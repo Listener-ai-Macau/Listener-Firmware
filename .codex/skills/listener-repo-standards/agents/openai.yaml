@@ -1,0 +1,7 @@
+interface:
+  display_name: "Listener Repo Standards"
+  short_description: "Apply the repo quick-start rules."
+  default_prompt: "Use $listener-repo-standards and read references/start_here.md first."
+
+policy:
+  allow_implicit_invocation: true

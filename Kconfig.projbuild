@@ -1,0 +1,6 @@
+menu "Codex Keyboard Configuration"
+    config CODEX_KEYBOARD_ENABLE
+        bool "Enable BLE keyboard mode"
+        default y
+        select BT_NIMBLE_HID_SERVICE
+endmenu

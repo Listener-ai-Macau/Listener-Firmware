@@ -1,0 +1,6 @@
+{
+  "clangd.arguments": [
+    "--compile-commands-dir=${workspaceFolder}/.cache/clangd",
+    "--query-driver=C:/Users/Billy/.espressif/tools/riscv32-esp-elf/**/riscv32-esp-elf-gcc.exe"
+  ]
+}
