@@ -9,28 +9,29 @@
 当前仓库已经完成的稳定能力主要是：
 
 - BLE HID 键盘脚本输入验证链路
+- 设备端音频采集、录音控制与 BLE 音频上传链路
 
 对应稳定总结已在：
 
 - [ble_hid_keyboard_input.md](../features/ble_hid_keyboard_input.md)
+- [audio_capture_ble_upload.md](../features/audio_capture_ble_upload.md)
 
-但按产品文档，蓝牙语音键盘 `v1` 还缺少多项关键能力：
+但按当前讨论更新后的产品方向，蓝牙语音键盘 `v1` 还缺少多项关键能力：
 
 - BLE 键盘产品化能力
-- 实体按键输入
-- 语音键触发控制
-- `Windows` 中文文本注入
-- 音频采集
-- 音频上传
+- `4` 个实体可编程键位与 `1` 个旋钮
+- 默认快捷键 / 系统键映射
 - 日志与自检
+- 蓝牙连接稳定性回归与测试脚本
+- `Windows` 主机端常驻语音输入 / agent app
 
 ## 范围
 
 - 为蓝牙语音键盘 `v1` 剩余主要功能建立子方案
 - 明确各功能之间的依赖顺序
 - 明确哪些内容当前可直接做，哪些受硬件或后端约束
-- 为“无后端先验证麦克风 / 喇叭是否正常”的主机侧保存与回放路径预留独立方案入口
-- 明确哪些能力属于设备侧，哪些能力必须由 `Windows` 主机伴随程序承担
+- 明确设备端音频链路与 `Windows` 主机端之间的职责边界
+- 明确哪些能力当前属于 `Windows` 先行主线，哪些能力降级为后续增强
 
 ## 不在本次范围内
 
@@ -46,12 +47,16 @@
 - 当前仓库仍是 `ESP32-S3` bring-up 阶段，不是量产键盘固件
 - 当前开发板原理图为：
   [schematic_v1.pdf](../hardware/esp32s3_board_v1/schematic_v1.pdf)
-- 如果最终目标提高到“类似闪电说的嵌入式语音助手”，应先参考：
-  [shandianshuo_like_embedded_voice_assistant_plan.md](./shandianshuo_like_embedded_voice_assistant_plan.md)
-- 如果当前先要把 `Windows` 中文输出能力独立打通，应先参考：
-  [windows_unicode_text_injection_plan.md](./windows_unicode_text_injection_plan.md)
-- 如果当前先要确认麦克风和喇叭链路是否真的好，应先参考：
-  [audio_input_output_host_capture_plan.md](./audio_input_output_host_capture_plan.md)
+- 如果要看当前新的 `A` 方案主线，应先参考：
+  [voice_shortcut_keyboard_plan.md](./voice_shortcut_keyboard_plan.md)
+- 当前已经完成的设备侧音频与上传能力总结在：
+  [audio_capture_ble_upload.md](../features/audio_capture_ble_upload.md)
+- 当前蓝牙连接稳定性与测试脚本边界，以：
+  [ble_keyboard_productization_plan.md](./ble_keyboard_productization_plan.md)
+  为准
+- 当前主机端结构参考优先顺序为：
+  - `Type4Me` 作为主参考
+  - `Handy` 作为次参考
 
 ## 步骤
 
@@ -62,7 +67,7 @@
 工作内容：
 
 - 建立 BLE 键盘产品化相关方案
-- 范围包括配对、绑定、重连、电量、主机输出状态等
+- 范围包括配对、绑定、重连、电量、主机输出状态、稳定性目标和测试脚本
 
 验收方式：
 
@@ -72,13 +77,14 @@
 
 - 人确认 BLE 产品化范围可接受后，AI 才能进入该子方案实现
 
-### 第二步：完成实体按键输入方案
+### 第二步：完成 `4` 键 + `1` 旋钮输入方案
 
 状态：`pending`
 
 工作内容：
 
-- 建立实体按键输入与 HID 映射方案
+- 建立少量实体键与旋钮输入方案
+- 不再按完整键盘矩阵作为默认主线推进
 
 验收方式：
 
@@ -88,88 +94,24 @@
 
 - 人确认实体按键输入方案可接受后，AI 才能进入该子方案实现
 
-### 第三步：完成语音键控制方案
+### 第三步：完成 BLE 键盘产品化细化
 
 状态：`pending`
 
 工作内容：
 
-- 建立语音键按下、保持、释放与取消的状态控制方案
+- 收敛 `v1` 的命名、绑定、重连、电量与连接体验
+- 收敛 `v1` 的蓝牙稳定性目标和脚本化回归标准
 
 验收方式：
 
-- [voice_key_recording_control_plan.md](./voice_key_recording_control_plan.md) 存在且内容完整
+- [ble_keyboard_productization_plan.md](./ble_keyboard_productization_plan.md) 作为当前有效方案保留
 
 人工检查点：
 
-- 人确认语音键控制方案可接受后，AI 才能进入该子方案实现
+- 人确认当前先做 BLE 产品化主链路可接受后，AI 才能进入该子方案实现
 
-### 第四步：完成 `Windows` 中文文本注入方案
-
-状态：`pending`
-
-工作内容：
-
-- 建立 `Windows` 主机侧的 Unicode 文本注入路线
-- 先验证 mock 文本 `测试` 能稳定进入当前输入框
-
-验收方式：
-
-- [windows_unicode_text_injection_plan.md](./windows_unicode_text_injection_plan.md) 作为当前有效方案保留
-
-人工检查点：
-
-- 人确认当前先做中文输出主链路可接受后，AI 才能进入该子方案实现
-
-### 第五步：完成无后端音频输入占位方案
-
-状态：`pending`
-
-工作内容：
-
-- 保留并推进当前“无后端先打通占位链路”的方案
-
-验收方式：
-
-- [audio_input_placeholder_plan.md](./audio_input_placeholder_plan.md) 作为当前有效方案保留
-
-人工检查点：
-
-- 人确认当前先走占位链路的策略可接受后，AI 才能进入该子方案实现
-
-### 第六步：完成正式音频采集方案
-
-状态：`pending`
-
-工作内容：
-
-- 建立 `ES8311 + MIC + I2S` 正式音频采集方案
-
-验收方式：
-
-- [audio_capture_bringup_plan.md](./audio_capture_bringup_plan.md) 存在且内容完整
-
-人工检查点：
-
-- 人确认音频采集方案可接受后，AI 才能进入该子方案实现
-
-### 第七步：完成音频上传方案
-
-状态：`pending`
-
-工作内容：
-
-- 建立音频分片上传与协议对接方案
-
-验收方式：
-
-- [audio_stream_upload_plan.md](./audio_stream_upload_plan.md) 存在且内容完整
-
-人工检查点：
-
-- 人确认上传方案和协议依赖可接受后，AI 才能进入该子方案实现
-
-### 第八步：完成日志与自检方案
+### 第四步：完成日志与自检方案
 
 状态：`pending`
 
@@ -185,52 +127,51 @@
 
 - 人确认日志与自检方案可接受后，AI 才能进入该子方案实现
 
-### 第九步：完成实体按键输入方案实现前准备
+### 第五步：后续再单独建立 Windows 主机端语音输入 app 方案
 
 状态：`pending`
 
 工作内容：
 
-- 建立日志、自检、版本与故障定位方案
+- 在当前设备侧音频链路已经稳定后，再单独建立主机端语音输入 / agent app 方案
+- 继续沿用：
+  - `Type4Me` 主参考
+  - `Handy` 次参考
 
 验收方式：
 
-- [device_logging_selftest_plan.md](./device_logging_selftest_plan.md) 存在且内容完整
+- 新方案存在且重新过审
 
 人工检查点：
 
-- 人确认日志与自检方案可接受后，AI 才能进入该子方案实现
+- 人确认确实进入主机端实现阶段后，AI 才能进入这些新方案实现
 
 ## 当前阻塞项
 
 - 当前只是完成方案梳理，还没有开始任何一个子方案的实现审批
-- 当前“中文输出”如果要求稳定支持 `Windows` 输入框，不应继续走“纯 BLE HID 直接注入中文”的假设
-- 当前还没有主机侧 Unicode 注入工具实现
+- 当前仍需要把实体输入、默认快捷键映射和主机端 app 边界定义清楚
+- 当前仍需要把 BLE 稳定性与测试脚本边界定义清楚
 
 ## 备注
 
 - 当前建议的执行顺序是：
-  1. `windows_unicode_text_injection_plan`
-  2. `audio_input_placeholder_plan`
-  3. `audio_input_output_host_capture_plan`
-  4. `voice_key_recording_control_plan`
-  5. `ble_keyboard_productization_plan`
-  6. `audio_capture_bringup_plan`
-  7. `audio_stream_upload_plan`
-  8. `device_logging_selftest_plan`
-  9. `keyboard_matrix_input_plan`
+  1. `voice_shortcut_keyboard_plan`
+  2. `ble_keyboard_productization_plan`
+  3. `keyboard_matrix_input_plan`（但边界改成 `4` 键 + `1` 旋钮）
+  4. `device_logging_selftest_plan`
+  5. 再单独立 `Windows` 主机端语音输入 app 方案
 
-- 其中最容易被外部依赖卡住的是：
-  `audio_stream_upload_plan` 和 `Windows` 主机侧中文注入方案
+- 其中蓝牙连接稳定性不是附属项，而是：
+  - `ble_keyboard_productization_plan` 的必收内容
+  - 无线音频上传前的前置门槛
 
 - 其中最适合当前立即推进的是：
-  `windows_unicode_text_injection_plan`
+  `ble_keyboard_productization_plan`
 
-- 如果问题是“现在要不要先把中文输出搞定”，当前建议是：
-  - 先把 `Windows` 主机侧 Unicode 中文输出打通
-  - 先用 mock 文本 `测试` 验证
-  - 再做设备侧语音输入
-  - 后续后端返回什么字符串，就复用当前主机注入链路输出什么字符串
+- 如果后续问题再次回到“Type4Me / Handy 选哪个”，
+  当前默认结论是：
+  - 主参考选 `Type4Me`
+  - 次参考保留 `Handy`
 
 - 如果目标从“BLE 语音键盘 v1”升级为“类似闪电说的嵌入式语音助手”，
   当前这份 roadmap 只覆盖设备侧子集，不覆盖主机伴随程序、上下文理解和技能执行。

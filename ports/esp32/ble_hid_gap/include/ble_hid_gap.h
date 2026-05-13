@@ -70,6 +70,8 @@ void print_uuid(esp_bt_uuid_t *uuid);
 esp_err_t ble_hid_gap_init(void);
 esp_err_t ble_hid_gap_configure_advertising(uint16_t appearance, const char *device_name);
 esp_err_t ble_hid_gap_start_advertising(void);
+esp_err_t ble_hid_gap_mark_stack_ready(void);
+bool ble_hid_gap_is_connected(void);
 
 esp_err_t esp_hid_gap_init(uint8_t mode);
 esp_err_t esp_hid_gap_deinit(void);

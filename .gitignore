@@ -5,3 +5,7 @@ sdkconfig
 sdkconfig.old
 .DS_Store
 Thumbs.db
+__pycache__/
+*.pyc
+tests/artifacts/
+.external_refs/

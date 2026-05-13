@@ -5,12 +5,53 @@
 - 当前状态：`可用`
 - 当前定位：`保底输入链路 / 调试验证链路`
 - 当前是否主线：`不是语音主线`
+- 当前是否默认启用：`否`
 
 说明：
 
 - 这条链路当前已经稳定可用，适合作为设备 bring-up、主机联调、输入回路验证和 fallback 输入方式
+- 这条链路会继续保留在仓库中，作为可复用能力存在
 - 但对“类似闪电说”的最终目标来说，它不是中文输出的主方案
+- 对当前新的 `A` 方案来说，它也不是默认启用的最终产品交互方式
 - 后续如果进入真正的中文语音输入主线，`Windows` 主机伴随程序的 Unicode 注入能力会比这条 `BLE HID` ASCII / 键码链路更重要
+- 当前“稳定可用”的定义已经补充为：
+  - 主机恢复后，连续多轮 `reset + 发字` 回归通过
+  - 空闲一段时间后再次 `reset` 仍能恢复
+  - 如果 `Windows` 进入假连接态，仓库内存在一键恢复脚本
+
+## 保留的中文输入实验能力
+
+当前仓库仍保留一条“只用于实验、不作为主线产品功能”的中文输入测试能力。
+
+能力定义：
+
+- 固件在 BLE HID 连接恢复后，约 `1s` 自动发送固定测试键序列
+- 固定测试键序列位于：
+  [ports/esp32/ble_hid/ble_hid.c](../../ports/esp32/ble_hid/ble_hid.c)
+- 当前固定测试键序列为：
+  `zheshiyigezhongwenshuruceshi `
+
+如果 `Windows` 当前输入法满足以下条件：
+
+- 已切到中文输入法
+- 当前候选行为与微软拼音常见默认行为一致
+
+则当前输入框里会看到：
+
+- `这是一个中文输入测试`
+
+这条能力当前保留的意义是：
+
+- 作为“纯 BLE HID + 主机当前 IME”路线的历史验证结果
+- 作为中文输入体验讨论时的现成演示能力
+
+这条能力当前不作为主线的原因是：
+
+- 依赖主机当前输入法状态
+- 不保证跨输入法、跨平台一致
+- 不适合作为“后端返回什么就稳定输出什么”的最终方案
+
+另外，这轮为该实验单独增加的稳定性 / 压测专用脚本已经删除，稳定结果保留在本文档里，不再继续维护那两份测试脚本。
 
 ## 目标
 
@@ -37,7 +78,8 @@
 - `Listener Keyboard` 已建立 `NimBLE` bond，固件端启动日志显示 `NimBLE bonded peers=1`
 - 设备 `reset` 后无需人工点击 Windows 蓝牙界面，约数秒内可自动恢复加密连接并重新完成 HID 订阅
 - `verify_ble_hid.ps1` 已确认固件侧输入链路、BLE 连接状态和 HID report 发送完成
-- `verify_ble_hid_end_to_end.ps1` 已确认 Windows 主机实际收到测试文本 `ab`
+- `verify_ble_hid_end_to_end.ps1` 已确认 Windows 主机实际收到固定测试文本
+- 在 `Windows` 主机偶发进入异常态时，执行主机侧恢复脚本后，`3` 轮稳定性回归全部通过
 
 ## 关键代码位置
 
@@ -78,6 +120,12 @@
   [tools/send_serial.ps1](../../tools/send_serial.ps1)
 - 非交互抓串口日志：
   [tools/capture_serial.ps1](../../tools/capture_serial.ps1)
+- 主机侧恢复：
+  [tools/recover_ble_hid_host.ps1](../../tools/recover_ble_hid_host.ps1)
+- 主机侧 `MaintainConnection`：
+  [tools/ensure_ble_hid_connection.ps1](../../tools/ensure_ble_hid_connection.ps1)
+- `Windows` 蓝牙服务恢复：
+  [tools/restart_windows_bluetooth.ps1](../../tools/restart_windows_bluetooth.ps1)
 
 ## 推荐验证方式
 
@@ -106,7 +154,7 @@ powershell -ExecutionPolicy Bypass -File .\tools\capture_serial.ps1 -Port COM3 -
 ### 2. 固件侧快速验证
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File .\tools\verify_ble_hid.ps1 -Port COM3 -Text "ab" -BootCaptureSeconds 10 -PostSendCaptureSeconds 5
+powershell -ExecutionPolicy Bypass -File .\tools\verify_ble_hid.ps1 -Port COM3 -Text "zheshiyigezhongwenshuruceshi " -BootCaptureSeconds 10 -PostSendCaptureSeconds 5
 ```
 
 预期结果：
@@ -120,26 +168,68 @@ powershell -ExecutionPolicy Bypass -File .\tools\verify_ble_hid.ps1 -Port COM3 -
 
 `2026-05-13` 实测结果：
 
-- `ab` 两个字符均被固件消费
-- 两个字符均出现 `hid_keyboard: send_ascii done`
+- 固定测试文本被固件消费
+- 全部字符均出现 `hid_keyboard: send_ascii done`
 - `notify_tx event` 返回 `status=0`
 
 ### 3. 主机侧端到端验证
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File .\tools\verify_ble_hid_end_to_end.ps1 -Port COM3 -Text "ab" -BootCaptureSeconds 10 -PostSendCaptureSeconds 5 -HostCaptureTimeoutSeconds 15
+powershell -ExecutionPolicy Bypass -File .\tools\verify_ble_hid_end_to_end.ps1 -Port COM3 -Text "zheshiyigezhongwenshuruceshi " -BootCaptureSeconds 10 -PostSendCaptureSeconds 5 -HostCaptureTimeoutSeconds 15
 ```
 
 预期结果：
 
 - 返回 `verify_ble_hid_end_to_end: host received expected text and firmware logs show HID send completion`
-- 主机侧实际捕获结果为 `ab`
+- 主机侧实际捕获结果为固定测试文本
 
 `2026-05-13` 实测结果：
 
 - 脚本成功返回
-- `CAPTURED_TEXT` 为 `ab`
+- `CAPTURED_TEXT` 为固定测试文本
 - 固件日志同时包含 `SCRIPT RX`、`connected=yes`、`notify_tx event status=0` 和 `hid_keyboard: send_ascii done`
+
+### 4. Windows 假连接态恢复
+
+当遇到下面这种现象时：
+
+- `Windows` UI 看起来“已连接”
+- 但固件日志没有 `connection established; status=0`
+- 或 `verify_ble_hid.ps1` 出现 `connected=no`
+
+优先执行：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\tools\recover_ble_hid_host.ps1
+```
+
+这条命令会组合完成：
+
+- 重启 `Windows` 蓝牙服务
+- 重新请求 `BluetoothLEDevice` 的 `GattSession.MaintainConnection`
+
+`2026-05-13` 实测结果：
+
+- 执行该命令后，设备可再次自动恢复真实 `HID` 会话
+- 后续脚本输入重新出现 `connected=yes`
+
+### 5. 历史稳定性结果归档
+
+虽然专用稳定性 / 压测脚本已经删掉，但 `2026-05-13` 这轮实测结果仍然保留如下：
+
+- 主机恢复后，多轮 `reset + 自动回连 + 发字` 回归曾做到 `3/3` 通过
+- 空闲 `60s` 后再次 `reset`，仍能恢复连接并继续发字
+- 常见断链场景压测曾做到 `4/4` 通过，覆盖：
+  - 主机先恢复后再验证
+  - 空闲等待一段时间后再验证
+  - `Windows` 蓝牙服务重启后再验证
+  - `Windows` 蓝牙 `PAN` 适配器循环后再恢复并验证
+
+这部分现在只作为历史稳定性结论保留，不再继续以独立压测脚本的形式维护。
+
+设备端音频采集、录音控制和自定义 `BLE` 音频上传能力，已经独立整理到：
+
+- [audio_capture_ble_upload.md](./audio_capture_ble_upload.md)
 
 ## 迁移注意事项
 
@@ -159,6 +249,12 @@ powershell -ExecutionPolicy Bypass -File .\tools\verify_ble_hid_end_to_end.ps1 -
 - 重新运行 reset 自动回连和端到端验证
 
 完成这次重新配对后，后续 reset 不应再需要人工重连。
+
+如果后续又出现“UI 显示已连接，但 HID 实际不工作”的主机异常态，优先先跑：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\tools\recover_ble_hid_host.ps1
+```
 
 ## 这次收掉的关键问题
 
@@ -188,6 +284,10 @@ powershell -ExecutionPolicy Bypass -File .\tools\verify_ble_hid_end_to_end.ps1 -
 - 端到端验证前应重新确认当前枚举串口，而不是固定假设 `COM5`
 - `idf.py monitor` 不是 AI 的主验证路径，非交互环境优先走脚本链路
 - Windows 蓝牙 UI 的“已连接”状态不一定可靠，应以固件日志中的 `connection established`、`encryption change event; status=0`、`subscribe event` 和脚本端到端结果为准
+- 如果要判断“当前是不是稳”，不要只看一轮成功；优先运行：
+  - reset 自动回连日志检查
+  - 一轮固件侧快速验证
+  - 一轮主机侧端到端验证
 
 ## 已知限制
 
@@ -198,9 +298,11 @@ powershell -ExecutionPolicy Bypass -File .\tools\verify_ble_hid_end_to_end.ps1 -
 
 ## 下一步建议
 
-- 如果继续做真实产品功能，下一步应进入“语音输入占位链路”而不是继续扩 BLE demo
-- 优先目标应是：
-  `音频采集 -> 本地触发固定测试字符串 -> 复用当前 BLE HID 输出链路 -> 输出到 Windows`
+- 如果继续做真实产品功能，下一步应进入“设备端音频采集 + 上传到 Windows 主机端”主线，而不是继续扩 BLE demo
+- 这条 BLE HID 链路后续更适合作为：
+  - fallback 输入方式
+  - 设备 bring-up 验证链路
+  - 中文输入实验能力保留位
 
 ## 目前不再单独使用的历史背景
 

@@ -16,6 +16,7 @@
 #include "freertos/semphr.h"
 
 #include "ble_hid_gap.h"
+#include "ble_audio_stream.h"
 
 #if CONFIG_BT_NIMBLE_ENABLED
 #include "esp_bt.h"
@@ -23,6 +24,7 @@
 #include "nimble/nimble_port.h"
 #include "host/ble_gap.h"
 #include "host/ble_hs_adv.h"
+#include "services/gatt/ble_svc_gatt.h"
 #include "host/ble_store.h"
 #include "nimble/ble.h"
 #include "host/ble_sm.h"
@@ -754,6 +756,13 @@ extern void ble_hid_task_start_up(void);
 static struct ble_hs_adv_fields s_adv_fields;
 static struct ble_hs_adv_fields s_scan_rsp_fields;
 static ble_uuid16_t s_hid_service_uuid = BLE_UUID16_INIT(GATT_SVR_SVC_HID_UUID);
+static ble_uuid128_t s_audio_stream_service_uuid = BLE_AUDIO_STREAM_SERVICE_UUID;
+static bool s_nimble_stack_ready = false;
+static bool s_hid_start_event_seen = false;
+static uint8_t s_own_addr_type = BLE_OWN_ADDR_PUBLIC;
+static bool s_directed_adv_pending = true;
+static bool s_last_adv_was_directed = false;
+static bool s_ble_gap_connected = false;
 
 /*
  * Legacy advertising has a hard 31-byte payload limit. With flags,
@@ -789,6 +798,9 @@ esp_err_t esp_hid_ble_gap_adv_init(uint16_t appearance, const char *device_name)
 
     s_scan_rsp_fields.tx_pwr_lvl_is_present = 1;
     s_scan_rsp_fields.tx_pwr_lvl = BLE_HS_ADV_TX_PWR_LVL_AUTO;
+    s_scan_rsp_fields.uuids128 = &s_audio_stream_service_uuid;
+    s_scan_rsp_fields.num_uuids128 = 1;
+    s_scan_rsp_fields.uuids128_is_complete = 1;
 
     /* Initialize the security configuration */
     ble_hs_cfg.sm_io_cap = BLE_SM_IO_CAP_NO_IO;
@@ -824,9 +836,14 @@ nimble_hid_gap_event(struct ble_gap_event *event, void *arg)
                  event->connect.status == 0 ? "established" : "failed",
                  event->connect.status);
         if (event->connect.status != 0) {
+            s_directed_adv_pending = false;
             ble_hid_gap_start_advertising();
             return 0;
         }
+
+        s_ble_gap_connected = true;
+        ble_audio_stream_on_gap_connect(event->connect.conn_handle);
+        s_last_adv_was_directed = false;
 
         rc = ble_gap_conn_find(event->connect.conn_handle, &desc);
         if (rc == 0) {
@@ -852,6 +869,10 @@ nimble_hid_gap_event(struct ble_gap_event *event, void *arg)
         return 0;
     case BLE_GAP_EVENT_DISCONNECT:
         ESP_LOGI(TAG, "disconnect; reason=%d", event->disconnect.reason);
+        s_ble_gap_connected = false;
+        ble_audio_stream_on_gap_disconnect(event->disconnect.conn.conn_handle);
+        s_directed_adv_pending = true;
+        s_last_adv_was_directed = false;
         ble_hid_gap_start_advertising();
         return 0;
     case BLE_GAP_EVENT_CONN_UPDATE:
@@ -863,6 +884,10 @@ nimble_hid_gap_event(struct ble_gap_event *event, void *arg)
     case BLE_GAP_EVENT_ADV_COMPLETE:
         ESP_LOGI(TAG, "advertise complete; reason=%d",
                 event->adv_complete.reason);
+        if (s_last_adv_was_directed) {
+            ESP_LOGI(TAG, "directed advertising completed; falling back to undirected advertising");
+            s_last_adv_was_directed = false;
+        }
         ble_hid_gap_start_advertising();
         return 0;
 
@@ -876,6 +901,11 @@ nimble_hid_gap_event(struct ble_gap_event *event, void *arg)
                 event->subscribe.cur_notify,
                 event->subscribe.prev_indicate,
                 event->subscribe.cur_indicate);
+        ble_audio_stream_on_gap_subscribe(
+            event->subscribe.conn_handle,
+            event->subscribe.attr_handle,
+            event->subscribe.cur_notify,
+            event->subscribe.cur_indicate);
         return 0;
 
     case BLE_GAP_EVENT_MTU:
@@ -889,6 +919,8 @@ nimble_hid_gap_event(struct ble_gap_event *event, void *arg)
         /* Encryption has been enabled or disabled for this connection. */
         ESP_LOGI(TAG, "encryption change event; status=%d", event->enc_change.status);
         if (event->enc_change.status == 0) {
+            ble_svc_gatt_changed(0x0001, 0xffff);
+            ESP_LOGI(TAG, "service changed indication queued for refreshed GATT discovery");
             rc = ble_gap_conn_find(event->enc_change.conn_handle, &desc);
             if (rc == 0) {
                 ESP_LOGI(
@@ -968,12 +1000,69 @@ nimble_hid_gap_event(struct ble_gap_event *event, void *arg)
     }
     return 0;
 }
+
+static void nimble_hid_on_reset(int reason)
+{
+    s_nimble_stack_ready = false;
+    ESP_LOGW(TAG, "NimBLE host reset; reason=%d", reason);
+}
+
+static void nimble_hid_on_sync(void)
+{
+    int rc;
+    uint8_t addr_val[6] = {0};
+
+    rc = ble_hs_id_infer_auto(0, &s_own_addr_type);
+    if (rc != 0) {
+        ESP_LOGE(TAG, "ble_hs_id_infer_auto failed: rc=%d", rc);
+        return;
+    }
+
+    rc = ble_hs_id_copy_addr(s_own_addr_type, addr_val, NULL);
+    if (rc != 0) {
+        ESP_LOGW(TAG, "ble_hs_id_copy_addr failed: rc=%d", rc);
+    } else {
+        ESP_LOGI(
+            TAG,
+            "NimBLE host sync complete: own_addr_type=%u addr=%02x:%02x:%02x:%02x:%02x:%02x",
+            s_own_addr_type,
+            addr_val[0],
+            addr_val[1],
+            addr_val[2],
+            addr_val[3],
+            addr_val[4],
+            addr_val[5]);
+    }
+
+    s_nimble_stack_ready = true;
+    s_directed_adv_pending = true;
+    s_last_adv_was_directed = false;
+
+    if (s_hid_start_event_seen) {
+        ble_hid_gap_start_advertising();
+    } else {
+        ESP_LOGI(TAG, "NimBLE host synced before HID START; advertising deferred");
+    }
+}
+
 esp_err_t esp_hid_ble_gap_adv_start(void)
 {
     int rc;
     struct ble_gap_adv_params adv_params;
     ble_addr_t bonded_peers[4];
     int bonded_peer_count = 0;
+    bool start_directed = false;
+    ble_addr_t direct_peer_addr = {0};
+
+    if (!s_hid_start_event_seen) {
+        ESP_LOGI(TAG, "NimBLE advertising deferred: HID START not seen yet");
+        return ESP_OK;
+    }
+
+    if (!s_nimble_stack_ready) {
+        ESP_LOGI(TAG, "NimBLE advertising deferred: host stack not synced yet");
+        return ESP_OK;
+    }
 
     if (ble_gap_adv_active()) {
         ESP_LOGI(TAG, "NimBLE advertising already active");
@@ -998,24 +1087,59 @@ esp_err_t esp_hid_ble_gap_adv_start(void)
         SIZEOF_ARRAY(bonded_peers));
     if (rc == 0) {
         ESP_LOGI(TAG, "NimBLE bonded peers=%d", bonded_peer_count);
+        if (bonded_peer_count > 0) {
+            direct_peer_addr = bonded_peers[0];
+            start_directed = s_directed_adv_pending;
+        }
     } else {
         ESP_LOGW(TAG, "NimBLE bonded peer lookup failed: rc=%d", rc);
     }
 
     /* Begin advertising. */
     memset(&adv_params, 0, sizeof adv_params);
+    if (start_directed) {
+        adv_params.conn_mode = BLE_GAP_CONN_MODE_DIR;
+        adv_params.high_duty_cycle = 1;
+        rc = ble_gap_adv_start(
+            s_own_addr_type,
+            &direct_peer_addr,
+            BLE_HS_FOREVER,
+            &adv_params,
+            nimble_hid_gap_event,
+            NULL);
+        if (rc == 0) {
+            s_directed_adv_pending = false;
+            s_last_adv_was_directed = true;
+            ESP_LOGI(
+                TAG,
+                "NimBLE directed advertising started: peer_type=%u peer_addr=%02x:%02x:%02x:%02x:%02x:%02x",
+                direct_peer_addr.type,
+                direct_peer_addr.val[0],
+                direct_peer_addr.val[1],
+                direct_peer_addr.val[2],
+                direct_peer_addr.val[3],
+                direct_peer_addr.val[4],
+                direct_peer_addr.val[5]);
+            return ESP_OK;
+        }
+
+        ESP_LOGW(TAG, "directed advertising failed, fallback to undirected; rc=%d", rc);
+    }
+
+    memset(&adv_params, 0, sizeof adv_params);
     adv_params.conn_mode = BLE_GAP_CONN_MODE_UND;
     adv_params.disc_mode = BLE_GAP_DISC_MODE_GEN;
     adv_params.itvl_min = BLE_GAP_ADV_ITVL_MS(30);/* Recommended interval 30ms to 50ms */
     adv_params.itvl_max = BLE_GAP_ADV_ITVL_MS(50);
-    rc = ble_gap_adv_start(BLE_OWN_ADDR_PUBLIC, NULL, BLE_HS_FOREVER,
+    rc = ble_gap_adv_start(s_own_addr_type, NULL, BLE_HS_FOREVER,
                            &adv_params, nimble_hid_gap_event, NULL);
     if (rc != 0) {
-        ESP_LOGE(TAG, "error enabling advertisement; rc=%d", rc);
+        ESP_LOGE(TAG, "error enabling undirected advertisement; rc=%d", rc);
         return ESP_FAIL;
     }
 
-    ESP_LOGI(TAG, "NimBLE advertising started");
+    s_last_adv_was_directed = false;
+    ESP_LOGI(TAG, "NimBLE undirected advertising started");
     return ESP_OK;
 }
 #endif
@@ -1162,6 +1286,8 @@ static esp_err_t init_low_level(uint8_t mode)
         return ret;
     }
 
+    ble_hs_cfg.sync_cb = nimble_hid_on_sync;
+    ble_hs_cfg.reset_cb = nimble_hid_on_reset;
 
     return ret;
 }
@@ -1263,6 +1389,27 @@ esp_err_t ble_hid_gap_configure_advertising(uint16_t appearance, const char *dev
 esp_err_t ble_hid_gap_start_advertising(void)
 {
     return esp_hid_ble_gap_adv_start();
+}
+
+esp_err_t ble_hid_gap_mark_stack_ready(void)
+{
+#if CONFIG_BT_NIMBLE_ENABLED
+    s_hid_start_event_seen = true;
+    if (!s_nimble_stack_ready) {
+        ESP_LOGI(TAG, "HID START received; waiting for NimBLE host sync before advertising");
+        return ESP_OK;
+    }
+#endif
+    return ble_hid_gap_start_advertising();
+}
+
+bool ble_hid_gap_is_connected(void)
+{
+#if CONFIG_BT_NIMBLE_ENABLED
+    return s_ble_gap_connected;
+#else
+    return false;
+#endif
 }
 
 #if !CONFIG_BT_NIMBLE_ENABLED
