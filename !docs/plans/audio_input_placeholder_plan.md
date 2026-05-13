@@ -45,9 +45,9 @@
 - 当前板子仍为 `ESP32-S3`
 - 当前主机已可连接 `Listener Keyboard`
 - 当前 BLE HID 输出链路已经完成，稳定知识已沉淀到：
-  [docs/features/ble_hid_keyboard_input.md](C:/Users/imhlemsman/Desktop/listener/voice-keyboard-firmware/docs/features/ble_hid_keyboard_input.md:1)
+  [ble_hid_keyboard_input.md](../features/ble_hid_keyboard_input.md)
 - 当前原理图文件为：
-  `C:\Users\imhlemsman\Desktop\listener\6. ESP32S3开发板原理图_V1.0.pdf`
+  [schematic_v1.pdf](../hardware/esp32s3_board_v1/schematic_v1.pdf)
 
 当前已从原理图确认的事实：
 
@@ -188,16 +188,16 @@
 
 工作内容：
 
-- 在 `docs/features/` 下新增总结文档
+- 在 `!docs/features/` 下新增总结文档
 - 说明音频输入占位链路的代码位置
 - 说明如何执行最小验证
 - 说明当前限制与后续接后端时的衔接方式
 
 验收方式：
 
-- `docs/features/` 下存在新的功能总结文档
+- `!docs/features/` 下存在新的功能总结文档
 - 文档包含代码位置、验证方式、约束和已知问题
-- 如果本方案全部完成，对应 plan 从 `docs/plans/` 删除
+- 如果本方案全部完成，对应 plan 从 `!docs/plans/` 删除
 
 人工检查点：
 

@@ -28,9 +28,9 @@ ESP-IDF seed firmware for the voice keyboard product.
 - `ports/`: platform-specific SDK bindings
 - `tools/`: build, flash, monitor, and helper scripts
 - `tests/`: smoke checks
-- `docs/`: human-facing product documents
+- `!docs/`: human-facing product documents
 
 ## Key Docs
 
-- `docs/development_setup.md`
-- `docs/product_solutions.md`
+- `!docs/development_setup.md`
+- `!docs/product_solutions.md`

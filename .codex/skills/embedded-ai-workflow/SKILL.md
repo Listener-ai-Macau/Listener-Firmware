@@ -21,7 +21,24 @@ Default to `full` if hardware behavior, architecture, or cross-module integratio
 
 ## Required Plan-First Flow
 
-Before meaningful implementation, create a plan document in the repository's `docs/plans/` directory.
+Before meaningful implementation, create a plan document in the repository's `!docs/plans/` directory.
+
+Before writing that plan, first do a short precedent review.
+
+The default question is:
+
+- `Has this already been solved by an official example, a mature built-in platform capability, a common industry pattern, or a well-established open-source tool?`
+
+Default rule:
+
+- Do not jump straight to a custom architecture or custom implementation if a reusable precedent likely already exists
+- Check official SDK examples, official platform guidance, repository-local references, and mature widely used tools before proposing a new mechanism
+- In the plan, explicitly record:
+- what existing options were checked
+- which option is being reused, adapted, or rejected
+- why the chosen path is better than simply adopting the precedent as-is
+
+The goal is not to avoid all custom work. The goal is to avoid reinventing a wheel that already exists and is already known to work.
 
 The plan must include:
 
@@ -34,6 +51,8 @@ The plan must include:
 - acceptance method for each step
 - human checkpoints
 - known blockers
+
+When relevant, the plan should also include a short `existing options / precedent review` section.
 
 If the repository already has a plan template or workflow document, follow it. If not, create a concise plan using this structure.
 
@@ -126,11 +145,28 @@ For `PowerShell -> Python` handoff in embedded repositories, default to:
 
 Only embed text directly into inline Python source when the content is static, ASCII-safe, and not influenced by runtime data.
 
+## Windows Path Escaping Rule
+
+On Windows, treat path serialization as part of script interop hygiene.
+
+Default rules:
+
+- Do not casually paste backslash paths such as `C:\Users\name\...` into inline `Python`, JSON literals, regex patterns, or Markdown examples that may later be copied into code
+- Assume sequences such as `\U`, `\n`, and `\t` can be misinterpreted unless the transport is explicit
+- Prefer repo-relative paths in repository documents when that is practical
+- When an absolute Windows path is unavoidable, prefer one of:
+- `pathlib.Path(...)`
+- raw Python strings such as `r"C:\path\to\file"`
+- forward-slash paths when the target tool accepts them
+- command-line arguments, environment variables, JSON, or temporary files for dynamic paths
+
+Before finalizing Windows-oriented scripts or docs, do a quick pass for accidental escape sequences caused by copied backslash paths.
+
 ## Completion Documentation
 
-When an important feature or important bug fix is completed, add a short handoff document under the repository's `docs/` tree.
+When an important feature or important bug fix is completed, add a short handoff document under the repository's `!docs/` tree.
 
-Prefer a `docs/features/` directory when the repository uses one.
+Prefer a `!docs/features/` directory when the repository uses one.
 
 The summary should include:
 
@@ -140,15 +176,15 @@ The summary should include:
 - important constraints
 - known risks and likely next steps
 
-After an implementation plan has been fully completed and its final behavior has been summarized, prefer moving the durable knowledge into `docs/features/` and removing the no-longer-active plan document.
+After an implementation plan has been fully completed and its final behavior has been summarized, prefer moving the durable knowledge into `!docs/features/` and removing the no-longer-active plan document.
 
-Treat `docs/plans/` as the place for:
+Treat `!docs/plans/` as the place for:
 
 - reusable plan templates
 - active plans
 - currently relevant in-progress work
 
-Do not let `docs/plans/` accumulate old completed plans unless the repository explicitly wants to preserve them.
+Do not let `!docs/plans/` accumulate old completed plans unless the repository explicitly wants to preserve them.
 
 ## Human-Facing Language Rule
 
@@ -156,9 +192,9 @@ Write human-facing repository documents in Chinese by default.
 
 This applies to content such as:
 
-- plan documents under `docs/plans/`
-- feature summaries under `docs/features/`
-- workflow and handoff documents under `docs/`
+- plan documents under `!docs/plans/`
+- feature summaries under `!docs/features/`
+- workflow and handoff documents under `!docs/`
 - approval notes, acceptance notes, and human review context written into repository documents
 
 This rule is about the document body and review-facing wording. File and directory names may still use repository-friendly naming such as `snake_case` when that is more practical.

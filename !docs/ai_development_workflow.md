@@ -26,7 +26,24 @@ This workflow applies to:
 
 ## 2. Required Plan-First Flow
 
-Before meaningful implementation starts, AI must create a plan document in `docs/plans/`.
+Before meaningful implementation starts, AI must create a plan document in `!docs/plans/`.
+
+在写方案之前，AI 应先做一轮“现成方案 / 先例检查”。
+
+默认要先问自己：
+
+- 这个问题是不是已经有官方示例、平台内建能力、成熟开源工具，或者业内常见做法可以直接复用？
+
+默认规则是：
+
+- 如果大概率存在现成轮子，不要直接跳到“自定义架构”或“从零写一套”
+- 先查官方示例、官方平台文档、仓库内已有参考资料，以及成熟常用工具
+- 在方案中明确写出：
+  - 查过哪些现成方案
+  - 最终复用 / 改造 / 放弃了哪条路线
+  - 为什么当前选择比“直接照搬现成方案”更合适
+
+这样做的目标不是禁止自定义实现，而是避免重复造一个已经存在、已经被验证过的轮子。
 
 The plan must include:
 
@@ -38,6 +55,8 @@ The plan must include:
 - a step-by-step execution plan
 - acceptance criteria for each step
 - blockers or human actions expected at any step
+
+如果任务明显存在可复用先例，方案中还应增加一小节“现成方案 / 先例检查”。
 
 AI must present that plan to the human and wait for approval before implementing step 1.
 
@@ -60,7 +79,7 @@ If the human says "continue", that counts as approval for the next step only.
 
 Important bugs should follow the same pattern.
 
-AI must create or update a bug plan in `docs/plans/` with:
+AI must create or update a bug plan in `!docs/plans/` with:
 
 - observed behavior
 - expected behavior
@@ -112,12 +131,12 @@ Avoid vague acceptance text such as:
 
 ## 7. Completion Documentation
 
-When an important feature or important bug fix is completed, AI must add a handoff document under `docs/`.
+When an important feature or important bug fix is completed, AI must add a handoff document under `!docs/`.
 
 Preferred location:
 
-- feature or subsystem summaries: `docs/features/`
-- cross-cutting workflow or architecture notes: `docs/`
+- feature or subsystem summaries: `!docs/features/`
+- cross-cutting workflow or architecture notes: `!docs/`
 
 That document should help a future AI quickly recover context and continue work.
 
@@ -129,12 +148,12 @@ Minimum contents:
 - important constraints
 - known risks or next steps
 
-完成后，若对应方案已经全部执行完毕，并且稳定知识已经整理完成，应优先把最终结果沉淀到 `docs/features/` 或其他稳定的 `docs/` 文档里，而不是长期堆在 `docs/plans/`。
+完成后，若对应方案已经全部执行完毕，并且稳定知识已经整理完成，应优先把最终结果沉淀到 `!docs/features/` 或其他稳定的 `!docs/` 文档里，而不是长期堆在 `!docs/plans/`。
 
 默认建议是：
 
-- `docs/plans/` 只保留模板和当前有效方案
-- 已完成方案在转成功能总结后，从 `docs/plans/` 中删除
+- `!docs/plans/` 只保留模板和当前有效方案
+- 已完成方案在转成功能总结后，从 `!docs/plans/` 中删除
 
 ## 7.1 面向人的文档语言
 
@@ -142,15 +161,34 @@ Minimum contents:
 
 包括但不限于：
 
-- `docs/plans/` 下的方案文档
-- `docs/features/` 下的功能总结
-- `docs/` 下的流程说明、交接说明、验收记录
+- `!docs/plans/` 下的方案文档
+- `!docs/features/` 下的功能总结
+- `!docs/` 下的流程说明、交接说明、验收记录
 
 这个规则主要针对文档正文和说明性文字。
 
 文件名、目录名仍可根据仓库约定继续使用英文 `snake_case`。
 
 如果用户或仓库另有明确语言要求，则以明确要求为准。
+
+## 7.2 Windows 路径与转义
+
+在 Windows 上，路径写法本身也属于脚本互操作可靠性的一部分。
+
+默认规则是：
+
+- 不要把 `C:\Users\name\...` 这类反斜杠路径随手嵌进内联 `Python`、JSON 字面量、正则表达式或之后很可能被复制进代码的示例里
+- 默认认为 `\U`、`\n`、`\t` 这类序列可能被误解释，除非传递方式是显式且安全的
+- 仓库文档里能用相对路径时，优先用仓库内相对路径，而不是机器相关的绝对路径
+- 动态路径优先通过命令行参数、环境变量、JSON、临时文件等方式传递
+
+如果确实必须写绝对 Windows 路径，优先使用以下安全形式之一：
+
+- `pathlib.Path(...)`
+- Python 原始字符串，例如 `r"C:\path\to\file"`
+- 目标工具可接受时，使用正斜杠路径
+
+在提交 Windows 相关脚本或文档前，AI 应额外检查一次是否因为复制路径而引入了意外转义。
 
 ## 8. Human vs AI Responsibilities
 
@@ -172,21 +210,21 @@ Human owns:
 
 ## 9. Directory Rules
 
-- Put active and historical task plans in `docs/plans/`.
-- Put reusable feature summaries in `docs/features/`.
+- Put active and historical task plans in `!docs/plans/`.
+- Put reusable feature summaries in `!docs/features/`.
 - Keep filenames descriptive and `snake_case`.
 
 For this repository's preferred cleanup model:
 
-- keep templates and active plans in `docs/plans/`
-- move durable finished knowledge to `docs/features/`
+- keep templates and active plans in `!docs/plans/`
+- move durable finished knowledge to `!docs/features/`
 - remove completed plans after their final summary is written, unless there is an explicit reason to keep them
 
 Examples:
 
-- `docs/plans/esp32_ble_hid_autotest_plan.md`
-- `docs/plans/ble_hid_input_path_bugfix_plan.md`
-- `docs/features/ble_hid_bringup.md`
+- `!docs/plans/esp32_ble_hid_autotest_plan.md`
+- `!docs/plans/ble_hid_input_path_bugfix_plan.md`
+- `!docs/features/ble_hid_bringup.md`
 
 ## 10. When The User Asks "What Next?"
 

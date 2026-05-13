@@ -10,7 +10,7 @@ Use this file as a minimal locator.
 
 ## Product Scope
 
-- `docs/product_solutions.md`
+- `!docs/product_solutions.md`
   - Read only when the task touches feature scope, BLE/Wi-Fi choices, or backend path assumptions.
 
 ## Usage Note

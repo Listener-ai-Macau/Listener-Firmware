@@ -17,7 +17,7 @@ That file is the fast-path brief for this repository. It contains:
 - required directory and naming rules
 - current code reading order
 - build, flash, and monitor commands
-- when to consult `docs/product_solutions.md`
+- when to consult `!docs/product_solutions.md`
 
 Only open more files when the task needs them.
 
@@ -48,8 +48,8 @@ Use this repository skill for:
 - Treat `idf.py monitor` as an optional human convenience, not the primary verification path for Codex.
 - Ask the user to step in only for real physical or OS-level actions that Codex cannot replace, such as USB replug, BOOT or RESET button presses, BLE pairing UI on another host, or observing behavior outside this machine.
 - Keep edits aligned with the repository's ESP32-now, STM32-later boundary.
-- When the task affects product scope or backend/device assumptions, consult `docs/product_solutions.md`.
-- When the repository has approved plans under `docs/plans/`, answer "what next" by referencing the current approved plan step.
+- When the task affects product scope or backend/device assumptions, consult `!docs/product_solutions.md`.
+- When the repository has approved plans under `!docs/plans/`, answer "what next" by referencing the current approved plan step.
 
 ## Deliverables
 
