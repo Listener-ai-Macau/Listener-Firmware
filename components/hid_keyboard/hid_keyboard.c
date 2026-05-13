@@ -1,9 +1,11 @@
 #include "hid_keyboard.h"
 
+#include <stdbool.h>
 #include <string.h>
 
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include "esp_log.h"
 
 #define USB_HID_MODIFIER_LEFT_SHIFT 0x02
 #define USB_HID_SPACE 0x2C
@@ -14,13 +16,15 @@
 #define USB_HID_COMMA 0x36
 
 #define HID_KEYBOARD_REPORT_ID 1
-#define HID_KEYBOARD_REPORT_SIZE 8
+#define HID_KEYBOARD_REPORT_SIZE 7
 
 #define KEY_CASE(input_value, modifier_value, key_value) \
     case input_value:                                    \
         report_buffer[0] = modifier_value;               \
         report_buffer[2] = key_value;                    \
         break
+
+static const char *TAG = "hid_keyboard";
 
 static const uint8_t s_keyboard_report_map[] = {
     0x05, 0x01,
@@ -85,6 +89,7 @@ static void hid_keyboard_translate_ascii(uint8_t *report_buffer, char input_char
     KEY_CASE(' ', 0, USB_HID_SPACE);
     KEY_CASE('.', 0, USB_HID_DOT);
     KEY_CASE('\n', 0, USB_HID_NEWLINE);
+    KEY_CASE('\r', 0, USB_HID_NEWLINE);
     KEY_CASE('?', USB_HID_MODIFIER_LEFT_SHIFT, USB_HID_FORWARD_SLASH);
     KEY_CASE('/', 0, USB_HID_FORWARD_SLASH);
     KEY_CASE('\\', 0, USB_HID_BACK_SLASH);
@@ -115,6 +120,11 @@ static void hid_keyboard_translate_ascii(uint8_t *report_buffer, char input_char
     }
 }
 
+static bool hid_keyboard_is_supported_ascii(const uint8_t *report_buffer)
+{
+    return report_buffer[0] != 0 || report_buffer[2] != 0;
+}
+
 void hid_keyboard_init(void)
 {
 }
@@ -129,14 +139,47 @@ size_t hid_keyboard_get_report_map_size(void)
     return sizeof(s_keyboard_report_map);
 }
 
-void hid_keyboard_send_ascii(char input_char, esp_hidd_dev_t *hid_device)
+esp_err_t hid_keyboard_send_ascii(char input_char, esp_hidd_dev_t *hid_device)
 {
     uint8_t report_buffer[HID_KEYBOARD_REPORT_SIZE] = {0};
+    unsigned int input_value = (unsigned char)input_char;
+    char display_char = (input_value >= 32 && input_value <= 126) ? input_char : '.';
+    esp_err_t ret;
+
+    if (hid_device == NULL) {
+        ESP_LOGE(TAG, "send_ascii called without HID device");
+        return ESP_ERR_INVALID_ARG;
+    }
 
     hid_keyboard_translate_ascii(report_buffer, input_char);
-    esp_hidd_dev_input_set(hid_device, 0, HID_KEYBOARD_REPORT_ID, report_buffer, HID_KEYBOARD_REPORT_SIZE);
+    if (!hid_keyboard_is_supported_ascii(report_buffer)) {
+        ESP_LOGW(TAG, "unsupported ascii input=0x%02X display=%c", input_value, display_char);
+        return ESP_ERR_NOT_SUPPORTED;
+    }
+
+    ESP_LOGI(
+        TAG,
+        "send_ascii input=0x%02X display=%c modifier=0x%02X key=0x%02X connected=%s",
+        input_value,
+        display_char,
+        report_buffer[0],
+        report_buffer[2],
+        esp_hidd_dev_connected(hid_device) ? "yes" : "no");
+
+    ret = esp_hidd_dev_input_set(hid_device, 0, HID_KEYBOARD_REPORT_ID, report_buffer, HID_KEYBOARD_REPORT_SIZE);
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "input press failed: %s", esp_err_to_name(ret));
+        return ret;
+    }
 
     vTaskDelay(pdMS_TO_TICKS(50));
     memset(report_buffer, 0, sizeof(report_buffer));
-    esp_hidd_dev_input_set(hid_device, 0, HID_KEYBOARD_REPORT_ID, report_buffer, HID_KEYBOARD_REPORT_SIZE);
+    ret = esp_hidd_dev_input_set(hid_device, 0, HID_KEYBOARD_REPORT_ID, report_buffer, HID_KEYBOARD_REPORT_SIZE);
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "input release failed: %s", esp_err_to_name(ret));
+        return ret;
+    }
+
+    ESP_LOGI(TAG, "send_ascii done input=0x%02X display=%c", input_value, display_char);
+    return ESP_OK;
 }

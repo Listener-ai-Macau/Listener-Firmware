@@ -11,7 +11,8 @@ void board_print_help(void)
     static const char *help_string =
         "########################################################################\n"
         "BLE keyboard demo usage:\n"
-        "Type characters in monitor, and the device sends them as HID keyboard events.\n"
+        "Inject test bytes with tools/send_serial.ps1 or type in monitor.\n"
+        "End-to-end keystroke delivery still requires a BLE host connection.\n"
         "########################################################################\n";
 
     printf("%s\n", help_string);

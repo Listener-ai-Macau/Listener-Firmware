@@ -11,6 +11,7 @@
 #include "esp_hidd.h"
 #include "esp_log.h"
 #include "esp_system.h"
+#include "driver/usb_serial_jtag.h"
 #include "nvs_flash.h"
 
 #if CONFIG_BT_NIMBLE_ENABLED
@@ -57,17 +58,58 @@ static esp_hid_device_config_t s_ble_hid_config = {
     .report_maps_len = 1,
 };
 
+static bool s_usb_serial_ready = false;
+
+static esp_err_t ble_hid_usb_serial_init(void)
+{
+    if (s_usb_serial_ready) {
+        return ESP_OK;
+    }
+
+    if (!usb_serial_jtag_is_driver_installed()) {
+        usb_serial_jtag_driver_config_t usb_config = USB_SERIAL_JTAG_DRIVER_CONFIG_DEFAULT();
+        esp_err_t ret = usb_serial_jtag_driver_install(&usb_config);
+        if (ret != ESP_OK) {
+            return ret;
+        }
+    }
+
+    s_usb_serial_ready = true;
+    return ESP_OK;
+}
+
 static void ble_hid_keyboard_task(void *parameter)
 {
     (void)parameter;
 
+    char rx_buffer[16];
+    esp_err_t ret = ble_hid_usb_serial_init();
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "USB SERIAL INIT FAILED: %s", esp_err_to_name(ret));
+        vTaskDelete(NULL);
+        return;
+    }
+
+    ESP_LOGI(TAG, "USB SERIAL INPUT READY");
     board_print_help();
     while (1) {
-        int input_char = fgetc(stdin);
-        if (input_char != EOF && input_char != 255) {
-            hid_keyboard_send_ascii((char)input_char, s_ble_hid_ctx.hid_device);
+        int bytes_read = usb_serial_jtag_read_bytes(rx_buffer, sizeof(rx_buffer), pdMS_TO_TICKS(20));
+        if (bytes_read > 0) {
+            for (int index = 0; index < bytes_read; ++index) {
+                int input_char = (unsigned char)rx_buffer[index];
+
+            ESP_LOGI(
+                TAG,
+                "SCRIPT RX input=0x%02X display=%c",
+                input_char & 0xFF,
+                (input_char >= 32 && input_char <= 126) ? input_char : '.');
+
+                ret = hid_keyboard_send_ascii((char)input_char, s_ble_hid_ctx.hid_device);
+                if (ret != ESP_OK) {
+                    ESP_LOGW(TAG, "SCRIPT dispatch failed: %s", esp_err_to_name(ret));
+                }
+            }
         }
-        vTaskDelay(pdMS_TO_TICKS(10));
     }
 }
 
@@ -116,6 +158,7 @@ static void ble_hid_event_callback(void *handler_args, esp_event_base_t base, in
     case ESP_HIDD_START_EVENT:
         ESP_LOGI(TAG, "START");
         ble_hid_gap_start_advertising();
+        ble_hid_task_start();
         break;
     case ESP_HIDD_CONNECT_EVENT:
         ESP_LOGI(TAG, "CONNECT");
@@ -166,8 +209,8 @@ static void ble_hid_event_callback(void *handler_args, esp_event_base_t base, in
             esp_hid_disconnect_reason_str(
                 esp_hidd_dev_transport_get(param->disconnect.dev),
                 param->disconnect.reason));
-        ble_hid_task_stop();
         ble_hid_gap_start_advertising();
+        ble_hid_task_start();
         break;
     case ESP_HIDD_STOP_EVENT:
         ESP_LOGI(TAG, "STOP");

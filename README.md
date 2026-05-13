@@ -16,6 +16,8 @@ ESP-IDF seed firmware for the voice keyboard product.
   `powershell -ExecutionPolicy Bypass -File .\tools\capture_serial.ps1 -Port COM5 -ResetBeforeRead`
 - Send test input to firmware over serial without interactive monitor:
   `powershell -ExecutionPolicy Bypass -File .\tools\send_serial.ps1 -Port COM5 -Text "abc123"`
+- Run a single non-interactive BLE HID runtime verification:
+  `powershell -ExecutionPolicy Bypass -File .\tools\verify_ble_hid.ps1 -Port COM5 -Text "abc123"`
 
 ## Layout
 

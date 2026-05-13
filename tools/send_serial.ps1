@@ -12,13 +12,15 @@ $ErrorActionPreference = "Stop"
 . (Join-Path $PSScriptRoot "idf_env.ps1")
 
 $python_path = (Get-Command python -ErrorAction Stop).Path
+$text_base64 = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($Text))
 
 @"
+import base64
 import time
 import serial
 
 port = r"$Port"
-text = $([System.Management.Automation.Language.CodeGeneration]::EscapeSingleQuotedStringContent($Text) | ForEach-Object { "'" + $_ + "'" })
+text = base64.b64decode("$text_base64").decode("utf-8")
 baud = $Baud
 post_write_delay_ms = $PostWriteDelayMs
 

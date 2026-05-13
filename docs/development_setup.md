@@ -46,6 +46,7 @@ powershell -ExecutionPolicy Bypass -File .\tools\monitor.ps1 -Port COM5
 - In a normal terminal window, use `tools/monitor.ps1`.
 - In a non-interactive Codex session, use `tools/capture_serial.ps1` to grab boot logs without TTY support.
 - If the firmware test path reads from `stdin`, use `tools/send_serial.ps1` to inject test bytes without relying on a human typing into `monitor`.
+- For the standard Codex runtime check, use `tools/verify_ble_hid.ps1` to reset the board, capture boot logs, inject test bytes, and summarize whether the HID path ran.
 
 Example:
 
@@ -55,6 +56,10 @@ powershell -ExecutionPolicy Bypass -File .\tools\capture_serial.ps1 -Port COM5 -
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\tools\send_serial.ps1 -Port COM5 -Text "abc123"
+```
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\tools\verify_ble_hid.ps1 -Port COM5 -Text "abc123"
 ```
 
 ## Board Detection
