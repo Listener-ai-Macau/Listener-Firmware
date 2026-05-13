@@ -11,6 +11,7 @@ Read `references/start_here.md` first.
 
 That file is the fast-path brief for this repository. It contains:
 
+- new machine bootstrap commands
 - current product and platform facts
 - required directory and naming rules
 - current code reading order
@@ -23,6 +24,7 @@ Only open more files when the task needs them.
 
 - Treat `references/start_here.md` as the quickest recovery path after context loss.
 - Follow its repository rules unless the user explicitly asks to override them.
+- On a new Windows machine or a machine missing `ESP-IDF`, run `tools/setup_windows.ps1` before build or flash work.
 - Keep edits aligned with the repository's ESP32-now, STM32-later boundary.
 - When the task affects product scope or backend/device assumptions, consult `docs/product_solutions.md`.
 

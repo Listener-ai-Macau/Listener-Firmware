@@ -23,7 +23,7 @@ One-line operating model:
 ## 2. What This Repo Is
 
 - Formal repo name: `voice-keyboard-firmware`
-- Current platform: `ESP32-C3`
+- Current bring-up target: `ESP32-S3`
 - Build system: `ESP-IDF + CMake`
 - Current goal: verify a BLE HID keyboard seed project first
 - Future boundary: keep the upper layers portable to `STM32`
@@ -83,9 +83,13 @@ Read in this order when modifying the seed project:
 
 ## 7. Current Build Workflow
 
+- Windows default `ESP-IDF` path: `%USERPROFILE%\esp\esp-idf`
+- New Windows machine bootstrap: `powershell -ExecutionPolicy Bypass -File .\tools\setup_windows.ps1`
 - Build: `idf.py build`
 - Flash: `idf.py flash`
 - Monitor: `idf.py monitor`
+- `idf.py monitor` requires an interactive TTY. In a non-interactive Codex session, use `powershell -ExecutionPolicy Bypass -File .\tools\capture_serial.ps1 -Port COM5 -ResetBeforeRead` for boot logs.
+- If the firmware test path consumes console input, use `powershell -ExecutionPolicy Bypass -File .\tools\send_serial.ps1 -Port COM5 -Text "abc123"` instead of asking a human to type into monitor.
 
 If the environment allows command execution, AI should prefer doing these steps itself instead of pushing them back to the user.
 

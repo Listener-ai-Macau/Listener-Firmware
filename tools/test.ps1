@@ -1,9 +1,13 @@
+param(
+    [string]$Target = "esp32s3"
+)
+
 $ErrorActionPreference = "Stop"
 
 $project_root = Split-Path -Parent $PSScriptRoot
 
 Write-Host "[1/2] build smoke test"
-powershell -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot "build.ps1")
+powershell -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot "build.ps1") -Target $Target
 
 Write-Host "[2/2] artifact check"
 $required_files = @(

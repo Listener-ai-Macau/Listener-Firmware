@@ -2,6 +2,21 @@
 
 ESP-IDF seed firmware for the voice keyboard product.
 
+## Quick Start
+
+- New Windows machine bootstrap:
+  `powershell -ExecutionPolicy Bypass -File .\tools\setup_windows.ps1`
+- Build:
+  `powershell -ExecutionPolicy Bypass -File .\tools\build.ps1`
+- Flash:
+  `powershell -ExecutionPolicy Bypass -File .\tools\flash.ps1 -Port COM5`
+- Monitor in an interactive terminal:
+  `powershell -ExecutionPolicy Bypass -File .\tools\monitor.ps1 -Port COM5`
+- Capture boot logs in a non-interactive Codex session:
+  `powershell -ExecutionPolicy Bypass -File .\tools\capture_serial.ps1 -Port COM5 -ResetBeforeRead`
+- Send test input to firmware over serial without interactive monitor:
+  `powershell -ExecutionPolicy Bypass -File .\tools\send_serial.ps1 -Port COM5 -Text "abc123"`
+
 ## Layout
 
 - `main/`: thin `app_main()` entry
@@ -15,4 +30,5 @@ ESP-IDF seed firmware for the voice keyboard product.
 
 ## Key Docs
 
+- `docs/development_setup.md`
 - `docs/product_solutions.md`
