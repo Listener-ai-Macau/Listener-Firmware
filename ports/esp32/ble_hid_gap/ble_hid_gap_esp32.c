@@ -5,6 +5,8 @@
  */
 
 
+#include <assert.h>
+#include <stdlib.h>
 #include <string.h>
 #include <stdbool.h>
 #include <inttypes.h>
@@ -21,6 +23,7 @@
 #include "nimble/nimble_port.h"
 #include "host/ble_gap.h"
 #include "host/ble_hs_adv.h"
+#include "host/ble_store.h"
 #include "nimble/ble.h"
 #include "host/ble_sm.h"
 #else
@@ -748,61 +751,65 @@ esp_err_t esp_hid_ble_gap_adv_start(void)
 #define GATT_SVR_SVC_HID_UUID 0x1812
 
 extern void ble_hid_task_start_up(void);
-static struct ble_hs_adv_fields fields;
+static struct ble_hs_adv_fields s_adv_fields;
+static struct ble_hs_adv_fields s_scan_rsp_fields;
+static ble_uuid16_t s_hid_service_uuid = BLE_UUID16_INIT(GATT_SVR_SVC_HID_UUID);
+
+/*
+ * Legacy advertising has a hard 31-byte payload limit. With flags,
+ * appearance and one 16-bit HID UUID, the current 17-byte product name fits
+ * exactly under that limit; longer names stay in scan response data.
+ */
+#define BLE_HID_ADV_NAME_MAX_LEN 17
 
 esp_err_t esp_hid_ble_gap_adv_init(uint16_t appearance, const char *device_name)
 {
-    ble_uuid16_t *uuid16, *uuid16_1;
-    /**
-     *  Set the advertisement data included in our advertisements:
-     *     o Flags (indicates advertisement type and other general info).
-     *     o Advertising tx power.
-     *     o Device name.
-     *     o 16-bit service UUIDs (HID).
-     */
+    memset(&s_adv_fields, 0, sizeof(s_adv_fields));
+    memset(&s_scan_rsp_fields, 0, sizeof(s_scan_rsp_fields));
 
-    memset(&fields, 0, sizeof fields);
+    s_adv_fields.flags = BLE_HS_ADV_F_DISC_GEN | BLE_HS_ADV_F_BREDR_UNSUP;
+    s_adv_fields.appearance = appearance;
+    s_adv_fields.appearance_is_present = 1;
+    s_adv_fields.uuids16 = &s_hid_service_uuid;
+    s_adv_fields.num_uuids16 = 1;
+    s_adv_fields.uuids16_is_complete = 1;
 
-    /* Advertise two flags:
-     *     o Discoverability in forthcoming advertisement (general)
-     *     o BLE-only (BR/EDR unsupported).
-     */
-    fields.flags = BLE_HS_ADV_F_DISC_GEN |
-                   BLE_HS_ADV_F_BREDR_UNSUP;
+    size_t device_name_len = strlen(device_name);
+    bool name_in_adv = device_name_len <= BLE_HID_ADV_NAME_MAX_LEN;
 
-    fields.appearance = ESP_HID_APPEARANCE_GENERIC;
-    fields.appearance_is_present = 1;
+    if (name_in_adv) {
+        s_adv_fields.name = (uint8_t *)device_name;
+        s_adv_fields.name_len = device_name_len;
+        s_adv_fields.name_is_complete = 1;
+    } else {
+        s_scan_rsp_fields.name = (uint8_t *)device_name;
+        s_scan_rsp_fields.name_len = device_name_len;
+        s_scan_rsp_fields.name_is_complete = 1;
+    }
 
-    /* Indicate that the TX power level field should be included; have the
-     * stack fill this value automatically.  This is done by assigning the
-     * special value BLE_HS_ADV_TX_PWR_LVL_AUTO.
-     */
-    fields.tx_pwr_lvl_is_present = 1;
-    fields.tx_pwr_lvl = BLE_HS_ADV_TX_PWR_LVL_AUTO;
-
-    fields.name = (uint8_t *)device_name;
-    fields.name_len = strlen(device_name);
-    fields.name_is_complete = 1;
-
-    uuid16 = (ble_uuid16_t *)malloc(sizeof(ble_uuid16_t));
-    uuid16_1 = (ble_uuid16_t[]) {
-        BLE_UUID16_INIT(GATT_SVR_SVC_HID_UUID)
-    };
-    memcpy(uuid16, uuid16_1, sizeof(ble_uuid16_t));
-    fields.uuids16 = uuid16;
-    fields.num_uuids16 = 1;
-    fields.uuids16_is_complete = 1;
+    s_scan_rsp_fields.tx_pwr_lvl_is_present = 1;
+    s_scan_rsp_fields.tx_pwr_lvl = BLE_HS_ADV_TX_PWR_LVL_AUTO;
 
     /* Initialize the security configuration */
-    ble_hs_cfg.sm_io_cap = BLE_SM_IO_CAP_DISP_ONLY;
+    ble_hs_cfg.sm_io_cap = BLE_SM_IO_CAP_NO_IO;
     ble_hs_cfg.sm_bonding = 1;
-    ble_hs_cfg.sm_mitm = 1;
+    ble_hs_cfg.sm_mitm = 0;
     ble_hs_cfg.sm_sc = 1;
     ble_hs_cfg.sm_our_key_dist = BLE_SM_PAIR_KEY_DIST_ID | BLE_SM_PAIR_KEY_DIST_ENC;
     ble_hs_cfg.sm_their_key_dist |= BLE_SM_PAIR_KEY_DIST_ID | BLE_SM_PAIR_KEY_DIST_ENC;
 
-    return ESP_OK;
+    ESP_LOGI(
+        TAG,
+        "NimBLE advertising configured: appearance=0x%04x name=%s name_in_adv=%s io_cap=%u bonding=%u mitm=%u sc=%u",
+        appearance,
+        device_name,
+        name_in_adv ? "yes" : "scan_rsp",
+        ble_hs_cfg.sm_io_cap,
+        ble_hs_cfg.sm_bonding,
+        ble_hs_cfg.sm_mitm,
+        ble_hs_cfg.sm_sc);
 
+    return ESP_OK;
 }
 
 static int
@@ -813,15 +820,39 @@ nimble_hid_gap_event(struct ble_gap_event *event, void *arg)
 
     switch (event->type) {
     case BLE_GAP_EVENT_CONNECT:
-        /* A new connection was established or a connection attempt failed. */
         ESP_LOGI(TAG, "connection %s; status=%d",
-                event->connect.status == 0 ? "established" : "failed",
-                event->connect.status);
+                 event->connect.status == 0 ? "established" : "failed",
+                 event->connect.status);
+        if (event->connect.status != 0) {
+            ble_hid_gap_start_advertising();
+            return 0;
+        }
+
+        rc = ble_gap_conn_find(event->connect.conn_handle, &desc);
+        if (rc == 0) {
+            ESP_LOGI(
+                TAG,
+                "security state before initiate: encrypted=%u authenticated=%u bonded=%u key_size=%u",
+                desc.sec_state.encrypted,
+                desc.sec_state.authenticated,
+                desc.sec_state.bonded,
+                desc.sec_state.key_size);
+        } else {
+            ESP_LOGW(TAG, "connection descriptor lookup failed before security initiate: rc=%d", rc);
+        }
+
+        rc = ble_gap_security_initiate(event->connect.conn_handle);
+        if (rc == 0) {
+            ESP_LOGI(TAG, "security initiate requested");
+        } else if (rc == BLE_HS_EALREADY) {
+            ESP_LOGI(TAG, "security already in progress");
+        } else {
+            ESP_LOGW(TAG, "security initiate failed: rc=%d", rc);
+        }
         return 0;
-        break;
     case BLE_GAP_EVENT_DISCONNECT:
         ESP_LOGI(TAG, "disconnect; reason=%d", event->disconnect.reason);
-
+        ble_hid_gap_start_advertising();
         return 0;
     case BLE_GAP_EVENT_CONN_UPDATE:
         /* The central has updated the connection parameters. */
@@ -832,11 +863,12 @@ nimble_hid_gap_event(struct ble_gap_event *event, void *arg)
     case BLE_GAP_EVENT_ADV_COMPLETE:
         ESP_LOGI(TAG, "advertise complete; reason=%d",
                 event->adv_complete.reason);
+        ble_hid_gap_start_advertising();
         return 0;
 
     case BLE_GAP_EVENT_SUBSCRIBE:
         ESP_LOGI(TAG, "subscribe event; conn_handle=%d attr_handle=%d "
-                "reason=%d prevn=%d curn=%d previ=%d curi=%d\n",
+                "reason=%d prevn=%d curn=%d previ=%d curi=%d",
                 event->subscribe.conn_handle,
                 event->subscribe.attr_handle,
                 event->subscribe.reason,
@@ -855,16 +887,29 @@ nimble_hid_gap_event(struct ble_gap_event *event, void *arg)
 
     case BLE_GAP_EVENT_ENC_CHANGE:
         /* Encryption has been enabled or disabled for this connection. */
-        MODLOG_DFLT(INFO, "encryption change event; status=%d ",
-                event->enc_change.status);
-        rc = ble_gap_conn_find(event->enc_change.conn_handle, &desc);
-        assert(rc == 0);
-        ble_hid_task_start_up();
+        ESP_LOGI(TAG, "encryption change event; status=%d", event->enc_change.status);
+        if (event->enc_change.status == 0) {
+            rc = ble_gap_conn_find(event->enc_change.conn_handle, &desc);
+            if (rc == 0) {
+                ESP_LOGI(
+                    TAG,
+                    "security state after encryption: encrypted=%u authenticated=%u bonded=%u key_size=%u",
+                    desc.sec_state.encrypted,
+                    desc.sec_state.authenticated,
+                    desc.sec_state.bonded,
+                    desc.sec_state.key_size);
+            } else {
+                ESP_LOGW(TAG, "connection descriptor lookup failed after encryption: rc=%d", rc);
+            }
+            ble_hid_task_start_up();
+        } else {
+            ESP_LOGW(TAG, "encryption failed or connection already gone; status=%d", event->enc_change.status);
+        }
         return 0;
 
     case BLE_GAP_EVENT_NOTIFY_TX:
-        MODLOG_DFLT(INFO, "notify_tx event; conn_handle=%d attr_handle=%d "
-                "status=%d is_indication=%d",
+        ESP_LOGI(TAG, "notify_tx event; conn_handle=%d attr_handle=%d "
+                "status=%d indication=%d",
                 event->notify_tx.conn_handle,
                 event->notify_tx.attr_handle,
                 event->notify_tx.status,
@@ -901,7 +946,7 @@ nimble_hid_gap_event(struct ble_gap_event *event, void *arg)
         } else if (event->passkey.params.action == BLE_SM_IOACT_NUMCMP) {
             ESP_LOGI(TAG, "Accepting passkey..");
             pkey.action = event->passkey.params.action;
-            pkey.numcmp_accept = key;
+            pkey.numcmp_accept = 1;
             rc = ble_sm_inject_io(event->passkey.conn_handle, &pkey);
             ESP_LOGI(TAG, "ble_sm_inject_io result: %d", rc);
         } else if (event->passkey.params.action == BLE_SM_IOACT_OOB) {
@@ -927,27 +972,51 @@ esp_err_t esp_hid_ble_gap_adv_start(void)
 {
     int rc;
     struct ble_gap_adv_params adv_params;
-    /* maximum possible duration for hid device(180s) */
-    int32_t adv_duration_ms = 180000;
+    ble_addr_t bonded_peers[4];
+    int bonded_peer_count = 0;
 
-    rc = ble_gap_adv_set_fields(&fields);
-    if (rc != 0) {
-        MODLOG_DFLT(ERROR, "error setting advertisement data; rc=%d\n", rc);
-        return rc;
+    if (ble_gap_adv_active()) {
+        ESP_LOGI(TAG, "NimBLE advertising already active");
+        return ESP_OK;
     }
+
+    rc = ble_gap_adv_set_fields(&s_adv_fields);
+    if (rc != 0) {
+        ESP_LOGE(TAG, "error setting advertisement data; rc=%d", rc);
+        return ESP_FAIL;
+    }
+
+    rc = ble_gap_adv_rsp_set_fields(&s_scan_rsp_fields);
+    if (rc != 0) {
+        ESP_LOGE(TAG, "error setting scan response data; rc=%d", rc);
+        return ESP_FAIL;
+    }
+
+    rc = ble_store_util_bonded_peers(
+        bonded_peers,
+        &bonded_peer_count,
+        SIZEOF_ARRAY(bonded_peers));
+    if (rc == 0) {
+        ESP_LOGI(TAG, "NimBLE bonded peers=%d", bonded_peer_count);
+    } else {
+        ESP_LOGW(TAG, "NimBLE bonded peer lookup failed: rc=%d", rc);
+    }
+
     /* Begin advertising. */
     memset(&adv_params, 0, sizeof adv_params);
     adv_params.conn_mode = BLE_GAP_CONN_MODE_UND;
     adv_params.disc_mode = BLE_GAP_DISC_MODE_GEN;
     adv_params.itvl_min = BLE_GAP_ADV_ITVL_MS(30);/* Recommended interval 30ms to 50ms */
     adv_params.itvl_max = BLE_GAP_ADV_ITVL_MS(50);
-    rc = ble_gap_adv_start(BLE_OWN_ADDR_PUBLIC, NULL, adv_duration_ms,
+    rc = ble_gap_adv_start(BLE_OWN_ADDR_PUBLIC, NULL, BLE_HS_FOREVER,
                            &adv_params, nimble_hid_gap_event, NULL);
     if (rc != 0) {
-        MODLOG_DFLT(ERROR, "error enabling advertisement; rc=%d\n", rc);
-        return rc;
+        ESP_LOGE(TAG, "error enabling advertisement; rc=%d", rc);
+        return ESP_FAIL;
     }
-    return rc;
+
+    ESP_LOGI(TAG, "NimBLE advertising started");
+    return ESP_OK;
 }
 #endif
 

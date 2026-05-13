@@ -19,6 +19,7 @@
 #include "nimble/nimble_port.h"
 #include "nimble/nimble_port_freertos.h"
 #include "host/ble_store.h"
+#include "services/gap/ble_svc_gap.h"
 void ble_store_config_init(void);
 #else
 #include "esp_gap_ble_api.h"
@@ -29,6 +30,8 @@ void ble_store_config_init(void);
 #include "ble_hid_gap.h"
 
 static const char *TAG = "ble_hid";
+
+#define BLE_HID_PLACEHOLDER_BATTERY_LEVEL 100
 
 typedef struct
 {
@@ -209,7 +212,9 @@ static void ble_hid_event_callback(void *handler_args, esp_event_base_t base, in
             esp_hid_disconnect_reason_str(
                 esp_hidd_dev_transport_get(param->disconnect.dev),
                 param->disconnect.reason));
+#if !CONFIG_BT_NIMBLE_ENABLED
         ble_hid_gap_start_advertising();
+#endif
         ble_hid_task_start();
         break;
     case ESP_HIDD_STOP_EVENT:
@@ -259,6 +264,20 @@ void ble_hid_init(void)
             ESP_HID_TRANSPORT_BLE,
             ble_hid_event_callback,
             &s_ble_hid_ctx.hid_device));
+
+#if CONFIG_BT_NIMBLE_ENABLED
+    int gap_name_rc = ble_svc_gap_device_name_set(s_device_name);
+    if (gap_name_rc != 0) {
+        ESP_LOGW(TAG, "ble_svc_gap_device_name_set failed: %d", gap_name_rc);
+    }
+#endif
+
+    ret = esp_hidd_dev_battery_set(s_ble_hid_ctx.hid_device, BLE_HID_PLACEHOLDER_BATTERY_LEVEL);
+    if (ret != ESP_OK) {
+        ESP_LOGW(TAG, "battery level placeholder failed: %s", esp_err_to_name(ret));
+    } else {
+        ESP_LOGI(TAG, "battery level placeholder=%u", BLE_HID_PLACEHOLDER_BATTERY_LEVEL);
+    }
 }
 
 void ble_hid_start(void)
