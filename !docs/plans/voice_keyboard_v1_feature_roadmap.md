@@ -55,9 +55,6 @@
 - 当前蓝牙连接稳定性与测试脚本边界，以：
   [ble_keyboard_productization_plan.md](./ble_keyboard_productization_plan.md)
   为准
-- 当前设备端音频主线应以：
-  [audio_streaming_session_plan.md](./audio_streaming_session_plan.md)
-  为准
 - 当前主机端结构参考优先顺序为：
   - `Type4Me` 作为主参考
   - `Handy` 作为次参考
@@ -87,12 +84,14 @@
 
 工作内容：
 
-- 建立少量实体键与旋钮输入方案
-- 不再按完整键盘矩阵作为默认主线推进
+- 在现有产品 roadmap 中明确：
+  - 当前输入边界是 `4` 键 + `1` 旋钮
+  - 不再按完整键盘矩阵作为默认主线推进
+- 如果后续真的进入实现，再单独补新的输入方案文档
 
 验收方式：
 
-- [keyboard_matrix_input_plan.md](./keyboard_matrix_input_plan.md) 存在且内容完整
+- 当前 roadmap 中明确写出 `4` 键 + `1` 旋钮边界
 
 人工检查点：
 
@@ -121,11 +120,13 @@
 
 工作内容：
 
-- 建立日志、自检、版本与故障定位方案
+- 在现有产品 roadmap 中明确：
+  - 日志、自检、版本与故障定位是必收能力
+  - 但当前先作为实现要求保留，不单独占用 active plan 名额
 
 验收方式：
 
-- [device_logging_selftest_plan.md](./device_logging_selftest_plan.md) 存在且内容完整
+- 当前 roadmap 中明确写出日志与自检要求
 
 人工检查点：
 
@@ -156,22 +157,23 @@
 - 当前只是完成方案梳理，还没有开始任何一个子方案的实现审批
 - 当前仍需要把实体输入、默认快捷键映射和主机端 app 边界定义清楚
 - 当前仍需要把 BLE 稳定性与测试脚本边界定义清楚
+- 当前还缺少单独的 `Windows` 主机端语音输入 / agent app active plan
 
 ## 备注
 
 - 当前建议的执行顺序是：
   1. `voice_shortcut_keyboard_plan`
   2. `ble_keyboard_productization_plan`
-  3. `keyboard_matrix_input_plan`（但边界改成 `4` 键 + `1` 旋钮）
-  4. `device_logging_selftest_plan`
-  5. 再单独立 `Windows` 主机端语音输入 app 方案
+  3. 在当前 roadmap 内收敛 `4` 键 + `1` 旋钮边界
+  4. 再单独立 `Windows` 主机端语音输入 app 方案
 
 - 其中蓝牙连接稳定性不是附属项，而是：
   - `ble_keyboard_productization_plan` 的必收内容
   - 无线音频上传前的前置门槛
 
-- 其中最适合当前立即推进的是：
-  `audio_streaming_session_plan`
+- 其中当前最适合立即推进的是：
+  - 新建 `Windows` 主机端语音输入 / agent app 方案
+  - 然后把它接到已经完成的设备端音频上传 feature 上
 
 - 如果后续问题再次回到“Type4Me / Handy 选哪个”，
   当前默认结论是：

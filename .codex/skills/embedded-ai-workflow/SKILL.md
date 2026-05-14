@@ -52,6 +52,18 @@ The plan must include:
 - human checkpoints
 - known blockers
 
+For implementation-oriented plans, each execution step must also explicitly record:
+
+- which code files, scripts, docs, or modules are expected to change
+- whether the step is documentation-only, script-only, firmware-only, host-only, or mixed
+- the concrete command-level or artifact-level acceptance for that step
+
+Default rule:
+
+- Do not leave steps as high-level direction only when the real intent is to implement code
+- If a step will later require code or script changes, name the likely files or at least the target module / directory in the plan
+- If a step will later require verification, name the expected command, output fields, artifact path, or log markers in the plan
+
 When relevant, the plan should also include a short `existing options / precedent review` section.
 
 If the repository already has a plan template or workflow document, follow it. If not, create a concise plan using this structure.

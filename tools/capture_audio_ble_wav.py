@@ -218,10 +218,18 @@ def write_wav(output_path: pathlib.Path, pcm_bytes: bytes) -> None:
         wav_file.writeframes(pcm_bytes)
 
 
+def pcm_duration_seconds(pcm_bytes_len: int) -> float:
+    bytes_per_second = PCM_SAMPLE_RATE * PCM_CHANNELS * PCM_WIDTH_BYTES
+    if bytes_per_second <= 0:
+        return 0.0
+    return float(pcm_bytes_len) / float(bytes_per_second)
+
+
 class SessionCollector:
     def __init__(self) -> None:
         self.session_id = None
         self.stop_received = False
+        self.expected_chunk_count = None
         self.chunk_fragments = {}
         self.chunk_sizes = {}
         self.complete_chunks = {}
@@ -230,6 +238,7 @@ class SessionCollector:
     def reset(self) -> None:
         self.session_id = None
         self.stop_received = False
+        self.expected_chunk_count = None
         self.chunk_fragments = {}
         self.chunk_sizes = {}
         self.complete_chunks = {}
@@ -257,11 +266,50 @@ class SessionCollector:
                 self.complete_chunks[chunk_index] = joined[:self.chunk_sizes[chunk_index]]
         elif packet_type == PACKET_TYPE_SESSION_STOP:
             self.stop_received = True
+            self.expected_chunk_count = header["chunk_index"]
 
     def has_completed_session(self) -> bool:
-        if self.session_id is None or not self.stop_received or not self.complete_chunks:
+        if (
+            self.session_id is None
+            or not self.stop_received
+            or self.expected_chunk_count is None
+            or self.expected_chunk_count == 0
+        ):
             return False
         return (time.time() - self.last_packet_time) >= 0.2
+
+    def missing_chunk_indices(self) -> list[int]:
+        if self.expected_chunk_count is None:
+            return []
+        return [
+            index
+            for index in range(self.expected_chunk_count)
+            if index not in self.complete_chunks
+        ]
+
+    def is_chunk_complete(self) -> bool:
+        if self.expected_chunk_count is None:
+            return False
+        return len(self.missing_chunk_indices()) == 0
+
+    def chunk_integrity_summary(self) -> str:
+        expected = (
+            str(self.expected_chunk_count)
+            if self.expected_chunk_count is not None
+            else "unknown"
+        )
+        missing = self.missing_chunk_indices()
+        missing_preview = ",".join(str(index) for index in missing[:16])
+        if len(missing) > 16:
+            missing_preview += ",..."
+        if not missing_preview:
+            missing_preview = "<none>"
+        return (
+            f"expected_chunk_count={expected} "
+            f"received_chunk_count={len(self.complete_chunks)} "
+            f"missing_chunk_count={len(missing)} "
+            f"missing_chunk_indices={missing_preview}"
+        )
 
     def ordered_pcm(self) -> bytes:
         return b"".join(self.complete_chunks[index] for index in sorted(self.complete_chunks))
@@ -277,6 +325,7 @@ async def run_ble_capture(args, ser: Serial, serial_monitor: SerialLogMonitor):
 
     collector = SessionCollector()
     completed_sessions = 0
+    session_summaries = []
 
     def handle_notification(_sender, data: bytearray):
         collector.handle_notification(bytes(data))
@@ -425,10 +474,20 @@ async def run_ble_capture(args, ser: Serial, serial_monitor: SerialLogMonitor):
                     "capture_audio_ble_wav: did not receive session_stop; recent serial logs:\n"
                     f"{serial_monitor.recent_text()}"
                 )
+            if collector.expected_chunk_count is None:
+                raise RuntimeError(
+                    "capture_audio_ble_wav: session_stop did not provide expected chunk count; recent serial logs:\n"
+                    f"{serial_monitor.recent_text()}"
+                )
             if not collector.complete_chunks:
                 raise RuntimeError(
                     "capture_audio_ble_wav: did not receive any audio chunks; recent serial logs:\n"
                     f"{serial_monitor.recent_text()}"
+                )
+            if not collector.is_chunk_complete():
+                raise RuntimeError(
+                    "capture_audio_ble_wav: session chunk integrity check failed; "
+                    f"{collector.chunk_integrity_summary()}\nrecent serial logs:\n{serial_monitor.recent_text()}"
                 )
 
             ordered_pcm = collector.ordered_pcm()
@@ -436,6 +495,23 @@ async def run_ble_capture(args, ser: Serial, serial_monitor: SerialLogMonitor):
             output_path = output_dir / "capture_ble_latest_16k_mono.wav"
             write_wav(output_path, ordered_pcm)
             completed_sessions += 1
+            duration_seconds = pcm_duration_seconds(len(ordered_pcm))
+
+            session_summary = {
+                "wav_path": str(output_path),
+                "serial_log_path": str(args.serial_log_path) if args.serial_log_path else "",
+                "session_id": collector.session_id,
+                "chunk_count": len(collector.complete_chunks),
+                "expected_chunk_count": collector.expected_chunk_count,
+                "missing_chunk_count": len(collector.missing_chunk_indices()),
+                "pcm_bytes": len(ordered_pcm),
+                "duration_seconds": duration_seconds,
+                "serial_stream_start_count": len(serial_monitor.find_lines(STREAM_SESSION_START_MARKER)),
+                "serial_stream_chunk_count": len(serial_monitor.find_lines(STREAM_SESSION_CHUNK_MARKER)),
+                "serial_stream_stop_count": len(serial_monitor.find_lines(STREAM_SESSION_STOP_MARKER)),
+                "completed_session_count": completed_sessions,
+            }
+            session_summaries.append(session_summary)
 
             if args.serial_log_path:
                 serial_log_path = pathlib.Path(args.serial_log_path)
@@ -445,7 +521,10 @@ async def run_ble_capture(args, ser: Serial, serial_monitor: SerialLogMonitor):
             print(f"wav_path={output_path}", flush=True)
             print(f"session_id={collector.session_id}", flush=True)
             print(f"chunk_count={len(collector.complete_chunks)}", flush=True)
+            print(f"expected_chunk_count={collector.expected_chunk_count}", flush=True)
+            print(f"missing_chunk_count={len(collector.missing_chunk_indices())}", flush=True)
             print(f"pcm_bytes={len(ordered_pcm)}", flush=True)
+            print(f"duration_seconds={duration_seconds:.3f}", flush=True)
             print(
                 f"serial_stream_start_count={len(serial_monitor.find_lines(STREAM_SESSION_START_MARKER))}",
                 flush=True,
@@ -487,6 +566,7 @@ async def run_ble_capture(args, ser: Serial, serial_monitor: SerialLogMonitor):
             "capture_audio_ble_wav: no completed session captured; recent serial logs:\n"
             f"{serial_monitor.recent_text()}"
         )
+    return session_summaries
 
 
 def main():
