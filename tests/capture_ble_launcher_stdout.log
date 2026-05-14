@@ -1,11 +1,5 @@
+Starting BLE audio capture...
+Waiting for BLE notify subscription to become ready...
 ready_for_key=1
 trigger_mode=physical-key
 instruction=press KEY1 once to start recording, then press KEY1 again to stop
-wav_path=tests\capture_ble_latest_16k_mono.wav
-session_id=1
-chunk_count=60
-pcm_bytes=382080
-serial_stream_start_count=0
-serial_stream_chunk_count=13
-serial_stream_stop_count=1
-completed_session_count=1

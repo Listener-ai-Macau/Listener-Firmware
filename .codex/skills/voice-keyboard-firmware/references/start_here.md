@@ -105,10 +105,12 @@ If the environment allows command execution, AI should prefer doing these steps 
 
 ## 9. Plan And Next-Step Rule
 
-- Repository plans live in `!docs/plans/`.
+- Repository feature / implementation plans live in `!docs/plans/`.
+- Current bug fix / bug investigation docs live in `!docs/fixes/`.
 - Important completion summaries should live in `!docs/features/` or another relevant `!docs/` file.
 - When the user asks what to do next, prefer the current approved plan step over an ad-hoc task list.
-- Prefer keeping `!docs/plans/` clean: templates plus current valid plans.
+- Prefer keeping `!docs/plans/` clean: templates plus current valid feature / implementation plans.
+- Prefer keeping `!docs/fixes/` clean: only current bug fix / bug investigation docs.
 - After a plan is fully completed and summarized, move the durable knowledge into `!docs/features/` and delete the completed plan unless there is an explicit reason to keep it.
 
 ## 10. When To Read More

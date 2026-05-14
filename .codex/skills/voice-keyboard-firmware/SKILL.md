@@ -45,8 +45,7 @@ Use this repository skill for:
 - Treat `references/start_here.md` as the quickest recovery path after context loss.
 - Follow its repository rules unless the user explicitly asks to override them.
 - On a new Windows machine or a machine missing `ESP-IDF`, run `tools/setup_windows.ps1` before build or flash work.
-- Treat `idf.py monitor` as an optional human convenience, not the primary verification path for Codex.
-- Ask the user to step in only for real physical or OS-level actions that Codex cannot replace, such as USB replug, BOOT or RESET button presses, BLE pairing UI on another host, or observing behavior outside this machine.
+- Treat `idf.py monitor` as an optional human convenience; prefer this repository's non-interactive verification scripts when possible.
 - Keep edits aligned with the repository's ESP32-now, STM32-later boundary.
 - When the task affects product scope or backend/device assumptions, consult `!docs/product_solutions.md`.
 - When the repository has approved plans under `!docs/plans/`, answer "what next" by referencing the current approved plan step.

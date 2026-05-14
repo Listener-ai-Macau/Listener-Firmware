@@ -21,6 +21,7 @@
 #if CONFIG_BT_NIMBLE_ENABLED
 #include "esp_bt.h"
 #include "host/ble_hs.h"
+#include "host/util/util.h"
 #include "nimble/nimble_port.h"
 #include "host/ble_gap.h"
 #include "host/ble_hs_adv.h"
@@ -764,6 +765,10 @@ static bool s_directed_adv_pending = true;
 static bool s_last_adv_was_directed = false;
 static bool s_ble_gap_connected = false;
 
+#define BLE_AUDIO_LL_PACKET_LENGTH 251
+#define BLE_AUDIO_LL_PACKET_TIME 2120
+#define BLE_AUDIO_ENABLE_EXPLICIT_DLE 0
+
 /*
  * Legacy advertising has a hard 31-byte payload limit. With flags,
  * appearance and one 16-bit HID UUID, the current 17-byte product name fits
@@ -892,6 +897,26 @@ nimble_hid_gap_event(struct ble_gap_event *event, void *arg)
         } else {
             ESP_LOGW(TAG, "audio 2M PHY preference failed: rc=%d", rc);
         }
+
+#if BLE_AUDIO_ENABLE_EXPLICIT_DLE
+        rc = ble_hs_hci_util_set_data_len(
+            event->connect.conn_handle,
+            BLE_AUDIO_LL_PACKET_LENGTH,
+            BLE_AUDIO_LL_PACKET_TIME);
+        if (rc == 0) {
+            ESP_LOGI(
+                TAG,
+                "audio data length extension requested: octets=%u time=%u",
+                BLE_AUDIO_LL_PACKET_LENGTH,
+                BLE_AUDIO_LL_PACKET_TIME);
+        } else {
+            ESP_LOGW(TAG, "audio data length extension request failed: rc=%d", rc);
+        }
+#else
+        ESP_LOGI(
+            TAG,
+            "audio data length extension skipped: explicit DLE disabled for host stability");
+#endif
         return 0;
     case BLE_GAP_EVENT_DISCONNECT:
         ESP_LOGI(TAG, "disconnect; reason=%d", event->disconnect.reason);
@@ -973,6 +998,11 @@ nimble_hid_gap_event(struct ble_gap_event *event, void *arg)
                 event->notify_tx.attr_handle,
                 event->notify_tx.status,
                 event->notify_tx.indication);
+        ble_audio_stream_on_gap_notify_tx(
+            event->notify_tx.conn_handle,
+            event->notify_tx.attr_handle,
+            event->notify_tx.status,
+            event->notify_tx.indication != 0);
         return 0;
 
     case BLE_GAP_EVENT_REPEAT_PAIRING:

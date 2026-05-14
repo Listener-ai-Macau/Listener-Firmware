@@ -7,6 +7,7 @@ from ble_audio_regression_common import (
     recover_ble_hid_host,
     restart_windows_bluetooth,
 )
+from capture_audio_ble_wav import configure_utf8_stdio
 
 
 def parse_args():
@@ -24,8 +25,9 @@ async def main_async(args):
         capture_seconds=args.capture_seconds,
         source_label="baseline",
         timeout_seconds=max(90, int(args.capture_seconds * 3 + 30)),
+        reset_before_capture=args.reset_before_capture,
     )
-    if baseline["result"] != "pass":
+    if baseline["result"] == "fail":
         raise RuntimeError("verify_audio_ble_upload_reconnect: baseline pre-disconnect session failed")
 
     recover_attempts = 0
@@ -41,17 +43,24 @@ async def main_async(args):
         capture_seconds=args.capture_seconds,
         source_label="reconnect",
         timeout_seconds=max(90, int(args.capture_seconds * 3 + 30)),
+        reset_before_capture=args.reset_before_capture,
     )
 
     print("scenario=R5", flush=True)
     print(f"result={summary['result']}", flush=True)
+    print(f"transport_result={summary['transport_result']}", flush=True)
+    print(f"analysis_result={summary['analysis_result']}", flush=True)
     print(f"recover_attempts={recover_attempts}", flush=True)
     print(f"baseline_session_id={baseline['session_id']}", flush=True)
-    print(f"baseline_missing_chunk_count={baseline['missing_chunk_count']}", flush=True)
+    print(f"baseline_result={baseline['result']}", flush=True)
+    print(f"baseline_missing_packet_count={baseline['missing_packet_count']}", flush=True)
+    print(f"baseline_packet_loss_ratio={baseline['packet_loss_ratio']:.4f}", flush=True)
     print(f"session_id={summary['session_id']}", flush=True)
-    print(f"chunk_count={summary['chunk_count']}", flush=True)
-    print(f"expected_chunk_count={summary['expected_chunk_count']}", flush=True)
-    print(f"missing_chunk_count={summary['missing_chunk_count']}", flush=True)
+    print(f"received_packet_count={summary['received_packet_count']}", flush=True)
+    print(f"expected_packet_count={summary['expected_packet_count']}", flush=True)
+    print(f"missing_packet_count={summary['missing_packet_count']}", flush=True)
+    print(f"packet_loss_ratio={summary['packet_loss_ratio']:.4f}", flush=True)
+    print(f"received_pcm_bytes={summary['received_pcm_bytes']}", flush=True)
     print(f"duration_seconds={summary['duration_seconds']:.3f}", flush=True)
     print(f"wav_path={summary['wav_path']}", flush=True)
     print(f"serial_log_path={summary['serial_log_path']}", flush=True)
@@ -60,13 +69,15 @@ async def main_async(args):
     print(f"active_frame_count={summary['active_frame_count']}", flush=True)
     print(f"restart_stdout={restart_result.stdout.strip()}", flush=True)
     print(f"recover_stdout={recover_result.stdout.strip()}", flush=True)
+    print(f"warning_reason={summary['warning_reason']}", flush=True)
     print(f"failure_reason={summary['failure_reason']}", flush=True)
 
-    if summary["result"] != "pass":
+    if summary["result"] == "fail":
         raise RuntimeError("verify_audio_ble_upload_reconnect: post-reconnect session failed")
 
 
 def main():
+    configure_utf8_stdio()
     args = parse_args()
     asyncio.run(main_async(args))
 

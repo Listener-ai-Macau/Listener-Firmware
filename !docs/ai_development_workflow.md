@@ -26,7 +26,10 @@ This workflow applies to:
 
 ## 2. Required Plan-First Flow
 
-Before meaningful implementation starts, AI must create a plan document in `!docs/plans/`.
+Before meaningful implementation starts, AI must create a plan document in the appropriate active-doc location:
+
+- feature / bring-up / implementation plans: `!docs/plans/`
+- current bug fix / bug investigation plans: `!docs/fixes/`
 
 在写方案之前，AI 应先做一轮“现成方案 / 先例检查”。
 
@@ -79,7 +82,7 @@ If the human says "continue", that counts as approval for the next step only.
 
 Important bugs should follow the same pattern.
 
-AI must create or update a bug plan in `!docs/plans/` with:
+AI must create or update a bug plan in `!docs/fixes/` with:
 
 - observed behavior
 - expected behavior
@@ -201,6 +204,22 @@ AI owns:
 - result analysis
 - documenting the outcome
 
+默认执行规则：
+
+- 如果当前环境允许，AI 应默认自己先做手上的执行工作
+- 优先自己运行：
+  - setup
+  - build
+  - flash
+  - log capture
+  - 主机侧测试脚本
+  - 串口注入
+  - 结果分析
+  - 迭代修复
+- 优先使用命令行验收，而不是先把操作推回给人
+- 交互式 monitor 更适合作为人的辅助观察工具，而不是 AI 的默认验收路径
+- 只有当下一步确实需要物理动作或 OS 级动作，且 AI 无法替代时，才让人介入
+
 Human owns:
 
 - approving plans
@@ -210,20 +229,22 @@ Human owns:
 
 ## 9. Directory Rules
 
-- Put active and historical task plans in `!docs/plans/`.
+- Put active feature / implementation plans in `!docs/plans/`.
+- Put current bug fix / bug investigation documents in `!docs/fixes/`.
 - Put reusable feature summaries in `!docs/features/`.
 - Keep filenames descriptive and `snake_case`.
 
 For this repository's preferred cleanup model:
 
-- keep templates and active plans in `!docs/plans/`
+- keep templates and active feature / implementation plans in `!docs/plans/`
+- keep only current bug fix / bug investigation documents in `!docs/fixes/`
 - move durable finished knowledge to `!docs/features/`
-- remove completed plans after their final summary is written, unless there is an explicit reason to keep them
+- remove completed plans / fixes after their final summary is written, unless there is an explicit reason to keep them
 
 Examples:
 
 - `!docs/plans/esp32_ble_hid_autotest_plan.md`
-- `!docs/plans/ble_hid_input_path_bugfix_plan.md`
+- `!docs/fixes/ble_hid_input_path_bugfix_plan.md`
 - `!docs/features/ble_hid_bringup.md`
 
 ## 10. When The User Asks "What Next?"

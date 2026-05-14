@@ -47,7 +47,7 @@
 - 当前产品边界以 [product_solutions.md](../product_solutions.md) 为准
 - 当前仓库仍是 `ESP32-S3` bring-up 阶段，不是量产键盘固件
 - 当前开发板原理图为：
-  [schematic_v1.pdf](../hardware/esp32s3_board_v1/schematic_v1.pdf)
+  [schematic_v1.pdf](../schematics/esp32s3_board_v1/schematic_v1.pdf)
 - 如果要看当前新的 `A` 方案主线，应先参考：
   [voice_shortcut_keyboard_plan.md](./voice_shortcut_keyboard_plan.md)
 - 当前已经完成的设备侧音频与上传能力总结在：

@@ -33,5 +33,5 @@ foreach ($entry in $entries) {
     }
 }
 
-$entries | ConvertTo-Json -Depth 8 | Set-Content -Path $output_db
+$entries | ConvertTo-Json -Depth 8 | Set-Content -Path $output_db -Encoding utf8
 Write-Host "clangd compilation database updated: $output_db"

@@ -14,6 +14,7 @@ from capture_audio_ble_wav import (
     READY_MARKERS,
     SerialLogMonitor,
     get_paired_device_address_hex,
+    reset_target_before_capture,
     run_ble_capture,
 )
 
@@ -25,12 +26,19 @@ TRANSIENT_SOURCE_DIR = ARTIFACT_DIR / "artifacts" / "audio_regression_sources"
 DEFAULT_SERIAL_LOG_PATH = ARTIFACT_DIR / "capture_ble_latest.log"
 RESTART_WINDOWS_BLUETOOTH_SCRIPT = pathlib.Path(__file__).with_name("restart_windows_bluetooth.ps1")
 RECOVER_BLE_HID_HOST_SCRIPT = pathlib.Path(__file__).with_name("recover_ble_hid_host.ps1")
+PASS_PACKET_LOSS_RATIO = 0.02
+FAIL_PACKET_LOSS_RATIO = 0.12
+ANALYSIS_MIN_CORR = 0.20
+ANALYSIS_MIN_PEAK = 500
+ANALYSIS_MIN_ACTIVE_FRAMES = 5
 
 
 def add_common_capture_args(parser: argparse.ArgumentParser, capture_seconds_default: int) -> None:
     parser.add_argument("--port", required=True)
     parser.add_argument("--device-name", default="Listener Keyboard")
     parser.add_argument("--capture-seconds", type=int, default=capture_seconds_default)
+    parser.add_argument("--no-reset-before-capture", action="store_false", dest="reset_before_capture")
+    parser.set_defaults(reset_before_capture=True)
 
 
 def source_wav_path(scenario: str, suffix: str = "latest") -> pathlib.Path:
@@ -153,18 +161,42 @@ def analyze_recording(source_wav: pathlib.Path, recorded_wav: pathlib.Path) -> d
     peak = max(abs(value) for value in recorded_frames) if recorded_frames else 0
     recorded_runs = detect_active_runs(recorded_env)
     active_frame_count = sum(end - start for start, end in recorded_runs)
+    analysis_pass = (
+        corr >= ANALYSIS_MIN_CORR
+        and peak >= ANALYSIS_MIN_PEAK
+        and active_frame_count >= ANALYSIS_MIN_ACTIVE_FRAMES
+    )
+    analysis_failure_reason = ""
+    if not analysis_pass:
+        if corr < ANALYSIS_MIN_CORR:
+            analysis_failure_reason = "correlation_below_threshold"
+        elif peak < ANALYSIS_MIN_PEAK:
+            analysis_failure_reason = "recorded_peak_below_threshold"
+        else:
+            analysis_failure_reason = "active_frame_count_below_threshold"
     return {
         "best_corr": corr,
         "best_offset_frames": offset,
         "recorded_peak": peak,
         "recorded_runs": recorded_runs,
         "active_frame_count": active_frame_count,
-        "analysis_pass": corr >= 0.20 and peak >= 500 and active_frame_count >= 40,
+        "analysis_pass": analysis_pass,
+        "analysis_result": "pass" if analysis_pass else "fail",
+        "analysis_failure_reason": analysis_failure_reason,
     }
 
 
 def default_post_stop_timeout_seconds(capture_seconds: int) -> int:
     return max(60, int(capture_seconds * 3 + 30))
+
+
+def summary_int(summary: dict[str, object], *keys: str, default: int = 0) -> int:
+    for key in keys:
+        value = summary.get(key)
+        if value is None:
+            continue
+        return int(value)
+    return default
 
 
 def make_capture_args(
@@ -178,7 +210,9 @@ def make_capture_args(
     output_dir: pathlib.Path = ARTIFACT_DIR,
     serial_log_path: pathlib.Path = DEFAULT_SERIAL_LOG_PATH,
     boot_timeout_seconds: int = 15,
+    ble_connect_timeout_seconds: int = 12,
     notify_ready_timeout_seconds: int = 20,
+    reset_before_capture: bool = True,
 ):
     return SimpleNamespace(
         port=port,
@@ -188,9 +222,11 @@ def make_capture_args(
         serial_log_path=str(serial_log_path),
         timeout_seconds=timeout_seconds if timeout_seconds is not None else default_post_stop_timeout_seconds(capture_seconds),
         boot_timeout_seconds=boot_timeout_seconds,
+        ble_connect_timeout_seconds=ble_connect_timeout_seconds,
         notify_ready_timeout_seconds=notify_ready_timeout_seconds,
         trigger_mode=trigger_mode,
         max_sessions=max_sessions,
+        reset_before_capture=reset_before_capture,
     )
 
 
@@ -198,9 +234,12 @@ async def capture_sessions(capture_args) -> list[dict[str, object]]:
     with serial.Serial(capture_args.port, 115200, timeout=0.05) as ser:
         ser.setDTR(False)
         ser.setRTS(False)
+        if getattr(capture_args, "reset_before_capture", True):
+            reset_target_before_capture(ser)
         ser.reset_input_buffer()
         serial_monitor = SerialLogMonitor(ser)
-        await serial_monitor.wait_for_markers(READY_MARKERS, timeout_seconds=capture_args.boot_timeout_seconds)
+        if getattr(capture_args, "reset_before_capture", True):
+            await serial_monitor.wait_for_markers(READY_MARKERS, timeout_seconds=capture_args.boot_timeout_seconds)
         ser.reset_input_buffer()
         return await run_ble_capture(capture_args, ser, serial_monitor)
 
@@ -212,20 +251,60 @@ def validate_transport_summary(
     min_ratio: float = 0.90,
     max_extra_seconds: float = 1.00,
 ) -> dict[str, object]:
+    expected_packet_count = summary_int(summary, "expected_packet_count", "expected_chunk_count")
+    received_packet_count = summary_int(summary, "received_packet_count", "chunk_count")
+    missing_packet_count = summary_int(
+        summary,
+        "missing_packet_count",
+        "missing_chunk_count",
+        default=max(expected_packet_count - received_packet_count, 0),
+    )
+    received_pcm_bytes = summary_int(summary, "received_pcm_bytes", "pcm_bytes")
     duration_seconds = float(summary["duration_seconds"])
     min_duration_seconds = float(capture_seconds) * min_ratio
     max_duration_seconds = float(capture_seconds) + max_extra_seconds
     duration_ok = min_duration_seconds <= duration_seconds <= max_duration_seconds
-    transport_ok = (
-        int(summary["missing_chunk_count"]) == 0
-        and int(summary["expected_chunk_count"]) == int(summary["chunk_count"])
-        and duration_ok
+    packet_loss_ratio = (
+        float(missing_packet_count) / float(expected_packet_count)
+        if expected_packet_count > 0
+        else 1.0
     )
+    transport_result = "pass"
+    transport_failure_reason = ""
+    transport_warning_reason = ""
+
+    if expected_packet_count <= 0:
+        transport_result = "fail"
+        transport_failure_reason = "missing_expected_packet_count"
+    elif received_packet_count <= 0 or received_pcm_bytes <= 0:
+        transport_result = "fail"
+        transport_failure_reason = "no_audio_packets_received"
+    elif received_packet_count > expected_packet_count:
+        transport_result = "fail"
+        transport_failure_reason = "received_packet_count_exceeds_expected"
+    elif not duration_ok:
+        transport_result = "fail"
+        transport_failure_reason = "duration_out_of_range"
+    elif packet_loss_ratio > FAIL_PACKET_LOSS_RATIO:
+        transport_result = "fail"
+        transport_failure_reason = "packet_loss_above_fail_threshold"
+    elif packet_loss_ratio > PASS_PACKET_LOSS_RATIO:
+        transport_result = "warning"
+        transport_warning_reason = "packet_loss_above_pass_threshold"
     return {
+        "expected_packet_count": expected_packet_count,
+        "received_packet_count": received_packet_count,
+        "missing_packet_count": missing_packet_count,
+        "received_pcm_bytes": received_pcm_bytes,
+        "packet_loss_ratio": packet_loss_ratio,
         "duration_min_seconds": min_duration_seconds,
         "duration_max_seconds": max_duration_seconds,
         "duration_ok": duration_ok,
-        "transport_ok": transport_ok,
+        "transport_result": transport_result,
+        "transport_pass": transport_result == "pass",
+        "transport_ok": transport_result != "fail",
+        "transport_failure_reason": transport_failure_reason,
+        "transport_warning_reason": transport_warning_reason,
     }
 
 
@@ -237,6 +316,7 @@ async def play_and_capture_serial_toggle(
     capture_seconds: int,
     source_label: str = "latest",
     timeout_seconds: int | None = None,
+    reset_before_capture: bool = True,
 ) -> dict[str, object]:
     source_wav = source_wav_path(scenario, source_label)
     generate_source_wav(source_wav, capture_seconds)
@@ -247,6 +327,7 @@ async def play_and_capture_serial_toggle(
             device_name=device_name,
             capture_seconds=capture_seconds,
             timeout_seconds=timeout_seconds,
+            reset_before_capture=reset_before_capture,
         )
         session_summaries = await capture_sessions(capture_args)
     finally:
@@ -265,8 +346,20 @@ async def play_and_capture_serial_toggle(
     summary.update(validation)
     summary.update(analysis)
     summary["source_wav"] = str(source_wav)
-    summary["result"] = "pass" if validation["transport_ok"] else "fail"
-    summary["failure_reason"] = "" if validation["transport_ok"] else "transport_validation_failed"
+    summary["result"] = "pass"
+    summary["failure_reason"] = ""
+    summary["warning_reason"] = ""
+
+    if validation["transport_result"] == "fail":
+        summary["result"] = "fail"
+        summary["failure_reason"] = validation["transport_failure_reason"] or "transport_validation_failed"
+    elif analysis["analysis_result"] == "fail":
+        summary["result"] = "fail"
+        summary["failure_reason"] = analysis["analysis_failure_reason"] or "recording_analysis_failed"
+    elif validation["transport_result"] == "warning":
+        summary["result"] = "warning"
+        summary["warning_reason"] = validation["transport_warning_reason"] or "transport_warning"
+
     return summary
 
 

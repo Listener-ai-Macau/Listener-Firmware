@@ -3,17 +3,21 @@ import asyncio
 import pathlib
 import subprocess
 import struct
+import sys
 import time
 import uuid
 import wave
-from collections import deque
+from collections import Counter, deque
 
 import serial
 from serial import Serial
-from winrt.windows.devices.bluetooth import BluetoothLEDevice
+from winrt.windows.devices.bluetooth import BluetoothCacheMode, BluetoothLEDevice
 from winrt.windows.devices.bluetooth.genericattributeprofile import (
     GattClientCharacteristicConfigurationDescriptorValue as GattCccdValue,
+    GattCharacteristicProperties,
+    GattCommunicationStatus,
 )
+from winrt.windows.devices.enumeration import DeviceAccessStatus
 from winrt.windows.storage.streams import DataReader
 
 SERVICE_UUID = "710af845-6d9f-6583-0c4d-9e5b3bc3091a"
@@ -21,26 +25,38 @@ NOTIFY_UUID = "710af845-6d9f-6583-0c4d-9e5b3bc3091b"
 HEADER_LEN = 20
 MAGIC = b"VKA1"
 PACKET_TYPE_SESSION_START = 1
-PACKET_TYPE_AUDIO_CHUNK = 2
+PACKET_TYPE_AUDIO_DATA = 2
+PACKET_TYPE_AUDIO_CHUNK = PACKET_TYPE_AUDIO_DATA
 PACKET_TYPE_SESSION_STOP = 3
+PACKET_TYPE_SESSION_CANCEL = 4
 PCM_SAMPLE_RATE = 16000
 PCM_CHANNELS = 1
 PCM_WIDTH_BYTES = 2
 DEFAULT_OUTPUT_DIR = pathlib.Path("tests")
 RECOVER_BLE_SCRIPT = pathlib.Path(__file__).with_name("recover_ble_hid_host.ps1")
+ENSURE_BLE_SCRIPT = pathlib.Path(__file__).with_name("ensure_ble_hid_connection.ps1")
+SERIAL_RESET_PULSE_SECONDS = 0.1
+SERIAL_RESET_SETTLE_SECONDS = 0.2
 READY_MARKERS = (
     "voice recording control ready: key1 toggle start/stop",
     "USB SERIAL INPUT READY",
 )
+AUDIO_NOTIFY_PACKET_SIZE_MARKER = "audio notify packet size updated"
 AUDIO_NOTIFY_READY_MARKER = "audio notify subscription changed"
+AUDIO_NOTIFY_RESTORED_MARKER = "audio notify subscription restored before connect"
 AUDIO_NOTIFY_ENABLED_MARKER = "notify=1"
+BLE_CONNECTION_ESTABLISHED_MARKER = "connection established; status=0"
 AUDIO_UPLOAD_BEGIN_MARKER = "audio session upload begin"
 AUDIO_UPLOAD_END_MARKER = "audio session upload end"
 AUDIO_UPLOAD_SKIPPED_MARKER = "audio session upload skipped"
 STREAM_SESSION_START_MARKER = "stream session start queued"
+STREAM_SESSION_AUDIO_MARKER = "stream audio packet batch queued"
 STREAM_SESSION_CHUNK_MARKER = "stream session chunk queued"
 STREAM_SESSION_STOP_MARKER = "stream session stop queued"
 BLE_NOTIFY_ENABLE_RETRY_COUNT = 3
+BLE_NOTIFY_RECOVERY_DELAY_SECONDS = 0.5
+BLE_NOTIFY_CCCD_TIMEOUT_SECONDS = 8
+SESSION_COMPLETE_IDLE_SECONDS = 0.2
 
 
 class SerialLogMonitor:
@@ -79,6 +95,13 @@ class SerialLogMonitor:
     def find_lines(self, marker: str) -> list[str]:
         return [line for line in self._recent_lines if marker in line]
 
+    def find_lines_any(self, markers: tuple[str, ...]) -> list[str]:
+        return [
+            line
+            for line in self._recent_lines
+            if any(marker in line for marker in markers)
+        ]
+
     async def wait_for_markers(self, markers: tuple[str, ...], timeout_seconds: int) -> None:
         deadline = time.time() + timeout_seconds
         found = set()
@@ -96,6 +119,8 @@ class SerialLogMonitor:
         )
 
     async def wait_for_predicate(self, predicate, timeout_seconds: int, description: str) -> None:
+        if any(predicate(line) for line in self._recent_lines):
+            return
         deadline = time.time() + timeout_seconds
         while time.time() < deadline:
             for line in self.poll_lines():
@@ -116,10 +141,24 @@ def parse_args():
     parser.add_argument("--serial-log-path", default=None)
     parser.add_argument("--timeout-seconds", type=int, default=60)
     parser.add_argument("--boot-timeout-seconds", type=int, default=15)
+    parser.add_argument("--ble-connect-timeout-seconds", type=int, default=12)
     parser.add_argument("--notify-ready-timeout-seconds", type=int, default=20)
     parser.add_argument("--trigger-mode", choices=["serial-toggle", "physical-key"], default="serial-toggle")
     parser.add_argument("--max-sessions", type=int, default=1)
+    parser.add_argument("--no-reset-before-capture", action="store_false", dest="reset_before_capture")
+    parser.set_defaults(reset_before_capture=True)
     return parser.parse_args()
+
+
+def configure_utf8_stdio() -> None:
+    for stream_name in ("stdout", "stderr"):
+        stream = getattr(sys, stream_name, None)
+        if stream is None or not hasattr(stream, "reconfigure"):
+            continue
+        try:
+            stream.reconfigure(encoding="utf-8", errors="replace")
+        except Exception:
+            pass
 
 
 def get_paired_device_address(device_name: str) -> str | None:
@@ -177,9 +216,401 @@ def recover_host_ble(device_name: str, address_hex: str) -> None:
     )
 
 
+def ensure_host_ble_connection(
+    device_name: str,
+    address_hex: str,
+    duration_seconds: int = 12,
+    poll_interval_seconds: int = 2,
+) -> None:
+    if not ENSURE_BLE_SCRIPT.exists():
+        return
+    subprocess.run(
+        [
+            "powershell",
+            "-ExecutionPolicy",
+            "Bypass",
+            "-File",
+            str(ENSURE_BLE_SCRIPT),
+            "-DeviceName",
+            device_name,
+            "-BluetoothAddress",
+            address_hex,
+            "-DurationSeconds",
+            str(duration_seconds),
+            "-PollIntervalSeconds",
+            str(poll_interval_seconds),
+            "-ExitOnReady",
+        ],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+
+def close_ble_objects(*, characteristic=None, token=None, service=None, requester=None) -> None:
+    if characteristic is not None and token is not None:
+        try:
+            characteristic.remove_value_changed(token)
+        except Exception:
+            pass
+    if service is not None:
+        try:
+            service.close()
+        except Exception:
+            pass
+    if requester is not None:
+        try:
+            requester.close()
+        except Exception:
+            pass
+
+
+async def disable_notify_best_effort(characteristic) -> None:
+    if characteristic is None:
+        return
+    try:
+        status = await characteristic.write_client_characteristic_configuration_descriptor_async(
+            GattCccdValue.NONE
+        )
+        print(f"notify_disable_status={status}", flush=True)
+    except OSError as exc:
+        print(f"notify_disable_error={exc!r}", flush=True)
+    except Exception as exc:
+        print(f"notify_disable_error={type(exc).__name__}:{exc}", flush=True)
+
+
+async def resolve_notify_characteristic(
+    requester: BluetoothLEDevice,
+    service_uuid: uuid.UUID,
+    notify_uuid: uuid.UUID,
+):
+    services_result = await requester.get_gatt_services_with_cache_mode_async(BluetoothCacheMode.CACHED)
+    if services_result.status != GattCommunicationStatus.SUCCESS:
+        return None, None, RuntimeError(
+            "capture_audio_ble_wav: target service unavailable "
+            f"status={services_result.status} count={len(services_result.services)}"
+        )
+
+    service = None
+    for candidate in services_result.services:
+        if candidate.uuid == service_uuid:
+            service = candidate
+        else:
+            try:
+                candidate.close()
+            except Exception:
+                pass
+
+    if service is None:
+        return None, None, RuntimeError(
+            "capture_audio_ble_wav: target service unavailable "
+            f"status={services_result.status} count={len(services_result.services)}"
+        )
+
+    try:
+        access_status = await service.request_access_async()
+        if access_status not in (DeviceAccessStatus.ALLOWED, DeviceAccessStatus.UNSPECIFIED):
+            service.close()
+            return None, None, RuntimeError(
+                f"capture_audio_ble_wav: target service access denied status={access_status}"
+            )
+
+        session = service.session
+        if session is not None and session.can_maintain_connection:
+            session.maintain_connection = True
+    except Exception:
+        pass
+
+    chars_result = await service.get_characteristics_with_cache_mode_async(BluetoothCacheMode.CACHED)
+    if chars_result.status != GattCommunicationStatus.SUCCESS:
+        service.close()
+        return None, None, RuntimeError(
+            "capture_audio_ble_wav: target characteristic unavailable "
+            f"status={chars_result.status} count={len(chars_result.characteristics)}"
+        )
+
+    characteristic = None
+    for candidate in chars_result.characteristics:
+        if candidate.uuid == notify_uuid:
+            characteristic = candidate
+            break
+
+    if characteristic is None:
+        service.close()
+        return None, None, RuntimeError(
+            "capture_audio_ble_wav: target characteristic unavailable "
+            f"status={chars_result.status} count={len(chars_result.characteristics)}"
+        )
+
+    if not (
+        int(characteristic.characteristic_properties)
+        & int(GattCharacteristicProperties.NOTIFY)
+    ):
+        service.close()
+        return None, None, RuntimeError(
+            "capture_audio_ble_wav: target characteristic does not advertise NOTIFY property"
+        )
+
+    return service, characteristic, None
+
+
+async def open_ble_device(address_hex: str):
+    requester = await BluetoothLEDevice.from_bluetooth_address_async(int(address_hex, 16))
+    if requester is None:
+        return None
+
+    device_id = ""
+    try:
+        device_id = requester.device_id or ""
+    except Exception:
+        device_id = ""
+
+    if not device_id:
+        return requester
+
+    requester_by_id = await BluetoothLEDevice.from_id_async(device_id)
+    if requester_by_id is None:
+        return requester
+
+    try:
+        requester.close()
+    except Exception:
+        pass
+    return requester_by_id
+
+
+async def enable_notify_with_rebuild(
+    *,
+    address_hex: str,
+    device_name: str,
+    service_uuid: uuid.UUID,
+    notify_uuid: uuid.UUID,
+    on_value_changed,
+):
+    requester = None
+    service = None
+    characteristic = None
+    token = None
+    last_error = None
+
+    for attempt in range(1, BLE_NOTIFY_ENABLE_RETRY_COUNT + 1):
+        await disable_notify_best_effort(characteristic)
+        close_ble_objects(
+            characteristic=characteristic,
+            token=token,
+            service=service,
+            requester=requester,
+        )
+        requester = None
+        service = None
+        characteristic = None
+        token = None
+
+        if attempt > 1:
+            try:
+                ensure_host_ble_connection(device_name, address_hex)
+            except subprocess.CalledProcessError:
+                pass
+            await asyncio.sleep(BLE_NOTIFY_RECOVERY_DELAY_SECONDS)
+
+        requester = await open_ble_device(address_hex)
+        if requester is None:
+            last_error = RuntimeError(
+                f"capture_audio_ble_wav: unable to open BluetoothLEDevice for '{device_name}' attempt={attempt}"
+            )
+            await asyncio.sleep(BLE_NOTIFY_RECOVERY_DELAY_SECONDS)
+            continue
+
+        print(f"notify_enable_attempt={attempt}", flush=True)
+        conn_status = 0
+        try:
+            conn_status = requester.connection_status
+            print(f"ble_connection_status={conn_status}", flush=True)
+        except Exception:
+            pass
+        if conn_status == 0:
+            print("ble_device_disconnected=1; ensuring connection", flush=True)
+            try:
+                ensure_host_ble_connection(
+                    device_name, address_hex,
+                    duration_seconds=8, poll_interval_seconds=2,
+                )
+            except subprocess.CalledProcessError:
+                pass
+            await asyncio.sleep(0.3)
+
+        try:
+            cached_services_result = await requester.get_gatt_services_with_cache_mode_async(
+                BluetoothCacheMode.CACHED
+            )
+            print(
+                "cached_service_probe_status="
+                f"{cached_services_result.status} count={len(cached_services_result.services)}",
+                flush=True,
+            )
+            if cached_services_result is not None and cached_services_result.services is not None:
+                for cached_service in cached_services_result.services:
+                    try:
+                        session = cached_service.session
+                        if session is not None and session.can_maintain_connection:
+                            session.maintain_connection = True
+                    except Exception:
+                        pass
+                    try:
+                        cached_service.close()
+                    except Exception:
+                        pass
+        except Exception as exc:
+            print(f"cached_service_probe_error={type(exc).__name__}:{exc}", flush=True)
+
+        service, characteristic, resolve_error = await resolve_notify_characteristic(
+            requester,
+            service_uuid,
+            notify_uuid,
+        )
+        if resolve_error is not None:
+            last_error = resolve_error
+            print(f"notify_resolve_error={resolve_error}", flush=True)
+            try:
+                recover_host_ble(device_name, address_hex)
+            except subprocess.CalledProcessError:
+                pass
+            await asyncio.sleep(BLE_NOTIFY_RECOVERY_DELAY_SECONDS)
+            continue
+
+        def record_notify_failure(prefix: str, exc: Exception) -> RuntimeError:
+            return RuntimeError(
+                f"capture_audio_ble_wav: {prefix} raised {type(exc).__name__}: {exc} attempt={attempt}"
+            )
+
+        cccd_timed_out = False
+        try:
+            cccd_result = await asyncio.wait_for(
+                characteristic.write_client_characteristic_configuration_descriptor_with_result_async(
+                    GattCccdValue.NOTIFY
+                ),
+                timeout=BLE_NOTIFY_CCCD_TIMEOUT_SECONDS,
+            )
+            cccd_status = cccd_result.status
+            protocol_error = getattr(cccd_result, "protocol_error", None)
+            print(
+                f"notify_enable_status={cccd_status} protocol_error={protocol_error}",
+                flush=True,
+            )
+            if cccd_status == GattCommunicationStatus.SUCCESS:
+                token = characteristic.add_value_changed(on_value_changed)
+                return requester, service, characteristic, token
+            last_error = RuntimeError(
+                "capture_audio_ble_wav: notify enable failed "
+                f"status={cccd_status} protocol_error={protocol_error} attempt={attempt}"
+            )
+        except asyncio.TimeoutError:
+            cccd_timed_out = True
+            print(
+                f"notify_enable_primary_timeout=1 timeout_s={BLE_NOTIFY_CCCD_TIMEOUT_SECONDS}",
+                flush=True,
+            )
+            last_error = RuntimeError(
+                f"capture_audio_ble_wav: notify enable timed out after {BLE_NOTIFY_CCCD_TIMEOUT_SECONDS}s attempt={attempt}"
+            )
+        except OSError as exc:
+            print(f"notify_enable_primary_error={exc!r}", flush=True)
+            last_error = RuntimeError(
+                f"capture_audio_ble_wav: notify enable raised {exc!r} attempt={attempt}"
+            )
+        except Exception as exc:
+            print(f"notify_enable_primary_error={type(exc).__name__}:{exc}", flush=True)
+            last_error = RuntimeError(
+                f"capture_audio_ble_wav: notify enable raised {type(exc).__name__}: {exc} attempt={attempt}"
+            )
+
+        if token is None and not cccd_timed_out:
+            try:
+                token = characteristic.add_value_changed(on_value_changed)
+                print("notify_enable_fallback=winrt_warmup", flush=True)
+                try:
+                    warmup_status = await asyncio.wait_for(
+                        characteristic.write_client_characteristic_configuration_descriptor_async(
+                            GattCccdValue.NOTIFY
+                        ),
+                        timeout=BLE_NOTIFY_CCCD_TIMEOUT_SECONDS,
+                    )
+                    print(f"notify_enable_warmup_status={warmup_status}", flush=True)
+                    if warmup_status == GattCommunicationStatus.SUCCESS:
+                        return requester, service, characteristic, token
+                except asyncio.TimeoutError:
+                    print("notify_enable_warmup_timeout=1", flush=True)
+                except OSError as exc:
+                    print(f"notify_enable_warmup_error={exc!r}", flush=True)
+                except Exception as exc:
+                    print(
+                        f"notify_enable_warmup_error={type(exc).__name__}:{exc}",
+                        flush=True,
+                    )
+
+                cccd_result = await asyncio.wait_for(
+                    characteristic.write_client_characteristic_configuration_descriptor_with_result_async(
+                        GattCccdValue.NOTIFY
+                    ),
+                    timeout=BLE_NOTIFY_CCCD_TIMEOUT_SECONDS,
+                )
+                cccd_status = cccd_result.status
+                protocol_error = getattr(cccd_result, "protocol_error", None)
+                print(
+                    f"notify_enable_fallback_status={cccd_status} protocol_error={protocol_error}",
+                    flush=True,
+                )
+                if cccd_status == GattCommunicationStatus.SUCCESS:
+                    return requester, service, characteristic, token
+                last_error = RuntimeError(
+                    "capture_audio_ble_wav: notify fallback failed "
+                    f"status={cccd_status} protocol_error={protocol_error} attempt={attempt}"
+                )
+            except asyncio.TimeoutError:
+                last_error = RuntimeError(
+                    f"capture_audio_ble_wav: notify fallback timed out attempt={attempt}"
+                )
+            except OSError as exc:
+                last_error = RuntimeError(
+                    f"capture_audio_ble_wav: notify fallback raised {exc!r} attempt={attempt}"
+                )
+            except Exception as exc:
+                last_error = record_notify_failure("notify fallback", exc)
+            if token is not None:
+                try:
+                    characteristic.remove_value_changed(token)
+                except Exception:
+                    pass
+                token = None
+
+        try:
+            recover_host_ble(device_name, address_hex)
+        except subprocess.CalledProcessError:
+            pass
+        await asyncio.sleep(BLE_NOTIFY_RECOVERY_DELAY_SECONDS)
+
+    close_ble_objects(
+        characteristic=characteristic,
+        token=token,
+        service=service,
+        requester=requester,
+    )
+    raise last_error if last_error is not None else RuntimeError(
+        "capture_audio_ble_wav: notify enable failed without detailed error"
+    )
+
+
 def send_toggle(ser: Serial) -> None:
     ser.write(b"~VREC:TOGGLE\n")
     ser.flush()
+
+
+def reset_target_before_capture(ser: Serial) -> None:
+    ser.setDTR(False)
+    ser.setRTS(True)
+    time.sleep(SERIAL_RESET_PULSE_SECONDS)
+    ser.setRTS(False)
+    time.sleep(SERIAL_RESET_SETTLE_SECONDS)
 
 
 def parse_header(packet: bytes):
@@ -196,7 +627,8 @@ def parse_header(packet: bytes):
     fragment_count = packet[15]
     payload_len = struct.unpack_from("<H", packet, 16)[0]
     chunk_pcm_bytes = struct.unpack_from("<H", packet, 18)[0]
-    payload = packet[header_len:header_len + payload_len]
+    payload_end = min(len(packet), header_len + payload_len)
+    payload = packet[header_len:payload_end]
     return {
         "packet_type": packet_type,
         "session_id": session_id,
@@ -206,6 +638,9 @@ def parse_header(packet: bytes):
         "payload_len": payload_len,
         "chunk_pcm_bytes": chunk_pcm_bytes,
         "payload": payload,
+        "packet_sequence": chunk_index,
+        "expected_packet_count": chunk_index,
+        "packet_pcm_bytes": chunk_pcm_bytes,
     }
 
 
@@ -229,19 +664,21 @@ class SessionCollector:
     def __init__(self) -> None:
         self.session_id = None
         self.stop_received = False
-        self.expected_chunk_count = None
-        self.chunk_fragments = {}
-        self.chunk_sizes = {}
-        self.complete_chunks = {}
+        self.expected_packet_count = None
+        self.cancel_received = False
+        self.audio_packets = {}
+        self.packet_pcm_bytes = {}
+        self.packet_size_counter = Counter()
         self.last_packet_time = 0.0
 
     def reset(self) -> None:
         self.session_id = None
         self.stop_received = False
-        self.expected_chunk_count = None
-        self.chunk_fragments = {}
-        self.chunk_sizes = {}
-        self.complete_chunks = {}
+        self.expected_packet_count = None
+        self.cancel_received = False
+        self.audio_packets = {}
+        self.packet_pcm_bytes = {}
+        self.packet_size_counter = Counter()
         self.last_packet_time = 0.0
 
     def handle_notification(self, packet: bytes) -> None:
@@ -255,64 +692,151 @@ class SessionCollector:
             return
         if self.session_id is None or header["session_id"] != self.session_id:
             return
-        if packet_type == PACKET_TYPE_AUDIO_CHUNK:
-            chunk_index = header["chunk_index"]
-            if chunk_index not in self.chunk_fragments:
-                self.chunk_fragments[chunk_index] = [None] * header["fragment_count"]
-                self.chunk_sizes[chunk_index] = header["chunk_pcm_bytes"]
-            self.chunk_fragments[chunk_index][header["fragment_index"]] = header["payload"]
-            if all(part is not None for part in self.chunk_fragments[chunk_index]):
-                joined = b"".join(self.chunk_fragments[chunk_index])
-                self.complete_chunks[chunk_index] = joined[:self.chunk_sizes[chunk_index]]
+        if packet_type == PACKET_TYPE_AUDIO_DATA:
+            packet_sequence = header["packet_sequence"]
+            packet_pcm_bytes = header["packet_pcm_bytes"] or header["payload_len"]
+            if packet_pcm_bytes <= 0:
+                packet_pcm_bytes = len(header["payload"])
+            payload = header["payload"][:packet_pcm_bytes]
+            if not payload:
+                return
+
+            existing_payload = self.audio_packets.get(packet_sequence)
+            if existing_payload is not None and len(existing_payload) >= len(payload):
+                return
+
+            if existing_payload is not None:
+                existing_size = self.packet_pcm_bytes.get(packet_sequence, len(existing_payload))
+                self.packet_size_counter.subtract([existing_size])
+                if self.packet_size_counter[existing_size] <= 0:
+                    del self.packet_size_counter[existing_size]
+
+            self.audio_packets[packet_sequence] = payload
+            self.packet_pcm_bytes[packet_sequence] = len(payload)
+            self.packet_size_counter.update([len(payload)])
         elif packet_type == PACKET_TYPE_SESSION_STOP:
             self.stop_received = True
-            self.expected_chunk_count = header["chunk_index"]
+            self.expected_packet_count = header["expected_packet_count"]
+        elif packet_type == PACKET_TYPE_SESSION_CANCEL:
+            self.cancel_received = True
+            self.stop_received = True
+            self.expected_packet_count = header["expected_packet_count"]
 
     def has_completed_session(self) -> bool:
         if (
             self.session_id is None
             or not self.stop_received
-            or self.expected_chunk_count is None
-            or self.expected_chunk_count == 0
+            or self.cancel_received
+            or self.expected_packet_count is None
+            or self.expected_packet_count == 0
         ):
             return False
-        return (time.time() - self.last_packet_time) >= 0.2
+        return (time.time() - self.last_packet_time) >= SESSION_COMPLETE_IDLE_SECONDS
 
-    def missing_chunk_indices(self) -> list[int]:
-        if self.expected_chunk_count is None:
+    def received_packet_count(self) -> int:
+        return len(self.audio_packets)
+
+    def received_pcm_bytes(self) -> int:
+        return sum(self.packet_pcm_bytes.values())
+
+    def missing_packet_indices(self) -> list[int]:
+        if self.expected_packet_count is None:
             return []
         return [
             index
-            for index in range(self.expected_chunk_count)
-            if index not in self.complete_chunks
+            for index in range(self.expected_packet_count)
+            if index not in self.audio_packets
         ]
 
-    def is_chunk_complete(self) -> bool:
-        if self.expected_chunk_count is None:
+    def is_packet_complete(self) -> bool:
+        if self.expected_packet_count is None:
             return False
-        return len(self.missing_chunk_indices()) == 0
+        return len(self.missing_packet_indices()) == 0
 
-    def chunk_integrity_summary(self) -> str:
+    def packet_integrity_summary(self) -> str:
         expected = (
-            str(self.expected_chunk_count)
-            if self.expected_chunk_count is not None
+            str(self.expected_packet_count)
+            if self.expected_packet_count is not None
             else "unknown"
         )
-        missing = self.missing_chunk_indices()
+        missing = self.missing_packet_indices()
         missing_preview = ",".join(str(index) for index in missing[:16])
         if len(missing) > 16:
             missing_preview += ",..."
         if not missing_preview:
             missing_preview = "<none>"
         return (
-            f"expected_chunk_count={expected} "
-            f"received_chunk_count={len(self.complete_chunks)} "
-            f"missing_chunk_count={len(missing)} "
-            f"missing_chunk_indices={missing_preview}"
+            f"expected_packet_count={expected} "
+            f"received_packet_count={self.received_packet_count()} "
+            f"missing_packet_count={len(missing)} "
+            f"missing_packet_indices={missing_preview} "
+            f"received_pcm_bytes={self.received_pcm_bytes()}"
         )
 
-    def ordered_pcm(self) -> bytes:
-        return b"".join(self.complete_chunks[index] for index in sorted(self.complete_chunks))
+    def _inferred_cycle_length(self) -> int:
+        if len(self.packet_pcm_bytes) < 6:
+            return 1
+
+        best_cycle_length = 1
+        best_match_count = -1
+        best_score = -1.0
+        for cycle_length in range(1, 17):
+            buckets = {}
+            for sequence, size in self.packet_pcm_bytes.items():
+                buckets.setdefault(sequence % cycle_length, Counter()).update([size])
+            match_count = 0
+            for sequence, size in self.packet_pcm_bytes.items():
+                predicted_size, _ = buckets[sequence % cycle_length].most_common(1)[0]
+                if predicted_size == size:
+                    match_count += 1
+            score = match_count / float(len(self.packet_pcm_bytes))
+            if score > best_score or (score == best_score and match_count > best_match_count):
+                best_cycle_length = cycle_length
+                best_match_count = match_count
+                best_score = score
+        return best_cycle_length
+
+    def _build_cycle_size_map(self, cycle_length: int) -> dict[int, int]:
+        cycle_size_map = {}
+        if cycle_length <= 0:
+            return cycle_size_map
+        for sequence, size in self.packet_pcm_bytes.items():
+            cycle_size_map.setdefault(sequence % cycle_length, Counter()).update([size])
+        return {
+            offset: bucket.most_common(1)[0][0]
+            for offset, bucket in cycle_size_map.items()
+            if bucket
+        }
+
+    def inferred_packet_pcm_bytes(self, packet_sequence: int) -> int:
+        actual_size = self.packet_pcm_bytes.get(packet_sequence)
+        if actual_size is not None:
+            return actual_size
+
+        if self.packet_size_counter:
+            cycle_length = self._inferred_cycle_length()
+            cycle_size_map = self._build_cycle_size_map(cycle_length)
+            inferred_size = cycle_size_map.get(packet_sequence % cycle_length)
+            if inferred_size is not None:
+                return inferred_size
+            return self.packet_size_counter.most_common(1)[0][0]
+        return 0
+
+    def reconstructed_pcm(self) -> bytes:
+        if self.expected_packet_count is None:
+            return b"".join(self.audio_packets[index] for index in sorted(self.audio_packets))
+
+        parts = []
+        for packet_sequence in range(self.expected_packet_count):
+            payload = self.audio_packets.get(packet_sequence)
+            if payload is not None:
+                parts.append(payload)
+                continue
+
+            inferred_size = self.inferred_packet_pcm_bytes(packet_sequence)
+            if inferred_size > 0:
+                parts.append(bytes(inferred_size))
+        return b"".join(parts)
 
 
 async def run_ble_capture(args, ser: Serial, serial_monitor: SerialLogMonitor):
@@ -320,8 +844,6 @@ async def run_ble_capture(args, ser: Serial, serial_monitor: SerialLogMonitor):
     address_hex = get_paired_device_address_hex(args.device_name)
     if address is None or address_hex is None:
         raise RuntimeError(f"capture_audio_ble_wav: unable to resolve paired BLE device '{args.device_name}'")
-
-    recover_host_ble(args.device_name, address_hex)
 
     collector = SessionCollector()
     completed_sessions = 0
@@ -337,7 +859,6 @@ async def run_ble_capture(args, ser: Serial, serial_monitor: SerialLogMonitor):
     service = None
     characteristic = None
     token = None
-    last_notify_error = None
 
     def on_value_changed(sender, args):
         reader = DataReader.from_buffer(args.characteristic_value)
@@ -346,82 +867,50 @@ async def run_ble_capture(args, ser: Serial, serial_monitor: SerialLogMonitor):
         handle_notification(sender, payload)
         reader.close()
 
-    for attempt in range(1, BLE_NOTIFY_ENABLE_RETRY_COUNT + 1):
-        if requester is not None:
-            try:
-                if characteristic is not None and token is not None:
-                    characteristic.remove_value_changed(token)
-            except Exception:
-                pass
-            if service is not None:
-                service.close()
-            requester.close()
-            requester = None
-            service = None
-            characteristic = None
-            token = None
-
-        requester = await BluetoothLEDevice.from_bluetooth_address_async(int(address_hex, 16))
-        if requester is None:
-            last_notify_error = RuntimeError(
-                f"capture_audio_ble_wav: unable to open BluetoothLEDevice for '{args.device_name}'")
-            await asyncio.sleep(1.0)
-            continue
-
-        services_result = await requester.get_gatt_services_for_uuid_async(service_uuid)
-        if services_result.status != 0 or len(services_result.services) == 0:
-            last_notify_error = RuntimeError(
-                f"capture_audio_ble_wav: target service unavailable status={services_result.status} count={len(services_result.services)}"
-            )
-            recover_host_ble(args.device_name, address_hex)
-            await asyncio.sleep(1.0)
-            continue
-
-        service = services_result.services[0]
-        chars_result = await service.get_characteristics_for_uuid_async(notify_uuid)
-        if chars_result.status != 0 or len(chars_result.characteristics) == 0:
-            last_notify_error = RuntimeError(
-                f"capture_audio_ble_wav: target characteristic unavailable status={chars_result.status} count={len(chars_result.characteristics)}"
-            )
-            recover_host_ble(args.device_name, address_hex)
-            await asyncio.sleep(1.0)
-            continue
-
-        characteristic = chars_result.characteristics[0]
-        token = characteristic.add_value_changed(on_value_changed)
+    if getattr(args, "reset_before_capture", False):
         try:
-            cccd_status = await characteristic.write_client_characteristic_configuration_descriptor_async(
-                GattCccdValue.NOTIFY)
-            if cccd_status == 0:
-                break
-            last_notify_error = RuntimeError(
-                f"capture_audio_ble_wav: notify enable failed status={cccd_status} attempt={attempt}"
+            ensure_host_ble_connection(
+                args.device_name,
+                address_hex,
+                duration_seconds=args.ble_connect_timeout_seconds,
+                poll_interval_seconds=2,
             )
-        except OSError as exc:
-            last_notify_error = RuntimeError(
-                f"capture_audio_ble_wav: notify enable raised {exc!r} attempt={attempt}"
+        except subprocess.CalledProcessError:
+            pass
+        try:
+            await serial_monitor.wait_for_predicate(
+                lambda line: BLE_CONNECTION_ESTABLISHED_MARKER in line,
+                timeout_seconds=args.ble_connect_timeout_seconds,
+                description="BLE connection established marker",
             )
+        except RuntimeError:
+            print(
+                "ble_connection_marker_wait=timeout; continuing with host-side notify enable",
+                flush=True,
+            )
+        await asyncio.sleep(0.5)
 
-        recover_host_ble(args.device_name, address_hex)
-        await asyncio.sleep(1.0)
-    else:
-        if requester is not None:
-            try:
-                if characteristic is not None and token is not None:
-                    characteristic.remove_value_changed(token)
-            except Exception:
-                pass
-            if service is not None:
-                service.close()
-            requester.close()
-        raise last_notify_error if last_notify_error is not None else RuntimeError(
-            "capture_audio_ble_wav: notify enable failed without detailed error")
+    requester, service, characteristic, token = await enable_notify_with_rebuild(
+        address_hex=address_hex,
+        device_name=args.device_name,
+        service_uuid=service_uuid,
+        notify_uuid=notify_uuid,
+        on_value_changed=on_value_changed,
+    )
 
     try:
         await serial_monitor.wait_for_predicate(
-            lambda line: AUDIO_NOTIFY_READY_MARKER in line and AUDIO_NOTIFY_ENABLED_MARKER in line,
+            lambda line: (
+                (AUDIO_NOTIFY_READY_MARKER in line and AUDIO_NOTIFY_ENABLED_MARKER in line)
+                or AUDIO_NOTIFY_RESTORED_MARKER in line
+            ),
             timeout_seconds=args.notify_ready_timeout_seconds,
             description="audio notify enabled marker",
+        )
+        await serial_monitor.wait_for_predicate(
+            lambda line: AUDIO_NOTIFY_PACKET_SIZE_MARKER in line,
+            timeout_seconds=args.notify_ready_timeout_seconds,
+            description="audio notify packet size marker",
         )
 
         if args.trigger_mode == "physical-key":
@@ -458,6 +947,8 @@ async def run_ble_capture(args, ser: Serial, serial_monitor: SerialLogMonitor):
                     + "\n".join(serial_monitor.find_lines("recording start"))
                     + "\nrecord_stop_lines=\n"
                     + "\n".join(serial_monitor.find_lines("recording stop"))
+                    + "\npacket_size_lines=\n"
+                    + "\n".join(serial_monitor.find_lines(AUDIO_NOTIFY_PACKET_SIZE_MARKER))
                     + "\nqueue_lines=\n"
                     + "\n".join(serial_monitor.find_lines("ble audio upload queued"))
                     + "\nupload_begin_lines=\n"
@@ -474,42 +965,51 @@ async def run_ble_capture(args, ser: Serial, serial_monitor: SerialLogMonitor):
                     "capture_audio_ble_wav: did not receive session_stop; recent serial logs:\n"
                     f"{serial_monitor.recent_text()}"
                 )
-            if collector.expected_chunk_count is None:
+            if collector.cancel_received:
                 raise RuntimeError(
-                    "capture_audio_ble_wav: session_stop did not provide expected chunk count; recent serial logs:\n"
+                    "capture_audio_ble_wav: session canceled before completion; recent serial logs:\n"
                     f"{serial_monitor.recent_text()}"
                 )
-            if not collector.complete_chunks:
+            if collector.expected_packet_count is None:
                 raise RuntimeError(
-                    "capture_audio_ble_wav: did not receive any audio chunks; recent serial logs:\n"
+                    "capture_audio_ble_wav: session_stop did not provide expected packet count; recent serial logs:\n"
                     f"{serial_monitor.recent_text()}"
                 )
-            if not collector.is_chunk_complete():
+            if collector.received_packet_count() == 0:
                 raise RuntimeError(
-                    "capture_audio_ble_wav: session chunk integrity check failed; "
-                    f"{collector.chunk_integrity_summary()}\nrecent serial logs:\n{serial_monitor.recent_text()}"
+                    "capture_audio_ble_wav: did not receive any audio packets; recent serial logs:\n"
+                    f"{serial_monitor.recent_text()}"
                 )
-
-            ordered_pcm = collector.ordered_pcm()
+            reconstructed_pcm = collector.reconstructed_pcm()
             output_dir = pathlib.Path(args.output_dir)
             output_path = output_dir / "capture_ble_latest_16k_mono.wav"
-            write_wav(output_path, ordered_pcm)
+            write_wav(output_path, reconstructed_pcm)
             completed_sessions += 1
-            duration_seconds = pcm_duration_seconds(len(ordered_pcm))
+            duration_seconds = pcm_duration_seconds(len(reconstructed_pcm))
+            missing_packet_indices = collector.missing_packet_indices()
+            serial_stream_audio_lines = serial_monitor.find_lines_any(
+                (STREAM_SESSION_AUDIO_MARKER, STREAM_SESSION_CHUNK_MARKER)
+            )
 
             session_summary = {
                 "wav_path": str(output_path),
                 "serial_log_path": str(args.serial_log_path) if args.serial_log_path else "",
                 "session_id": collector.session_id,
-                "chunk_count": len(collector.complete_chunks),
-                "expected_chunk_count": collector.expected_chunk_count,
-                "missing_chunk_count": len(collector.missing_chunk_indices()),
-                "pcm_bytes": len(ordered_pcm),
+                "received_packet_count": collector.received_packet_count(),
+                "expected_packet_count": collector.expected_packet_count,
+                "missing_packet_count": len(missing_packet_indices),
+                "missing_packet_indices": missing_packet_indices,
+                "received_pcm_bytes": collector.received_pcm_bytes(),
+                "pcm_bytes": len(reconstructed_pcm),
                 "duration_seconds": duration_seconds,
                 "serial_stream_start_count": len(serial_monitor.find_lines(STREAM_SESSION_START_MARKER)),
-                "serial_stream_chunk_count": len(serial_monitor.find_lines(STREAM_SESSION_CHUNK_MARKER)),
+                "serial_stream_audio_count": len(serial_stream_audio_lines),
                 "serial_stream_stop_count": len(serial_monitor.find_lines(STREAM_SESSION_STOP_MARKER)),
                 "completed_session_count": completed_sessions,
+                "chunk_count": collector.received_packet_count(),
+                "expected_chunk_count": collector.expected_packet_count,
+                "missing_chunk_count": len(missing_packet_indices),
+                "serial_stream_chunk_count": len(serial_stream_audio_lines),
             }
             session_summaries.append(session_summary)
 
@@ -520,17 +1020,25 @@ async def run_ble_capture(args, ser: Serial, serial_monitor: SerialLogMonitor):
 
             print(f"wav_path={output_path}", flush=True)
             print(f"session_id={collector.session_id}", flush=True)
-            print(f"chunk_count={len(collector.complete_chunks)}", flush=True)
-            print(f"expected_chunk_count={collector.expected_chunk_count}", flush=True)
-            print(f"missing_chunk_count={len(collector.missing_chunk_indices())}", flush=True)
-            print(f"pcm_bytes={len(ordered_pcm)}", flush=True)
+            print(f"received_packet_count={collector.received_packet_count()}", flush=True)
+            print(f"expected_packet_count={collector.expected_packet_count}", flush=True)
+            print(f"missing_packet_count={len(missing_packet_indices)}", flush=True)
+            print(f"received_pcm_bytes={collector.received_pcm_bytes()}", flush=True)
+            print(f"chunk_count={collector.received_packet_count()}", flush=True)
+            print(f"expected_chunk_count={collector.expected_packet_count}", flush=True)
+            print(f"missing_chunk_count={len(missing_packet_indices)}", flush=True)
+            print(f"pcm_bytes={len(reconstructed_pcm)}", flush=True)
             print(f"duration_seconds={duration_seconds:.3f}", flush=True)
             print(
                 f"serial_stream_start_count={len(serial_monitor.find_lines(STREAM_SESSION_START_MARKER))}",
                 flush=True,
             )
             print(
-                f"serial_stream_chunk_count={len(serial_monitor.find_lines(STREAM_SESSION_CHUNK_MARKER))}",
+                f"serial_stream_audio_count={len(serial_stream_audio_lines)}",
+                flush=True,
+            )
+            print(
+                f"serial_stream_chunk_count={len(serial_stream_audio_lines)}",
                 flush=True,
             )
             print(
@@ -547,19 +1055,13 @@ async def run_ble_capture(args, ser: Serial, serial_monitor: SerialLogMonitor):
             serial_log_path = pathlib.Path(args.serial_log_path)
             serial_log_path.parent.mkdir(parents=True, exist_ok=True)
             serial_log_path.write_text(serial_monitor.recent_text(), encoding="utf-8")
-        try:
-            await characteristic.write_client_characteristic_configuration_descriptor_async(GattCccdValue.NONE)
-        except Exception:
-            pass
-        if characteristic is not None and token is not None:
-            try:
-                characteristic.remove_value_changed(token)
-            except Exception:
-                pass
-        if service is not None:
-            service.close()
-        if requester is not None:
-            requester.close()
+        await disable_notify_best_effort(characteristic)
+        close_ble_objects(
+            characteristic=characteristic,
+            token=token,
+            service=service,
+            requester=requester,
+        )
 
     if completed_sessions == 0:
         raise RuntimeError(
@@ -570,13 +1072,17 @@ async def run_ble_capture(args, ser: Serial, serial_monitor: SerialLogMonitor):
 
 
 def main():
+    configure_utf8_stdio()
     args = parse_args()
     with serial.Serial(args.port, 115200, timeout=0.05) as ser:
         ser.setDTR(False)
         ser.setRTS(False)
+        if args.reset_before_capture:
+            reset_target_before_capture(ser)
         ser.reset_input_buffer()
         serial_monitor = SerialLogMonitor(ser)
-        asyncio.run(serial_monitor.wait_for_markers(READY_MARKERS, timeout_seconds=args.boot_timeout_seconds))
+        if args.reset_before_capture:
+            asyncio.run(serial_monitor.wait_for_markers(READY_MARKERS, timeout_seconds=args.boot_timeout_seconds))
         ser.reset_input_buffer()
         asyncio.run(run_ble_capture(args, ser, serial_monitor))
 

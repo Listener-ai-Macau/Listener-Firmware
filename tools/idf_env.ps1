@@ -4,6 +4,17 @@ param(
 
 $ErrorActionPreference = "Stop"
 
+$env:PYTHONUTF8 = "1"
+$env:PYTHONIOENCODING = "utf-8"
+
+try {
+    $utf8_no_bom = [System.Text.UTF8Encoding]::new($false)
+    [Console]::InputEncoding = $utf8_no_bom
+    [Console]::OutputEncoding = $utf8_no_bom
+    $OutputEncoding = $utf8_no_bom
+} catch {
+}
+
 $project_root = Split-Path -Parent $PSScriptRoot
 $idf_path = $env:ESP_IDF_PATH
 

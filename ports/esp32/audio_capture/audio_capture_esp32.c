@@ -47,8 +47,8 @@
 #define AUDIO_CAPTURE_EXPORT_LINE_BUFFER_BYTES 1024
 #define AUDIO_CAPTURE_EXPORT_RAW_CHUNK_BYTES 160
 #define AUDIO_CAPTURE_EXPORT_USB_TIMEOUT_MS 2000
-#define AUDIO_CAPTURE_STREAM_CHUNK_FRAMES 10
-#define AUDIO_CAPTURE_STREAM_CHUNK_BYTES (AUDIO_CAPTURE_STREAM_CHUNK_FRAMES * AUDIO_CAPTURE_FRAME_BYTES)
+#define AUDIO_CAPTURE_STREAM_BATCH_FRAMES 4
+#define AUDIO_CAPTURE_STREAM_BATCH_BYTES (AUDIO_CAPTURE_STREAM_BATCH_FRAMES * AUDIO_CAPTURE_FRAME_BYTES)
 
 static const char *TAG = "audio_capture";
 
@@ -71,11 +71,11 @@ typedef struct {
     size_t pcm_bytes_total;
     size_t pcm_bytes_written;
     uint32_t session_id;
-    uint16_t stream_chunk_index;
-    uint16_t stream_chunk_frame_count;
+    uint16_t stream_next_packet_sequence;
+    uint16_t stream_batch_frame_count;
     uint8_t *pcm_buffer;
-    uint8_t stream_chunk_buffer[AUDIO_CAPTURE_STREAM_CHUNK_BYTES];
-    uint8_t stream_emit_buffer[AUDIO_CAPTURE_STREAM_CHUNK_BYTES];
+    uint8_t stream_batch_buffer[AUDIO_CAPTURE_STREAM_BATCH_BYTES];
+    uint8_t stream_emit_buffer[AUDIO_CAPTURE_STREAM_BATCH_BYTES];
 } audio_capture_export_state_t;
 
 static bool s_started;
@@ -252,10 +252,10 @@ esp_err_t audio_capture_session_begin(void)
     xSemaphoreGive(s_state_mutex);
     ESP_LOGI(
         TAG,
-        "record session begin requested: session_id=%" PRIu32 " chunk_ms=%u chunk_bytes=%u safety_max_s=%u",
+        "record session begin requested: session_id=%" PRIu32 " buffer_ms=%u buffer_bytes=%u safety_max_s=%u",
         s_export_state.session_id,
-        AUDIO_CAPTURE_STREAM_CHUNK_FRAMES * AUDIO_CAPTURE_FRAME_MS,
-        (unsigned)AUDIO_CAPTURE_STREAM_CHUNK_BYTES,
+        AUDIO_CAPTURE_STREAM_BATCH_FRAMES * AUDIO_CAPTURE_FRAME_MS,
+        (unsigned)AUDIO_CAPTURE_STREAM_BATCH_BYTES,
         AUDIO_CAPTURE_SESSION_SAFETY_MAX_SECONDS);
     return ESP_OK;
 }
@@ -332,14 +332,15 @@ static void audio_capture_task(void *arg)
             bool should_cancel = false;
             bool idle_for_logging = false;
             bool should_session_start = false;
-            bool should_session_chunk = false;
+            bool should_session_audio = false;
             bool should_session_stop = false;
             bool should_session_cancel = false;
             uint32_t session_id = 0;
-            uint16_t chunk_index = 0;
-            uint16_t chunk_pcm_bytes = 0;
-            uint16_t chunk_count_at_end = 0;
-            const uint8_t *chunk_copy = NULL;
+            uint16_t packet_sequence_start = 0;
+            uint16_t batch_pcm_bytes = 0;
+            uint16_t expected_packet_count_at_end = 0;
+            uint16_t packet_count = 0;
+            const uint8_t *audio_batch_copy = NULL;
 
             if (xSemaphoreTake(s_state_mutex, portMAX_DELAY) == pdTRUE) {
                 if (s_export_state.requested && !s_export_state.active) {
@@ -347,8 +348,8 @@ static void audio_capture_task(void *arg)
                     s_export_state.active = true;
                     s_export_state.captured_frames = 0;
                     s_export_state.pcm_bytes_written = 0;
-                    s_export_state.stream_chunk_index = 0;
-                    s_export_state.stream_chunk_frame_count = 0;
+                    s_export_state.stream_next_packet_sequence = 0;
+                    s_export_state.stream_batch_frame_count = 0;
                     s_export_state.ble_session_started = false;
                 }
 
@@ -364,21 +365,23 @@ static void audio_capture_task(void *arg)
                             s_export_state.ble_session_started = true;
                         }
 
-                        size_t chunk_offset =
-                            (size_t)s_export_state.stream_chunk_frame_count * AUDIO_CAPTURE_FRAME_BYTES;
-                        memcpy(s_export_state.stream_chunk_buffer + chunk_offset, frame_buffer, AUDIO_CAPTURE_FRAME_BYTES);
-                        s_export_state.stream_chunk_frame_count++;
+                        size_t batch_offset =
+                            (size_t)s_export_state.stream_batch_frame_count * AUDIO_CAPTURE_FRAME_BYTES;
+                        memcpy(s_export_state.stream_batch_buffer + batch_offset, frame_buffer, AUDIO_CAPTURE_FRAME_BYTES);
+                        s_export_state.stream_batch_frame_count++;
                         s_export_state.pcm_bytes_written += AUDIO_CAPTURE_FRAME_BYTES;
 
-                        if (s_export_state.stream_chunk_frame_count >= AUDIO_CAPTURE_STREAM_CHUNK_FRAMES) {
-                            should_session_chunk = true;
+                        if (s_export_state.stream_batch_frame_count >= AUDIO_CAPTURE_STREAM_BATCH_FRAMES) {
+                            should_session_audio = true;
                             session_id = s_export_state.session_id;
-                            chunk_index = s_export_state.stream_chunk_index;
-                            chunk_pcm_bytes = AUDIO_CAPTURE_STREAM_CHUNK_BYTES;
-                            memcpy(s_export_state.stream_emit_buffer, s_export_state.stream_chunk_buffer, chunk_pcm_bytes);
-                            chunk_copy = s_export_state.stream_emit_buffer;
-                            s_export_state.stream_chunk_index++;
-                            s_export_state.stream_chunk_frame_count = 0;
+                            packet_sequence_start = s_export_state.stream_next_packet_sequence;
+                            batch_pcm_bytes = AUDIO_CAPTURE_STREAM_BATCH_BYTES;
+                            memcpy(s_export_state.stream_emit_buffer, s_export_state.stream_batch_buffer, batch_pcm_bytes);
+                            audio_batch_copy = s_export_state.stream_emit_buffer;
+                            packet_count = ble_audio_stream_count_audio_packets(batch_pcm_bytes);
+                            s_export_state.stream_next_packet_sequence =
+                                (uint16_t)(s_export_state.stream_next_packet_sequence + packet_count);
+                            s_export_state.stream_batch_frame_count = 0;
                         }
                     }
 
@@ -400,20 +403,22 @@ static void audio_capture_task(void *arg)
                         s_export_state.duration_seconds =
                             (s_export_state.captured_frames * AUDIO_CAPTURE_FRAME_MS) / 1000U;
 
-                        if (s_export_state.stream_chunk_frame_count > 0) {
-                            should_session_chunk = true;
+                        if (s_export_state.stream_batch_frame_count > 0) {
+                            should_session_audio = true;
                             session_id = s_export_state.session_id;
-                            chunk_index = s_export_state.stream_chunk_index;
-                            chunk_pcm_bytes =
-                                s_export_state.stream_chunk_frame_count * AUDIO_CAPTURE_FRAME_BYTES;
-                            memcpy(s_export_state.stream_emit_buffer, s_export_state.stream_chunk_buffer, chunk_pcm_bytes);
-                            chunk_copy = s_export_state.stream_emit_buffer;
-                            s_export_state.stream_chunk_index++;
-                            s_export_state.stream_chunk_frame_count = 0;
+                            packet_sequence_start = s_export_state.stream_next_packet_sequence;
+                            batch_pcm_bytes =
+                                s_export_state.stream_batch_frame_count * AUDIO_CAPTURE_FRAME_BYTES;
+                            memcpy(s_export_state.stream_emit_buffer, s_export_state.stream_batch_buffer, batch_pcm_bytes);
+                            audio_batch_copy = s_export_state.stream_emit_buffer;
+                            packet_count = ble_audio_stream_count_audio_packets(batch_pcm_bytes);
+                            s_export_state.stream_next_packet_sequence =
+                                (uint16_t)(s_export_state.stream_next_packet_sequence + packet_count);
+                            s_export_state.stream_batch_frame_count = 0;
                         }
                         should_session_stop = true;
                         session_id = s_export_state.session_id;
-                        chunk_count_at_end = s_export_state.stream_chunk_index;
+                        expected_packet_count_at_end = s_export_state.stream_next_packet_sequence;
                         should_emit = true;
                     }
                 }
@@ -423,7 +428,7 @@ static void audio_capture_task(void *arg)
                     if (s_export_state.mode == AUDIO_CAPTURE_EXPORT_MODE_SESSION) {
                         should_session_cancel = s_export_state.ble_session_started;
                         session_id = s_export_state.session_id;
-                        chunk_count_at_end = s_export_state.stream_chunk_index;
+                        expected_packet_count_at_end = s_export_state.stream_next_packet_sequence;
                     }
                 }
 
@@ -433,9 +438,14 @@ static void audio_capture_task(void *arg)
 
             if (should_cancel) {
                 if (should_session_cancel) {
-                    esp_err_t cancel_ret = ble_audio_stream_send_session_cancel(session_id, chunk_count_at_end);
+                    esp_err_t cancel_ret = ble_audio_stream_send_session_cancel(session_id, expected_packet_count_at_end);
                     if (cancel_ret != ESP_OK) {
-                        ESP_LOGW(TAG, "stream session cancel failed: session_id=%" PRIu32 " ret=%s", session_id, esp_err_to_name(cancel_ret));
+                        ESP_LOGW(
+                            TAG,
+                            "stream session cancel failed: session_id=%" PRIu32 " expected_packet_count=%u ret=%s",
+                            session_id,
+                            expected_packet_count_at_end,
+                            esp_err_to_name(cancel_ret));
                     }
                 }
                 if (xSemaphoreTake(s_state_mutex, portMAX_DELAY) == pdTRUE) {
@@ -443,63 +453,6 @@ static void audio_capture_task(void *arg)
                     xSemaphoreGive(s_state_mutex);
                 }
                 ESP_LOGI(TAG, "record session canceled");
-            } else if (should_emit) {
-                if (should_session_start) {
-                    esp_err_t start_ret = ble_audio_stream_send_session_start(session_id);
-                    if (start_ret != ESP_OK) {
-                        ESP_LOGW(TAG, "stream session start failed: session_id=%" PRIu32 " ret=%s", session_id, esp_err_to_name(start_ret));
-                    } else {
-                        ESP_LOGI(TAG, "stream session start queued: session_id=%" PRIu32, session_id);
-                    }
-                }
-
-                if (should_session_chunk) {
-                    esp_err_t chunk_ret =
-                        ble_audio_stream_send_session_chunk(session_id, chunk_index, chunk_copy, chunk_pcm_bytes);
-                    if (chunk_ret != ESP_OK) {
-                        ESP_LOGW(
-                            TAG,
-                            "stream session chunk failed: session_id=%" PRIu32 " chunk_index=%u pcm_bytes=%u ret=%s",
-                            session_id,
-                            chunk_index,
-                            chunk_pcm_bytes,
-                            esp_err_to_name(chunk_ret));
-                    } else {
-                        ESP_LOGI(
-                            TAG,
-                            "stream session chunk queued: session_id=%" PRIu32 " chunk_index=%u pcm_bytes=%u",
-                            session_id,
-                            chunk_index,
-                            chunk_pcm_bytes);
-                    }
-                }
-
-                if (should_session_stop) {
-                    esp_err_t stop_ret = ble_audio_stream_send_session_stop(session_id, chunk_count_at_end);
-                    if (stop_ret != ESP_OK) {
-                        ESP_LOGW(
-                            TAG,
-                            "stream session stop failed: session_id=%" PRIu32 " chunk_count=%u ret=%s",
-                            session_id,
-                            chunk_count_at_end,
-                            esp_err_to_name(stop_ret));
-                    } else {
-                        ESP_LOGI(
-                            TAG,
-                            "stream session stop queued: session_id=%" PRIu32 " chunk_count=%u duration_s=%" PRIu32,
-                            session_id,
-                            chunk_count_at_end,
-                            s_export_state.duration_seconds);
-                    }
-                }
-
-                if (s_export_state.mode == AUDIO_CAPTURE_EXPORT_MODE_FIXED) {
-                    audio_capture_emit_export_buffer();
-                }
-                if (xSemaphoreTake(s_state_mutex, portMAX_DELAY) == pdTRUE) {
-                    audio_capture_export_cleanup();
-                    xSemaphoreGive(s_state_mutex);
-                }
             } else {
                 if (should_session_start) {
                     esp_err_t start_ret = ble_audio_stream_send_session_start(session_id);
@@ -510,24 +463,55 @@ static void audio_capture_task(void *arg)
                     }
                 }
 
-                if (should_session_chunk) {
-                    esp_err_t chunk_ret =
-                        ble_audio_stream_send_session_chunk(session_id, chunk_index, chunk_copy, chunk_pcm_bytes);
-                    if (chunk_ret != ESP_OK) {
+                if (should_session_audio) {
+                    esp_err_t audio_ret =
+                        ble_audio_stream_send_session_audio(session_id, packet_sequence_start, audio_batch_copy, batch_pcm_bytes);
+                    if (audio_ret != ESP_OK) {
                         ESP_LOGW(
                             TAG,
-                            "stream session chunk failed: session_id=%" PRIu32 " chunk_index=%u pcm_bytes=%u ret=%s",
+                            "stream audio packet batch failed: session_id=%" PRIu32 " seq_start=%u packet_count=%u pcm_bytes=%u ret=%s",
                             session_id,
-                            chunk_index,
-                            chunk_pcm_bytes,
-                            esp_err_to_name(chunk_ret));
+                            packet_sequence_start,
+                            packet_count,
+                            batch_pcm_bytes,
+                            esp_err_to_name(audio_ret));
                     } else {
                         ESP_LOGI(
                             TAG,
-                            "stream session chunk queued: session_id=%" PRIu32 " chunk_index=%u pcm_bytes=%u",
+                            "stream audio packet batch queued: session_id=%" PRIu32 " seq_start=%u packet_count=%u pcm_bytes=%u",
                             session_id,
-                            chunk_index,
-                            chunk_pcm_bytes);
+                            packet_sequence_start,
+                            packet_count,
+                            batch_pcm_bytes);
+                    }
+                }
+
+                if (should_session_stop) {
+                    esp_err_t stop_ret = ble_audio_stream_send_session_stop(session_id, expected_packet_count_at_end);
+                    if (stop_ret != ESP_OK) {
+                        ESP_LOGW(
+                            TAG,
+                            "stream session stop failed: session_id=%" PRIu32 " expected_packet_count=%u ret=%s",
+                            session_id,
+                            expected_packet_count_at_end,
+                            esp_err_to_name(stop_ret));
+                    } else {
+                        ESP_LOGI(
+                            TAG,
+                            "stream session stop queued: session_id=%" PRIu32 " expected_packet_count=%u duration_s=%" PRIu32,
+                            session_id,
+                            expected_packet_count_at_end,
+                            s_export_state.duration_seconds);
+                    }
+                }
+
+                if (should_emit) {
+                    if (s_export_state.mode == AUDIO_CAPTURE_EXPORT_MODE_FIXED) {
+                        audio_capture_emit_export_buffer();
+                    }
+                    if (xSemaphoreTake(s_state_mutex, portMAX_DELAY) == pdTRUE) {
+                        audio_capture_export_cleanup();
+                        xSemaphoreGive(s_state_mutex);
                     }
                 }
             }

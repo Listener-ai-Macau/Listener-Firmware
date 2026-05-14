@@ -22,7 +22,9 @@
 #define VOICE_KEY_INPUT_FALLBACK_SCL_IO (48)
 #define VOICE_KEY_INPUT_INT_IO         (46)
 #define VOICE_KEY_INPUT_DIRECT_GPIO    (GPIO_NUM_0)
-#define VOICE_KEY_INPUT_KEY1_MASK      (1U << 4)
+#define VOICE_KEY_INPUT_KEY1_MASK_IO0_4 (1U << 4)
+#define VOICE_KEY_INPUT_KEY1_MASK_IO0_5 (1U << 5)
+#define VOICE_KEY_INPUT_EXPANDER_KEY_MASKS (VOICE_KEY_INPUT_KEY1_MASK_IO0_4 | VOICE_KEY_INPUT_KEY1_MASK_IO0_5)
 #define VOICE_KEY_INPUT_POLL_MS        (20)
 #define VOICE_KEY_INPUT_I2C_TIMEOUT_MS (100)
 #define VOICE_KEY_INPUT_ADDR           ESP_IO_EXPANDER_I2C_TCA9555_ADDRESS_000
@@ -46,6 +48,10 @@ static bool s_prev_pressed;
 static bool s_prev_raw_high;
 static bool s_idle_level_high;
 static bool s_idle_level_valid;
+static bool s_alt_prev_pressed;
+static bool s_alt_prev_raw_high;
+static bool s_alt_idle_level_high;
+static bool s_alt_idle_level_valid;
 static bool s_prev_input_valid;
 static uint32_t s_prev_input_levels;
 static bool s_direct_prev_pressed;
@@ -174,9 +180,9 @@ static esp_err_t voice_key_input_expander_init(void)
         "create xl9555 failed");
 
     ESP_RETURN_ON_ERROR(
-        esp_io_expander_set_dir(s_io_expander, VOICE_KEY_INPUT_KEY1_MASK, IO_EXPANDER_INPUT),
+        esp_io_expander_set_dir(s_io_expander, VOICE_KEY_INPUT_EXPANDER_KEY_MASKS, IO_EXPANDER_INPUT),
         TAG,
-        "set key1 input failed");
+        "set expander key inputs failed");
 
     gpio_config_t int_cfg = {
         .pin_bit_mask = 1ULL << VOICE_KEY_INPUT_INT_IO,
@@ -225,26 +231,47 @@ static void voice_key_input_poll_task(void *parameter)
                 s_prev_input_levels = pin_levels;
             }
 
-            bool raw_high = (pin_levels & VOICE_KEY_INPUT_KEY1_MASK) != 0;
+            bool raw_high = (pin_levels & VOICE_KEY_INPUT_KEY1_MASK_IO0_4) != 0;
             if (!s_idle_level_valid) {
                 s_idle_level_high = raw_high;
                 s_prev_raw_high = raw_high;
                 s_idle_level_valid = true;
                 ESP_LOGI(
                     TAG,
-                    "key1 idle level detected: raw_high=%d pressed_when=%s",
+                    "voice key candidate idle level detected: source=xl9555.io0_4 raw_high=%d pressed_when=%s",
                     raw_high ? 1 : 0,
                     raw_high ? "low" : "high");
             } else if (raw_high != s_prev_raw_high) {
                 s_prev_raw_high = raw_high;
-                ESP_LOGI(TAG, "key1 level changed: raw_high=%d", raw_high ? 1 : 0);
+                ESP_LOGI(TAG, "voice key candidate level changed: source=xl9555.io0_4 raw_high=%d", raw_high ? 1 : 0);
             }
 
             bool pressed = raw_high != s_idle_level_high;
             if (pressed && !s_prev_pressed) {
-                voice_key_input_record_toggle_event("xl9555.key1");
+                voice_key_input_record_toggle_event("xl9555.io0_4");
             }
             s_prev_pressed = pressed;
+
+            bool alt_raw_high = (pin_levels & VOICE_KEY_INPUT_KEY1_MASK_IO0_5) != 0;
+            if (!s_alt_idle_level_valid) {
+                s_alt_idle_level_high = alt_raw_high;
+                s_alt_prev_raw_high = alt_raw_high;
+                s_alt_idle_level_valid = true;
+                ESP_LOGI(
+                    TAG,
+                    "voice key candidate idle level detected: source=xl9555.io0_5 raw_high=%d pressed_when=%s",
+                    alt_raw_high ? 1 : 0,
+                    alt_raw_high ? "low" : "high");
+            } else if (alt_raw_high != s_alt_prev_raw_high) {
+                s_alt_prev_raw_high = alt_raw_high;
+                ESP_LOGI(TAG, "voice key candidate level changed: source=xl9555.io0_5 raw_high=%d", alt_raw_high ? 1 : 0);
+            }
+
+            bool alt_pressed = alt_raw_high != s_alt_idle_level_high;
+            if (alt_pressed && !s_alt_prev_pressed) {
+                voice_key_input_record_toggle_event("xl9555.io0_5");
+            }
+            s_alt_prev_pressed = alt_pressed;
         } else {
             ESP_LOGW(TAG, "key1 read failed: %s", esp_err_to_name(ret));
         }
@@ -301,7 +328,7 @@ esp_err_t voice_key_input_start(void)
     s_started = true;
     ESP_LOGI(
         TAG,
-        "voice key ready: key1=xl9555.io0_4 + direct.gpio0 bus=%s int_gpio=%d",
+        "voice key ready: expander_candidates=xl9555.io0_4/xl9555.io0_5 + direct.gpio0 bus=%s int_gpio=%d",
         s_selected_bus_label != NULL ? s_selected_bus_label : "unknown",
         VOICE_KEY_INPUT_INT_IO);
     return ESP_OK;
