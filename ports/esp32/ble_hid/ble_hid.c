@@ -34,8 +34,6 @@ void ble_store_config_init(void);
 static const char *TAG = "ble_hid";
 
 #define BLE_HID_PLACEHOLDER_BATTERY_LEVEL 100
-#define BLE_HID_AUTO_TEXT_DELAY_MS 1000
-static const char *s_auto_test_text = "zheshiyigezhongwenshuruceshi ";
 
 typedef struct
 {
@@ -66,64 +64,6 @@ static esp_hid_device_config_t s_ble_hid_config = {
 };
 
 static bool s_usb_serial_ready = false;
-static bool s_auto_test_pending = false;
-
-static void ble_hid_send_text(const char *text)
-{
-    if (text == NULL || s_ble_hid_ctx.hid_device == NULL) {
-        return;
-    }
-
-    for (size_t index = 0; text[index] != '\0'; ++index) {
-        esp_err_t ret = hid_keyboard_send_ascii(text[index], s_ble_hid_ctx.hid_device);
-        if (ret != ESP_OK) {
-            ESP_LOGW(
-                TAG,
-                "AUTO TEXT dispatch failed at index=%u char=0x%02X: %s",
-                (unsigned)index,
-                (unsigned char)text[index],
-                esp_err_to_name(ret));
-            return;
-        }
-    }
-
-    ESP_LOGI(TAG, "AUTO TEXT dispatch completed: %s", text);
-}
-
-static void ble_hid_auto_test_task(void *parameter)
-{
-    (void)parameter;
-
-    vTaskDelay(pdMS_TO_TICKS(BLE_HID_AUTO_TEXT_DELAY_MS));
-    ble_hid_send_text(s_auto_test_text);
-    s_auto_test_pending = false;
-    vTaskDelete(NULL);
-}
-
-static void ble_hid_schedule_auto_test_text(void)
-{
-    if (s_auto_test_pending) {
-        ESP_LOGI(TAG, "AUTO TEXT already pending");
-        return;
-    }
-
-    s_auto_test_pending = true;
-    BaseType_t task_created = xTaskCreate(
-        ble_hid_auto_test_task,
-        "ble_hid_auto_text_task",
-        3 * 1024,
-        NULL,
-        configMAX_PRIORITIES - 4,
-        NULL);
-
-    if (task_created != pdPASS) {
-        s_auto_test_pending = false;
-        ESP_LOGW(TAG, "AUTO TEXT task create failed");
-    } else {
-        ESP_LOGI(TAG, "AUTO TEXT scheduled in %d ms: %s", BLE_HID_AUTO_TEXT_DELAY_MS, s_auto_test_text);
-    }
-}
-
 static esp_err_t ble_hid_usb_serial_init(void)
 {
     if (s_usb_serial_ready) {
@@ -207,9 +147,6 @@ static void ble_hid_task_stop(void)
 void ble_hid_task_start_up(void)
 {
     ble_hid_task_start();
-#if CONFIG_BT_NIMBLE_ENABLED
-    ble_hid_schedule_auto_test_text();
-#endif
 }
 
 void ble_hid_task_shut_down(void)
@@ -281,7 +218,6 @@ static void ble_hid_event_callback(void *handler_args, esp_event_base_t base, in
             esp_hid_disconnect_reason_str(
                 esp_hidd_dev_transport_get(param->disconnect.dev),
                 param->disconnect.reason));
-        s_auto_test_pending = false;
 #if !CONFIG_BT_NIMBLE_ENABLED
         ble_hid_gap_start_advertising();
 #endif

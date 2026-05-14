@@ -1,4 +1,4 @@
-# BLE HID 键盘输入验证链路
+# BLE HID 键盘逐键输出能力
 
 ## 使用状态
 
@@ -11,6 +11,10 @@
 
 - 这条链路当前已经稳定可用，适合作为设备 bring-up、主机联调、输入回路验证和 fallback 输入方式
 - 这条链路会继续保留在仓库中，作为可复用能力存在
+- 这条链路的本质是：
+  - 设备模仿“人按键盘”的行为
+  - 通过标准 `BLE HID` 向主机逐键发送按键码
+  - 主机侧把它当成普通蓝牙键盘输入
 - 但对“类似闪电说”的最终目标来说，它不是中文输出的主方案
 - 对当前新的 `A` 方案来说，它也不是默认启用的最终产品交互方式
 - 后续如果进入真正的中文语音输入主线，`Windows` 主机伴随程序的 Unicode 注入能力会比这条 `BLE HID` ASCII / 键码链路更重要
@@ -19,41 +23,34 @@
   - 空闲一段时间后再次 `reset` 仍能恢复
   - 如果 `Windows` 进入假连接态，仓库内存在一键恢复脚本
 
-## 保留的中文输入实验能力
+## 当前范围
 
-当前仓库仍保留一条“只用于实验、不作为主线产品功能”的中文输入测试能力。
+当前这份 feature 只保留标准 `BLE HID` 键盘逐键输出能力本身。
 
-能力定义：
+当前不再默认保留以下行为：
 
-- 固件在 BLE HID 连接恢复后，约 `1s` 自动发送固定测试键序列
-- 固定测试键序列位于：
-  [ports/esp32/ble_hid/ble_hid.c](../../ports/esp32/ble_hid/ble_hid.c)
-- 当前固定测试键序列为：
-  `zheshiyigezhongwenshuruceshi `
+- 连接后自动发送固定中文测试串
+- 依赖主机输入法状态做“拼音上屏中文”的自动实验
 
-如果 `Windows` 当前输入法满足以下条件：
+原因：
 
-- 已切到中文输入法
-- 当前候选行为与微软拼音常见默认行为一致
-
-则当前输入框里会看到：
-
-- `这是一个中文输入测试`
-
-这条能力当前保留的意义是：
-
-- 作为“纯 BLE HID + 主机当前 IME”路线的历史验证结果
-- 作为中文输入体验讨论时的现成演示能力
-
-这条能力当前不作为主线的原因是：
-
-- 依赖主机当前输入法状态
-- 不保证跨输入法、跨平台一致
-- 不适合作为“后端返回什么就稳定输出什么”的最终方案
-
-另外，这轮为该实验单独增加的稳定性 / 压测专用脚本已经删除，稳定结果保留在本文档里，不再继续维护那两份测试脚本。
+- 当前产品主线已经切到语音采集与流式上传
+- 当前不再需要自动蓝牙键盘键入作为默认产品行为
+- `BLE HID` 现在主要作为：
+  - 标准键盘输出能力
+  - 快捷键 / fallback 输出能力
+  - 联调验证能力
 
 ## 目标
+
+保留并验证一条“设备模仿人打键盘逐键输出”的标准蓝牙键盘能力。
+
+这条能力的作用主要是：
+
+- 输出 ASCII / 键盘键位
+- 模拟快捷键或按键组合
+- 做蓝牙连接、输入链路和主机焦点的联调验证
+- 作为语音主链路之外的 fallback 输入方式
 
 在当前 `ESP32-S3` 板子上，建立一条不依赖人工 `idf.py monitor` 输入的 BLE HID 键盘验证链路，让 AI 可以直接完成：
 
@@ -154,7 +151,7 @@ powershell -ExecutionPolicy Bypass -File .\tools\capture_serial.ps1 -Port COM3 -
 ### 2. 固件侧快速验证
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File .\tools\verify_ble_hid.ps1 -Port COM3 -Text "zheshiyigezhongwenshuruceshi " -BootCaptureSeconds 10 -PostSendCaptureSeconds 5
+powershell -ExecutionPolicy Bypass -File .\tools\verify_ble_hid.ps1 -Port COM3 -Text "abc123" -BootCaptureSeconds 10 -PostSendCaptureSeconds 5
 ```
 
 预期结果：
@@ -166,22 +163,22 @@ powershell -ExecutionPolicy Bypass -File .\tools\verify_ble_hid.ps1 -Port COM3 -
 - 日志出现 `hid_keyboard: send_ascii done`
 - HID 发送日志显示 `connected=yes`
 
-`2026-05-13` 实测结果：
+`2026-05-13` 历史实测结果：
 
-- 固定测试文本被固件消费
+- 固定测试文本曾被固件消费
 - 全部字符均出现 `hid_keyboard: send_ascii done`
 - `notify_tx event` 返回 `status=0`
 
 ### 3. 主机侧端到端验证
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File .\tools\verify_ble_hid_end_to_end.ps1 -Port COM3 -Text "zheshiyigezhongwenshuruceshi " -BootCaptureSeconds 10 -PostSendCaptureSeconds 5 -HostCaptureTimeoutSeconds 15
+powershell -ExecutionPolicy Bypass -File .\tools\verify_ble_hid_end_to_end.ps1 -Port COM3 -Text "abc123" -BootCaptureSeconds 10 -PostSendCaptureSeconds 5 -HostCaptureTimeoutSeconds 15
 ```
 
 预期结果：
 
 - 返回 `verify_ble_hid_end_to_end: host received expected text and firmware logs show HID send completion`
-- 主机侧实际捕获结果为固定测试文本
+- 主机侧实际捕获结果为传入测试文本
 
 `2026-05-13` 实测结果：
 

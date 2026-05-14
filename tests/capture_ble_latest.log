@@ -1,0 +1,400 @@
+I (57394) NimBLE: GATT procedure initiated: notify;
+I (57394) NimBLE: att_handle=3
+I (57394) NimBLE: GATT procedure initiated: notify;
+I (57404) NimBLE: att_handle=3
+I (57404) NimBLE: GATT procedure initiated: notify;
+I (57404) NimBLE: att_handle=3
+I (57414) NimBLE: GATT procedure initiated: notify;
+I (57414) NimBLE: att_handle=3
+I (57424) NimBLE: GATT procedure initiated: notify;
+I (57424) NimBLE: att_handle=3
+I (57434) NimBLE: GATT procedure initiated: notify;
+I (57434) NimBLE: att_handle=3
+I (57434) NimBLE: GATT procedure initiated: notify;
+I (57434) NimBLE: att_handle=3
+I (57444) NimBLE: GATT procedure initiated: notify;
+I (57444) NimBLE: att_handle=3
+I (57454) NimBLE: GATT procedure initiated: notify;
+I (57454) NimBLE: att_handle=3
+I (57464) NimBLE: GATT procedure initiated: notify;
+I (57464) NimBLE: att_handle=3
+I (57554) NimBLE: GATT procedure initiated: notify;
+I (57554) NimBLE: att_handle=3
+I (57564) NimBLE: GATT procedure initiated: notify;
+I (57564) NimBLE: att_handle=3
+I (57564) NimBLE: GATT procedure initiated: notify;
+I (57564) NimBLE: att_handle=3
+I (57564) audio_capture: stream session chunk queued: session_id=1 chunk_index=47 pcm_bytes=6400
+I (57574) NimBLE: GATT procedure initiated: notify;
+I (57584) NimBLE: att_handle=3
+I (57584) NimBLE: GATT procedure initiated: notify;
+I (57584) NimBLE: att_handle=3
+I (57594) NimBLE: GATT procedure initiated: notify;
+I (57594) NimBLE: att_handle=3
+I (57604) NimBLE: GATT procedure initiated: notify;
+I (57604) NimBLE: att_handle=3
+I (57614) NimBLE: GATT procedure initiated: notify;
+I (57614) NimBLE: att_handle=3
+I (57614) NimBLE: GATT procedure initiated: notify;
+I (57614) NimBLE: att_handle=3
+I (57624) NimBLE: GATT procedure initiated: notify;
+I (57624) NimBLE: att_handle=3
+I (57634) NimBLE: GATT procedure initiated: notify;
+I (57634) NimBLE: att_handle=3
+I (57644) NimBLE: GATT procedure initiated: notify;
+I (57644) NimBLE: att_handle=3
+I (57644) NimBLE: GATT procedure initiated: notify;
+I (57644) NimBLE: att_handle=3
+I (57654) NimBLE: GATT procedure initiated: notify;
+I (57654) NimBLE: att_handle=3
+I (57764) NimBLE: GATT procedure initiated: notify;
+I (57764) NimBLE: att_handle=3
+I (57764) NimBLE: GATT procedure initiated: notify;
+I (57774) NimBLE: att_handle=3
+I (57774) NimBLE: GATT procedure initiated: notify;
+I (57774) NimBLE: att_handle=3
+I (57774) audio_capture: stream session chunk queued: session_id=1 chunk_index=48 pcm_bytes=6400
+I (57784) NimBLE: GATT procedure initiated: notify;
+I (57794) NimBLE: att_handle=3
+I (57794) NimBLE: GATT procedure initiated: notify;
+I (57794) NimBLE: att_handle=3
+I (57804) NimBLE: GATT procedure initiated: notify;
+I (57804) NimBLE: att_handle=3
+I (57814) NimBLE: GATT procedure initiated: notify;
+I (57814) NimBLE: att_handle=3
+I (57824) NimBLE: GATT procedure initiated: notify;
+I (57824) NimBLE: att_handle=3
+I (57824) NimBLE: GATT procedure initiated: notify;
+I (57824) NimBLE: att_handle=3
+I (57834) NimBLE: GATT procedure initiated: notify;
+I (57834) NimBLE: att_handle=3
+I (57844) NimBLE: GATT procedure initiated: notify;
+I (57844) NimBLE: att_handle=3
+I (57854) NimBLE: GATT procedure initiated: notify;
+I (57854) NimBLE: att_handle=3
+I (57854) NimBLE: GATT procedure initiated: notify;
+I (57854) NimBLE: att_handle=3
+I (57864) NimBLE: GATT procedure initiated: notify;
+I (57864) NimBLE: att_handle=3
+I (57964) audio_capture: stream session chunk queued: session_id=1 chunk_index=49 pcm_bytes=6400
+I (57964) NimBLE: GATT procedure initiated: notify;
+I (57964) NimBLE: att_handle=3
+I (57964) NimBLE: GATT procedure initiated: notify;
+I (57974) NimBLE: att_handle=3
+I (57974) NimBLE: GATT procedure initiated: notify;
+I (57974) NimBLE: att_handle=3
+I (57984) NimBLE: GATT procedure initiated: notify;
+I (57984) NimBLE: att_handle=3
+I (57994) NimBLE: GATT procedure initiated: notify;
+I (57994) NimBLE: att_handle=3
+I (57994) NimBLE: GATT procedure initiated: notify;
+I (58004) NimBLE: att_handle=3
+I (58004) NimBLE: GATT procedure initiated: notify;
+I (58004) NimBLE: att_handle=3
+I (58014) NimBLE: GATT procedure initiated: notify;
+I (58014) NimBLE: att_handle=3
+I (58024) NimBLE: GATT procedure initiated: notify;
+I (58024) NimBLE: att_handle=3
+I (58034) NimBLE: GATT procedure initiated: notify;
+I (58034) NimBLE: att_handle=3
+I (58034) NimBLE: GATT procedure initiated: notify;
+I (58034) NimBLE: att_handle=3
+I (58044) NimBLE: GATT procedure initiated: notify;
+I (58044) NimBLE: att_handle=3
+I (58054) NimBLE: GATT procedure initiated: notify;
+I (58054) NimBLE: att_handle=3
+I (58064) NimBLE: GATT procedure initiated: notify;
+I (58064) NimBLE: att_handle=3
+I (58154) NimBLE: GATT procedure initiated: notify;
+I (58154) NimBLE: att_handle=3
+I (58154) NimBLE: GATT procedure initiated: notify;
+I (58164) NimBLE: att_handle=3
+I (58164) NimBLE: GATT procedure initiated: notify;
+I (58164) NimBLE: att_handle=3
+I (58164) audio_capture: stream session chunk queued: session_id=1 chunk_index=50 pcm_bytes=6400
+I (58174) NimBLE: GATT procedure initiated: notify;
+I (58184) NimBLE: att_handle=3
+I (58184) NimBLE: GATT procedure initiated: notify;
+I (58184) NimBLE: att_handle=3
+I (58194) NimBLE: GATT procedure initiated: notify;
+I (58194) NimBLE: att_handle=3
+I (58204) NimBLE: GATT procedure initiated: notify;
+I (58204) NimBLE: att_handle=3
+I (58204) NimBLE: GATT procedure initiated: notify;
+I (58214) NimBLE: att_handle=3
+I (58214) NimBLE: GATT procedure initiated: notify;
+I (58214) NimBLE: att_handle=3
+I (58224) NimBLE: GATT procedure initiated: notify;
+I (58224) NimBLE: att_handle=3
+I (58234) NimBLE: GATT procedure initiated: notify;
+I (58234) NimBLE: att_handle=3
+I (58244) NimBLE: GATT procedure initiated: notify;
+I (58244) NimBLE: att_handle=3
+I (58244) NimBLE: GATT procedure initiated: notify;
+I (58244) NimBLE: att_handle=3
+I (58254) NimBLE: GATT procedure initiated: notify;
+I (58254) NimBLE: att_handle=3
+I (58364) NimBLE: GATT procedure initiated: notify;
+I (58364) NimBLE: att_handle=3
+I (58374) NimBLE: GATT procedure initiated: notify;
+I (58374) NimBLE: att_handle=3
+I (58374) NimBLE: GATT procedure initiated: notify;
+I (58374) NimBLE: att_handle=3
+I (58374) audio_capture: stream session chunk queued: session_id=1 chunk_index=51 pcm_bytes=6400
+I (58384) NimBLE: GATT procedure initiated: notify;
+I (58394) NimBLE: att_handle=3
+I (58394) NimBLE: GATT procedure initiated: notify;
+I (58394) NimBLE: att_handle=3
+I (58404) NimBLE: GATT procedure initiated: notify;
+I (58404) NimBLE: att_handle=3
+I (58414) NimBLE: GATT procedure initiated: notify;
+I (58414) NimBLE: att_handle=3
+I (58424) NimBLE: GATT procedure initiated: notify;
+I (58424) NimBLE: att_handle=3
+I (58424) NimBLE: GATT procedure initiated: notify;
+I (58424) NimBLE: att_handle=3
+I (58434) NimBLE: GATT procedure initiated: notify;
+I (58434) NimBLE: att_handle=3
+I (58444) NimBLE: GATT procedure initiated: notify;
+I (58444) NimBLE: att_handle=3
+I (58454) NimBLE: GATT procedure initiated: notify;
+I (58454) NimBLE: att_handle=3
+I (58454) NimBLE: GATT procedure initiated: notify;
+I (58454) NimBLE: att_handle=3
+I (58464) NimBLE: GATT procedure initiated: notify;
+I (58464) NimBLE: att_handle=3
+I (58564) audio_capture: stream session chunk queued: session_id=1 chunk_index=52 pcm_bytes=6400
+I (58564) NimBLE: GATT procedure initiated: notify;
+I (58564) NimBLE: att_handle=3
+I (58564) NimBLE: GATT procedure initiated: notify;
+I (58574) NimBLE: att_handle=3
+I (58574) NimBLE: GATT procedure initiated: notify;
+I (58574) NimBLE: att_handle=3
+I (58584) NimBLE: GATT procedure initiated: notify;
+I (58584) NimBLE: att_handle=3
+I (58594) NimBLE: GATT procedure initiated: notify;
+I (58594) NimBLE: att_handle=3
+I (58594) NimBLE: GATT procedure initiated: notify;
+I (58604) NimBLE: att_handle=3
+I (58604) NimBLE: GATT procedure initiated: notify;
+I (58604) NimBLE: att_handle=3
+I (58614) NimBLE: GATT procedure initiated: notify;
+I (58614) NimBLE: att_handle=3
+I (58624) NimBLE: GATT procedure initiated: notify;
+I (58624) NimBLE: att_handle=3
+I (58634) NimBLE: GATT procedure initiated: notify;
+I (58634) NimBLE: att_handle=3
+I (58634) NimBLE: GATT procedure initiated: notify;
+I (58634) NimBLE: att_handle=3
+I (58644) NimBLE: GATT procedure initiated: notify;
+I (58644) NimBLE: att_handle=3
+I (58654) NimBLE: GATT procedure initiated: notify;
+I (58654) NimBLE: att_handle=3
+I (58664) NimBLE: GATT procedure initiated: notify;
+I (58664) NimBLE: att_handle=3
+I (58754) NimBLE: GATT procedure initiated: notify;
+I (58754) NimBLE: att_handle=3
+I (58754) NimBLE: GATT procedure initiated: notify;
+I (58764) NimBLE: att_handle=3
+I (58764) NimBLE: GATT procedure initiated: notify;
+I (58764) NimBLE: att_handle=3
+I (58764) audio_capture: stream session chunk queued: session_id=1 chunk_index=53 pcm_bytes=6400
+I (58774) NimBLE: GATT procedure initiated: notify;
+I (58784) NimBLE: att_handle=3
+I (58784) NimBLE: GATT procedure initiated: notify;
+I (58784) NimBLE: att_handle=3
+I (58794) NimBLE: GATT procedure initiated: notify;
+I (58794) NimBLE: att_handle=3
+I (58804) NimBLE: GATT procedure initiated: notify;
+I (58804) NimBLE: att_handle=3
+I (58814) NimBLE: GATT procedure initiated: notify;
+I (58814) NimBLE: att_handle=3
+I (58814) NimBLE: GATT procedure initiated: notify;
+I (58814) NimBLE: att_handle=3
+I (58824) NimBLE: GATT procedure initiated: notify;
+I (58824) NimBLE: att_handle=3
+I (58834) NimBLE: GATT procedure initiated: notify;
+I (58834) NimBLE: att_handle=3
+I (58844) NimBLE: GATT procedure initiated: notify;
+I (58844) NimBLE: att_handle=3
+I (58844) NimBLE: GATT procedure initiated: notify;
+I (58844) NimBLE: att_handle=3
+I (58854) NimBLE: GATT procedure initiated: notify;
+I (58854) NimBLE: att_handle=3
+I (58964) NimBLE: GATT procedure initiated: notify;
+I (58964) NimBLE: att_handle=3
+I (58964) NimBLE: GATT procedure initiated: notify;
+I (58974) NimBLE: att_handle=3
+I (58974) NimBLE: GATT procedure initiated: notify;
+I (58974) NimBLE: att_handle=3
+I (58974) audio_capture: stream session chunk queued: session_id=1 chunk_index=54 pcm_bytes=6400
+I (58984) NimBLE: GATT procedure initiated: notify;
+I (58994) NimBLE: att_handle=3
+I (58994) NimBLE: GATT procedure initiated: notify;
+I (58994) NimBLE: att_handle=3
+I (59004) NimBLE: GATT procedure initiated: notify;
+I (59004) NimBLE: att_handle=3
+I (59014) NimBLE: GATT procedure initiated: notify;
+I (59014) NimBLE: att_handle=3
+I (59014) NimBLE: GATT procedure initiated: notify;
+I (59024) NimBLE: att_handle=3
+I (59024) NimBLE: GATT procedure initiated: notify;
+I (59024) NimBLE: att_handle=3
+I (59034) NimBLE: GATT procedure initiated: notify;
+I (59034) NimBLE: att_handle=3
+I (59044) NimBLE: GATT procedure initiated: notify;
+I (59044) NimBLE: att_handle=3
+I (59054) NimBLE: GATT procedure initiated: notify;
+I (59054) NimBLE: att_handle=3
+I (59054) NimBLE: GATT procedure initiated: notify;
+I (59054) NimBLE: att_handle=3
+I (59064) NimBLE: GATT procedure initiated: notify;
+I (59064) NimBLE: att_handle=3
+I (59164) NimBLE: GATT procedure initiated: notify;
+I (59164) audio_capture: stream session chunk queued: session_id=1 chunk_index=55 pcm_bytes=6400
+I (59164) NimBLE: att_handle=3
+I (59164) NimBLE: GATT procedure initiated: notify;
+I (59174) NimBLE: att_handle=3
+I (59174) NimBLE: GATT procedure initiated: notify;
+I (59174) NimBLE: att_handle=3
+I (59184) NimBLE: GATT procedure initiated: notify;
+I (59184) NimBLE: att_handle=3
+I (59194) NimBLE: GATT procedure initiated: notify;
+I (59194) NimBLE: att_handle=3
+I (59194) NimBLE: GATT procedure initiated: notify;
+I (59204) NimBLE: att_handle=3
+I (59204) NimBLE: GATT procedure initiated: notify;
+I (59204) NimBLE: att_handle=3
+I (59214) NimBLE: GATT procedure initiated: notify;
+I (59214) NimBLE: att_handle=3
+I (59224) NimBLE: GATT procedure initiated: notify;
+I (59224) NimBLE: att_handle=3
+I (59234) NimBLE: GATT procedure initiated: notify;
+I (59234) NimBLE: att_handle=3
+I (59234) NimBLE: GATT procedure initiated: notify;
+I (59234) NimBLE: att_handle=3
+I (59244) NimBLE: GATT procedure initiated: notify;
+I (59244) NimBLE: att_handle=3
+I (59254) NimBLE: GATT procedure initiated: notify;
+I (59254) NimBLE: att_handle=3
+I (59264) NimBLE: GATT procedure initiated: notify;
+I (59264) NimBLE: att_handle=3
+I (59354) NimBLE: GATT procedure initiated: notify;
+I (59354) NimBLE: att_handle=3
+I (59364) NimBLE: GATT procedure initiated: notify;
+I (59364) NimBLE: att_handle=3
+I (59364) NimBLE: GATT procedure initiated: notify;
+I (59364) NimBLE: att_handle=3
+I (59364) audio_capture: stream session chunk queued: session_id=1 chunk_index=56 pcm_bytes=6400
+I (59374) NimBLE: GATT procedure initiated: notify;
+I (59384) NimBLE: att_handle=3
+I (59384) NimBLE: GATT procedure initiated: notify;
+I (59384) NimBLE: att_handle=3
+I (59394) NimBLE: GATT procedure initiated: notify;
+I (59394) NimBLE: att_handle=3
+I (59404) NimBLE: GATT procedure initiated: notify;
+I (59404) NimBLE: att_handle=3
+I (59414) NimBLE: GATT procedure initiated: notify;
+I (59414) NimBLE: att_handle=3
+I (59414) NimBLE: GATT procedure initiated: notify;
+I (59414) NimBLE: att_handle=3
+I (59424) NimBLE: GATT procedure initiated: notify;
+I (59424) NimBLE: att_handle=3
+I (59434) NimBLE: GATT procedure initiated: notify;
+I (59434) NimBLE: att_handle=3
+I (59444) NimBLE: GATT procedure initiated: notify;
+I (59444) NimBLE: att_handle=3
+I (59444) NimBLE: GATT procedure initiated: notify;
+I (59444) NimBLE: att_handle=3
+I (59454) NimBLE: GATT procedure initiated: notify;
+I (59454) NimBLE: att_handle=3
+I (59564) NimBLE: GATT procedure initiated: notify;
+I (59564) NimBLE: att_handle=3
+I (59564) NimBLE: GATT procedure initiated: notify;
+I (59574) NimBLE: att_handle=3
+I (59574) NimBLE: GATT procedure initiated: notify;
+I (59574) NimBLE: att_handle=3
+I (59574) audio_capture: stream session chunk queued: session_id=1 chunk_index=57 pcm_bytes=6400
+I (59584) NimBLE: GATT procedure initiated: notify;
+I (59594) NimBLE: att_handle=3
+I (59594) NimBLE: GATT procedure initiated: notify;
+I (59594) NimBLE: att_handle=3
+I (59604) NimBLE: GATT procedure initiated: notify;
+I (59604) NimBLE: att_handle=3
+I (59614) NimBLE: GATT procedure initiated: notify;
+I (59614) NimBLE: att_handle=3
+I (59624) NimBLE: GATT procedure initiated: notify;
+I (59624) NimBLE: att_handle=3
+I (59624) NimBLE: GATT procedure initiated: notify;
+I (59624) NimBLE: att_handle=3
+I (59634) NimBLE: GATT procedure initiated: notify;
+I (59634) NimBLE: att_handle=3
+I (59644) NimBLE: GATT procedure initiated: notify;
+I (59644) NimBLE: att_handle=3
+I (59654) NimBLE: GATT procedure initiated: notify;
+I (59654) NimBLE: att_handle=3
+I (59654) NimBLE: GATT procedure initiated: notify;
+I (59654) NimBLE: att_handle=3
+I (59664) NimBLE: GATT procedure initiated: notify;
+I (59664) NimBLE: att_handle=3
+I (59764) audio_capture: stream session chunk queued: session_id=1 chunk_index=58 pcm_bytes=6400
+I (59764) NimBLE: GATT procedure initiated: notify;
+I (59764) NimBLE: att_handle=3
+I (59764) NimBLE: GATT procedure initiated: notify;
+I (59774) NimBLE: att_handle=3
+I (59774) NimBLE: GATT procedure initiated: notify;
+I (59774) NimBLE: att_handle=3
+I (59784) NimBLE: GATT procedure initiated: notify;
+I (59784) NimBLE: att_handle=3
+I (59794) NimBLE: GATT procedure initiated: notify;
+I (59794) NimBLE: att_handle=3
+I (59794) NimBLE: GATT procedure initiated: notify;
+I (59804) NimBLE: att_handle=3
+I (59804) NimBLE: GATT procedure initiated: notify;
+I (59804) NimBLE: att_handle=3
+I (59814) NimBLE: GATT procedure initiated: notify;
+I (59814) NimBLE: att_handle=3
+I (59824) NimBLE: GATT procedure initiated: notify;
+I (59824) NimBLE: att_handle=3
+I (59834) NimBLE: GATT procedure initiated: notify;
+I (59834) NimBLE: att_handle=3
+I (59834) NimBLE: GATT procedure initiated: notify;
+I (59834) NimBLE: att_handle=3
+I (59844) NimBLE: GATT procedure initiated: notify;
+I (59844) NimBLE: att_handle=3
+I (59854) NimBLE: GATT procedure initiated: notify;
+I (59854) NimBLE: att_handle=3
+I (59864) voice_key_input: xl9555 input changed: old=0x3fff new=0x3fef changed=0x0010
+I (59864) NimBLE: GATT procedure initiated: notify;
+I (59864) voice_key_input: key1 level changed: raw_high=0
+I (59864) NimBLE: att_handle=3
+I (59874) voice_key_input: xl9555.key1 press edge detected, toggle_event_count=1
+I (59894) audio_capture: record session stop requested
+I (59894) voice_rec_ctrl: recording stop source=key1
+I (59894) NimBLE: GATT procedure initiated: notify;
+I (59894) NimBLE: att_handle=3
+I (59904) audio_capture: stream session chunk queued: session_id=1 chunk_index=59 pcm_bytes=4480
+I (59904) NimBLE: GATT procedure initiated: notify;
+I (59914) audio_capture: stream session stop queued: session_id=1 chunk_count=60 duration_s=11
+I (59914) NimBLE: att_handle=3
+I (59934) NimBLE: GATT procedure initiated: notify;
+I (59934) NimBLE: att_handle=3
+I (59934) NimBLE: GATT procedure initiated: notify;
+I (59934) NimBLE: att_handle=3
+I (59944) NimBLE: GATT procedure initiated: notify;
+I (59944) NimBLE: att_handle=3
+I (59954) NimBLE: GATT procedure initiated: notify;
+I (59954) NimBLE: att_handle=3
+I (59964) NimBLE: GATT procedure initiated: notify;
+I (59964) NimBLE: att_handle=3
+I (59964) NimBLE: GATT procedure initiated: notify;
+I (59964) NimBLE: att_handle=3
+I (59974) NimBLE: GATT procedure initiated: notify;
+I (59974) NimBLE: att_handle=3
+I (59984) NimBLE: GATT procedure initiated: notify;
+I (59984) NimBLE: att_handle=3
+I (59984) ble_audio_stream: audio session stop: session=1 chunk_count=60
+I (59994) NimBLE: GATT procedure initiated: notify;
+I (59994) NimBLE: att_handle=3
+I (60104) voice_key_input: xl9555 input changed: old=0x3fef new=0x3fff changed=0x0010
+I (60104) voice_key_input: key1 level changed: raw_high=1

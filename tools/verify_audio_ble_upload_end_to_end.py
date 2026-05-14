@@ -18,14 +18,14 @@ from capture_audio_ble_wav import (
 PCM_SAMPLE_RATE = 16000
 PCM_WIDTH_BYTES = 2
 PCM_CHANNELS = 1
-ARTIFACT_DIR = pathlib.Path("tests/artifacts/audio")
+ARTIFACT_DIR = pathlib.Path("tests")
 
 
 def parse_args():
     parser = argparse.ArgumentParser()
     parser.add_argument("--port", required=True)
     parser.add_argument("--device-name", default="Listener Keyboard")
-    parser.add_argument("--capture-seconds", type=int, default=4)
+    parser.add_argument("--capture-seconds", type=int, default=12)
     return parser.parse_args()
 
 
@@ -146,9 +146,12 @@ async def main_async(args):
             device_name = args.device_name
             capture_seconds = args.capture_seconds
             output_dir = str(ARTIFACT_DIR)
+            serial_log_path = str(ARTIFACT_DIR / "capture_ble_latest.log")
             timeout_seconds = 60
             boot_timeout_seconds = 15
             notify_ready_timeout_seconds = 20
+            trigger_mode = "serial-toggle"
+            max_sessions = 1
 
         with serial.Serial(args.port, 115200, timeout=0.05) as ser:
             ser.setDTR(False)
@@ -161,7 +164,9 @@ async def main_async(args):
     finally:
         winsound.PlaySound(None, winsound.SND_PURGE)
 
-    latest = sorted(ARTIFACT_DIR.glob("capture_ble_*_16k_mono.wav"), key=lambda p: p.stat().st_mtime, reverse=True)[0]
+    latest = ARTIFACT_DIR / "capture_ble_latest_16k_mono.wav"
+    if not latest.exists():
+        raise RuntimeError(f"verify_audio_ble_upload_end_to_end: expected output wav missing: {latest}")
     source_frames = read_wav_frames(source_wav)
     recorded_frames = read_wav_frames(latest)
     source_env = compute_envelope(source_frames)

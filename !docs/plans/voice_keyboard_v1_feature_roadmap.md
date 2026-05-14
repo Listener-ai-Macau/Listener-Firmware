@@ -8,12 +8,12 @@
 
 当前仓库已经完成的稳定能力主要是：
 
-- BLE HID 键盘脚本输入验证链路
+- BLE HID 键盘逐键输出验证链路
 - 设备端音频采集、录音控制与 BLE 音频上传链路
 
 对应稳定总结已在：
 
-- [ble_hid_keyboard_input.md](../features/ble_hid_keyboard_input.md)
+- [ble_hid_keyboard_output.md](../features/ble_hid_keyboard_output.md)
 - [audio_capture_ble_upload.md](../features/audio_capture_ble_upload.md)
 
 但按当前讨论更新后的产品方向，蓝牙语音键盘 `v1` 还缺少多项关键能力：
@@ -24,6 +24,7 @@
 - 日志与自检
 - 蓝牙连接稳定性回归与测试脚本
 - `Windows` 主机端常驻语音输入 / agent app
+- 设备端流式分片上传与后端流式识别接口
 
 ## 范围
 
@@ -53,6 +54,9 @@
   [audio_capture_ble_upload.md](../features/audio_capture_ble_upload.md)
 - 当前蓝牙连接稳定性与测试脚本边界，以：
   [ble_keyboard_productization_plan.md](./ble_keyboard_productization_plan.md)
+  为准
+- 当前设备端音频主线应以：
+  [audio_streaming_session_plan.md](./audio_streaming_session_plan.md)
   为准
 - 当前主机端结构参考优先顺序为：
   - `Type4Me` 作为主参考
@@ -134,6 +138,7 @@
 工作内容：
 
 - 在当前设备侧音频链路已经稳定后，再单独建立主机端语音输入 / agent app 方案
+- 主机端音频接收方式默认应建立在“单 session + 流式 chunk”之上
 - 继续沿用：
   - `Type4Me` 主参考
   - `Handy` 次参考
@@ -166,7 +171,7 @@
   - 无线音频上传前的前置门槛
 
 - 其中最适合当前立即推进的是：
-  `ble_keyboard_productization_plan`
+  `audio_streaming_session_plan`
 
 - 如果后续问题再次回到“Type4Me / Handy 选哪个”，
   当前默认结论是：

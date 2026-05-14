@@ -31,7 +31,7 @@
 ## 当前推荐入口
 
 - `BLE HID` 键盘 fallback / 验证链路：
-  [features/ble_hid_keyboard_input.md](./features/ble_hid_keyboard_input.md)
+  [features/ble_hid_keyboard_output.md](./features/ble_hid_keyboard_output.md)
 - 设备端音频采集、录音控制与 `BLE` 上传链路：
   [features/audio_capture_ble_upload.md](./features/audio_capture_ble_upload.md)
 - 当前仍在推进的 active plans：

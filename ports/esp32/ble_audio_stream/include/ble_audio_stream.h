@@ -36,7 +36,16 @@ void ble_audio_stream_on_gap_subscribe(
     uint16_t attr_handle,
     uint8_t cur_notify,
     uint8_t cur_indicate);
+void ble_audio_stream_on_gap_mtu(uint16_t conn_handle, uint16_t mtu);
 esp_err_t ble_audio_stream_register_gatt(void);
+esp_err_t ble_audio_stream_send_session_start(uint32_t session_id);
+esp_err_t ble_audio_stream_send_session_chunk(
+    uint32_t session_id,
+    uint16_t chunk_index,
+    const uint8_t *pcm_buffer,
+    uint16_t pcm_bytes);
+esp_err_t ble_audio_stream_send_session_stop(uint32_t session_id, uint16_t chunk_count);
+esp_err_t ble_audio_stream_send_session_cancel(uint32_t session_id, uint16_t chunk_count);
 esp_err_t ble_audio_stream_send_export(const ble_audio_stream_export_t *export_info);
 esp_err_t ble_audio_stream_send_export_blocking(const ble_audio_stream_export_t *export_info);
 bool ble_audio_stream_is_ready(void);

@@ -42,11 +42,13 @@
 #define AUDIO_CAPTURE_LOG_INTERVAL_FRAMES (50)
 #define AUDIO_CAPTURE_EXPORT_MAX_SECONDS (5)
 #define AUDIO_CAPTURE_EXPORT_MIN_SECONDS (1)
-#define AUDIO_CAPTURE_SESSION_MAX_SECONDS AUDIO_CAPTURE_EXPORT_MAX_SECONDS
+#define AUDIO_CAPTURE_SESSION_SAFETY_MAX_SECONDS (600)
 #define AUDIO_CAPTURE_EXPORT_BASE64_PREFIX "PCM64:"
 #define AUDIO_CAPTURE_EXPORT_LINE_BUFFER_BYTES 1024
 #define AUDIO_CAPTURE_EXPORT_RAW_CHUNK_BYTES 160
 #define AUDIO_CAPTURE_EXPORT_USB_TIMEOUT_MS 2000
+#define AUDIO_CAPTURE_STREAM_CHUNK_FRAMES 10
+#define AUDIO_CAPTURE_STREAM_CHUNK_BYTES (AUDIO_CAPTURE_STREAM_CHUNK_FRAMES * AUDIO_CAPTURE_FRAME_BYTES)
 
 static const char *TAG = "audio_capture";
 
@@ -60,6 +62,7 @@ typedef struct {
     audio_capture_export_mode_t mode;
     bool requested;
     bool active;
+    bool ble_session_started;
     bool stop_requested;
     bool cancel_requested;
     uint32_t duration_seconds;
@@ -67,7 +70,12 @@ typedef struct {
     uint32_t captured_frames;
     size_t pcm_bytes_total;
     size_t pcm_bytes_written;
+    uint32_t session_id;
+    uint16_t stream_chunk_index;
+    uint16_t stream_chunk_frame_count;
     uint8_t *pcm_buffer;
+    uint8_t stream_chunk_buffer[AUDIO_CAPTURE_STREAM_CHUNK_BYTES];
+    uint8_t stream_emit_buffer[AUDIO_CAPTURE_STREAM_CHUNK_BYTES];
 } audio_capture_export_state_t;
 
 static bool s_started;
@@ -182,37 +190,6 @@ void audio_capture_set_export_callback(audio_capture_export_callback_t callback)
     s_export_callback = callback;
 }
 
-static void audio_capture_export_to_ble(
-    uint32_t session_id,
-    uint32_t duration_seconds,
-    uint32_t frame_count,
-    const uint8_t *pcm_buffer,
-    size_t pcm_bytes,
-    uint16_t frame_bytes)
-{
-    ble_audio_stream_export_t export_info = {
-        .session_id = session_id,
-        .duration_seconds = duration_seconds,
-        .frame_count = frame_count,
-        .pcm_buffer = pcm_buffer,
-        .pcm_bytes = pcm_bytes,
-        .frame_bytes = frame_bytes,
-        .chunk_pcm_bytes = 6400,
-    };
-
-    esp_err_t ret = ble_audio_stream_send_export_blocking(&export_info);
-    if (ret != ESP_OK) {
-        ESP_LOGW(TAG, "ble audio upload queue rejected: %s", esp_err_to_name(ret));
-    } else {
-        ESP_LOGI(
-            TAG,
-            "ble audio upload queued: session_id=%" PRIu32 " pcm_bytes=%u duration_s=%" PRIu32,
-            session_id,
-            (unsigned)pcm_bytes,
-            duration_seconds);
-    }
-}
-
 bool audio_capture_request_fixed_export_seconds(uint32_t duration_seconds)
 {
     if (duration_seconds < AUDIO_CAPTURE_EXPORT_MIN_SECONDS || duration_seconds > AUDIO_CAPTURE_EXPORT_MAX_SECONDS) {
@@ -264,31 +241,22 @@ esp_err_t audio_capture_session_begin(void)
         return ESP_ERR_INVALID_STATE;
     }
 
-    const uint32_t max_frames = (AUDIO_CAPTURE_SESSION_MAX_SECONDS * 1000U) / AUDIO_CAPTURE_FRAME_MS;
-    const size_t pcm_bytes_total = (size_t)max_frames * AUDIO_CAPTURE_FRAME_BYTES;
-
     memset(&s_export_state, 0, sizeof(s_export_state));
     s_export_state.mode = AUDIO_CAPTURE_EXPORT_MODE_SESSION;
-    s_export_state.duration_seconds = AUDIO_CAPTURE_SESSION_MAX_SECONDS;
-    s_export_state.total_frames = max_frames;
-    s_export_state.pcm_bytes_total = pcm_bytes_total;
-    s_export_state.pcm_buffer = audio_capture_alloc_export_buffer(pcm_bytes_total);
-    if (s_export_state.pcm_buffer == NULL) {
-        xSemaphoreGive(s_state_mutex);
-        ESP_LOGW(TAG, "record session begin failed: no memory for %u bytes", (unsigned)pcm_bytes_total);
-        return ESP_ERR_NO_MEM;
-    }
+    s_export_state.duration_seconds = 0;
+    s_export_state.total_frames = (AUDIO_CAPTURE_SESSION_SAFETY_MAX_SECONDS * 1000U) / AUDIO_CAPTURE_FRAME_MS;
+    s_export_state.pcm_bytes_total = 0;
+    s_export_state.session_id = ++s_session_id_counter;
 
     s_export_state.requested = true;
-    s_session_id_counter++;
     xSemaphoreGive(s_state_mutex);
     ESP_LOGI(
         TAG,
-        "record session begin requested: session_id=%" PRIu32 " max_duration_s=%" PRIu32 " max_frames=%" PRIu32 " pcm_bytes=%u",
-        s_session_id_counter,
-        AUDIO_CAPTURE_SESSION_MAX_SECONDS,
-        max_frames,
-        (unsigned)pcm_bytes_total);
+        "record session begin requested: session_id=%" PRIu32 " chunk_ms=%u chunk_bytes=%u safety_max_s=%u",
+        s_export_state.session_id,
+        AUDIO_CAPTURE_STREAM_CHUNK_FRAMES * AUDIO_CAPTURE_FRAME_MS,
+        (unsigned)AUDIO_CAPTURE_STREAM_CHUNK_BYTES,
+        AUDIO_CAPTURE_SESSION_SAFETY_MAX_SECONDS);
     return ESP_OK;
 }
 
@@ -363,13 +331,15 @@ static void audio_capture_task(void *arg)
             bool should_emit = false;
             bool should_cancel = false;
             bool idle_for_logging = false;
-            bool should_invoke_callback = false;
-            uint32_t callback_duration_seconds = 0;
-            uint32_t callback_frame_count = 0;
-            size_t callback_pcm_bytes = 0;
-            const uint8_t *callback_pcm_buffer = NULL;
-            audio_capture_export_callback_t callback = NULL;
-            uint32_t callback_session_id = 0;
+            bool should_session_start = false;
+            bool should_session_chunk = false;
+            bool should_session_stop = false;
+            bool should_session_cancel = false;
+            uint32_t session_id = 0;
+            uint16_t chunk_index = 0;
+            uint16_t chunk_pcm_bytes = 0;
+            uint16_t chunk_count_at_end = 0;
+            const uint8_t *chunk_copy = NULL;
 
             if (xSemaphoreTake(s_state_mutex, portMAX_DELAY) == pdTRUE) {
                 if (s_export_state.requested && !s_export_state.active) {
@@ -377,13 +347,42 @@ static void audio_capture_task(void *arg)
                     s_export_state.active = true;
                     s_export_state.captured_frames = 0;
                     s_export_state.pcm_bytes_written = 0;
+                    s_export_state.stream_chunk_index = 0;
+                    s_export_state.stream_chunk_frame_count = 0;
+                    s_export_state.ble_session_started = false;
                 }
 
                 if (s_export_state.active && s_export_state.captured_frames < s_export_state.total_frames) {
-                    size_t frame_offset = (size_t)s_export_state.captured_frames * AUDIO_CAPTURE_FRAME_BYTES;
-                    memcpy(s_export_state.pcm_buffer + frame_offset, frame_buffer, AUDIO_CAPTURE_FRAME_BYTES);
+                    if (s_export_state.mode == AUDIO_CAPTURE_EXPORT_MODE_FIXED) {
+                        size_t frame_offset = (size_t)s_export_state.captured_frames * AUDIO_CAPTURE_FRAME_BYTES;
+                        memcpy(s_export_state.pcm_buffer + frame_offset, frame_buffer, AUDIO_CAPTURE_FRAME_BYTES);
+                        s_export_state.pcm_bytes_written += AUDIO_CAPTURE_FRAME_BYTES;
+                    } else if (s_export_state.mode == AUDIO_CAPTURE_EXPORT_MODE_SESSION) {
+                        if (!s_export_state.ble_session_started) {
+                            should_session_start = true;
+                            session_id = s_export_state.session_id;
+                            s_export_state.ble_session_started = true;
+                        }
+
+                        size_t chunk_offset =
+                            (size_t)s_export_state.stream_chunk_frame_count * AUDIO_CAPTURE_FRAME_BYTES;
+                        memcpy(s_export_state.stream_chunk_buffer + chunk_offset, frame_buffer, AUDIO_CAPTURE_FRAME_BYTES);
+                        s_export_state.stream_chunk_frame_count++;
+                        s_export_state.pcm_bytes_written += AUDIO_CAPTURE_FRAME_BYTES;
+
+                        if (s_export_state.stream_chunk_frame_count >= AUDIO_CAPTURE_STREAM_CHUNK_FRAMES) {
+                            should_session_chunk = true;
+                            session_id = s_export_state.session_id;
+                            chunk_index = s_export_state.stream_chunk_index;
+                            chunk_pcm_bytes = AUDIO_CAPTURE_STREAM_CHUNK_BYTES;
+                            memcpy(s_export_state.stream_emit_buffer, s_export_state.stream_chunk_buffer, chunk_pcm_bytes);
+                            chunk_copy = s_export_state.stream_emit_buffer;
+                            s_export_state.stream_chunk_index++;
+                            s_export_state.stream_chunk_frame_count = 0;
+                        }
+                    }
+
                     s_export_state.captured_frames++;
-                    s_export_state.pcm_bytes_written += AUDIO_CAPTURE_FRAME_BYTES;
 
                     if (s_export_state.mode == AUDIO_CAPTURE_EXPORT_MODE_FIXED &&
                         s_export_state.captured_frames >= s_export_state.total_frames) {
@@ -395,33 +394,37 @@ static void audio_capture_task(void *arg)
                         if (s_export_state.captured_frames >= s_export_state.total_frames) {
                             ESP_LOGW(
                                 TAG,
-                                "record session hit max duration: max_duration_s=%" PRIu32,
-                                AUDIO_CAPTURE_SESSION_MAX_SECONDS);
+                                "record session hit safety max duration: max_duration_s=%" PRIu32,
+                                AUDIO_CAPTURE_SESSION_SAFETY_MAX_SECONDS);
                         }
                         s_export_state.duration_seconds =
                             (s_export_state.captured_frames * AUDIO_CAPTURE_FRAME_MS) / 1000U;
-                        should_emit = true;
-                        if (s_export_callback != NULL) {
-                            should_invoke_callback = true;
-                            callback_duration_seconds = s_export_state.duration_seconds;
-                            callback_frame_count = s_export_state.captured_frames;
-                            callback_pcm_bytes = s_export_state.pcm_bytes_written;
-                            callback_pcm_buffer = s_export_state.pcm_buffer;
-                            callback = s_export_callback;
-                            callback_session_id = s_session_id_counter;
-                            ESP_LOGI(
-                                TAG,
-                                "record session callback ready: session_id=%" PRIu32 " frames=%" PRIu32 " pcm_bytes=%u duration_s=%" PRIu32,
-                                callback_session_id,
-                                callback_frame_count,
-                                (unsigned)callback_pcm_bytes,
-                                callback_duration_seconds);
+
+                        if (s_export_state.stream_chunk_frame_count > 0) {
+                            should_session_chunk = true;
+                            session_id = s_export_state.session_id;
+                            chunk_index = s_export_state.stream_chunk_index;
+                            chunk_pcm_bytes =
+                                s_export_state.stream_chunk_frame_count * AUDIO_CAPTURE_FRAME_BYTES;
+                            memcpy(s_export_state.stream_emit_buffer, s_export_state.stream_chunk_buffer, chunk_pcm_bytes);
+                            chunk_copy = s_export_state.stream_emit_buffer;
+                            s_export_state.stream_chunk_index++;
+                            s_export_state.stream_chunk_frame_count = 0;
                         }
+                        should_session_stop = true;
+                        session_id = s_export_state.session_id;
+                        chunk_count_at_end = s_export_state.stream_chunk_index;
+                        should_emit = true;
                     }
                 }
 
                 if (s_export_state.active && s_export_state.cancel_requested) {
                     should_cancel = true;
+                    if (s_export_state.mode == AUDIO_CAPTURE_EXPORT_MODE_SESSION) {
+                        should_session_cancel = s_export_state.ble_session_started;
+                        session_id = s_export_state.session_id;
+                        chunk_count_at_end = s_export_state.stream_chunk_index;
+                    }
                 }
 
                 idle_for_logging = !s_export_state.active && !s_export_state.requested;
@@ -429,27 +432,106 @@ static void audio_capture_task(void *arg)
             }
 
             if (should_cancel) {
+                if (should_session_cancel) {
+                    esp_err_t cancel_ret = ble_audio_stream_send_session_cancel(session_id, chunk_count_at_end);
+                    if (cancel_ret != ESP_OK) {
+                        ESP_LOGW(TAG, "stream session cancel failed: session_id=%" PRIu32 " ret=%s", session_id, esp_err_to_name(cancel_ret));
+                    }
+                }
                 if (xSemaphoreTake(s_state_mutex, portMAX_DELAY) == pdTRUE) {
                     audio_capture_export_cleanup();
                     xSemaphoreGive(s_state_mutex);
                 }
                 ESP_LOGI(TAG, "record session canceled");
             } else if (should_emit) {
-                if (should_invoke_callback && callback != NULL) {
-                    callback(
-                        callback_session_id,
-                        callback_duration_seconds,
-                        callback_frame_count,
-                        callback_pcm_buffer,
-                        callback_pcm_bytes,
-                        AUDIO_CAPTURE_FRAME_BYTES);
+                if (should_session_start) {
+                    esp_err_t start_ret = ble_audio_stream_send_session_start(session_id);
+                    if (start_ret != ESP_OK) {
+                        ESP_LOGW(TAG, "stream session start failed: session_id=%" PRIu32 " ret=%s", session_id, esp_err_to_name(start_ret));
+                    } else {
+                        ESP_LOGI(TAG, "stream session start queued: session_id=%" PRIu32, session_id);
+                    }
                 }
-                audio_capture_emit_export_buffer();
+
+                if (should_session_chunk) {
+                    esp_err_t chunk_ret =
+                        ble_audio_stream_send_session_chunk(session_id, chunk_index, chunk_copy, chunk_pcm_bytes);
+                    if (chunk_ret != ESP_OK) {
+                        ESP_LOGW(
+                            TAG,
+                            "stream session chunk failed: session_id=%" PRIu32 " chunk_index=%u pcm_bytes=%u ret=%s",
+                            session_id,
+                            chunk_index,
+                            chunk_pcm_bytes,
+                            esp_err_to_name(chunk_ret));
+                    } else {
+                        ESP_LOGI(
+                            TAG,
+                            "stream session chunk queued: session_id=%" PRIu32 " chunk_index=%u pcm_bytes=%u",
+                            session_id,
+                            chunk_index,
+                            chunk_pcm_bytes);
+                    }
+                }
+
+                if (should_session_stop) {
+                    esp_err_t stop_ret = ble_audio_stream_send_session_stop(session_id, chunk_count_at_end);
+                    if (stop_ret != ESP_OK) {
+                        ESP_LOGW(
+                            TAG,
+                            "stream session stop failed: session_id=%" PRIu32 " chunk_count=%u ret=%s",
+                            session_id,
+                            chunk_count_at_end,
+                            esp_err_to_name(stop_ret));
+                    } else {
+                        ESP_LOGI(
+                            TAG,
+                            "stream session stop queued: session_id=%" PRIu32 " chunk_count=%u duration_s=%" PRIu32,
+                            session_id,
+                            chunk_count_at_end,
+                            s_export_state.duration_seconds);
+                    }
+                }
+
+                if (s_export_state.mode == AUDIO_CAPTURE_EXPORT_MODE_FIXED) {
+                    audio_capture_emit_export_buffer();
+                }
                 if (xSemaphoreTake(s_state_mutex, portMAX_DELAY) == pdTRUE) {
                     audio_capture_export_cleanup();
                     xSemaphoreGive(s_state_mutex);
                 }
-            } else if (idle_for_logging && (s_frame_captured_count % AUDIO_CAPTURE_LOG_INTERVAL_FRAMES) == 0) {
+            } else {
+                if (should_session_start) {
+                    esp_err_t start_ret = ble_audio_stream_send_session_start(session_id);
+                    if (start_ret != ESP_OK) {
+                        ESP_LOGW(TAG, "stream session start failed: session_id=%" PRIu32 " ret=%s", session_id, esp_err_to_name(start_ret));
+                    } else {
+                        ESP_LOGI(TAG, "stream session start queued: session_id=%" PRIu32, session_id);
+                    }
+                }
+
+                if (should_session_chunk) {
+                    esp_err_t chunk_ret =
+                        ble_audio_stream_send_session_chunk(session_id, chunk_index, chunk_copy, chunk_pcm_bytes);
+                    if (chunk_ret != ESP_OK) {
+                        ESP_LOGW(
+                            TAG,
+                            "stream session chunk failed: session_id=%" PRIu32 " chunk_index=%u pcm_bytes=%u ret=%s",
+                            session_id,
+                            chunk_index,
+                            chunk_pcm_bytes,
+                            esp_err_to_name(chunk_ret));
+                    } else {
+                        ESP_LOGI(
+                            TAG,
+                            "stream session chunk queued: session_id=%" PRIu32 " chunk_index=%u pcm_bytes=%u",
+                            session_id,
+                            chunk_index,
+                            chunk_pcm_bytes);
+                    }
+                }
+            }
+            if (idle_for_logging && (s_frame_captured_count % AUDIO_CAPTURE_LOG_INTERVAL_FRAMES) == 0) {
                 ESP_LOGI(
                     TAG,
                     "frame captured count=%" PRIu32 " bytes=%" PRIu32,
@@ -621,7 +703,6 @@ esp_err_t audio_capture_start(void)
         return ESP_ERR_NO_MEM;
     }
 
-    audio_capture_set_export_callback(audio_capture_export_to_ble);
     s_started = true;
     BaseType_t task_ok = xTaskCreate(
         audio_capture_task,

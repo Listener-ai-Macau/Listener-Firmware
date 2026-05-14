@@ -21,10 +21,12 @@
 #define VOICE_KEY_INPUT_FALLBACK_SDA_IO (47)
 #define VOICE_KEY_INPUT_FALLBACK_SCL_IO (48)
 #define VOICE_KEY_INPUT_INT_IO         (46)
+#define VOICE_KEY_INPUT_DIRECT_GPIO    (GPIO_NUM_0)
 #define VOICE_KEY_INPUT_KEY1_MASK      (1U << 4)
 #define VOICE_KEY_INPUT_POLL_MS        (20)
 #define VOICE_KEY_INPUT_I2C_TIMEOUT_MS (100)
 #define VOICE_KEY_INPUT_ADDR           ESP_IO_EXPANDER_I2C_TCA9555_ADDRESS_000
+#define VOICE_KEY_INPUT_ALL_MASK       (0xFFFFU)
 
 static const char *TAG = "voice_key_input";
 
@@ -41,9 +43,24 @@ static i2c_master_bus_handle_t s_i2c_bus_handle;
 static esp_io_expander_handle_t s_io_expander;
 static TaskHandle_t s_poll_task_handle;
 static bool s_prev_pressed;
+static bool s_prev_raw_high;
+static bool s_idle_level_high;
+static bool s_idle_level_valid;
+static bool s_prev_input_valid;
+static uint32_t s_prev_input_levels;
+static bool s_direct_prev_pressed;
+static bool s_direct_prev_raw_high;
+static bool s_direct_idle_level_high;
+static bool s_direct_idle_level_valid;
 static volatile uint32_t s_toggle_event_count;
 static bool s_owns_i2c_bus;
 static const char *s_selected_bus_label;
+
+static void voice_key_input_record_toggle_event(const char *source)
+{
+    s_toggle_event_count++;
+    ESP_LOGI(TAG, "%s press edge detected, toggle_event_count=%" PRIu32, source, s_toggle_event_count);
+}
 
 static const voice_key_input_bus_candidate_t s_bus_candidates[] = {
     {
@@ -172,23 +189,92 @@ static esp_err_t voice_key_input_expander_init(void)
     return ESP_OK;
 }
 
+static esp_err_t voice_key_input_direct_gpio_init(void)
+{
+    gpio_config_t direct_cfg = {
+        .pin_bit_mask = 1ULL << VOICE_KEY_INPUT_DIRECT_GPIO,
+        .mode = GPIO_MODE_INPUT,
+        .pull_up_en = GPIO_PULLUP_ENABLE,
+        .pull_down_en = GPIO_PULLDOWN_DISABLE,
+        .intr_type = GPIO_INTR_DISABLE,
+    };
+    ESP_RETURN_ON_ERROR(gpio_config(&direct_cfg), TAG, "direct gpio config failed");
+    return ESP_OK;
+}
+
 static void voice_key_input_poll_task(void *parameter)
 {
     (void)parameter;
 
     while (1) {
         uint32_t pin_levels = 0;
-        esp_err_t ret = esp_io_expander_get_level(s_io_expander, VOICE_KEY_INPUT_KEY1_MASK, &pin_levels);
+        esp_err_t ret = esp_io_expander_get_level(s_io_expander, VOICE_KEY_INPUT_ALL_MASK, &pin_levels);
         if (ret == ESP_OK) {
-            bool pressed = (pin_levels & VOICE_KEY_INPUT_KEY1_MASK) == 0;
+            if (!s_prev_input_valid) {
+                s_prev_input_levels = pin_levels;
+                s_prev_input_valid = true;
+                ESP_LOGI(TAG, "xl9555 initial input levels=0x%04" PRIx32, pin_levels & VOICE_KEY_INPUT_ALL_MASK);
+            } else if (pin_levels != s_prev_input_levels) {
+                uint32_t changed_mask = (pin_levels ^ s_prev_input_levels) & VOICE_KEY_INPUT_ALL_MASK;
+                ESP_LOGI(
+                    TAG,
+                    "xl9555 input changed: old=0x%04" PRIx32 " new=0x%04" PRIx32 " changed=0x%04" PRIx32,
+                    s_prev_input_levels & VOICE_KEY_INPUT_ALL_MASK,
+                    pin_levels & VOICE_KEY_INPUT_ALL_MASK,
+                    changed_mask);
+                s_prev_input_levels = pin_levels;
+            }
+
+            bool raw_high = (pin_levels & VOICE_KEY_INPUT_KEY1_MASK) != 0;
+            if (!s_idle_level_valid) {
+                s_idle_level_high = raw_high;
+                s_prev_raw_high = raw_high;
+                s_idle_level_valid = true;
+                ESP_LOGI(
+                    TAG,
+                    "key1 idle level detected: raw_high=%d pressed_when=%s",
+                    raw_high ? 1 : 0,
+                    raw_high ? "low" : "high");
+            } else if (raw_high != s_prev_raw_high) {
+                s_prev_raw_high = raw_high;
+                ESP_LOGI(TAG, "key1 level changed: raw_high=%d", raw_high ? 1 : 0);
+            }
+
+            bool pressed = raw_high != s_idle_level_high;
             if (pressed && !s_prev_pressed) {
-                s_toggle_event_count++;
-                ESP_LOGI(TAG, "key1 press edge detected, toggle_event_count=%" PRIu32, s_toggle_event_count);
+                voice_key_input_record_toggle_event("xl9555.key1");
             }
             s_prev_pressed = pressed;
         } else {
             ESP_LOGW(TAG, "key1 read failed: %s", esp_err_to_name(ret));
         }
+
+        int direct_level = gpio_get_level(VOICE_KEY_INPUT_DIRECT_GPIO);
+        bool direct_raw_high = direct_level != 0;
+        if (!s_direct_idle_level_valid) {
+            s_direct_idle_level_high = direct_raw_high;
+            s_direct_prev_raw_high = direct_raw_high;
+            s_direct_idle_level_valid = true;
+            ESP_LOGI(
+                TAG,
+                "direct key idle level detected: gpio=%d raw_high=%d pressed_when=%s",
+                VOICE_KEY_INPUT_DIRECT_GPIO,
+                direct_raw_high ? 1 : 0,
+                direct_raw_high ? "low" : "high");
+        } else if (direct_raw_high != s_direct_prev_raw_high) {
+            s_direct_prev_raw_high = direct_raw_high;
+            ESP_LOGI(
+                TAG,
+                "direct key level changed: gpio=%d raw_high=%d",
+                VOICE_KEY_INPUT_DIRECT_GPIO,
+                direct_raw_high ? 1 : 0);
+        }
+
+        bool direct_pressed = direct_raw_high != s_direct_idle_level_high;
+        if (direct_pressed && !s_direct_prev_pressed) {
+            voice_key_input_record_toggle_event("direct.gpio0");
+        }
+        s_direct_prev_pressed = direct_pressed;
 
         vTaskDelay(pdMS_TO_TICKS(VOICE_KEY_INPUT_POLL_MS));
     }
@@ -201,6 +287,7 @@ esp_err_t voice_key_input_start(void)
     }
 
     ESP_RETURN_ON_ERROR(voice_key_input_expander_init(), TAG, "voice key expander init failed");
+    ESP_RETURN_ON_ERROR(voice_key_input_direct_gpio_init(), TAG, "direct voice key init failed");
 
     BaseType_t task_ok = xTaskCreate(
         voice_key_input_poll_task,
@@ -214,7 +301,7 @@ esp_err_t voice_key_input_start(void)
     s_started = true;
     ESP_LOGI(
         TAG,
-        "voice key ready: key1=xl9555.io0_4 bus=%s int_gpio=%d",
+        "voice key ready: key1=xl9555.io0_4 + direct.gpio0 bus=%s int_gpio=%d",
         s_selected_bus_label != NULL ? s_selected_bus_label : "unknown",
         VOICE_KEY_INPUT_INT_IO);
     return ESP_OK;

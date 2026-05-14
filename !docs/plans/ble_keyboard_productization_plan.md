@@ -38,7 +38,7 @@
 - 当前开发板具备电池电量检测相关硬件预留
 - 当前仍以 `ESP32-S3` 平台 bring-up 为主
 - 当前 BLE HID 稳定总结位于：
-  [ble_hid_keyboard_input.md](../features/ble_hid_keyboard_input.md)
+  [ble_hid_keyboard_output.md](../features/ble_hid_keyboard_output.md)
 
 ## 当前建议的稳定性目标
 

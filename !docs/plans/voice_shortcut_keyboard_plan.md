@@ -190,7 +190,7 @@
 
 对应稳定知识：
 
-- [ble_hid_keyboard_input.md](../features/ble_hid_keyboard_input.md)
+- [ble_hid_keyboard_output.md](../features/ble_hid_keyboard_output.md)
 - [audio_capture_ble_upload.md](../features/audio_capture_ble_upload.md)
 
 ### 需求 2：4 个可编程键位

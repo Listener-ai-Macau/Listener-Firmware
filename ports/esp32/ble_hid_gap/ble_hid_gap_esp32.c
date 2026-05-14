@@ -866,6 +866,32 @@ nimble_hid_gap_event(struct ble_gap_event *event, void *arg)
         } else {
             ESP_LOGW(TAG, "security initiate failed: rc=%d", rc);
         }
+
+        struct ble_gap_upd_params audio_params = {
+            .itvl_min = 6,
+            .itvl_max = 12,
+            .latency = 0,
+            .supervision_timeout = 400,
+            .min_ce_len = 0,
+            .max_ce_len = 0,
+        };
+        rc = ble_gap_update_params(event->connect.conn_handle, &audio_params);
+        if (rc == 0) {
+            ESP_LOGI(TAG, "audio connection parameter update requested");
+        } else {
+            ESP_LOGW(TAG, "audio connection parameter update failed: rc=%d", rc);
+        }
+
+        rc = ble_gap_set_prefered_le_phy(
+            event->connect.conn_handle,
+            BLE_GAP_LE_PHY_2M_MASK,
+            BLE_GAP_LE_PHY_2M_MASK,
+            0);
+        if (rc == 0) {
+            ESP_LOGI(TAG, "audio 2M PHY preference requested");
+        } else {
+            ESP_LOGW(TAG, "audio 2M PHY preference failed: rc=%d", rc);
+        }
         return 0;
     case BLE_GAP_EVENT_DISCONNECT:
         ESP_LOGI(TAG, "disconnect; reason=%d", event->disconnect.reason);
@@ -913,6 +939,7 @@ nimble_hid_gap_event(struct ble_gap_event *event, void *arg)
                 event->mtu.conn_handle,
                 event->mtu.channel_id,
                 event->mtu.value);
+        ble_audio_stream_on_gap_mtu(event->mtu.conn_handle, event->mtu.value);
         return 0;
 
     case BLE_GAP_EVENT_ENC_CHANGE:
@@ -940,7 +967,7 @@ nimble_hid_gap_event(struct ble_gap_event *event, void *arg)
         return 0;
 
     case BLE_GAP_EVENT_NOTIFY_TX:
-        ESP_LOGI(TAG, "notify_tx event; conn_handle=%d attr_handle=%d "
+        ESP_LOGV(TAG, "notify_tx event; conn_handle=%d attr_handle=%d "
                 "status=%d indication=%d",
                 event->notify_tx.conn_handle,
                 event->notify_tx.attr_handle,
