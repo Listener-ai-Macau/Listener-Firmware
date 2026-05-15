@@ -24,7 +24,15 @@ text = base64.b64decode("$text_base64").decode("utf-8")
 baud = $Baud
 post_write_delay_ms = $PostWriteDelayMs
 
-ser = serial.Serial(port, baud, timeout=0.2)
+ser = serial.Serial()
+ser.port = port
+ser.baudrate = baud
+ser.timeout = 0.2
+ser.dsrdtr = False
+ser.rtscts = False
+ser.dtr = False
+ser.rts = False
+ser.open()
 try:
     ser.dtr = False
     ser.rts = False

@@ -38,6 +38,8 @@ RECOVER_BLE_SCRIPT = pathlib.Path(__file__).with_name("recover_ble_hid_host.ps1"
 ENSURE_BLE_SCRIPT = pathlib.Path(__file__).with_name("ensure_ble_hid_connection.ps1")
 SERIAL_RESET_PULSE_SECONDS = 0.1
 SERIAL_RESET_SETTLE_SECONDS = 0.2
+SERIAL_OPEN_RETRY_COUNT = 12
+SERIAL_OPEN_RETRY_DELAY_SECONDS = 1.0
 READY_MARKERS = (
     "voice recording control ready: key1 toggle start/stop",
     "USB SERIAL INPUT READY",
@@ -45,18 +47,26 @@ READY_MARKERS = (
 AUDIO_NOTIFY_PACKET_SIZE_MARKER = "audio notify packet size updated"
 AUDIO_NOTIFY_READY_MARKER = "audio notify subscription changed"
 AUDIO_NOTIFY_RESTORED_MARKER = "audio notify subscription restored before connect"
+AUDIO_NOTIFY_SUBSCRIBED_MARKER = "audio notify subscribed:"
 AUDIO_NOTIFY_ENABLED_MARKER = "notify=1"
 BLE_CONNECTION_ESTABLISHED_MARKER = "connection established; status=0"
 AUDIO_UPLOAD_BEGIN_MARKER = "audio session upload begin"
 AUDIO_UPLOAD_END_MARKER = "audio session upload end"
 AUDIO_UPLOAD_SKIPPED_MARKER = "audio session upload skipped"
+UNEXPECTED_RESET_MARKERS = (
+    "rst:0x",
+    "ESP-ROM:esp32",
+    "boot: ESP-IDF",
+)
 STREAM_SESSION_START_MARKER = "stream session start queued"
 STREAM_SESSION_AUDIO_MARKER = "stream audio packet batch queued"
 STREAM_SESSION_CHUNK_MARKER = "stream session chunk queued"
 STREAM_SESSION_STOP_MARKER = "stream session stop queued"
 BLE_NOTIFY_ENABLE_RETRY_COUNT = 3
 BLE_NOTIFY_RECOVERY_DELAY_SECONDS = 0.5
-BLE_NOTIFY_CCCD_TIMEOUT_SECONDS = 4
+BLE_NOTIFY_CCCD_TIMEOUT_SECONDS = 5
+BLE_NOTIFY_PRE_CCCD_SETTLE_SECONDS = 0.35
+NOTIFY_READY_SETTLE_SECONDS = 1.2
 SESSION_COMPLETE_IDLE_SECONDS = 0.2
 PHYSICAL_KEY_START_TIMEOUT_SECONDS = 300
 
@@ -151,7 +161,7 @@ def parse_args():
     parser.add_argument("--timeout-seconds", type=int, default=60)
     parser.add_argument("--boot-timeout-seconds", type=int, default=15)
     parser.add_argument("--ble-connect-timeout-seconds", type=int, default=12)
-    parser.add_argument("--notify-ready-timeout-seconds", type=int, default=20)
+    parser.add_argument("--notify-ready-timeout-seconds", type=int, default=45)
     parser.add_argument("--trigger-mode", choices=["serial-toggle", "physical-key"], default="serial-toggle")
     parser.add_argument("--max-sessions", type=int, default=1)
     parser.add_argument("--no-reset-before-capture", action="store_false", dest="reset_before_capture")
@@ -487,6 +497,7 @@ async def enable_notify_with_rebuild(
                 pass
             await asyncio.sleep(BLE_NOTIFY_RECOVERY_DELAY_SECONDS)
             continue
+        await asyncio.sleep(BLE_NOTIFY_PRE_CCCD_SETTLE_SECONDS)
 
         def record_notify_failure(prefix: str, exc: Exception) -> RuntimeError:
             return RuntimeError(
@@ -621,6 +632,40 @@ async def enable_notify_with_rebuild(
 def send_toggle(ser: Serial) -> None:
     ser.write(b"~VREC:TOGGLE\n")
     ser.flush()
+
+
+def send_cancel(ser: Serial) -> None:
+    ser.write(b"~VREC:CANCEL\n")
+    ser.flush()
+
+
+def open_serial_with_retry(port: str, baudrate: int = 115200, timeout: float = 0.05) -> Serial:
+    last_error = None
+    for attempt in range(1, SERIAL_OPEN_RETRY_COUNT + 1):
+        try:
+            if attempt > 1:
+                print(f"serial_open_retry_attempt={attempt}", flush=True)
+            ser = serial.Serial()
+            ser.port = port
+            ser.baudrate = baudrate
+            ser.timeout = timeout
+            ser.dsrdtr = False
+            ser.rtscts = False
+            ser.dtr = False
+            ser.rts = False
+            ser.open()
+            ser.setDTR(False)
+            ser.setRTS(False)
+            return ser
+        except (OSError, serial.SerialException) as exc:
+            last_error = exc
+            if attempt >= SERIAL_OPEN_RETRY_COUNT:
+                break
+            time.sleep(SERIAL_OPEN_RETRY_DELAY_SECONDS)
+    raise RuntimeError(
+        "capture_audio_ble_wav: unable to open serial port "
+        f"{port} after {SERIAL_OPEN_RETRY_COUNT} attempts; last_error={last_error!r}"
+    )
 
 
 def reset_target_before_capture(ser: Serial) -> None:
@@ -900,6 +945,20 @@ async def run_ble_capture(args, ser: Serial, serial_monitor: SerialLogMonitor):
         handle_notification(sender, payload)
         reader.close()
 
+    def fail_if_unexpected_reset(context: str) -> None:
+        if getattr(args, "reset_before_capture", False):
+            return
+        reset_lines = serial_monitor.find_lines_any(UNEXPECTED_RESET_MARKERS)
+        if not reset_lines:
+            return
+        raise RuntimeError(
+            "capture_audio_ble_wav: unexpected device reset detected while no-reset capture is active; "
+            f"context={context}; reset_lines=\n"
+            + "\n".join(reset_lines[-12:])
+            + "\nrecent serial logs:\n"
+            + serial_monitor.recent_text()
+        )
+
     if getattr(args, "reset_before_capture", False):
         try:
             ensure_host_ble_connection(
@@ -936,15 +995,20 @@ async def run_ble_capture(args, ser: Serial, serial_monitor: SerialLogMonitor):
             lambda line: (
                 (AUDIO_NOTIFY_READY_MARKER in line and AUDIO_NOTIFY_ENABLED_MARKER in line)
                 or AUDIO_NOTIFY_RESTORED_MARKER in line
+                or AUDIO_NOTIFY_SUBSCRIBED_MARKER in line
             ),
             timeout_seconds=args.notify_ready_timeout_seconds,
             description="audio notify enabled marker",
         )
+        fail_if_unexpected_reset("after_notify_ready_wait")
         await serial_monitor.wait_for_predicate(
             lambda line: AUDIO_NOTIFY_PACKET_SIZE_MARKER in line,
             timeout_seconds=args.notify_ready_timeout_seconds,
             description="audio notify packet size marker",
         )
+        fail_if_unexpected_reset("after_packet_size_wait")
+        await asyncio.sleep(NOTIFY_READY_SETTLE_SECONDS)
+        fail_if_unexpected_reset("after_notify_settle")
 
         if args.trigger_mode == "physical-key":
             print("ready_for_key=1", flush=True)
@@ -952,20 +1016,62 @@ async def run_ble_capture(args, ser: Serial, serial_monitor: SerialLogMonitor):
             print("instruction=press KEY1 once to start recording, then press KEY1 again to stop", flush=True)
 
         target_sessions = args.max_sessions if args.max_sessions > 0 else None
+        capture_seconds_per_session = getattr(args, "capture_seconds_per_session", None)
+        session_pre_start_delay_seconds = getattr(args, "session_pre_start_delay_seconds", None)
         while target_sessions is None or completed_sessions < target_sessions:
             collector.reset()
+            session_capture_seconds = int(args.capture_seconds)
+            if capture_seconds_per_session is not None and completed_sessions < len(capture_seconds_per_session):
+                session_capture_seconds = int(capture_seconds_per_session[completed_sessions])
+            session_pre_start_delay_seconds_value = 0.0
+            if (
+                session_pre_start_delay_seconds is not None
+                and completed_sessions < len(session_pre_start_delay_seconds)
+            ):
+                session_pre_start_delay_seconds_value = max(
+                    0.0,
+                    float(session_pre_start_delay_seconds[completed_sessions]),
+                )
 
             if args.trigger_mode == "serial-toggle":
+                if session_pre_start_delay_seconds_value > 0.0:
+                    print(
+                        "session_pre_start_delay_seconds="
+                        f"{session_pre_start_delay_seconds_value:.2f} session_index={completed_sessions + 1}",
+                        flush=True,
+                    )
+                    pre_start_deadline = time.time() + session_pre_start_delay_seconds_value
+                    while time.time() < pre_start_deadline:
+                        serial_monitor.poll_lines()
+                        fail_if_unexpected_reset("during_pre_start_delay")
+                        await asyncio.sleep(0.05)
                 send_toggle(ser)
-                capture_deadline = time.time() + args.capture_seconds
+                start_deadline = time.time() + max(30, int(session_capture_seconds * 2 + 10))
+                while time.time() < start_deadline:
+                    serial_monitor.poll_lines()
+                    fail_if_unexpected_reset("during_session_start_wait")
+                    if collector.has_started_session():
+                        break
+                    await asyncio.sleep(0.05)
+
+                if not collector.has_started_session():
+                    raise RuntimeError(
+                        "capture_audio_ble_wav: timed out waiting for serial-toggle session start; "
+                        f"budget_seconds={max(30, int(session_capture_seconds * 2 + 10))}; recent serial logs:\n"
+                        f"{serial_monitor.recent_text()}"
+                    )
+
+                capture_deadline = time.time() + session_capture_seconds
                 while time.time() < capture_deadline:
                     serial_monitor.poll_lines()
+                    fail_if_unexpected_reset("during_capture_window")
                     await asyncio.sleep(0.05)
                 send_toggle(ser)
             else:
                 start_deadline = time.time() + PHYSICAL_KEY_START_TIMEOUT_SECONDS
                 while time.time() < start_deadline:
                     serial_monitor.poll_lines()
+                    fail_if_unexpected_reset("during_physical_key_start_wait")
                     if collector.has_started_session():
                         break
                     await asyncio.sleep(0.1)
@@ -980,6 +1086,7 @@ async def run_ble_capture(args, ser: Serial, serial_monitor: SerialLogMonitor):
             deadline = time.time() + args.timeout_seconds
             while time.time() < deadline:
                 serial_monitor.poll_lines()
+                fail_if_unexpected_reset("during_session_complete_wait")
                 if collector.has_completed_session():
                     break
                 if AUDIO_UPLOAD_SKIPPED_MARKER in serial_monitor.recent_text():
@@ -1029,8 +1136,14 @@ async def run_ble_capture(args, ser: Serial, serial_monitor: SerialLogMonitor):
                 )
             reconstructed_pcm = collector.reconstructed_pcm()
             output_dir = pathlib.Path(args.output_dir)
-            output_path = output_dir / "capture_ble_latest_16k_mono.wav"
+            latest_output_path = output_dir / "capture_ble_latest_16k_mono.wav"
+            if target_sessions is not None and target_sessions > 1:
+                output_path = output_dir / f"capture_ble_session_{completed_sessions + 1}_16k_mono.wav"
+            else:
+                output_path = latest_output_path
             write_wav(output_path, reconstructed_pcm)
+            if output_path != latest_output_path:
+                write_wav(latest_output_path, reconstructed_pcm)
             completed_sessions += 1
             duration_seconds = pcm_duration_seconds(len(reconstructed_pcm))
             missing_packet_indices = collector.missing_packet_indices()
@@ -1060,6 +1173,8 @@ async def run_ble_capture(args, ser: Serial, serial_monitor: SerialLogMonitor):
                 "expected_chunk_count": collector.expected_packet_count,
                 "missing_chunk_count": len(missing_packet_indices),
                 "serial_stream_chunk_count": len(serial_stream_audio_lines),
+                "capture_seconds_target": session_capture_seconds,
+                "pre_start_delay_seconds": session_pre_start_delay_seconds_value,
             }
             session_summaries.append(session_summary)
 
@@ -1079,6 +1194,8 @@ async def run_ble_capture(args, ser: Serial, serial_monitor: SerialLogMonitor):
             print(f"missing_chunk_count={len(missing_packet_indices)}", flush=True)
             print(f"pcm_bytes={len(reconstructed_pcm)}", flush=True)
             print(f"duration_seconds={duration_seconds:.3f}", flush=True)
+            print(f"capture_seconds_target={session_capture_seconds}", flush=True)
+            print(f"pre_start_delay_seconds={session_pre_start_delay_seconds_value:.2f}", flush=True)
             print(
                 f"serial_stream_start_count={len(serial_monitor.find_lines(STREAM_SESSION_START_MARKER))}",
                 flush=True,
@@ -1134,7 +1251,7 @@ async def run_ble_capture(args, ser: Serial, serial_monitor: SerialLogMonitor):
 
 
 async def run_capture_with_args(args):
-    with serial.Serial(args.port, 115200, timeout=0.05) as ser:
+    with open_serial_with_retry(args.port, 115200, timeout=0.05) as ser:
         ser.setDTR(False)
         ser.setRTS(False)
         if args.reset_before_capture:

@@ -33,10 +33,14 @@
 
 ## 当前推荐入口
 
+- `v1` 产品需求与下一步主线：
+  [plans/voice_shortcut_keyboard_plan.md](./plans/voice_shortcut_keyboard_plan.md)
 - `BLE HID` 键盘 fallback / 验证链路：
   [features/ble_hid_keyboard_output.md](./features/ble_hid_keyboard_output.md)
 - 设备端音频采集、录音控制与 `BLE` 上传链路：
   [features/audio_capture_ble_upload.md](./features/audio_capture_ble_upload.md)
+- 面向后端联调的语音输入契约：
+  [features/voice_input_backend_contract.md](./features/voice_input_backend_contract.md)
 - 当前仍在推进的 active plans：
   [plans](./plans)
 - 当前仍在推进的 bug fixes：

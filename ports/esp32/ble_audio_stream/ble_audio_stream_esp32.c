@@ -1,6 +1,7 @@
 #include "ble_audio_stream.h"
 
 #include <inttypes.h>
+#include <limits.h>
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
@@ -24,10 +25,10 @@
 #define BLE_AUDIO_STREAM_PACKET_DEFAULT_BYTES 244
 #define BLE_AUDIO_STREAM_PACKET_MAX_BYTES 500
 #define BLE_AUDIO_STREAM_NOTIFY_QUEUE_LENGTH 12
-#define BLE_AUDIO_STREAM_NOTIFY_WINDOW_DEPTH 6
+#define BLE_AUDIO_STREAM_NOTIFY_WINDOW_DEPTH 1
 #define BLE_AUDIO_STREAM_NOTIFY_WAIT_MS 1000
 #define BLE_AUDIO_STREAM_NOTIFY_TX_DELAY_MS 2
-#define BLE_AUDIO_STREAM_MIN_REQUIRED_MBUF 2
+#define BLE_AUDIO_STREAM_NOTIFY_TX_DONE_WAIT_MS 1000
 #define BLE_AUDIO_STREAM_NOTIFY_RETRY_LIMIT 80
 
 typedef enum {
@@ -61,11 +62,16 @@ static bool s_notify_enabled;
 static bool s_pending_subscribe_valid;
 static uint16_t s_pending_subscribe_conn_handle = BLE_HS_CONN_HANDLE_NONE;
 static bool s_pending_notify_enabled;
+static bool s_pending_mtu_valid;
+static uint16_t s_pending_mtu_conn_handle = BLE_HS_CONN_HANDLE_NONE;
+static uint16_t s_pending_mtu_value;
 static uint16_t s_packet_value_max_bytes = BLE_AUDIO_STREAM_PACKET_DEFAULT_BYTES;
 static QueueHandle_t s_export_queue;
 static TaskHandle_t s_export_task_handle;
 static SemaphoreHandle_t s_notify_credit_sem;
+static SemaphoreHandle_t s_notify_tx_done_sem;
 static uint8_t s_notify_window_depth = BLE_AUDIO_STREAM_NOTIFY_WINDOW_DEPTH;
+static int s_last_notify_tx_status = INT_MIN;
 
 _Static_assert(
     LISTENER_AUDIO_PROTO_HEADER_BYTES <= sizeof(listener_audio_packet_header_t),
@@ -101,6 +107,10 @@ static void ble_audio_stream_reset_notify_credit(void)
     }
 
     xQueueReset(s_notify_credit_sem);
+    if (s_notify_tx_done_sem != NULL) {
+        xQueueReset(s_notify_tx_done_sem);
+    }
+    s_last_notify_tx_status = INT_MIN;
 }
 
 static void ble_audio_stream_prime_notify_credit(void)
@@ -133,6 +143,25 @@ static void ble_audio_stream_log_packet_size(uint16_t conn_handle)
         conn_handle,
         s_packet_value_max_bytes,
         ble_audio_stream_packet_payload_bytes());
+}
+
+static void ble_audio_stream_apply_mtu_value(uint16_t conn_handle, uint16_t mtu)
+{
+    if (mtu <= 3) {
+        return;
+    }
+
+    uint16_t value_max = (uint16_t)(mtu - 3);
+    if (value_max > BLE_AUDIO_STREAM_PACKET_MAX_BYTES) {
+        value_max = BLE_AUDIO_STREAM_PACKET_MAX_BYTES;
+    }
+    if (value_max < LISTENER_AUDIO_PROTO_HEADER_BYTES) {
+        value_max = LISTENER_AUDIO_PROTO_HEADER_BYTES;
+    }
+
+    s_packet_value_max_bytes = value_max;
+    ESP_LOGI(TAG, "audio notify mtu updated: conn=%u mtu=%u", conn_handle, mtu);
+    ble_audio_stream_log_packet_size(conn_handle);
 }
 
 static esp_err_t ble_audio_stream_wait_notify_credit(
@@ -252,12 +281,6 @@ static esp_err_t ble_audio_stream_send_packet(
             return credit_err;
         }
 
-        if (os_msys_num_free() < BLE_AUDIO_STREAM_MIN_REQUIRED_MBUF) {
-            xSemaphoreGive(s_notify_credit_sem);
-            vTaskDelay(pdMS_TO_TICKS(BLE_AUDIO_STREAM_NOTIFY_TX_DELAY_MS));
-            continue;
-        }
-
         struct os_mbuf *om = ble_hs_mbuf_from_flat(packet, packet_len);
         if (om == NULL) {
             xSemaphoreGive(s_notify_credit_sem);
@@ -265,8 +288,45 @@ static esp_err_t ble_audio_stream_send_packet(
             continue;
         }
 
+        if (s_notify_tx_done_sem != NULL) {
+            xQueueReset(s_notify_tx_done_sem);
+        }
+        s_last_notify_tx_status = INT_MIN;
+
         int rc = ble_gatts_notify_custom(s_conn_handle, s_notify_attr_handle, om);
         if (rc == 0) {
+            if (s_notify_tx_done_sem != NULL) {
+                if (xSemaphoreTake(
+                        s_notify_tx_done_sem,
+                        pdMS_TO_TICKS(BLE_AUDIO_STREAM_NOTIFY_TX_DONE_WAIT_MS)) != pdTRUE) {
+                    ESP_LOGW(
+                        TAG,
+                        "notify tx completion timeout: type=%u session=%" PRIu32 " seq_or_count=%u frag=%u/%u",
+                        (unsigned)packet_type,
+                        session_id,
+                        sequence_or_count,
+                        fragment_index,
+                        fragment_count);
+                    xSemaphoreGive(s_notify_credit_sem);
+                    vTaskDelay(pdMS_TO_TICKS(BLE_AUDIO_STREAM_NOTIFY_TX_DELAY_MS));
+                    continue;
+                }
+
+                if (s_last_notify_tx_status != 0 && s_last_notify_tx_status != BLE_HS_EDONE) {
+                    ESP_LOGW(
+                        TAG,
+                        "notify tx completion retry: type=%u session=%" PRIu32 " seq_or_count=%u frag=%u/%u status=%d",
+                        (unsigned)packet_type,
+                        session_id,
+                        sequence_or_count,
+                        fragment_index,
+                        fragment_count,
+                        s_last_notify_tx_status);
+                    vTaskDelay(pdMS_TO_TICKS(BLE_AUDIO_STREAM_NOTIFY_TX_DELAY_MS));
+                    continue;
+                }
+            }
+            vTaskDelay(pdMS_TO_TICKS(BLE_AUDIO_STREAM_NOTIFY_TX_DELAY_MS));
             return ESP_OK;
         }
 
@@ -311,6 +371,46 @@ static void ble_audio_stream_free_job(ble_audio_stream_job_t *job)
     }
     free(job->owned_pcm);
     memset(job, 0, sizeof(*job));
+}
+
+static void ble_audio_stream_purge_queued_session_jobs(uint32_t session_id)
+{
+    if (s_export_queue == NULL) {
+        return;
+    }
+
+    UBaseType_t queued_count = uxQueueMessagesWaiting(s_export_queue);
+    uint16_t dropped_count = 0;
+    for (UBaseType_t i = 0; i < queued_count; ++i) {
+        ble_audio_stream_job_t job = {0};
+        if (xQueueReceive(s_export_queue, &job, 0) != pdTRUE) {
+            break;
+        }
+
+        bool drop_job = job.session_id == session_id &&
+            (job.type == BLE_AUDIO_STREAM_JOB_TYPE_SESSION_START ||
+             job.type == BLE_AUDIO_STREAM_JOB_TYPE_SESSION_AUDIO_DATA ||
+             job.type == BLE_AUDIO_STREAM_JOB_TYPE_SESSION_STOP ||
+             job.type == BLE_AUDIO_STREAM_JOB_TYPE_SESSION_CANCEL);
+        if (drop_job) {
+            ble_audio_stream_free_job(&job);
+            dropped_count++;
+            continue;
+        }
+
+        if (xQueueSendToBack(s_export_queue, &job, 0) != pdTRUE) {
+            ESP_LOGW(TAG, "failed to restore queued audio job while purging session=%" PRIu32, session_id);
+            ble_audio_stream_free_job(&job);
+        }
+    }
+
+    if (dropped_count > 0) {
+        ESP_LOGI(
+            TAG,
+            "purged queued audio jobs for canceled session: session=%" PRIu32 " dropped=%u",
+            session_id,
+            dropped_count);
+    }
 }
 
 static esp_err_t ble_audio_stream_send_session_start_internal(uint32_t session_id)
@@ -613,6 +713,15 @@ esp_err_t ble_audio_stream_init(void)
         return ESP_ERR_NO_MEM;
     }
 
+    s_notify_tx_done_sem = xSemaphoreCreateBinary();
+    if (s_notify_tx_done_sem == NULL) {
+        vSemaphoreDelete(s_notify_credit_sem);
+        s_notify_credit_sem = NULL;
+        vQueueDelete(s_export_queue);
+        s_export_queue = NULL;
+        return ESP_ERR_NO_MEM;
+    }
+
     BaseType_t task_ok = xTaskCreate(
         ble_audio_stream_task,
         "ble_audio_stream_task",
@@ -621,6 +730,8 @@ esp_err_t ble_audio_stream_init(void)
         configMAX_PRIORITIES - 5,
         &s_export_task_handle);
     if (task_ok != pdPASS) {
+        vSemaphoreDelete(s_notify_tx_done_sem);
+        s_notify_tx_done_sem = NULL;
         vSemaphoreDelete(s_notify_credit_sem);
         s_notify_credit_sem = NULL;
         vQueueDelete(s_export_queue);
@@ -640,6 +751,13 @@ esp_err_t ble_audio_stream_start(void)
 void ble_audio_stream_on_gap_connect(uint16_t conn_handle)
 {
     s_conn_handle = conn_handle;
+    if (s_pending_mtu_valid && s_pending_mtu_conn_handle == conn_handle) {
+        ble_audio_stream_apply_mtu_value(conn_handle, s_pending_mtu_value);
+        s_pending_mtu_valid = false;
+        s_pending_mtu_conn_handle = BLE_HS_CONN_HANDLE_NONE;
+        s_pending_mtu_value = 0;
+    }
+
     if (s_pending_subscribe_valid && s_pending_subscribe_conn_handle == conn_handle) {
         ble_audio_stream_apply_notify_enabled(s_pending_notify_enabled);
         ESP_LOGI(
@@ -670,6 +788,12 @@ void ble_audio_stream_on_gap_disconnect(uint16_t conn_handle)
         s_pending_subscribe_valid = false;
         s_pending_subscribe_conn_handle = BLE_HS_CONN_HANDLE_NONE;
         s_pending_notify_enabled = false;
+    }
+
+    if (s_pending_mtu_valid && s_pending_mtu_conn_handle == conn_handle) {
+        s_pending_mtu_valid = false;
+        s_pending_mtu_conn_handle = BLE_HS_CONN_HANDLE_NONE;
+        s_pending_mtu_value = 0;
     }
 }
 
@@ -715,21 +839,19 @@ void ble_audio_stream_on_gap_subscribe(
 
 void ble_audio_stream_on_gap_mtu(uint16_t conn_handle, uint16_t mtu)
 {
-    if (conn_handle != s_conn_handle || mtu <= 3) {
+    if (mtu <= 3) {
         return;
     }
 
-    uint16_t value_max = (uint16_t)(mtu - 3);
-    if (value_max > BLE_AUDIO_STREAM_PACKET_MAX_BYTES) {
-        value_max = BLE_AUDIO_STREAM_PACKET_MAX_BYTES;
-    }
-    if (value_max < LISTENER_AUDIO_PROTO_HEADER_BYTES) {
-        value_max = LISTENER_AUDIO_PROTO_HEADER_BYTES;
+    if (conn_handle != s_conn_handle) {
+        s_pending_mtu_valid = true;
+        s_pending_mtu_conn_handle = conn_handle;
+        s_pending_mtu_value = mtu;
+        ESP_LOGI(TAG, "audio notify mtu deferred until connect: conn=%u mtu=%u", conn_handle, mtu);
+        return;
     }
 
-    s_packet_value_max_bytes = value_max;
-    ESP_LOGI(TAG, "audio notify mtu updated: conn=%u mtu=%u", conn_handle, mtu);
-    ble_audio_stream_log_packet_size(conn_handle);
+    ble_audio_stream_apply_mtu_value(conn_handle, mtu);
 }
 
 void ble_audio_stream_on_gap_notify_tx(
@@ -745,6 +867,10 @@ void ble_audio_stream_on_gap_notify_tx(
     }
 
     if (status == 0 || status == BLE_HS_EDONE) {
+        s_last_notify_tx_status = status;
+        if (s_notify_tx_done_sem != NULL) {
+            xSemaphoreGive(s_notify_tx_done_sem);
+        }
         if (s_notify_credit_sem != NULL) {
             xSemaphoreGive(s_notify_credit_sem);
         }
@@ -757,6 +883,10 @@ void ble_audio_stream_on_gap_notify_tx(
         conn_handle,
         attr_handle,
         status);
+    s_last_notify_tx_status = status;
+    if (s_notify_tx_done_sem != NULL) {
+        xSemaphoreGive(s_notify_tx_done_sem);
+    }
     if (s_notify_credit_sem != NULL) {
         xSemaphoreGive(s_notify_credit_sem);
     }
@@ -875,6 +1005,8 @@ esp_err_t ble_audio_stream_send_session_cancel(uint32_t session_id, uint16_t exp
     if (!s_started || s_export_queue == NULL) {
         return ESP_ERR_INVALID_STATE;
     }
+
+    ble_audio_stream_purge_queued_session_jobs(session_id);
 
     ble_audio_stream_job_t job = {
         .type = BLE_AUDIO_STREAM_JOB_TYPE_SESSION_CANCEL,

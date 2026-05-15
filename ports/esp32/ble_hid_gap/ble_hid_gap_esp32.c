@@ -35,6 +35,27 @@
 
 static const char *TAG = "ESP_HID_GAP";
 
+static void ble_hid_gap_log_conn_desc(const char *context, uint16_t conn_handle)
+{
+    struct ble_gap_conn_desc desc;
+    int rc = ble_gap_conn_find(conn_handle, &desc);
+    if (rc != 0) {
+        ESP_LOGW(TAG, "%s: connection descriptor lookup failed: conn_handle=%u rc=%d", context, conn_handle, rc);
+        return;
+    }
+
+    ESP_LOGI(
+        TAG,
+        "%s: conn_handle=%u interval_units=%u interval_ms=%.2f latency=%u supervision_timeout_units=%u supervision_timeout_ms=%u",
+        context,
+        conn_handle,
+        desc.conn_itvl,
+        (double)desc.conn_itvl * 1.25,
+        desc.conn_latency,
+        desc.supervision_timeout,
+        desc.supervision_timeout * 10);
+}
+
 // uncomment to print all devices that were seen during a scan
 #define GAP_DBG_PRINTF(...) //printf(__VA_ARGS__)
 //static const char * gap_bt_prop_type_names[5] = {"","BDNAME","COD","RSSI","EIR"};
@@ -872,7 +893,7 @@ nimble_hid_gap_event(struct ble_gap_event *event, void *arg)
             .itvl_min = 6,
             .itvl_max = 12,
             .latency = 0,
-            .supervision_timeout = 400,
+            .supervision_timeout = 800,
             .min_ce_len = 0,
             .max_ce_len = 0,
         };
@@ -906,6 +927,7 @@ nimble_hid_gap_event(struct ble_gap_event *event, void *arg)
         /* The central has updated the connection parameters. */
         ESP_LOGI(TAG, "connection updated; status=%d",
                 event->conn_update.status);
+        ble_hid_gap_log_conn_desc("connection updated", event->conn_update.conn_handle);
         return 0;
 
     case BLE_GAP_EVENT_ADV_COMPLETE:
@@ -933,6 +955,10 @@ nimble_hid_gap_event(struct ble_gap_event *event, void *arg)
             event->subscribe.attr_handle,
             event->subscribe.cur_notify,
             event->subscribe.cur_indicate);
+        if (event->subscribe.attr_handle == ble_audio_stream_get_notify_attr_handle() &&
+            event->subscribe.cur_notify != 0) {
+            ble_hid_gap_log_conn_desc("audio notify subscribed", event->subscribe.conn_handle);
+        }
         return 0;
 
     case BLE_GAP_EVENT_MTU:

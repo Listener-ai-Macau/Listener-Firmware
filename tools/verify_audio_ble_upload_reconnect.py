@@ -21,10 +21,10 @@ async def main_async(args):
     baseline = await play_and_capture_serial_toggle(
         port=args.port,
         device_name=args.device_name,
-        scenario="R5",
+        scenario="P5",
         capture_seconds=args.capture_seconds,
         source_label="baseline",
-        timeout_seconds=max(90, int(args.capture_seconds * 3 + 30)),
+        timeout_seconds=args.timeout_seconds if args.timeout_seconds is not None else max(90, int(args.capture_seconds * 3 + 30)),
         reset_before_capture=args.reset_before_capture,
     )
     if baseline["result"] == "fail":
@@ -39,14 +39,16 @@ async def main_async(args):
     summary = await play_and_capture_serial_toggle(
         port=args.port,
         device_name=args.device_name,
-        scenario="R5",
+        scenario="P5",
         capture_seconds=args.capture_seconds,
         source_label="reconnect",
-        timeout_seconds=max(90, int(args.capture_seconds * 3 + 30)),
+        timeout_seconds=args.timeout_seconds if args.timeout_seconds is not None else max(90, int(args.capture_seconds * 3 + 30)),
         reset_before_capture=args.reset_before_capture,
     )
 
-    print("scenario=R5", flush=True)
+    print("product_case_id=P5", flush=True)
+    print("legacy_scenario=R5", flush=True)
+    print("scenario=P5", flush=True)
     print(f"result={summary['result']}", flush=True)
     print(f"transport_result={summary['transport_result']}", flush=True)
     print(f"analysis_result={summary['analysis_result']}", flush=True)

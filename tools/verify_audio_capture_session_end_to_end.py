@@ -52,6 +52,12 @@ def build_capture_args(args, output_dir: pathlib.Path):
     )
 
 
+def read_serial_log_text(serial_log_path: pathlib.Path) -> str:
+    if not serial_log_path.exists():
+        return ""
+    return serial_log_path.read_text(encoding="utf-8", errors="replace")
+
+
 async def main_async(args) -> None:
     artifacts_dir = pathlib.Path(args.artifacts_dir)
     artifacts_dir.mkdir(parents=True, exist_ok=True)
@@ -60,17 +66,32 @@ async def main_async(args) -> None:
     summaries = await run_capture_with_args(capture_args)
     summary = summaries[0]
     recorded_wav_path = pathlib.Path(summary["wav_path"])
-    transport = validate_transport_summary(summary, capture_seconds=args.capture_seconds)
+    if args.trigger_mode == "physical-key":
+        transport = validate_transport_summary(
+            summary,
+            capture_seconds=args.capture_seconds,
+            min_ratio=0.0,
+            max_extra_seconds=float(args.timeout_seconds),
+        )
+    else:
+        transport = validate_transport_summary(summary, capture_seconds=args.capture_seconds)
 
     source_wav_path = None
     analysis = None
     physical_key_analysis = None
+    serial_log_path = pathlib.Path(str(summary["serial_log_path"]))
+    serial_log_text = ""
+    physical_key_start_seen = False
+    physical_key_stop_seen = False
 
     if args.trigger_mode == "serial-toggle":
         source_wav_path = artifacts_dir / "source_ble_session_reference_latest_16k_mono.wav"
         generate_source_wav(source_wav_path, args.capture_seconds)
         analysis = analyze_recording(source_wav_path, recorded_wav_path)
     else:
+        serial_log_text = read_serial_log_text(serial_log_path)
+        physical_key_start_seen = "recording start source=key1" in serial_log_text
+        physical_key_stop_seen = "recording stop source=key1" in serial_log_text
         recorded_frames = read_wav_frames(recorded_wav_path)
         recorded_env = compute_envelope(recorded_frames)
         recorded_peak = max(abs(value) for value in recorded_frames) if recorded_frames else 0
@@ -93,13 +114,16 @@ async def main_async(args) -> None:
     if source_wav_path is not None:
         print(f"source_wav={source_wav_path}")
     print(f"recorded_wav={recorded_wav_path}")
-    print(f"serial_log_path={summary['serial_log_path']}")
+    print(f"serial_log_path={serial_log_path}")
     print(f"trigger_mode={args.trigger_mode}")
+    print(f"duration_validation_mode={'manual_keypress_window' if args.trigger_mode == 'physical-key' else 'target_seconds_window'}")
     print(f"received_packet_count={transport['received_packet_count']}")
     print(f"expected_packet_count={transport['expected_packet_count']}")
     print(f"missing_packet_count={transport['missing_packet_count']}")
     print(f"received_pcm_bytes={transport['received_pcm_bytes']}")
     print(f"duration_seconds={summary['duration_seconds']:.3f}")
+    print(f"duration_min_seconds={transport['duration_min_seconds']:.3f}")
+    print(f"duration_max_seconds={transport['duration_max_seconds']:.3f}")
     print(f"packet_loss_ratio={transport['packet_loss_ratio']:.4f}")
 
     if transport["transport_result"] == "fail":
@@ -126,9 +150,18 @@ async def main_async(args) -> None:
                 f"active_frames={analysis['active_frame_count']}"
             )
     else:
+        print(f"physical_key_start_seen={1 if physical_key_start_seen else 0}")
+        print(f"physical_key_stop_seen={1 if physical_key_stop_seen else 0}")
         print(f"recorded_peak={physical_key_analysis['recorded_peak']}")
         print(f"recorded_runs={physical_key_analysis['recorded_runs']}")
         print(f"active_frame_count={physical_key_analysis['active_frame_count']}")
+
+        if not physical_key_start_seen or not physical_key_stop_seen:
+            raise RuntimeError(
+                "verify_audio_capture_session_end_to_end: physical-key source check failed "
+                f"start_seen={1 if physical_key_start_seen else 0} "
+                f"stop_seen={1 if physical_key_stop_seen else 0}"
+            )
 
         if not physical_key_analysis["analysis_pass"]:
             raise RuntimeError(

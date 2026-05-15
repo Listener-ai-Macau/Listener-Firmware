@@ -1,7 +1,7 @@
 interface:
   display_name: "Voice Keyboard Firmware"
   short_description: "Apply the voice-keyboard-firmware repo rules."
-  default_prompt: "Use $voice-keyboard-firmware and read references/start_here.md first."
+  default_prompt: "Use $voice-keyboard-firmware. The repo fast-path brief is embedded in SKILL.md."
 
 policy:
   allow_implicit_invocation: true

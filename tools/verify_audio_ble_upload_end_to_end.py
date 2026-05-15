@@ -18,11 +18,14 @@ async def main_async(args):
     summary = await play_and_capture_serial_toggle(
         port=args.port,
         device_name=args.device_name,
-        scenario="R1",
+        scenario="P1",
         capture_seconds=args.capture_seconds,
+        timeout_seconds=args.timeout_seconds,
         reset_before_capture=args.reset_before_capture,
     )
-    print("scenario=R1", flush=True)
+    print("product_case_id=P1", flush=True)
+    print("legacy_scenario=R1", flush=True)
+    print("scenario=P1", flush=True)
     print(f"result={summary['result']}", flush=True)
     print(f"transport_result={summary['transport_result']}", flush=True)
     print(f"analysis_result={summary['analysis_result']}", flush=True)

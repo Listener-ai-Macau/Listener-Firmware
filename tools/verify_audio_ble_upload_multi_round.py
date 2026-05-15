@@ -18,15 +18,16 @@ async def run_round(args, round_index: int):
     summary = await play_and_capture_serial_toggle(
         port=args.port,
         device_name=args.device_name,
-        scenario="R2",
+        scenario="P2",
         capture_seconds=args.capture_seconds,
         source_label=f"round{round_index}",
+        timeout_seconds=args.timeout_seconds,
         reset_before_capture=args.reset_before_capture,
     )
     summary.update(
         {
             "round_index": round_index,
-            "scenario": "R2",
+            "scenario": "P2",
         }
     )
     return summary
@@ -52,7 +53,9 @@ async def main_async(args):
             fail_count += 1
             failed_rounds.append(round_index)
 
-        print(f"scenario=R2", flush=True)
+        print("product_case_id=P2", flush=True)
+        print("legacy_scenario=R2", flush=True)
+        print("scenario=P2", flush=True)
         print(f"round_index={round_index}", flush=True)
         print(f"round_count={args.round_count}", flush=True)
         print(f"result={summary['result']}", flush=True)
@@ -77,7 +80,9 @@ async def main_async(args):
         print(f"warning_reason={summary['warning_reason']}", flush=True)
         print(f"failure_reason={summary['failure_reason']}", flush=True)
 
-    print("scenario=R2", flush=True)
+    print("product_case_id=P2", flush=True)
+    print("legacy_scenario=R2", flush=True)
+    print("scenario=P2", flush=True)
     overall_result = "fail" if fail_count > 0 else ("warning" if warning_count > 0 else "pass")
     print(f"result={overall_result}", flush=True)
     print(f"round_count={args.round_count}", flush=True)

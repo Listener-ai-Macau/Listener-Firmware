@@ -183,7 +183,15 @@ def serial_worker():
     error_message = ""
 
     try:
-        ser = serial.Serial(port, baud, timeout=0.2)
+        ser = serial.Serial()
+        ser.port = port
+        ser.baudrate = baud
+        ser.timeout = 0.2
+        ser.dsrdtr = False
+        ser.rtscts = False
+        ser.dtr = False
+        ser.rts = False
+        ser.open()
         try:
             if reset_before_read:
                 ser.dtr = False
