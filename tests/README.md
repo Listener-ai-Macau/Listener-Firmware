@@ -4,10 +4,12 @@
 
 当前目录规则：
 
-- `tests/capture_ble_latest_16k_mono.wav`
-  - 保留最新一份主机侧录音产物
-- `tests/capture_ble_latest.log`
-  - 保留最新一份主机侧串口 / 接收日志
+- `tests/*.wav`
+  - 主机侧运行时产物
+  - 默认本地保留，但不提交
+- `tests/*.log`
+  - 主机侧串口 / 接收 / 回归日志产物
+  - 默认本地保留，但不提交
 - `tests/artifacts/`
   - 放自动回归时生成的临时源音频或其它中间产物
   - 这些内容默认不提交

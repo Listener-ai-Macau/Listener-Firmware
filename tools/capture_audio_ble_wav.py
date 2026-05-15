@@ -4,6 +4,7 @@ import pathlib
 import subprocess
 import struct
 import sys
+import threading
 import time
 import uuid
 import wave
@@ -55,8 +56,9 @@ STREAM_SESSION_CHUNK_MARKER = "stream session chunk queued"
 STREAM_SESSION_STOP_MARKER = "stream session stop queued"
 BLE_NOTIFY_ENABLE_RETRY_COUNT = 3
 BLE_NOTIFY_RECOVERY_DELAY_SECONDS = 0.5
-BLE_NOTIFY_CCCD_TIMEOUT_SECONDS = 8
+BLE_NOTIFY_CCCD_TIMEOUT_SECONDS = 4
 SESSION_COMPLETE_IDLE_SECONDS = 0.2
+PHYSICAL_KEY_START_TIMEOUT_SECONDS = 300
 
 
 class SerialLogMonitor:
@@ -64,6 +66,7 @@ class SerialLogMonitor:
         self._ser = ser
         self._buffer = bytearray()
         self._recent_lines = deque(maxlen=400)
+        self._all_lines: list[str] = []
 
     def poll_lines(self) -> list[str]:
         lines: list[str] = []
@@ -80,6 +83,7 @@ class SerialLogMonitor:
             raw_line, _, self._buffer = self._buffer.partition(b"\n")
             line = raw_line.decode("utf-8", errors="ignore").strip()
             if line:
+                self._all_lines.append(line)
                 self._recent_lines.append(line)
                 lines.append(line)
         return lines
@@ -89,16 +93,21 @@ class SerialLogMonitor:
             return "<no serial logs captured>"
         return "\n".join(self._recent_lines)
 
+    def full_text(self) -> str:
+        if not self._all_lines:
+            return "<no serial logs captured>"
+        return "\n".join(self._all_lines)
+
     def contains(self, marker: str) -> bool:
-        return any(marker in line for line in self._recent_lines)
+        return any(marker in line for line in self._all_lines)
 
     def find_lines(self, marker: str) -> list[str]:
-        return [line for line in self._recent_lines if marker in line]
+        return [line for line in self._all_lines if marker in line]
 
     def find_lines_any(self, markers: tuple[str, ...]) -> list[str]:
         return [
             line
-            for line in self._recent_lines
+            for line in self._all_lines
             if any(marker in line for marker in markers)
         ]
 
@@ -162,9 +171,10 @@ def configure_utf8_stdio() -> None:
 
 
 def get_paired_device_address(device_name: str) -> str | None:
+    escaped_name = device_name.replace("'", "''")
     ps = (
         "Get-PnpDevice -Class Bluetooth | "
-        f"Where-Object {{ $_.FriendlyName -eq '{device_name}' }} | "
+        f"Where-Object {{ $_.FriendlyName -eq '{escaped_name}' }} | "
         "Select-Object -First 1 -ExpandProperty InstanceId"
     )
     try:
@@ -524,8 +534,16 @@ async def enable_notify_with_rebuild(
                 f"capture_audio_ble_wav: notify enable raised {type(exc).__name__}: {exc} attempt={attempt}"
             )
 
-        if token is None and not cccd_timed_out:
+        should_try_warmup_fallback = token is None
+        if should_try_warmup_fallback:
             try:
+                # Intentional deviation from documented CCCD-first order:
+                # The primary path already tried CCCD write and failed (typically
+                # with OSError(22)).  The warmup path hooks ValueChanged first to
+                # prime the WinRT GATT stack, then writes CCCD.  This reversed
+                # order is safe here because the stack is in a known-bad state
+                # and needs the ValueChanged registration to accept the CCCD write.
+                # Do NOT use this order in the primary path.
                 token = characteristic.add_value_changed(on_value_changed)
                 print("notify_enable_fallback=winrt_warmup", flush=True)
                 try:
@@ -662,6 +680,7 @@ def pcm_duration_seconds(pcm_bytes_len: int) -> float:
 
 class SessionCollector:
     def __init__(self) -> None:
+        self._lock = threading.Lock()
         self.session_id = None
         self.stop_received = False
         self.expected_packet_count = None
@@ -672,66 +691,79 @@ class SessionCollector:
         self.last_packet_time = 0.0
 
     def reset(self) -> None:
-        self.session_id = None
-        self.stop_received = False
-        self.expected_packet_count = None
-        self.cancel_received = False
-        self.audio_packets = {}
-        self.packet_pcm_bytes = {}
-        self.packet_size_counter = Counter()
-        self.last_packet_time = 0.0
+        with self._lock:
+            self.session_id = None
+            self.stop_received = False
+            self.expected_packet_count = None
+            self.cancel_received = False
+            self.audio_packets = {}
+            self.packet_pcm_bytes = {}
+            self.packet_size_counter = Counter()
+            self.last_packet_time = 0.0
 
     def handle_notification(self, packet: bytes) -> None:
         header = parse_header(packet)
         packet_type = header["packet_type"]
-        self.last_packet_time = time.time()
-        if packet_type == PACKET_TYPE_SESSION_START:
-            if self.session_id != header["session_id"]:
-                self.reset()
-                self.session_id = header["session_id"]
-            return
-        if self.session_id is None or header["session_id"] != self.session_id:
-            return
-        if packet_type == PACKET_TYPE_AUDIO_DATA:
-            packet_sequence = header["packet_sequence"]
-            packet_pcm_bytes = header["packet_pcm_bytes"] or header["payload_len"]
-            if packet_pcm_bytes <= 0:
-                packet_pcm_bytes = len(header["payload"])
-            payload = header["payload"][:packet_pcm_bytes]
-            if not payload:
+        with self._lock:
+            self.last_packet_time = time.time()
+            if packet_type == PACKET_TYPE_SESSION_START:
+                if self.session_id != header["session_id"]:
+                    self.session_id = None
+                    self.stop_received = False
+                    self.expected_packet_count = None
+                    self.cancel_received = False
+                    self.audio_packets = {}
+                    self.packet_pcm_bytes = {}
+                    self.packet_size_counter = Counter()
+                    self.session_id = header["session_id"]
                 return
-
-            existing_payload = self.audio_packets.get(packet_sequence)
-            if existing_payload is not None and len(existing_payload) >= len(payload):
+            if self.session_id is None or header["session_id"] != self.session_id:
                 return
+            if packet_type == PACKET_TYPE_AUDIO_DATA:
+                packet_sequence = header["packet_sequence"]
+                packet_pcm_bytes = header["packet_pcm_bytes"] or header["payload_len"]
+                if packet_pcm_bytes <= 0:
+                    packet_pcm_bytes = len(header["payload"])
+                payload = header["payload"][:packet_pcm_bytes]
+                if not payload:
+                    return
 
-            if existing_payload is not None:
-                existing_size = self.packet_pcm_bytes.get(packet_sequence, len(existing_payload))
-                self.packet_size_counter.subtract([existing_size])
-                if self.packet_size_counter[existing_size] <= 0:
-                    del self.packet_size_counter[existing_size]
+                existing_payload = self.audio_packets.get(packet_sequence)
+                if existing_payload is not None and len(existing_payload) >= len(payload):
+                    return
 
-            self.audio_packets[packet_sequence] = payload
-            self.packet_pcm_bytes[packet_sequence] = len(payload)
-            self.packet_size_counter.update([len(payload)])
-        elif packet_type == PACKET_TYPE_SESSION_STOP:
-            self.stop_received = True
-            self.expected_packet_count = header["expected_packet_count"]
-        elif packet_type == PACKET_TYPE_SESSION_CANCEL:
-            self.cancel_received = True
-            self.stop_received = True
-            self.expected_packet_count = header["expected_packet_count"]
+                if existing_payload is not None:
+                    existing_size = self.packet_pcm_bytes.get(packet_sequence, len(existing_payload))
+                    self.packet_size_counter.subtract([existing_size])
+                    if self.packet_size_counter[existing_size] <= 0:
+                        del self.packet_size_counter[existing_size]
+
+                self.audio_packets[packet_sequence] = payload
+                self.packet_pcm_bytes[packet_sequence] = len(payload)
+                self.packet_size_counter.update([len(payload)])
+            elif packet_type == PACKET_TYPE_SESSION_STOP:
+                self.stop_received = True
+                self.expected_packet_count = header["expected_packet_count"]
+            elif packet_type == PACKET_TYPE_SESSION_CANCEL:
+                self.cancel_received = True
+                self.stop_received = True
+                self.expected_packet_count = header["expected_packet_count"]
 
     def has_completed_session(self) -> bool:
-        if (
-            self.session_id is None
-            or not self.stop_received
-            or self.cancel_received
-            or self.expected_packet_count is None
-            or self.expected_packet_count == 0
-        ):
-            return False
-        return (time.time() - self.last_packet_time) >= SESSION_COMPLETE_IDLE_SECONDS
+        with self._lock:
+            if (
+                self.session_id is None
+                or not self.stop_received
+                or self.cancel_received
+                or self.expected_packet_count is None
+                or self.expected_packet_count == 0
+            ):
+                return False
+            return (time.time() - self.last_packet_time) >= SESSION_COMPLETE_IDLE_SECONDS
+
+    def has_started_session(self) -> bool:
+        with self._lock:
+            return self.session_id is not None
 
     def received_packet_count(self) -> int:
         return len(self.audio_packets)
@@ -823,20 +855,21 @@ class SessionCollector:
         return 0
 
     def reconstructed_pcm(self) -> bytes:
-        if self.expected_packet_count is None:
-            return b"".join(self.audio_packets[index] for index in sorted(self.audio_packets))
+        with self._lock:
+            if self.expected_packet_count is None:
+                return b"".join(self.audio_packets[index] for index in sorted(self.audio_packets))
 
-        parts = []
-        for packet_sequence in range(self.expected_packet_count):
-            payload = self.audio_packets.get(packet_sequence)
-            if payload is not None:
-                parts.append(payload)
-                continue
+            parts = []
+            for packet_sequence in range(self.expected_packet_count):
+                payload = self.audio_packets.get(packet_sequence)
+                if payload is not None:
+                    parts.append(payload)
+                    continue
 
-            inferred_size = self.inferred_packet_pcm_bytes(packet_sequence)
-            if inferred_size > 0:
-                parts.append(bytes(inferred_size))
-        return b"".join(parts)
+                inferred_size = self.inferred_packet_pcm_bytes(packet_sequence)
+                if inferred_size > 0:
+                    parts.append(bytes(inferred_size))
+            return b"".join(parts)
 
 
 async def run_ble_capture(args, ser: Serial, serial_monitor: SerialLogMonitor):
@@ -929,6 +962,20 @@ async def run_ble_capture(args, ser: Serial, serial_monitor: SerialLogMonitor):
                     serial_monitor.poll_lines()
                     await asyncio.sleep(0.05)
                 send_toggle(ser)
+            else:
+                start_deadline = time.time() + PHYSICAL_KEY_START_TIMEOUT_SECONDS
+                while time.time() < start_deadline:
+                    serial_monitor.poll_lines()
+                    if collector.has_started_session():
+                        break
+                    await asyncio.sleep(0.1)
+
+                if not collector.has_started_session():
+                    raise RuntimeError(
+                        "capture_audio_ble_wav: timed out waiting for physical-key session start; "
+                        f"budget_seconds={PHYSICAL_KEY_START_TIMEOUT_SECONDS}; recent serial logs:\n"
+                        f"{serial_monitor.recent_text()}"
+                    )
 
             deadline = time.time() + args.timeout_seconds
             while time.time() < deadline:
@@ -1005,6 +1052,9 @@ async def run_ble_capture(args, ser: Serial, serial_monitor: SerialLogMonitor):
                 "serial_stream_start_count": len(serial_monitor.find_lines(STREAM_SESSION_START_MARKER)),
                 "serial_stream_audio_count": len(serial_stream_audio_lines),
                 "serial_stream_stop_count": len(serial_monitor.find_lines(STREAM_SESSION_STOP_MARKER)),
+                "serial_upload_begin_count": len(serial_monitor.find_lines(AUDIO_UPLOAD_BEGIN_MARKER)),
+                "serial_upload_end_count": len(serial_monitor.find_lines(AUDIO_UPLOAD_END_MARKER)),
+                "serial_upload_skipped_count": len(serial_monitor.find_lines(AUDIO_UPLOAD_SKIPPED_MARKER)),
                 "completed_session_count": completed_sessions,
                 "chunk_count": collector.received_packet_count(),
                 "expected_chunk_count": collector.expected_packet_count,
@@ -1016,7 +1066,7 @@ async def run_ble_capture(args, ser: Serial, serial_monitor: SerialLogMonitor):
             if args.serial_log_path:
                 serial_log_path = pathlib.Path(args.serial_log_path)
                 serial_log_path.parent.mkdir(parents=True, exist_ok=True)
-                serial_log_path.write_text(serial_monitor.recent_text(), encoding="utf-8")
+                serial_log_path.write_text(serial_monitor.full_text(), encoding="utf-8")
 
             print(f"wav_path={output_path}", flush=True)
             print(f"session_id={collector.session_id}", flush=True)
@@ -1045,6 +1095,18 @@ async def run_ble_capture(args, ser: Serial, serial_monitor: SerialLogMonitor):
                 f"serial_stream_stop_count={len(serial_monitor.find_lines(STREAM_SESSION_STOP_MARKER))}",
                 flush=True,
             )
+            print(
+                f"serial_upload_begin_count={len(serial_monitor.find_lines(AUDIO_UPLOAD_BEGIN_MARKER))}",
+                flush=True,
+            )
+            print(
+                f"serial_upload_end_count={len(serial_monitor.find_lines(AUDIO_UPLOAD_END_MARKER))}",
+                flush=True,
+            )
+            print(
+                f"serial_upload_skipped_count={len(serial_monitor.find_lines(AUDIO_UPLOAD_SKIPPED_MARKER))}",
+                flush=True,
+            )
             print(f"completed_session_count={completed_sessions}", flush=True)
 
             if target_sessions is None and args.trigger_mode == "physical-key":
@@ -1054,7 +1116,7 @@ async def run_ble_capture(args, ser: Serial, serial_monitor: SerialLogMonitor):
         if args.serial_log_path:
             serial_log_path = pathlib.Path(args.serial_log_path)
             serial_log_path.parent.mkdir(parents=True, exist_ok=True)
-            serial_log_path.write_text(serial_monitor.recent_text(), encoding="utf-8")
+            serial_log_path.write_text(serial_monitor.full_text(), encoding="utf-8")
         await disable_notify_best_effort(characteristic)
         close_ble_objects(
             characteristic=characteristic,
@@ -1071,9 +1133,7 @@ async def run_ble_capture(args, ser: Serial, serial_monitor: SerialLogMonitor):
     return session_summaries
 
 
-def main():
-    configure_utf8_stdio()
-    args = parse_args()
+async def run_capture_with_args(args):
     with serial.Serial(args.port, 115200, timeout=0.05) as ser:
         ser.setDTR(False)
         ser.setRTS(False)
@@ -1082,9 +1142,15 @@ def main():
         ser.reset_input_buffer()
         serial_monitor = SerialLogMonitor(ser)
         if args.reset_before_capture:
-            asyncio.run(serial_monitor.wait_for_markers(READY_MARKERS, timeout_seconds=args.boot_timeout_seconds))
+            await serial_monitor.wait_for_markers(READY_MARKERS, timeout_seconds=args.boot_timeout_seconds)
         ser.reset_input_buffer()
-        asyncio.run(run_ble_capture(args, ser, serial_monitor))
+        return await run_ble_capture(args, ser, serial_monitor)
+
+
+def main():
+    configure_utf8_stdio()
+    args = parse_args()
+    asyncio.run(run_capture_with_args(args))
 
 
 if __name__ == "__main__":

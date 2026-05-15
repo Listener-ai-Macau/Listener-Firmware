@@ -765,10 +765,6 @@ static bool s_directed_adv_pending = true;
 static bool s_last_adv_was_directed = false;
 static bool s_ble_gap_connected = false;
 
-#define BLE_AUDIO_LL_PACKET_LENGTH 251
-#define BLE_AUDIO_LL_PACKET_TIME 2120
-#define BLE_AUDIO_ENABLE_EXPLICIT_DLE 0
-
 /*
  * Legacy advertising has a hard 31-byte payload limit. With flags,
  * appearance and one 16-bit HID UUID, the current 17-byte product name fits
@@ -897,26 +893,6 @@ nimble_hid_gap_event(struct ble_gap_event *event, void *arg)
         } else {
             ESP_LOGW(TAG, "audio 2M PHY preference failed: rc=%d", rc);
         }
-
-#if BLE_AUDIO_ENABLE_EXPLICIT_DLE
-        rc = ble_hs_hci_util_set_data_len(
-            event->connect.conn_handle,
-            BLE_AUDIO_LL_PACKET_LENGTH,
-            BLE_AUDIO_LL_PACKET_TIME);
-        if (rc == 0) {
-            ESP_LOGI(
-                TAG,
-                "audio data length extension requested: octets=%u time=%u",
-                BLE_AUDIO_LL_PACKET_LENGTH,
-                BLE_AUDIO_LL_PACKET_TIME);
-        } else {
-            ESP_LOGW(TAG, "audio data length extension request failed: rc=%d", rc);
-        }
-#else
-        ESP_LOGI(
-            TAG,
-            "audio data length extension skipped: explicit DLE disabled for host stability");
-#endif
         return 0;
     case BLE_GAP_EVENT_DISCONNECT:
         ESP_LOGI(TAG, "disconnect; reason=%d", event->disconnect.reason);
@@ -1013,7 +989,10 @@ nimble_hid_gap_event(struct ble_gap_event *event, void *arg)
 
         /* Delete the old bond. */
         rc = ble_gap_conn_find(event->repeat_pairing.conn_handle, &desc);
-        assert(rc == 0);
+        if (rc != 0) {
+            ESP_LOGW(TAG, "repeat pairing: conn find failed rc=%d; ignoring", rc);
+            return BLE_GAP_REPEAT_PAIRING_IGNORE;
+        }
         ble_store_util_delete_peer(&desc.peer_id_addr);
 
         /* Return BLE_GAP_REPEAT_PAIRING_RETRY to indicate that the host should
@@ -1021,39 +1000,6 @@ nimble_hid_gap_event(struct ble_gap_event *event, void *arg)
          */
         return BLE_GAP_REPEAT_PAIRING_RETRY;
 
-    case BLE_GAP_EVENT_PASSKEY_ACTION:
-        ESP_LOGI(TAG, "PASSKEY_ACTION_EVENT started");
-        struct ble_sm_io pkey = {0};
-        int key = 0;
-
-        if (event->passkey.params.action == BLE_SM_IOACT_DISP) {
-            pkey.action = event->passkey.params.action;
-            pkey.passkey = 123456; // This is the passkey to be entered on peer
-            ESP_LOGI(TAG, "Enter passkey %" PRIu32 "on the peer side", pkey.passkey);
-            rc = ble_sm_inject_io(event->passkey.conn_handle, &pkey);
-            ESP_LOGI(TAG, "ble_sm_inject_io result: %d", rc);
-        } else if (event->passkey.params.action == BLE_SM_IOACT_NUMCMP) {
-            ESP_LOGI(TAG, "Accepting passkey..");
-            pkey.action = event->passkey.params.action;
-            pkey.numcmp_accept = 1;
-            rc = ble_sm_inject_io(event->passkey.conn_handle, &pkey);
-            ESP_LOGI(TAG, "ble_sm_inject_io result: %d", rc);
-        } else if (event->passkey.params.action == BLE_SM_IOACT_OOB) {
-            static uint8_t tem_oob[16] = {0};
-            pkey.action = event->passkey.params.action;
-            for (int i = 0; i < 16; i++) {
-                pkey.oob[i] = tem_oob[i];
-            }
-            rc = ble_sm_inject_io(event->passkey.conn_handle, &pkey);
-            ESP_LOGI(TAG, "ble_sm_inject_io result: %d", rc);
-        } else if (event->passkey.params.action == BLE_SM_IOACT_INPUT) {
-            ESP_LOGI(TAG, "Input not supported passing -> 123456");
-            pkey.action = event->passkey.params.action;
-            pkey.passkey = 123456;
-            rc = ble_sm_inject_io(event->passkey.conn_handle, &pkey);
-            ESP_LOGI(TAG, "ble_sm_inject_io result: %d", rc);
-        }
-        return 0;
     }
     return 0;
 }

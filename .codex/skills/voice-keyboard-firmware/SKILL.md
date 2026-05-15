@@ -15,7 +15,7 @@ That file is the fast-path brief for this repository. It contains:
 - new machine bootstrap commands
 - current product and platform facts
 - required directory and naming rules
-- current code reading order
+- current document and code reading order
 - build, flash, and monitor commands
 - when to consult `!docs/product_solutions.md`
 

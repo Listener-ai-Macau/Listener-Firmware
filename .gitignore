@@ -3,9 +3,12 @@ build/
 compile_commands.json
 sdkconfig
 sdkconfig.old
+gcm-diagnose.log
 .DS_Store
 Thumbs.db
 __pycache__/
 *.pyc
 tests/artifacts/
+tests/*.log
+tests/*.wav
 .external_refs/

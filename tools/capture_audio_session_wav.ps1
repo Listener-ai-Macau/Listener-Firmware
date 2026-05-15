@@ -3,9 +3,8 @@ param(
     [string]$Port,
     [ValidateRange(1, 10)]
     [int]$CaptureSeconds = 3,
-    [int]$Baud = 115200,
-    [int]$BootTimeoutSeconds = 12,
-    [int]$ExportTimeoutSeconds = 45
+    [switch]$PhysicalKey,
+    [switch]$NoResetBeforeCapture
 )
 
 $ErrorActionPreference = "Stop"
@@ -21,11 +20,20 @@ $capture_timestamp = Get-Date -Format "yyyyMMdd_HHmmss"
 $wav_path = Join-Path $artifact_dir ("capture_session_{0}_16k_mono.wav" -f $capture_timestamp)
 $python_script = Join-Path $PSScriptRoot "capture_audio_wav.py"
 
-& $python_path $python_script `
-    --port $Port `
-    --mode toggle-session `
-    --capture-seconds $CaptureSeconds `
-    --baud $Baud `
-    --boot-timeout-seconds $BootTimeoutSeconds `
-    --export-timeout-seconds $ExportTimeoutSeconds `
-    --wav-path $wav_path
+$command = @(
+    $python_script,
+    "--port", $Port,
+    "--mode", "toggle-session",
+    "--capture-seconds", $CaptureSeconds,
+    "--wav-path", $wav_path
+)
+
+if ($PhysicalKey) {
+    $command += @("--trigger-mode", "physical-key")
+}
+
+if ($NoResetBeforeCapture) {
+    $command += "--no-reset-before-capture"
+}
+
+& $python_path @command

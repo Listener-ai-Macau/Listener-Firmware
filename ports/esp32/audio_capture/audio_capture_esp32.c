@@ -15,13 +15,10 @@
 #include "freertos/task.h"
 #include "driver/i2c_master.h"
 #include "driver/i2s_std.h"
-#include "driver/usb_serial_jtag.h"
 #include "esp_check.h"
 #include "esp_codec_dev.h"
 #include "esp_codec_dev_defaults.h"
-#include "esp_heap_caps.h"
 #include "esp_log.h"
-#include "mbedtls/base64.h"
 
 #define AUDIO_CAPTURE_I2C_PORT          (0)
 #define AUDIO_CAPTURE_I2C_SDA_IO        (4)
@@ -40,13 +37,7 @@
 #define AUDIO_CAPTURE_FRAME_SAMPLES     ((AUDIO_CAPTURE_SAMPLE_RATE_HZ * AUDIO_CAPTURE_FRAME_MS) / 1000)
 #define AUDIO_CAPTURE_FRAME_BYTES       (AUDIO_CAPTURE_FRAME_SAMPLES * sizeof(int16_t))
 #define AUDIO_CAPTURE_LOG_INTERVAL_FRAMES (50)
-#define AUDIO_CAPTURE_EXPORT_MAX_SECONDS (5)
-#define AUDIO_CAPTURE_EXPORT_MIN_SECONDS (1)
 #define AUDIO_CAPTURE_SESSION_SAFETY_MAX_SECONDS (600)
-#define AUDIO_CAPTURE_EXPORT_BASE64_PREFIX "PCM64:"
-#define AUDIO_CAPTURE_EXPORT_LINE_BUFFER_BYTES 1024
-#define AUDIO_CAPTURE_EXPORT_RAW_CHUNK_BYTES 160
-#define AUDIO_CAPTURE_EXPORT_USB_TIMEOUT_MS 2000
 #define AUDIO_CAPTURE_STREAM_BATCH_FRAMES 4
 #define AUDIO_CAPTURE_STREAM_BATCH_BYTES (AUDIO_CAPTURE_STREAM_BATCH_FRAMES * AUDIO_CAPTURE_FRAME_BYTES)
 
@@ -54,7 +45,6 @@ static const char *TAG = "audio_capture";
 
 typedef enum {
     AUDIO_CAPTURE_EXPORT_MODE_NONE = 0,
-    AUDIO_CAPTURE_EXPORT_MODE_FIXED,
     AUDIO_CAPTURE_EXPORT_MODE_SESSION,
 } audio_capture_export_mode_t;
 
@@ -73,7 +63,6 @@ typedef struct {
     uint32_t session_id;
     uint16_t stream_next_packet_sequence;
     uint16_t stream_batch_frame_count;
-    uint8_t *pcm_buffer;
     uint8_t stream_batch_buffer[AUDIO_CAPTURE_STREAM_BATCH_BYTES];
     uint8_t stream_emit_buffer[AUDIO_CAPTURE_STREAM_BATCH_BYTES];
 } audio_capture_export_state_t;
@@ -89,146 +78,13 @@ static uint32_t s_underrun_count;
 static uint32_t s_dropped_frame_count;
 static audio_capture_export_state_t s_export_state;
 static SemaphoreHandle_t s_state_mutex;
-static audio_capture_export_callback_t s_export_callback;
 static uint32_t s_session_id_counter;
 
 static void audio_capture_export_cleanup(void)
 {
-    free(s_export_state.pcm_buffer);
     memset(&s_export_state, 0, sizeof(s_export_state));
 }
 
-static uint8_t *audio_capture_alloc_export_buffer(size_t buffer_size)
-{
-    uint8_t *buffer = (uint8_t *)heap_caps_malloc(buffer_size, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
-    if (buffer != NULL) {
-        return buffer;
-    }
-    return (uint8_t *)malloc(buffer_size);
-}
-
-static bool audio_capture_usb_write_all(const void *data, size_t size)
-{
-    const uint8_t *cursor = (const uint8_t *)data;
-    size_t remaining = size;
-
-    while (remaining > 0) {
-        int written = usb_serial_jtag_write_bytes(
-            cursor,
-            remaining,
-            pdMS_TO_TICKS(AUDIO_CAPTURE_EXPORT_USB_TIMEOUT_MS));
-        if (written <= 0) {
-            return false;
-        }
-        cursor += written;
-        remaining -= (size_t)written;
-    }
-
-    return usb_serial_jtag_wait_tx_done(pdMS_TO_TICKS(AUDIO_CAPTURE_EXPORT_USB_TIMEOUT_MS)) == ESP_OK;
-}
-
-static void audio_capture_emit_export_buffer(void)
-{
-    char line_buffer[AUDIO_CAPTURE_EXPORT_LINE_BUFFER_BYTES];
-    size_t base64_out_len = 0;
-    const char *mode_string =
-        (s_export_state.mode == AUDIO_CAPTURE_EXPORT_MODE_SESSION) ? "session" : "fixed";
-    const char *begin_template =
-        "AUDIO_CAPTURE_EXPORT_BEGIN mode=%s duration_s=%" PRIu32 " frames=%" PRIu32 " pcm_bytes=%u frame_bytes=%u\n";
-    const char *end_template = "AUDIO_CAPTURE_EXPORT_END pcm_bytes=%u\n";
-
-    int begin_len = snprintf(
-        line_buffer,
-        sizeof(line_buffer),
-        begin_template,
-        mode_string,
-        s_export_state.duration_seconds,
-        s_export_state.captured_frames,
-        (unsigned)s_export_state.pcm_bytes_written,
-        (unsigned)AUDIO_CAPTURE_FRAME_BYTES);
-    if (begin_len > 0) {
-        audio_capture_usb_write_all(line_buffer, (size_t)begin_len);
-    }
-
-    for (size_t pcm_offset = 0; pcm_offset < s_export_state.pcm_bytes_written; pcm_offset += AUDIO_CAPTURE_EXPORT_RAW_CHUNK_BYTES) {
-        size_t raw_chunk_size = s_export_state.pcm_bytes_written - pcm_offset;
-        if (raw_chunk_size > AUDIO_CAPTURE_EXPORT_RAW_CHUNK_BYTES) {
-            raw_chunk_size = AUDIO_CAPTURE_EXPORT_RAW_CHUNK_BYTES;
-        }
-        const uint8_t *frame_ptr = s_export_state.pcm_buffer + pcm_offset;
-        memcpy(line_buffer, AUDIO_CAPTURE_EXPORT_BASE64_PREFIX, strlen(AUDIO_CAPTURE_EXPORT_BASE64_PREFIX));
-        int ret = mbedtls_base64_encode(
-            (unsigned char *)(line_buffer + strlen(AUDIO_CAPTURE_EXPORT_BASE64_PREFIX)),
-            sizeof(line_buffer) - strlen(AUDIO_CAPTURE_EXPORT_BASE64_PREFIX) - 2,
-            &base64_out_len,
-            frame_ptr,
-            raw_chunk_size);
-        if (ret != 0) {
-            s_dropped_frame_count++;
-            ESP_LOGW(TAG, "dropped frame=%" PRIu32 " ret=%d", s_dropped_frame_count, ret);
-            continue;
-        }
-
-        size_t total_len = strlen(AUDIO_CAPTURE_EXPORT_BASE64_PREFIX) + base64_out_len;
-        line_buffer[total_len++] = '\n';
-        line_buffer[total_len] = '\0';
-        if (!audio_capture_usb_write_all(line_buffer, total_len)) {
-            s_dropped_frame_count++;
-            ESP_LOGW(TAG, "dropped frame=%" PRIu32 " ret=%d", s_dropped_frame_count, ESP_ERR_TIMEOUT);
-            break;
-        }
-    }
-
-    int end_len = snprintf(line_buffer, sizeof(line_buffer), end_template, (unsigned)s_export_state.pcm_bytes_written);
-    if (end_len > 0) {
-        audio_capture_usb_write_all(line_buffer, (size_t)end_len);
-    }
-}
-
-void audio_capture_set_export_callback(audio_capture_export_callback_t callback)
-{
-    s_export_callback = callback;
-}
-
-bool audio_capture_request_fixed_export_seconds(uint32_t duration_seconds)
-{
-    if (duration_seconds < AUDIO_CAPTURE_EXPORT_MIN_SECONDS || duration_seconds > AUDIO_CAPTURE_EXPORT_MAX_SECONDS) {
-        ESP_LOGW(TAG, "drop export request: invalid duration=%" PRIu32, duration_seconds);
-        return false;
-    }
-    if (s_state_mutex == NULL || xSemaphoreTake(s_state_mutex, portMAX_DELAY) != pdTRUE) {
-        ESP_LOGW(TAG, "drop export request: state lock unavailable");
-        return false;
-    }
-
-    if (s_export_state.requested || s_export_state.active) {
-        xSemaphoreGive(s_state_mutex);
-        ESP_LOGW(TAG, "drop export request: export already active");
-        return false;
-    }
-
-    memset(&s_export_state, 0, sizeof(s_export_state));
-    s_export_state.mode = AUDIO_CAPTURE_EXPORT_MODE_FIXED;
-    s_export_state.duration_seconds = duration_seconds;
-    s_export_state.total_frames = (duration_seconds * 1000U) / AUDIO_CAPTURE_FRAME_MS;
-    s_export_state.pcm_bytes_total = (size_t)s_export_state.total_frames * AUDIO_CAPTURE_FRAME_BYTES;
-    s_export_state.pcm_buffer = audio_capture_alloc_export_buffer(s_export_state.pcm_bytes_total);
-    if (s_export_state.pcm_buffer == NULL) {
-        xSemaphoreGive(s_state_mutex);
-        ESP_LOGW(TAG, "drop export request: no memory for %u bytes", (unsigned)s_export_state.pcm_bytes_total);
-        return false;
-    }
-
-    s_export_state.requested = true;
-    xSemaphoreGive(s_state_mutex);
-    ESP_LOGI(
-        TAG,
-        "audio export requested: duration_s=%" PRIu32 " frames=%" PRIu32 " pcm_bytes=%u",
-        duration_seconds,
-        s_export_state.total_frames,
-        (unsigned)s_export_state.pcm_bytes_total);
-    return true;
-}
 
 esp_err_t audio_capture_session_begin(void)
 {
@@ -354,11 +210,7 @@ static void audio_capture_task(void *arg)
                 }
 
                 if (s_export_state.active && s_export_state.captured_frames < s_export_state.total_frames) {
-                    if (s_export_state.mode == AUDIO_CAPTURE_EXPORT_MODE_FIXED) {
-                        size_t frame_offset = (size_t)s_export_state.captured_frames * AUDIO_CAPTURE_FRAME_BYTES;
-                        memcpy(s_export_state.pcm_buffer + frame_offset, frame_buffer, AUDIO_CAPTURE_FRAME_BYTES);
-                        s_export_state.pcm_bytes_written += AUDIO_CAPTURE_FRAME_BYTES;
-                    } else if (s_export_state.mode == AUDIO_CAPTURE_EXPORT_MODE_SESSION) {
+                    if (s_export_state.mode == AUDIO_CAPTURE_EXPORT_MODE_SESSION) {
                         if (!s_export_state.ble_session_started) {
                             should_session_start = true;
                             session_id = s_export_state.session_id;
@@ -386,11 +238,6 @@ static void audio_capture_task(void *arg)
                     }
 
                     s_export_state.captured_frames++;
-
-                    if (s_export_state.mode == AUDIO_CAPTURE_EXPORT_MODE_FIXED &&
-                        s_export_state.captured_frames >= s_export_state.total_frames) {
-                        should_emit = true;
-                    }
 
                     if (s_export_state.mode == AUDIO_CAPTURE_EXPORT_MODE_SESSION &&
                         (s_export_state.stop_requested || s_export_state.captured_frames >= s_export_state.total_frames)) {
@@ -506,9 +353,6 @@ static void audio_capture_task(void *arg)
                 }
 
                 if (should_emit) {
-                    if (s_export_state.mode == AUDIO_CAPTURE_EXPORT_MODE_FIXED) {
-                        audio_capture_emit_export_buffer();
-                    }
                     if (xSemaphoreTake(s_state_mutex, portMAX_DELAY) == pdTRUE) {
                         audio_capture_export_cleanup();
                         xSemaphoreGive(s_state_mutex);
@@ -670,20 +514,23 @@ esp_err_t audio_capture_start(void)
 
     err = audio_capture_i2c_init();
     if (err != ESP_OK) {
-        ESP_LOGE(TAG, "codec init fail");
+        ESP_LOGE(TAG, "i2c init fail");
+        i2s_channel_disable(s_i2s_rx_handle);
         return err;
     }
 
     err = audio_capture_codec_init();
     if (err != ESP_OK) {
         ESP_LOGE(TAG, "codec init fail");
+        i2s_channel_disable(s_i2s_rx_handle);
         return err;
     }
     ESP_LOGI(TAG, "codec init ok");
 
     s_state_mutex = xSemaphoreCreateMutex();
     if (s_state_mutex == NULL) {
-        ESP_LOGE(TAG, "dropped frame=%" PRIu32 " ret=%d", ++s_dropped_frame_count, ESP_ERR_NO_MEM);
+        ESP_LOGE(TAG, "state mutex create fail");
+        i2s_channel_disable(s_i2s_rx_handle);
         return ESP_ERR_NO_MEM;
     }
 
@@ -696,7 +543,11 @@ esp_err_t audio_capture_start(void)
         5,
         &s_capture_task_handle);
     if (task_ok != pdPASS) {
-        ESP_LOGE(TAG, "dropped frame=%" PRIu32 " ret=%d", ++s_dropped_frame_count, ESP_ERR_NO_MEM);
+        ESP_LOGE(TAG, "task create fail");
+        i2s_channel_disable(s_i2s_rx_handle);
+        vSemaphoreDelete(s_state_mutex);
+        s_state_mutex = NULL;
+        s_started = false;
         return ESP_ERR_NO_MEM;
     }
     return ESP_OK;

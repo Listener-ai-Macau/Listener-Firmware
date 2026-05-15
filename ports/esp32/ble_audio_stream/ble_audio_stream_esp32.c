@@ -94,7 +94,7 @@ uint16_t ble_audio_stream_count_audio_packets(uint16_t pcm_bytes)
     return (uint16_t)((pcm_bytes + payload_bytes - 1u) / payload_bytes);
 }
 
-static void ble_audio_stream_reset_notify_credit_locked(void)
+static void ble_audio_stream_reset_notify_credit(void)
 {
     if (s_notify_credit_sem == NULL) {
         return;
@@ -103,7 +103,7 @@ static void ble_audio_stream_reset_notify_credit_locked(void)
     xQueueReset(s_notify_credit_sem);
 }
 
-static void ble_audio_stream_prime_notify_credit_locked(void)
+static void ble_audio_stream_prime_notify_credit(void)
 {
     if (s_notify_credit_sem == NULL) {
         return;
@@ -115,13 +115,13 @@ static void ble_audio_stream_prime_notify_credit_locked(void)
     }
 }
 
-static void ble_audio_stream_apply_notify_enabled_locked(bool notify_enabled)
+static void ble_audio_stream_apply_notify_enabled(bool notify_enabled)
 {
     s_notify_enabled = notify_enabled;
     if (s_notify_enabled) {
-        ble_audio_stream_prime_notify_credit_locked();
+        ble_audio_stream_prime_notify_credit();
     } else {
-        ble_audio_stream_reset_notify_credit_locked();
+        ble_audio_stream_reset_notify_credit();
     }
 }
 
@@ -237,6 +237,11 @@ static esp_err_t ble_audio_stream_send_packet(
     }
 
     for (int attempt = 0; attempt < BLE_AUDIO_STREAM_NOTIFY_RETRY_LIMIT; ++attempt) {
+        if (s_conn_handle == BLE_HS_CONN_HANDLE_NONE || !s_notify_enabled) {
+            ESP_LOGW(TAG, "notify aborted: link lost during retry");
+            return ESP_ERR_INVALID_STATE;
+        }
+
         esp_err_t credit_err = ble_audio_stream_wait_notify_credit(
             packet_type,
             session_id,
@@ -636,7 +641,7 @@ void ble_audio_stream_on_gap_connect(uint16_t conn_handle)
 {
     s_conn_handle = conn_handle;
     if (s_pending_subscribe_valid && s_pending_subscribe_conn_handle == conn_handle) {
-        ble_audio_stream_apply_notify_enabled_locked(s_pending_notify_enabled);
+        ble_audio_stream_apply_notify_enabled(s_pending_notify_enabled);
         ESP_LOGI(
             TAG,
             "audio notify subscription restored before connect: conn=%d notify=%u window=%u",
@@ -651,14 +656,14 @@ void ble_audio_stream_on_gap_connect(uint16_t conn_handle)
         return;
     }
 
-    ble_audio_stream_apply_notify_enabled_locked(false);
+    ble_audio_stream_apply_notify_enabled(false);
 }
 
 void ble_audio_stream_on_gap_disconnect(uint16_t conn_handle)
 {
     if (s_conn_handle == conn_handle) {
         s_conn_handle = BLE_HS_CONN_HANDLE_NONE;
-        ble_audio_stream_apply_notify_enabled_locked(false);
+        ble_audio_stream_apply_notify_enabled(false);
     }
 
     if (s_pending_subscribe_valid && s_pending_subscribe_conn_handle == conn_handle) {
@@ -695,7 +700,7 @@ void ble_audio_stream_on_gap_subscribe(
     s_pending_subscribe_valid = false;
     s_pending_subscribe_conn_handle = BLE_HS_CONN_HANDLE_NONE;
     s_pending_notify_enabled = false;
-    ble_audio_stream_apply_notify_enabled_locked(cur_notify != 0);
+    ble_audio_stream_apply_notify_enabled(cur_notify != 0);
     ESP_LOGI(
         TAG,
         "audio notify subscription changed: conn=%d attr=%d notify=%u window=%u",

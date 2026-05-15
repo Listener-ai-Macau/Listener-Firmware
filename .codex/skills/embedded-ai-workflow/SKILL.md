@@ -135,6 +135,36 @@ Preferred acceptance methods:
 
 Avoid vague acceptance text such as `works`, `looks good`, or `mostly done`.
 
+## Verification Timeout Rule
+
+Treat runtime budgeting as part of verification design, not an optional convenience.
+
+Default rules:
+
+- Before running any build, flash, capture, regression, log-collection, or host/device script, define an expected time budget
+- Prefer explicit command timeouts at invocation time instead of open-ended waiting
+- If the command exceeds its expected budget, stop it and report `timeout` rather than continuing to wait by default
+- Do not treat `it is still running` as sufficient evidence that the run is healthy
+- When a step needs a longer timeout than usual, record why that longer budget is justified
+
+Preferred interpretation:
+
+- `normal but bounded`: allow it to run within the declared time budget
+- `clearly over budget`: terminate and treat as a timeout signal that needs explanation
+- `needs a bigger budget`: explain the reason concretely before rerunning with a longer timeout
+
+When reporting a timeout, do not stop at `timed out`.
+
+Also report:
+
+- which command timed out
+- what the expected duration or budget was
+- what phase it appeared to be stuck in
+- why continued waiting was not justified
+- the most likely next diagnostic step
+
+Avoid rationalizing obviously long waits as `probably normal` unless there is concrete evidence from prior runs, repository docs, or live progress logs that the duration is expected.
+
 ## Bug Workflow
 
 Important bugs follow the same process.

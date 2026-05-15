@@ -1,148 +1,100 @@
 import argparse
-import base64
+import asyncio
 import pathlib
-import struct
-import time
 
-import serial
-
-
-SAMPLE_RATE = 16000
-BITS_PER_SAMPLE = 16
-CHANNELS = 1
-FRAME_MS = 20
-FRAME_BYTES = (SAMPLE_RATE * FRAME_MS // 1000) * (BITS_PER_SAMPLE // 8) * CHANNELS
+from ble_audio_regression_common import DEFAULT_SERIAL_LOG_PATH, make_capture_args
+from capture_audio_ble_wav import configure_utf8_stdio, run_capture_with_args
 
 
-def make_wav_header(pcm_bytes: int) -> bytes:
-    byte_rate = SAMPLE_RATE * CHANNELS * (BITS_PER_SAMPLE // 8)
-    block_align = CHANNELS * (BITS_PER_SAMPLE // 8)
-    return (
-        b"RIFF"
-        + struct.pack("<I", 36 + pcm_bytes)
-        + b"WAVE"
-        + b"fmt "
-        + struct.pack("<IHHIIHH", 16, 1, CHANNELS, SAMPLE_RATE, byte_rate, block_align, BITS_PER_SAMPLE)
-        + b"data"
-        + struct.pack("<I", pcm_bytes)
+DEFAULT_OUTPUT_ROOT = pathlib.Path("tests") / "artifacts" / "audio"
+
+
+def parse_args():
+    parser = argparse.ArgumentParser(
+        description=(
+            "Capture audio to WAV using the current BLE session path. "
+            "The legacy fixed ACAP/PCM64 export path has been retired."
+        )
     )
-
-
-def main() -> None:
-    parser = argparse.ArgumentParser()
     parser.add_argument("--port", required=True)
+    parser.add_argument("--device-name", default="Listener Keyboard")
     parser.add_argument("--duration-seconds", type=int)
     parser.add_argument("--capture-seconds", type=int)
     parser.add_argument("--mode", choices=["fixed", "toggle-session"], default="fixed")
     parser.add_argument("--baud", default=115200, type=int)
-    parser.add_argument("--boot-timeout-seconds", default=12, type=int)
-    parser.add_argument("--export-timeout-seconds", default=45, type=int)
+    parser.add_argument("--boot-timeout-seconds", default=15, type=int)
+    parser.add_argument("--ble-connect-timeout-seconds", default=12, type=int)
+    parser.add_argument("--notify-ready-timeout-seconds", default=20, type=int)
+    parser.add_argument("--timeout-seconds", default=60, type=int)
     parser.add_argument("--wav-path", required=True)
-    args = parser.parse_args()
+    parser.add_argument("--serial-log-path", default=None)
+    parser.add_argument("--trigger-mode", choices=["serial-toggle", "physical-key"], default=None)
+    parser.add_argument("--no-reset-before-capture", action="store_false", dest="reset_before_capture")
+    parser.set_defaults(reset_before_capture=True)
+    return parser.parse_args()
 
+
+def resolve_capture_args(args) -> argparse.Namespace:
     wav_path = pathlib.Path(args.wav_path)
+    wav_path.parent.mkdir(parents=True, exist_ok=True)
+
     if args.mode == "fixed":
         if args.duration_seconds is None:
             raise RuntimeError("capture_audio_wav: --duration-seconds is required in fixed mode")
-        expected_pcm_bytes = args.duration_seconds * SAMPLE_RATE * (BITS_PER_SAMPLE // 8) * CHANNELS
-        start_command = f"~ACAP:{args.duration_seconds}\n".encode("ascii")
-        stop_command = None
-        active_capture_seconds = args.duration_seconds
+        capture_seconds = args.duration_seconds
+        trigger_mode = args.trigger_mode or "serial-toggle"
     else:
         if args.capture_seconds is None:
             raise RuntimeError("capture_audio_wav: --capture-seconds is required in toggle-session mode")
-        expected_pcm_bytes = args.capture_seconds * SAMPLE_RATE * (BITS_PER_SAMPLE // 8) * CHANNELS
-        max_pcm_bytes = expected_pcm_bytes + FRAME_BYTES * 8
-        start_command = b"~VREC:TOGGLE\n"
-        stop_command = b"~VREC:TOGGLE\n"
-        active_capture_seconds = args.capture_seconds
+        capture_seconds = args.capture_seconds
+        trigger_mode = args.trigger_mode or "serial-toggle"
 
-    ser = serial.Serial(args.port, args.baud, timeout=0.2)
-    try:
-        ser.reset_input_buffer()
-        ser.reset_output_buffer()
-        ser.dtr = False
-        ser.rts = True
-        time.sleep(0.1)
-        ser.rts = False
-        time.sleep(0.2)
-        ser.reset_input_buffer()
+    serial_log_path = args.serial_log_path
+    if serial_log_path is None:
+        serial_log_path = str(DEFAULT_SERIAL_LOG_PATH)
 
-        boot_deadline = time.time() + args.boot_timeout_seconds
-        boot_buffer = bytearray()
-        while time.time() < boot_deadline:
-            data = ser.read(4096)
-            if data:
-                boot_buffer.extend(data)
-                boot_text = boot_buffer.decode("utf-8", errors="replace")
-                if "audio_capture: codec init ok" in boot_text and "ble_hid: USB SERIAL INPUT READY" in boot_text:
-                    break
-        else:
-            raise RuntimeError("capture_audio_wav: device did not become ready before timeout")
+    return make_capture_args(
+        port=args.port,
+        device_name=args.device_name,
+        capture_seconds=capture_seconds,
+        trigger_mode=trigger_mode,
+        max_sessions=1,
+        timeout_seconds=args.timeout_seconds,
+        output_dir=wav_path.parent,
+        serial_log_path=pathlib.Path(serial_log_path),
+        boot_timeout_seconds=args.boot_timeout_seconds,
+        ble_connect_timeout_seconds=args.ble_connect_timeout_seconds,
+        notify_ready_timeout_seconds=args.notify_ready_timeout_seconds,
+        reset_before_capture=args.reset_before_capture,
+    )
 
-        ser.write(start_command)
-        ser.flush()
 
-        if stop_command is not None:
-            time.sleep(active_capture_seconds)
-            ser.write(stop_command)
-            ser.flush()
+async def main_async(args) -> None:
+    capture_args = resolve_capture_args(args)
+    summaries = await run_capture_with_args(capture_args)
+    summary = summaries[0]
 
-        export_deadline = time.time() + args.export_timeout_seconds
-        line_buffer = bytearray()
-        pcm_data = bytearray()
-        saw_begin = False
-        saw_end = False
+    output_dir = pathlib.Path(capture_args.output_dir)
+    latest_wav_path = output_dir / "capture_ble_latest_16k_mono.wav"
+    requested_wav_path = pathlib.Path(args.wav_path)
+    if latest_wav_path.resolve() != requested_wav_path.resolve():
+        requested_wav_path.write_bytes(latest_wav_path.read_bytes())
 
-        while time.time() < export_deadline:
-            data = ser.read(4096)
-            if not data:
-                continue
+    print(f"wav_path={requested_wav_path}")
+    print(f"session_id={summary['session_id']}")
+    print(f"received_packet_count={summary['received_packet_count']}")
+    print(f"expected_packet_count={summary['expected_packet_count']}")
+    print(f"missing_packet_count={summary['missing_packet_count']}")
+    print(f"received_pcm_bytes={summary['received_pcm_bytes']}")
+    print(f"duration_seconds={summary['duration_seconds']:.3f}")
+    if summary.get("serial_log_path"):
+        print(f"serial_log_path={summary['serial_log_path']}")
 
-            line_buffer.extend(data)
-            while b"\n" in line_buffer:
-                raw_line, _, line_buffer = line_buffer.partition(b"\n")
-                line = raw_line.decode("utf-8", errors="replace").strip()
-                if not line:
-                    continue
-                if "AUDIO_CAPTURE_EXPORT_BEGIN" in line:
-                    saw_begin = True
-                    continue
-                pcm_marker = line.find("PCM64:")
-                if pcm_marker >= 0:
-                    payload = line[pcm_marker + len("PCM64:") :]
-                    pcm_data.extend(base64.b64decode(payload.encode("ascii")))
-                    continue
-                if "AUDIO_CAPTURE_EXPORT_END" in line:
-                    saw_end = True
-                    break
-            if saw_end:
-                break
 
-        if not saw_begin:
-            raise RuntimeError("capture_audio_wav: missing AUDIO_CAPTURE_EXPORT_BEGIN marker")
-        if not saw_end:
-            raise RuntimeError("capture_audio_wav: missing AUDIO_CAPTURE_EXPORT_END marker")
-        if args.mode == "fixed":
-            if len(pcm_data) != expected_pcm_bytes:
-                raise RuntimeError(
-                    f"capture_audio_wav: pcm size mismatch expected={expected_pcm_bytes} actual={len(pcm_data)}"
-                )
-        else:
-            if len(pcm_data) < expected_pcm_bytes:
-                raise RuntimeError(
-                    f"capture_audio_wav: pcm size too short expected_at_least={expected_pcm_bytes} actual={len(pcm_data)}"
-                )
-            if len(pcm_data) > max_pcm_bytes:
-                raise RuntimeError(
-                    f"capture_audio_wav: pcm size too long max_expected={max_pcm_bytes} actual={len(pcm_data)}"
-                )
-
-        wav_path.write_bytes(make_wav_header(len(pcm_data)) + pcm_data)
-        print(f"wav_path={wav_path}")
-        print(f"pcm_bytes={len(pcm_data)}")
-    finally:
-        ser.close()
+def main() -> None:
+    configure_utf8_stdio()
+    args = parse_args()
+    asyncio.run(main_async(args))
 
 
 if __name__ == "__main__":

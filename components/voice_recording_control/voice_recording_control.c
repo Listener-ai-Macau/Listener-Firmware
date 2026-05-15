@@ -15,7 +15,6 @@
 
 #define VOICE_RECORDING_CONTROL_PREFIX_CHAR '~'
 #define VOICE_RECORDING_CONTROL_COMMAND_BUFFER_BYTES 32
-#define VOICE_RECORDING_CONTROL_ACAP_PREFIX "ACAP:"
 #define VOICE_RECORDING_CONTROL_VREC_PREFIX "VREC:"
 #define VOICE_RECORDING_CONTROL_TASK_POLL_MS 20
 
@@ -142,21 +141,6 @@ bool voice_recording_control_consume_usb_control_byte(uint8_t input_char)
     if (input_char == '\n') {
         s_usb_command_active = false;
         s_usb_command_buffer[s_usb_command_length] = '\0';
-
-        if (strncmp(
-                s_usb_command_buffer,
-                VOICE_RECORDING_CONTROL_ACAP_PREFIX,
-                strlen(VOICE_RECORDING_CONTROL_ACAP_PREFIX)) == 0) {
-            const char *seconds_str = s_usb_command_buffer + strlen(VOICE_RECORDING_CONTROL_ACAP_PREFIX);
-            char *end_ptr = NULL;
-            long duration_seconds = strtol(seconds_str, &end_ptr, 10);
-            if (end_ptr != seconds_str && *end_ptr == '\0' && duration_seconds > 0) {
-                audio_capture_request_fixed_export_seconds((uint32_t)duration_seconds);
-            } else {
-                ESP_LOGW(TAG, "drop control command: %s", s_usb_command_buffer);
-            }
-            return true;
-        }
 
         if (strncmp(
                 s_usb_command_buffer,
