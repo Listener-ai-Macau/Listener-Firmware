@@ -8,7 +8,6 @@ extern "C" {
 void ble_hid_init(void);
 void ble_hid_start(void);
 void ble_hid_task_start_up(void);
-void ble_hid_task_shut_down(void);
 
 #ifdef __cplusplus
 }

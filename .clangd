@@ -1,0 +1,8 @@
+# Keep clangd navigation, references, completion, and background indexing enabled.
+Index:
+  Background: Build
+
+# Hide clangd diagnostics in the editor without disabling clangd itself.
+Diagnostics:
+  Suppress:
+    - '*'

@@ -24,6 +24,8 @@
 
 ## 构建命令
 
+### Windows 终端
+
 ```powershell
 # 新机初始化
 powershell -ExecutionPolicy Bypass -File .\tools\setup_windows.ps1
@@ -40,6 +42,36 @@ powershell -ExecutionPolicy Bypass -File .\tools\flash.ps1 -Port COM3
 
 # 非交互式串口抓取（替代 idf.py monitor）
 powershell -ExecutionPolicy Bypass -File .\tools\capture_serial.ps1 -Port COM3 -ResetBeforeRead
+```
+
+### Git Bash（CI 环境）
+
+`idf.py` 检测到 MSys 会静默退出。用 `pwsh` 调 `esp_idf_ci.ps1` 绕过，直接调底层工具：
+
+```bash
+# 构建
+pwsh -NoProfile -File ./tools/esp_idf_ci.ps1 build
+
+# 烧录（需要设备连接）
+pwsh -NoProfile -File ./tools/esp_idf_ci.ps1 flash -Port COM3
+
+# 擦除 flash
+pwsh -NoProfile -File ./tools/esp_idf_ci.ps1 erase-flash -Port COM3
+
+# 串口监视器
+pwsh -NoProfile -File ./tools/esp_idf_ci.ps1 monitor -Port COM3
+
+# 固件大小
+pwsh -NoProfile -File ./tools/esp_idf_ci.ps1 size
+
+# 切换目标芯片
+pwsh -NoProfile -File ./tools/esp_idf_ci.ps1 set-target -Target esp32s3
+
+# 清理 + 重新配置
+pwsh -NoProfile -File ./tools/esp_idf_ci.ps1 reconfigure
+
+# 查看所有命令
+pwsh -NoProfile -File ./tools/esp_idf_ci.ps1 help
 ```
 
 ## 文档约定

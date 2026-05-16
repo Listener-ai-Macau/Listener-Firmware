@@ -1,6 +1,6 @@
 [CmdletBinding(PositionalBinding = $false)]
 param(
-    [string]$DeviceName = "Listener Keyboard",
+    [string]$DeviceName = "listener",
     [string]$BluetoothAddress = "DCB4D91112CE",
     [int]$MaintainConnectionDurationSeconds = 12,
     [int]$PollIntervalSeconds = 2,

@@ -61,6 +61,7 @@ The human mainly owns requirements, architecture tradeoffs, hardware bring-up co
 - Keep edits aligned with the repository's ESP32-now, STM32-later boundary.
 - When the task affects product scope or backend/device assumptions, consult `!docs/product_solutions.md`.
 - When the repository has approved plans under `!docs/plans/`, answer "what next" by referencing the current approved plan step.
+- For simple low-risk bug fixes, use the embedded workflow `fast` path by default: fix directly, verify narrowly, and skip new `!docs/fixes/` documents unless the investigation becomes ambiguous or risky.
 
 ## Directory Boundaries
 
@@ -144,12 +145,13 @@ python .\tools\verify_audio_ble_upload_end_to_end.py --port COM3 --capture-secon
 - Do not change the host primary subscription order: `CCCD notify -> ValueChanged`.
 - Do not remove the device compatibility for `subscribe` arriving before `connect`.
 - Keep docs in Chinese by default.
-- If there is an active plan or fix under `!docs/plans/` or `!docs/fixes/`, follow it before inventing an ad-hoc next step.
+- If there is an active related plan or fix under `!docs/plans/` or `!docs/fixes/`, follow it before inventing an ad-hoc next step. Unrelated simple local bug fixes may still use the fast path.
 
 ## Planning And Cleanup Rules
 
 - Feature and implementation plans live in `!docs/plans/`.
 - Current bug fix and investigation docs live in `!docs/fixes/`.
+- Simple low-risk bug fixes do not need a new `!docs/fixes/` document by default; direct fix plus focused verification is enough.
 - Durable completion summaries belong in `!docs/features/` or another relevant `!docs/` file.
 - Prefer keeping `!docs/plans/` clean: templates plus current valid plans.
 - Prefer keeping `!docs/fixes/` clean: only current bug fix or investigation docs.

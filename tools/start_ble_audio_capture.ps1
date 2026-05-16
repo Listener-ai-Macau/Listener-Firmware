@@ -2,7 +2,7 @@
 param(
     [Parameter(Mandatory = $true)]
     [string]$Port,
-    [string]$DeviceName = "Listener Keyboard",
+    [string]$DeviceName = "listener",
     [string]$OutputDir = "",
     [string]$SerialLogPath = "",
     [int]$MaxSessions = 1

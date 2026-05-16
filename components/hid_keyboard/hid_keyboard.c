@@ -96,7 +96,7 @@ static void hid_keyboard_translate_ascii(uint8_t *report_buffer, char input_char
     KEY_CASE('|', USB_HID_MODIFIER_LEFT_SHIFT, USB_HID_BACK_SLASH);
     KEY_CASE(',', 0, USB_HID_COMMA);
     KEY_CASE('<', USB_HID_MODIFIER_LEFT_SHIFT, USB_HID_COMMA);
-    KEY_CASE('>', USB_HID_MODIFIER_LEFT_SHIFT, USB_HID_COMMA);
+    KEY_CASE('>', USB_HID_MODIFIER_LEFT_SHIFT, USB_HID_DOT);
     KEY_CASE('@', USB_HID_MODIFIER_LEFT_SHIFT, 31);
     KEY_CASE('!', USB_HID_MODIFIER_LEFT_SHIFT, 30);
     KEY_CASE('#', USB_HID_MODIFIER_LEFT_SHIFT, 32);
@@ -113,6 +113,16 @@ static void hid_keyboard_translate_ascii(uint8_t *report_buffer, char input_char
     KEY_CASE('+', USB_HID_MODIFIER_LEFT_SHIFT, 0x2E);
     KEY_CASE(8, 0, 0x2A);
     KEY_CASE('\t', 0, 0x2B);
+    KEY_CASE(';', 0, 0x33);
+    KEY_CASE(':', USB_HID_MODIFIER_LEFT_SHIFT, 0x33);
+    KEY_CASE('\'', 0, 0x34);
+    KEY_CASE('"', USB_HID_MODIFIER_LEFT_SHIFT, 0x34);
+    KEY_CASE('`', 0, 0x35);
+    KEY_CASE('~', USB_HID_MODIFIER_LEFT_SHIFT, 0x35);
+    KEY_CASE('[', 0, 0x2F);
+    KEY_CASE(']', 0, 0x30);
+    KEY_CASE('{', USB_HID_MODIFIER_LEFT_SHIFT, 0x2F);
+    KEY_CASE('}', USB_HID_MODIFIER_LEFT_SHIFT, 0x30);
     default:
         report_buffer[0] = 0;
         report_buffer[2] = 0;

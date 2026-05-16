@@ -12,7 +12,6 @@ extern "C" {
 
 esp_err_t voice_recording_control_start(void);
 bool voice_recording_control_consume_usb_control_byte(uint8_t input_char);
-bool voice_recording_control_is_recording(void);
 
 #ifdef __cplusplus
 }

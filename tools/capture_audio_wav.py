@@ -17,7 +17,7 @@ def parse_args():
         )
     )
     parser.add_argument("--port", required=True)
-    parser.add_argument("--device-name", default="Listener Keyboard")
+    parser.add_argument("--device-name", default="listener")
     parser.add_argument("--duration-seconds", type=int)
     parser.add_argument("--capture-seconds", type=int)
     parser.add_argument("--mode", choices=["fixed", "toggle-session"], default="fixed")

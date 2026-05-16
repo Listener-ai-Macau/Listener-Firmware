@@ -1,10 +1,6 @@
 #include "board.h"
 
-#include <stdio.h>
-
-void board_init(void)
-{
-}
+#include "esp_log.h"
 
 void board_print_help(void)
 {
@@ -16,7 +12,7 @@ void board_print_help(void)
         "Capture toggle session WAV with tools/capture_audio_session_wav.ps1 -Port COM3.\n"
         "Hardware voice key uses KEY1: press once to start, press again to stop.\n"
         "End-to-end keystroke delivery still requires a BLE host connection.\n"
-        "########################################################################\n";
+        "########################################################################";
 
-    printf("%s\n", help_string);
+    ESP_LOGI("board", "%s", help_string);
 }

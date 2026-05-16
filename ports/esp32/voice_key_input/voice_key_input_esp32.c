@@ -5,6 +5,7 @@
 #include <inttypes.h>
 
 #include "freertos/FreeRTOS.h"
+#include "freertos/semphr.h"
 #include "freertos/task.h"
 #include "driver/gpio.h"
 #include "driver/i2c_master.h"
@@ -26,6 +27,8 @@
 #define VOICE_KEY_INPUT_KEY1_MASK_IO0_5 (1U << 5)
 #define VOICE_KEY_INPUT_EXPANDER_KEY_MASKS (VOICE_KEY_INPUT_KEY1_MASK_IO0_4 | VOICE_KEY_INPUT_KEY1_MASK_IO0_5)
 #define VOICE_KEY_INPUT_POLL_MS        (20)
+#define VOICE_KEY_INPUT_DEBOUNCE_THRESHOLD (3)
+#define VOICE_KEY_INPUT_EVENT_QUEUE_LENGTH (8)
 #define VOICE_KEY_INPUT_I2C_TIMEOUT_MS (100)
 #define VOICE_KEY_INPUT_PROBE_RETRY_COUNT (4)
 #define VOICE_KEY_INPUT_PROBE_RETRY_DELAY_MS (80)
@@ -33,6 +36,16 @@
 #define VOICE_KEY_INPUT_ALL_MASK       (0xFFFFU)
 
 static const char *TAG = "voice_key_input";
+
+typedef struct {
+    const char *label;
+    bool idle_level_valid;
+    bool idle_level_high;
+    bool last_sample_high;
+    bool stable_level_high;
+    uint8_t stable_count;
+    bool pressed;
+} voice_key_button_state_t;
 
 typedef struct {
     const char *label;
@@ -46,30 +59,21 @@ static bool s_started;
 static i2c_master_bus_handle_t s_i2c_bus_handle;
 static esp_io_expander_handle_t s_io_expander;
 static TaskHandle_t s_poll_task_handle;
-static bool s_prev_pressed;
-static bool s_prev_raw_high;
-static bool s_idle_level_high;
-static bool s_idle_level_valid;
-static bool s_alt_prev_pressed;
-static bool s_alt_prev_raw_high;
-static bool s_alt_idle_level_high;
-static bool s_alt_idle_level_valid;
+static SemaphoreHandle_t s_toggle_event_sem;
 static bool s_prev_input_valid;
 static uint32_t s_prev_input_levels;
-static bool s_direct_prev_pressed;
-static bool s_direct_prev_raw_high;
-static bool s_direct_idle_level_high;
-static bool s_direct_idle_level_valid;
-static volatile uint32_t s_toggle_event_count;
 static bool s_owns_i2c_bus;
 static const char *s_selected_bus_label;
 static bool s_expander_available;
-
-static void voice_key_input_record_toggle_event(const char *source)
-{
-    s_toggle_event_count++;
-    ESP_LOGI(TAG, "%s press edge detected, toggle_event_count=%" PRIu32, source, s_toggle_event_count);
-}
+static voice_key_button_state_t s_expander_io4_state = {
+    .label = "xl9555.io0_4",
+};
+static voice_key_button_state_t s_expander_io5_state = {
+    .label = "xl9555.io0_5",
+};
+static voice_key_button_state_t s_direct_gpio_state = {
+    .label = "direct.gpio0",
+};
 
 static const voice_key_input_bus_candidate_t s_bus_candidates[] = {
     {
@@ -94,6 +98,68 @@ static const voice_key_input_bus_candidate_t s_bus_candidates[] = {
         .scl_io = VOICE_KEY_INPUT_FALLBACK_SCL_IO,
     },
 };
+
+static void voice_key_input_record_toggle_event(const char *source)
+{
+    if (s_toggle_event_sem == NULL) {
+        ESP_LOGW(TAG, "%s press edge dropped: event queue unavailable", source);
+        return;
+    }
+
+    if (xSemaphoreGive(s_toggle_event_sem) == pdTRUE) {
+        ESP_LOGI(TAG, "%s press edge detected", source);
+    } else {
+        ESP_LOGW(TAG, "%s press edge dropped: event queue full", source);
+    }
+}
+
+static void voice_key_input_handle_button_sample(voice_key_button_state_t *button, bool raw_high)
+{
+    if (button == NULL) {
+        return;
+    }
+
+    if (!button->idle_level_valid) {
+        button->idle_level_valid = true;
+        button->idle_level_high = raw_high;
+        button->last_sample_high = raw_high;
+        button->stable_level_high = raw_high;
+        button->stable_count = 1;
+        button->pressed = false;
+        ESP_LOGI(
+            TAG,
+            "voice key candidate idle level detected: source=%s raw_high=%d pressed_when=%s",
+            button->label,
+            raw_high ? 1 : 0,
+            raw_high ? "low" : "high");
+        return;
+    }
+
+    if (raw_high == button->last_sample_high) {
+        if (button->stable_count < UINT8_MAX) {
+            button->stable_count++;
+        }
+    } else {
+        button->last_sample_high = raw_high;
+        button->stable_count = 1;
+        return;
+    }
+
+    if (button->stable_count < VOICE_KEY_INPUT_DEBOUNCE_THRESHOLD) {
+        return;
+    }
+
+    if (raw_high != button->stable_level_high) {
+        button->stable_level_high = raw_high;
+        ESP_LOGI(TAG, "voice key candidate level changed: source=%s raw_high=%d", button->label, raw_high ? 1 : 0);
+    }
+
+    bool pressed = raw_high != button->idle_level_high;
+    if (pressed && !button->pressed) {
+        voice_key_input_record_toggle_event(button->label);
+    }
+    button->pressed = pressed;
+}
 
 static esp_err_t voice_key_input_probe_candidate(
     const voice_key_input_bus_candidate_t *candidate,
@@ -255,78 +321,20 @@ static void voice_key_input_poll_task(void *parameter)
                     s_prev_input_levels = pin_levels;
                 }
 
-                bool raw_high = (pin_levels & VOICE_KEY_INPUT_KEY1_MASK_IO0_4) != 0;
-                if (!s_idle_level_valid) {
-                    s_idle_level_high = raw_high;
-                    s_prev_raw_high = raw_high;
-                    s_idle_level_valid = true;
-                    ESP_LOGI(
-                        TAG,
-                        "voice key candidate idle level detected: source=xl9555.io0_4 raw_high=%d pressed_when=%s",
-                        raw_high ? 1 : 0,
-                        raw_high ? "low" : "high");
-                } else if (raw_high != s_prev_raw_high) {
-                    s_prev_raw_high = raw_high;
-                    ESP_LOGI(TAG, "voice key candidate level changed: source=xl9555.io0_4 raw_high=%d", raw_high ? 1 : 0);
-                }
-
-                bool pressed = raw_high != s_idle_level_high;
-                if (pressed && !s_prev_pressed) {
-                    voice_key_input_record_toggle_event("xl9555.io0_4");
-                }
-                s_prev_pressed = pressed;
-
-                bool alt_raw_high = (pin_levels & VOICE_KEY_INPUT_KEY1_MASK_IO0_5) != 0;
-                if (!s_alt_idle_level_valid) {
-                    s_alt_idle_level_high = alt_raw_high;
-                    s_alt_prev_raw_high = alt_raw_high;
-                    s_alt_idle_level_valid = true;
-                    ESP_LOGI(
-                        TAG,
-                        "voice key candidate idle level detected: source=xl9555.io0_5 raw_high=%d pressed_when=%s",
-                        alt_raw_high ? 1 : 0,
-                        alt_raw_high ? "low" : "high");
-                } else if (alt_raw_high != s_alt_prev_raw_high) {
-                    s_alt_prev_raw_high = alt_raw_high;
-                    ESP_LOGI(TAG, "voice key candidate level changed: source=xl9555.io0_5 raw_high=%d", alt_raw_high ? 1 : 0);
-                }
-
-                bool alt_pressed = alt_raw_high != s_alt_idle_level_high;
-                if (alt_pressed && !s_alt_prev_pressed) {
-                    voice_key_input_record_toggle_event("xl9555.io0_5");
-                }
-                s_alt_prev_pressed = alt_pressed;
+                voice_key_input_handle_button_sample(
+                    &s_expander_io4_state,
+                    (pin_levels & VOICE_KEY_INPUT_KEY1_MASK_IO0_4) != 0);
+                voice_key_input_handle_button_sample(
+                    &s_expander_io5_state,
+                    (pin_levels & VOICE_KEY_INPUT_KEY1_MASK_IO0_5) != 0);
             } else {
                 ESP_LOGW(TAG, "key1 read failed: %s", esp_err_to_name(ret));
             }
         }
 
-        int direct_level = gpio_get_level(VOICE_KEY_INPUT_DIRECT_GPIO);
-        bool direct_raw_high = direct_level != 0;
-        if (!s_direct_idle_level_valid) {
-            s_direct_idle_level_high = direct_raw_high;
-            s_direct_prev_raw_high = direct_raw_high;
-            s_direct_idle_level_valid = true;
-            ESP_LOGI(
-                TAG,
-                "direct key idle level detected: gpio=%d raw_high=%d pressed_when=%s",
-                VOICE_KEY_INPUT_DIRECT_GPIO,
-                direct_raw_high ? 1 : 0,
-                direct_raw_high ? "low" : "high");
-        } else if (direct_raw_high != s_direct_prev_raw_high) {
-            s_direct_prev_raw_high = direct_raw_high;
-            ESP_LOGI(
-                TAG,
-                "direct key level changed: gpio=%d raw_high=%d",
-                VOICE_KEY_INPUT_DIRECT_GPIO,
-                direct_raw_high ? 1 : 0);
-        }
-
-        bool direct_pressed = direct_raw_high != s_direct_idle_level_high;
-        if (direct_pressed && !s_direct_prev_pressed) {
-            voice_key_input_record_toggle_event("direct.gpio0");
-        }
-        s_direct_prev_pressed = direct_pressed;
+        voice_key_input_handle_button_sample(
+            &s_direct_gpio_state,
+            gpio_get_level(VOICE_KEY_INPUT_DIRECT_GPIO) != 0);
 
         vTaskDelay(pdMS_TO_TICKS(VOICE_KEY_INPUT_POLL_MS));
     }
@@ -337,6 +345,9 @@ esp_err_t voice_key_input_start(void)
     if (s_started) {
         return ESP_OK;
     }
+
+    s_toggle_event_sem = xSemaphoreCreateCounting(VOICE_KEY_INPUT_EVENT_QUEUE_LENGTH, 0);
+    ESP_RETURN_ON_FALSE(s_toggle_event_sem != NULL, ESP_ERR_NO_MEM, TAG, "voice key event queue create failed");
 
     esp_err_t expander_ret = voice_key_input_expander_init();
     if (expander_ret != ESP_OK) {
@@ -364,21 +375,22 @@ esp_err_t voice_key_input_start(void)
     s_started = true;
     ESP_LOGI(
         TAG,
-        "voice key ready: expander=%s candidates=xl9555.io0_4/xl9555.io0_5 + direct.gpio0 bus=%s int_gpio=%d",
+        "voice key ready: expander=%s candidates=xl9555.io0_4/xl9555.io0_5 + direct.gpio0 bus=%s int_gpio=%d poll_ms=%d debounce_samples=%d",
         s_expander_available ? "ready" : "fallback_only",
         s_selected_bus_label != NULL ? s_selected_bus_label : "unknown",
-        VOICE_KEY_INPUT_INT_IO);
+        VOICE_KEY_INPUT_INT_IO,
+        VOICE_KEY_INPUT_POLL_MS,
+        VOICE_KEY_INPUT_DEBOUNCE_THRESHOLD);
     return ESP_OK;
 }
 
 bool voice_key_input_take_toggle_event(void)
 {
-    if (s_toggle_event_count == 0) {
+    if (s_toggle_event_sem == NULL) {
         return false;
     }
 
-    s_toggle_event_count--;
-    return true;
+    return xSemaphoreTake(s_toggle_event_sem, pdMS_TO_TICKS(50)) == pdTRUE;
 }
 
 esp_err_t voice_key_input_set_recording_output(bool enabled)

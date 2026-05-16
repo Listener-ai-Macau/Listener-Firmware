@@ -4,7 +4,7 @@ param(
     [string]$Port,
     [int]$CaptureSeconds = 10,
     [int]$RoundCount = 10,
-    [string]$DeviceName = "Listener Keyboard"
+    [string]$DeviceName = "listener"
 )
 
 $ErrorActionPreference = "Stop"

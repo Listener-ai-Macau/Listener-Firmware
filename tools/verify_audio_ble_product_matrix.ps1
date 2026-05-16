@@ -2,7 +2,7 @@
 param(
     [Parameter(Mandatory = $true)]
     [string]$Port,
-    [string]$DeviceName = "Listener Keyboard",
+    [string]$DeviceName = "listener",
     [string]$Cases = "auto",
     [int]$CaptureSeconds = 5,
     [int]$LongCaptureSeconds = 30,

@@ -3,7 +3,7 @@ param(
     [Parameter(Mandatory = $true)]
     [string]$Port,
     [int]$CaptureSeconds = 60,
-    [string]$DeviceName = "Listener Keyboard"
+    [string]$DeviceName = "listener"
 )
 
 $ErrorActionPreference = "Stop"

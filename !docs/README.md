@@ -9,13 +9,10 @@
 - 活跃方案放到 `plans/`
 - 当前正在处理的 bug fix 放到 `fixes/`
 - 已完成能力沉淀到 `features/`
-- 板级原理图和截图资料放到 `schematics/`
-- 暂不推进但保留参考价值的内容放到 `parking_lot/`
+- 板级原理图资料放到 `schematics/`
 
 ## 当前目录说明
 
-- `ai_development_workflow.md`
-  仓库内 AI 开发流程、计划与验收规则
 - `development_setup.md`
   新机器环境、`build / flash` 和串口使用说明
 - `plans/`
@@ -25,9 +22,7 @@
 - `features/`
   已完成功能或稳定子系统总结
 - `schematics/`
-  板级原理图 PDF 和相关截图资料
-- `parking_lot/`
-  暂不推进但保留参考的材料
+  板级原理图 PDF 和必要参考资料
 - `product_solutions.md`
   当前产品方向和边界说明
 

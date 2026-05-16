@@ -3,7 +3,7 @@ param(
     [Parameter(Mandatory = $true)]
     [string]$Port,
     [int]$CaptureSeconds = 4,
-    [string]$DeviceName = "Listener Keyboard",
+    [string]$DeviceName = "listener",
     [string]$OutputDir = "",
     [string]$SerialLogPath = "",
     [ValidateSet("serial-toggle", "physical-key")]

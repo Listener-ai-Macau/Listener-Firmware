@@ -42,7 +42,7 @@ def parse_args():
         description="Run the BLE audio product-surface test matrix (P-series)."
     )
     parser.add_argument("--port", required=True)
-    parser.add_argument("--device-name", default="Listener Keyboard")
+    parser.add_argument("--device-name", default="listener")
     parser.add_argument("--cases", default="auto")
     parser.add_argument("--capture-seconds", type=int, default=5)
     parser.add_argument("--long-capture-seconds", type=int, default=30)

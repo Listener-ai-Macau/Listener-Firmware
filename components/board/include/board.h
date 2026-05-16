@@ -5,7 +5,6 @@
 extern "C" {
 #endif
 
-void board_init(void);
 void board_print_help(void);
 
 #ifdef __cplusplus

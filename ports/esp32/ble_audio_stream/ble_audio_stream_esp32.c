@@ -32,8 +32,7 @@
 #define BLE_AUDIO_STREAM_NOTIFY_RETRY_LIMIT 80
 
 typedef enum {
-    BLE_AUDIO_STREAM_JOB_TYPE_EXPORT = 0,
-    BLE_AUDIO_STREAM_JOB_TYPE_SESSION_START,
+    BLE_AUDIO_STREAM_JOB_TYPE_SESSION_START = 0,
     BLE_AUDIO_STREAM_JOB_TYPE_SESSION_AUDIO_DATA,
     BLE_AUDIO_STREAM_JOB_TYPE_SESSION_STOP,
     BLE_AUDIO_STREAM_JOB_TYPE_SESSION_CANCEL,
@@ -41,7 +40,6 @@ typedef enum {
 
 typedef struct {
     ble_audio_stream_job_type_t type;
-    ble_audio_stream_export_t export_info;
     uint32_t session_id;
     uint16_t packet_sequence;
     uint16_t pcm_bytes;
@@ -540,81 +538,6 @@ static esp_err_t ble_audio_stream_send_session_cancel_internal(uint32_t session_
         0);
 }
 
-static esp_err_t ble_audio_stream_send_export_internal(const ble_audio_stream_export_t *export_info)
-{
-    if (export_info == NULL || export_info->pcm_buffer == NULL || export_info->pcm_bytes == 0 ||
-        export_info->chunk_pcm_bytes == 0) {
-        return ESP_ERR_INVALID_ARG;
-    }
-
-    ESP_LOGI(
-        TAG,
-        "audio session upload begin: session=%" PRIu32 " pcm_bytes=%u frame_bytes=%u batch_pcm_bytes=%u payload_max=%u ready=%u conn=%d",
-        export_info->session_id,
-        (unsigned)export_info->pcm_bytes,
-        export_info->frame_bytes,
-        export_info->chunk_pcm_bytes,
-        ble_audio_stream_get_audio_payload_bytes(),
-        ble_audio_stream_is_ready(),
-        s_conn_handle);
-
-    if (!ble_audio_stream_is_ready()) {
-        ESP_LOGW(TAG, "audio session upload skipped: BLE notify not ready");
-        return ESP_ERR_INVALID_STATE;
-    }
-
-    esp_err_t err = ble_audio_stream_send_session_start_internal(export_info->session_id);
-    if (err != ESP_OK) {
-        return err;
-    }
-
-    const uint16_t batch_pcm_bytes = export_info->chunk_pcm_bytes;
-    uint16_t packet_sequence = 0;
-    for (size_t batch_offset = 0; batch_offset < export_info->pcm_bytes; batch_offset += batch_pcm_bytes) {
-        uint16_t this_batch_bytes = (uint16_t)(export_info->pcm_bytes - batch_offset);
-        if (this_batch_bytes > batch_pcm_bytes) {
-            this_batch_bytes = batch_pcm_bytes;
-        }
-
-        uint16_t batch_packet_count = ble_audio_stream_count_audio_packets(this_batch_bytes);
-        if (batch_packet_count == 0) {
-            return ESP_ERR_INVALID_SIZE;
-        }
-
-        if ((uint32_t)packet_sequence + batch_packet_count > UINT16_MAX) {
-            ESP_LOGW(
-                TAG,
-                "audio session export packet sequence overflow: session=%" PRIu32 " seq=%u add=%u",
-                export_info->session_id,
-                packet_sequence,
-                batch_packet_count);
-            return ESP_ERR_INVALID_SIZE;
-        }
-
-        err = ble_audio_stream_send_session_audio_internal(
-            export_info->session_id,
-            packet_sequence,
-            export_info->pcm_buffer + batch_offset,
-            this_batch_bytes);
-        if (err != ESP_OK) {
-            break;
-        }
-
-        packet_sequence = (uint16_t)(packet_sequence + batch_packet_count);
-    }
-
-    if (err == ESP_OK) {
-        err = ble_audio_stream_send_session_stop_internal(export_info->session_id, packet_sequence);
-    }
-
-    ESP_LOGI(
-        TAG,
-        "audio session upload end: session=%" PRIu32 " status=%s",
-        export_info->session_id,
-        esp_err_to_name(err));
-    return err;
-}
-
 static void ble_audio_stream_task(void *parameter)
 {
     (void)parameter;
@@ -625,9 +548,6 @@ static void ble_audio_stream_task(void *parameter)
             continue;
         }
         switch (job.type) {
-            case BLE_AUDIO_STREAM_JOB_TYPE_EXPORT:
-                ble_audio_stream_send_export_internal(&job.export_info);
-                break;
             case BLE_AUDIO_STREAM_JOB_TYPE_SESSION_START:
                 ble_audio_stream_send_session_start_internal(job.session_id);
                 break;
@@ -741,11 +661,6 @@ esp_err_t ble_audio_stream_init(void)
 
     s_started = true;
     return ESP_OK;
-}
-
-esp_err_t ble_audio_stream_start(void)
-{
-    return ble_audio_stream_init();
 }
 
 void ble_audio_stream_on_gap_connect(uint16_t conn_handle)
@@ -900,36 +815,6 @@ bool ble_audio_stream_is_ready(void)
 uint16_t ble_audio_stream_get_notify_attr_handle(void)
 {
     return s_notify_attr_handle;
-}
-
-esp_err_t ble_audio_stream_send_export(const ble_audio_stream_export_t *export_info)
-{
-    if (!s_started || s_export_queue == NULL || export_info == NULL || export_info->pcm_buffer == NULL || export_info->pcm_bytes == 0) {
-        return ESP_ERR_INVALID_ARG;
-    }
-
-    ble_audio_stream_job_t job = {0};
-    job.type = BLE_AUDIO_STREAM_JOB_TYPE_EXPORT;
-    job.owned_pcm = (uint8_t *)malloc(export_info->pcm_bytes);
-    if (job.owned_pcm == NULL) {
-        return ESP_ERR_NO_MEM;
-    }
-
-    memcpy(job.owned_pcm, export_info->pcm_buffer, export_info->pcm_bytes);
-    job.export_info = *export_info;
-    job.export_info.pcm_buffer = job.owned_pcm;
-
-    if (xQueueSend(s_export_queue, &job, pdMS_TO_TICKS(1000)) != pdTRUE) {
-        free(job.owned_pcm);
-        return ESP_ERR_TIMEOUT;
-    }
-
-    return ESP_OK;
-}
-
-esp_err_t ble_audio_stream_send_export_blocking(const ble_audio_stream_export_t *export_info)
-{
-    return ble_audio_stream_send_export_internal(export_info);
 }
 
 esp_err_t ble_audio_stream_send_session_start(uint32_t session_id)

@@ -21,7 +21,7 @@ def parse_args():
         )
     )
     parser.add_argument("--port", required=True)
-    parser.add_argument("--device-name", default="Listener Keyboard")
+    parser.add_argument("--device-name", default="listener")
     parser.add_argument("--boot-timeout-seconds", default=15, type=int)
     parser.add_argument("--ble-connect-timeout-seconds", default=12, type=int)
     parser.add_argument("--notify-ready-timeout-seconds", default=20, type=int)

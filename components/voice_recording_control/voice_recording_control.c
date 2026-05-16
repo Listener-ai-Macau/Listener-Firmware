@@ -16,7 +16,7 @@
 #define VOICE_RECORDING_CONTROL_PREFIX_CHAR '~'
 #define VOICE_RECORDING_CONTROL_COMMAND_BUFFER_BYTES 32
 #define VOICE_RECORDING_CONTROL_VREC_PREFIX "VREC:"
-#define VOICE_RECORDING_CONTROL_TASK_POLL_MS 20
+#define VOICE_RECORDING_CONTROL_SESSION_CHECK_MS 50
 
 typedef enum {
     VOICE_RECORDING_STATE_IDLE = 0,
@@ -92,8 +92,6 @@ static void voice_recording_control_task(void *parameter)
             s_state = VOICE_RECORDING_STATE_IDLE;
             ESP_LOGI(TAG, "recording session finished");
         }
-
-        vTaskDelay(pdMS_TO_TICKS(VOICE_RECORDING_CONTROL_TASK_POLL_MS));
     }
 }
 
@@ -171,9 +169,4 @@ bool voice_recording_control_consume_usb_control_byte(uint8_t input_char)
 
     s_usb_command_buffer[s_usb_command_length++] = (char)input_char;
     return true;
-}
-
-bool voice_recording_control_is_recording(void)
-{
-    return s_state == VOICE_RECORDING_STATE_RECORDING;
 }

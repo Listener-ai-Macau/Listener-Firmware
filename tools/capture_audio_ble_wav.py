@@ -154,7 +154,7 @@ class SerialLogMonitor:
 def parse_args():
     parser = argparse.ArgumentParser()
     parser.add_argument("--port", required=True)
-    parser.add_argument("--device-name", default="Listener Keyboard")
+    parser.add_argument("--device-name", default="listener")
     parser.add_argument("--capture-seconds", type=int, default=4)
     parser.add_argument("--output-dir", default=str(DEFAULT_OUTPUT_DIR))
     parser.add_argument("--serial-log-path", default=None)

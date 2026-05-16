@@ -9,21 +9,18 @@
 #include "esp_err.h"
 #include "esp_event.h"
 #include "esp_hidd.h"
+#include "esp_hid_common.h"
 #include "esp_log.h"
 #include "esp_system.h"
 #include "driver/usb_serial_jtag.h"
 #include "nvs_flash.h"
 
-#if CONFIG_BT_NIMBLE_ENABLED
 #include "host/ble_hs.h"
 #include "nimble/nimble_port.h"
 #include "nimble/nimble_port_freertos.h"
 #include "host/ble_store.h"
 #include "services/gap/ble_svc_gap.h"
 void ble_store_config_init(void);
-#else
-#include "esp_gap_ble_api.h"
-#endif
 
 #include "hid_keyboard.h"
 #include "board.h"
@@ -43,7 +40,7 @@ typedef struct
 
 static ble_hid_ctx_t s_ble_hid_ctx = {0};
 
-static const char *s_device_name = "Listener Keyboard";
+static const char *s_device_name = "listener";
 
 static esp_hid_raw_report_map_t s_ble_report_maps[] = {
     {
@@ -56,8 +53,8 @@ static esp_hid_device_config_t s_ble_hid_config = {
     .vendor_id = 0x16C0,
     .product_id = 0x05DF,
     .version = 0x0100,
-    .device_name = "Codex Keyboard",
-    .manufacturer_name = "Codex",
+    .device_name = "listener",
+    .manufacturer_name = "listener",
     .serial_number = "keyboard-v1",
     .report_maps = s_ble_report_maps,
     .report_maps_len = 1,
@@ -149,11 +146,6 @@ void ble_hid_task_start_up(void)
     ble_hid_task_start();
 }
 
-void ble_hid_task_shut_down(void)
-{
-    ble_hid_task_stop();
-}
-
 static void ble_hid_event_callback(void *handler_args, esp_event_base_t base, int32_t id, void *event_data)
 {
     (void)handler_args;
@@ -218,10 +210,6 @@ static void ble_hid_event_callback(void *handler_args, esp_event_base_t base, in
             esp_hid_disconnect_reason_str(
                 esp_hidd_dev_transport_get(param->disconnect.dev),
                 param->disconnect.reason));
-#if !CONFIG_BT_NIMBLE_ENABLED
-        ble_hid_gap_start_advertising();
-#endif
-        ble_hid_task_start();
         break;
     case ESP_HIDD_STOP_EVENT:
         ESP_LOGI(TAG, "STOP");
@@ -231,7 +219,6 @@ static void ble_hid_event_callback(void *handler_args, esp_event_base_t base, in
     }
 }
 
-#if CONFIG_BT_NIMBLE_ENABLED
 static void ble_hid_host_task(void *parameter)
 {
     (void)parameter;
@@ -239,7 +226,6 @@ static void ble_hid_host_task(void *parameter)
     nimble_port_run();
     nimble_port_freertos_deinit();
 }
-#endif
 
 void ble_hid_init(void)
 {
@@ -250,7 +236,6 @@ void ble_hid_init(void)
     }
     ESP_ERROR_CHECK(ret);
 
-    s_ble_hid_config.device_name = s_device_name;
     s_ble_report_maps[0].data = hid_keyboard_get_report_map();
     s_ble_report_maps[0].len = hid_keyboard_get_report_map_size();
 
@@ -258,13 +243,7 @@ void ble_hid_init(void)
     ESP_ERROR_CHECK(ble_audio_stream_init());
     ESP_ERROR_CHECK(ble_audio_stream_register_gatt());
 
-#if CONFIG_BT_NIMBLE_ENABLED
     ESP_ERROR_CHECK(ble_hid_gap_configure_advertising(ESP_HID_APPEARANCE_KEYBOARD, s_device_name));
-#else
-    ESP_ERROR_CHECK(ble_hid_gap_configure_advertising(ESP_HID_APPEARANCE_KEYBOARD, s_device_name));
-    ret = esp_ble_gatts_register_callback(esp_hidd_gatts_event_handler);
-    ESP_ERROR_CHECK(ret);
-#endif
 
     ESP_ERROR_CHECK(
         esp_hidd_dev_init(
@@ -275,12 +254,10 @@ void ble_hid_init(void)
 
     ble_audio_stream_log_gatt_state();
 
-#if CONFIG_BT_NIMBLE_ENABLED
     int gap_name_rc = ble_svc_gap_device_name_set(s_device_name);
     if (gap_name_rc != 0) {
         ESP_LOGW(TAG, "ble_svc_gap_device_name_set failed: %d", gap_name_rc);
     }
-#endif
 
     ret = esp_hidd_dev_battery_set(s_ble_hid_ctx.hid_device, BLE_HID_PLACEHOLDER_BATTERY_LEVEL);
     if (ret != ESP_OK) {
@@ -292,7 +269,6 @@ void ble_hid_init(void)
 
 void ble_hid_start(void)
 {
-#if CONFIG_BT_NIMBLE_ENABLED
     ble_store_config_init();
     ble_hs_cfg.store_status_cb = ble_store_util_status_rr;
 
@@ -300,5 +276,4 @@ void ble_hid_start(void)
     if (ret != ESP_OK) {
         ESP_LOGE(TAG, "esp_nimble_enable failed: %d", ret);
     }
-#endif
 }

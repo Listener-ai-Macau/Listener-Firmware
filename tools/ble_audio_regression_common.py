@@ -40,7 +40,7 @@ ANALYSIS_MIN_ACTIVE_FRAMES = 5
 
 def add_common_capture_args(parser: argparse.ArgumentParser, capture_seconds_default: int) -> None:
     parser.add_argument("--port", required=True)
-    parser.add_argument("--device-name", default="Listener Keyboard")
+    parser.add_argument("--device-name", default="listener")
     parser.add_argument("--capture-seconds", type=int, default=capture_seconds_default)
     parser.add_argument("--timeout-seconds", type=int, default=None)
     parser.add_argument("--no-reset-before-capture", action="store_false", dest="reset_before_capture")

@@ -15,16 +15,18 @@ Choose the lightest level that still matches the risk.
 
 - `full`: new features, architecture changes, board bring-up, hardware integration, safety-critical changes, or important bugs
 - `standard`: normal feature work or moderate-risk bug fixes
-- `fast`: very small, low-risk, local fixes when the user explicitly wants a quick change
+- `fast`: very small, low-risk, local fixes, including simple bug fixes with a clear cause and focused verification
 
 Default to `full` if hardware behavior, architecture, or cross-module integration is involved.
 
 ## Required Plan-First Flow
 
-Before meaningful implementation, create a plan document in the repository's active-doc area:
+For `standard` and `full` work, before meaningful implementation, create a plan document in the repository's active-doc area:
 
 - feature / bring-up / implementation plans go in `!docs/plans/`
 - current bug fix / bug investigation plans go in `!docs/fixes/`
+
+For `fast` simple fixes, skip the plan document by default. Do a brief local context check, implement the direct fix, run focused verification, and report what changed.
 
 Before writing that plan, first do a short precedent review.
 
@@ -167,7 +169,7 @@ Avoid rationalizing obviously long waits as `probably normal` unless there is co
 
 ## Bug Workflow
 
-Important bugs follow the same process.
+Important, ambiguous, cross-module, hardware-facing, timing-sensitive, or product-contract bugs follow the plan-first process.
 
 Create or update a bug plan under `!docs/fixes/` with:
 
@@ -179,7 +181,24 @@ Create or update a bug plan under `!docs/fixes/` with:
 - fix steps
 - acceptance checks
 
-Only skip a dedicated plan for clearly trivial, low-risk fixes when the user explicitly wants a fast path.
+Simple low-risk bugs use the `fast` path by default and do not need a dedicated `!docs/fixes/` document.
+
+Use the bug fast path only when all of these are true:
+
+- the symptom and likely scope are clear
+- the change is local to a small file or module boundary
+- the fix does not alter hardware bring-up, timing behavior, protocols, persistence, safety assumptions, or product semantics
+- the fix does not conflict with an active related plan or fix document
+- a focused verification command, build, script, or inspection check is available
+
+For fast bug fixes:
+
+- inspect only the context needed to avoid a careless change
+- edit directly
+- run the focused verification that matches the risk
+- summarize changed files, verification result, and any residual risk
+
+If the investigation expands beyond those constraints, escalate to `standard` or `full` and create or update the bug document before continuing.
 
 ## Execution Discipline
 

@@ -72,7 +72,7 @@
 当前关键结论：
 
 - BLE HID host 已从 `Bluedroid` 迁移到 `NimBLE`
-- `Listener Keyboard` 已建立 `NimBLE` bond，固件端启动日志显示 `NimBLE bonded peers=1`
+- `listener` 已建立 `NimBLE` bond，固件端启动日志显示 `NimBLE bonded peers=1`
 - 设备 `reset` 后无需人工点击 Windows 蓝牙界面，约数秒内可自动恢复加密连接并重新完成 HID 订阅
 - `verify_ble_hid.ps1` 已确认固件侧输入链路、BLE 连接状态和 HID report 发送完成
 - `verify_ble_hid_end_to_end.ps1` 已确认 Windows 主机实际收到固定测试文本
@@ -101,7 +101,7 @@
 
 迁移后的广告与安全策略：
 
-- 主广告包收敛为 `flags + appearance + 16-bit HID UUID + Listener Keyboard`
+- 主广告包收敛为 `flags + appearance + 16-bit HID UUID + listener`
 - 不再使用旧 `Bluedroid` 路径中的 `128-bit HID UUID` 广告组合
 - 启动日志不再出现 `BTM_BleWriteAdvData, Partial data write into ADV`
 - 安全参数为 `bonding=1`、`mitm=0`、`sc=1`、`io_cap=NO_IO`
@@ -230,7 +230,7 @@ powershell -ExecutionPolicy Bypass -File .\tools\recover_ble_hid_host.ps1
 
 ## 迁移注意事项
 
-从旧 `Bluedroid` 固件迁到 `NimBLE` 固件后，Windows 可能仍保留旧的 `Listener Keyboard` 配对缓存。这个缓存不等于新的 `NimBLE` bond。
+从旧 `Bluedroid` 固件迁到 `NimBLE` 固件后，Windows 可能仍保留旧的 `listener` 配对缓存。这个缓存不等于新的 `NimBLE` bond。
 
 如果迁移后看到以下现象：
 
@@ -241,8 +241,8 @@ powershell -ExecutionPolicy Bypass -File .\tools\recover_ble_hid_host.ps1
 处理方式：
 
 - 确认固件已经启用 `CONFIG_BT_NIMBLE_NVS_PERSIST=y`
-- 在 Windows 蓝牙设置中删除旧的 `Listener Keyboard`
-- 重新配对一次 `Listener Keyboard`
+- 在 Windows 蓝牙设置中删除旧的 `listener`
+- 重新配对一次 `listener`
 - 重新运行 reset 自动回连和端到端验证
 
 完成这次重新配对后，后续 reset 不应再需要人工重连。
