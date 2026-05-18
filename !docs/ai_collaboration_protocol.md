@@ -17,7 +17,7 @@
 
 1. **开工前必须读状态**：`cat C:\Users\Billy\Desktop\listener\docs\plans\*_status.json`，确认没有别人在做同一步骤
 2. **认领必须写 JSON**：用 `tools\update_plan_status.ps1` 更新 assignee + status，**必须在开始编码前执行**
-3. **硬件操作必须加锁**：`tools\lock_resource.ps1` 获取，`tools\unlock_resource.ps1` 释放
+3. **真实硬件操作必须按资源加锁**：只有占用真实硬件的步骤需要锁；纯文档、静态检查、编译不需要。用到 `COM3` 锁 `COM3`，用到 `BLE` 锁 `BLE`，用完分别释放
 4. **完成必须更新 JSON**：验收通过后标记 completed，清空 assignee
 5. **阻塞必须写明原因**：`blocked_reason` 字段
 
@@ -29,7 +29,7 @@
 1. 任务到达 → 任一 AI 或人类拆成可并行的独立步骤，写入 docs/plans/
 2. 人类可以分配步骤，或者谁空闲谁认领
 3. 【硬约束】认领后立即 update_plan_status.ps1 标记 assignee + in_progress
-4. 在 master 上开 branch 做，做完 cherry-pick 回 master，删 branch
+4. 在当前仓库开任务 branch 做；不创建 worktree
 5. 验收通过才算完成；验收不通过就继续修
 6. 需要人工的步骤标记 blocked + blocked_reason
 7. 不需要人工确认的步骤直接做，不等待审批
@@ -100,20 +100,25 @@
 
 ## Branch 协作
 
-直接在主仓库里开 branch，不建 worktree：
+直接在当前仓库开 branch，不建 worktree：
 
-- 开工：`git checkout -b ai/<task>` 从 master 拉
+- 开工：从状态 JSON 里的 `base_branch` 或当前目标分支创建 `ai/<task>` / `task/<description>`
 - 分支命名：`ai/<task>` 或 `task/<description>`
-- 做完：cherry-pick 回 master，删 branch
-- **冲突靠 JSON 状态避免，不靠物理隔离**
-
-如果某个任务确实需要长时间隔离（如跨仓库大重构），可以临时建 worktree，做完删除。
+- 只在任务 branch 上改动；不要创建 worktree
+- 做完后按计划要求 merge/cherry-pick/PR 回目标分支，再删 branch
+- **冲突靠 JSON 状态、`write_paths` 和文件边界避免，不靠物理隔离**
 
 ## 硬件资源锁
 
-共享硬件（COM3、BLE）通过 `tools/lock_resource.ps1` / `tools/unlock_resource.ps1` 互斥。
+共享硬件（`COM3`、`BLE`）通过 `tools/lock_resource.ps1` / `tools/unlock_resource.ps1` 互斥。
 
+- 只有会占用真实硬件的命令才需要锁：`flash`、`monitor`、串口输入/抓取、BLE capture、BLE matrix、真实设备验证
+- 纯文档、静态检查、代码搜索、`python -m compileall`、不接触设备的构建不需要锁
+- `lock_resource.ps1` 当前一次只锁一个 `-Resource`；同时用到 `COM3` 和 `BLE` 时分别调用两次
 - 用前 `lock_resource`，用完 `unlock_resource`
+- 示例：
+  - `powershell -File .\tools\lock_resource.ps1 -Resource COM3 -Owner <you>`
+  - `powershell -File .\tools\lock_resource.ps1 -Resource BLE -Owner <you>`
 - 进程退出后 60 分钟自动过期
 - **同一时间只有一个 AI 操作硬件**
 

@@ -158,12 +158,13 @@ pwsh -NoProfile -File ./tools/esp_idf_ci.ps1 help
 
 **所有 AI 角色平等**：拆步骤、干活、审查、测试谁都能做。谁闲谁就做。
 
-### 硬约束（开工前必做）
+### 硬约束
 
 1. **读状态**：`cat C:\Users\Billy\Desktop\listener\docs\plans\*_status.json`
 2. **确认无人占用**你要做的步骤（status != in_progress 或 assignee == 你）
-3. **认领**：`tools\update_plan_status.ps1 -Plan p13 -StepId N -Status in_progress -Assignee <你>`
-4. **硬件加锁**：`tools\lock_resource.ps1 -Resource COM3 -Owner <你>`
+3. **认领**：`tools\update_plan_status.ps1 -Plan <plan_id> -StepId <step_id> -Status in_progress -Assignee <你>`
+4. **真实硬件命令前按资源加锁**：纯文档、搜索、静态检查、compileall、不接触设备的构建不需要锁；`flash / monitor / COM3 serial / BLE capture / BLE matrix / 真实设备验证` 需要锁
+5. **分别锁资源**：`lock_resource.ps1` 当前一次只锁一个 `-Resource`；同时用 `COM3` 和 `BLE` 时分别锁 `COM3`、`BLE`，用完分别释放
 
 不做就开工导致冲突的，由冲突方负责修复。
 
@@ -173,7 +174,11 @@ pwsh -NoProfile -File ./tools/esp_idf_ci.ps1 help
 - 参考文档（步骤定义、验收标准）在 `C:\Users\Billy\Desktop\listener\docs\plans\*.md`
 - 仓库级文档（features、fixes）继续放各自仓库 `!docs/`
 
-Codex 和 Tai 是同一个 CLI 工具的不同 profile。默认在主仓库各自开 branch 工作，文件可以重叠；冲突在 merge/rebase 时解决。Claude 审查/测试/精简/汇报。
+<<<<<<< Updated upstream
+Codex 和 Tai 是同一个 CLI 工具的不同 profile。默认在当前仓库各自开任务 branch 工作，不创建 worktree；冲突靠共享 JSON、`write_paths` 和 merge/rebase 解决。Claude 审查/测试/精简/汇报。
+=======
+Codex 和 Tai 是同一个 CLI 工具的不同 profile。默认在当前仓库各自开任务 branch 工作，不创建 worktree；冲突靠共享 JSON、`write_paths` 和 merge/rebase 解决。Claude 审查/测试/精简/汇报。
+>>>>>>> Stashed changes
 
 - **Claude** 拆步骤 → **人类** 分工 → **干活者** 认领标记做 → **Claude** 审查汇报
 

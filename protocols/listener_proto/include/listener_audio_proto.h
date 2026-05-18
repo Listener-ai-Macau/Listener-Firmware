@@ -11,6 +11,7 @@ extern "C" {
 #define LISTENER_AUDIO_PROTO_MAGIC "VKA1"
 #define LISTENER_AUDIO_PROTO_MAGIC_U32 0x31414B56u
 #define LISTENER_AUDIO_PROTO_HEADER_BYTES 20u
+#define LISTENER_AUDIO_PROTO_VERSION 1u
 
 typedef enum {
     LISTENER_AUDIO_PACKET_TYPE_SESSION_START = 1,
@@ -78,7 +79,9 @@ static inline void listener_audio_proto_header_init(
     header->fragment_count = fragment_count;
     header->payload_len_le = payload_len;
     header->chunk_pcm_bytes_le = chunk_pcm_bytes;
-    header->reserved_le = 0;
+    header->reserved_le = (packet_type == LISTENER_AUDIO_PACKET_TYPE_SESSION_START)
+                              ? LISTENER_AUDIO_PROTO_VERSION
+                              : 0;
 }
 
 #ifdef __cplusplus

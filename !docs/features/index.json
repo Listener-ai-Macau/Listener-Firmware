@@ -1,0 +1,151 @@
+{
+  "schema_version": 1,
+  "updated_at": "2026-05-18",
+  "features": [
+    {
+      "id": "audio_capture_ble_upload",
+      "status": "implemented",
+      "summary": "KEY1 or serial toggle records 16 kHz mono PCM and uploads VKA1 sessions over BLE Notify for host WAV/PCM reconstruction.",
+      "doc": "audio_capture_ble_upload.md",
+      "primary_paths": [
+        "components/voice_recording_control/",
+        "ports/esp32/voice_key_input/",
+        "ports/esp32/audio_capture/",
+        "ports/esp32/ble_audio_stream/",
+        "protocols/listener_proto/include/listener_audio_proto.h",
+        "tools/capture_audio_ble_wav.py",
+        "tools/verify_audio_ble_product_matrix.py"
+      ],
+      "validation": [
+        "python .\\tools\\capture_audio_ble_wav.py --port COM3 --capture-seconds 5",
+        "python .\\tools\\verify_audio_ble_product_matrix.py --port COM3 --cases A1 --fail-on-warning"
+      ],
+      "evidence": [
+        "archive/audio_capture_ble_upload_history.md records P1-P10 standard/realistic multi-seed PASS with matrix_failed=0 and matrix_warning=0",
+        "archive/audio_capture_ble_upload_history.md records real KEY1 manual acceptance without counting it as automated matrix"
+      ],
+      "invariants": [
+        "audio_data is a packet_sequence stream, not old chunk+fragment",
+        "host subscription order stays CCCD notify -> ValueChanged",
+        "subscribe-before-connect compatibility stays supported"
+      ],
+      "known_limits": [
+        "Raw PCM over BLE has limited RF margin",
+        "Windows WinRT may need recovery fallback"
+      ]
+    },
+    {
+      "id": "ble_audio_transport_hardening",
+      "status": "implemented",
+      "summary": "BLE audio transport uses explicit state, connection epoch filtering, notify credits, fixed audio pool, backpressure, and summary logs.",
+      "doc": "ble_audio_transport_hardening.md",
+      "primary_paths": [
+        "ports/esp32/ble_audio_stream/ble_audio_stream_esp32.c",
+        "ports/esp32/ble_hid_gap/ble_hid_gap_esp32.c",
+        "protocols/listener_proto/include/listener_audio_proto.h",
+        "tools/capture_audio_ble_wav.py",
+        "tools/verify_audio_ble_product_matrix.py"
+      ],
+      "validation": [
+        "python -m compileall -q tools",
+        "python .\\tools\\verify_audio_ble_product_matrix.py --port COM3 --cases A1,A2,A3,A6,A7,A8 --fail-on-warning"
+      ],
+      "evidence": [
+        "archive/ble_audio_transport_hardening_history.md records fixed pool, queue/pool/drop summary, P1-P10 standard/realistic, 60s long session, and 10-round soak PASS"
+      ],
+      "invariants": [
+        "connection epoch filters stale subscribe/MTU/notify_tx/disconnect events",
+        "notify credits and tx completion must remain balanced",
+        "audio pool and transport summary counters must remain observable"
+      ],
+      "known_limits": [
+        "GATT Notify is not a reliable stream protocol",
+        "RF interference still needs external validation"
+      ]
+    },
+    {
+      "id": "ble_hid_keyboard_output",
+      "status": "implemented",
+      "summary": "Standard BLE HID keyboard fallback/debug path sends ASCII or key reports to Windows.",
+      "doc": "ble_hid_keyboard_output.md",
+      "primary_paths": [
+        "ports/esp32/ble_hid/",
+        "ports/esp32/ble_hid_gap/",
+        "components/hid_keyboard/",
+        "tools/verify_ble_hid.ps1",
+        "tools/verify_ble_hid_end_to_end.ps1"
+      ],
+      "validation": [
+        "powershell -ExecutionPolicy Bypass -File .\\tools\\verify_ble_hid.ps1 -Port COM3 -Text \"abc123\"",
+        "powershell -ExecutionPolicy Bypass -File .\\tools\\verify_ble_hid_end_to_end.ps1 -Port COM3"
+      ],
+      "evidence": [
+        "archive/ble_hid_keyboard_output_history.md records 2026-05-13 real-device validation PASS",
+        "archive/ble_hid_keyboard_output_history.md records 3/3 reset + reconnect + typing regression PASS"
+      ],
+      "invariants": [
+        "Windows UI connected is not enough; require firmware logs or host capture",
+        "BLE HID remains fallback/debug, not the Chinese speech output path"
+      ],
+      "known_limits": [
+        "Depends on host focus and Windows Bluetooth state"
+      ]
+    },
+    {
+      "id": "voice_input_backend_contract",
+      "status": "implemented",
+      "summary": "VKA1 session semantics provide a stable 16 kHz mono PCM input contract for desktop or backend consumers.",
+      "doc": "voice_input_backend_contract.md",
+      "primary_paths": [
+        "protocols/listener_proto/include/listener_audio_proto.h",
+        "ports/esp32/audio_capture/",
+        "ports/esp32/ble_audio_stream/",
+        "tools/capture_audio_ble_wav.py",
+        "tools/verify_audio_ble_product_matrix.py"
+      ],
+      "validation": [
+        "python .\\tools\\capture_audio_ble_wav.py --port COM3 --capture-seconds 5",
+        "python .\\tools\\verify_audio_ble_product_matrix.py --port COM3 --cases A1,A2 --fail-on-warning"
+      ],
+      "evidence": [
+        "archive/voice_input_backend_contract_history.md records P1-P10 standard/realistic multi-seed PASS and matrix_failed=0/matrix_warning=0"
+      ],
+      "invariants": [
+        "backend consumes ordered PCM packets and checks expected_packet_count",
+        "missing packets must be reported or silence-filled, not silently ignored",
+        "firmware does not perform ASR, polishing, insertion history, or agent routing"
+      ],
+      "known_limits": [
+        "Current transport is BLE Notify; future transports should preserve session semantics"
+      ]
+    },
+    {
+      "id": "ble_audio_test_matrix",
+      "status": "implemented",
+      "summary": "BLE audio product matrix runs A1-A10 + H1 automated/semi-automated coverage plus H2/H3 external placeholders with Chinese TTS source generation.",
+      "doc": "ble_audio_test_matrix.md",
+      "primary_paths": [
+        "tools/verify_audio_ble_product_matrix.py",
+        "tools/ble_audio_regression_common.py",
+        "tools/capture_audio_ble_wav.py"
+      ],
+      "validation": [
+        "python -m compileall -q tools",
+        "python .\\tools\\verify_audio_ble_product_matrix.py --port COM3 --cases A1 --fail-on-warning",
+        "python .\\tools\\verify_audio_ble_product_matrix.py --port COM3 --realistic-usage-profile --random-seed 20260525"
+      ],
+      "evidence": [
+        "tools/verify_audio_ble_product_matrix.py registers CASE_ORDER A1-A10,H1 and CASE_RUNNERS for each",
+        "tools/verify_audio_ble_product_matrix.py keeps H2/H3 in MANUAL_OR_EXTERNAL_CASES"
+      ],
+      "invariants": [
+        "CASE_ORDER in code is the source of truth for implemented case IDs",
+        "hardware cases lock resources separately; COM3 and BLE are separate lock_resource.ps1 calls",
+        "H2/H3 remain external placeholders until code-backed validation exists"
+      ],
+      "known_limits": [
+        "Physical RF/distance and backend ASR integration are not automated in firmware matrix"
+      ]
+    }
+  ]
+}
