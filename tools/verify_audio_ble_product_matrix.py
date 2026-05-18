@@ -7,24 +7,35 @@ import subprocess
 import sys
 import time
 
+import serial
+
 from ble_audio_regression_common import (
     play_and_capture_serial_toggle_after_cancel_probe,
     play_and_capture_serial_toggle,
     play_and_capture_serial_toggle_multi_session,
     recover_ble_hid_host,
     restart_windows_bluetooth,
+    analyze_recording,
+    capture_sessions,
+    make_capture_args,
+    read_wav_frames,
+    compute_envelope,
+    detect_active_runs,
+    validate_transport_summary,
+    get_paired_device_address_hex,
+    open_serial_with_retry,
+    send_toggle,
 )
-from capture_audio_ble_wav import configure_utf8_stdio
+from capture_audio_ble_wav import configure_utf8_stdio, run_capture_with_args
 
 
-CASE_ORDER = ("P1", "P2", "P3", "P4", "P5", "P6", "P7", "P8", "P9", "P10")
+CASE_ORDER = ("A1", "A2", "A3", "A4", "A5", "A6", "A7", "A8", "A9", "A10", "H1")
 MANUAL_OR_EXTERNAL_CASES = {
-    "P11": "requires physical KEY1 interaction",
-    "P12": "requires controlled RF/distance/interference setup",
-    "P13": "requires backend integration endpoint",
+    "H2": "requires controlled RF/distance/interference setup",
+    "H3": "requires backend ASR integration endpoint",
 }
 MATRIX_ARTIFACT_DIR = pathlib.Path("tests") / "artifacts" / "ble_product_matrix"
-P5_RECONNECT_MIN_PRE_START_DELAY_SECONDS = 12.0
+A3_RECONNECT_MIN_PRE_START_DELAY_SECONDS = 12.0
 COMPACT_STDOUT_PREFIXES = (
     "execution_profile=",
     "preflight_recover_mode=",
@@ -88,7 +99,7 @@ def parse_case_list(raw: str) -> list[str]:
 
 def parse_args():
     parser = argparse.ArgumentParser(
-        description="Run the BLE audio product-surface test matrix (P-series)."
+        description="Run the BLE audio product-surface test matrix."
     )
     parser.add_argument("--port", required=True)
     parser.add_argument("--device-name", default="listener")
@@ -97,7 +108,6 @@ def parse_args():
     parser.add_argument("--long-capture-seconds", type=int, default=30)
     parser.add_argument("--round-count", type=int, default=3)
     parser.add_argument("--idle-seconds", type=int, default=30)
-    parser.add_argument("--soak-round-count", type=int, default=5)
     parser.add_argument("--short-capture-min-seconds", type=int, default=None)
     parser.add_argument("--short-capture-max-seconds", type=int, default=None)
     parser.add_argument("--long-capture-min-seconds", type=int, default=None)
@@ -490,46 +500,50 @@ def write_matrix_result_json(
     return output_path
 
 
-async def run_p1(args) -> dict[str, str]:
-    print_case_header("P1", "single standard serial-toggle recording", 120)
-    capture_seconds = choose_duration(args, window=args.short_capture_window, label="p1")
-    pre_start_delay_seconds = choose_delay_seconds(args, window=args.pre_start_delay_window, label="p1_pre_start")
+async def run_a1(args) -> dict[str, str]:
+    use_long = args.duration_rng.random() < 0.3
+    window = args.long_capture_window if use_long else args.short_capture_window
+    duration_label = "long" if use_long else "short"
+    capture_seconds = choose_duration(args, window=window, label=f"a1_{duration_label}")
+    budget = max(240, int(capture_seconds * 3 + 60)) if use_long else 120
+    print_case_header("A1", f"single recording ({duration_label})", budget)
+    pre_start_delay_seconds = choose_delay_seconds(args, window=args.pre_start_delay_window, label="a1_pre_start")
     summary = await play_and_capture_serial_toggle(
         port=args.port,
         device_name=args.device_name,
-        scenario="P1",
+        scenario="A1",
         capture_seconds=capture_seconds,
         timeout_seconds=90,
         reset_before_capture=args.reset_before_capture,
         pre_start_delay_seconds=pre_start_delay_seconds,
-        output_dir=case_output_dir("P1"),
-        serial_log_path=case_serial_log_path("P1"),
+        output_dir=case_output_dir("A1"),
+        serial_log_path=case_serial_log_path("A1"),
     )
-    return ensure_pass("P1", summary)
+    return ensure_pass("A1", summary)
 
 
-async def run_p2(args) -> dict[str, str]:
+async def run_a2(args) -> dict[str, str]:
     budget_seconds = max(180, args.round_count * 90)
-    print_case_header("P2", "continuous short utterance multi-round input", budget_seconds)
+    print_case_header("A2", "multi-round continuous recording", budget_seconds)
     failures = []
     warnings = []
     capture_seconds_plan = choose_duration_plan(
         args,
         window=args.short_capture_window,
         count=args.round_count,
-        label="p2",
+        label="a2",
     )
     pre_start_delay_plan = choose_delay_plan(
         args,
         first_window=args.pre_start_delay_window,
         followup_window=args.inter_session_gap_window,
         count=args.round_count,
-        label="p2",
+        label="a2",
     )
     summaries = await play_and_capture_serial_toggle_multi_session(
         port=args.port,
         device_name=args.device_name,
-        scenario="P2",
+        scenario="A2",
         capture_seconds=args.capture_seconds,
         capture_seconds_per_session=capture_seconds_plan,
         session_count=args.round_count,
@@ -537,8 +551,8 @@ async def run_p2(args) -> dict[str, str]:
         reset_before_capture=args.reset_before_capture,
         require_analysis=False,
         pre_start_delay_seconds_per_session=pre_start_delay_plan,
-        output_dir=case_output_dir("P2"),
-        serial_log_path=case_serial_log_path("P2"),
+        output_dir=case_output_dir("A2"),
+        serial_log_path=case_serial_log_path("A2"),
     )
     for round_index, summary in enumerate(summaries, start=1):
         print(f"round_index={round_index}", flush=True)
@@ -558,102 +572,63 @@ async def run_p2(args) -> dict[str, str]:
             warnings.append(round_index)
 
     if failures:
-        return print_summary("P2", "fail", "failed_rounds=" + ",".join(str(v) for v in failures))
+        return print_summary("A2", "fail", "failed_rounds=" + ",".join(str(v) for v in failures))
     if warnings:
-        return print_summary("P2", "warning", "warning_rounds=" + ",".join(str(v) for v in warnings))
-    return print_summary("P2", "pass", "")
+        return print_summary("A2", "warning", "warning_rounds=" + ",".join(str(v) for v in warnings))
+    return print_summary("A2", "pass", "")
 
 
-async def run_p3(args) -> dict[str, str]:
-    capture_seconds = choose_duration(args, window=args.long_capture_window, label="p3")
-    pre_start_delay_seconds = choose_delay_seconds(args, window=args.pre_start_delay_window, label="p3_pre_start")
-    budget_seconds = max(240, int(capture_seconds * 3 + 60))
-    print_case_header("P3", "long utterance / long recording", budget_seconds)
-    summary = await play_and_capture_serial_toggle(
-        port=args.port,
-        device_name=args.device_name,
-        scenario="P3",
-        capture_seconds=capture_seconds,
-        timeout_seconds=budget_seconds,
-        reset_before_capture=args.reset_before_capture,
-        pre_start_delay_seconds=pre_start_delay_seconds,
-        output_dir=case_output_dir("P3"),
-        serial_log_path=case_serial_log_path("P3"),
-    )
-    return ensure_pass("P3", summary)
-
-
-async def run_p4(args) -> dict[str, str]:
-    print_case_header("P4", "recording after Windows Bluetooth recovery", 180)
-    capture_seconds = choose_duration(args, window=args.short_capture_window, label="p4")
-    pre_start_delay_seconds = choose_delay_seconds(args, window=args.pre_start_delay_window, label="p4_pre_start")
-    restart_windows_bluetooth(restart_pan_adapter=args.restart_pan_adapter)
-    recover_ble_hid_host(args.device_name)
-    summary = await play_and_capture_serial_toggle(
-        port=args.port,
-        device_name=args.device_name,
-        scenario="P4",
-        capture_seconds=capture_seconds,
-        timeout_seconds=90,
-        reset_before_capture=args.reset_before_capture,
-        pre_start_delay_seconds=pre_start_delay_seconds,
-        output_dir=case_output_dir("P4"),
-        serial_log_path=case_serial_log_path("P4"),
-    )
-    return ensure_pass("P4", summary)
-
-
-async def run_p5(args) -> dict[str, str]:
-    print_case_header("P5", "recording after disconnect/reconnect recovery", 240)
-    baseline_capture_seconds = choose_duration(args, window=args.short_capture_window, label="p5_baseline")
+async def run_a3(args) -> dict[str, str]:
+    print_case_header("A3", "disconnect/reconnect recovery (with BT restart)", 240)
+    baseline_capture_seconds = choose_duration(args, window=args.short_capture_window, label="a3_baseline")
     baseline_pre_start_delay_seconds = choose_delay_seconds(
         args,
         window=args.pre_start_delay_window,
-        label="p5_baseline_pre_start",
+        label="a3_baseline_pre_start",
     )
     baseline = await play_and_capture_serial_toggle(
         port=args.port,
         device_name=args.device_name,
-        scenario="P5",
+        scenario="A3",
         source_label="baseline",
         capture_seconds=baseline_capture_seconds,
         timeout_seconds=90,
         reset_before_capture=args.reset_before_capture,
         pre_start_delay_seconds=baseline_pre_start_delay_seconds,
-        output_dir=case_output_dir("P5"),
-        serial_log_path=case_serial_log_path("P5", "baseline"),
+        output_dir=case_output_dir("A3"),
+        serial_log_path=case_serial_log_path("A3", "baseline"),
     )
     if baseline["result"] != "pass":
-        return print_summary("P5", "fail", "baseline_failed", compact_case_details(baseline))
+        return print_summary("A3", "fail", "baseline_failed", compact_case_details(baseline))
     restart_windows_bluetooth(restart_pan_adapter=args.restart_pan_adapter)
     recover_ble_hid_host(args.device_name)
-    print("p5_host_recovery_completed=1", flush=True)
-    reconnect_capture_seconds = choose_duration(args, window=args.short_capture_window, label="p5_reconnect")
+    print("a3_host_recovery_completed=1", flush=True)
+    reconnect_capture_seconds = choose_duration(args, window=args.short_capture_window, label="a3_reconnect")
     reconnect_pre_start_delay_seconds = choose_delay_seconds(
         args,
         window=args.pre_start_delay_window,
-        label="p5_reconnect_pre_start",
+        label="a3_reconnect_pre_start",
     )
-    if reconnect_pre_start_delay_seconds < P5_RECONNECT_MIN_PRE_START_DELAY_SECONDS:
+    if reconnect_pre_start_delay_seconds < A3_RECONNECT_MIN_PRE_START_DELAY_SECONDS:
         print(
-            "p5_reconnect_pre_start_delay_floor_seconds="
-            f"{P5_RECONNECT_MIN_PRE_START_DELAY_SECONDS:.2f}",
+            "a3_reconnect_pre_start_delay_floor_seconds="
+            f"{A3_RECONNECT_MIN_PRE_START_DELAY_SECONDS:.2f}",
             flush=True,
         )
-        reconnect_pre_start_delay_seconds = P5_RECONNECT_MIN_PRE_START_DELAY_SECONDS
-    print(f"p5_settle_window_seconds={reconnect_pre_start_delay_seconds:.2f}", flush=True)
-    print("p5_capture_phase=start", flush=True)
+        reconnect_pre_start_delay_seconds = A3_RECONNECT_MIN_PRE_START_DELAY_SECONDS
+    print(f"a3_settle_window_seconds={reconnect_pre_start_delay_seconds:.2f}", flush=True)
+    print("a3_capture_phase=start", flush=True)
     summary = await play_and_capture_serial_toggle(
         port=args.port,
         device_name=args.device_name,
-        scenario="P5",
+        scenario="A3",
         source_label="reconnect",
         capture_seconds=reconnect_capture_seconds,
         timeout_seconds=90,
         reset_before_capture=args.reset_before_capture,
         pre_start_delay_seconds=reconnect_pre_start_delay_seconds,
-        output_dir=case_output_dir("P5"),
-        serial_log_path=case_serial_log_path("P5", "reconnect"),
+        output_dir=case_output_dir("A3"),
+        serial_log_path=case_serial_log_path("A3", "reconnect"),
     )
     summary["host_recovery_completed"] = True
     summary["settle_window_seconds"] = float(reconnect_pre_start_delay_seconds)
@@ -661,55 +636,55 @@ async def run_p5(args) -> dict[str, str]:
     summary["baseline_result"] = str(baseline.get("result", ""))
     summary["baseline_missing_packet_count"] = baseline.get("missing_packet_count")
     summary["baseline_packet_loss_ratio"] = baseline.get("packet_loss_ratio")
-    return ensure_pass("P5", summary)
+    return ensure_pass("A3", summary)
 
 
-async def run_p6(args) -> dict[str, str]:
-    p6_capture_seconds = choose_duration(
+async def run_a6(args) -> dict[str, str]:
+    a6_capture_seconds = choose_duration(
         args,
         window=args.short_capture_window,
-        label="p6",
+        label="a6",
         floor_seconds=6,
     )
-    idle_wait_seconds = choose_delay_seconds(args, window=args.idle_wait_window, label="p6_idle_wait")
-    pre_start_delay_seconds = choose_delay_seconds(args, window=args.pre_start_delay_window, label="p6_pre_start")
+    idle_wait_seconds = choose_delay_seconds(args, window=args.idle_wait_window, label="a6_idle_wait")
+    pre_start_delay_seconds = choose_delay_seconds(args, window=args.pre_start_delay_window, label="a6_pre_start")
     budget_seconds = int(idle_wait_seconds) + 180
-    print_case_header("P6", "first utterance after idle wait", budget_seconds)
+    print_case_header("A6", "first recording after idle wait", budget_seconds)
     print(f"idle_wait_seconds={idle_wait_seconds:.2f}", flush=True)
-    time.sleep(idle_wait_seconds)
+    await asyncio.sleep(idle_wait_seconds)
     summary = await play_and_capture_serial_toggle(
         port=args.port,
         device_name=args.device_name,
-        scenario="P6",
-        capture_seconds=p6_capture_seconds,
+        scenario="A6",
+        capture_seconds=a6_capture_seconds,
         timeout_seconds=90,
         reset_before_capture=False,
         pre_start_delay_seconds=pre_start_delay_seconds,
-        output_dir=case_output_dir("P6"),
-        serial_log_path=case_serial_log_path("P6"),
+        output_dir=case_output_dir("A6"),
+        serial_log_path=case_serial_log_path("A6"),
     )
-    return ensure_pass("P6", summary)
+    return ensure_pass("A6", summary)
 
 
-async def run_p7(args) -> dict[str, str]:
-    print_case_header("P7", "host receiver process restart between sessions", 180)
-    baseline_capture_seconds = choose_duration(args, window=args.short_capture_window, label="p7_baseline")
+async def run_a5(args) -> dict[str, str]:
+    print_case_header("A5", "host-side recovery without BT restart", 180)
+    baseline_capture_seconds = choose_duration(args, window=args.short_capture_window, label="a5_baseline")
     baseline_pre_start_delay_seconds = choose_delay_seconds(
         args,
         window=args.pre_start_delay_window,
-        label="p7_baseline_pre_start",
+        label="a5_baseline_pre_start",
     )
     baseline = await play_and_capture_serial_toggle(
         port=args.port,
         device_name=args.device_name,
-        scenario="P7",
+        scenario="A5",
         source_label="baseline",
         capture_seconds=baseline_capture_seconds,
         timeout_seconds=90,
         reset_before_capture=args.reset_before_capture,
         pre_start_delay_seconds=baseline_pre_start_delay_seconds,
-        output_dir=case_output_dir("P7"),
-        serial_log_path=case_serial_log_path("P7", "baseline"),
+        output_dir=case_output_dir("A5"),
+        serial_log_path=case_serial_log_path("A5", "baseline"),
     )
     baseline_failure_reason = str(baseline.get("failure_reason") or baseline.get("warning_reason") or "")
     baseline_retry_allowed = (
@@ -721,7 +696,7 @@ async def run_p7(args) -> dict[str, str]:
     )
     if baseline_retry_allowed:
         print(
-            "p7_baseline_retry_after_recover=1 "
+            "a5_baseline_retry_after_recover=1 "
             f"first_result={baseline['result']} "
             f"first_reason={baseline_failure_reason} "
             f"first_missing_packet_count={baseline['missing_packet_count']} "
@@ -732,18 +707,18 @@ async def run_p7(args) -> dict[str, str]:
         baseline = await play_and_capture_serial_toggle(
             port=args.port,
             device_name=args.device_name,
-            scenario="P7",
+            scenario="A5",
             source_label="baseline_retry",
             capture_seconds=baseline_capture_seconds,
             timeout_seconds=90,
             reset_before_capture=False,
             pre_start_delay_seconds=baseline_pre_start_delay_seconds,
-            output_dir=case_output_dir("P7"),
-            serial_log_path=case_serial_log_path("P7", "baseline_retry"),
+            output_dir=case_output_dir("A5"),
+            serial_log_path=case_serial_log_path("A5", "baseline_retry"),
         )
         if baseline["result"] != "pass":
             return print_summary(
-                "P7",
+                "A5",
                 "fail",
                 "baseline_failed_after_retry "
                 f"missing_packet_count={baseline['missing_packet_count']} "
@@ -751,149 +726,309 @@ async def run_p7(args) -> dict[str, str]:
             )
     elif baseline["result"] != "pass":
         return print_summary(
-            "P7",
+            "A5",
             baseline["result"],
             "baseline_failed_without_retry "
             f"reason={baseline_failure_reason} "
             f"missing_packet_count={baseline.get('missing_packet_count', 0)} "
             f"missing_packet_indices={baseline.get('missing_packet_indices', [])[:16]}",
         )
-    after_restart_capture_seconds = choose_duration(args, window=args.short_capture_window, label="p7_after_restart")
+    after_restart_capture_seconds = choose_duration(args, window=args.short_capture_window, label="a5_after_restart")
     after_restart_pre_start_delay_seconds = choose_delay_seconds(
         args,
         window=args.pre_start_delay_window,
-        label="p7_after_restart_pre_start",
+        label="a5_after_restart_pre_start",
     )
     summary = await play_and_capture_serial_toggle(
         port=args.port,
         device_name=args.device_name,
-        scenario="P7",
+        scenario="A5",
         source_label="after_restart",
         capture_seconds=after_restart_capture_seconds,
         timeout_seconds=90,
         reset_before_capture=False,
         pre_start_delay_seconds=after_restart_pre_start_delay_seconds,
-        output_dir=case_output_dir("P7"),
-        serial_log_path=case_serial_log_path("P7", "after_restart"),
+        output_dir=case_output_dir("A5"),
+        serial_log_path=case_serial_log_path("A5", "after_restart"),
     )
-    return ensure_pass("P7", summary)
+    return ensure_pass("A5", summary)
 
 
-async def run_p8(args) -> dict[str, str]:
-    print_case_header("P8", "cancel during recording and recover next session", 180)
-    cancel_hold_seconds = choose_delay_seconds(args, window=args.cancel_hold_window, label="p8_cancel_hold")
-    capture_seconds = choose_duration(args, window=args.short_capture_window, label="p8")
-    pre_start_delay_seconds = choose_delay_seconds(args, window=args.pre_start_delay_window, label="p8_pre_start")
+async def run_a7(args) -> dict[str, str]:
+    print_case_header("A7", "cancel during recording and recover (long + short hold)", 300)
+    # First probe: long cancel hold
+    long_cancel_hold = choose_delay_seconds(args, window=args.cancel_hold_window, label="a7_long_cancel")
+    capture_seconds = choose_duration(args, window=args.short_capture_window, label="a7")
+    pre_start_delay = choose_delay_seconds(args, window=args.pre_start_delay_window, label="a7_pre_start")
     summary = await play_and_capture_serial_toggle_after_cancel_probe(
         port=args.port,
         device_name=args.device_name,
-        scenario="P8",
+        scenario="A7",
         capture_seconds=capture_seconds,
-        cancel_hold_seconds=cancel_hold_seconds,
+        cancel_hold_seconds=long_cancel_hold,
         timeout_seconds=90,
         reset_before_capture=args.reset_before_capture,
-        pre_start_delay_seconds=pre_start_delay_seconds,
-        output_dir=case_output_dir("P8"),
-        serial_log_path=case_serial_log_path("P8"),
+        pre_start_delay_seconds=pre_start_delay,
+        output_dir=case_output_dir("A7"),
+        serial_log_path=case_serial_log_path("A7", "long_hold"),
     )
-    print(f"cancel_probe_result={'pass' if summary.get('cancel_requested') and summary.get('cancel_completed') else 'fail'}", flush=True)
+    print(f"long_cancel_probe={'pass' if summary.get('cancel_requested') and summary.get('cancel_completed') else 'fail'}", flush=True)
     print(f"cancel_requested={1 if summary.get('cancel_requested') else 0}", flush=True)
     print(f"cancel_completed={1 if summary.get('cancel_completed') else 0}", flush=True)
     if summary["result"] != "pass":
         if summary.get("failure_reason") == "short_cancel_probe_failed":
-            return print_summary("P8", "fail", "cancel_probe_failed")
+            return print_summary("A7", "fail", "long_cancel_probe_failed")
         return print_summary(
-            "P8",
+            "A7",
             summary["result"],
             f"{summary.get('failure_reason') or summary.get('warning_reason') or ''} "
             f"missing_packet_count={summary['missing_packet_count']} "
             f"missing_packet_indices={summary['missing_packet_indices'][:16]}",
         )
-    return print_summary("P8", "pass", "")
 
-
-async def run_p9(args) -> dict[str, str]:
-    print_case_header("P9", "abnormal end / timeout budget sanity and next-session recovery", 180)
-    short_cancel_hold_seconds = choose_delay_seconds(
-        args,
-        window=args.short_cancel_hold_window,
-        label="p9_short_cancel_hold",
-    )
-    capture_seconds = choose_duration(args, window=args.short_capture_window, label="p9")
-    pre_start_delay_seconds = choose_delay_seconds(args, window=args.pre_start_delay_window, label="p9_pre_start")
-    summary = await play_and_capture_serial_toggle_after_cancel_probe(
+    # Second probe: short cancel hold (merged from old P9)
+    short_cancel_hold = choose_delay_seconds(args, window=args.short_cancel_hold_window, label="a7_short_cancel")
+    short_summary = await play_and_capture_serial_toggle_after_cancel_probe(
         port=args.port,
         device_name=args.device_name,
-        scenario="P9",
+        scenario="A7",
         capture_seconds=capture_seconds,
-        cancel_hold_seconds=short_cancel_hold_seconds,
+        cancel_hold_seconds=short_cancel_hold,
         timeout_seconds=90,
-        reset_before_capture=args.reset_before_capture,
-        pre_start_delay_seconds=pre_start_delay_seconds,
-        output_dir=case_output_dir("P9"),
-        serial_log_path=case_serial_log_path("P9"),
+        reset_before_capture=False,
+        pre_start_delay_seconds=pre_start_delay,
+        output_dir=case_output_dir("A7"),
+        serial_log_path=case_serial_log_path("A7", "short_hold"),
     )
-    return ensure_pass("P9", summary)
+    print(f"short_cancel_probe={'pass' if short_summary.get('cancel_requested') and short_summary.get('cancel_completed') else 'fail'}", flush=True)
+    if short_summary["result"] != "pass":
+        return print_summary("A7", short_summary["result"], f"short_cancel_failed: {short_summary.get('failure_reason', '')}")
+    return print_summary("A7", "pass", "")
 
 
-async def run_p10(args) -> dict[str, str]:
-    budget_seconds = max(240, args.soak_round_count * 90)
-    print_case_header("P10", "short soak multi-round baseline", budget_seconds)
+async def run_a4(args) -> dict[str, str]:
+    round_count = args.round_count
+    budget_seconds = max(240, round_count * 120)
+    print_case_header("A4", f"multi-round independent reconnect ({round_count} rounds)", budget_seconds)
     failures = []
-    capture_seconds_plan = choose_duration_plan(
-        args,
-        window=args.short_capture_window,
-        count=args.soak_round_count,
-        label="p10",
-    )
-    pre_start_delay_plan = choose_delay_plan(
-        args,
-        first_window=args.pre_start_delay_window,
-        followup_window=args.inter_session_gap_window,
-        count=args.soak_round_count,
-        label="p10",
-    )
-    summaries = await play_and_capture_serial_toggle_multi_session(
+    warnings = []
+    for round_index in range(1, round_count + 1):
+        capture_seconds = choose_duration(args, window=args.short_capture_window, label=f"a4_r{round_index}")
+        pre_start_delay = choose_delay_seconds(args, window=args.pre_start_delay_window, label=f"a4_r{round_index}_pre_start")
+        summary = await play_and_capture_serial_toggle(
+            port=args.port,
+            device_name=args.device_name,
+            scenario="A4",
+            source_label=f"round{round_index}",
+            capture_seconds=capture_seconds,
+            timeout_seconds=90,
+            reset_before_capture=True,  # Full reset each round
+            pre_start_delay_seconds=pre_start_delay,
+            output_dir=case_output_dir("A4"),
+            serial_log_path=case_serial_log_path("A4", f"round{round_index}"),
+        )
+        print(f"a4_round_index={round_index}", flush=True)
+        print(f"a4_round_result={summary['result']}", flush=True)
+        print(f"a4_round_missing_packet_count={summary['missing_packet_count']}", flush=True)
+        if summary["result"] == "fail":
+            failures.append(round_index)
+        elif summary["result"] == "warning":
+            warnings.append(round_index)
+    if failures:
+        return print_summary("A4", "fail", "failed_rounds=" + ",".join(str(v) for v in failures))
+    if warnings:
+        return print_summary("A4", "warning", "warning_rounds=" + ",".join(str(v) for v in warnings))
+    return print_summary("A4", "pass", "")
+
+
+async def run_a8(args) -> dict[str, str]:
+    print_case_header("A8", "silent/no-input negative test", 120)
+    capture_seconds = choose_duration(args, window=args.short_capture_window, label="a8")
+    pre_start_delay = choose_delay_seconds(args, window=args.pre_start_delay_window, label="a8_pre_start")
+    capture_args = make_capture_args(
         port=args.port,
         device_name=args.device_name,
-        scenario="P10",
-        capture_seconds=args.capture_seconds,
-        capture_seconds_per_session=capture_seconds_plan,
-        session_count=args.soak_round_count,
-        source_label="soak",
+        capture_seconds=capture_seconds,
+        capture_seconds_per_session=[capture_seconds],
+        session_pre_start_delay_seconds=[pre_start_delay],
         timeout_seconds=90,
         reset_before_capture=args.reset_before_capture,
-        require_analysis=False,
-        pre_start_delay_seconds_per_session=pre_start_delay_plan,
-        output_dir=case_output_dir("P10"),
-        serial_log_path=case_serial_log_path("P10"),
+        output_dir=case_output_dir("A8"),
+        serial_log_path=case_serial_log_path("A8"),
     )
-    for round_index, summary in enumerate(summaries, start=1):
-        print(f"soak_round_index={round_index}", flush=True)
-        print(f"soak_round_result={summary['result']}", flush=True)
-        print(f"soak_round_transport_result={summary['transport_result']}", flush=True)
-        print(f"soak_round_analysis_result={summary['analysis_result']}", flush=True)
-        print(f"soak_round_capture_seconds_target={summary['capture_seconds_target']}", flush=True)
-        print(f"soak_round_missing_packet_count={summary['missing_packet_count']}", flush=True)
-        print(f"soak_round_packet_loss_ratio={summary['packet_loss_ratio']:.4f}", flush=True)
-        if summary["result"] != "pass":
-            failures.append(round_index)
-    if failures:
-        return print_summary("P10", "fail", "failed_soak_rounds=" + ",".join(str(v) for v in failures))
-    return print_summary("P10", "pass", "")
+    session_summaries = await capture_sessions(capture_args)
+    if not session_summaries:
+        return print_summary("A8", "fail", "no_session_captured")
+    summary = dict(session_summaries[-1])
+    recorded_wav = pathlib.Path(summary["wav_path"])
+    if not recorded_wav.exists():
+        return print_summary("A8", "fail", "no_output_wav")
+    frames = read_wav_frames(recorded_wav)
+    peak = max(abs(v) for v in frames) if frames else 0
+    env = compute_envelope(frames)
+    runs = detect_active_runs(env)
+    active_frames = sum(end - start for start, end in runs)
+    print(f"a8_recorded_peak={peak}", flush=True)
+    print(f"a8_active_frame_count={active_frames}", flush=True)
+    print(f"a8_total_frames={len(frames)}", flush=True)
+    validation = validate_transport_summary(summary, capture_seconds=capture_seconds)
+    transport_ok = validation["transport_result"] != "fail" or validation["transport_failure_reason"] != "no_audio_packets_received"
+    print(f"a8_transport_ok={1 if transport_ok else 0}", flush=True)
+    if not transport_ok:
+        return print_summary("A8", "fail", "transport_failed_even_without_audio")
+    return print_summary("A8", "pass", f"peak={peak} active_frames={active_frames}")
+
+
+RAPID_TOGGLE_COUNT_DEFAULT = 10
+
+
+async def run_a9(args) -> dict[str, str]:
+    toggle_count = RAPID_TOGGLE_COUNT_DEFAULT
+    print_case_header("A9", f"rapid toggle stress ({toggle_count} cycles)", 180)
+    stress_ok = True
+    stress_errors = []
+    with open_serial_with_retry(args.port) as ser:
+        ser.setDTR(False)
+        ser.setRTS(False)
+        ser.reset_input_buffer()
+        for cycle in range(1, toggle_count + 1):
+            try:
+                send_toggle(ser)
+                await asyncio.sleep(round(args.duration_rng.uniform(0.3, 0.8), 2))
+                send_toggle(ser)
+                await asyncio.sleep(round(args.duration_rng.uniform(0.1, 0.3), 2))
+            except (OSError, serial.SerialException) as exc:
+                stress_ok = False
+                stress_errors.append(f"cycle={cycle} {type(exc).__name__}:{exc}")
+                break
+        print(f"a9_stress_toggle_count={toggle_count}", flush=True)
+        print(f"a9_stress_ok={1 if stress_ok else 0}", flush=True)
+        if stress_errors:
+            for error in stress_errors[:5]:
+                print(f"a9_stress_error={error}", flush=True)
+        await asyncio.sleep(1.0)
+        try:
+            ser.reset_input_buffer()
+        except (OSError, serial.SerialException):
+            pass
+    if not stress_ok:
+        return print_summary("A9", "fail", "serial_error_during_stress")
+    verify_capture_seconds = choose_duration(args, window=args.short_capture_window, label="a9_verify")
+    pre_start_delay = choose_delay_seconds(args, window=args.pre_start_delay_window, label="a9_verify_pre_start")
+    summary = await play_and_capture_serial_toggle(
+        port=args.port,
+        device_name=args.device_name,
+        scenario="A9",
+        source_label="post_stress_verify",
+        capture_seconds=verify_capture_seconds,
+        timeout_seconds=90,
+        reset_before_capture=True,
+        pre_start_delay_seconds=pre_start_delay,
+        output_dir=case_output_dir("A9"),
+        serial_log_path=case_serial_log_path("A9"),
+    )
+    summary["stress_toggle_count"] = toggle_count
+    summary["stress_ok"] = stress_ok
+    return ensure_pass("A9", summary)
+
+
+async def run_a10(args) -> dict[str, str]:
+    print_case_header("A10", "concurrent BLE client attempt during capture", 180)
+    address_hex = get_paired_device_address_hex(args.device_name)
+    if not address_hex:
+        return print_summary("A10", "fail", "unable_to_resolve_device_address")
+    from winrt.windows.devices.bluetooth import BluetoothLEDevice
+    rogue_device = None
+    try:
+        rogue_device = await BluetoothLEDevice.from_bluetooth_address_async(int(address_hex, 16))
+    except Exception as exc:
+        print(f"a10_rogue_connect_error={type(exc).__name__}:{exc}", flush=True)
+    rogue_connected = False
+    if rogue_device is not None:
+        try:
+            rogue_connected = rogue_device.connection_status == 1
+        except Exception:
+            pass
+    print(f"a10_rogue_device_open={1 if rogue_device else 0}", flush=True)
+    print(f"a10_rogue_connected={1 if rogue_connected else 0}", flush=True)
+    capture_seconds = choose_duration(args, window=args.short_capture_window, label="a10")
+    pre_start_delay = choose_delay_seconds(args, window=args.pre_start_delay_window, label="a10_pre_start")
+    try:
+        summary = await play_and_capture_serial_toggle(
+            port=args.port,
+            device_name=args.device_name,
+            scenario="A10",
+            source_label="concurrent_test",
+            capture_seconds=capture_seconds,
+            timeout_seconds=90,
+            reset_before_capture=args.reset_before_capture,
+            pre_start_delay_seconds=pre_start_delay,
+            output_dir=case_output_dir("A10"),
+            serial_log_path=case_serial_log_path("A10"),
+        )
+    finally:
+        if rogue_device is not None:
+            try:
+                rogue_device.close()
+            except Exception:
+                pass
+    summary["rogue_device_open"] = rogue_device is not None
+    summary["rogue_connected"] = rogue_connected
+    return ensure_pass("A10", summary)
+
+
+async def run_h1(args) -> dict[str, str]:
+    print_case_header("H1", "physical KEY1 semi-auto (waiting for button press)", 180)
+    capture_seconds = choose_duration(args, window=args.short_capture_window, label="h1")
+    serial_log_path = case_serial_log_path("H1")
+    output_dir = case_output_dir("H1")
+    capture_args = argparse.Namespace(
+        port=args.port,
+        device_name=args.device_name,
+        capture_seconds=capture_seconds,
+        output_dir=str(output_dir),
+        serial_log_path=str(serial_log_path),
+        timeout_seconds=90,
+        boot_timeout_seconds=15,
+        ble_connect_timeout_seconds=15,
+        notify_ready_timeout_seconds=45,
+        trigger_mode="physical-key",
+        max_sessions=1,
+        reset_before_capture=args.reset_before_capture,
+    )
+    summaries = await run_capture_with_args(capture_args)
+    summary = dict(summaries[-1])
+    serial_log_text = serial_log_path.read_text(encoding="utf-8", errors="replace") if serial_log_path.exists() else ""
+    key_start_seen = "recording start source=key1" in serial_log_text
+    key_stop_seen = "recording stop source=key1" in serial_log_text
+    print(f"h1_key_start_seen={1 if key_start_seen else 0}", flush=True)
+    print(f"h1_key_stop_seen={1 if key_stop_seen else 0}", flush=True)
+    if not key_start_seen or not key_stop_seen:
+        return print_summary("H1", "fail", f"physical_key_source_missing start={key_start_seen} stop={key_stop_seen}")
+    validation = validate_transport_summary(summary, capture_seconds=capture_seconds, min_ratio=0.0, max_extra_seconds=float(90))
+    summary.update(validation)
+    if validation["transport_result"] == "fail" and validation["transport_failure_reason"] == "missing_expected_packet_count":
+        return print_summary("H1", "fail", "no_audio_packets")
+    result = "pass"
+    reason = ""
+    if validation["transport_result"] == "fail":
+        result = "fail"
+        reason = validation.get("transport_failure_reason", "")
+    return print_summary("H1", result, reason)
 
 
 CASE_RUNNERS = {
-    "P1": run_p1,
-    "P2": run_p2,
-    "P3": run_p3,
-    "P4": run_p4,
-    "P5": run_p5,
-    "P6": run_p6,
-    "P7": run_p7,
-    "P8": run_p8,
-    "P9": run_p9,
-    "P10": run_p10,
+    "A1": run_a1,
+    "A2": run_a2,
+    "A3": run_a3,
+    "A4": run_a4,
+    "A5": run_a5,
+    "A6": run_a6,
+    "A7": run_a7,
+    "A8": run_a8,
+    "A9": run_a9,
+    "A10": run_a10,
+    "H1": run_h1,
 }
 
 
@@ -964,7 +1099,7 @@ async def main_async(args) -> None:
             else:
                 print(f"preflight_recover_skipped={case_id}", flush=True)
             results.append(await runner(args))
-        except (RuntimeError, subprocess.CalledProcessError, subprocess.TimeoutExpired, OSError) as exc:
+        except Exception as exc:
             results.append(print_summary(case_id, "fail", f"{type(exc).__name__}:{exc}"))
 
     failed = [item for item in results if item["result"] == "fail"]

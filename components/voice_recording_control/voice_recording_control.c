@@ -31,6 +31,8 @@ static bool s_usb_command_active;
 static size_t s_usb_command_length;
 static char s_usb_command_buffer[VOICE_RECORDING_CONTROL_COMMAND_BUFFER_BYTES];
 static voice_recording_state_t s_state = VOICE_RECORDING_STATE_IDLE;
+static bool s_cancel_pending;
+static const char *s_cancel_source;
 
 static esp_err_t voice_recording_control_enter_recording(const char *source)
 {
@@ -40,6 +42,8 @@ static esp_err_t voice_recording_control_enter_recording(const char *source)
         return ret;
     }
 
+    s_cancel_pending = false;
+    s_cancel_source = NULL;
     s_state = VOICE_RECORDING_STATE_RECORDING;
     ESP_LOGI(TAG, "recording start source=%s", source);
     return ESP_OK;
@@ -53,6 +57,8 @@ static esp_err_t voice_recording_control_exit_recording(const char *source)
         return ret;
     }
 
+    s_cancel_pending = false;
+    s_cancel_source = NULL;
     s_state = VOICE_RECORDING_STATE_IDLE;
     ESP_LOGI(TAG, "recording stop source=%s", source);
     return ESP_OK;
@@ -60,6 +66,11 @@ static esp_err_t voice_recording_control_exit_recording(const char *source)
 
 static void voice_recording_control_toggle(const char *source)
 {
+    if (s_cancel_pending) {
+        ESP_LOGW(TAG, "recording toggle ignored source=%s: cancel pending", source);
+        return;
+    }
+
     if (s_state == VOICE_RECORDING_STATE_IDLE) {
         voice_recording_control_enter_recording(source);
     } else {
@@ -75,8 +86,17 @@ static void voice_recording_control_cancel(const char *source)
         return;
     }
 
-    s_state = VOICE_RECORDING_STATE_IDLE;
-    ESP_LOGI(TAG, "recording cancel source=%s", source);
+    s_cancel_pending = true;
+    s_cancel_source = source;
+    if (!audio_capture_session_is_active()) {
+        s_cancel_pending = false;
+        s_cancel_source = NULL;
+        s_state = VOICE_RECORDING_STATE_IDLE;
+        ESP_LOGI(TAG, "recording cancel source=%s", source);
+        return;
+    }
+
+    ESP_LOGI(TAG, "recording cancel requested source=%s", source);
 }
 
 static void voice_recording_control_task(void *parameter)
@@ -89,6 +109,15 @@ static void voice_recording_control_task(void *parameter)
         }
 
         if (s_state == VOICE_RECORDING_STATE_RECORDING && !audio_capture_session_is_active()) {
+            if (s_cancel_pending) {
+                const char *source = s_cancel_source != NULL ? s_cancel_source : "unknown";
+                s_cancel_pending = false;
+                s_cancel_source = NULL;
+                s_state = VOICE_RECORDING_STATE_IDLE;
+                ESP_LOGI(TAG, "recording cancel source=%s", source);
+                continue;
+            }
+
             s_state = VOICE_RECORDING_STATE_IDLE;
             ESP_LOGI(TAG, "recording session finished");
         }

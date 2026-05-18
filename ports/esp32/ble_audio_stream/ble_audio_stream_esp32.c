@@ -1678,11 +1678,15 @@ void ble_audio_stream_on_gap_subscribe(
     if (cur_notify == 0 && ble_audio_stream_transport_session_active()) {
         ESP_LOGW(
             TAG,
-            "audio transport link suspended: reason=notify_disabled epoch=%" PRIu32 " conn=%u state=%s session=%" PRIu32,
+            "audio transport session aborted: reason=notify_disabled epoch=%" PRIu32 " conn=%u state=%s session=%" PRIu32,
             s_connection_epoch,
             conn_handle,
             ble_audio_stream_transport_state_name(s_transport_state),
             s_transport_session_id);
+        ble_audio_stream_reset_transport_session();
+        ble_audio_stream_set_transport_state(
+            BLE_AUDIO_STREAM_TRANSPORT_STATE_STOPPED,
+            "notify_disabled_session_abort");
     }
 
     s_pending_subscribe_valid = false;
