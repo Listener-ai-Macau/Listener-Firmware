@@ -1,65 +1,101 @@
 ---
 name: voice-keyboard-firmware
-description: Repository adapter for voice-keyboard-firmware. Use with ai-collaboration-workflow when work touches firmware structure, ESP32/S3 commands, COM3/BLE hardware resources, audio/BLE validation, or repo-specific planning and documentation rules.
+description: Firmware repo adapter. Three agents collaborate, all roles equal, whoever is free picks up work.
 ---
 
 # Voice Keyboard Firmware
 
-Use `$ai-collaboration-workflow` for generic Codex/executor routing. This skill only adds repo-specific rules.
+## 协作
 
-## Workflow
+三个 AI（Codex / Tai / Claude）角色平等，谁闲谁做。任务由人工分配或空闲者认领。
 
-- Small local fixes use the fast path: inspect narrowly, edit, verify, report.
-- New features, architecture, hardware, timing-sensitive bugs, protocol changes, or cross-module work need a plan in `!docs/plans/` or `!docs/fixes/` before implementation.
-- Execute one planned step at a time. Run that step's acceptance check before moving on.
-- Write human-facing docs in Chinese by default.
+## 【硬约束】开工前必做
 
-## Repo Facts
+1. **读状态**：`cat C:\Users\Billy\Desktop\listener\docs\plans\*_status.json`
+2. **确认无人占用**你要做的步骤（status != in_progress 或 assignee == 你）
+3. **认领**：`powershell -File C:\Users\Billy\Desktop\listener\voice-keyboard-firmware\tools\update_plan_status.ps1 -Plan p13 -StepId N -Status in_progress -Assignee <你>`
+4. **硬件加锁**：`powershell -File C:\Users\Billy\Desktop\listener\voice-keyboard-firmware\tools\lock_resource.ps1 -Resource COM3 -Owner <你>`
 
-- Platform now: `ESP32-S3` with `ESP-IDF + CMake`.
-- Future boundary: keep upper layers portable to `STM32`.
-- Product line: `BLE HID keyboard + voice capture upload`.
-- Audio path: `BLE session notify -> Windows host reassembly -> wav`.
-- Keep `components/` and `protocols/` as free of direct `ESP-IDF` coupling as practical.
+以上必须在开始编码前完成。不做就开工导致冲突的，由冲突方负责修复。
 
-## Boundaries
+## 工作流
 
-- `main/`: thin `app_main()` and initialization handoff.
-- `components/`: cross-platform product logic.
-- `protocols/`: protocol structs, codecs, and error contracts.
-- `ports/esp32/`: ESP-IDF bindings and SDK glue.
-- Do not create generic top-level folders such as `services/`, `platform/`, `common`, or `misc` unless explicitly requested.
+1. 确认身份：先看启动器注入身份（Tai 会有 `AI_AGENT_ID=Tai` / `TAI_AGENT_ID=Tai`），再用工作目录路径校验：`codex-p13` = Codex，`tai-p13` = Tai，`claude-review-p13` = Claude
+2. 读协议：`!docs/ai_collaboration_protocol.md`
+3. 读状态：`C:\Users\Billy\Desktop\listener\docs\plans\*_status.json`
+4. 读参考文档：`C:\Users\Billy\Desktop\listener\docs\plans\*.md`
+5. 找到分配给自己或 unassigned 的步骤
+6. **硬约束**：认领 → `update_plan_status.ps1` 标记 assignee + in_progress
+7. **硬约束**：硬件 → `lock_resource.ps1` 获取锁
+8. 只在自己的 worktree 内工作
+9. 完成后 `update_plan_status.ps1` 标记 completed，清空 assignee
+10. 硬件用完 `unlock_resource.ps1` 释放锁
+11. 遇到人工阻塞标记 blocked + blocked_reason
 
-## Executor Adapter
+## 【硬约束】写计划必须遵守
 
-- COM3, BLE, flash, monitor, and verify chains are exclusive/critical. Use native pipeline plus `-Resource COM3,BLE`.
-- Build/size tasks that depend on ignored local state such as `build/` or `sdkconfig` should use `-NoWorktree`.
-- BLE/audio/hardware/protocol/cross-module conclusions are high risk: check structured evidence such as `pipeline_steps.json`, `matrix_result.json`, `diagnosis.json`, `evidence.md`, or source `file:line`.
-- BLE matrix warnings are not PASS. Gate runs should use `--fail-on-warning` or native pipeline `inconclusive_on_stdout_regex`.
-- P5 host recovery semantics: host recovery completed -> settle window -> start capture.
+任何 AI 写计划时必须按以下格式，确保步骤可并行分工：
 
-## Commands
+### JSON 状态
 
-```powershell
-# Build
-idf.py build
-
-# Flash
-pwsh -File .\tools\flash.ps1 -Port COM3
-
-# Serial capture
-pwsh -File .\tools\capture_serial.ps1 -Port COM3 -ResetBeforeRead
-
-# BLE audio capture
-python .\tools\capture_audio_ble_wav.py --port COM3 --capture-seconds 5
-
-# Product matrix gate
-python .\tools\verify_audio_ble_product_matrix.py --port COM3 --capture-seconds 5 --long-capture-seconds 30 --round-count 3 --idle-seconds 30 --soak-round-count 5 --fail-on-warning
+```json
+{
+  "plan": "<name>",
+  "phases": [
+    {
+      "id": 1,
+      "title": "阶段名",
+      "status": "completed | in_progress | pending",
+      "steps": [
+        {
+          "id": "1.1",
+          "title": "步骤名",
+          "repo": "firmware | Listener-Type",
+          "status": "pending | in_progress | completed | blocked",
+          "assignee": null,
+          "parallel_group": "A"
+        }
+      ]
+    }
+  ]
+}
 ```
 
-## Key Constraints
+### 规则
 
-- Do not reinterpret current `audio_data` back into the old `chunk + fragment` model.
-- Do not change host primary subscription order: `CCCD notify -> ValueChanged`.
-- Do not remove compatibility for `subscribe` arriving before `connect`.
-- When product scope or backend/device assumptions matter, consult `!docs/product_solutions.md`.
+1. **分阶段**：不同阶段串行，同阶段内步骤尽量并行
+2. **parallel_group**：同组可同时做，不同组互不依赖
+3. **只追踪未完成**：已完成阶段折叠一行，不展开步骤
+4. **步骤粒度**：单次会话可完成并验收的大小
+5. **repo 标注**：每个步骤必须标注涉及哪个仓库
+
+## 仓库约束
+
+### 目录边界
+
+- `main/`：精简的 app_main 和初始化
+- `components/`：跨平台产品逻辑
+- `protocols/`：协议、编解码、错误码
+- `drivers/`：语义化外设驱动
+- `ports/esp32/`：ESP-IDF 绑定
+- 不新建 `services/`、`platform/`、`common/`、`misc/`
+
+### 命名
+
+- 目录、文件、函数、变量：`snake_case`
+- 公开函数加模块前缀：`keyboard_start()`、`ble_hid_init()`
+
+### 构建
+
+```powershell
+idf.py build
+idf.py flash
+python .\tools\capture_audio_ble_wav.py --port COM3 --capture-seconds 5
+python .\tools\verify_audio_ble_product_matrix.py --port COM3 --capture-seconds 5 --long-capture-seconds 30 --round-count 3 --fail-on-warning
+```
+
+### 关键不变量
+
+- 不重解释 `audio_data` 为旧的 `chunk + fragment` 模型
+- 不改变 host 订阅顺序：`CCCD notify -> ValueValueChanged`
+- 不移除 `subscribe` 先于 `connect` 到达的兼容性

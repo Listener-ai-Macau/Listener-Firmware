@@ -25,6 +25,53 @@ MANUAL_OR_EXTERNAL_CASES = {
 }
 MATRIX_ARTIFACT_DIR = pathlib.Path("tests") / "artifacts" / "ble_product_matrix"
 P5_RECONNECT_MIN_PRE_START_DELAY_SECONDS = 12.0
+COMPACT_STDOUT_PREFIXES = (
+    "execution_profile=",
+    "preflight_recover_mode=",
+    "random_seed=",
+    "case_execution_order=",
+    "case_start=",
+    "case_id=",
+    "case_result=",
+    "case_reason=",
+    "matrix_item=",
+    "matrix_summary=",
+    "matrix_total=",
+    "matrix_failed=",
+    "matrix_warning=",
+    "matrix_skipped=",
+    "matrix_result_json=",
+    "matrix_summary_log=",
+    "matrix_failed_cases=",
+    "matrix_warning_cases=",
+    "matrix_error=",
+    "interrupted=",
+)
+
+
+class MatrixStdoutFilter:
+    def __init__(self, original, log_file, *, verbose: bool):
+        self.original = original
+        self.log_file = log_file
+        self.verbose = verbose
+        self.buffer = ""
+
+    def write(self, text: str) -> int:
+        self.log_file.write(text)
+        self.buffer += text
+        while "\n" in self.buffer:
+            line, self.buffer = self.buffer.split("\n", 1)
+            complete = line + "\n"
+            if self.verbose or self.should_forward(line.rstrip("\r")):
+                self.original.write(complete)
+        return len(text)
+
+    def flush(self) -> None:
+        self.log_file.flush()
+        self.original.flush()
+
+    def should_forward(self, line: str) -> bool:
+        return any(line.startswith(prefix) for prefix in COMPACT_STDOUT_PREFIXES)
 
 
 def parse_case_list(raw: str) -> list[str]:
@@ -82,9 +129,19 @@ def parse_args():
     parser.add_argument("--skip-preflight-recover", action="store_true")
     parser.add_argument("--fail-on-warning", action="store_true")
     parser.add_argument(
+        "--verbose",
+        action="store_true",
+        help="Print full per-step progress to stdout. By default full logs go to --summary-log.",
+    )
+    parser.add_argument(
         "--matrix-result-json",
         default=str(MATRIX_ARTIFACT_DIR / "matrix_result.json"),
         help="Write structured matrix result JSON for CI/executor consumption.",
+    )
+    parser.add_argument(
+        "--summary-log",
+        default=str(MATRIX_ARTIFACT_DIR / "summary.log"),
+        help="Write full matrix stdout to this log while keeping default stdout compact.",
     )
     parser.add_argument(
         "--preflight-recover-mode",
@@ -407,6 +464,7 @@ def ensure_pass(case_id: str, summary: dict[str, object]) -> dict[str, object]:
 def write_matrix_result_json(
     *,
     path: str,
+    summary_log: str,
     results: list[dict[str, object]],
     failed: list[dict[str, object]],
     warnings: list[dict[str, object]],
@@ -425,6 +483,7 @@ def write_matrix_result_json(
         "failed_cases": [str(item["case_id"]) for item in failed],
         "warning_cases": [str(item["case_id"]) for item in warnings],
         "skipped_cases": [str(item["case_id"]) for item in skipped],
+        "summary_log": summary_log,
         "cases": results,
     }
     output_path.write_text(json.dumps(payload, indent=2, ensure_ascii=False), encoding="utf-8")
@@ -923,6 +982,7 @@ async def main_async(args) -> None:
     print(f"matrix_skipped={len(skipped)}", flush=True)
     matrix_result_path = write_matrix_result_json(
         path=args.matrix_result_json,
+        summary_log=args.summary_log,
         results=results,
         failed=failed,
         warnings=warnings,
@@ -930,6 +990,7 @@ async def main_async(args) -> None:
         fail_on_warning=args.fail_on_warning,
     )
     print(f"matrix_result_json={matrix_result_path}", flush=True)
+    print(f"matrix_summary_log={args.summary_log}", flush=True)
     if failed:
         failed_ids = ",".join(item["case_id"] for item in failed)
         print(f"matrix_failed_cases={failed_ids}", flush=True)
@@ -945,11 +1006,23 @@ def main() -> None:
     args = parse_args()
     apply_execution_profile(args)
     prepare_duration_randomizer(args)
+    summary_log_path = pathlib.Path(args.summary_log)
+    summary_log_path.parent.mkdir(parents=True, exist_ok=True)
+    original_stdout = sys.stdout
+    log_file = summary_log_path.open("w", encoding="utf-8")
+    sys.stdout = MatrixStdoutFilter(original_stdout, log_file, verbose=args.verbose)
     try:
         asyncio.run(main_async(args))
+    except RuntimeError as exc:
+        print(f"matrix_error={type(exc).__name__}:{exc}", flush=True)
+        sys.exit(1)
     except KeyboardInterrupt:
         print("interrupted=1", flush=True)
         sys.exit(130)
+    finally:
+        sys.stdout.flush()
+        sys.stdout = original_stdout
+        log_file.close()
 
 
 if __name__ == "__main__":

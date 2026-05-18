@@ -1,0 +1,38 @@
+#!/bin/sh
+# pre-commit hook: validate plan status JSON files
+# Install: cp tools/hooks/pre-commit .git/hooks/pre-commit
+
+staged_status_files=$(git diff --cached --name-only -- '!docs/plans/*_status.json')
+
+if [ -z "$staged_status_files" ]; then
+    exit 0
+fi
+
+for f in $staged_status_files; do
+    # Check file is valid JSON
+    if ! python -c "import json,sys; json.load(open(sys.argv[1]))" "$f" 2>/dev/null; then
+        echo "ERROR: $f is not valid JSON"
+        exit 1
+    fi
+
+    # Check required fields exist
+    if ! python -c "
+import json,sys
+data = json.load(open(sys.argv[1]))
+assert 'plan' in data, 'missing plan field'
+assert 'steps' in data, 'missing steps field'
+assert 'updated_at' in data, 'missing updated_at field'
+for s in data['steps']:
+    assert 'id' in s, f'missing id in step {s}'
+    assert 'status' in s, f'missing status in step {s}'
+    assert s['status'] in ('pending','in_progress','completed','blocked'), f'invalid status: {s[\"status\"]}'
+" "$f" 2>/dev/null; then
+        echo "ERROR: $f has invalid structure or status values"
+        exit 1
+    fi
+
+    # Check no two steps are in_progress by same assignee on same resource
+    echo "OK: $f validated"
+done
+
+exit 0

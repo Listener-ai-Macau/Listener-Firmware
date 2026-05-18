@@ -122,6 +122,10 @@ function Join-Arguments([string[]]$Values) {
 
 function Get-ObjectPropertyValue($Object, [string]$Name) {
   if ($null -eq $Object) { return $null }
+  if ($Object -is [System.Collections.IDictionary]) {
+    if ($Object.Contains($Name)) { return $Object[$Name] }
+    return $null
+  }
   $prop = $Object.PSObject.Properties[$Name]
   if ($null -eq $prop) { return $null }
   return $prop.Value
@@ -169,6 +173,15 @@ function Get-Sha256Text([string]$Value) {
     return [System.BitConverter]::ToString($sha.ComputeHash([System.Text.Encoding]::UTF8.GetBytes($Value))).Replace('-', '').ToLowerInvariant()
   } finally {
     $sha.Dispose()
+  }
+}
+
+function Get-Sha256File([string]$Path) {
+  if ([string]::IsNullOrWhiteSpace($Path) -or -not (Test-Path -LiteralPath $Path -PathType Leaf)) { return '' }
+  try {
+    return (Get-FileHash -LiteralPath $Path -Algorithm SHA256).Hash.ToLowerInvariant()
+  } catch {
+    return ''
   }
 }
 
@@ -448,6 +461,338 @@ function Sync-WorkspaceSnapshotToWorktree([string]$RepoRoot, [string]$WorktreePa
   return [ordered]@{ tracked_copied = @($trackedCopied); untracked_copied = @($untrackedCopied) }
 }
 
+function Get-GitWorkspaceSnapshot([string]$RepoRoot) {
+  $snapshot = [ordered]@{
+    available = $false
+    root = $RepoRoot
+    head = ''
+    branch = ''
+    diff_hash = ''
+    status_hash = ''
+    changed_paths = @()
+    status = @()
+    ignored_paths = @('.cache', 'tests/artifacts')
+    error = ''
+  }
+  if ([string]::IsNullOrWhiteSpace($RepoRoot) -or -not (Test-Path -LiteralPath $RepoRoot -PathType Container)) {
+    $snapshot.error = 'workspace root is unavailable'
+    return $snapshot
+  }
+  Push-Location -LiteralPath $RepoRoot
+  try {
+    $head = ((& git rev-parse HEAD 2>&1) -join [char]10).Trim()
+    if ($LASTEXITCODE -ne 0) { throw "git rev-parse HEAD failed: $head" }
+    $branch = ((& git rev-parse --abbrev-ref HEAD 2>$null) -join [char]10).Trim()
+    $pathspec = @('.', ':(exclude).cache', ':(exclude)tests/artifacts')
+    $diffText = ((& git diff --no-ext-diff --binary -- @pathspec 2>&1) -join [char]10)
+    if ($LASTEXITCODE -ne 0) { throw "git diff failed: $diffText" }
+    $statusLines = @(& git status --porcelain=v1 --untracked-files=all -- @pathspec 2>$null)
+    $changedPaths = @()
+    foreach ($line in @($statusLines)) {
+      if ([string]::IsNullOrWhiteSpace($line)) { continue }
+      $pathText = if ($line.Length -ge 4) { $line.Substring(3) } else { $line }
+      $changedPaths += $pathText
+    }
+    $snapshot.available = $true
+    $snapshot.head = $head
+    $snapshot.branch = $branch
+    $snapshot.diff_hash = Get-Sha256Text $diffText
+    $snapshot.status_hash = Get-Sha256Text ($statusLines -join [char]10)
+    $snapshot.changed_paths = @($changedPaths | Sort-Object -Unique)
+    $snapshot.status = @($statusLines)
+  } catch {
+    $snapshot.error = $_.Exception.Message
+  } finally {
+    Pop-Location
+  }
+  return $snapshot
+}
+
+function Get-FileArtifactSnapshot([string]$Root, [string]$RelativePath) {
+  $path = Join-Path $Root $RelativePath
+  $exists = Test-Path -LiteralPath $path -PathType Leaf
+  $item = if ($exists) { Get-Item -LiteralPath $path -ErrorAction SilentlyContinue } else { $null }
+  return [ordered]@{
+    path = $path
+    relative_path = $RelativePath
+    exists = [bool]$exists
+    size_bytes = if ($null -eq $item) { $null } else { [int64]$item.Length }
+    sha256 = if ($exists) { Get-Sha256File $path } else { '' }
+    last_write_time = if ($null -eq $item) { '' } else { $item.LastWriteTimeUtc.ToString('o') }
+  }
+}
+
+function Get-ArtifactFilesSnapshot([string]$Root, [array]$ArtifactSpecs) {
+  $items = @()
+  foreach ($spec in @($ArtifactSpecs)) {
+    $relative = [string](Get-ObjectPropertyValue $spec 'path')
+    if ([string]::IsNullOrWhiteSpace($relative)) { continue }
+    $snapshot = Get-FileArtifactSnapshot $Root $relative
+    $snapshot.label = [string](Get-ObjectPropertyValue $spec 'label')
+    $snapshot.required = [bool](Get-ObjectPropertyValue $spec 'required')
+    $items += $snapshot
+  }
+  return @($items)
+}
+
+function Get-ConsistencySnapshot([string]$Root, [array]$ArtifactSpecs = @()) {
+  return [ordered]@{
+    source = Get-GitWorkspaceSnapshot $Root
+    artifacts = Get-ArtifactFilesSnapshot $Root $ArtifactSpecs
+  }
+}
+
+function Get-WorkspaceDelta($Before, $After) {
+  $changed = $false
+  if ($null -eq $Before -or $null -eq $After) {
+    $changed = $false
+  } elseif ([string](Get-ObjectPropertyValue $Before 'head') -ne [string](Get-ObjectPropertyValue $After 'head')) {
+    $changed = $true
+  } elseif ([string](Get-ObjectPropertyValue $Before 'diff_hash') -ne [string](Get-ObjectPropertyValue $After 'diff_hash')) {
+    $changed = $true
+  } elseif ([string](Get-ObjectPropertyValue $Before 'status_hash') -ne [string](Get-ObjectPropertyValue $After 'status_hash')) {
+    $changed = $true
+  }
+  return [ordered]@{
+    changed = [bool]$changed
+    changed_paths = if ($null -eq $After) { @() } else { @((Get-ObjectPropertyValue $After 'changed_paths')) }
+    before = $Before
+    after = $After
+  }
+}
+
+function Resolve-StepOutputPath([string]$WorkDir, [string]$Value) {
+  $trimmed = ([string]$Value).Trim().Trim('"').Trim("'")
+  if ([string]::IsNullOrWhiteSpace($trimmed)) { return '' }
+  if ([System.IO.Path]::IsPathRooted($trimmed)) { return $trimmed }
+  return Join-Path $WorkDir $trimmed
+}
+
+function Get-JsonFieldValue($Object, [string]$Path) {
+  if ($null -eq $Object -or [string]::IsNullOrWhiteSpace($Path)) { return $null }
+  $cursor = $Object
+  foreach ($part in ($Path -split '\.')) {
+    if ([string]::IsNullOrWhiteSpace($part)) { continue }
+    $cursor = Get-ObjectPropertyValue $cursor $part
+    if ($null -eq $cursor) { return $null }
+  }
+  return $cursor
+}
+
+function Test-StructuredResultRule($Json, $Rule) {
+  $field = [string](Get-ObjectPropertyValue $Rule 'field')
+  if ([string]::IsNullOrWhiteSpace($field)) { return $false }
+  $actual = Get-JsonFieldValue $Json $field
+  $equals = Get-ObjectPropertyValue $Rule 'equals'
+  if ($null -ne $equals -and [string]$actual -ne [string]$equals) { return $false }
+  $notEquals = Get-ObjectPropertyValue $Rule 'not_equals'
+  if ($null -ne $notEquals -and [string]$actual -eq [string]$notEquals) { return $false }
+  $greaterThan = Get-ObjectPropertyValue $Rule 'greater_than'
+  if ($null -ne $greaterThan) {
+    try {
+      if ([double]$actual -le [double]$greaterThan) { return $false }
+    } catch {
+      return $false
+    }
+  }
+  $lessThan = Get-ObjectPropertyValue $Rule 'less_than'
+  if ($null -ne $lessThan) {
+    try {
+      if ([double]$actual -ge [double]$lessThan) { return $false }
+    } catch {
+      return $false
+    }
+  }
+  return ($null -ne $equals -or $null -ne $notEquals -or $null -ne $greaterThan -or $null -ne $lessThan)
+}
+
+function Get-StructuredResultRuleSignal($Json, [array]$Rules) {
+  foreach ($rule in @($Rules)) {
+    if (-not (Test-StructuredResultRule $Json $rule)) { continue }
+    $status = [string](Get-ObjectPropertyValue $rule 'status')
+    if ([string]::IsNullOrWhiteSpace($status)) { $status = 'INCONCLUSIVE' }
+    $status = $status.ToUpperInvariant()
+    $reason = [string](Get-ObjectPropertyValue $rule 'reason')
+    if ([string]::IsNullOrWhiteSpace($reason)) {
+      $reason = "structured result rule matched: $([string](Get-ObjectPropertyValue $rule 'field'))"
+    }
+    return [ordered]@{ status = $status; reason = $reason; rule = $rule }
+  }
+  return [ordered]@{ status = 'PASS'; reason = ''; rule = $null }
+}
+
+function Copy-StructuredResultPathFields($Json, [array]$FieldNames, [string]$WorkDir, [string]$CopyDir, [int]$Index) {
+  $copies = [ordered]@{}
+  if ([string]::IsNullOrWhiteSpace($CopyDir) -or -not (Test-Path -LiteralPath $CopyDir -PathType Container)) { return $copies }
+  foreach ($field in @($FieldNames)) {
+    $value = [string](Get-JsonFieldValue $Json $field)
+    if ([string]::IsNullOrWhiteSpace($value)) { continue }
+    $path = Resolve-StepOutputPath $WorkDir $value
+    if (-not (Test-Path -LiteralPath $path -PathType Leaf)) { continue }
+    $extension = [System.IO.Path]::GetExtension($path)
+    if ([string]::IsNullOrWhiteSpace($extension)) { $extension = '.artifact' }
+    $copyPath = Join-Path $CopyDir ('structured_result_{0:00}_{1}{2}' -f $Index, (ConvertTo-SafeName $field), $extension)
+    Copy-Item -LiteralPath $path -Destination $copyPath -Force -ErrorAction SilentlyContinue
+    $copies[$field] = [ordered]@{ path = $path; artifact_copy_path = $copyPath }
+  }
+  return $copies
+}
+
+function Get-StructuredResultReferences([string]$WorkDir, [string]$StdoutText, [string]$StderrText, [array]$Specs, [string]$CopyDir = '') {
+  $text = ([string]$StdoutText) + [char]10 + ([string]$StderrText)
+  $items = @()
+  $index = 0
+  foreach ($spec in @($Specs)) {
+    if ($null -eq $spec) { continue }
+    $name = [string](Get-ObjectPropertyValue $spec 'name')
+    if ([string]::IsNullOrWhiteSpace($name)) { $name = 'result' }
+    $paths = @()
+    $explicitPath = [string](Get-ObjectPropertyValue $spec 'path')
+    if (-not [string]::IsNullOrWhiteSpace($explicitPath)) {
+      $paths += Resolve-StepOutputPath $WorkDir $explicitPath
+    }
+    $stdoutRegex = [string](Get-ObjectPropertyValue $spec 'stdout_regex')
+    if (-not [string]::IsNullOrWhiteSpace($stdoutRegex)) {
+      foreach ($match in [regex]::Matches($text, $stdoutRegex)) {
+        if ($match.Groups.Count -gt 1) {
+          $paths += Resolve-StepOutputPath $WorkDir $match.Groups[1].Value
+        }
+      }
+    }
+    if ([string]::IsNullOrWhiteSpace($explicitPath) -and [string]::IsNullOrWhiteSpace($stdoutRegex)) {
+      continue
+    }
+    $uniquePaths = @($paths | Where-Object { -not [string]::IsNullOrWhiteSpace($_) } | Sort-Object -Unique)
+    if ($uniquePaths.Count -eq 0) {
+      $index++
+      $items += [ordered]@{
+        name = $name
+        path = if ([string]::IsNullOrWhiteSpace($stdoutRegex)) { $explicitPath } else { "stdout_regex:$stdoutRegex" }
+        artifact_copy_path = ''
+        exists = $false
+        sha256 = ''
+        summary = [ordered]@{}
+        copied_paths = [ordered]@{}
+        rule_signal = [ordered]@{ status = [string](Get-ObjectPropertyValue $spec 'missing_status'); reason = 'structured result JSON was not found'; rule = $null }
+      }
+      continue
+    }
+    foreach ($path in $uniquePaths) {
+      $index++
+      $exists = Test-Path -LiteralPath $path -PathType Leaf
+      $copyPath = ''
+      $summary = [ordered]@{}
+      $copiedPaths = [ordered]@{}
+      $ruleSignal = [ordered]@{ status = 'PASS'; reason = ''; rule = $null }
+      if ($exists) {
+        try {
+          $json = Get-Content -LiteralPath $path -Raw | ConvertFrom-Json
+          foreach ($field in @((Get-ObjectPropertyValue $spec 'summary_fields'))) {
+            if ([string]::IsNullOrWhiteSpace([string]$field)) { continue }
+            $summary[[string]$field] = Get-JsonFieldValue $json ([string]$field)
+          }
+          if ($summary.Count -eq 0) {
+            $summary.status = Get-JsonFieldValue $json 'status'
+          }
+          $copiedPaths = Copy-StructuredResultPathFields $json @((Get-ObjectPropertyValue $spec 'copy_path_fields')) $WorkDir $CopyDir $index
+          $ruleSignal = Get-StructuredResultRuleSignal $json @((Get-ObjectPropertyValue $spec 'rules'))
+        } catch {
+          $summary = [ordered]@{ error = $_.Exception.Message }
+          $ruleSignal = [ordered]@{ status = 'INCONCLUSIVE'; reason = "structured result JSON could not be parsed: $($_.Exception.Message)"; rule = $null }
+        }
+        if (-not [string]::IsNullOrWhiteSpace($CopyDir) -and (Test-Path -LiteralPath $CopyDir -PathType Container)) {
+          $copyPath = Join-Path $CopyDir ('structured_result_{0:00}_{1}.json' -f $index, (ConvertTo-SafeName $name))
+          Copy-Item -LiteralPath $path -Destination $copyPath -Force -ErrorAction SilentlyContinue
+        }
+      }
+      $items += [ordered]@{
+        name = $name
+        path = $path
+        artifact_copy_path = $copyPath
+        exists = [bool]$exists
+        sha256 = if ($exists) { Get-Sha256File $path } else { '' }
+        summary = $summary
+        copied_paths = $copiedPaths
+        rule_signal = $ruleSignal
+      }
+    }
+  }
+  return @($items)
+}
+
+function Get-StructuredResultSignal([array]$StructuredResults) {
+  foreach ($item in @($StructuredResults)) {
+    if (-not [bool](Get-ObjectPropertyValue $item 'exists')) {
+      $missingPath = [string](Get-ObjectPropertyValue $item 'path')
+      $missingSignal = Get-ObjectPropertyValue $item 'rule_signal'
+      $missingStatus = [string](Get-ObjectPropertyValue $missingSignal 'status')
+      if ([string]::IsNullOrWhiteSpace($missingStatus)) { $missingStatus = 'INCONCLUSIVE' }
+      return [ordered]@{ status = $missingStatus.ToUpperInvariant(); reason = "structured result JSON was referenced but not found: $missingPath" }
+    }
+    $signal = Get-ObjectPropertyValue $item 'rule_signal'
+    $status = [string](Get-ObjectPropertyValue $signal 'status')
+    if ([string]::IsNullOrWhiteSpace($status)) { $status = 'PASS' }
+    if ($status.ToUpperInvariant() -ne 'PASS') {
+      return [ordered]@{ status = $status.ToUpperInvariant(); reason = [string](Get-ObjectPropertyValue $signal 'reason') }
+    }
+  }
+  return [ordered]@{ status = 'PASS'; reason = '' }
+}
+
+function Get-PipelinePolicyReport($PipelineResult) {
+  $issues = @()
+  $previousDiffHash = ''
+  $previousHead = ''
+  $stepCount = 0
+  foreach ($step in @($PipelineResult.steps)) {
+    $stepCount++
+    $consistency = Get-ObjectPropertyValue $step 'consistency'
+    $after = Get-ObjectPropertyValue $consistency 'after'
+    $source = Get-ObjectPropertyValue $after 'source'
+    $head = [string](Get-ObjectPropertyValue $source 'head')
+    $diffHash = [string](Get-ObjectPropertyValue $source 'diff_hash')
+    if ($stepCount -gt 1 -and -not [string]::IsNullOrWhiteSpace($previousHead) -and $head -ne $previousHead) {
+      $issues += [ordered]@{ severity = 'INCONCLUSIVE'; step = [int]$step.index; code = 'source_head_changed'; reason = "source HEAD changed between pipeline steps: $previousHead -> $head" }
+    }
+    if ($stepCount -gt 1 -and -not [string]::IsNullOrWhiteSpace($previousDiffHash) -and $diffHash -ne $previousDiffHash) {
+      $issues += [ordered]@{ severity = 'INCONCLUSIVE'; step = [int]$step.index; code = 'source_diff_hash_changed'; reason = "source diff_hash changed between pipeline steps: $previousDiffHash -> $diffHash" }
+    }
+    $previousHead = $head
+    $previousDiffHash = $diffHash
+
+    foreach ($structuredResult in @((Get-ObjectPropertyValue $consistency 'structured_results'))) {
+      $name = [string](Get-ObjectPropertyValue $structuredResult 'name')
+      if ([string]::IsNullOrWhiteSpace($name)) { $name = 'result' }
+      if (-not [bool](Get-ObjectPropertyValue $structuredResult 'exists')) {
+        $issues += [ordered]@{ severity = 'INCONCLUSIVE'; step = [int]$step.index; code = 'structured_result_missing'; reason = "structured result '$name' missing: $([string](Get-ObjectPropertyValue $structuredResult 'path'))" }
+      }
+      $copyPath = [string](Get-ObjectPropertyValue $structuredResult 'artifact_copy_path')
+      if ([bool](Get-ObjectPropertyValue $structuredResult 'exists') -and [string]::IsNullOrWhiteSpace($copyPath)) {
+        $issues += [ordered]@{ severity = 'INCONCLUSIVE'; step = [int]$step.index; code = 'structured_result_not_copied'; reason = "structured result '$name' exists but has no artifact copy path" }
+      }
+      $signal = Get-ObjectPropertyValue $structuredResult 'rule_signal'
+      $signalStatus = ([string](Get-ObjectPropertyValue $signal 'status')).ToUpperInvariant()
+      if ($signalStatus -eq 'FAIL') {
+        $issues += [ordered]@{ severity = 'FAIL'; step = [int]$step.index; code = 'structured_result_fail'; reason = [string](Get-ObjectPropertyValue $signal 'reason') }
+      } elseif ($signalStatus -eq 'INCONCLUSIVE') {
+        $issues += [ordered]@{ severity = 'INCONCLUSIVE'; step = [int]$step.index; code = 'structured_result_inconclusive'; reason = [string](Get-ObjectPropertyValue $signal 'reason') }
+      }
+    }
+  }
+  $policyStatus = if (@($issues | Where-Object { $_.severity -eq 'FAIL' }).Count -gt 0) {
+    'FAIL'
+  } elseif (@($issues | Where-Object { $_.severity -eq 'INCONCLUSIVE' }).Count -gt 0) {
+    'INCONCLUSIVE'
+  } else {
+    'PASS'
+  }
+  return [ordered]@{
+    status = $policyStatus
+    continue_ok = ($policyStatus -eq 'PASS' -and [string]$PipelineResult.status -eq 'PASS')
+    issues = @($issues)
+  }
+}
+
 function New-ExecutorWorktree([string]$RepoRoot, [string]$JobId) {
   $git = Get-Command git -ErrorAction SilentlyContinue
   if ($null -eq $git) { throw 'git unavailable; cannot create executor worktree' }
@@ -523,6 +868,17 @@ function ConvertTo-StringArray($Value) {
   return @($items)
 }
 
+function ConvertTo-ArgumentArray($Value) {
+  if ($null -eq $Value) { return @() }
+  $values = if ($Value -is [array]) { @($Value) } else { @($Value) }
+  $items = @()
+  foreach ($entry in $values) {
+    if ($null -eq $entry) { continue }
+    $items += [string]$entry
+  }
+  return @($items)
+}
+
 function ConvertTo-MatchRuleArray($Value, [string]$DefaultStatus, [string]$Target) {
   if ($null -eq $Value) { return @() }
   $values = if ($Value -is [array]) { @($Value) } else { @($Value) }
@@ -572,6 +928,7 @@ function Get-NativePipelineSteps {
     $index++
     $name = [string](Get-ObjectPropertyValue $step 'name')
     $command = [string](Get-ObjectPropertyValue $step 'command')
+    $args = @(ConvertTo-ArgumentArray (Get-ObjectPropertyValue $step 'args'))
     $timeoutValue = Get-ObjectPropertyValue $step 'timeout_seconds'
     if ([string]::IsNullOrWhiteSpace($name)) { $name = "step_$index" }
     if ([string]::IsNullOrWhiteSpace($command)) { throw "native pipeline step $index is missing command" }
@@ -598,6 +955,7 @@ function Get-NativePipelineSteps {
       index = $index
       name = $name
       command = $command
+      args = @($args)
       timeout_seconds = $stepTimeout
       fail_on_stdout_regex = @(ConvertTo-StringArray (Get-ObjectPropertyValue $step 'fail_on_stdout_regex'))
       fail_on_stderr_regex = @(ConvertTo-StringArray (Get-ObjectPropertyValue $step 'fail_on_stderr_regex'))
@@ -606,6 +964,8 @@ function Get-NativePipelineSteps {
       inconclusive_on_stderr_regex = @(ConvertTo-StringArray (Get-ObjectPropertyValue $step 'inconclusive_on_stderr_regex'))
       inconclusive_on_output_regex = @(ConvertTo-StringArray (Get-ObjectPropertyValue $step 'inconclusive_on_output_regex'))
       match_rules = @($rules)
+      artifact_files = @((Get-ObjectPropertyValue $step 'artifact_files'))
+      structured_results = @((Get-ObjectPropertyValue $step 'structured_results'))
     }
   }
   return @($normalized)
@@ -643,16 +1003,37 @@ function Invoke-NativePipeline([array]$Steps, [string]$WorkDir, [string]$Artifac
   foreach ($step in @($Steps)) {
     $stepLogDir = Join-Path $ArtifactDir ('pipeline_step_{0:00}_{1}' -f [int]$step.index, (ConvertTo-SafeName $step.name))
     New-Item -ItemType Directory -Path $stepLogDir -Force | Out-Null
-    $result = Invoke-ProcessCommand (Resolve-PowerShellHost) @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-Command', [string]$step.command) $WorkDir ([int]$step.timeout_seconds)
+    $artifactSpecs = @((Get-ObjectPropertyValue $step 'artifact_files'))
+    $structuredResultSpecs = @((Get-ObjectPropertyValue $step 'structured_results'))
+    $beforeConsistency = Get-ConsistencySnapshot $WorkDir $artifactSpecs
+    $stepArgs = @((Get-ObjectPropertyValue $step 'args'))
+    if ($stepArgs.Count -gt 0) {
+      $result = Invoke-ProcessCommand ([string]$step.command) @($stepArgs | ForEach-Object { [string]$_ }) $WorkDir ([int]$step.timeout_seconds)
+    } else {
+      $result = Invoke-ProcessCommand (Resolve-PowerShellHost) @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-Command', [string]$step.command) $WorkDir ([int]$step.timeout_seconds)
+    }
+    $afterConsistency = Get-ConsistencySnapshot $WorkDir $artifactSpecs
+    $workspaceDelta = Get-WorkspaceDelta $beforeConsistency.source $afterConsistency.source
+    $structuredResults = @(Get-StructuredResultReferences $WorkDir ([string]$result.stdout) ([string]$result.stderr) $structuredResultSpecs $stepLogDir)
+    $consistency = [ordered]@{
+      before = $beforeConsistency
+      after = $afterConsistency
+      workspace_delta = $workspaceDelta
+      structured_results = $structuredResults
+    }
     Set-Content -LiteralPath (Join-Path $stepLogDir 'stdout.log') -Value ([string]$result.stdout) -Encoding UTF8
     Set-Content -LiteralPath (Join-Path $stepLogDir 'stderr.log') -Value ([string]$result.stderr) -Encoding UTF8
+    Write-StatusJson (Join-Path $stepLogDir 'consistency.json') $consistency
     $ruleSignal = Get-PipelineRuleSignal $step ([string]$result.stdout) ([string]$result.stderr)
-    $status = if ($result.timed_out) { 'TIMEOUT' } elseif ($null -ne $result.error) { 'FAIL' } elseif ($result.exit_code -eq 0) { [string]$ruleSignal.status } else { 'FAIL' }
-    $reasonText = if ($status -ne 'PASS' -and -not [string]::IsNullOrWhiteSpace([string]$ruleSignal.reason)) { [string]$ruleSignal.reason } elseif ($status -eq 'TIMEOUT') { "step timed out after $($step.timeout_seconds)s" } elseif ($status -eq 'FAIL') { "step exited with code $($result.exit_code)" } else { '' }
+    $structuredSignal = Get-StructuredResultSignal $structuredResults
+    $semanticSignal = if ([string]$ruleSignal.status -ne 'PASS') { $ruleSignal } elseif ([string]$structuredSignal.status -ne 'PASS') { $structuredSignal } else { [ordered]@{ status = 'PASS'; reason = ''; metrics = [ordered]@{} } }
+    $status = if ($result.timed_out) { 'TIMEOUT' } elseif ($null -ne $result.error) { 'FAIL' } elseif ($result.exit_code -eq 0) { [string]$semanticSignal.status } else { 'FAIL' }
+    $reasonText = if ($status -ne 'PASS' -and -not [string]::IsNullOrWhiteSpace([string]$semanticSignal.reason)) { [string]$semanticSignal.reason } elseif ($status -eq 'TIMEOUT') { "step timed out after $($step.timeout_seconds)s" } elseif ($status -eq 'FAIL') { "step exited with code $($result.exit_code)" } else { '' }
     $record = [ordered]@{
       index = [int]$step.index
       name = [string]$step.name
       command = [string]$step.command
+      args = @($stepArgs)
       timeout_seconds = [int]$step.timeout_seconds
       status = $status
       reason = $reasonText
@@ -660,9 +1041,12 @@ function Invoke-NativePipeline([array]$Steps, [string]$WorkDir, [string]$Artifac
       timed_out = $result.timed_out
       error = $result.error
       rule_metrics = $ruleSignal.metrics
+      structured_result_signal = $structuredSignal
       duration_ms = $result.duration_ms
       stdout_file = (Join-Path $stepLogDir 'stdout.log')
       stderr_file = (Join-Path $stepLogDir 'stderr.log')
+      consistency_file = (Join-Path $stepLogDir 'consistency.json')
+      consistency = $consistency
       stdout_excerpt = (Limit-LogText ([string]$result.stdout) 80)
       stderr_excerpt = (Limit-LogText ([string]$result.stderr) 80)
     }
@@ -680,7 +1064,10 @@ function Invoke-NativePipeline([array]$Steps, [string]$WorkDir, [string]$Artifac
     failed_step_name = if ($null -eq $failedStep) { '' } else { $failedStep.name }
     steps = @($stepResults)
   }
+  $policy = Get-PipelinePolicyReport $pipelineResult
+  $pipelineResult.policy = $policy
   Write-StatusJson (Join-Path $ArtifactDir 'pipeline_steps.json') $pipelineResult
+  Write-StatusJson (Join-Path $ArtifactDir 'pipeline_policy.json') $policy
   return $pipelineResult
 }
 
@@ -689,6 +1076,13 @@ function Get-PipelineResultText($PipelineResult) {
   foreach ($step in @($PipelineResult.steps)) {
     $suffix = if (-not [string]::IsNullOrWhiteSpace([string]$step.reason)) { " reason=$($step.reason)" } else { '' }
     $lines += "- Step $($step.index) ($($step.name)): $($step.status) exit=$($step.exit_code) timeout=$($step.timed_out) duration_ms=$($step.duration_ms)$suffix"
+  }
+  $policy = Get-ObjectPropertyValue $PipelineResult 'policy'
+  if ($null -ne $policy) {
+    $lines += "- Policy: $([string](Get-ObjectPropertyValue $policy 'status')) continue_ok=$([bool](Get-ObjectPropertyValue $policy 'continue_ok'))"
+    foreach ($issue in @((Get-ObjectPropertyValue $policy 'issues'))) {
+      $lines += "  - $([string](Get-ObjectPropertyValue $issue 'code')) step=$([string](Get-ObjectPropertyValue $issue 'step')) $([string](Get-ObjectPropertyValue $issue 'reason'))"
+    }
   }
   return ($lines -join [char]10)
 }
@@ -718,7 +1112,7 @@ function Write-PipelineArtifacts($PipelineResult, [string]$SummaryPath, [string]
     root_cause_hypothesis = if ([string]::IsNullOrWhiteSpace([string]$failed.reason)) { "Pipeline step '$($failed.name)' returned $($failed.status)." } else { [string]$failed.reason }
     not_root_causes = @()
     key_markers = @("step=$($failed.index)", "status=$($failed.status)", "exit_code=$($failed.exit_code)")
-    metrics = [ordered]@{ duration_ms = $failed.duration_ms; rule_metrics = $failed.rule_metrics }
+    metrics = [ordered]@{ duration_ms = $failed.duration_ms; rule_metrics = $failed.rule_metrics; structured_result_signal = $failed.structured_result_signal; policy = (Get-ObjectPropertyValue $PipelineResult 'policy') }
     next_action = 'Read pipeline_steps.json and the step stdout/stderr excerpts; rerun a focused executor diagnosis only if this structured evidence is insufficient.'
   }
   Write-StatusJson $DiagnosisPath $diagnosis
@@ -1034,6 +1428,7 @@ function Write-FinalStatus {
     diagnosis_file = $script:DiagnosisPath
     evidence_file = $script:EvidencePath
     metrics_file = $script:MetricsPath
+    workspace_delta_file = $script:WorkspaceDeltaPath
     done_file = $script:DonePath
     timeout_seconds = $TimeoutSeconds
     resources = $script:ResourceList
@@ -1163,10 +1558,11 @@ function Main {
   $script:SummaryPath = Join-Path $script:ArtifactDir 'summary.md'
   $script:DiagnosisPath = Join-Path $script:ArtifactDir 'diagnosis.json'
   $script:EvidencePath = Join-Path $script:ArtifactDir 'evidence.md'
-  $script:MetricsPath = Join-Path $script:ArtifactDir 'metrics.json'
-  $script:StdoutPath = Join-Path $script:ArtifactDir 'claude_stdout.json'
-  $script:StderrPath = Join-Path $script:ArtifactDir 'claude_stderr.log'
-  $script:DonePath = Join-Path $script:ArtifactDir '.done'
+    $script:MetricsPath = Join-Path $script:ArtifactDir 'metrics.json'
+    $script:WorkspaceDeltaPath = Join-Path $script:ArtifactDir 'workspace_delta.json'
+    $script:StdoutPath = Join-Path $script:ArtifactDir 'claude_stdout.json'
+    $script:StderrPath = Join-Path $script:ArtifactDir 'claude_stderr.log'
+    $script:DonePath = Join-Path $script:ArtifactDir '.done'
   $script:PipelineStepsPath = Join-Path $script:ArtifactDir 'pipeline_steps_input.json'
   $script:ClaudeArgsPath = Join-Path $script:ArtifactDir 'claude_args.json'
   $script:BackgroundHealthPath = Join-Path $script:ArtifactDir 'background_health.json'
@@ -1176,6 +1572,7 @@ function Main {
   $script:ResourceList = @(Get-NormalizedResourceList $Resource)
   $script:ExecutionRoot = $script:RepoRoot
   $script:WorktreeInfo = [ordered]@{ enabled = $false; path = ''; head = ''; root = ''; snapshot = $null; keep = [bool]$KeepWorktree }
+  $script:WorkspaceBefore = Get-GitWorkspaceSnapshot $script:RepoRoot
 
   $taskText = Get-TaskText
   Set-Content -LiteralPath $script:TaskCopyPath -Value $taskText -Encoding UTF8
@@ -1266,7 +1663,10 @@ function Main {
   }
 
   Write-ExecutorArtifacts $response $resultText $workerStatus $workerReason $script:SummaryPath $script:DiagnosisPath $script:EvidencePath
-  Write-StatusJson $script:MetricsPath ([ordered]@{ attempts = $run.attempts; retried = $run.retried; stdout_bytes = ([string]$run.stdout).Length; stderr_bytes = ([string]$run.stderr).Length })
+  $workspaceAfter = Get-GitWorkspaceSnapshot $script:RepoRoot
+  $workspaceDelta = Get-WorkspaceDelta $script:WorkspaceBefore $workspaceAfter
+  Write-StatusJson $script:WorkspaceDeltaPath $workspaceDelta
+  Write-StatusJson $script:MetricsPath ([ordered]@{ attempts = $run.attempts; retried = $run.retried; stdout_bytes = ([string]$run.stdout).Length; stderr_bytes = ([string]$run.stderr).Length; workspace_delta = $workspaceDelta })
   $state = if ($workerStatus -eq 'PASS') { 'completed' } elseif ($workerStatus -eq 'TIMEOUT') { 'timeout' } else { 'failed' }
   $actionOverride = if ($workerReason -match '(?i)transient.*retry') { 'retry_executor' } else { '' }
   Write-FinalStatus $state $workerStatus $workerReason $run.exit_code ([bool]$run.timed_out) $run.error $actionOverride

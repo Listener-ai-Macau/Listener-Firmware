@@ -4,7 +4,7 @@
 
 - 状态：`可联调`
 - 定位：`后端接入语音输入链路时应依赖的稳定输入边界`
-- 当前阶段结论：`单轮 BLE 录音上传链路已经可用，可作为后端联调基线；多轮、恢复、重连稳定性仍未完全产品化`
+- 当前阶段结论：`BLE 音频会话主链路已完成 P1-P10 standard/realistic 多 seed 收敛，可作为 Listener-Type 外部音频源和 P13 软件后端闭环的稳定基线`
 
 ## 文档目的
 
@@ -24,7 +24,7 @@
 
 当前已跑通的链路是：
 
-`KEY1 / 串口 toggle -> voice_recording_control -> audio_capture -> ble_audio_stream -> Windows 主机重组 -> wav / 上层接入点`
+`KEY1 / 串口 toggle -> voice_recording_control -> audio_capture -> ble_audio_stream -> Windows 主机重组 -> wav / Listener-Type 外部音频源 / 上层 ASR 接入点`
 
 面向后端时，建议按两层理解：
 
@@ -34,6 +34,26 @@
   当前已经形成稳定的 `session_start -> audio_data -> session_stop/session_cancel` 语义
 
 后端应尽量依赖第二层，而不是绑定第一层。
+
+## 软件侧职责边界
+
+当前嵌入式音频到软件的推荐边界是：
+
+```text
+ESP32-S3 firmware
+  -> BLE GATT Notify: VKA1 session_start / audio_data / session_stop
+  -> Listener-Type embedded audio source
+  -> Listener-Type existing ASR / polish / insertion / history
+  -> optional final text handoff to Listener-ai-agent
+```
+
+也就是说：
+
+- `Listener-Type` 是 `raw PCM` 和听写会话的优先承接方。
+- `Listener-Type` 应把 BLE 音频建模成与麦克风并列的外部音频源，复用现有 ASR、润色、插入和历史记录链路。
+- `Listener-ai-agent` 当前不接收 `BLE PCM` / `WAV` 原始音频，只作为可选的最终文本或用户指令下游。
+- 固件不做 ASR、云端 API 调用、Agent 调度或业务理解，只负责采集、分包、会话边界和错误上报。
+- 如果未来需要 Agent handoff，应通过稳定的 app 级文本入口，不依赖私有 sidecar port。
 
 ## 当前建议冻结的输入契约
 
@@ -138,7 +158,7 @@
 
 ### 当前可视为成功的联调口径
 
-一轮会话当前至少应满足：
+单轮会话至少应满足：
 
 - 收到 `session_start`
 - 收到 `session_stop`
@@ -146,7 +166,13 @@
 - `duration_seconds` 与实际录音时长大体一致
 - `missing_packet_count` 可统计
 
-当前最近一次物理按键成功基线：
+当前已收敛的自动矩阵口径：
+
+- `P1-P10` 在 `standard` 口径下多随机种子通过
+- `P1-P10` 在 `realistic` 口径下多随机种子通过
+- 当前自动矩阵结论为 `matrix_failed=0`、`matrix_warning=0`
+
+历史物理按键成功基线之一：
 
 - `received_packet_count=1524`
 - `expected_packet_count=1524`
@@ -156,33 +182,50 @@
 
 这说明：
 
-- 单轮主链路已经可用
-- 当前音频格式和会话模型已经足够支撑后端联调
+- BLE 音频主链路已经可用
+- 当前音频格式和会话模型已经足够支撑 Listener-Type 外部音频源联调
+- 后续软件后端闭环应进入 `P13`
 
-### 当前不应误判为产品级完成的部分
+### 当前仍需单独验收的部分
 
-下面这些场景当前还没有完全收敛：
+下面这些场景不应被 P1-P10 自动矩阵冒充为已完成：
 
-- `P2` 多轮连续回归
-- `P4` 恢复场景
-- `P5` 重连场景
-- 长时间空闲后的首句输入
-- 主机侧接收进程重启后的继续录音
-- 取消 / 超时 / 异常结束后的下一轮恢复
-- 长时间 soak 与弱环境稳定性
+- `P11` 真实物理按键口径：已有人工听感通过记录，但仍不计入自动矩阵
+- `P12` 弱环境 / 距离 / 遮挡 / 强干扰：已有当前桌面 ambient RF baseline，受控外场仍需补测
+- `P13` 软件后端闭环：`Listener-Type` 外部音频源、ASR、润色、插入、历史记录、可选 Agent handoff
+- 更长时间的量产级 soak
 
-最近一次回归结论：
+因此当前应把结论写成：
 
-- `P2`
-  第 1 轮通过，但第 2 轮出现高丢包，最近一次实测 `packet_loss_ratio=0.5178`
-- `P4 / P5`
-  最近一次失败点集中在串口 / 设备重新枚举后的 `COM3` 重新打开不稳定
+- `BLE 音频主链路 P1-P10 已收敛`
+- `P12 仍需要受控弱环境补测`
+- `P13 仍需要软件后端闭环验收`
+- `产品级使用面测试矩阵已切到 P 系列，旧 R1-R5 或更早失败记录不能代表当前结论`
 
-所以当前应把结论写成：
+### P13 软件后端闭环口径
 
-- `BLE 单轮录音上传链路已可联调`
-- `BLE 多轮、恢复、重连稳定性仍在产品化收敛中`
-- `产品级使用面测试矩阵已切到 P 系列，当前不能把旧 R1-R5 等同于完整产品级覆盖`
+P13 负责回答“嵌入式音频是否真正进入软件产品链路”。建议至少拆成：
+
+- `P13.1`：BLE host adapter smoke，KEY1 触发后软件端收到完整 session，并产出合法 `16k mono i16` PCM/WAV stats
+- `P13.2`：`Listener-Type` ASR，嵌入式 PCM 进入现有 ASR provider，得到 raw transcript
+- `P13.3`：`Listener-Type` 产品链路，最终文本完成润色、插入和历史记录，并记录 session stats
+- `P13.4`：cancel/error/reconnect，`session_cancel`、`session_error`、BLE 断链后软件回到 Idle
+- `P13.5`：可选 Agent handoff，开启后最终文本进入 `Listener-ai-agent` 当前会话
+- `P13.6`：固件回归，P1-P10 realistic `--fail-on-warning` 仍通过
+
+P13 验证音频优先使用固定人声样本或 seeded TTS 随机语料，减少人工每轮说话。随机语料必须保存 seed、case_id、ground truth、ASR raw transcript、normalized diff 和音频路径，方便失败复现和识别准确率统计。
+
+`2026-05-18` 软件侧 baseline：`Listener-Type` 已用 Foundry Local `whisper-small` 完成 P13.2 纯软件 smoke。seeded TTS 句子“明天下午两点提醒我检查蓝牙音频丢包率。”经 `VKA1` replay 后进入 ASR，raw transcript 为“明天下午兩點提醒我檢查藍牙音頻丟包率。”。结论：ASR 链路可用，准确率统计需要在 normalization 中加入简繁归一，避免把等价字符差异误判成识别错误。
+
+`2026-05-18` 真实 BLE acoustic smoke：PC 扬声器播放同一句 TTS，设备麦克风采集并经 BLE 回传，抓音 `407/407` 包、丢包 `0`、声学相关性 `0.943`，Foundry raw transcript 为“明天下午兩點提醒或檢查藍芽音頻中包”。结论：真实声学链路已经能让后端识别到文字；该结果只能证明 P13.2 真实链路可达，不代表识别准确率已经达 gate。
+
+`2026-05-18` P13.3 产品链路入口初版：`Listener-Type` 已新增 `submit_embedded_audio_notifications` IPC。该入口接收完整 `VKA1` notification batch，按 `SessionCollector` 重组 PCM，然后复用现有 coordinator 听写链路完成 ASR、润色、插入和历史记录；当前支持 Foundry Local Whisper 与 Whisper 兼容 batch ASR。该入口证明“外部嵌入式音频源”可以进入产品链路，但还没有完成 native BLE scan/connect/notify 与真实 KEY1 的自动端到端 smoke。
+
+`2026-05-18` P13.3 自动化调试入口：`Listener-Type` 已新增 `submit_embedded_audio_file` IPC 和 CLI 参数 `--submit-embedded-audio*`。该入口把本地 `16k mono i16` WAV/PCM 构造成成功的 `VKA1` replay session，再进入同一条 coordinator 产品链路。它不是最终 BLE host adapter，但可以让 pipeline artifact、真实 BLE 抓到的 WAV、随机 TTS fixture 直接用于插入 / 历史 smoke，减少人工说话和手动复制音频。
+
+`2026-05-18` S2.1 native BLE source MVP：`Listener-Type` 已新增 Windows WinRT BLE `capture once` 入口。软件端按官方 GATT/WinRT 路径发现 `VKA1` service、订阅 notify characteristic，并把收到的 notification batch 送入 `submit_embedded_audio_notifications` 同一条 coordinator 产品链路。该能力已完成编译级验证，仍需真实设备 KEY1 + 当前光标插入 / 历史记录 smoke 才能宣告 P13.3 产品链路通过。
+
+`2026-05-18` 火山 ASR provider baseline：`Listener-Type` 已切到火山 ASR，并用独立 probe 验证 `activeAsr=volcengine`、`resourceId=volc.bigasr.sauc.duration`、凭据可用。随机 TTS source WAV 直接送火山可得到 raw transcript：“后天下午3点提醒我检查蓝牙音频回放，并保存火山识别报告。”。同一轮真实 BLE 抓音传输 `407/407` 包、丢包 `0`，但火山返回空 transcript；抓音统计显示 `recorded_peak=32768`、`active_frame_count=6`。结论：软件 provider 和 BLE 传输不是当前瓶颈，真实声学输入存在削顶/摆位/增益问题，需要先校准再把准确率纳入 gate。
 
 ## 超时与错误处理建议
 
@@ -219,13 +262,19 @@
 - 上层会话模型：`session_start -> audio_data -> session_stop/session_cancel`
 - 会话内顺序编号语义：`packet_sequence`
 - 会话结束总包数字段：`expected_packet_count`
-- 单轮会话从设备到主机的基本传输主干
+- 设备到 Windows 主机的 BLE 音频传输主干
+- `Listener-Type` 已有 batch `VKA1 notifications -> coordinator` 产品链路入口
+- `Listener-Type` 已有本地 `WAV/PCM file -> VKA1 replay -> coordinator` 自动化调试入口
+- `Listener-Type` 已有 native Windows BLE `capture once -> VKA1 notifications -> coordinator` 代码入口
+- P1-P10 standard/realistic 自动矩阵的当前稳定性结论
 
 ### 当前不要假设已经成立的部分
 
-- 多轮连续录音一定稳定
-- 恢复后第一次抓音一定稳定
-- 断开重连后自动回归一定稳定
+- 真实 BLE 声学音频已经达到火山 ASR 准确率 gate
+- `Listener-Type` native BLE scan/connect/notify 已经完成真实 KEY1 产品 smoke
+- 真实 KEY1 已经自动触发 `Listener-Type` 插入 / 历史记录
+- `Listener-ai-agent` 已经有稳定 raw audio 输入 API
+- 可选 Agent handoff 已经有稳定 app 级文本入口
 - `BLE` 承载一定是最终产品的唯一传输层
 
 ## 面向后端的接口建议

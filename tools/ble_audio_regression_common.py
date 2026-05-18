@@ -21,6 +21,7 @@ from capture_audio_ble_wav import (
     run_ble_capture,
     send_cancel,
     send_toggle,
+    wait_for_ready_markers_or_running,
 )
 
 PCM_SAMPLE_RATE = 16000
@@ -324,12 +325,14 @@ async def capture_sessions(capture_args) -> list[dict[str, object]]:
     with open_serial_with_retry(capture_args.port, 115200, timeout=0.05) as ser:
         ser.setDTR(False)
         ser.setRTS(False)
-        if getattr(capture_args, "reset_before_capture", True):
-            reset_target_before_capture(ser)
         ser.reset_input_buffer()
         serial_monitor = SerialLogMonitor(ser)
         if getattr(capture_args, "reset_before_capture", True):
-            await serial_monitor.wait_for_markers(READY_MARKERS, timeout_seconds=capture_args.boot_timeout_seconds)
+            reset_target_before_capture(ser)
+            await wait_for_ready_markers_or_running(
+                serial_monitor,
+                capture_args.boot_timeout_seconds,
+            )
         ser.reset_input_buffer()
         return await run_ble_capture(capture_args, ser, serial_monitor)
 
@@ -345,12 +348,11 @@ async def run_serial_cancel_probe(
     with open_serial_with_retry(port, 115200, timeout=0.05) as ser:
         ser.setDTR(False)
         ser.setRTS(False)
-        if reset_before_probe:
-            reset_target_before_capture(ser)
         ser.reset_input_buffer()
         serial_monitor = SerialLogMonitor(ser)
         if reset_before_probe:
-            await serial_monitor.wait_for_markers(READY_MARKERS, timeout_seconds=boot_timeout_seconds)
+            reset_target_before_capture(ser)
+            await wait_for_ready_markers_or_running(serial_monitor, boot_timeout_seconds)
         ser.reset_input_buffer()
 
         send_toggle(ser)

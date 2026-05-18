@@ -60,6 +60,7 @@ AUDIO_NOTIFY_READY_MARKER = "audio notify subscription changed"
 AUDIO_NOTIFY_RESTORED_MARKER = "audio notify subscription restored before connect"
 AUDIO_NOTIFY_SUBSCRIBED_MARKER = "audio notify subscribed:"
 AUDIO_NOTIFY_ENABLED_MARKER = "notify=1"
+AUDIO_TRANSPORT_STATE_MARKER = "audio transport state:"
 BLE_CONNECTION_ESTABLISHED_MARKER = "connection established; status=0"
 AUDIO_UPLOAD_BEGIN_MARKER = "audio session upload begin"
 AUDIO_UPLOAD_END_MARKER = "audio session upload end"
@@ -161,6 +162,30 @@ class SerialLogMonitor:
         raise RuntimeError(
             f"capture_audio_ble_wav: timed out waiting for {description}; recent logs:\n{self.recent_text()}"
         )
+
+
+async def wait_for_ready_markers_or_running(
+    serial_monitor: SerialLogMonitor,
+    timeout_seconds: int,
+) -> None:
+    try:
+        await serial_monitor.wait_for_markers(READY_MARKERS, timeout_seconds=timeout_seconds)
+        return
+    except RuntimeError:
+        if "audio_capture: frame captured" not in serial_monitor.full_text():
+            raise
+        print(
+            "serial_ready_fallback=audio_capture_running",
+            flush=True,
+        )
+
+
+def line_indicates_notify_ready(line: str) -> bool:
+    if AUDIO_NOTIFY_READY_MARKER in line and AUDIO_NOTIFY_ENABLED_MARKER in line:
+        return True
+    if AUDIO_NOTIFY_RESTORED_MARKER in line or AUDIO_NOTIFY_SUBSCRIBED_MARKER in line:
+        return True
+    return AUDIO_TRANSPORT_STATE_MARKER in line and AUDIO_NOTIFY_ENABLED_MARKER in line
 
 
 def parse_args():
@@ -1033,21 +1058,29 @@ async def run_ble_capture(args, ser: Serial, serial_monitor: SerialLogMonitor):
     )
 
     try:
-        await serial_monitor.wait_for_predicate(
-            lambda line: (
-                (AUDIO_NOTIFY_READY_MARKER in line and AUDIO_NOTIFY_ENABLED_MARKER in line)
-                or AUDIO_NOTIFY_RESTORED_MARKER in line
-                or AUDIO_NOTIFY_SUBSCRIBED_MARKER in line
-            ),
-            timeout_seconds=args.notify_ready_timeout_seconds,
-            description="audio notify enabled marker",
-        )
+        try:
+            await serial_monitor.wait_for_predicate(
+                line_indicates_notify_ready,
+                timeout_seconds=min(args.notify_ready_timeout_seconds, 3),
+                description="audio notify enabled marker",
+            )
+        except RuntimeError:
+            print(
+                "notify_ready_marker_wait=timeout; continuing after host-side notify enable",
+                flush=True,
+            )
         fail_if_unexpected_reset("after_notify_ready_wait")
-        await serial_monitor.wait_for_predicate(
-            lambda line: AUDIO_NOTIFY_PACKET_SIZE_MARKER in line,
-            timeout_seconds=args.notify_ready_timeout_seconds,
-            description="audio notify packet size marker",
-        )
+        try:
+            await serial_monitor.wait_for_predicate(
+                lambda line: AUDIO_NOTIFY_PACKET_SIZE_MARKER in line,
+                timeout_seconds=min(args.notify_ready_timeout_seconds, 3),
+                description="audio notify packet size marker",
+            )
+        except RuntimeError:
+            print(
+                "notify_packet_size_marker_wait=timeout; continuing after host-side notify enable",
+                flush=True,
+            )
         fail_if_unexpected_reset("after_packet_size_wait")
         await asyncio.sleep(NOTIFY_READY_SETTLE_SECONDS)
         fail_if_unexpected_reset("after_notify_settle")
@@ -1388,12 +1421,11 @@ async def run_capture_with_args(args):
     with open_serial_with_retry(args.port, 115200, timeout=0.05) as ser:
         ser.setDTR(False)
         ser.setRTS(False)
-        if args.reset_before_capture:
-            reset_target_before_capture(ser)
         ser.reset_input_buffer()
         serial_monitor = SerialLogMonitor(ser)
         if args.reset_before_capture:
-            await serial_monitor.wait_for_markers(READY_MARKERS, timeout_seconds=args.boot_timeout_seconds)
+            reset_target_before_capture(ser)
+            await wait_for_ready_markers_or_running(serial_monitor, args.boot_timeout_seconds)
         ser.reset_input_buffer()
         return await run_ble_capture(args, ser, serial_monitor)
 

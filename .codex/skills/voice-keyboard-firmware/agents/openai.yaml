@@ -1,7 +1,7 @@
 interface:
   display_name: "Voice Keyboard Firmware"
-  short_description: "Apply repo-specific firmware and hardware rules"
-  default_prompt: "Use $ai-collaboration-workflow and $voice-keyboard-firmware for this repository task."
+  short_description: "Firmware repo — three agents, all roles equal"
+  default_prompt: "MANDATORY BEFORE CODING: 1) Read status: cat C:\\Users\\Billy\\Desktop\\listener\\docs\\plans\\*_status.json. 2) Claim step: powershell -File C:\\Users\\Billy\\Desktop\\listener\\voice-keyboard-firmware\\tools\\update_plan_status.ps1 -Plan p13 -StepId N -Status in_progress -Assignee <you>. 3) Lock hardware: powershell -File ...\\tools\\lock_resource.ps1 -Resource COM3 -Owner <you>. Work in your own worktree only. Check working directory for identity: codex-p13=Codex, tai-p13=Tai, claude-review-p13=Claude."
 
 policy:
   allow_implicit_invocation: true

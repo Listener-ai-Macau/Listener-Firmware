@@ -76,12 +76,12 @@ pwsh -NoProfile -File ./tools/esp_idf_ci.ps1 help
 
 ## 文档约定
 
-- `!docs/plans/` — 活跃的功能/实现计划
-- `!docs/fixes/` — 活跃的 bug 修复/调查计划
-- `!docs/features/` — 已完成的功能总结
+- `C:\Users\Billy\Desktop\listener\docs\plans\` — 跨仓库共享任务状态（JSON 为唯一状态源）和参考文档
+- `C:\Users\Billy\Desktop\listener\docs\fixes\` — 跨仓库活跃 bug 修复/调查计划
+- `!docs/features/` — 已完成的功能总结（仓库级，留在各自仓库）
 - `!docs/product_solutions.md` — 产品范围与架构决策（仅涉及范围时读）
 - 人类文档默认中文
-- 计划完成后将持久知识移入 `!docs/features/` 并删除已完成的计划
+- 计划完成后将持久知识移入 `!docs/features/` 并清理 `docs/plans/` 中对应文件
 
 ## 工作流原则
 
@@ -100,7 +100,7 @@ pwsh -NoProfile -File ./tools/esp_idf_ci.ps1 help
 
 ### 计划驱动
 
-- 功能开发、架构变更、板级调试、重要 bug 修复前，先写计划文档到 `!docs/plans/` 或 `!docs/fixes/`
+- 功能开发、架构变更、板级调试、重要 bug 修复前，先写计划文档到 `C:\Users\Billy\Desktop\listener\docs\plans\` 或 `C:\Users\Billy\Desktop\listener\docs\fixes\`
 - 计划需包含：目标、当前问题、范围、超出范围项、假设与依赖、步骤、每步验收、人工检查点、已知阻碍
 - 写计划前先做 precedent review：是否已有官方/成熟方案可直接复用
 - 计划文档聚焦自定义、有风险、需决策的部分，官方路径简要提及即可
@@ -108,16 +108,16 @@ pwsh -NoProfile -File ./tools/esp_idf_ci.ps1 help
 
 ### Bug 工作流
 
-- 重要 bug 遵循相同计划流程，计划文档放 `!docs/fixes/`
+- 重要 bug 遵循相同计划流程，计划文档放 `C:\Users\Billy\Desktop\listener\docs\fixes\`
 - 计划需包含：观察到的行为、期望行为、复现步骤、疑似范围、根因调查步骤、修复步骤、验收检查
 - 仅在用户明确要求快速路径且 bug 显而易见、低风险时才跳过专门计划
 
 ### 步骤门控
 
-- 只执行当前批准的步骤
-- 每步完成后跑验收、报结果、等批准再进下一步
-- 不静默继续后续步骤
-- 现实变化时更新计划并重新获批
+- 只执行当前步骤，不提前开后续步骤
+- 每步完成后跑验收，验收通过即可标记完成
+- 不需要人工确认的步骤直接做，只有必须人工操作的才算阻塞（推送 origin、物理操作、人工决策）
+- 现实变化时更新计划
 
 ### 验收设计
 
@@ -146,17 +146,36 @@ pwsh -NoProfile -File ./tools/esp_idf_ci.ps1 help
 - 重要功能或 bug 完成后，在 `!docs/features/` 写简要交接文档：做了什么、代码在哪、如何验证、重要约束、已知风险和可能的下一步
 - 完成后将持久知识移入 `!docs/features/`，删除已完成的活跃计划
 
-## 执行责任划分
+## 三体 AI 协作
 
-**AI 默认自己动手**：
+详见 `!docs/ai_collaboration_protocol.md`。
 
-- 构建、烧录、日志抓取、结果分析、迭代修复都自己做
-- 优先用命令行验证，不把可执行步骤推回给人类
-- 只有真正需要物理操作（USB 插拔、按 BOOT/RESET、BLE 配对、外部设备响应）时才请人介入
+| 工具 | 模型 | 启动 |
+|---|---|---|
+| Codex CLI | GPT-5.5 | `codex` |
+| Codex CLI + `tai` profile | GPT-5.x via TTAPI | `tai` |
+| Claude Code CLI（本会话） | GLM-5.1 | `claude` |
 
-**人类负责决策**：
+**所有 AI 角色平等**：拆步骤、干活、审查、测试谁都能做。谁闲谁就做。
 
-- 批准计划、批准步骤推进、产品/架构决策、最终验收
+### 硬约束（开工前必做）
+
+1. **读状态**：`cat C:\Users\Billy\Desktop\listener\docs\plans\*_status.json`
+2. **确认无人占用**你要做的步骤（status != in_progress 或 assignee == 你）
+3. **认领**：`tools\update_plan_status.ps1 -Plan p13 -StepId N -Status in_progress -Assignee <你>`
+4. **硬件加锁**：`tools\lock_resource.ps1 -Resource COM3 -Owner <你>`
+
+不做就开工导致冲突的，由冲突方负责修复。
+
+### 状态源
+
+- **唯一状态源**：`C:\Users\Billy\Desktop\listener\docs\plans\*_status.json`
+- 参考文档（步骤定义、验收标准）在 `C:\Users\Billy\Desktop\listener\docs\plans\*.md`
+- 仓库级文档（features、fixes）继续放各自仓库 `!docs/`
+
+Codex 和 Tai 是同一个 CLI 工具的不同 profile。各自在独立 worktree 中工作，Claude 审查/测试/精简/汇报。
+
+- **Claude** 拆步骤 → **人类** 分工 → **干活者** 认领标记做 → **Claude** 审查汇报
 
 ## 当前关键约束
 
@@ -171,12 +190,14 @@ pwsh -NoProfile -File ./tools/esp_idf_ci.ps1 help
 按需取最小集合，优先顺序：
 
 1. `CLAUDE.md`
-2. `README.md`
-3. `!docs/README.md`
-4. `!docs/plans/` 下当前活跃计划
-5. `!docs/features/` 下已完成功能
-6. `!docs/product_solutions.md`（仅涉及产品范围时）
-7. 源代码（改实现细节时直接读）
+2. `C:\Users\Billy\Desktop\listener\docs\plans\*_status.json`（当前步骤状态）
+3. `!docs/ai_collaboration_protocol.md`（涉及多 AI 协作时必读）
+4. `README.md`
+5. `C:\Users\Billy\Desktop\listener\docs\plans\*.md`（步骤定义和验收标准）
+6. `C:\Users\Billy\Desktop\listener\docs\fixes\`（活跃 bug 修复计划）
+7. `!docs/features/` 下已完成功能
+8. `!docs/product_solutions.md`（仅涉及产品范围时）
+9. 源代码（改实现细节时直接读）
 
 ## 扩展命令
 
