@@ -31,6 +31,20 @@ description: Firmware repo adapter. Three agents collaborate, all roles equal, w
 9. 完成后 `update_plan_status.ps1` 标记 completed，清空 assignee
 10. 硬件用完 `unlock_resource.ps1` 释放锁
 11. 遇到人工阻塞标记 blocked + blocked_reason
+12. 推送 origin 前执行推送前审核 gate，通过后直接推送，不再默认等待人工确认
+
+## 推送前审核 gate
+
+push 类步骤不算人工阻塞。执行前必须检查：
+
+1. 共享状态：目标步骤已由自己认领，且相关前置步骤 completed
+2. 分支：目标本地分支没有 behind，推送目标明确
+3. 待推提交：列出将推送的 commits，确认不包含临时 agent 分支
+4. 未提交改动：确认不会把未提交改动混入 push；若存在，只报告并隔离
+5. 基础验证：执行该步骤已有验收或轻量检查
+6. secret scan：确认用户提供的 token/API key 未写入仓库
+
+只有物理操作、人工决策、凭据缺失等必须人类参与的事项才标记 blocked。
 
 ## 【硬约束】写计划必须遵守
 
