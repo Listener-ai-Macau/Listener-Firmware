@@ -78,6 +78,7 @@ pwsh -NoProfile -File ./tools/esp_idf_ci.ps1 help
 
 - `C:\Users\Billy\Desktop\listener\docs\plans\` — 跨仓库共享任务状态（JSON 为唯一状态源）和参考文档
 - `C:\Users\Billy\Desktop\listener\docs\fixes\` — 跨仓库活跃 bug 修复/调查计划
+- `C:\Users\Billy\Desktop\listener\docs\ai_collaboration_protocol.md` — 三体 AI 协作完整协议（所有 AI 读同一个文件）
 - `!docs/features/` — 已完成的功能总结（仓库级，留在各自仓库）
 - `!docs/product_solutions.md` — 产品范围与架构决策（仅涉及范围时读）
 - 人类文档默认中文
@@ -146,49 +147,10 @@ pwsh -NoProfile -File ./tools/esp_idf_ci.ps1 help
 - 重要功能或 bug 完成后，在 `!docs/features/` 写简要交接文档：做了什么、代码在哪、如何验证、重要约束、已知风险和可能的下一步
 - 完成后将持久知识移入 `!docs/features/`，删除已完成的活跃计划
 
-## 三体 AI 协作
+## AI 协作
 
-详见 `!docs/ai_collaboration_protocol.md`。
-
-| 工具 | 模型 | 启动 |
-|---|---|---|
-| Codex CLI | GPT-5.5 | `codex` |
-| Codex CLI + `tai` profile | GPT-5.x via TTAPI | `tai` |
-| Claude Code CLI（本会话） | GLM-5.1 | `claude` |
-
-**所有 AI 角色平等**：拆步骤、干活、审查、测试谁都能做。谁闲谁就做。
-
-### 硬约束
-
-1. **读状态**：`cat C:\Users\Billy\Desktop\listener\docs\plans\*_status.json`
-2. **确认无人占用**你要做的步骤（status != in_progress 或 assignee == 你）
-3. **认领**：`tools\update_plan_status.ps1 -Plan <plan_id> -StepId <step_id> -Status in_progress -Assignee <你>`
-4. **真实硬件命令前按资源加锁**：纯文档、搜索、静态检查、compileall、不接触设备的构建不需要锁；`flash / monitor / COM3 serial / BLE capture / BLE matrix / 真实设备验证` 需要锁
-5. **分别锁资源**：`lock_resource.ps1` 当前一次只锁一个 `-Resource`；同时用 `COM3` 和 `BLE` 时分别锁 `COM3`、`BLE`，用完分别释放
-
-不做就开工导致冲突的，由冲突方负责修复。
-
-### 状态源
-
-- **唯一状态源**：`C:\Users\Billy\Desktop\listener\docs\plans\*_status.json`
-- 参考文档（步骤定义、验收标准）在 `C:\Users\Billy\Desktop\listener\docs\plans\*.md`
-- 仓库级文档（features、fixes）继续放各自仓库 `!docs/`
-
-Codex 和 Tai 是同一个 CLI 工具的不同 profile。AI 在 `feature/<plan>` 下各自的 step branch 上开发，每步 merge 回 feature，最后 feature 整体进 master。
-
-### 分支工作流
-
-```
-master → feature/<plan> → ai/<agent>-<step>
-```
-
-1. 计划创建时从 master 拉 `feature/<plan-name>`
-2. AI 认领步骤时从 feature 拉自己的 `ai/<agent>-<plan>-<step>`
-3. 完成一步就 merge 回 feature，删 step branch
-4. 计划完成时 feature 整体 merge 到 master，删 feature branch
-5. **下一个 AI 读 feature 分支就能看到前序步骤的最新改动**
-
-- **Claude** 拆步骤 → **人类** 分工 → **干活者** 认领标记做 → **Claude** 审查汇报
+完整协议见 `C:\Users\Billy\Desktop\listener\docs\ai_collaboration_protocol.md`。
+工具脚本：`tools\update_plan_status.ps1`（认领/更新）、`tools\validate_plan_status.ps1`（校验）、`tools\lock_resource.ps1` / `unlock_resource.ps1`（硬件锁）。
 
 ## 当前关键约束
 
@@ -204,7 +166,7 @@ master → feature/<plan> → ai/<agent>-<step>
 
 1. `CLAUDE.md`
 2. `C:\Users\Billy\Desktop\listener\docs\plans\*_status.json`（当前步骤状态）
-3. `!docs/ai_collaboration_protocol.md`（涉及多 AI 协作时必读）
+3. `C:\Users\Billy\Desktop\listener\docs\ai_collaboration_protocol.md`（多 AI 协作时必读）
 4. `README.md`
 5. `C:\Users\Billy\Desktop\listener\docs\plans\*.md`（步骤定义和验收标准）
 6. `C:\Users\Billy\Desktop\listener\docs\fixes\`（活跃 bug 修复计划）
@@ -239,6 +201,11 @@ python .\tools\verify_audio_ble_product_matrix.py --port COM3 --cases A1,A3,A6
 # A9: 快速启停压力 | A10: 并发BLE客户端
 # H1: 物理KEY1（半自动，等按钮后自动继续）
 # H2: RF干扰/距离 | H3: 后端ASR集成
+
+# 校验计划状态（所有 AI 完成步骤后跑一遍）
+pwsh -NoProfile -ExecutionPolicy Bypass -File .\tools\validate_plan_status.ps1
+# 自动修复可修复的问题
+pwsh -NoProfile -ExecutionPolicy Bypass -File .\tools\validate_plan_status.ps1 -Fix
 ```
 
 ## 交付物
