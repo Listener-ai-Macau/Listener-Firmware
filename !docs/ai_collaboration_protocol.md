@@ -100,13 +100,35 @@
 
 ## Branch 协作
 
-直接在当前仓库开 branch，不建 worktree：
+三层分支结构：`master` → `feature/<plan>` → `ai/<agent>-<step>`
 
-- 开工：从状态 JSON 里的 `base_branch` 或当前目标分支创建 `ai/<task>` / `task/<description>`
-- 分支命名：`ai/<task>` 或 `task/<description>`
-- 只在任务 branch 上改动；不要创建 worktree
-- 做完后按计划要求 merge/cherry-pick/PR 回目标分支，再删 branch
-- **冲突靠 JSON 状态、`write_paths` 和文件边界避免，不靠物理隔离**
+```
+master                          ← 稳定基线，只有完成的 feature 合入
+  └── feature/p15-v1-remaining  ← 计划级集成分支，从 master 拉
+        ├── ai/claude-p15-1.1   ← AI 步骤分支，从 feature 拉
+        ├── ai/codex-p15-1.2
+        └── ai/claude-p15-1.3
+```
+
+### 流程
+
+1. **计划创建时**：从 `master` 拉 `feature/<plan-name>` 分支
+2. **AI 认领步骤时**：从 `feature/<plan-name>` 拉自己的 step branch：
+   - 命名：`ai/<agent>-<plan>-<step>`，如 `ai/claude-p15-1.1`
+   - 只在 step branch 上改动
+3. **步骤完成后**：
+   - 验收通过 → merge 回 `feature/<plan-name>` → 删 step branch
+   - 验收不通过 → 继续修，不 merge
+4. **计划完成时**：`feature/<plan-name>` 整体 merge 到 `master`，删 feature branch
+5. **下一个 AI 读 `feature/<plan-name>` 就能看到前序步骤的最新改动**
+
+### 规则
+
+- **不创建 worktree**：每个 AI 只在当前仓库切 branch
+- **每步必 merge**：做完一步就 merge 回 feature，不要攒一堆
+- **冲突靠 JSON 状态和 `write_paths` 避免**：同组并行步骤不能改同一文件
+- **step branch 短命**：merge 后立即删除，不长期保留
+- **feature branch 是计划内的唯一集成点**：所有 AI 共享这个分支的状态
 
 ## 硬件资源锁
 

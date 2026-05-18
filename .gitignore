@@ -9,6 +9,7 @@ Thumbs.db
 __pycache__/
 *.pyc
 tests/artifacts/
+tools/tests/artifacts/
 tests/*.log
 tests/*.wav
 .external_refs/

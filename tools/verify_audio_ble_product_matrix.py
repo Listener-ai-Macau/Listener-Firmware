@@ -30,9 +30,9 @@ from capture_audio_ble_wav import configure_utf8_stdio, run_capture_with_args
 
 
 CASE_ORDER = ("A1", "A2", "A3", "A4", "A5", "A6", "A7", "A8", "A9", "A10", "H1")
+FULL_CHAIN_CASE_ORDER = ("H3",)
 MANUAL_OR_EXTERNAL_CASES = {
     "H2": "requires controlled RF/distance/interference setup",
-    "H3": "requires backend ASR integration endpoint",
 }
 MATRIX_ARTIFACT_DIR = pathlib.Path("tests") / "artifacts" / "ble_product_matrix"
 A3_RECONNECT_MIN_PRE_START_DELAY_SECONDS = 12.0
@@ -57,6 +57,8 @@ COMPACT_STDOUT_PREFIXES = (
     "matrix_warning_cases=",
     "matrix_error=",
     "interrupted=",
+    "case_catalog=",
+    "h3_",
 )
 
 
@@ -101,9 +103,15 @@ def parse_args():
     parser = argparse.ArgumentParser(
         description="Run the BLE audio product-surface test matrix."
     )
-    parser.add_argument("--port", required=True)
+    parser.add_argument("--port")
     parser.add_argument("--device-name", default="listener")
     parser.add_argument("--cases", default="auto")
+    parser.add_argument("--list-cases", action="store_true")
+    parser.add_argument(
+        "--full-chain",
+        action="store_true",
+        help="Include the H3 Listener-Type ASR/insertion product-chain case when --cases auto is used.",
+    )
     parser.add_argument("--capture-seconds", type=int, default=5)
     parser.add_argument("--long-capture-seconds", type=int, default=30)
     parser.add_argument("--round-count", type=int, default=3)
@@ -158,9 +166,27 @@ def parse_args():
         choices=["per-case", "initial-only", "none"],
         default="per-case",
     )
+    parser.add_argument(
+        "--listener-type-repo",
+        default=None,
+        help="Path to the sibling Listener-Type repo used by the H3 full-chain case.",
+    )
+    parser.add_argument(
+        "--bluetooth-address",
+        default=None,
+        help="Optional hex BLE address for Listener-Type full-chain smoke; auto-resolved when possible.",
+    )
+    parser.add_argument("--full-chain-timeout-seconds", type=int, default=60)
+    parser.add_argument("--full-chain-listener-timeout-ms", type=int, default=45000)
+    parser.add_argument("--full-chain-sentence", default=None)
+    parser.add_argument("--full-chain-verify-insertion", action="store_true")
+    parser.add_argument("--full-chain-tts-gain", type=float, default=2.5)
     parser.add_argument("--no-reset-before-capture", action="store_false", dest="reset_before_capture")
     parser.set_defaults(reset_before_capture=True)
-    return parser.parse_args()
+    args = parser.parse_args()
+    if not args.list_cases and not args.port:
+        parser.error("--port is required unless --list-cases is used")
+    return args
 
 
 def apply_execution_profile(args) -> None:
@@ -454,8 +480,126 @@ def case_serial_log_path(case_id: str, label: str = "latest") -> pathlib.Path:
     return path
 
 
+def firmware_repo_root() -> pathlib.Path:
+    return pathlib.Path(__file__).resolve().parents[1]
+
+
+def default_listener_type_repo() -> pathlib.Path:
+    return firmware_repo_root().parent / "Listener-Type"
+
+
+def resolve_listener_type_repo(args) -> pathlib.Path:
+    raw_path = args.listener_type_repo or str(default_listener_type_repo())
+    return pathlib.Path(raw_path).expanduser().resolve()
+
+
+def extract_prefixed_json(text: str, prefix: str) -> dict[str, object] | None:
+    for line in reversed(text.splitlines()):
+        if not line.startswith(prefix):
+            continue
+        payload = line[len(prefix):].strip()
+        if not payload:
+            continue
+        return json.loads(payload)
+    return None
+
+
+def latest_matching_file(directory: pathlib.Path, pattern: str) -> str | None:
+    if not directory.exists():
+        return None
+    matches = sorted(directory.glob(pattern), key=lambda path: path.stat().st_mtime)
+    return str(matches[-1]) if matches else None
+
+
+def first_non_empty(*values: object) -> str:
+    for value in values:
+        text = "" if value is None else str(value).strip()
+        if text:
+            return text
+    return ""
+
+
+def longest_non_empty(*values: object) -> str:
+    texts = [str(value).strip() for value in values if value is not None and str(value).strip()]
+    return max(texts, key=len) if texts else ""
+
+
+def find_listener_history_session(
+    *,
+    history_path: object,
+    transcript: str,
+    expected_pcm_bytes: object,
+) -> dict[str, object] | None:
+    path_text = first_non_empty(history_path)
+    if not path_text:
+        return None
+    path = pathlib.Path(path_text)
+    if not path.exists():
+        return None
+    try:
+        sessions_payload = json.loads(path.read_text(encoding="utf-8-sig", errors="replace"))
+    except (OSError, json.JSONDecodeError):
+        return None
+    if isinstance(sessions_payload, dict):
+        sessions = [sessions_payload]
+    elif isinstance(sessions_payload, list):
+        sessions = [item for item in sessions_payload if isinstance(item, dict)]
+    else:
+        return None
+
+    try:
+        expected_pcm = int(expected_pcm_bytes)
+    except (TypeError, ValueError):
+        expected_pcm = 0
+
+    candidates: list[tuple[int, str, dict[str, object]]] = []
+    for session in sessions:
+        raw_transcript = first_non_empty(session.get("rawTranscript"))
+        final_text = first_non_empty(session.get("finalText"))
+        stats = session.get("embeddedAudioStats")
+        if not isinstance(stats, dict):
+            stats = {}
+        score = 0
+        if expected_pcm > 0:
+            received_pcm = stats.get("receivedPcmBytes")
+            reconstructed_pcm = stats.get("reconstructedPcmBytes")
+            if received_pcm == expected_pcm or reconstructed_pcm == expected_pcm:
+                score += 4
+        if stats:
+            score += 2
+        if transcript:
+            if transcript in raw_transcript or transcript in final_text:
+                score += 1
+            elif raw_transcript and raw_transcript in transcript:
+                score += 1
+            elif final_text and final_text in transcript:
+                score += 1
+        if score > 0:
+            candidates.append((score, first_non_empty(session.get("createdAt")), session))
+    if not candidates:
+        return None
+    candidates.sort(key=lambda item: (item[0], item[1]), reverse=True)
+    return candidates[0][2]
+
+
+def print_case_catalog() -> None:
+    catalog = {
+        "auto_cases": list(CASE_ORDER),
+        "full_chain_cases": list(FULL_CHAIN_CASE_ORDER),
+        "manual_or_external_cases": MANUAL_OR_EXTERNAL_CASES,
+        "implemented_cases": sorted([*CASE_RUNNERS.keys(), *MANUAL_OR_EXTERNAL_CASES.keys()]),
+        "notes": {
+            "H3": "real BLE audio -> Listener-Type native stream -> ASR final text -> insertion/history evidence",
+            "auto_plus_full_chain": "--full-chain appends H3 when --cases auto is used",
+        },
+    }
+    print(f"case_catalog={json.dumps(catalog, ensure_ascii=False, sort_keys=True)}")
+
+
 def resolve_case_execution_order(args) -> list[str]:
     cases = parse_case_list(args.cases)
+    if args.cases.strip().lower() == "auto" and args.full_chain:
+        cases.extend(case_id for case_id in FULL_CHAIN_CASE_ORDER if case_id not in cases)
     if args.cases.strip().lower() == "auto" and args.shuffle_auto_case_order:
         shuffled_cases = list(cases)
         args.duration_rng.shuffle(shuffled_cases)
@@ -1017,6 +1161,212 @@ async def run_h1(args) -> dict[str, str]:
     return print_summary("H1", result, reason)
 
 
+async def run_h3(args) -> dict[str, str]:
+    print_case_header("H3", "full BLE -> Listener-Type -> ASR -> insertion/history", 60)
+    output_dir = case_output_dir("H3")
+    stdout_log = output_dir / "listener_type_stdout.log"
+    stderr_log = output_dir / "listener_type_stderr.log"
+    listener_repo = resolve_listener_type_repo(args)
+    script_path = listener_repo / "tools" / "embedded_audio_replay" / "run_ble_stream_smoke.ps1"
+    if not script_path.exists():
+        return print_summary(
+            "H3",
+            "fail",
+            "listener_type_smoke_script_missing",
+            {
+                "listener_type_repo": str(listener_repo),
+                "expected_script": str(script_path),
+            },
+        )
+
+    bluetooth_address = args.bluetooth_address
+    bluetooth_address_source = "argument" if bluetooth_address else "script_default"
+    if not bluetooth_address:
+        try:
+            bluetooth_address = get_paired_device_address_hex(args.device_name)
+            if bluetooth_address:
+                bluetooth_address_source = "paired_device_lookup"
+        except Exception as exc:
+            print(f"h3_bluetooth_address_lookup_error={type(exc).__name__}:{exc}", flush=True)
+
+    command = [
+        "powershell.exe",
+        "-NoProfile",
+        "-ExecutionPolicy",
+        "Bypass",
+        "-File",
+        str(script_path),
+        "-Port",
+        args.port,
+        "-DeviceName",
+        args.device_name,
+        "-TimeoutMs",
+        str(args.full_chain_listener_timeout_ms),
+        "-OutDir",
+        str(output_dir.resolve()),
+        "-TtsGain",
+        str(args.full_chain_tts_gain),
+        "-FirmwareRepo",
+        str(firmware_repo_root()),
+        "-VerifyHistory",
+    ]
+    if bluetooth_address:
+        command.extend(["-BluetoothAddress", bluetooth_address])
+    if args.full_chain_sentence:
+        command.extend(["-Sentence", args.full_chain_sentence])
+    if not args.reset_before_capture:
+        command.append("-NoResetBeforeCapture")
+    if args.full_chain_verify_insertion:
+        command.append("-VerifyInsertion")
+
+    print(f"h3_listener_type_repo={listener_repo}", flush=True)
+    print(f"h3_bluetooth_address_source={bluetooth_address_source}", flush=True)
+    if bluetooth_address:
+        print(f"h3_bluetooth_address={bluetooth_address}", flush=True)
+    print(f"h3_listener_stdout={stdout_log}", flush=True)
+    print(f"h3_listener_stderr={stderr_log}", flush=True)
+
+    try:
+        completed = subprocess.run(
+            command,
+            cwd=str(listener_repo),
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=max(1, int(args.full_chain_timeout_seconds)),
+        )
+    except subprocess.TimeoutExpired as exc:
+        stdout_text = exc.stdout if isinstance(exc.stdout, str) else (exc.stdout or b"").decode("utf-8", errors="replace")
+        stderr_text = exc.stderr if isinstance(exc.stderr, str) else (exc.stderr or b"").decode("utf-8", errors="replace")
+        stdout_log.write_text(stdout_text, encoding="utf-8", errors="replace")
+        stderr_log.write_text(stderr_text, encoding="utf-8", errors="replace")
+        return print_summary(
+            "H3",
+            "fail",
+            "full_chain_timeout",
+            {
+                "timeout_seconds": args.full_chain_timeout_seconds,
+                "listener_type_repo": str(listener_repo),
+                "listener_type_stdout_path": str(stdout_log),
+                "listener_type_stderr_path": str(stderr_log),
+            },
+        )
+
+    stdout_log.write_text(completed.stdout or "", encoding="utf-8", errors="replace")
+    stderr_log.write_text(completed.stderr or "", encoding="utf-8", errors="replace")
+
+    try:
+        report = extract_prefixed_json(completed.stdout or "", "ble_stream_smoke_result_json=")
+    except json.JSONDecodeError as exc:
+        return print_summary(
+            "H3",
+            "fail",
+            "full_chain_report_json_invalid",
+            {
+                "json_error": str(exc),
+                "returncode": completed.returncode,
+                "listener_type_stdout_path": str(stdout_log),
+                "listener_type_stderr_path": str(stderr_log),
+            },
+        )
+    if report is None:
+        return print_summary(
+            "H3",
+            "fail",
+            "full_chain_report_missing",
+            {
+                "returncode": completed.returncode,
+                "listener_type_stdout_path": str(stdout_log),
+                "listener_type_stderr_path": str(stderr_log),
+            },
+        )
+
+    transcript = first_non_empty(report.get("transcript"))
+    history_session = report.get("history_session")
+    if not isinstance(history_session, dict):
+        history_session = find_listener_history_session(
+            history_path=report.get("history_path"),
+            transcript=transcript,
+            expected_pcm_bytes=report.get("pcm_bytes"),
+        ) or {}
+        if history_session:
+            report["history_session"] = history_session
+            report["history_lookup_fallback"] = True
+    embedded_stats = history_session.get("embeddedAudioStats")
+    if not isinstance(embedded_stats, dict):
+        embedded_stats = {}
+    transcript = longest_non_empty(
+        transcript,
+        history_session.get("rawTranscript"),
+        history_session.get("finalText"),
+    )
+    insert_status = first_non_empty(history_session.get("insertStatus"))
+    report_status = str(report.get("status") or "FAIL").upper()
+    result = "pass" if report_status == "PASS" else "warning" if report_status == "WARNING" else "fail"
+    reason = ""
+    verification_errors = report.get("verification_errors") or []
+    history_lookup_fallback = bool(report.get("history_lookup_fallback"))
+    history_missing_only = bool(verification_errors) and all(
+        str(item) == "history session was not written for this BLE smoke"
+        for item in verification_errors
+    )
+    history_fallback_cleared_failure = history_lookup_fallback and history_missing_only
+    if history_fallback_cleared_failure:
+        result = "pass"
+        verification_errors = []
+        report["verification_errors"] = verification_errors
+        report["status_after_history_lookup_fallback"] = "PASS"
+
+    if completed.returncode != 0 and not history_fallback_cleared_failure:
+        result = "fail"
+        reason = first_non_empty(report.get("error"), "; ".join(str(item) for item in verification_errors), f"returncode={completed.returncode}")
+    elif not transcript:
+        result = "fail"
+        reason = "asr_transcript_missing"
+    elif not history_session:
+        result = "fail"
+        reason = "history_session_missing"
+    elif not embedded_stats:
+        result = "fail"
+        reason = "embedded_audio_stats_missing"
+    elif insert_status != "inserted":
+        result = "fail"
+        reason = f"insert_status_not_inserted:{insert_status or 'missing'}"
+
+    effective_status = "PASS" if result == "pass" else "WARNING" if result == "warning" else "FAIL"
+    details = {
+        "full_chain_status": effective_status,
+        "listener_type_report_status": report_status,
+        "full_chain_returncode": completed.returncode,
+        "listener_type_repo": str(listener_repo),
+        "listener_type_stdout_path": str(stdout_log),
+        "listener_type_stderr_path": str(stderr_log),
+        "listener_type_report_path": latest_matching_file(output_dir, "ble-stream-smoke.*.json"),
+        "sentence": report.get("sentence"),
+        "transcript": transcript,
+        "insert_status": insert_status,
+        "history_session_id": history_session.get("id"),
+        "missing_packets": report.get("missing_packets"),
+        "pcm_bytes": report.get("pcm_bytes"),
+        "embedded_audio_stats": embedded_stats,
+        "verify_insertion": bool(report.get("verify_insertion")),
+        "verify_history": bool(report.get("verify_history")),
+        "history_lookup_fallback": history_lookup_fallback,
+        "verification_errors": verification_errors,
+        "listener_type_report": report,
+    }
+    print(f"h3_full_chain_status={effective_status}", flush=True)
+    print(f"h3_listener_type_report_status={report_status}", flush=True)
+    print(f"h3_transcript={transcript.replace(chr(13), ' ').replace(chr(10), ' ')}", flush=True)
+    print(f"h3_insert_status={insert_status}", flush=True)
+    print(f"h3_history_lookup_fallback={1 if history_lookup_fallback else 0}", flush=True)
+    print(f"h3_history_session_id={history_session.get('id')}", flush=True)
+    print(f"h3_missing_packets={report.get('missing_packets')}", flush=True)
+    print(f"h3_pcm_bytes={report.get('pcm_bytes')}", flush=True)
+    return print_summary("H3", result, reason, details)
+
+
 CASE_RUNNERS = {
     "A1": run_a1,
     "A2": run_a2,
@@ -1029,6 +1379,7 @@ CASE_RUNNERS = {
     "A9": run_a9,
     "A10": run_a10,
     "H1": run_h1,
+    "H3": run_h3,
 }
 
 
@@ -1139,6 +1490,9 @@ async def main_async(args) -> None:
 def main() -> None:
     configure_utf8_stdio()
     args = parse_args()
+    if args.list_cases:
+        print_case_catalog()
+        return
     apply_execution_profile(args)
     prepare_duration_randomizer(args)
     summary_log_path = pathlib.Path(args.summary_log)

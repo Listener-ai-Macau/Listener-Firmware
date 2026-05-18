@@ -122,7 +122,7 @@
     {
       "id": "ble_audio_test_matrix",
       "status": "implemented",
-      "summary": "BLE audio product matrix runs A1-A10 + H1 automated/semi-automated coverage plus H2/H3 external placeholders with Chinese TTS source generation.",
+      "summary": "BLE audio product matrix runs A1-A10 + H1 audio/transport coverage with Chinese TTS generation, and H3 full product-chain validation through Listener-Type ASR text insertion/history evidence.",
       "doc": "ble_audio_test_matrix.md",
       "primary_paths": [
         "tools/verify_audio_ble_product_matrix.py",
@@ -131,20 +131,24 @@
       ],
       "validation": [
         "python -m compileall -q tools",
+        "python .\\tools\\verify_audio_ble_product_matrix.py --list-cases",
         "python .\\tools\\verify_audio_ble_product_matrix.py --port COM3 --cases A1 --fail-on-warning",
-        "python .\\tools\\verify_audio_ble_product_matrix.py --port COM3 --realistic-usage-profile --random-seed 20260525"
+        "python .\\tools\\verify_audio_ble_product_matrix.py --port COM3 --realistic-usage-profile --random-seed 20260525",
+        "python .\\tools\\verify_audio_ble_product_matrix.py --port COM3 --cases H3 --fail-on-warning"
       ],
       "evidence": [
         "tools/verify_audio_ble_product_matrix.py registers CASE_ORDER A1-A10,H1 and CASE_RUNNERS for each",
-        "tools/verify_audio_ble_product_matrix.py keeps H2/H3 in MANUAL_OR_EXTERNAL_CASES"
+        "tools/verify_audio_ble_product_matrix.py registers FULL_CHAIN_CASE_ORDER H3 and runs Listener-Type ble_stream_smoke_result_json validation",
+        "tools/verify_audio_ble_product_matrix.py keeps H2 in MANUAL_OR_EXTERNAL_CASES"
       ],
       "invariants": [
         "CASE_ORDER in code is the source of truth for implemented case IDs",
         "hardware cases lock resources separately; COM3 and BLE are separate lock_resource.ps1 calls",
-        "H2/H3 remain external placeholders until code-backed validation exists"
+        "H3 reuses Listener-Type native BLE stream/ASR/insertion smoke instead of reimplementing host pipeline logic"
       ],
       "known_limits": [
-        "Physical RF/distance and backend ASR integration are not automated in firmware matrix"
+        "Physical RF/distance remains external",
+        "H3 requires sibling Listener-Type repo, working ASR configuration, current cursor insertion path, and a real device"
       ]
     }
   ]

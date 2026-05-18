@@ -16,13 +16,13 @@ description: Firmware repo adapter for ESP32-S3 BLE HID keyboard and BLE audio c
 
 - Before coding, confirm the step is not occupied, then claim it:
   `powershell -File C:\Users\Billy\Desktop\listener\voice-keyboard-firmware\tools\update_plan_status.ps1 -Plan <plan_id> -StepId <step_id> -Status in_progress -Assignee <you>`
-- Work only on the current repository task branch. Do not create worktrees.
+- **Branch workflow**: `master` → `feature/<plan>` → `ai/<agent>-<step>`. Create your step branch FROM the feature branch, merge back after each step, delete step branch. Do not create worktrees.
 - Real hardware commands require resource locks immediately before use. Pure docs, search, static checks, compileall, and non-device builds do not need locks.
 - Lock each resource separately; `lock_resource.ps1` currently locks one `-Resource` per call:
   `powershell -File C:\Users\Billy\Desktop\listener\voice-keyboard-firmware\tools\lock_resource.ps1 -Resource COM3 -Owner <you>`
   `powershell -File C:\Users\Billy\Desktop\listener\voice-keyboard-firmware\tools\lock_resource.ps1 -Resource BLE -Owner <you>`
 - Release every lock you acquired with `unlock_resource.ps1`.
-- On completion, run the step validation, record evidence in status JSON, mark `completed`, and clear assignee.
+- On completion, run the step validation, merge step branch to feature branch, record evidence in status JSON, mark `completed`, and clear assignee.
 - If human action is required, mark `blocked` with `blocked_reason`.
 
 ## Plan Rules

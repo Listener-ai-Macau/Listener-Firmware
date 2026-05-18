@@ -174,11 +174,19 @@ pwsh -NoProfile -File ./tools/esp_idf_ci.ps1 help
 - 参考文档（步骤定义、验收标准）在 `C:\Users\Billy\Desktop\listener\docs\plans\*.md`
 - 仓库级文档（features、fixes）继续放各自仓库 `!docs/`
 
-<<<<<<< Updated upstream
-Codex 和 Tai 是同一个 CLI 工具的不同 profile。默认在当前仓库各自开任务 branch 工作，不创建 worktree；冲突靠共享 JSON、`write_paths` 和 merge/rebase 解决。Claude 审查/测试/精简/汇报。
-=======
-Codex 和 Tai 是同一个 CLI 工具的不同 profile。默认在当前仓库各自开任务 branch 工作，不创建 worktree；冲突靠共享 JSON、`write_paths` 和 merge/rebase 解决。Claude 审查/测试/精简/汇报。
->>>>>>> Stashed changes
+Codex 和 Tai 是同一个 CLI 工具的不同 profile。AI 在 `feature/<plan>` 下各自的 step branch 上开发，每步 merge 回 feature，最后 feature 整体进 master。
+
+### 分支工作流
+
+```
+master → feature/<plan> → ai/<agent>-<step>
+```
+
+1. 计划创建时从 master 拉 `feature/<plan-name>`
+2. AI 认领步骤时从 feature 拉自己的 `ai/<agent>-<plan>-<step>`
+3. 完成一步就 merge 回 feature，删 step branch
+4. 计划完成时 feature 整体 merge 到 master，删 feature branch
+5. **下一个 AI 读 feature 分支就能看到前序步骤的最新改动**
 
 - **Claude** 拆步骤 → **人类** 分工 → **干活者** 认领标记做 → **Claude** 审查汇报
 
