@@ -24,6 +24,7 @@ void ble_store_config_init(void);
 
 #include "hid_keyboard.h"
 #include "board.h"
+#include "listener_device.h"
 #include "ble_hid_gap.h"
 #include "ble_audio_stream.h"
 #include "voice_recording_control.h"
@@ -40,7 +41,9 @@ typedef struct
 
 static ble_hid_ctx_t s_ble_hid_ctx = {0};
 
-static const char *s_device_name = "listener";
+static const char *s_device_name = LISTENER_DEVICE_MANUFACTURER;
+
+static char s_ble_serial[18];
 
 static esp_hid_raw_report_map_t s_ble_report_maps[] = {
     {
@@ -50,12 +53,12 @@ static esp_hid_raw_report_map_t s_ble_report_maps[] = {
 };
 
 static esp_hid_device_config_t s_ble_hid_config = {
-    .vendor_id = 0x16C0,
-    .product_id = 0x05DF,
-    .version = 0x0100,
-    .device_name = "listener",
-    .manufacturer_name = "listener",
-    .serial_number = "keyboard-v1",
+    .vendor_id = LISTENER_VENDOR_ID,
+    .product_id = LISTENER_PRODUCT_ID,
+    .version = LISTENER_PROTOCOL_VERSION,
+    .device_name = LISTENER_DEVICE_MANUFACTURER,
+    .manufacturer_name = LISTENER_DEVICE_MANUFACTURER,
+    .serial_number = s_ble_serial,
     .report_maps = s_ble_report_maps,
     .report_maps_len = 1,
 };
@@ -229,6 +232,14 @@ static void ble_hid_host_task(void *parameter)
 
 void ble_hid_init(void)
 {
+    ESP_LOGI(TAG, "fw_version=%s protocol_version=%u build=%s serial=%s",
+             listener_device_get_fw_version(),
+             LISTENER_PROTOCOL_VERSION,
+             listener_device_get_build_id(),
+             listener_device_get_serial());
+
+    snprintf(s_ble_serial, sizeof(s_ble_serial), "%s", listener_device_get_serial());
+
     esp_err_t ret = nvs_flash_init();
     if (ret == ESP_ERR_NVS_NO_FREE_PAGES || ret == ESP_ERR_NVS_NEW_VERSION_FOUND) {
         ESP_ERROR_CHECK(nvs_flash_erase());
