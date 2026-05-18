@@ -654,12 +654,11 @@ async def play_and_capture_serial_toggle_after_cancel_probe(
     with open_serial_with_retry(port, 115200, timeout=0.05) as ser:
         ser.setDTR(False)
         ser.setRTS(False)
-        if reset_before_capture:
-            reset_target_before_capture(ser)
         ser.reset_input_buffer()
         serial_monitor = SerialLogMonitor(ser)
         if reset_before_capture:
-            await serial_monitor.wait_for_markers(READY_MARKERS, timeout_seconds=15)
+            reset_target_before_capture(ser)
+            await wait_for_ready_markers_or_running(serial_monitor, timeout_seconds=15)
         ser.reset_input_buffer()
 
         cancel_args = make_capture_args(
