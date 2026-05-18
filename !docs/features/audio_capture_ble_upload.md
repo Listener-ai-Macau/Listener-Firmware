@@ -121,7 +121,7 @@
   - `--no-reset-before-capture` 会压住 `DTR/RTS` 并检查意外 boot marker
   - 参考音升级为可复现的 `speech-like loop`
 - 矩阵外剩余项：
-  - `P12` 弱环境 / 距离 / 干扰实验
+  - `P12` 已有当前桌面 ambient RF baseline；受控距离 / 遮挡 / 强干扰实验仍需外场补测
   - `P13` 后端闭环端到端验收
   - `P10` 仍需要更长时间的量产级 soak
 
@@ -185,7 +185,7 @@ Windows 自动恢复订阅时 `BLE_GAP_EVENT_SUBSCRIBE` 可能早于 `BLE_GAP_EV
 - `P7` 的自动 recover 重试只允许用于主机 / 传输类失败，不再对任意失败都自动重试
 - `P11/P12/P13` 不会被自动矩阵冒充成已通过：
   - `P11` 已按真实按键人工验收口径通过，但仍不计入自动矩阵
-  - `P12` 仍需要弱环境实验
+  - `P12` 已形成 ambient RF baseline，但受控弱环境实验仍需单独记录
   - `P13` 仍需要后端联调
 
 ## 产品级使用面测试矩阵
@@ -305,7 +305,7 @@ Windows 自动恢复订阅时 `BLE_GAP_EVENT_SUBSCRIBE` 可能早于 `BLE_GAP_EV
 | P9 | 超时 / 异常结束 | 录音未正常结束时能正确超时与恢复 | `verify_audio_ble_product_matrix.py` | 已覆盖 | `standard + realistic` 均已通过，且已改成同串口真实恢复 | 中高 |
 | P10 | 长时间 soak | 多轮长时间连续使用后仍稳定 | `verify_audio_ble_product_matrix.py` | 已覆盖 | 短 soak 在 `standard + realistic` 均已通过 | 高 |
 | P11 | 真实按键录音复验 | 真实 `KEY1 -> KEY1` 录音成功，听感内容符合预期 | `physical-key` | 人工验收已覆盖 | 两轮人工复验通过，保留 `source=key1` 基线；非自动矩阵项 | 高 |
-| P12 | 弱环境 / 边界环境 | 干扰、距离变化时仍可用 | 无专门脚本 | 未覆盖 | 尚无基线 | 中 |
+| P12 | 弱环境 / 边界环境 | 干扰、距离变化时仍可用 | ambient RF formal record + 受控外场 | 部分覆盖 | 当前桌面 ambient RF baseline 已通过；受控距离 / 遮挡 / 强干扰待补 | 中 |
 | P13 | 后端联调端到端 | 音频送到后端后整体闭环可接受 | 后端联调 | 未覆盖 | 当前仅前端基线完成 | 高 |
 
 ### 现有回归与场景映射
@@ -337,7 +337,7 @@ Windows 自动恢复订阅时 `BLE_GAP_EVENT_SUBSCRIBE` 可能早于 `BLE_GAP_EV
 ### 目前还没被量产级证明的问题
 
 - `P11` 真实按键路径已完成两轮人工复验，但还不等于按键寿命、长时间误触发、极端按压节奏这些量产耐久项已覆盖
-- `P12` 弱环境 / 距离 / 干扰还没有正式实验数据
+- `P12` 已有 ambient RF baseline 正式数据，但还没有受控距离 / 遮挡 / 强干扰实验数据
 - `P13` 后端闭环还没有接入正式验收
 - `P10` 当前仍是短 soak，不等于全天 / 多小时量产 soak
 - `WinRT notify_enable_fallback=winrt_warmup` 日志偶发仍会出现，虽然当前未再造成矩阵失败
@@ -385,13 +385,13 @@ Windows 自动恢复订阅时 `BLE_GAP_EVENT_SUBSCRIBE` 可能早于 `BLE_GAP_EV
 - `P1-P10` 最好同时在 `standard` 和 `realistic` 两种口径下通过
 - `P8/P9` 确认是同串口真实恢复验证，不是二次开串口伪恢复
 - `P11` 真实按键路径完成重复人工复验
-- `P12` 有至少一轮正式弱环境实验记录
+- `P12` 至少有一轮正式环境记录；量产前还需要受控距离 / 遮挡 / 强干扰记录
 - `P13` 有至少一轮后端闭环记录
 
 在这之前，更准确的表述仍然应该是：
 
 - `BLE 自动化产品矩阵主路径已收敛`
-- `BLE 量产级验收仍缺弱环境实验和后端闭环；真实按键路径已按人工验收口径通过`
+- `BLE 量产级验收仍缺受控弱环境实验和后端闭环；真实按键路径已按人工验收口径通过`
 
 ## 验证方式
 
@@ -416,6 +416,12 @@ python .\tools\verify_audio_ble_product_matrix.py --port COM3 --capture-seconds 
 
 # 更贴近真实连续使用的口径
 python .\tools\verify_audio_ble_product_matrix.py --port COM3 --capture-seconds 5 --long-capture-seconds 30 --round-count 3 --idle-seconds 30 --soak-round-count 5 --realistic-usage-profile --random-seed 20260521
+
+# 当前门禁口径：失败或 warning 都不允许悄悄通过，并保留 JSON 结果
+python .\tools\verify_audio_ble_product_matrix.py --port COM3 --cases P1,P2,P3,P4,P5,P6,P7,P8,P9,P10 --realistic-usage-profile --fail-on-warning --matrix-result-json tests\artifacts\ble_product_matrix\matrix_result_realistic_latest.json
+
+# P12 ambient RF baseline 记录口径；受控距离 / 干扰实验需要另行注明环境条件
+python .\tools\verify_audio_ble_product_matrix.py --port COM3 --cases P1,P3,P8,P9,P10 --realistic-usage-profile --random-seed 20260520 --fail-on-warning --matrix-result-json tests\artifacts\ble_product_matrix\p12\p12_ambient_rf_matrix_20260517.json
 
 # P1：标准端到端回归
 python .\tools\verify_audio_ble_upload_end_to_end.py --port COM3 --capture-seconds 5 --no-reset-before-capture
@@ -463,34 +469,27 @@ python .\tools\verify_audio_ble_upload_reconnect.py --port COM3 --capture-second
 
 ### 当前回归结论更新
 
-- 截至 `2026-05-15`，`P1-P10` 自动矩阵在默认 `standard` 口径下已在这些随机种子下实测通过：
-  - `20260515`
-  - `20260516`
-  - `20260517`
-  - `20260518`
-  - `20260519`
-  - `20260520`
-- 截至 `2026-05-15`，`P1-P10` 自动矩阵在更贴近连续使用的 `realistic` 口径下也已在这些随机种子下实测通过：
-  - `20260521`
-  - `20260522`
-- 本轮继续在更贴近连续使用的 `realistic` 口径下补测通过：
-  - `20260524`
-  - `20260525`
-- 本轮新增确认：
-  - `P8` 已改成同串口会话的真实恢复验证，并在 `20260518 / 20260519 / 20260520` 下通过
-  - `P9` 已改成同串口会话的真实恢复验证，并在 `20260518 / 20260519 / 20260520` 下通过
-  - `P7` 的 baseline 自动 recover 重试已收紧，不再对任意失败都自动重试
-  - `--no-reset-before-capture` 已修正为真正的“不主动重置设备”，不会再因为串口 `open()` 默认控制线动作把板子偷偷复位
-  - notify 就绪判定已补上 `audio notify subscribed:` 这条真实设备侧 marker，降低串口日志互相穿插时的误判
-  - 参考音已升级为可复现的 `speech-like loop`，不再是之前过于规则的固定蜂鸣
-- 当前自动矩阵结论：
+- 截至 `2026-05-17`，BLE 音频产品矩阵稳定性修复计划 Step 1-5 已完成当前代码与工作台验证闭环。
+- `P1-P10` 自动矩阵在 `standard` 口径下多种子通过：
+  - `tests/artifacts/ble_product_matrix/matrix_result_standard_final.json`
+  - `tests/artifacts/ble_product_matrix/matrix_result_standard_seed_20260518.json`
+- `P1-P10` 自动矩阵在 `realistic` 口径下多种子通过：
+  - `tests/artifacts/ble_product_matrix/matrix_result_realistic_final.json`
+  - `tests/artifacts/ble_product_matrix/matrix_result_realistic_seed_20260519.json`
+- 上述四轮主矩阵均为：
   - `matrix_total=10`
   - `matrix_failed=0`
   - `matrix_warning=0`
+  - `matrix_skipped=0`
+- P12 当前已有 ambient RF baseline 正式记录：
+  - `tests/artifacts/ble_product_matrix/p12/p12_ambient_rf_matrix_20260517.json`
+  - `tests/artifacts/ble_product_matrix/p12/p12_ambient_rf_20260517.md`
+  - 覆盖 `P1/P3/P8/P9/P10` representative subset，`matrix_total=5`，`matrix_failed=0`，`matrix_warning=0`
 - 当前仍需明确区分：
   - `P1-P10` 已是自动化真实通过
   - `P11` 真实按键已按人工验收口径通过，但不是自动矩阵通过
-  - `P12/P13` 还没有正式验收数据
+  - `P12` ambient RF baseline 已通过，但不是受控距离 / 遮挡 / 强干扰通过
+  - `P13` 还没有后端闭环正式验收数据
 
 ## 产物
 
@@ -504,6 +503,9 @@ python .\tools\verify_audio_ble_upload_reconnect.py --port COM3 --capture-second
   - `tests/artifacts/p11_single/verify_audio_capture_session_latest.log`
   - `tests/artifacts/p11_rerun_20260515/capture_ble_latest_16k_mono.wav`
   - `tests/artifacts/p11_rerun_20260515/verify_audio_capture_session_latest.log`
+- 当前长期保留的 P12 baseline 证据：
+  - `tests/artifacts/ble_product_matrix/p12/p12_ambient_rf_matrix_20260517.json`
+  - `tests/artifacts/ble_product_matrix/p12/p12_ambient_rf_20260517.md`
 
 ## 关键代码位置
 

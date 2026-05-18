@@ -1,4 +1,0 @@
-interface:
-  display_name: "Embedded AI Workflow"
-  short_description: "Plan-gated embedded AI delivery"
-  default_prompt: "Use $embedded-ai-workflow to plan and execute this embedded firmware task with gated approvals."

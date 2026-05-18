@@ -1,9 +1,11 @@
 #include "audio_capture.h"
 #include "audio_capture_platform.h"
 #include "ble_audio_stream.h"
+#include "listener_audio_proto.h"
 
 #include <assert.h>
 #include <inttypes.h>
+#include <limits.h>
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
@@ -40,6 +42,7 @@
 #define AUDIO_CAPTURE_SESSION_SAFETY_MAX_SECONDS (600)
 #define AUDIO_CAPTURE_STREAM_BATCH_FRAMES 3
 #define AUDIO_CAPTURE_STREAM_BATCH_BYTES (AUDIO_CAPTURE_STREAM_BATCH_FRAMES * AUDIO_CAPTURE_FRAME_BYTES)
+#define AUDIO_CAPTURE_STREAM_PROGRESS_LOG_PACKET_INTERVAL 64U
 
 static const char *TAG = "audio_capture";
 
@@ -85,6 +88,44 @@ static void audio_capture_export_cleanup(void)
     memset(&s_export_state, 0, sizeof(s_export_state));
 }
 
+static uint32_t audio_capture_packet_safe_total_frames(uint16_t payload_bytes)
+{
+    if (payload_bytes == 0) {
+        return 0;
+    }
+
+    uint64_t max_pcm_bytes = (uint64_t)UINT16_MAX * (uint64_t)payload_bytes;
+    uint64_t max_frames = max_pcm_bytes / AUDIO_CAPTURE_FRAME_BYTES;
+    if (max_frames > UINT32_MAX) {
+        return UINT32_MAX;
+    }
+
+    return (uint32_t)max_frames;
+}
+
+static bool audio_capture_packet_sequence_can_advance(uint16_t next_packet_sequence, uint16_t packet_count)
+{
+    return packet_count > 0 && (uint32_t)next_packet_sequence + packet_count <= UINT16_MAX;
+}
+
+static uint16_t audio_capture_session_error_from_stream_result(esp_err_t result)
+{
+    switch (result) {
+        case ESP_ERR_TIMEOUT:
+            return LISTENER_AUDIO_SESSION_ERROR_QUEUE_FULL;
+        case ESP_ERR_INVALID_STATE:
+            return LISTENER_AUDIO_SESSION_ERROR_LINK_LOST;
+        case ESP_ERR_NO_MEM:
+            return LISTENER_AUDIO_SESSION_ERROR_NO_MEMORY;
+        case ESP_ERR_INVALID_SIZE:
+            return LISTENER_AUDIO_SESSION_ERROR_PACKET_TOO_LARGE;
+        default:
+            break;
+    }
+
+    return LISTENER_AUDIO_SESSION_ERROR_TRANSPORT;
+}
+
 
 esp_err_t audio_capture_session_begin(void)
 {
@@ -97,22 +138,46 @@ esp_err_t audio_capture_session_begin(void)
         return ESP_ERR_INVALID_STATE;
     }
 
+    if (!ble_audio_stream_is_ready()) {
+        xSemaphoreGive(s_state_mutex);
+        ESP_LOGW(TAG, "record session start rejected: BLE audio transport not ready");
+        return ESP_ERR_INVALID_STATE;
+    }
+
+    uint16_t payload_bytes = ble_audio_stream_get_audio_payload_bytes();
+    uint32_t packet_safe_total_frames = audio_capture_packet_safe_total_frames(payload_bytes);
+    if (packet_safe_total_frames == 0) {
+        xSemaphoreGive(s_state_mutex);
+        ESP_LOGW(TAG, "record session start rejected: audio payload unavailable");
+        return ESP_ERR_INVALID_SIZE;
+    }
+
+    uint32_t requested_total_frames = (AUDIO_CAPTURE_SESSION_SAFETY_MAX_SECONDS * 1000U) / AUDIO_CAPTURE_FRAME_MS;
+    uint32_t total_frames = requested_total_frames;
+    if (packet_safe_total_frames < total_frames) {
+        total_frames = packet_safe_total_frames;
+    }
+
     memset(&s_export_state, 0, sizeof(s_export_state));
     s_export_state.mode = AUDIO_CAPTURE_EXPORT_MODE_SESSION;
     s_export_state.duration_seconds = 0;
-    s_export_state.total_frames = (AUDIO_CAPTURE_SESSION_SAFETY_MAX_SECONDS * 1000U) / AUDIO_CAPTURE_FRAME_MS;
+    s_export_state.total_frames = total_frames;
     s_export_state.pcm_bytes_total = 0;
     s_export_state.session_id = ++s_session_id_counter;
+    uint32_t session_id = s_export_state.session_id;
+    uint32_t session_max_seconds = (s_export_state.total_frames * AUDIO_CAPTURE_FRAME_MS) / 1000U;
 
     s_export_state.requested = true;
     xSemaphoreGive(s_state_mutex);
     ESP_LOGI(
         TAG,
-        "record session begin requested: session_id=%" PRIu32 " buffer_ms=%u buffer_bytes=%u safety_max_s=%u",
-        s_export_state.session_id,
+        "record session begin requested: session_id=%" PRIu32 " buffer_ms=%u buffer_bytes=%u safety_max_s=%u packet_payload_bytes=%u packet_safe_max_s=%" PRIu32,
+        session_id,
         AUDIO_CAPTURE_STREAM_BATCH_FRAMES * AUDIO_CAPTURE_FRAME_MS,
         (unsigned)AUDIO_CAPTURE_STREAM_BATCH_BYTES,
-        AUDIO_CAPTURE_SESSION_SAFETY_MAX_SECONDS);
+        AUDIO_CAPTURE_SESSION_SAFETY_MAX_SECONDS,
+        payload_bytes,
+        session_max_seconds);
     return ESP_OK;
 }
 
@@ -186,15 +251,19 @@ static void audio_capture_task(void *arg)
 
             bool should_emit = false;
             bool should_cancel = false;
+            bool stream_failed = false;
+            bool should_transport_error = false;
             bool idle_for_logging = false;
             bool should_session_start = false;
             bool should_session_audio = false;
             bool should_session_stop = false;
             bool should_session_cancel = false;
+            bool should_session_error = false;
             uint32_t session_id = 0;
             uint16_t packet_sequence_start = 0;
             uint16_t batch_pcm_bytes = 0;
             uint16_t expected_packet_count_at_end = 0;
+            uint16_t session_error_code = LISTENER_AUDIO_SESSION_ERROR_NONE;
             uint16_t packet_count = 0;
             const uint8_t *audio_batch_copy = NULL;
 
@@ -224,22 +293,40 @@ static void audio_capture_task(void *arg)
                         s_export_state.pcm_bytes_written += AUDIO_CAPTURE_FRAME_BYTES;
 
                         if (s_export_state.stream_batch_frame_count >= AUDIO_CAPTURE_STREAM_BATCH_FRAMES) {
-                            should_session_audio = true;
                             session_id = s_export_state.session_id;
                             packet_sequence_start = s_export_state.stream_next_packet_sequence;
                             batch_pcm_bytes = AUDIO_CAPTURE_STREAM_BATCH_BYTES;
                             memcpy(s_export_state.stream_emit_buffer, s_export_state.stream_batch_buffer, batch_pcm_bytes);
                             audio_batch_copy = s_export_state.stream_emit_buffer;
                             packet_count = ble_audio_stream_count_audio_packets(batch_pcm_bytes);
-                            s_export_state.stream_next_packet_sequence =
-                                (uint16_t)(s_export_state.stream_next_packet_sequence + packet_count);
-                            s_export_state.stream_batch_frame_count = 0;
+                            if (!audio_capture_packet_sequence_can_advance(
+                                    s_export_state.stream_next_packet_sequence,
+                                    packet_count)) {
+                                should_cancel = true;
+                                should_session_error = s_export_state.ble_session_started;
+                                expected_packet_count_at_end = s_export_state.stream_next_packet_sequence;
+                                session_error_code = LISTENER_AUDIO_SESSION_ERROR_SEQUENCE_OVERFLOW;
+                                ESP_LOGW(
+                                    TAG,
+                                    "record session canceled: packet sequence limit reached session_id=%" PRIu32 " next=%u add=%u",
+                                    session_id,
+                                    s_export_state.stream_next_packet_sequence,
+                                    packet_count);
+                            } else {
+                                should_session_audio = true;
+                                s_export_state.stream_next_packet_sequence =
+                                    (uint16_t)(s_export_state.stream_next_packet_sequence + packet_count);
+                                s_export_state.stream_batch_frame_count = 0;
+                            }
                         }
                     }
 
-                    s_export_state.captured_frames++;
+                    if (!should_cancel) {
+                        s_export_state.captured_frames++;
+                    }
 
-                    if (s_export_state.mode == AUDIO_CAPTURE_EXPORT_MODE_SESSION &&
+                    if (!should_cancel &&
+                        s_export_state.mode == AUDIO_CAPTURE_EXPORT_MODE_SESSION &&
                         (s_export_state.stop_requested || s_export_state.captured_frames >= s_export_state.total_frames)) {
                         if (s_export_state.captured_frames >= s_export_state.total_frames) {
                             ESP_LOGW(
@@ -251,7 +338,6 @@ static void audio_capture_task(void *arg)
                             (s_export_state.captured_frames * AUDIO_CAPTURE_FRAME_MS) / 1000U;
 
                         if (s_export_state.stream_batch_frame_count > 0) {
-                            should_session_audio = true;
                             session_id = s_export_state.session_id;
                             packet_sequence_start = s_export_state.stream_next_packet_sequence;
                             batch_pcm_bytes =
@@ -259,14 +345,32 @@ static void audio_capture_task(void *arg)
                             memcpy(s_export_state.stream_emit_buffer, s_export_state.stream_batch_buffer, batch_pcm_bytes);
                             audio_batch_copy = s_export_state.stream_emit_buffer;
                             packet_count = ble_audio_stream_count_audio_packets(batch_pcm_bytes);
-                            s_export_state.stream_next_packet_sequence =
-                                (uint16_t)(s_export_state.stream_next_packet_sequence + packet_count);
-                            s_export_state.stream_batch_frame_count = 0;
+                            if (!audio_capture_packet_sequence_can_advance(
+                                    s_export_state.stream_next_packet_sequence,
+                                    packet_count)) {
+                                should_cancel = true;
+                                should_session_error = s_export_state.ble_session_started;
+                                expected_packet_count_at_end = s_export_state.stream_next_packet_sequence;
+                                session_error_code = LISTENER_AUDIO_SESSION_ERROR_SEQUENCE_OVERFLOW;
+                                ESP_LOGW(
+                                    TAG,
+                                    "record session canceled at stop: packet sequence limit reached session_id=%" PRIu32 " next=%u add=%u",
+                                    session_id,
+                                    s_export_state.stream_next_packet_sequence,
+                                    packet_count);
+                            } else {
+                                should_session_audio = true;
+                                s_export_state.stream_next_packet_sequence =
+                                    (uint16_t)(s_export_state.stream_next_packet_sequence + packet_count);
+                                s_export_state.stream_batch_frame_count = 0;
+                            }
                         }
-                        should_session_stop = true;
-                        session_id = s_export_state.session_id;
-                        expected_packet_count_at_end = s_export_state.stream_next_packet_sequence;
-                        should_emit = true;
+                        if (!should_cancel) {
+                            should_session_stop = true;
+                            session_id = s_export_state.session_id;
+                            expected_packet_count_at_end = s_export_state.stream_next_packet_sequence;
+                            should_emit = true;
+                        }
                     }
                 }
 
@@ -284,6 +388,21 @@ static void audio_capture_task(void *arg)
             }
 
             if (should_cancel) {
+                if (should_session_error) {
+                    esp_err_t error_ret = ble_audio_stream_send_session_error(
+                        session_id,
+                        expected_packet_count_at_end,
+                        session_error_code);
+                    if (error_ret != ESP_OK) {
+                        ESP_LOGW(
+                            TAG,
+                            "stream session error failed: session_id=%" PRIu32 " expected_packet_count=%u error_code=%u ret=%s",
+                            session_id,
+                            expected_packet_count_at_end,
+                            session_error_code,
+                            esp_err_to_name(error_ret));
+                    }
+                }
                 if (should_session_cancel) {
                     esp_err_t cancel_ret = ble_audio_stream_send_session_cancel(session_id, expected_packet_count_at_end);
                     if (cancel_ret != ESP_OK) {
@@ -304,16 +423,22 @@ static void audio_capture_task(void *arg)
                 if (should_session_start) {
                     esp_err_t start_ret = ble_audio_stream_send_session_start(session_id);
                     if (start_ret != ESP_OK) {
+                        stream_failed = true;
+                        should_transport_error = true;
+                        session_error_code = audio_capture_session_error_from_stream_result(start_ret);
                         ESP_LOGW(TAG, "stream session start failed: session_id=%" PRIu32 " ret=%s", session_id, esp_err_to_name(start_ret));
                     } else {
                         ESP_LOGI(TAG, "stream session start queued: session_id=%" PRIu32, session_id);
                     }
                 }
 
-                if (should_session_audio) {
+                if (!stream_failed && should_session_audio) {
                     esp_err_t audio_ret =
                         ble_audio_stream_send_session_audio(session_id, packet_sequence_start, audio_batch_copy, batch_pcm_bytes);
                     if (audio_ret != ESP_OK) {
+                        stream_failed = true;
+                        should_transport_error = true;
+                        session_error_code = audio_capture_session_error_from_stream_result(audio_ret);
                         ESP_LOGW(
                             TAG,
                             "stream audio packet batch failed: session_id=%" PRIu32 " seq_start=%u packet_count=%u pcm_bytes=%u ret=%s",
@@ -322,7 +447,9 @@ static void audio_capture_task(void *arg)
                             packet_count,
                             batch_pcm_bytes,
                             esp_err_to_name(audio_ret));
-                    } else {
+                    } else if (packet_sequence_start == 0 ||
+                               ((uint32_t)packet_sequence_start %
+                                AUDIO_CAPTURE_STREAM_PROGRESS_LOG_PACKET_INTERVAL) == 0) {
                         ESP_LOGI(
                             TAG,
                             "stream audio packet batch queued: session_id=%" PRIu32 " seq_start=%u packet_count=%u pcm_bytes=%u",
@@ -333,7 +460,28 @@ static void audio_capture_task(void *arg)
                     }
                 }
 
-                if (should_session_stop) {
+                if (stream_failed) {
+                    if (should_transport_error) {
+                        esp_err_t error_ret = ble_audio_stream_send_session_error(
+                            session_id,
+                            packet_sequence_start,
+                            session_error_code);
+                        if (error_ret != ESP_OK) {
+                            ESP_LOGW(
+                                TAG,
+                                "stream session error after transport failure failed: session_id=%" PRIu32 " expected_packet_count=%u error_code=%u ret=%s",
+                                session_id,
+                                packet_sequence_start,
+                                session_error_code,
+                                esp_err_to_name(error_ret));
+                        }
+                    }
+                    if (xSemaphoreTake(s_state_mutex, portMAX_DELAY) == pdTRUE) {
+                        audio_capture_export_cleanup();
+                        xSemaphoreGive(s_state_mutex);
+                    }
+                    ESP_LOGW(TAG, "record session aborted after BLE transport failure: session_id=%" PRIu32, session_id);
+                } else if (should_session_stop) {
                     esp_err_t stop_ret = ble_audio_stream_send_session_stop(session_id, expected_packet_count_at_end);
                     if (stop_ret != ESP_OK) {
                         ESP_LOGW(
@@ -352,7 +500,7 @@ static void audio_capture_task(void *arg)
                     }
                 }
 
-                if (should_emit) {
+                if (!stream_failed && should_emit) {
                     if (xSemaphoreTake(s_state_mutex, portMAX_DELAY) == pdTRUE) {
                         audio_capture_export_cleanup();
                         xSemaphoreGive(s_state_mutex);
@@ -551,9 +699,4 @@ esp_err_t audio_capture_start(void)
         return ESP_ERR_NO_MEM;
     }
     return ESP_OK;
-}
-
-bool audio_capture_is_running(void)
-{
-    return s_started && s_capture_task_handle != NULL;
 }

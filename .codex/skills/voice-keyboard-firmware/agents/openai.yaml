@@ -1,7 +1,7 @@
 interface:
   display_name: "Voice Keyboard Firmware"
-  short_description: "Apply the voice-keyboard-firmware repo rules."
-  default_prompt: "Use $voice-keyboard-firmware. The repo fast-path brief is embedded in SKILL.md."
+  short_description: "Apply repo-specific firmware and hardware rules"
+  default_prompt: "Use $ai-collaboration-workflow and $voice-keyboard-firmware for this repository task."
 
 policy:
   allow_implicit_invocation: true

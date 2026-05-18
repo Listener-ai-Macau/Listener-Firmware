@@ -558,32 +558,31 @@ async def play_and_capture_serial_toggle_after_cancel_probe(
             await serial_monitor.wait_for_markers(READY_MARKERS, timeout_seconds=15)
         ser.reset_input_buffer()
 
-        send_toggle(ser)
-        cancel_deadline = asyncio.get_running_loop().time() + cancel_hold_seconds
-        while asyncio.get_running_loop().time() < cancel_deadline:
-            serial_monitor.poll_lines()
-            await asyncio.sleep(0.05)
-
-        send_cancel(ser)
-        post_cancel_deadline = asyncio.get_running_loop().time() + cancel_post_wait_seconds
-        while asyncio.get_running_loop().time() < post_cancel_deadline:
-            serial_monitor.poll_lines()
-            await asyncio.sleep(0.05)
-
-        probe_log = serial_monitor.full_text()
-        cancel_requested = "record session cancel requested" in probe_log
-        cancel_completed = (
-            "record session canceled" in probe_log
-            or "recording cancel source=" in probe_log
-            or "record session canceled before activation" in probe_log
+        cancel_args = make_capture_args(
+            port=port,
+            device_name=device_name,
+            capture_seconds=max(1, int(math.ceil(cancel_hold_seconds))),
+            capture_seconds_per_session=[max(1, int(math.ceil(cancel_hold_seconds)))],
+            session_pre_start_delay_seconds=[0.0],
+            max_sessions=1,
+            timeout_seconds=max(30, int(cancel_hold_seconds + cancel_post_wait_seconds + 20)),
+            reset_before_capture=False,
+            output_dir=output_dir,
+            serial_log_path=serial_log_path,
         )
+        cancel_args.session_cancel_after_start_seconds = cancel_hold_seconds
+        cancel_args.session_cancel_post_wait_seconds = cancel_post_wait_seconds
+        cancel_summaries = await run_ble_capture(cancel_args, ser, serial_monitor)
+        cancel_probe_summary = cancel_summaries[-1] if cancel_summaries else {}
+        cancel_requested = bool(cancel_probe_summary.get("cancel_requested"))
+        cancel_completed = bool(cancel_probe_summary.get("cancel_completed"))
         if not cancel_requested or not cancel_completed:
             return {
                 "result": "fail",
                 "failure_reason": "short_cancel_probe_failed",
                 "cancel_requested": cancel_requested,
                 "cancel_completed": cancel_completed,
-                "serial_log": probe_log,
+                "serial_log": serial_monitor.full_text(),
             }
 
         winsound.PlaySound(str(playback_source_wav), winsound.SND_FILENAME | winsound.SND_ASYNC)

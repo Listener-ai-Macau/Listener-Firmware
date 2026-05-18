@@ -175,7 +175,7 @@ nimble_hid_gap_event(struct ble_gap_event *event, void *arg)
 
         struct ble_gap_upd_params audio_params = {
             .itvl_min = 6,
-            .itvl_max = 12,
+            .itvl_max = 6,
             .latency = 0,
             .supervision_timeout = 800,
             .min_ce_len = 0,

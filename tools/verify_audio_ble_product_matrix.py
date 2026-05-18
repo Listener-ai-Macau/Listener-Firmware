@@ -1,5 +1,6 @@
 import argparse
 import asyncio
+import json
 import pathlib
 import random
 import subprocess
@@ -23,6 +24,7 @@ MANUAL_OR_EXTERNAL_CASES = {
     "P13": "requires backend integration endpoint",
 }
 MATRIX_ARTIFACT_DIR = pathlib.Path("tests") / "artifacts" / "ble_product_matrix"
+P5_RECONNECT_MIN_PRE_START_DELAY_SECONDS = 12.0
 
 
 def parse_case_list(raw: str) -> list[str]:
@@ -78,6 +80,12 @@ def parse_args():
     parser.add_argument("--short-cancel-hold-max-seconds", type=float, default=None)
     parser.add_argument("--restart-pan-adapter", action="store_true")
     parser.add_argument("--skip-preflight-recover", action="store_true")
+    parser.add_argument("--fail-on-warning", action="store_true")
+    parser.add_argument(
+        "--matrix-result-json",
+        default=str(MATRIX_ARTIFACT_DIR / "matrix_result.json"),
+        help="Write structured matrix result JSON for CI/executor consumption.",
+    )
     parser.add_argument(
         "--preflight-recover-mode",
         choices=["per-case", "initial-only", "none"],
@@ -301,11 +309,61 @@ def print_case_header(case_id: str, description: str, budget_seconds: int) -> No
     print(f"budget_seconds={budget_seconds}", flush=True)
 
 
-def print_summary(case_id: str, result: str, reason: str = "") -> dict[str, str]:
+def compact_case_details(summary: dict[str, object]) -> dict[str, object]:
+    keys = (
+        "expected_packet_count",
+        "received_packet_count",
+        "missing_packet_count",
+        "packet_loss_ratio",
+        "received_pcm_bytes",
+        "duration_seconds",
+        "best_corr",
+        "recorded_peak",
+        "active_frame_count",
+        "transport_result",
+        "transport_failure_reason",
+        "transport_warning_reason",
+        "analysis_result",
+        "analysis_failure_reason",
+        "wav_path",
+        "serial_log_path",
+        "source_wav",
+        "pre_start_delay_seconds",
+        "host_recovery_completed",
+        "settle_window_seconds",
+        "capture_phase",
+        "baseline_result",
+        "baseline_missing_packet_count",
+        "baseline_packet_loss_ratio",
+    )
+    return {key: summary[key] for key in keys if key in summary}
+
+
+def case_artifact_manifest(case_id: str) -> dict[str, object]:
+    output_dir = case_output_dir(case_id)
+    return {
+        "output_dir": str(output_dir),
+        "serial_logs": [str(path) for path in sorted(output_dir.glob("*.log"))],
+        "wav_files": [str(path) for path in sorted(output_dir.glob("*.wav"))],
+    }
+
+
+def print_summary(
+    case_id: str,
+    result: str,
+    reason: str = "",
+    details: dict[str, object] | None = None,
+) -> dict[str, object]:
     print(f"case_id={case_id}", flush=True)
     print(f"case_result={result}", flush=True)
     print(f"case_reason={reason}", flush=True)
-    return {"case_id": case_id, "result": result, "reason": reason}
+    return {
+        "case_id": case_id,
+        "result": result,
+        "reason": reason,
+        "details": details or {},
+        "artifacts": case_artifact_manifest(case_id),
+    }
 
 
 def preflight_recover_host(args, case_id: str) -> None:
@@ -338,12 +396,39 @@ def resolve_case_execution_order(args) -> list[str]:
     return cases
 
 
-def ensure_pass(case_id: str, summary: dict[str, object]) -> dict[str, str]:
+def ensure_pass(case_id: str, summary: dict[str, object]) -> dict[str, object]:
     result = str(summary["result"])
     reason = str(summary.get("failure_reason") or summary.get("warning_reason") or "")
     if result != "pass":
-        return print_summary(case_id, result, reason)
-    return print_summary(case_id, "pass", "")
+        return print_summary(case_id, result, reason, compact_case_details(summary))
+    return print_summary(case_id, "pass", "", compact_case_details(summary))
+
+
+def write_matrix_result_json(
+    *,
+    path: str,
+    results: list[dict[str, object]],
+    failed: list[dict[str, object]],
+    warnings: list[dict[str, object]],
+    skipped: list[dict[str, object]],
+    fail_on_warning: bool,
+) -> pathlib.Path:
+    output_path = pathlib.Path(path)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    payload = {
+        "status": "FAIL" if failed or (fail_on_warning and warnings) else "PASS",
+        "fail_on_warning": bool(fail_on_warning),
+        "matrix_total": len(results),
+        "matrix_failed": len(failed),
+        "matrix_warning": len(warnings),
+        "matrix_skipped": len(skipped),
+        "failed_cases": [str(item["case_id"]) for item in failed],
+        "warning_cases": [str(item["case_id"]) for item in warnings],
+        "skipped_cases": [str(item["case_id"]) for item in skipped],
+        "cases": results,
+    }
+    output_path.write_text(json.dumps(payload, indent=2, ensure_ascii=False), encoding="utf-8")
+    return output_path
 
 
 async def run_p1(args) -> dict[str, str]:
@@ -480,15 +565,25 @@ async def run_p5(args) -> dict[str, str]:
         serial_log_path=case_serial_log_path("P5", "baseline"),
     )
     if baseline["result"] != "pass":
-        return print_summary("P5", "fail", "baseline_failed")
+        return print_summary("P5", "fail", "baseline_failed", compact_case_details(baseline))
     restart_windows_bluetooth(restart_pan_adapter=args.restart_pan_adapter)
     recover_ble_hid_host(args.device_name)
+    print("p5_host_recovery_completed=1", flush=True)
     reconnect_capture_seconds = choose_duration(args, window=args.short_capture_window, label="p5_reconnect")
     reconnect_pre_start_delay_seconds = choose_delay_seconds(
         args,
         window=args.pre_start_delay_window,
         label="p5_reconnect_pre_start",
     )
+    if reconnect_pre_start_delay_seconds < P5_RECONNECT_MIN_PRE_START_DELAY_SECONDS:
+        print(
+            "p5_reconnect_pre_start_delay_floor_seconds="
+            f"{P5_RECONNECT_MIN_PRE_START_DELAY_SECONDS:.2f}",
+            flush=True,
+        )
+        reconnect_pre_start_delay_seconds = P5_RECONNECT_MIN_PRE_START_DELAY_SECONDS
+    print(f"p5_settle_window_seconds={reconnect_pre_start_delay_seconds:.2f}", flush=True)
+    print("p5_capture_phase=start", flush=True)
     summary = await play_and_capture_serial_toggle(
         port=args.port,
         device_name=args.device_name,
@@ -501,6 +596,12 @@ async def run_p5(args) -> dict[str, str]:
         output_dir=case_output_dir("P5"),
         serial_log_path=case_serial_log_path("P5", "reconnect"),
     )
+    summary["host_recovery_completed"] = True
+    summary["settle_window_seconds"] = float(reconnect_pre_start_delay_seconds)
+    summary["capture_phase"] = "reconnect"
+    summary["baseline_result"] = str(baseline.get("result", ""))
+    summary["baseline_missing_packet_count"] = baseline.get("missing_packet_count")
+    summary["baseline_packet_loss_ratio"] = baseline.get("packet_loss_ratio")
     return ensure_pass("P5", summary)
 
 
@@ -820,10 +921,23 @@ async def main_async(args) -> None:
     print(f"matrix_failed={len(failed)}", flush=True)
     print(f"matrix_warning={len(warnings)}", flush=True)
     print(f"matrix_skipped={len(skipped)}", flush=True)
+    matrix_result_path = write_matrix_result_json(
+        path=args.matrix_result_json,
+        results=results,
+        failed=failed,
+        warnings=warnings,
+        skipped=skipped,
+        fail_on_warning=args.fail_on_warning,
+    )
+    print(f"matrix_result_json={matrix_result_path}", flush=True)
     if failed:
         failed_ids = ",".join(item["case_id"] for item in failed)
         print(f"matrix_failed_cases={failed_ids}", flush=True)
         raise RuntimeError(f"verify_audio_ble_product_matrix: failed cases: {failed_ids}")
+    if args.fail_on_warning and warnings:
+        warning_ids = ",".join(item["case_id"] for item in warnings)
+        print(f"matrix_warning_cases={warning_ids}", flush=True)
+        raise RuntimeError(f"verify_audio_ble_product_matrix: warning cases: {warning_ids}")
 
 
 def main() -> None:

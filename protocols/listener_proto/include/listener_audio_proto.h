@@ -21,6 +21,18 @@ typedef enum {
     LISTENER_AUDIO_PACKET_TYPE_SESSION_ERROR = 5,
 } listener_audio_packet_type_t;
 
+typedef enum {
+    LISTENER_AUDIO_SESSION_ERROR_NONE = 0,
+    LISTENER_AUDIO_SESSION_ERROR_QUEUE_FULL = 1,
+    LISTENER_AUDIO_SESSION_ERROR_NOTIFY_TIMEOUT = 2,
+    LISTENER_AUDIO_SESSION_ERROR_LINK_LOST = 3,
+    LISTENER_AUDIO_SESSION_ERROR_SEQUENCE_OVERFLOW = 4,
+    LISTENER_AUDIO_SESSION_ERROR_INVALID_STATE = 5,
+    LISTENER_AUDIO_SESSION_ERROR_NO_MEMORY = 6,
+    LISTENER_AUDIO_SESSION_ERROR_PACKET_TOO_LARGE = 7,
+    LISTENER_AUDIO_SESSION_ERROR_TRANSPORT = 8,
+} listener_audio_session_error_t;
+
 /*
  * Phase-1 continuous notify streaming keeps the legacy wire layout stable while
  * reinterpreting the old chunk fields as packet-sequence metadata.
