@@ -1,6 +1,8 @@
 import argparse
 import asyncio
+import base64
 import hashlib
+import json
 import math
 import pathlib
 import random
@@ -37,6 +39,105 @@ FAIL_PACKET_LOSS_RATIO = 0.12
 ANALYSIS_MIN_CORR = 0.20
 ANALYSIS_MIN_PEAK = 450
 ANALYSIS_MIN_ACTIVE_FRAMES = 5
+TTS_CACHE_DIR = TRANSIENT_SOURCE_DIR / "tts_cache"
+
+CHINESE_SENTENCE_POOL = (
+    "明天下午两点提醒我检查蓝牙音频丢包率。",
+    "请帮我打开项目文档并将字体设置为宋体十四号。",
+    "今天的会议纪要已经整理好了发到群里了。",
+    "把这段文字翻译成英文然后保存到桌面文件夹。",
+    "新建一个空白文档命名为二零二六年终总结。",
+    "帮我查一下从北京到上海的高铁票最早的几班。",
+    "请注意会议室的投影仪需要提前十五分钟调试。",
+    "将选中内容复制到剪贴板然后粘贴到新邮件正文。",
+    "今天天气不错适合出去走走散散心。",
+    "请把这份报告的第三页到第五页打印出来。",
+    "下次产品评审会议安排在下周三上午十点。",
+    "帮我回复邮件说已经收到附件并开始处理。",
+    "关闭所有打开的窗口然后重启电脑。",
+    "请在表格最后一行插入汇总公式并设置条件格式。",
+    "昨天晚上的自动化测试结果全部通过了没有失败用例。",
+    "调大音量到百分之八十然后播放下一首歌曲。",
+    "将这个单元格的数值保留两位小数并居中对齐。",
+    "打开系统设置找到蓝牙选项并连接新设备。",
+    "今天的代码审查发现了三个需要修复的问题。",
+    "请将这段话中的所有数字替换为中文大写。",
+    "上个月的销售额同比增长了百分之十五点三。",
+    "帮我预约下周一下午三点到四点的会议室。",
+    "先把数据导出为逗号分隔格式再导入数据库。",
+    "在光标位置插入当前日期和时间戳。",
+)
+
+
+def pick_chinese_sentence(seed: int) -> str:
+    return CHINESE_SENTENCE_POOL[seed % len(CHINESE_SENTENCE_POOL)]
+
+
+def generate_tts_wav(path: pathlib.Path, text: str) -> str:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    script = f"""
+$ErrorActionPreference = "Stop"
+Add-Type -AssemblyName System.Speech
+$path = {json.dumps(str(path), ensure_ascii=False)}
+$text = {json.dumps(text, ensure_ascii=False)}
+$synth = [System.Speech.Synthesis.SpeechSynthesizer]::new()
+try {{
+    $zhVoice = $synth.GetInstalledVoices() |
+        Where-Object {{ $_.VoiceInfo.Culture.Name -like "zh-*" }} |
+        Select-Object -First 1
+    if ($null -ne $zhVoice) {{
+        $synth.SelectVoice($zhVoice.VoiceInfo.Name)
+    }}
+    $format = [System.Speech.AudioFormat.SpeechAudioFormatInfo]::new(
+        16000,
+        [System.Speech.AudioFormat.AudioBitsPerSample]::Sixteen,
+        [System.Speech.AudioFormat.AudioChannel]::Mono
+    )
+    $synth.SetOutputToWaveFile($path, $format)
+    $synth.Speak($text) | Out-Null
+    Write-Output $synth.Voice.Name
+}} finally {{
+    $synth.Dispose()
+}}
+"""
+    completed = subprocess.run(
+        [
+            "powershell", "-NoProfile", "-ExecutionPolicy", "Bypass",
+            "-EncodedCommand",
+            base64.b64encode(script.encode("utf-16le")).decode("ascii"),
+        ],
+        check=True, capture_output=True,
+        encoding="utf-8", errors="replace", text=True,
+    )
+    voice_lines = [line.strip() for line in completed.stdout.splitlines() if line.strip()]
+    return voice_lines[-1] if voice_lines else ""
+
+
+def make_loop_wav(source_wav: pathlib.Path, loop_wav: pathlib.Path, loop_seconds: int) -> None:
+    frames = read_wav_frames(source_wav)
+    silence = [0] * int(PCM_SAMPLE_RATE * 0.25)
+    cycle = frames + silence
+    target_frames = max(len(cycle), int(PCM_SAMPLE_RATE * loop_seconds))
+    repeat_count = int(math.ceil(target_frames / len(cycle)))
+    loop_frames = (cycle * repeat_count)[:target_frames]
+    loop_wav.parent.mkdir(parents=True, exist_ok=True)
+    with wave.open(str(loop_wav), "wb") as wav_file:
+        wav_file.setnchannels(PCM_CHANNELS)
+        wav_file.setsampwidth(PCM_WIDTH_BYTES)
+        wav_file.setframerate(PCM_SAMPLE_RATE)
+        wav_file.writeframes(struct.pack("<" + "h" * len(loop_frames), *loop_frames))
+
+
+def generate_source_wav_tts(
+    path: pathlib.Path, seconds: int, seed: int | None = None,
+) -> tuple[int, str]:
+    source_seed = int(seed) if seed is not None else resolve_source_seed(path, seconds)
+    text = pick_chinese_sentence(source_seed)
+    tts_raw = TTS_CACHE_DIR / f"tts_seed_{source_seed}_16k_mono.wav"
+    if not tts_raw.exists():
+        generate_tts_wav(tts_raw, text)
+    make_loop_wav(tts_raw, path, seconds)
+    return source_seed, text
 
 
 def add_common_capture_args(parser: argparse.ArgumentParser, capture_seconds_default: int) -> None:
@@ -469,8 +570,8 @@ async def play_and_capture_serial_toggle(
         int(math.ceil(float(capture_seconds) + max(2.0, float(pre_start_delay_seconds) + 2.0))),
     )
     source_seed = resolve_source_seed(analysis_source_wav, capture_seconds)
-    generate_source_wav(playback_source_wav, playback_length_seconds, seed=source_seed)
-    generate_source_wav(analysis_source_wav, capture_seconds, seed=source_seed)
+    tts_seed, tts_text = generate_source_wav_tts(playback_source_wav, playback_length_seconds, seed=source_seed)
+    generate_source_wav_tts(analysis_source_wav, capture_seconds, seed=source_seed)
     winsound.PlaySound(str(playback_source_wav), winsound.SND_FILENAME | winsound.SND_ASYNC)
     try:
         capture_args = make_capture_args(
@@ -501,8 +602,9 @@ async def play_and_capture_serial_toggle(
     summary.update(validation)
     summary.update(analysis)
     summary["source_wav"] = str(analysis_source_wav)
-    summary["source_profile"] = "speech_like_loop"
-    summary["source_seed"] = source_seed
+    summary["source_profile"] = "chinese_tts"
+    summary["source_seed"] = tts_seed
+    summary["source_text"] = tts_text
     summary["pre_start_delay_seconds"] = float(pre_start_delay_seconds)
     summary["result"] = "pass"
     summary["failure_reason"] = ""
@@ -546,8 +648,8 @@ async def play_and_capture_serial_toggle_after_cancel_probe(
         int(math.ceil(float(capture_seconds) + max(2.0, float(pre_start_delay_seconds) + 2.0))),
     )
     source_seed = resolve_source_seed(analysis_source_wav, capture_seconds)
-    generate_source_wav(playback_source_wav, playback_length_seconds, seed=source_seed)
-    generate_source_wav(analysis_source_wav, capture_seconds, seed=source_seed)
+    tts_seed, tts_text = generate_source_wav_tts(playback_source_wav, playback_length_seconds, seed=source_seed)
+    generate_source_wav_tts(analysis_source_wav, capture_seconds, seed=source_seed)
 
     with open_serial_with_retry(port, 115200, timeout=0.05) as ser:
         ser.setDTR(False)
@@ -617,8 +719,9 @@ async def play_and_capture_serial_toggle_after_cancel_probe(
     summary.update(validation)
     summary.update(analysis)
     summary["source_wav"] = str(analysis_source_wav)
-    summary["source_profile"] = "speech_like_loop"
-    summary["source_seed"] = source_seed
+    summary["source_profile"] = "chinese_tts"
+    summary["source_seed"] = tts_seed
+    summary["source_text"] = tts_text
     summary["pre_start_delay_seconds"] = float(pre_start_delay_seconds)
     summary["cancel_hold_seconds"] = float(cancel_hold_seconds)
     summary["cancel_requested"] = cancel_requested
@@ -679,7 +782,7 @@ async def play_and_capture_serial_toggle_multi_session(
     total_capture_seconds = sum(effective_capture_seconds_per_session)
     total_pre_start_delay_seconds = sum(effective_pre_start_delay_seconds)
     source_seed = resolve_source_seed(source_wav, int(capture_seconds))
-    generate_source_wav(
+    tts_seed, tts_text = generate_source_wav_tts(
         source_wav,
         max(
             max(effective_capture_seconds_per_session),
@@ -725,7 +828,7 @@ async def play_and_capture_serial_toggle_multi_session(
                 scenario,
                 f"{source_label}_reference_{target_capture_seconds}s",
             )
-            generate_source_wav(reference_wav, target_capture_seconds, seed=source_seed)
+            generate_source_wav_tts(reference_wav, target_capture_seconds, seed=source_seed)
             reference_wav_cache[target_capture_seconds] = reference_wav
 
         analysis = analyze_recording(reference_wav, recorded_wav)
@@ -733,8 +836,9 @@ async def play_and_capture_serial_toggle_multi_session(
         summary.update(validation)
         summary.update(analysis)
         summary["source_wav"] = str(reference_wav)
-        summary["source_profile"] = "speech_like_loop"
-        summary["source_seed"] = source_seed
+        summary["source_profile"] = "chinese_tts"
+        summary["source_seed"] = tts_seed
+        summary["source_text"] = tts_text
         summary["result"] = "pass"
         summary["failure_reason"] = ""
         summary["warning_reason"] = ""

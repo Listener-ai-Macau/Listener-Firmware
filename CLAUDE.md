@@ -173,7 +173,7 @@ pwsh -NoProfile -File ./tools/esp_idf_ci.ps1 help
 - 参考文档（步骤定义、验收标准）在 `C:\Users\Billy\Desktop\listener\docs\plans\*.md`
 - 仓库级文档（features、fixes）继续放各自仓库 `!docs/`
 
-Codex 和 Tai 是同一个 CLI 工具的不同 profile。各自在独立 worktree 中工作，Claude 审查/测试/精简/汇报。
+Codex 和 Tai 是同一个 CLI 工具的不同 profile。默认在主仓库各自开 branch 工作，文件可以重叠；冲突在 merge/rebase 时解决。Claude 审查/测试/精简/汇报。
 
 - **Claude** 拆步骤 → **人类** 分工 → **干活者** 认领标记做 → **Claude** 审查汇报
 
@@ -211,14 +211,21 @@ python .\tools\capture_audio_ble_wav.py --port COM3 --capture-seconds 5
 # 物理 KEY1 音频采集
 python .\tools\capture_audio_ble_wav.py --port COM3 --capture-seconds 5 --trigger-mode physical-key --no-reset-before-capture
 
-# BLE 音频产品矩阵验证
-python .\tools\verify_audio_ble_product_matrix.py --port COM3 --capture-seconds 5 --long-capture-seconds 30 --round-count 3 --idle-seconds 30 --soak-round-count 5
+# BLE 音频产品矩阵验证（A=自动, H=手动）
+python .\tools\verify_audio_ble_product_matrix.py --port COM3 --capture-seconds 5 --long-capture-seconds 30 --round-count 3 --idle-seconds 30
 
 # 模拟真实使用场景
 python .\tools\verify_audio_ble_product_matrix.py --port COM3 --realistic-usage-profile --random-seed 20260525
 
-# P1 标准 BLE 音频回归
-python .\tools\verify_audio_ble_upload_end_to_end.py --port COM3 --capture-seconds 5 --no-reset-before-capture
+# 只跑特定 case
+python .\tools\verify_audio_ble_product_matrix.py --port COM3 --cases A1,A3,A6
+
+# 矩阵 case 说明（按 Bluetooth SIG 分类顺序）
+# A1: GAP基线连接 | A2: GATT连续传输 | A3: GAP断连重连 | A4: GAP多轮独立重连
+# A5: 主机端恢复 | A6: 空闲后首录 | A7: 取消+恢复 | A8: 静音负向
+# A9: 快速启停压力 | A10: 并发BLE客户端
+# H1: 物理KEY1（半自动，等按钮后自动继续）
+# H2: RF干扰/距离 | H3: 后端ASR集成
 ```
 
 ## 交付物
