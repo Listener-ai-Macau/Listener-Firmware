@@ -1,6 +1,7 @@
 #include "audio_capture.h"
 #include "audio_capture_platform.h"
 #include "ble_audio_stream.h"
+#include "board_pins.h"
 #include "listener_audio_proto.h"
 
 #include <assert.h>
@@ -25,12 +26,6 @@
 #define AUDIO_CAPTURE_I2C_PORT          (0)
 #define AUDIO_CAPTURE_I2C_SDA_IO        (4)
 #define AUDIO_CAPTURE_I2C_SCL_IO        (5)
-
-#define AUDIO_CAPTURE_I2S_PORT          (0)
-#define AUDIO_CAPTURE_I2S_MCLK_IO       (45)
-#define AUDIO_CAPTURE_I2S_BCLK_IO       (39)
-#define AUDIO_CAPTURE_I2S_WS_IO         (41)
-#define AUDIO_CAPTURE_I2S_DIN_IO        (40)
 
 #define AUDIO_CAPTURE_SAMPLE_RATE_HZ    (16000)
 #define AUDIO_CAPTURE_MCLK_MULTIPLE     (384)
@@ -540,7 +535,7 @@ static void audio_capture_task(void *arg)
 
 static esp_err_t audio_capture_i2s_init(void)
 {
-    i2s_chan_config_t chan_cfg = I2S_CHANNEL_DEFAULT_CONFIG(AUDIO_CAPTURE_I2S_PORT, I2S_ROLE_MASTER);
+    i2s_chan_config_t chan_cfg = I2S_CHANNEL_DEFAULT_CONFIG(BOARD_PINS_I2S_PORT, I2S_ROLE_MASTER);
     chan_cfg.auto_clear = true;
     ESP_RETURN_ON_ERROR(i2s_new_channel(&chan_cfg, NULL, &s_i2s_rx_handle), TAG, "create i2s channel failed");
 
@@ -548,11 +543,11 @@ static esp_err_t audio_capture_i2s_init(void)
         .clk_cfg = I2S_STD_CLK_DEFAULT_CONFIG(AUDIO_CAPTURE_SAMPLE_RATE_HZ),
         .slot_cfg = I2S_STD_PHILIPS_SLOT_DEFAULT_CONFIG(I2S_DATA_BIT_WIDTH_16BIT, I2S_SLOT_MODE_MONO),
         .gpio_cfg = {
-            .mclk = AUDIO_CAPTURE_I2S_MCLK_IO,
-            .bclk = AUDIO_CAPTURE_I2S_BCLK_IO,
-            .ws = AUDIO_CAPTURE_I2S_WS_IO,
-            .dout = -1,
-            .din = AUDIO_CAPTURE_I2S_DIN_IO,
+            .mclk = BOARD_PINS_I2S_MCLK_IO,
+            .bclk = BOARD_PINS_I2S_BCLK_IO,
+            .ws = BOARD_PINS_I2S_WS_IO,
+            .dout = BOARD_PINS_I2S_DOUT_IO,
+            .din = BOARD_PINS_I2S_DIN_IO,
             .invert_flags = {
                 .mclk_inv = false,
                 .bclk_inv = false,
@@ -591,7 +586,7 @@ static esp_err_t audio_capture_codec_init(void)
     ESP_RETURN_ON_FALSE(ctrl_if != NULL, ESP_FAIL, TAG, "create codec i2c ctrl failed");
 
     audio_codec_i2s_cfg_t i2s_cfg = {
-        .port = AUDIO_CAPTURE_I2S_PORT,
+        .port = BOARD_PINS_I2S_PORT,
         .rx_handle = s_i2s_rx_handle,
         .tx_handle = NULL,
     };

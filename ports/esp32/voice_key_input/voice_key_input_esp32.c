@@ -4,36 +4,50 @@
 #include <stdint.h>
 #include <inttypes.h>
 
+#ifndef VOICE_KEY_INPUT_ENABLE_LEGACY_EXPANDER
+#define VOICE_KEY_INPUT_ENABLE_LEGACY_EXPANDER 0
+#endif
+
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
 #include "freertos/task.h"
 #include "driver/gpio.h"
+#if VOICE_KEY_INPUT_ENABLE_LEGACY_EXPANDER
 #include "driver/i2c_master.h"
+#endif
 #include "esp_check.h"
+#if VOICE_KEY_INPUT_ENABLE_LEGACY_EXPANDER
 #include "esp_io_expander.h"
 #include "esp_io_expander_tca95xx_16bit.h"
+#endif
 #include "esp_log.h"
 
+#if VOICE_KEY_INPUT_ENABLE_LEGACY_EXPANDER
 #include "audio_capture_platform.h"
+#endif
+#include "board_pins.h"
 
+#if VOICE_KEY_INPUT_ENABLE_LEGACY_EXPANDER
 #define VOICE_KEY_INPUT_ALT_I2C_PORT   (1)
 #define VOICE_KEY_INPUT_ALT_I2C_SDA_IO (38)
 #define VOICE_KEY_INPUT_ALT_I2C_SCL_IO (48)
 #define VOICE_KEY_INPUT_FALLBACK_SDA_IO (47)
 #define VOICE_KEY_INPUT_FALLBACK_SCL_IO (48)
 #define VOICE_KEY_INPUT_INT_IO         (46)
-#define VOICE_KEY_INPUT_DIRECT_GPIO    (GPIO_NUM_0)
 #define VOICE_KEY_INPUT_KEY1_MASK_IO0_4 (1U << 4)
 #define VOICE_KEY_INPUT_KEY1_MASK_IO0_5 (1U << 5)
 #define VOICE_KEY_INPUT_EXPANDER_KEY_MASKS (VOICE_KEY_INPUT_KEY1_MASK_IO0_4 | VOICE_KEY_INPUT_KEY1_MASK_IO0_5)
-#define VOICE_KEY_INPUT_POLL_MS        (20)
-#define VOICE_KEY_INPUT_DEBOUNCE_THRESHOLD (3)
-#define VOICE_KEY_INPUT_EVENT_QUEUE_LENGTH (8)
 #define VOICE_KEY_INPUT_I2C_TIMEOUT_MS (100)
 #define VOICE_KEY_INPUT_PROBE_RETRY_COUNT (4)
 #define VOICE_KEY_INPUT_PROBE_RETRY_DELAY_MS (80)
 #define VOICE_KEY_INPUT_ADDR           ESP_IO_EXPANDER_I2C_TCA9555_ADDRESS_000
 #define VOICE_KEY_INPUT_ALL_MASK       (0xFFFFU)
+#endif
+
+#define VOICE_KEY_INPUT_DIRECT_GPIO    BOARD_PINS_KEY1_IO
+#define VOICE_KEY_INPUT_POLL_MS        (20)
+#define VOICE_KEY_INPUT_DEBOUNCE_THRESHOLD (3)
+#define VOICE_KEY_INPUT_EVENT_QUEUE_LENGTH (8)
 
 static const char *TAG = "voice_key_input";
 
@@ -47,6 +61,7 @@ typedef struct {
     bool pressed;
 } voice_key_button_state_t;
 
+#if VOICE_KEY_INPUT_ENABLE_LEGACY_EXPANDER
 typedef struct {
     const char *label;
     bool use_shared_audio_bus;
@@ -54,12 +69,16 @@ typedef struct {
     gpio_num_t sda_io;
     gpio_num_t scl_io;
 } voice_key_input_bus_candidate_t;
+#endif
 
 static bool s_started;
+#if VOICE_KEY_INPUT_ENABLE_LEGACY_EXPANDER
 static i2c_master_bus_handle_t s_i2c_bus_handle;
 static esp_io_expander_handle_t s_io_expander;
+#endif
 static TaskHandle_t s_poll_task_handle;
 static SemaphoreHandle_t s_toggle_event_sem;
+#if VOICE_KEY_INPUT_ENABLE_LEGACY_EXPANDER
 static bool s_prev_input_valid;
 static uint32_t s_prev_input_levels;
 static bool s_owns_i2c_bus;
@@ -71,10 +90,14 @@ static voice_key_button_state_t s_expander_io4_state = {
 static voice_key_button_state_t s_expander_io5_state = {
     .label = "xl9555.io0_5",
 };
+#endif
 static voice_key_button_state_t s_direct_gpio_state = {
-    .label = "direct.gpio0",
+    .label = "gpio45.key1",
 };
 
+#if VOICE_KEY_INPUT_ENABLE_LEGACY_EXPANDER
+/* Legacy board compatibility only: old hardware used a TCA9555/XL9555 expander
+ * and BOOT GPIO fallback. Schematic V1 uses BOARD_PINS_KEY1_IO directly. */
 static const voice_key_input_bus_candidate_t s_bus_candidates[] = {
     {
         .label = "shared_sda1_scl1",
@@ -98,6 +121,7 @@ static const voice_key_input_bus_candidate_t s_bus_candidates[] = {
         .scl_io = VOICE_KEY_INPUT_FALLBACK_SCL_IO,
     },
 };
+#endif
 
 static void voice_key_input_record_toggle_event(const char *source)
 {
@@ -161,6 +185,7 @@ static void voice_key_input_handle_button_sample(voice_key_button_state_t *butto
     button->pressed = pressed;
 }
 
+#if VOICE_KEY_INPUT_ENABLE_LEGACY_EXPANDER
 static esp_err_t voice_key_input_probe_candidate(
     const voice_key_input_bus_candidate_t *candidate,
     i2c_master_bus_handle_t *bus_handle_out,
@@ -283,6 +308,7 @@ static esp_err_t voice_key_input_expander_init(void)
     s_expander_available = true;
     return ESP_OK;
 }
+#endif
 
 static esp_err_t voice_key_input_direct_gpio_init(void)
 {
@@ -302,6 +328,7 @@ static void voice_key_input_poll_task(void *parameter)
     (void)parameter;
 
     while (1) {
+#if VOICE_KEY_INPUT_ENABLE_LEGACY_EXPANDER
         if (s_io_expander != NULL) {
             uint32_t pin_levels = 0;
             esp_err_t ret = esp_io_expander_get_level(s_io_expander, VOICE_KEY_INPUT_ALL_MASK, &pin_levels);
@@ -331,6 +358,7 @@ static void voice_key_input_poll_task(void *parameter)
                 ESP_LOGW(TAG, "key1 read failed: %s", esp_err_to_name(ret));
             }
         }
+#endif
 
         voice_key_input_handle_button_sample(
             &s_direct_gpio_state,
@@ -349,6 +377,7 @@ esp_err_t voice_key_input_start(void)
     s_toggle_event_sem = xSemaphoreCreateCounting(VOICE_KEY_INPUT_EVENT_QUEUE_LENGTH, 0);
     ESP_RETURN_ON_FALSE(s_toggle_event_sem != NULL, ESP_ERR_NO_MEM, TAG, "voice key event queue create failed");
 
+#if VOICE_KEY_INPUT_ENABLE_LEGACY_EXPANDER
     esp_err_t expander_ret = voice_key_input_expander_init();
     if (expander_ret != ESP_OK) {
         ESP_LOGW(
@@ -361,6 +390,7 @@ esp_err_t voice_key_input_start(void)
         s_io_expander = NULL;
         s_expander_available = false;
     }
+#endif
     ESP_RETURN_ON_ERROR(voice_key_input_direct_gpio_init(), TAG, "direct voice key init failed");
 
     BaseType_t task_ok = xTaskCreate(
@@ -375,10 +405,7 @@ esp_err_t voice_key_input_start(void)
     s_started = true;
     ESP_LOGI(
         TAG,
-        "voice key ready: expander=%s candidates=xl9555.io0_4/xl9555.io0_5 + direct.gpio0 bus=%s int_gpio=%d poll_ms=%d debounce_samples=%d",
-        s_expander_available ? "ready" : "fallback_only",
-        s_selected_bus_label != NULL ? s_selected_bus_label : "unknown",
-        VOICE_KEY_INPUT_INT_IO,
+        "voice key ready: source=gpio45 active_low=1 poll_ms=%d debounce_samples=%d",
         VOICE_KEY_INPUT_POLL_MS,
         VOICE_KEY_INPUT_DEBOUNCE_THRESHOLD);
     return ESP_OK;
