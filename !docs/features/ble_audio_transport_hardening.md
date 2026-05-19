@@ -355,7 +355,7 @@ python .\tools\verify_audio_ble_product_matrix.py --port COM3 --cases P1,P7,P8,P
 
 - 静态验收：`PASS`
   - `python -m compileall -q tools`
-  - `git diff --check -- ports/esp32/ble_audio_stream/ble_audio_stream_esp32.c tools/capture_audio_ble_wav.py ports/esp32/ble_hid_gap/ble_hid_gap_esp32.c sdkconfig.defaults sdkconfig.defaults.esp32s3 sdkconfig !docs/fixes/ble_audio_transport_hardening.md`
+  - Historical command now maps to archived feature history: `!docs/archive/ble_audio_transport_hardening_history.md`
 - 固件构建：`PASS`
   - `powershell -ExecutionPolicy Bypass -File .\tools\test.ps1`
   - `voice-keyboard-firmware.bin binary size 0x9c3b0 bytes`，app partition 余量 `0xdac50 bytes (58%)`

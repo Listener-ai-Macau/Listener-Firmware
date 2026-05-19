@@ -8,15 +8,16 @@ description: Firmware repo adapter for ESP32-S3 BLE HID keyboard and BLE audio c
 ## Start
 
 1. Confirm identity from launcher/env (`AI_AGENT_ID`, `TAI_AGENT_ID`) and current branch.
-2. Read `!docs/ai_collaboration_protocol.md`.
+2. Read shared protocol `C:\Users\Billy\Desktop\listener\docs\ai_collaboration_protocol.md`. If a repo-local protocol copy exists, treat it as a mirror only; shared protocol wins.
 3. Read shared status: `C:\Users\Billy\Desktop\listener\docs\plans\*_status.json`.
 4. If using existing capabilities, read `!docs/features/index.json` first, then only the needed feature card.
 
 ## Hard Gates
 
 - Before coding, confirm the step is not occupied, then claim it:
-  `powershell -File C:\Users\Billy\Desktop\listener\voice-keyboard-firmware\tools\update_plan_status.ps1 -Plan <plan_id> -StepId <step_id> -Status in_progress -Assignee <you>`
-- **Branch workflow**: `master` → `feature/<plan>` → `ai/<agent>-<step>`. Create your step branch FROM the feature branch, merge back after each step, delete step branch. Do not create worktrees.
+  `powershell -File C:\Users\Billy\Desktop\listener\voice-keyboard-firmware\tools\update_plan_status.ps1 -Plan <task_slug> -StepId <step_id> -Status in_progress -Assignee <you>`
+- **Task naming**: new tasks use descriptive lowercase kebab-case `task_slug` names, such as `feature-docs-repair` or `schematic-v1-adaptation`. Do not create new `p<number>` tasks; `p13` to `p18` are legacy status sources only.
+- **Branch workflow**: `master` → `feature/<task_slug>` → `ai/<agent>-<task_slug>-<step_id>`. Create your step branch FROM the feature branch, merge back after each step, delete step branch. Do not create worktrees.
 - Real hardware commands require resource locks immediately before use. Pure docs, search, static checks, compileall, and non-device builds do not need locks.
 - Lock each resource separately; `lock_resource.ps1` currently locks one `-Resource` per call:
   `powershell -File C:\Users\Billy\Desktop\listener\voice-keyboard-firmware\tools\lock_resource.ps1 -Resource COM3 -Owner <you>`
@@ -28,9 +29,10 @@ description: Firmware repo adapter for ESP32-S3 BLE HID keyboard and BLE audio c
 ## Plan Rules
 
 - New feature, architecture, hardware, cross-module integration, and important bug work needs a plan in shared `plans/` or `fixes/`.
+- New task files are `C:\Users\Billy\Desktop\listener\docs\plans\<task_slug>_plan.md` and `<task_slug>_status.json`; the JSON top-level `plan` must equal the same `task_slug`.
 - Plans must include precedent review: official examples/APIs, platform built-ins, existing repo mechanisms, or mature community tools.
-- Steps must include `repo`, `parallel_group`, `depends_on`, `write_paths`, `validation_commands`, and objective acceptance.
-- Same-time work avoids overlapping `write_paths`; shared hardware serializes through resource locks.
+- Steps must include `repo`, `depends_on`, `validation_commands`, and objective acceptance.
+- Same-time work avoids overlapping files by step scope and `depends_on`; shared hardware serializes through resource locks.
 
 ## Feature Docs
 

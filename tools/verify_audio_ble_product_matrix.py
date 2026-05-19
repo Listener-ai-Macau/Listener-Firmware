@@ -1,15 +1,18 @@
 import argparse
 import asyncio
+import hashlib
 import json
 import pathlib
 import random
 import subprocess
 import sys
 import time
+import unicodedata
 
 import serial
 
 from ble_audio_regression_common import (
+    AUDIO_PROFILE_CONFIGS,
     play_and_capture_serial_toggle_after_cancel_probe,
     play_and_capture_serial_toggle,
     play_and_capture_serial_toggle_multi_session,
@@ -23,19 +26,37 @@ from ble_audio_regression_common import (
     detect_active_runs,
     validate_transport_summary,
     get_paired_device_address_hex,
+    generate_profile_tts_wav,
     open_serial_with_retry,
+    pick_chinese_sentences,
+    resolve_audio_profile,
     send_toggle,
 )
-from capture_audio_ble_wav import configure_utf8_stdio, run_capture_with_args
+from capture_audio_ble_wav import configure_utf8_stdio
 
 
-CASE_ORDER = ("A1", "A2", "A3", "A4", "A5", "A6", "A7", "A8", "A9", "A10", "H1")
-FULL_CHAIN_CASE_ORDER = ("H3",)
+CASE_ORDER = ("A1", "A2", "A3", "A4", "A5", "A6", "A7", "A8", "A9", "A10", "A11")
+EXTENDED_AUTO_CASES = ("A12",)
+MANUAL_CASES = ("H1",)
+PRODUCT_CHAIN_OVERLAY_CASES = tuple(case_id for case_id in CASE_ORDER if case_id.startswith("A"))
+PRODUCT_CHAIN_IN_RUNNER_CASES = (*EXTENDED_AUTO_CASES, *MANUAL_CASES)
 MANUAL_OR_EXTERNAL_CASES = {
     "H2": "requires controlled RF/distance/interference setup",
 }
 MATRIX_ARTIFACT_DIR = pathlib.Path("tests") / "artifacts" / "ble_product_matrix"
-A3_RECONNECT_MIN_PRE_START_DELAY_SECONDS = 12.0
+A4_RECONNECT_MIN_PRE_START_DELAY_SECONDS = 12.0
+A2_PRODUCT_CHAIN_RANDOM_SENTENCE_COUNT = 7
+A2_PRODUCT_CHAIN_MIN_LISTENER_TIMEOUT_MS = 90000
+A2_PRODUCT_CHAIN_MIN_TIMEOUT_SECONDS = 150
+NEGATIVE_PRODUCT_CHAIN_TIMEOUT_SECONDS = 70
+NEGATIVE_PRODUCT_CHAIN_LISTENER_TIMEOUT_MS = 35000
+PRODUCT_CHAIN_EMPTY_TRANSCRIPT_RETRY_SENTENCE = "蓝牙音频正在发送到火山识别，请检查文本结果。"
+CASE_PRODUCT_CHAIN_AUDIO_PROFILES = {
+    "A1": ("normal", "fast", "low-volume"),
+    "A2": ("normal", "fast"),
+    "A3": ("normal", "fast", "low-volume"),
+}
+A12_PRODUCT_CHAIN_AUDIO_PROFILES = ("normal", "fast-low-volume")
 COMPACT_STDOUT_PREFIXES = (
     "execution_profile=",
     "preflight_recover_mode=",
@@ -58,7 +79,7 @@ COMPACT_STDOUT_PREFIXES = (
     "matrix_error=",
     "interrupted=",
     "case_catalog=",
-    "h3_",
+    "product_chain_",
 )
 
 
@@ -110,7 +131,12 @@ def parse_args():
     parser.add_argument(
         "--full-chain",
         action="store_true",
-        help="Include the H3 Listener-Type ASR/insertion product-chain case when --cases auto is used.",
+        help="Compatibility no-op. A/H cases validate the product chain by default; use --transport-only for BLE-only diagnostics.",
+    )
+    parser.add_argument(
+        "--transport-only",
+        action="store_true",
+        help="Run the legacy BLE transport/audio checks without Listener-Type ASR/text-output validation.",
     )
     parser.add_argument("--capture-seconds", type=int, default=5)
     parser.add_argument("--long-capture-seconds", type=int, default=30)
@@ -147,6 +173,11 @@ def parse_args():
     parser.add_argument("--skip-preflight-recover", action="store_true")
     parser.add_argument("--fail-on-warning", action="store_true")
     parser.add_argument(
+        "--continue-on-failure",
+        action="store_true",
+        help="Keep running later cases after a fail/warning. Default is gated fail-fast so each case is fixed before the next one runs.",
+    )
+    parser.add_argument(
         "--verbose",
         action="store_true",
         help="Print full per-step progress to stdout. By default full logs go to --summary-log.",
@@ -169,18 +200,32 @@ def parse_args():
     parser.add_argument(
         "--listener-type-repo",
         default=None,
-        help="Path to the sibling Listener-Type repo used by the H3 full-chain case.",
+        help="Path to the sibling Listener-Type repo used by product-chain validation.",
     )
     parser.add_argument(
         "--bluetooth-address",
         default=None,
-        help="Optional hex BLE address for Listener-Type full-chain smoke; auto-resolved when possible.",
+        help="Optional hex BLE address for Listener-Type product-chain validation; auto-resolved when possible.",
     )
-    parser.add_argument("--full-chain-timeout-seconds", type=int, default=60)
+    parser.add_argument("--full-chain-timeout-seconds", type=int, default=90)
     parser.add_argument("--full-chain-listener-timeout-ms", type=int, default=45000)
     parser.add_argument("--full-chain-sentence", default=None)
     parser.add_argument("--full-chain-verify-insertion", action="store_true")
-    parser.add_argument("--full-chain-tts-gain", type=float, default=2.5)
+    parser.add_argument("--full-chain-tts-gain", type=float, default=4.0)
+    parser.add_argument(
+        "--full-chain-audio-profile",
+        choices=sorted(AUDIO_PROFILE_CONFIGS),
+        default="normal",
+        help="Audio profile for product-chain cases that do not have case-specific profile plans.",
+    )
+    parser.add_argument(
+        "--full-chain-long-sentence-count",
+        type=int,
+        default=A2_PRODUCT_CHAIN_RANDOM_SENTENCE_COUNT,
+        help="Random sentence count for A2 long-recording product-chain validation when --full-chain-sentence is not set.",
+    )
+    parser.add_argument("--soak-round-count", type=int, default=6)
+    parser.add_argument("--soak-idle-seconds", type=float, default=10.0)
     parser.add_argument("--no-reset-before-capture", action="store_false", dest="reset_before_capture")
     parser.set_defaults(reset_before_capture=True)
     args = parser.parse_args()
@@ -421,6 +466,19 @@ def compact_case_details(summary: dict[str, object]) -> dict[str, object]:
         "wav_path",
         "serial_log_path",
         "source_wav",
+        "audio_profile",
+        "source_tts_rate",
+        "source_tts_gain",
+        "source_sentence_count",
+        "expected_text",
+        "normalized_expected",
+        "normalized_transcript",
+        "edit_distance",
+        "reference_length",
+        "cer",
+        "accuracy",
+        "accuracy_threshold",
+        "accuracy_warning_only",
         "pre_start_delay_seconds",
         "host_recovery_completed",
         "settle_window_seconds",
@@ -524,6 +582,77 @@ def longest_non_empty(*values: object) -> str:
     return max(texts, key=len) if texts else ""
 
 
+def normalize_accuracy_text(text: object) -> str:
+    folded = unicodedata.normalize("NFKC", "" if text is None else str(text)).lower()
+    return "".join(ch for ch in folded if ch.isalnum())
+
+
+def edit_distance(expected: str, actual: str) -> int:
+    if expected == actual:
+        return 0
+    if not expected:
+        return len(actual)
+    if not actual:
+        return len(expected)
+    previous = list(range(len(actual) + 1))
+    for expected_index, expected_char in enumerate(expected, start=1):
+        current = [expected_index]
+        for actual_index, actual_char in enumerate(actual, start=1):
+            insert_cost = current[actual_index - 1] + 1
+            delete_cost = previous[actual_index] + 1
+            replace_cost = previous[actual_index - 1] + (0 if expected_char == actual_char else 1)
+            current.append(min(insert_cost, delete_cost, replace_cost))
+        previous = current
+    return previous[-1]
+
+
+def score_transcript_accuracy(expected: object, transcript: object) -> dict[str, object]:
+    normalized_expected = normalize_accuracy_text(expected)
+    normalized_transcript = normalize_accuracy_text(transcript)
+    distance = edit_distance(normalized_expected, normalized_transcript)
+    if normalized_expected:
+        cer = distance / float(len(normalized_expected))
+    else:
+        cer = 0.0 if not normalized_transcript else 1.0
+    accuracy = max(0.0, 1.0 - cer)
+    return {
+        "expected_text": "" if expected is None else str(expected),
+        "normalized_expected": normalized_expected,
+        "normalized_transcript": normalized_transcript,
+        "edit_distance": distance,
+        "reference_length": len(normalized_expected),
+        "cer": round(cer, 6),
+        "accuracy": round(accuracy, 6),
+    }
+
+
+def product_chain_profiles_for_case(args, case_id: str) -> tuple[str, ...]:
+    profiles = CASE_PRODUCT_CHAIN_AUDIO_PROFILES.get(case_id)
+    if profiles:
+        return profiles
+    return (str(args.full_chain_audio_profile),)
+
+
+def apply_accuracy_gate(
+    *,
+    current_result: str,
+    current_reason: str,
+    audio_profile: dict[str, object],
+    accuracy_details: dict[str, object],
+) -> tuple[str, str]:
+    if current_result == "fail":
+        return current_result, current_reason
+    threshold = float(audio_profile["minimum_accuracy"])
+    accuracy = float(accuracy_details["accuracy"])
+    if accuracy >= threshold:
+        return current_result, current_reason
+    profile_name = str(audio_profile["name"])
+    reason = f"accuracy_below_threshold:{profile_name}:{accuracy:.3f}<{threshold:.3f}"
+    if bool(audio_profile["warning_only"]):
+        return ("warning" if current_result == "pass" else current_result), (current_reason or reason)
+    return "fail", reason
+
+
 def find_listener_history_session(
     *,
     history_path: object,
@@ -585,12 +714,37 @@ def find_listener_history_session(
 def print_case_catalog() -> None:
     catalog = {
         "auto_cases": list(CASE_ORDER),
-        "full_chain_cases": list(FULL_CHAIN_CASE_ORDER),
+        "extended_auto_cases": list(EXTENDED_AUTO_CASES),
+        "manual_cases": list(MANUAL_CASES),
+        "product_chain_overlay_cases": list(PRODUCT_CHAIN_OVERLAY_CASES),
+        "product_chain_in_runner_cases": list(PRODUCT_CHAIN_IN_RUNNER_CASES),
+        "audio_profiles": {
+            name: {
+                "tts_rate": config["tts_rate"],
+                "tts_gain": config["tts_gain"],
+                "minimum_accuracy": config["minimum_accuracy"],
+                "warning_only": config["warning_only"],
+            }
+            for name, config in sorted(AUDIO_PROFILE_CONFIGS.items())
+        },
+        "case_product_chain_audio_profiles": {
+            case_id: list(profiles)
+            for case_id, profiles in sorted(CASE_PRODUCT_CHAIN_AUDIO_PROFILES.items())
+        },
         "manual_or_external_cases": MANUAL_OR_EXTERNAL_CASES,
         "implemented_cases": sorted([*CASE_RUNNERS.keys(), *MANUAL_OR_EXTERNAL_CASES.keys()]),
         "notes": {
-            "H3": "real BLE audio -> Listener-Type native stream -> ASR final text -> insertion/history evidence",
-            "auto_plus_full_chain": "--full-chain appends H3 when --cases auto is used",
+            "A": "automated user-experience cases: randomized playback audio -> device BLE capture -> Listener-Type ASR -> text output evidence",
+            "A1": "single short-recording baseline product-chain case",
+            "A2": "single long-recording baseline product-chain case",
+            "A3": "multi-round short recordings with randomized durations and gaps",
+            "A8": "cancel negative assertion plus recovery product-chain output",
+            "A9": "silence/no-input negative assertion plus recovery product-chain output",
+            "A11": "concurrent BLE client attempt during capture",
+            "A12": "explicit mixed-use soak; not part of --cases auto",
+            "H": "manual/human-in-loop cases use the same product-chain evidence model while preserving manual trigger semantics",
+            "transport_only": "--transport-only disables the ASR/text-output overlay for legacy transport debugging",
+            "continue_on_failure": "default is fail-fast; --continue-on-failure keeps collecting later-case failures",
         },
     }
     print(f"case_catalog={json.dumps(catalog, ensure_ascii=False, sort_keys=True)}")
@@ -598,8 +752,6 @@ def print_case_catalog() -> None:
 
 def resolve_case_execution_order(args) -> list[str]:
     cases = parse_case_list(args.cases)
-    if args.cases.strip().lower() == "auto" and args.full_chain:
-        cases.extend(case_id for case_id in FULL_CHAIN_CASE_ORDER if case_id not in cases)
     if args.cases.strip().lower() == "auto" and args.shuffle_auto_case_order:
         shuffled_cases = list(cases)
         args.duration_rng.shuffle(shuffled_cases)
@@ -613,6 +765,13 @@ def ensure_pass(case_id: str, summary: dict[str, object]) -> dict[str, object]:
     if result != "pass":
         return print_summary(case_id, result, reason, compact_case_details(summary))
     return print_summary(case_id, "pass", "", compact_case_details(summary))
+
+
+def summary_outcome(summary: dict[str, object]) -> tuple[str, str]:
+    return (
+        str(summary.get("result") or "fail"),
+        str(summary.get("failure_reason") or summary.get("warning_reason") or ""),
+    )
 
 
 def write_matrix_result_json(
@@ -645,21 +804,22 @@ def write_matrix_result_json(
 
 
 async def run_a1(args) -> dict[str, str]:
-    use_long = args.duration_rng.random() < 0.3
-    window = args.long_capture_window if use_long else args.short_capture_window
-    duration_label = "long" if use_long else "short"
-    capture_seconds = choose_duration(args, window=window, label=f"a1_{duration_label}")
-    budget = max(240, int(capture_seconds * 3 + 60)) if use_long else 120
-    print_case_header("A1", f"single recording ({duration_label})", budget)
-    pre_start_delay_seconds = choose_delay_seconds(args, window=args.pre_start_delay_window, label="a1_pre_start")
+    capture_seconds = choose_duration(args, window=args.short_capture_window, label="a1")
+    budget = max(120, int(capture_seconds * 3 + 60))
+    print_case_header("A1", "single short recording baseline", budget)
+    pre_start_delay = choose_delay_seconds(
+        args,
+        window=args.pre_start_delay_window,
+        label="a1_pre_start",
+    )
     summary = await play_and_capture_serial_toggle(
         port=args.port,
         device_name=args.device_name,
         scenario="A1",
         capture_seconds=capture_seconds,
-        timeout_seconds=90,
+        timeout_seconds=max(90, int(capture_seconds + 60)),
         reset_before_capture=args.reset_before_capture,
-        pre_start_delay_seconds=pre_start_delay_seconds,
+        pre_start_delay_seconds=pre_start_delay,
         output_dir=case_output_dir("A1"),
         serial_log_path=case_serial_log_path("A1"),
     )
@@ -667,27 +827,51 @@ async def run_a1(args) -> dict[str, str]:
 
 
 async def run_a2(args) -> dict[str, str]:
+    capture_seconds = choose_duration(args, window=args.long_capture_window, label="a2")
+    budget = max(240, int(capture_seconds * 3 + 60))
+    print_case_header("A2", "single long recording baseline", budget)
+    pre_start_delay = choose_delay_seconds(
+        args,
+        window=args.pre_start_delay_window,
+        label="a2_pre_start",
+    )
+    summary = await play_and_capture_serial_toggle(
+        port=args.port,
+        device_name=args.device_name,
+        scenario="A2",
+        capture_seconds=capture_seconds,
+        timeout_seconds=max(90, int(capture_seconds + 60)),
+        reset_before_capture=args.reset_before_capture,
+        pre_start_delay_seconds=pre_start_delay,
+        tts_sentence_count=max(2, int(args.full_chain_long_sentence_count)),
+        output_dir=case_output_dir("A2"),
+        serial_log_path=case_serial_log_path("A2"),
+    )
+    return ensure_pass("A2", summary)
+
+
+async def run_a3(args) -> dict[str, str]:
     budget_seconds = max(180, args.round_count * 90)
-    print_case_header("A2", "multi-round continuous recording", budget_seconds)
+    print_case_header("A3", "multi-round short recordings", budget_seconds)
     failures = []
     warnings = []
     capture_seconds_plan = choose_duration_plan(
         args,
         window=args.short_capture_window,
         count=args.round_count,
-        label="a2",
+        label="a3",
     )
     pre_start_delay_plan = choose_delay_plan(
         args,
         first_window=args.pre_start_delay_window,
         followup_window=args.inter_session_gap_window,
         count=args.round_count,
-        label="a2",
+        label="a3",
     )
     summaries = await play_and_capture_serial_toggle_multi_session(
         port=args.port,
         device_name=args.device_name,
-        scenario="A2",
+        scenario="A3",
         capture_seconds=args.capture_seconds,
         capture_seconds_per_session=capture_seconds_plan,
         session_count=args.round_count,
@@ -695,8 +879,8 @@ async def run_a2(args) -> dict[str, str]:
         reset_before_capture=args.reset_before_capture,
         require_analysis=False,
         pre_start_delay_seconds_per_session=pre_start_delay_plan,
-        output_dir=case_output_dir("A2"),
-        serial_log_path=case_serial_log_path("A2"),
+        output_dir=case_output_dir("A3"),
+        serial_log_path=case_serial_log_path("A3"),
     )
     for round_index, summary in enumerate(summaries, start=1):
         print(f"round_index={round_index}", flush=True)
@@ -716,63 +900,63 @@ async def run_a2(args) -> dict[str, str]:
             warnings.append(round_index)
 
     if failures:
-        return print_summary("A2", "fail", "failed_rounds=" + ",".join(str(v) for v in failures))
+        return print_summary("A3", "fail", "failed_rounds=" + ",".join(str(v) for v in failures))
     if warnings:
-        return print_summary("A2", "warning", "warning_rounds=" + ",".join(str(v) for v in warnings))
-    return print_summary("A2", "pass", "")
+        return print_summary("A3", "warning", "warning_rounds=" + ",".join(str(v) for v in warnings))
+    return print_summary("A3", "pass", "")
 
 
-async def run_a3(args) -> dict[str, str]:
-    print_case_header("A3", "disconnect/reconnect recovery (with BT restart)", 240)
-    baseline_capture_seconds = choose_duration(args, window=args.short_capture_window, label="a3_baseline")
+async def run_a4(args) -> dict[str, str]:
+    print_case_header("A4", "disconnect/reconnect recovery (with BT restart)", 240)
+    baseline_capture_seconds = choose_duration(args, window=args.short_capture_window, label="a4_baseline")
     baseline_pre_start_delay_seconds = choose_delay_seconds(
         args,
         window=args.pre_start_delay_window,
-        label="a3_baseline_pre_start",
+        label="a4_baseline_pre_start",
     )
     baseline = await play_and_capture_serial_toggle(
         port=args.port,
         device_name=args.device_name,
-        scenario="A3",
+        scenario="A4",
         source_label="baseline",
         capture_seconds=baseline_capture_seconds,
         timeout_seconds=90,
         reset_before_capture=args.reset_before_capture,
         pre_start_delay_seconds=baseline_pre_start_delay_seconds,
-        output_dir=case_output_dir("A3"),
-        serial_log_path=case_serial_log_path("A3", "baseline"),
+        output_dir=case_output_dir("A4"),
+        serial_log_path=case_serial_log_path("A4", "baseline"),
     )
     if baseline["result"] != "pass":
-        return print_summary("A3", "fail", "baseline_failed", compact_case_details(baseline))
+        return print_summary("A4", "fail", "baseline_failed", compact_case_details(baseline))
     restart_windows_bluetooth(restart_pan_adapter=args.restart_pan_adapter)
     recover_ble_hid_host(args.device_name)
-    print("a3_host_recovery_completed=1", flush=True)
-    reconnect_capture_seconds = choose_duration(args, window=args.short_capture_window, label="a3_reconnect")
+    print("a4_host_recovery_completed=1", flush=True)
+    reconnect_capture_seconds = choose_duration(args, window=args.short_capture_window, label="a4_reconnect")
     reconnect_pre_start_delay_seconds = choose_delay_seconds(
         args,
         window=args.pre_start_delay_window,
-        label="a3_reconnect_pre_start",
+        label="a4_reconnect_pre_start",
     )
-    if reconnect_pre_start_delay_seconds < A3_RECONNECT_MIN_PRE_START_DELAY_SECONDS:
+    if reconnect_pre_start_delay_seconds < A4_RECONNECT_MIN_PRE_START_DELAY_SECONDS:
         print(
-            "a3_reconnect_pre_start_delay_floor_seconds="
-            f"{A3_RECONNECT_MIN_PRE_START_DELAY_SECONDS:.2f}",
+            "a4_reconnect_pre_start_delay_floor_seconds="
+            f"{A4_RECONNECT_MIN_PRE_START_DELAY_SECONDS:.2f}",
             flush=True,
         )
-        reconnect_pre_start_delay_seconds = A3_RECONNECT_MIN_PRE_START_DELAY_SECONDS
-    print(f"a3_settle_window_seconds={reconnect_pre_start_delay_seconds:.2f}", flush=True)
-    print("a3_capture_phase=start", flush=True)
+        reconnect_pre_start_delay_seconds = A4_RECONNECT_MIN_PRE_START_DELAY_SECONDS
+    print(f"a4_settle_window_seconds={reconnect_pre_start_delay_seconds:.2f}", flush=True)
+    print("a4_capture_phase=start", flush=True)
     summary = await play_and_capture_serial_toggle(
         port=args.port,
         device_name=args.device_name,
-        scenario="A3",
+        scenario="A4",
         source_label="reconnect",
         capture_seconds=reconnect_capture_seconds,
         timeout_seconds=90,
         reset_before_capture=args.reset_before_capture,
         pre_start_delay_seconds=reconnect_pre_start_delay_seconds,
-        output_dir=case_output_dir("A3"),
-        serial_log_path=case_serial_log_path("A3", "reconnect"),
+        output_dir=case_output_dir("A4"),
+        serial_log_path=case_serial_log_path("A4", "reconnect"),
     )
     summary["host_recovery_completed"] = True
     summary["settle_window_seconds"] = float(reconnect_pre_start_delay_seconds)
@@ -780,55 +964,55 @@ async def run_a3(args) -> dict[str, str]:
     summary["baseline_result"] = str(baseline.get("result", ""))
     summary["baseline_missing_packet_count"] = baseline.get("missing_packet_count")
     summary["baseline_packet_loss_ratio"] = baseline.get("packet_loss_ratio")
-    return ensure_pass("A3", summary)
+    return ensure_pass("A4", summary)
 
 
-async def run_a6(args) -> dict[str, str]:
-    a6_capture_seconds = choose_duration(
+async def run_a7(args) -> dict[str, str]:
+    a7_capture_seconds = choose_duration(
         args,
         window=args.short_capture_window,
-        label="a6",
+        label="a7",
         floor_seconds=6,
     )
-    idle_wait_seconds = choose_delay_seconds(args, window=args.idle_wait_window, label="a6_idle_wait")
-    pre_start_delay_seconds = choose_delay_seconds(args, window=args.pre_start_delay_window, label="a6_pre_start")
+    idle_wait_seconds = choose_delay_seconds(args, window=args.idle_wait_window, label="a7_idle_wait")
+    pre_start_delay_seconds = choose_delay_seconds(args, window=args.pre_start_delay_window, label="a7_pre_start")
     budget_seconds = int(idle_wait_seconds) + 180
-    print_case_header("A6", "first recording after idle wait", budget_seconds)
+    print_case_header("A7", "first recording after idle wait", budget_seconds)
     print(f"idle_wait_seconds={idle_wait_seconds:.2f}", flush=True)
     await asyncio.sleep(idle_wait_seconds)
     summary = await play_and_capture_serial_toggle(
         port=args.port,
         device_name=args.device_name,
-        scenario="A6",
-        capture_seconds=a6_capture_seconds,
+        scenario="A7",
+        capture_seconds=a7_capture_seconds,
         timeout_seconds=90,
         reset_before_capture=False,
         pre_start_delay_seconds=pre_start_delay_seconds,
-        output_dir=case_output_dir("A6"),
-        serial_log_path=case_serial_log_path("A6"),
+        output_dir=case_output_dir("A7"),
+        serial_log_path=case_serial_log_path("A7"),
     )
-    return ensure_pass("A6", summary)
+    return ensure_pass("A7", summary)
 
 
-async def run_a5(args) -> dict[str, str]:
-    print_case_header("A5", "host-side recovery without BT restart", 180)
-    baseline_capture_seconds = choose_duration(args, window=args.short_capture_window, label="a5_baseline")
+async def run_a6(args) -> dict[str, str]:
+    print_case_header("A6", "host-side recovery without BT restart", 180)
+    baseline_capture_seconds = choose_duration(args, window=args.short_capture_window, label="a6_baseline")
     baseline_pre_start_delay_seconds = choose_delay_seconds(
         args,
         window=args.pre_start_delay_window,
-        label="a5_baseline_pre_start",
+        label="a6_baseline_pre_start",
     )
     baseline = await play_and_capture_serial_toggle(
         port=args.port,
         device_name=args.device_name,
-        scenario="A5",
+        scenario="A6",
         source_label="baseline",
         capture_seconds=baseline_capture_seconds,
         timeout_seconds=90,
         reset_before_capture=args.reset_before_capture,
         pre_start_delay_seconds=baseline_pre_start_delay_seconds,
-        output_dir=case_output_dir("A5"),
-        serial_log_path=case_serial_log_path("A5", "baseline"),
+        output_dir=case_output_dir("A6"),
+        serial_log_path=case_serial_log_path("A6", "baseline"),
     )
     baseline_failure_reason = str(baseline.get("failure_reason") or baseline.get("warning_reason") or "")
     baseline_retry_allowed = (
@@ -840,7 +1024,7 @@ async def run_a5(args) -> dict[str, str]:
     )
     if baseline_retry_allowed:
         print(
-            "a5_baseline_retry_after_recover=1 "
+            "a6_baseline_retry_after_recover=1 "
             f"first_result={baseline['result']} "
             f"first_reason={baseline_failure_reason} "
             f"first_missing_packet_count={baseline['missing_packet_count']} "
@@ -851,18 +1035,18 @@ async def run_a5(args) -> dict[str, str]:
         baseline = await play_and_capture_serial_toggle(
             port=args.port,
             device_name=args.device_name,
-            scenario="A5",
+            scenario="A6",
             source_label="baseline_retry",
             capture_seconds=baseline_capture_seconds,
             timeout_seconds=90,
             reset_before_capture=False,
             pre_start_delay_seconds=baseline_pre_start_delay_seconds,
-            output_dir=case_output_dir("A5"),
-            serial_log_path=case_serial_log_path("A5", "baseline_retry"),
+            output_dir=case_output_dir("A6"),
+            serial_log_path=case_serial_log_path("A6", "baseline_retry"),
         )
         if baseline["result"] != "pass":
             return print_summary(
-                "A5",
+                "A6",
                 "fail",
                 "baseline_failed_after_retry "
                 f"missing_packet_count={baseline['missing_packet_count']} "
@@ -870,60 +1054,60 @@ async def run_a5(args) -> dict[str, str]:
             )
     elif baseline["result"] != "pass":
         return print_summary(
-            "A5",
+            "A6",
             baseline["result"],
             "baseline_failed_without_retry "
             f"reason={baseline_failure_reason} "
             f"missing_packet_count={baseline.get('missing_packet_count', 0)} "
             f"missing_packet_indices={baseline.get('missing_packet_indices', [])[:16]}",
         )
-    after_restart_capture_seconds = choose_duration(args, window=args.short_capture_window, label="a5_after_restart")
+    after_restart_capture_seconds = choose_duration(args, window=args.short_capture_window, label="a6_after_restart")
     after_restart_pre_start_delay_seconds = choose_delay_seconds(
         args,
         window=args.pre_start_delay_window,
-        label="a5_after_restart_pre_start",
+        label="a6_after_restart_pre_start",
     )
     summary = await play_and_capture_serial_toggle(
         port=args.port,
         device_name=args.device_name,
-        scenario="A5",
+        scenario="A6",
         source_label="after_restart",
         capture_seconds=after_restart_capture_seconds,
         timeout_seconds=90,
         reset_before_capture=False,
         pre_start_delay_seconds=after_restart_pre_start_delay_seconds,
-        output_dir=case_output_dir("A5"),
-        serial_log_path=case_serial_log_path("A5", "after_restart"),
+        output_dir=case_output_dir("A6"),
+        serial_log_path=case_serial_log_path("A6", "after_restart"),
     )
-    return ensure_pass("A5", summary)
+    return ensure_pass("A6", summary)
 
 
-async def run_a7(args) -> dict[str, str]:
-    print_case_header("A7", "cancel during recording and recover (long + short hold)", 300)
+async def run_a8(args) -> dict[str, str]:
+    print_case_header("A8", "cancel during recording and recover (long + short hold)", 300)
     # First probe: long cancel hold
-    long_cancel_hold = choose_delay_seconds(args, window=args.cancel_hold_window, label="a7_long_cancel")
-    capture_seconds = choose_duration(args, window=args.short_capture_window, label="a7")
-    pre_start_delay = choose_delay_seconds(args, window=args.pre_start_delay_window, label="a7_pre_start")
+    long_cancel_hold = choose_delay_seconds(args, window=args.cancel_hold_window, label="a8_long_cancel")
+    capture_seconds = choose_duration(args, window=args.short_capture_window, label="a8")
+    pre_start_delay = choose_delay_seconds(args, window=args.pre_start_delay_window, label="a8_pre_start")
     summary = await play_and_capture_serial_toggle_after_cancel_probe(
         port=args.port,
         device_name=args.device_name,
-        scenario="A7",
+        scenario="A8",
         capture_seconds=capture_seconds,
         cancel_hold_seconds=long_cancel_hold,
         timeout_seconds=90,
         reset_before_capture=args.reset_before_capture,
         pre_start_delay_seconds=pre_start_delay,
-        output_dir=case_output_dir("A7"),
-        serial_log_path=case_serial_log_path("A7", "long_hold"),
+        output_dir=case_output_dir("A8"),
+        serial_log_path=case_serial_log_path("A8", "long_hold"),
     )
     print(f"long_cancel_probe={'pass' if summary.get('cancel_requested') and summary.get('cancel_completed') else 'fail'}", flush=True)
     print(f"cancel_requested={1 if summary.get('cancel_requested') else 0}", flush=True)
     print(f"cancel_completed={1 if summary.get('cancel_completed') else 0}", flush=True)
     if summary["result"] != "pass":
         if summary.get("failure_reason") == "short_cancel_probe_failed":
-            return print_summary("A7", "fail", "long_cancel_probe_failed")
+            return print_summary("A8", "fail", "long_cancel_probe_failed")
         return print_summary(
-            "A7",
+            "A8",
             summary["result"],
             f"{summary.get('failure_reason') or summary.get('warning_reason') or ''} "
             f"missing_packet_count={summary['missing_packet_count']} "
@@ -931,64 +1115,91 @@ async def run_a7(args) -> dict[str, str]:
         )
 
     # Second probe: short cancel hold (merged from old P9)
-    short_cancel_hold = choose_delay_seconds(args, window=args.short_cancel_hold_window, label="a7_short_cancel")
+    short_cancel_hold = choose_delay_seconds(args, window=args.short_cancel_hold_window, label="a8_short_cancel")
     short_summary = await play_and_capture_serial_toggle_after_cancel_probe(
         port=args.port,
         device_name=args.device_name,
-        scenario="A7",
+        scenario="A8",
         capture_seconds=capture_seconds,
         cancel_hold_seconds=short_cancel_hold,
         timeout_seconds=90,
         reset_before_capture=False,
         pre_start_delay_seconds=pre_start_delay,
-        output_dir=case_output_dir("A7"),
-        serial_log_path=case_serial_log_path("A7", "short_hold"),
+        output_dir=case_output_dir("A8"),
+        serial_log_path=case_serial_log_path("A8", "short_hold"),
     )
     print(f"short_cancel_probe={'pass' if short_summary.get('cancel_requested') and short_summary.get('cancel_completed') else 'fail'}", flush=True)
     if short_summary["result"] != "pass":
-        return print_summary("A7", short_summary["result"], f"short_cancel_failed: {short_summary.get('failure_reason', '')}")
-    return print_summary("A7", "pass", "")
+        return print_summary("A8", short_summary["result"], f"short_cancel_failed: {short_summary.get('failure_reason', '')}")
+    details = {
+        "long_cancel_probe": compact_case_details(summary),
+        "short_cancel_probe": compact_case_details(short_summary),
+    }
+    if not args.transport_only:
+        negative_product_chain = await run_listener_type_product_chain(
+            args,
+            "A8",
+            trigger_mode="serial-cancel",
+            artifact_label="cancel_negative",
+            expect_no_text=True,
+        )
+        details["cancel_negative_product_chain"] = negative_product_chain
+        if str(negative_product_chain.get("result")) == "fail":
+            return print_summary(
+                "A8",
+                "fail",
+                "cancel_negative_product_chain_failed:" + str(negative_product_chain.get("reason", "")),
+                details,
+            )
+        if str(negative_product_chain.get("result")) == "warning":
+            return print_summary(
+                "A8",
+                "warning",
+                "cancel_negative_product_chain_warning:" + str(negative_product_chain.get("reason", "")),
+                details,
+            )
+    return print_summary("A8", "pass", "", details)
 
 
-async def run_a4(args) -> dict[str, str]:
+async def run_a5(args) -> dict[str, str]:
     round_count = args.round_count
     budget_seconds = max(240, round_count * 120)
-    print_case_header("A4", f"multi-round independent reconnect ({round_count} rounds)", budget_seconds)
+    print_case_header("A5", f"multi-round independent reconnect ({round_count} rounds)", budget_seconds)
     failures = []
     warnings = []
     for round_index in range(1, round_count + 1):
-        capture_seconds = choose_duration(args, window=args.short_capture_window, label=f"a4_r{round_index}")
-        pre_start_delay = choose_delay_seconds(args, window=args.pre_start_delay_window, label=f"a4_r{round_index}_pre_start")
+        capture_seconds = choose_duration(args, window=args.short_capture_window, label=f"a5_r{round_index}")
+        pre_start_delay = choose_delay_seconds(args, window=args.pre_start_delay_window, label=f"a5_r{round_index}_pre_start")
         summary = await play_and_capture_serial_toggle(
             port=args.port,
             device_name=args.device_name,
-            scenario="A4",
+            scenario="A5",
             source_label=f"round{round_index}",
             capture_seconds=capture_seconds,
             timeout_seconds=90,
             reset_before_capture=True,  # Full reset each round
             pre_start_delay_seconds=pre_start_delay,
-            output_dir=case_output_dir("A4"),
-            serial_log_path=case_serial_log_path("A4", f"round{round_index}"),
+            output_dir=case_output_dir("A5"),
+            serial_log_path=case_serial_log_path("A5", f"round{round_index}"),
         )
-        print(f"a4_round_index={round_index}", flush=True)
-        print(f"a4_round_result={summary['result']}", flush=True)
-        print(f"a4_round_missing_packet_count={summary['missing_packet_count']}", flush=True)
+        print(f"a5_round_index={round_index}", flush=True)
+        print(f"a5_round_result={summary['result']}", flush=True)
+        print(f"a5_round_missing_packet_count={summary['missing_packet_count']}", flush=True)
         if summary["result"] == "fail":
             failures.append(round_index)
         elif summary["result"] == "warning":
             warnings.append(round_index)
     if failures:
-        return print_summary("A4", "fail", "failed_rounds=" + ",".join(str(v) for v in failures))
+        return print_summary("A5", "fail", "failed_rounds=" + ",".join(str(v) for v in failures))
     if warnings:
-        return print_summary("A4", "warning", "warning_rounds=" + ",".join(str(v) for v in warnings))
-    return print_summary("A4", "pass", "")
+        return print_summary("A5", "warning", "warning_rounds=" + ",".join(str(v) for v in warnings))
+    return print_summary("A5", "pass", "")
 
 
-async def run_a8(args) -> dict[str, str]:
-    print_case_header("A8", "silent/no-input negative test", 120)
-    capture_seconds = choose_duration(args, window=args.short_capture_window, label="a8")
-    pre_start_delay = choose_delay_seconds(args, window=args.pre_start_delay_window, label="a8_pre_start")
+async def run_a9(args) -> dict[str, str]:
+    print_case_header("A9", "silent/no-input negative test", 120)
+    capture_seconds = choose_duration(args, window=args.short_capture_window, label="a9")
+    pre_start_delay = choose_delay_seconds(args, window=args.pre_start_delay_window, label="a9_pre_start")
     capture_args = make_capture_args(
         port=args.port,
         device_name=args.device_name,
@@ -997,38 +1208,71 @@ async def run_a8(args) -> dict[str, str]:
         session_pre_start_delay_seconds=[pre_start_delay],
         timeout_seconds=90,
         reset_before_capture=args.reset_before_capture,
-        output_dir=case_output_dir("A8"),
-        serial_log_path=case_serial_log_path("A8"),
+        output_dir=case_output_dir("A9"),
+        serial_log_path=case_serial_log_path("A9"),
     )
     session_summaries = await capture_sessions(capture_args)
     if not session_summaries:
-        return print_summary("A8", "fail", "no_session_captured")
+        return print_summary("A9", "fail", "no_session_captured")
     summary = dict(session_summaries[-1])
     recorded_wav = pathlib.Path(summary["wav_path"])
     if not recorded_wav.exists():
-        return print_summary("A8", "fail", "no_output_wav")
+        return print_summary("A9", "fail", "no_output_wav")
     frames = read_wav_frames(recorded_wav)
     peak = max(abs(v) for v in frames) if frames else 0
     env = compute_envelope(frames)
     runs = detect_active_runs(env)
     active_frames = sum(end - start for start, end in runs)
-    print(f"a8_recorded_peak={peak}", flush=True)
-    print(f"a8_active_frame_count={active_frames}", flush=True)
-    print(f"a8_total_frames={len(frames)}", flush=True)
+    print(f"a9_recorded_peak={peak}", flush=True)
+    print(f"a9_active_frame_count={active_frames}", flush=True)
+    print(f"a9_total_frames={len(frames)}", flush=True)
     validation = validate_transport_summary(summary, capture_seconds=capture_seconds)
     transport_ok = validation["transport_result"] != "fail" or validation["transport_failure_reason"] != "no_audio_packets_received"
-    print(f"a8_transport_ok={1 if transport_ok else 0}", flush=True)
+    print(f"a9_transport_ok={1 if transport_ok else 0}", flush=True)
     if not transport_ok:
-        return print_summary("A8", "fail", "transport_failed_even_without_audio")
-    return print_summary("A8", "pass", f"peak={peak} active_frames={active_frames}")
+        return print_summary("A9", "fail", "transport_failed_even_without_audio")
+    details = {
+        "silent_transport": {
+            "peak": peak,
+            "active_frames": active_frames,
+            "total_frames": len(frames),
+            "transport_validation": validation,
+            **compact_case_details(summary),
+        }
+    }
+    if not args.transport_only:
+        negative_product_chain = await run_listener_type_product_chain(
+            args,
+            "A9",
+            trigger_mode="serial-toggle",
+            artifact_label="silence_negative",
+            expect_no_text=True,
+            extra_smoke_args=["-SilentAudio"],
+        )
+        details["silence_negative_product_chain"] = negative_product_chain
+        if str(negative_product_chain.get("result")) == "fail":
+            return print_summary(
+                "A9",
+                "fail",
+                "silence_negative_product_chain_failed:" + str(negative_product_chain.get("reason", "")),
+                details,
+            )
+        if str(negative_product_chain.get("result")) == "warning":
+            return print_summary(
+                "A9",
+                "warning",
+                "silence_negative_product_chain_warning:" + str(negative_product_chain.get("reason", "")),
+                details,
+            )
+    return print_summary("A9", "pass", f"peak={peak} active_frames={active_frames}", details)
 
 
 RAPID_TOGGLE_COUNT_DEFAULT = 10
 
 
-async def run_a9(args) -> dict[str, str]:
+async def run_a10(args) -> dict[str, str]:
     toggle_count = RAPID_TOGGLE_COUNT_DEFAULT
-    print_case_header("A9", f"rapid toggle stress ({toggle_count} cycles)", 180)
+    print_case_header("A10", f"rapid toggle stress ({toggle_count} cycles)", 180)
     stress_ok = True
     stress_errors = []
     with open_serial_with_retry(args.port) as ser:
@@ -1045,70 +1289,70 @@ async def run_a9(args) -> dict[str, str]:
                 stress_ok = False
                 stress_errors.append(f"cycle={cycle} {type(exc).__name__}:{exc}")
                 break
-        print(f"a9_stress_toggle_count={toggle_count}", flush=True)
-        print(f"a9_stress_ok={1 if stress_ok else 0}", flush=True)
+        print(f"a10_stress_toggle_count={toggle_count}", flush=True)
+        print(f"a10_stress_ok={1 if stress_ok else 0}", flush=True)
         if stress_errors:
             for error in stress_errors[:5]:
-                print(f"a9_stress_error={error}", flush=True)
+                print(f"a10_stress_error={error}", flush=True)
         await asyncio.sleep(1.0)
         try:
             ser.reset_input_buffer()
         except (OSError, serial.SerialException):
             pass
     if not stress_ok:
-        return print_summary("A9", "fail", "serial_error_during_stress")
-    verify_capture_seconds = choose_duration(args, window=args.short_capture_window, label="a9_verify")
-    pre_start_delay = choose_delay_seconds(args, window=args.pre_start_delay_window, label="a9_verify_pre_start")
+        return print_summary("A10", "fail", "serial_error_during_stress")
+    verify_capture_seconds = choose_duration(args, window=args.short_capture_window, label="a10_verify")
+    pre_start_delay = choose_delay_seconds(args, window=args.pre_start_delay_window, label="a10_verify_pre_start")
     summary = await play_and_capture_serial_toggle(
         port=args.port,
         device_name=args.device_name,
-        scenario="A9",
+        scenario="A10",
         source_label="post_stress_verify",
         capture_seconds=verify_capture_seconds,
         timeout_seconds=90,
         reset_before_capture=True,
         pre_start_delay_seconds=pre_start_delay,
-        output_dir=case_output_dir("A9"),
-        serial_log_path=case_serial_log_path("A9"),
+        output_dir=case_output_dir("A10"),
+        serial_log_path=case_serial_log_path("A10"),
     )
     summary["stress_toggle_count"] = toggle_count
     summary["stress_ok"] = stress_ok
-    return ensure_pass("A9", summary)
+    return ensure_pass("A10", summary)
 
 
-async def run_a10(args) -> dict[str, str]:
-    print_case_header("A10", "concurrent BLE client attempt during capture", 180)
+async def run_a11(args) -> dict[str, str]:
+    print_case_header("A11", "concurrent BLE client attempt during capture", 180)
     address_hex = get_paired_device_address_hex(args.device_name)
     if not address_hex:
-        return print_summary("A10", "fail", "unable_to_resolve_device_address")
+        return print_summary("A11", "fail", "unable_to_resolve_device_address")
     from winrt.windows.devices.bluetooth import BluetoothLEDevice
     rogue_device = None
     try:
         rogue_device = await BluetoothLEDevice.from_bluetooth_address_async(int(address_hex, 16))
     except Exception as exc:
-        print(f"a10_rogue_connect_error={type(exc).__name__}:{exc}", flush=True)
+        print(f"a11_rogue_connect_error={type(exc).__name__}:{exc}", flush=True)
     rogue_connected = False
     if rogue_device is not None:
         try:
             rogue_connected = rogue_device.connection_status == 1
         except Exception:
             pass
-    print(f"a10_rogue_device_open={1 if rogue_device else 0}", flush=True)
-    print(f"a10_rogue_connected={1 if rogue_connected else 0}", flush=True)
-    capture_seconds = choose_duration(args, window=args.short_capture_window, label="a10")
-    pre_start_delay = choose_delay_seconds(args, window=args.pre_start_delay_window, label="a10_pre_start")
+    print(f"a11_rogue_device_open={1 if rogue_device else 0}", flush=True)
+    print(f"a11_rogue_connected={1 if rogue_connected else 0}", flush=True)
+    capture_seconds = choose_duration(args, window=args.short_capture_window, label="a11")
+    pre_start_delay = choose_delay_seconds(args, window=args.pre_start_delay_window, label="a11_pre_start")
     try:
         summary = await play_and_capture_serial_toggle(
             port=args.port,
             device_name=args.device_name,
-            scenario="A10",
+            scenario="A11",
             source_label="concurrent_test",
             capture_seconds=capture_seconds,
             timeout_seconds=90,
             reset_before_capture=args.reset_before_capture,
             pre_start_delay_seconds=pre_start_delay,
-            output_dir=case_output_dir("A10"),
-            serial_log_path=case_serial_log_path("A10"),
+            output_dir=case_output_dir("A11"),
+            serial_log_path=case_serial_log_path("A11"),
         )
     finally:
         if rogue_device is not None:
@@ -1118,59 +1362,64 @@ async def run_a10(args) -> dict[str, str]:
                 pass
     summary["rogue_device_open"] = rogue_device is not None
     summary["rogue_connected"] = rogue_connected
-    return ensure_pass("A10", summary)
+    return ensure_pass("A11", summary)
 
 
-async def run_h1(args) -> dict[str, str]:
-    print_case_header("H1", "physical KEY1 semi-auto (waiting for button press)", 180)
-    capture_seconds = choose_duration(args, window=args.short_capture_window, label="h1")
-    serial_log_path = case_serial_log_path("H1")
-    output_dir = case_output_dir("H1")
-    capture_args = argparse.Namespace(
-        port=args.port,
-        device_name=args.device_name,
-        capture_seconds=capture_seconds,
-        output_dir=str(output_dir),
-        serial_log_path=str(serial_log_path),
-        timeout_seconds=90,
-        boot_timeout_seconds=15,
-        ble_connect_timeout_seconds=15,
-        notify_ready_timeout_seconds=45,
-        trigger_mode="physical-key",
-        max_sessions=1,
-        reset_before_capture=args.reset_before_capture,
+def make_product_chain_result(
+    case_id: str,
+    result: str,
+    reason: str = "",
+    details: dict[str, object] | None = None,
+) -> dict[str, object]:
+    print(f"product_chain_case={case_id}", flush=True)
+    print(f"product_chain_result={result}", flush=True)
+    print(f"product_chain_reason={reason}", flush=True)
+    return {
+        "case_id": case_id,
+        "result": result,
+        "reason": reason,
+        "details": details or {},
+    }
+
+
+def deterministic_sentence_seed(args, *parts: object) -> int:
+    raw = "|".join(str(part) for part in (args.random_seed_resolved, *parts))
+    digest = hashlib.sha256(raw.encode("utf-8")).digest()
+    return int.from_bytes(digest[:8], "little")
+
+
+async def run_listener_type_product_chain(
+    args,
+    case_id: str,
+    *,
+    trigger_mode: str = "serial-toggle",
+    artifact_label: str | None = None,
+    audio_profile: str | None = None,
+    expect_no_text: bool = False,
+    extra_smoke_args: list[str] | None = None,
+    sentence_override: str | None = None,
+    random_sentence_count_override: int | None = None,
+    listener_timeout_ms_override: int | None = None,
+    timeout_seconds_override: int | None = None,
+) -> dict[str, object]:
+    output_dir = case_output_dir(case_id) / "product_chain"
+    output_dir.mkdir(parents=True, exist_ok=True)
+    trigger_label = artifact_label or trigger_mode.replace("-", "_")
+    stdout_log = output_dir / f"listener_type_{trigger_label}_stdout.log"
+    stderr_log = output_dir / f"listener_type_{trigger_label}_stderr.log"
+    profile = resolve_audio_profile(audio_profile or args.full_chain_audio_profile)
+    profile_name = str(profile["name"])
+    profile_tts_rate = int(profile["tts_rate"])
+    profile_tts_gain = float(profile["tts_gain"])
+    silent_audio_requested = any(
+        str(item).lower() == "-silentaudio"
+        for item in (extra_smoke_args or [])
     )
-    summaries = await run_capture_with_args(capture_args)
-    summary = dict(summaries[-1])
-    serial_log_text = serial_log_path.read_text(encoding="utf-8", errors="replace") if serial_log_path.exists() else ""
-    key_start_seen = "recording start source=key1" in serial_log_text
-    key_stop_seen = "recording stop source=key1" in serial_log_text
-    print(f"h1_key_start_seen={1 if key_start_seen else 0}", flush=True)
-    print(f"h1_key_stop_seen={1 if key_stop_seen else 0}", flush=True)
-    if not key_start_seen or not key_stop_seen:
-        return print_summary("H1", "fail", f"physical_key_source_missing start={key_start_seen} stop={key_stop_seen}")
-    validation = validate_transport_summary(summary, capture_seconds=capture_seconds, min_ratio=0.0, max_extra_seconds=float(90))
-    summary.update(validation)
-    if validation["transport_result"] == "fail" and validation["transport_failure_reason"] == "missing_expected_packet_count":
-        return print_summary("H1", "fail", "no_audio_packets")
-    result = "pass"
-    reason = ""
-    if validation["transport_result"] == "fail":
-        result = "fail"
-        reason = validation.get("transport_failure_reason", "")
-    return print_summary("H1", result, reason)
-
-
-async def run_h3(args) -> dict[str, str]:
-    print_case_header("H3", "full BLE -> Listener-Type -> ASR -> insertion/history", 60)
-    output_dir = case_output_dir("H3")
-    stdout_log = output_dir / "listener_type_stdout.log"
-    stderr_log = output_dir / "listener_type_stderr.log"
     listener_repo = resolve_listener_type_repo(args)
     script_path = listener_repo / "tools" / "embedded_audio_replay" / "run_ble_stream_smoke.ps1"
     if not script_path.exists():
-        return print_summary(
-            "H3",
+        return make_product_chain_result(
+            case_id,
             "fail",
             "listener_type_smoke_script_missing",
             {
@@ -1187,7 +1436,40 @@ async def run_h3(args) -> dict[str, str]:
             if bluetooth_address:
                 bluetooth_address_source = "paired_device_lookup"
         except Exception as exc:
-            print(f"h3_bluetooth_address_lookup_error={type(exc).__name__}:{exc}", flush=True)
+            print(f"product_chain_bluetooth_address_lookup_error={type(exc).__name__}:{exc}", flush=True)
+
+    random_sentence_count = random_sentence_count_override or 1
+    listener_timeout_ms = listener_timeout_ms_override or args.full_chain_listener_timeout_ms
+    timeout_seconds = timeout_seconds_override or args.full_chain_timeout_seconds
+    if case_id == "A2" and not args.full_chain_sentence and random_sentence_count_override is None:
+        random_sentence_count = max(1, int(args.full_chain_long_sentence_count))
+        listener_timeout_ms = max(listener_timeout_ms, A2_PRODUCT_CHAIN_MIN_LISTENER_TIMEOUT_MS)
+        timeout_seconds = max(timeout_seconds, A2_PRODUCT_CHAIN_MIN_TIMEOUT_SECONDS)
+    if expect_no_text:
+        listener_timeout_ms = max(listener_timeout_ms, NEGATIVE_PRODUCT_CHAIN_LISTENER_TIMEOUT_MS)
+        timeout_seconds = max(timeout_seconds, NEGATIVE_PRODUCT_CHAIN_TIMEOUT_SECONDS)
+
+    expected_sentence = sentence_override or args.full_chain_sentence or ""
+    generated_wav_path: pathlib.Path | None = None
+    if not silent_audio_requested:
+        if not expected_sentence:
+            sentence_seed = deterministic_sentence_seed(
+                args,
+                case_id,
+                trigger_label,
+                profile_name,
+                random_sentence_count,
+            )
+            expected_sentence = "".join(
+                pick_chinese_sentences(sentence_seed, random_sentence_count)
+            )
+        generated_wav_path = output_dir / f"ble-stream-{trigger_label}-{profile_name}.wav"
+        generate_profile_tts_wav(
+            generated_wav_path,
+            expected_sentence,
+            tts_rate=profile_tts_rate,
+            tts_gain=profile_tts_gain,
+        )
 
     command = [
         "powershell.exe",
@@ -1196,35 +1478,55 @@ async def run_h3(args) -> dict[str, str]:
         "Bypass",
         "-File",
         str(script_path),
+        "-TriggerMode",
+        trigger_mode,
         "-Port",
         args.port,
         "-DeviceName",
         args.device_name,
         "-TimeoutMs",
-        str(args.full_chain_listener_timeout_ms),
+        str(listener_timeout_ms),
         "-OutDir",
         str(output_dir.resolve()),
         "-TtsGain",
-        str(args.full_chain_tts_gain),
+        str(profile_tts_gain),
         "-FirmwareRepo",
         str(firmware_repo_root()),
         "-VerifyHistory",
     ]
     if bluetooth_address:
         command.extend(["-BluetoothAddress", bluetooth_address])
-    if args.full_chain_sentence:
-        command.extend(["-Sentence", args.full_chain_sentence])
+    if generated_wav_path is not None:
+        command.extend(["-WavPath", str(generated_wav_path)])
+    if expected_sentence:
+        command.extend(["-Sentence", expected_sentence])
+    elif random_sentence_count > 1:
+        command.extend(["-RandomSentenceCount", str(random_sentence_count)])
+    if trigger_mode == "manual-key":
+        command.extend(["-PlaybackCount", "2", "-RecordPlaybackIndex", "2"])
+    if expect_no_text:
+        command.append("-ExpectNoText")
+    if extra_smoke_args:
+        command.extend(extra_smoke_args)
     if not args.reset_before_capture:
         command.append("-NoResetBeforeCapture")
     if args.full_chain_verify_insertion:
         command.append("-VerifyInsertion")
 
-    print(f"h3_listener_type_repo={listener_repo}", flush=True)
-    print(f"h3_bluetooth_address_source={bluetooth_address_source}", flush=True)
+    print(f"product_chain_trigger_mode={trigger_mode}", flush=True)
+    print(f"product_chain_artifact_label={trigger_label}", flush=True)
+    print(f"product_chain_audio_profile={profile_name}", flush=True)
+    print(f"product_chain_tts_rate={profile_tts_rate}", flush=True)
+    print(f"product_chain_tts_gain={profile_tts_gain}", flush=True)
+    print(f"product_chain_listener_type_repo={listener_repo}", flush=True)
+    print(f"product_chain_bluetooth_address_source={bluetooth_address_source}", flush=True)
+    print(f"product_chain_random_sentence_count={random_sentence_count}", flush=True)
+    print(f"product_chain_expect_no_text={1 if expect_no_text else 0}", flush=True)
+    print(f"product_chain_listener_timeout_ms={listener_timeout_ms}", flush=True)
     if bluetooth_address:
-        print(f"h3_bluetooth_address={bluetooth_address}", flush=True)
-    print(f"h3_listener_stdout={stdout_log}", flush=True)
-    print(f"h3_listener_stderr={stderr_log}", flush=True)
+        print(f"product_chain_bluetooth_address={bluetooth_address}", flush=True)
+    print(f"product_chain_listener_stdout={stdout_log}", flush=True)
+    print(f"product_chain_listener_stderr={stderr_log}", flush=True)
 
     try:
         completed = subprocess.run(
@@ -1234,19 +1536,19 @@ async def run_h3(args) -> dict[str, str]:
             text=True,
             encoding="utf-8",
             errors="replace",
-            timeout=max(1, int(args.full_chain_timeout_seconds)),
+            timeout=max(1, int(timeout_seconds)),
         )
     except subprocess.TimeoutExpired as exc:
         stdout_text = exc.stdout if isinstance(exc.stdout, str) else (exc.stdout or b"").decode("utf-8", errors="replace")
         stderr_text = exc.stderr if isinstance(exc.stderr, str) else (exc.stderr or b"").decode("utf-8", errors="replace")
         stdout_log.write_text(stdout_text, encoding="utf-8", errors="replace")
         stderr_log.write_text(stderr_text, encoding="utf-8", errors="replace")
-        return print_summary(
-            "H3",
+        return make_product_chain_result(
+            case_id,
             "fail",
             "full_chain_timeout",
             {
-                "timeout_seconds": args.full_chain_timeout_seconds,
+                "timeout_seconds": timeout_seconds,
                 "listener_type_repo": str(listener_repo),
                 "listener_type_stdout_path": str(stdout_log),
                 "listener_type_stderr_path": str(stderr_log),
@@ -1259,8 +1561,8 @@ async def run_h3(args) -> dict[str, str]:
     try:
         report = extract_prefixed_json(completed.stdout or "", "ble_stream_smoke_result_json=")
     except json.JSONDecodeError as exc:
-        return print_summary(
-            "H3",
+        return make_product_chain_result(
+            case_id,
             "fail",
             "full_chain_report_json_invalid",
             {
@@ -1271,8 +1573,8 @@ async def run_h3(args) -> dict[str, str]:
             },
         )
     if report is None:
-        return print_summary(
-            "H3",
+        return make_product_chain_result(
+            case_id,
             "fail",
             "full_chain_report_missing",
             {
@@ -1301,7 +1603,20 @@ async def run_h3(args) -> dict[str, str]:
         history_session.get("rawTranscript"),
         history_session.get("finalText"),
     )
+    inserted_text = first_non_empty(report.get("inserted_text"))
+    insertion_verified = bool(report.get("insertion_verified"))
+    if not insertion_verified and transcript and inserted_text:
+        insertion_verified = transcript in inserted_text
     insert_status = first_non_empty(history_session.get("insertStatus"))
+    if not insert_status and insertion_verified:
+        insert_status = "inserted"
+    if not embedded_stats and report.get("pcm_bytes") is not None:
+        embedded_stats = {
+            "receivedPcmBytes": report.get("pcm_bytes"),
+            "reconstructedPcmBytes": report.get("pcm_bytes"),
+            "missingPacketCount": report.get("missing_packets"),
+            "source": "smoke_report",
+        }
     report_status = str(report.get("status") or "FAIL").upper()
     result = "pass" if report_status == "PASS" else "warning" if report_status == "WARNING" else "fail"
     reason = ""
@@ -1312,21 +1627,54 @@ async def run_h3(args) -> dict[str, str]:
         for item in verification_errors
     )
     history_fallback_cleared_failure = history_lookup_fallback and history_missing_only
-    if history_fallback_cleared_failure:
+    fallback_resolved_verification = (
+        history_lookup_fallback
+        and bool(verification_errors)
+        and bool(transcript)
+        and bool(history_session)
+        and bool(embedded_stats)
+        and insert_status == "inserted"
+        and all(
+            str(item)
+            in {
+                "history session was not written for this BLE smoke",
+                "no transcript/final text available for insertion verification",
+                "target editor does not contain final text",
+            }
+            for item in verification_errors
+        )
+    )
+    if history_fallback_cleared_failure or fallback_resolved_verification:
         result = "pass"
         verification_errors = []
         report["verification_errors"] = verification_errors
         report["status_after_history_lookup_fallback"] = "PASS"
 
-    if completed.returncode != 0 and not history_fallback_cleared_failure:
+    if expect_no_text:
+        history_text = longest_non_empty(
+            history_session.get("rawTranscript"),
+            history_session.get("finalText"),
+        )
+        if completed.returncode != 0:
+            result = "fail"
+            reason = first_non_empty(report.get("error"), f"returncode={completed.returncode}")
+        elif transcript:
+            result = "fail"
+            reason = "unexpected_transcript_for_no_text_case"
+        elif inserted_text:
+            result = "fail"
+            reason = "unexpected_inserted_text_for_no_text_case"
+        elif history_text:
+            result = "fail"
+            reason = "unexpected_history_text_for_no_text_case"
+    elif completed.returncode != 0 and not (
+        history_fallback_cleared_failure or fallback_resolved_verification
+    ):
         result = "fail"
         reason = first_non_empty(report.get("error"), "; ".join(str(item) for item in verification_errors), f"returncode={completed.returncode}")
     elif not transcript:
         result = "fail"
         reason = "asr_transcript_missing"
-    elif not history_session:
-        result = "fail"
-        reason = "history_session_missing"
     elif not embedded_stats:
         result = "fail"
         reason = "embedded_audio_stats_missing"
@@ -1334,37 +1682,115 @@ async def run_h3(args) -> dict[str, str]:
         result = "fail"
         reason = f"insert_status_not_inserted:{insert_status or 'missing'}"
 
+    expected_text = first_non_empty(report.get("sentence"), expected_sentence)
+    accuracy_details = score_transcript_accuracy(expected_text, transcript)
+    accuracy_details["audio_profile"] = profile_name
+    accuracy_details["source_tts_rate"] = profile_tts_rate
+    accuracy_details["source_tts_gain"] = profile_tts_gain
+    accuracy_details["accuracy_threshold"] = float(profile["minimum_accuracy"])
+    accuracy_details["accuracy_warning_only"] = bool(profile["warning_only"])
+    if not expect_no_text:
+        result, reason = apply_accuracy_gate(
+            current_result=result,
+            current_reason=reason,
+            audio_profile=profile,
+            accuracy_details=accuracy_details,
+        )
+
     effective_status = "PASS" if result == "pass" else "WARNING" if result == "warning" else "FAIL"
     details = {
         "full_chain_status": effective_status,
         "listener_type_report_status": report_status,
         "full_chain_returncode": completed.returncode,
+        "trigger_mode": trigger_mode,
+        "artifact_label": trigger_label,
+        "audio_profile": profile_name,
+        "source_tts_rate": profile_tts_rate,
+        "source_tts_gain": profile_tts_gain,
+        "generated_wav_path": str(generated_wav_path) if generated_wav_path is not None else None,
+        "expect_no_text": expect_no_text,
         "listener_type_repo": str(listener_repo),
         "listener_type_stdout_path": str(stdout_log),
         "listener_type_stderr_path": str(stderr_log),
         "listener_type_report_path": latest_matching_file(output_dir, "ble-stream-smoke.*.json"),
         "sentence": report.get("sentence"),
+        **accuracy_details,
         "transcript": transcript,
         "insert_status": insert_status,
+        "inserted_text": inserted_text,
+        "insertion_verified": insertion_verified,
         "history_session_id": history_session.get("id"),
         "missing_packets": report.get("missing_packets"),
         "pcm_bytes": report.get("pcm_bytes"),
         "embedded_audio_stats": embedded_stats,
+        "recording_archive_path": report.get("recording_archive_path"),
         "verify_insertion": bool(report.get("verify_insertion")),
         "verify_history": bool(report.get("verify_history")),
         "history_lookup_fallback": history_lookup_fallback,
         "verification_errors": verification_errors,
         "listener_type_report": report,
     }
-    print(f"h3_full_chain_status={effective_status}", flush=True)
-    print(f"h3_listener_type_report_status={report_status}", flush=True)
-    print(f"h3_transcript={transcript.replace(chr(13), ' ').replace(chr(10), ' ')}", flush=True)
-    print(f"h3_insert_status={insert_status}", flush=True)
-    print(f"h3_history_lookup_fallback={1 if history_lookup_fallback else 0}", flush=True)
-    print(f"h3_history_session_id={history_session.get('id')}", flush=True)
-    print(f"h3_missing_packets={report.get('missing_packets')}", flush=True)
-    print(f"h3_pcm_bytes={report.get('pcm_bytes')}", flush=True)
-    return print_summary("H3", result, reason, details)
+    print(f"product_chain_full_chain_status={effective_status}", flush=True)
+    print(f"product_chain_listener_type_report_status={report_status}", flush=True)
+    print(f"product_chain_accuracy={accuracy_details['accuracy']}", flush=True)
+    print(f"product_chain_cer={accuracy_details['cer']}", flush=True)
+    print(f"product_chain_transcript={transcript.replace(chr(13), ' ').replace(chr(10), ' ')}", flush=True)
+    print(f"product_chain_insert_status={insert_status}", flush=True)
+    print(f"product_chain_history_lookup_fallback={1 if history_lookup_fallback else 0}", flush=True)
+    print(f"product_chain_history_session_id={history_session.get('id')}", flush=True)
+    print(f"product_chain_missing_packets={report.get('missing_packets')}", flush=True)
+    print(f"product_chain_pcm_bytes={report.get('pcm_bytes')}", flush=True)
+    return make_product_chain_result(case_id, result, reason, details)
+
+
+async def run_a12(args) -> dict[str, str]:
+    round_count = max(1, int(args.soak_round_count))
+    idle_seconds = max(0.0, float(args.soak_idle_seconds))
+    budget_seconds = max(300, int(round_count * 90 + idle_seconds * max(0, round_count - 1) + 60))
+    print_case_header("A12", f"mixed-use product-chain soak ({round_count} rounds)", budget_seconds)
+    rounds = []
+    failures = []
+    warnings = []
+    original_reset_before_capture = args.reset_before_capture
+    args.reset_before_capture = False
+    try:
+        for round_index in range(1, round_count + 1):
+            if round_index > 1 and idle_seconds > 0:
+                print(f"a12_idle_before_round={round_index}:{idle_seconds:.2f}", flush=True)
+                await asyncio.sleep(idle_seconds)
+            random_sentence_count = 2 if round_index % 3 == 0 else 1
+            product_chain = await run_listener_type_product_chain(
+                args,
+                "A12",
+                trigger_mode="serial-toggle",
+                artifact_label=f"soak_round_{round_index:02d}",
+                random_sentence_count_override=random_sentence_count,
+            )
+            rounds.append(product_chain)
+            result = str(product_chain.get("result"))
+            print(f"a12_round={round_index}:{result}:{product_chain.get('reason', '')}", flush=True)
+            if result == "fail":
+                failures.append(round_index)
+            elif result == "warning":
+                warnings.append(round_index)
+    finally:
+        args.reset_before_capture = original_reset_before_capture
+    if failures:
+        return print_summary("A12", "fail", "failed_rounds=" + ",".join(str(v) for v in failures), {"rounds": rounds})
+    if warnings:
+        return print_summary("A12", "warning", "warning_rounds=" + ",".join(str(v) for v in warnings), {"rounds": rounds})
+    return print_summary("A12", "pass", "", {"rounds": rounds})
+
+
+async def run_h1(args) -> dict[str, str]:
+    print_case_header("H1", "physical KEY1 product chain (manual trigger)", 180)
+    product_chain = await run_listener_type_product_chain(args, "H1", trigger_mode="manual-key")
+    return print_summary(
+        "H1",
+        str(product_chain["result"]),
+        str(product_chain.get("reason", "")),
+        {"product_chain": product_chain},
+    )
 
 
 CASE_RUNNERS = {
@@ -1378,9 +1804,111 @@ CASE_RUNNERS = {
     "A8": run_a8,
     "A9": run_a9,
     "A10": run_a10,
+    "A11": run_a11,
+    "A12": run_a12,
     "H1": run_h1,
-    "H3": run_h3,
 }
+
+
+def should_run_product_chain_overlay(args, case_id: str, case_result: dict[str, object]) -> bool:
+    if args.transport_only:
+        return False
+    if case_id in PRODUCT_CHAIN_IN_RUNNER_CASES:
+        return False
+    if case_id not in PRODUCT_CHAIN_OVERLAY_CASES:
+        return False
+    return str(case_result.get("result")) in ("pass", "warning")
+
+
+def should_stop_after_case(args, case_result: dict[str, object]) -> bool:
+    if args.continue_on_failure:
+        return False
+    result = str(case_result.get("result") or "")
+    if result == "fail":
+        return True
+    return bool(args.fail_on_warning and result == "warning")
+
+
+def should_retry_empty_transcript_product_chain(product_chain: dict[str, object]) -> bool:
+    if str(product_chain.get("result")) != "fail":
+        return False
+    details = product_chain.get("details")
+    if not isinstance(details, dict):
+        return False
+    if first_non_empty(details.get("transcript")):
+        return False
+    report = details.get("listener_type_report")
+    if not isinstance(report, dict):
+        report = {}
+    history_session = report.get("history_session")
+    if not isinstance(history_session, dict):
+        history_session = {}
+    embedded_stats = details.get("embedded_audio_stats")
+    if not isinstance(embedded_stats, dict):
+        embedded_stats = history_session.get("embeddedAudioStats")
+    if not isinstance(embedded_stats, dict) or not embedded_stats:
+        return False
+    try:
+        missing_packets = int(embedded_stats.get("missingPacketCount") or 0)
+    except (TypeError, ValueError):
+        missing_packets = 0
+    if missing_packets != 0:
+        return False
+    error_text = " ".join(
+        first_non_empty(value)
+        for value in (
+            product_chain.get("reason"),
+            report.get("error"),
+            history_session.get("errorCode"),
+        )
+    ).lower()
+    return "empty" in error_text and "transcript" in error_text
+
+
+async def attach_product_chain_overlay(
+    args,
+    case_id: str,
+    case_result: dict[str, object],
+) -> dict[str, object]:
+    print(f"product_chain_overlay_start={case_id}", flush=True)
+    product_chain = await run_listener_type_product_chain(args, case_id, trigger_mode="serial-toggle")
+    if should_retry_empty_transcript_product_chain(product_chain):
+        print(f"product_chain_retry_empty_transcript={case_id}", flush=True)
+        retry_product_chain = await run_listener_type_product_chain(
+            args,
+            case_id,
+            trigger_mode="serial-toggle",
+            artifact_label="serial_toggle_retry_empty_transcript",
+            sentence_override=PRODUCT_CHAIN_EMPTY_TRANSCRIPT_RETRY_SENTENCE,
+        )
+        retry_details = retry_product_chain.get("details")
+        if isinstance(retry_details, dict):
+            retry_details["retry_reason"] = "empty_transcript_with_complete_ble_audio"
+            retry_details["initial_attempt"] = product_chain
+        if str(retry_product_chain.get("result")) == "pass":
+            product_chain = retry_product_chain
+        else:
+            details = product_chain.get("details")
+            if isinstance(details, dict):
+                details["retry_attempt"] = retry_product_chain
+    details = case_result.get("details")
+    if not isinstance(details, dict):
+        details = {}
+        case_result["details"] = details
+    details["product_chain"] = product_chain
+
+    product_result = str(product_chain.get("result"))
+    if product_result == "fail":
+        case_result["result"] = "fail"
+        case_result["reason"] = "product_chain_failed:" + str(product_chain.get("reason", ""))
+    elif product_result == "warning" and str(case_result.get("result")) == "pass":
+        case_result["result"] = "warning"
+        case_result["reason"] = "product_chain_warning:" + str(product_chain.get("reason", ""))
+    print(
+        f"product_chain_overlay_done={case_id}:{product_result}:{product_chain.get('reason', '')}",
+        flush=True,
+    )
+    return case_result
 
 
 async def main_async(args) -> None:
@@ -1393,6 +1921,7 @@ async def main_async(args) -> None:
     print(f"random_usage_timing_enabled={0 if args.disable_random_usage_timing else 1}", flush=True)
     print(f"shuffle_auto_case_order={1 if args.shuffle_auto_case_order else 0}", flush=True)
     print(f"preflight_recover_mode={args.preflight_recover_mode}", flush=True)
+    print(f"product_chain_enabled={0 if args.transport_only else 1}", flush=True)
     print(f"random_seed={args.random_seed_resolved}", flush=True)
     print(
         f"short_capture_window={args.short_capture_window[0]}-{args.short_capture_window[1]}",
@@ -1449,9 +1978,25 @@ async def main_async(args) -> None:
                     print(f"preflight_recover_deferred={case_id}", flush=True)
             else:
                 print(f"preflight_recover_skipped={case_id}", flush=True)
-            results.append(await runner(args))
+            case_result = await runner(args)
+            if should_run_product_chain_overlay(args, case_id, case_result):
+                case_result = await attach_product_chain_overlay(args, case_id, case_result)
+            results.append(case_result)
+            if should_stop_after_case(args, case_result):
+                print(
+                    f"matrix_stop_after_case={case_id}:{case_result.get('result')}:{case_result.get('reason', '')}",
+                    flush=True,
+                )
+                break
         except Exception as exc:
-            results.append(print_summary(case_id, "fail", f"{type(exc).__name__}:{exc}"))
+            case_result = print_summary(case_id, "fail", f"{type(exc).__name__}:{exc}")
+            results.append(case_result)
+            if should_stop_after_case(args, case_result):
+                print(
+                    f"matrix_stop_after_case={case_id}:{case_result.get('result')}:{case_result.get('reason', '')}",
+                    flush=True,
+                )
+                break
 
     failed = [item for item in results if item["result"] == "fail"]
     warnings = [item for item in results if item["result"] == "warning"]

@@ -1,7 +1,0 @@
-interface:
-  display_name: "Voice Keyboard Firmware"
-  short_description: "Apply repo-specific firmware and hardware rules"
-  default_prompt: "Use $ai-collaboration-workflow and $voice-keyboard-firmware. Prefer Codex-direct for small work and dual-agent separate-worktree splits for clean parallel tasks. Route COM3/BLE/flash/verify gates through native pipeline with resource locks, declare artifact_files/structured_results metadata, then check pipeline_policy before continuing."
-
-policy:
-  allow_implicit_invocation: true

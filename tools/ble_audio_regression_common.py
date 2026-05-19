@@ -40,6 +40,36 @@ ANALYSIS_MIN_CORR = 0.20
 ANALYSIS_MIN_PEAK = 450
 ANALYSIS_MIN_ACTIVE_FRAMES = 5
 TTS_CACHE_DIR = TRANSIENT_SOURCE_DIR / "tts_cache"
+DEFAULT_TTS_GAIN = 4.0
+DEFAULT_TTS_RATE = 0
+FAST_TTS_RATE = 5
+LOW_VOLUME_TTS_GAIN = 1.8
+AUDIO_PROFILE_CONFIGS = {
+    "normal": {
+        "tts_rate": DEFAULT_TTS_RATE,
+        "tts_gain": DEFAULT_TTS_GAIN,
+        "minimum_accuracy": 0.85,
+        "warning_only": False,
+    },
+    "fast": {
+        "tts_rate": FAST_TTS_RATE,
+        "tts_gain": DEFAULT_TTS_GAIN,
+        "minimum_accuracy": 0.78,
+        "warning_only": False,
+    },
+    "low-volume": {
+        "tts_rate": DEFAULT_TTS_RATE,
+        "tts_gain": LOW_VOLUME_TTS_GAIN,
+        "minimum_accuracy": 0.72,
+        "warning_only": False,
+    },
+    "fast-low-volume": {
+        "tts_rate": FAST_TTS_RATE,
+        "tts_gain": LOW_VOLUME_TTS_GAIN,
+        "minimum_accuracy": 0.65,
+        "warning_only": True,
+    },
+}
 
 CHINESE_SENTENCE_POOL = (
     "明天下午两点提醒我检查蓝牙音频丢包率。",
@@ -73,13 +103,43 @@ def pick_chinese_sentence(seed: int) -> str:
     return CHINESE_SENTENCE_POOL[seed % len(CHINESE_SENTENCE_POOL)]
 
 
-def generate_tts_wav(path: pathlib.Path, text: str) -> str:
+def pick_chinese_sentences(seed: int, count: int) -> list[str]:
+    sentence_count = max(1, int(count))
+    rng = random.Random(seed)
+    pool = list(CHINESE_SENTENCE_POOL)
+    selected = []
+    while len(selected) < sentence_count:
+        if not pool:
+            pool = list(CHINESE_SENTENCE_POOL)
+        index = rng.randrange(len(pool))
+        selected.append(pool.pop(index))
+    return selected
+
+
+def normalize_audio_profile_name(profile: str | None) -> str:
+    name = (profile or "normal").strip().lower()
+    if name not in AUDIO_PROFILE_CONFIGS:
+        available = ", ".join(sorted(AUDIO_PROFILE_CONFIGS))
+        raise ValueError(f"unknown audio profile '{profile}'. Available profiles: {available}")
+    return name
+
+
+def resolve_audio_profile(profile: str | None = None) -> dict[str, object]:
+    name = normalize_audio_profile_name(profile)
+    resolved = dict(AUDIO_PROFILE_CONFIGS[name])
+    resolved["name"] = name
+    return resolved
+
+
+def generate_tts_wav(path: pathlib.Path, text: str, *, rate: int = DEFAULT_TTS_RATE) -> str:
     path.parent.mkdir(parents=True, exist_ok=True)
+    resolved_rate = max(-10, min(10, int(rate)))
     script = f"""
 $ErrorActionPreference = "Stop"
 Add-Type -AssemblyName System.Speech
 $path = {json.dumps(str(path), ensure_ascii=False)}
 $text = {json.dumps(text, ensure_ascii=False)}
+$rate = {resolved_rate}
 $synth = [System.Speech.Synthesis.SpeechSynthesizer]::new()
 try {{
     $zhVoice = $synth.GetInstalledVoices() |
@@ -88,6 +148,7 @@ try {{
     if ($null -ne $zhVoice) {{
         $synth.SelectVoice($zhVoice.VoiceInfo.Name)
     }}
+    $synth.Rate = $rate
     $format = [System.Speech.AudioFormat.SpeechAudioFormatInfo]::new(
         16000,
         [System.Speech.AudioFormat.AudioBitsPerSample]::Sixteen,
@@ -113,6 +174,18 @@ try {{
     return voice_lines[-1] if voice_lines else ""
 
 
+def generate_profile_tts_wav(
+    path: pathlib.Path,
+    text: str,
+    *,
+    tts_rate: int = DEFAULT_TTS_RATE,
+    tts_gain: float = DEFAULT_TTS_GAIN,
+) -> str:
+    voice = generate_tts_wav(path, text, rate=tts_rate)
+    scale_wav_pcm16(path, tts_gain)
+    return voice
+
+
 def make_loop_wav(source_wav: pathlib.Path, loop_wav: pathlib.Path, loop_seconds: int) -> None:
     frames = read_wav_frames(source_wav)
     silence = [0] * int(PCM_SAMPLE_RATE * 0.25)
@@ -128,15 +201,51 @@ def make_loop_wav(source_wav: pathlib.Path, loop_wav: pathlib.Path, loop_seconds
         wav_file.writeframes(struct.pack("<" + "h" * len(loop_frames), *loop_frames))
 
 
+def scale_wav_pcm16(path: pathlib.Path, gain: float) -> None:
+    resolved_gain = float(gain)
+    if resolved_gain == 1.0:
+        return
+    frames = read_wav_frames(path)
+    scaled_frames = []
+    for sample in frames:
+        scaled = int(round(sample * resolved_gain))
+        if scaled > 32767:
+            scaled = 32767
+        elif scaled < -32768:
+            scaled = -32768
+        scaled_frames.append(scaled)
+    with wave.open(str(path), "wb") as wav_file:
+        wav_file.setnchannels(PCM_CHANNELS)
+        wav_file.setsampwidth(PCM_WIDTH_BYTES)
+        wav_file.setframerate(PCM_SAMPLE_RATE)
+        wav_file.writeframes(struct.pack("<" + "h" * len(scaled_frames), *scaled_frames))
+
+
+def boost_wav_pcm16(path: pathlib.Path, gain: float) -> None:
+    scale_wav_pcm16(path, gain)
+
+
 def generate_source_wav_tts(
-    path: pathlib.Path, seconds: int, seed: int | None = None,
+    path: pathlib.Path,
+    seconds: int,
+    seed: int | None = None,
+    sentence_count: int = 1,
+    tts_rate: int = DEFAULT_TTS_RATE,
+    tts_gain: float = DEFAULT_TTS_GAIN,
 ) -> tuple[int, str]:
     source_seed = int(seed) if seed is not None else resolve_source_seed(path, seconds)
-    text = pick_chinese_sentence(source_seed)
-    tts_raw = TTS_CACHE_DIR / f"tts_seed_{source_seed}_16k_mono.wav"
+    sentences = pick_chinese_sentences(source_seed, sentence_count)
+    text = "".join(sentences)
+    resolved_rate = max(-10, min(10, int(tts_rate)))
+    resolved_gain = float(tts_gain)
+    tts_raw = (
+        TTS_CACHE_DIR /
+        f"tts_seed_{source_seed}_count_{max(1, int(sentence_count))}_rate_{resolved_rate}_16k_mono.wav"
+    )
     if not tts_raw.exists():
-        generate_tts_wav(tts_raw, text)
+        generate_tts_wav(tts_raw, text, rate=resolved_rate)
     make_loop_wav(tts_raw, path, seconds)
+    scale_wav_pcm16(path, resolved_gain)
     return source_seed, text
 
 
@@ -557,21 +666,45 @@ async def play_and_capture_serial_toggle(
     timeout_seconds: int | None = None,
     reset_before_capture: bool = True,
     pre_start_delay_seconds: float = 0.0,
+    tts_sentence_count: int = 1,
+    audio_profile: str = "normal",
+    tts_rate: int | None = None,
+    tts_gain: float | None = None,
     output_dir: pathlib.Path = ARTIFACT_DIR,
     serial_log_path: pathlib.Path = DEFAULT_SERIAL_LOG_PATH,
 ) -> dict[str, object]:
-    playback_source_wav = source_wav_path(scenario, source_label)
+    profile = resolve_audio_profile(audio_profile)
+    profile_name = str(profile["name"])
+    profile_label = profile_name.replace("-", "_")
+    effective_tts_rate = int(profile["tts_rate"] if tts_rate is None else tts_rate)
+    effective_tts_gain = float(profile["tts_gain"] if tts_gain is None else tts_gain)
+    effective_source_label = f"{source_label}_{profile_label}"
+    playback_source_wav = source_wav_path(scenario, effective_source_label)
     analysis_source_wav = source_wav_path(
         scenario,
-        f"{source_label}_reference_{capture_seconds}s",
+        f"{effective_source_label}_reference_{capture_seconds}s",
     )
     playback_length_seconds = max(
         capture_seconds,
         int(math.ceil(float(capture_seconds) + max(2.0, float(pre_start_delay_seconds) + 2.0))),
     )
     source_seed = resolve_source_seed(analysis_source_wav, capture_seconds)
-    tts_seed, tts_text = generate_source_wav_tts(playback_source_wav, playback_length_seconds, seed=source_seed)
-    generate_source_wav_tts(analysis_source_wav, capture_seconds, seed=source_seed)
+    tts_seed, tts_text = generate_source_wav_tts(
+        playback_source_wav,
+        playback_length_seconds,
+        seed=source_seed,
+        sentence_count=tts_sentence_count,
+        tts_rate=effective_tts_rate,
+        tts_gain=effective_tts_gain,
+    )
+    generate_source_wav_tts(
+        analysis_source_wav,
+        capture_seconds,
+        seed=source_seed,
+        sentence_count=tts_sentence_count,
+        tts_rate=effective_tts_rate,
+        tts_gain=effective_tts_gain,
+    )
     winsound.PlaySound(str(playback_source_wav), winsound.SND_FILENAME | winsound.SND_ASYNC)
     try:
         capture_args = make_capture_args(
@@ -605,6 +738,10 @@ async def play_and_capture_serial_toggle(
     summary["source_profile"] = "chinese_tts"
     summary["source_seed"] = tts_seed
     summary["source_text"] = tts_text
+    summary["source_sentence_count"] = int(tts_sentence_count)
+    summary["audio_profile"] = profile_name
+    summary["source_tts_rate"] = effective_tts_rate
+    summary["source_tts_gain"] = effective_tts_gain
     summary["pre_start_delay_seconds"] = float(pre_start_delay_seconds)
     summary["result"] = "pass"
     summary["failure_reason"] = ""
@@ -635,21 +772,42 @@ async def play_and_capture_serial_toggle_after_cancel_probe(
     timeout_seconds: int | None = None,
     reset_before_capture: bool = True,
     pre_start_delay_seconds: float = 0.0,
+    audio_profile: str = "normal",
+    tts_rate: int | None = None,
+    tts_gain: float | None = None,
     output_dir: pathlib.Path = ARTIFACT_DIR,
     serial_log_path: pathlib.Path = DEFAULT_SERIAL_LOG_PATH,
 ) -> dict[str, object]:
-    playback_source_wav = source_wav_path(scenario, source_label)
+    profile = resolve_audio_profile(audio_profile)
+    profile_name = str(profile["name"])
+    profile_label = profile_name.replace("-", "_")
+    effective_tts_rate = int(profile["tts_rate"] if tts_rate is None else tts_rate)
+    effective_tts_gain = float(profile["tts_gain"] if tts_gain is None else tts_gain)
+    effective_source_label = f"{source_label}_{profile_label}"
+    playback_source_wav = source_wav_path(scenario, effective_source_label)
     analysis_source_wav = source_wav_path(
         scenario,
-        f"{source_label}_reference_{capture_seconds}s",
+        f"{effective_source_label}_reference_{capture_seconds}s",
     )
     playback_length_seconds = max(
         capture_seconds,
         int(math.ceil(float(capture_seconds) + max(2.0, float(pre_start_delay_seconds) + 2.0))),
     )
     source_seed = resolve_source_seed(analysis_source_wav, capture_seconds)
-    tts_seed, tts_text = generate_source_wav_tts(playback_source_wav, playback_length_seconds, seed=source_seed)
-    generate_source_wav_tts(analysis_source_wav, capture_seconds, seed=source_seed)
+    tts_seed, tts_text = generate_source_wav_tts(
+        playback_source_wav,
+        playback_length_seconds,
+        seed=source_seed,
+        tts_rate=effective_tts_rate,
+        tts_gain=effective_tts_gain,
+    )
+    generate_source_wav_tts(
+        analysis_source_wav,
+        capture_seconds,
+        seed=source_seed,
+        tts_rate=effective_tts_rate,
+        tts_gain=effective_tts_gain,
+    )
 
     with open_serial_with_retry(port, 115200, timeout=0.05) as ser:
         ser.setDTR(False)
@@ -721,6 +879,9 @@ async def play_and_capture_serial_toggle_after_cancel_probe(
     summary["source_profile"] = "chinese_tts"
     summary["source_seed"] = tts_seed
     summary["source_text"] = tts_text
+    summary["audio_profile"] = profile_name
+    summary["source_tts_rate"] = effective_tts_rate
+    summary["source_tts_gain"] = effective_tts_gain
     summary["pre_start_delay_seconds"] = float(pre_start_delay_seconds)
     summary["cancel_hold_seconds"] = float(cancel_hold_seconds)
     summary["cancel_requested"] = cancel_requested
@@ -755,9 +916,17 @@ async def play_and_capture_serial_toggle_multi_session(
     reset_before_capture: bool = True,
     require_analysis: bool = True,
     pre_start_delay_seconds_per_session: list[float] | None = None,
+    audio_profile: str = "normal",
+    tts_rate: int | None = None,
+    tts_gain: float | None = None,
     output_dir: pathlib.Path = ARTIFACT_DIR,
     serial_log_path: pathlib.Path = DEFAULT_SERIAL_LOG_PATH,
 ) -> list[dict[str, object]]:
+    profile = resolve_audio_profile(audio_profile)
+    profile_name = str(profile["name"])
+    profile_label = profile_name.replace("-", "_")
+    effective_tts_rate = int(profile["tts_rate"] if tts_rate is None else tts_rate)
+    effective_tts_gain = float(profile["tts_gain"] if tts_gain is None else tts_gain)
     effective_capture_seconds_per_session = (
         [int(value) for value in capture_seconds_per_session]
         if capture_seconds_per_session is not None
@@ -777,7 +946,8 @@ async def play_and_capture_serial_toggle_multi_session(
             f"{scenario}: expected {session_count} pre-start delays, got {len(effective_pre_start_delay_seconds)}"
         )
 
-    source_wav = source_wav_path(scenario, source_label)
+    effective_source_label = f"{source_label}_{profile_label}"
+    source_wav = source_wav_path(scenario, effective_source_label)
     total_capture_seconds = sum(effective_capture_seconds_per_session)
     total_pre_start_delay_seconds = sum(effective_pre_start_delay_seconds)
     source_seed = resolve_source_seed(source_wav, int(capture_seconds))
@@ -788,6 +958,8 @@ async def play_and_capture_serial_toggle_multi_session(
             int(math.ceil(float(total_capture_seconds) + float(total_pre_start_delay_seconds) + 2.0)),
         ),
         seed=source_seed,
+        tts_rate=effective_tts_rate,
+        tts_gain=effective_tts_gain,
     )
     winsound.PlaySound(str(source_wav), winsound.SND_FILENAME | winsound.SND_ASYNC)
     try:
@@ -825,9 +997,15 @@ async def play_and_capture_serial_toggle_multi_session(
         if reference_wav is None:
             reference_wav = source_wav_path(
                 scenario,
-                f"{source_label}_reference_{target_capture_seconds}s",
+                f"{effective_source_label}_reference_{target_capture_seconds}s",
             )
-            generate_source_wav_tts(reference_wav, target_capture_seconds, seed=source_seed)
+            generate_source_wav_tts(
+                reference_wav,
+                target_capture_seconds,
+                seed=source_seed,
+                tts_rate=effective_tts_rate,
+                tts_gain=effective_tts_gain,
+            )
             reference_wav_cache[target_capture_seconds] = reference_wav
 
         analysis = analyze_recording(reference_wav, recorded_wav)
@@ -838,6 +1016,9 @@ async def play_and_capture_serial_toggle_multi_session(
         summary["source_profile"] = "chinese_tts"
         summary["source_seed"] = tts_seed
         summary["source_text"] = tts_text
+        summary["audio_profile"] = profile_name
+        summary["source_tts_rate"] = effective_tts_rate
+        summary["source_tts_gain"] = effective_tts_gain
         summary["result"] = "pass"
         summary["failure_reason"] = ""
         summary["warning_reason"] = ""
