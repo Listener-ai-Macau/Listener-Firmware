@@ -1,0 +1,15 @@
+choice AUDIO_CAPTURE_MIC_TYPE
+    prompt "Microphone hardware type"
+    default AUDIO_CAPTURE_MIC_ES8311
+    help
+        Select the microphone hardware connected to the I2S interface.
+        ES8311: Analog codec via I2C + I2S (legacy board).
+        SPH0645: I2S digital microphone, no codec needed (schematic V1).
+
+config AUDIO_CAPTURE_MIC_ES8311
+    bool "ES8311 analog codec (legacy board)"
+
+config AUDIO_CAPTURE_MIC_SPH0645
+    bool "SPH0645 I2S digital mic (schematic V1)"
+
+endchoice
