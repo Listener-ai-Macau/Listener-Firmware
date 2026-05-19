@@ -1130,6 +1130,31 @@ def ensure_pass(case_id: str, summary: dict[str, object]) -> dict[str, object]:
     return print_summary(case_id, "pass", "", compact_case_details(summary))
 
 
+def finalize_transport_capture_summary(
+    summary: dict[str, object],
+    *,
+    capture_seconds: int,
+    pre_start_delay_seconds: float,
+) -> dict[str, object]:
+    validation = validate_transport_summary(summary, capture_seconds=capture_seconds)
+    summary.update(validation)
+    summary["pre_start_delay_seconds"] = float(pre_start_delay_seconds)
+    summary["result"] = "pass"
+    summary["failure_reason"] = ""
+    summary["warning_reason"] = ""
+    if validation["transport_result"] == "fail":
+        summary["result"] = "fail"
+        summary["failure_reason"] = (
+            validation["transport_failure_reason"] or "transport_validation_failed"
+        )
+    elif validation["transport_result"] == "warning":
+        summary["result"] = "warning"
+        summary["warning_reason"] = (
+            validation["transport_warning_reason"] or "transport_warning"
+        )
+    return summary
+
+
 def summary_outcome(summary: dict[str, object]) -> tuple[str, str]:
     return (
         str(summary.get("result") or "fail"),
@@ -1254,6 +1279,11 @@ async def run_a4_new(args) -> dict[str, str]:
     if not session_summaries:
         return print_summary("A4", "fail", "no_session_captured")
     summary = dict(session_summaries[-1])
+    summary = finalize_transport_capture_summary(
+        summary,
+        capture_seconds=capture_seconds,
+        pre_start_delay_seconds=pre_start_delay,
+    )
     expected_text = "".join(sentences)
     summary["expected_text"] = expected_text
     summary["audio_profile"] = "normal"
@@ -1298,7 +1328,6 @@ async def run_a6_new(args) -> dict[str, str]:
         reset_before_capture=args.reset_before_capture,
         pre_start_delay_seconds=pre_start_delay,
         audio_profile="fast",
-        tts_rate=7,
         output_dir=case_output_dir("A6"),
         serial_log_path=case_serial_log_path("A6"),
     )
@@ -1518,6 +1547,11 @@ async def run_a12_new(args) -> dict[str, str]:
     if not session_summaries:
         return print_summary("A12", "fail", "no_session_captured")
     summary = dict(session_summaries[-1])
+    summary = finalize_transport_capture_summary(
+        summary,
+        capture_seconds=capture_seconds,
+        pre_start_delay_seconds=pre_start_delay,
+    )
     summary["expected_text"] = expected_text
     summary["audio_profile"] = "noisy"
     summary["source_tts_rate"] = int(profile["tts_rate"])
@@ -1565,6 +1599,11 @@ async def run_a13_new(args) -> dict[str, str]:
     if not session_summaries:
         return print_summary("A13", "fail", "no_session_captured")
     summary = dict(session_summaries[-1])
+    summary = finalize_transport_capture_summary(
+        summary,
+        capture_seconds=capture_seconds,
+        pre_start_delay_seconds=pre_start_delay,
+    )
     summary["expected_text"] = expected_text
     summary["audio_profile"] = "normal"
     summary["source_tts_rate"] = int(profile["tts_rate"])
@@ -1609,6 +1648,11 @@ async def run_a16_new(args) -> dict[str, str]:
     if not session_summaries:
         return print_summary("A16", "fail", "no_session_captured")
     summary = dict(session_summaries[-1])
+    summary = finalize_transport_capture_summary(
+        summary,
+        capture_seconds=capture_seconds,
+        pre_start_delay_seconds=pre_start_delay,
+    )
     summary["expected_text"] = expected_text
     summary["audio_profile"] = "normal"
     summary["source_tts_rate"] = int(profile["tts_rate"])
