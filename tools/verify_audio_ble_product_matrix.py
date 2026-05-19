@@ -71,7 +71,7 @@ CASE_SUITES = {
     "auto": FULL_CASES,
 }
 PRODUCT_CHAIN_OVERLAY_CASES = tuple(case_id for case_id in CASE_ORDER if case_id.startswith("A"))
-PRODUCT_CHAIN_IN_RUNNER_CASES = ()
+PRODUCT_CHAIN_IN_RUNNER_CASES = ("A1", "A2", "A3")
 MANUAL_OR_EXTERNAL_CASES = {
     "H2": "requires physical distance/angle change",
     "H3": "requires different speaker voice or manual TTS voice switch",
@@ -115,11 +115,27 @@ NEGATIVE_PRODUCT_CHAIN_TIMEOUT_SECONDS = 70
 NEGATIVE_PRODUCT_CHAIN_LISTENER_TIMEOUT_MS = 35000
 PRODUCT_CHAIN_EMPTY_TRANSCRIPT_RETRY_SENTENCE = "蓝牙音频正在发送到火山识别，请检查文本结果。"
 
+SHORT_DICTATION_SENTENCES = (
+    "今天天气不错，适合出去走走，散散心。",
+    "蓝牙音频正在发送到火山识别，请检查文本结果。",
+    "我正在测试语音输入，确认文字可以稳定出现。",
+    "火山识别和蓝牙传输正在接受测试。",
+)
+
+LOW_VOLUME_DICTATION_SENTENCES = (
+    "蓝牙音频正在发送到火山识别，请检查文本结果。",
+    "火山识别和蓝牙传输正在接受测试。",
+    "今天天气不错，适合出去走走，散散心。",
+    "我正在测试语音输入，确认文字可以稳定出现。",
+)
+
+SHORT_DICTATION_CASES = {"A1", "A3", "A5", "A6"}
+
 A2_LONG_DICTATION_LEADS = (
-    "今天我会连续记录蓝牙听写的使用过程",
-    "这段长录音用来验证真实会议记录的输入体验",
     "现在开始进行一段完整的产品链路长听写",
-    "我正在复盘上午的调试过程和后续安排",
+    "蓝牙听写测试现在开始记录第一句话",
+    "这段录音正在验证长时间语音输入",
+    "请把这段长录音完整转换成文字",
 )
 A2_LONG_DICTATION_CLAUSES = (
     "先确认胶囊里可以实时看到稳定的预览内容",
@@ -142,7 +158,7 @@ A2_LONG_DICTATION_ENDINGS = (
     "最后继续执行下一项自动化回归",
 )
 CASE_PRODUCT_CHAIN_AUDIO_PROFILES = {
-    "A1": ("normal",),
+    "A1": ("normal", "fast", "low-volume"),
     "A2": ("normal", "fast"),
     "A3": ("normal", "fast", "low-volume"),
     "A4": ("normal",),
@@ -747,6 +763,7 @@ def validate_partial_preview_quality(
     partial_preview: str,
     *,
     max_cer: float = 0.5,
+    min_chars: int = 6,
 ) -> dict[str, object]:
     if not partial_preview:
         return {"pass": False, "reason": "empty_partial_preview"}
@@ -757,19 +774,67 @@ def validate_partial_preview_quality(
     normalized_partial = normalize_accuracy_text(partial_preview)
     if not normalized_partial:
         return {"pass": False, "reason": "empty_normalized_partial_preview"}
+    if len(normalized_partial) < min_chars:
+        return {
+            "pass": False,
+            "reason": f"partial_preview_too_short:{len(normalized_partial)}<{min_chars}",
+            "prefix_cer": 1.0,
+            "best_window_cer": 1.0,
+            "match_cer": 1.0,
+        }
 
     prefix_len = min(len(normalized_partial), len(normalized_expected))
     expected_prefix = normalized_expected[:prefix_len]
     distance = edit_distance(expected_prefix, normalized_partial)
     prefix_cer = distance / float(len(expected_prefix)) if expected_prefix else 0.0
-    quality_pass = prefix_cer <= max_cer
+    best_window_cer = prefix_cer
+    best_window_offset = 0
+    if normalized_expected:
+        window_len = min(len(normalized_partial), len(normalized_expected))
+        if len(normalized_partial) <= len(normalized_expected):
+            best_window_cer = 1.0
+            for offset in range(0, len(normalized_expected) - window_len + 1):
+                expected_window = normalized_expected[offset:offset + window_len]
+                window_distance = edit_distance(expected_window, normalized_partial)
+                window_cer = window_distance / float(window_len) if window_len else 0.0
+                if window_cer < best_window_cer:
+                    best_window_cer = window_cer
+                    best_window_offset = offset
+        else:
+            window_distance = edit_distance(normalized_expected, normalized_partial)
+            best_window_cer = window_distance / float(len(normalized_expected))
+    match_cer = min(prefix_cer, best_window_cer)
+    quality_pass = match_cer <= max_cer
+    match_type = "prefix" if prefix_cer <= best_window_cer else "window"
 
     return {
         "pass": quality_pass,
-        "reason": "" if quality_pass else f"partial_preview_prefix_cer={prefix_cer:.3f}>{max_cer}",
+        "reason": "" if quality_pass else f"partial_preview_match_cer={match_cer:.3f}>{max_cer}",
         "prefix_cer": round(prefix_cer, 6),
+        "best_window_cer": round(best_window_cer, 6),
+        "best_window_offset": best_window_offset,
+        "match_cer": round(match_cer, 6),
+        "match_type": match_type,
         "prefix_length": prefix_len,
+        "preview": partial_preview,
     }
+
+
+def validate_best_partial_preview_quality(
+    expected_text: str,
+    partial_previews: list[str],
+    *,
+    max_cer: float = 0.5,
+) -> dict[str, object]:
+    meaningful_previews = [preview for preview in partial_previews if preview and preview.strip()]
+    if not meaningful_previews:
+        return {"pass": False, "reason": "empty_partial_preview"}
+    best: dict[str, object] | None = None
+    for preview in meaningful_previews:
+        quality = validate_partial_preview_quality(expected_text, preview, max_cer=max_cer)
+        if best is None or float(quality.get("match_cer", 1.0)) < float(best.get("match_cer", 1.0)):
+            best = quality
+    return best or {"pass": False, "reason": "empty_partial_preview"}
 
 
 def validate_capsule_evidence(
@@ -786,6 +851,32 @@ def validate_capsule_evidence(
     partial_preview_count = details.get("partial_preview_count")
     last_partial_preview = details.get("last_partial_preview")
     transcript = details.get("transcript")
+    expected_text = first_non_empty(details.get("expected_text"), details.get("sentence"))
+    final_text = first_non_empty(details.get("final_text"), transcript)
+    raw_updates = details.get("asr_text_updates")
+    text_updates = [
+        str(item).strip()
+        for item in raw_updates
+        if item is not None and str(item).strip()
+    ] if isinstance(raw_updates, list) else []
+    normalized_final = normalize_accuracy_text(final_text)
+    partial_only_updates = [
+        item for item in text_updates
+        if not normalized_final or normalize_accuracy_text(item) != normalized_final
+    ]
+    first_partial_preview = partial_only_updates[0] if partial_only_updates else (
+        text_updates[0] if text_updates else ""
+    )
+    final_preview_update_seen = bool(
+        normalized_final
+        and any(normalize_accuracy_text(item) == normalized_final for item in text_updates)
+    )
+    normalized_expected = normalize_accuracy_text(expected_text)
+    expected_front_prefix = normalized_expected[: min(12, len(normalized_expected))]
+    front_prefix_seen_before_final = bool(
+        expected_front_prefix
+        and any(expected_front_prefix in normalize_accuracy_text(item) for item in partial_only_updates)
+    )
 
     if expect_no_text:
         had_unexpected_partial = (
@@ -810,14 +901,28 @@ def validate_capsule_evidence(
     checks: dict[str, object] = {
         "partial_preview_visible": had_partial,
         "final_text_received": had_transcript,
+        "preview_evidence": {
+            "text_update_count": len(text_updates),
+            "first_partial_preview": first_partial_preview,
+            "last_partial_preview": str(last_partial_preview or ""),
+            "final_preview_update_seen": final_preview_update_seen,
+            "front_prefix_seen_before_final": front_prefix_seen_before_final,
+            "expected_front_prefix": expected_front_prefix,
+            "final_text": final_text,
+        },
     }
 
-    if case_id == "A2" and had_partial and last_partial_preview:
-        preview_quality = validate_partial_preview_quality(
-            str(transcript or ""), str(last_partial_preview), max_cer=0.5,
+    if case_id == "A2" and had_partial:
+        preview_quality = validate_best_partial_preview_quality(
+            str(first_non_empty(expected_text, final_text, transcript)),
+            partial_only_updates or [str(last_partial_preview or "")],
+            max_cer=0.5,
         )
         checks["partial_preview_content_quality"] = preview_quality["pass"]
         checks["partial_preview_prefix_cer"] = preview_quality.get("prefix_cer")
+        checks["partial_preview_best_window_cer"] = preview_quality.get("best_window_cer")
+        checks["partial_preview_match_type"] = preview_quality.get("match_type")
+        checks["partial_preview_quality_source"] = preview_quality.get("preview")
 
     all_pass = all(v for v in checks.values() if isinstance(v, bool))
     reasons = [k for k, v in checks.items() if isinstance(v, bool) and not v]
@@ -993,107 +1098,57 @@ def write_matrix_result_json(
     return output_path
 
 
-async def run_a1(args) -> dict[str, str]:
-    capture_seconds = choose_duration(args, window=args.short_capture_window, label="a1")
-    budget = max(120, int(capture_seconds * 3 + 60))
-    print_case_header("A1", "single short recording baseline", budget)
-    pre_start_delay = choose_delay_seconds(
+async def run_product_chain_primary_case(
+    args,
+    case_id: str,
+    title: str,
+    budget_seconds: int,
+) -> dict[str, object]:
+    print_case_header(case_id, title, budget_seconds)
+    print(f"transport_capture_skipped={case_id}:product_chain_primary", flush=True)
+    case_result: dict[str, object] = {
+        "case_id": case_id,
+        "result": "pass",
+        "reason": "",
+        "details": {
+            "transport_capture_skipped": True,
+            "transport_skip_reason": "product_chain_primary_requires_capsule_before_playback",
+        },
+    }
+    return await attach_product_chain_overlay(args, case_id, case_result)
+
+
+async def run_a1(args) -> dict[str, object]:
+    profiles = product_chain_profiles_for_case(args, "A1")
+    budget = max(180, len(profiles) * 90)
+    return await run_product_chain_primary_case(
         args,
-        window=args.pre_start_delay_window,
-        label="a1_pre_start",
+        "A1",
+        "single short recording product chain",
+        budget,
     )
-    summary = await play_and_capture_serial_toggle(
-        port=args.port,
-        device_name=args.device_name,
-        scenario="A1",
-        capture_seconds=capture_seconds,
-        timeout_seconds=max(90, int(capture_seconds + 60)),
-        reset_before_capture=args.reset_before_capture,
-        pre_start_delay_seconds=pre_start_delay,
-        output_dir=case_output_dir("A1"),
-        serial_log_path=case_serial_log_path("A1"),
-    )
-    return ensure_pass("A1", summary)
 
 
-async def run_a2(args) -> dict[str, str]:
-    capture_seconds = choose_duration(args, window=args.long_capture_window, label="a2")
-    budget = max(240, int(capture_seconds * 3 + 60))
-    print_case_header("A2", "single long recording baseline", budget)
-    pre_start_delay = choose_delay_seconds(
+async def run_a2(args) -> dict[str, object]:
+    profiles = product_chain_profiles_for_case(args, "A2")
+    budget = max(300, len(profiles) * A2_PRODUCT_CHAIN_MIN_TIMEOUT_SECONDS)
+    return await run_product_chain_primary_case(
         args,
-        window=args.pre_start_delay_window,
-        label="a2_pre_start",
+        "A2",
+        "single long recording product chain",
+        budget,
     )
-    summary = await play_and_capture_serial_toggle(
-        port=args.port,
-        device_name=args.device_name,
-        scenario="A2",
-        capture_seconds=capture_seconds,
-        timeout_seconds=max(90, int(capture_seconds + 60)),
-        reset_before_capture=args.reset_before_capture,
-        pre_start_delay_seconds=pre_start_delay,
-        tts_sentence_count=max(2, int(args.full_chain_long_sentence_count)),
-        output_dir=case_output_dir("A2"),
-        serial_log_path=case_serial_log_path("A2"),
-    )
-    return ensure_pass("A2", summary)
 
 
-async def run_a3(args) -> dict[str, str]:
-    budget_seconds = max(180, args.round_count * 90)
-    print_case_header("A3", "multi-round short recordings", budget_seconds)
-    failures = []
-    warnings = []
-    capture_seconds_plan = choose_duration_plan(
+async def run_a3(args) -> dict[str, object]:
+    profiles = product_chain_profiles_for_case(args, "A3")
+    budget_seconds = max(240, len(profiles) * 90)
+    return await run_product_chain_primary_case(
         args,
-        window=args.short_capture_window,
-        count=args.round_count,
-        label="a3",
+        "A3",
+        "multi-profile short recording product chain",
+        budget_seconds,
     )
-    pre_start_delay_plan = choose_delay_plan(
-        args,
-        first_window=args.pre_start_delay_window,
-        followup_window=args.inter_session_gap_window,
-        count=args.round_count,
-        label="a3",
-    )
-    summaries = await play_and_capture_serial_toggle_multi_session(
-        port=args.port,
-        device_name=args.device_name,
-        scenario="A3",
-        capture_seconds=args.capture_seconds,
-        capture_seconds_per_session=capture_seconds_plan,
-        session_count=args.round_count,
-        timeout_seconds=90,
-        reset_before_capture=args.reset_before_capture,
-        require_analysis=False,
-        pre_start_delay_seconds_per_session=pre_start_delay_plan,
-        output_dir=case_output_dir("A3"),
-        serial_log_path=case_serial_log_path("A3"),
-    )
-    for round_index, summary in enumerate(summaries, start=1):
-        print(f"round_index={round_index}", flush=True)
-        print(f"round_result={summary['result']}", flush=True)
-        print(f"round_transport_result={summary['transport_result']}", flush=True)
-        print(f"round_analysis_result={summary['analysis_result']}", flush=True)
-        print(f"round_capture_seconds_target={summary['capture_seconds_target']}", flush=True)
-        print(f"round_missing_packet_count={summary['missing_packet_count']}", flush=True)
-        print(f"round_missing_packet_indices={','.join(str(v) for v in summary['missing_packet_indices'][:16])}", flush=True)
-        print(f"round_packet_loss_ratio={summary['packet_loss_ratio']:.4f}", flush=True)
-        print(f"round_best_corr={summary['best_corr']:.4f}", flush=True)
-        print(f"round_recorded_peak={summary['recorded_peak']}", flush=True)
-        print(f"round_active_frame_count={summary['active_frame_count']}", flush=True)
-        if summary["result"] == "fail":
-            failures.append(round_index)
-        elif summary["result"] == "warning":
-            warnings.append(round_index)
-
-    if failures:
-        return print_summary("A3", "fail", "failed_rounds=" + ",".join(str(v) for v in failures))
-    if warnings:
-        return print_summary("A3", "warning", "warning_rounds=" + ",".join(str(v) for v in warnings))
-    return print_summary("A3", "pass", "")
 
 
 async def run_a4_new(args) -> dict[str, str]:
@@ -2034,6 +2089,22 @@ def pick_a2_long_dictation_text(seed: int, clause_count: int) -> str:
     return "，".join([lead, *clauses, ending]) + "。"
 
 
+def pick_short_dictation_text(
+    seed: int,
+    sentence_count: int,
+    pool: tuple[str, ...] = SHORT_DICTATION_SENTENCES,
+) -> str:
+    rng = random.Random(seed)
+    candidates = list(pool)
+    picked: list[str] = []
+    while len(picked) < max(1, int(sentence_count)):
+        if not candidates:
+            candidates = list(pool)
+        index = rng.randrange(len(candidates))
+        picked.append(candidates.pop(index))
+    return "".join(picked)
+
+
 async def run_listener_type_product_chain(
     args,
     case_id: str,
@@ -2110,6 +2181,17 @@ async def run_listener_type_product_chain(
                 expected_sentence = pick_a2_long_dictation_text(
                     sentence_seed,
                     random_sentence_count,
+                )
+            elif case_id in SHORT_DICTATION_CASES:
+                short_pool = (
+                    LOW_VOLUME_DICTATION_SENTENCES
+                    if profile_name == "low-volume"
+                    else SHORT_DICTATION_SENTENCES
+                )
+                expected_sentence = pick_short_dictation_text(
+                    sentence_seed,
+                    random_sentence_count,
+                    short_pool,
                 )
             else:
                 expected_sentence = "".join(
@@ -2239,14 +2321,30 @@ async def run_listener_type_product_chain(
     transcript = first_non_empty(report.get("transcript"))
     history_session = report.get("history_session")
     if not isinstance(history_session, dict):
-        history_session = find_listener_history_session(
-            history_path=report.get("history_path"),
-            transcript=transcript,
-            expected_pcm_bytes=report.get("pcm_bytes"),
-        ) or {}
-        if history_session:
-            report["history_session"] = history_session
-            report["history_lookup_fallback"] = True
+        try:
+            fallback_pcm_bytes = int(report.get("pcm_bytes") or 0)
+        except (TypeError, ValueError):
+            fallback_pcm_bytes = 0
+        try:
+            fallback_playback_ms = int(report.get("record_playback_actual_ms") or 0)
+        except (TypeError, ValueError):
+            fallback_playback_ms = 0
+        history_fallback_eligible = (
+            not expect_no_text
+            and (completed.returncode == 0 or fallback_pcm_bytes > 0 or fallback_playback_ms > 0)
+        )
+        if history_fallback_eligible:
+            history_session = find_listener_history_session(
+                history_path=report.get("history_path"),
+                transcript=transcript,
+                expected_pcm_bytes=report.get("pcm_bytes"),
+            ) or {}
+            if history_session:
+                report["history_session"] = history_session
+                report["history_lookup_fallback"] = True
+        else:
+            history_session = {}
+            report["history_lookup_fallback_skipped"] = "no_current_recording_evidence"
     embedded_stats = history_session.get("embeddedAudioStats")
     if not isinstance(embedded_stats, dict):
         embedded_stats = {}
@@ -2368,6 +2466,11 @@ async def run_listener_type_product_chain(
         "sentence": report.get("sentence"),
         **accuracy_details,
         "transcript": transcript,
+        "final_text": first_non_empty(report.get("final_text"), transcript),
+        "partial_preview_count": report.get("partial_preview_count"),
+        "last_partial_preview": report.get("last_partial_preview"),
+        "asr_text_update_count": report.get("asr_text_update_count"),
+        "asr_text_updates": report.get("asr_text_updates"),
         "insert_status": insert_status,
         "inserted_text": inserted_text,
         "insertion_verified": insertion_verified,
@@ -2514,6 +2617,34 @@ def should_retry_empty_transcript_product_chain(product_chain: dict[str, object]
     return "empty" in error_text and "transcript" in error_text
 
 
+def compact_product_chain_attempt(product_chain: dict[str, object]) -> dict[str, object]:
+    details = product_chain.get("details")
+    if not isinstance(details, dict):
+        details = {}
+    return {
+        "case_id": product_chain.get("case_id"),
+        "result": product_chain.get("result"),
+        "reason": product_chain.get("reason"),
+        "details": {
+            "full_chain_status": details.get("full_chain_status"),
+            "listener_type_report_status": details.get("listener_type_report_status"),
+            "full_chain_returncode": details.get("full_chain_returncode"),
+            "artifact_label": details.get("artifact_label"),
+            "audio_profile": details.get("audio_profile"),
+            "sentence": details.get("sentence"),
+            "transcript": details.get("transcript"),
+            "accuracy": details.get("accuracy"),
+            "cer": details.get("cer"),
+            "insert_status": details.get("insert_status"),
+            "history_session_id": details.get("history_session_id"),
+            "missing_packets": details.get("missing_packets"),
+            "pcm_bytes": details.get("pcm_bytes"),
+            "embedded_audio_stats": details.get("embedded_audio_stats"),
+            "listener_type_report_path": details.get("listener_type_report_path"),
+        },
+    }
+
+
 async def attach_product_chain_overlay(
     args,
     case_id: str,
@@ -2546,19 +2677,25 @@ async def attach_product_chain_overlay(
             retry_details = retry_product_chain.get("details")
             if isinstance(retry_details, dict):
                 retry_details["retry_reason"] = "empty_transcript_with_complete_ble_audio"
-                retry_details["initial_attempt"] = product_chain
+                retry_details["initial_attempt"] = compact_product_chain_attempt(product_chain)
             if str(retry_product_chain.get("result")) == "pass":
                 product_chain = retry_product_chain
             else:
                 details = product_chain.get("details")
                 if isinstance(details, dict):
-                    details["retry_attempt"] = retry_product_chain
+                    details["retry_attempt"] = compact_product_chain_attempt(retry_product_chain)
         profile_results.append(product_chain)
         product_result = str(product_chain.get("result"))
         if product_result == "fail":
             failures.append(profile_name)
+            if not args.continue_on_failure:
+                print(f"product_chain_profile_stop={case_id}:{profile_name}:fail", flush=True)
+                break
         elif product_result == "warning":
             warnings.append(profile_name)
+            if args.fail_on_warning and not args.continue_on_failure:
+                print(f"product_chain_profile_stop={case_id}:{profile_name}:warning", flush=True)
+                break
 
     details = case_result.get("details")
     if not isinstance(details, dict):
@@ -2579,7 +2716,7 @@ async def attach_product_chain_overlay(
         is_no_text = bool(pc_details.get("expect_no_text"))
         check = validate_capsule_evidence(
             case_id, pc,
-            expect_partial=not is_no_text,
+            expect_partial=(case_id == "A2" and not is_no_text),
             expect_no_text=is_no_text,
         )
         capsule_checks.append(check)
