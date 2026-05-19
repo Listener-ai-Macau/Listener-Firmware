@@ -693,7 +693,9 @@ static esp_err_t audio_capture_codec_init(void)
 static void sph0645_to_int16(const int32_t *src, int16_t *dst, size_t samples)
 {
     for (size_t i = 0; i < samples; i++) {
-        dst[i] = (int16_t)(src[i] >> 8);
+        /* SPH0645 24-bit data is left-aligned in 32-bit FIFO word (bits [31:8]).
+         * Shift right by 16 to extract the upper 16 bits. */
+        dst[i] = (int16_t)(src[i] >> 16);
     }
 }
 
@@ -734,7 +736,9 @@ static esp_err_t audio_capture_i2s_init(void)
             .clk_src = I2S_CLK_SRC_DEFAULT,
             .mclk_multiple = AUDIO_CAPTURE_SPH0645_MCLK_MULTIPLE,
         },
-        .slot_cfg = I2S_STD_PHILIPS_SLOT_DEFAULT_CONFIG(I2S_DATA_BIT_WIDTH_24BIT, I2S_SLOT_MODE_MONO),
+        /* Capture full 32-bit slot to avoid 3-byte DMA packing;
+         * SPH0645 24-bit data is left-aligned in the 32-bit word. */
+        .slot_cfg = I2S_STD_PHILIPS_SLOT_DEFAULT_CONFIG(I2S_DATA_BIT_WIDTH_32BIT, I2S_SLOT_MODE_MONO),
         .gpio_cfg = {
             .mclk = GPIO_NUM_NC,
             .bclk = BOARD_PINS_I2S_BCLK_IO,
@@ -748,12 +752,10 @@ static esp_err_t audio_capture_i2s_init(void)
             },
         },
     };
-    std_cfg.slot_cfg.slot_bit_width = I2S_SLOT_BIT_WIDTH_32BIT;
-    std_cfg.slot_cfg.ws_width = 32;
 
     ESP_RETURN_ON_ERROR(i2s_channel_init_std_mode(s_i2s_rx_handle, &std_cfg), TAG, "init i2s rx failed");
     ESP_RETURN_ON_ERROR(i2s_channel_enable(s_i2s_rx_handle), TAG, "enable i2s rx failed");
-    ESP_LOGI(TAG, "SPH0645 I2S init: %uHz 24-bit/32-slot no-MCLK", AUDIO_CAPTURE_SAMPLE_RATE_HZ);
+    ESP_LOGI(TAG, "SPH0645 I2S init: %uHz 32-bit slot no-MCLK", AUDIO_CAPTURE_SAMPLE_RATE_HZ);
     return ESP_OK;
 }
 
