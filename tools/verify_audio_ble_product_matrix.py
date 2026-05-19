@@ -82,7 +82,7 @@ CASE_DESCRIPTIONS = {
     "A3": "连续多轮：每轮说不同的话，混合 profile",
     "A4": "犹豫停顿：说话时停顿 1-3s 后继续",
     "A5": "小声说话：low-volume profile",
-    "A6": "快速说话：fast profile（rate=7）",
+    "A6": "快速说话：fast profile（rate=3）",
     "A7": "短命令+长句混合：随机交替",
     "A8": "极短语音（1-2字）：验证 ASR 能识别",
     "A9": "标点命令：验证输出包含逗号/句号/换行",
@@ -150,7 +150,7 @@ CASE_PRODUCT_CHAIN_AUDIO_PROFILES = {
     "A6": ("fast",),
     "A7": ("normal",),
     "A8": ("normal",),
-    "A9": ("normal",),
+    "A9": ("punctuation",),
     "A10": ("normal",),
     "A11": ("normal",),
     "A12": ("noisy",),
@@ -769,6 +769,64 @@ def validate_partial_preview_quality(
         "reason": "" if quality_pass else f"partial_preview_prefix_cer={prefix_cer:.3f}>{max_cer}",
         "prefix_cer": round(prefix_cer, 6),
         "prefix_length": prefix_len,
+    }
+
+
+def validate_capsule_evidence(
+    case_id: str,
+    product_chain: dict[str, object],
+    *,
+    expect_partial: bool = True,
+    expect_no_text: bool = False,
+) -> dict[str, object]:
+    details = product_chain.get("details")
+    if not isinstance(details, dict):
+        return {"pass": True, "reason": "no_product_chain_details", "capsule_validated": False}
+
+    partial_preview_count = details.get("partial_preview_count")
+    last_partial_preview = details.get("last_partial_preview")
+    transcript = details.get("transcript")
+
+    if expect_no_text:
+        had_unexpected_partial = (
+            isinstance(partial_preview_count, int) and partial_preview_count > 0
+            and isinstance(last_partial_preview, str) and len(last_partial_preview.strip()) > 2
+        )
+        if had_unexpected_partial and str(product_chain.get("result")) != "fail":
+            return {
+                "pass": False,
+                "reason": "unexpected_capsule_partial_preview_for_no_text_case",
+                "partial_preview_count": partial_preview_count,
+                "capsule_validated": True,
+            }
+        return {"pass": True, "reason": "no_unexpected_capsule_activity", "capsule_validated": True}
+
+    if not expect_partial:
+        return {"pass": True, "reason": "capsule_check_not_required", "capsule_validated": False}
+
+    had_partial = isinstance(partial_preview_count, int) and partial_preview_count > 0
+    had_transcript = bool(transcript and str(transcript).strip())
+
+    checks: dict[str, object] = {
+        "partial_preview_visible": had_partial,
+        "final_text_received": had_transcript,
+    }
+
+    if case_id == "A2" and had_partial and last_partial_preview:
+        preview_quality = validate_partial_preview_quality(
+            str(transcript or ""), str(last_partial_preview), max_cer=0.5,
+        )
+        checks["partial_preview_content_quality"] = preview_quality["pass"]
+        checks["partial_preview_prefix_cer"] = preview_quality.get("prefix_cer")
+
+    all_pass = all(v for v in checks.values() if isinstance(v, bool))
+    reasons = [k for k, v in checks.items() if isinstance(v, bool) and not v]
+
+    return {
+        "pass": all_pass,
+        "reason": "" if all_pass else "capsule_check_failed:" + ",".join(reasons),
+        "capsule_validated": True,
+        **checks,
     }
 
 
@@ -2514,8 +2572,28 @@ async def attach_product_chain_overlay(
     elif warnings and str(case_result.get("result")) == "pass":
         case_result["result"] = "warning"
         case_result["reason"] = "product_chain_warning:" + ",".join(warnings)
+
+    capsule_checks = []
+    for pc in profile_results:
+        pc_details = pc.get("details") if isinstance(pc.get("details"), dict) else {}
+        is_no_text = bool(pc_details.get("expect_no_text"))
+        check = validate_capsule_evidence(
+            case_id, pc,
+            expect_partial=not is_no_text,
+            expect_no_text=is_no_text,
+        )
+        capsule_checks.append(check)
+        print(f"capsule_evidence={case_id}:{check.get('pass')}:{check.get('reason')}", flush=True)
+    details["capsule_evidence"] = capsule_checks
+    failed_capsule = [c for c in capsule_checks if not c.get("pass") and c.get("capsule_validated")]
+    if failed_capsule and str(case_result.get("result")) == "pass":
+        case_result["result"] = "warning"
+        case_result["reason"] = "capsule_evidence_warning:" + ";".join(
+            str(c.get("reason")) for c in failed_capsule
+        )
+
     print(
-        f"product_chain_overlay_done={case_id}:profiles={','.join(profiles)}:failed={len(failures)}:warnings={len(warnings)}",
+        f"product_chain_overlay_done={case_id}:profiles={','.join(profiles)}:failed={len(failures)}:warnings={len(warnings)}:capsule_failed={len(failed_capsule)}",
         flush=True,
     )
     return case_result

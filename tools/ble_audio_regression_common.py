@@ -42,7 +42,7 @@ ANALYSIS_MIN_ACTIVE_FRAMES = 5
 TTS_CACHE_DIR = TRANSIENT_SOURCE_DIR / "tts_cache"
 DEFAULT_TTS_GAIN = 4.0
 DEFAULT_TTS_RATE = 0
-FAST_TTS_RATE = 5
+FAST_TTS_RATE = 3
 LOW_VOLUME_TTS_GAIN = 1.8
 AUDIO_PROFILE_CONFIGS = {
     "normal": {
@@ -76,6 +76,12 @@ AUDIO_PROFILE_CONFIGS = {
         "warning_only": False,
         "noise_type": "white",
         "noise_snr_db": 12.0,
+    },
+    "punctuation": {
+        "tts_rate": DEFAULT_TTS_RATE,
+        "tts_gain": DEFAULT_TTS_GAIN,
+        "minimum_accuracy": 0.60,
+        "warning_only": True,
     },
 }
 

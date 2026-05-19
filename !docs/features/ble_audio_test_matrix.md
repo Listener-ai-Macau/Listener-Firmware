@@ -3,8 +3,8 @@
 ## 状态
 
 - status: `implemented`
-- scope: BLE 音频真实用户场景矩阵。`A1-A19` 为自动化用户场景 case，`H1-H3` 为手动 case，`T1-T5` 为旧传输层 case（`--transport-only` 模式）
-- source_of_truth: `tools/verify_audio_ble_product_matrix.py` 中的 `CASE_ORDER` / `MANUAL_CASES` / `TRANSPORT_ONLY_CASES` / `CASE_RUNNERS` / `CASE_DESCRIPTIONS`
+- scope: BLE 音频真实用户场景矩阵。`A1-A19` 为自动化用户场景 case，`H1-H3` 为手动 case，`T1-T5` 为旧传输层 case（`--cases transport`）
+- source_of_truth: `tools/verify_audio_ble_product_matrix.py` 中的 `CASE_ORDER` / `MANUAL_CASES` / `TRANSPORT_ONLY_CASES` / `CASE_SUITES` / `CASE_RUNNERS` / `CASE_DESCRIPTIONS`
 
 ## 当前能力
 
@@ -12,7 +12,32 @@
 
 TTS 音频通过分段播放（句间随机停顿）、噪音叠加（白噪声/粉红噪声）、语音干扰叠加（次声 TTS 混合）、渐变音量（模拟走动距离变化）等能力模拟真实使用条件。句子池覆盖长句（24条）、短命令（17条）、极短词（10条）、标点命令（8条）、中英混合（15条）。
 
-每个 A case 默认叠加 Listener-Type 产品链路 overlay：BLE 音频 → ASR 识别 → 文本插入 → 准确率门禁。默认执行策略是 fail-fast。
+每个 A case 默认叠加 Listener-Type 产品链路 overlay：BLE 音频 → ASR 识别 → 文本插入 → 准确率门禁。默认执行策略是 fail-fast。产品链路 overlay 自动附加胶囊（Capsule）UX 验证。
+
+## Suite 分层
+
+| Suite | Case | 说明 |
+|-------|------|------|
+| `smoke` | A1, A3, A14, A15 | 核心门禁，快速验证 |
+| `daily`/`auto` | A1-A16 | 日常回归，不含长 idle/soak |
+| `full` | A1-A19 | 全量矩阵 |
+| `soak` | A17, A18, A19 | 长 idle + 网络异常 + 综合 soak |
+| `transport` | T1-T5 | 旧传输层 case，通过 `--cases transport` 运行 |
+
+`--cases auto` 默认只跑 A1-A16（不含 A17 5min idle、A18 网络异常、A19 soak）。
+
+## 胶囊（Capsule）验证
+
+胶囊是 Listener-Type 桌面端的核心 UX 组件：听写过程中显示实时 partial preview，识别完成后展示最终文本并插入光标。矩阵在产品链路 overlay 中自动附加胶囊验证：
+
+| 场景 | 验证内容 | 适用 case |
+|---|---|---|
+| 正常听写 | `partial_preview_count > 0`（胶囊可见）+ `final_text_received` | A1-A13, A16-A19 |
+| 长段听写 | 额外验证 partial preview 内容质量（prefix CER ≤ 0.5） | A2 |
+| 取消 | 胶囊不应显示有意义的 partial preview | A14 |
+| 静音/误触 | 胶囊不应显示有意义的 partial preview | A15 |
+
+胶囊验证逻辑位于 `validate_capsule_evidence()` 函数。验证失败时产生 warning 级别结果（不直接 fail 主链路）。
 
 ## 代码入口
 
@@ -37,7 +62,7 @@ TTS 音频通过分段播放（句间随机停顿）、噪音叠加（白噪声/
 |---|---|
 | A4 | 犹豫停顿：句间 1-3s 随机停顿 |
 | A5 | 小声说话：low-volume profile |
-| A6 | 快速说话：fast profile（rate=7） |
+| A6 | 快速说话：fast profile（rate=3） |
 
 ### 内容多样性
 
@@ -45,7 +70,7 @@ TTS 音频通过分段播放（句间随机停顿）、噪音叠加（白噪声/
 |---|---|
 | A7 | 短命令+长句混合：随机交替 |
 | A8 | 极短语音（1-2字）：验证 ASR 能识别 |
-| A9 | 标点命令：验证输出包含逗号/句号/换行 |
+| A9 | 标点命令：warning_only，验证输出趋势 |
 | A10 | 中英混合：句内中英交替 |
 | A11 | 重复同句 3 轮：验证每轮独立不串 |
 
@@ -60,8 +85,8 @@ TTS 音频通过分段播放（句间随机停顿）、噪音叠加（白噪声/
 
 | ID | 场景 |
 |---|---|
-| A14 | 取消后恢复：验证不出文字，再正常录音 |
-| A15 | 静音误触：验证不出文字 |
+| A14 | 取消后恢复：负向验证 + 正常录音 |
+| A15 | 静音误触：负向验证 |
 | A16 | 渐变音量：模拟走动距离变化（gain 0.4-1.0 周期） |
 
 ### 时间与网络
@@ -69,7 +94,7 @@ TTS 音频通过分段播放（句间随机停顿）、噪音叠加（白噪声/
 | ID | 场景 |
 |---|---|
 | A17 | 长时间空闲后首录（5min idle） |
-| A18 | ASR 网络异常：验证不卡死 |
+| A18 | ASR 网络异常：可控超时验证不卡死 |
 
 ### 综合压力
 
@@ -85,7 +110,7 @@ TTS 音频通过分段播放（句间随机停顿）、噪音叠加（白噪声/
 | H2 | 不同距离/角度说话（需手动操作） |
 | H3 | 不同人说话（需切换声音或真人） |
 
-### 传输层 case（--transport-only）
+### 传输层 case（--cases transport）
 
 | ID | 原对应 | 场景 |
 |---|---|---|
@@ -97,13 +122,16 @@ TTS 音频通过分段播放（句间随机停顿）、噪音叠加（白噪声/
 
 ## Audio Profiles
 
-| Profile | TTS rate | Gain | 最低准确率 | 使用 case |
-|---------|---------|------|----------|---------|
-| `normal` | 0 | 4.0 | 0.85 | A1, A2, A3, A4, A7-A11, A13-A18 |
-| `fast` | 3 | 4.0 | 0.78 | A2, A3, A6, A19 |
-| `low-volume` | 0 | 1.8 | 0.72 | A3, A5, A19 |
-| `noisy` | 0 | 4.0+噪音 | 0.70 | A12, A19 |
-| `fast-low-volume` | 3 | 1.8 | 0.65(warning) | A19 |
+| Profile | TTS rate | Gain | 最低准确率 | warning_only | 使用 case |
+|---------|---------|------|----------|-------------|---------|
+| `normal` | 0 | 4.0 | 0.85 | 否 | A1, A2, A3, A4, A7-A8, A10-A11, A13-A18 |
+| `fast` | 3 | 4.0 | 0.78 | 否 | A2, A3, A6, A19 |
+| `low-volume` | 0 | 1.8 | 0.72 | 否 | A3, A5, A19 |
+| `noisy` | 0 | 4.0+噪音 | 0.70 | 否 | A12, A19 |
+| `punctuation` | 0 | 4.0 | 0.60 | **是** | A9 |
+| `fast-low-volume` | 3 | 1.8 | 0.65 | **是** | A19 |
+
+A9 标点命令使用 `punctuation` profile（`warning_only=True`），因为 ASR 可能输出文字"逗号"而非标点符号，准确率不稳定，只作诊断/warning 不 hard fail。
 
 ## 句子池
 
@@ -130,12 +158,17 @@ python .\tools\verify_audio_ble_product_matrix.py --port COM3 --cases T1,T2,T3,T
 
 ## 关键不变量
 
-- `CASE_ORDER` 是 `--cases auto` 的唯一来源。A1-A19 是默认自动矩阵。
-- 传输层 case（T1-T5）只通过 `--transport-only` 模式运行，不在 `--cases auto` 中。
+- `CASE_SUITES` 定义 suite 分层：`--cases auto` 默认只跑 A1-A16，A17/A18/A19 在 `soak` suite 中需显式指定。
+- 传输层 case（T1-T5）只通过 `--cases transport` 运行，不在 `--cases auto` 中。
+- `--transport-only` 只控制产品链路 overlay 开关，不影响 case 选择。
 - 默认逐 case fail-fast；需要全量失败收集时加 `--continue-on-failure`。
 - A2 验证 partial preview 内容质量（前缀 CER ≤ 0.5），不只是存在性。
+- A9 标点命令使用 `warning_only=True` profile，不 hard fail。
+- 胶囊验证失败产生 warning 不直接 fail。
 - 每个 A case 只测一个维度，不混合多个用户场景。
+- A18 使用可控超时（8s total / 5s listener），不依赖真实网络异常。
 - 矩阵只做编排和验收，不重新实现 Listener-Type 的 BLE 流式/ASR/插入逻辑。
+- `FAST_TTS_RATE = 3`，对应 fast profile 的 TTS rate。
 
 ## 已知限制
 
@@ -143,3 +176,5 @@ python .\tools\verify_audio_ble_product_matrix.py --port COM3 --cases T1,T2,T3,T
 - ASR 错误后的用户修改流程（产品决策待定）。
 - 产品链路验收需要同级 `Listener-Type` 仓库、可用 ASR 配置、真实设备在线。
 - RF 干扰/距离需外部环境（H2）。
+- 胶囊视觉细节（退出动画、compact text 截断）需手动目视验证。
+- 胶囊验证依赖 smoke 报告暴露 `partial_preview_count` / `last_partial_preview` 字段。
