@@ -4,6 +4,7 @@ import hashlib
 import json
 import pathlib
 import random
+import re
 import subprocess
 import sys
 import time
@@ -132,7 +133,10 @@ LOW_VOLUME_DICTATION_SENTENCES = (
 SHORT_DICTATION_CASES = {"A1", "A3", "A5", "A6"}
 
 A2_LONG_DICTATION_LEADS = (
+    "今天我会连续记录蓝牙听写的使用过程",
+    "这段长录音用来验证真实会议记录的输入体验",
     "现在开始进行一段完整的产品链路长听写",
+    "我正在复盘上午的调试过程和后续安排",
     "蓝牙听写测试现在开始记录第一句话",
     "这段录音正在验证长时间语音输入",
     "请把这段长录音完整转换成文字",
@@ -716,7 +720,71 @@ def longest_non_empty(*values: object) -> str:
 
 def normalize_accuracy_text(text: object) -> str:
     folded = unicodedata.normalize("NFKC", "" if text is None else str(text)).lower()
+    folded = normalize_chinese_numerals_for_accuracy(folded)
     return "".join(ch for ch in folded if ch.isalnum())
+
+
+CHINESE_NUMERAL_DIGITS = {
+    "零": "0",
+    "〇": "0",
+    "一": "1",
+    "二": "2",
+    "两": "2",
+    "三": "3",
+    "四": "4",
+    "五": "5",
+    "六": "6",
+    "七": "7",
+    "八": "8",
+    "九": "9",
+}
+
+
+def parse_chinese_numeral_token(token: str) -> str | None:
+    token = token.strip()
+    if not token:
+        return None
+    if "十" in token:
+        parts = token.split("十", 1)
+        tens = 1 if not parts[0] else int(CHINESE_NUMERAL_DIGITS.get(parts[0], "0"))
+        units = 0 if not parts[1] else int(CHINESE_NUMERAL_DIGITS.get(parts[1], "0"))
+        return str(tens * 10 + units)
+    if all(ch in CHINESE_NUMERAL_DIGITS for ch in token):
+        return "".join(CHINESE_NUMERAL_DIGITS[ch] for ch in token)
+    return None
+
+
+def normalize_chinese_numerals_for_accuracy(text: str) -> str:
+    digit_chars = "零〇一二两三四五六七八九"
+    number_chars = f"{digit_chars}十"
+
+    def replace_token(match: re.Match[str]) -> str:
+        parsed = parse_chinese_numeral_token(match.group(0))
+        return parsed if parsed is not None else match.group(0)
+
+    def replace_decimal(match: re.Match[str]) -> str:
+        lhs = parse_chinese_numeral_token(match.group(1))
+        rhs = parse_chinese_numeral_token(match.group(2))
+        if lhs is None or rhs is None:
+            return match.group(0)
+        return f"{lhs}.{rhs}"
+
+    text = re.sub(
+        rf"([{number_chars}]+)点([{digit_chars}]+)",
+        replace_decimal,
+        text,
+    )
+    text = re.sub(
+        rf"[{number_chars}]+(?=年|点|分钟|秒|位|个|条|次|页|行|列|号|%|％)",
+        replace_token,
+        text,
+    )
+    text = re.sub(
+        rf"(?<=第)[{number_chars}]+(?=页|章|节|行|列|个|次|段|句|项|条)",
+        replace_token,
+        text,
+    )
+    return text
 
 
 def edit_distance(expected: str, actual: str) -> int:
@@ -2224,6 +2292,10 @@ async def run_listener_type_product_chain(
         str(output_dir.resolve()),
         "-TtsGain",
         str(profile_tts_gain),
+        "-TtsRate",
+        str(profile_tts_rate),
+        "-AudioProfile",
+        profile_name,
         "-FirmwareRepo",
         str(firmware_repo_root()),
         "-VerifyHistory",
@@ -2234,6 +2306,7 @@ async def run_listener_type_product_chain(
         command.extend(["-WavPath", str(generated_wav_path.resolve())])
     if expected_sentence:
         command.extend(["-Sentence", expected_sentence])
+        command.extend(["-ExpectedText", expected_sentence])
     elif random_sentence_count > 1:
         command.extend(["-RandomSentenceCount", str(random_sentence_count)])
     if trigger_mode == "manual-key":
