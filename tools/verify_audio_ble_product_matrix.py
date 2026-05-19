@@ -27,36 +27,131 @@ from ble_audio_regression_common import (
     validate_transport_summary,
     get_paired_device_address_hex,
     generate_profile_tts_wav,
+    generate_segmented_tts_wav,
+    mix_noise_into_wav,
+    mix_secondary_speech_into_wav,
+    apply_fading_gain,
     open_serial_with_retry,
     pick_chinese_sentences,
+    pick_short_commands,
+    pick_ultra_short,
+    pick_punctuation_commands,
+    pick_mixed_sentences,
     resolve_audio_profile,
     send_toggle,
+    source_wav_path,
+    generate_source_wav_tts,
+    PCM_SAMPLE_RATE,
 )
 from capture_audio_ble_wav import configure_utf8_stdio
 
 
-CASE_ORDER = ("A1", "A2", "A3", "A4", "A5", "A6", "A7", "A8", "A9", "A10", "A11")
-EXTENDED_AUTO_CASES = ("A12",)
-MANUAL_CASES = ("H1",)
+CASE_ORDER = (
+    "A1", "A2", "A3",
+    "A4", "A5", "A6",
+    "A7", "A8", "A9", "A10", "A11",
+    "A12", "A13",
+    "A14", "A15", "A16",
+    "A17", "A18",
+    "A19",
+)
+EXTENDED_AUTO_CASES = ()
+MANUAL_CASES = ("H1", "H2", "H3")
+TRANSPORT_ONLY_CASES = ("T1", "T2", "T3", "T4", "T5")
 PRODUCT_CHAIN_OVERLAY_CASES = tuple(case_id for case_id in CASE_ORDER if case_id.startswith("A"))
-PRODUCT_CHAIN_IN_RUNNER_CASES = (*EXTENDED_AUTO_CASES, *MANUAL_CASES)
+PRODUCT_CHAIN_IN_RUNNER_CASES = ()
 MANUAL_OR_EXTERNAL_CASES = {
-    "H2": "requires controlled RF/distance/interference setup",
+    "H2": "requires physical distance/angle change",
+    "H3": "requires different speaker voice or manual TTS voice switch",
+}
+CASE_DESCRIPTIONS = {
+    "A1": "单句 normal 基线：用户说一句话，文字出现在光标",
+    "A2": "长段话（3-5句）：验证 partial preview 内容质量和 final insertion",
+    "A3": "连续多轮：每轮说不同的话，混合 profile",
+    "A4": "犹豫停顿：说话时停顿 1-3s 后继续",
+    "A5": "小声说话：low-volume profile",
+    "A6": "快速说话：fast profile（rate=7）",
+    "A7": "短命令+长句混合：随机交替",
+    "A8": "极短语音（1-2字）：验证 ASR 能识别",
+    "A9": "标点命令：验证输出包含逗号/句号/换行",
+    "A10": "中英混合：句内中英交替",
+    "A11": "重复同句 3 轮：验证每轮独立不串",
+    "A12": "环境噪音：TTS + 白噪声/粉红噪声",
+    "A13": "语音干扰：TTS + 次语音叠加",
+    "A14": "取消后恢复：负向验证 + 正常录音",
+    "A15": "静音误触：负向验证",
+    "A16": "渐变音量：模拟走动距离变化",
+    "A17": "长时间空闲后首录（5min idle）",
+    "A18": "ASR 网络异常：验证不卡死",
+    "A19": "综合 soak：混合所有 profile 和句子类型",
+    "H1": "物理 KEY1 语音输入",
+    "H2": "不同距离/角度说话",
+    "H3": "不同人说话（男女/老人/口音）",
+    "T1": "（旧 A4）BT 重启后重连",
+    "T2": "（旧 A5）多轮重连循环",
+    "T3": "（旧 A6）Host 恢复不重启",
+    "T4": "（旧 A10）快速 toggle 压力",
+    "T5": "（旧 A11）并发 BLE 客户端",
 }
 MATRIX_ARTIFACT_DIR = pathlib.Path("tests") / "artifacts" / "ble_product_matrix"
-A4_RECONNECT_MIN_PRE_START_DELAY_SECONDS = 12.0
-A2_PRODUCT_CHAIN_RANDOM_SENTENCE_COUNT = 7
+# Keep the A2 continuous utterance under the current async ASR stability window.
+# Longer soak/stress coverage belongs in A19 mixed-use runs.
+A2_PRODUCT_CHAIN_RANDOM_SENTENCE_COUNT = 4
 A2_PRODUCT_CHAIN_MIN_LISTENER_TIMEOUT_MS = 90000
 A2_PRODUCT_CHAIN_MIN_TIMEOUT_SECONDS = 150
 NEGATIVE_PRODUCT_CHAIN_TIMEOUT_SECONDS = 70
 NEGATIVE_PRODUCT_CHAIN_LISTENER_TIMEOUT_MS = 35000
 PRODUCT_CHAIN_EMPTY_TRANSCRIPT_RETRY_SENTENCE = "蓝牙音频正在发送到火山识别，请检查文本结果。"
+
+A2_LONG_DICTATION_LEADS = (
+    "今天我会连续记录蓝牙听写的使用过程",
+    "这段长录音用来验证真实会议记录的输入体验",
+    "现在开始进行一段完整的产品链路长听写",
+    "我正在复盘上午的调试过程和后续安排",
+)
+A2_LONG_DICTATION_CLAUSES = (
+    "先确认胶囊里可以实时看到稳定的预览内容",
+    "再观察识别完成后文字是否立即进入当前光标",
+    "同时检查历史记录里是否保存了完整的最终文本",
+    "如果声音偏小也要尽量保持句子结构清楚",
+    "遇到语速变快时需要重点关注开头和结尾是否丢失",
+    "测试报告里要记录蓝牙包数和识别准确率",
+    "每一轮播放都应该使用新的随机内容避免固定答案",
+    "短句回归和长段落回归需要分开判断",
+    "前端胶囊只显示短预览不能承载整段文字",
+    "后端需要把最终结果稳定地交给系统输入链路",
+    "这类场景更接近日常口述备忘和会议纪要",
+    "如果某一步失败就先修最基础的链路再继续往后跑",
+)
+A2_LONG_DICTATION_ENDINGS = (
+    "最后把异常现象整理成清晰的结论",
+    "最后确认这段文字没有明显缺句再结束测试",
+    "最后把通过和失败的证据都写进矩阵结果",
+    "最后继续执行下一项自动化回归",
+)
 CASE_PRODUCT_CHAIN_AUDIO_PROFILES = {
-    "A1": ("normal", "fast", "low-volume"),
+    "A1": ("normal",),
     "A2": ("normal", "fast"),
     "A3": ("normal", "fast", "low-volume"),
+    "A4": ("normal",),
+    "A5": ("low-volume",),
+    "A6": ("fast",),
+    "A7": ("normal",),
+    "A8": ("normal",),
+    "A9": ("normal",),
+    "A10": ("normal",),
+    "A11": ("normal",),
+    "A12": ("noisy",),
+    "A13": ("normal",),
+    "A14": ("normal",),
+    "A15": ("normal",),
+    "A16": ("normal",),
+    "A17": ("normal",),
+    "A18": ("normal",),
+    "A19": ("normal", "fast", "low-volume", "noisy"),
 }
-A12_PRODUCT_CHAIN_AUDIO_PROFILES = ("normal", "fast-low-volume")
+A19_SOAK_AUDIO_PROFILES = ("normal", "fast", "low-volume", "noisy")
+A17_LONG_IDLE_SECONDS = 300
 COMPACT_STDOUT_PREFIXES = (
     "execution_profile=",
     "preflight_recover_mode=",
@@ -222,7 +317,7 @@ def parse_args():
         "--full-chain-long-sentence-count",
         type=int,
         default=A2_PRODUCT_CHAIN_RANDOM_SENTENCE_COUNT,
-        help="Random sentence count for A2 long-recording product-chain validation when --full-chain-sentence is not set.",
+        help="Random clause count for A2 long-recording product-chain validation when --full-chain-sentence is not set.",
     )
     parser.add_argument("--soak-round-count", type=int, default=6)
     parser.add_argument("--soak-idle-seconds", type=float, default=10.0)
@@ -744,10 +839,9 @@ def find_listener_history_session(
 def print_case_catalog() -> None:
     catalog = {
         "auto_cases": list(CASE_ORDER),
-        "extended_auto_cases": list(EXTENDED_AUTO_CASES),
         "manual_cases": list(MANUAL_CASES),
-        "product_chain_overlay_cases": list(PRODUCT_CHAIN_OVERLAY_CASES),
-        "product_chain_in_runner_cases": list(PRODUCT_CHAIN_IN_RUNNER_CASES),
+        "transport_only_cases": list(TRANSPORT_ONLY_CASES),
+        "case_descriptions": CASE_DESCRIPTIONS,
         "audio_profiles": {
             name: {
                 "tts_rate": config["tts_rate"],
@@ -763,19 +857,6 @@ def print_case_catalog() -> None:
         },
         "manual_or_external_cases": MANUAL_OR_EXTERNAL_CASES,
         "implemented_cases": sorted([*CASE_RUNNERS.keys(), *MANUAL_OR_EXTERNAL_CASES.keys()]),
-        "notes": {
-            "A": "automated user-experience cases: randomized playback audio -> device BLE capture -> Listener-Type ASR -> text output evidence",
-            "A1": "single short-recording baseline product-chain case",
-            "A2": "single long-recording baseline product-chain case",
-            "A3": "multi-round short recordings with randomized durations and gaps",
-            "A8": "cancel negative assertion plus recovery product-chain output",
-            "A9": "silence/no-input negative assertion plus recovery product-chain output",
-            "A11": "concurrent BLE client attempt during capture",
-            "A12": "explicit mixed-use soak; not part of --cases auto",
-            "H": "manual/human-in-loop cases use the same product-chain evidence model while preserving manual trigger semantics",
-            "transport_only": "--transport-only disables the ASR/text-output overlay for legacy transport debugging",
-            "continue_on_failure": "default is fail-fast; --continue-on-failure keeps collecting later-case failures",
-        },
     }
     print(f"case_catalog={json.dumps(catalog, ensure_ascii=False, sort_keys=True)}")
 
@@ -1418,6 +1499,21 @@ def deterministic_sentence_seed(args, *parts: object) -> int:
     return int.from_bytes(digest[:8], "little")
 
 
+def pick_a2_long_dictation_text(seed: int, clause_count: int) -> str:
+    rng = random.Random(seed)
+    lead = rng.choice(A2_LONG_DICTATION_LEADS)
+    ending = rng.choice(A2_LONG_DICTATION_ENDINGS)
+    middle_count = max(1, int(clause_count) - 2)
+    pool = list(A2_LONG_DICTATION_CLAUSES)
+    clauses: list[str] = []
+    while len(clauses) < middle_count:
+        if not pool:
+            pool = list(A2_LONG_DICTATION_CLAUSES)
+        index = rng.randrange(len(pool))
+        clauses.append(pool.pop(index))
+    return "，".join([lead, *clauses, ending]) + "。"
+
+
 async def run_listener_type_product_chain(
     args,
     case_id: str,
@@ -1490,9 +1586,15 @@ async def run_listener_type_product_chain(
                 profile_name,
                 random_sentence_count,
             )
-            expected_sentence = "".join(
-                pick_chinese_sentences(sentence_seed, random_sentence_count)
-            )
+            if case_id == "A2":
+                expected_sentence = pick_a2_long_dictation_text(
+                    sentence_seed,
+                    random_sentence_count,
+                )
+            else:
+                expected_sentence = "".join(
+                    pick_chinese_sentences(sentence_seed, random_sentence_count)
+                )
         generated_wav_path = output_dir / f"ble-stream-{trigger_label}-{profile_name}.wav"
         generate_profile_tts_wav(
             generated_wav_path,
@@ -1527,7 +1629,7 @@ async def run_listener_type_product_chain(
     if bluetooth_address:
         command.extend(["-BluetoothAddress", bluetooth_address])
     if generated_wav_path is not None:
-        command.extend(["-WavPath", str(generated_wav_path)])
+        command.extend(["-WavPath", str(generated_wav_path.resolve())])
     if expected_sentence:
         command.extend(["-Sentence", expected_sentence])
     elif random_sentence_count > 1:
@@ -1901,41 +2003,60 @@ async def attach_product_chain_overlay(
     case_result: dict[str, object],
 ) -> dict[str, object]:
     print(f"product_chain_overlay_start={case_id}", flush=True)
-    product_chain = await run_listener_type_product_chain(args, case_id, trigger_mode="serial-toggle")
-    if should_retry_empty_transcript_product_chain(product_chain):
-        print(f"product_chain_retry_empty_transcript={case_id}", flush=True)
-        retry_product_chain = await run_listener_type_product_chain(
+    profile_results = []
+    failures = []
+    warnings = []
+    profiles = product_chain_profiles_for_case(args, case_id)
+    for profile_name in profiles:
+        artifact_profile = profile_name.replace("-", "_")
+        product_chain = await run_listener_type_product_chain(
             args,
             case_id,
             trigger_mode="serial-toggle",
-            artifact_label="serial_toggle_retry_empty_transcript",
-            sentence_override=PRODUCT_CHAIN_EMPTY_TRANSCRIPT_RETRY_SENTENCE,
+            artifact_label=f"serial_toggle_{artifact_profile}",
+            audio_profile=profile_name,
         )
-        retry_details = retry_product_chain.get("details")
-        if isinstance(retry_details, dict):
-            retry_details["retry_reason"] = "empty_transcript_with_complete_ble_audio"
-            retry_details["initial_attempt"] = product_chain
-        if str(retry_product_chain.get("result")) == "pass":
-            product_chain = retry_product_chain
-        else:
-            details = product_chain.get("details")
-            if isinstance(details, dict):
-                details["retry_attempt"] = retry_product_chain
+        if should_retry_empty_transcript_product_chain(product_chain):
+            print(f"product_chain_retry_empty_transcript={case_id}:{profile_name}", flush=True)
+            retry_product_chain = await run_listener_type_product_chain(
+                args,
+                case_id,
+                trigger_mode="serial-toggle",
+                artifact_label=f"serial_toggle_{artifact_profile}_retry_empty_transcript",
+                audio_profile=profile_name,
+                sentence_override=PRODUCT_CHAIN_EMPTY_TRANSCRIPT_RETRY_SENTENCE,
+            )
+            retry_details = retry_product_chain.get("details")
+            if isinstance(retry_details, dict):
+                retry_details["retry_reason"] = "empty_transcript_with_complete_ble_audio"
+                retry_details["initial_attempt"] = product_chain
+            if str(retry_product_chain.get("result")) == "pass":
+                product_chain = retry_product_chain
+            else:
+                details = product_chain.get("details")
+                if isinstance(details, dict):
+                    details["retry_attempt"] = retry_product_chain
+        profile_results.append(product_chain)
+        product_result = str(product_chain.get("result"))
+        if product_result == "fail":
+            failures.append(profile_name)
+        elif product_result == "warning":
+            warnings.append(profile_name)
+
     details = case_result.get("details")
     if not isinstance(details, dict):
         details = {}
         case_result["details"] = details
-    details["product_chain"] = product_chain
+    details["product_chain_profiles"] = profile_results
 
-    product_result = str(product_chain.get("result"))
-    if product_result == "fail":
+    if failures:
         case_result["result"] = "fail"
-        case_result["reason"] = "product_chain_failed:" + str(product_chain.get("reason", ""))
-    elif product_result == "warning" and str(case_result.get("result")) == "pass":
+        case_result["reason"] = "product_chain_failed:" + ",".join(failures)
+    elif warnings and str(case_result.get("result")) == "pass":
         case_result["result"] = "warning"
-        case_result["reason"] = "product_chain_warning:" + str(product_chain.get("reason", ""))
+        case_result["reason"] = "product_chain_warning:" + ",".join(warnings)
     print(
-        f"product_chain_overlay_done={case_id}:{product_result}:{product_chain.get('reason', '')}",
+        f"product_chain_overlay_done={case_id}:profiles={','.join(profiles)}:failed={len(failures)}:warnings={len(warnings)}",
         flush=True,
     )
     return case_result
