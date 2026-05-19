@@ -1490,6 +1490,10 @@ async def run_listener_type_product_chain(
         str(output_dir.resolve()),
         "-TtsGain",
         str(profile_tts_gain),
+        "-TtsRate",
+        str(profile_tts_rate),
+        "-AudioProfile",
+        profile_name,
         "-FirmwareRepo",
         str(firmware_repo_root()),
         "-VerifyHistory",
@@ -1500,6 +1504,7 @@ async def run_listener_type_product_chain(
         command.extend(["-WavPath", str(generated_wav_path)])
     if expected_sentence:
         command.extend(["-Sentence", expected_sentence])
+        command.extend(["-ExpectedText", expected_sentence])
     elif random_sentence_count > 1:
         command.extend(["-RandomSentenceCount", str(random_sentence_count)])
     if trigger_mode == "manual-key":
@@ -1607,7 +1612,7 @@ async def run_listener_type_product_chain(
     insertion_verified = bool(report.get("insertion_verified"))
     if not insertion_verified and transcript and inserted_text:
         insertion_verified = transcript in inserted_text
-    insert_status = first_non_empty(history_session.get("insertStatus"))
+    insert_status = first_non_empty(report.get("insert_status"), history_session.get("insertStatus"))
     if not insert_status and insertion_verified:
         insert_status = "inserted"
     if not embedded_stats and report.get("pcm_bytes") is not None:
@@ -1682,7 +1687,7 @@ async def run_listener_type_product_chain(
         result = "fail"
         reason = f"insert_status_not_inserted:{insert_status or 'missing'}"
 
-    expected_text = first_non_empty(report.get("sentence"), expected_sentence)
+    expected_text = first_non_empty(report.get("expected_text"), report.get("sentence"), expected_sentence)
     accuracy_details = score_transcript_accuracy(expected_text, transcript)
     accuracy_details["audio_profile"] = profile_name
     accuracy_details["source_tts_rate"] = profile_tts_rate
@@ -1716,6 +1721,10 @@ async def run_listener_type_product_chain(
         "sentence": report.get("sentence"),
         **accuracy_details,
         "transcript": transcript,
+        "final_text": first_non_empty(report.get("final_text"), transcript),
+        "partial_preview_count": report.get("partial_preview_count"),
+        "last_partial_preview": report.get("last_partial_preview"),
+        "asr_text_update_count": report.get("asr_text_update_count"),
         "insert_status": insert_status,
         "inserted_text": inserted_text,
         "insertion_verified": insertion_verified,
@@ -1727,6 +1736,7 @@ async def run_listener_type_product_chain(
         "verify_insertion": bool(report.get("verify_insertion")),
         "verify_history": bool(report.get("verify_history")),
         "history_lookup_fallback": history_lookup_fallback,
+        "timeline": report.get("timeline"),
         "verification_errors": verification_errors,
         "listener_type_report": report,
     }
