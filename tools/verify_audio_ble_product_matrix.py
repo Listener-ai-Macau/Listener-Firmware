@@ -116,6 +116,7 @@ A2_PRODUCT_CHAIN_MIN_TIMEOUT_SECONDS = 150
 NEGATIVE_PRODUCT_CHAIN_TIMEOUT_SECONDS = 70
 NEGATIVE_PRODUCT_CHAIN_LISTENER_TIMEOUT_MS = 35000
 PRODUCT_CHAIN_EMPTY_TRANSCRIPT_RETRY_SENTENCE = "蓝牙音频正在发送到火山识别，请检查文本结果。"
+T1_RECONNECT_MIN_PRE_START_DELAY_SECONDS = 3.0
 
 SHORT_DICTATION_SENTENCES = (
     "今天天气不错，适合出去走走，散散心。",
@@ -1768,13 +1769,13 @@ async def run_t1(args) -> dict[str, str]:
         window=args.pre_start_delay_window,
         label="t1_reconnect_pre_start",
     )
-    if reconnect_pre_start_delay_seconds < A4_RECONNECT_MIN_PRE_START_DELAY_SECONDS:
+    if reconnect_pre_start_delay_seconds < T1_RECONNECT_MIN_PRE_START_DELAY_SECONDS:
         print(
             "t1_reconnect_pre_start_delay_floor_seconds="
-            f"{A4_RECONNECT_MIN_PRE_START_DELAY_SECONDS:.2f}",
+            f"{T1_RECONNECT_MIN_PRE_START_DELAY_SECONDS:.2f}",
             flush=True,
         )
-        reconnect_pre_start_delay_seconds = A4_RECONNECT_MIN_PRE_START_DELAY_SECONDS
+        reconnect_pre_start_delay_seconds = T1_RECONNECT_MIN_PRE_START_DELAY_SECONDS
     print(f"t1_settle_window_seconds={reconnect_pre_start_delay_seconds:.2f}", flush=True)
     print("t1_capture_phase=start", flush=True)
     summary = await play_and_capture_serial_toggle(
