@@ -1,5 +1,6 @@
 import argparse
 import asyncio
+from datetime import datetime, timezone
 import hashlib
 import json
 import pathlib
@@ -72,7 +73,7 @@ CASE_SUITES = {
     "auto": FULL_CASES,
 }
 PRODUCT_CHAIN_OVERLAY_CASES = tuple(case_id for case_id in CASE_ORDER if case_id.startswith("A"))
-PRODUCT_CHAIN_IN_RUNNER_CASES = ("A1", "A2", "A3")
+PRODUCT_CHAIN_IN_RUNNER_CASES = ("A1", "A2", "A3", "A14", "A15", "A18", "A19")
 MANUAL_OR_EXTERNAL_CASES = {
     "H2": "requires physical distance/angle change",
     "H3": "requires different speaker voice or manual TTS voice switch",
@@ -716,6 +717,38 @@ def first_non_empty(*values: object) -> str:
 def longest_non_empty(*values: object) -> str:
     texts = [str(value).strip() for value in values if value is not None and str(value).strip()]
     return max(texts, key=len) if texts else ""
+
+
+def parse_iso_datetime_utc(value: object) -> datetime | None:
+    text = first_non_empty(value)
+    if not text:
+        return None
+    normalized = text.replace("Z", "+00:00")
+    if "." in normalized:
+        prefix, suffix = normalized.split(".", 1)
+        tz_index = min(
+            [index for index in (suffix.find("+"), suffix.find("-")) if index >= 0]
+            or [len(suffix)]
+        )
+        fraction = suffix[:tz_index]
+        tz_suffix = suffix[tz_index:]
+        normalized = f"{prefix}.{(fraction + '000000')[:6]}{tz_suffix}"
+    try:
+        parsed = datetime.fromisoformat(normalized)
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed.astimezone(timezone.utc)
+
+
+def history_session_is_stale_for_report(
+    report: dict[str, object],
+    history_session: dict[str, object],
+) -> bool:
+    started_at = parse_iso_datetime_utc(report.get("started_at_utc"))
+    created_at = parse_iso_datetime_utc(history_session.get("createdAt"))
+    return bool(started_at and created_at and created_at < started_at)
 
 
 def normalize_accuracy_text(text: object) -> str:
@@ -2517,12 +2550,48 @@ async def run_listener_type_product_chain(
         report["verification_errors"] = verification_errors
         report["status_after_history_lookup_fallback"] = "PASS"
 
+    no_text_acceptance: dict[str, object] | None = None
     if expect_no_text:
         history_text = longest_non_empty(
             history_session.get("rawTranscript"),
             history_session.get("finalText"),
         )
-        if completed.returncode != 0:
+        serial_report_text = first_non_empty(report.get("serial_report"))
+        history_is_stale = history_session_is_stale_for_report(report, history_session)
+        expected_stream_failure = first_non_empty(report.get("expected_stream_failure"))
+        try:
+            report_pcm_bytes = int(report.get("pcm_bytes") or 0)
+        except (TypeError, ValueError):
+            report_pcm_bytes = -1
+        cancel_negative_ok = (
+            trigger_mode == "serial-cancel"
+            and bool(expected_stream_failure)
+            and report_pcm_bytes == 0
+            and (not history_session or history_is_stale)
+            and not first_non_empty(report.get("recording_archive_path"))
+            and not inserted_text
+            and not insertion_verified
+            and "cancel_completed=True" in serial_report_text
+        )
+        if cancel_negative_ok:
+            no_text_acceptance = {
+                "accepted": True,
+                "reason": "serial_cancel_expected_stream_failure_without_current_history",
+                "expected_stream_failure": expected_stream_failure,
+                "ignored_stale_history_session_id": history_session.get("id"),
+                "ignored_stale_history_created_at": history_session.get("createdAt"),
+                "raw_verification_errors": verification_errors,
+                "raw_transcript": transcript,
+            }
+            result = "pass"
+            reason = ""
+            transcript = ""
+            history_session = {}
+            embedded_stats = {}
+            insert_status = ""
+            verification_errors = []
+            report["status_after_no_text_acceptance"] = "PASS"
+        elif completed.returncode != 0:
             result = "fail"
             reason = first_non_empty(report.get("error"), f"returncode={completed.returncode}")
         elif transcript:
@@ -2600,6 +2669,7 @@ async def run_listener_type_product_chain(
         "verify_history": bool(report.get("verify_history")),
         "history_lookup_fallback": history_lookup_fallback,
         "verification_errors": verification_errors,
+        "no_text_acceptance": no_text_acceptance,
         "listener_type_report": report,
     }
     print(f"product_chain_full_chain_status={effective_status}", flush=True)
