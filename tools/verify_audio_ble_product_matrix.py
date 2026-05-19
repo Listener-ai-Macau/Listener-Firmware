@@ -626,6 +626,36 @@ def score_transcript_accuracy(expected: object, transcript: object) -> dict[str,
     }
 
 
+def validate_partial_preview_quality(
+    expected_text: str,
+    partial_preview: str,
+    *,
+    max_cer: float = 0.5,
+) -> dict[str, object]:
+    if not partial_preview:
+        return {"pass": False, "reason": "empty_partial_preview"}
+    if not expected_text:
+        return {"pass": True, "reason": "no_expected_text"}
+
+    normalized_expected = normalize_accuracy_text(expected_text)
+    normalized_partial = normalize_accuracy_text(partial_preview)
+    if not normalized_partial:
+        return {"pass": False, "reason": "empty_normalized_partial_preview"}
+
+    prefix_len = min(len(normalized_partial), len(normalized_expected))
+    expected_prefix = normalized_expected[:prefix_len]
+    distance = edit_distance(expected_prefix, normalized_partial)
+    prefix_cer = distance / float(len(expected_prefix)) if expected_prefix else 0.0
+    quality_pass = prefix_cer <= max_cer
+
+    return {
+        "pass": quality_pass,
+        "reason": "" if quality_pass else f"partial_preview_prefix_cer={prefix_cer:.3f}>{max_cer}",
+        "prefix_cer": round(prefix_cer, 6),
+        "prefix_length": prefix_len,
+    }
+
+
 def product_chain_profiles_for_case(args, case_id: str) -> tuple[str, ...]:
     profiles = CASE_PRODUCT_CHAIN_AUDIO_PROFILES.get(case_id)
     if profiles:

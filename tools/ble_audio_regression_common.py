@@ -69,6 +69,14 @@ AUDIO_PROFILE_CONFIGS = {
         "minimum_accuracy": 0.65,
         "warning_only": True,
     },
+    "noisy": {
+        "tts_rate": DEFAULT_TTS_RATE,
+        "tts_gain": DEFAULT_TTS_GAIN,
+        "minimum_accuracy": 0.70,
+        "warning_only": False,
+        "noise_type": "white",
+        "noise_snr_db": 12.0,
+    },
 }
 
 CHINESE_SENTENCE_POOL = (
@@ -98,6 +106,68 @@ CHINESE_SENTENCE_POOL = (
     "在光标位置插入当前日期和时间戳。",
 )
 
+SHORT_COMMAND_POOL = (
+    "打开设置",
+    "新建文件",
+    "保存文件",
+    "撤销操作",
+    "关闭窗口",
+    "复制内容",
+    "粘贴内容",
+    "全部选中",
+    "删除选中",
+    "截取屏幕",
+    "刷新页面",
+    "返回上一页",
+    "搜索文件",
+    "确认发送",
+    "回到桌面",
+    "最小化窗口",
+    "切换窗口",
+)
+
+ULTRA_SHORT_POOL = (
+    "好",
+    "是",
+    "确定",
+    "取消",
+    "对",
+    "行",
+    "继续",
+    "停",
+    "下一个",
+    "完成",
+)
+
+PUNCTUATION_COMMAND_POOL = (
+    "你好逗号今天天气不错句号",
+    "打开设置换行字体设置为宋体",
+    "二零二六年五月逗号项目进展如下换行",
+    "第一步打开文件换行第二步修改内容换行第三步保存",
+    "会议时间上午十点逗号地点三号会议室句号",
+    "收件人张三逗号主题项目进度句号",
+    "复制这段文字换行粘贴到新文件",
+    "选择全部内容逗号删除换行重新输入",
+)
+
+MIXED_LANGUAGE_POOL = (
+    "这个bug在master分支上已经fix了",
+    "打开Chrome浏览器搜索API文档",
+    "发email给产品组确认PR合并时间",
+    "把这段code提交到dev分支",
+    "今天的meeting推迟到下午三点",
+    "这个feature需要在iOS和Android上测试",
+    "打开VSCode创建新project",
+    "查看GitHub上的issue列表",
+    "运行npm install安装依赖",
+    "这个commit需要rebase到main",
+    "把config文件里的port改成八零八零",
+    "创建新的pull request并assign给reviewer",
+    "运行unit test确保没有regression",
+    "检查CI pipeline的log找error",
+    "更新README里的API endpoint说明",
+)
+
 
 def pick_chinese_sentence(seed: int) -> str:
     return CHINESE_SENTENCE_POOL[seed % len(CHINESE_SENTENCE_POOL)]
@@ -114,6 +184,35 @@ def pick_chinese_sentences(seed: int, count: int) -> list[str]:
         index = rng.randrange(len(pool))
         selected.append(pool.pop(index))
     return selected
+
+
+def _pick_from_pool(pool: tuple[str, ...], seed: int, count: int) -> list[str]:
+    sentence_count = max(1, int(count))
+    rng = random.Random(seed)
+    remaining = list(pool)
+    selected = []
+    while len(selected) < sentence_count:
+        if not remaining:
+            remaining = list(pool)
+        index = rng.randrange(len(remaining))
+        selected.append(remaining.pop(index))
+    return selected
+
+
+def pick_short_commands(seed: int, count: int) -> list[str]:
+    return _pick_from_pool(SHORT_COMMAND_POOL, seed, count)
+
+
+def pick_ultra_short(seed: int, count: int) -> list[str]:
+    return _pick_from_pool(ULTRA_SHORT_POOL, seed, count)
+
+
+def pick_punctuation_commands(seed: int, count: int) -> list[str]:
+    return _pick_from_pool(PUNCTUATION_COMMAND_POOL, seed, count)
+
+
+def pick_mixed_sentences(seed: int, count: int) -> list[str]:
+    return _pick_from_pool(MIXED_LANGUAGE_POOL, seed, count)
 
 
 def normalize_audio_profile_name(profile: str | None) -> str:
@@ -1070,3 +1169,176 @@ def recover_ble_hid_host(device_name: str) -> subprocess.CompletedProcess[str]:
         RECOVER_BLE_HID_HOST_SCRIPT,
         ["-DeviceName", device_name, "-BluetoothAddress", address_hex],
     )
+
+
+def generate_segmented_tts_wav(
+    path: pathlib.Path,
+    sentences: list[str],
+    *,
+    gap_seconds_range: tuple[float, float] = (0.5, 3.0),
+    tts_rate: int = DEFAULT_TTS_RATE,
+    tts_gain: float = DEFAULT_TTS_GAIN,
+    seed: int = 0,
+) -> str:
+    rng = random.Random(seed)
+    segments = []
+    voice = ""
+    for i, sentence in enumerate(sentences):
+        segment_path = path.parent / f"{path.stem}_seg{i}.wav"
+        v = generate_tts_wav(segment_path, sentence, rate=tts_rate)
+        if v:
+            voice = v
+        frames = read_wav_frames(segment_path)
+        segments.append(frames)
+        segment_path.unlink(missing_ok=True)
+
+    combined: list[int] = []
+    for i, seg in enumerate(segments):
+        combined.extend(seg)
+        if i < len(segments) - 1:
+            gap_seconds = rng.uniform(gap_seconds_range[0], gap_seconds_range[1])
+            gap_samples = int(PCM_SAMPLE_RATE * gap_seconds)
+            combined.extend([0] * gap_samples)
+
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with wave.open(str(path), "wb") as wav_file:
+        wav_file.setnchannels(PCM_CHANNELS)
+        wav_file.setsampwidth(PCM_WIDTH_BYTES)
+        wav_file.setframerate(PCM_SAMPLE_RATE)
+        wav_file.writeframes(struct.pack("<" + "h" * len(combined), *combined))
+
+    if tts_gain != 1.0:
+        scale_wav_pcm16(path, tts_gain)
+    return voice
+
+
+def _generate_noise_samples(count: int, noise_type: str, seed: int) -> list[float]:
+    rng = random.Random(seed)
+    if noise_type == "white":
+        return [rng.uniform(-1.0, 1.0) for _ in range(count)]
+    elif noise_type == "pink":
+        b = [0.0] * 7
+        pink: list[float] = []
+        for _ in range(count):
+            white = rng.uniform(-1.0, 1.0)
+            b[0] = 0.99886 * b[0] + white * 0.0555179
+            b[1] = 0.99332 * b[1] + white * 0.0750759
+            b[2] = 0.96900 * b[2] + white * 0.1538520
+            b[3] = 0.86650 * b[3] + white * 0.3104856
+            b[4] = 0.55000 * b[4] + white * 0.5329522
+            b[5] = -0.7616 * b[5] - white * 0.0168980
+            pink.append((b[0] + b[1] + b[2] + b[3] + b[4] + b[5] + b[6] + white * 0.5362) * 0.11)
+            b[6] = white * 0.115926
+        return pink
+    else:
+        raise ValueError(f"unknown noise_type '{noise_type}'. Use 'white' or 'pink'.")
+
+
+def mix_noise_into_wav(
+    path: pathlib.Path,
+    *,
+    noise_type: str = "white",
+    snr_db: float = 12.0,
+    seed: int = 0,
+) -> None:
+    frames = read_wav_frames(path)
+    if not frames:
+        return
+
+    signal_power = sum(float(s) ** 2 for s in frames) / len(frames)
+    noise_samples = _generate_noise_samples(len(frames), noise_type, seed)
+    noise_power = sum(n ** 2 for n in noise_samples) / len(noise_samples)
+    if noise_power == 0.0:
+        return
+
+    target_noise_power = signal_power / (10.0 ** (snr_db / 10.0))
+    scale = math.sqrt(target_noise_power / noise_power)
+
+    mixed: list[int] = []
+    for original, noise in zip(frames, noise_samples):
+        val = int(round(float(original) + noise * scale * 32767.0))
+        mixed.append(max(-32768, min(32767, val)))
+
+    with wave.open(str(path), "wb") as wav_file:
+        wav_file.setnchannels(PCM_CHANNELS)
+        wav_file.setsampwidth(PCM_WIDTH_BYTES)
+        wav_file.setframerate(PCM_SAMPLE_RATE)
+        wav_file.writeframes(struct.pack("<" + "h" * len(mixed), *mixed))
+
+
+def mix_secondary_speech_into_wav(
+    path: pathlib.Path,
+    secondary_text: str,
+    *,
+    snr_db: float = 8.0,
+    tts_rate: int = DEFAULT_TTS_RATE,
+    seed: int = 0,
+) -> None:
+    primary_frames = read_wav_frames(path)
+    if not primary_frames:
+        return
+
+    temp_secondary = path.parent / f"{path.stem}_secondary.wav"
+    generate_tts_wav(temp_secondary, secondary_text, rate=tts_rate)
+    secondary_frames = read_wav_frames(temp_secondary)
+    temp_secondary.unlink(missing_ok=True)
+
+    if len(secondary_frames) < len(primary_frames):
+        rng = random.Random(seed)
+        start_pos = rng.randint(0, max(0, len(primary_frames) - len(secondary_frames)))
+        padded = [0] * len(primary_frames)
+        for i, s in enumerate(secondary_frames):
+            padded[start_pos + i] = s
+        secondary_frames = padded
+    else:
+        secondary_frames = secondary_frames[: len(primary_frames)]
+
+    signal_power = sum(float(s) ** 2 for s in primary_frames) / len(primary_frames)
+    noise_power = sum(float(s) ** 2 for s in secondary_frames) / len(secondary_frames)
+    if noise_power == 0.0:
+        return
+
+    target_noise_power = signal_power / (10.0 ** (snr_db / 10.0))
+    scale = math.sqrt(target_noise_power / noise_power)
+
+    mixed: list[int] = []
+    for primary, secondary in zip(primary_frames, secondary_frames):
+        val = int(round(float(primary) + float(secondary) * scale))
+        mixed.append(max(-32768, min(32767, val)))
+
+    with wave.open(str(path), "wb") as wav_file:
+        wav_file.setnchannels(PCM_CHANNELS)
+        wav_file.setsampwidth(PCM_WIDTH_BYTES)
+        wav_file.setframerate(PCM_SAMPLE_RATE)
+        wav_file.writeframes(struct.pack("<" + "h" * len(mixed), *mixed))
+
+
+def apply_fading_gain(
+    path: pathlib.Path,
+    *,
+    min_gain: float = 0.4,
+    period_seconds: float = 4.0,
+    seed: int = 0,
+) -> None:
+    frames = read_wav_frames(path)
+    if not frames:
+        return
+
+    total_samples = len(frames)
+    rng = random.Random(seed)
+    phase_offset = rng.uniform(0.0, 2.0 * math.pi)
+    period_samples = int(PCM_SAMPLE_RATE * period_seconds)
+
+    result: list[int] = []
+    for i, sample in enumerate(frames):
+        t = float(i) / float(period_samples)
+        cos_val = math.cos(2.0 * math.pi * t + phase_offset)
+        gain = min_gain + (1.0 - min_gain) * (0.5 + 0.5 * cos_val)
+        val = int(round(float(sample) * gain))
+        result.append(max(-32768, min(32767, val)))
+
+    with wave.open(str(path), "wb") as wav_file:
+        wav_file.setnchannels(PCM_CHANNELS)
+        wav_file.setsampwidth(PCM_WIDTH_BYTES)
+        wav_file.setframerate(PCM_SAMPLE_RATE)
+        wav_file.writeframes(struct.pack("<" + "h" * len(result), *result))
