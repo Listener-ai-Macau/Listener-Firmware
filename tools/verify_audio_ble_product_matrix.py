@@ -158,7 +158,7 @@ A2_LONG_DICTATION_ENDINGS = (
     "最后继续执行下一项自动化回归",
 )
 CASE_PRODUCT_CHAIN_AUDIO_PROFILES = {
-    "A1": ("normal", "fast", "low-volume"),
+    "A1": ("normal",),
     "A2": ("normal", "fast"),
     "A3": ("normal", "fast", "low-volume"),
     "A4": ("normal",),
@@ -1216,10 +1216,10 @@ async def run_a5_new(args) -> dict[str, str]:
 
 
 async def run_a6_new(args) -> dict[str, str]:
-    """A6: fast speech with fast profile (tts_rate=7)."""
+    """A6: fast speech with fast profile."""
     capture_seconds = choose_duration(args, window=args.short_capture_window, label="a6")
     budget = max(120, int(capture_seconds * 3 + 60))
-    print_case_header("A6", "fast speech (rate=7)", budget)
+    print_case_header("A6", "fast speech", budget)
     pre_start_delay = choose_delay_seconds(args, window=args.pre_start_delay_window, label="a6_pre_start")
     summary = await play_and_capture_serial_toggle(
         port=args.port,
