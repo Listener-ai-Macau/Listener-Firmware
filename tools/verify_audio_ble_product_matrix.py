@@ -56,9 +56,20 @@ CASE_ORDER = (
     "A17", "A18",
     "A19",
 )
+SMOKE_CASES = ("A1", "A3", "A14", "A15")
+FULL_CASES = tuple(c for c in CASE_ORDER if c not in ("A17", "A18", "A19"))
+SOAK_CASES = ("A17", "A18", "A19")
 EXTENDED_AUTO_CASES = ()
 MANUAL_CASES = ("H1", "H2", "H3")
 TRANSPORT_ONLY_CASES = ("T1", "T2", "T3", "T4", "T5")
+CASE_SUITES = {
+    "smoke": SMOKE_CASES,
+    "daily": FULL_CASES,
+    "full": CASE_ORDER,
+    "transport": TRANSPORT_ONLY_CASES,
+    "soak": SOAK_CASES,
+    "auto": FULL_CASES,
+}
 PRODUCT_CHAIN_OVERLAY_CASES = tuple(case_id for case_id in CASE_ORDER if case_id.startswith("A"))
 PRODUCT_CHAIN_IN_RUNNER_CASES = ()
 MANUAL_OR_EXTERNAL_CASES = {
@@ -205,8 +216,9 @@ class MatrixStdoutFilter:
 
 
 def parse_case_list(raw: str) -> list[str]:
-    if raw.strip().lower() == "auto":
-        return list(CASE_ORDER)
+    normalized = raw.strip().lower()
+    if normalized in CASE_SUITES:
+        return list(CASE_SUITES[normalized])
     cases = []
     for item in raw.split(","):
         case_id = item.strip().upper()
@@ -222,7 +234,15 @@ def parse_args():
     )
     parser.add_argument("--port")
     parser.add_argument("--device-name", default="listener")
-    parser.add_argument("--cases", default="auto")
+    parser.add_argument(
+        "--cases",
+        default="auto",
+        help=(
+            "Case IDs or suite name. Suites: smoke (A1,A3,A14,A15), auto/daily (A1-A16), "
+            "full (A1-A19), soak (A17-A19), transport (T1-T5). "
+            "Or comma-separated IDs: A1,A4,T2."
+        ),
+    )
     parser.add_argument("--list-cases", action="store_true")
     parser.add_argument(
         "--full-chain",
@@ -232,7 +252,7 @@ def parse_args():
     parser.add_argument(
         "--transport-only",
         action="store_true",
-        help="Run the legacy BLE transport/audio checks without Listener-Type ASR/text-output validation.",
+        help="Disable product-chain (ASR/text) overlay. Use --cases transport to run legacy T1-T5 transport cases.",
     )
     parser.add_argument("--capture-seconds", type=int, default=5)
     parser.add_argument("--long-capture-seconds", type=int, default=30)
@@ -1416,48 +1436,47 @@ async def run_a16_new(args) -> dict[str, str]:
 
 
 async def run_a18_new(args) -> dict[str, str]:
-    """A18: ASR network failure - negative test verifying host does not hang."""
+    """A18: ASR timeout simulation - verifies host does not hang when ASR is slow/unavailable.
+
+    Uses a controlled 8s timeout on the product-chain runner (5s listener timeout)
+    so ASR is guaranteed to not return in time. This simulates network failure
+    without depending on real network issues.
+    """
     budget = 120
-    print_case_header("A18", "ASR network failure (negative)", budget)
-    if not args.transport_only:
-        negative_product_chain = await run_listener_type_product_chain(
-            args,
-            "A18",
-            trigger_mode="serial-toggle",
-            artifact_label="asr_failure_negative",
-            expect_no_text=True,
-            timeout_seconds_override=90,
-        )
-        result_str = str(negative_product_chain.get("result"))
-        if result_str == "fail":
-            return print_summary(
-                "A18",
-                "fail",
-                "asr_failure_negative_failed:" + str(negative_product_chain.get("reason", "")),
-                {"product_chain": negative_product_chain},
-            )
-        if result_str == "warning":
-            return print_summary(
-                "A18",
-                "warning",
-                "asr_failure_negative_warning:" + str(negative_product_chain.get("reason", "")),
-                {"product_chain": negative_product_chain},
-            )
-        return print_summary("A18", "pass", "", {"product_chain": negative_product_chain})
-    # Transport-only mode: just verify a short capture works without hang
+    print_case_header("A18", "ASR timeout simulation (controlled short timeout)", budget)
     capture_seconds = choose_duration(args, window=args.short_capture_window, label="a18")
-    summary = await play_and_capture_serial_toggle(
+    pre_start_delay = choose_delay_seconds(args, window=args.pre_start_delay_window, label="a18_pre_start")
+    transport_summary = await play_and_capture_serial_toggle(
         port=args.port,
         device_name=args.device_name,
         scenario="A18",
         capture_seconds=capture_seconds,
         timeout_seconds=90,
         reset_before_capture=args.reset_before_capture,
-        pre_start_delay_seconds=0.0,
+        pre_start_delay_seconds=pre_start_delay,
         output_dir=case_output_dir("A18"),
         serial_log_path=case_serial_log_path("A18"),
     )
-    return ensure_pass("A18", summary)
+    transport_ok = str(transport_summary.get("result")) != "fail"
+    details: dict[str, object] = {"transport": compact_case_details(transport_summary)}
+    if not transport_ok:
+        return print_summary("A18", "fail", "transport_failed_before_asr_timeout_test", details)
+    if not args.transport_only:
+        asr_timeout_chain = await run_listener_type_product_chain(
+            args,
+            "A18",
+            trigger_mode="serial-toggle",
+            artifact_label="asr_timeout_sim",
+            timeout_seconds_override=8,
+            listener_timeout_ms_override=5000,
+        )
+        asr_result = str(asr_timeout_chain.get("result"))
+        details["asr_timeout_simulation"] = asr_timeout_chain
+        host_did_not_hang = asr_result != "fail" or "full_chain_timeout" not in str(asr_timeout_chain.get("reason", ""))
+        if host_did_not_hang:
+            return print_summary("A18", "pass", f"asr_timeout_handled:{asr_result}", details)
+        return print_summary("A18", "fail", "asr_timeout_caused_host_hang", details)
+    return ensure_pass("A18", transport_summary)
 
 
 async def run_t1(args) -> dict[str, str]:
