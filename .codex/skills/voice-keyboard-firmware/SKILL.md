@@ -14,7 +14,7 @@ description: Firmware repo adapter for ESP32-S3 BLE HID keyboard and BLE audio c
 
 ## Hard Gates
 
-- Before coding, confirm the step is not occupied, then claim it:
+- Before coding, confirm the step is not occupied and all dependencies are completed, then claim it:
   `powershell -File C:\Users\Billy\Desktop\listener\voice-keyboard-firmware\tools\update_plan_status.ps1 -Plan <task_slug> -StepId <step_id> -Status in_progress -Assignee <you>`
 - **Task naming**: new tasks use descriptive lowercase kebab-case `task_slug` names, such as `feature-docs-repair` or `schematic-v1-adaptation`. Do not create new `p<number>` tasks; `p13` to `p18` are legacy status sources only.
 - **Branch workflow**: `master` → `feature/<task_slug>` → `ai/<agent>-<task_slug>-<step_id>`. Create your step branch FROM the feature branch, merge back after each step, delete step branch. Do not create worktrees.
@@ -23,8 +23,8 @@ description: Firmware repo adapter for ESP32-S3 BLE HID keyboard and BLE audio c
   `powershell -File C:\Users\Billy\Desktop\listener\voice-keyboard-firmware\tools\lock_resource.ps1 -Resource COM3 -Owner <you>`
   `powershell -File C:\Users\Billy\Desktop\listener\voice-keyboard-firmware\tools\lock_resource.ps1 -Resource BLE -Owner <you>`
 - Release every lock you acquired with `unlock_resource.ps1`.
-- On completion, run the step validation, merge step branch to feature branch, record evidence in status JSON, mark `completed`, and clear assignee.
-- If human action is required, mark `blocked` with `blocked_reason`.
+- On completion, run the step validation, mark `completed` with `-ValidationResult "PASS: ..."`, validate status JSON, merge step branch to feature branch, then delete the step branch.
+- If human action is required, mark `blocked` with `-BlockedReason`; validation failures are not blocked.
 
 ## Plan Rules
 

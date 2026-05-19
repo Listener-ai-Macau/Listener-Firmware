@@ -14,6 +14,9 @@ param(
 $ErrorActionPreference = "Continue"
 $issues = @()
 $fixed = @()
+$allowedLegacyPlans = @("p13","p14","p15","p16","p17","p18")
+$deprecatedStepFields = @("parallel_group", "write_paths", "push_gate_report", "evidence", "base_branch")
+$indexFile = Join-Path $PlansDir "task_index.json"
 
 function Add-Issue {
     param([string]$Level, [string]$Message, [string]$PlanName, [string]$StepId)
@@ -25,16 +28,102 @@ function Add-Issue {
     }
 }
 
-# Find status files
-$files = if ($Plan) {
-    @(Join-Path $PlansDir "${Plan}_status.json")
+function Test-BlankRequiredValue {
+    param($Object, [string]$PropertyName)
+
+    if (-not $Object.PSObject.Properties[$PropertyName]) {
+        return $true
+    }
+
+    $value = $Object.$PropertyName
+    if ($null -eq $value) {
+        return $true
+    }
+
+    if ($value -is [string]) {
+        return [string]::IsNullOrWhiteSpace($value)
+    }
+
+    return $false
+}
+
+# Find status files.
+$files = @()
+if ($Plan) {
+    $candidate = Join-Path $PlansDir "${Plan}_status.json"
+    if (Test-Path $candidate) {
+        $files = @($candidate)
+    } else {
+        $indexFile = Join-Path $PlansDir "task_index.json"
+        if (Test-Path $indexFile) {
+            try {
+                $index = Get-Content $indexFile -Raw | ConvertFrom-Json
+                $mappedTask = $index.tasks | Where-Object {
+                    $_.task_slug -eq $Plan -or $_.legacy_id -eq $Plan
+                } | Select-Object -First 1
+                if ($mappedTask -and $mappedTask.status_file) {
+                    $mappedFile = Join-Path $PlansDir $mappedTask.status_file
+                    if (Test-Path $mappedFile) { $files = @($mappedFile) }
+                }
+            } catch {
+                Add-Issue "ERROR" "Could not read task_index.json: $_" $Plan ""
+            }
+        }
+    }
 } else {
-    Get-ChildItem (Join-Path $PlansDir "*_status.json") -ErrorAction SilentlyContinue | ForEach-Object { $_.FullName }
+    $files = Get-ChildItem (Join-Path $PlansDir "*_status.json") -ErrorAction SilentlyContinue | ForEach-Object { $_.FullName }
 }
 
 if (-not $files) {
     Write-Error "No status files found in $PlansDir"
     exit 1
+}
+
+if (-not $Plan -and (Test-Path $indexFile)) {
+    try {
+        $index = Get-Content $indexFile -Raw | ConvertFrom-Json
+        if (-not $index.PSObject.Properties["tasks"] -or -not $index.tasks) {
+            Add-Issue "ERROR" "task_index.json missing tasks array" "task_index" ""
+        } else {
+            $seenSlugs = @{}
+            foreach ($task in $index.tasks) {
+                if (-not $task.task_slug) {
+                    Add-Issue "ERROR" "task_index entry missing task_slug" "task_index" ""
+                    continue
+                }
+                if ($seenSlugs.ContainsKey($task.task_slug)) {
+                    Add-Issue "ERROR" "Duplicate task_slug in task_index: $($task.task_slug)" "task_index" ""
+                } else {
+                    $seenSlugs[$task.task_slug] = $true
+                }
+
+                if ($task.legacy_id) {
+                    if ($allowedLegacyPlans -notcontains ([string]$task.legacy_id).ToLowerInvariant()) {
+                        Add-Issue "ERROR" "task_index legacy_id '$($task.legacy_id)' is not in allowed legacy set" "task_index" $task.task_slug
+                    }
+                } elseif ($task.task_slug -notmatch '^[a-z][a-z0-9]*(?:-[a-z0-9]+)+$') {
+                    Add-Issue "ERROR" "task_index task_slug '$($task.task_slug)' must be descriptive lowercase kebab-case" "task_index" $task.task_slug
+                }
+
+                $taskStatus = if ($task.PSObject.Properties["status"]) { [string]$task.status } else { "" }
+                $isArchivedTask = $taskStatus -in @("completed", "superseded", "archived")
+
+                if (-not $task.status_file) {
+                    Add-Issue "ERROR" "task_index '$($task.task_slug)' missing status_file" "task_index" $task.task_slug
+                } else {
+                    $taskStatusPath = Join-Path $PlansDir $task.status_file
+                    if (-not (Test-Path $taskStatusPath)) {
+                        $level = if ($isArchivedTask) { "WARN" } else { "ERROR" }
+                        Add-Issue $level "task_index '$($task.task_slug)' status_file not found: $($task.status_file)" "task_index" $task.task_slug
+                    }
+                }
+            }
+        }
+    } catch {
+        Add-Issue "ERROR" "Could not parse task_index.json: $_" "task_index" ""
+    }
+} elseif (-not $Plan) {
+    Add-Issue "WARN" "task_index.json not found" "task_index" ""
 }
 
 foreach ($file in $files) {
@@ -48,7 +137,15 @@ foreach ($file in $files) {
         continue
     }
 
-    # Schema check: top-level fields
+    $declaredPlan = if ($data.PSObject.Properties["plan"]) { [string]$data.plan } else { $planName }
+    $isLegacyFile = $planName -in $allowedLegacyPlans -or $declaredPlan -match '^p(13|14|15|16|17|18)(?:$|[-_])'
+    $isDescriptiveSlug = $declaredPlan -match '^[a-z][a-z0-9]*(?:-[a-z0-9]+)+$'
+
+    if (-not $isLegacyFile -and -not $isDescriptiveSlug) {
+        Add-Issue "ERROR" "Plan name '$declaredPlan' must be descriptive lowercase kebab-case" $planName ""
+    }
+
+    # Schema check: top-level fields.
     foreach ($req in @("plan", "updated_at", "phases")) {
         if (-not $data.PSObject.Properties[$req]) {
             Add-Issue "ERROR" "Missing required field: $req" $planName ""
@@ -56,6 +153,26 @@ foreach ($file in $files) {
     }
 
     if (-not $data.phases) { continue }
+
+    $stepById = @{}
+    $duplicateStepIds = @{}
+    foreach ($phase in $data.phases) {
+        if ($phase.steps) {
+            foreach ($step in $phase.steps) {
+                if ($step.PSObject.Properties["id"] -and $step.id) {
+                    if ($stepById.ContainsKey($step.id)) {
+                        $duplicateStepIds[$step.id] = $true
+                    } else {
+                        $stepById[$step.id] = $step
+                    }
+                }
+            }
+        }
+    }
+
+    foreach ($dup in $duplicateStepIds.Keys) {
+        Add-Issue "ERROR" "Duplicate step id: $dup" $planName $dup
+    }
 
     foreach ($phase in $data.phases) {
         # Phase-level checks
@@ -75,9 +192,54 @@ foreach ($file in $files) {
                 $sid = $step.id
 
                 # Required step fields
-                foreach ($req in @("id", "title", "repo", "status")) {
-                    if (-not $step.PSObject.Properties[$req] -or -not $step.$req) {
-                        Add-Issue "ERROR" "Step $sid missing required field: $req" $planName $sid
+                foreach ($req in @("id", "title", "repo", "status", "assignee", "depends_on", "acceptance", "validation_commands", "validation_result")) {
+                    $isNullableRequired = $req -in @("assignee", "validation_result")
+                    $isArrayRequired = $req -in @("depends_on", "acceptance", "validation_commands")
+
+                    if (-not $step.PSObject.Properties[$req]) {
+                        if ($isNullableRequired) {
+                            Add-Issue "ERROR" "Step $sid missing required nullable field: $req" $planName $sid
+                        } else {
+                            Add-Issue "ERROR" "Step $sid missing required field: $req" $planName $sid
+                        }
+                    } elseif (-not $isNullableRequired -and -not $isArrayRequired -and (Test-BlankRequiredValue $step $req)) {
+                        Add-Issue "ERROR" "Step $sid has blank required field: $req" $planName $sid
+                    } elseif ($req -eq "depends_on" -and $null -eq $step.depends_on) {
+                        Add-Issue "ERROR" "Step $sid depends_on must be an array; use [] when there are no dependencies" $planName $sid
+                    } elseif ($req -in @("acceptance", "validation_commands") -and (-not $step.$req -or $step.$req.Count -eq 0)) {
+                        Add-Issue "ERROR" "Step $sid must include at least one $req item" $planName $sid
+                    }
+                }
+
+                foreach ($arrayField in @("depends_on", "acceptance", "validation_commands")) {
+                    if ($step.PSObject.Properties[$arrayField] -and $null -ne $step.$arrayField) {
+                        $value = $step.$arrayField
+                        if ($value -is [string]) {
+                            Add-Issue "ERROR" "Step $sid field $arrayField must be an array, not a string" $planName $sid
+                        }
+                    }
+                }
+
+                foreach ($field in $deprecatedStepFields) {
+                    if ($step.PSObject.Properties[$field]) {
+                        $level = if ($isLegacyFile) { "WARN" } else { "ERROR" }
+                        Add-Issue $level "Step $sid uses deprecated field: $field" $planName $sid
+                        if ($Fix -and -not $isLegacyFile) {
+                            $step.PSObject.Properties.Remove($field)
+                            $fixed += "Removed deprecated field $field from $planName/$sid"
+                        }
+                    }
+                }
+
+                if ($step.status -notin @("pending", "in_progress", "completed", "blocked")) {
+                    Add-Issue "ERROR" "Step $sid has invalid status: $($step.status)" $planName $sid
+                }
+
+                if ($step.depends_on) {
+                    foreach ($dep in $step.depends_on) {
+                        if (-not $stepById.ContainsKey($dep)) {
+                            Add-Issue "ERROR" "Step $sid depends on missing step: $dep" $planName $sid
+                        }
                     }
                 }
 
@@ -121,6 +283,18 @@ foreach ($file in $files) {
                     if ($Fix) {
                         $step.assignee = $null
                         $fixed += "Cleared assignee on completed step $planName/$sid"
+                    }
+                }
+
+                if ($step.status -eq "completed" -and -not $step.validation_result) {
+                    Add-Issue "ERROR" "Step $sid is completed but has no validation_result" $planName $sid
+                }
+
+                if ($step.status -eq "completed" -and $step.depends_on) {
+                    foreach ($dep in $step.depends_on) {
+                        if ($stepById.ContainsKey($dep) -and $stepById[$dep].status -ne "completed") {
+                            Add-Issue "ERROR" "Step $sid is completed but dependency $dep is $($stepById[$dep].status)" $planName $sid
+                        }
                     }
                 }
             }
