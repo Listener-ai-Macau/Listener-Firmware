@@ -10,7 +10,8 @@
 
 工具脚本：
 - 认领/更新步骤：`powershell -File tools\update_plan_status.ps1 -Plan <plan> -StepId <id> -Status in_progress -Assignee <you>`
-- 完成步骤：`powershell -File tools\update_plan_status.ps1 -Plan <plan> -StepId <id> -Status completed`
+- 完成步骤：`powershell -File tools\update_plan_status.ps1 -Plan <plan> -StepId <id> -Status completed -ValidationResult "PASS: ..."`
+- 阻塞步骤：`powershell -File tools\update_plan_status.ps1 -Plan <plan> -StepId <id> -Status blocked -Assignee <you> -BlockedReason "..."`
 - 校验状态：`pwsh -NoProfile -File tools\validate_plan_status.ps1`
 - 硬件锁：`powershell -File tools\lock_resource.ps1 -Resource COM3 -Owner <you>`
 - 释放锁：`powershell -File tools\unlock_resource.ps1 -Resource COM3 -Owner <you>`

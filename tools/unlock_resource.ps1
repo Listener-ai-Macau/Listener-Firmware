@@ -4,24 +4,41 @@ param(
     [Parameter(Mandatory=$true)]
     [string]$Resource,
     [string]$Owner = $env:USERNAME,
-    [string]$LockDir = ".cache/resource_locks"
+    [string]$LockDir = "C:\Users\Billy\Desktop\listener\.cache\resource_locks",
+    [int]$MutexTimeoutSeconds = 30
 )
 
 $ErrorActionPreference = "Stop"
 
-$lockFile = Join-Path $LockDir "$Resource.lock.json"
+$mutex = [System.Threading.Mutex]::new($false, "Local\ListenerAiResourceLock")
+$hasMutex = $false
 
-if (-not (Test-Path $lockFile)) {
-    Write-Output "No lock found for '$Resource'"
-    exit 0
+try {
+    $hasMutex = $mutex.WaitOne([TimeSpan]::FromSeconds($MutexTimeoutSeconds))
+    if (-not $hasMutex) {
+        Write-Error "Timed out waiting for resource lock mutex after $MutexTimeoutSeconds seconds."
+        exit 1
+    }
+
+    $lockFile = Join-Path $LockDir "$Resource.lock.json"
+
+    if (-not (Test-Path $lockFile)) {
+        Write-Output "No lock found for '$Resource'"
+        exit 0
+    }
+
+    $existing = Get-Content $lockFile -Raw | ConvertFrom-Json
+
+    if ($existing.owner -ne $Owner) {
+        Write-Error "Lock for '$Resource' is owned by '$($existing.owner)', not '$Owner'. Cannot release."
+        exit 1
+    }
+
+    Remove-Item $lockFile -Force
+    Write-Output "Released '$Resource' (was locked by '$Owner')"
+} finally {
+    if ($hasMutex) {
+        $mutex.ReleaseMutex() | Out-Null
+    }
+    $mutex.Dispose()
 }
-
-$existing = Get-Content $lockFile -Raw | ConvertFrom-Json
-
-if ($existing.owner -ne $Owner) {
-    Write-Error "Lock for '$Resource' is owned by '$($existing.owner)', not '$Owner'. Cannot release."
-    exit 1
-}
-
-Remove-Item $lockFile -Force
-Write-Output "Released '$Resource' (was locked by '$Owner')"
