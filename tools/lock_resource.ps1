@@ -5,39 +5,56 @@ param(
     [string]$Resource,
     [string]$Owner = $env:USERNAME,
     [int]$TimeoutMinutes = 60,
-    [string]$LockDir = ".cache/resource_locks"
+    [string]$LockDir = "C:\Users\Billy\Desktop\listener\.cache\resource_locks",
+    [int]$MutexTimeoutSeconds = 30
 )
 
 $ErrorActionPreference = "Stop"
 
-if (-not (Test-Path $LockDir)) {
-    New-Item -ItemType Directory -Path $LockDir -Force | Out-Null
-}
+$mutex = [System.Threading.Mutex]::new($false, "Local\ListenerAiResourceLock")
+$hasMutex = $false
 
-$lockFile = Join-Path $LockDir "$Resource.lock.json"
-
-# 检查现有锁
-if (Test-Path $lockFile) {
-    $existing = Get-Content $lockFile -Raw | ConvertFrom-Json
-    $lockedAt = [DateTime]::Parse($existing.locked_at)
-    $expiresAt = $lockedAt.AddMinutes($existing.timeout_minutes)
-
-    if ((Get-Date) -lt $expiresAt -and $existing.owner -ne $Owner) {
-        Write-Error "Resource '$Resource' is locked by '$($existing.owner)' until $($expiresAt.ToString('yyyy-MM-dd HH:mm:ss'))"
+try {
+    $hasMutex = $mutex.WaitOne([TimeSpan]::FromSeconds($MutexTimeoutSeconds))
+    if (-not $hasMutex) {
+        Write-Error "Timed out waiting for resource lock mutex after $MutexTimeoutSeconds seconds."
         exit 1
     }
 
-    # 过期锁或自己是 owner，可以覆盖
+    if (-not (Test-Path $LockDir)) {
+        New-Item -ItemType Directory -Path $LockDir -Force | Out-Null
+    }
+
+    $lockFile = Join-Path $LockDir "$Resource.lock.json"
+
+    # 检查现有锁
+    if (Test-Path $lockFile) {
+        $existing = Get-Content $lockFile -Raw | ConvertFrom-Json
+        $lockedAt = [DateTime]::Parse($existing.locked_at)
+        $expiresAt = $lockedAt.AddMinutes($existing.timeout_minutes)
+
+        if ((Get-Date) -lt $expiresAt -and $existing.owner -ne $Owner) {
+            Write-Error "Resource '$Resource' is locked by '$($existing.owner)' until $($expiresAt.ToString('yyyy-MM-dd HH:mm:ss'))"
+            exit 1
+        }
+
+        # 过期锁或自己是 owner，可以覆盖
+    }
+
+    # 写锁
+    $lockData = @{
+        resource = $Resource
+        owner = $Owner
+        locked_at = (Get-Date).ToString("o")
+        timeout_minutes = $TimeoutMinutes
+        pid = $PID
+    } | ConvertTo-Json
+
+    Set-Content -Path $lockFile -Value $lockData -Encoding UTF8
+    Write-Output "Locked '$Resource' for '$Owner' ($TimeoutMinutes min)"
+} finally {
+    if ($hasMutex) {
+        $mutex.ReleaseMutex() | Out-Null
+    }
+    $mutex.Dispose()
 }
-
-# 写锁
-$lockData = @{
-    resource = $Resource
-    owner = $Owner
-    locked_at = (Get-Date).ToString("o")
-    timeout_minutes = $TimeoutMinutes
-    pid = $PID
-} | ConvertTo-Json
-
-Set-Content -Path $lockFile -Value $lockData -Encoding UTF8
-Write-Output "Locked '$Resource' for '$Owner' ($TimeoutMinutes min)"
