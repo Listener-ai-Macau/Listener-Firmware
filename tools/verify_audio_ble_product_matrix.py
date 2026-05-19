@@ -1759,11 +1759,15 @@ async def run_a12(args) -> dict[str, str]:
                 print(f"a12_idle_before_round={round_index}:{idle_seconds:.2f}", flush=True)
                 await asyncio.sleep(idle_seconds)
             random_sentence_count = 2 if round_index % 3 == 0 else 1
+            profile_name = A12_PRODUCT_CHAIN_AUDIO_PROFILES[
+                (round_index - 1) % len(A12_PRODUCT_CHAIN_AUDIO_PROFILES)
+            ]
             product_chain = await run_listener_type_product_chain(
                 args,
                 "A12",
                 trigger_mode="serial-toggle",
-                artifact_label=f"soak_round_{round_index:02d}",
+                artifact_label=f"soak_round_{round_index:02d}_{profile_name.replace('-', '_')}",
+                audio_profile=profile_name,
                 random_sentence_count_override=random_sentence_count,
             )
             rounds.append(product_chain)
@@ -1871,41 +1875,70 @@ async def attach_product_chain_overlay(
     case_result: dict[str, object],
 ) -> dict[str, object]:
     print(f"product_chain_overlay_start={case_id}", flush=True)
-    product_chain = await run_listener_type_product_chain(args, case_id, trigger_mode="serial-toggle")
-    if should_retry_empty_transcript_product_chain(product_chain):
-        print(f"product_chain_retry_empty_transcript={case_id}", flush=True)
-        retry_product_chain = await run_listener_type_product_chain(
+    profile_results = []
+    profiles = product_chain_profiles_for_case(args, case_id)
+    for profile_name in profiles:
+        product_chain = await run_listener_type_product_chain(
             args,
             case_id,
             trigger_mode="serial-toggle",
-            artifact_label="serial_toggle_retry_empty_transcript",
-            sentence_override=PRODUCT_CHAIN_EMPTY_TRANSCRIPT_RETRY_SENTENCE,
+            artifact_label=f"serial_toggle_{profile_name.replace('-', '_')}",
+            audio_profile=profile_name,
         )
-        retry_details = retry_product_chain.get("details")
-        if isinstance(retry_details, dict):
-            retry_details["retry_reason"] = "empty_transcript_with_complete_ble_audio"
-            retry_details["initial_attempt"] = product_chain
-        if str(retry_product_chain.get("result")) == "pass":
-            product_chain = retry_product_chain
-        else:
-            details = product_chain.get("details")
-            if isinstance(details, dict):
-                details["retry_attempt"] = retry_product_chain
+        if should_retry_empty_transcript_product_chain(product_chain):
+            print(f"product_chain_retry_empty_transcript={case_id}:{profile_name}", flush=True)
+            retry_product_chain = await run_listener_type_product_chain(
+                args,
+                case_id,
+                trigger_mode="serial-toggle",
+                artifact_label=f"serial_toggle_{profile_name.replace('-', '_')}_retry_empty_transcript",
+                audio_profile=profile_name,
+                sentence_override=PRODUCT_CHAIN_EMPTY_TRANSCRIPT_RETRY_SENTENCE,
+            )
+            retry_details = retry_product_chain.get("details")
+            if isinstance(retry_details, dict):
+                retry_details["retry_reason"] = "empty_transcript_with_complete_ble_audio"
+                retry_details["initial_attempt"] = product_chain
+            if str(retry_product_chain.get("result")) == "pass":
+                product_chain = retry_product_chain
+            else:
+                details = product_chain.get("details")
+                if isinstance(details, dict):
+                    details["retry_attempt"] = retry_product_chain
+        profile_results.append(product_chain)
     details = case_result.get("details")
     if not isinstance(details, dict):
         details = {}
         case_result["details"] = details
-    details["product_chain"] = product_chain
+    details["product_chain_profiles"] = profile_results
+    details["product_chain"] = profile_results[-1] if profile_results else {}
 
-    product_result = str(product_chain.get("result"))
-    if product_result == "fail":
+    failed_profiles = [
+        item for item in profile_results
+        if str(item.get("result")) == "fail"
+    ]
+    warning_profiles = [
+        item for item in profile_results
+        if str(item.get("result")) == "warning"
+    ]
+    if failed_profiles:
         case_result["result"] = "fail"
-        case_result["reason"] = "product_chain_failed:" + str(product_chain.get("reason", ""))
-    elif product_result == "warning" and str(case_result.get("result")) == "pass":
+        case_result["reason"] = "product_chain_failed:" + ",".join(
+            str(item.get("details", {}).get("audio_profile") or item.get("case_id"))
+            for item in failed_profiles
+        )
+    elif warning_profiles and str(case_result.get("result")) == "pass":
         case_result["result"] = "warning"
-        case_result["reason"] = "product_chain_warning:" + str(product_chain.get("reason", ""))
+        case_result["reason"] = "product_chain_warning:" + ",".join(
+            str(item.get("details", {}).get("audio_profile") or item.get("case_id"))
+            for item in warning_profiles
+        )
     print(
-        f"product_chain_overlay_done={case_id}:{product_result}:{product_chain.get('reason', '')}",
+        "product_chain_overlay_done="
+        f"{case_id}:"
+        f"profiles={','.join(profiles)}:"
+        f"failed={len(failed_profiles)}:"
+        f"warnings={len(warning_profiles)}",
         flush=True,
     )
     return case_result
