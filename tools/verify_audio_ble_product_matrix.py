@@ -1184,7 +1184,7 @@ def find_listener_history_session(
 
 def print_case_catalog() -> None:
     catalog = {
-        "auto_cases": list(CASE_ORDER),
+        "auto_cases": list(FULL_CASES),
         "manual_cases": list(MANUAL_CASES),
         "transport_only_cases": list(TRANSPORT_ONLY_CASES),
         "case_descriptions": CASE_DESCRIPTIONS,
@@ -3002,7 +3002,7 @@ async def attach_product_chain_overlay(
         is_no_text = bool(pc_details.get("expect_no_text"))
         check = validate_capsule_evidence(
             case_id, pc,
-            expect_partial=(case_id == "A2" and not is_no_text),
+            expect_partial=not is_no_text,
             expect_no_text=is_no_text,
         )
         capsule_checks.append(check)
