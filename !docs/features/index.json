@@ -151,7 +151,7 @@
     },
     {
       "id": "ble_audio_test_matrix",
-      "status": "implemented",
+      "status": "validated",
       "summary": "Realistic user-scenario matrix with suite layering (smoke/daily/full/soak/transport): A1-A19 automated cases covering normal speech, hesitation, quiet, fast, short commands, ultra-short, punctuation (warning-only), Chinese-English mix, repeated speech, noise, voice interference, cancel, silent, fading gain, long idle, network failure (controlled timeout), and soak. Capsule UX validation integrated into product-chain overlay. H1-H3 manual. T1-T5 legacy transport.",
       "doc": "ble_audio_test_matrix.md",
       "primary_paths": [
@@ -173,7 +173,8 @@
         "verify_audio_ble_product_matrix.py adds validate_partial_preview_quality + validate_capsule_evidence",
         "Capsule evidence checks partial_preview_count, last_partial_preview; warnings on failure, not hard fail",
         "A9 punctuation uses warning_only profile; A18 uses controlled 8s/5s timeout, not real network failure",
-        "FAST_TTS_RATE = 3, matching fast profile TTS rate"
+        "FAST_TTS_RATE = 3, matching fast profile TTS rate",
+        "2026-05-19 full hardware validation PASS: A1-A19 automated, H1 real manual KEY1, T1-T5 transport"
       ],
       "invariants": [
         "CASE_SUITES defines suite layering: --cases auto defaults to A1-A16 only; A17/A18/A19 in soak suite",

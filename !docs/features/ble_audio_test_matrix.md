@@ -2,7 +2,7 @@
 
 ## 状态
 
-- status: `implemented`
+- status: `validated` (2026-05-19 全量硬件通过：A1-A19 PASS, H1 手动 PASS, T1-T5 PASS)
 - scope: BLE 音频真实用户场景矩阵。`A1-A19` 为自动化用户场景 case，`H1-H3` 为手动 case，`T1-T5` 为旧传输层 case（`--cases transport`）
 - source_of_truth: `tools/verify_audio_ble_product_matrix.py` 中的 `CASE_ORDER` / `MANUAL_CASES` / `TRANSPORT_ONLY_CASES` / `CASE_SUITES` / `CASE_RUNNERS` / `CASE_DESCRIPTIONS`
 
