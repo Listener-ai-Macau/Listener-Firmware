@@ -42,8 +42,9 @@ ANALYSIS_MIN_ACTIVE_FRAMES = 5
 TTS_CACHE_DIR = TRANSIENT_SOURCE_DIR / "tts_cache"
 DEFAULT_TTS_GAIN = 4.0
 DEFAULT_TTS_RATE = 0
-FAST_TTS_RATE = 5
+FAST_TTS_RATE = 3
 LOW_VOLUME_TTS_GAIN = 1.8
+TTS_TARGET_PEAK = 26000
 AUDIO_PROFILE_CONFIGS = {
     "normal": {
         "tts_rate": DEFAULT_TTS_RATE,
@@ -76,6 +77,12 @@ AUDIO_PROFILE_CONFIGS = {
         "warning_only": False,
         "noise_type": "white",
         "noise_snr_db": 12.0,
+    },
+    "punctuation": {
+        "tts_rate": DEFAULT_TTS_RATE,
+        "tts_gain": DEFAULT_TTS_GAIN,
+        "minimum_accuracy": 0.60,
+        "warning_only": True,
     },
 }
 
@@ -305,6 +312,11 @@ def scale_wav_pcm16(path: pathlib.Path, gain: float) -> None:
     if resolved_gain == 1.0:
         return
     frames = read_wav_frames(path)
+    if not frames:
+        return
+    peak = max(abs(sample) for sample in frames)
+    if peak > 0 and resolved_gain > 1.0:
+        resolved_gain = min(resolved_gain, TTS_TARGET_PEAK / float(peak))
     scaled_frames = []
     for sample in frames:
         scaled = int(round(sample * resolved_gain))
