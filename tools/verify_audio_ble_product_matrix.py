@@ -14,6 +14,48 @@ import unicodedata
 import serial
 import winsound
 
+
+def run_with_process_tree_timeout(
+    command: list[str],
+    *,
+    cwd: str,
+    timeout: int,
+) -> subprocess.CompletedProcess[str]:
+    process = subprocess.Popen(
+        command,
+        cwd=cwd,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+    )
+    try:
+        stdout_text, stderr_text = process.communicate(timeout=max(1, int(timeout)))
+        return subprocess.CompletedProcess(command, process.returncode, stdout_text, stderr_text)
+    except subprocess.TimeoutExpired as exc:
+        if sys.platform == "win32":
+            subprocess.run(
+                ["taskkill", "/PID", str(process.pid), "/T", "/F"],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                check=False,
+            )
+        else:
+            process.kill()
+        try:
+            stdout_text, stderr_text = process.communicate(timeout=5)
+        except subprocess.TimeoutExpired:
+            process.kill()
+            stdout_text, stderr_text = process.communicate(timeout=5)
+        raise subprocess.TimeoutExpired(
+            exc.cmd,
+            exc.timeout,
+            output=stdout_text,
+            stderr=stderr_text,
+        ) from exc
+
+
 from ble_audio_regression_common import (
     AUDIO_PROFILE_CONFIGS,
     play_and_capture_serial_toggle_after_cancel_probe,
@@ -185,6 +227,13 @@ CASE_PRODUCT_CHAIN_AUDIO_PROFILES = {
     "A19": ("normal", "fast", "low-volume", "noisy"),
 }
 A19_SOAK_AUDIO_PROFILES = ("normal", "fast", "low-volume", "noisy")
+A19_SOAK_SENTENCES = (
+    ("normal", "蓝牙音频正在发送到火山识别，请检查文本结果。"),
+    ("fast", "我正在测试语音输入，确认文字可以稳定出现。"),
+    ("low-volume", "火山识别和蓝牙传输正在接受测试。"),
+    ("noisy", "今天天气不错，适合出去走走，散散心。"),
+    ("normal", "蓝牙音频正在发送到火山识别，请检查文本结果。我正在测试语音输入，确认文字可以稳定出现。"),
+)
 A17_LONG_IDLE_SECONDS = 300
 COMPACT_STDOUT_PREFIXES = (
     "execution_profile=",
@@ -1697,9 +1746,9 @@ async def run_a16_new(args) -> dict[str, str]:
 async def run_a18_new(args) -> dict[str, str]:
     """A18: ASR timeout simulation - verifies host does not hang when ASR is slow/unavailable.
 
-    Uses a controlled 8s timeout on the product-chain runner (5s listener timeout)
-    so ASR is guaranteed to not return in time. This simulates network failure
-    without depending on real network issues.
+    Uses a controlled short product-chain run (5s listener timeout, 25s outer
+    budget) so ASR is expected to time out without depending on real network
+    issues.
     """
     budget = 120
     print_case_header("A18", "ASR timeout simulation (controlled short timeout)", budget)
@@ -1726,7 +1775,7 @@ async def run_a18_new(args) -> dict[str, str]:
             "A18",
             trigger_mode="serial-toggle",
             artifact_label="asr_timeout_sim",
-            timeout_seconds_override=8,
+            timeout_seconds_override=25,
             listener_timeout_ms_override=5000,
         )
         asr_result = str(asr_timeout_chain.get("result"))
@@ -2414,13 +2463,9 @@ async def run_listener_type_product_chain(
     print(f"product_chain_listener_stderr={stderr_log}", flush=True)
 
     try:
-        completed = subprocess.run(
+        completed = run_with_process_tree_timeout(
             command,
             cwd=str(listener_repo),
-            capture_output=True,
-            text=True,
-            encoding="utf-8",
-            errors="replace",
             timeout=max(1, int(timeout_seconds)),
         )
     except subprocess.TimeoutExpired as exc:
@@ -2701,13 +2746,16 @@ async def run_a19(args) -> dict[str, str]:
             if round_index > 1 and idle_seconds > 0:
                 print(f"a19_idle_before_round={round_index}:{idle_seconds:.2f}", flush=True)
                 await asyncio.sleep(idle_seconds)
-            random_sentence_count = 2 if round_index % 3 == 0 else 1
+            profile_name, sentence = A19_SOAK_SENTENCES[
+                (round_index - 1) % len(A19_SOAK_SENTENCES)
+            ]
             product_chain = await run_listener_type_product_chain(
                 args,
                 "A19",
                 trigger_mode="serial-toggle",
                 artifact_label=f"soak_round_{round_index:02d}",
-                random_sentence_count_override=random_sentence_count,
+                audio_profile=profile_name,
+                sentence_override=sentence,
             )
             rounds.append(product_chain)
             result = str(product_chain.get("result"))
