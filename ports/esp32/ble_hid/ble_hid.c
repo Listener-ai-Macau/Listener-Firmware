@@ -46,6 +46,7 @@ static const char *TAG = "ble_hid";
 #define BLE_HID_BATTERY_DIVIDER_DENOMINATOR 1U
 #define BLE_HID_BATTERY_EMPTY_MV 3000U
 #define BLE_HID_BATTERY_FULL_MV 4200U
+#define BLE_HID_BATTERY_TASK_STACK_BYTES (4 * 1024)
 
 typedef struct
 {
@@ -275,8 +276,8 @@ static void ble_hid_battery_task(void *parameter)
     (void)parameter;
 
     while (1) {
-        ble_hid_update_battery_level("periodic");
         vTaskDelay(pdMS_TO_TICKS(BLE_HID_BATTERY_UPDATE_INTERVAL_MS));
+        ble_hid_update_battery_level("periodic");
     }
 }
 
@@ -289,7 +290,7 @@ static void ble_hid_battery_task_start(void)
     BaseType_t task_ok = xTaskCreate(
         ble_hid_battery_task,
         "ble_hid_battery_task",
-        2048,
+        BLE_HID_BATTERY_TASK_STACK_BYTES,
         NULL,
         configMAX_PRIORITIES - 5,
         &s_ble_hid_ctx.battery_task_handle);
