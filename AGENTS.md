@@ -2,37 +2,52 @@
 
 ## 身份
 
-你的身份由启动器注入（环境变量 `AI_AGENT_ID`）。检测到就用作 `assignee`；否则用 `codex` 或 `tai`。
+你的身份由启动器注入（环境变量 `AI_AGENT_ID`）。检测不到时，显式传 `-Assignee` / `-Owner`，不要退回 Windows 用户名。
 
 ## AI 协作
 
-完整协议见 `C:\Users\Billy\Desktop\listener\docs\ai_collaboration_protocol.md`。
+公共 workflow 仓库：
 
-工具脚本：
-- 创建任务：`pwsh -NoProfile -File tools\new_ai_task.ps1 -Plan <plan> -Title "<目标>" -StepTitle "<步骤>"`
-- 查看可认领步骤：`pwsh -NoProfile -File tools\list_available_steps.ps1 -Plan <plan> -IncludeStale`
-- 认领步骤并创建/切换分支：`pwsh -NoProfile -File tools\claim_step.ps1 -Plan <plan> -StepId <id> -Assignee <you> -BaseBranch master`
-- 刷新心跳/更新步骤：`powershell -File tools\update_plan_status.ps1 -Plan <plan> -StepId <id> -Status in_progress -Assignee <you> -Touch`
-- 完成步骤并合回 feature：`pwsh -NoProfile -File tools\complete_step.ps1 -Plan <plan> -StepId <id> -ValidationResult "PASS: ..."`
-- 阻塞步骤：`powershell -File tools\update_plan_status.ps1 -Plan <plan> -StepId <id> -Status blocked -Assignee <you> -BlockedReason "..."`
-- 查看硬件锁：`pwsh -NoProfile -File tools\lock_status.ps1`
-- 同步任务索引：`pwsh -NoProfile -File tools\sync_task_index.ps1`
-- 校验状态：`pwsh -NoProfile -File tools\validate_plan_status.ps1`
-- 硬件锁：`powershell -File tools\lock_resource.ps1 -Resource COM3 -Owner <you>`
-- 释放锁：`powershell -File tools\unlock_resource.ps1 -Resource COM3 -Owner <you>`
+`C:\Users\Billy\Desktop\listener\ai-collaboration-workflow`
+
+完整协议见：
+
+`C:\Users\Billy\Desktop\listener\ai-collaboration-workflow\docs\ai_collaboration_protocol.md`
+
+共享计划状态：
+
+`C:\Users\Billy\Desktop\listener\ai-collaboration-workflow\docs\plans\*_status.json`
+
+本仓库不维护协作脚本；协作命令一律通过公共 workflow 仓库的 `scripts\aiw.ps1` 调用。
+
+常用命令：
+
+```powershell
+$aiw = "..\ai-collaboration-workflow\scripts\aiw.ps1"
+pwsh -NoProfile -File $aiw status
+pwsh -NoProfile -File $aiw list -Plan <plan> -IncludeStale
+pwsh -NoProfile -File $aiw claim -Plan <plan> -StepId <id> -Assignee <you> -RepoRoot .
+pwsh -NoProfile -File $aiw touch -Plan <plan> -StepId <id> -Assignee <you>
+pwsh -NoProfile -File $aiw submit -Plan <plan> -StepId <id> -ValidationResult "PASS: ..." -RepoRoot .
+pwsh -NoProfile -File $aiw review -Plan <plan> -StepId <id> -Reviewer <reviewer> -Result approved -Notes "<what was checked>"
+pwsh -NoProfile -File $aiw block -Plan <plan> -StepId <id> -Assignee <you> -BlockedReason "..."
+pwsh -NoProfile -File $aiw lock -Resource COM3 -Owner <you>
+pwsh -NoProfile -File $aiw unlock -Resource COM3 -Owner <you>
+```
+
+`submit` 只表示提交复核，状态为 `review`；只有 `review -Result approved` 才会写入 `accepted` 并解锁依赖。若需要返工，用 `review -Result changes_requested -Notes "..."`。
 
 ## 构建命令
 
 ```powershell
-idf.py build                    # 构建
-idf.py -p COM3 flash            # 烧录
-pwsh -NoProfile -File ./tools/esp_idf_ci.ps1 build   # Git Bash CI
+idf.py build
+idf.py -p COM3 flash
+pwsh -NoProfile -File ./tools/esp_idf_ci.ps1 build
 ```
 
 ## 文档位置
 
-- 共享任务状态：`C:\Users\Billy\Desktop\listener\docs\plans\*_status.json`
-- 计划参考文档：`C:\Users\Billy\Desktop\listener\docs\plans\*.md`
-- 协作协议：`C:\Users\Billy\Desktop\listener\docs\ai_collaboration_protocol.md`
-- 仓库级文档：`!docs/features/`
+- 协作状态/计划：`C:\Users\Billy\Desktop\listener\ai-collaboration-workflow\docs\plans\`
+- 协作修复计划：`C:\Users\Billy\Desktop\listener\ai-collaboration-workflow\docs\fixes\`
+- 仓库级功能文档：`!docs/features/`
 - 人类文档默认中文
