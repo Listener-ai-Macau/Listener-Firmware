@@ -22,8 +22,8 @@ function Invoke-Git {
     }
 }
 
-if ($ValidationResult -notmatch '^(PASS|BLOCKED):') {
-    throw "ValidationResult must start with 'PASS:' or 'BLOCKED:'."
+if ($ValidationResult -notmatch '^PASS:') {
+    throw "ValidationResult must start with 'PASS:'. Use update_plan_status.ps1 -Status blocked for blocked work."
 }
 
 $currentBranch = (& git -C $RepoRoot branch --show-current).Trim()
@@ -45,23 +45,13 @@ $updateScript = Join-Path $PSScriptRoot "update_plan_status.ps1"
 $validateScript = Join-Path $PSScriptRoot "validate_plan_status.ps1"
 
 if ($DryRun) {
-    Write-Output "Would mark $Plan/$StepId completed with validation result."
-    Write-Output "Would run: powershell -ExecutionPolicy Bypass -File $updateScript -Plan $Plan -StepId $StepId -Status completed -ValidationResult `"$ValidationResult`""
-    Write-Output "Would run: pwsh -NoProfile -File $validateScript -Plan $Plan"
     if (-not $NoBranch) {
         Write-Output "Would switch to $featureBranch, merge $currentBranch, and delete $currentBranch."
     }
+    Write-Output "Would mark completed only after the merge succeeds."
+    Write-Output "Would run: powershell -ExecutionPolicy Bypass -File $updateScript -Plan $Plan -StepId $StepId -Status completed -ValidationResult `"$ValidationResult`""
+    Write-Output "Would run: pwsh -NoProfile -File $validateScript -Plan $Plan"
     exit 0
-}
-
-& powershell -ExecutionPolicy Bypass -File $updateScript -Plan $Plan -StepId $StepId -Status completed -ValidationResult $ValidationResult
-if ($LASTEXITCODE -ne 0) {
-    throw "update_plan_status.ps1 failed with exit code $LASTEXITCODE."
-}
-
-& pwsh -NoProfile -File $validateScript -Plan $Plan
-if ($LASTEXITCODE -ne 0) {
-    throw "validate_plan_status.ps1 failed for '$Plan'."
 }
 
 if (-not $NoBranch) {
@@ -73,6 +63,16 @@ if (-not $NoBranch) {
     Invoke-Git @("switch", $featureBranch)
     Invoke-Git @("merge", "--no-ff", $currentBranch, "-m", "Merge $Plan step $StepId")
     Invoke-Git @("branch", "-d", $currentBranch)
+}
+
+& powershell -ExecutionPolicy Bypass -File $updateScript -Plan $Plan -StepId $StepId -Status completed -ValidationResult $ValidationResult
+if ($LASTEXITCODE -ne 0) {
+    throw "update_plan_status.ps1 failed with exit code $LASTEXITCODE."
+}
+
+& pwsh -NoProfile -File $validateScript -Plan $Plan
+if ($LASTEXITCODE -ne 0) {
+    throw "validate_plan_status.ps1 failed for '$Plan'."
 }
 
 Write-Output "Completed $Plan/$StepId."
