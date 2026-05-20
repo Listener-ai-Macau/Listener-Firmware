@@ -15,11 +15,11 @@ description: Firmware repo adapter for ESP32-S3 BLE HID keyboard and BLE audio c
 ## Hard Gates
 
 - Prefer the wrapper scripts for collaboration actions; they encode the shared gates:
-  `new_ai_task.ps1`, `list_available_steps.ps1`, `claim_step.ps1`, `complete_step.ps1`, `lock_status.ps1`.
+  `new_ai_task.ps1`, `list_available_steps.ps1`, `claim_step.ps1`, `complete_step.ps1`, `lock_status.ps1`, `sync_task_index.ps1`.
 - Before coding, list claimable work when needed:
   `pwsh -NoProfile -File C:\Users\Billy\Desktop\listener\voice-keyboard-firmware\tools\list_available_steps.ps1 -Plan <task_slug>`
 - Claim with the branch-aware wrapper when possible:
-  `pwsh -NoProfile -File C:\Users\Billy\Desktop\listener\voice-keyboard-firmware\tools\claim_step.ps1 -Plan <task_slug> -StepId <step_id> -Assignee <you>`
+  `pwsh -NoProfile -File C:\Users\Billy\Desktop\listener\voice-keyboard-firmware\tools\claim_step.ps1 -Plan <task_slug> -StepId <step_id> -Assignee <you> -BaseBranch master`
 - Use `update_plan_status.ps1` directly for status-only operations and heartbeat refreshes:
   `powershell -File C:\Users\Billy\Desktop\listener\voice-keyboard-firmware\tools\update_plan_status.ps1 -Plan <task_slug> -StepId <step_id> -Status in_progress -Assignee <you> -Touch`
 - **Task naming**: new tasks use descriptive lowercase kebab-case `task_slug` names, such as `feature-docs-repair` or `schematic-v1-adaptation`. Do not create new `p<number>` tasks; `p13` to `p18` are legacy status sources only.
@@ -31,6 +31,7 @@ description: Firmware repo adapter for ESP32-S3 BLE HID keyboard and BLE audio c
 - Release every lock you acquired with `unlock_resource.ps1`.
 - On completion, run the step validation, then prefer:
   `pwsh -NoProfile -File C:\Users\Billy\Desktop\listener\voice-keyboard-firmware\tools\complete_step.ps1 -Plan <task_slug> -StepId <step_id> -ValidationResult "PASS: ..."`
+- `complete_step.ps1` only accepts `PASS:` and writes completed after a successful merge; blocked work uses `update_plan_status.ps1 -Status blocked`.
 - If human action is required, mark `blocked` with `-BlockedReason`; validation failures are not blocked.
 
 ## Plan Rules

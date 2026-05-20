@@ -4,9 +4,10 @@ param(
     [string]$Plan,
     [Parameter(Mandatory=$true)]
     [string]$StepId,
-    [string]$Assignee = $(if ($env:AI_AGENT_ID) { $env:AI_AGENT_ID } elseif ($env:TAI_AGENT_ID) { $env:TAI_AGENT_ID } else { $env:USERNAME }),
+    [string]$Assignee,
     [string]$PlansDir = "C:\Users\Billy\Desktop\listener\docs\plans",
     [string]$RepoRoot = $(Resolve-Path (Join-Path $PSScriptRoot "..")),
+    [string]$BaseBranch = "master",
     [switch]$NoBranch,
     [switch]$DryRun,
     [switch]$AllowDirty,
@@ -15,6 +16,7 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
+. (Join-Path $PSScriptRoot "ai_workflow_common.ps1")
 
 function Get-StatusFile {
     param([string]$RequestedPlan, [string]$Directory)
@@ -49,16 +51,6 @@ function Invoke-Git {
     }
 }
 
-function Get-FirstLine {
-    param([string[]]$Lines)
-
-    if (-not $Lines) {
-        return ""
-    }
-
-    return ([string]($Lines | Select-Object -First 1)).Trim()
-}
-
 if (-not $SkipValidation) {
     $validateScript = Join-Path $PSScriptRoot "validate_plan_status.ps1"
     & pwsh -NoProfile -File $validateScript -Plan $Plan | Write-Output
@@ -67,6 +59,7 @@ if (-not $SkipValidation) {
     }
 }
 
+$Assignee = Resolve-AiIdentity -ExplicitIdentity $Assignee -ParameterName "Assignee"
 $statusFile = Get-StatusFile -RequestedPlan $Plan -Directory $PlansDir
 $data = Get-Content $statusFile -Raw | ConvertFrom-Json
 $stepById = @{}
@@ -87,14 +80,6 @@ if (-not $target) {
     throw "Step '$StepId' not found in '$statusFile'."
 }
 
-if ($target.status -ne "pending") {
-    throw "Step '$StepId' is '$($target.status)', not pending."
-}
-
-if ($target.assignee) {
-    throw "Step '$StepId' already has assignee '$($target.assignee)'."
-}
-
 foreach ($dep in @($target.depends_on)) {
     if (-not $stepById.ContainsKey([string]$dep)) {
         throw "Step '$StepId' depends on missing step '$dep'."
@@ -102,6 +87,17 @@ foreach ($dep in @($target.depends_on)) {
     if ($stepById[[string]$dep].status -ne "completed") {
         throw "Step '$StepId' depends on '$dep', but '$dep' is '$($stepById[[string]$dep].status)'."
     }
+}
+
+$claimState = Get-StepClaimState -Step $target -StaleHours $StaleHours
+if (-not $claimState.Claimable) {
+    if ($target.status -eq "in_progress") {
+        throw "Step '$StepId' is in_progress by '$($target.assignee)' and is not stale."
+    }
+    if ($target.assignee) {
+        throw "Step '$StepId' already has assignee '$($target.assignee)'."
+    }
+    throw "Step '$StepId' is '$($target.status)', not pending or stale in_progress."
 }
 
 $normalizedAssignee = $Assignee.ToLowerInvariant()
@@ -124,8 +120,9 @@ if (-not $NoBranch) {
                 Invoke-Git @("switch", "-c", $featureBranch, "--track", "origin/$featureBranch")
             }
         } elseif ($DryRun) {
-            Write-Output "Would create $featureBranch from current HEAD."
+            Write-Output "Would create $featureBranch from $BaseBranch."
         } else {
+            Invoke-Git @("switch", $BaseBranch)
             Invoke-Git @("switch", "-c", $featureBranch)
         }
     } else {
@@ -164,6 +161,9 @@ $updateArgs = @(
 )
 
 if ($DryRun) {
+    if ($claimState.Stale) {
+        Write-Output "Would reclaim stale $Plan/$StepId from '$($target.assignee)'."
+    }
     Write-Output "Would claim $Plan/$StepId for $Assignee."
     Write-Output "Would run: powershell $($updateArgs -join ' ')"
     exit 0

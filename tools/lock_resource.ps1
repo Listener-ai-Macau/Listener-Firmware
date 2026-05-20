@@ -3,13 +3,15 @@
 param(
     [Parameter(Mandatory=$true)]
     [string]$Resource,
-    [string]$Owner = $env:USERNAME,
+    [string]$Owner,
     [int]$TimeoutMinutes = 60,
     [string]$LockDir = "C:\Users\Billy\Desktop\listener\.cache\resource_locks",
     [int]$MutexTimeoutSeconds = 30
 )
 
 $ErrorActionPreference = "Stop"
+. (Join-Path $PSScriptRoot "ai_workflow_common.ps1")
+$Owner = Resolve-AiIdentity -ExplicitIdentity $Owner -ParameterName "Owner"
 
 $mutex = [System.Threading.Mutex]::new($false, "Local\ListenerAiResourceLock")
 $hasMutex = $false
