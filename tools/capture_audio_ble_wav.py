@@ -195,7 +195,7 @@ def parse_args():
     parser.add_argument("--capture-seconds", type=int, default=4)
     parser.add_argument("--output-dir", default=str(DEFAULT_OUTPUT_DIR))
     parser.add_argument("--serial-log-path", default=None)
-    parser.add_argument("--timeout-seconds", type=int, default=60)
+    parser.add_argument("--timeout-seconds", type=int, default=None, help="Total session timeout. Defaults to capture-seconds + 45s for connection overhead.")
     parser.add_argument("--boot-timeout-seconds", type=int, default=15)
     parser.add_argument("--ble-connect-timeout-seconds", type=int, default=12)
     parser.add_argument("--notify-ready-timeout-seconds", type=int, default=45)
@@ -1433,6 +1433,9 @@ async def run_capture_with_args(args):
 def main():
     configure_utf8_stdio()
     args = parse_args()
+    # Auto-calculate timeout if not explicitly set
+    if args.timeout_seconds is None:
+        args.timeout_seconds = args.capture_seconds + 45
     asyncio.run(run_capture_with_args(args))
 
 
