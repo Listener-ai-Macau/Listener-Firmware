@@ -28,11 +28,14 @@ pwsh -NoProfile -File $aiw status
 pwsh -NoProfile -File $aiw list -Plan <plan> -IncludeStale
 pwsh -NoProfile -File $aiw claim -Plan <plan> -StepId <id> -Assignee <you> -RepoRoot .
 pwsh -NoProfile -File $aiw touch -Plan <plan> -StepId <id> -Assignee <you>
-pwsh -NoProfile -File $aiw done -Plan <plan> -StepId <id> -ValidationResult "PASS: ..." -RepoRoot .
+pwsh -NoProfile -File $aiw submit -Plan <plan> -StepId <id> -ValidationResult "PASS: ..." -RepoRoot .
+pwsh -NoProfile -File $aiw review -Plan <plan> -StepId <id> -Reviewer <reviewer> -Result approved -Notes "<what was checked>"
 pwsh -NoProfile -File $aiw block -Plan <plan> -StepId <id> -Assignee <you> -BlockedReason "..."
 pwsh -NoProfile -File $aiw lock -Resource COM3 -Owner <you>
 pwsh -NoProfile -File $aiw unlock -Resource COM3 -Owner <you>
 ```
+
+`submit` 只表示提交复核，状态为 `review`；只有 `review -Result approved` 才会写入 `accepted` 并解锁依赖。若需要返工，用 `review -Result changes_requested -Notes "..."`。
 
 ## 构建命令
 

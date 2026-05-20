@@ -38,7 +38,9 @@
 #define AUDIO_CAPTURE_FRAME_SAMPLES     ((AUDIO_CAPTURE_SAMPLE_RATE_HZ * AUDIO_CAPTURE_FRAME_MS) / 1000)
 #define AUDIO_CAPTURE_FRAME_BYTES       (AUDIO_CAPTURE_FRAME_SAMPLES * sizeof(int16_t))
 #define AUDIO_CAPTURE_LOG_INTERVAL_FRAMES (50)
-#define AUDIO_CAPTURE_SESSION_SAFETY_MAX_SECONDS (600)
+/* Recording duration is user-controlled (KEY1 toggle); no fixed upper limit.
+ * The only hard limit is uint16_t packet_sequence overflow in the BLE protocol,
+ * which is handled gracefully by sending session_stop before overflow. */
 #define AUDIO_CAPTURE_STREAM_BATCH_FRAMES 3
 #define AUDIO_CAPTURE_STREAM_BATCH_BYTES (AUDIO_CAPTURE_STREAM_BATCH_FRAMES * AUDIO_CAPTURE_FRAME_BYTES)
 #define AUDIO_CAPTURE_STREAM_PROGRESS_LOG_PACKET_INTERVAL 64U
@@ -184,11 +186,11 @@ esp_err_t audio_capture_session_begin(void)
         return ESP_ERR_INVALID_SIZE;
     }
 
-    uint32_t requested_total_frames = (AUDIO_CAPTURE_SESSION_SAFETY_MAX_SECONDS * 1000U) / AUDIO_CAPTURE_FRAME_MS;
-    uint32_t total_frames = requested_total_frames;
-    if (packet_safe_total_frames < total_frames) {
-        total_frames = packet_safe_total_frames;
-    }
+    /* Use packet_safe_total_frames as the only limit (protocol-level packet
+     * sequence overflow protection). If payload is unavailable, this will be 0
+     * and we reject; otherwise recording continues until user stops or protocol
+     * limit is approached. */
+    uint32_t total_frames = packet_safe_total_frames;
 
     memset(&s_export_state, 0, sizeof(s_export_state));
     s_export_state.mode = AUDIO_CAPTURE_EXPORT_MODE_SESSION;
@@ -203,11 +205,10 @@ esp_err_t audio_capture_session_begin(void)
     xSemaphoreGive(s_state_mutex);
     ESP_LOGI(
         TAG,
-        "record session begin requested: session_id=%" PRIu32 " buffer_ms=%u buffer_bytes=%u safety_max_s=%u packet_payload_bytes=%u packet_safe_max_s=%" PRIu32,
+        "record session begin requested: session_id=%" PRIu32 " buffer_ms=%u buffer_bytes=%u packet_payload_bytes=%u packet_safe_max_s=%" PRIu32,
         session_id,
         AUDIO_CAPTURE_STREAM_BATCH_FRAMES * AUDIO_CAPTURE_FRAME_MS,
         (unsigned)AUDIO_CAPTURE_STREAM_BATCH_BYTES,
-        AUDIO_CAPTURE_SESSION_SAFETY_MAX_SECONDS,
         payload_bytes,
         session_max_seconds);
     return ESP_OK;
@@ -326,13 +327,16 @@ static void audio_capture_process_frame(const int16_t *frame_buffer)
                     if (!audio_capture_packet_sequence_can_advance(
                             s_export_state.stream_next_packet_sequence,
                             packet_count)) {
-                        should_cancel = true;
-                        should_session_error = s_export_state.ble_session_started;
+                        /* Protocol packet sequence limit reached; perform graceful
+                         * session_stop instead of error so the host receives all
+                         * audio up to this point with a clean termination. */
+                        should_session_stop = true;
+                        session_id = s_export_state.session_id;
                         expected_packet_count_at_end = s_export_state.stream_next_packet_sequence;
-                        session_error_code = LISTENER_AUDIO_SESSION_ERROR_SEQUENCE_OVERFLOW;
-                        ESP_LOGW(
+                        should_emit = true;
+                        ESP_LOGI(
                             TAG,
-                            "record session canceled: packet sequence limit reached session_id=%" PRIu32 " next=%u add=%u",
+                            "record session stopping at protocol limit: session_id=%" PRIu32 " next=%u add=%u",
                             session_id,
                             s_export_state.stream_next_packet_sequence,
                             packet_count);
@@ -349,14 +353,15 @@ static void audio_capture_process_frame(const int16_t *frame_buffer)
                 s_export_state.captured_frames++;
             }
 
-            if (!should_cancel &&
+            if (!should_cancel && !should_session_stop &&
                 s_export_state.mode == AUDIO_CAPTURE_EXPORT_MODE_SESSION &&
                 (s_export_state.stop_requested || s_export_state.captured_frames >= s_export_state.total_frames)) {
                 if (s_export_state.captured_frames >= s_export_state.total_frames) {
-                    ESP_LOGW(
+                    ESP_LOGI(
                         TAG,
-                        "record session hit safety max duration: max_duration_s=%" PRIu32,
-                        AUDIO_CAPTURE_SESSION_SAFETY_MAX_SECONDS);
+                        "record session stopping at protocol limit (total_frames): session_id=%" PRIu32 " captured_frames=%" PRIu32,
+                        s_export_state.session_id,
+                        s_export_state.captured_frames);
                 }
                 s_export_state.duration_seconds =
                     (s_export_state.captured_frames * AUDIO_CAPTURE_FRAME_MS) / 1000U;
@@ -372,13 +377,11 @@ static void audio_capture_process_frame(const int16_t *frame_buffer)
                     if (!audio_capture_packet_sequence_can_advance(
                             s_export_state.stream_next_packet_sequence,
                             packet_count)) {
-                        should_cancel = true;
-                        should_session_error = s_export_state.ble_session_started;
-                        expected_packet_count_at_end = s_export_state.stream_next_packet_sequence;
-                        session_error_code = LISTENER_AUDIO_SESSION_ERROR_SEQUENCE_OVERFLOW;
-                        ESP_LOGW(
+                        /* Protocol limit at final batch; stop gracefully with
+                         * whatever audio we have so far. */
+                        ESP_LOGI(
                             TAG,
-                            "record session canceled at stop: packet sequence limit reached session_id=%" PRIu32 " next=%u add=%u",
+                            "record session stopping at protocol limit (final batch): session_id=%" PRIu32 " next=%u add=%u",
                             session_id,
                             s_export_state.stream_next_packet_sequence,
                             packet_count);

@@ -98,12 +98,12 @@ CASE_ORDER = (
     "A12", "A13",
     "A14", "A15", "A16",
     "A17", "A18",
-    "A19",
+    "A19", "A20",
 )
 SMOKE_CASES = ("A1", "A3", "A14", "A15")
-FULL_CASES = tuple(c for c in CASE_ORDER if c not in ("A17", "A18", "A19"))
+FULL_CASES = tuple(c for c in CASE_ORDER if c not in ("A17", "A18", "A19", "A20"))
 SOAK_CASES = ("A17", "A18", "A19")
-EXTENDED_AUTO_CASES = ()
+EXTENDED_AUTO_CASES = ("A20",)
 MANUAL_CASES = ("H1", "H2", "H3")
 TRANSPORT_ONLY_CASES = ("T1", "T2", "T3", "T4", "T5")
 CASE_SUITES = {
@@ -112,10 +112,11 @@ CASE_SUITES = {
     "full": CASE_ORDER,
     "transport": TRANSPORT_ONLY_CASES,
     "soak": SOAK_CASES,
+    "extended": EXTENDED_AUTO_CASES,
     "auto": FULL_CASES,
 }
 PRODUCT_CHAIN_OVERLAY_CASES = tuple(case_id for case_id in CASE_ORDER if case_id.startswith("A"))
-PRODUCT_CHAIN_IN_RUNNER_CASES = ("A1", "A2", "A3", "A14", "A15", "A18", "A19")
+PRODUCT_CHAIN_IN_RUNNER_CASES = ("A1", "A2", "A3", "A14", "A15", "A18", "A19", "A20")
 MANUAL_OR_EXTERNAL_CASES = {
     "H2": "requires physical distance/angle change",
     "H3": "requires different speaker voice or manual TTS voice switch",
@@ -140,6 +141,7 @@ CASE_DESCRIPTIONS = {
     "A17": "长时间空闲后首录（5min idle）",
     "A18": "ASR 网络异常：验证不卡死",
     "A19": "综合 soak：混合所有 profile 和句子类型",
+    "A20": "超长录音传输：15min BLE session 由用户停止且不触发 sequence overflow error",
     "H1": "物理 KEY1 语音输入",
     "H2": "不同距离/角度说话",
     "H3": "不同人说话（男女/老人/口音）",
@@ -310,7 +312,7 @@ def parse_args():
         default="auto",
         help=(
             "Case IDs or suite name. Suites: smoke (A1,A3,A14,A15), auto/daily (A1-A16), "
-            "full (A1-A19), soak (A17-A19), transport (T1-T5). "
+            "full (A1-A20), soak (A17-A19), extended (A20), transport (T1-T5). "
             "Or comma-separated IDs: A1,A4,T2."
         ),
     )
@@ -413,6 +415,12 @@ def parse_args():
     )
     parser.add_argument("--soak-round-count", type=int, default=6)
     parser.add_argument("--soak-idle-seconds", type=float, default=10.0)
+    parser.add_argument(
+        "--a20-capture-seconds",
+        type=int,
+        default=900,
+        help="A20 ultra-long transport capture duration. Defaults to 900 seconds (15 minutes).",
+    )
     parser.add_argument(
         "--manual-trigger-ready-delay-ms",
         type=int,
@@ -2797,6 +2805,44 @@ async def run_a19(args) -> dict[str, str]:
     return print_summary("A19", "pass", "", {"rounds": rounds})
 
 
+async def run_a20(args) -> dict[str, object]:
+    capture_seconds = max(1, int(args.a20_capture_seconds))
+    budget_seconds = max(300, int(capture_seconds * 1.2 + 180))
+    print_case_header("A20", f"ultra-long BLE transport session ({capture_seconds}s)", budget_seconds)
+    pre_start_delay = choose_delay_seconds(args, window=args.pre_start_delay_window, label="a20_pre_start")
+    post_stop_timeout_seconds = max(180, int(capture_seconds * 0.25 + 120))
+    capture_args = make_capture_args(
+        port=args.port,
+        device_name=args.device_name,
+        capture_seconds=capture_seconds,
+        capture_seconds_per_session=[capture_seconds],
+        session_pre_start_delay_seconds=[pre_start_delay],
+        timeout_seconds=post_stop_timeout_seconds,
+        reset_before_capture=args.reset_before_capture,
+        output_dir=case_output_dir("A20"),
+        serial_log_path=case_serial_log_path("A20"),
+    )
+    session_summaries = await capture_sessions(capture_args)
+    if not session_summaries:
+        return print_summary("A20", "fail", "no_session_captured")
+
+    summary = dict(session_summaries[-1])
+    summary = finalize_transport_capture_summary(
+        summary,
+        capture_seconds=capture_seconds,
+        pre_start_delay_seconds=pre_start_delay,
+    )
+    summary["post_stop_timeout_seconds"] = post_stop_timeout_seconds
+    summary["ultra_long_transport_only"] = True
+    summary["product_chain_skipped"] = True
+    summary["product_chain_skip_reason"] = "A20 validates firmware transport duration and graceful stop, not ASR accuracy"
+    summary["target_duration_seconds"] = capture_seconds
+    if summary.get("session_error_code") is not None:
+        summary["result"] = "fail"
+        summary["failure_reason"] = "session_error_received"
+    return ensure_pass("A20", summary)
+
+
 async def run_h1(args) -> dict[str, str]:
     print_case_header("H1", "physical KEY1 product chain (manual trigger)", 180)
     extra_smoke_args = [
@@ -2855,7 +2901,7 @@ CASE_RUNNERS = {
     "A12": run_a12_new, "A13": run_a13_new,
     "A14": run_a14, "A15": run_a15, "A16": run_a16_new,
     "A17": run_a17, "A18": run_a18_new,
-    "A19": run_a19,
+    "A19": run_a19, "A20": run_a20,
     "H1": run_h1,
     "T1": run_t1, "T2": run_t2, "T3": run_t3, "T4": run_t4, "T5": run_t5,
 }

@@ -21,6 +21,7 @@
 #include "host/ble_hs.h"
 #include "host/ble_hs_mbuf.h"
 #include "os/os_mbuf.h"
+#include "listener_device.h"
 #include "listener_audio_proto.h"
 
 #define BLE_AUDIO_STREAM_TASK_STACK_BYTES (6 * 1024)
@@ -42,6 +43,9 @@
 #define BLE_AUDIO_STREAM_AUDIO_QUEUE_WAIT_MS 100
 #define BLE_AUDIO_STREAM_AUDIO_POOL_BUFFER_BYTES 1920
 #define BLE_AUDIO_STREAM_AUDIO_POOL_LENGTH (BLE_AUDIO_STREAM_NOTIFY_QUEUE_LENGTH + 8)
+#define BLE_AUDIO_STREAM_AUDIO_POOL_PRESSURE_WARN_PERCENT 80U
+#define BLE_AUDIO_STREAM_AUDIO_POOL_PRESSURE_WARN_LEVEL \
+    ((BLE_AUDIO_STREAM_AUDIO_POOL_LENGTH * BLE_AUDIO_STREAM_AUDIO_POOL_PRESSURE_WARN_PERCENT + 99U) / 100U)
 #define BLE_AUDIO_STREAM_CONTROL_NOTIFY_REPETITIONS 3
 #define BLE_AUDIO_STREAM_CONTROL_NOTIFY_REPEAT_DELAY_MS 5
 
@@ -101,6 +105,7 @@ typedef struct {
     uint32_t audio_pool_high_water;
     uint32_t audio_pool_alloc_failed;
     uint32_t audio_queue_full;
+    bool audio_pool_pressure_warned;
     const char *last_drop_reason;
     int last_error;
 } ble_audio_stream_session_stats_t;
@@ -116,6 +121,14 @@ static const char *TAG = "ble_audio_stream";
 
 static const ble_uuid128_t s_service_uuid = BLE_AUDIO_STREAM_SERVICE_UUID;
 static const ble_uuid128_t s_notify_uuid = BLE_AUDIO_STREAM_NOTIFY_UUID;
+static const ble_uuid128_t s_readiness_uuid = BLE_AUDIO_STREAM_READINESS_UUID;
+static const ble_uuid128_t s_capabilities_uuid = BLE_AUDIO_STREAM_CAPABILITIES_UUID;
+
+typedef enum {
+    BLE_AUDIO_STREAM_GATT_ATTR_NOTIFY = 0,
+    BLE_AUDIO_STREAM_GATT_ATTR_READINESS,
+    BLE_AUDIO_STREAM_GATT_ATTR_CAPABILITIES,
+} ble_audio_stream_gatt_attr_t;
 
 static uint16_t s_notify_attr_handle;
 static bool s_started;
@@ -260,6 +273,18 @@ static void ble_audio_stream_stats_pool_high_water(uint32_t session_id, uint32_t
     if (in_use > s_session_stats.audio_pool_high_water) {
         s_session_stats.audio_pool_high_water = in_use;
     }
+
+    if (!s_session_stats.audio_pool_pressure_warned &&
+        in_use >= BLE_AUDIO_STREAM_AUDIO_POOL_PRESSURE_WARN_LEVEL) {
+        s_session_stats.audio_pool_pressure_warned = true;
+        ESP_LOGW(
+            TAG,
+            "audio buffer pool pressure high: session=%" PRIu32 " in_use=%" PRIu32 "/%u threshold=%u%%",
+            session_id,
+            in_use,
+            (unsigned)BLE_AUDIO_STREAM_AUDIO_POOL_LENGTH,
+            (unsigned)BLE_AUDIO_STREAM_AUDIO_POOL_PRESSURE_WARN_PERCENT);
+    }
 }
 
 static void ble_audio_stream_stats_drop(uint32_t session_id, const char *reason, esp_err_t result)
@@ -288,7 +313,7 @@ static void ble_audio_stream_stats_log_and_end(
 
     ESP_LOGI(
         TAG,
-        "audio session transport summary: session=%" PRIu32 " reason=%s expected_packet_count=%u notify_sent=%" PRIu32 " notify_failed=%" PRIu32 " notify_retries=%" PRIu32 " retry_mbuf=%" PRIu32 " retry_enomem=%" PRIu32 " retry_tx_timeout=%" PRIu32 " retry_tx_status=%" PRIu32 " retry_other=%" PRIu32 " audio_sent=%" PRIu32 " audio_failed=%" PRIu32 " queue_jobs_purged=%" PRIu32 " pool_high_water=%" PRIu32 " pool_capacity=%u pool_alloc_failed=%" PRIu32 " queue_full=%" PRIu32 " last_drop_reason=%s last_error=%d",
+        "audio session transport summary: session=%" PRIu32 " reason=%s expected_packet_count=%u notify_sent=%" PRIu32 " notify_failed=%" PRIu32 " notify_retries=%" PRIu32 " retry_mbuf=%" PRIu32 " retry_enomem=%" PRIu32 " retry_tx_timeout=%" PRIu32 " retry_tx_status=%" PRIu32 " retry_other=%" PRIu32 " audio_sent=%" PRIu32 " audio_failed=%" PRIu32 " queue_jobs_purged=%" PRIu32 " pool_high_water=%" PRIu32 " pool_capacity=%u pool_high_water_pct=%" PRIu32 " pool_alloc_failed=%" PRIu32 " queue_full=%" PRIu32 " last_drop_reason=%s last_error=%d",
         session_id,
         reason,
         expected_packet_count,
@@ -305,6 +330,7 @@ static void ble_audio_stream_stats_log_and_end(
         s_session_stats.queue_jobs_purged,
         s_session_stats.audio_pool_high_water,
         (unsigned)BLE_AUDIO_STREAM_AUDIO_POOL_LENGTH,
+        (s_session_stats.audio_pool_high_water * 100U) / BLE_AUDIO_STREAM_AUDIO_POOL_LENGTH,
         s_session_stats.audio_pool_alloc_failed,
         s_session_stats.audio_queue_full,
         s_session_stats.last_drop_reason != NULL ? s_session_stats.last_drop_reason : "none",
@@ -688,9 +714,33 @@ static int ble_audio_stream_access(
 {
     (void)conn_handle;
     (void)attr_handle;
-    (void)ctxt;
-    (void)arg;
-    return BLE_ATT_ERR_READ_NOT_PERMITTED;
+
+    if (ctxt == NULL || ctxt->op != BLE_GATT_ACCESS_OP_READ_CHR) {
+        return BLE_ATT_ERR_READ_NOT_PERMITTED;
+    }
+
+    const char *value = NULL;
+    switch ((ble_audio_stream_gatt_attr_t)(uintptr_t)arg) {
+    case BLE_AUDIO_STREAM_GATT_ATTR_READINESS:
+        value = listener_device_get_factory_readiness();
+        break;
+    case BLE_AUDIO_STREAM_GATT_ATTR_CAPABILITIES:
+        value = listener_device_get_capabilities();
+        break;
+    case BLE_AUDIO_STREAM_GATT_ATTR_NOTIFY:
+    default:
+        return BLE_ATT_ERR_READ_NOT_PERMITTED;
+    }
+
+    int rc = os_mbuf_append(ctxt->om, value, strlen(value));
+    if (rc != 0) {
+        return BLE_ATT_ERR_INSUFFICIENT_RES;
+    }
+
+    ESP_LOGI(TAG, "factory info read: attr=%u value=%s",
+             (unsigned)((ble_audio_stream_gatt_attr_t)(uintptr_t)arg),
+             value);
+    return 0;
 }
 
 static const struct ble_gatt_svc_def s_audio_svcs[] = {
@@ -703,6 +753,18 @@ static const struct ble_gatt_svc_def s_audio_svcs[] = {
                 .access_cb = ble_audio_stream_access,
                 .flags = BLE_GATT_CHR_F_NOTIFY,
                 .val_handle = &s_notify_attr_handle,
+            },
+            {
+                .uuid = &s_readiness_uuid.u,
+                .access_cb = ble_audio_stream_access,
+                .flags = BLE_GATT_CHR_F_READ,
+                .arg = (void *)(uintptr_t)BLE_AUDIO_STREAM_GATT_ATTR_READINESS,
+            },
+            {
+                .uuid = &s_capabilities_uuid.u,
+                .access_cb = ble_audio_stream_access,
+                .flags = BLE_GATT_CHR_F_READ,
+                .arg = (void *)(uintptr_t)BLE_AUDIO_STREAM_GATT_ATTR_CAPABILITIES,
             },
             {0},
         },
