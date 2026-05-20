@@ -4,8 +4,6 @@
 
 #include "esp_log.h"
 
-#define LISTENER_PROTOCOL_VERSION_STR "1"
-
 static const char *TAG = "self_test";
 
 static const char *self_test_nvs_status(const self_test_result_t *result)
@@ -41,7 +39,7 @@ self_test_result_t self_test_run(void)
         .nvs_error = 0,
         .free_heap = 0,
         .fw_version = listener_device_get_fw_version(),
-        .protocol_version = LISTENER_PROTOCOL_VERSION_STR,
+        .protocol_version = listener_device_get_protocol_version(),
     };
 
     result.nvs_ok = self_test_platform_check_nvs(&result.nvs_recovered, &result.nvs_error);

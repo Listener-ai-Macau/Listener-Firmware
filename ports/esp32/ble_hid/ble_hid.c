@@ -24,6 +24,7 @@
 #include "nimble/nimble_port_freertos.h"
 #include "host/ble_store.h"
 #include "services/gap/ble_svc_gap.h"
+#include "services/dis/ble_svc_dis.h"
 void ble_store_config_init(void);
 
 #include "hid_keyboard.h"
@@ -55,7 +56,7 @@ typedef struct
 
 static ble_hid_ctx_t s_ble_hid_ctx = {0};
 
-static const char *s_device_name = LISTENER_DEVICE_MANUFACTURER;
+static const char *s_device_name = LISTENER_DEVICE_BLE_NAME;
 
 static char s_ble_serial[18];
 static adc_oneshot_unit_handle_t s_battery_adc_handle;
@@ -77,7 +78,7 @@ static esp_hid_device_config_t s_ble_hid_config = {
     .vendor_id = LISTENER_VENDOR_ID,
     .product_id = LISTENER_PRODUCT_ID,
     .version = LISTENER_PROTOCOL_VERSION,
-    .device_name = LISTENER_DEVICE_MANUFACTURER,
+    .device_name = LISTENER_DEVICE_BLE_NAME,
     .manufacturer_name = LISTENER_DEVICE_MANUFACTURER,
     .serial_number = s_ble_serial,
     .report_maps = s_ble_report_maps,
@@ -466,6 +467,30 @@ static void ble_hid_host_task(void *parameter)
     nimble_port_freertos_deinit();
 }
 
+static void ble_hid_log_dis_result(const char *field, int rc)
+{
+    if (rc != 0) {
+        ESP_LOGW(TAG, "DIS %s set failed: rc=%d", field, rc);
+    }
+}
+
+static void ble_hid_configure_dis_identity(void)
+{
+    ble_hid_log_dis_result("model", ble_svc_dis_model_number_set(LISTENER_DEVICE_MODEL));
+    ble_hid_log_dis_result("hardware_revision", ble_svc_dis_hardware_revision_set(LISTENER_DEVICE_HW_REV));
+    ble_hid_log_dis_result("firmware_revision", ble_svc_dis_firmware_revision_set(listener_device_get_fw_version()));
+    ble_hid_log_dis_result("software_revision", ble_svc_dis_software_revision_set(listener_device_get_protocol_version()));
+
+    ESP_LOGI(TAG,
+             "DIS identity: manufacturer=%s model=%s hw=%s fw=%s proto=%s serial=%s",
+             LISTENER_DEVICE_MANUFACTURER,
+             LISTENER_DEVICE_MODEL,
+             LISTENER_DEVICE_HW_REV,
+             listener_device_get_fw_version(),
+             listener_device_get_protocol_version(),
+             listener_device_get_serial());
+}
+
 void ble_hid_init(void)
 {
     ESP_LOGI(TAG, "fw_version=%s protocol_version=%u build=%s serial=%s",
@@ -473,6 +498,12 @@ void ble_hid_init(void)
              LISTENER_PROTOCOL_VERSION,
              listener_device_get_build_id(),
              listener_device_get_serial());
+    ESP_LOGI(TAG,
+             "factory readiness: ble_name=%s appearance=0x%04x readiness=%s capabilities=%s",
+             listener_device_get_ble_name(),
+             LISTENER_DEVICE_BLE_APPEARANCE_KEYBOARD,
+             listener_device_get_factory_readiness(),
+             listener_device_get_capabilities());
 
     snprintf(s_ble_serial, sizeof(s_ble_serial), "%s", listener_device_get_serial());
 
@@ -499,6 +530,7 @@ void ble_hid_init(void)
             ble_hid_event_callback,
             &s_ble_hid_ctx.hid_device));
 
+    ble_hid_configure_dis_identity();
     ble_audio_stream_log_gatt_state();
 
     int gap_name_rc = ble_svc_gap_device_name_set(s_device_name);

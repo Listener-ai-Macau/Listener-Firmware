@@ -1,7 +1,40 @@
 {
   "schema_version": 1,
-  "updated_at": "2026-05-19",
+  "updated_at": "2026-05-20",
   "features": [
+    {
+      "id": "factory_firmware_readiness",
+      "status": "implemented",
+      "summary": "Factory firmware package generation plus stable BLE identity, DIS firmware/protocol fields, pairable-on-boot behavior, and BLE-readable readiness/capabilities strings.",
+      "doc": "factory_firmware_readiness.md",
+      "primary_paths": [
+        "protocols/listener_device/",
+        "ports/esp32/ble_hid/ble_hid.c",
+        "ports/esp32/ble_audio_stream/",
+        "components/self_test/",
+        "tools/package_factory_firmware.ps1"
+      ],
+      "validation": [
+        "idf.py build",
+        "pwsh -NoProfile -File .\\tools\\package_factory_firmware.ps1",
+        "powershell -ExecutionPolicy Bypass -File .\\tools\\verify_ble_hid.ps1 -Port COM3 -Text \"hello\"",
+        "Manual BLE scan confirms name, appearance, DIS firmware/protocol, readiness, and capabilities"
+      ],
+      "evidence": [
+        "Factory package manifest records bootloader, partition table, app binary offsets, SHA256, git commit, version, and flash command",
+        "BLE custom audio service exposes read-only readiness and capabilities characteristics"
+      ],
+      "invariants": [
+        "Factory BLE name remains listener",
+        "Appearance remains keyboard 0x03C1",
+        "First power-on advertises without a serial command",
+        "POST critical failures log and continue into degraded BLE mode"
+      ],
+      "known_limits": [
+        "Generated binary package lives under .cache/factory_firmware and is not committed to git",
+        "Readiness and capabilities are static factory capability strings, not the full diagnostic package"
+      ]
+    },
     {
       "id": "v1_remaining_capabilities",
       "status": "implemented",

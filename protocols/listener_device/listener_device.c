@@ -46,3 +46,23 @@ const char *listener_device_get_serial(void)
     }
     return s_serial_str;
 }
+
+const char *listener_device_get_ble_name(void)
+{
+    return LISTENER_DEVICE_BLE_NAME;
+}
+
+const char *listener_device_get_protocol_version(void)
+{
+    return LISTENER_PROTOCOL_VERSION_STR;
+}
+
+const char *listener_device_get_factory_readiness(void)
+{
+    return LISTENER_DEVICE_FACTORY_READINESS;
+}
+
+const char *listener_device_get_capabilities(void)
+{
+    return LISTENER_DEVICE_CAPABILITIES;
+}
