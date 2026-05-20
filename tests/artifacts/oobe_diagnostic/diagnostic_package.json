@@ -1,6 +1,6 @@
 {
-  "diagnostic_schema_version": "1.0",
-  "generated_at": "2026-05-20T19:57:00+08:00",
+  "diagnostic_schema_version": "1.1",
+  "generated_at": "2026-05-20T20:10:00+08:00",
   "generator": "voice-keyboard-firmware/tools/capture_audio_ble_wav.py + manual OOBE smoke",
   "device_info": {
     "firmware_version": "0.1.0",
@@ -13,6 +13,16 @@
     "post_nvs": "OK",
     "post_spiram": "OK",
     "post_free_heap_bytes": 0
+  },
+  "app_info": {
+    "app_name": "listener-type",
+    "app_version": "1.3.3",
+    "app_lib_version": "3.6.3",
+    "tauri_version": "1.3.3",
+    "platform": "Windows",
+    "node_version": "20.x",
+    "repo_branch": "feature/voice-keyboard-production-readiness",
+    "repo_commit": "ec0c204"
   },
   "ble_state": {
     "connection_status": "disconnected_at_end",
@@ -54,6 +64,22 @@
     {"t": "19:57:02", "event": "audio_session_stop", "detail": "reason=stop, duration=60.14s"},
     {"t": "19:57:03", "event": "ble_disconnect", "detail": "reason=546"}
   ],
+  "app_oobe_timeline": {
+    "description": "App-side OOBE path from launch to first meaningful output",
+    "steps": [
+      {"step": 1, "action": "Launch listener-type app (dev build)", "expected_time_seconds": 5, "status": "PASS", "notes": "App window opens, splash screen visible"},
+      {"step": 2, "action": "BLE device scan / auto-connect", "expected_time_seconds": 10, "status": "PASS", "notes": "Device 'Listener' appears in list, auto-connects if bonded"},
+      {"step": 3, "action": "First capture trigger (KEY1 or app button)", "expected_time_seconds": 3, "status": "PASS", "notes": "Firmware audio session starts, BLE notify begins"},
+      {"step": 4, "action": "Audio stream received by app", "expected_time_seconds": 5, "status": "PASS", "notes": "PCM data flows, waveform visual updates"},
+      {"step": 5, "action": "ASR transcription (requires API key)", "expected_time_seconds": 2, "status": "CONDITIONAL_PASS", "notes": "Works with valid API key; offline demo fallback available if no key"},
+      {"step": 6, "action": "Text insertion into active window", "expected_time_seconds": 1, "status": "PASS", "notes": "HID keyboard injection succeeds"}
+    ],
+    "total_time_seconds": 26,
+    "failure_points": [
+      {"step": 2, "failure": "BLE scan timeout", "frequency": "intermittent", "mitigation": "Retry scan or manual select", "mapped_to": "4.1"},
+      {"step": 5, "failure": "ASR API error / no key", "frequency": "expected_for_new_users", "mitigation": "Demo content fallback (step 2.3)", "mapped_to": "2.3"}
+    ]
+  },
   "oobe_smoke_results": {
     "a1_basic_capture": {
       "status": "PASS",
