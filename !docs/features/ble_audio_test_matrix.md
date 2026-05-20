@@ -154,7 +154,7 @@ python .\tools\verify_audio_ble_product_matrix.py --port COM3 --cases H1 --fail-
 python .\tools\verify_audio_ble_product_matrix.py --port COM3 --cases T1,T2,T3,T4,T5 --transport-only --fail-on-warning
 ```
 
-真实硬件命令前按资源加锁：`lock_resource.ps1 -Resource COM3` 与 `lock_resource.ps1 -Resource BLE`，用完分别释放。
+真实硬件命令前按资源加锁：`aiw.ps1 lock -Resource COM3` 与 `aiw.ps1 lock -Resource BLE`，用完分别释放。
 
 ## 关键不变量
 

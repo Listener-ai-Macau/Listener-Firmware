@@ -19,19 +19,26 @@ description: Firmware repo adapter for ESP32-S3 BLE HID keyboard and BLE audio c
 Use the public workflow repo as the implementation source:
 
 ```powershell
-$wf = "..\ai-collaboration-workflow\scripts"
+$aiw = "..\ai-collaboration-workflow\scripts\aiw.ps1"
+```
+
+Status:
+
+```powershell
+pwsh -NoProfile -File $aiw status
+pwsh -NoProfile -File $aiw list -Plan <task_slug> -IncludeStale
 ```
 
 Claim:
 
 ```powershell
-pwsh -NoProfile -File "$wf\claim_step.ps1" -Plan <task_slug> -StepId <step_id> -Assignee <you> -RepoRoot . -BaseBranch master
+pwsh -NoProfile -File $aiw claim -Plan <task_slug> -StepId <step_id> -Assignee <you> -RepoRoot .
 ```
 
 Complete:
 
 ```powershell
-pwsh -NoProfile -File "$wf\complete_step.ps1" -Plan <task_slug> -StepId <step_id> -ValidationResult "PASS: ..." -RepoRoot .
+pwsh -NoProfile -File $aiw done -Plan <task_slug> -StepId <step_id> -ValidationResult "PASS: ..." -RepoRoot .
 ```
 
 Do not use repo-local collaboration scripts. This repo keeps only firmware/product tools under `tools\`; collaboration commands live in the public workflow repo.
@@ -41,10 +48,10 @@ Do not use repo-local collaboration scripts. This repo keeps only firmware/produ
 Real hardware commands require resource locks immediately before use:
 
 ```powershell
-pwsh -NoProfile -File "$wf\lock_resource.ps1" -Resource COM3 -Owner <you>
-pwsh -NoProfile -File "$wf\lock_resource.ps1" -Resource BLE -Owner <you>
-pwsh -NoProfile -File "$wf\unlock_resource.ps1" -Resource COM3 -Owner <you>
-pwsh -NoProfile -File "$wf\unlock_resource.ps1" -Resource BLE -Owner <you>
+pwsh -NoProfile -File $aiw lock -Resource COM3 -Owner <you>
+pwsh -NoProfile -File $aiw lock -Resource BLE -Owner <you>
+pwsh -NoProfile -File $aiw unlock -Resource COM3 -Owner <you>
+pwsh -NoProfile -File $aiw unlock -Resource BLE -Owner <you>
 ```
 
 Pure docs, search, static checks, compile-only builds, and non-device tests do not need locks.

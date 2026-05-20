@@ -207,9 +207,9 @@ python .\tools\verify_audio_ble_product_matrix.py --port COM3 --cases A1,A3,A6
 # H2: RF干扰/距离 | H3: 后端ASR集成
 
 # 校验计划状态（所有 AI 完成步骤后跑一遍）
-pwsh -NoProfile -File ..\ai-collaboration-workflow\scripts\validate_plan_status.ps1
+pwsh -NoProfile -File ..\ai-collaboration-workflow\scripts\aiw.ps1 validate
 # 自动修复可修复的问题
-pwsh -NoProfile -File ..\ai-collaboration-workflow\scripts\validate_plan_status.ps1 -Fix
+pwsh -NoProfile -File ..\ai-collaboration-workflow\scripts\aiw.ps1 validate -Fix
 ```
 
 ## 交付物
