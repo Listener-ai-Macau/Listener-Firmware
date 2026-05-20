@@ -3,10 +3,13 @@ param(
     [string]$Plan,
     [string]$Repo,
     [switch]$IncludeBlocked,
+    [switch]$IncludeStale,
+    [int]$StaleHours = 4,
     [string]$PlansDir = "C:\Users\Billy\Desktop\listener\docs\plans"
 )
 
 $ErrorActionPreference = "Stop"
+. (Join-Path $PSScriptRoot "ai_workflow_common.ps1")
 
 function Get-StatusFiles {
     param([string]$RequestedPlan, [string]$Directory)
@@ -66,7 +69,8 @@ foreach ($file in (Get-StatusFiles -RequestedPlan $Plan -Directory $PlansDir)) {
                 }
             }
 
-            $claimable = $step.status -eq "pending" -and -not $step.assignee -and $ready
+            $claimState = Get-StepClaimState -Step $step -StaleHours $StaleHours
+            $claimable = $claimState.Claimable -and $ready -and ($step.status -eq "pending" -or $IncludeStale)
             if (-not $claimable -and -not ($IncludeBlocked -and $step.status -eq "blocked")) {
                 continue
             }
@@ -80,6 +84,9 @@ foreach ($file in (Get-StatusFiles -RequestedPlan $Plan -Directory $PlansDir)) {
                 repo = $step.repo
                 title = $step.title
                 depends_on = (@($step.depends_on) -join ",")
+                stale = $claimState.Stale
+                stale_basis = $claimState.Basis
+                stale_hours = if ($null -ne $claimState.HoursOld) { "{0:N1}" -f $claimState.HoursOld } else { "" }
             }
         }
     }

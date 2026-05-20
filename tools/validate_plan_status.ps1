@@ -17,6 +17,7 @@ $fixed = @()
 $allowedLegacyPlans = @("p13","p14","p15","p16","p17","p18")
 $deprecatedStepFields = @("parallel_group", "write_paths", "push_gate_report", "evidence", "base_branch")
 $indexFile = Join-Path $PlansDir "task_index.json"
+. (Join-Path $PSScriptRoot "ai_workflow_common.ps1")
 
 function Add-Issue {
     param([string]$Level, [string]$Message, [string]$PlanName, [string]$StepId)
@@ -117,6 +118,16 @@ if (-not $Plan -and (Test-Path $indexFile)) {
                     if (-not (Test-Path $taskStatusPath)) {
                         if (-not $isArchivedTask) {
                             Add-Issue "ERROR" "task_index '$($task.task_slug)' status_file not found: $($task.status_file)" "task_index" $task.task_slug
+                        }
+                    } else {
+                        try {
+                            $taskStatusData = Get-Content $taskStatusPath -Raw | ConvertFrom-Json
+                            $derivedTaskStatus = Get-DerivedPlanStatus -PlanData $taskStatusData
+                            if ($taskStatus -and $taskStatus -ne $derivedTaskStatus) {
+                                Add-Issue "WARN" "task_index '$($task.task_slug)' status '$taskStatus' differs from derived status '$derivedTaskStatus'" "task_index" $task.task_slug
+                            }
+                        } catch {
+                            Add-Issue "ERROR" "Could not derive task_index status for '$($task.task_slug)': $_" "task_index" $task.task_slug
                         }
                     }
                 }
