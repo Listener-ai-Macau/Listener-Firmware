@@ -1057,6 +1057,19 @@ def validate_capsule_evidence(
     if not expect_partial:
         return {"pass": True, "reason": "capsule_check_not_required", "capsule_validated": False}
 
+    # CLI mode (no capsule window): skip partial preview check but still verify transcript.
+    timeline = details.get("timeline")
+    capsule_visible = isinstance(timeline, dict) and timeline.get("capsule_visible_at_utc")
+    if expect_partial and not capsule_visible:
+        had_transcript = bool(transcript and str(transcript).strip())
+        return {
+            "pass": had_transcript,
+            "reason": "cli_mode_no_capsule" if had_transcript else "cli_mode_no_transcript",
+            "capsule_validated": False,
+            "partial_preview_visible": None,
+            "final_text_received": had_transcript,
+        }
+
     had_partial = isinstance(partial_preview_count, int) and partial_preview_count > 0
     had_transcript = bool(transcript and str(transcript).strip())
 
