@@ -41,7 +41,6 @@
 /* Recording duration is user-controlled (KEY1 toggle); no fixed upper limit.
  * The only hard limit is uint16_t packet_sequence overflow in the BLE protocol,
  * which is handled gracefully by sending session_stop before overflow. */
-#define AUDIO_CAPTURE_SESSION_MAX_SECONDS UINT32_MAX
 #define AUDIO_CAPTURE_STREAM_BATCH_FRAMES 3
 #define AUDIO_CAPTURE_STREAM_BATCH_BYTES (AUDIO_CAPTURE_STREAM_BATCH_FRAMES * AUDIO_CAPTURE_FRAME_BYTES)
 #define AUDIO_CAPTURE_STREAM_PROGRESS_LOG_PACKET_INTERVAL 64U
@@ -200,7 +199,7 @@ esp_err_t audio_capture_session_begin(void)
     xSemaphoreGive(s_state_mutex);
     ESP_LOGI(
         TAG,
-        "record session begin requested: session_id=%" PRIu32 " buffer_ms=%u buffer_bytes=%u safety_max_s=%u packet_payload_bytes=%u packet_safe_max_s=%" PRIu32,
+        "record session begin requested: session_id=%" PRIu32 " buffer_ms=%u buffer_bytes=%u packet_payload_bytes=%u packet_safe_max_s=%" PRIu32,
         session_id,
         AUDIO_CAPTURE_STREAM_BATCH_FRAMES * AUDIO_CAPTURE_FRAME_MS,
         (unsigned)AUDIO_CAPTURE_STREAM_BATCH_BYTES,

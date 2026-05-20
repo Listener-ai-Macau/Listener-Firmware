@@ -55,7 +55,7 @@ switch ($Command) {
             }
         }
         Write-Host "[ci] Flashing to $Port ..."
-        & $python $esptool.py --chip esp32s3 -p $Port -b $Baud --before=default_reset --after=hard_reset write_flash `
+        & $python $esptool --chip esp32s3 -p $Port -b $Baud --before=default_reset --after=hard_reset write_flash `
             0x0 $bootloader `
             0x8000 $partition `
             0x10000 $bin 2>&1 | ForEach-Object { Write-Host $_ }
