@@ -9,11 +9,13 @@
 完整协议见 `C:\Users\Billy\Desktop\listener\docs\ai_collaboration_protocol.md`。
 
 工具脚本：
+- 创建任务：`pwsh -NoProfile -File tools\new_ai_task.ps1 -Plan <plan> -Title "<目标>" -StepTitle "<步骤>"`
 - 查看可认领步骤：`pwsh -NoProfile -File tools\list_available_steps.ps1 -Plan <plan>`
 - 认领步骤并创建/切换分支：`pwsh -NoProfile -File tools\claim_step.ps1 -Plan <plan> -StepId <id> -Assignee <you>`
 - 刷新心跳/更新步骤：`powershell -File tools\update_plan_status.ps1 -Plan <plan> -StepId <id> -Status in_progress -Assignee <you> -Touch`
-- 完成步骤：`powershell -File tools\update_plan_status.ps1 -Plan <plan> -StepId <id> -Status completed -ValidationResult "PASS: ..."`
+- 完成步骤并合回 feature：`pwsh -NoProfile -File tools\complete_step.ps1 -Plan <plan> -StepId <id> -ValidationResult "PASS: ..."`
 - 阻塞步骤：`powershell -File tools\update_plan_status.ps1 -Plan <plan> -StepId <id> -Status blocked -Assignee <you> -BlockedReason "..."`
+- 查看硬件锁：`pwsh -NoProfile -File tools\lock_status.ps1`
 - 校验状态：`pwsh -NoProfile -File tools\validate_plan_status.ps1`
 - 硬件锁：`powershell -File tools\lock_resource.ps1 -Resource COM3 -Owner <you>`
 - 释放锁：`powershell -File tools\unlock_resource.ps1 -Resource COM3 -Owner <you>`

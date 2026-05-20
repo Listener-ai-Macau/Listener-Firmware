@@ -49,6 +49,16 @@ function Invoke-Git {
     }
 }
 
+function Get-FirstLine {
+    param([string[]]$Lines)
+
+    if (-not $Lines) {
+        return ""
+    }
+
+    return ([string]($Lines | Select-Object -First 1)).Trim()
+}
+
 if (-not $SkipValidation) {
     $validateScript = Join-Path $PSScriptRoot "validate_plan_status.ps1"
     & pwsh -NoProfile -File $validateScript -Plan $Plan | Write-Output
@@ -104,8 +114,8 @@ if (-not $NoBranch) {
         throw "Working tree is dirty. Commit/stash unrelated work or pass -AllowDirty after confirming it is safe."
     }
 
-    $existingFeature = (& git -C $RepoRoot branch --list $featureBranch).Trim()
-    $existingRemoteFeature = (& git -C $RepoRoot branch -r --list "origin/$featureBranch").Trim()
+    $existingFeature = Get-FirstLine (& git -C $RepoRoot branch --list $featureBranch)
+    $existingRemoteFeature = Get-FirstLine (& git -C $RepoRoot branch -r --list "origin/$featureBranch")
     if (-not $existingFeature) {
         if ($existingRemoteFeature) {
             if ($DryRun) {
@@ -126,7 +136,7 @@ if (-not $NoBranch) {
         }
     }
 
-    $existingStep = (& git -C $RepoRoot branch --list $stepBranch).Trim()
+    $existingStep = Get-FirstLine (& git -C $RepoRoot branch --list $stepBranch)
     if ($existingStep) {
         if ($DryRun) {
             Write-Output "Would switch to existing $stepBranch."

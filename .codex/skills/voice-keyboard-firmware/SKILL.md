@@ -14,6 +14,8 @@ description: Firmware repo adapter for ESP32-S3 BLE HID keyboard and BLE audio c
 
 ## Hard Gates
 
+- Prefer the wrapper scripts for collaboration actions; they encode the shared gates:
+  `new_ai_task.ps1`, `list_available_steps.ps1`, `claim_step.ps1`, `complete_step.ps1`, `lock_status.ps1`.
 - Before coding, list claimable work when needed:
   `pwsh -NoProfile -File C:\Users\Billy\Desktop\listener\voice-keyboard-firmware\tools\list_available_steps.ps1 -Plan <task_slug>`
 - Claim with the branch-aware wrapper when possible:
@@ -27,7 +29,8 @@ description: Firmware repo adapter for ESP32-S3 BLE HID keyboard and BLE audio c
   `powershell -File C:\Users\Billy\Desktop\listener\voice-keyboard-firmware\tools\lock_resource.ps1 -Resource COM3 -Owner <you>`
   `powershell -File C:\Users\Billy\Desktop\listener\voice-keyboard-firmware\tools\lock_resource.ps1 -Resource BLE -Owner <you>`
 - Release every lock you acquired with `unlock_resource.ps1`.
-- On completion, run the step validation, mark `completed` with `-ValidationResult "PASS: ..."`, validate status JSON, merge step branch to feature branch, then delete the step branch.
+- On completion, run the step validation, then prefer:
+  `pwsh -NoProfile -File C:\Users\Billy\Desktop\listener\voice-keyboard-firmware\tools\complete_step.ps1 -Plan <task_slug> -StepId <step_id> -ValidationResult "PASS: ..."`
 - If human action is required, mark `blocked` with `-BlockedReason`; validation failures are not blocked.
 
 ## Plan Rules
