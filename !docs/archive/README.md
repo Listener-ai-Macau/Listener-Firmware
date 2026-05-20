@@ -19,7 +19,8 @@ This archive keeps only durable firmware documentation that still has a current 
 
 Old executor/worktree workflow docs, pre-merge drafts, duplicate local plan/fix copies, and superseded legacy PRDs were removed after the active workflow moved to:
 
-`C:\Users\Billy\Desktop\listener\docs\plans\`
-`C:\Users\Billy\Desktop\listener\docs\fixes\`
+`C:\Users\Billy\Desktop\listener\ai-collaboration-workflow\docs\plans\`
+`C:\Users\Billy\Desktop\listener\ai-collaboration-workflow\docs\fixes\`
 
 Current task status is tracked only in shared `*_status.json` files.
+

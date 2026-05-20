@@ -1,10 +1,4 @@
-# resolve_ai_identity.ps1 - resolve the current AI collaboration identity.
-param(
-    [string]$ExplicitIdentity,
-    [string]$ParameterName = "Assignee"
-)
-
-$ErrorActionPreference = "Stop"
-. (Join-Path $PSScriptRoot "ai_workflow_common.ps1")
-
-Resolve-AiIdentity -ExplicitIdentity $ExplicitIdentity -ParameterName $ParameterName
+# Compatibility wrapper. The implementation lives in ..\ai-collaboration-workflow\scripts.
+$proxy = Join-Path $PSScriptRoot "ai_workflow_proxy.ps1"
+& $proxy -ScriptName $MyInvocation.MyCommand.Name @args
+exit $LASTEXITCODE

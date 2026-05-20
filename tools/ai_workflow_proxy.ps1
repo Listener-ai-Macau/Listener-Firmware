@@ -1,4 +1,13 @@
-# Compatibility shim. The shared helpers live in ..\ai-collaboration-workflow\scripts.
+# Compatibility proxy for the shared AI collaboration workflow scripts.
+param(
+    [Parameter(Mandatory=$true)]
+    [string]$ScriptName,
+    [Parameter(ValueFromRemainingArguments=$true)]
+    [object[]]$ForwardArgs
+)
+
+$ErrorActionPreference = "Stop"
+
 $workflowRepo = [Environment]::GetEnvironmentVariable("AI_WORKFLOW_REPO")
 if ([string]::IsNullOrWhiteSpace($workflowRepo)) {
     $installedWorkflowRepo = 'C:\Users\Billy\Desktop\listener\ai-collaboration-workflow'
@@ -13,4 +22,11 @@ if ([string]::IsNullOrWhiteSpace($workflowRepo)) {
         }
     }
 }
-. (Join-Path $workflowRepo "scripts\ai_workflow_common.ps1")
+
+$target = Join-Path $workflowRepo "scripts\$ScriptName"
+if (-not (Test-Path $target)) {
+    throw "Shared AI workflow script not found: $target"
+}
+
+& pwsh -NoProfile -File $target @ForwardArgs
+exit $LASTEXITCODE

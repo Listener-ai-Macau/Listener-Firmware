@@ -5,8 +5,8 @@
 当前约定是：
 
 - 活跃计划和修复统一放到共享目录：
-  `C:\Users\Billy\Desktop\listener\docs\plans\`
-  `C:\Users\Billy\Desktop\listener\docs\fixes\`
+  `C:\Users\Billy\Desktop\listener\ai-collaboration-workflow\docs\plans\`
+  `C:\Users\Billy\Desktop\listener\ai-collaboration-workflow\docs\fixes\`
 - 当前仓库不再保留仓库级任务入口目录。
 - 已完成能力沉淀到 `features/`。
 - 板级原理图资料放到 `schematics/`。
@@ -28,9 +28,9 @@
 ## 当前推荐入口
 
 - 当前协作任务、计划和状态：
-  `C:\Users\Billy\Desktop\listener\docs\plans\`
+  `C:\Users\Billy\Desktop\listener\ai-collaboration-workflow\docs\plans\`
 - 当前修复方案：
-  `C:\Users\Billy\Desktop\listener\docs\fixes\`
+  `C:\Users\Billy\Desktop\listener\ai-collaboration-workflow\docs\fixes\`
 - `BLE HID` 键盘 fallback / 验证链路：
   [features/ble_hid_keyboard_output.md](./features/ble_hid_keyboard_output.md)
 - 设备端音频采集、录音控制与 `BLE` 上传链路：
@@ -41,3 +41,4 @@
   [archive](./archive)
 - 当前板级原理图资料：
   [schematics/esp32s3_board_v1](./schematics/esp32s3_board_v1)
+
