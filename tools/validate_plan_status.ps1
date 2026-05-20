@@ -109,12 +109,15 @@ if (-not $Plan -and (Test-Path $indexFile)) {
                 $isArchivedTask = $taskStatus -in @("completed", "superseded", "archived")
 
                 if (-not $task.status_file) {
-                    Add-Issue "ERROR" "task_index '$($task.task_slug)' missing status_file" "task_index" $task.task_slug
+                    if (-not $isArchivedTask) {
+                        Add-Issue "ERROR" "task_index '$($task.task_slug)' missing status_file" "task_index" $task.task_slug
+                    }
                 } else {
                     $taskStatusPath = Join-Path $PlansDir $task.status_file
                     if (-not (Test-Path $taskStatusPath)) {
-                        $level = if ($isArchivedTask) { "WARN" } else { "ERROR" }
-                        Add-Issue $level "task_index '$($task.task_slug)' status_file not found: $($task.status_file)" "task_index" $task.task_slug
+                        if (-not $isArchivedTask) {
+                            Add-Issue "ERROR" "task_index '$($task.task_slug)' status_file not found: $($task.status_file)" "task_index" $task.task_slug
+                        }
                     }
                 }
             }
@@ -250,22 +253,34 @@ foreach ($file in $files) {
                         Add-Issue "WARN" "Step $sid is in_progress but has no assignee" $planName $sid
                     }
 
-                    # Stale claim check
-                    if ($step.PSObject.Properties["claimed_at"]) {
+                    # Stale claim check. Prefer heartbeat_at when present so long-running
+                    # work can show liveness without resetting the original claim time.
+                    $staleBasis = $null
+                    $staleBasisName = $null
+                    if ($step.PSObject.Properties["heartbeat_at"] -and $step.heartbeat_at) {
+                        $staleBasis = $step.heartbeat_at
+                        $staleBasisName = "heartbeat_at"
+                    } elseif ($step.PSObject.Properties["claimed_at"] -and $step.claimed_at) {
+                        $staleBasis = $step.claimed_at
+                        $staleBasisName = "claimed_at"
+                    }
+
+                    if ($staleBasis) {
                         try {
-                            $claimedAt = [DateTime]::Parse($step.claimed_at)
-                            $hoursAgo = ((Get-Date) - $claimedAt).TotalHours
+                            $lastSeenAt = [DateTime]::Parse($staleBasis)
+                            $hoursAgo = ((Get-Date) - $lastSeenAt).TotalHours
                             if ($hoursAgo -ge $StaleHours) {
-                                Add-Issue "WARN" ("Step $sid claimed by '$($step.assignee)' $('{0:N1}' -f $hoursAgo)h ago (threshold: ${StaleHours}h)") $planName $sid
+                                Add-Issue "WARN" ("Step $sid claimed by '$($step.assignee)' has stale $staleBasisName $('{0:N1}' -f $hoursAgo)h ago (threshold: ${StaleHours}h)") $planName $sid
                             }
                         } catch {
-                            Add-Issue "WARN" "Step $sid has invalid claimed_at: $($step.claimed_at)" $planName $sid
+                            Add-Issue "WARN" "Step $sid has invalid ${staleBasisName}: $staleBasis" $planName $sid
                         }
                     } else {
-                        Add-Issue "WARN" "Step $sid is in_progress but has no claimed_at" $planName $sid
+                        Add-Issue "WARN" "Step $sid is in_progress but has no claimed_at or heartbeat_at" $planName $sid
                         if ($Fix -and $step.assignee) {
                             $step | Add-Member -NotePropertyName "claimed_at" -NotePropertyValue (Get-Date).ToString("o") -Force
-                            $fixed += "Added claimed_at to $planName/$sid"
+                            $step | Add-Member -NotePropertyName "heartbeat_at" -NotePropertyValue (Get-Date).ToString("o") -Force
+                            $fixed += "Added claimed_at and heartbeat_at to $planName/$sid"
                         }
                     }
                 }

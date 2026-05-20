@@ -3,6 +3,7 @@
 #   .\tools\update_plan_status.ps1 -Plan descriptive-task-ids-workflow -StepId "1.1" -Status in_progress -Assignee Tai
 #   .\tools\update_plan_status.ps1 -Plan descriptive-task-ids-workflow -StepId "1.1" -Status completed -ValidationResult "PASS: ..."
 #   .\tools\update_plan_status.ps1 -Plan schematic-v1-adaptation -StepId "2.1" -Status blocked -BlockedReason "新硬件未到"
+#   .\tools\update_plan_status.ps1 -Plan descriptive-task-ids-workflow -StepId "1.1" -Status in_progress -Assignee Tai -Touch
 # 新任务必须使用描述性 task_slug（小写 kebab-case）。p13-p18 仅作为 legacy 状态源保留，不再递增创建 p19。
 param(
     [Parameter(Mandatory=$true)]
@@ -15,6 +16,7 @@ param(
     [string]$Assignee,
     [string]$BlockedReason,
     [string]$ValidationResult,
+    [switch]$Touch,
     [int]$StaleHours = 4,
     [string]$PlansDir = "C:\Users\Billy\Desktop\listener\docs\plans",
     [int]$MutexTimeoutSeconds = 30
@@ -148,15 +150,26 @@ try {
         }
     }
 
-    # Check stale claim: if step is in_progress with claimed_at older than StaleHours, allow reclaim.
+    # Check stale claim: if step is in_progress with heartbeat_at or claimed_at older
+    # than StaleHours, allow reclaim.
     if ($stepObj.status -eq "in_progress" -and $stepObj.assignee -and $Assignee -and $stepObj.assignee -ne $Assignee) {
         $isStale = $false
-        if ($stepObj.PSObject.Properties["claimed_at"]) {
+        $staleBasis = $null
+        $staleBasisName = $null
+        if ($stepObj.PSObject.Properties["heartbeat_at"] -and $stepObj.heartbeat_at) {
+            $staleBasis = $stepObj.heartbeat_at
+            $staleBasisName = "heartbeat_at"
+        } elseif ($stepObj.PSObject.Properties["claimed_at"] -and $stepObj.claimed_at) {
+            $staleBasis = $stepObj.claimed_at
+            $staleBasisName = "claimed_at"
+        }
+
+        if ($staleBasis) {
             try {
-                $claimedAt = [DateTime]::Parse($stepObj.claimed_at)
-                if (((Get-Date) - $claimedAt).TotalHours -ge $StaleHours) {
+                $lastSeenAt = [DateTime]::Parse($staleBasis)
+                if (((Get-Date) - $lastSeenAt).TotalHours -ge $StaleHours) {
                     $isStale = $true
-                    Write-Warning "Step '$StepId' claim by '$($stepObj.assignee)' is stale ($('{0:N1}' -f ((Get-Date) - $claimedAt).TotalHours)h old). Reclaiming for '$Assignee'."
+                    Write-Warning "Step '$StepId' claim by '$($stepObj.assignee)' is stale by $staleBasisName ($('{0:N1}' -f ((Get-Date) - $lastSeenAt).TotalHours)h old). Reclaiming for '$Assignee'."
                 }
             } catch {
                 # Invalid date, treat as stale.
@@ -166,11 +179,17 @@ try {
             $isStale = $true
         }
 
-        if (-not $isStale) {
+    if (-not $isStale) {
             Write-Error "Step '$StepId' is already in_progress by '$($stepObj.assignee)' (claimed recently). Cannot reassign to '$Assignee'. Use -StaleHours 0 to force."
             exit 1
         }
     }
+
+    $preserveClaimedAt = $Status -eq "in_progress" -and
+        $Touch -and
+        $stepObj.status -eq "in_progress" -and
+        $stepObj.assignee -and
+        $stepObj.assignee -eq $Assignee
 
     # Apply status change.
     $stepObj.status = $Status
@@ -180,25 +199,34 @@ try {
     }
 
     if ($Status -eq "in_progress") {
+        if ($stepObj.status -eq "in_progress" -and $stepObj.assignee -and $stepObj.assignee -eq $Assignee -and $Touch) {
+            Write-Verbose "Refreshing heartbeat for '$StepId' owned by '$Assignee'."
+        }
         $stepObj.assignee = $Assignee
-        $stepObj | Add-Member -NotePropertyName "claimed_at" -NotePropertyValue (Get-Date).ToString("o") -Force
+        if (-not $stepObj.PSObject.Properties["claimed_at"] -or -not $stepObj.claimed_at -or -not $preserveClaimedAt) {
+            $stepObj | Add-Member -NotePropertyName "claimed_at" -NotePropertyValue (Get-Date).ToString("o") -Force
+        }
+        $stepObj | Add-Member -NotePropertyName "heartbeat_at" -NotePropertyValue (Get-Date).ToString("o") -Force
         $stepObj.PSObject.Properties.Remove("blocked_reason")
     }
 
     if ($Status -eq "completed") {
         $stepObj.assignee = $null
         $stepObj.PSObject.Properties.Remove("claimed_at")
+        $stepObj.PSObject.Properties.Remove("heartbeat_at")
         $stepObj.PSObject.Properties.Remove("blocked_reason")
     }
 
     if ($Status -eq "pending") {
         $stepObj.assignee = $null
         $stepObj.PSObject.Properties.Remove("claimed_at")
+        $stepObj.PSObject.Properties.Remove("heartbeat_at")
         $stepObj.PSObject.Properties.Remove("blocked_reason")
     }
 
     if ($Status -eq "blocked") {
         if ($Assignee) { $stepObj.assignee = $Assignee }
+        $stepObj.PSObject.Properties.Remove("heartbeat_at")
         $stepObj | Add-Member -NotePropertyName "blocked_reason" -NotePropertyValue $BlockedReason -Force
     }
 
