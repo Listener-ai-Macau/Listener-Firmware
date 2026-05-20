@@ -9,7 +9,9 @@
 完整协议见 `C:\Users\Billy\Desktop\listener\docs\ai_collaboration_protocol.md`。
 
 工具脚本：
-- 认领/更新步骤：`powershell -File tools\update_plan_status.ps1 -Plan <plan> -StepId <id> -Status in_progress -Assignee <you>`
+- 查看可认领步骤：`pwsh -NoProfile -File tools\list_available_steps.ps1 -Plan <plan>`
+- 认领步骤并创建/切换分支：`pwsh -NoProfile -File tools\claim_step.ps1 -Plan <plan> -StepId <id> -Assignee <you>`
+- 刷新心跳/更新步骤：`powershell -File tools\update_plan_status.ps1 -Plan <plan> -StepId <id> -Status in_progress -Assignee <you> -Touch`
 - 完成步骤：`powershell -File tools\update_plan_status.ps1 -Plan <plan> -StepId <id> -Status completed -ValidationResult "PASS: ..."`
 - 阻塞步骤：`powershell -File tools\update_plan_status.ps1 -Plan <plan> -StepId <id> -Status blocked -Assignee <you> -BlockedReason "..."`
 - 校验状态：`pwsh -NoProfile -File tools\validate_plan_status.ps1`
