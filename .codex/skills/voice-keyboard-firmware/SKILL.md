@@ -34,7 +34,7 @@ Complete:
 pwsh -NoProfile -File "$wf\complete_step.ps1" -Plan <task_slug> -StepId <step_id> -ValidationResult "PASS: ..." -RepoRoot .
 ```
 
-The repo-local collaboration scripts in `tools\` are compatibility proxies only. Do not edit their workflow logic here.
+Do not use repo-local collaboration scripts. This repo keeps only firmware/product tools under `tools\`; collaboration commands live in the public workflow repo.
 
 ## Hardware
 

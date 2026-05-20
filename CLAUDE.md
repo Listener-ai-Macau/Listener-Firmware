@@ -154,7 +154,7 @@ pwsh -NoProfile -File ./tools/esp_idf_ci.ps1 help
 ## AI 协作
 
 完整协议见 `C:\Users\Billy\Desktop\listener\ai-collaboration-workflow\docs\ai_collaboration_protocol.md`。
-工具脚本在 `C:\Users\Billy\Desktop\listener\ai-collaboration-workflow\scripts\`；本仓库 `tools\*` 协作脚本仅作兼容代理。
+工具脚本只在 `C:\Users\Billy\Desktop\listener\ai-collaboration-workflow\scripts\` 维护；本仓库不保留协作脚本副本。
 
 ## 当前关键约束
 
@@ -207,9 +207,9 @@ python .\tools\verify_audio_ble_product_matrix.py --port COM3 --cases A1,A3,A6
 # H2: RF干扰/距离 | H3: 后端ASR集成
 
 # 校验计划状态（所有 AI 完成步骤后跑一遍）
-pwsh -NoProfile -ExecutionPolicy Bypass -File .\tools\validate_plan_status.ps1
+pwsh -NoProfile -File ..\ai-collaboration-workflow\scripts\validate_plan_status.ps1
 # 自动修复可修复的问题
-pwsh -NoProfile -ExecutionPolicy Bypass -File .\tools\validate_plan_status.ps1 -Fix
+pwsh -NoProfile -File ..\ai-collaboration-workflow\scripts\validate_plan_status.ps1 -Fix
 ```
 
 ## 交付物

@@ -18,7 +18,7 @@
 
 `C:\Users\Billy\Desktop\listener\ai-collaboration-workflow\docs\plans\*_status.json`
 
-本仓库 `tools\claim_step.ps1`、`tools\complete_step.ps1`、`tools\update_plan_status.ps1`、`tools\lock_resource.ps1` 等协作脚本只是兼容代理；真实实现都在公共 workflow 仓库。
+本仓库不维护协作脚本；协作命令一律从公共 workflow 仓库调用。
 
 常用命令：
 
