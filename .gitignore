@@ -14,5 +14,3 @@ tests/*.log
 tests/*.wav
 .external_refs/
 node_modules/
-package.json
-package-lock.json
