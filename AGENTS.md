@@ -18,19 +18,20 @@
 
 `C:\Users\Billy\Desktop\listener\ai-collaboration-workflow\docs\plans\*_status.json`
 
-本仓库不维护协作脚本；协作命令一律从公共 workflow 仓库调用。
+本仓库不维护协作脚本；协作命令一律通过公共 workflow 仓库的 `scripts\aiw.ps1` 调用。
 
 常用命令：
 
 ```powershell
-$wf = "..\ai-collaboration-workflow\scripts"
-pwsh -NoProfile -File "$wf\list_available_steps.ps1" -Plan <plan> -IncludeStale
-pwsh -NoProfile -File "$wf\claim_step.ps1" -Plan <plan> -StepId <id> -Assignee <you> -RepoRoot . -BaseBranch master
-pwsh -NoProfile -File "$wf\update_plan_status.ps1" -Plan <plan> -StepId <id> -Status in_progress -Assignee <you> -Touch
-pwsh -NoProfile -File "$wf\complete_step.ps1" -Plan <plan> -StepId <id> -ValidationResult "PASS: ..." -RepoRoot .
-pwsh -NoProfile -File "$wf\update_plan_status.ps1" -Plan <plan> -StepId <id> -Status blocked -Assignee <you> -BlockedReason "..."
-pwsh -NoProfile -File "$wf\lock_resource.ps1" -Resource COM3 -Owner <you>
-pwsh -NoProfile -File "$wf\unlock_resource.ps1" -Resource COM3 -Owner <you>
+$aiw = "..\ai-collaboration-workflow\scripts\aiw.ps1"
+pwsh -NoProfile -File $aiw status
+pwsh -NoProfile -File $aiw list -Plan <plan> -IncludeStale
+pwsh -NoProfile -File $aiw claim -Plan <plan> -StepId <id> -Assignee <you> -RepoRoot .
+pwsh -NoProfile -File $aiw touch -Plan <plan> -StepId <id> -Assignee <you>
+pwsh -NoProfile -File $aiw done -Plan <plan> -StepId <id> -ValidationResult "PASS: ..." -RepoRoot .
+pwsh -NoProfile -File $aiw block -Plan <plan> -StepId <id> -Assignee <you> -BlockedReason "..."
+pwsh -NoProfile -File $aiw lock -Resource COM3 -Owner <you>
+pwsh -NoProfile -File $aiw unlock -Resource COM3 -Owner <you>
 ```
 
 ## 构建命令
