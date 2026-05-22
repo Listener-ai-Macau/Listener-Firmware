@@ -22,6 +22,7 @@
 #include "host/util/util.h"
 #include "nimble/nimble_port.h"
 #include "host/ble_gap.h"
+#include "host/ble_hs.h"
 #include "host/ble_hs_adv.h"
 #include "services/gatt/ble_svc_gatt.h"
 #include "host/ble_store.h"
@@ -69,6 +70,7 @@ static uint8_t s_own_addr_type = BLE_OWN_ADDR_PUBLIC;
 static bool s_directed_adv_pending = true;
 static bool s_last_adv_was_directed = false;
 static bool s_ble_gap_connected = false;
+static uint16_t s_ble_gap_conn_handle = BLE_HS_CONN_HANDLE_NONE;
 
 /*
  * Legacy advertising has a hard 31-byte payload limit. With flags,
@@ -148,6 +150,7 @@ nimble_hid_gap_event(struct ble_gap_event *event, void *arg)
         }
 
         s_ble_gap_connected = true;
+        s_ble_gap_conn_handle = event->connect.conn_handle;
         ble_audio_stream_on_gap_connect(event->connect.conn_handle);
         s_last_adv_was_directed = false;
 
@@ -202,6 +205,7 @@ nimble_hid_gap_event(struct ble_gap_event *event, void *arg)
     case BLE_GAP_EVENT_DISCONNECT:
         ESP_LOGI(TAG, "disconnect; reason=%d", event->disconnect.reason);
         s_ble_gap_connected = false;
+        s_ble_gap_conn_handle = BLE_HS_CONN_HANDLE_NONE;
         ble_audio_stream_on_gap_disconnect(event->disconnect.conn.conn_handle);
         s_directed_adv_pending = true;
         s_last_adv_was_directed = false;
@@ -535,4 +539,57 @@ esp_err_t ble_hid_gap_mark_stack_ready(void)
         return ESP_OK;
     }
     return ble_hid_gap_start_advertising();
+}
+
+esp_err_t ble_hid_gap_forget_bonds_and_repair(void)
+{
+    ble_addr_t bonded_peers[8];
+    int bonded_peer_count = 0;
+    int first_error = 0;
+    int rc = ble_store_util_bonded_peers(
+        bonded_peers,
+        &bonded_peer_count,
+        sizeof(bonded_peers) / sizeof(bonded_peers[0]));
+    if (rc != 0) {
+        ESP_LOGE(TAG, "recovery: bonded peer lookup failed rc=%d", rc);
+        return ESP_FAIL;
+    }
+
+    ESP_LOGW(TAG, "recovery: clearing pairing bonds count=%d", bonded_peer_count);
+    for (int index = 0; index < bonded_peer_count; ++index) {
+        rc = ble_store_util_delete_peer(&bonded_peers[index]);
+        if (rc != 0) {
+            ESP_LOGE(TAG, "recovery: delete peer index=%d failed rc=%d", index, rc);
+            if (first_error == 0) {
+                first_error = rc;
+            }
+        }
+    }
+
+    s_directed_adv_pending = false;
+    s_last_adv_was_directed = false;
+
+    if (s_ble_gap_connected && s_ble_gap_conn_handle != BLE_HS_CONN_HANDLE_NONE) {
+        rc = ble_gap_terminate(s_ble_gap_conn_handle, BLE_ERR_REM_USER_CONN_TERM);
+        if (rc == 0) {
+            ESP_LOGW(TAG, "recovery: active BLE connection terminating for re-pair; advertising restarts after disconnect");
+            return first_error == 0 ? ESP_OK : ESP_FAIL;
+        } else {
+            ESP_LOGW(TAG, "recovery: BLE terminate failed rc=%d; advertising restart will continue", rc);
+        }
+    } else if (ble_gap_adv_active()) {
+        rc = ble_gap_adv_stop();
+        if (rc != 0) {
+            ESP_LOGW(TAG, "recovery: advertising stop failed rc=%d; restart will continue", rc);
+        }
+    }
+
+    esp_err_t adv_ret = ble_hid_gap_start_advertising();
+    if (adv_ret != ESP_OK) {
+        ESP_LOGE(TAG, "recovery: advertising restart failed: %s", esp_err_to_name(adv_ret));
+        return adv_ret;
+    }
+
+    ESP_LOGW(TAG, "recovery: pairing reset complete, device is discoverable for first-time pairing");
+    return first_error == 0 ? ESP_OK : ESP_FAIL;
 }

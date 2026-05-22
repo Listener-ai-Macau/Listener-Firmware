@@ -11,6 +11,7 @@ extern "C" {
 
 esp_err_t voice_key_input_start(void);
 bool voice_key_input_take_toggle_event(void);
+bool voice_key_input_take_recovery_event(void);
 esp_err_t voice_key_input_set_recording_output(bool enabled);
 
 #ifdef __cplusplus
