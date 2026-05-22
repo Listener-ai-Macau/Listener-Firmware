@@ -48,6 +48,7 @@
 #define VOICE_KEY_INPUT_POLL_MS        (20)
 #define VOICE_KEY_INPUT_DEBOUNCE_THRESHOLD (3)
 #define VOICE_KEY_INPUT_EVENT_QUEUE_LENGTH (8)
+#define VOICE_KEY_INPUT_RECOVERY_HOLD_MS (10000)
 
 static const char *TAG = "voice_key_input";
 
@@ -59,6 +60,8 @@ typedef struct {
     bool stable_level_high;
     uint8_t stable_count;
     bool pressed;
+    uint32_t pressed_ms;
+    bool recovery_reported;
 } voice_key_button_state_t;
 
 #if VOICE_KEY_INPUT_ENABLE_LEGACY_EXPANDER
@@ -78,6 +81,7 @@ static esp_io_expander_handle_t s_io_expander;
 #endif
 static TaskHandle_t s_poll_task_handle;
 static SemaphoreHandle_t s_toggle_event_sem;
+static SemaphoreHandle_t s_recovery_event_sem;
 #if VOICE_KEY_INPUT_ENABLE_LEGACY_EXPANDER
 static bool s_prev_input_valid;
 static uint32_t s_prev_input_levels;
@@ -131,9 +135,23 @@ static void voice_key_input_record_toggle_event(const char *source)
     }
 
     if (xSemaphoreGive(s_toggle_event_sem) == pdTRUE) {
-        ESP_LOGI(TAG, "%s press edge detected", source);
+        ESP_LOGI(TAG, "%s short press detected", source);
     } else {
-        ESP_LOGW(TAG, "%s press edge dropped: event queue full", source);
+        ESP_LOGW(TAG, "%s short press dropped: event queue full", source);
+    }
+}
+
+static void voice_key_input_record_recovery_event(const char *source)
+{
+    if (s_recovery_event_sem == NULL) {
+        ESP_LOGW(TAG, "%s recovery hold dropped: event queue unavailable", source);
+        return;
+    }
+
+    if (xSemaphoreGive(s_recovery_event_sem) == pdTRUE) {
+        ESP_LOGW(TAG, "%s recovery hold detected: hold_ms=%d", source, VOICE_KEY_INPUT_RECOVERY_HOLD_MS);
+    } else {
+        ESP_LOGW(TAG, "%s recovery hold dropped: event queue full", source);
     }
 }
 
@@ -150,6 +168,8 @@ static void voice_key_input_handle_button_sample(voice_key_button_state_t *butto
         button->stable_level_high = raw_high;
         button->stable_count = 1;
         button->pressed = false;
+        button->pressed_ms = 0;
+        button->recovery_reported = false;
         ESP_LOGI(
             TAG,
             "voice key candidate idle level detected: source=%s raw_high=%d pressed_when=%s",
@@ -180,7 +200,21 @@ static void voice_key_input_handle_button_sample(voice_key_button_state_t *butto
 
     bool pressed = raw_high != button->idle_level_high;
     if (pressed && !button->pressed) {
-        voice_key_input_record_toggle_event(button->label);
+        button->pressed_ms = 0;
+        button->recovery_reported = false;
+    } else if (!pressed && button->pressed) {
+        if (!button->recovery_reported) {
+            voice_key_input_record_toggle_event(button->label);
+        }
+        button->pressed_ms = 0;
+        button->recovery_reported = false;
+    } else if (pressed && !button->recovery_reported) {
+        uint32_t next_pressed_ms = button->pressed_ms + VOICE_KEY_INPUT_POLL_MS;
+        button->pressed_ms = next_pressed_ms;
+        if (next_pressed_ms >= VOICE_KEY_INPUT_RECOVERY_HOLD_MS) {
+            button->recovery_reported = true;
+            voice_key_input_record_recovery_event(button->label);
+        }
     }
     button->pressed = pressed;
 }
@@ -376,6 +410,8 @@ esp_err_t voice_key_input_start(void)
 
     s_toggle_event_sem = xSemaphoreCreateCounting(VOICE_KEY_INPUT_EVENT_QUEUE_LENGTH, 0);
     ESP_RETURN_ON_FALSE(s_toggle_event_sem != NULL, ESP_ERR_NO_MEM, TAG, "voice key event queue create failed");
+    s_recovery_event_sem = xSemaphoreCreateCounting(VOICE_KEY_INPUT_EVENT_QUEUE_LENGTH, 0);
+    ESP_RETURN_ON_FALSE(s_recovery_event_sem != NULL, ESP_ERR_NO_MEM, TAG, "voice key recovery event queue create failed");
 
 #if VOICE_KEY_INPUT_ENABLE_LEGACY_EXPANDER
     esp_err_t expander_ret = voice_key_input_expander_init();
@@ -408,6 +444,7 @@ esp_err_t voice_key_input_start(void)
         "voice key ready: source=gpio45 active_low=1 poll_ms=%d debounce_samples=%d",
         VOICE_KEY_INPUT_POLL_MS,
         VOICE_KEY_INPUT_DEBOUNCE_THRESHOLD);
+    ESP_LOGI(TAG, "voice key recovery ready: hold_ms=%d", VOICE_KEY_INPUT_RECOVERY_HOLD_MS);
     return ESP_OK;
 }
 
@@ -418,6 +455,15 @@ bool voice_key_input_take_toggle_event(void)
     }
 
     return xSemaphoreTake(s_toggle_event_sem, pdMS_TO_TICKS(50)) == pdTRUE;
+}
+
+bool voice_key_input_take_recovery_event(void)
+{
+    if (s_recovery_event_sem == NULL) {
+        return false;
+    }
+
+    return xSemaphoreTake(s_recovery_event_sem, 0) == pdTRUE;
 }
 
 esp_err_t voice_key_input_set_recording_output(bool enabled)
