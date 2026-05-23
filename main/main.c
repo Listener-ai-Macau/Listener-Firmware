@@ -4,6 +4,7 @@
 #include "system_health.h"
 #include "diag_log.h"
 
+#include "esp_err.h"
 #include "esp_log.h"
 #include "esp_system.h"
 
@@ -33,7 +34,10 @@ void app_main(void)
     }
 
     ble_hid_init();
-    keyboard_start();
+    esp_err_t keyboard_ret = keyboard_start();
+    if (keyboard_ret != ESP_OK) {
+        ESP_LOGW(TAG, "keyboard start degraded; continuing BLE startup: %s", esp_err_to_name(keyboard_ret));
+    }
     system_health_init();
     ble_hid_start();
     system_health_start();

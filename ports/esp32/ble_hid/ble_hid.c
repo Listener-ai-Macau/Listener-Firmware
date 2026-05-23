@@ -5,6 +5,7 @@
 #include <string.h>
 
 #include "freertos/FreeRTOS.h"
+#include "freertos/queue.h"
 #include "freertos/task.h"
 
 #include "esp_err.h"
@@ -52,6 +53,7 @@ static const char *TAG = "ble_hid";
 #define BLE_HID_BATTERY_TASK_STACK_BYTES (4 * 1024)
 #define BLE_HID_USB_COMMAND_PREFIX '~'
 #define BLE_HID_USB_COMMAND_BUFFER_BYTES 64
+#define BLE_HID_ASCII_QUEUE_LENGTH 8
 
 typedef struct
 {
@@ -99,6 +101,7 @@ static char s_usb_command_buffer[BLE_HID_USB_COMMAND_BUFFER_BYTES];
 static bool s_ble_connected;
 static uint32_t s_disconnect_count;
 static uint32_t s_connect_timestamp_ms;
+static QueueHandle_t s_ascii_queue;
 
 static bool ble_hid_battery_calibration_init(adc_unit_t unit, adc_channel_t channel)
 {
@@ -316,6 +319,53 @@ static void ble_hid_battery_task_start(void)
     }
 }
 
+static esp_err_t ble_hid_dispatch_ascii(char input_char, const char *source)
+{
+    if (s_ble_hid_ctx.hid_device == NULL) {
+        ESP_LOGW(TAG, "%s dispatch dropped: HID device unavailable", source);
+        return ESP_ERR_INVALID_STATE;
+    }
+
+    if (!esp_hidd_dev_connected(s_ble_hid_ctx.hid_device)) {
+        ESP_LOGW(TAG, "%s dispatch dropped: HID host not connected", source);
+        return ESP_ERR_INVALID_STATE;
+    }
+
+    return hid_keyboard_send_ascii(input_char, s_ble_hid_ctx.hid_device);
+}
+
+static void ble_hid_drain_ascii_queue(void)
+{
+    if (s_ascii_queue == NULL) {
+        return;
+    }
+
+    char input_char;
+    while (xQueueReceive(s_ascii_queue, &input_char, 0) == pdTRUE) {
+        esp_err_t ret = ble_hid_dispatch_ascii(input_char, "KEY");
+        if (ret != ESP_OK) {
+            ESP_LOGW(TAG, "KEY dispatch failed: %s", esp_err_to_name(ret));
+        }
+    }
+}
+
+esp_err_t ble_hid_send_ascii_async(char input_char)
+{
+    if (s_ascii_queue == NULL) {
+        return ESP_ERR_INVALID_STATE;
+    }
+
+    if (!ble_hid_is_connected()) {
+        return ESP_ERR_INVALID_STATE;
+    }
+
+    if (xQueueSend(s_ascii_queue, &input_char, 0) != pdTRUE) {
+        return ESP_ERR_TIMEOUT;
+    }
+
+    return ESP_OK;
+}
+
 static esp_err_t ble_hid_usb_serial_init(void)
 {
     if (s_usb_serial_ready) {
@@ -408,6 +458,8 @@ static void ble_hid_keyboard_task(void *parameter)
     ESP_LOGI(TAG, "USB SERIAL INPUT READY");
     board_print_help();
     while (1) {
+        ble_hid_drain_ascii_queue();
+
         int bytes_read = usb_serial_jtag_read_bytes(rx_buffer, sizeof(rx_buffer), pdMS_TO_TICKS(20));
         if (bytes_read > 0) {
             for (int index = 0; index < bytes_read; ++index) {
@@ -423,7 +475,7 @@ static void ble_hid_keyboard_task(void *parameter)
                     input_char & 0xFF,
                     (input_char >= 32 && input_char <= 126) ? input_char : '.');
 
-                ret = hid_keyboard_send_ascii((char)input_char, s_ble_hid_ctx.hid_device);
+                ret = ble_hid_dispatch_ascii((char)input_char, "SCRIPT");
                 if (ret != ESP_OK) {
                     ESP_LOGW(TAG, "SCRIPT dispatch failed: %s", esp_err_to_name(ret));
                     diag_log(DIAG_SRC_BLE_HID, DIAG_BLE_HID_SEND_FAIL, DIAG_SEV_WARN,
@@ -539,6 +591,9 @@ static void ble_hid_event_callback(void *handler_args, esp_event_base_t base, in
             diag_log(DIAG_SRC_BLE_HID, DIAG_BLE_DISCONNECT, DIAG_SEV_WARN,
                      param->disconnect.reason, s_disconnect_count,
                      conn_duration, heap_kb);
+            if (s_ascii_queue != NULL) {
+                xQueueReset(s_ascii_queue);
+            }
         }
         break;
     case ESP_HIDD_STOP_EVENT:
@@ -599,26 +654,60 @@ void ble_hid_init(void)
 
     esp_err_t ret = nvs_flash_init();
     if (ret == ESP_ERR_NVS_NO_FREE_PAGES || ret == ESP_ERR_NVS_NEW_VERSION_FOUND) {
-        ESP_ERROR_CHECK(nvs_flash_erase());
+        esp_err_t erase_ret = nvs_flash_erase();
+        if (erase_ret != ESP_OK) {
+            ESP_LOGE(TAG, "nvs_flash_erase failed: %s", esp_err_to_name(erase_ret));
+            return;
+        }
         ret = nvs_flash_init();
     }
-    ESP_ERROR_CHECK(ret);
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "nvs_flash_init failed: %s", esp_err_to_name(ret));
+        return;
+    }
 
     s_ble_report_maps[0].data = hid_keyboard_get_report_map();
     s_ble_report_maps[0].len = hid_keyboard_get_report_map_size();
 
-    ESP_ERROR_CHECK(ble_hid_gap_init());
-    ESP_ERROR_CHECK(ble_audio_stream_init());
-    ESP_ERROR_CHECK(ble_audio_stream_register_gatt());
+    if (s_ascii_queue == NULL) {
+        s_ascii_queue = xQueueCreate(BLE_HID_ASCII_QUEUE_LENGTH, sizeof(char));
+        if (s_ascii_queue == NULL) {
+            ESP_LOGE(TAG, "ascii queue create failed");
+            return;
+        }
+    }
 
-    ESP_ERROR_CHECK(ble_hid_gap_configure_advertising(ESP_HID_APPEARANCE_KEYBOARD, s_device_name));
+    ret = ble_hid_gap_init();
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "ble_hid_gap_init failed: %s", esp_err_to_name(ret));
+        return;
+    }
 
-    ESP_ERROR_CHECK(
-        esp_hidd_dev_init(
-            &s_ble_hid_config,
-            ESP_HID_TRANSPORT_BLE,
-            ble_hid_event_callback,
-            &s_ble_hid_ctx.hid_device));
+    ret = ble_audio_stream_init();
+    if (ret == ESP_OK) {
+        ret = ble_audio_stream_register_gatt();
+        if (ret != ESP_OK) {
+            ESP_LOGW(TAG, "BLE audio GATT registration failed; HID/recovery continue: %s", esp_err_to_name(ret));
+        }
+    } else {
+        ESP_LOGW(TAG, "BLE audio init failed; HID/recovery continue without audio stream: %s", esp_err_to_name(ret));
+    }
+
+    ret = ble_hid_gap_configure_advertising(ESP_HID_APPEARANCE_KEYBOARD, s_device_name);
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "BLE advertising config failed: %s", esp_err_to_name(ret));
+        return;
+    }
+
+    ret = esp_hidd_dev_init(
+        &s_ble_hid_config,
+        ESP_HID_TRANSPORT_BLE,
+        ble_hid_event_callback,
+        &s_ble_hid_ctx.hid_device);
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "esp_hidd_dev_init failed: %s", esp_err_to_name(ret));
+        return;
+    }
 
     ble_hid_configure_dis_identity();
     ble_audio_stream_log_gatt_state();

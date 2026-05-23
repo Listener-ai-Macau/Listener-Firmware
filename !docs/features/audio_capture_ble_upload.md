@@ -8,11 +8,11 @@
 
 ## 链路
 
-`KEY1 / 串口 toggle -> voice_recording_control -> audio_capture -> ble_audio_stream -> WinRT GATT client -> session 重组 -> wav`
+`EC11_KEY / 串口 toggle -> voice_recording_control -> audio_capture -> ble_audio_stream -> WinRT GATT client -> session 重组 -> wav`
 
-- 用户语义：`KEY1` 按一下开始录音，再按一下结束录音
+- 用户语义：`EC11_KEY` 按一下开始录音，再按一下结束录音
 - 自动化验证：`~VREC:TOGGLE` / `~VREC:CANCEL`
-- 采音路径：`MIC -> ES8311 ADC -> I2S -> ESP32-S3`
+- 采音路径：`SPH0645 I2S digital mic -> ESP32-S3`
 
 ## 音频契约
 
@@ -433,10 +433,10 @@ python .\tools\verify_audio_ble_upload_recovery.py --port COM3 --capture-seconds
 python .\tools\verify_audio_ble_upload_reconnect.py --port COM3 --capture-seconds 10
 ```
 
-`physical-key` 模式下，录音时长以两次真实 `KEY1` 按下之间的时间为准。`--capture-seconds` 只是默认提示 / 参考参数，不要求实际录音严格落在目标秒数附近。脚本验收重点是：
+`physical-key` 模式下，录音时长以两次真实 `EC11_KEY` 按下之间的时间为准。`--capture-seconds` 只是默认提示 / 参考参数，不要求实际录音严格落在目标秒数附近。脚本验收重点是：
 
-- 日志必须包含 `recording start source=key1`
-- 日志必须包含 `recording stop source=key1`
+- 日志必须包含 `recording start source=ec11_key`
+- 日志必须包含 `recording stop source=ec11_key`
 - BLE session 传输完整
 - WAV 有有效声音活动
 - 录音时长在 `--timeout-seconds` 预算内
@@ -445,10 +445,10 @@ python .\tools\verify_audio_ble_upload_reconnect.py --port COM3 --capture-second
 
 ### 最近一次已记录的 physical-key 基线
 
-- 最近一次已记录的 `KEY1 -> KEY1` 真实按键日志基线：
+- 最近一次已记录的 `EC11_KEY -> EC11_KEY` 真实按键日志基线：
   - `session_id=75`
-  - `recording start source=key1`
-  - `recording stop source=key1`
+  - `recording start source=ec11_key`
+  - `recording stop source=ec11_key`
   - `expected_packet_count=1067`
   - `received_packet_count=1067`
   - `missing_packet_count=0`

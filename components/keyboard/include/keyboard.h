@@ -2,12 +2,13 @@
 #define KEYBOARD_H
 
 #include <stdint.h>
+#include "esp_err.h"
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
-void keyboard_start(void);
+esp_err_t keyboard_start(void);
 uint32_t keyboard_get_key_press_count(void);
 
 #ifdef __cplusplus

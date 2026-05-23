@@ -183,11 +183,11 @@ static void voice_recording_control_task(void *parameter)
 
     while (1) {
         if (voice_key_input_take_toggle_event()) {
-            voice_recording_control_toggle("key1");
+            voice_recording_control_toggle("ec11_key");
         }
 
         if (voice_key_input_take_recovery_event()) {
-            voice_recording_control_recovery("key_hold");
+            voice_recording_control_recovery("ec11_key_hold");
         }
 
         if ((s_state == VOICE_RECORDING_STATE_RECORDING || s_state == VOICE_RECORDING_STATE_TRANSFERRING) &&
@@ -208,6 +208,8 @@ static void voice_recording_control_task(void *parameter)
             ESP_LOGI(TAG, "recording session finished");
             voice_recording_control_log_device_status("ready", "recording_session_finished");
         }
+
+        vTaskDelay(pdMS_TO_TICKS(VOICE_RECORDING_CONTROL_SESSION_CHECK_MS));
     }
 }
 
@@ -222,8 +224,17 @@ esp_err_t voice_recording_control_start(void)
         return ESP_OK;
     }
 
-    ESP_ERROR_CHECK(audio_capture_start());
-    ESP_ERROR_CHECK(voice_key_input_start());
+    esp_err_t audio_ret = audio_capture_start();
+    if (audio_ret != ESP_OK) {
+        ESP_LOGW(TAG, "audio capture start failed; keeping recovery/status path alive: %s", esp_err_to_name(audio_ret));
+        voice_recording_control_log_device_error("error", "audio_capture_start_failed", audio_ret);
+    }
+
+    esp_err_t key_ret = voice_key_input_start();
+    if (key_ret != ESP_OK) {
+        ESP_LOGW(TAG, "voice key input start failed; USB recovery remains available: %s", esp_err_to_name(key_ret));
+        voice_recording_control_log_device_error("error", "voice_key_input_start_failed", key_ret);
+    }
 
     BaseType_t task_ok = xTaskCreate(
         voice_recording_control_task,
@@ -237,9 +248,14 @@ esp_err_t voice_recording_control_start(void)
     }
 
     s_started = true;
-    ESP_LOGI(TAG, "voice recording control ready: key1 toggle start/stop");
-    voice_recording_control_log_device_status("ready", "voice_recording_control_started");
-    return ESP_OK;
+    ESP_LOGI(TAG, "voice recording control ready: ec11_key toggle start/stop");
+    if (audio_ret == ESP_OK && key_ret == ESP_OK) {
+        voice_recording_control_log_device_status("ready", "voice_recording_control_started");
+        return ESP_OK;
+    }
+
+    voice_recording_control_log_device_error("error", "voice_recording_control_degraded", audio_ret != ESP_OK ? audio_ret : key_ret);
+    return audio_ret != ESP_OK ? audio_ret : key_ret;
 }
 
 bool voice_recording_control_consume_usb_control_byte(uint8_t input_char)

@@ -473,14 +473,14 @@ python .\tools\verify_audio_ble_product_matrix.py --port COM3 --cases P1,P7,P8,P
 本轮改动：
 
 - `ports/esp32/ble_audio_stream/ble_audio_stream_esp32.c`
-  - `BLE_AUDIO_STREAM_NOTIFY_QUEUE_LENGTH=128`，`BLE_AUDIO_STREAM_AUDIO_POOL_LENGTH=132`，每个 pool buffer 为 `1920` bytes。
-  - pool 优先用 `MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT` 分配，失败再 fallback 到 internal 8-bit heap。
+  - 当前 no-PSRAM V1.0 SPH0645 构建使用 `BLE_AUDIO_STREAM_NOTIFY_QUEUE_LENGTH=32`、`BLE_AUDIO_STREAM_AUDIO_POOL_LENGTH=36`，每个 pool buffer 为 `1920` bytes。
+  - pool 在 PSRAM 不可用时 fallback 到 internal 8-bit heap；当前目标必须按 internal RAM 预算验证。
   - `ble_audio_stream_send_session_audio()` 从固定 pool acquire buffer；enqueue 失败记录 `queue_full` 并释放 pool buffer。
   - session summary 增加 pool / queue / drop 指标；cancel path 保留 `queue_jobs_purged`。
-  - notify 成功 pacing 改成 backlog 自适应：低 backlog 仍为 `20ms`，当 export queue 超过半满时切到 `2ms`，保持 `notify window=1` 不变。
+  - notify 成功 pacing 改成 backlog 自适应：低 backlog 仍为 `20ms`，当 export queue 超过半满时切到 `2ms`，当前 no-PSRAM 目标使用 `notify window=3`。
 - `sdkconfig.defaults.esp32s3`
-  - 启用 ESP32-S3 Octal PSRAM：`CONFIG_SPIRAM=y`、`CONFIG_SPIRAM_MODE_OCT=y`、`CONFIG_SPIRAM_SPEED_80M=y`、`CONFIG_SPIRAM_USE_MALLOC=y`、`CONFIG_SPIRAM_MALLOC_RESERVE_INTERNAL=65536`。
-  - 首轮只加 fixed pool 时，硬件启动在 `ble_audio_stream_init()` 因 `ESP_ERR_NO_MEM` boot loop；启用 PSRAM 后消失。
+  - 2026-05-23 当前 SPH0645 板因 GPIO35/36/37 与 MSPI PSRAM 线冲突，必须保持 `CONFIG_SPIRAM` disabled。
+  - no-PSRAM 版本使用缩小后的 BLE/NimBLE 内存预算，PSRAM 版本只适用于后续改 pin 硬件。
 - `tools/verify_audio_ble_product_matrix.py`
   - 支持 `--fail-on-warning` 和 `--matrix-result-json`，避免 `matrix_warning > 0` 被 executor / CI 当作 PASS。
 

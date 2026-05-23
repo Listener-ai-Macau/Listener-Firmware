@@ -52,7 +52,7 @@ SERIAL_RESET_SETTLE_SECONDS = 0.2
 SERIAL_OPEN_RETRY_COUNT = 12
 SERIAL_OPEN_RETRY_DELAY_SECONDS = 1.0
 READY_MARKERS = (
-    "voice recording control ready: key1 toggle start/stop",
+    "voice recording control ready: ec11_key toggle start/stop",
     "USB SERIAL INPUT READY",
 )
 AUDIO_NOTIFY_PACKET_SIZE_MARKER = "audio notify packet size updated"
