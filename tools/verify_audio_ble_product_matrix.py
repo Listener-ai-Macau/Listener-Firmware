@@ -728,7 +728,7 @@ def preflight_recover_host(args, case_id: str) -> None:
         print(f"preflight_recover_skipped={case_id}", flush=True)
         return
     print(f"preflight_recover_start={case_id}", flush=True)
-    recover_ble_hid_host(args.device_name)
+    recover_ble_hid_host(args.device_name, args.bluetooth_address)
     print(f"preflight_recover_done={case_id}", flush=True)
 
 
@@ -1380,6 +1380,7 @@ async def run_a4_new(args) -> dict[str, str]:
         capture_args = make_capture_args(
             port=args.port,
             device_name=args.device_name,
+            bluetooth_address=args.bluetooth_address,
             capture_seconds=capture_seconds,
             capture_seconds_per_session=[capture_seconds],
             session_pre_start_delay_seconds=[pre_start_delay],
@@ -1416,6 +1417,7 @@ async def run_a5_new(args) -> dict[str, str]:
     summary = await play_and_capture_serial_toggle(
         port=args.port,
         device_name=args.device_name,
+        bluetooth_address=args.bluetooth_address,
         scenario="A5",
         capture_seconds=capture_seconds,
         timeout_seconds=max(90, int(capture_seconds + 60)),
@@ -1437,6 +1439,7 @@ async def run_a6_new(args) -> dict[str, str]:
     summary = await play_and_capture_serial_toggle(
         port=args.port,
         device_name=args.device_name,
+        bluetooth_address=args.bluetooth_address,
         scenario="A6",
         capture_seconds=capture_seconds,
         timeout_seconds=max(90, int(capture_seconds + 60)),
@@ -1480,6 +1483,7 @@ async def run_a7_new(args) -> dict[str, str]:
         round_summary = await play_and_capture_serial_toggle(
             port=args.port,
             device_name=args.device_name,
+            bluetooth_address=args.bluetooth_address,
             scenario="A7",
             source_label=f"round{round_index}",
             capture_seconds=capture_seconds_plan[round_index - 1],
@@ -1518,6 +1522,7 @@ async def run_a8_new(args) -> dict[str, str]:
         round_summary = await play_and_capture_serial_toggle(
             port=args.port,
             device_name=args.device_name,
+            bluetooth_address=args.bluetooth_address,
             scenario="A8",
             source_label=f"round{round_index}",
             capture_seconds=capture_seconds,
@@ -1551,6 +1556,7 @@ async def run_a9_new(args) -> dict[str, str]:
     summary = await play_and_capture_serial_toggle(
         port=args.port,
         device_name=args.device_name,
+        bluetooth_address=args.bluetooth_address,
         scenario="A9",
         capture_seconds=capture_seconds,
         timeout_seconds=max(90, int(capture_seconds + 60)),
@@ -1575,6 +1581,7 @@ async def run_a10_new(args) -> dict[str, str]:
     summary = await play_and_capture_serial_toggle(
         port=args.port,
         device_name=args.device_name,
+        bluetooth_address=args.bluetooth_address,
         scenario="A10",
         capture_seconds=capture_seconds,
         timeout_seconds=max(90, int(capture_seconds + 60)),
@@ -1604,6 +1611,7 @@ async def run_a11_new(args) -> dict[str, str]:
         round_summary = await play_and_capture_serial_toggle(
             port=args.port,
             device_name=args.device_name,
+            bluetooth_address=args.bluetooth_address,
             scenario="A11",
             source_label=f"round{round_index}",
             capture_seconds=capture_seconds,
@@ -1648,6 +1656,7 @@ async def run_a12_new(args) -> dict[str, str]:
         capture_args = make_capture_args(
             port=args.port,
             device_name=args.device_name,
+            bluetooth_address=args.bluetooth_address,
             capture_seconds=capture_seconds,
             capture_seconds_per_session=[capture_seconds],
             session_pre_start_delay_seconds=[pre_start_delay],
@@ -1700,6 +1709,7 @@ async def run_a13_new(args) -> dict[str, str]:
         capture_args = make_capture_args(
             port=args.port,
             device_name=args.device_name,
+            bluetooth_address=args.bluetooth_address,
             capture_seconds=capture_seconds,
             capture_seconds_per_session=[capture_seconds],
             session_pre_start_delay_seconds=[pre_start_delay],
@@ -1749,6 +1759,7 @@ async def run_a16_new(args) -> dict[str, str]:
         capture_args = make_capture_args(
             port=args.port,
             device_name=args.device_name,
+            bluetooth_address=args.bluetooth_address,
             capture_seconds=capture_seconds,
             capture_seconds_per_session=[capture_seconds],
             session_pre_start_delay_seconds=[pre_start_delay],
@@ -1789,6 +1800,7 @@ async def run_a18_new(args) -> dict[str, str]:
     transport_summary = await play_and_capture_serial_toggle(
         port=args.port,
         device_name=args.device_name,
+        bluetooth_address=args.bluetooth_address,
         scenario="A18",
         capture_seconds=capture_seconds,
         timeout_seconds=90,
@@ -1830,6 +1842,7 @@ async def run_t1(args) -> dict[str, str]:
     baseline = await play_and_capture_serial_toggle(
         port=args.port,
         device_name=args.device_name,
+        bluetooth_address=args.bluetooth_address,
         scenario="T1",
         source_label="baseline",
         capture_seconds=baseline_capture_seconds,
@@ -1842,7 +1855,7 @@ async def run_t1(args) -> dict[str, str]:
     if baseline["result"] != "pass":
         return print_summary("T1", "fail", "baseline_failed", compact_case_details(baseline))
     restart_windows_bluetooth(restart_pan_adapter=args.restart_pan_adapter)
-    recover_ble_hid_host(args.device_name)
+    recover_ble_hid_host(args.device_name, args.bluetooth_address)
     print("t1_host_recovery_completed=1", flush=True)
     reconnect_capture_seconds = choose_duration(args, window=args.short_capture_window, label="t1_reconnect")
     reconnect_pre_start_delay_seconds = choose_delay_seconds(
@@ -1862,6 +1875,7 @@ async def run_t1(args) -> dict[str, str]:
     summary = await play_and_capture_serial_toggle(
         port=args.port,
         device_name=args.device_name,
+        bluetooth_address=args.bluetooth_address,
         scenario="T1",
         source_label="reconnect",
         capture_seconds=reconnect_capture_seconds,
@@ -1896,6 +1910,7 @@ async def run_a17(args) -> dict[str, str]:
     summary = await play_and_capture_serial_toggle(
         port=args.port,
         device_name=args.device_name,
+        bluetooth_address=args.bluetooth_address,
         scenario="A17",
         capture_seconds=a17_capture_seconds,
         timeout_seconds=90,
@@ -1918,6 +1933,7 @@ async def run_t3(args) -> dict[str, str]:
     baseline = await play_and_capture_serial_toggle(
         port=args.port,
         device_name=args.device_name,
+        bluetooth_address=args.bluetooth_address,
         scenario="T3",
         source_label="baseline",
         capture_seconds=baseline_capture_seconds,
@@ -1944,10 +1960,11 @@ async def run_t3(args) -> dict[str, str]:
             f"first_missing_packet_indices={baseline['missing_packet_indices'][:16]}",
             flush=True,
         )
-        recover_ble_hid_host(args.device_name)
+        recover_ble_hid_host(args.device_name, args.bluetooth_address)
         baseline = await play_and_capture_serial_toggle(
             port=args.port,
             device_name=args.device_name,
+            bluetooth_address=args.bluetooth_address,
             scenario="T3",
             source_label="baseline_retry",
             capture_seconds=baseline_capture_seconds,
@@ -1983,6 +2000,7 @@ async def run_t3(args) -> dict[str, str]:
     summary = await play_and_capture_serial_toggle(
         port=args.port,
         device_name=args.device_name,
+        bluetooth_address=args.bluetooth_address,
         scenario="T3",
         source_label="after_restart",
         capture_seconds=after_restart_capture_seconds,
@@ -2004,6 +2022,7 @@ async def run_a14(args) -> dict[str, str]:
     summary = await play_and_capture_serial_toggle_after_cancel_probe(
         port=args.port,
         device_name=args.device_name,
+        bluetooth_address=args.bluetooth_address,
         scenario="A14",
         capture_seconds=capture_seconds,
         cancel_hold_seconds=long_cancel_hold,
@@ -2032,6 +2051,7 @@ async def run_a14(args) -> dict[str, str]:
     short_summary = await play_and_capture_serial_toggle_after_cancel_probe(
         port=args.port,
         device_name=args.device_name,
+        bluetooth_address=args.bluetooth_address,
         scenario="A14",
         capture_seconds=capture_seconds,
         cancel_hold_seconds=short_cancel_hold,
@@ -2086,6 +2106,7 @@ async def run_t2(args) -> dict[str, str]:
         summary = await play_and_capture_serial_toggle(
             port=args.port,
             device_name=args.device_name,
+            bluetooth_address=args.bluetooth_address,
             scenario="T2",
             source_label=f"round{round_index}",
             capture_seconds=capture_seconds,
@@ -2116,6 +2137,7 @@ async def run_a15(args) -> dict[str, str]:
     capture_args = make_capture_args(
         port=args.port,
         device_name=args.device_name,
+        bluetooth_address=args.bluetooth_address,
         capture_seconds=capture_seconds,
         capture_seconds_per_session=[capture_seconds],
         session_pre_start_delay_seconds=[pre_start_delay],
@@ -2219,6 +2241,7 @@ async def run_t4(args) -> dict[str, str]:
     summary = await play_and_capture_serial_toggle(
         port=args.port,
         device_name=args.device_name,
+        bluetooth_address=args.bluetooth_address,
         scenario="T4",
         source_label="post_stress_verify",
         capture_seconds=verify_capture_seconds,
@@ -2258,6 +2281,7 @@ async def run_t5(args) -> dict[str, str]:
         summary = await play_and_capture_serial_toggle(
             port=args.port,
             device_name=args.device_name,
+            bluetooth_address=args.bluetooth_address,
             scenario="T5",
             source_label="concurrent_test",
             capture_seconds=capture_seconds,

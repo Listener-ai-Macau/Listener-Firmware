@@ -8,7 +8,8 @@ param(
     [string]$SerialLogPath = "",
     [ValidateSet("serial-toggle", "physical-key")]
     [string]$TriggerMode = "serial-toggle",
-    [int]$MaxSessions = 1
+    [int]$MaxSessions = 1,
+    [string]$BluetoothAddress = ""
 )
 
 $ErrorActionPreference = "Stop"
@@ -30,11 +31,19 @@ else {
     $resolvedSerialLogPath = $SerialLogPath
 }
 
-python $pythonScript `
-    --port $Port `
-    --capture-seconds $CaptureSeconds `
-    --device-name $DeviceName `
-    --output-dir $resolvedOutputDir `
-    --serial-log-path $resolvedSerialLogPath `
-    --trigger-mode $TriggerMode `
-    --max-sessions $MaxSessions
+$arguments = @(
+    $pythonScript,
+    "--port", $Port,
+    "--capture-seconds", "$CaptureSeconds",
+    "--device-name", $DeviceName,
+    "--output-dir", $resolvedOutputDir,
+    "--serial-log-path", $resolvedSerialLogPath,
+    "--trigger-mode", $TriggerMode,
+    "--max-sessions", "$MaxSessions"
+)
+
+if (-not [string]::IsNullOrWhiteSpace($BluetoothAddress)) {
+    $arguments += @("--bluetooth-address", $BluetoothAddress)
+}
+
+python @arguments

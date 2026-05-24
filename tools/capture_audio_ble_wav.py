@@ -201,6 +201,7 @@ def parse_args():
     parser.add_argument("--notify-ready-timeout-seconds", type=int, default=45)
     parser.add_argument("--trigger-mode", choices=["serial-toggle", "physical-key"], default="serial-toggle")
     parser.add_argument("--max-sessions", type=int, default=1)
+    parser.add_argument("--bluetooth-address", default=None)
     parser.add_argument("--no-reset-before-capture", action="store_false", dest="reset_before_capture")
     parser.set_defaults(reset_before_capture=True)
     return parser.parse_args()
@@ -985,10 +986,23 @@ class SessionCollector:
 
 
 async def run_ble_capture(args, ser: Serial, serial_monitor: SerialLogMonitor):
-    address = get_paired_device_address(args.device_name)
-    address_hex = get_paired_device_address_hex(args.device_name)
-    if address is None or address_hex is None:
+    explicit_address = getattr(args, "bluetooth_address", None)
+    address_hex = "".join(
+        ch for ch in str(explicit_address or "") if ch in "0123456789ABCDEFabcdef"
+    ).upper() or None
+    address = None
+    if address_hex is None:
+        address = get_paired_device_address(args.device_name)
+        address_hex = get_paired_device_address_hex(args.device_name)
+    if address_hex is None:
         raise RuntimeError(f"capture_audio_ble_wav: unable to resolve paired BLE device '{args.device_name}'")
+    if address is None:
+        address = ":".join(address_hex[i:i + 2] for i in range(0, 12, 2))
+    print(
+        "ble_address_source="
+        f"{'argument' if explicit_address else 'paired_device_lookup'} address={address_hex}",
+        flush=True,
+    )
 
     collector = SessionCollector()
     completed_sessions = 0
