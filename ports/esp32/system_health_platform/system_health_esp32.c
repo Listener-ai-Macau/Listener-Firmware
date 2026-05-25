@@ -40,20 +40,19 @@ static void system_health_task(void *parameter)
         uint32_t audio_frames = audio_capture_get_frame_count();
         uint32_t audio_drops = audio_capture_get_dropped_frame_count();
         uint32_t keys = keyboard_get_key_press_count();
-        uint32_t ec11 = keyboard_get_ec11_detent_count();
         uint32_t sessions = voice_recording_control_get_session_count();
         uint32_t uptime_s = (uint32_t)(xTaskGetTickCount() * portTICK_PERIOD_MS / 1000);
 
         ESP_LOGI(TAG,
                  "heartbeat: uptime=%" PRIu32 "s heap_free=%" PRIu32 "KB heap_min=%" PRIu32 "KB "
                  "ble=%s disconnects=%" PRIu32 " audio_frames=%" PRIu32 " audio_drops=%" PRIu32 " "
-                 "keys=%" PRIu32 " ec11=%" PRIu32 " sessions=%" PRIu32,
+                 "keys=%" PRIu32 " sessions=%" PRIu32,
                  uptime_s,
                  heap_free / 1024, heap_min / 1024,
                  ble_connected ? "OK" : "OFF",
                  disconnects,
                  audio_frames, audio_drops,
-                 keys, ec11, sessions);
+                 keys, sessions);
 
         diag_log(DIAG_SRC_HEALTH, DIAG_HEALTH_HEARTBEAT, DIAG_SEV_INFO,
                  heap_free / 1024, heap_min / 1024, ble_connected ? 1 : 0, uptime_s / 60);

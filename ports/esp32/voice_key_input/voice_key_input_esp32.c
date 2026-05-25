@@ -28,6 +28,8 @@
 #endif
 #include "esp_log.h"
 
+#include "diag_log.h"
+
 #if VOICE_KEY_INPUT_ENABLE_LEGACY_EXPANDER
 #include "audio_capture_platform.h"
 #endif
@@ -139,13 +141,16 @@ static void voice_key_input_record_toggle_event(const char *source)
 {
     if (s_toggle_event_sem == NULL) {
         ESP_LOGW(TAG, "%s press edge dropped: event queue unavailable", source);
+        diag_log(DIAG_SRC_VOICE_KEY, DIAG_VKEY_QUEUE_DROP, DIAG_SEV_WARN, 1, 1, 0, 0);
         return;
     }
 
     if (xSemaphoreGive(s_toggle_event_sem) == pdTRUE) {
         ESP_LOGI(TAG, "%s press edge detected", source);
+        diag_log(DIAG_SRC_VOICE_KEY, DIAG_VKEY_PRESS, DIAG_SEV_INFO, 1, 0, 0, 0);
     } else {
         ESP_LOGW(TAG, "%s press edge dropped: event queue full", source);
+        diag_log(DIAG_SRC_VOICE_KEY, DIAG_VKEY_QUEUE_DROP, DIAG_SEV_WARN, 1, 2, 0, 0);
     }
 }
 

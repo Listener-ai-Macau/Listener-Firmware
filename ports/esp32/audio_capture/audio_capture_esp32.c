@@ -40,6 +40,7 @@
 #define AUDIO_CAPTURE_FRAME_SAMPLES     ((AUDIO_CAPTURE_SAMPLE_RATE_HZ * AUDIO_CAPTURE_FRAME_MS) / 1000)
 #define AUDIO_CAPTURE_FRAME_BYTES       (AUDIO_CAPTURE_FRAME_SAMPLES * sizeof(int16_t))
 #define AUDIO_CAPTURE_LOG_INTERVAL_FRAMES (50)
+#define AUDIO_CAPTURE_TASK_STACK_BYTES  (6 * 1024)
 /* Recording duration is user-controlled (KEY1 toggle); no fixed upper limit.
  * The only hard limit is uint16_t packet_sequence overflow in the BLE protocol,
  * which is handled gracefully by sending session_stop before overflow. */
@@ -850,7 +851,7 @@ esp_err_t audio_capture_start(void)
     BaseType_t task_ok = xTaskCreate(
         audio_capture_task,
         "audio_capture_task",
-        4096,
+        AUDIO_CAPTURE_TASK_STACK_BYTES,
         NULL,
         5,
         &s_capture_task_handle);

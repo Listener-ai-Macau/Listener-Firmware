@@ -23,31 +23,41 @@ $timestamp = Get-Date -Format "yyyyMMdd-HHmmss"
 $outputFile = Join-Path $OutputDir "diag_log_$timestamp.jsonl"
 
 # Send DIAGLOG:DUMP command and capture output
-$command = "~DIAGLOG:DUMP`n"
+$command = "~DIAGLOG:DUMP"
 
 Write-Host "Dumping diag_log from $Port to $outputFile ..."
 
 try {
-    $port = New-Object System.IO.Ports.SerialPort $Port, 115200, None, 8, one
-    $port.ReadTimeout = 5000
-    $port.WriteTimeout = 5000
-    $port.Open()
+    $serialPort = [System.IO.Ports.SerialPort]::new(
+        $Port,
+        115200,
+        [System.IO.Ports.Parity]::None,
+        8,
+        [System.IO.Ports.StopBits]::One
+    )
+    $serialPort.ReadTimeout = 5000
+    $serialPort.WriteTimeout = 5000
+    $serialPort.DtrEnable = $false
+    $serialPort.RtsEnable = $false
+    $serialPort.Open()
+    $serialPort.DtrEnable = $false
+    $serialPort.RtsEnable = $false
 
     # Drain any pending data
     Start-Sleep -Milliseconds 500
-    while ($port.BytesToRead -gt 0) {
-        $port.ReadByte() | Out-Null
+    while ($serialPort.BytesToRead -gt 0) {
+        $serialPort.ReadByte() | Out-Null
     }
 
     # Send dump command
-    $port.WriteLine($command)
+    $serialPort.Write("$command`n")
 
     # Read output until timeout
     $output = @()
     $readStart = Get-Date
     while (((Get-Date) - $readStart).TotalSeconds -lt 10) {
         try {
-            $line = $port.ReadLine()
+            $line = $serialPort.ReadLine()
             if ($line -match '^\{') {
                 $output += $line
             }
@@ -56,10 +66,10 @@ try {
         }
     }
 
-    $port.Close()
+    $serialPort.Close()
 } catch {
-    if ($port -and $port.IsOpen) {
-        $port.Close()
+    if ($serialPort -and $serialPort.IsOpen) {
+        $serialPort.Close()
     }
     throw
 }

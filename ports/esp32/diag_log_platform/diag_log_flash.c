@@ -87,12 +87,32 @@ static esp_err_t read_event(uint16_t sector, uint16_t index, diag_event_t *evt)
     return esp_partition_read(s_partition, offset, evt, DIAG_EVENT_SIZE);
 }
 
-static uint16_t retained_count_from_header(const diag_sector_header_t *header)
+static bool event_is_erased(const diag_event_t *evt)
+{
+    const uint8_t *bytes = (const uint8_t *)evt;
+    for (size_t i = 0; i < sizeof(*evt); i++) {
+        if (bytes[i] != 0xFF) {
+            return false;
+        }
+    }
+    return true;
+}
+
+static uint16_t retained_count_from_sector(uint16_t sector, const diag_sector_header_t *header)
 {
     if (header == NULL || header->magic != DIAG_LOG_MAGIC) {
         return 0;
     }
-    return header->count > DIAG_EVENTS_PER_SECTOR ? DIAG_EVENTS_PER_SECTOR : header->count;
+
+    uint16_t count = 0;
+    for (uint16_t index = 0; index < DIAG_EVENTS_PER_SECTOR; index++) {
+        diag_event_t evt;
+        if (read_event(sector, index, &evt) != ESP_OK || event_is_erased(&evt)) {
+            break;
+        }
+        count++;
+    }
+    return count;
 }
 
 static void find_write_position(void)
@@ -110,7 +130,7 @@ static void find_write_position(void)
             continue;
         }
 
-        uint16_t count = retained_count_from_header(&header);
+        uint16_t count = retained_count_from_sector((uint16_t)i, &header);
         s_retained_events += count;
 
         if (header.sequence > best_seq || best_seq == 0) {
@@ -224,7 +244,7 @@ void diag_log_platform_write(
     if (s_write_offset == 0) {
         diag_sector_header_t old_header;
         if (read_sector_header(s_write_sector, &old_header) == ESP_OK) {
-            uint16_t old_count = retained_count_from_header(&old_header);
+            uint16_t old_count = retained_count_from_sector(s_write_sector, &old_header);
             s_retained_events = old_count > s_retained_events ? 0 : s_retained_events - old_count;
         }
 
@@ -263,11 +283,6 @@ void diag_log_platform_write(
     if (s_retained_events < s_capacity_events) {
         s_retained_events++;
     }
-
-    diag_sector_header_t header;
-    read_sector_header(s_write_sector, &header);
-    header.count = s_write_offset;
-    write_sector_header(s_write_sector, &header);
 
     if (s_write_offset >= DIAG_EVENTS_PER_SECTOR) {
         s_write_sector = (s_write_sector + 1) % (uint16_t)s_total_sectors;
@@ -310,7 +325,7 @@ void diag_log_platform_dump(void)
     for (uint32_t sec = 0; sec < s_total_sectors; sec++) {
         diag_sector_header_t header;
         if (read_sector_header((uint16_t)sec, &header) == ESP_OK
-            && header.magic == DIAG_LOG_MAGIC && retained_count_from_header(&header) > 0) {
+            && header.magic == DIAG_LOG_MAGIC && retained_count_from_sector((uint16_t)sec, &header) > 0) {
             if (header.sequence < min_seq) {
                 min_seq = header.sequence;
                 start_sec = (uint16_t)sec;
@@ -326,7 +341,7 @@ void diag_log_platform_dump(void)
         if (ret != ESP_OK) {
             continue;
         }
-        uint16_t count = retained_count_from_header(&header);
+        uint16_t count = retained_count_from_sector(sec, &header);
         if (count == 0) {
             continue;
         }
@@ -367,7 +382,7 @@ void diag_log_platform_dump_last(uint32_t count)
     for (uint32_t sec = 0; sec < s_total_sectors; sec++) {
         diag_sector_header_t header;
         if (read_sector_header((uint16_t)sec, &header) == ESP_OK
-            && header.magic == DIAG_LOG_MAGIC && retained_count_from_header(&header) > 0) {
+            && header.magic == DIAG_LOG_MAGIC && retained_count_from_sector((uint16_t)sec, &header) > 0) {
             if (header.sequence < min_seq) {
                 min_seq = header.sequence;
                 start_sec = (uint16_t)sec;
@@ -384,7 +399,7 @@ void diag_log_platform_dump_last(uint32_t count)
         if (ret != ESP_OK) {
             continue;
         }
-        uint16_t sector_count = retained_count_from_header(&header);
+        uint16_t sector_count = retained_count_from_sector(sec, &header);
         if (sector_count == 0) {
             continue;
         }
