@@ -49,12 +49,12 @@
 #define DIAG_BLE_BATTERY_WARN  4   /* a1=level, a2=voltage_mv, a3=0, a4=0 */
 
 /* BLE GAP events (DIAG_SRC_BLE_GAP) */
-#define DIAG_GAP_MTU           1   /* a1=requested, a2=actual, a3=conn_handle, a4=0 */
-#define DIAG_GAP_ENCRYPT       2   /* a1=status(0=fail,1=success), a2=conn_handle, a3=0, a4=0 */
+#define DIAG_GAP_MTU           1   /* a1=requested/0, a2=actual, a3=conn_handle, a4=channel_id */
+#define DIAG_GAP_ENCRYPT       2   /* a1=status(0=fail,1=success), a2=esp_status, a3=conn_handle, a4=0 */
 #define DIAG_GAP_BOND          3   /* a1=result(0=fail,1=success), a2=reason, a3=conn_handle, a4=0 */
-#define DIAG_GAP_ADV_START     4   /* a1=result(0=fail,1=success), a2=0, a3=0, a4=0 */
+#define DIAG_GAP_ADV_START     4   /* a1=result(0=fail,1=success), a2=mode_or_error, a3=context, a4=0 */
 #define DIAG_GAP_ADV_STOP      5   /* a1=result(0=fail,1=success), a2=0, a3=0, a4=0 */
-#define DIAG_GAP_CTRL_INIT     6   /* a1=stage, a2=esp_err, a3=0, a4=0 */
+#define DIAG_GAP_CTRL_INIT     6   /* a1=stage, a2=esp_err, a3=mode, a4=0 */
 #define DIAG_GAP_CONN_PARAM    7   /* a1=conn_interval, a2=conn_latency, a3=conn_timeout, a4=conn_handle */
 
 /* Audio capture events (DIAG_SRC_AUDIO) */
@@ -67,10 +67,10 @@
 
 /* BLE Audio Stream events (DIAG_SRC_BLE_AUDIO) */
 #define DIAG_BAUD_STATE_CHANGE 1   /* a1=old_state, a2=new_state, a3=reason, a4=session_id */
-#define DIAG_BAUD_POOL_EXHAUST 2   /* a1=session_id, a2=in_use, a3=pool_size, a4=0 */
+#define DIAG_BAUD_POOL_EXHAUST 2   /* a1=session_id, a2=in_use, a3=pool_size, a4=high_water */
 #define DIAG_BAUD_NOTIFY_FAIL  3   /* a1=session_id, a2=seq, a3=esp_err, a4=retries */
-#define DIAG_BAUD_SESSION_ABORT 4  /* a1=session_id, a2=reason, a3=0, a4=0 */
-#define DIAG_BAUD_LINK_TIMEOUT 5   /* a1=session_id, a2=waited_ms, a3=0, a4=0 */
+#define DIAG_BAUD_SESSION_ABORT 4  /* a1=session_id, a2=reason, a3=expected_packet_count, a4=0 */
+#define DIAG_BAUD_LINK_TIMEOUT 5   /* a1=session_id, a2=waited_ms, a3=packet_type, a4=seq_or_count */
 
 /* Voice recording events (DIAG_SRC_VOICE_REC) */
 #define DIAG_VREC_SESSION      1   /* a1=type(1=start,2=stop,3=cancel), a2=source_code, a3=session_count, a4=0 */

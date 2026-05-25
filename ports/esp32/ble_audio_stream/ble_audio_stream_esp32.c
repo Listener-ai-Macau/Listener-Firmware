@@ -21,6 +21,7 @@
 #include "host/ble_hs.h"
 #include "host/ble_hs_mbuf.h"
 #include "os/os_mbuf.h"
+#include "diag_log.h"
 #include "listener_device.h"
 #include "listener_audio_proto.h"
 
@@ -284,6 +285,8 @@ static void ble_audio_stream_stats_pool_high_water(uint32_t session_id, uint32_t
             in_use,
             (unsigned)BLE_AUDIO_STREAM_AUDIO_POOL_LENGTH,
             (unsigned)BLE_AUDIO_STREAM_AUDIO_POOL_PRESSURE_WARN_PERCENT);
+        diag_log(DIAG_SRC_BLE_AUDIO, DIAG_BAUD_POOL_EXHAUST, DIAG_SEV_WARN,
+                 session_id, in_use, BLE_AUDIO_STREAM_AUDIO_POOL_LENGTH, 0);
     }
 }
 
@@ -384,6 +387,20 @@ static const char *ble_audio_stream_transport_state_name(ble_audio_stream_transp
     return "unknown";
 }
 
+static uint32_t ble_audio_stream_reason_code(const char *reason)
+{
+    uint32_t hash = 2166136261u;
+    if (reason == NULL) {
+        return 0;
+    }
+    while (*reason != '\0') {
+        hash ^= (uint8_t)*reason;
+        hash *= 16777619u;
+        reason++;
+    }
+    return hash;
+}
+
 static void ble_audio_stream_set_transport_state(
     ble_audio_stream_transport_state_t next_state,
     const char *reason)
@@ -392,10 +409,11 @@ static void ble_audio_stream_set_transport_state(
         return;
     }
 
+    ble_audio_stream_transport_state_t previous_state = s_transport_state;
     ESP_LOGI(
         TAG,
         "audio transport state: %s -> %s reason=%s epoch=%" PRIu32 " conn=%u mtu_ready=%u notify=%u value_max=%u",
-        ble_audio_stream_transport_state_name(s_transport_state),
+        ble_audio_stream_transport_state_name(previous_state),
         ble_audio_stream_transport_state_name(next_state),
         reason != NULL ? reason : "unspecified",
         s_connection_epoch,
@@ -403,6 +421,11 @@ static void ble_audio_stream_set_transport_state(
         s_mtu_ready ? 1u : 0u,
         s_notify_enabled ? 1u : 0u,
         s_packet_value_max_bytes);
+    diag_log(DIAG_SRC_BLE_AUDIO, DIAG_BAUD_STATE_CHANGE, DIAG_SEV_INFO,
+             (uint32_t)previous_state,
+             (uint32_t)next_state,
+             ble_audio_stream_reason_code(reason),
+             s_transport_session_id);
     s_transport_state = next_state;
 }
 
@@ -526,6 +549,8 @@ static bool ble_audio_stream_wait_link_ready(
         fragment_index,
         fragment_count,
         (unsigned)BLE_AUDIO_STREAM_LINK_RECOVERY_WAIT_MS);
+    diag_log(DIAG_SRC_BLE_AUDIO, DIAG_BAUD_LINK_TIMEOUT, DIAG_SEV_WARN,
+             session_id, BLE_AUDIO_STREAM_LINK_RECOVERY_WAIT_MS, packet_type, sequence_or_count);
     return false;
 }
 
@@ -884,6 +909,8 @@ static esp_err_t ble_audio_stream_send_packet(
                         session_id,
                         ESP_ERR_TIMEOUT,
                         BLE_AUDIO_STREAM_RETRY_CAUSE_NOTIFY_TX_TIMEOUT);
+                    diag_log(DIAG_SRC_BLE_AUDIO, DIAG_BAUD_NOTIFY_FAIL, DIAG_SEV_WARN,
+                             session_id, sequence_or_count, ESP_ERR_TIMEOUT, s_session_stats.notify_retries);
                     xSemaphoreGive(s_notify_credit_sem);
                     ble_audio_stream_notify_retry_delay();
                     continue;
@@ -964,6 +991,8 @@ static esp_err_t ble_audio_stream_send_packet(
             session_id,
             rc,
             BLE_AUDIO_STREAM_RETRY_CAUSE_NOTIFY_OTHER);
+        diag_log(DIAG_SRC_BLE_AUDIO, DIAG_BAUD_NOTIFY_FAIL, DIAG_SEV_WARN,
+                 session_id, sequence_or_count, (uint32_t)rc, s_session_stats.notify_retries);
         ble_audio_stream_stats_packet_result(session_id, packet_type, ESP_FAIL);
         return ESP_FAIL;
     }
@@ -980,6 +1009,8 @@ static esp_err_t ble_audio_stream_send_packet(
         s_export_queue != NULL ? (uint32_t)uxQueueMessagesWaiting(s_export_queue) : 0,
         (uint32_t)BLE_AUDIO_STREAM_NOTIFY_QUEUE_LENGTH);
     ble_audio_stream_stats_packet_result(session_id, packet_type, ESP_ERR_TIMEOUT);
+    diag_log(DIAG_SRC_BLE_AUDIO, DIAG_BAUD_NOTIFY_FAIL, DIAG_SEV_WARN,
+             session_id, sequence_or_count, ESP_ERR_TIMEOUT, s_session_stats.notify_retries);
     return ESP_ERR_TIMEOUT;
 }
 
@@ -1130,6 +1161,8 @@ static esp_err_t ble_audio_stream_audio_pool_acquire(
             s_audio_pool_in_use,
             (unsigned)BLE_AUDIO_STREAM_AUDIO_POOL_LENGTH,
             s_audio_pool_global_high_water);
+        diag_log(DIAG_SRC_BLE_AUDIO, DIAG_BAUD_POOL_EXHAUST, DIAG_SEV_WARN,
+                 session_id, s_audio_pool_in_use, BLE_AUDIO_STREAM_AUDIO_POOL_LENGTH, s_audio_pool_global_high_water);
     }
 
     xSemaphoreGive(s_audio_pool_mutex);
@@ -1241,6 +1274,8 @@ static void ble_audio_stream_abort_active_session(const char *reason)
     ble_audio_stream_set_transport_state(
         BLE_AUDIO_STREAM_TRANSPORT_STATE_ERROR,
         reason);
+    diag_log(DIAG_SRC_BLE_AUDIO, DIAG_BAUD_SESSION_ABORT, DIAG_SEV_ERROR,
+             session_id, ble_audio_stream_reason_code(reason), expected_packet_count, 0);
     if (session_id != 0) {
         ble_audio_stream_purge_queued_session_jobs(session_id, false);
         ble_audio_stream_stats_log_and_end(
@@ -1416,6 +1451,8 @@ static esp_err_t ble_audio_stream_send_session_error_internal(
         0,
         error_code);
     ble_audio_stream_stats_log_and_end(session_id, "error", expected_packet_count);
+    diag_log(DIAG_SRC_BLE_AUDIO, DIAG_BAUD_SESSION_ABORT, DIAG_SEV_ERROR,
+             session_id, error_code, expected_packet_count, 0);
     ble_audio_stream_set_transport_state(
         BLE_AUDIO_STREAM_TRANSPORT_STATE_ERROR,
         ret == ESP_OK ? "session_error_sent" : "session_error_failed");
