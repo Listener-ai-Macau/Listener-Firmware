@@ -311,6 +311,10 @@ static void audio_capture_process_frame(const int16_t *frame_buffer)
         }
 
         if (s_export_state.active && s_export_state.captured_frames < s_export_state.total_frames) {
+            bool stop_boundary_requested =
+                s_export_state.mode == AUDIO_CAPTURE_EXPORT_MODE_SESSION &&
+                s_export_state.stop_requested;
+            bool hit_safety_max_duration = false;
             if (s_export_state.mode == AUDIO_CAPTURE_EXPORT_MODE_SESSION) {
                 if (!s_export_state.ble_session_started) {
                     should_session_start = true;
@@ -318,52 +322,57 @@ static void audio_capture_process_frame(const int16_t *frame_buffer)
                     s_export_state.ble_session_started = true;
                 }
 
-                size_t batch_offset =
-                    (size_t)s_export_state.stream_batch_frame_count * AUDIO_CAPTURE_FRAME_BYTES;
-                memcpy(s_export_state.stream_batch_buffer + batch_offset, frame_buffer, AUDIO_CAPTURE_FRAME_BYTES);
-                s_export_state.stream_batch_frame_count++;
-                s_export_state.pcm_bytes_written += AUDIO_CAPTURE_FRAME_BYTES;
+                /* Stop is a hard capture boundary; the frame that woke this
+                 * call may already be after the user's stop edge. */
+                if (!stop_boundary_requested) {
+                    size_t batch_offset =
+                        (size_t)s_export_state.stream_batch_frame_count * AUDIO_CAPTURE_FRAME_BYTES;
+                    memcpy(s_export_state.stream_batch_buffer + batch_offset, frame_buffer, AUDIO_CAPTURE_FRAME_BYTES);
+                    s_export_state.stream_batch_frame_count++;
+                    s_export_state.pcm_bytes_written += AUDIO_CAPTURE_FRAME_BYTES;
 
-                if (s_export_state.stream_batch_frame_count >= AUDIO_CAPTURE_STREAM_BATCH_FRAMES) {
-                    session_id = s_export_state.session_id;
-                    packet_sequence_start = s_export_state.stream_next_packet_sequence;
-                    batch_pcm_bytes = AUDIO_CAPTURE_STREAM_BATCH_BYTES;
-                    memcpy(s_export_state.stream_emit_buffer, s_export_state.stream_batch_buffer, batch_pcm_bytes);
-                    audio_batch_copy = s_export_state.stream_emit_buffer;
-                    packet_count = ble_audio_stream_count_audio_packets(batch_pcm_bytes);
-                    if (!audio_capture_packet_sequence_can_advance(
-                            s_export_state.stream_next_packet_sequence,
-                            packet_count)) {
-                        /* Protocol packet sequence limit reached; perform graceful
-                         * session_stop instead of error so the host receives all
-                         * audio up to this point with a clean termination. */
-                        should_session_stop = true;
+                    if (s_export_state.stream_batch_frame_count >= AUDIO_CAPTURE_STREAM_BATCH_FRAMES) {
                         session_id = s_export_state.session_id;
-                        expected_packet_count_at_end = s_export_state.stream_next_packet_sequence;
-                        should_emit = true;
-                        ESP_LOGI(
-                            TAG,
-                            "record session stopping at protocol limit: session_id=%" PRIu32 " next=%u add=%u",
-                            session_id,
-                            s_export_state.stream_next_packet_sequence,
-                            packet_count);
-                    } else {
-                        should_session_audio = true;
-                        s_export_state.stream_next_packet_sequence =
-                            (uint16_t)(s_export_state.stream_next_packet_sequence + packet_count);
-                        s_export_state.stream_batch_frame_count = 0;
+                        packet_sequence_start = s_export_state.stream_next_packet_sequence;
+                        batch_pcm_bytes = AUDIO_CAPTURE_STREAM_BATCH_BYTES;
+                        memcpy(s_export_state.stream_emit_buffer, s_export_state.stream_batch_buffer, batch_pcm_bytes);
+                        audio_batch_copy = s_export_state.stream_emit_buffer;
+                        packet_count = ble_audio_stream_count_audio_packets(batch_pcm_bytes);
+                        if (!audio_capture_packet_sequence_can_advance(
+                                s_export_state.stream_next_packet_sequence,
+                                packet_count)) {
+                            /* Protocol packet sequence limit reached; perform graceful
+                             * session_stop instead of error so the host receives all
+                             * audio up to this point with a clean termination. */
+                            should_session_stop = true;
+                            session_id = s_export_state.session_id;
+                            expected_packet_count_at_end = s_export_state.stream_next_packet_sequence;
+                            should_emit = true;
+                            ESP_LOGI(
+                                TAG,
+                                "record session stopping at protocol limit: session_id=%" PRIu32 " next=%u add=%u",
+                                session_id,
+                                s_export_state.stream_next_packet_sequence,
+                                packet_count);
+                        } else {
+                            should_session_audio = true;
+                            s_export_state.stream_next_packet_sequence =
+                                (uint16_t)(s_export_state.stream_next_packet_sequence + packet_count);
+                            s_export_state.stream_batch_frame_count = 0;
+                        }
                     }
                 }
             }
 
-            if (!should_cancel) {
+            if (!should_cancel && !stop_boundary_requested) {
                 s_export_state.captured_frames++;
+                hit_safety_max_duration = s_export_state.captured_frames >= s_export_state.total_frames;
             }
 
             if (!should_cancel && !should_session_stop &&
                 s_export_state.mode == AUDIO_CAPTURE_EXPORT_MODE_SESSION &&
-                (s_export_state.stop_requested || s_export_state.captured_frames >= s_export_state.total_frames)) {
-                if (s_export_state.captured_frames >= s_export_state.total_frames) {
+                (stop_boundary_requested || hit_safety_max_duration)) {
+                if (hit_safety_max_duration) {
                     ESP_LOGI(
                         TAG,
                         "record session stopping at protocol limit (total_frames): session_id=%" PRIu32 " captured_frames=%" PRIu32,
