@@ -1972,7 +1972,9 @@ esp_err_t ble_audio_stream_send_session_stop(uint32_t session_id, uint16_t expec
     ble_audio_stream_set_transport_state(
         BLE_AUDIO_STREAM_TRANSPORT_STATE_DRAINING,
         "session_stop_queued");
-    if (xQueueSendToFront(s_export_queue, &job, pdMS_TO_TICKS(1000)) != pdTRUE) {
+    /* Keep STOP after accepted audio data so the receiver can treat it as the
+     * ASR input boundary instead of a marker that still permits tail audio. */
+    if (xQueueSend(s_export_queue, &job, pdMS_TO_TICKS(1000)) != pdTRUE) {
         ble_audio_stream_set_transport_state(
             previous_state,
             "session_stop_enqueue_failed");
