@@ -9,6 +9,7 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "esp_log.h"
+#include "diag_log.h"
 
 #include "audio_capture.h"
 #include "voice_key_input.h"
@@ -33,19 +34,39 @@ static char s_usb_command_buffer[VOICE_RECORDING_CONTROL_COMMAND_BUFFER_BYTES];
 static voice_recording_state_t s_state = VOICE_RECORDING_STATE_IDLE;
 static bool s_cancel_pending;
 static const char *s_cancel_source;
+static uint32_t s_session_count;
+
+static uint32_t voice_recording_source_code(const char *source)
+{
+    if (source == NULL) {
+        return 0;
+    }
+    if (strcmp(source, "key1") == 0) {
+        return 1;
+    }
+    if (strcmp(source, "usb") == 0) {
+        return 2;
+    }
+    return 255;
+}
 
 static esp_err_t voice_recording_control_enter_recording(const char *source)
 {
     esp_err_t ret = audio_capture_session_begin();
     if (ret != ESP_OK) {
         ESP_LOGW(TAG, "recording start rejected source=%s: %s", source, esp_err_to_name(ret));
+        diag_log(DIAG_SRC_VOICE_REC, DIAG_VREC_REJECTED, DIAG_SEV_WARN,
+                 voice_recording_source_code(source), (uint32_t)ret, (uint32_t)s_state, 0);
         return ret;
     }
 
     s_cancel_pending = false;
     s_cancel_source = NULL;
     s_state = VOICE_RECORDING_STATE_RECORDING;
+    s_session_count++;
     ESP_LOGI(TAG, "recording start source=%s", source);
+    diag_log(DIAG_SRC_VOICE_REC, DIAG_VREC_SESSION, DIAG_SEV_INFO,
+             1, voice_recording_source_code(source), s_session_count, 0);
     return ESP_OK;
 }
 
@@ -54,6 +75,8 @@ static esp_err_t voice_recording_control_exit_recording(const char *source)
     esp_err_t ret = audio_capture_session_stop();
     if (ret != ESP_OK) {
         ESP_LOGW(TAG, "recording stop rejected source=%s: %s", source, esp_err_to_name(ret));
+        diag_log(DIAG_SRC_VOICE_REC, DIAG_VREC_REJECTED, DIAG_SEV_WARN,
+                 voice_recording_source_code(source), (uint32_t)ret, (uint32_t)s_state, 0);
         return ret;
     }
 
@@ -61,6 +84,8 @@ static esp_err_t voice_recording_control_exit_recording(const char *source)
     s_cancel_source = NULL;
     s_state = VOICE_RECORDING_STATE_IDLE;
     ESP_LOGI(TAG, "recording stop source=%s", source);
+    diag_log(DIAG_SRC_VOICE_REC, DIAG_VREC_SESSION, DIAG_SEV_INFO,
+             2, voice_recording_source_code(source), s_session_count, 0);
     return ESP_OK;
 }
 
@@ -83,6 +108,8 @@ static void voice_recording_control_cancel(const char *source)
     esp_err_t ret = audio_capture_session_cancel();
     if (ret != ESP_OK) {
         ESP_LOGW(TAG, "recording cancel rejected source=%s: %s", source, esp_err_to_name(ret));
+        diag_log(DIAG_SRC_VOICE_REC, DIAG_VREC_REJECTED, DIAG_SEV_WARN,
+                 voice_recording_source_code(source), (uint32_t)ret, (uint32_t)s_state, 0);
         return;
     }
 
@@ -93,6 +120,8 @@ static void voice_recording_control_cancel(const char *source)
         s_cancel_source = NULL;
         s_state = VOICE_RECORDING_STATE_IDLE;
         ESP_LOGI(TAG, "recording cancel source=%s", source);
+        diag_log(DIAG_SRC_VOICE_REC, DIAG_VREC_SESSION, DIAG_SEV_INFO,
+                 3, voice_recording_source_code(source), s_session_count, 0);
         return;
     }
 
@@ -115,6 +144,8 @@ static void voice_recording_control_task(void *parameter)
                 s_cancel_source = NULL;
                 s_state = VOICE_RECORDING_STATE_IDLE;
                 ESP_LOGI(TAG, "recording cancel source=%s", source);
+                diag_log(DIAG_SRC_VOICE_REC, DIAG_VREC_SESSION, DIAG_SEV_INFO,
+                         3, voice_recording_source_code(source), s_session_count, 0);
                 continue;
             }
 
@@ -122,6 +153,11 @@ static void voice_recording_control_task(void *parameter)
             ESP_LOGI(TAG, "recording session finished");
         }
     }
+}
+
+uint32_t voice_recording_control_get_session_count(void)
+{
+    return s_session_count;
 }
 
 esp_err_t voice_recording_control_start(void)

@@ -3,6 +3,8 @@
 #include "listener_device.h"
 
 #include "esp_log.h"
+#include "esp_system.h"
+#include "diag_log.h"
 
 static const char *TAG = "self_test";
 
@@ -54,10 +56,16 @@ self_test_result_t self_test_run(void)
              (unsigned long)result.free_heap,
              result.fw_version,
              result.protocol_version);
+    diag_log(DIAG_SRC_SELF_TEST, DIAG_ST_POST_RESULT, result.nvs_ok ? DIAG_SEV_INFO : DIAG_SEV_ERROR,
+             (uint32_t)result.nvs_ok, (uint32_t)result.spiram_ok,
+             esp_get_free_heap_size() / 1024, self_test_critical_ok(&result) ? 1 : 0);
     if (!self_test_critical_ok(&result)) {
         ESP_LOGE(TAG, "POST critical checks failed: nvs=%s spiram=%s",
                  self_test_nvs_status(&result),
                  self_test_spiram_status(&result));
+        diag_log(DIAG_SRC_SELF_TEST, DIAG_ST_POST_RESULT, DIAG_SEV_ERROR,
+                 (uint32_t)result.nvs_ok, (uint32_t)result.spiram_ok,
+                 esp_get_free_heap_size() / 1024, 0);
     }
 
     return result;

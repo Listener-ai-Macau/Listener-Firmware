@@ -30,6 +30,8 @@
 #endif
 
 #include "esp_log.h"
+#include "diag_log.h"
+#include "diag_log_events.h"
 
 /* ---------- Shared defines ---------- */
 
@@ -106,6 +108,7 @@ static esp_codec_dev_handle_t s_codec_handle;
 #endif
 
 static TaskHandle_t s_capture_task_handle;
+static uint32_t s_frame_count;
 static uint32_t s_frame_captured_count;
 static uint32_t s_overflow_count;
 static uint32_t s_underrun_count;
@@ -175,6 +178,7 @@ esp_err_t audio_capture_session_begin(void)
     if (!ble_audio_stream_is_ready()) {
         xSemaphoreGive(s_state_mutex);
         ESP_LOGW(TAG, "record session start rejected: BLE audio transport not ready");
+        diag_log(DIAG_SRC_AUDIO, DIAG_AUDIO_SESSION_REJ, DIAG_SEV_WARN, 1, 0, 0, 0);
         return ESP_ERR_INVALID_STATE;
     }
 
@@ -183,6 +187,7 @@ esp_err_t audio_capture_session_begin(void)
     if (packet_safe_total_frames == 0) {
         xSemaphoreGive(s_state_mutex);
         ESP_LOGW(TAG, "record session start rejected: audio payload unavailable");
+        diag_log(DIAG_SRC_AUDIO, DIAG_AUDIO_SESSION_REJ, DIAG_SEV_WARN, 2, 0, 0, 0);
         return ESP_ERR_INVALID_SIZE;
     }
 
@@ -211,6 +216,7 @@ esp_err_t audio_capture_session_begin(void)
         (unsigned)AUDIO_CAPTURE_STREAM_BATCH_BYTES,
         payload_bytes,
         session_max_seconds);
+    diag_log(DIAG_SRC_AUDIO, DIAG_AUDIO_SESSION, DIAG_SEV_INFO, 1, session_id, 0, 0);
     return ESP_OK;
 }
 
@@ -273,6 +279,7 @@ bool audio_capture_session_is_active(void)
 static void audio_capture_process_frame(const int16_t *frame_buffer)
 {
     s_frame_captured_count++;
+    s_frame_count++;
 
     bool should_emit = false;
     bool should_cancel = false;
@@ -528,10 +535,16 @@ static void audio_capture_process_frame(const int16_t *frame_buffer)
         }
 
         if (!stream_failed && should_emit) {
+            uint32_t stop_duration = 0;
+            uint32_t stop_frames = 0;
             if (xSemaphoreTake(s_state_mutex, portMAX_DELAY) == pdTRUE) {
+                stop_duration = s_export_state.duration_seconds;
+                stop_frames = s_export_state.captured_frames;
                 audio_capture_export_cleanup();
                 xSemaphoreGive(s_state_mutex);
             }
+            diag_log(DIAG_SRC_AUDIO, DIAG_AUDIO_SESSION, DIAG_SEV_INFO,
+                     2, session_id, stop_duration, stop_frames);
         }
     }
     if (idle_for_logging && (s_frame_captured_count % AUDIO_CAPTURE_LOG_INTERVAL_FRAMES) == 0) {
@@ -566,6 +579,7 @@ static void audio_capture_task(void *arg)
         if (ret == ESP_CODEC_DEV_WRONG_STATE) {
             s_underrun_count++;
             ESP_LOGW(TAG, "underrun count=%" PRIu32 " ret=%d", s_underrun_count, ret);
+            diag_log(DIAG_SRC_AUDIO, DIAG_AUDIO_UNDERRUN, DIAG_SEV_WARN, s_underrun_count, 0, 0, 0);
         } else if (ret == ESP_CODEC_DEV_DRV_ERR || ret == ESP_CODEC_DEV_READ_FAIL) {
             s_overflow_count++;
             s_dropped_frame_count++;
@@ -575,9 +589,11 @@ static void audio_capture_task(void *arg)
                 s_overflow_count,
                 s_dropped_frame_count,
                 ret);
+            diag_log(DIAG_SRC_AUDIO, DIAG_AUDIO_DROP, DIAG_SEV_WARN, s_dropped_frame_count, ret, 0, 0);
         } else {
             s_dropped_frame_count++;
             ESP_LOGW(TAG, "dropped frame=%" PRIu32 " ret=%d", s_dropped_frame_count, ret);
+            diag_log(DIAG_SRC_AUDIO, DIAG_AUDIO_DROP, DIAG_SEV_WARN, s_dropped_frame_count, ret, 0, 0);
         }
 
         vTaskDelay(pdMS_TO_TICKS(5));
@@ -736,6 +752,7 @@ static void audio_capture_task(void *arg)
             s_dropped_frame_count++;
             ESP_LOGW(TAG, "i2s read failed: dropped=%" PRIu32 " ret=%s",
                      s_dropped_frame_count, esp_err_to_name(ret));
+            diag_log(DIAG_SRC_AUDIO, DIAG_AUDIO_I2S_FAIL, DIAG_SEV_WARN, s_dropped_frame_count, ret, 0, 0);
         }
         vTaskDelay(pdMS_TO_TICKS(5));
     }
@@ -789,6 +806,7 @@ esp_err_t audio_capture_start(void)
     esp_err_t err = audio_capture_i2s_init();
     if (err != ESP_OK) {
         ESP_LOGE(TAG, "i2s start fail");
+        diag_log(DIAG_SRC_AUDIO, DIAG_AUDIO_INIT_FAIL, DIAG_SEV_ERROR, 1, err, 0, 0);
         return err;
     }
     ESP_LOGI(TAG, "i2s start ok");
@@ -797,6 +815,7 @@ esp_err_t audio_capture_start(void)
     err = audio_capture_i2c_init();
     if (err != ESP_OK) {
         ESP_LOGE(TAG, "i2c init fail");
+        diag_log(DIAG_SRC_AUDIO, DIAG_AUDIO_INIT_FAIL, DIAG_SEV_ERROR, 2, err, 0, 0);
         i2s_channel_disable(s_i2s_rx_handle);
         return err;
     }
@@ -804,6 +823,7 @@ esp_err_t audio_capture_start(void)
     err = audio_capture_codec_init();
     if (err != ESP_OK) {
         ESP_LOGE(TAG, "codec init fail");
+        diag_log(DIAG_SRC_AUDIO, DIAG_AUDIO_INIT_FAIL, DIAG_SEV_ERROR, 3, err, 0, 0);
         i2s_channel_disable(s_i2s_rx_handle);
         return err;
     }
@@ -839,4 +859,14 @@ esp_err_t audio_capture_start(void)
 #endif
 
     return ESP_OK;
+}
+
+uint32_t audio_capture_get_frame_count(void)
+{
+    return s_frame_count;
+}
+
+uint32_t audio_capture_get_dropped_frame_count(void)
+{
+    return s_dropped_frame_count;
 }
