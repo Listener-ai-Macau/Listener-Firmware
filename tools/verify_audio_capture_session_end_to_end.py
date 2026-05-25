@@ -90,8 +90,13 @@ async def main_async(args) -> None:
         analysis = analyze_recording(source_wav_path, recorded_wav_path)
     else:
         serial_log_text = read_serial_log_text(serial_log_path)
-        physical_key_start_seen = "recording start source=ec11_key" in serial_log_text
-        physical_key_stop_seen = "recording stop source=ec11_key" in serial_log_text
+        physical_key_sources = ("gpio35.ec11_key", "key1")
+        physical_key_start_seen = any(
+            f"recording start source={source}" in serial_log_text for source in physical_key_sources
+        )
+        physical_key_stop_seen = any(
+            f"recording stop source={source}" in serial_log_text for source in physical_key_sources
+        )
         recorded_frames = read_wav_frames(recorded_wav_path)
         recorded_env = compute_envelope(recorded_frames)
         recorded_peak = max(abs(value) for value in recorded_frames) if recorded_frames else 0

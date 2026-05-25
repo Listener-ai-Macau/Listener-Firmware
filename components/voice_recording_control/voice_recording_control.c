@@ -183,7 +183,7 @@ static void voice_recording_control_task(void *parameter)
 
     while (1) {
         if (voice_key_input_take_toggle_event()) {
-            voice_recording_control_toggle("ec11_key");
+            voice_recording_control_toggle(voice_key_input_get_active_source());
         }
 
         if (voice_key_input_take_recovery_event()) {
@@ -248,7 +248,7 @@ esp_err_t voice_recording_control_start(void)
     }
 
     s_started = true;
-    ESP_LOGI(TAG, "voice recording control ready: ec11_key toggle start/stop");
+    ESP_LOGI(TAG, "voice recording control ready: source=%s toggle start/stop", voice_key_input_get_active_source());
     if (audio_ret == ESP_OK && key_ret == ESP_OK) {
         voice_recording_control_log_device_status("ready", "voice_recording_control_started");
         return ESP_OK;

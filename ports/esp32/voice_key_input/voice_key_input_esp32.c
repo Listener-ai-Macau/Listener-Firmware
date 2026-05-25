@@ -488,6 +488,11 @@ bool voice_key_input_take_recovery_event(void)
     return xSemaphoreTake(s_recovery_event_sem, 0) == pdTRUE;
 }
 
+const char *voice_key_input_get_active_source(void)
+{
+    return VOICE_KEY_INPUT_DIRECT_LABEL;
+}
+
 esp_err_t voice_key_input_set_recording_output(bool enabled)
 {
     (void)enabled;

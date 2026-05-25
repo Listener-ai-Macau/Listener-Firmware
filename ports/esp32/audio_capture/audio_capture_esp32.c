@@ -39,6 +39,7 @@
 #define AUDIO_CAPTURE_FRAME_MS          (20)
 #define AUDIO_CAPTURE_FRAME_SAMPLES     ((AUDIO_CAPTURE_SAMPLE_RATE_HZ * AUDIO_CAPTURE_FRAME_MS) / 1000)
 #define AUDIO_CAPTURE_FRAME_BYTES       (AUDIO_CAPTURE_FRAME_SAMPLES * sizeof(int16_t))
+#define AUDIO_CAPTURE_TASK_STACK_BYTES  (8 * 1024)
 #define AUDIO_CAPTURE_LOG_INTERVAL_FRAMES (50)
 #define AUDIO_CAPTURE_TASK_STACK_BYTES  (6 * 1024)
 /* Recording duration is user-controlled (KEY1 toggle); no fixed upper limit.

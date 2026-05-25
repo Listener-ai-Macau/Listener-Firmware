@@ -60,7 +60,7 @@ static void keyboard_wasd_handle_sample(keyboard_wasd_key_t *key, bool raw_high)
         key->last_sample_high = raw_high;
         key->stable_level_high = raw_high;
         key->stable_count = 1;
-        key->pressed = !raw_high;
+        key->pressed = false;
         ESP_LOGI(TAG, "WASD key idle detected: source=%s raw_high=%d", key->label, raw_high ? 1 : 0);
         return;
     }
@@ -70,6 +70,12 @@ static void keyboard_wasd_handle_sample(keyboard_wasd_key_t *key, bool raw_high)
             key->stable_count++;
         }
     } else {
+        ESP_LOGI(
+            TAG,
+            "WASD key raw transition: source=%s raw_high=%d stable_high=%d",
+            key->label,
+            raw_high ? 1 : 0,
+            key->stable_level_high ? 1 : 0);
         key->last_sample_high = raw_high;
         key->stable_count = 1;
         return;
@@ -81,12 +87,23 @@ static void keyboard_wasd_handle_sample(keyboard_wasd_key_t *key, bool raw_high)
 
     key->stable_level_high = raw_high;
     bool pressed = !raw_high;
+    ESP_LOGI(
+        TAG,
+        "WASD key stable transition: source=%s raw_high=%d pressed=%d",
+        key->label,
+        raw_high ? 1 : 0,
+        pressed ? 1 : 0);
     if (pressed && !key->pressed) {
         esp_err_t ret = ble_hid_send_ascii_async(key->output_char);
         if (ret == ESP_OK) {
             ESP_LOGI(TAG, "WASD key press queued: source=%s output=%c", key->label, key->output_char);
         } else {
-            ESP_LOGW(TAG, "WASD key press dropped: source=%s output=%c error=%s", key->label, key->output_char, esp_err_to_name(ret));
+            ESP_LOGW(
+                TAG,
+                "WASD key press dropped: source=%s output=%c error=%s",
+                key->label,
+                key->output_char,
+                esp_err_to_name(ret));
         }
     }
     key->pressed = pressed;
