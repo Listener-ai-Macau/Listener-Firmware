@@ -34,6 +34,9 @@ void ble_store_config_init(void);
 #include "ble_hid_gap.h"
 #include "ble_audio_stream.h"
 #include "voice_recording_control.h"
+#include "diag_log_platform.h"
+#include "diag_log.h"
+#include "esp_timer.h"
 
 static const char *TAG = "ble_hid";
 
@@ -47,6 +50,8 @@ static const char *TAG = "ble_hid";
 #define BLE_HID_BATTERY_EMPTY_MV 3000U
 #define BLE_HID_BATTERY_FULL_MV 4200U
 #define BLE_HID_BATTERY_TASK_STACK_BYTES (4 * 1024)
+#define BLE_HID_USB_COMMAND_PREFIX '~'
+#define BLE_HID_USB_COMMAND_BUFFER_BYTES 64
 
 typedef struct
 {
@@ -87,6 +92,13 @@ static esp_hid_device_config_t s_ble_hid_config = {
 };
 
 static bool s_usb_serial_ready = false;
+static bool s_usb_command_active;
+static size_t s_usb_command_length;
+static char s_usb_command_buffer[BLE_HID_USB_COMMAND_BUFFER_BYTES];
+
+static bool s_ble_connected;
+static uint32_t s_disconnect_count;
+static uint32_t s_connect_timestamp_ms;
 
 static bool ble_hid_battery_calibration_init(adc_unit_t unit, adc_channel_t channel)
 {
@@ -269,6 +281,11 @@ static void ble_hid_update_battery_level(const char *reason)
             reason,
             esp_err_to_name(read_ret));
     }
+
+    if (level < 10 && read_ret == ESP_OK) {
+        diag_log(DIAG_SRC_BLE_HID, DIAG_BLE_BATTERY_WARN, DIAG_SEV_WARN,
+                 level, battery_mv, 0, 0);
+    }
 }
 
 static void ble_hid_battery_task(void *parameter)
@@ -317,6 +334,65 @@ static esp_err_t ble_hid_usb_serial_init(void)
     return ESP_OK;
 }
 
+static void ble_hid_dispatch_voice_recording_command(const char *line)
+{
+    for (const char *cursor = line; cursor != NULL && *cursor != '\0'; cursor++) {
+        voice_recording_control_consume_usb_control_byte((uint8_t)*cursor);
+    }
+    voice_recording_control_consume_usb_control_byte((uint8_t)'\n');
+}
+
+static bool ble_hid_dispatch_usb_command_line(const char *line)
+{
+    if (diag_log_consume_usb_command(line)) {
+        return true;
+    }
+
+    if (strncmp(line, "~VREC:", strlen("~VREC:")) == 0) {
+        ble_hid_dispatch_voice_recording_command(line);
+        return true;
+    }
+
+    ESP_LOGW(TAG, "drop unknown USB control command: %s", line);
+    return true;
+}
+
+static bool ble_hid_consume_usb_command_byte(uint8_t input_char)
+{
+    if (!s_usb_command_active) {
+        if (input_char != (uint8_t)BLE_HID_USB_COMMAND_PREFIX) {
+            return false;
+        }
+
+        s_usb_command_active = true;
+        s_usb_command_length = 0;
+        memset(s_usb_command_buffer, 0, sizeof(s_usb_command_buffer));
+        s_usb_command_buffer[s_usb_command_length++] = (char)input_char;
+        return true;
+    }
+
+    if (input_char == '\r') {
+        return true;
+    }
+
+    if (input_char == '\n') {
+        s_usb_command_active = false;
+        s_usb_command_buffer[s_usb_command_length] = '\0';
+        return ble_hid_dispatch_usb_command_line(s_usb_command_buffer);
+    }
+
+    if (s_usb_command_length + 1 >= sizeof(s_usb_command_buffer)) {
+        s_usb_command_active = false;
+        s_usb_command_length = 0;
+        memset(s_usb_command_buffer, 0, sizeof(s_usb_command_buffer));
+        ESP_LOGW(TAG, "drop USB control command: too long");
+        return true;
+    }
+
+    s_usb_command_buffer[s_usb_command_length++] = (char)input_char;
+    return true;
+}
+
 static void ble_hid_keyboard_task(void *parameter)
 {
     (void)parameter;
@@ -337,7 +413,7 @@ static void ble_hid_keyboard_task(void *parameter)
             for (int index = 0; index < bytes_read; ++index) {
                 int input_char = (unsigned char)rx_buffer[index];
 
-                if (voice_recording_control_consume_usb_control_byte((uint8_t)input_char)) {
+                if (ble_hid_consume_usb_command_byte((uint8_t)input_char)) {
                     continue;
                 }
 
@@ -350,6 +426,8 @@ static void ble_hid_keyboard_task(void *parameter)
                 ret = hid_keyboard_send_ascii((char)input_char, s_ble_hid_ctx.hid_device);
                 if (ret != ESP_OK) {
                     ESP_LOGW(TAG, "SCRIPT dispatch failed: %s", esp_err_to_name(ret));
+                    diag_log(DIAG_SRC_BLE_HID, DIAG_BLE_HID_SEND_FAIL, DIAG_SEV_WARN,
+                             (uint32_t)input_char, (uint32_t)ret, s_ble_connected ? 1 : 0, 0);
                 }
             }
         }
@@ -403,7 +481,11 @@ static void ble_hid_event_callback(void *handler_args, esp_event_base_t base, in
         break;
     case ESP_HIDD_CONNECT_EVENT:
         ESP_LOGI(TAG, "CONNECT");
+        s_ble_connected = true;
+        s_connect_timestamp_ms = (uint32_t)(esp_timer_get_time() / 1000LL);
         ble_hid_update_battery_level("connect");
+        diag_log(DIAG_SRC_BLE_HID, DIAG_BLE_CONNECT, DIAG_SEV_INFO,
+                 1, esp_get_free_heap_size() / 1024, s_disconnect_count, 0);
         break;
     case ESP_HIDD_PROTOCOL_MODE_EVENT:
         ESP_LOGI(
@@ -445,12 +527,19 @@ static void ble_hid_event_callback(void *handler_args, esp_event_base_t base, in
         ESP_LOG_BUFFER_HEX(TAG, param->feature.data, param->feature.length);
         break;
     case ESP_HIDD_DISCONNECT_EVENT:
-        ESP_LOGI(
-            TAG,
-            "DISCONNECT: %s",
-            esp_hid_disconnect_reason_str(
-                esp_hidd_dev_transport_get(param->disconnect.dev),
-                param->disconnect.reason));
+        {
+            s_ble_connected = false;
+            s_disconnect_count++;
+            uint32_t conn_duration = (uint32_t)(esp_timer_get_time() / 1000LL) - s_connect_timestamp_ms;
+            uint32_t heap_kb = esp_get_free_heap_size() / 1024;
+            ESP_LOGI(TAG, "DISCONNECT: %s",
+                     esp_hid_disconnect_reason_str(
+                         esp_hidd_dev_transport_get(param->disconnect.dev),
+                         param->disconnect.reason));
+            diag_log(DIAG_SRC_BLE_HID, DIAG_BLE_DISCONNECT, DIAG_SEV_WARN,
+                     param->disconnect.reason, s_disconnect_count,
+                     conn_duration, heap_kb);
+        }
         break;
     case ESP_HIDD_STOP_EVENT:
         ESP_LOGI(TAG, "STOP");
@@ -551,4 +640,14 @@ void ble_hid_start(void)
     if (ret != ESP_OK) {
         ESP_LOGE(TAG, "esp_nimble_enable failed: %d", ret);
     }
+}
+
+bool ble_hid_is_connected(void)
+{
+    return s_ble_connected;
+}
+
+uint32_t ble_hid_get_disconnect_count(void)
+{
+    return s_disconnect_count;
 }
