@@ -1,0 +1,226 @@
+I (16359) audio_capture: frame captured count=800 bytes=512000
+I (250909) audio_capture: stream audio packet batch queued: session_id=1 seq_start=384 packet_count=4 pcm_bytes=1920
+I (251559) voice_key_input: voice key candidate level changed: source=gpio35.ec11_key raw_high=0
+I (251719) voice_key_input: voice key candidate level changed: source=gpio35.ec11_key raw_high=1
+I (251719) voice_key_input: gpio35.ec11_key short press detected
+I (251719) audio_capture: record session stop requested
+I (251719) voice_rec_ctrl: recording stop source=ec11_key
+I (251729) voice_rec_ctrl: device_status state=transferring detail=audio_session_finishing
+I (251739) ble_audio_stream: audio transport state: streaming -> draining reason=session_stop_queued epoch=1 conn=1 mtu_ready=1 notify=1 value_max=500
+I (251749) audio_capture: stream session stop queued: session_id=1 expected_packet_count=443 duration_s=6
+I (251759) ble_audio_stream: audio session stop: session=1 expected_packet_count=443
+I (251839) voice_rec_ctrl: recording session finished
+I (251839) voice_rec_ctrl: device_status state=ready detail=recording_session_finished
+I (252349) audio_capture: frame captured count=12600 bytes=8064000
+I (252969) ble_audio_stream: audio session transport summary: session=1 reason=stop expected_packet_count=443 notify_sent=447 notify_failed=0 notify_retries=0 retry_mbuf=0 retry_enomem=0 retry_tx_timeout=0 retry_tx_status=0 retry_other=0 audio_sent=443 audio_failed=0 queue_jobs_purged=0 pool_high_water=17 pool_capacity=36 pool_alloc_failed=0 queue_full=0 last_drop_reason=none last_error=0
+I (252989) ble_audio_stream: audio transport state: draining -> stopped reason=session_stop_drained epoch=1 conn=1 mtu_ready=1 notify=1 value_max=500
+I (252999) ble_audio_stream: audio transport state: stopped -> subscribed reason=session_stop_complete epoch=1 conn=1 mtu_ready=1 notify=1 value_max=500
+I (253019) ble_audio_stream: audio transport state: subscribed -> stream_ready reason=session_stop_complete epoch=1 conn=1 mtu_ready=1 notify=1 value_max=500
+I (253199) ESP_HID_GAP: mtu update event; conn_handle=1 cid=4 mtu=517
+I (253199) ble_audio_stream: audio notify mtu updated: conn=1 mtu=517
+I (253199) ble_audio_stream: audio notify packet size updated: conn=1 value_max=500 payload_max=480
+I (253209) ble_audio_stream: audio transport state: stream_ready -> subscribed reason=gap_mtu epoch=1 conn=1 mtu_ready=1 notify=1 value_max=500
+I (253219) ble_audio_stream: audio transport state: subscribed -> stream_ready reason=gap_mtu epoch=1 conn=1 mtu_ready=1 notify=1 value_max=500
+I (253359) audio_capture: frame captured count=12650 bytes=8096000
+I (254359) audio_capture: frame captured count=12700 bytes=8128000
+I (255349) audio_capture: frame captured count=12750 bytes=8160000
+I (256189) ESP_HID_GAP: subscribe event; conn_handle=1 attr_handle=3 reason=1 prevn=1 curn=0 previ=0 curi=0
+I (256189) ble_audio_stream: audio notify subscription changed: epoch=1 conn=1 attr=3 notify=0 window=3
+I (256199) ble_audio_stream: audio transport state: stream_ready -> mtu_ready reason=gap_subscribe_notify_off epoch=1 conn=1 mtu_ready=1 notify=0 value_max=500
+I (256359) audio_capture: frame captured count=12800 bytes=8192000
+I (256409) ESP_HID_GAP: subscribe event; conn_handle=1 attr_handle=3 reason=1 prevn=0 curn=1 previ=0 curi=0
+I (256409) ble_audio_stream: audio notify subscription changed: epoch=1 conn=1 attr=3 notify=1 window=3
+I (256419) ble_audio_stream: audio notify packet size updated: conn=1 value_max=500 payload_max=480
+I (256429) ble_audio_stream: audio transport state: mtu_ready -> subscribed reason=gap_subscribe_notify_on epoch=1 conn=1 mtu_ready=1 notify=1 value_max=500
+I (256439) ble_audio_stream: audio transport state: subscribed -> stream_ready reason=gap_subscribe_notify_on epoch=1 conn=1 mtu_ready=1 notify=1 value_max=500
+I (256449) ESP_HID_GAP: audio notify subscribed: conn_handle=1 interval_units=6 interval_ms=7.50 latency=0 supervision_timeout_units=800 supervision_timeout_ms=8000
+I (256499) voice_key_input: voice key candidate level changed: source=gpio35.ec11_key raw_high=0
+I (256659) voice_key_input: voice key candidate level changed: source=gpio35.ec11_key raw_high=1
+I (256659) voice_key_input: gpio35.ec11_key short press detected
+I (256689) audio_capture: record session begin requested: session_id=2 buffer_ms=60 buffer_bytes=1920 safety_max_s=600 packet_payload_bytes=480 packet_safe_max_s=600
+I (256689) voice_rec_ctrl: recording start source=ec11_key
+I (256689) voice_rec_ctrl: device_status state=recording detail=capture_active
+I (256699) ble_audio_stream: audio transport state: stream_ready -> streaming reason=session_start_queued epoch=1 conn=1 mtu_ready=1 notify=1 value_max=500
+I (256719) audio_capture: stream session start queued: session_id=2
+I (256729) audio_capture: stream audio packet batch queued: session_id=2 seq_start=0 packet_count=4 pcm_bytes=1920
+I (257689) audio_capture: stream audio packet batch queued: session_id=2 seq_start=64 packet_count=4 pcm_bytes=1920
+I (257809) ESP_HID_GAP: mtu update event; conn_handle=1 cid=4 mtu=517
+I (257809) ble_audio_stream: audio notify mtu updated: conn=1 mtu=517
+I (257809) ble_audio_stream: audio notify packet size updated: conn=1 value_max=500 payload_max=480
+I (257819) ESP_HID_GAP: subscribe event; conn_handle=1 attr_handle=3 reason=2 prevn=1 curn=0 previ=0 curi=0
+W (257829) ble_audio_stream: audio transport session aborted: reason=notify_disabled epoch=1 conn=1 state=streaming session=2
+I (257839) ble_audio_stream: audio transport state: streaming -> stopped reason=notify_disabled_session_abort epoch=1 conn=1 mtu_ready=1 notify=1 value_max=500
+I (257859) ble_audio_stream: audio notify subscription changed: epoch=1 conn=1 attr=3 notify=0 window=3
+I (257859) ble_audio_stream: purged queued audio jobs for canceled session: session=2 dropped=5
+I (257869) ble_audio_stream: audio transport state: stopped -> mtu_ready reason=gap_subscribe_notify_off epoch=1 conn=1 mtu_ready=1 notify=0 value_max=500
+I (257869) ble_audio_stream: audio transport state: stopped -> draining reason=session_audio_failed epoch=1 conn=1 mtu_ready=1 notify=0 value_max=500
+I (257889) ESP_HID_GAP: subscribe event; conn_handle=1 attr_handle=22 reason=2 prevn=1 curn=0 previ=0 curi=0
+W (257899) ble_audio_stream: audio session error: session=2 expected_packet_count=56 error_code=3
+I (257909) ESP_HID_GAP: subscribe event; conn_handle=1 attr_handle=41 reason=2 prevn=1 curn=0 previ=0 curi=0
+I (257919) ble_audio_stream: audio session transport summary: session=2 reason=error expected_packet_count=56 notify_sent=57 notify_failed=2 notify_retries=0 retry_mbuf=0 retry_enomem=0 retry_tx_timeout=0 retry_tx_status=0 retry_other=0 audio_sent=54 audio_failed=1 queue_jobs_purged=5 pool_high_water=7 pool_capacity=36 pool_alloc_failed=0 queue_full=0 last_drop_reason=none last_error=259
+I (257929) ESP_HID_GAP: disconnect; reason=531
+I (257959) ble_audio_stream: audio transport state: draining -> error reason=session_error_failed epoch=1 conn=1 mtu_ready=1 notify=0 value_max=500
+I (257969) ble_audio_stream: audio transport epoch advanced: epoch=2 reason=gap_disconnect stale_subscribe=0 stale_mtu=0 stale_notify_tx=0 stale_disconnect=0
+I (257979) ble_audio_stream: audio transport state: error -> mtu_ready reason=session_error_complete epoch=2 conn=1 mtu_ready=1 notify=0 value_max=500
+I (257989) ble_audio_stream: audio transport state: error -> disconnected reason=gap_disconnect epoch=2 conn=65535 mtu_ready=0 notify=0 value_max=244
+W (257869) audio_capture: stream audio packet batch failed: session_id=2 seq_start=76 packet_count=4 pcm_bytes=1920 ret=ESP_ERR_INVALID_STATE
+I (258019) ESP_HID_GAP: NimBLE bonded peers=1
+W (258029) audio_capture: stream session error after transport failure failed: session_id=2 expected_packet_count=76 error_code=3 ret=ESP_ERR_INVALID_STATE
+I (258039) ESP_HID_GAP: NimBLE directed advertising started: peer_type=0 peer_addr=ac:92:ef:77:d5:4c
+W (258049) audio_capture: record session aborted after BLE transport failure: session_id=2
+I (257929) ble_hid: DISCONNECT: UNKNOWN
+I (258099) voice_rec_ctrl: recording session finished
+I (258099) voice_rec_ctrl: device_status state=ready detail=recording_session_finished
+I (258439) ESP_HID_GAP: encryption change event; status=0
+I (258439) ESP_HID_GAP: service changed indication queued for refreshed GATT discovery
+I (258439) ESP_HID_GAP: security state after encryption: encrypted=1 authenticated=0 bonded=1 key_size=16
+I (258449) ESP_HID_GAP: subscribe event; conn_handle=1 attr_handle=22 reason=3 prevn=0 curn=1 previ=0 curi=0
+I (258459) ESP_HID_GAP: subscribe event; conn_handle=1 attr_handle=41 reason=3 prevn=0 curn=1 previ=0 curi=0
+I (258469) ESP_HID_GAP: subscribe event; conn_handle=1 attr_handle=3 reason=3 prevn=0 curn=1 previ=0 curi=0
+I (258479) ble_audio_stream: audio notify subscription deferred until connect: pending_epoch=3 conn=1 attr=3 notify=1
+I (258489) ESP_HID_GAP: audio notify subscribed: conn_handle=1 interval_units=6 interval_ms=7.50 latency=0 supervision_timeout_units=800 supervision_timeout_ms=8000
+I (258499) audio_capture: frame captured count=12900 bytes=8256000
+I (258509) ESP_HID_GAP: connection established; status=0
+I (258519) ble_audio_stream: audio transport epoch advanced: epoch=3 reason=gap_connect stale_subscribe=0 stale_mtu=0 stale_notify_tx=0 stale_disconnect=0
+I (258509) ble_hid: CONNECT
+I (258529) ble_audio_stream: audio transport state: disconnected -> connected reason=gap_connect epoch=3 conn=1 mtu_ready=0 notify=0 value_max=244
+I (258549) ble_audio_stream: audio notify subscription restored before connect: epoch=3 conn=1 notify=1 window=3
+I (258559) ble_audio_stream: audio notify packet size updated: conn=1 value_max=244 payload_max=224
+I (258559) ESP_HID_GAP: security state before initiate: encrypted=1 authenticated=0 bonded=1 key_size=16
+I (258569) ESP_HID_GAP: security initiate requested
+I (258579) ESP_HID_GAP: audio connection parameter update requested
+I (258579) ESP_HID_GAP: audio 2M PHY preference requested
+I (258589) ESP_HID_GAP: mtu update event; conn_handle=1 cid=4 mtu=517
+I (258599) ble_audio_stream: audio notify mtu updated: conn=1 mtu=517
+I (258599) ble_audio_stream: audio notify packet size updated: conn=1 value_max=500 payload_max=480
+I (258609) ble_audio_stream: audio transport state: connected -> subscribed reason=gap_mtu epoch=3 conn=1 mtu_ready=1 notify=1 value_max=500
+I (258619) ble_audio_stream: audio transport state: subscribed -> stream_ready reason=gap_mtu epoch=3 conn=1 mtu_ready=1 notify=1 value_max=500
+I (258649) ESP_HID_GAP: encryption change event; status=0
+I (258649) ESP_HID_GAP: service changed indication queued for refreshed GATT discovery
+I (258649) ESP_HID_GAP: security state after encryption: encrypted=1 authenticated=0 bonded=1 key_size=16
+I (258659) ESP_HID_GAP: subscribe event; conn_handle=1 attr_handle=22 reason=3 prevn=0 curn=1 previ=0 curi=0
+I (258669) ESP_HID_GAP: subscribe event; conn_handle=1 attr_handle=41 reason=3 prevn=0 curn=1 previ=0 curi=0
+I (258679) ESP_HID_GAP: subscribe event; conn_handle=1 attr_handle=3 reason=3 prevn=0 curn=1 previ=0 curi=0
+I (258689) ble_audio_stream: audio notify subscription changed: epoch=3 conn=1 attr=3 notify=1 window=3
+I (258699) ble_audio_stream: audio notify packet size updated: conn=1 value_max=500 payload_max=480
+I (258709) ble_audio_stream: audio transport state: stream_ready -> subscribed reason=gap_subscribe_notify_on epoch=3 conn=1 mtu_ready=1 notify=1 value_max=500
+I (258719) ble_audio_stream: audio transport state: subscribed -> stream_ready reason=gap_subscribe_notify_on epoch=3 conn=1 mtu_ready=1 notify=1 value_max=500
+I (258739) ESP_HID_GAP: audio notify subscribed: conn_handle=1 interval_units=6 interval_ms=7.50 latency=0 supervision_timeout_units=800 supervision_timeout_ms=8000
+I (259509) audio_capture: frame captured count=12950 bytes=8288000
+I (260509) audio_capture: frame captured count=13000 bytes=8320000
+I (261499) audio_capture: frame captured count=13050 bytes=8352000
+I (262509) audio_capture: frame captured count=13100 bytes=8384000
+I (262579) voice_key_input: voice key candidate level changed: source=gpio35.ec11_key raw_high=0
+I (262739) voice_key_input: voice key candidate level changed: source=gpio35.ec11_key raw_high=1
+I (262739) voice_key_input: gpio35.ec11_key short press detected
+I (262749) audio_capture: record session begin requested: session_id=3 buffer_ms=60 buffer_bytes=1920 safety_max_s=600 packet_payload_bytes=480 packet_safe_max_s=600
+I (262749) ble_audio_stream: audio transport state: stream_ready -> streaming reason=session_start_queued epoch=3 conn=1 mtu_ready=1 notify=1 value_max=500
+I (262749) voice_rec_ctrl: recording start source=ec11_key
+I (262769) audio_capture: stream session start queued: session_id=3
+I (262769) voice_rec_ctrl: device_status state=recording detail=capture_active
+I (262789) audio_capture: stream audio packet batch queued: session_id=3 seq_start=0 packet_count=4 pcm_bytes=1920
+I (263749) audio_capture: stream audio packet batch queued: session_id=3 seq_start=64 packet_count=4 pcm_bytes=1920
+I (264709) audio_capture: stream audio packet batch queued: session_id=3 seq_start=128 packet_count=4 pcm_bytes=1920
+I (265669) audio_capture: stream audio packet batch queued: session_id=3 seq_start=192 packet_count=4 pcm_bytes=1920
+I (265999) voice_key_input: voice key candidate level changed: source=gpio35.ec11_key raw_high=0
+I (266199) voice_key_input: voice key candidate level changed: source=gpio35.ec11_key raw_high=1
+I (266199) voice_key_input: gpio35.ec11_key short press detected
+I (266229) audio_capture: record session stop requested
+I (266229) voice_rec_ctrl: recording stop source=ec11_key
+I (266229) voice_rec_ctrl: device_status state=transferring detail=audio_session_finishing
+I (266229) ble_audio_stream: audio transport state: streaming -> draining reason=session_stop_queued epoch=3 conn=1 mtu_ready=1 notify=1 value_max=500
+I (266249) audio_capture: stream session stop queued: session_id=3 expected_packet_count=234 duration_s=3
+I (266249) ble_audio_stream: audio session stop: session=3 expected_packet_count=234
+I (266339) voice_rec_ctrl: recording session finished
+I (266339) voice_rec_ctrl: device_status state=ready detail=recording_session_finished
+I (266509) audio_capture: frame captured count=13300 bytes=8512000
+I (267449) ble_audio_stream: audio session transport summary: session=3 reason=stop expected_packet_count=234 notify_sent=238 notify_failed=0 notify_retries=0 retry_mbuf=0 retry_enomem=0 retry_tx_timeout=0 retry_tx_status=0 retry_other=0 audio_sent=234 audio_failed=0 queue_jobs_purged=0 pool_high_water=17 pool_capacity=36 pool_alloc_failed=0 queue_full=0 last_drop_reason=none last_error=0
+I (267469) ble_audio_stream: audio transport state: draining -> stopped reason=session_stop_drained epoch=3 conn=1 mtu_ready=1 notify=1 value_max=500
+I (267479) ble_audio_stream: audio transport state: stopped -> subscribed reason=session_stop_complete epoch=3 conn=1 mtu_ready=1 notify=1 value_max=500
+I (267489) ble_audio_stream: audio transport state: subscribed -> stream_ready reason=session_stop_complete epoch=3 conn=1 mtu_ready=1 notify=1 value_max=500
+I (267509) audio_capture: frame captured count=13350 bytes=8544000
+I (268509) audio_capture: frame captured count=13400 bytes=8576000
+I (269509) audio_capture: frame captured count=13450 bytes=8608000
+I (270509) audio_capture: frame captured count=13500 bytes=8640000
+I (271509) audio_capture: frame captured count=13550 bytes=8672000
+I (272509) audio_capture: frame captured count=13600 bytes=8704000
+I (273509) audio_capture: frame captured count=13650 bytes=8736000
+I (274509) audio_capture: frame captured count=13700 bytes=8768000
+I (275509) audio_capture: frame captured count=13750 bytes=8800000
+I (276509) audio_capture: frame captured count=13800 bytes=8832000
+I (277509) audio_capture: frame captured count=13850 bytes=8864000
+I (278509) audio_capture: frame captured count=13900 bytes=8896000
+I (279509) audio_capture: frame captured count=13950 bytes=8928000
+I (280509) audio_capture: frame captured count=14000 bytes=8960000
+I (281509) audio_capture: frame captured count=14050 bytes=8992000
+I (282509) audio_capture: frame captured count=14100 bytes=9024000
+I (283509) audio_capture: frame captured count=14150 bytes=9056000
+I (284509) audio_capture: frame captured count=14200 bytes=9088000
+I (285509) audio_capture: frame captured count=14250 bytes=9120000
+I (286509) audio_capture: frame captured count=14300 bytes=9152000
+I (287509) audio_capture: frame captured count=14350 bytes=9184000
+I (288509) audio_capture: frame captured count=14400 bytes=9216000
+I (289509) audio_capture: frame captured count=14450 bytes=9248000
+I (290509) audio_capture: frame captured count=14500 bytes=9280000
+I (291509) audio_capture: frame captured count=14550 bytes=9312000
+I (292509) audio_capture: frame captured count=14600 bytes=9344000
+I (293509) audio_capture: frame captured count=14650 bytes=9376000
+I (294509) audio_capture: frame captured count=14700 bytes=9408000
+I (295509) audio_capture: frame captured count=14750 bytes=9440000
+I (296509) audio_capture: frame captured count=14800 bytes=9472000
+I (297509) audio_capture: frame captured count=14850 bytes=9504000
+I (298509) audio_capture: frame captured count=14900 bytes=9536000
+I (299509) audio_capture: frame captured count=14950 bytes=9568000
+I (300509) audio_capture: frame captured count=15000 bytes=9600000
+I (301509) audio_capture: frame captured count=15050 bytes=9632000
+I (302509) audio_capture: frame captured count=15100 bytes=9664000
+I (303509) audio_capture: frame captured count=15150 bytes=9696000
+I (304509) audio_capture: frame captured count=15200 bytes=9728000
+I (305509) audio_capture: frame captured count=15250 bytes=9760000
+I (306509) audio_capture: frame captured count=15300 bytes=9792000
+I (307509) audio_capture: frame captured count=15350 bytes=9824000
+I (308509) audio_capture: frame captured count=15400 bytes=9856000
+I (309509) audio_capture: frame captured count=15450 bytes=9888000
+I (310509) audio_capture: frame captured count=15500 bytes=9920000
+I (311509) audio_capture: frame captured count=15550 bytes=9952000
+I (312509) audio_capture: frame captured count=15600 bytes=9984000
+I (313509) audio_capture: frame captured count=15650 bytes=10016000
+I (314509) audio_capture: frame captured count=15700 bytes=10048000
+I (315509) audio_capture: frame captured count=15750 bytes=10080000
+I (316509) audio_capture: frame captured count=15800 bytes=10112000
+I (317509) audio_capture: frame captured count=15850 bytes=10144000
+I (318509) audio_capture: frame captured count=15900 bytes=10176000
+I (319509) audio_capture: frame captured count=15950 bytes=10208000
+I (320509) audio_capture: frame captured count=16000 bytes=10240000
+I (321509) audio_capture: frame captured count=16050 bytes=10272000
+I (322509) audio_capture: frame captured count=16100 bytes=10304000
+I (323509) audio_capture: frame captured count=16150 bytes=10336000
+I (324509) audio_capture: frame captured count=16200 bytes=10368000
+I (325509) audio_capture: frame captured count=16250 bytes=10400000
+I (326509) audio_capture: frame captured count=16300 bytes=10432000
+I (327509) audio_capture: frame captured count=16350 bytes=10464000
+I (328509) audio_capture: frame captured count=16400 bytes=10496000
+I (329509) audio_capture: frame captured count=16450 bytes=10528000
+I (330509) audio_capture: frame captured count=16500 bytes=10560000
+I (331509) audio_capture: frame captured count=16550 bytes=10592000
+I (332509) audio_capture: frame captured count=16600 bytes=10624000
+I (333509) audio_capture: frame captured count=16650 bytes=10656000
+I (334509) audio_capture: frame captured count=16700 bytes=10688000
+I (335509) audio_capture: frame captured count=16750 bytes=10720000
+I (336509) audio_capture: frame captured count=16800 bytes=10752000
+I (337509) audio_capture: frame captured count=16850 bytes=10784000
+I (338509) audio_capture: frame captured count=16900 bytes=10816000
+I (339509) audio_capture: frame captured count=16950 bytes=10848000
+I (340509) audio_capture: frame captured count=17000 bytes=10880000
+I (341509) audio_capture: frame captured count=17050 bytes=10912000
+I (342509) audio_capture: frame captured count=17100 bytes=10944000
+I (343509) audio_capture: frame captured count=17150 bytes=10976000
+I (344509) audio_capture: frame captured count=17200 bytes=11008000
+I (345509) audio_capture: frame captured count=17250 bytes=11040000
+I (346509) audio_capture: frame captured count=17300 bytes=11072000
+I (347509) audio_capture: frame captured count=17350 bytes=11104000
+I (348509) audio_capture: frame captured count=17400 bytes=11136000
+I (349509) audio_capture: frame captured count=17450 bytes=11168000
+I (350509) audio_capture: frame captured count=17500 bytes=11200000
+I (351509) audio_capture: frame captured count=17550 bytes=11232000
+I (352509) audio_capture: frame captured count=17600 bytes=11264000
