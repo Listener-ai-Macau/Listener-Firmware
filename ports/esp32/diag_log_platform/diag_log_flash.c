@@ -3,6 +3,7 @@
 #include <inttypes.h>
 #include <stdbool.h>
 #include <stddef.h>
+#include <stdlib.h>
 #include <string.h>
 
 #include "esp_log.h"
@@ -49,17 +50,11 @@ static uint16_t s_write_sector;
 static uint16_t s_write_offset;
 static uint16_t s_sector_sequence;
 static uint32_t s_retained_events;
+static uint32_t s_capacity_events;
 static bool s_initialized;
 
-/* USB command parser */
-#define DIAG_USB_PREFIX '~'
 #define DIAG_USB_CMD_PREFIX "DIAGLOG:"
 #define DIAG_USB_CMD_MAX 32
-
-static bool s_usb_active;
-static bool s_usb_prefix_matched;
-static size_t s_usb_length;
-static char s_usb_buffer[DIAG_USB_CMD_MAX];
 
 static uint32_t timestamp_ms(void)
 {
@@ -92,6 +87,14 @@ static esp_err_t read_event(uint16_t sector, uint16_t index, diag_event_t *evt)
     return esp_partition_read(s_partition, offset, evt, DIAG_EVENT_SIZE);
 }
 
+static uint16_t retained_count_from_header(const diag_sector_header_t *header)
+{
+    if (header == NULL || header->magic != DIAG_LOG_MAGIC) {
+        return 0;
+    }
+    return header->count > DIAG_EVENTS_PER_SECTOR ? DIAG_EVENTS_PER_SECTOR : header->count;
+}
+
 static void find_write_position(void)
 {
     uint16_t best_seq = 0;
@@ -107,13 +110,18 @@ static void find_write_position(void)
             continue;
         }
 
-        s_retained_events += header.count;
+        uint16_t count = retained_count_from_header(&header);
+        s_retained_events += count;
 
         if (header.sequence > best_seq || best_seq == 0) {
             best_seq = header.sequence;
             best_sector = (uint16_t)i;
-            best_count = header.count;
+            best_count = count;
         }
+    }
+
+    if (s_retained_events > s_capacity_events) {
+        s_retained_events = s_capacity_events;
     }
 
     if (best_seq == 0) {
@@ -171,6 +179,7 @@ void diag_log_platform_init(void)
     }
 
     s_total_sectors = s_partition->size / DIAG_LOG_SECTOR_SIZE;
+    s_capacity_events = s_total_sectors * DIAG_EVENTS_PER_SECTOR;
     ESP_LOGI(TAG, "diag_log partition: %uKB %u sectors",
              (unsigned)(s_partition->size / 1024), (unsigned)s_total_sectors);
 
@@ -213,6 +222,12 @@ void diag_log_platform_write(
     xSemaphoreTake(s_mutex, portMAX_DELAY);
 
     if (s_write_offset == 0) {
+        diag_sector_header_t old_header;
+        if (read_sector_header(s_write_sector, &old_header) == ESP_OK) {
+            uint16_t old_count = retained_count_from_header(&old_header);
+            s_retained_events = old_count > s_retained_events ? 0 : s_retained_events - old_count;
+        }
+
         esp_err_t ret = erase_sector(s_write_sector);
         if (ret != ESP_OK) {
             ESP_LOGW(TAG, "erase sector %u failed: %s", (unsigned)s_write_sector, esp_err_to_name(ret));
@@ -245,7 +260,9 @@ void diag_log_platform_write(
     }
 
     s_write_offset++;
-    s_retained_events++;
+    if (s_retained_events < s_capacity_events) {
+        s_retained_events++;
+    }
 
     diag_sector_header_t header;
     read_sector_header(s_write_sector, &header);
@@ -293,7 +310,7 @@ void diag_log_platform_dump(void)
     for (uint32_t sec = 0; sec < s_total_sectors; sec++) {
         diag_sector_header_t header;
         if (read_sector_header((uint16_t)sec, &header) == ESP_OK
-            && header.magic == DIAG_LOG_MAGIC && header.count > 0) {
+            && header.magic == DIAG_LOG_MAGIC && retained_count_from_header(&header) > 0) {
             if (header.sequence < min_seq) {
                 min_seq = header.sequence;
                 start_sec = (uint16_t)sec;
@@ -306,11 +323,15 @@ void diag_log_platform_dump(void)
         uint16_t sec = (start_sec + (uint16_t)i) % (uint16_t)s_total_sectors;
         diag_sector_header_t header;
         esp_err_t ret = read_sector_header(sec, &header);
-        if (ret != ESP_OK || header.magic != DIAG_LOG_MAGIC || header.count == 0) {
+        if (ret != ESP_OK) {
+            continue;
+        }
+        uint16_t count = retained_count_from_header(&header);
+        if (count == 0) {
             continue;
         }
 
-        for (uint16_t idx = 0; idx < header.count; idx++) {
+        for (uint16_t idx = 0; idx < count; idx++) {
             diag_event_t evt;
             ret = read_event(sec, idx, &evt);
             if (ret != ESP_OK) continue;
@@ -346,7 +367,7 @@ void diag_log_platform_dump_last(uint32_t count)
     for (uint32_t sec = 0; sec < s_total_sectors; sec++) {
         diag_sector_header_t header;
         if (read_sector_header((uint16_t)sec, &header) == ESP_OK
-            && header.magic == DIAG_LOG_MAGIC) {
+            && header.magic == DIAG_LOG_MAGIC && retained_count_from_header(&header) > 0) {
             if (header.sequence < min_seq) {
                 min_seq = header.sequence;
                 start_sec = (uint16_t)sec;
@@ -360,11 +381,15 @@ void diag_log_platform_dump_last(uint32_t count)
         uint16_t sec = (start_sec + (uint16_t)i) % (uint16_t)s_total_sectors;
         diag_sector_header_t header;
         esp_err_t ret = read_sector_header(sec, &header);
-        if (ret != ESP_OK || header.magic != DIAG_LOG_MAGIC || header.count == 0) {
+        if (ret != ESP_OK) {
+            continue;
+        }
+        uint16_t sector_count = retained_count_from_header(&header);
+        if (sector_count == 0) {
             continue;
         }
 
-        for (uint16_t idx = 0; idx < header.count; idx++) {
+        for (uint16_t idx = 0; idx < sector_count; idx++) {
             if (skipped < skip) {
                 skipped++;
                 continue;
@@ -403,105 +428,53 @@ void diag_log_platform_clear(void)
     ESP_LOGI(TAG, "DIAGLOG CLEAR: all logs erased");
 }
 
-/*
- * USB command parser: ~DIAGLOG:DUMP / ~DIAGLOG:COUNT / ~DIAGLOG:CLEAR / ~DIAGLOG:LAST:N
- *
- * Only consumes bytes that are part of a recognized ~DIAGLOG: command.
- * Non-DIAGLOG ~ commands (e.g. ~VREC:TOGGLE) are NOT consumed — the parser
- * resets and returns false so the caller can pass the bytes to the next handler.
- */
-bool diag_log_consume_usb_command(uint8_t input_char)
+bool diag_log_consume_usb_command(const char *line)
 {
-    if (!s_usb_active) {
-        if (input_char == (uint8_t)DIAG_USB_PREFIX) {
-            s_usb_active = true;
-            s_usb_prefix_matched = false;
-            s_usb_length = 0;
-            memset(s_usb_buffer, 0, sizeof(s_usb_buffer));
-            return true; /* consumed the ~ */
-        }
+    if (line == NULL) {
         return false;
     }
 
-    /* Still checking if this is DIAGLOG: prefix */
-    if (!s_usb_prefix_matched) {
-        if (input_char == '\r') {
-            return true; /* consume CR inside potential command */
-        }
+    if (*line == '~') {
+        line++;
+    }
 
-        if (input_char == '\n') {
-            /* End of command before DIAGLOG: prefix matched */
-            s_usb_active = false;
-            /* This was not a DIAGLOG command, but we already consumed the ~ */
+    size_t prefix_len = strlen(DIAG_USB_CMD_PREFIX);
+    if (strncmp(line, DIAG_USB_CMD_PREFIX, prefix_len) != 0) {
+        return false;
+    }
+
+    char cmd_buffer[DIAG_USB_CMD_MAX] = {0};
+    const char *cmd_start = line + prefix_len;
+    size_t cmd_len = 0;
+    while (cmd_start[cmd_len] != '\0' && cmd_start[cmd_len] != '\r' && cmd_start[cmd_len] != '\n') {
+        if (cmd_len + 1 >= sizeof(cmd_buffer)) {
+            ESP_LOGW(TAG, "DIAGLOG: command too long");
             return true;
         }
+        cmd_buffer[cmd_len] = cmd_start[cmd_len];
+        cmd_len++;
+    }
 
-        /* Build up prefix to check against DIAGLOG: */
-        if (s_usb_length < strlen(DIAG_USB_CMD_PREFIX)) {
-            s_usb_buffer[s_usb_length++] = (char)input_char;
-            s_usb_buffer[s_usb_length] = '\0';
-
-            /* Check if still matches DIAGLOG: prefix so far */
-            if (strncmp(s_usb_buffer, DIAG_USB_CMD_PREFIX, s_usb_length) != 0) {
-                /* Not a DIAGLOG command — reset and return consumed (we ate the ~) */
-                s_usb_active = false;
-                return true;
-            }
-
-            /* Full prefix matched */
-            if (s_usb_length == strlen(DIAG_USB_CMD_PREFIX)) {
-                s_usb_prefix_matched = true;
-                s_usb_length = 0;
-                memset(s_usb_buffer, 0, sizeof(s_usb_buffer));
-            }
-            return true;
+    if (strcmp(cmd_buffer, "DUMP") == 0) {
+        diag_log_platform_dump();
+        return true;
+    }
+    if (strcmp(cmd_buffer, "COUNT") == 0) {
+        ESP_LOGI(TAG, "DIAGLOG COUNT: %" PRIu32, diag_log_platform_count());
+        return true;
+    }
+    if (strcmp(cmd_buffer, "CLEAR") == 0) {
+        diag_log_platform_clear();
+        return true;
+    }
+    if (strncmp(cmd_buffer, "LAST:", 5) == 0) {
+        uint32_t n = (uint32_t)atoi(cmd_buffer + 5);
+        if (n > 0) {
+            diag_log_platform_dump_last(n);
         }
-
-        /* Shouldn't reach here */
-        s_usb_active = false;
         return true;
     }
 
-    /* Prefix matched, now collecting the command */
-    if (input_char == '\r') {
-        return true;
-    }
-
-    if (input_char == '\n') {
-        s_usb_active = false;
-        s_usb_buffer[s_usb_length] = '\0';
-
-        const char *cmd = s_usb_buffer;
-
-        if (strcmp(cmd, "DUMP") == 0) {
-            diag_log_platform_dump();
-            return true;
-        }
-        if (strcmp(cmd, "COUNT") == 0) {
-            ESP_LOGI(TAG, "DIAGLOG COUNT: %" PRIu32, diag_log_platform_count());
-            return true;
-        }
-        if (strcmp(cmd, "CLEAR") == 0) {
-            diag_log_platform_clear();
-            return true;
-        }
-        if (strncmp(cmd, "LAST:", 5) == 0) {
-            uint32_t n = (uint32_t)atoi(cmd + 5);
-            if (n > 0) {
-                diag_log_platform_dump_last(n);
-            }
-            return true;
-        }
-
-        ESP_LOGW(TAG, "DIAGLOG: unknown command: %s", cmd);
-        return true;
-    }
-
-    if (s_usb_length + 1 >= sizeof(s_usb_buffer)) {
-        s_usb_active = false;
-        return true;
-    }
-
-    s_usb_buffer[s_usb_length++] = (char)input_char;
+    ESP_LOGW(TAG, "DIAGLOG: unknown command: %s", cmd_buffer);
     return true;
 }

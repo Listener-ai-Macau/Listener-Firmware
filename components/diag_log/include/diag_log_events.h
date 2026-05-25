@@ -43,7 +43,7 @@
 #define DIAG_KBD_QUEUE_DROP    5   /* a1=key_ascii, a2=queue_depth, a3=0, a4=0 */
 
 /* BLE HID events (DIAG_SRC_BLE_HID) */
-#define DIAG_BLE_CONNECT       1   /* a1=mtu, a2=conn_interval, a3=0, a4=0 */
+#define DIAG_BLE_CONNECT       1   /* a1=connected, a2=heap_kb, a3=disconnect_count, a4=0 */
 #define DIAG_BLE_DISCONNECT    2   /* a1=reason, a2=disconnect_count, a3=conn_duration_ms, a4=pre_state(heap/1024) */
 #define DIAG_BLE_HID_SEND_FAIL 3   /* a1=key_ascii, a2=esp_err, a3=ble_connected, a4=0 */
 #define DIAG_BLE_BATTERY_WARN  4   /* a1=level, a2=voltage_mv, a3=0, a4=0 */
@@ -73,8 +73,8 @@
 #define DIAG_BAUD_LINK_TIMEOUT 5   /* a1=session_id, a2=waited_ms, a3=0, a4=0 */
 
 /* Voice recording events (DIAG_SRC_VOICE_REC) */
-#define DIAG_VREC_SESSION      1   /* a1=type(1=start,2=stop,3=cancel), a2=source, a3=session_count, a4=0 */
-#define DIAG_VREC_REJECTED     2   /* a1=source, a2=reject_reason, a3=current_state, a4=0 */
+#define DIAG_VREC_SESSION      1   /* a1=type(1=start,2=stop,3=cancel), a2=source_code, a3=session_count, a4=0 */
+#define DIAG_VREC_REJECTED     2   /* a1=source_code, a2=reject_reason, a3=current_state, a4=0 */
 
 /* Voice key events (DIAG_SRC_VOICE_KEY) */
 #define DIAG_VKEY_PRESS        1   /* a1=type(1=short,2=recovery_hold), a2=0, a3=0, a4=0 */

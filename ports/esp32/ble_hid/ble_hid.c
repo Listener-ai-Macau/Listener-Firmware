@@ -50,6 +50,8 @@ static const char *TAG = "ble_hid";
 #define BLE_HID_BATTERY_EMPTY_MV 3000U
 #define BLE_HID_BATTERY_FULL_MV 4200U
 #define BLE_HID_BATTERY_TASK_STACK_BYTES (4 * 1024)
+#define BLE_HID_USB_COMMAND_PREFIX '~'
+#define BLE_HID_USB_COMMAND_BUFFER_BYTES 64
 
 typedef struct
 {
@@ -90,6 +92,9 @@ static esp_hid_device_config_t s_ble_hid_config = {
 };
 
 static bool s_usb_serial_ready = false;
+static bool s_usb_command_active;
+static size_t s_usb_command_length;
+static char s_usb_command_buffer[BLE_HID_USB_COMMAND_BUFFER_BYTES];
 
 static bool s_ble_connected;
 static uint32_t s_disconnect_count;
@@ -329,6 +334,65 @@ static esp_err_t ble_hid_usb_serial_init(void)
     return ESP_OK;
 }
 
+static void ble_hid_dispatch_voice_recording_command(const char *line)
+{
+    for (const char *cursor = line; cursor != NULL && *cursor != '\0'; cursor++) {
+        voice_recording_control_consume_usb_control_byte((uint8_t)*cursor);
+    }
+    voice_recording_control_consume_usb_control_byte((uint8_t)'\n');
+}
+
+static bool ble_hid_dispatch_usb_command_line(const char *line)
+{
+    if (diag_log_consume_usb_command(line)) {
+        return true;
+    }
+
+    if (strncmp(line, "~VREC:", strlen("~VREC:")) == 0) {
+        ble_hid_dispatch_voice_recording_command(line);
+        return true;
+    }
+
+    ESP_LOGW(TAG, "drop unknown USB control command: %s", line);
+    return true;
+}
+
+static bool ble_hid_consume_usb_command_byte(uint8_t input_char)
+{
+    if (!s_usb_command_active) {
+        if (input_char != (uint8_t)BLE_HID_USB_COMMAND_PREFIX) {
+            return false;
+        }
+
+        s_usb_command_active = true;
+        s_usb_command_length = 0;
+        memset(s_usb_command_buffer, 0, sizeof(s_usb_command_buffer));
+        s_usb_command_buffer[s_usb_command_length++] = (char)input_char;
+        return true;
+    }
+
+    if (input_char == '\r') {
+        return true;
+    }
+
+    if (input_char == '\n') {
+        s_usb_command_active = false;
+        s_usb_command_buffer[s_usb_command_length] = '\0';
+        return ble_hid_dispatch_usb_command_line(s_usb_command_buffer);
+    }
+
+    if (s_usb_command_length + 1 >= sizeof(s_usb_command_buffer)) {
+        s_usb_command_active = false;
+        s_usb_command_length = 0;
+        memset(s_usb_command_buffer, 0, sizeof(s_usb_command_buffer));
+        ESP_LOGW(TAG, "drop USB control command: too long");
+        return true;
+    }
+
+    s_usb_command_buffer[s_usb_command_length++] = (char)input_char;
+    return true;
+}
+
 static void ble_hid_keyboard_task(void *parameter)
 {
     (void)parameter;
@@ -349,11 +413,7 @@ static void ble_hid_keyboard_task(void *parameter)
             for (int index = 0; index < bytes_read; ++index) {
                 int input_char = (unsigned char)rx_buffer[index];
 
-                if (diag_log_consume_usb_command((uint8_t)input_char)) {
-                    continue;
-                }
-
-                if (voice_recording_control_consume_usb_control_byte((uint8_t)input_char)) {
+                if (ble_hid_consume_usb_command_byte((uint8_t)input_char)) {
                     continue;
                 }
 
@@ -425,7 +485,7 @@ static void ble_hid_event_callback(void *handler_args, esp_event_base_t base, in
         s_connect_timestamp_ms = (uint32_t)(esp_timer_get_time() / 1000LL);
         ble_hid_update_battery_level("connect");
         diag_log(DIAG_SRC_BLE_HID, DIAG_BLE_CONNECT, DIAG_SEV_INFO,
-                 0, 0, 0, 0);
+                 1, esp_get_free_heap_size() / 1024, s_disconnect_count, 0);
         break;
     case ESP_HIDD_PROTOCOL_MODE_EVENT:
         ESP_LOGI(

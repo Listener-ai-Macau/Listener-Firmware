@@ -3,6 +3,7 @@
 #include "listener_device.h"
 
 #include "esp_log.h"
+#include "esp_err.h"
 #include "esp_system.h"
 #include "diag_log.h"
 
@@ -48,6 +49,18 @@ self_test_result_t self_test_run(void)
     result.spiram_required = self_test_platform_spiram_required();
     result.spiram_ok = self_test_platform_check_spiram();
     result.free_heap = self_test_platform_get_free_heap();
+    diag_log(DIAG_SRC_SYSTEM, DIAG_SYS_INIT_RESULT,
+             result.nvs_ok ? DIAG_SEV_INFO : DIAG_SEV_ERROR,
+             DIAG_COMP_NVS,
+             result.nvs_ok ? 0 : (uint32_t)result.nvs_error,
+             result.nvs_recovered ? 1 : 0,
+             0);
+    diag_log(DIAG_SRC_SYSTEM, DIAG_SYS_INIT_RESULT,
+             (result.spiram_ok || !result.spiram_required) ? DIAG_SEV_INFO : DIAG_SEV_ERROR,
+             DIAG_COMP_SPIRAM,
+             result.spiram_ok ? 0 : (uint32_t)ESP_ERR_NOT_FOUND,
+             result.spiram_required ? 1 : 0,
+             0);
 
     ESP_LOGI(TAG, "POST: nvs=%s nvs_err=%d ble=PENDING audio=PENDING spiram=%s heap=%lu fw=%s proto=%s",
              self_test_nvs_status(&result),

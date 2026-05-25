@@ -4,6 +4,8 @@
 void diag_log_init(void)
 {
     diag_log_platform_init();
+    diag_log_write(DIAG_SRC_SYSTEM, DIAG_SYS_INIT_RESULT, DIAG_SEV_INFO,
+                   DIAG_COMP_DIAG_LOG, 0, 0, 0);
 }
 
 void diag_log_write(uint16_t source, uint8_t event, uint8_t severity,

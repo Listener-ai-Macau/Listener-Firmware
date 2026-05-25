@@ -12,8 +12,7 @@ void diag_log_platform_dump(void);
 void diag_log_platform_dump_last(uint32_t count);
 void diag_log_platform_clear(void);
 
-/* Returns true if the byte was consumed as part of a ~DIAGLOG: command.
-   Non-DIAGLOG ~ commands (e.g. ~VREC:*) are NOT consumed. */
-bool diag_log_consume_usb_command(uint8_t input_char);
+/* Returns true only for complete ~DIAGLOG:* command lines. */
+bool diag_log_consume_usb_command(const char *line);
 
 #endif /* DIAG_LOG_PLATFORM_H */

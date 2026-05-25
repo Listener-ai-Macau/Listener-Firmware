@@ -5,21 +5,15 @@
 #include "diag_log.h"
 
 #include "esp_log.h"
-#include "esp_reset.h"
+#include "esp_system.h"
 
 static const char *TAG = "app_main";
 
 void app_main(void)
 {
     self_test_init();
-    self_test_result_t post = self_test_run();
-    if (!self_test_critical_ok(&post)) {
-        ESP_LOGE(TAG, "POST failed; continuing in degraded mode so BLE can expose device status");
-    }
-
     diag_log_init();
 
-    /* Log boot reason */
     esp_reset_reason_t reset_reason = esp_reset_reason();
     uint32_t boot_reason = 0;
     switch (reset_reason) {
@@ -32,6 +26,11 @@ void app_main(void)
     }
     diag_log(DIAG_SRC_SYSTEM, DIAG_SYS_BOOT, DIAG_SEV_INFO,
              boot_reason, 0, 0, 0);
+
+    self_test_result_t post = self_test_run();
+    if (!self_test_critical_ok(&post)) {
+        ESP_LOGE(TAG, "POST failed; continuing in degraded mode so BLE can expose device status");
+    }
 
     ble_hid_init();
     keyboard_start();
