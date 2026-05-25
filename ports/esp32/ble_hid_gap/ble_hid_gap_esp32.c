@@ -15,6 +15,7 @@
 
 #include "ble_hid_gap.h"
 #include "ble_audio_stream.h"
+#include "diag_log.h"
 
 #include "esp_bt.h"
 #include "esp_log.h"
@@ -144,6 +145,8 @@ nimble_hid_gap_event(struct ble_gap_event *event, void *arg)
                  event->connect.status == 0 ? "established" : "failed",
                  event->connect.status);
         if (event->connect.status != 0) {
+            diag_log(DIAG_SRC_BLE_GAP, DIAG_GAP_BOND, DIAG_SEV_WARN,
+                     0, (uint32_t)event->connect.status, event->connect.conn_handle, 0);
             s_directed_adv_pending = false;
             ble_hid_gap_start_advertising();
             return 0;
@@ -163,6 +166,8 @@ nimble_hid_gap_event(struct ble_gap_event *event, void *arg)
                 desc.sec_state.authenticated,
                 desc.sec_state.bonded,
                 desc.sec_state.key_size);
+            diag_log(DIAG_SRC_BLE_GAP, DIAG_GAP_CONN_PARAM, DIAG_SEV_INFO,
+                     desc.conn_itvl, desc.conn_latency, desc.supervision_timeout, event->connect.conn_handle);
         } else {
             ESP_LOGW(TAG, "connection descriptor lookup failed before security initiate: rc=%d", rc);
         }
@@ -204,6 +209,8 @@ nimble_hid_gap_event(struct ble_gap_event *event, void *arg)
         return 0;
     case BLE_GAP_EVENT_DISCONNECT:
         ESP_LOGI(TAG, "disconnect; reason=%d", event->disconnect.reason);
+        diag_log(DIAG_SRC_BLE_GAP, DIAG_GAP_BOND, DIAG_SEV_WARN,
+                 0, (uint32_t)event->disconnect.reason, event->disconnect.conn.conn_handle, 0);
         s_ble_gap_connected = false;
         s_ble_gap_conn_handle = BLE_HS_CONN_HANDLE_NONE;
         ble_audio_stream_on_gap_disconnect(event->disconnect.conn.conn_handle);
@@ -216,6 +223,11 @@ nimble_hid_gap_event(struct ble_gap_event *event, void *arg)
         ESP_LOGI(TAG, "connection updated; status=%d",
                 event->conn_update.status);
         ble_hid_gap_log_conn_desc("connection updated", event->conn_update.conn_handle);
+        rc = ble_gap_conn_find(event->conn_update.conn_handle, &desc);
+        if (rc == 0) {
+            diag_log(DIAG_SRC_BLE_GAP, DIAG_GAP_CONN_PARAM, DIAG_SEV_INFO,
+                     desc.conn_itvl, desc.conn_latency, desc.supervision_timeout, event->conn_update.conn_handle);
+        }
         return 0;
 
     case BLE_GAP_EVENT_ADV_COMPLETE:
@@ -254,12 +266,20 @@ nimble_hid_gap_event(struct ble_gap_event *event, void *arg)
                 event->mtu.conn_handle,
                 event->mtu.channel_id,
                 event->mtu.value);
+        diag_log(DIAG_SRC_BLE_GAP, DIAG_GAP_MTU, DIAG_SEV_INFO,
+                 0, event->mtu.value, event->mtu.conn_handle, event->mtu.channel_id);
         ble_audio_stream_on_gap_mtu(event->mtu.conn_handle, event->mtu.value);
         return 0;
 
     case BLE_GAP_EVENT_ENC_CHANGE:
         /* Encryption has been enabled or disabled for this connection. */
         ESP_LOGI(TAG, "encryption change event; status=%d", event->enc_change.status);
+        diag_log(DIAG_SRC_BLE_GAP, DIAG_GAP_ENCRYPT,
+                 event->enc_change.status == 0 ? DIAG_SEV_INFO : DIAG_SEV_WARN,
+                 event->enc_change.status == 0 ? 1 : 0,
+                 (uint32_t)event->enc_change.status,
+                 event->enc_change.conn_handle,
+                 0);
         if (event->enc_change.status == 0) {
             ble_svc_gatt_changed(0x0001, 0xffff);
             ESP_LOGI(TAG, "service changed indication queued for refreshed GATT discovery");
@@ -305,9 +325,13 @@ nimble_hid_gap_event(struct ble_gap_event *event, void *arg)
         rc = ble_gap_conn_find(event->repeat_pairing.conn_handle, &desc);
         if (rc != 0) {
             ESP_LOGW(TAG, "repeat pairing: conn find failed rc=%d; ignoring", rc);
+            diag_log(DIAG_SRC_BLE_GAP, DIAG_GAP_BOND, DIAG_SEV_WARN,
+                     0, (uint32_t)rc, event->repeat_pairing.conn_handle, 0);
             return BLE_GAP_REPEAT_PAIRING_IGNORE;
         }
         ble_store_util_delete_peer(&desc.peer_id_addr);
+        diag_log(DIAG_SRC_BLE_GAP, DIAG_GAP_BOND, DIAG_SEV_INFO,
+                 1, 0, event->repeat_pairing.conn_handle, 0);
 
         /* Return BLE_GAP_REPEAT_PAIRING_RETRY to indicate that the host should
          * continue with the pairing operation.
@@ -389,12 +413,16 @@ esp_err_t esp_hid_ble_gap_adv_start(void)
     rc = ble_gap_adv_set_fields(&s_adv_fields);
     if (rc != 0) {
         ESP_LOGE(TAG, "error setting advertisement data; rc=%d", rc);
+        diag_log(DIAG_SRC_BLE_GAP, DIAG_GAP_ADV_START, DIAG_SEV_WARN,
+                 0, (uint32_t)rc, 1, 0);
         return ESP_FAIL;
     }
 
     rc = ble_gap_adv_rsp_set_fields(&s_scan_rsp_fields);
     if (rc != 0) {
         ESP_LOGE(TAG, "error setting scan response data; rc=%d", rc);
+        diag_log(DIAG_SRC_BLE_GAP, DIAG_GAP_ADV_START, DIAG_SEV_WARN,
+                 0, (uint32_t)rc, 2, 0);
         return ESP_FAIL;
     }
 
@@ -437,10 +465,14 @@ esp_err_t esp_hid_ble_gap_adv_start(void)
                 direct_peer_addr.val[3],
                 direct_peer_addr.val[4],
                 direct_peer_addr.val[5]);
+            diag_log(DIAG_SRC_BLE_GAP, DIAG_GAP_ADV_START, DIAG_SEV_INFO,
+                     1, 1, bonded_peer_count, 0);
             return ESP_OK;
         }
 
         ESP_LOGW(TAG, "directed advertising failed, fallback to undirected; rc=%d", rc);
+        diag_log(DIAG_SRC_BLE_GAP, DIAG_GAP_ADV_START, DIAG_SEV_WARN,
+                 0, (uint32_t)rc, 3, 0);
     }
 
     memset(&adv_params, 0, sizeof adv_params);
@@ -452,11 +484,15 @@ esp_err_t esp_hid_ble_gap_adv_start(void)
                            &adv_params, nimble_hid_gap_event, NULL);
     if (rc != 0) {
         ESP_LOGE(TAG, "error enabling undirected advertisement; rc=%d", rc);
+        diag_log(DIAG_SRC_BLE_GAP, DIAG_GAP_ADV_START, DIAG_SEV_WARN,
+                 0, (uint32_t)rc, 4, 0);
         return ESP_FAIL;
     }
 
     s_last_adv_was_directed = false;
     ESP_LOGI(TAG, "NimBLE undirected advertising started");
+    diag_log(DIAG_SRC_BLE_GAP, DIAG_GAP_ADV_START, DIAG_SEV_INFO,
+             1, 0, bonded_peer_count, 0);
     return ESP_OK;
 }
 
@@ -474,25 +510,30 @@ static esp_err_t init_low_level(uint8_t mode)
     ret = esp_bt_controller_mem_release(ESP_BT_MODE_CLASSIC_BT);
     if (ret) {
         ESP_LOGE(TAG, "esp_bt_controller_mem_release failed: %d", ret);
+        diag_log(DIAG_SRC_BLE_GAP, DIAG_GAP_CTRL_INIT, DIAG_SEV_ERROR, 1, (uint32_t)ret, 0, 0);
         return ret;
     }
     ret = esp_bt_controller_init(&bt_cfg);
     if (ret) {
         ESP_LOGE(TAG, "esp_bt_controller_init failed: %d", ret);
+        diag_log(DIAG_SRC_BLE_GAP, DIAG_GAP_CTRL_INIT, DIAG_SEV_ERROR, 2, (uint32_t)ret, 0, 0);
         return ret;
     }
 
     ret = esp_bt_controller_enable(mode);
     if (ret) {
         ESP_LOGE(TAG, "esp_bt_controller_enable failed: %d", ret);
+        diag_log(DIAG_SRC_BLE_GAP, DIAG_GAP_CTRL_INIT, DIAG_SEV_ERROR, 3, (uint32_t)ret, 0, 0);
         return ret;
     }
 
     ret = esp_nimble_init();
     if (ret) {
         ESP_LOGE(TAG, "esp_nimble_init failed: %d", ret);
+        diag_log(DIAG_SRC_BLE_GAP, DIAG_GAP_CTRL_INIT, DIAG_SEV_ERROR, 4, (uint32_t)ret, 0, 0);
         return ret;
     }
+    diag_log(DIAG_SRC_BLE_GAP, DIAG_GAP_CTRL_INIT, DIAG_SEV_INFO, 5, 0, mode, 0);
 
     ble_hs_cfg.sync_cb = nimble_hid_on_sync;
     ble_hs_cfg.reset_cb = nimble_hid_on_reset;

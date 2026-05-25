@@ -1,6 +1,6 @@
 choice AUDIO_CAPTURE_MIC_TYPE
     prompt "Microphone hardware type"
-    default AUDIO_CAPTURE_MIC_ES8311
+    default AUDIO_CAPTURE_MIC_SPH0645
     help
         Select the microphone hardware connected to the I2S interface.
         ES8311: Analog codec via I2C + I2S (legacy board).

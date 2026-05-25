@@ -30,6 +30,8 @@
 #endif
 
 #include "esp_log.h"
+#include "diag_log.h"
+#include "diag_log_events.h"
 
 /* ---------- Shared defines ---------- */
 
@@ -38,7 +40,10 @@
 #define AUDIO_CAPTURE_FRAME_SAMPLES     ((AUDIO_CAPTURE_SAMPLE_RATE_HZ * AUDIO_CAPTURE_FRAME_MS) / 1000)
 #define AUDIO_CAPTURE_FRAME_BYTES       (AUDIO_CAPTURE_FRAME_SAMPLES * sizeof(int16_t))
 #define AUDIO_CAPTURE_LOG_INTERVAL_FRAMES (50)
-#define AUDIO_CAPTURE_SESSION_SAFETY_MAX_SECONDS (600)
+#define AUDIO_CAPTURE_TASK_STACK_BYTES  (6 * 1024)
+/* Recording duration is user-controlled (KEY1 toggle); no fixed upper limit.
+ * The only hard limit is uint16_t packet_sequence overflow in the BLE protocol,
+ * which is handled gracefully by sending session_stop before overflow. */
 #define AUDIO_CAPTURE_STREAM_BATCH_FRAMES 3
 #define AUDIO_CAPTURE_STREAM_BATCH_BYTES (AUDIO_CAPTURE_STREAM_BATCH_FRAMES * AUDIO_CAPTURE_FRAME_BYTES)
 #define AUDIO_CAPTURE_STREAM_PROGRESS_LOG_PACKET_INTERVAL 64U
@@ -49,6 +54,12 @@
 #define AUDIO_CAPTURE_I2C_PORT          (0)
 #define AUDIO_CAPTURE_I2C_SDA_IO        (4)
 #define AUDIO_CAPTURE_I2C_SCL_IO        (5)
+#define AUDIO_CAPTURE_ES8311_I2S_PORT   (0)
+#define AUDIO_CAPTURE_ES8311_I2S_MCLK_IO (GPIO_NUM_45)
+#define AUDIO_CAPTURE_ES8311_I2S_BCLK_IO (GPIO_NUM_39)
+#define AUDIO_CAPTURE_ES8311_I2S_WS_IO  (GPIO_NUM_41)
+#define AUDIO_CAPTURE_ES8311_I2S_DIN_IO (GPIO_NUM_40)
+#define AUDIO_CAPTURE_ES8311_I2S_DOUT_IO (GPIO_NUM_NC)
 #define AUDIO_CAPTURE_MCLK_MULTIPLE     (384)
 #define AUDIO_CAPTURE_INPUT_GAIN_DB     (42.0f)
 #endif
@@ -98,6 +109,7 @@ static esp_codec_dev_handle_t s_codec_handle;
 #endif
 
 static TaskHandle_t s_capture_task_handle;
+static uint32_t s_frame_count;
 static uint32_t s_frame_captured_count;
 static uint32_t s_overflow_count;
 static uint32_t s_underrun_count;
@@ -167,6 +179,7 @@ esp_err_t audio_capture_session_begin(void)
     if (!ble_audio_stream_is_ready()) {
         xSemaphoreGive(s_state_mutex);
         ESP_LOGW(TAG, "record session start rejected: BLE audio transport not ready");
+        diag_log(DIAG_SRC_AUDIO, DIAG_AUDIO_SESSION_REJ, DIAG_SEV_WARN, 1, 0, 0, 0);
         return ESP_ERR_INVALID_STATE;
     }
 
@@ -175,14 +188,15 @@ esp_err_t audio_capture_session_begin(void)
     if (packet_safe_total_frames == 0) {
         xSemaphoreGive(s_state_mutex);
         ESP_LOGW(TAG, "record session start rejected: audio payload unavailable");
+        diag_log(DIAG_SRC_AUDIO, DIAG_AUDIO_SESSION_REJ, DIAG_SEV_WARN, 2, 0, 0, 0);
         return ESP_ERR_INVALID_SIZE;
     }
 
-    uint32_t requested_total_frames = (AUDIO_CAPTURE_SESSION_SAFETY_MAX_SECONDS * 1000U) / AUDIO_CAPTURE_FRAME_MS;
-    uint32_t total_frames = requested_total_frames;
-    if (packet_safe_total_frames < total_frames) {
-        total_frames = packet_safe_total_frames;
-    }
+    /* Use packet_safe_total_frames as the only limit (protocol-level packet
+     * sequence overflow protection). If payload is unavailable, this will be 0
+     * and we reject; otherwise recording continues until user stops or protocol
+     * limit is approached. */
+    uint32_t total_frames = packet_safe_total_frames;
 
     memset(&s_export_state, 0, sizeof(s_export_state));
     s_export_state.mode = AUDIO_CAPTURE_EXPORT_MODE_SESSION;
@@ -197,13 +211,13 @@ esp_err_t audio_capture_session_begin(void)
     xSemaphoreGive(s_state_mutex);
     ESP_LOGI(
         TAG,
-        "record session begin requested: session_id=%" PRIu32 " buffer_ms=%u buffer_bytes=%u safety_max_s=%u packet_payload_bytes=%u packet_safe_max_s=%" PRIu32,
+        "record session begin requested: session_id=%" PRIu32 " buffer_ms=%u buffer_bytes=%u packet_payload_bytes=%u packet_safe_max_s=%" PRIu32,
         session_id,
         AUDIO_CAPTURE_STREAM_BATCH_FRAMES * AUDIO_CAPTURE_FRAME_MS,
         (unsigned)AUDIO_CAPTURE_STREAM_BATCH_BYTES,
-        AUDIO_CAPTURE_SESSION_SAFETY_MAX_SECONDS,
         payload_bytes,
         session_max_seconds);
+    diag_log(DIAG_SRC_AUDIO, DIAG_AUDIO_SESSION, DIAG_SEV_INFO, 1, session_id, 0, 0);
     return ESP_OK;
 }
 
@@ -266,6 +280,7 @@ bool audio_capture_session_is_active(void)
 static void audio_capture_process_frame(const int16_t *frame_buffer)
 {
     s_frame_captured_count++;
+    s_frame_count++;
 
     bool should_emit = false;
     bool should_cancel = false;
@@ -297,6 +312,10 @@ static void audio_capture_process_frame(const int16_t *frame_buffer)
         }
 
         if (s_export_state.active && s_export_state.captured_frames < s_export_state.total_frames) {
+            bool stop_boundary_requested =
+                s_export_state.mode == AUDIO_CAPTURE_EXPORT_MODE_SESSION &&
+                s_export_state.stop_requested;
+            bool hit_safety_max_duration = false;
             if (s_export_state.mode == AUDIO_CAPTURE_EXPORT_MODE_SESSION) {
                 if (!s_export_state.ble_session_started) {
                     should_session_start = true;
@@ -304,53 +323,62 @@ static void audio_capture_process_frame(const int16_t *frame_buffer)
                     s_export_state.ble_session_started = true;
                 }
 
-                size_t batch_offset =
-                    (size_t)s_export_state.stream_batch_frame_count * AUDIO_CAPTURE_FRAME_BYTES;
-                memcpy(s_export_state.stream_batch_buffer + batch_offset, frame_buffer, AUDIO_CAPTURE_FRAME_BYTES);
-                s_export_state.stream_batch_frame_count++;
-                s_export_state.pcm_bytes_written += AUDIO_CAPTURE_FRAME_BYTES;
+                /* Stop is a hard capture boundary; the frame that woke this
+                 * call may already be after the user's stop edge. */
+                if (!stop_boundary_requested) {
+                    size_t batch_offset =
+                        (size_t)s_export_state.stream_batch_frame_count * AUDIO_CAPTURE_FRAME_BYTES;
+                    memcpy(s_export_state.stream_batch_buffer + batch_offset, frame_buffer, AUDIO_CAPTURE_FRAME_BYTES);
+                    s_export_state.stream_batch_frame_count++;
+                    s_export_state.pcm_bytes_written += AUDIO_CAPTURE_FRAME_BYTES;
 
-                if (s_export_state.stream_batch_frame_count >= AUDIO_CAPTURE_STREAM_BATCH_FRAMES) {
-                    session_id = s_export_state.session_id;
-                    packet_sequence_start = s_export_state.stream_next_packet_sequence;
-                    batch_pcm_bytes = AUDIO_CAPTURE_STREAM_BATCH_BYTES;
-                    memcpy(s_export_state.stream_emit_buffer, s_export_state.stream_batch_buffer, batch_pcm_bytes);
-                    audio_batch_copy = s_export_state.stream_emit_buffer;
-                    packet_count = ble_audio_stream_count_audio_packets(batch_pcm_bytes);
-                    if (!audio_capture_packet_sequence_can_advance(
-                            s_export_state.stream_next_packet_sequence,
-                            packet_count)) {
-                        should_cancel = true;
-                        should_session_error = s_export_state.ble_session_started;
-                        expected_packet_count_at_end = s_export_state.stream_next_packet_sequence;
-                        session_error_code = LISTENER_AUDIO_SESSION_ERROR_SEQUENCE_OVERFLOW;
-                        ESP_LOGW(
-                            TAG,
-                            "record session canceled: packet sequence limit reached session_id=%" PRIu32 " next=%u add=%u",
-                            session_id,
-                            s_export_state.stream_next_packet_sequence,
-                            packet_count);
-                    } else {
-                        should_session_audio = true;
-                        s_export_state.stream_next_packet_sequence =
-                            (uint16_t)(s_export_state.stream_next_packet_sequence + packet_count);
-                        s_export_state.stream_batch_frame_count = 0;
+                    if (s_export_state.stream_batch_frame_count >= AUDIO_CAPTURE_STREAM_BATCH_FRAMES) {
+                        session_id = s_export_state.session_id;
+                        packet_sequence_start = s_export_state.stream_next_packet_sequence;
+                        batch_pcm_bytes = AUDIO_CAPTURE_STREAM_BATCH_BYTES;
+                        memcpy(s_export_state.stream_emit_buffer, s_export_state.stream_batch_buffer, batch_pcm_bytes);
+                        audio_batch_copy = s_export_state.stream_emit_buffer;
+                        packet_count = ble_audio_stream_count_audio_packets(batch_pcm_bytes);
+                        if (!audio_capture_packet_sequence_can_advance(
+                                s_export_state.stream_next_packet_sequence,
+                                packet_count)) {
+                            /* Protocol packet sequence limit reached; perform graceful
+                             * session_stop instead of error so the host receives all
+                             * audio up to this point with a clean termination. */
+                            should_session_stop = true;
+                            session_id = s_export_state.session_id;
+                            expected_packet_count_at_end = s_export_state.stream_next_packet_sequence;
+                            should_emit = true;
+                            ESP_LOGI(
+                                TAG,
+                                "record session stopping at protocol limit: session_id=%" PRIu32 " next=%u add=%u",
+                                session_id,
+                                s_export_state.stream_next_packet_sequence,
+                                packet_count);
+                        } else {
+                            should_session_audio = true;
+                            s_export_state.stream_next_packet_sequence =
+                                (uint16_t)(s_export_state.stream_next_packet_sequence + packet_count);
+                            s_export_state.stream_batch_frame_count = 0;
+                        }
                     }
                 }
             }
 
-            if (!should_cancel) {
+            if (!should_cancel && !stop_boundary_requested) {
                 s_export_state.captured_frames++;
+                hit_safety_max_duration = s_export_state.captured_frames >= s_export_state.total_frames;
             }
 
-            if (!should_cancel &&
+            if (!should_cancel && !should_session_stop &&
                 s_export_state.mode == AUDIO_CAPTURE_EXPORT_MODE_SESSION &&
-                (s_export_state.stop_requested || s_export_state.captured_frames >= s_export_state.total_frames)) {
-                if (s_export_state.captured_frames >= s_export_state.total_frames) {
-                    ESP_LOGW(
+                (stop_boundary_requested || hit_safety_max_duration)) {
+                if (hit_safety_max_duration) {
+                    ESP_LOGI(
                         TAG,
-                        "record session hit safety max duration: max_duration_s=%" PRIu32,
-                        AUDIO_CAPTURE_SESSION_SAFETY_MAX_SECONDS);
+                        "record session stopping at protocol limit (total_frames): session_id=%" PRIu32 " captured_frames=%" PRIu32,
+                        s_export_state.session_id,
+                        s_export_state.captured_frames);
                 }
                 s_export_state.duration_seconds =
                     (s_export_state.captured_frames * AUDIO_CAPTURE_FRAME_MS) / 1000U;
@@ -366,13 +394,11 @@ static void audio_capture_process_frame(const int16_t *frame_buffer)
                     if (!audio_capture_packet_sequence_can_advance(
                             s_export_state.stream_next_packet_sequence,
                             packet_count)) {
-                        should_cancel = true;
-                        should_session_error = s_export_state.ble_session_started;
-                        expected_packet_count_at_end = s_export_state.stream_next_packet_sequence;
-                        session_error_code = LISTENER_AUDIO_SESSION_ERROR_SEQUENCE_OVERFLOW;
-                        ESP_LOGW(
+                        /* Protocol limit at final batch; stop gracefully with
+                         * whatever audio we have so far. */
+                        ESP_LOGI(
                             TAG,
-                            "record session canceled at stop: packet sequence limit reached session_id=%" PRIu32 " next=%u add=%u",
+                            "record session stopping at protocol limit (final batch): session_id=%" PRIu32 " next=%u add=%u",
                             session_id,
                             s_export_state.stream_next_packet_sequence,
                             packet_count);
@@ -519,10 +545,16 @@ static void audio_capture_process_frame(const int16_t *frame_buffer)
         }
 
         if (!stream_failed && should_emit) {
+            uint32_t stop_duration = 0;
+            uint32_t stop_frames = 0;
             if (xSemaphoreTake(s_state_mutex, portMAX_DELAY) == pdTRUE) {
+                stop_duration = s_export_state.duration_seconds;
+                stop_frames = s_export_state.captured_frames;
                 audio_capture_export_cleanup();
                 xSemaphoreGive(s_state_mutex);
             }
+            diag_log(DIAG_SRC_AUDIO, DIAG_AUDIO_SESSION, DIAG_SEV_INFO,
+                     2, session_id, stop_duration, stop_frames);
         }
     }
     if (idle_for_logging && (s_frame_captured_count % AUDIO_CAPTURE_LOG_INTERVAL_FRAMES) == 0) {
@@ -557,6 +589,7 @@ static void audio_capture_task(void *arg)
         if (ret == ESP_CODEC_DEV_WRONG_STATE) {
             s_underrun_count++;
             ESP_LOGW(TAG, "underrun count=%" PRIu32 " ret=%d", s_underrun_count, ret);
+            diag_log(DIAG_SRC_AUDIO, DIAG_AUDIO_UNDERRUN, DIAG_SEV_WARN, s_underrun_count, 0, 0, 0);
         } else if (ret == ESP_CODEC_DEV_DRV_ERR || ret == ESP_CODEC_DEV_READ_FAIL) {
             s_overflow_count++;
             s_dropped_frame_count++;
@@ -566,9 +599,11 @@ static void audio_capture_task(void *arg)
                 s_overflow_count,
                 s_dropped_frame_count,
                 ret);
+            diag_log(DIAG_SRC_AUDIO, DIAG_AUDIO_DROP, DIAG_SEV_WARN, s_dropped_frame_count, ret, 0, 0);
         } else {
             s_dropped_frame_count++;
             ESP_LOGW(TAG, "dropped frame=%" PRIu32 " ret=%d", s_dropped_frame_count, ret);
+            diag_log(DIAG_SRC_AUDIO, DIAG_AUDIO_DROP, DIAG_SEV_WARN, s_dropped_frame_count, ret, 0, 0);
         }
 
         vTaskDelay(pdMS_TO_TICKS(5));
@@ -577,7 +612,7 @@ static void audio_capture_task(void *arg)
 
 static esp_err_t audio_capture_i2s_init(void)
 {
-    i2s_chan_config_t chan_cfg = I2S_CHANNEL_DEFAULT_CONFIG(BOARD_PINS_I2S_PORT, I2S_ROLE_MASTER);
+    i2s_chan_config_t chan_cfg = I2S_CHANNEL_DEFAULT_CONFIG(AUDIO_CAPTURE_ES8311_I2S_PORT, I2S_ROLE_MASTER);
     chan_cfg.auto_clear = true;
     ESP_RETURN_ON_ERROR(i2s_new_channel(&chan_cfg, NULL, &s_i2s_rx_handle), TAG, "create i2s channel failed");
 
@@ -585,11 +620,11 @@ static esp_err_t audio_capture_i2s_init(void)
         .clk_cfg = I2S_STD_CLK_DEFAULT_CONFIG(AUDIO_CAPTURE_SAMPLE_RATE_HZ),
         .slot_cfg = I2S_STD_PHILIPS_SLOT_DEFAULT_CONFIG(I2S_DATA_BIT_WIDTH_16BIT, I2S_SLOT_MODE_MONO),
         .gpio_cfg = {
-            .mclk = BOARD_PINS_I2S_MCLK_IO,
-            .bclk = BOARD_PINS_I2S_BCLK_IO,
-            .ws = BOARD_PINS_I2S_WS_IO,
-            .dout = BOARD_PINS_I2S_DOUT_IO,
-            .din = BOARD_PINS_I2S_DIN_IO,
+            .mclk = AUDIO_CAPTURE_ES8311_I2S_MCLK_IO,
+            .bclk = AUDIO_CAPTURE_ES8311_I2S_BCLK_IO,
+            .ws = AUDIO_CAPTURE_ES8311_I2S_WS_IO,
+            .dout = AUDIO_CAPTURE_ES8311_I2S_DOUT_IO,
+            .din = AUDIO_CAPTURE_ES8311_I2S_DIN_IO,
             .invert_flags = {
                 .mclk_inv = false,
                 .bclk_inv = false,
@@ -601,6 +636,14 @@ static esp_err_t audio_capture_i2s_init(void)
 
     ESP_RETURN_ON_ERROR(i2s_channel_init_std_mode(s_i2s_rx_handle, &std_cfg), TAG, "init i2s rx failed");
     ESP_RETURN_ON_ERROR(i2s_channel_enable(s_i2s_rx_handle), TAG, "enable i2s rx failed");
+    ESP_LOGI(
+        TAG,
+        "ES8311 I2S init: %uHz mclk=%d bclk=%d ws=%d din=%d",
+        AUDIO_CAPTURE_SAMPLE_RATE_HZ,
+        AUDIO_CAPTURE_ES8311_I2S_MCLK_IO,
+        AUDIO_CAPTURE_ES8311_I2S_BCLK_IO,
+        AUDIO_CAPTURE_ES8311_I2S_WS_IO,
+        AUDIO_CAPTURE_ES8311_I2S_DIN_IO);
     return ESP_OK;
 }
 
@@ -628,7 +671,7 @@ static esp_err_t audio_capture_codec_init(void)
     ESP_RETURN_ON_FALSE(ctrl_if != NULL, ESP_FAIL, TAG, "create codec i2c ctrl failed");
 
     audio_codec_i2s_cfg_t i2s_cfg = {
-        .port = BOARD_PINS_I2S_PORT,
+        .port = AUDIO_CAPTURE_ES8311_I2S_PORT,
         .rx_handle = s_i2s_rx_handle,
         .tx_handle = NULL,
     };
@@ -719,6 +762,7 @@ static void audio_capture_task(void *arg)
             s_dropped_frame_count++;
             ESP_LOGW(TAG, "i2s read failed: dropped=%" PRIu32 " ret=%s",
                      s_dropped_frame_count, esp_err_to_name(ret));
+            diag_log(DIAG_SRC_AUDIO, DIAG_AUDIO_I2S_FAIL, DIAG_SEV_WARN, s_dropped_frame_count, ret, 0, 0);
         }
         vTaskDelay(pdMS_TO_TICKS(5));
     }
@@ -772,6 +816,7 @@ esp_err_t audio_capture_start(void)
     esp_err_t err = audio_capture_i2s_init();
     if (err != ESP_OK) {
         ESP_LOGE(TAG, "i2s start fail");
+        diag_log(DIAG_SRC_AUDIO, DIAG_AUDIO_INIT_FAIL, DIAG_SEV_ERROR, 1, err, 0, 0);
         return err;
     }
     ESP_LOGI(TAG, "i2s start ok");
@@ -780,6 +825,7 @@ esp_err_t audio_capture_start(void)
     err = audio_capture_i2c_init();
     if (err != ESP_OK) {
         ESP_LOGE(TAG, "i2c init fail");
+        diag_log(DIAG_SRC_AUDIO, DIAG_AUDIO_INIT_FAIL, DIAG_SEV_ERROR, 2, err, 0, 0);
         i2s_channel_disable(s_i2s_rx_handle);
         return err;
     }
@@ -787,6 +833,7 @@ esp_err_t audio_capture_start(void)
     err = audio_capture_codec_init();
     if (err != ESP_OK) {
         ESP_LOGE(TAG, "codec init fail");
+        diag_log(DIAG_SRC_AUDIO, DIAG_AUDIO_INIT_FAIL, DIAG_SEV_ERROR, 3, err, 0, 0);
         i2s_channel_disable(s_i2s_rx_handle);
         return err;
     }
@@ -804,7 +851,7 @@ esp_err_t audio_capture_start(void)
     BaseType_t task_ok = xTaskCreate(
         audio_capture_task,
         "audio_capture_task",
-        4096,
+        AUDIO_CAPTURE_TASK_STACK_BYTES,
         NULL,
         5,
         &s_capture_task_handle);
@@ -822,4 +869,14 @@ esp_err_t audio_capture_start(void)
 #endif
 
     return ESP_OK;
+}
+
+uint32_t audio_capture_get_frame_count(void)
+{
+    return s_frame_count;
+}
+
+uint32_t audio_capture_get_dropped_frame_count(void)
+{
+    return s_dropped_frame_count;
 }

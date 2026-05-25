@@ -21,18 +21,27 @@
 #include "host/ble_hs.h"
 #include "host/ble_hs_mbuf.h"
 #include "os/os_mbuf.h"
+#include "sdkconfig.h"
+#include "diag_log.h"
+#include "listener_device.h"
 #include "listener_audio_proto.h"
 
 #define BLE_AUDIO_STREAM_TASK_STACK_BYTES (6 * 1024)
 #define BLE_AUDIO_STREAM_PACKET_DEFAULT_BYTES 244
 #define BLE_AUDIO_STREAM_PACKET_MAX_BYTES 500
-#define BLE_AUDIO_STREAM_NOTIFY_QUEUE_LENGTH 128
+#ifdef CONFIG_SPIRAM
+#define BLE_AUDIO_STREAM_NOTIFY_QUEUE_LENGTH 256
+#define BLE_AUDIO_STREAM_AUDIO_POOL_EXTRA 8
+#else
+#define BLE_AUDIO_STREAM_NOTIFY_QUEUE_LENGTH 32
+#define BLE_AUDIO_STREAM_AUDIO_POOL_EXTRA 4
+#endif
 #define BLE_AUDIO_STREAM_NOTIFY_WINDOW_DEPTH 1
 #define BLE_AUDIO_STREAM_NOTIFY_WAIT_MS 1000
-#define BLE_AUDIO_STREAM_NOTIFY_SUCCESS_DELAY_MS 20
-#define BLE_AUDIO_STREAM_NOTIFY_BACKLOG_SUCCESS_DELAY_MS 2
+#define BLE_AUDIO_STREAM_NOTIFY_SUCCESS_DELAY_MS 2
+#define BLE_AUDIO_STREAM_NOTIFY_BACKLOG_SUCCESS_DELAY_MS 1
 #define BLE_AUDIO_STREAM_NOTIFY_BACKLOG_QUEUE_THRESHOLD (BLE_AUDIO_STREAM_NOTIFY_QUEUE_LENGTH / 2)
-#define BLE_AUDIO_STREAM_NOTIFY_RETRY_DELAY_MS 20
+#define BLE_AUDIO_STREAM_NOTIFY_RETRY_DELAY_MS 2
 #define BLE_AUDIO_STREAM_NOTIFY_TX_DONE_WAIT_MS 1000
 #define BLE_AUDIO_STREAM_NOTIFY_RETRY_LIMIT 80
 #define BLE_AUDIO_STREAM_NOTIFY_RETRY_LOG_INTERVAL 40
@@ -41,7 +50,10 @@
 #define BLE_AUDIO_STREAM_LINK_RECOVERY_RESUME_DELAY_MS 500
 #define BLE_AUDIO_STREAM_AUDIO_QUEUE_WAIT_MS 100
 #define BLE_AUDIO_STREAM_AUDIO_POOL_BUFFER_BYTES 1920
-#define BLE_AUDIO_STREAM_AUDIO_POOL_LENGTH (BLE_AUDIO_STREAM_NOTIFY_QUEUE_LENGTH + 4)
+#define BLE_AUDIO_STREAM_AUDIO_POOL_LENGTH (BLE_AUDIO_STREAM_NOTIFY_QUEUE_LENGTH + BLE_AUDIO_STREAM_AUDIO_POOL_EXTRA)
+#define BLE_AUDIO_STREAM_AUDIO_POOL_PRESSURE_WARN_PERCENT 80U
+#define BLE_AUDIO_STREAM_AUDIO_POOL_PRESSURE_WARN_LEVEL \
+    ((BLE_AUDIO_STREAM_AUDIO_POOL_LENGTH * BLE_AUDIO_STREAM_AUDIO_POOL_PRESSURE_WARN_PERCENT + 99U) / 100U)
 #define BLE_AUDIO_STREAM_CONTROL_NOTIFY_REPETITIONS 3
 #define BLE_AUDIO_STREAM_CONTROL_NOTIFY_REPEAT_DELAY_MS 5
 
@@ -101,6 +113,7 @@ typedef struct {
     uint32_t audio_pool_high_water;
     uint32_t audio_pool_alloc_failed;
     uint32_t audio_queue_full;
+    bool audio_pool_pressure_warned;
     const char *last_drop_reason;
     int last_error;
 } ble_audio_stream_session_stats_t;
@@ -116,6 +129,14 @@ static const char *TAG = "ble_audio_stream";
 
 static const ble_uuid128_t s_service_uuid = BLE_AUDIO_STREAM_SERVICE_UUID;
 static const ble_uuid128_t s_notify_uuid = BLE_AUDIO_STREAM_NOTIFY_UUID;
+static const ble_uuid128_t s_readiness_uuid = BLE_AUDIO_STREAM_READINESS_UUID;
+static const ble_uuid128_t s_capabilities_uuid = BLE_AUDIO_STREAM_CAPABILITIES_UUID;
+
+typedef enum {
+    BLE_AUDIO_STREAM_GATT_ATTR_NOTIFY = 0,
+    BLE_AUDIO_STREAM_GATT_ATTR_READINESS,
+    BLE_AUDIO_STREAM_GATT_ATTR_CAPABILITIES,
+} ble_audio_stream_gatt_attr_t;
 
 static uint16_t s_notify_attr_handle;
 static bool s_started;
@@ -260,6 +281,20 @@ static void ble_audio_stream_stats_pool_high_water(uint32_t session_id, uint32_t
     if (in_use > s_session_stats.audio_pool_high_water) {
         s_session_stats.audio_pool_high_water = in_use;
     }
+
+    if (!s_session_stats.audio_pool_pressure_warned &&
+        in_use >= BLE_AUDIO_STREAM_AUDIO_POOL_PRESSURE_WARN_LEVEL) {
+        s_session_stats.audio_pool_pressure_warned = true;
+        ESP_LOGW(
+            TAG,
+            "audio buffer pool pressure high: session=%" PRIu32 " in_use=%" PRIu32 "/%u threshold=%u%%",
+            session_id,
+            in_use,
+            (unsigned)BLE_AUDIO_STREAM_AUDIO_POOL_LENGTH,
+            (unsigned)BLE_AUDIO_STREAM_AUDIO_POOL_PRESSURE_WARN_PERCENT);
+        diag_log(DIAG_SRC_BLE_AUDIO, DIAG_BAUD_POOL_EXHAUST, DIAG_SEV_WARN,
+                 session_id, in_use, BLE_AUDIO_STREAM_AUDIO_POOL_LENGTH, 0);
+    }
 }
 
 static void ble_audio_stream_stats_drop(uint32_t session_id, const char *reason, esp_err_t result)
@@ -288,7 +323,7 @@ static void ble_audio_stream_stats_log_and_end(
 
     ESP_LOGI(
         TAG,
-        "audio session transport summary: session=%" PRIu32 " reason=%s expected_packet_count=%u notify_sent=%" PRIu32 " notify_failed=%" PRIu32 " notify_retries=%" PRIu32 " retry_mbuf=%" PRIu32 " retry_enomem=%" PRIu32 " retry_tx_timeout=%" PRIu32 " retry_tx_status=%" PRIu32 " retry_other=%" PRIu32 " audio_sent=%" PRIu32 " audio_failed=%" PRIu32 " queue_jobs_purged=%" PRIu32 " pool_high_water=%" PRIu32 " pool_capacity=%u pool_alloc_failed=%" PRIu32 " queue_full=%" PRIu32 " last_drop_reason=%s last_error=%d",
+        "audio session transport summary: session=%" PRIu32 " reason=%s expected_packet_count=%u notify_sent=%" PRIu32 " notify_failed=%" PRIu32 " notify_retries=%" PRIu32 " retry_mbuf=%" PRIu32 " retry_enomem=%" PRIu32 " retry_tx_timeout=%" PRIu32 " retry_tx_status=%" PRIu32 " retry_other=%" PRIu32 " audio_sent=%" PRIu32 " audio_failed=%" PRIu32 " queue_jobs_purged=%" PRIu32 " pool_high_water=%" PRIu32 " pool_capacity=%u pool_high_water_pct=%" PRIu32 " pool_alloc_failed=%" PRIu32 " queue_full=%" PRIu32 " last_drop_reason=%s last_error=%d",
         session_id,
         reason,
         expected_packet_count,
@@ -305,6 +340,7 @@ static void ble_audio_stream_stats_log_and_end(
         s_session_stats.queue_jobs_purged,
         s_session_stats.audio_pool_high_water,
         (unsigned)BLE_AUDIO_STREAM_AUDIO_POOL_LENGTH,
+        (s_session_stats.audio_pool_high_water * 100U) / BLE_AUDIO_STREAM_AUDIO_POOL_LENGTH,
         s_session_stats.audio_pool_alloc_failed,
         s_session_stats.audio_queue_full,
         s_session_stats.last_drop_reason != NULL ? s_session_stats.last_drop_reason : "none",
@@ -358,6 +394,20 @@ static const char *ble_audio_stream_transport_state_name(ble_audio_stream_transp
     return "unknown";
 }
 
+static uint32_t ble_audio_stream_reason_code(const char *reason)
+{
+    uint32_t hash = 2166136261u;
+    if (reason == NULL) {
+        return 0;
+    }
+    while (*reason != '\0') {
+        hash ^= (uint8_t)*reason;
+        hash *= 16777619u;
+        reason++;
+    }
+    return hash;
+}
+
 static void ble_audio_stream_set_transport_state(
     ble_audio_stream_transport_state_t next_state,
     const char *reason)
@@ -366,10 +416,11 @@ static void ble_audio_stream_set_transport_state(
         return;
     }
 
+    ble_audio_stream_transport_state_t previous_state = s_transport_state;
     ESP_LOGI(
         TAG,
         "audio transport state: %s -> %s reason=%s epoch=%" PRIu32 " conn=%u mtu_ready=%u notify=%u value_max=%u",
-        ble_audio_stream_transport_state_name(s_transport_state),
+        ble_audio_stream_transport_state_name(previous_state),
         ble_audio_stream_transport_state_name(next_state),
         reason != NULL ? reason : "unspecified",
         s_connection_epoch,
@@ -377,6 +428,11 @@ static void ble_audio_stream_set_transport_state(
         s_mtu_ready ? 1u : 0u,
         s_notify_enabled ? 1u : 0u,
         s_packet_value_max_bytes);
+    diag_log(DIAG_SRC_BLE_AUDIO, DIAG_BAUD_STATE_CHANGE, DIAG_SEV_INFO,
+             (uint32_t)previous_state,
+             (uint32_t)next_state,
+             ble_audio_stream_reason_code(reason),
+             s_transport_session_id);
     s_transport_state = next_state;
 }
 
@@ -500,6 +556,8 @@ static bool ble_audio_stream_wait_link_ready(
         fragment_index,
         fragment_count,
         (unsigned)BLE_AUDIO_STREAM_LINK_RECOVERY_WAIT_MS);
+    diag_log(DIAG_SRC_BLE_AUDIO, DIAG_BAUD_LINK_TIMEOUT, DIAG_SEV_WARN,
+             session_id, BLE_AUDIO_STREAM_LINK_RECOVERY_WAIT_MS, packet_type, sequence_or_count);
     return false;
 }
 
@@ -688,9 +746,33 @@ static int ble_audio_stream_access(
 {
     (void)conn_handle;
     (void)attr_handle;
-    (void)ctxt;
-    (void)arg;
-    return BLE_ATT_ERR_READ_NOT_PERMITTED;
+
+    if (ctxt == NULL || ctxt->op != BLE_GATT_ACCESS_OP_READ_CHR) {
+        return BLE_ATT_ERR_READ_NOT_PERMITTED;
+    }
+
+    const char *value = NULL;
+    switch ((ble_audio_stream_gatt_attr_t)(uintptr_t)arg) {
+    case BLE_AUDIO_STREAM_GATT_ATTR_READINESS:
+        value = listener_device_get_factory_readiness();
+        break;
+    case BLE_AUDIO_STREAM_GATT_ATTR_CAPABILITIES:
+        value = listener_device_get_capabilities();
+        break;
+    case BLE_AUDIO_STREAM_GATT_ATTR_NOTIFY:
+    default:
+        return BLE_ATT_ERR_READ_NOT_PERMITTED;
+    }
+
+    int rc = os_mbuf_append(ctxt->om, value, strlen(value));
+    if (rc != 0) {
+        return BLE_ATT_ERR_INSUFFICIENT_RES;
+    }
+
+    ESP_LOGI(TAG, "factory info read: attr=%u value=%s",
+             (unsigned)((ble_audio_stream_gatt_attr_t)(uintptr_t)arg),
+             value);
+    return 0;
 }
 
 static const struct ble_gatt_svc_def s_audio_svcs[] = {
@@ -703,6 +785,18 @@ static const struct ble_gatt_svc_def s_audio_svcs[] = {
                 .access_cb = ble_audio_stream_access,
                 .flags = BLE_GATT_CHR_F_NOTIFY,
                 .val_handle = &s_notify_attr_handle,
+            },
+            {
+                .uuid = &s_readiness_uuid.u,
+                .access_cb = ble_audio_stream_access,
+                .flags = BLE_GATT_CHR_F_READ,
+                .arg = (void *)(uintptr_t)BLE_AUDIO_STREAM_GATT_ATTR_READINESS,
+            },
+            {
+                .uuid = &s_capabilities_uuid.u,
+                .access_cb = ble_audio_stream_access,
+                .flags = BLE_GATT_CHR_F_READ,
+                .arg = (void *)(uintptr_t)BLE_AUDIO_STREAM_GATT_ATTR_CAPABILITIES,
             },
             {0},
         },
@@ -822,6 +916,8 @@ static esp_err_t ble_audio_stream_send_packet(
                         session_id,
                         ESP_ERR_TIMEOUT,
                         BLE_AUDIO_STREAM_RETRY_CAUSE_NOTIFY_TX_TIMEOUT);
+                    diag_log(DIAG_SRC_BLE_AUDIO, DIAG_BAUD_NOTIFY_FAIL, DIAG_SEV_WARN,
+                             session_id, sequence_or_count, ESP_ERR_TIMEOUT, s_session_stats.notify_retries);
                     xSemaphoreGive(s_notify_credit_sem);
                     ble_audio_stream_notify_retry_delay();
                     continue;
@@ -902,6 +998,8 @@ static esp_err_t ble_audio_stream_send_packet(
             session_id,
             rc,
             BLE_AUDIO_STREAM_RETRY_CAUSE_NOTIFY_OTHER);
+        diag_log(DIAG_SRC_BLE_AUDIO, DIAG_BAUD_NOTIFY_FAIL, DIAG_SEV_WARN,
+                 session_id, sequence_or_count, (uint32_t)rc, s_session_stats.notify_retries);
         ble_audio_stream_stats_packet_result(session_id, packet_type, ESP_FAIL);
         return ESP_FAIL;
     }
@@ -918,6 +1016,8 @@ static esp_err_t ble_audio_stream_send_packet(
         s_export_queue != NULL ? (uint32_t)uxQueueMessagesWaiting(s_export_queue) : 0,
         (uint32_t)BLE_AUDIO_STREAM_NOTIFY_QUEUE_LENGTH);
     ble_audio_stream_stats_packet_result(session_id, packet_type, ESP_ERR_TIMEOUT);
+    diag_log(DIAG_SRC_BLE_AUDIO, DIAG_BAUD_NOTIFY_FAIL, DIAG_SEV_WARN,
+             session_id, sequence_or_count, ESP_ERR_TIMEOUT, s_session_stats.notify_retries);
     return ESP_ERR_TIMEOUT;
 }
 
@@ -1068,6 +1168,8 @@ static esp_err_t ble_audio_stream_audio_pool_acquire(
             s_audio_pool_in_use,
             (unsigned)BLE_AUDIO_STREAM_AUDIO_POOL_LENGTH,
             s_audio_pool_global_high_water);
+        diag_log(DIAG_SRC_BLE_AUDIO, DIAG_BAUD_POOL_EXHAUST, DIAG_SEV_WARN,
+                 session_id, s_audio_pool_in_use, BLE_AUDIO_STREAM_AUDIO_POOL_LENGTH, s_audio_pool_global_high_water);
     }
 
     xSemaphoreGive(s_audio_pool_mutex);
@@ -1179,6 +1281,8 @@ static void ble_audio_stream_abort_active_session(const char *reason)
     ble_audio_stream_set_transport_state(
         BLE_AUDIO_STREAM_TRANSPORT_STATE_ERROR,
         reason);
+    diag_log(DIAG_SRC_BLE_AUDIO, DIAG_BAUD_SESSION_ABORT, DIAG_SEV_ERROR,
+             session_id, ble_audio_stream_reason_code(reason), expected_packet_count, 0);
     if (session_id != 0) {
         ble_audio_stream_purge_queued_session_jobs(session_id, false);
         ble_audio_stream_stats_log_and_end(
@@ -1354,6 +1458,8 @@ static esp_err_t ble_audio_stream_send_session_error_internal(
         0,
         error_code);
     ble_audio_stream_stats_log_and_end(session_id, "error", expected_packet_count);
+    diag_log(DIAG_SRC_BLE_AUDIO, DIAG_BAUD_SESSION_ABORT, DIAG_SEV_ERROR,
+             session_id, error_code, expected_packet_count, 0);
     ble_audio_stream_set_transport_state(
         BLE_AUDIO_STREAM_TRANSPORT_STATE_ERROR,
         ret == ESP_OK ? "session_error_sent" : "session_error_failed");
@@ -1910,7 +2016,9 @@ esp_err_t ble_audio_stream_send_session_stop(uint32_t session_id, uint16_t expec
     ble_audio_stream_set_transport_state(
         BLE_AUDIO_STREAM_TRANSPORT_STATE_DRAINING,
         "session_stop_queued");
-    if (xQueueSendToFront(s_export_queue, &job, pdMS_TO_TICKS(1000)) != pdTRUE) {
+    /* Keep STOP after accepted audio data so the receiver can treat it as the
+     * ASR input boundary instead of a marker that still permits tail audio. */
+    if (xQueueSend(s_export_queue, &job, pdMS_TO_TICKS(1000)) != pdTRUE) {
         ble_audio_stream_set_transport_state(
             previous_state,
             "session_stop_enqueue_failed");

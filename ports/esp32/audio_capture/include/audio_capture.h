@@ -16,6 +16,8 @@ esp_err_t audio_capture_session_begin(void);
 esp_err_t audio_capture_session_stop(void);
 esp_err_t audio_capture_session_cancel(void);
 bool audio_capture_session_is_active(void);
+uint32_t audio_capture_get_frame_count(void);
+uint32_t audio_capture_get_dropped_frame_count(void);
 
 #ifdef __cplusplus
 }

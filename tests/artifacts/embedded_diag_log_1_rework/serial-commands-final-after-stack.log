@@ -1,0 +1,248 @@
+### SERIAL OPEN stable attempt=1
+I (75571) audio_capture: frame captured count=7500 bytes=4800000I (106081) audio_capture: frame captured count=10550 bytes=6752000
+I (106581) audio_capture: frame captured count=10600 bytes=6784000
+I (107081) audio_capture: frame captured count=10650 bytes=6816000
+I (107581) audio_capture: frame captured count=10700 bytes=6848000
+I (108081) audio_capture: frame captured count=10750 bytes=6880000
+I (108581) audio_capture: frame captured count=10800 bytes=6912000
+I (109081) audio_capture: frame captured count=10850 bytes=6944000
+I (109581) audio_capture: frame captured count=10900 bytes=6976000
+I (110081) audio_capture: frame captured count=10950 bytes=7008000
+I (110581) audio_capture: frame captured count=11000 bytes=7040000
+I (111081) audio_capture: frame captured count=11050 bytes=7072000
+
+### SEND ~DIAGLOG:COUNT
+I (111261) diag_log: DIAGLOG COUNT: 156
+I (111581) audio_capture: frame captured count=11100 bytes=7104000
+I (112081) audio_capture: frame captured count=11150 bytes=7136000
+I (112581) audio_capture: frame captured count=11200 bytes=7168000
+I (113081) audio_capture: frame captured count=11250 bytes=7200000
+
+### SEND ~DIAGLOG:LAST:5
+{"t":49220,"src":"ble_gap","evt":2,"sev":"INFO","a1":1,"a2":0,"a3":1,"a4":0}
+{"t":49303,"src":"ble_gap","evt":1,"sev":"INFO","a1":0,"a2":517,"a3":1,"a4":4}
+{"t":49329,"src":"ble_audio","evt":1,"sev":"INFO","a1":1,"a2":3,"a3":2286455572,"a4":0}
+{"t":49342,"src":"ble_audio","evt":1,"sev":"INFO","a1":3,"a2":4,"a3":2286455572,"a4":0}
+{"t":60324,"src":"health","evt":1,"sev":"INFO","a1":85,"a2":85,"a3":1,"a4":1}
+I (113421) diag_log: DIAGLOG LAST 5: dumped 5 events
+I (113581) audio_capture: frame captured count=11300 bytes=7232000
+I (114081) audio_capture: frame captured count=11350 bytes=7264000
+I (114581) audio_capture: frame captured count=11400 bytes=7296000
+I (115081) audio_capture: frame captured count=11450 bytes=7328000
+I (115581) audio_capture: frame captured count=11500 bytes=7360000
+I (116081) audio_capture: frame captured count=11550 bytes=7392000
+
+### SEND ~DIAGLOG:DUMP
+{"t":48062,"src":"ble_audio","evt":1,"sev":"INFO","a1":4,"a2":2,"a3":2909880158,"a4":0}
+{"t":48085,"src":"ble_gap","evt":3,"sev":"WARN","a1":0,"a2":546,"a3":1,"a4":0}
+{"t":48089,"src":"ble_hid","evt":2,"sev":"WARN","a1":546,"a2":1,"a3":40159,"a4":87}
+{"t":48116,"src":"ble_audio","evt":1,"sev":"INFO","a1":2,"a2":0,"a3":3473054698,"a4":0}
+{"t":48129,"src":"ble_gap","evt":4,"sev":"INFO","a1":1,"a2":1,"a3":1,"a4":0}
+{"t":49414,"src":"ble_gap","evt":4,"sev":"INFO","a1":1,"a2":0,"a3":1,"a4":0}
+{"t":49992,"src":"audio","evt":3,"sev":"WARN","a1":1,"a2":0,"a3":0,"a4":0}
+{"t":49995,"src":"voice_rec","evt":2,"sev":"WARN","a1":2,"a2":259,"a3":0,"a4":0}
+{"t":52098,"src":"voice_rec","evt":2,"sev":"WARN","a1":2,"a2":259,"a3":0,"a4":0}
+{"t":68,"src":"system","evt":2,"sev":"INFO","a1":5,"a2":0,"a3":0,"a4":0}
+{"t":73,"src":"system","evt":1,"sev":"INFO","a1":4,"a2":0,"a3":0,"a4":0}
+{"t":86,"src":"system","evt":2,"sev":"INFO","a1":1,"a2":0,"a3":0,"a4":0}
+{"t":86,"src":"system","evt":2,"sev":"INFO","a1":2,"a2":261,"a3":0,"a4":0}
+{"t":95,"src":"self_test","evt":1,"sev":"INFO","a1":1,"a2":0,"a3":327,"a4":1}
+{"t":190,"src":"ble_gap","evt":6,"sev":"INFO","a1":5,"a2":0,"a3":1,"a4":0}
+{"t":349,"src":"ble_gap","evt":4,"sev":"INFO","a1":1,"a2":1,"a3":1,"a4":0}
+{"t":1525,"src":"ble_gap","evt":2,"sev":"INFO","a1":1,"a2":0,"a3":1,"a4":0}
+{"t":1615,"src":"ble_hid","evt":1,"sev":"INFO","a1":1,"a2":87,"a3":0,"a4":0}
+{"t":1628,"src":"ble_audio","evt":1,"sev":"INFO","a1":0,"a2":1,"a3":2971904838,"a4":0}
+I (116581) audio_capture: frame captured count=11600 bytes=7424000
+{"t":1655,"src":"ble_gap","evt":7,"sev":"INFO","a1":6,"a2":0,"a3":800,"a4":1}
+{"t":1713,"src":"ble_gap","evt":2,"sev":"INFO","a1":1,"a2":0,"a3":1,"a4":0}
+{"t":1968,"src":"ble_gap","evt":1,"sev":"INFO","a1":0,"a2":517,"a3":1,"a4":4}
+{"t":1990,"src":"ble_audio","evt":1,"sev":"INFO","a1":1,"a2":3,"a3":2286455572,"a4":0}
+{"t":2002,"src":"ble_audio","evt":1,"sev":"INFO","a1":3,"a2":4,"a3":2286455572,"a4":0}
+{"t":10198,"src":"audio","evt":2,"sev":"INFO","a1":1,"a2":1,"a3":0,"a4":0}
+{"t":10202,"src":"voice_rec","evt":1,"sev":"INFO","a1":1,"a2":2,"a3":1,"a4":0}
+{"t":70,"src":"system","evt":2,"sev":"INFO","a1":5,"a2":0,"a3":0,"a4":0}
+{"t":73,"src":"system","evt":1,"sev":"INFO","a1":4,"a2":0,"a3":0,"a4":0}
+{"t":86,"src":"system","evt":2,"sev":"INFO","a1":1,"a2":0,"a3":0,"a4":0}
+{"t":86,"src":"system","evt":2,"sev":"INFO","a1":2,"a2":261,"a3":0,"a4":0}
+{"t":95,"src":"self_test","evt":1,"sev":"INFO","a1":1,"a2":0,"a3":327,"a4":1}
+{"t":190,"src":"ble_gap","evt":6,"sev":"INFO","a1":5,"a2":0,"a3":1,"a4":0}
+{"t":349,"src":"ble_gap","evt":4,"sev":"INFO","a1":1,"a2":1,"a3":1,"a4":0}
+{"t":1634,"src":"ble_gap","evt":4,"sev":"INFO","a1":1,"a2":0,"a3":1,"a4":0}
+{"t":8280,"src":"ble_gap","evt":2,"sev":"INFO","a1":1,"a2":0,"a3":1,"a4":0}
+{"t":8370,"src":"ble_hid","evt":1,"sev":"INFO","a1":1,"a2":87,"a3":0,"a4":0}
+{"t":8383,"src":"ble_audio","evt":1,"sev":"INFO","a1":0,"a2":1,"a3":2971904838,"a4":0}
+{"t":8411,"src":"ble_gap","evt":7,"sev":"INFO","a1":6,"a2":0,"a3":800,"a4":1}
+{"t":8432,"src":"ble_gap","evt":1,"sev":"INFO","a1":0,"a2":517,"a3":1,"a4":4}
+{"t":8458,"src":"ble_audio","evt":1,"sev":"INFO","a1":1,"a2":3,"a3":2286455572,"a4":0}
+{"t":8471,"src":"ble_audio","evt":1,"sev":"INFO","a1":3,"a2":4,"a3":2286455572,"a4":0}
+{"t":8483,"src":"ble_gap","evt":2,"sev":"INFO","a1":1,"a2":0,"a3":1,"a4":0}
+{"t":8534,"src":"ble_audio","evt":1,"sev":"INFO","a1":4,"a2":3,"a3":867066404,"a4":0}
+{"t":8548,"src":"ble_audio","evt":1,"sev":"INFO","a1":3,"a2":4,"a3":867066404,"a4":0}
+{"t":71,"src":"system","evt":2,"sev":"INFO","a1":5,"a2":0,"a3":0,"a4":0}
+{"t":73,"src":"system","evt":1,"sev":"INFO","a1":4,"a2":0,"a3":0,"a4":0}
+{"t":86,"src":"system","evt":2,"sev":"INFO","a1":1,"a2":0,"a3":0,"a4":0}
+{"t":86,"src":"system","evt":2,"sev":"INFO","a1":2,"a2":261,"a3":0,"a4":0}
+{"t":95,"src":"self_test","evt":1,"sev":"INFO","a1":1,"a2":0,"a3":327,"a4":1}
+{"t":189,"src":"ble_gap","evt":6,"sev":"INFO","a1":5,"a2":0,"a3":1,"a4":0}
+{"t":347,"src":"ble_gap","evt":4,"sev":"INFO","a1":1,"a2":1,"a3":1,"a4":0}
+{"t":1633,"src":"ble_gap","evt":4,"sev":"INFO","a1":1,"a2":0,"a3":1,"a4":0}
+{"t":9321,"src":"ble_gap","evt":2,"sev":"INFO","a1":1,"a2":0,"a3":1,"a4":0}
+{"t":9411,"src":"ble_hid","evt":1,"sev":"INFO","a1":1,"a2":87,"a3":0,"a4":0}
+{"t":9424,"src":"ble_audio","evt":1,"sev":"INFO","a1":0,"a2":1,"a3":2971904838,"a4":0}
+{"t":9451,"src":"ble_gap","evt":7,"sev":"INFO","a1":6,"a2":0,"a3":800,"a4":1}
+{"t":9472,"src":"ble_gap","evt":1,"sev":"INFO","a1":0,"a2":517,"a3":1,"a4":4}
+{"t":9499,"src":"ble_audio","evt":1,"sev":"INFO","a1":1,"a2":3,"a3":2286455572,"a4":0}
+{"t":9511,"src":"ble_audio","evt":1,"sev":"INFO","a1":3,"a2":4,"a3":2286455572,"a4":0}
+{"t":9524,"src":"ble_gap","evt":2,"sev":"INFO","a1":1,"a2":0,"a3":1,"a4":0}
+{"t":9575,"src":"ble_audio","evt":1,"sev":"INFO","a1":4,"a2":3,"a3":867066404,"a4":0}
+{"t":9588,"src":"ble_audio","evt":1,"sev":"INFO","a1":3,"a2":4,"a3":867066404,"a4":0}
+{"t":72,"src":"system","evt":2,"sev":"INFO","a1":5,"a2":0,"a3":0,"a4":0}
+{"t":73,"src":"system","evt":1,"sev":"INFO","a1":2,"a2":0,"a3":0,"a4":0}
+{"t":86,"src":"system","evt":2,"sev":"INFO","a1":1,"a2":0,"a3":0,"a4":0}
+{"t":86,"src":"system","evt":2,"sev":"INFO","a1":2,"a2":261,"a3":0,"a4":0}
+{"t":95,"src":"self_test","evt":1,"sev":"INFO","a1":1,"a2":0,"a3":327,"a4":1}
+{"t":188,"src":"ble_gap","evt":6,"sev":"INFO","a1":5,"a2":0,"a3":1,"a4":0}
+{"t":347,"src":"ble_gap","evt":4,"sev":"INFO","a1":1,"a2":1,"a3":1,"a4":0}
+{"t":1632,"src":"ble_gap","evt":4,"sev":"INFO","a1":1,"a2":0,"a3":1,"a4":0}
+{"t":7998,"src":"ble_gap","evt":2,"sev":"INFO","a1":1,"a2":0,"a3":1,"a4":0}
+{"t":8093,"src":"ble_audio","evt":1,"sev":"INFO","a1":0,"a2":1,"a3":2971904838,"a4":0}
+{"t":8100,"src":"ble_hid","evt":1,"sev":"INFO","a1":1,"a2":87,"a3":0,"a4":0}
+{"t":8128,"src":"ble_gap","evt":7,"sev":"INFO","a1":6,"a2":0,"a3":800,"a4":1}
+{"t":8185,"src":"ble_gap","evt":2,"sev":"INFO","a1":1,"a2":0,"a3":1,"a4":0}
+{"t":8276,"src":"ble_gap","evt":1,"sev":"INFO","a1":0,"a2":517,"a3":1,"a4":4}
+{"t":8297,"src":"ble_audio","evt":1,"sev":"INFO","a1":1,"a2":3,"a3":2286455572,"a4":0}
+{"t":8309,"src":"ble_audio","evt":1,"sev":"INFO","a1":3,"a2":4,"a3":2286455572,"a4":0}
+{"t":42655,"src":"ble_audio","evt":1,"sev":"INFO","a1":4,"a2":2,"a3":2909880158,"a4":0}
+{"t":42874,"src":"ble_audio","evt":1,"sev":"INFO","a1":2,"a2":3,"a3":867066404,"a4":0}
+{"t":42888,"src":"ble_audio","evt":1,"sev":"INFO","a1":3,"a2":4,"a3":867066404,"a4":0}
+{"t":48202,"src":"ble_audio","evt":1,"sev":"INFO","a1":4,"a2":2,"a3":2909880158,"a4":0}
+{"t":48225,"src":"ble_gap","evt":3,"sev":"WARN","a1":0,"a2":546,"a3":1,"a4":0}
+{"t":48229,"src":"ble_hid","evt":2,"sev":"WARN","a1":546,"a2":1,"a3":40140,"a4":87}
+{"t":48256,"src":"ble_audio","evt":1,"sev":"INFO","a1":2,"a2":0,"a3":3473054698,"a4":0}
+{"t":48274,"src":"ble_gap","evt":4,"sev":"INFO","a1":1,"a2":1,"a3":1,"a4":0}
+{"t":49560,"src":"ble_gap","evt":4,"sev":"INFO","a1":1,"a2":0,"a3":1,"a4":0}
+{"t":56464,"src":"ble_gap","evt":2,"sev":"INFO","a1":1,"a2":0,"a3":1,"a4":0}
+{"t":56555,"src":"ble_hid","evt":1,"sev":"INFO","a1":1,"a2":87,"a3":1,"a4":0}
+{"t":56568,"src":"ble_audio","evt":1,"sev":"INFO","a1":0,"a2":1,"a3":2971904838,"a4":0}
+I (117081) audio_capture: frame captured count=11650 bytes=7456000
+{"t":56596,"src":"ble_gap","evt":7,"sev":"INFO","a1":6,"a2":0,"a3":800,"a4":1}
+{"t":56644,"src":"ble_gap","evt":2,"sev":"INFO","a1":1,"a2":0,"a3":1,"a4":0}
+{"t":56763,"src":"ble_gap","evt":1,"sev":"INFO","a1":0,"a2":517,"a3":1,"a4":4}
+{"t":56784,"src":"ble_audio","evt":1,"sev":"INFO","a1":1,"a2":3,"a3":2286455572,"a4":0}
+{"t":56797,"src":"ble_audio","evt":1,"sev":"INFO","a1":3,"a2":4,"a3":2286455572,"a4":0}
+{"t":60304,"src":"health","evt":1,"sev":"INFO","a1":87,"a2":87,"a3":1,"a4":1}
+{"t":74,"src":"system","evt":2,"sev":"INFO","a1":5,"a2":0,"a3":0,"a4":0}
+{"t":83,"src":"system","evt":1,"sev":"INFO","a1":4,"a2":0,"a3":0,"a4":0}
+{"t":96,"src":"system","evt":2,"sev":"INFO","a1":1,"a2":0,"a3":0,"a4":0}
+{"t":96,"src":"system","evt":2,"sev":"INFO","a1":2,"a2":261,"a3":0,"a4":0}
+{"t":105,"src":"self_test","evt":1,"sev":"INFO","a1":1,"a2":0,"a3":327,"a4":1}
+{"t":200,"src":"ble_gap","evt":6,"sev":"INFO","a1":5,"a2":0,"a3":1,"a4":0}
+{"t":359,"src":"ble_gap","evt":4,"sev":"INFO","a1":1,"a2":1,"a3":1,"a4":0}
+{"t":1644,"src":"ble_gap","evt":4,"sev":"INFO","a1":1,"a2":0,"a3":1,"a4":0}
+{"t":75,"src":"system","evt":2,"sev":"INFO","a1":5,"a2":0,"a3":0,"a4":0}
+{"t":83,"src":"system","evt":1,"sev":"INFO","a1":2,"a2":0,"a3":0,"a4":0}
+{"t":96,"src":"system","evt":2,"sev":"INFO","a1":1,"a2":0,"a3":0,"a4":0}
+{"t":96,"src":"system","evt":2,"sev":"INFO","a1":2,"a2":261,"a3":0,"a4":0}
+{"t":105,"src":"self_test","evt":1,"sev":"INFO","a1":1,"a2":0,"a3":327,"a4":1}
+{"t":203,"src":"ble_gap","evt":6,"sev":"INFO","a1":5,"a2":0,"a3":1,"a4":0}
+{"t":362,"src":"ble_gap","evt":4,"sev":"INFO","a1":1,"a2":1,"a3":1,"a4":0}
+{"t":601,"src":"ble_gap","evt":2,"sev":"INFO","a1":1,"a2":0,"a3":1,"a4":0}
+{"t":690,"src":"ble_hid","evt":1,"sev":"INFO","a1":1,"a2":87,"a3":0,"a4":0}
+{"t":702,"src":"ble_audio","evt":1,"sev":"INFO","a1":0,"a2":1,"a3":2971904838,"a4":0}
+{"t":730,"src":"ble_gap","evt":7,"sev":"INFO","a1":6,"a2":0,"a3":800,"a4":1}
+{"t":751,"src":"ble_gap","evt":1,"sev":"INFO","a1":0,"a2":517,"a3":1,"a4":4}
+{"t":783,"src":"ble_audio","evt":1,"sev":"INFO","a1":1,"a2":3,"a3":2286455572,"a4":0}
+{"t":795,"src":"ble_audio","evt":1,"sev":"INFO","a1":3,"a2":4,"a3":2286455572,"a4":0}
+{"t":811,"src":"ble_gap","evt":2,"sev":"INFO","a1":1,"a2":0,"a3":1,"a4":0}
+{"t":861,"src":"ble_audio","evt":1,"sev":"INFO","a1":4,"a2":3,"a3":867066404,"a4":0}
+{"t":875,"src":"ble_audio","evt":1,"sev":"INFO","a1":3,"a2":4,"a3":867066404,"a4":0}
+{"t":76,"src":"system","evt":2,"sev":"INFO","a1":5,"a2":0,"a3":0,"a4":0}
+{"t":83,"src":"system","evt":1,"sev":"INFO","a1":2,"a2":0,"a3":0,"a4":0}
+{"t":96,"src":"system","evt":2,"sev":"INFO","a1":1,"a2":0,"a3":0,"a4":0}
+{"t":96,"src":"system","evt":2,"sev":"INFO","a1":2,"a2":261,"a3":0,"a4":0}
+{"t":105,"src":"self_test","evt":1,"sev":"INFO","a1":1,"a2":0,"a3":327,"a4":1}
+{"t":200,"src":"ble_gap","evt":6,"sev":"INFO","a1":5,"a2":0,"a3":1,"a4":0}
+{"t":359,"src":"ble_gap","evt":4,"sev":"INFO","a1":1,"a2":1,"a3":1,"a4":0}
+{"t":520,"src":"ble_gap","evt":2,"sev":"INFO","a1":1,"a2":0,"a3":1,"a4":0}
+{"t":609,"src":"ble_hid","evt":1,"sev":"INFO","a1":1,"a2":85,"a3":0,"a4":0}
+{"t":622,"src":"ble_audio","evt":1,"sev":"INFO","a1":0,"a2":1,"a3":2971904838,"a4":0}
+{"t":649,"src":"ble_gap","evt":7,"sev":"INFO","a1":6,"a2":0,"a3":800,"a4":1}
+{"t":670,"src":"ble_gap","evt":1,"sev":"INFO","a1":0,"a2":517,"a3":1,"a4":4}
+{"t":696,"src":"ble_audio","evt":1,"sev":"INFO","a1":1,"a2":3,"a3":2286455572,"a4":0}
+{"t":709,"src":"ble_audio","evt":1,"sev":"INFO","a1":3,"a2":4,"a3":2286455572,"a4":0}
+{"t":723,"src":"ble_gap","evt":2,"sev":"INFO","a1":1,"a2":0,"a3":1,"a4":0}
+{"t":779,"src":"ble_audio","evt":1,"sev":"INFO","a1":4,"a2":3,"a3":867066404,"a4":0}
+{"t":793,"src":"ble_audio","evt":1,"sev":"INFO","a1":3,"a2":4,"a3":867066404,"a4":0}
+{"t":23585,"src":"ble_audio","evt":1,"sev":"INFO","a1":4,"a2":2,"a3":2909880158,"a4":0}
+{"t":23803,"src":"ble_audio","evt":1,"sev":"INFO","a1":2,"a2":3,"a3":867066404,"a4":0}
+{"t":23817,"src":"ble_audio","evt":1,"sev":"INFO","a1":3,"a2":4,"a3":867066404,"a4":0}
+{"t":40742,"src":"ble_audio","evt":1,"sev":"INFO","a1":4,"a2":2,"a3":2909880158,"a4":0}
+{"t":40771,"src":"ble_gap","evt":3,"sev":"WARN","a1":0,"a2":546,"a3":1,"a4":0}
+{"t":40774,"src":"ble_hid","evt":2,"sev":"WARN","a1":546,"a2":1,"a3":40172,"a4":85}
+{"t":40801,"src":"ble_audio","evt":1,"sev":"INFO","a1":2,"a2":0,"a3":3473054698,"a4":0}
+{"t":40814,"src":"ble_gap","evt":4,"sev":"INFO","a1":1,"a2":1,"a3":1,"a4":0}
+{"t":42100,"src":"ble_gap","evt":4,"sev":"INFO","a1":1,"a2":0,"a3":1,"a4":0}
+{"t":49040,"src":"ble_gap","evt":2,"sev":"INFO","a1":1,"a2":0,"a3":1,"a4":0}
+{"t":49117,"src":"ble_hid","evt":1,"sev":"INFO","a1":1,"a2":85,"a3":1,"a4":0}
+{"t":49143,"src":"ble_audio","evt":1,"sev":"INFO","a1":0,"a2":1,"a3":2971904838,"a4":0}
+{"t":49171,"src":"ble_gap","evt":7,"sev":"INFO","a1":6,"a2":0,"a3":800,"a4":1}
+{"t":49220,"src":"ble_gap","evt":2,"sev":"INFO","a1":1,"a2":0,"a3":1,"a4":0}
+{"t":49303,"src":"ble_gap","evt":1,"sev":"INFO","a1":0,"a2":517,"a3":1,"a4":4}
+{"t":49329,"src":"ble_audio","evt":1,"sev":"INFO","a1":1,"a2":3,"a3":2286455572,"a4":0}
+{"t":49342,"src":"ble_audio","evt":1,"sev":"INFO","a1":3,"a2":4,"a3":2286455572,"a4":0}
+{"t":60324,"src":"health","evt":1,"sev":"INFO","a1":85,"a2":85,"a3":1,"a4":1}
+I (117561) diag_log: DIAGLOG DUMP: 156 events
+I (117581) audio_capture: frame captured count=11700 bytes=7488000
+I (118081) audio_capture: frame captured count=11750 bytes=7520000
+I (118581) audio_capture: frame captured count=11800 bytes=7552000
+I (119081) audio_capture: frame captured count=11850 bytes=7584000
+I (119581) audio_capture: frame captured count=11900 bytes=7616000
+I (120081) audio_capture: frame captured count=11950 bytes=7648000
+I (120581) audio_capture: frame captured count=12000 bytes=7680000
+I (120641) health: heartbeat: uptime=120s heap_free=85KB heap_min=85KB ble=OK disconnects=1 audio_frames=12005 audio_drops=0 keys=0 sessions=0
+I (120681) ble_hid: battery level=93 voltage_mv=4112 raw=2385 reason=periodic
+I (121081) audio_capture: frame captured count=12050 bytes=7712000
+I (121581) audio_capture: frame captured count=12100 bytes=7744000
+I (122081) audio_capture: frame captured count=12150 bytes=7776000
+
+### SEND ~DIAGLOG:CLEAR
+I (122581) audio_capture: frame captured count=12200 bytes=7808000
+I (122861) diag_log: DIAGLOG CLEAR: all logs erased
+I (123081) audio_capture: frame captured count=12250 bytes=7840000
+I (123581) audio_capture: frame captured count=12300 bytes=7872000
+I (124081) audio_capture: frame captured count=12350 bytes=7904000
+I (124581) audio_capture: frame captured count=12400 bytes=7936000
+
+### SEND ~DIAGLOG:COUNT
+I (124621) diag_log: DIAGLOG COUNT: 0
+I (125081) audio_capture: frame captured count=12450 bytes=7968000
+I (125581) audio_capture: frame captured count=12500 bytes=8000000
+I (126081) audio_capture: frame captured count=12550 bytes=8032000
+I (126581) audio_capture: frame captured count=12600 bytes=8064000
+
+### SEND ~VREC:TOGGLE
+I (126721) audio_capture: record session begin requested: session_id=1 buffer_ms=60 buffer_bytes=1920 packet_payload_bytes=480 packet_safe_max_s=983
+I (126731) ble_audio_stream: audio transport state: stream_ready -> streaming reason=session_start_queued epoch=3 conn=1 mtu_ready=1 notify=1 value_max=500
+I (126731) voice_rec_ctrl: recording start source=usb
+I (126741) audio_capture: stream session start queued: session_id=1
+I (126751) audio_capture: stream audio packet batch queued: session_id=1 seq_start=0 packet_count=4 pcm_bytes=1920
+I (127231) audio_capture: stream audio packet batch queued: session_id=1 seq_start=64 packet_count=4 pcm_bytes=1920
+I (127711) audio_capture: stream audio packet batch queued: session_id=1 seq_start=128 packet_count=4 pcm_bytes=1920
+I (128191) audio_capture: stream audio packet batch queued: session_id=1 seq_start=192 packet_count=4 pcm_bytes=1920
+I (128671) audio_capture: stream audio packet batch queued: session_id=1 seq_start=256 packet_count=4 pcm_bytes=1920
+
+### SEND ~VREC:CANCEL
+I (128831) audio_capture: record session cancel requested
+I (128831) voice_rec_ctrl: recording cancel requested source=usb
+I (128831) ble_audio_stream: audio transport state: streaming -> draining reason=session_cancel_queued epoch=3 conn=1 mtu_ready=1 notify=1 value_max=500
+I (128841) ble_audio_stream: audio session cancel: session=1 expected_packet_count=280
+I (128841) audio_capture: record session canceled
+I (128851) voice_rec_ctrl: recording cancel source=usb
+I (128851) ble_audio_stream: audio session transport summary: session=1 reason=cancel expected_packet_count=280 notify_sent=284 notify_failed=0 notify_retries=0 retry_mbuf=0 retry_enomem=0 retry_tx_timeout=0 retry_tx_status=0 retry_other=0 audio_sent=280 audio_failed=0 queue_jobs_purged=0 pool_high_water=2 pool_capacity=36 pool_high_water_pct=5 pool_alloc_failed=0 queue_full=0 last_drop_reason=none last_error=0
+I (128891) ble_audio_stream: audio transport state: draining -> stopped reason=session_cancel_sent epoch=3 conn=1 mtu_ready=1 notify=1 value_max=500
+I (128911) ble_audio_stream: audio transport state: stopped -> subscribed reason=session_cancel_complete epoch=3 conn=1 mtu_ready=1 notify=1 value_max=500
+I (128921) ble_audio_stream: audio transport state: subscribed -> stream_ready reason=session_cancel_complete epoch=3 conn=1 mtu_ready=1 notify=1 value_max=500
+I (129081) audio_capture: frame captured count=12850 bytes=8224000
+I (129581) audio_capture: frame captured count=12900 bytes=8256000
+I (130081) audio_capture: frame captured count=12950 bytes=8288000
+I (130581) audio_capture: frame captured count=13000 bytes=8320000

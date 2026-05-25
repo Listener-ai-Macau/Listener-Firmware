@@ -1,0 +1,12 @@
+rst:0x1 (POWERON_RESET),boot:0x8 (SPI_FAST_FLASH_BOOT)
+I (25) boot: ESP-IDF v5.4.1 2nd stage bootloader
+I (82) app_desc: project_name=voice-keyboard project_version=995eef8-dirty
+I (104) psram: SPIRAM=N/A
+I (216) ble_hid: START
+I (238) ble_hid: USB SERIAL INPUT READY
+I (310) gpio: GPIO35 voice_key ready
+I (512) audio_capture: SPH0645 init ok, sample_rate=16000
+I (700) audio_capture: frame captured bytes=320
+W (820) ble_hid: notify retry mbuf exhausted once
+E (960) ble_hid: ESP_ERROR_CHECK failed: esp_err_t 0x101 (ESP_ERR_NO_MEM)
+Backtrace: 0x40375abc:0x3fca1230 0x4037abcd:0x3fca1250

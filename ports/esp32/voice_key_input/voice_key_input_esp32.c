@@ -4,8 +4,14 @@
 #include <stdint.h>
 #include <inttypes.h>
 
+#ifdef CONFIG_AUDIO_CAPTURE_MIC_ES8311
+#define VOICE_KEY_INPUT_LEGACY_ES8311_BOARD 1
+#else
+#define VOICE_KEY_INPUT_LEGACY_ES8311_BOARD 0
+#endif
+
 #ifndef VOICE_KEY_INPUT_ENABLE_LEGACY_EXPANDER
-#define VOICE_KEY_INPUT_ENABLE_LEGACY_EXPANDER 0
+#define VOICE_KEY_INPUT_ENABLE_LEGACY_EXPANDER VOICE_KEY_INPUT_LEGACY_ES8311_BOARD
 #endif
 
 #include "freertos/FreeRTOS.h"
@@ -21,6 +27,8 @@
 #include "esp_io_expander_tca95xx_16bit.h"
 #endif
 #include "esp_log.h"
+
+#include "diag_log.h"
 
 #if VOICE_KEY_INPUT_ENABLE_LEGACY_EXPANDER
 #include "audio_capture_platform.h"
@@ -44,7 +52,13 @@
 #define VOICE_KEY_INPUT_ALL_MASK       (0xFFFFU)
 #endif
 
+#if VOICE_KEY_INPUT_LEGACY_ES8311_BOARD
+#define VOICE_KEY_INPUT_DIRECT_GPIO    GPIO_NUM_0
+#define VOICE_KEY_INPUT_DIRECT_LABEL   "gpio0.boot"
+#else
 #define VOICE_KEY_INPUT_DIRECT_GPIO    BOARD_PINS_KEY1_IO
+#define VOICE_KEY_INPUT_DIRECT_LABEL   "gpio45.key1"
+#endif
 #define VOICE_KEY_INPUT_POLL_MS        (20)
 #define VOICE_KEY_INPUT_DEBOUNCE_THRESHOLD (3)
 #define VOICE_KEY_INPUT_EVENT_QUEUE_LENGTH (8)
@@ -96,7 +110,7 @@ static voice_key_button_state_t s_expander_io5_state = {
 };
 #endif
 static voice_key_button_state_t s_direct_gpio_state = {
-    .label = "gpio45.key1",
+    .label = VOICE_KEY_INPUT_DIRECT_LABEL,
 };
 
 #if VOICE_KEY_INPUT_ENABLE_LEGACY_EXPANDER
@@ -131,13 +145,16 @@ static void voice_key_input_record_toggle_event(const char *source)
 {
     if (s_toggle_event_sem == NULL) {
         ESP_LOGW(TAG, "%s press edge dropped: event queue unavailable", source);
+        diag_log(DIAG_SRC_VOICE_KEY, DIAG_VKEY_QUEUE_DROP, DIAG_SEV_WARN, 1, 1, 0, 0);
         return;
     }
 
     if (xSemaphoreGive(s_toggle_event_sem) == pdTRUE) {
-        ESP_LOGI(TAG, "%s short press detected", source);
+        ESP_LOGI(TAG, "%s press edge detected", source);
+        diag_log(DIAG_SRC_VOICE_KEY, DIAG_VKEY_PRESS, DIAG_SEV_INFO, 1, 0, 0, 0);
     } else {
-        ESP_LOGW(TAG, "%s short press dropped: event queue full", source);
+        ESP_LOGW(TAG, "%s press edge dropped: event queue full", source);
+        diag_log(DIAG_SRC_VOICE_KEY, DIAG_VKEY_QUEUE_DROP, DIAG_SEV_WARN, 1, 2, 0, 0);
     }
 }
 
@@ -150,8 +167,10 @@ static void voice_key_input_record_recovery_event(const char *source)
 
     if (xSemaphoreGive(s_recovery_event_sem) == pdTRUE) {
         ESP_LOGW(TAG, "%s recovery hold detected: hold_ms=%d", source, VOICE_KEY_INPUT_RECOVERY_HOLD_MS);
+        diag_log(DIAG_SRC_VOICE_KEY, DIAG_VKEY_PRESS, DIAG_SEV_WARN, 2, VOICE_KEY_INPUT_RECOVERY_HOLD_MS, 0, 0);
     } else {
         ESP_LOGW(TAG, "%s recovery hold dropped: event queue full", source);
+        diag_log(DIAG_SRC_VOICE_KEY, DIAG_VKEY_QUEUE_DROP, DIAG_SEV_WARN, 2, 2, 0, 0);
     }
 }
 
@@ -441,7 +460,10 @@ esp_err_t voice_key_input_start(void)
     s_started = true;
     ESP_LOGI(
         TAG,
-        "voice key ready: source=gpio45 active_low=1 poll_ms=%d debounce_samples=%d",
+        "voice key ready: source=%s gpio=%d active_low=1 legacy_expander=%d poll_ms=%d debounce_samples=%d",
+        VOICE_KEY_INPUT_DIRECT_LABEL,
+        VOICE_KEY_INPUT_DIRECT_GPIO,
+        VOICE_KEY_INPUT_ENABLE_LEGACY_EXPANDER,
         VOICE_KEY_INPUT_POLL_MS,
         VOICE_KEY_INPUT_DEBOUNCE_THRESHOLD);
     ESP_LOGI(TAG, "voice key recovery ready: hold_ms=%d", VOICE_KEY_INPUT_RECOVERY_HOLD_MS);

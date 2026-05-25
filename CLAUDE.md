@@ -76,9 +76,9 @@ pwsh -NoProfile -File ./tools/esp_idf_ci.ps1 help
 
 ## 文档约定
 
-- `C:\Users\Billy\Desktop\listener\docs\plans\` — 跨仓库共享任务状态（JSON 为唯一状态源）和参考文档
-- `C:\Users\Billy\Desktop\listener\docs\fixes\` — 跨仓库活跃 bug 修复/调查计划
-- `C:\Users\Billy\Desktop\listener\docs\ai_collaboration_protocol.md` — 三体 AI 协作完整协议（所有 AI 读同一个文件）
+- `C:\Users\Billy\Desktop\listener\ai-collaboration-workflow\docs\plans\` — 跨仓库共享任务状态（JSON 为唯一状态源）和参考文档
+- `C:\Users\Billy\Desktop\listener\ai-collaboration-workflow\docs\fixes\` — 跨仓库活跃 bug 修复/调查计划
+- `C:\Users\Billy\Desktop\listener\ai-collaboration-workflow\docs\ai_collaboration_protocol.md` — 三体 AI 协作完整协议（所有 AI 读同一个文件）
 - `!docs/features/` — 已完成的功能总结（仓库级，留在各自仓库）
 - `!docs/product_solutions.md` — 产品范围与架构决策（仅涉及范围时读）
 - 人类文档默认中文
@@ -101,7 +101,7 @@ pwsh -NoProfile -File ./tools/esp_idf_ci.ps1 help
 
 ### 计划驱动
 
-- 功能开发、架构变更、板级调试、重要 bug 修复前，先写计划文档到 `C:\Users\Billy\Desktop\listener\docs\plans\` 或 `C:\Users\Billy\Desktop\listener\docs\fixes\`
+- 功能开发、架构变更、板级调试、重要 bug 修复前，先写计划文档到 `C:\Users\Billy\Desktop\listener\ai-collaboration-workflow\docs\plans\` 或 `C:\Users\Billy\Desktop\listener\ai-collaboration-workflow\docs\fixes\`
 - 计划的核心价值是**并行分工**和**不重复造轮子**，不是写八股文
 - 计划只需包含：
   - **目标**：一句话说清楚要达成什么
@@ -113,7 +113,7 @@ pwsh -NoProfile -File ./tools/esp_idf_ci.ps1 help
 
 ### Bug 工作流
 
-- 重要 bug 遵循相同计划流程，计划文档放 `C:\Users\Billy\Desktop\listener\docs\fixes\`
+- 重要 bug 遵循相同计划流程，计划文档放 `C:\Users\Billy\Desktop\listener\ai-collaboration-workflow\docs\fixes\`
 - 计划需包含：观察到的行为、期望行为、复现步骤、疑似范围、根因调查步骤、修复步骤、验收检查
 - 仅在用户明确要求快速路径且 bug 显而易见、低风险时才跳过专门计划
 
@@ -153,8 +153,8 @@ pwsh -NoProfile -File ./tools/esp_idf_ci.ps1 help
 
 ## AI 协作
 
-完整协议见 `C:\Users\Billy\Desktop\listener\docs\ai_collaboration_protocol.md`。
-工具脚本：`tools\update_plan_status.ps1`（认领/更新）、`tools\validate_plan_status.ps1`（校验）、`tools\lock_resource.ps1` / `unlock_resource.ps1`（硬件锁）。
+完整协议见 `C:\Users\Billy\Desktop\listener\ai-collaboration-workflow\docs\ai_collaboration_protocol.md`。
+工具脚本只在 `C:\Users\Billy\Desktop\listener\ai-collaboration-workflow\scripts\` 维护；本仓库不保留协作脚本副本。
 
 ## 当前关键约束
 
@@ -169,11 +169,11 @@ pwsh -NoProfile -File ./tools/esp_idf_ci.ps1 help
 按需取最小集合，优先顺序：
 
 1. `CLAUDE.md`
-2. `C:\Users\Billy\Desktop\listener\docs\plans\*_status.json`（当前步骤状态）
-3. `C:\Users\Billy\Desktop\listener\docs\ai_collaboration_protocol.md`（多 AI 协作时必读）
+2. `C:\Users\Billy\Desktop\listener\ai-collaboration-workflow\docs\plans\*_status.json`（当前步骤状态）
+3. `C:\Users\Billy\Desktop\listener\ai-collaboration-workflow\docs\ai_collaboration_protocol.md`（多 AI 协作时必读）
 4. `README.md`
-5. `C:\Users\Billy\Desktop\listener\docs\plans\*.md`（步骤定义和验收标准）
-6. `C:\Users\Billy\Desktop\listener\docs\fixes\`（活跃 bug 修复计划）
+5. `C:\Users\Billy\Desktop\listener\ai-collaboration-workflow\docs\plans\*.md`（步骤定义和验收标准）
+6. `C:\Users\Billy\Desktop\listener\ai-collaboration-workflow\docs\fixes\`（活跃 bug 修复计划）
 7. `!docs/features/` 下已完成功能
 8. `!docs/product_solutions.md`（仅涉及产品范围时）
 9. 源代码（改实现细节时直接读）
@@ -207,9 +207,9 @@ python .\tools\verify_audio_ble_product_matrix.py --port COM3 --cases A1,A3,A6
 # H2: RF干扰/距离 | H3: 后端ASR集成
 
 # 校验计划状态（所有 AI 完成步骤后跑一遍）
-pwsh -NoProfile -ExecutionPolicy Bypass -File .\tools\validate_plan_status.ps1
+pwsh -NoProfile -File ..\ai-collaboration-workflow\scripts\aiw.ps1 validate
 # 自动修复可修复的问题
-pwsh -NoProfile -ExecutionPolicy Bypass -File .\tools\validate_plan_status.ps1 -Fix
+pwsh -NoProfile -File ..\ai-collaboration-workflow\scripts\aiw.ps1 validate -Fix
 ```
 
 ## 交付物
@@ -225,3 +225,4 @@ pwsh -NoProfile -ExecutionPolicy Bypass -File .\tools\validate_plan_status.ps1 -
 - 用 base64 编码、JSON 序列化、命令行参数、环境变量、临时文件传递动态内容
 - Windows 路径用 `pathlib.Path`、raw string `r"..."`、或正斜杠，避免 `\U` `\n` `\t` 误解析
 - 文档中优先用仓库相对路径
+

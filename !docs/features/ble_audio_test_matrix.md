@@ -2,13 +2,13 @@
 
 ## 状态
 
-- status: `validated` (2026-05-19 全量硬件通过：A1-A19 PASS, H1 手动 PASS, T1-T5 PASS)
-- scope: BLE 音频真实用户场景矩阵。`A1-A19` 为自动化用户场景 case，`H1-H3` 为手动 case，`T1-T5` 为旧传输层 case（`--cases transport`）
+- status: `validated` (2026-05-19 全量硬件通过：A1-A19 PASS, H1 手动 PASS, T1-T5 PASS；A20 为 2026-05-20 新增超长录音扩展 case，需单独长测)
+- scope: BLE 音频真实用户场景矩阵。`A1-A20` 为自动化用户场景 case，`H1-H3` 为手动 case，`T1-T5` 为旧传输层 case（`--cases transport`）
 - source_of_truth: `tools/verify_audio_ble_product_matrix.py` 中的 `CASE_ORDER` / `MANUAL_CASES` / `TRANSPORT_ONLY_CASES` / `CASE_SUITES` / `CASE_RUNNERS` / `CASE_DESCRIPTIONS`
 
 ## 当前能力
 
-矩阵脚本模拟真实用户使用语音键盘的场景。每个 A case 对应一个真实用户故事——正常说话、犹豫停顿、小声说话、说很快、短命令、极短语音、标点命令、中英混合、重复同句、环境噪音、旁边有人说话、取消、误触、一边走一边说、长时间空闲、网络异常、长时间综合使用。
+矩阵脚本模拟真实用户使用语音键盘的场景。每个 A case 对应一个真实用户故事——正常说话、犹豫停顿、小声说话、说很快、短命令、极短语音、标点命令、中英混合、重复同句、环境噪音、旁边有人说话、取消、误触、一边走一边说、长时间空闲、网络异常、长时间综合使用、超长录音传输。
 
 TTS 音频通过分段播放（句间随机停顿）、噪音叠加（白噪声/粉红噪声）、语音干扰叠加（次声 TTS 混合）、渐变音量（模拟走动距离变化）等能力模拟真实使用条件。句子池覆盖长句（24条）、短命令（17条）、极短词（10条）、标点命令（8条）、中英混合（15条）。
 
@@ -20,11 +20,12 @@ TTS 音频通过分段播放（句间随机停顿）、噪音叠加（白噪声/
 |-------|------|------|
 | `smoke` | A1, A3, A14, A15 | 核心门禁，快速验证 |
 | `daily`/`auto` | A1-A16 | 日常回归，不含长 idle/soak |
-| `full` | A1-A19 | 全量矩阵 |
+| `full` | A1-A20 | 全量矩阵，包含 15 分钟 A20 |
 | `soak` | A17, A18, A19 | 长 idle + 网络异常 + 综合 soak |
+| `extended` | A20 | 超长录音扩展门禁 |
 | `transport` | T1-T5 | 旧传输层 case，通过 `--cases transport` 运行 |
 
-`--cases auto` 默认只跑 A1-A16（不含 A17 5min idle、A18 网络异常、A19 soak）。
+`--cases auto` 默认只跑 A1-A16（不含 A17 5min idle、A18 网络异常、A19 soak、A20 15min 超长录音）。
 
 ## 胶囊（Capsule）验证
 
@@ -101,6 +102,7 @@ TTS 音频通过分段播放（句间随机停顿）、噪音叠加（白噪声/
 | ID | 场景 |
 |---|---|
 | A19 | 综合 soak：混合所有 profile 和句子类型 |
+| A20 | 超长录音传输：默认 15 分钟 BLE session，由 KEY1/串口 toggle 停止；验证无 session_error、无丢包、duration 和 expected packet count 合理；不跑 ASR/product-chain accuracy |
 
 ### 手动 case
 
@@ -150,15 +152,16 @@ python -m compileall -q tools
 python .\tools\verify_audio_ble_product_matrix.py --list-cases
 python .\tools\verify_audio_ble_product_matrix.py --port COM3 --fail-on-warning
 python .\tools\verify_audio_ble_product_matrix.py --port COM3 --cases A19 --soak-round-count 3 --fail-on-warning
+python .\tools\verify_audio_ble_product_matrix.py --port COM3 --cases A20 --a20-capture-seconds 900 --transport-only --fail-on-warning
 python .\tools\verify_audio_ble_product_matrix.py --port COM3 --cases H1 --fail-on-warning
 python .\tools\verify_audio_ble_product_matrix.py --port COM3 --cases T1,T2,T3,T4,T5 --transport-only --fail-on-warning
 ```
 
-真实硬件命令前按资源加锁：`lock_resource.ps1 -Resource COM3` 与 `lock_resource.ps1 -Resource BLE`，用完分别释放。
+真实硬件命令前按资源加锁：`aiw.ps1 lock -Resource COM3` 与 `aiw.ps1 lock -Resource BLE`，用完分别释放。
 
 ## 关键不变量
 
-- `CASE_SUITES` 定义 suite 分层：`--cases auto` 默认只跑 A1-A16，A17/A18/A19 在 `soak` suite 中需显式指定。
+- `CASE_SUITES` 定义 suite 分层：`--cases auto` 默认只跑 A1-A16，A17/A18/A19 在 `soak` suite 中需显式指定，A20 在 `extended` suite 中需显式指定。
 - 传输层 case（T1-T5）只通过 `--cases transport` 运行，不在 `--cases auto` 中。
 - `--transport-only` 只控制产品链路 overlay 开关，不影响 case 选择。
 - 默认逐 case fail-fast；需要全量失败收集时加 `--continue-on-failure`。
@@ -167,6 +170,7 @@ python .\tools\verify_audio_ble_product_matrix.py --port COM3 --cases T1,T2,T3,T
 - 胶囊验证失败产生 warning 不直接 fail。
 - 每个 A case 只测一个维度，不混合多个用户场景。
 - A18 使用可控超时（8s total / 5s listener），不依赖真实网络异常。
+- A20 是 transport-only 超长录音门禁，默认 900 秒，允许用 `--a20-capture-seconds` 做短时 smoke；正式验收必须使用 900 秒。
 - 矩阵只做编排和验收，不重新实现 Listener-Type 的 BLE 流式/ASR/插入逻辑。
 - `FAST_TTS_RATE = 3`，对应 fast profile 的 TTS rate。
 
@@ -175,6 +179,7 @@ python .\tools\verify_audio_ble_product_matrix.py --port COM3 --cases T1,T2,T3,T
 - 不同说话人音色需额外 TTS voice 或真人（H3 手动预留）。
 - ASR 错误后的用户修改流程（产品决策待定）。
 - 产品链路验收需要同级 `Listener-Type` 仓库、可用 ASR 配置、真实设备在线。
+- A20 需要真实硬件和 COM/BLE 锁；短时 smoke 只能验证脚本入口，不能替代 15 分钟验收。
 - RF 干扰/距离需外部环境（H2）。
 - 胶囊视觉细节（退出动画、compact text 截断）需手动目视验证。
 - 胶囊验证依赖 smoke 报告暴露 `partial_preview_count` / `last_partial_preview` 字段。

@@ -7,6 +7,8 @@
 #include "freertos/task.h"
 #include "esp_log.h"
 
+#include "diag_log.h"
+
 #define USB_HID_MODIFIER_LEFT_SHIFT 0x02
 #define USB_HID_SPACE 0x2C
 #define USB_HID_DOT 0x37
@@ -25,6 +27,7 @@
         break
 
 static const char *TAG = "hid_keyboard";
+static uint32_t s_key_press_count;
 
 static const uint8_t s_keyboard_report_map[] = {
     0x05, 0x01,
@@ -149,6 +152,11 @@ size_t hid_keyboard_get_report_map_size(void)
     return sizeof(s_keyboard_report_map);
 }
 
+uint32_t hid_keyboard_get_key_press_count(void)
+{
+    return s_key_press_count;
+}
+
 esp_err_t hid_keyboard_send_ascii(char input_char, esp_hidd_dev_t *hid_device)
 {
     uint8_t report_buffer[HID_KEYBOARD_REPORT_SIZE] = {0};
@@ -158,12 +166,17 @@ esp_err_t hid_keyboard_send_ascii(char input_char, esp_hidd_dev_t *hid_device)
 
     if (hid_device == NULL) {
         ESP_LOGE(TAG, "send_ascii called without HID device");
+        diag_log(DIAG_SRC_KEYBOARD, DIAG_KBD_KEY_FAIL, DIAG_SEV_WARN,
+                 input_value, ESP_ERR_INVALID_ARG, 0, 0);
         return ESP_ERR_INVALID_ARG;
     }
 
+    bool connected = esp_hidd_dev_connected(hid_device);
     hid_keyboard_translate_ascii(report_buffer, input_char);
     if (!hid_keyboard_is_supported_ascii(report_buffer)) {
         ESP_LOGW(TAG, "unsupported ascii input=0x%02X display=%c", input_value, display_char);
+        diag_log(DIAG_SRC_KEYBOARD, DIAG_KBD_KEY_FAIL, DIAG_SEV_WARN,
+                 input_value, ESP_ERR_NOT_SUPPORTED, connected ? 1 : 0, 0);
         return ESP_ERR_NOT_SUPPORTED;
     }
 
@@ -174,11 +187,13 @@ esp_err_t hid_keyboard_send_ascii(char input_char, esp_hidd_dev_t *hid_device)
         display_char,
         report_buffer[0],
         report_buffer[2],
-        esp_hidd_dev_connected(hid_device) ? "yes" : "no");
+        connected ? "yes" : "no");
 
     ret = esp_hidd_dev_input_set(hid_device, 0, HID_KEYBOARD_REPORT_ID, report_buffer, HID_KEYBOARD_REPORT_SIZE);
     if (ret != ESP_OK) {
         ESP_LOGE(TAG, "input press failed: %s", esp_err_to_name(ret));
+        diag_log(DIAG_SRC_KEYBOARD, DIAG_KBD_KEY_FAIL, DIAG_SEV_WARN,
+                 input_value, ret, connected ? 1 : 0, 0);
         return ret;
     }
 
@@ -187,9 +202,14 @@ esp_err_t hid_keyboard_send_ascii(char input_char, esp_hidd_dev_t *hid_device)
     ret = esp_hidd_dev_input_set(hid_device, 0, HID_KEYBOARD_REPORT_ID, report_buffer, HID_KEYBOARD_REPORT_SIZE);
     if (ret != ESP_OK) {
         ESP_LOGE(TAG, "input release failed: %s", esp_err_to_name(ret));
+        diag_log(DIAG_SRC_KEYBOARD, DIAG_KBD_KEY_FAIL, DIAG_SEV_WARN,
+                 input_value, ret, connected ? 1 : 0, 0);
         return ret;
     }
 
+    s_key_press_count++;
+    diag_log(DIAG_SRC_KEYBOARD, DIAG_KBD_KEY_PRESS, DIAG_SEV_INFO,
+             input_value, 0, connected ? 1 : 0, s_key_press_count);
     ESP_LOGI(TAG, "send_ascii done input=0x%02X display=%c", input_value, display_char);
     return ESP_OK;
 }

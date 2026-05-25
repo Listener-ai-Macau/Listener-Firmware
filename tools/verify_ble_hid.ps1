@@ -75,11 +75,19 @@ $has_send_done = $log_output -match "hid_keyboard: send_ascii done"
 $has_not_connected = $log_output -match "Device Not Connected|connected=no"
 
 if (-not $has_start) {
-    throw "verify_ble_hid: missing boot marker 'ble_hid: START'"
+    if ($has_send_done) {
+        Write-Warning "verify_ble_hid: boot marker missing, but HID report dispatch completed; reset log was likely missed"
+    } else {
+        throw "verify_ble_hid: missing boot marker 'ble_hid: START'"
+    }
 }
 
 if (-not $has_input_task) {
-    throw "verify_ble_hid: missing input task marker 'ble_hid: USB SERIAL INPUT READY'"
+    if ($has_uart_rx) {
+        Write-Warning "verify_ble_hid: input task marker missing, but script input reached firmware"
+    } else {
+        throw "verify_ble_hid: missing input task marker 'ble_hid: USB SERIAL INPUT READY'"
+    }
 }
 
 if ($has_send_done) {

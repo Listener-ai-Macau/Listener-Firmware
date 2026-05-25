@@ -1,0 +1,344 @@
+### PRE-DRAIN
+I (15549) audio_capture: frame captured count=1500 bytes=960000
+I (40084) audio_capture: frame captured count=3950 bytes=2528000
+I (40584) audio_capture: frame captured count=4000 bytes=2560000
+
+### SEND ~DIAGLOG:COUNT
+I (40884) diag_log: DIAGLOG COUNT: 219
+I (41084) audio_capture: frame captured count=4050 bytes=2592000
+I (41584) audio_capture: frame captured count=4100 bytes=2624000
+I (42084) audio_capture: frame captured count=4150 bytes=2656000
+I (42584) audio_capture: frame captured count=4200 bytes=2688000
+
+### SEND ~DIAGLOG:LAST:5
+{"t":7966,"src":"ble_gap","evt":7,"sev":"INFO","a1":6,"a2":0,"a3":800,"a4":1}
+{"t":8028,"src":"ble_gap","evt":2,"sev":"INFO","a1":1,"a2":0,"a3":1,"a4":0}
+{"t":8183,"src":"ble_gap","evt":1,"sev":"INFO","a1":0,"a2":517,"a3":1,"a4":4}
+{"t":8205,"src":"ble_audio","evt":1,"sev":"INFO","a1":1,"a2":3,"a3":2286455572,"a4":0}
+{"t":8217,"src":"ble_audio","evt":1,"sev":"INFO","a1":3,"a2":4,"a3":2286455572,"a4":0}
+I (43074) diag_log: DIAGLOG LAST 5: dumped 5 events
+I (43084) audio_capture: frame captured count=4250 bytes=2720000
+I (43584) audio_capture: frame captured count=4300 bytes=2752000
+I (44084) audio_capture: frame captured count=4350 bytes=2784000
+I (44584) audio_capture: frame captured count=4400 bytes=2816000
+I (45084) audio_capture: frame captured count=4450 bytes=2848000
+I (45584) audio_capture: frame captured count=4500 bytes=2880000
+I (46084) audio_capture: frame captured count=4550 bytes=2912000
+
+### SEND ~DIAGLOG:DUMP
+{"t":68,"src":"system","evt":2,"sev":"INFO","a1":5,"a2":0,"a3":0,"a4":0}
+{"t":83,"src":"system","evt":1,"sev":"INFO","a1":4,"a2":0,"a3":0,"a4":0}
+{"t":97,"src":"system","evt":2,"sev":"INFO","a1":1,"a2":0,"a3":0,"a4":0}
+{"t":103,"src":"system","evt":2,"sev":"INFO","a1":2,"a2":261,"a3":0,"a4":0}
+{"t":107,"src":"self_test","evt":1,"sev":"INFO","a1":1,"a2":0,"a3":327,"a4":1}
+{"t":200,"src":"ble_gap","evt":6,"sev":"INFO","a1":5,"a2":0,"a3":1,"a4":0}
+{"t":360,"src":"ble_gap","evt":4,"sev":"INFO","a1":1,"a2":1,"a3":1,"a4":0}
+{"t":1645,"src":"ble_gap","evt":4,"sev":"INFO","a1":1,"a2":0,"a3":1,"a4":0}
+{"t":7873,"src":"ble_gap","evt":2,"sev":"INFO","a1":1,"a2":0,"a3":1,"a4":0}
+{"t":8002,"src":"ble_audio","evt":1,"sev":"INFO","a1":0,"a2":1,"a3":2971904838,"a4":0}
+{"t":8009,"src":"ble_hid","evt":1,"sev":"INFO","a1":1,"a2":87,"a3":0,"a4":0}
+{"t":8036,"src":"ble_gap","evt":7,"sev":"INFO","a1":6,"a2":0,"a3":800,"a4":1}
+{"t":8098,"src":"ble_gap","evt":2,"sev":"INFO","a1":1,"a2":0,"a3":1,"a4":0}
+{"t":8215,"src":"ble_gap","evt":1,"sev":"INFO","a1":0,"a2":517,"a3":1,"a4":4}
+{"t":8241,"src":"ble_audio","evt":1,"sev":"INFO","a1":1,"a2":3,"a3":2286455572,"a4":0}
+{"t":8254,"src":"ble_audio","evt":1,"sev":"INFO","a1":3,"a2":4,"a3":2286455572,"a4":0}
+{"t":69,"src":"system","evt":2,"sev":"INFO","a1":5,"a2":0,"a3":0,"a4":0}
+{"t":73,"src":"system","evt":1,"sev":"INFO","a1":2,"a2":0,"a3":0,"a4":0}
+{"t":87,"src":"system","evt":2,"sev":"INFO","a1":1,"a2":0,"a3":0,"a4":0}
+{"t":88,"src":"system","evt":2,"sev":"INFO","a1":2,"a2":261,"a3":0,"a4":0}
+{"t":97,"src":"self_test","evt":1,"sev":"INFO","a1":1,"a2":0,"a3":327,"a4":1}
+{"t":190,"src":"ble_gap","evt":6,"sev":"INFO","a1":5,"a2":0,"a3":1,"a4":0}
+{"t":349,"src":"ble_gap","evt":4,"sev":"INFO","a1":1,"a2":1,"a3":1,"a4":0}
+{"t":587,"src":"ble_gap","evt":2,"sev":"INFO","a1":1,"a2":0,"a3":1,"a4":0}
+{"t":710,"src":"ble_hid","evt":1,"sev":"INFO","a1":1,"a2":87,"a3":0,"a4":0}
+{"t":723,"src":"ble_audio","evt":1,"sev":"INFO","a1":0,"a2":1,"a3":2971904838,"a4":0}
+{"t":750,"src":"ble_gap","evt":7,"sev":"INFO","a1":6,"a2":0,"a3":800,"a4":1}
+{"t":777,"src":"ble_gap","evt":1,"sev":"INFO","a1":0,"a2":517,"a3":1,"a4":4}
+{"t":803,"src":"ble_audio","evt":1,"sev":"INFO","a1":1,"a2":3,"a3":2286455572,"a4":0}
+{"t":816,"src":"ble_audio","evt":1,"sev":"INFO","a1":3,"a2":4,"a3":2286455572,"a4":0}
+{"t":827,"src":"ble_gap","evt":2,"sev":"INFO","a1":1,"a2":0,"a3":1,"a4":0}
+{"t":878,"src":"ble_audio","evt":1,"sev":"INFO","a1":4,"a2":3,"a3":867066404,"a4":0}
+{"t":892,"src":"ble_audio","evt":1,"sev":"INFO","a1":3,"a2":4,"a3":867066404,"a4":0}
+{"t":966,"src":"ble_audio","evt":1,"sev":"INFO","a1":4,"a2":3,"a3":867066404,"a4":0}
+{"t":980,"src":"ble_audio","evt":1,"sev":"INFO","a1":3,"a2":4,"a3":867066404,"a4":0}
+{"t":70,"src":"system","evt":2,"sev":"INFO","a1":5,"a2":0,"a3":0,"a4":0}
+{"t":73,"src":"system","evt":1,"sev":"INFO","a1":4,"a2":0,"a3":0,"a4":0}
+{"t":87,"src":"system","evt":2,"sev":"INFO","a1":1,"a2":0,"a3":0,"a4":0}
+{"t":88,"src":"system","evt":2,"sev":"INFO","a1":2,"a2":261,"a3":0,"a4":0}
+{"t":97,"src":"self_test","evt":1,"sev":"INFO","a1":1,"a2":0,"a3":327,"a4":1}
+{"t":191,"src":"ble_gap","evt":6,"sev":"INFO","a1":5,"a2":0,"a3":1,"a4":0}
+{"t":350,"src":"ble_gap","evt":4,"sev":"INFO","a1":1,"a2":1,"a3":1,"a4":0}
+{"t":1636,"src":"ble_gap","evt":4,"sev":"INFO","a1":1,"a2":0,"a3":1,"a4":0}
+{"t":8225,"src":"ble_gap","evt":2,"sev":"INFO","a1":1,"a2":0,"a3":1,"a4":0}
+{"t":8354,"src":"ble_hid","evt":1,"sev":"INFO","a1":1,"a2":87,"a3":0,"a4":0}
+{"t":8367,"src":"ble_audio","evt":1,"sev":"INFO","a1":0,"a2":1,"a3":2971904838,"a4":0}
+{"t":8394,"src":"ble_gap","evt":7,"sev":"INFO","a1":6,"a2":0,"a3":800,"a4":1}
+{"t":8416,"src":"ble_gap","evt":1,"sev":"INFO","a1":0,"a2":517,"a3":1,"a4":4}
+{"t":8442,"src":"ble_audio","evt":1,"sev":"INFO","a1":1,"a2":3,"a3":2286455572,"a4":0}
+{"t":8455,"src":"ble_audio","evt":1,"sev":"INFO","a1":3,"a2":4,"a3":2286455572,"a4":0}
+{"t":8465,"src":"ble_gap","evt":2,"sev":"INFO","a1":1,"a2":0,"a3":1,"a4":0}
+{"t":8517,"src":"ble_audio","evt":1,"sev":"INFO","a1":4,"a2":3,"a3":867066404,"a4":0}
+{"t":8531,"src":"ble_audio","evt":1,"sev":"INFO","a1":3,"a2":4,"a3":867066404,"a4":0}
+{"t":8604,"src":"ble_audio","evt":1,"sev":"INFO","a1":4,"a2":3,"a3":867066404,"a4":0}
+{"t":8618,"src":"ble_audio","evt":1,"sev":"INFO","a1":3,"a2":4,"a3":867066404,"a4":0}
+{"t":71,"src":"system","evt":2,"sev":"INFO","a1":5,"a2":0,"a3":0,"a4":0}
+{"t":73,"src":"system","evt":1,"sev":"INFO","a1":4,"a2":0,"a3":0,"a4":0}
+{"t":87,"src":"system","evt":2,"sev":"INFO","a1":1,"a2":0,"a3":0,"a4":0}
+{"t":88,"src":"system","evt":2,"sev":"INFO","a1":2,"a2":261,"a3":0,"a4":0}
+{"t":97,"src":"self_test","evt":1,"sev":"INFO","a1":1,"a2":0,"a3":327,"a4":1}
+{"t":192,"src":"ble_gap","evt":6,"sev":"INFO","a1":5,"a2":0,"a3":1,"a4":0}
+{"t":351,"src":"ble_gap","evt":4,"sev":"INFO","a1":1,"a2":1,"a3":1,"a4":0}
+{"t":1636,"src":"ble_gap","evt":4,"sev":"INFO","a1":1,"a2":0,"a3":1,"a4":0}
+{"t":7870,"src":"ble_gap","evt":2,"sev":"INFO","a1":1,"a2":0,"a3":1,"a4":0}
+{"t":7994,"src":"ble_hid","evt":1,"sev":"INFO","a1":1,"a2":87,"a3":0,"a4":0}
+{"t":8006,"src":"ble_audio","evt":1,"sev":"INFO","a1":0,"a2":1,"a3":2971904838,"a4":0}
+{"t":8034,"src":"ble_gap","evt":7,"sev":"INFO","a1":6,"a2":0,"a3":800,"a4":1}
+I (46584) audio_capture: frame captured count=4600 bytes=2944000
+{"t":8201,"src":"ble_gap","evt":1,"sev":"INFO","a1":0,"a2":517,"a3":1,"a4":4}
+{"t":8222,"src":"ble_audio","evt":1,"sev":"INFO","a1":1,"a2":3,"a3":2286455572,"a4":0}
+{"t":8234,"src":"ble_audio","evt":1,"sev":"INFO","a1":3,"a2":4,"a3":2286455572,"a4":0}
+{"t":8507,"src":"ble_gap","evt":2,"sev":"INFO","a1":1,"a2":0,"a3":1,"a4":0}
+{"t":8558,"src":"ble_audio","evt":1,"sev":"INFO","a1":4,"a2":3,"a3":867066404,"a4":0}
+{"t":8572,"src":"ble_audio","evt":1,"sev":"INFO","a1":3,"a2":4,"a3":867066404,"a4":0}
+{"t":8646,"src":"ble_audio","evt":1,"sev":"INFO","a1":4,"a2":3,"a3":867066404,"a4":0}
+{"t":8660,"src":"ble_audio","evt":1,"sev":"INFO","a1":3,"a2":4,"a3":867066404,"a4":0}
+{"t":73,"src":"system","evt":2,"sev":"INFO","a1":5,"a2":0,"a3":0,"a4":0}
+{"t":83,"src":"system","evt":1,"sev":"INFO","a1":4,"a2":0,"a3":0,"a4":0}
+{"t":97,"src":"system","evt":2,"sev":"INFO","a1":1,"a2":0,"a3":0,"a4":0}
+{"t":98,"src":"system","evt":2,"sev":"INFO","a1":2,"a2":261,"a3":0,"a4":0}
+{"t":107,"src":"self_test","evt":1,"sev":"INFO","a1":1,"a2":0,"a3":327,"a4":1}
+{"t":202,"src":"ble_gap","evt":6,"sev":"INFO","a1":5,"a2":0,"a3":1,"a4":0}
+{"t":361,"src":"ble_gap","evt":4,"sev":"INFO","a1":1,"a2":1,"a3":1,"a4":0}
+{"t":1647,"src":"ble_gap","evt":4,"sev":"INFO","a1":1,"a2":0,"a3":1,"a4":0}
+{"t":8424,"src":"ble_gap","evt":2,"sev":"INFO","a1":1,"a2":0,"a3":1,"a4":0}
+{"t":8526,"src":"ble_gap","evt":1,"sev":"INFO","a1":0,"a2":517,"a3":1,"a4":4}
+{"t":8549,"src":"ble_hid","evt":1,"sev":"INFO","a1":1,"a2":87,"a3":0,"a4":0}
+{"t":8574,"src":"ble_audio","evt":1,"sev":"INFO","a1":0,"a2":1,"a3":2971904838,"a4":0}
+{"t":8621,"src":"ble_audio","evt":1,"sev":"INFO","a1":1,"a2":3,"a3":2339379497,"a4":0}
+{"t":8635,"src":"ble_audio","evt":1,"sev":"INFO","a1":3,"a2":4,"a3":2339379497,"a4":0}
+{"t":8644,"src":"ble_gap","evt":7,"sev":"INFO","a1":6,"a2":0,"a3":800,"a4":1}
+{"t":8701,"src":"ble_gap","evt":2,"sev":"INFO","a1":1,"a2":0,"a3":1,"a4":0}
+{"t":8752,"src":"ble_audio","evt":1,"sev":"INFO","a1":4,"a2":3,"a3":867066404,"a4":0}
+{"t":8766,"src":"ble_audio","evt":1,"sev":"INFO","a1":3,"a2":4,"a3":867066404,"a4":0}
+{"t":8845,"src":"ble_audio","evt":1,"sev":"INFO","a1":4,"a2":3,"a3":867066404,"a4":0}
+{"t":8859,"src":"ble_audio","evt":1,"sev":"INFO","a1":3,"a2":4,"a3":867066404,"a4":0}
+{"t":36325,"src":"voice_key","evt":1,"sev":"INFO","a1":1,"a2":0,"a3":0,"a4":0}
+{"t":36338,"src":"audio","evt":2,"sev":"INFO","a1":1,"a2":1,"a3":0,"a4":0}
+{"t":74,"src":"system","evt":2,"sev":"INFO","a1":5,"a2":0,"a3":0,"a4":0}
+{"t":83,"src":"system","evt":1,"sev":"INFO","a1":2,"a2":0,"a3":0,"a4":0}
+{"t":97,"src":"system","evt":2,"sev":"INFO","a1":1,"a2":0,"a3":0,"a4":0}
+{"t":98,"src":"system","evt":2,"sev":"INFO","a1":2,"a2":261,"a3":0,"a4":0}
+{"t":107,"src":"self_test","evt":1,"sev":"INFO","a1":1,"a2":0,"a3":327,"a4":1}
+{"t":201,"src":"ble_gap","evt":6,"sev":"INFO","a1":5,"a2":0,"a3":1,"a4":0}
+{"t":360,"src":"ble_gap","evt":4,"sev":"INFO","a1":1,"a2":1,"a3":1,"a4":0}
+{"t":1646,"src":"ble_gap","evt":4,"sev":"INFO","a1":1,"a2":0,"a3":1,"a4":0}
+{"t":7958,"src":"ble_gap","evt":2,"sev":"INFO","a1":1,"a2":0,"a3":1,"a4":0}
+{"t":8081,"src":"ble_hid","evt":1,"sev":"INFO","a1":1,"a2":87,"a3":0,"a4":0}
+{"t":8094,"src":"ble_audio","evt":1,"sev":"INFO","a1":0,"a2":1,"a3":2971904838,"a4":0}
+{"t":8121,"src":"ble_gap","evt":7,"sev":"INFO","a1":6,"a2":0,"a3":800,"a4":1}
+{"t":8183,"src":"ble_gap","evt":2,"sev":"INFO","a1":1,"a2":0,"a3":1,"a4":0}
+{"t":8305,"src":"ble_gap","evt":1,"sev":"INFO","a1":0,"a2":517,"a3":1,"a4":4}
+{"t":8332,"src":"ble_audio","evt":1,"sev":"INFO","a1":1,"a2":3,"a3":2286455572,"a4":0}
+{"t":8344,"src":"ble_audio","evt":1,"sev":"INFO","a1":3,"a2":4,"a3":2286455572,"a4":0}
+{"t":15424,"src":"keyboard","evt":1,"sev":"INFO","a1":119,"a2":0,"a3":1,"a4":1}
+{"t":15524,"src":"keyboard","evt":1,"sev":"INFO","a1":97,"a2":0,"a3":1,"a4":2}
+{"t":15624,"src":"keyboard","evt":1,"sev":"INFO","a1":115,"a2":0,"a3":1,"a4":3}
+{"t":15723,"src":"keyboard","evt":1,"sev":"INFO","a1":100,"a2":0,"a3":1,"a4":4}
+{"t":76,"src":"system","evt":2,"sev":"INFO","a1":5,"a2":0,"a3":0,"a4":0}
+{"t":83,"src":"system","evt":1,"sev":"INFO","a1":4,"a2":0,"a3":0,"a4":0}
+{"t":97,"src":"system","evt":2,"sev":"INFO","a1":1,"a2":0,"a3":0,"a4":0}
+{"t":98,"src":"system","evt":2,"sev":"INFO","a1":2,"a2":261,"a3":0,"a4":0}
+{"t":107,"src":"self_test","evt":1,"sev":"INFO","a1":1,"a2":0,"a3":327,"a4":1}
+{"t":201,"src":"ble_gap","evt":6,"sev":"INFO","a1":5,"a2":0,"a3":1,"a4":0}
+{"t":360,"src":"ble_gap","evt":4,"sev":"INFO","a1":1,"a2":1,"a3":1,"a4":0}
+{"t":1646,"src":"ble_gap","evt":4,"sev":"INFO","a1":1,"a2":0,"a3":1,"a4":0}
+{"t":8157,"src":"ble_gap","evt":2,"sev":"INFO","a1":1,"a2":0,"a3":1,"a4":0}
+{"t":8281,"src":"ble_hid","evt":1,"sev":"INFO","a1":1,"a2":87,"a3":0,"a4":0}
+{"t":8294,"src":"ble_audio","evt":1,"sev":"INFO","a1":0,"a2":1,"a3":2971904838,"a4":0}
+{"t":8327,"src":"ble_gap","evt":7,"sev":"INFO","a1":6,"a2":0,"a3":800,"a4":1}
+{"t":8348,"src":"ble_gap","evt":1,"sev":"INFO","a1":0,"a2":517,"a3":1,"a4":4}
+{"t":8374,"src":"ble_audio","evt":1,"sev":"INFO","a1":1,"a2":3,"a3":2286455572,"a4":0}
+{"t":8387,"src":"ble_audio","evt":1,"sev":"INFO","a1":3,"a2":4,"a3":2286455572,"a4":0}
+{"t":8397,"src":"ble_gap","evt":2,"sev":"INFO","a1":1,"a2":0,"a3":1,"a4":0}
+{"t":8449,"src":"ble_audio","evt":1,"sev":"INFO","a1":4,"a2":3,"a3":867066404,"a4":0}
+{"t":8463,"src":"ble_audio","evt":1,"sev":"INFO","a1":3,"a2":4,"a3":867066404,"a4":0}
+{"t":8536,"src":"ble_audio","evt":1,"sev":"INFO","a1":4,"a2":3,"a3":867066404,"a4":0}
+{"t":8550,"src":"ble_audio","evt":1,"sev":"INFO","a1":3,"a2":4,"a3":867066404,"a4":0}
+I (47084) audio_capture: frame captured count=4650 bytes=2976000
+{"t":13355,"src":"voice_key","evt":1,"sev":"INFO","a1":1,"a2":0,"a3":0,"a4":0}
+{"t":13368,"src":"audio","evt":2,"sev":"INFO","a1":1,"a2":1,"a3":0,"a4":0}
+{"t":57,"src":"system","evt":2,"sev":"INFO","a1":5,"a2":0,"a3":0,"a4":0}
+{"t":63,"src":"system","evt":1,"sev":"INFO","a1":4,"a2":0,"a3":0,"a4":0}
+{"t":77,"src":"system","evt":2,"sev":"INFO","a1":1,"a2":0,"a3":0,"a4":0}
+{"t":78,"src":"system","evt":2,"sev":"INFO","a1":2,"a2":261,"a3":0,"a4":0}
+{"t":87,"src":"self_test","evt":1,"sev":"INFO","a1":1,"a2":0,"a3":327,"a4":1}
+{"t":181,"src":"ble_gap","evt":6,"sev":"INFO","a1":5,"a2":0,"a3":1,"a4":0}
+{"t":340,"src":"ble_gap","evt":4,"sev":"INFO","a1":1,"a2":1,"a3":1,"a4":0}
+{"t":1625,"src":"ble_gap","evt":4,"sev":"INFO","a1":1,"a2":0,"a3":1,"a4":0}
+{"t":4203,"src":"voice_key","evt":1,"sev":"INFO","a1":1,"a2":0,"a3":0,"a4":0}
+{"t":4205,"src":"audio","evt":3,"sev":"WARN","a1":1,"a2":0,"a3":0,"a4":0}
+{"t":4212,"src":"voice_rec","evt":2,"sev":"WARN","a1":1,"a2":259,"a3":0,"a4":0}
+{"t":4925,"src":"voice_key","evt":1,"sev":"INFO","a1":1,"a2":0,"a3":0,"a4":0}
+{"t":4933,"src":"audio","evt":3,"sev":"WARN","a1":1,"a2":0,"a3":0,"a4":0}
+{"t":4940,"src":"voice_rec","evt":2,"sev":"WARN","a1":1,"a2":259,"a3":0,"a4":0}
+{"t":5345,"src":"voice_key","evt":1,"sev":"INFO","a1":1,"a2":0,"a3":0,"a4":0}
+{"t":5353,"src":"audio","evt":3,"sev":"WARN","a1":1,"a2":0,"a3":0,"a4":0}
+{"t":5360,"src":"voice_rec","evt":2,"sev":"WARN","a1":1,"a2":259,"a3":0,"a4":0}
+{"t":6205,"src":"voice_key","evt":1,"sev":"INFO","a1":1,"a2":0,"a3":0,"a4":0}
+{"t":6213,"src":"audio","evt":3,"sev":"WARN","a1":1,"a2":0,"a3":0,"a4":0}
+{"t":6220,"src":"voice_rec","evt":2,"sev":"WARN","a1":1,"a2":259,"a3":0,"a4":0}
+{"t":7829,"src":"ble_gap","evt":2,"sev":"INFO","a1":1,"a2":0,"a3":1,"a4":0}
+{"t":7952,"src":"ble_hid","evt":1,"sev":"INFO","a1":1,"a2":87,"a3":0,"a4":0}
+{"t":7965,"src":"ble_audio","evt":1,"sev":"INFO","a1":0,"a2":1,"a3":2971904838,"a4":0}
+{"t":7992,"src":"ble_gap","evt":7,"sev":"INFO","a1":6,"a2":0,"a3":800,"a4":1}
+{"t":8046,"src":"ble_gap","evt":2,"sev":"INFO","a1":1,"a2":0,"a3":1,"a4":0}
+{"t":8239,"src":"ble_gap","evt":1,"sev":"INFO","a1":0,"a2":517,"a3":1,"a4":4}
+{"t":8266,"src":"ble_audio","evt":1,"sev":"INFO","a1":1,"a2":3,"a3":2286455572,"a4":0}
+{"t":8279,"src":"ble_audio","evt":1,"sev":"INFO","a1":3,"a2":4,"a3":2286455572,"a4":0}
+{"t":79,"src":"system","evt":2,"sev":"INFO","a1":5,"a2":0,"a3":0,"a4":0}
+{"t":83,"src":"system","evt":1,"sev":"INFO","a1":2,"a2":0,"a3":0,"a4":0}
+{"t":97,"src":"system","evt":2,"sev":"INFO","a1":1,"a2":0,"a3":0,"a4":0}
+{"t":98,"src":"system","evt":2,"sev":"INFO","a1":2,"a2":261,"a3":0,"a4":0}
+{"t":107,"src":"self_test","evt":1,"sev":"INFO","a1":1,"a2":0,"a3":327,"a4":1}
+{"t":203,"src":"ble_gap","evt":6,"sev":"INFO","a1":5,"a2":0,"a3":1,"a4":0}
+{"t":362,"src":"ble_gap","evt":4,"sev":"INFO","a1":1,"a2":1,"a3":1,"a4":0}
+{"t":1647,"src":"ble_gap","evt":4,"sev":"INFO","a1":1,"a2":0,"a3":1,"a4":0}
+{"t":2143,"src":"ble_gap","evt":2,"sev":"INFO","a1":1,"a2":0,"a3":1,"a4":0}
+{"t":2253,"src":"ble_hid","evt":1,"sev":"INFO","a1":1,"a2":87,"a3":0,"a4":0}
+{"t":2284,"src":"ble_audio","evt":1,"sev":"INFO","a1":0,"a2":1,"a3":2971904838,"a4":0}
+{"t":2312,"src":"ble_gap","evt":7,"sev":"INFO","a1":6,"a2":0,"a3":800,"a4":1}
+{"t":2526,"src":"ble_gap","evt":1,"sev":"INFO","a1":0,"a2":517,"a3":1,"a4":4}
+{"t":2547,"src":"ble_audio","evt":1,"sev":"INFO","a1":1,"a2":3,"a3":2286455572,"a4":0}
+{"t":2560,"src":"ble_audio","evt":1,"sev":"INFO","a1":3,"a2":4,"a3":2286455572,"a4":0}
+{"t":2773,"src":"ble_gap","evt":2,"sev":"INFO","a1":1,"a2":0,"a3":1,"a4":0}
+{"t":2823,"src":"ble_audio","evt":1,"sev":"INFO","a1":4,"a2":3,"a3":867066404,"a4":0}
+{"t":2837,"src":"ble_audio","evt":1,"sev":"INFO","a1":3,"a2":4,"a3":867066404,"a4":0}
+{"t":2911,"src":"ble_audio","evt":1,"sev":"INFO","a1":4,"a2":3,"a3":867066404,"a4":0}
+{"t":2925,"src":"ble_audio","evt":1,"sev":"INFO","a1":3,"a2":4,"a3":867066404,"a4":0}
+{"t":80,"src":"system","evt":2,"sev":"INFO","a1":5,"a2":0,"a3":0,"a4":0}
+{"t":83,"src":"system","evt":1,"sev":"INFO","a1":4,"a2":0,"a3":0,"a4":0}
+{"t":97,"src":"system","evt":2,"sev":"INFO","a1":1,"a2":0,"a3":0,"a4":0}
+{"t":98,"src":"system","evt":2,"sev":"INFO","a1":2,"a2":261,"a3":0,"a4":0}
+{"t":107,"src":"self_test","evt":1,"sev":"INFO","a1":1,"a2":0,"a3":327,"a4":1}
+{"t":201,"src":"ble_gap","evt":6,"sev":"INFO","a1":5,"a2":0,"a3":1,"a4":0}
+{"t":360,"src":"ble_gap","evt":4,"sev":"INFO","a1":1,"a2":1,"a3":1,"a4":0}
+{"t":1645,"src":"ble_gap","evt":4,"sev":"INFO","a1":1,"a2":0,"a3":1,"a4":0}
+{"t":7868,"src":"ble_gap","evt":2,"sev":"INFO","a1":1,"a2":0,"a3":1,"a4":0}
+{"t":7978,"src":"ble_hid","evt":1,"sev":"INFO","a1":1,"a2":87,"a3":0,"a4":0}
+{"t":8004,"src":"ble_audio","evt":1,"sev":"INFO","a1":0,"a2":1,"a3":2971904838,"a4":0}
+{"t":8031,"src":"ble_gap","evt":7,"sev":"INFO","a1":6,"a2":0,"a3":800,"a4":1}
+{"t":8093,"src":"ble_gap","evt":2,"sev":"INFO","a1":1,"a2":0,"a3":1,"a4":0}
+{"t":8210,"src":"ble_gap","evt":1,"sev":"INFO","a1":0,"a2":517,"a3":1,"a4":4}
+{"t":8237,"src":"ble_audio","evt":1,"sev":"INFO","a1":1,"a2":3,"a3":2286455572,"a4":0}
+{"t":8249,"src":"ble_audio","evt":1,"sev":"INFO","a1":3,"a2":4,"a3":2286455572,"a4":0}
+{"t":81,"src":"system","evt":2,"sev":"INFO","a1":5,"a2":0,"a3":0,"a4":0}
+{"t":83,"src":"system","evt":1,"sev":"INFO","a1":4,"a2":0,"a3":0,"a4":0}
+{"t":97,"src":"system","evt":2,"sev":"INFO","a1":1,"a2":0,"a3":0,"a4":0}
+{"t":98,"src":"system","evt":2,"sev":"INFO","a1":2,"a2":261,"a3":0,"a4":0}
+{"t":107,"src":"self_test","evt":1,"sev":"INFO","a1":1,"a2":0,"a3":327,"a4":1}
+{"t":207,"src":"ble_gap","evt":6,"sev":"INFO","a1":5,"a2":0,"a3":1,"a4":0}
+{"t":366,"src":"ble_gap","evt":4,"sev":"INFO","a1":1,"a2":1,"a3":1,"a4":0}
+I (47584) audio_capture: frame captured count=4700 bytes=3008000
+{"t":1651,"src":"ble_gap","evt":4,"sev":"INFO","a1":1,"a2":0,"a3":1,"a4":0}
+{"t":7803,"src":"ble_gap","evt":2,"sev":"INFO","a1":1,"a2":0,"a3":1,"a4":0}
+{"t":7932,"src":"ble_audio","evt":1,"sev":"INFO","a1":0,"a2":1,"a3":2971904838,"a4":0}
+{"t":7939,"src":"ble_hid","evt":1,"sev":"INFO","a1":1,"a2":87,"a3":0,"a4":0}
+{"t":7966,"src":"ble_gap","evt":7,"sev":"INFO","a1":6,"a2":0,"a3":800,"a4":1}
+{"t":8028,"src":"ble_gap","evt":2,"sev":"INFO","a1":1,"a2":0,"a3":1,"a4":0}
+{"t":8183,"src":"ble_gap","evt":1,"sev":"INFO","a1":0,"a2":517,"a3":1,"a4":4}
+{"t":8205,"src":"ble_audio","evt":1,"sev":"INFO","a1":1,"a2":3,"a3":2286455572,"a4":0}
+{"t":8217,"src":"ble_audio","evt":1,"sev":"INFO","a1":3,"a2":4,"a3":2286455572,"a4":0}
+I (47664) diag_log: DIAGLOG DUMP: 219 events
+I (48084) audio_capture: frame captured count=4750 bytes=3040000
+I (48334) ESP_HID_GAP: subscribe event; conn_handle=1 attr_handle=3 reason=2 prevn=1 curn=0 previ=0 curi=0
+I (48344) ble_audio_stream: audio notify subscription changed: epoch=1 conn=1 attr=3 notify=0 window=1
+I (48344) ble_audio_stream: audio transport state: stream_ready -> mtu_ready reason=gap_subscribe_notify_off epoch=1 conn=1 mtu_ready=1 notify=0 value_max=500
+I (48364) ESP_HID_GAP: subscribe event; conn_handle=1 attr_handle=26 reason=2 prevn=1 curn=0 previ=0 curi=0
+I (48374) ESP_HID_GAP: subscribe event; conn_handle=1 attr_handle=45 reason=2 prevn=1 curn=0 previ=0 curi=0
+I (48384) ESP_HID_GAP: disconnect; reason=546
+I (48384) ble_hid: DISCONNECT: UNKNOWN
+I (48384) ble_audio_stream: audio transport epoch advanced: epoch=2 reason=gap_disconnect stale_subscribe=0 stale_mtu=0 stale_notify_tx=0 stale_disconnect=0
+I (48404) ble_audio_stream: audio transport state: mtu_ready -> disconnected reason=gap_disconnect epoch=2 conn=65535 mtu_ready=0 notify=0 value_max=244
+I (48414) ESP_HID_GAP: NimBLE bonded peers=1
+I (48414) ESP_HID_GAP: NimBLE directed advertising started: peer_type=0 peer_addr=ac:92:ef:77:d5:4c
+I (48584) audio_capture: frame captured count=4800 bytes=3072000
+I (49084) audio_capture: frame captured count=4850 bytes=3104000
+I (49584) audio_capture: frame captured count=4900 bytes=3136000
+I (49704) ESP_HID_GAP: advertise complete; reason=0
+I (49704) ESP_HID_GAP: directed advertising completed; falling back to undirected advertising
+I (49704) ESP_HID_GAP: NimBLE bonded peers=1
+I (49704) ESP_HID_GAP: NimBLE undirected advertising started
+I (50084) audio_capture: frame captured count=4950 bytes=3168000
+I (50584) audio_capture: frame captured count=5000 bytes=3200000
+I (51084) audio_capture: frame captured count=5050 bytes=3232000
+I (51584) audio_capture: frame captured count=5100 bytes=3264000
+I (52084) audio_capture: frame captured count=5150 bytes=3296000
+
+### SEND ~DIAGLOG:CLEAR
+I (52464) diag_log: DIAGLOG CLEAR: all logs erased
+I (52584) audio_capture: frame captured count=5200 bytes=3328000
+I (53084) audio_capture: frame captured count=5250 bytes=3360000
+I (53584) audio_capture: frame captured count=5300 bytes=3392000
+I (54084) audio_capture: frame captured count=5350 bytes=3424000
+
+### SEND ~DIAGLOG:COUNT
+I (54214) diag_log: DIAGLOG COUNT: 0
+I (54584) audio_capture: frame captured count=5400 bytes=3456000
+I (55084) audio_capture: frame captured count=5450 bytes=3488000
+I (55584) audio_capture: frame captured count=5500 bytes=3520000
+I (56084) audio_capture: frame captured count=5550 bytes=3552000
+
+### SEND ~VREC:TOGGLE
+W (56314) audio_capture: record session start rejected: BLE audio transport not ready
+W (56324) voice_rec_ctrl: recording start rejected source=usb: ESP_ERR_INVALID_STATE
+I (56534) ESP_HID_GAP: encryption change event; status=0
+I (56534) ESP_HID_GAP: service changed indication queued for refreshed GATT discovery
+I (56534) ESP_HID_GAP: security state after encryption: encrypted=1 authenticated=0 bonded=1 key_size=16
+I (56544) ESP_HID_GAP: subscribe event; conn_handle=1 attr_handle=3 reason=3 prevn=0 curn=1 previ=0 curi=0
+I (56554) ble_audio_stream: audio notify subscription deferred until connect: pending_epoch=3 conn=1 attr=3 notify=1
+I (56564) ESP_HID_GAP: audio notify subscribed: conn_handle=1 interval_units=6 interval_ms=7.50 latency=0 supervision_timeout_units=800 supervision_timeout_ms=8000
+I (56574) ESP_HID_GAP: subscribe event; conn_handle=1 attr_handle=26 reason=3 prevn=0 curn=1 previ=0 curi=0
+I (56584) audio_capture: frame captured count=5600 bytes=3584000
+I (56584) ESP_HID_GAP: subscribe event; conn_handle=1 attr_handle=45 reason=3 prevn=0 curn=1 previ=0 curi=0
+I (56604) ESP_HID_GAP: subscribe event; conn_handle=1 attr_handle=3 reason=3 prevn=0 curn=1 previ=0 curi=0
+I (56614) ble_audio_stream: audio notify subscription deferred until connect: pending_epoch=3 conn=1 attr=3 notify=1
+I (56624) ESP_HID_GAP: audio notify subscribed: conn_handle=1 interval_units=6 interval_ms=7.50 latency=0 supervision_timeout_units=800 supervision_timeout_ms=8000
+I (56634) ESP_HID_GAP: connection established; status=0
+I (56644) ble_audio_stream: audio transport epoch advanced: epoch=3 reason=gap_connect stale_subscribe=0 stale_mtu=0 stale_notify_tx=0 stale_disconnect=0
+I (56634) ble_hid: CONNECT
+I (56654) ble_audio_stream: audio transport state: disconnected -> connected reason=gap_connect epoch=3 conn=1 mtu_ready=0 notify=0 value_max=244
+I (56654) ble_hid: battery level=96 voltage_mv=4156 raw=2411 reason=connect
+I (56674) ble_audio_stream: audio notify subscription restored before connect: epoch=3 conn=1 notify=1 window=1
+I (56684) ble_audio_stream: audio notify packet size updated: conn=1 value_max=244 payload_max=224
+I (56694) ESP_HID_GAP: security state before initiate: encrypted=1 authenticated=0 bonded=1 key_size=16
+I (56704) ESP_HID_GAP: security initiate requested
+I (56714) ESP_HID_GAP: audio connection parameter update requested
+I (56714) ESP_HID_GAP: audio 2M PHY preference requested
+I (56764) ESP_HID_GAP: encryption change event; status=0
+I (56764) ESP_HID_GAP: service changed indication queued for refreshed GATT discovery
+I (56764) ESP_HID_GAP: security state after encryption: encrypted=1 authenticated=0 bonded=1 key_size=16
+I (56774) ESP_HID_GAP: subscribe event; conn_handle=1 attr_handle=3 reason=3 prevn=0 curn=1 previ=0 curi=0
+I (56784) ble_audio_stream: audio notify subscription changed: epoch=3 conn=1 attr=3 notify=1 window=1
+I (56794) ble_audio_stream: audio notify packet size updated: conn=1 value_max=244 payload_max=224
+I (56804) ESP_HID_GAP: audio notify subscribed: conn_handle=1 interval_units=6 interval_ms=7.50 latency=0 supervision_timeout_units=800 supervision_timeout_ms=8000
+I (56814) ESP_HID_GAP: subscribe event; conn_handle=1 attr_handle=26 reason=3 prevn=0 curn=1 previ=0 curi=0
+I (56824) ESP_HID_GAP: subscribe event; conn_handle=1 attr_handle=45 reason=3 prevn=0 curn=1 previ=0 curi=0
+I (56834) ESP_HID_GAP: subscribe event; conn_handle=1 attr_handle=3 reason=3 prevn=0 curn=1 previ=0 curi=0
+I (56844) ble_audio_stream: audio notify subscription changed: epoch=3 conn=1 attr=3 notify=1 window=1
+I (56854) ble_audio_stream: audio notify packet size updated: conn=1 value_max=244 payload_max=224
+I (56864) ESP_HID_GAP: audio notify subscribed: conn_handle=1 interval_units=6 interval_ms=7.50 latency=0 supervision_timeout_units=800 supervision_timeout_ms=8000
+I (56924) ESP_HID_GAP: mtu update event; conn_handle=1 cid=4 mtu=517
+I (56924) ble_audio_stream: audio notify mtu updated: conn=1 mtu=517
+I (56924) ble_audio_stream: audio notify packet size updated: conn=1 value_max=500 payload_max=480
+I (56934) ble_audio_stream: audio transport state: connected -> subscribed reason=gap_mtu epoch=3 conn=1 mtu_ready=1 notify=1 value_max=500
+I (56944) ble_audio_stream: audio transport state: subscribed -> stream_ready reason=gap_mtu epoch=3 conn=1 mtu_ready=1 notify=1 value_max=500
+I (57084) audio_capture: frame captured count=5650 bytes=3616000
+I (57584) audio_capture: frame captured count=5700 bytes=3648000
+I (58084) audio_capture: frame captured count=5750 bytes=3680000
+
+### SEND ~VREC:CANCEL
+W (58314) voice_rec_ctrl: recording cancel rejected source=usb: ESP_ERR_INVALID_STATE
+I (58584) audio_capture: frame captured count=5800 bytes=3712000
+I (59084) audio_capture: frame captured count=5850 bytes=3744000
+I (59584) audio_capture: frame captured count=5900 bytes=3776000
+I (60084) audio_capture: frame captured count=5950 bytes=3808000
