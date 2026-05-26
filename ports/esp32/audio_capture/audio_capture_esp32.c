@@ -39,6 +39,7 @@
 #define AUDIO_CAPTURE_FRAME_MS          (20)
 #define AUDIO_CAPTURE_FRAME_SAMPLES     ((AUDIO_CAPTURE_SAMPLE_RATE_HZ * AUDIO_CAPTURE_FRAME_MS) / 1000)
 #define AUDIO_CAPTURE_FRAME_BYTES       (AUDIO_CAPTURE_FRAME_SAMPLES * sizeof(int16_t))
+#define AUDIO_CAPTURE_TASK_STACK_BYTES  (8 * 1024)
 #define AUDIO_CAPTURE_LOG_INTERVAL_FRAMES (50)
 #define AUDIO_CAPTURE_TASK_STACK_BYTES  (6 * 1024)
 /* Recording duration is user-controlled (KEY1 toggle); no fixed upper limit.
@@ -111,8 +112,10 @@ static esp_codec_dev_handle_t s_codec_handle;
 static TaskHandle_t s_capture_task_handle;
 static uint32_t s_frame_count;
 static uint32_t s_frame_captured_count;
+#ifdef CONFIG_AUDIO_CAPTURE_MIC_ES8311
 static uint32_t s_overflow_count;
 static uint32_t s_underrun_count;
+#endif
 static uint32_t s_dropped_frame_count;
 static audio_capture_export_state_t s_export_state;
 static SemaphoreHandle_t s_state_mutex;
@@ -733,18 +736,18 @@ static esp_err_t audio_capture_codec_init(void)
 
 #ifdef CONFIG_AUDIO_CAPTURE_MIC_SPH0645
 
-static void sph0645_to_int16(const int32_t *src, int16_t *dst, size_t samples)
+static void sph0645_to_int16(const int32_t *src, int16_t *dst, size_t out_samples)
 {
-    for (size_t i = 0; i < samples; i++) {
-        /* SPH0645 24-bit data is left-aligned in 32-bit FIFO word (bits [31:8]).
-         * Shift right by 16 to extract the upper 16 bits. */
-        dst[i] = (int16_t)(src[i] >> 16);
+    /* SPH0645 in Philips I2S MONO delivers interleaved L/R at 2x the
+     * configured sample rate. Take every other sample to recover true mono. */
+    for (size_t i = 0; i < out_samples; i++) {
+        dst[i] = (int16_t)(src[i * 2] >> 16);
     }
 }
 
 static void audio_capture_task(void *arg)
 {
-    int32_t raw_buffer[AUDIO_CAPTURE_FRAME_SAMPLES];
+    int32_t raw_buffer[AUDIO_CAPTURE_FRAME_SAMPLES * 2];
     int16_t frame_buffer[AUDIO_CAPTURE_FRAME_SAMPLES];
 
     while (1) {

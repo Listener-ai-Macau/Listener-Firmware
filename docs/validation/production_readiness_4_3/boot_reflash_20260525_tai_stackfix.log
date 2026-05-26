@@ -1,0 +1,207 @@
+
+Done! You can now compile ESP-IDF projects.
+Go to the project directory and run:
+
+  idf.py build
+
+I (107) esp_image: segment 1: paddr=0002af3c vaddr=3fc9ad00 sizeI (31543) audio_capture: frame captured count=3100 bytes=1984000
+
+I (32033) audio_capture: frame captured count=3150 bytes=2016000
+
+I (32543) audio_capture: frame captured count=3200 bytes=2048000
+
+I (33043) audio_capture: frame captured count=3250 bytes=2080000
+
+I (33533) audio_capture: frame captured count=3300 bytes=2112000
+
+I (34043) audio_capture: frame captured count=3350 bytes=2144000
+
+I (34543) audio_capture: frame captured count=3400 bytes=2176000
+
+I (35033) audio_capture: frame captured count=3450 bytes=2208000
+
+I (35543) audio_capture: frame captured count=3500 bytes=2240000
+
+I (36043) audio_capture: frame captured count=3550 bytes=2272000
+
+I (36533) audio_capture: frame captured count=3600 bytes=2304000
+
+I (37043) audio_capture: frame captured count=3650 bytes=2336000
+
+I (37543) audio_capture: frame captured count=3700 bytes=2368000
+
+I (38033) audio_capture: frame captured count=3750 bytes=2400000
+
+I (38543) audio_capture: frame captured count=3800 bytes=2432000
+
+I (39043) audio_capture: frame captured count=3850 bytes=2464000
+
+I (39533) audio_capture: frame captured count=3900 bytes=2496000
+
+I (40043) audio_capture: frame captured count=3950 bytes=2528000
+
+I (40543) audio_capture: frame captured count=4000 bytes=2560000
+
+I (41033) audio_capture: frame captured count=4050 bytes=2592000
+
+I (41063) ESP_HID_GAP: subscribe event; conn_handle=1 attr_handle=3 reason=2 prevn=1 curn=0 previ=0 curi=0
+
+I (41063) ble_audio_stream: audio notify subscription changed: epoch=1 conn=1 attr=3 notify=0 window=3
+
+I (41073) ble_audio_stream: audio transport state: stream_ready -> mtu_ready reason=gap_subscribe_notify_off epoch=1 conn=1 mtu_ready=1 notify=0 value_max=500
+
+I (41083) ESP_HID_GAP: subscribe event; conn_handle=1 attr_handle=26 reason=2 prevn=1 curn=0 previ=0 curi=0
+
+I (41093) ESP_HID_GAP: subscribe event; conn_handle=1 attr_handle=45 reason=2 prevn=1 curn=0 previ=0 curi=0
+
+I (41103) ESP_HID_GAP: disconnect; reason=546
+
+I (41103) ble_hid: DISCONNECT: UNKNOWN
+
+I (41103) ble_audio_stream: audio transport epoch advanced: epoch=2 reason=gap_disconnect stale_subscribe=0 stale_mtu=0 stale_notify_tx=0 stale_disconnect=0
+
+I (41123) ble_audio_stream: audio transport state: mtu_ready -> disconnected reason=gap_disconnect epoch=2 conn=65535 mtu_ready=0 notify=0 value_max=244
+
+I (41143) ESP_HID_GAP: NimBLE bonded peers=1
+
+I (41143) ESP_HID_GAP: NimBLE directed advertising started: peer_type=0 peer_addr=ac:92:ef:77:d5:4c
+
+I (41543) audio_capture: frame captured count=4100 bytes=2624000
+
+I (42043) audio_capture: frame captured count=4150 bytes=2656000
+
+I (42423) ESP_HID_GAP: advertise complete; reason=0
+
+I (42423) ESP_HID_GAP: directed advertising completed; falling back to undirected advertising
+
+I (42423) ESP_HID_GAP: NimBLE bonded peers=1
+
+I (42433) ESP_HID_GAP: NimBLE undirected advertising started
+
+I (42533) audio_capture: frame captured count=4200 bytes=2688000
+
+I (43043) audio_capture: frame captured count=4250 bytes=2720000
+
+I (43543) audio_capture: frame captured count=4300 bytes=2752000
+
+I (44033) audio_capture: frame captured count=4350 bytes=2784000
+
+I (44543) audio_capture: frame captured count=4400 bytes=2816000
+
+I (45043) audio_capture: frame captured count=4450 bytes=2848000
+
+I (45533) audio_capture: frame captured count=4500 bytes=2880000
+
+I (46043) audio_capture: frame captured count=4550 bytes=2912000
+
+I (46543) audio_capture: frame captured count=4600 bytes=2944000
+
+I (47043) audio_capture: frame captured count=4650 bytes=2976000
+
+I (47543) audio_capture: frame captured count=4700 bytes=3008000
+
+I (48043) audio_capture: frame captured count=4750 bytes=3040000
+
+I (48533) audio_capture: frame captured count=4800 bytes=3072000
+
+I (49043) audio_capture: frame captured count=4850 bytes=3104000
+
+I (49543) audio_capture: frame captured count=4900 bytes=3136000
+
+I (50033) audio_capture: frame captured count=4950 bytes=3168000
+
+I (50093) ESP_HID_GAP: encryption change event; status=0
+
+I (50093) ESP_HID_GAP: service changed indication queued for refreshed GATT discovery
+
+I (50093) ESP_HID_GAP: security state after encryption: encrypted=1 authenticated=0 bonded=1 key_size=16
+
+I (50103) ESP_HID_GAP: subscribe event; conn_handle=1 attr_handle=3 reason=3 prevn=0 curn=1 previ=0 curi=0
+
+I (50113) ble_audio_stream: audio notify subscription deferred until connect: pending_epoch=3 conn=1 attr=3 notify=1
+
+I (50123) ESP_HID_GAP: audio notify subscribed: conn_handle=1 interval_units=6 interval_ms=7.50 latency=0 supervision_timeout_units=800 supervision_timeout_ms=8000
+
+I (50133) ESP_HID_GAP: subscribe event; conn_handle=1 attr_handle=26 reason=3 prevn=0 curn=1 previ=0 curi=0
+
+I (50143) ESP_HID_GAP: subscribe event; conn_handle=1 attr_handle=45 reason=3 prevn=0 curn=1 previ=0 curi=0
+
+I (50153) ESP_HID_GAP: connection established; status=0
+
+I (50153) ble_hid: CONNECT
+
+I (50153) ble_audio_stream: audio transport epoch advanced: epoch=3 reason=gap_connect stale_subscribe=0 stale_mtu=0 stale_notify_tx=0 stale_disconnect=0
+
+I (50163) ble_hid: battery level=91 voltage_mv=4096 raw=2377 reason=connect
+
+I (50173) ble_audio_stream: audio transport state: disconnected -> connected reason=gap_connect epoch=3 conn=1 mtu_ready=0 notify=0 value_max=244
+
+I (50193) ble_audio_stream: audio notify subscription restored before connect: epoch=3 conn=1 notify=1 window=3
+
+I (50203) ble_audio_stream: audio notify packet size updated: conn=1 value_max=244 payload_max=224
+
+I (50213) ESP_HID_GAP: security state before initiate: encrypted=1 authenticated=0 bonded=1 key_size=16
+
+I (50223) ESP_HID_GAP: security initiate requested
+
+I (50223) ESP_HID_GAP: audio connection parameter update requested
+
+I (50233) ESP_HID_GAP: audio 2M PHY preference requested
+
+I (50233) ESP_HID_GAP: mtu update event; conn_handle=1 cid=4 mtu=517
+
+I (50243) ble_audio_stream: audio notify mtu updated: conn=1 mtu=517
+
+I (50243) ble_audio_stream: audio notify packet size updated: conn=1 value_max=500 payload_max=480
+
+I (50253) ble_audio_stream: audio transport state: connected -> subscribed reason=gap_mtu epoch=3 conn=1 mtu_ready=1 notify=1 value_max=500
+
+I (50273) ble_audio_stream: audio transport state: subscribed -> stream_ready reason=gap_mtu epoch=3 conn=1 mtu_ready=1 notify=1 value_max=500
+
+I (50303) ESP_HID_GAP: encryption change event; status=0
+
+I (50303) ESP_HID_GAP: service changed indication queued for refreshed GATT discovery
+
+I (50303) ESP_HID_GAP: security state after encryption: encrypted=1 authenticated=0 bonded=1 key_size=16
+
+I (50313) ESP_HID_GAP: subscribe event; conn_handle=1 attr_handle=3 reason=3 prevn=0 curn=1 previ=0 curi=0
+
+I (50323) ble_audio_stream: audio notify subscription changed: epoch=3 conn=1 attr=3 notify=1 window=3
+
+I (50333) ble_audio_stream: audio notify packet size updated: conn=1 value_max=500 payload_max=480
+
+I (50333) ble_audio_stream: audio transport state: stream_ready -> subscribed reason=gap_subscribe_notify_on epoch=3 conn=1 mtu_ready=1 notify=1 value_max=500
+
+I (50353) ble_audio_stream: audio transport state: subscribed -> stream_ready reason=gap_subscribe_notify_on epoch=3 conn=1 mtu_ready=1 notify=1 value_max=500
+
+I (50363) ESP_HID_GAP: audio notify subscribed: conn_handle=1 interval_units=6 interval_ms=7.50 latency=0 supervision_timeout_units=800 supervision_timeout_ms=8000
+
+I (50383) ESP_HID_GAP: subscribe event; conn_handle=1 attr_handle=26 reason=3 prevn=0 curn=1 previ=0 curi=0
+
+I (50393) ESP_HID_GAP: subscribe event; conn_handle=1 attr_handle=45 reason=3 prevn=0 curn=1 previ=0 curi=0
+
+I (50543) audio_capture: frame captured count=5000 bytes=3200000
+
+I (51043) audio_capture: frame captured count=5050 bytes=3232000
+
+I (51533) audio_capture: frame captured count=5100 bytes=3264000
+
+I (52043) audio_capture: frame captured count=5150 bytes=3296000
+
+I (52543) audio_capture: frame captured count=5200 bytes=3328000
+
+I (53033) audio_capture: frame captured count=5250 bytes=3360000
+
+I (53543) audio_capture: frame captured count=5300 bytes=3392000
+
+I (54043) audio_capture: frame captured count=5350 bytes=3424000
+
+I (54533) audio_capture: frame captured count=5400 bytes=3456000
+
+I (55043) audio_capture: frame captured count=5450 bytes=3488000
+
+I (55543) audio_capture: frame captured count=5500 bytes=3520000
+
+I (56033) audio_capture: frame captured count=5550 bytes=3552000
+
+I (56543) audio_capture: frame captured count=5600 bytes=3584000

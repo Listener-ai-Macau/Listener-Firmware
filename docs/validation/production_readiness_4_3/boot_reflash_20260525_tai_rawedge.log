@@ -1,0 +1,109 @@
+
+Done! You can now compile ESP-IDF projects.
+Go to the project directory and run:
+
+  idf.py build
+
+I (107) esp_image: segment 1: paddr=0002afcc vaddr=3fc9ad00 sizeI (462043) audio_capture: frame captured count=46150 bytes=29536000
+
+I (462533) audio_capture: frame captured count=46200 bytes=29568000
+
+I (463043) audio_capture: frame captured count=46250 bytes=29600000
+
+I (463543) audio_capture: frame captured count=46300 bytes=29632000
+
+I (464033) audio_capture: frame captured count=46350 bytes=29664000
+
+I (464543) audio_capture: frame captured count=46400 bytes=29696000
+
+I (465043) audio_capture: frame captured count=46450 bytes=29728000
+
+I (465533) audio_capture: frame captured count=46500 bytes=29760000
+
+I (466043) audio_capture: frame captured count=46550 bytes=29792000
+
+I (466543) audio_capture: frame captured count=46600 bytes=29824000
+
+I (467033) audio_capture: frame captured count=46650 bytes=29856000
+
+I (467543) audio_capture: frame captured count=46700 bytes=29888000
+
+I (468043) audio_capture: frame captured count=46750 bytes=29920000
+
+I (468533) audio_capture: frame captured count=46800 bytes=29952000
+
+I (469043) audio_capture: frame captured count=46850 bytes=29984000
+
+I (469543) audio_capture: frame captured count=46900 bytes=30016000
+
+I (470033) audio_capture: frame captured count=46950 bytes=30048000
+
+I (470543) audio_capture: frame captured count=47000 bytes=30080000
+
+I (471043) audio_capture: frame captured count=47050 bytes=30112000
+
+I (471533) audio_capture: frame captured count=47100 bytes=30144000
+
+I (472043) audio_capture: frame captured count=47150 bytes=30176000
+
+I (472543) audio_capture: frame captured count=47200 bytes=30208000
+
+I (473033) audio_capture: frame captured count=47250 bytes=30240000
+
+I (473543) audio_capture: frame captured count=47300 bytes=30272000
+
+I (474043) audio_capture: frame captured count=47350 bytes=30304000
+
+I (474533) audio_capture: frame captured count=47400 bytes=30336000
+
+I (475043) audio_capture: frame captured count=47450 bytes=30368000
+
+I (475543) audio_capture: frame captured count=47500 bytes=30400000
+
+I (476033) audio_capture: frame captured count=47550 bytes=30432000
+
+I (476543) audio_capture: frame captured count=47600 bytes=30464000
+
+I (477043) audio_capture: frame captured count=47650 bytes=30496000
+
+I (477533) audio_capture: frame captured count=47700 bytes=30528000
+
+I (478043) audio_capture: frame captured count=47750 bytes=30560000
+
+I (478543) audio_capture: frame captured count=47800 bytes=30592000
+
+I (479033) audio_capture: frame captured count=47850 bytes=30624000
+
+I (479543) audio_capture: frame captured count=47900 bytes=30656000
+
+I (480043) audio_capture: frame captured count=47950 bytes=30688000
+
+I (480533) audio_capture: frame captured count=48000 bytes=30720000
+
+I (480683) ble_hid: battery level=94 voltage_mv=4132 raw=2397 reason=periodic
+
+I (481043) audio_capture: frame captured count=48050 bytes=30752000
+
+I (481543) audio_capture: frame captured count=48100 bytes=30784000
+
+I (482033) audio_capture: frame captured count=48150 bytes=30816000
+
+I (482543) audio_capture: frame captured count=48200 bytes=30848000
+
+I (483043) audio_capture: frame captured count=48250 bytes=30880000
+
+I (483533) audio_capture: frame captured count=48300 bytes=30912000
+
+I (484043) audio_capture: frame captured count=48350 bytes=30944000
+
+I (484543) audio_capture: frame captured count=48400 bytes=30976000
+
+I (485033) audio_capture: frame captured count=48450 bytes=31008000
+
+I (485543) audio_capture: frame captured count=48500 bytes=31040000
+
+I (486043) audio_capture: frame captured count=48550 bytes=31072000
+
+I (486533) audio_capture: frame captured count=48600 bytes=31104000
+
+I (487043) audio_capture: frame captured count=48650 bytes=31136000

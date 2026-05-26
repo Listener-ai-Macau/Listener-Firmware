@@ -9,6 +9,7 @@ param(
     [int]$RoundCount = 3,
     [int]$IdleSeconds = 30,
     [int]$SoakRoundCount = 5,
+    [string]$BluetoothAddress = "",
     [switch]$NoResetBeforeCapture,
     [switch]$RestartPanAdapter
 )
@@ -30,6 +31,10 @@ $arguments = @(
 
 if ($NoResetBeforeCapture) {
     $arguments += "--no-reset-before-capture"
+}
+
+if (-not [string]::IsNullOrWhiteSpace($BluetoothAddress)) {
+    $arguments += @("--bluetooth-address", $BluetoothAddress)
 }
 
 if ($RestartPanAdapter) {

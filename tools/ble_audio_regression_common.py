@@ -363,6 +363,7 @@ def generate_source_wav_tts(
 def add_common_capture_args(parser: argparse.ArgumentParser, capture_seconds_default: int) -> None:
     parser.add_argument("--port", required=True)
     parser.add_argument("--device-name", default="listener")
+    parser.add_argument("--bluetooth-address", default=None)
     parser.add_argument("--capture-seconds", type=int, default=capture_seconds_default)
     parser.add_argument("--timeout-seconds", type=int, default=None)
     parser.add_argument("--no-reset-before-capture", action="store_false", dest="reset_before_capture")
@@ -611,6 +612,7 @@ def make_capture_args(
     *,
     port: str,
     device_name: str,
+    bluetooth_address: str | None = None,
     capture_seconds: int,
     capture_seconds_per_session: list[int] | None = None,
     session_pre_start_delay_seconds: list[float] | None = None,
@@ -627,6 +629,7 @@ def make_capture_args(
     return SimpleNamespace(
         port=port,
         device_name=device_name,
+        bluetooth_address=bluetooth_address,
         capture_seconds=capture_seconds,
         output_dir=str(output_dir),
         serial_log_path=str(serial_log_path),
@@ -771,6 +774,7 @@ async def play_and_capture_serial_toggle(
     *,
     port: str,
     device_name: str,
+    bluetooth_address: str | None = None,
     scenario: str,
     capture_seconds: int,
     source_label: str = "latest",
@@ -821,6 +825,7 @@ async def play_and_capture_serial_toggle(
         capture_args = make_capture_args(
             port=port,
             device_name=device_name,
+            bluetooth_address=bluetooth_address,
             capture_seconds=capture_seconds,
             capture_seconds_per_session=[capture_seconds],
             session_pre_start_delay_seconds=[pre_start_delay_seconds],
@@ -875,6 +880,7 @@ async def play_and_capture_serial_toggle_after_cancel_probe(
     *,
     port: str,
     device_name: str,
+    bluetooth_address: str | None = None,
     scenario: str,
     capture_seconds: int,
     cancel_hold_seconds: float,
@@ -933,6 +939,7 @@ async def play_and_capture_serial_toggle_after_cancel_probe(
         cancel_args = make_capture_args(
             port=port,
             device_name=device_name,
+            bluetooth_address=bluetooth_address,
             capture_seconds=max(1, int(math.ceil(cancel_hold_seconds))),
             capture_seconds_per_session=[max(1, int(math.ceil(cancel_hold_seconds)))],
             session_pre_start_delay_seconds=[0.0],
@@ -962,6 +969,7 @@ async def play_and_capture_serial_toggle_after_cancel_probe(
             capture_args = make_capture_args(
                 port=port,
                 device_name=device_name,
+                bluetooth_address=bluetooth_address,
                 capture_seconds=capture_seconds,
                 capture_seconds_per_session=[capture_seconds],
                 session_pre_start_delay_seconds=[pre_start_delay_seconds],
@@ -1018,6 +1026,7 @@ async def play_and_capture_serial_toggle_multi_session(
     *,
     port: str,
     device_name: str,
+    bluetooth_address: str | None = None,
     scenario: str,
     capture_seconds: int,
     session_count: int,
@@ -1077,6 +1086,7 @@ async def play_and_capture_serial_toggle_multi_session(
         capture_args = make_capture_args(
             port=port,
             device_name=device_name,
+            bluetooth_address=bluetooth_address,
             capture_seconds=capture_seconds,
             capture_seconds_per_session=effective_capture_seconds_per_session,
             session_pre_start_delay_seconds=effective_pre_start_delay_seconds,
@@ -1173,8 +1183,12 @@ def restart_windows_bluetooth(*, restart_pan_adapter: bool = False) -> subproces
     return run_powershell_script(RESTART_WINDOWS_BLUETOOTH_SCRIPT, arguments)
 
 
-def recover_ble_hid_host(device_name: str) -> subprocess.CompletedProcess[str]:
-    address_hex = get_paired_device_address_hex(device_name)
+def recover_ble_hid_host(device_name: str, bluetooth_address: str | None = None) -> subprocess.CompletedProcess[str]:
+    address_hex = "".join(
+        ch for ch in str(bluetooth_address or "") if ch in "0123456789ABCDEFabcdef"
+    ).upper()
+    if not address_hex:
+        address_hex = get_paired_device_address_hex(device_name)
     if address_hex is None:
         raise RuntimeError(f"unable to resolve paired BLE device address for '{device_name}'")
     return run_powershell_script(

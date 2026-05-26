@@ -1,0 +1,28 @@
+I (45182) keyboard: WASD key raw transition: source=key4.gpio21.s raw_high=0 stable_high=1
+I (45222) keyboard: WASD key stable transition: source=key4.gpio21.s raw_high=0 pressed=1
+I (45222) keyboard: WASD key press queued: source=key4.gpio21.s output=s
+I (45232) hid_keyboard: send_ascii input=0x73 display=s modifier=0x00 key=0x16 connected=yes
+I (45282) hid_keyboard: send_ascii done input=0x73 display=s
+I (45462) keyboard: WASD key raw transition: source=key4.gpio21.s raw_high=1 stable_high=0
+I (45502) keyboard: WASD key stable transition: source=key4.gpio21.s raw_high=1 pressed=0
+I (45862) keyboard: WASD key raw transition: source=key3.gpio47.a raw_high=0 stable_high=1
+I (45902) keyboard: WASD key stable transition: source=key3.gpio47.a raw_high=0 pressed=1
+I (45902) keyboard: WASD key press queued: source=key3.gpio47.a output=a
+I (45922) hid_keyboard: send_ascii input=0x61 display=a modifier=0x00 key=0x04 connected=yes
+I (45972) hid_keyboard: send_ascii done input=0x61 display=a
+I (46022) keyboard: WASD key raw transition: source=key3.gpio47.a raw_high=1 stable_high=0
+I (46062) keyboard: WASD key stable transition: source=key3.gpio47.a raw_high=1 pressed=0
+I (46562) keyboard: WASD key raw transition: source=key2.gpio48.w raw_high=0 stable_high=1
+I (46602) keyboard: WASD key stable transition: source=key2.gpio48.w raw_high=0 pressed=1
+I (46602) keyboard: WASD key press queued: source=key2.gpio48.w output=w
+I (46612) hid_keyboard: send_ascii input=0x77 display=w modifier=0x00 key=0x1A connected=yes
+I (46662) hid_keyboard: send_ascii done input=0x77 display=w
+I (46722) keyboard: WASD key raw transition: source=key2.gpio48.w raw_high=1 stable_high=0
+I (46762) keyboard: WASD key stable transition: source=key2.gpio48.w raw_high=1 pressed=0
+I (47102) keyboard: WASD key raw transition: source=key1.gpio45.d raw_high=0 stable_high=1
+I (47142) keyboard: WASD key stable transition: source=key1.gpio45.d raw_high=0 pressed=1
+I (47142) keyboard: WASD key press queued: source=key1.gpio45.d output=d
+I (47162) hid_keyboard: send_ascii input=0x64 display=d modifier=0x00 key=0x07 connected=yes
+I (47212) hid_keyboard: send_ascii done input=0x64 display=d
+I (47262) keyboard: WASD key raw transition: source=key1.gpio45.d raw_high=1 stable_high=0
+I (47302) keyboard: WASD key stable transition: source=key1.gpio45.d raw_high=1 pressed=0
