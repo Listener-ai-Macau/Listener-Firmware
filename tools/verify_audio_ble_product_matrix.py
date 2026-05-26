@@ -2031,7 +2031,7 @@ async def run_t3(args) -> dict[str, str]:
 
 async def run_a14(args) -> dict[str, str]:
     print_case_header("A14", "cancel during recording and recover (long + short hold)", 300)
-    # First probe: long cancel hold
+    # First probe: long cancel hold.
     long_cancel_hold = choose_delay_seconds(args, window=args.cancel_hold_window, label="a14_long_cancel")
     capture_seconds = choose_duration(args, window=args.short_capture_window, label="a14")
     pre_start_delay = choose_delay_seconds(args, window=args.pre_start_delay_window, label="a14_pre_start")
@@ -2062,7 +2062,13 @@ async def run_a14(args) -> dict[str, str]:
             f"missing_packet_indices={summary['missing_packet_indices'][:16]}",
         )
 
-    # Second probe: short cancel hold (merged from old P9)
+    recover_settle_seconds = 12.0
+    print("a14_between_cancel_probes_ble_recover_start=1", flush=True)
+    recover_ble_hid_host(args.device_name, args.bluetooth_address)
+    print(f"a14_between_cancel_probes_ble_settle_seconds={recover_settle_seconds:.2f}", flush=True)
+    await asyncio.sleep(recover_settle_seconds)
+
+    # Second probe: short cancel hold (merged from old P9).
     short_cancel_hold = choose_delay_seconds(args, window=args.short_cancel_hold_window, label="a14_short_cancel")
     short_summary = await play_and_capture_serial_toggle_after_cancel_probe(
         port=args.port,
@@ -2083,6 +2089,7 @@ async def run_a14(args) -> dict[str, str]:
     details = {
         "long_cancel_probe": compact_case_details(summary),
         "short_cancel_probe": compact_case_details(short_summary),
+        "between_probe_ble_settle_seconds": recover_settle_seconds,
     }
     if not args.transport_only:
         negative_product_chain = await run_listener_type_product_chain(
@@ -2091,7 +2098,10 @@ async def run_a14(args) -> dict[str, str]:
             trigger_mode="serial-cancel",
             artifact_label="cancel_negative",
             expect_no_text=True,
-            extra_smoke_args=["-RecordingStartTimeoutMs", "12000"],
+            extra_smoke_args=[
+                "-RecordingStartTimeoutMs", "12000",
+                "-SilentAudio", "-SilentAudioMs", "300",
+            ],
         )
         details["cancel_negative_product_chain"] = negative_product_chain
         if str(negative_product_chain.get("result")) == "fail":

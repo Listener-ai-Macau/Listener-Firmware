@@ -332,10 +332,20 @@ def ensure_host_ble_connection(
     )
 
 
-def close_ble_objects(*, characteristic=None, token=None, service=None, requester=None) -> None:
+def close_ble_objects(*, characteristic=None, token=None, service=None, gatt_session=None, requester=None) -> None:
     if characteristic is not None and token is not None:
         try:
             characteristic.remove_value_changed(token)
+        except Exception:
+            pass
+    if gatt_session is not None:
+        try:
+            if gatt_session.can_maintain_connection:
+                gatt_session.maintain_connection = False
+        except Exception:
+            pass
+        try:
+            gatt_session.close()
         except Exception:
             pass
     if service is not None:
@@ -371,7 +381,7 @@ async def resolve_notify_characteristic(
 ):
     services_result = await requester.get_gatt_services_with_cache_mode_async(BluetoothCacheMode.CACHED)
     if services_result.status != GattCommunicationStatus.SUCCESS:
-        return None, None, RuntimeError(
+        return None, None, None, RuntimeError(
             "capture_audio_ble_wav: target service unavailable "
             f"status={services_result.status} count={len(services_result.services)}"
         )
@@ -387,29 +397,30 @@ async def resolve_notify_characteristic(
                 pass
 
     if service is None:
-        return None, None, RuntimeError(
+        return None, None, None, RuntimeError(
             "capture_audio_ble_wav: target service unavailable "
             f"status={services_result.status} count={len(services_result.services)}"
         )
 
+    gatt_session = None
     try:
         access_status = await service.request_access_async()
         if access_status not in (DeviceAccessStatus.ALLOWED, DeviceAccessStatus.UNSPECIFIED):
             service.close()
-            return None, None, RuntimeError(
+            return None, None, None, RuntimeError(
                 f"capture_audio_ble_wav: target service access denied status={access_status}"
             )
 
-        session = service.session
-        if session is not None and session.can_maintain_connection:
-            session.maintain_connection = True
+        gatt_session = service.session
+        if gatt_session is not None and gatt_session.can_maintain_connection:
+            gatt_session.maintain_connection = True
     except Exception:
         pass
 
     chars_result = await service.get_characteristics_with_cache_mode_async(BluetoothCacheMode.CACHED)
     if chars_result.status != GattCommunicationStatus.SUCCESS:
-        service.close()
-        return None, None, RuntimeError(
+        close_ble_objects(service=service, gatt_session=gatt_session)
+        return None, None, None, RuntimeError(
             "capture_audio_ble_wav: target characteristic unavailable "
             f"status={chars_result.status} count={len(chars_result.characteristics)}"
         )
@@ -421,8 +432,8 @@ async def resolve_notify_characteristic(
             break
 
     if characteristic is None:
-        service.close()
-        return None, None, RuntimeError(
+        close_ble_objects(service=service, gatt_session=gatt_session)
+        return None, None, None, RuntimeError(
             "capture_audio_ble_wav: target characteristic unavailable "
             f"status={chars_result.status} count={len(chars_result.characteristics)}"
         )
@@ -431,12 +442,12 @@ async def resolve_notify_characteristic(
         int(characteristic.characteristic_properties)
         & int(GattCharacteristicProperties.NOTIFY)
     ):
-        service.close()
-        return None, None, RuntimeError(
+        close_ble_objects(service=service, gatt_session=gatt_session)
+        return None, None, None, RuntimeError(
             "capture_audio_ble_wav: target characteristic does not advertise NOTIFY property"
         )
 
-    return service, characteristic, None
+    return service, characteristic, gatt_session, None
 
 
 async def open_ble_device(address_hex: str):
@@ -475,6 +486,7 @@ async def enable_notify_with_rebuild(
     requester = None
     service = None
     characteristic = None
+    gatt_session = None
     token = None
     last_error = None
 
@@ -484,11 +496,13 @@ async def enable_notify_with_rebuild(
             characteristic=characteristic,
             token=token,
             service=service,
+            gatt_session=gatt_session,
             requester=requester,
         )
         requester = None
         service = None
         characteristic = None
+        gatt_session = None
         token = None
 
         if attempt > 1:
@@ -548,7 +562,7 @@ async def enable_notify_with_rebuild(
         except Exception as exc:
             print(f"cached_service_probe_error={type(exc).__name__}:{exc}", flush=True)
 
-        service, characteristic, resolve_error = await resolve_notify_characteristic(
+        service, characteristic, gatt_session, resolve_error = await resolve_notify_characteristic(
             requester,
             service_uuid,
             notify_uuid,
@@ -585,7 +599,7 @@ async def enable_notify_with_rebuild(
             )
             if cccd_status == GattCommunicationStatus.SUCCESS:
                 token = characteristic.add_value_changed(on_value_changed)
-                return requester, service, characteristic, token
+                return requester, service, characteristic, token, gatt_session
             last_error = RuntimeError(
                 "capture_audio_ble_wav: notify enable failed "
                 f"status={cccd_status} protocol_error={protocol_error} attempt={attempt}"
@@ -631,7 +645,7 @@ async def enable_notify_with_rebuild(
                     )
                     print(f"notify_enable_warmup_status={warmup_status}", flush=True)
                     if warmup_status == GattCommunicationStatus.SUCCESS:
-                        return requester, service, characteristic, token
+                        return requester, service, characteristic, token, gatt_session
                 except asyncio.TimeoutError:
                     print("notify_enable_warmup_timeout=1", flush=True)
                 except OSError as exc:
@@ -655,7 +669,7 @@ async def enable_notify_with_rebuild(
                     flush=True,
                 )
                 if cccd_status == GattCommunicationStatus.SUCCESS:
-                    return requester, service, characteristic, token
+                    return requester, service, characteristic, token, gatt_session
                 last_error = RuntimeError(
                     "capture_audio_ble_wav: notify fallback failed "
                     f"status={cccd_status} protocol_error={protocol_error} attempt={attempt}"
@@ -687,6 +701,7 @@ async def enable_notify_with_rebuild(
         characteristic=characteristic,
         token=token,
         service=service,
+        gatt_session=gatt_session,
         requester=requester,
     )
     raise last_error if last_error is not None else RuntimeError(
@@ -1044,6 +1059,7 @@ async def run_ble_capture(args, ser: Serial, serial_monitor: SerialLogMonitor):
     requester = None
     service = None
     characteristic = None
+    gatt_session = None
     token = None
 
     def on_value_changed(sender, args):
@@ -1161,7 +1177,7 @@ async def run_ble_capture(args, ser: Serial, serial_monitor: SerialLogMonitor):
             )
         await asyncio.sleep(0.5)
 
-    requester, service, characteristic, token = await enable_notify_with_rebuild(
+    requester, service, characteristic, token, gatt_session = await enable_notify_with_rebuild(
         address_hex=address_hex,
         device_name=args.device_name,
         service_uuid=service_uuid,
@@ -1206,7 +1222,13 @@ async def run_ble_capture(args, ser: Serial, serial_monitor: SerialLogMonitor):
         capture_seconds_per_session = getattr(args, "capture_seconds_per_session", None)
         session_pre_start_delay_seconds = getattr(args, "session_pre_start_delay_seconds", None)
         session_cancel_after_start_seconds = getattr(args, "session_cancel_after_start_seconds", None)
+        session_cancel_after_start_seconds_per_session = getattr(
+            args,
+            "session_cancel_after_start_seconds_per_session",
+            None,
+        )
         session_cancel_post_wait_seconds = float(getattr(args, "session_cancel_post_wait_seconds", 2.0))
+        session_start_callbacks = getattr(args, "session_start_callbacks", None)
         while target_sessions is None or completed_sessions < target_sessions:
             collector.reset()
             session_capture_seconds = int(args.capture_seconds)
@@ -1223,6 +1245,16 @@ async def run_ble_capture(args, ser: Serial, serial_monitor: SerialLogMonitor):
                 )
 
             if args.trigger_mode == "serial-toggle":
+                if (
+                    session_start_callbacks is not None
+                    and completed_sessions < len(session_start_callbacks)
+                    and session_start_callbacks[completed_sessions] is not None
+                ):
+                    print(
+                        f"session_start_callback=session_index={completed_sessions + 1}",
+                        flush=True,
+                    )
+                    session_start_callbacks[completed_sessions]()
                 if session_pre_start_delay_seconds_value > 0.0:
                     print(
                         "session_pre_start_delay_seconds="
@@ -1236,8 +1268,16 @@ async def run_ble_capture(args, ser: Serial, serial_monitor: SerialLogMonitor):
                         await asyncio.sleep(0.05)
                 await send_serial_toggle_and_wait_for_start(session_capture_seconds)
 
-                if session_cancel_after_start_seconds is not None:
-                    cancel_delay_seconds = max(0.0, float(session_cancel_after_start_seconds))
+                session_cancel_after_start_seconds_value = session_cancel_after_start_seconds
+                if (
+                    session_cancel_after_start_seconds_per_session is not None
+                    and completed_sessions < len(session_cancel_after_start_seconds_per_session)
+                ):
+                    session_cancel_after_start_seconds_value = (
+                        session_cancel_after_start_seconds_per_session[completed_sessions]
+                    )
+                if session_cancel_after_start_seconds_value is not None:
+                    cancel_delay_seconds = max(0.0, float(session_cancel_after_start_seconds_value))
                     print(
                         f"session_cancel_after_start_seconds={cancel_delay_seconds:.2f} "
                         f"session_index={completed_sessions + 1}",
@@ -1248,6 +1288,15 @@ async def run_ble_capture(args, ser: Serial, serial_monitor: SerialLogMonitor):
                         serial_monitor.poll_lines()
                         fail_if_unexpected_reset("during_cancel_probe_hold")
                         await asyncio.sleep(0.05)
+                    cancel_request_count_before = len(serial_monitor.find_lines("record session cancel requested"))
+                    cancel_complete_count_before = sum(
+                        len(serial_monitor.find_lines(marker))
+                        for marker in (
+                            "record session canceled",
+                            "recording cancel source=",
+                            "record session canceled before activation",
+                        )
+                    )
                     send_cancel(ser)
                     post_cancel_deadline = time.time() + session_cancel_post_wait_seconds
                     while time.time() < post_cancel_deadline:
@@ -1256,12 +1305,21 @@ async def run_ble_capture(args, ser: Serial, serial_monitor: SerialLogMonitor):
                         await asyncio.sleep(0.05)
 
                     full_text = serial_monitor.full_text()
-                    cancel_requested = "record session cancel requested" in full_text
+                    cancel_requested = (
+                        len(serial_monitor.find_lines("record session cancel requested"))
+                        > cancel_request_count_before
+                    )
+                    cancel_completed_from_serial = sum(
+                        len(serial_monitor.find_lines(marker))
+                        for marker in (
+                            "record session canceled",
+                            "recording cancel source=",
+                            "record session canceled before activation",
+                        )
+                    ) > cancel_complete_count_before
                     cancel_completed = (
                         collector.cancel_received
-                        or "record session canceled" in full_text
-                        or "recording cancel source=" in full_text
-                        or "record session canceled before activation" in full_text
+                        or cancel_completed_from_serial
                     )
                     serial_transport_summary_lines = serial_monitor.find_lines(STREAM_TRANSPORT_SUMMARY_MARKER)
                     completed_sessions += 1
@@ -1504,6 +1562,7 @@ async def run_ble_capture(args, ser: Serial, serial_monitor: SerialLogMonitor):
             characteristic=characteristic,
             token=token,
             service=service,
+            gatt_session=gatt_session,
             requester=requester,
         )
 

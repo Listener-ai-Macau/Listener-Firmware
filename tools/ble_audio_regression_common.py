@@ -1184,23 +1184,44 @@ async def play_and_capture_serial_toggle_after_cancel_probe(
             await wait_for_ready_markers_or_running(serial_monitor, timeout_seconds=15)
         ser.reset_input_buffer()
 
-        cancel_args = make_capture_args(
+        cancel_capture_seconds = max(1, int(math.ceil(cancel_hold_seconds)))
+        combined_timeout_seconds = max(
+            timeout_seconds or 0,
+            90,
+            int(cancel_hold_seconds + cancel_post_wait_seconds + pre_start_delay_seconds + capture_seconds + 30),
+        )
+        playback = WavPlayback(playback_source_wav)
+        playback_started = False
+
+        def start_recovery_playback() -> None:
+            nonlocal playback_started
+            if playback_started:
+                return
+            playback.__enter__()
+            playback_started = True
+
+        capture_args = make_capture_args(
             port=port,
             device_name=device_name,
             bluetooth_address=bluetooth_address,
-            capture_seconds=max(1, int(math.ceil(cancel_hold_seconds))),
-            capture_seconds_per_session=[max(1, int(math.ceil(cancel_hold_seconds)))],
-            session_pre_start_delay_seconds=[0.0],
-            max_sessions=1,
-            timeout_seconds=max(30, int(cancel_hold_seconds + cancel_post_wait_seconds + 20)),
+            capture_seconds=capture_seconds,
+            capture_seconds_per_session=[cancel_capture_seconds, capture_seconds],
+            session_pre_start_delay_seconds=[0.0, pre_start_delay_seconds],
+            max_sessions=2,
+            timeout_seconds=combined_timeout_seconds,
             reset_before_capture=False,
             output_dir=output_dir,
             serial_log_path=serial_log_path,
         )
-        cancel_args.session_cancel_after_start_seconds = cancel_hold_seconds
-        cancel_args.session_cancel_post_wait_seconds = cancel_post_wait_seconds
-        cancel_summaries = await run_ble_capture(cancel_args, ser, serial_monitor)
-        cancel_probe_summary = cancel_summaries[-1] if cancel_summaries else {}
+        capture_args.session_cancel_after_start_seconds_per_session = [cancel_hold_seconds, None]
+        capture_args.session_cancel_post_wait_seconds = cancel_post_wait_seconds
+        capture_args.session_start_callbacks = [None, start_recovery_playback]
+        try:
+            session_summaries = await run_ble_capture(capture_args, ser, serial_monitor)
+        finally:
+            if playback_started:
+                playback.__exit__(None, None, None)
+        cancel_probe_summary = session_summaries[0] if session_summaries else {}
         cancel_requested = bool(cancel_probe_summary.get("cancel_requested"))
         cancel_completed = bool(cancel_probe_summary.get("cancel_completed"))
         if not cancel_requested or not cancel_completed:
@@ -1211,21 +1232,6 @@ async def play_and_capture_serial_toggle_after_cancel_probe(
                 "cancel_completed": cancel_completed,
                 "serial_log": serial_monitor.full_text(),
             }
-
-        with WavPlayback(playback_source_wav):
-            capture_args = make_capture_args(
-                port=port,
-                device_name=device_name,
-                bluetooth_address=bluetooth_address,
-                capture_seconds=capture_seconds,
-                capture_seconds_per_session=[capture_seconds],
-                session_pre_start_delay_seconds=[pre_start_delay_seconds],
-                timeout_seconds=timeout_seconds,
-                reset_before_capture=False,
-                output_dir=output_dir,
-                serial_log_path=serial_log_path,
-            )
-            session_summaries = await run_ble_capture(capture_args, ser, serial_monitor)
 
     if not session_summaries:
         raise RuntimeError(f"{scenario}: capture returned no session summaries")
