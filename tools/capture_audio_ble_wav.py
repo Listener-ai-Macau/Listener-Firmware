@@ -61,6 +61,8 @@ AUDIO_NOTIFY_RESTORED_MARKER = "audio notify subscription restored before connec
 AUDIO_NOTIFY_SUBSCRIBED_MARKER = "audio notify subscribed:"
 AUDIO_NOTIFY_ENABLED_MARKER = "notify=1"
 AUDIO_TRANSPORT_STATE_MARKER = "audio transport state:"
+AUDIO_TRANSPORT_STREAM_READY_MARKER = "stream_ready"
+AUDIO_TRANSPORT_NOT_READY_REJECTION_MARKER = "record session start rejected: BLE audio transport not ready"
 BLE_CONNECTION_ESTABLISHED_MARKER = "connection established; status=0"
 AUDIO_UPLOAD_BEGIN_MARKER = "audio session upload begin"
 AUDIO_UPLOAD_END_MARKER = "audio session upload end"
@@ -80,6 +82,8 @@ BLE_NOTIFY_RECOVERY_DELAY_SECONDS = 0.5
 BLE_NOTIFY_CCCD_TIMEOUT_SECONDS = 5
 BLE_NOTIFY_PRE_CCCD_SETTLE_SECONDS = 0.35
 NOTIFY_READY_SETTLE_SECONDS = 1.2
+STREAM_READY_START_WAIT_SECONDS = 12.0
+SERIAL_TOGGLE_TRANSPORT_READY_RETRY_COUNT = 1
 SESSION_COMPLETE_IDLE_SECONDS = 0.2
 PHYSICAL_KEY_START_TIMEOUT_SECONDS = 300
 
@@ -150,8 +154,14 @@ class SerialLogMonitor:
             f"{markers}; recent logs:\n{self.recent_text()}"
         )
 
-    async def wait_for_predicate(self, predicate, timeout_seconds: int, description: str) -> None:
-        if any(predicate(line) for line in self._recent_lines):
+    async def wait_for_predicate(
+        self,
+        predicate,
+        timeout_seconds: float,
+        description: str,
+        include_recent: bool = True,
+    ) -> None:
+        if include_recent and any(predicate(line) for line in self._recent_lines):
             return
         deadline = time.time() + timeout_seconds
         while time.time() < deadline:
@@ -186,6 +196,23 @@ def line_indicates_notify_ready(line: str) -> bool:
     if AUDIO_NOTIFY_RESTORED_MARKER in line or AUDIO_NOTIFY_SUBSCRIBED_MARKER in line:
         return True
     return AUDIO_TRANSPORT_STATE_MARKER in line and AUDIO_NOTIFY_ENABLED_MARKER in line
+
+
+def line_indicates_stream_ready(line: str) -> bool:
+    return (
+        AUDIO_TRANSPORT_STATE_MARKER in line
+        and AUDIO_TRANSPORT_STREAM_READY_MARKER in line
+        and AUDIO_NOTIFY_ENABLED_MARKER in line
+    )
+
+
+def latest_audio_transport_state_line(serial_monitor: SerialLogMonitor) -> str:
+    lines = serial_monitor.find_lines(AUDIO_TRANSPORT_STATE_MARKER)
+    return lines[-1] if lines else ""
+
+
+def transport_not_ready_rejection_count(serial_monitor: SerialLogMonitor) -> int:
+    return len(serial_monitor.find_lines(AUDIO_TRANSPORT_NOT_READY_REJECTION_MARKER))
 
 
 def parse_args():
@@ -1040,6 +1067,77 @@ async def run_ble_capture(args, ser: Serial, serial_monitor: SerialLogMonitor):
             + serial_monitor.recent_text()
         )
 
+    async def wait_for_stream_ready_before_toggle(context: str) -> bool:
+        serial_monitor.poll_lines()
+        latest_state = latest_audio_transport_state_line(serial_monitor)
+        if line_indicates_stream_ready(latest_state):
+            print(f"{context}_stream_ready=already_ready", flush=True)
+            return True
+
+        timeout_seconds = min(
+            max(3.0, float(args.notify_ready_timeout_seconds)),
+            STREAM_READY_START_WAIT_SECONDS,
+        )
+        try:
+            await serial_monitor.wait_for_predicate(
+                line_indicates_stream_ready,
+                timeout_seconds=timeout_seconds,
+                description="audio transport stream_ready marker",
+                include_recent=False,
+            )
+            print(f"{context}_stream_ready=observed", flush=True)
+            return True
+        except RuntimeError:
+            latest_state = latest_audio_transport_state_line(serial_monitor)
+            print(
+                f"{context}_stream_ready=timeout "
+                f"timeout_seconds={timeout_seconds:.1f} "
+                f"latest_transport_state={latest_state or '<none>'}",
+                flush=True,
+            )
+            return False
+
+    async def send_serial_toggle_and_wait_for_start(session_capture_seconds: int) -> None:
+        start_budget_seconds = max(30, int(session_capture_seconds * 2 + 10))
+        retries_remaining = SERIAL_TOGGLE_TRANSPORT_READY_RETRY_COUNT
+        attempt = 1
+
+        while True:
+            await wait_for_stream_ready_before_toggle(f"serial_toggle_attempt_{attempt}")
+            rejection_count_before = transport_not_ready_rejection_count(serial_monitor)
+            send_toggle(ser)
+            start_deadline = time.time() + start_budget_seconds
+
+            while time.time() < start_deadline:
+                serial_monitor.poll_lines()
+                fail_if_unexpected_reset("during_session_start_wait")
+                if collector.has_started_session():
+                    return
+                if (
+                    retries_remaining > 0
+                    and transport_not_ready_rejection_count(serial_monitor) > rejection_count_before
+                ):
+                    print(
+                        "serial_toggle_transport_not_ready_retry=1 "
+                        f"attempt={attempt} retries_remaining_after={retries_remaining - 1}",
+                        flush=True,
+                    )
+                    retries_remaining -= 1
+                    attempt += 1
+                    break
+                await asyncio.sleep(0.05)
+            else:
+                break
+
+            if retries_remaining < 0:
+                break
+
+        raise RuntimeError(
+            "capture_audio_ble_wav: timed out waiting for serial-toggle session start; "
+            f"budget_seconds={start_budget_seconds}; recent serial logs:\n"
+            f"{serial_monitor.recent_text()}"
+        )
+
     if getattr(args, "reset_before_capture", False):
         try:
             ensure_host_ble_connection(
@@ -1136,21 +1234,7 @@ async def run_ble_capture(args, ser: Serial, serial_monitor: SerialLogMonitor):
                         serial_monitor.poll_lines()
                         fail_if_unexpected_reset("during_pre_start_delay")
                         await asyncio.sleep(0.05)
-                send_toggle(ser)
-                start_deadline = time.time() + max(30, int(session_capture_seconds * 2 + 10))
-                while time.time() < start_deadline:
-                    serial_monitor.poll_lines()
-                    fail_if_unexpected_reset("during_session_start_wait")
-                    if collector.has_started_session():
-                        break
-                    await asyncio.sleep(0.05)
-
-                if not collector.has_started_session():
-                    raise RuntimeError(
-                        "capture_audio_ble_wav: timed out waiting for serial-toggle session start; "
-                        f"budget_seconds={max(30, int(session_capture_seconds * 2 + 10))}; recent serial logs:\n"
-                        f"{serial_monitor.recent_text()}"
-                    )
+                await send_serial_toggle_and_wait_for_start(session_capture_seconds)
 
                 if session_cancel_after_start_seconds is not None:
                     cancel_delay_seconds = max(0.0, float(session_cancel_after_start_seconds))
