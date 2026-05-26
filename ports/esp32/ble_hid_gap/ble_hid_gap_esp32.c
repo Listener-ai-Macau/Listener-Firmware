@@ -250,6 +250,14 @@ nimble_hid_gap_event(struct ble_gap_event *event, void *arg)
                 event->subscribe.cur_notify,
                 event->subscribe.prev_indicate,
                 event->subscribe.cur_indicate);
+        diag_log(DIAG_SRC_BLE_GAP, DIAG_GAP_SUBSCRIBE, DIAG_SEV_INFO,
+                 event->subscribe.conn_handle,
+                 event->subscribe.attr_handle,
+                 ((uint32_t)event->subscribe.reason << 16) |
+                 ((uint32_t)event->subscribe.prev_notify << 8) |
+                 (uint32_t)event->subscribe.cur_notify,
+                 ((uint32_t)event->subscribe.prev_indicate << 8) |
+                 (uint32_t)event->subscribe.cur_indicate);
         ble_audio_stream_on_gap_subscribe(
             event->subscribe.conn_handle,
             event->subscribe.attr_handle,
