@@ -80,6 +80,10 @@ def check_integration(repo: Path) -> None:
     require("ble_firmware_ota_register_gatt()" in hid, "BLE HID init does not register firmware OTA GATT")
     require("ble_firmware_ota_log_gatt_state()" in hid, "BLE HID init does not log firmware OTA GATT state")
     require("ble_firmware_ota_on_gap_disconnect(" in gap, "GAP disconnect does not abort firmware OTA")
+    require(
+        "s_scan_rsp_fields.uuids128_is_complete = 0" in gap,
+        "BLE advertising must not mark the single advertised 128-bit service UUID as complete while OTA is also present",
+    )
     require("ble_firmware_ota" in hid_cmake, "ble_hid component does not require ble_firmware_ota")
     require("ble_firmware_ota" in gap_cmake, "ble_hid_gap component does not require ble_firmware_ota")
     for token in (

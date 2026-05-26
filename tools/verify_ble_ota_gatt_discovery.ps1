@@ -40,8 +40,19 @@ function Invoke-WinRtAsync {
     }
 
     $task = $method.MakeGenericMethod($ResultType).Invoke($null, @($AsyncOp))
-    if (-not $task.Wait($TimeoutMs)) {
-        throw "WinRT async operation timed out after $TimeoutMs ms."
+    try {
+        if (-not $task.Wait($TimeoutMs)) {
+            throw "WinRT async operation timed out after $TimeoutMs ms."
+        }
+    } catch {
+        if ($task.Exception -and $task.Exception.InnerExceptions.Count -gt 0) {
+            $details = @($task.Exception.InnerExceptions | ForEach-Object {
+                $hresult = "0x{0:X8}" -f ($_.HResult -band 0xffffffff)
+                "$($_.GetType().Name): $($_.Message) ($hresult)"
+            }) -join "; "
+            throw "WinRT async operation failed: $details"
+        }
+        throw
     }
     return $task.GetAwaiter().GetResult()
 }
