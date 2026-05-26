@@ -11,6 +11,7 @@ uint32_t diag_log_platform_count(void);
 void diag_log_platform_dump(void);
 void diag_log_platform_dump_last(uint32_t count);
 void diag_log_platform_clear(void);
+bool diag_log_platform_is_dumping(void);
 
 /* Returns true only for complete ~DIAGLOG:* command lines. */
 bool diag_log_consume_usb_command(const char *line);

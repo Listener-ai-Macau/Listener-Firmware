@@ -3,6 +3,7 @@
 #include "self_test.h"
 #include "system_health.h"
 #include "diag_log.h"
+#include "firmware_ota.h"
 
 #include "esp_err.h"
 #include "esp_log.h"
@@ -14,6 +15,7 @@ void app_main(void)
 {
     self_test_init();
     diag_log_init();
+    firmware_ota_init();
 
     esp_reset_reason_t reset_reason = esp_reset_reason();
     uint32_t boot_reason = 0;
@@ -33,12 +35,20 @@ void app_main(void)
         ESP_LOGE(TAG, "POST failed; continuing in degraded mode so BLE can expose device status");
     }
 
-    ble_hid_init();
+    esp_err_t ble_ret = ble_hid_init();
+    if (ble_ret != ESP_OK) {
+        ESP_LOGW(TAG, "BLE HID init degraded: %s", esp_err_to_name(ble_ret));
+    }
     esp_err_t keyboard_ret = keyboard_start();
     if (keyboard_ret != ESP_OK) {
         ESP_LOGW(TAG, "keyboard start degraded; continuing BLE startup: %s", esp_err_to_name(keyboard_ret));
     }
     system_health_init();
-    ble_hid_start();
+    esp_err_t ble_start_ret = ble_ret == ESP_OK ? ble_hid_start() : ble_ret;
     system_health_start();
+    firmware_ota_record_self_check(
+        self_test_critical_ok(&post),
+        ble_ret == ESP_OK && ble_start_ret == ESP_OK,
+        keyboard_ret == ESP_OK);
+    firmware_ota_confirm_pending_verify_if_ready();
 }
