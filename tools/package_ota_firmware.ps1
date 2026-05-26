@@ -105,7 +105,7 @@ $manifest = [ordered]@{
     }
     recovery = [ordered]@{
         factory_reflash = "Use package_factory_firmware.ps1 to restore factory image via USB/serial."
-        serial_commands = "~OTASTATUS to check current OTA state; ~OTAREBOOT to trigger reboot into pending image."
+        serial_commands = "~OTA:STATUS to check current OTA state; ~OTA:BLOCKER to inspect update blockers; ~OTA:ABORT to cancel an in-progress update."
     }
 }
 
