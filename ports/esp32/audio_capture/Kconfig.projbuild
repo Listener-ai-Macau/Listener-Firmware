@@ -13,3 +13,30 @@ config AUDIO_CAPTURE_MIC_SPH0645
     bool "SPH0645 I2S digital mic (schematic V1)"
 
 endchoice
+
+choice AUDIO_CAPTURE_SPH0645_SLOT
+    prompt "SPH0645 active I2S slot"
+    depends on AUDIO_CAPTURE_MIC_SPH0645
+    default AUDIO_CAPTURE_SPH0645_SLOT_LEFT
+    help
+        The SPH0645 drives DATA only on the WS slot selected by its SELECT
+        pin.  A slot mismatch records the idle/floating slot, which looks like
+        near-constant DC offset instead of speech.
+
+config AUDIO_CAPTURE_SPH0645_SLOT_LEFT
+    bool "Left / WS-low slot"
+
+config AUDIO_CAPTURE_SPH0645_SLOT_RIGHT
+    bool "Right / WS-high slot"
+
+endchoice
+
+config AUDIO_CAPTURE_SPH0645_GAIN
+    int "SPH0645 post-DC digital gain"
+    depends on AUDIO_CAPTURE_MIC_SPH0645
+    range 1 32
+    default 4
+    help
+        Apply gain after removing the measured DC offset from the digital mic
+        stream.  The V1 SPH0645 path has a large DC component and low useful
+        AC level; without this stage replayed speech can arrive as empty ASR.

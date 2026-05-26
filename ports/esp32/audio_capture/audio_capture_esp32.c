@@ -39,7 +39,6 @@
 #define AUDIO_CAPTURE_FRAME_MS          (20)
 #define AUDIO_CAPTURE_FRAME_SAMPLES     ((AUDIO_CAPTURE_SAMPLE_RATE_HZ * AUDIO_CAPTURE_FRAME_MS) / 1000)
 #define AUDIO_CAPTURE_FRAME_BYTES       (AUDIO_CAPTURE_FRAME_SAMPLES * sizeof(int16_t))
-#define AUDIO_CAPTURE_TASK_STACK_BYTES  (8 * 1024)
 #define AUDIO_CAPTURE_LOG_INTERVAL_FRAMES (50)
 #define AUDIO_CAPTURE_TASK_STACK_BYTES  (6 * 1024)
 /* Recording duration is user-controlled (KEY1 toggle); no fixed upper limit.
@@ -69,6 +68,21 @@
 
 #ifdef CONFIG_AUDIO_CAPTURE_MIC_SPH0645
 #define AUDIO_CAPTURE_SPH0645_MCLK_MULTIPLE (256)
+#if CONFIG_AUDIO_CAPTURE_SPH0645_SLOT_RIGHT
+#define AUDIO_CAPTURE_SPH0645_SLOT_INDEX (1)
+#define AUDIO_CAPTURE_SPH0645_SLOT_NAME "right"
+#else
+#define AUDIO_CAPTURE_SPH0645_SLOT_INDEX (0)
+#define AUDIO_CAPTURE_SPH0645_SLOT_NAME "left"
+#endif
+#define AUDIO_CAPTURE_SPH0645_SLOT_COUNT (2)
+#define AUDIO_CAPTURE_SPH0645_SAMPLE_SHIFT (14)
+#define AUDIO_CAPTURE_SPH0645_DC_Q_SHIFT (8)
+#define AUDIO_CAPTURE_SPH0645_DC_FILTER_SHIFT (12)
+#ifndef CONFIG_AUDIO_CAPTURE_SPH0645_GAIN
+#define CONFIG_AUDIO_CAPTURE_SPH0645_GAIN (4)
+#endif
+#define AUDIO_CAPTURE_SPH0645_OUTPUT_GAIN CONFIG_AUDIO_CAPTURE_SPH0645_GAIN
 #endif
 
 static const char *TAG = "audio_capture";
@@ -120,6 +134,10 @@ static uint32_t s_dropped_frame_count;
 static audio_capture_export_state_t s_export_state;
 static SemaphoreHandle_t s_state_mutex;
 static uint32_t s_session_id_counter;
+#ifdef CONFIG_AUDIO_CAPTURE_MIC_SPH0645
+static bool s_sph0645_dc_initialized;
+static int32_t s_sph0645_dc_q;
+#endif
 
 /* ---------- Shared helpers ---------- */
 
@@ -736,12 +754,36 @@ static esp_err_t audio_capture_codec_init(void)
 
 #ifdef CONFIG_AUDIO_CAPTURE_MIC_SPH0645
 
+static int16_t clamp_i16(int32_t sample)
+{
+    if (sample > INT16_MAX) {
+        return INT16_MAX;
+    }
+    if (sample < INT16_MIN) {
+        return INT16_MIN;
+    }
+    return (int16_t)sample;
+}
+
 static void sph0645_to_int16(const int32_t *src, int16_t *dst, size_t out_samples)
 {
-    /* SPH0645 in Philips I2S MONO delivers interleaved L/R at 2x the
-     * configured sample rate. Take every other sample to recover true mono. */
+    /* The SPH0645 drives only the WS slot selected by its SELECT pin. Capture
+     * both I2S slots and extract the configured active slot; the inactive slot
+     * is idle/floating and can appear as near-constant DC-offset PCM. The mic
+     * has 18 effective bits in a 24-bit I2S word; remove the observed DC term
+     * before applying product-level digital gain. */
     for (size_t i = 0; i < out_samples; i++) {
-        dst[i] = (int16_t)(src[i * 2] >> 16);
+        const size_t raw_index = (i * AUDIO_CAPTURE_SPH0645_SLOT_COUNT) + AUDIO_CAPTURE_SPH0645_SLOT_INDEX;
+        const int32_t sample = src[raw_index] >> AUDIO_CAPTURE_SPH0645_SAMPLE_SHIFT;
+        const int32_t sample_q = sample << AUDIO_CAPTURE_SPH0645_DC_Q_SHIFT;
+        if (!s_sph0645_dc_initialized) {
+            s_sph0645_dc_q = sample_q;
+            s_sph0645_dc_initialized = true;
+        } else {
+            s_sph0645_dc_q += (sample_q - s_sph0645_dc_q) >> AUDIO_CAPTURE_SPH0645_DC_FILTER_SHIFT;
+        }
+        const int32_t centered = sample - (s_sph0645_dc_q >> AUDIO_CAPTURE_SPH0645_DC_Q_SHIFT);
+        dst[i] = clamp_i16(centered * AUDIO_CAPTURE_SPH0645_OUTPUT_GAIN);
     }
 }
 
@@ -783,9 +825,9 @@ static esp_err_t audio_capture_i2s_init(void)
             .clk_src = I2S_CLK_SRC_DEFAULT,
             .mclk_multiple = AUDIO_CAPTURE_SPH0645_MCLK_MULTIPLE,
         },
-        /* Capture full 32-bit slot to avoid 3-byte DMA packing;
+        /* Capture full 32-bit slots to avoid 3-byte DMA packing;
          * SPH0645 24-bit data is left-aligned in the 32-bit word. */
-        .slot_cfg = I2S_STD_PHILIPS_SLOT_DEFAULT_CONFIG(I2S_DATA_BIT_WIDTH_32BIT, I2S_SLOT_MODE_MONO),
+        .slot_cfg = I2S_STD_PHILIPS_SLOT_DEFAULT_CONFIG(I2S_DATA_BIT_WIDTH_32BIT, I2S_SLOT_MODE_STEREO),
         .gpio_cfg = {
             .mclk = GPIO_NUM_NC,
             .bclk = BOARD_PINS_I2S_BCLK_IO,
@@ -799,10 +841,17 @@ static esp_err_t audio_capture_i2s_init(void)
             },
         },
     };
+    std_cfg.slot_cfg.slot_mask = I2S_STD_SLOT_BOTH;
 
     ESP_RETURN_ON_ERROR(i2s_channel_init_std_mode(s_i2s_rx_handle, &std_cfg), TAG, "init i2s rx failed");
     ESP_RETURN_ON_ERROR(i2s_channel_enable(s_i2s_rx_handle), TAG, "enable i2s rx failed");
-    ESP_LOGI(TAG, "SPH0645 I2S init: %uHz 32-bit slot no-MCLK", AUDIO_CAPTURE_SAMPLE_RATE_HZ);
+    ESP_LOGI(
+        TAG,
+        "SPH0645 I2S init: %uHz 32-bit stereo slots no-MCLK selected_slot=%s gain=%d dc_filter_shift=%d",
+        AUDIO_CAPTURE_SAMPLE_RATE_HZ,
+        AUDIO_CAPTURE_SPH0645_SLOT_NAME,
+        AUDIO_CAPTURE_SPH0645_OUTPUT_GAIN,
+        AUDIO_CAPTURE_SPH0645_DC_FILTER_SHIFT);
     return ESP_OK;
 }
 
