@@ -40,7 +40,7 @@ function New-FeatureSnapshot {
             "Voice key control for start/stop recording flow, including serial VREC commands.",
             "diag_log flash ring buffer for boot, BLE, audio, health, and error events that survive reboot.",
             "AI-readable diag_log JSON bundle tooling for deterministic event, argument, severity, boot-segment, and summary fields.",
-            "Firmware OTA v1 using ESP-IDF otadata/ota_0/ota_1 slots, BLE GATT control/data bridge, official rollback, pending verify, blockers, and diag_log OTA events.",
+            "Firmware OTA v1 using ESP-IDF otadata/ota_0/ota_1 slots, partition-derived flash offsets, BLE GATT control/data bridge, official rollback, pending verify, blockers, and diag_log OTA events.",
             "system_health heartbeat and resource checks for heap, task, BLE, and disconnect conditions.",
             "POST and degraded boot reporting for NVS, BLE, audio, heap, and board assumptions."
         )
@@ -79,6 +79,7 @@ function New-FeatureSnapshot {
             "pwsh -NoProfile -File .\tools\flash.ps1 -Port <COMx>",
             "pwsh -NoProfile -File .\tools\monitor.ps1 -Port <COMx>",
             "pwsh -NoProfile -File .\tools\dump_diag_log.ps1 -Port <COMx>",
+            "pwsh -NoProfile -File .\tools\verify_diagnostic_log_coverage.ps1",
             "pwsh -NoProfile -File .\tools\collect_ai_diagnostics.ps1 -InputJsonl <diag_log.jsonl> -OutputDir .\tests\artifacts\ai_diagnostics",
             "pwsh -NoProfile -File .\tools\verify_ble_hid.ps1",
             "pwsh -NoProfile -File .\tools\verify_audio_ble_product_matrix.ps1",

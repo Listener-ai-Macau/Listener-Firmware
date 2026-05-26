@@ -61,6 +61,16 @@ static uint32_t partition_subtype_u32(const esp_partition_t *partition)
     return partition != NULL ? (uint32_t)partition->subtype : UINT32_MAX;
 }
 
+static uint32_t partition_offset_u32(const esp_partition_t *partition)
+{
+    return partition != NULL ? partition->address : UINT32_MAX;
+}
+
+static uint32_t partition_size_u32(const esp_partition_t *partition)
+{
+    return partition != NULL ? partition->size : 0;
+}
+
 static uint32_t firmware_ota_string_hash(const char *text)
 {
     uint32_t hash = 2166136261U;
@@ -107,6 +117,15 @@ static void firmware_ota_log_event(
 {
     diag_log(DIAG_SRC_OTA, event, severity,
              partition_subtype_u32(partition), detail, error, reason);
+}
+
+static void firmware_ota_log_partition_event(uint32_t role, const esp_partition_t *partition)
+{
+    diag_log(DIAG_SRC_OTA, DIAG_OTA_PARTITION, partition != NULL ? DIAG_SEV_INFO : DIAG_SEV_WARN,
+             role,
+             partition_subtype_u32(partition),
+             partition_offset_u32(partition),
+             partition_size_u32(partition));
 }
 
 static void firmware_ota_log_version_values(
@@ -187,16 +206,25 @@ void firmware_ota_init(void)
     firmware_ota_lock();
     s_ota.running_partition = esp_ota_get_running_partition();
     s_ota.boot_partition = esp_ota_get_boot_partition();
+    const esp_partition_t *next_partition = esp_ota_get_next_update_partition(NULL);
     firmware_ota_unlock();
+
+    firmware_ota_log_partition_event(DIAG_OTA_PARTITION_RUNNING, s_ota.running_partition);
+    firmware_ota_log_partition_event(DIAG_OTA_PARTITION_BOOT, s_ota.boot_partition);
+    firmware_ota_log_partition_event(DIAG_OTA_PARTITION_NEXT, next_partition);
 
     esp_ota_img_states_t state = ESP_OTA_IMG_UNDEFINED;
     if (s_ota.running_partition != NULL &&
         esp_ota_get_state_partition(s_ota.running_partition, &state) == ESP_OK) {
         ESP_LOGI(
             TAG,
-            "OTA running partition=%s boot=%s state=%" PRIu32 " version=%s",
+            "OTA running partition=%s offset=0x%08" PRIx32 " boot=%s boot_offset=0x%08" PRIx32 " next=%s next_offset=0x%08" PRIx32 " state=%" PRIu32 " version=%s",
             partition_label_or_none(s_ota.running_partition),
+            partition_offset_u32(s_ota.running_partition),
             partition_label_or_none(s_ota.boot_partition),
+            partition_offset_u32(s_ota.boot_partition),
+            partition_label_or_none(next_partition),
+            partition_offset_u32(next_partition),
             (uint32_t)state,
             listener_device_get_fw_version());
         firmware_ota_log_event(
@@ -309,11 +337,14 @@ esp_err_t firmware_ota_begin(size_t image_size, const char *target_version)
 
     ESP_LOGI(
         TAG,
-        "OTA begin partition=%s size=%u from=%s to=%s",
+        "OTA begin partition=%s offset=0x%08" PRIx32 " partition_size=%u image_size=%u from=%s to=%s",
         partition->label,
+        partition_offset_u32(partition),
+        (unsigned)partition->size,
         (unsigned)image_size,
         listener_device_get_fw_version(),
         target_version != NULL ? target_version : "unknown");
+    firmware_ota_log_partition_event(DIAG_OTA_PARTITION_UPDATE, partition);
     firmware_ota_log_event(DIAG_OTA_BEGIN, DIAG_SEV_INFO, partition, (uint32_t)image_size, 0, 0);
     firmware_ota_log_version_event(DIAG_OTA_BEGIN, partition);
     return ESP_OK;
@@ -400,8 +431,13 @@ esp_err_t firmware_ota_finish(bool reboot_after_set_boot)
         return ret;
     }
 
-    ESP_LOGI(TAG, "OTA set boot partition=%s bytes=%u; reboot=%u", partition->label, (unsigned)bytes_written, reboot_after_set_boot ? 1U : 0U);
+    ESP_LOGI(TAG, "OTA set boot partition=%s offset=0x%08" PRIx32 " bytes=%u; reboot=%u",
+             partition->label,
+             partition_offset_u32(partition),
+             (unsigned)bytes_written,
+             reboot_after_set_boot ? 1U : 0U);
     firmware_ota_log_event(DIAG_OTA_SET_BOOT, DIAG_SEV_INFO, partition, (uint32_t)bytes_written, 0, 0);
+    firmware_ota_log_partition_event(DIAG_OTA_PARTITION_BOOT, partition);
     firmware_ota_log_version_event(DIAG_OTA_SET_BOOT, partition);
 
     firmware_ota_lock();
@@ -476,17 +512,23 @@ firmware_ota_status_t firmware_ota_get_status(void)
 {
     firmware_ota_status_t status = {0};
     firmware_ota_lock();
-    status.running_partition = partition_label_or_none(s_ota.running_partition != NULL ? s_ota.running_partition : esp_ota_get_running_partition());
-    status.boot_partition = partition_label_or_none(s_ota.boot_partition != NULL ? s_ota.boot_partition : esp_ota_get_boot_partition());
+    const esp_partition_t *running = s_ota.running_partition != NULL ? s_ota.running_partition : esp_ota_get_running_partition();
+    const esp_partition_t *boot = s_ota.boot_partition != NULL ? s_ota.boot_partition : esp_ota_get_boot_partition();
     const esp_partition_t *next = s_ota.active ? s_ota.update_partition : esp_ota_get_next_update_partition(NULL);
+    status.running_partition = partition_label_or_none(running);
+    status.boot_partition = partition_label_or_none(boot);
     status.update_partition = partition_label_or_none(next);
+    status.running_offset = partition_offset_u32(running);
+    status.boot_offset = partition_offset_u32(boot);
+    status.update_offset = partition_offset_u32(next);
+    status.update_size = partition_size_u32(next);
     status.running_version = listener_device_get_fw_version();
     status.target_version = s_ota.target_version[0] != '\0' ? s_ota.target_version : "none";
     status.bytes_written = s_ota.bytes_written;
     status.expected_size = s_ota.expected_size;
     status.active = s_ota.active;
     status.pending_verify = firmware_ota_running_pending_verify();
-    status.running_state = ota_state_for_partition(s_ota.running_partition != NULL ? s_ota.running_partition : esp_ota_get_running_partition());
+    status.running_state = ota_state_for_partition(running);
     firmware_ota_unlock();
     status.blocker = firmware_ota_get_blocker();
     return status;
@@ -504,12 +546,19 @@ void firmware_ota_note_battery(uint8_t percent, uint32_t voltage_mv, bool valid)
 static void firmware_ota_print_status(void)
 {
     firmware_ota_status_t status = firmware_ota_get_status();
+    firmware_ota_log_partition_event(DIAG_OTA_PARTITION_RUNNING, esp_ota_get_running_partition());
+    firmware_ota_log_partition_event(DIAG_OTA_PARTITION_BOOT, esp_ota_get_boot_partition());
+    firmware_ota_log_partition_event(DIAG_OTA_PARTITION_NEXT, esp_ota_get_next_update_partition(NULL));
     ESP_LOGI(
         TAG,
-        "OTA STATUS running=%s boot=%s update=%s version=%s target=%s active=%u pending_verify=%u state=%" PRIu32 " bytes=%u expected=%u blocker=%s",
+        "OTA STATUS running=%s running_offset=0x%08" PRIx32 " boot=%s boot_offset=0x%08" PRIx32 " update=%s update_offset=0x%08" PRIx32 " update_size=%u version=%s target=%s active=%u pending_verify=%u state=%" PRIu32 " bytes=%u expected=%u blocker=%s",
         status.running_partition,
+        status.running_offset,
         status.boot_partition,
+        status.boot_offset,
         status.update_partition,
+        status.update_offset,
+        (unsigned)status.update_size,
         status.running_version,
         status.target_version,
         status.active ? 1U : 0U,

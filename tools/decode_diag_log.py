@@ -148,6 +148,12 @@ def load_event_schema(header_path: pathlib.Path) -> dict[str, Any]:
         macros[macro] = value
 
         if macro.startswith("DIAG_SRC_"):
+            if value in sources_by_id:
+                existing = sources_by_id[value]
+                raise ValueError(
+                    f"duplicate diag_log source id 0x{value:02X}: "
+                    f"{existing['macro']} line {existing['line']} and {macro} line {line_number}"
+                )
             source = {
                 "id": value,
                 "name": source_name_from_macro(macro),
@@ -172,6 +178,13 @@ def load_event_schema(header_path: pathlib.Path) -> dict[str, Any]:
             continue
 
         if current_event_source and comment and "a1=" in comment:
+            event_key = (current_event_source, value)
+            if event_key in events_by_source_value:
+                existing = events_by_source_value[event_key]
+                raise ValueError(
+                    f"duplicate diag_log event id {value} for {current_event_source}: "
+                    f"{existing['macro']} line {existing['line']} and {macro} line {line_number}"
+                )
             event = {
                 "value": value,
                 "name": event_name_from_macro(macro),
@@ -181,7 +194,7 @@ def load_event_schema(header_path: pathlib.Path) -> dict[str, Any]:
                 "args": parse_arg_specs(comment),
                 "line": line_number,
             }
-            events_by_source_value[(current_event_source, value)] = event
+            events_by_source_value[event_key] = event
             continue
 
         group = "_".join(macro.split("_")[:2])

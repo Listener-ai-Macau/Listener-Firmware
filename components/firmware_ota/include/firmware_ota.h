@@ -26,6 +26,10 @@ typedef struct {
     const char *running_partition;
     const char *boot_partition;
     const char *update_partition;
+    uint32_t running_offset;
+    uint32_t boot_offset;
+    uint32_t update_offset;
+    uint32_t update_size;
     const char *running_version;
     const char *target_version;
     size_t bytes_written;
