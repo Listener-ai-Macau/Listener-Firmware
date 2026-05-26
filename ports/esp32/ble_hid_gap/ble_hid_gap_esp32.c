@@ -15,6 +15,7 @@
 
 #include "ble_hid_gap.h"
 #include "ble_audio_stream.h"
+#include "ble_firmware_ota.h"
 #include "diag_log.h"
 
 #include "esp_bt.h"
@@ -109,7 +110,10 @@ esp_err_t esp_hid_ble_gap_adv_init(uint16_t appearance, const char *device_name)
     s_scan_rsp_fields.tx_pwr_lvl = BLE_HS_ADV_TX_PWR_LVL_AUTO;
     s_scan_rsp_fields.uuids128 = &s_audio_stream_service_uuid;
     s_scan_rsp_fields.num_uuids128 = 1;
-    s_scan_rsp_fields.uuids128_is_complete = 1;
+    /* The OTA GATT service is another 128-bit service; the legacy 31-byte scan
+     * response can only afford one UUID, so this advertised list is incomplete.
+     */
+    s_scan_rsp_fields.uuids128_is_complete = 0;
 
     /* Initialize the security configuration */
     ble_hs_cfg.sm_io_cap = BLE_SM_IO_CAP_NO_IO;
@@ -214,6 +218,7 @@ nimble_hid_gap_event(struct ble_gap_event *event, void *arg)
         s_ble_gap_connected = false;
         s_ble_gap_conn_handle = BLE_HS_CONN_HANDLE_NONE;
         ble_audio_stream_on_gap_disconnect(event->disconnect.conn.conn_handle);
+        ble_firmware_ota_on_gap_disconnect(event->disconnect.conn.conn_handle);
         s_directed_adv_pending = true;
         s_last_adv_was_directed = false;
         ble_hid_gap_start_advertising();
