@@ -17,6 +17,7 @@
 #define DIAG_SRC_SELF_TEST 0x08
 #define DIAG_SRC_HEALTH    0x09
 #define DIAG_SRC_BLE_AUDIO 0x0A
+#define DIAG_SRC_OTA       0x0B
 
 /* System events (DIAG_SRC_SYSTEM) */
 #define DIAG_SYS_BOOT          1   /* a1=boot_reason, a2=0, a3=0, a4=0 */
@@ -34,6 +35,7 @@
 #define DIAG_COMP_DIAG_LOG     5
 #define DIAG_COMP_KEYBOARD     6
 #define DIAG_COMP_HEALTH       7
+#define DIAG_COMP_OTA          8
 
 /* Keyboard events (DIAG_SRC_KEYBOARD) */
 #define DIAG_KBD_KEY_PRESS     1   /* a1=key_ascii, a2=hid_result(0=ok), a3=ble_connected, a4=press_count */
@@ -88,5 +90,26 @@
 /* Health events (DIAG_SRC_HEALTH) */
 #define DIAG_HEALTH_HEARTBEAT  1   /* a1=heap_free_kb, a2=heap_min_kb, a3=ble_connected, a4=uptime_min */
 #define DIAG_HEALTH_ALERT      2   /* a1=alert_type(1=heap,2=ble_rate), a2=alert_value, a3=threshold, a4=0 */
+
+/* Firmware OTA events (DIAG_SRC_OTA) */
+#define DIAG_OTA_STATE          1   /* a1=partition_subtype, a2=ota_state, a3=0, a4=0 */
+#define DIAG_OTA_BEGIN          2   /* a1=partition_subtype, a2=image_size, a3=esp_err, a4=0 */
+#define DIAG_OTA_WRITE          3   /* a1=partition_subtype, a2=offset_or_bytes, a3=esp_err, a4=0 */
+#define DIAG_OTA_VERIFY         4   /* a1=partition_subtype, a2=bytes_written, a3=esp_err, a4=0 */
+#define DIAG_OTA_SET_BOOT       5   /* a1=partition_subtype, a2=bytes_written, a3=esp_err, a4=0 */
+#define DIAG_OTA_REBOOT         6   /* a1=partition_subtype, a2=0, a3=0, a4=0 */
+#define DIAG_OTA_PENDING_VERIFY 7   /* a1=partition_subtype, a2=ota_state, a3=0, a4=0 */
+#define DIAG_OTA_MARK_VALID     8   /* a1=partition_subtype, a2=0, a3=esp_err, a4=0 */
+#define DIAG_OTA_ROLLBACK       9   /* a1=partition_subtype, a2=detail, a3=esp_err, a4=reason */
+#define DIAG_OTA_ABORT          10  /* a1=partition_subtype, a2=bytes_written, a3=esp_err, a4=reason */
+#define DIAG_OTA_REJECTED       11  /* a1=partition_subtype, a2=detail, a3=esp_err, a4=blocker */
+#define DIAG_OTA_VERSION        12  /* a1=from_version_hash, a2=to_version_hash, a3=partition_subtype, a4=event */
+
+#define DIAG_OTA_ABORT_USB                  1
+#define DIAG_OTA_ROLLBACK_USB               1
+#define DIAG_OTA_TEST_BOOT_INACTIVE         2
+#define DIAG_OTA_ROLLBACK_POST_FAILED       0x01
+#define DIAG_OTA_ROLLBACK_BLE_NOT_READY     0x02
+#define DIAG_OTA_ROLLBACK_KEYBOARD_NOT_READY 0x04
 
 #endif /* DIAG_LOG_EVENTS_H */

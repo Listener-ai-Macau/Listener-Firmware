@@ -1,0 +1,189 @@
+
+--- 2026-05-26 12:32:14 serial opened initial_dtr=True initial_rts=True ---
+
+--- 2026-05-26 12:32:15 usb-jtag reset sent dtr=False rts=False ---
+ESP-ROM:esp32s3-20210327
+Build:Mar 27 2021
+rst:0x15 (USB_UART_CHIP_RESET),boot:0x39 (SPI_FAST_FLASH_BOOT)
+Saved PC:0x4037e35a
+SPIWP:0xee
+mode:DIO, clock div:1
+load:0x3fce2820,len:0x14f0
+load:0x403c8700,len:0xd24
+load:0x403cb700,len:0x2f48
+entry 0x403c8924
+I (24) boot: ESP-IDF v5.5.4-668-g8e48797f0c 2nd stage bootloader
+I (25) boot: compile time May 26 2026 12:00:37
+I (25) boot: Multicore bootloader
+I (26) boot: chip revision: v0.2
+I (29) boot: efuse block revision: v1.4
+I (33) boot.esp32s3: Boot SPI Speed : 80MHz
+I (36) boot.esp32s3: SPI Mode       : DIO
+I (40) boot.esp32s3: SPI Flash Size : 16MB
+I (44) boot: Enabling RNG early entropy source...
+I (49) boot: Partition Table:
+I (51) boot: ## Label            Usage          Type ST Offset   Length
+I (57) boot:  0 nvs              WiFi data        01 02 00009000 00006000
+I (64) boot:  1 otadata          OTA data         01 00 0000f000 00002000
+I (70) boot:  2 phy_init         RF data          01 01 00011000 00001000
+I (77) boot:  3 ota_0            OTA app          00 10 00020000 001b0000
+I (83) boot:  4 ota_1            OTA app          00 11 001d0000 001b0000
+I (90) boot:  5 diag_log         Unknown data     01 81 00380000 00080000
+I (97) boot: End of partition table
+I (100) esp_image: segment 0: paddr=00020020 vaddr=3c070020 size=1cd54h (118100) map
+I (128) esp_image: segment 1: paddr=0003cd7c vaddr=3fc9ae00 size=0329ch ( 12956) load
+I (131) esp_image: segment 2: paddr=00040020 vaddr=42000020 size=626d0h (403152) map
+I (203) esp_image: segment 3: paddr=000a26f8 vaddr=3fc9e09c size=011a8h (  4520) load
+I (204) esp_image: segment 4: paddr=000a38a8 vaddr=40374000 size=16d3ch ( 93500) load
+I (227) esp_image: segment 5: paddr=000ba5ec vaddr=50000000 size=00020h (    32) load
+I (236) boot: Loaded app from partition at offset 0x20000
+I (237) boot: Disabling RNG early entropy source...
+I (247) cpu_start: Multicore app
+I (255) cpu_start: GPIO 44 and 43 are used as console UART I/O pins
+I (256) cpu_start: Pro cpu start user code
+I (256) cpu_start: cpu freq: 160000000 Hz
+I (257) app_init: Application information:
+I (261) app_init: Project name:     voice-keyboard-firmware
+I (267) app_init: App version:      28331d4-dirty
+I (271) app_init: Compile time:     May 26 2026 11:59:55
+I (276) app_init: ELF file SHA256:  4f9f211b4...
+I (280) app_init: ESP-IDF:          v5.5.4-668-g8e48797f0c
+I (286) efuse_init: Min chip rev:     v0.0
+I (289) efuse_init: Max chip rev:     v0.99
+I (293) efuse_init: Chip rev:         v0.2
+I (297) heap_init: Initializing. RAM available for dynamic allocation:
+I (304) heap_init: At 3FCA1338 len 000483D8 (288 KiB): RAM
+I (309) heap_init: At 3FCE9710 len 00005724 (21 KiB): RAM
+I (314) heap_init: At 3FCF0000 len 00008000 (32 KiB): DRAM
+I (319) heap_init: At 600FE000 len 00001FE8 (7 KiB): RTCRAM
+I (325) spi_flash: detected chip: generic
+I (328) spi_flash: flash io: dio
+I (332) sleep_gpio: Configure to isolate all GPIO pins in sleep state
+I (337) sleep_gpio: Enable automatic switching of GPIO sleep configuration
+I (353) main_task: Started on CPU0
+I (363) main_task: Calling app_main()
+I (363) diag_log: diag_log partition: 512KB 128 sectors
+I (413) diag_log: diag_log ready: write_sector=3 write_offset=160 retained=670
+I (423) firmware_ota: OTA running partition=ota_0 boot=ota_0 state=2 version=28331d4-dirty
+I (433) self_test_plat: NVS stats: used=87 free=669 total=756 recovered=no
+I (433) self_test_plat: SPIRAM not configured
+I (433) self_test: POST: nvs=OK nvs_err=0 ble=PENDING audio=PENDING spiram=N/A heap=335064 fw=28331d4-dirty proto=1
+I (453) ble_hid: fw_version=28331d4-dirty protocol_version=1 build=May 26 2026 11:59:55 serial=14:C1:9F:48:FE:70
+I (453) ble_hid: factory readiness: ble_name=listener appearance=0x03c1 readiness=factory_ready;pairable_on_boot;post_degraded_boot capabilities=ble_hid_keyboard;ble_audio_vka1;usb_serial_text;key1_record_toggle;post_status;firmware_ota_v1
+I (473) BLE_INIT: BT controller compile version [b7de11e]
+I (473) BLE_INIT: Using main XTAL as clock source
+I (483) BLE_INIT: Feature Config, ADV:1, BLE_50:1, DTM:1, SCAN:1, CCA:0, SMP:1, CONNECT:1
+I (493) BLE_INIT: Bluetooth MAC: 14:c1:9f:48:fe:72
+I (493) phy_init: phy_version 711,97bcf0a2,Aug 25 2025,19:04:10
+I (543) ble_audio_stream: audio buffer pool initialized: buffers=36 buffer_bytes=1920 total_bytes=69120 heap=8bit
+I (543) ble_audio_stream: audio GATT service registered
+I (543) ESP_HID_GAP: NimBLE advertising configured: appearance=0x03c1 name=listener name_in_adv=yes io_cap=3 bonding=1 mitm=0 sc=1
+I (553) ble_hid: DIS identity: manufacturer=listener model=keyboard-v1 hw=esp32s3-devkit fw=28331d4-dirty proto=1 serial=14:C1:9F:48:FE:70
+I (563) ble_audio_stream: audio GATT state: registered=1 svc_rc=5 svc_handle=0 chr_rc=5 chr_def=0 chr_val=0 notify_attr=0
+I (583) ble_hid: battery ADC calibration: curve fitting
+I (583) ble_hid: battery ADC ready: gpio=7 unit=0 channel=6
+I (593) ble_hid: battery level=92 voltage_mv=4100 raw=2379 reason=init
+I (593) audio_capture: SPH0645 I2S init: 16000Hz 32-bit slot no-MCLK
+I (603) audio_capture: i2s start ok
+I (603) audio_capture: audio capture started: SPH0645 I2S digital mic
+I (613) voice_key_input: voice key candidate idle level detected: source=gpio35.ec11_key raw_high=1 pressed_when=low
+I (623) voice_key_input: voice key ready: source=gpio35.ec11_key gpio=35 active_low=1 legacy_expander=0 poll_ms=20 debounce_samples=3
+I (633) voice_key_input: voice key recovery ready: hold_ms=5000
+I (633) voice_rec_ctrl: voice recording control ready: source=gpio35.ec11_key toggle start/stop
+I (643) voice_rec_ctrl: device_status state=ready detail=voice_recording_control_started
+I (653) keyboard: WASD key idle detected: source=key1.gpio45.d raw_high=1
+I (663) keyboard: WASD key idle detected: source=key2.gpio48.w raw_high=1
+I (663) keyboard: WASD key idle detected: source=key3.gpio47.a raw_high=1
+I (673) keyboard: WASD key idle detected: source=key4.gpio21.s raw_high=1
+I (683) keyboard: WASD keys ready: key1=gpio45:d key2=gpio48:w key3=gpio47:a key4=gpio21:s active_low=1 poll_ms=20 debounce_samples=3
+I (693) ble_hid: BLE host task started
+I (713) ESP_HID_GAP: NimBLE host sync complete: own_addr_type=0 addr=72:fe:48:9f:c1:14
+I (713) ESP_HID_GAP: NimBLE host synced before HID START; advertising deferred
+I (713) ble_hid: START
+I (713) health: system health monitoring started: interval_s=60
+I (713) ble_audio_stream: audio GATT state: registered=1 svc_rc=0 svc_handle=1 chr_rc=0 chr_def=2 chr_val=3 notify_attr=3
+I (723) main_task: Returned from app_main()
+I (733) ESP_HID_GAP: NimBLE bonded peers=1
+I (743) ESP_HID_GAP: NimBLE directed advertising started: peer_type=0 peer_addr=ac:92:ef:77:d5:4c
+I (753) ble_hid: battery level=93 voltage_mv=4116 raw=2388 reason=hid_start
+I (753) ble_hid: USB SERIAL INPUT READY
+I (763) board: ########################################################################
+BLE keyboard demo usage:
+Inject test bytes with tools/send_serial.ps1 or type in monitor.
+Capture 3s audio WAV with tools/capture_audio_wav.ps1 -Port COM3.
+Capture toggle session WAV with tools/capture_audio_session_wav.ps1 -Port COM3.
+Hardware voice key uses EC11_KEY/GPIO35: press once to start, press again to stop.
+Temporary physical keys: KEY1/GPIO45=d, KEY2/GPIO48=w, KEY3/GPIO47=a, KEY4/GPIO21=s.
+KEY1-KEY4 send BLE HID d/w/a/s when a host is connected.
+Hold the hardware voice key for 5s or send ~VREC:RECOVERY to clear pairing/session state.
+Use ~OTA:STATUS, ~OTA:BLOCKER, or ~OTA:ABORT for firmware OTA diagnostics.
+Use ~DIAGLOG:COUNT, ~DIAGLOG:LAST:N, ~DIAGLOG:DUMP, or ~DIAGLOG:CLEAR for diagnostics.
+Device status logs use ready, recording, transferring, error, and recovery.
+End-to-end keystroke delivery still requires a BLE host connection.
+########################################################################
+I (1603) audio_capture: frame captured count=50 bytes=32000
+I (2023) ESP_HID_GAP: advertise complete; reason=0
+I (2023) ESP_HID_GAP: directed advertising completed; falling back to undirected advertising
+I (2023) ESP_HID_GAP: NimBLE bonded peers=1
+I (2033) ESP_HID_GAP: NimBLE undirected advertising started
+I (2603) audio_capture: frame captured count=100 bytes=64000
+I (3593) audio_capture: frame captured count=150 bytes=96000
+I (4603) audio_capture: frame captured count=200 bytes=128000
+I (5603) audio_capture: frame captured count=250 bytes=160000
+I (6593) audio_capture: frame captured count=300 bytes=192000
+I (7603) audio_capture: frame captured count=350 bytes=224000
+I (8203) ESP_HID_GAP: encryption change event; status=0
+I (8203) ESP_HID_GAP: service changed indication queued for refreshed GATT discovery
+I (8203) ESP_HID_GAP: security state after encryption: encrypted=1 authenticated=0 bonded=1 key_size=16
+I (8223) ESP_HID_GAP: connection established; status=0
+I (8223) ble_hid: CONNECT
+I (8223) ble_audio_stream: audio transport epoch advanced: epoch=1 reason=gap_connect stale_subscribe=0 stale_mtu=0 stale_notify_tx=0 stale_disconnect=0
+I (8223) ble_hid: battery level=92 voltage_mv=4108 raw=2382 reason=connect
+I (8233) ble_audio_stream: audio transport state: disconnected -> connected reason=gap_connect epoch=1 conn=1 mtu_ready=0 notify=0 value_max=244
+I (8253) ESP_HID_GAP: security state before initiate: encrypted=1 authenticated=0 bonded=1 key_size=16
+I (8263) ESP_HID_GAP: security initiate requested
+I (8273) ESP_HID_GAP: audio connection parameter update requested
+I (8273) ESP_HID_GAP: audio 2M PHY preference requested
+I (8323) ESP_HID_GAP: encryption change event; status=0
+I (8323) ESP_HID_GAP: service changed indication queued for refreshed GATT discovery
+I (8323) ESP_HID_GAP: security state after encryption: encrypted=1 authenticated=0 bonded=1 key_size=16
+I (8583) ESP_HID_GAP: mtu update event; conn_handle=1 cid=4 mtu=517
+I (8593) ble_audio_stream: audio notify mtu updated: conn=1 mtu=517
+I (8593) ble_audio_stream: audio notify packet size updated: conn=1 value_max=500 payload_max=480
+I (8593) ble_audio_stream: audio transport state: connected -> mtu_ready reason=gap_mtu epoch=1 conn=1 mtu_ready=1 notify=0 value_max=500
+I (8603) audio_capture: frame captured count=400 bytes=256000
+I (9593) audio_capture: frame captured count=450 bytes=288000
+
+--- 2026-05-26 12:32:25 send ~OTA:STATUS ---
+I (10603) audio_capture: frame captured count=500 bytes=320000
+I (10603) firmware_ota: OTA STATUS running=ota_0 boot=ota_0 update=ota_1 version=28331d4-dirty target=none active=0 pending_verify=0 state=2 bytes=0 expected=0 blocker=none
+
+--- 2026-05-26 12:32:27 send ~OTA:BLOCKER ---
+I (11603) audio_capture: frame captured count=550 bytes=352000
+I (12593) audio_capture: frame captured count=600 bytes=384000
+I (12663) firmware_ota: OTA BLOCKER: none
+
+--- 2026-05-26 12:32:29 send ~DIAGLOG:LAST:20 ---
+I (13603) audio_capture: frame captured count=650 bytes=416000
+I (14603) audio_capture: frame captured count=700 bytes=448000
+{"t":8453,"src":"ble_gap","evt":7,"sev":"INFO","a1":6,"a2":0,"a3":800,"a4":1}
+{"t":8475,"src":"ble_gap","evt":1,"sev":"INFO","a1":0,"a2":517,"a3":1,"a4":4}
+{"t":8501,"src":"ble_audio","evt":1,"sev":"INFO","a1":1,"a2":2,"a3":2286455572,"a4":0}
+{"t":8514,"src":"ble_gap","evt":2,"sev":"INFO","a1":1,"a2":0,"a3":1,"a4":0}
+{"t":92,"src":"system","evt":2,"sev":"INFO","a1":5,"a2":0,"a3":0,"a4":0}
+{"t":96,"src":"ota","evt":1,"sev":"INFO","a1":16,"a2":2,"a3":0,"a4":0}
+{"t":96,"src":"system","evt":1,"sev":"INFO","a1":2,"a2":0,"a3":0,"a4":0}
+{"t":107,"src":"system","evt":2,"sev":"INFO","a1":1,"a2":0,"a3":0,"a4":0}
+{"t":107,"src":"system","evt":2,"sev":"INFO","a1":2,"a2":261,"a3":0,"a4":0}
+{"t":117,"src":"self_test","evt":1,"sev":"INFO","a1":1,"a2":0,"a3":327,"a4":1}
+{"t":214,"src":"ble_gap","evt":6,"sev":"INFO","a1":5,"a2":0,"a3":1,"a4":0}
+{"t":425,"src":"ble_gap","evt":4,"sev":"INFO","a1":1,"a2":1,"a3":1,"a4":0}
+{"t":1710,"src":"ble_gap","evt":4,"sev":"INFO","a1":1,"a2":0,"a3":1,"a4":0}
+{"t":7880,"src":"ble_gap","evt":2,"sev":"INFO","a1":1,"a2":0,"a3":1,"a4":0}
+{"t":7917,"src":"ble_hid","evt":1,"sev":"INFO","a1":1,"a2":135,"a3":0,"a4":0}
+{"t":7930,"src":"ble_audio","evt":1,"sev":"INFO","a1":0,"a2":1,"a3":2971904838,"a4":0}
+{"t":7939,"src":"ble_gap","evt":7,"sev":"INFO","a1":6,"a2":0,"a3":800,"a4":1}
+{"t":8000,"src":"ble_gap","evt":2,"sev":"INFO","a1":1,"a2":0,"a3":1,"a4":0}
+{"t":8263,"src":"ble_gap","evt":1,"sev":"INFO","a1":0,"a2":517,"a3":1,"a4":4}
+{"t":8284,"src":"ble_audio","evt":1,"sev":"INFO","a1":1,"a2":2,"a3":2286455572,"a4":0}
+I (14943) diag_log: DIAGLOG LAST 20: dumped 20 events

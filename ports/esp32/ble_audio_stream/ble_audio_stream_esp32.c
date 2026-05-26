@@ -1898,6 +1898,13 @@ bool ble_audio_stream_is_ready(void)
            s_transport_state == BLE_AUDIO_STREAM_TRANSPORT_STATE_STREAM_READY;
 }
 
+bool ble_audio_stream_is_busy(void)
+{
+    return s_transport_state == BLE_AUDIO_STREAM_TRANSPORT_STATE_STREAMING ||
+           s_transport_state == BLE_AUDIO_STREAM_TRANSPORT_STATE_DRAINING ||
+           (s_export_queue != NULL && uxQueueMessagesWaiting(s_export_queue) > 0);
+}
+
 uint16_t ble_audio_stream_get_notify_attr_handle(void)
 {
     return s_notify_attr_handle;
