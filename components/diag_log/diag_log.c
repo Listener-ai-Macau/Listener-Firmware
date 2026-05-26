@@ -1,6 +1,8 @@
 #include "diag_log.h"
 #include "diag_log_platform.h"
 
+static bool s_dumping;
+
 void diag_log_init(void)
 {
     diag_log_platform_init();
@@ -21,15 +23,24 @@ uint32_t diag_log_count(void)
 
 void diag_log_dump(void)
 {
+    s_dumping = true;
     diag_log_platform_dump();
+    s_dumping = false;
 }
 
 void diag_log_dump_last(uint32_t count)
 {
+    s_dumping = true;
     diag_log_platform_dump_last(count);
+    s_dumping = false;
 }
 
 void diag_log_clear(void)
 {
     diag_log_platform_clear();
+}
+
+bool diag_log_is_dumping(void)
+{
+    return s_dumping || diag_log_platform_is_dumping();
 }

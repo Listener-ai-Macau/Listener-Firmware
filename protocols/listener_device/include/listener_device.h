@@ -23,7 +23,7 @@ extern "C" {
 #define LISTENER_DEVICE_FACTORY_READINESS \
     "factory_ready;pairable_on_boot;post_degraded_boot"
 #define LISTENER_DEVICE_CAPABILITIES \
-    "ble_hid_keyboard;ble_audio_vka1;usb_serial_text;key1_record_toggle;post_status"
+    "ble_hid_keyboard;ble_audio_vka1;usb_serial_text;key1_record_toggle;post_status;firmware_ota_v1"
 
 const char *listener_device_get_fw_version(void);
 const char *listener_device_get_build_id(void);

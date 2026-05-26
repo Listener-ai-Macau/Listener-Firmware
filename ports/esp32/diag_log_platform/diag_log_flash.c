@@ -52,6 +52,7 @@ static uint16_t s_sector_sequence;
 static uint32_t s_retained_events;
 static uint32_t s_capacity_events;
 static bool s_initialized;
+static bool s_dumping;
 
 #define DIAG_USB_CMD_PREFIX "DIAGLOG:"
 #define DIAG_USB_CMD_MAX 32
@@ -174,6 +175,7 @@ static const char *source_name(uint16_t src)
     case 0x08: return "self_test";
     case 0x09: return "health";
     case 0x0A: return "ble_audio";
+    case 0x0B: return "ota";
     default:   return "unknown";
     }
 }
@@ -317,6 +319,7 @@ void diag_log_platform_dump(void)
         return;
     }
 
+    s_dumping = true;
     xSemaphoreTake(s_mutex, portMAX_DELAY);
 
     /* Find minimum sequence to start iteration in chronological order */
@@ -356,6 +359,7 @@ void diag_log_platform_dump(void)
     }
 
     xSemaphoreGive(s_mutex);
+    s_dumping = false;
     ESP_LOGI(TAG, "DIAGLOG DUMP: %" PRIu32 " events", dumped);
 }
 
@@ -366,6 +370,7 @@ void diag_log_platform_dump_last(uint32_t count)
         return;
     }
 
+    s_dumping = true;
     xSemaphoreTake(s_mutex, portMAX_DELAY);
 
     /* Count total retained events */
@@ -419,6 +424,7 @@ void diag_log_platform_dump_last(uint32_t count)
     }
 
     xSemaphoreGive(s_mutex);
+    s_dumping = false;
     ESP_LOGI(TAG, "DIAGLOG LAST %" PRIu32 ": dumped %" PRIu32 " events", count, dumped);
 }
 
@@ -441,6 +447,11 @@ void diag_log_platform_clear(void)
 
     xSemaphoreGive(s_mutex);
     ESP_LOGI(TAG, "DIAGLOG CLEAR: all logs erased");
+}
+
+bool diag_log_platform_is_dumping(void)
+{
+    return s_dumping;
 }
 
 bool diag_log_consume_usb_command(const char *line)

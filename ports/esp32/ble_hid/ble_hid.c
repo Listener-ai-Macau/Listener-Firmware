@@ -37,6 +37,7 @@ void ble_store_config_init(void);
 #include "voice_recording_control.h"
 #include "diag_log_platform.h"
 #include "diag_log.h"
+#include "firmware_ota.h"
 #include "esp_timer.h"
 
 static const char *TAG = "ble_hid";
@@ -284,6 +285,7 @@ static void ble_hid_update_battery_level(const char *reason)
             reason,
             esp_err_to_name(read_ret));
     }
+    firmware_ota_note_battery(level, read_ret == ESP_OK ? battery_mv : 0, read_ret == ESP_OK);
 
     if (level < 10 && read_ret == ESP_OK) {
         diag_log(DIAG_SRC_BLE_HID, DIAG_BLE_BATTERY_WARN, DIAG_SEV_WARN,
@@ -394,6 +396,10 @@ static void ble_hid_dispatch_voice_recording_command(const char *line)
 
 static bool ble_hid_dispatch_usb_command_line(const char *line)
 {
+    if (firmware_ota_consume_usb_command(line)) {
+        return true;
+    }
+
     if (diag_log_consume_usb_command(line)) {
         return true;
     }
@@ -636,7 +642,7 @@ static void ble_hid_configure_dis_identity(void)
              listener_device_get_serial());
 }
 
-void ble_hid_init(void)
+esp_err_t ble_hid_init(void)
 {
     ESP_LOGI(TAG, "fw_version=%s protocol_version=%u build=%s serial=%s",
              listener_device_get_fw_version(),
@@ -657,13 +663,13 @@ void ble_hid_init(void)
         esp_err_t erase_ret = nvs_flash_erase();
         if (erase_ret != ESP_OK) {
             ESP_LOGE(TAG, "nvs_flash_erase failed: %s", esp_err_to_name(erase_ret));
-            return;
+            return erase_ret;
         }
         ret = nvs_flash_init();
     }
     if (ret != ESP_OK) {
         ESP_LOGE(TAG, "nvs_flash_init failed: %s", esp_err_to_name(ret));
-        return;
+        return ret;
     }
 
     s_ble_report_maps[0].data = hid_keyboard_get_report_map();
@@ -673,14 +679,14 @@ void ble_hid_init(void)
         s_ascii_queue = xQueueCreate(BLE_HID_ASCII_QUEUE_LENGTH, sizeof(char));
         if (s_ascii_queue == NULL) {
             ESP_LOGE(TAG, "ascii queue create failed");
-            return;
+            return ESP_ERR_NO_MEM;
         }
     }
 
     ret = ble_hid_gap_init();
     if (ret != ESP_OK) {
         ESP_LOGE(TAG, "ble_hid_gap_init failed: %s", esp_err_to_name(ret));
-        return;
+        return ret;
     }
 
     ret = ble_audio_stream_init();
@@ -696,7 +702,7 @@ void ble_hid_init(void)
     ret = ble_hid_gap_configure_advertising(ESP_HID_APPEARANCE_KEYBOARD, s_device_name);
     if (ret != ESP_OK) {
         ESP_LOGE(TAG, "BLE advertising config failed: %s", esp_err_to_name(ret));
-        return;
+        return ret;
     }
 
     ret = esp_hidd_dev_init(
@@ -706,7 +712,7 @@ void ble_hid_init(void)
         &s_ble_hid_ctx.hid_device);
     if (ret != ESP_OK) {
         ESP_LOGE(TAG, "esp_hidd_dev_init failed: %s", esp_err_to_name(ret));
-        return;
+        return ret;
     }
 
     ble_hid_configure_dis_identity();
@@ -718,9 +724,10 @@ void ble_hid_init(void)
     }
 
     ble_hid_update_battery_level("init");
+    return ESP_OK;
 }
 
-void ble_hid_start(void)
+esp_err_t ble_hid_start(void)
 {
     ble_store_config_init();
     ble_hs_cfg.store_status_cb = ble_store_util_status_rr;
@@ -729,6 +736,7 @@ void ble_hid_start(void)
     if (ret != ESP_OK) {
         ESP_LOGE(TAG, "esp_nimble_enable failed: %d", ret);
     }
+    return ret;
 }
 
 bool ble_hid_is_connected(void)

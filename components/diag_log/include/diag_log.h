@@ -1,6 +1,7 @@
 #ifndef DIAG_LOG_H
 #define DIAG_LOG_H
 
+#include <stdbool.h>
 #include <stdint.h>
 #include "diag_log_events.h"
 
@@ -12,6 +13,7 @@ uint32_t diag_log_count(void);
 void diag_log_dump(void);
 void diag_log_dump_last(uint32_t count);
 void diag_log_clear(void);
+bool diag_log_is_dumping(void);
 
 #define diag_log(src, evt, sev, a1, a2, a3, a4) \
     diag_log_write((src), (evt), (sev), \
