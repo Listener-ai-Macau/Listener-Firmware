@@ -15,6 +15,7 @@
 
 #include "ble_hid_gap.h"
 #include "ble_audio_stream.h"
+#include "ble_firmware_ota.h"
 #include "diag_log.h"
 
 #include "esp_bt.h"
@@ -214,6 +215,7 @@ nimble_hid_gap_event(struct ble_gap_event *event, void *arg)
         s_ble_gap_connected = false;
         s_ble_gap_conn_handle = BLE_HS_CONN_HANDLE_NONE;
         ble_audio_stream_on_gap_disconnect(event->disconnect.conn.conn_handle);
+        ble_firmware_ota_on_gap_disconnect(event->disconnect.conn.conn_handle);
         s_directed_adv_pending = true;
         s_last_adv_was_directed = false;
         ble_hid_gap_start_advertising();

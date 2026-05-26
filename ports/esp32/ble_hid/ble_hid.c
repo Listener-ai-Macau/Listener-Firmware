@@ -34,6 +34,7 @@ void ble_store_config_init(void);
 #include "listener_device.h"
 #include "ble_hid_gap.h"
 #include "ble_audio_stream.h"
+#include "ble_firmware_ota.h"
 #include "voice_recording_control.h"
 #include "diag_log_platform.h"
 #include "diag_log.h"
@@ -396,6 +397,11 @@ static void ble_hid_dispatch_voice_recording_command(const char *line)
 
 static bool ble_hid_dispatch_usb_command_line(const char *line)
 {
+    if (strcmp(line, "~OTA:GATT") == 0 || strcmp(line, "OTA:GATT") == 0) {
+        ble_firmware_ota_log_gatt_state();
+        return true;
+    }
+
     if (firmware_ota_consume_usb_command(line)) {
         return true;
     }
@@ -699,6 +705,11 @@ esp_err_t ble_hid_init(void)
         ESP_LOGW(TAG, "BLE audio init failed; HID/recovery continue without audio stream: %s", esp_err_to_name(ret));
     }
 
+    ret = ble_firmware_ota_register_gatt();
+    if (ret != ESP_OK) {
+        ESP_LOGW(TAG, "BLE firmware OTA GATT registration failed; HID/audio continue: %s", esp_err_to_name(ret));
+    }
+
     ret = ble_hid_gap_configure_advertising(ESP_HID_APPEARANCE_KEYBOARD, s_device_name);
     if (ret != ESP_OK) {
         ESP_LOGE(TAG, "BLE advertising config failed: %s", esp_err_to_name(ret));
@@ -717,6 +728,7 @@ esp_err_t ble_hid_init(void)
 
     ble_hid_configure_dis_identity();
     ble_audio_stream_log_gatt_state();
+    ble_firmware_ota_log_gatt_state();
 
     int gap_name_rc = ble_svc_gap_device_name_set(s_device_name);
     if (gap_name_rc != 0) {
