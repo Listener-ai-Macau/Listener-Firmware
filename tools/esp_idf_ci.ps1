@@ -33,11 +33,25 @@ $env:PATH = "$gcc_dir;$ccache;$([System.IO.Path]::GetDirectoryName($ninja));$([S
 switch ($Command) {
     "build" {
         Write-Host "[ci] Building ..."
+        if (-not (Test-Path "$bld\build.ninja")) {
+            $buildScript = Join-Path $prj "tools\build.ps1"
+            if (Test-Path $buildScript) {
+                Write-Host "[ci] build.ninja missing; running full ESP-IDF configure/build via tools\build.ps1 ..."
+                & pwsh -NoProfile -File $buildScript -Target $Target 2>&1 | ForEach-Object { Write-Host $_ }
+                exit $LASTEXITCODE
+            }
+
+            Write-Host "[ci] build.ninja missing; running full ESP-IDF configure/build via idf.py ..."
+            Set-Location $prj
+            & $python "$idf\tools\idf.py" build 2>&1 | ForEach-Object { Write-Host $_ }
+            exit $LASTEXITCODE
+        }
+
         Set-Location $bld
         & $ninja 2>&1 | ForEach-Object { Write-Host $_ }
         if ($LASTEXITCODE -eq 0) {
             $bin = "$bld\voice-keyboard-firmware.bin"
-            Write-Host "[ci] Build OK: $bin ($(Get-Item $bin).Length bytes)"
+            Write-Host "[ci] Build OK: $bin ($((Get-Item $bin).Length) bytes)"
         } else {
             Write-Error "[ci] Build FAILED (exit $LASTEXITCODE)"
         }
@@ -101,9 +115,12 @@ switch ($Command) {
 
     "reconfigure" {
         Write-Host "[ci] Reconfiguring CMake ..."
-        Set-Location $bld
-        & $ninja -t clean 2>&1 | ForEach-Object { Write-Host $_ }
-        Remove-Item "$bld\build.ninja" -ErrorAction SilentlyContinue
+        if (Test-Path "$bld\build.ninja") {
+            Set-Location $bld
+            & $ninja -t clean 2>&1 | ForEach-Object { Write-Host $_ }
+            Remove-Item "$bld\build.ninja" -ErrorAction SilentlyContinue
+        }
+        Set-Location $prj
         & $python "$idf\tools\idf.py" build 2>&1 | ForEach-Object { Write-Host $_ }
         exit $LASTEXITCODE
     }
