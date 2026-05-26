@@ -30,6 +30,7 @@ function New-FeatureSnapshot {
             "Expose BLE HID keyboard behavior for the physical keys.",
             "Capture microphone audio and stream Listener BLE audio to the desktop app.",
             "Own device-side voice key state, serial commands, diagnostics, system health, and recovery evidence.",
+            "Own firmware OTA slot/rollback primitives, pending-verify checks, and OTA diagnostics used by desktop update flows.",
             "Provide build, flash, serial monitor, BLE HID, BLE audio, and diagnostic-log validation tools."
         )
         major_features = @(
@@ -37,6 +38,7 @@ function New-FeatureSnapshot {
             "BLE audio upload path for 16 kHz microphone audio sessions consumed by Listener-Type.",
             "Voice key control for start/stop recording flow, including serial VREC commands.",
             "diag_log flash ring buffer for boot, BLE, audio, health, and error events that survive reboot.",
+            "Firmware OTA v1 using ESP-IDF otadata/ota_0/ota_1 slots, official rollback, pending verify, blockers, and diag_log OTA events.",
             "system_health heartbeat and resource checks for heap, task, BLE, and disconnect conditions.",
             "POST and degraded boot reporting for NVS, BLE, audio, heap, and board assumptions."
         )
@@ -45,11 +47,13 @@ function New-FeatureSnapshot {
             [ordered]@{ path = "components/keyboard/"; purpose = "Physical key scanning and keyboard events." },
             [ordered]@{ path = "components/hid_keyboard/"; purpose = "Cross-platform HID keyboard abstraction." },
             [ordered]@{ path = "components/diag_log/"; purpose = "Diagnostic event schema and ring-buffer API." },
+            [ordered]@{ path = "components/firmware_ota/"; purpose = "ESP-IDF OTA manager, rollback/pending-verify handling, blockers, and OTA serial diagnostics." },
             [ordered]@{ path = "components/system_health/"; purpose = "Health status, heartbeat, and fault reporting." },
             [ordered]@{ path = "components/voice_recording_control/"; purpose = "Voice key state machine and serial control contract." },
             [ordered]@{ path = "ports/esp32/ble_hid*"; purpose = "ESP32 BLE HID service, GAP, pairing, and host connection." },
             [ordered]@{ path = "ports/esp32/ble_audio_stream*"; purpose = "ESP32 BLE audio transport and notifications." },
             [ordered]@{ path = "ports/esp32/audio_capture*"; purpose = "I2S microphone capture path." },
+            [ordered]@{ path = "partitions.csv"; purpose = "ESP32 flash layout including OTA app slots and diag_log partition." },
             [ordered]@{ path = "tools/"; purpose = "Build, flash, monitor, BLE, audio, and diagnostic validation scripts." }
         )
         hardware_assumptions = @(
