@@ -31,6 +31,24 @@ if (-not $project_version) {
     if (-not $project_version) { $project_version = "0.1.0-dev" }
 }
 
+function Test-ReleaseVersionString {
+    param(
+        [Parameter(Mandatory = $true)][string]$Version,
+        [Parameter(Mandatory = $true)][string]$ReleaseChannel
+    )
+
+    if ($ReleaseChannel -eq "internal-test") {
+        return
+    }
+
+    if ($Version -match '(?i)(^|[._+-])(dirty|dev)([._+-]|$)') {
+        Write-Error "Release channel $ReleaseChannel requires a clean release version; got '$Version'. Use -Channel internal-test for dirty/dev builds."
+        exit 1
+    }
+}
+
+Test-ReleaseVersionString -Version $project_version -ReleaseChannel $Channel
+
 # --- Dirty tree check ---
 $git_commit = (& git -C $project_root rev-parse HEAD 2>$null)
 if (-not $git_commit) { $git_commit = "unknown" }
@@ -114,9 +132,36 @@ $manifest | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $manifest_path -E
 
 # --- Also generate factory package ---
 $factory_output = Join-Path $package_dir "factory"
-& pwsh -NoProfile -File (Join-Path $PSScriptRoot "package_factory_firmware.ps1") -BuildDir $build_path -OutputRoot $factory_output 2>$null
+$factory_result = @(& pwsh -NoProfile -File (Join-Path $PSScriptRoot "package_factory_firmware.ps1") -BuildDir $build_path -OutputRoot $factory_output 2>&1)
 if ($LASTEXITCODE -ne 0) {
-    Write-Warning "Factory package generation failed (non-fatal for OTA package)."
+    $factory_message = "Factory package generation failed for OTA package channel $Channel.`n$($factory_result -join "`n")"
+    if ($Channel -eq "internal-test") {
+        Write-Warning $factory_message
+    } else {
+        Write-Error $factory_message
+        exit 1
+    }
+} else {
+    $factory_package = Get-ChildItem -LiteralPath $factory_output -Directory | Sort-Object LastWriteTime -Descending | Select-Object -First 1
+    if (-not $factory_package) {
+        Write-Error "Factory package generation did not produce a package directory under $factory_output."
+        exit 1
+    }
+
+    $required_factory_files = @(
+        "manifest.json",
+        "FLASHING.md",
+        "bootloader.bin",
+        "partition-table.bin",
+        "$project_name.bin"
+    )
+    foreach ($required_file in $required_factory_files) {
+        $required_path = Join-Path $factory_package.FullName $required_file
+        if (-not (Test-Path -LiteralPath $required_path)) {
+            Write-Error "Factory package is incomplete; missing $required_file in $($factory_package.FullName)."
+            exit 1
+        }
+    }
 }
 
 # --- Summary ---

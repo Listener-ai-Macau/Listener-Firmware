@@ -2,11 +2,11 @@
 
 Date: 2026-05-26
 
-Branch: `ai/codex-voice-keyboard-ota-update-1.3`
+Branch: `ai/oai-voice-keyboard-ota-update-1.3`
 
 ## Scope
 
-Rework for review finding on `voice-keyboard-ota-update/1.3`: `tools/check_ota_manifest.ps1` accepted schema v2 manifests that omitted required `created_at_utc`, `ble_identity`, `rollback.method`, `rollback.instructions`, and `recovery` fields.
+Rework for review findings on `voice-keyboard-ota-update/1.3`: `tools/check_ota_manifest.ps1` accepted schema v2 manifests that omitted required `created_at_utc`, `ble_identity`, `rollback.method`, `rollback.instructions`, and `recovery` fields. A later review found that `tools/package_ota_firmware.ps1` still accepted dirty/dev version strings for stable/beta channels and treated factory package generation failures as non-fatal.
 
 ## Validation
 
@@ -20,6 +20,14 @@ Rework for review finding on `voice-keyboard-ota-update/1.3`: `tools/check_ota_m
   - PASS: missing `recovery` rejected.
   - PASS: missing `recovery.factory_reflash` rejected.
   - PASS: missing `recovery.serial_commands` rejected.
+- `pwsh -NoProfile -File .\tools\test_ota_package_release_rules.ps1`
+  - PASS: stable package rejected `project_version=review-dirty`.
+  - PASS: beta package rejected `project_version=0.1.0-dev`.
+  - PASS: stable package rejected missing factory artifacts as a hard failure.
+  - PASS: stable package generated `firmware_ota.bin`, `ota_manifest.json`,
+    and a complete nested factory package.
+  - PASS: beta package generated `firmware_ota.bin`, `ota_manifest.json`, and a
+    complete nested factory package.
 - `pwsh -NoProfile -File .\tools\package_ota_firmware.ps1 -BuildDir C:\Users\Billy\Desktop\listener\voice-keyboard-firmware\build -OutputRoot .\.cache\ota_package_stable_dirty_check -Channel stable`
   - PASS: rejected dirty tree as expected.
 - After committing the rework, `pwsh -NoProfile -File .\tools\package_ota_firmware.ps1 -BuildDir C:\Users\Billy\Desktop\listener\voice-keyboard-firmware\build -OutputRoot .\.cache\ota_package_stable_postcommit -Channel stable`
@@ -34,7 +42,7 @@ Rework for review finding on `voice-keyboard-ota-update/1.3`: `tools/check_ota_m
   - PASS.
 - `python -m compileall -q tools`
   - PASS.
-- PowerShell parser check for `tools\check_ota_manifest.ps1`, `tools\package_ota_firmware.ps1`, and `tools\test_ota_manifest_validation.ps1`
+- PowerShell parser check for `tools\check_ota_manifest.ps1`, `tools\package_ota_firmware.ps1`, `tools\test_ota_manifest_validation.ps1`, and `tools\test_ota_package_release_rules.ps1`
   - PASS.
 - `git diff --check`
   - PASS.

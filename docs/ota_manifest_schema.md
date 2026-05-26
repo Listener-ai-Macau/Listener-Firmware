@@ -64,9 +64,9 @@ the tables above, including `created_at_utc`, `ble_identity`,
 
 ## Channel Rules
 
-- **stable**: Requires clean git tree (no uncommitted changes). For production releases.
-- **beta**: Requires clean git tree. For pre-release testing.
-- **internal-test**: Allows dirty tree. For development builds.
+- **stable**: Requires clean git tree, clean release version string, and a complete nested factory package. For production releases.
+- **beta**: Requires clean git tree, clean release version string, and a complete nested factory package. For pre-release testing.
+- **internal-test**: Allows dirty tree and OTA-only package output when factory artifact generation fails. For development builds.
 
 ## Versioning
 
