@@ -29,11 +29,84 @@ if (-not $project_version) {
     if (-not $project_version) { $project_version = "0.1.0-dev" }
 }
 
+function Get-UserProfilePath {
+    if ($env:USERPROFILE) {
+        return $env:USERPROFILE
+    }
+    $profile = [Environment]::GetFolderPath([Environment+SpecialFolder]::UserProfile)
+    if (-not [string]::IsNullOrWhiteSpace($profile)) {
+        return $profile
+    }
+    throw "Unable to resolve user profile path."
+}
+
+function Get-PythonExe {
+    $home_dir = Get-UserProfilePath
+    $candidate = Join-Path $home_dir ".espressif\python_env\idf5.5_py3.11_env\Scripts\python.exe"
+    if (Test-Path $candidate) {
+        return $candidate
+    }
+    return "python"
+}
+
+function Get-IdfPartitionTable {
+    param([Parameter(Mandatory = $true)][string]$PartitionBin)
+
+    $idf = if ($env:IDF_PATH) { $env:IDF_PATH } elseif ($env:ESP_IDF_PATH) { $env:ESP_IDF_PATH } else { Join-Path (Get-UserProfilePath) "esp\esp-idf" }
+    $python = Get-PythonExe
+    $genPart = Join-Path $idf "components\partition_table\gen_esp32part.py"
+    if (-not (Test-Path $genPart)) {
+        throw "Missing ESP-IDF partition parser: $genPart"
+    }
+
+    $output = @(& $python $genPart $PartitionBin 2>&1)
+    if ($LASTEXITCODE -ne 0) {
+        $text = ($output -join "`n")
+        throw "Failed to parse partition table $PartitionBin`n$text"
+    }
+
+    $entries = @()
+    foreach ($line in $output) {
+        $trimmed = ([string]$line).Trim()
+        if (-not $trimmed -or $trimmed.StartsWith("#") -or -not $trimmed.Contains(",")) {
+            continue
+        }
+        $parts = @($trimmed -split ",")
+        if ($parts.Count -lt 5 -or $parts[3].Trim() -notmatch "^0x[0-9A-Fa-f]+$") {
+            continue
+        }
+        $entries += [pscustomobject]@{
+            name = $parts[0].Trim()
+            type = $parts[1].Trim()
+            subtype = $parts[2].Trim()
+            offset = $parts[3].Trim()
+            size = $parts[4].Trim()
+        }
+    }
+    return $entries
+}
+
+function Get-PartitionEntry {
+    param(
+        [Parameter(Mandatory = $true)]$Entries,
+        [Parameter(Mandatory = $true)][string]$Name
+    )
+    return @($Entries | Where-Object { $_.name -eq $Name } | Select-Object -First 1)[0]
+}
+
 $safe_version = $project_version -replace '[^A-Za-z0-9_.-]', '_'
 $timestamp = Get-Date -Format "yyyyMMdd-HHmmss"
 $package_name = "listener-factory-$safe_version-$timestamp"
 $package_dir = Join-Path $output_root_path $package_name
 New-Item -ItemType Directory -Force $package_dir | Out-Null
+
+$partition_table_source = Join-Path $build_path "partition_table\partition-table.bin"
+$partition_entries = Get-IdfPartitionTable -PartitionBin $partition_table_source
+$ota0 = Get-PartitionEntry -Entries $partition_entries -Name "ota_0"
+if ($null -eq $ota0) {
+    throw "partition table does not contain ota_0; cannot derive app flash offset"
+}
+$app_offset = $ota0.offset
 
 $inputs = @(
     [ordered]@{
@@ -45,12 +118,12 @@ $inputs = @(
     [ordered]@{
         role = "partition_table"
         offset = "0x8000"
-        source = Join-Path $build_path "partition_table\partition-table.bin"
+        source = $partition_table_source
         file = "partition-table.bin"
     },
     [ordered]@{
         role = "app"
-        offset = "0x10000"
+        offset = $app_offset
         source = Join-Path $build_path "$project_name.bin"
         file = "$project_name.bin"
     }
@@ -117,7 +190,8 @@ $manifest = [ordered]@{
         chip = $target
         port = $Port
         baud = $Baud
-        command = "python `$env:IDF_PATH\components\esptool_py\esptool\esptool.py --chip $target -p $Port -b $Baud --before=default_reset --after=hard_reset write_flash 0x0 bootloader.bin 0x8000 partition-table.bin 0x10000 $project_name.bin"
+        command = "python `$env:IDF_PATH\components\esptool_py\esptool\esptool.py --chip $target -p $Port -b $Baud --before=default_reset --after=hard_reset write_flash 0x0 bootloader.bin 0x8000 partition-table.bin $app_offset $project_name.bin"
+        partition_table = @($partition_entries | Where-Object { $_.name -in @("otadata", "ota_0", "ota_1") })
     }
     artifacts = $artifacts
 }
@@ -152,8 +226,18 @@ Run this command from this package directory:
 python `$env:IDF_PATH\components\esptool_py\esptool\esptool.py --chip $target -p $Port -b $Baud --before=default_reset --after=hard_reset write_flash `
     0x0 .\bootloader.bin `
     0x8000 .\partition-table.bin `
-    0x10000 .\$project_name.bin
+    $app_offset .\$project_name.bin
 ````
+
+Partition evidence from the generated partition table:
+
+"@
+
+foreach ($entry in @($partition_entries | Where-Object { $_.name -in @("otadata", "ota_0", "ota_1") })) {
+    $flash_doc += "- $($entry.name): type=$($entry.type) subtype=$($entry.subtype) offset=$($entry.offset) size=$($entry.size)`n"
+}
+
+$flash_doc += @"
 
 ## SHA256
 

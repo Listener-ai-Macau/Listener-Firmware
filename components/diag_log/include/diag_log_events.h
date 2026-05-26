@@ -18,6 +18,7 @@
 #define DIAG_SRC_HEALTH    0x09
 #define DIAG_SRC_BLE_AUDIO 0x0A
 #define DIAG_SRC_OTA       0x0B
+#define DIAG_SRC_POWER     0x0C
 
 /* System events (DIAG_SRC_SYSTEM) */
 #define DIAG_SYS_BOOT          1   /* a1=boot_reason, a2=0, a3=0, a4=0 */
@@ -72,8 +73,9 @@
 #define DIAG_BAUD_STATE_CHANGE 1   /* a1=old_state, a2=new_state, a3=reason, a4=session_id */
 #define DIAG_BAUD_POOL_EXHAUST 2   /* a1=session_id, a2=in_use, a3=pool_size, a4=high_water */
 #define DIAG_BAUD_NOTIFY_FAIL  3   /* a1=session_id, a2=seq, a3=esp_err, a4=retries */
-#define DIAG_BAUD_SESSION_ABORT 4  /* a1=session_id, a2=reason, a3=expected_packet_count, a4=0 */
+#define DIAG_BAUD_SESSION_ABORT 4  /* a1=session_id, a2=reason, a3=expected_packet_count, a4=epoch */
 #define DIAG_BAUD_LINK_TIMEOUT 5   /* a1=session_id, a2=waited_ms, a3=packet_type, a4=seq_or_count */
+#define DIAG_BAUD_NOTIFY_STATE 6   /* a1=session_id, a2=epoch, a3=conn_handle, a4=notify_state */
 
 /* Voice recording events (DIAG_SRC_VOICE_REC) */
 #define DIAG_VREC_SESSION      1   /* a1=type(1=start,2=stop,3=cancel), a2=source_code, a3=session_count, a4=0 */
@@ -92,6 +94,15 @@
 #define DIAG_HEALTH_HEARTBEAT  1   /* a1=heap_free_kb, a2=heap_min_kb, a3=ble_connected, a4=uptime_min */
 #define DIAG_HEALTH_ALERT      2   /* a1=alert_type(1=heap,2=ble_rate), a2=alert_value, a3=threshold, a4=0 */
 
+/* Power manager events (DIAG_SRC_POWER) */
+#define DIAG_POWER_STATE          1 /* a1=previous_state, a2=next_state, a3=idle_ms, a4=blockers */
+#define DIAG_POWER_SLEEP_ENTRY    2 /* a1=idle_ms, a2=battery_mv, a3=battery_level, a4=reason */
+#define DIAG_POWER_WAKE           3 /* a1=wake_source, a2=wake_gpio_mask_low, a3=last_sleep_reason, a4=last_idle_ms */
+#define DIAG_POWER_SLEEP_BLOCKED  4 /* a1=blockers, a2=idle_ms, a3=reason, a4=esp_err */
+#define DIAG_POWER_BATTERY_WARN   5 /* a1=battery_level, a2=battery_mv, a3=0, a4=0 */
+#define DIAG_POWER_BLOCKER_CHANGE 6 /* a1=old_blockers, a2=new_blockers, a3=changed_mask, a4=enabled */
+#define DIAG_POWER_STATUS         7 /* a1=state, a2=blockers, a3=idle_ms, a4=wake_gpio_mask_low */
+
 /* Firmware OTA events (DIAG_SRC_OTA) */
 #define DIAG_OTA_STATE          1   /* a1=partition_subtype, a2=ota_state, a3=0, a4=0 */
 #define DIAG_OTA_BEGIN          2   /* a1=partition_subtype, a2=image_size, a3=esp_err, a4=0 */
@@ -105,6 +116,7 @@
 #define DIAG_OTA_ABORT          10  /* a1=partition_subtype, a2=bytes_written, a3=esp_err, a4=reason */
 #define DIAG_OTA_REJECTED       11  /* a1=partition_subtype, a2=detail, a3=esp_err, a4=blocker */
 #define DIAG_OTA_VERSION        12  /* a1=from_version_hash, a2=to_version_hash, a3=partition_subtype, a4=event */
+#define DIAG_OTA_PARTITION      13  /* a1=role, a2=partition_subtype, a3=offset, a4=size_bytes */
 
 #define DIAG_OTA_ABORT_USB                  1
 #define DIAG_OTA_ROLLBACK_USB               1
@@ -115,5 +127,10 @@
 #define DIAG_OTA_ROLLBACK_POST_FAILED       0x01
 #define DIAG_OTA_ROLLBACK_BLE_NOT_READY     0x02
 #define DIAG_OTA_ROLLBACK_KEYBOARD_NOT_READY 0x04
+
+#define DIAG_OTA_PARTITION_RUNNING          1
+#define DIAG_OTA_PARTITION_BOOT             2
+#define DIAG_OTA_PARTITION_UPDATE           3
+#define DIAG_OTA_PARTITION_NEXT             4
 
 #endif /* DIAG_LOG_EVENTS_H */

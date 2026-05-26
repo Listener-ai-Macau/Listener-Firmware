@@ -29,6 +29,64 @@ $env:IDF_PATH = $idf
 $env:IDF_TARGET = $Target
 $env:PATH = "$gcc_dir;$ccache;$([System.IO.Path]::GetDirectoryName($ninja));$([System.IO.Path]::GetDirectoryName($python));$env:PATH"
 
+function Get-IdfPartitionTable {
+    param([Parameter(Mandatory = $true)][string]$PartitionBin)
+
+    $genPart = Join-Path $idf "components\partition_table\gen_esp32part.py"
+    if (-not (Test-Path $genPart)) {
+        throw "[ci] Missing ESP-IDF partition parser: $genPart"
+    }
+
+    $output = @(& $python $genPart $PartitionBin 2>&1)
+    if ($LASTEXITCODE -ne 0) {
+        $text = ($output -join "`n")
+        throw "[ci] Failed to parse partition table $PartitionBin`n$text"
+    }
+
+    $entries = @()
+    foreach ($line in $output) {
+        $trimmed = ([string]$line).Trim()
+        if (-not $trimmed -or $trimmed.StartsWith("#") -or -not $trimmed.Contains(",")) {
+            continue
+        }
+
+        $parts = @($trimmed -split ",")
+        if ($parts.Count -lt 5 -or $parts[3].Trim() -notmatch "^0x[0-9A-Fa-f]+$") {
+            continue
+        }
+
+        $entries += [pscustomobject]@{
+            Name = $parts[0].Trim()
+            Type = $parts[1].Trim()
+            SubType = $parts[2].Trim()
+            Offset = $parts[3].Trim()
+            Size = $parts[4].Trim()
+        }
+    }
+
+    return $entries
+}
+
+function Get-PartitionEntry {
+    param(
+        [Parameter(Mandatory = $true)]$Entries,
+        [Parameter(Mandatory = $true)][string]$Name
+    )
+    return @($Entries | Where-Object { $_.Name -eq $Name } | Select-Object -First 1)[0]
+}
+
+function Write-OtaPartitionEvidence {
+    param([Parameter(Mandatory = $true)]$Entries)
+    foreach ($name in @("otadata", "ota_0", "ota_1")) {
+        $entry = Get-PartitionEntry -Entries $Entries -Name $name
+        if ($null -eq $entry) {
+            Write-Host "[ci] partition ${name}: missing"
+            continue
+        }
+        Write-Host "[ci] partition $($entry.Name): type=$($entry.Type) subtype=$($entry.SubType) offset=$($entry.Offset) size=$($entry.Size)"
+    }
+}
+
 # ---- 命令分发 ----
 switch ($Command) {
     "build" {
@@ -68,11 +126,24 @@ switch ($Command) {
                 exit 1
             }
         }
+        try {
+            $partitionEntries = Get-IdfPartitionTable -PartitionBin $partition
+            Write-OtaPartitionEvidence -Entries $partitionEntries
+            $ota0 = Get-PartitionEntry -Entries $partitionEntries -Name "ota_0"
+            if ($null -eq $ota0) {
+                throw "[ci] partition table does not contain ota_0; cannot derive app flash offset"
+            }
+            $appOffset = $ota0.Offset
+        } catch {
+            Write-Error $_
+            exit 1
+        }
         Write-Host "[ci] Flashing to $Port ..."
+        Write-Host "[ci] write_flash plan: bootloader=0x0 partition_table=0x8000 app($($ota0.Name))=$appOffset"
         & $python $esptool --chip esp32s3 -p $Port -b $Baud --before=default_reset --after=hard_reset write_flash `
             0x0 $bootloader `
             0x8000 $partition `
-            0x10000 $bin 2>&1 | ForEach-Object { Write-Host $_ }
+            $appOffset $bin 2>&1 | ForEach-Object { Write-Host $_ }
         if ($LASTEXITCODE -eq 0) { Write-Host "[ci] Flash OK" } else { Write-Error "[ci] Flash FAILED" }
         exit $LASTEXITCODE
     }

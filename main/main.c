@@ -7,15 +7,33 @@
 
 #include "esp_err.h"
 #include "esp_log.h"
+#include "esp_sleep.h"
 #include "esp_system.h"
 
+#include <inttypes.h>
+
 static const char *TAG = "app_main";
+
+static void log_power_boot_diagnostics(void)
+{
+    esp_sleep_wakeup_cause_t wake_source = esp_sleep_get_wakeup_cause();
+    uint32_t wake_gpio_mask_low = (uint32_t)(esp_sleep_get_ext1_wakeup_status() & 0xffffffffu);
+
+    diag_log(DIAG_SRC_POWER, DIAG_POWER_WAKE, DIAG_SEV_INFO,
+             (uint32_t)wake_source, wake_gpio_mask_low, 0, 0);
+    diag_log(DIAG_SRC_POWER, DIAG_POWER_STATUS, DIAG_SEV_INFO,
+             0, 0, 0, wake_gpio_mask_low);
+    ESP_LOGI(TAG, "power wake status: wake_source=%u wake_gpio_mask_low=0x%08" PRIx32,
+             (unsigned)wake_source,
+             wake_gpio_mask_low);
+}
 
 void app_main(void)
 {
     self_test_init();
     diag_log_init();
     firmware_ota_init();
+    log_power_boot_diagnostics();
 
     esp_reset_reason_t reset_reason = esp_reset_reason();
     uint32_t boot_reason = 0;

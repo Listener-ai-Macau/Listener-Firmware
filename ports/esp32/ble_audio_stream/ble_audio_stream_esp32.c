@@ -45,6 +45,11 @@
 #define BLE_AUDIO_STREAM_NOTIFY_TX_DONE_WAIT_MS 1000
 #define BLE_AUDIO_STREAM_NOTIFY_RETRY_LIMIT 80
 #define BLE_AUDIO_STREAM_NOTIFY_RETRY_LOG_INTERVAL 40
+#define BLE_AUDIO_NOTIFY_STATE_DISABLED 0U
+#define BLE_AUDIO_NOTIFY_STATE_ENABLED 1U
+#define BLE_AUDIO_NOTIFY_STATE_DISABLED_ABORT 2U
+#define BLE_AUDIO_NOTIFY_STATE_DEFERRED_DISABLED 3U
+#define BLE_AUDIO_NOTIFY_STATE_DEFERRED_ENABLED 4U
 #define BLE_AUDIO_STREAM_LINK_RECOVERY_WAIT_MS 20000
 #define BLE_AUDIO_STREAM_LINK_RECOVERY_POLL_MS 50
 #define BLE_AUDIO_STREAM_LINK_RECOVERY_RESUME_DELAY_MS 500
@@ -434,6 +439,18 @@ static void ble_audio_stream_set_transport_state(
              ble_audio_stream_reason_code(reason),
              s_transport_session_id);
     s_transport_state = next_state;
+}
+
+static void ble_audio_stream_log_notify_state(
+    uint32_t notify_state,
+    uint16_t conn_handle,
+    uint8_t severity)
+{
+    diag_log(DIAG_SRC_BLE_AUDIO, DIAG_BAUD_NOTIFY_STATE, severity,
+             s_transport_session_id,
+             s_connection_epoch,
+             conn_handle,
+             notify_state);
 }
 
 static bool ble_audio_stream_transport_session_active(void)
@@ -1282,7 +1299,7 @@ static void ble_audio_stream_abort_active_session(const char *reason)
         BLE_AUDIO_STREAM_TRANSPORT_STATE_ERROR,
         reason);
     diag_log(DIAG_SRC_BLE_AUDIO, DIAG_BAUD_SESSION_ABORT, DIAG_SEV_ERROR,
-             session_id, ble_audio_stream_reason_code(reason), expected_packet_count, 0);
+             session_id, ble_audio_stream_reason_code(reason), expected_packet_count, s_connection_epoch);
     if (session_id != 0) {
         ble_audio_stream_purge_queued_session_jobs(session_id, false);
         ble_audio_stream_stats_log_and_end(
@@ -1459,7 +1476,7 @@ static esp_err_t ble_audio_stream_send_session_error_internal(
         error_code);
     ble_audio_stream_stats_log_and_end(session_id, "error", expected_packet_count);
     diag_log(DIAG_SRC_BLE_AUDIO, DIAG_BAUD_SESSION_ABORT, DIAG_SEV_ERROR,
-             session_id, error_code, expected_packet_count, 0);
+             session_id, error_code, expected_packet_count, s_connection_epoch);
     ble_audio_stream_set_transport_state(
         BLE_AUDIO_STREAM_TRANSPORT_STATE_ERROR,
         ret == ESP_OK ? "session_error_sent" : "session_error_failed");
@@ -1771,6 +1788,11 @@ void ble_audio_stream_on_gap_subscribe(
         s_pending_subscribe_conn_handle = conn_handle;
         s_pending_subscribe_epoch = ble_audio_stream_next_epoch_value();
         s_pending_notify_enabled = cur_notify != 0;
+        diag_log(DIAG_SRC_BLE_AUDIO, DIAG_BAUD_NOTIFY_STATE, DIAG_SEV_INFO,
+                 0,
+                 s_pending_subscribe_epoch,
+                 conn_handle,
+                 cur_notify != 0 ? BLE_AUDIO_NOTIFY_STATE_DEFERRED_ENABLED : BLE_AUDIO_NOTIFY_STATE_DEFERRED_DISABLED);
         ESP_LOGI(
             TAG,
             "audio notify subscription deferred until connect: pending_epoch=%" PRIu32 " conn=%d attr=%d notify=%u",
@@ -1789,10 +1811,20 @@ void ble_audio_stream_on_gap_subscribe(
             conn_handle,
             ble_audio_stream_transport_state_name(s_transport_state),
             s_transport_session_id);
-        ble_audio_stream_reset_transport_session();
+        diag_log(DIAG_SRC_BLE_AUDIO, DIAG_BAUD_NOTIFY_STATE, DIAG_SEV_WARN,
+                 s_transport_session_id,
+                 s_connection_epoch,
+                 conn_handle,
+                 BLE_AUDIO_NOTIFY_STATE_DISABLED_ABORT);
+        diag_log(DIAG_SRC_BLE_AUDIO, DIAG_BAUD_SESSION_ABORT, DIAG_SEV_ERROR,
+                 s_transport_session_id,
+                 ble_audio_stream_reason_code("notify_disabled_session_abort"),
+                 s_transport_expected_packet_count,
+                 s_connection_epoch);
         ble_audio_stream_set_transport_state(
             BLE_AUDIO_STREAM_TRANSPORT_STATE_STOPPED,
             "notify_disabled_session_abort");
+        ble_audio_stream_reset_transport_session();
     }
 
     s_pending_subscribe_valid = false;
@@ -1800,6 +1832,10 @@ void ble_audio_stream_on_gap_subscribe(
     s_pending_subscribe_epoch = 0;
     s_pending_notify_enabled = false;
     ble_audio_stream_apply_notify_enabled(cur_notify != 0);
+    ble_audio_stream_log_notify_state(
+        cur_notify != 0 ? BLE_AUDIO_NOTIFY_STATE_ENABLED : BLE_AUDIO_NOTIFY_STATE_DISABLED,
+        conn_handle,
+        DIAG_SEV_INFO);
     ESP_LOGI(
         TAG,
         "audio notify subscription changed: epoch=%" PRIu32 " conn=%d attr=%d notify=%u window=%u",
