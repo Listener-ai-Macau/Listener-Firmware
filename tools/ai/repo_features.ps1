@@ -30,7 +30,7 @@ function New-FeatureSnapshot {
             "Expose BLE HID keyboard behavior for the physical keys.",
             "Capture microphone audio and stream Listener BLE audio to the desktop app.",
             "Own device-side voice key state, serial commands, diagnostics, system health, and recovery evidence.",
-            "Own firmware OTA slot/rollback primitives, pending-verify checks, and OTA diagnostics used by desktop update flows.",
+            "Own firmware OTA slot/rollback primitives, BLE OTA GATT bridge, pending-verify checks, and OTA diagnostics used by desktop update flows.",
             "Provide build, flash, serial monitor, BLE HID, BLE audio, and diagnostic-log validation tools.",
             "Provide AI-readable firmware diagnostic bundles that preserve raw diag_log events and decode schema names from firmware headers."
         )
@@ -40,7 +40,7 @@ function New-FeatureSnapshot {
             "Voice key control for start/stop recording flow, including serial VREC commands.",
             "diag_log flash ring buffer for boot, BLE, audio, health, and error events that survive reboot.",
             "AI-readable diag_log JSON bundle tooling for deterministic event, argument, severity, boot-segment, and summary fields.",
-            "Firmware OTA v1 using ESP-IDF otadata/ota_0/ota_1 slots, official rollback, pending verify, blockers, and diag_log OTA events.",
+            "Firmware OTA v1 using ESP-IDF otadata/ota_0/ota_1 slots, BLE GATT control/data bridge, official rollback, pending verify, blockers, and diag_log OTA events.",
             "system_health heartbeat and resource checks for heap, task, BLE, and disconnect conditions.",
             "POST and degraded boot reporting for NVS, BLE, audio, heap, and board assumptions."
         )
@@ -52,6 +52,7 @@ function New-FeatureSnapshot {
             [ordered]@{ path = "tools/decode_diag_log.py"; purpose = "Offline decoder for ~DIAGLOG JSONL into stable AI-readable JSON bundles." },
             [ordered]@{ path = "tools/collect_ai_diagnostics.ps1"; purpose = "Collect recent serial diag_log events or decode saved JSONL into raw and decoded artifacts under tests/artifacts." },
             [ordered]@{ path = "components/firmware_ota/"; purpose = "ESP-IDF OTA manager, rollback/pending-verify handling, blockers, and OTA serial diagnostics." },
+            [ordered]@{ path = "ports/esp32/ble_firmware_ota/"; purpose = "NimBLE firmware OTA service with control/data characteristics and BLE abort integration." },
             [ordered]@{ path = "components/system_health/"; purpose = "Health status, heartbeat, and fault reporting." },
             [ordered]@{ path = "components/voice_recording_control/"; purpose = "Voice key state machine and serial control contract." },
             [ordered]@{ path = "ports/esp32/ble_hid*"; purpose = "ESP32 BLE HID service, GAP, pairing, and host connection." },
@@ -81,6 +82,8 @@ function New-FeatureSnapshot {
             "pwsh -NoProfile -File .\tools\collect_ai_diagnostics.ps1 -InputJsonl <diag_log.jsonl> -OutputDir .\tests\artifacts\ai_diagnostics",
             "pwsh -NoProfile -File .\tools\verify_ble_hid.ps1",
             "pwsh -NoProfile -File .\tools\verify_audio_ble_product_matrix.ps1",
+            "python .\tools\verify_ble_ota_gatt_contract.py",
+            "powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\tools\verify_ble_ota_gatt_discovery.ps1 -DeviceName listener -BluetoothAddress <addr>",
             "git diff --check"
         )
         update_policy = "Record accepted changes only when they alter important firmware capabilities, hardware assumptions, BLE/audio/HID contracts, diagnostic behavior, or validation entry points."
