@@ -900,6 +900,11 @@ def normalize_chinese_numerals_for_accuracy(text: str) -> str:
         return f"{lhs}.{rhs}"
 
     text = re.sub(
+        rf"百分之([{number_chars}]+)",
+        lambda match: parse_chinese_numeral_token(match.group(1)) or match.group(0),
+        text,
+    )
+    text = re.sub(
         rf"([{number_chars}]+)点([{digit_chars}]+)",
         replace_decimal,
         text,
