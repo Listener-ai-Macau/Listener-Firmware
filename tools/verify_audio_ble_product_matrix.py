@@ -2091,6 +2091,7 @@ async def run_a14(args) -> dict[str, str]:
             trigger_mode="serial-cancel",
             artifact_label="cancel_negative",
             expect_no_text=True,
+            extra_smoke_args=["-RecordingStartTimeoutMs", "12000"],
         )
         details["cancel_negative_product_chain"] = negative_product_chain
         if str(negative_product_chain.get("result")) == "fail":
