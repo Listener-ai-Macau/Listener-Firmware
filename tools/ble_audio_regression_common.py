@@ -4,10 +4,12 @@ import base64
 import hashlib
 import json
 import math
+import os
 import pathlib
 import random
 import struct
 import subprocess
+import sys
 import wave
 from types import SimpleNamespace
 
@@ -45,6 +47,9 @@ DEFAULT_TTS_RATE = 0
 FAST_TTS_RATE = 3
 LOW_VOLUME_TTS_GAIN = 1.8
 TTS_TARGET_PEAK = 26000
+DEFAULT_PLAYBACK_VOLUME_PERCENT = 70
+PLAYBACK_VOLUME_ENV = "LISTENER_TEST_PLAYBACK_VOLUME_PERCENT"
+KEEP_PLAYBACK_VOLUME_ENV = "LISTENER_TEST_KEEP_PLAYBACK_VOLUME"
 AUDIO_PROFILE_CONFIGS = {
     "normal": {
         "tts_rate": DEFAULT_TTS_RATE,
@@ -85,6 +90,252 @@ AUDIO_PROFILE_CONFIGS = {
         "warning_only": True,
     },
 }
+
+_AUDIO_ENDPOINT_VOLUME_PS = r'''
+$ErrorActionPreference = "Stop"
+Add-Type -TypeDefinition @'
+using System;
+using System.Runtime.InteropServices;
+
+[ComImport]
+[Guid("BCDE0395-E52F-467C-8E3D-C4579291692E")]
+internal class MMDeviceEnumerator
+{
+}
+
+internal enum EDataFlow
+{
+    eRender = 0,
+    eCapture = 1,
+    eAll = 2
+}
+
+internal enum ERole
+{
+    eConsole = 0,
+    eMultimedia = 1,
+    eCommunications = 2
+}
+
+[ComImport]
+[Guid("A95664D2-9614-4F35-A746-DE8DB63617E6")]
+[InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+internal interface IMMDeviceEnumerator
+{
+    int EnumAudioEndpoints();
+
+    [PreserveSig]
+    int GetDefaultAudioEndpoint(EDataFlow dataFlow, ERole role, out IMMDevice ppDevice);
+}
+
+[ComImport]
+[Guid("D666063F-1587-4E43-81F1-B948E807363F")]
+[InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+internal interface IMMDevice
+{
+    [PreserveSig]
+    int Activate(ref Guid iid, int dwClsCtx, IntPtr pActivationParams, out IAudioEndpointVolume ppInterface);
+}
+
+[ComImport]
+[Guid("5CDF2C82-841E-4546-9722-0CF74078229A")]
+[InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+internal interface IAudioEndpointVolume
+{
+    int RegisterControlChangeNotify(IntPtr pNotify);
+    int UnregisterControlChangeNotify(IntPtr pNotify);
+    int GetChannelCount(out uint pnChannelCount);
+    int SetMasterVolumeLevel(float fLevelDB, Guid pguidEventContext);
+    int SetMasterVolumeLevelScalar(float fLevel, Guid pguidEventContext);
+    int GetMasterVolumeLevel(out float pfLevelDB);
+    int GetMasterVolumeLevelScalar(out float pfLevel);
+    int SetChannelVolumeLevel(uint nChannel, float fLevelDB, Guid pguidEventContext);
+    int SetChannelVolumeLevelScalar(uint nChannel, float fLevel, Guid pguidEventContext);
+    int GetChannelVolumeLevel(uint nChannel, out float pfLevelDB);
+    int GetChannelVolumeLevelScalar(uint nChannel, out float pfLevel);
+    int SetMute([MarshalAs(UnmanagedType.Bool)] bool bMute, Guid pguidEventContext);
+    int GetMute(out bool pbMute);
+}
+
+public sealed class ListenerTestAudioEndpoint
+{
+    public float Volume;
+    public bool Muted;
+
+    private static IAudioEndpointVolume GetEndpoint()
+    {
+        var enumerator = (IMMDeviceEnumerator)(new MMDeviceEnumerator());
+        IMMDevice device;
+        int hr = enumerator.GetDefaultAudioEndpoint(EDataFlow.eRender, ERole.eMultimedia, out device);
+        if (hr != 0)
+        {
+            Marshal.ThrowExceptionForHR(hr);
+        }
+
+        Guid iid = typeof(IAudioEndpointVolume).GUID;
+        IAudioEndpointVolume endpoint;
+        hr = device.Activate(ref iid, 23, IntPtr.Zero, out endpoint);
+        if (hr != 0)
+        {
+            Marshal.ThrowExceptionForHR(hr);
+        }
+        return endpoint;
+    }
+
+    public static ListenerTestAudioEndpoint Snapshot()
+    {
+        var endpoint = GetEndpoint();
+        float volume;
+        bool muted;
+        endpoint.GetMasterVolumeLevelScalar(out volume);
+        endpoint.GetMute(out muted);
+        return new ListenerTestAudioEndpoint { Volume = volume, Muted = muted };
+    }
+
+    public static void Set(float volume, bool muted)
+    {
+        var endpoint = GetEndpoint();
+        var context = Guid.Empty;
+        endpoint.SetMute(muted, context);
+        endpoint.SetMasterVolumeLevelScalar(volume, context);
+    }
+}
+'@
+
+$mode = $env:LISTENER_AUDIO_ENDPOINT_MODE
+$culture = [System.Globalization.CultureInfo]::InvariantCulture
+if ($mode -eq "set") {
+    $volume = [double]::Parse($env:LISTENER_AUDIO_ENDPOINT_VOLUME, $culture)
+    $snapshot = [ListenerTestAudioEndpoint]::Snapshot()
+    [ListenerTestAudioEndpoint]::Set([single]$volume, $false)
+    [pscustomobject]@{
+        volume = [double]$snapshot.Volume
+        muted = [bool]$snapshot.Muted
+    } | ConvertTo-Json -Compress
+} elseif ($mode -eq "restore") {
+    $volume = [double]::Parse($env:LISTENER_AUDIO_ENDPOINT_VOLUME, $culture)
+    $muted = [bool]::Parse($env:LISTENER_AUDIO_ENDPOINT_MUTED)
+    [ListenerTestAudioEndpoint]::Set([single]$volume, $muted)
+} else {
+    throw "Unknown audio endpoint mode: $mode"
+}
+'''
+
+
+def _env_flag(name: str) -> bool:
+    return (os.environ.get(name) or "").strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _playback_volume_percent() -> int | None:
+    raw = os.environ.get(PLAYBACK_VOLUME_ENV, str(DEFAULT_PLAYBACK_VOLUME_PERCENT)).strip()
+    if raw.lower() in {"", "none", "off", "disabled"}:
+        return None
+    try:
+        percent = int(float(raw))
+    except ValueError:
+        print(f"playback_volume_warning=invalid_percent:{raw}", flush=True)
+        return None
+    if percent < 0:
+        return None
+    return max(0, min(100, percent))
+
+
+def _invoke_audio_endpoint_volume(mode: str, *, volume: float, muted: bool | None = None) -> str | None:
+    if sys.platform != "win32":
+        return None
+    env = os.environ.copy()
+    env["LISTENER_AUDIO_ENDPOINT_MODE"] = mode
+    env["LISTENER_AUDIO_ENDPOINT_VOLUME"] = f"{volume:.6f}"
+    if muted is not None:
+        env["LISTENER_AUDIO_ENDPOINT_MUTED"] = str(muted).lower()
+    try:
+        completed = subprocess.run(
+            [
+                "powershell.exe",
+                "-NoProfile",
+                "-ExecutionPolicy",
+                "Bypass",
+                "-Command",
+                _AUDIO_ENDPOINT_VOLUME_PS,
+            ],
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            env=env,
+            timeout=10,
+            check=False,
+        )
+    except Exception as exc:
+        print(f"playback_volume_warning={type(exc).__name__}:{exc}", flush=True)
+        return None
+    if completed.returncode != 0:
+        error = (completed.stderr or completed.stdout or "").strip().replace("\n", " ")
+        print(f"playback_volume_warning=command_failed:{error}", flush=True)
+        return None
+    return (completed.stdout or "").strip()
+
+
+class PlaybackVolumeGuard:
+    def __init__(self) -> None:
+        self.percent = _playback_volume_percent()
+        self.snapshot: dict[str, object] | None = None
+        self.keep_volume = _env_flag(KEEP_PLAYBACK_VOLUME_ENV)
+
+    def __enter__(self) -> "PlaybackVolumeGuard":
+        if self.percent is None:
+            print("playback_volume_setup_skipped=1", flush=True)
+            return self
+        target = max(0.01, min(1.0, self.percent / 100.0))
+        stdout = _invoke_audio_endpoint_volume("set", volume=target)
+        if not stdout:
+            return self
+        try:
+            parsed = json.loads(stdout)
+            self.snapshot = parsed if isinstance(parsed, dict) else None
+        except json.JSONDecodeError:
+            self.snapshot = None
+        previous = self.snapshot.get("volume") if self.snapshot else None
+        muted = self.snapshot.get("muted") if self.snapshot else None
+        print(
+            f"playback_volume_set_target={self.percent} previous={previous} muted={muted}",
+            flush=True,
+        )
+        return self
+
+    def close(self) -> None:
+        if self.keep_volume or not self.snapshot:
+            return
+        volume = float(self.snapshot.get("volume") or 0.0)
+        muted = bool(self.snapshot.get("muted"))
+        _invoke_audio_endpoint_volume("restore", volume=volume, muted=muted)
+        print(f"playback_volume_restored={volume:.3f} muted={muted}", flush=True)
+
+    def __exit__(self, exc_type, exc, tb) -> None:
+        self.close()
+
+
+class WavPlayback:
+    def __init__(self, path: pathlib.Path | str) -> None:
+        self.path = pathlib.Path(path)
+        self.volume_guard: PlaybackVolumeGuard | None = None
+
+    def __enter__(self) -> "WavPlayback":
+        self.volume_guard = PlaybackVolumeGuard()
+        self.volume_guard.__enter__()
+        try:
+            winsound.PlaySound(str(self.path), winsound.SND_FILENAME | winsound.SND_ASYNC)
+        except Exception:
+            self.volume_guard.close()
+            raise
+        return self
+
+    def __exit__(self, exc_type, exc, tb) -> None:
+        try:
+            winsound.PlaySound(None, winsound.SND_PURGE)
+        finally:
+            if self.volume_guard is not None:
+                self.volume_guard.__exit__(exc_type, exc, tb)
 
 CHINESE_SENTENCE_POOL = (
     "明天下午两点提醒我检查蓝牙音频丢包率。",
@@ -820,8 +1071,7 @@ async def play_and_capture_serial_toggle(
         tts_rate=effective_tts_rate,
         tts_gain=effective_tts_gain,
     )
-    winsound.PlaySound(str(playback_source_wav), winsound.SND_FILENAME | winsound.SND_ASYNC)
-    try:
+    with WavPlayback(playback_source_wav):
         capture_args = make_capture_args(
             port=port,
             device_name=device_name,
@@ -835,8 +1085,6 @@ async def play_and_capture_serial_toggle(
             serial_log_path=serial_log_path,
         )
         session_summaries = await capture_sessions(capture_args)
-    finally:
-        winsound.PlaySound(None, winsound.SND_PURGE)
 
     if not session_summaries:
         raise RuntimeError(f"{scenario}: capture returned no session summaries")
@@ -964,8 +1212,7 @@ async def play_and_capture_serial_toggle_after_cancel_probe(
                 "serial_log": serial_monitor.full_text(),
             }
 
-        winsound.PlaySound(str(playback_source_wav), winsound.SND_FILENAME | winsound.SND_ASYNC)
-        try:
+        with WavPlayback(playback_source_wav):
             capture_args = make_capture_args(
                 port=port,
                 device_name=device_name,
@@ -979,8 +1226,6 @@ async def play_and_capture_serial_toggle_after_cancel_probe(
                 serial_log_path=serial_log_path,
             )
             session_summaries = await run_ble_capture(capture_args, ser, serial_monitor)
-        finally:
-            winsound.PlaySound(None, winsound.SND_PURGE)
 
     if not session_summaries:
         raise RuntimeError(f"{scenario}: capture returned no session summaries")
@@ -1081,8 +1326,7 @@ async def play_and_capture_serial_toggle_multi_session(
         tts_rate=effective_tts_rate,
         tts_gain=effective_tts_gain,
     )
-    winsound.PlaySound(str(source_wav), winsound.SND_FILENAME | winsound.SND_ASYNC)
-    try:
+    with WavPlayback(source_wav):
         capture_args = make_capture_args(
             port=port,
             device_name=device_name,
@@ -1097,8 +1341,6 @@ async def play_and_capture_serial_toggle_multi_session(
             serial_log_path=serial_log_path,
         )
         session_summaries = await capture_sessions(capture_args)
-    finally:
-        winsound.PlaySound(None, winsound.SND_PURGE)
 
     if len(session_summaries) != session_count:
         raise RuntimeError(

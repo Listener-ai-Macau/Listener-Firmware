@@ -3,6 +3,7 @@ import asyncio
 from datetime import datetime, timezone
 import hashlib
 import json
+import os
 import pathlib
 import random
 import re
@@ -12,7 +13,6 @@ import time
 import unicodedata
 
 import serial
-import winsound
 
 
 def run_with_process_tree_timeout(
@@ -87,6 +87,10 @@ from ble_audio_regression_common import (
     source_wav_path,
     generate_source_wav_tts,
     PCM_SAMPLE_RATE,
+    WavPlayback,
+    DEFAULT_PLAYBACK_VOLUME_PERCENT,
+    PLAYBACK_VOLUME_ENV,
+    KEEP_PLAYBACK_VOLUME_ENV,
 )
 from capture_audio_ble_wav import configure_utf8_stdio
 
@@ -392,6 +396,11 @@ def parse_args():
         help="Path to the sibling Listener-Type repo used by product-chain validation.",
     )
     parser.add_argument(
+        "--listener-exe",
+        default=None,
+        help="Optional listener-type.exe path passed to the Listener-Type product-chain smoke script.",
+    )
+    parser.add_argument(
         "--bluetooth-address",
         default=None,
         help="Optional hex BLE address for Listener-Type product-chain validation; auto-resolved when possible.",
@@ -401,6 +410,17 @@ def parse_args():
     parser.add_argument("--full-chain-sentence", default=None)
     parser.add_argument("--full-chain-verify-insertion", action="store_true")
     parser.add_argument("--full-chain-tts-gain", type=float, default=4.0)
+    parser.add_argument(
+        "--playback-volume-percent",
+        type=int,
+        default=DEFAULT_PLAYBACK_VOLUME_PERCENT,
+        help="Set the Windows playback endpoint to this volume before scripted WAV playback. Use -1 to disable.",
+    )
+    parser.add_argument(
+        "--keep-playback-volume",
+        action="store_true",
+        help="Do not restore the previous Windows playback endpoint volume after scripted WAV playback.",
+    )
     parser.add_argument(
         "--full-chain-audio-profile",
         choices=sorted(AUDIO_PROFILE_CONFIGS),
@@ -450,6 +470,14 @@ def apply_execution_profile(args) -> None:
     if not args.skip_preflight_recover:
         args.preflight_recover_mode = "initial-only"
     args.reset_before_capture = False
+
+
+def configure_playback_volume(args) -> None:
+    os.environ[PLAYBACK_VOLUME_ENV] = str(args.playback_volume_percent)
+    if args.keep_playback_volume:
+        os.environ[KEEP_PLAYBACK_VOLUME_ENV] = "1"
+    else:
+        os.environ.pop(KEEP_PLAYBACK_VOLUME_ENV, None)
 
 
 def resolve_duration_window(
@@ -1375,8 +1403,7 @@ async def run_a4_new(args) -> dict[str, str]:
         seed=sentence_seed,
     )
     profile = resolve_audio_profile("normal")
-    winsound.PlaySound(str(wav_path), winsound.SND_FILENAME | winsound.SND_ASYNC)
-    try:
+    with WavPlayback(wav_path):
         capture_args = make_capture_args(
             port=args.port,
             device_name=args.device_name,
@@ -1390,8 +1417,6 @@ async def run_a4_new(args) -> dict[str, str]:
             serial_log_path=case_serial_log_path("A4"),
         )
         session_summaries = await capture_sessions(capture_args)
-    finally:
-        winsound.PlaySound(None, winsound.SND_PURGE)
     if not session_summaries:
         return print_summary("A4", "fail", "no_session_captured")
     summary = dict(session_summaries[-1])
@@ -1651,8 +1676,7 @@ async def run_a12_new(args) -> dict[str, str]:
         tts_gain=float(profile["tts_gain"]),
     )
     mix_noise_into_wav(wav_path, noise_type="white", snr_db=12.0, seed=sentence_seed)
-    winsound.PlaySound(str(wav_path), winsound.SND_FILENAME | winsound.SND_ASYNC)
-    try:
+    with WavPlayback(wav_path):
         capture_args = make_capture_args(
             port=args.port,
             device_name=args.device_name,
@@ -1666,8 +1690,6 @@ async def run_a12_new(args) -> dict[str, str]:
             serial_log_path=case_serial_log_path("A12"),
         )
         session_summaries = await capture_sessions(capture_args)
-    finally:
-        winsound.PlaySound(None, winsound.SND_PURGE)
     if not session_summaries:
         return print_summary("A12", "fail", "no_session_captured")
     summary = dict(session_summaries[-1])
@@ -1704,8 +1726,7 @@ async def run_a13_new(args) -> dict[str, str]:
     secondary_sentences = pick_chinese_sentences(secondary_seed, 1)
     secondary_text = secondary_sentences[0]
     mix_secondary_speech_into_wav(wav_path, secondary_text, snr_db=8.0, seed=secondary_seed)
-    winsound.PlaySound(str(wav_path), winsound.SND_FILENAME | winsound.SND_ASYNC)
-    try:
+    with WavPlayback(wav_path):
         capture_args = make_capture_args(
             port=args.port,
             device_name=args.device_name,
@@ -1719,8 +1740,6 @@ async def run_a13_new(args) -> dict[str, str]:
             serial_log_path=case_serial_log_path("A13"),
         )
         session_summaries = await capture_sessions(capture_args)
-    finally:
-        winsound.PlaySound(None, winsound.SND_PURGE)
     if not session_summaries:
         return print_summary("A13", "fail", "no_session_captured")
     summary = dict(session_summaries[-1])
@@ -1754,8 +1773,7 @@ async def run_a16_new(args) -> dict[str, str]:
         tts_gain=float(profile["tts_gain"]),
     )
     apply_fading_gain(wav_path, min_gain=0.4, period_seconds=4.0, seed=sentence_seed)
-    winsound.PlaySound(str(wav_path), winsound.SND_FILENAME | winsound.SND_ASYNC)
-    try:
+    with WavPlayback(wav_path):
         capture_args = make_capture_args(
             port=args.port,
             device_name=args.device_name,
@@ -1769,8 +1787,6 @@ async def run_a16_new(args) -> dict[str, str]:
             serial_log_path=case_serial_log_path("A16"),
         )
         session_summaries = await capture_sessions(capture_args)
-    finally:
-        winsound.PlaySound(None, winsound.SND_PURGE)
     if not session_summaries:
         return print_summary("A16", "fail", "no_session_captured")
     summary = dict(session_summaries[-1])
@@ -2477,6 +2493,8 @@ async def run_listener_type_product_chain(
         str(profile_tts_gain),
         "-TtsRate",
         str(profile_tts_rate),
+        "-PlaybackVolumePercent",
+        str(args.playback_volume_percent),
         "-AudioProfile",
         profile_name,
         "-FirmwareRepo",
@@ -2485,6 +2503,8 @@ async def run_listener_type_product_chain(
     ]
     if bluetooth_address:
         command.extend(["-BluetoothAddress", bluetooth_address])
+    if args.listener_exe:
+        command.extend(["-ListenerExe", str(pathlib.Path(args.listener_exe).resolve())])
     if generated_wav_path is not None:
         command.extend(["-WavPath", str(generated_wav_path.resolve())])
     if expected_sentence:
@@ -2502,6 +2522,8 @@ async def run_listener_type_product_chain(
         command.append("-NoResetBeforeCapture")
     if args.full_chain_verify_insertion:
         command.append("-VerifyInsertion")
+    if args.keep_playback_volume:
+        command.append("-KeepPlaybackVolume")
 
     print(f"product_chain_trigger_mode={trigger_mode}", flush=True)
     print(f"product_chain_artifact_label={trigger_label}", flush=True)
@@ -2509,6 +2531,8 @@ async def run_listener_type_product_chain(
     print(f"product_chain_tts_rate={profile_tts_rate}", flush=True)
     print(f"product_chain_tts_gain={profile_tts_gain}", flush=True)
     print(f"product_chain_listener_type_repo={listener_repo}", flush=True)
+    if args.listener_exe:
+        print(f"product_chain_listener_exe={pathlib.Path(args.listener_exe).resolve()}", flush=True)
     print(f"product_chain_bluetooth_address_source={bluetooth_address_source}", flush=True)
     print(f"product_chain_random_sentence_count={random_sentence_count}", flush=True)
     print(f"product_chain_expect_no_text={1 if expect_no_text else 0}", flush=True)
@@ -3116,6 +3140,8 @@ async def main_async(args) -> None:
     print(f"shuffle_auto_case_order={1 if args.shuffle_auto_case_order else 0}", flush=True)
     print(f"preflight_recover_mode={args.preflight_recover_mode}", flush=True)
     print(f"product_chain_enabled={0 if args.transport_only else 1}", flush=True)
+    print(f"playback_volume_percent={args.playback_volume_percent}", flush=True)
+    print(f"keep_playback_volume={1 if args.keep_playback_volume else 0}", flush=True)
     print(f"random_seed={args.random_seed_resolved}", flush=True)
     print(
         f"short_capture_window={args.short_capture_window[0]}-{args.short_capture_window[1]}",
@@ -3232,6 +3258,7 @@ def main() -> None:
     if args.list_cases:
         print_case_catalog()
         return
+    configure_playback_volume(args)
     apply_execution_profile(args)
     prepare_duration_randomizer(args)
     summary_log_path = pathlib.Path(args.summary_log)
