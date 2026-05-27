@@ -10,9 +10,6 @@
 
 #include "esp_err.h"
 #include "esp_event.h"
-#include "esp_adc/adc_cali.h"
-#include "esp_adc/adc_cali_scheme.h"
-#include "esp_adc/adc_oneshot.h"
 #include "esp_hidd.h"
 #include "esp_hid_common.h"
 #include "esp_log.h"
@@ -29,8 +26,8 @@
 void ble_store_config_init(void);
 
 #include "hid_keyboard.h"
+#include "battery_monitor.h"
 #include "board.h"
-#include "board_pins.h"
 #include "listener_device.h"
 #include "ble_hid_gap.h"
 #include "ble_audio_stream.h"
@@ -39,19 +36,13 @@ void ble_store_config_init(void);
 #include "diag_log_platform.h"
 #include "diag_log.h"
 #include "firmware_ota.h"
+#include "power_manager.h"
 #include "esp_timer.h"
 
 static const char *TAG = "ble_hid";
 
 #define BLE_HID_BATTERY_FALLBACK_LEVEL 50
 #define BLE_HID_BATTERY_UPDATE_INTERVAL_MS 60000
-#define BLE_HID_BATTERY_ADC_ATTEN ADC_ATTEN_DB_12
-#define BLE_HID_BATTERY_ADC_RAW_MAX 4095U
-#define BLE_HID_BATTERY_ADC_FALLBACK_REF_MV 3300U
-#define BLE_HID_BATTERY_DIVIDER_NUMERATOR 2U
-#define BLE_HID_BATTERY_DIVIDER_DENOMINATOR 1U
-#define BLE_HID_BATTERY_EMPTY_MV 3000U
-#define BLE_HID_BATTERY_FULL_MV 4200U
 #define BLE_HID_BATTERY_TASK_STACK_BYTES (4 * 1024)
 #define BLE_HID_USB_COMMAND_PREFIX '~'
 #define BLE_HID_USB_COMMAND_BUFFER_BYTES 64
@@ -69,13 +60,6 @@ static ble_hid_ctx_t s_ble_hid_ctx = {0};
 static const char *s_device_name = LISTENER_DEVICE_BLE_NAME;
 
 static char s_ble_serial[18];
-static adc_oneshot_unit_handle_t s_battery_adc_handle;
-static adc_cali_handle_t s_battery_cali_handle;
-static adc_unit_t s_battery_adc_unit = ADC_UNIT_1;
-static adc_channel_t s_battery_adc_channel = ADC_CHANNEL_6;
-static bool s_battery_adc_ready;
-static bool s_battery_cali_ready;
-static bool s_battery_adc_warned;
 
 static esp_hid_raw_report_map_t s_ble_report_maps[] = {
     {
@@ -105,163 +89,16 @@ static uint32_t s_disconnect_count;
 static uint32_t s_connect_timestamp_ms;
 static QueueHandle_t s_ascii_queue;
 
-static bool ble_hid_battery_calibration_init(adc_unit_t unit, adc_channel_t channel)
-{
-    esp_err_t ret = ESP_FAIL;
-
-#if ADC_CALI_SCHEME_CURVE_FITTING_SUPPORTED
-    adc_cali_curve_fitting_config_t curve_config = {
-        .unit_id = unit,
-        .chan = channel,
-        .atten = BLE_HID_BATTERY_ADC_ATTEN,
-        .bitwidth = ADC_BITWIDTH_DEFAULT,
-    };
-    ret = adc_cali_create_scheme_curve_fitting(&curve_config, &s_battery_cali_handle);
-    if (ret == ESP_OK) {
-        ESP_LOGI(TAG, "battery ADC calibration: curve fitting");
-        return true;
-    }
-#endif
-
-#if ADC_CALI_SCHEME_LINE_FITTING_SUPPORTED
-    adc_cali_line_fitting_config_t line_config = {
-        .unit_id = unit,
-        .atten = BLE_HID_BATTERY_ADC_ATTEN,
-        .bitwidth = ADC_BITWIDTH_DEFAULT,
-    };
-    ret = adc_cali_create_scheme_line_fitting(&line_config, &s_battery_cali_handle);
-    if (ret == ESP_OK) {
-        ESP_LOGI(TAG, "battery ADC calibration: line fitting");
-        return true;
-    }
-#endif
-
-    ESP_LOGW(TAG, "battery ADC calibration unavailable: %s", esp_err_to_name(ret));
-    return false;
-}
-
-static esp_err_t ble_hid_battery_adc_init(void)
-{
-    if (s_battery_adc_ready) {
-        return ESP_OK;
-    }
-
-    adc_unit_t unit = ADC_UNIT_1;
-    adc_channel_t channel = ADC_CHANNEL_0;
-    esp_err_t ret = adc_oneshot_io_to_channel((int)BOARD_PINS_BAT_V_ADC_IO, &unit, &channel);
-    if (ret != ESP_OK) {
-        if (!s_battery_adc_warned) {
-            ESP_LOGW(
-                TAG,
-                "battery ADC pin unavailable: gpio=%d ret=%s",
-                (int)BOARD_PINS_BAT_V_ADC_IO,
-                esp_err_to_name(ret));
-            s_battery_adc_warned = true;
-        }
-        return ret;
-    }
-
-    adc_oneshot_unit_init_cfg_t unit_config = {
-        .unit_id = unit,
-        .ulp_mode = ADC_ULP_MODE_DISABLE,
-    };
-    ret = adc_oneshot_new_unit(&unit_config, &s_battery_adc_handle);
-    if (ret != ESP_OK) {
-        if (!s_battery_adc_warned) {
-            ESP_LOGW(TAG, "battery ADC unit init failed: %s", esp_err_to_name(ret));
-            s_battery_adc_warned = true;
-        }
-        return ret;
-    }
-
-    adc_oneshot_chan_cfg_t channel_config = {
-        .atten = BLE_HID_BATTERY_ADC_ATTEN,
-        .bitwidth = ADC_BITWIDTH_DEFAULT,
-    };
-    ret = adc_oneshot_config_channel(s_battery_adc_handle, channel, &channel_config);
-    if (ret != ESP_OK) {
-        ESP_LOGW(TAG, "battery ADC channel config failed: %s", esp_err_to_name(ret));
-        adc_oneshot_del_unit(s_battery_adc_handle);
-        s_battery_adc_handle = NULL;
-        return ret;
-    }
-
-    s_battery_adc_unit = unit;
-    s_battery_adc_channel = channel;
-    s_battery_cali_ready = ble_hid_battery_calibration_init(unit, channel);
-    s_battery_adc_ready = true;
-    ESP_LOGI(
-        TAG,
-        "battery ADC ready: gpio=%d unit=%d channel=%d",
-        (int)BOARD_PINS_BAT_V_ADC_IO,
-        (int)s_battery_adc_unit,
-        (int)s_battery_adc_channel);
-    return ESP_OK;
-}
-
-static esp_err_t ble_hid_read_battery_mv(uint32_t *out_battery_mv, int *out_raw)
-{
-    if (out_battery_mv == NULL || out_raw == NULL) {
-        return ESP_ERR_INVALID_ARG;
-    }
-
-    esp_err_t ret = ble_hid_battery_adc_init();
-    if (ret != ESP_OK) {
-        return ret;
-    }
-
-    int raw = 0;
-    ret = adc_oneshot_read(s_battery_adc_handle, s_battery_adc_channel, &raw);
-    if (ret != ESP_OK) {
-        return ret;
-    }
-
-    int pad_mv = 0;
-    if (s_battery_cali_ready) {
-        ret = adc_cali_raw_to_voltage(s_battery_cali_handle, raw, &pad_mv);
-        if (ret != ESP_OK) {
-            return ret;
-        }
-    } else {
-        pad_mv = (int)(((uint32_t)raw * BLE_HID_BATTERY_ADC_FALLBACK_REF_MV) /
-                       BLE_HID_BATTERY_ADC_RAW_MAX);
-    }
-
-    uint32_t battery_mv =
-        ((uint32_t)pad_mv * BLE_HID_BATTERY_DIVIDER_NUMERATOR) /
-        BLE_HID_BATTERY_DIVIDER_DENOMINATOR;
-    *out_raw = raw;
-    *out_battery_mv = battery_mv;
-    return ESP_OK;
-}
-
-static uint8_t ble_hid_battery_percent_from_mv(uint32_t battery_mv)
-{
-    if (battery_mv <= BLE_HID_BATTERY_EMPTY_MV) {
-        return 0;
-    }
-    if (battery_mv >= BLE_HID_BATTERY_FULL_MV) {
-        return 100;
-    }
-
-    uint32_t range_mv = BLE_HID_BATTERY_FULL_MV - BLE_HID_BATTERY_EMPTY_MV;
-    uint32_t level =
-        ((battery_mv - BLE_HID_BATTERY_EMPTY_MV) * 100U + (range_mv / 2U)) /
-        range_mv;
-    return (uint8_t)level;
-}
-
 static void ble_hid_update_battery_level(const char *reason)
 {
     if (s_ble_hid_ctx.hid_device == NULL) {
         return;
     }
 
-    uint32_t battery_mv = 0;
-    int raw = 0;
-    esp_err_t read_ret = ble_hid_read_battery_mv(&battery_mv, &raw);
-    uint8_t level = (read_ret == ESP_OK)
-        ? ble_hid_battery_percent_from_mv(battery_mv)
+    battery_monitor_status_t battery = {0};
+    esp_err_t read_ret = battery_monitor_read(&battery);
+    uint8_t level = (read_ret == ESP_OK && battery.valid)
+        ? battery.level_percent
         : BLE_HID_BATTERY_FALLBACK_LEVEL;
 
     esp_err_t ret = esp_hidd_dev_battery_set(s_ble_hid_ctx.hid_device, level);
@@ -275,8 +112,8 @@ static void ble_hid_update_battery_level(const char *reason)
             TAG,
             "battery level=%u voltage_mv=%" PRIu32 " raw=%d reason=%s",
             level,
-            battery_mv,
-            raw,
+            battery.voltage_mv,
+            battery.raw_adc,
             reason);
     } else {
         ESP_LOGW(
@@ -286,11 +123,14 @@ static void ble_hid_update_battery_level(const char *reason)
             reason,
             esp_err_to_name(read_ret));
     }
-    firmware_ota_note_battery(level, read_ret == ESP_OK ? battery_mv : 0, read_ret == ESP_OK);
+    firmware_ota_note_battery(
+        level,
+        (read_ret == ESP_OK && battery.valid) ? battery.voltage_mv : 0,
+        read_ret == ESP_OK && battery.valid);
 
     if (level < 10 && read_ret == ESP_OK) {
         diag_log(DIAG_SRC_BLE_HID, DIAG_BLE_BATTERY_WARN, DIAG_SEV_WARN,
-                 level, battery_mv, 0, 0);
+                 level, battery.voltage_mv, 0, 0);
     }
 }
 
@@ -366,6 +206,7 @@ esp_err_t ble_hid_send_ascii_async(char input_char)
         return ESP_ERR_TIMEOUT;
     }
 
+    power_manager_record_activity("hid_key_enqueue");
     return ESP_OK;
 }
 
@@ -397,13 +238,43 @@ static void ble_hid_dispatch_voice_recording_command(const char *line)
 
 static bool ble_hid_dispatch_usb_command_line(const char *line)
 {
+    power_manager_record_activity("usb_control_line");
+
+    if (power_manager_consume_usb_command(line)) {
+        return true;
+    }
+
     if (strcmp(line, "~OTA:GATT") == 0 || strcmp(line, "OTA:GATT") == 0) {
         ble_firmware_ota_log_gatt_state();
         return true;
     }
 
-    if (firmware_ota_consume_usb_command(line)) {
-        return true;
+    if (strncmp(line, "~OTA:", strlen("~OTA:")) == 0) {
+        power_manager_set_blocker(
+            POWER_MANAGER_BLOCKER_FLASH_WRITE |
+            POWER_MANAGER_BLOCKER_USB_COMMAND,
+            true);
+        bool consumed = firmware_ota_consume_usb_command(line);
+        power_manager_set_blocker(
+            POWER_MANAGER_BLOCKER_FLASH_WRITE |
+            POWER_MANAGER_BLOCKER_USB_COMMAND,
+            false);
+        return consumed;
+    }
+
+    if (strncmp(line, "~DIAGLOG:", strlen("~DIAGLOG:")) == 0) {
+        power_manager_set_blocker(
+            POWER_MANAGER_BLOCKER_DIAG_EXPORT |
+            POWER_MANAGER_BLOCKER_FLASH_WRITE |
+            POWER_MANAGER_BLOCKER_USB_COMMAND,
+            true);
+        bool consumed = diag_log_consume_usb_command(line);
+        power_manager_set_blocker(
+            POWER_MANAGER_BLOCKER_DIAG_EXPORT |
+            POWER_MANAGER_BLOCKER_FLASH_WRITE |
+            POWER_MANAGER_BLOCKER_USB_COMMAND,
+            false);
+        return consumed;
     }
 
     if (diag_log_consume_usb_command(line)) {
@@ -411,7 +282,9 @@ static bool ble_hid_dispatch_usb_command_line(const char *line)
     }
 
     if (strncmp(line, "~VREC:", strlen("~VREC:")) == 0) {
+        power_manager_set_blocker(POWER_MANAGER_BLOCKER_USB_COMMAND, true);
         ble_hid_dispatch_voice_recording_command(line);
+        power_manager_set_blocker(POWER_MANAGER_BLOCKER_USB_COMMAND, false);
         return true;
     }
 
@@ -487,6 +360,7 @@ static void ble_hid_keyboard_task(void *parameter)
                     input_char & 0xFF,
                     (input_char >= 32 && input_char <= 126) ? input_char : '.');
 
+                power_manager_record_activity("usb_ascii");
                 ret = ble_hid_dispatch_ascii((char)input_char, "SCRIPT");
                 if (ret != ESP_OK) {
                     ESP_LOGW(TAG, "SCRIPT dispatch failed: %s", esp_err_to_name(ret));
@@ -537,6 +411,7 @@ static void ble_hid_event_callback(void *handler_args, esp_event_base_t base, in
     switch (event) {
     case ESP_HIDD_START_EVENT:
         ESP_LOGI(TAG, "START");
+        power_manager_record_activity("ble_hid_start");
         ble_audio_stream_log_gatt_state();
         ble_hid_gap_mark_stack_ready();
         ble_hid_update_battery_level("hid_start");
@@ -546,6 +421,8 @@ static void ble_hid_event_callback(void *handler_args, esp_event_base_t base, in
     case ESP_HIDD_CONNECT_EVENT:
         ESP_LOGI(TAG, "CONNECT");
         s_ble_connected = true;
+        power_manager_set_ble_connected(true);
+        power_manager_record_activity("ble_connect");
         s_connect_timestamp_ms = (uint32_t)(esp_timer_get_time() / 1000LL);
         ble_hid_update_battery_level("connect");
         diag_log(DIAG_SRC_BLE_HID, DIAG_BLE_CONNECT, DIAG_SEV_INFO,
@@ -603,6 +480,8 @@ static void ble_hid_event_callback(void *handler_args, esp_event_base_t base, in
             diag_log(DIAG_SRC_BLE_HID, DIAG_BLE_DISCONNECT, DIAG_SEV_WARN,
                      param->disconnect.reason, s_disconnect_count,
                      conn_duration, heap_kb);
+            power_manager_set_ble_connected(false);
+            power_manager_record_activity("ble_disconnect");
             if (s_ascii_queue != NULL) {
                 xQueueReset(s_ascii_queue);
             }

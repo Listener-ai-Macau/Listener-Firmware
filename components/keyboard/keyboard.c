@@ -12,6 +12,7 @@
 #include "ble_hid.h"
 #include "board_pins.h"
 #include "hid_keyboard.h"
+#include "power_manager.h"
 #include "voice_recording_control.h"
 
 #define KEYBOARD_WASD_POLL_MS 20
@@ -87,6 +88,7 @@ static void keyboard_wasd_handle_sample(keyboard_wasd_key_t *key, bool raw_high)
 
     key->stable_level_high = raw_high;
     bool pressed = !raw_high;
+    power_manager_record_activity(key->label);
     ESP_LOGI(
         TAG,
         "WASD key stable transition: source=%s raw_high=%d pressed=%d",

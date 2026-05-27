@@ -1,0 +1,35 @@
+menu "Listener Power Manager"
+    config POWER_MANAGER_ENABLE
+        bool "Enable firmware low-power manager and overnight guard"
+        default y
+
+    config POWER_MANAGER_CONNECTED_IDLE_MS
+        int "BLE connected idle threshold in milliseconds"
+        default 30000
+        depends on POWER_MANAGER_ENABLE
+
+    config POWER_MANAGER_AUDIO_IDLE_MS
+        int "Audio idle power-save threshold in milliseconds"
+        default 5000
+        depends on POWER_MANAGER_ENABLE
+
+    config POWER_MANAGER_DISCONNECTED_IDLE_MS
+        int "BLE disconnected idle threshold in milliseconds"
+        default 30000
+        depends on POWER_MANAGER_ENABLE
+
+    config POWER_MANAGER_OVERNIGHT_SLEEP_MS
+        int "Overnight deep-sleep threshold in milliseconds"
+        default 900000
+        depends on POWER_MANAGER_ENABLE
+
+    config POWER_MANAGER_EVALUATE_INTERVAL_MS
+        int "Power manager evaluation interval in milliseconds"
+        default 2000
+        depends on POWER_MANAGER_ENABLE
+
+    config POWER_MANAGER_LOW_POWER_HEALTH_INTERVAL_S
+        int "System-health interval while idle in seconds"
+        default 600
+        depends on POWER_MANAGER_ENABLE
+endmenu

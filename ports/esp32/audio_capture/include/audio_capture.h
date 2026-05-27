@@ -12,6 +12,7 @@ extern "C" {
 #endif
 
 esp_err_t audio_capture_start(void);
+esp_err_t audio_capture_set_idle_power_save(bool enabled);
 esp_err_t audio_capture_session_begin(void);
 esp_err_t audio_capture_session_stop(void);
 esp_err_t audio_capture_session_cancel(void);

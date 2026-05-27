@@ -124,6 +124,8 @@ static esp_codec_dev_handle_t s_codec_handle;
 #endif
 
 static TaskHandle_t s_capture_task_handle;
+static volatile bool s_idle_power_save_requested;
+static bool s_i2s_low_power_disabled;
 static uint32_t s_frame_count;
 static uint32_t s_frame_captured_count;
 #ifdef CONFIG_AUDIO_CAPTURE_MIC_ES8311
@@ -184,10 +186,63 @@ static uint16_t audio_capture_session_error_from_stream_result(esp_err_t result)
     return LISTENER_AUDIO_SESSION_ERROR_TRANSPORT;
 }
 
+static esp_err_t audio_capture_apply_idle_power_save(bool enabled)
+{
+    if (!s_started || s_i2s_rx_handle == NULL) {
+        return ESP_ERR_INVALID_STATE;
+    }
+
+    if (enabled == s_i2s_low_power_disabled) {
+        return ESP_OK;
+    }
+
+    esp_err_t ret = ESP_OK;
+    if (enabled) {
+#ifdef CONFIG_AUDIO_CAPTURE_MIC_ES8311
+        if (s_codec_handle != NULL) {
+            int mute_ret = esp_codec_dev_set_in_mute(s_codec_handle, true);
+            if (mute_ret != ESP_CODEC_DEV_OK) {
+                ESP_LOGW(TAG, "codec input mute failed before idle power save: %d", mute_ret);
+            }
+        }
+#endif
+        ret = i2s_channel_disable(s_i2s_rx_handle);
+        if (ret == ESP_OK) {
+            s_i2s_low_power_disabled = true;
+        }
+    } else {
+        ret = i2s_channel_enable(s_i2s_rx_handle);
+        if (ret == ESP_OK) {
+            s_i2s_low_power_disabled = false;
+#ifdef CONFIG_AUDIO_CAPTURE_MIC_ES8311
+            if (s_codec_handle != NULL) {
+                int mute_ret = esp_codec_dev_set_in_mute(s_codec_handle, false);
+                if (mute_ret != ESP_CODEC_DEV_OK) {
+                    ESP_LOGW(TAG, "codec input unmute failed after idle power save: %d", mute_ret);
+                }
+            }
+#endif
+        }
+    }
+
+    ESP_LOGI(
+        TAG,
+        "audio idle power save %s: %s",
+        enabled ? "enabled" : "disabled",
+        esp_err_to_name(ret));
+    diag_log(DIAG_SRC_AUDIO, DIAG_AUDIO_IDLE_POWER,
+             ret == ESP_OK ? DIAG_SEV_INFO : DIAG_SEV_WARN,
+             enabled ? 1 : 0, ret, 0, 0);
+    return ret;
+}
+
 /* ---------- Session API (shared) ---------- */
 
 esp_err_t audio_capture_session_begin(void)
 {
+    s_idle_power_save_requested = false;
+    (void)audio_capture_apply_idle_power_save(false);
+
     if (s_state_mutex == NULL || xSemaphoreTake(s_state_mutex, portMAX_DELAY) != pdTRUE) {
         return ESP_ERR_INVALID_STATE;
     }
@@ -294,6 +349,18 @@ bool audio_capture_session_is_active(void)
     bool active = s_export_state.requested || s_export_state.active;
     xSemaphoreGive(s_state_mutex);
     return active;
+}
+
+esp_err_t audio_capture_set_idle_power_save(bool enabled)
+{
+    s_idle_power_save_requested = enabled;
+    if (!enabled) {
+        return audio_capture_apply_idle_power_save(false);
+    }
+    if (audio_capture_session_is_active()) {
+        return ESP_ERR_INVALID_STATE;
+    }
+    return ESP_OK;
 }
 
 /* ---------- Shared frame processing ---------- */
@@ -601,6 +668,13 @@ static void audio_capture_task(void *arg)
     int16_t frame_buffer[AUDIO_CAPTURE_FRAME_SAMPLES];
 
     while (1) {
+        if (s_idle_power_save_requested && !audio_capture_session_is_active()) {
+            (void)audio_capture_apply_idle_power_save(true);
+            vTaskDelay(pdMS_TO_TICKS(250));
+            continue;
+        }
+        (void)audio_capture_apply_idle_power_save(false);
+
         int ret = esp_codec_dev_read(s_codec_handle, frame_buffer, sizeof(frame_buffer));
         if (ret == ESP_CODEC_DEV_OK) {
             audio_capture_process_frame(frame_buffer);
@@ -793,6 +867,13 @@ static void audio_capture_task(void *arg)
     int16_t frame_buffer[AUDIO_CAPTURE_FRAME_SAMPLES];
 
     while (1) {
+        if (s_idle_power_save_requested && !audio_capture_session_is_active()) {
+            (void)audio_capture_apply_idle_power_save(true);
+            vTaskDelay(pdMS_TO_TICKS(250));
+            continue;
+        }
+        (void)audio_capture_apply_idle_power_save(false);
+
         size_t bytes_read = 0;
         esp_err_t ret = i2s_channel_read(
             s_i2s_rx_handle, raw_buffer, sizeof(raw_buffer),
