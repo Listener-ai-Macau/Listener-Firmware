@@ -82,5 +82,12 @@ $watchdog = Read-RepoFile "ports/esp32/watchdog_platform/watchdog_platform_esp32
 Assert-Contains $watchdog 'esp_task_wdt_add\(NULL\)' 'current task subscription API'
 Assert-Contains $watchdog 'esp_task_wdt_reset\(\)' 'current task feed API'
 Assert-Contains $watchdog 'WATCHDOG_PLATFORM_FEED_INTERVAL_MS 1000U' 'bounded long-wait feed interval'
+Assert-Contains $watchdog 'WDT DEADLOCK test command accepted' 'watchdog deadlock validation command'
+
+$watchdogHeader = Read-RepoFile "ports/esp32/watchdog_platform/include/watchdog_platform.h"
+Assert-Contains $watchdogHeader 'watchdog_platform_consume_usb_command' 'watchdog USB command API'
+
+$bleHid = Read-RepoFile "ports/esp32/ble_hid/ble_hid.c"
+Assert-Contains $bleHid 'watchdog_platform_consume_usb_command\(line\)' 'watchdog USB command dispatch'
 
 Write-Host "PASS: watchdog boot-safety static checks passed."

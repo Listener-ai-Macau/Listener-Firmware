@@ -250,6 +250,10 @@ static bool ble_hid_dispatch_usb_command_line(const char *line)
         return true;
     }
 
+    if (watchdog_platform_consume_usb_command(line)) {
+        return true;
+    }
+
     if (strcmp(line, "~OTA:GATT") == 0 || strcmp(line, "OTA:GATT") == 0) {
         ble_firmware_ota_log_gatt_state();
         return true;

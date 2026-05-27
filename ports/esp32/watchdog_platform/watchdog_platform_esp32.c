@@ -1,6 +1,8 @@
 #include "watchdog_platform.h"
 
 #include <inttypes.h>
+#include <stdbool.h>
+#include <string.h>
 
 #include "esp_log.h"
 #include "esp_task_wdt.h"
@@ -27,6 +29,7 @@
 #endif
 
 #define WATCHDOG_PLATFORM_FEED_INTERVAL_MS 1000U
+#define WATCHDOG_PLATFORM_USB_PREFIX "WDT:"
 
 static const char *TAG = "watchdog";
 
@@ -116,4 +119,45 @@ void watchdog_platform_log_config(void)
         (unsigned)CONFIG_ESP_TASK_WDT_TIMEOUT_S,
         (unsigned)CONFIG_ESP_INT_WDT,
         (unsigned)CONFIG_ESP_INT_WDT_TIMEOUT_MS);
+}
+
+static void watchdog_platform_deadlock_for_test(void)
+{
+    volatile uint32_t spin_count = 0;
+
+    ESP_LOGE(TAG, "WDT DEADLOCK test command accepted; spinning without feed");
+    vTaskDelay(pdMS_TO_TICKS(100));
+
+    while (1) {
+        spin_count++;
+    }
+}
+
+bool watchdog_platform_consume_usb_command(const char *line)
+{
+    if (line == NULL) {
+        return false;
+    }
+    if (*line == '~') {
+        line++;
+    }
+
+    const size_t prefix_len = strlen(WATCHDOG_PLATFORM_USB_PREFIX);
+    if (strncmp(line, WATCHDOG_PLATFORM_USB_PREFIX, prefix_len) != 0) {
+        return false;
+    }
+
+    const char *command = line + prefix_len;
+    if (strcmp(command, "STATUS") == 0) {
+        watchdog_platform_log_config();
+        return true;
+    }
+
+    if (strcmp(command, "DEADLOCK") == 0) {
+        watchdog_platform_deadlock_for_test();
+        return true;
+    }
+
+    ESP_LOGW(TAG, "WDT unknown command: %s", command);
+    return true;
 }
