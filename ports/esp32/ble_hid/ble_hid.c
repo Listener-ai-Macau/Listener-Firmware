@@ -18,6 +18,7 @@
 #include "nvs_flash.h"
 
 #include "host/ble_hs.h"
+#include "host/ble_gatt.h"
 #include "nimble/nimble_port.h"
 #include "nimble/nimble_port_freertos.h"
 #include "host/ble_store.h"
@@ -88,6 +89,8 @@ static bool s_ble_connected;
 static uint32_t s_disconnect_count;
 static uint32_t s_connect_timestamp_ms;
 static QueueHandle_t s_ascii_queue;
+
+static void ble_hid_log_dis_gatt_state(void);
 
 static void ble_hid_update_battery_level(const char *reason)
 {
@@ -246,6 +249,11 @@ static bool ble_hid_dispatch_usb_command_line(const char *line)
 
     if (strcmp(line, "~OTA:GATT") == 0 || strcmp(line, "OTA:GATT") == 0) {
         ble_firmware_ota_log_gatt_state();
+        return true;
+    }
+
+    if (strcmp(line, "~DIS:GATT") == 0 || strcmp(line, "DIS:GATT") == 0) {
+        ble_hid_log_dis_gatt_state();
         return true;
     }
 
@@ -527,6 +535,82 @@ static void ble_hid_configure_dis_identity(void)
              listener_device_get_serial());
 }
 
+static void ble_hid_log_dis_gatt_state(void)
+{
+    const ble_uuid16_t dis_uuid = BLE_UUID16_INIT(BLE_SVC_DIS_UUID16);
+    const ble_uuid16_t model_uuid = BLE_UUID16_INIT(BLE_SVC_DIS_CHR_UUID16_MODEL_NUMBER);
+    const ble_uuid16_t serial_uuid = BLE_UUID16_INIT(BLE_SVC_DIS_CHR_UUID16_SERIAL_NUMBER);
+    const ble_uuid16_t firmware_uuid = BLE_UUID16_INIT(BLE_SVC_DIS_CHR_UUID16_FIRMWARE_REVISION);
+    const ble_uuid16_t hardware_uuid = BLE_UUID16_INIT(BLE_SVC_DIS_CHR_UUID16_HARDWARE_REVISION);
+    const ble_uuid16_t software_uuid = BLE_UUID16_INIT(BLE_SVC_DIS_CHR_UUID16_SOFTWARE_REVISION);
+    const ble_uuid16_t manufacturer_uuid = BLE_UUID16_INIT(BLE_SVC_DIS_CHR_UUID16_MANUFACTURER_NAME);
+    const ble_uuid16_t pnp_uuid = BLE_UUID16_INIT(BLE_SVC_DIS_CHR_UUID16_PNP_ID);
+    uint16_t service_handle = 0;
+    uint16_t model_def_handle = 0;
+    uint16_t model_val_handle = 0;
+    uint16_t serial_def_handle = 0;
+    uint16_t serial_val_handle = 0;
+    uint16_t firmware_def_handle = 0;
+    uint16_t firmware_val_handle = 0;
+    uint16_t hardware_def_handle = 0;
+    uint16_t hardware_val_handle = 0;
+    uint16_t software_def_handle = 0;
+    uint16_t software_val_handle = 0;
+    uint16_t manufacturer_def_handle = 0;
+    uint16_t manufacturer_val_handle = 0;
+    uint16_t pnp_def_handle = 0;
+    uint16_t pnp_val_handle = 0;
+
+    int svc_rc = ble_gatts_find_svc(&dis_uuid.u, &service_handle);
+    int model_rc = ble_gatts_find_chr(
+        &dis_uuid.u, &model_uuid.u, &model_def_handle, &model_val_handle);
+    int serial_rc = ble_gatts_find_chr(
+        &dis_uuid.u, &serial_uuid.u, &serial_def_handle, &serial_val_handle);
+    int firmware_rc = ble_gatts_find_chr(
+        &dis_uuid.u, &firmware_uuid.u, &firmware_def_handle, &firmware_val_handle);
+    int hardware_rc = ble_gatts_find_chr(
+        &dis_uuid.u, &hardware_uuid.u, &hardware_def_handle, &hardware_val_handle);
+    int software_rc = ble_gatts_find_chr(
+        &dis_uuid.u, &software_uuid.u, &software_def_handle, &software_val_handle);
+    int manufacturer_rc = ble_gatts_find_chr(
+        &dis_uuid.u, &manufacturer_uuid.u, &manufacturer_def_handle, &manufacturer_val_handle);
+    int pnp_rc = ble_gatts_find_chr(
+        &dis_uuid.u, &pnp_uuid.u, &pnp_def_handle, &pnp_val_handle);
+
+    ESP_LOGI(TAG,
+             "DIS GATT state: svc_rc=%d svc_handle=%u "
+             "model_rc=%d model_def=%u model_val=%u "
+             "serial_rc=%d serial_def=%u serial_val=%u "
+             "firmware_rc=%d firmware_def=%u firmware_val=%u "
+             "hardware_rc=%d hardware_def=%u hardware_val=%u "
+             "software_rc=%d software_def=%u software_val=%u "
+             "manufacturer_rc=%d manufacturer_def=%u manufacturer_val=%u "
+             "pnp_rc=%d pnp_def=%u pnp_val=%u",
+             svc_rc,
+             service_handle,
+             model_rc,
+             model_def_handle,
+             model_val_handle,
+             serial_rc,
+             serial_def_handle,
+             serial_val_handle,
+             firmware_rc,
+             firmware_def_handle,
+             firmware_val_handle,
+             hardware_rc,
+             hardware_def_handle,
+             hardware_val_handle,
+             software_rc,
+             software_def_handle,
+             software_val_handle,
+             manufacturer_rc,
+             manufacturer_def_handle,
+             manufacturer_val_handle,
+             pnp_rc,
+             pnp_def_handle,
+             pnp_val_handle);
+}
+
 esp_err_t ble_hid_init(void)
 {
     ESP_LOGI(TAG, "fw_version=%s protocol_version=%u build=%s serial=%s",
@@ -606,6 +690,7 @@ esp_err_t ble_hid_init(void)
     }
 
     ble_hid_configure_dis_identity();
+    ble_hid_log_dis_gatt_state();
     ble_audio_stream_log_gatt_state();
     ble_firmware_ota_log_gatt_state();
 

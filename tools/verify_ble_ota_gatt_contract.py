@@ -94,6 +94,84 @@ def check_integration(repo: Path) -> None:
         require(token in diag, f"diag_log_events.h is missing {token}")
 
 
+def check_dis_identity(repo: Path) -> None:
+    hid = read_text(repo / "ports/esp32/ble_hid/ble_hid.c")
+    gap = read_text(repo / "ports/esp32/ble_hid_gap/ble_hid_gap_esp32.c")
+    listener_device = read_text(repo / "protocols/listener_device/listener_device.c")
+    listener_header = read_text(repo / "protocols/listener_device/include/listener_device.h")
+    default_configs = [
+        repo / "sdkconfig.defaults",
+        repo / "sdkconfig.defaults.esp32s3",
+    ]
+
+    for path in default_configs:
+        config = read_text(path)
+        for token in (
+            "CONFIG_BT_NIMBLE_DIS_SERVICE=y",
+            "CONFIG_BT_NIMBLE_SVC_DIS_MANUFACTURER_NAME=y",
+            "CONFIG_BT_NIMBLE_SVC_DIS_SERIAL_NUMBER=y",
+            "CONFIG_BT_NIMBLE_SVC_DIS_HARDWARE_REVISION=y",
+            "CONFIG_BT_NIMBLE_SVC_DIS_FIRMWARE_REVISION=y",
+            "CONFIG_BT_NIMBLE_SVC_DIS_SOFTWARE_REVISION=y",
+            "CONFIG_BT_NIMBLE_SVC_DIS_PNP_ID=y",
+        ):
+            require(token in config, f"{path.name} is missing {token}")
+
+    require(
+        "ble_svc_dis_firmware_revision_set(listener_device_get_fw_version())" in hid,
+        "DIS firmware revision must be set from listener_device_get_fw_version()",
+    )
+    require(
+        "ble_svc_dis_hardware_revision_set(LISTENER_DEVICE_HW_REV)" in hid,
+        "DIS hardware revision must be set from LISTENER_DEVICE_HW_REV",
+    )
+    require(
+        "ble_svc_dis_software_revision_set(listener_device_get_protocol_version())" in hid,
+        "DIS software revision must be set from listener_device_get_protocol_version()",
+    )
+    require(
+        "esp_app_get_description()" in listener_device
+        and "return app_desc->version;" in listener_device,
+        "listener_device_get_fw_version() must return the ESP app description version",
+    )
+    require(
+        "firmware_ota_v1" in listener_header,
+        "Listener device capabilities must advertise firmware_ota_v1 for desktop preflight",
+    )
+    require(
+        'strcmp(line, "~DIS:GATT")' in hid and "ble_hid_log_dis_gatt_state()" in hid,
+        "serial ~DIS:GATT must log DIS service/characteristic handles for hardware validation",
+    )
+    require(
+        "BLE_SVC_DIS_CHR_UUID16_FIRMWARE_REVISION" in hid
+        and "ble_gatts_find_chr(" in hid,
+        "DIS GATT state logging must verify Firmware Revision 2A26 is registered",
+    )
+    for token in (
+        "BLE_SVC_DIS_CHR_UUID16_SERIAL_NUMBER",
+        "BLE_SVC_DIS_CHR_UUID16_MANUFACTURER_NAME",
+        "BLE_SVC_DIS_CHR_UUID16_PNP_ID",
+    ):
+        require(token in hid, f"DIS GATT state logging must include {token}")
+    require(
+        "ble_hid_gap_queue_service_changed(\"connect\")" in gap
+        and "ble_hid_gap_service_changed_pending()" in gap
+        and "nvs_get_str" in gap
+        and "nvs_set_str" in gap,
+        "BLE connect path must version-gate Service Changed so Windows refreshes OTA/DIS GATT once after firmware updates",
+    )
+    require(
+        "BLE_SVC_GATT_CHR_SERVICE_CHANGED_UUID16" in gap
+        and "event->subscribe.reason == BLE_GAP_SUBSCRIBE_REASON_WRITE" in gap
+        and "ble_hid_gap_indicate_service_changed(event->subscribe.conn_handle, \"central subscribe\")" in gap
+        and "ble_hid_gap_indicate_service_changed(event->enc_change.conn_handle, \"encryption change\")" in gap
+        and "ble_gatts_indicate_custom(conn_handle, service_changed_val_handle, om)" in gap
+        and "service changed indication skipped" in gap
+        and "service changed indication tx complete" in gap,
+        "BLE subscribe path must send or skip Service Changed according to the version-gated pending state",
+    )
+
+
 def candidate_desktop_contracts(repo: Path) -> list[Path]:
     listener_root = repo.parent
     return [
@@ -126,6 +204,7 @@ def main() -> int:
         check_header(repo)
         check_bridge(repo)
         check_integration(repo)
+        check_dis_identity(repo)
 
         desktop_checked = None
         if args.desktop_contract:
