@@ -24,7 +24,9 @@
 #include "host/util/util.h"
 #include "nimble/nimble_port.h"
 #include "host/ble_gap.h"
+#include "host/ble_gatt.h"
 #include "host/ble_hs.h"
+#include "host/ble_hs_mbuf.h"
 #include "host/ble_hs_adv.h"
 #include "services/gatt/ble_svc_gatt.h"
 #include "host/ble_store.h"
@@ -73,6 +75,7 @@ static bool s_directed_adv_pending = true;
 static bool s_last_adv_was_directed = false;
 static bool s_ble_gap_connected = false;
 static uint16_t s_ble_gap_conn_handle = BLE_HS_CONN_HANDLE_NONE;
+static uint16_t s_service_changed_val_handle = BLE_HS_CONN_HANDLE_NONE;
 
 /*
  * Legacy advertising has a hard 31-byte payload limit. With flags,
@@ -80,6 +83,79 @@ static uint16_t s_ble_gap_conn_handle = BLE_HS_CONN_HANDLE_NONE;
  * exactly under that limit; longer names stay in scan response data.
  */
 #define BLE_HID_ADV_NAME_MAX_LEN 17
+
+static uint16_t ble_hid_gap_get_service_changed_val_handle(void)
+{
+    if (s_service_changed_val_handle != BLE_HS_CONN_HANDLE_NONE) {
+        return s_service_changed_val_handle;
+    }
+
+    const ble_uuid16_t gatt_uuid = BLE_UUID16_INIT(BLE_GATT_SVC_UUID16);
+    const ble_uuid16_t service_changed_uuid =
+        BLE_UUID16_INIT(BLE_SVC_GATT_CHR_SERVICE_CHANGED_UUID16);
+    uint16_t def_handle = 0;
+    uint16_t val_handle = 0;
+    int rc = ble_gatts_find_chr(
+        &gatt_uuid.u, &service_changed_uuid.u, &def_handle, &val_handle);
+    if (rc != 0) {
+        ESP_LOGW(TAG, "service changed characteristic lookup failed: rc=%d", rc);
+        return BLE_HS_CONN_HANDLE_NONE;
+    }
+
+    s_service_changed_val_handle = val_handle;
+    ESP_LOGI(TAG,
+             "service changed characteristic handle: def=%u val=%u",
+             def_handle,
+             val_handle);
+    return s_service_changed_val_handle;
+}
+
+static void ble_hid_gap_queue_service_changed(const char *reason)
+{
+    uint16_t service_changed_val_handle = ble_hid_gap_get_service_changed_val_handle();
+    if (service_changed_val_handle == BLE_HS_CONN_HANDLE_NONE) {
+        ESP_LOGW(TAG, "service changed not queued for %s: characteristic unavailable", reason);
+        return;
+    }
+
+    ble_svc_gatt_changed(0x0001, 0xffff);
+    ESP_LOGI(TAG,
+             "service changed indication queued for %s: attr_handle=%u range=0x0001-0xffff",
+             reason,
+             service_changed_val_handle);
+}
+
+static void ble_hid_gap_indicate_service_changed(uint16_t conn_handle, const char *reason)
+{
+    uint16_t service_changed_val_handle = ble_hid_gap_get_service_changed_val_handle();
+    if (service_changed_val_handle == BLE_HS_CONN_HANDLE_NONE) {
+        ESP_LOGW(TAG, "service changed indication not sent for %s: characteristic unavailable", reason);
+        return;
+    }
+
+    const uint8_t payload[] = {0x01, 0x00, 0xff, 0xff};
+    struct os_mbuf *om = ble_hs_mbuf_from_flat(payload, sizeof(payload));
+    if (om == NULL) {
+        ESP_LOGW(TAG, "service changed indication not sent for %s: no mbuf", reason);
+        return;
+    }
+
+    int rc = ble_gatts_indicate_custom(conn_handle, service_changed_val_handle, om);
+    if (rc == 0) {
+        ESP_LOGI(TAG,
+                 "service changed indication sent for %s: conn_handle=%u attr_handle=%u range=0x0001-0xffff",
+                 reason,
+                 conn_handle,
+                 service_changed_val_handle);
+    } else {
+        ESP_LOGW(TAG,
+                 "service changed indication send deferred for %s: conn_handle=%u attr_handle=%u rc=%d",
+                 reason,
+                 conn_handle,
+                 service_changed_val_handle,
+                 rc);
+    }
+}
 
 esp_err_t esp_hid_ble_gap_adv_init(uint16_t appearance, const char *device_name)
 {
@@ -160,6 +236,7 @@ nimble_hid_gap_event(struct ble_gap_event *event, void *arg)
         s_ble_gap_conn_handle = event->connect.conn_handle;
         ble_audio_stream_on_gap_connect(event->connect.conn_handle);
         s_last_adv_was_directed = false;
+        ble_hid_gap_queue_service_changed("connect");
 
         rc = ble_gap_conn_find(event->connect.conn_handle, &desc);
         if (rc == 0) {
@@ -268,6 +345,11 @@ nimble_hid_gap_event(struct ble_gap_event *event, void *arg)
             event->subscribe.attr_handle,
             event->subscribe.cur_notify,
             event->subscribe.cur_indicate);
+        if (event->subscribe.reason == BLE_GAP_SUBSCRIBE_REASON_WRITE &&
+            event->subscribe.attr_handle == ble_hid_gap_get_service_changed_val_handle() &&
+            event->subscribe.cur_indicate != 0) {
+            ble_hid_gap_indicate_service_changed(event->subscribe.conn_handle, "central subscribe");
+        }
         if (event->subscribe.attr_handle == ble_audio_stream_get_notify_attr_handle() &&
             event->subscribe.cur_notify != 0) {
             ble_hid_gap_log_conn_desc("audio notify subscribed", event->subscribe.conn_handle);
@@ -294,8 +376,7 @@ nimble_hid_gap_event(struct ble_gap_event *event, void *arg)
                  event->enc_change.conn_handle,
                  0);
         if (event->enc_change.status == 0) {
-            ble_svc_gatt_changed(0x0001, 0xffff);
-            ESP_LOGI(TAG, "service changed indication queued for refreshed GATT discovery");
+            ble_hid_gap_indicate_service_changed(event->enc_change.conn_handle, "encryption change");
             rc = ble_gap_conn_find(event->enc_change.conn_handle, &desc);
             if (rc == 0) {
                 ESP_LOGI(
@@ -321,6 +402,14 @@ nimble_hid_gap_event(struct ble_gap_event *event, void *arg)
                 event->notify_tx.attr_handle,
                 event->notify_tx.status,
                 event->notify_tx.indication);
+        if (event->notify_tx.indication != 0 &&
+            event->notify_tx.attr_handle == ble_hid_gap_get_service_changed_val_handle()) {
+            ESP_LOGI(TAG,
+                     "service changed indication tx complete: conn_handle=%u attr_handle=%u status=%d",
+                     event->notify_tx.conn_handle,
+                     event->notify_tx.attr_handle,
+                     event->notify_tx.status);
+        }
         ble_audio_stream_on_gap_notify_tx(
             event->notify_tx.conn_handle,
             event->notify_tx.attr_handle,
