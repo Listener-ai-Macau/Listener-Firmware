@@ -50,6 +50,19 @@ Key serial evidence:
 
 No `disconnect; reason=546` occurred between OTA begin and OTA finish. The Windows idle reconnect cycle still appears after reboot; that is outside the OTA transfer window and should be treated as a separate idle BLE behavior if product requirements require eliminating it globally.
 
+## Post-Merge Integration
+
+After rebasing the step onto current `origin/master`, the merge pulled in accepted low-power wake policy and battery monitor changes. The conflict resolution preserved those master changes and restored the OTA validation `~DIS:GATT` serial diagnostic used to log DIS service/characteristic handles.
+
+Post-merge validation on 2026-05-27:
+
+- `python .\tools\verify_ble_ota_gatt_contract.py`: PASS.
+- `python -m compileall -q tools`: PASS.
+- `pwsh -NoProfile -File .\tools\ai\repo_features.ps1 -Check`: PASS.
+- `pwsh -NoProfile -File .\tools\verify_power_manager_static.ps1`: PASS.
+- `pwsh -NoProfile -File .\tools\build.ps1 -Target esp32s3`: PASS.
+- `git diff --check`: PASS, with only LF/CRLF warnings for `ports/esp32/ble_hid/ble_hid.c`.
+
 ## Commands
 
 | Command | Result |
