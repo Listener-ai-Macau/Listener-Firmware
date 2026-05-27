@@ -12,7 +12,7 @@ from pathlib import Path
 SERVICE_UUID = "710af845-6d9f-6583-0c4d-9e5b3bc3092a"
 CONTROL_UUID = "710af845-6d9f-6583-0c4d-9e5b3bc3092b"
 DATA_UUID = "710af845-6d9f-6583-0c4d-9e5b3bc3092c"
-CHUNK_BYTES = 180
+CHUNK_BYTES = 244
 
 UUID_BYTES = {
     "BLE_FIRMWARE_OTA_SERVICE_UUID": "0x2a, 0x09, 0xc3, 0x3b, 0x5b, 0x9e, 0x4d, 0x0c, 0x83, 0x65, 0x9f, 0x6d, 0x45, 0xf8, 0x0a, 0x71",
@@ -186,7 +186,7 @@ def check_desktop_contract(path: Path) -> str:
         SERVICE_UUID: "serviceUuid",
         CONTROL_UUID: "controlUuid",
         DATA_UUID: "dataUuid",
-        str(CHUNK_BYTES): "chunkBytes",
+        str(CHUNK_BYTES): "defaultChunkBytes",
     }
     for value, field in expected_pairs.items():
         require(value in contract, f"desktop contract {path} is missing {field}={value}")
