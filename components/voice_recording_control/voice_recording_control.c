@@ -15,6 +15,7 @@
 #include "ble_hid_gap.h"
 #include "power_manager.h"
 #include "voice_key_input.h"
+#include "watchdog_platform.h"
 
 #define VOICE_RECORDING_CONTROL_PREFIX_CHAR '~'
 #define VOICE_RECORDING_CONTROL_COMMAND_BUFFER_BYTES 32
@@ -216,8 +217,10 @@ static void voice_recording_control_recovery(const char *source)
 static void voice_recording_control_task(void *parameter)
 {
     (void)parameter;
+    (void)watchdog_platform_subscribe_current_task("voice_recording_control_task");
 
     while (1) {
+        watchdog_platform_feed_current_task();
         if (voice_key_input_take_toggle_event()) {
             voice_recording_control_toggle(voice_key_input_get_active_source());
         }

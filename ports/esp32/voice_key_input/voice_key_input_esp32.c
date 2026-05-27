@@ -29,6 +29,7 @@
 #include "esp_log.h"
 
 #include "diag_log.h"
+#include "watchdog_platform.h"
 
 #if VOICE_KEY_INPUT_ENABLE_LEGACY_EXPANDER
 #include "audio_capture_platform.h"
@@ -379,8 +380,10 @@ static esp_err_t voice_key_input_direct_gpio_init(void)
 static void voice_key_input_poll_task(void *parameter)
 {
     (void)parameter;
+    (void)watchdog_platform_subscribe_current_task("voice_key_input_task");
 
     while (1) {
+        watchdog_platform_feed_current_task();
 #if VOICE_KEY_INPUT_ENABLE_LEGACY_EXPANDER
         if (s_io_expander != NULL) {
             uint32_t pin_levels = 0;

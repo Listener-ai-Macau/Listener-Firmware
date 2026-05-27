@@ -16,7 +16,6 @@
 #include "esp_check.h"
 #include "esp_heap_caps.h"
 #include "esp_log.h"
-#include "esp_rom_sys.h"
 #include "host/ble_gatt.h"
 #include "host/ble_hs.h"
 #include "host/ble_hs_mbuf.h"
@@ -25,6 +24,7 @@
 #include "diag_log.h"
 #include "listener_device.h"
 #include "listener_audio_proto.h"
+#include "watchdog_platform.h"
 
 #define BLE_AUDIO_STREAM_TASK_STACK_BYTES (5 * 1024)
 #define BLE_AUDIO_STREAM_PACKET_DEFAULT_BYTES 244
@@ -61,6 +61,7 @@
     ((BLE_AUDIO_STREAM_AUDIO_POOL_LENGTH * BLE_AUDIO_STREAM_AUDIO_POOL_PRESSURE_WARN_PERCENT + 99U) / 100U)
 #define BLE_AUDIO_STREAM_CONTROL_NOTIFY_REPETITIONS 3
 #define BLE_AUDIO_STREAM_CONTROL_NOTIFY_REPEAT_DELAY_MS 5
+#define BLE_AUDIO_STREAM_TASK_QUEUE_WAIT_MS 1000
 
 typedef enum {
     BLE_AUDIO_STREAM_JOB_TYPE_SESSION_START = 0,
@@ -629,21 +630,9 @@ static void ble_audio_stream_note_transport_progress(uint32_t session_id, uint16
     }
 }
 
-static TickType_t ble_audio_stream_delay_ticks(uint32_t delay_ms)
-{
-    return pdMS_TO_TICKS(delay_ms);
-}
-
 static void ble_audio_stream_delay_ms(uint32_t delay_ms)
 {
-    TickType_t ticks = ble_audio_stream_delay_ticks(delay_ms);
-    if (ticks > 0) {
-        vTaskDelay(ticks);
-        return;
-    }
-
-    esp_rom_delay_us(delay_ms * 1000U);
-    taskYIELD();
+    watchdog_platform_delay_ms(delay_ms);
 }
 
 static void ble_audio_stream_notify_success_delay(void)
@@ -1488,10 +1477,12 @@ static esp_err_t ble_audio_stream_send_session_error_internal(
 static void ble_audio_stream_task(void *parameter)
 {
     (void)parameter;
+    (void)watchdog_platform_subscribe_current_task("ble_audio_stream_task");
 
     ble_audio_stream_job_t job;
     while (1) {
-        if (xQueueReceive(s_export_queue, &job, portMAX_DELAY) != pdTRUE) {
+        watchdog_platform_feed_current_task();
+        if (xQueueReceive(s_export_queue, &job, pdMS_TO_TICKS(BLE_AUDIO_STREAM_TASK_QUEUE_WAIT_MS)) != pdTRUE) {
             continue;
         }
         switch (job.type) {
@@ -1556,6 +1547,7 @@ static void ble_audio_stream_task(void *parameter)
         }
 
         ble_audio_stream_free_job(&job);
+        watchdog_platform_feed_current_task();
     }
 }
 

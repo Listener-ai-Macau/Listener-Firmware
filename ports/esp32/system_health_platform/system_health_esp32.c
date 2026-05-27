@@ -13,6 +13,7 @@
 #include "audio_capture.h"
 #include "keyboard.h"
 #include "voice_recording_control.h"
+#include "watchdog_platform.h"
 
 static const char *TAG = "health";
 
@@ -31,6 +32,7 @@ static bool s_low_power_mode;
 static void system_health_task(void *parameter)
 {
     (void)parameter;
+    (void)watchdog_platform_subscribe_current_task("health_task");
 
     uint32_t last_disconnect_count = 0;
     uint32_t window_start_ms = 0;
@@ -39,7 +41,8 @@ static void system_health_task(void *parameter)
         uint32_t interval_s = s_low_power_mode
             ? (uint32_t)CONFIG_POWER_MANAGER_LOW_POWER_HEALTH_INTERVAL_S
             : HEALTH_INTERVAL_S;
-        (void)ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(interval_s * 1000U));
+        (void)watchdog_platform_task_notify_take(pdTRUE, interval_s * 1000U);
+        watchdog_platform_feed_current_task();
 
         uint32_t heap_free = esp_get_free_heap_size();
         uint32_t heap_min = esp_get_minimum_free_heap_size();

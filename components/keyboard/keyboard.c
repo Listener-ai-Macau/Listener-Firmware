@@ -14,6 +14,7 @@
 #include "hid_keyboard.h"
 #include "power_manager.h"
 #include "voice_recording_control.h"
+#include "watchdog_platform.h"
 
 #define KEYBOARD_WASD_POLL_MS 20
 #define KEYBOARD_WASD_DEBOUNCE_SAMPLES 3
@@ -114,8 +115,10 @@ static void keyboard_wasd_handle_sample(keyboard_wasd_key_t *key, bool raw_high)
 static void keyboard_wasd_task(void *parameter)
 {
     (void)parameter;
+    (void)watchdog_platform_subscribe_current_task("keyboard_wasd_task");
 
     while (1) {
+        watchdog_platform_feed_current_task();
         for (size_t index = 0; index < sizeof(s_wasd_keys) / sizeof(s_wasd_keys[0]); ++index) {
             int level = gpio_get_level(s_wasd_keys[index].gpio);
             keyboard_wasd_handle_sample(&s_wasd_keys[index], level != 0);
