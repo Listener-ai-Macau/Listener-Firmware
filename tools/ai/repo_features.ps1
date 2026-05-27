@@ -42,6 +42,7 @@ function New-FeatureSnapshot {
             "AI-readable diag_log JSON bundle tooling for deterministic event, argument, severity, boot-segment, and summary fields.",
             "Firmware OTA v1 using ESP-IDF otadata/ota_0/ota_1 slots, partition-derived flash offsets, BLE GATT control/data bridge, official rollback, pending verify, blockers, and diag_log OTA events.",
             "system_health heartbeat and resource checks for heap, task, BLE, and disconnect conditions.",
+            "power_manager low-power state machine for connected idle, disconnected idle, overnight sleep, explicit KEY4/GPIO21 wake policy, GPIO35 voice-key wake limitation diagnostics, and power blockers.",
             "POST and degraded boot reporting for NVS, BLE, audio, heap, and board assumptions."
         )
         key_paths = @(
@@ -49,6 +50,9 @@ function New-FeatureSnapshot {
             [ordered]@{ path = "components/keyboard/"; purpose = "Physical key scanning and keyboard events." },
             [ordered]@{ path = "components/hid_keyboard/"; purpose = "Cross-platform HID keyboard abstraction." },
             [ordered]@{ path = "components/diag_log/"; purpose = "Diagnostic event schema and ring-buffer API." },
+            [ordered]@{ path = "components/power_manager/"; purpose = "Low-power state machine, sleep blockers, overnight deep sleep, wake/status diagnostics." },
+            [ordered]@{ path = "components/battery_monitor/"; purpose = "Shared battery voltage and level reading for HID and power diagnostics." },
+            [ordered]@{ path = "docs/features/low_power_wake_policy.md"; purpose = "Firmware wake policy contract for V1 KEY4/GPIO21 deep-sleep wake and GPIO35 voice-key limitation." },
             [ordered]@{ path = "tools/decode_diag_log.py"; purpose = "Offline decoder for ~DIAGLOG JSONL into stable AI-readable JSON bundles." },
             [ordered]@{ path = "tools/collect_ai_diagnostics.ps1"; purpose = "Collect recent serial diag_log events or decode saved JSONL into raw and decoded artifacts under tests/artifacts." },
             [ordered]@{ path = "components/firmware_ota/"; purpose = "ESP-IDF OTA manager, rollback/pending-verify handling, blockers, and OTA serial diagnostics." },
@@ -65,6 +69,7 @@ function New-FeatureSnapshot {
             "Target board is ESP32-S3 with USB serial/JTAG and sufficient flash for app plus diag_log partition.",
             "Microphone path is SPH0645-style I2S digital audio at the product capture rate.",
             "Physical key GPIO mapping and voice key GPIO live in board pin configuration, not desktop code.",
+            "Overnight sleep wake uses KEY4/GPIO21 on V1; EC11 voice key GPIO35 is not RTC deep-sleep wake capable and must be reported in diagnostics.",
             "Real BLE, flash, serial, or audio capture validation requires a workflow hardware lock."
         )
         boundaries = @(
@@ -79,6 +84,7 @@ function New-FeatureSnapshot {
             "pwsh -NoProfile -File .\tools\flash.ps1 -Port <COMx>",
             "pwsh -NoProfile -File .\tools\monitor.ps1 -Port <COMx>",
             "pwsh -NoProfile -File .\tools\dump_diag_log.ps1 -Port <COMx>",
+            "pwsh -NoProfile -File .\tools\verify_power_manager_static.ps1",
             "pwsh -NoProfile -File .\tools\verify_diagnostic_log_coverage.ps1",
             "pwsh -NoProfile -File .\tools\collect_ai_diagnostics.ps1 -InputJsonl <diag_log.jsonl> -OutputDir .\tests\artifacts\ai_diagnostics",
             "pwsh -NoProfile -File .\tools\verify_ble_hid.ps1",

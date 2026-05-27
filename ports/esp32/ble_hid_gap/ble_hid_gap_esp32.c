@@ -72,6 +72,7 @@ static uint8_t s_own_addr_type = BLE_OWN_ADDR_PUBLIC;
 static bool s_directed_adv_pending = true;
 static bool s_last_adv_was_directed = false;
 static bool s_ble_gap_connected = false;
+static bool s_low_power_advertising = false;
 static uint16_t s_ble_gap_conn_handle = BLE_HS_CONN_HANDLE_NONE;
 
 /*
@@ -80,6 +81,49 @@ static uint16_t s_ble_gap_conn_handle = BLE_HS_CONN_HANDLE_NONE;
  * exactly under that limit; longer names stay in scan response data.
  */
 #define BLE_HID_ADV_NAME_MAX_LEN 17
+
+static esp_err_t ble_hid_gap_request_connection_params(
+    const char *label,
+    uint16_t itvl_min,
+    uint16_t itvl_max,
+    uint16_t latency,
+    uint16_t supervision_timeout,
+    uint32_t mode_code)
+{
+    if (!s_ble_gap_connected || s_ble_gap_conn_handle == BLE_HS_CONN_HANDLE_NONE) {
+        return ESP_ERR_INVALID_STATE;
+    }
+
+    struct ble_gap_upd_params params = {
+        .itvl_min = itvl_min,
+        .itvl_max = itvl_max,
+        .latency = latency,
+        .supervision_timeout = supervision_timeout,
+        .min_ce_len = 0,
+        .max_ce_len = 0,
+    };
+    int rc = ble_gap_update_params(s_ble_gap_conn_handle, &params);
+    if (rc == 0) {
+        ESP_LOGI(
+            TAG,
+            "%s connection parameter update requested: conn=%u itvl=%u-%u latency=%u timeout=%u",
+            label,
+            s_ble_gap_conn_handle,
+            itvl_min,
+            itvl_max,
+            latency,
+            supervision_timeout);
+        diag_log(DIAG_SRC_BLE_GAP, DIAG_GAP_CONN_PARAM_REQ, DIAG_SEV_INFO,
+                 mode_code, 0, s_ble_gap_conn_handle, latency);
+        return ESP_OK;
+    }
+
+    ESP_LOGW(TAG, "%s connection parameter update failed: conn=%u rc=%d",
+             label, s_ble_gap_conn_handle, rc);
+    diag_log(DIAG_SRC_BLE_GAP, DIAG_GAP_CONN_PARAM_REQ, DIAG_SEV_WARN,
+             mode_code, (uint32_t)rc, s_ble_gap_conn_handle, latency);
+    return ESP_FAIL;
+}
 
 esp_err_t esp_hid_ble_gap_adv_init(uint16_t appearance, const char *device_name)
 {
@@ -447,7 +491,7 @@ esp_err_t esp_hid_ble_gap_adv_start(void)
         ESP_LOGI(TAG, "NimBLE bonded peers=%d", bonded_peer_count);
         if (bonded_peer_count > 0) {
             direct_peer_addr = bonded_peers[0];
-            start_directed = s_directed_adv_pending;
+            start_directed = s_directed_adv_pending && !s_low_power_advertising;
         }
     } else {
         ESP_LOGW(TAG, "NimBLE bonded peer lookup failed: rc=%d", rc);
@@ -491,8 +535,8 @@ esp_err_t esp_hid_ble_gap_adv_start(void)
     memset(&adv_params, 0, sizeof adv_params);
     adv_params.conn_mode = BLE_GAP_CONN_MODE_UND;
     adv_params.disc_mode = BLE_GAP_DISC_MODE_GEN;
-    adv_params.itvl_min = BLE_GAP_ADV_ITVL_MS(30);/* Recommended interval 30ms to 50ms */
-    adv_params.itvl_max = BLE_GAP_ADV_ITVL_MS(50);
+    adv_params.itvl_min = BLE_GAP_ADV_ITVL_MS(s_low_power_advertising ? 1000 : 30);
+    adv_params.itvl_max = BLE_GAP_ADV_ITVL_MS(s_low_power_advertising ? 1200 : 50);
     rc = ble_gap_adv_start(s_own_addr_type, NULL, BLE_HS_FOREVER,
                            &adv_params, nimble_hid_gap_event, NULL);
     if (rc != 0) {
@@ -503,9 +547,14 @@ esp_err_t esp_hid_ble_gap_adv_start(void)
     }
 
     s_last_adv_was_directed = false;
-    ESP_LOGI(TAG, "NimBLE undirected advertising started");
+    ESP_LOGI(
+        TAG,
+        "NimBLE undirected advertising started: low_power=%u interval_ms=%u-%u",
+        s_low_power_advertising ? 1u : 0u,
+        s_low_power_advertising ? 1000u : 30u,
+        s_low_power_advertising ? 1200u : 50u);
     diag_log(DIAG_SRC_BLE_GAP, DIAG_GAP_ADV_START, DIAG_SEV_INFO,
-             1, 0, bonded_peer_count, 0);
+             1, s_low_power_advertising ? 2 : 0, bonded_peer_count, 0);
     return ESP_OK;
 }
 
@@ -646,4 +695,53 @@ esp_err_t ble_hid_gap_forget_bonds_and_repair(void)
 
     ESP_LOGW(TAG, "recovery: pairing reset complete, device is discoverable for first-time pairing");
     return first_error == 0 ? ESP_OK : ESP_FAIL;
+}
+
+bool ble_hid_gap_is_connected(void)
+{
+    return s_ble_gap_connected;
+}
+
+esp_err_t ble_hid_gap_set_low_power_advertising(bool enabled)
+{
+    if (s_low_power_advertising == enabled) {
+        return ESP_OK;
+    }
+
+    s_low_power_advertising = enabled;
+    ESP_LOGI(TAG, "low-power advertising=%u", enabled ? 1u : 0u);
+
+    if (!s_nimble_stack_ready || s_ble_gap_connected || !ble_gap_adv_active()) {
+        return ESP_OK;
+    }
+
+    int rc = ble_gap_adv_stop();
+    if (rc != 0) {
+        ESP_LOGW(TAG, "advertising restart for low-power mode failed to stop: rc=%d", rc);
+        return ESP_FAIL;
+    }
+
+    return ble_hid_gap_start_advertising();
+}
+
+esp_err_t ble_hid_gap_request_low_power_connection(void)
+{
+    return ble_hid_gap_request_connection_params(
+        "low-power idle",
+        36,
+        72,
+        4,
+        600,
+        2);
+}
+
+esp_err_t ble_hid_gap_request_active_connection(void)
+{
+    return ble_hid_gap_request_connection_params(
+        "active",
+        6,
+        12,
+        0,
+        800,
+        1);
 }
