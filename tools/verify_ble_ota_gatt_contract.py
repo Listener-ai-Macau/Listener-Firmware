@@ -155,8 +155,10 @@ def check_dis_identity(repo: Path) -> None:
         require(token in hid, f"DIS GATT state logging must include {token}")
     require(
         "ble_hid_gap_queue_service_changed(\"connect\")" in gap
-        and "service changed indication queued for %s" in gap,
-        "BLE connect path must queue Service Changed so Windows refreshes OTA/DIS GATT after firmware updates",
+        and "ble_hid_gap_service_changed_pending()" in gap
+        and "nvs_get_str" in gap
+        and "nvs_set_str" in gap,
+        "BLE connect path must version-gate Service Changed so Windows refreshes OTA/DIS GATT once after firmware updates",
     )
     require(
         "BLE_SVC_GATT_CHR_SERVICE_CHANGED_UUID16" in gap
@@ -164,8 +166,9 @@ def check_dis_identity(repo: Path) -> None:
         and "ble_hid_gap_indicate_service_changed(event->subscribe.conn_handle, \"central subscribe\")" in gap
         and "ble_hid_gap_indicate_service_changed(event->enc_change.conn_handle, \"encryption change\")" in gap
         and "ble_gatts_indicate_custom(conn_handle, service_changed_val_handle, om)" in gap
+        and "service changed indication skipped" in gap
         and "service changed indication tx complete" in gap,
-        "BLE subscribe path must send Service Changed after the central enables indications",
+        "BLE subscribe path must send or skip Service Changed according to the version-gated pending state",
     )
 
 

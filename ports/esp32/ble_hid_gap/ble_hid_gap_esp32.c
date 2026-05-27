@@ -17,9 +17,11 @@
 #include "ble_audio_stream.h"
 #include "ble_firmware_ota.h"
 #include "diag_log.h"
+#include "listener_device.h"
 
 #include "esp_bt.h"
 #include "esp_log.h"
+#include "nvs.h"
 #include "host/ble_hs.h"
 #include "host/util/util.h"
 #include "nimble/nimble_port.h"
@@ -76,6 +78,15 @@ static bool s_last_adv_was_directed = false;
 static bool s_ble_gap_connected = false;
 static uint16_t s_ble_gap_conn_handle = BLE_HS_CONN_HANDLE_NONE;
 static uint16_t s_service_changed_val_handle = BLE_HS_CONN_HANDLE_NONE;
+static bool s_service_changed_state_loaded = false;
+static bool s_service_changed_pending = false;
+static bool s_service_changed_queued_for_conn = false;
+static char s_service_changed_fw_version[32];
+
+#define BLE_HID_GAP_SERVICE_CHANGED_NVS_NAMESPACE "ble_gap"
+#define BLE_HID_GAP_SERVICE_CHANGED_FW_KEY "svcchg_fw"
+#define BLE_HID_GAP_SERVICE_CHANGED_START_HANDLE 0x0001
+#define BLE_HID_GAP_SERVICE_CHANGED_END_HANDLE 0xffff
 
 /*
  * Legacy advertising has a hard 31-byte payload limit. With flags,
@@ -110,23 +121,130 @@ static uint16_t ble_hid_gap_get_service_changed_val_handle(void)
     return s_service_changed_val_handle;
 }
 
+static const char *ble_hid_gap_current_fw_version(void)
+{
+    const char *version = listener_device_get_fw_version();
+    return version != NULL && version[0] != '\0' ? version : "unknown";
+}
+
+static bool ble_hid_gap_service_changed_pending(void)
+{
+    if (s_service_changed_state_loaded) {
+        return s_service_changed_pending;
+    }
+
+    const char *current_version = ble_hid_gap_current_fw_version();
+    snprintf(
+        s_service_changed_fw_version,
+        sizeof(s_service_changed_fw_version),
+        "%s",
+        current_version);
+
+    char stored_version[sizeof(s_service_changed_fw_version)] = {0};
+    size_t stored_len = sizeof(stored_version);
+    nvs_handle_t nvs = 0;
+    esp_err_t ret = nvs_open(
+        BLE_HID_GAP_SERVICE_CHANGED_NVS_NAMESPACE,
+        NVS_READONLY,
+        &nvs);
+    if (ret == ESP_OK) {
+        ret = nvs_get_str(nvs, BLE_HID_GAP_SERVICE_CHANGED_FW_KEY, stored_version, &stored_len);
+        nvs_close(nvs);
+    }
+
+    if (ret == ESP_OK) {
+        s_service_changed_pending = strcmp(stored_version, s_service_changed_fw_version) != 0;
+    } else if (ret == ESP_ERR_NVS_NOT_FOUND) {
+        s_service_changed_pending = true;
+    } else {
+        s_service_changed_pending = true;
+        ESP_LOGW(TAG, "service changed version state unavailable: %s", esp_err_to_name(ret));
+    }
+
+    s_service_changed_state_loaded = true;
+    ESP_LOGI(
+        TAG,
+        "service changed version state: current=%s stored=%s pending=%u",
+        current_version,
+        ret == ESP_OK ? stored_version : "none",
+        s_service_changed_pending ? 1U : 0U);
+    return s_service_changed_pending;
+}
+
+static void ble_hid_gap_mark_service_changed_confirmed(void)
+{
+    if (!s_service_changed_pending) {
+        return;
+    }
+
+    nvs_handle_t nvs = 0;
+    esp_err_t ret = nvs_open(
+        BLE_HID_GAP_SERVICE_CHANGED_NVS_NAMESPACE,
+        NVS_READWRITE,
+        &nvs);
+    if (ret == ESP_OK) {
+        ret = nvs_set_str(
+            nvs,
+            BLE_HID_GAP_SERVICE_CHANGED_FW_KEY,
+            s_service_changed_fw_version[0] != '\0'
+                ? s_service_changed_fw_version
+                : ble_hid_gap_current_fw_version());
+        if (ret == ESP_OK) {
+            ret = nvs_commit(nvs);
+        }
+        nvs_close(nvs);
+    }
+
+    if (ret == ESP_OK) {
+        s_service_changed_pending = false;
+        ESP_LOGI(
+            TAG,
+            "service changed confirmed for fw_version=%s; future reconnects skip GATT refresh",
+            s_service_changed_fw_version);
+    } else {
+        ESP_LOGW(TAG, "service changed confirmation persist failed: %s", esp_err_to_name(ret));
+    }
+}
+
 static void ble_hid_gap_queue_service_changed(const char *reason)
 {
+    if (!ble_hid_gap_service_changed_pending()) {
+        ESP_LOGI(TAG, "service changed skipped for %s: fw_version already confirmed", reason);
+        return;
+    }
+    if (s_service_changed_queued_for_conn) {
+        ESP_LOGI(TAG, "service changed already queued for this connection: reason=%s", reason);
+        return;
+    }
+
     uint16_t service_changed_val_handle = ble_hid_gap_get_service_changed_val_handle();
     if (service_changed_val_handle == BLE_HS_CONN_HANDLE_NONE) {
         ESP_LOGW(TAG, "service changed not queued for %s: characteristic unavailable", reason);
         return;
     }
 
-    ble_svc_gatt_changed(0x0001, 0xffff);
+    ble_svc_gatt_changed(
+        BLE_HID_GAP_SERVICE_CHANGED_START_HANDLE,
+        BLE_HID_GAP_SERVICE_CHANGED_END_HANDLE);
+    s_service_changed_queued_for_conn = true;
     ESP_LOGI(TAG,
-             "service changed indication queued for %s: attr_handle=%u range=0x0001-0xffff",
+             "service changed indication queued for %s: attr_handle=%u fw_version=%s range=0x0001-0xffff",
              reason,
-             service_changed_val_handle);
+             service_changed_val_handle,
+             s_service_changed_fw_version);
 }
 
 static void ble_hid_gap_indicate_service_changed(uint16_t conn_handle, const char *reason)
 {
+    if (!ble_hid_gap_service_changed_pending()) {
+        ESP_LOGI(TAG, "service changed indication skipped for %s: fw_version already confirmed", reason);
+        return;
+    }
+    if (s_service_changed_queued_for_conn) {
+        ESP_LOGI(TAG, "service changed indication skipped for %s: update already queued", reason);
+        return;
+    }
+
     uint16_t service_changed_val_handle = ble_hid_gap_get_service_changed_val_handle();
     if (service_changed_val_handle == BLE_HS_CONN_HANDLE_NONE) {
         ESP_LOGW(TAG, "service changed indication not sent for %s: characteristic unavailable", reason);
@@ -142,11 +260,13 @@ static void ble_hid_gap_indicate_service_changed(uint16_t conn_handle, const cha
 
     int rc = ble_gatts_indicate_custom(conn_handle, service_changed_val_handle, om);
     if (rc == 0) {
+        s_service_changed_queued_for_conn = true;
         ESP_LOGI(TAG,
-                 "service changed indication sent for %s: conn_handle=%u attr_handle=%u range=0x0001-0xffff",
+                 "service changed indication sent for %s: conn_handle=%u attr_handle=%u fw_version=%s range=0x0001-0xffff",
                  reason,
                  conn_handle,
-                 service_changed_val_handle);
+                 service_changed_val_handle,
+                 s_service_changed_fw_version);
     } else {
         ESP_LOGW(TAG,
                  "service changed indication send deferred for %s: conn_handle=%u attr_handle=%u rc=%d",
@@ -234,6 +354,7 @@ nimble_hid_gap_event(struct ble_gap_event *event, void *arg)
 
         s_ble_gap_connected = true;
         s_ble_gap_conn_handle = event->connect.conn_handle;
+        s_service_changed_queued_for_conn = false;
         ble_audio_stream_on_gap_connect(event->connect.conn_handle);
         s_last_adv_was_directed = false;
         ble_hid_gap_queue_service_changed("connect");
@@ -294,6 +415,7 @@ nimble_hid_gap_event(struct ble_gap_event *event, void *arg)
                  0, (uint32_t)event->disconnect.reason, event->disconnect.conn.conn_handle, 0);
         s_ble_gap_connected = false;
         s_ble_gap_conn_handle = BLE_HS_CONN_HANDLE_NONE;
+        s_service_changed_queued_for_conn = false;
         ble_audio_stream_on_gap_disconnect(event->disconnect.conn.conn_handle);
         ble_firmware_ota_on_gap_disconnect(event->disconnect.conn.conn_handle);
         s_directed_adv_pending = true;
@@ -409,6 +531,11 @@ nimble_hid_gap_event(struct ble_gap_event *event, void *arg)
                      event->notify_tx.conn_handle,
                      event->notify_tx.attr_handle,
                      event->notify_tx.status);
+            if (event->notify_tx.status == 0) {
+                ble_hid_gap_mark_service_changed_confirmed();
+            } else {
+                s_service_changed_queued_for_conn = false;
+            }
         }
         ble_audio_stream_on_gap_notify_tx(
             event->notify_tx.conn_handle,
