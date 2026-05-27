@@ -28,6 +28,7 @@
 #define DIAG_BOOT_RESET        2
 #define DIAG_BOOT_WATCHDOG     3
 #define DIAG_BOOT_EXCEPTION    4
+#define DIAG_BOOT_DEEP_SLEEP   5
 
 #define DIAG_COMP_NVS          1
 #define DIAG_COMP_SPIRAM       2
@@ -37,6 +38,7 @@
 #define DIAG_COMP_KEYBOARD     6
 #define DIAG_COMP_HEALTH       7
 #define DIAG_COMP_OTA          8
+#define DIAG_COMP_POWER_MANAGER 9
 
 /* Keyboard events (DIAG_SRC_KEYBOARD) */
 #define DIAG_KBD_KEY_PRESS     1   /* a1=key_ascii, a2=hid_result(0=ok), a3=ble_connected, a4=press_count */
@@ -59,7 +61,8 @@
 #define DIAG_GAP_ADV_STOP      5   /* a1=result(0=fail,1=success), a2=0, a3=0, a4=0 */
 #define DIAG_GAP_CTRL_INIT     6   /* a1=stage, a2=esp_err, a3=mode, a4=0 */
 #define DIAG_GAP_CONN_PARAM    7   /* a1=conn_interval, a2=conn_latency, a3=conn_timeout, a4=conn_handle */
-#define DIAG_GAP_SUBSCRIBE     8   /* a1=conn_handle, a2=attr_handle, a3=(reason<<16|prevn<<8|curn), a4=(previ<<8|curi) */
+#define DIAG_GAP_CONN_PARAM_REQ 8  /* a1=mode(1=active,2=low_power), a2=result, a3=conn_handle, a4=latency */
+#define DIAG_GAP_SUBSCRIBE     9   /* a1=conn_handle, a2=attr_handle, a3=(reason<<16|prevn<<8|curn), a4=(previ<<8|curi) */
 
 /* Audio capture events (DIAG_SRC_AUDIO) */
 #define DIAG_AUDIO_INIT_FAIL   1   /* a1=component(1=I2S,2=I2C,3=codec,4=mutex,5=task), a2=esp_err, a3=0, a4=0 */
@@ -68,6 +71,7 @@
 #define DIAG_AUDIO_UNDERRUN    4   /* a1=underrun_count, a2=buffer_level, a3=0, a4=0 */
 #define DIAG_AUDIO_DROP        5   /* a1=drop_count, a2=reason, a3=buffer_level, a4=session_ms */
 #define DIAG_AUDIO_I2S_FAIL    6   /* a1=drop_count, a2=esp_err, a3=0, a4=0 */
+#define DIAG_AUDIO_IDLE_POWER  7   /* a1=enabled, a2=esp_err, a3=0, a4=0 */
 
 /* BLE Audio Stream events (DIAG_SRC_BLE_AUDIO) */
 #define DIAG_BAUD_STATE_CHANGE 1   /* a1=old_state, a2=new_state, a3=reason, a4=session_id */
@@ -102,6 +106,7 @@
 #define DIAG_POWER_BATTERY_WARN   5 /* a1=battery_level, a2=battery_mv, a3=0, a4=0 */
 #define DIAG_POWER_BLOCKER_CHANGE 6 /* a1=old_blockers, a2=new_blockers, a3=changed_mask, a4=enabled */
 #define DIAG_POWER_STATUS         7 /* a1=state, a2=blockers, a3=idle_ms, a4=wake_gpio_mask_low */
+#define DIAG_POWER_WAKE_POLICY    8 /* a1=policy, a2=wake_gpio_mask_low, a3=voice_key_capable, a4=voice_key_gpio */
 
 /* Firmware OTA events (DIAG_SRC_OTA) */
 #define DIAG_OTA_STATE          1   /* a1=partition_subtype, a2=ota_state, a3=0, a4=0 */

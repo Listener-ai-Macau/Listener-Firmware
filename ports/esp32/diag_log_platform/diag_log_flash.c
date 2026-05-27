@@ -176,6 +176,7 @@ static const char *source_name(uint16_t src)
     case 0x09: return "health";
     case 0x0A: return "ble_audio";
     case 0x0B: return "ota";
+    case 0x0C: return "power";
     default:   return "unknown";
     }
 }

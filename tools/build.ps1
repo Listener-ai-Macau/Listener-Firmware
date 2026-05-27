@@ -21,6 +21,18 @@ function Get-ConfiguredTarget {
     return $line.Matches[0].Groups[1].Value
 }
 
+function Invoke-CheckedCommand {
+    param(
+        [string]$File,
+        [string[]]$Arguments
+    )
+
+    & $File @Arguments
+    if ($LASTEXITCODE -ne 0) {
+        throw "$File $($Arguments -join ' ') failed with exit code $LASTEXITCODE"
+    }
+}
+
 function Invoke-IdfBuild {
     param(
         [string]$BuildTarget
@@ -29,12 +41,12 @@ function Invoke-IdfBuild {
     $configuredTarget = Get-ConfiguredTarget
     if ($configuredTarget -ne $BuildTarget) {
         Write-Host "Configured target is '$configuredTarget'; switching to '$BuildTarget'."
-        idf.py set-target $BuildTarget
+        Invoke-CheckedCommand -File "idf.py" -Arguments @("set-target", $BuildTarget)
     } else {
         Write-Host "Configured target already '$BuildTarget'; skipping set-target."
     }
 
-    idf.py build
+    Invoke-CheckedCommand -File "idf.py" -Arguments @("build")
 }
 
 try {
@@ -48,4 +60,9 @@ try {
     Invoke-IdfBuild -BuildTarget $Target
 }
 
-powershell -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot "sync_clangd_db.ps1")
+Invoke-CheckedCommand -File "powershell" -Arguments @(
+    "-ExecutionPolicy",
+    "Bypass",
+    "-File",
+    (Join-Path $PSScriptRoot "sync_clangd_db.ps1")
+)

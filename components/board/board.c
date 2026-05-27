@@ -14,6 +14,8 @@ void board_print_help(void)
         "Temporary physical keys: KEY1/GPIO45=d, KEY2/GPIO48=w, KEY3/GPIO47=a, KEY4/GPIO21=s.\n"
         "KEY1-KEY4 send BLE HID d/w/a/s when a host is connected.\n"
         "Hold the hardware voice key for 5s or send ~VREC:RECOVERY to clear pairing/session state.\n"
+        "Power diagnostics: ~POWER:STATUS reports state/blockers/battery/wake policy, ~POWER:SLEEP requests manual sleep.\n"
+        "V1 deep sleep wakes by KEY4/GPIO21; EC11 voice key GPIO35 is not RTC deep-sleep wake capable.\n"
         "Use ~OTA:STATUS, ~OTA:BLOCKER, or ~OTA:ABORT for firmware OTA diagnostics.\n"
         "Use ~DIAGLOG:COUNT, ~DIAGLOG:LAST:N, ~DIAGLOG:DUMP, or ~DIAGLOG:CLEAR for diagnostics.\n"
         "Device status logs use ready, recording, transferring, error, and recovery.\n"

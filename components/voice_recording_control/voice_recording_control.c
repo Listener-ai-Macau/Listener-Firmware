@@ -13,6 +13,7 @@
 
 #include "audio_capture.h"
 #include "ble_hid_gap.h"
+#include "power_manager.h"
 #include "voice_key_input.h"
 
 #define VOICE_RECORDING_CONTROL_PREFIX_CHAR '~'
@@ -63,10 +64,23 @@ static void voice_recording_control_log_device_error(const char *state, const ch
     ESP_LOGW(TAG, "device_status state=%s detail=%s error=%s", state, detail != NULL ? detail : "none", esp_err_to_name(ret));
 }
 
+static void voice_recording_control_clear_power_blockers(void)
+{
+    power_manager_set_blocker(
+        POWER_MANAGER_BLOCKER_RECORDING | POWER_MANAGER_BLOCKER_BLE_AUDIO,
+        false);
+}
+
 static esp_err_t voice_recording_control_enter_recording(const char *source)
 {
+    power_manager_record_activity("voice_recording_start");
+    power_manager_set_blocker(
+        POWER_MANAGER_BLOCKER_RECORDING | POWER_MANAGER_BLOCKER_BLE_AUDIO,
+        true);
+
     esp_err_t ret = audio_capture_session_begin();
     if (ret != ESP_OK) {
+        voice_recording_control_clear_power_blockers();
         ESP_LOGW(TAG, "recording start rejected source=%s: %s", source, esp_err_to_name(ret));
         voice_recording_control_log_device_error("error", "recording_start_rejected", ret);
         diag_log(DIAG_SRC_VOICE_REC, DIAG_VREC_REJECTED, DIAG_SEV_WARN,
@@ -87,8 +101,13 @@ static esp_err_t voice_recording_control_enter_recording(const char *source)
 
 static esp_err_t voice_recording_control_exit_recording(const char *source)
 {
+    power_manager_record_activity("voice_recording_stop");
     esp_err_t ret = audio_capture_session_stop();
     if (ret != ESP_OK) {
+        if (!audio_capture_session_is_active()) {
+            s_state = VOICE_RECORDING_STATE_IDLE;
+            voice_recording_control_clear_power_blockers();
+        }
         ESP_LOGW(TAG, "recording stop rejected source=%s: %s", source, esp_err_to_name(ret));
         voice_recording_control_log_device_error("error", "recording_stop_rejected", ret);
         diag_log(DIAG_SRC_VOICE_REC, DIAG_VREC_REJECTED, DIAG_SEV_WARN,
@@ -122,8 +141,13 @@ static void voice_recording_control_toggle(const char *source)
 
 static void voice_recording_control_cancel(const char *source)
 {
+    power_manager_record_activity("voice_recording_cancel");
     esp_err_t ret = audio_capture_session_cancel();
     if (ret != ESP_OK) {
+        if (!audio_capture_session_is_active()) {
+            s_state = VOICE_RECORDING_STATE_IDLE;
+            voice_recording_control_clear_power_blockers();
+        }
         ESP_LOGW(TAG, "recording cancel rejected source=%s: %s", source, esp_err_to_name(ret));
         voice_recording_control_log_device_error("error", "recording_cancel_rejected", ret);
         diag_log(DIAG_SRC_VOICE_REC, DIAG_VREC_REJECTED, DIAG_SEV_WARN,
@@ -137,6 +161,7 @@ static void voice_recording_control_cancel(const char *source)
         s_cancel_pending = false;
         s_cancel_source = NULL;
         s_state = VOICE_RECORDING_STATE_IDLE;
+        voice_recording_control_clear_power_blockers();
         ESP_LOGI(TAG, "recording cancel source=%s", source);
         voice_recording_control_log_device_status("ready", "recording_canceled");
         diag_log(DIAG_SRC_VOICE_REC, DIAG_VREC_SESSION, DIAG_SEV_INFO,
@@ -149,6 +174,10 @@ static void voice_recording_control_cancel(const char *source)
 
 static void voice_recording_control_recovery(const char *source)
 {
+    power_manager_record_activity("voice_recording_recovery");
+    power_manager_set_blocker(
+        POWER_MANAGER_BLOCKER_PAIRING | POWER_MANAGER_BLOCKER_RECONNECT,
+        true);
     voice_recording_state_t previous_state = s_state;
     s_state = VOICE_RECORDING_STATE_RECOVERY;
     ESP_LOGW(TAG, "recovery requested source=%s", source);
@@ -170,10 +199,17 @@ static void voice_recording_control_recovery(const char *source)
     if (ret != ESP_OK) {
         voice_recording_control_log_device_error("error", "recovery_pairing_reset_failed", ret);
         s_state = previous_state == VOICE_RECORDING_STATE_RECORDING ? VOICE_RECORDING_STATE_RECORDING : VOICE_RECORDING_STATE_IDLE;
+        power_manager_set_blocker(
+            POWER_MANAGER_BLOCKER_PAIRING | POWER_MANAGER_BLOCKER_RECONNECT,
+            false);
         return;
     }
 
     s_state = VOICE_RECORDING_STATE_IDLE;
+    voice_recording_control_clear_power_blockers();
+    power_manager_set_blocker(
+        POWER_MANAGER_BLOCKER_PAIRING | POWER_MANAGER_BLOCKER_RECONNECT,
+        false);
     voice_recording_control_log_device_status("ready", "recovery_complete_pair_again");
 }
 
@@ -197,6 +233,7 @@ static void voice_recording_control_task(void *parameter)
                 s_cancel_pending = false;
                 s_cancel_source = NULL;
                 s_state = VOICE_RECORDING_STATE_IDLE;
+                voice_recording_control_clear_power_blockers();
                 ESP_LOGI(TAG, "recording cancel source=%s", source);
                 voice_recording_control_log_device_status("ready", "recording_canceled");
                 diag_log(DIAG_SRC_VOICE_REC, DIAG_VREC_SESSION, DIAG_SEV_INFO,
@@ -205,6 +242,7 @@ static void voice_recording_control_task(void *parameter)
             }
 
             s_state = VOICE_RECORDING_STATE_IDLE;
+            voice_recording_control_clear_power_blockers();
             ESP_LOGI(TAG, "recording session finished");
             voice_recording_control_log_device_status("ready", "recording_session_finished");
         }

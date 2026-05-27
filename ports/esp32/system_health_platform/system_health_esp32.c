@@ -6,6 +6,7 @@
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include "sdkconfig.h"
 
 #include "diag_log.h"
 #include "ble_hid.h"
@@ -16,12 +17,16 @@
 static const char *TAG = "health";
 
 #define HEALTH_INTERVAL_S       60
+#ifndef CONFIG_POWER_MANAGER_LOW_POWER_HEALTH_INTERVAL_S
+#define CONFIG_POWER_MANAGER_LOW_POWER_HEALTH_INTERVAL_S 600
+#endif
 #define HEALTH_TASK_STACK_BYTES (4 * 1024)
 #define HEALTH_HEAP_WARN_KB     20U
 #define HEALTH_BLE_DISCONNECT_RATE_WINDOW_S 60U
 #define HEALTH_BLE_DISCONNECT_RATE_LIMIT    2U
 
 static TaskHandle_t s_health_task;
+static bool s_low_power_mode;
 
 static void system_health_task(void *parameter)
 {
@@ -31,7 +36,10 @@ static void system_health_task(void *parameter)
     uint32_t window_start_ms = 0;
 
     while (1) {
-        vTaskDelay(pdMS_TO_TICKS(HEALTH_INTERVAL_S * 1000));
+        uint32_t interval_s = s_low_power_mode
+            ? (uint32_t)CONFIG_POWER_MANAGER_LOW_POWER_HEALTH_INTERVAL_S
+            : HEALTH_INTERVAL_S;
+        (void)ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(interval_s * 1000U));
 
         uint32_t heap_free = esp_get_free_heap_size();
         uint32_t heap_min = esp_get_minimum_free_heap_size();
@@ -79,6 +87,23 @@ static void system_health_task(void *parameter)
             window_start_ms = now_ms;
         }
     }
+}
+
+void system_health_platform_set_low_power_mode(bool enabled)
+{
+    if (s_low_power_mode == enabled) {
+        return;
+    }
+
+    s_low_power_mode = enabled;
+    if (s_health_task != NULL) {
+        xTaskNotifyGive(s_health_task);
+    }
+    ESP_LOGI(
+        TAG,
+        "system health low-power mode=%u interval_s=%" PRIu32,
+        enabled ? 1u : 0u,
+        enabled ? (uint32_t)CONFIG_POWER_MANAGER_LOW_POWER_HEALTH_INTERVAL_S : (uint32_t)HEALTH_INTERVAL_S);
 }
 
 esp_err_t system_health_platform_init(void)
