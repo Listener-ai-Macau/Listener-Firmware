@@ -103,6 +103,8 @@ Final Listener-Type UI follow-ups:
 - `30ea634` shows a separate finalize/checking stage after all firmware bytes are sent, formats package/progress bytes as KB or MB, and extends the OTA finish control-write timeout to allow firmware-side verify/set-boot/reboot work.
 - `e8875de` corrects that DIS metadata approach after live evidence showed Windows can return stale discovered DIS values: Listener Type now filters discovered DIS services by the currently opened OTA Bluetooth address, uses uncached reads only, and prefers identity fields read from the current OTA service.
 - `2546c54` adds `model=` and `fw_version=` tokens to firmware OTA readiness so future firmware can expose current identity through the OTA service itself instead of relying on Windows DIS cache behavior.
+- `2a5e7f2` fixes the desktop OTA readiness/capabilities characteristic UUIDs to match firmware (`...091c` and `...091d`) and keeps an address-filtered discovered-service fallback.
+- `4d030f5` extends `tools\verify_ble_ota_gatt_contract.py` so it also checks the desktop Rust BLE UUID constants, preventing a repeat of the readiness/capabilities UUID mismatch.
 - Rebuilt and launched `src-tauri\target\release\listener-type.exe` after the final UI changes; latest exe timestamp: 2026-05-28 21:40.
 
 Final UI validation:
@@ -115,6 +117,8 @@ Final UI validation:
 - After a user reflash attempt timed out at `OTA control finish`, serial `~OTA:STATUS` showed the device was healthy and running a valid image: `running=ota_0`, `boot=ota_0`, `version=v1002.0.0-ota-test-9-gcbbf239-d`, `active=0`, `pending_verify=0`, `state=2`, `blocker=none`. That confirms the device was not stuck in OTA, but the timed-out v1.1.0 package was not confirmed as the running image.
 - The serial result also proved the earlier BLE `firmwareVersion=v1.1.0-manual-ota` was stale Windows DIS metadata, not the device's true running firmware. After `e8875de`, headless preflight no longer reports the stale v1.1.0 value; with the currently installed v1002 firmware it returns `firmwareVersion=null` because that firmware does not yet expose `fw_version=` on the OTA readiness characteristic.
 - Firmware build after `2546c54`: `pwsh -NoProfile -File .\tools\esp_idf_ci.ps1 build` PASS, generated `build\voice-keyboard-firmware.bin` at 678368 bytes.
+- USB flash after `2546c54` PASS on COM5. Serial `~OTA:STATUS` confirms `version=v1002.0.0-ota-test-9-gcbbf239-d`, `active=0`, `pending_verify=0`, and readiness now includes `model=keyboard-v1;fw_version=v1002.0.0-ota-test-9-gcbbf239-d`.
+- Static contract check after `4d030f5`: `python tools\verify_ble_ota_gatt_contract.py` PASS, including the desktop Rust BLE source.
 
 Artifact:
 
