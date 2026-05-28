@@ -32,6 +32,7 @@
 #include "esp_log.h"
 #include "diag_log.h"
 #include "diag_log_events.h"
+#include "watchdog_platform.h"
 
 /* ---------- Shared defines ---------- */
 
@@ -666,8 +667,10 @@ i2c_master_bus_handle_t audio_capture_get_i2c_bus_handle(void)
 static void audio_capture_task(void *arg)
 {
     int16_t frame_buffer[AUDIO_CAPTURE_FRAME_SAMPLES];
+    (void)watchdog_platform_subscribe_current_task("audio_capture_task");
 
     while (1) {
+        watchdog_platform_feed_current_task();
         if (s_idle_power_save_requested && !audio_capture_session_is_active()) {
             (void)audio_capture_apply_idle_power_save(true);
             vTaskDelay(pdMS_TO_TICKS(250));
@@ -865,8 +868,10 @@ static void audio_capture_task(void *arg)
 {
     int32_t raw_buffer[AUDIO_CAPTURE_FRAME_SAMPLES * 2];
     int16_t frame_buffer[AUDIO_CAPTURE_FRAME_SAMPLES];
+    (void)watchdog_platform_subscribe_current_task("audio_capture_task");
 
     while (1) {
+        watchdog_platform_feed_current_task();
         if (s_idle_power_save_requested && !audio_capture_session_is_active()) {
             (void)audio_capture_apply_idle_power_save(true);
             vTaskDelay(pdMS_TO_TICKS(250));

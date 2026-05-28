@@ -38,6 +38,7 @@ void ble_store_config_init(void);
 #include "diag_log.h"
 #include "firmware_ota.h"
 #include "power_manager.h"
+#include "watchdog_platform.h"
 #include "esp_timer.h"
 
 static const char *TAG = "ble_hid";
@@ -140,10 +141,12 @@ static void ble_hid_update_battery_level(const char *reason)
 static void ble_hid_battery_task(void *parameter)
 {
     (void)parameter;
+    (void)watchdog_platform_subscribe_current_task("ble_hid_battery_task");
 
     while (1) {
-        vTaskDelay(pdMS_TO_TICKS(BLE_HID_BATTERY_UPDATE_INTERVAL_MS));
+        watchdog_platform_delay_ms(BLE_HID_BATTERY_UPDATE_INTERVAL_MS);
         ble_hid_update_battery_level("periodic");
+        watchdog_platform_feed_current_task();
     }
 }
 
@@ -244,6 +247,10 @@ static bool ble_hid_dispatch_usb_command_line(const char *line)
     power_manager_record_activity("usb_control_line");
 
     if (power_manager_consume_usb_command(line)) {
+        return true;
+    }
+
+    if (watchdog_platform_consume_usb_command(line)) {
         return true;
     }
 
@@ -350,7 +357,9 @@ static void ble_hid_keyboard_task(void *parameter)
 
     ESP_LOGI(TAG, "USB SERIAL INPUT READY");
     board_print_help();
+    (void)watchdog_platform_subscribe_current_task("ble_hid_keyboard_task");
     while (1) {
+        watchdog_platform_feed_current_task();
         ble_hid_drain_ascii_queue();
 
         int bytes_read = usb_serial_jtag_read_bytes(rx_buffer, sizeof(rx_buffer), pdMS_TO_TICKS(20));
@@ -377,6 +386,7 @@ static void ble_hid_keyboard_task(void *parameter)
                 }
             }
         }
+        watchdog_platform_feed_current_task();
     }
 }
 

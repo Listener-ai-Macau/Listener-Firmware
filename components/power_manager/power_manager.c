@@ -21,6 +21,7 @@
 #include "battery_monitor.h"
 #include "board_pins.h"
 #include "diag_log.h"
+#include "watchdog_platform.h"
 
 extern esp_err_t audio_capture_set_idle_power_save(bool enabled) __attribute__((weak));
 extern bool audio_capture_session_is_active(void) __attribute__((weak));
@@ -607,10 +608,12 @@ static void power_manager_evaluate(void)
 static void power_manager_task(void *parameter)
 {
     (void)parameter;
+    (void)watchdog_platform_subscribe_current_task("power_manager_task");
 
     while (1) {
-        vTaskDelay(pdMS_TO_TICKS(CONFIG_POWER_MANAGER_EVALUATE_INTERVAL_MS));
+        watchdog_platform_delay_ms(CONFIG_POWER_MANAGER_EVALUATE_INTERVAL_MS);
         power_manager_evaluate();
+        watchdog_platform_feed_current_task();
     }
 }
 

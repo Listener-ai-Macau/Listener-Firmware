@@ -5,6 +5,7 @@
 #include "diag_log.h"
 #include "firmware_ota.h"
 #include "power_manager.h"
+#include "watchdog_platform.h"
 
 #include "esp_err.h"
 #include "esp_log.h"
@@ -67,6 +68,7 @@ void app_main(void)
     diag_log_init();
     firmware_ota_init();
     configure_power_management();
+    watchdog_platform_log_config();
     log_power_boot_diagnostics();
 
     esp_reset_reason_t reset_reason = esp_reset_reason();
