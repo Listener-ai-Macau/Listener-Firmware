@@ -98,13 +98,16 @@ Final Listener-Type UI follow-ups:
 - `54641e1` makes the firmware-version query stay in `查询中` until a device firmware version is read or the timeout expires.
 - `7881d51` sets that firmware-version query timeout to 15 seconds.
 - `f8def7b` limits the 15-second firmware-version wait to the manual query button and immediately exits `查询中` when a firmware version is already present.
-- Rebuilt and launched `src-tauri\target\release\listener-type.exe` after the final UI changes; latest exe timestamp: 2026-05-28 21:06.
+- `b0f6083` fixes the Windows BLE metadata read path: when the OTA device handle exposes the OTA service but returns empty DIS metadata, Listener Type falls back to the discovered DIS service and reads hardware revision, firmware revision, and battery level from there.
+- Rebuilt and launched `src-tauri\target\release\listener-type.exe` after the final UI changes; latest exe timestamp: 2026-05-28 21:18.
 
 Final UI validation:
 
 - `npm run test:firmware-ota`: PASS.
 - `npm run build`: PASS.
 - `cargo build --release --manifest-path src-tauri\Cargo.toml`: PASS, with the pre-existing unused-import warning in `src\coordinator.rs`.
+- Before `b0f6083`, headless preflight connected to the OTA service but returned `hardwareRevision=null`, `firmwareVersion=null`, and `batteryPercent=null`, causing the UI query to time out.
+- After `b0f6083`, the same headless preflight returned PASS with `hardwareRevision=keyboard-v1`, `firmwareVersion=v1.1.0-manual-ota`, and `batteryPercent=85`.
 
 Artifact:
 
