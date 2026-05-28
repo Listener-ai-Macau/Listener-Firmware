@@ -99,7 +99,8 @@ Final Listener-Type UI follow-ups:
 - `7881d51` sets that firmware-version query timeout to 15 seconds.
 - `f8def7b` limits the 15-second firmware-version wait to the manual query button and immediately exits `查询中` when a firmware version is already present.
 - `b0f6083` fixes the Windows BLE metadata read path: when the OTA device handle exposes the OTA service but returns empty DIS metadata, Listener Type falls back to the discovered DIS service and reads hardware revision, firmware revision, and battery level from there.
-- Rebuilt and launched `src-tauri\target\release\listener-type.exe` after the final UI changes; latest exe timestamp: 2026-05-28 21:18.
+- `ec9d67c` makes the discovered DIS service the primary metadata source, with the OTA device handle only filling any missing fields; OTA transfer still uses the dedicated OTA service.
+- Rebuilt and launched `src-tauri\target\release\listener-type.exe` after the final UI changes; latest exe timestamp: 2026-05-28 21:27.
 
 Final UI validation:
 
