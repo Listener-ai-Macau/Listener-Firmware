@@ -97,7 +97,14 @@ Final Listener-Type UI follow-ups:
 - `83a8d43` localizes/simplifies blocker and same-version warning text; same-version reflash remains allowed.
 - `54641e1` makes the firmware-version query stay in `查询中` until a device firmware version is read or the timeout expires.
 - `7881d51` sets that firmware-version query timeout to 15 seconds.
-- Rebuilt and launched `src-tauri\target\release\listener-type.exe` after the final UI changes.
+- `f8def7b` limits the 15-second firmware-version wait to the manual query button and immediately exits `查询中` when a firmware version is already present.
+- Rebuilt and launched `src-tauri\target\release\listener-type.exe` after the final UI changes; latest exe timestamp: 2026-05-28 21:06.
+
+Final UI validation:
+
+- `npm run test:firmware-ota`: PASS.
+- `npm run build`: PASS.
+- `cargo build --release --manifest-path src-tauri\Cargo.toml`: PASS, with the pre-existing unused-import warning in `src\coordinator.rs`.
 
 Artifact:
 
