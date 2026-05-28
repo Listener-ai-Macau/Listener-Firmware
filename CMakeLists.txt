@@ -2,16 +2,20 @@
 # in this exact order for cmake to work correctly
 cmake_minimum_required(VERSION 3.16)
 
-execute_process(
-    COMMAND git describe --tags --always --dirty
-    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
-    OUTPUT_VARIABLE PROJECT_VER
-    OUTPUT_STRIP_TRAILING_WHITESPACE
-    ERROR_QUIET
-    RESULT_VARIABLE GIT_DESCRIBE_RESULT
-)
-if(NOT GIT_DESCRIBE_RESULT EQUAL 0)
-    set(PROJECT_VER "0.1.0-dev")
+if(DEFINED ENV{LISTENER_FIRMWARE_VERSION_OVERRIDE} AND NOT "$ENV{LISTENER_FIRMWARE_VERSION_OVERRIDE}" STREQUAL "")
+    set(PROJECT_VER "$ENV{LISTENER_FIRMWARE_VERSION_OVERRIDE}")
+else()
+    execute_process(
+        COMMAND git describe --tags --always --dirty
+        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+        OUTPUT_VARIABLE PROJECT_VER
+        OUTPUT_STRIP_TRAILING_WHITESPACE
+        ERROR_QUIET
+        RESULT_VARIABLE GIT_DESCRIBE_RESULT
+    )
+    if(NOT GIT_DESCRIBE_RESULT EQUAL 0)
+        set(PROJECT_VER "0.1.0-dev")
+    endif()
 endif()
 
 set(EXTRA_COMPONENT_DIRS

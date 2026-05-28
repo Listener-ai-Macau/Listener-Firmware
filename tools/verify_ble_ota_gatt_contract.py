@@ -13,6 +13,7 @@ SERVICE_UUID = "710af845-6d9f-6583-0c4d-9e5b3bc3092a"
 CONTROL_UUID = "710af845-6d9f-6583-0c4d-9e5b3bc3092b"
 DATA_UUID = "710af845-6d9f-6583-0c4d-9e5b3bc3092c"
 MAX_CHUNK_BYTES = 512
+CHUNK_BYTES = 500
 
 UUID_BYTES = {
     "BLE_FIRMWARE_OTA_SERVICE_UUID": "0x2a, 0x09, 0xc3, 0x3b, 0x5b, 0x9e, 0x4d, 0x0c, 0x83, 0x65, 0x9f, 0x6d, 0x45, 0xf8, 0x0a, 0x71",
@@ -273,8 +274,8 @@ def check_desktop_contract(path: Path) -> str:
         require(match is not None, f"desktop contract {path} is missing {field}")
         chunk_bytes = int(match.group(1))
         require(
-            1 <= chunk_bytes <= MAX_CHUNK_BYTES,
-            f"desktop contract {path} has {field}={chunk_bytes}, outside firmware BLE OTA data write limit 1..={MAX_CHUNK_BYTES}",
+            chunk_bytes == CHUNK_BYTES,
+            f"desktop contract {path} has {field}={chunk_bytes}, expected {CHUNK_BYTES}",
         )
     return str(path)
 
@@ -306,7 +307,7 @@ def main() -> int:
         else:
             print(
                 "PASS: BLE OTA GATT contract matches canonical Listener OTA UUIDs "
-                f"({SERVICE_UUID}, {CONTROL_UUID}, {DATA_UUID}) and <= {MAX_CHUNK_BYTES}-byte desktop chunks"
+                f"({SERVICE_UUID}, {CONTROL_UUID}, {DATA_UUID}) and {CHUNK_BYTES}-byte desktop chunks"
             )
         return 0
     except AssertionError as exc:

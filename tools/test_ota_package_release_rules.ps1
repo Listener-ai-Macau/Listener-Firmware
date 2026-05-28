@@ -27,6 +27,51 @@ Set-Content -LiteralPath (Join-Path $fakeRepo ".gitignore") -Value @(".cache/", 
 $packageScript = Join-Path $fakeTools "package_ota_firmware.ps1"
 $buildRoot = Join-Path $testRoot "builds"
 
+function Get-TestUserProfilePath {
+    if ($env:USERPROFILE) {
+        return $env:USERPROFILE
+    }
+    $profile = [Environment]::GetFolderPath([Environment+SpecialFolder]::UserProfile)
+    if (-not [string]::IsNullOrWhiteSpace($profile)) {
+        return $profile
+    }
+    throw "Unable to resolve user profile path."
+}
+
+function Get-TestPythonExe {
+    $candidate = Join-Path (Get-TestUserProfilePath) ".espressif\python_env\idf5.5_py3.11_env\Scripts\python.exe"
+    if (Test-Path -LiteralPath $candidate) {
+        return $candidate
+    }
+    return "python"
+}
+
+function New-FakePartitionTable {
+    param([Parameter(Mandatory = $true)][string]$OutputPath)
+
+    $idf = if ($env:IDF_PATH) { $env:IDF_PATH } elseif ($env:ESP_IDF_PATH) { $env:ESP_IDF_PATH } else { Join-Path (Get-TestUserProfilePath) "esp\esp-idf" }
+    $genPart = Join-Path $idf "components\partition_table\gen_esp32part.py"
+    if (-not (Test-Path -LiteralPath $genPart)) {
+        throw "Missing ESP-IDF partition parser: $genPart"
+    }
+
+    $csvPath = [System.IO.Path]::ChangeExtension($OutputPath, ".csv")
+    @(
+        "# Name, Type, SubType, Offset, Size"
+        "nvs,data,nvs,0x9000,0x6000"
+        "otadata,data,ota,0xf000,0x2000"
+        "phy_init,data,phy,0x11000,0x1000"
+        "ota_0,app,ota_0,0x20000,0x1B0000"
+        "ota_1,app,ota_1,0x1D0000,0x1B0000"
+    ) | Set-Content -LiteralPath $csvPath -Encoding UTF8
+
+    $python = Get-TestPythonExe
+    $output = @(& $python $genPart $csvPath $OutputPath 2>&1)
+    if ($LASTEXITCODE -ne 0) {
+        throw "Failed to generate fake partition table:`n$($output -join "`n")"
+    }
+}
+
 function New-FakeBuild {
     param(
         [Parameter(Mandatory = $true)][string]$Name,
@@ -49,7 +94,7 @@ function New-FakeBuild {
         $partitionDir = Join-Path $buildDir "partition_table"
         New-Item -ItemType Directory -Force -Path $bootloaderDir, $partitionDir | Out-Null
         [System.IO.File]::WriteAllBytes((Join-Path $bootloaderDir "bootloader.bin"), [byte[]](0x42, 0x4F, 0x4F, 0x54))
-        [System.IO.File]::WriteAllBytes((Join-Path $partitionDir "partition-table.bin"), [byte[]](0x50, 0x41, 0x52, 0x54))
+        New-FakePartitionTable -OutputPath (Join-Path $partitionDir "partition-table.bin")
     }
 
     return $buildDir

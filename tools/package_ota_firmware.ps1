@@ -3,7 +3,9 @@ param(
     [string]$OutputRoot = (Join-Path $PSScriptRoot "..\.cache\ota_firmware"),
     [ValidateSet("stable", "beta", "internal-test")]
     [string]$Channel = "stable",
-    [string]$MinDesktopVersion = "1.0.0"
+    [string]$MinDesktopVersion = "1.0.0",
+    [ValidateRange(1, 500)]
+    [int]$GattChunkBytes = 500
 )
 
 $ErrorActionPreference = "Stop"
@@ -99,6 +101,7 @@ $manifest = [ordered]@{
         hardware_revision = "keyboard-v1"
         protocol_version = 1
         min_desktop_version = $MinDesktopVersion
+        gatt_chunk_bytes = $GattChunkBytes
     }
     ble_identity = [ordered]@{
         name = "listener"
@@ -164,8 +167,19 @@ if ($LASTEXITCODE -ne 0) {
     }
 }
 
+# --- Generate single-file OTA zip for customer-facing/manual update flows ---
+$zip_path = "$package_dir.zip"
+if (Test-Path -LiteralPath $zip_path) {
+    Remove-Item -LiteralPath $zip_path -Force
+}
+Compress-Archive -LiteralPath @(
+    $manifest_path,
+    $ota_bin_dest
+) -DestinationPath $zip_path -Force
+
 # --- Summary ---
 Write-Host "OTA firmware package: $package_dir"
+Write-Host "OTA zip package: $zip_path"
 Write-Host "OTA manifest: $manifest_path"
 Write-Host "OTA binary: $ota_bin_name ($ota_size bytes) sha256=$ota_hash"
 Write-Host "Channel: $Channel  Version: $project_version  Git dirty: $git_dirty"
