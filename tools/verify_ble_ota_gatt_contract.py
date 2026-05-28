@@ -12,6 +12,8 @@ from pathlib import Path
 SERVICE_UUID = "710af845-6d9f-6583-0c4d-9e5b3bc3092a"
 CONTROL_UUID = "710af845-6d9f-6583-0c4d-9e5b3bc3092b"
 DATA_UUID = "710af845-6d9f-6583-0c4d-9e5b3bc3092c"
+READINESS_UUID = "710af845-6d9f-6583-0c4d-9e5b3bc3091c"
+CAPABILITIES_UUID = "710af845-6d9f-6583-0c4d-9e5b3bc3091d"
 MAX_CHUNK_BYTES = 512
 CHUNK_BYTES = 500
 
@@ -260,6 +262,14 @@ def candidate_desktop_contracts(repo: Path) -> list[Path]:
     ]
 
 
+def candidate_desktop_ble_sources(repo: Path) -> list[Path]:
+    listener_root = repo.parent
+    return [
+        listener_root / "Listener-Type-wt-tai-voice-keyboard-ota-update-1.2/src-tauri/src/embedded_ble.rs",
+        listener_root / "Listener-Type/src-tauri/src/embedded_ble.rs",
+    ]
+
+
 def check_desktop_contract(path: Path) -> str:
     contract = read_text(path)
     expected_pairs = {
@@ -277,6 +287,21 @@ def check_desktop_contract(path: Path) -> str:
             chunk_bytes == CHUNK_BYTES,
             f"desktop contract {path} has {field}={chunk_bytes}, expected {CHUNK_BYTES}",
         )
+    return str(path)
+
+
+def check_desktop_ble_source(path: Path) -> str:
+    source = read_text(path)
+    expected_tokens = {
+        SERVICE_UUID: "OTA_SERVICE_UUID",
+        CONTROL_UUID: "OTA_CONTROL_UUID",
+        DATA_UUID: "OTA_DATA_UUID",
+        READINESS_UUID: "OTA_READINESS_UUID",
+        CAPABILITIES_UUID: "OTA_CAPABILITIES_UUID",
+    }
+    for uuid, field in expected_tokens.items():
+        token = f"0x{uuid.replace('-', '_')}"
+        require(token in source, f"desktop BLE source {path} is missing {field}={uuid}")
     return str(path)
 
 
@@ -301,9 +326,15 @@ def main() -> int:
                 if candidate.exists():
                     desktop_checked = check_desktop_contract(candidate.resolve())
                     break
+        desktop_ble_checked = None
+        for candidate in candidate_desktop_ble_sources(repo):
+            if candidate.exists():
+                desktop_ble_checked = check_desktop_ble_source(candidate.resolve())
+                break
 
         if desktop_checked:
-            print(f"PASS: BLE OTA GATT contract matches desktop contract at {desktop_checked}")
+            suffix = f" and desktop BLE source at {desktop_ble_checked}" if desktop_ble_checked else ""
+            print(f"PASS: BLE OTA GATT contract matches desktop contract at {desktop_checked}{suffix}")
         else:
             print(
                 "PASS: BLE OTA GATT contract matches canonical Listener OTA UUIDs "
