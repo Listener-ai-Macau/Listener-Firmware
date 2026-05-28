@@ -118,10 +118,14 @@ void app_main(void)
     if (power_ret != ESP_OK) {
         ESP_LOGW(TAG, "power manager start failed: %s", esp_err_to_name(power_ret));
     }
-    firmware_ota_record_self_check(
-        self_test_critical_ok(&post),
-        ble_ret == ESP_OK && ble_start_ret == ESP_OK,
-        keyboard_ret == ESP_OK);
+    bool ota_post_ok = self_test_critical_ok(&post);
+    bool ota_ble_ready = ble_ret == ESP_OK && ble_start_ret == ESP_OK;
+    bool ota_keyboard_ready = keyboard_ret == ESP_OK;
+#ifdef LISTENER_OTA_FORCE_PENDING_VERIFY_FAIL
+    ESP_LOGE(TAG, "OTA rollback validation build: forcing pending-verify self-check failure");
+    ota_post_ok = false;
+#endif
+    firmware_ota_record_self_check(ota_post_ok, ota_ble_ready, ota_keyboard_ready);
     firmware_ota_confirm_pending_verify_if_ready();
     boot_safety_start_normal_boot_clear_timer();
 }

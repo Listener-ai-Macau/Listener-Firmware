@@ -18,6 +18,29 @@ Partial PASS. The successful OTA path and several failure/core-path checks passe
 Artifact:
 
 - `tests/artifacts/ota_release_gate_20260528/final_status_after_smoke.txt`
+- `tests/artifacts/ota_release_gate_20260528/pre_rollback_serial_status_blocked_by_ble_lock.txt`
+
+## Rollback Test Image Prepared
+
+A dedicated rollback validation OTA image was built with `LISTENER_OTA_FORCE_PENDING_VERIFY_FAIL=1`.
+The default production build is unchanged unless that environment variable is set.
+
+- Version: `v1.2.0-rollback-test`
+- Channel: `internal-test`
+- BLE write chunk: `500`
+- Firmware size: `678208` bytes
+- SHA256: `82fd64874d20277c7e41e8ca85154aad8e2f1e3a82395a308e25deb3aabad4c3`
+- Package: `C:\Users\Billy\Desktop\listener\voice-keyboard-firmware-wt-codex-ota-rollback-test\.cache\ota_rollback_test_20260528\listener-ota-v1.2.0-rollback-test-20260528-141148`
+
+Transfer was attempted under the hardware workflow lock, but `BLE-14C19F48FE72`
+was already locked by `oai1` until `2026-05-28 15:12:26 +08:00`. Serial status
+was still collected under a COM5 lock and confirmed the board remains healthy on
+`v1.1.0-manual-ota` with `pending_verify=0` and `blocker=none`.
+
+Artifacts:
+
+- `tests/artifacts/ota_release_gate_20260528/rollback_transfer_headless.txt`
+- `tests/artifacts/ota_release_gate_20260528/pre_rollback_serial_status_blocked_by_ble_lock.txt`
 
 ## Successful OTA Path Already Covered
 
@@ -59,13 +82,12 @@ Artifacts:
 ## Findings
 
 - Headless preflight currently returns PASS for the same-version package because the headless CLI sets `current_firmware_version: None` before package validation. The UI can read the device firmware version, but this headless path does not feed it into same-version validation.
-- Rollback cannot be honestly validated by `~BOOT:CRASH` after normal boot because firmware calls `firmware_ota_confirm_pending_verify_if_ready()` immediately once POST/BLE/keyboard checks pass. A real rollback test needs a dedicated OTA image or test switch that fails pending-verify self-check before `esp_ota_mark_app_valid_cancel_rollback()`.
+- Rollback cannot be honestly validated by `~BOOT:CRASH` after normal boot because firmware calls `firmware_ota_confirm_pending_verify_if_ready()` immediately once POST/BLE/keyboard checks pass. A dedicated rollback test image is now prepared, but BLE transfer is blocked by the active `oai1` BLE lock.
 - Transfer interruption was not run in this pass; it needs either a controllable BLE abort harness or a desktop transfer cancel/disconnect test that preserves device recovery evidence.
 
 ## Remaining For 1.4 Review
 
-- Build or enable a rollback-test OTA image that deliberately fails pending-verify, then verify automatic rollback to the previous partition and desktop rolled-back/failure state.
+- Run the prepared rollback-test OTA image after the `oai1` BLE lock releases, then verify automatic rollback to the previous partition and desktop rolled-back/failure state.
 - Run a real BLE transfer interruption test and confirm retry/recovery.
 - Cover recording-active OTA request blocker from the desktop path.
 - Decide whether same-version headless preflight should become a blocker or remain a testing-only warning.
-
