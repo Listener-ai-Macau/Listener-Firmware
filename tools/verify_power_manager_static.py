@@ -30,6 +30,7 @@ CHECKS = {
         "CONFIG_POWER_MANAGER_AUDIO_IDLE_MS",
         "POWER_MANAGER_SLEEP_REASON_OVERNIGHT_IDLE",
         "esp_deep_sleep_start",
+        "esp_sleep_disable_wakeup_source(ESP_SLEEP_WAKEUP_ALL)",
         "esp_sleep_enable_ext1_wakeup_io",
         "DIAG_POWER_SLEEP_ENTRY",
         "DIAG_POWER_SLEEP_BLOCKED",
@@ -80,7 +81,7 @@ CHECKS = {
         "CONFIG_USJ_NO_AUTO_LS_ON_CONNECTION=y",
         "CONFIG_POWER_MANAGER_AUDIO_IDLE_MS=5000",
         "CONFIG_POWER_MANAGER_CONNECTED_IDLE_MS=30000",
-        "CONFIG_POWER_MANAGER_OVERNIGHT_SLEEP_MS=900000",
+        "CONFIG_POWER_MANAGER_OVERNIGHT_SLEEP_MS=1800000",
     ],
     "main/main.c": [
         "esp_pm_configure",

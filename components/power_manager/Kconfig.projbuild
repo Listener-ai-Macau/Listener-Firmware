@@ -20,7 +20,7 @@ menu "Listener Power Manager"
 
     config POWER_MANAGER_OVERNIGHT_SLEEP_MS
         int "Overnight deep-sleep threshold in milliseconds"
-        default 900000
+        default 1800000
         depends on POWER_MANAGER_ENABLE
 
     config POWER_MANAGER_EVALUATE_INTERVAL_MS

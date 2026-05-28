@@ -48,7 +48,7 @@ extern void system_health_set_low_power_mode(bool enabled) __attribute__((weak))
 #endif
 
 #ifndef CONFIG_POWER_MANAGER_OVERNIGHT_SLEEP_MS
-#define CONFIG_POWER_MANAGER_OVERNIGHT_SLEEP_MS 900000
+#define CONFIG_POWER_MANAGER_OVERNIGHT_SLEEP_MS 1800000
 #endif
 
 #ifndef CONFIG_POWER_MANAGER_EVALUATE_INTERVAL_MS
@@ -449,6 +449,11 @@ static esp_err_t power_manager_configure_wakeup(uint64_t wake_gpio_mask)
 {
     if (wake_gpio_mask == 0) {
         return ESP_ERR_NOT_SUPPORTED;
+    }
+
+    esp_err_t clear_ret = esp_sleep_disable_wakeup_source(ESP_SLEEP_WAKEUP_ALL);
+    if (clear_ret != ESP_OK) {
+        return clear_ret;
     }
 
     gpio_config_t input_config = {
