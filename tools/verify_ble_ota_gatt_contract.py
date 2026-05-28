@@ -12,12 +12,14 @@ from pathlib import Path
 SERVICE_UUID = "710af845-6d9f-6583-0c4d-9e5b3bc3092a"
 CONTROL_UUID = "710af845-6d9f-6583-0c4d-9e5b3bc3092b"
 DATA_UUID = "710af845-6d9f-6583-0c4d-9e5b3bc3092c"
-CHUNK_BYTES = 244
+MAX_CHUNK_BYTES = 512
 
 UUID_BYTES = {
     "BLE_FIRMWARE_OTA_SERVICE_UUID": "0x2a, 0x09, 0xc3, 0x3b, 0x5b, 0x9e, 0x4d, 0x0c, 0x83, 0x65, 0x9f, 0x6d, 0x45, 0xf8, 0x0a, 0x71",
     "BLE_FIRMWARE_OTA_CONTROL_UUID": "0x2b, 0x09, 0xc3, 0x3b, 0x5b, 0x9e, 0x4d, 0x0c, 0x83, 0x65, 0x9f, 0x6d, 0x45, 0xf8, 0x0a, 0x71",
     "BLE_FIRMWARE_OTA_DATA_UUID": "0x2c, 0x09, 0xc3, 0x3b, 0x5b, 0x9e, 0x4d, 0x0c, 0x83, 0x65, 0x9f, 0x6d, 0x45, 0xf8, 0x0a, 0x71",
+    "BLE_FIRMWARE_OTA_READINESS_UUID": "0x1c, 0x09, 0xc3, 0x3b, 0x5b, 0x9e, 0x4d, 0x0c, 0x83, 0x65, 0x9f, 0x6d, 0x45, 0xf8, 0x0a, 0x71",
+    "BLE_FIRMWARE_OTA_CAPABILITIES_UUID": "0x1d, 0x09, 0xc3, 0x3b, 0x5b, 0x9e, 0x4d, 0x0c, 0x83, 0x65, 0x9f, 0x6d, 0x45, 0xf8, 0x0a, 0x71",
 }
 
 
@@ -57,10 +59,18 @@ def check_bridge(repo: Path) -> None:
         "firmware_ota_abort(",
         "BLE_GATT_CHR_F_WRITE",
         "BLE_GATT_CHR_F_WRITE_NO_RSP",
+        "BLE_GATT_CHR_F_READ",
         "ble_gatts_add_svcs",
         "DIAG_OTA_ABORT_BLE_CONTROL",
         "DIAG_OTA_ABORT_BLE_WRITE_FAIL",
         "DIAG_OTA_ABORT_BLE_DISCONNECT",
+        "listener_device_get_factory_readiness()",
+        "listener_device_get_capabilities()",
+        "BLE_FIRMWARE_OTA_GATT_ATTR_READINESS",
+        "BLE_FIRMWARE_OTA_GATT_ATTR_CAPABILITIES",
+        "readiness_rc",
+        "capabilities_rc",
+        "#define BLE_FIRMWARE_OTA_DATA_MAX_BYTES 512",
     ]
     for token in required_tokens:
         require(token in source, f"BLE OTA bridge is missing {token}")
@@ -99,6 +109,9 @@ def check_dis_identity(repo: Path) -> None:
     gap = read_text(repo / "ports/esp32/ble_hid_gap/ble_hid_gap_esp32.c")
     listener_device = read_text(repo / "protocols/listener_device/listener_device.c")
     listener_header = read_text(repo / "protocols/listener_device/include/listener_device.h")
+    firmware_ota = read_text(repo / "components/firmware_ota/firmware_ota.c")
+    firmware_ota_header = read_text(repo / "components/firmware_ota/include/firmware_ota.h")
+    diag = read_text(repo / "components/diag_log/include/diag_log_events.h")
     default_configs = [
         repo / "sdkconfig.defaults",
         repo / "sdkconfig.defaults.esp32s3",
@@ -122,8 +135,23 @@ def check_dis_identity(repo: Path) -> None:
         "DIS firmware revision must be set from listener_device_get_fw_version()",
     )
     require(
+        "ble_svc_dis_manufacturer_name_set(LISTENER_DEVICE_MANUFACTURER)" in hid,
+        "DIS manufacturer must be set from LISTENER_DEVICE_MANUFACTURER",
+    )
+    require(
+        "ble_svc_dis_serial_number_set(listener_device_get_serial())" in hid,
+        "DIS serial number must be set from listener_device_get_serial()",
+    )
+    require(
         "ble_svc_dis_hardware_revision_set(LISTENER_DEVICE_HW_REV)" in hid,
         "DIS hardware revision must be set from LISTENER_DEVICE_HW_REV",
+    )
+    require(
+        ".vendor_id = LISTENER_VENDOR_ID" in hid
+        and ".product_id = LISTENER_PRODUCT_ID" in hid
+        and ".version = LISTENER_PROTOCOL_VERSION" in hid
+        and "vid=0x%04x pid=0x%04x product_version=%u" in hid,
+        "DIS PnP ID must be sourced from the HID Listener VID/PID/protocol identity",
     )
     require(
         "ble_svc_dis_software_revision_set(listener_device_get_protocol_version())" in hid,
@@ -137,6 +165,48 @@ def check_dis_identity(repo: Path) -> None:
     require(
         "firmware_ota_v1" in listener_header,
         "Listener device capabilities must advertise firmware_ota_v1 for desktop preflight",
+    )
+    for token in (
+        "LISTENER_DEVICE_READY_HID",
+        "LISTENER_DEVICE_READY_AUDIO",
+        "LISTENER_DEVICE_READY_OTA",
+        "LISTENER_DEVICE_READY_DIAGNOSTIC",
+        "listener_device_set_readiness",
+        "listener_device_get_ready_mask",
+        "listener_device_get_degraded_mask",
+    ):
+        require(token in listener_header, f"Listener device readiness contract is missing {token}")
+    require(
+        '"hid"' in listener_device
+        and '"audio"' in listener_device
+        and '"ota"' in listener_device
+        and '"diagnostic"' in listener_device
+        and '"%s_%s"' in listener_device
+        and '"ready"' in listener_device
+        and '"degraded"' in listener_device,
+        "Listener readiness/capabilities must expose per-subsystem ready/degraded tokens",
+    )
+    require(
+        "ble_hid_publish_readiness(" in hid
+        and "LISTENER_DEVICE_READY_HID" in hid
+        and "LISTENER_DEVICE_READY_AUDIO" in hid
+        and "LISTENER_DEVICE_READY_OTA" in hid
+        and "LISTENER_DEVICE_READY_DIAGNOSTIC" in hid,
+        "BLE HID init must publish separate HID/audio/OTA/diagnostic readiness",
+    )
+    require(
+        "ready_mask" in firmware_ota_header
+        and "degraded_mask" in firmware_ota_header
+        and "readiness" in firmware_ota_header
+        and "capabilities" in firmware_ota_header
+        and "listener_device_get_ready_mask()" in firmware_ota
+        and "listener_device_get_degraded_mask()" in firmware_ota
+        and "listener_device_get_factory_readiness()" in firmware_ota
+        and "listener_device_get_capabilities()" in firmware_ota
+        and "OTA STATUS" in firmware_ota
+        and "ready_mask=0x%08" in firmware_ota
+        and "capabilities=%s" in firmware_ota,
+        "~OTA:STATUS must expose per-subsystem readiness and capabilities for hardware validation",
     )
     require(
         'strcmp(line, "~DIS:GATT")' in hid and "ble_hid_log_dis_gatt_state()" in hid,
@@ -156,9 +226,11 @@ def check_dis_identity(repo: Path) -> None:
     require(
         "ble_hid_gap_queue_service_changed(\"connect\")" in gap
         and "ble_hid_gap_service_changed_pending()" in gap
+        and "BLE_HID_GAP_GATT_SCHEMA_REV" in gap
+        and "ota_identity_v2" in gap
         and "nvs_get_str" in gap
         and "nvs_set_str" in gap,
-        "BLE connect path must version-gate Service Changed so Windows refreshes OTA/DIS GATT once after firmware updates",
+        "BLE connect path must version/schema-gate Service Changed so Windows refreshes OTA/DIS GATT once after firmware or GATT-shape updates",
     )
     require(
         "BLE_SVC_GATT_CHR_SERVICE_CHANGED_UUID16" in gap
@@ -169,6 +241,13 @@ def check_dis_identity(repo: Path) -> None:
         and "service changed indication skipped" in gap
         and "service changed indication tx complete" in gap,
         "BLE subscribe path must send or skip Service Changed according to the version-gated pending state",
+    )
+    require(
+        "DIAG_GAP_RECOVERY" in diag
+        and "DIAG_GAP_RECOVERY" in gap
+        and "recovery: clearing pairing bonds" in gap
+        and "recovery: pairing reset complete" in gap,
+        "BLE recovery actions must be logged in serial and diag_log",
     )
 
 
@@ -186,10 +265,17 @@ def check_desktop_contract(path: Path) -> str:
         SERVICE_UUID: "serviceUuid",
         CONTROL_UUID: "controlUuid",
         DATA_UUID: "dataUuid",
-        str(CHUNK_BYTES): "defaultChunkBytes",
     }
     for value, field in expected_pairs.items():
         require(value in contract, f"desktop contract {path} is missing {field}={value}")
+    for field in ("defaultChunkBytes", "maxChunkBytes"):
+        match = re.search(rf"{field}\s*:\s*(\d+)", contract)
+        require(match is not None, f"desktop contract {path} is missing {field}")
+        chunk_bytes = int(match.group(1))
+        require(
+            1 <= chunk_bytes <= MAX_CHUNK_BYTES,
+            f"desktop contract {path} has {field}={chunk_bytes}, outside firmware BLE OTA data write limit 1..={MAX_CHUNK_BYTES}",
+        )
     return str(path)
 
 
@@ -220,7 +306,7 @@ def main() -> int:
         else:
             print(
                 "PASS: BLE OTA GATT contract matches canonical Listener OTA UUIDs "
-                f"({SERVICE_UUID}, {CONTROL_UUID}, {DATA_UUID}) and {CHUNK_BYTES}-byte desktop chunks"
+                f"({SERVICE_UUID}, {CONTROL_UUID}, {DATA_UUID}) and <= {MAX_CHUNK_BYTES}-byte desktop chunks"
             )
         return 0
     except AssertionError as exc:
