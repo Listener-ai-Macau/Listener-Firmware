@@ -5,7 +5,7 @@ Agent: codex
 
 ## Result
 
-Partial PASS. The successful OTA path, rollback path, transfer-interruption retry path, recording-active blocker, and several failure/core-path checks passed on the COM5 board. The remaining 1.4 release gate item is final manual release checklist/go-no-go review.
+PASS. The successful OTA path, rollback path, transfer-interruption retry path, recording-active blocker, final manual UI reflash, and several failure/core-path checks passed on the COM5 board. The final Listener-Type OTA panel follow-ups were rebuilt and accepted for 1.4 review.
 
 ## Device Baseline
 
@@ -91,6 +91,14 @@ The user ran a manual UI OTA reflash from Listener-Type on 2026-05-28. Serial ev
 
 The user also verified the recording-active blocker from the desktop UI. With recording state `Listening`, the OTA panel blocked update start and showed the localized Chinese blocker. A small UI follow-up was found and fixed in Listener-Type: the panel no longer repeats the raw English backend message, and same-version packages remain allowed while showing a localized reflash warning.
 
+Final Listener-Type UI follow-ups:
+
+- `5378432` keeps OTA on the independent BLE OTA service instead of opening BLE audio notify keepalive.
+- `83a8d43` localizes/simplifies blocker and same-version warning text; same-version reflash remains allowed.
+- `54641e1` makes the firmware-version query stay in `查询中` until a device firmware version is read or the timeout expires.
+- `7881d51` sets that firmware-version query timeout to 15 seconds.
+- Rebuilt and launched `src-tauri\target\release\listener-type.exe` after the final UI changes.
+
 Artifact:
 
 - `tests/artifacts/ota_release_gate_20260528/manual_ui_upgrade_status_after_user_run.txt`
@@ -127,4 +135,4 @@ Artifacts:
 
 ## Remaining For 1.4 Review
 
-- Run the manual release checklist/go-no-go review with the latest rebuilt Listener-Type binary.
+- No open 1.4 implementation item remains after the user accepted the manual UI behavior and requested review submission.
