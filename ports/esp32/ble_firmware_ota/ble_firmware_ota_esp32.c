@@ -17,6 +17,7 @@
 #include "host/ble_att.h"
 #include "host/ble_gatt.h"
 #include "host/ble_hs_mbuf.h"
+#include "listener_device.h"
 #include "os/os_mbuf.h"
 
 #define BLE_FIRMWARE_OTA_CONTROL_MAX_BYTES 384
@@ -27,12 +28,16 @@
 typedef enum {
     BLE_FIRMWARE_OTA_GATT_ATTR_CONTROL = 1,
     BLE_FIRMWARE_OTA_GATT_ATTR_DATA = 2,
+    BLE_FIRMWARE_OTA_GATT_ATTR_READINESS = 3,
+    BLE_FIRMWARE_OTA_GATT_ATTR_CAPABILITIES = 4,
 } ble_firmware_ota_gatt_attr_t;
 
 static const char *TAG = "ble_firmware_ota";
 static const ble_uuid128_t s_service_uuid = BLE_FIRMWARE_OTA_SERVICE_UUID;
 static const ble_uuid128_t s_control_uuid = BLE_FIRMWARE_OTA_CONTROL_UUID;
 static const ble_uuid128_t s_data_uuid = BLE_FIRMWARE_OTA_DATA_UUID;
+static const ble_uuid128_t s_readiness_uuid = BLE_FIRMWARE_OTA_READINESS_UUID;
+static const ble_uuid128_t s_capabilities_uuid = BLE_FIRMWARE_OTA_CAPABILITIES_UUID;
 static bool s_registered;
 
 static int ble_firmware_ota_att_error_from_esp(esp_err_t ret)
@@ -286,15 +291,46 @@ static int ble_firmware_ota_access(
     (void)conn_handle;
     (void)attr_handle;
 
-    if (ctxt == NULL || ctxt->op != BLE_GATT_ACCESS_OP_WRITE_CHR) {
+    if (ctxt == NULL) {
+        return BLE_ATT_ERR_UNLIKELY;
+    }
+
+    ble_firmware_ota_gatt_attr_t attr = (ble_firmware_ota_gatt_attr_t)(uintptr_t)arg;
+    if (ctxt->op == BLE_GATT_ACCESS_OP_READ_CHR) {
+        const char *value = NULL;
+        switch (attr) {
+        case BLE_FIRMWARE_OTA_GATT_ATTR_READINESS:
+            value = listener_device_get_factory_readiness();
+            break;
+        case BLE_FIRMWARE_OTA_GATT_ATTR_CAPABILITIES:
+            value = listener_device_get_capabilities();
+            break;
+        case BLE_FIRMWARE_OTA_GATT_ATTR_CONTROL:
+        case BLE_FIRMWARE_OTA_GATT_ATTR_DATA:
+        default:
+            return BLE_ATT_ERR_READ_NOT_PERMITTED;
+        }
+
+        int rc = os_mbuf_append(ctxt->om, value, strlen(value));
+        if (rc != 0) {
+            return BLE_ATT_ERR_INSUFFICIENT_RES;
+        }
+        ESP_LOGI(TAG, "OTA identity read attr=%u value=%s", (unsigned)attr, value);
+        return 0;
+    }
+
+    if (ctxt->op != BLE_GATT_ACCESS_OP_WRITE_CHR) {
         return BLE_ATT_ERR_WRITE_NOT_PERMITTED;
     }
 
-    switch ((ble_firmware_ota_gatt_attr_t)(uintptr_t)arg) {
+    switch (attr) {
     case BLE_FIRMWARE_OTA_GATT_ATTR_CONTROL:
         return ble_firmware_ota_handle_control_write(ctxt->om);
     case BLE_FIRMWARE_OTA_GATT_ATTR_DATA:
         return ble_firmware_ota_handle_data_write(ctxt->om);
+    case BLE_FIRMWARE_OTA_GATT_ATTR_READINESS:
+    case BLE_FIRMWARE_OTA_GATT_ATTR_CAPABILITIES:
+        return BLE_ATT_ERR_WRITE_NOT_PERMITTED;
     default:
         return BLE_ATT_ERR_UNLIKELY;
     }
@@ -316,6 +352,18 @@ static const struct ble_gatt_svc_def s_ota_svcs[] = {
                 .access_cb = ble_firmware_ota_access,
                 .flags = BLE_GATT_CHR_F_WRITE | BLE_GATT_CHR_F_WRITE_NO_RSP,
                 .arg = (void *)(uintptr_t)BLE_FIRMWARE_OTA_GATT_ATTR_DATA,
+            },
+            {
+                .uuid = &s_readiness_uuid.u,
+                .access_cb = ble_firmware_ota_access,
+                .flags = BLE_GATT_CHR_F_READ,
+                .arg = (void *)(uintptr_t)BLE_FIRMWARE_OTA_GATT_ATTR_READINESS,
+            },
+            {
+                .uuid = &s_capabilities_uuid.u,
+                .access_cb = ble_firmware_ota_access,
+                .flags = BLE_GATT_CHR_F_READ,
+                .arg = (void *)(uintptr_t)BLE_FIRMWARE_OTA_GATT_ATTR_CAPABILITIES,
             },
             {0},
         },
@@ -359,6 +407,10 @@ void ble_firmware_ota_log_gatt_state(void)
     uint16_t control_val_handle = 0;
     uint16_t data_def_handle = 0;
     uint16_t data_val_handle = 0;
+    uint16_t readiness_def_handle = 0;
+    uint16_t readiness_val_handle = 0;
+    uint16_t capabilities_def_handle = 0;
+    uint16_t capabilities_val_handle = 0;
     int svc_rc = ble_gatts_find_svc(&s_service_uuid.u, &service_handle);
     int control_rc = ble_gatts_find_chr(
         &s_service_uuid.u,
@@ -370,10 +422,20 @@ void ble_firmware_ota_log_gatt_state(void)
         &s_data_uuid.u,
         &data_def_handle,
         &data_val_handle);
+    int readiness_rc = ble_gatts_find_chr(
+        &s_service_uuid.u,
+        &s_readiness_uuid.u,
+        &readiness_def_handle,
+        &readiness_val_handle);
+    int capabilities_rc = ble_gatts_find_chr(
+        &s_service_uuid.u,
+        &s_capabilities_uuid.u,
+        &capabilities_def_handle,
+        &capabilities_val_handle);
 
     ESP_LOGI(
         TAG,
-        "firmware OTA GATT state: registered=%u svc_rc=%d svc_handle=%u control_rc=%d control_def=%u control_val=%u data_rc=%d data_def=%u data_val=%u",
+        "firmware OTA GATT state: registered=%u svc_rc=%d svc_handle=%u control_rc=%d control_def=%u control_val=%u data_rc=%d data_def=%u data_val=%u readiness_rc=%d readiness_def=%u readiness_val=%u capabilities_rc=%d capabilities_def=%u capabilities_val=%u",
         s_registered,
         svc_rc,
         service_handle,
@@ -382,5 +444,11 @@ void ble_firmware_ota_log_gatt_state(void)
         control_val_handle,
         data_rc,
         data_def_handle,
-        data_val_handle);
+        data_val_handle,
+        readiness_rc,
+        readiness_def_handle,
+        readiness_val_handle,
+        capabilities_rc,
+        capabilities_def_handle,
+        capabilities_val_handle);
 }

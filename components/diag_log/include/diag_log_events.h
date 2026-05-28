@@ -64,6 +64,7 @@
 #define DIAG_GAP_CONN_PARAM    7   /* a1=conn_interval, a2=conn_latency, a3=conn_timeout, a4=conn_handle */
 #define DIAG_GAP_CONN_PARAM_REQ 8  /* a1=mode(1=active,2=low_power), a2=result, a3=conn_handle, a4=latency */
 #define DIAG_GAP_SUBSCRIBE     9   /* a1=conn_handle, a2=attr_handle, a3=(reason<<16|prevn<<8|curn), a4=(previ<<8|curi) */
+#define DIAG_GAP_RECOVERY      10  /* a1=action(1=clear_bonds,2=terminate_conn,3=restart_adv,4=complete), a2=result, a3=bond_count, a4=conn_handle */
 
 /* Audio capture events (DIAG_SRC_AUDIO) */
 #define DIAG_AUDIO_INIT_FAIL   1   /* a1=component(1=I2S,2=I2C,3=codec,4=mutex,5=task), a2=esp_err, a3=0, a4=0 */

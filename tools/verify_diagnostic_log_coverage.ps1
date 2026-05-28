@@ -100,7 +100,8 @@ foreach ($macro in @(
     "DIAG_POWER_SLEEP_BLOCKED",
     "DIAG_POWER_WAKE",
     "DIAG_POWER_BLOCKER_CHANGE",
-    "DIAG_POWER_STATUS"
+    "DIAG_POWER_STATUS",
+    "DIAG_GAP_RECOVERY"
 )) {
     if ($events -notmatch "(?m)^\s*#define\s+$macro\b") {
         Add-CheckError "$eventsPath missing $macro"
@@ -129,6 +130,9 @@ Assert-NotContains -RelativePath "tools/package_factory_firmware.ps1" -Pattern '
 Assert-Contains -RelativePath "ports/esp32/ble_audio_stream/ble_audio_stream_esp32.c" -Pattern "DIAG_BAUD_NOTIFY_STATE" -Description "BLE audio notify state diag event"
 Assert-Contains -RelativePath "ports/esp32/ble_audio_stream/ble_audio_stream_esp32.c" -Pattern "BLE_AUDIO_NOTIFY_STATE_DISABLED_ABORT" -Description "notify-disabled abort state"
 Assert-Contains -RelativePath "ports/esp32/ble_audio_stream/ble_audio_stream_esp32.c" -Pattern '(?s)DIAG_BAUD_SESSION_ABORT.*?s_transport_session_id,\s*ble_audio_stream_reason_code\("notify_disabled_session_abort"\),\s*s_transport_expected_packet_count,\s*s_connection_epoch' -Description "notify-disabled session abort epoch"
+Assert-Contains -RelativePath "ports/esp32/ble_hid_gap/ble_hid_gap_esp32.c" -Pattern "DIAG_GAP_RECOVERY" -Description "BLE recovery diag event logging"
+Assert-Contains -RelativePath "ports/esp32/ble_hid_gap/ble_hid_gap_esp32.c" -Pattern "recovery: clearing pairing bonds" -Description "BLE recovery serial action log"
+Assert-Contains -RelativePath "ports/esp32/ble_hid_gap/ble_hid_gap_esp32.c" -Pattern "recovery: pairing reset complete" -Description "BLE recovery completion serial log"
 
 Assert-Contains -RelativePath "tools/decode_diag_log.py" -Pattern "duplicate diag_log source id" -Description "duplicate source id rejection"
 Assert-Contains -RelativePath "tools/decode_diag_log.py" -Pattern "duplicate diag_log event id" -Description "duplicate event id rejection"

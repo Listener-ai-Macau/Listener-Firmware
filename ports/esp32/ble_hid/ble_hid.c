@@ -50,6 +50,9 @@ static const char *TAG = "ble_hid";
 #define BLE_HID_USB_COMMAND_PREFIX '~'
 #define BLE_HID_USB_COMMAND_BUFFER_BYTES 64
 #define BLE_HID_ASCII_QUEUE_LENGTH 8
+#define BLE_HID_READINESS_ALL \
+    (LISTENER_DEVICE_READY_HID | LISTENER_DEVICE_READY_AUDIO | \
+     LISTENER_DEVICE_READY_OTA | LISTENER_DEVICE_READY_DIAGNOSTIC)
 
 typedef struct
 {
@@ -94,6 +97,23 @@ static QueueHandle_t s_ascii_queue;
 static bool s_safe_mode;
 
 static void ble_hid_log_dis_gatt_state(void);
+
+static void ble_hid_publish_readiness(
+    uint32_t ready_mask,
+    uint32_t degraded_mask,
+    const char *reason)
+{
+    listener_device_set_readiness(ready_mask, degraded_mask);
+    ESP_LOGI(
+        TAG,
+        "device readiness: reason=%s ready_mask=0x%08" PRIx32
+        " degraded_mask=0x%08" PRIx32 " readiness=%s capabilities=%s",
+        reason != NULL ? reason : "unspecified",
+        ready_mask,
+        degraded_mask,
+        listener_device_get_factory_readiness(),
+        listener_device_get_capabilities());
+}
 
 static void ble_hid_update_battery_level(const char *reason)
 {
@@ -538,19 +558,24 @@ static void ble_hid_log_dis_result(const char *field, int rc)
 
 static void ble_hid_configure_dis_identity(void)
 {
+    ble_hid_log_dis_result("manufacturer", ble_svc_dis_manufacturer_name_set(LISTENER_DEVICE_MANUFACTURER));
     ble_hid_log_dis_result("model", ble_svc_dis_model_number_set(LISTENER_DEVICE_MODEL));
+    ble_hid_log_dis_result("serial", ble_svc_dis_serial_number_set(listener_device_get_serial()));
     ble_hid_log_dis_result("hardware_revision", ble_svc_dis_hardware_revision_set(LISTENER_DEVICE_HW_REV));
     ble_hid_log_dis_result("firmware_revision", ble_svc_dis_firmware_revision_set(listener_device_get_fw_version()));
     ble_hid_log_dis_result("software_revision", ble_svc_dis_software_revision_set(listener_device_get_protocol_version()));
 
     ESP_LOGI(TAG,
-             "DIS identity: manufacturer=%s model=%s hw=%s fw=%s proto=%s serial=%s",
+             "DIS identity: manufacturer=%s model=%s hw=%s fw=%s proto=%s serial=%s vid=0x%04x pid=0x%04x product_version=%u",
              LISTENER_DEVICE_MANUFACTURER,
              LISTENER_DEVICE_MODEL,
              LISTENER_DEVICE_HW_REV,
              listener_device_get_fw_version(),
              listener_device_get_protocol_version(),
-             listener_device_get_serial());
+             listener_device_get_serial(),
+             LISTENER_VENDOR_ID,
+             LISTENER_PRODUCT_ID,
+             LISTENER_PROTOCOL_VERSION);
 }
 
 static void ble_hid_log_dis_gatt_state(void)
@@ -632,6 +657,8 @@ static void ble_hid_log_dis_gatt_state(void)
 esp_err_t ble_hid_init(void)
 {
     listener_device_set_safe_mode(s_safe_mode);
+    uint32_t ready_mask = LISTENER_DEVICE_READY_DIAGNOSTIC;
+    uint32_t degraded_mask = 0;
     ESP_LOGI(TAG, "fw_version=%s protocol_version=%u build=%s serial=%s",
              listener_device_get_fw_version(),
              LISTENER_PROTOCOL_VERSION,
@@ -657,6 +684,10 @@ esp_err_t ble_hid_init(void)
     }
     if (ret != ESP_OK) {
         ESP_LOGE(TAG, "nvs_flash_init failed: %s", esp_err_to_name(ret));
+        ble_hid_publish_readiness(
+            ready_mask,
+            BLE_HID_READINESS_ALL & ~ready_mask,
+            "nvs_init_failed");
         return ret;
     }
 
@@ -667,6 +698,10 @@ esp_err_t ble_hid_init(void)
         s_ascii_queue = xQueueCreate(BLE_HID_ASCII_QUEUE_LENGTH, sizeof(char));
         if (s_ascii_queue == NULL) {
             ESP_LOGE(TAG, "ascii queue create failed");
+            ble_hid_publish_readiness(
+                ready_mask,
+                BLE_HID_READINESS_ALL & ~ready_mask,
+                "ascii_queue_failed");
             return ESP_ERR_NO_MEM;
         }
     }
@@ -675,31 +710,47 @@ esp_err_t ble_hid_init(void)
     ret = ble_hid_gap_init();
     if (ret != ESP_OK) {
         ESP_LOGE(TAG, "ble_hid_gap_init failed: %s", esp_err_to_name(ret));
+        ble_hid_publish_readiness(
+            ready_mask,
+            BLE_HID_READINESS_ALL & ~ready_mask,
+            "gap_init_failed");
         return ret;
     }
 
     if (s_safe_mode) {
         ESP_LOGW(TAG, "safe mode: BLE audio GATT disabled");
+        degraded_mask |= LISTENER_DEVICE_READY_AUDIO;
     } else {
         ret = ble_audio_stream_init();
         if (ret == ESP_OK) {
             ret = ble_audio_stream_register_gatt();
             if (ret != ESP_OK) {
                 ESP_LOGW(TAG, "BLE audio GATT registration failed; HID/recovery continue: %s", esp_err_to_name(ret));
+                degraded_mask |= LISTENER_DEVICE_READY_AUDIO;
+            } else {
+                ready_mask |= LISTENER_DEVICE_READY_AUDIO;
             }
         } else {
             ESP_LOGW(TAG, "BLE audio init failed; HID/recovery continue without audio stream: %s", esp_err_to_name(ret));
+            degraded_mask |= LISTENER_DEVICE_READY_AUDIO;
         }
     }
 
     ret = ble_firmware_ota_register_gatt();
     if (ret != ESP_OK) {
         ESP_LOGW(TAG, "BLE firmware OTA GATT registration failed; HID/audio continue: %s", esp_err_to_name(ret));
+        degraded_mask |= LISTENER_DEVICE_READY_OTA;
+    } else {
+        ready_mask |= LISTENER_DEVICE_READY_OTA;
     }
 
     ret = ble_hid_gap_configure_advertising(ESP_HID_APPEARANCE_KEYBOARD, s_device_name);
     if (ret != ESP_OK) {
         ESP_LOGE(TAG, "BLE advertising config failed: %s", esp_err_to_name(ret));
+        ble_hid_publish_readiness(
+            ready_mask,
+            degraded_mask | (BLE_HID_READINESS_ALL & ~ready_mask),
+            "advertising_config_failed");
         return ret;
     }
 
@@ -710,8 +761,13 @@ esp_err_t ble_hid_init(void)
         &s_ble_hid_ctx.hid_device);
     if (ret != ESP_OK) {
         ESP_LOGE(TAG, "esp_hidd_dev_init failed: %s", esp_err_to_name(ret));
+        ble_hid_publish_readiness(
+            ready_mask,
+            degraded_mask | LISTENER_DEVICE_READY_HID,
+            "hid_init_failed");
         return ret;
     }
+    ready_mask |= LISTENER_DEVICE_READY_HID;
 
     ble_hid_configure_dis_identity();
     ble_hid_log_dis_gatt_state();
@@ -726,6 +782,7 @@ esp_err_t ble_hid_init(void)
     }
 
     ble_hid_update_battery_level("init");
+    ble_hid_publish_readiness(ready_mask, degraded_mask, "init_complete");
     return ESP_OK;
 }
 

@@ -82,7 +82,7 @@ static uint16_t s_service_changed_val_handle = BLE_HS_CONN_HANDLE_NONE;
 static bool s_service_changed_state_loaded = false;
 static bool s_service_changed_pending = false;
 static bool s_service_changed_queued_for_conn = false;
-static char s_service_changed_fw_version[32];
+static char s_service_changed_fw_version[64];
 
 /*
  * Legacy advertising has a hard 31-byte payload limit. With flags,
@@ -92,6 +92,7 @@ static char s_service_changed_fw_version[32];
 #define BLE_HID_ADV_NAME_MAX_LEN 17
 #define BLE_HID_GAP_SERVICE_CHANGED_NVS_NAMESPACE "ble_gap"
 #define BLE_HID_GAP_SERVICE_CHANGED_FW_KEY "svcchg_fw"
+#define BLE_HID_GAP_GATT_SCHEMA_REV "ota_identity_v2"
 #define BLE_HID_GAP_SERVICE_CHANGED_START_HANDLE 0x0001
 #define BLE_HID_GAP_SERVICE_CHANGED_END_HANDLE 0xffff
 
@@ -137,8 +138,9 @@ static bool ble_hid_gap_service_changed_pending(void)
     snprintf(
         s_service_changed_fw_version,
         sizeof(s_service_changed_fw_version),
-        "%s",
-        current_version);
+        "%s;%s",
+        current_version,
+        BLE_HID_GAP_GATT_SCHEMA_REV);
 
     char stored_version[sizeof(s_service_changed_fw_version)] = {0};
     size_t stored_len = sizeof(stored_version);
@@ -169,7 +171,7 @@ static bool ble_hid_gap_service_changed_pending(void)
     ESP_LOGI(
         TAG,
         "service changed version state: current=%s stored=%s pending=%u",
-        current_version,
+        s_service_changed_fw_version,
         ret == ESP_OK ? stored_version : "none",
         s_service_changed_pending ? 1U : 0U);
     return s_service_changed_pending;
@@ -887,14 +889,20 @@ esp_err_t ble_hid_gap_forget_bonds_and_repair(void)
         sizeof(bonded_peers) / sizeof(bonded_peers[0]));
     if (rc != 0) {
         ESP_LOGE(TAG, "recovery: bonded peer lookup failed rc=%d", rc);
+        diag_log(DIAG_SRC_BLE_GAP, DIAG_GAP_RECOVERY, DIAG_SEV_ERROR,
+                 1, (uint32_t)rc, 0, s_ble_gap_conn_handle);
         return ESP_FAIL;
     }
 
     ESP_LOGW(TAG, "recovery: clearing pairing bonds count=%d", bonded_peer_count);
+    diag_log(DIAG_SRC_BLE_GAP, DIAG_GAP_RECOVERY, DIAG_SEV_WARN,
+             1, 0, (uint32_t)bonded_peer_count, s_ble_gap_conn_handle);
     for (int index = 0; index < bonded_peer_count; ++index) {
         rc = ble_store_util_delete_peer(&bonded_peers[index]);
         if (rc != 0) {
             ESP_LOGE(TAG, "recovery: delete peer index=%d failed rc=%d", index, rc);
+            diag_log(DIAG_SRC_BLE_GAP, DIAG_GAP_RECOVERY, DIAG_SEV_ERROR,
+                     1, (uint32_t)rc, (uint32_t)bonded_peer_count, s_ble_gap_conn_handle);
             if (first_error == 0) {
                 first_error = rc;
             }
@@ -908,24 +916,36 @@ esp_err_t ble_hid_gap_forget_bonds_and_repair(void)
         rc = ble_gap_terminate(s_ble_gap_conn_handle, BLE_ERR_REM_USER_CONN_TERM);
         if (rc == 0) {
             ESP_LOGW(TAG, "recovery: active BLE connection terminating for re-pair; advertising restarts after disconnect");
+            diag_log(DIAG_SRC_BLE_GAP, DIAG_GAP_RECOVERY, DIAG_SEV_WARN,
+                     2, 0, (uint32_t)bonded_peer_count, s_ble_gap_conn_handle);
             return first_error == 0 ? ESP_OK : ESP_FAIL;
         } else {
             ESP_LOGW(TAG, "recovery: BLE terminate failed rc=%d; advertising restart will continue", rc);
+            diag_log(DIAG_SRC_BLE_GAP, DIAG_GAP_RECOVERY, DIAG_SEV_WARN,
+                     2, (uint32_t)rc, (uint32_t)bonded_peer_count, s_ble_gap_conn_handle);
         }
     } else if (ble_gap_adv_active()) {
         rc = ble_gap_adv_stop();
         if (rc != 0) {
             ESP_LOGW(TAG, "recovery: advertising stop failed rc=%d; restart will continue", rc);
+            diag_log(DIAG_SRC_BLE_GAP, DIAG_GAP_RECOVERY, DIAG_SEV_WARN,
+                     3, (uint32_t)rc, (uint32_t)bonded_peer_count, s_ble_gap_conn_handle);
         }
     }
 
     esp_err_t adv_ret = ble_hid_gap_start_advertising();
     if (adv_ret != ESP_OK) {
         ESP_LOGE(TAG, "recovery: advertising restart failed: %s", esp_err_to_name(adv_ret));
+        diag_log(DIAG_SRC_BLE_GAP, DIAG_GAP_RECOVERY, DIAG_SEV_ERROR,
+                 3, (uint32_t)adv_ret, (uint32_t)bonded_peer_count, s_ble_gap_conn_handle);
         return adv_ret;
     }
+    diag_log(DIAG_SRC_BLE_GAP, DIAG_GAP_RECOVERY, DIAG_SEV_INFO,
+             3, 0, (uint32_t)bonded_peer_count, s_ble_gap_conn_handle);
 
     ESP_LOGW(TAG, "recovery: pairing reset complete, device is discoverable for first-time pairing");
+    diag_log(DIAG_SRC_BLE_GAP, DIAG_GAP_RECOVERY, DIAG_SEV_INFO,
+             4, first_error == 0 ? 0 : (uint32_t)first_error, (uint32_t)bonded_peer_count, s_ble_gap_conn_handle);
     return first_error == 0 ? ESP_OK : ESP_FAIL;
 }
 

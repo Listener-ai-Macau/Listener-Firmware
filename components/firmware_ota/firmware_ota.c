@@ -530,6 +530,10 @@ firmware_ota_status_t firmware_ota_get_status(void)
     status.pending_verify = firmware_ota_running_pending_verify();
     status.running_state = ota_state_for_partition(running);
     firmware_ota_unlock();
+    status.ready_mask = listener_device_get_ready_mask();
+    status.degraded_mask = listener_device_get_degraded_mask();
+    status.readiness = listener_device_get_factory_readiness();
+    status.capabilities = listener_device_get_capabilities();
     status.blocker = firmware_ota_get_blocker();
     return status;
 }
@@ -551,7 +555,7 @@ static void firmware_ota_print_status(void)
     firmware_ota_log_partition_event(DIAG_OTA_PARTITION_NEXT, esp_ota_get_next_update_partition(NULL));
     ESP_LOGI(
         TAG,
-        "OTA STATUS running=%s running_offset=0x%08" PRIx32 " boot=%s boot_offset=0x%08" PRIx32 " update=%s update_offset=0x%08" PRIx32 " update_size=%u version=%s target=%s active=%u pending_verify=%u state=%" PRIu32 " bytes=%u expected=%u blocker=%s",
+        "OTA STATUS running=%s running_offset=0x%08" PRIx32 " boot=%s boot_offset=0x%08" PRIx32 " update=%s update_offset=0x%08" PRIx32 " update_size=%u version=%s target=%s active=%u pending_verify=%u state=%" PRIu32 " bytes=%u expected=%u blocker=%s ready_mask=0x%08" PRIx32 " degraded_mask=0x%08" PRIx32 " readiness=%s capabilities=%s",
         status.running_partition,
         status.running_offset,
         status.boot_partition,
@@ -566,7 +570,11 @@ static void firmware_ota_print_status(void)
         status.running_state,
         (unsigned)status.bytes_written,
         (unsigned)status.expected_size,
-        firmware_ota_blocker_name(status.blocker));
+        firmware_ota_blocker_name(status.blocker),
+        status.ready_mask,
+        status.degraded_mask,
+        status.readiness,
+        status.capabilities);
 }
 
 bool firmware_ota_consume_usb_command(const char *line)

@@ -37,6 +37,10 @@ typedef struct {
     bool active;
     bool pending_verify;
     uint32_t running_state;
+    uint32_t ready_mask;
+    uint32_t degraded_mask;
+    const char *readiness;
+    const char *capabilities;
     firmware_ota_blocker_t blocker;
 } firmware_ota_status_t;
 
