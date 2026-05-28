@@ -32,6 +32,7 @@ const char *listener_device_get_ble_name(void);
 const char *listener_device_get_protocol_version(void);
 const char *listener_device_get_factory_readiness(void);
 const char *listener_device_get_capabilities(void);
+void listener_device_set_safe_mode(bool enabled);
 
 #ifdef __cplusplus
 }

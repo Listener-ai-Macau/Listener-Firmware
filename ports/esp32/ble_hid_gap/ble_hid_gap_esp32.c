@@ -75,6 +75,7 @@ static uint8_t s_own_addr_type = BLE_OWN_ADDR_PUBLIC;
 static bool s_directed_adv_pending = true;
 static bool s_last_adv_was_directed = false;
 static bool s_ble_gap_connected = false;
+static bool s_audio_enabled = true;
 static bool s_low_power_advertising = false;
 static uint16_t s_ble_gap_conn_handle = BLE_HS_CONN_HANDLE_NONE;
 static uint16_t s_service_changed_val_handle = BLE_HS_CONN_HANDLE_NONE;
@@ -394,7 +395,9 @@ nimble_hid_gap_event(struct ble_gap_event *event, void *arg)
 
         s_ble_gap_connected = true;
         s_ble_gap_conn_handle = event->connect.conn_handle;
-        ble_audio_stream_on_gap_connect(event->connect.conn_handle);
+        if (s_audio_enabled) {
+            ble_audio_stream_on_gap_connect(event->connect.conn_handle);
+        }
         s_last_adv_was_directed = false;
         s_service_changed_queued_for_conn = false;
         ble_hid_gap_queue_service_changed("connect");
@@ -423,30 +426,32 @@ nimble_hid_gap_event(struct ble_gap_event *event, void *arg)
             ESP_LOGW(TAG, "security initiate failed: rc=%d", rc);
         }
 
-        struct ble_gap_upd_params audio_params = {
-            .itvl_min = 6,
-            .itvl_max = 6,
-            .latency = 0,
-            .supervision_timeout = 800,
-            .min_ce_len = 0,
-            .max_ce_len = 0,
-        };
-        rc = ble_gap_update_params(event->connect.conn_handle, &audio_params);
-        if (rc == 0) {
-            ESP_LOGI(TAG, "audio connection parameter update requested");
-        } else {
-            ESP_LOGW(TAG, "audio connection parameter update failed: rc=%d", rc);
-        }
+        if (s_audio_enabled) {
+            struct ble_gap_upd_params audio_params = {
+                .itvl_min = 6,
+                .itvl_max = 6,
+                .latency = 0,
+                .supervision_timeout = 800,
+                .min_ce_len = 0,
+                .max_ce_len = 0,
+            };
+            rc = ble_gap_update_params(event->connect.conn_handle, &audio_params);
+            if (rc == 0) {
+                ESP_LOGI(TAG, "audio connection parameter update requested");
+            } else {
+                ESP_LOGW(TAG, "audio connection parameter update failed: rc=%d", rc);
+            }
 
-        rc = ble_gap_set_prefered_le_phy(
-            event->connect.conn_handle,
-            BLE_GAP_LE_PHY_2M_MASK,
-            BLE_GAP_LE_PHY_2M_MASK,
-            0);
-        if (rc == 0) {
-            ESP_LOGI(TAG, "audio 2M PHY preference requested");
-        } else {
-            ESP_LOGW(TAG, "audio 2M PHY preference failed: rc=%d", rc);
+            rc = ble_gap_set_prefered_le_phy(
+                event->connect.conn_handle,
+                BLE_GAP_LE_PHY_2M_MASK,
+                BLE_GAP_LE_PHY_2M_MASK,
+                0);
+            if (rc == 0) {
+                ESP_LOGI(TAG, "audio 2M PHY preference requested");
+            } else {
+                ESP_LOGW(TAG, "audio 2M PHY preference failed: rc=%d", rc);
+            }
         }
         return 0;
     case BLE_GAP_EVENT_DISCONNECT:
@@ -456,7 +461,9 @@ nimble_hid_gap_event(struct ble_gap_event *event, void *arg)
         s_ble_gap_connected = false;
         s_ble_gap_conn_handle = BLE_HS_CONN_HANDLE_NONE;
         s_service_changed_queued_for_conn = false;
-        ble_audio_stream_on_gap_disconnect(event->disconnect.conn.conn_handle);
+        if (s_audio_enabled) {
+            ble_audio_stream_on_gap_disconnect(event->disconnect.conn.conn_handle);
+        }
         ble_firmware_ota_on_gap_disconnect(event->disconnect.conn.conn_handle);
         s_directed_adv_pending = true;
         s_last_adv_was_directed = false;
@@ -502,17 +509,20 @@ nimble_hid_gap_event(struct ble_gap_event *event, void *arg)
                  (uint32_t)event->subscribe.cur_notify,
                  ((uint32_t)event->subscribe.prev_indicate << 8) |
                  (uint32_t)event->subscribe.cur_indicate);
-        ble_audio_stream_on_gap_subscribe(
-            event->subscribe.conn_handle,
-            event->subscribe.attr_handle,
-            event->subscribe.cur_notify,
-            event->subscribe.cur_indicate);
+        if (s_audio_enabled) {
+            ble_audio_stream_on_gap_subscribe(
+                event->subscribe.conn_handle,
+                event->subscribe.attr_handle,
+                event->subscribe.cur_notify,
+                event->subscribe.cur_indicate);
+        }
         if (event->subscribe.reason == BLE_GAP_SUBSCRIBE_REASON_WRITE &&
             event->subscribe.attr_handle == ble_hid_gap_get_service_changed_val_handle() &&
             event->subscribe.cur_indicate != 0) {
             ble_hid_gap_indicate_service_changed(event->subscribe.conn_handle, "central subscribe");
         }
-        if (event->subscribe.attr_handle == ble_audio_stream_get_notify_attr_handle() &&
+        if (s_audio_enabled &&
+            event->subscribe.attr_handle == ble_audio_stream_get_notify_attr_handle() &&
             event->subscribe.cur_notify != 0) {
             ble_hid_gap_log_conn_desc("audio notify subscribed", event->subscribe.conn_handle);
         }
@@ -525,7 +535,9 @@ nimble_hid_gap_event(struct ble_gap_event *event, void *arg)
                 event->mtu.value);
         diag_log(DIAG_SRC_BLE_GAP, DIAG_GAP_MTU, DIAG_SEV_INFO,
                  0, event->mtu.value, event->mtu.conn_handle, event->mtu.channel_id);
-        ble_audio_stream_on_gap_mtu(event->mtu.conn_handle, event->mtu.value);
+        if (s_audio_enabled) {
+            ble_audio_stream_on_gap_mtu(event->mtu.conn_handle, event->mtu.value);
+        }
         return 0;
 
     case BLE_GAP_EVENT_ENC_CHANGE:
@@ -577,11 +589,13 @@ nimble_hid_gap_event(struct ble_gap_event *event, void *arg)
                 s_service_changed_queued_for_conn = false;
             }
         }
-        ble_audio_stream_on_gap_notify_tx(
-            event->notify_tx.conn_handle,
-            event->notify_tx.attr_handle,
-            event->notify_tx.status,
-            event->notify_tx.indication != 0);
+        if (s_audio_enabled) {
+            ble_audio_stream_on_gap_notify_tx(
+                event->notify_tx.conn_handle,
+                event->notify_tx.attr_handle,
+                event->notify_tx.status,
+                event->notify_tx.indication != 0);
+        }
         return 0;
 
     case BLE_GAP_EVENT_REPEAT_PAIRING:
@@ -834,6 +848,12 @@ esp_err_t esp_hid_gap_init(uint8_t mode)
 esp_err_t ble_hid_gap_init(void)
 {
     return esp_hid_gap_init(HIDD_BLE_MODE);
+}
+
+void ble_hid_gap_set_audio_enabled(bool enabled)
+{
+    s_audio_enabled = enabled;
+    ESP_LOGI(TAG, "audio GAP integration enabled=%u", enabled ? 1u : 0u);
 }
 
 esp_err_t ble_hid_gap_configure_advertising(uint16_t appearance, const char *device_name)

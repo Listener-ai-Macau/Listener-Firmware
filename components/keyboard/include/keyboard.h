@@ -9,6 +9,7 @@ extern "C" {
 #endif
 
 esp_err_t keyboard_start(void);
+esp_err_t keyboard_start_safe_mode(void);
 uint32_t keyboard_get_key_press_count(void);
 
 #ifdef __cplusplus
