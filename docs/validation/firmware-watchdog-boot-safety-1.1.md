@@ -1,65 +1,46 @@
 # firmware-watchdog-boot-safety 1.1 validation
 
-Date: 2026-05-27
-Agent: tai
-Repo: voice-keyboard-firmware
-Branch: ai/tai-firmware-watchdog-boot-safety-1.1
+Date: 2026-05-28
+Agent: oai1
+Branch: ai/oai1-firmware-watchdog-boot-safety-1.1
+Commit: cf76aaa
+Device: ESP32-S3 on COM5, USB-Serial-JTAG, MAC 14:c1:9f:48:fe:70
 
-## Scope
+## Commands
 
-Enabled firmware watchdog boot safety for the ESP32-S3 product firmware.
-
-- `sdkconfig.defaults` and `sdkconfig.defaults.esp32s3` enable Task WDT with panic and a 5 second timeout.
-- `sdkconfig.defaults` and `sdkconfig.defaults.esp32s3` enable Interrupt WDT with a 300 ms timeout.
-- Added the `watchdog_platform` ESP32 component as a small wrapper around `esp_task_wdt_add(NULL)` and `esp_task_wdt_reset()`.
-- Registered and fed the main firmware long-running tasks:
-  - BLE HID USB command task
-  - BLE HID battery task
-  - BLE audio stream task
-  - audio capture task
-  - WASD keyboard scan task
-  - voice key input task
-  - voice recording control task
-  - power manager task
-  - system health task
-- Long waits in battery, health, power manager, and BLE audio queue/delay paths are bounded or split through the watchdog wrapper so normal idle periods do not trip the 5 second Task WDT.
-- `app_main` logs the active watchdog configuration during boot; existing reset-reason diagnostics already map `ESP_RST_TASK_WDT` and `ESP_RST_INT_WDT` to `DIAG_BOOT_WATCHDOG`.
-- Added `tools/verify_watchdog_boot_safety_static.ps1` to make the WDT config and task subscription coverage reviewable without hardware.
-
-## Config Evidence
-
-After `pwsh -NoProfile -File .\tools\build.ps1 -Target esp32s3`, generated `sdkconfig` contained:
-
-- `CONFIG_ESP_TASK_WDT_EN=y`
-- `CONFIG_ESP_TASK_WDT_INIT=y`
-- `CONFIG_ESP_TASK_WDT_PANIC=y`
-- `CONFIG_ESP_TASK_WDT_TIMEOUT_S=5`
-- `CONFIG_ESP_TASK_WDT_CHECK_IDLE_TASK_CPU0=y`
-- `CONFIG_ESP_TASK_WDT_CHECK_IDLE_TASK_CPU1=y`
-- `CONFIG_ESP_INT_WDT=y`
-- `CONFIG_ESP_INT_WDT_TIMEOUT_MS=300`
-- `CONFIG_ESP_INT_WDT_CHECK_CPU1=y`
-
-## Validation
-
-Passed:
-
-- `pwsh -NoProfile -File .\tools\build.ps1 -Target esp32s3`
 - `pwsh -NoProfile -File .\tools\verify_watchdog_boot_safety_static.ps1`
-- `pwsh -NoProfile -File .\tools\ai\repo_features.ps1 -Check`
-- `python -m compileall -q tools`
 - `git diff --check`
-- `pwsh -NoProfile -File ..\ai-collaboration-workflow\scripts\aiw.ps1 validate -Plan firmware-watchdog-boot-safety`
+- `python -m compileall -q tools`
+- `pwsh -NoProfile -File .\tools\ai\repo_features.ps1 -Check`
+- `pwsh -NoProfile -File .\tools\build.ps1 -Target esp32s3`
+- `pwsh -NoProfile -File .\tools\flash.ps1 -Port COM5 -Target esp32s3`
+- USB serial `~WDT:STATUS`
+- USB serial `~WDT:DEADLOCK`
 
-## Hardware Boundary
+## Results
 
-Hardware validation was not run in this implementation step because the workflow hardware locks were active:
+- Static watchdog checks passed.
+- Build passed for ESP32-S3. Binary size: `0xa4670`; smallest app partition: `0x1b0000`; 62% free.
+- Flash passed over COM5 without BOOT or RESET button interaction. `esptool.py` detected ESP32-S3 and verified all written segments.
+- Boot log after forced reconfigure reports `App version: cf76aaa` and `fw_version=cf76aaa`.
+- Runtime watchdog status reports `task_wdt=1 init=1 panic=1 timeout_s=5 int_wdt=1 int_timeout_ms=300`.
+- Normal boot subscribes core runtime tasks to Task WDT, including BLE audio, audio capture, voice key input, voice recording control, keyboard, health, power manager, BLE HID battery, and BLE HID keyboard tasks.
+- `~WDT:DEADLOCK` was accepted by firmware and triggered Task WDT panic after approximately 5.8 seconds.
+- Device rebooted automatically after the watchdog panic and returned to normal boot with `fw_version=cf76aaa`.
 
-- `COM5` owner: `codex`
-- `BLE-14C19F48FE72` owner: `codex`
+## Key Evidence
 
-Deferred hardware evidence:
+- `tests/artifacts/firmware_watchdog_boot_safety_20260528-085608/cf76aaa_wdt_status.log`
+  - `App version:      cf76aaa`
+  - `watchdog: config: task_wdt=1 init=1 panic=1 timeout_s=5 int_wdt=1 int_timeout_ms=300`
+  - `ble_hid: USB SERIAL INPUT READY`
+- `tests/artifacts/firmware_watchdog_boot_safety_20260528-085632/cf76aaa_wdt_deadlock_reset.log`
+  - `watchdog: WDT DEADLOCK test command accepted; spinning without feed`
+  - `task_wdt: Task watchdog got triggered`
+  - `task_wdt: Aborting.`
+  - `Rebooting...`
+  - post-reboot `App version:      cf76aaa`
 
-- `idf.py flash monitor` normal-run proof that watchdog does not trip during ordinary BLE/audio/keyboard startup.
-- Injected deadlock proof that `Task watchdog got triggered` appears and the device reboots within 5 seconds.
-- `esptool.py --chip esp32s3 -p COMx chip_id` no-button USB-Serial-JTAG recovery proof.
+## Note On Low Power Observation
+
+During this validation, the observed boot source was not deep-sleep KEY4/EXT1 wake. The captured boot log reports `power wake status: wake_source=0 wake_gpio_mask_low=0x00000000` and `wake=power_on`.
