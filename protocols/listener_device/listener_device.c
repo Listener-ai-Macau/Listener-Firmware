@@ -111,6 +111,18 @@ const char *listener_device_get_factory_readiness(void)
         s_readiness_str,
         sizeof(s_readiness_str),
         LISTENER_DEVICE_FACTORY_READINESS);
+    char model_token[32];
+    snprintf(model_token, sizeof(model_token), "model=%s", LISTENER_DEVICE_MODEL);
+    listener_device_append_token(
+        s_readiness_str,
+        sizeof(s_readiness_str),
+        model_token);
+    char fw_token[64];
+    snprintf(fw_token, sizeof(fw_token), "fw_version=%s", listener_device_get_fw_version());
+    listener_device_append_token(
+        s_readiness_str,
+        sizeof(s_readiness_str),
+        fw_token);
     listener_device_append_subsystem_tokens(
         s_readiness_str,
         sizeof(s_readiness_str),
