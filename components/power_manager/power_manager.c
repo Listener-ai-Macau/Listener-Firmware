@@ -533,6 +533,16 @@ static esp_err_t power_manager_enter_sleep(power_manager_sleep_reason_t reason)
     }
 
     uint64_t wake_gpio_mask = power_manager_wake_gpio_mask();
+    esp_err_t disable_ret = esp_sleep_disable_wakeup_source(ESP_SLEEP_WAKEUP_ALL);
+    if (disable_ret != ESP_OK) {
+        ESP_LOGW(TAG, "sleep rejected: failed to clear existing wake sources ret=%s",
+                 esp_err_to_name(disable_ret));
+        diag_log(DIAG_SRC_POWER, DIAG_POWER_SLEEP_BLOCKED, DIAG_SEV_WARN,
+                 0, snapshot.idle_ms, (uint32_t)reason, (uint32_t)disable_ret);
+        power_manager_log_wake_policy(wake_gpio_mask);
+        return disable_ret;
+    }
+
     esp_err_t wake_ret = power_manager_configure_wakeup(wake_gpio_mask);
     if (wake_ret != ESP_OK) {
         ESP_LOGW(TAG, "sleep rejected: wake GPIO unavailable ret=%s mask=0x%016" PRIx64,
