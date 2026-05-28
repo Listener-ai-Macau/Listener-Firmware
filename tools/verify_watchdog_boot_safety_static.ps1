@@ -28,12 +28,12 @@ $defaults = Read-RepoFile "sdkconfig.defaults"
 $defaultsEsp32s3 = Read-RepoFile "sdkconfig.defaults.esp32s3"
 
 foreach ($configText in @($defaults, $defaultsEsp32s3)) {
-    Assert-Contains $configText '(?m)^CONFIG_ESP_TASK_WDT_EN=y$' 'Task WDT enable'
-    Assert-Contains $configText '(?m)^CONFIG_ESP_TASK_WDT_INIT=y$' 'Task WDT init'
-    Assert-Contains $configText '(?m)^CONFIG_ESP_TASK_WDT_PANIC=y$' 'Task WDT panic'
-    Assert-Contains $configText '(?m)^CONFIG_ESP_TASK_WDT_TIMEOUT_S=5$' 'Task WDT 5 second timeout'
-    Assert-Contains $configText '(?m)^CONFIG_ESP_INT_WDT=y$' 'Interrupt WDT enable'
-    Assert-Contains $configText '(?m)^CONFIG_ESP_INT_WDT_TIMEOUT_MS=300$' 'Interrupt WDT 300ms timeout'
+    Assert-Contains $configText '(?m)^CONFIG_ESP_TASK_WDT_EN=y\r?$' 'Task WDT enable'
+    Assert-Contains $configText '(?m)^CONFIG_ESP_TASK_WDT_INIT=y\r?$' 'Task WDT init'
+    Assert-Contains $configText '(?m)^CONFIG_ESP_TASK_WDT_PANIC=y\r?$' 'Task WDT panic'
+    Assert-Contains $configText '(?m)^CONFIG_ESP_TASK_WDT_TIMEOUT_S=5\r?$' 'Task WDT 5 second timeout'
+    Assert-Contains $configText '(?m)^CONFIG_ESP_INT_WDT=y\r?$' 'Interrupt WDT enable'
+    Assert-Contains $configText '(?m)^CONFIG_ESP_INT_WDT_TIMEOUT_MS=300\r?$' 'Interrupt WDT 300ms timeout'
 }
 
 $requiredTaskFiles = @{
