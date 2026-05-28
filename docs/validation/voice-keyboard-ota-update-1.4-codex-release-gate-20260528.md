@@ -5,7 +5,7 @@ Agent: codex
 
 ## Result
 
-Partial PASS. The successful OTA path, rollback path, transfer-interruption retry path, and several failure/core-path checks passed on the COM5 board. The remaining 1.4 release gate items are the recording-active desktop blocker and final manual release checklist/go-no-go review.
+Partial PASS. The successful OTA path, rollback path, transfer-interruption retry path, recording-active blocker, and several failure/core-path checks passed on the COM5 board. The remaining 1.4 release gate item is final manual release checklist/go-no-go review.
 
 ## Device Baseline
 
@@ -20,6 +20,7 @@ Artifact:
 - `tests/artifacts/ota_release_gate_20260528/final_status_after_smoke.txt`
 - `tests/artifacts/ota_release_gate_20260528/pre_rollback_serial_status_blocked_by_ble_lock.txt`
 - `tests/artifacts/ota_release_gate_20260528/final_status_after_retry_rollback.txt`
+- `tests/artifacts/ota_release_gate_20260528/manual_ui_upgrade_status_after_user_run.txt`
 
 ## Rollback Test Image
 
@@ -77,6 +78,22 @@ Artifacts:
 
 - `tests/artifacts/manual_upgrade_1_0_to_1_1/v1_0_ota_status_single_session.log`
 - `tests/artifacts/manual_upgrade_1_0_to_1_1/v1_1_ota_status_after_manual_update.log`
+- `tests/artifacts/ota_release_gate_20260528/manual_ui_upgrade_status_after_user_run.txt`
+
+## Manual UI Reflash And Recording Blocker
+
+The user ran a manual UI OTA reflash from Listener-Type on 2026-05-28. Serial evidence after the run showed:
+
+- Current running/boot partition: `ota_0`
+- Current firmware: `v1.1.0-manual-ota`
+- OTA state: `target=none`, `active=0`, `pending_verify=0`, `bytes=0`, `expected=0`, `blocker=none`
+- Recent diagnostic events include OTA begin, full write, finish, reboot into the updated partition, and app-valid confirmation.
+
+The user also verified the recording-active blocker from the desktop UI. With recording state `Listening`, the OTA panel blocked update start and showed the localized Chinese blocker. A small UI follow-up was found and fixed in Listener-Type: the panel no longer repeats the raw English backend message, and same-version packages remain allowed while showing a localized reflash warning.
+
+Artifact:
+
+- `tests/artifacts/ota_release_gate_20260528/manual_ui_upgrade_status_after_user_run.txt`
 
 ## Failure Paths Covered
 
@@ -110,5 +127,4 @@ Artifacts:
 
 ## Remaining For 1.4 Review
 
-- Cover recording-active OTA request blocker from the desktop path.
 - Run the manual release checklist/go-no-go review with the latest rebuilt Listener-Type binary.
