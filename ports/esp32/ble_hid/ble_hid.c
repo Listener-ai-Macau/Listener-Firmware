@@ -29,6 +29,7 @@ void ble_store_config_init(void);
 #include "hid_keyboard.h"
 #include "battery_monitor.h"
 #include "board.h"
+#include "boot_safety.h"
 #include "listener_device.h"
 #include "ble_hid_gap.h"
 #include "ble_audio_stream.h"
@@ -90,6 +91,7 @@ static bool s_ble_connected;
 static uint32_t s_disconnect_count;
 static uint32_t s_connect_timestamp_ms;
 static QueueHandle_t s_ascii_queue;
+static bool s_safe_mode;
 
 static void ble_hid_log_dis_gatt_state(void);
 
@@ -251,6 +253,10 @@ static bool ble_hid_dispatch_usb_command_line(const char *line)
     }
 
     if (watchdog_platform_consume_usb_command(line)) {
+        return true;
+    }
+
+    if (boot_safety_consume_usb_command(line)) {
         return true;
     }
 
@@ -430,7 +436,9 @@ static void ble_hid_event_callback(void *handler_args, esp_event_base_t base, in
     case ESP_HIDD_START_EVENT:
         ESP_LOGI(TAG, "START");
         power_manager_record_activity("ble_hid_start");
-        ble_audio_stream_log_gatt_state();
+        if (!s_safe_mode) {
+            ble_audio_stream_log_gatt_state();
+        }
         ble_hid_gap_mark_stack_ready();
         ble_hid_update_battery_level("hid_start");
         ble_hid_battery_task_start();
@@ -623,6 +631,7 @@ static void ble_hid_log_dis_gatt_state(void)
 
 esp_err_t ble_hid_init(void)
 {
+    listener_device_set_safe_mode(s_safe_mode);
     ESP_LOGI(TAG, "fw_version=%s protocol_version=%u build=%s serial=%s",
              listener_device_get_fw_version(),
              LISTENER_PROTOCOL_VERSION,
@@ -662,20 +671,25 @@ esp_err_t ble_hid_init(void)
         }
     }
 
+    ble_hid_gap_set_audio_enabled(!s_safe_mode);
     ret = ble_hid_gap_init();
     if (ret != ESP_OK) {
         ESP_LOGE(TAG, "ble_hid_gap_init failed: %s", esp_err_to_name(ret));
         return ret;
     }
 
-    ret = ble_audio_stream_init();
-    if (ret == ESP_OK) {
-        ret = ble_audio_stream_register_gatt();
-        if (ret != ESP_OK) {
-            ESP_LOGW(TAG, "BLE audio GATT registration failed; HID/recovery continue: %s", esp_err_to_name(ret));
-        }
+    if (s_safe_mode) {
+        ESP_LOGW(TAG, "safe mode: BLE audio GATT disabled");
     } else {
-        ESP_LOGW(TAG, "BLE audio init failed; HID/recovery continue without audio stream: %s", esp_err_to_name(ret));
+        ret = ble_audio_stream_init();
+        if (ret == ESP_OK) {
+            ret = ble_audio_stream_register_gatt();
+            if (ret != ESP_OK) {
+                ESP_LOGW(TAG, "BLE audio GATT registration failed; HID/recovery continue: %s", esp_err_to_name(ret));
+            }
+        } else {
+            ESP_LOGW(TAG, "BLE audio init failed; HID/recovery continue without audio stream: %s", esp_err_to_name(ret));
+        }
     }
 
     ret = ble_firmware_ota_register_gatt();
@@ -701,7 +715,9 @@ esp_err_t ble_hid_init(void)
 
     ble_hid_configure_dis_identity();
     ble_hid_log_dis_gatt_state();
-    ble_audio_stream_log_gatt_state();
+    if (!s_safe_mode) {
+        ble_audio_stream_log_gatt_state();
+    }
     ble_firmware_ota_log_gatt_state();
 
     int gap_name_rc = ble_svc_gap_device_name_set(s_device_name);
@@ -711,6 +727,11 @@ esp_err_t ble_hid_init(void)
 
     ble_hid_update_battery_level("init");
     return ESP_OK;
+}
+
+void ble_hid_set_safe_mode(bool enabled)
+{
+    s_safe_mode = enabled;
 }
 
 esp_err_t ble_hid_start(void)

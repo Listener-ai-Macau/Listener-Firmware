@@ -1,5 +1,6 @@
 #include "keyboard.h"
 #include "ble_hid.h"
+#include "boot_safety.h"
 #include "self_test.h"
 #include "system_health.h"
 #include "diag_log.h"
@@ -69,6 +70,7 @@ void app_main(void)
     firmware_ota_init();
     configure_power_management();
     watchdog_platform_log_config();
+    boot_safety_init();
     log_power_boot_diagnostics();
 
     esp_reset_reason_t reset_reason = esp_reset_reason();
@@ -94,11 +96,18 @@ void app_main(void)
         ESP_LOGE(TAG, "POST failed; continuing in degraded mode so BLE can expose device status");
     }
 
+    bool safe_mode = boot_safety_is_safe_mode();
+    if (safe_mode) {
+        ESP_LOGW(TAG, "boot safety safe mode active: BLE HID and recovery diagnostics only; audio disabled");
+        ESP_LOGW(TAG, "device_status state=recovery detail=boot_safety_safe_mode");
+    }
+
+    ble_hid_set_safe_mode(safe_mode);
     esp_err_t ble_ret = ble_hid_init();
     if (ble_ret != ESP_OK) {
         ESP_LOGW(TAG, "BLE HID init degraded: %s", esp_err_to_name(ble_ret));
     }
-    esp_err_t keyboard_ret = keyboard_start();
+    esp_err_t keyboard_ret = safe_mode ? keyboard_start_safe_mode() : keyboard_start();
     if (keyboard_ret != ESP_OK) {
         ESP_LOGW(TAG, "keyboard start degraded; continuing BLE startup: %s", esp_err_to_name(keyboard_ret));
     }
@@ -114,4 +123,5 @@ void app_main(void)
         ble_ret == ESP_OK && ble_start_ret == ESP_OK,
         keyboard_ret == ESP_OK);
     firmware_ota_confirm_pending_verify_if_ready();
+    boot_safety_start_normal_boot_clear_timer();
 }

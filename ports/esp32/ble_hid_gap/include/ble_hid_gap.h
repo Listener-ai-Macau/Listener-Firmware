@@ -13,6 +13,7 @@ extern "C" {
 #endif
 
 esp_err_t ble_hid_gap_init(void);
+void ble_hid_gap_set_audio_enabled(bool enabled);
 esp_err_t ble_hid_gap_configure_advertising(uint16_t appearance, const char *device_name);
 esp_err_t ble_hid_gap_start_advertising(void);
 esp_err_t ble_hid_gap_mark_stack_ready(void);

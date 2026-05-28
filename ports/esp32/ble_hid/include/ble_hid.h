@@ -12,6 +12,7 @@ extern "C" {
 esp_err_t ble_hid_init(void);
 esp_err_t ble_hid_start(void);
 void ble_hid_task_start_up(void);
+void ble_hid_set_safe_mode(bool enabled);
 bool ble_hid_is_connected(void);
 uint32_t ble_hid_get_disconnect_count(void);
 esp_err_t ble_hid_send_ascii_async(char input_char);

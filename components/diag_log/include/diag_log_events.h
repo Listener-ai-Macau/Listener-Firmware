@@ -23,6 +23,7 @@
 /* System events (DIAG_SRC_SYSTEM) */
 #define DIAG_SYS_BOOT          1   /* a1=boot_reason, a2=0, a3=0, a4=0 */
 #define DIAG_SYS_INIT_RESULT   2   /* a1=component_id, a2=esp_err, a3=0, a4=0 */
+#define DIAG_SYS_BOOT_SAFETY   3   /* a1=reset_reason, a2=crash_count, a3=safe_mode, a4=threshold */
 
 #define DIAG_BOOT_POWER_ON     1
 #define DIAG_BOOT_RESET        2

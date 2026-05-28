@@ -12,6 +12,7 @@ static const char *TAG = "listener_device";
 static char s_serial_str[18];
 static char s_build_id_str[32];
 static bool s_serial_initialized = false;
+static bool s_safe_mode;
 
 const char *listener_device_get_fw_version(void)
 {
@@ -59,10 +60,21 @@ const char *listener_device_get_protocol_version(void)
 
 const char *listener_device_get_factory_readiness(void)
 {
+    if (s_safe_mode) {
+        return LISTENER_DEVICE_FACTORY_READINESS ";boot_safety_safe_mode";
+    }
     return LISTENER_DEVICE_FACTORY_READINESS;
 }
 
 const char *listener_device_get_capabilities(void)
 {
+    if (s_safe_mode) {
+        return "ble_hid_keyboard;usb_serial_text;post_status;firmware_ota_v1;boot_safety_safe_mode;audio_disabled";
+    }
     return LISTENER_DEVICE_CAPABILITIES;
+}
+
+void listener_device_set_safe_mode(bool enabled)
+{
+    s_safe_mode = enabled;
 }

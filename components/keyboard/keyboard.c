@@ -186,6 +186,13 @@ esp_err_t keyboard_start(void)
     return voice_ret == ESP_OK ? ESP_OK : voice_ret;
 }
 
+esp_err_t keyboard_start_safe_mode(void)
+{
+    hid_keyboard_init();
+    ESP_LOGW(TAG, "safe mode: voice recording control and audio capture are disabled");
+    return keyboard_wasd_start();
+}
+
 uint32_t keyboard_get_key_press_count(void)
 {
     return hid_keyboard_get_key_press_count();
