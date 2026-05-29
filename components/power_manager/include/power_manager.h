@@ -53,6 +53,8 @@ typedef struct {
     power_manager_state_t state;
     uint32_t blockers;
     uint32_t idle_ms;
+    uint32_t user_idle_ms;
+    uint32_t radio_idle_ms;
     uint32_t audio_idle_threshold_ms;
     uint32_t connected_idle_threshold_ms;
     uint32_t disconnected_idle_threshold_ms;

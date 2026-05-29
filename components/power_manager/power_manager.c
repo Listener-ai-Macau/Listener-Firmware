@@ -79,7 +79,8 @@ static bool s_ble_connected;
 static bool s_battery_warning_logged;
 static bool s_audio_idle_power_save_enabled;
 static uint32_t s_blockers;
-static uint32_t s_last_activity_ms;
+static uint32_t s_last_user_activity_ms;
+static uint32_t s_last_radio_activity_ms;
 static power_manager_state_t s_state = POWER_MANAGER_STATE_ACTIVE;
 static power_manager_wake_source_t s_last_wake_source = POWER_MANAGER_WAKE_SOURCE_POWER_ON;
 
@@ -245,30 +246,36 @@ static void power_manager_log_wake_policy(uint64_t wake_gpio_mask)
              (uint32_t)BOARD_PINS_EC11_KEY_IO);
 }
 
-static uint32_t power_manager_idle_ms_locked(uint32_t now_ms)
+static uint32_t power_manager_user_idle_ms_locked(uint32_t now_ms)
 {
-    return now_ms - s_last_activity_ms;
+    return now_ms - s_last_user_activity_ms;
+}
+
+static uint32_t power_manager_radio_idle_ms_locked(uint32_t now_ms)
+{
+    return now_ms - s_last_radio_activity_ms;
 }
 
 static power_manager_state_t power_manager_target_state_locked(uint32_t now_ms)
 {
-    uint32_t idle_ms = power_manager_idle_ms_locked(now_ms);
+    uint32_t user_idle_ms = power_manager_user_idle_ms_locked(now_ms);
+    uint32_t radio_idle_ms = power_manager_radio_idle_ms_locked(now_ms);
     if (s_blockers != 0) {
         return POWER_MANAGER_STATE_ACTIVE;
     }
 
     if (CONFIG_POWER_MANAGER_ENABLE &&
-        idle_ms >= (uint32_t)CONFIG_POWER_MANAGER_OVERNIGHT_SLEEP_MS) {
+        user_idle_ms >= (uint32_t)CONFIG_POWER_MANAGER_OVERNIGHT_SLEEP_MS) {
         return POWER_MANAGER_STATE_OVERNIGHT_SLEEP;
     }
 
     if (s_ble_connected) {
-        return idle_ms >= (uint32_t)CONFIG_POWER_MANAGER_CONNECTED_IDLE_MS
+        return radio_idle_ms >= (uint32_t)CONFIG_POWER_MANAGER_CONNECTED_IDLE_MS
             ? POWER_MANAGER_STATE_CONNECTED_IDLE
             : POWER_MANAGER_STATE_ACTIVE;
     }
 
-    return idle_ms >= (uint32_t)CONFIG_POWER_MANAGER_DISCONNECTED_IDLE_MS
+    return radio_idle_ms >= (uint32_t)CONFIG_POWER_MANAGER_DISCONNECTED_IDLE_MS
         ? POWER_MANAGER_STATE_DISCONNECTED_IDLE
         : POWER_MANAGER_STATE_ACTIVE;
 }
@@ -281,7 +288,7 @@ static bool power_manager_refresh_ble_connection_locked(uint32_t now_ms)
     }
 
     s_ble_connected = connected;
-    s_last_activity_ms = now_ms;
+    s_last_radio_activity_ms = now_ms;
     s_state = POWER_MANAGER_STATE_ACTIVE;
     return true;
 }
@@ -380,14 +387,14 @@ static void power_manager_apply_state(power_manager_state_t previous, power_mana
     }
 }
 
-static void power_manager_apply_fast_idle_actions(power_manager_state_t state, uint32_t idle_ms, uint32_t blockers)
+static void power_manager_apply_fast_idle_actions(power_manager_state_t state, uint32_t user_idle_ms, uint32_t blockers)
 {
     if (state != POWER_MANAGER_STATE_ACTIVE) {
         return;
     }
 
     bool audio_idle = blockers == 0 &&
-        idle_ms >= (uint32_t)CONFIG_POWER_MANAGER_AUDIO_IDLE_MS;
+        user_idle_ms >= (uint32_t)CONFIG_POWER_MANAGER_AUDIO_IDLE_MS;
     power_manager_set_audio_idle_power_save(audio_idle);
 }
 
@@ -420,7 +427,9 @@ void power_manager_get_snapshot(power_manager_snapshot_t *snapshot)
     if (s_mutex != NULL && xSemaphoreTake(s_mutex, portMAX_DELAY) == pdTRUE) {
         snapshot->state = s_state;
         snapshot->blockers = s_blockers;
-        snapshot->idle_ms = power_manager_idle_ms_locked(now_ms);
+        snapshot->user_idle_ms = power_manager_user_idle_ms_locked(now_ms);
+        snapshot->radio_idle_ms = power_manager_radio_idle_ms_locked(now_ms);
+        snapshot->idle_ms = snapshot->user_idle_ms;
         snapshot->ble_connected = s_ble_connected;
         snapshot->last_sleep_reason = (power_manager_sleep_reason_t)s_rtc_last_sleep_reason;
         snapshot->last_wake_source = s_last_wake_source;
@@ -574,7 +583,8 @@ static void power_manager_evaluate(void)
     uint32_t now_ms = power_manager_now_ms();
     power_manager_state_t previous = POWER_MANAGER_STATE_ACTIVE;
     power_manager_state_t next = POWER_MANAGER_STATE_ACTIVE;
-    uint32_t idle_ms = 0;
+    uint32_t user_idle_ms = 0;
+    uint32_t radio_idle_ms = 0;
     uint32_t blockers = 0;
 
     if (xSemaphoreTake(s_mutex, portMAX_DELAY) != pdTRUE) {
@@ -584,7 +594,8 @@ static void power_manager_evaluate(void)
     previous = s_state;
     bool ble_changed = power_manager_refresh_ble_connection_locked(now_ms);
     next = power_manager_target_state_locked(now_ms);
-    idle_ms = power_manager_idle_ms_locked(now_ms);
+    user_idle_ms = power_manager_user_idle_ms_locked(now_ms);
+    radio_idle_ms = power_manager_radio_idle_ms_locked(now_ms);
     blockers = s_blockers;
     if (previous != next) {
         s_state = next;
@@ -594,14 +605,18 @@ static void power_manager_evaluate(void)
     if (ble_changed) {
         ESP_LOGI(TAG, "BLE connection state observed: connected=%u", s_ble_connected ? 1u : 0u);
     }
-    power_manager_log_transition(previous, next, idle_ms, blockers);
+    ESP_LOGD(TAG, "idle clocks: user_idle_ms=%" PRIu32 " radio_idle_ms=%" PRIu32,
+             user_idle_ms, radio_idle_ms);
+    power_manager_log_transition(previous, next, user_idle_ms, blockers);
     power_manager_apply_state(previous, next);
-    power_manager_apply_fast_idle_actions(next, idle_ms, blockers);
+    power_manager_apply_fast_idle_actions(next, user_idle_ms, blockers);
 
     if (next == POWER_MANAGER_STATE_OVERNIGHT_SLEEP) {
         esp_err_t sleep_ret = power_manager_enter_sleep(POWER_MANAGER_SLEEP_REASON_OVERNIGHT_IDLE);
         if (sleep_ret != ESP_OK && xSemaphoreTake(s_mutex, portMAX_DELAY) == pdTRUE) {
-            s_last_activity_ms = power_manager_now_ms();
+            uint32_t reset_ms = power_manager_now_ms();
+            s_last_user_activity_ms = reset_ms;
+            s_last_radio_activity_ms = reset_ms;
             s_state = s_ble_connected
                 ? POWER_MANAGER_STATE_CONNECTED_IDLE
                 : POWER_MANAGER_STATE_DISCONNECTED_IDLE;
@@ -633,7 +648,8 @@ esp_err_t power_manager_init(void)
         return ESP_ERR_NO_MEM;
     }
 
-    s_last_activity_ms = power_manager_now_ms();
+    s_last_user_activity_ms = power_manager_now_ms();
+    s_last_radio_activity_ms = s_last_user_activity_ms;
     s_last_wake_source = power_manager_map_wakeup(esp_sleep_get_wakeup_cause());
     s_initialized = true;
 
@@ -718,7 +734,9 @@ void power_manager_record_activity(const char *reason)
     uint32_t blockers = 0;
     if (xSemaphoreTake(s_mutex, portMAX_DELAY) == pdTRUE) {
         previous = s_state;
-        s_last_activity_ms = power_manager_now_ms();
+        uint32_t now_ms = power_manager_now_ms();
+        s_last_user_activity_ms = now_ms;
+        s_last_radio_activity_ms = now_ms;
         if (s_state != POWER_MANAGER_STATE_ACTIVE) {
             s_state = POWER_MANAGER_STATE_ACTIVE;
         }
@@ -758,7 +776,9 @@ void power_manager_set_blocker(uint32_t blocker_mask, bool enabled)
             s_blockers &= ~blocker_mask;
         }
         new_blockers = s_blockers;
-        s_last_activity_ms = power_manager_now_ms();
+        uint32_t now_ms = power_manager_now_ms();
+        s_last_user_activity_ms = now_ms;
+        s_last_radio_activity_ms = now_ms;
         previous = s_state;
         if (s_blockers != 0 && s_state != POWER_MANAGER_STATE_ACTIVE) {
             s_state = POWER_MANAGER_STATE_ACTIVE;
@@ -796,18 +816,27 @@ void power_manager_set_ble_connected(bool connected)
     }
 
     bool changed = false;
+    power_manager_state_t previous = POWER_MANAGER_STATE_ACTIVE;
+    power_manager_state_t next = POWER_MANAGER_STATE_ACTIVE;
+    uint32_t blockers = 0;
     if (xSemaphoreTake(s_mutex, portMAX_DELAY) == pdTRUE) {
         changed = s_ble_connected != connected;
+        previous = s_state;
         s_ble_connected = connected;
-        s_last_activity_ms = power_manager_now_ms();
+        s_last_radio_activity_ms = power_manager_now_ms();
         s_state = POWER_MANAGER_STATE_ACTIVE;
+        next = s_state;
+        blockers = s_blockers;
         xSemaphoreGive(s_mutex);
     }
 
     if (changed) {
         ESP_LOGI(TAG, "BLE connection state changed: connected=%u", connected ? 1u : 0u);
     }
-    power_manager_apply_state(POWER_MANAGER_STATE_CONNECTED_IDLE, POWER_MANAGER_STATE_ACTIVE);
+    if (previous != next) {
+        power_manager_log_transition(previous, next, 0, blockers);
+        power_manager_apply_state(previous, next);
+    }
 }
 
 static const char *power_manager_strip_prefix(const char *line)
@@ -834,6 +863,7 @@ static void power_manager_print_status(void)
     power_manager_blocker_names(snapshot.blockers, blocker_text, sizeof(blocker_text));
     printf(
         "~POWER:STATUS state=%s blockers=0x%08" PRIx32 " blocker_names=%s idle_ms=%" PRIu32
+        " user_idle_ms=%" PRIu32 " radio_idle_ms=%" PRIu32
         " ble_connected=%u battery_mv=%" PRIu32 " battery_level=%u battery_valid=%u"
         " last_sleep_reason=%s last_wake_source=%s guard=%u audio_idle_ms=%" PRIu32
         " connected_idle_ms=%" PRIu32
@@ -846,6 +876,8 @@ static void power_manager_print_status(void)
         snapshot.blockers,
         blocker_text,
         snapshot.idle_ms,
+        snapshot.user_idle_ms,
+        snapshot.radio_idle_ms,
         snapshot.ble_connected ? 1u : 0u,
         snapshot.battery_mv,
         snapshot.battery_level_percent,
