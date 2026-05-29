@@ -17,7 +17,7 @@
 #include "watchdog_platform.h"
 
 #define KEYBOARD_WASD_POLL_MS 20
-#define KEYBOARD_WASD_DEBOUNCE_SAMPLES 3
+#define KEYBOARD_WASD_DEBOUNCE_SAMPLES 8
 
 typedef struct {
     gpio_num_t gpio;
