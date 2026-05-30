@@ -3,6 +3,7 @@
 #include <inttypes.h>
 #include <stdio.h>
 
+#include "esp_heap_caps.h"
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -23,6 +24,7 @@ static const char *TAG = "health";
 #endif
 #define HEALTH_TASK_STACK_BYTES (4 * 1024)
 #define HEALTH_HEAP_WARN_KB     20U
+#define HEALTH_HEAP_LARGEST_WARN_KB 32U
 #define HEALTH_BLE_DISCONNECT_RATE_WINDOW_S 60U
 #define HEALTH_BLE_DISCONNECT_RATE_LIMIT    2U
 
@@ -46,6 +48,7 @@ static void system_health_task(void *parameter)
 
         uint32_t heap_free = esp_get_free_heap_size();
         uint32_t heap_min = esp_get_minimum_free_heap_size();
+        uint32_t heap_largest = (uint32_t)heap_caps_get_largest_free_block(MALLOC_CAP_8BIT);
         bool ble_connected = ble_hid_is_connected();
         uint32_t disconnects = ble_hid_get_disconnect_count();
         uint32_t audio_frames = audio_capture_get_frame_count();
@@ -55,11 +58,10 @@ static void system_health_task(void *parameter)
         uint32_t uptime_s = (uint32_t)(xTaskGetTickCount() * portTICK_PERIOD_MS / 1000);
 
         ESP_LOGI(TAG,
-                 "heartbeat: uptime=%" PRIu32 "s heap_free=%" PRIu32 "KB heap_min=%" PRIu32 "KB "
-                 "ble=%s disconnects=%" PRIu32 " audio_frames=%" PRIu32 " audio_drops=%" PRIu32 " "
+                 "heartbeat: uptime=%" PRIu32 "s ble=%s disconnects=%" PRIu32
+                 " audio_frames=%" PRIu32 " audio_drops=%" PRIu32 " "
                  "keys=%" PRIu32 " sessions=%" PRIu32,
                  uptime_s,
-                 heap_free / 1024, heap_min / 1024,
                  ble_connected ? "OK" : "OFF",
                  disconnects,
                  audio_frames, audio_drops,
@@ -70,10 +72,27 @@ static void system_health_task(void *parameter)
 
         /* Heap alert */
         if (heap_free / 1024 < HEALTH_HEAP_WARN_KB) {
-            ESP_LOGW(TAG, "heap pressure: free=%" PRIu32 " below %" PRIu32 "KB threshold",
-                     heap_free / 1024, HEALTH_HEAP_WARN_KB);
+            ESP_LOGW(
+                TAG,
+                "heap pressure: free=%" PRIu32 "KB min=%" PRIu32 "KB largest=%" PRIu32
+                "KB free_threshold=%" PRIu32 "KB",
+                heap_free / 1024,
+                heap_min / 1024,
+                heap_largest / 1024,
+                HEALTH_HEAP_WARN_KB);
             diag_log(DIAG_SRC_HEALTH, DIAG_HEALTH_ALERT, DIAG_SEV_WARN,
-                     1, heap_free / 1024, HEALTH_HEAP_WARN_KB, 0);
+                     1, heap_free / 1024, HEALTH_HEAP_WARN_KB, heap_largest / 1024);
+        } else if (heap_largest / 1024 < HEALTH_HEAP_LARGEST_WARN_KB) {
+            ESP_LOGW(
+                TAG,
+                "heap fragmentation pressure: free=%" PRIu32 "KB min=%" PRIu32
+                "KB largest=%" PRIu32 "KB largest_threshold=%" PRIu32 "KB",
+                heap_free / 1024,
+                heap_min / 1024,
+                heap_largest / 1024,
+                HEALTH_HEAP_LARGEST_WARN_KB);
+            diag_log(DIAG_SRC_HEALTH, DIAG_HEALTH_ALERT, DIAG_SEV_WARN,
+                     3, heap_largest / 1024, HEALTH_HEAP_LARGEST_WARN_KB, heap_largest / 1024);
         }
 
         /* BLE disconnect rate alert */

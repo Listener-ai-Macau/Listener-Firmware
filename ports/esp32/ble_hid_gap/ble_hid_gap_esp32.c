@@ -97,7 +97,7 @@ static int64_t s_recovery_identity_rotated_at_ms = 0;
 #define BLE_HID_GAP_SERVICE_CHANGED_NVS_NAMESPACE "ble_gap"
 #define BLE_HID_GAP_SERVICE_CHANGED_FW_KEY "svcchg_fw"
 #define BLE_HID_GAP_RANDOM_IDENTITY_ADDR_KEY "rnd_id_addr"
-#define BLE_HID_GAP_GATT_SCHEMA_REV "ota_identity_v2"
+#define BLE_HID_GAP_GATT_SCHEMA_REV "ota_identity_v3"
 #define BLE_HID_GAP_SERVICE_CHANGED_START_HANDLE 0x0001
 #define BLE_HID_GAP_SERVICE_CHANGED_END_HANDLE 0xffff
 #define BLE_HID_GAP_RECOVERY_PAIRING_WINDOW_MS 120000LL
@@ -411,9 +411,8 @@ static void ble_hid_gap_queue_service_changed(const char *reason)
     ble_svc_gatt_changed(
         BLE_HID_GAP_SERVICE_CHANGED_START_HANDLE,
         BLE_HID_GAP_SERVICE_CHANGED_END_HANDLE);
-    s_service_changed_queued_for_conn = true;
     ESP_LOGI(TAG,
-             "service changed indication queued for %s: attr_handle=%u fw_version=%s range=0x0001-0xffff",
+             "service changed marked for %s: attr_handle=%u fw_version=%s range=0x0001-0xffff",
              reason,
              service_changed_val_handle,
              s_service_changed_fw_version);
