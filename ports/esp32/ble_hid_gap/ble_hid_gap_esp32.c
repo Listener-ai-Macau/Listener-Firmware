@@ -21,6 +21,7 @@
 
 #include "esp_bt.h"
 #include "esp_log.h"
+#include "esp_timer.h"
 #include "host/ble_hs.h"
 #include "host/util/util.h"
 #include "nimble/nimble_port.h"
@@ -83,6 +84,9 @@ static bool s_service_changed_state_loaded = false;
 static bool s_service_changed_pending = false;
 static bool s_service_changed_queued_for_conn = false;
 static char s_service_changed_fw_version[64];
+static bool s_recovery_identity_rotation_pending = false;
+static bool s_recovery_pairing_window_active = false;
+static int64_t s_recovery_identity_rotated_at_ms = 0;
 
 /*
  * Legacy advertising has a hard 31-byte payload limit. With flags,
@@ -92,9 +96,190 @@ static char s_service_changed_fw_version[64];
 #define BLE_HID_ADV_NAME_MAX_LEN 17
 #define BLE_HID_GAP_SERVICE_CHANGED_NVS_NAMESPACE "ble_gap"
 #define BLE_HID_GAP_SERVICE_CHANGED_FW_KEY "svcchg_fw"
+#define BLE_HID_GAP_RANDOM_IDENTITY_ADDR_KEY "rnd_id_addr"
 #define BLE_HID_GAP_GATT_SCHEMA_REV "ota_identity_v2"
 #define BLE_HID_GAP_SERVICE_CHANGED_START_HANDLE 0x0001
 #define BLE_HID_GAP_SERVICE_CHANGED_END_HANDLE 0xffff
+#define BLE_HID_GAP_RECOVERY_PAIRING_WINDOW_MS 120000LL
+
+static int64_t ble_hid_gap_now_ms(void)
+{
+    return esp_timer_get_time() / 1000LL;
+}
+
+static bool ble_hid_gap_recovery_pairing_window_open(void)
+{
+    if (!s_recovery_pairing_window_active ||
+        s_recovery_identity_rotated_at_ms <= 0) {
+        return false;
+    }
+
+    int64_t elapsed_ms =
+        ble_hid_gap_now_ms() - s_recovery_identity_rotated_at_ms;
+    if (elapsed_ms < 0 ||
+        elapsed_ms >= BLE_HID_GAP_RECOVERY_PAIRING_WINDOW_MS) {
+        s_recovery_pairing_window_active = false;
+        return false;
+    }
+
+    return true;
+}
+
+static void ble_hid_gap_open_recovery_pairing_window(void)
+{
+    s_recovery_pairing_window_active = true;
+    s_recovery_identity_rotated_at_ms = ble_hid_gap_now_ms();
+}
+
+static void ble_hid_gap_close_recovery_pairing_window(const char *reason)
+{
+    if (!s_recovery_pairing_window_active) {
+        return;
+    }
+
+    s_recovery_pairing_window_active = false;
+    ESP_LOGI(TAG, "recovery: pairing window closed: %s", reason);
+}
+
+static void ble_hid_gap_log_identity_addr(const char *context, const uint8_t addr[6])
+{
+    ESP_LOGI(
+        TAG,
+        "%s: own_addr_type=%u addr=%02x:%02x:%02x:%02x:%02x:%02x",
+        context,
+        s_own_addr_type,
+        addr[0],
+        addr[1],
+        addr[2],
+        addr[3],
+        addr[4],
+        addr[5]);
+}
+
+static esp_err_t ble_hid_gap_apply_static_random_identity(
+    const uint8_t addr[6],
+    const char *context)
+{
+    int rc = ble_hs_id_set_rnd(addr);
+    if (rc != 0) {
+        ESP_LOGE(TAG, "%s: BLE static random identity apply failed rc=%d", context, rc);
+        return ESP_FAIL;
+    }
+
+    rc = ble_hs_id_infer_auto(0, &s_own_addr_type);
+    if (rc != 0) {
+        s_own_addr_type = BLE_OWN_ADDR_RANDOM;
+        ESP_LOGW(TAG, "%s: address type infer failed after random identity rc=%d", context, rc);
+    }
+
+    ble_hid_gap_log_identity_addr(context, addr);
+    return ESP_OK;
+}
+
+static esp_err_t ble_hid_gap_load_static_random_identity(void)
+{
+    uint8_t addr[6] = {0};
+    size_t addr_len = sizeof(addr);
+    nvs_handle_t nvs = 0;
+    esp_err_t ret = nvs_open(
+        BLE_HID_GAP_SERVICE_CHANGED_NVS_NAMESPACE,
+        NVS_READONLY,
+        &nvs);
+    if (ret != ESP_OK) {
+        if (ret == ESP_ERR_NVS_NOT_FOUND) {
+            ESP_LOGI(TAG, "BLE recovery identity: none stored; using controller identity");
+        } else {
+            ESP_LOGW(TAG, "BLE recovery identity unavailable: %s", esp_err_to_name(ret));
+        }
+        return ret;
+    }
+
+    ret = nvs_get_blob(
+        nvs,
+        BLE_HID_GAP_RANDOM_IDENTITY_ADDR_KEY,
+        addr,
+        &addr_len);
+    nvs_close(nvs);
+
+    if (ret != ESP_OK) {
+        if (ret == ESP_ERR_NVS_NOT_FOUND) {
+            ESP_LOGI(TAG, "BLE recovery identity: none stored; using controller identity");
+        } else {
+            ESP_LOGW(TAG, "BLE recovery identity read failed: %s", esp_err_to_name(ret));
+        }
+        return ret;
+    }
+
+    if (addr_len != sizeof(addr)) {
+        ESP_LOGW(TAG, "BLE recovery identity invalid length=%u", (unsigned)addr_len);
+        return ESP_ERR_INVALID_SIZE;
+    }
+
+    return ble_hid_gap_apply_static_random_identity(addr, "BLE recovery identity loaded");
+}
+
+static esp_err_t ble_hid_gap_rotate_static_random_identity(const char *reason)
+{
+    ble_addr_t addr = {0};
+    int rc = ble_hs_id_gen_rnd(0, &addr);
+    if (rc != 0) {
+        ESP_LOGE(TAG, "recovery: BLE static random identity generation failed rc=%d", rc);
+        diag_log(DIAG_SRC_BLE_GAP, DIAG_GAP_RECOVERY, DIAG_SEV_ERROR,
+                 5, (uint32_t)rc, 0, s_ble_gap_conn_handle);
+        return ESP_FAIL;
+    }
+
+    nvs_handle_t nvs = 0;
+    esp_err_t ret = nvs_open(
+        BLE_HID_GAP_SERVICE_CHANGED_NVS_NAMESPACE,
+        NVS_READWRITE,
+        &nvs);
+    if (ret == ESP_OK) {
+        ret = nvs_set_blob(
+            nvs,
+            BLE_HID_GAP_RANDOM_IDENTITY_ADDR_KEY,
+            addr.val,
+            sizeof(addr.val));
+        if (ret == ESP_OK) {
+            ret = nvs_commit(nvs);
+        }
+        nvs_close(nvs);
+    }
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "recovery: BLE identity persist failed: %s", esp_err_to_name(ret));
+        diag_log(DIAG_SRC_BLE_GAP, DIAG_GAP_RECOVERY, DIAG_SEV_ERROR,
+                 5, (uint32_t)ret, 0, s_ble_gap_conn_handle);
+        return ret;
+    }
+
+    ESP_LOGW(TAG, "recovery: rotating BLE identity for %s so stale Windows pairing cache must rediscover", reason);
+    ret = ble_hid_gap_apply_static_random_identity(addr.val, "BLE recovery identity rotated");
+    if (ret == ESP_OK) {
+        ble_hid_gap_open_recovery_pairing_window();
+    }
+    diag_log(DIAG_SRC_BLE_GAP, DIAG_GAP_RECOVERY,
+             ret == ESP_OK ? DIAG_SEV_INFO : DIAG_SEV_ERROR,
+             5,
+             ret == ESP_OK ? 0 : (uint32_t)ret,
+             0,
+             s_ble_gap_conn_handle);
+    return ret;
+}
+
+static esp_err_t ble_hid_gap_apply_pending_recovery_identity_rotation(const char *reason)
+{
+    if (!s_recovery_identity_rotation_pending) {
+        return ESP_OK;
+    }
+
+    s_recovery_identity_rotation_pending = false;
+    esp_err_t ret = ble_hid_gap_rotate_static_random_identity(reason);
+    if (ret == ESP_OK) {
+        s_directed_adv_pending = false;
+        s_last_adv_was_directed = false;
+    }
+    return ret;
+}
 
 static uint16_t ble_hid_gap_get_service_changed_val_handle(void)
 {
@@ -469,6 +654,15 @@ nimble_hid_gap_event(struct ble_gap_event *event, void *arg)
         ble_firmware_ota_on_gap_disconnect(event->disconnect.conn.conn_handle);
         s_directed_adv_pending = true;
         s_last_adv_was_directed = false;
+        if (s_recovery_identity_rotation_pending) {
+            esp_err_t identity_ret =
+                ble_hid_gap_apply_pending_recovery_identity_rotation("disconnect recovery");
+            if (identity_ret != ESP_OK) {
+                ESP_LOGE(TAG, "recovery: BLE identity rotation failed before advertising: %s",
+                         esp_err_to_name(identity_ret));
+                s_directed_adv_pending = false;
+            }
+        }
         ble_hid_gap_start_advertising();
         return 0;
     case BLE_GAP_EVENT_CONN_UPDATE:
@@ -562,6 +756,9 @@ nimble_hid_gap_event(struct ble_gap_event *event, void *arg)
                     desc.sec_state.authenticated,
                     desc.sec_state.bonded,
                     desc.sec_state.key_size);
+                if (desc.sec_state.encrypted || desc.sec_state.bonded) {
+                    ble_hid_gap_close_recovery_pairing_window("secure connection established");
+                }
             } else {
                 ESP_LOGW(TAG, "connection descriptor lookup failed after encryption: rc=%d", rc);
             }
@@ -637,6 +834,8 @@ static void nimble_hid_on_sync(void)
 {
     int rc;
     uint8_t addr_val[6] = {0};
+
+    (void)ble_hid_gap_load_static_random_identity();
 
     rc = ble_hs_id_infer_auto(0, &s_own_addr_type);
     if (rc != 0) {
@@ -882,7 +1081,6 @@ esp_err_t ble_hid_gap_forget_bonds_and_repair(void)
 {
     ble_addr_t bonded_peers[8];
     int bonded_peer_count = 0;
-    int first_error = 0;
     int rc = ble_store_util_bonded_peers(
         bonded_peers,
         &bonded_peer_count,
@@ -894,21 +1092,50 @@ esp_err_t ble_hid_gap_forget_bonds_and_repair(void)
         return ESP_FAIL;
     }
 
+    bool refresh_pairing_window =
+        ble_hid_gap_recovery_pairing_window_open() &&
+        bonded_peer_count == 0 &&
+        !s_ble_gap_connected;
+    if (refresh_pairing_window) {
+        ESP_LOGW(TAG, "recovery: pairing window already active; refreshing advertising without rotating BLE identity");
+        diag_log(DIAG_SRC_BLE_GAP, DIAG_GAP_RECOVERY, DIAG_SEV_INFO,
+                 6, 0, 0, s_ble_gap_conn_handle);
+        s_directed_adv_pending = false;
+        s_last_adv_was_directed = false;
+
+        if (ble_gap_adv_active()) {
+            rc = ble_gap_adv_stop();
+            if (rc != 0) {
+                ESP_LOGW(TAG, "recovery: pairing window advertising refresh stop failed rc=%d", rc);
+                diag_log(DIAG_SRC_BLE_GAP, DIAG_GAP_RECOVERY, DIAG_SEV_WARN,
+                         6, (uint32_t)rc, 0, s_ble_gap_conn_handle);
+            }
+        }
+
+        esp_err_t adv_ret = ble_hid_gap_start_advertising();
+        if (adv_ret != ESP_OK) {
+            ESP_LOGE(TAG, "recovery: pairing window advertising refresh failed: %s", esp_err_to_name(adv_ret));
+            diag_log(DIAG_SRC_BLE_GAP, DIAG_GAP_RECOVERY, DIAG_SEV_ERROR,
+                     6, (uint32_t)adv_ret, 0, s_ble_gap_conn_handle);
+            return adv_ret;
+        }
+
+        ESP_LOGW(TAG, "recovery: pairing window refreshed, device remains discoverable for first-time pairing");
+        return ESP_OK;
+    }
+
     ESP_LOGW(TAG, "recovery: clearing pairing bonds count=%d", bonded_peer_count);
     diag_log(DIAG_SRC_BLE_GAP, DIAG_GAP_RECOVERY, DIAG_SEV_WARN,
              1, 0, (uint32_t)bonded_peer_count, s_ble_gap_conn_handle);
-    for (int index = 0; index < bonded_peer_count; ++index) {
-        rc = ble_store_util_delete_peer(&bonded_peers[index]);
-        if (rc != 0) {
-            ESP_LOGE(TAG, "recovery: delete peer index=%d failed rc=%d", index, rc);
-            diag_log(DIAG_SRC_BLE_GAP, DIAG_GAP_RECOVERY, DIAG_SEV_ERROR,
-                     1, (uint32_t)rc, (uint32_t)bonded_peer_count, s_ble_gap_conn_handle);
-            if (first_error == 0) {
-                first_error = rc;
-            }
-        }
+    rc = ble_store_clear();
+    if (rc != 0) {
+        ESP_LOGE(TAG, "recovery: BLE store clear failed rc=%d", rc);
+        diag_log(DIAG_SRC_BLE_GAP, DIAG_GAP_RECOVERY, DIAG_SEV_ERROR,
+                 1, (uint32_t)rc, (uint32_t)bonded_peer_count, s_ble_gap_conn_handle);
+        return ESP_FAIL;
     }
 
+    s_recovery_identity_rotation_pending = true;
     s_directed_adv_pending = false;
     s_last_adv_was_directed = false;
 
@@ -918,11 +1145,12 @@ esp_err_t ble_hid_gap_forget_bonds_and_repair(void)
             ESP_LOGW(TAG, "recovery: active BLE connection terminating for re-pair; advertising restarts after disconnect");
             diag_log(DIAG_SRC_BLE_GAP, DIAG_GAP_RECOVERY, DIAG_SEV_WARN,
                      2, 0, (uint32_t)bonded_peer_count, s_ble_gap_conn_handle);
-            return first_error == 0 ? ESP_OK : ESP_FAIL;
+            return ESP_OK;
         } else {
-            ESP_LOGW(TAG, "recovery: BLE terminate failed rc=%d; advertising restart will continue", rc);
+            ESP_LOGW(TAG, "recovery: BLE terminate failed rc=%d", rc);
             diag_log(DIAG_SRC_BLE_GAP, DIAG_GAP_RECOVERY, DIAG_SEV_WARN,
                      2, (uint32_t)rc, (uint32_t)bonded_peer_count, s_ble_gap_conn_handle);
+            return ESP_FAIL;
         }
     } else if (ble_gap_adv_active()) {
         rc = ble_gap_adv_stop();
@@ -931,6 +1159,13 @@ esp_err_t ble_hid_gap_forget_bonds_and_repair(void)
             diag_log(DIAG_SRC_BLE_GAP, DIAG_GAP_RECOVERY, DIAG_SEV_WARN,
                      3, (uint32_t)rc, (uint32_t)bonded_peer_count, s_ble_gap_conn_handle);
         }
+    }
+
+    esp_err_t identity_ret =
+        ble_hid_gap_apply_pending_recovery_identity_rotation("manual recovery");
+    if (identity_ret != ESP_OK) {
+        ESP_LOGE(TAG, "recovery: BLE identity rotation failed: %s", esp_err_to_name(identity_ret));
+        return identity_ret;
     }
 
     esp_err_t adv_ret = ble_hid_gap_start_advertising();
@@ -945,8 +1180,8 @@ esp_err_t ble_hid_gap_forget_bonds_and_repair(void)
 
     ESP_LOGW(TAG, "recovery: pairing reset complete, device is discoverable for first-time pairing");
     diag_log(DIAG_SRC_BLE_GAP, DIAG_GAP_RECOVERY, DIAG_SEV_INFO,
-             4, first_error == 0 ? 0 : (uint32_t)first_error, (uint32_t)bonded_peer_count, s_ble_gap_conn_handle);
-    return first_error == 0 ? ESP_OK : ESP_FAIL;
+             4, 0, (uint32_t)bonded_peer_count, s_ble_gap_conn_handle);
+    return ESP_OK;
 }
 
 bool ble_hid_gap_is_connected(void)
