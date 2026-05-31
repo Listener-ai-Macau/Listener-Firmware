@@ -299,14 +299,14 @@ static int ble_firmware_ota_access(
     if (ctxt->op == BLE_GATT_ACCESS_OP_READ_CHR) {
         const char *value = NULL;
         switch (attr) {
+        case BLE_FIRMWARE_OTA_GATT_ATTR_CONTROL:
         case BLE_FIRMWARE_OTA_GATT_ATTR_READINESS:
             value = listener_device_get_factory_readiness();
             break;
+        case BLE_FIRMWARE_OTA_GATT_ATTR_DATA:
         case BLE_FIRMWARE_OTA_GATT_ATTR_CAPABILITIES:
             value = listener_device_get_capabilities();
             break;
-        case BLE_FIRMWARE_OTA_GATT_ATTR_CONTROL:
-        case BLE_FIRMWARE_OTA_GATT_ATTR_DATA:
         default:
             return BLE_ATT_ERR_READ_NOT_PERMITTED;
         }
@@ -344,13 +344,13 @@ static const struct ble_gatt_svc_def s_ota_svcs[] = {
             {
                 .uuid = &s_control_uuid.u,
                 .access_cb = ble_firmware_ota_access,
-                .flags = BLE_GATT_CHR_F_WRITE,
+                .flags = BLE_GATT_CHR_F_READ | BLE_GATT_CHR_F_WRITE,
                 .arg = (void *)(uintptr_t)BLE_FIRMWARE_OTA_GATT_ATTR_CONTROL,
             },
             {
                 .uuid = &s_data_uuid.u,
                 .access_cb = ble_firmware_ota_access,
-                .flags = BLE_GATT_CHR_F_WRITE | BLE_GATT_CHR_F_WRITE_NO_RSP,
+                .flags = BLE_GATT_CHR_F_READ | BLE_GATT_CHR_F_WRITE | BLE_GATT_CHR_F_WRITE_NO_RSP,
                 .arg = (void *)(uintptr_t)BLE_FIRMWARE_OTA_GATT_ATTR_DATA,
             },
             {

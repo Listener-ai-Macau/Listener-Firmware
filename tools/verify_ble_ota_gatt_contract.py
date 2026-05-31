@@ -81,6 +81,11 @@ def check_bridge(repo: Path) -> None:
         "status.expected_size != expected_size" in source and "firmware_ota_abort(DIAG_OTA_ABORT_BLE_CONTROL)" in source,
         "finish size mismatch must abort the OTA session",
     )
+    require(
+        "BLE_GATT_CHR_F_READ | BLE_GATT_CHR_F_WRITE" in source
+        and "BLE_GATT_CHR_F_READ | BLE_GATT_CHR_F_WRITE | BLE_GATT_CHR_F_WRITE_NO_RSP" in source,
+        "OTA control/data characteristics must remain readable so Windows can recover identity even when new GATT characteristics are cached out",
+    )
 
 
 def check_integration(repo: Path) -> None:
@@ -230,7 +235,7 @@ def check_dis_identity(repo: Path) -> None:
         "ble_hid_gap_queue_service_changed(\"connect\")" in gap
         and "ble_hid_gap_service_changed_pending()" in gap
         and "BLE_HID_GAP_GATT_SCHEMA_REV" in gap
-        and "ota_identity_v2" in gap
+        and "ota_identity_v3" in gap
         and "nvs_get_str" in gap
         and "nvs_set_str" in gap,
         "BLE connect path must version/schema-gate Service Changed so Windows refreshes OTA/DIS GATT once after firmware or GATT-shape updates",
@@ -241,9 +246,10 @@ def check_dis_identity(repo: Path) -> None:
         and "ble_hid_gap_indicate_service_changed(event->subscribe.conn_handle, \"central subscribe\")" in gap
         and "ble_hid_gap_indicate_service_changed(event->enc_change.conn_handle, \"encryption change\")" in gap
         and "ble_gatts_indicate_custom(conn_handle, service_changed_val_handle, om)" in gap
+        and "service changed marked for %s" in gap
         and "service changed indication skipped" in gap
         and "service changed indication tx complete" in gap,
-        "BLE subscribe path must send or skip Service Changed according to the version-gated pending state",
+        "BLE subscribe path must mark GATT changed on connect, then send or skip Service Changed according to the version-gated pending state",
     )
     require(
         "DIAG_GAP_RECOVERY" in diag
@@ -302,6 +308,13 @@ def check_desktop_ble_source(path: Path) -> str:
     for uuid, field in expected_tokens.items():
         token = f"0x{uuid.replace('-', '_')}"
         require(token in source, f"desktop BLE source {path} is missing {field}={uuid}")
+    require(
+        "OTA_CONTROL_UUID" in source
+        and "OTA_DATA_UUID" in source
+        and "readiness_field(&readiness, \"fw_version\")" in source
+        and "split_capability_tokens(&capabilities)" in source,
+        f"desktop BLE source {path} must read OTA identity/capabilities from the stable control/data UUIDs when Windows hides newer GATT characteristics",
+    )
     return str(path)
 
 

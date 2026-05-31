@@ -99,7 +99,7 @@
 
 /* Health events (DIAG_SRC_HEALTH) */
 #define DIAG_HEALTH_HEARTBEAT  1   /* a1=heap_free_kb, a2=heap_min_kb, a3=ble_connected, a4=uptime_min */
-#define DIAG_HEALTH_ALERT      2   /* a1=alert_type(1=heap,2=ble_rate), a2=alert_value, a3=threshold, a4=0 */
+#define DIAG_HEALTH_ALERT      2   /* a1=alert_type(1=heap_free,2=ble_rate,3=heap_largest), a2=alert_value, a3=threshold, a4=heap_largest_kb */
 
 /* Power manager events (DIAG_SRC_POWER) */
 #define DIAG_POWER_STATE          1 /* a1=previous_state, a2=next_state, a3=idle_ms, a4=blockers */
