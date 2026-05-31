@@ -117,6 +117,9 @@ static esp_err_t battery_monitor_adc_channel_init(battery_monitor_adc_channel_st
     if (state->configured) {
         return ESP_OK;
     }
+    if (state->gpio == GPIO_NUM_NC || state->gpio < 0 || state->gpio >= GPIO_NUM_MAX) {
+        return ESP_ERR_NOT_SUPPORTED;
+    }
 
     esp_err_t ret = battery_monitor_adc1_init();
     if (ret != ESP_OK) {
@@ -130,7 +133,7 @@ static esp_err_t battery_monitor_adc_channel_init(battery_monitor_adc_channel_st
         if (!s_warned) {
             ESP_LOGW(
                 TAG,
-                "V2 ADC pin unavailable: gpio=%d unit=%d ret=%s",
+                "ADC pin unavailable: gpio=%d unit=%d ret=%s",
                 (int)state->gpio,
                 (int)unit,
                 esp_err_to_name(ret));
@@ -147,7 +150,7 @@ static esp_err_t battery_monitor_adc_channel_init(battery_monitor_adc_channel_st
     if (ret != ESP_OK) {
         ESP_LOGW(
             TAG,
-            "V2 ADC channel config failed: gpio=%d channel=%d ret=%s",
+            "ADC channel config failed: gpio=%d channel=%d ret=%s",
             (int)state->gpio,
             (int)channel,
             esp_err_to_name(ret));
@@ -161,7 +164,7 @@ static esp_err_t battery_monitor_adc_channel_init(battery_monitor_adc_channel_st
     state->configured = true;
     ESP_LOGI(
         TAG,
-        "V2 ADC ready: gpio=%d unit=%d channel=%d calibrated=%u",
+        "ADC ready: gpio=%d unit=%d channel=%d calibrated=%u",
         (int)state->gpio,
         (int)state->unit,
         (int)state->channel,

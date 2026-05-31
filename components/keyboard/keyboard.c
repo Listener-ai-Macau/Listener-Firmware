@@ -53,22 +53,22 @@ static keyboard_wasd_key_t s_wasd_keys[] = {
     {
         .gpio = BOARD_PINS_KEY1_IO,
         .output_char = 'd',
-        .label = "key1.gpio38.d",
+        .label = "key1.gpio45.d",
     },
     {
         .gpio = BOARD_PINS_KEY2_IO,
         .output_char = 'w',
-        .label = "key2.gpio39.w",
+        .label = "key2.gpio48.w",
     },
     {
         .gpio = BOARD_PINS_KEY3_IO,
         .output_char = 'a',
-        .label = "key3.gpio40.a",
+        .label = "key3.gpio47.a",
     },
     {
         .gpio = BOARD_PINS_KEY4_IO,
         .output_char = 's',
-        .label = "key4.gpio41.s",
+        .label = "key4.gpio21.s",
     },
 };
 static keyboard_ec11_state_t s_ec11_state = {
@@ -280,7 +280,7 @@ static esp_err_t keyboard_wasd_start(void)
 
     ESP_LOGI(
         TAG,
-        "WASD keys ready: key1=gpio38:d key2=gpio39:w key3=gpio40:a key4=gpio41:s active_low=1 poll_ms=%d debounce_samples=%d",
+        "WASD keys ready: key1=gpio45:d key2=gpio48:w key3=gpio47:a key4=gpio21:s active_low=1 poll_ms=%d debounce_samples=%d",
         KEYBOARD_WASD_POLL_MS,
         KEYBOARD_WASD_DEBOUNCE_SAMPLES);
     return ESP_OK;
@@ -325,7 +325,7 @@ static esp_err_t keyboard_ec11_start(void)
 
     ESP_LOGI(
         TAG,
-        "EC11 ready: a=gpio42 b=gpio2 key=gpio11 key_policy=provisional_no_deep_sleep_wake poll_ms=%d debounce_samples=%d",
+        "EC11 ready: a=gpio36 b=gpio38 key=gpio35 key_policy=gpio35_no_deep_sleep_wake poll_ms=%d debounce_samples=%d",
         KEYBOARD_EC11_POLL_MS,
         KEYBOARD_EC11_DEBOUNCE_SAMPLES);
     return ESP_OK;

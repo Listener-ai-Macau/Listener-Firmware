@@ -252,17 +252,17 @@ serial_done.wait(5.0)
 log_output = b"".join(serial_chunks).decode("utf-8", errors="replace")
 captured_text = capture_state["captured_text"]
 required_lines = [
-    "WASD key press queued: source=key1.gpio38.d output=d",
-    "WASD key press queued: source=key2.gpio39.w output=w",
-    "WASD key press queued: source=key3.gpio40.a output=a",
-    "WASD key press queued: source=key4.gpio41.s output=s",
+    "WASD key press queued: source=key1.gpio45.d output=d",
+    "WASD key press queued: source=key2.gpio48.w output=w",
+    "WASD key press queued: source=key3.gpio47.a output=a",
+    "WASD key press queued: source=key4.gpio21.s output=s",
 ]
 missing_lines = [line for line in required_lines if line not in log_output]
 required_raw_sources = [
-    "WASD key raw transition: source=key1.gpio38.d",
-    "WASD key raw transition: source=key2.gpio39.w",
-    "WASD key raw transition: source=key3.gpio40.a",
-    "WASD key raw transition: source=key4.gpio41.s",
+    "WASD key raw transition: source=key1.gpio45.d",
+    "WASD key raw transition: source=key2.gpio48.w",
+    "WASD key raw transition: source=key3.gpio47.a",
+    "WASD key raw transition: source=key4.gpio21.s",
 ]
 missing_raw_sources = [line for line in required_raw_sources if line not in log_output]
 

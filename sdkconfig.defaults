@@ -27,7 +27,7 @@ CONFIG_ESP_INT_WDT=y
 CONFIG_ESP_INT_WDT_TIMEOUT_MS=300
 CONFIG_ESP_INT_WDT_CHECK_CPU1=y
 
-# Voice Keyboard V2/N16R8 baseline: SPH0645-style digital microphone path
+# Voice Keyboard N4 baseline: SPH0645-style digital microphone path
 # remains provisional until the final V2 mic clock/data wiring is validated.
 CONFIG_AUDIO_CAPTURE_MIC_SPH0645=y
 CONFIG_AUDIO_CAPTURE_SPH0645_SLOT_LEFT=y

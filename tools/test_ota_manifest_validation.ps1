@@ -33,7 +33,7 @@ function New-BaseManifest {
             sha256 = $firmwareHash
         }
         requirements = [ordered]@{
-            hardware_revision = "keyboard-v2-n16r8"
+            hardware_revision = "keyboard-n4"
             protocol_version = 1
             min_desktop_version = "1.0.0"
         }
@@ -48,7 +48,7 @@ function New-BaseManifest {
             dis = [ordered]@{
                 manufacturer = "listener"
                 model = "keyboard-v2"
-                hardware_revision = "esp32s3-wroom-1-n16r8"
+                hardware_revision = "esp32s3-wroom-1-n4"
                 firmware_revision = "test-ota"
                 software_revision_protocol = "1"
             }

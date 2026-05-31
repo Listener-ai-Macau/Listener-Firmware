@@ -17,12 +17,12 @@ static const char *TAG = "board";
 #define BOARD_USB_PREFIX "BOARD:"
 #define BOARD_LED_PREFIX "LED:"
 
-#define BOARD_V2_USB_DET_POLICY "provisional_divider_5k1_10k_may_exceed_3v3"
-#define BOARD_V2_CHARGER_POLARITY "provisional_active_low_open_drain_unconfirmed"
-#define BOARD_V2_PWR_HOLD_POLICY "disabled_until_gpio46_reset_strapping_signoff"
-#define BOARD_V2_LED_POLICY "resources_declared_only_vdd_led_unsigned_full_white_blocked"
-#define BOARD_V2_MIC_POLICY "clk_gpio48_dout_gpio47_interface_validation_required"
-#define BOARD_V2_CURRENT_POLICY "raw_adc_only_current_ma_mw_uncalibrated"
+#define BOARD_V2_USB_DET_POLICY "n4_gpio9_legacy_validation"
+#define BOARD_V2_CHARGER_POLARITY "n4_gpio3_gpio46_legacy_validation"
+#define BOARD_V2_PWR_HOLD_POLICY "not_populated_on_n4"
+#define BOARD_V2_LED_POLICY "not_populated_on_n4"
+#define BOARD_V2_MIC_POLICY "sph0645_i2s_bclk_gpio39_ws_gpio40_din_gpio41"
+#define BOARD_V2_CURRENT_POLICY "not_populated_on_n4"
 
 typedef struct {
     const char *name;
@@ -227,7 +227,7 @@ static void board_print_status(void)
 
     printf(
         "~BOARD:STATUS profile=%s module=%s flash_mb=%u psram_mb=%u psram_mode=%s"
-        " key_gpios=38,39,40,41 ec11_a_gpio=%d ec11_b_gpio=%d ec11_key_gpio=%d"
+        " key_gpios=%d,%d,%d,%d ec11_a_gpio=%d ec11_b_gpio=%d ec11_key_gpio=%d"
         " ec11_key_provisional=1 mic_clk_gpio=%d mic_dout_gpio=%d mic_policy=%s"
         " pwr_hold_gpio=%d pwr_hold_enabled=0 pwr_hold_policy=%s"
         " usb_det_gpio=%d usb_det_level=%s usb_det_policy=%s"
@@ -235,12 +235,16 @@ static void board_print_status(void)
         " battery_gpio=%d battery_mv=%" PRIu32 " battery_adc_mv=%d battery_raw=%d"
         " battery_level=%u battery_valid=%u battery_adc_calibrated=%u battery_samples=%u battery_result=%s"
         " battery_scaling=\"68K/68K divider, VBAT~=2*ADC\" battery_policy=\"source_impedance_filter_calibration_provisional\""
-        " reserved_mspi_gpio=35,36,37\n",
+        " reserved_mspi_gpio=none\n",
         BOARD_PINS_PROFILE_ID,
         BOARD_PINS_MODULE,
         (unsigned)BOARD_PINS_FLASH_SIZE_MB,
         (unsigned)BOARD_PINS_PSRAM_SIZE_MB,
         BOARD_PINS_PSRAM_MODE,
+        (int)BOARD_PINS_KEY1_IO,
+        (int)BOARD_PINS_KEY2_IO,
+        (int)BOARD_PINS_KEY3_IO,
+        (int)BOARD_PINS_KEY4_IO,
         (int)BOARD_PINS_EC11_A_IO,
         (int)BOARD_PINS_EC11_B_IO,
         (int)BOARD_PINS_EC11_KEY_IO,
@@ -276,13 +280,32 @@ void board_log_v2_diagnostics(void)
 {
     ESP_LOGI(
         TAG,
-        "V2 board profile: id=%s module=%s flash=%uMB psram=%uMB %s key_gpios=38,39,40,41 ec11=42,2,11 mic=48,47 usb_det=7 charger=14,21 battery_adc=8 current_adc=10,9 rgb=1,13,4 pwr_hold=46",
+        "board profile: id=%s module=%s flash=%uMB psram=%uMB %s key_gpios=%d,%d,%d,%d ec11=%d,%d,%d mic=%d,%d usb_det=%d charger=%d,%d battery_adc=%d current_adc=%d,%d rgb=%d,%d,%d pwr_hold=%d",
         BOARD_PINS_PROFILE_ID,
         BOARD_PINS_MODULE,
         (unsigned)BOARD_PINS_FLASH_SIZE_MB,
         (unsigned)BOARD_PINS_PSRAM_SIZE_MB,
-        BOARD_PINS_PSRAM_MODE);
-    ESP_LOGW(TAG, "V2 hardware provisional: usb_det=%s charger=%s pwr_hold=%s current=%s led=%s mic=%s",
+        BOARD_PINS_PSRAM_MODE,
+        (int)BOARD_PINS_KEY1_IO,
+        (int)BOARD_PINS_KEY2_IO,
+        (int)BOARD_PINS_KEY3_IO,
+        (int)BOARD_PINS_KEY4_IO,
+        (int)BOARD_PINS_EC11_A_IO,
+        (int)BOARD_PINS_EC11_B_IO,
+        (int)BOARD_PINS_EC11_KEY_IO,
+        (int)BOARD_PINS_MIC_CLK_IO,
+        (int)BOARD_PINS_MIC_DOUT_IO,
+        (int)BOARD_PINS_USB_DET_IO,
+        (int)BOARD_PINS_BAT_CHG_IO,
+        (int)BOARD_PINS_BAT_STD_IO,
+        (int)BOARD_PINS_BAT_V_ADC_IO,
+        (int)BOARD_PINS_TPS63020_I_ADC_IO,
+        (int)BOARD_PINS_SY7088_I_ADC_IO,
+        (int)BOARD_PINS_RGB_STATUS_IO,
+        (int)BOARD_PINS_RGB_KEY_IO,
+        (int)BOARD_PINS_RGB_EDGE_IO,
+        (int)BOARD_PINS_PWR_HOLD_IO);
+    ESP_LOGW(TAG, "board hardware provisional: usb_det=%s charger=%s pwr_hold=%s current=%s led=%s mic=%s",
              BOARD_V2_USB_DET_POLICY,
              BOARD_V2_CHARGER_POLARITY,
              BOARD_V2_PWR_HOLD_POLICY,
@@ -304,20 +327,20 @@ void board_print_help(void)
     static const char *help_string =
         "########################################################################\n"
         "BLE keyboard demo usage:\n"
-        "Board profile: Voice Keyboard V2/N16R8, ESP32-S3-WROOM-1-N16R8, 16MB flash, 8MB Octal PSRAM.\n"
+        "Board profile: Voice Keyboard N4, ESP32-S3-WROOM-1-N4, 4MB flash, no PSRAM.\n"
         "Inject test bytes with tools/send_serial.ps1 or type in monitor.\n"
         "Capture 3s audio WAV with tools/capture_audio_wav.ps1 -Port COM3.\n"
         "Capture toggle session WAV with tools/capture_audio_session_wav.ps1 -Port COM3.\n"
-        "Hardware voice key uses EC11_KEY/GPIO11: press once to start, press again to stop.\n"
-        "Physical keys: KEY1/GPIO38=d, KEY2/GPIO39=w, KEY3/GPIO40=a, KEY4/GPIO41=s.\n"
+        "Hardware voice key uses EC11_KEY/GPIO35: press once to start, press again to stop.\n"
+        "Physical keys: KEY1/GPIO45=d, KEY2/GPIO48=w, KEY3/GPIO47=a, KEY4/GPIO21=s.\n"
         "KEY1-KEY4 send BLE HID d/w/a/s when a host is connected.\n"
         "Hold the hardware voice key for 5s or send ~VREC:RECOVERY to clear pairing/session state.\n"
-        "Board diagnostics: ~BOARD:STATUS reports V2 pin, USB, charger, battery, current telemetry, PWR_HOLD, mic, and LED resource status.\n"
+        "Board diagnostics: ~BOARD:STATUS reports N4 pin, USB, charger, battery, PWR_HOLD, mic, and LED resource status.\n"
         "Power diagnostics: ~POWER:STATUS reports state/blockers/battery/wake policy, ~POWER:SLEEP requests manual sleep.\n"
-        "LED diagnostics: ~LED:STATUS reports V2 WS2812 groups; ~LED:TEST:RGBW and ~LED:TEST:MAP are blocked until VDD_LED is signed off.\n"
+        "LED diagnostics: ~LED:STATUS reports optional WS2812 groups; ~LED:TEST:RGBW and ~LED:TEST:MAP stay blocked on N4.\n"
         "Watchdog diagnostics: ~WDT:STATUS reports config, ~WDT:DEADLOCK intentionally triggers Task WDT reset.\n"
         "Boot safety diagnostics: ~BOOT:STATUS reports crash counter, ~BOOT:CRASH restarts for validation, ~BOOT:CLEAR clears safe mode.\n"
-        "V2 deep-sleep EC11_KEY/GPIO11 wake is disabled until hardware isolation/off-state sign-off.\n"
+        "N4 deep sleep wakes by KEY4/GPIO21; EC11 voice key GPIO35 is not RTC deep-sleep wake capable.\n"
         "Use ~OTA:STATUS, ~OTA:BLOCKER, or ~OTA:ABORT for firmware OTA diagnostics.\n"
         "Use ~DIAGLOG:COUNT, ~DIAGLOG:LAST:N, ~DIAGLOG:DUMP, or ~DIAGLOG:CLEAR for diagnostics.\n"
         "Device status logs use ready, recording, transferring, error, and recovery.\n"

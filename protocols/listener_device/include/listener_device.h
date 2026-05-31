@@ -11,7 +11,7 @@ extern "C" {
 #define LISTENER_DEVICE_MANUFACTURER "listener"
 #define LISTENER_DEVICE_BLE_NAME     "listener"
 #define LISTENER_DEVICE_MODEL        "keyboard-v2"
-#define LISTENER_DEVICE_HW_REV       "esp32s3-wroom-1-n16r8"
+#define LISTENER_DEVICE_HW_REV       "esp32s3-wroom-1-n4"
 
 #define LISTENER_VENDOR_ID  0x16C0
 #define LISTENER_PRODUCT_ID 0x05DF
@@ -21,9 +21,9 @@ extern "C" {
 #define LISTENER_DEVICE_BLE_APPEARANCE_KEYBOARD 0x03C1
 
 #define LISTENER_DEVICE_FACTORY_READINESS \
-    "factory_ready;pairable_on_boot;post_degraded_boot;board=voice-keyboard-v2-n16r8"
+    "factory_ready;pairable_on_boot;post_degraded_boot;board=voice-keyboard-n4"
 #define LISTENER_DEVICE_CAPABILITIES \
-    "ble_hid_keyboard;ble_audio_vka1;usb_serial_text;key1_record_toggle;post_status;firmware_ota_v1;flash_16mb;psram_8mb_octal"
+    "ble_hid_keyboard;ble_audio_vka1;usb_serial_text;key1_record_toggle;post_status;firmware_ota_v1;flash_4mb;no_psram"
 
 #define LISTENER_DEVICE_READY_HID        (1u << 0)
 #define LISTENER_DEVICE_READY_AUDIO      (1u << 1)
