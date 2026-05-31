@@ -18,6 +18,7 @@
 #include "ble_firmware_ota.h"
 #include "diag_log.h"
 #include "listener_device.h"
+#include "status_led.h"
 
 #include "esp_bt.h"
 #include "esp_log.h"
@@ -575,6 +576,7 @@ nimble_hid_gap_event(struct ble_gap_event *event, void *arg)
         if (event->connect.status != 0) {
             diag_log(DIAG_SRC_BLE_GAP, DIAG_GAP_BOND, DIAG_SEV_WARN,
                      0, (uint32_t)event->connect.status, event->connect.conn_handle, 0);
+            status_led_set_error(STATUS_LED_ERROR_DOMAIN_BLE, STATUS_LED_ERROR_RETRYABLE, "ble_connect_failed");
             s_directed_adv_pending = false;
             ble_hid_gap_start_advertising();
             return 0;
@@ -582,6 +584,7 @@ nimble_hid_gap_event(struct ble_gap_event *event, void *arg)
 
         s_ble_gap_connected = true;
         s_ble_gap_conn_handle = event->connect.conn_handle;
+        status_led_set_ble_state(STATUS_LED_BLE_CONNECTED, true);
         if (s_audio_enabled) {
             ble_audio_stream_on_gap_connect(event->connect.conn_handle);
         }
@@ -647,6 +650,7 @@ nimble_hid_gap_event(struct ble_gap_event *event, void *arg)
                  0, (uint32_t)event->disconnect.reason, event->disconnect.conn.conn_handle, 0);
         s_ble_gap_connected = false;
         s_ble_gap_conn_handle = BLE_HS_CONN_HANDLE_NONE;
+        status_led_set_ble_state(STATUS_LED_BLE_RECONNECTING, false);
         s_service_changed_queued_for_conn = false;
         if (s_audio_enabled) {
             ble_audio_stream_on_gap_disconnect(event->disconnect.conn.conn_handle);
@@ -951,6 +955,7 @@ esp_err_t esp_hid_ble_gap_adv_start(void)
                 direct_peer_addr.val[5]);
             diag_log(DIAG_SRC_BLE_GAP, DIAG_GAP_ADV_START, DIAG_SEV_INFO,
                      1, 1, bonded_peer_count, 0);
+            status_led_set_ble_state(STATUS_LED_BLE_RECONNECTING, false);
             return ESP_OK;
         }
 
@@ -982,6 +987,9 @@ esp_err_t esp_hid_ble_gap_adv_start(void)
         s_low_power_advertising ? 1200u : 50u);
     diag_log(DIAG_SRC_BLE_GAP, DIAG_GAP_ADV_START, DIAG_SEV_INFO,
              1, s_low_power_advertising ? 2 : 0, bonded_peer_count, 0);
+    if (!s_low_power_advertising) {
+        status_led_set_ble_state(STATUS_LED_BLE_PAIRING, false);
+    }
     return ESP_OK;
 }
 
@@ -1089,6 +1097,7 @@ esp_err_t ble_hid_gap_forget_bonds_and_repair(void)
         ESP_LOGE(TAG, "recovery: bonded peer lookup failed rc=%d", rc);
         diag_log(DIAG_SRC_BLE_GAP, DIAG_GAP_RECOVERY, DIAG_SEV_ERROR,
                  1, (uint32_t)rc, 0, s_ble_gap_conn_handle);
+        status_led_set_error(STATUS_LED_ERROR_DOMAIN_BLE, STATUS_LED_ERROR_HARD, "ble_recovery_bond_lookup_failed");
         return ESP_FAIL;
     }
 
@@ -1121,10 +1130,12 @@ esp_err_t ble_hid_gap_forget_bonds_and_repair(void)
         }
 
         ESP_LOGW(TAG, "recovery: pairing window refreshed, device remains discoverable for first-time pairing");
+        status_led_set_ble_state(STATUS_LED_BLE_PAIRING, false);
         return ESP_OK;
     }
 
     ESP_LOGW(TAG, "recovery: clearing pairing bonds count=%d", bonded_peer_count);
+    status_led_set_error(STATUS_LED_ERROR_DOMAIN_BLE, STATUS_LED_ERROR_RETRYABLE, "ble_recovery_clear_bonds");
     diag_log(DIAG_SRC_BLE_GAP, DIAG_GAP_RECOVERY, DIAG_SEV_WARN,
              1, 0, (uint32_t)bonded_peer_count, s_ble_gap_conn_handle);
     rc = ble_store_clear();
@@ -1132,6 +1143,7 @@ esp_err_t ble_hid_gap_forget_bonds_and_repair(void)
         ESP_LOGE(TAG, "recovery: BLE store clear failed rc=%d", rc);
         diag_log(DIAG_SRC_BLE_GAP, DIAG_GAP_RECOVERY, DIAG_SEV_ERROR,
                  1, (uint32_t)rc, (uint32_t)bonded_peer_count, s_ble_gap_conn_handle);
+        status_led_set_error(STATUS_LED_ERROR_DOMAIN_BLE, STATUS_LED_ERROR_HARD, "ble_store_clear_failed");
         return ESP_FAIL;
     }
 
@@ -1165,6 +1177,7 @@ esp_err_t ble_hid_gap_forget_bonds_and_repair(void)
         ble_hid_gap_apply_pending_recovery_identity_rotation("manual recovery");
     if (identity_ret != ESP_OK) {
         ESP_LOGE(TAG, "recovery: BLE identity rotation failed: %s", esp_err_to_name(identity_ret));
+        status_led_set_error(STATUS_LED_ERROR_DOMAIN_BLE, STATUS_LED_ERROR_HARD, "ble_identity_rotate_failed");
         return identity_ret;
     }
 
@@ -1173,12 +1186,15 @@ esp_err_t ble_hid_gap_forget_bonds_and_repair(void)
         ESP_LOGE(TAG, "recovery: advertising restart failed: %s", esp_err_to_name(adv_ret));
         diag_log(DIAG_SRC_BLE_GAP, DIAG_GAP_RECOVERY, DIAG_SEV_ERROR,
                  3, (uint32_t)adv_ret, (uint32_t)bonded_peer_count, s_ble_gap_conn_handle);
+        status_led_set_error(STATUS_LED_ERROR_DOMAIN_BLE, STATUS_LED_ERROR_HARD, "ble_recovery_adv_restart_failed");
         return adv_ret;
     }
     diag_log(DIAG_SRC_BLE_GAP, DIAG_GAP_RECOVERY, DIAG_SEV_INFO,
              3, 0, (uint32_t)bonded_peer_count, s_ble_gap_conn_handle);
 
     ESP_LOGW(TAG, "recovery: pairing reset complete, device is discoverable for first-time pairing");
+    status_led_clear_error(STATUS_LED_ERROR_DOMAIN_BLE);
+    status_led_set_ble_state(STATUS_LED_BLE_PAIRING, false);
     diag_log(DIAG_SRC_BLE_GAP, DIAG_GAP_RECOVERY, DIAG_SEV_INFO,
              4, 0, (uint32_t)bonded_peer_count, s_ble_gap_conn_handle);
     return ESP_OK;

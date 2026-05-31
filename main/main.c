@@ -6,6 +6,7 @@
 #include "diag_log.h"
 #include "firmware_ota.h"
 #include "power_manager.h"
+#include "status_led.h"
 #include "watchdog_platform.h"
 
 #include "esp_err.h"
@@ -118,6 +119,10 @@ void app_main(void)
     if (power_ret != ESP_OK) {
         ESP_LOGW(TAG, "power manager init failed: %s", esp_err_to_name(power_ret));
     }
+    esp_err_t led_ret = status_led_init();
+    if (led_ret != ESP_OK) {
+        ESP_LOGW(TAG, "status LED init degraded: %s", esp_err_to_name(led_ret));
+    }
 
     self_test_result_t post = self_test_run();
     if (!self_test_critical_ok(&post)) {
@@ -138,6 +143,10 @@ void app_main(void)
     esp_err_t keyboard_ret = safe_mode ? keyboard_start_safe_mode() : keyboard_start();
     if (keyboard_ret != ESP_OK) {
         ESP_LOGW(TAG, "keyboard start degraded; continuing BLE startup: %s", esp_err_to_name(keyboard_ret));
+    }
+    led_ret = status_led_start();
+    if (led_ret != ESP_OK) {
+        ESP_LOGW(TAG, "status LED start degraded: %s", esp_err_to_name(led_ret));
     }
     system_health_init();
     esp_err_t ble_start_ret = ble_ret == ESP_OK ? ble_hid_start() : ble_ret;

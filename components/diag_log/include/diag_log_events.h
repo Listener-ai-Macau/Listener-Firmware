@@ -19,6 +19,7 @@
 #define DIAG_SRC_BLE_AUDIO 0x0A
 #define DIAG_SRC_OTA       0x0B
 #define DIAG_SRC_POWER     0x0C
+#define DIAG_SRC_STATUS_LED 0x0D
 
 /* System events (DIAG_SRC_SYSTEM) */
 #define DIAG_SYS_BOOT          1   /* a1=boot_reason, a2=0, a3=0, a4=0 */
@@ -109,6 +110,12 @@
 #define DIAG_POWER_BLOCKER_CHANGE 6 /* a1=old_blockers, a2=new_blockers, a3=changed_mask, a4=enabled */
 #define DIAG_POWER_STATUS         7 /* a1=state, a2=blockers, a3=idle_ms, a4=wake_gpio_mask_low */
 #define DIAG_POWER_WAKE_POLICY    8 /* a1=policy, a2=wake_gpio_mask_low, a3=voice_key_capable, a4=voice_key_gpio */
+
+/* Status LED events (DIAG_SRC_STATUS_LED) */
+#define DIAG_LED_STATE       1 /* a1=state_type, a2=value, a3=detail, a4=detail */
+#define DIAG_LED_ERROR       2 /* a1=domain, a2=severity, a3=0, a4=0 */
+#define DIAG_LED_OUTPUT_FAIL 3 /* a1=gpio, a2=esp_err, a3=stage, a4=0 */
+#define DIAG_LED_PROFILE     4 /* a1=profile, a2=0, a3=0, a4=0 */
 
 /* Firmware OTA events (DIAG_SRC_OTA) */
 #define DIAG_OTA_STATE          1   /* a1=partition_subtype, a2=ota_state, a3=0, a4=0 */

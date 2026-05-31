@@ -13,6 +13,7 @@
 #include "board_pins.h"
 #include "hid_keyboard.h"
 #include "power_manager.h"
+#include "status_led.h"
 #include "voice_recording_control.h"
 #include "watchdog_platform.h"
 
@@ -23,6 +24,7 @@ typedef struct {
     gpio_num_t gpio;
     char output_char;
     const char *label;
+    uint8_t index;
     bool initialized;
     bool last_sample_high;
     bool stable_level_high;
@@ -37,21 +39,25 @@ static keyboard_wasd_key_t s_wasd_keys[] = {
         .gpio = BOARD_PINS_KEY1_IO,
         .output_char = 'd',
         .label = "key1.gpio38.d",
+        .index = 0,
     },
     {
         .gpio = BOARD_PINS_KEY2_IO,
         .output_char = 'w',
         .label = "key2.gpio39.w",
+        .index = 1,
     },
     {
         .gpio = BOARD_PINS_KEY3_IO,
         .output_char = 'a',
         .label = "key3.gpio40.a",
+        .index = 2,
     },
     {
         .gpio = BOARD_PINS_KEY4_IO,
         .output_char = 's',
         .label = "key4.gpio41.s",
+        .index = 3,
     },
 };
 
@@ -90,6 +96,7 @@ static void keyboard_wasd_handle_sample(keyboard_wasd_key_t *key, bool raw_high)
     key->stable_level_high = raw_high;
     bool pressed = !raw_high;
     power_manager_record_activity(key->label);
+    status_led_notify_key_event(key->index, pressed);
     ESP_LOGI(
         TAG,
         "WASD key stable transition: source=%s raw_high=%d pressed=%d",
@@ -101,6 +108,7 @@ static void keyboard_wasd_handle_sample(keyboard_wasd_key_t *key, bool raw_high)
         if (ret == ESP_OK) {
             ESP_LOGI(TAG, "WASD key press queued: source=%s output=%c", key->label, key->output_char);
         } else {
+            status_led_set_error(STATUS_LED_ERROR_DOMAIN_BLE, STATUS_LED_ERROR_RETRYABLE, "hid_key_send_failed");
             ESP_LOGW(
                 TAG,
                 "WASD key press dropped: source=%s output=%c error=%s",

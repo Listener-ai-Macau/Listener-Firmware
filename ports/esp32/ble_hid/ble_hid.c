@@ -39,6 +39,7 @@ void ble_store_config_init(void);
 #include "diag_log.h"
 #include "firmware_ota.h"
 #include "power_manager.h"
+#include "status_led.h"
 #include "watchdog_platform.h"
 #include "esp_timer.h"
 
@@ -273,6 +274,10 @@ static bool ble_hid_dispatch_usb_command_line(const char *line)
         return true;
     }
 
+    if (status_led_consume_usb_command(line)) {
+        return true;
+    }
+
     if (watchdog_platform_consume_usb_command(line)) {
         return true;
     }
@@ -457,6 +462,7 @@ static void ble_hid_event_callback(void *handler_args, esp_event_base_t base, in
     case ESP_HIDD_START_EVENT:
         ESP_LOGI(TAG, "START");
         power_manager_record_activity("ble_hid_start");
+        status_led_show_status_window("ble_hid_start");
         if (!s_safe_mode) {
             ble_audio_stream_log_gatt_state();
         }
@@ -469,6 +475,7 @@ static void ble_hid_event_callback(void *handler_args, esp_event_base_t base, in
         ESP_LOGI(TAG, "CONNECT");
         s_ble_connected = true;
         power_manager_set_ble_connected(true);
+        status_led_set_ble_state(STATUS_LED_BLE_CONNECTED, true);
         s_connect_timestamp_ms = (uint32_t)(esp_timer_get_time() / 1000LL);
         ble_hid_update_battery_level("connect");
         diag_log(DIAG_SRC_BLE_HID, DIAG_BLE_CONNECT, DIAG_SEV_INFO,
@@ -527,6 +534,7 @@ static void ble_hid_event_callback(void *handler_args, esp_event_base_t base, in
                      param->disconnect.reason, s_disconnect_count,
                      conn_duration, heap_kb);
             power_manager_set_ble_connected(false);
+            status_led_set_ble_state(STATUS_LED_BLE_RECONNECTING, false);
             if (s_ascii_queue != NULL) {
                 xQueueReset(s_ascii_queue);
             }

@@ -1,0 +1,63 @@
+#ifndef STATUS_LED_H
+#define STATUS_LED_H
+
+#include <stdbool.h>
+#include <stdint.h>
+
+#include "esp_err.h"
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+typedef enum {
+    STATUS_LED_BLE_DISCONNECTED = 0,
+    STATUS_LED_BLE_PAIRING,
+    STATUS_LED_BLE_RECONNECTING,
+    STATUS_LED_BLE_CONNECTED,
+} status_led_ble_state_t;
+
+typedef enum {
+    STATUS_LED_REC_SOURCE_NONE = 0,
+    STATUS_LED_REC_SOURCE_DEVICE_MIC,
+    STATUS_LED_REC_SOURCE_DESKTOP_MIC,
+    STATUS_LED_REC_SOURCE_NOT_AVAILABLE,
+} status_led_rec_source_t;
+
+typedef enum {
+    STATUS_LED_ERROR_DOMAIN_NONE = 0,
+    STATUS_LED_ERROR_DOMAIN_BLE,
+    STATUS_LED_ERROR_DOMAIN_REC,
+    STATUS_LED_ERROR_DOMAIN_AI,
+    STATUS_LED_ERROR_DOMAIN_OTA,
+    STATUS_LED_ERROR_DOMAIN_POWER,
+    STATUS_LED_ERROR_DOMAIN_SYSTEM,
+} status_led_error_domain_t;
+
+typedef enum {
+    STATUS_LED_ERROR_RETRYABLE = 0,
+    STATUS_LED_ERROR_HARD,
+} status_led_error_severity_t;
+
+esp_err_t status_led_init(void);
+esp_err_t status_led_start(void);
+void status_led_show_status_window(const char *reason);
+void status_led_set_ble_state(status_led_ble_state_t state, bool confidence_window);
+void status_led_set_recording(bool active, status_led_rec_source_t source);
+void status_led_set_processing(bool active, const char *reason);
+void status_led_notify_success(const char *reason);
+void status_led_notify_key_event(uint8_t key_index, bool pressed);
+void status_led_set_error(
+    status_led_error_domain_t domain,
+    status_led_error_severity_t severity,
+    const char *reason);
+void status_led_clear_error(status_led_error_domain_t domain);
+void status_led_set_low_power_disabled(bool disabled);
+void status_led_prepare_sleep(void);
+bool status_led_consume_usb_command(const char *line);
+
+#ifdef __cplusplus
+}
+#endif
+
+#endif /* STATUS_LED_H */
