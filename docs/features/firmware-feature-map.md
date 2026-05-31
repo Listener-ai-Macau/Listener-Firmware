@@ -8,7 +8,8 @@ same product capabilities with concrete source locations.
 
 | Feature | What exists | Main paths |
 | --- | --- | --- |
-| Physical BLE HID keys | Four product keys send WASD-style HID characters: KEY1/GPIO45 -> `d`, KEY2/GPIO48 -> `w`, KEY3/GPIO47 -> `a`, KEY4/GPIO21 -> `s`. | `components/keyboard/`, `components/hid_keyboard/`, `ports/esp32/ble_hid*`, `ports/esp32/board_pins/` |
+| V2/N16R8 board profile | Production firmware defaults to `ESP32-S3-WROOM-1-N16R8`, 16 MB flash, 8 MB Octal PSRAM, V2 pin map, and 16 MB OTA/diag_log partition layout. | `ports/esp32/board_pins/Kconfig.projbuild`, `sdkconfig.defaults.esp32s3`, `partitions.csv`, `ports/esp32/board_pins/`, `tools/verify_v2_board_profile_static.ps1` |
+| Physical BLE HID keys | Four product keys send WASD-style HID characters: KEY1/GPIO38 -> `d`, KEY2/GPIO39 -> `w`, KEY3/GPIO40 -> `a`, KEY4/GPIO41 -> `s`. | `components/keyboard/`, `components/hid_keyboard/`, `ports/esp32/ble_hid*`, `ports/esp32/board_pins/` |
 | Voice recording key | The voice key toggles recording start/stop and exposes serial `VREC:` commands for desktop/product validation. | `components/voice_recording_control/`, `ports/esp32/voice_key_input/` |
 | Recovery | Long-hold voice key recovery and serial `VREC:RECOVERY`, `VREC:RESET`, or `VREC:FORGET` clear pairing/session state. | `ports/esp32/voice_key_input/`, `components/voice_recording_control/`, `ports/esp32/ble_hid*` |
 | BLE audio transport | VKA1-style 16 kHz microphone sessions are framed as start/audio/stop/cancel/error notifications for Listener-Type. | `ports/esp32/audio_capture*`, `ports/esp32/ble_audio_stream*` |
@@ -28,6 +29,7 @@ pwsh -NoProfile -File .\tools\build.ps1
 pwsh -NoProfile -File .\tools\flash.ps1 -Port <COMx>
 pwsh -NoProfile -File .\tools\monitor.ps1 -Port <COMx>
 pwsh -NoProfile -File .\tools\dump_diag_log.ps1 -Port <COMx>
+pwsh -NoProfile -File .\tools\verify_v2_board_profile_static.ps1
 pwsh -NoProfile -File .\tools\verify_ble_hid.ps1
 pwsh -NoProfile -File .\tools\verify_ble_hid_end_to_end.ps1
 pwsh -NoProfile -File .\tools\verify_physical_wasd_hid.ps1

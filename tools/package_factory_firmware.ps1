@@ -172,8 +172,8 @@ $manifest = [ordered]@{
         capabilities_uuid = "710af845-6d9f-6583-0c4d-9e5b3bc3091d"
         dis = [ordered]@{
             manufacturer = "listener"
-            model = "keyboard-v1"
-            hardware_revision = "esp32s3-devkit"
+            model = "keyboard-v2"
+            hardware_revision = "esp32s3-wroom-1-n16r8"
             firmware_revision = $project_version
             software_revision_protocol = "1"
         }
@@ -207,6 +207,10 @@ Version: $project_version
 Target: $target
 
 BLE name: listener
+
+Model: keyboard-v2
+
+Hardware revision: esp32s3-wroom-1-n16r8
 
 Appearance: 0x03C1 keyboard
 

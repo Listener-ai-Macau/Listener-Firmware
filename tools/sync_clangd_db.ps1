@@ -1,7 +1,14 @@
+param(
+    [string]$BuildDir
+)
+
 $ErrorActionPreference = "Stop"
 
 $project_root = Split-Path -Parent $PSScriptRoot
-$source_db = Join-Path $project_root "build\\compile_commands.json"
+if ([string]::IsNullOrWhiteSpace($BuildDir)) {
+    $BuildDir = Join-Path $project_root "build"
+}
+$source_db = Join-Path $BuildDir "compile_commands.json"
 $clangd_dir = Join-Path $project_root ".cache\\clangd"
 $output_db = Join-Path $clangd_dir "compile_commands.json"
 

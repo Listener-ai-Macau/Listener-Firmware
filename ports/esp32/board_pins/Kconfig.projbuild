@@ -1,0 +1,20 @@
+menu "Listener Board Profile"
+    choice LISTENER_BOARD_PROFILE
+        prompt "Listener board profile"
+        default LISTENER_BOARD_PROFILE_V2_N16R8
+
+        config LISTENER_BOARD_PROFILE_V2_N16R8
+            bool "Voice Keyboard V2.0 ESP32-S3-WROOM-1-N16R8"
+            help
+                Production V2 board profile for ESP32-S3-WROOM-1-N16R8:
+                16 MB flash, 8 MB Octal PSRAM, and the V2 schematic pin map.
+    endchoice
+
+    config LISTENER_V2_ENABLE_EC11_DEEP_SLEEP_WAKE
+        bool "Enable V2 EC11 key deep-sleep wake"
+        default n
+        depends on LISTENER_BOARD_PROFILE_V2_N16R8
+        help
+            Keep disabled until EC11-KEY_IO/GPIO11 isolation and off-state
+            leakage are signed off on V2 hardware.
+endmenu
