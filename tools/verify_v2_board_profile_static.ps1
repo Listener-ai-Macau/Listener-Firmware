@@ -73,6 +73,7 @@ $partitions = Read-RepoFile "partitions.csv"
 $boardKconfig = Read-RepoFile "ports\esp32\board_pins\Kconfig.projbuild"
 $listenerDevice = Read-RepoFile "protocols\listener_device\include\listener_device.h"
 $keyboard = Read-RepoFile "components\keyboard\keyboard.c"
+$voiceRecordingControl = Read-RepoFile "components\voice_recording_control\voice_recording_control.c"
 $voiceKeyInput = Read-RepoFile "ports\esp32\voice_key_input\voice_key_input_esp32.c"
 $boardHelp = Read-RepoFile "components\board\board.c"
 $powerManager = Read-RepoFile "components\power_manager\power_manager.c"
@@ -103,6 +104,7 @@ foreach ($item in @(
     @($keyboard, "key2\.gpio48\.w", "N4 KEY2 diagnostic label"),
     @($keyboard, "key4\.gpio21\.s", "N4 KEY4 diagnostic label"),
     @($voiceKeyInput, 'VOICE_KEY_INPUT_DIRECT_LABEL\s+"key1\.gpio45\.voice"', "N4 KEY1 voice diagnostic label"),
+    @($voiceRecordingControl, "voice_key_input_get_active_source\(\)", "voice recovery source follows active key source"),
     @($boardHelp, "Voice Keyboard N4", "N4 board help text"),
     @($boardHelp, "KEY1/GPIO45", "N4 voice key help text"),
     @($powerManager, "POWER_MANAGER_WAKE_POLICY_KEY4_ONLY", "N4 KEY4 wake policy"),
@@ -129,6 +131,7 @@ foreach ($item in @(
     @($sdkconfig, "CONFIG_ESPTOOLPY_FLASHSIZE_16MB", "16 MB flash N4 default"),
     @($voiceKeyInput, "gpio11\.ec11_key", "V2 GPIO11 EC11 diagnostic label in active code"),
     @($voiceKeyInput, "gpio35\.ec11_key", "N4 EC11 key diagnostic label in active voice key code"),
+    @($voiceRecordingControl, "ec11_key_hold", "EC11 recovery source label while KEY1 is the voice key"),
     @($keyboard, "key1\.gpio38\.d", "V2 KEY1 diagnostic label in active code"),
     @($keyboard, "key1\.gpio45\.d", "KEY1 HID diagnostic label while KEY1 is the voice key")
 )) {

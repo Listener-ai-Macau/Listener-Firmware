@@ -233,7 +233,8 @@ static void voice_recording_control_task(void *parameter)
         }
 
         if (voice_key_input_take_recovery_event()) {
-            voice_recording_control_recovery("ec11_key_hold");
+            const char *source = voice_key_input_get_active_source();
+            voice_recording_control_recovery(source != NULL ? source : "voice_key_hold");
         }
 
         if ((s_state == VOICE_RECORDING_STATE_RECORDING || s_state == VOICE_RECORDING_STATE_TRANSFERRING) &&
