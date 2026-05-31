@@ -77,6 +77,8 @@ typedef struct {
     bool pressed;
     uint32_t pressed_ms;
     bool recovery_reported;
+    bool release_toggle_suppressed;
+    bool recovery_suppressed;
 } voice_key_button_state_t;
 
 #if VOICE_KEY_INPUT_ENABLE_LEGACY_EXPANDER
@@ -95,9 +97,9 @@ static i2c_master_bus_handle_t s_i2c_bus_handle;
 static esp_io_expander_handle_t s_io_expander;
 #endif
 static TaskHandle_t s_poll_task_handle;
-static SemaphoreHandle_t s_press_event_sem;
 static SemaphoreHandle_t s_toggle_event_sem;
 static SemaphoreHandle_t s_recovery_event_sem;
+static volatile bool s_recording_output_enabled;
 #if VOICE_KEY_INPUT_ENABLE_LEGACY_EXPANDER
 static bool s_prev_input_valid;
 static uint32_t s_prev_input_levels;
@@ -144,37 +146,20 @@ static const voice_key_input_bus_candidate_t s_bus_candidates[] = {
 };
 #endif
 
-static void voice_key_input_record_press_event(const char *source)
-{
-    if (s_press_event_sem == NULL) {
-        ESP_LOGW(TAG, "%s press edge dropped: event queue unavailable", source);
-        diag_log(DIAG_SRC_VOICE_KEY, DIAG_VKEY_QUEUE_DROP, DIAG_SEV_WARN, 3, 1, 0, 0);
-        return;
-    }
-
-    if (xSemaphoreGive(s_press_event_sem) == pdTRUE) {
-        ESP_LOGI(TAG, "%s press edge detected", source);
-        diag_log(DIAG_SRC_VOICE_KEY, DIAG_VKEY_PRESS, DIAG_SEV_INFO, 3, 0, 0, 0);
-    } else {
-        ESP_LOGW(TAG, "%s press edge dropped: event queue full", source);
-        diag_log(DIAG_SRC_VOICE_KEY, DIAG_VKEY_QUEUE_DROP, DIAG_SEV_WARN, 3, 2, 0, 0);
-    }
-}
-
-static void voice_key_input_record_toggle_event(const char *source)
+static void voice_key_input_record_toggle_event(const char *source, uint32_t event_type, const char *edge_label)
 {
     if (s_toggle_event_sem == NULL) {
-        ESP_LOGW(TAG, "%s release toggle dropped: event queue unavailable", source);
-        diag_log(DIAG_SRC_VOICE_KEY, DIAG_VKEY_QUEUE_DROP, DIAG_SEV_WARN, 1, 1, 0, 0);
+        ESP_LOGW(TAG, "%s %s toggle dropped: event queue unavailable", source, edge_label);
+        diag_log(DIAG_SRC_VOICE_KEY, DIAG_VKEY_QUEUE_DROP, DIAG_SEV_WARN, event_type, 1, 0, 0);
         return;
     }
 
     if (xSemaphoreGive(s_toggle_event_sem) == pdTRUE) {
-        ESP_LOGI(TAG, "%s release toggle detected", source);
-        diag_log(DIAG_SRC_VOICE_KEY, DIAG_VKEY_PRESS, DIAG_SEV_INFO, 1, 0, 0, 0);
+        ESP_LOGI(TAG, "%s %s toggle detected", source, edge_label);
+        diag_log(DIAG_SRC_VOICE_KEY, DIAG_VKEY_PRESS, DIAG_SEV_INFO, event_type, 0, 0, 0);
     } else {
-        ESP_LOGW(TAG, "%s release toggle dropped: event queue full", source);
-        diag_log(DIAG_SRC_VOICE_KEY, DIAG_VKEY_QUEUE_DROP, DIAG_SEV_WARN, 1, 2, 0, 0);
+        ESP_LOGW(TAG, "%s %s toggle dropped: event queue full", source, edge_label);
+        diag_log(DIAG_SRC_VOICE_KEY, DIAG_VKEY_QUEUE_DROP, DIAG_SEV_WARN, event_type, 2, 0, 0);
     }
 }
 
@@ -209,6 +194,8 @@ static void voice_key_input_handle_button_sample(voice_key_button_state_t *butto
         button->pressed = false;
         button->pressed_ms = 0;
         button->recovery_reported = false;
+        button->release_toggle_suppressed = false;
+        button->recovery_suppressed = false;
         ESP_LOGI(
             TAG,
             "voice key candidate idle level detected: source=%s raw_high=%d pressed_when=%s",
@@ -241,19 +228,31 @@ static void voice_key_input_handle_button_sample(voice_key_button_state_t *butto
     if (pressed && !button->pressed) {
         button->pressed_ms = 0;
         button->recovery_reported = false;
-        voice_key_input_record_press_event(button->label);
+        button->release_toggle_suppressed = false;
+        button->recovery_suppressed = false;
+        if (s_recording_output_enabled) {
+            button->release_toggle_suppressed = true;
+            button->recovery_suppressed = true;
+            voice_key_input_record_toggle_event(button->label, 3, "press-edge stop");
+        }
     } else if (!pressed && button->pressed) {
-        if (!button->recovery_reported) {
-            voice_key_input_record_toggle_event(button->label);
+        if (!button->recovery_reported && !button->release_toggle_suppressed) {
+            voice_key_input_record_toggle_event(button->label, 1, "release");
         }
         button->pressed_ms = 0;
         button->recovery_reported = false;
+        button->release_toggle_suppressed = false;
+        button->recovery_suppressed = false;
     } else if (pressed && !button->recovery_reported) {
         uint32_t next_pressed_ms = button->pressed_ms + VOICE_KEY_INPUT_POLL_MS;
         button->pressed_ms = next_pressed_ms;
         if (next_pressed_ms >= VOICE_KEY_INPUT_RECOVERY_HOLD_MS) {
             button->recovery_reported = true;
-            voice_key_input_record_recovery_event(button->label);
+            if (button->recovery_suppressed) {
+                ESP_LOGI(TAG, "%s recovery hold ignored after press-edge stop", button->label);
+            } else {
+                voice_key_input_record_recovery_event(button->label);
+            }
         }
     }
     button->pressed = pressed;
@@ -450,8 +449,6 @@ esp_err_t voice_key_input_start(void)
         return ESP_OK;
     }
 
-    s_press_event_sem = xSemaphoreCreateCounting(VOICE_KEY_INPUT_EVENT_QUEUE_LENGTH, 0);
-    ESP_RETURN_ON_FALSE(s_press_event_sem != NULL, ESP_ERR_NO_MEM, TAG, "voice key press event queue create failed");
     s_toggle_event_sem = xSemaphoreCreateCounting(VOICE_KEY_INPUT_EVENT_QUEUE_LENGTH, 0);
     ESP_RETURN_ON_FALSE(s_toggle_event_sem != NULL, ESP_ERR_NO_MEM, TAG, "voice key event queue create failed");
     s_recovery_event_sem = xSemaphoreCreateCounting(VOICE_KEY_INPUT_EVENT_QUEUE_LENGTH, 0);
@@ -495,15 +492,6 @@ esp_err_t voice_key_input_start(void)
     return ESP_OK;
 }
 
-bool voice_key_input_take_press_event(void)
-{
-    if (s_press_event_sem == NULL) {
-        return false;
-    }
-
-    return xSemaphoreTake(s_press_event_sem, 0) == pdTRUE;
-}
-
 bool voice_key_input_take_toggle_event(void)
 {
     if (s_toggle_event_sem == NULL) {
@@ -529,6 +517,6 @@ const char *voice_key_input_get_active_source(void)
 
 esp_err_t voice_key_input_set_recording_output(bool enabled)
 {
-    (void)enabled;
+    s_recording_output_enabled = enabled;
     return ESP_OK;
 }
