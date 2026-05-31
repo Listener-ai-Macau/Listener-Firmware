@@ -51,11 +51,6 @@ static TaskHandle_t s_wasd_task_handle;
 static TaskHandle_t s_ec11_task_handle;
 static keyboard_wasd_key_t s_wasd_keys[] = {
     {
-        .gpio = BOARD_PINS_KEY1_IO,
-        .output_char = 'd',
-        .label = "key1.gpio45.d",
-    },
-    {
         .gpio = BOARD_PINS_KEY2_IO,
         .output_char = 'w',
         .label = "key2.gpio48.w",
@@ -251,8 +246,7 @@ static esp_err_t keyboard_wasd_start(void)
     }
 
     gpio_config_t io_conf = {
-        .pin_bit_mask = (1ULL << BOARD_PINS_KEY1_IO) |
-                        (1ULL << BOARD_PINS_KEY2_IO) |
+        .pin_bit_mask = (1ULL << BOARD_PINS_KEY2_IO) |
                         (1ULL << BOARD_PINS_KEY3_IO) |
                         (1ULL << BOARD_PINS_KEY4_IO),
         .mode = GPIO_MODE_INPUT,

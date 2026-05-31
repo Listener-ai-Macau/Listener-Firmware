@@ -1,7 +1,7 @@
 param(
     [Parameter(Mandatory = $true)]
     [string]$Port,
-    [string]$ExpectedText = "dwas",
+    [string]$ExpectedText = "was",
     [int]$TimeoutSeconds = 45,
     [int]$Baud = 115200,
     [string]$OutputPath = "",
@@ -222,7 +222,7 @@ def write_artifact(text):
     output_path.parent.mkdir(parents=True, exist_ok=True)
     output_path.write_text(text, encoding="utf-8", newline="\n")
 
-print("verify_physical_wasd_hid: focus a text editor now, then physically press KEY1, KEY2, KEY3, KEY4.")
+print("verify_physical_wasd_hid: focus a text editor now, then physically press KEY2, KEY3, KEY4.")
 print("Expected host text: " + expected_text)
 sys.stdout.flush()
 
@@ -252,14 +252,12 @@ serial_done.wait(5.0)
 log_output = b"".join(serial_chunks).decode("utf-8", errors="replace")
 captured_text = capture_state["captured_text"]
 required_lines = [
-    "WASD key press queued: source=key1.gpio45.d output=d",
     "WASD key press queued: source=key2.gpio48.w output=w",
     "WASD key press queued: source=key3.gpio47.a output=a",
     "WASD key press queued: source=key4.gpio21.s output=s",
 ]
 missing_lines = [line for line in required_lines if line not in log_output]
 required_raw_sources = [
-    "WASD key raw transition: source=key1.gpio45.d",
     "WASD key raw transition: source=key2.gpio48.w",
     "WASD key raw transition: source=key3.gpio47.a",
     "WASD key raw transition: source=key4.gpio21.s",
@@ -282,7 +280,7 @@ if missing_raw_sources:
     failure_reasons.append("missing_raw_sources=" + repr(missing_raw_sources))
 
 artifact = []
-artifact.append("# Physical WASD BLE HID validation")
+artifact.append("# Physical key BLE HID validation")
 artifact.append("")
 artifact.append(f"status={status}")
 artifact.append(f"port={port}")

@@ -100,14 +100,14 @@ foreach ($item in @(
     @($boardPins, "BOARD_PINS_I2S_DIN_IO\s+\(GPIO_NUM_41\)", "I2S DIN GPIO41"),
     @($listenerDevice, 'LISTENER_DEVICE_HW_REV\s+"esp32s3-wroom-1-n4"', "N4 BLE/DIS hardware revision"),
     @($listenerDevice, "flash_4mb;no_psram", "N4 capability metadata"),
-    @($keyboard, "key1\.gpio45\.d", "N4 KEY1 diagnostic label"),
+    @($keyboard, "key2\.gpio48\.w", "N4 KEY2 diagnostic label"),
     @($keyboard, "key4\.gpio21\.s", "N4 KEY4 diagnostic label"),
-    @($voiceKeyInput, 'VOICE_KEY_INPUT_DIRECT_LABEL\s+"gpio35\.ec11_key"', "N4 EC11 key diagnostic label"),
+    @($voiceKeyInput, 'VOICE_KEY_INPUT_DIRECT_LABEL\s+"key1\.gpio45\.voice"', "N4 KEY1 voice diagnostic label"),
     @($boardHelp, "Voice Keyboard N4", "N4 board help text"),
-    @($boardHelp, "EC11_KEY/GPIO35", "N4 voice key help text"),
+    @($boardHelp, "KEY1/GPIO45", "N4 voice key help text"),
     @($powerManager, "POWER_MANAGER_WAKE_POLICY_KEY4_ONLY", "N4 KEY4 wake policy"),
     @($powerManager, "KEY4/GPIO21", "N4 wake key string"),
-    @($powerManager, "GPIO35 voice key", "N4 voice key wake limitation"),
+    @($powerManager, "KEY1/GPIO45 voice key", "N4 voice key wake limitation"),
     @($otaPackage, 'hardware_revision = "keyboard-n4"', "OTA package N4 hardware requirement"),
     @($factoryPackage, 'hardware_revision = "esp32s3-wroom-1-n4"', "factory package N4 DIS hardware revision")
 )) {
@@ -128,7 +128,9 @@ foreach ($item in @(
     @($sdkconfig, "CONFIG_SPIRAM=y", "PSRAM-enabled N4 default"),
     @($sdkconfig, "CONFIG_ESPTOOLPY_FLASHSIZE_16MB", "16 MB flash N4 default"),
     @($voiceKeyInput, "gpio11\.ec11_key", "V2 GPIO11 EC11 diagnostic label in active code"),
-    @($keyboard, "key1\.gpio38\.d", "V2 KEY1 diagnostic label in active code")
+    @($voiceKeyInput, "gpio35\.ec11_key", "N4 EC11 key diagnostic label in active voice key code"),
+    @($keyboard, "key1\.gpio38\.d", "V2 KEY1 diagnostic label in active code"),
+    @($keyboard, "key1\.gpio45\.d", "KEY1 HID diagnostic label while KEY1 is the voice key")
 )) {
     Assert-NotContains -Text $item[0] -Pattern $item[1] -Description $item[2]
 }

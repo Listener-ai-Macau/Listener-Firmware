@@ -31,7 +31,7 @@ CHECKS = {
         "wake_policy=%s",
         "wake_capable_keys=%s",
         "voice_key_deep_sleep_wake=%u",
-        "GPIO35 voice key is not RTC deep-sleep wake capable on N4",
+        "KEY1/GPIO45 voice key is not RTC deep-sleep wake capable on N4",
         "press KEY4/GPIO21 after deep sleep",
         "POWER_MANAGER_WAKE_POLICY_KEY4_ONLY",
         "s_last_user_activity_ms",
@@ -111,7 +111,7 @@ CHECKS = {
     ],
     "components/board/board.c": [
         "Voice Keyboard N4",
-        "EC11_KEY/GPIO35",
+        "KEY1/GPIO45",
         "N4 deep sleep wakes by KEY4/GPIO21",
     ],
 }
