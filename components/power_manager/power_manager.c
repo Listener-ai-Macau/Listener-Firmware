@@ -189,7 +189,7 @@ const char *power_manager_wake_policy_name(power_manager_wake_policy_t policy)
     }
 }
 
-static power_manager_wake_source_t power_manager_map_wakeup(esp_sleep_wakeup_cause_t cause)
+power_manager_wake_source_t power_manager_map_wakeup(esp_sleep_wakeup_cause_t cause)
 {
     switch (cause) {
     case ESP_SLEEP_WAKEUP_EXT0:

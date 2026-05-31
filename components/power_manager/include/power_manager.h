@@ -5,6 +5,7 @@
 #include <stdint.h>
 
 #include "esp_err.h"
+#include "esp_sleep.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -101,6 +102,7 @@ void power_manager_get_snapshot(power_manager_snapshot_t *snapshot);
 const char *power_manager_state_name(power_manager_state_t state);
 const char *power_manager_sleep_reason_name(power_manager_sleep_reason_t reason);
 const char *power_manager_wake_source_name(power_manager_wake_source_t source);
+power_manager_wake_source_t power_manager_map_wakeup(esp_sleep_wakeup_cause_t cause);
 const char *power_manager_wake_policy_name(power_manager_wake_policy_t policy);
 
 #ifdef __cplusplus
