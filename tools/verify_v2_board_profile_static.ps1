@@ -88,6 +88,7 @@ $voiceRecordingControl = Read-RepoFile "components\voice_recording_control\voice
 $systemHealth = Read-RepoFile "ports\esp32\system_health_platform\system_health_esp32.c"
 $otaPackage = Read-RepoFile "tools\package_ota_firmware.ps1"
 $factoryPackage = Read-RepoFile "tools\package_factory_firmware.ps1"
+$currentTelemetryTool = Read-RepoFile "tools\collect_v2_current_telemetry.ps1"
 
 foreach ($item in @(
     @($boardKconfig, "LISTENER_BOARD_PROFILE_V2_N16R8", "default V2/N16R8 board profile option"),
@@ -141,6 +142,13 @@ foreach ($item in @(
     @($batteryMonitor, "BOARD_PINS_TPS63020_I_ADC_IO", "3.3 V current ADC implementation"),
     @($batteryMonitor, "BOARD_PINS_SY7088_I_ADC_IO", "LED/5 V current ADC implementation"),
     @($batteryMonitor, "current_ma_valid = false", "uncalibrated current status"),
+    @($currentTelemetryTool, "TPS63020_I_ADC", "3.3 V current telemetry collection tool net"),
+    @($currentTelemetryTool, "SY7088_I_ADC", "LED/5 V current telemetry collection tool net"),
+    @($currentTelemetryTool, "~POWER:STATUS", "low-power status collection in current telemetry report"),
+    @($currentTelemetryTool, "low_power_status_present", "low-power status report presence flag"),
+    @($currentTelemetryTool, "sleep_drain_mv_per_hour", "low-power drain-rate report field"),
+    @($currentTelemetryTool, 'software_power_control\s*=\s*\$false', "telemetry-only current report policy"),
+    @($currentTelemetryTool, 'valid_for_power_decisions\s*=\s*\$false', "no software power decision from current telemetry"),
     @($keyboard, "keyboard_ec11_task", "EC11 A/B polling task"),
     @($keyboard, "BOARD_PINS_EC11_A_IO", "EC11 A GPIO use"),
     @($keyboard, "BOARD_PINS_EC11_B_IO", "EC11 B GPIO use"),

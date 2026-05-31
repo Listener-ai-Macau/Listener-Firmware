@@ -45,6 +45,7 @@ function New-FeatureSnapshot {
             "V2/N16R8 board profile with 16 MB flash, 8 MB Octal PSRAM, V2 pin map, and static checks rejecting stale V1 pins or no-PSRAM defaults.",
             "power_manager low-power state machine for connected idle, disconnected idle, overnight sleep, provisional EC11-KEY_IO/GPIO11 wake diagnostics, and power blockers.",
             "V2 board diagnostics for ~BOARD:STATUS and ~LED:STATUS, including USB/charger provisional status, battery ADC, raw 3.3V and LED/5V current telemetry, LED resource mapping, and hardware blocker policy strings.",
+            "V2 current telemetry and low-power report tooling for TPS63020_I_ADC/GPIO10, SY7088_I_ADC/GPIO9, and ~POWER:STATUS sleep drain evidence; readings are telemetry-only and do not drive firmware power-control decisions.",
             "V2 safety gates keep PWR_HOLD/GPIO46 undriven, LED calibration commands blocked until VDD_LED sign-off, current mA/mW uncalibrated, and CLK/GPIO48 DOUT/GPIO47 microphone capture degraded until validated.",
             "POST and degraded boot reporting for NVS, BLE, audio, heap, and board assumptions."
         )
@@ -58,6 +59,7 @@ function New-FeatureSnapshot {
             [ordered]@{ path = "docs/features/low_power_wake_policy.md"; purpose = "Firmware wake policy contract for V2 EC11-KEY_IO/GPIO11 provisional deep-sleep wake." },
             [ordered]@{ path = "tools/decode_diag_log.py"; purpose = "Offline decoder for ~DIAGLOG JSONL into stable AI-readable JSON bundles." },
             [ordered]@{ path = "tools/collect_ai_diagnostics.ps1"; purpose = "Collect recent serial diag_log events or decode saved JSONL into raw and decoded artifacts under tests/artifacts." },
+            [ordered]@{ path = "tools/collect_v2_current_telemetry.ps1"; purpose = "Collect focused V2 current telemetry and low-power drain reports for TPS63020_I_ADC/GPIO10, SY7088_I_ADC/GPIO9, and ~POWER:STATUS without power-control side effects." },
             [ordered]@{ path = "components/firmware_ota/"; purpose = "ESP-IDF OTA manager, rollback/pending-verify handling, blockers, and OTA serial diagnostics." },
             [ordered]@{ path = "ports/esp32/ble_firmware_ota/"; purpose = "NimBLE firmware OTA service with control/data characteristics and BLE abort integration." },
             [ordered]@{ path = "components/system_health/"; purpose = "Health status, heartbeat, and fault reporting." },
@@ -76,6 +78,7 @@ function New-FeatureSnapshot {
             "V2 physical keys use GPIO38/GPIO39/GPIO40/GPIO41; EC11 uses GPIO42/GPIO2/GPIO11; GPIO35/GPIO36/GPIO37 are reserved for N16R8/MSPI.",
             "V2 deep-sleep wake intent is EC11-KEY_IO/GPIO11, but firmware leaves it disabled until hardware isolation/off-state sign-off.",
             "V2 PWR_HOLD/GPIO46, USB_Det/GPIO7, charger CHG/STDBY polarity, VDD_LED, current-sense scaling, and microphone interface remain hardware sign-off gates exposed through diagnostics.",
+            "V2 current telemetry is read-only software: firmware collects TPS63020_I_ADC/GPIO10 and SY7088_I_ADC/GPIO9 diagnostics but does not intervene in hardware power behavior.",
             "Real BLE, flash, serial, or audio capture validation requires a workflow hardware lock."
         )
         boundaries = @(
@@ -91,6 +94,7 @@ function New-FeatureSnapshot {
             "pwsh -NoProfile -File .\tools\monitor.ps1 -Port <COMx>",
             "pwsh -NoProfile -File .\tools\dump_diag_log.ps1 -Port <COMx>",
             "pwsh -NoProfile -File .\tools\verify_v2_board_profile_static.ps1",
+            "pwsh -NoProfile -File .\tools\collect_v2_current_telemetry.ps1 -SelfTest",
             "pwsh -NoProfile -File .\tools\verify_power_manager_static.ps1",
             "pwsh -NoProfile -File .\tools\verify_diagnostic_log_coverage.ps1",
             "pwsh -NoProfile -File .\tools\collect_ai_diagnostics.ps1 -InputJsonl <diag_log.jsonl> -OutputDir .\tests\artifacts\ai_diagnostics",
