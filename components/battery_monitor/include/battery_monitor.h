@@ -15,10 +15,40 @@ typedef struct {
     uint32_t voltage_mv;
     uint8_t level_percent;
     int raw_adc;
+    int adc_mv;
+    bool adc_calibrated;
+    uint8_t sample_count;
     esp_err_t result;
 } battery_monitor_status_t;
 
+typedef enum {
+    BATTERY_MONITOR_POWER_RAIL_3V3 = 0,
+    BATTERY_MONITOR_POWER_RAIL_LED_5V,
+} battery_monitor_power_rail_t;
+
+typedef struct {
+    bool valid;
+    const char *rail_name;
+    const char *calibration_status;
+    uint32_t gpio;
+    uint32_t nominal_rail_mv;
+    bool rail_voltage_provisional;
+    int raw_adc;
+    int adc_mv;
+    bool adc_calibrated;
+    bool current_calibrated;
+    bool current_ma_valid;
+    int32_t estimated_current_ma;
+    bool power_mw_valid;
+    int32_t estimated_power_mw;
+    uint8_t sample_count;
+    esp_err_t result;
+} battery_monitor_power_rail_status_t;
+
 esp_err_t battery_monitor_read(battery_monitor_status_t *out_status);
+esp_err_t battery_monitor_read_power_rail(
+    battery_monitor_power_rail_t rail,
+    battery_monitor_power_rail_status_t *out_status);
 uint8_t battery_monitor_percent_from_mv(uint32_t battery_mv);
 
 #ifdef __cplusplus

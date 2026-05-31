@@ -273,6 +273,10 @@ static bool ble_hid_dispatch_usb_command_line(const char *line)
         return true;
     }
 
+    if (board_consume_usb_command(line)) {
+        return true;
+    }
+
     if (watchdog_platform_consume_usb_command(line)) {
         return true;
     }

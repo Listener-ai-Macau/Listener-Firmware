@@ -42,6 +42,7 @@
 #define AUDIO_CAPTURE_FRAME_BYTES       (AUDIO_CAPTURE_FRAME_SAMPLES * sizeof(int16_t))
 #define AUDIO_CAPTURE_LOG_INTERVAL_FRAMES (50)
 #define AUDIO_CAPTURE_TASK_STACK_BYTES  (6 * 1024)
+#define AUDIO_CAPTURE_V2_MIC_BLOCKER "V2 CLK/GPIO48 DOUT/GPIO47 microphone interface not validated"
 /* Recording duration is user-controlled (KEY1 toggle); no fixed upper limit.
  * The only hard limit is uint16_t packet_sequence overflow in the BLE protocol,
  * which is handled gracefully by sending session_stop before overflow. */
@@ -950,6 +951,16 @@ esp_err_t audio_capture_start(void)
     if (s_started) {
         return ESP_OK;
     }
+
+#if defined(CONFIG_LISTENER_BOARD_PROFILE_V2_N16R8) && CONFIG_LISTENER_BOARD_PROFILE_V2_N16R8 && \
+    defined(CONFIG_AUDIO_CAPTURE_MIC_SPH0645) && CONFIG_AUDIO_CAPTURE_MIC_SPH0645 && \
+    !CONFIG_AUDIO_CAPTURE_V2_MIC_INTERFACE_VALIDATED
+    ESP_LOGW(TAG, "audio capture degraded: %s", AUDIO_CAPTURE_V2_MIC_BLOCKER);
+    diag_log(DIAG_SRC_AUDIO, DIAG_AUDIO_INIT_FAIL, DIAG_SEV_WARN, 8,
+             ESP_ERR_NOT_SUPPORTED, (uint32_t)BOARD_PINS_MIC_CLK_IO,
+             (uint32_t)BOARD_PINS_MIC_DOUT_IO);
+    return ESP_ERR_NOT_SUPPORTED;
+#endif
 
     esp_err_t err = audio_capture_i2s_init();
     if (err != ESP_OK) {

@@ -1,6 +1,303 @@
 #include "board.h"
 
+#include <inttypes.h>
+#include <stdbool.h>
+#include <stdio.h>
+#include <string.h>
+
+#include "driver/gpio.h"
+#include "battery_monitor.h"
+#include "board_pins.h"
+#include "diag_log.h"
+#include "esp_err.h"
 #include "esp_log.h"
+
+static const char *TAG = "board";
+
+#define BOARD_USB_PREFIX "BOARD:"
+#define BOARD_LED_PREFIX "LED:"
+
+#define BOARD_V2_USB_DET_POLICY "provisional_divider_5k1_10k_may_exceed_3v3"
+#define BOARD_V2_CHARGER_POLARITY "provisional_active_low_open_drain_unconfirmed"
+#define BOARD_V2_PWR_HOLD_POLICY "disabled_until_gpio46_reset_strapping_signoff"
+#define BOARD_V2_LED_POLICY "resources_declared_only_vdd_led_unsigned_full_white_blocked"
+#define BOARD_V2_MIC_POLICY "clk_gpio48_dout_gpio47_interface_validation_required"
+#define BOARD_V2_CURRENT_POLICY "raw_adc_only_current_ma_mw_uncalibrated"
+
+typedef struct {
+    const char *name;
+    gpio_num_t data_gpio;
+    uint8_t first_led;
+    uint8_t led_count;
+    uint8_t brightness_cap_percent;
+    const char *policy;
+} board_led_group_t;
+
+static const board_led_group_t s_led_groups[] = {
+    {
+        .name = "status",
+        .data_gpio = BOARD_PINS_RGB_STATUS_IO,
+        .first_led = 1,
+        .led_count = 6,
+        .brightness_cap_percent = 8,
+        .policy = "LED1..LED6 semantic PWR/BLE/REC/AI/OK/WARN rail",
+    },
+    {
+        .name = "key",
+        .data_gpio = BOARD_PINS_RGB_KEY_IO,
+        .first_led = 7,
+        .led_count = 4,
+        .brightness_cap_percent = 8,
+        .policy = "LED7..LED10 transient local key feedback",
+    },
+    {
+        .name = "edge",
+        .data_gpio = BOARD_PINS_RGB_EDGE_IO,
+        .first_led = 11,
+        .led_count = 6,
+        .brightness_cap_percent = 4,
+        .policy = "LED11..LED16 restrained edge/ring effects",
+    },
+};
+
+static bool board_command_matches(const char *line, const char *prefix, const char **out_command)
+{
+    if (line == NULL || prefix == NULL || out_command == NULL) {
+        return false;
+    }
+    if (*line == '~') {
+        line++;
+    }
+    size_t prefix_len = strlen(prefix);
+    if (strncmp(line, prefix, prefix_len) != 0) {
+        return false;
+    }
+    *out_command = line + prefix_len;
+    return true;
+}
+
+static void board_configure_status_input(gpio_num_t gpio)
+{
+    if (gpio == GPIO_NUM_NC || gpio < 0 || gpio >= GPIO_NUM_MAX) {
+        return;
+    }
+
+    gpio_config_t config = {
+        .pin_bit_mask = 1ULL << (uint32_t)gpio,
+        .mode = GPIO_MODE_INPUT,
+        .pull_up_en = GPIO_PULLUP_ENABLE,
+        .pull_down_en = GPIO_PULLDOWN_DISABLE,
+        .intr_type = GPIO_INTR_DISABLE,
+    };
+    esp_err_t ret = gpio_config(&config);
+    if (ret != ESP_OK) {
+        ESP_LOGW(TAG, "status input config failed: gpio=%d ret=%s", (int)gpio, esp_err_to_name(ret));
+    }
+}
+
+static const char *board_gpio_level_name(int level)
+{
+    if (level < 0) {
+        return "unknown";
+    }
+    return level ? "high" : "low";
+}
+
+static int board_read_gpio_level(gpio_num_t gpio)
+{
+    if (gpio == GPIO_NUM_NC || gpio < 0 || gpio >= GPIO_NUM_MAX) {
+        return -1;
+    }
+    return gpio_get_level(gpio);
+}
+
+void board_get_v2_power_input_snapshot(board_v2_power_input_snapshot_t *out_snapshot)
+{
+    if (out_snapshot == NULL) {
+        return;
+    }
+
+    board_configure_status_input(BOARD_PINS_USB_DET_IO);
+    board_configure_status_input(BOARD_PINS_BAT_CHG_IO);
+    board_configure_status_input(BOARD_PINS_BAT_STD_IO);
+
+    *out_snapshot = (board_v2_power_input_snapshot_t){
+        .usb_det_level = board_read_gpio_level(BOARD_PINS_USB_DET_IO),
+        .bat_chg_level = board_read_gpio_level(BOARD_PINS_BAT_CHG_IO),
+        .bat_std_level = board_read_gpio_level(BOARD_PINS_BAT_STD_IO),
+        .usb_det_policy = BOARD_V2_USB_DET_POLICY,
+        .charger_polarity_policy = BOARD_V2_CHARGER_POLARITY,
+    };
+}
+
+static void board_print_power_rail_status(battery_monitor_power_rail_t rail)
+{
+    battery_monitor_power_rail_status_t status = {0};
+    esp_err_t ret = battery_monitor_read_power_rail(rail, &status);
+    uint32_t rail_code = rail == BATTERY_MONITOR_POWER_RAIL_3V3 ? 1u : 2u;
+    diag_log(DIAG_SRC_BOARD, DIAG_BOARD_POWER_RAIL,
+             status.valid ? DIAG_SEV_INFO : DIAG_SEV_WARN,
+             rail_code,
+             (uint32_t)(status.raw_adc < 0 ? 0 : status.raw_adc),
+             (uint32_t)(status.adc_mv < 0 ? 0 : status.adc_mv),
+             status.adc_calibrated ? 1u : 0u);
+    printf(
+        "~BOARD:POWER rail=%s gpio=%" PRIu32
+        " raw_adc=%d adc_mv=%d adc_calibrated=%u sample_count=%u"
+        " calibration_status=%s current_calibrated=%u current_ma_valid=%u"
+        " estimated_current_ma=%" PRId32 " rail_mv=%" PRIu32
+        " rail_voltage_provisional=%u power_mw_valid=%u estimated_power_mw=%" PRId32
+        " result=%s policy=%s\n",
+        status.rail_name,
+        status.gpio,
+        status.raw_adc,
+        status.adc_mv,
+        status.adc_calibrated ? 1u : 0u,
+        status.sample_count,
+        status.calibration_status,
+        status.current_calibrated ? 1u : 0u,
+        status.current_ma_valid ? 1u : 0u,
+        status.estimated_current_ma,
+        status.nominal_rail_mv,
+        status.rail_voltage_provisional ? 1u : 0u,
+        status.power_mw_valid ? 1u : 0u,
+        status.estimated_power_mw,
+        esp_err_to_name(ret),
+        BOARD_V2_CURRENT_POLICY);
+}
+
+static void board_print_led_status(void)
+{
+    for (size_t i = 0; i < sizeof(s_led_groups) / sizeof(s_led_groups[0]); ++i) {
+        const board_led_group_t *group = &s_led_groups[i];
+        diag_log(DIAG_SRC_BOARD, DIAG_BOARD_LED_RESOURCE, DIAG_SEV_WARN,
+                 (uint32_t)(i + 1u),
+                 (uint32_t)group->data_gpio,
+                 group->first_led,
+                 group->led_count);
+        printf(
+            "~LED:STATUS group=%s transport=WS2812 data_gpio=%d first_led=%u led_count=%u"
+            " brightness_cap_percent=%u vdd_led_signed_off=0 full_white_allowed=0"
+            " rgbw_calibration_path=provisional policy=\"%s\"\n",
+            group->name,
+            (int)group->data_gpio,
+            group->first_led,
+            group->led_count,
+            group->brightness_cap_percent,
+            group->policy);
+    }
+    printf("~LED:STATUS policy=%s\n", BOARD_V2_LED_POLICY);
+    fflush(stdout);
+}
+
+static bool board_print_led_test(const char *command)
+{
+    if (strncmp(command, "TEST:RGBW", strlen("TEST:RGBW")) == 0) {
+        printf(
+            "~LED:TEST:RGBW result=blocked reason=vdd_led_not_signed_off"
+            " status_gpio=%d key_gpio=%d edge_gpio=%d max_brightness_percent=4"
+            " note=\"red/green/blue/white calibration command is present but does not drive LEDs until VDD_LED is measured\"\n",
+            (int)BOARD_PINS_RGB_STATUS_IO,
+            (int)BOARD_PINS_RGB_KEY_IO,
+            (int)BOARD_PINS_RGB_EDGE_IO);
+        fflush(stdout);
+        return true;
+    }
+    if (strncmp(command, "TEST:MAP", strlen("TEST:MAP")) == 0) {
+        printf(
+            "~LED:TEST:MAP result=blocked reason=vdd_led_not_signed_off"
+            " status=\"LED1=PWR LED2=BLE LED3=REC LED4=AI LED5=OK LED6=WARN\""
+            " key=\"LED7..LED10\" edge=\"LED11..LED16\" note=\"one-by-one map command is present but does not drive LEDs until VDD_LED is measured\"\n");
+        fflush(stdout);
+        return true;
+    }
+    if (strcmp(command, "STATUS") == 0) {
+        board_print_led_status();
+        return true;
+    }
+    return false;
+}
+
+static void board_print_status(void)
+{
+    battery_monitor_status_t battery = {0};
+    esp_err_t battery_ret = battery_monitor_read(&battery);
+    board_v2_power_input_snapshot_t power_inputs = {0};
+    board_get_v2_power_input_snapshot(&power_inputs);
+
+    printf(
+        "~BOARD:STATUS profile=%s module=%s flash_mb=%u psram_mb=%u psram_mode=%s"
+        " key_gpios=38,39,40,41 ec11_a_gpio=%d ec11_b_gpio=%d ec11_key_gpio=%d"
+        " ec11_key_provisional=1 mic_clk_gpio=%d mic_dout_gpio=%d mic_policy=%s"
+        " pwr_hold_gpio=%d pwr_hold_enabled=0 pwr_hold_policy=%s"
+        " usb_det_gpio=%d usb_det_level=%s usb_det_policy=%s"
+        " bat_chg_gpio=%d bat_chg_level=%s bat_std_gpio=%d bat_std_level=%s charger_polarity=%s"
+        " battery_gpio=%d battery_mv=%" PRIu32 " battery_adc_mv=%d battery_raw=%d"
+        " battery_level=%u battery_valid=%u battery_adc_calibrated=%u battery_samples=%u battery_result=%s"
+        " battery_scaling=\"68K/68K divider, VBAT~=2*ADC\" battery_policy=\"source_impedance_filter_calibration_provisional\""
+        " reserved_mspi_gpio=35,36,37\n",
+        BOARD_PINS_PROFILE_ID,
+        BOARD_PINS_MODULE,
+        (unsigned)BOARD_PINS_FLASH_SIZE_MB,
+        (unsigned)BOARD_PINS_PSRAM_SIZE_MB,
+        BOARD_PINS_PSRAM_MODE,
+        (int)BOARD_PINS_EC11_A_IO,
+        (int)BOARD_PINS_EC11_B_IO,
+        (int)BOARD_PINS_EC11_KEY_IO,
+        (int)BOARD_PINS_MIC_CLK_IO,
+        (int)BOARD_PINS_MIC_DOUT_IO,
+        BOARD_V2_MIC_POLICY,
+        (int)BOARD_PINS_PWR_HOLD_IO,
+        BOARD_V2_PWR_HOLD_POLICY,
+        (int)BOARD_PINS_USB_DET_IO,
+        board_gpio_level_name(power_inputs.usb_det_level),
+        power_inputs.usb_det_policy,
+        (int)BOARD_PINS_BAT_CHG_IO,
+        board_gpio_level_name(power_inputs.bat_chg_level),
+        (int)BOARD_PINS_BAT_STD_IO,
+        board_gpio_level_name(power_inputs.bat_std_level),
+        power_inputs.charger_polarity_policy,
+        (int)BOARD_PINS_BAT_V_ADC_IO,
+        battery.voltage_mv,
+        battery.adc_mv,
+        battery.raw_adc,
+        battery.level_percent,
+        battery.valid ? 1u : 0u,
+        battery.adc_calibrated ? 1u : 0u,
+        battery.sample_count,
+        esp_err_to_name(battery_ret));
+    board_print_power_rail_status(BATTERY_MONITOR_POWER_RAIL_3V3);
+    board_print_power_rail_status(BATTERY_MONITOR_POWER_RAIL_LED_5V);
+    board_print_led_status();
+    fflush(stdout);
+}
+
+void board_log_v2_diagnostics(void)
+{
+    ESP_LOGI(
+        TAG,
+        "V2 board profile: id=%s module=%s flash=%uMB psram=%uMB %s key_gpios=38,39,40,41 ec11=42,2,11 mic=48,47 usb_det=7 charger=14,21 battery_adc=8 current_adc=10,9 rgb=1,13,4 pwr_hold=46",
+        BOARD_PINS_PROFILE_ID,
+        BOARD_PINS_MODULE,
+        (unsigned)BOARD_PINS_FLASH_SIZE_MB,
+        (unsigned)BOARD_PINS_PSRAM_SIZE_MB,
+        BOARD_PINS_PSRAM_MODE);
+    ESP_LOGW(TAG, "V2 hardware provisional: usb_det=%s charger=%s pwr_hold=%s current=%s led=%s mic=%s",
+             BOARD_V2_USB_DET_POLICY,
+             BOARD_V2_CHARGER_POLARITY,
+             BOARD_V2_PWR_HOLD_POLICY,
+             BOARD_V2_CURRENT_POLICY,
+             BOARD_V2_LED_POLICY,
+             BOARD_V2_MIC_POLICY);
+    diag_log(DIAG_SRC_BOARD, DIAG_BOARD_PROFILE, DIAG_SEV_INFO,
+             BOARD_PINS_FLASH_SIZE_MB, BOARD_PINS_PSRAM_SIZE_MB,
+             (uint32_t)BOARD_PINS_KEY1_IO, (uint32_t)BOARD_PINS_EC11_KEY_IO);
+    diag_log(DIAG_SRC_BOARD, DIAG_BOARD_PROVISIONAL, DIAG_SEV_WARN,
+             (uint32_t)BOARD_PINS_USB_DET_IO,
+             (uint32_t)BOARD_PINS_PWR_HOLD_IO,
+             (uint32_t)BOARD_PINS_TPS63020_I_ADC_IO,
+             (uint32_t)BOARD_PINS_SY7088_I_ADC_IO);
+}
 
 void board_print_help(void)
 {
@@ -15,7 +312,9 @@ void board_print_help(void)
         "Physical keys: KEY1/GPIO38=d, KEY2/GPIO39=w, KEY3/GPIO40=a, KEY4/GPIO41=s.\n"
         "KEY1-KEY4 send BLE HID d/w/a/s when a host is connected.\n"
         "Hold the hardware voice key for 5s or send ~VREC:RECOVERY to clear pairing/session state.\n"
+        "Board diagnostics: ~BOARD:STATUS reports V2 pin, USB, charger, battery, current telemetry, PWR_HOLD, mic, and LED resource status.\n"
         "Power diagnostics: ~POWER:STATUS reports state/blockers/battery/wake policy, ~POWER:SLEEP requests manual sleep.\n"
+        "LED diagnostics: ~LED:STATUS reports V2 WS2812 groups; ~LED:TEST:RGBW and ~LED:TEST:MAP are blocked until VDD_LED is signed off.\n"
         "Watchdog diagnostics: ~WDT:STATUS reports config, ~WDT:DEADLOCK intentionally triggers Task WDT reset.\n"
         "Boot safety diagnostics: ~BOOT:STATUS reports crash counter, ~BOOT:CRASH restarts for validation, ~BOOT:CLEAR clears safe mode.\n"
         "V2 deep-sleep EC11_KEY/GPIO11 wake is disabled until hardware isolation/off-state sign-off.\n"
@@ -26,4 +325,27 @@ void board_print_help(void)
         "########################################################################";
 
     ESP_LOGI("board", "%s", help_string);
+}
+
+bool board_consume_usb_command(const char *line)
+{
+    const char *command = NULL;
+    if (board_command_matches(line, BOARD_USB_PREFIX, &command)) {
+        if (strcmp(command, "STATUS") == 0) {
+            board_print_status();
+            return true;
+        }
+        ESP_LOGW(TAG, "BOARD: unknown command: %s", command);
+        return true;
+    }
+
+    if (board_command_matches(line, BOARD_LED_PREFIX, &command)) {
+        if (board_print_led_test(command)) {
+            return true;
+        }
+        ESP_LOGW(TAG, "LED: unknown command: %s", command);
+        return true;
+    }
+
+    return false;
 }
