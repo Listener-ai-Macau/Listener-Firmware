@@ -350,7 +350,10 @@ esp_err_t keyboard_start(void)
         return ec11_ret;
     }
 
-    return voice_ret == ESP_OK ? ESP_OK : voice_ret;
+    if (voice_ret != ESP_OK) {
+        return voice_ret;
+    }
+    return ESP_OK;
 }
 
 esp_err_t keyboard_start_safe_mode(void)

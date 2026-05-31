@@ -27,6 +27,7 @@
 void ble_store_config_init(void);
 
 #include "hid_keyboard.h"
+#include "audio_capture.h"
 #include "battery_monitor.h"
 #include "board.h"
 #include "boot_safety.h"
@@ -729,6 +730,13 @@ esp_err_t ble_hid_init(void)
             ret = ble_audio_stream_register_gatt();
             if (ret != ESP_OK) {
                 ESP_LOGW(TAG, "BLE audio GATT registration failed; HID/recovery continue: %s", esp_err_to_name(ret));
+                degraded_mask |= LISTENER_DEVICE_READY_AUDIO;
+            } else if (!audio_capture_is_available()) {
+                const char *reason = audio_capture_get_unavailable_reason();
+                ESP_LOGW(
+                    TAG,
+                    "BLE audio GATT registered but capture is degraded: %s",
+                    reason != NULL ? reason : "audio_capture_unavailable");
                 degraded_mask |= LISTENER_DEVICE_READY_AUDIO;
             } else {
                 ready_mask |= LISTENER_DEVICE_READY_AUDIO;

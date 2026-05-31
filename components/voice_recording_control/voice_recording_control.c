@@ -296,8 +296,13 @@ esp_err_t voice_recording_control_start(void)
         return ESP_OK;
     }
 
-    voice_recording_control_log_device_error("error", "voice_recording_control_degraded", audio_ret != ESP_OK ? audio_ret : key_ret);
-    return audio_ret != ESP_OK ? audio_ret : key_ret;
+    if (key_ret != ESP_OK) {
+        voice_recording_control_log_device_error("error", "voice_recording_control_input_failed", key_ret);
+        return key_ret;
+    }
+
+    voice_recording_control_log_device_error("degraded", "voice_recording_control_audio_degraded", audio_ret);
+    return ESP_OK;
 }
 
 bool voice_recording_control_consume_usb_control_byte(uint8_t input_char)

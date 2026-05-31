@@ -81,7 +81,10 @@ $batteryMonitorHeader = Read-RepoFile "components\battery_monitor\include\batter
 $diagEvents = Read-RepoFile "components\diag_log\include\diag_log_events.h"
 $diagPlatform = Read-RepoFile "ports\esp32\diag_log_platform\diag_log_flash.c"
 $audioCapture = Read-RepoFile "ports\esp32\audio_capture\audio_capture_esp32.c"
+$audioCaptureHeader = Read-RepoFile "ports\esp32\audio_capture\include\audio_capture.h"
 $audioCaptureKconfig = Read-RepoFile "ports\esp32\audio_capture\Kconfig.projbuild"
+$bleHid = Read-RepoFile "ports\esp32\ble_hid\ble_hid.c"
+$voiceRecordingControl = Read-RepoFile "components\voice_recording_control\voice_recording_control.c"
 $systemHealth = Read-RepoFile "ports\esp32\system_health_platform\system_health_esp32.c"
 $otaPackage = Read-RepoFile "tools\package_ota_firmware.ps1"
 $factoryPackage = Read-RepoFile "tools\package_factory_firmware.ps1"
@@ -147,7 +150,15 @@ foreach ($item in @(
     @($diagPlatform, 'case 0x0D: return "board"', "diag_log board source name"),
     @($audioCaptureKconfig, "AUDIO_CAPTURE_V2_MIC_INTERFACE_VALIDATED", "V2 mic validation gate"),
     @($audioCapture, "AUDIO_CAPTURE_V2_MIC_BLOCKER", "V2 mic blocker log"),
+    @($audioCaptureHeader, "audio_capture_is_available", "audio availability readiness API"),
+    @($audioCaptureHeader, "audio_capture_get_unavailable_reason", "audio unavailable reason API"),
+    @($audioCapture, "audio_capture_static_unavailable_reason", "V2 mic gate shared readiness helper"),
     @($audioCapture, "ESP_ERR_NOT_SUPPORTED", "V2 mic degraded return"),
+    @($bleHid, "audio_capture_is_available\(\)", "BLE readiness checks audio capture availability"),
+    @($bleHid, "audio_capture_get_unavailable_reason\(\)", "BLE readiness exposes audio degraded reason"),
+    @($bleHid, "BLE audio GATT registered but capture is degraded", "BLE readiness does not mark gated audio ready"),
+    @($voiceRecordingControl, "voice_recording_control_audio_degraded", "voice recording logs audio-only degradation"),
+    @($voiceRecordingControl, "if \(key_ret != ESP_OK\)", "voice recording start separates key failure from audio degradation"),
     @($systemHealth, "board_get_v2_power_input_snapshot", "system health V2 USB/charger raw snapshot"),
     @($systemHealth, "bat_chg_raw", "system health raw charger CHG level"),
     @($systemHealth, "charger_policy", "system health charger provisional policy"),
@@ -168,7 +179,8 @@ foreach ($item in @(
     @($powerManager, "POWER_MANAGER_WAKE_POLICY_KEY4_ONLY", "V1 KEY4 wake policy in active code"),
     @($powerManager, "KEY4/GPIO21", "V1 KEY4 wake string in active code"),
     @($powerManager, "GPIO35 voice key", "V1 GPIO35 wake limitation in active code"),
-    @($voiceKeyInput, "gpio35\.ec11_key", "V1 GPIO35 EC11 diagnostic label in active code")
+    @($voiceKeyInput, "gpio35\.ec11_key", "V1 GPIO35 EC11 diagnostic label in active code"),
+    @($keyboard, "return voice_ret == ESP_OK \\? ESP_OK : voice_ret;", "keyboard/OTA readiness coupled to voice audio start result")
 )) {
     Assert-NotContains -Text $item[0] -Pattern $item[1] -Description $item[2]
 }

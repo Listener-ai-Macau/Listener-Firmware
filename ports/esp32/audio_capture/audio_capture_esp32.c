@@ -143,6 +143,17 @@ static bool s_sph0645_dc_initialized;
 static int32_t s_sph0645_dc_q;
 #endif
 
+static const char *audio_capture_static_unavailable_reason(void)
+{
+#if defined(CONFIG_LISTENER_BOARD_PROFILE_V2_N16R8) && CONFIG_LISTENER_BOARD_PROFILE_V2_N16R8 && \
+    defined(CONFIG_AUDIO_CAPTURE_MIC_SPH0645) && CONFIG_AUDIO_CAPTURE_MIC_SPH0645 && \
+    !CONFIG_AUDIO_CAPTURE_V2_MIC_INTERFACE_VALIDATED
+    return AUDIO_CAPTURE_V2_MIC_BLOCKER;
+#else
+    return NULL;
+#endif
+}
+
 /* ---------- Shared helpers ---------- */
 
 static void audio_capture_export_cleanup(void)
@@ -952,15 +963,14 @@ esp_err_t audio_capture_start(void)
         return ESP_OK;
     }
 
-#if defined(CONFIG_LISTENER_BOARD_PROFILE_V2_N16R8) && CONFIG_LISTENER_BOARD_PROFILE_V2_N16R8 && \
-    defined(CONFIG_AUDIO_CAPTURE_MIC_SPH0645) && CONFIG_AUDIO_CAPTURE_MIC_SPH0645 && \
-    !CONFIG_AUDIO_CAPTURE_V2_MIC_INTERFACE_VALIDATED
-    ESP_LOGW(TAG, "audio capture degraded: %s", AUDIO_CAPTURE_V2_MIC_BLOCKER);
-    diag_log(DIAG_SRC_AUDIO, DIAG_AUDIO_INIT_FAIL, DIAG_SEV_WARN, 8,
-             ESP_ERR_NOT_SUPPORTED, (uint32_t)BOARD_PINS_MIC_CLK_IO,
-             (uint32_t)BOARD_PINS_MIC_DOUT_IO);
-    return ESP_ERR_NOT_SUPPORTED;
-#endif
+    const char *unavailable_reason = audio_capture_static_unavailable_reason();
+    if (unavailable_reason != NULL) {
+        ESP_LOGW(TAG, "audio capture degraded: %s", unavailable_reason);
+        diag_log(DIAG_SRC_AUDIO, DIAG_AUDIO_INIT_FAIL, DIAG_SEV_WARN, 8,
+                 ESP_ERR_NOT_SUPPORTED, (uint32_t)BOARD_PINS_MIC_CLK_IO,
+                 (uint32_t)BOARD_PINS_MIC_DOUT_IO);
+        return ESP_ERR_NOT_SUPPORTED;
+    }
 
     esp_err_t err = audio_capture_i2s_init();
     if (err != ESP_OK) {
@@ -1018,6 +1028,16 @@ esp_err_t audio_capture_start(void)
 #endif
 
     return ESP_OK;
+}
+
+bool audio_capture_is_available(void)
+{
+    return audio_capture_static_unavailable_reason() == NULL;
+}
+
+const char *audio_capture_get_unavailable_reason(void)
+{
+    return audio_capture_static_unavailable_reason();
 }
 
 uint32_t audio_capture_get_frame_count(void)
