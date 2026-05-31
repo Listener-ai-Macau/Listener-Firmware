@@ -227,6 +227,7 @@ esp_err_t ble_hid_send_ascii_async(char input_char)
     }
 
     if (!ble_hid_is_connected()) {
+        (void)ble_hid_gap_request_reconnect();
         return ESP_ERR_INVALID_STATE;
     }
 
@@ -468,7 +469,6 @@ static void ble_hid_event_callback(void *handler_args, esp_event_base_t base, in
         ESP_LOGI(TAG, "CONNECT");
         s_ble_connected = true;
         power_manager_set_ble_connected(true);
-        power_manager_record_activity("ble_connect");
         s_connect_timestamp_ms = (uint32_t)(esp_timer_get_time() / 1000LL);
         ble_hid_update_battery_level("connect");
         diag_log(DIAG_SRC_BLE_HID, DIAG_BLE_CONNECT, DIAG_SEV_INFO,
@@ -527,7 +527,6 @@ static void ble_hid_event_callback(void *handler_args, esp_event_base_t base, in
                      param->disconnect.reason, s_disconnect_count,
                      conn_duration, heap_kb);
             power_manager_set_ble_connected(false);
-            power_manager_record_activity("ble_disconnect");
             if (s_ascii_queue != NULL) {
                 xQueueReset(s_ascii_queue);
             }

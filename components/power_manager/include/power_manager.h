@@ -53,6 +53,8 @@ typedef struct {
     power_manager_state_t state;
     uint32_t blockers;
     uint32_t idle_ms;
+    uint32_t user_idle_ms;
+    uint32_t radio_idle_ms;
     uint32_t audio_idle_threshold_ms;
     uint32_t connected_idle_threshold_ms;
     uint32_t disconnected_idle_threshold_ms;
@@ -64,6 +66,18 @@ typedef struct {
     bool overnight_guard_enabled;
     power_manager_sleep_reason_t last_sleep_reason;
     power_manager_wake_source_t last_wake_source;
+    bool last_sleep_stats_valid;
+    uint32_t last_sleep_duration_ms;
+    uint32_t sleep_entry_battery_mv;
+    uint8_t sleep_entry_battery_level_percent;
+    bool sleep_entry_battery_valid;
+    uint32_t wake_battery_mv;
+    uint8_t wake_battery_level_percent;
+    bool wake_battery_valid;
+    int32_t sleep_drain_mv;
+    int32_t sleep_drain_level_percent;
+    int32_t sleep_drain_mv_per_hour;
+    int32_t sleep_drain_level_per_hour_x100;
     uint64_t wake_gpio_mask;
     power_manager_wake_policy_t wake_policy;
     uint32_t wake_key_gpio;

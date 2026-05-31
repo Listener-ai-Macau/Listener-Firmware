@@ -81,6 +81,7 @@ static esp_err_t voice_recording_control_enter_recording(const char *source)
 
     esp_err_t ret = audio_capture_session_begin();
     if (ret != ESP_OK) {
+        (void)ble_hid_gap_request_reconnect();
         voice_recording_control_clear_power_blockers();
         ESP_LOGW(TAG, "recording start rejected source=%s: %s", source, esp_err_to_name(ret));
         voice_recording_control_log_device_error("error", "recording_start_rejected", ret);

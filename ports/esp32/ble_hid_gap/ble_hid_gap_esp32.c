@@ -1211,6 +1211,54 @@ esp_err_t ble_hid_gap_set_low_power_advertising(bool enabled)
     return ble_hid_gap_start_advertising();
 }
 
+esp_err_t ble_hid_gap_request_reconnect(void)
+{
+    if (s_ble_gap_connected) {
+        return ble_hid_gap_request_active_connection();
+    }
+
+    const bool adv_active = s_nimble_stack_ready && ble_gap_adv_active();
+    const uint32_t state_flags =
+        (adv_active ? 1U : 0U) |
+        (s_low_power_advertising ? 2U : 0U) |
+        (s_directed_adv_pending ? 4U : 0U);
+
+    ESP_LOGI(TAG,
+             "BLE reconnect requested: adv_active=%u low_power_adv=%u directed_pending=%u",
+             adv_active ? 1U : 0U,
+             s_low_power_advertising ? 1U : 0U,
+             s_directed_adv_pending ? 1U : 0U);
+    diag_log(DIAG_SRC_BLE_GAP,
+             DIAG_GAP_RECOVERY,
+             DIAG_SEV_INFO,
+             7,
+             0,
+             state_flags,
+             s_ble_gap_conn_handle);
+
+    s_low_power_advertising = false;
+    s_directed_adv_pending = true;
+    s_last_adv_was_directed = false;
+
+    if (!s_nimble_stack_ready || !s_hid_start_event_seen) {
+        ESP_LOGW(TAG,
+                 "Cannot restart BLE advertising yet: nimble_ready=%u hid_started=%u",
+                 s_nimble_stack_ready ? 1U : 0U,
+                 s_hid_start_event_seen ? 1U : 0U);
+        return ESP_ERR_INVALID_STATE;
+    }
+
+    if (adv_active) {
+        const int rc = ble_gap_adv_stop();
+        if (rc != 0) {
+            ESP_LOGW(TAG, "Failed to stop BLE advertising before reconnect request: rc=%d", rc);
+            return ESP_FAIL;
+        }
+    }
+
+    return ble_hid_gap_start_advertising();
+}
+
 esp_err_t ble_hid_gap_request_low_power_connection(void)
 {
     return ble_hid_gap_request_connection_params(

@@ -18,6 +18,31 @@
 
 static const char *TAG = "app_main";
 
+static power_manager_wake_source_t map_esp_wakeup_cause(esp_sleep_wakeup_cause_t cause)
+{
+    switch (cause) {
+    case ESP_SLEEP_WAKEUP_EXT0:
+        return POWER_MANAGER_WAKE_SOURCE_EXT0;
+    case ESP_SLEEP_WAKEUP_EXT1:
+        return POWER_MANAGER_WAKE_SOURCE_EXT1;
+    case ESP_SLEEP_WAKEUP_TIMER:
+        return POWER_MANAGER_WAKE_SOURCE_TIMER;
+    case ESP_SLEEP_WAKEUP_TOUCHPAD:
+        return POWER_MANAGER_WAKE_SOURCE_TOUCHPAD;
+    case ESP_SLEEP_WAKEUP_ULP:
+        return POWER_MANAGER_WAKE_SOURCE_ULP;
+    case ESP_SLEEP_WAKEUP_GPIO:
+        return POWER_MANAGER_WAKE_SOURCE_GPIO;
+    case ESP_SLEEP_WAKEUP_UART:
+        return POWER_MANAGER_WAKE_SOURCE_UART;
+    case ESP_SLEEP_WAKEUP_UNDEFINED:
+    default:
+        return esp_reset_reason() == ESP_RST_DEEPSLEEP
+            ? POWER_MANAGER_WAKE_SOURCE_UNDEFINED
+            : POWER_MANAGER_WAKE_SOURCE_POWER_ON;
+    }
+}
+
 static void configure_power_management(void)
 {
 #if CONFIG_PM_ENABLE
@@ -51,15 +76,18 @@ static void configure_power_management(void)
 
 static void log_power_boot_diagnostics(void)
 {
-    esp_sleep_wakeup_cause_t wake_source = esp_sleep_get_wakeup_cause();
+    esp_sleep_wakeup_cause_t esp_wake_source = esp_sleep_get_wakeup_cause();
+    power_manager_wake_source_t wake_source = map_esp_wakeup_cause(esp_wake_source);
     uint32_t wake_gpio_mask_low = (uint32_t)(esp_sleep_get_ext1_wakeup_status() & 0xffffffffu);
 
     diag_log(DIAG_SRC_POWER, DIAG_POWER_WAKE, DIAG_SEV_INFO,
              (uint32_t)wake_source, wake_gpio_mask_low, 0, 0);
     diag_log(DIAG_SRC_POWER, DIAG_POWER_STATUS, DIAG_SEV_INFO,
              0, 0, 0, wake_gpio_mask_low);
-    ESP_LOGI(TAG, "power wake status: wake_source=%u wake_gpio_mask_low=0x%08" PRIx32,
+    ESP_LOGI(TAG, "power wake status: esp_wake_source=%u wake_source=%u (%s) wake_gpio_mask_low=0x%08" PRIx32,
+             (unsigned)esp_wake_source,
              (unsigned)wake_source,
+             power_manager_wake_source_name(wake_source),
              wake_gpio_mask_low);
 }
 
