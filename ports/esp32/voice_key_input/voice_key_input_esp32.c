@@ -58,7 +58,7 @@
 #define VOICE_KEY_INPUT_DIRECT_LABEL   "gpio0.boot"
 #else
 #define VOICE_KEY_INPUT_DIRECT_GPIO    BOARD_PINS_EC11_KEY_IO
-#define VOICE_KEY_INPUT_DIRECT_LABEL   "gpio35.ec11_key"
+#define VOICE_KEY_INPUT_DIRECT_LABEL   "gpio11.ec11_key"
 #endif
 #define VOICE_KEY_INPUT_POLL_MS        (20)
 #define VOICE_KEY_INPUT_DEBOUNCE_THRESHOLD (3)
@@ -116,7 +116,8 @@ static voice_key_button_state_t s_direct_gpio_state = {
 
 #if VOICE_KEY_INPUT_ENABLE_LEGACY_EXPANDER
 /* Legacy board compatibility only: old hardware used a TCA9555/XL9555 expander
- * and BOOT GPIO fallback. Schematic V1 uses BOARD_PINS_EC11_KEY_IO directly. */
+ * and BOOT GPIO fallback. The production board profile uses
+ * BOARD_PINS_EC11_KEY_IO directly. */
 static const voice_key_input_bus_candidate_t s_bus_candidates[] = {
     {
         .label = "shared_sda1_scl1",

@@ -73,6 +73,7 @@ $partitions = Read-RepoFile "partitions.csv"
 $boardKconfig = Read-RepoFile "ports\esp32\board_pins\Kconfig.projbuild"
 $listenerDevice = Read-RepoFile "protocols\listener_device\include\listener_device.h"
 $keyboard = Read-RepoFile "components\keyboard\keyboard.c"
+$voiceKeyInput = Read-RepoFile "ports\esp32\voice_key_input\voice_key_input_esp32.c"
 $boardHelp = Read-RepoFile "components\board\board.c"
 $powerManager = Read-RepoFile "components\power_manager\power_manager.c"
 $otaPackage = Read-RepoFile "tools\package_ota_firmware.ps1"
@@ -114,6 +115,7 @@ foreach ($item in @(
     @($listenerDevice, 'LISTENER_DEVICE_HW_REV\s+"esp32s3-wroom-1-n16r8"', "N16R8 BLE/DIS hardware revision"),
     @($keyboard, "key1\.gpio38\.d", "V2 KEY1 diagnostic label"),
     @($keyboard, "key4\.gpio41\.s", "V2 KEY4 diagnostic label"),
+    @($voiceKeyInput, 'VOICE_KEY_INPUT_DIRECT_LABEL\s+"gpio11\.ec11_key"', "V2 EC11 key diagnostic label"),
     @($boardHelp, "Voice Keyboard V2/N16R8", "V2 board help text"),
     @($powerManager, "POWER_MANAGER_WAKE_POLICY_V2_EC11_PROVISIONAL", "V2 provisional wake policy"),
     @($powerManager, "CONFIG_LISTENER_V2_ENABLE_EC11_DEEP_SLEEP_WAKE", "V2 wake sign-off config guard"),
@@ -131,7 +133,8 @@ foreach ($item in @(
     @($sdkconfig, "CONFIG_ESPTOOLPY_FLASHSIZE_4MB", "4 MB flash production default"),
     @($powerManager, "POWER_MANAGER_WAKE_POLICY_KEY4_ONLY", "V1 KEY4 wake policy in active code"),
     @($powerManager, "KEY4/GPIO21", "V1 KEY4 wake string in active code"),
-    @($powerManager, "GPIO35 voice key", "V1 GPIO35 wake limitation in active code")
+    @($powerManager, "GPIO35 voice key", "V1 GPIO35 wake limitation in active code"),
+    @($voiceKeyInput, "gpio35\.ec11_key", "V1 GPIO35 EC11 diagnostic label in active code")
 )) {
     Assert-NotContains -Text $item[0] -Pattern $item[1] -Description $item[2]
 }
