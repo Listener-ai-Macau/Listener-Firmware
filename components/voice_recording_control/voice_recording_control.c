@@ -40,6 +40,8 @@ static voice_recording_state_t s_state = VOICE_RECORDING_STATE_IDLE;
 static bool s_cancel_pending;
 static const char *s_cancel_source;
 static uint32_t s_session_count;
+static bool s_suppress_next_release_toggle;
+static bool s_suppress_recovery_until_release;
 
 static uint32_t voice_recording_source_code(const char *source)
 {
@@ -141,6 +143,18 @@ static void voice_recording_control_toggle(const char *source)
     }
 }
 
+static void voice_recording_control_press(const char *source)
+{
+    if (s_state != VOICE_RECORDING_STATE_RECORDING || s_cancel_pending) {
+        return;
+    }
+
+    s_suppress_next_release_toggle = true;
+    s_suppress_recovery_until_release = true;
+    ESP_LOGI(TAG, "recording stop requested on press edge source=%s", source);
+    voice_recording_control_exit_recording(source);
+}
+
 static void voice_recording_control_cancel(const char *source)
 {
     power_manager_record_activity("voice_recording_cancel");
@@ -177,6 +191,8 @@ static void voice_recording_control_cancel(const char *source)
 static void voice_recording_control_recovery(const char *source)
 {
     power_manager_record_activity("voice_recording_recovery");
+    s_suppress_next_release_toggle = false;
+    s_suppress_recovery_until_release = false;
     power_manager_set_blocker(
         POWER_MANAGER_BLOCKER_PAIRING | POWER_MANAGER_BLOCKER_RECONNECT,
         true);
@@ -222,12 +238,28 @@ static void voice_recording_control_task(void *parameter)
 
     while (1) {
         watchdog_platform_feed_current_task();
+        if (voice_key_input_take_press_event()) {
+            voice_recording_control_press(voice_key_input_get_active_source());
+        }
+
         if (voice_key_input_take_toggle_event()) {
-            voice_recording_control_toggle(voice_key_input_get_active_source());
+            if (s_suppress_next_release_toggle) {
+                s_suppress_next_release_toggle = false;
+                s_suppress_recovery_until_release = false;
+                ESP_LOGI(TAG, "recording release toggle ignored after press-edge stop");
+            } else {
+                voice_recording_control_toggle(voice_key_input_get_active_source());
+            }
         }
 
         if (voice_key_input_take_recovery_event()) {
-            voice_recording_control_recovery("ec11_key_hold");
+            if (s_suppress_recovery_until_release) {
+                s_suppress_next_release_toggle = false;
+                s_suppress_recovery_until_release = false;
+                ESP_LOGI(TAG, "recording recovery hold ignored after press-edge stop");
+            } else {
+                voice_recording_control_recovery("ec11_key_hold");
+            }
         }
 
         if ((s_state == VOICE_RECORDING_STATE_RECORDING || s_state == VOICE_RECORDING_STATE_TRANSFERRING) &&
