@@ -274,7 +274,7 @@ static esp_err_t keyboard_wasd_start(void)
 
     ESP_LOGI(
         TAG,
-        "WASD keys ready: key1=gpio45:d key2=gpio48:w key3=gpio47:a key4=gpio21:s active_low=1 poll_ms=%d debounce_samples=%d",
+        "WASD keys ready: key2=gpio48:w key3=gpio47:a key4=gpio21:s key1_reserved=voice active_low=1 poll_ms=%d debounce_samples=%d",
         KEYBOARD_WASD_POLL_MS,
         KEYBOARD_WASD_DEBOUNCE_SAMPLES);
     return ESP_OK;

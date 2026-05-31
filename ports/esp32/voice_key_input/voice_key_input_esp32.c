@@ -230,11 +230,13 @@ static void voice_key_input_handle_button_sample(voice_key_button_state_t *butto
         button->recovery_reported = false;
         button->release_toggle_suppressed = false;
         button->recovery_suppressed = false;
-        if (s_recording_output_enabled) {
-            button->release_toggle_suppressed = true;
-            button->recovery_suppressed = true;
-            voice_key_input_record_toggle_event(button->label, 3, "press-edge stop");
-        }
+        bool recording_active = s_recording_output_enabled;
+        button->release_toggle_suppressed = true;
+        button->recovery_suppressed = recording_active;
+        voice_key_input_record_toggle_event(
+            button->label,
+            3,
+            recording_active ? "press-edge stop" : "press-edge start");
     } else if (!pressed && button->pressed) {
         if (!button->recovery_reported && !button->release_toggle_suppressed) {
             voice_key_input_record_toggle_event(button->label, 1, "release");
