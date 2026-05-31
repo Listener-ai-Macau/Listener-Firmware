@@ -44,6 +44,8 @@ function New-FeatureSnapshot {
             "system_health heartbeat and resource checks for heap, task, BLE, and disconnect conditions.",
             "V2/N16R8 board profile with 16 MB flash, 8 MB Octal PSRAM, V2 pin map, and static checks rejecting stale V1 pins or no-PSRAM defaults.",
             "power_manager low-power state machine for connected idle, disconnected idle, overnight sleep, provisional EC11-KEY_IO/GPIO11 wake diagnostics, and power blockers.",
+            "V2 board diagnostics for ~BOARD:STATUS and ~LED:STATUS, including USB/charger provisional status, battery ADC, raw 3.3V and LED/5V current telemetry, LED resource mapping, and hardware blocker policy strings.",
+            "V2 safety gates keep PWR_HOLD/GPIO46 undriven, LED calibration commands blocked until VDD_LED sign-off, current mA/mW uncalibrated, and CLK/GPIO48 DOUT/GPIO47 microphone capture degraded until validated.",
             "POST and degraded boot reporting for NVS, BLE, audio, heap, and board assumptions."
         )
         key_paths = @(
@@ -73,6 +75,7 @@ function New-FeatureSnapshot {
             "Physical key GPIO mapping and voice key GPIO live in board pin configuration, not desktop code.",
             "V2 physical keys use GPIO38/GPIO39/GPIO40/GPIO41; EC11 uses GPIO42/GPIO2/GPIO11; GPIO35/GPIO36/GPIO37 are reserved for N16R8/MSPI.",
             "V2 deep-sleep wake intent is EC11-KEY_IO/GPIO11, but firmware leaves it disabled until hardware isolation/off-state sign-off.",
+            "V2 PWR_HOLD/GPIO46, USB_Det/GPIO7, charger CHG/STDBY polarity, VDD_LED, current-sense scaling, and microphone interface remain hardware sign-off gates exposed through diagnostics.",
             "Real BLE, flash, serial, or audio capture validation requires a workflow hardware lock."
         )
         boundaries = @(

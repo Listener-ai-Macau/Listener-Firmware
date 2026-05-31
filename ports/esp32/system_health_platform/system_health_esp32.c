@@ -10,6 +10,7 @@
 
 #include "diag_log.h"
 #include "ble_hid.h"
+#include "board.h"
 #include "audio_capture.h"
 #include "keyboard.h"
 #include "voice_recording_control.h"
@@ -53,17 +54,26 @@ static void system_health_task(void *parameter)
         uint32_t keys = keyboard_get_key_press_count();
         uint32_t sessions = voice_recording_control_get_session_count();
         uint32_t uptime_s = (uint32_t)(xTaskGetTickCount() * portTICK_PERIOD_MS / 1000);
+        board_v2_power_input_snapshot_t power_inputs = {0};
+        board_get_v2_power_input_snapshot(&power_inputs);
 
         ESP_LOGI(TAG,
                  "heartbeat: uptime=%" PRIu32 "s heap_free=%" PRIu32 "KB heap_min=%" PRIu32 "KB "
                  "ble=%s disconnects=%" PRIu32 " audio_frames=%" PRIu32 " audio_drops=%" PRIu32 " "
-                 "keys=%" PRIu32 " sessions=%" PRIu32,
+                 "keys=%" PRIu32 " sessions=%" PRIu32
+                 " usb_det_raw=%d bat_chg_raw=%d bat_std_raw=%d"
+                 " usb_det_policy=%s charger_policy=%s",
                  uptime_s,
                  heap_free / 1024, heap_min / 1024,
                  ble_connected ? "OK" : "OFF",
                  disconnects,
                  audio_frames, audio_drops,
-                 keys, sessions);
+                 keys, sessions,
+                 power_inputs.usb_det_level,
+                 power_inputs.bat_chg_level,
+                 power_inputs.bat_std_level,
+                 power_inputs.usb_det_policy,
+                 power_inputs.charger_polarity_policy);
 
         diag_log(DIAG_SRC_HEALTH, DIAG_HEALTH_HEARTBEAT, DIAG_SEV_INFO,
                  heap_free / 1024, heap_min / 1024, ble_connected ? 1 : 0, uptime_s / 60);

@@ -76,6 +76,16 @@ $keyboard = Read-RepoFile "components\keyboard\keyboard.c"
 $voiceKeyInput = Read-RepoFile "ports\esp32\voice_key_input\voice_key_input_esp32.c"
 $boardHelp = Read-RepoFile "components\board\board.c"
 $powerManager = Read-RepoFile "components\power_manager\power_manager.c"
+$batteryMonitor = Read-RepoFile "components\battery_monitor\battery_monitor.c"
+$batteryMonitorHeader = Read-RepoFile "components\battery_monitor\include\battery_monitor.h"
+$diagEvents = Read-RepoFile "components\diag_log\include\diag_log_events.h"
+$diagPlatform = Read-RepoFile "ports\esp32\diag_log_platform\diag_log_flash.c"
+$audioCapture = Read-RepoFile "ports\esp32\audio_capture\audio_capture_esp32.c"
+$audioCaptureHeader = Read-RepoFile "ports\esp32\audio_capture\include\audio_capture.h"
+$audioCaptureKconfig = Read-RepoFile "ports\esp32\audio_capture\Kconfig.projbuild"
+$bleHid = Read-RepoFile "ports\esp32\ble_hid\ble_hid.c"
+$voiceRecordingControl = Read-RepoFile "components\voice_recording_control\voice_recording_control.c"
+$systemHealth = Read-RepoFile "ports\esp32\system_health_platform\system_health_esp32.c"
 $otaPackage = Read-RepoFile "tools\package_ota_firmware.ps1"
 $factoryPackage = Read-RepoFile "tools\package_factory_firmware.ps1"
 
@@ -117,6 +127,41 @@ foreach ($item in @(
     @($keyboard, "key4\.gpio41\.s", "V2 KEY4 diagnostic label"),
     @($voiceKeyInput, 'VOICE_KEY_INPUT_DIRECT_LABEL\s+"gpio11\.ec11_key"', "V2 EC11 key diagnostic label"),
     @($boardHelp, "Voice Keyboard V2/N16R8", "V2 board help text"),
+    @($boardHelp, "~BOARD:STATUS", "V2 board diagnostic command"),
+    @($boardHelp, "~LED:TEST:RGBW", "V2 LED RGBW diagnostic command"),
+    @($boardHelp, "BOARD_V2_USB_DET_POLICY", "USB detect provisional policy"),
+    @($boardHelp, "BOARD_V2_CHARGER_POLARITY", "charger polarity provisional policy"),
+    @($boardHelp, "BOARD_V2_PWR_HOLD_POLICY", "PWR_HOLD sign-off policy"),
+    @($boardHelp, "BOARD_V2_CURRENT_POLICY", "current telemetry provisional policy"),
+    @($boardHelp, "BOARD_V2_LED_POLICY", "LED rail sign-off policy"),
+    @($boardHelp, "board_get_v2_power_input_snapshot", "V2 board power input snapshot API"),
+    @($batteryMonitorHeader, "battery_monitor_read_power_rail", "V2 current/power telemetry API"),
+    @($batteryMonitorHeader, "BATTERY_MONITOR_POWER_RAIL_3V3", "3.3 V rail telemetry enum"),
+    @($batteryMonitorHeader, "BATTERY_MONITOR_POWER_RAIL_LED_5V", "LED/5 V rail telemetry enum"),
+    @($batteryMonitor, "BOARD_PINS_TPS63020_I_ADC_IO", "3.3 V current ADC implementation"),
+    @($batteryMonitor, "BOARD_PINS_SY7088_I_ADC_IO", "LED/5 V current ADC implementation"),
+    @($batteryMonitor, "current_ma_valid = false", "uncalibrated current status"),
+    @($keyboard, "keyboard_ec11_task", "EC11 A/B polling task"),
+    @($keyboard, "BOARD_PINS_EC11_A_IO", "EC11 A GPIO use"),
+    @($keyboard, "BOARD_PINS_EC11_B_IO", "EC11 B GPIO use"),
+    @($diagEvents, "DIAG_SRC_BOARD", "board diagnostics source"),
+    @($diagEvents, "DIAG_BOARD_POWER_RAIL", "board current telemetry diag event"),
+    @($diagEvents, "DIAG_BOARD_LED_RESOURCE", "LED resource diag event"),
+    @($diagPlatform, 'case 0x0D: return "board"', "diag_log board source name"),
+    @($audioCaptureKconfig, "AUDIO_CAPTURE_V2_MIC_INTERFACE_VALIDATED", "V2 mic validation gate"),
+    @($audioCapture, "AUDIO_CAPTURE_V2_MIC_BLOCKER", "V2 mic blocker log"),
+    @($audioCaptureHeader, "audio_capture_is_available", "audio availability readiness API"),
+    @($audioCaptureHeader, "audio_capture_get_unavailable_reason", "audio unavailable reason API"),
+    @($audioCapture, "audio_capture_static_unavailable_reason", "V2 mic gate shared readiness helper"),
+    @($audioCapture, "ESP_ERR_NOT_SUPPORTED", "V2 mic degraded return"),
+    @($bleHid, "audio_capture_is_available\(\)", "BLE readiness checks audio capture availability"),
+    @($bleHid, "audio_capture_get_unavailable_reason\(\)", "BLE readiness exposes audio degraded reason"),
+    @($bleHid, "BLE audio GATT registered but capture is degraded", "BLE readiness does not mark gated audio ready"),
+    @($voiceRecordingControl, "voice_recording_control_audio_degraded", "voice recording logs audio-only degradation"),
+    @($voiceRecordingControl, "if \(key_ret != ESP_OK\)", "voice recording start separates key failure from audio degradation"),
+    @($systemHealth, "board_get_v2_power_input_snapshot", "system health V2 USB/charger raw snapshot"),
+    @($systemHealth, "bat_chg_raw", "system health raw charger CHG level"),
+    @($systemHealth, "charger_policy", "system health charger provisional policy"),
     @($powerManager, "POWER_MANAGER_WAKE_POLICY_V2_EC11_PROVISIONAL", "V2 provisional wake policy"),
     @($powerManager, "CONFIG_LISTENER_V2_ENABLE_EC11_DEEP_SLEEP_WAKE", "V2 wake sign-off config guard"),
     @($otaPackage, 'hardware_revision = "keyboard-v2-n16r8"', "OTA package V2 hardware revision"),
@@ -134,7 +179,8 @@ foreach ($item in @(
     @($powerManager, "POWER_MANAGER_WAKE_POLICY_KEY4_ONLY", "V1 KEY4 wake policy in active code"),
     @($powerManager, "KEY4/GPIO21", "V1 KEY4 wake string in active code"),
     @($powerManager, "GPIO35 voice key", "V1 GPIO35 wake limitation in active code"),
-    @($voiceKeyInput, "gpio35\.ec11_key", "V1 GPIO35 EC11 diagnostic label in active code")
+    @($voiceKeyInput, "gpio35\.ec11_key", "V1 GPIO35 EC11 diagnostic label in active code"),
+    @($keyboard, "return voice_ret == ESP_OK \\? ESP_OK : voice_ret;", "keyboard/OTA readiness coupled to voice audio start result")
 )) {
     Assert-NotContains -Text $item[0] -Pattern $item[1] -Description $item[2]
 }

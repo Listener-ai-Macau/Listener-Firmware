@@ -1,5 +1,6 @@
 #include "keyboard.h"
 #include "ble_hid.h"
+#include "board.h"
 #include "boot_safety.h"
 #include "self_test.h"
 #include "system_health.h"
@@ -74,6 +75,7 @@ void app_main(void)
     configure_power_management();
     watchdog_platform_log_config();
     boot_safety_init();
+    board_log_v2_diagnostics();
     log_power_boot_diagnostics();
 
     esp_reset_reason_t reset_reason = esp_reset_reason();

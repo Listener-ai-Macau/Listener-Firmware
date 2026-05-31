@@ -42,6 +42,7 @@
 #define AUDIO_CAPTURE_FRAME_BYTES       (AUDIO_CAPTURE_FRAME_SAMPLES * sizeof(int16_t))
 #define AUDIO_CAPTURE_LOG_INTERVAL_FRAMES (50)
 #define AUDIO_CAPTURE_TASK_STACK_BYTES  (6 * 1024)
+#define AUDIO_CAPTURE_V2_MIC_BLOCKER "V2 CLK/GPIO48 DOUT/GPIO47 microphone interface not validated"
 /* Recording duration is user-controlled (KEY1 toggle); no fixed upper limit.
  * The only hard limit is uint16_t packet_sequence overflow in the BLE protocol,
  * which is handled gracefully by sending session_stop before overflow. */
@@ -141,6 +142,17 @@ static uint32_t s_session_id_counter;
 static bool s_sph0645_dc_initialized;
 static int32_t s_sph0645_dc_q;
 #endif
+
+static const char *audio_capture_static_unavailable_reason(void)
+{
+#if defined(CONFIG_LISTENER_BOARD_PROFILE_V2_N16R8) && CONFIG_LISTENER_BOARD_PROFILE_V2_N16R8 && \
+    defined(CONFIG_AUDIO_CAPTURE_MIC_SPH0645) && CONFIG_AUDIO_CAPTURE_MIC_SPH0645 && \
+    !CONFIG_AUDIO_CAPTURE_V2_MIC_INTERFACE_VALIDATED
+    return AUDIO_CAPTURE_V2_MIC_BLOCKER;
+#else
+    return NULL;
+#endif
+}
 
 /* ---------- Shared helpers ---------- */
 
@@ -951,6 +963,15 @@ esp_err_t audio_capture_start(void)
         return ESP_OK;
     }
 
+    const char *unavailable_reason = audio_capture_static_unavailable_reason();
+    if (unavailable_reason != NULL) {
+        ESP_LOGW(TAG, "audio capture degraded: %s", unavailable_reason);
+        diag_log(DIAG_SRC_AUDIO, DIAG_AUDIO_INIT_FAIL, DIAG_SEV_WARN, 8,
+                 ESP_ERR_NOT_SUPPORTED, (uint32_t)BOARD_PINS_MIC_CLK_IO,
+                 (uint32_t)BOARD_PINS_MIC_DOUT_IO);
+        return ESP_ERR_NOT_SUPPORTED;
+    }
+
     esp_err_t err = audio_capture_i2s_init();
     if (err != ESP_OK) {
         ESP_LOGE(TAG, "i2s start fail");
@@ -1007,6 +1028,16 @@ esp_err_t audio_capture_start(void)
 #endif
 
     return ESP_OK;
+}
+
+bool audio_capture_is_available(void)
+{
+    return audio_capture_static_unavailable_reason() == NULL;
+}
+
+const char *audio_capture_get_unavailable_reason(void)
+{
+    return audio_capture_static_unavailable_reason();
 }
 
 uint32_t audio_capture_get_frame_count(void)

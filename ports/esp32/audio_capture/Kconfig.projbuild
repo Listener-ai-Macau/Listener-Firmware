@@ -40,3 +40,12 @@ config AUDIO_CAPTURE_SPH0645_GAIN
         Apply gain after removing the measured DC offset from the digital mic
         stream.  The V1 SPH0645 path has a large DC component and low useful
         AC level; without this stage replayed speech can arrive as empty ASR.
+
+config AUDIO_CAPTURE_V2_MIC_INTERFACE_VALIDATED
+    bool "Enable V2 microphone capture after CLK/DOUT interface validation"
+    default n
+    depends on AUDIO_CAPTURE_MIC_SPH0645
+    help
+        Keep disabled until the V2 CLK/GPIO48 and DOUT/GPIO47 microphone
+        interface is validated on hardware. When disabled, firmware reports
+        a degraded audio path instead of pretending capture is production-ready.
