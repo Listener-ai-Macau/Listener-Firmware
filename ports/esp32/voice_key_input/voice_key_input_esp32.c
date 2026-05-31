@@ -95,6 +95,7 @@ static i2c_master_bus_handle_t s_i2c_bus_handle;
 static esp_io_expander_handle_t s_io_expander;
 #endif
 static TaskHandle_t s_poll_task_handle;
+static SemaphoreHandle_t s_press_event_sem;
 static SemaphoreHandle_t s_toggle_event_sem;
 static SemaphoreHandle_t s_recovery_event_sem;
 #if VOICE_KEY_INPUT_ENABLE_LEGACY_EXPANDER
@@ -143,19 +144,36 @@ static const voice_key_input_bus_candidate_t s_bus_candidates[] = {
 };
 #endif
 
+static void voice_key_input_record_press_event(const char *source)
+{
+    if (s_press_event_sem == NULL) {
+        ESP_LOGW(TAG, "%s press edge dropped: event queue unavailable", source);
+        diag_log(DIAG_SRC_VOICE_KEY, DIAG_VKEY_QUEUE_DROP, DIAG_SEV_WARN, 3, 1, 0, 0);
+        return;
+    }
+
+    if (xSemaphoreGive(s_press_event_sem) == pdTRUE) {
+        ESP_LOGI(TAG, "%s press edge detected", source);
+        diag_log(DIAG_SRC_VOICE_KEY, DIAG_VKEY_PRESS, DIAG_SEV_INFO, 3, 0, 0, 0);
+    } else {
+        ESP_LOGW(TAG, "%s press edge dropped: event queue full", source);
+        diag_log(DIAG_SRC_VOICE_KEY, DIAG_VKEY_QUEUE_DROP, DIAG_SEV_WARN, 3, 2, 0, 0);
+    }
+}
+
 static void voice_key_input_record_toggle_event(const char *source)
 {
     if (s_toggle_event_sem == NULL) {
-        ESP_LOGW(TAG, "%s press edge dropped: event queue unavailable", source);
+        ESP_LOGW(TAG, "%s release toggle dropped: event queue unavailable", source);
         diag_log(DIAG_SRC_VOICE_KEY, DIAG_VKEY_QUEUE_DROP, DIAG_SEV_WARN, 1, 1, 0, 0);
         return;
     }
 
     if (xSemaphoreGive(s_toggle_event_sem) == pdTRUE) {
-        ESP_LOGI(TAG, "%s press edge detected", source);
+        ESP_LOGI(TAG, "%s release toggle detected", source);
         diag_log(DIAG_SRC_VOICE_KEY, DIAG_VKEY_PRESS, DIAG_SEV_INFO, 1, 0, 0, 0);
     } else {
-        ESP_LOGW(TAG, "%s press edge dropped: event queue full", source);
+        ESP_LOGW(TAG, "%s release toggle dropped: event queue full", source);
         diag_log(DIAG_SRC_VOICE_KEY, DIAG_VKEY_QUEUE_DROP, DIAG_SEV_WARN, 1, 2, 0, 0);
     }
 }
@@ -223,6 +241,7 @@ static void voice_key_input_handle_button_sample(voice_key_button_state_t *butto
     if (pressed && !button->pressed) {
         button->pressed_ms = 0;
         button->recovery_reported = false;
+        voice_key_input_record_press_event(button->label);
     } else if (!pressed && button->pressed) {
         if (!button->recovery_reported) {
             voice_key_input_record_toggle_event(button->label);
@@ -431,6 +450,8 @@ esp_err_t voice_key_input_start(void)
         return ESP_OK;
     }
 
+    s_press_event_sem = xSemaphoreCreateCounting(VOICE_KEY_INPUT_EVENT_QUEUE_LENGTH, 0);
+    ESP_RETURN_ON_FALSE(s_press_event_sem != NULL, ESP_ERR_NO_MEM, TAG, "voice key press event queue create failed");
     s_toggle_event_sem = xSemaphoreCreateCounting(VOICE_KEY_INPUT_EVENT_QUEUE_LENGTH, 0);
     ESP_RETURN_ON_FALSE(s_toggle_event_sem != NULL, ESP_ERR_NO_MEM, TAG, "voice key event queue create failed");
     s_recovery_event_sem = xSemaphoreCreateCounting(VOICE_KEY_INPUT_EVENT_QUEUE_LENGTH, 0);
@@ -472,6 +493,15 @@ esp_err_t voice_key_input_start(void)
         VOICE_KEY_INPUT_DEBOUNCE_THRESHOLD);
     ESP_LOGI(TAG, "voice key recovery ready: hold_ms=%d", VOICE_KEY_INPUT_RECOVERY_HOLD_MS);
     return ESP_OK;
+}
+
+bool voice_key_input_take_press_event(void)
+{
+    if (s_press_event_sem == NULL) {
+        return false;
+    }
+
+    return xSemaphoreTake(s_press_event_sem, 0) == pdTRUE;
 }
 
 bool voice_key_input_take_toggle_event(void)

@@ -89,8 +89,8 @@
 #define DIAG_VREC_REJECTED     2   /* a1=source_code, a2=reject_reason, a3=current_state, a4=0 */
 
 /* Voice key events (DIAG_SRC_VOICE_KEY) */
-#define DIAG_VKEY_PRESS        1   /* a1=type(1=short,2=recovery_hold), a2=0, a3=0, a4=0 */
-#define DIAG_VKEY_QUEUE_DROP   2   /* a1=type(1=short,2=recovery_hold), a2=reason(1=no_queue,2=queue_full), a3=0, a4=0 */
+#define DIAG_VKEY_PRESS        1   /* a1=type(1=release_toggle,2=recovery_hold,3=press_edge), a2=0, a3=0, a4=0 */
+#define DIAG_VKEY_QUEUE_DROP   2   /* a1=type(1=release_toggle,2=recovery_hold,3=press_edge), a2=reason(1=no_queue,2=queue_full), a3=0, a4=0 */
 #define DIAG_VKEY_EXPANDER     3   /* a1=status(0=fail,1=degraded_fallback), a2=esp_err, a3=0, a4=0 */
 
 /* Self-test events (DIAG_SRC_SELF_TEST) */
