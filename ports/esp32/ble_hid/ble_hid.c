@@ -227,6 +227,7 @@ esp_err_t ble_hid_send_ascii_async(char input_char)
     }
 
     if (!ble_hid_is_connected()) {
+        (void)ble_hid_gap_request_reconnect();
         return ESP_ERR_INVALID_STATE;
     }
 

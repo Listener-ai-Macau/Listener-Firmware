@@ -22,6 +22,7 @@ bool ble_hid_gap_is_connected(void);
 esp_err_t ble_hid_gap_set_low_power_advertising(bool enabled);
 esp_err_t ble_hid_gap_request_low_power_connection(void);
 esp_err_t ble_hid_gap_request_active_connection(void);
+esp_err_t ble_hid_gap_request_reconnect(void);
 
 #ifdef __cplusplus
 }
