@@ -24,7 +24,7 @@
 
 当前已跑通的链路是：
 
-`KEY1 / 串口 toggle -> voice_recording_control -> audio_capture -> ble_audio_stream -> Windows 主机重组 -> wav / Listener-Type 外部音频源 / 上层 ASR 接入点`
+`EC11 单击 / 串口 toggle -> voice_recording_control -> audio_capture -> ble_audio_stream -> Windows 主机重组 -> wav / Listener-Type 外部音频源 / 上层 ASR 接入点`
 
 面向后端时，建议按两层理解：
 
