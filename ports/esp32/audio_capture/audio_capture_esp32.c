@@ -49,6 +49,8 @@
 #define AUDIO_CAPTURE_STREAM_BATCH_FRAMES 3
 #define AUDIO_CAPTURE_STREAM_BATCH_BYTES (AUDIO_CAPTURE_STREAM_BATCH_FRAMES * AUDIO_CAPTURE_FRAME_BYTES)
 #define AUDIO_CAPTURE_STREAM_PROGRESS_LOG_PACKET_INTERVAL 64U
+#define AUDIO_CAPTURE_BACKPRESSURE_PAUSE_MS AUDIO_CAPTURE_FRAME_MS
+#define AUDIO_CAPTURE_BACKPRESSURE_LOG_INTERVAL_FRAMES 50U
 
 /* ---------- ES8311-specific defines ---------- */
 
@@ -138,6 +140,8 @@ static uint32_t s_dropped_frame_count;
 static audio_capture_export_state_t s_export_state;
 static SemaphoreHandle_t s_state_mutex;
 static uint32_t s_session_id_counter;
+static bool s_capture_backpressure_paused;
+static uint32_t s_capture_backpressure_frames;
 #ifdef CONFIG_AUDIO_CAPTURE_MIC_SPH0645
 static bool s_sph0645_dc_initialized;
 static int32_t s_sph0645_dc_q;
@@ -159,6 +163,73 @@ static const char *audio_capture_static_unavailable_reason(void)
 static void audio_capture_export_cleanup(void)
 {
     memset(&s_export_state, 0, sizeof(s_export_state));
+    s_capture_backpressure_paused = false;
+    s_capture_backpressure_frames = 0;
+}
+
+static bool audio_capture_backpressure_should_pause(void)
+{
+    ble_audio_stream_backpressure_t pressure = {0};
+    ble_audio_stream_get_backpressure(&pressure);
+
+    bool stop_or_cancel_requested = false;
+    if (s_state_mutex != NULL &&
+        xSemaphoreTake(s_state_mutex, pdMS_TO_TICKS(2)) == pdTRUE) {
+        stop_or_cancel_requested = s_export_state.stop_requested || s_export_state.cancel_requested;
+        xSemaphoreGive(s_state_mutex);
+    }
+
+    if (!pressure.transport_session_active) {
+        if (s_capture_backpressure_paused) {
+            s_capture_backpressure_paused = false;
+        }
+        return false;
+    }
+
+    bool should_pause = pressure.pause_recommended && !stop_or_cancel_requested;
+    if (should_pause) {
+        s_capture_backpressure_frames++;
+    }
+
+    if (should_pause != s_capture_backpressure_paused) {
+        s_capture_backpressure_paused = should_pause;
+        uint32_t session_id = 0;
+        if (s_state_mutex != NULL &&
+            xSemaphoreTake(s_state_mutex, pdMS_TO_TICKS(2)) == pdTRUE) {
+            session_id = s_export_state.session_id;
+            xSemaphoreGive(s_state_mutex);
+        }
+        ESP_LOGI(
+            TAG,
+            "record capture backpressure %s: session=%" PRIu32 " queued=%" PRIu32 "/%" PRIu32 " pool=%" PRIu32 "/%" PRIu32 " pressure=%" PRIu32 "%% paused_frames=%" PRIu32,
+            should_pause ? "pause" : "resume",
+            session_id,
+            pressure.queue_depth,
+            pressure.queue_capacity,
+            pressure.audio_pool_in_use,
+            pressure.audio_pool_capacity,
+            pressure.pressure_percent,
+            s_capture_backpressure_frames);
+        diag_log(DIAG_SRC_AUDIO, DIAG_AUDIO_BACKPRESSURE,
+                 should_pause ? DIAG_SEV_WARN : DIAG_SEV_INFO,
+                 session_id,
+                 should_pause ? 1U : 2U,
+                 pressure.queue_depth,
+                 pressure.audio_pool_in_use);
+    } else if (should_pause &&
+               (s_capture_backpressure_frames % AUDIO_CAPTURE_BACKPRESSURE_LOG_INTERVAL_FRAMES) == 0) {
+        ESP_LOGW(
+            TAG,
+            "record capture still paused by BLE backpressure: queued=%" PRIu32 "/%" PRIu32 " pool=%" PRIu32 "/%" PRIu32 " pressure=%" PRIu32 "%% paused_frames=%" PRIu32,
+            pressure.queue_depth,
+            pressure.queue_capacity,
+            pressure.audio_pool_in_use,
+            pressure.audio_pool_capacity,
+            pressure.pressure_percent,
+            s_capture_backpressure_frames);
+    }
+
+    return should_pause;
 }
 
 static uint32_t audio_capture_packet_safe_total_frames(uint16_t payload_bytes)
@@ -690,8 +761,17 @@ static void audio_capture_task(void *arg)
         }
         (void)audio_capture_apply_idle_power_save(false);
 
+        if (audio_capture_backpressure_should_pause()) {
+            vTaskDelay(pdMS_TO_TICKS(AUDIO_CAPTURE_BACKPRESSURE_PAUSE_MS));
+            continue;
+        }
+
         int ret = esp_codec_dev_read(s_codec_handle, frame_buffer, sizeof(frame_buffer));
         if (ret == ESP_CODEC_DEV_OK) {
+            if (audio_capture_backpressure_should_pause()) {
+                vTaskDelay(pdMS_TO_TICKS(AUDIO_CAPTURE_BACKPRESSURE_PAUSE_MS));
+                continue;
+            }
             audio_capture_process_frame(frame_buffer);
             continue;
         }
@@ -891,11 +971,20 @@ static void audio_capture_task(void *arg)
         }
         (void)audio_capture_apply_idle_power_save(false);
 
+        if (audio_capture_backpressure_should_pause()) {
+            vTaskDelay(pdMS_TO_TICKS(AUDIO_CAPTURE_BACKPRESSURE_PAUSE_MS));
+            continue;
+        }
+
         size_t bytes_read = 0;
         esp_err_t ret = i2s_channel_read(
             s_i2s_rx_handle, raw_buffer, sizeof(raw_buffer),
             &bytes_read, portMAX_DELAY);
         if (ret == ESP_OK && bytes_read == sizeof(raw_buffer)) {
+            if (audio_capture_backpressure_should_pause()) {
+                vTaskDelay(pdMS_TO_TICKS(AUDIO_CAPTURE_BACKPRESSURE_PAUSE_MS));
+                continue;
+            }
             sph0645_to_int16(raw_buffer, frame_buffer, AUDIO_CAPTURE_FRAME_SAMPLES);
             audio_capture_process_frame(frame_buffer);
             continue;

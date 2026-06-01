@@ -76,6 +76,7 @@
 #define DIAG_AUDIO_DROP        5   /* a1=drop_count, a2=reason, a3=buffer_level, a4=session_ms */
 #define DIAG_AUDIO_I2S_FAIL    6   /* a1=drop_count, a2=esp_err, a3=0, a4=0 */
 #define DIAG_AUDIO_IDLE_POWER  7   /* a1=enabled, a2=esp_err, a3=0, a4=0 */
+#define DIAG_AUDIO_BACKPRESSURE 8  /* a1=session_id, a2=state(1=pause,2=resume), a3=queue_depth, a4=pool_in_use */
 
 /* BLE Audio Stream events (DIAG_SRC_BLE_AUDIO) */
 #define DIAG_BAUD_STATE_CHANGE 1   /* a1=old_state, a2=new_state, a3=reason, a4=session_id */
@@ -84,6 +85,8 @@
 #define DIAG_BAUD_SESSION_ABORT 4  /* a1=session_id, a2=reason, a3=expected_packet_count, a4=epoch */
 #define DIAG_BAUD_LINK_TIMEOUT 5   /* a1=session_id, a2=waited_ms, a3=packet_type, a4=seq_or_count */
 #define DIAG_BAUD_NOTIFY_STATE 6   /* a1=session_id, a2=epoch, a3=conn_handle, a4=notify_state */
+#define DIAG_BAUD_WATERMARK    7   /* a1=session_id, a2=queue_depth, a3=pool_in_use, a4=pressure_percent */
+#define DIAG_BAUD_BACKPRESSURE 8   /* a1=session_id, a2=state(1=pause,2=resume), a3=queue_depth, a4=pool_in_use */
 
 /* Voice recording events (DIAG_SRC_VOICE_REC) */
 #define DIAG_VREC_SESSION      1   /* a1=type(1=start,2=stop,3=cancel), a2=source_code, a3=session_count, a4=0 */
