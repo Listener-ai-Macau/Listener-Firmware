@@ -16,6 +16,7 @@
 #include "ble_audio_stream.h"
 #include "ble_hid_gap.h"
 #include "power_manager.h"
+#include "status_led.h"
 #include "voice_key_input.h"
 #include "watchdog_platform.h"
 
@@ -264,6 +265,8 @@ static esp_err_t voice_recording_control_enter_recording(const char *source, boo
         }
         voice_recording_control_clear_power_blockers();
         (void)voice_key_input_set_recording_output(false);
+        status_led_set_recording(false, STATUS_LED_REC_SOURCE_NOT_AVAILABLE);
+        status_led_set_error(STATUS_LED_ERROR_DOMAIN_REC, STATUS_LED_ERROR_RETRYABLE, "recording_start_rejected");
         if (log_rejection) {
             ESP_LOGW(TAG, "recording start rejected source=%s: %s", source, esp_err_to_name(ret));
             voice_recording_control_log_flow(
@@ -272,10 +275,10 @@ static esp_err_t voice_recording_control_enter_recording(const char *source, boo
                 source,
                 ret,
                 true);
-            voice_recording_control_log_device_error("error", "recording_start_rejected", ret);
-            diag_log(DIAG_SRC_VOICE_REC, DIAG_VREC_REJECTED, DIAG_SEV_WARN,
-                     voice_recording_source_code(source), (uint32_t)ret, (uint32_t)s_state, 0);
         }
+        voice_recording_control_log_device_error("error", "recording_start_rejected", ret);
+        diag_log(DIAG_SRC_VOICE_REC, DIAG_VREC_REJECTED, DIAG_SEV_WARN,
+                 voice_recording_source_code(source), (uint32_t)ret, (uint32_t)s_state, 0);
         return ret;
     }
 
@@ -286,6 +289,7 @@ static esp_err_t voice_recording_control_enter_recording(const char *source, boo
     s_state = VOICE_RECORDING_STATE_RECORDING;
     (void)voice_key_input_set_recording_output(true);
     s_session_count++;
+    status_led_set_recording(true, STATUS_LED_REC_SOURCE_DEVICE_MIC);
     ESP_LOGI(TAG, "recording start source=%s", source);
     voice_recording_control_log_flow(
         VOICE_RECORDING_FLOW_START_OK,
@@ -310,6 +314,7 @@ static esp_err_t voice_recording_control_exit_recording(const char *source)
             voice_recording_control_clear_power_blockers();
             (void)voice_key_input_set_recording_output(false);
         }
+        status_led_set_error(STATUS_LED_ERROR_DOMAIN_REC, STATUS_LED_ERROR_RETRYABLE, "recording_stop_rejected");
         ESP_LOGW(TAG, "recording stop rejected source=%s: %s", source, esp_err_to_name(ret));
         voice_recording_control_log_flow(
             VOICE_RECORDING_FLOW_STOP_REJECTED,
@@ -327,6 +332,8 @@ static esp_err_t voice_recording_control_exit_recording(const char *source)
     s_cancel_source = NULL;
     s_state = VOICE_RECORDING_STATE_TRANSFERRING;
     (void)voice_key_input_set_recording_output(false);
+    status_led_set_recording(false, STATUS_LED_REC_SOURCE_NONE);
+    status_led_set_processing(true, "audio_session_finishing");
     ESP_LOGI(TAG, "recording stop source=%s", source);
     voice_recording_control_log_flow(
         VOICE_RECORDING_FLOW_STOP_REQUESTED,
@@ -410,6 +417,7 @@ static void voice_recording_control_cancel(const char *source)
             s_active_session_source = NULL;
             voice_recording_control_clear_power_blockers();
         }
+        status_led_set_error(STATUS_LED_ERROR_DOMAIN_REC, STATUS_LED_ERROR_RETRYABLE, "recording_cancel_rejected");
         ESP_LOGW(TAG, "recording cancel rejected source=%s: %s", source, esp_err_to_name(ret));
         voice_recording_control_log_flow(
             VOICE_RECORDING_FLOW_CANCEL,
@@ -432,6 +440,8 @@ static void voice_recording_control_cancel(const char *source)
         s_active_session_source = NULL;
         voice_recording_control_clear_power_blockers();
         (void)voice_key_input_set_recording_output(false);
+        status_led_set_recording(false, STATUS_LED_REC_SOURCE_NONE);
+        status_led_set_processing(false, "recording_canceled");
         ESP_LOGI(TAG, "recording cancel source=%s", source);
         voice_recording_control_log_flow(
             VOICE_RECORDING_FLOW_CANCEL,
@@ -470,6 +480,7 @@ static void voice_recording_control_recovery(const char *source)
         true);
     voice_recording_state_t previous_state = s_state;
     s_state = VOICE_RECORDING_STATE_RECOVERY;
+    status_led_set_error(STATUS_LED_ERROR_DOMAIN_BLE, STATUS_LED_ERROR_RETRYABLE, "voice_recovery_requested");
     ESP_LOGW(TAG, "recovery requested source=%s", source);
     voice_recording_control_log_device_status("recovery", "forget_pairing_and_clear_session");
 
@@ -480,6 +491,7 @@ static void voice_recording_control_recovery(const char *source)
         } else {
             ESP_LOGW(TAG, "recovery session cancel failed source=%s: %s", source, esp_err_to_name(cancel_ret));
             voice_recording_control_log_device_error("error", "recovery_cancel_session_failed", cancel_ret);
+            status_led_set_error(STATUS_LED_ERROR_DOMAIN_REC, STATUS_LED_ERROR_RETRYABLE, "recovery_cancel_session_failed");
         }
     }
 
@@ -489,6 +501,7 @@ static void voice_recording_control_recovery(const char *source)
     esp_err_t ret = ble_hid_gap_forget_bonds_and_repair();
     if (ret != ESP_OK) {
         voice_recording_control_log_device_error("error", "recovery_pairing_reset_failed", ret);
+        status_led_set_error(STATUS_LED_ERROR_DOMAIN_BLE, STATUS_LED_ERROR_HARD, "recovery_pairing_reset_failed");
         s_state = previous_state == VOICE_RECORDING_STATE_RECORDING ? VOICE_RECORDING_STATE_RECORDING : VOICE_RECORDING_STATE_IDLE;
         power_manager_set_blocker(
             POWER_MANAGER_BLOCKER_PAIRING | POWER_MANAGER_BLOCKER_RECONNECT,
@@ -501,6 +514,9 @@ static void voice_recording_control_recovery(const char *source)
     power_manager_set_blocker(
         POWER_MANAGER_BLOCKER_PAIRING | POWER_MANAGER_BLOCKER_RECONNECT,
         false);
+    status_led_set_recording(false, STATUS_LED_REC_SOURCE_NONE);
+    status_led_set_processing(false, "recovery_complete");
+    status_led_set_ble_state(STATUS_LED_BLE_PAIRING, false);
     voice_recording_control_log_device_status("ready", "recovery_complete_pair_again");
 }
 
@@ -580,6 +596,8 @@ static void voice_recording_control_task(void *parameter)
                 s_active_session_source = NULL;
                 voice_recording_control_clear_power_blockers();
                 (void)voice_key_input_set_recording_output(false);
+                status_led_set_recording(false, STATUS_LED_REC_SOURCE_NONE);
+                status_led_set_processing(false, "recording_canceled");
                 ESP_LOGI(TAG, "recording cancel source=%s", source);
                 voice_recording_control_log_flow(
                     VOICE_RECORDING_FLOW_CANCEL,
@@ -598,6 +616,9 @@ static void voice_recording_control_task(void *parameter)
             s_active_session_source = NULL;
             voice_recording_control_clear_power_blockers();
             (void)voice_key_input_set_recording_output(false);
+            status_led_set_recording(false, STATUS_LED_REC_SOURCE_NONE);
+            status_led_set_processing(false, "recording_session_finished");
+            status_led_notify_success("recording_session_finished");
             if (finished_state == VOICE_RECORDING_STATE_TRANSFERRING) {
                 ESP_LOGI(TAG, "recording session finished");
                 voice_recording_control_log_flow(
@@ -639,12 +660,15 @@ esp_err_t voice_recording_control_start(void)
     if (audio_ret != ESP_OK) {
         ESP_LOGW(TAG, "audio capture start failed; keeping recovery/status path alive: %s", esp_err_to_name(audio_ret));
         voice_recording_control_log_device_error("error", "audio_capture_start_failed", audio_ret);
+        status_led_set_recording(false, STATUS_LED_REC_SOURCE_NOT_AVAILABLE);
+        status_led_set_error(STATUS_LED_ERROR_DOMAIN_REC, STATUS_LED_ERROR_RETRYABLE, "audio_capture_start_failed");
     }
 
     esp_err_t key_ret = voice_key_input_start();
     if (key_ret != ESP_OK) {
         ESP_LOGW(TAG, "voice key input start failed; USB recovery remains available: %s", esp_err_to_name(key_ret));
         voice_recording_control_log_device_error("error", "voice_key_input_start_failed", key_ret);
+        status_led_set_error(STATUS_LED_ERROR_DOMAIN_REC, STATUS_LED_ERROR_RETRYABLE, "voice_key_input_start_failed");
     }
 
     BaseType_t task_ok = xTaskCreate(
@@ -662,6 +686,7 @@ esp_err_t voice_recording_control_start(void)
     ESP_LOGI(TAG, "voice recording control ready: source=%s toggle start/stop", voice_key_input_get_active_source());
     if (audio_ret == ESP_OK && key_ret == ESP_OK) {
         voice_recording_control_log_device_status("ready", "voice_recording_control_started");
+        status_led_show_status_window("voice_recording_control_started");
         return ESP_OK;
     }
 

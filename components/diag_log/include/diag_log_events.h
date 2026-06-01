@@ -20,6 +20,7 @@
 #define DIAG_SRC_OTA       0x0B
 #define DIAG_SRC_POWER     0x0C
 #define DIAG_SRC_BOARD     0x0D
+#define DIAG_SRC_STATUS_LED 0x0E
 
 /* System events (DIAG_SRC_SYSTEM) */
 #define DIAG_SYS_BOOT          1   /* a1=boot_reason, a2=0, a3=0, a4=0 */
@@ -122,6 +123,12 @@
 #define DIAG_BOARD_PROVISIONAL    2 /* a1=usb_det_gpio, a2=pwr_hold_gpio, a3=3v3_current_gpio, a4=led_current_gpio */
 #define DIAG_BOARD_POWER_RAIL     3 /* a1=rail(1=3v3,2=led_5v), a2=raw_adc, a3=adc_mv, a4=calibrated */
 #define DIAG_BOARD_LED_RESOURCE   4 /* a1=group(1=status,2=key,3=edge), a2=data_gpio, a3=first_led, a4=led_count */
+
+/* Status LED events (DIAG_SRC_STATUS_LED) */
+#define DIAG_LED_STATE       1 /* a1=state_type, a2=value, a3=detail, a4=detail */
+#define DIAG_LED_ERROR       2 /* a1=domain, a2=severity, a3=0, a4=0 */
+#define DIAG_LED_OUTPUT_FAIL 3 /* a1=gpio, a2=esp_err, a3=stage, a4=0 */
+#define DIAG_LED_PROFILE     4 /* a1=profile, a2=0, a3=0, a4=0 */
 
 /* Firmware OTA events (DIAG_SRC_OTA) */
 #define DIAG_OTA_STATE          1   /* a1=partition_subtype, a2=ota_state, a3=0, a4=0 */

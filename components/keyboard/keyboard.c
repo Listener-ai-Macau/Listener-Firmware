@@ -15,6 +15,7 @@
 #include "diag_log.h"
 #include "hid_keyboard.h"
 #include "power_manager.h"
+#include "status_led.h"
 #include "voice_recording_control.h"
 #include "watchdog_platform.h"
 
@@ -32,6 +33,7 @@ typedef struct {
     uint8_t fallback_usage;
     const char *logical_name;
     const char *label;
+    uint8_t index;
     bool initialized;
     bool last_sample_high;
     bool stable_level_high;
@@ -61,6 +63,7 @@ static keyboard_custom_key_t s_custom_keys[] = {
         .fallback_usage = HID_KEYBOARD_USAGE_F13,
         .logical_name = "KEY1",
         .label = "key1.gpio45.f13",
+        .index = 0,
     },
     {
         .gpio = BOARD_PINS_KEY2_IO,
@@ -68,6 +71,7 @@ static keyboard_custom_key_t s_custom_keys[] = {
         .fallback_usage = HID_KEYBOARD_USAGE_F14,
         .logical_name = "KEY2",
         .label = "key2.gpio48.f14",
+        .index = 1,
     },
     {
         .gpio = BOARD_PINS_KEY3_IO,
@@ -75,6 +79,7 @@ static keyboard_custom_key_t s_custom_keys[] = {
         .fallback_usage = HID_KEYBOARD_USAGE_F15,
         .logical_name = "KEY3",
         .label = "key3.gpio47.f15",
+        .index = 2,
     },
     {
         .gpio = BOARD_PINS_KEY4_IO,
@@ -82,6 +87,7 @@ static keyboard_custom_key_t s_custom_keys[] = {
         .fallback_usage = HID_KEYBOARD_USAGE_F16,
         .logical_name = "KEY4",
         .label = "key4.gpio21.f16",
+        .index = 3,
     },
 };
 static keyboard_ec11_state_t s_ec11_state = {
@@ -160,6 +166,7 @@ static void keyboard_custom_handle_sample(keyboard_custom_key_t *key, bool raw_h
     key->stable_level_high = raw_high;
     bool pressed = !raw_high;
     power_manager_record_activity(key->logical_name);
+    status_led_notify_key_event(key->index, pressed);
     ESP_LOGI(
         TAG,
         "custom key stable transition: logical=%s source=%s raw_high=%d pressed=%d",
@@ -179,6 +186,7 @@ static void keyboard_custom_handle_sample(keyboard_custom_key_t *key, bool raw_h
                 key->label,
                 12u + key->logical_key);
         } else {
+            status_led_set_error(STATUS_LED_ERROR_DOMAIN_BLE, STATUS_LED_ERROR_RETRYABLE, "hid_key_send_failed");
             ESP_LOGW(
                 TAG,
                 "custom key fallback dropped: logical=%s source=%s usage=0x%02X error=%s",

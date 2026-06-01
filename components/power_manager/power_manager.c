@@ -31,6 +31,8 @@ extern esp_err_t ble_hid_gap_set_low_power_advertising(bool enabled) __attribute
 extern esp_err_t ble_hid_gap_request_low_power_connection(void) __attribute__((weak));
 extern esp_err_t ble_hid_gap_request_active_connection(void) __attribute__((weak));
 extern void system_health_set_low_power_mode(bool enabled) __attribute__((weak));
+extern void status_led_set_low_power_disabled(bool disabled) __attribute__((weak));
+extern void status_led_prepare_sleep(void) __attribute__((weak));
 
 #ifndef CONFIG_POWER_MANAGER_ENABLE
 #define CONFIG_POWER_MANAGER_ENABLE 1
@@ -459,6 +461,9 @@ static void power_manager_apply_state(power_manager_state_t previous, power_mana
 
     switch (next) {
     case POWER_MANAGER_STATE_ACTIVE:
+        if (status_led_set_low_power_disabled != NULL) {
+            status_led_set_low_power_disabled(false);
+        }
         power_manager_set_audio_idle_power_save(false);
         if (system_health_set_low_power_mode != NULL) {
             system_health_set_low_power_mode(false);
@@ -735,6 +740,9 @@ static esp_err_t power_manager_enter_sleep(power_manager_sleep_reason_t reason)
 
     // Keep the gate held through sleep entry so blocker-before-audio paths cannot
     // start a recording after the final check.
+    if (status_led_prepare_sleep != NULL) {
+        status_led_prepare_sleep();
+    }
     vTaskDelay(pdMS_TO_TICKS(100));
     esp_deep_sleep_start();
     return ESP_OK;
