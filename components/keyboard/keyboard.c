@@ -18,21 +18,26 @@
 #include "voice_recording_control.h"
 #include "watchdog_platform.h"
 
-#define KEYBOARD_WASD_POLL_MS 20
-#define KEYBOARD_WASD_DEBOUNCE_SAMPLES 8
-#define KEYBOARD_EC11_POLL_MS KEYBOARD_WASD_POLL_MS
+#define KEYBOARD_CUSTOM_POLL_MS 20
+#define KEYBOARD_CUSTOM_DEBOUNCE_SAMPLES 8
+#define KEYBOARD_EC11_POLL_MS KEYBOARD_CUSTOM_POLL_MS
 #define KEYBOARD_EC11_DEBOUNCE_SAMPLES 2
+
+#define KEYBOARD_CUSTOM_PHASE_PRESS 1u
+#define KEYBOARD_CUSTOM_PHASE_RELEASE 2u
 
 typedef struct {
     gpio_num_t gpio;
-    char output_char;
+    uint8_t logical_key;
+    uint8_t fallback_usage;
+    const char *logical_name;
     const char *label;
     bool initialized;
     bool last_sample_high;
     bool stable_level_high;
     uint8_t stable_count;
     bool pressed;
-} keyboard_wasd_key_t;
+} keyboard_custom_key_t;
 
 typedef struct {
     gpio_num_t a_gpio;
@@ -47,23 +52,29 @@ typedef struct {
 } keyboard_ec11_state_t;
 
 static const char *TAG = "keyboard";
-static TaskHandle_t s_wasd_task_handle;
+static TaskHandle_t s_custom_task_handle;
 static TaskHandle_t s_ec11_task_handle;
-static keyboard_wasd_key_t s_wasd_keys[] = {
+static keyboard_custom_key_t s_custom_keys[] = {
     {
         .gpio = BOARD_PINS_KEY2_IO,
-        .output_char = 'w',
-        .label = "key2.gpio48.w",
+        .logical_key = 1,
+        .fallback_usage = HID_KEYBOARD_USAGE_F13,
+        .logical_name = "KEY1",
+        .label = "key1.gpio48.f13",
     },
     {
         .gpio = BOARD_PINS_KEY3_IO,
-        .output_char = 'a',
-        .label = "key3.gpio47.a",
+        .logical_key = 2,
+        .fallback_usage = HID_KEYBOARD_USAGE_F14,
+        .logical_name = "KEY2",
+        .label = "key2.gpio47.f14",
     },
     {
         .gpio = BOARD_PINS_KEY4_IO,
-        .output_char = 's',
-        .label = "key4.gpio21.s",
+        .logical_key = 3,
+        .fallback_usage = HID_KEYBOARD_USAGE_F15,
+        .logical_name = "KEY3",
+        .label = "key3.gpio21.f15",
     },
 };
 static keyboard_ec11_state_t s_ec11_state = {
@@ -89,7 +100,19 @@ static int8_t keyboard_ec11_quadrature_delta(uint8_t previous, uint8_t current)
     }
 }
 
-static void keyboard_wasd_handle_sample(keyboard_wasd_key_t *key, bool raw_high)
+static void keyboard_custom_log_event(
+    const keyboard_custom_key_t *key,
+    uint32_t phase,
+    esp_err_t result)
+{
+    diag_log(DIAG_SRC_KEYBOARD, DIAG_KBD_CUSTOM_KEY, DIAG_SEV_INFO,
+             key->logical_key,
+             phase,
+             key->fallback_usage,
+             (uint32_t)result);
+}
+
+static void keyboard_custom_handle_sample(keyboard_custom_key_t *key, bool raw_high)
 {
     if (!key->initialized) {
         key->initialized = true;
@@ -97,7 +120,12 @@ static void keyboard_wasd_handle_sample(keyboard_wasd_key_t *key, bool raw_high)
         key->stable_level_high = raw_high;
         key->stable_count = 1;
         key->pressed = false;
-        ESP_LOGI(TAG, "WASD key idle detected: source=%s raw_high=%d", key->label, raw_high ? 1 : 0);
+        ESP_LOGI(
+            TAG,
+            "custom key idle detected: logical=%s source=%s raw_high=%d",
+            key->logical_name,
+            key->label,
+            raw_high ? 1 : 0);
         return;
     }
 
@@ -108,7 +136,8 @@ static void keyboard_wasd_handle_sample(keyboard_wasd_key_t *key, bool raw_high)
     } else {
         ESP_LOGI(
             TAG,
-            "WASD key raw transition: source=%s raw_high=%d stable_high=%d",
+            "custom key raw transition: logical=%s source=%s raw_high=%d stable_high=%d",
+            key->logical_name,
             key->label,
             raw_high ? 1 : 0,
             key->stable_level_high ? 1 : 0);
@@ -117,47 +146,64 @@ static void keyboard_wasd_handle_sample(keyboard_wasd_key_t *key, bool raw_high)
         return;
     }
 
-    if (key->stable_count < KEYBOARD_WASD_DEBOUNCE_SAMPLES || raw_high == key->stable_level_high) {
+    if (key->stable_count < KEYBOARD_CUSTOM_DEBOUNCE_SAMPLES || raw_high == key->stable_level_high) {
         return;
     }
 
     key->stable_level_high = raw_high;
     bool pressed = !raw_high;
-    power_manager_record_activity(key->label);
+    power_manager_record_activity(key->logical_name);
     ESP_LOGI(
         TAG,
-        "WASD key stable transition: source=%s raw_high=%d pressed=%d",
+        "custom key stable transition: logical=%s source=%s raw_high=%d pressed=%d",
+        key->logical_name,
         key->label,
         raw_high ? 1 : 0,
         pressed ? 1 : 0);
+
     if (pressed && !key->pressed) {
-        esp_err_t ret = ble_hid_send_ascii_async(key->output_char);
+        esp_err_t ret = ble_hid_send_keyboard_usage_async(key->fallback_usage, key->label);
+        keyboard_custom_log_event(key, KEYBOARD_CUSTOM_PHASE_PRESS, ret);
         if (ret == ESP_OK) {
-            ESP_LOGI(TAG, "WASD key press queued: source=%s output=%c", key->label, key->output_char);
+            ESP_LOGI(
+                TAG,
+                "custom key fallback queued: logical=%s source=%s usage=F%u",
+                key->logical_name,
+                key->label,
+                12u + key->logical_key);
         } else {
             ESP_LOGW(
                 TAG,
-                "WASD key press dropped: source=%s output=%c error=%s",
+                "custom key fallback dropped: logical=%s source=%s usage=0x%02X error=%s",
+                key->logical_name,
                 key->label,
-                key->output_char,
+                key->fallback_usage,
                 esp_err_to_name(ret));
         }
+    } else if (!pressed && key->pressed) {
+        keyboard_custom_log_event(key, KEYBOARD_CUSTOM_PHASE_RELEASE, ESP_OK);
+        ESP_LOGI(
+            TAG,
+            "custom key release: logical=%s source=%s usage=F%u",
+            key->logical_name,
+            key->label,
+            12u + key->logical_key);
     }
     key->pressed = pressed;
 }
 
-static void keyboard_wasd_task(void *parameter)
+static void keyboard_custom_task(void *parameter)
 {
     (void)parameter;
-    (void)watchdog_platform_subscribe_current_task("keyboard_wasd_task");
+    (void)watchdog_platform_subscribe_current_task("keyboard_custom_task");
 
     while (1) {
         watchdog_platform_feed_current_task();
-        for (size_t index = 0; index < sizeof(s_wasd_keys) / sizeof(s_wasd_keys[0]); ++index) {
-            int level = gpio_get_level(s_wasd_keys[index].gpio);
-            keyboard_wasd_handle_sample(&s_wasd_keys[index], level != 0);
+        for (size_t index = 0; index < sizeof(s_custom_keys) / sizeof(s_custom_keys[0]); ++index) {
+            int level = gpio_get_level(s_custom_keys[index].gpio);
+            keyboard_custom_handle_sample(&s_custom_keys[index], level != 0);
         }
-        vTaskDelay(pdMS_TO_TICKS(KEYBOARD_WASD_POLL_MS));
+        vTaskDelay(pdMS_TO_TICKS(KEYBOARD_CUSTOM_POLL_MS));
     }
 }
 
@@ -239,9 +285,9 @@ static void keyboard_ec11_task(void *parameter)
     }
 }
 
-static esp_err_t keyboard_wasd_start(void)
+static esp_err_t keyboard_custom_start(void)
 {
-    if (s_wasd_task_handle != NULL) {
+    if (s_custom_task_handle != NULL) {
         return ESP_OK;
     }
 
@@ -256,27 +302,28 @@ static esp_err_t keyboard_wasd_start(void)
     };
     esp_err_t ret = gpio_config(&io_conf);
     if (ret != ESP_OK) {
-        ESP_LOGE(TAG, "WASD GPIO config failed: %s", esp_err_to_name(ret));
+        ESP_LOGE(TAG, "custom key GPIO config failed: %s", esp_err_to_name(ret));
+        diag_log(DIAG_SRC_KEYBOARD, DIAG_KBD_GPIO_FAIL, DIAG_SEV_ERROR, 1, ret, 0, 0);
         return ret;
     }
 
     BaseType_t task_ok = xTaskCreate(
-        keyboard_wasd_task,
-        "keyboard_wasd_task",
+        keyboard_custom_task,
+        "keyboard_custom_task",
         3072,
         NULL,
         4,
-        &s_wasd_task_handle);
+        &s_custom_task_handle);
     if (task_ok != pdPASS) {
-        ESP_LOGE(TAG, "WASD task create failed");
+        ESP_LOGE(TAG, "custom key task create failed");
         return ESP_ERR_NO_MEM;
     }
 
     ESP_LOGI(
         TAG,
-        "WASD keys ready: key2=gpio48:w key3=gpio47:a key4=gpio21:s key1_reserved=voice active_low=1 poll_ms=%d debounce_samples=%d",
-        KEYBOARD_WASD_POLL_MS,
-        KEYBOARD_WASD_DEBOUNCE_SAMPLES);
+        "custom keys ready: key1=gpio48:f13 key2=gpio47:f14 key3=gpio21:f15 voice=gpio45 active_low=1 poll_ms=%d debounce_samples=%d",
+        KEYBOARD_CUSTOM_POLL_MS,
+        KEYBOARD_CUSTOM_DEBOUNCE_SAMPLES);
     return ESP_OK;
 }
 
@@ -334,9 +381,9 @@ esp_err_t keyboard_start(void)
         ESP_LOGW(TAG, "voice recording control started degraded: %s", esp_err_to_name(voice_ret));
     }
 
-    esp_err_t wasd_ret = keyboard_wasd_start();
-    if (wasd_ret != ESP_OK) {
-        return wasd_ret;
+    esp_err_t custom_ret = keyboard_custom_start();
+    if (custom_ret != ESP_OK) {
+        return custom_ret;
     }
 
     esp_err_t ec11_ret = keyboard_ec11_start();
@@ -354,9 +401,9 @@ esp_err_t keyboard_start_safe_mode(void)
 {
     hid_keyboard_init();
     ESP_LOGW(TAG, "safe mode: voice recording control and audio capture are disabled");
-    esp_err_t wasd_ret = keyboard_wasd_start();
-    if (wasd_ret != ESP_OK) {
-        return wasd_ret;
+    esp_err_t custom_ret = keyboard_custom_start();
+    if (custom_ret != ESP_OK) {
+        return custom_ret;
     }
     esp_err_t ec11_ret = keyboard_ec11_start();
     return ec11_ret == ESP_ERR_NOT_SUPPORTED ? ESP_OK : ec11_ret;

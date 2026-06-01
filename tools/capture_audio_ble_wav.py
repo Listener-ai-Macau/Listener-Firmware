@@ -1216,7 +1216,7 @@ async def run_ble_capture(args, ser: Serial, serial_monitor: SerialLogMonitor):
         if args.trigger_mode == "physical-key":
             print("ready_for_key=1", flush=True)
             print("trigger_mode=physical-key", flush=True)
-            print("instruction=press KEY1 once to start recording, then press KEY1 again to stop", flush=True)
+            print("instruction=press VOICE once to start recording, then press VOICE again to stop", flush=True)
 
         target_sessions = args.max_sessions if args.max_sessions > 0 else None
         capture_seconds_per_session = getattr(args, "capture_seconds_per_session", None)
