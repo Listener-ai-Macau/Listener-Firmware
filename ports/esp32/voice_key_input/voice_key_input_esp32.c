@@ -71,6 +71,7 @@ static const char *TAG = "voice_key_input";
 
 typedef struct {
     const char *label;
+    bool active_low;
     bool idle_level_valid;
     bool idle_level_high;
     bool last_sample_high;
@@ -110,13 +111,16 @@ static const char *s_selected_bus_label;
 static bool s_expander_available;
 static voice_key_button_state_t s_expander_io4_state = {
     .label = "xl9555.io0_4",
+    .active_low = true,
 };
 static voice_key_button_state_t s_expander_io5_state = {
     .label = "xl9555.io0_5",
+    .active_low = true,
 };
 #endif
 static voice_key_button_state_t s_direct_gpio_state = {
     .label = VOICE_KEY_INPUT_DIRECT_LABEL,
+    .active_low = true,
 };
 
 #if VOICE_KEY_INPUT_ENABLE_LEGACY_EXPANDER
@@ -205,7 +209,7 @@ static void voice_key_input_handle_button_sample(voice_key_button_state_t *butto
 
     if (!button->idle_level_valid) {
         button->idle_level_valid = true;
-        button->idle_level_high = raw_high;
+        button->idle_level_high = button->active_low;
         button->last_sample_high = raw_high;
         button->stable_level_high = raw_high;
         button->stable_count = 1;
@@ -219,7 +223,7 @@ static void voice_key_input_handle_button_sample(voice_key_button_state_t *butto
             "recording gesture key idle level detected: source=%s raw_high=%d pressed_when=%s",
             button->label,
             raw_high ? 1 : 0,
-            raw_high ? "low" : "high");
+            button->idle_level_high ? "low" : "high");
         return;
     }
 
