@@ -48,7 +48,7 @@ $requiredTaskFiles = @{
         "watchdog_platform_subscribe_current_task(`"audio_capture_task`")"
     )
     "components/keyboard/keyboard.c" = @(
-        "watchdog_platform_subscribe_current_task(`"keyboard_wasd_task`")"
+        "watchdog_platform_subscribe_current_task(`"keyboard_custom_task`")"
     )
     "components/voice_recording_control/voice_recording_control.c" = @(
         "watchdog_platform_subscribe_current_task(`"voice_recording_control_task`")"

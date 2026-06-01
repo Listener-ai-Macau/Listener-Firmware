@@ -19,6 +19,8 @@
 
 #define HID_KEYBOARD_REPORT_ID 1
 #define HID_KEYBOARD_REPORT_SIZE 7
+#define HID_KEYBOARD_USAGE_MIN 0x04u
+#define HID_KEYBOARD_USAGE_MAX HID_KEYBOARD_USAGE_F15
 
 #define KEY_CASE(input_value, modifier_value, key_value) \
     case input_value:                                    \
@@ -57,10 +59,10 @@ static const uint8_t s_keyboard_report_map[] = {
     0x95, 0x05,
     0x75, 0x08,
     0x15, 0x00,
-    0x25, 0x65,
+    0x25, HID_KEYBOARD_USAGE_MAX,
     0x05, 0x07,
     0x19, 0x00,
-    0x29, 0x65,
+    0x29, HID_KEYBOARD_USAGE_MAX,
     0x81, 0x00,
     0xC0,
 };
@@ -138,6 +140,11 @@ static bool hid_keyboard_is_supported_ascii(const uint8_t *report_buffer)
     return report_buffer[0] != 0 || report_buffer[2] != 0;
 }
 
+static bool hid_keyboard_is_supported_usage(uint8_t usage)
+{
+    return usage >= HID_KEYBOARD_USAGE_MIN && usage <= HID_KEYBOARD_USAGE_MAX;
+}
+
 void hid_keyboard_init(void)
 {
 }
@@ -211,5 +218,57 @@ esp_err_t hid_keyboard_send_ascii(char input_char, esp_hidd_dev_t *hid_device)
     diag_log(DIAG_SRC_KEYBOARD, DIAG_KBD_KEY_PRESS, DIAG_SEV_INFO,
              input_value, 0, connected ? 1 : 0, s_key_press_count);
     ESP_LOGI(TAG, "send_ascii done input=0x%02X display=%c", input_value, display_char);
+    return ESP_OK;
+}
+
+esp_err_t hid_keyboard_send_usage(uint8_t usage, esp_hidd_dev_t *hid_device)
+{
+    uint8_t report_buffer[HID_KEYBOARD_REPORT_SIZE] = {0};
+    esp_err_t ret;
+
+    if (hid_device == NULL) {
+        ESP_LOGE(TAG, "send_usage called without HID device usage=0x%02X", usage);
+        diag_log(DIAG_SRC_KEYBOARD, DIAG_KBD_KEY_FAIL, DIAG_SEV_WARN,
+                 usage, ESP_ERR_INVALID_ARG, 0, 0);
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    bool connected = esp_hidd_dev_connected(hid_device);
+    if (!hid_keyboard_is_supported_usage(usage)) {
+        ESP_LOGW(TAG, "unsupported HID usage=0x%02X", usage);
+        diag_log(DIAG_SRC_KEYBOARD, DIAG_KBD_KEY_FAIL, DIAG_SEV_WARN,
+                 usage, ESP_ERR_NOT_SUPPORTED, connected ? 1 : 0, 0);
+        return ESP_ERR_NOT_SUPPORTED;
+    }
+
+    report_buffer[2] = usage;
+    ESP_LOGI(
+        TAG,
+        "send_usage usage=0x%02X connected=%s",
+        usage,
+        connected ? "yes" : "no");
+
+    ret = esp_hidd_dev_input_set(hid_device, 0, HID_KEYBOARD_REPORT_ID, report_buffer, HID_KEYBOARD_REPORT_SIZE);
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "usage press failed: usage=0x%02X error=%s", usage, esp_err_to_name(ret));
+        diag_log(DIAG_SRC_KEYBOARD, DIAG_KBD_KEY_FAIL, DIAG_SEV_WARN,
+                 usage, ret, connected ? 1 : 0, 0);
+        return ret;
+    }
+
+    vTaskDelay(pdMS_TO_TICKS(50));
+    memset(report_buffer, 0, sizeof(report_buffer));
+    ret = esp_hidd_dev_input_set(hid_device, 0, HID_KEYBOARD_REPORT_ID, report_buffer, HID_KEYBOARD_REPORT_SIZE);
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "usage release failed: usage=0x%02X error=%s", usage, esp_err_to_name(ret));
+        diag_log(DIAG_SRC_KEYBOARD, DIAG_KBD_KEY_FAIL, DIAG_SEV_WARN,
+                 usage, ret, connected ? 1 : 0, 0);
+        return ret;
+    }
+
+    s_key_press_count++;
+    diag_log(DIAG_SRC_KEYBOARD, DIAG_KBD_KEY_PRESS, DIAG_SEV_INFO,
+             usage, 0, connected ? 1 : 0, s_key_press_count);
+    ESP_LOGI(TAG, "send_usage done usage=0x%02X", usage);
     return ESP_OK;
 }

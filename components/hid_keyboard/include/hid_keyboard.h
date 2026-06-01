@@ -11,11 +11,16 @@
 extern "C" {
 #endif
 
+#define HID_KEYBOARD_USAGE_F13 0x68u
+#define HID_KEYBOARD_USAGE_F14 0x69u
+#define HID_KEYBOARD_USAGE_F15 0x6Au
+
 void hid_keyboard_init(void);
 const uint8_t *hid_keyboard_get_report_map(void);
 size_t hid_keyboard_get_report_map_size(void);
 uint32_t hid_keyboard_get_key_press_count(void);
 esp_err_t hid_keyboard_send_ascii(char input_char, esp_hidd_dev_t *hid_device);
+esp_err_t hid_keyboard_send_usage(uint8_t usage, esp_hidd_dev_t *hid_device);
 
 #ifdef __cplusplus
 }
