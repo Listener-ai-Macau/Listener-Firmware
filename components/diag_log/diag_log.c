@@ -44,3 +44,9 @@ bool diag_log_is_dumping(void)
 {
     return s_dumping || diag_log_platform_is_dumping();
 }
+
+uint32_t diag_log_read_range(uint32_t offset, uint32_t limit,
+                              void *buffer, uint32_t buffer_size)
+{
+    return diag_log_platform_read_range(offset, limit, buffer, buffer_size);
+}

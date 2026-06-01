@@ -16,6 +16,7 @@
 #include "ble_hid_gap.h"
 #include "ble_audio_stream.h"
 #include "ble_firmware_ota.h"
+#include "ble_diag_log.h"
 #include "diag_log.h"
 #include "listener_device.h"
 
@@ -733,6 +734,7 @@ nimble_hid_gap_event(struct ble_gap_event *event, void *arg)
         if (s_audio_enabled) {
             ble_audio_stream_on_gap_mtu(event->mtu.conn_handle, event->mtu.value);
         }
+        ble_diag_log_on_gap_mtu(event->mtu.conn_handle, event->mtu.value);
         return 0;
 
     case BLE_GAP_EVENT_ENC_CHANGE:

@@ -13,6 +13,14 @@ void diag_log_platform_dump_last(uint32_t count);
 void diag_log_platform_clear(void);
 bool diag_log_platform_is_dumping(void);
 
+/*
+ * Read a contiguous range of retained events into a caller-supplied buffer.
+ * Returns the number of events actually written. Events are packed 24-byte
+ * diag_event_t structs. Thread-safe (acquires s_mutex).
+ */
+uint32_t diag_log_platform_read_range(uint32_t offset, uint32_t limit,
+                                       void *buffer, uint32_t buffer_size);
+
 /* Returns true only for complete ~DIAGLOG:* command lines. */
 bool diag_log_consume_usb_command(const char *line);
 
