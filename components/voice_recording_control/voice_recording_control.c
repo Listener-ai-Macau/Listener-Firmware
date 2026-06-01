@@ -115,6 +115,7 @@ static void voice_recording_control_schedule_pending_start(const char *source)
     s_pending_start_next_retry_tick = now + pdMS_TO_TICKS(VOICE_RECORDING_CONTROL_PENDING_START_RETRY_MS);
 
     power_manager_record_activity("voice_recording_wait_transport");
+    (void)ble_hid_gap_request_active_connection();
     power_manager_set_blocker(
         POWER_MANAGER_BLOCKER_RECORDING | POWER_MANAGER_BLOCKER_BLE_AUDIO,
         true);
@@ -146,6 +147,7 @@ static void voice_recording_control_timeout_pending_start(esp_err_t reason)
 static esp_err_t voice_recording_control_enter_recording(const char *source, bool log_rejection, bool request_reconnect)
 {
     power_manager_record_activity("voice_recording_start");
+    (void)ble_hid_gap_request_active_connection();
     power_manager_set_blocker(
         POWER_MANAGER_BLOCKER_RECORDING | POWER_MANAGER_BLOCKER_BLE_AUDIO,
         true);
