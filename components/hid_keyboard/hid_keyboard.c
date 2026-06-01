@@ -20,7 +20,7 @@
 #define HID_KEYBOARD_REPORT_ID 1
 #define HID_KEYBOARD_REPORT_SIZE 7
 #define HID_KEYBOARD_USAGE_MIN 0x04u
-#define HID_KEYBOARD_USAGE_MAX HID_KEYBOARD_USAGE_F15
+#define HID_KEYBOARD_USAGE_MAX HID_KEYBOARD_USAGE_F16
 
 #define KEY_CASE(input_value, modifier_value, key_value) \
     case input_value:                                    \

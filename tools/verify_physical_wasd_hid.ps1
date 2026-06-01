@@ -8,7 +8,7 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
-Write-Warning "verify_physical_wasd_hid.ps1 is a legacy wrapper. Use verify_physical_custom_key_hid.ps1 for KEY1-KEY3 F13/F14/F15 fallback validation."
+Write-Warning "verify_physical_wasd_hid.ps1 is a legacy wrapper. Use verify_physical_custom_key_hid.ps1 for KEY1-KEY4 F13/F14/F15/F16 fallback validation."
 
 $script = Join-Path $PSScriptRoot "verify_physical_custom_key_hid.ps1"
 $forwardArgs = @(

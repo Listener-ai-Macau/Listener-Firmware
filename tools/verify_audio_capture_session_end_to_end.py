@@ -16,7 +16,7 @@ from capture_audio_ble_wav import configure_utf8_stdio, run_capture_with_args
 def parse_args():
     parser = argparse.ArgumentParser(
         description=(
-            "Verify VOICE/toggle session WAV capture using the current BLE session path. "
+            "Verify EC11/toggle session WAV capture using the current BLE session path. "
             "This replaces the retired serial ACAP/PCM64 export verification."
         )
     )
@@ -90,7 +90,7 @@ async def main_async(args) -> None:
         analysis = analyze_recording(source_wav_path, recorded_wav_path)
     else:
         serial_log_text = read_serial_log_text(serial_log_path)
-        physical_key_sources = ("voice.gpio45",)
+        physical_key_sources = ("ec11_key.gpio35",)
         physical_key_start_seen = any(
             f"recording start source={source}" in serial_log_text for source in physical_key_sources
         )

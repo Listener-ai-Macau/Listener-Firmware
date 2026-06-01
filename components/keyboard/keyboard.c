@@ -56,25 +56,32 @@ static TaskHandle_t s_custom_task_handle;
 static TaskHandle_t s_ec11_task_handle;
 static keyboard_custom_key_t s_custom_keys[] = {
     {
-        .gpio = BOARD_PINS_KEY2_IO,
+        .gpio = BOARD_PINS_KEY1_IO,
         .logical_key = 1,
         .fallback_usage = HID_KEYBOARD_USAGE_F13,
         .logical_name = "KEY1",
-        .label = "key1.gpio48.f13",
+        .label = "key1.gpio45.f13",
     },
     {
-        .gpio = BOARD_PINS_KEY3_IO,
+        .gpio = BOARD_PINS_KEY2_IO,
         .logical_key = 2,
         .fallback_usage = HID_KEYBOARD_USAGE_F14,
         .logical_name = "KEY2",
-        .label = "key2.gpio47.f14",
+        .label = "key2.gpio48.f14",
     },
     {
-        .gpio = BOARD_PINS_KEY4_IO,
+        .gpio = BOARD_PINS_KEY3_IO,
         .logical_key = 3,
         .fallback_usage = HID_KEYBOARD_USAGE_F15,
         .logical_name = "KEY3",
-        .label = "key3.gpio21.f15",
+        .label = "key3.gpio47.f15",
+    },
+    {
+        .gpio = BOARD_PINS_KEY4_IO,
+        .logical_key = 4,
+        .fallback_usage = HID_KEYBOARD_USAGE_F16,
+        .logical_name = "KEY4",
+        .label = "key4.gpio21.f16",
     },
 };
 static keyboard_ec11_state_t s_ec11_state = {
@@ -292,7 +299,8 @@ static esp_err_t keyboard_custom_start(void)
     }
 
     gpio_config_t io_conf = {
-        .pin_bit_mask = (1ULL << BOARD_PINS_KEY2_IO) |
+        .pin_bit_mask = (1ULL << BOARD_PINS_KEY1_IO) |
+                        (1ULL << BOARD_PINS_KEY2_IO) |
                         (1ULL << BOARD_PINS_KEY3_IO) |
                         (1ULL << BOARD_PINS_KEY4_IO),
         .mode = GPIO_MODE_INPUT,
@@ -321,7 +329,7 @@ static esp_err_t keyboard_custom_start(void)
 
     ESP_LOGI(
         TAG,
-        "custom keys ready: key1=gpio48:f13 key2=gpio47:f14 key3=gpio21:f15 voice=gpio45 active_low=1 poll_ms=%d debounce_samples=%d",
+        "custom keys ready: key1=gpio45:f13 key2=gpio48:f14 key3=gpio47:f15 key4=gpio21:f16 active_low=1 poll_ms=%d debounce_samples=%d",
         KEYBOARD_CUSTOM_POLL_MS,
         KEYBOARD_CUSTOM_DEBOUNCE_SAMPLES);
     return ESP_OK;

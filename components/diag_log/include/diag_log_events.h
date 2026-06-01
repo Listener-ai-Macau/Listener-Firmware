@@ -48,7 +48,7 @@
 #define DIAG_KBD_GPIO_FAIL     3   /* a1=gpio_group(1=CUSTOM_KEY,2=EC11_AB,3=EC11_C), a2=esp_err, a3=0, a4=0 */
 #define DIAG_KBD_EC11_DETENT   4   /* a1=direction(1=CW,2=CCW), a2=detent_count, a3=0, a4=0 */
 #define DIAG_KBD_QUEUE_DROP    5   /* a1=key_usage_or_ascii, a2=queue_depth, a3=0, a4=0 */
-#define DIAG_KBD_CUSTOM_KEY    6   /* a1=logical_key(1=KEY1,2=KEY2,3=KEY3), a2=phase(1=press,2=release), a3=fallback_usage, a4=esp_err */
+#define DIAG_KBD_CUSTOM_KEY    6   /* a1=logical_key(1=KEY1..4=KEY4), a2=phase(1=press,2=release), a3=fallback_usage, a4=esp_err */
 
 /* BLE HID events (DIAG_SRC_BLE_HID) */
 #define DIAG_BLE_CONNECT       1   /* a1=connected, a2=heap_kb, a3=disconnect_count, a4=0 */
@@ -91,8 +91,8 @@
 #define DIAG_VREC_FLOW         3   /* a1=stage(1=toggle_start,2=toggle_stop,3=start_ok,4=stop_requested,5=pending_start,6=pending_ready,7=pending_timeout,8=session_finished,9=session_aborted,10=toggle_ignored,11=cancel,12=recovery,13=start_rejected,14=stop_rejected), a2=source_code, a3=session_count, a4=current_state */
 
 /* Voice key events (DIAG_SRC_VOICE_KEY) */
-#define DIAG_VKEY_PRESS        1   /* a1=type(1=release_toggle,2=recovery_hold,3=press_edge), a2=0, a3=0, a4=0 */
-#define DIAG_VKEY_QUEUE_DROP   2   /* a1=type(1=release_toggle,2=recovery_hold,3=press_edge), a2=reason(1=no_queue,2=queue_full), a3=0, a4=0 */
+#define DIAG_VKEY_PRESS        1   /* a1=type(1=single_click_toggle,2=double_click_recovery,3=long_press_ignored), a2=detail_ms, a3=0, a4=0 */
+#define DIAG_VKEY_QUEUE_DROP   2   /* a1=type(1=single_click_toggle,2=double_click_recovery), a2=reason(1=no_queue,2=queue_full), a3=0, a4=0 */
 #define DIAG_VKEY_EXPANDER     3   /* a1=status(0=fail,1=degraded_fallback), a2=esp_err, a3=0, a4=0 */
 
 /* Self-test events (DIAG_SRC_SELF_TEST) */

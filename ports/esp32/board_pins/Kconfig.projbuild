@@ -7,8 +7,8 @@ menu "Listener Board Profile"
             bool "Voice Keyboard N4 ESP32-S3-WROOM-1-N4"
             help
                 Current validation hardware profile for ESP32-S3-WROOM-1-N4:
-                4 MB flash, no PSRAM, VOICE/GPIO45 on the legacy KEY1 pin,
-                logical KEY1-KEY3 on GPIO48/GPIO47/GPIO21, and the N4 pin map.
+                4 MB flash, no PSRAM, logical KEY1-KEY4 on
+                GPIO45/GPIO48/GPIO47/GPIO21, EC11 push on GPIO35, and the N4 pin map.
 
         config LISTENER_BOARD_PROFILE_V2_N16R8
             bool "Voice Keyboard V2.0 ESP32-S3-WROOM-1-N16R8"
