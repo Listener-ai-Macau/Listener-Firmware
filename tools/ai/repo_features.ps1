@@ -43,7 +43,7 @@ function New-FeatureSnapshot {
             "Firmware OTA v1 using ESP-IDF otadata/ota_0/ota_1 slots, partition-derived flash offsets, BLE GATT control/data bridge, official rollback, pending verify, blockers, and diag_log OTA events.",
             "system_health heartbeat and resource checks for heap, task, BLE, and disconnect conditions.",
             "N4 board profile with 4 MB flash, no PSRAM, KEY1/GPIO45 voice key, GPIO48/47/21 HID key map, and static checks rejecting stale V2/N16R8 defaults.",
-            "power_manager low-power state machine for connected idle, disconnected idle, overnight sleep, KEY4/GPIO21 wake diagnostics, and power blockers.",
+            "power_manager low-power state machine for connected idle, disconnected idle, overnight sleep, N4 KEY4/GPIO21 wake diagnostics, production wake-policy blockers, and power blockers.",
             "V2 board diagnostics for ~BOARD:STATUS and ~LED:STATUS, including USB/charger provisional status, battery ADC, raw 3.3V and LED/5V current telemetry, LED resource mapping, and hardware blocker policy strings.",
             "V2 current telemetry and low-power report tooling for TPS63020_I_ADC/GPIO10, SY7088_I_ADC/GPIO9, and ~POWER:STATUS sleep drain evidence; readings are telemetry-only and do not drive firmware power-control decisions.",
             "V2 safety gates keep PWR_HOLD/GPIO46 undriven, LED calibration commands blocked until VDD_LED sign-off, current mA/mW uncalibrated, and CLK/GPIO48 DOUT/GPIO47 microphone capture degraded until validated.",
@@ -56,7 +56,7 @@ function New-FeatureSnapshot {
             [ordered]@{ path = "components/diag_log/"; purpose = "Diagnostic event schema and ring-buffer API." },
             [ordered]@{ path = "components/power_manager/"; purpose = "Low-power state machine, sleep blockers, overnight deep sleep, wake/status diagnostics." },
             [ordered]@{ path = "components/battery_monitor/"; purpose = "Shared battery voltage and level reading for HID and power diagnostics." },
-            [ordered]@{ path = "docs/features/low_power_wake_policy.md"; purpose = "Firmware wake policy contract for N4 KEY4/GPIO21 deep-sleep wake and KEY1/GPIO45 voice key limitation." },
+            [ordered]@{ path = "docs/features/low_power_wake_policy.md"; purpose = "Firmware wake policy contract for N4 KEY4/GPIO21 deep-sleep wake, KEY1/GPIO45 voice key limitation, and production primary voice/wake requirements." },
             [ordered]@{ path = "tools/decode_diag_log.py"; purpose = "Offline decoder for ~DIAGLOG JSONL into stable AI-readable JSON bundles." },
             [ordered]@{ path = "tools/collect_ai_diagnostics.ps1"; purpose = "Collect recent serial diag_log events or decode saved JSONL into raw and decoded artifacts under tests/artifacts." },
             [ordered]@{ path = "tools/collect_v2_current_telemetry.ps1"; purpose = "Legacy V2 current telemetry helper; not part of the active N4 hardware path." },
@@ -77,6 +77,7 @@ function New-FeatureSnapshot {
             "Physical key GPIO mapping and voice key GPIO live in board pin configuration, not desktop code.",
             "N4 KEY1 voice key uses GPIO45; HID keys use GPIO48/GPIO47/GPIO21; EC11 uses GPIO36/GPIO38/GPIO37/GPIO35.",
             "N4 deep-sleep wake uses KEY4/GPIO21; KEY1/GPIO45 voice key is not RTC deep-sleep wake capable.",
+            "Production V2 hardware must provide an RTC-capable primary voice/wake input; EC11-KEY_IO/GPIO11 is provisional until isolation, leakage, pull policy, and false-wake behavior are signed off.",
             "N4 PWR_HOLD, RGB LEDs, and V2 current-sense telemetry are not populated in the active profile.",
             "Real BLE, flash, serial, or audio capture validation requires a workflow hardware lock."
         )
