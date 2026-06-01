@@ -54,7 +54,8 @@
 #define DIAG_BLE_CONNECT       1   /* a1=connected, a2=heap_kb, a3=disconnect_count, a4=0 */
 #define DIAG_BLE_DISCONNECT    2   /* a1=reason, a2=disconnect_count, a3=conn_duration_ms, a4=pre_state(heap/1024) */
 #define DIAG_BLE_HID_SEND_FAIL 3   /* a1=key_ascii, a2=esp_err, a3=ble_connected, a4=0 */
-#define DIAG_BLE_BATTERY_WARN  4   /* a1=level, a2=voltage_mv, a3=0, a4=0 */
+#define DIAG_BLE_BATTERY_WARN  4   /* a1=level, a2=voltage_mv, a3=raw_adc, a4=adc_mv */
+#define DIAG_BLE_BATTERY_LEVEL 5   /* a1=level, a2=voltage_mv, a3=raw_adc, a4=adc_mv */
 
 /* BLE GAP events (DIAG_SRC_BLE_GAP) */
 #define DIAG_GAP_MTU           1   /* a1=requested/0, a2=actual, a3=conn_handle, a4=channel_id */
