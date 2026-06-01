@@ -1,5 +1,6 @@
 #include "voice_recording_control.h"
 
+#include <inttypes.h>
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
@@ -32,6 +33,23 @@ typedef enum {
     VOICE_RECORDING_STATE_RECOVERY,
 } voice_recording_state_t;
 
+typedef enum {
+    VOICE_RECORDING_FLOW_TOGGLE_START = 1,
+    VOICE_RECORDING_FLOW_TOGGLE_STOP = 2,
+    VOICE_RECORDING_FLOW_START_OK = 3,
+    VOICE_RECORDING_FLOW_STOP_REQUESTED = 4,
+    VOICE_RECORDING_FLOW_PENDING_START = 5,
+    VOICE_RECORDING_FLOW_PENDING_READY = 6,
+    VOICE_RECORDING_FLOW_PENDING_TIMEOUT = 7,
+    VOICE_RECORDING_FLOW_SESSION_FINISHED = 8,
+    VOICE_RECORDING_FLOW_SESSION_ABORTED = 9,
+    VOICE_RECORDING_FLOW_TOGGLE_IGNORED = 10,
+    VOICE_RECORDING_FLOW_CANCEL = 11,
+    VOICE_RECORDING_FLOW_RECOVERY = 12,
+    VOICE_RECORDING_FLOW_START_REJECTED = 13,
+    VOICE_RECORDING_FLOW_STOP_REJECTED = 14,
+} voice_recording_flow_stage_t;
+
 static const char *TAG = "voice_rec_ctrl";
 
 static bool s_started;
@@ -46,6 +64,7 @@ static bool s_pending_start;
 static const char *s_pending_start_source;
 static TickType_t s_pending_start_deadline_tick;
 static TickType_t s_pending_start_next_retry_tick;
+static const char *s_active_session_source;
 static uint32_t s_session_count;
 
 static uint32_t voice_recording_source_code(const char *source)
@@ -60,6 +79,72 @@ static uint32_t voice_recording_source_code(const char *source)
         return 2;
     }
     return 255;
+}
+
+static const char *voice_recording_state_name(voice_recording_state_t state)
+{
+    switch (state) {
+    case VOICE_RECORDING_STATE_IDLE:
+        return "idle";
+    case VOICE_RECORDING_STATE_RECORDING:
+        return "recording";
+    case VOICE_RECORDING_STATE_TRANSFERRING:
+        return "transferring";
+    case VOICE_RECORDING_STATE_RECOVERY:
+        return "recovery";
+    default:
+        return "unknown";
+    }
+}
+
+static void voice_recording_control_log_flow(
+    voice_recording_flow_stage_t stage,
+    const char *event,
+    const char *source,
+    esp_err_t result,
+    bool warn)
+{
+    const char *safe_source = source != NULL ? source : "unknown";
+    bool audio_active = audio_capture_session_is_active();
+    bool ble_ready = ble_audio_stream_is_ready();
+    const char *result_name = result == ESP_OK ? "ESP_OK" : esp_err_to_name(result);
+
+    if (warn) {
+        ESP_LOGW(
+            TAG,
+            "voiceflow event=%s source=%s result=%s state=%s pending=%u cancel_pending=%u session_count=%" PRIu32 " audio_active=%u ble_ready=%u",
+            event,
+            safe_source,
+            result_name,
+            voice_recording_state_name(s_state),
+            s_pending_start ? 1u : 0u,
+            s_cancel_pending ? 1u : 0u,
+            s_session_count,
+            audio_active ? 1u : 0u,
+            ble_ready ? 1u : 0u);
+    } else {
+        ESP_LOGI(
+            TAG,
+            "voiceflow event=%s source=%s result=%s state=%s pending=%u cancel_pending=%u session_count=%" PRIu32 " audio_active=%u ble_ready=%u",
+            event,
+            safe_source,
+            result_name,
+            voice_recording_state_name(s_state),
+            s_pending_start ? 1u : 0u,
+            s_cancel_pending ? 1u : 0u,
+            s_session_count,
+            audio_active ? 1u : 0u,
+            ble_ready ? 1u : 0u);
+    }
+
+    diag_log(
+        DIAG_SRC_VOICE_REC,
+        DIAG_VREC_FLOW,
+        warn ? DIAG_SEV_WARN : DIAG_SEV_INFO,
+        (uint32_t)stage,
+        voice_recording_source_code(safe_source),
+        s_session_count,
+        (uint32_t)s_state);
 }
 
 static void voice_recording_control_log_device_status(const char *state, const char *detail)
@@ -103,6 +188,12 @@ static void voice_recording_control_cancel_pending_start(const char *detail)
     voice_recording_control_clear_power_blockers();
     (void)voice_key_input_set_recording_output(false);
     ESP_LOGI(TAG, "recording pending start canceled source=%s detail=%s", source, detail);
+    voice_recording_control_log_flow(
+        VOICE_RECORDING_FLOW_CANCEL,
+        detail,
+        source,
+        ESP_OK,
+        false);
     voice_recording_control_log_device_status("ready", detail);
 }
 
@@ -124,6 +215,12 @@ static void voice_recording_control_schedule_pending_start(const char *source)
         "recording start pending source=%s timeout_ms=%u reason=audio_transport_not_ready",
         source,
         VOICE_RECORDING_CONTROL_PENDING_START_TIMEOUT_MS);
+    voice_recording_control_log_flow(
+        VOICE_RECORDING_FLOW_PENDING_START,
+        "pending_start",
+        source,
+        ESP_ERR_INVALID_STATE,
+        true);
     voice_recording_control_log_device_status("ready", "recording_waiting_for_ble_audio");
 }
 
@@ -139,6 +236,12 @@ static void voice_recording_control_timeout_pending_start(esp_err_t reason)
         source,
         VOICE_RECORDING_CONTROL_PENDING_START_TIMEOUT_MS,
         esp_err_to_name(reason));
+    voice_recording_control_log_flow(
+        VOICE_RECORDING_FLOW_PENDING_TIMEOUT,
+        "pending_timeout",
+        source,
+        reason,
+        true);
     voice_recording_control_log_device_error("ready", "recording_start_transport_timeout", reason);
     diag_log(DIAG_SRC_VOICE_REC, DIAG_VREC_REJECTED, DIAG_SEV_WARN,
              voice_recording_source_code(source), (uint32_t)reason, (uint32_t)s_state, 1);
@@ -161,6 +264,12 @@ static esp_err_t voice_recording_control_enter_recording(const char *source, boo
         (void)voice_key_input_set_recording_output(false);
         if (log_rejection) {
             ESP_LOGW(TAG, "recording start rejected source=%s: %s", source, esp_err_to_name(ret));
+            voice_recording_control_log_flow(
+                VOICE_RECORDING_FLOW_START_REJECTED,
+                "start_rejected",
+                source,
+                ret,
+                true);
             voice_recording_control_log_device_error("error", "recording_start_rejected", ret);
             diag_log(DIAG_SRC_VOICE_REC, DIAG_VREC_REJECTED, DIAG_SEV_WARN,
                      voice_recording_source_code(source), (uint32_t)ret, (uint32_t)s_state, 0);
@@ -171,10 +280,17 @@ static esp_err_t voice_recording_control_enter_recording(const char *source, boo
     voice_recording_control_reset_pending_start();
     s_cancel_pending = false;
     s_cancel_source = NULL;
+    s_active_session_source = source;
     s_state = VOICE_RECORDING_STATE_RECORDING;
     (void)voice_key_input_set_recording_output(true);
     s_session_count++;
     ESP_LOGI(TAG, "recording start source=%s", source);
+    voice_recording_control_log_flow(
+        VOICE_RECORDING_FLOW_START_OK,
+        "start_ok",
+        source,
+        ESP_OK,
+        false);
     voice_recording_control_log_device_status("recording", "capture_active");
     diag_log(DIAG_SRC_VOICE_REC, DIAG_VREC_SESSION, DIAG_SEV_INFO,
              1, voice_recording_source_code(source), s_session_count, 0);
@@ -188,10 +304,17 @@ static esp_err_t voice_recording_control_exit_recording(const char *source)
     if (ret != ESP_OK) {
         if (!audio_capture_session_is_active()) {
             s_state = VOICE_RECORDING_STATE_IDLE;
+            s_active_session_source = NULL;
             voice_recording_control_clear_power_blockers();
             (void)voice_key_input_set_recording_output(false);
         }
         ESP_LOGW(TAG, "recording stop rejected source=%s: %s", source, esp_err_to_name(ret));
+        voice_recording_control_log_flow(
+            VOICE_RECORDING_FLOW_STOP_REJECTED,
+            "stop_rejected",
+            source,
+            ret,
+            true);
         voice_recording_control_log_device_error("error", "recording_stop_rejected", ret);
         diag_log(DIAG_SRC_VOICE_REC, DIAG_VREC_REJECTED, DIAG_SEV_WARN,
                  voice_recording_source_code(source), (uint32_t)ret, (uint32_t)s_state, 0);
@@ -203,6 +326,12 @@ static esp_err_t voice_recording_control_exit_recording(const char *source)
     s_state = VOICE_RECORDING_STATE_TRANSFERRING;
     (void)voice_key_input_set_recording_output(false);
     ESP_LOGI(TAG, "recording stop source=%s", source);
+    voice_recording_control_log_flow(
+        VOICE_RECORDING_FLOW_STOP_REQUESTED,
+        "stop_requested",
+        source,
+        ESP_OK,
+        false);
     voice_recording_control_log_device_status("transferring", "audio_session_finishing");
     diag_log(DIAG_SRC_VOICE_REC, DIAG_VREC_SESSION, DIAG_SEV_INFO,
              2, voice_recording_source_code(source), s_session_count, 0);
@@ -213,6 +342,12 @@ static void voice_recording_control_toggle(const char *source)
 {
     if (s_cancel_pending) {
         ESP_LOGW(TAG, "recording toggle ignored source=%s: cancel pending", source);
+        voice_recording_control_log_flow(
+            VOICE_RECORDING_FLOW_TOGGLE_IGNORED,
+            "toggle_ignored_cancel_pending",
+            source,
+            ESP_ERR_INVALID_STATE,
+            true);
         return;
     }
 
@@ -223,16 +358,34 @@ static void voice_recording_control_toggle(const char *source)
             "recording toggle ignored source=%s: pending start source=%s",
             source,
             s_pending_start_source != NULL ? s_pending_start_source : "unknown");
+        voice_recording_control_log_flow(
+            VOICE_RECORDING_FLOW_TOGGLE_IGNORED,
+            "toggle_ignored_pending_start",
+            source,
+            ESP_ERR_INVALID_STATE,
+            false);
         voice_recording_control_log_device_status("ready", "recording_waiting_for_ble_audio");
         return;
     }
 
     if (s_state == VOICE_RECORDING_STATE_IDLE) {
+        voice_recording_control_log_flow(
+            VOICE_RECORDING_FLOW_TOGGLE_START,
+            "toggle_start",
+            source,
+            ESP_OK,
+            false);
         esp_err_t ret = voice_recording_control_enter_recording(source, true, true);
         if (ret == ESP_ERR_INVALID_STATE && !audio_capture_session_is_active()) {
             voice_recording_control_schedule_pending_start(source);
         }
     } else {
+        voice_recording_control_log_flow(
+            VOICE_RECORDING_FLOW_TOGGLE_STOP,
+            "toggle_stop",
+            source,
+            ESP_OK,
+            false);
         voice_recording_control_exit_recording(source);
     }
 }
@@ -252,9 +405,16 @@ static void voice_recording_control_cancel(const char *source)
     if (ret != ESP_OK) {
         if (!audio_capture_session_is_active()) {
             s_state = VOICE_RECORDING_STATE_IDLE;
+            s_active_session_source = NULL;
             voice_recording_control_clear_power_blockers();
         }
         ESP_LOGW(TAG, "recording cancel rejected source=%s: %s", source, esp_err_to_name(ret));
+        voice_recording_control_log_flow(
+            VOICE_RECORDING_FLOW_CANCEL,
+            "cancel_rejected",
+            source,
+            ret,
+            true);
         voice_recording_control_log_device_error("error", "recording_cancel_rejected", ret);
         diag_log(DIAG_SRC_VOICE_REC, DIAG_VREC_REJECTED, DIAG_SEV_WARN,
                  voice_recording_source_code(source), (uint32_t)ret, (uint32_t)s_state, 0);
@@ -267,9 +427,16 @@ static void voice_recording_control_cancel(const char *source)
         s_cancel_pending = false;
         s_cancel_source = NULL;
         s_state = VOICE_RECORDING_STATE_IDLE;
+        s_active_session_source = NULL;
         voice_recording_control_clear_power_blockers();
         (void)voice_key_input_set_recording_output(false);
         ESP_LOGI(TAG, "recording cancel source=%s", source);
+        voice_recording_control_log_flow(
+            VOICE_RECORDING_FLOW_CANCEL,
+            "cancel_complete",
+            source,
+            ESP_OK,
+            false);
         voice_recording_control_log_device_status("ready", "recording_canceled");
         diag_log(DIAG_SRC_VOICE_REC, DIAG_VREC_SESSION, DIAG_SEV_INFO,
                  3, voice_recording_source_code(source), s_session_count, 0);
@@ -277,11 +444,23 @@ static void voice_recording_control_cancel(const char *source)
     }
 
     ESP_LOGI(TAG, "recording cancel requested source=%s", source);
+    voice_recording_control_log_flow(
+        VOICE_RECORDING_FLOW_CANCEL,
+        "cancel_requested",
+        source,
+        ESP_OK,
+        false);
 }
 
 static void voice_recording_control_recovery(const char *source)
 {
     power_manager_record_activity("voice_recording_recovery");
+    voice_recording_control_log_flow(
+        VOICE_RECORDING_FLOW_RECOVERY,
+        "recovery_requested",
+        source,
+        ESP_OK,
+        true);
     voice_recording_control_cancel_pending_start("recovery_cleared_pending_start");
     (void)voice_key_input_set_recording_output(false);
     power_manager_set_blocker(
@@ -304,6 +483,7 @@ static void voice_recording_control_recovery(const char *source)
 
     s_cancel_pending = false;
     s_cancel_source = NULL;
+    s_active_session_source = NULL;
     esp_err_t ret = ble_hid_gap_forget_bonds_and_repair();
     if (ret != ESP_OK) {
         voice_recording_control_log_device_error("error", "recovery_pairing_reset_failed", ret);
@@ -350,6 +530,12 @@ static void voice_recording_control_poll_pending_start(void)
 
     const char *source = s_pending_start_source != NULL ? s_pending_start_source : "pending";
     ESP_LOGI(TAG, "recording pending start transport ready source=%s", source);
+    voice_recording_control_log_flow(
+        VOICE_RECORDING_FLOW_PENDING_READY,
+        "pending_ready",
+        source,
+        ESP_OK,
+        false);
     esp_err_t ret = voice_recording_control_enter_recording(source, false, false);
     if (ret == ESP_OK) {
         return;
@@ -383,25 +569,52 @@ static void voice_recording_control_task(void *parameter)
 
         if ((s_state == VOICE_RECORDING_STATE_RECORDING || s_state == VOICE_RECORDING_STATE_TRANSFERRING) &&
             !audio_capture_session_is_active()) {
+            voice_recording_state_t finished_state = s_state;
             if (s_cancel_pending) {
                 const char *source = s_cancel_source != NULL ? s_cancel_source : "unknown";
                 s_cancel_pending = false;
                 s_cancel_source = NULL;
                 s_state = VOICE_RECORDING_STATE_IDLE;
+                s_active_session_source = NULL;
                 voice_recording_control_clear_power_blockers();
                 (void)voice_key_input_set_recording_output(false);
                 ESP_LOGI(TAG, "recording cancel source=%s", source);
+                voice_recording_control_log_flow(
+                    VOICE_RECORDING_FLOW_CANCEL,
+                    "cancel_complete",
+                    source,
+                    ESP_OK,
+                    false);
                 voice_recording_control_log_device_status("ready", "recording_canceled");
                 diag_log(DIAG_SRC_VOICE_REC, DIAG_VREC_SESSION, DIAG_SEV_INFO,
                          3, voice_recording_source_code(source), s_session_count, 0);
                 continue;
             }
 
+            const char *source = s_active_session_source != NULL ? s_active_session_source : "session";
             s_state = VOICE_RECORDING_STATE_IDLE;
+            s_active_session_source = NULL;
             voice_recording_control_clear_power_blockers();
             (void)voice_key_input_set_recording_output(false);
-            ESP_LOGI(TAG, "recording session finished");
-            voice_recording_control_log_device_status("ready", "recording_session_finished");
+            if (finished_state == VOICE_RECORDING_STATE_TRANSFERRING) {
+                ESP_LOGI(TAG, "recording session finished");
+                voice_recording_control_log_flow(
+                    VOICE_RECORDING_FLOW_SESSION_FINISHED,
+                    "session_finished",
+                    source,
+                    ESP_OK,
+                    false);
+                voice_recording_control_log_device_status("ready", "recording_session_finished");
+            } else {
+                ESP_LOGW(TAG, "recording session ended without stop request");
+                voice_recording_control_log_flow(
+                    VOICE_RECORDING_FLOW_SESSION_ABORTED,
+                    "session_aborted_without_stop",
+                    source,
+                    ESP_ERR_INVALID_STATE,
+                    true);
+                voice_recording_control_log_device_error("ready", "recording_session_aborted", ESP_ERR_INVALID_STATE);
+            }
         }
 
         voice_recording_control_poll_pending_start();

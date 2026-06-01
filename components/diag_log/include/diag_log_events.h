@@ -87,6 +87,7 @@
 /* Voice recording events (DIAG_SRC_VOICE_REC) */
 #define DIAG_VREC_SESSION      1   /* a1=type(1=start,2=stop,3=cancel), a2=source_code, a3=session_count, a4=0 */
 #define DIAG_VREC_REJECTED     2   /* a1=source_code, a2=reject_reason, a3=current_state, a4=0 */
+#define DIAG_VREC_FLOW         3   /* a1=stage(1=toggle_start,2=toggle_stop,3=start_ok,4=stop_requested,5=pending_start,6=pending_ready,7=pending_timeout,8=session_finished,9=session_aborted,10=toggle_ignored,11=cancel,12=recovery,13=start_rejected,14=stop_rejected), a2=source_code, a3=session_count, a4=current_state */
 
 /* Voice key events (DIAG_SRC_VOICE_KEY) */
 #define DIAG_VKEY_PRESS        1   /* a1=type(1=release_toggle,2=recovery_hold,3=press_edge), a2=0, a3=0, a4=0 */
