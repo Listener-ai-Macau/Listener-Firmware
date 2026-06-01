@@ -59,6 +59,8 @@
 #define BLE_AUDIO_STREAM_AUDIO_POOL_PRESSURE_WARN_PERCENT 80U
 #define BLE_AUDIO_STREAM_AUDIO_POOL_PRESSURE_WARN_LEVEL \
     ((BLE_AUDIO_STREAM_AUDIO_POOL_LENGTH * BLE_AUDIO_STREAM_AUDIO_POOL_PRESSURE_WARN_PERCENT + 99U) / 100U)
+#define BLE_AUDIO_STREAM_BACKPRESSURE_PAUSE_PERCENT 85U
+#define BLE_AUDIO_STREAM_BACKPRESSURE_RESUME_PERCENT 55U
 #define BLE_AUDIO_STREAM_CONTROL_NOTIFY_REPETITIONS 3
 #define BLE_AUDIO_STREAM_CONTROL_NOTIFY_REPEAT_DELAY_MS 5
 #define BLE_AUDIO_STREAM_TASK_QUEUE_WAIT_MS 1000
@@ -179,6 +181,7 @@ static uint8_t *s_audio_pool_storage;
 static bool s_audio_pool_used[BLE_AUDIO_STREAM_AUDIO_POOL_LENGTH];
 static uint32_t s_audio_pool_in_use;
 static uint32_t s_audio_pool_global_high_water;
+static bool s_backpressure_active;
 
 _Static_assert(
     LISTENER_AUDIO_PROTO_HEADER_BYTES <= sizeof(listener_audio_packet_header_t),
@@ -301,6 +304,31 @@ static void ble_audio_stream_stats_pool_high_water(uint32_t session_id, uint32_t
         diag_log(DIAG_SRC_BLE_AUDIO, DIAG_BAUD_POOL_EXHAUST, DIAG_SEV_WARN,
                  session_id, in_use, BLE_AUDIO_STREAM_AUDIO_POOL_LENGTH, 0);
     }
+}
+
+static uint32_t ble_audio_stream_pressure_percent(uint32_t queue_depth, uint32_t pool_in_use)
+{
+    uint32_t queue_percent = 0;
+    uint32_t pool_percent = 0;
+
+    if (BLE_AUDIO_STREAM_NOTIFY_QUEUE_LENGTH > 0) {
+        queue_percent = (queue_depth * 100U) / BLE_AUDIO_STREAM_NOTIFY_QUEUE_LENGTH;
+    }
+    if (BLE_AUDIO_STREAM_AUDIO_POOL_LENGTH > 0) {
+        pool_percent = (pool_in_use * 100U) / BLE_AUDIO_STREAM_AUDIO_POOL_LENGTH;
+    }
+
+    return queue_percent > pool_percent ? queue_percent : pool_percent;
+}
+
+static void ble_audio_stream_log_watermark(
+    uint32_t session_id,
+    uint32_t queue_depth,
+    uint32_t pool_in_use,
+    uint32_t pressure_percent)
+{
+    diag_log(DIAG_SRC_BLE_AUDIO, DIAG_BAUD_WATERMARK, DIAG_SEV_INFO,
+             session_id, queue_depth, pool_in_use, pressure_percent);
 }
 
 static void ble_audio_stream_stats_drop(uint32_t session_id, const char *reason, esp_err_t result)
@@ -1296,11 +1324,13 @@ static void ble_audio_stream_abort_active_session(const char *reason)
             reason != NULL ? reason : "transport_error",
             expected_packet_count);
     }
+    s_backpressure_active = false;
     ble_audio_stream_reset_transport_session();
 }
 
 static esp_err_t ble_audio_stream_send_session_start_internal(uint32_t session_id)
 {
+    s_backpressure_active = false;
     return ble_audio_stream_send_control_packet_repeated(
         LISTENER_AUDIO_PACKET_TYPE_SESSION_START,
         session_id,
@@ -1410,6 +1440,14 @@ static void ble_audio_stream_finalize_session_stop_internal(
     uint32_t session_id,
     uint16_t expected_packet_count)
 {
+    ble_audio_stream_log_watermark(
+        session_id,
+        s_export_queue != NULL ? (uint32_t)uxQueueMessagesWaiting(s_export_queue) : 0,
+        s_audio_pool_in_use,
+        ble_audio_stream_pressure_percent(
+            s_export_queue != NULL ? (uint32_t)uxQueueMessagesWaiting(s_export_queue) : 0,
+            s_audio_pool_in_use));
+    s_backpressure_active = false;
     ble_audio_stream_stats_log_and_end(session_id, "stop", expected_packet_count);
     ble_audio_stream_set_transport_state(
         BLE_AUDIO_STREAM_TRANSPORT_STATE_STOPPED,
@@ -1434,6 +1472,7 @@ static esp_err_t ble_audio_stream_send_session_cancel_internal(uint32_t session_
         NULL,
         0,
         0);
+    s_backpressure_active = false;
     ble_audio_stream_stats_log_and_end(session_id, "cancel", expected_packet_count);
     ble_audio_stream_set_transport_state(
         ret == ESP_OK ? BLE_AUDIO_STREAM_TRANSPORT_STATE_STOPPED : BLE_AUDIO_STREAM_TRANSPORT_STATE_ERROR,
@@ -1466,6 +1505,7 @@ static esp_err_t ble_audio_stream_send_session_error_internal(
     ble_audio_stream_stats_log_and_end(session_id, "error", expected_packet_count);
     diag_log(DIAG_SRC_BLE_AUDIO, DIAG_BAUD_SESSION_ABORT, DIAG_SEV_ERROR,
              session_id, error_code, expected_packet_count, s_connection_epoch);
+    s_backpressure_active = false;
     ble_audio_stream_set_transport_state(
         BLE_AUDIO_STREAM_TRANSPORT_STATE_ERROR,
         ret == ESP_OK ? "session_error_sent" : "session_error_failed");
@@ -1931,6 +1971,76 @@ bool ble_audio_stream_is_busy(void)
     return s_transport_state == BLE_AUDIO_STREAM_TRANSPORT_STATE_STREAMING ||
            s_transport_state == BLE_AUDIO_STREAM_TRANSPORT_STATE_DRAINING ||
            (s_export_queue != NULL && uxQueueMessagesWaiting(s_export_queue) > 0);
+}
+
+void ble_audio_stream_get_backpressure(ble_audio_stream_backpressure_t *snapshot)
+{
+    if (snapshot == NULL) {
+        return;
+    }
+
+    memset(snapshot, 0, sizeof(*snapshot));
+    snapshot->queue_capacity = BLE_AUDIO_STREAM_NOTIFY_QUEUE_LENGTH;
+    snapshot->audio_pool_capacity = BLE_AUDIO_STREAM_AUDIO_POOL_LENGTH;
+    snapshot->transport_session_active = ble_audio_stream_transport_session_active();
+    snapshot->link_ready = ble_audio_stream_transport_link_ready();
+
+    if (s_export_queue != NULL) {
+        snapshot->queue_depth = (uint32_t)uxQueueMessagesWaiting(s_export_queue);
+    }
+
+    if (s_audio_pool_mutex != NULL &&
+        xSemaphoreTake(s_audio_pool_mutex, pdMS_TO_TICKS(2)) == pdTRUE) {
+        snapshot->audio_pool_in_use = s_audio_pool_in_use;
+        snapshot->audio_pool_high_water = s_audio_pool_global_high_water;
+        xSemaphoreGive(s_audio_pool_mutex);
+    } else {
+        snapshot->audio_pool_in_use = s_audio_pool_in_use;
+        snapshot->audio_pool_high_water = s_audio_pool_global_high_water;
+    }
+
+    snapshot->pressure_percent = ble_audio_stream_pressure_percent(
+        snapshot->queue_depth,
+        snapshot->audio_pool_in_use);
+
+    bool next_backpressure_active = s_backpressure_active;
+    if (!snapshot->transport_session_active) {
+        next_backpressure_active = false;
+    } else if (!snapshot->link_ready ||
+               snapshot->pressure_percent >= BLE_AUDIO_STREAM_BACKPRESSURE_PAUSE_PERCENT) {
+        next_backpressure_active = true;
+    } else if (snapshot->pressure_percent <= BLE_AUDIO_STREAM_BACKPRESSURE_RESUME_PERCENT) {
+        next_backpressure_active = false;
+    }
+
+    snapshot->pause_recommended = next_backpressure_active;
+    snapshot->resume_recommended = !next_backpressure_active;
+
+    if (next_backpressure_active != s_backpressure_active) {
+        s_backpressure_active = next_backpressure_active;
+        ESP_LOGI(
+            TAG,
+            "audio backpressure %s: session=%" PRIu32 " queued=%" PRIu32 "/%u pool=%" PRIu32 "/%u pressure=%" PRIu32 "%% link=%u",
+            next_backpressure_active ? "pause" : "resume",
+            s_transport_session_id,
+            snapshot->queue_depth,
+            (unsigned)BLE_AUDIO_STREAM_NOTIFY_QUEUE_LENGTH,
+            snapshot->audio_pool_in_use,
+            (unsigned)BLE_AUDIO_STREAM_AUDIO_POOL_LENGTH,
+            snapshot->pressure_percent,
+            snapshot->link_ready ? 1u : 0u);
+        ble_audio_stream_log_watermark(
+            s_transport_session_id,
+            snapshot->queue_depth,
+            snapshot->audio_pool_in_use,
+            snapshot->pressure_percent);
+        diag_log(DIAG_SRC_BLE_AUDIO, DIAG_BAUD_BACKPRESSURE,
+                 next_backpressure_active ? DIAG_SEV_WARN : DIAG_SEV_INFO,
+                 s_transport_session_id,
+                 next_backpressure_active ? 1U : 2U,
+                 snapshot->queue_depth,
+                 snapshot->audio_pool_in_use);
+    }
 }
 
 uint16_t ble_audio_stream_get_notify_attr_handle(void)

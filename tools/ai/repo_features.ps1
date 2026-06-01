@@ -96,6 +96,7 @@ function New-FeatureSnapshot {
             "pwsh -NoProfile -File .\tools\verify_v2_board_profile_static.ps1",
             "pwsh -NoProfile -File .\tools\verify_power_manager_static.ps1",
             "pwsh -NoProfile -File .\tools\verify_diagnostic_log_coverage.ps1",
+            "pwsh -NoProfile -File .\tools\verify_ble_audio_backpressure_static.ps1",
             "pwsh -NoProfile -File .\tools\collect_ai_diagnostics.ps1 -InputJsonl <diag_log.jsonl> -OutputDir .\tests\artifacts\ai_diagnostics",
             "pwsh -NoProfile -File .\tools\verify_ble_hid.ps1",
             "pwsh -NoProfile -File .\tools\verify_physical_custom_key_hid.ps1 -Port <COMx>",

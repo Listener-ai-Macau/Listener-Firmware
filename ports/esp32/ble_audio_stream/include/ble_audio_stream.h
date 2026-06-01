@@ -21,6 +21,19 @@ extern "C" {
 #define BLE_AUDIO_STREAM_CAPABILITIES_UUID \
     BLE_UUID128_INIT(0x1d, 0x09, 0xc3, 0x3b, 0x5b, 0x9e, 0x4d, 0x0c, 0x83, 0x65, 0x9f, 0x6d, 0x45, 0xf8, 0x0a, 0x71)
 
+typedef struct {
+    uint32_t queue_depth;
+    uint32_t queue_capacity;
+    uint32_t audio_pool_in_use;
+    uint32_t audio_pool_capacity;
+    uint32_t audio_pool_high_water;
+    uint32_t pressure_percent;
+    bool transport_session_active;
+    bool link_ready;
+    bool pause_recommended;
+    bool resume_recommended;
+} ble_audio_stream_backpressure_t;
+
 esp_err_t ble_audio_stream_init(void);
 void ble_audio_stream_on_gap_connect(uint16_t conn_handle);
 void ble_audio_stream_on_gap_disconnect(uint16_t conn_handle);
@@ -52,6 +65,7 @@ esp_err_t ble_audio_stream_send_session_error(
     uint16_t error_code);
 bool ble_audio_stream_is_ready(void);
 bool ble_audio_stream_is_busy(void);
+void ble_audio_stream_get_backpressure(ble_audio_stream_backpressure_t *snapshot);
 uint16_t ble_audio_stream_get_notify_attr_handle(void);
 void ble_audio_stream_log_gatt_state(void);
 
