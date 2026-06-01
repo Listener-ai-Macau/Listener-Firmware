@@ -672,9 +672,42 @@ static esp_err_t power_manager_enter_sleep(power_manager_sleep_reason_t reason)
         return wake_ret;
     }
 
+    if (s_mutex == NULL || xSemaphoreTake(s_mutex, portMAX_DELAY) != pdTRUE) {
+        ESP_LOGW(TAG, "sleep rejected: failed to acquire final sleep gate");
+        diag_log(DIAG_SRC_POWER, DIAG_POWER_SLEEP_BLOCKED, DIAG_SEV_WARN,
+                 0, snapshot.idle_ms, (uint32_t)reason, (uint32_t)ESP_ERR_TIMEOUT);
+        return ESP_ERR_TIMEOUT;
+    }
+
+    uint32_t final_blockers = s_blockers;
+    if (final_blockers != 0) {
+        xSemaphoreGive(s_mutex);
+        char blocker_text[96];
+        power_manager_blocker_names(final_blockers, blocker_text, sizeof(blocker_text));
+        ESP_LOGW(
+            TAG,
+            "sleep rejected: final blockers=0x%08" PRIx32 " (%s) idle_ms=%" PRIu32,
+            final_blockers,
+            blocker_text,
+            snapshot.idle_ms);
+        diag_log(DIAG_SRC_POWER, DIAG_POWER_SLEEP_BLOCKED, DIAG_SEV_WARN,
+                 final_blockers, snapshot.idle_ms, (uint32_t)reason, 0);
+        power_manager_log_wake_policy(wake_gpio_mask);
+        return ESP_ERR_INVALID_STATE;
+    }
+
+    if (audio_capture_session_is_active != NULL && audio_capture_session_is_active()) {
+        xSemaphoreGive(s_mutex);
+        ESP_LOGW(TAG, "sleep rejected: final audio capture session active");
+        diag_log(DIAG_SRC_POWER, DIAG_POWER_SLEEP_BLOCKED, DIAG_SEV_WARN,
+                 POWER_MANAGER_BLOCKER_RECORDING, snapshot.idle_ms, (uint32_t)reason, 0);
+        power_manager_log_wake_policy(wake_gpio_mask);
+        return ESP_ERR_INVALID_STATE;
+    }
+
     s_rtc_last_sleep_reason = (uint32_t)reason;
     s_rtc_last_idle_ms = snapshot.idle_ms;
-    s_rtc_last_blockers = snapshot.blockers;
+    s_rtc_last_blockers = final_blockers;
     power_manager_store_sleep_entry_stats(&snapshot);
     s_rtc_sleep_count++;
 
@@ -699,6 +732,9 @@ static esp_err_t power_manager_enter_sleep(power_manager_sleep_reason_t reason)
         snapshot.voice_key_deep_sleep_wake_enabled ? 1u : 0u,
         snapshot.voice_key_limitation,
         snapshot.wake_user_action);
+
+    // Keep the gate held through sleep entry so blocker-before-audio paths cannot
+    // start a recording after the final check.
     vTaskDelay(pdMS_TO_TICKS(100));
     esp_deep_sleep_start();
     return ESP_OK;
