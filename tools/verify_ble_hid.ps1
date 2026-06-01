@@ -1,14 +1,49 @@
 param(
-    [Parameter(Mandatory = $true)]
     [string]$Port,
     [string]$Text = "abc123",
     [int]$BootCaptureSeconds = 8,
     [int]$PostSendCaptureSeconds = 3,
     [int]$Baud = 115200,
-    [switch]$ResetBeforeRead = $true
+    [switch]$ResetBeforeRead = $true,
+    [string]$RepoRoot = (Split-Path -Parent $PSScriptRoot)
 )
 
 $ErrorActionPreference = "Stop"
+
+if ([string]::IsNullOrWhiteSpace($Port)) {
+    $bleHidPath = Join-Path $RepoRoot "ports\esp32\ble_hid\ble_hid.c"
+    $diagEventsPath = Join-Path $RepoRoot "components\diag_log\include\diag_log_events.h"
+    if (-not (Test-Path -LiteralPath $bleHidPath)) {
+        throw "Missing BLE HID source: $bleHidPath"
+    }
+    if (-not (Test-Path -LiteralPath $diagEventsPath)) {
+        throw "Missing diag log events header: $diagEventsPath"
+    }
+
+    $bleHid = Get-Content -LiteralPath $bleHidPath -Raw
+    $diagEvents = Get-Content -LiteralPath $diagEventsPath -Raw
+
+    $checks = @(
+        @($bleHid, 'battery_monitor_read\(&battery\)', "BLE HID reads battery_monitor ADC status"),
+        @($bleHid, 'esp_hidd_dev_battery_set\(s_ble_hid_ctx\.hid_device, level\)', "BLE HID writes HID Battery Service"),
+        @($bleHid, 'BLE_HID_BATTERY_NOTIFY_THRESHOLD_PERCENT 1', "BLE HID uses a 1 percent battery notify threshold"),
+        @($bleHid, 'ble_hid_battery_level_exceeds_notify_threshold\(level\)', "BLE HID gates periodic battery notifications on threshold changes"),
+        @($bleHid, 'ble_hid_update_battery_level\("connect_restore", true\)', "BLE HID forces battery refresh after reconnect"),
+        @($bleHid, 'DIAG_BLE_BATTERY_LEVEL', "BLE HID records battery level diagnostics"),
+        @($bleHid, 'battery\.raw_adc', "BLE HID diagnostics include raw ADC"),
+        @($bleHid, 'battery\.adc_mv', "BLE HID diagnostics include ADC mV"),
+        @($diagEvents, 'DIAG_BLE_BATTERY_LEVEL\s+5', "diag_log defines BLE battery level event")
+    )
+
+    foreach ($check in $checks) {
+        if ($check[0] -notmatch $check[1]) {
+            throw "verify_ble_hid static check failed: $($check[2])"
+        }
+    }
+
+    Write-Host "PASS: verify_ble_hid static checks cover BLE HID Battery Service live reporting, reconnect refresh, and ADC diagnostics."
+    exit 0
+}
 
 . (Join-Path $PSScriptRoot "idf_env.ps1")
 

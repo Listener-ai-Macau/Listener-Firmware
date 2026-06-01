@@ -46,7 +46,9 @@ void ble_store_config_init(void);
 static const char *TAG = "ble_hid";
 
 #define BLE_HID_BATTERY_FALLBACK_LEVEL 50
-#define BLE_HID_BATTERY_UPDATE_INTERVAL_MS 60000
+#define BLE_HID_BATTERY_SAMPLE_INTERVAL_MS 5000
+#define BLE_HID_BATTERY_NOTIFY_THRESHOLD_PERCENT 1
+#define BLE_HID_BATTERY_LEVEL_INVALID UINT8_MAX
 #define BLE_HID_BATTERY_TASK_STACK_BYTES (4 * 1024)
 #define BLE_HID_USB_COMMAND_PREFIX '~'
 #define BLE_HID_USB_COMMAND_BUFFER_BYTES 64
@@ -104,6 +106,8 @@ static uint32_t s_connect_timestamp_ms;
 static QueueHandle_t s_ascii_queue;
 static QueueHandle_t s_usage_queue;
 static bool s_safe_mode;
+static bool s_battery_service_valid;
+static uint8_t s_battery_service_level = BLE_HID_BATTERY_LEVEL_INVALID;
 
 static void ble_hid_log_dis_gatt_state(void);
 
@@ -124,7 +128,19 @@ static void ble_hid_publish_readiness(
         listener_device_get_capabilities());
 }
 
-static void ble_hid_update_battery_level(const char *reason)
+static bool ble_hid_battery_level_exceeds_notify_threshold(uint8_t level)
+{
+    if (!s_battery_service_valid || s_battery_service_level == BLE_HID_BATTERY_LEVEL_INVALID) {
+        return true;
+    }
+
+    uint8_t delta = level > s_battery_service_level
+        ? (uint8_t)(level - s_battery_service_level)
+        : (uint8_t)(s_battery_service_level - level);
+    return delta > BLE_HID_BATTERY_NOTIFY_THRESHOLD_PERCENT;
+}
+
+static void ble_hid_update_battery_level(const char *reason, bool force_notify)
 {
     if (s_ble_hid_ctx.hid_device == NULL) {
         return;
@@ -135,37 +151,64 @@ static void ble_hid_update_battery_level(const char *reason)
     uint8_t level = (read_ret == ESP_OK && battery.valid)
         ? battery.level_percent
         : BLE_HID_BATTERY_FALLBACK_LEVEL;
+    bool should_notify = force_notify ||
+        (read_ret == ESP_OK && battery.valid &&
+         ble_hid_battery_level_exceeds_notify_threshold(level));
 
-    esp_err_t ret = esp_hidd_dev_battery_set(s_ble_hid_ctx.hid_device, level);
-    if (ret != ESP_OK) {
-        ESP_LOGW(TAG, "battery level update failed: %s", esp_err_to_name(ret));
+    firmware_ota_note_battery(
+        level,
+        (read_ret == ESP_OK && battery.valid) ? battery.voltage_mv : 0,
+        read_ret == ESP_OK && battery.valid);
+
+    if (!should_notify) {
+        ESP_LOGD(
+            TAG,
+            "battery unchanged level=%u last=%u reason=%s",
+            level,
+            s_battery_service_level,
+            reason != NULL ? reason : "unspecified");
         return;
     }
 
     if (read_ret == ESP_OK) {
         ESP_LOGI(
             TAG,
-            "battery level=%u voltage_mv=%" PRIu32 " raw=%d reason=%s",
+            "battery notify level=%u voltage_mv=%" PRIu32 " raw=%d adc_mv=%d reason=%s forced=%u",
             level,
             battery.voltage_mv,
             battery.raw_adc,
-            reason);
+            battery.adc_mv,
+            reason != NULL ? reason : "unspecified",
+            force_notify ? 1u : 0u);
     } else {
         ESP_LOGW(
             TAG,
-            "battery level fallback=%u reason=%s read_failed=%s",
+            "battery notify fallback=%u reason=%s read_failed=%s forced=%u",
             level,
-            reason,
-            esp_err_to_name(read_ret));
+            reason != NULL ? reason : "unspecified",
+            esp_err_to_name(read_ret),
+            force_notify ? 1u : 0u);
     }
-    firmware_ota_note_battery(
-        level,
-        (read_ret == ESP_OK && battery.valid) ? battery.voltage_mv : 0,
-        read_ret == ESP_OK && battery.valid);
+
+    esp_err_t ret = esp_hidd_dev_battery_set(s_ble_hid_ctx.hid_device, level);
+    if (ret != ESP_OK) {
+        ESP_LOGW(TAG, "battery level notify failed: %s", esp_err_to_name(ret));
+        return;
+    }
+
+    s_battery_service_level = level;
+    s_battery_service_valid = true;
+
+    if (read_ret == ESP_OK && battery.valid) {
+        diag_log(DIAG_SRC_BLE_HID, DIAG_BLE_BATTERY_LEVEL, DIAG_SEV_INFO,
+                 level, battery.voltage_mv, (uint32_t)battery.raw_adc,
+                 (uint32_t)battery.adc_mv);
+    }
 
     if (level < 10 && read_ret == ESP_OK) {
         diag_log(DIAG_SRC_BLE_HID, DIAG_BLE_BATTERY_WARN, DIAG_SEV_WARN,
-                 level, battery.voltage_mv, 0, 0);
+                 level, battery.voltage_mv, (uint32_t)battery.raw_adc,
+                 (uint32_t)battery.adc_mv);
     }
 }
 
@@ -175,8 +218,8 @@ static void ble_hid_battery_task(void *parameter)
     (void)watchdog_platform_subscribe_current_task("ble_hid_battery_task");
 
     while (1) {
-        watchdog_platform_delay_ms(BLE_HID_BATTERY_UPDATE_INTERVAL_MS);
-        ble_hid_update_battery_level("periodic");
+        watchdog_platform_delay_ms(BLE_HID_BATTERY_SAMPLE_INTERVAL_MS);
+        ble_hid_update_battery_level("threshold_sample", false);
         watchdog_platform_feed_current_task();
     }
 }
@@ -539,7 +582,7 @@ static void ble_hid_event_callback(void *handler_args, esp_event_base_t base, in
             ble_audio_stream_log_gatt_state();
         }
         ble_hid_gap_mark_stack_ready();
-        ble_hid_update_battery_level("hid_start");
+        ble_hid_update_battery_level("hid_start", true);
         ble_hid_battery_task_start();
         ble_hid_task_start();
         break;
@@ -548,7 +591,7 @@ static void ble_hid_event_callback(void *handler_args, esp_event_base_t base, in
         s_ble_connected = true;
         power_manager_set_ble_connected(true);
         s_connect_timestamp_ms = (uint32_t)(esp_timer_get_time() / 1000LL);
-        ble_hid_update_battery_level("connect");
+        ble_hid_update_battery_level("connect_restore", true);
         diag_log(DIAG_SRC_BLE_HID, DIAG_BLE_CONNECT, DIAG_SEV_INFO,
                  1, esp_get_free_heap_size() / 1024, s_disconnect_count, 0);
         break;
@@ -880,7 +923,7 @@ esp_err_t ble_hid_init(void)
         ESP_LOGW(TAG, "ble_svc_gap_device_name_set failed: %d", gap_name_rc);
     }
 
-    ble_hid_update_battery_level("init");
+    ble_hid_update_battery_level("init", true);
     ble_hid_publish_readiness(ready_mask, degraded_mask, "init_complete");
     return ESP_OK;
 }
