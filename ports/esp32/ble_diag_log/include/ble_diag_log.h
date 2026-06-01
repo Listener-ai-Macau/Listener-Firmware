@@ -39,6 +39,13 @@ extern "C" {
 int ble_diag_log_register_gatt(void);
 
 /*
+ * Track the active GAP connection so diagnostic export can safely size
+ * notifications even when MTU exchange completes before the first control
+ * write.
+ */
+void ble_diag_log_on_gap_connect(uint16_t conn_handle);
+
+/*
  * Reset any in-progress paginated read state on BLE disconnect.
  */
 void ble_diag_log_on_gap_disconnect(uint16_t conn_handle);

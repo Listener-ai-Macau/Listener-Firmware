@@ -16,13 +16,16 @@
 #include "freertos/task.h"
 #include "host/ble_att.h"
 #include "host/ble_gatt.h"
+#include "host/ble_hs.h"
 #include "host/ble_hs_mbuf.h"
 #include "os/os_mbuf.h"
 #include "power_manager.h"
 
 #define BLE_DIAG_LOG_CONTROL_MAX_BYTES 128
-#define BLE_DIAG_LOG_CHUNK_HEADER_BYTES 8
-#define BLE_DIAG_LOG_DEFAULT_MTU 244
+#define BLE_DIAG_LOG_CHUNK_HEADER_BYTES 8U
+#define BLE_DIAG_LOG_ATT_HEADER_BYTES 3U
+#define BLE_DIAG_LOG_EVENT_BYTES DIAG_LOG_EVENT_WIRE_BYTES
+#define BLE_DIAG_LOG_MAX_EVENTS_PER_CHUNK 4U
 
 typedef enum {
     BLE_DIAG_LOG_GATT_ATTR_CONTROL = 1,
@@ -47,8 +50,9 @@ static uint16_t s_data_val_handle;
 
 /* Export session state */
 static bool s_exporting;
-static uint16_t s_conn_handle;
-static uint16_t s_mtu;
+static uint16_t s_conn_handle = BLE_HS_CONN_HANDLE_NONE;
+static uint16_t s_att_mtu = BLE_ATT_MTU_DFLT;
+static uint16_t s_att_value_max_bytes = BLE_ATT_MTU_DFLT - BLE_DIAG_LOG_ATT_HEADER_BYTES;
 static uint32_t s_export_offset;
 
 static int ble_diag_log_copy_mbuf(
@@ -158,10 +162,47 @@ static bool ble_diag_log_json_uint32(
 
 static uint16_t ble_diag_log_max_event_per_chunk(void)
 {
-    uint16_t payload = s_mtu > BLE_DIAG_LOG_CHUNK_HEADER_BYTES
-        ? s_mtu - BLE_DIAG_LOG_CHUNK_HEADER_BYTES
-        : BLE_DIAG_LOG_DEFAULT_MTU - BLE_DIAG_LOG_CHUNK_HEADER_BYTES;
-    return payload / 24; /* sizeof(diag_event_t) is 24 */
+    if (s_att_value_max_bytes <= BLE_DIAG_LOG_CHUNK_HEADER_BYTES) {
+        return 0;
+    }
+
+    uint16_t payload = (uint16_t)(s_att_value_max_bytes - BLE_DIAG_LOG_CHUNK_HEADER_BYTES);
+    uint16_t mtu_events = (uint16_t)(payload / BLE_DIAG_LOG_EVENT_BYTES);
+    if (mtu_events > BLE_DIAG_LOG_MAX_EVENTS_PER_CHUNK) {
+        return BLE_DIAG_LOG_MAX_EVENTS_PER_CHUNK;
+    }
+    return mtu_events;
+}
+
+static void ble_diag_log_apply_mtu(uint16_t conn_handle, uint16_t mtu, const char *reason)
+{
+    if (mtu < BLE_ATT_MTU_DFLT) {
+        mtu = BLE_ATT_MTU_DFLT;
+    }
+    if (mtu > BLE_ATT_MTU_MAX) {
+        mtu = BLE_ATT_MTU_MAX;
+    }
+
+    uint16_t value_max = (uint16_t)(mtu - BLE_DIAG_LOG_ATT_HEADER_BYTES);
+    if (value_max > BLE_ATT_ATTR_MAX_LEN) {
+        value_max = BLE_ATT_ATTR_MAX_LEN;
+    }
+
+    s_att_mtu = mtu;
+    s_att_value_max_bytes = value_max;
+    ESP_LOGI(
+        TAG,
+        "diag export MTU updated: reason=%s conn=%u mtu=%u value_max=%u",
+        reason != NULL ? reason : "unknown",
+        conn_handle,
+        s_att_mtu,
+        s_att_value_max_bytes);
+}
+
+static void ble_diag_log_refresh_current_mtu(uint16_t conn_handle, const char *reason)
+{
+    uint16_t mtu = ble_att_mtu(conn_handle);
+    ble_diag_log_apply_mtu(conn_handle, mtu, reason);
 }
 
 static void ble_diag_log_stop_export(void)
@@ -175,48 +216,74 @@ static void ble_diag_log_stop_export(void)
     ESP_LOGI(TAG, "export session stopped");
 }
 
-static void ble_diag_log_send_chunk(uint32_t offset)
+static int ble_diag_log_send_chunk(uint32_t offset)
 {
     if (!s_exporting) {
-        return;
+        return 0;
     }
 
+    ble_diag_log_refresh_current_mtu(s_conn_handle, "read");
     uint16_t max_events = ble_diag_log_max_event_per_chunk();
+    if (max_events == 0) {
+        ESP_LOGW(
+            TAG,
+            "diag export MTU too small: conn=%u mtu=%u value_max=%u need_min=%u",
+            s_conn_handle,
+            s_att_mtu,
+            s_att_value_max_bytes,
+            (unsigned)(BLE_DIAG_LOG_CHUNK_HEADER_BYTES + BLE_DIAG_LOG_EVENT_BYTES));
+        return BLE_ATT_ERR_INSUFFICIENT_RES;
+    }
+
     uint32_t total = diag_log_count();
 
-    /* Allocate buffer for events: max_events * 24 bytes */
-    uint16_t buf_size = max_events * 24;
+    uint16_t buf_size = (uint16_t)(max_events * BLE_DIAG_LOG_EVENT_BYTES);
     uint8_t *event_buf = (uint8_t *)malloc(buf_size);
     if (event_buf == NULL) {
         ESP_LOGE(TAG, "failed to allocate event buffer");
-        return;
+        return BLE_ATT_ERR_INSUFFICIENT_RES;
     }
 
     uint32_t read_count = diag_log_read_range(offset, max_events, event_buf, buf_size);
     if (read_count == 0) {
         free(event_buf);
         ESP_LOGI(TAG, "no events at offset %" PRIu32, offset);
-        return;
+        return 0;
     }
 
     /* Build notification: chunk header + events */
-    uint16_t data_len = BLE_DIAG_LOG_CHUNK_HEADER_BYTES + (uint16_t)(read_count * 24);
+    uint16_t data_len =
+        BLE_DIAG_LOG_CHUNK_HEADER_BYTES + (uint16_t)(read_count * BLE_DIAG_LOG_EVENT_BYTES);
+    if (data_len > s_att_value_max_bytes) {
+        free(event_buf);
+        ESP_LOGW(
+            TAG,
+            "diag export chunk exceeds negotiated ATT value size: len=%u value_max=%u events=%" PRIu32,
+            data_len,
+            s_att_value_max_bytes,
+            read_count);
+        return BLE_ATT_ERR_INSUFFICIENT_RES;
+    }
+
     uint8_t *notify_buf = (uint8_t *)malloc(data_len);
     if (notify_buf == NULL) {
         free(event_buf);
         ESP_LOGE(TAG, "failed to allocate notify buffer");
-        return;
+        return BLE_ATT_ERR_INSUFFICIENT_RES;
     }
 
     /* Chunk header */
     diag_log_chunk_header_t header = {
         .event_count = (uint16_t)read_count,
         .global_offset = (uint16_t)offset,
-        .events_crc = esp_crc32_le(0, event_buf, read_count * 24),
+        .events_crc = esp_crc32_le(0, event_buf, read_count * BLE_DIAG_LOG_EVENT_BYTES),
     };
 
     memcpy(notify_buf, &header, BLE_DIAG_LOG_CHUNK_HEADER_BYTES);
-    memcpy(notify_buf + BLE_DIAG_LOG_CHUNK_HEADER_BYTES, event_buf, read_count * 24);
+    memcpy(
+        notify_buf + BLE_DIAG_LOG_CHUNK_HEADER_BYTES,
+        event_buf,
+        read_count * BLE_DIAG_LOG_EVENT_BYTES);
 
     free(event_buf);
 
@@ -225,20 +292,29 @@ static void ble_diag_log_send_chunk(uint32_t offset)
 
     if (om == NULL) {
         ESP_LOGE(TAG, "failed to create mbuf for notification");
-        return;
+        return BLE_ATT_ERR_INSUFFICIENT_RES;
     }
 
     int rc = ble_gatts_notify_custom(s_conn_handle, s_data_val_handle, om);
     if (rc != 0) {
         ESP_LOGW(TAG, "notify failed: rc=%d offset=%" PRIu32, rc, offset);
+        return BLE_ATT_ERR_UNLIKELY;
     } else {
         s_export_offset = offset + read_count;
-        ESP_LOGI(TAG, "sent chunk offset=%" PRIu32 " count=%" PRIu32 " total=%" PRIu32 " crc=0x%08lx",
-                 offset, read_count, total, (unsigned long)header.events_crc);
+        ESP_LOGI(
+            TAG,
+            "sent chunk offset=%" PRIu32 " count=%" PRIu32 " total=%" PRIu32 " crc=0x%08lx value_len=%u value_max=%u",
+            offset,
+            read_count,
+            total,
+            (unsigned long)header.events_crc,
+            data_len,
+            s_att_value_max_bytes);
     }
+    return 0;
 }
 
-static int ble_diag_log_handle_control_write(struct os_mbuf *om)
+static int ble_diag_log_handle_control_write(uint16_t conn_handle, struct os_mbuf *om)
 {
     uint8_t raw[BLE_DIAG_LOG_CONTROL_MAX_BYTES + 1];
     uint16_t len = 0;
@@ -259,10 +335,29 @@ static int ble_diag_log_handle_control_write(struct os_mbuf *om)
             ESP_LOGW(TAG, "export already in progress");
             return 0;
         }
+        s_conn_handle = conn_handle;
+        ble_diag_log_refresh_current_mtu(conn_handle, "start");
+        if (ble_diag_log_max_event_per_chunk() == 0) {
+            ESP_LOGW(
+                TAG,
+                "export start rejected: MTU too small conn=%u mtu=%u value_max=%u need_min=%u",
+                conn_handle,
+                s_att_mtu,
+                s_att_value_max_bytes,
+                (unsigned)(BLE_DIAG_LOG_CHUNK_HEADER_BYTES + BLE_DIAG_LOG_EVENT_BYTES));
+            return BLE_ATT_ERR_INSUFFICIENT_RES;
+        }
         s_exporting = true;
         s_export_offset = 0;
         power_manager_set_blocker(POWER_MANAGER_BLOCKER_DIAG_EXPORT, true);
-        ESP_LOGI(TAG, "export session started, total=%" PRIu32, diag_log_count());
+        ESP_LOGI(
+            TAG,
+            "export session started, conn=%u total=%" PRIu32 " mtu=%u value_max=%u events_per_chunk=%u",
+            conn_handle,
+            diag_log_count(),
+            s_att_mtu,
+            s_att_value_max_bytes,
+            ble_diag_log_max_event_per_chunk());
         return 0;
     }
 
@@ -276,8 +371,7 @@ static int ble_diag_log_handle_control_write(struct os_mbuf *om)
             ESP_LOGW(TAG, "read missing offset");
             return BLE_ATT_ERR_INVALID_ATTR_VALUE_LEN;
         }
-        ble_diag_log_send_chunk(offset);
-        return 0;
+        return ble_diag_log_send_chunk(offset);
     }
 
     if (strcmp(op, "stop") == 0) {
@@ -320,7 +414,7 @@ static int ble_diag_log_access(
     if (ctxt->op == BLE_GATT_ACCESS_OP_WRITE_CHR) {
         if (attr == BLE_DIAG_LOG_GATT_ATTR_CONTROL) {
             s_conn_handle = conn_handle;
-            return ble_diag_log_handle_control_write(ctxt->om);
+            return ble_diag_log_handle_control_write(conn_handle, ctxt->om);
         }
         return BLE_ATT_ERR_WRITE_NOT_PERMITTED;
     }
@@ -381,21 +475,41 @@ int ble_diag_log_register_gatt(void)
     return 0;
 }
 
+void ble_diag_log_on_gap_connect(uint16_t conn_handle)
+{
+    s_conn_handle = conn_handle;
+    s_export_offset = 0;
+    ble_diag_log_refresh_current_mtu(conn_handle, "connect");
+}
+
 void ble_diag_log_on_gap_disconnect(uint16_t conn_handle)
 {
-    (void)conn_handle;
+    if (s_conn_handle != BLE_HS_CONN_HANDLE_NONE && conn_handle != s_conn_handle) {
+        ESP_LOGD(TAG, "stale disconnect ignored: conn=%u active=%u", conn_handle, s_conn_handle);
+        return;
+    }
+
     if (s_exporting) {
         ESP_LOGW(TAG, "BLE disconnect during export, aborting");
         ble_diag_log_stop_export();
     }
+    s_conn_handle = BLE_HS_CONN_HANDLE_NONE;
+    s_att_mtu = BLE_ATT_MTU_DFLT;
+    s_att_value_max_bytes = BLE_ATT_MTU_DFLT - BLE_DIAG_LOG_ATT_HEADER_BYTES;
 }
 
 void ble_diag_log_on_gap_mtu(uint16_t conn_handle, uint16_t mtu)
 {
-    if (conn_handle == s_conn_handle) {
-        s_mtu = mtu;
-        ESP_LOGI(TAG, "MTU updated: %u", (unsigned)mtu);
+    if (s_conn_handle == BLE_HS_CONN_HANDLE_NONE) {
+        s_conn_handle = conn_handle;
     }
+
+    if (conn_handle != s_conn_handle) {
+        ESP_LOGD(TAG, "stale MTU ignored: conn=%u active=%u mtu=%u", conn_handle, s_conn_handle, mtu);
+        return;
+    }
+
+    ble_diag_log_apply_mtu(conn_handle, mtu, "gap_mtu");
 }
 
 void ble_diag_log_log_gatt_state(void)

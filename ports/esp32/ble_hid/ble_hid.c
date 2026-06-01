@@ -412,6 +412,11 @@ static bool ble_hid_dispatch_usb_command_line(const char *line)
         return true;
     }
 
+    if (strcmp(line, "~DIAG:GATT") == 0 || strcmp(line, "DIAG:GATT") == 0) {
+        ble_diag_log_log_gatt_state();
+        return true;
+    }
+
     if (strncmp(line, "~OTA:", strlen("~OTA:")) == 0) {
         power_manager_set_blocker(
             POWER_MANAGER_BLOCKER_FLASH_WRITE |

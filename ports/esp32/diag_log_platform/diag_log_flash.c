@@ -41,6 +41,8 @@ typedef struct {
 } diag_event_t;
 
 #define DIAG_EVENT_SIZE sizeof(diag_event_t)
+_Static_assert(DIAG_EVENT_SIZE == DIAG_LOG_EVENT_WIRE_BYTES,
+               "diag_event_t wire size must stay stable for BLE diagnostic export");
 #define DIAG_EVENTS_PER_SECTOR ((DIAG_LOG_SECTOR_SIZE - DIAG_SECTOR_HEADER_SIZE) / DIAG_EVENT_SIZE)
 
 static const esp_partition_t *s_partition;

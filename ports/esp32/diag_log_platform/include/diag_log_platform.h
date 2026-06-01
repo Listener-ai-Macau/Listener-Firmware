@@ -4,6 +4,10 @@
 #include <stdint.h>
 #include <stdbool.h>
 
+#ifndef DIAG_LOG_EVENT_WIRE_BYTES
+#define DIAG_LOG_EVENT_WIRE_BYTES 24U
+#endif
+
 void diag_log_platform_init(void);
 void diag_log_platform_write(uint16_t source, uint8_t event, uint8_t severity,
                              uint32_t arg1, uint32_t arg2, uint32_t arg3, uint32_t arg4);
