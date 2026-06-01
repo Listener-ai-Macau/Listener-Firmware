@@ -58,7 +58,7 @@
 #define VOICE_KEY_INPUT_DIRECT_LABEL   "gpio0.boot"
 #else
 #define VOICE_KEY_INPUT_DIRECT_GPIO    BOARD_PINS_KEY1_IO
-#define VOICE_KEY_INPUT_DIRECT_LABEL   "key1.gpio45.voice"
+#define VOICE_KEY_INPUT_DIRECT_LABEL   "voice.gpio45"
 #endif
 #define VOICE_KEY_INPUT_POLL_MS        (20)
 #define VOICE_KEY_INPUT_DEBOUNCE_THRESHOLD (3)

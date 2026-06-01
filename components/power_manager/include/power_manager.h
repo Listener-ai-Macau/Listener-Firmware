@@ -47,7 +47,7 @@ typedef enum {
 } power_manager_wake_source_t;
 
 typedef enum {
-    POWER_MANAGER_WAKE_POLICY_KEY4_ONLY = 1,
+    POWER_MANAGER_WAKE_POLICY_KEY3_ONLY = 1,
     POWER_MANAGER_WAKE_POLICY_V2_EC11_PROVISIONAL = 2,
 } power_manager_wake_policy_t;
 

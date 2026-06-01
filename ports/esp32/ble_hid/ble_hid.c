@@ -51,6 +51,8 @@ static const char *TAG = "ble_hid";
 #define BLE_HID_USB_COMMAND_PREFIX '~'
 #define BLE_HID_USB_COMMAND_BUFFER_BYTES 64
 #define BLE_HID_ASCII_QUEUE_LENGTH 8
+#define BLE_HID_USAGE_QUEUE_LENGTH 8
+#define BLE_HID_KEY_SOURCE_BYTES 32
 #define BLE_HID_READINESS_ALL \
     (LISTENER_DEVICE_READY_HID | LISTENER_DEVICE_READY_AUDIO | \
      LISTENER_DEVICE_READY_OTA | LISTENER_DEVICE_READY_DIAGNOSTIC)
@@ -61,6 +63,11 @@ typedef struct
     TaskHandle_t battery_task_handle;
     esp_hidd_dev_t *hid_device;
 } ble_hid_ctx_t;
+
+typedef struct {
+    uint8_t usage;
+    char source[BLE_HID_KEY_SOURCE_BYTES];
+} ble_hid_usage_event_t;
 
 static ble_hid_ctx_t s_ble_hid_ctx = {0};
 
@@ -95,6 +102,7 @@ static bool s_ble_connected;
 static uint32_t s_disconnect_count;
 static uint32_t s_connect_timestamp_ms;
 static QueueHandle_t s_ascii_queue;
+static QueueHandle_t s_usage_queue;
 static bool s_safe_mode;
 
 static void ble_hid_log_dis_gatt_state(void);
@@ -206,6 +214,21 @@ static esp_err_t ble_hid_dispatch_ascii(char input_char, const char *source)
     return hid_keyboard_send_ascii(input_char, s_ble_hid_ctx.hid_device);
 }
 
+static esp_err_t ble_hid_dispatch_usage(uint8_t usage, const char *source)
+{
+    if (s_ble_hid_ctx.hid_device == NULL) {
+        ESP_LOGW(TAG, "%s dispatch dropped: HID device unavailable", source);
+        return ESP_ERR_INVALID_STATE;
+    }
+
+    if (!esp_hidd_dev_connected(s_ble_hid_ctx.hid_device)) {
+        ESP_LOGW(TAG, "%s dispatch dropped: HID host not connected", source);
+        return ESP_ERR_INVALID_STATE;
+    }
+
+    return hid_keyboard_send_usage(usage, s_ble_hid_ctx.hid_device);
+}
+
 static void ble_hid_drain_ascii_queue(void)
 {
     if (s_ascii_queue == NULL) {
@@ -217,6 +240,27 @@ static void ble_hid_drain_ascii_queue(void)
         esp_err_t ret = ble_hid_dispatch_ascii(input_char, "KEY");
         if (ret != ESP_OK) {
             ESP_LOGW(TAG, "KEY dispatch failed: %s", esp_err_to_name(ret));
+        }
+    }
+}
+
+static void ble_hid_drain_usage_queue(void)
+{
+    if (s_usage_queue == NULL) {
+        return;
+    }
+
+    ble_hid_usage_event_t event;
+    while (xQueueReceive(s_usage_queue, &event, 0) == pdTRUE) {
+        const char *source = event.source[0] != '\0' ? event.source : "CUSTOM_KEY";
+        esp_err_t ret = ble_hid_dispatch_usage(event.usage, source);
+        if (ret != ESP_OK) {
+            ESP_LOGW(
+                TAG,
+                "%s dispatch failed: usage=0x%02X error=%s",
+                source,
+                event.usage,
+                esp_err_to_name(ret));
         }
     }
 }
@@ -237,6 +281,34 @@ esp_err_t ble_hid_send_ascii_async(char input_char)
     }
 
     power_manager_record_activity("hid_key_enqueue");
+    return ESP_OK;
+}
+
+esp_err_t ble_hid_send_keyboard_usage_async(uint8_t usage, const char *source)
+{
+    if (s_usage_queue == NULL) {
+        return ESP_ERR_INVALID_STATE;
+    }
+
+    if (!ble_hid_is_connected()) {
+        (void)ble_hid_gap_request_reconnect();
+        return ESP_ERR_INVALID_STATE;
+    }
+
+    ble_hid_usage_event_t event = {
+        .usage = usage,
+    };
+    if (source != NULL) {
+        snprintf(event.source, sizeof(event.source), "%s", source);
+    }
+
+    if (xQueueSend(s_usage_queue, &event, 0) != pdTRUE) {
+        diag_log(DIAG_SRC_KEYBOARD, DIAG_KBD_QUEUE_DROP, DIAG_SEV_WARN,
+                 usage, BLE_HID_USAGE_QUEUE_LENGTH, 0, 0);
+        return ESP_ERR_TIMEOUT;
+    }
+
+    power_manager_record_activity("hid_usage_enqueue");
     return ESP_OK;
 }
 
@@ -393,6 +465,7 @@ static void ble_hid_keyboard_task(void *parameter)
     while (1) {
         watchdog_platform_feed_current_task();
         ble_hid_drain_ascii_queue();
+        ble_hid_drain_usage_queue();
 
         int bytes_read = usb_serial_jtag_read_bytes(rx_buffer, sizeof(rx_buffer), pdMS_TO_TICKS(20));
         if (bytes_read > 0) {
@@ -534,6 +607,9 @@ static void ble_hid_event_callback(void *handler_args, esp_event_base_t base, in
             power_manager_set_ble_connected(false);
             if (s_ascii_queue != NULL) {
                 xQueueReset(s_ascii_queue);
+            }
+            if (s_usage_queue != NULL) {
+                xQueueReset(s_usage_queue);
             }
         }
         break;
@@ -706,6 +782,18 @@ esp_err_t ble_hid_init(void)
                 ready_mask,
                 BLE_HID_READINESS_ALL & ~ready_mask,
                 "ascii_queue_failed");
+            return ESP_ERR_NO_MEM;
+        }
+    }
+
+    if (s_usage_queue == NULL) {
+        s_usage_queue = xQueueCreate(BLE_HID_USAGE_QUEUE_LENGTH, sizeof(ble_hid_usage_event_t));
+        if (s_usage_queue == NULL) {
+            ESP_LOGE(TAG, "usage queue create failed");
+            ble_hid_publish_readiness(
+                ready_mask,
+                BLE_HID_READINESS_ALL & ~ready_mask,
+                "usage_queue_failed");
             return ESP_ERR_NO_MEM;
         }
     }

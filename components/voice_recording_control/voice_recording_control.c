@@ -53,7 +53,8 @@ static uint32_t voice_recording_source_code(const char *source)
     if (source == NULL) {
         return 0;
     }
-    if (strncmp(source, "key1", strlen("key1")) == 0) {
+    if (strncmp(source, "voice", strlen("voice")) == 0 ||
+        strncmp(source, "key1", strlen("key1")) == 0) {
         return 1;
     }
     if (strcmp(source, "usb") == 0) {
