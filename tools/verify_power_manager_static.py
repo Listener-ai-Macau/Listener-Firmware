@@ -16,7 +16,7 @@ CHECKS = {
         "POWER_MANAGER_BLOCKER_RECORDING",
         "POWER_MANAGER_BLOCKER_BLE_AUDIO",
         "POWER_MANAGER_BLOCKER_DIAG_EXPORT",
-        "POWER_MANAGER_WAKE_POLICY_KEY3_ONLY",
+        "POWER_MANAGER_WAKE_POLICY_KEY4_ONLY",
         "user_idle_ms",
         "radio_idle_ms",
         "last_sleep_duration_ms",
@@ -31,9 +31,10 @@ CHECKS = {
         "wake_policy=%s",
         "wake_capable_keys=%s",
         "voice_key_deep_sleep_wake=%u",
-        "VOICE/GPIO45 is not RTC deep-sleep wake capable on N4",
-        "press KEY3/GPIO21 after deep sleep",
-        "POWER_MANAGER_WAKE_POLICY_KEY3_ONLY",
+        "N4 validation profile: EC11-KEY/GPIO35 recording key is not RTC deep-sleep wake capable",
+        "production hardware must provide RTC-capable primary voice/wake input",
+        "press KEY4/GPIO21 after deep sleep on N4",
+        "POWER_MANAGER_WAKE_POLICY_KEY4_ONLY",
         "s_last_user_activity_ms",
         "s_last_radio_activity_ms",
         "power_manager_user_idle_ms_locked",
@@ -111,8 +112,8 @@ CHECKS = {
     ],
     "components/board/board.c": [
         "Voice Keyboard N4",
-        "VOICE/GPIO45",
-        "N4 deep sleep wakes by KEY3/GPIO21",
+        "EC11 push/GPIO35",
+        "N4 deep sleep wakes by KEY4/GPIO21",
     ],
 }
 
