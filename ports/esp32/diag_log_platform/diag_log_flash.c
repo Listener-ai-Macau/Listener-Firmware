@@ -41,6 +41,8 @@ typedef struct {
 } diag_event_t;
 
 #define DIAG_EVENT_SIZE sizeof(diag_event_t)
+_Static_assert(DIAG_EVENT_SIZE == DIAG_LOG_EVENT_WIRE_BYTES,
+               "diag_event_t wire size must stay stable for BLE diagnostic export");
 #define DIAG_EVENTS_PER_SECTOR ((DIAG_LOG_SECTOR_SIZE - DIAG_SECTOR_HEADER_SIZE) / DIAG_EVENT_SIZE)
 
 static const esp_partition_t *s_partition;
@@ -454,6 +456,75 @@ void diag_log_platform_clear(void)
 bool diag_log_platform_is_dumping(void)
 {
     return s_dumping;
+}
+
+uint32_t diag_log_platform_read_range(uint32_t offset, uint32_t limit,
+                                       void *buffer, uint32_t buffer_size)
+{
+    if (!s_initialized || s_partition == NULL || buffer == NULL) {
+        return 0;
+    }
+
+    if (limit == 0 || buffer_size < DIAG_EVENT_SIZE) {
+        return 0;
+    }
+
+    uint32_t max_events = buffer_size / DIAG_EVENT_SIZE;
+    if (limit > max_events) {
+        limit = max_events;
+    }
+
+    xSemaphoreTake(s_mutex, portMAX_DELAY);
+
+    /* Find minimum sequence to start iteration in chronological order */
+    uint16_t min_seq = UINT16_MAX;
+    uint16_t start_sec = 0;
+    for (uint32_t sec = 0; sec < s_total_sectors; sec++) {
+        diag_sector_header_t header;
+        if (read_sector_header((uint16_t)sec, &header) == ESP_OK
+            && header.magic == DIAG_LOG_MAGIC
+            && retained_count_from_sector((uint16_t)sec, &header) > 0) {
+            if (header.sequence < min_seq) {
+                min_seq = header.sequence;
+                start_sec = (uint16_t)sec;
+            }
+        }
+    }
+
+    uint32_t global_idx = 0;
+    uint32_t written = 0;
+    uint8_t *out = (uint8_t *)buffer;
+
+    for (uint32_t i = 0; i < s_total_sectors && written < limit; i++) {
+        uint16_t sec = (start_sec + (uint16_t)i) % (uint16_t)s_total_sectors;
+        diag_sector_header_t header;
+        esp_err_t ret = read_sector_header(sec, &header);
+        if (ret != ESP_OK) {
+            continue;
+        }
+        uint16_t sector_count = retained_count_from_sector(sec, &header);
+        if (sector_count == 0) {
+            continue;
+        }
+
+        for (uint16_t idx = 0; idx < sector_count && written < limit; idx++, global_idx++) {
+            if (global_idx < offset) {
+                continue;
+            }
+
+            diag_event_t evt;
+            ret = read_event(sec, idx, &evt);
+            if (ret != ESP_OK) {
+                continue;
+            }
+
+            memcpy(out + written * DIAG_EVENT_SIZE, &evt, DIAG_EVENT_SIZE);
+            written++;
+        }
+    }
+
+    xSemaphoreGive(s_mutex);
+    return written;
 }
 
 bool diag_log_consume_usb_command(const char *line)

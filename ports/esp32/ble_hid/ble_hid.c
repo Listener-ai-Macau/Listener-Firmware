@@ -35,6 +35,7 @@ void ble_store_config_init(void);
 #include "ble_hid_gap.h"
 #include "ble_audio_stream.h"
 #include "ble_firmware_ota.h"
+#include "ble_diag_log.h"
 #include "voice_recording_control.h"
 #include "diag_log_platform.h"
 #include "diag_log.h"
@@ -411,6 +412,11 @@ static bool ble_hid_dispatch_usb_command_line(const char *line)
         return true;
     }
 
+    if (strcmp(line, "~DIAG:GATT") == 0 || strcmp(line, "DIAG:GATT") == 0) {
+        ble_diag_log_log_gatt_state();
+        return true;
+    }
+
     if (strncmp(line, "~OTA:", strlen("~OTA:")) == 0) {
         power_manager_set_blocker(
             POWER_MANAGER_BLOCKER_FLASH_WRITE |
@@ -648,6 +654,8 @@ static void ble_hid_event_callback(void *handler_args, esp_event_base_t base, in
                      param->disconnect.reason, s_disconnect_count,
                      conn_duration, heap_kb);
             power_manager_set_ble_connected(false);
+            ble_diag_log_on_gap_disconnect(0);
+            ble_firmware_ota_on_gap_disconnect(0);
             if (s_ascii_queue != NULL) {
                 xQueueReset(s_ascii_queue);
             }
@@ -886,6 +894,13 @@ esp_err_t ble_hid_init(void)
         ready_mask |= LISTENER_DEVICE_READY_OTA;
     }
 
+    {
+        int diag_rc = ble_diag_log_register_gatt();
+        if (diag_rc != 0) {
+            ESP_LOGW(TAG, "BLE diag log GATT registration failed: rc=%d", diag_rc);
+        }
+    }
+
     ret = ble_hid_gap_configure_advertising(ESP_HID_APPEARANCE_KEYBOARD, s_device_name);
     if (ret != ESP_OK) {
         ESP_LOGE(TAG, "BLE advertising config failed: %s", esp_err_to_name(ret));
@@ -917,6 +932,7 @@ esp_err_t ble_hid_init(void)
         ble_audio_stream_log_gatt_state();
     }
     ble_firmware_ota_log_gatt_state();
+    ble_diag_log_log_gatt_state();
 
     int gap_name_rc = ble_svc_gap_device_name_set(s_device_name);
     if (gap_name_rc != 0) {

@@ -16,6 +16,7 @@
 #include "ble_hid_gap.h"
 #include "ble_audio_stream.h"
 #include "ble_firmware_ota.h"
+#include "ble_diag_log.h"
 #include "diag_log.h"
 #include "listener_device.h"
 
@@ -97,7 +98,7 @@ static int64_t s_recovery_identity_rotated_at_ms = 0;
 #define BLE_HID_GAP_SERVICE_CHANGED_NVS_NAMESPACE "ble_gap"
 #define BLE_HID_GAP_SERVICE_CHANGED_FW_KEY "svcchg_fw"
 #define BLE_HID_GAP_RANDOM_IDENTITY_ADDR_KEY "rnd_id_addr"
-#define BLE_HID_GAP_GATT_SCHEMA_REV "ota_identity_v3"
+#define BLE_HID_GAP_GATT_SCHEMA_REV "diag_export_v1"
 #define BLE_HID_GAP_SERVICE_CHANGED_START_HANDLE 0x0001
 #define BLE_HID_GAP_SERVICE_CHANGED_END_HANDLE 0xffff
 #define BLE_HID_GAP_RECOVERY_PAIRING_WINDOW_MS 120000LL
@@ -581,6 +582,7 @@ nimble_hid_gap_event(struct ble_gap_event *event, void *arg)
 
         s_ble_gap_connected = true;
         s_ble_gap_conn_handle = event->connect.conn_handle;
+        ble_diag_log_on_gap_connect(event->connect.conn_handle);
         if (s_audio_enabled) {
             ble_audio_stream_on_gap_connect(event->connect.conn_handle);
         }
@@ -650,6 +652,7 @@ nimble_hid_gap_event(struct ble_gap_event *event, void *arg)
         if (s_audio_enabled) {
             ble_audio_stream_on_gap_disconnect(event->disconnect.conn.conn_handle);
         }
+        ble_diag_log_on_gap_disconnect(event->disconnect.conn.conn_handle);
         ble_firmware_ota_on_gap_disconnect(event->disconnect.conn.conn_handle);
         s_directed_adv_pending = true;
         s_last_adv_was_directed = false;
@@ -733,6 +736,7 @@ nimble_hid_gap_event(struct ble_gap_event *event, void *arg)
         if (s_audio_enabled) {
             ble_audio_stream_on_gap_mtu(event->mtu.conn_handle, event->mtu.value);
         }
+        ble_diag_log_on_gap_mtu(event->mtu.conn_handle, event->mtu.value);
         return 0;
 
     case BLE_GAP_EVENT_ENC_CHANGE:
