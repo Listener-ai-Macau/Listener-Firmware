@@ -57,13 +57,15 @@
 #define VOICE_KEY_INPUT_DIRECT_GPIO    GPIO_NUM_0
 #define VOICE_KEY_INPUT_DIRECT_LABEL   "gpio0.boot"
 #else
-#define VOICE_KEY_INPUT_DIRECT_GPIO    BOARD_PINS_KEY1_IO
-#define VOICE_KEY_INPUT_DIRECT_LABEL   "voice.gpio45"
+#define VOICE_KEY_INPUT_DIRECT_GPIO    BOARD_PINS_EC11_KEY_IO
+#define VOICE_KEY_INPUT_DIRECT_LABEL   "ec11_key.gpio35"
 #endif
 #define VOICE_KEY_INPUT_POLL_MS        (20)
 #define VOICE_KEY_INPUT_DEBOUNCE_THRESHOLD (3)
 #define VOICE_KEY_INPUT_EVENT_QUEUE_LENGTH (8)
-#define VOICE_KEY_INPUT_RECOVERY_HOLD_MS (5000)
+#define VOICE_KEY_INPUT_CLICK_MAX_MS (700)
+#define VOICE_KEY_INPUT_DOUBLE_CLICK_WINDOW_MS (350)
+#define VOICE_KEY_INPUT_LONG_PRESS_IGNORE_MS (1200)
 
 static const char *TAG = "voice_key_input";
 
@@ -76,9 +78,9 @@ typedef struct {
     uint8_t stable_count;
     bool pressed;
     uint32_t pressed_ms;
-    bool recovery_reported;
-    bool release_toggle_suppressed;
-    bool recovery_suppressed;
+    bool pending_single_click;
+    uint32_t pending_click_ms;
+    bool long_press_reported;
 } voice_key_button_state_t;
 
 #if VOICE_KEY_INPUT_ENABLE_LEGACY_EXPANDER
@@ -119,8 +121,8 @@ static voice_key_button_state_t s_direct_gpio_state = {
 
 #if VOICE_KEY_INPUT_ENABLE_LEGACY_EXPANDER
 /* Legacy board compatibility only: old hardware used a TCA9555/XL9555 expander
- * and BOOT GPIO fallback. The active N4 board profile uses BOARD_PINS_KEY1_IO
- * directly for the product voice key; EC11_KEY/GPIO35 remains knob push only. */
+ * and BOOT GPIO fallback. The active product path uses the EC11 push key for
+ * recording gestures so KEY1-KEY4 can remain logical custom keys. */
 static const voice_key_input_bus_candidate_t s_bus_candidates[] = {
     {
         .label = "shared_sda1_scl1",
@@ -166,17 +168,33 @@ static void voice_key_input_record_toggle_event(const char *source, uint32_t eve
 static void voice_key_input_record_recovery_event(const char *source)
 {
     if (s_recovery_event_sem == NULL) {
-        ESP_LOGW(TAG, "%s recovery hold dropped: event queue unavailable", source);
+        ESP_LOGW(TAG, "%s double-click recovery dropped: event queue unavailable", source);
         return;
     }
 
     if (xSemaphoreGive(s_recovery_event_sem) == pdTRUE) {
-        ESP_LOGW(TAG, "%s recovery hold detected: hold_ms=%d", source, VOICE_KEY_INPUT_RECOVERY_HOLD_MS);
-        diag_log(DIAG_SRC_VOICE_KEY, DIAG_VKEY_PRESS, DIAG_SEV_WARN, 2, VOICE_KEY_INPUT_RECOVERY_HOLD_MS, 0, 0);
+        ESP_LOGW(TAG, "%s double-click recovery detected", source);
+        diag_log(DIAG_SRC_VOICE_KEY, DIAG_VKEY_PRESS, DIAG_SEV_WARN, 2, VOICE_KEY_INPUT_DOUBLE_CLICK_WINDOW_MS, 0, 0);
     } else {
-        ESP_LOGW(TAG, "%s recovery hold dropped: event queue full", source);
+        ESP_LOGW(TAG, "%s double-click recovery dropped: event queue full", source);
         diag_log(DIAG_SRC_VOICE_KEY, DIAG_VKEY_QUEUE_DROP, DIAG_SEV_WARN, 2, 2, 0, 0);
     }
+}
+
+static void voice_key_input_poll_pending_single_click(voice_key_button_state_t *button)
+{
+    if (button == NULL || button->pressed || !button->pending_single_click) {
+        return;
+    }
+
+    button->pending_click_ms += VOICE_KEY_INPUT_POLL_MS;
+    if (button->pending_click_ms < VOICE_KEY_INPUT_DOUBLE_CLICK_WINDOW_MS) {
+        return;
+    }
+
+    button->pending_single_click = false;
+    button->pending_click_ms = 0;
+    voice_key_input_record_toggle_event(button->label, 1, "single-click");
 }
 
 static void voice_key_input_handle_button_sample(voice_key_button_state_t *button, bool raw_high)
@@ -193,12 +211,12 @@ static void voice_key_input_handle_button_sample(voice_key_button_state_t *butto
         button->stable_count = 1;
         button->pressed = false;
         button->pressed_ms = 0;
-        button->recovery_reported = false;
-        button->release_toggle_suppressed = false;
-        button->recovery_suppressed = false;
+        button->pending_single_click = false;
+        button->pending_click_ms = 0;
+        button->long_press_reported = false;
         ESP_LOGI(
             TAG,
-            "voice key candidate idle level detected: source=%s raw_high=%d pressed_when=%s",
+            "recording gesture key idle level detected: source=%s raw_high=%d pressed_when=%s",
             button->label,
             raw_high ? 1 : 0,
             raw_high ? "low" : "high");
@@ -221,43 +239,42 @@ static void voice_key_input_handle_button_sample(voice_key_button_state_t *butto
 
     if (raw_high != button->stable_level_high) {
         button->stable_level_high = raw_high;
-        ESP_LOGI(TAG, "voice key candidate level changed: source=%s raw_high=%d", button->label, raw_high ? 1 : 0);
+        ESP_LOGI(TAG, "recording gesture key level changed: source=%s raw_high=%d", button->label, raw_high ? 1 : 0);
     }
 
     bool pressed = raw_high != button->idle_level_high;
     if (pressed && !button->pressed) {
         button->pressed_ms = 0;
-        button->recovery_reported = false;
-        button->release_toggle_suppressed = false;
-        button->recovery_suppressed = false;
-        bool recording_active = s_recording_output_enabled;
-        button->release_toggle_suppressed = true;
-        button->recovery_suppressed = recording_active;
-        voice_key_input_record_toggle_event(
-            button->label,
-            3,
-            recording_active ? "press-edge stop" : "press-edge start");
+        button->long_press_reported = false;
     } else if (!pressed && button->pressed) {
-        if (!button->recovery_reported && !button->release_toggle_suppressed) {
-            voice_key_input_record_toggle_event(button->label, 1, "release");
+        if (!button->long_press_reported && button->pressed_ms <= VOICE_KEY_INPUT_CLICK_MAX_MS) {
+            if (button->pending_single_click) {
+                button->pending_single_click = false;
+                button->pending_click_ms = 0;
+                voice_key_input_record_recovery_event(button->label);
+            } else {
+                button->pending_single_click = true;
+                button->pending_click_ms = 0;
+                ESP_LOGI(TAG, "%s single click pending for double-click window", button->label);
+            }
+        } else if (button->long_press_reported) {
+            ESP_LOGI(TAG, "%s long press released without recording gesture", button->label);
         }
         button->pressed_ms = 0;
-        button->recovery_reported = false;
-        button->release_toggle_suppressed = false;
-        button->recovery_suppressed = false;
-    } else if (pressed && !button->recovery_reported) {
+        button->long_press_reported = false;
+    } else if (pressed && !button->long_press_reported) {
         uint32_t next_pressed_ms = button->pressed_ms + VOICE_KEY_INPUT_POLL_MS;
         button->pressed_ms = next_pressed_ms;
-        if (next_pressed_ms >= VOICE_KEY_INPUT_RECOVERY_HOLD_MS) {
-            button->recovery_reported = true;
-            if (button->recovery_suppressed) {
-                ESP_LOGI(TAG, "%s recovery hold ignored after press-edge stop", button->label);
-            } else {
-                voice_key_input_record_recovery_event(button->label);
-            }
+        if (next_pressed_ms >= VOICE_KEY_INPUT_LONG_PRESS_IGNORE_MS) {
+            button->long_press_reported = true;
+            button->pending_single_click = false;
+            button->pending_click_ms = 0;
+            ESP_LOGI(TAG, "%s long press reserved for power control: hold_ms=%" PRIu32, button->label, next_pressed_ms);
+            diag_log(DIAG_SRC_VOICE_KEY, DIAG_VKEY_PRESS, DIAG_SEV_INFO, 3, next_pressed_ms, 0, 0);
         }
     }
     button->pressed = pressed;
+    voice_key_input_poll_pending_single_click(button);
 }
 
 #if VOICE_KEY_INPUT_ENABLE_LEGACY_EXPANDER
@@ -490,7 +507,10 @@ esp_err_t voice_key_input_start(void)
         VOICE_KEY_INPUT_ENABLE_LEGACY_EXPANDER,
         VOICE_KEY_INPUT_POLL_MS,
         VOICE_KEY_INPUT_DEBOUNCE_THRESHOLD);
-    ESP_LOGI(TAG, "voice key recovery ready: hold_ms=%d", VOICE_KEY_INPUT_RECOVERY_HOLD_MS);
+    ESP_LOGI(
+        TAG,
+        "recording gesture key ready: single_click_toggle=1 double_click_recovery=1 long_press_reserved_ms=%d",
+        VOICE_KEY_INPUT_LONG_PRESS_IGNORE_MS);
     return ESP_OK;
 }
 

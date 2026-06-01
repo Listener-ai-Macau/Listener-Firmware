@@ -52,7 +52,7 @@ SERIAL_RESET_SETTLE_SECONDS = 0.2
 SERIAL_OPEN_RETRY_COUNT = 12
 SERIAL_OPEN_RETRY_DELAY_SECONDS = 1.0
 READY_MARKERS = (
-    "voice recording control ready: ec11_key toggle start/stop",
+    "voice recording control ready: source=ec11_key.gpio35 toggle start/stop",
     "USB SERIAL INPUT READY",
 )
 AUDIO_NOTIFY_PACKET_SIZE_MARKER = "audio notify packet size updated"
@@ -1216,7 +1216,7 @@ async def run_ble_capture(args, ser: Serial, serial_monitor: SerialLogMonitor):
         if args.trigger_mode == "physical-key":
             print("ready_for_key=1", flush=True)
             print("trigger_mode=physical-key", flush=True)
-            print("instruction=press VOICE once to start recording, then press VOICE again to stop", flush=True)
+            print("instruction=single-click EC11 push to start recording, then single-click EC11 push again to stop", flush=True)
 
         target_sessions = args.max_sessions if args.max_sessions > 0 else None
         capture_seconds_per_session = getattr(args, "capture_seconds_per_session", None)

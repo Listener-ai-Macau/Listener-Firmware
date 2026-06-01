@@ -184,7 +184,7 @@ $manifest = [ordered]@{
         "ble_audio_vka1",
         "usb_serial_text",
         "voice_record_toggle",
-        "custom_keys_f13_f15",
+        "custom_keys_f13_f16",
         "post_status"
     )
     flash = [ordered]@{

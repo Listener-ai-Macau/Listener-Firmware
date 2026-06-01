@@ -4,10 +4,9 @@ Assignee: tai2
 
 Scope:
 
-- Firmware logical custom keys now expose `KEY1`, `KEY2`, and `KEY3` events from current N4 GPIO48/GPIO47/GPIO21.
-- Safe fallback HID uses F13/F14/F15 instead of typing WASD text.
-- `VOICE` remains the recording/recovery key through the existing voice recording control path. On current N4 hardware, this is GPIO45 via the legacy KEY1 board pin define.
-- Recording stability logic was not redesigned in this step; changes in the recording path are limited to source labeling and accepting `voice.*` as the same diagnostic source class as the legacy `key1.*` label.
+- Firmware logical custom keys now expose `KEY1`, `KEY2`, `KEY3`, and `KEY4` events from current N4 GPIO45/GPIO48/GPIO47/GPIO21.
+- Safe fallback HID uses F13/F14/F15/F16 instead of typing WASD text.
+- EC11 push is now the recording/recovery input through the existing voice recording control path: single click toggles recording, double-click clears pairing/session state, and long press is reserved for hardware power control.
 
 Validation:
 
@@ -24,8 +23,8 @@ Manual/source review:
 
 - No real hardware flash, serial monitor, BLE capture, or key press validation was run in this implementation step.
 - The physical fallback verification entry point is `tools/verify_physical_custom_key_hid.ps1`; the old WASD script name remains only as a compatibility wrapper.
-- Current N4 deep-sleep wake remains GPIO21, now reported as logical `KEY3/GPIO21`; `VOICE/GPIO45` is still documented as not RTC deep-sleep wake capable.
+- Current N4 deep-sleep wake remains GPIO21, reported as `KEY4/GPIO21`; `EC11-KEY/GPIO35` is documented as not RTC deep-sleep wake capable on N4.
 
 Hardware-dependent follow-up:
 
-- `voice-keyboard-custom-keys/1.3` owns real-device validation for VOICE press/hold behavior and KEY1-KEY3 fallback/action dispatch with hardware locks.
+- `voice-keyboard-custom-keys/1.3` owns real-device validation for EC11 single/double-click behavior and KEY1-KEY4 fallback/action dispatch with hardware locks.

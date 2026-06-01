@@ -1,4 +1,4 @@
-# Verifies logical KEY1-KEY3 safe fallback HID usages F13-F15 on Windows.
+# Verifies logical KEY1-KEY4 safe fallback HID usages F13-F16 on Windows.
 param(
     [Parameter(Mandatory = $true)]
     [string]$Port,
@@ -33,11 +33,12 @@ baud = $Baud
 output_path_text = base64.b64decode("$output_base64").decode("utf-8")
 reset_before_read = $reset_before_read
 
-expected_vk_sequence = [0x7C, 0x7D, 0x7E]
+expected_vk_sequence = [0x7C, 0x7D, 0x7E, 0x7F]
 expected_vk_names = {
     0x7C: "F13",
     0x7D: "F14",
     0x7E: "F15",
+    0x7F: "F16",
 }
 
 capture_state = {
@@ -195,8 +196,8 @@ def write_artifact(text):
 def vk_names(values):
     return [expected_vk_names.get(value, f"VK_0x{value:02X}") for value in values]
 
-print("verify_physical_custom_key_hid: focus any window, then physically press logical KEY1, KEY2, KEY3.")
-print("Expected host keys: F13, F14, F15")
+print("verify_physical_custom_key_hid: focus any window, then physically press logical KEY1, KEY2, KEY3, KEY4.")
+print("Expected host keys: F13, F14, F15, F16")
 sys.stdout.flush()
 
 hook_thread = threading.Thread(target=keyboard_hook_worker, daemon=True)
@@ -225,15 +226,17 @@ serial_done.wait(5.0)
 log_output = b"".join(serial_chunks).decode("utf-8", errors="replace")
 captured_vks = capture_state["captured_vks"]
 required_lines = [
-    "custom key fallback queued: logical=KEY1 source=key1.gpio48.f13 usage=F13",
-    "custom key fallback queued: logical=KEY2 source=key2.gpio47.f14 usage=F14",
-    "custom key fallback queued: logical=KEY3 source=key3.gpio21.f15 usage=F15",
+    "custom key fallback queued: logical=KEY1 source=key1.gpio45.f13 usage=F13",
+    "custom key fallback queued: logical=KEY2 source=key2.gpio48.f14 usage=F14",
+    "custom key fallback queued: logical=KEY3 source=key3.gpio47.f15 usage=F15",
+    "custom key fallback queued: logical=KEY4 source=key4.gpio21.f16 usage=F16",
 ]
 missing_lines = [line for line in required_lines if line not in log_output]
 required_raw_sources = [
-    "custom key raw transition: logical=KEY1 source=key1.gpio48.f13",
-    "custom key raw transition: logical=KEY2 source=key2.gpio47.f14",
-    "custom key raw transition: logical=KEY3 source=key3.gpio21.f15",
+    "custom key raw transition: logical=KEY1 source=key1.gpio45.f13",
+    "custom key raw transition: logical=KEY2 source=key2.gpio48.f14",
+    "custom key raw transition: logical=KEY3 source=key3.gpio47.f15",
+    "custom key raw transition: logical=KEY4 source=key4.gpio21.f16",
 ]
 missing_raw_sources = [line for line in required_raw_sources if line not in log_output]
 

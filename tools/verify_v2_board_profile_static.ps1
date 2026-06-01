@@ -101,18 +101,20 @@ foreach ($item in @(
     @($boardPins, "BOARD_PINS_I2S_DIN_IO\s+\(GPIO_NUM_41\)", "I2S DIN GPIO41"),
     @($listenerDevice, 'LISTENER_DEVICE_HW_REV\s+"esp32s3-wroom-1-n4"', "N4 BLE/DIS hardware revision"),
     @($listenerDevice, "flash_4mb;no_psram", "N4 capability metadata"),
-    @($keyboard, "key1\.gpio48\.f13", "N4 logical KEY1 fallback diagnostic label"),
-    @($keyboard, "key3\.gpio21\.f15", "N4 logical KEY3 fallback diagnostic label"),
+    @($keyboard, "key1\.gpio45\.f13", "N4 logical KEY1 fallback diagnostic label"),
+    @($keyboard, "key4\.gpio21\.f16", "N4 logical KEY4 fallback diagnostic label"),
     @($keyboard, "DIAG_KBD_CUSTOM_KEY", "custom key diag event coverage"),
-    @($voiceKeyInput, 'VOICE_KEY_INPUT_DIRECT_LABEL\s+"voice\.gpio45"', "N4 VOICE diagnostic label"),
-    @($voiceKeyInput, "press-edge start", "VOICE press-edge recording start"),
+    @($voiceKeyInput, 'VOICE_KEY_INPUT_DIRECT_LABEL\s+"ec11_key\.gpio35"', "N4 EC11 recording diagnostic label"),
+    @($voiceKeyInput, "single-click", "EC11 single-click recording toggle"),
+    @($voiceKeyInput, "double-click recovery", "EC11 double-click pairing reset"),
     @($voiceRecordingControl, "voice_key_input_get_active_source\(\)", "voice recovery source follows active key source"),
     @($boardHelp, "Voice Keyboard N4", "N4 board help text"),
-    @($boardHelp, "VOICE/GPIO45", "N4 voice key help text"),
-    @($boardHelp, "KEY1/GPIO48 fallback=F13", "N4 logical KEY1 help text"),
-    @($powerManager, "POWER_MANAGER_WAKE_POLICY_KEY3_ONLY", "N4 KEY3 wake policy"),
-    @($powerManager, "KEY3/GPIO21", "N4 logical KEY3 wake key string"),
-    @($powerManager, "VOICE/GPIO45", "N4 voice key wake limitation"),
+    @($boardHelp, "EC11 push/GPIO35", "N4 EC11 recording help text"),
+    @($boardHelp, "KEY1/GPIO45 fallback=F13", "N4 logical KEY1 help text"),
+    @($boardHelp, "KEY4/GPIO21 fallback=F16", "N4 logical KEY4 help text"),
+    @($powerManager, "POWER_MANAGER_WAKE_POLICY_KEY4_ONLY", "N4 KEY4 wake policy"),
+    @($powerManager, "KEY4/GPIO21", "N4 logical KEY4 wake key string"),
+    @($powerManager, "EC11-KEY/GPIO35", "N4 EC11 key wake limitation"),
     @($otaPackage, 'hardware_revision = "keyboard-n4"', "OTA package N4 hardware requirement"),
     @($factoryPackage, 'hardware_revision = "esp32s3-wroom-1-n4"', "factory package N4 DIS hardware revision")
 )) {
@@ -133,14 +135,13 @@ foreach ($item in @(
     @($sdkconfig, "CONFIG_SPIRAM=y", "PSRAM-enabled N4 default"),
     @($sdkconfig, "CONFIG_ESPTOOLPY_FLASHSIZE_16MB", "16 MB flash N4 default"),
     @($voiceKeyInput, "gpio11\.ec11_key", "V2 GPIO11 EC11 diagnostic label in active code"),
-    @($voiceKeyInput, "gpio35\.ec11_key", "N4 EC11 key diagnostic label in active voice key code"),
-    @($voiceRecordingControl, "ec11_key_hold", "EC11 recovery source label while KEY1 is the voice key"),
+    @($voiceRecordingControl, "ec11_key_hold", "legacy EC11 hold recovery source label"),
     @($keyboard, "WASD", "temporary WASD key naming in active code"),
     @($keyboard, "key2\.gpio48\.w", "old KEY2 WASD diagnostic label"),
     @($keyboard, "key4\.gpio21\.s", "old KEY4 WASD diagnostic label"),
     @($keyboard, "key1\.gpio38\.d", "V2 KEY1 diagnostic label in active code"),
-    @($keyboard, "key1\.gpio45\.d", "KEY1 HID diagnostic label while KEY1 is the voice key"),
-    @($keyboard, "key1=gpio45:d", "KEY1 HID ready log while KEY1 is the voice key")
+    @($keyboard, "key1\.gpio45\.d", "old KEY1 text HID diagnostic label"),
+    @($keyboard, "key1=gpio45:d", "old KEY1 text HID ready log")
 )) {
     Assert-NotContains -Text $item[0] -Pattern $item[1] -Description $item[2]
 }

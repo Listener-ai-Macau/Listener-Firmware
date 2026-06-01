@@ -146,7 +146,7 @@ CASE_DESCRIPTIONS = {
     "A18": "ASR 网络异常：验证不卡死",
     "A19": "综合 soak：混合所有 profile 和句子类型",
     "A20": "超长录音传输：15min BLE session 由用户停止且不触发 sequence overflow error",
-    "H1": "物理 VOICE 语音输入",
+    "H1": "物理 EC11 按压语音输入",
     "H2": "不同距离/角度说话",
     "H3": "不同人说话（男女/老人/口音）",
     "T1": "（旧 A4）BT 重启后重连",
@@ -445,12 +445,12 @@ def parse_args():
         "--manual-trigger-ready-delay-ms",
         type=int,
         default=700,
-        help="Delay before manual-key playback starts, giving the operator time to press VOICE.",
+        help="Delay before manual-key playback starts, giving the operator time to single-click EC11 push.",
     )
     parser.add_argument(
         "--h1-human-voice",
         action="store_true",
-        help="Run H1 with silent playback so the operator can speak the expected sentence after pressing VOICE.",
+        help="Run H1 with silent playback so the operator can speak the expected sentence after single-clicking EC11 push.",
     )
     parser.add_argument("--no-reset-before-capture", action="store_false", dest="reset_before_capture")
     parser.set_defaults(reset_before_capture=True)
@@ -2908,7 +2908,7 @@ async def run_a20(args) -> dict[str, object]:
 
 
 async def run_h1(args) -> dict[str, str]:
-    print_case_header("H1", "physical VOICE product chain (manual trigger)", 180)
+    print_case_header("H1", "physical EC11 push product chain (manual trigger)", 180)
     extra_smoke_args = [
         "-ManualTriggerReadyDelayMs",
         str(max(700, int(args.manual_trigger_ready_delay_ms))),
