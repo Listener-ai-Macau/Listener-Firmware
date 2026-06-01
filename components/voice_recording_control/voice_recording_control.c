@@ -12,6 +12,7 @@
 #include "diag_log.h"
 
 #include "audio_capture.h"
+#include "ble_audio_stream.h"
 #include "ble_hid_gap.h"
 #include "power_manager.h"
 #include "voice_key_input.h"
@@ -21,6 +22,8 @@
 #define VOICE_RECORDING_CONTROL_COMMAND_BUFFER_BYTES 32
 #define VOICE_RECORDING_CONTROL_VREC_PREFIX "VREC:"
 #define VOICE_RECORDING_CONTROL_SESSION_CHECK_MS 50
+#define VOICE_RECORDING_CONTROL_PENDING_START_TIMEOUT_MS 12000
+#define VOICE_RECORDING_CONTROL_PENDING_START_RETRY_MS 250
 
 typedef enum {
     VOICE_RECORDING_STATE_IDLE = 0,
@@ -39,6 +42,10 @@ static char s_usb_command_buffer[VOICE_RECORDING_CONTROL_COMMAND_BUFFER_BYTES];
 static voice_recording_state_t s_state = VOICE_RECORDING_STATE_IDLE;
 static bool s_cancel_pending;
 static const char *s_cancel_source;
+static bool s_pending_start;
+static const char *s_pending_start_source;
+static TickType_t s_pending_start_deadline_tick;
+static TickType_t s_pending_start_next_retry_tick;
 static uint32_t s_session_count;
 
 static uint32_t voice_recording_source_code(const char *source)
@@ -46,7 +53,7 @@ static uint32_t voice_recording_source_code(const char *source)
     if (source == NULL) {
         return 0;
     }
-    if (strcmp(source, "key1") == 0) {
+    if (strncmp(source, "key1", strlen("key1")) == 0) {
         return 1;
     }
     if (strcmp(source, "usb") == 0) {
@@ -72,7 +79,71 @@ static void voice_recording_control_clear_power_blockers(void)
         false);
 }
 
-static esp_err_t voice_recording_control_enter_recording(const char *source)
+static bool voice_recording_control_tick_reached(TickType_t now, TickType_t target)
+{
+    return (int32_t)(now - target) >= 0;
+}
+
+static void voice_recording_control_reset_pending_start(void)
+{
+    s_pending_start = false;
+    s_pending_start_source = NULL;
+    s_pending_start_deadline_tick = 0;
+    s_pending_start_next_retry_tick = 0;
+}
+
+static void voice_recording_control_cancel_pending_start(const char *detail)
+{
+    if (!s_pending_start) {
+        return;
+    }
+
+    const char *source = s_pending_start_source != NULL ? s_pending_start_source : "unknown";
+    voice_recording_control_reset_pending_start();
+    voice_recording_control_clear_power_blockers();
+    (void)voice_key_input_set_recording_output(false);
+    ESP_LOGI(TAG, "recording pending start canceled source=%s detail=%s", source, detail);
+    voice_recording_control_log_device_status("ready", detail);
+}
+
+static void voice_recording_control_schedule_pending_start(const char *source)
+{
+    TickType_t now = xTaskGetTickCount();
+    s_pending_start = true;
+    s_pending_start_source = source;
+    s_pending_start_deadline_tick = now + pdMS_TO_TICKS(VOICE_RECORDING_CONTROL_PENDING_START_TIMEOUT_MS);
+    s_pending_start_next_retry_tick = now + pdMS_TO_TICKS(VOICE_RECORDING_CONTROL_PENDING_START_RETRY_MS);
+
+    power_manager_record_activity("voice_recording_wait_transport");
+    power_manager_set_blocker(
+        POWER_MANAGER_BLOCKER_RECORDING | POWER_MANAGER_BLOCKER_BLE_AUDIO,
+        true);
+    ESP_LOGW(
+        TAG,
+        "recording start pending source=%s timeout_ms=%u reason=audio_transport_not_ready",
+        source,
+        VOICE_RECORDING_CONTROL_PENDING_START_TIMEOUT_MS);
+    voice_recording_control_log_device_status("ready", "recording_waiting_for_ble_audio");
+}
+
+static void voice_recording_control_timeout_pending_start(esp_err_t reason)
+{
+    const char *source = s_pending_start_source != NULL ? s_pending_start_source : "unknown";
+    voice_recording_control_reset_pending_start();
+    voice_recording_control_clear_power_blockers();
+    (void)voice_key_input_set_recording_output(false);
+    ESP_LOGW(
+        TAG,
+        "recording pending start timed out source=%s timeout_ms=%u reason=%s",
+        source,
+        VOICE_RECORDING_CONTROL_PENDING_START_TIMEOUT_MS,
+        esp_err_to_name(reason));
+    voice_recording_control_log_device_error("ready", "recording_start_transport_timeout", reason);
+    diag_log(DIAG_SRC_VOICE_REC, DIAG_VREC_REJECTED, DIAG_SEV_WARN,
+             voice_recording_source_code(source), (uint32_t)reason, (uint32_t)s_state, 1);
+}
+
+static esp_err_t voice_recording_control_enter_recording(const char *source, bool log_rejection, bool request_reconnect)
 {
     power_manager_record_activity("voice_recording_start");
     power_manager_set_blocker(
@@ -81,16 +152,21 @@ static esp_err_t voice_recording_control_enter_recording(const char *source)
 
     esp_err_t ret = audio_capture_session_begin();
     if (ret != ESP_OK) {
-        (void)ble_hid_gap_request_reconnect();
+        if (request_reconnect) {
+            (void)ble_hid_gap_request_reconnect();
+        }
         voice_recording_control_clear_power_blockers();
         (void)voice_key_input_set_recording_output(false);
-        ESP_LOGW(TAG, "recording start rejected source=%s: %s", source, esp_err_to_name(ret));
-        voice_recording_control_log_device_error("error", "recording_start_rejected", ret);
-        diag_log(DIAG_SRC_VOICE_REC, DIAG_VREC_REJECTED, DIAG_SEV_WARN,
-                 voice_recording_source_code(source), (uint32_t)ret, (uint32_t)s_state, 0);
+        if (log_rejection) {
+            ESP_LOGW(TAG, "recording start rejected source=%s: %s", source, esp_err_to_name(ret));
+            voice_recording_control_log_device_error("error", "recording_start_rejected", ret);
+            diag_log(DIAG_SRC_VOICE_REC, DIAG_VREC_REJECTED, DIAG_SEV_WARN,
+                     voice_recording_source_code(source), (uint32_t)ret, (uint32_t)s_state, 0);
+        }
         return ret;
     }
 
+    voice_recording_control_reset_pending_start();
     s_cancel_pending = false;
     s_cancel_source = NULL;
     s_state = VOICE_RECORDING_STATE_RECORDING;
@@ -138,8 +214,22 @@ static void voice_recording_control_toggle(const char *source)
         return;
     }
 
+    if (s_pending_start) {
+        power_manager_record_activity("voice_recording_pending_start");
+        ESP_LOGI(
+            TAG,
+            "recording toggle ignored source=%s: pending start source=%s",
+            source,
+            s_pending_start_source != NULL ? s_pending_start_source : "unknown");
+        voice_recording_control_log_device_status("ready", "recording_waiting_for_ble_audio");
+        return;
+    }
+
     if (s_state == VOICE_RECORDING_STATE_IDLE) {
-        voice_recording_control_enter_recording(source);
+        esp_err_t ret = voice_recording_control_enter_recording(source, true, true);
+        if (ret == ESP_ERR_INVALID_STATE && !audio_capture_session_is_active()) {
+            voice_recording_control_schedule_pending_start(source);
+        }
     } else {
         voice_recording_control_exit_recording(source);
     }
@@ -147,6 +237,14 @@ static void voice_recording_control_toggle(const char *source)
 
 static void voice_recording_control_cancel(const char *source)
 {
+    if (s_pending_start) {
+        power_manager_record_activity("voice_recording_cancel_pending_start");
+        voice_recording_control_cancel_pending_start("recording_pending_start_canceled");
+        diag_log(DIAG_SRC_VOICE_REC, DIAG_VREC_SESSION, DIAG_SEV_INFO,
+                 3, voice_recording_source_code(source), s_session_count, 0);
+        return;
+    }
+
     power_manager_record_activity("voice_recording_cancel");
     esp_err_t ret = audio_capture_session_cancel();
     if (ret != ESP_OK) {
@@ -182,6 +280,7 @@ static void voice_recording_control_cancel(const char *source)
 static void voice_recording_control_recovery(const char *source)
 {
     power_manager_record_activity("voice_recording_recovery");
+    voice_recording_control_cancel_pending_start("recovery_cleared_pending_start");
     (void)voice_key_input_set_recording_output(false);
     power_manager_set_blocker(
         POWER_MANAGER_BLOCKER_PAIRING | POWER_MANAGER_BLOCKER_RECONNECT,
@@ -219,6 +318,49 @@ static void voice_recording_control_recovery(const char *source)
         POWER_MANAGER_BLOCKER_PAIRING | POWER_MANAGER_BLOCKER_RECONNECT,
         false);
     voice_recording_control_log_device_status("ready", "recovery_complete_pair_again");
+}
+
+static void voice_recording_control_poll_pending_start(void)
+{
+    if (!s_pending_start) {
+        return;
+    }
+
+    if (s_state != VOICE_RECORDING_STATE_IDLE) {
+        voice_recording_control_reset_pending_start();
+        return;
+    }
+
+    TickType_t now = xTaskGetTickCount();
+    if (voice_recording_control_tick_reached(now, s_pending_start_deadline_tick)) {
+        voice_recording_control_timeout_pending_start(ESP_ERR_TIMEOUT);
+        return;
+    }
+
+    if (!voice_recording_control_tick_reached(now, s_pending_start_next_retry_tick)) {
+        return;
+    }
+    s_pending_start_next_retry_tick = now + pdMS_TO_TICKS(VOICE_RECORDING_CONTROL_PENDING_START_RETRY_MS);
+
+    if (!ble_audio_stream_is_ready()) {
+        return;
+    }
+
+    const char *source = s_pending_start_source != NULL ? s_pending_start_source : "pending";
+    ESP_LOGI(TAG, "recording pending start transport ready source=%s", source);
+    esp_err_t ret = voice_recording_control_enter_recording(source, false, false);
+    if (ret == ESP_OK) {
+        return;
+    }
+
+    if (ret != ESP_ERR_INVALID_STATE) {
+        voice_recording_control_timeout_pending_start(ret);
+        return;
+    }
+
+    power_manager_set_blocker(
+        POWER_MANAGER_BLOCKER_RECORDING | POWER_MANAGER_BLOCKER_BLE_AUDIO,
+        true);
 }
 
 static void voice_recording_control_task(void *parameter)
@@ -260,6 +402,7 @@ static void voice_recording_control_task(void *parameter)
             voice_recording_control_log_device_status("ready", "recording_session_finished");
         }
 
+        voice_recording_control_poll_pending_start();
         vTaskDelay(pdMS_TO_TICKS(VOICE_RECORDING_CONTROL_SESSION_CHECK_MS));
     }
 }
