@@ -62,7 +62,7 @@ extern void status_led_prepare_sleep(void) __attribute__((weak));
 #define POWER_MANAGER_BATTERY_WARN_PERCENT 10U
 #define POWER_MANAGER_TASK_STACK_BYTES (4 * 1024)
 #define POWER_MANAGER_WAKE_CAPABLE_KEYS "KEY4/GPIO21"
-#define POWER_MANAGER_VOICE_KEY_LIMITATION "N4 validation profile: EC11-KEY/GPIO35 recording key is not RTC deep-sleep wake capable; production hardware must provide RTC-capable primary voice/wake input"
+#define POWER_MANAGER_VOICE_KEY_LIMITATION "N4 validation profile: KEY1/GPIO45 voice key is not RTC deep-sleep wake capable; production hardware must provide RTC-capable primary voice/wake input"
 #define POWER_MANAGER_WAKE_USER_ACTION "press KEY4/GPIO21 after deep sleep on N4"
 #define POWER_MANAGER_WAKE_POLICY_CODE ((uint32_t)POWER_MANAGER_WAKE_POLICY_KEY4_ONLY)
 #define POWER_MANAGER_WAKE_VOICE_KEY_CAPABLE_CODE 0U

@@ -275,10 +275,10 @@ static esp_err_t voice_recording_control_enter_recording(const char *source, boo
                 source,
                 ret,
                 true);
+            voice_recording_control_log_device_error("error", "recording_start_rejected", ret);
+            diag_log(DIAG_SRC_VOICE_REC, DIAG_VREC_REJECTED, DIAG_SEV_WARN,
+                     voice_recording_source_code(source), (uint32_t)ret, (uint32_t)s_state, 0);
         }
-        voice_recording_control_log_device_error("error", "recording_start_rejected", ret);
-        diag_log(DIAG_SRC_VOICE_REC, DIAG_VREC_REJECTED, DIAG_SEV_WARN,
-                 voice_recording_source_code(source), (uint32_t)ret, (uint32_t)s_state, 0);
         return ret;
     }
 
