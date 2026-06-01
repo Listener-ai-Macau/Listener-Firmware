@@ -149,7 +149,7 @@ $patterns = [ordered]@{
     "Boot lines" = "boot:|rst:|ESP-ROM|project_version|app_desc|chip revision|flash size|SPIRAM|psram"
     "BLE/HID lines" = "ble_hid|BLE|GATT|HID|notify|connection|pair|bond"
     "Audio lines" = "audio|I2S|SPH0645|mic|pcm|packet|stream|voice"
-    "Voice key/flow lines" = "voiceflow|voice_rec_ctrl|recording|voice key|voice_key|VREC|GPIO35|ec11_key|button|key"
+    "Voice key/flow lines" = "voiceflow|voice_rec_ctrl|recording|voice key|voice_key|VREC|GPIO35|ec11_key|button|\bKEY[0-9]\b|\bkey[0-9]\b"
 }
 
 foreach ($entry in $patterns.GetEnumerator()) {
@@ -162,7 +162,7 @@ $summaryPatterns = [ordered]@{
     "Last memory issue" = "ESP_ERR_NO_MEM|NO_MEM|heap|mbuf|ENOMEM|out of memory|SPIRAM|psram"
     "Last BLE/HID event" = "ble_hid|BLE|GATT|HID|notify|connection|pair|bond"
     "Last audio event" = "audio|I2S|SPH0645|mic|pcm|packet|stream"
-    "Last voice-key/flow event" = "voiceflow|voice_rec_ctrl|recording|voice key|voice_key|VREC|GPIO35|ec11_key|button|key"
+    "Last voice-key/flow event" = "voiceflow|voice_rec_ctrl|recording|voice key|voice_key|VREC|GPIO35|ec11_key|button|\bKEY[0-9]\b|\bkey[0-9]\b"
 }
 
 foreach ($entry in $summaryPatterns.GetEnumerator()) {
@@ -182,7 +182,7 @@ if ($warnings.Count -eq 0) {
 }
 
 Write-Section "Recent key events"
-$keyPattern = "rst:|boot:|project_version|app_desc|SPIRAM|psram|ble_hid|BLE|GATT|HID|notify|connection|pair|bond|audio|I2S|SPH0645|mic|pcm|packet|stream|voiceflow|voice_rec_ctrl|recording|voice key|voice_key|VREC|GPIO35|ec11_key|button|key"
+$keyPattern = "rst:|boot:|project_version|app_desc|SPIRAM|psram|ble_hid|BLE|GATT|HID|notify|connection|pair|bond|audio|I2S|SPH0645|mic|pcm|packet|stream|voiceflow|voice_rec_ctrl|recording|voice key|voice_key|VREC|GPIO35|ec11_key|button|\bKEY[0-9]\b|\bkey[0-9]\b"
 $events = @($scan | Select-String -Pattern $keyPattern | Select-Object -Last $EventCount)
 if ($events.Count -eq 0) {
     Write-Host "No key events in scanned window."
