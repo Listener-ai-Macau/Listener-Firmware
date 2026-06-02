@@ -1,0 +1,25 @@
+Locked 'COM5' for 'oai2' (60 min)
+Running locked command: pwsh -NoProfile -Command . .\tools\send_serial.ps1 -Port COM5 -Text "~BOARD:STATUS`n"; Start-Sleep -Milliseconds 300; . .\tools\send_serial.ps1 -Port COM5 -Text "~POWER:STATUS`n"; Start-Sleep -Milliseconds 300; pwsh -NoProfile -File .\tools\capture_serial.ps1 -Port COM5 -DurationSeconds 5
+
+Done! You can now compile ESP-IDF projects.
+Go to the project directory and run:
+
+  idf.py build
+
+
+Done! You can now compile ESP-IDF projects.
+Go to the project directory and run:
+
+  idf.py build
+
+
+Done! You can now compile ESP-IDF projects.
+Go to the project directory and run:
+
+  idf.py build
+
+I (1200604) audio_capture: frame captured count=6300 bytes=40320I (1204614) audio_capture: frame captured count=6500 bytes=4160000
+
+I (1205304) audio_capture: audio idle power save enabled: ESP_OK
+
+Released 'COM5' (was locked by 'oai2')

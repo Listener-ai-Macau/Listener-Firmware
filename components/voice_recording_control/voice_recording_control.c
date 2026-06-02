@@ -537,7 +537,7 @@ static void voice_recording_control_recovery(const char *source)
     voice_recording_control_log_device_status("ready", "recovery_complete_pair_again");
 }
 
-static esp_err_t voice_recording_control_dispatch_command(const char *command, const char *source)
+esp_err_t voice_recording_control_dispatch_control_command(const char *command, const char *source)
 {
     if (command == NULL || source == NULL) {
         return ESP_ERR_INVALID_ARG;
@@ -591,7 +591,7 @@ static esp_err_t voice_recording_control_ble_control_write(
     command[strcspn(command, "\r\n")] = '\0';
 
     power_manager_record_activity("voice_recording_ble_control");
-    return voice_recording_control_dispatch_command(command, source);
+    return voice_recording_control_dispatch_control_command(command, source);
 }
 
 static void voice_recording_control_poll_pending_start(void)
@@ -808,7 +808,7 @@ bool voice_recording_control_consume_usb_control_byte(uint8_t input_char)
     if (input_char == '\n') {
         s_usb_command_active = false;
         s_usb_command_buffer[s_usb_command_length] = '\0';
-        (void)voice_recording_control_dispatch_command(s_usb_command_buffer, "usb");
+        (void)voice_recording_control_dispatch_control_command(s_usb_command_buffer, "usb");
         return true;
     }
 

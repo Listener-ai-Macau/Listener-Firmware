@@ -24,12 +24,18 @@ extern "C" {
 #define HID_KEYBOARD_USAGE_F23 0x72u
 #define HID_KEYBOARD_USAGE_F24 0x73u
 
+#define HID_CONSUMER_USAGE_BRIGHTNESS_INCREMENT 0x006Fu
+#define HID_CONSUMER_USAGE_BRIGHTNESS_DECREMENT 0x0070u
+#define HID_CONSUMER_USAGE_VOLUME_INCREMENT     0x00E9u
+#define HID_CONSUMER_USAGE_VOLUME_DECREMENT     0x00EAu
+
 void hid_keyboard_init(void);
 const uint8_t *hid_keyboard_get_report_map(void);
 size_t hid_keyboard_get_report_map_size(void);
 uint32_t hid_keyboard_get_key_press_count(void);
 esp_err_t hid_keyboard_send_ascii(char input_char, esp_hidd_dev_t *hid_device);
 esp_err_t hid_keyboard_send_usage(uint8_t usage, esp_hidd_dev_t *hid_device);
+esp_err_t hid_keyboard_send_consumer_usage(uint16_t usage, esp_hidd_dev_t *hid_device);
 
 #ifdef __cplusplus
 }

@@ -31,6 +31,7 @@ void ble_store_config_init(void);
 #include "battery_monitor.h"
 #include "board.h"
 #include "boot_safety.h"
+#include "ec11_rotation_control.h"
 #include "listener_device.h"
 #include "ble_hid_gap.h"
 #include "ble_audio_stream.h"
@@ -69,7 +70,8 @@ typedef struct
 } ble_hid_ctx_t;
 
 typedef struct {
-    uint8_t usage;
+    uint16_t usage;
+    bool consumer;
     char source[BLE_HID_KEY_SOURCE_BYTES];
 } ble_hid_usage_event_t;
 
@@ -294,6 +296,21 @@ static esp_err_t ble_hid_dispatch_usage(uint8_t usage, const char *source)
     return hid_keyboard_send_usage(usage, s_ble_hid_ctx.hid_device);
 }
 
+static esp_err_t ble_hid_dispatch_consumer_usage(uint16_t usage, const char *source)
+{
+    if (s_ble_hid_ctx.hid_device == NULL) {
+        ESP_LOGW(TAG, "%s dispatch dropped: HID device unavailable", source);
+        return ESP_ERR_INVALID_STATE;
+    }
+
+    if (!esp_hidd_dev_connected(s_ble_hid_ctx.hid_device)) {
+        ESP_LOGW(TAG, "%s dispatch dropped: HID host not connected", source);
+        return ESP_ERR_INVALID_STATE;
+    }
+
+    return hid_keyboard_send_consumer_usage(usage, s_ble_hid_ctx.hid_device);
+}
+
 static void ble_hid_drain_ascii_queue(void)
 {
     if (s_ascii_queue == NULL) {
@@ -318,13 +335,16 @@ static void ble_hid_drain_usage_queue(void)
     ble_hid_usage_event_t event;
     while (xQueueReceive(s_usage_queue, &event, 0) == pdTRUE) {
         const char *source = event.source[0] != '\0' ? event.source : "CUSTOM_KEY";
-        esp_err_t ret = ble_hid_dispatch_usage(event.usage, source);
+        esp_err_t ret = event.consumer
+            ? ble_hid_dispatch_consumer_usage(event.usage, source)
+            : ble_hid_dispatch_usage((uint8_t)event.usage, source);
         if (ret != ESP_OK) {
             ESP_LOGW(
                 TAG,
-                "%s dispatch failed: usage=0x%02X error=%s",
+                "%s dispatch failed: usage=0x%04X consumer=%u error=%s",
                 source,
                 event.usage,
+                event.consumer ? 1u : 0u,
                 esp_err_to_name(ret));
         }
     }
@@ -362,6 +382,7 @@ esp_err_t ble_hid_send_keyboard_usage_async(uint8_t usage, const char *source)
 
     ble_hid_usage_event_t event = {
         .usage = usage,
+        .consumer = false,
     };
     if (source != NULL) {
         snprintf(event.source, sizeof(event.source), "%s", source);
@@ -374,6 +395,35 @@ esp_err_t ble_hid_send_keyboard_usage_async(uint8_t usage, const char *source)
     }
 
     power_manager_record_activity("hid_usage_enqueue");
+    return ESP_OK;
+}
+
+esp_err_t ble_hid_send_consumer_usage_async(uint16_t usage, const char *source)
+{
+    if (s_usage_queue == NULL) {
+        return ESP_ERR_INVALID_STATE;
+    }
+
+    if (!ble_hid_is_connected()) {
+        (void)ble_hid_gap_request_reconnect();
+        return ESP_ERR_INVALID_STATE;
+    }
+
+    ble_hid_usage_event_t event = {
+        .usage = usage,
+        .consumer = true,
+    };
+    if (source != NULL) {
+        snprintf(event.source, sizeof(event.source), "%s", source);
+    }
+
+    if (xQueueSend(s_usage_queue, &event, 0) != pdTRUE) {
+        diag_log(DIAG_SRC_KEYBOARD, DIAG_KBD_QUEUE_DROP, DIAG_SEV_WARN,
+                 usage, BLE_HID_USAGE_QUEUE_LENGTH, 1, 0);
+        return ESP_ERR_TIMEOUT;
+    }
+
+    power_manager_record_activity("hid_consumer_enqueue");
     return ESP_OK;
 }
 
@@ -471,6 +521,14 @@ static bool ble_hid_dispatch_usb_command_line(const char *line)
     }
 
     if (diag_log_consume_usb_command(line)) {
+        return true;
+    }
+
+    esp_err_t ec11_ret = ESP_OK;
+    if (ec11_rotation_control_consume_command(line, "usb", &ec11_ret)) {
+        if (ec11_ret != ESP_OK) {
+            ESP_LOGW(TAG, "EC11 USB control command failed: %s", esp_err_to_name(ec11_ret));
+        }
         return true;
     }
 

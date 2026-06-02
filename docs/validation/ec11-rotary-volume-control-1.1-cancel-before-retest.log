@@ -1,0 +1,27 @@
+Locked 'COM5' for 'oai2' (60 min)
+Running locked command: pwsh -NoProfile -Command pwsh -NoProfile -File .\tools\send_serial.ps1 -Port COM5 -Text "~VREC:CANCEL`n"; Start-Sleep -Milliseconds 500; pwsh -NoProfile -File .\tools\capture_serial.ps1 -Port COM5 -DurationSeconds 5
+
+Done! You can now compile ESP-IDF projects.
+Go to the project directory and run:
+
+  idf.py build
+
+
+Done! You can now compile ESP-IDF projects.
+Go to the project directory and run:
+
+  idf.py build
+
+I (45983) audio_capture: frame captured count=1600 bytes=1024000I (51833) ESP_HID_GAP: subscribe event; conn_handle=1 attr_handle=3 reason=1 prevn=0 curn=1 previ=0 curi=0
+
+I (51833) ble_audio_stream: audio notify subscription changed: epoch=3 conn=1 attr=3 notify=1 window=3
+
+I (51843) ble_audio_stream: audio notify packet size updated: conn=1 value_max=500 payload_max=480
+
+I (51853) ble_audio_stream: audio transport state: mtu_ready -> subscribed reason=gap_subscribe_notify_on epoch=3 conn=1 mtu_ready=1 notify=1 value_max=500
+
+I (51863) ble_audio_stream: audio transport state: subscribed -> stream_ready reason=gap_subscribe_notify_on epoch=3 conn=1 mtu_ready=1 notify=1 value_max=500
+
+I (51873) ESP_HID_GAP: audio notify subscribed: conn_handle=1 interval_units=6 interval_ms=7.50 latency=0 supervision_timeout_units=800 supervision_timeout_ms=8000
+
+Released 'COM5' (was locked by 'oai2')
