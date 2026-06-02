@@ -5,6 +5,7 @@
 #include <stddef.h>
 #include <stdint.h>
 #include <stdio.h>
+#include <string.h>
 
 #include "driver/gpio.h"
 #include "esp_log.h"
@@ -12,8 +13,10 @@
 #include "freertos/task.h"
 
 #include "ble_hid.h"
+#include "ble_audio_stream.h"
 #include "board_pins.h"
 #include "diag_log.h"
+#include "ec11_rotation_control.h"
 #include "hid_keyboard.h"
 #include "power_manager.h"
 #include "status_led.h"
@@ -126,6 +129,10 @@ static keyboard_ec11_state_t s_ec11_state = {
     .a_gpio = BOARD_PINS_EC11_A_IO,
     .b_gpio = BOARD_PINS_EC11_B_IO,
 };
+
+static esp_err_t keyboard_ec11_dispatch_rotation(
+    ec11_rotation_direction_t direction,
+    const char *source);
 
 static int8_t keyboard_ec11_quadrature_delta(uint8_t previous, uint8_t current)
 {
@@ -464,6 +471,7 @@ static void keyboard_ec11_handle_sample(keyboard_ec11_state_t *state, uint8_t ra
         ESP_LOGI(TAG, "EC11 detent: direction=clockwise count=%" PRIu32, state->clockwise_count);
         diag_log(DIAG_SRC_KEYBOARD, DIAG_KBD_EC11_DETENT, DIAG_SEV_INFO,
                  1, state->clockwise_count, 0, 0);
+        (void)keyboard_ec11_dispatch_rotation(EC11_ROTATION_DIRECTION_CW, "ec11.detent.cw");
     } else if (state->detent_accumulator <= -4) {
         state->detent_accumulator = 0;
         state->counter_clockwise_count++;
@@ -471,7 +479,99 @@ static void keyboard_ec11_handle_sample(keyboard_ec11_state_t *state, uint8_t ra
                  state->counter_clockwise_count);
         diag_log(DIAG_SRC_KEYBOARD, DIAG_KBD_EC11_DETENT, DIAG_SEV_INFO,
                  2, state->counter_clockwise_count, 0, 0);
+        (void)keyboard_ec11_dispatch_rotation(EC11_ROTATION_DIRECTION_CCW, "ec11.detent.ccw");
     }
+}
+
+static const char *keyboard_ec11_source_for_action(
+    ec11_rotation_direction_t direction,
+    ec11_rotation_action_t action,
+    char *buffer,
+    size_t buffer_size)
+{
+    snprintf(
+        buffer,
+        buffer_size,
+        "ec11.rotate.%s.%s",
+        ec11_rotation_control_direction_name(direction),
+        ec11_rotation_control_action_name(action));
+    return buffer;
+}
+
+static esp_err_t keyboard_ec11_dispatch_rotation(
+    ec11_rotation_direction_t direction,
+    const char *source)
+{
+    ec11_rotation_action_t action = ec11_rotation_control_get_action();
+    uint16_t usage = 0;
+    switch (action) {
+    case EC11_ROTATION_ACTION_SCREEN_BRIGHTNESS:
+        usage = direction == EC11_ROTATION_DIRECTION_CW
+            ? HID_CONSUMER_USAGE_BRIGHTNESS_INCREMENT
+            : HID_CONSUMER_USAGE_BRIGHTNESS_DECREMENT;
+        break;
+    case EC11_ROTATION_ACTION_DISABLED:
+        ESP_LOGI(
+            TAG,
+            "EC11 rotation disabled: direction=%s source=%s",
+            ec11_rotation_control_direction_name(direction),
+            source != NULL ? source : "unknown");
+        return ESP_OK;
+    case EC11_ROTATION_ACTION_SYSTEM_VOLUME:
+    default:
+        usage = direction == EC11_ROTATION_DIRECTION_CW
+            ? HID_CONSUMER_USAGE_VOLUME_INCREMENT
+            : HID_CONSUMER_USAGE_VOLUME_DECREMENT;
+        break;
+    }
+
+    char source_label[48];
+    esp_err_t ret = ble_hid_send_consumer_usage_async(
+        usage,
+        keyboard_ec11_source_for_action(direction, action, source_label, sizeof(source_label)));
+    if (ret != ESP_OK) {
+        status_led_set_error(STATUS_LED_ERROR_DOMAIN_BLE, STATUS_LED_ERROR_RETRYABLE, "hid_consumer_send_failed");
+        ESP_LOGW(
+            TAG,
+            "EC11 rotation dispatch failed: action=%s direction=%s usage=0x%04X source=%s error=%s",
+            ec11_rotation_control_action_name(action),
+            ec11_rotation_control_direction_name(direction),
+            usage,
+            source != NULL ? source : "unknown",
+            esp_err_to_name(ret));
+        return ret;
+    }
+
+    ESP_LOGI(
+        TAG,
+        "EC11 rotation queued: action=%s direction=%s usage=0x%04X source=%s",
+        ec11_rotation_control_action_name(action),
+        ec11_rotation_control_direction_name(direction),
+        usage,
+        source != NULL ? source : "unknown");
+    return ESP_OK;
+}
+
+static esp_err_t keyboard_ble_control_write(
+    const uint8_t *data,
+    size_t len,
+    const char *source)
+{
+    if (data == NULL || len == 0 || len >= 64) {
+        return ESP_ERR_INVALID_SIZE;
+    }
+
+    char command[64];
+    memcpy(command, data, len);
+    command[len] = '\0';
+    command[strcspn(command, "\r\n")] = '\0';
+
+    esp_err_t ec11_ret = ESP_OK;
+    if (ec11_rotation_control_consume_command(command, source, &ec11_ret)) {
+        return ec11_ret;
+    }
+
+    return voice_recording_control_dispatch_control_command(command, source);
 }
 
 static void keyboard_ec11_task(void *parameter)
@@ -582,8 +682,10 @@ static esp_err_t keyboard_ec11_start(void)
 esp_err_t keyboard_start(void)
 {
     hid_keyboard_init();
+    ec11_rotation_control_register_dispatcher(keyboard_ec11_dispatch_rotation);
 
     esp_err_t voice_ret = voice_recording_control_start();
+    ble_audio_stream_set_control_write_handler(keyboard_ble_control_write);
     if (voice_ret != ESP_OK) {
         ESP_LOGW(TAG, "voice recording control started degraded: %s", esp_err_to_name(voice_ret));
     }
@@ -607,6 +709,8 @@ esp_err_t keyboard_start(void)
 esp_err_t keyboard_start_safe_mode(void)
 {
     hid_keyboard_init();
+    ec11_rotation_control_register_dispatcher(keyboard_ec11_dispatch_rotation);
+    ble_audio_stream_set_control_write_handler(keyboard_ble_control_write);
     ESP_LOGW(TAG, "safe mode: voice recording control and audio capture are disabled");
     esp_err_t custom_ret = keyboard_custom_start();
     if (custom_ret != ESP_OK) {

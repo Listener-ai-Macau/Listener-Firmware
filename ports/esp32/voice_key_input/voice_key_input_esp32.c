@@ -64,8 +64,9 @@
 #define VOICE_KEY_INPUT_DEBOUNCE_THRESHOLD (3)
 #define VOICE_KEY_INPUT_EVENT_QUEUE_LENGTH (8)
 #define VOICE_KEY_INPUT_CLICK_MAX_MS (700)
-#define VOICE_KEY_INPUT_DOUBLE_CLICK_WINDOW_MS (250)
+#define VOICE_KEY_INPUT_DOUBLE_CLICK_WINDOW_MS (200)
 #define VOICE_KEY_INPUT_LONG_PRESS_IGNORE_MS (1200)
+#define VOICE_KEY_INPUT_RECOVERY_IDLE_GUARD_MS (2000)
 
 static const char *TAG = "voice_key_input";
 
@@ -103,6 +104,8 @@ static TaskHandle_t s_poll_task_handle;
 static SemaphoreHandle_t s_toggle_event_sem;
 static SemaphoreHandle_t s_recovery_event_sem;
 static volatile bool s_recording_output_enabled;
+static volatile bool s_recording_output_change_seen;
+static volatile TickType_t s_recording_output_last_change_tick;
 #if VOICE_KEY_INPUT_ENABLE_LEGACY_EXPANDER
 static bool s_prev_input_valid;
 static uint32_t s_prev_input_levels;
@@ -185,6 +188,19 @@ static void voice_key_input_record_recovery_event(const char *source)
     }
 }
 
+static bool voice_key_input_recovery_allowed(void)
+{
+    if (s_recording_output_enabled) {
+        return false;
+    }
+    if (!s_recording_output_change_seen) {
+        return true;
+    }
+
+    TickType_t elapsed = xTaskGetTickCount() - s_recording_output_last_change_tick;
+    return elapsed >= pdMS_TO_TICKS(VOICE_KEY_INPUT_RECOVERY_IDLE_GUARD_MS);
+}
+
 static void voice_key_input_poll_pending_single_click(voice_key_button_state_t *button)
 {
     if (button == NULL || button->pressed || !button->pending_single_click) {
@@ -253,9 +269,20 @@ static void voice_key_input_handle_button_sample(voice_key_button_state_t *butto
     } else if (!pressed && button->pressed) {
         if (!button->long_press_reported && button->pressed_ms <= VOICE_KEY_INPUT_CLICK_MAX_MS) {
             if (button->pending_single_click) {
-                button->pending_single_click = false;
-                button->pending_click_ms = 0;
-                voice_key_input_record_recovery_event(button->label);
+                if (voice_key_input_recovery_allowed()) {
+                    button->pending_single_click = false;
+                    button->pending_click_ms = 0;
+                    voice_key_input_record_recovery_event(button->label);
+                } else {
+                    ESP_LOGI(
+                        TAG,
+                        "%s consecutive short click kept as recording toggle: recovery_idle_guard_ms=%d",
+                        button->label,
+                        VOICE_KEY_INPUT_RECOVERY_IDLE_GUARD_MS);
+                    voice_key_input_record_toggle_event(button->label, 1, "single-click");
+                    button->pending_single_click = true;
+                    button->pending_click_ms = 0;
+                }
             } else {
                 button->pending_single_click = true;
                 button->pending_click_ms = 0;
@@ -513,7 +540,9 @@ esp_err_t voice_key_input_start(void)
         VOICE_KEY_INPUT_DEBOUNCE_THRESHOLD);
     ESP_LOGI(
         TAG,
-        "recording gesture key ready: single_click_toggle=1 double_click_recovery=1 long_press_reserved_ms=%d",
+        "recording gesture key ready: single_click_toggle=1 double_click_recovery=1 double_click_window_ms=%d recovery_idle_guard_ms=%d long_press_reserved_ms=%d",
+        VOICE_KEY_INPUT_DOUBLE_CLICK_WINDOW_MS,
+        VOICE_KEY_INPUT_RECOVERY_IDLE_GUARD_MS,
         VOICE_KEY_INPUT_LONG_PRESS_IGNORE_MS);
     return ESP_OK;
 }
@@ -543,6 +572,10 @@ const char *voice_key_input_get_active_source(void)
 
 esp_err_t voice_key_input_set_recording_output(bool enabled)
 {
+    if (s_recording_output_enabled != enabled || !s_recording_output_change_seen) {
+        s_recording_output_last_change_tick = xTaskGetTickCount();
+        s_recording_output_change_seen = true;
+    }
     s_recording_output_enabled = enabled;
     return ESP_OK;
 }
