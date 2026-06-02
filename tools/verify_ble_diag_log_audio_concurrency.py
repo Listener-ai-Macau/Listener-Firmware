@@ -40,7 +40,7 @@ DIAG_CONTROL_UUID = uuid.UUID("710af845-6d9f-6583-0c4d-9e5b3bc3093b")
 DIAG_DATA_UUID = uuid.UUID("710af845-6d9f-6583-0c4d-9e5b3bc3093c")
 DIAG_COUNT_UUID = uuid.UUID("710af845-6d9f-6583-0c4d-9e5b3bc3093d")
 DIAG_EVENT_BYTES = 24
-DIAG_CHUNK_HEADER_BYTES = 8
+DIAG_CHUNK_HEADER_BYTES = 10
 DEFAULT_ARTIFACT_DIR = pathlib.Path("tests") / "artifacts" / "ble_diag_log"
 
 
@@ -290,7 +290,7 @@ class DiagnosticLogPuller:
                 if len(packet) < DIAG_CHUNK_HEADER_BYTES:
                     raise RuntimeError(f"diagnostic notification too short: {len(packet)} bytes")
 
-                event_count, global_offset, firmware_crc = struct.unpack_from("<HHI", packet, 0)
+                event_count, global_offset, firmware_crc = struct.unpack_from("<HII", packet, 0)
                 payload = packet[DIAG_CHUNK_HEADER_BYTES:]
                 expected_payload_len = event_count * DIAG_EVENT_BYTES
                 if event_count <= 0:
@@ -301,7 +301,7 @@ class DiagnosticLogPuller:
                         f"offset={offset} count={event_count} bytes={len(payload)} "
                         f"expected={expected_payload_len}"
                     )
-                if global_offset != (offset & 0xFFFF):
+                if global_offset != offset:
                     raise RuntimeError(
                         "diagnostic chunk offset mismatch: "
                         f"host={offset} firmware_header={global_offset}"

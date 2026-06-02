@@ -15,6 +15,14 @@ extern "C" {
 #define HID_KEYBOARD_USAGE_F14 0x69u
 #define HID_KEYBOARD_USAGE_F15 0x6Au
 #define HID_KEYBOARD_USAGE_F16 0x6Bu
+#define HID_KEYBOARD_USAGE_F17 0x6Cu
+#define HID_KEYBOARD_USAGE_F18 0x6Du
+#define HID_KEYBOARD_USAGE_F19 0x6Eu
+#define HID_KEYBOARD_USAGE_F20 0x6Fu
+#define HID_KEYBOARD_USAGE_F21 0x70u
+#define HID_KEYBOARD_USAGE_F22 0x71u
+#define HID_KEYBOARD_USAGE_F23 0x72u
+#define HID_KEYBOARD_USAGE_F24 0x73u
 
 void hid_keyboard_init(void);
 const uint8_t *hid_keyboard_get_report_map(void);

@@ -74,6 +74,8 @@ $boardKconfig = Read-RepoFile "ports\esp32\board_pins\Kconfig.projbuild"
 $listenerDevice = Read-RepoFile "protocols\listener_device\include\listener_device.h"
 $keyboard = Read-RepoFile "components\keyboard\keyboard.c"
 $voiceRecordingControl = Read-RepoFile "components\voice_recording_control\voice_recording_control.c"
+$bleAudioStreamHeader = Read-RepoFile "ports\esp32\ble_audio_stream\include\ble_audio_stream.h"
+$bleAudioStream = Read-RepoFile "ports\esp32\ble_audio_stream\ble_audio_stream_esp32.c"
 $voiceKeyInput = Read-RepoFile "ports\esp32\voice_key_input\voice_key_input_esp32.c"
 $boardHelp = Read-RepoFile "components\board\board.c"
 $powerManager = Read-RepoFile "components\power_manager\power_manager.c"
@@ -101,6 +103,7 @@ foreach ($item in @(
     @($boardPins, "BOARD_PINS_I2S_DIN_IO\s+\(GPIO_NUM_41\)", "I2S DIN GPIO41"),
     @($listenerDevice, 'LISTENER_DEVICE_HW_REV\s+"esp32s3-wroom-1-n4"', "N4 BLE/DIS hardware revision"),
     @($listenerDevice, "flash_4mb;no_psram", "N4 capability metadata"),
+    @($listenerDevice, "ble_audio_control_v1", "BLE audio control capability metadata"),
     @($keyboard, "key1\.gpio45\.f13", "N4 logical KEY1 fallback diagnostic label"),
     @($keyboard, "key4\.gpio21\.f16", "N4 logical KEY4 fallback diagnostic label"),
     @($keyboard, "DIAG_KBD_CUSTOM_KEY", "custom key diag event coverage"),
@@ -108,15 +111,26 @@ foreach ($item in @(
     @($voiceKeyInput, "single-click", "EC11 single-click recording toggle"),
     @($voiceKeyInput, "double-click recovery", "EC11 double-click pairing reset"),
     @($voiceRecordingControl, "voice_key_input_get_active_source\(\)", "voice recovery source follows active key source"),
+    @($voiceRecordingControl, "voice_recording_control_ble_control_write", "BLE recording control dispatch handler"),
+    @($voiceRecordingControl, "ble_audio_stream_set_control_write_handler", "BLE recording control handler registration"),
+    @($bleAudioStreamHeader, "BLE_AUDIO_STREAM_CONTROL_UUID", "BLE audio control UUID declaration"),
+    @($bleAudioStreamHeader, "0x1e, 0x09, 0xc3, 0x3b", "BLE audio control UUID value"),
+    @($bleAudioStream, "BLE_AUDIO_STREAM_GATT_ATTR_CONTROL", "BLE audio control GATT attribute"),
+    @($bleAudioStream, "BLE_GATT_CHR_F_WRITE", "BLE audio control writable characteristic"),
+    @($bleAudioStream, "ble_audio_control", "BLE audio control source label"),
     @($boardHelp, "Voice Keyboard N4", "N4 board help text"),
     @($boardHelp, "EC11 push/GPIO35", "N4 EC11 recording help text"),
-    @($boardHelp, "KEY1/GPIO45 fallback=F13", "N4 logical KEY1 help text"),
-    @($boardHelp, "KEY4/GPIO21 fallback=F16", "N4 logical KEY4 help text"),
+    @($boardHelp, "single-click KEY1-KEY4 fallback=F13-F16", "N4 logical custom key single-click help text"),
+    @($boardHelp, "double-click=F17-F20", "N4 logical custom key double-click help text"),
+    @($boardHelp, "long-press=F21-F24", "N4 logical custom key long-press help text"),
     @($powerManager, "POWER_MANAGER_WAKE_POLICY_KEY4_ONLY", "N4 KEY4 wake policy"),
     @($powerManager, "KEY4/GPIO21", "N4 logical KEY4 wake key string"),
     @($powerManager, "EC11-KEY/GPIO35", "N4 EC11 key wake limitation"),
     @($otaPackage, 'hardware_revision = "keyboard-n4"', "OTA package N4 hardware requirement"),
-    @($factoryPackage, 'hardware_revision = "esp32s3-wroom-1-n4"', "factory package N4 DIS hardware revision")
+    @($otaPackage, "audio_control_uuid", "OTA package audio control UUID"),
+    @($factoryPackage, 'hardware_revision = "esp32s3-wroom-1-n4"', "factory package N4 DIS hardware revision"),
+    @($factoryPackage, "audio_control_uuid", "factory package audio control UUID"),
+    @($factoryPackage, "ble_audio_control_v1", "factory package audio control capability")
 )) {
     Assert-Contains -Text $item[0] -Pattern $item[1] -Description $item[2]
 }

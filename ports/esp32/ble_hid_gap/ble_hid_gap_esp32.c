@@ -36,6 +36,7 @@
 #include "host/ble_sm.h"
 #include "nvs.h"
 #include "nvs_flash.h"
+#include "freertos/FreeRTOS.h"
 
 static const char *TAG = "ESP_HID_GAP";
 
@@ -81,6 +82,7 @@ static bool s_ble_gap_connected = false;
 static bool s_audio_enabled = true;
 static bool s_low_power_advertising = false;
 static uint16_t s_ble_gap_conn_handle = BLE_HS_CONN_HANDLE_NONE;
+static portMUX_TYPE s_ble_gap_state_lock = portMUX_INITIALIZER_UNLOCKED;
 static uint16_t s_service_changed_val_handle = BLE_HS_CONN_HANDLE_NONE;
 static bool s_service_changed_state_loaded = false;
 static bool s_service_changed_pending = false;
@@ -89,6 +91,30 @@ static char s_service_changed_fw_version[64];
 static bool s_recovery_identity_rotation_pending = false;
 static bool s_recovery_pairing_window_active = false;
 static int64_t s_recovery_identity_rotated_at_ms = 0;
+
+typedef struct {
+    bool connected;
+    uint16_t conn_handle;
+} ble_hid_gap_connection_snapshot_t;
+
+static ble_hid_gap_connection_snapshot_t ble_hid_gap_connection_snapshot(void)
+{
+    portENTER_CRITICAL(&s_ble_gap_state_lock);
+    ble_hid_gap_connection_snapshot_t snapshot = {
+        .connected = s_ble_gap_connected,
+        .conn_handle = s_ble_gap_conn_handle,
+    };
+    portEXIT_CRITICAL(&s_ble_gap_state_lock);
+    return snapshot;
+}
+
+static void ble_hid_gap_set_connection_state(bool connected, uint16_t conn_handle)
+{
+    portENTER_CRITICAL(&s_ble_gap_state_lock);
+    s_ble_gap_connected = connected;
+    s_ble_gap_conn_handle = conn_handle;
+    portEXIT_CRITICAL(&s_ble_gap_state_lock);
+}
 
 /*
  * Legacy advertising has a hard 31-byte payload limit. With flags,
@@ -99,7 +125,7 @@ static int64_t s_recovery_identity_rotated_at_ms = 0;
 #define BLE_HID_GAP_SERVICE_CHANGED_NVS_NAMESPACE "ble_gap"
 #define BLE_HID_GAP_SERVICE_CHANGED_FW_KEY "svcchg_fw"
 #define BLE_HID_GAP_RANDOM_IDENTITY_ADDR_KEY "rnd_id_addr"
-#define BLE_HID_GAP_GATT_SCHEMA_REV "diag_export_v1"
+#define BLE_HID_GAP_GATT_SCHEMA_REV "diag_export_v2"
 #define BLE_HID_GAP_SERVICE_CHANGED_START_HANDLE 0x0001
 #define BLE_HID_GAP_SERVICE_CHANGED_END_HANDLE 0xffff
 #define BLE_HID_GAP_RECOVERY_PAIRING_WINDOW_MS 120000LL
@@ -471,7 +497,8 @@ static esp_err_t ble_hid_gap_request_connection_params(
     uint16_t supervision_timeout,
     uint32_t mode_code)
 {
-    if (!s_ble_gap_connected || s_ble_gap_conn_handle == BLE_HS_CONN_HANDLE_NONE) {
+    ble_hid_gap_connection_snapshot_t conn = ble_hid_gap_connection_snapshot();
+    if (!conn.connected || conn.conn_handle == BLE_HS_CONN_HANDLE_NONE) {
         return ESP_ERR_INVALID_STATE;
     }
 
@@ -483,26 +510,26 @@ static esp_err_t ble_hid_gap_request_connection_params(
         .min_ce_len = 0,
         .max_ce_len = 0,
     };
-    int rc = ble_gap_update_params(s_ble_gap_conn_handle, &params);
+    int rc = ble_gap_update_params(conn.conn_handle, &params);
     if (rc == 0) {
         ESP_LOGI(
             TAG,
             "%s connection parameter update requested: conn=%u itvl=%u-%u latency=%u timeout=%u",
             label,
-            s_ble_gap_conn_handle,
+            conn.conn_handle,
             itvl_min,
             itvl_max,
             latency,
             supervision_timeout);
         diag_log(DIAG_SRC_BLE_GAP, DIAG_GAP_CONN_PARAM_REQ, DIAG_SEV_INFO,
-                 mode_code, 0, s_ble_gap_conn_handle, latency);
+                 mode_code, 0, conn.conn_handle, latency);
         return ESP_OK;
     }
 
     ESP_LOGW(TAG, "%s connection parameter update failed: conn=%u rc=%d",
-             label, s_ble_gap_conn_handle, rc);
+             label, conn.conn_handle, rc);
     diag_log(DIAG_SRC_BLE_GAP, DIAG_GAP_CONN_PARAM_REQ, DIAG_SEV_WARN,
-             mode_code, (uint32_t)rc, s_ble_gap_conn_handle, latency);
+             mode_code, (uint32_t)rc, conn.conn_handle, latency);
     return ESP_FAIL;
 }
 
@@ -582,8 +609,7 @@ nimble_hid_gap_event(struct ble_gap_event *event, void *arg)
             return 0;
         }
 
-        s_ble_gap_connected = true;
-        s_ble_gap_conn_handle = event->connect.conn_handle;
+        ble_hid_gap_set_connection_state(true, event->connect.conn_handle);
         ble_diag_log_on_gap_connect(event->connect.conn_handle);
         status_led_set_ble_state(STATUS_LED_BLE_CONNECTED, true);
         if (s_audio_enabled) {
@@ -649,8 +675,7 @@ nimble_hid_gap_event(struct ble_gap_event *event, void *arg)
         ESP_LOGI(TAG, "disconnect; reason=%d", event->disconnect.reason);
         diag_log(DIAG_SRC_BLE_GAP, DIAG_GAP_BOND, DIAG_SEV_WARN,
                  0, (uint32_t)event->disconnect.reason, event->disconnect.conn.conn_handle, 0);
-        s_ble_gap_connected = false;
-        s_ble_gap_conn_handle = BLE_HS_CONN_HANDLE_NONE;
+        ble_hid_gap_set_connection_state(false, BLE_HS_CONN_HANDLE_NONE);
         status_led_set_ble_state(STATUS_LED_BLE_RECONNECTING, false);
         s_service_changed_queued_for_conn = false;
         if (s_audio_enabled) {
@@ -1154,17 +1179,18 @@ esp_err_t ble_hid_gap_forget_bonds_and_repair(void)
     s_directed_adv_pending = false;
     s_last_adv_was_directed = false;
 
-    if (s_ble_gap_connected && s_ble_gap_conn_handle != BLE_HS_CONN_HANDLE_NONE) {
-        rc = ble_gap_terminate(s_ble_gap_conn_handle, BLE_ERR_REM_USER_CONN_TERM);
+    ble_hid_gap_connection_snapshot_t conn = ble_hid_gap_connection_snapshot();
+    if (conn.connected && conn.conn_handle != BLE_HS_CONN_HANDLE_NONE) {
+        rc = ble_gap_terminate(conn.conn_handle, BLE_ERR_REM_USER_CONN_TERM);
         if (rc == 0) {
             ESP_LOGW(TAG, "recovery: active BLE connection terminating for re-pair; advertising restarts after disconnect");
             diag_log(DIAG_SRC_BLE_GAP, DIAG_GAP_RECOVERY, DIAG_SEV_WARN,
-                     2, 0, (uint32_t)bonded_peer_count, s_ble_gap_conn_handle);
+                     2, 0, (uint32_t)bonded_peer_count, conn.conn_handle);
             return ESP_OK;
         } else {
             ESP_LOGW(TAG, "recovery: BLE terminate failed rc=%d", rc);
             diag_log(DIAG_SRC_BLE_GAP, DIAG_GAP_RECOVERY, DIAG_SEV_WARN,
-                     2, (uint32_t)rc, (uint32_t)bonded_peer_count, s_ble_gap_conn_handle);
+                     2, (uint32_t)rc, (uint32_t)bonded_peer_count, conn.conn_handle);
             return ESP_FAIL;
         }
     } else if (ble_gap_adv_active()) {
@@ -1205,7 +1231,7 @@ esp_err_t ble_hid_gap_forget_bonds_and_repair(void)
 
 bool ble_hid_gap_is_connected(void)
 {
-    return s_ble_gap_connected;
+    return ble_hid_gap_connection_snapshot().connected;
 }
 
 esp_err_t ble_hid_gap_set_low_power_advertising(bool enabled)

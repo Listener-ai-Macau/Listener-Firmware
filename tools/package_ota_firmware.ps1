@@ -109,6 +109,7 @@ $manifest = [ordered]@{
         hid_service_uuid = "1812"
         audio_service_uuid = "710af845-6d9f-6583-0c4d-9e5b3bc3091a"
         audio_notify_uuid = "710af845-6d9f-6583-0c4d-9e5b3bc3091b"
+        audio_control_uuid = "710af845-6d9f-6583-0c4d-9e5b3bc3091e"
         readiness_uuid = "710af845-6d9f-6583-0c4d-9e5b3bc3091c"
         capabilities_uuid = "710af845-6d9f-6583-0c4d-9e5b3bc3091d"
         dis = [ordered]@{

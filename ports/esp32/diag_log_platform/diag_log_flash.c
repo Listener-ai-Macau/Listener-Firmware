@@ -40,6 +40,12 @@ typedef struct {
     uint32_t arg4;
 } diag_event_t;
 
+typedef struct {
+    uint16_t sector;
+    uint16_t index;
+    uint16_t sequence;
+} diag_read_slot_t;
+
 #define DIAG_EVENT_SIZE sizeof(diag_event_t)
 _Static_assert(DIAG_EVENT_SIZE == DIAG_LOG_EVENT_WIRE_BYTES,
                "diag_event_t wire size must stay stable for BLE diagnostic export");
@@ -47,6 +53,8 @@ _Static_assert(DIAG_EVENT_SIZE == DIAG_LOG_EVENT_WIRE_BYTES,
 
 static const esp_partition_t *s_partition;
 static SemaphoreHandle_t s_mutex;
+static uint16_t *s_sector_counts;
+static uint16_t *s_sector_sequences;
 static uint32_t s_total_sectors;
 static uint16_t s_write_sector;
 static uint16_t s_write_offset;
@@ -55,6 +63,22 @@ static uint32_t s_retained_events;
 static uint32_t s_capacity_events;
 static bool s_initialized;
 static bool s_dumping;
+static portMUX_TYPE s_dumping_lock = portMUX_INITIALIZER_UNLOCKED;
+
+static void diag_log_platform_set_dumping(bool dumping)
+{
+    portENTER_CRITICAL(&s_dumping_lock);
+    s_dumping = dumping;
+    portEXIT_CRITICAL(&s_dumping_lock);
+}
+
+static bool diag_log_platform_get_dumping(void)
+{
+    portENTER_CRITICAL(&s_dumping_lock);
+    bool dumping = s_dumping;
+    portEXIT_CRITICAL(&s_dumping_lock);
+    return dumping;
+}
 
 #define DIAG_USB_CMD_PREFIX "DIAGLOG:"
 #define DIAG_USB_CMD_MAX 32
@@ -125,6 +149,12 @@ static void find_write_position(void)
     uint16_t best_count = 0;
 
     s_retained_events = 0;
+    if (s_sector_counts != NULL) {
+        memset(s_sector_counts, 0, s_total_sectors * sizeof(s_sector_counts[0]));
+    }
+    if (s_sector_sequences != NULL) {
+        memset(s_sector_sequences, 0, s_total_sectors * sizeof(s_sector_sequences[0]));
+    }
 
     for (uint32_t i = 0; i < s_total_sectors; i++) {
         diag_sector_header_t header;
@@ -135,6 +165,12 @@ static void find_write_position(void)
 
         uint16_t count = retained_count_from_sector((uint16_t)i, &header);
         s_retained_events += count;
+        if (s_sector_counts != NULL) {
+            s_sector_counts[i] = count;
+        }
+        if (s_sector_sequences != NULL) {
+            s_sector_sequences[i] = header.sequence;
+        }
 
         if (header.sequence > best_seq || best_seq == 0) {
             best_seq = header.sequence;
@@ -209,9 +245,26 @@ void diag_log_platform_init(void)
     ESP_LOGI(TAG, "diag_log partition: %uKB %u sectors",
              (unsigned)(s_partition->size / 1024), (unsigned)s_total_sectors);
 
+    free(s_sector_counts);
+    free(s_sector_sequences);
+    s_sector_counts = (uint16_t *)calloc(s_total_sectors, sizeof(uint16_t));
+    s_sector_sequences = (uint16_t *)calloc(s_total_sectors, sizeof(uint16_t));
+    if (s_sector_counts == NULL || s_sector_sequences == NULL) {
+        ESP_LOGE(TAG, "sector metadata allocation failed");
+        free(s_sector_counts);
+        free(s_sector_sequences);
+        s_sector_counts = NULL;
+        s_sector_sequences = NULL;
+        return;
+    }
+
     s_mutex = xSemaphoreCreateMutex();
     if (s_mutex == NULL) {
         ESP_LOGE(TAG, "mutex create failed");
+        free(s_sector_counts);
+        free(s_sector_sequences);
+        s_sector_counts = NULL;
+        s_sector_sequences = NULL;
         return;
     }
 
@@ -250,7 +303,10 @@ void diag_log_platform_write(
     if (s_write_offset == 0) {
         diag_sector_header_t old_header;
         if (read_sector_header(s_write_sector, &old_header) == ESP_OK) {
-            uint16_t old_count = retained_count_from_sector(s_write_sector, &old_header);
+            uint16_t old_count =
+                s_sector_counts != NULL
+                    ? s_sector_counts[s_write_sector]
+                    : retained_count_from_sector(s_write_sector, &old_header);
             s_retained_events = old_count > s_retained_events ? 0 : s_retained_events - old_count;
         }
 
@@ -259,6 +315,12 @@ void diag_log_platform_write(
             ESP_LOGW(TAG, "erase sector %u failed: %s", (unsigned)s_write_sector, esp_err_to_name(ret));
             xSemaphoreGive(s_mutex);
             return;
+        }
+        if (s_sector_counts != NULL) {
+            s_sector_counts[s_write_sector] = 0;
+        }
+        if (s_sector_sequences != NULL) {
+            s_sector_sequences[s_write_sector] = 0;
         }
 
         diag_sector_header_t header = {
@@ -273,8 +335,12 @@ void diag_log_platform_write(
             xSemaphoreGive(s_mutex);
             return;
         }
+        if (s_sector_sequences != NULL) {
+            s_sector_sequences[s_write_sector] = header.sequence;
+        }
     }
 
+    uint16_t written_sector = s_write_sector;
     size_t offset = (size_t)s_write_sector * DIAG_LOG_SECTOR_SIZE
                   + DIAG_SECTOR_HEADER_SIZE
                   + (size_t)s_write_offset * DIAG_EVENT_SIZE;
@@ -286,6 +352,9 @@ void diag_log_platform_write(
     }
 
     s_write_offset++;
+    if (s_sector_counts != NULL && s_sector_counts[written_sector] < s_write_offset) {
+        s_sector_counts[written_sector] = s_write_offset;
+    }
     if (s_retained_events < s_capacity_events) {
         s_retained_events++;
     }
@@ -323,7 +392,7 @@ void diag_log_platform_dump(void)
         return;
     }
 
-    s_dumping = true;
+    diag_log_platform_set_dumping(true);
     xSemaphoreTake(s_mutex, portMAX_DELAY);
 
     /* Find minimum sequence to start iteration in chronological order */
@@ -363,7 +432,7 @@ void diag_log_platform_dump(void)
     }
 
     xSemaphoreGive(s_mutex);
-    s_dumping = false;
+    diag_log_platform_set_dumping(false);
     ESP_LOGI(TAG, "DIAGLOG DUMP: %" PRIu32 " events", dumped);
 }
 
@@ -374,7 +443,7 @@ void diag_log_platform_dump_last(uint32_t count)
         return;
     }
 
-    s_dumping = true;
+    diag_log_platform_set_dumping(true);
     xSemaphoreTake(s_mutex, portMAX_DELAY);
 
     /* Count total retained events */
@@ -428,7 +497,7 @@ void diag_log_platform_dump_last(uint32_t count)
     }
 
     xSemaphoreGive(s_mutex);
-    s_dumping = false;
+    diag_log_platform_set_dumping(false);
     ESP_LOGI(TAG, "DIAGLOG LAST %" PRIu32 ": dumped %" PRIu32 " events", count, dumped);
 }
 
@@ -448,6 +517,12 @@ void diag_log_platform_clear(void)
     s_write_offset = 0;
     s_sector_sequence = 1;
     s_retained_events = 0;
+    if (s_sector_counts != NULL) {
+        memset(s_sector_counts, 0, s_total_sectors * sizeof(s_sector_counts[0]));
+    }
+    if (s_sector_sequences != NULL) {
+        memset(s_sector_sequences, 0, s_total_sectors * sizeof(s_sector_sequences[0]));
+    }
 
     xSemaphoreGive(s_mutex);
     ESP_LOGI(TAG, "DIAGLOG CLEAR: all logs erased");
@@ -455,7 +530,7 @@ void diag_log_platform_clear(void)
 
 bool diag_log_platform_is_dumping(void)
 {
-    return s_dumping;
+    return diag_log_platform_get_dumping();
 }
 
 uint32_t diag_log_platform_read_range(uint32_t offset, uint32_t limit,
@@ -474,56 +549,74 @@ uint32_t diag_log_platform_read_range(uint32_t offset, uint32_t limit,
         limit = max_events;
     }
 
+    diag_read_slot_t *slots = (diag_read_slot_t *)calloc(limit, sizeof(diag_read_slot_t));
+    if (slots == NULL) {
+        return 0;
+    }
+
     xSemaphoreTake(s_mutex, portMAX_DELAY);
 
-    /* Find minimum sequence to start iteration in chronological order */
+    /* Find minimum sequence to start iteration in chronological order. */
     uint16_t min_seq = UINT16_MAX;
     uint16_t start_sec = 0;
-    for (uint32_t sec = 0; sec < s_total_sectors; sec++) {
-        diag_sector_header_t header;
-        if (read_sector_header((uint16_t)sec, &header) == ESP_OK
-            && header.magic == DIAG_LOG_MAGIC
-            && retained_count_from_sector((uint16_t)sec, &header) > 0) {
-            if (header.sequence < min_seq) {
-                min_seq = header.sequence;
+    bool have_start = false;
+    if (s_sector_counts != NULL && s_sector_sequences != NULL) {
+        for (uint32_t sec = 0; sec < s_total_sectors; sec++) {
+            if (s_sector_counts[sec] == 0) {
+                continue;
+            }
+            if (!have_start || s_sector_sequences[sec] < min_seq) {
+                min_seq = s_sector_sequences[sec];
                 start_sec = (uint16_t)sec;
+                have_start = true;
             }
         }
     }
 
     uint32_t global_idx = 0;
-    uint32_t written = 0;
-    uint8_t *out = (uint8_t *)buffer;
+    uint32_t selected = 0;
 
-    for (uint32_t i = 0; i < s_total_sectors && written < limit; i++) {
+    for (uint32_t i = 0; have_start && i < s_total_sectors && selected < limit; i++) {
         uint16_t sec = (start_sec + (uint16_t)i) % (uint16_t)s_total_sectors;
-        diag_sector_header_t header;
-        esp_err_t ret = read_sector_header(sec, &header);
-        if (ret != ESP_OK) {
-            continue;
-        }
-        uint16_t sector_count = retained_count_from_sector(sec, &header);
+        uint16_t sector_count = s_sector_counts[sec];
         if (sector_count == 0) {
             continue;
         }
 
-        for (uint16_t idx = 0; idx < sector_count && written < limit; idx++, global_idx++) {
+        for (uint16_t idx = 0; idx < sector_count && selected < limit; idx++, global_idx++) {
             if (global_idx < offset) {
                 continue;
             }
 
-            diag_event_t evt;
-            ret = read_event(sec, idx, &evt);
-            if (ret != ESP_OK) {
-                continue;
-            }
-
-            memcpy(out + written * DIAG_EVENT_SIZE, &evt, DIAG_EVENT_SIZE);
-            written++;
+            slots[selected].sector = sec;
+            slots[selected].index = idx;
+            slots[selected].sequence = s_sector_sequences[sec];
+            selected++;
         }
     }
 
     xSemaphoreGive(s_mutex);
+
+    uint32_t written = 0;
+    uint8_t *out = (uint8_t *)buffer;
+    for (uint32_t i = 0; i < selected; i++) {
+        diag_sector_header_t header;
+        esp_err_t ret = read_sector_header(slots[i].sector, &header);
+        if (ret != ESP_OK || header.magic != DIAG_LOG_MAGIC || header.sequence != slots[i].sequence) {
+            continue;
+        }
+
+        diag_event_t evt;
+        ret = read_event(slots[i].sector, slots[i].index, &evt);
+        if (ret != ESP_OK || event_is_erased(&evt)) {
+            continue;
+        }
+
+        memcpy(out + written * DIAG_EVENT_SIZE, &evt, DIAG_EVENT_SIZE);
+        written++;
+    }
+
+    free(slots);
     return written;
 }
 

@@ -235,7 +235,7 @@ def check_dis_identity(repo: Path) -> None:
         "ble_hid_gap_queue_service_changed(\"connect\")" in gap
         and "ble_hid_gap_service_changed_pending()" in gap
         and "BLE_HID_GAP_GATT_SCHEMA_REV" in gap
-        and "ota_identity_v3" in gap
+        and "diag_export_v2" in gap
         and "nvs_get_str" in gap
         and "nvs_set_str" in gap,
         "BLE connect path must version/schema-gate Service Changed so Windows refreshes OTA/DIS GATT once after firmware or GATT-shape updates",

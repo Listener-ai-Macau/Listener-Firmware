@@ -168,6 +168,7 @@ $manifest = [ordered]@{
         hid_service_uuid = "1812"
         audio_service_uuid = "710af845-6d9f-6583-0c4d-9e5b3bc3091a"
         audio_notify_uuid = "710af845-6d9f-6583-0c4d-9e5b3bc3091b"
+        audio_control_uuid = "710af845-6d9f-6583-0c4d-9e5b3bc3091e"
         readiness_uuid = "710af845-6d9f-6583-0c4d-9e5b3bc3091c"
         capabilities_uuid = "710af845-6d9f-6583-0c4d-9e5b3bc3091d"
         dis = [ordered]@{
@@ -182,9 +183,11 @@ $manifest = [ordered]@{
     capabilities = @(
         "ble_hid_keyboard",
         "ble_audio_vka1",
+        "ble_audio_control_v1",
         "usb_serial_text",
         "voice_record_toggle",
         "custom_keys_f13_f16",
+        "custom_key_gestures_f13_f24",
         "post_status"
     )
     flash = [ordered]@{

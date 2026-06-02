@@ -8,6 +8,7 @@
 #include <string.h>
 
 #include "freertos/FreeRTOS.h"
+#include "freertos/semphr.h"
 #include "freertos/task.h"
 #include "esp_log.h"
 #include "diag_log.h"
@@ -55,6 +56,7 @@ static const char *TAG = "voice_rec_ctrl";
 
 static bool s_started;
 static TaskHandle_t s_task_handle;
+static SemaphoreHandle_t s_state_mutex;
 static bool s_usb_command_active;
 static size_t s_usb_command_length;
 static char s_usb_command_buffer[VOICE_RECORDING_CONTROL_COMMAND_BUFFER_BYTES];
@@ -68,6 +70,18 @@ static TickType_t s_pending_start_next_retry_tick;
 static const char *s_active_session_source;
 static uint32_t s_session_count;
 
+static bool voice_recording_control_lock(void)
+{
+    return s_state_mutex == NULL || xSemaphoreTake(s_state_mutex, portMAX_DELAY) == pdTRUE;
+}
+
+static void voice_recording_control_unlock(void)
+{
+    if (s_state_mutex != NULL) {
+        xSemaphoreGive(s_state_mutex);
+    }
+}
+
 static uint32_t voice_recording_source_code(const char *source)
 {
     if (source == NULL) {
@@ -80,6 +94,9 @@ static uint32_t voice_recording_source_code(const char *source)
     }
     if (strcmp(source, "usb") == 0) {
         return 2;
+    }
+    if (strcmp(source, "ble_audio_control") == 0) {
+        return 3;
     }
     return 255;
 }
@@ -520,6 +537,63 @@ static void voice_recording_control_recovery(const char *source)
     voice_recording_control_log_device_status("ready", "recovery_complete_pair_again");
 }
 
+static esp_err_t voice_recording_control_dispatch_command(const char *command, const char *source)
+{
+    if (command == NULL || source == NULL) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    if (!voice_recording_control_lock()) {
+        return ESP_ERR_TIMEOUT;
+    }
+
+    const char *action = command;
+    if (strncmp(
+            command,
+            VOICE_RECORDING_CONTROL_VREC_PREFIX,
+            strlen(VOICE_RECORDING_CONTROL_VREC_PREFIX)) == 0) {
+        action = command + strlen(VOICE_RECORDING_CONTROL_VREC_PREFIX);
+    }
+
+    if (strcmp(action, "TOGGLE") == 0) {
+        voice_recording_control_toggle(source);
+        voice_recording_control_unlock();
+        return ESP_OK;
+    }
+    if (strcmp(action, "CANCEL") == 0) {
+        voice_recording_control_cancel(source);
+        voice_recording_control_unlock();
+        return ESP_OK;
+    }
+    if (strcmp(action, "RECOVERY") == 0 || strcmp(action, "RESET") == 0 || strcmp(action, "FORGET") == 0) {
+        voice_recording_control_recovery(source);
+        voice_recording_control_unlock();
+        return ESP_OK;
+    }
+
+    ESP_LOGW(TAG, "drop control command source=%s command=%s", source, command);
+    voice_recording_control_log_device_error("error", "unknown_control_command", ESP_ERR_INVALID_ARG);
+    voice_recording_control_unlock();
+    return ESP_ERR_INVALID_ARG;
+}
+
+static esp_err_t voice_recording_control_ble_control_write(
+    const uint8_t *data,
+    size_t len,
+    const char *source)
+{
+    if (data == NULL || len == 0 || len >= VOICE_RECORDING_CONTROL_COMMAND_BUFFER_BYTES) {
+        return ESP_ERR_INVALID_SIZE;
+    }
+
+    char command[VOICE_RECORDING_CONTROL_COMMAND_BUFFER_BYTES];
+    memcpy(command, data, len);
+    command[len] = '\0';
+    command[strcspn(command, "\r\n")] = '\0';
+
+    power_manager_record_activity("voice_recording_ble_control");
+    return voice_recording_control_dispatch_command(command, source);
+}
+
 static void voice_recording_control_poll_pending_start(void)
 {
     if (!s_pending_start) {
@@ -576,84 +650,98 @@ static void voice_recording_control_task(void *parameter)
 
     while (1) {
         watchdog_platform_feed_current_task();
-        if (voice_key_input_take_toggle_event()) {
-            voice_recording_control_toggle(voice_key_input_get_active_source());
-        }
-
-        if (voice_key_input_take_recovery_event()) {
-            const char *source = voice_key_input_get_active_source();
-            voice_recording_control_recovery(source != NULL ? source : "voice_key_hold");
-        }
-
-        if ((s_state == VOICE_RECORDING_STATE_RECORDING || s_state == VOICE_RECORDING_STATE_TRANSFERRING) &&
-            !audio_capture_session_is_active()) {
-            voice_recording_state_t finished_state = s_state;
-            if (s_cancel_pending) {
-                const char *source = s_cancel_source != NULL ? s_cancel_source : "unknown";
-                s_cancel_pending = false;
-                s_cancel_source = NULL;
-                s_state = VOICE_RECORDING_STATE_IDLE;
-                s_active_session_source = NULL;
-                voice_recording_control_clear_power_blockers();
-                (void)voice_key_input_set_recording_output(false);
-                status_led_set_recording(false, STATUS_LED_REC_SOURCE_NONE);
-                status_led_set_processing(false, "recording_canceled");
-                ESP_LOGI(TAG, "recording cancel source=%s", source);
-                voice_recording_control_log_flow(
-                    VOICE_RECORDING_FLOW_CANCEL,
-                    "cancel_complete",
-                    source,
-                    ESP_OK,
-                    false);
-                voice_recording_control_log_device_status("ready", "recording_canceled");
-                diag_log(DIAG_SRC_VOICE_REC, DIAG_VREC_SESSION, DIAG_SEV_INFO,
-                         3, voice_recording_source_code(source), s_session_count, 0);
-                continue;
+        if (voice_recording_control_lock()) {
+            if (voice_key_input_take_toggle_event()) {
+                voice_recording_control_toggle(voice_key_input_get_active_source());
             }
 
-            const char *source = s_active_session_source != NULL ? s_active_session_source : "session";
-            s_state = VOICE_RECORDING_STATE_IDLE;
-            s_active_session_source = NULL;
-            voice_recording_control_clear_power_blockers();
-            (void)voice_key_input_set_recording_output(false);
-            status_led_set_recording(false, STATUS_LED_REC_SOURCE_NONE);
-            status_led_set_processing(false, "recording_session_finished");
-            status_led_notify_success("recording_session_finished");
-            if (finished_state == VOICE_RECORDING_STATE_TRANSFERRING) {
-                ESP_LOGI(TAG, "recording session finished");
-                voice_recording_control_log_flow(
-                    VOICE_RECORDING_FLOW_SESSION_FINISHED,
-                    "session_finished",
-                    source,
-                    ESP_OK,
-                    false);
-                voice_recording_control_log_device_status("ready", "recording_session_finished");
-            } else {
-                ESP_LOGW(TAG, "recording session ended without stop request");
-                voice_recording_control_log_flow(
-                    VOICE_RECORDING_FLOW_SESSION_ABORTED,
-                    "session_aborted_without_stop",
-                    source,
-                    ESP_ERR_INVALID_STATE,
-                    true);
-                voice_recording_control_log_device_error("ready", "recording_session_aborted", ESP_ERR_INVALID_STATE);
+            if (voice_key_input_take_recovery_event()) {
+                const char *source = voice_key_input_get_active_source();
+                voice_recording_control_recovery(source != NULL ? source : "voice_key_hold");
             }
+
+            if ((s_state == VOICE_RECORDING_STATE_RECORDING || s_state == VOICE_RECORDING_STATE_TRANSFERRING) &&
+                !audio_capture_session_is_active()) {
+                voice_recording_state_t finished_state = s_state;
+                if (s_cancel_pending) {
+                    const char *source = s_cancel_source != NULL ? s_cancel_source : "unknown";
+                    s_cancel_pending = false;
+                    s_cancel_source = NULL;
+                    s_state = VOICE_RECORDING_STATE_IDLE;
+                    s_active_session_source = NULL;
+                    voice_recording_control_clear_power_blockers();
+                    (void)voice_key_input_set_recording_output(false);
+                    status_led_set_recording(false, STATUS_LED_REC_SOURCE_NONE);
+                    status_led_set_processing(false, "recording_canceled");
+                    ESP_LOGI(TAG, "recording cancel source=%s", source);
+                    voice_recording_control_log_flow(
+                        VOICE_RECORDING_FLOW_CANCEL,
+                        "cancel_complete",
+                        source,
+                        ESP_OK,
+                        false);
+                    voice_recording_control_log_device_status("ready", "recording_canceled");
+                    diag_log(DIAG_SRC_VOICE_REC, DIAG_VREC_SESSION, DIAG_SEV_INFO,
+                             3, voice_recording_source_code(source), s_session_count, 0);
+                } else {
+                    const char *source = s_active_session_source != NULL ? s_active_session_source : "session";
+                    s_state = VOICE_RECORDING_STATE_IDLE;
+                    s_active_session_source = NULL;
+                    voice_recording_control_clear_power_blockers();
+                    (void)voice_key_input_set_recording_output(false);
+                    status_led_set_recording(false, STATUS_LED_REC_SOURCE_NONE);
+                    status_led_set_processing(false, "recording_session_finished");
+                    status_led_notify_success("recording_session_finished");
+                    if (finished_state == VOICE_RECORDING_STATE_TRANSFERRING) {
+                        ESP_LOGI(TAG, "recording session finished");
+                        voice_recording_control_log_flow(
+                            VOICE_RECORDING_FLOW_SESSION_FINISHED,
+                            "session_finished",
+                            source,
+                            ESP_OK,
+                            false);
+                        voice_recording_control_log_device_status("ready", "recording_session_finished");
+                    } else {
+                        ESP_LOGW(TAG, "recording session ended without stop request");
+                        voice_recording_control_log_flow(
+                            VOICE_RECORDING_FLOW_SESSION_ABORTED,
+                            "session_aborted_without_stop",
+                            source,
+                            ESP_ERR_INVALID_STATE,
+                            true);
+                        voice_recording_control_log_device_error("ready", "recording_session_aborted", ESP_ERR_INVALID_STATE);
+                    }
+                }
+            }
+
+            voice_recording_control_poll_pending_start();
+            voice_recording_control_unlock();
         }
 
-        voice_recording_control_poll_pending_start();
         vTaskDelay(pdMS_TO_TICKS(VOICE_RECORDING_CONTROL_SESSION_CHECK_MS));
     }
 }
 
 uint32_t voice_recording_control_get_session_count(void)
 {
-    return s_session_count;
+    uint32_t session_count = 0;
+    if (voice_recording_control_lock()) {
+        session_count = s_session_count;
+        voice_recording_control_unlock();
+    }
+    return session_count;
 }
 
 esp_err_t voice_recording_control_start(void)
 {
     if (s_started) {
         return ESP_OK;
+    }
+    if (s_state_mutex == NULL) {
+        s_state_mutex = xSemaphoreCreateMutex();
+        if (s_state_mutex == NULL) {
+            return ESP_ERR_NO_MEM;
+        }
     }
 
     esp_err_t audio_ret = audio_capture_start();
@@ -670,6 +758,8 @@ esp_err_t voice_recording_control_start(void)
         voice_recording_control_log_device_error("error", "voice_key_input_start_failed", key_ret);
         status_led_set_error(STATUS_LED_ERROR_DOMAIN_REC, STATUS_LED_ERROR_RETRYABLE, "voice_key_input_start_failed");
     }
+
+    ble_audio_stream_set_control_write_handler(voice_recording_control_ble_control_write);
 
     BaseType_t task_ok = xTaskCreate(
         voice_recording_control_task,
@@ -718,27 +808,7 @@ bool voice_recording_control_consume_usb_control_byte(uint8_t input_char)
     if (input_char == '\n') {
         s_usb_command_active = false;
         s_usb_command_buffer[s_usb_command_length] = '\0';
-
-        if (strncmp(
-                s_usb_command_buffer,
-                VOICE_RECORDING_CONTROL_VREC_PREFIX,
-                strlen(VOICE_RECORDING_CONTROL_VREC_PREFIX)) == 0) {
-            const char *action = s_usb_command_buffer + strlen(VOICE_RECORDING_CONTROL_VREC_PREFIX);
-            if (strcmp(action, "TOGGLE") == 0) {
-                voice_recording_control_toggle("usb");
-            } else if (strcmp(action, "CANCEL") == 0) {
-                voice_recording_control_cancel("usb");
-            } else if (strcmp(action, "RECOVERY") == 0 || strcmp(action, "RESET") == 0 || strcmp(action, "FORGET") == 0) {
-                voice_recording_control_recovery("usb");
-            } else {
-                ESP_LOGW(TAG, "drop control command: %s", s_usb_command_buffer);
-                voice_recording_control_log_device_error("error", "unknown_usb_control_command", ESP_ERR_INVALID_ARG);
-            }
-            return true;
-        }
-
-        ESP_LOGW(TAG, "drop control command: %s", s_usb_command_buffer);
-        voice_recording_control_log_device_error("error", "unknown_usb_control_prefix", ESP_ERR_INVALID_ARG);
+        (void)voice_recording_control_dispatch_command(s_usb_command_buffer, "usb");
         return true;
     }
 

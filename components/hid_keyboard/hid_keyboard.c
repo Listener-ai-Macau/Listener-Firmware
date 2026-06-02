@@ -20,7 +20,7 @@
 #define HID_KEYBOARD_REPORT_ID 1
 #define HID_KEYBOARD_REPORT_SIZE 7
 #define HID_KEYBOARD_USAGE_MIN 0x04u
-#define HID_KEYBOARD_USAGE_MAX HID_KEYBOARD_USAGE_F16
+#define HID_KEYBOARD_USAGE_MAX HID_KEYBOARD_USAGE_F24
 
 #define KEY_CASE(input_value, modifier_value, key_value) \
     case input_value:                                    \
@@ -30,6 +30,7 @@
 
 static const char *TAG = "hid_keyboard";
 static uint32_t s_key_press_count;
+static portMUX_TYPE s_key_press_count_lock = portMUX_INITIALIZER_UNLOCKED;
 
 static const uint8_t s_keyboard_report_map[] = {
     0x05, 0x01,
@@ -161,7 +162,21 @@ size_t hid_keyboard_get_report_map_size(void)
 
 uint32_t hid_keyboard_get_key_press_count(void)
 {
-    return s_key_press_count;
+    portENTER_CRITICAL(&s_key_press_count_lock);
+    uint32_t count = s_key_press_count;
+    portEXIT_CRITICAL(&s_key_press_count_lock);
+    return count;
+}
+
+static uint32_t hid_keyboard_increment_key_press_count(void)
+{
+    portENTER_CRITICAL(&s_key_press_count_lock);
+    if (s_key_press_count != UINT32_MAX) {
+        s_key_press_count++;
+    }
+    uint32_t count = s_key_press_count;
+    portEXIT_CRITICAL(&s_key_press_count_lock);
+    return count;
 }
 
 esp_err_t hid_keyboard_send_ascii(char input_char, esp_hidd_dev_t *hid_device)
@@ -214,9 +229,9 @@ esp_err_t hid_keyboard_send_ascii(char input_char, esp_hidd_dev_t *hid_device)
         return ret;
     }
 
-    s_key_press_count++;
+    uint32_t key_press_count = hid_keyboard_increment_key_press_count();
     diag_log(DIAG_SRC_KEYBOARD, DIAG_KBD_KEY_PRESS, DIAG_SEV_INFO,
-             input_value, 0, connected ? 1 : 0, s_key_press_count);
+             input_value, 0, connected ? 1 : 0, key_press_count);
     ESP_LOGI(TAG, "send_ascii done input=0x%02X display=%c", input_value, display_char);
     return ESP_OK;
 }
@@ -266,9 +281,9 @@ esp_err_t hid_keyboard_send_usage(uint8_t usage, esp_hidd_dev_t *hid_device)
         return ret;
     }
 
-    s_key_press_count++;
+    uint32_t key_press_count = hid_keyboard_increment_key_press_count();
     diag_log(DIAG_SRC_KEYBOARD, DIAG_KBD_KEY_PRESS, DIAG_SEV_INFO,
-             usage, 0, connected ? 1 : 0, s_key_press_count);
+             usage, 0, connected ? 1 : 0, key_press_count);
     ESP_LOGI(TAG, "send_usage done usage=0x%02X", usage);
     return ESP_OK;
 }

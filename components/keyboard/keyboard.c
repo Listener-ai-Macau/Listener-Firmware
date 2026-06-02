@@ -4,6 +4,7 @@
 #include <inttypes.h>
 #include <stddef.h>
 #include <stdint.h>
+#include <stdio.h>
 
 #include "driver/gpio.h"
 #include "esp_log.h"
@@ -21,24 +22,43 @@
 
 #define KEYBOARD_CUSTOM_POLL_MS 20
 #define KEYBOARD_CUSTOM_DEBOUNCE_SAMPLES 8
+#define KEYBOARD_CUSTOM_DOUBLE_CLICK_WINDOW_MS 250
+#define KEYBOARD_CUSTOM_LONG_PRESS_MS 1000
 #define KEYBOARD_EC11_POLL_MS KEYBOARD_CUSTOM_POLL_MS
 #define KEYBOARD_EC11_DEBOUNCE_SAMPLES 2
 
 #define KEYBOARD_CUSTOM_PHASE_PRESS 1u
 #define KEYBOARD_CUSTOM_PHASE_RELEASE 2u
+#define KEYBOARD_CUSTOM_PHASE_SINGLE 3u
+#define KEYBOARD_CUSTOM_PHASE_DOUBLE 4u
+#define KEYBOARD_CUSTOM_PHASE_LONG 5u
+
+typedef enum {
+    KEYBOARD_CUSTOM_GESTURE_SINGLE = 0,
+    KEYBOARD_CUSTOM_GESTURE_DOUBLE,
+    KEYBOARD_CUSTOM_GESTURE_LONG,
+} keyboard_custom_gesture_t;
 
 typedef struct {
     gpio_num_t gpio;
     uint8_t logical_key;
-    uint8_t fallback_usage;
+    uint8_t single_usage;
+    uint8_t double_usage;
+    uint8_t long_usage;
     const char *logical_name;
     const char *label;
+    const char *source_base;
     uint8_t index;
     bool initialized;
     bool last_sample_high;
     bool stable_level_high;
     uint8_t stable_count;
     bool pressed;
+    bool long_sent;
+    bool pending_single;
+    bool double_candidate;
+    TickType_t press_tick;
+    TickType_t pending_single_due_tick;
 } keyboard_custom_key_t;
 
 typedef struct {
@@ -60,33 +80,45 @@ static keyboard_custom_key_t s_custom_keys[] = {
     {
         .gpio = BOARD_PINS_KEY1_IO,
         .logical_key = 1,
-        .fallback_usage = HID_KEYBOARD_USAGE_F13,
+        .single_usage = HID_KEYBOARD_USAGE_F13,
+        .double_usage = HID_KEYBOARD_USAGE_F17,
+        .long_usage = HID_KEYBOARD_USAGE_F21,
         .logical_name = "KEY1",
         .label = "key1.gpio45.f13",
+        .source_base = "key1.gpio45",
         .index = 0,
     },
     {
         .gpio = BOARD_PINS_KEY2_IO,
         .logical_key = 2,
-        .fallback_usage = HID_KEYBOARD_USAGE_F14,
+        .single_usage = HID_KEYBOARD_USAGE_F14,
+        .double_usage = HID_KEYBOARD_USAGE_F18,
+        .long_usage = HID_KEYBOARD_USAGE_F22,
         .logical_name = "KEY2",
         .label = "key2.gpio48.f14",
+        .source_base = "key2.gpio48",
         .index = 1,
     },
     {
         .gpio = BOARD_PINS_KEY3_IO,
         .logical_key = 3,
-        .fallback_usage = HID_KEYBOARD_USAGE_F15,
+        .single_usage = HID_KEYBOARD_USAGE_F15,
+        .double_usage = HID_KEYBOARD_USAGE_F19,
+        .long_usage = HID_KEYBOARD_USAGE_F23,
         .logical_name = "KEY3",
         .label = "key3.gpio47.f15",
+        .source_base = "key3.gpio47",
         .index = 2,
     },
     {
         .gpio = BOARD_PINS_KEY4_IO,
         .logical_key = 4,
-        .fallback_usage = HID_KEYBOARD_USAGE_F16,
+        .single_usage = HID_KEYBOARD_USAGE_F16,
+        .double_usage = HID_KEYBOARD_USAGE_F20,
+        .long_usage = HID_KEYBOARD_USAGE_F24,
         .logical_name = "KEY4",
         .label = "key4.gpio21.f16",
+        .source_base = "key4.gpio21",
         .index = 3,
     },
 };
@@ -116,16 +148,159 @@ static int8_t keyboard_ec11_quadrature_delta(uint8_t previous, uint8_t current)
 static void keyboard_custom_log_event(
     const keyboard_custom_key_t *key,
     uint32_t phase,
+    uint8_t usage,
     esp_err_t result)
 {
     diag_log(DIAG_SRC_KEYBOARD, DIAG_KBD_CUSTOM_KEY, DIAG_SEV_INFO,
              key->logical_key,
              phase,
-             key->fallback_usage,
+             usage,
              (uint32_t)result);
 }
 
-static void keyboard_custom_handle_sample(keyboard_custom_key_t *key, bool raw_high)
+static uint32_t keyboard_custom_elapsed_ms(TickType_t now, TickType_t start)
+{
+    uint64_t elapsed_ms = (uint64_t)(now - start) * (uint64_t)portTICK_PERIOD_MS;
+    return elapsed_ms > UINT32_MAX ? UINT32_MAX : (uint32_t)elapsed_ms;
+}
+
+static bool keyboard_custom_tick_reached(TickType_t now, TickType_t deadline)
+{
+    return (int32_t)(now - deadline) >= 0;
+}
+
+static uint8_t keyboard_custom_usage_for_gesture(
+    const keyboard_custom_key_t *key,
+    keyboard_custom_gesture_t gesture)
+{
+    switch (gesture) {
+    case KEYBOARD_CUSTOM_GESTURE_DOUBLE:
+        return key->double_usage;
+    case KEYBOARD_CUSTOM_GESTURE_LONG:
+        return key->long_usage;
+    case KEYBOARD_CUSTOM_GESTURE_SINGLE:
+    default:
+        return key->single_usage;
+    }
+}
+
+static uint32_t keyboard_custom_phase_for_gesture(keyboard_custom_gesture_t gesture)
+{
+    switch (gesture) {
+    case KEYBOARD_CUSTOM_GESTURE_DOUBLE:
+        return KEYBOARD_CUSTOM_PHASE_DOUBLE;
+    case KEYBOARD_CUSTOM_GESTURE_LONG:
+        return KEYBOARD_CUSTOM_PHASE_LONG;
+    case KEYBOARD_CUSTOM_GESTURE_SINGLE:
+    default:
+        return KEYBOARD_CUSTOM_PHASE_SINGLE;
+    }
+}
+
+static const char *keyboard_custom_gesture_name(keyboard_custom_gesture_t gesture)
+{
+    switch (gesture) {
+    case KEYBOARD_CUSTOM_GESTURE_DOUBLE:
+        return "double";
+    case KEYBOARD_CUSTOM_GESTURE_LONG:
+        return "long";
+    case KEYBOARD_CUSTOM_GESTURE_SINGLE:
+    default:
+        return "single";
+    }
+}
+
+static unsigned int keyboard_custom_function_number(uint8_t usage)
+{
+    if (usage >= HID_KEYBOARD_USAGE_F13 && usage <= HID_KEYBOARD_USAGE_F24) {
+        return 13u + (unsigned int)(usage - HID_KEYBOARD_USAGE_F13);
+    }
+    return usage;
+}
+
+static void keyboard_custom_make_source_label(
+    const keyboard_custom_key_t *key,
+    uint8_t usage,
+    char *buffer,
+    size_t buffer_size)
+{
+    unsigned int function_number = keyboard_custom_function_number(usage);
+    if (usage == key->single_usage) {
+        snprintf(buffer, buffer_size, "%s", key->label);
+    } else {
+        snprintf(buffer, buffer_size, "%s.f%u", key->source_base, function_number);
+    }
+}
+
+static void keyboard_custom_send_gesture(
+    keyboard_custom_key_t *key,
+    keyboard_custom_gesture_t gesture)
+{
+    uint8_t usage = keyboard_custom_usage_for_gesture(key, gesture);
+    unsigned int function_number = keyboard_custom_function_number(usage);
+    char source_label[32];
+    keyboard_custom_make_source_label(key, usage, source_label, sizeof(source_label));
+
+    esp_err_t ret = ble_hid_send_keyboard_usage_async(usage, source_label);
+    keyboard_custom_log_event(key, keyboard_custom_phase_for_gesture(gesture), usage, ret);
+    if (ret == ESP_OK) {
+        if (gesture == KEYBOARD_CUSTOM_GESTURE_SINGLE) {
+            ESP_LOGI(
+                TAG,
+                "custom key fallback queued: logical=%s source=%s usage=F%u gesture=single",
+                key->logical_name,
+                source_label,
+                function_number);
+        } else {
+            ESP_LOGI(
+                TAG,
+                "custom key gesture queued: logical=%s source=%s usage=F%u gesture=%s",
+                key->logical_name,
+                source_label,
+                function_number,
+                keyboard_custom_gesture_name(gesture));
+        }
+    } else {
+        status_led_set_error(STATUS_LED_ERROR_DOMAIN_BLE, STATUS_LED_ERROR_RETRYABLE, "hid_key_send_failed");
+        ESP_LOGW(
+            TAG,
+            "custom key gesture dropped: logical=%s source=%s usage=0x%02X gesture=%s error=%s",
+            key->logical_name,
+            source_label,
+            usage,
+            keyboard_custom_gesture_name(gesture),
+            esp_err_to_name(ret));
+    }
+}
+
+static void keyboard_custom_cancel_pending_single(keyboard_custom_key_t *key)
+{
+    key->pending_single = false;
+    key->double_candidate = false;
+}
+
+static void keyboard_custom_handle_timers(keyboard_custom_key_t *key, TickType_t now)
+{
+    if (!key->initialized) {
+        return;
+    }
+
+    if (key->pressed && !key->long_sent &&
+        keyboard_custom_elapsed_ms(now, key->press_tick) >= KEYBOARD_CUSTOM_LONG_PRESS_MS) {
+        keyboard_custom_cancel_pending_single(key);
+        key->long_sent = true;
+        keyboard_custom_send_gesture(key, KEYBOARD_CUSTOM_GESTURE_LONG);
+        return;
+    }
+
+    if (!key->pressed && key->pending_single &&
+        keyboard_custom_tick_reached(now, key->pending_single_due_tick)) {
+        keyboard_custom_cancel_pending_single(key);
+        keyboard_custom_send_gesture(key, KEYBOARD_CUSTOM_GESTURE_SINGLE);
+    }
+}
+
+static void keyboard_custom_handle_sample(keyboard_custom_key_t *key, bool raw_high, TickType_t now)
 {
     if (!key->initialized) {
         key->initialized = true;
@@ -133,6 +308,9 @@ static void keyboard_custom_handle_sample(keyboard_custom_key_t *key, bool raw_h
         key->stable_level_high = raw_high;
         key->stable_count = 1;
         key->pressed = false;
+        key->long_sent = false;
+        key->pending_single = false;
+        key->double_candidate = false;
         ESP_LOGI(
             TAG,
             "custom key idle detected: logical=%s source=%s raw_high=%d",
@@ -176,35 +354,43 @@ static void keyboard_custom_handle_sample(keyboard_custom_key_t *key, bool raw_h
         pressed ? 1 : 0);
 
     if (pressed && !key->pressed) {
-        esp_err_t ret = ble_hid_send_keyboard_usage_async(key->fallback_usage, key->label);
-        keyboard_custom_log_event(key, KEYBOARD_CUSTOM_PHASE_PRESS, ret);
-        if (ret == ESP_OK) {
-            ESP_LOGI(
-                TAG,
-                "custom key fallback queued: logical=%s source=%s usage=F%u",
-                key->logical_name,
-                key->label,
-                12u + key->logical_key);
-        } else {
-            status_led_set_error(STATUS_LED_ERROR_DOMAIN_BLE, STATUS_LED_ERROR_RETRYABLE, "hid_key_send_failed");
-            ESP_LOGW(
-                TAG,
-                "custom key fallback dropped: logical=%s source=%s usage=0x%02X error=%s",
-                key->logical_name,
-                key->label,
-                key->fallback_usage,
-                esp_err_to_name(ret));
-        }
+        key->pressed = true;
+        key->press_tick = now;
+        key->long_sent = false;
+        key->double_candidate = key->pending_single;
+        keyboard_custom_log_event(key, KEYBOARD_CUSTOM_PHASE_PRESS, key->single_usage, ESP_OK);
     } else if (!pressed && key->pressed) {
-        keyboard_custom_log_event(key, KEYBOARD_CUSTOM_PHASE_RELEASE, ESP_OK);
+        key->pressed = false;
+        keyboard_custom_log_event(key, KEYBOARD_CUSTOM_PHASE_RELEASE, key->single_usage, ESP_OK);
         ESP_LOGI(
             TAG,
             "custom key release: logical=%s source=%s usage=F%u",
             key->logical_name,
             key->label,
-            12u + key->logical_key);
+            keyboard_custom_function_number(key->single_usage));
+
+        if (key->long_sent) {
+            key->long_sent = false;
+            keyboard_custom_cancel_pending_single(key);
+        } else if (keyboard_custom_elapsed_ms(now, key->press_tick) >= KEYBOARD_CUSTOM_LONG_PRESS_MS) {
+            keyboard_custom_cancel_pending_single(key);
+            keyboard_custom_send_gesture(key, KEYBOARD_CUSTOM_GESTURE_LONG);
+        } else if (key->double_candidate && key->pending_single) {
+            keyboard_custom_cancel_pending_single(key);
+            keyboard_custom_send_gesture(key, KEYBOARD_CUSTOM_GESTURE_DOUBLE);
+        } else {
+            key->pending_single = true;
+            key->double_candidate = false;
+            key->pending_single_due_tick = now + pdMS_TO_TICKS(KEYBOARD_CUSTOM_DOUBLE_CLICK_WINDOW_MS);
+            ESP_LOGI(
+                TAG,
+                "custom key single pending: logical=%s source=%s usage=F%u window_ms=%d",
+                key->logical_name,
+                key->label,
+                keyboard_custom_function_number(key->single_usage),
+                KEYBOARD_CUSTOM_DOUBLE_CLICK_WINDOW_MS);
+        }
     }
-    key->pressed = pressed;
 }
 
 static void keyboard_custom_task(void *parameter)
@@ -214,9 +400,12 @@ static void keyboard_custom_task(void *parameter)
 
     while (1) {
         watchdog_platform_feed_current_task();
+        TickType_t now = xTaskGetTickCount();
         for (size_t index = 0; index < sizeof(s_custom_keys) / sizeof(s_custom_keys[0]); ++index) {
+            keyboard_custom_handle_timers(&s_custom_keys[index], now);
             int level = gpio_get_level(s_custom_keys[index].gpio);
-            keyboard_custom_handle_sample(&s_custom_keys[index], level != 0);
+            keyboard_custom_handle_sample(&s_custom_keys[index], level != 0, now);
+            keyboard_custom_handle_timers(&s_custom_keys[index], now);
         }
         vTaskDelay(pdMS_TO_TICKS(KEYBOARD_CUSTOM_POLL_MS));
     }
@@ -337,9 +526,11 @@ static esp_err_t keyboard_custom_start(void)
 
     ESP_LOGI(
         TAG,
-        "custom keys ready: key1=gpio45:f13 key2=gpio48:f14 key3=gpio47:f15 key4=gpio21:f16 active_low=1 poll_ms=%d debounce_samples=%d",
+        "custom keys ready: key1=gpio45:f13/f17/f21 key2=gpio48:f14/f18/f22 key3=gpio47:f15/f19/f23 key4=gpio21:f16/f20/f24 active_low=1 poll_ms=%d debounce_samples=%d double_ms=%d long_ms=%d",
         KEYBOARD_CUSTOM_POLL_MS,
-        KEYBOARD_CUSTOM_DEBOUNCE_SAMPLES);
+        KEYBOARD_CUSTOM_DEBOUNCE_SAMPLES,
+        KEYBOARD_CUSTOM_DOUBLE_CLICK_WINDOW_MS,
+        KEYBOARD_CUSTOM_LONG_PRESS_MS);
     return ESP_OK;
 }
 

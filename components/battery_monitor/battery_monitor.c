@@ -39,6 +39,7 @@ typedef struct {
 static adc_oneshot_unit_handle_t s_adc1_handle;
 static bool s_warned;
 static SemaphoreHandle_t s_mutex;
+static portMUX_TYPE s_mutex_init_lock = portMUX_INITIALIZER_UNLOCKED;
 static battery_monitor_adc_channel_state_t s_battery_adc = {
     .gpio = BOARD_PINS_BAT_V_ADC_IO,
 };
@@ -238,6 +239,30 @@ uint8_t battery_monitor_percent_from_mv(uint32_t battery_mv)
     return (uint8_t)level;
 }
 
+static esp_err_t battery_monitor_ensure_mutex(void)
+{
+    if (s_mutex != NULL) {
+        return ESP_OK;
+    }
+
+    SemaphoreHandle_t new_mutex = xSemaphoreCreateMutex();
+    if (new_mutex == NULL) {
+        return ESP_ERR_NO_MEM;
+    }
+
+    portENTER_CRITICAL(&s_mutex_init_lock);
+    if (s_mutex == NULL) {
+        s_mutex = new_mutex;
+        new_mutex = NULL;
+    }
+    portEXIT_CRITICAL(&s_mutex_init_lock);
+
+    if (new_mutex != NULL) {
+        vSemaphoreDelete(new_mutex);
+    }
+    return ESP_OK;
+}
+
 esp_err_t battery_monitor_read(battery_monitor_status_t *out_status)
 {
     if (out_status == NULL) {
@@ -249,12 +274,10 @@ esp_err_t battery_monitor_read(battery_monitor_status_t *out_status)
         .result = ESP_FAIL,
     };
 
-    if (s_mutex == NULL) {
-        s_mutex = xSemaphoreCreateMutex();
-        if (s_mutex == NULL) {
-            out_status->result = ESP_ERR_NO_MEM;
-            return ESP_ERR_NO_MEM;
-        }
+    esp_err_t mutex_ret = battery_monitor_ensure_mutex();
+    if (mutex_ret != ESP_OK) {
+        out_status->result = mutex_ret;
+        return mutex_ret;
     }
 
     if (xSemaphoreTake(s_mutex, portMAX_DELAY) != pdTRUE) {
@@ -357,12 +380,10 @@ esp_err_t battery_monitor_read_power_rail(
     }
     out_status->gpio = (uint32_t)adc->gpio;
 
-    if (s_mutex == NULL) {
-        s_mutex = xSemaphoreCreateMutex();
-        if (s_mutex == NULL) {
-            out_status->result = ESP_ERR_NO_MEM;
-            return ESP_ERR_NO_MEM;
-        }
+    esp_err_t mutex_ret = battery_monitor_ensure_mutex();
+    if (mutex_ret != ESP_OK) {
+        out_status->result = mutex_ret;
+        return mutex_ret;
     }
 
     if (xSemaphoreTake(s_mutex, portMAX_DELAY) != pdTRUE) {

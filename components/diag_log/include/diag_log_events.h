@@ -49,7 +49,7 @@
 #define DIAG_KBD_GPIO_FAIL     3   /* a1=gpio_group(1=CUSTOM_KEY,2=EC11_AB,3=EC11_C), a2=esp_err, a3=0, a4=0 */
 #define DIAG_KBD_EC11_DETENT   4   /* a1=direction(1=CW,2=CCW), a2=detent_count, a3=0, a4=0 */
 #define DIAG_KBD_QUEUE_DROP    5   /* a1=key_usage_or_ascii, a2=queue_depth, a3=0, a4=0 */
-#define DIAG_KBD_CUSTOM_KEY    6   /* a1=logical_key(1=KEY1..4=KEY4), a2=phase(1=press,2=release), a3=fallback_usage, a4=esp_err */
+#define DIAG_KBD_CUSTOM_KEY    6   /* a1=logical_key(1=KEY1..4=KEY4), a2=phase(1=press,2=release,3=single,4=double,5=long), a3=hid_usage, a4=esp_err */
 
 /* BLE HID events (DIAG_SRC_BLE_HID) */
 #define DIAG_BLE_CONNECT       1   /* a1=connected, a2=heap_kb, a3=disconnect_count, a4=0 */

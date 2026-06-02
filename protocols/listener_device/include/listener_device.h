@@ -23,7 +23,7 @@ extern "C" {
 #define LISTENER_DEVICE_FACTORY_READINESS \
     "factory_ready;pairable_on_boot;post_degraded_boot;board=voice-keyboard-n4"
 #define LISTENER_DEVICE_CAPABILITIES \
-    "ble_hid_keyboard;ble_audio_vka1;usb_serial_text;voice_record_toggle;custom_keys_f13_f16;post_status;firmware_ota_v1;flash_4mb;no_psram"
+    "ble_hid_keyboard;ble_audio_vka1;ble_audio_control_v1;usb_serial_text;voice_record_toggle;custom_keys_f13_f16;custom_key_gestures_f13_f24;post_status;firmware_ota_v1;flash_4mb;no_psram"
 
 #define LISTENER_DEVICE_READY_HID        (1u << 0)
 #define LISTENER_DEVICE_READY_AUDIO      (1u << 1)

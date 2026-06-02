@@ -22,7 +22,7 @@
 #include "power_manager.h"
 
 #define BLE_DIAG_LOG_CONTROL_MAX_BYTES 128
-#define BLE_DIAG_LOG_CHUNK_HEADER_BYTES 8U
+#define BLE_DIAG_LOG_CHUNK_HEADER_BYTES 10U
 #define BLE_DIAG_LOG_ATT_HEADER_BYTES 3U
 #define BLE_DIAG_LOG_EVENT_BYTES DIAG_LOG_EVENT_WIRE_BYTES
 #define BLE_DIAG_LOG_MAX_EVENTS_PER_CHUNK 4U
@@ -33,12 +33,15 @@ typedef enum {
     BLE_DIAG_LOG_GATT_ATTR_COUNT = 3,
 } ble_diag_log_gatt_attr_t;
 
-/* Notification chunk header: [event_count:2][global_offset:2][crc32:4] */
-typedef struct {
+/* Notification chunk header: [event_count:2][global_offset:4][crc32:4] */
+typedef struct __attribute__((packed)) {
     uint16_t event_count;
-    uint16_t global_offset;
+    uint32_t global_offset;
     uint32_t events_crc;
 } diag_log_chunk_header_t;
+_Static_assert(
+    sizeof(diag_log_chunk_header_t) == BLE_DIAG_LOG_CHUNK_HEADER_BYTES,
+    "diag log chunk header wire size must match BLE_DIAG_LOG_CHUNK_HEADER_BYTES");
 
 static const char *TAG = "ble_diag_log";
 static const ble_uuid128_t s_service_uuid = BLE_DIAG_LOG_SERVICE_UUID;
@@ -275,7 +278,7 @@ static int ble_diag_log_send_chunk(uint32_t offset)
     /* Chunk header */
     diag_log_chunk_header_t header = {
         .event_count = (uint16_t)read_count,
-        .global_offset = (uint16_t)offset,
+        .global_offset = offset,
         .events_crc = esp_crc32_le(0, event_buf, read_count * BLE_DIAG_LOG_EVENT_BYTES),
     };
 
@@ -413,7 +416,13 @@ static int ble_diag_log_access(
 
     if (ctxt->op == BLE_GATT_ACCESS_OP_WRITE_CHR) {
         if (attr == BLE_DIAG_LOG_GATT_ATTR_CONTROL) {
-            s_conn_handle = conn_handle;
+            if (s_conn_handle != BLE_HS_CONN_HANDLE_NONE && conn_handle != s_conn_handle) {
+                ESP_LOGD(TAG, "stale control write ignored: conn=%u active=%u", conn_handle, s_conn_handle);
+                return BLE_ATT_ERR_UNLIKELY;
+            }
+            if (s_conn_handle == BLE_HS_CONN_HANDLE_NONE) {
+                s_conn_handle = conn_handle;
+            }
             return ble_diag_log_handle_control_write(conn_handle, ctxt->om);
         }
         return BLE_ATT_ERR_WRITE_NOT_PERMITTED;

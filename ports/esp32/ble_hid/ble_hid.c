@@ -104,6 +104,7 @@ static char s_usb_command_buffer[BLE_HID_USB_COMMAND_BUFFER_BYTES];
 
 static bool s_ble_connected;
 static uint32_t s_disconnect_count;
+static portMUX_TYPE s_disconnect_count_lock = portMUX_INITIALIZER_UNLOCKED;
 static uint32_t s_connect_timestamp_ms;
 static QueueHandle_t s_ascii_queue;
 static QueueHandle_t s_usage_queue;
@@ -112,6 +113,25 @@ static bool s_battery_service_valid;
 static uint8_t s_battery_service_level = BLE_HID_BATTERY_LEVEL_INVALID;
 
 static void ble_hid_log_dis_gatt_state(void);
+
+static uint32_t ble_hid_disconnect_count_snapshot(void)
+{
+    portENTER_CRITICAL(&s_disconnect_count_lock);
+    uint32_t count = s_disconnect_count;
+    portEXIT_CRITICAL(&s_disconnect_count_lock);
+    return count;
+}
+
+static uint32_t ble_hid_increment_disconnect_count(void)
+{
+    portENTER_CRITICAL(&s_disconnect_count_lock);
+    if (s_disconnect_count != UINT32_MAX) {
+        s_disconnect_count++;
+    }
+    uint32_t count = s_disconnect_count;
+    portEXIT_CRITICAL(&s_disconnect_count_lock);
+    return count;
+}
 
 static void ble_hid_publish_readiness(
     uint32_t ready_mask,
@@ -555,13 +575,17 @@ static void ble_hid_task_start(void)
         return;
     }
 
-    xTaskCreate(
+    BaseType_t task_ok = xTaskCreate(
         ble_hid_keyboard_task,
         "ble_hid_keyboard_task",
         3 * 1024,
         NULL,
         configMAX_PRIORITIES - 3,
         &s_ble_hid_ctx.task_handle);
+    if (task_ok != pdPASS) {
+        s_ble_hid_ctx.task_handle = NULL;
+        ESP_LOGE(TAG, "failed to start BLE HID keyboard task");
+    }
 }
 
 static void ble_hid_task_stop(void)
@@ -605,8 +629,9 @@ static void ble_hid_event_callback(void *handler_args, esp_event_base_t base, in
         status_led_set_ble_state(STATUS_LED_BLE_CONNECTED, true);
         s_connect_timestamp_ms = (uint32_t)(esp_timer_get_time() / 1000LL);
         ble_hid_update_battery_level("connect_restore", true);
+        uint32_t disconnect_count = ble_hid_disconnect_count_snapshot();
         diag_log(DIAG_SRC_BLE_HID, DIAG_BLE_CONNECT, DIAG_SEV_INFO,
-                 1, esp_get_free_heap_size() / 1024, s_disconnect_count, 0);
+                 1, esp_get_free_heap_size() / 1024, disconnect_count, 0);
         break;
     case ESP_HIDD_PROTOCOL_MODE_EVENT:
         ESP_LOGI(
@@ -650,7 +675,7 @@ static void ble_hid_event_callback(void *handler_args, esp_event_base_t base, in
     case ESP_HIDD_DISCONNECT_EVENT:
         {
             s_ble_connected = false;
-            s_disconnect_count++;
+            uint32_t disconnect_count = ble_hid_increment_disconnect_count();
             uint32_t conn_duration = (uint32_t)(esp_timer_get_time() / 1000LL) - s_connect_timestamp_ms;
             uint32_t heap_kb = esp_get_free_heap_size() / 1024;
             ESP_LOGI(TAG, "DISCONNECT: %s",
@@ -658,7 +683,7 @@ static void ble_hid_event_callback(void *handler_args, esp_event_base_t base, in
                          esp_hidd_dev_transport_get(param->disconnect.dev),
                          param->disconnect.reason));
             diag_log(DIAG_SRC_BLE_HID, DIAG_BLE_DISCONNECT, DIAG_SEV_WARN,
-                     param->disconnect.reason, s_disconnect_count,
+                     param->disconnect.reason, disconnect_count,
                      conn_duration, heap_kb);
             power_manager_set_ble_connected(false);
             ble_diag_log_on_gap_disconnect(0);
@@ -976,5 +1001,5 @@ bool ble_hid_is_connected(void)
 
 uint32_t ble_hid_get_disconnect_count(void)
 {
-    return s_disconnect_count;
+    return ble_hid_disconnect_count_snapshot();
 }

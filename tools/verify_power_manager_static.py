@@ -31,7 +31,7 @@ CHECKS = {
         "wake_policy=%s",
         "wake_capable_keys=%s",
         "voice_key_deep_sleep_wake=%u",
-        "N4 validation profile: KEY1/GPIO45 voice key is not RTC deep-sleep wake capable",
+        "N4 validation profile: EC11-KEY/GPIO35 recording key is not RTC deep-sleep wake capable",
         "production hardware must provide RTC-capable primary voice/wake input",
         "press KEY4/GPIO21 after deep sleep on N4",
         "POWER_MANAGER_WAKE_POLICY_KEY4_ONLY",

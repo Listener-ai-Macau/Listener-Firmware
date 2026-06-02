@@ -43,12 +43,14 @@ def main() -> int:
         "GAP disconnect must abort diagnostic export with the real connection handle",
     )
     require(
-        'BLE_HID_GAP_GATT_SCHEMA_REV "diag_export_v1"' in gap,
+        'BLE_HID_GAP_GATT_SCHEMA_REV "diag_export_v2"' in gap,
         "adding the diagnostic GATT service must bump the schema rev so bonded Windows hosts refresh cached services",
     )
 
     require("ble_att_mtu(conn_handle)" in diag_service, "diagnostic export must query the current ATT MTU")
     require("BLE_DIAG_LOG_ATT_HEADER_BYTES 3U" in diag_service, "diagnostic export must account for ATT opcode+handle bytes")
+    require("BLE_DIAG_LOG_CHUNK_HEADER_BYTES 10U" in diag_service, "diagnostic chunk header must carry a 32-bit export offset")
+    require("uint32_t global_offset" in diag_service, "diagnostic chunk offset must not truncate after 65535 events")
     require("s_att_value_max_bytes" in diag_service, "diagnostic export must track ATT value payload bytes")
     require(
         "data_len > s_att_value_max_bytes" in diag_service,

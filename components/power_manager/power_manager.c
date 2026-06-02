@@ -62,7 +62,7 @@ extern void status_led_prepare_sleep(void) __attribute__((weak));
 #define POWER_MANAGER_BATTERY_WARN_PERCENT 10U
 #define POWER_MANAGER_TASK_STACK_BYTES (4 * 1024)
 #define POWER_MANAGER_WAKE_CAPABLE_KEYS "KEY4/GPIO21"
-#define POWER_MANAGER_VOICE_KEY_LIMITATION "N4 validation profile: KEY1/GPIO45 voice key is not RTC deep-sleep wake capable; production hardware must provide RTC-capable primary voice/wake input"
+#define POWER_MANAGER_VOICE_KEY_LIMITATION "N4 validation profile: EC11-KEY/GPIO35 recording key is not RTC deep-sleep wake capable; production hardware must provide RTC-capable primary voice/wake input"
 #define POWER_MANAGER_WAKE_USER_ACTION "press KEY4/GPIO21 after deep sleep on N4"
 #define POWER_MANAGER_WAKE_POLICY_CODE ((uint32_t)POWER_MANAGER_WAKE_POLICY_KEY4_ONLY)
 #define POWER_MANAGER_WAKE_VOICE_KEY_CAPABLE_CODE 0U
@@ -95,14 +95,14 @@ static bool s_ble_connected;
 static bool s_battery_warning_logged;
 static bool s_audio_idle_power_save_enabled;
 static uint32_t s_blockers;
-static uint32_t s_last_user_activity_ms;
-static uint32_t s_last_radio_activity_ms;
+static uint64_t s_last_user_activity_ms;
+static uint64_t s_last_radio_activity_ms;
 static power_manager_state_t s_state = POWER_MANAGER_STATE_ACTIVE;
 static power_manager_wake_source_t s_last_wake_source = POWER_MANAGER_WAKE_SOURCE_POWER_ON;
 
-static uint32_t power_manager_now_ms(void)
+static uint64_t power_manager_now_ms(void)
 {
-    return (uint32_t)(esp_timer_get_time() / 1000LL);
+    return (uint64_t)(esp_timer_get_time() / 1000LL);
 }
 
 static uint32_t power_manager_clamp_u64_to_u32(uint64_t value)
@@ -366,17 +366,17 @@ static void power_manager_capture_wake_stats(void)
         s_rtc_last_wake_battery_valid ? 1u : 0u);
 }
 
-static uint32_t power_manager_user_idle_ms_locked(uint32_t now_ms)
+static uint32_t power_manager_user_idle_ms_locked(uint64_t now_ms)
 {
-    return now_ms - s_last_user_activity_ms;
+    return power_manager_clamp_u64_to_u32(now_ms - s_last_user_activity_ms);
 }
 
-static uint32_t power_manager_radio_idle_ms_locked(uint32_t now_ms)
+static uint32_t power_manager_radio_idle_ms_locked(uint64_t now_ms)
 {
-    return now_ms - s_last_radio_activity_ms;
+    return power_manager_clamp_u64_to_u32(now_ms - s_last_radio_activity_ms);
 }
 
-static power_manager_state_t power_manager_target_state_locked(uint32_t now_ms)
+static power_manager_state_t power_manager_target_state_locked(uint64_t now_ms)
 {
     uint32_t user_idle_ms = power_manager_user_idle_ms_locked(now_ms);
     uint32_t radio_idle_ms = power_manager_radio_idle_ms_locked(now_ms);
@@ -400,7 +400,7 @@ static power_manager_state_t power_manager_target_state_locked(uint32_t now_ms)
         : POWER_MANAGER_STATE_ACTIVE;
 }
 
-static bool power_manager_refresh_ble_connection_locked(uint32_t now_ms)
+static bool power_manager_refresh_ble_connection_locked(uint64_t now_ms)
 {
     bool connected = ble_hid_gap_is_connected != NULL && ble_hid_gap_is_connected();
     if (s_ble_connected == connected) {
@@ -545,7 +545,7 @@ void power_manager_get_snapshot(power_manager_snapshot_t *snapshot)
     }
 
     memset(snapshot, 0, sizeof(*snapshot));
-    uint32_t now_ms = power_manager_now_ms();
+    uint64_t now_ms = power_manager_now_ms();
 
     if (s_mutex != NULL && xSemaphoreTake(s_mutex, portMAX_DELAY) == pdTRUE) {
         snapshot->state = s_state;
@@ -754,7 +754,7 @@ static void power_manager_evaluate(void)
         return;
     }
 
-    uint32_t now_ms = power_manager_now_ms();
+    uint64_t now_ms = power_manager_now_ms();
     power_manager_state_t previous = POWER_MANAGER_STATE_ACTIVE;
     power_manager_state_t next = POWER_MANAGER_STATE_ACTIVE;
     uint32_t user_idle_ms = 0;
@@ -788,7 +788,7 @@ static void power_manager_evaluate(void)
     if (next == POWER_MANAGER_STATE_OVERNIGHT_SLEEP) {
         esp_err_t sleep_ret = power_manager_enter_sleep(POWER_MANAGER_SLEEP_REASON_OVERNIGHT_IDLE);
         if (sleep_ret != ESP_OK && xSemaphoreTake(s_mutex, portMAX_DELAY) == pdTRUE) {
-            uint32_t reset_ms = power_manager_now_ms();
+            uint64_t reset_ms = power_manager_now_ms();
             s_last_user_activity_ms = reset_ms;
             s_last_radio_activity_ms = reset_ms;
             s_state = s_ble_connected
@@ -915,7 +915,7 @@ void power_manager_record_activity(const char *reason)
     uint32_t blockers = 0;
     if (xSemaphoreTake(s_mutex, portMAX_DELAY) == pdTRUE) {
         previous = s_state;
-        uint32_t now_ms = power_manager_now_ms();
+        uint64_t now_ms = power_manager_now_ms();
         s_last_user_activity_ms = now_ms;
         s_last_radio_activity_ms = now_ms;
         if (s_state != POWER_MANAGER_STATE_ACTIVE) {
@@ -957,7 +957,7 @@ void power_manager_set_blocker(uint32_t blocker_mask, bool enabled)
             s_blockers &= ~blocker_mask;
         }
         new_blockers = s_blockers;
-        uint32_t now_ms = power_manager_now_ms();
+        uint64_t now_ms = power_manager_now_ms();
         s_last_user_activity_ms = now_ms;
         s_last_radio_activity_ms = now_ms;
         previous = s_state;

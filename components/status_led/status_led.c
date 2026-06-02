@@ -1218,7 +1218,7 @@ esp_err_t status_led_init(void)
              (uint32_t)s_state.profile, (uint32_t)BOARD_PINS_RGB_STATUS_IO,
              (uint32_t)BOARD_PINS_RGB_KEY_IO, (uint32_t)BOARD_PINS_RGB_EDGE_IO);
     status_led_force_all_off();
-    return final_ret == ESP_OK ? ESP_OK : ESP_OK;
+    return final_ret;
 }
 
 esp_err_t status_led_start(void)

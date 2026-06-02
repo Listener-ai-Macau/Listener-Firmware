@@ -1,7 +1,25 @@
 #include "diag_log.h"
 #include "diag_log_platform.h"
 
+#include "freertos/FreeRTOS.h"
+
 static bool s_dumping;
+static portMUX_TYPE s_dumping_lock = portMUX_INITIALIZER_UNLOCKED;
+
+static void diag_log_set_dumping(bool dumping)
+{
+    portENTER_CRITICAL(&s_dumping_lock);
+    s_dumping = dumping;
+    portEXIT_CRITICAL(&s_dumping_lock);
+}
+
+static bool diag_log_get_dumping(void)
+{
+    portENTER_CRITICAL(&s_dumping_lock);
+    bool dumping = s_dumping;
+    portEXIT_CRITICAL(&s_dumping_lock);
+    return dumping;
+}
 
 void diag_log_init(void)
 {
@@ -23,16 +41,16 @@ uint32_t diag_log_count(void)
 
 void diag_log_dump(void)
 {
-    s_dumping = true;
+    diag_log_set_dumping(true);
     diag_log_platform_dump();
-    s_dumping = false;
+    diag_log_set_dumping(false);
 }
 
 void diag_log_dump_last(uint32_t count)
 {
-    s_dumping = true;
+    diag_log_set_dumping(true);
     diag_log_platform_dump_last(count);
-    s_dumping = false;
+    diag_log_set_dumping(false);
 }
 
 void diag_log_clear(void)
@@ -42,7 +60,7 @@ void diag_log_clear(void)
 
 bool diag_log_is_dumping(void)
 {
-    return s_dumping || diag_log_platform_is_dumping();
+    return diag_log_get_dumping() || diag_log_platform_is_dumping();
 }
 
 uint32_t diag_log_read_range(uint32_t offset, uint32_t limit,

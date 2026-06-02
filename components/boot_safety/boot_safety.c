@@ -28,6 +28,15 @@ RTC_NOINIT_ATTR static boot_safety_rtc_state_t s_rtc_state;
 
 static boot_safety_status_t s_status;
 static TaskHandle_t s_clear_task;
+static portMUX_TYPE s_status_lock = portMUX_INITIALIZER_UNLOCKED;
+
+static boot_safety_status_t boot_safety_status_snapshot(void)
+{
+    portENTER_CRITICAL(&s_status_lock);
+    boot_safety_status_t status = s_status;
+    portEXIT_CRITICAL(&s_status_lock);
+    return status;
+}
 
 static bool boot_safety_reason_counts_as_crash(esp_reset_reason_t reason)
 {
@@ -92,32 +101,35 @@ void boot_safety_init(void)
         s_rtc_state.safe_mode_latched = 1;
     }
 
+    portENTER_CRITICAL(&s_status_lock);
     s_status.reset_reason = reason;
     s_status.crash_count = s_rtc_state.crash_count;
     s_status.safe_mode = s_rtc_state.safe_mode_latched != 0;
     s_status.clear_scheduled = false;
+    boot_safety_status_t status = s_status;
+    portEXIT_CRITICAL(&s_status_lock);
 
     ESP_LOGI(
         TAG,
         "status: reset_reason=%s(%u) crash_count=%" PRIu32 " threshold=%u safe_mode=%u",
         boot_safety_reset_reason_name(reason),
         (unsigned)reason,
-        s_status.crash_count,
+        status.crash_count,
         (unsigned)BOOT_SAFETY_SAFE_MODE_THRESHOLD,
-        s_status.safe_mode ? 1u : 0u);
+        status.safe_mode ? 1u : 0u);
     diag_log(
         DIAG_SRC_SYSTEM,
         DIAG_SYS_BOOT_SAFETY,
-        s_status.safe_mode ? DIAG_SEV_WARN : DIAG_SEV_INFO,
+        status.safe_mode ? DIAG_SEV_WARN : DIAG_SEV_INFO,
         (uint32_t)reason,
-        s_status.crash_count,
-        s_status.safe_mode ? 1u : 0u,
+        status.crash_count,
+        status.safe_mode ? 1u : 0u,
         BOOT_SAFETY_SAFE_MODE_THRESHOLD);
 }
 
 bool boot_safety_is_safe_mode(void)
 {
-    return s_status.safe_mode;
+    return boot_safety_status_snapshot().safe_mode;
 }
 
 void boot_safety_get_status(boot_safety_status_t *status)
@@ -125,29 +137,40 @@ void boot_safety_get_status(boot_safety_status_t *status)
     if (status == NULL) {
         return;
     }
-    *status = s_status;
+    *status = boot_safety_status_snapshot();
 }
 
 static void boot_safety_clear_task(void *parameter)
 {
     (void)parameter;
     vTaskDelay(pdMS_TO_TICKS(BOOT_SAFETY_NORMAL_CLEAR_DELAY_MS));
+    bool cleared = false;
+    esp_reset_reason_t reset_reason = ESP_RST_UNKNOWN;
+    portENTER_CRITICAL(&s_status_lock);
     if (!s_status.safe_mode) {
         s_rtc_state.crash_count = 0;
         s_rtc_state.safe_mode_latched = 0;
+        reset_reason = s_status.reset_reason;
         s_status.crash_count = 0;
         s_status.clear_scheduled = false;
-        ESP_LOGI(TAG, "normal boot survived %ums; crash counter cleared", (unsigned)BOOT_SAFETY_NORMAL_CLEAR_DELAY_MS);
-        diag_log(DIAG_SRC_SYSTEM, DIAG_SYS_BOOT_SAFETY, DIAG_SEV_INFO,
-                 (uint32_t)s_status.reset_reason, 0, 0, 0);
+        cleared = true;
     }
     s_clear_task = NULL;
+    portEXIT_CRITICAL(&s_status_lock);
+    if (cleared) {
+        ESP_LOGI(TAG, "normal boot survived %ums; crash counter cleared", (unsigned)BOOT_SAFETY_NORMAL_CLEAR_DELAY_MS);
+        diag_log(DIAG_SRC_SYSTEM, DIAG_SYS_BOOT_SAFETY, DIAG_SEV_INFO,
+                 (uint32_t)reset_reason, 0, 0, 0);
+    }
     vTaskDelete(NULL);
 }
 
 void boot_safety_start_normal_boot_clear_timer(void)
 {
-    if (s_status.safe_mode || s_clear_task != NULL) {
+    portENTER_CRITICAL(&s_status_lock);
+    bool already_scheduled = s_status.safe_mode || s_clear_task != NULL;
+    portEXIT_CRITICAL(&s_status_lock);
+    if (already_scheduled) {
         return;
     }
 
@@ -159,7 +182,9 @@ void boot_safety_start_normal_boot_clear_timer(void)
         3,
         &s_clear_task);
     if (task_ok == pdPASS) {
+        portENTER_CRITICAL(&s_status_lock);
         s_status.clear_scheduled = true;
+        portEXIT_CRITICAL(&s_status_lock);
         ESP_LOGI(TAG, "normal boot clear timer armed: delay_ms=%u", (unsigned)BOOT_SAFETY_NORMAL_CLEAR_DELAY_MS);
     } else {
         ESP_LOGW(TAG, "normal boot clear timer task create failed");
@@ -168,15 +193,16 @@ void boot_safety_start_normal_boot_clear_timer(void)
 
 static void boot_safety_log_status(void)
 {
+    boot_safety_status_t status = boot_safety_status_snapshot();
     ESP_LOGI(
         TAG,
         "USB STATUS reset_reason=%s(%u) crash_count=%" PRIu32 " threshold=%u safe_mode=%u clear_scheduled=%u",
-        boot_safety_reset_reason_name(s_status.reset_reason),
-        (unsigned)s_status.reset_reason,
-        s_status.crash_count,
+        boot_safety_reset_reason_name(status.reset_reason),
+        (unsigned)status.reset_reason,
+        status.crash_count,
         (unsigned)BOOT_SAFETY_SAFE_MODE_THRESHOLD,
-        s_status.safe_mode ? 1u : 0u,
-        s_status.clear_scheduled ? 1u : 0u);
+        status.safe_mode ? 1u : 0u,
+        status.clear_scheduled ? 1u : 0u);
 }
 
 bool boot_safety_consume_usb_command(const char *line)
@@ -201,9 +227,11 @@ bool boot_safety_consume_usb_command(const char *line)
 
     if (strcmp(command, "CLEAR") == 0) {
         boot_safety_reset_rtc_state();
+        portENTER_CRITICAL(&s_status_lock);
         s_status.crash_count = 0;
         s_status.safe_mode = false;
         s_status.clear_scheduled = false;
+        portEXIT_CRITICAL(&s_status_lock);
         ESP_LOGW(TAG, "USB CLEAR accepted; crash counter and safe mode latch cleared");
         return true;
     }

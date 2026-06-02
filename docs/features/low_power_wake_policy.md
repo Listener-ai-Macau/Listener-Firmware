@@ -1,6 +1,6 @@
 # Low-Power Wake Policy
 
-Current N4 firmware uses `components/power_manager` for idle power reduction and overnight deep-sleep diagnostics. Deep sleep wakes from KEY4/GPIO21. KEY1/GPIO45 is the product voice key, but it is not RTC deep-sleep wake capable on the active N4 validation profile.
+Current N4 firmware uses `components/power_manager` for idle power reduction and overnight deep-sleep diagnostics. Deep sleep wakes from KEY4/GPIO21. EC11-KEY/GPIO35 is the active recording key on the N4 validation profile, but it is not RTC deep-sleep wake capable.
 
 Observable firmware contract:
 
