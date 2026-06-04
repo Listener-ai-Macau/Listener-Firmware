@@ -57,6 +57,7 @@ $header = "ports/esp32/ble_audio_stream/include/ble_audio_stream.h"
 $stream = "ports/esp32/ble_audio_stream/ble_audio_stream_esp32.c"
 $capture = "ports/esp32/audio_capture/audio_capture_esp32.c"
 $events = "components/diag_log/include/diag_log_events.h"
+$voiceControl = "components/voice_recording_control/voice_recording_control.c"
 
 Assert-Contains -RelativePath $header -Pattern "typedef\s+struct\s*\{(?s).*queue_depth.*audio_pool_in_use.*pressure_percent.*pause_recommended" -Description "backpressure snapshot API shape"
 Assert-Contains -RelativePath $header -Pattern "ble_audio_stream_get_backpressure" -Description "public backpressure snapshot function"
@@ -79,6 +80,19 @@ Assert-Order -RelativePath $capture -First "if (audio_capture_backpressure_shoul
 Assert-Contains -RelativePath $events -Pattern "DIAG_AUDIO_BACKPRESSURE" -Description "audio backpressure event schema"
 Assert-Contains -RelativePath $events -Pattern "DIAG_BAUD_WATERMARK" -Description "BLE audio watermark event schema"
 Assert-Contains -RelativePath $events -Pattern "DIAG_BAUD_BACKPRESSURE" -Description "BLE audio backpressure event schema"
+
+Assert-Contains -RelativePath $voiceControl -Pattern "voice_recording_control_source_is_user_start_intent" -Description "user start intent source classifier"
+Assert-Contains -RelativePath $voiceControl -Pattern "voice_recording_control_source_is_host_control" -Description "host cleanup/control source classifier"
+Assert-Contains -RelativePath $voiceControl -Pattern "host_toggle_transport_not_ready_no_pending" -Description "host transport-not-ready toggle negative pending-start case"
+Assert-Contains -RelativePath $voiceControl -Pattern "host_cleanup_toggle_cleared_pending_start" -Description "host cleanup toggle clears stale pending start"
+Assert-Contains -RelativePath $voiceControl -Pattern "host_cleanup_toggle_ignored_user_pending" -Description "host cleanup toggle preserves real user pending start"
+Assert-Contains -RelativePath $voiceControl -Pattern "host_cleanup_toggle_ignored_after_abort" -Description "late host cleanup toggle after aborted session guard"
+Assert-Contains -RelativePath $voiceControl -Pattern "toggle_start_pending_transfer" -Description "real user next-start pending transfer case"
+Assert-Contains -RelativePath $voiceControl -Pattern 'strcmp\(action, "STOP"\) == 0 \|\| strcmp\(action, "CLEANUP"\) == 0' -Description "explicit stop/cleanup control commands"
+Assert-Contains -RelativePath $voiceControl -Pattern '(?s)if \(host_control\) \{.*host_cleanup_toggle_cleared_pending_start.*return;.*power_manager_record_activity\("voice_recording_pending_start"\)' -Description "host cleanup toggle exits before pending-start ignore path"
+Assert-Contains -RelativePath $voiceControl -Pattern '(?s)if \(ret == ESP_ERR_INVALID_STATE && !audio_capture_session_is_active\(\)\) \{.*if \(user_start_intent\) \{.*voice_recording_control_schedule_pending_start\(source, "pending_start"\).*host_toggle_transport_not_ready_no_pending' -Description "only user idle start failures create pending start"
+Assert-Contains -RelativePath $voiceControl -Pattern '(?s)s_state == VOICE_RECORDING_STATE_TRANSFERRING.*if \(user_start_intent\) \{.*voice_recording_control_schedule_pending_start\(source, "toggle_start_pending_transfer"\).*voice_recording_control_stop\(source\)' -Description "transfer toggle distinguishes user next-start from host cleanup stop"
+Assert-Contains -RelativePath $voiceControl -Pattern '(?s)static void voice_recording_control_poll_pending_start\(void\).*if \(s_state == VOICE_RECORDING_STATE_TRANSFERRING\) \{.*return;.*if \(s_state != VOICE_RECORDING_STATE_IDLE\) \{.*voice_recording_control_reset_pending_start\(\)' -Description "pending start survives transfer drain but resets outside idle/transfer"
 
 foreach ($relativePath in @(
     "tools/verify_ble_audio_backpressure_static.ps1"
