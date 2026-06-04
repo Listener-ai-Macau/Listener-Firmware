@@ -33,7 +33,7 @@
 #define BLE_AUDIO_STREAM_NOTIFY_QUEUE_LENGTH 256
 #define BLE_AUDIO_STREAM_AUDIO_POOL_EXTRA 8
 #else
-#define BLE_AUDIO_STREAM_NOTIFY_QUEUE_LENGTH 32
+#define BLE_AUDIO_STREAM_NOTIFY_QUEUE_LENGTH 48
 #define BLE_AUDIO_STREAM_AUDIO_POOL_EXTRA 4
 #endif
 #define BLE_AUDIO_STREAM_NOTIFY_WINDOW_DEPTH 3
@@ -56,11 +56,13 @@
 #define BLE_AUDIO_STREAM_AUDIO_QUEUE_WAIT_MS 100
 #define BLE_AUDIO_STREAM_AUDIO_POOL_BUFFER_BYTES 1920
 #define BLE_AUDIO_STREAM_AUDIO_POOL_LENGTH (BLE_AUDIO_STREAM_NOTIFY_QUEUE_LENGTH + BLE_AUDIO_STREAM_AUDIO_POOL_EXTRA)
+#define BLE_AUDIO_STREAM_REPLAY_WINDOW_PACKETS 48
+#define BLE_AUDIO_STREAM_REPLAY_PAYLOAD_BYTES (BLE_AUDIO_STREAM_PACKET_MAX_BYTES - LISTENER_AUDIO_PROTO_HEADER_BYTES)
 #define BLE_AUDIO_STREAM_AUDIO_POOL_PRESSURE_WARN_PERCENT 80U
 #define BLE_AUDIO_STREAM_AUDIO_POOL_PRESSURE_WARN_LEVEL \
     ((BLE_AUDIO_STREAM_AUDIO_POOL_LENGTH * BLE_AUDIO_STREAM_AUDIO_POOL_PRESSURE_WARN_PERCENT + 99U) / 100U)
-#define BLE_AUDIO_STREAM_BACKPRESSURE_PAUSE_PERCENT 85U
-#define BLE_AUDIO_STREAM_BACKPRESSURE_RESUME_PERCENT 55U
+#define BLE_AUDIO_STREAM_BACKPRESSURE_PAUSE_PERCENT 95U
+#define BLE_AUDIO_STREAM_BACKPRESSURE_RESUME_PERCENT 70U
 #define BLE_AUDIO_STREAM_CONTROL_NOTIFY_REPETITIONS 3
 #define BLE_AUDIO_STREAM_CONTROL_NOTIFY_REPEAT_DELAY_MS 5
 #define BLE_AUDIO_STREAM_TASK_QUEUE_WAIT_MS 1000
@@ -134,6 +136,15 @@ typedef struct {
     uint32_t disconnect;
 } ble_audio_stream_stale_event_counts_t;
 
+typedef struct {
+    bool valid;
+    uint32_t session_id;
+    uint16_t sequence;
+    uint16_t payload_len;
+    uint16_t packet_pcm_bytes;
+    uint8_t payload[BLE_AUDIO_STREAM_REPLAY_PAYLOAD_BYTES];
+} ble_audio_stream_replay_packet_t;
+
 static const char *TAG = "ble_audio_stream";
 
 static const ble_uuid128_t s_service_uuid = BLE_AUDIO_STREAM_SERVICE_UUID;
@@ -180,11 +191,17 @@ static ble_audio_stream_transport_state_t s_transport_state =
     BLE_AUDIO_STREAM_TRANSPORT_STATE_DISCONNECTED;
 static uint32_t s_transport_session_id;
 static uint16_t s_transport_expected_packet_count;
+static uint16_t s_transport_audio_payload_bytes;
 static uint8_t *s_audio_pool_storage;
 static bool s_audio_pool_used[BLE_AUDIO_STREAM_AUDIO_POOL_LENGTH];
 static uint32_t s_audio_pool_in_use;
 static uint32_t s_audio_pool_global_high_water;
 static bool s_backpressure_active;
+static ble_audio_stream_replay_packet_t s_replay_window[BLE_AUDIO_STREAM_REPLAY_WINDOW_PACKETS];
+static uint32_t s_replay_next_index;
+static bool s_replay_pending;
+static uint32_t s_replay_session_id;
+static bool s_replay_in_progress;
 static portMUX_TYPE s_backpressure_lock = portMUX_INITIALIZER_UNLOCKED;
 static portMUX_TYPE s_link_state_lock = portMUX_INITIALIZER_UNLOCKED;
 static ble_audio_stream_control_write_handler_t s_control_write_handler;
@@ -198,10 +215,22 @@ typedef struct {
 } ble_audio_stream_link_snapshot_t;
 
 static ble_audio_stream_link_snapshot_t ble_audio_stream_get_link_snapshot(void);
+static esp_err_t ble_audio_stream_send_packet(
+    listener_audio_packet_type_t packet_type,
+    uint32_t session_id,
+    uint16_t sequence_or_count,
+    uint8_t fragment_index,
+    uint8_t fragment_count,
+    const uint8_t *payload,
+    uint16_t payload_len,
+    uint16_t packet_pcm_bytes);
 
 _Static_assert(
     LISTENER_AUDIO_PROTO_HEADER_BYTES <= sizeof(listener_audio_packet_header_t),
     "listener audio header constant exceeds struct size");
+_Static_assert(
+    BLE_AUDIO_STREAM_REPLAY_PAYLOAD_BYTES >= 480,
+    "replay window must hold a full negotiated audio payload");
 
 static uint16_t ble_audio_stream_packet_payload_bytes(void)
 {
@@ -215,6 +244,14 @@ static uint16_t ble_audio_stream_packet_payload_bytes(void)
 uint16_t ble_audio_stream_get_audio_payload_bytes(void)
 {
     return (uint16_t)(ble_audio_stream_packet_payload_bytes() & ~1u);
+}
+
+static uint16_t ble_audio_stream_session_audio_payload_bytes(void)
+{
+    if (s_transport_audio_payload_bytes != 0) {
+        return s_transport_audio_payload_bytes;
+    }
+    return ble_audio_stream_get_audio_payload_bytes();
 }
 
 static bool ble_audio_stream_get_backpressure_active(void)
@@ -250,7 +287,7 @@ static ble_audio_stream_link_snapshot_t ble_audio_stream_get_link_snapshot(void)
 
 uint16_t ble_audio_stream_count_audio_packets(uint16_t pcm_bytes)
 {
-    uint16_t payload_bytes = ble_audio_stream_get_audio_payload_bytes();
+    uint16_t payload_bytes = ble_audio_stream_session_audio_payload_bytes();
     if (pcm_bytes == 0 || payload_bytes == 0) {
         return 0;
     }
@@ -258,8 +295,37 @@ uint16_t ble_audio_stream_count_audio_packets(uint16_t pcm_bytes)
     return (uint16_t)((pcm_bytes + payload_bytes - 1u) / payload_bytes);
 }
 
+static void ble_audio_stream_replay_clear_session(uint32_t session_id)
+{
+    if (session_id == 0) {
+        return;
+    }
+
+    for (size_t i = 0; i < BLE_AUDIO_STREAM_REPLAY_WINDOW_PACKETS; ++i) {
+        if (s_replay_window[i].valid && s_replay_window[i].session_id == session_id) {
+            memset(&s_replay_window[i], 0, sizeof(s_replay_window[i]));
+        }
+    }
+    if (s_replay_pending && s_replay_session_id == session_id) {
+        s_replay_pending = false;
+        s_replay_session_id = 0;
+    }
+}
+
+static uint32_t ble_audio_stream_replay_count_retained(uint32_t session_id)
+{
+    uint32_t retained = 0;
+    for (size_t i = 0; i < BLE_AUDIO_STREAM_REPLAY_WINDOW_PACKETS; ++i) {
+        if (s_replay_window[i].valid && s_replay_window[i].session_id == session_id) {
+            retained++;
+        }
+    }
+    return retained;
+}
+
 static void ble_audio_stream_stats_begin(uint32_t session_id)
 {
+    ble_audio_stream_replay_clear_session(session_id);
     memset(&s_session_stats, 0, sizeof(s_session_stats));
     s_session_stats.active = true;
     s_session_stats.session_id = session_id;
@@ -699,8 +765,10 @@ static void ble_audio_stream_refresh_link_state(const char *reason)
 
 static void ble_audio_stream_reset_transport_session(void)
 {
+    ble_audio_stream_replay_clear_session(s_transport_session_id);
     s_transport_session_id = 0;
     s_transport_expected_packet_count = 0;
+    s_transport_audio_payload_bytes = 0;
 }
 
 static void ble_audio_stream_note_transport_progress(uint32_t session_id, uint16_t expected_packet_count)
@@ -711,6 +779,169 @@ static void ble_audio_stream_note_transport_progress(uint32_t session_id, uint16
     if (expected_packet_count > s_transport_expected_packet_count) {
         s_transport_expected_packet_count = expected_packet_count;
     }
+}
+
+static void ble_audio_stream_replay_store_packet(
+    uint32_t session_id,
+    uint16_t sequence,
+    const uint8_t *payload,
+    uint16_t payload_len,
+    uint16_t packet_pcm_bytes)
+{
+    if (session_id == 0 || payload == NULL || payload_len == 0 ||
+        payload_len > BLE_AUDIO_STREAM_REPLAY_PAYLOAD_BYTES ||
+        s_replay_in_progress) {
+        return;
+    }
+
+    for (size_t i = 0; i < BLE_AUDIO_STREAM_REPLAY_WINDOW_PACKETS; ++i) {
+        ble_audio_stream_replay_packet_t *existing = &s_replay_window[i];
+        if (existing->valid && existing->session_id == session_id &&
+            existing->sequence == sequence) {
+            existing->payload_len = payload_len;
+            existing->packet_pcm_bytes = packet_pcm_bytes;
+            memcpy(existing->payload, payload, payload_len);
+            return;
+        }
+    }
+
+    ble_audio_stream_replay_packet_t *slot =
+        &s_replay_window[s_replay_next_index % BLE_AUDIO_STREAM_REPLAY_WINDOW_PACKETS];
+    memset(slot, 0, sizeof(*slot));
+    slot->valid = true;
+    slot->session_id = session_id;
+    slot->sequence = sequence;
+    slot->payload_len = payload_len;
+    slot->packet_pcm_bytes = packet_pcm_bytes;
+    memcpy(slot->payload, payload, payload_len);
+    s_replay_next_index++;
+}
+
+static void ble_audio_stream_replay_remove_packet(uint32_t session_id, uint16_t sequence)
+{
+    if (session_id == 0) {
+        return;
+    }
+
+    for (size_t i = 0; i < BLE_AUDIO_STREAM_REPLAY_WINDOW_PACKETS; ++i) {
+        ble_audio_stream_replay_packet_t *packet = &s_replay_window[i];
+        if (packet->valid && packet->session_id == session_id &&
+            packet->sequence == sequence) {
+            memset(packet, 0, sizeof(*packet));
+            return;
+        }
+    }
+}
+
+static void ble_audio_stream_replay_mark_link_suspended(const char *reason)
+{
+    if (!ble_audio_stream_transport_session_active()) {
+        return;
+    }
+
+    uint32_t session_id = s_transport_session_id;
+    uint32_t retained = ble_audio_stream_replay_count_retained(session_id);
+    if (retained == 0) {
+        return;
+    }
+
+    s_replay_pending = true;
+    s_replay_session_id = session_id;
+    ESP_LOGW(
+        TAG,
+        "audio replay window armed: reason=%s session=%" PRIu32 " retained=%" PRIu32 " window=%u",
+        reason != NULL ? reason : "link_suspended",
+        session_id,
+        retained,
+        (unsigned)BLE_AUDIO_STREAM_REPLAY_WINDOW_PACKETS);
+}
+
+static int ble_audio_stream_replay_compare_sequence(const void *a, const void *b)
+{
+    const ble_audio_stream_replay_packet_t *left =
+        *(const ble_audio_stream_replay_packet_t * const *)a;
+    const ble_audio_stream_replay_packet_t *right =
+        *(const ble_audio_stream_replay_packet_t * const *)b;
+    if (left->sequence < right->sequence) {
+        return -1;
+    }
+    if (left->sequence > right->sequence) {
+        return 1;
+    }
+    return 0;
+}
+
+static esp_err_t ble_audio_stream_replay_pending_packets(
+    uint32_t session_id,
+    bool skip_current_sequence,
+    uint16_t current_sequence)
+{
+    if (s_replay_in_progress || !s_replay_pending || s_replay_session_id != session_id) {
+        return ESP_OK;
+    }
+
+    const ble_audio_stream_replay_packet_t *packets[BLE_AUDIO_STREAM_REPLAY_WINDOW_PACKETS];
+    size_t count = 0;
+    bool skipped_current = false;
+    for (size_t i = 0; i < BLE_AUDIO_STREAM_REPLAY_WINDOW_PACKETS; ++i) {
+        if (s_replay_window[i].valid && s_replay_window[i].session_id == session_id) {
+            if (skip_current_sequence && s_replay_window[i].sequence == current_sequence) {
+                skipped_current = true;
+                continue;
+            }
+            packets[count++] = &s_replay_window[i];
+        }
+    }
+
+    if (count == 0) {
+        s_replay_pending = false;
+        s_replay_session_id = 0;
+        if (skipped_current) {
+            ESP_LOGW(
+                TAG,
+                "audio replay window skip current packet: session=%" PRIu32 " seq=%u",
+                session_id,
+                current_sequence);
+        }
+        return ESP_OK;
+    }
+
+    qsort(packets, count, sizeof(packets[0]), ble_audio_stream_replay_compare_sequence);
+    ESP_LOGW(
+        TAG,
+        "audio replay window resend: session=%" PRIu32 " packets=%u first_seq=%u last_seq=%u",
+        session_id,
+        (unsigned)count,
+        packets[0]->sequence,
+        packets[count - 1]->sequence);
+    if (skipped_current) {
+        ESP_LOGW(
+            TAG,
+            "audio replay window skip current packet: session=%" PRIu32 " seq=%u",
+            session_id,
+            current_sequence);
+    }
+
+    s_replay_in_progress = true;
+    for (size_t i = 0; i < count; ++i) {
+        esp_err_t ret = ble_audio_stream_send_packet(
+            LISTENER_AUDIO_PACKET_TYPE_AUDIO_DATA,
+            session_id,
+            packets[i]->sequence,
+            0,
+            1,
+            packets[i]->payload,
+            packets[i]->payload_len,
+            packets[i]->packet_pcm_bytes);
+        if (ret != ESP_OK) {
+            s_replay_in_progress = false;
+            return ret;
+        }
+    }
+    s_replay_in_progress = false;
+    s_replay_pending = false;
+    s_replay_session_id = 0;
+    return ESP_OK;
 }
 
 static void ble_audio_stream_delay_ms(uint32_t delay_ms)
@@ -1011,6 +1242,33 @@ static esp_err_t ble_audio_stream_send_packet(
         return ESP_ERR_INVALID_SIZE;
     }
 
+    bool skip_replay_current_packet = false;
+    if (!s_replay_in_progress &&
+        packet_type == LISTENER_AUDIO_PACKET_TYPE_AUDIO_DATA &&
+        s_replay_pending &&
+        s_replay_session_id == session_id) {
+        ble_audio_stream_replay_store_packet(
+            session_id,
+            sequence_or_count,
+            payload,
+            payload_len,
+            packet_pcm_bytes);
+        skip_replay_current_packet = true;
+    }
+
+    if (!s_replay_in_progress &&
+        (packet_type == LISTENER_AUDIO_PACKET_TYPE_AUDIO_DATA ||
+         packet_type == LISTENER_AUDIO_PACKET_TYPE_SESSION_STOP)) {
+        esp_err_t replay_ret = ble_audio_stream_replay_pending_packets(
+            session_id,
+            skip_replay_current_packet,
+            sequence_or_count);
+        if (replay_ret != ESP_OK) {
+            ble_audio_stream_stats_packet_result(session_id, packet_type, replay_ret);
+            return replay_ret;
+        }
+    }
+
     uint8_t packet[BLE_AUDIO_STREAM_PACKET_MAX_BYTES];
     listener_audio_packet_header_t header;
     listener_audio_proto_header_init(
@@ -1070,6 +1328,15 @@ static esp_err_t ble_audio_stream_send_packet(
         s_notify_tx_wait_epoch = link.connection_epoch;
         s_notify_tx_wait_active = true;
 
+        if (packet_type == LISTENER_AUDIO_PACKET_TYPE_AUDIO_DATA) {
+            ble_audio_stream_replay_store_packet(
+                session_id,
+                sequence_or_count,
+                payload,
+                payload_len,
+                packet_pcm_bytes);
+        }
+
         int rc = ble_gatts_notify_custom(link.conn_handle, s_notify_attr_handle, om);
         if (rc == 0) {
             if (s_notify_tx_done_sem != NULL) {
@@ -1091,6 +1358,9 @@ static esp_err_t ble_audio_stream_send_packet(
                         BLE_AUDIO_STREAM_RETRY_CAUSE_NOTIFY_TX_TIMEOUT);
                     diag_log(DIAG_SRC_BLE_AUDIO, DIAG_BAUD_NOTIFY_FAIL, DIAG_SEV_WARN,
                              session_id, sequence_or_count, ESP_ERR_TIMEOUT, s_session_stats.notify_retries);
+                    if (packet_type == LISTENER_AUDIO_PACKET_TYPE_AUDIO_DATA) {
+                        ble_audio_stream_replay_remove_packet(session_id, sequence_or_count);
+                    }
                     xSemaphoreGive(s_notify_credit_sem);
                     ble_audio_stream_notify_retry_delay();
                     continue;
@@ -1117,6 +1387,9 @@ static esp_err_t ble_audio_stream_send_packet(
                             fragment_count,
                             s_last_notify_tx_status,
                             s_session_stats.notify_retries);
+                        if (packet_type == LISTENER_AUDIO_PACKET_TYPE_AUDIO_DATA) {
+                            ble_audio_stream_replay_remove_packet(session_id, sequence_or_count);
+                        }
                         ble_audio_stream_notify_retry_delay();
                         continue;
                     }
@@ -1125,6 +1398,9 @@ static esp_err_t ble_audio_stream_send_packet(
                 s_notify_tx_wait_active = false;
             }
             ble_audio_stream_notify_success_delay();
+            if (packet_type == LISTENER_AUDIO_PACKET_TYPE_AUDIO_DATA) {
+                ble_audio_stream_replay_remove_packet(session_id, sequence_or_count);
+            }
             ble_audio_stream_stats_packet_result(session_id, packet_type, ESP_OK);
             return ESP_OK;
         }
@@ -1132,6 +1408,9 @@ static esp_err_t ble_audio_stream_send_packet(
         s_notify_tx_wait_active = false;
         os_mbuf_free_chain(om);
         if (rc == BLE_HS_ENOMEM) {
+            if (packet_type == LISTENER_AUDIO_PACKET_TYPE_AUDIO_DATA) {
+                ble_audio_stream_replay_remove_packet(session_id, sequence_or_count);
+            }
             ble_audio_stream_stats_retry(
                 session_id,
                 rc,
@@ -1156,6 +1435,9 @@ static esp_err_t ble_audio_stream_send_packet(
 
         if (s_notify_credit_sem != NULL) {
             xSemaphoreGive(s_notify_credit_sem);
+        }
+        if (packet_type == LISTENER_AUDIO_PACKET_TYPE_AUDIO_DATA) {
+            ble_audio_stream_replay_remove_packet(session_id, sequence_or_count);
         }
 
         ESP_LOGW(
@@ -1487,7 +1769,7 @@ static esp_err_t ble_audio_stream_send_session_audio_internal(
         return ESP_ERR_INVALID_ARG;
     }
 
-    uint16_t payload_bytes = ble_audio_stream_get_audio_payload_bytes();
+    uint16_t payload_bytes = ble_audio_stream_session_audio_payload_bytes();
     uint16_t packet_count = ble_audio_stream_count_audio_packets(pcm_bytes);
     if (payload_bytes == 0 || packet_count == 0) {
         return ESP_ERR_INVALID_SIZE;
@@ -1920,6 +2202,7 @@ void ble_audio_stream_on_gap_disconnect(uint16_t conn_handle)
             conn_handle,
             ble_audio_stream_transport_state_name(s_transport_state),
             s_transport_session_id);
+        ble_audio_stream_replay_mark_link_suspended("disconnect");
     }
     portENTER_CRITICAL(&s_link_state_lock);
     s_conn_handle = BLE_HS_CONN_HANDLE_NONE;
@@ -1986,9 +2269,11 @@ void ble_audio_stream_on_gap_subscribe(
     }
 
     if (cur_notify == 0 && ble_audio_stream_transport_session_active()) {
+        /* Keep the session active so queued stop/cancel can use the bounded
+         * link recovery window instead of turning a cleanup toggle into start. */
         ESP_LOGW(
             TAG,
-            "audio transport session aborted: reason=notify_disabled epoch=%" PRIu32 " conn=%u state=%s session=%" PRIu32,
+            "audio transport link suspended: reason=notify_disabled epoch=%" PRIu32 " conn=%u state=%s session=%" PRIu32,
             link.connection_epoch,
             conn_handle,
             ble_audio_stream_transport_state_name(s_transport_state),
@@ -1998,15 +2283,7 @@ void ble_audio_stream_on_gap_subscribe(
                  link.connection_epoch,
                  conn_handle,
                  BLE_AUDIO_NOTIFY_STATE_DISABLED_ABORT);
-        diag_log(DIAG_SRC_BLE_AUDIO, DIAG_BAUD_SESSION_ABORT, DIAG_SEV_ERROR,
-                 s_transport_session_id,
-                 ble_audio_stream_reason_code("notify_disabled_session_abort"),
-                 s_transport_expected_packet_count,
-                 link.connection_epoch);
-        ble_audio_stream_set_transport_state(
-            BLE_AUDIO_STREAM_TRANSPORT_STATE_STOPPED,
-            "notify_disabled_session_abort");
-        ble_audio_stream_reset_transport_session();
+        ble_audio_stream_replay_mark_link_suspended("notify_disabled");
     }
 
     s_pending_subscribe_valid = false;
@@ -2161,8 +2438,7 @@ void ble_audio_stream_get_backpressure(ble_audio_stream_backpressure_t *snapshot
     bool next_backpressure_active = ble_audio_stream_get_backpressure_active();
     if (!snapshot->transport_session_active) {
         next_backpressure_active = false;
-    } else if (!snapshot->link_ready ||
-               snapshot->pressure_percent >= BLE_AUDIO_STREAM_BACKPRESSURE_PAUSE_PERCENT) {
+    } else if (snapshot->pressure_percent >= BLE_AUDIO_STREAM_BACKPRESSURE_PAUSE_PERCENT) {
         next_backpressure_active = true;
     } else if (snapshot->pressure_percent <= BLE_AUDIO_STREAM_BACKPRESSURE_RESUME_PERCENT) {
         next_backpressure_active = false;
@@ -2211,6 +2487,10 @@ esp_err_t ble_audio_stream_send_session_start(uint32_t session_id)
         s_transport_state != BLE_AUDIO_STREAM_TRANSPORT_STATE_STREAM_READY) {
         return ESP_ERR_INVALID_STATE;
     }
+    uint16_t payload_bytes = ble_audio_stream_get_audio_payload_bytes();
+    if (payload_bytes == 0) {
+        return ESP_ERR_INVALID_SIZE;
+    }
 
     ble_audio_stream_job_t job = {
         .type = BLE_AUDIO_STREAM_JOB_TYPE_SESSION_START,
@@ -2219,6 +2499,7 @@ esp_err_t ble_audio_stream_send_session_start(uint32_t session_id)
 
     s_transport_session_id = session_id;
     s_transport_expected_packet_count = 0;
+    s_transport_audio_payload_bytes = payload_bytes;
     ble_audio_stream_set_transport_state(
         BLE_AUDIO_STREAM_TRANSPORT_STATE_STREAMING,
         "session_start_queued");
@@ -2242,8 +2523,8 @@ esp_err_t ble_audio_stream_send_session_audio(
     if (!s_started || s_export_queue == NULL || pcm_buffer == NULL || pcm_bytes == 0) {
         return ESP_ERR_INVALID_ARG;
     }
-    if (!ble_audio_stream_transport_link_ready() ||
-        s_transport_state != BLE_AUDIO_STREAM_TRANSPORT_STATE_STREAMING) {
+    if (s_transport_state != BLE_AUDIO_STREAM_TRANSPORT_STATE_STREAMING ||
+        s_transport_session_id != session_id) {
         ble_audio_stream_purge_queued_session_jobs(session_id, false);
         return ESP_ERR_INVALID_STATE;
     }
@@ -2292,11 +2573,25 @@ esp_err_t ble_audio_stream_send_session_stop(uint32_t session_id, uint16_t expec
     if (!s_started || s_export_queue == NULL) {
         return ESP_ERR_INVALID_STATE;
     }
-    if (!ble_audio_stream_transport_link_ready() ||
-        (s_transport_state != BLE_AUDIO_STREAM_TRANSPORT_STATE_STREAMING &&
-         s_transport_state != BLE_AUDIO_STREAM_TRANSPORT_STATE_STREAM_READY)) {
+    bool link_ready = ble_audio_stream_transport_link_ready();
+    bool active_session =
+        ble_audio_stream_transport_session_active() &&
+        s_transport_session_id == session_id;
+    bool idle_ready =
+        link_ready &&
+        s_transport_state == BLE_AUDIO_STREAM_TRANSPORT_STATE_STREAM_READY;
+    if (!active_session && !idle_ready) {
         ble_audio_stream_purge_queued_session_jobs(session_id, false);
         return ESP_ERR_INVALID_STATE;
+    }
+    if (active_session && !link_ready) {
+        ESP_LOGW(
+            TAG,
+            "audio session stop queued during link recovery: session=%" PRIu32 " expected_packet_count=%u queued=%" PRIu32 "/%" PRIu32,
+            session_id,
+            expected_packet_count,
+            s_export_queue != NULL ? (uint32_t)uxQueueMessagesWaiting(s_export_queue) : 0,
+            (uint32_t)BLE_AUDIO_STREAM_NOTIFY_QUEUE_LENGTH);
     }
 
     ble_audio_stream_job_t job = {
@@ -2342,9 +2637,8 @@ esp_err_t ble_audio_stream_send_session_error(
     }
 
     ble_audio_stream_purge_queued_session_jobs(session_id, true);
-    if (!ble_audio_stream_transport_link_ready() ||
-        (s_transport_state != BLE_AUDIO_STREAM_TRANSPORT_STATE_STREAMING &&
-         s_transport_state != BLE_AUDIO_STREAM_TRANSPORT_STATE_DRAINING)) {
+    if (!ble_audio_stream_transport_session_active() ||
+        s_transport_session_id != session_id) {
         return ESP_ERR_INVALID_STATE;
     }
 
@@ -2376,9 +2670,8 @@ esp_err_t ble_audio_stream_send_session_cancel(uint32_t session_id, uint16_t exp
     }
 
     ble_audio_stream_purge_queued_session_jobs(session_id, true);
-    if (!ble_audio_stream_transport_link_ready() ||
-        (s_transport_state != BLE_AUDIO_STREAM_TRANSPORT_STATE_STREAMING &&
-         s_transport_state != BLE_AUDIO_STREAM_TRANSPORT_STATE_DRAINING)) {
+    if (!ble_audio_stream_transport_session_active() ||
+        s_transport_session_id != session_id) {
         return ESP_ERR_INVALID_STATE;
     }
 
