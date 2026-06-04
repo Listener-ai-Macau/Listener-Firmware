@@ -1986,9 +1986,11 @@ void ble_audio_stream_on_gap_subscribe(
     }
 
     if (cur_notify == 0 && ble_audio_stream_transport_session_active()) {
+        /* Keep the session active so queued stop/cancel can use the bounded
+         * link recovery window instead of turning a cleanup toggle into start. */
         ESP_LOGW(
             TAG,
-            "audio transport session aborted: reason=notify_disabled epoch=%" PRIu32 " conn=%u state=%s session=%" PRIu32,
+            "audio transport link suspended: reason=notify_disabled epoch=%" PRIu32 " conn=%u state=%s session=%" PRIu32,
             link.connection_epoch,
             conn_handle,
             ble_audio_stream_transport_state_name(s_transport_state),
@@ -1998,15 +2000,6 @@ void ble_audio_stream_on_gap_subscribe(
                  link.connection_epoch,
                  conn_handle,
                  BLE_AUDIO_NOTIFY_STATE_DISABLED_ABORT);
-        diag_log(DIAG_SRC_BLE_AUDIO, DIAG_BAUD_SESSION_ABORT, DIAG_SEV_ERROR,
-                 s_transport_session_id,
-                 ble_audio_stream_reason_code("notify_disabled_session_abort"),
-                 s_transport_expected_packet_count,
-                 link.connection_epoch);
-        ble_audio_stream_set_transport_state(
-            BLE_AUDIO_STREAM_TRANSPORT_STATE_STOPPED,
-            "notify_disabled_session_abort");
-        ble_audio_stream_reset_transport_session();
     }
 
     s_pending_subscribe_valid = false;
@@ -2242,8 +2235,8 @@ esp_err_t ble_audio_stream_send_session_audio(
     if (!s_started || s_export_queue == NULL || pcm_buffer == NULL || pcm_bytes == 0) {
         return ESP_ERR_INVALID_ARG;
     }
-    if (!ble_audio_stream_transport_link_ready() ||
-        s_transport_state != BLE_AUDIO_STREAM_TRANSPORT_STATE_STREAMING) {
+    if (s_transport_state != BLE_AUDIO_STREAM_TRANSPORT_STATE_STREAMING ||
+        s_transport_session_id != session_id) {
         ble_audio_stream_purge_queued_session_jobs(session_id, false);
         return ESP_ERR_INVALID_STATE;
     }
@@ -2292,11 +2285,19 @@ esp_err_t ble_audio_stream_send_session_stop(uint32_t session_id, uint16_t expec
     if (!s_started || s_export_queue == NULL) {
         return ESP_ERR_INVALID_STATE;
     }
-    if (!ble_audio_stream_transport_link_ready() ||
-        (s_transport_state != BLE_AUDIO_STREAM_TRANSPORT_STATE_STREAMING &&
-         s_transport_state != BLE_AUDIO_STREAM_TRANSPORT_STATE_STREAM_READY)) {
+    bool link_ready = ble_audio_stream_transport_link_ready();
+    bool active_session =
+        ble_audio_stream_transport_session_active() &&
+        s_transport_session_id == session_id;
+    bool idle_ready =
+        link_ready &&
+        s_transport_state == BLE_AUDIO_STREAM_TRANSPORT_STATE_STREAM_READY;
+    if (!active_session && !idle_ready) {
         ble_audio_stream_purge_queued_session_jobs(session_id, false);
         return ESP_ERR_INVALID_STATE;
+    }
+    if (active_session && !link_ready) {
+        ble_audio_stream_purge_queued_session_jobs(session_id, true);
     }
 
     ble_audio_stream_job_t job = {
@@ -2342,9 +2343,8 @@ esp_err_t ble_audio_stream_send_session_error(
     }
 
     ble_audio_stream_purge_queued_session_jobs(session_id, true);
-    if (!ble_audio_stream_transport_link_ready() ||
-        (s_transport_state != BLE_AUDIO_STREAM_TRANSPORT_STATE_STREAMING &&
-         s_transport_state != BLE_AUDIO_STREAM_TRANSPORT_STATE_DRAINING)) {
+    if (!ble_audio_stream_transport_session_active() ||
+        s_transport_session_id != session_id) {
         return ESP_ERR_INVALID_STATE;
     }
 
@@ -2376,9 +2376,8 @@ esp_err_t ble_audio_stream_send_session_cancel(uint32_t session_id, uint16_t exp
     }
 
     ble_audio_stream_purge_queued_session_jobs(session_id, true);
-    if (!ble_audio_stream_transport_link_ready() ||
-        (s_transport_state != BLE_AUDIO_STREAM_TRANSPORT_STATE_STREAMING &&
-         s_transport_state != BLE_AUDIO_STREAM_TRANSPORT_STATE_DRAINING)) {
+    if (!ble_audio_stream_transport_session_active() ||
+        s_transport_session_id != session_id) {
         return ESP_ERR_INVALID_STATE;
     }
 

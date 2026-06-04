@@ -68,6 +68,10 @@ Assert-Contains -RelativePath $stream -Pattern "uxQueueMessagesWaiting\(s_export
 Assert-Contains -RelativePath $stream -Pattern "s_audio_pool_global_high_water" -Description "pool high-water sampling"
 Assert-Contains -RelativePath $stream -Pattern "DIAG_BAUD_WATERMARK" -Description "BLE audio watermark diagnostic event logging"
 Assert-Contains -RelativePath $stream -Pattern "DIAG_BAUD_BACKPRESSURE" -Description "BLE audio backpressure diagnostic event logging"
+Assert-Contains -RelativePath $stream -Pattern "audio transport link suspended: reason=notify_disabled" -Description "notify-disabled link suspension instead of immediate session reset"
+Assert-Contains -RelativePath $stream -Pattern "(?s)esp_err_t\s+ble_audio_stream_send_session_audio.*?s_transport_state\s*!=\s*BLE_AUDIO_STREAM_TRANSPORT_STATE_STREAMING\s*\|\|\s*s_transport_session_id\s*!=\s*session_id" -Description "audio enqueue preserves active recovery window without link-ready precheck"
+Assert-Contains -RelativePath $stream -Pattern "(?s)esp_err_t\s+ble_audio_stream_send_session_stop.*?active_session.*?!link_ready.*?ble_audio_stream_purge_queued_session_jobs\(session_id,\s*true\)" -Description "stop during link recovery purges stale audio but preserves control intent"
+Assert-Contains -RelativePath $stream -Pattern "(?s)esp_err_t\s+ble_audio_stream_send_session_cancel.*?ble_audio_stream_transport_session_active\(\).*?s_transport_session_id\s*!=\s*session_id" -Description "cancel during link recovery remains session-owned"
 
 Assert-Contains -RelativePath $capture -Pattern "audio_capture_backpressure_should_pause" -Description "audio capture backpressure gate"
 Assert-Contains -RelativePath $capture -Pattern "ble_audio_stream_get_backpressure" -Description "audio capture reads BLE audio pressure"
