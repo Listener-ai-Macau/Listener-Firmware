@@ -816,6 +816,8 @@ class SessionCollector:
         self.audio_packets = {}
         self.packet_pcm_bytes = {}
         self.packet_size_counter = Counter()
+        self.duplicate_packet_sequences = Counter()
+        self.duplicate_packet_details = []
         self.last_packet_time = 0.0
         self.explicit_start_received = False
         self.start_inferred_from_audio = False
@@ -832,6 +834,8 @@ class SessionCollector:
             self.audio_packets = {}
             self.packet_pcm_bytes = {}
             self.packet_size_counter = Counter()
+            self.duplicate_packet_sequences = Counter()
+            self.duplicate_packet_details = []
             self.last_packet_time = 0.0
             self.explicit_start_received = False
             self.start_inferred_from_audio = False
@@ -853,6 +857,8 @@ class SessionCollector:
                     self.audio_packets = {}
                     self.packet_pcm_bytes = {}
                     self.packet_size_counter = Counter()
+                    self.duplicate_packet_sequences = Counter()
+                    self.duplicate_packet_details = []
                     self.session_id = header["session_id"]
                     self.start_inferred_from_audio = False
                 self.explicit_start_received = True
@@ -874,6 +880,17 @@ class SessionCollector:
                     return
 
                 existing_payload = self.audio_packets.get(packet_sequence)
+                if existing_payload is not None:
+                    existing_size = self.packet_pcm_bytes.get(packet_sequence, len(existing_payload))
+                    self.duplicate_packet_sequences.update([packet_sequence])
+                    if len(self.duplicate_packet_details) < 32:
+                        self.duplicate_packet_details.append(
+                            {
+                                "packet_sequence": packet_sequence,
+                                "existing_pcm_bytes": existing_size,
+                                "incoming_pcm_bytes": len(payload),
+                            }
+                        )
                 if existing_payload is not None and len(existing_payload) >= len(payload):
                     return
 
@@ -939,6 +956,18 @@ class SessionCollector:
         if self.expected_packet_count is None:
             return False
         return len(self.missing_packet_indices()) == 0
+
+    def duplicate_packet_count(self) -> int:
+        with self._lock:
+            return sum(self.duplicate_packet_sequences.values())
+
+    def duplicate_packet_sequence_list(self) -> list[int]:
+        with self._lock:
+            return sorted(self.duplicate_packet_sequences)
+
+    def duplicate_packet_detail_list(self) -> list[dict[str, int]]:
+        with self._lock:
+            return list(self.duplicate_packet_details)
 
     def packet_integrity_summary(self) -> str:
         expected = (
@@ -1334,6 +1363,9 @@ async def run_ble_capture(args, ser: Serial, serial_monitor: SerialLogMonitor):
                         "received_packet_count": collector.received_packet_count(),
                         "missing_packet_count": len(collector.missing_packet_indices()),
                         "missing_packet_indices": collector.missing_packet_indices(),
+                        "duplicate_packet_count": collector.duplicate_packet_count(),
+                        "duplicate_packet_sequences": collector.duplicate_packet_sequence_list(),
+                        "duplicate_packet_details": collector.duplicate_packet_detail_list(),
                         "received_pcm_bytes": collector.received_pcm_bytes(),
                         "serial_transport_summary_count": len(serial_transport_summary_lines),
                         "serial_transport_summary_last": serial_transport_summary_lines[-1] if serial_transport_summary_lines else "",
@@ -1452,6 +1484,9 @@ async def run_ble_capture(args, ser: Serial, serial_monitor: SerialLogMonitor):
             completed_sessions += 1
             duration_seconds = pcm_duration_seconds(len(reconstructed_pcm))
             missing_packet_indices = collector.missing_packet_indices()
+            duplicate_packet_count = collector.duplicate_packet_count()
+            duplicate_packet_sequences = collector.duplicate_packet_sequence_list()
+            duplicate_packet_details = collector.duplicate_packet_detail_list()
             serial_stream_audio_lines = serial_monitor.find_lines_any(
                 (STREAM_SESSION_AUDIO_MARKER, STREAM_SESSION_CHUNK_MARKER)
             )
@@ -1465,6 +1500,9 @@ async def run_ble_capture(args, ser: Serial, serial_monitor: SerialLogMonitor):
                 "expected_packet_count": collector.expected_packet_count,
                 "missing_packet_count": len(missing_packet_indices),
                 "missing_packet_indices": missing_packet_indices,
+                "duplicate_packet_count": duplicate_packet_count,
+                "duplicate_packet_sequences": duplicate_packet_sequences,
+                "duplicate_packet_details": duplicate_packet_details,
                 "session_error_code": collector.session_error_code,
                 "session_error_name": collector.session_error_name,
                 "received_pcm_bytes": collector.received_pcm_bytes(),
@@ -1500,6 +1538,14 @@ async def run_ble_capture(args, ser: Serial, serial_monitor: SerialLogMonitor):
             print(f"received_packet_count={collector.received_packet_count()}", flush=True)
             print(f"expected_packet_count={collector.expected_packet_count}", flush=True)
             print(f"missing_packet_count={len(missing_packet_indices)}", flush=True)
+            print(f"duplicate_packet_count={duplicate_packet_count}", flush=True)
+            if duplicate_packet_sequences:
+                duplicate_preview = ",".join(str(seq) for seq in duplicate_packet_sequences[:16])
+                if len(duplicate_packet_sequences) > 16:
+                    duplicate_preview += ",..."
+            else:
+                duplicate_preview = "<none>"
+            print(f"duplicate_packet_sequences={duplicate_preview}", flush=True)
             if collector.session_error_code is not None:
                 print(f"session_error_code={collector.session_error_code}", flush=True)
                 print(f"session_error_name={collector.session_error_name}", flush=True)
@@ -1548,6 +1594,13 @@ async def run_ble_capture(args, ser: Serial, serial_monitor: SerialLogMonitor):
                 flush=True,
             )
             print(f"completed_session_count={completed_sessions}", flush=True)
+
+            if duplicate_packet_count > 0:
+                raise RuntimeError(
+                    "capture_audio_ble_wav: duplicate packet_sequence values detected: "
+                    f"count={duplicate_packet_count} sequences={duplicate_preview}; "
+                    "duplicate packet sequences can mask replay defects even when missing_packet_count=0"
+                )
 
             if target_sessions is None and args.trigger_mode == "physical-key":
                 print("ready_for_key=1", flush=True)
