@@ -66,6 +66,8 @@ static bool s_cancel_pending;
 static const char *s_cancel_source;
 static bool s_pending_start;
 static const char *s_pending_start_source;
+static const char *s_pending_start_reason;
+static const char *s_pending_start_detail;
 static TickType_t s_pending_start_deadline_tick;
 static TickType_t s_pending_start_next_retry_tick;
 static const char *s_active_session_source;
@@ -223,6 +225,8 @@ static void voice_recording_control_reset_pending_start(void)
 {
     s_pending_start = false;
     s_pending_start_source = NULL;
+    s_pending_start_reason = NULL;
+    s_pending_start_detail = NULL;
     s_pending_start_deadline_tick = 0;
     s_pending_start_next_retry_tick = 0;
 }
@@ -262,12 +266,16 @@ static void voice_recording_control_log_toggle_ignored(
         warn);
 }
 
-static void voice_recording_control_schedule_pending_start(const char *source, const char *detail)
+static void voice_recording_control_schedule_pending_start(
+    const char *source,
+    const char *reason,
+    const char *detail)
 {
     TickType_t now = xTaskGetTickCount();
-    const char *safe_detail = detail != NULL ? detail : "pending_start";
     s_pending_start = true;
     s_pending_start_source = source;
+    s_pending_start_reason = reason != NULL ? reason : "audio_transport_not_ready";
+    s_pending_start_detail = detail != NULL ? detail : "recording_waiting_for_ble_audio";
     s_pending_start_deadline_tick = now + pdMS_TO_TICKS(VOICE_RECORDING_CONTROL_PENDING_START_TIMEOUT_MS);
     s_pending_start_next_retry_tick = now + pdMS_TO_TICKS(VOICE_RECORDING_CONTROL_PENDING_START_RETRY_MS);
 
@@ -281,14 +289,14 @@ static void voice_recording_control_schedule_pending_start(const char *source, c
         "recording start pending source=%s timeout_ms=%u reason=%s",
         source,
         VOICE_RECORDING_CONTROL_PENDING_START_TIMEOUT_MS,
-        safe_detail);
+        s_pending_start_reason);
     voice_recording_control_log_flow(
         VOICE_RECORDING_FLOW_PENDING_START,
-        safe_detail,
+        "pending_start",
         source,
         ESP_ERR_INVALID_STATE,
         true);
-    voice_recording_control_log_device_status("ready", safe_detail);
+    voice_recording_control_log_device_status("ready", s_pending_start_detail);
 }
 
 static void voice_recording_control_timeout_pending_start(esp_err_t reason)
@@ -502,7 +510,9 @@ static void voice_recording_control_toggle(const char *source)
             source,
             ESP_ERR_INVALID_STATE,
             false);
-        voice_recording_control_log_device_status("ready", "recording_waiting_for_ble_audio");
+        voice_recording_control_log_device_status(
+            "ready",
+            s_pending_start_detail != NULL ? s_pending_start_detail : "recording_waiting_for_ble_audio");
         return;
     }
 
@@ -527,7 +537,10 @@ static void voice_recording_control_toggle(const char *source)
         esp_err_t ret = voice_recording_control_enter_recording(source, true, true);
         if (ret == ESP_ERR_INVALID_STATE && !audio_capture_session_is_active()) {
             if (user_start_intent) {
-                voice_recording_control_schedule_pending_start(source, "pending_start");
+                voice_recording_control_schedule_pending_start(
+                    source,
+                    "audio_transport_not_ready",
+                    "recording_waiting_for_ble_audio");
             } else {
                 voice_recording_control_log_toggle_ignored(
                     source,
@@ -547,7 +560,18 @@ static void voice_recording_control_toggle(const char *source)
         voice_recording_control_exit_recording(source);
     } else if (s_state == VOICE_RECORDING_STATE_TRANSFERRING) {
         if (user_start_intent) {
-            voice_recording_control_schedule_pending_start(source, "toggle_start_pending_transfer");
+            power_manager_record_activity("voice_recording_pending_transfer_start");
+            ESP_LOGI(TAG, "recording toggle queued source=%s: previous session transferring", source);
+            voice_recording_control_log_flow(
+                VOICE_RECORDING_FLOW_TOGGLE_START,
+                "toggle_start_pending_transfer",
+                source,
+                ESP_OK,
+                false);
+            voice_recording_control_schedule_pending_start(
+                source,
+                "audio_session_transferring",
+                "recording_waiting_for_previous_session");
             return;
         }
         voice_recording_control_stop(source);
