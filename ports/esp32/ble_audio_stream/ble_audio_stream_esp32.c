@@ -33,7 +33,7 @@
 #define BLE_AUDIO_STREAM_NOTIFY_QUEUE_LENGTH 256
 #define BLE_AUDIO_STREAM_AUDIO_POOL_EXTRA 8
 #else
-#define BLE_AUDIO_STREAM_NOTIFY_QUEUE_LENGTH 32
+#define BLE_AUDIO_STREAM_NOTIFY_QUEUE_LENGTH 48
 #define BLE_AUDIO_STREAM_AUDIO_POOL_EXTRA 4
 #endif
 #define BLE_AUDIO_STREAM_NOTIFY_WINDOW_DEPTH 3
@@ -56,7 +56,7 @@
 #define BLE_AUDIO_STREAM_AUDIO_QUEUE_WAIT_MS 100
 #define BLE_AUDIO_STREAM_AUDIO_POOL_BUFFER_BYTES 1920
 #define BLE_AUDIO_STREAM_AUDIO_POOL_LENGTH (BLE_AUDIO_STREAM_NOTIFY_QUEUE_LENGTH + BLE_AUDIO_STREAM_AUDIO_POOL_EXTRA)
-#define BLE_AUDIO_STREAM_REPLAY_WINDOW_PACKETS 32
+#define BLE_AUDIO_STREAM_REPLAY_WINDOW_PACKETS 48
 #define BLE_AUDIO_STREAM_REPLAY_PAYLOAD_BYTES (BLE_AUDIO_STREAM_PACKET_MAX_BYTES - LISTENER_AUDIO_PROTO_HEADER_BYTES)
 #define BLE_AUDIO_STREAM_AUDIO_POOL_PRESSURE_WARN_PERCENT 80U
 #define BLE_AUDIO_STREAM_AUDIO_POOL_PRESSURE_WARN_LEVEL \
@@ -784,6 +784,17 @@ static void ble_audio_stream_replay_store_packet(
         return;
     }
 
+    for (size_t i = 0; i < BLE_AUDIO_STREAM_REPLAY_WINDOW_PACKETS; ++i) {
+        ble_audio_stream_replay_packet_t *existing = &s_replay_window[i];
+        if (existing->valid && existing->session_id == session_id &&
+            existing->sequence == sequence) {
+            existing->payload_len = payload_len;
+            existing->packet_pcm_bytes = packet_pcm_bytes;
+            memcpy(existing->payload, payload, payload_len);
+            return;
+        }
+    }
+
     ble_audio_stream_replay_packet_t *slot =
         &s_replay_window[s_replay_next_index % BLE_AUDIO_STREAM_REPLAY_WINDOW_PACKETS];
     memset(slot, 0, sizeof(*slot));
@@ -1181,6 +1192,18 @@ static esp_err_t ble_audio_stream_send_packet(
             link.packet_value_max_bytes);
         ble_audio_stream_stats_packet_result(session_id, packet_type, ESP_ERR_INVALID_SIZE);
         return ESP_ERR_INVALID_SIZE;
+    }
+
+    if (!s_replay_in_progress &&
+        packet_type == LISTENER_AUDIO_PACKET_TYPE_AUDIO_DATA &&
+        s_replay_pending &&
+        s_replay_session_id == session_id) {
+        ble_audio_stream_replay_store_packet(
+            session_id,
+            sequence_or_count,
+            payload,
+            payload_len,
+            packet_pcm_bytes);
     }
 
     if (!s_replay_in_progress &&
