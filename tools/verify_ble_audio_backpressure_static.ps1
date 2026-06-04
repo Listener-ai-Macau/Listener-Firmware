@@ -37,6 +37,19 @@ function Assert-Contains {
     }
 }
 
+function Assert-NotContains {
+    param(
+        [Parameter(Mandatory = $true)][string]$RelativePath,
+        [Parameter(Mandatory = $true)][string]$Pattern,
+        [Parameter(Mandatory = $true)][string]$Description
+    )
+
+    $text = Read-RepoFile -RelativePath $RelativePath
+    if ($text -match $Pattern) {
+        Add-CheckError "$RelativePath contains forbidden $Description"
+    }
+}
+
 function Assert-Order {
     param(
         [Parameter(Mandatory = $true)][string]$RelativePath,
@@ -70,7 +83,8 @@ Assert-Contains -RelativePath $stream -Pattern "DIAG_BAUD_WATERMARK" -Descriptio
 Assert-Contains -RelativePath $stream -Pattern "DIAG_BAUD_BACKPRESSURE" -Description "BLE audio backpressure diagnostic event logging"
 Assert-Contains -RelativePath $stream -Pattern "audio transport link suspended: reason=notify_disabled" -Description "notify-disabled link suspension instead of immediate session reset"
 Assert-Contains -RelativePath $stream -Pattern "(?s)esp_err_t\s+ble_audio_stream_send_session_audio.*?s_transport_state\s*!=\s*BLE_AUDIO_STREAM_TRANSPORT_STATE_STREAMING\s*\|\|\s*s_transport_session_id\s*!=\s*session_id" -Description "audio enqueue preserves active recovery window without link-ready precheck"
-Assert-Contains -RelativePath $stream -Pattern "(?s)esp_err_t\s+ble_audio_stream_send_session_stop.*?active_session.*?!link_ready.*?ble_audio_stream_purge_queued_session_jobs\(session_id,\s*true\)" -Description "stop during link recovery purges stale audio but preserves control intent"
+Assert-Contains -RelativePath $stream -Pattern "audio session stop queued during link recovery" -Description "stop during link recovery preserves queued audio before control intent"
+Assert-NotContains -RelativePath $stream -Pattern "if\s*\(\s*active_session\s*&&\s*!link_ready\s*\)\s*\{\s*ble_audio_stream_purge_queued_session_jobs\(session_id,\s*true\)" -Description "stop during link recovery must not purge queued tail audio"
 Assert-Contains -RelativePath $stream -Pattern "(?s)esp_err_t\s+ble_audio_stream_send_session_cancel.*?ble_audio_stream_transport_session_active\(\).*?s_transport_session_id\s*!=\s*session_id" -Description "cancel during link recovery remains session-owned"
 
 Assert-Contains -RelativePath $capture -Pattern "audio_capture_backpressure_should_pause" -Description "audio capture backpressure gate"

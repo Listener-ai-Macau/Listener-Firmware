@@ -2297,7 +2297,13 @@ esp_err_t ble_audio_stream_send_session_stop(uint32_t session_id, uint16_t expec
         return ESP_ERR_INVALID_STATE;
     }
     if (active_session && !link_ready) {
-        ble_audio_stream_purge_queued_session_jobs(session_id, true);
+        ESP_LOGW(
+            TAG,
+            "audio session stop queued during link recovery: session=%" PRIu32 " expected_packet_count=%u queued=%" PRIu32 "/%" PRIu32,
+            session_id,
+            expected_packet_count,
+            s_export_queue != NULL ? (uint32_t)uxQueueMessagesWaiting(s_export_queue) : 0,
+            (uint32_t)BLE_AUDIO_STREAM_NOTIFY_QUEUE_LENGTH);
     }
 
     ble_audio_stream_job_t job = {
