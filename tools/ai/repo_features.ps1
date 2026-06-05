@@ -43,11 +43,11 @@ function New-FeatureSnapshot {
             "AI-readable diag_log JSON bundle tooling for deterministic event, argument, severity, boot-segment, and summary fields.",
             "Firmware OTA v1 using ESP-IDF otadata/ota_0/ota_1 slots, partition-derived flash offsets, BLE GATT control/data bridge, official rollback, pending verify, blockers, and diag_log OTA events.",
             "system_health heartbeat and resource checks for heap, task, BLE, and disconnect conditions.",
-            "N4 board profile with 4 MB flash, no PSRAM, EC11 push recording control on GPIO35, KEY1/2/3/4 HID gesture map on GPIO45/48/47/21, and static checks rejecting stale V2/N16R8 defaults.",
-            "power_manager low-power state machine for connected idle, disconnected idle, charge-aware automatic sleep blocking, overnight sleep, N4 KEY4/GPIO21 wake diagnostics, production wake-policy blockers, and power blockers.",
-            "V2 board diagnostics for ~BOARD:STATUS and ~LED:STATUS, including USB/charger provisional status, battery ADC, raw 3.3V and LED/5V current telemetry, LED resource mapping, and hardware blocker policy strings.",
-            "V2 current telemetry and low-power report tooling for TPS63020_I_ADC/GPIO10, SY7088_I_ADC/GPIO9, and ~POWER:STATUS sleep drain evidence; readings are telemetry-only and do not drive firmware power-control decisions.",
-            "V2 safety gates keep PWR_HOLD/GPIO46 undriven, LED calibration commands blocked until VDD_LED sign-off, current mA/mW uncalibrated, and CLK/GPIO48 DOUT/GPIO47 microphone capture degraded until validated.",
+            "V2 N16R8 board profile with 16 MB flash, 8 MB Octal PSRAM, EC11 push recording control on GPIO18, KEY1/2/3/4 HID gesture map on GPIO38/39/40/41, four-zone WS2812 resources, and static checks rejecting stale N4 defaults.",
+            "power_manager low-power state machine for connected idle, disconnected idle, charge-aware automatic sleep blocking, overnight sleep, V2 EC11/GPIO18 provisional wake diagnostics, production wake-policy blockers, and power blockers.",
+            "V2 board diagnostics for ~BOARD:STATUS and ~LED:STATUS, including USB/charger status, battery ADC, battery-side TPS63020/SY7088 input branch current telemetry, LED resource mapping, and hardware blocker policy strings.",
+            "V2 current telemetry and low-power report tooling for TPS63020_I_ADC/GPIO10, SY7088_I_ADC/GPIO9, and ~POWER:STATUS sleep drain evidence; readings use reconstructed battery voltage and do not drive firmware power-control decisions.",
+            "V2 safety gates keep PWR_HOLD/GPIO11 disabled until power-sequence validation, LED calibration commands blocked until VDD_LED sign-off, and CLK/GPIO48 DOUT/GPIO47 microphone capture degraded until validated.",
             "POST and degraded boot reporting for NVS, BLE, audio, heap, and board assumptions."
         )
         key_paths = @(
@@ -57,10 +57,10 @@ function New-FeatureSnapshot {
             [ordered]@{ path = "components/diag_log/"; purpose = "Diagnostic event schema and ring-buffer API." },
             [ordered]@{ path = "components/power_manager/"; purpose = "Low-power state machine, sleep blockers, overnight deep sleep, wake/status diagnostics." },
             [ordered]@{ path = "components/battery_monitor/"; purpose = "Shared battery voltage and level reading for HID and power diagnostics." },
-            [ordered]@{ path = "docs/features/low_power_wake_policy.md"; purpose = "Firmware wake policy contract for N4 KEY4/GPIO21 deep-sleep wake, EC11-KEY/GPIO35 recording-key limitation, and production primary voice/wake requirements." },
+            [ordered]@{ path = "docs/features/low_power_wake_policy.md"; purpose = "Firmware wake policy contract for V2 EC11/GPIO18 provisional deep-sleep wake and production primary voice/wake requirements." },
             [ordered]@{ path = "tools/decode_diag_log.py"; purpose = "Offline decoder for ~DIAGLOG JSONL into stable AI-readable JSON bundles." },
             [ordered]@{ path = "tools/collect_ai_diagnostics.ps1"; purpose = "Collect recent serial diag_log events or decode saved JSONL into raw and decoded artifacts under tests/artifacts." },
-            [ordered]@{ path = "tools/collect_v2_current_telemetry.ps1"; purpose = "Legacy V2 current telemetry helper; not part of the active N4 hardware path." },
+            [ordered]@{ path = "tools/collect_v2_current_telemetry.ps1"; purpose = "V2 current telemetry helper for battery-side TPS63020/SY7088 branch measurements." },
             [ordered]@{ path = "ports/esp32/ble_diag_log/"; purpose = "BLE GATT service for paginated firmware diag_log export with per-chunk CRC." },
             [ordered]@{ path = "components/firmware_ota/"; purpose = "ESP-IDF OTA manager, rollback/pending-verify handling, blockers, and OTA serial diagnostics." },
             [ordered]@{ path = "ports/esp32/ble_firmware_ota/"; purpose = "NimBLE firmware OTA service with control/data characteristics and BLE abort integration." },
@@ -69,18 +69,18 @@ function New-FeatureSnapshot {
             [ordered]@{ path = "ports/esp32/ble_hid*"; purpose = "ESP32 BLE HID service, GAP, pairing, and host connection." },
             [ordered]@{ path = "ports/esp32/ble_audio_stream*"; purpose = "ESP32 BLE audio transport and notifications." },
             [ordered]@{ path = "ports/esp32/audio_capture*"; purpose = "I2S microphone capture path." },
-            [ordered]@{ path = "partitions.csv"; purpose = "N4 4 MB flash layout including OTA app slots and diag_log partition." },
-            [ordered]@{ path = "tools/verify_v2_board_profile_static.ps1"; purpose = "Static N4 board profile, memory, pin, partition, and package identity check." },
+            [ordered]@{ path = "partitions.csv"; purpose = "V2 16 MB flash layout including OTA app slots and diag_log partition." },
+            [ordered]@{ path = "tools/verify_v2_board_profile_static.ps1"; purpose = "Static V2 board profile, memory, pin, LED, current telemetry, partition, and package identity check." },
             [ordered]@{ path = "tools/"; purpose = "Build, flash, monitor, BLE, audio, and diagnostic validation scripts." }
         )
         hardware_assumptions = @(
-            "Default active board is ESP32-S3-WROOM-1-N4 with 4 MB flash and no PSRAM until the new N16R8 hardware arrives.",
+            "Default active board is ESP32-S3-WROOM-1-N16R8 with 16 MB flash and 8 MB Octal PSRAM.",
             "Microphone path is SPH0645-style I2S digital audio at the product capture rate.",
             "Physical key GPIO mapping and voice key GPIO live in board pin configuration, not desktop code.",
-            "N4 EC11-KEY/GPIO35 controls recording; KEY1/KEY2/KEY3/KEY4 use GPIO45/GPIO48/GPIO47/GPIO21 and fall back to F13-F24 gesture usages; EC11 encoder uses GPIO36/GPIO38/GPIO37/GPIO35.",
-            "N4 deep-sleep wake uses KEY4/GPIO21; EC11-KEY/GPIO35 recording key is not RTC deep-sleep wake capable.",
-            "Production V2 hardware must provide an RTC-capable primary voice/wake input; EC11-KEY_IO/GPIO11 is provisional until isolation, leakage, pull policy, and false-wake behavior are signed off.",
-            "N4 PWR_HOLD, RGB LEDs, and V2 current-sense telemetry are not populated in the active profile.",
+            "V2 EC11-KEY/GPIO18 controls recording; KEY1/KEY2/KEY3/KEY4 use GPIO38/GPIO39/GPIO40/GPIO41 and fall back to F13-F24 gesture usages; EC11 encoder uses GPIO42/GPIO2/GPIO18.",
+            "V2 deep-sleep wake is provisional on EC11-KEY/GPIO18 and remains disabled by default until isolation, leakage, pull policy, and false-wake behavior are signed off.",
+            "GPIO35/GPIO36/GPIO37 are reserved for the N16R8 module flash/PSRAM/MSPI interface.",
+            "PWR_HOLD/GPIO11, RGB LEDs, and V2 current-sense telemetry are populated in the active profile but gated by validation policy where required.",
             "Real BLE, flash, serial, or audio capture validation requires a workflow hardware lock."
         )
         boundaries = @(

@@ -59,14 +59,18 @@ extern void status_led_prepare_sleep(void) __attribute__((weak));
 #define CONFIG_POWER_MANAGER_EVALUATE_INTERVAL_MS 2000
 #endif
 
+#ifndef CONFIG_LISTENER_V2_ENABLE_EC11_DEEP_SLEEP_WAKE
+#define CONFIG_LISTENER_V2_ENABLE_EC11_DEEP_SLEEP_WAKE 0
+#endif
+
 #define POWER_MANAGER_USB_PREFIX "POWER:"
 #define POWER_MANAGER_BATTERY_WARN_PERCENT 10U
 #define POWER_MANAGER_TASK_STACK_BYTES (4 * 1024)
-#define POWER_MANAGER_WAKE_CAPABLE_KEYS "KEY4/GPIO21"
-#define POWER_MANAGER_VOICE_KEY_LIMITATION "N4 validation profile: EC11-KEY/GPIO35 recording key is not RTC deep-sleep wake capable; production hardware must provide RTC-capable primary voice/wake input"
-#define POWER_MANAGER_WAKE_USER_ACTION "press KEY4/GPIO21 after deep sleep on N4"
-#define POWER_MANAGER_WAKE_POLICY_CODE ((uint32_t)POWER_MANAGER_WAKE_POLICY_KEY4_ONLY)
-#define POWER_MANAGER_WAKE_VOICE_KEY_CAPABLE_CODE 0U
+#define POWER_MANAGER_WAKE_CAPABLE_KEYS "EC11_KEY/GPIO18"
+#define POWER_MANAGER_VOICE_KEY_LIMITATION "V2 EC11-KEY_IO/GPIO18 is the RTC-capable wake candidate; deep-sleep wake remains disabled until power-latch isolation, leakage, pull policy, and false-wake behavior are signed off"
+#define POWER_MANAGER_WAKE_USER_ACTION "use USB reset or power cycle until EC11 wake is signed off"
+#define POWER_MANAGER_WAKE_POLICY_ACTIVE POWER_MANAGER_WAKE_POLICY_V2_EC11_PROVISIONAL
+#define POWER_MANAGER_WAKE_POLICY_CODE ((uint32_t)POWER_MANAGER_WAKE_POLICY_ACTIVE)
 #define POWER_MANAGER_SLEEP_STATS_MAGIC 0x50575331u
 #define POWER_MANAGER_RTC_CAL_CYCLES 1024U
 #define POWER_MANAGER_MS_PER_HOUR 3600000LL
@@ -283,12 +287,16 @@ static void power_manager_blocker_names(uint32_t blockers, char *buffer, size_t 
 
 static uint64_t power_manager_wake_gpio_mask(void)
 {
-    return (BOARD_PINS_KEY4_IO != GPIO_NUM_NC &&
-            BOARD_PINS_KEY4_IO >= 0 &&
-            BOARD_PINS_KEY4_IO < 64 &&
-            rtc_gpio_is_valid_gpio(BOARD_PINS_KEY4_IO))
-        ? (1ULL << (uint32_t)BOARD_PINS_KEY4_IO)
+#if CONFIG_LISTENER_V2_ENABLE_EC11_DEEP_SLEEP_WAKE
+    return (BOARD_PINS_EC11_KEY_IO != GPIO_NUM_NC &&
+            BOARD_PINS_EC11_KEY_IO >= 0 &&
+            BOARD_PINS_EC11_KEY_IO < 64 &&
+            rtc_gpio_is_valid_gpio(BOARD_PINS_EC11_KEY_IO))
+        ? (1ULL << (uint32_t)BOARD_PINS_EC11_KEY_IO)
         : 0;
+#else
+    return 0;
+#endif
 }
 
 static bool power_manager_voice_key_rtc_capable(void)
@@ -304,7 +312,7 @@ static void power_manager_log_wake_policy(uint64_t wake_gpio_mask)
     diag_log(DIAG_SRC_POWER, DIAG_POWER_WAKE_POLICY, DIAG_SEV_INFO,
              POWER_MANAGER_WAKE_POLICY_CODE,
              (uint32_t)(wake_gpio_mask & 0xffffffffu),
-             POWER_MANAGER_WAKE_VOICE_KEY_CAPABLE_CODE,
+             power_manager_voice_key_rtc_capable() ? 1u : 0u,
              (uint32_t)BOARD_PINS_EC11_KEY_IO);
 }
 
@@ -786,12 +794,13 @@ void power_manager_get_snapshot(power_manager_snapshot_t *snapshot)
     snapshot->overnight_sleep_threshold_ms = CONFIG_POWER_MANAGER_OVERNIGHT_SLEEP_MS;
     snapshot->overnight_guard_enabled = CONFIG_POWER_MANAGER_ENABLE != 0;
     snapshot->wake_gpio_mask = power_manager_wake_gpio_mask();
-    snapshot->wake_policy = POWER_MANAGER_WAKE_POLICY_KEY4_ONLY;
-    snapshot->wake_key_gpio = (uint32_t)BOARD_PINS_KEY4_IO;
-    snapshot->wake_key_rtc_capable = snapshot->wake_gpio_mask != 0;
+    snapshot->wake_policy = POWER_MANAGER_WAKE_POLICY_ACTIVE;
+    snapshot->wake_key_gpio = (uint32_t)BOARD_PINS_EC11_KEY_IO;
+    snapshot->wake_key_rtc_capable = power_manager_voice_key_rtc_capable();
     snapshot->voice_key_gpio = (uint32_t)BOARD_PINS_EC11_KEY_IO;
     snapshot->voice_key_rtc_capable = power_manager_voice_key_rtc_capable();
-    snapshot->voice_key_deep_sleep_wake_enabled = false;
+    snapshot->voice_key_deep_sleep_wake_enabled =
+        CONFIG_LISTENER_V2_ENABLE_EC11_DEEP_SLEEP_WAKE && snapshot->wake_gpio_mask != 0;
     snapshot->wake_capable_keys = POWER_MANAGER_WAKE_CAPABLE_KEYS;
     snapshot->voice_key_limitation = POWER_MANAGER_VOICE_KEY_LIMITATION;
     snapshot->wake_user_action = POWER_MANAGER_WAKE_USER_ACTION;
@@ -822,7 +831,7 @@ static esp_err_t power_manager_configure_wakeup(uint64_t wake_gpio_mask)
     }
 
     const gpio_num_t candidates[] = {
-        BOARD_PINS_KEY4_IO,
+        BOARD_PINS_EC11_KEY_IO,
     };
     for (size_t index = 0; index < sizeof(candidates) / sizeof(candidates[0]); ++index) {
         gpio_num_t gpio = candidates[index];
@@ -1219,7 +1228,7 @@ esp_err_t power_manager_init(void)
         s_rtc_last_sleep_duration_ms,
         s_rtc_sleep_entry_battery_mv,
         s_rtc_last_wake_battery_mv,
-        power_manager_wake_policy_name(POWER_MANAGER_WAKE_POLICY_KEY4_ONLY),
+        power_manager_wake_policy_name(POWER_MANAGER_WAKE_POLICY_ACTIVE),
         POWER_MANAGER_WAKE_CAPABLE_KEYS,
         (unsigned)BOARD_PINS_EC11_KEY_IO,
         POWER_MANAGER_VOICE_KEY_LIMITATION);
@@ -1264,15 +1273,16 @@ esp_err_t power_manager_start(void)
         TAG,
         "power manager started: audio_idle_ms=%u connected_idle_ms=%u disconnected_idle_ms=%u"
         " overnight_sleep_ms=%u eval_ms=%u wake_mask=0x%016" PRIx64
-        " wake_policy=%s wake_keys=%s voice_key_wake=0",
+        " wake_policy=%s wake_keys=%s voice_key_wake=%u",
         (unsigned)CONFIG_POWER_MANAGER_AUDIO_IDLE_MS,
         (unsigned)CONFIG_POWER_MANAGER_CONNECTED_IDLE_MS,
         (unsigned)CONFIG_POWER_MANAGER_DISCONNECTED_IDLE_MS,
         (unsigned)CONFIG_POWER_MANAGER_OVERNIGHT_SLEEP_MS,
         (unsigned)CONFIG_POWER_MANAGER_EVALUATE_INTERVAL_MS,
         power_manager_wake_gpio_mask(),
-        power_manager_wake_policy_name(POWER_MANAGER_WAKE_POLICY_KEY4_ONLY),
-        POWER_MANAGER_WAKE_CAPABLE_KEYS);
+        power_manager_wake_policy_name(POWER_MANAGER_WAKE_POLICY_ACTIVE),
+        POWER_MANAGER_WAKE_CAPABLE_KEYS,
+        CONFIG_LISTENER_V2_ENABLE_EC11_DEEP_SLEEP_WAKE ? 1u : 0u);
     return ESP_OK;
 }
 

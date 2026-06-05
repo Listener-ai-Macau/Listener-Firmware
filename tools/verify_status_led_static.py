@@ -11,6 +11,7 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 CHECKS = {
     "ports/esp32/board_pins/include/board_pins.h": [
         r"BOARD_PINS_RGB_STATUS_IO\s+\(GPIO_NUM_1\)",
+        r"BOARD_PINS_RGB_EC11_IO\s+\(GPIO_NUM_5\)",
         r"BOARD_PINS_RGB_KEY_IO\s+\(GPIO_NUM_13\)",
         r"BOARD_PINS_RGB_EDGE_IO\s+\(GPIO_NUM_4\)",
         r"BOARD_PINS_BAT_CHG_IO\s+\(GPIO_NUM_14\)",
@@ -30,9 +31,12 @@ CHECKS = {
     ],
     "components/status_led/status_led.c": [
         "STATUS_LED_STATUS_COUNT 6",
+        "STATUS_LED_EC11_COUNT 12",
         "STATUS_LED_KEY_COUNT 4",
         "STATUS_LED_EDGE_COUNT 6",
+        "STATUS_LED_STRIP_COUNT 4",
         "STATUS_LED_STRIP_STATUS",
+        "STATUS_LED_STRIP_EC11",
         "STATUS_LED_STRIP_KEY",
         "STATUS_LED_STRIP_EDGE",
         "STATUS_LED_PROFILE_OFF",
@@ -51,9 +55,11 @@ CHECKS = {
         "~LED:PRIVACY",
         "TEST:RGBW",
         "TEST:MAP",
+        "ec11_order=LED7..LED10+LED15..LED16+LED23..LED28",
         "PREVIEW ",
         "ERROR ",
         "PROFILE ",
+        "PWM_RGB_EC11_GPIO5",
         "PWM_RGB_KEY_GPIO13",
         "gpio14_reserved=BAT_CHG_IO",
         "vdd_led_enable=always_on_assumed",
@@ -108,11 +114,12 @@ CHECKS = {
         "status_led_set_low_power_disabled",
     ],
     "docs/features/status_led.md": [
+        "GPIO5",
         "GPIO13",
         "`GPIO14` is reserved for `BAT_CHG_IO`",
         "`LED1=PWR`",
         "`LED6=WARN`",
-        "`~LED:TEST:RGBW <status|key|edge|all>`",
+        "`~LED:TEST:RGBW <status|ec11|knob|ring|key|edge|all>`",
     ],
 }
 
@@ -147,10 +154,32 @@ def main() -> int:
     board = read("ports/esp32/board_pins/include/board_pins.h")
     if re.search(r"BOARD_PINS_RGB_KEY_IO\s+\(GPIO_NUM_14\)", board):
         failures.append("board_pins.h: RGB key strip must not use GPIO14; GPIO14 is BAT_CHG_IO")
+    if re.search(r"BOARD_PINS_RGB_EC11_IO\s+\(GPIO_NUM_4\)", board):
+        failures.append("board_pins.h: EC11 knob ring must use GPIO5, not the edge GPIO4 strip")
 
     status_led = read("components/status_led/status_led.c")
     if "bit-bang" in status_led.lower():
         failures.append("status_led.c: do not bit-bang WS2812 timing")
+    if "STATUS_LED_EC11_COUNT 4" in status_led:
+        failures.append("status_led.c: stale EC11 four-LED strip count")
+    if "STATUS_LED_EDGE_COUNT 14" in status_led:
+        failures.append("status_led.c: stale edge/frame fourteen-LED strip count")
+
+    board_leds = read("components/board/board.c")
+    if "BOARD_LED_PREFIX" in board_leds or 'board_command_matches(line, BOARD_LED_PREFIX' in board_leds:
+        failures.append("board.c: board_consume_usb_command must not swallow LED: commands before status_led")
+    if 'key="LED7..LED10" edge="LED11..LED16"' in board_leds:
+        failures.append("board.c: stale three-zone LED map")
+    if "LED15..LED28" in board_leds and "LED23..LED28" not in board_leds:
+        failures.append("board.c: stale edge LED15..LED28 map")
+
+    ble_hid = read("ports/esp32/ble_hid/ble_hid.c")
+    status_dispatch = ble_hid.find("status_led_consume_usb_command(line)")
+    board_dispatch = ble_hid.find("board_consume_usb_command(line)")
+    if status_dispatch < 0:
+        failures.append("ble_hid.c: missing status_led_consume_usb_command dispatch")
+    if board_dispatch >= 0 and status_dispatch > board_dispatch:
+        failures.append("ble_hid.c: status_led_consume_usb_command must run before board_consume_usb_command")
 
     if failures:
         print("FAIL: status LED static verification failed")
@@ -159,8 +188,9 @@ def main() -> int:
         return 1
 
     print(
-        "PASS: status LED static verification covers V2 WS2812 resources, GPIO13 key strip, "
-        "central state machine, diagnostics, USB validation hooks, and low-power off path."
+        "PASS: status LED static verification covers V2 four-zone WS2812 resources, "
+        "EC11 GPIO5/count12, key GPIO13/count4, edge GPIO4/count6, diagnostics, "
+        "USB validation hooks, and low-power off path."
     )
     return 0
 
