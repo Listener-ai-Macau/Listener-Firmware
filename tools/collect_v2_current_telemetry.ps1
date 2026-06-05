@@ -5,8 +5,8 @@ Collect V2 current telemetry and low-power status evidence.
 .DESCRIPTION
 Reads firmware diagnostics and writes a focused report for the two current
 telemetry inputs only:
-  - TPS63020_I_ADC / GPIO10 / TPS63020_3V3
-  - SY7088_I_ADC / GPIO9 / SY7088_LED_5V
+  - TPS63020_I_ADC / GPIO10 / BAT_IN -> VIN_TPS63020
+  - SY7088_I_ADC / GPIO9 / BAT_IN -> VIN_SY7088
 
 Serial mode also requests ~POWER:STATUS so the same report captures sleep
 duration, sleep-entry battery, wake battery, and drain rate after a wake.
@@ -28,16 +28,16 @@ Set-StrictMode -Version Latest
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
 $expectedSensors = @(
     [ordered]@{
-        rail = "TPS63020_3V3"
+        branch = "TPS63020_input_branch"
         net = "TPS63020_I_ADC"
         gpio = 10
-        role = "3.3V rail current telemetry"
+        role = "BAT_IN -> VIN_TPS63020 input branch current telemetry"
     },
     [ordered]@{
-        rail = "SY7088_LED_5V"
+        branch = "SY7088_input_branch"
         net = "SY7088_I_ADC"
         gpio = 9
-        role = "LED/5V boost rail current telemetry"
+        role = "BAT_IN -> VIN_SY7088 input branch current telemetry"
     }
 )
 
@@ -185,9 +185,9 @@ function Read-DiagnosticsFromSerial {
 function New-SelfTestLines {
     return @(
         "~BOARD:STATUS profile=voice-keyboard-v2-n16r8 battery_mv=4012 battery_valid=1",
-        "~BOARD:POWER rail=TPS63020_3V3 gpio=10 raw_adc=1234 adc_mv=995 adc_calibrated=1 sample_count=4 calibration_status=uncalibrated current_calibrated=0 current_ma_valid=0 estimated_current_ma=0 rail_mv=3300 rail_voltage_provisional=0 power_mw_valid=0 estimated_power_mw=0 result=ESP_OK policy=telemetry_only_no_power_control",
-        "~BOARD:POWER rail=SY7088_LED_5V gpio=9 raw_adc=2345 adc_mv=1888 adc_calibrated=1 sample_count=4 calibration_status=uncalibrated current_calibrated=0 current_ma_valid=0 estimated_current_ma=0 rail_mv=5000 rail_voltage_provisional=0 power_mw_valid=0 estimated_power_mw=0 result=ESP_OK policy=telemetry_only_no_power_control",
-        "~POWER:STATUS state=CONNECTED_IDLE blockers=0x00000000 blocker_names=none idle_ms=100 user_idle_ms=100 radio_idle_ms=100 ble_connected=1 battery_mv=3988 battery_level=82 battery_valid=1 last_sleep_reason=MANUAL_COMMAND last_wake_source=GPIO guard=1 audio_idle_ms=60000 connected_idle_ms=300000 disconnected_idle_ms=600000 overnight_sleep_ms=1800000 sleep_stats_valid=1 sleep_duration_ms=28800000 sleep_entry_battery_mv=4012 sleep_entry_battery_level=84 sleep_entry_battery_valid=1 wake_battery_mv=3988 wake_battery_level=82 wake_battery_valid=1 sleep_drain_mv=24 sleep_drain_level=2 sleep_drain_mv_per_hour=3 sleep_drain_level_per_hour_x100=25 wake_policy=v2_ec11_provisional wake_gpio_mask=0x0000000000000800 wake_capable_keys=EC11_KEY wake_key_gpio=11 wake_key_rtc_capable=1 voice_key_gpio=11 voice_key_rtc_capable=1 voice_key_deep_sleep_wake=0 voice_key_limitation=""hardware_signoff_required"" wake_user_action=""press_ec11_key_or_usb_reset"""
+        "~BOARD:POWER branch=TPS63020_input_branch gpio=10 raw_adc=1234 adc_mv=995 adc_calibrated=1 sample_count=4 calibration_status=uncalibrated current_model=""INA180A2 10mR current_mA=adc_mv*2"" current_calibrated=0 current_ma_valid=0 estimated_input_current_ma=0 battery_side_mv=4012 battery_voltage_source=""BAT_V_ADC/GPIO8 68K/68K midpoint, VBAT~=2*ADC"" power_mw_valid=0 estimated_input_power_mw=0 result=ESP_OK policy=v2_battery_side_input_branch_current_ina180a2_10mR_adc_mv_x2_with_battery_mv_from_gpio8_div2",
+        "~BOARD:POWER branch=SY7088_input_branch gpio=9 raw_adc=2345 adc_mv=1888 adc_calibrated=1 sample_count=4 calibration_status=uncalibrated current_model=""INA180A2 10mR current_mA=adc_mv*2"" current_calibrated=0 current_ma_valid=0 estimated_input_current_ma=0 battery_side_mv=4012 battery_voltage_source=""BAT_V_ADC/GPIO8 68K/68K midpoint, VBAT~=2*ADC"" power_mw_valid=0 estimated_input_power_mw=0 result=ESP_OK policy=v2_battery_side_input_branch_current_ina180a2_10mR_adc_mv_x2_with_battery_mv_from_gpio8_div2",
+        "~POWER:STATUS state=CONNECTED_IDLE blockers=0x00000000 blocker_names=none sleep_blockers=0x00000000 sleep_blocker_names=none idle_ms=100 user_idle_ms=100 radio_idle_ms=100 ble_connected=1 automatic_sleep_blocked_by_external_power=0 external_power_present=0 usb_power_present=0 charging=0 charge_full=0 usb_det_level=low bat_chg_level=high bat_std_level=high usb_det_policy=v2_gpio7_r37_r32_10K_10K_divider charger_polarity=v2_gpio14_chg_gpio21_std_active_low battery_mv=3988 battery_level=82 battery_valid=1 last_sleep_reason=MANUAL_COMMAND last_wake_source=GPIO guard=1 audio_idle_ms=60000 connected_idle_ms=300000 disconnected_idle_ms=600000 overnight_sleep_ms=1800000 sleep_stats_valid=1 sleep_duration_ms=28800000 sleep_entry_battery_mv=4012 sleep_entry_battery_level=84 sleep_entry_battery_valid=1 wake_battery_mv=3988 wake_battery_level=82 wake_battery_valid=1 sleep_drain_mv=24 sleep_drain_level=2 sleep_drain_mv_per_hour=3 sleep_drain_level_per_hour_x100=25 wake_policy=v2_ec11_provisional wake_gpio_mask=0x0000000000000000 wake_capable_keys=EC11_KEY/GPIO18 wake_key_gpio=18 wake_key_rtc_capable=1 voice_key_gpio=18 voice_key_rtc_capable=1 voice_key_deep_sleep_wake=0 voice_key_limitation=""V2 EC11-KEY_IO/GPIO18 is the RTC-capable wake candidate; deep-sleep wake remains disabled until power-latch isolation, leakage, pull policy, and false-wake behavior are signed off"" wake_user_action=""use USB reset or power cycle until EC11 wake is signed off"""
     )
 }
 
@@ -205,12 +205,12 @@ function New-MarkdownReport {
     $lines.Add("")
     $lines.Add("Policy: telemetry only. Firmware does not use these readings for power control, shutdown, LED limiting, or user-visible power decisions.")
     $lines.Add("")
-    $lines.Add("| Rail | Net | GPIO | Present | Raw ADC | ADC mV | ADC calibrated | Current mA valid | Power mW valid | Result |")
-    $lines.Add("|---|---|---:|---|---:|---:|---|---|---|---|")
+    $lines.Add("| Branch | Net | GPIO | Present | Raw ADC | ADC mV | ADC calibrated | Input current mA valid | Battery mV | Input power mW valid | Result |")
+    $lines.Add("|---|---|---:|---|---:|---:|---|---|---:|---|---|")
     foreach ($reading in $Readings) {
         $lines.Add((
-            "| {0} | {1} | {2} | {3} | {4} | {5} | {6} | {7} | {8} | {9} |" -f
-            $reading.rail,
+            "| {0} | {1} | {2} | {3} | {4} | {5} | {6} | {7} | {8} | {9} | {10} |" -f
+            $reading.branch,
             $reading.net,
             $reading.gpio_expected,
             $reading.present,
@@ -218,6 +218,7 @@ function New-MarkdownReport {
             $reading.adc_mv,
             $reading.adc_calibrated,
             $reading.current_ma_valid,
+            $reading.battery_side_mv,
             $reading.power_mw_valid,
             $reading.result
         ))
@@ -237,8 +238,8 @@ function New-MarkdownReport {
     } else {
         $lines.Add("~POWER:STATUS was not present in the captured log.")
     }
-    if (@($Manifest.summary.missing_rails).Count -gt 0) {
-        $lines.Add(("Missing rails: {0}" -f (@($Manifest.summary.missing_rails) -join ", ")))
+    if (@($Manifest.summary.missing_branches).Count -gt 0) {
+        $lines.Add(("Missing branches: {0}" -f (@($Manifest.summary.missing_branches) -join ", ")))
     }
     if (@($Manifest.summary.gpio_mismatches).Count -gt 0) {
         $lines.Add(("GPIO mismatches: {0}" -f (@($Manifest.summary.gpio_mismatches) -join "; ")))
@@ -293,31 +294,31 @@ try {
     $powerStatusRows = @($allLines | ForEach-Object { Parse-PowerStatusLine -Line $_ } | Where-Object { $null -ne $_ })
     $latestPowerStatus = if (@($powerStatusRows).Count -gt 0) { $powerStatusRows[-1] } else { $null }
 
-    $byRail = @{}
+    $byBranch = @{}
     foreach ($row in $boardPowerRows) {
-        if ($row.PSObject.Properties.Name -contains "rail") {
-            $byRail[[string]$row.rail] = $row
+        if ($row.PSObject.Properties.Name -contains "branch") {
+            $byBranch[[string]$row.branch] = $row
         }
     }
 
     $readings = @()
-    $missingRails = New-Object System.Collections.Generic.List[string]
+    $missingBranches = New-Object System.Collections.Generic.List[string]
     $gpioMismatches = New-Object System.Collections.Generic.List[string]
     foreach ($sensor in $expectedSensors) {
-        $rail = [string]$sensor.rail
-        $row = if ($byRail.ContainsKey($rail)) { $byRail[$rail] } else { $null }
+        $branch = [string]$sensor.branch
+        $row = if ($byBranch.ContainsKey($branch)) { $byBranch[$branch] } else { $null }
         $present = $null -ne $row
         if (-not $present) {
-            $missingRails.Add($rail)
+            $missingBranches.Add($branch)
         }
 
         $gpio = if ($present -and ($row.PSObject.Properties.Name -contains "gpio")) { [int64]$row.gpio } else { $null }
         if ($present -and $gpio -ne [int64]$sensor.gpio) {
-            $gpioMismatches.Add(("{0}: expected GPIO{1}, got GPIO{2}" -f $rail, $sensor.gpio, $gpio))
+            $gpioMismatches.Add(("{0}: expected GPIO{1}, got GPIO{2}" -f $branch, $sensor.gpio, $gpio))
         }
 
         $readings += [pscustomobject][ordered]@{
-            rail = $rail
+            branch = $branch
             net = [string]$sensor.net
             role = [string]$sensor.role
             gpio_expected = [int]$sensor.gpio
@@ -328,32 +329,32 @@ try {
             adc_calibrated = if ($present -and ($row.PSObject.Properties.Name -contains "adc_calibrated")) { Convert-ToBool $row.adc_calibrated } else { $false }
             sample_count = if ($present -and ($row.PSObject.Properties.Name -contains "sample_count")) { [int64]$row.sample_count } else { $null }
             current_ma_valid = if ($present -and ($row.PSObject.Properties.Name -contains "current_ma_valid")) { Convert-ToBool $row.current_ma_valid } else { $false }
-            estimated_current_ma = if ($present -and ($row.PSObject.Properties.Name -contains "estimated_current_ma")) { [int64]$row.estimated_current_ma } else { $null }
-            rail_mv = if ($present -and ($row.PSObject.Properties.Name -contains "rail_mv")) { [int64]$row.rail_mv } else { $null }
+            estimated_input_current_ma = if ($present -and ($row.PSObject.Properties.Name -contains "estimated_input_current_ma")) { [int64]$row.estimated_input_current_ma } else { $null }
+            battery_side_mv = if ($present -and ($row.PSObject.Properties.Name -contains "battery_side_mv")) { [int64]$row.battery_side_mv } else { $null }
             power_mw_valid = if ($present -and ($row.PSObject.Properties.Name -contains "power_mw_valid")) { Convert-ToBool $row.power_mw_valid } else { $false }
-            estimated_power_mw = if ($present -and ($row.PSObject.Properties.Name -contains "estimated_power_mw")) { [int64]$row.estimated_power_mw } else { $null }
+            estimated_input_power_mw = if ($present -and ($row.PSObject.Properties.Name -contains "estimated_input_power_mw")) { [int64]$row.estimated_input_power_mw } else { $null }
             result = if ($present -and ($row.PSObject.Properties.Name -contains "result")) { [string]$row.result } else { $null }
             policy = if ($present -and ($row.PSObject.Properties.Name -contains "policy")) { [string]$row.policy } else { $null }
             raw_line = if ($present) { [string]$row.raw_line } else { $null }
         }
     }
 
-    $expectedRailNames = @($expectedSensors | ForEach-Object { [string]$_.rail })
-    $unexpectedRails = @($boardPowerRows |
-        Where-Object { $_.PSObject.Properties.Name -contains "rail" } |
+    $expectedBranchNames = @($expectedSensors | ForEach-Object { [string]$_.branch })
+    $unexpectedBranches = @($boardPowerRows |
+        Where-Object { $_.PSObject.Properties.Name -contains "branch" } |
         Where-Object {
-            $railName = [string]$_.rail
-            -not $expectedRailNames.Contains($railName)
+            $branchName = [string]$_.branch
+            -not $expectedBranchNames.Contains($branchName)
         } |
-        ForEach-Object { [string]$_.rail })
+        ForEach-Object { [string]$_.branch })
 
     $summary = [ordered]@{
         expected_sensor_count = @($expectedSensors).Count
         reading_count = @($boardPowerRows).Count
-        all_expected_present = $missingRails.Count -eq 0
+        all_expected_present = $missingBranches.Count -eq 0
         low_power_status_present = $null -ne $latestPowerStatus
-        missing_rails = @($missingRails)
-        unexpected_rails = @($unexpectedRails)
+        missing_branches = @($missingBranches)
+        unexpected_branches = @($unexpectedBranches)
         gpio_mismatches = @($gpioMismatches)
         software_power_control = $false
         telemetry_only = $true

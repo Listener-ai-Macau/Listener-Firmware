@@ -80,6 +80,7 @@ $batteryMonitor = Read-RepoFile "components\battery_monitor\battery_monitor.c"
 $statusLed = Read-RepoFile "components\status_led\status_led.c"
 $statusLedDoc = Read-RepoFile "docs\features\status_led.md"
 $lowPowerDoc = Read-RepoFile "docs\features\low_power_wake_policy.md"
+$currentTelemetryTool = Read-RepoFile "tools\collect_v2_current_telemetry.ps1"
 $otaPackage = Read-RepoFile "tools\package_ota_firmware.ps1"
 $factoryPackage = Read-RepoFile "tools\package_factory_firmware.ps1"
 
@@ -131,6 +132,11 @@ foreach ($item in @(
     @($batteryMonitor, "TPS63020_input_branch", "TPS63020 input branch naming"),
     @($batteryMonitor, "SY7088_input_branch", "SY7088 input branch naming"),
     @($board, "battery_side_mv", "battery-side power telemetry output"),
+    @($currentTelemetryTool, 'branch\s*=\s*"TPS63020_input_branch"', "current telemetry TPS63020 branch parser"),
+    @($currentTelemetryTool, 'branch\s*=\s*"SY7088_input_branch"', "current telemetry SY7088 branch parser"),
+    @($currentTelemetryTool, "wake_capable_keys=EC11_KEY/GPIO18", "current telemetry self-test V2 wake key label"),
+    @($currentTelemetryTool, "wake_key_gpio=18", "current telemetry self-test wake key GPIO18"),
+    @($currentTelemetryTool, "voice_key_gpio=18", "current telemetry self-test voice key GPIO18"),
     @($powerManager, "POWER_MANAGER_WAKE_POLICY_ACTIVE POWER_MANAGER_WAKE_POLICY_V2_EC11_PROVISIONAL", "V2 EC11 provisional wake policy"),
     @($powerManager, "EC11-KEY_IO/GPIO18", "V2 wake limitation GPIO18"),
     @($lowPowerDoc, "EC11-KEY_IO/GPIO18", "low-power V2 EC11 GPIO18 doc"),
@@ -170,6 +176,7 @@ foreach ($item in @(
     @($voiceKeyInput, "ec11_key\.gpio(11|35)", "stale EC11 recording label"),
     @($board, "5\.1K|GPIO46|Voice Keyboard N4|EC11 push/GPIO35|N4 deep sleep", "stale board diagnostics/help"),
     @($board, "LED11..LED16|LED15..LED28", "stale LED three-zone refs in board diagnostics"),
+    @($currentTelemetryTool, 'rail=TPS63020_3V3|rail=SY7088_LED_5V|wake_key_gpio=11|voice_key_gpio=11|wake_user_action=""press_ec11_key_or_usb_reset""', "stale current telemetry collector diagnostics"),
     @($powerManager, "KEY4/GPIO21|EC11-KEY/GPIO35", "stale N4 wake diagnostics"),
     @($lowPowerDoc, "EC11-KEY_IO/GPIO11|EC11-KEY/GPIO35|KEY4/GPIO21", "stale low-power wake doc GPIO"),
     @($statusLed, "STATUS_LED_EC11_COUNT 4|STATUS_LED_EDGE_COUNT 14", "stale LED strip counts"),
