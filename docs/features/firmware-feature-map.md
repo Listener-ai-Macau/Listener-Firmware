@@ -12,7 +12,7 @@ same product capabilities with concrete source locations.
 | Custom BLE HID fallback keys | Logical custom keys emit stable `KEY1`/`KEY2`/`KEY3`/`KEY4` firmware events. Current N4 GPIO45/GPIO48/GPIO47/GPIO21 fall back to safe non-text BLE HID gestures: single-click F13-F16, double-click F17-F20, and long-press F21-F24 until Listener-Type consumes custom key actions. | `components/keyboard/`, `components/hid_keyboard/`, `ports/esp32/ble_hid*`, `ports/esp32/board_pins/` |
 | Recording control key | EC11 push/GPIO35 controls recording: single click starts or stops after the double-click window, while USB `VREC:` commands remain available for desktop/product validation. | `components/voice_recording_control/`, `ports/esp32/voice_key_input/` |
 | Recovery | EC11 push double-click recovery and serial `VREC:RECOVERY`, `VREC:RESET`, or `VREC:FORGET` clear pairing/session state. | `ports/esp32/voice_key_input/`, `components/voice_recording_control/`, `ports/esp32/ble_hid*` |
-| BLE audio transport | VKA1-style 16 kHz microphone sessions are framed as start/audio/stop/cancel/error notifications for Listener-Type. | `ports/esp32/audio_capture*`, `ports/esp32/ble_audio_stream*` |
+| BLE audio transport | VKA1-style 16 kHz microphone sessions are framed as start/audio/stop/cancel/error notifications for Listener-Type, with executable transport invariants for epoch filtering, replay, queue/pool backpressure, stale GATT events, and terminal ownership. | `ports/esp32/audio_capture*`, `ports/esp32/ble_audio_stream*`, `tools/verify_ble_audio_transport_model.py` |
 | Diagnostics | `diag_log` records boot, BLE, audio, health, recording-key, self-test, and error events in flash-backed logs that survive reboot. | `components/diag_log/`, `ports/esp32/diag_log_platform/`, `tools/dump_diag_log.ps1` |
 | System health | Runtime heartbeat and resource checks cover heap, BLE state, disconnect conditions, and task health evidence. | `components/system_health/`, `ports/esp32/system_health_platform/` |
 | POST and degraded boot | Startup checks report NVS, heap, SPIRAM assumptions, BLE/audio pending state, and degraded boot status. | `main/`, `components/self_test/` |
@@ -31,6 +31,7 @@ pwsh -NoProfile -File .\tools\flash.ps1 -Port <COMx>
 pwsh -NoProfile -File .\tools\monitor.ps1 -Port <COMx>
 pwsh -NoProfile -File .\tools\dump_diag_log.ps1 -Port <COMx>
 pwsh -NoProfile -File .\tools\verify_v2_board_profile_static.ps1
+python .\tools\verify_ble_audio_transport_model.py
 pwsh -NoProfile -File .\tools\verify_ble_hid.ps1
 pwsh -NoProfile -File .\tools\verify_ble_hid_end_to_end.ps1
 pwsh -NoProfile -File .\tools\verify_physical_custom_key_hid.ps1

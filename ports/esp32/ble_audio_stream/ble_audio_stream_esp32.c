@@ -97,6 +97,21 @@ typedef enum {
     BLE_AUDIO_STREAM_TRANSPORT_STATE_ERROR,
 } ble_audio_stream_transport_state_t;
 
+/*
+ * BLE audio transport invariants:
+ * - NimBLE/GATT callbacks own only link state, connection epoch, deferred
+ *   subscribe/MTU snapshots, notify_tx completion, and stale-event counters.
+ * - The export task owns session packets, queue order, replay drain, and
+ *   terminal stop/cancel/error delivery.
+ * - audio_capture owns PCM production and can pause on queue/pool pressure,
+ *   but it must not advance packet_sequence while backpressure is active.
+ * - Replay packets are retained until notify success removes them; reconnect
+ *   drains retained audio before SESSION_STOP so stale tail audio cannot land
+ *   after the terminal boundary.
+ * - Stale subscribe/MTU/notify_tx/disconnect events are classified by
+ *   conn_handle + epoch and never release current-session notify credits.
+ */
+
 typedef struct {
     ble_audio_stream_job_type_t type;
     uint32_t session_id;
@@ -124,6 +139,13 @@ typedef struct {
     uint32_t audio_pool_high_water;
     uint32_t audio_pool_alloc_failed;
     uint32_t audio_queue_full;
+    uint32_t replay_retained_high_water;
+    uint32_t replay_packets_stored;
+    uint32_t replay_packets_replaced;
+    uint32_t replay_packets_removed;
+    uint32_t replay_packets_resent;
+    uint32_t replay_resend_failures;
+    uint32_t replay_current_skipped;
     bool audio_pool_pressure_warned;
     const char *last_drop_reason;
     int last_error;
@@ -331,6 +353,60 @@ static void ble_audio_stream_stats_begin(uint32_t session_id)
     s_session_stats.session_id = session_id;
 }
 
+static void ble_audio_stream_stats_replay_retained(uint32_t session_id, uint32_t retained)
+{
+    if (!s_session_stats.active || s_session_stats.session_id != session_id) {
+        return;
+    }
+    if (retained > s_session_stats.replay_retained_high_water) {
+        s_session_stats.replay_retained_high_water = retained;
+    }
+}
+
+static void ble_audio_stream_stats_replay_store(uint32_t session_id, bool replaced)
+{
+    if (!s_session_stats.active || s_session_stats.session_id != session_id) {
+        return;
+    }
+    if (replaced) {
+        s_session_stats.replay_packets_replaced++;
+    } else {
+        s_session_stats.replay_packets_stored++;
+    }
+}
+
+static void ble_audio_stream_stats_replay_removed(uint32_t session_id)
+{
+    if (!s_session_stats.active || s_session_stats.session_id != session_id) {
+        return;
+    }
+    s_session_stats.replay_packets_removed++;
+}
+
+static void ble_audio_stream_stats_replay_resent(uint32_t session_id)
+{
+    if (!s_session_stats.active || s_session_stats.session_id != session_id) {
+        return;
+    }
+    s_session_stats.replay_packets_resent++;
+}
+
+static void ble_audio_stream_stats_replay_resend_failed(uint32_t session_id)
+{
+    if (!s_session_stats.active || s_session_stats.session_id != session_id) {
+        return;
+    }
+    s_session_stats.replay_resend_failures++;
+}
+
+static void ble_audio_stream_stats_replay_skip_current(uint32_t session_id)
+{
+    if (!s_session_stats.active || s_session_stats.session_id != session_id) {
+        return;
+    }
+    s_session_stats.replay_current_skipped++;
+}
+
 static void ble_audio_stream_stats_retry(
     uint32_t session_id,
     int last_error,
@@ -469,9 +545,10 @@ static void ble_audio_stream_stats_log_and_end(
         return;
     }
 
+    uint32_t replay_pending = ble_audio_stream_replay_count_retained(session_id);
     ESP_LOGI(
         TAG,
-        "audio session transport summary: session=%" PRIu32 " reason=%s expected_packet_count=%u notify_sent=%" PRIu32 " notify_failed=%" PRIu32 " notify_retries=%" PRIu32 " retry_mbuf=%" PRIu32 " retry_enomem=%" PRIu32 " retry_tx_timeout=%" PRIu32 " retry_tx_status=%" PRIu32 " retry_other=%" PRIu32 " audio_sent=%" PRIu32 " audio_failed=%" PRIu32 " queue_jobs_purged=%" PRIu32 " pool_high_water=%" PRIu32 " pool_capacity=%u pool_high_water_pct=%" PRIu32 " pool_alloc_failed=%" PRIu32 " queue_full=%" PRIu32 " last_drop_reason=%s last_error=%d",
+        "audio session transport summary: session=%" PRIu32 " reason=%s expected_packet_count=%u notify_sent=%" PRIu32 " notify_failed=%" PRIu32 " notify_retries=%" PRIu32 " retry_mbuf=%" PRIu32 " retry_enomem=%" PRIu32 " retry_tx_timeout=%" PRIu32 " retry_tx_status=%" PRIu32 " retry_other=%" PRIu32 " audio_sent=%" PRIu32 " audio_failed=%" PRIu32 " queue_jobs_purged=%" PRIu32 " pool_high_water=%" PRIu32 " pool_capacity=%u pool_high_water_pct=%" PRIu32 " pool_alloc_failed=%" PRIu32 " queue_full=%" PRIu32 " replay_retained_high_water=%" PRIu32 " replay_stored=%" PRIu32 " replay_replaced=%" PRIu32 " replay_removed=%" PRIu32 " replay_resent=%" PRIu32 " replay_resend_failed=%" PRIu32 " replay_skip_current=%" PRIu32 " replay_pending=%" PRIu32 " last_drop_reason=%s last_error=%d",
         session_id,
         reason,
         expected_packet_count,
@@ -491,6 +568,14 @@ static void ble_audio_stream_stats_log_and_end(
         (s_session_stats.audio_pool_high_water * 100U) / BLE_AUDIO_STREAM_AUDIO_POOL_LENGTH,
         s_session_stats.audio_pool_alloc_failed,
         s_session_stats.audio_queue_full,
+        s_session_stats.replay_retained_high_water,
+        s_session_stats.replay_packets_stored,
+        s_session_stats.replay_packets_replaced,
+        s_session_stats.replay_packets_removed,
+        s_session_stats.replay_packets_resent,
+        s_session_stats.replay_resend_failures,
+        s_session_stats.replay_current_skipped,
+        replay_pending,
         s_session_stats.last_drop_reason != NULL ? s_session_stats.last_drop_reason : "none",
         s_session_stats.last_error);
     memset(&s_session_stats, 0, sizeof(s_session_stats));
@@ -801,6 +886,10 @@ static void ble_audio_stream_replay_store_packet(
             existing->payload_len = payload_len;
             existing->packet_pcm_bytes = packet_pcm_bytes;
             memcpy(existing->payload, payload, payload_len);
+            ble_audio_stream_stats_replay_store(session_id, true);
+            ble_audio_stream_stats_replay_retained(
+                session_id,
+                ble_audio_stream_replay_count_retained(session_id));
             return;
         }
     }
@@ -815,6 +904,10 @@ static void ble_audio_stream_replay_store_packet(
     slot->packet_pcm_bytes = packet_pcm_bytes;
     memcpy(slot->payload, payload, payload_len);
     s_replay_next_index++;
+    ble_audio_stream_stats_replay_store(session_id, false);
+    ble_audio_stream_stats_replay_retained(
+        session_id,
+        ble_audio_stream_replay_count_retained(session_id));
 }
 
 static void ble_audio_stream_replay_remove_packet(uint32_t session_id, uint16_t sequence)
@@ -828,6 +921,7 @@ static void ble_audio_stream_replay_remove_packet(uint32_t session_id, uint16_t 
         if (packet->valid && packet->session_id == session_id &&
             packet->sequence == sequence) {
             memset(packet, 0, sizeof(*packet));
+            ble_audio_stream_stats_replay_removed(session_id);
             return;
         }
     }
@@ -847,6 +941,7 @@ static void ble_audio_stream_replay_mark_link_suspended(const char *reason)
 
     s_replay_pending = true;
     s_replay_session_id = session_id;
+    ble_audio_stream_stats_replay_retained(session_id, retained);
     ESP_LOGW(
         TAG,
         "audio replay window armed: reason=%s session=%" PRIu32 " retained=%" PRIu32 " window=%u",
@@ -854,6 +949,8 @@ static void ble_audio_stream_replay_mark_link_suspended(const char *reason)
         session_id,
         retained,
         (unsigned)BLE_AUDIO_STREAM_REPLAY_WINDOW_PACKETS);
+    diag_log(DIAG_SRC_BLE_AUDIO, DIAG_BAUD_REPLAY, DIAG_SEV_WARN,
+             session_id, 1U, retained, BLE_AUDIO_STREAM_REPLAY_WINDOW_PACKETS);
 }
 
 static int ble_audio_stream_replay_compare_sequence(const void *a, const void *b)
@@ -897,11 +994,14 @@ static esp_err_t ble_audio_stream_replay_pending_packets(
         s_replay_pending = false;
         s_replay_session_id = 0;
         if (skipped_current) {
+            ble_audio_stream_stats_replay_skip_current(session_id);
             ESP_LOGW(
                 TAG,
                 "audio replay window skip current packet: session=%" PRIu32 " seq=%u",
                 session_id,
                 current_sequence);
+            diag_log(DIAG_SRC_BLE_AUDIO, DIAG_BAUD_REPLAY, DIAG_SEV_INFO,
+                     session_id, 3U, current_sequence, 0);
         }
         return ESP_OK;
     }
@@ -914,29 +1014,39 @@ static esp_err_t ble_audio_stream_replay_pending_packets(
         (unsigned)count,
         packets[0]->sequence,
         packets[count - 1]->sequence);
+    diag_log(DIAG_SRC_BLE_AUDIO, DIAG_BAUD_REPLAY, DIAG_SEV_WARN,
+             session_id, 2U, (uint32_t)count, packets[0]->sequence);
     if (skipped_current) {
+        ble_audio_stream_stats_replay_skip_current(session_id);
         ESP_LOGW(
             TAG,
             "audio replay window skip current packet: session=%" PRIu32 " seq=%u",
             session_id,
             current_sequence);
+        diag_log(DIAG_SRC_BLE_AUDIO, DIAG_BAUD_REPLAY, DIAG_SEV_INFO,
+                 session_id, 3U, current_sequence, 0);
     }
 
     s_replay_in_progress = true;
     for (size_t i = 0; i < count; ++i) {
+        uint16_t sequence = packets[i]->sequence;
         esp_err_t ret = ble_audio_stream_send_packet(
             LISTENER_AUDIO_PACKET_TYPE_AUDIO_DATA,
             session_id,
-            packets[i]->sequence,
+            sequence,
             0,
             1,
             packets[i]->payload,
             packets[i]->payload_len,
             packets[i]->packet_pcm_bytes);
         if (ret != ESP_OK) {
+            ble_audio_stream_stats_replay_resend_failed(session_id);
+            diag_log(DIAG_SRC_BLE_AUDIO, DIAG_BAUD_REPLAY, DIAG_SEV_WARN,
+                     session_id, 5U, sequence, (uint32_t)ret);
             s_replay_in_progress = false;
             return ret;
         }
+        ble_audio_stream_stats_replay_resent(session_id);
     }
     s_replay_in_progress = false;
     s_replay_pending = false;

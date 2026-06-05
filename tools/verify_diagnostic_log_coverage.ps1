@@ -101,7 +101,8 @@ foreach ($macro in @(
     "DIAG_POWER_WAKE",
     "DIAG_POWER_BLOCKER_CHANGE",
     "DIAG_POWER_STATUS",
-    "DIAG_GAP_RECOVERY"
+    "DIAG_GAP_RECOVERY",
+    "DIAG_BAUD_REPLAY"
 )) {
     if ($events -notmatch "(?m)^\s*#define\s+$macro\b") {
         Add-CheckError "$eventsPath missing $macro"
@@ -128,6 +129,7 @@ Assert-Contains -RelativePath "tools/package_factory_firmware.ps1" -Pattern '\$a
 Assert-NotContains -RelativePath "tools/package_factory_firmware.ps1" -Pattern '0x10000\s+(\.\\)?\$project_name\.bin' -Description "hard-coded package app flash offset"
 
 Assert-Contains -RelativePath "ports/esp32/ble_audio_stream/ble_audio_stream_esp32.c" -Pattern "DIAG_BAUD_NOTIFY_STATE" -Description "BLE audio notify state diag event"
+Assert-Contains -RelativePath "ports/esp32/ble_audio_stream/ble_audio_stream_esp32.c" -Pattern "DIAG_BAUD_REPLAY" -Description "BLE audio replay diag event"
 Assert-Contains -RelativePath "ports/esp32/ble_audio_stream/ble_audio_stream_esp32.c" -Pattern "BLE_AUDIO_NOTIFY_STATE_DISABLED_ABORT" -Description "notify-disabled suspended state"
 Assert-Contains -RelativePath "ports/esp32/ble_audio_stream/ble_audio_stream_esp32.c" -Pattern "audio transport link suspended: reason=notify_disabled" -Description "notify-disabled recovery suspension log"
 Assert-NotContains -RelativePath "ports/esp32/ble_audio_stream/ble_audio_stream_esp32.c" -Pattern "notify_disabled_session_abort" -Description "obsolete notify-disabled immediate abort"

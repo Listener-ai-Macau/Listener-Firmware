@@ -36,7 +36,7 @@ function New-FeatureSnapshot {
         )
         major_features = @(
             "BLE HID keyboard fallback for logical KEY1-KEY4 custom keys using safe non-text gestures: single-click F13-F16, double-click F17-F20, and long-press F21-F24.",
-            "BLE audio upload path for 16 kHz microphone audio sessions consumed by Listener-Type.",
+            "BLE audio upload path for 16 kHz microphone audio sessions consumed by Listener-Type, including executable transport invariants for epoch, replay, backpressure, and stale GATT events.",
             "Voice key control for start/stop recording flow, including serial VREC commands.",
             "diag_log flash ring buffer for boot, BLE, audio, health, and error events that survive reboot.",
             "BLE diagnostic log GATT export service for paginated CRC-tagged firmware log pulls by desktop diagnostics.",
@@ -97,6 +97,7 @@ function New-FeatureSnapshot {
             "pwsh -NoProfile -File .\tools\dump_diag_log.ps1 -Port <COMx>",
             "pwsh -NoProfile -File .\tools\verify_v2_board_profile_static.ps1",
             "pwsh -NoProfile -File .\tools\verify_power_manager_static.ps1",
+            "python .\tools\verify_ble_audio_transport_model.py",
             "pwsh -NoProfile -File .\tools\verify_diagnostic_log_coverage.ps1",
             "pwsh -NoProfile -File .\tools\verify_ble_audio_backpressure_static.ps1",
             "python .\tools\verify_ble_diag_log_gatt_contract.py",

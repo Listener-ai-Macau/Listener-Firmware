@@ -89,6 +89,7 @@
 #define DIAG_BAUD_NOTIFY_STATE 6   /* a1=session_id, a2=epoch, a3=conn_handle, a4=notify_state */
 #define DIAG_BAUD_WATERMARK    7   /* a1=session_id, a2=queue_depth, a3=pool_in_use, a4=pressure_percent */
 #define DIAG_BAUD_BACKPRESSURE 8   /* a1=session_id, a2=state(1=pause,2=resume), a3=queue_depth, a4=pool_in_use */
+#define DIAG_BAUD_REPLAY       9   /* a1=session_id, a2=event(1=armed,2=resend,3=skip_current,5=fail), a3=count_or_seq, a4=window_or_err */
 
 /* Voice recording events (DIAG_SRC_VOICE_REC) */
 #define DIAG_VREC_SESSION      1   /* a1=type(1=start,2=stop,3=cancel), a2=source_code, a3=session_count, a4=0 */
