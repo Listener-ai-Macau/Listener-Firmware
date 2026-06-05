@@ -3,15 +3,15 @@
 ## 状态
 
 - status: `simplified` (2026-06-04 从 28 case 精简到 2 个核心 case)
-- scope: BLE 音频核心用户场景。A1 快速连续短录音，A2 长段录音。两个 case 均走完整产品链路（BLE→ASR→文本插入→准确率门禁→胶囊验证）。
+- scope: BLE 音频核心用户场景。A1 快速连续短录音，A2 约一分钟长段录音。两个 case 均走完整产品链路（BLE→ASR→文本插入→准确率门禁→胶囊验证）。
 - source_of_truth: `tools/verify_audio_ble_product_matrix.py` 中的 `CASE_ORDER` / `CASE_SUITES` / `CASE_DESCRIPTIONS`
 
 ## 当前能力
 
 矩阵验证两个核心用户场景：
 
-- **A1 快速连续短录音**：连续 5-8 轮短句（从 SHORT_COMMAND_POOL 随机取），每轮走完整产品链路，验证每轮独立识别且不丢轮
-- **A2 长段录音**：单次 25-35 秒长段（3-5 句），验证完整传输 + partial preview 质量 + 最终识别准确率
+- **A1 快速连续短录音**：连续 5-8 轮短句（从 SHORT_COMMAND_POOL 随机取），每轮走完整产品链路；上一轮录音胶囊窗口隐藏后等待 3-5 秒再开始下一轮，验证每轮独立识别且不丢轮
+- **A2 长段录音**：单次约一分钟长段（默认 14 个随机分句），验证完整传输 + partial preview 质量 + 最终识别准确率
 
 ## Suite 分层
 
@@ -57,7 +57,7 @@ python .\tools\verify_audio_ble_product_matrix.py --port COMx --fail-on-warning
 
 - 产品链路 overlay 默认开启；`--transport-only` 关闭。
 - 默认逐 case fail-fast；需要全量失败收集时加 `--continue-on-failure`。
-- A2 验证 partial preview 内容质量（前缀 CER ≤ 0.5），不只是存在性。
+- A2 默认生成约一分钟长录音（`--full-chain-long-sentence-count 14`），并验证 partial preview 内容质量（前缀 CER ≤ 0.5），不只是存在性。
 - 胶囊验证失败产生 warning 不直接 fail。
-- A1 每轮独立验证产品链路；出现丢轮（某轮无 transcript）记为 warning。
+- A1 每轮独立验证产品链路；轮间先记录 `capsule_hidden_checks`，再用默认 3-5 秒 `inter_session_gap` 作为胶囊隐藏到下一轮开始的间隔，产物记录 `inter_round_gaps`；出现丢轮（某轮无 transcript）记为 warning。
 - 矩阵只做编排和验收，不重新实现 Listener-Type 的 BLE 流式/ASR/插入逻辑。

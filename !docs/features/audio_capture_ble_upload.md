@@ -59,7 +59,7 @@
   - 更长的 `notify ready` 等待预算
 - 测试层：
   - 当前 `verify_audio_ble_product_matrix.py` 简化为 A1/A2 核心产品链路矩阵
-  - A1 快速连续短录音；A2 长段录音和 partial preview 质量
+  - A1 快速连续短录音，轮间等待上一轮录音胶囊窗口隐藏后的 3-5 秒；A2 约一分钟长段录音和 partial preview 质量
 
 ### 当前明确避免的重自定义
 
@@ -184,8 +184,8 @@ Windows 自动恢复订阅时 `BLE_GAP_EVENT_SUBSCRIBE` 可能早于 `BLE_GAP_EV
   - 仍然是脚本可控、可复现的合成源
   - 但包络、停顿、音强变化更接近真实说话节奏
   - 比之前更适合验证首句、连续多句、取消后恢复这类场景
-- A1 每轮独立验证产品链路；出现丢轮或无 transcript 记为 warning。
-- A2 验证 partial preview 内容质量（前缀 CER <= 0.5），不只检查是否有 preview。
+- A1 每轮独立验证产品链路；上一轮录音胶囊窗口隐藏后等待 3-5 秒再开始下一轮；出现丢轮或无 transcript 记为 warning。
+- A2 默认生成约一分钟长录音（`--full-chain-long-sentence-count 14`），验证 partial preview 内容质量（前缀 CER <= 0.5），不只检查是否有 preview。
 - 历史 `P11/P12/P13` 不会被自动矩阵冒充成已通过：
   - `P11` 已按真实按键人工验收口径通过，但仍不计入自动矩阵
   - `P12` 已形成 ambient RF baseline，但受控弱环境实验仍需单独记录
@@ -217,7 +217,7 @@ Windows 自动恢复订阅时 `BLE_GAP_EVENT_SUBSCRIBE` 可能早于 `BLE_GAP_EV
   - 长会话默认在 `long_capture_seconds-5` 到 `long_capture_seconds+5`
 - 使用节奏随机：
   - 开始前等待 `pre_start_delay`
-  - 多轮 session 间隔 `inter_session_gap`
+  - 多轮 session 间隔 `inter_session_gap`（当前 A1 默认 3-5 秒，作为上一轮录音胶囊窗口隐藏到下一轮开始的等待）
   - 空闲后再说的等待时长 `idle_wait`
   - 中途取消停留 `cancel_hold`
   - 短异常结束停留 `short_cancel_hold`
@@ -413,13 +413,13 @@ python .\tools\capture_audio_ble_wav.py --port COM3 --capture-seconds 10 --trigg
 # KEY1 物理按键模式验收
 python .\tools\verify_audio_capture_session_end_to_end.py --port COM3 --capture-seconds 10 --artifacts-dir .\tests\artifacts\audio --trigger-mode physical-key --no-reset-before-capture --timeout-seconds 120
 
-# 当前产品链路自动矩阵（A1 快速连续短录音 + A2 长段录音）
+# 当前产品链路自动矩阵（A1 快速连续短录音 + A2 约一分钟长段录音）
 python .\tools\verify_audio_ble_product_matrix.py --port COM3 --fail-on-warning
 
-# 只跑快速连续短录音，便于复现或缩短回归时间
+# 只跑快速连续短录音，默认轮间等待 3-5 秒，便于复现或缩短回归时间
 python .\tools\verify_audio_ble_product_matrix.py --port COM3 --cases A1 --a1-round-count 6 --fail-on-warning
 
-# 只跑长段录音和 partial preview 质量
+# 只跑约一分钟长段录音和 partial preview 质量
 python .\tools\verify_audio_ble_product_matrix.py --port COM3 --cases A2 --fail-on-warning
 
 # P1：标准端到端回归

@@ -185,7 +185,7 @@
     {
       "id": "ble_audio_test_matrix",
       "status": "simplified",
-      "summary": "Simplified BLE audio product-chain matrix with A1/A2 only: A1 rapid consecutive short recordings, A2 long recording with partial preview quality. Both cases run BLE -> ASR -> text insertion -> accuracy gate -> capsule evidence.",
+      "summary": "Simplified BLE audio product-chain matrix with A1/A2 only: A1 rapid consecutive short recordings with a 3-5s gap after the previous capsule window is hidden, A2 about-one-minute long recording with partial preview quality. Both cases run BLE -> ASR -> text insertion -> accuracy gate -> capsule evidence.",
       "doc": "ble_audio_test_matrix.md",
       "primary_paths": [
         "tools/verify_audio_ble_product_matrix.py",
@@ -201,19 +201,20 @@
       ],
       "evidence": [
         "CASE_ORDER is A1,A2 and CASE_SUITES smoke/daily/full/auto all resolve to A1,A2",
-        "CASE_DESCRIPTIONS documents A1 rapid consecutive short recordings and A2 long recording",
+        "CASE_DESCRIPTIONS documents A1 rapid consecutive short recordings with post-capsule-hidden gaps and A2 about-one-minute long recording",
         "CASE_PRODUCT_CHAIN_AUDIO_PROFILES uses normal profile for A1/A2",
         "ble_audio_regression_common.py remains the shared TTS/playback/BLE capture support library",
         "verify_audio_ble_product_matrix.py adds validate_partial_preview_quality + validate_capsule_evidence",
         "Capsule evidence checks partial_preview_count and last_partial_preview; warnings on failure, not hard fail",
-        "2026-06-04 matrix simplified from 28 cases to A1/A2 core product-chain gates"
+        "2026-06-04 matrix simplified from 28 cases to A1/A2 core product-chain gates",
+        "2026-06-05 matrix timing tightened: A1 waits for capsule_hidden_checks then records 3-5s inter_round_gaps and A2 defaults to 14 clauses/about one minute"
       ],
       "invariants": [
         "CASE_SUITES smoke/daily/full/auto all select A1,A2",
         "--transport-only controls product-chain overlay only; the simplified matrix has no legacy transport suite",
         "Each case tests one core user scenario dimension",
-        "A1 validates every rapid round independently and treats dropped/no-transcript rounds as warning",
-        "A2 validates partial preview content quality (prefix CER <= 0.5) via validate_capsule_evidence",
+        "A1 validates every rapid round independently, waits for capsule_hidden_checks before recording a 3-5s inter_round_gaps window, and treats dropped/no-transcript rounds as warning",
+        "A2 defaults to --full-chain-long-sentence-count 14/about one minute and validates partial preview content quality (prefix CER <= 0.5) via validate_capsule_evidence",
         "Capsule validation failure produces warning, not hard fail",
         "Default matrix execution stops at the first fail or fail-on-warning warning",
         "A1/A2 product-chain checks reuse Listener-Type native BLE stream/ASR/insertion smoke"

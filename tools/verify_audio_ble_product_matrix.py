@@ -84,13 +84,13 @@ CASE_SUITES = {
 PRODUCT_CHAIN_OVERLAY_CASES = CASE_ORDER
 PRODUCT_CHAIN_IN_RUNNER_CASES = ("A1", "A2")
 CASE_DESCRIPTIONS = {
-    "A1": "快速连续短录音：连续 5-8 轮短句，每轮走完整产品链路，验证独立识别不丢轮",
-    "A2": "长段录音（3-5句）：验证完整传输 + partial preview 质量 + 最终识别准确率",
+    "A1": "快速连续短录音：连续 5-8 轮短句，轮间等待上一录音胶囊消失后的 3-5 秒再开始下一轮",
+    "A2": "长段录音（约一分钟，默认 14 个分句）：验证完整传输 + partial preview 质量 + 最终识别准确率",
 }
 MATRIX_ARTIFACT_DIR = pathlib.Path("tests") / "artifacts" / "ble_product_matrix"
-A2_PRODUCT_CHAIN_RANDOM_SENTENCE_COUNT = 4
-A2_PRODUCT_CHAIN_MIN_LISTENER_TIMEOUT_MS = 90000
-A2_PRODUCT_CHAIN_MIN_TIMEOUT_SECONDS = 150
+A2_PRODUCT_CHAIN_RANDOM_SENTENCE_COUNT = 14
+A2_PRODUCT_CHAIN_MIN_LISTENER_TIMEOUT_MS = 180000
+A2_PRODUCT_CHAIN_MIN_TIMEOUT_SECONDS = 240
 NEGATIVE_PRODUCT_CHAIN_TIMEOUT_SECONDS = 70
 NEGATIVE_PRODUCT_CHAIN_LISTENER_TIMEOUT_MS = 35000
 PRODUCT_CHAIN_EMPTY_TRANSCRIPT_RETRY_SENTENCE = "蓝牙音频正在发送到火山识别，请检查文本结果。"
@@ -250,8 +250,18 @@ def parse_args():
     )
     parser.add_argument("--pre-start-min-delay-seconds", type=float, default=None)
     parser.add_argument("--pre-start-max-delay-seconds", type=float, default=None)
-    parser.add_argument("--inter-session-gap-min-seconds", type=float, default=None)
-    parser.add_argument("--inter-session-gap-max-seconds", type=float, default=None)
+    parser.add_argument(
+        "--inter-session-gap-min-seconds",
+        type=float,
+        default=None,
+        help="Minimum A1 post-capsule gap before starting the next short recording (default window: 3-5 seconds).",
+    )
+    parser.add_argument(
+        "--inter-session-gap-max-seconds",
+        type=float,
+        default=None,
+        help="Maximum A1 post-capsule gap before starting the next short recording (default window: 3-5 seconds).",
+    )
     parser.add_argument("--idle-min-seconds", type=float, default=None)
     parser.add_argument("--idle-max-seconds", type=float, default=None)
     parser.add_argument("--cancel-hold-min-seconds", type=float, default=None)
@@ -327,7 +337,7 @@ def parse_args():
         "--full-chain-long-sentence-count",
         type=int,
         default=A2_PRODUCT_CHAIN_RANDOM_SENTENCE_COUNT,
-        help="Random clause count for A2 long-recording product-chain validation when --full-chain-sentence is not set.",
+        help="Random clause count for A2 long-recording product-chain validation when --full-chain-sentence is not set (default: 14, about one minute).",
     )
     parser.add_argument(
         "--a1-round-count",
@@ -426,11 +436,11 @@ def prepare_duration_randomizer(args) -> None:
         disable_random=args.disable_random_usage_timing,
     )
     args.inter_session_gap_window = resolve_float_window(
-        default_seconds=1.2,
+        default_seconds=4.0,
         min_seconds=args.inter_session_gap_min_seconds,
         max_seconds=args.inter_session_gap_max_seconds,
-        min_padding=0.7,
-        max_padding=1.3,
+        min_padding=1.0,
+        max_padding=1.0,
         absolute_min=0.0,
         disable_random=args.disable_random_usage_timing,
     )
@@ -531,6 +541,75 @@ def choose_delay_seconds(
     print(f"{label}_delay_window={min_seconds:.2f}-{max_seconds:.2f}", flush=True)
     print(f"{label}_delay_seconds={delay_seconds:.2f}", flush=True)
     return delay_seconds
+
+
+def is_listener_type_capsule_window_visible() -> bool:
+    if sys.platform != "win32":
+        return False
+
+    try:
+        import ctypes
+        from ctypes import wintypes
+
+        user32 = ctypes.windll.user32
+        visible = False
+
+        enum_windows_proc = ctypes.WINFUNCTYPE(ctypes.c_bool, wintypes.HWND, wintypes.LPARAM)
+
+        def callback(hwnd, _lparam):
+            nonlocal visible
+            if not user32.IsWindowVisible(hwnd):
+                return True
+            length = user32.GetWindowTextLengthW(hwnd)
+            if length <= 0:
+                return True
+            buffer = ctypes.create_unicode_buffer(length + 1)
+            user32.GetWindowTextW(hwnd, buffer, length + 1)
+            title = buffer.value
+            if title == "Listener Type Capsule" or "Listener Type Capsule" in title:
+                visible = True
+                return False
+            return True
+
+        user32.EnumWindows(enum_windows_proc(callback), 0)
+        return visible
+    except Exception as exc:
+        print(f"capsule_window_probe_error={type(exc).__name__}:{exc}", flush=True)
+        return False
+
+
+async def wait_for_capsule_window_hidden(
+    *,
+    label: str,
+    timeout_seconds: float = 8.0,
+    poll_seconds: float = 0.25,
+) -> dict[str, object]:
+    supported = sys.platform == "win32"
+    start = time.monotonic()
+    visible_at_start = is_listener_type_capsule_window_visible() if supported else False
+    hidden = not visible_at_start
+
+    if supported and visible_at_start:
+        deadline = start + max(0.0, timeout_seconds)
+        while time.monotonic() < deadline:
+            await asyncio.sleep(max(0.05, poll_seconds))
+            if not is_listener_type_capsule_window_visible():
+                hidden = True
+                break
+
+    elapsed_seconds = round(time.monotonic() - start, 2)
+    print(f"{label}_capsule_window_supported={str(supported).lower()}", flush=True)
+    print(f"{label}_capsule_visible_at_gap_start={str(visible_at_start).lower()}", flush=True)
+    print(f"{label}_capsule_hidden_before_gap={str(hidden).lower()}", flush=True)
+    print(f"{label}_capsule_hidden_wait_seconds={elapsed_seconds:.2f}", flush=True)
+    return {
+        "label": label,
+        "supported": supported,
+        "visible_at_start": visible_at_start,
+        "hidden": hidden,
+        "wait_seconds": elapsed_seconds,
+        "timeout_seconds": timeout_seconds,
+    }
 
 
 def choose_delay_plan(
@@ -1257,6 +1336,8 @@ async def run_a1(args) -> dict[str, object]:
     failures: list[str] = []
     warnings: list[str] = []
     missed_rounds: list[int] = []
+    capsule_hidden_checks: list[dict[str, object]] = []
+    inter_round_gaps: list[dict[str, object]] = []
 
     for round_idx in range(round_count):
         sentence_seed = deterministic_sentence_seed(args, "A1", round_idx)
@@ -1309,6 +1390,31 @@ async def run_a1(args) -> dict[str, object]:
         if result_str == "fail" and not args.continue_on_failure:
             break
 
+        if round_idx < round_count - 1:
+            gap_label = f"a1_after_round{round_idx + 1}_capsule_to_next_round"
+            hidden_check = await wait_for_capsule_window_hidden(label=gap_label)
+            capsule_hidden_checks.append(hidden_check)
+            if hidden_check.get("supported") and not hidden_check.get("hidden"):
+                warnings.append(f"round{round_idx + 1}_capsule_not_hidden_before_gap")
+
+            gap_seconds = choose_delay_seconds(
+                args,
+                window=args.inter_session_gap_window,
+                label=gap_label,
+            )
+            inter_round_gaps.append(
+                {
+                    "after_round": round_idx + 1,
+                    "seconds": gap_seconds,
+                    "measurement": "capsule_hidden_to_next_round_start",
+                }
+            )
+            print(
+                f"a1_capsule_to_next_round_gap_seconds=after_round{round_idx + 1}:{gap_seconds:.2f}",
+                flush=True,
+            )
+            await asyncio.sleep(gap_seconds)
+
     details: dict[str, object] = {
         "transport_capture_skipped": True,
         "transport_skip_reason": "product_chain_primary_requires_capsule_before_playback",
@@ -1316,6 +1422,8 @@ async def run_a1(args) -> dict[str, object]:
         "capsule_evidence": all_capsule_checks,
         "round_count": round_count,
         "missed_rounds": missed_rounds,
+        "capsule_hidden_checks": capsule_hidden_checks,
+        "inter_round_gaps": inter_round_gaps,
     }
 
     if failures:
