@@ -26,6 +26,7 @@ typedef enum {
     POWER_MANAGER_BLOCKER_RECONNECT = 1u << 4,
     POWER_MANAGER_BLOCKER_FLASH_WRITE = 1u << 5,
     POWER_MANAGER_BLOCKER_USB_COMMAND = 1u << 6,
+    POWER_MANAGER_BLOCKER_EXTERNAL_POWER = 1u << 7,
 } power_manager_blocker_t;
 
 typedef enum {
@@ -54,6 +55,7 @@ typedef enum {
 typedef struct {
     power_manager_state_t state;
     uint32_t blockers;
+    uint32_t sleep_blockers;
     uint32_t idle_ms;
     uint32_t user_idle_ms;
     uint32_t radio_idle_ms;
@@ -66,6 +68,16 @@ typedef struct {
     bool battery_valid;
     bool ble_connected;
     bool overnight_guard_enabled;
+    int usb_det_level;
+    int bat_chg_level;
+    int bat_std_level;
+    bool usb_power_present;
+    bool external_power_present;
+    bool charging;
+    bool charge_full;
+    bool automatic_sleep_blocked_by_external_power;
+    const char *usb_det_policy;
+    const char *charger_polarity_policy;
     power_manager_sleep_reason_t last_sleep_reason;
     power_manager_wake_source_t last_wake_source;
     bool last_sleep_stats_valid;

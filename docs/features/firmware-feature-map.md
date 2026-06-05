@@ -17,7 +17,7 @@ same product capabilities with concrete source locations.
 | System health | Runtime heartbeat and resource checks cover heap, BLE state, disconnect conditions, and task health evidence. | `components/system_health/`, `ports/esp32/system_health_platform/` |
 | POST and degraded boot | Startup checks report NVS, heap, SPIRAM assumptions, BLE/audio pending state, and degraded boot status. | `main/`, `components/self_test/` |
 | Battery and factory readiness | Battery ADC status, USB serial text commands, readiness flags, and capability strings are exposed for production bring-up. | `ports/esp32/ble_hid*`, `ports/esp32/board_pins/`, `tools/package_factory_firmware.ps1` |
-| Low power | `power_manager` reports idle thresholds, blockers, KEY4/GPIO21 deep-sleep wake policy, EC11-KEY/GPIO35 wake limitation, battery entry/wake stats, and sleep-drain telemetry. | `components/power_manager/`, `docs/features/low_power_wake_policy.md`, `tools/verify_power_manager_static.py` |
+| Low power | `power_manager` reports idle thresholds, blockers, sleep-only external-power blockers, KEY4/GPIO21 deep-sleep wake policy, EC11-KEY/GPIO35 wake limitation, USB/charger raw and interpreted power status, battery entry/wake stats, and sleep-drain telemetry. | `components/power_manager/`, `docs/features/low_power_wake_policy.md`, `tools/verify_power_manager_static.py`, `tools/verify_charging_awake_policy_static.ps1` |
 
 ## Validation Entrypoints
 
@@ -31,6 +31,8 @@ pwsh -NoProfile -File .\tools\flash.ps1 -Port <COMx>
 pwsh -NoProfile -File .\tools\monitor.ps1 -Port <COMx>
 pwsh -NoProfile -File .\tools\dump_diag_log.ps1 -Port <COMx>
 pwsh -NoProfile -File .\tools\verify_v2_board_profile_static.ps1
+pwsh -NoProfile -File .\tools\verify_power_manager_static.ps1
+pwsh -NoProfile -File .\tools\verify_charging_awake_policy_static.ps1
 python .\tools\verify_ble_audio_transport_model.py
 pwsh -NoProfile -File .\tools\verify_ble_hid.ps1
 pwsh -NoProfile -File .\tools\verify_ble_hid_end_to_end.ps1
