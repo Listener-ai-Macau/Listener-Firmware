@@ -7,11 +7,10 @@ param(
     [int]$CaptureSeconds = 5,
     [int]$LongCaptureSeconds = 30,
     [int]$RoundCount = 3,
-    [int]$IdleSeconds = 30,
-    [int]$SoakRoundCount = 5,
     [string]$BluetoothAddress = "",
     [switch]$NoResetBeforeCapture,
-    [switch]$RestartPanAdapter
+    [switch]$RestartPanAdapter,
+    [int]$A1RoundCount = 6
 )
 
 $ErrorActionPreference = "Stop"
@@ -25,8 +24,7 @@ $arguments = @(
     "--capture-seconds", "$CaptureSeconds",
     "--long-capture-seconds", "$LongCaptureSeconds",
     "--round-count", "$RoundCount",
-    "--idle-seconds", "$IdleSeconds",
-    "--soak-round-count", "$SoakRoundCount"
+    "--a1-round-count", "$A1RoundCount"
 )
 
 if ($NoResetBeforeCapture) {
