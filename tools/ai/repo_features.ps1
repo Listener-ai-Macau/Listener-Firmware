@@ -147,7 +147,7 @@ function Test-FeatureSnapshot {
     $jsonText = $Snapshot | ConvertTo-Json -Depth 10
     $scriptText = Get-Content -Path $PSCommandPath -Raw
 
-    foreach ($term in @("ESP32-S3", "N4", "no PSRAM", "BLE HID", "BLE audio", "diag_log", "system_health", "voice key", "build", "flash", "serial")) {
+    foreach ($term in @("ESP32-S3", "N16R8", "Octal PSRAM", "BLE HID", "BLE audio", "diag_log", "system_health", "voice key", "build", "flash", "serial")) {
         if ($jsonText -notmatch [regex]::Escape($term)) {
             $errors += "missing required firmware feature term: $term"
         }
@@ -235,7 +235,7 @@ if ($Check) {
     if (@($errors).Count -gt 0) {
         throw ("repo_features check failed:`n - " + ($errors -join "`n - "))
     }
-    Write-Output "PASS: firmware repo feature script is present, concise, and covers ESP32-S3 BLE HID/audio diagnostics."
+    Write-Output "PASS: firmware repo feature script is present, concise, and covers ESP32-S3 N16R8 BLE HID/audio diagnostics."
     exit 0
 }
 
