@@ -166,10 +166,20 @@ def main() -> int:
         failures.append("status_led.c: stale edge/frame fourteen-LED strip count")
 
     board_leds = read("components/board/board.c")
+    if "BOARD_LED_PREFIX" in board_leds or 'board_command_matches(line, BOARD_LED_PREFIX' in board_leds:
+        failures.append("board.c: board_consume_usb_command must not swallow LED: commands before status_led")
     if 'key="LED7..LED10" edge="LED11..LED16"' in board_leds:
         failures.append("board.c: stale three-zone LED map")
     if "LED15..LED28" in board_leds and "LED23..LED28" not in board_leds:
         failures.append("board.c: stale edge LED15..LED28 map")
+
+    ble_hid = read("ports/esp32/ble_hid/ble_hid.c")
+    status_dispatch = ble_hid.find("status_led_consume_usb_command(line)")
+    board_dispatch = ble_hid.find("board_consume_usb_command(line)")
+    if status_dispatch < 0:
+        failures.append("ble_hid.c: missing status_led_consume_usb_command dispatch")
+    if board_dispatch >= 0 and status_dispatch > board_dispatch:
+        failures.append("ble_hid.c: status_led_consume_usb_command must run before board_consume_usb_command")
 
     if failures:
         print("FAIL: status LED static verification failed")

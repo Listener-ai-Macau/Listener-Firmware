@@ -13,6 +13,14 @@ PASS: Compared the active V2 firmware contract against `C:\Users\Billy\Desktop\l
 - Power telemetry reports TPS63020/SY7088 as battery-side input branch current monitors and combines current with reconstructed battery voltage from BAT_V_ADC/GPIO8 using the 68K/68K midpoint.
 - USB_Det diagnostics report the latest GPIO7 R37/R32 10K/10K divider policy.
 
+## Rework Closure
+
+PASS: Closed the changes_requested finding that `~LED:*` USB commands were swallowed by `board_consume_usb_command` before reaching `status_led_consume_usb_command`.
+
+- `ports/esp32/ble_hid/ble_hid.c` now dispatches `status_led_consume_usb_command(line)` before `board_consume_usb_command(line)`.
+- `components/board/board.c` no longer consumes the `LED:` prefix or returns a board-level blocked LED test stub; board LED resources remain observable through `~BOARD:STATUS`.
+- `tools/verify_status_led_static.py` now fails if board USB dispatch can swallow `LED:` commands or if BLE HID dispatch orders `board_consume_usb_command(line)` before `status_led_consume_usb_command(line)`.
+
 ## Required Validation Commands
 
 PASS:
@@ -67,7 +75,7 @@ PASS:
 pwsh -NoProfile -File tools\build.ps1
 ```
 
-Build summary: ESP-IDF build completed for `esp32s3`; generated flash command uses `--flash_size 16MB`; partition table has 6 MB `ota_0`, 6 MB `ota_1`, and 1 MB `diag_log`; app binary size `0xbef20`, with 88% free in the smallest app partition.
+Build summary: ESP-IDF build completed for `esp32s3`; generated flash command uses `--flash_size 16MB`; partition table has 6 MB `ota_0`, 6 MB `ota_1`, and 1 MB `diag_log`; app binary size `0xbec00`, with 88% free in the smallest app partition.
 
 ## Scope Notes
 

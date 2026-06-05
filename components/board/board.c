@@ -15,7 +15,6 @@
 static const char *TAG = "board";
 
 #define BOARD_USB_PREFIX "BOARD:"
-#define BOARD_LED_PREFIX "LED:"
 
 #define BOARD_V2_USB_DET_POLICY "v2_gpio7_r37_r32_10K_10K_divider"
 #define BOARD_V2_CHARGER_POLARITY "v2_gpio14_chg_gpio21_std_active_low"
@@ -204,37 +203,6 @@ static void board_print_led_status(void)
     fflush(stdout);
 }
 
-static bool board_print_led_test(const char *command)
-{
-    if (strncmp(command, "TEST:RGBW", strlen("TEST:RGBW")) == 0) {
-        printf(
-            "~LED:TEST:RGBW result=blocked reason=vdd_led_not_signed_off"
-            " status_gpio=%d ec11_gpio=%d key_gpio=%d edge_gpio=%d max_brightness_percent=4"
-            " note=\"red/green/blue/white calibration command is present but does not drive LEDs until VDD_LED is measured\"\n",
-            (int)BOARD_PINS_RGB_STATUS_IO,
-            (int)BOARD_PINS_RGB_EC11_IO,
-            (int)BOARD_PINS_RGB_KEY_IO,
-            (int)BOARD_PINS_RGB_EDGE_IO);
-        fflush(stdout);
-        return true;
-    }
-    if (strncmp(command, "TEST:MAP", strlen("TEST:MAP")) == 0) {
-        printf(
-            "~LED:TEST:MAP result=blocked reason=vdd_led_not_signed_off"
-            " status=\"LED1=PWR LED2=BLE LED3=REC LED4=AI LED5=OK LED6=WARN\""
-            " ec11=\"LED7..LED10 LED15..LED16 LED23..LED28\""
-            " key=\"LED11..LED14\" edge=\"LED17..LED22\""
-            " note=\"one-by-one map command is present but does not drive LEDs until VDD_LED is measured\"\n");
-        fflush(stdout);
-        return true;
-    }
-    if (strcmp(command, "STATUS") == 0) {
-        board_print_led_status();
-        return true;
-    }
-    return false;
-}
-
 static void board_print_status(void)
 {
     battery_monitor_status_t battery = {0};
@@ -380,14 +348,6 @@ bool board_consume_usb_command(const char *line)
             return true;
         }
         ESP_LOGW(TAG, "BOARD: unknown command: %s", command);
-        return true;
-    }
-
-    if (board_command_matches(line, BOARD_LED_PREFIX, &command)) {
-        if (board_print_led_test(command)) {
-            return true;
-        }
-        ESP_LOGW(TAG, "LED: unknown command: %s", command);
         return true;
     }
 

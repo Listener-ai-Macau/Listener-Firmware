@@ -461,11 +461,11 @@ static bool ble_hid_dispatch_usb_command_line(const char *line)
         return true;
     }
 
-    if (board_consume_usb_command(line)) {
+    if (status_led_consume_usb_command(line)) {
         return true;
     }
 
-    if (status_led_consume_usb_command(line)) {
+    if (board_consume_usb_command(line)) {
         return true;
     }
 
