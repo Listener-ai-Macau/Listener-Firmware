@@ -20,6 +20,7 @@
 #include "soc/rtc.h"
 
 #include "battery_monitor.h"
+#include "board.h"
 #include "board_pins.h"
 #include "diag_log.h"
 #include "watchdog_platform.h"
@@ -69,8 +70,25 @@ extern void status_led_prepare_sleep(void) __attribute__((weak));
 #define POWER_MANAGER_SLEEP_STATS_MAGIC 0x50575331u
 #define POWER_MANAGER_RTC_CAL_CYCLES 1024U
 #define POWER_MANAGER_MS_PER_HOUR 3600000LL
+#define POWER_MANAGER_POWER_SOURCE_USB_PRESENT (1u << 0)
+#define POWER_MANAGER_POWER_SOURCE_CHARGING (1u << 1)
+#define POWER_MANAGER_POWER_SOURCE_CHARGE_FULL (1u << 2)
+#define POWER_MANAGER_POWER_SOURCE_EXTERNAL_PRESENT (1u << 3)
+#define POWER_MANAGER_POWER_SOURCE_AUTO_SLEEP_BLOCKED (1u << 4)
 
 static const char *TAG = "power_manager";
+
+typedef struct {
+    int usb_det_level;
+    int bat_chg_level;
+    int bat_std_level;
+    bool usb_power_present;
+    bool external_power_present;
+    bool charging;
+    bool charge_full;
+    const char *usb_det_policy;
+    const char *charger_polarity_policy;
+} power_manager_power_source_snapshot_t;
 
 RTC_DATA_ATTR static uint32_t s_rtc_last_sleep_reason;
 RTC_DATA_ATTR static uint32_t s_rtc_last_idle_ms;
@@ -94,6 +112,15 @@ static bool s_started;
 static bool s_ble_connected;
 static bool s_battery_warning_logged;
 static bool s_audio_idle_power_save_enabled;
+static bool s_power_source_initialized;
+static bool s_usb_power_present;
+static bool s_external_power_present;
+static bool s_charging;
+static bool s_charge_full;
+static bool s_auto_sleep_block_logged;
+static int s_usb_det_level = -1;
+static int s_bat_chg_level = -1;
+static int s_bat_std_level = -1;
 static uint32_t s_blockers;
 static uint64_t s_last_user_activity_ms;
 static uint64_t s_last_radio_activity_ms;
@@ -230,6 +257,7 @@ static void power_manager_blocker_names(uint32_t blockers, char *buffer, size_t 
         {POWER_MANAGER_BLOCKER_RECONNECT, "reconnect"},
         {POWER_MANAGER_BLOCKER_FLASH_WRITE, "flash_write"},
         {POWER_MANAGER_BLOCKER_USB_COMMAND, "usb_command"},
+        {POWER_MANAGER_BLOCKER_EXTERNAL_POWER, "external_power"},
     };
 
     bool first = true;
@@ -278,6 +306,123 @@ static void power_manager_log_wake_policy(uint64_t wake_gpio_mask)
              (uint32_t)(wake_gpio_mask & 0xffffffffu),
              POWER_MANAGER_WAKE_VOICE_KEY_CAPABLE_CODE,
              (uint32_t)BOARD_PINS_EC11_KEY_IO);
+}
+
+static const char *power_manager_gpio_level_name(int level)
+{
+    if (level < 0) {
+        return "unknown";
+    }
+    return level != 0 ? "high" : "low";
+}
+
+static uint32_t power_manager_encode_gpio_level(int level)
+{
+    if (level < 0) {
+        return 2u;
+    }
+    return level != 0 ? 1u : 0u;
+}
+
+static uint32_t power_manager_encode_power_source_levels(const power_manager_power_source_snapshot_t *source)
+{
+    if (source == NULL) {
+        return 0x222u;
+    }
+    return power_manager_encode_gpio_level(source->usb_det_level) |
+           (power_manager_encode_gpio_level(source->bat_chg_level) << 4) |
+           (power_manager_encode_gpio_level(source->bat_std_level) << 8);
+}
+
+static uint32_t power_manager_encode_power_source_flags(
+    const power_manager_power_source_snapshot_t *source,
+    bool automatic_sleep_blocked)
+{
+    if (source == NULL) {
+        return 0;
+    }
+
+    uint32_t flags = 0;
+    if (source->usb_power_present) {
+        flags |= POWER_MANAGER_POWER_SOURCE_USB_PRESENT;
+    }
+    if (source->charging) {
+        flags |= POWER_MANAGER_POWER_SOURCE_CHARGING;
+    }
+    if (source->charge_full) {
+        flags |= POWER_MANAGER_POWER_SOURCE_CHARGE_FULL;
+    }
+    if (source->external_power_present) {
+        flags |= POWER_MANAGER_POWER_SOURCE_EXTERNAL_PRESENT;
+    }
+    if (automatic_sleep_blocked) {
+        flags |= POWER_MANAGER_POWER_SOURCE_AUTO_SLEEP_BLOCKED;
+    }
+    return flags;
+}
+
+static void power_manager_read_power_source(power_manager_power_source_snapshot_t *out_source)
+{
+    if (out_source == NULL) {
+        return;
+    }
+
+    board_v2_power_input_snapshot_t board_snapshot = {0};
+    board_get_v2_power_input_snapshot(&board_snapshot);
+
+    *out_source = (power_manager_power_source_snapshot_t){
+        .usb_det_level = board_snapshot.usb_det_level,
+        .bat_chg_level = board_snapshot.bat_chg_level,
+        .bat_std_level = board_snapshot.bat_std_level,
+        .usb_power_present = board_snapshot.usb_det_level > 0,
+        .charging = board_snapshot.bat_chg_level == 0,
+        .charge_full = board_snapshot.bat_std_level == 0,
+        .usb_det_policy = board_snapshot.usb_det_policy,
+        .charger_polarity_policy = board_snapshot.charger_polarity_policy,
+    };
+    out_source->external_power_present =
+        out_source->usb_power_present || out_source->charging || out_source->charge_full;
+}
+
+static uint32_t power_manager_sleep_blockers_for_source(
+    uint32_t blockers,
+    const power_manager_power_source_snapshot_t *source,
+    power_manager_sleep_reason_t reason)
+{
+    uint32_t sleep_blockers = blockers;
+    if (reason == POWER_MANAGER_SLEEP_REASON_OVERNIGHT_IDLE &&
+        source != NULL &&
+        source->external_power_present) {
+        sleep_blockers |= POWER_MANAGER_BLOCKER_EXTERNAL_POWER;
+    }
+    return sleep_blockers;
+}
+
+static uint32_t power_manager_automatic_sleep_blockers_for_source(
+    uint32_t blockers,
+    const power_manager_power_source_snapshot_t *source)
+{
+    return power_manager_sleep_blockers_for_source(
+        blockers,
+        source,
+        POWER_MANAGER_SLEEP_REASON_OVERNIGHT_IDLE);
+}
+
+static void power_manager_log_power_source_diag(
+    uint8_t severity,
+    const power_manager_power_source_snapshot_t *source,
+    uint32_t idle_ms,
+    uint32_t sleep_blockers,
+    bool automatic_sleep_blocked)
+{
+    diag_log(
+        DIAG_SRC_POWER,
+        DIAG_POWER_EXTERNAL_POWER,
+        severity,
+        power_manager_encode_power_source_flags(source, automatic_sleep_blocked),
+        power_manager_encode_power_source_levels(source),
+        idle_ms,
+        sleep_blockers);
 }
 
 static int32_t power_manager_rate_per_hour(int32_t delta, uint32_t duration_ms, int32_t scale)
@@ -376,6 +521,68 @@ static uint32_t power_manager_radio_idle_ms_locked(uint64_t now_ms)
     return power_manager_clamp_u64_to_u32(now_ms - s_last_radio_activity_ms);
 }
 
+static bool power_manager_sync_power_source_locked(
+    const power_manager_power_source_snapshot_t *source,
+    uint64_t now_ms)
+{
+    if (source == NULL) {
+        return false;
+    }
+
+    bool changed = !s_power_source_initialized ||
+                   s_usb_det_level != source->usb_det_level ||
+                   s_bat_chg_level != source->bat_chg_level ||
+                   s_bat_std_level != source->bat_std_level ||
+                   s_usb_power_present != source->usb_power_present ||
+                   s_external_power_present != source->external_power_present ||
+                   s_charging != source->charging ||
+                   s_charge_full != source->charge_full;
+    bool external_changed = !s_power_source_initialized ||
+                            s_external_power_present != source->external_power_present;
+
+    if (!changed) {
+        return false;
+    }
+
+    if (s_power_source_initialized && external_changed) {
+        s_last_user_activity_ms = now_ms;
+        s_last_radio_activity_ms = now_ms;
+    }
+
+    s_power_source_initialized = true;
+    s_usb_det_level = source->usb_det_level;
+    s_bat_chg_level = source->bat_chg_level;
+    s_bat_std_level = source->bat_std_level;
+    s_usb_power_present = source->usb_power_present;
+    s_external_power_present = source->external_power_present;
+    s_charging = source->charging;
+    s_charge_full = source->charge_full;
+    s_auto_sleep_block_logged = false;
+    return true;
+}
+
+static power_manager_state_t power_manager_awake_idle_state_locked(uint32_t radio_idle_ms)
+{
+    if (s_ble_connected) {
+        return radio_idle_ms >= (uint32_t)CONFIG_POWER_MANAGER_CONNECTED_IDLE_MS
+            ? POWER_MANAGER_STATE_CONNECTED_IDLE
+            : POWER_MANAGER_STATE_ACTIVE;
+    }
+
+    return radio_idle_ms >= (uint32_t)CONFIG_POWER_MANAGER_DISCONNECTED_IDLE_MS
+        ? POWER_MANAGER_STATE_DISCONNECTED_IDLE
+        : POWER_MANAGER_STATE_ACTIVE;
+}
+
+static bool power_manager_automatic_sleep_blocked_by_external_power_locked(uint64_t now_ms)
+{
+    return CONFIG_POWER_MANAGER_ENABLE &&
+           s_blockers == 0 &&
+           s_external_power_present &&
+           power_manager_user_idle_ms_locked(now_ms) >=
+               (uint32_t)CONFIG_POWER_MANAGER_OVERNIGHT_SLEEP_MS;
+}
+
 static power_manager_state_t power_manager_target_state_locked(uint64_t now_ms)
 {
     uint32_t user_idle_ms = power_manager_user_idle_ms_locked(now_ms);
@@ -386,18 +593,12 @@ static power_manager_state_t power_manager_target_state_locked(uint64_t now_ms)
 
     if (CONFIG_POWER_MANAGER_ENABLE &&
         user_idle_ms >= (uint32_t)CONFIG_POWER_MANAGER_OVERNIGHT_SLEEP_MS) {
-        return POWER_MANAGER_STATE_OVERNIGHT_SLEEP;
+        return s_external_power_present
+            ? power_manager_awake_idle_state_locked(radio_idle_ms)
+            : POWER_MANAGER_STATE_OVERNIGHT_SLEEP;
     }
 
-    if (s_ble_connected) {
-        return radio_idle_ms >= (uint32_t)CONFIG_POWER_MANAGER_CONNECTED_IDLE_MS
-            ? POWER_MANAGER_STATE_CONNECTED_IDLE
-            : POWER_MANAGER_STATE_ACTIVE;
-    }
-
-    return radio_idle_ms >= (uint32_t)CONFIG_POWER_MANAGER_DISCONNECTED_IDLE_MS
-        ? POWER_MANAGER_STATE_DISCONNECTED_IDLE
-        : POWER_MANAGER_STATE_ACTIVE;
+    return power_manager_awake_idle_state_locked(radio_idle_ms);
 }
 
 static bool power_manager_refresh_ble_connection_locked(uint64_t now_ms)
@@ -546,14 +747,33 @@ void power_manager_get_snapshot(power_manager_snapshot_t *snapshot)
 
     memset(snapshot, 0, sizeof(*snapshot));
     uint64_t now_ms = power_manager_now_ms();
+    power_manager_power_source_snapshot_t power_source = {0};
+    power_manager_read_power_source(&power_source);
+
+    snapshot->usb_det_level = power_source.usb_det_level;
+    snapshot->bat_chg_level = power_source.bat_chg_level;
+    snapshot->bat_std_level = power_source.bat_std_level;
+    snapshot->usb_power_present = power_source.usb_power_present;
+    snapshot->external_power_present = power_source.external_power_present;
+    snapshot->charging = power_source.charging;
+    snapshot->charge_full = power_source.charge_full;
+    snapshot->usb_det_policy = power_source.usb_det_policy;
+    snapshot->charger_polarity_policy = power_source.charger_polarity_policy;
 
     if (s_mutex != NULL && xSemaphoreTake(s_mutex, portMAX_DELAY) == pdTRUE) {
         snapshot->state = s_state;
         snapshot->blockers = s_blockers;
+        snapshot->sleep_blockers =
+            power_manager_automatic_sleep_blockers_for_source(s_blockers, &power_source);
         snapshot->user_idle_ms = power_manager_user_idle_ms_locked(now_ms);
         snapshot->radio_idle_ms = power_manager_radio_idle_ms_locked(now_ms);
         snapshot->idle_ms = snapshot->user_idle_ms;
         snapshot->ble_connected = s_ble_connected;
+        snapshot->automatic_sleep_blocked_by_external_power =
+            CONFIG_POWER_MANAGER_ENABLE &&
+            s_blockers == 0 &&
+            power_source.external_power_present &&
+            snapshot->user_idle_ms >= (uint32_t)CONFIG_POWER_MANAGER_OVERNIGHT_SLEEP_MS;
         snapshot->last_sleep_reason = (power_manager_sleep_reason_t)s_rtc_last_sleep_reason;
         snapshot->last_wake_source = s_last_wake_source;
         power_manager_fill_sleep_stats(snapshot);
@@ -648,6 +868,56 @@ static esp_err_t power_manager_enter_sleep(power_manager_sleep_reason_t reason)
         return ESP_ERR_INVALID_STATE;
     }
 
+    if (reason == POWER_MANAGER_SLEEP_REASON_OVERNIGHT_IDLE &&
+        snapshot.external_power_present) {
+        power_manager_power_source_snapshot_t power_source = {
+            .usb_det_level = snapshot.usb_det_level,
+            .bat_chg_level = snapshot.bat_chg_level,
+            .bat_std_level = snapshot.bat_std_level,
+            .usb_power_present = snapshot.usb_power_present,
+            .external_power_present = snapshot.external_power_present,
+            .charging = snapshot.charging,
+            .charge_full = snapshot.charge_full,
+            .usb_det_policy = snapshot.usb_det_policy,
+            .charger_polarity_policy = snapshot.charger_polarity_policy,
+        };
+        uint32_t sleep_blockers = power_manager_automatic_sleep_blockers_for_source(
+            snapshot.blockers,
+            &power_source);
+        char blocker_text[96];
+        power_manager_blocker_names(sleep_blockers, blocker_text, sizeof(blocker_text));
+        ESP_LOGW(
+            TAG,
+            "sleep rejected: automatic sleep blocked by external power"
+            " sleep_blockers=0x%08" PRIx32 " (%s) idle_ms=%" PRIu32
+            " usb_det_level=%s charging=%u charge_full=%u external_power_present=%u"
+            " charger_policy=%s",
+            sleep_blockers,
+            blocker_text,
+            snapshot.idle_ms,
+            power_manager_gpio_level_name(snapshot.usb_det_level),
+            snapshot.charging ? 1u : 0u,
+            snapshot.charge_full ? 1u : 0u,
+            snapshot.external_power_present ? 1u : 0u,
+            snapshot.charger_polarity_policy != NULL ? snapshot.charger_polarity_policy : "unknown");
+        diag_log(
+            DIAG_SRC_POWER,
+            DIAG_POWER_SLEEP_BLOCKED,
+            DIAG_SEV_WARN,
+            sleep_blockers,
+            snapshot.idle_ms,
+            (uint32_t)reason,
+            power_manager_encode_power_source_flags(&power_source, true));
+        power_manager_log_power_source_diag(
+            DIAG_SEV_WARN,
+            &power_source,
+            snapshot.idle_ms,
+            sleep_blockers,
+            true);
+        power_manager_log_wake_policy(snapshot.wake_gpio_mask);
+        return ESP_ERR_INVALID_STATE;
+    }
+
     if (audio_capture_session_is_active != NULL && audio_capture_session_is_active()) {
         ESP_LOGW(TAG, "sleep rejected: audio capture session active");
         diag_log(DIAG_SRC_POWER, DIAG_POWER_SLEEP_BLOCKED, DIAG_SEV_WARN,
@@ -677,6 +947,9 @@ static esp_err_t power_manager_enter_sleep(power_manager_sleep_reason_t reason)
         return wake_ret;
     }
 
+    power_manager_power_source_snapshot_t final_power_source = {0};
+    power_manager_read_power_source(&final_power_source);
+
     if (s_mutex == NULL || xSemaphoreTake(s_mutex, portMAX_DELAY) != pdTRUE) {
         ESP_LOGW(TAG, "sleep rejected: failed to acquire final sleep gate");
         diag_log(DIAG_SRC_POWER, DIAG_POWER_SLEEP_BLOCKED, DIAG_SEV_WARN,
@@ -685,18 +958,43 @@ static esp_err_t power_manager_enter_sleep(power_manager_sleep_reason_t reason)
     }
 
     uint32_t final_blockers = s_blockers;
-    if (final_blockers != 0) {
+    uint32_t final_sleep_blockers = power_manager_sleep_blockers_for_source(
+        final_blockers,
+        &final_power_source,
+        reason);
+    if (final_sleep_blockers != 0) {
         xSemaphoreGive(s_mutex);
         char blocker_text[96];
-        power_manager_blocker_names(final_blockers, blocker_text, sizeof(blocker_text));
+        power_manager_blocker_names(final_sleep_blockers, blocker_text, sizeof(blocker_text));
         ESP_LOGW(
             TAG,
-            "sleep rejected: final blockers=0x%08" PRIx32 " (%s) idle_ms=%" PRIu32,
-            final_blockers,
+            "sleep rejected: final sleep_blockers=0x%08" PRIx32 " (%s) idle_ms=%" PRIu32
+            " external_power_present=%u charging=%u charge_full=%u usb_det_level=%s",
+            final_sleep_blockers,
             blocker_text,
-            snapshot.idle_ms);
-        diag_log(DIAG_SRC_POWER, DIAG_POWER_SLEEP_BLOCKED, DIAG_SEV_WARN,
-                 final_blockers, snapshot.idle_ms, (uint32_t)reason, 0);
+            snapshot.idle_ms,
+            final_power_source.external_power_present ? 1u : 0u,
+            final_power_source.charging ? 1u : 0u,
+            final_power_source.charge_full ? 1u : 0u,
+            power_manager_gpio_level_name(final_power_source.usb_det_level));
+        diag_log(
+            DIAG_SRC_POWER,
+            DIAG_POWER_SLEEP_BLOCKED,
+            DIAG_SEV_WARN,
+            final_sleep_blockers,
+            snapshot.idle_ms,
+            (uint32_t)reason,
+            power_manager_encode_power_source_flags(
+                &final_power_source,
+                (final_sleep_blockers & POWER_MANAGER_BLOCKER_EXTERNAL_POWER) != 0));
+        if ((final_sleep_blockers & POWER_MANAGER_BLOCKER_EXTERNAL_POWER) != 0) {
+            power_manager_log_power_source_diag(
+                DIAG_SEV_WARN,
+                &final_power_source,
+                snapshot.idle_ms,
+                final_sleep_blockers,
+                true);
+        }
         power_manager_log_wake_policy(wake_gpio_mask);
         return ESP_ERR_INVALID_STATE;
     }
@@ -760,22 +1058,61 @@ static void power_manager_evaluate(void)
     uint32_t user_idle_ms = 0;
     uint32_t radio_idle_ms = 0;
     uint32_t blockers = 0;
+    uint32_t sleep_blockers = 0;
+    bool power_source_changed = false;
+    bool automatic_sleep_blocked = false;
+    bool log_automatic_sleep_blocked = false;
+    power_manager_power_source_snapshot_t power_source = {0};
+    power_manager_read_power_source(&power_source);
 
     if (xSemaphoreTake(s_mutex, portMAX_DELAY) != pdTRUE) {
         return;
     }
 
     previous = s_state;
+    power_source_changed = power_manager_sync_power_source_locked(&power_source, now_ms);
     bool ble_changed = power_manager_refresh_ble_connection_locked(now_ms);
+    automatic_sleep_blocked = power_manager_automatic_sleep_blocked_by_external_power_locked(now_ms);
     next = power_manager_target_state_locked(now_ms);
     user_idle_ms = power_manager_user_idle_ms_locked(now_ms);
     radio_idle_ms = power_manager_radio_idle_ms_locked(now_ms);
     blockers = s_blockers;
+    sleep_blockers = power_manager_automatic_sleep_blockers_for_source(blockers, &power_source);
+    if (automatic_sleep_blocked && !s_auto_sleep_block_logged) {
+        s_auto_sleep_block_logged = true;
+        log_automatic_sleep_blocked = true;
+    } else if (!automatic_sleep_blocked) {
+        s_auto_sleep_block_logged = false;
+    }
     if (previous != next) {
         s_state = next;
     }
     xSemaphoreGive(s_mutex);
 
+    if (power_source_changed) {
+        ESP_LOGI(
+            TAG,
+            "power source changed: usb_det=%s bat_chg=%s bat_std=%s"
+            " usb_power_present=%u charging=%u charge_full=%u external_power_present=%u"
+            " usb_policy=%s charger_policy=%s",
+            power_manager_gpio_level_name(power_source.usb_det_level),
+            power_manager_gpio_level_name(power_source.bat_chg_level),
+            power_manager_gpio_level_name(power_source.bat_std_level),
+            power_source.usb_power_present ? 1u : 0u,
+            power_source.charging ? 1u : 0u,
+            power_source.charge_full ? 1u : 0u,
+            power_source.external_power_present ? 1u : 0u,
+            power_source.usb_det_policy != NULL ? power_source.usb_det_policy : "unknown",
+            power_source.charger_polarity_policy != NULL
+                ? power_source.charger_polarity_policy
+                : "unknown");
+        power_manager_log_power_source_diag(
+            DIAG_SEV_INFO,
+            &power_source,
+            user_idle_ms,
+            sleep_blockers,
+            automatic_sleep_blocked);
+    }
     if (ble_changed) {
         ESP_LOGI(TAG, "BLE connection state observed: connected=%u", s_ble_connected ? 1u : 0u);
     }
@@ -785,12 +1122,47 @@ static void power_manager_evaluate(void)
     power_manager_apply_state(previous, next);
     power_manager_apply_fast_idle_actions(next, user_idle_ms, blockers);
 
+    if (log_automatic_sleep_blocked) {
+        char sleep_blocker_text[96];
+        power_manager_blocker_names(sleep_blockers, sleep_blocker_text, sizeof(sleep_blocker_text));
+        ESP_LOGW(
+            TAG,
+            "automatic overnight sleep blocked by external power"
+            " sleep_blockers=0x%08" PRIx32 " (%s) idle_ms=%" PRIu32
+            " usb_det=%s bat_chg=%s bat_std=%s"
+            " external_power_present=%u charging=%u charge_full=%u",
+            sleep_blockers,
+            sleep_blocker_text,
+            user_idle_ms,
+            power_manager_gpio_level_name(power_source.usb_det_level),
+            power_manager_gpio_level_name(power_source.bat_chg_level),
+            power_manager_gpio_level_name(power_source.bat_std_level),
+            power_source.external_power_present ? 1u : 0u,
+            power_source.charging ? 1u : 0u,
+            power_source.charge_full ? 1u : 0u);
+        diag_log(
+            DIAG_SRC_POWER,
+            DIAG_POWER_SLEEP_BLOCKED,
+            DIAG_SEV_WARN,
+            sleep_blockers,
+            user_idle_ms,
+            (uint32_t)POWER_MANAGER_SLEEP_REASON_OVERNIGHT_IDLE,
+            power_manager_encode_power_source_flags(&power_source, true));
+        power_manager_log_power_source_diag(
+            DIAG_SEV_WARN,
+            &power_source,
+            user_idle_ms,
+            sleep_blockers,
+            true);
+    }
+
     if (next == POWER_MANAGER_STATE_OVERNIGHT_SLEEP) {
         esp_err_t sleep_ret = power_manager_enter_sleep(POWER_MANAGER_SLEEP_REASON_OVERNIGHT_IDLE);
         if (sleep_ret != ESP_OK && xSemaphoreTake(s_mutex, portMAX_DELAY) == pdTRUE) {
             uint64_t reset_ms = power_manager_now_ms();
             s_last_user_activity_ms = reset_ms;
             s_last_radio_activity_ms = reset_ms;
+            s_auto_sleep_block_logged = false;
             s_state = s_ble_connected
                 ? POWER_MANAGER_STATE_CONNECTED_IDLE
                 : POWER_MANAGER_STATE_DISCONNECTED_IDLE;
@@ -918,6 +1290,7 @@ void power_manager_record_activity(const char *reason)
         uint64_t now_ms = power_manager_now_ms();
         s_last_user_activity_ms = now_ms;
         s_last_radio_activity_ms = now_ms;
+        s_auto_sleep_block_logged = false;
         if (s_state != POWER_MANAGER_STATE_ACTIVE) {
             s_state = POWER_MANAGER_STATE_ACTIVE;
         }
@@ -960,6 +1333,7 @@ void power_manager_set_blocker(uint32_t blocker_mask, bool enabled)
         uint64_t now_ms = power_manager_now_ms();
         s_last_user_activity_ms = now_ms;
         s_last_radio_activity_ms = now_ms;
+        s_auto_sleep_block_logged = false;
         previous = s_state;
         if (s_blockers != 0 && s_state != POWER_MANAGER_STATE_ACTIVE) {
             s_state = POWER_MANAGER_STATE_ACTIVE;
@@ -1005,6 +1379,7 @@ void power_manager_set_ble_connected(bool connected)
         previous = s_state;
         s_ble_connected = connected;
         s_last_radio_activity_ms = power_manager_now_ms();
+        s_auto_sleep_block_logged = false;
         s_state = POWER_MANAGER_STATE_ACTIVE;
         next = s_state;
         blockers = s_blockers;
@@ -1042,10 +1417,17 @@ static void power_manager_print_status(void)
 
     char blocker_text[96];
     power_manager_blocker_names(snapshot.blockers, blocker_text, sizeof(blocker_text));
+    char sleep_blocker_text[96];
+    power_manager_blocker_names(snapshot.sleep_blockers, sleep_blocker_text, sizeof(sleep_blocker_text));
     printf(
-        "~POWER:STATUS state=%s blockers=0x%08" PRIx32 " blocker_names=%s idle_ms=%" PRIu32
+        "~POWER:STATUS state=%s blockers=0x%08" PRIx32 " blocker_names=%s"
+        " sleep_blockers=0x%08" PRIx32 " sleep_blocker_names=%s idle_ms=%" PRIu32
         " user_idle_ms=%" PRIu32 " radio_idle_ms=%" PRIu32
-        " ble_connected=%u battery_mv=%" PRIu32 " battery_level=%u battery_valid=%u"
+        " ble_connected=%u automatic_sleep_blocked_by_external_power=%u"
+        " external_power_present=%u usb_power_present=%u charging=%u charge_full=%u"
+        " usb_det_level=%s bat_chg_level=%s bat_std_level=%s"
+        " usb_det_policy=%s charger_polarity=%s"
+        " battery_mv=%" PRIu32 " battery_level=%u battery_valid=%u"
         " last_sleep_reason=%s last_wake_source=%s guard=%u audio_idle_ms=%" PRIu32
         " connected_idle_ms=%" PRIu32
         " disconnected_idle_ms=%" PRIu32 " overnight_sleep_ms=%" PRIu32
@@ -1063,10 +1445,22 @@ static void power_manager_print_status(void)
         power_manager_state_name(snapshot.state),
         snapshot.blockers,
         blocker_text,
+        snapshot.sleep_blockers,
+        sleep_blocker_text,
         snapshot.idle_ms,
         snapshot.user_idle_ms,
         snapshot.radio_idle_ms,
         snapshot.ble_connected ? 1u : 0u,
+        snapshot.automatic_sleep_blocked_by_external_power ? 1u : 0u,
+        snapshot.external_power_present ? 1u : 0u,
+        snapshot.usb_power_present ? 1u : 0u,
+        snapshot.charging ? 1u : 0u,
+        snapshot.charge_full ? 1u : 0u,
+        power_manager_gpio_level_name(snapshot.usb_det_level),
+        power_manager_gpio_level_name(snapshot.bat_chg_level),
+        power_manager_gpio_level_name(snapshot.bat_std_level),
+        snapshot.usb_det_policy != NULL ? snapshot.usb_det_policy : "unknown",
+        snapshot.charger_polarity_policy != NULL ? snapshot.charger_polarity_policy : "unknown",
         snapshot.battery_mv,
         snapshot.battery_level_percent,
         snapshot.battery_valid ? 1u : 0u,
