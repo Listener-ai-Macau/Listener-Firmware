@@ -73,19 +73,298 @@ from capture_audio_ble_wav import configure_utf8_stdio
 
 
 CASE_ORDER = ("A1", "A2")
-MANUAL_CASES: tuple[str, ...] = ()
-TRANSPORT_ONLY_CASES: tuple[str, ...] = ()
+EXTREME_CASES = (
+    "A1",
+    "A2",
+    "A14",
+    "T1",
+    "T3",
+    "L1",
+    "H1",
+    "H4",
+    "A17",
+    "A15",
+    "D1",
+)
+MANUAL_CASES: tuple[str, ...] = ("H1", "H4")
+TRANSPORT_ONLY_CASES: tuple[str, ...] = ("T1", "T3")
 CASE_SUITES = {
     "smoke": CASE_ORDER,
     "daily": CASE_ORDER,
     "full": CASE_ORDER,
+    "extreme": EXTREME_CASES,
     "auto": CASE_ORDER,
 }
 PRODUCT_CHAIN_OVERLAY_CASES = CASE_ORDER
 PRODUCT_CHAIN_IN_RUNNER_CASES = ("A1", "A2")
 CASE_DESCRIPTIONS = {
     "A1": "快速连续短录音：连续 5-8 轮短句，上一轮文字出现后 1 秒内尝试拉起下一轮录音胶囊",
-    "A2": "长段录音（约一分钟，默认 14 个分句）：验证完整传输 + partial preview 质量 + 最终识别准确率",
+    "A2": "长段录音（约一分钟，默认 14 个分句）：验证完整传输 + partial preview 质量 + 最终识别准确率；extreme suite 使用 fast profile",
+    "A14": "取消后恢复：中途取消当前录音，确认没有插入旧文本，然后立刻重试一轮正常录音",
+    "A15": "静音误触/负向 case：没有有效语音时不应产生可见文本、历史插入或成功假象",
+    "A17": "空闲/睡眠恢复：长时间 idle 或低功耗恢复后的首轮录音仍可解释并继续使用",
+    "T1": "BLE 断连/回连：流式录音或准备阶段断开后恢复，合法下一次录音不被吞掉",
+    "T3": "Notify disabled 或 Windows stale GATT/cache：host recovery 后重新达到 notify-ready",
+    "L1": "Listener-Type 重启：桌面进程重启后设备和胶囊状态收敛到可继续录音",
+    "H1": "EC11 物理录音键压力：物理 EC11 start/stop/recovery 不产生 stuck capsule 或重复 session",
+    "H4": "KEY1-KEY4 物理/注入压力：自定义键和 fallback HID 压力下录音链路仍稳定",
+    "D1": "诊断导出：固件 diag、BLE、Listener-Type 日志和 UI timeline 可对齐并带 artifact 引用",
+}
+MANUAL_OR_EXTERNAL_CASES = {
+    "A14": "pending_automation: requires Listener-Type cancel/capsule recovery runner or manual cancel timing",
+    "A15": "pending_automation: requires silent negative product-chain runner on current Listener-Type build",
+    "A17": "manual_or_long_running: requires idle/sleep timing and optional power-state observation",
+    "T1": "external_ble_state: requires intentional BLE disconnect/reconnect or Windows Bluetooth restart",
+    "T3": "external_ble_state: requires notify disable/stale GATT-cache recovery on Windows",
+    "L1": "external_desktop_state: requires Listener-Type process restart during or between sessions",
+    "H1": "manual_hardware: requires physical EC11 operation under workflow hardware lock",
+    "H4": "manual_hardware: requires physical or injection stress for KEY1-KEY4 under workflow hardware lock",
+    "D1": "diagnostic_export: requires firmware diag pull plus Listener-Type log collection artifacts",
+}
+CASE_CONTRACTS = {
+    "A1": {
+        "scenario": "Rapid short recordings after previous text/history, 0-1 second next-start gap.",
+        "expected_user_visible_behavior": "Each legal short recording shows a new capsule quickly, inserts the intended text, and does not lose a round silently.",
+        "firmware_observables": [
+            "voice recording source/state/session id",
+            "BLE packet counts and missing/duplicate packet counters",
+            "no QueueFull or session storm",
+        ],
+        "desktop_observables": [
+            "capsule visible timestamp/source",
+            "history session id",
+            "text_to_next_capsule_latencies",
+            "ASR partial/final text",
+        ],
+        "failure_classification": "latency, dropped_round, transport, asr, insertion, capsule",
+        "artifact_requirements": [
+            "matrix JSON",
+            "summary log",
+            "Listener-Type smoke report",
+            "firmware serial or diag reference when available",
+        ],
+        "automation_status": "automated",
+    },
+    "A2": {
+        "scenario": "About 60 seconds of fast long-form dictation in the extreme suite.",
+        "expected_user_visible_behavior": "Capsule stays visible through the long capture, final text inserts once, and the user can continue after completion.",
+        "firmware_observables": [
+            "expected/received/missing packet counts",
+            "duplicate packet count",
+            "audio transport summary",
+            "no QueueFull or SessionError",
+        ],
+        "desktop_observables": [
+            "partial preview count and content quality",
+            "history session id",
+            "insert status",
+            "accuracy/CER",
+        ],
+        "failure_classification": "transport, packet_loss, duplicate_packet, asr, insertion, stuck_capsule",
+        "artifact_requirements": [
+            "matrix JSON",
+            "summary log",
+            "Listener-Type smoke report",
+            "generated WAV path",
+            "firmware diag reference when available",
+        ],
+        "automation_status": "automated",
+    },
+    "A14": {
+        "scenario": "Cancel during an active or pending capture, then retry a normal capture.",
+        "expected_user_visible_behavior": "Cancel stops capture without inserting stale text; retry starts a fresh session and inserts only retry text.",
+        "firmware_observables": [
+            "cancel source/result",
+            "session id transition",
+            "stop/cancel ownership",
+        ],
+        "desktop_observables": [
+            "capsule cancelled state",
+            "no stale history insertion",
+            "retry capsule/session timeline",
+        ],
+        "failure_classification": "cancel_lost, stale_insert, stuck_capsule, retry_blocked",
+        "artifact_requirements": [
+            "serial report",
+            "Listener-Type timeline",
+            "history before/after",
+            "matrix JSON",
+        ],
+        "automation_status": "manual_or_external",
+    },
+    "A15": {
+        "scenario": "Silent or accidental trigger negative case.",
+        "expected_user_visible_behavior": "No meaningful text is inserted and any visible error explains the absence of speech.",
+        "firmware_observables": [
+            "short or empty audio session summary",
+            "cancel/error terminal reason",
+        ],
+        "desktop_observables": [
+            "no ASR final text",
+            "no history insert",
+            "actionable no-speech/error state when surfaced",
+        ],
+        "failure_classification": "false_positive_text, stale_history, silent_success",
+        "artifact_requirements": [
+            "silent audio report",
+            "history snapshot",
+            "capsule timeline",
+        ],
+        "automation_status": "manual_or_external",
+    },
+    "A17": {
+        "scenario": "Idle or sleep/resume before first recording.",
+        "expected_user_visible_behavior": "After idle/resume, the next legal press starts or explains recovery instead of being swallowed.",
+        "firmware_observables": [
+            "power/idle status",
+            "wake or recovery diag events",
+            "recording source/result",
+        ],
+        "desktop_observables": [
+            "BLE readiness timeline",
+            "capsule/error visible state",
+            "history result",
+        ],
+        "failure_classification": "resume_not_ready, lost_press, stale_ble_state",
+        "artifact_requirements": [
+            "idle duration",
+            "serial/diag export",
+            "Listener-Type logs",
+            "matrix JSON",
+        ],
+        "automation_status": "manual_or_external",
+    },
+    "T1": {
+        "scenario": "BLE disconnect/reconnect before or during recording.",
+        "expected_user_visible_behavior": "Recovery reaches ready state within the scenario budget or shows an actionable reconnect error.",
+        "firmware_observables": [
+            "connection epoch",
+            "GAP disconnect/connect",
+            "session abort/recovery summary",
+        ],
+        "desktop_observables": [
+            "BLE readiness timeline",
+            "capsule terminal state",
+            "reconnect result",
+        ],
+        "failure_classification": "reconnect_timeout, stale_epoch, stuck_capsule, lost_legal_press",
+        "artifact_requirements": [
+            "Windows BLE evidence",
+            "firmware diag export",
+            "Listener-Type logs",
+            "matrix JSON",
+        ],
+        "automation_status": "manual_or_external",
+    },
+    "T3": {
+        "scenario": "Notify disabled or Windows stale GATT/cache recovery.",
+        "expected_user_visible_behavior": "The app either repairs notify readiness or gives a clear next step; it must not claim a successful recording without audio.",
+        "firmware_observables": [
+            "notify readiness",
+            "MTU/subscription epoch",
+            "stale event discard",
+        ],
+        "desktop_observables": [
+            "cache recovery action",
+            "notify-ready timestamp",
+            "visible error text when recovery fails",
+        ],
+        "failure_classification": "notify_not_ready, stale_cache, false_success, transport_not_ready",
+        "artifact_requirements": [
+            "BLE address/cache evidence",
+            "firmware diag export",
+            "Listener-Type log",
+            "matrix JSON",
+        ],
+        "automation_status": "manual_or_external",
+    },
+    "L1": {
+        "scenario": "Listener-Type restart while firmware remains powered and paired.",
+        "expected_user_visible_behavior": "After restart, the app discovers or recovers the device and the next recording behaves like a fresh session.",
+        "firmware_observables": [
+            "connection state after desktop restart",
+            "active session ownership",
+            "diagnostic pull availability",
+        ],
+        "desktop_observables": [
+            "process restart timeline",
+            "BLE readiness state",
+            "capsule/history session ownership",
+        ],
+        "failure_classification": "desktop_restart_loss, stale_session, reconnect_timeout",
+        "artifact_requirements": [
+            "Listener-Type restart log",
+            "firmware serial/diag",
+            "history session id",
+            "matrix JSON",
+        ],
+        "automation_status": "manual_or_external",
+    },
+    "H1": {
+        "scenario": "Physical EC11 start/stop/recovery stress.",
+        "expected_user_visible_behavior": "Physical presses map to one session action each and do not create stuck recording/transferring UI.",
+        "firmware_observables": [
+            "voice_key source label",
+            "press/cancel/recovery result",
+            "session count",
+        ],
+        "desktop_observables": [
+            "capsule state per press",
+            "history insertion once per valid session",
+        ],
+        "failure_classification": "double_trigger, missed_press, stuck_state, stale_history",
+        "artifact_requirements": [
+            "hardware lock evidence",
+            "serial log",
+            "Listener-Type log",
+            "matrix JSON or written timeline",
+        ],
+        "automation_status": "manual_hardware",
+    },
+    "H4": {
+        "scenario": "KEY1-KEY4 physical/custom fallback stress while BLE audio remains available.",
+        "expected_user_visible_behavior": "Custom/fallback key actions are delivered or explained without disrupting legal voice recordings.",
+        "firmware_observables": [
+            "custom key diag events",
+            "HID dispatch result",
+            "recording control state",
+        ],
+        "desktop_observables": [
+            "focused app input result",
+            "BLE/capsule readiness after stress",
+        ],
+        "failure_classification": "hid_loss, recording_disruption, stuck_modifier, lost_voice_press",
+        "artifact_requirements": [
+            "hardware lock evidence",
+            "serial/custom-key log",
+            "Listener-Type log",
+            "matrix JSON or written timeline",
+        ],
+        "automation_status": "manual_hardware",
+    },
+    "D1": {
+        "scenario": "Diagnostic export after an extreme or failed scenario.",
+        "expected_user_visible_behavior": "A support package can explain firmware, BLE, desktop, and UI timeline without asking the user to reproduce blindly.",
+        "firmware_observables": [
+            "diag_log export path/count/CRC",
+            "audio/session diag references",
+            "BLE readiness events",
+        ],
+        "desktop_observables": [
+            "Listener-Type log path",
+            "capsule timeline",
+            "package commit/hash",
+            "history session id",
+        ],
+        "failure_classification": "diagnostics_missing, timeline_unaligned, package_unidentified",
+        "artifact_requirements": [
+            "firmware diag export",
+            "Listener-Type log bundle",
+            "matrix JSON",
+            "package SHA256/commit",
+        ],
+        "automation_status": "manual_or_external",
+    },
 }
 MATRIX_ARTIFACT_DIR = pathlib.Path("tests") / "artifacts" / "ble_product_matrix"
 A2_PRODUCT_CHAIN_RANDOM_SENTENCE_COUNT = 14
@@ -212,8 +491,9 @@ def parse_args():
         "--cases",
         default="auto",
         help=(
-            "Case IDs or suite name. Suites: smoke/full/auto (A1,A2). "
-            "Or comma-separated IDs: A1,A2."
+            "Case IDs or suite name. Suites: smoke/daily/full/auto (A1,A2), "
+            "extreme (A1,A2,A14,T1,T3,L1,H1,H4,A17,A15,D1). "
+            "Or comma-separated IDs: A1,A2,A14."
         ),
     )
     parser.add_argument("--list-cases", action="store_true")
@@ -719,11 +999,23 @@ def print_summary(
     print(f"case_id={case_id}", flush=True)
     print(f"case_result={result}", flush=True)
     print(f"case_reason={reason}", flush=True)
+    contract = CASE_CONTRACTS.get(case_id, {})
+    details_payload = details or {}
+    if contract:
+        details_payload = {
+            "contract": contract,
+            **details_payload,
+        }
     return {
         "case_id": case_id,
+        "description": CASE_DESCRIPTIONS.get(case_id, ""),
+        "automation_status": contract.get("automation_status"),
+        "failure_classification": contract.get("failure_classification"),
+        "artifact_requirements": contract.get("artifact_requirements", []),
         "result": result,
         "reason": reason,
-        "details": details or {},
+        "failure_timestamp_utc": datetime.now(timezone.utc).isoformat() if result == "fail" else None,
+        "details": details_payload,
         "artifacts": case_artifact_manifest(case_id),
     }
 
@@ -778,6 +1070,79 @@ def latest_matching_file(directory: pathlib.Path, pattern: str) -> str | None:
         return None
     matches = sorted(directory.glob(pattern), key=lambda path: path.stat().st_mtime)
     return str(matches[-1]) if matches else None
+
+
+def run_git_text(args: list[str], *, cwd: pathlib.Path) -> str:
+    try:
+        completed = subprocess.run(
+            ["git", *args],
+            cwd=str(cwd),
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=10,
+            check=False,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return ""
+    if completed.returncode != 0:
+        return ""
+    return (completed.stdout or "").strip()
+
+
+def git_snapshot(path: pathlib.Path) -> dict[str, object]:
+    if not path.exists():
+        return {
+            "path": str(path),
+            "missing": True,
+            "commit": None,
+            "branch": None,
+            "dirty": None,
+        }
+    commit = run_git_text(["rev-parse", "HEAD"], cwd=path)
+    branch = run_git_text(["rev-parse", "--abbrev-ref", "HEAD"], cwd=path)
+    dirty = bool(run_git_text(["status", "--porcelain"], cwd=path))
+    return {
+        "path": str(path),
+        "commit": commit or None,
+        "branch": branch or None,
+        "dirty": dirty,
+    }
+
+
+def sha256_file(path: pathlib.Path) -> str | None:
+    if not path.exists() or not path.is_file():
+        return None
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def package_snapshot(args) -> dict[str, object]:
+    if not args.listener_exe:
+        return {"listener_exe": None, "package_hash": None}
+    exe_path = pathlib.Path(args.listener_exe).expanduser().resolve()
+    digest = sha256_file(exe_path)
+    return {
+        "listener_exe": str(exe_path),
+        "listener_exe_sha256": digest,
+        "package_hash": digest,
+    }
+
+
+def matrix_run_metadata(args) -> dict[str, object]:
+    listener_repo = resolve_listener_type_repo(args)
+    return {
+        "schema": "voice_keyboard_extreme_matrix.v1",
+        "generated_at_utc": datetime.now(timezone.utc).isoformat(),
+        "firmware": git_snapshot(firmware_repo_root()),
+        "listener_type": git_snapshot(listener_repo),
+        "package": package_snapshot(args),
+    }
 
 
 def first_non_empty(*values: object) -> str:
@@ -1219,9 +1584,37 @@ def find_listener_history_session(
 def print_case_catalog() -> None:
     catalog = {
         "auto_cases": list(CASE_ORDER),
+        "extreme_cases": list(EXTREME_CASES),
         "manual_cases": list(MANUAL_CASES),
         "transport_only_cases": list(TRANSPORT_ONLY_CASES),
+        "case_suites": {
+            name: list(cases)
+            for name, cases in sorted(CASE_SUITES.items())
+        },
         "case_descriptions": CASE_DESCRIPTIONS,
+        "case_contracts": CASE_CONTRACTS,
+        "extreme_suite_defaults": {
+            "a1_round_count": "20 recommended for release closure; current default stays 6 for smoke",
+            "inter_session_gap_seconds": "0-1",
+            "a2_long_capture_seconds": "60",
+            "a2_audio_profile": "fast",
+            "required_lock": "aiw with-lock for COMx and BLE-<address> before real hardware execution",
+            "artifact_root": str(MATRIX_ARTIFACT_DIR),
+        },
+        "matrix_result_required_fields": [
+            "text_to_next_capsule_latencies",
+            "capsule_source",
+            "history_session_id",
+            "expected_packet_count",
+            "received_packet_count",
+            "missing_packet_count",
+            "duplicate_packet_count",
+            "firmware_diag_refs",
+            "listener_type_log_refs",
+            "package_hash",
+            "commit",
+            "failure_timestamp_utc",
+        ],
         "audio_profiles": {
             name: {
                 "tts_rate": config["tts_rate"],
@@ -1235,7 +1628,7 @@ def print_case_catalog() -> None:
             case_id: list(profiles)
             for case_id, profiles in sorted(CASE_PRODUCT_CHAIN_AUDIO_PROFILES.items())
         },
-        "manual_or_external_cases": {},
+        "manual_or_external_cases": MANUAL_OR_EXTERNAL_CASES,
         "implemented_cases": sorted(CASE_RUNNERS.keys()),
     }
     print(f"case_catalog={json.dumps(catalog, ensure_ascii=False, sort_keys=True)}")
@@ -1290,6 +1683,20 @@ def summary_outcome(summary: dict[str, object]) -> tuple[str, str]:
     )
 
 
+def skipped_case_summary(case_id: str, reason: str) -> dict[str, object]:
+    return print_summary(
+        case_id,
+        "skipped",
+        reason,
+        details={
+            "skip_is_baseline": True,
+            "baseline_note": "Scenario is part of the durable extreme-use contract but is not automated in this firmware-only harness step.",
+            "automation_gap": reason,
+            "required_artifacts": CASE_CONTRACTS.get(case_id, {}).get("artifact_requirements", []),
+        },
+    )
+
+
 def write_matrix_result_json(
     *,
     path: str,
@@ -1299,12 +1706,27 @@ def write_matrix_result_json(
     warnings: list[dict[str, object]],
     skipped: list[dict[str, object]],
     fail_on_warning: bool,
+    metadata: dict[str, object],
+    requested_cases: list[str],
+    case_suite: str,
 ) -> pathlib.Path:
     output_path = pathlib.Path(path)
     output_path.parent.mkdir(parents=True, exist_ok=True)
+    status = "FAIL" if failed or (fail_on_warning and warnings) else "PASS_WITH_SKIPS" if skipped else "PASS"
     payload = {
-        "status": "FAIL" if failed or (fail_on_warning and warnings) else "PASS",
+        "schema": "voice_keyboard_extreme_matrix_result.v1",
+        "status": status,
         "fail_on_warning": bool(fail_on_warning),
+        "matrix_incomplete": bool(skipped),
+        "skipped_is_not_pass_evidence": bool(skipped),
+        "case_suite": case_suite,
+        "requested_cases": requested_cases,
+        "run_metadata": metadata,
+        "case_contracts": {
+            case_id: CASE_CONTRACTS[case_id]
+            for case_id in requested_cases
+            if case_id in CASE_CONTRACTS
+        },
         "matrix_total": len(results),
         "matrix_failed": len(failed),
         "matrix_warning": len(warnings),
@@ -1963,6 +2385,18 @@ async def run_listener_type_product_chain(
         )
 
     effective_status = "PASS" if result == "pass" else "WARNING" if result == "warning" else "FAIL"
+    expected_packet_count = None
+    received_packet_count = None
+    missing_packet_count = report.get("missing_packets")
+    duplicate_packet_count = None
+    if isinstance(embedded_stats, dict):
+        expected_packet_count = embedded_stats.get("expectedPacketCount")
+        received_packet_count = embedded_stats.get("receivedPacketCount")
+        missing_packet_count = first_non_empty(
+            embedded_stats.get("missingPacketCount"),
+            report.get("missing_packets"),
+        )
+        duplicate_packet_count = embedded_stats.get("duplicatePacketCount")
     details = {
         "full_chain_status": effective_status,
         "listener_type_report_status": report_status,
@@ -1978,6 +2412,24 @@ async def run_listener_type_product_chain(
         "listener_type_stdout_path": str(stdout_log),
         "listener_type_stderr_path": str(stderr_log),
         "listener_type_report_path": latest_matching_file(output_dir, "ble-stream-smoke.*.json"),
+        "listener_type_log_refs": [
+            value
+            for value in (
+                str(stdout_log),
+                str(stderr_log),
+                first_non_empty(report.get("log_path")),
+            )
+            if value
+        ],
+        "firmware_diag_refs": [
+            value
+            for value in (
+                first_non_empty(report.get("serial_log_path")),
+                first_non_empty(report.get("firmware_diag_path")),
+                first_non_empty(report.get("diag_log_path")),
+            )
+            if value
+        ],
         "sentence": report.get("sentence"),
         **accuracy_details,
         "transcript": transcript,
@@ -1990,10 +2442,15 @@ async def run_listener_type_product_chain(
         "inserted_text": inserted_text,
         "insertion_verified": insertion_verified,
         "history_session_id": history_session.get("id"),
+        "expected_packet_count": expected_packet_count,
+        "received_packet_count": received_packet_count,
+        "missing_packet_count": missing_packet_count,
+        "duplicate_packet_count": duplicate_packet_count,
         "missing_packets": report.get("missing_packets"),
         "pcm_bytes": report.get("pcm_bytes"),
         "embedded_audio_stats": embedded_stats,
         "recording_archive_path": report.get("recording_archive_path"),
+        "timeline": report.get("timeline"),
         "verify_insertion": bool(report.get("verify_insertion")),
         "verify_history": bool(report.get("verify_history")),
         "history_lookup_fallback": history_lookup_fallback,
@@ -2213,6 +2670,8 @@ async def main_async(args) -> None:
         args.preflight_recover_mode = "none"
 
     case_order = resolve_case_execution_order(args)
+    requested_suite = args.cases.strip().lower() if args.cases.strip().lower() in CASE_SUITES else "custom"
+    run_metadata = matrix_run_metadata(args)
     print(f"execution_profile={args.execution_profile}", flush=True)
     print(f"random_capture_durations_enabled={0 if args.disable_random_capture_durations else 1}", flush=True)
     print(f"random_usage_timing_enabled={0 if args.disable_random_usage_timing else 1}", flush=True)
@@ -2259,9 +2718,12 @@ async def main_async(args) -> None:
     results = []
     initial_preflight_done = False
     for case_id in case_order:
+        if case_id in MANUAL_OR_EXTERNAL_CASES:
+            results.append(skipped_case_summary(case_id, MANUAL_OR_EXTERNAL_CASES[case_id]))
+            continue
         runner = CASE_RUNNERS.get(case_id)
         if runner is None:
-            results.append(print_summary(case_id, "skipped", "unknown_or_not_automated"))
+            results.append(skipped_case_summary(case_id, "unknown_or_not_automated"))
             continue
         try:
             if args.preflight_recover_mode == "per-case":
@@ -2315,6 +2777,9 @@ async def main_async(args) -> None:
         warnings=warnings,
         skipped=skipped,
         fail_on_warning=args.fail_on_warning,
+        metadata=run_metadata,
+        requested_cases=case_order,
+        case_suite=requested_suite,
     )
     print(f"matrix_result_json={matrix_result_path}", flush=True)
     print(f"matrix_summary_log={args.summary_log}", flush=True)

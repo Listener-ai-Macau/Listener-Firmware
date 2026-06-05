@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "updated_at": "2026-05-20",
+  "updated_at": "2026-06-05",
   "features": [
     {
       "id": "factory_firmware_readiness",
@@ -224,6 +224,43 @@
         "Environment, reconnect, cancel, physical-key, soak, and RF edge cases now require separate targeted validation rather than this simplified matrix",
         "Capsule visual details (exit animation, compact text truncation) require manual visual verification",
         "Capsule validation depends on smoke report exposing partial_preview_count/last_partial_preview fields"
+      ]
+    },
+    {
+      "id": "extreme_stability_matrix",
+      "status": "contract-and-harness",
+      "summary": "Extreme-use stability contract and named matrix suite for rapid short recordings, 60s fast long recording, cancel/retry, BLE recovery, stale GATT/cache, Listener-Type restart, EC11/KEY1-KEY4 stress, idle/resume, silence negative case, and diagnostic export evidence.",
+      "doc": "extreme_stability_matrix.md",
+      "primary_paths": [
+        "tools/verify_audio_ble_product_matrix.py",
+        "tools/ble_audio_regression_common.py",
+        "tools/capture_audio_ble_wav.py",
+        "!docs/features/extreme_stability_matrix.md"
+      ],
+      "validation": [
+        "python -m compileall -q tools\\verify_audio_ble_product_matrix.py tools\\capture_audio_ble_wav.py tools\\ble_audio_regression_common.py",
+        "python .\\tools\\verify_audio_ble_product_matrix.py --list-cases",
+        "python .\\tools\\verify_audio_ble_product_matrix.py --port COMx --cases extreme --a1-round-count 20 --inter-session-gap-min-seconds 0 --inter-session-gap-max-seconds 1 --long-capture-seconds 60 --full-chain-audio-profile fast --fail-on-warning --continue-on-failure",
+        "pwsh -NoProfile -File .\\tools\\verify_ble_audio_backpressure_static.ps1",
+        "pwsh -NoProfile -File .\\tools\\ai\\repo_features.ps1 -Check",
+        "git diff --check"
+      ],
+      "evidence": [
+        "CASE_SUITES exposes a named extreme suite without editing the script by hand.",
+        "CASE_CONTRACTS records scenario, expected user-visible behavior, firmware/desktop observables, failure classification, and artifact requirements for every extreme case.",
+        "Matrix result JSON includes schema voice_keyboard_extreme_matrix_result.v1 plus firmware/Listener-Type commit metadata, optional Listener package SHA256, case contracts, skipped manual/external baselines, failure timestamps, and artifact requirements.",
+        "A1/A2 product-chain details standardize timeline, history_session_id, packet counters, firmware diag/serial refs, and Listener-Type log refs."
+      ],
+      "invariants": [
+        "Existing auto/smoke/daily/full suites keep the accepted A1,A2 low-cost baseline.",
+        "The extreme suite records manual/external cases as skipped baselines until locked real-device or dedicated automation evidence exists; skipped is not PASS.",
+        "Hardware, serial, BLE, physical-key, idle/sleep, and diagnostic-export closure must use workflow locks and durable artifacts.",
+        "UX latency and product-chain startup/package identity are recorded as separate evidence surfaces."
+      ],
+      "known_limits": [
+        "A14, A15, A17, T1, T3, L1, H1, H4, and D1 are contract/skipped baselines in this firmware-only harness step until later automation or manual locked evidence closes them.",
+        "Product-chain A1/A2 still require sibling Listener-Type repo, ASR configuration, Windows BLE state, and real hardware for execution.",
+        "Physical EC11 and KEY1-KEY4 stress cannot be honestly automated without external hardware operation or a validated injection fixture."
       ]
     }
   ]
