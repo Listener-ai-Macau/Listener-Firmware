@@ -58,8 +58,8 @@
   - `WinRT OSError(22)` 时的 warm-up / rebuild fallback
   - 更长的 `notify ready` 等待预算
 - 测试层：
-  - 随机时长 + 随机使用节奏矩阵
-  - `P8/P9` 的“同一串口会话里 cancel 后继续录音”真实恢复验证
+  - 当前 `verify_audio_ble_product_matrix.py` 简化为 A1/A2 核心产品链路矩阵
+  - A1 快速连续短录音，轮间在上一轮文字/历史出现后 0-1 秒内触发下一轮并记录下一颗录音胶囊可见延迟；A2 约一分钟长段录音和 partial preview 质量
 
 ### 当前明确避免的重自定义
 
@@ -115,7 +115,7 @@
   - `xl9555` 探测加有限重试
   - 扩展器不可用时保留 `direct.gpio0` 保底路径
   - `P11` 真实 `KEY1 -> KEY1` 已按人工听感口径通过
-- 测试真实性修正：
+- 历史测试真实性修正：
   - 随机性从录音时长扩展到使用节奏
   - `P8/P9` 改为同一条串口会话内完成取消和恢复录音
   - `--no-reset-before-capture` 会压住 `DTR/RTS` 并检查意外 boot marker
@@ -159,6 +159,8 @@ Windows 自动恢复订阅时 `BLE_GAP_EVENT_SUBSCRIBE` 可能早于 `BLE_GAP_EV
 
 ## 测试准确性约束
 
+当前 `verify_audio_ble_product_matrix.py` 只保留 A1/A2 两个核心自动 case。历史 P 系列覆盖结论保留在本节和归档中作为已完成稳定性证据，但不再是当前脚本的 case 入口。
+
 - 自动矩阵的 `pass/fail` 依据是真实采集结果：
   - 实际 `wav`
   - 实际 `expected_packet_count / received_packet_count / missing_packet_count`
@@ -182,13 +184,14 @@ Windows 自动恢复订阅时 `BLE_GAP_EVENT_SUBSCRIBE` 可能早于 `BLE_GAP_EV
   - 仍然是脚本可控、可复现的合成源
   - 但包络、停顿、音强变化更接近真实说话节奏
   - 比之前更适合验证首句、连续多句、取消后恢复这类场景
-- `P7` 的自动 recover 重试只允许用于主机 / 传输类失败，不再对任意失败都自动重试
-- `P11/P12/P13` 不会被自动矩阵冒充成已通过：
+- A1 每轮独立验证产品链路；上一轮文字/历史出现后 0-1 秒内开始下一轮，并记录 `text_to_next_capsule_latencies`；出现丢轮或无 transcript 记为 warning。
+- A2 默认生成约一分钟长录音（`--full-chain-long-sentence-count 14`），验证 partial preview 内容质量（前缀 CER <= 0.5），不只检查是否有 preview。
+- 历史 `P11/P12/P13` 不会被自动矩阵冒充成已通过：
   - `P11` 已按真实按键人工验收口径通过，但仍不计入自动矩阵
   - `P12` 已形成 ambient RF baseline，但受控弱环境实验仍需单独记录
   - `P13` 仍需要后端联调
 
-## 产品级使用面测试矩阵
+## 历史产品级使用面测试矩阵
 
 下面这组矩阵用于回答：
 
@@ -214,7 +217,7 @@ Windows 自动恢复订阅时 `BLE_GAP_EVENT_SUBSCRIBE` 可能早于 `BLE_GAP_EV
   - 长会话默认在 `long_capture_seconds-5` 到 `long_capture_seconds+5`
 - 使用节奏随机：
   - 开始前等待 `pre_start_delay`
-  - 多轮 session 间隔 `inter_session_gap`
+  - 多轮 session 间隔 `inter_session_gap`（当前 A1 默认 0-1 秒，作为上一轮文字/历史出现到下一轮开始的等待）
   - 空闲后再说的等待时长 `idle_wait`
   - 中途取消停留 `cancel_hold`
   - 短异常结束停留 `short_cancel_hold`
@@ -310,8 +313,10 @@ Windows 自动恢复订阅时 `BLE_GAP_EVENT_SUBSCRIBE` 可能早于 `BLE_GAP_EV
 
 ### 现有回归与场景映射
 
+当前主入口 `verify_audio_ble_product_matrix.py` 已简化为 A1/A2。下面 P 系列映射是历史稳定性计划的覆盖说明；单项旧脚本仍可作为诊断入口，但不代表当前产品矩阵 case。
+
 - `verify_audio_ble_product_matrix.py`
-  对应 `P1-P10`，验证自动化产品使用面主路径
+  当前对应 A1/A2 核心产品链路矩阵
 - `verify_audio_ble_upload_end_to_end.py`
   对应 `P1`，保留单轮标准自动触发链路的兼容入口
 - `verify_audio_ble_upload_multi_round.py`
@@ -408,20 +413,14 @@ python .\tools\capture_audio_ble_wav.py --port COM3 --capture-seconds 10 --trigg
 # KEY1 物理按键模式验收
 python .\tools\verify_audio_capture_session_end_to_end.py --port COM3 --capture-seconds 10 --artifacts-dir .\tests\artifacts\audio --trigger-mode physical-key --no-reset-before-capture --timeout-seconds 120
 
-# 产品级使用面自动矩阵（P1/P2/P3/P4/P5/P6/P7/P8/P9/P10，默认随机录音时长 + 随机使用节奏）
-python .\tools\verify_audio_ble_product_matrix.py --port COM3 --capture-seconds 5 --long-capture-seconds 30 --round-count 3 --idle-seconds 30 --soak-round-count 5
+# 当前产品链路自动矩阵（A1 快速连续短录音 + A2 约一分钟长段录音）
+python .\tools\verify_audio_ble_product_matrix.py --port COM3 --fail-on-warning
 
-# 指定随机种子，便于复现
-python .\tools\verify_audio_ble_product_matrix.py --port COM3 --capture-seconds 5 --long-capture-seconds 30 --round-count 3 --idle-seconds 30 --soak-round-count 5 --random-seed 20260520
+# 只跑快速连续短录音，默认上一轮文字/历史出现后 0-1 秒内触发下一轮
+python .\tools\verify_audio_ble_product_matrix.py --port COM3 --cases A1 --a1-round-count 6 --fail-on-warning
 
-# 更贴近真实连续使用的口径
-python .\tools\verify_audio_ble_product_matrix.py --port COM3 --capture-seconds 5 --long-capture-seconds 30 --round-count 3 --idle-seconds 30 --soak-round-count 5 --realistic-usage-profile --random-seed 20260521
-
-# 当前门禁口径：失败或 warning 都不允许悄悄通过，并保留 JSON 结果
-python .\tools\verify_audio_ble_product_matrix.py --port COM3 --cases P1,P2,P3,P4,P5,P6,P7,P8,P9,P10 --realistic-usage-profile --fail-on-warning --matrix-result-json tests\artifacts\ble_product_matrix\matrix_result_realistic_latest.json
-
-# P12 ambient RF baseline 记录口径；受控距离 / 干扰实验需要另行注明环境条件
-python .\tools\verify_audio_ble_product_matrix.py --port COM3 --cases P1,P3,P8,P9,P10 --realistic-usage-profile --random-seed 20260520 --fail-on-warning --matrix-result-json tests\artifacts\ble_product_matrix\p12\p12_ambient_rf_matrix_20260517.json
+# 只跑约一分钟长段录音和 partial preview 质量
+python .\tools\verify_audio_ble_product_matrix.py --port COM3 --cases A2 --fail-on-warning
 
 # P1：标准端到端回归
 python .\tools\verify_audio_ble_upload_end_to_end.py --port COM3 --capture-seconds 5 --no-reset-before-capture

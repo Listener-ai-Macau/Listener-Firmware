@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "updated_at": "2026-05-20",
+  "updated_at": "2026-06-05",
   "features": [
     {
       "id": "factory_firmware_readiness",
@@ -184,8 +184,8 @@
     },
     {
       "id": "ble_audio_test_matrix",
-      "status": "validated",
-      "summary": "Realistic user-scenario matrix with suite layering (smoke/daily/full/soak/extended/transport): A1-A20 automated cases covering normal speech, hesitation, quiet, fast, short commands, ultra-short, punctuation (warning-only), Chinese-English mix, repeated speech, noise, voice interference, cancel, silent, fading gain, long idle, network failure (controlled timeout), soak, and A20 ultra-long transport. Capsule UX validation integrated into product-chain overlay. H1-H3 manual. T1-T5 legacy transport.",
+      "status": "simplified",
+      "summary": "Simplified BLE audio product-chain matrix with A1/A2 only: A1 rapid consecutive short recordings with the next round triggered within 0-1s after the previous text/history appears, A2 about-one-minute long recording with partial preview quality. Both cases run BLE -> ASR -> text insertion -> accuracy gate -> capsule evidence.",
       "doc": "ble_audio_test_matrix.md",
       "primary_paths": [
         "tools/verify_audio_ble_product_matrix.py",
@@ -196,42 +196,71 @@
         "python -m compileall -q tools",
         "python .\\tools\\verify_audio_ble_product_matrix.py --list-cases",
         "python .\\tools\\verify_audio_ble_product_matrix.py --port COM3 --fail-on-warning",
-        "python .\\tools\\verify_audio_ble_product_matrix.py --port COM3 --cases A19 --soak-round-count 3 --fail-on-warning",
-        "python .\\tools\\verify_audio_ble_product_matrix.py --port COM3 --cases A20 --a20-capture-seconds 900 --transport-only --fail-on-warning"
+        "python .\\tools\\verify_audio_ble_product_matrix.py --port COM3 --cases A1 --a1-round-count 6 --fail-on-warning",
+        "python .\\tools\\verify_audio_ble_product_matrix.py --port COM3 --cases A2 --fail-on-warning"
       ],
       "evidence": [
-        "CASE_ORDER A1-A20 with CASE_SUITES smoke/daily/full/soak/extended/transport/auto layering",
-        "CASE_DESCRIPTIONS per user story, CASE_PRODUCT_CHAIN_AUDIO_PROFILES per case",
-        "TRANSPORT_ONLY_CASES T1-T5 (old A4/A5/A6/A10/A11) accessible via --cases transport",
-        "ble_audio_regression_common.py adds segmented TTS, noise mixing, secondary speech, fading gain, 5 sentence pools, noisy profile, punctuation profile (warning_only)",
+        "CASE_ORDER is A1,A2 and CASE_SUITES smoke/daily/full/auto all resolve to A1,A2",
+        "CASE_DESCRIPTIONS documents A1 rapid consecutive short recordings with <=1s post-text next-round trigger and A2 about-one-minute long recording",
+        "CASE_PRODUCT_CHAIN_AUDIO_PROFILES uses normal profile for A1/A2",
+        "ble_audio_regression_common.py remains the shared TTS/playback/BLE capture support library",
         "verify_audio_ble_product_matrix.py adds validate_partial_preview_quality + validate_capsule_evidence",
-        "Capsule evidence checks partial_preview_count, last_partial_preview; warnings on failure, not hard fail",
-        "A9 punctuation uses warning_only profile; A18 uses controlled 8s/5s timeout, not real network failure",
-        "FAST_TTS_RATE = 3, matching fast profile TTS rate",
-        "2026-05-19 full hardware validation PASS: A1-A19 automated, H1 real manual KEY1, T1-T5 transport",
-        "2026-05-20 A20 ultra-long transport case added; default 900s hardware validation remains required for acceptance"
+        "Capsule evidence checks partial_preview_count and last_partial_preview; warnings on failure, not hard fail",
+        "2026-06-04 matrix simplified from 28 cases to A1/A2 core product-chain gates",
+        "2026-06-05 matrix timing tightened: A1 records 0-1s inter_round_gaps and text_to_next_capsule_latencies, and A2 defaults to 14 clauses/about one minute"
       ],
       "invariants": [
-        "CASE_SUITES defines suite layering: --cases auto defaults to A1-A16 only; A17/A18/A19 in soak suite; A20 in extended suite",
-        "Transport-only cases T1-T5 only via --cases transport, not in --cases auto",
-        "--transport-only controls product-chain overlay only, does not change case selection",
-        "Each A case tests exactly one user scenario dimension",
-        "A2 validates partial preview content quality (prefix CER <= 0.5) via validate_capsule_evidence",
-        "A9 punctuation uses warning_only=True profile; accuracy failure produces warning, not hard fail",
-        "A18 uses controlled timeout (8s total / 5s listener), does not depend on real network failure",
-        "A20 is transport-only and defaults to 900 seconds; shorter --a20-capture-seconds values are smoke only",
+        "CASE_SUITES smoke/daily/full/auto all select A1,A2",
+        "--transport-only controls product-chain overlay only; the simplified matrix has no legacy transport suite",
+        "Each case tests one core user scenario dimension",
+        "A1 validates every rapid round independently, records a 0-1s inter_round_gaps window plus text_to_next_capsule_latencies, and treats dropped/no-transcript rounds as warning",
+        "A2 defaults to --full-chain-long-sentence-count 14/about one minute and validates partial preview content quality (prefix CER <= 0.5) via validate_capsule_evidence",
         "Capsule validation failure produces warning, not hard fail",
         "Default matrix execution stops at the first fail or fail-on-warning warning",
-        "FAST_TTS_RATE = 3; fast profile uses this rate for A6 fast-speech simulation",
-        "A/H product-chain checks reuse Listener-Type native BLE stream/ASR/insertion smoke"
+        "A1/A2 product-chain checks reuse Listener-Type native BLE stream/ASR/insertion smoke"
       ],
       "known_limits": [
-        "Different speaker voices require additional TTS voices or real humans (H3 manual)",
         "Product-chain validation requires sibling Listener-Type repo, working ASR, and real device",
-        "A20 requires real hardware and COM/BLE resource locks; short smoke runs do not replace 900s acceptance",
-        "ASR error recovery UX not yet covered (product decision pending)",
+        "Environment, reconnect, cancel, physical-key, soak, and RF edge cases now require separate targeted validation rather than this simplified matrix",
         "Capsule visual details (exit animation, compact text truncation) require manual visual verification",
         "Capsule validation depends on smoke report exposing partial_preview_count/last_partial_preview fields"
+      ]
+    },
+    {
+      "id": "extreme_stability_matrix",
+      "status": "contract-and-harness",
+      "summary": "Extreme-use stability contract and named matrix suite for rapid short recordings, 60s fast long recording, cancel/retry, BLE recovery, stale GATT/cache, Listener-Type restart, EC11/KEY1-KEY4 stress, idle/resume, silence negative case, and diagnostic export evidence.",
+      "doc": "extreme_stability_matrix.md",
+      "primary_paths": [
+        "tools/verify_audio_ble_product_matrix.py",
+        "tools/ble_audio_regression_common.py",
+        "tools/capture_audio_ble_wav.py",
+        "!docs/features/extreme_stability_matrix.md"
+      ],
+      "validation": [
+        "python -m compileall -q tools\\verify_audio_ble_product_matrix.py tools\\capture_audio_ble_wav.py tools\\ble_audio_regression_common.py",
+        "python .\\tools\\verify_audio_ble_product_matrix.py --list-cases",
+        "python .\\tools\\verify_audio_ble_product_matrix.py --port COMx --cases extreme --a1-round-count 20 --inter-session-gap-min-seconds 0 --inter-session-gap-max-seconds 1 --long-capture-seconds 60 --full-chain-audio-profile fast --fail-on-warning --continue-on-failure",
+        "pwsh -NoProfile -File .\\tools\\verify_ble_audio_backpressure_static.ps1",
+        "pwsh -NoProfile -File .\\tools\\ai\\repo_features.ps1 -Check",
+        "git diff --check"
+      ],
+      "evidence": [
+        "CASE_SUITES exposes a named extreme suite without editing the script by hand.",
+        "CASE_CONTRACTS records scenario, expected user-visible behavior, firmware/desktop observables, failure classification, and artifact requirements for every extreme case.",
+        "Matrix result JSON includes schema voice_keyboard_extreme_matrix_result.v1 plus firmware/Listener-Type commit metadata, optional Listener package SHA256, case contracts, skipped manual/external baselines, failure timestamps, and artifact requirements.",
+        "A1/A2 product-chain details standardize timeline, history_session_id, packet counters, firmware diag/serial refs, and Listener-Type log refs."
+      ],
+      "invariants": [
+        "Existing auto/smoke/daily/full suites keep the accepted A1,A2 low-cost baseline.",
+        "The extreme suite records manual/external cases as skipped baselines until locked real-device or dedicated automation evidence exists; skipped is not PASS.",
+        "Hardware, serial, BLE, physical-key, idle/sleep, and diagnostic-export closure must use workflow locks and durable artifacts.",
+        "UX latency and product-chain startup/package identity are recorded as separate evidence surfaces."
+      ],
+      "known_limits": [
+        "A14, A15, A17, T1, T3, L1, H1, H4, and D1 are contract/skipped baselines in this firmware-only harness step until later automation or manual locked evidence closes them.",
+        "Product-chain A1/A2 still require sibling Listener-Type repo, ASR configuration, Windows BLE state, and real hardware for execution.",
+        "Physical EC11 and KEY1-KEY4 stress cannot be honestly automated without external hardware operation or a validated injection fixture."
       ]
     }
   ]

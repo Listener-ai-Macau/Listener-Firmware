@@ -190,21 +190,18 @@ python .\tools\capture_audio_ble_wav.py --port COM3 --capture-seconds 5
 # 物理 KEY1 音频采集
 python .\tools\capture_audio_ble_wav.py --port COM3 --capture-seconds 5 --trigger-mode physical-key --no-reset-before-capture
 
-# BLE 音频产品矩阵验证（A=自动, H=手动）
-python .\tools\verify_audio_ble_product_matrix.py --port COM3 --capture-seconds 5 --long-capture-seconds 30 --round-count 3 --idle-seconds 30
+# BLE 音频产品矩阵验证（当前简化为 A1/A2）
+python .\tools\verify_audio_ble_product_matrix.py --port COM3 --fail-on-warning
 
-# 模拟真实使用场景
-python .\tools\verify_audio_ble_product_matrix.py --port COM3 --realistic-usage-profile --random-seed 20260525
+# 列出当前矩阵 case
+python .\tools\verify_audio_ble_product_matrix.py --list-cases
 
 # 只跑特定 case
-python .\tools\verify_audio_ble_product_matrix.py --port COM3 --cases A1,A3,A6
+python .\tools\verify_audio_ble_product_matrix.py --port COM3 --cases A1 --a1-round-count 6 --fail-on-warning
 
-# 矩阵 case 说明（按 Bluetooth SIG 分类顺序）
-# A1: GAP基线连接 | A2: GATT连续传输 | A3: GAP断连重连 | A4: GAP多轮独立重连
-# A5: 主机端恢复 | A6: 空闲后首录 | A7: 取消+恢复 | A8: 静音负向
-# A9: 快速启停压力 | A10: 并发BLE客户端
-# H1: 物理KEY1（半自动，等按钮后自动继续）
-# H2: RF干扰/距离 | H3: 后端ASR集成
+# 矩阵 case 说明
+# A1: 快速连续短录音，连续 5-8 轮短句，每轮走完整产品链路，上一轮文字/历史出现后默认 0-1 秒内触发下一轮
+# A2: 约一分钟长段录音，验证完整传输、partial preview 质量和最终识别准确率
 
 # 校验计划状态（所有 AI 完成步骤后跑一遍）
 pwsh -NoProfile -File ..\ai-collaboration-workflow\scripts\aiw.ps1 validate

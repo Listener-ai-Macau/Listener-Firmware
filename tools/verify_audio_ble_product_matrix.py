@@ -58,36 +58,13 @@ def run_with_process_tree_timeout(
 
 from ble_audio_regression_common import (
     AUDIO_PROFILE_CONFIGS,
-    play_and_capture_serial_toggle_after_cancel_probe,
-    play_and_capture_serial_toggle,
-    play_and_capture_serial_toggle_multi_session,
     recover_ble_hid_host,
-    restart_windows_bluetooth,
-    analyze_recording,
-    capture_sessions,
-    make_capture_args,
-    read_wav_frames,
-    compute_envelope,
-    detect_active_runs,
     validate_transport_summary,
     get_paired_device_address_hex,
     generate_profile_tts_wav,
-    generate_segmented_tts_wav,
-    mix_noise_into_wav,
-    mix_secondary_speech_into_wav,
-    apply_fading_gain,
-    open_serial_with_retry,
     pick_chinese_sentences,
     pick_short_commands,
-    pick_ultra_short,
-    pick_punctuation_commands,
-    pick_mixed_sentences,
     resolve_audio_profile,
-    send_toggle,
-    source_wav_path,
-    generate_source_wav_tts,
-    PCM_SAMPLE_RATE,
-    WavPlayback,
     DEFAULT_PLAYBACK_VOLUME_PERCENT,
     PLAYBACK_VOLUME_ENV,
     KEEP_PLAYBACK_VOLUME_ENV,
@@ -95,76 +72,308 @@ from ble_audio_regression_common import (
 from capture_audio_ble_wav import configure_utf8_stdio
 
 
-CASE_ORDER = (
-    "A1", "A2", "A3",
-    "A4", "A5", "A6",
-    "A7", "A8", "A9", "A10", "A11",
-    "A12", "A13",
-    "A14", "A15", "A16",
-    "A17", "A18",
-    "A19", "A20",
+CASE_ORDER = ("A1", "A2")
+EXTREME_CASES = (
+    "A1",
+    "A2",
+    "A14",
+    "T1",
+    "T3",
+    "L1",
+    "H1",
+    "H4",
+    "A17",
+    "A15",
+    "D1",
 )
-SMOKE_CASES = ("A1", "A3", "A14", "A15")
-FULL_CASES = tuple(c for c in CASE_ORDER if c not in ("A17", "A18", "A19", "A20"))
-SOAK_CASES = ("A17", "A18", "A19")
-EXTENDED_AUTO_CASES = ("A20",)
-MANUAL_CASES = ("H1", "H2", "H3")
-TRANSPORT_ONLY_CASES = ("T1", "T2", "T3", "T4", "T5")
+MANUAL_CASES: tuple[str, ...] = ("H1", "H4")
+TRANSPORT_ONLY_CASES: tuple[str, ...] = ("T1", "T3")
 CASE_SUITES = {
-    "smoke": SMOKE_CASES,
-    "daily": FULL_CASES,
+    "smoke": CASE_ORDER,
+    "daily": CASE_ORDER,
     "full": CASE_ORDER,
-    "transport": TRANSPORT_ONLY_CASES,
-    "soak": SOAK_CASES,
-    "extended": EXTENDED_AUTO_CASES,
-    "auto": FULL_CASES,
+    "extreme": EXTREME_CASES,
+    "auto": CASE_ORDER,
 }
-PRODUCT_CHAIN_OVERLAY_CASES = tuple(case_id for case_id in CASE_ORDER if case_id.startswith("A"))
-PRODUCT_CHAIN_IN_RUNNER_CASES = ("A1", "A2", "A3", "A14", "A15", "A18", "A19", "A20")
-MANUAL_OR_EXTERNAL_CASES = {
-    "H2": "requires physical distance/angle change",
-    "H3": "requires different speaker voice or manual TTS voice switch",
-}
+PRODUCT_CHAIN_OVERLAY_CASES = CASE_ORDER
+PRODUCT_CHAIN_IN_RUNNER_CASES = ("A1", "A2")
 CASE_DESCRIPTIONS = {
-    "A1": "单句 normal 基线：用户说一句话，文字出现在光标",
-    "A2": "长段话（3-5句）：验证 partial preview 内容质量和 final insertion",
-    "A3": "连续多轮：每轮说不同的话，混合 profile",
-    "A4": "犹豫停顿：说话时停顿 1-3s 后继续",
-    "A5": "小声说话：low-volume profile",
-    "A6": "快速说话：fast profile（rate=3）",
-    "A7": "短命令+长句混合：随机交替",
-    "A8": "极短语音（1-2字）：验证 ASR 能识别",
-    "A9": "标点命令：验证输出包含逗号/句号/换行",
-    "A10": "中英混合：句内中英交替",
-    "A11": "重复同句 3 轮：验证每轮独立不串",
-    "A12": "环境噪音：TTS + 白噪声/粉红噪声",
-    "A13": "语音干扰：TTS + 次语音叠加",
-    "A14": "取消后恢复：负向验证 + 正常录音",
-    "A15": "静音误触：负向验证",
-    "A16": "渐变音量：模拟走动距离变化",
-    "A17": "长时间空闲后首录（5min idle）",
-    "A18": "ASR 网络异常：验证不卡死",
-    "A19": "综合 soak：混合所有 profile 和句子类型",
-    "A20": "超长录音传输：15min BLE session 由用户停止且不触发 sequence overflow error",
-    "H1": "物理 EC11 按压语音输入",
-    "H2": "不同距离/角度说话",
-    "H3": "不同人说话（男女/老人/口音）",
-    "T1": "（旧 A4）BT 重启后重连",
-    "T2": "（旧 A5）多轮重连循环",
-    "T3": "（旧 A6）Host 恢复不重启",
-    "T4": "（旧 A10）快速 toggle 压力",
-    "T5": "（旧 A11）并发 BLE 客户端",
+    "A1": "快速连续短录音：连续 5-8 轮短句，上一轮文字出现后 1 秒内尝试拉起下一轮录音胶囊",
+    "A2": "长段录音（约一分钟，默认 14 个分句）：验证完整传输 + partial preview 质量 + 最终识别准确率；extreme suite 使用 fast profile",
+    "A14": "取消后恢复：中途取消当前录音，确认没有插入旧文本，然后立刻重试一轮正常录音",
+    "A15": "静音误触/负向 case：没有有效语音时不应产生可见文本、历史插入或成功假象",
+    "A17": "空闲/睡眠恢复：长时间 idle 或低功耗恢复后的首轮录音仍可解释并继续使用",
+    "T1": "BLE 断连/回连：流式录音或准备阶段断开后恢复，合法下一次录音不被吞掉",
+    "T3": "Notify disabled 或 Windows stale GATT/cache：host recovery 后重新达到 notify-ready",
+    "L1": "Listener-Type 重启：桌面进程重启后设备和胶囊状态收敛到可继续录音",
+    "H1": "EC11 物理录音键压力：物理 EC11 start/stop/recovery 不产生 stuck capsule 或重复 session",
+    "H4": "KEY1-KEY4 物理/注入压力：自定义键和 fallback HID 压力下录音链路仍稳定",
+    "D1": "诊断导出：固件 diag、BLE、Listener-Type 日志和 UI timeline 可对齐并带 artifact 引用",
+}
+MANUAL_OR_EXTERNAL_CASES = {
+    "A14": "pending_automation: requires Listener-Type cancel/capsule recovery runner or manual cancel timing",
+    "A15": "pending_automation: requires silent negative product-chain runner on current Listener-Type build",
+    "A17": "manual_or_long_running: requires idle/sleep timing and optional power-state observation",
+    "T1": "external_ble_state: requires intentional BLE disconnect/reconnect or Windows Bluetooth restart",
+    "T3": "external_ble_state: requires notify disable/stale GATT-cache recovery on Windows",
+    "L1": "external_desktop_state: requires Listener-Type process restart during or between sessions",
+    "H1": "manual_hardware: requires physical EC11 operation under workflow hardware lock",
+    "H4": "manual_hardware: requires physical or injection stress for KEY1-KEY4 under workflow hardware lock",
+    "D1": "diagnostic_export: requires firmware diag pull plus Listener-Type log collection artifacts",
+}
+CASE_CONTRACTS = {
+    "A1": {
+        "scenario": "Rapid short recordings after previous text/history, 0-1 second next-start gap.",
+        "expected_user_visible_behavior": "Each legal short recording shows a new capsule quickly, inserts the intended text, and does not lose a round silently.",
+        "firmware_observables": [
+            "voice recording source/state/session id",
+            "BLE packet counts and missing/duplicate packet counters",
+            "no QueueFull or session storm",
+        ],
+        "desktop_observables": [
+            "capsule visible timestamp/source",
+            "history session id",
+            "text_to_next_capsule_latencies",
+            "ASR partial/final text",
+        ],
+        "failure_classification": "latency, dropped_round, transport, asr, insertion, capsule",
+        "artifact_requirements": [
+            "matrix JSON",
+            "summary log",
+            "Listener-Type smoke report",
+            "firmware serial or diag reference when available",
+        ],
+        "automation_status": "automated",
+    },
+    "A2": {
+        "scenario": "About 60 seconds of fast long-form dictation in the extreme suite.",
+        "expected_user_visible_behavior": "Capsule stays visible through the long capture, final text inserts once, and the user can continue after completion.",
+        "firmware_observables": [
+            "expected/received/missing packet counts",
+            "duplicate packet count",
+            "audio transport summary",
+            "no QueueFull or SessionError",
+        ],
+        "desktop_observables": [
+            "partial preview count and content quality",
+            "history session id",
+            "insert status",
+            "accuracy/CER",
+        ],
+        "failure_classification": "transport, packet_loss, duplicate_packet, asr, insertion, stuck_capsule",
+        "artifact_requirements": [
+            "matrix JSON",
+            "summary log",
+            "Listener-Type smoke report",
+            "generated WAV path",
+            "firmware diag reference when available",
+        ],
+        "automation_status": "automated",
+    },
+    "A14": {
+        "scenario": "Cancel during an active or pending capture, then retry a normal capture.",
+        "expected_user_visible_behavior": "Cancel stops capture without inserting stale text; retry starts a fresh session and inserts only retry text.",
+        "firmware_observables": [
+            "cancel source/result",
+            "session id transition",
+            "stop/cancel ownership",
+        ],
+        "desktop_observables": [
+            "capsule cancelled state",
+            "no stale history insertion",
+            "retry capsule/session timeline",
+        ],
+        "failure_classification": "cancel_lost, stale_insert, stuck_capsule, retry_blocked",
+        "artifact_requirements": [
+            "serial report",
+            "Listener-Type timeline",
+            "history before/after",
+            "matrix JSON",
+        ],
+        "automation_status": "manual_or_external",
+    },
+    "A15": {
+        "scenario": "Silent or accidental trigger negative case.",
+        "expected_user_visible_behavior": "No meaningful text is inserted and any visible error explains the absence of speech.",
+        "firmware_observables": [
+            "short or empty audio session summary",
+            "cancel/error terminal reason",
+        ],
+        "desktop_observables": [
+            "no ASR final text",
+            "no history insert",
+            "actionable no-speech/error state when surfaced",
+        ],
+        "failure_classification": "false_positive_text, stale_history, silent_success",
+        "artifact_requirements": [
+            "silent audio report",
+            "history snapshot",
+            "capsule timeline",
+        ],
+        "automation_status": "manual_or_external",
+    },
+    "A17": {
+        "scenario": "Idle or sleep/resume before first recording.",
+        "expected_user_visible_behavior": "After idle/resume, the next legal press starts or explains recovery instead of being swallowed.",
+        "firmware_observables": [
+            "power/idle status",
+            "wake or recovery diag events",
+            "recording source/result",
+        ],
+        "desktop_observables": [
+            "BLE readiness timeline",
+            "capsule/error visible state",
+            "history result",
+        ],
+        "failure_classification": "resume_not_ready, lost_press, stale_ble_state",
+        "artifact_requirements": [
+            "idle duration",
+            "serial/diag export",
+            "Listener-Type logs",
+            "matrix JSON",
+        ],
+        "automation_status": "manual_or_external",
+    },
+    "T1": {
+        "scenario": "BLE disconnect/reconnect before or during recording.",
+        "expected_user_visible_behavior": "Recovery reaches ready state within the scenario budget or shows an actionable reconnect error.",
+        "firmware_observables": [
+            "connection epoch",
+            "GAP disconnect/connect",
+            "session abort/recovery summary",
+        ],
+        "desktop_observables": [
+            "BLE readiness timeline",
+            "capsule terminal state",
+            "reconnect result",
+        ],
+        "failure_classification": "reconnect_timeout, stale_epoch, stuck_capsule, lost_legal_press",
+        "artifact_requirements": [
+            "Windows BLE evidence",
+            "firmware diag export",
+            "Listener-Type logs",
+            "matrix JSON",
+        ],
+        "automation_status": "manual_or_external",
+    },
+    "T3": {
+        "scenario": "Notify disabled or Windows stale GATT/cache recovery.",
+        "expected_user_visible_behavior": "The app either repairs notify readiness or gives a clear next step; it must not claim a successful recording without audio.",
+        "firmware_observables": [
+            "notify readiness",
+            "MTU/subscription epoch",
+            "stale event discard",
+        ],
+        "desktop_observables": [
+            "cache recovery action",
+            "notify-ready timestamp",
+            "visible error text when recovery fails",
+        ],
+        "failure_classification": "notify_not_ready, stale_cache, false_success, transport_not_ready",
+        "artifact_requirements": [
+            "BLE address/cache evidence",
+            "firmware diag export",
+            "Listener-Type log",
+            "matrix JSON",
+        ],
+        "automation_status": "manual_or_external",
+    },
+    "L1": {
+        "scenario": "Listener-Type restart while firmware remains powered and paired.",
+        "expected_user_visible_behavior": "After restart, the app discovers or recovers the device and the next recording behaves like a fresh session.",
+        "firmware_observables": [
+            "connection state after desktop restart",
+            "active session ownership",
+            "diagnostic pull availability",
+        ],
+        "desktop_observables": [
+            "process restart timeline",
+            "BLE readiness state",
+            "capsule/history session ownership",
+        ],
+        "failure_classification": "desktop_restart_loss, stale_session, reconnect_timeout",
+        "artifact_requirements": [
+            "Listener-Type restart log",
+            "firmware serial/diag",
+            "history session id",
+            "matrix JSON",
+        ],
+        "automation_status": "manual_or_external",
+    },
+    "H1": {
+        "scenario": "Physical EC11 start/stop/recovery stress.",
+        "expected_user_visible_behavior": "Physical presses map to one session action each and do not create stuck recording/transferring UI.",
+        "firmware_observables": [
+            "voice_key source label",
+            "press/cancel/recovery result",
+            "session count",
+        ],
+        "desktop_observables": [
+            "capsule state per press",
+            "history insertion once per valid session",
+        ],
+        "failure_classification": "double_trigger, missed_press, stuck_state, stale_history",
+        "artifact_requirements": [
+            "hardware lock evidence",
+            "serial log",
+            "Listener-Type log",
+            "matrix JSON or written timeline",
+        ],
+        "automation_status": "manual_hardware",
+    },
+    "H4": {
+        "scenario": "KEY1-KEY4 physical/custom fallback stress while BLE audio remains available.",
+        "expected_user_visible_behavior": "Custom/fallback key actions are delivered or explained without disrupting legal voice recordings.",
+        "firmware_observables": [
+            "custom key diag events",
+            "HID dispatch result",
+            "recording control state",
+        ],
+        "desktop_observables": [
+            "focused app input result",
+            "BLE/capsule readiness after stress",
+        ],
+        "failure_classification": "hid_loss, recording_disruption, stuck_modifier, lost_voice_press",
+        "artifact_requirements": [
+            "hardware lock evidence",
+            "serial/custom-key log",
+            "Listener-Type log",
+            "matrix JSON or written timeline",
+        ],
+        "automation_status": "manual_hardware",
+    },
+    "D1": {
+        "scenario": "Diagnostic export after an extreme or failed scenario.",
+        "expected_user_visible_behavior": "A support package can explain firmware, BLE, desktop, and UI timeline without asking the user to reproduce blindly.",
+        "firmware_observables": [
+            "diag_log export path/count/CRC",
+            "audio/session diag references",
+            "BLE readiness events",
+        ],
+        "desktop_observables": [
+            "Listener-Type log path",
+            "capsule timeline",
+            "package commit/hash",
+            "history session id",
+        ],
+        "failure_classification": "diagnostics_missing, timeline_unaligned, package_unidentified",
+        "artifact_requirements": [
+            "firmware diag export",
+            "Listener-Type log bundle",
+            "matrix JSON",
+            "package SHA256/commit",
+        ],
+        "automation_status": "manual_or_external",
+    },
 }
 MATRIX_ARTIFACT_DIR = pathlib.Path("tests") / "artifacts" / "ble_product_matrix"
-# Keep the A2 continuous utterance under the current async ASR stability window.
-# Longer soak/stress coverage belongs in A19 mixed-use runs.
-A2_PRODUCT_CHAIN_RANDOM_SENTENCE_COUNT = 4
-A2_PRODUCT_CHAIN_MIN_LISTENER_TIMEOUT_MS = 90000
-A2_PRODUCT_CHAIN_MIN_TIMEOUT_SECONDS = 150
+A2_PRODUCT_CHAIN_RANDOM_SENTENCE_COUNT = 14
+A2_PRODUCT_CHAIN_MIN_LISTENER_TIMEOUT_MS = 180000
+A2_PRODUCT_CHAIN_MIN_TIMEOUT_SECONDS = 240
 NEGATIVE_PRODUCT_CHAIN_TIMEOUT_SECONDS = 70
 NEGATIVE_PRODUCT_CHAIN_LISTENER_TIMEOUT_MS = 35000
 PRODUCT_CHAIN_EMPTY_TRANSCRIPT_RETRY_SENTENCE = "蓝牙音频正在发送到火山识别，请检查文本结果。"
-T1_RECONNECT_MIN_PRE_START_DELAY_SECONDS = 3.0
+A1_RAPID_ROUND_COUNT = 6
 
 SHORT_DICTATION_SENTENCES = (
     "今天天气不错，适合出去走走，散散心。",
@@ -173,14 +382,7 @@ SHORT_DICTATION_SENTENCES = (
     "火山识别和蓝牙传输正在接受测试。",
 )
 
-LOW_VOLUME_DICTATION_SENTENCES = (
-    "蓝牙音频正在发送到火山识别，请检查文本结果。",
-    "火山识别和蓝牙传输正在接受测试。",
-    "今天天气不错，适合出去走走，散散心。",
-    "我正在测试语音输入，确认文字可以稳定出现。",
-)
-
-SHORT_DICTATION_CASES = {"A1", "A3", "A5", "A6"}
+SHORT_DICTATION_CASES = {"A1"}
 
 A2_LONG_DICTATION_LEADS = (
     "今天我会连续记录蓝牙听写的使用过程",
@@ -213,34 +415,8 @@ A2_LONG_DICTATION_ENDINGS = (
 )
 CASE_PRODUCT_CHAIN_AUDIO_PROFILES = {
     "A1": ("normal",),
-    "A2": ("normal", "fast"),
-    "A3": ("normal", "fast", "low-volume"),
-    "A4": ("normal",),
-    "A5": ("low-volume",),
-    "A6": ("fast",),
-    "A7": ("normal",),
-    "A8": ("normal",),
-    "A9": ("punctuation",),
-    "A10": ("normal",),
-    "A11": ("normal",),
-    "A12": ("noisy",),
-    "A13": ("normal",),
-    "A14": ("normal",),
-    "A15": ("normal",),
-    "A16": ("normal",),
-    "A17": ("normal",),
-    "A18": ("normal",),
-    "A19": ("normal", "fast", "low-volume", "noisy"),
+    "A2": ("normal",),
 }
-A19_SOAK_AUDIO_PROFILES = ("normal", "fast", "low-volume", "noisy")
-A19_SOAK_SENTENCES = (
-    ("normal", "蓝牙音频正在发送到火山识别，请检查文本结果。"),
-    ("fast", "我正在测试语音输入，确认文字可以稳定出现。"),
-    ("low-volume", "火山识别和蓝牙传输正在接受测试。"),
-    ("noisy", "今天天气不错，适合出去走走，散散心。"),
-    ("normal", "蓝牙音频正在发送到火山识别，请检查文本结果。我正在测试语音输入，确认文字可以稳定出现。"),
-)
-A17_LONG_IDLE_SECONDS = 300
 COMPACT_STDOUT_PREFIXES = (
     "execution_profile=",
     "preflight_recover_mode=",
@@ -315,21 +491,21 @@ def parse_args():
         "--cases",
         default="auto",
         help=(
-            "Case IDs or suite name. Suites: smoke (A1,A3,A14,A15), auto/daily (A1-A16), "
-            "full (A1-A20), soak (A17-A19), extended (A20), transport (T1-T5). "
-            "Or comma-separated IDs: A1,A4,T2."
+            "Case IDs or suite name. Suites: smoke/daily/full/auto (A1,A2), "
+            "extreme (A1,A2,A14,T1,T3,L1,H1,H4,A17,A15,D1). "
+            "Or comma-separated IDs: A1,A2,A14."
         ),
     )
     parser.add_argument("--list-cases", action="store_true")
     parser.add_argument(
         "--full-chain",
         action="store_true",
-        help="Compatibility no-op. A/H cases validate the product chain by default; use --transport-only for BLE-only diagnostics.",
+        help="Compatibility no-op. A1/A2 validate the product chain by default; use --transport-only for BLE-only diagnostics.",
     )
     parser.add_argument(
         "--transport-only",
         action="store_true",
-        help="Disable product-chain (ASR/text) overlay. Use --cases transport to run legacy T1-T5 transport cases.",
+        help="Disable product-chain ASR/text overlay for diagnostics. The simplified matrix no longer has legacy transport-only cases.",
     )
     parser.add_argument("--capture-seconds", type=int, default=5)
     parser.add_argument("--long-capture-seconds", type=int, default=30)
@@ -354,8 +530,18 @@ def parse_args():
     )
     parser.add_argument("--pre-start-min-delay-seconds", type=float, default=None)
     parser.add_argument("--pre-start-max-delay-seconds", type=float, default=None)
-    parser.add_argument("--inter-session-gap-min-seconds", type=float, default=None)
-    parser.add_argument("--inter-session-gap-max-seconds", type=float, default=None)
+    parser.add_argument(
+        "--inter-session-gap-min-seconds",
+        type=float,
+        default=None,
+        help="Minimum A1 gap after the previous text/history appears before starting the next short recording (default window: 0-1 seconds).",
+    )
+    parser.add_argument(
+        "--inter-session-gap-max-seconds",
+        type=float,
+        default=None,
+        help="Maximum A1 gap after the previous text/history appears before starting the next short recording (default window: 0-1 seconds).",
+    )
     parser.add_argument("--idle-min-seconds", type=float, default=None)
     parser.add_argument("--idle-max-seconds", type=float, default=None)
     parser.add_argument("--cancel-hold-min-seconds", type=float, default=None)
@@ -431,26 +617,13 @@ def parse_args():
         "--full-chain-long-sentence-count",
         type=int,
         default=A2_PRODUCT_CHAIN_RANDOM_SENTENCE_COUNT,
-        help="Random clause count for A2 long-recording product-chain validation when --full-chain-sentence is not set.",
+        help="Random clause count for A2 long-recording product-chain validation when --full-chain-sentence is not set (default: 14, about one minute).",
     )
-    parser.add_argument("--soak-round-count", type=int, default=6)
-    parser.add_argument("--soak-idle-seconds", type=float, default=10.0)
     parser.add_argument(
-        "--a20-capture-seconds",
+        "--a1-round-count",
         type=int,
-        default=900,
-        help="A20 ultra-long transport capture duration. Defaults to 900 seconds (15 minutes).",
-    )
-    parser.add_argument(
-        "--manual-trigger-ready-delay-ms",
-        type=int,
-        default=700,
-        help="Delay before manual-key playback starts, giving the operator time to single-click EC11 push.",
-    )
-    parser.add_argument(
-        "--h1-human-voice",
-        action="store_true",
-        help="Run H1 with silent playback so the operator can speak the expected sentence after single-clicking EC11 push.",
+        default=6,
+        help="Number of rapid consecutive rounds for A1 (default: 6).",
     )
     parser.add_argument("--no-reset-before-capture", action="store_false", dest="reset_before_capture")
     parser.set_defaults(reset_before_capture=True)
@@ -543,11 +716,11 @@ def prepare_duration_randomizer(args) -> None:
         disable_random=args.disable_random_usage_timing,
     )
     args.inter_session_gap_window = resolve_float_window(
-        default_seconds=1.2,
+        default_seconds=0.5,
         min_seconds=args.inter_session_gap_min_seconds,
         max_seconds=args.inter_session_gap_max_seconds,
-        min_padding=0.7,
-        max_padding=1.3,
+        min_padding=0.5,
+        max_padding=0.5,
         absolute_min=0.0,
         disable_random=args.disable_random_usage_timing,
     )
@@ -650,6 +823,87 @@ def choose_delay_seconds(
     return delay_seconds
 
 
+def is_listener_type_capsule_window_visible() -> bool:
+    if sys.platform != "win32":
+        return False
+
+    try:
+        import ctypes
+        from ctypes import wintypes
+
+        user32 = ctypes.windll.user32
+        visible = False
+
+        enum_windows_proc = ctypes.WINFUNCTYPE(ctypes.c_bool, wintypes.HWND, wintypes.LPARAM)
+
+        def callback(hwnd, _lparam):
+            nonlocal visible
+            if not user32.IsWindowVisible(hwnd):
+                return True
+            length = user32.GetWindowTextLengthW(hwnd)
+            if length <= 0:
+                return True
+            buffer = ctypes.create_unicode_buffer(length + 1)
+            user32.GetWindowTextW(hwnd, buffer, length + 1)
+            title = buffer.value
+            if title == "Listener Type Capsule" or "Listener Type Capsule" in title:
+                visible = True
+                return False
+            return True
+
+        user32.EnumWindows(enum_windows_proc(callback), 0)
+        return visible
+    except Exception as exc:
+        print(f"capsule_window_probe_error={type(exc).__name__}:{exc}", flush=True)
+        return False
+
+
+async def wait_for_capsule_window_hidden(
+    *,
+    label: str,
+    timeout_seconds: float = 8.0,
+    poll_seconds: float = 0.25,
+) -> dict[str, object]:
+    supported = sys.platform == "win32"
+    start = time.monotonic()
+    visible_at_start = is_listener_type_capsule_window_visible() if supported else False
+    hidden = not visible_at_start
+
+    if supported and visible_at_start:
+        deadline = start + max(0.0, timeout_seconds)
+        while time.monotonic() < deadline:
+            await asyncio.sleep(max(0.05, poll_seconds))
+            if not is_listener_type_capsule_window_visible():
+                hidden = True
+                break
+
+    elapsed_seconds = round(time.monotonic() - start, 2)
+    print(f"{label}_capsule_window_supported={str(supported).lower()}", flush=True)
+    print(f"{label}_capsule_visible_at_gap_start={str(visible_at_start).lower()}", flush=True)
+    print(f"{label}_capsule_hidden_before_gap={str(hidden).lower()}", flush=True)
+    print(f"{label}_capsule_hidden_wait_seconds={elapsed_seconds:.2f}", flush=True)
+    return {
+        "label": label,
+        "supported": supported,
+        "visible_at_start": visible_at_start,
+        "hidden": hidden,
+        "wait_seconds": elapsed_seconds,
+        "timeout_seconds": timeout_seconds,
+    }
+
+
+def probe_capsule_window_state(*, label: str) -> dict[str, object]:
+    supported = sys.platform == "win32"
+    visible = is_listener_type_capsule_window_visible() if supported else False
+    print(f"{label}_capsule_window_supported={str(supported).lower()}", flush=True)
+    print(f"{label}_capsule_visible_before_gap={str(visible).lower()}", flush=True)
+    return {
+        "label": label,
+        "supported": supported,
+        "visible_before_gap": visible,
+    }
+
+
 def choose_delay_plan(
     args,
     *,
@@ -745,11 +999,23 @@ def print_summary(
     print(f"case_id={case_id}", flush=True)
     print(f"case_result={result}", flush=True)
     print(f"case_reason={reason}", flush=True)
+    contract = CASE_CONTRACTS.get(case_id, {})
+    details_payload = details or {}
+    if contract:
+        details_payload = {
+            "contract": contract,
+            **details_payload,
+        }
     return {
         "case_id": case_id,
+        "description": CASE_DESCRIPTIONS.get(case_id, ""),
+        "automation_status": contract.get("automation_status"),
+        "failure_classification": contract.get("failure_classification"),
+        "artifact_requirements": contract.get("artifact_requirements", []),
         "result": result,
         "reason": reason,
-        "details": details or {},
+        "failure_timestamp_utc": datetime.now(timezone.utc).isoformat() if result == "fail" else None,
+        "details": details_payload,
         "artifacts": case_artifact_manifest(case_id),
     }
 
@@ -804,6 +1070,79 @@ def latest_matching_file(directory: pathlib.Path, pattern: str) -> str | None:
         return None
     matches = sorted(directory.glob(pattern), key=lambda path: path.stat().st_mtime)
     return str(matches[-1]) if matches else None
+
+
+def run_git_text(args: list[str], *, cwd: pathlib.Path) -> str:
+    try:
+        completed = subprocess.run(
+            ["git", *args],
+            cwd=str(cwd),
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=10,
+            check=False,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return ""
+    if completed.returncode != 0:
+        return ""
+    return (completed.stdout or "").strip()
+
+
+def git_snapshot(path: pathlib.Path) -> dict[str, object]:
+    if not path.exists():
+        return {
+            "path": str(path),
+            "missing": True,
+            "commit": None,
+            "branch": None,
+            "dirty": None,
+        }
+    commit = run_git_text(["rev-parse", "HEAD"], cwd=path)
+    branch = run_git_text(["rev-parse", "--abbrev-ref", "HEAD"], cwd=path)
+    dirty = bool(run_git_text(["status", "--porcelain"], cwd=path))
+    return {
+        "path": str(path),
+        "commit": commit or None,
+        "branch": branch or None,
+        "dirty": dirty,
+    }
+
+
+def sha256_file(path: pathlib.Path) -> str | None:
+    if not path.exists() or not path.is_file():
+        return None
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def package_snapshot(args) -> dict[str, object]:
+    if not args.listener_exe:
+        return {"listener_exe": None, "package_hash": None}
+    exe_path = pathlib.Path(args.listener_exe).expanduser().resolve()
+    digest = sha256_file(exe_path)
+    return {
+        "listener_exe": str(exe_path),
+        "listener_exe_sha256": digest,
+        "package_hash": digest,
+    }
+
+
+def matrix_run_metadata(args) -> dict[str, object]:
+    listener_repo = resolve_listener_type_repo(args)
+    return {
+        "schema": "voice_keyboard_extreme_matrix.v1",
+        "generated_at_utc": datetime.now(timezone.utc).isoformat(),
+        "firmware": git_snapshot(firmware_repo_root()),
+        "listener_type": git_snapshot(listener_repo),
+        "package": package_snapshot(args),
+    }
 
 
 def first_non_empty(*values: object) -> str:
@@ -1155,10 +1494,13 @@ def validate_capsule_evidence(
 
 
 def product_chain_profiles_for_case(args, case_id: str) -> tuple[str, ...]:
+    requested_profile = str(args.full_chain_audio_profile)
+    if requested_profile != "normal":
+        return (requested_profile,)
     profiles = CASE_PRODUCT_CHAIN_AUDIO_PROFILES.get(case_id)
     if profiles:
         return profiles
-    return (str(args.full_chain_audio_profile),)
+    return (requested_profile,)
 
 
 def apply_accuracy_gate(
@@ -1241,10 +1583,38 @@ def find_listener_history_session(
 
 def print_case_catalog() -> None:
     catalog = {
-        "auto_cases": list(FULL_CASES),
+        "auto_cases": list(CASE_ORDER),
+        "extreme_cases": list(EXTREME_CASES),
         "manual_cases": list(MANUAL_CASES),
         "transport_only_cases": list(TRANSPORT_ONLY_CASES),
+        "case_suites": {
+            name: list(cases)
+            for name, cases in sorted(CASE_SUITES.items())
+        },
         "case_descriptions": CASE_DESCRIPTIONS,
+        "case_contracts": CASE_CONTRACTS,
+        "extreme_suite_defaults": {
+            "a1_round_count": "20 recommended for release closure; current default stays 6 for smoke",
+            "inter_session_gap_seconds": "0-1",
+            "a2_long_capture_seconds": "60",
+            "a2_audio_profile": "fast",
+            "required_lock": "aiw with-lock for COMx and BLE-<address> before real hardware execution",
+            "artifact_root": str(MATRIX_ARTIFACT_DIR),
+        },
+        "matrix_result_required_fields": [
+            "text_to_next_capsule_latencies",
+            "capsule_source",
+            "history_session_id",
+            "expected_packet_count",
+            "received_packet_count",
+            "missing_packet_count",
+            "duplicate_packet_count",
+            "firmware_diag_refs",
+            "listener_type_log_refs",
+            "package_hash",
+            "commit",
+            "failure_timestamp_utc",
+        ],
         "audio_profiles": {
             name: {
                 "tts_rate": config["tts_rate"],
@@ -1259,7 +1629,7 @@ def print_case_catalog() -> None:
             for case_id, profiles in sorted(CASE_PRODUCT_CHAIN_AUDIO_PROFILES.items())
         },
         "manual_or_external_cases": MANUAL_OR_EXTERNAL_CASES,
-        "implemented_cases": sorted([*CASE_RUNNERS.keys(), *MANUAL_OR_EXTERNAL_CASES.keys()]),
+        "implemented_cases": sorted(CASE_RUNNERS.keys()),
     }
     print(f"case_catalog={json.dumps(catalog, ensure_ascii=False, sort_keys=True)}")
 
@@ -1313,6 +1683,20 @@ def summary_outcome(summary: dict[str, object]) -> tuple[str, str]:
     )
 
 
+def skipped_case_summary(case_id: str, reason: str) -> dict[str, object]:
+    return print_summary(
+        case_id,
+        "skipped",
+        reason,
+        details={
+            "skip_is_baseline": True,
+            "baseline_note": "Scenario is part of the durable extreme-use contract but is not automated in this firmware-only harness step.",
+            "automation_gap": reason,
+            "required_artifacts": CASE_CONTRACTS.get(case_id, {}).get("artifact_requirements", []),
+        },
+    )
+
+
 def write_matrix_result_json(
     *,
     path: str,
@@ -1322,12 +1706,27 @@ def write_matrix_result_json(
     warnings: list[dict[str, object]],
     skipped: list[dict[str, object]],
     fail_on_warning: bool,
+    metadata: dict[str, object],
+    requested_cases: list[str],
+    case_suite: str,
 ) -> pathlib.Path:
     output_path = pathlib.Path(path)
     output_path.parent.mkdir(parents=True, exist_ok=True)
+    status = "FAIL" if failed or (fail_on_warning and warnings) else "PASS_WITH_SKIPS" if skipped else "PASS"
     payload = {
-        "status": "FAIL" if failed or (fail_on_warning and warnings) else "PASS",
+        "schema": "voice_keyboard_extreme_matrix_result.v1",
+        "status": status,
         "fail_on_warning": bool(fail_on_warning),
+        "matrix_incomplete": bool(skipped),
+        "skipped_is_not_pass_evidence": bool(skipped),
+        "case_suite": case_suite,
+        "requested_cases": requested_cases,
+        "run_metadata": metadata,
+        "case_contracts": {
+            case_id: CASE_CONTRACTS[case_id]
+            for case_id in requested_cases
+            if case_id in CASE_CONTRACTS
+        },
         "matrix_total": len(results),
         "matrix_failed": len(failed),
         "matrix_warning": len(warnings),
@@ -1363,14 +1762,174 @@ async def run_product_chain_primary_case(
 
 
 async def run_a1(args) -> dict[str, object]:
-    profiles = product_chain_profiles_for_case(args, "A1")
-    budget = max(180, len(profiles) * 90)
-    return await run_product_chain_primary_case(
-        args,
-        "A1",
-        "single short recording product chain",
-        budget,
-    )
+    """A1: rapid consecutive short recordings — N rounds of short commands, each through product chain."""
+    round_count = getattr(args, "a1_round_count", A1_RAPID_ROUND_COUNT)
+    budget = max(180, round_count * 90)
+    print_case_header("A1", f"rapid consecutive short recordings ({round_count} rounds)", budget)
+    print(f"transport_capture_skipped=A1:product_chain_primary", flush=True)
+
+    all_profile_results: list[dict[str, object]] = []
+    all_capsule_checks: list[dict[str, object]] = []
+    failures: list[str] = []
+    warnings: list[str] = []
+    missed_rounds: list[int] = []
+    capsule_gap_start_checks: list[dict[str, object]] = []
+    inter_round_gaps: list[dict[str, object]] = []
+    text_to_next_capsule_latencies: list[dict[str, object]] = []
+
+    for round_idx in range(round_count):
+        sentence_seed = deterministic_sentence_seed(args, "A1", round_idx)
+        sentence = pick_short_commands(sentence_seed, 1)[0]
+        print(f"a1_round={round_idx + 1}/{round_count}:sentence={sentence}", flush=True)
+
+        product_chain = await run_listener_type_product_chain(
+            args,
+            "A1",
+            trigger_mode="serial-toggle",
+            artifact_label=f"round{round_idx + 1}_normal",
+            audio_profile="normal",
+            sentence_override=sentence,
+        )
+        if should_retry_empty_transcript_product_chain(product_chain):
+            print(f"product_chain_retry_empty_transcript=A1:round{round_idx + 1}", flush=True)
+            retry = await run_listener_type_product_chain(
+                args,
+                "A1",
+                trigger_mode="serial-toggle",
+                artifact_label=f"round{round_idx + 1}_normal_retry",
+                audio_profile="normal",
+                sentence_override=PRODUCT_CHAIN_EMPTY_TRANSCRIPT_RETRY_SENTENCE,
+            )
+            retry_details = retry.get("details")
+            if isinstance(retry_details, dict):
+                retry_details["retry_reason"] = "empty_transcript"
+                retry_details["initial_attempt"] = compact_product_chain_attempt(product_chain)
+            if str(retry.get("result")) == "pass":
+                product_chain = retry
+            else:
+                details = product_chain.get("details")
+                if isinstance(details, dict):
+                    details["retry_attempt"] = compact_product_chain_attempt(retry)
+
+        if round_idx > 0 and all_profile_results:
+            previous_details = all_profile_results[-1].get("details")
+            current_details = product_chain.get("details")
+            previous_timeline = product_chain_timeline(previous_details)
+            current_timeline = product_chain_timeline(current_details)
+            previous_text_at = (
+                parse_iso_datetime_utc(previous_timeline.get("history_wait_done_at_utc"))
+                if isinstance(previous_timeline, dict)
+                else None
+            )
+            current_capsule_visible = (
+                first_non_empty(
+                    current_timeline.get("notify_ready_capsule_visible_at_utc"),
+                    current_timeline.get("capsule_visible_at_utc"),
+                )
+                if isinstance(current_timeline, dict)
+                else ""
+            )
+            current_capsule_at = (
+                parse_iso_datetime_utc(current_capsule_visible)
+                if isinstance(current_timeline, dict)
+                else None
+            )
+            if previous_text_at and current_capsule_at:
+                latency_seconds = round(
+                    (current_capsule_at - previous_text_at).total_seconds(),
+                    3,
+                )
+                text_to_next_capsule_latencies.append(
+                    {
+                        "round": round_idx + 1,
+                        "previous_round": round_idx,
+                        "seconds": latency_seconds,
+                        "previous_text_at_utc": previous_text_at.isoformat(),
+                        "capsule_visible_at_utc": current_capsule_at.isoformat(),
+                        "capsule_source": (
+                            "notify_ready_capsule_visible_at_utc"
+                            if current_timeline
+                            and current_capsule_visible
+                            == current_timeline.get("notify_ready_capsule_visible_at_utc")
+                            else "capsule_visible_at_utc"
+                        ),
+                    }
+                )
+                print(
+                    f"a1_previous_text_to_capsule_visible_seconds=round{round_idx + 1}:{latency_seconds:.3f}",
+                    flush=True,
+                )
+
+        all_profile_results.append(product_chain)
+        result_str = str(product_chain.get("result"))
+        if result_str == "fail":
+            failures.append(f"round{round_idx + 1}")
+            details = product_chain.get("details")
+            if isinstance(details, dict) and not first_non_empty(details.get("transcript")):
+                missed_rounds.append(round_idx + 1)
+        elif result_str == "warning":
+            warnings.append(f"round{round_idx + 1}")
+
+        check = validate_capsule_evidence("A1", product_chain, expect_partial=True, expect_no_text=False)
+        all_capsule_checks.append(check)
+        print(f"capsule_evidence=A1:round{round_idx + 1}:{check.get('pass')}:{check.get('reason')}", flush=True)
+
+        if result_str == "fail" and not args.continue_on_failure:
+            break
+
+        if round_idx < round_count - 1:
+            gap_label = f"a1_after_round{round_idx + 1}_text_to_next_round"
+            capsule_gap_start_checks.append(probe_capsule_window_state(label=gap_label))
+
+            gap_seconds = choose_delay_seconds(
+                args,
+                window=args.inter_session_gap_window,
+                label=gap_label,
+            )
+            inter_round_gaps.append(
+                {
+                    "after_round": round_idx + 1,
+                    "seconds": gap_seconds,
+                    "measurement": "previous_text_history_done_to_next_round_start",
+                }
+            )
+            print(
+                f"a1_previous_text_to_next_round_gap_seconds=after_round{round_idx + 1}:{gap_seconds:.2f}",
+                flush=True,
+            )
+            await asyncio.sleep(gap_seconds)
+
+    details: dict[str, object] = {
+        "transport_capture_skipped": True,
+        "transport_skip_reason": "product_chain_primary_requires_capsule_before_playback",
+        "product_chain_profiles": all_profile_results,
+        "capsule_evidence": all_capsule_checks,
+        "round_count": round_count,
+        "missed_rounds": missed_rounds,
+        "capsule_gap_start_checks": capsule_gap_start_checks,
+        "inter_round_gaps": inter_round_gaps,
+        "text_to_next_capsule_latencies": text_to_next_capsule_latencies,
+    }
+
+    if failures:
+        result = "fail"
+        reason = "product_chain_failed:" + ",".join(failures)
+    elif missed_rounds and len(missed_rounds) >= 2:
+        result = "warning"
+        reason = f"missed_rounds:{','.join(str(r) for r in missed_rounds)}"
+    elif warnings:
+        failed_capsule = [c for c in all_capsule_checks if not c.get("pass") and c.get("capsule_validated")]
+        if failed_capsule:
+            result = "warning"
+            reason = "capsule_evidence_warning:" + ";".join(str(c.get("reason")) for c in failed_capsule)
+        else:
+            result = "warning"
+            reason = "product_chain_warning:" + ",".join(warnings)
+    else:
+        result = "pass"
+        reason = ""
+
+    return print_summary("A1", result, reason, details=details)
 
 
 async def run_a2(args) -> dict[str, object]:
@@ -1382,959 +1941,6 @@ async def run_a2(args) -> dict[str, object]:
         "single long recording product chain",
         budget,
     )
-
-
-async def run_a3(args) -> dict[str, object]:
-    profiles = product_chain_profiles_for_case(args, "A3")
-    budget_seconds = max(240, len(profiles) * 90)
-    return await run_product_chain_primary_case(
-        args,
-        "A3",
-        "multi-profile short recording product chain",
-        budget_seconds,
-    )
-
-
-async def run_a4_new(args) -> dict[str, str]:
-    """A4: hesitation/pause - segmented TTS with 1-3s gaps between sentences."""
-    capture_seconds = choose_duration(args, window=args.short_capture_window, label="a4", floor_seconds=6)
-    budget = max(180, int(capture_seconds * 3 + 60))
-    print_case_header("A4", "hesitation/pause with gaps", budget)
-    pre_start_delay = choose_delay_seconds(args, window=args.pre_start_delay_window, label="a4_pre_start")
-    sentence_seed = deterministic_sentence_seed(args, "A4")
-    sentences = pick_chinese_sentences(sentence_seed, 2)
-    wav_path = case_output_dir("A4") / "a4_segmented.wav"
-    generate_segmented_tts_wav(
-        wav_path,
-        sentences,
-        gap_seconds_range=(1.0, 3.0),
-        seed=sentence_seed,
-    )
-    profile = resolve_audio_profile("normal")
-    with WavPlayback(wav_path):
-        capture_args = make_capture_args(
-            port=args.port,
-            device_name=args.device_name,
-            bluetooth_address=args.bluetooth_address,
-            capture_seconds=capture_seconds,
-            capture_seconds_per_session=[capture_seconds],
-            session_pre_start_delay_seconds=[pre_start_delay],
-            timeout_seconds=max(90, int(capture_seconds + 60)),
-            reset_before_capture=args.reset_before_capture,
-            output_dir=case_output_dir("A4"),
-            serial_log_path=case_serial_log_path("A4"),
-        )
-        session_summaries = await capture_sessions(capture_args)
-    if not session_summaries:
-        return print_summary("A4", "fail", "no_session_captured")
-    summary = dict(session_summaries[-1])
-    summary = finalize_transport_capture_summary(
-        summary,
-        capture_seconds=capture_seconds,
-        pre_start_delay_seconds=pre_start_delay,
-    )
-    expected_text = "".join(sentences)
-    summary["expected_text"] = expected_text
-    summary["audio_profile"] = "normal"
-    summary["source_tts_rate"] = int(profile["tts_rate"])
-    summary["source_tts_gain"] = float(profile["tts_gain"])
-    return ensure_pass("A4", summary)
-
-
-async def run_a5_new(args) -> dict[str, str]:
-    """A5: quiet speech with low-volume profile."""
-    capture_seconds = choose_duration(args, window=args.short_capture_window, label="a5")
-    budget = max(120, int(capture_seconds * 3 + 60))
-    print_case_header("A5", "quiet speech (low-volume profile)", budget)
-    pre_start_delay = choose_delay_seconds(args, window=args.pre_start_delay_window, label="a5_pre_start")
-    summary = await play_and_capture_serial_toggle(
-        port=args.port,
-        device_name=args.device_name,
-        bluetooth_address=args.bluetooth_address,
-        scenario="A5",
-        capture_seconds=capture_seconds,
-        timeout_seconds=max(90, int(capture_seconds + 60)),
-        reset_before_capture=args.reset_before_capture,
-        pre_start_delay_seconds=pre_start_delay,
-        audio_profile="low-volume",
-        output_dir=case_output_dir("A5"),
-        serial_log_path=case_serial_log_path("A5"),
-    )
-    return ensure_pass("A5", summary)
-
-
-async def run_a6_new(args) -> dict[str, str]:
-    """A6: fast speech with fast profile."""
-    capture_seconds = choose_duration(args, window=args.short_capture_window, label="a6")
-    budget = max(120, int(capture_seconds * 3 + 60))
-    print_case_header("A6", "fast speech", budget)
-    pre_start_delay = choose_delay_seconds(args, window=args.pre_start_delay_window, label="a6_pre_start")
-    summary = await play_and_capture_serial_toggle(
-        port=args.port,
-        device_name=args.device_name,
-        bluetooth_address=args.bluetooth_address,
-        scenario="A6",
-        capture_seconds=capture_seconds,
-        timeout_seconds=max(90, int(capture_seconds + 60)),
-        reset_before_capture=args.reset_before_capture,
-        pre_start_delay_seconds=pre_start_delay,
-        audio_profile="fast",
-        output_dir=case_output_dir("A6"),
-        serial_log_path=case_serial_log_path("A6"),
-    )
-    return ensure_pass("A6", summary)
-
-
-async def run_a7_new(args) -> dict[str, str]:
-    """A7: short command + long sentence mix, alternating per round."""
-    round_count = args.round_count
-    budget_seconds = max(180, round_count * 90)
-    print_case_header("A7", f"short command + long sentence mix ({round_count} rounds)", budget_seconds)
-    failures = []
-    warnings = []
-    capture_seconds_plan = choose_duration_plan(
-        args,
-        window=args.short_capture_window,
-        count=round_count,
-        label="a7",
-    )
-    pre_start_delay_plan = choose_delay_plan(
-        args,
-        first_window=args.pre_start_delay_window,
-        followup_window=args.inter_session_gap_window,
-        count=round_count,
-        label="a7",
-    )
-    for round_index in range(1, round_count + 1):
-        round_seed = deterministic_sentence_seed(args, "A7", round_index)
-        if round_index % 2 == 1:
-            text_pieces = pick_short_commands(round_seed, 1)
-        else:
-            text_pieces = pick_chinese_sentences(round_seed, 1)
-        expected_text = text_pieces[0]
-        print(f"a7_round={round_index} mode={'short' if round_index % 2 == 1 else 'long'} text={expected_text}", flush=True)
-        round_summary = await play_and_capture_serial_toggle(
-            port=args.port,
-            device_name=args.device_name,
-            bluetooth_address=args.bluetooth_address,
-            scenario="A7",
-            source_label=f"round{round_index}",
-            capture_seconds=capture_seconds_plan[round_index - 1],
-            timeout_seconds=90,
-            reset_before_capture=args.reset_before_capture if round_index == 1 else False,
-            pre_start_delay_seconds=pre_start_delay_plan[round_index - 1],
-            output_dir=case_output_dir("A7"),
-            serial_log_path=case_serial_log_path("A7", f"round{round_index}"),
-        )
-        print(f"a7_round_result={round_summary['result']}", flush=True)
-        if round_summary["result"] == "fail":
-            failures.append(round_index)
-        elif round_summary["result"] == "warning":
-            warnings.append(round_index)
-    if failures:
-        return print_summary("A7", "fail", "failed_rounds=" + ",".join(str(v) for v in failures))
-    if warnings:
-        return print_summary("A7", "warning", "warning_rounds=" + ",".join(str(v) for v in warnings))
-    return print_summary("A7", "pass", "")
-
-
-async def run_a8_new(args) -> dict[str, str]:
-    """A8: ultra short 1-2 character commands, 3 rounds."""
-    round_count = 3
-    budget_seconds = 180
-    print_case_header("A8", f"ultra short 1-2 char commands ({round_count} rounds)", budget_seconds)
-    failures = []
-    warnings = []
-    for round_index in range(1, round_count + 1):
-        round_seed = deterministic_sentence_seed(args, "A8", round_index)
-        text_pieces = pick_ultra_short(round_seed, 1)
-        expected_text = text_pieces[0]
-        capture_seconds = choose_duration(args, window=args.short_capture_window, label=f"a8_r{round_index}")
-        pre_start_delay = choose_delay_seconds(args, window=args.pre_start_delay_window, label=f"a8_r{round_index}_pre_start")
-        print(f"a8_round={round_index} text={expected_text}", flush=True)
-        round_summary = await play_and_capture_serial_toggle(
-            port=args.port,
-            device_name=args.device_name,
-            bluetooth_address=args.bluetooth_address,
-            scenario="A8",
-            source_label=f"round{round_index}",
-            capture_seconds=capture_seconds,
-            timeout_seconds=90,
-            reset_before_capture=args.reset_before_capture if round_index == 1 else False,
-            pre_start_delay_seconds=pre_start_delay,
-            output_dir=case_output_dir("A8"),
-            serial_log_path=case_serial_log_path("A8", f"round{round_index}"),
-        )
-        print(f"a8_round_result={round_summary['result']}", flush=True)
-        if round_summary["result"] == "fail":
-            failures.append(round_index)
-        elif round_summary["result"] == "warning":
-            warnings.append(round_index)
-    if failures:
-        return print_summary("A8", "fail", "failed_rounds=" + ",".join(str(v) for v in failures))
-    if warnings:
-        return print_summary("A8", "warning", "warning_rounds=" + ",".join(str(v) for v in warnings))
-    return print_summary("A8", "pass", "")
-
-
-async def run_a9_new(args) -> dict[str, str]:
-    """A9: punctuation commands with 逗号/句号/换行."""
-    capture_seconds = choose_duration(args, window=args.short_capture_window, label="a9")
-    budget = max(120, int(capture_seconds * 3 + 60))
-    print_case_header("A9", "punctuation commands", budget)
-    pre_start_delay = choose_delay_seconds(args, window=args.pre_start_delay_window, label="a9_pre_start")
-    sentence_seed = deterministic_sentence_seed(args, "A9")
-    text_pieces = pick_punctuation_commands(sentence_seed, 1)
-    expected_text = text_pieces[0]
-    summary = await play_and_capture_serial_toggle(
-        port=args.port,
-        device_name=args.device_name,
-        bluetooth_address=args.bluetooth_address,
-        scenario="A9",
-        capture_seconds=capture_seconds,
-        timeout_seconds=max(90, int(capture_seconds + 60)),
-        reset_before_capture=args.reset_before_capture,
-        pre_start_delay_seconds=pre_start_delay,
-        output_dir=case_output_dir("A9"),
-        serial_log_path=case_serial_log_path("A9"),
-    )
-    summary["expected_text"] = expected_text
-    return ensure_pass("A9", summary)
-
-
-async def run_a10_new(args) -> dict[str, str]:
-    """A10: Chinese-English mixed language."""
-    capture_seconds = choose_duration(args, window=args.short_capture_window, label="a10")
-    budget = max(120, int(capture_seconds * 3 + 60))
-    print_case_header("A10", "Chinese-English mixed language", budget)
-    pre_start_delay = choose_delay_seconds(args, window=args.pre_start_delay_window, label="a10_pre_start")
-    sentence_seed = deterministic_sentence_seed(args, "A10")
-    text_pieces = pick_mixed_sentences(sentence_seed, 1)
-    expected_text = text_pieces[0]
-    summary = await play_and_capture_serial_toggle(
-        port=args.port,
-        device_name=args.device_name,
-        bluetooth_address=args.bluetooth_address,
-        scenario="A10",
-        capture_seconds=capture_seconds,
-        timeout_seconds=max(90, int(capture_seconds + 60)),
-        reset_before_capture=args.reset_before_capture,
-        pre_start_delay_seconds=pre_start_delay,
-        output_dir=case_output_dir("A10"),
-        serial_log_path=case_serial_log_path("A10"),
-    )
-    summary["expected_text"] = expected_text
-    return ensure_pass("A10", summary)
-
-
-async def run_a11_new(args) -> dict[str, str]:
-    """A11: repeat same sentence 3 times, verify each independently."""
-    round_count = 3
-    budget_seconds = 180
-    print_case_header("A11", f"repeat same sentence ({round_count} rounds)", budget_seconds)
-    sentence_seed = deterministic_sentence_seed(args, "A11")
-    sentences = pick_chinese_sentences(sentence_seed, 1)
-    expected_text = sentences[0]
-    print(f"a11_fixed_text={expected_text}", flush=True)
-    failures = []
-    warnings = []
-    for round_index in range(1, round_count + 1):
-        capture_seconds = choose_duration(args, window=args.short_capture_window, label=f"a11_r{round_index}")
-        pre_start_delay = choose_delay_seconds(args, window=args.pre_start_delay_window, label=f"a11_r{round_index}_pre_start")
-        round_summary = await play_and_capture_serial_toggle(
-            port=args.port,
-            device_name=args.device_name,
-            bluetooth_address=args.bluetooth_address,
-            scenario="A11",
-            source_label=f"round{round_index}",
-            capture_seconds=capture_seconds,
-            timeout_seconds=90,
-            reset_before_capture=args.reset_before_capture if round_index == 1 else False,
-            pre_start_delay_seconds=pre_start_delay,
-            output_dir=case_output_dir("A11"),
-            serial_log_path=case_serial_log_path("A11", f"round{round_index}"),
-        )
-        print(f"a11_round={round_index} result={round_summary['result']}", flush=True)
-        if round_summary["result"] == "fail":
-            failures.append(round_index)
-        elif round_summary["result"] == "warning":
-            warnings.append(round_index)
-    if failures:
-        return print_summary("A11", "fail", "failed_rounds=" + ",".join(str(v) for v in failures))
-    if warnings:
-        return print_summary("A11", "warning", "warning_rounds=" + ",".join(str(v) for v in warnings))
-    return print_summary("A11", "pass", "")
-
-
-async def run_a12_new(args) -> dict[str, str]:
-    """A12: environment noise - TTS + white noise at SNR 12dB."""
-    capture_seconds = choose_duration(args, window=args.short_capture_window, label="a12")
-    budget = max(120, int(capture_seconds * 3 + 60))
-    print_case_header("A12", "environment noise (white, SNR=12dB)", budget)
-    pre_start_delay = choose_delay_seconds(args, window=args.pre_start_delay_window, label="a12_pre_start")
-    sentence_seed = deterministic_sentence_seed(args, "A12")
-    sentences = pick_chinese_sentences(sentence_seed, 1)
-    expected_text = sentences[0]
-    profile = resolve_audio_profile("noisy")
-    wav_path = case_output_dir("A12") / "a12_noisy.wav"
-    generate_profile_tts_wav(
-        wav_path,
-        expected_text,
-        tts_rate=int(profile["tts_rate"]),
-        tts_gain=float(profile["tts_gain"]),
-    )
-    mix_noise_into_wav(wav_path, noise_type="white", snr_db=12.0, seed=sentence_seed)
-    with WavPlayback(wav_path):
-        capture_args = make_capture_args(
-            port=args.port,
-            device_name=args.device_name,
-            bluetooth_address=args.bluetooth_address,
-            capture_seconds=capture_seconds,
-            capture_seconds_per_session=[capture_seconds],
-            session_pre_start_delay_seconds=[pre_start_delay],
-            timeout_seconds=max(90, int(capture_seconds + 60)),
-            reset_before_capture=args.reset_before_capture,
-            output_dir=case_output_dir("A12"),
-            serial_log_path=case_serial_log_path("A12"),
-        )
-        session_summaries = await capture_sessions(capture_args)
-    if not session_summaries:
-        return print_summary("A12", "fail", "no_session_captured")
-    summary = dict(session_summaries[-1])
-    summary = finalize_transport_capture_summary(
-        summary,
-        capture_seconds=capture_seconds,
-        pre_start_delay_seconds=pre_start_delay,
-    )
-    summary["expected_text"] = expected_text
-    summary["audio_profile"] = "noisy"
-    summary["source_tts_rate"] = int(profile["tts_rate"])
-    summary["source_tts_gain"] = float(profile["tts_gain"])
-    return ensure_pass("A12", summary)
-
-
-async def run_a13_new(args) -> dict[str, str]:
-    """A13: secondary speech interference - primary TTS + secondary speaker."""
-    capture_seconds = choose_duration(args, window=args.short_capture_window, label="a13")
-    budget = max(120, int(capture_seconds * 3 + 60))
-    print_case_header("A13", "secondary speech interference", budget)
-    pre_start_delay = choose_delay_seconds(args, window=args.pre_start_delay_window, label="a13_pre_start")
-    sentence_seed = deterministic_sentence_seed(args, "A13")
-    primary_sentences = pick_chinese_sentences(sentence_seed, 1)
-    expected_text = primary_sentences[0]
-    profile = resolve_audio_profile("normal")
-    wav_path = case_output_dir("A13") / "a13_interference.wav"
-    generate_profile_tts_wav(
-        wav_path,
-        expected_text,
-        tts_rate=int(profile["tts_rate"]),
-        tts_gain=float(profile["tts_gain"]),
-    )
-    secondary_seed = deterministic_sentence_seed(args, "A13", "secondary")
-    secondary_sentences = pick_chinese_sentences(secondary_seed, 1)
-    secondary_text = secondary_sentences[0]
-    mix_secondary_speech_into_wav(wav_path, secondary_text, snr_db=8.0, seed=secondary_seed)
-    with WavPlayback(wav_path):
-        capture_args = make_capture_args(
-            port=args.port,
-            device_name=args.device_name,
-            bluetooth_address=args.bluetooth_address,
-            capture_seconds=capture_seconds,
-            capture_seconds_per_session=[capture_seconds],
-            session_pre_start_delay_seconds=[pre_start_delay],
-            timeout_seconds=max(90, int(capture_seconds + 60)),
-            reset_before_capture=args.reset_before_capture,
-            output_dir=case_output_dir("A13"),
-            serial_log_path=case_serial_log_path("A13"),
-        )
-        session_summaries = await capture_sessions(capture_args)
-    if not session_summaries:
-        return print_summary("A13", "fail", "no_session_captured")
-    summary = dict(session_summaries[-1])
-    summary = finalize_transport_capture_summary(
-        summary,
-        capture_seconds=capture_seconds,
-        pre_start_delay_seconds=pre_start_delay,
-    )
-    summary["expected_text"] = expected_text
-    summary["audio_profile"] = "normal"
-    summary["source_tts_rate"] = int(profile["tts_rate"])
-    summary["source_tts_gain"] = float(profile["tts_gain"])
-    return ensure_pass("A13", summary)
-
-
-async def run_a16_new(args) -> dict[str, str]:
-    """A16: fading gain / walking distance simulation."""
-    capture_seconds = choose_duration(args, window=args.short_capture_window, label="a16")
-    budget = max(120, int(capture_seconds * 3 + 60))
-    print_case_header("A16", "fading gain (walking simulation)", budget)
-    pre_start_delay = choose_delay_seconds(args, window=args.pre_start_delay_window, label="a16_pre_start")
-    sentence_seed = deterministic_sentence_seed(args, "A16")
-    sentences = pick_chinese_sentences(sentence_seed, 1)
-    expected_text = sentences[0]
-    profile = resolve_audio_profile("normal")
-    wav_path = case_output_dir("A16") / "a16_fading.wav"
-    generate_profile_tts_wav(
-        wav_path,
-        expected_text,
-        tts_rate=int(profile["tts_rate"]),
-        tts_gain=float(profile["tts_gain"]),
-    )
-    apply_fading_gain(wav_path, min_gain=0.4, period_seconds=4.0, seed=sentence_seed)
-    with WavPlayback(wav_path):
-        capture_args = make_capture_args(
-            port=args.port,
-            device_name=args.device_name,
-            bluetooth_address=args.bluetooth_address,
-            capture_seconds=capture_seconds,
-            capture_seconds_per_session=[capture_seconds],
-            session_pre_start_delay_seconds=[pre_start_delay],
-            timeout_seconds=max(90, int(capture_seconds + 60)),
-            reset_before_capture=args.reset_before_capture,
-            output_dir=case_output_dir("A16"),
-            serial_log_path=case_serial_log_path("A16"),
-        )
-        session_summaries = await capture_sessions(capture_args)
-    if not session_summaries:
-        return print_summary("A16", "fail", "no_session_captured")
-    summary = dict(session_summaries[-1])
-    summary = finalize_transport_capture_summary(
-        summary,
-        capture_seconds=capture_seconds,
-        pre_start_delay_seconds=pre_start_delay,
-    )
-    summary["expected_text"] = expected_text
-    summary["audio_profile"] = "normal"
-    summary["source_tts_rate"] = int(profile["tts_rate"])
-    summary["source_tts_gain"] = float(profile["tts_gain"])
-    return ensure_pass("A16", summary)
-
-
-async def run_a18_new(args) -> dict[str, str]:
-    """A18: ASR timeout simulation - verifies host does not hang when ASR is slow/unavailable.
-
-    Uses a controlled short product-chain run (5s listener timeout, 25s outer
-    budget) so ASR is expected to time out without depending on real network
-    issues.
-    """
-    budget = 120
-    print_case_header("A18", "ASR timeout simulation (controlled short timeout)", budget)
-    capture_seconds = choose_duration(args, window=args.short_capture_window, label="a18")
-    pre_start_delay = choose_delay_seconds(args, window=args.pre_start_delay_window, label="a18_pre_start")
-    transport_summary = await play_and_capture_serial_toggle(
-        port=args.port,
-        device_name=args.device_name,
-        bluetooth_address=args.bluetooth_address,
-        scenario="A18",
-        capture_seconds=capture_seconds,
-        timeout_seconds=90,
-        reset_before_capture=args.reset_before_capture,
-        pre_start_delay_seconds=pre_start_delay,
-        output_dir=case_output_dir("A18"),
-        serial_log_path=case_serial_log_path("A18"),
-    )
-    transport_ok = str(transport_summary.get("result")) != "fail"
-    details: dict[str, object] = {"transport": compact_case_details(transport_summary)}
-    if not transport_ok:
-        return print_summary("A18", "fail", "transport_failed_before_asr_timeout_test", details)
-    if not args.transport_only:
-        asr_timeout_chain = await run_listener_type_product_chain(
-            args,
-            "A18",
-            trigger_mode="serial-toggle",
-            artifact_label="asr_timeout_sim",
-            timeout_seconds_override=25,
-            listener_timeout_ms_override=5000,
-        )
-        asr_result = str(asr_timeout_chain.get("result"))
-        details["asr_timeout_simulation"] = asr_timeout_chain
-        host_did_not_hang = asr_result != "fail" or "full_chain_timeout" not in str(asr_timeout_chain.get("reason", ""))
-        if host_did_not_hang:
-            return print_summary("A18", "pass", f"asr_timeout_handled:{asr_result}", details)
-        return print_summary("A18", "fail", "asr_timeout_caused_host_hang", details)
-    return ensure_pass("A18", transport_summary)
-
-
-async def run_t1(args) -> dict[str, str]:
-    print_case_header("T1", "disconnect/reconnect recovery (with BT restart)", 240)
-    baseline_capture_seconds = choose_duration(args, window=args.short_capture_window, label="t1_baseline")
-    baseline_pre_start_delay_seconds = choose_delay_seconds(
-        args,
-        window=args.pre_start_delay_window,
-        label="t1_baseline_pre_start",
-    )
-    baseline = await play_and_capture_serial_toggle(
-        port=args.port,
-        device_name=args.device_name,
-        bluetooth_address=args.bluetooth_address,
-        scenario="T1",
-        source_label="baseline",
-        capture_seconds=baseline_capture_seconds,
-        timeout_seconds=90,
-        reset_before_capture=args.reset_before_capture,
-        pre_start_delay_seconds=baseline_pre_start_delay_seconds,
-        output_dir=case_output_dir("A4"),
-        serial_log_path=case_serial_log_path("A4", "baseline"),
-    )
-    if baseline["result"] != "pass":
-        return print_summary("T1", "fail", "baseline_failed", compact_case_details(baseline))
-    restart_windows_bluetooth(restart_pan_adapter=args.restart_pan_adapter)
-    recover_ble_hid_host(args.device_name, args.bluetooth_address)
-    print("t1_host_recovery_completed=1", flush=True)
-    reconnect_capture_seconds = choose_duration(args, window=args.short_capture_window, label="t1_reconnect")
-    reconnect_pre_start_delay_seconds = choose_delay_seconds(
-        args,
-        window=args.pre_start_delay_window,
-        label="t1_reconnect_pre_start",
-    )
-    if reconnect_pre_start_delay_seconds < T1_RECONNECT_MIN_PRE_START_DELAY_SECONDS:
-        print(
-            "t1_reconnect_pre_start_delay_floor_seconds="
-            f"{T1_RECONNECT_MIN_PRE_START_DELAY_SECONDS:.2f}",
-            flush=True,
-        )
-        reconnect_pre_start_delay_seconds = T1_RECONNECT_MIN_PRE_START_DELAY_SECONDS
-    print(f"t1_settle_window_seconds={reconnect_pre_start_delay_seconds:.2f}", flush=True)
-    print("t1_capture_phase=start", flush=True)
-    summary = await play_and_capture_serial_toggle(
-        port=args.port,
-        device_name=args.device_name,
-        bluetooth_address=args.bluetooth_address,
-        scenario="T1",
-        source_label="reconnect",
-        capture_seconds=reconnect_capture_seconds,
-        timeout_seconds=90,
-        reset_before_capture=args.reset_before_capture,
-        pre_start_delay_seconds=reconnect_pre_start_delay_seconds,
-        output_dir=case_output_dir("T1"),
-        serial_log_path=case_serial_log_path("T1", "reconnect"),
-    )
-    summary["host_recovery_completed"] = True
-    summary["settle_window_seconds"] = float(reconnect_pre_start_delay_seconds)
-    summary["capture_phase"] = "reconnect"
-    summary["baseline_result"] = str(baseline.get("result", ""))
-    summary["baseline_missing_packet_count"] = baseline.get("missing_packet_count")
-    summary["baseline_packet_loss_ratio"] = baseline.get("packet_loss_ratio")
-    return ensure_pass("T1", summary)
-
-
-async def run_a17(args) -> dict[str, str]:
-    a17_capture_seconds = choose_duration(
-        args,
-        window=args.short_capture_window,
-        label="a17",
-        floor_seconds=6,
-    )
-    idle_wait_seconds = float(A17_LONG_IDLE_SECONDS)
-    pre_start_delay_seconds = choose_delay_seconds(args, window=args.pre_start_delay_window, label="a17_pre_start")
-    budget_seconds = int(idle_wait_seconds) + 180
-    print_case_header("A17", "first recording after long idle (5 min)", budget_seconds)
-    print(f"a17_idle_wait_seconds={idle_wait_seconds:.2f}", flush=True)
-    await asyncio.sleep(idle_wait_seconds)
-    summary = await play_and_capture_serial_toggle(
-        port=args.port,
-        device_name=args.device_name,
-        bluetooth_address=args.bluetooth_address,
-        scenario="A17",
-        capture_seconds=a17_capture_seconds,
-        timeout_seconds=90,
-        reset_before_capture=False,
-        pre_start_delay_seconds=pre_start_delay_seconds,
-        output_dir=case_output_dir("A17"),
-        serial_log_path=case_serial_log_path("A17"),
-    )
-    return ensure_pass("A17", summary)
-
-
-async def run_t3(args) -> dict[str, str]:
-    print_case_header("T3", "host-side recovery without BT restart", 180)
-    baseline_capture_seconds = choose_duration(args, window=args.short_capture_window, label="t3_baseline")
-    baseline_pre_start_delay_seconds = choose_delay_seconds(
-        args,
-        window=args.pre_start_delay_window,
-        label="t3_baseline_pre_start",
-    )
-    baseline = await play_and_capture_serial_toggle(
-        port=args.port,
-        device_name=args.device_name,
-        bluetooth_address=args.bluetooth_address,
-        scenario="T3",
-        source_label="baseline",
-        capture_seconds=baseline_capture_seconds,
-        timeout_seconds=90,
-        reset_before_capture=args.reset_before_capture,
-        pre_start_delay_seconds=baseline_pre_start_delay_seconds,
-        output_dir=case_output_dir("T3"),
-        serial_log_path=case_serial_log_path("T3", "baseline"),
-    )
-    baseline_failure_reason = str(baseline.get("failure_reason") or baseline.get("warning_reason") or "")
-    baseline_retry_allowed = (
-        baseline["result"] != "pass"
-        and (
-            str(baseline.get("transport_result")) != "pass"
-            or int(baseline.get("missing_packet_count", 0)) > 0
-        )
-    )
-    if baseline_retry_allowed:
-        print(
-            "t3_baseline_retry_after_recover=1 "
-            f"first_result={baseline['result']} "
-            f"first_reason={baseline_failure_reason} "
-            f"first_missing_packet_count={baseline['missing_packet_count']} "
-            f"first_missing_packet_indices={baseline['missing_packet_indices'][:16]}",
-            flush=True,
-        )
-        recover_ble_hid_host(args.device_name, args.bluetooth_address)
-        baseline = await play_and_capture_serial_toggle(
-            port=args.port,
-            device_name=args.device_name,
-            bluetooth_address=args.bluetooth_address,
-            scenario="T3",
-            source_label="baseline_retry",
-            capture_seconds=baseline_capture_seconds,
-            timeout_seconds=90,
-            reset_before_capture=False,
-            pre_start_delay_seconds=baseline_pre_start_delay_seconds,
-            output_dir=case_output_dir("T3"),
-            serial_log_path=case_serial_log_path("T3", "baseline_retry"),
-        )
-        if baseline["result"] != "pass":
-            return print_summary(
-                "T3",
-                "fail",
-                "baseline_failed_after_retry "
-                f"missing_packet_count={baseline['missing_packet_count']} "
-                f"missing_packet_indices={baseline['missing_packet_indices'][:16]}",
-            )
-    elif baseline["result"] != "pass":
-        return print_summary(
-            "T3",
-            baseline["result"],
-            "baseline_failed_without_retry "
-            f"reason={baseline_failure_reason} "
-            f"missing_packet_count={baseline.get('missing_packet_count', 0)} "
-            f"missing_packet_indices={baseline.get('missing_packet_indices', [])[:16]}",
-        )
-    after_restart_capture_seconds = choose_duration(args, window=args.short_capture_window, label="t3_after_restart")
-    after_restart_pre_start_delay_seconds = choose_delay_seconds(
-        args,
-        window=args.pre_start_delay_window,
-        label="t3_after_restart_pre_start",
-    )
-    summary = await play_and_capture_serial_toggle(
-        port=args.port,
-        device_name=args.device_name,
-        bluetooth_address=args.bluetooth_address,
-        scenario="T3",
-        source_label="after_restart",
-        capture_seconds=after_restart_capture_seconds,
-        timeout_seconds=90,
-        reset_before_capture=False,
-        pre_start_delay_seconds=after_restart_pre_start_delay_seconds,
-        output_dir=case_output_dir("T3"),
-        serial_log_path=case_serial_log_path("T3", "after_restart"),
-    )
-    return ensure_pass("T3", summary)
-
-
-async def run_a14(args) -> dict[str, str]:
-    print_case_header("A14", "cancel during recording and recover (long + short hold)", 300)
-    # First probe: long cancel hold.
-    long_cancel_hold = choose_delay_seconds(args, window=args.cancel_hold_window, label="a14_long_cancel")
-    capture_seconds = choose_duration(args, window=args.short_capture_window, label="a14")
-    pre_start_delay = choose_delay_seconds(args, window=args.pre_start_delay_window, label="a14_pre_start")
-    summary = await play_and_capture_serial_toggle_after_cancel_probe(
-        port=args.port,
-        device_name=args.device_name,
-        bluetooth_address=args.bluetooth_address,
-        scenario="A14",
-        capture_seconds=capture_seconds,
-        cancel_hold_seconds=long_cancel_hold,
-        timeout_seconds=90,
-        reset_before_capture=args.reset_before_capture,
-        pre_start_delay_seconds=pre_start_delay,
-        output_dir=case_output_dir("A14"),
-        serial_log_path=case_serial_log_path("A14", "long_hold"),
-    )
-    print(f"long_cancel_probe={'pass' if summary.get('cancel_requested') and summary.get('cancel_completed') else 'fail'}", flush=True)
-    print(f"cancel_requested={1 if summary.get('cancel_requested') else 0}", flush=True)
-    print(f"cancel_completed={1 if summary.get('cancel_completed') else 0}", flush=True)
-    if summary["result"] != "pass":
-        if summary.get("failure_reason") == "short_cancel_probe_failed":
-            return print_summary("A14", "fail", "long_cancel_probe_failed")
-        return print_summary(
-            "A14",
-            summary["result"],
-            f"{summary.get('failure_reason') or summary.get('warning_reason') or ''} "
-            f"missing_packet_count={summary['missing_packet_count']} "
-            f"missing_packet_indices={summary['missing_packet_indices'][:16]}",
-        )
-
-    recover_settle_seconds = 12.0
-    print("a14_between_cancel_probes_ble_recover_start=1", flush=True)
-    recover_ble_hid_host(args.device_name, args.bluetooth_address)
-    print(f"a14_between_cancel_probes_ble_settle_seconds={recover_settle_seconds:.2f}", flush=True)
-    await asyncio.sleep(recover_settle_seconds)
-
-    # Second probe: short cancel hold (merged from old P9).
-    short_cancel_hold = choose_delay_seconds(args, window=args.short_cancel_hold_window, label="a14_short_cancel")
-    short_summary = await play_and_capture_serial_toggle_after_cancel_probe(
-        port=args.port,
-        device_name=args.device_name,
-        bluetooth_address=args.bluetooth_address,
-        scenario="A14",
-        capture_seconds=capture_seconds,
-        cancel_hold_seconds=short_cancel_hold,
-        timeout_seconds=90,
-        reset_before_capture=False,
-        pre_start_delay_seconds=pre_start_delay,
-        output_dir=case_output_dir("A14"),
-        serial_log_path=case_serial_log_path("A14", "short_hold"),
-    )
-    print(f"short_cancel_probe={'pass' if short_summary.get('cancel_requested') and short_summary.get('cancel_completed') else 'fail'}", flush=True)
-    if short_summary["result"] != "pass":
-        return print_summary("A14", short_summary["result"], f"short_cancel_failed: {short_summary.get('failure_reason', '')}")
-    details = {
-        "long_cancel_probe": compact_case_details(summary),
-        "short_cancel_probe": compact_case_details(short_summary),
-        "between_probe_ble_settle_seconds": recover_settle_seconds,
-    }
-    if not args.transport_only:
-        negative_product_chain = await run_listener_type_product_chain(
-            args,
-            "A14",
-            trigger_mode="serial-cancel",
-            artifact_label="cancel_negative",
-            expect_no_text=True,
-            extra_smoke_args=[
-                "-RecordingStartTimeoutMs", "12000",
-                "-SilentAudio", "-SilentAudioMs", "300",
-            ],
-        )
-        details["cancel_negative_product_chain"] = negative_product_chain
-        if str(negative_product_chain.get("result")) == "fail":
-            return print_summary(
-                "A14",
-                "fail",
-                "cancel_negative_product_chain_failed:" + str(negative_product_chain.get("reason", "")),
-                details,
-            )
-        if str(negative_product_chain.get("result")) == "warning":
-            return print_summary(
-                "A14",
-                "warning",
-                "cancel_negative_product_chain_warning:" + str(negative_product_chain.get("reason", "")),
-                details,
-            )
-    return print_summary("A14", "pass", "", details)
-
-
-async def run_t2(args) -> dict[str, str]:
-    round_count = args.round_count
-    budget_seconds = max(240, round_count * 120)
-    print_case_header("T2", f"multi-round independent reconnect ({round_count} rounds)", budget_seconds)
-    failures = []
-    warnings = []
-    for round_index in range(1, round_count + 1):
-        capture_seconds = choose_duration(args, window=args.short_capture_window, label=f"t2_r{round_index}")
-        pre_start_delay = choose_delay_seconds(args, window=args.pre_start_delay_window, label=f"t2_r{round_index}_pre_start")
-        summary = await play_and_capture_serial_toggle(
-            port=args.port,
-            device_name=args.device_name,
-            bluetooth_address=args.bluetooth_address,
-            scenario="T2",
-            source_label=f"round{round_index}",
-            capture_seconds=capture_seconds,
-            timeout_seconds=90,
-            reset_before_capture=True,  # Full reset each round
-            pre_start_delay_seconds=pre_start_delay,
-            output_dir=case_output_dir("T2"),
-            serial_log_path=case_serial_log_path("T2", f"round{round_index}"),
-        )
-        print(f"t2_round_index={round_index}", flush=True)
-        print(f"t2_round_result={summary['result']}", flush=True)
-        print(f"t2_round_missing_packet_count={summary['missing_packet_count']}", flush=True)
-        if summary["result"] == "fail":
-            failures.append(round_index)
-        elif summary["result"] == "warning":
-            warnings.append(round_index)
-    if failures:
-        return print_summary("T2", "fail", "failed_rounds=" + ",".join(str(v) for v in failures))
-    if warnings:
-        return print_summary("T2", "warning", "warning_rounds=" + ",".join(str(v) for v in warnings))
-    return print_summary("T2", "pass", "")
-
-
-async def run_a15(args) -> dict[str, str]:
-    print_case_header("A15", "silent/no-input negative test", 120)
-    capture_seconds = choose_duration(args, window=args.short_capture_window, label="a15")
-    pre_start_delay = choose_delay_seconds(args, window=args.pre_start_delay_window, label="a15_pre_start")
-    capture_args = make_capture_args(
-        port=args.port,
-        device_name=args.device_name,
-        bluetooth_address=args.bluetooth_address,
-        capture_seconds=capture_seconds,
-        capture_seconds_per_session=[capture_seconds],
-        session_pre_start_delay_seconds=[pre_start_delay],
-        timeout_seconds=90,
-        reset_before_capture=args.reset_before_capture,
-        output_dir=case_output_dir("A15"),
-        serial_log_path=case_serial_log_path("A15"),
-    )
-    session_summaries = await capture_sessions(capture_args)
-    if not session_summaries:
-        return print_summary("A15", "fail", "no_session_captured")
-    summary = dict(session_summaries[-1])
-    recorded_wav = pathlib.Path(summary["wav_path"])
-    if not recorded_wav.exists():
-        return print_summary("A15", "fail", "no_output_wav")
-    frames = read_wav_frames(recorded_wav)
-    peak = max(abs(v) for v in frames) if frames else 0
-    env = compute_envelope(frames)
-    runs = detect_active_runs(env)
-    active_frames = sum(end - start for start, end in runs)
-    print(f"a15_recorded_peak={peak}", flush=True)
-    print(f"a15_active_frame_count={active_frames}", flush=True)
-    print(f"a15_total_frames={len(frames)}", flush=True)
-    validation = validate_transport_summary(summary, capture_seconds=capture_seconds)
-    transport_ok = validation["transport_result"] != "fail" or validation["transport_failure_reason"] != "no_audio_packets_received"
-    print(f"a15_transport_ok={1 if transport_ok else 0}", flush=True)
-    if not transport_ok:
-        return print_summary("A15", "fail", "transport_failed_even_without_audio")
-    details = {
-        "silent_transport": {
-            "peak": peak,
-            "active_frames": active_frames,
-            "total_frames": len(frames),
-            "transport_validation": validation,
-            **compact_case_details(summary),
-        }
-    }
-    if not args.transport_only:
-        negative_product_chain = await run_listener_type_product_chain(
-            args,
-            "A15",
-            trigger_mode="serial-toggle",
-            artifact_label="silence_negative",
-            expect_no_text=True,
-            extra_smoke_args=["-SilentAudio"],
-        )
-        details["silence_negative_product_chain"] = negative_product_chain
-        if str(negative_product_chain.get("result")) == "fail":
-            return print_summary(
-                "A15",
-                "fail",
-                "silence_negative_product_chain_failed:" + str(negative_product_chain.get("reason", "")),
-                details,
-            )
-        if str(negative_product_chain.get("result")) == "warning":
-            return print_summary(
-                "A15",
-                "warning",
-                "silence_negative_product_chain_warning:" + str(negative_product_chain.get("reason", "")),
-                details,
-            )
-    return print_summary("A15", "pass", f"peak={peak} active_frames={active_frames}", details)
-
-
-RAPID_TOGGLE_COUNT_DEFAULT = 10
-
-
-async def run_t4(args) -> dict[str, str]:
-    toggle_count = RAPID_TOGGLE_COUNT_DEFAULT
-    print_case_header("T4", f"rapid toggle stress ({toggle_count} cycles)", 180)
-    stress_ok = True
-    stress_errors = []
-    with open_serial_with_retry(args.port) as ser:
-        ser.setDTR(False)
-        ser.setRTS(False)
-        ser.reset_input_buffer()
-        for cycle in range(1, toggle_count + 1):
-            try:
-                send_toggle(ser)
-                await asyncio.sleep(round(args.duration_rng.uniform(0.3, 0.8), 2))
-                send_toggle(ser)
-                await asyncio.sleep(round(args.duration_rng.uniform(0.1, 0.3), 2))
-            except (OSError, serial.SerialException) as exc:
-                stress_ok = False
-                stress_errors.append(f"cycle={cycle} {type(exc).__name__}:{exc}")
-                break
-        print(f"t4_stress_toggle_count={toggle_count}", flush=True)
-        print(f"t4_stress_ok={1 if stress_ok else 0}", flush=True)
-        if stress_errors:
-            for error in stress_errors[:5]:
-                print(f"t4_stress_error={error}", flush=True)
-        await asyncio.sleep(1.0)
-        try:
-            ser.reset_input_buffer()
-        except (OSError, serial.SerialException):
-            pass
-    if not stress_ok:
-        return print_summary("T4", "fail", "serial_error_during_stress")
-    verify_capture_seconds = choose_duration(args, window=args.short_capture_window, label="t4_verify")
-    pre_start_delay = choose_delay_seconds(args, window=args.pre_start_delay_window, label="t4_verify_pre_start")
-    summary = await play_and_capture_serial_toggle(
-        port=args.port,
-        device_name=args.device_name,
-        bluetooth_address=args.bluetooth_address,
-        scenario="T4",
-        source_label="post_stress_verify",
-        capture_seconds=verify_capture_seconds,
-        timeout_seconds=90,
-        reset_before_capture=True,
-        pre_start_delay_seconds=pre_start_delay,
-        output_dir=case_output_dir("T4"),
-        serial_log_path=case_serial_log_path("T4"),
-    )
-    summary["stress_toggle_count"] = toggle_count
-    summary["stress_ok"] = stress_ok
-    return ensure_pass("T4", summary)
-
-
-async def run_t5(args) -> dict[str, str]:
-    print_case_header("T5", "concurrent BLE client attempt during capture", 180)
-    address_hex = get_paired_device_address_hex(args.device_name)
-    if not address_hex:
-        return print_summary("T5", "fail", "unable_to_resolve_device_address")
-    from winrt.windows.devices.bluetooth import BluetoothLEDevice
-    rogue_device = None
-    try:
-        rogue_device = await BluetoothLEDevice.from_bluetooth_address_async(int(address_hex, 16))
-    except Exception as exc:
-        print(f"t5_rogue_connect_error={type(exc).__name__}:{exc}", flush=True)
-    rogue_connected = False
-    if rogue_device is not None:
-        try:
-            rogue_connected = rogue_device.connection_status == 1
-        except Exception:
-            pass
-    print(f"t5_rogue_device_open={1 if rogue_device else 0}", flush=True)
-    print(f"t5_rogue_connected={1 if rogue_connected else 0}", flush=True)
-    capture_seconds = choose_duration(args, window=args.short_capture_window, label="t5")
-    pre_start_delay = choose_delay_seconds(args, window=args.pre_start_delay_window, label="t5_pre_start")
-    try:
-        summary = await play_and_capture_serial_toggle(
-            port=args.port,
-            device_name=args.device_name,
-            bluetooth_address=args.bluetooth_address,
-            scenario="T5",
-            source_label="concurrent_test",
-            capture_seconds=capture_seconds,
-            timeout_seconds=90,
-            reset_before_capture=args.reset_before_capture,
-            pre_start_delay_seconds=pre_start_delay,
-            output_dir=case_output_dir("T5"),
-            serial_log_path=case_serial_log_path("T5"),
-        )
-    finally:
-        if rogue_device is not None:
-            try:
-                rogue_device.close()
-            except Exception:
-                pass
-    summary["rogue_device_open"] = rogue_device is not None
-    summary["rogue_connected"] = rogue_connected
-    return ensure_pass("T5", summary)
 
 
 def make_product_chain_result(
@@ -2779,6 +2385,18 @@ async def run_listener_type_product_chain(
         )
 
     effective_status = "PASS" if result == "pass" else "WARNING" if result == "warning" else "FAIL"
+    expected_packet_count = None
+    received_packet_count = None
+    missing_packet_count = report.get("missing_packets")
+    duplicate_packet_count = None
+    if isinstance(embedded_stats, dict):
+        expected_packet_count = embedded_stats.get("expectedPacketCount")
+        received_packet_count = embedded_stats.get("receivedPacketCount")
+        missing_packet_count = first_non_empty(
+            embedded_stats.get("missingPacketCount"),
+            report.get("missing_packets"),
+        )
+        duplicate_packet_count = embedded_stats.get("duplicatePacketCount")
     details = {
         "full_chain_status": effective_status,
         "listener_type_report_status": report_status,
@@ -2794,6 +2412,24 @@ async def run_listener_type_product_chain(
         "listener_type_stdout_path": str(stdout_log),
         "listener_type_stderr_path": str(stderr_log),
         "listener_type_report_path": latest_matching_file(output_dir, "ble-stream-smoke.*.json"),
+        "listener_type_log_refs": [
+            value
+            for value in (
+                str(stdout_log),
+                str(stderr_log),
+                first_non_empty(report.get("log_path")),
+            )
+            if value
+        ],
+        "firmware_diag_refs": [
+            value
+            for value in (
+                first_non_empty(report.get("serial_log_path")),
+                first_non_empty(report.get("firmware_diag_path")),
+                first_non_empty(report.get("diag_log_path")),
+            )
+            if value
+        ],
         "sentence": report.get("sentence"),
         **accuracy_details,
         "transcript": transcript,
@@ -2806,10 +2442,15 @@ async def run_listener_type_product_chain(
         "inserted_text": inserted_text,
         "insertion_verified": insertion_verified,
         "history_session_id": history_session.get("id"),
+        "expected_packet_count": expected_packet_count,
+        "received_packet_count": received_packet_count,
+        "missing_packet_count": missing_packet_count,
+        "duplicate_packet_count": duplicate_packet_count,
         "missing_packets": report.get("missing_packets"),
         "pcm_bytes": report.get("pcm_bytes"),
         "embedded_audio_stats": embedded_stats,
         "recording_archive_path": report.get("recording_archive_path"),
+        "timeline": report.get("timeline"),
         "verify_insertion": bool(report.get("verify_insertion")),
         "verify_history": bool(report.get("verify_history")),
         "history_lookup_fallback": history_lookup_fallback,
@@ -2830,147 +2471,9 @@ async def run_listener_type_product_chain(
     return make_product_chain_result(case_id, result, reason, details)
 
 
-async def run_a19(args) -> dict[str, str]:
-    round_count = max(1, int(args.soak_round_count))
-    idle_seconds = max(0.0, float(args.soak_idle_seconds))
-    budget_seconds = max(300, int(round_count * 90 + idle_seconds * max(0, round_count - 1) + 60))
-    print_case_header("A19", f"mixed-use product-chain soak ({round_count} rounds)", budget_seconds)
-    rounds = []
-    failures = []
-    warnings = []
-    original_reset_before_capture = args.reset_before_capture
-    args.reset_before_capture = False
-    try:
-        for round_index in range(1, round_count + 1):
-            if round_index > 1 and idle_seconds > 0:
-                print(f"a19_idle_before_round={round_index}:{idle_seconds:.2f}", flush=True)
-                await asyncio.sleep(idle_seconds)
-            profile_name, sentence = A19_SOAK_SENTENCES[
-                (round_index - 1) % len(A19_SOAK_SENTENCES)
-            ]
-            product_chain = await run_listener_type_product_chain(
-                args,
-                "A19",
-                trigger_mode="serial-toggle",
-                artifact_label=f"soak_round_{round_index:02d}",
-                audio_profile=profile_name,
-                sentence_override=sentence,
-            )
-            rounds.append(product_chain)
-            result = str(product_chain.get("result"))
-            print(f"a19_round={round_index}:{result}:{product_chain.get('reason', '')}", flush=True)
-            if result == "fail":
-                failures.append(round_index)
-            elif result == "warning":
-                warnings.append(round_index)
-    finally:
-        args.reset_before_capture = original_reset_before_capture
-    if failures:
-        return print_summary("A19", "fail", "failed_rounds=" + ",".join(str(v) for v in failures), {"rounds": rounds})
-    if warnings:
-        return print_summary("A19", "warning", "warning_rounds=" + ",".join(str(v) for v in warnings), {"rounds": rounds})
-    return print_summary("A19", "pass", "", {"rounds": rounds})
-
-
-async def run_a20(args) -> dict[str, object]:
-    capture_seconds = max(1, int(args.a20_capture_seconds))
-    budget_seconds = max(300, int(capture_seconds * 1.2 + 180))
-    print_case_header("A20", f"ultra-long BLE transport session ({capture_seconds}s)", budget_seconds)
-    pre_start_delay = choose_delay_seconds(args, window=args.pre_start_delay_window, label="a20_pre_start")
-    post_stop_timeout_seconds = max(180, int(capture_seconds * 0.25 + 120))
-    capture_args = make_capture_args(
-        port=args.port,
-        device_name=args.device_name,
-        capture_seconds=capture_seconds,
-        capture_seconds_per_session=[capture_seconds],
-        session_pre_start_delay_seconds=[pre_start_delay],
-        timeout_seconds=post_stop_timeout_seconds,
-        reset_before_capture=args.reset_before_capture,
-        output_dir=case_output_dir("A20"),
-        serial_log_path=case_serial_log_path("A20"),
-    )
-    session_summaries = await capture_sessions(capture_args)
-    if not session_summaries:
-        return print_summary("A20", "fail", "no_session_captured")
-
-    summary = dict(session_summaries[-1])
-    summary = finalize_transport_capture_summary(
-        summary,
-        capture_seconds=capture_seconds,
-        pre_start_delay_seconds=pre_start_delay,
-    )
-    summary["post_stop_timeout_seconds"] = post_stop_timeout_seconds
-    summary["ultra_long_transport_only"] = True
-    summary["product_chain_skipped"] = True
-    summary["product_chain_skip_reason"] = "A20 validates firmware transport duration and graceful stop, not ASR accuracy"
-    summary["target_duration_seconds"] = capture_seconds
-    if summary.get("session_error_code") is not None:
-        summary["result"] = "fail"
-        summary["failure_reason"] = "session_error_received"
-    return ensure_pass("A20", summary)
-
-
-async def run_h1(args) -> dict[str, str]:
-    print_case_header("H1", "physical EC11 push product chain (manual trigger)", 180)
-    extra_smoke_args = [
-        "-ManualTriggerReadyDelayMs",
-        str(max(700, int(args.manual_trigger_ready_delay_ms))),
-    ]
-    if args.h1_human_voice:
-        extra_smoke_args.extend(["-SilentAudio", "-SilentAudioMs", "12000"])
-    product_chain = await run_listener_type_product_chain(
-        args,
-        "H1",
-        trigger_mode="manual-key",
-        extra_smoke_args=extra_smoke_args,
-    )
-    details = product_chain.get("details")
-    if not isinstance(details, dict):
-        details = {}
-    capsule_evidence = validate_capsule_evidence("H1", product_chain)
-    details["h1_capsule_evidence"] = capsule_evidence
-    if not capsule_evidence.get("pass") and str(product_chain.get("result")) == "pass":
-        product_chain = dict(product_chain)
-        product_chain["result"] = "warning"
-        product_chain["reason"] = "h1_capsule_feedback_warning:" + str(capsule_evidence.get("reason", ""))
-    manual_trigger_inserted = (
-        str(product_chain.get("result")) == "fail"
-        and str(product_chain.get("reason", "")).startswith("accuracy_below_threshold:")
-        and str(details.get("listener_type_report_status", "")).upper() == "PASS"
-        and str(details.get("insert_status", "")) == "inserted"
-        and first_non_empty(details.get("transcript"))
-        and int(details.get("missing_packets") or 0) == 0
-        and bool(capsule_evidence.get("pass"))
-    )
-    if manual_trigger_inserted:
-        raw_accuracy_reason = product_chain.get("reason")
-        product_chain = dict(product_chain)
-        product_chain["result"] = "pass"
-        product_chain["reason"] = "manual_key_trigger_inserted_accuracy_not_gated"
-        details["h1_manual_acceptance"] = {
-            "accepted": True,
-            "reason": "manual_key_validates_trigger_and_insertion_not_scripted_content",
-            "raw_accuracy_reason": raw_accuracy_reason,
-        }
-    return print_summary(
-        "H1",
-        str(product_chain["result"]),
-        str(product_chain.get("reason", "")),
-        {"product_chain": product_chain},
-    )
-
-
 CASE_RUNNERS = {
-    "A1": run_a1, "A2": run_a2, "A3": run_a3,
-    "A4": run_a4_new, "A5": run_a5_new, "A6": run_a6_new,
-    "A7": run_a7_new, "A8": run_a8_new, "A9": run_a9_new,
-    "A10": run_a10_new, "A11": run_a11_new,
-    "A12": run_a12_new, "A13": run_a13_new,
-    "A14": run_a14, "A15": run_a15, "A16": run_a16_new,
-    "A17": run_a17, "A18": run_a18_new,
-    "A19": run_a19, "A20": run_a20,
-    "H1": run_h1,
-    "T1": run_t1, "T2": run_t2, "T3": run_t3, "T4": run_t4, "T5": run_t5,
+    "A1": run_a1,
+    "A2": run_a2,
 }
 
 
@@ -3055,6 +2558,20 @@ def compact_product_chain_attempt(product_chain: dict[str, object]) -> dict[str,
             "listener_type_report_path": details.get("listener_type_report_path"),
         },
     }
+
+
+def product_chain_timeline(details: object) -> dict[str, object] | None:
+    if not isinstance(details, dict):
+        return None
+    timeline = details.get("timeline")
+    if isinstance(timeline, dict):
+        return timeline
+    report = details.get("listener_type_report")
+    if isinstance(report, dict):
+        timeline = report.get("timeline")
+        if isinstance(timeline, dict):
+            return timeline
+    return None
 
 
 async def attach_product_chain_overlay(
@@ -3153,6 +2670,8 @@ async def main_async(args) -> None:
         args.preflight_recover_mode = "none"
 
     case_order = resolve_case_execution_order(args)
+    requested_suite = args.cases.strip().lower() if args.cases.strip().lower() in CASE_SUITES else "custom"
+    run_metadata = matrix_run_metadata(args)
     print(f"execution_profile={args.execution_profile}", flush=True)
     print(f"random_capture_durations_enabled={0 if args.disable_random_capture_durations else 1}", flush=True)
     print(f"random_usage_timing_enabled={0 if args.disable_random_usage_timing else 1}", flush=True)
@@ -3200,11 +2719,11 @@ async def main_async(args) -> None:
     initial_preflight_done = False
     for case_id in case_order:
         if case_id in MANUAL_OR_EXTERNAL_CASES:
-            results.append(print_summary(case_id, "skipped", MANUAL_OR_EXTERNAL_CASES[case_id]))
+            results.append(skipped_case_summary(case_id, MANUAL_OR_EXTERNAL_CASES[case_id]))
             continue
         runner = CASE_RUNNERS.get(case_id)
         if runner is None:
-            results.append(print_summary(case_id, "skipped", "unknown_or_not_automated"))
+            results.append(skipped_case_summary(case_id, "unknown_or_not_automated"))
             continue
         try:
             if args.preflight_recover_mode == "per-case":
@@ -3258,6 +2777,9 @@ async def main_async(args) -> None:
         warnings=warnings,
         skipped=skipped,
         fail_on_warning=args.fail_on_warning,
+        metadata=run_metadata,
+        requested_cases=case_order,
+        case_suite=requested_suite,
     )
     print(f"matrix_result_json={matrix_result_path}", flush=True)
     print(f"matrix_summary_log={args.summary_log}", flush=True)
