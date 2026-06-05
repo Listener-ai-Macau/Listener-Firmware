@@ -98,7 +98,7 @@ $manifest = [ordered]@{
         sha256 = $ota_hash
     }
     requirements = [ordered]@{
-        hardware_revision = "keyboard-n4"
+        hardware_revision = "keyboard-v2-n16r8"
         protocol_version = 1
         min_desktop_version = $MinDesktopVersion
         gatt_chunk_bytes = $GattChunkBytes
@@ -115,7 +115,7 @@ $manifest = [ordered]@{
         dis = [ordered]@{
             manufacturer = "listener"
             model = "keyboard-v2"
-            hardware_revision = "esp32s3-wroom-1-n4"
+            hardware_revision = "esp32s3-wroom-1-n16r8"
             firmware_revision = $project_version
             software_revision_protocol = "1"
         }

@@ -174,7 +174,7 @@ $manifest = [ordered]@{
         dis = [ordered]@{
             manufacturer = "listener"
             model = "keyboard-v2"
-            hardware_revision = "esp32s3-wroom-1-n4"
+            hardware_revision = "esp32s3-wroom-1-n16r8"
             firmware_revision = $project_version
             software_revision_protocol = "1"
         }
@@ -214,7 +214,7 @@ BLE name: listener
 
 Model: keyboard-v2
 
-Hardware revision: esp32s3-wroom-1-n4
+Hardware revision: esp32s3-wroom-1-n16r8
 
 Appearance: 0x03C1 keyboard
 

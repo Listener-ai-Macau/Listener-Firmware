@@ -1,7 +1,7 @@
 menu "Listener Board Profile"
     choice LISTENER_BOARD_PROFILE
         prompt "Listener board profile"
-        default LISTENER_BOARD_PROFILE_N4
+        default LISTENER_BOARD_PROFILE_V2_N16R8
 
         config LISTENER_BOARD_PROFILE_N4
             bool "Voice Keyboard N4 ESP32-S3-WROOM-1-N4"
@@ -22,6 +22,6 @@ menu "Listener Board Profile"
         default n
         depends on LISTENER_BOARD_PROFILE_V2_N16R8
         help
-            Keep disabled until EC11-KEY_IO/GPIO11 isolation and off-state
+            Keep disabled until EC11-KEY_IO/GPIO18 isolation and off-state
             leakage are signed off on V2 hardware.
 endmenu

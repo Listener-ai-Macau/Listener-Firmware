@@ -21,8 +21,7 @@
 #define BATTERY_MONITOR_EMPTY_MV 2700U
 #define BATTERY_MONITOR_FULL_MV 4200U
 #define BATTERY_MONITOR_SAMPLE_COUNT 4U
-#define BATTERY_MONITOR_V2_3V3_NOMINAL_MV 3300U
-#define BATTERY_MONITOR_V2_LED_NOMINAL_MV 5000U
+#define BATTERY_MONITOR_V2_CURRENT_MA_PER_ADC_MV 2U
 
 static const char *TAG = "battery_monitor";
 
@@ -334,23 +333,11 @@ static const char *battery_monitor_power_rail_name(battery_monitor_power_rail_t 
 {
     switch (rail) {
     case BATTERY_MONITOR_POWER_RAIL_3V3:
-        return "TPS63020_3V3";
+        return "TPS63020_input_branch";
     case BATTERY_MONITOR_POWER_RAIL_LED_5V:
-        return "SY7088_LED_5V";
+        return "SY7088_input_branch";
     default:
         return "unknown";
-    }
-}
-
-static uint32_t battery_monitor_power_rail_nominal_mv(battery_monitor_power_rail_t rail)
-{
-    switch (rail) {
-    case BATTERY_MONITOR_POWER_RAIL_3V3:
-        return BATTERY_MONITOR_V2_3V3_NOMINAL_MV;
-    case BATTERY_MONITOR_POWER_RAIL_LED_5V:
-        return BATTERY_MONITOR_V2_LED_NOMINAL_MV;
-    default:
-        return 0;
     }
 }
 
@@ -365,9 +352,9 @@ esp_err_t battery_monitor_read_power_rail(
     memset(out_status, 0, sizeof(*out_status));
     out_status->valid = false;
     out_status->rail_name = battery_monitor_power_rail_name(rail);
-    out_status->calibration_status = "uncalibrated";
-    out_status->nominal_rail_mv = battery_monitor_power_rail_nominal_mv(rail);
-    out_status->rail_voltage_provisional = true;
+    out_status->calibration_status = "ina180a2_10mR_nominal";
+    out_status->nominal_rail_mv = 0;
+    out_status->rail_voltage_provisional = false;
     out_status->current_calibrated = false;
     out_status->current_ma_valid = false;
     out_status->power_mw_valid = false;
@@ -404,11 +391,38 @@ esp_err_t battery_monitor_read_power_rail(
 
     out_status->result = ret;
     if (ret == ESP_OK) {
+        int battery_raw = 0;
+        int battery_pad_mv = 0;
+        bool battery_calibrated = false;
+        uint8_t battery_sample_count = 0;
+        esp_err_t battery_ret = battery_monitor_read_adc_locked(
+            &s_battery_adc,
+            &battery_raw,
+            &battery_pad_mv,
+            &battery_calibrated,
+            &battery_sample_count);
+        uint32_t battery_mv = battery_ret == ESP_OK
+            ? ((uint32_t)battery_pad_mv * BATTERY_MONITOR_DIVIDER_NUMERATOR) /
+                  BATTERY_MONITOR_DIVIDER_DENOMINATOR
+            : 0U;
+        int32_t current_ma = (int32_t)((uint32_t)pad_mv * BATTERY_MONITOR_V2_CURRENT_MA_PER_ADC_MV);
+
         out_status->valid = true;
         out_status->raw_adc = raw;
         out_status->adc_mv = pad_mv;
         out_status->adc_calibrated = calibrated;
+        out_status->current_calibrated = calibrated;
+        out_status->current_ma_valid = true;
+        out_status->estimated_current_ma = current_ma;
+        out_status->nominal_rail_mv = battery_mv;
+        out_status->power_mw_valid = battery_ret == ESP_OK;
+        out_status->estimated_power_mw = battery_ret == ESP_OK
+            ? (int32_t)(((uint64_t)(uint32_t)current_ma * (uint64_t)battery_mv) / 1000ULL)
+            : 0;
         out_status->sample_count = sample_count;
+        out_status->calibration_status = battery_ret == ESP_OK && battery_calibrated
+            ? "ina180a2_10mR_adc_calibrated_battery_adc_calibrated"
+            : "ina180a2_10mR_nominal_battery_mv_reconstructed";
     }
     xSemaphoreGive(s_mutex);
     return ret;

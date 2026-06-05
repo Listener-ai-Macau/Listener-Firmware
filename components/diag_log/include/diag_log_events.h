@@ -124,7 +124,7 @@
 #define DIAG_BOARD_PROFILE        1 /* a1=flash_mb, a2=psram_mb, a3=key1_gpio, a4=ec11_key_gpio */
 #define DIAG_BOARD_PROVISIONAL    2 /* a1=usb_det_gpio, a2=pwr_hold_gpio, a3=3v3_current_gpio, a4=led_current_gpio */
 #define DIAG_BOARD_POWER_RAIL     3 /* a1=rail(1=3v3,2=led_5v), a2=raw_adc, a3=adc_mv, a4=calibrated */
-#define DIAG_BOARD_LED_RESOURCE   4 /* a1=group(1=status,2=key,3=edge), a2=data_gpio, a3=first_led, a4=led_count */
+#define DIAG_BOARD_LED_RESOURCE   4 /* a1=group(1=status,2=ec11,3=key,4=edge), a2=data_gpio, a3=first_led, a4=led_count */
 
 /* Status LED events (DIAG_SRC_STATUS_LED) */
 #define DIAG_LED_STATE       1 /* a1=state_type, a2=value, a3=detail, a4=detail */

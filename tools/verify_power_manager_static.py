@@ -17,7 +17,7 @@ CHECKS = {
         "POWER_MANAGER_BLOCKER_BLE_AUDIO",
         "POWER_MANAGER_BLOCKER_DIAG_EXPORT",
         "POWER_MANAGER_BLOCKER_EXTERNAL_POWER",
-        "POWER_MANAGER_WAKE_POLICY_KEY4_ONLY",
+        "POWER_MANAGER_WAKE_POLICY_V2_EC11_PROVISIONAL",
         "sleep_blockers",
         "user_idle_ms",
         "radio_idle_ms",
@@ -38,10 +38,10 @@ CHECKS = {
         "wake_policy=%s",
         "wake_capable_keys=%s",
         "voice_key_deep_sleep_wake=%u",
-        "N4 validation profile: EC11-KEY/GPIO35 recording key is not RTC deep-sleep wake capable",
-        "production hardware must provide RTC-capable primary voice/wake input",
-        "press KEY4/GPIO21 after deep sleep on N4",
-        "POWER_MANAGER_WAKE_POLICY_KEY4_ONLY",
+        "V2 EC11-KEY_IO/GPIO18 is the RTC-capable wake candidate",
+        "deep-sleep wake remains disabled until power-latch isolation",
+        "use USB reset or power cycle until EC11 wake is signed off",
+        "POWER_MANAGER_WAKE_POLICY_ACTIVE POWER_MANAGER_WAKE_POLICY_V2_EC11_PROVISIONAL",
         "s_last_user_activity_ms",
         "s_last_radio_activity_ms",
         "power_manager_user_idle_ms_locked",
@@ -122,8 +122,8 @@ CHECKS = {
         "CONFIG_FREERTOS_USE_TICKLESS_IDLE=y",
         "CONFIG_BT_CTRL_MODEM_SLEEP=y",
         "CONFIG_USJ_NO_AUTO_LS_ON_CONNECTION=y",
-        "CONFIG_ESPTOOLPY_FLASHSIZE_4MB=y",
-        "# CONFIG_SPIRAM is not set",
+        "CONFIG_ESPTOOLPY_FLASHSIZE_16MB=y",
+        "CONFIG_SPIRAM=y",
         "CONFIG_POWER_MANAGER_AUDIO_IDLE_MS=5000",
         "CONFIG_POWER_MANAGER_CONNECTED_IDLE_MS=30000",
         "CONFIG_POWER_MANAGER_OVERNIGHT_SLEEP_MS=1800000",
@@ -133,9 +133,9 @@ CHECKS = {
         "light_sleep_enable = true",
     ],
     "components/board/board.c": [
-        "Voice Keyboard N4",
-        "EC11 push/GPIO35",
-        "N4 deep sleep wakes by KEY4/GPIO21",
+        "Voice Keyboard V2",
+        "EC11 push/GPIO18",
+        "V2 EC11-KEY/GPIO18 deep-sleep wake remains disabled",
     ],
 }
 
@@ -151,6 +151,20 @@ def main() -> int:
         for token in required_tokens:
             if token not in text:
                 failures.append(f"{relative_path}: missing token {token!r}")
+
+    power_manager = (REPO_ROOT / "components/power_manager/power_manager.c").read_text(encoding="utf-8")
+    for stale in (
+        "N4 validation profile: EC11-KEY/GPIO35",
+        "press KEY4/GPIO21 after deep sleep on N4",
+        "POWER_MANAGER_WAKE_POLICY_CODE ((uint32_t)POWER_MANAGER_WAKE_POLICY_KEY4_ONLY)",
+    ):
+        if stale in power_manager:
+            failures.append(f"components/power_manager/power_manager.c: stale token {stale!r}")
+
+    board = (REPO_ROOT / "components/board/board.c").read_text(encoding="utf-8")
+    for stale in ("Voice Keyboard N4", "EC11 push/GPIO35", "N4 deep sleep wakes by KEY4/GPIO21"):
+        if stale in board:
+            failures.append(f"components/board/board.c: stale token {stale!r}")
 
     if failures:
         print("FAIL: power manager static verification failed")

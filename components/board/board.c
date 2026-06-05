@@ -17,12 +17,12 @@ static const char *TAG = "board";
 #define BOARD_USB_PREFIX "BOARD:"
 #define BOARD_LED_PREFIX "LED:"
 
-#define BOARD_V2_USB_DET_POLICY "n4_gpio9_legacy_validation"
-#define BOARD_V2_CHARGER_POLARITY "n4_gpio3_gpio46_legacy_validation"
-#define BOARD_V2_PWR_HOLD_POLICY "not_populated_on_n4"
-#define BOARD_V2_LED_POLICY "not_populated_on_n4"
-#define BOARD_V2_MIC_POLICY "sph0645_i2s_bclk_gpio39_ws_gpio40_din_gpio41"
-#define BOARD_V2_CURRENT_POLICY "not_populated_on_n4"
+#define BOARD_V2_USB_DET_POLICY "v2_gpio7_r37_r32_10K_10K_divider"
+#define BOARD_V2_CHARGER_POLARITY "v2_gpio14_chg_gpio21_std_active_low"
+#define BOARD_V2_PWR_HOLD_POLICY "v2_gpio11_power_latch_hold_disabled_until_power_sequence_validation"
+#define BOARD_V2_LED_POLICY "v2_four_zone_ws2812_status_gpio1_ec11_gpio5_key_gpio13_edge_gpio4"
+#define BOARD_V2_MIC_POLICY "v2_clk_gpio48_dout_gpio47_interface_degraded_until_hardware_validation"
+#define BOARD_V2_CURRENT_POLICY "v2_battery_side_input_branch_current_ina180a2_10mR_adc_mv_x2_with_battery_mv_from_gpio8_div2"
 
 typedef struct {
     const char *name;
@@ -30,6 +30,7 @@ typedef struct {
     uint8_t first_led;
     uint8_t led_count;
     uint8_t brightness_cap_percent;
+    const char *led_refs;
     const char *policy;
 } board_led_group_t;
 
@@ -40,23 +41,35 @@ static const board_led_group_t s_led_groups[] = {
         .first_led = 1,
         .led_count = 6,
         .brightness_cap_percent = 8,
+        .led_refs = "LED1..LED6",
         .policy = "LED1..LED6 semantic PWR/BLE/REC/AI/OK/WARN rail",
+    },
+    {
+        .name = "ec11",
+        .data_gpio = BOARD_PINS_RGB_EC11_IO,
+        .first_led = 7,
+        .led_count = 12,
+        .brightness_cap_percent = 8,
+        .led_refs = "LED7..LED10+LED15..LED16+LED23..LED28",
+        .policy = "EC11 knob ring feedback on the dedicated PWM_RGB_EC11 strip",
     },
     {
         .name = "key",
         .data_gpio = BOARD_PINS_RGB_KEY_IO,
-        .first_led = 7,
+        .first_led = 11,
         .led_count = 4,
         .brightness_cap_percent = 8,
-        .policy = "LED7..LED10 transient local key feedback",
+        .led_refs = "LED11..LED14",
+        .policy = "LED11..LED14 transient local key feedback",
     },
     {
         .name = "edge",
         .data_gpio = BOARD_PINS_RGB_EDGE_IO,
-        .first_led = 11,
+        .first_led = 17,
         .led_count = 6,
         .brightness_cap_percent = 4,
-        .policy = "LED11..LED16 restrained edge/ring effects",
+        .led_refs = "LED17..LED22",
+        .policy = "LED17..LED22 restrained edge/frame effects",
     },
 };
 
@@ -142,11 +155,12 @@ static void board_print_power_rail_status(battery_monitor_power_rail_t rail)
              (uint32_t)(status.adc_mv < 0 ? 0 : status.adc_mv),
              status.adc_calibrated ? 1u : 0u);
     printf(
-        "~BOARD:POWER rail=%s gpio=%" PRIu32
+        "~BOARD:POWER branch=%s gpio=%" PRIu32
         " raw_adc=%d adc_mv=%d adc_calibrated=%u sample_count=%u"
-        " calibration_status=%s current_calibrated=%u current_ma_valid=%u"
-        " estimated_current_ma=%" PRId32 " rail_mv=%" PRIu32
-        " rail_voltage_provisional=%u power_mw_valid=%u estimated_power_mw=%" PRId32
+        " calibration_status=%s current_model=\"INA180A2 10mR current_mA=adc_mv*2\""
+        " current_calibrated=%u current_ma_valid=%u estimated_input_current_ma=%" PRId32
+        " battery_side_mv=%" PRIu32 " battery_voltage_source=\"BAT_V_ADC/GPIO8 68K/68K midpoint, VBAT~=2*ADC\""
+        " power_mw_valid=%u estimated_input_power_mw=%" PRId32
         " result=%s policy=%s\n",
         status.rail_name,
         status.gpio,
@@ -159,7 +173,6 @@ static void board_print_power_rail_status(battery_monitor_power_rail_t rail)
         status.current_ma_valid ? 1u : 0u,
         status.estimated_current_ma,
         status.nominal_rail_mv,
-        status.rail_voltage_provisional ? 1u : 0u,
         status.power_mw_valid ? 1u : 0u,
         status.estimated_power_mw,
         esp_err_to_name(ret),
@@ -170,19 +183,20 @@ static void board_print_led_status(void)
 {
     for (size_t i = 0; i < sizeof(s_led_groups) / sizeof(s_led_groups[0]); ++i) {
         const board_led_group_t *group = &s_led_groups[i];
-        diag_log(DIAG_SRC_BOARD, DIAG_BOARD_LED_RESOURCE, DIAG_SEV_WARN,
+        diag_log(DIAG_SRC_BOARD, DIAG_BOARD_LED_RESOURCE, DIAG_SEV_INFO,
                  (uint32_t)(i + 1u),
                  (uint32_t)group->data_gpio,
                  group->first_led,
                  group->led_count);
         printf(
-            "~LED:STATUS group=%s transport=WS2812 data_gpio=%d first_led=%u led_count=%u"
+            "~LED:STATUS group=%s transport=WS2812 data_gpio=%d first_led=%u led_count=%u led_refs=\"%s\""
             " brightness_cap_percent=%u vdd_led_signed_off=0 full_white_allowed=0"
             " rgbw_calibration_path=provisional policy=\"%s\"\n",
             group->name,
             (int)group->data_gpio,
             group->first_led,
             group->led_count,
+            group->led_refs,
             group->brightness_cap_percent,
             group->policy);
     }
@@ -195,9 +209,10 @@ static bool board_print_led_test(const char *command)
     if (strncmp(command, "TEST:RGBW", strlen("TEST:RGBW")) == 0) {
         printf(
             "~LED:TEST:RGBW result=blocked reason=vdd_led_not_signed_off"
-            " status_gpio=%d key_gpio=%d edge_gpio=%d max_brightness_percent=4"
+            " status_gpio=%d ec11_gpio=%d key_gpio=%d edge_gpio=%d max_brightness_percent=4"
             " note=\"red/green/blue/white calibration command is present but does not drive LEDs until VDD_LED is measured\"\n",
             (int)BOARD_PINS_RGB_STATUS_IO,
+            (int)BOARD_PINS_RGB_EC11_IO,
             (int)BOARD_PINS_RGB_KEY_IO,
             (int)BOARD_PINS_RGB_EDGE_IO);
         fflush(stdout);
@@ -207,7 +222,9 @@ static bool board_print_led_test(const char *command)
         printf(
             "~LED:TEST:MAP result=blocked reason=vdd_led_not_signed_off"
             " status=\"LED1=PWR LED2=BLE LED3=REC LED4=AI LED5=OK LED6=WARN\""
-            " key=\"LED7..LED10\" edge=\"LED11..LED16\" note=\"one-by-one map command is present but does not drive LEDs until VDD_LED is measured\"\n");
+            " ec11=\"LED7..LED10 LED15..LED16 LED23..LED28\""
+            " key=\"LED11..LED14\" edge=\"LED17..LED22\""
+            " note=\"one-by-one map command is present but does not drive LEDs until VDD_LED is measured\"\n");
         fflush(stdout);
         return true;
     }
@@ -235,7 +252,7 @@ static void board_print_status(void)
         " battery_gpio=%d battery_mv=%" PRIu32 " battery_adc_mv=%d battery_raw=%d"
         " battery_level=%u battery_valid=%u battery_adc_calibrated=%u battery_samples=%u battery_result=%s"
         " battery_scaling=\"68K/68K divider, VBAT~=2*ADC\" battery_policy=\"source_impedance_filter_calibration_provisional\""
-        " reserved_mspi_gpio=none\n",
+        " reserved_mspi_gpio=%s\n",
         BOARD_PINS_PROFILE_ID,
         BOARD_PINS_MODULE,
         (unsigned)BOARD_PINS_FLASH_SIZE_MB,
@@ -269,7 +286,8 @@ static void board_print_status(void)
         battery.valid ? 1u : 0u,
         battery.adc_calibrated ? 1u : 0u,
         battery.sample_count,
-        esp_err_to_name(battery_ret));
+        esp_err_to_name(battery_ret),
+        BOARD_PINS_RESERVED_MSPI_GPIOS);
     board_print_power_rail_status(BATTERY_MONITOR_POWER_RAIL_3V3);
     board_print_power_rail_status(BATTERY_MONITOR_POWER_RAIL_LED_5V);
     board_print_led_status();
@@ -280,7 +298,7 @@ void board_log_v2_diagnostics(void)
 {
     ESP_LOGI(
         TAG,
-        "board profile: id=%s module=%s flash=%uMB psram=%uMB %s key_gpios=%d,%d,%d,%d ec11=%d,%d,%d mic=%d,%d usb_det=%d charger=%d,%d battery_adc=%d current_adc=%d,%d rgb=%d,%d,%d pwr_hold=%d",
+        "board profile: id=%s module=%s flash=%uMB psram=%uMB %s key_gpios=%d,%d,%d,%d ec11=%d,%d,%d mic=%d,%d usb_det=%d charger=%d,%d battery_adc=%d current_adc=%d,%d rgb=%d,%d,%d,%d pwr_hold=%d reserved_mspi=%s",
         BOARD_PINS_PROFILE_ID,
         BOARD_PINS_MODULE,
         (unsigned)BOARD_PINS_FLASH_SIZE_MB,
@@ -302,9 +320,11 @@ void board_log_v2_diagnostics(void)
         (int)BOARD_PINS_TPS63020_I_ADC_IO,
         (int)BOARD_PINS_SY7088_I_ADC_IO,
         (int)BOARD_PINS_RGB_STATUS_IO,
+        (int)BOARD_PINS_RGB_EC11_IO,
         (int)BOARD_PINS_RGB_KEY_IO,
         (int)BOARD_PINS_RGB_EDGE_IO,
-        (int)BOARD_PINS_PWR_HOLD_IO);
+        (int)BOARD_PINS_PWR_HOLD_IO,
+        BOARD_PINS_RESERVED_MSPI_GPIOS);
     ESP_LOGW(TAG, "board hardware provisional: usb_det=%s charger=%s pwr_hold=%s current=%s led=%s mic=%s",
              BOARD_V2_USB_DET_POLICY,
              BOARD_V2_CHARGER_POLARITY,
@@ -327,21 +347,21 @@ void board_print_help(void)
     static const char *help_string =
         "########################################################################\n"
         "Listener voice keyboard firmware usage:\n"
-        "Board profile: Voice Keyboard N4, ESP32-S3-WROOM-1-N4, 4MB flash, no PSRAM.\n"
+        "Board profile: Voice Keyboard V2, ESP32-S3-WROOM-1-N16R8, 16MB flash, 8MB Octal PSRAM.\n"
         "Inject test bytes with tools/send_serial.ps1 or type in monitor.\n"
         "Capture 3s audio WAV with tools/capture_audio_wav.ps1 -Port COM3.\n"
         "Capture toggle session WAV with tools/capture_audio_session_wav.ps1 -Port COM3.\n"
-        "EC11 push/GPIO35 controls recording: single click starts or stops after the 200 ms double-click window.\n"
+        "EC11 push/GPIO18 controls recording: single click starts or stops after the 200 ms double-click window.\n"
         "EC11 push fast double-click clears BLE pairing/session state after recording has been idle; long press is reserved for hardware power control.\n"
         "Logical custom keys: single-click KEY1-KEY4 fallback=F13-F16, double-click=F17-F20, long-press=F21-F24.\n"
-        "KEY1/GPIO45, KEY2/GPIO48, KEY3/GPIO47, KEY4/GPIO21 send safe non-text BLE HID usages while Listener-Type custom actions are unavailable.\n"
+        "KEY1/GPIO38, KEY2/GPIO39, KEY3/GPIO40, KEY4/GPIO41 send safe non-text BLE HID usages while Listener-Type custom actions are unavailable.\n"
         "Send ~VREC:RECOVERY to clear pairing/session state over USB.\n"
-        "Board diagnostics: ~BOARD:STATUS reports N4 pin, USB, charger, battery, PWR_HOLD, mic, and LED resource status.\n"
+        "Board diagnostics: ~BOARD:STATUS reports V2 pin, USB, charger, battery, PWR_HOLD/GPIO11, mic, reserved MSPI, and LED resource status.\n"
         "Power diagnostics: ~POWER:STATUS reports state/blockers/battery/wake policy, ~POWER:SLEEP requests manual sleep.\n"
-        "LED diagnostics: ~LED:STATUS reports optional WS2812 groups; ~LED:TEST:RGBW and ~LED:TEST:MAP stay blocked on N4.\n"
+        "LED diagnostics: ~LED:STATUS reports four WS2812 groups; ~LED:TEST:RGBW and ~LED:TEST:MAP stay brightness-gated until VDD_LED sign-off.\n"
         "Watchdog diagnostics: ~WDT:STATUS reports config, ~WDT:DEADLOCK intentionally triggers Task WDT reset.\n"
         "Boot safety diagnostics: ~BOOT:STATUS reports crash counter, ~BOOT:CRASH restarts for validation, ~BOOT:CLEAR clears safe mode.\n"
-        "N4 deep sleep wakes by KEY4/GPIO21; EC11-KEY/GPIO35 is not RTC deep-sleep wake capable.\n"
+        "V2 EC11-KEY/GPIO18 deep-sleep wake remains disabled until power-latch isolation, leakage, pull policy, and false-wake behavior are signed off.\n"
         "Use ~OTA:STATUS, ~OTA:BLOCKER, or ~OTA:ABORT for firmware OTA diagnostics.\n"
         "Use ~DIAGLOG:COUNT, ~DIAGLOG:LAST:N, ~DIAGLOG:DUMP, or ~DIAGLOG:CLEAR for diagnostics.\n"
         "Device status logs use ready, recording, transferring, error, and recovery.\n"

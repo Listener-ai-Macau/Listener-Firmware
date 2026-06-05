@@ -68,101 +68,113 @@ function Get-PartitionSize {
 }
 
 $boardPins = Read-RepoFile "ports\esp32\board_pins\include\board_pins.h"
+$boardKconfig = Read-RepoFile "ports\esp32\board_pins\Kconfig.projbuild"
 $sdkconfig = Read-RepoFile "sdkconfig.defaults.esp32s3"
 $partitions = Read-RepoFile "partitions.csv"
-$boardKconfig = Read-RepoFile "ports\esp32\board_pins\Kconfig.projbuild"
 $listenerDevice = Read-RepoFile "protocols\listener_device\include\listener_device.h"
 $keyboard = Read-RepoFile "components\keyboard\keyboard.c"
-$voiceRecordingControl = Read-RepoFile "components\voice_recording_control\voice_recording_control.c"
-$bleAudioStreamHeader = Read-RepoFile "ports\esp32\ble_audio_stream\include\ble_audio_stream.h"
-$bleAudioStream = Read-RepoFile "ports\esp32\ble_audio_stream\ble_audio_stream_esp32.c"
 $voiceKeyInput = Read-RepoFile "ports\esp32\voice_key_input\voice_key_input_esp32.c"
-$boardHelp = Read-RepoFile "components\board\board.c"
+$board = Read-RepoFile "components\board\board.c"
 $powerManager = Read-RepoFile "components\power_manager\power_manager.c"
+$batteryMonitor = Read-RepoFile "components\battery_monitor\battery_monitor.c"
+$statusLed = Read-RepoFile "components\status_led\status_led.c"
+$statusLedDoc = Read-RepoFile "docs\features\status_led.md"
+$lowPowerDoc = Read-RepoFile "docs\features\low_power_wake_policy.md"
 $otaPackage = Read-RepoFile "tools\package_ota_firmware.ps1"
 $factoryPackage = Read-RepoFile "tools\package_factory_firmware.ps1"
 
 foreach ($item in @(
-    @($boardKconfig, "default LISTENER_BOARD_PROFILE_N4", "default N4 board profile"),
-    @($boardKconfig, "LISTENER_BOARD_PROFILE_N4", "N4 board profile option"),
-    @($boardPins, 'BOARD_PINS_PROFILE_ID\s+"voice-keyboard-n4"', "N4 board profile id"),
-    @($boardPins, 'BOARD_PINS_MODULE\s+"ESP32-S3-WROOM-1-N4"', "N4 module id"),
-    @($boardPins, "BOARD_PINS_FLASH_SIZE_MB\s+\(4\)", "4 MB flash board metadata"),
-    @($boardPins, "BOARD_PINS_PSRAM_SIZE_MB\s+\(0\)", "no PSRAM board metadata"),
-    @($boardPins, 'BOARD_PINS_PSRAM_MODE\s+"none"', "no PSRAM board mode"),
-    @($boardPins, "BOARD_PINS_KEY1_IO\s+\(GPIO_NUM_45\)", "KEY1 GPIO45"),
-    @($boardPins, "BOARD_PINS_KEY2_IO\s+\(GPIO_NUM_48\)", "KEY2 GPIO48"),
-    @($boardPins, "BOARD_PINS_KEY3_IO\s+\(GPIO_NUM_47\)", "KEY3 GPIO47"),
-    @($boardPins, "BOARD_PINS_KEY4_IO\s+\(GPIO_NUM_21\)", "KEY4 GPIO21"),
-    @($boardPins, "BOARD_PINS_EC11_A_IO\s+\(GPIO_NUM_36\)", "EC11-A GPIO36"),
-    @($boardPins, "BOARD_PINS_EC11_B_IO\s+\(GPIO_NUM_38\)", "EC11-B GPIO38"),
-    @($boardPins, "BOARD_PINS_EC11_C_IO\s+\(GPIO_NUM_37\)", "EC11-C GPIO37"),
-    @($boardPins, "BOARD_PINS_EC11_KEY_IO\s+\(GPIO_NUM_35\)", "EC11 key GPIO35"),
-    @($boardPins, "BOARD_PINS_I2S_BCLK_IO\s+\(GPIO_NUM_39\)", "I2S BCLK GPIO39"),
-    @($boardPins, "BOARD_PINS_I2S_WS_IO\s+\(GPIO_NUM_40\)", "I2S WS GPIO40"),
-    @($boardPins, "BOARD_PINS_I2S_DIN_IO\s+\(GPIO_NUM_41\)", "I2S DIN GPIO41"),
-    @($listenerDevice, 'LISTENER_DEVICE_HW_REV\s+"esp32s3-wroom-1-n4"', "N4 BLE/DIS hardware revision"),
-    @($listenerDevice, "flash_4mb;no_psram", "N4 capability metadata"),
-    @($listenerDevice, "ble_audio_control_v1", "BLE audio control capability metadata"),
-    @($keyboard, "key1\.gpio45\.f13", "N4 logical KEY1 fallback diagnostic label"),
-    @($keyboard, "key4\.gpio21\.f16", "N4 logical KEY4 fallback diagnostic label"),
-    @($keyboard, "DIAG_KBD_CUSTOM_KEY", "custom key diag event coverage"),
-    @($voiceKeyInput, 'VOICE_KEY_INPUT_DIRECT_LABEL\s+"ec11_key\.gpio35"', "N4 EC11 recording diagnostic label"),
-    @($voiceKeyInput, "single-click", "EC11 single-click recording toggle"),
-    @($voiceKeyInput, "double-click recovery", "EC11 double-click pairing reset"),
-    @($voiceKeyInput, 'VOICE_KEY_INPUT_DOUBLE_CLICK_WINDOW_MS\s+\(200\)', "EC11 shortened double-click recovery window"),
-    @($voiceKeyInput, "double_click_window_ms", "EC11 double-click window startup log"),
-    @($voiceKeyInput, "VOICE_KEY_INPUT_RECOVERY_IDLE_GUARD_MS", "EC11 recovery idle guard for consecutive recording toggles"),
-    @($voiceKeyInput, "consecutive short click kept as recording toggle", "EC11 consecutive short press recording toggle guard"),
-    @($voiceKeyInput, "recovery_idle_guard_ms", "EC11 recovery idle guard startup log"),
-    @($voiceRecordingControl, "voice_key_input_get_active_source\(\)", "voice recovery source follows active key source"),
-    @($voiceRecordingControl, "voice_recording_control_ble_control_write", "BLE recording control dispatch handler"),
-    @($voiceRecordingControl, "ble_audio_stream_set_control_write_handler", "BLE recording control handler registration"),
-    @($bleAudioStreamHeader, "BLE_AUDIO_STREAM_CONTROL_UUID", "BLE audio control UUID declaration"),
-    @($bleAudioStreamHeader, "0x1e, 0x09, 0xc3, 0x3b", "BLE audio control UUID value"),
-    @($bleAudioStream, "BLE_AUDIO_STREAM_GATT_ATTR_CONTROL", "BLE audio control GATT attribute"),
-    @($bleAudioStream, "BLE_GATT_CHR_F_WRITE", "BLE audio control writable characteristic"),
-    @($bleAudioStream, "ble_audio_control", "BLE audio control source label"),
-    @($boardHelp, "Voice Keyboard N4", "N4 board help text"),
-    @($boardHelp, "EC11 push/GPIO35", "N4 EC11 recording help text"),
-    @($boardHelp, "200 ms double-click window", "N4 EC11 shortened double-click help text"),
-    @($boardHelp, "after recording has been idle", "N4 EC11 recovery idle guard help text"),
-    @($boardHelp, "single-click KEY1-KEY4 fallback=F13-F16", "N4 logical custom key single-click help text"),
-    @($boardHelp, "double-click=F17-F20", "N4 logical custom key double-click help text"),
-    @($boardHelp, "long-press=F21-F24", "N4 logical custom key long-press help text"),
-    @($powerManager, "POWER_MANAGER_WAKE_POLICY_KEY4_ONLY", "N4 KEY4 wake policy"),
-    @($powerManager, "KEY4/GPIO21", "N4 logical KEY4 wake key string"),
-    @($powerManager, "EC11-KEY/GPIO35", "N4 EC11 key wake limitation"),
-    @($otaPackage, 'hardware_revision = "keyboard-n4"', "OTA package N4 hardware requirement"),
-    @($otaPackage, "audio_control_uuid", "OTA package audio control UUID"),
-    @($factoryPackage, 'hardware_revision = "esp32s3-wroom-1-n4"', "factory package N4 DIS hardware revision"),
-    @($factoryPackage, "audio_control_uuid", "factory package audio control UUID"),
-    @($factoryPackage, "ble_audio_control_v1", "factory package audio control capability")
+    @($boardKconfig, "default LISTENER_BOARD_PROFILE_V2_N16R8", "default V2 board profile"),
+    @($boardKconfig, "EC11-KEY_IO/GPIO18", "V2 EC11 wake gate help"),
+    @($boardPins, 'BOARD_PINS_PROFILE_ID\s+"voice-keyboard-v2-n16r8"', "V2 board profile id"),
+    @($boardPins, 'BOARD_PINS_MODULE\s+"ESP32-S3-WROOM-1-N16R8"', "N16R8 module id"),
+    @($boardPins, "BOARD_PINS_FLASH_SIZE_MB\s+\(16\)", "16 MB flash board metadata"),
+    @($boardPins, "BOARD_PINS_PSRAM_SIZE_MB\s+\(8\)", "8 MB PSRAM board metadata"),
+    @($boardPins, 'BOARD_PINS_PSRAM_MODE\s+"octal"', "Octal PSRAM mode"),
+    @($boardPins, 'BOARD_PINS_RESERVED_MSPI_GPIOS\s+"GPIO35,GPIO36,GPIO37"', "reserved MSPI GPIO metadata"),
+    @($boardPins, "BOARD_PINS_KEY1_IO\s+\(GPIO_NUM_38\)", "KEY1 GPIO38"),
+    @($boardPins, "BOARD_PINS_KEY2_IO\s+\(GPIO_NUM_39\)", "KEY2 GPIO39"),
+    @($boardPins, "BOARD_PINS_KEY3_IO\s+\(GPIO_NUM_40\)", "KEY3 GPIO40"),
+    @($boardPins, "BOARD_PINS_KEY4_IO\s+\(GPIO_NUM_41\)", "KEY4 GPIO41"),
+    @($boardPins, "BOARD_PINS_EC11_A_IO\s+\(GPIO_NUM_42\)", "EC11-A GPIO42"),
+    @($boardPins, "BOARD_PINS_EC11_B_IO\s+\(GPIO_NUM_2\)", "EC11-B GPIO2"),
+    @($boardPins, "BOARD_PINS_EC11_KEY_IO\s+\(GPIO_NUM_18\)", "EC11 key GPIO18"),
+    @($boardPins, "BOARD_PINS_MIC_CLK_IO\s+BOARD_PINS_I2S_BCLK_IO", "mic clock macro"),
+    @($boardPins, "BOARD_PINS_I2S_BCLK_IO\s+\(GPIO_NUM_48\)", "mic CLK GPIO48"),
+    @($boardPins, "BOARD_PINS_I2S_DIN_IO\s+\(GPIO_NUM_47\)", "mic DOUT GPIO47"),
+    @($boardPins, "BOARD_PINS_BAT_CHG_IO\s+\(GPIO_NUM_14\)", "charger CHG GPIO14"),
+    @($boardPins, "BOARD_PINS_BAT_STD_IO\s+\(GPIO_NUM_21\)", "charger STD GPIO21"),
+    @($boardPins, "BOARD_PINS_BAT_V_ADC_IO\s+\(GPIO_NUM_8\)", "battery ADC GPIO8"),
+    @($boardPins, "BOARD_PINS_USB_DET_IO\s+\(GPIO_NUM_7\)", "USB detect GPIO7"),
+    @($boardPins, "BOARD_PINS_RGB_STATUS_IO\s+\(GPIO_NUM_1\)", "status strip GPIO1"),
+    @($boardPins, "BOARD_PINS_RGB_EC11_IO\s+\(GPIO_NUM_5\)", "EC11 strip GPIO5"),
+    @($boardPins, "BOARD_PINS_RGB_KEY_IO\s+\(GPIO_NUM_13\)", "key strip GPIO13"),
+    @($boardPins, "BOARD_PINS_RGB_EDGE_IO\s+\(GPIO_NUM_4\)", "edge strip GPIO4"),
+    @($boardPins, "BOARD_PINS_PWR_HOLD_IO\s+\(GPIO_NUM_11\)", "PWR_HOLD GPIO11"),
+    @($boardPins, "BOARD_PINS_TPS63020_I_ADC_IO\s+\(GPIO_NUM_10\)", "TPS63020 input current ADC GPIO10"),
+    @($boardPins, "BOARD_PINS_SY7088_I_ADC_IO\s+\(GPIO_NUM_9\)", "SY7088 input current ADC GPIO9"),
+    @($listenerDevice, 'LISTENER_DEVICE_HW_REV\s+"esp32s3-wroom-1-n16r8"', "BLE/DIS hardware revision"),
+    @($listenerDevice, "board=voice-keyboard-v2-n16r8", "factory readiness board metadata"),
+    @($listenerDevice, "flash_16mb;psram_8mb_octal", "V2 memory capabilities"),
+    @($keyboard, "key1\.gpio38\.f13", "KEY1 V2 diagnostic label"),
+    @($keyboard, "key4\.gpio41\.f16", "KEY4 V2 diagnostic label"),
+    @($keyboard, "EC11 ready: a=gpio42 b=gpio2 key=gpio18", "EC11 V2 ready log"),
+    @($voiceKeyInput, 'VOICE_KEY_INPUT_DIRECT_LABEL\s+"ec11_key\.gpio18"', "EC11 recording diagnostic label"),
+    @($board, "v2_gpio7_r37_r32_10K_10K_divider", "USB_Det 10K/10K policy"),
+    @($board, "PWR_HOLD/GPIO11", "PWR_HOLD help text"),
+    @($board, "reserved_mspi_gpio=%s", "reserved MSPI status field"),
+    @($board, "LED7..LED10\+LED15..LED16\+LED23..LED28", "EC11 LED refs in board diagnostics"),
+    @($board, 'key=\\"LED11..LED14\\" edge=\\"LED17..LED22\\"', "V2 key/edge map in board diagnostics"),
+    @($batteryMonitor, "BATTERY_MONITOR_DIVIDER_NUMERATOR 2U", "68K/68K battery divider reconstruction"),
+    @($batteryMonitor, "BATTERY_MONITOR_V2_CURRENT_MA_PER_ADC_MV 2U", "INA180A2 10mR current model"),
+    @($batteryMonitor, "TPS63020_input_branch", "TPS63020 input branch naming"),
+    @($batteryMonitor, "SY7088_input_branch", "SY7088 input branch naming"),
+    @($board, "battery_side_mv", "battery-side power telemetry output"),
+    @($powerManager, "POWER_MANAGER_WAKE_POLICY_ACTIVE POWER_MANAGER_WAKE_POLICY_V2_EC11_PROVISIONAL", "V2 EC11 provisional wake policy"),
+    @($powerManager, "EC11-KEY_IO/GPIO18", "V2 wake limitation GPIO18"),
+    @($lowPowerDoc, "EC11-KEY_IO/GPIO18", "low-power V2 EC11 GPIO18 doc"),
+    @($statusLed, "STATUS_LED_EC11_COUNT 12", "EC11 12-LED strip count"),
+    @($statusLed, "STATUS_LED_EDGE_COUNT 6", "edge 6-LED strip count"),
+    @($statusLed, "STATUS_LED_STRIP_COUNT 4", "four LED strips"),
+    @($statusLed, "BOARD_PINS_RGB_EC11_IO", "EC11 strip firmware resource"),
+    @($statusLed, "ec11_order=LED7..LED10\+LED15..LED16\+LED23..LED28", "EC11 LED order status"),
+    @($statusLedDoc, "GPIO5", "status LED doc EC11 GPIO5"),
+    @($statusLedDoc, "LED17.*LED22", "status LED doc edge LED refs"),
+    @($otaPackage, 'hardware_revision = "keyboard-v2-n16r8"', "OTA package V2 hardware requirement"),
+    @($otaPackage, 'hardware_revision = "esp32s3-wroom-1-n16r8"', "OTA package V2 DIS revision"),
+    @($factoryPackage, 'hardware_revision = "esp32s3-wroom-1-n16r8"', "factory package V2 DIS revision")
 )) {
     Assert-Contains -Text $item[0] -Pattern $item[1] -Description $item[2]
 }
 
 foreach ($token in @(
-    "CONFIG_LISTENER_BOARD_PROFILE_N4=y",
-    "CONFIG_ESPTOOLPY_FLASHSIZE_4MB=y",
-    'CONFIG_ESPTOOLPY_FLASHSIZE="4MB"',
-    "# CONFIG_SPIRAM is not set"
+    "CONFIG_LISTENER_BOARD_PROFILE_V2_N16R8=y",
+    "CONFIG_ESPTOOLPY_FLASHSIZE_16MB=y",
+    'CONFIG_ESPTOOLPY_FLASHSIZE="16MB"',
+    "CONFIG_SPIRAM=y",
+    "CONFIG_SPIRAM_MODE_OCT=y"
 )) {
     Assert-Contains -Text $sdkconfig -Pattern ([regex]::Escape($token)) -Description "sdkconfig token $token"
 }
 
 foreach ($item in @(
-    @($boardPins, "N16R8", "N16R8 board metadata in active board pins"),
-    @($sdkconfig, "CONFIG_SPIRAM=y", "PSRAM-enabled N4 default"),
-    @($sdkconfig, "CONFIG_ESPTOOLPY_FLASHSIZE_16MB", "16 MB flash N4 default"),
-    @($voiceKeyInput, "gpio11\.ec11_key", "V2 GPIO11 EC11 diagnostic label in active code"),
-    @($voiceRecordingControl, "ec11_key_hold", "legacy EC11 hold recovery source label"),
-    @($keyboard, "WASD", "temporary WASD key naming in active code"),
-    @($keyboard, "key2\.gpio48\.w", "old KEY2 WASD diagnostic label"),
-    @($keyboard, "key4\.gpio21\.s", "old KEY4 WASD diagnostic label"),
-    @($keyboard, "key1\.gpio38\.d", "V2 KEY1 diagnostic label in active code"),
-    @($keyboard, "key1\.gpio45\.d", "old KEY1 text HID diagnostic label"),
-    @($keyboard, "key1=gpio45:d", "old KEY1 text HID ready log")
+    @($boardPins, "BOARD_PINS_EC11_KEY_IO\s+\(GPIO_NUM_(11|35)\)", "stale EC11 key GPIO"),
+    @($boardPins, "BOARD_PINS_PWR_HOLD_IO\s+\(GPIO_NUM_46\)", "stale PWR_HOLD GPIO46"),
+    @($boardPins, "BOARD_PINS_RGB_EC11_IO\s+\(GPIO_NUM_4\)", "stale EC11 strip on edge GPIO"),
+    @($sdkconfig, "CONFIG_LISTENER_BOARD_PROFILE_N4=y", "active N4 sdkconfig"),
+    @($sdkconfig, "CONFIG_ESPTOOLPY_FLASHSIZE_4MB=y", "active 4 MB flash sdkconfig"),
+    @($sdkconfig, "# CONFIG_SPIRAM is not set", "disabled PSRAM sdkconfig"),
+    @($listenerDevice, "voice-keyboard-n4|esp32s3-wroom-1-n4|flash_4mb|no_psram", "N4 device metadata"),
+    @($keyboard, "gpio35|gpio45|gpio48\.f14|gpio47\.f15|gpio21\.f16", "N4 keyboard diagnostic labels"),
+    @($voiceKeyInput, "ec11_key\.gpio(11|35)", "stale EC11 recording label"),
+    @($board, "5\.1K|GPIO46|Voice Keyboard N4|EC11 push/GPIO35|N4 deep sleep", "stale board diagnostics/help"),
+    @($board, "LED11..LED16|LED15..LED28", "stale LED three-zone refs in board diagnostics"),
+    @($powerManager, "KEY4/GPIO21|EC11-KEY/GPIO35", "stale N4 wake diagnostics"),
+    @($lowPowerDoc, "EC11-KEY_IO/GPIO11|EC11-KEY/GPIO35|KEY4/GPIO21", "stale low-power wake doc GPIO"),
+    @($statusLed, "STATUS_LED_EC11_COUNT 4|STATUS_LED_EDGE_COUNT 14", "stale LED strip counts"),
+    @($statusLedDoc, "LED11.*LED16", "stale status LED doc edge refs"),
+    @($otaPackage, "keyboard-n4|esp32s3-wroom-1-n4", "N4 OTA package metadata"),
+    @($factoryPackage, "esp32s3-wroom-1-n4", "N4 factory package metadata")
 )) {
     Assert-NotContains -Text $item[0] -Pattern $item[1] -Description $item[2]
 }
@@ -170,17 +182,17 @@ foreach ($item in @(
 $ota0 = Get-PartitionSize -PartitionsText $partitions -Name "ota_0"
 $ota1 = Get-PartitionSize -PartitionsText $partitions -Name "ota_1"
 $diagLog = Get-PartitionSize -PartitionsText $partitions -Name "diag_log"
-if ($ota0 -lt 0x1B0000 -or $ota1 -lt 0x1B0000) {
-    Add-CheckError "OTA app partitions must be at least 0x1B0000 bytes for the 4 MB N4 baseline."
+if ($ota0 -lt 0x600000 -or $ota1 -lt 0x600000) {
+    Add-CheckError "OTA app partitions must be at least 0x600000 bytes for the 16 MB V2 baseline."
 }
-if ($diagLog -ne 0x80000) {
-    Add-CheckError "diag_log partition must be 0x80000 bytes for the 4 MB N4 baseline."
+if ($diagLog -lt 0x100000) {
+    Add-CheckError "diag_log partition must be at least 0x100000 bytes for the 16 MB V2 baseline."
 }
 
 if ($errors.Count -gt 0) {
-    Write-Host "FAIL: N4 board profile static verification failed"
+    Write-Host "FAIL: V2 board profile static verification failed"
     $errors | ForEach-Object { Write-Host " - $_" }
     exit 1
 }
 
-Write-Host "PASS: N4 board profile, memory defaults, pin map, partitions, package identity, and stale V2 guard checks passed."
+Write-Host "PASS: V2 N16R8 board profile, memory defaults, pin map, four-zone LED resources, battery-side current telemetry, USB_Det divider policy, diagnostics, partitions, and package identity checks passed."

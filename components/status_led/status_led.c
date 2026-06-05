@@ -25,9 +25,11 @@
 #include "power_manager.h"
 
 #define STATUS_LED_STATUS_COUNT 6
+#define STATUS_LED_EC11_COUNT 12
 #define STATUS_LED_KEY_COUNT 4
 #define STATUS_LED_EDGE_COUNT 6
-#define STATUS_LED_STRIP_COUNT 3
+#define STATUS_LED_STRIP_COUNT 4
+#define STATUS_LED_MAX_STRIP_COUNT STATUS_LED_EC11_COUNT
 
 #define STATUS_LED_TASK_STACK_BYTES (5 * 1024)
 #define STATUS_LED_REFRESH_MS 50U
@@ -45,12 +47,14 @@
 #define STATUS_LED_NVS_NAMESPACE "status_led"
 #define STATUS_LED_NVS_PROFILE_KEY "profile"
 #define STATUS_LED_NVS_STATUS_ORDER_KEY "ord_status"
+#define STATUS_LED_NVS_EC11_ORDER_KEY "ord_ec11"
 #define STATUS_LED_NVS_KEY_ORDER_KEY "ord_key"
 #define STATUS_LED_NVS_EDGE_ORDER_KEY "ord_edge"
 #define STATUS_LED_USB_PREFIX "LED:"
 
 typedef enum {
     STATUS_LED_STRIP_STATUS = 0,
+    STATUS_LED_STRIP_EC11,
     STATUS_LED_STRIP_KEY,
     STATUS_LED_STRIP_EDGE,
 } status_led_strip_id_t;
@@ -91,6 +95,7 @@ typedef struct {
 
 typedef struct {
     status_led_rgb_t status[STATUS_LED_STATUS_COUNT];
+    status_led_rgb_t ec11[STATUS_LED_EC11_COUNT];
     status_led_rgb_t key[STATUS_LED_KEY_COUNT];
     status_led_rgb_t edge[STATUS_LED_EDGE_COUNT];
 } status_led_frame_t;
@@ -110,7 +115,7 @@ typedef struct {
     status_led_color_order_t color_order;
     rmt_channel_handle_t channel;
     rmt_encoder_handle_t encoder;
-    uint8_t pixels[STATUS_LED_EDGE_COUNT * 3];
+    uint8_t pixels[STATUS_LED_MAX_STRIP_COUNT * 3];
     bool available;
 } status_led_strip_t;
 
@@ -164,6 +169,12 @@ static status_led_strip_t s_strips[STATUS_LED_STRIP_COUNT] = {
         .name = "status",
         .gpio = BOARD_PINS_RGB_STATUS_IO,
         .led_count = STATUS_LED_STATUS_COUNT,
+        .color_order = STATUS_LED_COLOR_ORDER_GRB,
+    },
+    {
+        .name = "ec11",
+        .gpio = BOARD_PINS_RGB_EC11_IO,
+        .led_count = STATUS_LED_EC11_COUNT,
         .color_order = STATUS_LED_COLOR_ORDER_GRB,
     },
     {
@@ -591,6 +602,7 @@ static esp_err_t status_led_transmit_strip(status_led_strip_t *strip, const stat
 static void status_led_transmit_frame(const status_led_frame_t *frame)
 {
     (void)status_led_transmit_strip(&s_strips[STATUS_LED_STRIP_STATUS], frame->status);
+    (void)status_led_transmit_strip(&s_strips[STATUS_LED_STRIP_EC11], frame->ec11);
     (void)status_led_transmit_strip(&s_strips[STATUS_LED_STRIP_KEY], frame->key);
     (void)status_led_transmit_strip(&s_strips[STATUS_LED_STRIP_EDGE], frame->edge);
 }
@@ -600,6 +612,9 @@ static uint32_t status_led_estimate_current_ma(const status_led_frame_t *frame)
     uint32_t channel_sum = 0;
     for (size_t index = 0; index < STATUS_LED_STATUS_COUNT; ++index) {
         channel_sum += frame->status[index].r + frame->status[index].g + frame->status[index].b;
+    }
+    for (size_t index = 0; index < STATUS_LED_EC11_COUNT; ++index) {
+        channel_sum += frame->ec11[index].r + frame->ec11[index].g + frame->ec11[index].b;
     }
     for (size_t index = 0; index < STATUS_LED_KEY_COUNT; ++index) {
         channel_sum += frame->key[index].r + frame->key[index].g + frame->key[index].b;
@@ -614,6 +629,9 @@ static void status_led_scale_frame_percent(status_led_frame_t *frame, uint8_t pe
 {
     for (size_t index = 0; index < STATUS_LED_STATUS_COUNT; ++index) {
         frame->status[index] = status_led_scale_raw(frame->status[index], percent);
+    }
+    for (size_t index = 0; index < STATUS_LED_EC11_COUNT; ++index) {
+        frame->ec11[index] = status_led_scale_raw(frame->ec11[index], percent);
     }
     for (size_t index = 0; index < STATUS_LED_KEY_COUNT; ++index) {
         frame->key[index] = status_led_scale_raw(frame->key[index], percent);
@@ -663,6 +681,11 @@ static void status_led_render_test_locked(status_led_frame_t *frame, uint32_t no
                 frame->status[index] = color;
             }
         }
+        if (s_state.test_strip_mask & (1U << STATUS_LED_STRIP_EC11)) {
+            for (size_t index = 0; index < STATUS_LED_EC11_COUNT; ++index) {
+                frame->ec11[index] = color;
+            }
+        }
         if (s_state.test_strip_mask & (1U << STATUS_LED_STRIP_KEY)) {
             for (size_t index = 0; index < STATUS_LED_KEY_COUNT; ++index) {
                 frame->key[index] = color;
@@ -681,6 +704,9 @@ static void status_led_render_test_locked(status_led_frame_t *frame, uint32_t no
         uint32_t step = elapsed / 600U;
         if (s_state.test_strip_mask & (1U << STATUS_LED_STRIP_STATUS)) {
             frame->status[step % STATUS_LED_STATUS_COUNT] = color;
+        }
+        if (s_state.test_strip_mask & (1U << STATUS_LED_STRIP_EC11)) {
+            frame->ec11[step % STATUS_LED_EC11_COUNT] = color;
         }
         if (s_state.test_strip_mask & (1U << STATUS_LED_STRIP_KEY)) {
             frame->key[step % STATUS_LED_KEY_COUNT] = color;
@@ -1136,6 +1162,11 @@ static void status_led_load_persistent_config(void)
             ? STATUS_LED_COLOR_ORDER_RGB
             : STATUS_LED_COLOR_ORDER_GRB;
     }
+    if (nvs_get_u8(nvs, STATUS_LED_NVS_EC11_ORDER_KEY, &order) == ESP_OK) {
+        s_strips[STATUS_LED_STRIP_EC11].color_order = order == STATUS_LED_COLOR_ORDER_RGB
+            ? STATUS_LED_COLOR_ORDER_RGB
+            : STATUS_LED_COLOR_ORDER_GRB;
+    }
     if (nvs_get_u8(nvs, STATUS_LED_NVS_KEY_ORDER_KEY, &order) == ESP_OK) {
         s_strips[STATUS_LED_STRIP_KEY].color_order = order == STATUS_LED_COLOR_ORDER_RGB
             ? STATUS_LED_COLOR_ORDER_RGB
@@ -1209,9 +1240,10 @@ esp_err_t status_led_init(void)
     s_state.initialized = true;
     ESP_LOGI(
         TAG,
-        "status LED init: profile=%s status_gpio=%d key_gpio=%d edge_gpio=%d key_pin_contract=GPIO13 vdd_led_enable=always_on_assumed",
+        "status LED init: profile=%s status_gpio=%d ec11_gpio=%d key_gpio=%d edge_gpio=%d key_pin_contract=GPIO13 ec11_pin_contract=GPIO5 vdd_led_enable=always_on_assumed",
         status_led_profile_name(s_state.profile),
         (int)BOARD_PINS_RGB_STATUS_IO,
+        (int)BOARD_PINS_RGB_EC11_IO,
         (int)BOARD_PINS_RGB_KEY_IO,
         (int)BOARD_PINS_RGB_EDGE_IO);
     diag_log(DIAG_SRC_STATUS_LED, DIAG_LED_STATE, DIAG_SEV_INFO,
@@ -1436,11 +1468,17 @@ static uint8_t status_led_parse_strip_mask(const char *text)
 {
     if (text == NULL || *text == '\0' || strcasecmp(text, "all") == 0) {
         return (1U << STATUS_LED_STRIP_STATUS) |
+               (1U << STATUS_LED_STRIP_EC11) |
                (1U << STATUS_LED_STRIP_KEY) |
                (1U << STATUS_LED_STRIP_EDGE);
     }
     if (strcasecmp(text, "status") == 0) {
         return 1U << STATUS_LED_STRIP_STATUS;
+    }
+    if (strcasecmp(text, "ec11") == 0 ||
+        strcasecmp(text, "knob") == 0 ||
+        strcasecmp(text, "ring") == 0) {
+        return 1U << STATUS_LED_STRIP_EC11;
     }
     if (strcasecmp(text, "key") == 0) {
         return 1U << STATUS_LED_STRIP_KEY;
@@ -1517,8 +1555,8 @@ static void status_led_print_status(void)
     printf(
         "~LED:STATUS profile=%s backend=rmt_ws2812_800khz refresh_ms=%u reset_us=50"
         " semantic_order=LED1:PWR,LED2:BLE,LED3:REC,LED4:AI,LED5:OK,LED6:WARN"
-        " strips=status:gpio%d:count%u:order%s,key:gpio%d:count%u:order%s,edge:gpio%d:count%u:order%s"
-        " key_pin_contract=PWM_RGB_KEY_GPIO13 gpio14_reserved=BAT_CHG_IO vdd_led_enable=always_on_assumed"
+        " strips=status:gpio%d:count%u:order%s:refsLED1..LED6,ec11:gpio%d:count%u:order%s:refsLED7..LED10+LED15..LED16+LED23..LED28,key:gpio%d:count%u:order%s:refsLED11..LED14,edge:gpio%d:count%u:order%s:refsLED17..LED22"
+        " key_pin_contract=PWM_RGB_KEY_GPIO13 ec11_pin_contract=PWM_RGB_EC11_GPIO5 edge_pin_contract=PWM_RGB_Edge_GPIO4 gpio14_reserved=BAT_CHG_IO vdd_led_enable=always_on_assumed"
         " ble=%s rec_active=%u rec_source=%s processing=%u"
         " error_domain=%s error_severity=%s output_disabled=%u low_power_disabled=%u"
         " battery_valid=%u battery_level=%u battery_mv=%" PRIu32 " charging=%u full=%u"
@@ -1532,6 +1570,9 @@ static void status_led_print_status(void)
         (int)strips[STATUS_LED_STRIP_STATUS].gpio,
         (unsigned)strips[STATUS_LED_STRIP_STATUS].led_count,
         status_led_color_order_name(strips[STATUS_LED_STRIP_STATUS].color_order),
+        (int)strips[STATUS_LED_STRIP_EC11].gpio,
+        (unsigned)strips[STATUS_LED_STRIP_EC11].led_count,
+        status_led_color_order_name(strips[STATUS_LED_STRIP_EC11].color_order),
         (int)strips[STATUS_LED_STRIP_KEY].gpio,
         (unsigned)strips[STATUS_LED_STRIP_KEY].led_count,
         status_led_color_order_name(strips[STATUS_LED_STRIP_KEY].color_order),
@@ -1776,7 +1817,7 @@ bool status_led_consume_usb_command(const char *line)
             status_led_set_last_reason_locked("test_map");
             xSemaphoreGive(s_mutex);
         }
-        ESP_LOGI(TAG, "LED map test running mask=0x%02x status_order=PWR,BLE,REC,AI,OK,WARN key_order=KEY1,KEY2,KEY3,KEY4", mask);
+        ESP_LOGI(TAG, "LED map test running mask=0x%02x status_order=PWR,BLE,REC,AI,OK,WARN ec11_order=LED7..LED10+LED15..LED16+LED23..LED28 key_order=KEY1,KEY2,KEY3,KEY4 edge_order=LED17..LED22", mask);
         return true;
     }
 

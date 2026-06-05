@@ -87,8 +87,8 @@ static keyboard_custom_key_t s_custom_keys[] = {
         .double_usage = HID_KEYBOARD_USAGE_F17,
         .long_usage = HID_KEYBOARD_USAGE_F21,
         .logical_name = "KEY1",
-        .label = "key1.gpio45.f13",
-        .source_base = "key1.gpio45",
+        .label = "key1.gpio38.f13",
+        .source_base = "key1.gpio38",
         .index = 0,
     },
     {
@@ -98,8 +98,8 @@ static keyboard_custom_key_t s_custom_keys[] = {
         .double_usage = HID_KEYBOARD_USAGE_F18,
         .long_usage = HID_KEYBOARD_USAGE_F22,
         .logical_name = "KEY2",
-        .label = "key2.gpio48.f14",
-        .source_base = "key2.gpio48",
+        .label = "key2.gpio39.f14",
+        .source_base = "key2.gpio39",
         .index = 1,
     },
     {
@@ -109,8 +109,8 @@ static keyboard_custom_key_t s_custom_keys[] = {
         .double_usage = HID_KEYBOARD_USAGE_F19,
         .long_usage = HID_KEYBOARD_USAGE_F23,
         .logical_name = "KEY3",
-        .label = "key3.gpio47.f15",
-        .source_base = "key3.gpio47",
+        .label = "key3.gpio40.f15",
+        .source_base = "key3.gpio40",
         .index = 2,
     },
     {
@@ -120,8 +120,8 @@ static keyboard_custom_key_t s_custom_keys[] = {
         .double_usage = HID_KEYBOARD_USAGE_F20,
         .long_usage = HID_KEYBOARD_USAGE_F24,
         .logical_name = "KEY4",
-        .label = "key4.gpio21.f16",
-        .source_base = "key4.gpio21",
+        .label = "key4.gpio41.f16",
+        .source_base = "key4.gpio41",
         .index = 3,
     },
 };
@@ -626,7 +626,7 @@ static esp_err_t keyboard_custom_start(void)
 
     ESP_LOGI(
         TAG,
-        "custom keys ready: key1=gpio45:f13/f17/f21 key2=gpio48:f14/f18/f22 key3=gpio47:f15/f19/f23 key4=gpio21:f16/f20/f24 active_low=1 poll_ms=%d debounce_samples=%d double_ms=%d long_ms=%d",
+        "custom keys ready: key1=gpio38:f13/f17/f21 key2=gpio39:f14/f18/f22 key3=gpio40:f15/f19/f23 key4=gpio41:f16/f20/f24 active_low=1 poll_ms=%d debounce_samples=%d double_ms=%d long_ms=%d",
         KEYBOARD_CUSTOM_POLL_MS,
         KEYBOARD_CUSTOM_DEBOUNCE_SAMPLES,
         KEYBOARD_CUSTOM_DOUBLE_CLICK_WINDOW_MS,
@@ -673,7 +673,7 @@ static esp_err_t keyboard_ec11_start(void)
 
     ESP_LOGI(
         TAG,
-        "EC11 ready: a=gpio36 b=gpio38 key=gpio35 key_policy=gpio35_no_deep_sleep_wake poll_ms=%d debounce_samples=%d",
+        "EC11 ready: a=gpio42 b=gpio2 key=gpio18 key_policy=gpio18_deep_sleep_wake_disabled_until_power_signoff poll_ms=%d debounce_samples=%d",
         KEYBOARD_EC11_POLL_MS,
         KEYBOARD_EC11_DEBOUNCE_SAMPLES);
     return ESP_OK;

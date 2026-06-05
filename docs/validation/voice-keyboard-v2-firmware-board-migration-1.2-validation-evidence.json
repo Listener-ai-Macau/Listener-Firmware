@@ -1,0 +1,85 @@
+{
+  "schema_version": 1,
+  "plan": "voice-keyboard-v2-firmware-board-migration",
+  "step_id": "1.2",
+  "generated_at": "2026-06-05T18:12:07.0356449+08:00",
+  "result": "PASS",
+  "repo_root": "C:\\Users\\Billy\\Desktop\\listener\\voice-keyboard-firmware",
+  "worktree": "C:\\Users\\Billy\\Desktop\\listener\\voice-keyboard-firmware-wt-oai3-voice-keyboard-v2-firmware-board-migration-1.2",
+  "branch": "ai/oai3-voice-keyboard-v2-firmware-board-migration-1.2",
+  "commit": "ef87c479f6a9c6fb8ea02bdf35ee2e873f938661",
+  "timeout_seconds": 180,
+  "commands": [
+    {
+      "index": 1,
+      "command": "manual: compare ports/esp32/board_pins/include/board_pins.h and board diagnostics against docs/validation/voice-keyboard-v2-firmware-board-migration-1.1-interface-confirmed.md",
+      "runnable": false,
+      "worktree": "C:\\Users\\Billy\\Desktop\\listener\\voice-keyboard-firmware-wt-oai3-voice-keyboard-v2-firmware-board-migration-1.2",
+      "branch": "ai/oai3-voice-keyboard-v2-firmware-board-migration-1.2",
+      "commit": "ef87c479f6a9c6fb8ea02bdf35ee2e873f938661",
+      "status": "RECORDED",
+      "started_at": "2026-06-05T18:12:04.6464890+08:00",
+      "finished_at": "2026-06-05T18:12:04.6464890+08:00",
+      "duration_ms": 0,
+      "exit_code": null,
+      "timed_out": false,
+      "stdout_summary": [],
+      "stderr_summary": [],
+      "output_sha256": null,
+      "evidence_refs": [
+        "artifact:docs/validation/voice-keyboard-v2-firmware-board-migration-1.2-oai3-validation.md"
+      ],
+      "artifacts": [
+        {
+          "ref": "artifact:docs/validation/voice-keyboard-v2-firmware-board-migration-1.2-oai3-validation.md",
+          "path": "docs/validation/voice-keyboard-v2-firmware-board-migration-1.2-oai3-validation.md",
+          "exists": true,
+          "sha256": "51fabec5ea9b2c04a024b682fabe5c4ed0198945464941f04f76f2d0ccc41a21"
+        }
+      ]
+    },
+    {
+      "index": 2,
+      "command": "pwsh -NoProfile -File tools/verify_v2_board_profile_static.ps1",
+      "runnable": true,
+      "worktree": "C:\\Users\\Billy\\Desktop\\listener\\voice-keyboard-firmware-wt-oai3-voice-keyboard-v2-firmware-board-migration-1.2",
+      "branch": "ai/oai3-voice-keyboard-v2-firmware-board-migration-1.2",
+      "commit": "ef87c479f6a9c6fb8ea02bdf35ee2e873f938661",
+      "status": "PASS",
+      "started_at": "2026-06-05T18:12:04.6710616+08:00",
+      "finished_at": "2026-06-05T18:12:06.1287958+08:00",
+      "duration_ms": 1458,
+      "exit_code": 0,
+      "timed_out": false,
+      "stdout_summary": [
+        "PASS: V2 N16R8 board profile, memory defaults, pin map, four-zone LED resources, battery-side current telemetry, USB_Det divider policy, diagnostics, partitions, and package identity checks passed."
+      ],
+      "stderr_summary": [],
+      "output_sha256": "22e7635539e658b31c7c1e31d3a6c3138e7f196616c0012d9e271c54e7a8e226",
+      "evidence_refs": [],
+      "artifacts": []
+    },
+    {
+      "index": 3,
+      "command": "python tools/verify_status_led_static.py",
+      "runnable": true,
+      "worktree": "C:\\Users\\Billy\\Desktop\\listener\\voice-keyboard-firmware-wt-oai3-voice-keyboard-v2-firmware-board-migration-1.2",
+      "branch": "ai/oai3-voice-keyboard-v2-firmware-board-migration-1.2",
+      "commit": "ef87c479f6a9c6fb8ea02bdf35ee2e873f938661",
+      "status": "PASS",
+      "started_at": "2026-06-05T18:12:06.1542742+08:00",
+      "finished_at": "2026-06-05T18:12:07.0344045+08:00",
+      "duration_ms": 880,
+      "exit_code": 0,
+      "timed_out": false,
+      "stdout_summary": [
+        "PASS: status LED static verification covers V2 four-zone WS2812 resources, EC11 GPIO5/count12, key GPIO13/count4, edge GPIO4/count6, diagnostics, USB validation hooks, and low-power off path."
+      ],
+      "stderr_summary": [],
+      "output_sha256": "13b9ef14bdcfd7a3d0652abb06f404d7b9bef70ebd3e0a9eea91809cf009eb0d",
+      "evidence_refs": [],
+      "artifacts": []
+    }
+  ],
+  "errors": []
+}
