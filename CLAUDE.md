@@ -200,7 +200,7 @@ python .\tools\verify_audio_ble_product_matrix.py --list-cases
 python .\tools\verify_audio_ble_product_matrix.py --port COM3 --cases A1 --a1-round-count 6 --fail-on-warning
 
 # 矩阵 case 说明
-# A1: 快速连续短录音，连续 5-8 轮短句，每轮走完整产品链路，轮间默认等待 3-5 秒
+# A1: 快速连续短录音，连续 5-8 轮短句，每轮走完整产品链路，上一轮文字/历史出现后默认 0-1 秒内触发下一轮
 # A2: 约一分钟长段录音，验证完整传输、partial preview 质量和最终识别准确率
 
 # 校验计划状态（所有 AI 完成步骤后跑一遍）

@@ -84,7 +84,7 @@ CASE_SUITES = {
 PRODUCT_CHAIN_OVERLAY_CASES = CASE_ORDER
 PRODUCT_CHAIN_IN_RUNNER_CASES = ("A1", "A2")
 CASE_DESCRIPTIONS = {
-    "A1": "快速连续短录音：连续 5-8 轮短句，轮间等待上一录音胶囊消失后的 3-5 秒再开始下一轮",
+    "A1": "快速连续短录音：连续 5-8 轮短句，上一轮文字出现后 1 秒内尝试拉起下一轮录音胶囊",
     "A2": "长段录音（约一分钟，默认 14 个分句）：验证完整传输 + partial preview 质量 + 最终识别准确率",
 }
 MATRIX_ARTIFACT_DIR = pathlib.Path("tests") / "artifacts" / "ble_product_matrix"
@@ -254,13 +254,13 @@ def parse_args():
         "--inter-session-gap-min-seconds",
         type=float,
         default=None,
-        help="Minimum A1 post-capsule gap before starting the next short recording (default window: 3-5 seconds).",
+        help="Minimum A1 gap after the previous text/history appears before starting the next short recording (default window: 0-1 seconds).",
     )
     parser.add_argument(
         "--inter-session-gap-max-seconds",
         type=float,
         default=None,
-        help="Maximum A1 post-capsule gap before starting the next short recording (default window: 3-5 seconds).",
+        help="Maximum A1 gap after the previous text/history appears before starting the next short recording (default window: 0-1 seconds).",
     )
     parser.add_argument("--idle-min-seconds", type=float, default=None)
     parser.add_argument("--idle-max-seconds", type=float, default=None)
@@ -436,11 +436,11 @@ def prepare_duration_randomizer(args) -> None:
         disable_random=args.disable_random_usage_timing,
     )
     args.inter_session_gap_window = resolve_float_window(
-        default_seconds=4.0,
+        default_seconds=0.5,
         min_seconds=args.inter_session_gap_min_seconds,
         max_seconds=args.inter_session_gap_max_seconds,
-        min_padding=1.0,
-        max_padding=1.0,
+        min_padding=0.5,
+        max_padding=0.5,
         absolute_min=0.0,
         disable_random=args.disable_random_usage_timing,
     )
@@ -609,6 +609,18 @@ async def wait_for_capsule_window_hidden(
         "hidden": hidden,
         "wait_seconds": elapsed_seconds,
         "timeout_seconds": timeout_seconds,
+    }
+
+
+def probe_capsule_window_state(*, label: str) -> dict[str, object]:
+    supported = sys.platform == "win32"
+    visible = is_listener_type_capsule_window_visible() if supported else False
+    print(f"{label}_capsule_window_supported={str(supported).lower()}", flush=True)
+    print(f"{label}_capsule_visible_before_gap={str(visible).lower()}", flush=True)
+    return {
+        "label": label,
+        "supported": supported,
+        "visible_before_gap": visible,
     }
 
 
@@ -1336,8 +1348,9 @@ async def run_a1(args) -> dict[str, object]:
     failures: list[str] = []
     warnings: list[str] = []
     missed_rounds: list[int] = []
-    capsule_hidden_checks: list[dict[str, object]] = []
+    capsule_gap_start_checks: list[dict[str, object]] = []
     inter_round_gaps: list[dict[str, object]] = []
+    text_to_next_capsule_latencies: list[dict[str, object]] = []
 
     for round_idx in range(round_count):
         sentence_seed = deterministic_sentence_seed(args, "A1", round_idx)
@@ -1373,6 +1386,44 @@ async def run_a1(args) -> dict[str, object]:
                 if isinstance(details, dict):
                     details["retry_attempt"] = compact_product_chain_attempt(retry)
 
+        if round_idx > 0 and all_profile_results:
+            previous_details = all_profile_results[-1].get("details")
+            current_details = product_chain.get("details")
+            previous_timeline = (
+                previous_details.get("timeline") if isinstance(previous_details, dict) else None
+            )
+            current_timeline = (
+                current_details.get("timeline") if isinstance(current_details, dict) else None
+            )
+            previous_text_at = (
+                parse_iso_datetime_utc(previous_timeline.get("history_wait_done_at_utc"))
+                if isinstance(previous_timeline, dict)
+                else None
+            )
+            current_capsule_at = (
+                parse_iso_datetime_utc(current_timeline.get("capsule_visible_at_utc"))
+                if isinstance(current_timeline, dict)
+                else None
+            )
+            if previous_text_at and current_capsule_at:
+                latency_seconds = round(
+                    (current_capsule_at - previous_text_at).total_seconds(),
+                    3,
+                )
+                text_to_next_capsule_latencies.append(
+                    {
+                        "round": round_idx + 1,
+                        "previous_round": round_idx,
+                        "seconds": latency_seconds,
+                        "previous_text_at_utc": previous_text_at.isoformat(),
+                        "capsule_visible_at_utc": current_capsule_at.isoformat(),
+                    }
+                )
+                print(
+                    f"a1_previous_text_to_capsule_visible_seconds=round{round_idx + 1}:{latency_seconds:.3f}",
+                    flush=True,
+                )
+
         all_profile_results.append(product_chain)
         result_str = str(product_chain.get("result"))
         if result_str == "fail":
@@ -1391,11 +1442,8 @@ async def run_a1(args) -> dict[str, object]:
             break
 
         if round_idx < round_count - 1:
-            gap_label = f"a1_after_round{round_idx + 1}_capsule_to_next_round"
-            hidden_check = await wait_for_capsule_window_hidden(label=gap_label)
-            capsule_hidden_checks.append(hidden_check)
-            if hidden_check.get("supported") and not hidden_check.get("hidden"):
-                warnings.append(f"round{round_idx + 1}_capsule_not_hidden_before_gap")
+            gap_label = f"a1_after_round{round_idx + 1}_text_to_next_round"
+            capsule_gap_start_checks.append(probe_capsule_window_state(label=gap_label))
 
             gap_seconds = choose_delay_seconds(
                 args,
@@ -1406,11 +1454,11 @@ async def run_a1(args) -> dict[str, object]:
                 {
                     "after_round": round_idx + 1,
                     "seconds": gap_seconds,
-                    "measurement": "capsule_hidden_to_next_round_start",
+                    "measurement": "previous_text_history_done_to_next_round_start",
                 }
             )
             print(
-                f"a1_capsule_to_next_round_gap_seconds=after_round{round_idx + 1}:{gap_seconds:.2f}",
+                f"a1_previous_text_to_next_round_gap_seconds=after_round{round_idx + 1}:{gap_seconds:.2f}",
                 flush=True,
             )
             await asyncio.sleep(gap_seconds)
@@ -1422,8 +1470,9 @@ async def run_a1(args) -> dict[str, object]:
         "capsule_evidence": all_capsule_checks,
         "round_count": round_count,
         "missed_rounds": missed_rounds,
-        "capsule_hidden_checks": capsule_hidden_checks,
+        "capsule_gap_start_checks": capsule_gap_start_checks,
         "inter_round_gaps": inter_round_gaps,
+        "text_to_next_capsule_latencies": text_to_next_capsule_latencies,
     }
 
     if failures:

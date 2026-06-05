@@ -12,8 +12,8 @@ param(
     [switch]$RestartPanAdapter,
     [int]$A1RoundCount = 6,
     [int]$A2LongSentenceCount = 14,
-    [double]$InterSessionGapMinSeconds = 3.0,
-    [double]$InterSessionGapMaxSeconds = 5.0
+    [double]$InterSessionGapMinSeconds = 0.0,
+    [double]$InterSessionGapMaxSeconds = 1.0
 )
 
 $ErrorActionPreference = "Stop"

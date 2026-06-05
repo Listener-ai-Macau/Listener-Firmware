@@ -10,7 +10,7 @@
 
 矩阵验证两个核心用户场景：
 
-- **A1 快速连续短录音**：连续 5-8 轮短句（从 SHORT_COMMAND_POOL 随机取），每轮走完整产品链路；上一轮录音胶囊窗口隐藏后等待 3-5 秒再开始下一轮，验证每轮独立识别且不丢轮
+- **A1 快速连续短录音**：连续 5-8 轮短句（从 SHORT_COMMAND_POOL 随机取），每轮走完整产品链路；上一轮文字/历史出现后 0-1 秒内开始下一轮，并记录 `previous_text_to_capsule_visible_seconds`，验证下一颗录音胶囊能否快速拉起且每轮独立识别不丢轮
 - **A2 长段录音**：单次约一分钟长段（默认 14 个随机分句），验证完整传输 + partial preview 质量 + 最终识别准确率
 
 ## Suite 分层
@@ -59,5 +59,5 @@ python .\tools\verify_audio_ble_product_matrix.py --port COMx --fail-on-warning
 - 默认逐 case fail-fast；需要全量失败收集时加 `--continue-on-failure`。
 - A2 默认生成约一分钟长录音（`--full-chain-long-sentence-count 14`），并验证 partial preview 内容质量（前缀 CER ≤ 0.5），不只是存在性。
 - 胶囊验证失败产生 warning 不直接 fail。
-- A1 每轮独立验证产品链路；轮间先记录 `capsule_hidden_checks`，再用默认 3-5 秒 `inter_session_gap` 作为胶囊隐藏到下一轮开始的间隔，产物记录 `inter_round_gaps`；出现丢轮（某轮无 transcript）记为 warning。
+- A1 每轮独立验证产品链路；轮间 `inter_session_gap` 默认 0-1 秒，作为上一轮文字/历史出现到下一轮开始的等待；产物记录 `inter_round_gaps` 和 `text_to_next_capsule_latencies`；出现丢轮（某轮无 transcript）记为 warning。
 - 矩阵只做编排和验收，不重新实现 Listener-Type 的 BLE 流式/ASR/插入逻辑。
