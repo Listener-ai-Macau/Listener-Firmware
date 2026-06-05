@@ -1129,10 +1129,13 @@ def validate_capsule_evidence(
 
 
 def product_chain_profiles_for_case(args, case_id: str) -> tuple[str, ...]:
+    requested_profile = str(args.full_chain_audio_profile)
+    if requested_profile != "normal":
+        return (requested_profile,)
     profiles = CASE_PRODUCT_CHAIN_AUDIO_PROFILES.get(case_id)
     if profiles:
         return profiles
-    return (str(args.full_chain_audio_profile),)
+    return (requested_profile,)
 
 
 def apply_accuracy_gate(
@@ -1389,19 +1392,23 @@ async def run_a1(args) -> dict[str, object]:
         if round_idx > 0 and all_profile_results:
             previous_details = all_profile_results[-1].get("details")
             current_details = product_chain.get("details")
-            previous_timeline = (
-                previous_details.get("timeline") if isinstance(previous_details, dict) else None
-            )
-            current_timeline = (
-                current_details.get("timeline") if isinstance(current_details, dict) else None
-            )
+            previous_timeline = product_chain_timeline(previous_details)
+            current_timeline = product_chain_timeline(current_details)
             previous_text_at = (
                 parse_iso_datetime_utc(previous_timeline.get("history_wait_done_at_utc"))
                 if isinstance(previous_timeline, dict)
                 else None
             )
+            current_capsule_visible = (
+                first_non_empty(
+                    current_timeline.get("notify_ready_capsule_visible_at_utc"),
+                    current_timeline.get("capsule_visible_at_utc"),
+                )
+                if isinstance(current_timeline, dict)
+                else ""
+            )
             current_capsule_at = (
-                parse_iso_datetime_utc(current_timeline.get("capsule_visible_at_utc"))
+                parse_iso_datetime_utc(current_capsule_visible)
                 if isinstance(current_timeline, dict)
                 else None
             )
@@ -1417,6 +1424,13 @@ async def run_a1(args) -> dict[str, object]:
                         "seconds": latency_seconds,
                         "previous_text_at_utc": previous_text_at.isoformat(),
                         "capsule_visible_at_utc": current_capsule_at.isoformat(),
+                        "capsule_source": (
+                            "notify_ready_capsule_visible_at_utc"
+                            if current_timeline
+                            and current_capsule_visible
+                            == current_timeline.get("notify_ready_capsule_visible_at_utc")
+                            else "capsule_visible_at_utc"
+                        ),
                     }
                 )
                 print(
@@ -2087,6 +2101,20 @@ def compact_product_chain_attempt(product_chain: dict[str, object]) -> dict[str,
             "listener_type_report_path": details.get("listener_type_report_path"),
         },
     }
+
+
+def product_chain_timeline(details: object) -> dict[str, object] | None:
+    if not isinstance(details, dict):
+        return None
+    timeline = details.get("timeline")
+    if isinstance(timeline, dict):
+        return timeline
+    report = details.get("listener_type_report")
+    if isinstance(report, dict):
+        timeline = report.get("timeline")
+        if isinstance(timeline, dict):
+            return timeline
+    return None
 
 
 async def attach_product_chain_overlay(
