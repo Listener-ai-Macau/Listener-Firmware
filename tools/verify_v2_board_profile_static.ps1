@@ -130,6 +130,7 @@ foreach ($item in @(
     @($board, "PWR_HOLD/GPIO46", "PWR_HOLD help text"),
     @($board, "reserved_mspi_gpio=%s", "reserved MSPI status field"),
     @($board, "~BOARD:GPIO", "raw V2 key and EC11 GPIO diagnostics command"),
+    @($board, "mode=read_as_configured reconfigure=0", "non-destructive GPIO diagnostics mode"),
     @($board, "recording_key=EC11_KEY/GPIO11", "EC11 recording key GPIO diagnostic"),
     @($board, "key_pressed_mask=0x%02", "V2 active-low custom key pressed mask"),
     @($board, "LED7..LED10\+LED15..LED16\+LED23..LED28", "EC11 LED refs in board diagnostics"),
@@ -162,6 +163,16 @@ foreach ($item in @(
     @($factoryPackage, 'hardware_revision = "esp32s3-wroom-1-n16r8"', "factory package V2 DIS revision")
 )) {
     Assert-Contains -Text $item[0] -Pattern $item[1] -Description $item[2]
+}
+
+if ($board -match "(?s)static void board_print_gpio_status\(void\)\s*\{(?<body>.*?)\n\}") {
+    $gpioStatusBody = $Matches["body"]
+    Assert-NotContains -Text $gpioStatusBody -Pattern "board_configure_status_input\s*\(\s*BOARD_PINS_EC11_A_IO\s*\)" -Description "~BOARD:GPIO EC11 A interrupt reconfiguration"
+    Assert-NotContains -Text $gpioStatusBody -Pattern "board_configure_status_input\s*\(\s*BOARD_PINS_EC11_B_IO\s*\)" -Description "~BOARD:GPIO EC11 B interrupt reconfiguration"
+    Assert-Contains -Text $gpioStatusBody -Pattern "board_read_gpio_level\s*\(\s*BOARD_PINS_EC11_A_IO\s*\)" -Description "~BOARD:GPIO EC11 A non-destructive read"
+    Assert-Contains -Text $gpioStatusBody -Pattern "board_read_gpio_level\s*\(\s*BOARD_PINS_EC11_B_IO\s*\)" -Description "~BOARD:GPIO EC11 B non-destructive read"
+} else {
+    Add-CheckError "missing board_print_gpio_status function"
 }
 
 foreach ($token in @(

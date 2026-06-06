@@ -376,14 +376,7 @@ static void board_print_led_status(void)
 
 static void board_print_gpio_status(void)
 {
-    board_configure_status_input(BOARD_PINS_KEY1_IO);
-    board_configure_status_input(BOARD_PINS_KEY2_IO);
-    board_configure_status_input(BOARD_PINS_KEY3_IO);
-    board_configure_status_input(BOARD_PINS_KEY4_IO);
-    board_configure_status_input(BOARD_PINS_EC11_A_IO);
-    board_configure_status_input(BOARD_PINS_EC11_B_IO);
-    board_configure_status_input(BOARD_PINS_EC11_KEY_IO);
-
+    /* Read as configured so diagnostics do not clear EC11 edge interrupts. */
     int key1 = board_read_gpio_level(BOARD_PINS_KEY1_IO);
     int key2 = board_read_gpio_level(BOARD_PINS_KEY2_IO);
     int key3 = board_read_gpio_level(BOARD_PINS_KEY3_IO);
@@ -401,7 +394,7 @@ static void board_print_gpio_status(void)
         (ec11_b > 0 ? 0x02u : 0u);
 
     printf(
-        "~BOARD:GPIO active_low=1"
+        "~BOARD:GPIO active_low=1 mode=read_as_configured reconfigure=0"
         " key1_gpio=%d key1_level=%s key1_pressed=%u"
         " key2_gpio=%d key2_level=%s key2_pressed=%u"
         " key3_gpio=%d key3_level=%s key3_pressed=%u"
@@ -662,7 +655,7 @@ void board_print_help(void)
         "KEY1/GPIO38, KEY2/GPIO39, KEY3/GPIO40, KEY4/GPIO41 send safe non-text BLE HID usages while Listener-Type custom actions are unavailable.\n"
         "Send ~VREC:RECOVERY to clear pairing/session state over USB.\n"
         "Board diagnostics: ~BOARD:STATUS reports V2 pin, USB, charger, battery, PWR_HOLD/GPIO46, mic, reserved MSPI, and LED resource status.\n"
-        "Board GPIO diagnostics: ~BOARD:GPIO reports raw KEY1-KEY4 and EC11 A/B/key levels.\n"
+        "Board GPIO diagnostics: ~BOARD:GPIO reads raw KEY1-KEY4 and EC11 A/B/key levels without reconfiguring pins.\n"
         "Board GPIO scan: ~BOARD:GPIO-SCAN samples all valid GPIO levels without reconfiguring pins and prints changed GPIOs.\n"
         "Input flash debug: ~DIAGLOG:INPUTDBG:ON records high-volume key/EC11 debug events until ~DIAGLOG:INPUTDBG:OFF or reboot.\n"
         "Power diagnostics: ~POWER:STATUS reports state/blockers/battery/power-hold status, ~POWER:SHUTDOWN requests manual hardware shutdown.\n"
