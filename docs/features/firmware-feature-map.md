@@ -13,11 +13,19 @@ same product capabilities with concrete source locations.
 | Recording control key | EC11 push/GPIO18 controls recording: single click starts or stops after the double-click window, while USB `VREC:` commands remain available for desktop/product validation. | `components/voice_recording_control/`, `ports/esp32/voice_key_input/` |
 | Recovery | EC11 push double-click recovery and serial `VREC:RECOVERY`, `VREC:RESET`, or `VREC:FORGET` clear pairing/session state. | `ports/esp32/voice_key_input/`, `components/voice_recording_control/`, `ports/esp32/ble_hid*` |
 | BLE audio transport | VKA1-style 16 kHz microphone sessions are framed as start/audio/stop/cancel/error notifications for Listener-Type, with executable transport invariants for epoch filtering, replay, queue/pool backpressure, stale GATT events, and terminal ownership. | `ports/esp32/audio_capture*`, `ports/esp32/ble_audio_stream*`, `tools/verify_ble_audio_transport_model.py` |
-| Diagnostics | `diag_log` records boot, BLE, audio, health, recording-key, self-test, and error events in flash-backed logs that survive reboot. | `components/diag_log/`, `ports/esp32/diag_log_platform/`, `tools/dump_diag_log.ps1` |
+| Diagnostics | `diag_log` records boot, BLE, health, power, board, status LED, WARN, and ERROR events by default in flash-backed logs that survive reboot. High-rate INFO sources are runtime-controlled: `keyboard`, `voice_key`, `audio`, `voice_rec`, and `ble_audio` are off by default and can be toggled with `~DIAGLOG:ENABLE <source>` / `~DIAGLOG:DISABLE <source>`. | `components/diag_log/`, `ports/esp32/diag_log_platform/`, `tools/dump_diag_log.ps1`, `tools/collect_ai_diagnostics.ps1` |
 | System health | Runtime heartbeat and resource checks cover heap, BLE state, disconnect conditions, and task health evidence. | `components/system_health/`, `ports/esp32/system_health_platform/` |
 | POST and degraded boot | Startup checks report NVS, heap, SPIRAM assumptions, BLE/audio pending state, and degraded boot status. | `main/`, `components/self_test/` |
 | Battery and factory readiness | Battery ADC status, USB serial text commands, readiness flags, and capability strings are exposed for production bring-up. | `ports/esp32/ble_hid*`, `ports/esp32/board_pins/`, `tools/package_factory_firmware.ps1` |
-| Low power | `power_manager` reports idle thresholds, blockers, sleep-only external-power blockers, V2 EC11/GPIO18 provisional deep-sleep wake policy, USB/charger raw and interpreted power status, battery entry/wake stats, and sleep-drain telemetry. | `components/power_manager/`, `docs/features/low_power_wake_policy.md`, `tools/verify_power_manager_static.py`, `tools/verify_charging_awake_policy_static.ps1` |
+| Low power | `power_manager` reports idle thresholds, blockers, sleep-only external-power blockers, V2 EC11/GPIO18 provisional deep-sleep wake policy, USB/charger/PWR_HOLD raw and interpreted power status, battery entry/wake stats, sleep-drain telemetry, and `DIAG_POWER_USB_DETECT` / `DIAG_POWER_CHARGE_STATE` / `DIAG_POWER_HOLD_STATE` transitions. | `components/power_manager/`, `docs/features/low_power_wake_policy.md`, `tools/verify_power_manager_static.py`, `tools/verify_charging_awake_policy_static.ps1` |
+
+## Diagnostic Source Controls
+
+`~DIAGLOG:SOURCES` reports every source with `info_enabled`, `info_default`, and the active mask. `~DIAGLOG:ENABLE <source>` and `~DIAGLOG:DISABLE <source>` toggle INFO retention without reflashing; WARN and ERROR events always pass the mask. `~DIAGLOG:LAST:N` emits a bounded recent tail, and `~DIAGLOG:LAST:N:<source>` emits a bounded recent tail for one source.
+
+Default INFO-on sources are `system`, `self_test`, `ble_hid`, `ble_gap`, `ota`, `health`, `power`, `board`, and `status_led`. Default INFO-off high-rate sources are `keyboard`, `voice_key`, `audio`, `voice_rec`, and `ble_audio`.
+
+Normal AI diagnostic collection uses `tools/collect_ai_diagnostics.ps1` or bounded `tools/dump_diag_log.ps1 -Count N`. Full retained export is still available only as the explicit `tools/dump_diag_log.ps1 -Full` path for exceptional manual use.
 
 ## Validation Entrypoints
 
@@ -29,7 +37,8 @@ python -m compileall -q tools
 pwsh -NoProfile -File .\tools\build.ps1
 pwsh -NoProfile -File .\tools\flash.ps1 -Port <COMx>
 pwsh -NoProfile -File .\tools\monitor.ps1 -Port <COMx>
-pwsh -NoProfile -File .\tools\dump_diag_log.ps1 -Port <COMx>
+pwsh -NoProfile -File .\tools\dump_diag_log.ps1 -Port <COMx> -Count 200
+pwsh -NoProfile -File .\tools\collect_ai_diagnostics.ps1 -Port <COMx> -RecentEventCount 200 -EnableSource keyboard,voice_key -Source keyboard,voice_key -OutputDir .\tests\artifacts\ai_diagnostics
 pwsh -NoProfile -File .\tools\verify_v2_board_profile_static.ps1
 pwsh -NoProfile -File .\tools\verify_power_manager_static.ps1
 pwsh -NoProfile -File .\tools\verify_charging_awake_policy_static.ps1

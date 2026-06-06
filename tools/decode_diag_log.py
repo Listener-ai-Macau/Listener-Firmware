@@ -427,6 +427,73 @@ def sorted_counter(counter: Counter[str]) -> dict[str, int]:
     return {key: counter[key] for key in sorted(counter)}
 
 
+def build_input_debug_summary(events: list[dict[str, Any]]) -> dict[str, Any]:
+    key_summary = {
+        f"KEY{i}": {"press": 0, "release": 0, "single": 0, "double": 0, "long": 0}
+        for i in range(1, 5)
+    }
+    ec11_summary: dict[str, Any] = {
+        "clockwise": 0,
+        "counterclockwise": 0,
+        "last_detent_count": None,
+        "press": 0,
+        "double_click_recovery": 0,
+        "long_press_ignored": 0,
+    }
+
+    key_phase_names = {
+        1: "press",
+        2: "release",
+        3: "single",
+        4: "double",
+        5: "long",
+    }
+    ec11_direction_names = {
+        1: "clockwise",
+        2: "counterclockwise",
+    }
+    ec11_press_names = {
+        1: "press",
+        2: "double_click_recovery",
+        3: "long_press_ignored",
+    }
+
+    for event in events:
+        source_name = event["source"].get("name")
+        event_name = event["event"].get("name")
+        args = event.get("args_named", {})
+
+        if source_name == "keyboard" and event_name == "kbd_custom_key":
+            logical_key = args.get("logical_key")
+            phase = args.get("phase")
+            key_name = f"KEY{logical_key}" if isinstance(logical_key, int) else None
+            phase_name = key_phase_names.get(phase) if isinstance(phase, int) else None
+            if key_name in key_summary and phase_name:
+                key_summary[key_name][phase_name] += 1
+            continue
+
+        if source_name == "keyboard" and event_name == "kbd_ec11_detent":
+            direction = args.get("direction")
+            direction_name = ec11_direction_names.get(direction) if isinstance(direction, int) else None
+            if direction_name:
+                ec11_summary[direction_name] += 1
+            if isinstance(args.get("detent_count"), int):
+                ec11_summary["last_detent_count"] = args["detent_count"]
+            continue
+
+        if source_name == "voice_key" and event_name == "vkey_press":
+            press_type = args.get("type")
+            press_name = ec11_press_names.get(press_type) if isinstance(press_type, int) else None
+            if press_name:
+                ec11_summary[press_name] += 1
+
+    return {
+        "custom_keys": key_summary,
+        "ec11": ec11_summary,
+        "notes": "Counts are populated when keyboard.kbd_custom_key, keyboard.kbd_ec11_detent, or voice_key.vkey_press events exist in the input log.",
+    }
+
+
 def build_summary(events: list[dict[str, Any]], segments: list[dict[str, Any]]) -> dict[str, Any]:
     source_counts: Counter[str] = Counter()
     severity_counts: Counter[str] = Counter()
@@ -477,6 +544,7 @@ def build_summary(events: list[dict[str, Any]], segments: list[dict[str, Any]]) 
         "counts_by_source": sorted_counter(source_counts),
         "counts_by_severity": sorted_counter(severity_counts),
         "counts_by_event": sorted_counter(event_counts),
+        "input_debug_summary": build_input_debug_summary(events),
         "recent_warning_error_refs": warning_error_refs[-20:],
         "session_refs": session_refs,
     }

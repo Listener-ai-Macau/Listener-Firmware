@@ -119,6 +119,9 @@
 #define DIAG_POWER_STATUS         7 /* a1=state, a2=blockers, a3=idle_ms, a4=wake_gpio_mask_low */
 #define DIAG_POWER_WAKE_POLICY    8 /* a1=policy, a2=wake_gpio_mask_low, a3=voice_key_capable, a4=voice_key_gpio */
 #define DIAG_POWER_EXTERNAL_POWER 9 /* a1=flags, a2=raw_levels, a3=idle_ms, a4=sleep_blockers */
+#define DIAG_POWER_USB_DETECT     10 /* a1=level, a2=usb_power_present, a3=idle_ms, a4=raw_levels */
+#define DIAG_POWER_CHARGE_STATE   11 /* a1=charging, a2=charge_full, a3=idle_ms, a4=raw_levels */
+#define DIAG_POWER_HOLD_STATE     12 /* a1=enabled, a2=gpio, a3=level, a4=policy */
 
 /* Board events (DIAG_SRC_BOARD) */
 #define DIAG_BOARD_PROFILE        1 /* a1=flash_mb, a2=psram_mb, a3=key1_gpio, a4=ec11_key_gpio */
