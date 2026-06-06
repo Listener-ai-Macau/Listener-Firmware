@@ -12,8 +12,9 @@ EC11 flash-log follow-up artifacts: `tests/artifacts/diag_flash_ec11_direction_2
 Input debug flash-log follow-up artifacts: `tests/artifacts/diag_flash_input_debug_20260606_oai2/`
 Submit refresh artifact root: `tests/artifacts/voice-keyboard-v2-firmware-board-migration-1.4-oai2/20260607-current`
 Final merge refresh artifact root: `tests/artifacts/voice-keyboard-v2-firmware-board-migration-1.4-oai2/20260607-final-d03a925`
+Rework refresh artifact root: `tests/artifacts/voice-keyboard-v2-firmware-board-migration-1.4-oai2/20260607-rework-nondestructive-gpio`
 
-Status: submit-ready for 1.4 AI evidence ladder. Residual final visible-effect, meter/fixture, EC11 push hand-feel, destructive watchdog, and product closure gates are explicitly deferred to 1.5.
+Status: re-submit-ready for 1.4 AI evidence ladder. Residual final visible-effect, meter/fixture, EC11 push hand-feel, destructive watchdog, and product closure gates are explicitly deferred to 1.5.
 
 ## Summary
 
@@ -32,6 +33,7 @@ The automated and non-destructive hardware checks found one real firmware defect
 - Follow-up flash-log debugging found the normal flash diag schema was too sparse for input bring-up. This branch adds a runtime, default-off input debug switch: `~DIAGLOG:INPUTDBG:ON`, `~DIAGLOG:INPUTDBG:OFF`, and `~DIAGLOG:INPUTDBG:STATUS`. When enabled, flash diag records KEY1-KEY4 raw/stable transitions, EC11 A/B transition/invalid/partial/dispatch details, and EC11 push raw/stable details. It is intended for hardware debugging only and should be turned off after input sign-off to avoid filling the flash ring with high-frequency input noise.
 - Submit refresh found `tools/flash.ps1` still defaulted to the long worktree-local `build` directory while `tools/build.ps1` defaulted to a short temp build directory. The first current locked flash attempt failed in the long build path before touching hardware state. `flash.ps1` now uses the same short-build selection as `build.ps1`, while still honoring `LISTENER_IDF_BUILD_DIR` when explicitly supplied.
 - Final merge refresh integrated current `master`, preserving the accepted hardware-shutdown path while applying the latest V2 pin evidence: `PWR_HOLD/GPIO46` is the power latch/shutdown output, and `EC11-KEY/GPIO11` remains the runtime recording input. This intentionally supersedes the older plan text that listed `PWR_HOLD/GPIO11` and `EC11-KEY_IO/GPIO18`.
+- Reviewer rework found `~BOARD:GPIO` still called `board_configure_status_input()` on EC11 A/B, which disabled the `GPIO_INTR_ANYEDGE` ISR configuration used by the EC11 runtime path. The diagnostic now reads KEY1-KEY4 and EC11 A/B/key as currently configured, prints `mode=read_as_configured reconfigure=0`, and `verify_v2_board_profile_static.ps1` rejects EC11 A/B reconfiguration inside `board_print_gpio_status()`.
 
 1.4 is complete as an AI-run evidence ladder: static checks, build, flash, serial capture, diag_log dump/decode, BLE HID static contract, diagnostic injection, and available physical-key/EC11 flash-backed evidence are captured. Remaining real-world visible-effect and repair/product decisions belong to 1.5.
 
@@ -83,6 +85,11 @@ Results:
 | Final merge flash | PASS | no-lock build first, then `with-lock -Resource COMx` resolved `COMx -> COM6`; `tools\flash.ps1 -Port COM6 -NoBuild` flashed final image; ESP32-S3 MAC `a4:cb:8f:f4:59:a4`; 16MB flash; 8MB embedded PSRAM; image hashes verified |
 | Final merge serial status/telemetry | PASS | `current_telemetry/v2_current_telemetry_20260607-072357.md` records both current branches present, battery around 4.09-4.10 V, `hardware_shutdown_ms=1800000`, and `PWR_HOLD GPIO: 46` |
 | Final merge bounded diag_log dump/decode | PASS | `diag_log_20260607-072414.jsonl` captured 240 retained events; `ai_diagnostics/manifest.json` records 240 decoded events, 13 warning/error refs, 4 boot segments, board profile highlights, LED resource highlights, and `pwr_hold_gpio=46` |
+| Rework non-destructive GPIO diagnostic static/tool checks | PASS | commit `0d4d95f2bb71712a13178df99d3fc2c37b136171`; `repo_features.ps1 -Check`, `verify_v2_board_profile_static.ps1`, `verify_power_manager_static.ps1`, `verify_status_led_static.py`, `verify_ble_ota_gatt_contract.py`, `verify_diagnostic_log_coverage.ps1`, `verify_ble_hid.ps1`, `python -m compileall -q tools`, and `git diff --check` all passed |
+| Rework build | PASS | `pwsh -NoProfile -File .\tools\build.ps1 -Target esp32s3`; short build dir `C:\Users\Billy\AppData\Local\Temp\listener-idf-build-36ea52e79d27`; app `0xc0490`, 87% free |
+| Rework flash | PASS | no-lock build first, then `with-lock -Resource COMx,BLE-ADDR` resolved `COMx -> COM6`; `tools\flash.ps1 -Port COM6 -NoBuild` flashed final image; ESP32-S3 MAC `a4:cb:8f:f4:59:a4`; 16MB flash; 8MB embedded PSRAM; image hashes verified |
+| Rework serial status/telemetry and GPIO diagnostic | PASS | `current_telemetry/v2_current_telemetry_20260607-074822.md` records both current branches present, battery around 4.07-4.11 V, `hardware_shutdown_ms=1800000`, and `PWR_HOLD GPIO: 46`; `board_gpio_status.txt` records `~BOARD:GPIO active_low=1 mode=read_as_configured reconfigure=0`, EC11 A/B idle high, and `ec11_ab_state=0x03` |
+| Rework bounded diag_log dump/decode | PASS | `diag_log_20260607-074837.jsonl` captured 240 retained events; `ai_diagnostics/manifest.json` records 240 decoded events, 10 warning/error refs, 4 boot segments, and board/power/BLE parameter highlights |
 
 Static/build checks run after the fix:
 
@@ -144,6 +151,19 @@ Static/build checks run after the fix:
 - PASS final merge refresh: `pwsh -NoProfile -File .\tools\flash.ps1 -Port COMx -NoBuild` under `aiw with-lock` after the no-lock final build
 - PASS final merge refresh: `pwsh -NoProfile -File .\tools\collect_v2_current_telemetry.ps1 -Port COMx` under `aiw with-lock`
 - PASS final merge refresh: `pwsh -NoProfile -File .\tools\dump_diag_log.ps1 -Port COMx -Count 240` under `aiw with-lock`, plus offline decode through `collect_ai_diagnostics.ps1`
+- PASS rework refresh: `pwsh -NoProfile -File .\tools\ai\repo_features.ps1 -Check`
+- PASS rework refresh: `pwsh -NoProfile -File .\tools\verify_v2_board_profile_static.ps1`
+- PASS rework refresh: `pwsh -NoProfile -File .\tools\verify_power_manager_static.ps1`
+- PASS rework refresh: `python .\tools\verify_status_led_static.py`
+- PASS rework refresh: `python .\tools\verify_ble_ota_gatt_contract.py`
+- PASS rework refresh: `pwsh -NoProfile -File .\tools\verify_diagnostic_log_coverage.ps1`
+- PASS rework refresh: `pwsh -NoProfile -File .\tools\verify_ble_hid.ps1`
+- PASS rework refresh: `python -m compileall -q tools`
+- PASS rework refresh: `git diff --check`
+- PASS rework refresh: `pwsh -NoProfile -File .\tools\build.ps1 -Target esp32s3`
+- PASS rework refresh: `pwsh -NoProfile -File .\tools\flash.ps1 -Port COMx -NoBuild` under `aiw with-lock` after a no-lock build
+- PASS rework refresh: `pwsh -NoProfile -File .\tools\collect_v2_current_telemetry.ps1 -Port COMx` and a bounded `~BOARD:GPIO` capture under `aiw with-lock`
+- PASS rework refresh: `pwsh -NoProfile -File .\tools\dump_diag_log.ps1 -Port COMx -Count 240` under `aiw with-lock`, plus offline decode through `collect_ai_diagnostics.ps1`
 
 ## Observed PASS Evidence
 
@@ -186,6 +206,7 @@ Power and telemetry:
 Physical key/EC11 follow-up:
 
 - `~BOARD:GPIO` reads raw active-low levels for KEY1 GPIO38, KEY2 GPIO39, KEY3 GPIO40, KEY4 GPIO41, EC11 A GPIO42, EC11 B GPIO2, and EC11 key GPIO11.
+- Rework refresh confirms `~BOARD:GPIO` is non-destructive for interrupt-owned EC11 A/B pins: `board_gpio_status.txt` shows `mode=read_as_configured reconfigure=0`, `ec11_a_level=high`, `ec11_b_level=high`, and `ec11_ab_state=0x03`. The static guard now fails if `board_print_gpio_status()` reintroduces `board_configure_status_input()` for EC11 A/B.
 - Before the latest hardware recheck, a 60 second locked capture polled `~BOARD:GPIO` 56 times with the obsolete EC11 key GPIO18 mapping. Every sample reported `key_pressed_mask=0x00`, `ec11_key_pressed=0`, and `ec11_ab_state=0x03`.
 - After the latest hardware recheck and EC11 GPIO11 correction, a 90 second locked capture reported 116 data samples with `key_pressed_mask=0x00`, `ec11_key_pressed=0`, and `ec11_ab_state=0x03`.
 - A second 180 second locked capture after the same correction reported 320 data samples with `key_pressed_mask=0x00`, `ec11_key_pressed=0`, and `ec11_ab_state=0x03`.

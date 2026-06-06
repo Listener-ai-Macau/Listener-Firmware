@@ -2,12 +2,12 @@
   "schema_version": 1,
   "plan": "voice-keyboard-v2-firmware-board-migration",
   "step_id": "1.4",
-  "generated_at": "2026-06-07T07:25:56.4608016+08:00",
+  "generated_at": "2026-06-07T07:50:51.6025833+08:00",
   "result": "PASS",
   "repo_root": "C:\\Users\\Billy\\Desktop\\listener\\voice-keyboard-firmware-wt-oai2-voice-keyboard-v2-firmware-board-migration-1.4",
   "worktree": "C:\\Users\\Billy\\Desktop\\listener\\voice-keyboard-firmware-wt-oai2-voice-keyboard-v2-firmware-board-migration-1.4",
   "branch": "ai/oai2-voice-keyboard-v2-firmware-board-migration-1.4",
-  "commit": "d03a9257b841cadcefed4773f6e901320dc46c7d",
+  "commit": "0d4d95f9d4f1b86f200cfb48a030366c7ece8e4f",
   "timeout_seconds": 120,
   "commands": [
     {
@@ -16,18 +16,18 @@
       "runnable": true,
       "worktree": "C:\\Users\\Billy\\Desktop\\listener\\voice-keyboard-firmware-wt-oai2-voice-keyboard-v2-firmware-board-migration-1.4",
       "branch": "ai/oai2-voice-keyboard-v2-firmware-board-migration-1.4",
-      "commit": "d03a9257b841cadcefed4773f6e901320dc46c7d",
+      "commit": "0d4d95f9d4f1b86f200cfb48a030366c7ece8e4f",
       "status": "PASS",
-      "started_at": "2026-06-07T07:25:56.4608016+08:00",
-      "finished_at": "2026-06-07T07:25:56.4608016+08:00",
+      "started_at": "2026-06-07T07:50:51.6025833+08:00",
+      "finished_at": "2026-06-07T07:50:51.6025833+08:00",
       "duration_ms": 1000,
       "exit_code": 0,
       "timed_out": false,
       "stdout_summary": [
-        "PASS: final merge V2 board profile verification covers N16R8 memory, GPIO38-41 keys, EC11 GPIO42/GPIO2/GPIO11, PWR_HOLD/GPIO46, four-zone LED resources, telemetry, diagnostics, partitions, and package identity."
+        "PASS: rework V2 board profile verification covers N16R8 memory, GPIO38-41 keys, EC11 GPIO42/GPIO2/GPIO11, non-destructive ~BOARD:GPIO mode, and rejects EC11 A/B interrupt reconfiguration inside board_print_gpio_status()."
       ],
       "stderr_summary": [],
-      "output_sha256": "61b6a29b21fc41bb4596c626d295d88c0458ad61c5a6c8b8e412469b81a1a691",
+      "output_sha256": "4efae3129641f899a333ea00b7750dcc9adfa2cb7d486fb68e67f65e3e1cfdc4",
       "evidence_refs": [
         "artifact:docs/validation/voice-keyboard-v2-firmware-board-migration-1.4.md"
       ],
@@ -36,7 +36,7 @@
           "ref": "artifact:docs/validation/voice-keyboard-v2-firmware-board-migration-1.4.md",
           "path": "docs/validation/voice-keyboard-v2-firmware-board-migration-1.4.md",
           "exists": true,
-          "sha256": "5432a4c923ec67b587c179b44b79146660e06840c25559850eaa3d6fe976decc"
+          "sha256": "42bae16074d1da72a9180ccbefc634edccf0b3c1275c059b0d6da98d18a19348"
         }
       ]
     },
@@ -46,18 +46,18 @@
       "runnable": true,
       "worktree": "C:\\Users\\Billy\\Desktop\\listener\\voice-keyboard-firmware-wt-oai2-voice-keyboard-v2-firmware-board-migration-1.4",
       "branch": "ai/oai2-voice-keyboard-v2-firmware-board-migration-1.4",
-      "commit": "d03a9257b841cadcefed4773f6e901320dc46c7d",
+      "commit": "0d4d95f9d4f1b86f200cfb48a030366c7ece8e4f",
       "status": "PASS",
-      "started_at": "2026-06-07T07:25:56.4608016+08:00",
-      "finished_at": "2026-06-07T07:25:56.4608016+08:00",
+      "started_at": "2026-06-07T07:50:51.6025833+08:00",
+      "finished_at": "2026-06-07T07:50:51.6025833+08:00",
       "duration_ms": 1000,
       "exit_code": 0,
       "timed_out": false,
       "stdout_summary": [
-        "PASS: final merge power manager static verification covers hardware shutdown, PWR_HOLD/GPIO46, external-power blockers, idle actions, diagnostics, and Deep Sleep removal."
+        "PASS: rework power manager static verification covers hardware shutdown, PWR_HOLD/GPIO46, external-power blockers, idle actions, diagnostics, and Deep Sleep removal."
       ],
       "stderr_summary": [],
-      "output_sha256": "bd67e9d0e96d19712311c993d9e4b9b5785777797f96ae505daf13f9f804c19e",
+      "output_sha256": "524a994e1dbb24bed37c2d5cf8902a98f581e0280803acfd14887d5e2b524541",
       "evidence_refs": [
         "artifact:docs/validation/voice-keyboard-v2-firmware-board-migration-1.4.md"
       ],
@@ -66,7 +66,7 @@
           "ref": "artifact:docs/validation/voice-keyboard-v2-firmware-board-migration-1.4.md",
           "path": "docs/validation/voice-keyboard-v2-firmware-board-migration-1.4.md",
           "exists": true,
-          "sha256": "5432a4c923ec67b587c179b44b79146660e06840c25559850eaa3d6fe976decc"
+          "sha256": "42bae16074d1da72a9180ccbefc634edccf0b3c1275c059b0d6da98d18a19348"
         }
       ]
     },
@@ -76,18 +76,18 @@
       "runnable": true,
       "worktree": "C:\\Users\\Billy\\Desktop\\listener\\voice-keyboard-firmware-wt-oai2-voice-keyboard-v2-firmware-board-migration-1.4",
       "branch": "ai/oai2-voice-keyboard-v2-firmware-board-migration-1.4",
-      "commit": "d03a9257b841cadcefed4773f6e901320dc46c7d",
+      "commit": "0d4d95f9d4f1b86f200cfb48a030366c7ece8e4f",
       "status": "PASS",
-      "started_at": "2026-06-07T07:25:56.4608016+08:00",
-      "finished_at": "2026-06-07T07:25:56.4608016+08:00",
+      "started_at": "2026-06-07T07:50:51.6025833+08:00",
+      "finished_at": "2026-06-07T07:50:51.6025833+08:00",
       "duration_ms": 1000,
       "exit_code": 0,
       "timed_out": false,
       "stdout_summary": [
-        "PASS: final merge status LED static verification covers V2 four-zone WS2812 resources, EC11 GPIO5/count12, key GPIO13/count4, edge GPIO4/count6, diagnostics, USB validation hooks, and low-power off path."
+        "PASS: rework status LED static verification covers V2 four-zone WS2812 resources, EC11 GPIO5/count12, key GPIO13/count4, edge GPIO4/count6, diagnostics, USB validation hooks, and low-power off path."
       ],
       "stderr_summary": [],
-      "output_sha256": "b8072b25d2a4c9bb924398c6dc5bd57132cc04907921b0bff722d00e592ff32a",
+      "output_sha256": "a4ffd806732aefdfa7d5dc055b00b33818c0127db251d3bc8033031433cf7f0a",
       "evidence_refs": [
         "artifact:docs/validation/voice-keyboard-v2-firmware-board-migration-1.4.md"
       ],
@@ -96,7 +96,7 @@
           "ref": "artifact:docs/validation/voice-keyboard-v2-firmware-board-migration-1.4.md",
           "path": "docs/validation/voice-keyboard-v2-firmware-board-migration-1.4.md",
           "exists": true,
-          "sha256": "5432a4c923ec67b587c179b44b79146660e06840c25559850eaa3d6fe976decc"
+          "sha256": "42bae16074d1da72a9180ccbefc634edccf0b3c1275c059b0d6da98d18a19348"
         }
       ]
     },
@@ -106,18 +106,18 @@
       "runnable": true,
       "worktree": "C:\\Users\\Billy\\Desktop\\listener\\voice-keyboard-firmware-wt-oai2-voice-keyboard-v2-firmware-board-migration-1.4",
       "branch": "ai/oai2-voice-keyboard-v2-firmware-board-migration-1.4",
-      "commit": "d03a9257b841cadcefed4773f6e901320dc46c7d",
+      "commit": "0d4d95f9d4f1b86f200cfb48a030366c7ece8e4f",
       "status": "PASS",
-      "started_at": "2026-06-07T07:25:56.4608016+08:00",
-      "finished_at": "2026-06-07T07:25:56.4608016+08:00",
+      "started_at": "2026-06-07T07:50:51.6025833+08:00",
+      "finished_at": "2026-06-07T07:50:51.6025833+08:00",
       "duration_ms": 1000,
       "exit_code": 0,
       "timed_out": false,
       "stdout_summary": [
-        "PASS: final merge BLE OTA GATT contract matches desktop firmware OTA and embedded BLE contracts."
+        "PASS: rework BLE OTA GATT contract matches desktop firmware OTA and embedded BLE contracts."
       ],
       "stderr_summary": [],
-      "output_sha256": "e47efe0b62f4a9e43aac37a82fd1af08b55f9fa47bc4d2765ef4adac5070acf2",
+      "output_sha256": "f98a4e30681f42e871a0de0c45d43a5c58054cf5ec0af8651fa7f32992697ab5",
       "evidence_refs": [
         "artifact:docs/validation/voice-keyboard-v2-firmware-board-migration-1.4.md"
       ],
@@ -126,7 +126,7 @@
           "ref": "artifact:docs/validation/voice-keyboard-v2-firmware-board-migration-1.4.md",
           "path": "docs/validation/voice-keyboard-v2-firmware-board-migration-1.4.md",
           "exists": true,
-          "sha256": "5432a4c923ec67b587c179b44b79146660e06840c25559850eaa3d6fe976decc"
+          "sha256": "42bae16074d1da72a9180ccbefc634edccf0b3c1275c059b0d6da98d18a19348"
         }
       ]
     },
@@ -136,18 +136,18 @@
       "runnable": true,
       "worktree": "C:\\Users\\Billy\\Desktop\\listener\\voice-keyboard-firmware-wt-oai2-voice-keyboard-v2-firmware-board-migration-1.4",
       "branch": "ai/oai2-voice-keyboard-v2-firmware-board-migration-1.4",
-      "commit": "d03a9257b841cadcefed4773f6e901320dc46c7d",
+      "commit": "0d4d95f9d4f1b86f200cfb48a030366c7ece8e4f",
       "status": "PASS",
-      "started_at": "2026-06-07T07:25:56.4608016+08:00",
-      "finished_at": "2026-06-07T07:25:56.4608016+08:00",
-      "duration_ms": 18000,
+      "started_at": "2026-06-07T07:50:51.6025833+08:00",
+      "finished_at": "2026-06-07T07:50:51.6025833+08:00",
+      "duration_ms": 18100,
       "exit_code": 0,
       "timed_out": false,
       "stdout_summary": [
-        "PASS: final merge with-lock resolved COMx to COM6; no-lock build produced app 0xc0470 with 87% free; flash.ps1 -Port COM6 -NoBuild flashed final image; ESP32-S3 MAC a4:cb:8f:f4:59:a4; 16MB flash; 8MB PSRAM; image hashes verified."
+        "PASS: no-lock build produced app 0xc0490 with 87% free; with-lock resolved COMx to COM6; flash.ps1 -Port COM6 -NoBuild flashed rework image; ESP32-S3 MAC a4:cb:8f:f4:59:a4; 16MB flash; 8MB PSRAM; image hashes verified."
       ],
       "stderr_summary": [],
-      "output_sha256": "0894fff5ae81f8e837715e54f5437d02257faf1890a3714f92ce23d34cb77ac6",
+      "output_sha256": "dacf09c492bf9eba25a6d4693c62b99318d3604d88000e969a65737c9c6cabd6",
       "evidence_refs": [
         "artifact:docs/validation/voice-keyboard-v2-firmware-board-migration-1.4.md"
       ],
@@ -156,7 +156,7 @@
           "ref": "artifact:docs/validation/voice-keyboard-v2-firmware-board-migration-1.4.md",
           "path": "docs/validation/voice-keyboard-v2-firmware-board-migration-1.4.md",
           "exists": true,
-          "sha256": "5432a4c923ec67b587c179b44b79146660e06840c25559850eaa3d6fe976decc"
+          "sha256": "42bae16074d1da72a9180ccbefc634edccf0b3c1275c059b0d6da98d18a19348"
         }
       ]
     },
@@ -166,41 +166,48 @@
       "runnable": true,
       "worktree": "C:\\Users\\Billy\\Desktop\\listener\\voice-keyboard-firmware-wt-oai2-voice-keyboard-v2-firmware-board-migration-1.4",
       "branch": "ai/oai2-voice-keyboard-v2-firmware-board-migration-1.4",
-      "commit": "d03a9257b841cadcefed4773f6e901320dc46c7d",
+      "commit": "0d4d95f9d4f1b86f200cfb48a030366c7ece8e4f",
       "status": "PASS",
-      "started_at": "2026-06-07T07:25:56.4608016+08:00",
-      "finished_at": "2026-06-07T07:25:56.4608016+08:00",
-      "duration_ms": 15300,
+      "started_at": "2026-06-07T07:50:51.6025833+08:00",
+      "finished_at": "2026-06-07T07:50:51.6025833+08:00",
+      "duration_ms": 33000,
       "exit_code": 0,
       "timed_out": false,
       "stdout_summary": [
-        "PASS: bounded serial status/telemetry capture used instead of infinite interactive monitor to avoid holding hardware lock indefinitely; report records both current branches present, battery around 4.09-4.10 V, hardware_shutdown_ms=1800000, and PWR_HOLD GPIO 46."
+        "PASS: bounded serial status/telemetry plus targeted ~BOARD:GPIO capture used instead of infinite interactive monitor; report records both current branches present, battery around 4.07-4.11 V, hardware_shutdown_ms=1800000, PWR_HOLD GPIO 46, and ~BOARD:GPIO mode=read_as_configured reconfigure=0 with EC11 A/B idle high."
       ],
       "stderr_summary": [],
-      "output_sha256": "1188cfa04434ab80c5f3ab8c8e418af61ca424803a9e65da38d3531a76b2334d",
+      "output_sha256": "cbafb7e2e102797de00a10582122bc703b77c7bcf6d0822a72a6405f9c74a476",
       "evidence_refs": [
         "artifact:docs/validation/voice-keyboard-v2-firmware-board-migration-1.4.md",
-        "artifact:tests/artifacts/voice-keyboard-v2-firmware-board-migration-1.4-oai2/20260607-final-d03a925/current_telemetry/v2_current_telemetry_20260607-072357.md",
-        "artifact:tests/artifacts/voice-keyboard-v2-firmware-board-migration-1.4-oai2/20260607-final-d03a925/current_telemetry/v2_current_telemetry_20260607-072357.json"
+        "artifact:tests/artifacts/voice-keyboard-v2-firmware-board-migration-1.4-oai2/20260607-rework-nondestructive-gpio/current_telemetry/v2_current_telemetry_20260607-074822.md",
+        "artifact:tests/artifacts/voice-keyboard-v2-firmware-board-migration-1.4-oai2/20260607-rework-nondestructive-gpio/current_telemetry/v2_current_telemetry_20260607-074822.json",
+        "artifact:tests/artifacts/voice-keyboard-v2-firmware-board-migration-1.4-oai2/20260607-rework-nondestructive-gpio/board_gpio_status.txt"
       ],
       "artifacts": [
         {
           "ref": "artifact:docs/validation/voice-keyboard-v2-firmware-board-migration-1.4.md",
           "path": "docs/validation/voice-keyboard-v2-firmware-board-migration-1.4.md",
           "exists": true,
-          "sha256": "5432a4c923ec67b587c179b44b79146660e06840c25559850eaa3d6fe976decc"
+          "sha256": "42bae16074d1da72a9180ccbefc634edccf0b3c1275c059b0d6da98d18a19348"
         },
         {
-          "ref": "artifact:tests/artifacts/voice-keyboard-v2-firmware-board-migration-1.4-oai2/20260607-final-d03a925/current_telemetry/v2_current_telemetry_20260607-072357.md",
-          "path": "tests/artifacts/voice-keyboard-v2-firmware-board-migration-1.4-oai2/20260607-final-d03a925/current_telemetry/v2_current_telemetry_20260607-072357.md",
+          "ref": "artifact:tests/artifacts/voice-keyboard-v2-firmware-board-migration-1.4-oai2/20260607-rework-nondestructive-gpio/current_telemetry/v2_current_telemetry_20260607-074822.md",
+          "path": "tests/artifacts/voice-keyboard-v2-firmware-board-migration-1.4-oai2/20260607-rework-nondestructive-gpio/current_telemetry/v2_current_telemetry_20260607-074822.md",
           "exists": true,
-          "sha256": "66e863d84af07d764f071a63c82b2eaf868e161fd224fadce5a48469c877e1b1"
+          "sha256": "fb9a0d37230ba1fc120629814d86c9669ce6b2cf6824157090807ecacaadecd2"
         },
         {
-          "ref": "artifact:tests/artifacts/voice-keyboard-v2-firmware-board-migration-1.4-oai2/20260607-final-d03a925/current_telemetry/v2_current_telemetry_20260607-072357.json",
-          "path": "tests/artifacts/voice-keyboard-v2-firmware-board-migration-1.4-oai2/20260607-final-d03a925/current_telemetry/v2_current_telemetry_20260607-072357.json",
+          "ref": "artifact:tests/artifacts/voice-keyboard-v2-firmware-board-migration-1.4-oai2/20260607-rework-nondestructive-gpio/current_telemetry/v2_current_telemetry_20260607-074822.json",
+          "path": "tests/artifacts/voice-keyboard-v2-firmware-board-migration-1.4-oai2/20260607-rework-nondestructive-gpio/current_telemetry/v2_current_telemetry_20260607-074822.json",
           "exists": true,
-          "sha256": "f1a17a9ebb9796a64dbae34899e07331b34af1d0c14b221985cbbe9cf113ebd8"
+          "sha256": "9e57bbc0af46b0c952b278b782e2ebb76031dcd36341c4d5e88a9439906b7ced"
+        },
+        {
+          "ref": "artifact:tests/artifacts/voice-keyboard-v2-firmware-board-migration-1.4-oai2/20260607-rework-nondestructive-gpio/board_gpio_status.txt",
+          "path": "tests/artifacts/voice-keyboard-v2-firmware-board-migration-1.4-oai2/20260607-rework-nondestructive-gpio/board_gpio_status.txt",
+          "exists": true,
+          "sha256": "d5c7eec2d393b81f46d92e8ca7f9db0f64c7a8d186efcb09df3da00e83ba5503"
         }
       ]
     },
@@ -210,48 +217,48 @@
       "runnable": true,
       "worktree": "C:\\Users\\Billy\\Desktop\\listener\\voice-keyboard-firmware-wt-oai2-voice-keyboard-v2-firmware-board-migration-1.4",
       "branch": "ai/oai2-voice-keyboard-v2-firmware-board-migration-1.4",
-      "commit": "d03a9257b841cadcefed4773f6e901320dc46c7d",
+      "commit": "0d4d95f9d4f1b86f200cfb48a030366c7ece8e4f",
       "status": "PASS",
-      "started_at": "2026-06-07T07:25:56.4608016+08:00",
-      "finished_at": "2026-06-07T07:25:56.4608016+08:00",
-      "duration_ms": 13400,
+      "started_at": "2026-06-07T07:50:51.6025833+08:00",
+      "finished_at": "2026-06-07T07:50:51.6025833+08:00",
+      "duration_ms": 13200,
       "exit_code": 0,
       "timed_out": false,
       "stdout_summary": [
-        "PASS: with-lock resolved COMx to COM6; dump_diag_log.ps1 captured 240 retained JSON events; collect_ai_diagnostics decoded 240 events, 13 warning/error refs, 4 boot segments, board profile highlights, LED resource highlights, and pwr_hold_gpio=46."
+        "PASS: with-lock resolved COMx to COM6; dump_diag_log.ps1 captured 240 retained JSON events; collect_ai_diagnostics decoded 240 events, 10 warning/error refs, 4 boot segments, and board/power/BLE parameter highlights."
       ],
       "stderr_summary": [],
-      "output_sha256": "6e629ae262cb768e101e9359cee8dac078d1a5359b270b33c1d97c59d3a70424",
+      "output_sha256": "05ead252e557723df048271a38353d66180c481371a2d57b8ca0ec83196cfec7",
       "evidence_refs": [
         "artifact:docs/validation/voice-keyboard-v2-firmware-board-migration-1.4.md",
-        "artifact:tests/artifacts/voice-keyboard-v2-firmware-board-migration-1.4-oai2/20260607-final-d03a925/diag_log_20260607-072414.jsonl",
-        "artifact:tests/artifacts/voice-keyboard-v2-firmware-board-migration-1.4-oai2/20260607-final-d03a925/ai_diagnostics/manifest.json",
-        "artifact:tests/artifacts/voice-keyboard-v2-firmware-board-migration-1.4-oai2/20260607-final-d03a925/ai_diagnostics/diag_log_ai_bundle.json"
+        "artifact:tests/artifacts/voice-keyboard-v2-firmware-board-migration-1.4-oai2/20260607-rework-nondestructive-gpio/diag_log_20260607-074837.jsonl",
+        "artifact:tests/artifacts/voice-keyboard-v2-firmware-board-migration-1.4-oai2/20260607-rework-nondestructive-gpio/ai_diagnostics/manifest.json",
+        "artifact:tests/artifacts/voice-keyboard-v2-firmware-board-migration-1.4-oai2/20260607-rework-nondestructive-gpio/ai_diagnostics/diag_log_ai_bundle.json"
       ],
       "artifacts": [
         {
           "ref": "artifact:docs/validation/voice-keyboard-v2-firmware-board-migration-1.4.md",
           "path": "docs/validation/voice-keyboard-v2-firmware-board-migration-1.4.md",
           "exists": true,
-          "sha256": "5432a4c923ec67b587c179b44b79146660e06840c25559850eaa3d6fe976decc"
+          "sha256": "42bae16074d1da72a9180ccbefc634edccf0b3c1275c059b0d6da98d18a19348"
         },
         {
-          "ref": "artifact:tests/artifacts/voice-keyboard-v2-firmware-board-migration-1.4-oai2/20260607-final-d03a925/diag_log_20260607-072414.jsonl",
-          "path": "tests/artifacts/voice-keyboard-v2-firmware-board-migration-1.4-oai2/20260607-final-d03a925/diag_log_20260607-072414.jsonl",
+          "ref": "artifact:tests/artifacts/voice-keyboard-v2-firmware-board-migration-1.4-oai2/20260607-rework-nondestructive-gpio/diag_log_20260607-074837.jsonl",
+          "path": "tests/artifacts/voice-keyboard-v2-firmware-board-migration-1.4-oai2/20260607-rework-nondestructive-gpio/diag_log_20260607-074837.jsonl",
           "exists": true,
-          "sha256": "d964463d92d43ee2a12679a6c9a5efb8f3dcf4d41d17709e029f6a2e7ed0b08f"
+          "sha256": "51fe6f0bee4a0b660ab2957b7af4dd53612258cd9ac0046556a3f46ec68267d7"
         },
         {
-          "ref": "artifact:tests/artifacts/voice-keyboard-v2-firmware-board-migration-1.4-oai2/20260607-final-d03a925/ai_diagnostics/manifest.json",
-          "path": "tests/artifacts/voice-keyboard-v2-firmware-board-migration-1.4-oai2/20260607-final-d03a925/ai_diagnostics/manifest.json",
+          "ref": "artifact:tests/artifacts/voice-keyboard-v2-firmware-board-migration-1.4-oai2/20260607-rework-nondestructive-gpio/ai_diagnostics/manifest.json",
+          "path": "tests/artifacts/voice-keyboard-v2-firmware-board-migration-1.4-oai2/20260607-rework-nondestructive-gpio/ai_diagnostics/manifest.json",
           "exists": true,
-          "sha256": "6213aa54b57f756e49564560d3098a9c20113d360fdb306306930273a3156834"
+          "sha256": "f7f5269daf714cad04ec073f29578f6e3a647a22c478719cefae58eb981cec94"
         },
         {
-          "ref": "artifact:tests/artifacts/voice-keyboard-v2-firmware-board-migration-1.4-oai2/20260607-final-d03a925/ai_diagnostics/diag_log_ai_bundle.json",
-          "path": "tests/artifacts/voice-keyboard-v2-firmware-board-migration-1.4-oai2/20260607-final-d03a925/ai_diagnostics/diag_log_ai_bundle.json",
+          "ref": "artifact:tests/artifacts/voice-keyboard-v2-firmware-board-migration-1.4-oai2/20260607-rework-nondestructive-gpio/ai_diagnostics/diag_log_ai_bundle.json",
+          "path": "tests/artifacts/voice-keyboard-v2-firmware-board-migration-1.4-oai2/20260607-rework-nondestructive-gpio/ai_diagnostics/diag_log_ai_bundle.json",
           "exists": true,
-          "sha256": "cf84df1347a917e4284dcaa2994d542905ef6c8f04d77f13f8e275f258d5f638"
+          "sha256": "84dce864e5c419bc7811b6c08b736fc6238776d17a9d278df1e3ff7a5d14bc3d"
         }
       ]
     },
@@ -261,18 +268,18 @@
       "runnable": true,
       "worktree": "C:\\Users\\Billy\\Desktop\\listener\\voice-keyboard-firmware-wt-oai2-voice-keyboard-v2-firmware-board-migration-1.4",
       "branch": "ai/oai2-voice-keyboard-v2-firmware-board-migration-1.4",
-      "commit": "d03a9257b841cadcefed4773f6e901320dc46c7d",
+      "commit": "0d4d95f9d4f1b86f200cfb48a030366c7ece8e4f",
       "status": "PASS",
-      "started_at": "2026-06-07T07:25:56.4608016+08:00",
-      "finished_at": "2026-06-07T07:25:56.4608016+08:00",
+      "started_at": "2026-06-07T07:50:51.6025833+08:00",
+      "finished_at": "2026-06-07T07:50:51.6025833+08:00",
       "duration_ms": 1000,
       "exit_code": 0,
       "timed_out": false,
       "stdout_summary": [
-        "PASS: verify_ble_hid static checks cover BLE HID Battery Service live reporting, reconnect refresh, ADC diagnostics, and diag event coverage."
+        "PASS: rework verify_ble_hid static checks cover BLE HID Battery Service live reporting, reconnect refresh, ADC diagnostics, and diag event coverage."
       ],
       "stderr_summary": [],
-      "output_sha256": "b8aa883158e1b42474d1ae862c1bcc7decfda8794741f666ec8c3aaebad06ae3",
+      "output_sha256": "e8ad60774725151b50977387a1700bf0193ed1f939cbe3f9e22614676343199d",
       "evidence_refs": [
         "artifact:docs/validation/voice-keyboard-v2-firmware-board-migration-1.4.md"
       ],
@@ -281,7 +288,7 @@
           "ref": "artifact:docs/validation/voice-keyboard-v2-firmware-board-migration-1.4.md",
           "path": "docs/validation/voice-keyboard-v2-firmware-board-migration-1.4.md",
           "exists": true,
-          "sha256": "5432a4c923ec67b587c179b44b79146660e06840c25559850eaa3d6fe976decc"
+          "sha256": "42bae16074d1da72a9180ccbefc634edccf0b3c1275c059b0d6da98d18a19348"
         }
       ]
     },
@@ -291,27 +298,55 @@
       "runnable": false,
       "worktree": "C:\\Users\\Billy\\Desktop\\listener\\voice-keyboard-firmware-wt-oai2-voice-keyboard-v2-firmware-board-migration-1.4",
       "branch": "ai/oai2-voice-keyboard-v2-firmware-board-migration-1.4",
-      "commit": "d03a9257b841cadcefed4773f6e901320dc46c7d",
+      "commit": "0d4d95f9d4f1b86f200cfb48a030366c7ece8e4f",
       "status": "RECORDED",
-      "started_at": "2026-06-07T07:25:56.4608016+08:00",
-      "finished_at": "2026-06-07T07:25:56.4608016+08:00",
+      "started_at": "2026-06-07T07:50:51.6025833+08:00",
+      "finished_at": "2026-06-07T07:50:51.6025833+08:00",
       "duration_ms": 1000,
-      "exit_code": null,
+      "exit_code": 0,
       "timed_out": false,
       "stdout_summary": [
-        "RECORDED: validation report documents AI-run static/build/flash/serial/diag/BLE evidence, final merge refresh, corrected PWR_HOLD/GPIO46 hardware evidence, and 1.5 residual final gates."
+        "RECORDED: validation report documents the rework fix for non-destructive ~BOARD:GPIO, static/build/flash/serial/diag/BLE evidence, targeted GPIO diagnostic capture, and residual 1.5 final gates."
       ],
       "stderr_summary": [],
-      "output_sha256": "18cb6472332807fc711ff447994dbebcb8ebc191a9b4b6c47f616a8a9e9391a3",
+      "output_sha256": "c8fd0a2300aa4d1d61f97c3a9d31015f35a5a9bc79e9cb985fa9059e0e87624f",
       "evidence_refs": [
-        "artifact:docs/validation/voice-keyboard-v2-firmware-board-migration-1.4.md"
+        "artifact:docs/validation/voice-keyboard-v2-firmware-board-migration-1.4.md",
+        "artifact:tests/artifacts/voice-keyboard-v2-firmware-board-migration-1.4-oai2/20260607-rework-nondestructive-gpio/board_gpio_status.txt",
+        "artifact:tests/artifacts/voice-keyboard-v2-firmware-board-migration-1.4-oai2/20260607-rework-nondestructive-gpio/current_telemetry/v2_current_telemetry_20260607-074822.md",
+        "artifact:tests/artifacts/voice-keyboard-v2-firmware-board-migration-1.4-oai2/20260607-rework-nondestructive-gpio/diag_log_20260607-074837.jsonl",
+        "artifact:tests/artifacts/voice-keyboard-v2-firmware-board-migration-1.4-oai2/20260607-rework-nondestructive-gpio/ai_diagnostics/manifest.json"
       ],
       "artifacts": [
         {
           "ref": "artifact:docs/validation/voice-keyboard-v2-firmware-board-migration-1.4.md",
           "path": "docs/validation/voice-keyboard-v2-firmware-board-migration-1.4.md",
           "exists": true,
-          "sha256": "5432a4c923ec67b587c179b44b79146660e06840c25559850eaa3d6fe976decc"
+          "sha256": "42bae16074d1da72a9180ccbefc634edccf0b3c1275c059b0d6da98d18a19348"
+        },
+        {
+          "ref": "artifact:tests/artifacts/voice-keyboard-v2-firmware-board-migration-1.4-oai2/20260607-rework-nondestructive-gpio/board_gpio_status.txt",
+          "path": "tests/artifacts/voice-keyboard-v2-firmware-board-migration-1.4-oai2/20260607-rework-nondestructive-gpio/board_gpio_status.txt",
+          "exists": true,
+          "sha256": "d5c7eec2d393b81f46d92e8ca7f9db0f64c7a8d186efcb09df3da00e83ba5503"
+        },
+        {
+          "ref": "artifact:tests/artifacts/voice-keyboard-v2-firmware-board-migration-1.4-oai2/20260607-rework-nondestructive-gpio/current_telemetry/v2_current_telemetry_20260607-074822.md",
+          "path": "tests/artifacts/voice-keyboard-v2-firmware-board-migration-1.4-oai2/20260607-rework-nondestructive-gpio/current_telemetry/v2_current_telemetry_20260607-074822.md",
+          "exists": true,
+          "sha256": "fb9a0d37230ba1fc120629814d86c9669ce6b2cf6824157090807ecacaadecd2"
+        },
+        {
+          "ref": "artifact:tests/artifacts/voice-keyboard-v2-firmware-board-migration-1.4-oai2/20260607-rework-nondestructive-gpio/diag_log_20260607-074837.jsonl",
+          "path": "tests/artifacts/voice-keyboard-v2-firmware-board-migration-1.4-oai2/20260607-rework-nondestructive-gpio/diag_log_20260607-074837.jsonl",
+          "exists": true,
+          "sha256": "51fe6f0bee4a0b660ab2957b7af4dd53612258cd9ac0046556a3f46ec68267d7"
+        },
+        {
+          "ref": "artifact:tests/artifacts/voice-keyboard-v2-firmware-board-migration-1.4-oai2/20260607-rework-nondestructive-gpio/ai_diagnostics/manifest.json",
+          "path": "tests/artifacts/voice-keyboard-v2-firmware-board-migration-1.4-oai2/20260607-rework-nondestructive-gpio/ai_diagnostics/manifest.json",
+          "exists": true,
+          "sha256": "f7f5269daf714cad04ec073f29578f6e3a647a22c478719cefae58eb981cec94"
         }
       ]
     },
@@ -321,18 +356,18 @@
       "runnable": true,
       "worktree": "C:\\Users\\Billy\\Desktop\\listener\\voice-keyboard-firmware-wt-oai2-voice-keyboard-v2-firmware-board-migration-1.4",
       "branch": "ai/oai2-voice-keyboard-v2-firmware-board-migration-1.4",
-      "commit": "d03a9257b841cadcefed4773f6e901320dc46c7d",
+      "commit": "0d4d95f9d4f1b86f200cfb48a030366c7ece8e4f",
       "status": "PASS",
-      "started_at": "2026-06-07T07:25:56.4608016+08:00",
-      "finished_at": "2026-06-07T07:25:56.4608016+08:00",
+      "started_at": "2026-06-07T07:50:51.6025833+08:00",
+      "finished_at": "2026-06-07T07:50:51.6025833+08:00",
       "duration_ms": 1000,
       "exit_code": 0,
       "timed_out": false,
       "stdout_summary": [
-        "PASS: final merge git diff --check returned exit code 0."
+        "PASS: rework git diff --check returned exit code 0."
       ],
       "stderr_summary": [],
-      "output_sha256": "2258cfc830b394a47388078c12f00b80bcf4651306c50a81cfad9881dbff5ef5",
+      "output_sha256": "877280edcaa35214a023cb4a1df4500603c11dfa4e824c0469ec6237fd573ef9",
       "evidence_refs": [
         "artifact:docs/validation/voice-keyboard-v2-firmware-board-migration-1.4.md"
       ],
@@ -341,7 +376,7 @@
           "ref": "artifact:docs/validation/voice-keyboard-v2-firmware-board-migration-1.4.md",
           "path": "docs/validation/voice-keyboard-v2-firmware-board-migration-1.4.md",
           "exists": true,
-          "sha256": "5432a4c923ec67b587c179b44b79146660e06840c25559850eaa3d6fe976decc"
+          "sha256": "42bae16074d1da72a9180ccbefc634edccf0b3c1275c059b0d6da98d18a19348"
         }
       ]
     }
