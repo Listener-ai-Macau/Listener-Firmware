@@ -13,7 +13,6 @@
 #include "esp_err.h"
 #include "esp_log.h"
 #include "esp_pm.h"
-#include "esp_sleep.h"
 #include "esp_system.h"
 
 #include <inttypes.h>
@@ -53,19 +52,24 @@ static void configure_power_management(void)
 
 static void log_power_boot_diagnostics(void)
 {
-    esp_sleep_wakeup_cause_t esp_wake_source = esp_sleep_get_wakeup_cause();
-    power_manager_wake_source_t wake_source = power_manager_map_wakeup(esp_wake_source);
-    uint32_t wake_gpio_mask_low = (uint32_t)(esp_sleep_get_ext1_wakeup_status() & 0xffffffffu);
+    esp_reset_reason_t reset_reason = esp_reset_reason();
+    board_v2_power_hold_snapshot_t power_hold = {0};
+    board_get_v2_power_hold_snapshot(&power_hold);
+    uint32_t pwr_hold_gpio =
+        power_hold.gpio >= 0 ? (uint32_t)power_hold.gpio : UINT32_MAX;
 
     diag_log(DIAG_SRC_POWER, DIAG_POWER_WAKE, DIAG_SEV_INFO,
-             (uint32_t)wake_source, wake_gpio_mask_low, 0, 0);
+             (uint32_t)reset_reason, pwr_hold_gpio, 0, 0);
     diag_log(DIAG_SRC_POWER, DIAG_POWER_STATUS, DIAG_SEV_INFO,
-             0, 0, 0, wake_gpio_mask_low);
-    ESP_LOGI(TAG, "power wake status: esp_wake_source=%u wake_source=%u (%s) wake_gpio_mask_low=0x%08" PRIx32,
-             (unsigned)esp_wake_source,
-             (unsigned)wake_source,
-             power_manager_wake_source_name(wake_source),
-             wake_gpio_mask_low);
+             0, 0, 0, pwr_hold_gpio);
+    ESP_LOGI(
+        TAG,
+        "power cold-boot status: reset_reason=%u pwr_hold_gpio=%d pwr_hold_level=%d configured=%u policy=%s",
+        (unsigned)reset_reason,
+        power_hold.gpio,
+        power_hold.level,
+        power_hold.configured ? 1u : 0u,
+        power_hold.policy != NULL ? power_hold.policy : "unknown");
 }
 
 void app_main(void)
@@ -87,7 +91,6 @@ void app_main(void)
     case ESP_RST_PANIC:     boot_reason = DIAG_BOOT_EXCEPTION; break;
     case ESP_RST_TASK_WDT:
     case ESP_RST_INT_WDT:   boot_reason = DIAG_BOOT_WATCHDOG; break;
-    case ESP_RST_DEEPSLEEP: boot_reason = DIAG_BOOT_DEEP_SLEEP; break;
     default:                boot_reason = DIAG_BOOT_RESET; break;
     }
     diag_log(DIAG_SRC_SYSTEM, DIAG_SYS_BOOT, DIAG_SEV_INFO,

@@ -1256,6 +1256,49 @@ esp_err_t ble_hid_gap_set_low_power_advertising(bool enabled)
     return ble_hid_gap_start_advertising();
 }
 
+esp_err_t ble_hid_gap_prepare_shutdown_disconnect(void)
+{
+    s_low_power_advertising = true;
+    s_directed_adv_pending = false;
+    s_last_adv_was_directed = false;
+
+    if (!s_nimble_stack_ready) {
+        ESP_LOGW(TAG, "shutdown BLE disconnect skipped: NimBLE stack is not ready");
+        return ESP_ERR_INVALID_STATE;
+    }
+
+    ble_hid_gap_connection_snapshot_t conn = ble_hid_gap_connection_snapshot();
+    if (conn.connected && conn.conn_handle != BLE_HS_CONN_HANDLE_NONE) {
+        int rc = ble_gap_terminate(conn.conn_handle, BLE_ERR_REM_USER_CONN_TERM);
+        if (rc != 0) {
+            ESP_LOGW(TAG, "shutdown BLE disconnect failed: conn_handle=%u rc=%d", conn.conn_handle, rc);
+            diag_log(DIAG_SRC_BLE_GAP, DIAG_GAP_RECOVERY, DIAG_SEV_WARN,
+                     2, (uint32_t)rc, 0, conn.conn_handle);
+            return ESP_FAIL;
+        }
+
+        ESP_LOGW(TAG, "shutdown BLE disconnect requested: conn_handle=%u", conn.conn_handle);
+        diag_log(DIAG_SRC_BLE_GAP, DIAG_GAP_RECOVERY, DIAG_SEV_WARN,
+                 2, 0, 0, conn.conn_handle);
+        return ESP_OK;
+    }
+
+    if (ble_gap_adv_active()) {
+        int rc = ble_gap_adv_stop();
+        if (rc != 0) {
+            ESP_LOGW(TAG, "shutdown BLE advertising stop failed: rc=%d", rc);
+            diag_log(DIAG_SRC_BLE_GAP, DIAG_GAP_RECOVERY, DIAG_SEV_WARN,
+                     3, (uint32_t)rc, 0, s_ble_gap_conn_handle);
+            return ESP_FAIL;
+        }
+        ESP_LOGW(TAG, "shutdown BLE advertising stopped");
+        diag_log(DIAG_SRC_BLE_GAP, DIAG_GAP_RECOVERY, DIAG_SEV_INFO,
+                 3, 0, 0, s_ble_gap_conn_handle);
+    }
+
+    return ESP_OK;
+}
+
 esp_err_t ble_hid_gap_request_reconnect(void)
 {
     if (s_ble_gap_connected) {

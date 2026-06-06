@@ -139,9 +139,10 @@ Assert-Contains -RelativePath "components/firmware_ota/firmware_ota.c" -Pattern 
 Assert-Contains -RelativePath "components/firmware_ota/firmware_ota.c" -Pattern "update_offset" -Description "OTA update offset status"
 Assert-Contains -RelativePath "components/firmware_ota/include/firmware_ota.h" -Pattern "uint32_t\s+running_offset" -Description "OTA status running offset field"
 Assert-Contains -RelativePath "components/firmware_ota/include/firmware_ota.h" -Pattern "uint32_t\s+update_size" -Description "OTA status update size field"
-Assert-Contains -RelativePath "main/main.c" -Pattern "DIAG_POWER_WAKE" -Description "power wake diag event"
-Assert-Contains -RelativePath "main/main.c" -Pattern "esp_sleep_get_wakeup_cause" -Description "power wake source capture"
-Assert-Contains -RelativePath "main/main.c" -Pattern "esp_sleep_get_ext1_wakeup_status" -Description "power wake GPIO mask capture"
+Assert-Contains -RelativePath "main/main.c" -Pattern "DIAG_POWER_WAKE" -Description "power reset diag event"
+Assert-Contains -RelativePath "main/main.c" -Pattern "esp_reset_reason" -Description "power reset reason capture"
+Assert-Contains -RelativePath "main/main.c" -Pattern "board_get_v2_power_hold_snapshot" -Description "PWR_HOLD boot diagnostic capture"
+Assert-Contains -RelativePath "main/main.c" -Pattern "power cold-boot status" -Description "cold boot serial diagnostic"
 
 Assert-Contains -RelativePath "components/diag_log/diag_log.c" -Pattern 'DIAG_SRC_SYSTEM,\s*"system",\s*true' -Description "source mask default includes system"
 Assert-Contains -RelativePath "components/diag_log/diag_log.c" -Pattern 'DIAG_SRC_SELF_TEST,\s*"self_test",\s*true' -Description "source mask default includes self_test"
@@ -188,6 +189,7 @@ Assert-NotContains -RelativePath "ports/esp32/ble_audio_stream/ble_audio_stream_
 Assert-Contains -RelativePath "ports/esp32/ble_hid_gap/ble_hid_gap_esp32.c" -Pattern "DIAG_GAP_RECOVERY" -Description "BLE recovery diag event logging"
 Assert-Contains -RelativePath "ports/esp32/ble_hid_gap/ble_hid_gap_esp32.c" -Pattern "recovery: clearing pairing bonds" -Description "BLE recovery serial action log"
 Assert-Contains -RelativePath "ports/esp32/ble_hid_gap/ble_hid_gap_esp32.c" -Pattern "recovery: pairing reset complete" -Description "BLE recovery completion serial log"
+Assert-Contains -RelativePath "ports/esp32/ble_hid_gap/ble_hid_gap_esp32.c" -Pattern "ble_hid_gap_prepare_shutdown_disconnect" -Description "hardware shutdown BLE disconnect preparation"
 
 Assert-Contains -RelativePath "tools/decode_diag_log.py" -Pattern "duplicate diag_log source id" -Description "duplicate source id rejection"
 Assert-Contains -RelativePath "tools/decode_diag_log.py" -Pattern "duplicate diag_log event id" -Description "duplicate event id rejection"

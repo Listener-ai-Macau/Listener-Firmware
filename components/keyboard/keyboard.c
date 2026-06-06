@@ -673,7 +673,7 @@ static esp_err_t keyboard_ec11_start(void)
 
     ESP_LOGI(
         TAG,
-        "EC11 ready: a=gpio42 b=gpio2 key=gpio18 key_policy=gpio18_deep_sleep_wake_disabled_until_power_signoff poll_ms=%d debounce_samples=%d",
+        "EC11 ready: a=gpio42 b=gpio2 key=gpio18 key_policy=gpio18_recording_key_power_hold_shutdown_separate poll_ms=%d debounce_samples=%d",
         KEYBOARD_EC11_POLL_MS,
         KEYBOARD_EC11_DEBOUNCE_SAMPLES);
     return ESP_OK;
