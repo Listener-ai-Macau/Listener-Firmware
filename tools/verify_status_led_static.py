@@ -72,6 +72,10 @@ CHECKS = {
         "status_led_render_recording_locked",
         "status_led_render_processing_locked",
         "status_led_render_edge_locked",
+        "soc/soc_caps.h",
+        "SOC_RMT_MEM_WORDS_PER_CHANNEL",
+        "STATUS_LED_TX_MUTEX_WAIT_MS",
+        "s_tx_mutex",
     ],
     "components/diag_log/include/diag_log_events.h": [
         "DIAG_SRC_STATUS_LED",
@@ -164,6 +168,14 @@ def main() -> int:
         failures.append("status_led.c: stale EC11 four-LED strip count")
     if "STATUS_LED_EDGE_COUNT 14" in status_led:
         failures.append("status_led.c: stale edge/frame fourteen-LED strip count")
+    if re.search(r"\.mem_block_symbols\s*=\s*64\b", status_led):
+        failures.append(
+            "status_led.c: RMT mem_block_symbols=64 consumes two ESP32-S3 RMT blocks per strip and leaves fewer than four TX channels"
+        )
+    if not re.search(r"\.mem_block_symbols\s*=\s*SOC_RMT_MEM_WORDS_PER_CHANNEL\b", status_led):
+        failures.append(
+            "status_led.c: RMT strip channels must use SOC_RMT_MEM_WORDS_PER_CHANNEL so all four V2 LED zones can initialize"
+        )
 
     board_leds = read("components/board/board.c")
     if "BOARD_LED_PREFIX" in board_leds or 'board_command_matches(line, BOARD_LED_PREFIX' in board_leds:
