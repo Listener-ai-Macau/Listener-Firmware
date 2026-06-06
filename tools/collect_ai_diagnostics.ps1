@@ -210,6 +210,8 @@ $manifest = [ordered]@{
     event_count = [int]$bundle.summary.event_count
     warning_error_count = @($bundle.summary.recent_warning_error_refs).Count
     boot_segment_count = [int]$bundle.summary.boot_segment_count
+    param_highlights = $bundle.summary.param_highlights
+    param_highlight_sections = @($bundle.summary.param_highlights.coverage.sections_present)
 }
 
 $manifestJson = $manifest | ConvertTo-Json -Depth 8

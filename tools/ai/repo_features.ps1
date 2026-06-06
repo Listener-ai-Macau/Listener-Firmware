@@ -32,7 +32,7 @@ function New-FeatureSnapshot {
             "Own device-side voice key state, serial commands, diagnostics, system health, and recovery evidence.",
             "Own firmware OTA slot/rollback primitives, BLE OTA GATT bridge, pending-verify checks, and OTA diagnostics used by desktop update flows.",
             "Provide build, flash, serial monitor, BLE HID, BLE audio, and diagnostic-log validation tools.",
-            "Provide AI-readable firmware diagnostic bundles that preserve raw diag_log events and decode schema names from firmware headers."
+            "Provide AI-readable firmware diagnostic bundles that preserve raw diag_log events, decode schema names from firmware headers, and summarize key parameter highlights."
         )
         major_features = @(
             "BLE HID keyboard fallback for logical KEY1-KEY4 custom keys using safe non-text gestures: single-click F13-F16, double-click F17-F20, and long-press F21-F24.",
@@ -40,7 +40,7 @@ function New-FeatureSnapshot {
             "Voice key control for start/stop recording flow, including serial VREC commands.",
             "diag_log flash ring buffer for boot, BLE, audio, health, power, board, status LED, WARN, and ERROR events that survive reboot, with runtime INFO source masks for high-rate input and audio sources.",
             "BLE diagnostic log GATT export service for paginated CRC-tagged firmware log pulls by desktop diagnostics.",
-            "AI-readable diag_log JSON bundle tooling for deterministic event, argument, severity, boot-segment, source-count, warning/error, KEY1-KEY4, and EC11 input summary fields.",
+            "AI-readable diag_log JSON bundle tooling for deterministic event, argument, severity, boot-segment, source-count, warning/error, parameter-highlight, KEY1-KEY4, and EC11 input summary fields.",
             "Firmware OTA v1 using ESP-IDF otadata/ota_0/ota_1 slots, partition-derived flash offsets, BLE GATT control/data bridge, official rollback, pending verify, blockers, and diag_log OTA events.",
             "system_health heartbeat and resource checks for heap, task, BLE, and disconnect conditions.",
             "V2 N16R8 board profile with 16 MB flash, 8 MB Octal PSRAM, EC11 push recording control on GPIO18, KEY1/2/3/4 HID gesture map on GPIO38/39/40/41, four-zone WS2812 resources, and static checks rejecting stale N4 defaults.",
