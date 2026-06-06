@@ -11,6 +11,7 @@ EC11 direction follow-up artifacts: `tests/artifacts/v2_ec11_direction_fix_*_202
 EC11 flash-log follow-up artifacts: `tests/artifacts/diag_flash_ec11_direction_20260606_oai2/`
 Input debug flash-log follow-up artifacts: `tests/artifacts/diag_flash_input_debug_20260606_oai2/`
 Submit refresh artifact root: `tests/artifacts/voice-keyboard-v2-firmware-board-migration-1.4-oai2/20260607-current`
+Final merge refresh artifact root: `tests/artifacts/voice-keyboard-v2-firmware-board-migration-1.4-oai2/20260607-final-d03a925`
 
 Status: submit-ready for 1.4 AI evidence ladder. Residual final visible-effect, meter/fixture, EC11 push hand-feel, destructive watchdog, and product closure gates are explicitly deferred to 1.5.
 
@@ -30,6 +31,7 @@ The automated and non-destructive hardware checks found one real firmware defect
 - Follow-up user testing found the EC11 physical rotation direction was inverted. This branch now flips the A/B quadrature sign at the decoder layer so the existing logical policy remains `CW -> increase` and `CCW -> decrease` for both system volume and screen brightness. A DTR-asserted logical dispatch smoke validated the HID usages, but the follow-up physical capture still did not record EC11 A/B edges, so final physical direction sign-off remains open.
 - Follow-up flash-log debugging found the normal flash diag schema was too sparse for input bring-up. This branch adds a runtime, default-off input debug switch: `~DIAGLOG:INPUTDBG:ON`, `~DIAGLOG:INPUTDBG:OFF`, and `~DIAGLOG:INPUTDBG:STATUS`. When enabled, flash diag records KEY1-KEY4 raw/stable transitions, EC11 A/B transition/invalid/partial/dispatch details, and EC11 push raw/stable details. It is intended for hardware debugging only and should be turned off after input sign-off to avoid filling the flash ring with high-frequency input noise.
 - Submit refresh found `tools/flash.ps1` still defaulted to the long worktree-local `build` directory while `tools/build.ps1` defaulted to a short temp build directory. The first current locked flash attempt failed in the long build path before touching hardware state. `flash.ps1` now uses the same short-build selection as `build.ps1`, while still honoring `LISTENER_IDF_BUILD_DIR` when explicitly supplied.
+- Final merge refresh integrated current `master`, preserving the accepted hardware-shutdown path while applying the latest V2 pin evidence: `PWR_HOLD/GPIO46` is the power latch/shutdown output, and `EC11-KEY/GPIO11` remains the runtime recording input. This intentionally supersedes the older plan text that listed `PWR_HOLD/GPIO11` and `EC11-KEY_IO/GPIO18`.
 
 1.4 is complete as an AI-run evidence ladder: static checks, build, flash, serial capture, diag_log dump/decode, BLE HID static contract, diagnostic injection, and available physical-key/EC11 flash-backed evidence are captured. Remaining real-world visible-effect and repair/product decisions belong to 1.5.
 
@@ -76,6 +78,11 @@ Results:
 | Submit refresh serial capture | PASS | `serial_capture_after_current_flash.log`; current firmware logs BLE disconnect/advertising and health heartbeat without taking a long monitor lock |
 | Submit refresh diag_log dump/decode | PASS | `diag_log_20260607-065955.jsonl` has 669 retained events; `ai_diagnostics/manifest.json` records 669 decoded events, 20 recent warning/error refs, and 4 boot segments |
 | Submit refresh BLE HID contract | PASS | `pwsh -NoProfile -File .\tools\verify_ble_hid.ps1` static checks passed for BLE HID battery service reporting, reconnect refresh, ADC diagnostics, and diag event coverage |
+| Final merge static/tool checks | PASS | commit `d03a9257b841cadcefed4773f6e901320dc46c7d`; `repo_features.ps1 -Check`, `verify_v2_board_profile_static.ps1`, `verify_power_manager_static.ps1`, `verify_status_led_static.py`, `verify_ble_ota_gatt_contract.py`, `verify_diagnostic_log_coverage.ps1`, `verify_ble_hid.ps1`, `python -m compileall -q tools`, and `git diff --check` all passed |
+| Final merge build | PASS | `pwsh -NoProfile -File .\tools\build.ps1 -Target esp32s3`; short build dir `C:\Users\Billy\AppData\Local\Temp\listener-idf-build-36ea52e79d27`; app `0xc0470`, 87% free |
+| Final merge flash | PASS | no-lock build first, then `with-lock -Resource COMx` resolved `COMx -> COM6`; `tools\flash.ps1 -Port COM6 -NoBuild` flashed final image; ESP32-S3 MAC `a4:cb:8f:f4:59:a4`; 16MB flash; 8MB embedded PSRAM; image hashes verified |
+| Final merge serial status/telemetry | PASS | `current_telemetry/v2_current_telemetry_20260607-072357.md` records both current branches present, battery around 4.09-4.10 V, `hardware_shutdown_ms=1800000`, and `PWR_HOLD GPIO: 46` |
+| Final merge bounded diag_log dump/decode | PASS | `diag_log_20260607-072414.jsonl` captured 240 retained events; `ai_diagnostics/manifest.json` records 240 decoded events, 13 warning/error refs, 4 boot segments, board profile highlights, LED resource highlights, and `pwr_hold_gpio=46` |
 
 Static/build checks run after the fix:
 
@@ -124,6 +131,19 @@ Static/build checks run after the fix:
 - PASS submit refresh: bounded serial capture artifact `tests/artifacts/voice-keyboard-v2-firmware-board-migration-1.4-oai2/20260607-current/serial_capture_after_current_flash.log`
 - PASS submit refresh: `pwsh -NoProfile -File .\tools\dump_diag_log.ps1 -Port COMx` under `aiw with-lock`, plus offline decode through `collect_ai_diagnostics.ps1`
 - PASS submit refresh: `pwsh -NoProfile -File .\tools\verify_ble_hid.ps1`
+- PASS final merge refresh: `pwsh -NoProfile -File .\tools\ai\repo_features.ps1 -Check`
+- PASS final merge refresh: `pwsh -NoProfile -File .\tools\verify_v2_board_profile_static.ps1`
+- PASS final merge refresh: `pwsh -NoProfile -File .\tools\verify_power_manager_static.ps1`
+- PASS final merge refresh: `python .\tools\verify_status_led_static.py`
+- PASS final merge refresh: `python .\tools\verify_ble_ota_gatt_contract.py`
+- PASS final merge refresh: `pwsh -NoProfile -File .\tools\verify_diagnostic_log_coverage.ps1`
+- PASS final merge refresh: `pwsh -NoProfile -File .\tools\verify_ble_hid.ps1`
+- PASS final merge refresh: `python -m compileall -q tools`
+- PASS final merge refresh: `git diff --check`
+- PASS final merge refresh: `pwsh -NoProfile -File .\tools\build.ps1 -Target esp32s3`
+- PASS final merge refresh: `pwsh -NoProfile -File .\tools\flash.ps1 -Port COMx -NoBuild` under `aiw with-lock` after the no-lock final build
+- PASS final merge refresh: `pwsh -NoProfile -File .\tools\collect_v2_current_telemetry.ps1 -Port COMx` under `aiw with-lock`
+- PASS final merge refresh: `pwsh -NoProfile -File .\tools\dump_diag_log.ps1 -Port COMx -Count 240` under `aiw with-lock`, plus offline decode through `collect_ai_diagnostics.ps1`
 
 ## Observed PASS Evidence
 
