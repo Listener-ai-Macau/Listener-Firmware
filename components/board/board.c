@@ -21,9 +21,9 @@ static const char *TAG = "board";
 
 #define BOARD_V2_USB_DET_POLICY "v2_gpio7_r37_r32_10K_10K_divider"
 #define BOARD_V2_CHARGER_POLARITY "v2_gpio14_chg_gpio21_std_active_low"
-#define BOARD_V2_PWR_HOLD_POLICY "v2_gpio46_power_latch_hold_disabled_until_strapping_power_sequence_validation"
+#define BOARD_V2_PWR_HOLD_POLICY "v2_gpio46_power_latch_hold_high_release_low_for_hardware_shutdown"
 #define BOARD_V2_LED_POLICY "v2_four_zone_ws2812_status_gpio1_ec11_gpio5_key_gpio13_edge_gpio4"
-#define BOARD_V2_MIC_POLICY "v2_clk_gpio48_dout_gpio47_interface_degraded_until_hardware_validation"
+#define BOARD_V2_MIC_POLICY "v2_sph0655_pdm_clk_gpio48_dout_gpio47_enabled_for_a1_a2_hardware_validation"
 #define BOARD_V2_CURRENT_POLICY "v2_battery_side_input_branch_current_ina180a2_10mR_adc_mv_x2_with_battery_mv_from_gpio8_div2"
 
 typedef struct {
@@ -74,6 +74,8 @@ static const board_led_group_t s_led_groups[] = {
         .policy = "LED17..LED22 restrained edge/frame effects",
     },
 };
+
+static bool s_power_hold_configured;
 
 static bool board_command_matches(const char *line, const char *prefix, const char **out_command)
 {
@@ -203,6 +205,91 @@ static const char *board_gpio_scan_label(gpio_num_t gpio)
     return "-";
 }
 
+esp_err_t board_configure_power_hold_latch(void)
+{
+    if (BOARD_PINS_PWR_HOLD_IO == GPIO_NUM_NC ||
+        BOARD_PINS_PWR_HOLD_IO < 0 ||
+        BOARD_PINS_PWR_HOLD_IO >= GPIO_NUM_MAX) {
+        return ESP_ERR_NOT_SUPPORTED;
+    }
+
+    gpio_config_t config = {
+        .pin_bit_mask = 1ULL << (uint32_t)BOARD_PINS_PWR_HOLD_IO,
+        .mode = GPIO_MODE_OUTPUT,
+        .pull_up_en = GPIO_PULLUP_DISABLE,
+        .pull_down_en = GPIO_PULLDOWN_DISABLE,
+        .intr_type = GPIO_INTR_DISABLE,
+    };
+    esp_err_t ret = gpio_config(&config);
+    if (ret != ESP_OK) {
+        ESP_LOGW(
+            TAG,
+            "PWR_HOLD/GPIO46 output config failed: gpio=%d ret=%s",
+            (int)BOARD_PINS_PWR_HOLD_IO,
+            esp_err_to_name(ret));
+        return ret;
+    }
+
+    ret = gpio_set_level(BOARD_PINS_PWR_HOLD_IO, 1);
+    if (ret != ESP_OK) {
+        ESP_LOGW(
+            TAG,
+            "PWR_HOLD/GPIO46 hold-high failed: gpio=%d ret=%s",
+            (int)BOARD_PINS_PWR_HOLD_IO,
+            esp_err_to_name(ret));
+        return ret;
+    }
+
+    s_power_hold_configured = true;
+    return ESP_OK;
+}
+
+esp_err_t board_set_power_hold_enabled(bool enabled)
+{
+    esp_err_t ret = board_configure_power_hold_latch();
+    if (ret != ESP_OK) {
+        return ret;
+    }
+
+    ret = gpio_set_level(BOARD_PINS_PWR_HOLD_IO, enabled ? 1 : 0);
+    if (ret != ESP_OK) {
+        ESP_LOGW(
+            TAG,
+            "PWR_HOLD/GPIO46 set failed: enabled=%u gpio=%d ret=%s",
+            enabled ? 1u : 0u,
+            (int)BOARD_PINS_PWR_HOLD_IO,
+            esp_err_to_name(ret));
+        return ret;
+    }
+
+    ESP_LOGW(
+        TAG,
+        "PWR_HOLD/GPIO46 %s: gpio=%d level=%d policy=%s",
+        enabled ? "held high" : "released low for hardware shutdown",
+        (int)BOARD_PINS_PWR_HOLD_IO,
+        enabled ? 1 : 0,
+        BOARD_V2_PWR_HOLD_POLICY);
+    return ESP_OK;
+}
+
+void board_get_v2_power_hold_snapshot(board_v2_power_hold_snapshot_t *out_snapshot)
+{
+    if (out_snapshot == NULL) {
+        return;
+    }
+
+    if (!s_power_hold_configured) {
+        (void)board_configure_power_hold_latch();
+    }
+
+    *out_snapshot = (board_v2_power_hold_snapshot_t){
+        .gpio = (int)BOARD_PINS_PWR_HOLD_IO,
+        .level = board_read_gpio_level(BOARD_PINS_PWR_HOLD_IO),
+        .configured = s_power_hold_configured,
+        .policy = BOARD_V2_PWR_HOLD_POLICY,
+    };
+}
+
 void board_get_v2_power_input_snapshot(board_v2_power_input_snapshot_t *out_snapshot)
 {
     if (out_snapshot == NULL) {
@@ -212,13 +299,17 @@ void board_get_v2_power_input_snapshot(board_v2_power_input_snapshot_t *out_snap
     board_configure_status_input(BOARD_PINS_USB_DET_IO);
     board_configure_status_input(BOARD_PINS_BAT_CHG_IO);
     board_configure_status_input(BOARD_PINS_BAT_STD_IO);
+    board_v2_power_hold_snapshot_t power_hold = {0};
+    board_get_v2_power_hold_snapshot(&power_hold);
 
     *out_snapshot = (board_v2_power_input_snapshot_t){
         .usb_det_level = board_read_gpio_level(BOARD_PINS_USB_DET_IO),
         .bat_chg_level = board_read_gpio_level(BOARD_PINS_BAT_CHG_IO),
         .bat_std_level = board_read_gpio_level(BOARD_PINS_BAT_STD_IO),
+        .pwr_hold_level = power_hold.level,
         .usb_det_policy = BOARD_V2_USB_DET_POLICY,
         .charger_polarity_policy = BOARD_V2_CHARGER_POLARITY,
+        .pwr_hold_policy = BOARD_V2_PWR_HOLD_POLICY,
     };
 }
 
@@ -320,7 +411,7 @@ static void board_print_gpio_status(void)
         " ec11_b_gpio=%d ec11_b_level=%s"
         " ec11_ab_state=0x%02" PRIx32
         " ec11_key_gpio=%d ec11_key_level=%s ec11_key_pressed=%u"
-        " wake_candidate=EC11_KEY/GPIO11\n",
+        " recording_key=EC11_KEY/GPIO11\n",
         (int)BOARD_PINS_KEY1_IO,
         board_gpio_level_name(key1),
         key1 == 0 ? 1u : 0u,
@@ -442,12 +533,14 @@ static void board_print_status(void)
     esp_err_t battery_ret = battery_monitor_read(&battery);
     board_v2_power_input_snapshot_t power_inputs = {0};
     board_get_v2_power_input_snapshot(&power_inputs);
+    board_v2_power_hold_snapshot_t power_hold = {0};
+    board_get_v2_power_hold_snapshot(&power_hold);
 
     printf(
         "~BOARD:STATUS profile=%s module=%s flash_mb=%u psram_mb=%u psram_mode=%s"
         " key_gpios=%d,%d,%d,%d ec11_a_gpio=%d ec11_b_gpio=%d ec11_key_gpio=%d"
         " ec11_key_provisional=1 mic_clk_gpio=%d mic_dout_gpio=%d mic_policy=%s"
-        " pwr_hold_gpio=%d pwr_hold_enabled=0 pwr_hold_policy=%s"
+        " pwr_hold_gpio=%d pwr_hold_level=%s pwr_hold_configured=%u pwr_hold_policy=%s"
         " usb_det_gpio=%d usb_det_level=%s usb_det_policy=%s"
         " bat_chg_gpio=%d bat_chg_level=%s bat_std_gpio=%d bat_std_level=%s charger_polarity=%s"
         " battery_gpio=%d battery_mv=%" PRIu32 " battery_adc_mv=%d battery_raw=%d"
@@ -469,8 +562,10 @@ static void board_print_status(void)
         (int)BOARD_PINS_MIC_CLK_IO,
         (int)BOARD_PINS_MIC_DOUT_IO,
         BOARD_V2_MIC_POLICY,
-        (int)BOARD_PINS_PWR_HOLD_IO,
-        BOARD_V2_PWR_HOLD_POLICY,
+        power_hold.gpio,
+        board_gpio_level_name(power_hold.level),
+        power_hold.configured ? 1u : 0u,
+        power_hold.policy,
         (int)BOARD_PINS_USB_DET_IO,
         board_gpio_level_name(power_inputs.usb_det_level),
         power_inputs.usb_det_policy,
@@ -497,9 +592,13 @@ static void board_print_status(void)
 
 void board_log_v2_diagnostics(void)
 {
+    esp_err_t pwr_hold_ret = board_configure_power_hold_latch();
+    board_v2_power_hold_snapshot_t power_hold = {0};
+    board_get_v2_power_hold_snapshot(&power_hold);
+
     ESP_LOGI(
         TAG,
-        "board profile: id=%s module=%s flash=%uMB psram=%uMB %s key_gpios=%d,%d,%d,%d ec11=%d,%d,%d mic=%d,%d usb_det=%d charger=%d,%d battery_adc=%d current_adc=%d,%d rgb=%d,%d,%d,%d pwr_hold=%d reserved_mspi=%s",
+        "board profile: id=%s module=%s flash=%uMB psram=%uMB %s key_gpios=%d,%d,%d,%d ec11=%d,%d,%d mic=%d,%d usb_det=%d charger=%d,%d battery_adc=%d current_adc=%d,%d rgb=%d,%d,%d,%d pwr_hold=%d pwr_hold_level=%s pwr_hold_configured=%u reserved_mspi=%s",
         BOARD_PINS_PROFILE_ID,
         BOARD_PINS_MODULE,
         (unsigned)BOARD_PINS_FLASH_SIZE_MB,
@@ -525,7 +624,12 @@ void board_log_v2_diagnostics(void)
         (int)BOARD_PINS_RGB_KEY_IO,
         (int)BOARD_PINS_RGB_EDGE_IO,
         (int)BOARD_PINS_PWR_HOLD_IO,
+        board_gpio_level_name(power_hold.level),
+        power_hold.configured ? 1u : 0u,
         BOARD_PINS_RESERVED_MSPI_GPIOS);
+    if (pwr_hold_ret != ESP_OK) {
+        ESP_LOGW(TAG, "PWR_HOLD/GPIO46 hold-high setup failed: %s", esp_err_to_name(pwr_hold_ret));
+    }
     ESP_LOGW(TAG, "board hardware provisional: usb_det=%s charger=%s pwr_hold=%s current=%s led=%s mic=%s",
              BOARD_V2_USB_DET_POLICY,
              BOARD_V2_CHARGER_POLARITY,
@@ -561,11 +665,10 @@ void board_print_help(void)
         "Board GPIO diagnostics: ~BOARD:GPIO reports raw KEY1-KEY4 and EC11 A/B/key levels.\n"
         "Board GPIO scan: ~BOARD:GPIO-SCAN samples all valid GPIO levels without reconfiguring pins and prints changed GPIOs.\n"
         "Input flash debug: ~DIAGLOG:INPUTDBG:ON records high-volume key/EC11 debug events until ~DIAGLOG:INPUTDBG:OFF or reboot.\n"
-        "Power diagnostics: ~POWER:STATUS reports state/blockers/battery/wake policy, ~POWER:SLEEP requests manual sleep.\n"
+        "Power diagnostics: ~POWER:STATUS reports state/blockers/battery/power-hold status, ~POWER:SHUTDOWN requests manual hardware shutdown.\n"
         "LED diagnostics: ~LED:STATUS reports four WS2812 groups; ~LED:TEST:RGBW and ~LED:TEST:MAP stay brightness-gated until VDD_LED sign-off.\n"
         "Watchdog diagnostics: ~WDT:STATUS reports config, ~WDT:DEADLOCK intentionally triggers Task WDT reset.\n"
         "Boot safety diagnostics: ~BOOT:STATUS reports crash counter, ~BOOT:CRASH restarts for validation, ~BOOT:CLEAR clears safe mode.\n"
-        "V2 EC11-KEY/GPIO11 deep-sleep wake remains disabled until power-latch isolation, leakage, pull policy, and false-wake behavior are signed off.\n"
         "Use ~OTA:STATUS, ~OTA:BLOCKER, or ~OTA:ABORT for firmware OTA diagnostics.\n"
         "Use ~DIAGLOG:COUNT, ~DIAGLOG:LAST:N, ~DIAGLOG:DUMP, or ~DIAGLOG:CLEAR for diagnostics.\n"
         "Device status logs use ready, recording, transferring, error, and recovery.\n"

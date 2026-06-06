@@ -2,7 +2,8 @@ param(
     [Parameter(Mandatory = $true)]
     [string]$Port,
     [string]$Target = "esp32s3",
-    [string]$BuildDir = $env:LISTENER_IDF_BUILD_DIR
+    [string]$BuildDir = $env:LISTENER_IDF_BUILD_DIR,
+    [switch]$NoBuild
 )
 
 $ErrorActionPreference = "Stop"
@@ -32,6 +33,32 @@ function Get-ShortBuildDir {
     return Join-Path ([System.IO.Path]::GetTempPath()) "listener-idf-build-$hash"
 }
 
-$build_dir = Get-ShortBuildDir -ProjectRoot $project_root
-Write-Host "Using ESP-IDF build directory: $build_dir"
-idf.py -B $build_dir -p $Port flash
+function Invoke-CheckedCommand {
+    param(
+        [string]$File,
+        [string[]]$Arguments
+    )
+
+    & $File @Arguments
+    if ($LASTEXITCODE -ne 0) {
+        throw "$File $($Arguments -join ' ') failed with exit code $LASTEXITCODE"
+    }
+}
+
+$projectRoot = Split-Path -Parent $PSScriptRoot
+$buildDirResolved = Get-ShortBuildDir -ProjectRoot $projectRoot
+
+if (-not $NoBuild) {
+    Invoke-CheckedCommand -File "powershell" -Arguments @(
+        "-ExecutionPolicy",
+        "Bypass",
+        "-File",
+        (Join-Path $PSScriptRoot "build.ps1"),
+        "-Target",
+        $Target,
+        "-BuildDir",
+        $buildDirResolved
+    )
+}
+
+Invoke-CheckedCommand -File "idf.py" -Arguments @("-B", $buildDirResolved, "-p", $Port, "flash")

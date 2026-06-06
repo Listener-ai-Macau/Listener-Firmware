@@ -8,8 +8,8 @@ telemetry inputs only:
   - TPS63020_I_ADC / GPIO10 / BAT_IN -> VIN_TPS63020
   - SY7088_I_ADC / GPIO9 / BAT_IN -> VIN_SY7088
 
-Serial mode also requests ~POWER:STATUS so the same report captures sleep
-duration, sleep-entry battery, wake battery, and drain rate after a wake.
+Serial mode also requests ~POWER:STATUS so the same report captures the
+hardware-shutdown threshold, external-power blocker state, and PWR_HOLD status.
 The report is telemetry-only. It does not enable power control, shutdown,
 LED limiting, or any other firmware power decision.
 #>
@@ -187,7 +187,7 @@ function New-SelfTestLines {
         "~BOARD:STATUS profile=voice-keyboard-v2-n16r8 battery_mv=4012 battery_valid=1",
         "~BOARD:POWER branch=TPS63020_input_branch gpio=10 raw_adc=1234 adc_mv=995 adc_calibrated=1 sample_count=4 calibration_status=uncalibrated current_model=""INA180A2 10mR current_mA=adc_mv*2"" current_calibrated=0 current_ma_valid=0 estimated_input_current_ma=0 battery_side_mv=4012 battery_voltage_source=""BAT_V_ADC/GPIO8 68K/68K midpoint, VBAT~=2*ADC"" power_mw_valid=0 estimated_input_power_mw=0 result=ESP_OK policy=v2_battery_side_input_branch_current_ina180a2_10mR_adc_mv_x2_with_battery_mv_from_gpio8_div2",
         "~BOARD:POWER branch=SY7088_input_branch gpio=9 raw_adc=2345 adc_mv=1888 adc_calibrated=1 sample_count=4 calibration_status=uncalibrated current_model=""INA180A2 10mR current_mA=adc_mv*2"" current_calibrated=0 current_ma_valid=0 estimated_input_current_ma=0 battery_side_mv=4012 battery_voltage_source=""BAT_V_ADC/GPIO8 68K/68K midpoint, VBAT~=2*ADC"" power_mw_valid=0 estimated_input_power_mw=0 result=ESP_OK policy=v2_battery_side_input_branch_current_ina180a2_10mR_adc_mv_x2_with_battery_mv_from_gpio8_div2",
-        "~POWER:STATUS state=CONNECTED_IDLE blockers=0x00000000 blocker_names=none sleep_blockers=0x00000000 sleep_blocker_names=none idle_ms=100 user_idle_ms=100 radio_idle_ms=100 ble_connected=1 automatic_sleep_blocked_by_external_power=0 external_power_present=0 usb_power_present=0 charging=0 charge_full=0 usb_det_level=low bat_chg_level=high bat_std_level=high usb_det_policy=v2_gpio7_r37_r32_10K_10K_divider charger_polarity=v2_gpio14_chg_gpio21_std_active_low battery_mv=3988 battery_level=82 battery_valid=1 last_sleep_reason=MANUAL_COMMAND last_wake_source=GPIO guard=1 audio_idle_ms=60000 connected_idle_ms=300000 disconnected_idle_ms=600000 overnight_sleep_ms=1800000 sleep_stats_valid=1 sleep_duration_ms=28800000 sleep_entry_battery_mv=4012 sleep_entry_battery_level=84 sleep_entry_battery_valid=1 wake_battery_mv=3988 wake_battery_level=82 wake_battery_valid=1 sleep_drain_mv=24 sleep_drain_level=2 sleep_drain_mv_per_hour=3 sleep_drain_level_per_hour_x100=25 wake_policy=v2_ec11_provisional wake_gpio_mask=0x0000000000000000 wake_capable_keys=EC11_KEY/GPIO11 wake_key_gpio=11 wake_key_rtc_capable=1 voice_key_gpio=11 voice_key_rtc_capable=1 voice_key_deep_sleep_wake=0 voice_key_limitation=""V2 EC11-KEY_IO/GPIO11 is the RTC-capable wake candidate; deep-sleep wake remains disabled until power-latch isolation, leakage, pull policy, and false-wake behavior are signed off"" wake_user_action=""use USB reset or power cycle until EC11 wake is signed off"""
+        "~POWER:STATUS state=CONNECTED_IDLE blockers=0x00000000 blocker_names=none shutdown_blockers=0x00000000 shutdown_blocker_names=none idle_ms=100 user_idle_ms=100 radio_idle_ms=100 ble_connected=1 automatic_shutdown_blocked_by_external_power=0 external_power_present=0 usb_power_present=0 charging=0 charge_full=0 usb_det_level=low bat_chg_level=high bat_std_level=high usb_det_policy=v2_gpio7_r37_r32_10K_10K_divider charger_polarity=v2_gpio14_chg_gpio21_std_active_low battery_mv=3988 battery_level=82 battery_valid=1 last_shutdown_reason=manual_command last_shutdown_idle_ms=100 last_shutdown_blockers=0x00000000 guard=1 audio_idle_ms=60000 connected_idle_ms=300000 disconnected_idle_ms=600000 hardware_shutdown_ms=1800000 pwr_hold_gpio=46 pwr_hold_level=high pwr_hold_configured=1 pwr_hold_policy=v2_gpio46_power_latch_hold_high_release_low_for_hardware_shutdown voice_key_gpio=11 hardware_shutdown_user_action=""short-press hardware power key for cold boot after PWR_HOLD/GPIO46 release"""
     )
 }
 
@@ -226,14 +226,14 @@ function New-MarkdownReport {
     $lines.Add("")
     $lines.Add(("All expected sensors present: {0}" -f $Manifest.summary.all_expected_present))
     $lines.Add("")
-    $lines.Add("## Low Power Status")
+    $lines.Add("## Power Status")
     if ($null -ne $Manifest.low_power_status -and $Manifest.low_power_status.present) {
-        $lines.Add(("- Sleep stats valid: {0}" -f $Manifest.low_power_status.sleep_stats_valid))
-        $lines.Add(("- Sleep duration ms: {0}" -f $Manifest.low_power_status.sleep_duration_ms))
-        $lines.Add(("- Entry battery mV: {0}" -f $Manifest.low_power_status.sleep_entry_battery_mv))
-        $lines.Add(("- Wake battery mV: {0}" -f $Manifest.low_power_status.wake_battery_mv))
-        $lines.Add(("- Sleep drain mV: {0}" -f $Manifest.low_power_status.sleep_drain_mv))
-        $lines.Add(("- Sleep drain mV/hour: {0}" -f $Manifest.low_power_status.sleep_drain_mv_per_hour))
+        $lines.Add(("- Hardware shutdown ms: {0}" -f $Manifest.low_power_status.hardware_shutdown_ms))
+        $lines.Add(("- Shutdown blockers: {0}" -f $Manifest.low_power_status.shutdown_blockers))
+        $lines.Add(("- Auto shutdown blocked by external power: {0}" -f $Manifest.low_power_status.automatic_shutdown_blocked_by_external_power))
+        $lines.Add(("- PWR_HOLD GPIO: {0}" -f $Manifest.low_power_status.pwr_hold_gpio))
+        $lines.Add(("- PWR_HOLD level: {0}" -f $Manifest.low_power_status.pwr_hold_level))
+        $lines.Add(("- Last shutdown reason: {0}" -f $Manifest.low_power_status.last_shutdown_reason))
         $lines.Add(("- Current battery mV: {0}" -f $Manifest.low_power_status.battery_mv))
     } else {
         $lines.Add("~POWER:STATUS was not present in the captured log.")
@@ -363,24 +363,21 @@ try {
 
     $lowPowerStatus = [ordered]@{
         present = $null -ne $latestPowerStatus
-        sleep_stats_valid = Convert-ToBool (Get-FieldValue -Object $latestPowerStatus -Name "sleep_stats_valid" -Default 0)
-        sleep_duration_ms = Get-FieldValue -Object $latestPowerStatus -Name "sleep_duration_ms"
-        sleep_entry_battery_mv = Get-FieldValue -Object $latestPowerStatus -Name "sleep_entry_battery_mv"
-        sleep_entry_battery_level = Get-FieldValue -Object $latestPowerStatus -Name "sleep_entry_battery_level"
-        sleep_entry_battery_valid = Convert-ToBool (Get-FieldValue -Object $latestPowerStatus -Name "sleep_entry_battery_valid" -Default 0)
-        wake_battery_mv = Get-FieldValue -Object $latestPowerStatus -Name "wake_battery_mv"
-        wake_battery_level = Get-FieldValue -Object $latestPowerStatus -Name "wake_battery_level"
-        wake_battery_valid = Convert-ToBool (Get-FieldValue -Object $latestPowerStatus -Name "wake_battery_valid" -Default 0)
-        sleep_drain_mv = Get-FieldValue -Object $latestPowerStatus -Name "sleep_drain_mv"
-        sleep_drain_level = Get-FieldValue -Object $latestPowerStatus -Name "sleep_drain_level"
-        sleep_drain_mv_per_hour = Get-FieldValue -Object $latestPowerStatus -Name "sleep_drain_mv_per_hour"
-        sleep_drain_level_per_hour_x100 = Get-FieldValue -Object $latestPowerStatus -Name "sleep_drain_level_per_hour_x100"
+        shutdown_blockers = Get-FieldValue -Object $latestPowerStatus -Name "shutdown_blockers"
+        automatic_shutdown_blocked_by_external_power = Convert-ToBool (Get-FieldValue -Object $latestPowerStatus -Name "automatic_shutdown_blocked_by_external_power" -Default 0)
+        hardware_shutdown_ms = Get-FieldValue -Object $latestPowerStatus -Name "hardware_shutdown_ms"
+        pwr_hold_gpio = Get-FieldValue -Object $latestPowerStatus -Name "pwr_hold_gpio"
+        pwr_hold_level = Get-FieldValue -Object $latestPowerStatus -Name "pwr_hold_level"
+        pwr_hold_configured = Convert-ToBool (Get-FieldValue -Object $latestPowerStatus -Name "pwr_hold_configured" -Default 0)
+        pwr_hold_policy = Get-FieldValue -Object $latestPowerStatus -Name "pwr_hold_policy"
         battery_mv = Get-FieldValue -Object $latestPowerStatus -Name "battery_mv"
         battery_level = Get-FieldValue -Object $latestPowerStatus -Name "battery_level"
         battery_valid = Convert-ToBool (Get-FieldValue -Object $latestPowerStatus -Name "battery_valid" -Default 0)
-        last_sleep_reason = Get-FieldValue -Object $latestPowerStatus -Name "last_sleep_reason"
-        last_wake_source = Get-FieldValue -Object $latestPowerStatus -Name "last_wake_source"
-        wake_policy = Get-FieldValue -Object $latestPowerStatus -Name "wake_policy"
+        last_shutdown_reason = Get-FieldValue -Object $latestPowerStatus -Name "last_shutdown_reason"
+        last_shutdown_idle_ms = Get-FieldValue -Object $latestPowerStatus -Name "last_shutdown_idle_ms"
+        last_shutdown_blockers = Get-FieldValue -Object $latestPowerStatus -Name "last_shutdown_blockers"
+        voice_key_gpio = Get-FieldValue -Object $latestPowerStatus -Name "voice_key_gpio"
+        hardware_shutdown_user_action = Get-FieldValue -Object $latestPowerStatus -Name "hardware_shutdown_user_action"
         raw_line = Get-FieldValue -Object $latestPowerStatus -Name "raw_line"
     }
 

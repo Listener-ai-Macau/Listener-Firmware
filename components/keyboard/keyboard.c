@@ -838,7 +838,7 @@ static esp_err_t keyboard_ec11_start(void)
 
     ESP_LOGI(
         TAG,
-        "EC11 ready: a=gpio42 b=gpio2 key=gpio11 key_policy=gpio11_deep_sleep_wake_disabled_until_power_signoff decoder=interrupt_quadrature direction_policy=clockwise_increases_volume_brightness detent_state=0x%02x idle_poll_ms=%d queue_depth=%d",
+        "EC11 ready: a=gpio42 b=gpio2 key=gpio11 key_policy=gpio11_recording_key_pwr_hold_gpio46_shutdown_separate decoder=interrupt_quadrature direction_policy=clockwise_increases_volume_brightness detent_state=0x%02x idle_poll_ms=%d queue_depth=%d",
         KEYBOARD_EC11_DETENT_STATE,
         KEYBOARD_EC11_IDLE_POLL_MS,
         KEYBOARD_EC11_EVENT_QUEUE_DEPTH);

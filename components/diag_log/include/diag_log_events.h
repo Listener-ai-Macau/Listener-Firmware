@@ -72,9 +72,9 @@
 #define DIAG_GAP_RECOVERY      10  /* a1=action(1=clear_bonds,2=terminate_conn,3=restart_adv,4=complete,5=rotate_identity,6=refresh_pairing_window,7=request_reconnect), a2=result, a3=bond_count_or_state_flags, a4=conn_handle */
 
 /* Audio capture events (DIAG_SRC_AUDIO) */
-#define DIAG_AUDIO_INIT_FAIL   1   /* a1=component(1=I2S,2=I2C,3=codec,4=mutex,5=task), a2=esp_err, a3=0, a4=0 */
+#define DIAG_AUDIO_INIT_FAIL   1   /* a1=component(1=I2S/PDM,2=I2C,3=codec,4=mutex,5=task), a2=esp_err, a3=0, a4=0 */
 #define DIAG_AUDIO_SESSION     2   /* a1=type(1=start,2=stop,3=cancel), a2=session_id, a3=duration_ms, a4=frame_count */
-#define DIAG_AUDIO_SESSION_REJ 3   /* a1=reason(1=transport_not_ready,2=payload_unavailable), a2=0, a3=0, a4=0 */
+#define DIAG_AUDIO_SESSION_REJ 3   /* a1=reason(1=transport_not_ready,2=payload_unavailable,3=capture_unavailable,4=capture_not_started), a2=esp_err, a3=0, a4=0 */
 #define DIAG_AUDIO_UNDERRUN    4   /* a1=underrun_count, a2=buffer_level, a3=0, a4=0 */
 #define DIAG_AUDIO_DROP        5   /* a1=drop_count, a2=reason, a3=buffer_level, a4=session_ms */
 #define DIAG_AUDIO_I2S_FAIL    6   /* a1=drop_count, a2=esp_err, a3=0, a4=0 */
@@ -113,14 +113,17 @@
 
 /* Power manager events (DIAG_SRC_POWER) */
 #define DIAG_POWER_STATE          1 /* a1=previous_state, a2=next_state, a3=idle_ms, a4=blockers */
-#define DIAG_POWER_SLEEP_ENTRY    2 /* a1=idle_ms, a2=battery_mv, a3=battery_level, a4=reason */
-#define DIAG_POWER_WAKE           3 /* a1=wake_source, a2=wake_gpio_mask_low, a3=last_sleep_reason, a4=last_idle_ms */
-#define DIAG_POWER_SLEEP_BLOCKED  4 /* a1=blockers, a2=idle_ms, a3=reason, a4=esp_err_or_detail */
+#define DIAG_POWER_SLEEP_ENTRY    2 /* a1=idle_ms, a2=battery_mv, a3=battery_level, a4=shutdown_reason */
+#define DIAG_POWER_WAKE           3 /* a1=reset_reason, a2=pwr_hold_gpio, a3=last_shutdown_reason, a4=last_shutdown_idle_ms */
+#define DIAG_POWER_SLEEP_BLOCKED  4 /* a1=blockers, a2=idle_ms, a3=shutdown_reason, a4=esp_err_or_detail */
 #define DIAG_POWER_BATTERY_WARN   5 /* a1=battery_level, a2=battery_mv, a3=0, a4=0 */
 #define DIAG_POWER_BLOCKER_CHANGE 6 /* a1=old_blockers, a2=new_blockers, a3=changed_mask, a4=enabled */
-#define DIAG_POWER_STATUS         7 /* a1=state, a2=blockers, a3=idle_ms, a4=wake_gpio_mask_low */
-#define DIAG_POWER_WAKE_POLICY    8 /* a1=policy, a2=wake_gpio_mask_low, a3=voice_key_capable, a4=voice_key_gpio */
-#define DIAG_POWER_EXTERNAL_POWER 9 /* a1=flags, a2=raw_levels, a3=idle_ms, a4=sleep_blockers */
+#define DIAG_POWER_STATUS         7 /* a1=state, a2=blockers, a3=idle_ms, a4=pwr_hold_gpio */
+#define DIAG_POWER_WAKE_POLICY    8 /* legacy reserved: wake policy is no longer used after hardware shutdown migration */
+#define DIAG_POWER_EXTERNAL_POWER 9 /* a1=flags, a2=raw_levels, a3=idle_ms, a4=shutdown_blockers */
+#define DIAG_POWER_USB_DETECT     10 /* a1=level, a2=usb_power_present, a3=idle_ms, a4=raw_levels */
+#define DIAG_POWER_CHARGE_STATE   11 /* a1=charging, a2=charge_full, a3=idle_ms, a4=raw_levels */
+#define DIAG_POWER_HOLD_STATE     12 /* a1=enabled, a2=gpio, a3=level, a4=policy */
 
 /* Board events (DIAG_SRC_BOARD) */
 #define DIAG_BOARD_PROFILE        1 /* a1=flash_mb, a2=psram_mb, a3=key1_gpio, a4=ec11_key_gpio */

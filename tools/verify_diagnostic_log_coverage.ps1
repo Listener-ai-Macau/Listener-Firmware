@@ -87,6 +87,27 @@ foreach ($name in @("DIAG_SRC_OTA", "DIAG_SRC_POWER", "DIAG_SRC_BLE_AUDIO")) {
     }
 }
 
+foreach ($name in @(
+    "DIAG_SRC_SYSTEM",
+    "DIAG_SRC_SELF_TEST",
+    "DIAG_SRC_BLE_HID",
+    "DIAG_SRC_BLE_GAP",
+    "DIAG_SRC_OTA",
+    "DIAG_SRC_HEALTH",
+    "DIAG_SRC_POWER",
+    "DIAG_SRC_BOARD",
+    "DIAG_SRC_STATUS_LED",
+    "DIAG_SRC_KEYBOARD",
+    "DIAG_SRC_VOICE_KEY",
+    "DIAG_SRC_AUDIO",
+    "DIAG_SRC_VOICE_REC",
+    "DIAG_SRC_BLE_AUDIO"
+)) {
+    if (-not $sourceNameToValue.ContainsKey($name)) {
+        Add-CheckError "$eventsPath missing source used by source mask contract: $name"
+    }
+}
+
 if ($sourceNameToValue.ContainsKey("DIAG_SRC_OTA") -and
     $sourceNameToValue.ContainsKey("DIAG_SRC_POWER") -and
     $sourceNameToValue["DIAG_SRC_OTA"] -eq $sourceNameToValue["DIAG_SRC_POWER"]) {
@@ -101,6 +122,9 @@ foreach ($macro in @(
     "DIAG_POWER_WAKE",
     "DIAG_POWER_BLOCKER_CHANGE",
     "DIAG_POWER_STATUS",
+    "DIAG_POWER_USB_DETECT",
+    "DIAG_POWER_CHARGE_STATE",
+    "DIAG_POWER_HOLD_STATE",
     "DIAG_GAP_RECOVERY",
     "DIAG_BAUD_REPLAY"
 )) {
@@ -115,9 +139,38 @@ Assert-Contains -RelativePath "components/firmware_ota/firmware_ota.c" -Pattern 
 Assert-Contains -RelativePath "components/firmware_ota/firmware_ota.c" -Pattern "update_offset" -Description "OTA update offset status"
 Assert-Contains -RelativePath "components/firmware_ota/include/firmware_ota.h" -Pattern "uint32_t\s+running_offset" -Description "OTA status running offset field"
 Assert-Contains -RelativePath "components/firmware_ota/include/firmware_ota.h" -Pattern "uint32_t\s+update_size" -Description "OTA status update size field"
-Assert-Contains -RelativePath "main/main.c" -Pattern "DIAG_POWER_WAKE" -Description "power wake diag event"
-Assert-Contains -RelativePath "main/main.c" -Pattern "esp_sleep_get_wakeup_cause" -Description "power wake source capture"
-Assert-Contains -RelativePath "main/main.c" -Pattern "esp_sleep_get_ext1_wakeup_status" -Description "power wake GPIO mask capture"
+Assert-Contains -RelativePath "main/main.c" -Pattern "DIAG_POWER_WAKE" -Description "power reset diag event"
+Assert-Contains -RelativePath "main/main.c" -Pattern "esp_reset_reason" -Description "power reset reason capture"
+Assert-Contains -RelativePath "main/main.c" -Pattern "board_get_v2_power_hold_snapshot" -Description "PWR_HOLD boot diagnostic capture"
+Assert-Contains -RelativePath "main/main.c" -Pattern "power cold-boot status" -Description "cold boot serial diagnostic"
+
+Assert-Contains -RelativePath "components/diag_log/diag_log.c" -Pattern 'DIAG_SRC_SYSTEM,\s*"system",\s*true' -Description "source mask default includes system"
+Assert-Contains -RelativePath "components/diag_log/diag_log.c" -Pattern 'DIAG_SRC_SELF_TEST,\s*"self_test",\s*true' -Description "source mask default includes self_test"
+Assert-Contains -RelativePath "components/diag_log/diag_log.c" -Pattern 'DIAG_SRC_BLE_HID,\s*"ble_hid",\s*true' -Description "source mask default includes ble_hid"
+Assert-Contains -RelativePath "components/diag_log/diag_log.c" -Pattern 'DIAG_SRC_BLE_GAP,\s*"ble_gap",\s*true' -Description "source mask default includes ble_gap"
+Assert-Contains -RelativePath "components/diag_log/diag_log.c" -Pattern 'DIAG_SRC_OTA,\s*"ota",\s*true' -Description "source mask default includes ota"
+Assert-Contains -RelativePath "components/diag_log/diag_log.c" -Pattern 'DIAG_SRC_HEALTH,\s*"health",\s*true' -Description "source mask default includes health"
+Assert-Contains -RelativePath "components/diag_log/diag_log.c" -Pattern 'DIAG_SRC_POWER,\s*"power",\s*true' -Description "source mask default includes power"
+Assert-Contains -RelativePath "components/diag_log/diag_log.c" -Pattern 'DIAG_SRC_BOARD,\s*"board",\s*true' -Description "source mask default includes board"
+Assert-Contains -RelativePath "components/diag_log/diag_log.c" -Pattern 'DIAG_SRC_STATUS_LED,\s*"status_led",\s*true' -Description "source mask default includes status_led"
+Assert-Contains -RelativePath "components/diag_log/diag_log.c" -Pattern 'DIAG_SRC_KEYBOARD,\s*"keyboard",\s*false' -Description "source mask default disables keyboard INFO"
+Assert-Contains -RelativePath "components/diag_log/diag_log.c" -Pattern 'DIAG_SRC_VOICE_KEY,\s*"voice_key",\s*false' -Description "source mask default disables voice_key INFO"
+Assert-Contains -RelativePath "components/diag_log/diag_log.c" -Pattern 'DIAG_SRC_AUDIO,\s*"audio",\s*false' -Description "source mask default disables audio INFO"
+Assert-Contains -RelativePath "components/diag_log/diag_log.c" -Pattern 'DIAG_SRC_VOICE_REC,\s*"voice_rec",\s*false' -Description "source mask default disables voice_rec INFO"
+Assert-Contains -RelativePath "components/diag_log/diag_log.c" -Pattern 'DIAG_SRC_BLE_AUDIO,\s*"ble_audio",\s*false' -Description "source mask default disables ble_audio INFO"
+Assert-Contains -RelativePath "components/diag_log/diag_log.c" -Pattern 'severity\s*>=\s*DIAG_SEV_WARN' -Description "WARN and ERROR bypass source mask"
+Assert-Contains -RelativePath "components/diag_log/diag_log.c" -Pattern 'strcmp\(cmd_buffer,\s*"SOURCES"\)' -Description "DIAGLOG SOURCES command"
+Assert-Contains -RelativePath "components/diag_log/diag_log.c" -Pattern 'strncmp\(cmd_buffer,\s*"ENABLE"' -Description "DIAGLOG ENABLE command"
+Assert-Contains -RelativePath "components/diag_log/diag_log.c" -Pattern 'strncmp\(cmd_buffer,\s*"DISABLE"' -Description "DIAGLOG DISABLE command"
+Assert-Contains -RelativePath "components/diag_log/diag_log.c" -Pattern 'diag_log_dump_last_by_source\(n,\s*source\)' -Description "source-filtered bounded tail command"
+Assert-Contains -RelativePath "ports/esp32/diag_log_platform/diag_log_flash.c" -Pattern "diag_log_platform_dump_last_by_source" -Description "platform source-filtered bounded tail"
+Assert-Contains -RelativePath "ports/esp32/diag_log_platform/diag_log_flash.c" -Pattern "DIAG_LOG_DUMP_PACE_EVENTS" -Description "diag_log export pacing batch"
+Assert-Contains -RelativePath "ports/esp32/diag_log_platform/diag_log_flash.c" -Pattern "watchdog_platform_feed_current_task" -Description "diag_log export watchdog feed"
+Assert-Contains -RelativePath "ports/esp32/diag_log_platform/diag_log_flash.c" -Pattern "snapshot_sector_events" -Description "diag_log export sector snapshot"
+Assert-Contains -RelativePath "ports/esp32/diag_log_platform/diag_log_flash.c" -Pattern "status_led" -Description "status_led source name"
+Assert-Contains -RelativePath "components/power_manager/power_manager.c" -Pattern "DIAG_POWER_USB_DETECT" -Description "USB detect transition diag"
+Assert-Contains -RelativePath "components/power_manager/power_manager.c" -Pattern "DIAG_POWER_CHARGE_STATE" -Description "charge state transition diag"
+Assert-Contains -RelativePath "components/power_manager/power_manager.c" -Pattern "DIAG_POWER_HOLD_STATE" -Description "PWR_HOLD transition diag"
 
 Assert-Contains -RelativePath "tools/esp_idf_ci.ps1" -Pattern "Get-IdfPartitionTable" -Description "partition table parser"
 Assert-Contains -RelativePath "tools/esp_idf_ci.ps1" -Pattern "Write-OtaPartitionEvidence" -Description "OTA partition evidence output"
@@ -136,12 +189,28 @@ Assert-NotContains -RelativePath "ports/esp32/ble_audio_stream/ble_audio_stream_
 Assert-Contains -RelativePath "ports/esp32/ble_hid_gap/ble_hid_gap_esp32.c" -Pattern "DIAG_GAP_RECOVERY" -Description "BLE recovery diag event logging"
 Assert-Contains -RelativePath "ports/esp32/ble_hid_gap/ble_hid_gap_esp32.c" -Pattern "recovery: clearing pairing bonds" -Description "BLE recovery serial action log"
 Assert-Contains -RelativePath "ports/esp32/ble_hid_gap/ble_hid_gap_esp32.c" -Pattern "recovery: pairing reset complete" -Description "BLE recovery completion serial log"
+Assert-Contains -RelativePath "ports/esp32/ble_hid_gap/ble_hid_gap_esp32.c" -Pattern "ble_hid_gap_prepare_shutdown_disconnect" -Description "hardware shutdown BLE disconnect preparation"
 
 Assert-Contains -RelativePath "tools/decode_diag_log.py" -Pattern "duplicate diag_log source id" -Description "duplicate source id rejection"
 Assert-Contains -RelativePath "tools/decode_diag_log.py" -Pattern "duplicate diag_log event id" -Description "duplicate event id rejection"
+Assert-Contains -RelativePath "tools/decode_diag_log.py" -Pattern "input_debug_summary" -Description "input debug summary"
+Assert-Contains -RelativePath "tools/decode_diag_log.py" -Pattern "kbd_custom_key" -Description "KEY1-KEY4 summary source"
+Assert-Contains -RelativePath "tools/decode_diag_log.py" -Pattern "kbd_ec11_detent" -Description "EC11 direction summary source"
+Assert-Contains -RelativePath "tools/decode_diag_log.py" -Pattern "vkey_press" -Description "EC11 press summary source"
+Assert-Contains -RelativePath "tools/decode_diag_log.py" -Pattern "build_param_highlights" -Description "parameter highlight summary builder"
+Assert-Contains -RelativePath "tools/decode_diag_log.py" -Pattern "field_sources" -Description "parameter highlight header field provenance"
+Assert-Contains -RelativePath "tools/collect_ai_diagnostics.ps1" -Pattern "TemporaryEnableSources" -Description "temporary source enable collection option"
+Assert-Contains -RelativePath "tools/collect_ai_diagnostics.ps1" -Pattern "DISABLE" -Description "source cleanup disable path"
+Assert-Contains -RelativePath "tools/collect_ai_diagnostics.ps1" -Pattern "source_state_path" -Description "final source state artifact"
+Assert-Contains -RelativePath "tools/collect_ai_diagnostics.ps1" -Pattern "param_highlights" -Description "parameter highlight manifest copy"
+Assert-Contains -RelativePath "tools/collect_ai_diagnostics.ps1" -Pattern "~DIAGLOG:SOURCES \+ ~DIAGLOG:ENABLE/DISABLE \+ ~DIAGLOG:LAST:N\[:source\]" -Description "bounded command path manifest"
+Assert-Contains -RelativePath "tools/dump_diag_log.ps1" -Pattern '~DIAGLOG:LAST:\{0\}' -Description "bounded dump default"
+Assert-Contains -RelativePath "tools/dump_diag_log.ps1" -Pattern '\[switch\]\$Full' -Description "explicit full dump switch"
 
 foreach ($relativePath in @(
     "tools/verify_diagnostic_log_coverage.ps1",
+    "tools/collect_ai_diagnostics.ps1",
+    "tools/dump_diag_log.ps1",
     "tools/esp_idf_ci.ps1",
     "tools/package_factory_firmware.ps1",
     "tools/ai/repo_features.ps1"

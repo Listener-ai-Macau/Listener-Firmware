@@ -14,6 +14,7 @@ void diag_log_platform_write(uint16_t source, uint8_t event, uint8_t severity,
 uint32_t diag_log_platform_count(void);
 void diag_log_platform_dump(void);
 void diag_log_platform_dump_last(uint32_t count);
+void diag_log_platform_dump_last_by_source(uint32_t count, uint16_t source);
 void diag_log_platform_clear(void);
 bool diag_log_platform_is_dumping(void);
 
@@ -24,8 +25,5 @@ bool diag_log_platform_is_dumping(void);
  */
 uint32_t diag_log_platform_read_range(uint32_t offset, uint32_t limit,
                                        void *buffer, uint32_t buffer_size);
-
-/* Returns true only for complete ~DIAGLOG:* command lines. */
-bool diag_log_consume_usb_command(const char *line);
 
 #endif /* DIAG_LOG_PLATFORM_H */

@@ -311,7 +311,7 @@ static esp_err_t status_led_new_ws2812_encoder(rmt_encoder_handle_t *ret_encoder
         return ret;
     }
 
-    rmt_copy_encoder_config_t copy_config = {0};
+    rmt_copy_encoder_config_t copy_config = {};
     ret = rmt_new_copy_encoder(&copy_config, &led_encoder->copy_encoder);
     if (ret != ESP_OK) {
         (void)rmt_del_encoder(led_encoder->bytes_encoder);

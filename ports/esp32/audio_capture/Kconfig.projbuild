@@ -1,51 +1,24 @@
 choice AUDIO_CAPTURE_MIC_TYPE
     prompt "Microphone hardware type"
-    default AUDIO_CAPTURE_MIC_SPH0645
+    default AUDIO_CAPTURE_MIC_SPH0655_PDM
     help
-        Select the microphone hardware connected to the I2S interface.
+        Select the microphone hardware connected to the audio capture peripheral.
         ES8311: Analog codec via I2C + I2S (legacy board).
-        SPH0645: I2S digital microphone, no codec needed (schematic V1).
+        SPH0655: PDM digital microphone on the V2 N16R8 CLK/DOUT interface.
 
 config AUDIO_CAPTURE_MIC_ES8311
     bool "ES8311 analog codec (legacy board)"
 
-config AUDIO_CAPTURE_MIC_SPH0645
-    bool "SPH0645 I2S digital mic (schematic V1)"
+config AUDIO_CAPTURE_MIC_SPH0655_PDM
+    bool "SPH0655 PDM digital mic (V2 N16R8)"
 
 endchoice
-
-choice AUDIO_CAPTURE_SPH0645_SLOT
-    prompt "SPH0645 active I2S slot"
-    depends on AUDIO_CAPTURE_MIC_SPH0645
-    default AUDIO_CAPTURE_SPH0645_SLOT_LEFT
-    help
-        The SPH0645 drives DATA only on the WS slot selected by its SELECT
-        pin.  A slot mismatch records the idle/floating slot, which looks like
-        near-constant DC offset instead of speech.
-
-config AUDIO_CAPTURE_SPH0645_SLOT_LEFT
-    bool "Left / WS-low slot"
-
-config AUDIO_CAPTURE_SPH0645_SLOT_RIGHT
-    bool "Right / WS-high slot"
-
-endchoice
-
-config AUDIO_CAPTURE_SPH0645_GAIN
-    int "SPH0645 post-DC digital gain"
-    depends on AUDIO_CAPTURE_MIC_SPH0645
-    range 1 32
-    default 4
-    help
-        Apply gain after removing the measured DC offset from the digital mic
-        stream.  The V1 SPH0645 path has a large DC component and low useful
-        AC level; without this stage replayed speech can arrive as empty ASR.
 
 config AUDIO_CAPTURE_V2_MIC_INTERFACE_VALIDATED
     bool "Enable V2 microphone capture after CLK/DOUT interface validation"
     default n
-    depends on AUDIO_CAPTURE_MIC_SPH0645
+    depends on AUDIO_CAPTURE_MIC_SPH0655_PDM
     help
-        Keep disabled until the V2 CLK/GPIO48 and DOUT/GPIO47 microphone
-        interface is validated on hardware. When disabled, firmware reports
-        a degraded audio path instead of pretending capture is production-ready.
+        Enable only for V2 hardware validation builds that must exercise the
+        CLK/GPIO48 and DOUT/GPIO47 microphone path. When disabled, firmware
+        reports a degraded audio path instead of pretending capture is ready.

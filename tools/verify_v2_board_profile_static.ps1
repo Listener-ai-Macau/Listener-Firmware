@@ -78,6 +78,7 @@ $board = Read-RepoFile "components\board\board.c"
 $powerManager = Read-RepoFile "components\power_manager\power_manager.c"
 $batteryMonitor = Read-RepoFile "components\battery_monitor\battery_monitor.c"
 $statusLed = Read-RepoFile "components\status_led\status_led.c"
+$audioCapture = Read-RepoFile "ports\esp32\audio_capture\audio_capture_esp32.c"
 $statusLedDoc = Read-RepoFile "docs\features\status_led.md"
 $lowPowerDoc = Read-RepoFile "docs\features\low_power_wake_policy.md"
 $currentTelemetryTool = Read-RepoFile "tools\collect_v2_current_telemetry.ps1"
@@ -86,7 +87,7 @@ $factoryPackage = Read-RepoFile "tools\package_factory_firmware.ps1"
 
 foreach ($item in @(
     @($boardKconfig, "default LISTENER_BOARD_PROFILE_V2_N16R8", "default V2 board profile"),
-    @($boardKconfig, "EC11-KEY_IO/GPIO11", "V2 EC11 wake gate help"),
+    @($boardKconfig, "Production V2 board profile", "V2 board profile help"),
     @($boardPins, 'BOARD_PINS_PROFILE_ID\s+"voice-keyboard-v2-n16r8"', "V2 board profile id"),
     @($boardPins, 'BOARD_PINS_MODULE\s+"ESP32-S3-WROOM-1-N16R8"', "N16R8 module id"),
     @($boardPins, "BOARD_PINS_FLASH_SIZE_MB\s+\(16\)", "16 MB flash board metadata"),
@@ -103,6 +104,10 @@ foreach ($item in @(
     @($boardPins, "BOARD_PINS_MIC_CLK_IO\s+BOARD_PINS_I2S_BCLK_IO", "mic clock macro"),
     @($boardPins, "BOARD_PINS_I2S_BCLK_IO\s+\(GPIO_NUM_48\)", "mic CLK GPIO48"),
     @($boardPins, "BOARD_PINS_I2S_DIN_IO\s+\(GPIO_NUM_47\)", "mic DOUT GPIO47"),
+    @($audioCapture, "CONFIG_AUDIO_CAPTURE_MIC_SPH0655_PDM", "SPH0655 PDM mic compile-time selector"),
+    @($audioCapture, "i2s_channel_init_pdm_rx_mode", "V2 PDM RX initialization"),
+    @($audioCapture, "I2S_PDM_RX_SLOT_PCM_FMT_DEFAULT_CONFIG", "V2 PDM2PCM slot configuration"),
+    @($audioCapture, "SPH0655 PDM mic init", "SPH0655 PDM mic init log"),
     @($boardPins, "BOARD_PINS_BAT_CHG_IO\s+\(GPIO_NUM_14\)", "charger CHG GPIO14"),
     @($boardPins, "BOARD_PINS_BAT_STD_IO\s+\(GPIO_NUM_21\)", "charger STD GPIO21"),
     @($boardPins, "BOARD_PINS_BAT_V_ADC_IO\s+\(GPIO_NUM_8\)", "battery ADC GPIO8"),
@@ -125,7 +130,7 @@ foreach ($item in @(
     @($board, "PWR_HOLD/GPIO46", "PWR_HOLD help text"),
     @($board, "reserved_mspi_gpio=%s", "reserved MSPI status field"),
     @($board, "~BOARD:GPIO", "raw V2 key and EC11 GPIO diagnostics command"),
-    @($board, "wake_candidate=EC11_KEY/GPIO11", "EC11 wake candidate GPIO diagnostic"),
+    @($board, "recording_key=EC11_KEY/GPIO11", "EC11 recording key GPIO diagnostic"),
     @($board, "key_pressed_mask=0x%02", "V2 active-low custom key pressed mask"),
     @($board, "LED7..LED10\+LED15..LED16\+LED23..LED28", "EC11 LED refs in board diagnostics"),
     @($board, '\.led_refs = "LED11..LED14"', "V2 key LED refs in board diagnostics"),
@@ -137,12 +142,14 @@ foreach ($item in @(
     @($board, "battery_side_mv", "battery-side power telemetry output"),
     @($currentTelemetryTool, 'branch\s*=\s*"TPS63020_input_branch"', "current telemetry TPS63020 branch parser"),
     @($currentTelemetryTool, 'branch\s*=\s*"SY7088_input_branch"', "current telemetry SY7088 branch parser"),
-    @($currentTelemetryTool, "wake_capable_keys=EC11_KEY/GPIO11", "current telemetry self-test V2 wake key label"),
-    @($currentTelemetryTool, "wake_key_gpio=11", "current telemetry self-test wake key GPIO11"),
+    @($currentTelemetryTool, "shutdown_blockers=0x00000000", "current telemetry self-test shutdown blockers"),
+    @($currentTelemetryTool, "hardware_shutdown_ms=1800000", "current telemetry self-test hardware shutdown threshold"),
+    @($currentTelemetryTool, "pwr_hold_gpio=46", "current telemetry self-test PWR_HOLD GPIO46"),
+    @($currentTelemetryTool, "pwr_hold_level=high", "current telemetry self-test PWR_HOLD high level"),
     @($currentTelemetryTool, "voice_key_gpio=11", "current telemetry self-test voice key GPIO11"),
-    @($powerManager, "POWER_MANAGER_WAKE_POLICY_ACTIVE POWER_MANAGER_WAKE_POLICY_V2_EC11_PROVISIONAL", "V2 EC11 provisional wake policy"),
-    @($powerManager, "EC11-KEY_IO/GPIO11", "V2 wake limitation GPIO11"),
-    @($lowPowerDoc, "EC11-KEY_IO/GPIO11", "low-power V2 EC11 GPIO11 doc"),
+    @($powerManager, "POWER_MANAGER_STATE_HARDWARE_SHUTDOWN", "power manager hardware shutdown state"),
+    @($powerManager, "board_set_power_hold_enabled\(false\)", "power manager releases PWR_HOLD for shutdown"),
+    @($lowPowerDoc, "PWR_HOLD/GPIO46", "low-power hardware shutdown PWR_HOLD doc"),
     @($statusLed, "STATUS_LED_EC11_COUNT 12", "EC11 12-LED strip count"),
     @($statusLed, "STATUS_LED_EDGE_COUNT 6", "edge 6-LED strip count"),
     @($statusLed, "STATUS_LED_STRIP_COUNT 4", "four LED strips"),
@@ -162,7 +169,9 @@ foreach ($token in @(
     "CONFIG_ESPTOOLPY_FLASHSIZE_16MB=y",
     'CONFIG_ESPTOOLPY_FLASHSIZE="16MB"',
     "CONFIG_SPIRAM=y",
-    "CONFIG_SPIRAM_MODE_OCT=y"
+    "CONFIG_SPIRAM_MODE_OCT=y",
+    "CONFIG_AUDIO_CAPTURE_MIC_SPH0655_PDM=y",
+    "CONFIG_AUDIO_CAPTURE_V2_MIC_INTERFACE_VALIDATED=y"
 )) {
     Assert-Contains -Text $sdkconfig -Pattern ([regex]::Escape($token)) -Description "sdkconfig token $token"
 }
@@ -174,14 +183,19 @@ foreach ($item in @(
     @($sdkconfig, "CONFIG_LISTENER_BOARD_PROFILE_N4=y", "active N4 sdkconfig"),
     @($sdkconfig, "CONFIG_ESPTOOLPY_FLASHSIZE_4MB=y", "active 4 MB flash sdkconfig"),
     @($sdkconfig, "# CONFIG_SPIRAM is not set", "disabled PSRAM sdkconfig"),
+    @($sdkconfig, "CONFIG_AUDIO_CAPTURE_MIC_SPH0645=y", "stale SPH0645 microphone sdkconfig"),
+    @($sdkconfig, "CONFIG_AUDIO_CAPTURE_SPH0645_SLOT_LEFT=y", "stale SPH0645 slot sdkconfig"),
+    @($sdkconfig, "CONFIG_AUDIO_CAPTURE_SPH0645_GAIN=4", "stale SPH0645 gain sdkconfig"),
+    @($sdkconfig, "# CONFIG_AUDIO_CAPTURE_MIC_SPH0655_PDM is not set", "disabled SPH0655 microphone sdkconfig"),
+    @($sdkconfig, "# CONFIG_AUDIO_CAPTURE_V2_MIC_INTERFACE_VALIDATED is not set", "disabled V2 microphone validation sdkconfig"),
     @($listenerDevice, "voice-keyboard-n4|esp32s3-wroom-1-n4|flash_4mb|no_psram", "N4 device metadata"),
     @($keyboard, "gpio35|gpio45|gpio48\.f14|gpio47\.f15|gpio21\.f16", "N4 keyboard diagnostic labels"),
     @($voiceKeyInput, "ec11_key\.gpio(18|35)", "stale EC11 recording label"),
     @($board, "5\.1K|PWR_HOLD/GPIO11|Voice Keyboard N4|EC11 push/GPIO(18|35)|N4 deep sleep", "stale board diagnostics/help"),
     @($board, "LED11..LED16|LED15..LED28", "stale LED three-zone refs in board diagnostics"),
-    @($currentTelemetryTool, 'rail=TPS63020_3V3|rail=SY7088_LED_5V|wake_capable_keys=EC11_KEY/GPIO18|wake_key_gpio=18|voice_key_gpio=18|wake_user_action=""press_ec11_key_or_usb_reset""', "stale current telemetry collector diagnostics"),
-    @($powerManager, "KEY4/GPIO21|EC11-KEY/GPIO35", "stale N4 wake diagnostics"),
-    @($lowPowerDoc, "EC11-KEY_IO/GPIO18|EC11-KEY/GPIO35|KEY4/GPIO21", "stale low-power wake doc GPIO"),
+    @($currentTelemetryTool, 'rail=TPS63020_3V3|rail=SY7088_LED_5V|wake_key_gpio=|wake_user_action=""press_ec11_key_or_usb_reset""|wake_capable_keys=EC11_KEY/GPIO18|voice_key_gpio=18|pwr_hold_gpio=11|PWR_HOLD/GPIO11', "stale current telemetry collector diagnostics"),
+    @($powerManager, "KEY4/GPIO21|EC11-KEY/GPIO35|wake_policy|wake_gpio|PWR_HOLD/GPIO11", "stale wake diagnostics"),
+    @($lowPowerDoc, "EC11-KEY_IO/GPIO18|EC11-KEY/GPIO35|KEY4/GPIO21|wake_policy|wake_gpio|deep-sleep|PWR_HOLD/GPIO11", "stale low-power wake doc GPIO"),
     @($statusLed, "STATUS_LED_EC11_COUNT 4|STATUS_LED_EDGE_COUNT 14", "stale LED strip counts"),
     @($statusLedDoc, "LED11.*LED16", "stale status LED doc edge refs"),
     @($otaPackage, "keyboard-n4|esp32s3-wroom-1-n4", "N4 OTA package metadata"),

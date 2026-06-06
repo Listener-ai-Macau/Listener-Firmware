@@ -1,6 +1,6 @@
 menu "Listener Power Manager"
     config POWER_MANAGER_ENABLE
-        bool "Enable firmware low-power manager and overnight guard"
+        bool "Enable firmware low-power manager and hardware shutdown guard"
         default y
 
     config POWER_MANAGER_CONNECTED_IDLE_MS
@@ -18,8 +18,8 @@ menu "Listener Power Manager"
         default 30000
         depends on POWER_MANAGER_ENABLE
 
-    config POWER_MANAGER_OVERNIGHT_SLEEP_MS
-        int "Overnight deep-sleep threshold in milliseconds"
+    config POWER_MANAGER_HARDWARE_SHUTDOWN_MS
+        int "Hardware shutdown threshold in milliseconds"
         default 1800000
         depends on POWER_MANAGER_ENABLE
 

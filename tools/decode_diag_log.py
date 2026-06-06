@@ -427,6 +427,242 @@ def sorted_counter(counter: Counter[str]) -> dict[str, int]:
     return {key: counter[key] for key in sorted(counter)}
 
 
+def build_input_debug_summary(events: list[dict[str, Any]]) -> dict[str, Any]:
+    key_summary = {
+        f"KEY{i}": {"press": 0, "release": 0, "single": 0, "double": 0, "long": 0}
+        for i in range(1, 5)
+    }
+    ec11_summary: dict[str, Any] = {
+        "clockwise": 0,
+        "counterclockwise": 0,
+        "last_detent_count": None,
+        "press": 0,
+        "double_click_recovery": 0,
+        "long_press_ignored": 0,
+    }
+
+    key_phase_names = {
+        1: "press",
+        2: "release",
+        3: "single",
+        4: "double",
+        5: "long",
+    }
+    ec11_direction_names = {
+        1: "clockwise",
+        2: "counterclockwise",
+    }
+    ec11_press_names = {
+        1: "press",
+        2: "double_click_recovery",
+        3: "long_press_ignored",
+    }
+
+    for event in events:
+        source_name = event["source"].get("name")
+        event_name = event["event"].get("name")
+        args = event.get("args_named", {})
+
+        if source_name == "keyboard" and event_name == "kbd_custom_key":
+            logical_key = args.get("logical_key")
+            phase = args.get("phase")
+            key_name = f"KEY{logical_key}" if isinstance(logical_key, int) else None
+            phase_name = key_phase_names.get(phase) if isinstance(phase, int) else None
+            if key_name in key_summary and phase_name:
+                key_summary[key_name][phase_name] += 1
+            continue
+
+        if source_name == "keyboard" and event_name == "kbd_ec11_detent":
+            direction = args.get("direction")
+            direction_name = ec11_direction_names.get(direction) if isinstance(direction, int) else None
+            if direction_name:
+                ec11_summary[direction_name] += 1
+            if isinstance(args.get("detent_count"), int):
+                ec11_summary["last_detent_count"] = args["detent_count"]
+            continue
+
+        if source_name == "voice_key" and event_name == "vkey_press":
+            press_type = args.get("type")
+            press_name = ec11_press_names.get(press_type) if isinstance(press_type, int) else None
+            if press_name:
+                ec11_summary[press_name] += 1
+
+    return {
+        "custom_keys": key_summary,
+        "ec11": ec11_summary,
+        "notes": "Counts are populated when keyboard.kbd_custom_key, keyboard.kbd_ec11_detent, or voice_key.vkey_press events exist in the input log.",
+    }
+
+
+PARAM_HIGHLIGHT_EVENT_MAP: dict[tuple[str, str], tuple[str, str]] = {
+    ("ble_gap", "gap_conn_param"): ("ble_gap", "connection_params"),
+    ("ble_gap", "gap_conn_param_req"): ("ble_gap", "connection_params"),
+    ("ble_gap", "gap_subscribe"): ("ble_gap", "subscriptions"),
+    ("ble_audio", "baud_notify_state"): ("ble_audio", "notify"),
+    ("ble_audio", "baud_notify_fail"): ("ble_audio", "notify"),
+    ("ble_audio", "baud_pool_exhaust"): ("ble_audio", "pressure"),
+    ("ble_audio", "baud_watermark"): ("ble_audio", "pressure"),
+    ("ble_audio", "baud_backpressure"): ("ble_audio", "pressure"),
+    ("ble_audio", "baud_replay"): ("ble_audio", "replay"),
+    ("ble_audio", "baud_session_abort"): ("ble_audio", "session_flow"),
+    ("ble_audio", "baud_link_timeout"): ("ble_audio", "session_flow"),
+    ("ble_audio", "baud_state_change"): ("ble_audio", "session_flow"),
+    ("audio", "audio_session"): ("audio_voice", "audio_sessions"),
+    ("audio", "audio_session_rej"): ("audio_voice", "rejects_and_flow"),
+    ("audio", "audio_drop"): ("audio_voice", "rejects_and_flow"),
+    ("audio", "audio_backpressure"): ("audio_voice", "rejects_and_flow"),
+    ("voice_rec", "vrec_session"): ("audio_voice", "voice_recording"),
+    ("voice_rec", "vrec_rejected"): ("audio_voice", "rejects_and_flow"),
+    ("voice_rec", "vrec_flow"): ("audio_voice", "rejects_and_flow"),
+    ("power", "power_state"): ("power", "state"),
+    ("power", "power_sleep_entry"): ("power", "sleep_wake"),
+    ("power", "power_wake"): ("power", "sleep_wake"),
+    ("power", "power_sleep_blocked"): ("power", "sleep_wake"),
+    ("power", "power_status"): ("power", "state"),
+    ("power", "power_wake_policy"): ("power", "state"),
+    ("power", "power_external_power"): ("power", "external_power"),
+    ("power", "power_usb_detect"): ("power", "external_power"),
+    ("power", "power_charge_state"): ("power", "external_power"),
+    ("power", "power_hold_state"): ("power", "external_power"),
+    ("power", "power_battery_warn"): ("power", "external_power"),
+    ("power", "power_blocker_change"): ("power", "state"),
+    ("board", "board_profile"): ("board", "profile"),
+    ("board", "board_provisional"): ("board", "profile"),
+    ("board", "board_power_rail"): ("board", "rails"),
+    ("board", "board_led_resource"): ("board", "profile"),
+    ("keyboard", "kbd_custom_key"): ("inputs", "events"),
+    ("keyboard", "kbd_key_press"): ("inputs", "events"),
+    ("keyboard", "kbd_queue_drop"): ("inputs", "events"),
+    ("keyboard", "kbd_ec11_detent"): ("inputs", "events"),
+    ("voice_key", "vkey_press"): ("inputs", "events"),
+    ("voice_key", "vkey_queue_drop"): ("inputs", "events"),
+}
+
+
+def build_field_sources(event: dict[str, Any]) -> dict[str, Any]:
+    field_sources: dict[str, Any] = {}
+    args_named = event.get("args_named", {})
+    for slot, definition in event.get("arg_definitions", {}).items():
+        field_name = definition.get("name")
+        if not field_name or field_name.startswith("unused_"):
+            continue
+        if field_name not in args_named:
+            field_name = f"{field_name}_{slot}"
+        if field_name not in args_named:
+            continue
+        field_sources[field_name] = {
+            "slot": slot,
+            "header_name": definition.get("raw_name"),
+            "header_detail": definition.get("detail"),
+        }
+    return field_sources
+
+
+def build_param_highlight_ref(event: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "event_index": event["index"],
+        "event_ref": f"events[{event['index']}]",
+        "boot_segment_index": event.get("boot_segment_index"),
+        "t_ms": event.get("t_ms"),
+        "source": event["source"].get("name"),
+        "event": event["event"].get("name"),
+        "event_macro": event["event"].get("macro"),
+        "severity": event["severity"].get("name"),
+        "fields": event.get("args_named", {}),
+        "decoded": event.get("args_decoded", {}),
+        "field_sources": build_field_sources(event),
+    }
+
+
+def add_gap_subscribe_state(ref: dict[str, Any], event: dict[str, Any]) -> None:
+    raw_args = event.get("args_raw", {})
+    packed_notify = raw_args.get("a3")
+    packed_indicate = raw_args.get("a4")
+    state: dict[str, Any] = {}
+    if isinstance(packed_notify, int):
+        state.update(
+            {
+                "reason": (packed_notify >> 16) & 0xFFFF,
+                "previous_notify": (packed_notify >> 8) & 0xFF,
+                "current_notify": packed_notify & 0xFF,
+            }
+        )
+    if isinstance(packed_indicate, int):
+        state.update(
+            {
+                "previous_indicate": (packed_indicate >> 8) & 0xFF,
+                "current_indicate": packed_indicate & 0xFF,
+            }
+        )
+    if state:
+        ref["subscribe_state"] = state
+
+
+def build_param_highlights(events: list[dict[str, Any]]) -> dict[str, Any]:
+    highlights: dict[str, Any] = {
+        "schema_version": 1,
+        "derivation": {
+            "field_source": "events[*].args_named and field_sources are derived from diag_log_events.h comments through arg_definitions.",
+            "event_ref": "Each highlight contains event_index/event_ref back to events[*], which preserves args_raw, args_named, args_decoded, and raw_event.",
+        },
+        "ble_gap": {"connection_params": [], "subscriptions": []},
+        "ble_audio": {"notify": [], "pressure": [], "replay": [], "session_flow": []},
+        "audio_voice": {"audio_sessions": [], "voice_recording": [], "rejects_and_flow": []},
+        "power": {"state": [], "sleep_wake": [], "external_power": []},
+        "board": {"profile": [], "rails": []},
+        "inputs": {"counts": build_input_debug_summary(events), "events": []},
+    }
+
+    for event in events:
+        source_name = event["source"].get("name")
+        event_name = event["event"].get("name")
+        section = PARAM_HIGHLIGHT_EVENT_MAP.get((source_name, event_name))
+        if not section:
+            continue
+        section_name, subsection_name = section
+        ref = build_param_highlight_ref(event)
+        if source_name == "ble_gap" and event_name == "gap_subscribe":
+            add_gap_subscribe_state(ref, event)
+        highlights[section_name][subsection_name].append(ref)
+
+    present_sections: list[str] = []
+    for section_name, section_value in highlights.items():
+        if section_name in ("schema_version", "derivation"):
+            continue
+        if not isinstance(section_value, dict):
+            continue
+        if section_name == "inputs":
+            has_events = len(section_value.get("events", [])) > 0
+            counts = section_value.get("counts", {})
+            custom_counts = counts.get("custom_keys", {})
+            ec11_counts = counts.get("ec11", {})
+            has_counts = any(
+                any(value for value in per_key_counts.values())
+                for per_key_counts in custom_counts.values()
+            ) or any(
+                value
+                for value in ec11_counts.values()
+                if isinstance(value, int)
+            )
+            if has_events or has_counts:
+                present_sections.append(section_name)
+            continue
+        if any(isinstance(value, list) and value for value in section_value.values()):
+            present_sections.append(section_name)
+
+    highlights["coverage"] = {
+        "highlighted_event_count": sum(
+            len(value)
+            for section_name, section_value in highlights.items()
+            if isinstance(section_value, dict) and section_name not in ("derivation", "coverage")
+            for value in section_value.values()
+            if isinstance(value, list)
+        ),
+        "sections_present": sorted(present_sections),
+    }
+    return highlights
+
+
 def build_summary(events: list[dict[str, Any]], segments: list[dict[str, Any]]) -> dict[str, Any]:
     source_counts: Counter[str] = Counter()
     severity_counts: Counter[str] = Counter()
@@ -477,6 +713,8 @@ def build_summary(events: list[dict[str, Any]], segments: list[dict[str, Any]]) 
         "counts_by_source": sorted_counter(source_counts),
         "counts_by_severity": sorted_counter(severity_counts),
         "counts_by_event": sorted_counter(event_counts),
+        "input_debug_summary": build_input_debug_summary(events),
+        "param_highlights": build_param_highlights(events),
         "recent_warning_error_refs": warning_error_refs[-20:],
         "session_refs": session_refs,
     }

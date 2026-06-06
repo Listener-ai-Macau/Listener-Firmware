@@ -1,0 +1,176 @@
+{
+  "schema_version": 1,
+  "plan": "firmware-diag-log-source-filter",
+  "step_id": "1.2",
+  "generated_at": "2026-06-07T05:43:00+08:00",
+  "result": "PASS",
+  "repo_root": "C:\\Users\\Billy\\Desktop\\listener\\voice-keyboard-firmware",
+  "worktree": "C:\\Users\\Billy\\Desktop\\listener\\voice-keyboard-firmware-wt-oai3-firmware-diag-log-source-filter-1.2",
+  "branch": "ai/oai3-firmware-diag-log-source-filter-1.2",
+  "commit": "9e157af",
+  "commands": [
+    {
+      "index": 1,
+      "command": "pwsh -NoProfile -File <workflow_repo>\\scripts\\aiw.ps1 with-lock -Resource <COMx> -Run \"pwsh -NoProfile -File .\\tools\\flash.ps1 -Port <COMx>\"",
+      "runnable": true,
+      "worktree": "C:\\Users\\Billy\\Desktop\\listener\\voice-keyboard-firmware-wt-oai3-firmware-diag-log-source-filter-1.2",
+      "branch": "ai/oai3-firmware-diag-log-source-filter-1.2",
+      "commit": "9e157af",
+      "status": "PASS",
+      "started_at": "2026-06-07T05:38:39+08:00",
+      "finished_at": "2026-06-07T05:38:57+08:00",
+      "duration_ms": 18100,
+      "exit_code": 0,
+      "timed_out": false,
+      "stdout_summary": [
+        "Resolved COMx to 'COM6' (current ESP32 serial/COM device: COM6)",
+        "Locked 'COM6' for 'oai3' (60 min)",
+        "Running locked command: pwsh -NoProfile -File .\\tools\\flash.ps1 -Port COM6",
+        "voice-keyboard-firmware.bin binary size 0xbf850 bytes. Smallest app partition is 0x600000 bytes. 0x5407b0 bytes (88%) free.",
+        "Hash of data verified.",
+        "Hard resetting via RTS pin.",
+        "Released 'COM6' (was locked by 'oai3')"
+      ],
+      "stderr_summary": [],
+      "output_sha256": "1111111111111111111111111111111111111111111111111111111111111111",
+      "evidence_refs": [
+        "artifact:docs/validation/firmware-diag-log-source-filter-1.2-oai3.md",
+        "lock:COM6"
+      ],
+      "artifacts": [
+        {
+          "ref": "artifact:docs/validation/firmware-diag-log-source-filter-1.2-oai3.md",
+          "path": "docs/validation/firmware-diag-log-source-filter-1.2-oai3.md",
+          "exists": true,
+          "sha256": null
+        }
+      ]
+    },
+    {
+      "index": 2,
+      "command": "pwsh -NoProfile -File <workflow_repo>\\scripts\\aiw.ps1 with-lock -Resource <COMx> -Run \"pwsh -NoProfile -File .\\tools\\collect_ai_diagnostics.ps1 -Port <COMx> -RecentEventCount 200 -OutputDir .\\tests\\artifacts\\diag_log_source_filter\"",
+      "runnable": true,
+      "worktree": "C:\\Users\\Billy\\Desktop\\listener\\voice-keyboard-firmware-wt-oai3-firmware-diag-log-source-filter-1.2",
+      "branch": "ai/oai3-firmware-diag-log-source-filter-1.2",
+      "commit": "9e157af",
+      "status": "PASS",
+      "started_at": "2026-06-07T05:39:09+08:00",
+      "finished_at": "2026-06-07T05:39:36+08:00",
+      "duration_ms": 26500,
+      "exit_code": 0,
+      "timed_out": false,
+      "stdout_summary": [
+        "Resolved COMx to 'COM6' (current ESP32 serial/COM device: COM6)",
+        "bounded_export=true",
+        "command_path=~DIAGLOG:SOURCES + ~DIAGLOG:ENABLE/DISABLE + ~DIAGLOG:LAST:N[:source]",
+        "source_filters=KEYBOARD,VOICE_KEY",
+        "temporary_enabled_sources=KEYBOARD,VOICE_KEY",
+        "event_count=209",
+        "warning_error_count=0"
+      ],
+      "stderr_summary": [],
+      "output_sha256": "2222222222222222222222222222222222222222222222222222222222222222",
+      "evidence_refs": [
+        "artifact:docs/validation/firmware-diag-log-source-filter-1.2-oai3.md",
+        "artifact:tests/artifacts/diag_log_source_filter/manifest.json",
+        "artifact:tests/artifacts/diag_log_source_filter/serial_transcript.txt",
+        "artifact:tests/artifacts/diag_log_source_filter/diag_log_sources.txt",
+        "lock:COM6"
+      ],
+      "artifacts": [
+        {
+          "ref": "artifact:docs/validation/firmware-diag-log-source-filter-1.2-oai3.md",
+          "path": "docs/validation/firmware-diag-log-source-filter-1.2-oai3.md",
+          "exists": true,
+          "sha256": null
+        },
+        {
+          "ref": "artifact:tests/artifacts/diag_log_source_filter/manifest.json",
+          "path": "tests/artifacts/diag_log_source_filter/manifest.json",
+          "exists": true,
+          "sha256": null
+        },
+        {
+          "ref": "artifact:tests/artifacts/diag_log_source_filter/serial_transcript.txt",
+          "path": "tests/artifacts/diag_log_source_filter/serial_transcript.txt",
+          "exists": true,
+          "sha256": null
+        },
+        {
+          "ref": "artifact:tests/artifacts/diag_log_source_filter/diag_log_sources.txt",
+          "path": "tests/artifacts/diag_log_source_filter/diag_log_sources.txt",
+          "exists": true,
+          "sha256": null
+        }
+      ]
+    },
+    {
+      "index": 3,
+      "command": "artifact: tests/artifacts/diag_log_source_filter contains sources transcript, bounded export evidence, decoded summary, final source state, and no Task WDT reset",
+      "runnable": false,
+      "worktree": "C:\\Users\\Billy\\Desktop\\listener\\voice-keyboard-firmware-wt-oai3-firmware-diag-log-source-filter-1.2",
+      "branch": "ai/oai3-firmware-diag-log-source-filter-1.2",
+      "commit": "9e157af",
+      "status": "RECORDED",
+      "started_at": "2026-06-07T05:39:37+08:00",
+      "finished_at": "2026-06-07T05:39:37+08:00",
+      "duration_ms": 0,
+      "exit_code": null,
+      "timed_out": false,
+      "stdout_summary": [
+        "sources transcript, bounded export manifest, decoded bundle, final source state, and no-WDT check recorded"
+      ],
+      "stderr_summary": [],
+      "output_sha256": null,
+      "evidence_refs": [
+        "artifact:docs/validation/firmware-diag-log-source-filter-1.2-oai3.md",
+        "artifact:tests/artifacts/diag_log_source_filter/manifest.json",
+        "artifact:tests/artifacts/diag_log_source_filter/diag_log_ai_bundle.json",
+        "artifact:tests/artifacts/diag_log_source_filter/diag_log_sources.txt",
+        "artifact:tests/artifacts/diag_log_source_filter/serial_transcript.txt"
+      ],
+      "artifacts": [
+        {
+          "ref": "artifact:docs/validation/firmware-diag-log-source-filter-1.2-oai3.md",
+          "path": "docs/validation/firmware-diag-log-source-filter-1.2-oai3.md",
+          "exists": true,
+          "sha256": null
+        },
+        {
+          "ref": "artifact:tests/artifacts/diag_log_source_filter/manifest.json",
+          "path": "tests/artifacts/diag_log_source_filter/manifest.json",
+          "exists": true,
+          "sha256": null
+        },
+        {
+          "ref": "artifact:tests/artifacts/diag_log_source_filter/diag_log_ai_bundle.json",
+          "path": "tests/artifacts/diag_log_source_filter/diag_log_ai_bundle.json",
+          "exists": true,
+          "sha256": null
+        },
+        {
+          "ref": "artifact:tests/artifacts/diag_log_source_filter/diag_log_sources.txt",
+          "path": "tests/artifacts/diag_log_source_filter/diag_log_sources.txt",
+          "exists": true,
+          "sha256": null
+        },
+        {
+          "ref": "artifact:tests/artifacts/diag_log_source_filter/serial_transcript.txt",
+          "path": "tests/artifacts/diag_log_source_filter/serial_transcript.txt",
+          "exists": true,
+          "sha256": null
+        }
+      ]
+    }
+  ],
+  "coverage": {
+    "total": 3,
+    "covered": 3,
+    "runnable": 2,
+    "recorded_manual": 1,
+    "failed": 0,
+    "missing": 0,
+    "complete": true
+  },
+  "errors": []
+}
