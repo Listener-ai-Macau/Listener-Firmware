@@ -24,7 +24,7 @@ function New-FeatureSnapshot {
         stack = @(
             "ESP-IDF C firmware on ESP32-S3",
             "NimBLE BLE stack",
-            "FreeRTOS tasks, GPIO polling, I2S microphone capture, flash-backed diagnostics"
+            "FreeRTOS tasks, GPIO polling, digital microphone capture, flash-backed diagnostics"
         )
         responsibilities = @(
             "Expose BLE HID keyboard behavior for the physical keys.",
@@ -47,7 +47,7 @@ function New-FeatureSnapshot {
             "power_manager low-power state machine for connected idle, disconnected idle, charge-aware automatic sleep blocking, overnight sleep, V2 EC11/GPIO18 provisional wake diagnostics, production wake-policy blockers, and power blockers.",
             "V2 board diagnostics for ~BOARD:STATUS and ~LED:STATUS, including USB/charger status, battery ADC, battery-side TPS63020/SY7088 input branch current telemetry, LED resource mapping, and hardware blocker policy strings.",
             "V2 current telemetry and low-power report tooling for TPS63020_I_ADC/GPIO10, SY7088_I_ADC/GPIO9, ~POWER:STATUS sleep drain evidence, and USB/charging/PWR_HOLD transition diagnostics; readings use reconstructed battery voltage and do not drive firmware power-control decisions.",
-            "V2 safety gates keep PWR_HOLD/GPIO11 disabled until power-sequence validation, LED calibration commands blocked until VDD_LED sign-off, and CLK/GPIO48 DOUT/GPIO47 microphone capture degraded until validated.",
+            "V2 safety gates keep PWR_HOLD/GPIO11 disabled until power-sequence validation and LED calibration commands blocked until VDD_LED sign-off; the N16R8 validation build enables SPH0655 PDM microphone capture on CLK/GPIO48 and DOUT/GPIO47 for A1/A2.",
             "POST and degraded boot reporting for NVS, BLE, audio, heap, and board assumptions."
         )
         key_paths = @(
@@ -68,14 +68,14 @@ function New-FeatureSnapshot {
             [ordered]@{ path = "components/voice_recording_control/"; purpose = "Voice key state machine and serial control contract." },
             [ordered]@{ path = "ports/esp32/ble_hid*"; purpose = "ESP32 BLE HID service, GAP, pairing, and host connection." },
             [ordered]@{ path = "ports/esp32/ble_audio_stream*"; purpose = "ESP32 BLE audio transport and notifications." },
-            [ordered]@{ path = "ports/esp32/audio_capture*"; purpose = "I2S microphone capture path." },
+            [ordered]@{ path = "ports/esp32/audio_capture*"; purpose = "Digital microphone capture path, including V2 PDM RX." },
             [ordered]@{ path = "partitions.csv"; purpose = "V2 16 MB flash layout including OTA app slots and diag_log partition." },
             [ordered]@{ path = "tools/verify_v2_board_profile_static.ps1"; purpose = "Static V2 board profile, memory, pin, LED, current telemetry, partition, and package identity check." },
             [ordered]@{ path = "tools/"; purpose = "Build, flash, monitor, BLE, audio, and diagnostic validation scripts." }
         )
         hardware_assumptions = @(
             "Default active board is ESP32-S3-WROOM-1-N16R8 with 16 MB flash and 8 MB Octal PSRAM.",
-            "Microphone path is SPH0645-style I2S digital audio at the product capture rate.",
+            "Microphone path captures product-rate PCM from the active digital mic path; N16R8 validation builds use ESP-IDF PDM RX on CLK/GPIO48 and DOUT/GPIO47.",
             "Physical key GPIO mapping and voice key GPIO live in board pin configuration, not desktop code.",
             "V2 EC11-KEY/GPIO18 controls recording; KEY1/KEY2/KEY3/KEY4 use GPIO38/GPIO39/GPIO40/GPIO41 and fall back to F13-F24 gesture usages; EC11 encoder uses GPIO42/GPIO2/GPIO18.",
             "V2 deep-sleep wake is provisional on EC11-KEY/GPIO18 and remains disabled by default until isolation, leakage, pull policy, and false-wake behavior are signed off.",

@@ -123,6 +123,8 @@ function Enable-GattMaintainConnection {
 
     $service_count = 0
     $session_count = 0
+    $active_session_count = 0
+    $session_statuses = @()
 
     if ($null -ne $result.Services) {
         foreach ($service in $result.Services) {
@@ -138,6 +140,15 @@ function Enable-GattMaintainConnection {
             $session.MaintainConnection = $true
             $Sessions.Value += $session
             $session_count += 1
+            try {
+                $session_status = $session.SessionStatus
+                $session_statuses += ([string]$session_status)
+                if ($session_status -eq [Windows.Devices.Bluetooth.GenericAttributeProfile.GattSessionStatus]::Active) {
+                    $active_session_count += 1
+                }
+            } catch {
+                $session_statuses += "Unknown"
+            }
         }
     }
 
@@ -145,6 +156,8 @@ function Enable-GattMaintainConnection {
         CommunicationStatus = $result.Status
         ServiceCount        = $service_count
         SessionCount        = $session_count
+        ActiveSessionCount  = $active_session_count
+        SessionStatuses     = $session_statuses
     }
 }
 
@@ -154,6 +167,7 @@ $deadline = (Get-Date).AddSeconds($DurationSeconds)
 $service_handles = @()
 $sessions = @()
 $ready = $false
+$last_status = $null
 
 Write-Host "ensure_ble_hid_connection: target=$DeviceName addr=$target_address_hex"
 
@@ -167,18 +181,36 @@ while ((Get-Date) -lt $deadline) {
         }
 
         $result = Enable-GattMaintainConnection -Device $device -ServiceHandles ([ref]$service_handles) -Sessions ([ref]$sessions)
+        $connection_ready = $device.ConnectionStatus -eq [Windows.Devices.Bluetooth.BluetoothConnectionStatus]::Connected
+        $session_ready = $result.ActiveSessionCount -gt 0
+        $last_status = [PSCustomObject]@{
+            ConnectionStatus = [string]$device.ConnectionStatus
+            GattStatus       = [string]$result.CommunicationStatus
+            Services         = $result.ServiceCount
+            Sessions         = $result.SessionCount
+            ActiveSessions   = $result.ActiveSessionCount
+            SessionStatuses  = ($result.SessionStatuses -join ",")
+        }
         Write-Host (
-            "ensure_ble_hid_connection: status={0} gatt={1} services={2} sessions={3}" -f
+            "ensure_ble_hid_connection: status={0} gatt={1} services={2} sessions={3} active_sessions={4} session_statuses={5}" -f
             $device.ConnectionStatus,
             $result.CommunicationStatus,
             $result.ServiceCount,
-            $result.SessionCount)
+            $result.SessionCount,
+            $result.ActiveSessionCount,
+            ($result.SessionStatuses -join ","))
 
-        if ($result.SessionCount -gt 0) {
+        if ($connection_ready -and $session_ready) {
             $ready = $true
             if ($ExitOnReady) {
                 break
             }
+        } elseif ($result.SessionCount -gt 0) {
+            Write-Warning (
+                "ensure_ble_hid_connection: GATT services are cached but device is not connected/active yet; status={0} active_sessions={1}" -f
+                $device.ConnectionStatus,
+                $result.ActiveSessionCount
+            )
         }
     } catch {
         Write-Warning "ensure_ble_hid_connection: $($_.Exception.Message)"
@@ -192,5 +224,17 @@ if ($ready) {
     exit 0
 }
 
-Write-Warning "ensure_ble_hid_connection: unable to establish maintain-connection session before timeout"
+if ($null -ne $last_status) {
+    Write-Warning (
+        "ensure_ble_hid_connection: unable to establish active maintain-connection session before timeout; last_status={0} gatt={1} services={2} sessions={3} active_sessions={4} session_statuses={5}" -f
+        $last_status.ConnectionStatus,
+        $last_status.GattStatus,
+        $last_status.Services,
+        $last_status.Sessions,
+        $last_status.ActiveSessions,
+        $last_status.SessionStatuses
+    )
+} else {
+    Write-Warning "ensure_ble_hid_connection: unable to establish active maintain-connection session before timeout"
+}
 exit 1

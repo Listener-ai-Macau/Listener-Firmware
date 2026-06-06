@@ -1040,22 +1040,34 @@ static esp_err_t voice_recording_control_enter_recording(const char *source, boo
 
     esp_err_t ret = audio_capture_session_begin();
     if (ret != ESP_OK) {
+        const bool audio_unavailable =
+            ret == ESP_ERR_NOT_SUPPORTED && !audio_capture_is_available();
+        const char *detail = audio_unavailable
+            ? "recording_start_audio_unavailable"
+            : "recording_start_rejected";
+        const char *reason = audio_unavailable
+            ? audio_capture_get_unavailable_reason()
+            : NULL;
         if (request_reconnect) {
             (void)ble_hid_gap_request_reconnect();
         }
         voice_recording_control_clear_power_blockers();
         (void)voice_key_input_set_recording_output(false);
         status_led_set_recording(false, STATUS_LED_REC_SOURCE_NOT_AVAILABLE);
-        status_led_set_error(STATUS_LED_ERROR_DOMAIN_REC, STATUS_LED_ERROR_RETRYABLE, "recording_start_rejected");
+        status_led_set_error(STATUS_LED_ERROR_DOMAIN_REC, STATUS_LED_ERROR_RETRYABLE, detail);
         if (log_rejection) {
-            ESP_LOGW(TAG, "recording start rejected source=%s: %s", source, esp_err_to_name(ret));
+            if (reason != NULL) {
+                ESP_LOGW(TAG, "recording start rejected source=%s: %s detail=%s", source, esp_err_to_name(ret), reason);
+            } else {
+                ESP_LOGW(TAG, "recording start rejected source=%s: %s", source, esp_err_to_name(ret));
+            }
             voice_recording_control_log_flow(
                 VOICE_RECORDING_FLOW_START_REJECTED,
                 "start_rejected",
                 source,
                 ret,
                 true);
-            voice_recording_control_log_device_error("error", "recording_start_rejected", ret);
+            voice_recording_control_log_device_error("error", detail, ret);
             diag_log(DIAG_SRC_VOICE_REC, DIAG_VREC_REJECTED, DIAG_SEV_WARN,
                      voice_recording_source_code(source), (uint32_t)ret, (uint32_t)s_state, 0);
         }

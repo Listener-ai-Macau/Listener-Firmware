@@ -12,7 +12,7 @@
 
 - 用户语义：`EC11_KEY` 按一下开始录音，再按一下结束录音
 - 自动化验证：`~VREC:TOGGLE` / `~VREC:CANCEL`
-- 采音路径：`SPH0645 I2S digital mic -> ESP32-S3`
+- 采音路径：`SPH0655 PDM digital mic -> ESP32-S3 PDM2PCM -> PCM`
 
 ## 音频契约
 
