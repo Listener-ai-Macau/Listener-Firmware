@@ -59,7 +59,7 @@ extern void status_led_prepare_sleep(void) __attribute__((weak));
 #define POWER_MANAGER_USB_PREFIX "POWER:"
 #define POWER_MANAGER_BATTERY_WARN_PERCENT 10U
 #define POWER_MANAGER_TASK_STACK_BYTES (4 * 1024)
-#define POWER_MANAGER_SHUTDOWN_USER_ACTION "short-press hardware power key for cold boot after PWR_HOLD/GPIO11 release"
+#define POWER_MANAGER_SHUTDOWN_USER_ACTION "short-press hardware power key for cold boot after PWR_HOLD/GPIO46 release"
 #define POWER_MANAGER_POWER_SOURCE_USB_PRESENT (1u << 0)
 #define POWER_MANAGER_POWER_SOURCE_CHARGING (1u << 1)
 #define POWER_MANAGER_POWER_SOURCE_CHARGE_FULL (1u << 2)
@@ -835,7 +835,7 @@ static esp_err_t power_manager_enter_hardware_shutdown(power_manager_shutdown_re
     vTaskDelay(pdMS_TO_TICKS(150));
     esp_err_t hold_ret = board_set_power_hold_enabled(false);
     if (hold_ret != ESP_OK) {
-        ESP_LOGE(TAG, "hardware shutdown failed: PWR_HOLD/GPIO11 release ret=%s",
+        ESP_LOGE(TAG, "hardware shutdown failed: PWR_HOLD/GPIO46 release ret=%s",
                  esp_err_to_name(hold_ret));
         diag_log(DIAG_SRC_POWER, DIAG_POWER_SLEEP_BLOCKED, DIAG_SEV_ERROR,
                  0, final_idle_ms, (uint32_t)reason, (uint32_t)hold_ret);
@@ -846,7 +846,7 @@ static esp_err_t power_manager_enter_hardware_shutdown(power_manager_shutdown_re
     vTaskDelay(pdMS_TO_TICKS(750));
     ESP_LOGE(
         TAG,
-        "hardware shutdown did not remove power after PWR_HOLD/GPIO11 release; restoring hold high");
+        "hardware shutdown did not remove power after PWR_HOLD/GPIO46 release; restoring hold high");
     (void)board_set_power_hold_enabled(true);
     diag_log(DIAG_SRC_POWER, DIAG_POWER_SLEEP_BLOCKED, DIAG_SEV_ERROR,
              0, final_idle_ms, (uint32_t)reason, (uint32_t)ESP_FAIL);
@@ -1036,7 +1036,7 @@ esp_err_t power_manager_init(void)
              (uint32_t)s_last_shutdown_reason,
              s_last_shutdown_idle_ms);
     if (hold_ret != ESP_OK) {
-        ESP_LOGW(TAG, "PWR_HOLD/GPIO11 hold-high setup failed: %s", esp_err_to_name(hold_ret));
+        ESP_LOGW(TAG, "PWR_HOLD/GPIO46 hold-high setup failed: %s", esp_err_to_name(hold_ret));
     }
     return ESP_OK;
 }

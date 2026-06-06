@@ -8,6 +8,7 @@ param(
 
 $ErrorActionPreference = "Stop"
 
+$project_root = Split-Path -Parent $PSScriptRoot
 . (Join-Path $PSScriptRoot "idf_env.ps1") -Target $Target
 
 function Get-ShortBuildDir {

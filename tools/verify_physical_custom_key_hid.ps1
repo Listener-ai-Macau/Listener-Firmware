@@ -226,17 +226,17 @@ serial_done.wait(5.0)
 log_output = b"".join(serial_chunks).decode("utf-8", errors="replace")
 captured_vks = capture_state["captured_vks"]
 required_lines = [
-    "custom key fallback queued: logical=KEY1 source=key1.gpio45.f13 usage=F13",
-    "custom key fallback queued: logical=KEY2 source=key2.gpio48.f14 usage=F14",
-    "custom key fallback queued: logical=KEY3 source=key3.gpio47.f15 usage=F15",
-    "custom key fallback queued: logical=KEY4 source=key4.gpio21.f16 usage=F16",
+    "custom key fallback queued: logical=KEY1 source=key1.gpio38.f13 usage=F13",
+    "custom key fallback queued: logical=KEY2 source=key2.gpio39.f14 usage=F14",
+    "custom key fallback queued: logical=KEY3 source=key3.gpio40.f15 usage=F15",
+    "custom key fallback queued: logical=KEY4 source=key4.gpio41.f16 usage=F16",
 ]
 missing_lines = [line for line in required_lines if line not in log_output]
 required_raw_sources = [
-    "custom key raw transition: logical=KEY1 source=key1.gpio45.f13",
-    "custom key raw transition: logical=KEY2 source=key2.gpio48.f14",
-    "custom key raw transition: logical=KEY3 source=key3.gpio47.f15",
-    "custom key raw transition: logical=KEY4 source=key4.gpio21.f16",
+    "custom key raw transition: logical=KEY1 source=key1.gpio38.f13",
+    "custom key raw transition: logical=KEY2 source=key2.gpio39.f14",
+    "custom key raw transition: logical=KEY3 source=key3.gpio40.f15",
+    "custom key raw transition: logical=KEY4 source=key4.gpio41.f16",
 ]
 missing_raw_sources = [line for line in required_raw_sources if line not in log_output]
 
