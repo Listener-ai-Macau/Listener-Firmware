@@ -44,6 +44,7 @@ Results:
 | Latest V2 hardware pin-map recheck | PASS, latest hardware repo/PDF/SchDoc/PCB tokens confirm KEY1-4 GPIO38-41, EC11 A/B GPIO42/GPIO2, EC11 key GPIO11, PWR_HOLD GPIO46, EC11 RGB GPIO5 | local hardware repo HEAD `5a16e2e`, origin/master `234304b` |
 | Flash after EC11 GPIO11/PWR_HOLD GPIO46 correction | PASS | `flash_ec11_gpio11_with_lock.txt` |
 | Live key/EC11 GPIO polling after EC11 GPIO11 correction | BLOCKED/FAIL, no physical GPIO change observed across 90s and 180s locked captures | `serial_gpio_recheck_90s_with_lock.txt`, `serial_gpio_recheck_180s_with_lock.txt` |
+| Persistent diag_log dump after post-fix polling | BLOCKED/FAIL, no persisted physical KEY1-4, EC11 detent, or voice-key press events | `dump_diag_log_after_180s_with_lock.txt`, `diag_log_20260606-194641.jsonl` |
 
 Static/build checks run after the fix:
 
@@ -109,6 +110,7 @@ Physical key/EC11 follow-up:
 - After the latest hardware recheck and EC11 GPIO11 correction, a 90 second locked capture reported 116 data samples with `key_pressed_mask=0x00`, `ec11_key_pressed=0`, and `ec11_ab_state=0x03`.
 - A second 180 second locked capture after the same correction reported 320 data samples with `key_pressed_mask=0x00`, `ec11_key_pressed=0`, and `ec11_ab_state=0x03`.
 - The same capture had no `custom key raw transition`, `custom key stable transition`, `custom key fallback queued`, `EC11 transition`, `EC11 detent`, `EC11 rotation queued`, or recording gesture log lines.
+- A post-fix flash-backed `diag_log` dump returned 727 retained events. It had 7 `keyboard evt=1` entries from prior BLE HID character dispatch, but no `keyboard evt=6` custom key events, no `keyboard evt=4` EC11 detent events, and no `voice_key evt=1/2/3` recording key events.
 - This does not validate the physical controls. It indicates either the controls were not actuated during the capture windows, the physical controls are not connected/soldered as expected, or the board under test differs from the current V2 schematic tokens despite the firmware now matching the latest hardware repo pin map.
 - Deep-sleep wake is mapped as a provisional EC11/GPIO11 candidate in firmware diagnostics: `wake_candidate=EC11_KEY/GPIO11`, `wake_capable_keys=EC11_KEY/GPIO11`, `wake_key_gpio=11`, and `voice_key_gpio=11`. It remains disabled by default (`voice_key_deep_sleep_wake=0`) until power-latch isolation, leakage, pull policy, and false-wake behavior are signed off.
 
