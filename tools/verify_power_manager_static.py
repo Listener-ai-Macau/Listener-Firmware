@@ -49,7 +49,7 @@ CHECKS = {
         "board_set_power_hold_enabled(true)",
         "board_configure_power_hold_latch",
         "board_get_v2_power_hold_snapshot",
-        "PWR_HOLD/GPIO11",
+        "PWR_HOLD/GPIO46",
         "pwr_hold_gpio=%d",
         "pwr_hold_level=%s",
         "pwr_hold_configured=%u",
@@ -155,9 +155,9 @@ CHECKS = {
     ],
     "components/board/board.c": [
         "Voice Keyboard V2",
-        "EC11 push/GPIO18",
-        "PWR_HOLD/GPIO11",
-        "v2_gpio11_power_latch_hold_high_release_low_for_hardware_shutdown",
+        "EC11 push/GPIO11",
+        "PWR_HOLD/GPIO46",
+        "v2_gpio46_power_latch_hold_high_release_low_for_hardware_shutdown",
         "~POWER:SHUTDOWN",
     ],
 }
@@ -232,7 +232,7 @@ def main() -> int:
                 failures.append(f"{relative_path}: stale token {token!r}")
 
     board = (REPO_ROOT / "components/board/board.c").read_text(encoding="utf-8")
-    for stale in ("Voice Keyboard N4", "EC11 push/GPIO35", "N4 deep sleep wakes by KEY4/GPIO21"):
+    for stale in ("Voice Keyboard N4", "EC11 push/GPIO18", "EC11 push/GPIO35", "N4 deep sleep wakes by KEY4/GPIO21"):
         if stale in board:
             failures.append(f"components/board/board.c: stale token {stale!r}")
 
@@ -243,7 +243,7 @@ def main() -> int:
         return 1
 
     print(
-        "PASS: power manager static verification covers hardware shutdown, PWR_HOLD/GPIO11, "
+        "PASS: power manager static verification covers hardware shutdown, PWR_HOLD/GPIO46, "
         "external-power blockers, idle actions, diagnostics, and Deep Sleep removal."
     )
     return 0

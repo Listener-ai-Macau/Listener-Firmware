@@ -25,6 +25,8 @@ void diag_log_dump_last(uint32_t count);
 void diag_log_dump_last_by_source(uint32_t count, uint16_t source);
 void diag_log_clear(void);
 bool diag_log_is_dumping(void);
+bool diag_log_input_debug_enabled(void);
+void diag_log_set_input_debug_enabled(bool enabled);
 bool diag_log_consume_usb_command(const char *line);
 
 /*

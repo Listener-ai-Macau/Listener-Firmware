@@ -322,6 +322,18 @@ bool diag_log_consume_usb_command(const char *line)
         diag_log_clear();
         return true;
     }
+    if (strcmp(cmd_buffer, "INPUTDBG") == 0 || strcmp(cmd_buffer, "INPUTDBG:STATUS") == 0) {
+        ESP_LOGI(TAG, "DIAGLOG INPUTDBG: %s", diag_log_input_debug_enabled() ? "ON" : "OFF");
+        return true;
+    }
+    if (strcmp(cmd_buffer, "INPUTDBG:ON") == 0) {
+        diag_log_set_input_debug_enabled(true);
+        return true;
+    }
+    if (strcmp(cmd_buffer, "INPUTDBG:OFF") == 0) {
+        diag_log_set_input_debug_enabled(false);
+        return true;
+    }
     if (strcmp(cmd_buffer, "SOURCES") == 0) {
         diag_log_print_sources();
         return true;
