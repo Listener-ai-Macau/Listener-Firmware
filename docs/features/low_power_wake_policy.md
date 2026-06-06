@@ -1,19 +1,17 @@
-# Low-Power Wake Policy
+# Low-Power Hardware Shutdown Policy
 
-Current V2/N16R8 firmware uses `components/power_manager` for idle power reduction and overnight deep-sleep diagnostics. EC11-KEY_IO/GPIO18 is the active recording key and the only user-facing RTC-capable wake candidate, but deep-sleep wake remains disabled until the V2 power-latch/off-state behavior is signed off.
+Current V2/N16R8 firmware uses `components/power_manager` for runtime idle power reduction and long-idle hardware shutdown. The long-idle path no longer uses ESP32-S3 Deep Sleep. Instead, battery-only long idle enters `POWER_MANAGER_STATE_HARDWARE_SHUTDOWN`, records diagnostics, prepares BLE/audio/LED shutdown, and releases `PWR_HOLD/GPIO11` LOW through the board abstraction.
 
 Observable firmware contract:
 
-- `~POWER:STATUS` reports `wake_policy=v2_ec11_provisional`, `wake_capable_keys=EC11_KEY/GPIO18`, `wake_gpio_mask`, `wake_key_gpio`, `voice_key_gpio`, `voice_key_rtc_capable`, `voice_key_deep_sleep_wake`, `voice_key_limitation`, `wake_user_action`, thresholds, blockers, sleep-only blockers, USB/charger raw levels, interpreted `external_power_present`, `charging`, `charge_full`, current battery, the last sleep/wake state, and sleep drain telemetry (`sleep_entry_battery_*`, `wake_battery_*`, `sleep_duration_ms`, `sleep_drain_*`).
-- Sleep entry and rejected sleep attempts log power diagnostics with blocker or reason fields plus `DIAG_POWER_WAKE_POLICY`; charging/USB automatic sleep blocks also log `DIAG_POWER_EXTERNAL_POWER`, so exported diag logs can distinguish firmware behavior from the V2 EC11 provisional wake policy and from non-power blockers.
-- Automatic overnight deep sleep keeps the 30 minute default threshold (`CONFIG_POWER_MANAGER_OVERNIGHT_SLEEP_MS=1800000`) and uses only RTC-capable wake GPIOs. With the default `CONFIG_LISTENER_V2_ENABLE_EC11_DEEP_SLEEP_WAKE=n`, `wake_gpio_mask=0` and sleep entry is rejected rather than silently enabling an unsigned wake path.
-- USB or charger/full detection blocks inactivity-triggered automatic deep sleep while preserving connected/disconnected awake idle behavior. The explicit `~POWER:SLEEP` debug command remains the manual sleep override and records `manual_command` rather than `overnight_idle`.
-- The voice key remains available during active runtime. Deep-sleep wake requires explicit V2 EC11 hardware sign-off before enabling `CONFIG_LISTENER_V2_ENABLE_EC11_DEEP_SLEEP_WAKE`.
+- `~POWER:STATUS` reports thresholds, blockers, `shutdown_blockers`, USB/charger raw levels, interpreted `external_power_present`, `charging`, `charge_full`, current battery, `last_shutdown_*`, `PWR_HOLD/GPIO11` status, `voice_key_gpio`, and the cold-boot user action.
+- Shutdown entry and rejected shutdown attempts log power diagnostics with blocker or reason fields. Charging/USB automatic shutdown blocks also log `DIAG_POWER_EXTERNAL_POWER`, so exported diag logs can distinguish external-power policy from other blockers.
+- Automatic long-idle hardware shutdown keeps the 30 minute V2 default threshold (`CONFIG_POWER_MANAGER_HARDWARE_SHUTDOWN_MS=1800000`) and uses only the board-level `PWR_HOLD/GPIO11` latch release. No ESP sleep source is configured.
+- USB or charger/full detection blocks inactivity-triggered automatic hardware shutdown while preserving connected/disconnected awake idle behavior. The explicit `~POWER:SHUTDOWN` command remains the manual hardware-shutdown request and records `manual_command`.
+- `CONFIG_PM_ENABLE`, `CONFIG_FREERTOS_USE_TICKLESS_IDLE`, and the connected/disconnected idle states remain the short-idle low-power behavior. They do not replace the long-idle hardware shutdown path.
 
 ## Production Requirement
 
-The old KEY4-only wake policy is not acceptable as the final production interaction for a voice-first product. Production hardware must provide one obvious primary voice/wake input that is RTC deep-sleep wake capable and safe in the off/sleep electrical state.
+`PWR_HOLD/GPIO11` must remain HIGH during normal boot and runtime. Long-idle shutdown may release it LOW only after diagnostics, BLE disconnect preparation, I2S idle power-save, LED shutdown preparation, and a final blocker/power-source check.
 
-For the V2/N16R8 schematic, `EC11-KEY_IO/GPIO18` is the preferred candidate if the encoder push is the user-facing voice/wake control. Firmware must not enable it for final deep-sleep wake until hardware signs off isolation from the raw power-latch/VBAT domain, reset/off-state leakage, pull policy, and false-wake behavior. If that sign-off is not available, production firmware should keep deep sleep disabled for the user-facing mode or block release with a hardware follow-up instead of shipping a hidden wake requirement.
-
-The policy is intentionally centralized in `power_manager` so desktop diagnostics and future board revisions can key off one stable status output instead of board-specific guesswork.
+Real confirmation that `PWR_HOLD/GPIO11` LOW fully removes power, that short press cold-boots the device afterward, and that USB/charging blocks automatic shutdown belongs to the hardware validation gate. Static firmware checks must not claim real power-off success.

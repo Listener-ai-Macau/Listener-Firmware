@@ -5,7 +5,6 @@
 #include <stdint.h>
 
 #include "esp_err.h"
-#include "esp_sleep.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -15,7 +14,7 @@ typedef enum {
     POWER_MANAGER_STATE_ACTIVE = 0,
     POWER_MANAGER_STATE_CONNECTED_IDLE,
     POWER_MANAGER_STATE_DISCONNECTED_IDLE,
-    POWER_MANAGER_STATE_OVERNIGHT_SLEEP,
+    POWER_MANAGER_STATE_HARDWARE_SHUTDOWN,
 } power_manager_state_t;
 
 typedef enum {
@@ -30,44 +29,27 @@ typedef enum {
 } power_manager_blocker_t;
 
 typedef enum {
-    POWER_MANAGER_SLEEP_REASON_NONE = 0,
-    POWER_MANAGER_SLEEP_REASON_OVERNIGHT_IDLE = 1,
-    POWER_MANAGER_SLEEP_REASON_MANUAL_COMMAND = 2,
-} power_manager_sleep_reason_t;
-
-typedef enum {
-    POWER_MANAGER_WAKE_SOURCE_UNDEFINED = 0,
-    POWER_MANAGER_WAKE_SOURCE_EXT0,
-    POWER_MANAGER_WAKE_SOURCE_EXT1,
-    POWER_MANAGER_WAKE_SOURCE_TIMER,
-    POWER_MANAGER_WAKE_SOURCE_TOUCHPAD,
-    POWER_MANAGER_WAKE_SOURCE_ULP,
-    POWER_MANAGER_WAKE_SOURCE_GPIO,
-    POWER_MANAGER_WAKE_SOURCE_UART,
-    POWER_MANAGER_WAKE_SOURCE_POWER_ON,
-} power_manager_wake_source_t;
-
-typedef enum {
-    POWER_MANAGER_WAKE_POLICY_KEY4_ONLY = 1,
-    POWER_MANAGER_WAKE_POLICY_V2_EC11_PROVISIONAL = 2,
-} power_manager_wake_policy_t;
+    POWER_MANAGER_SHUTDOWN_REASON_NONE = 0,
+    POWER_MANAGER_SHUTDOWN_REASON_LONG_IDLE = 1,
+    POWER_MANAGER_SHUTDOWN_REASON_MANUAL_COMMAND = 2,
+} power_manager_shutdown_reason_t;
 
 typedef struct {
     power_manager_state_t state;
     uint32_t blockers;
-    uint32_t sleep_blockers;
+    uint32_t shutdown_blockers;
     uint32_t idle_ms;
     uint32_t user_idle_ms;
     uint32_t radio_idle_ms;
     uint32_t audio_idle_threshold_ms;
     uint32_t connected_idle_threshold_ms;
     uint32_t disconnected_idle_threshold_ms;
-    uint32_t overnight_sleep_threshold_ms;
+    uint32_t hardware_shutdown_threshold_ms;
     uint32_t battery_mv;
     uint8_t battery_level_percent;
     bool battery_valid;
     bool ble_connected;
-    bool overnight_guard_enabled;
+    bool hardware_shutdown_guard_enabled;
     int usb_det_level;
     int bat_chg_level;
     int bat_std_level;
@@ -75,33 +57,18 @@ typedef struct {
     bool external_power_present;
     bool charging;
     bool charge_full;
-    bool automatic_sleep_blocked_by_external_power;
+    bool automatic_shutdown_blocked_by_external_power;
     const char *usb_det_policy;
     const char *charger_polarity_policy;
-    power_manager_sleep_reason_t last_sleep_reason;
-    power_manager_wake_source_t last_wake_source;
-    bool last_sleep_stats_valid;
-    uint32_t last_sleep_duration_ms;
-    uint32_t sleep_entry_battery_mv;
-    uint8_t sleep_entry_battery_level_percent;
-    bool sleep_entry_battery_valid;
-    uint32_t wake_battery_mv;
-    uint8_t wake_battery_level_percent;
-    bool wake_battery_valid;
-    int32_t sleep_drain_mv;
-    int32_t sleep_drain_level_percent;
-    int32_t sleep_drain_mv_per_hour;
-    int32_t sleep_drain_level_per_hour_x100;
-    uint64_t wake_gpio_mask;
-    power_manager_wake_policy_t wake_policy;
-    uint32_t wake_key_gpio;
-    bool wake_key_rtc_capable;
+    power_manager_shutdown_reason_t last_shutdown_reason;
+    uint32_t last_shutdown_idle_ms;
+    uint32_t last_shutdown_blockers;
+    int pwr_hold_gpio;
+    int pwr_hold_level;
+    bool pwr_hold_configured;
+    const char *pwr_hold_policy;
     uint32_t voice_key_gpio;
-    bool voice_key_rtc_capable;
-    bool voice_key_deep_sleep_wake_enabled;
-    const char *wake_capable_keys;
-    const char *voice_key_limitation;
-    const char *wake_user_action;
+    const char *hardware_shutdown_user_action;
 } power_manager_snapshot_t;
 
 esp_err_t power_manager_init(void);
@@ -113,10 +80,7 @@ bool power_manager_consume_usb_command(const char *line);
 void power_manager_get_snapshot(power_manager_snapshot_t *snapshot);
 
 const char *power_manager_state_name(power_manager_state_t state);
-const char *power_manager_sleep_reason_name(power_manager_sleep_reason_t reason);
-const char *power_manager_wake_source_name(power_manager_wake_source_t source);
-power_manager_wake_source_t power_manager_map_wakeup(esp_sleep_wakeup_cause_t cause);
-const char *power_manager_wake_policy_name(power_manager_wake_policy_t policy);
+const char *power_manager_shutdown_reason_name(power_manager_shutdown_reason_t reason);
 
 #ifdef __cplusplus
 }

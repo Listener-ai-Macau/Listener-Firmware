@@ -12,75 +12,69 @@ CHECKS = {
         "POWER_MANAGER_STATE_ACTIVE",
         "POWER_MANAGER_STATE_CONNECTED_IDLE",
         "POWER_MANAGER_STATE_DISCONNECTED_IDLE",
-        "POWER_MANAGER_STATE_OVERNIGHT_SLEEP",
+        "POWER_MANAGER_STATE_HARDWARE_SHUTDOWN",
         "POWER_MANAGER_BLOCKER_RECORDING",
         "POWER_MANAGER_BLOCKER_BLE_AUDIO",
         "POWER_MANAGER_BLOCKER_DIAG_EXPORT",
         "POWER_MANAGER_BLOCKER_EXTERNAL_POWER",
-        "POWER_MANAGER_WAKE_POLICY_V2_EC11_PROVISIONAL",
-        "sleep_blockers",
+        "POWER_MANAGER_SHUTDOWN_REASON_LONG_IDLE",
+        "POWER_MANAGER_SHUTDOWN_REASON_MANUAL_COMMAND",
+        "shutdown_blockers",
         "user_idle_ms",
         "radio_idle_ms",
+        "hardware_shutdown_threshold_ms",
         "external_power_present",
         "usb_power_present",
         "charging",
         "charge_full",
-        "automatic_sleep_blocked_by_external_power",
-        "last_sleep_duration_ms",
-        "sleep_entry_battery_mv",
-        "wake_battery_mv",
-        "sleep_drain_mv_per_hour",
-        "voice_key_limitation",
+        "automatic_shutdown_blocked_by_external_power",
+        "last_shutdown_reason",
+        "last_shutdown_idle_ms",
+        "last_shutdown_blockers",
+        "pwr_hold_gpio",
+        "pwr_hold_level",
+        "pwr_hold_configured",
+        "pwr_hold_policy",
+        "hardware_shutdown_user_action",
         "power_manager_consume_usb_command",
     ],
     "components/power_manager/power_manager.c": [
         "~POWER:STATUS",
-        "wake_policy=%s",
-        "wake_capable_keys=%s",
-        "voice_key_deep_sleep_wake=%u",
-        "V2 EC11-KEY_IO/GPIO18 is the RTC-capable wake candidate",
-        "deep-sleep wake remains disabled until power-latch isolation",
-        "use USB reset or power cycle until EC11 wake is signed off",
-        "POWER_MANAGER_WAKE_POLICY_ACTIVE POWER_MANAGER_WAKE_POLICY_V2_EC11_PROVISIONAL",
-        "s_last_user_activity_ms",
-        "s_last_radio_activity_ms",
-        "power_manager_user_idle_ms_locked",
-        "power_manager_radio_idle_ms_locked",
-        "user_idle_ms=%",
-        "radio_idle_ms=%",
-        "sleep_stats_valid=%u",
-        "sleep_duration_ms=%",
-        "sleep_entry_battery_mv=%",
-        "wake_battery_mv=%",
-        "sleep_drain_level_per_hour_x100=%",
-        "sleep_blockers=0x%08",
-        "external_power_present=%u",
-        "charging=%u",
-        "charge_full=%u",
-        "usb_det_level=%s",
-        "bat_chg_level=%s",
-        "bat_std_level=%s",
-        "automatic overnight sleep blocked by external power",
+        "POWER_MANAGER_STATE_HARDWARE_SHUTDOWN",
+        "CONFIG_POWER_MANAGER_HARDWARE_SHUTDOWN_MS",
+        "POWER_MANAGER_SHUTDOWN_REASON_LONG_IDLE",
+        "POWER_MANAGER_SHUTDOWN_REASON_MANUAL_COMMAND",
+        "power_manager_enter_hardware_shutdown",
+        "board_set_power_hold_enabled(false)",
+        "board_set_power_hold_enabled(true)",
+        "board_configure_power_hold_latch",
+        "board_get_v2_power_hold_snapshot",
+        "PWR_HOLD/GPIO11",
+        "pwr_hold_gpio=%d",
+        "pwr_hold_level=%s",
+        "pwr_hold_configured=%u",
+        "pwr_hold_policy=%s",
+        "hardware_shutdown_ms=%",
+        "shutdown_blockers=0x%08",
+        "automatic hardware shutdown blocked by external power",
+        "power_manager_shutdown_blockers_for_source",
+        "power_manager_automatic_shutdown_blocked_by_external_power_locked",
+        "board_get_v2_power_input_snapshot",
         "POWER_MANAGER_BLOCKER_EXTERNAL_POWER",
         "power_manager_read_power_source",
-        "power_manager_sleep_blockers_for_source",
-        "power_manager_automatic_sleep_blocked_by_external_power_locked",
-        "board_get_v2_power_input_snapshot",
-        "rtc_time_get",
-        "rtc_time_slowclk_to_us",
-        "CONFIG_POWER_MANAGER_AUDIO_IDLE_MS",
-        "POWER_MANAGER_SLEEP_REASON_OVERNIGHT_IDLE",
-        "esp_deep_sleep_start",
-        "esp_sleep_disable_wakeup_source(ESP_SLEEP_WAKEUP_ALL)",
-        "esp_sleep_enable_ext1_wakeup_io",
         "DIAG_POWER_SLEEP_ENTRY",
         "DIAG_POWER_SLEEP_BLOCKED",
-        "DIAG_POWER_WAKE_POLICY",
+        "DIAG_POWER_STATUS",
+        "DIAG_POWER_WAKE",
         "DIAG_POWER_EXTERNAL_POWER",
+        "esp_reset_reason",
         "battery_monitor_read",
+        "ble_hid_gap_prepare_shutdown_disconnect",
         "ble_hid_gap_request_low_power_connection",
         "ble_hid_gap_set_low_power_advertising",
         "audio_capture_set_idle_power_save",
+        "status_led_prepare_sleep",
+        'strcmp(command, "SHUTDOWN")',
     ],
     "ports/esp32/audio_capture/audio_capture_esp32.c": [
         "audio_capture_set_idle_power_save",
@@ -89,9 +83,11 @@ CHECKS = {
     ],
     "ports/esp32/ble_hid_gap/ble_hid_gap_esp32.c": [
         "ble_hid_gap_set_low_power_advertising",
-        "ble_hid_gap_request_low_power_connection",
+        "ble_hid_gap_prepare_shutdown_disconnect",
+        "ble_gap_terminate",
+        "ble_gap_adv_stop",
         "BLE_GAP_ADV_ITVL_MS(s_low_power_advertising ? 1000 : 30)",
-        "DIAG_GAP_CONN_PARAM_REQ",
+        "DIAG_GAP_RECOVERY",
     ],
     "ports/esp32/ble_hid/ble_hid.c": [
         "power_manager_consume_usb_command",
@@ -107,14 +103,16 @@ CHECKS = {
         "DIAG_SRC_POWER",
         "DIAG_POWER_STATE",
         "DIAG_POWER_WAKE",
+        "a1=reset_reason",
+        "a2=pwr_hold_gpio",
         "DIAG_POWER_BATTERY_WARN",
-        "DIAG_POWER_WAKE_POLICY",
         "DIAG_POWER_EXTERNAL_POWER",
+        "shutdown_blockers",
     ],
     "components/power_manager/Kconfig.projbuild": [
         "POWER_MANAGER_ENABLE",
         "POWER_MANAGER_AUDIO_IDLE_MS",
-        "POWER_MANAGER_OVERNIGHT_SLEEP_MS",
+        "POWER_MANAGER_HARDWARE_SHUTDOWN_MS",
     ],
     "sdkconfig.defaults.esp32s3": [
         "CONFIG_PM_ENABLE=y",
@@ -126,16 +124,67 @@ CHECKS = {
         "CONFIG_SPIRAM=y",
         "CONFIG_POWER_MANAGER_AUDIO_IDLE_MS=5000",
         "CONFIG_POWER_MANAGER_CONNECTED_IDLE_MS=30000",
-        "CONFIG_POWER_MANAGER_OVERNIGHT_SLEEP_MS=1800000",
+        "CONFIG_POWER_MANAGER_HARDWARE_SHUTDOWN_MS=1800000",
     ],
     "main/main.c": [
         "esp_pm_configure",
         "light_sleep_enable = true",
+        "esp_reset_reason",
+        "board_get_v2_power_hold_snapshot",
+        "power cold-boot status",
     ],
     "components/board/board.c": [
         "Voice Keyboard V2",
         "EC11 push/GPIO18",
-        "V2 EC11-KEY/GPIO18 deep-sleep wake remains disabled",
+        "PWR_HOLD/GPIO11",
+        "v2_gpio11_power_latch_hold_high_release_low_for_hardware_shutdown",
+        "~POWER:SHUTDOWN",
+    ],
+}
+
+
+FORBIDDEN = {
+    "components/power_manager/include/power_manager.h": [
+        "POWER_MANAGER_STATE_OVERNIGHT_SLEEP",
+        "POWER_MANAGER_SLEEP_REASON",
+        "POWER_MANAGER_WAKE_POLICY",
+        "sleep_blockers",
+        "last_sleep",
+        "last_wake",
+        "wake_gpio",
+        "sleep_drain",
+    ],
+    "components/power_manager/power_manager.c": [
+        "esp_deep_sleep_start",
+        "esp_sleep_",
+        "rtc_gpio_",
+        "RTC_DATA_ATTR",
+        "CONFIG_POWER_MANAGER_OVERNIGHT_SLEEP_MS",
+        "CONFIG_LISTENER_V2_ENABLE_EC11_DEEP_SLEEP_WAKE",
+        "POWER_MANAGER_STATE_OVERNIGHT_SLEEP",
+        "POWER_MANAGER_SLEEP_REASON",
+        "power_manager_configure_wakeup",
+        "power_manager_wake_gpio_mask",
+        "wake_policy=",
+        "sleep_blockers=0x%08",
+        "automatic overnight sleep",
+        "entering deep sleep",
+    ],
+    "main/main.c": [
+        "esp_sleep_get_wakeup_cause",
+        "esp_sleep_get_ext1_wakeup_status",
+        "case ESP_RST_DEEPSLEEP",
+    ],
+    "sdkconfig.defaults.esp32s3": [
+        "CONFIG_POWER_MANAGER_OVERNIGHT_SLEEP_MS",
+        "CONFIG_LISTENER_V2_ENABLE_EC11_DEEP_SLEEP_WAKE",
+    ],
+    "sdkconfig.defaults": [
+        "CONFIG_POWER_MANAGER_OVERNIGHT_SLEEP_MS",
+        "CONFIG_LISTENER_V2_ENABLE_EC11_DEEP_SLEEP_WAKE",
+    ],
+    "ports/esp32/board_pins/Kconfig.projbuild": [
+        "LISTENER_V2_ENABLE_EC11_DEEP_SLEEP_WAKE",
     ],
 }
 
@@ -152,14 +201,15 @@ def main() -> int:
             if token not in text:
                 failures.append(f"{relative_path}: missing token {token!r}")
 
-    power_manager = (REPO_ROOT / "components/power_manager/power_manager.c").read_text(encoding="utf-8")
-    for stale in (
-        "N4 validation profile: EC11-KEY/GPIO35",
-        "press KEY4/GPIO21 after deep sleep on N4",
-        "POWER_MANAGER_WAKE_POLICY_CODE ((uint32_t)POWER_MANAGER_WAKE_POLICY_KEY4_ONLY)",
-    ):
-        if stale in power_manager:
-            failures.append(f"components/power_manager/power_manager.c: stale token {stale!r}")
+    for relative_path, stale_tokens in FORBIDDEN.items():
+        path = REPO_ROOT / relative_path
+        if not path.is_file():
+            failures.append(f"missing file for stale-token check: {relative_path}")
+            continue
+        text = path.read_text(encoding="utf-8")
+        for token in stale_tokens:
+            if token in text:
+                failures.append(f"{relative_path}: stale token {token!r}")
 
     board = (REPO_ROOT / "components/board/board.c").read_text(encoding="utf-8")
     for stale in ("Voice Keyboard N4", "EC11 push/GPIO35", "N4 deep sleep wakes by KEY4/GPIO21"):
@@ -172,7 +222,10 @@ def main() -> int:
             print(f" - {failure}")
         return 1
 
-    print("PASS: power manager static verification covers states, blockers, idle actions, diagnostics, and sleep path.")
+    print(
+        "PASS: power manager static verification covers hardware shutdown, PWR_HOLD/GPIO11, "
+        "external-power blockers, idle actions, diagnostics, and Deep Sleep removal."
+    )
     return 0
 
 

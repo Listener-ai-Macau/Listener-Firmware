@@ -111,14 +111,14 @@
 
 /* Power manager events (DIAG_SRC_POWER) */
 #define DIAG_POWER_STATE          1 /* a1=previous_state, a2=next_state, a3=idle_ms, a4=blockers */
-#define DIAG_POWER_SLEEP_ENTRY    2 /* a1=idle_ms, a2=battery_mv, a3=battery_level, a4=reason */
-#define DIAG_POWER_WAKE           3 /* a1=wake_source, a2=wake_gpio_mask_low, a3=last_sleep_reason, a4=last_idle_ms */
-#define DIAG_POWER_SLEEP_BLOCKED  4 /* a1=blockers, a2=idle_ms, a3=reason, a4=esp_err_or_detail */
+#define DIAG_POWER_SLEEP_ENTRY    2 /* a1=idle_ms, a2=battery_mv, a3=battery_level, a4=shutdown_reason */
+#define DIAG_POWER_WAKE           3 /* a1=reset_reason, a2=pwr_hold_gpio, a3=last_shutdown_reason, a4=last_shutdown_idle_ms */
+#define DIAG_POWER_SLEEP_BLOCKED  4 /* a1=blockers, a2=idle_ms, a3=shutdown_reason, a4=esp_err_or_detail */
 #define DIAG_POWER_BATTERY_WARN   5 /* a1=battery_level, a2=battery_mv, a3=0, a4=0 */
 #define DIAG_POWER_BLOCKER_CHANGE 6 /* a1=old_blockers, a2=new_blockers, a3=changed_mask, a4=enabled */
-#define DIAG_POWER_STATUS         7 /* a1=state, a2=blockers, a3=idle_ms, a4=wake_gpio_mask_low */
-#define DIAG_POWER_WAKE_POLICY    8 /* a1=policy, a2=wake_gpio_mask_low, a3=voice_key_capable, a4=voice_key_gpio */
-#define DIAG_POWER_EXTERNAL_POWER 9 /* a1=flags, a2=raw_levels, a3=idle_ms, a4=sleep_blockers */
+#define DIAG_POWER_STATUS         7 /* a1=state, a2=blockers, a3=idle_ms, a4=pwr_hold_gpio */
+#define DIAG_POWER_WAKE_POLICY    8 /* legacy reserved: wake policy is no longer used after hardware shutdown migration */
+#define DIAG_POWER_EXTERNAL_POWER 9 /* a1=flags, a2=raw_levels, a3=idle_ms, a4=shutdown_blockers */
 
 /* Board events (DIAG_SRC_BOARD) */
 #define DIAG_BOARD_PROFILE        1 /* a1=flash_mb, a2=psram_mb, a3=key1_gpio, a4=ec11_key_gpio */

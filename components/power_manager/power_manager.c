@@ -6,18 +6,14 @@
 #include <stdio.h>
 #include <string.h>
 
-#include "driver/gpio.h"
-#include "driver/rtc_io.h"
-#include "esp_attr.h"
 #include "esp_err.h"
 #include "esp_log.h"
-#include "esp_sleep.h"
 #include "esp_timer.h"
+#include "esp_system.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
 #include "freertos/task.h"
 #include "sdkconfig.h"
-#include "soc/rtc.h"
 
 #include "battery_monitor.h"
 #include "board.h"
@@ -29,6 +25,7 @@ extern esp_err_t audio_capture_set_idle_power_save(bool enabled) __attribute__((
 extern bool audio_capture_session_is_active(void) __attribute__((weak));
 extern bool ble_hid_gap_is_connected(void) __attribute__((weak));
 extern esp_err_t ble_hid_gap_set_low_power_advertising(bool enabled) __attribute__((weak));
+extern esp_err_t ble_hid_gap_prepare_shutdown_disconnect(void) __attribute__((weak));
 extern esp_err_t ble_hid_gap_request_low_power_connection(void) __attribute__((weak));
 extern esp_err_t ble_hid_gap_request_active_connection(void) __attribute__((weak));
 extern void system_health_set_low_power_mode(bool enabled) __attribute__((weak));
@@ -51,34 +48,23 @@ extern void status_led_prepare_sleep(void) __attribute__((weak));
 #define CONFIG_POWER_MANAGER_DISCONNECTED_IDLE_MS 30000
 #endif
 
-#ifndef CONFIG_POWER_MANAGER_OVERNIGHT_SLEEP_MS
-#define CONFIG_POWER_MANAGER_OVERNIGHT_SLEEP_MS 1800000
+#ifndef CONFIG_POWER_MANAGER_HARDWARE_SHUTDOWN_MS
+#define CONFIG_POWER_MANAGER_HARDWARE_SHUTDOWN_MS 1800000
 #endif
 
 #ifndef CONFIG_POWER_MANAGER_EVALUATE_INTERVAL_MS
 #define CONFIG_POWER_MANAGER_EVALUATE_INTERVAL_MS 2000
 #endif
 
-#ifndef CONFIG_LISTENER_V2_ENABLE_EC11_DEEP_SLEEP_WAKE
-#define CONFIG_LISTENER_V2_ENABLE_EC11_DEEP_SLEEP_WAKE 0
-#endif
-
 #define POWER_MANAGER_USB_PREFIX "POWER:"
 #define POWER_MANAGER_BATTERY_WARN_PERCENT 10U
 #define POWER_MANAGER_TASK_STACK_BYTES (4 * 1024)
-#define POWER_MANAGER_WAKE_CAPABLE_KEYS "EC11_KEY/GPIO18"
-#define POWER_MANAGER_VOICE_KEY_LIMITATION "V2 EC11-KEY_IO/GPIO18 is the RTC-capable wake candidate; deep-sleep wake remains disabled until power-latch isolation, leakage, pull policy, and false-wake behavior are signed off"
-#define POWER_MANAGER_WAKE_USER_ACTION "use USB reset or power cycle until EC11 wake is signed off"
-#define POWER_MANAGER_WAKE_POLICY_ACTIVE POWER_MANAGER_WAKE_POLICY_V2_EC11_PROVISIONAL
-#define POWER_MANAGER_WAKE_POLICY_CODE ((uint32_t)POWER_MANAGER_WAKE_POLICY_ACTIVE)
-#define POWER_MANAGER_SLEEP_STATS_MAGIC 0x50575331u
-#define POWER_MANAGER_RTC_CAL_CYCLES 1024U
-#define POWER_MANAGER_MS_PER_HOUR 3600000LL
+#define POWER_MANAGER_SHUTDOWN_USER_ACTION "short-press hardware power key for cold boot after PWR_HOLD/GPIO11 release"
 #define POWER_MANAGER_POWER_SOURCE_USB_PRESENT (1u << 0)
 #define POWER_MANAGER_POWER_SOURCE_CHARGING (1u << 1)
 #define POWER_MANAGER_POWER_SOURCE_CHARGE_FULL (1u << 2)
 #define POWER_MANAGER_POWER_SOURCE_EXTERNAL_PRESENT (1u << 3)
-#define POWER_MANAGER_POWER_SOURCE_AUTO_SLEEP_BLOCKED (1u << 4)
+#define POWER_MANAGER_POWER_SOURCE_AUTO_SHUTDOWN_BLOCKED (1u << 4)
 
 static const char *TAG = "power_manager";
 
@@ -94,21 +80,6 @@ typedef struct {
     const char *charger_polarity_policy;
 } power_manager_power_source_snapshot_t;
 
-RTC_DATA_ATTR static uint32_t s_rtc_last_sleep_reason;
-RTC_DATA_ATTR static uint32_t s_rtc_last_idle_ms;
-RTC_DATA_ATTR static uint32_t s_rtc_last_blockers;
-RTC_DATA_ATTR static uint32_t s_rtc_sleep_count;
-RTC_DATA_ATTR static uint32_t s_rtc_sleep_stats_magic;
-RTC_DATA_ATTR static uint64_t s_rtc_sleep_entry_slowclk;
-RTC_DATA_ATTR static uint32_t s_rtc_sleep_slowclk_period;
-RTC_DATA_ATTR static uint32_t s_rtc_sleep_entry_battery_mv;
-RTC_DATA_ATTR static uint32_t s_rtc_sleep_entry_battery_level;
-RTC_DATA_ATTR static uint32_t s_rtc_sleep_entry_battery_valid;
-RTC_DATA_ATTR static uint32_t s_rtc_last_sleep_duration_ms;
-RTC_DATA_ATTR static uint32_t s_rtc_last_wake_battery_mv;
-RTC_DATA_ATTR static uint32_t s_rtc_last_wake_battery_level;
-RTC_DATA_ATTR static uint32_t s_rtc_last_wake_battery_valid;
-
 static SemaphoreHandle_t s_mutex;
 static TaskHandle_t s_task_handle;
 static bool s_initialized;
@@ -121,15 +92,18 @@ static bool s_usb_power_present;
 static bool s_external_power_present;
 static bool s_charging;
 static bool s_charge_full;
-static bool s_auto_sleep_block_logged;
+static bool s_auto_shutdown_block_logged;
 static int s_usb_det_level = -1;
 static int s_bat_chg_level = -1;
 static int s_bat_std_level = -1;
 static uint32_t s_blockers;
 static uint64_t s_last_user_activity_ms;
 static uint64_t s_last_radio_activity_ms;
+static power_manager_shutdown_reason_t s_last_shutdown_reason =
+    POWER_MANAGER_SHUTDOWN_REASON_NONE;
+static uint32_t s_last_shutdown_idle_ms;
+static uint32_t s_last_shutdown_blockers;
 static power_manager_state_t s_state = POWER_MANAGER_STATE_ACTIVE;
-static power_manager_wake_source_t s_last_wake_source = POWER_MANAGER_WAKE_SOURCE_POWER_ON;
 
 static uint64_t power_manager_now_ms(void)
 {
@@ -141,17 +115,6 @@ static uint32_t power_manager_clamp_u64_to_u32(uint64_t value)
     return value > UINT32_MAX ? UINT32_MAX : (uint32_t)value;
 }
 
-static int32_t power_manager_clamp_i64_to_i32(int64_t value)
-{
-    if (value > INT32_MAX) {
-        return INT32_MAX;
-    }
-    if (value < INT32_MIN) {
-        return INT32_MIN;
-    }
-    return (int32_t)value;
-}
-
 const char *power_manager_state_name(power_manager_state_t state)
 {
     switch (state) {
@@ -161,85 +124,24 @@ const char *power_manager_state_name(power_manager_state_t state)
         return "CONNECTED_IDLE";
     case POWER_MANAGER_STATE_DISCONNECTED_IDLE:
         return "DISCONNECTED_IDLE";
-    case POWER_MANAGER_STATE_OVERNIGHT_SLEEP:
-        return "OVERNIGHT_SLEEP";
+    case POWER_MANAGER_STATE_HARDWARE_SHUTDOWN:
+        return "HARDWARE_SHUTDOWN";
     default:
         return "UNKNOWN";
     }
 }
 
-const char *power_manager_sleep_reason_name(power_manager_sleep_reason_t reason)
+const char *power_manager_shutdown_reason_name(power_manager_shutdown_reason_t reason)
 {
     switch (reason) {
-    case POWER_MANAGER_SLEEP_REASON_NONE:
+    case POWER_MANAGER_SHUTDOWN_REASON_NONE:
         return "none";
-    case POWER_MANAGER_SLEEP_REASON_OVERNIGHT_IDLE:
-        return "overnight_idle";
-    case POWER_MANAGER_SLEEP_REASON_MANUAL_COMMAND:
+    case POWER_MANAGER_SHUTDOWN_REASON_LONG_IDLE:
+        return "long_idle";
+    case POWER_MANAGER_SHUTDOWN_REASON_MANUAL_COMMAND:
         return "manual_command";
     default:
         return "unknown";
-    }
-}
-
-const char *power_manager_wake_source_name(power_manager_wake_source_t source)
-{
-    switch (source) {
-    case POWER_MANAGER_WAKE_SOURCE_UNDEFINED:
-        return "undefined";
-    case POWER_MANAGER_WAKE_SOURCE_EXT0:
-        return "ext0";
-    case POWER_MANAGER_WAKE_SOURCE_EXT1:
-        return "ext1";
-    case POWER_MANAGER_WAKE_SOURCE_TIMER:
-        return "timer";
-    case POWER_MANAGER_WAKE_SOURCE_TOUCHPAD:
-        return "touchpad";
-    case POWER_MANAGER_WAKE_SOURCE_ULP:
-        return "ulp";
-    case POWER_MANAGER_WAKE_SOURCE_GPIO:
-        return "gpio";
-    case POWER_MANAGER_WAKE_SOURCE_UART:
-        return "uart";
-    case POWER_MANAGER_WAKE_SOURCE_POWER_ON:
-        return "power_on";
-    default:
-        return "unknown";
-    }
-}
-
-const char *power_manager_wake_policy_name(power_manager_wake_policy_t policy)
-{
-    switch (policy) {
-    case POWER_MANAGER_WAKE_POLICY_KEY4_ONLY:
-        return "key4_only";
-    case POWER_MANAGER_WAKE_POLICY_V2_EC11_PROVISIONAL:
-        return "v2_ec11_provisional";
-    default:
-        return "unknown";
-    }
-}
-
-power_manager_wake_source_t power_manager_map_wakeup(esp_sleep_wakeup_cause_t cause)
-{
-    switch (cause) {
-    case ESP_SLEEP_WAKEUP_EXT0:
-        return POWER_MANAGER_WAKE_SOURCE_EXT0;
-    case ESP_SLEEP_WAKEUP_EXT1:
-        return POWER_MANAGER_WAKE_SOURCE_EXT1;
-    case ESP_SLEEP_WAKEUP_TIMER:
-        return POWER_MANAGER_WAKE_SOURCE_TIMER;
-    case ESP_SLEEP_WAKEUP_TOUCHPAD:
-        return POWER_MANAGER_WAKE_SOURCE_TOUCHPAD;
-    case ESP_SLEEP_WAKEUP_ULP:
-        return POWER_MANAGER_WAKE_SOURCE_ULP;
-    case ESP_SLEEP_WAKEUP_GPIO:
-        return POWER_MANAGER_WAKE_SOURCE_GPIO;
-    case ESP_SLEEP_WAKEUP_UART:
-        return POWER_MANAGER_WAKE_SOURCE_UART;
-    case ESP_SLEEP_WAKEUP_UNDEFINED:
-    default:
-        return s_rtc_sleep_count > 0 ? POWER_MANAGER_WAKE_SOURCE_UNDEFINED : POWER_MANAGER_WAKE_SOURCE_POWER_ON;
     }
 }
 
@@ -271,6 +173,9 @@ static void power_manager_blocker_names(uint32_t blockers, char *buffer, size_t 
         }
 
         size_t used = strlen(buffer);
+        if (used >= buffer_size) {
+            break;
+        }
         snprintf(
             buffer + used,
             buffer_size - used,
@@ -283,37 +188,6 @@ static void power_manager_blocker_names(uint32_t blockers, char *buffer, size_t 
     if (first) {
         snprintf(buffer, buffer_size, "none");
     }
-}
-
-static uint64_t power_manager_wake_gpio_mask(void)
-{
-#if CONFIG_LISTENER_V2_ENABLE_EC11_DEEP_SLEEP_WAKE
-    return (BOARD_PINS_EC11_KEY_IO != GPIO_NUM_NC &&
-            BOARD_PINS_EC11_KEY_IO >= 0 &&
-            BOARD_PINS_EC11_KEY_IO < 64 &&
-            rtc_gpio_is_valid_gpio(BOARD_PINS_EC11_KEY_IO))
-        ? (1ULL << (uint32_t)BOARD_PINS_EC11_KEY_IO)
-        : 0;
-#else
-    return 0;
-#endif
-}
-
-static bool power_manager_voice_key_rtc_capable(void)
-{
-    return BOARD_PINS_EC11_KEY_IO != GPIO_NUM_NC &&
-           BOARD_PINS_EC11_KEY_IO >= 0 &&
-           BOARD_PINS_EC11_KEY_IO < 64 &&
-           rtc_gpio_is_valid_gpio(BOARD_PINS_EC11_KEY_IO);
-}
-
-static void power_manager_log_wake_policy(uint64_t wake_gpio_mask)
-{
-    diag_log(DIAG_SRC_POWER, DIAG_POWER_WAKE_POLICY, DIAG_SEV_INFO,
-             POWER_MANAGER_WAKE_POLICY_CODE,
-             (uint32_t)(wake_gpio_mask & 0xffffffffu),
-             power_manager_voice_key_rtc_capable() ? 1u : 0u,
-             (uint32_t)BOARD_PINS_EC11_KEY_IO);
 }
 
 static const char *power_manager_gpio_level_name(int level)
@@ -344,7 +218,7 @@ static uint32_t power_manager_encode_power_source_levels(const power_manager_pow
 
 static uint32_t power_manager_encode_power_source_flags(
     const power_manager_power_source_snapshot_t *source,
-    bool automatic_sleep_blocked)
+    bool automatic_shutdown_blocked)
 {
     if (source == NULL) {
         return 0;
@@ -363,8 +237,8 @@ static uint32_t power_manager_encode_power_source_flags(
     if (source->external_power_present) {
         flags |= POWER_MANAGER_POWER_SOURCE_EXTERNAL_PRESENT;
     }
-    if (automatic_sleep_blocked) {
-        flags |= POWER_MANAGER_POWER_SOURCE_AUTO_SLEEP_BLOCKED;
+    if (automatic_shutdown_blocked) {
+        flags |= POWER_MANAGER_POWER_SOURCE_AUTO_SHUTDOWN_BLOCKED;
     }
     return flags;
 }
@@ -392,131 +266,45 @@ static void power_manager_read_power_source(power_manager_power_source_snapshot_
         out_source->usb_power_present || out_source->charging || out_source->charge_full;
 }
 
-static uint32_t power_manager_sleep_blockers_for_source(
+static uint32_t power_manager_shutdown_blockers_for_source(
     uint32_t blockers,
     const power_manager_power_source_snapshot_t *source,
-    power_manager_sleep_reason_t reason)
+    power_manager_shutdown_reason_t reason)
 {
-    uint32_t sleep_blockers = blockers;
-    if (reason == POWER_MANAGER_SLEEP_REASON_OVERNIGHT_IDLE &&
+    uint32_t shutdown_blockers = blockers;
+    if (reason == POWER_MANAGER_SHUTDOWN_REASON_LONG_IDLE &&
         source != NULL &&
         source->external_power_present) {
-        sleep_blockers |= POWER_MANAGER_BLOCKER_EXTERNAL_POWER;
+        shutdown_blockers |= POWER_MANAGER_BLOCKER_EXTERNAL_POWER;
     }
-    return sleep_blockers;
+    return shutdown_blockers;
 }
 
-static uint32_t power_manager_automatic_sleep_blockers_for_source(
+static uint32_t power_manager_automatic_shutdown_blockers_for_source(
     uint32_t blockers,
     const power_manager_power_source_snapshot_t *source)
 {
-    return power_manager_sleep_blockers_for_source(
+    return power_manager_shutdown_blockers_for_source(
         blockers,
         source,
-        POWER_MANAGER_SLEEP_REASON_OVERNIGHT_IDLE);
+        POWER_MANAGER_SHUTDOWN_REASON_LONG_IDLE);
 }
 
 static void power_manager_log_power_source_diag(
     uint8_t severity,
     const power_manager_power_source_snapshot_t *source,
     uint32_t idle_ms,
-    uint32_t sleep_blockers,
-    bool automatic_sleep_blocked)
+    uint32_t shutdown_blockers,
+    bool automatic_shutdown_blocked)
 {
     diag_log(
         DIAG_SRC_POWER,
         DIAG_POWER_EXTERNAL_POWER,
         severity,
-        power_manager_encode_power_source_flags(source, automatic_sleep_blocked),
+        power_manager_encode_power_source_flags(source, automatic_shutdown_blocked),
         power_manager_encode_power_source_levels(source),
         idle_ms,
-        sleep_blockers);
-}
-
-static int32_t power_manager_rate_per_hour(int32_t delta, uint32_t duration_ms, int32_t scale)
-{
-    if (duration_ms == 0) {
-        return 0;
-    }
-    return power_manager_clamp_i64_to_i32(
-        ((int64_t)delta * POWER_MANAGER_MS_PER_HOUR * scale) / (int64_t)duration_ms);
-}
-
-static void power_manager_fill_sleep_stats(power_manager_snapshot_t *snapshot)
-{
-    snapshot->last_sleep_stats_valid = s_rtc_sleep_stats_magic == POWER_MANAGER_SLEEP_STATS_MAGIC;
-    snapshot->last_sleep_duration_ms = s_rtc_last_sleep_duration_ms;
-    snapshot->sleep_entry_battery_mv = s_rtc_sleep_entry_battery_mv;
-    snapshot->sleep_entry_battery_level_percent = (uint8_t)s_rtc_sleep_entry_battery_level;
-    snapshot->sleep_entry_battery_valid = s_rtc_sleep_entry_battery_valid != 0;
-    snapshot->wake_battery_mv = s_rtc_last_wake_battery_mv;
-    snapshot->wake_battery_level_percent = (uint8_t)s_rtc_last_wake_battery_level;
-    snapshot->wake_battery_valid = s_rtc_last_wake_battery_valid != 0;
-
-    if (snapshot->sleep_entry_battery_valid && snapshot->wake_battery_valid) {
-        snapshot->sleep_drain_mv = (int32_t)snapshot->sleep_entry_battery_mv -
-            (int32_t)snapshot->wake_battery_mv;
-        snapshot->sleep_drain_level_percent =
-            (int32_t)snapshot->sleep_entry_battery_level_percent -
-            (int32_t)snapshot->wake_battery_level_percent;
-        snapshot->sleep_drain_mv_per_hour =
-            power_manager_rate_per_hour(snapshot->sleep_drain_mv, snapshot->last_sleep_duration_ms, 1);
-        snapshot->sleep_drain_level_per_hour_x100 =
-            power_manager_rate_per_hour(
-                snapshot->sleep_drain_level_percent,
-                snapshot->last_sleep_duration_ms,
-                100);
-    }
-}
-
-static void power_manager_store_sleep_entry_stats(const power_manager_snapshot_t *snapshot)
-{
-    s_rtc_sleep_stats_magic = POWER_MANAGER_SLEEP_STATS_MAGIC;
-    s_rtc_sleep_entry_slowclk = rtc_time_get();
-    s_rtc_sleep_slowclk_period = rtc_clk_cal(RTC_CAL_RTC_MUX, POWER_MANAGER_RTC_CAL_CYCLES);
-    s_rtc_sleep_entry_battery_valid = snapshot->battery_valid ? 1u : 0u;
-    s_rtc_sleep_entry_battery_mv = snapshot->battery_valid ? snapshot->battery_mv : 0u;
-    s_rtc_sleep_entry_battery_level =
-        snapshot->battery_valid ? snapshot->battery_level_percent : 0xFFu;
-    s_rtc_last_sleep_duration_ms = 0;
-    s_rtc_last_wake_battery_valid = 0;
-    s_rtc_last_wake_battery_mv = 0;
-    s_rtc_last_wake_battery_level = 0xFFu;
-}
-
-static void power_manager_capture_wake_stats(void)
-{
-    if (esp_reset_reason() != ESP_RST_DEEPSLEEP ||
-        s_rtc_sleep_stats_magic != POWER_MANAGER_SLEEP_STATS_MAGIC) {
-        return;
-    }
-
-    uint64_t wake_slowclk = rtc_time_get();
-    if (s_rtc_sleep_slowclk_period != 0 && wake_slowclk >= s_rtc_sleep_entry_slowclk) {
-        uint64_t slept_cycles = wake_slowclk - s_rtc_sleep_entry_slowclk;
-        uint64_t slept_us = rtc_time_slowclk_to_us(slept_cycles, s_rtc_sleep_slowclk_period);
-        s_rtc_last_sleep_duration_ms = power_manager_clamp_u64_to_u32(slept_us / 1000ULL);
-    }
-
-    battery_monitor_status_t battery = {0};
-    esp_err_t ret = battery_monitor_read(&battery);
-    bool wake_battery_valid = ret == ESP_OK && battery.valid;
-    s_rtc_last_wake_battery_valid = wake_battery_valid ? 1u : 0u;
-    s_rtc_last_wake_battery_mv = wake_battery_valid ? battery.voltage_mv : 0u;
-    s_rtc_last_wake_battery_level = wake_battery_valid ? battery.level_percent : 0xFFu;
-
-    ESP_LOGI(
-        TAG,
-        "last sleep stats: duration_ms=%" PRIu32
-        " entry_battery_mv=%" PRIu32 " entry_level=%u entry_valid=%u"
-        " wake_battery_mv=%" PRIu32 " wake_level=%u wake_valid=%u",
-        s_rtc_last_sleep_duration_ms,
-        s_rtc_sleep_entry_battery_mv,
-        (unsigned)s_rtc_sleep_entry_battery_level,
-        s_rtc_sleep_entry_battery_valid ? 1u : 0u,
-        s_rtc_last_wake_battery_mv,
-        (unsigned)s_rtc_last_wake_battery_level,
-        s_rtc_last_wake_battery_valid ? 1u : 0u);
+        shutdown_blockers);
 }
 
 static uint32_t power_manager_user_idle_ms_locked(uint64_t now_ms)
@@ -565,7 +353,7 @@ static bool power_manager_sync_power_source_locked(
     s_external_power_present = source->external_power_present;
     s_charging = source->charging;
     s_charge_full = source->charge_full;
-    s_auto_sleep_block_logged = false;
+    s_auto_shutdown_block_logged = false;
     return true;
 }
 
@@ -582,13 +370,13 @@ static power_manager_state_t power_manager_awake_idle_state_locked(uint32_t radi
         : POWER_MANAGER_STATE_ACTIVE;
 }
 
-static bool power_manager_automatic_sleep_blocked_by_external_power_locked(uint64_t now_ms)
+static bool power_manager_automatic_shutdown_blocked_by_external_power_locked(uint64_t now_ms)
 {
     return CONFIG_POWER_MANAGER_ENABLE &&
            s_blockers == 0 &&
            s_external_power_present &&
            power_manager_user_idle_ms_locked(now_ms) >=
-               (uint32_t)CONFIG_POWER_MANAGER_OVERNIGHT_SLEEP_MS;
+               (uint32_t)CONFIG_POWER_MANAGER_HARDWARE_SHUTDOWN_MS;
 }
 
 static power_manager_state_t power_manager_target_state_locked(uint64_t now_ms)
@@ -600,10 +388,10 @@ static power_manager_state_t power_manager_target_state_locked(uint64_t now_ms)
     }
 
     if (CONFIG_POWER_MANAGER_ENABLE &&
-        user_idle_ms >= (uint32_t)CONFIG_POWER_MANAGER_OVERNIGHT_SLEEP_MS) {
+        user_idle_ms >= (uint32_t)CONFIG_POWER_MANAGER_HARDWARE_SHUTDOWN_MS) {
         return s_external_power_present
             ? power_manager_awake_idle_state_locked(radio_idle_ms)
-            : POWER_MANAGER_STATE_OVERNIGHT_SLEEP;
+            : POWER_MANAGER_STATE_HARDWARE_SHUTDOWN;
     }
 
     return power_manager_awake_idle_state_locked(radio_idle_ms);
@@ -697,15 +485,7 @@ static void power_manager_apply_state(power_manager_state_t previous, power_mana
         }
         break;
     case POWER_MANAGER_STATE_DISCONNECTED_IDLE:
-        power_manager_set_audio_idle_power_save(true);
-        if (system_health_set_low_power_mode != NULL) {
-            system_health_set_low_power_mode(true);
-        }
-        if (ble_hid_gap_set_low_power_advertising != NULL) {
-            (void)ble_hid_gap_set_low_power_advertising(true);
-        }
-        break;
-    case POWER_MANAGER_STATE_OVERNIGHT_SLEEP:
+    case POWER_MANAGER_STATE_HARDWARE_SHUTDOWN:
         power_manager_set_audio_idle_power_save(true);
         if (system_health_set_low_power_mode != NULL) {
             system_health_set_low_power_mode(true);
@@ -771,87 +551,57 @@ void power_manager_get_snapshot(power_manager_snapshot_t *snapshot)
     if (s_mutex != NULL && xSemaphoreTake(s_mutex, portMAX_DELAY) == pdTRUE) {
         snapshot->state = s_state;
         snapshot->blockers = s_blockers;
-        snapshot->sleep_blockers =
-            power_manager_automatic_sleep_blockers_for_source(s_blockers, &power_source);
+        snapshot->shutdown_blockers =
+            power_manager_automatic_shutdown_blockers_for_source(s_blockers, &power_source);
         snapshot->user_idle_ms = power_manager_user_idle_ms_locked(now_ms);
         snapshot->radio_idle_ms = power_manager_radio_idle_ms_locked(now_ms);
         snapshot->idle_ms = snapshot->user_idle_ms;
         snapshot->ble_connected = s_ble_connected;
-        snapshot->automatic_sleep_blocked_by_external_power =
+        snapshot->automatic_shutdown_blocked_by_external_power =
             CONFIG_POWER_MANAGER_ENABLE &&
             s_blockers == 0 &&
             power_source.external_power_present &&
-            snapshot->user_idle_ms >= (uint32_t)CONFIG_POWER_MANAGER_OVERNIGHT_SLEEP_MS;
-        snapshot->last_sleep_reason = (power_manager_sleep_reason_t)s_rtc_last_sleep_reason;
-        snapshot->last_wake_source = s_last_wake_source;
-        power_manager_fill_sleep_stats(snapshot);
+            snapshot->user_idle_ms >= (uint32_t)CONFIG_POWER_MANAGER_HARDWARE_SHUTDOWN_MS;
+        snapshot->last_shutdown_reason = s_last_shutdown_reason;
+        snapshot->last_shutdown_idle_ms = s_last_shutdown_idle_ms;
+        snapshot->last_shutdown_blockers = s_last_shutdown_blockers;
         xSemaphoreGive(s_mutex);
     }
 
     snapshot->connected_idle_threshold_ms = CONFIG_POWER_MANAGER_CONNECTED_IDLE_MS;
     snapshot->audio_idle_threshold_ms = CONFIG_POWER_MANAGER_AUDIO_IDLE_MS;
     snapshot->disconnected_idle_threshold_ms = CONFIG_POWER_MANAGER_DISCONNECTED_IDLE_MS;
-    snapshot->overnight_sleep_threshold_ms = CONFIG_POWER_MANAGER_OVERNIGHT_SLEEP_MS;
-    snapshot->overnight_guard_enabled = CONFIG_POWER_MANAGER_ENABLE != 0;
-    snapshot->wake_gpio_mask = power_manager_wake_gpio_mask();
-    snapshot->wake_policy = POWER_MANAGER_WAKE_POLICY_ACTIVE;
-    snapshot->wake_key_gpio = (uint32_t)BOARD_PINS_EC11_KEY_IO;
-    snapshot->wake_key_rtc_capable = power_manager_voice_key_rtc_capable();
+    snapshot->hardware_shutdown_threshold_ms = CONFIG_POWER_MANAGER_HARDWARE_SHUTDOWN_MS;
+    snapshot->hardware_shutdown_guard_enabled = CONFIG_POWER_MANAGER_ENABLE != 0;
+    board_v2_power_hold_snapshot_t power_hold = {0};
+    board_get_v2_power_hold_snapshot(&power_hold);
+    snapshot->pwr_hold_gpio = power_hold.gpio;
+    snapshot->pwr_hold_level = power_hold.level;
+    snapshot->pwr_hold_configured = power_hold.configured;
+    snapshot->pwr_hold_policy = power_hold.policy;
     snapshot->voice_key_gpio = (uint32_t)BOARD_PINS_EC11_KEY_IO;
-    snapshot->voice_key_rtc_capable = power_manager_voice_key_rtc_capable();
-    snapshot->voice_key_deep_sleep_wake_enabled =
-        CONFIG_LISTENER_V2_ENABLE_EC11_DEEP_SLEEP_WAKE && snapshot->wake_gpio_mask != 0;
-    snapshot->wake_capable_keys = POWER_MANAGER_WAKE_CAPABLE_KEYS;
-    snapshot->voice_key_limitation = POWER_MANAGER_VOICE_KEY_LIMITATION;
-    snapshot->wake_user_action = POWER_MANAGER_WAKE_USER_ACTION;
+    snapshot->hardware_shutdown_user_action = POWER_MANAGER_SHUTDOWN_USER_ACTION;
     power_manager_update_battery_snapshot(snapshot);
 }
 
-static esp_err_t power_manager_configure_wakeup(uint64_t wake_gpio_mask)
+static void power_manager_reset_idle_after_shutdown_failure(void)
 {
-    if (wake_gpio_mask == 0) {
-        return ESP_ERR_NOT_SUPPORTED;
+    if (s_mutex != NULL && xSemaphoreTake(s_mutex, portMAX_DELAY) == pdTRUE) {
+        uint64_t reset_ms = power_manager_now_ms();
+        s_last_user_activity_ms = reset_ms;
+        s_last_radio_activity_ms = reset_ms;
+        s_auto_shutdown_block_logged = false;
+        s_state = s_ble_connected
+            ? POWER_MANAGER_STATE_CONNECTED_IDLE
+            : POWER_MANAGER_STATE_DISCONNECTED_IDLE;
+        xSemaphoreGive(s_mutex);
     }
-
-    esp_err_t clear_ret = esp_sleep_disable_wakeup_source(ESP_SLEEP_WAKEUP_ALL);
-    if (clear_ret != ESP_OK) {
-        return clear_ret;
-    }
-
-    gpio_config_t input_config = {
-        .pin_bit_mask = wake_gpio_mask,
-        .mode = GPIO_MODE_INPUT,
-        .pull_up_en = GPIO_PULLUP_ENABLE,
-        .pull_down_en = GPIO_PULLDOWN_DISABLE,
-        .intr_type = GPIO_INTR_DISABLE,
-    };
-    esp_err_t ret = gpio_config(&input_config);
-    if (ret != ESP_OK) {
-        return ret;
-    }
-
-    const gpio_num_t candidates[] = {
-        BOARD_PINS_EC11_KEY_IO,
-    };
-    for (size_t index = 0; index < sizeof(candidates) / sizeof(candidates[0]); ++index) {
-        gpio_num_t gpio = candidates[index];
-        if (gpio == GPIO_NUM_NC || gpio < 0 || gpio >= 64) {
-            continue;
-        }
-        if ((wake_gpio_mask & (1ULL << (uint32_t)gpio)) == 0) {
-            continue;
-        }
-        (void)rtc_gpio_pullup_en(gpio);
-        (void)rtc_gpio_pulldown_dis(gpio);
-    }
-
-    return esp_sleep_enable_ext1_wakeup_io(wake_gpio_mask, ESP_EXT1_WAKEUP_ANY_LOW);
 }
 
-static esp_err_t power_manager_enter_sleep(power_manager_sleep_reason_t reason)
+static esp_err_t power_manager_enter_hardware_shutdown(power_manager_shutdown_reason_t reason)
 {
     if (!CONFIG_POWER_MANAGER_ENABLE) {
-        ESP_LOGW(TAG, "sleep rejected: power manager disabled");
+        ESP_LOGW(TAG, "hardware shutdown rejected: power manager disabled");
         return ESP_ERR_INVALID_STATE;
     }
 
@@ -862,22 +612,16 @@ static esp_err_t power_manager_enter_sleep(power_manager_sleep_reason_t reason)
         power_manager_blocker_names(snapshot.blockers, blocker_text, sizeof(blocker_text));
         ESP_LOGW(
             TAG,
-            "sleep rejected: blockers=0x%08" PRIx32 " (%s) idle_ms=%" PRIu32
-            " wake_policy=%s wake_keys=%s voice_key_wake=%u limitation=\"%s\"",
+            "hardware shutdown rejected: blockers=0x%08" PRIx32 " (%s) idle_ms=%" PRIu32,
             snapshot.blockers,
             blocker_text,
-            snapshot.idle_ms,
-            power_manager_wake_policy_name(snapshot.wake_policy),
-            snapshot.wake_capable_keys,
-            snapshot.voice_key_deep_sleep_wake_enabled ? 1u : 0u,
-            snapshot.voice_key_limitation);
+            snapshot.idle_ms);
         diag_log(DIAG_SRC_POWER, DIAG_POWER_SLEEP_BLOCKED, DIAG_SEV_WARN,
                  snapshot.blockers, snapshot.idle_ms, (uint32_t)reason, 0);
-        power_manager_log_wake_policy(snapshot.wake_gpio_mask);
         return ESP_ERR_INVALID_STATE;
     }
 
-    if (reason == POWER_MANAGER_SLEEP_REASON_OVERNIGHT_IDLE &&
+    if (reason == POWER_MANAGER_SHUTDOWN_REASON_LONG_IDLE &&
         snapshot.external_power_present) {
         power_manager_power_source_snapshot_t power_source = {
             .usb_det_level = snapshot.usb_det_level,
@@ -890,18 +634,18 @@ static esp_err_t power_manager_enter_sleep(power_manager_sleep_reason_t reason)
             .usb_det_policy = snapshot.usb_det_policy,
             .charger_polarity_policy = snapshot.charger_polarity_policy,
         };
-        uint32_t sleep_blockers = power_manager_automatic_sleep_blockers_for_source(
+        uint32_t shutdown_blockers = power_manager_automatic_shutdown_blockers_for_source(
             snapshot.blockers,
             &power_source);
         char blocker_text[96];
-        power_manager_blocker_names(sleep_blockers, blocker_text, sizeof(blocker_text));
+        power_manager_blocker_names(shutdown_blockers, blocker_text, sizeof(blocker_text));
         ESP_LOGW(
             TAG,
-            "sleep rejected: automatic sleep blocked by external power"
-            " sleep_blockers=0x%08" PRIx32 " (%s) idle_ms=%" PRIu32
+            "hardware shutdown rejected: automatic hardware shutdown blocked by external power"
+            " shutdown_blockers=0x%08" PRIx32 " (%s) idle_ms=%" PRIu32
             " usb_det_level=%s charging=%u charge_full=%u external_power_present=%u"
             " charger_policy=%s",
-            sleep_blockers,
+            shutdown_blockers,
             blocker_text,
             snapshot.idle_ms,
             power_manager_gpio_level_name(snapshot.usb_det_level),
@@ -913,7 +657,7 @@ static esp_err_t power_manager_enter_sleep(power_manager_sleep_reason_t reason)
             DIAG_SRC_POWER,
             DIAG_POWER_SLEEP_BLOCKED,
             DIAG_SEV_WARN,
-            sleep_blockers,
+            shutdown_blockers,
             snapshot.idle_ms,
             (uint32_t)reason,
             power_manager_encode_power_source_flags(&power_source, true));
@@ -921,67 +665,46 @@ static esp_err_t power_manager_enter_sleep(power_manager_sleep_reason_t reason)
             DIAG_SEV_WARN,
             &power_source,
             snapshot.idle_ms,
-            sleep_blockers,
+            shutdown_blockers,
             true);
-        power_manager_log_wake_policy(snapshot.wake_gpio_mask);
         return ESP_ERR_INVALID_STATE;
     }
 
     if (audio_capture_session_is_active != NULL && audio_capture_session_is_active()) {
-        ESP_LOGW(TAG, "sleep rejected: audio capture session active");
+        ESP_LOGW(TAG, "hardware shutdown rejected: audio capture session active");
         diag_log(DIAG_SRC_POWER, DIAG_POWER_SLEEP_BLOCKED, DIAG_SEV_WARN,
                  POWER_MANAGER_BLOCKER_RECORDING, snapshot.idle_ms, (uint32_t)reason, 0);
-        power_manager_log_wake_policy(snapshot.wake_gpio_mask);
         return ESP_ERR_INVALID_STATE;
-    }
-
-    uint64_t wake_gpio_mask = power_manager_wake_gpio_mask();
-    esp_err_t disable_ret = esp_sleep_disable_wakeup_source(ESP_SLEEP_WAKEUP_ALL);
-    if (disable_ret != ESP_OK) {
-        ESP_LOGW(TAG, "sleep rejected: failed to clear existing wake sources ret=%s",
-                 esp_err_to_name(disable_ret));
-        diag_log(DIAG_SRC_POWER, DIAG_POWER_SLEEP_BLOCKED, DIAG_SEV_WARN,
-                 0, snapshot.idle_ms, (uint32_t)reason, (uint32_t)disable_ret);
-        power_manager_log_wake_policy(wake_gpio_mask);
-        return disable_ret;
-    }
-
-    esp_err_t wake_ret = power_manager_configure_wakeup(wake_gpio_mask);
-    if (wake_ret != ESP_OK) {
-        ESP_LOGW(TAG, "sleep rejected: wake GPIO unavailable ret=%s mask=0x%016" PRIx64,
-                 esp_err_to_name(wake_ret), wake_gpio_mask);
-        diag_log(DIAG_SRC_POWER, DIAG_POWER_SLEEP_BLOCKED, DIAG_SEV_WARN,
-                 0, snapshot.idle_ms, (uint32_t)reason, (uint32_t)wake_ret);
-        power_manager_log_wake_policy(wake_gpio_mask);
-        return wake_ret;
     }
 
     power_manager_power_source_snapshot_t final_power_source = {0};
     power_manager_read_power_source(&final_power_source);
 
     if (s_mutex == NULL || xSemaphoreTake(s_mutex, portMAX_DELAY) != pdTRUE) {
-        ESP_LOGW(TAG, "sleep rejected: failed to acquire final sleep gate");
+        ESP_LOGW(TAG, "hardware shutdown rejected: failed to acquire final shutdown gate");
         diag_log(DIAG_SRC_POWER, DIAG_POWER_SLEEP_BLOCKED, DIAG_SEV_WARN,
                  0, snapshot.idle_ms, (uint32_t)reason, (uint32_t)ESP_ERR_TIMEOUT);
         return ESP_ERR_TIMEOUT;
     }
 
     uint32_t final_blockers = s_blockers;
-    uint32_t final_sleep_blockers = power_manager_sleep_blockers_for_source(
+    uint32_t final_shutdown_blockers = power_manager_shutdown_blockers_for_source(
         final_blockers,
         &final_power_source,
         reason);
-    if (final_sleep_blockers != 0) {
+    uint32_t final_idle_ms = power_manager_user_idle_ms_locked(power_manager_now_ms());
+    if (final_shutdown_blockers != 0) {
         xSemaphoreGive(s_mutex);
         char blocker_text[96];
-        power_manager_blocker_names(final_sleep_blockers, blocker_text, sizeof(blocker_text));
+        power_manager_blocker_names(final_shutdown_blockers, blocker_text, sizeof(blocker_text));
         ESP_LOGW(
             TAG,
-            "sleep rejected: final sleep_blockers=0x%08" PRIx32 " (%s) idle_ms=%" PRIu32
+            "hardware shutdown rejected: final shutdown_blockers=0x%08" PRIx32
+            " (%s) idle_ms=%" PRIu32
             " external_power_present=%u charging=%u charge_full=%u usb_det_level=%s",
-            final_sleep_blockers,
+            final_shutdown_blockers,
             blocker_text,
-            snapshot.idle_ms,
+            final_idle_ms,
             final_power_source.external_power_present ? 1u : 0u,
             final_power_source.charging ? 1u : 0u,
             final_power_source.charge_full ? 1u : 0u,
@@ -990,69 +713,100 @@ static esp_err_t power_manager_enter_sleep(power_manager_sleep_reason_t reason)
             DIAG_SRC_POWER,
             DIAG_POWER_SLEEP_BLOCKED,
             DIAG_SEV_WARN,
-            final_sleep_blockers,
-            snapshot.idle_ms,
+            final_shutdown_blockers,
+            final_idle_ms,
             (uint32_t)reason,
             power_manager_encode_power_source_flags(
                 &final_power_source,
-                (final_sleep_blockers & POWER_MANAGER_BLOCKER_EXTERNAL_POWER) != 0));
-        if ((final_sleep_blockers & POWER_MANAGER_BLOCKER_EXTERNAL_POWER) != 0) {
+                (final_shutdown_blockers & POWER_MANAGER_BLOCKER_EXTERNAL_POWER) != 0));
+        if ((final_shutdown_blockers & POWER_MANAGER_BLOCKER_EXTERNAL_POWER) != 0) {
             power_manager_log_power_source_diag(
                 DIAG_SEV_WARN,
                 &final_power_source,
-                snapshot.idle_ms,
-                final_sleep_blockers,
+                final_idle_ms,
+                final_shutdown_blockers,
                 true);
         }
-        power_manager_log_wake_policy(wake_gpio_mask);
         return ESP_ERR_INVALID_STATE;
     }
 
     if (audio_capture_session_is_active != NULL && audio_capture_session_is_active()) {
         xSemaphoreGive(s_mutex);
-        ESP_LOGW(TAG, "sleep rejected: final audio capture session active");
+        ESP_LOGW(TAG, "hardware shutdown rejected: final audio capture session active");
         diag_log(DIAG_SRC_POWER, DIAG_POWER_SLEEP_BLOCKED, DIAG_SEV_WARN,
-                 POWER_MANAGER_BLOCKER_RECORDING, snapshot.idle_ms, (uint32_t)reason, 0);
-        power_manager_log_wake_policy(wake_gpio_mask);
+                 POWER_MANAGER_BLOCKER_RECORDING, final_idle_ms, (uint32_t)reason, 0);
         return ESP_ERR_INVALID_STATE;
     }
 
-    s_rtc_last_sleep_reason = (uint32_t)reason;
-    s_rtc_last_idle_ms = snapshot.idle_ms;
-    s_rtc_last_blockers = final_blockers;
-    power_manager_store_sleep_entry_stats(&snapshot);
-    s_rtc_sleep_count++;
+    s_last_shutdown_reason = reason;
+    s_last_shutdown_idle_ms = final_idle_ms;
+    s_last_shutdown_blockers = final_blockers;
+    s_state = POWER_MANAGER_STATE_HARDWARE_SHUTDOWN;
+    xSemaphoreGive(s_mutex);
 
+    board_v2_power_hold_snapshot_t power_hold = {0};
+    board_get_v2_power_hold_snapshot(&power_hold);
     diag_log(DIAG_SRC_POWER, DIAG_POWER_SLEEP_ENTRY, DIAG_SEV_INFO,
-             snapshot.idle_ms,
+             final_idle_ms,
              snapshot.battery_valid ? snapshot.battery_mv : 0,
              snapshot.battery_valid ? snapshot.battery_level_percent : 0xFF,
              (uint32_t)reason);
-    power_manager_log_wake_policy(wake_gpio_mask);
+    diag_log(DIAG_SRC_POWER, DIAG_POWER_STATUS, DIAG_SEV_INFO,
+             (uint32_t)POWER_MANAGER_STATE_HARDWARE_SHUTDOWN,
+             final_blockers,
+             final_idle_ms,
+             power_hold.gpio >= 0 ? (uint32_t)power_hold.gpio : UINT32_MAX);
     ESP_LOGW(
         TAG,
-        "entering deep sleep reason=%s idle_ms=%" PRIu32 " battery_mv=%" PRIu32
-        " level=%u wake_mask=0x%016" PRIx64 " wake_policy=%s wake_keys=%s"
-        " voice_key_wake=%u limitation=\"%s\" user_action=\"%s\"",
-        power_manager_sleep_reason_name(reason),
-        snapshot.idle_ms,
+        "entering hardware shutdown reason=%s idle_ms=%" PRIu32 " battery_mv=%" PRIu32
+        " level=%u pwr_hold_gpio=%d pwr_hold_level=%s pwr_hold_configured=%u"
+        " pwr_hold_policy=%s user_action=\"%s\"",
+        power_manager_shutdown_reason_name(reason),
+        final_idle_ms,
         snapshot.battery_mv,
         snapshot.battery_level_percent,
-        wake_gpio_mask,
-        power_manager_wake_policy_name(snapshot.wake_policy),
-        snapshot.wake_capable_keys,
-        snapshot.voice_key_deep_sleep_wake_enabled ? 1u : 0u,
-        snapshot.voice_key_limitation,
-        snapshot.wake_user_action);
+        power_hold.gpio,
+        power_manager_gpio_level_name(power_hold.level),
+        power_hold.configured ? 1u : 0u,
+        power_hold.policy != NULL ? power_hold.policy : "unknown",
+        POWER_MANAGER_SHUTDOWN_USER_ACTION);
 
-    // Keep the gate held through sleep entry so blocker-before-audio paths cannot
-    // start a recording after the final check.
     if (status_led_prepare_sleep != NULL) {
         status_led_prepare_sleep();
     }
-    vTaskDelay(pdMS_TO_TICKS(100));
-    esp_deep_sleep_start();
-    return ESP_OK;
+    power_manager_set_audio_idle_power_save(true);
+    if (system_health_set_low_power_mode != NULL) {
+        system_health_set_low_power_mode(true);
+    }
+    if (ble_hid_gap_prepare_shutdown_disconnect != NULL) {
+        esp_err_t ble_ret = ble_hid_gap_prepare_shutdown_disconnect();
+        if (ble_ret != ESP_OK && ble_ret != ESP_ERR_INVALID_STATE) {
+            ESP_LOGW(TAG, "shutdown BLE disconnect preparation failed: %s", esp_err_to_name(ble_ret));
+        }
+    } else if (ble_hid_gap_set_low_power_advertising != NULL) {
+        (void)ble_hid_gap_set_low_power_advertising(true);
+    }
+
+    vTaskDelay(pdMS_TO_TICKS(150));
+    esp_err_t hold_ret = board_set_power_hold_enabled(false);
+    if (hold_ret != ESP_OK) {
+        ESP_LOGE(TAG, "hardware shutdown failed: PWR_HOLD/GPIO11 release ret=%s",
+                 esp_err_to_name(hold_ret));
+        diag_log(DIAG_SRC_POWER, DIAG_POWER_SLEEP_BLOCKED, DIAG_SEV_ERROR,
+                 0, final_idle_ms, (uint32_t)reason, (uint32_t)hold_ret);
+        power_manager_reset_idle_after_shutdown_failure();
+        return hold_ret;
+    }
+
+    vTaskDelay(pdMS_TO_TICKS(750));
+    ESP_LOGE(
+        TAG,
+        "hardware shutdown did not remove power after PWR_HOLD/GPIO11 release; restoring hold high");
+    (void)board_set_power_hold_enabled(true);
+    diag_log(DIAG_SRC_POWER, DIAG_POWER_SLEEP_BLOCKED, DIAG_SEV_ERROR,
+             0, final_idle_ms, (uint32_t)reason, (uint32_t)ESP_FAIL);
+    power_manager_reset_idle_after_shutdown_failure();
+    return ESP_FAIL;
 }
 
 static void power_manager_evaluate(void)
@@ -1067,10 +821,10 @@ static void power_manager_evaluate(void)
     uint32_t user_idle_ms = 0;
     uint32_t radio_idle_ms = 0;
     uint32_t blockers = 0;
-    uint32_t sleep_blockers = 0;
+    uint32_t shutdown_blockers = 0;
     bool power_source_changed = false;
-    bool automatic_sleep_blocked = false;
-    bool log_automatic_sleep_blocked = false;
+    bool automatic_shutdown_blocked = false;
+    bool log_automatic_shutdown_blocked = false;
     power_manager_power_source_snapshot_t power_source = {0};
     power_manager_read_power_source(&power_source);
 
@@ -1081,17 +835,18 @@ static void power_manager_evaluate(void)
     previous = s_state;
     power_source_changed = power_manager_sync_power_source_locked(&power_source, now_ms);
     bool ble_changed = power_manager_refresh_ble_connection_locked(now_ms);
-    automatic_sleep_blocked = power_manager_automatic_sleep_blocked_by_external_power_locked(now_ms);
+    automatic_shutdown_blocked =
+        power_manager_automatic_shutdown_blocked_by_external_power_locked(now_ms);
     next = power_manager_target_state_locked(now_ms);
     user_idle_ms = power_manager_user_idle_ms_locked(now_ms);
     radio_idle_ms = power_manager_radio_idle_ms_locked(now_ms);
     blockers = s_blockers;
-    sleep_blockers = power_manager_automatic_sleep_blockers_for_source(blockers, &power_source);
-    if (automatic_sleep_blocked && !s_auto_sleep_block_logged) {
-        s_auto_sleep_block_logged = true;
-        log_automatic_sleep_blocked = true;
-    } else if (!automatic_sleep_blocked) {
-        s_auto_sleep_block_logged = false;
+    shutdown_blockers = power_manager_automatic_shutdown_blockers_for_source(blockers, &power_source);
+    if (automatic_shutdown_blocked && !s_auto_shutdown_block_logged) {
+        s_auto_shutdown_block_logged = true;
+        log_automatic_shutdown_blocked = true;
+    } else if (!automatic_shutdown_blocked) {
+        s_auto_shutdown_block_logged = false;
     }
     if (previous != next) {
         s_state = next;
@@ -1119,8 +874,8 @@ static void power_manager_evaluate(void)
             DIAG_SEV_INFO,
             &power_source,
             user_idle_ms,
-            sleep_blockers,
-            automatic_sleep_blocked);
+            shutdown_blockers,
+            automatic_shutdown_blocked);
     }
     if (ble_changed) {
         ESP_LOGI(TAG, "BLE connection state observed: connected=%u", s_ble_connected ? 1u : 0u);
@@ -1131,17 +886,20 @@ static void power_manager_evaluate(void)
     power_manager_apply_state(previous, next);
     power_manager_apply_fast_idle_actions(next, user_idle_ms, blockers);
 
-    if (log_automatic_sleep_blocked) {
-        char sleep_blocker_text[96];
-        power_manager_blocker_names(sleep_blockers, sleep_blocker_text, sizeof(sleep_blocker_text));
+    if (log_automatic_shutdown_blocked) {
+        char shutdown_blocker_text[96];
+        power_manager_blocker_names(
+            shutdown_blockers,
+            shutdown_blocker_text,
+            sizeof(shutdown_blocker_text));
         ESP_LOGW(
             TAG,
-            "automatic overnight sleep blocked by external power"
-            " sleep_blockers=0x%08" PRIx32 " (%s) idle_ms=%" PRIu32
+            "automatic hardware shutdown blocked by external power"
+            " shutdown_blockers=0x%08" PRIx32 " (%s) idle_ms=%" PRIu32
             " usb_det=%s bat_chg=%s bat_std=%s"
             " external_power_present=%u charging=%u charge_full=%u",
-            sleep_blockers,
-            sleep_blocker_text,
+            shutdown_blockers,
+            shutdown_blocker_text,
             user_idle_ms,
             power_manager_gpio_level_name(power_source.usb_det_level),
             power_manager_gpio_level_name(power_source.bat_chg_level),
@@ -1153,29 +911,23 @@ static void power_manager_evaluate(void)
             DIAG_SRC_POWER,
             DIAG_POWER_SLEEP_BLOCKED,
             DIAG_SEV_WARN,
-            sleep_blockers,
+            shutdown_blockers,
             user_idle_ms,
-            (uint32_t)POWER_MANAGER_SLEEP_REASON_OVERNIGHT_IDLE,
+            (uint32_t)POWER_MANAGER_SHUTDOWN_REASON_LONG_IDLE,
             power_manager_encode_power_source_flags(&power_source, true));
         power_manager_log_power_source_diag(
             DIAG_SEV_WARN,
             &power_source,
             user_idle_ms,
-            sleep_blockers,
+            shutdown_blockers,
             true);
     }
 
-    if (next == POWER_MANAGER_STATE_OVERNIGHT_SLEEP) {
-        esp_err_t sleep_ret = power_manager_enter_sleep(POWER_MANAGER_SLEEP_REASON_OVERNIGHT_IDLE);
-        if (sleep_ret != ESP_OK && xSemaphoreTake(s_mutex, portMAX_DELAY) == pdTRUE) {
-            uint64_t reset_ms = power_manager_now_ms();
-            s_last_user_activity_ms = reset_ms;
-            s_last_radio_activity_ms = reset_ms;
-            s_auto_sleep_block_logged = false;
-            s_state = s_ble_connected
-                ? POWER_MANAGER_STATE_CONNECTED_IDLE
-                : POWER_MANAGER_STATE_DISCONNECTED_IDLE;
-            xSemaphoreGive(s_mutex);
+    if (next == POWER_MANAGER_STATE_HARDWARE_SHUTDOWN) {
+        esp_err_t shutdown_ret =
+            power_manager_enter_hardware_shutdown(POWER_MANAGER_SHUTDOWN_REASON_LONG_IDLE);
+        if (shutdown_ret != ESP_OK) {
+            power_manager_reset_idle_after_shutdown_failure();
         }
     }
 }
@@ -1205,39 +957,37 @@ esp_err_t power_manager_init(void)
 
     s_last_user_activity_ms = power_manager_now_ms();
     s_last_radio_activity_ms = s_last_user_activity_ms;
-    s_last_wake_source = power_manager_map_wakeup(esp_sleep_get_wakeup_cause());
-    power_manager_capture_wake_stats();
+    esp_err_t hold_ret = board_configure_power_hold_latch();
     s_initialized = true;
 
-    uint64_t ext1_status = esp_sleep_get_ext1_wakeup_status();
-    uint64_t wake_gpio_mask = power_manager_wake_gpio_mask();
+    esp_reset_reason_t reset_reason = esp_reset_reason();
+    board_v2_power_hold_snapshot_t power_hold = {0};
+    board_get_v2_power_hold_snapshot(&power_hold);
     ESP_LOGI(
         TAG,
-        "power manager init: enabled=%u wake=%s ext1=0x%016" PRIx64
-        " last_sleep=%s last_idle_ms=%" PRIu32 " last_blockers=0x%08" PRIx32
-        " sleep_stats_valid=%u sleep_duration_ms=%" PRIu32
-        " sleep_entry_battery_mv=%" PRIu32 " wake_battery_mv=%" PRIu32
-        " wake_policy=%s wake_keys=%s voice_key_gpio=%u voice_key_wake=0 limitation=\"%s\"",
+        "power manager init: enabled=%u reset_reason=%u last_shutdown=%s"
+        " last_shutdown_idle_ms=%" PRIu32 " last_shutdown_blockers=0x%08" PRIx32
+        " pwr_hold_gpio=%d pwr_hold_level=%s pwr_hold_configured=%u pwr_hold_policy=%s"
+        " voice_key_gpio=%u user_action=\"%s\"",
         CONFIG_POWER_MANAGER_ENABLE ? 1u : 0u,
-        power_manager_wake_source_name(s_last_wake_source),
-        ext1_status,
-        power_manager_sleep_reason_name((power_manager_sleep_reason_t)s_rtc_last_sleep_reason),
-        s_rtc_last_idle_ms,
-        s_rtc_last_blockers,
-        s_rtc_sleep_stats_magic == POWER_MANAGER_SLEEP_STATS_MAGIC ? 1u : 0u,
-        s_rtc_last_sleep_duration_ms,
-        s_rtc_sleep_entry_battery_mv,
-        s_rtc_last_wake_battery_mv,
-        power_manager_wake_policy_name(POWER_MANAGER_WAKE_POLICY_ACTIVE),
-        POWER_MANAGER_WAKE_CAPABLE_KEYS,
+        (unsigned)reset_reason,
+        power_manager_shutdown_reason_name(s_last_shutdown_reason),
+        s_last_shutdown_idle_ms,
+        s_last_shutdown_blockers,
+        power_hold.gpio,
+        power_manager_gpio_level_name(power_hold.level),
+        power_hold.configured ? 1u : 0u,
+        power_hold.policy != NULL ? power_hold.policy : "unknown",
         (unsigned)BOARD_PINS_EC11_KEY_IO,
-        POWER_MANAGER_VOICE_KEY_LIMITATION);
+        POWER_MANAGER_SHUTDOWN_USER_ACTION);
     diag_log(DIAG_SRC_POWER, DIAG_POWER_WAKE, DIAG_SEV_INFO,
-             (uint32_t)s_last_wake_source,
-             (uint32_t)(ext1_status & 0xffffffffu),
-             s_rtc_last_sleep_reason,
-             s_rtc_last_idle_ms);
-    power_manager_log_wake_policy(wake_gpio_mask);
+             (uint32_t)reset_reason,
+             power_hold.gpio >= 0 ? (uint32_t)power_hold.gpio : UINT32_MAX,
+             (uint32_t)s_last_shutdown_reason,
+             s_last_shutdown_idle_ms);
+    if (hold_ret != ESP_OK) {
+        ESP_LOGW(TAG, "PWR_HOLD/GPIO11 hold-high setup failed: %s", esp_err_to_name(hold_ret));
+    }
     return ESP_OK;
 }
 
@@ -1272,17 +1022,13 @@ esp_err_t power_manager_start(void)
     ESP_LOGI(
         TAG,
         "power manager started: audio_idle_ms=%u connected_idle_ms=%u disconnected_idle_ms=%u"
-        " overnight_sleep_ms=%u eval_ms=%u wake_mask=0x%016" PRIx64
-        " wake_policy=%s wake_keys=%s voice_key_wake=%u",
+        " hardware_shutdown_ms=%u eval_ms=%u pwr_hold_gpio=%d",
         (unsigned)CONFIG_POWER_MANAGER_AUDIO_IDLE_MS,
         (unsigned)CONFIG_POWER_MANAGER_CONNECTED_IDLE_MS,
         (unsigned)CONFIG_POWER_MANAGER_DISCONNECTED_IDLE_MS,
-        (unsigned)CONFIG_POWER_MANAGER_OVERNIGHT_SLEEP_MS,
+        (unsigned)CONFIG_POWER_MANAGER_HARDWARE_SHUTDOWN_MS,
         (unsigned)CONFIG_POWER_MANAGER_EVALUATE_INTERVAL_MS,
-        power_manager_wake_gpio_mask(),
-        power_manager_wake_policy_name(POWER_MANAGER_WAKE_POLICY_ACTIVE),
-        POWER_MANAGER_WAKE_CAPABLE_KEYS,
-        CONFIG_LISTENER_V2_ENABLE_EC11_DEEP_SLEEP_WAKE ? 1u : 0u);
+        (int)BOARD_PINS_PWR_HOLD_IO);
     return ESP_OK;
 }
 
@@ -1300,7 +1046,7 @@ void power_manager_record_activity(const char *reason)
         uint64_t now_ms = power_manager_now_ms();
         s_last_user_activity_ms = now_ms;
         s_last_radio_activity_ms = now_ms;
-        s_auto_sleep_block_logged = false;
+        s_auto_shutdown_block_logged = false;
         if (s_state != POWER_MANAGER_STATE_ACTIVE) {
             s_state = POWER_MANAGER_STATE_ACTIVE;
         }
@@ -1343,7 +1089,7 @@ void power_manager_set_blocker(uint32_t blocker_mask, bool enabled)
         uint64_t now_ms = power_manager_now_ms();
         s_last_user_activity_ms = now_ms;
         s_last_radio_activity_ms = now_ms;
-        s_auto_sleep_block_logged = false;
+        s_auto_shutdown_block_logged = false;
         previous = s_state;
         if (s_blockers != 0 && s_state != POWER_MANAGER_STATE_ACTIVE) {
             s_state = POWER_MANAGER_STATE_ACTIVE;
@@ -1389,7 +1135,7 @@ void power_manager_set_ble_connected(bool connected)
         previous = s_state;
         s_ble_connected = connected;
         s_last_radio_activity_ms = power_manager_now_ms();
-        s_auto_sleep_block_logged = false;
+        s_auto_shutdown_block_logged = false;
         s_state = POWER_MANAGER_STATE_ACTIVE;
         next = s_state;
         blockers = s_blockers;
@@ -1427,41 +1173,36 @@ static void power_manager_print_status(void)
 
     char blocker_text[96];
     power_manager_blocker_names(snapshot.blockers, blocker_text, sizeof(blocker_text));
-    char sleep_blocker_text[96];
-    power_manager_blocker_names(snapshot.sleep_blockers, sleep_blocker_text, sizeof(sleep_blocker_text));
+    char shutdown_blocker_text[96];
+    power_manager_blocker_names(
+        snapshot.shutdown_blockers,
+        shutdown_blocker_text,
+        sizeof(shutdown_blocker_text));
     printf(
         "~POWER:STATUS state=%s blockers=0x%08" PRIx32 " blocker_names=%s"
-        " sleep_blockers=0x%08" PRIx32 " sleep_blocker_names=%s idle_ms=%" PRIu32
+        " shutdown_blockers=0x%08" PRIx32 " shutdown_blocker_names=%s idle_ms=%" PRIu32
         " user_idle_ms=%" PRIu32 " radio_idle_ms=%" PRIu32
-        " ble_connected=%u automatic_sleep_blocked_by_external_power=%u"
+        " ble_connected=%u automatic_shutdown_blocked_by_external_power=%u"
         " external_power_present=%u usb_power_present=%u charging=%u charge_full=%u"
         " usb_det_level=%s bat_chg_level=%s bat_std_level=%s"
         " usb_det_policy=%s charger_polarity=%s"
         " battery_mv=%" PRIu32 " battery_level=%u battery_valid=%u"
-        " last_sleep_reason=%s last_wake_source=%s guard=%u audio_idle_ms=%" PRIu32
-        " connected_idle_ms=%" PRIu32
-        " disconnected_idle_ms=%" PRIu32 " overnight_sleep_ms=%" PRIu32
-        " sleep_stats_valid=%u sleep_duration_ms=%" PRIu32
-        " sleep_entry_battery_mv=%" PRIu32 " sleep_entry_battery_level=%u"
-        " sleep_entry_battery_valid=%u wake_battery_mv=%" PRIu32
-        " wake_battery_level=%u wake_battery_valid=%u"
-        " sleep_drain_mv=%" PRId32 " sleep_drain_level=%" PRId32
-        " sleep_drain_mv_per_hour=%" PRId32
-        " sleep_drain_level_per_hour_x100=%" PRId32
-        " wake_policy=%s wake_gpio_mask=0x%016" PRIx64 " wake_capable_keys=%s"
-        " wake_key_gpio=%" PRIu32 " wake_key_rtc_capable=%u"
-        " voice_key_gpio=%" PRIu32 " voice_key_rtc_capable=%u"
-        " voice_key_deep_sleep_wake=%u voice_key_limitation=\"%s\" wake_user_action=\"%s\"\n",
+        " last_shutdown_reason=%s last_shutdown_idle_ms=%" PRIu32
+        " last_shutdown_blockers=0x%08" PRIx32 " guard=%u audio_idle_ms=%" PRIu32
+        " connected_idle_ms=%" PRIu32 " disconnected_idle_ms=%" PRIu32
+        " hardware_shutdown_ms=%" PRIu32
+        " pwr_hold_gpio=%d pwr_hold_level=%s pwr_hold_configured=%u pwr_hold_policy=%s"
+        " voice_key_gpio=%" PRIu32 " hardware_shutdown_user_action=\"%s\"\n",
         power_manager_state_name(snapshot.state),
         snapshot.blockers,
         blocker_text,
-        snapshot.sleep_blockers,
-        sleep_blocker_text,
+        snapshot.shutdown_blockers,
+        shutdown_blocker_text,
         snapshot.idle_ms,
         snapshot.user_idle_ms,
         snapshot.radio_idle_ms,
         snapshot.ble_connected ? 1u : 0u,
-        snapshot.automatic_sleep_blocked_by_external_power ? 1u : 0u,
+        snapshot.automatic_shutdown_blocked_by_external_power ? 1u : 0u,
         snapshot.external_power_present ? 1u : 0u,
         snapshot.usb_power_present ? 1u : 0u,
         snapshot.charging ? 1u : 0u,
@@ -1474,35 +1215,22 @@ static void power_manager_print_status(void)
         snapshot.battery_mv,
         snapshot.battery_level_percent,
         snapshot.battery_valid ? 1u : 0u,
-        power_manager_sleep_reason_name(snapshot.last_sleep_reason),
-        power_manager_wake_source_name(snapshot.last_wake_source),
-        snapshot.overnight_guard_enabled ? 1u : 0u,
+        power_manager_shutdown_reason_name(snapshot.last_shutdown_reason),
+        snapshot.last_shutdown_idle_ms,
+        snapshot.last_shutdown_blockers,
+        snapshot.hardware_shutdown_guard_enabled ? 1u : 0u,
         snapshot.audio_idle_threshold_ms,
         snapshot.connected_idle_threshold_ms,
         snapshot.disconnected_idle_threshold_ms,
-        snapshot.overnight_sleep_threshold_ms,
-        snapshot.last_sleep_stats_valid ? 1u : 0u,
-        snapshot.last_sleep_duration_ms,
-        snapshot.sleep_entry_battery_mv,
-        snapshot.sleep_entry_battery_level_percent,
-        snapshot.sleep_entry_battery_valid ? 1u : 0u,
-        snapshot.wake_battery_mv,
-        snapshot.wake_battery_level_percent,
-        snapshot.wake_battery_valid ? 1u : 0u,
-        snapshot.sleep_drain_mv,
-        snapshot.sleep_drain_level_percent,
-        snapshot.sleep_drain_mv_per_hour,
-        snapshot.sleep_drain_level_per_hour_x100,
-        power_manager_wake_policy_name(snapshot.wake_policy),
-        snapshot.wake_gpio_mask,
-        snapshot.wake_capable_keys,
-        snapshot.wake_key_gpio,
-        snapshot.wake_key_rtc_capable ? 1u : 0u,
+        snapshot.hardware_shutdown_threshold_ms,
+        snapshot.pwr_hold_gpio,
+        power_manager_gpio_level_name(snapshot.pwr_hold_level),
+        snapshot.pwr_hold_configured ? 1u : 0u,
+        snapshot.pwr_hold_policy != NULL ? snapshot.pwr_hold_policy : "unknown",
         snapshot.voice_key_gpio,
-        snapshot.voice_key_rtc_capable ? 1u : 0u,
-        snapshot.voice_key_deep_sleep_wake_enabled ? 1u : 0u,
-        snapshot.voice_key_limitation,
-        snapshot.wake_user_action);
+        snapshot.hardware_shutdown_user_action != NULL
+            ? snapshot.hardware_shutdown_user_action
+            : "short-press hardware power key");
     fflush(stdout);
 }
 
@@ -1520,8 +1248,8 @@ bool power_manager_consume_usb_command(const char *line)
         return true;
     }
 
-    if (strcmp(command, "SLEEP") == 0) {
-        (void)power_manager_enter_sleep(POWER_MANAGER_SLEEP_REASON_MANUAL_COMMAND);
+    if (strcmp(command, "SHUTDOWN") == 0) {
+        (void)power_manager_enter_hardware_shutdown(POWER_MANAGER_SHUTDOWN_REASON_MANUAL_COMMAND);
         return true;
     }
 
