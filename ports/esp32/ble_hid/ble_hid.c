@@ -38,7 +38,6 @@ void ble_store_config_init(void);
 #include "ble_firmware_ota.h"
 #include "ble_diag_log.h"
 #include "voice_recording_control.h"
-#include "diag_log_platform.h"
 #include "diag_log.h"
 #include "firmware_ota.h"
 #include "power_manager.h"

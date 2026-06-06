@@ -132,13 +132,16 @@ void board_get_v2_power_input_snapshot(board_v2_power_input_snapshot_t *out_snap
     board_configure_status_input(BOARD_PINS_USB_DET_IO);
     board_configure_status_input(BOARD_PINS_BAT_CHG_IO);
     board_configure_status_input(BOARD_PINS_BAT_STD_IO);
+    board_configure_status_input(BOARD_PINS_PWR_HOLD_IO);
 
     *out_snapshot = (board_v2_power_input_snapshot_t){
         .usb_det_level = board_read_gpio_level(BOARD_PINS_USB_DET_IO),
         .bat_chg_level = board_read_gpio_level(BOARD_PINS_BAT_CHG_IO),
         .bat_std_level = board_read_gpio_level(BOARD_PINS_BAT_STD_IO),
+        .pwr_hold_level = board_read_gpio_level(BOARD_PINS_PWR_HOLD_IO),
         .usb_det_policy = BOARD_V2_USB_DET_POLICY,
         .charger_polarity_policy = BOARD_V2_CHARGER_POLARITY,
+        .pwr_hold_policy = BOARD_V2_PWR_HOLD_POLICY,
     };
 }
 
@@ -214,7 +217,7 @@ static void board_print_status(void)
         "~BOARD:STATUS profile=%s module=%s flash_mb=%u psram_mb=%u psram_mode=%s"
         " key_gpios=%d,%d,%d,%d ec11_a_gpio=%d ec11_b_gpio=%d ec11_key_gpio=%d"
         " ec11_key_provisional=1 mic_clk_gpio=%d mic_dout_gpio=%d mic_policy=%s"
-        " pwr_hold_gpio=%d pwr_hold_enabled=0 pwr_hold_policy=%s"
+        " pwr_hold_gpio=%d pwr_hold_enabled=0 pwr_hold_level=%s pwr_hold_policy=%s"
         " usb_det_gpio=%d usb_det_level=%s usb_det_policy=%s"
         " bat_chg_gpio=%d bat_chg_level=%s bat_std_gpio=%d bat_std_level=%s charger_polarity=%s"
         " battery_gpio=%d battery_mv=%" PRIu32 " battery_adc_mv=%d battery_raw=%d"
@@ -237,6 +240,7 @@ static void board_print_status(void)
         (int)BOARD_PINS_MIC_DOUT_IO,
         BOARD_V2_MIC_POLICY,
         (int)BOARD_PINS_PWR_HOLD_IO,
+        board_gpio_level_name(power_inputs.pwr_hold_level),
         BOARD_V2_PWR_HOLD_POLICY,
         (int)BOARD_PINS_USB_DET_IO,
         board_gpio_level_name(power_inputs.usb_det_level),

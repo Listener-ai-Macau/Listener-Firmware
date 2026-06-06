@@ -71,6 +71,7 @@ typedef struct {
     int usb_det_level;
     int bat_chg_level;
     int bat_std_level;
+    int pwr_hold_level;
     bool usb_power_present;
     bool external_power_present;
     bool charging;
@@ -78,6 +79,7 @@ typedef struct {
     bool automatic_sleep_blocked_by_external_power;
     const char *usb_det_policy;
     const char *charger_polarity_policy;
+    const char *pwr_hold_policy;
     power_manager_sleep_reason_t last_sleep_reason;
     power_manager_wake_source_t last_wake_source;
     bool last_sleep_stats_valid;
