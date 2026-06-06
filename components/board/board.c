@@ -203,6 +203,68 @@ static void board_print_led_status(void)
     fflush(stdout);
 }
 
+static void board_print_gpio_status(void)
+{
+    board_configure_status_input(BOARD_PINS_KEY1_IO);
+    board_configure_status_input(BOARD_PINS_KEY2_IO);
+    board_configure_status_input(BOARD_PINS_KEY3_IO);
+    board_configure_status_input(BOARD_PINS_KEY4_IO);
+    board_configure_status_input(BOARD_PINS_EC11_A_IO);
+    board_configure_status_input(BOARD_PINS_EC11_B_IO);
+    board_configure_status_input(BOARD_PINS_EC11_KEY_IO);
+
+    int key1 = board_read_gpio_level(BOARD_PINS_KEY1_IO);
+    int key2 = board_read_gpio_level(BOARD_PINS_KEY2_IO);
+    int key3 = board_read_gpio_level(BOARD_PINS_KEY3_IO);
+    int key4 = board_read_gpio_level(BOARD_PINS_KEY4_IO);
+    int ec11_a = board_read_gpio_level(BOARD_PINS_EC11_A_IO);
+    int ec11_b = board_read_gpio_level(BOARD_PINS_EC11_B_IO);
+    int ec11_key = board_read_gpio_level(BOARD_PINS_EC11_KEY_IO);
+    uint32_t key_pressed_mask =
+        (key1 == 0 ? 0x01u : 0u) |
+        (key2 == 0 ? 0x02u : 0u) |
+        (key3 == 0 ? 0x04u : 0u) |
+        (key4 == 0 ? 0x08u : 0u);
+    uint32_t ec11_ab_state =
+        (ec11_a > 0 ? 0x01u : 0u) |
+        (ec11_b > 0 ? 0x02u : 0u);
+
+    printf(
+        "~BOARD:GPIO active_low=1"
+        " key1_gpio=%d key1_level=%s key1_pressed=%u"
+        " key2_gpio=%d key2_level=%s key2_pressed=%u"
+        " key3_gpio=%d key3_level=%s key3_pressed=%u"
+        " key4_gpio=%d key4_level=%s key4_pressed=%u"
+        " key_pressed_mask=0x%02" PRIx32
+        " ec11_a_gpio=%d ec11_a_level=%s"
+        " ec11_b_gpio=%d ec11_b_level=%s"
+        " ec11_ab_state=0x%02" PRIx32
+        " ec11_key_gpio=%d ec11_key_level=%s ec11_key_pressed=%u"
+        " wake_candidate=EC11_KEY/GPIO18\n",
+        (int)BOARD_PINS_KEY1_IO,
+        board_gpio_level_name(key1),
+        key1 == 0 ? 1u : 0u,
+        (int)BOARD_PINS_KEY2_IO,
+        board_gpio_level_name(key2),
+        key2 == 0 ? 1u : 0u,
+        (int)BOARD_PINS_KEY3_IO,
+        board_gpio_level_name(key3),
+        key3 == 0 ? 1u : 0u,
+        (int)BOARD_PINS_KEY4_IO,
+        board_gpio_level_name(key4),
+        key4 == 0 ? 1u : 0u,
+        key_pressed_mask,
+        (int)BOARD_PINS_EC11_A_IO,
+        board_gpio_level_name(ec11_a),
+        (int)BOARD_PINS_EC11_B_IO,
+        board_gpio_level_name(ec11_b),
+        ec11_ab_state,
+        (int)BOARD_PINS_EC11_KEY_IO,
+        board_gpio_level_name(ec11_key),
+        ec11_key == 0 ? 1u : 0u);
+    fflush(stdout);
+}
+
 static void board_print_status(void)
 {
     battery_monitor_status_t battery = {0};
@@ -325,6 +387,7 @@ void board_print_help(void)
         "KEY1/GPIO38, KEY2/GPIO39, KEY3/GPIO40, KEY4/GPIO41 send safe non-text BLE HID usages while Listener-Type custom actions are unavailable.\n"
         "Send ~VREC:RECOVERY to clear pairing/session state over USB.\n"
         "Board diagnostics: ~BOARD:STATUS reports V2 pin, USB, charger, battery, PWR_HOLD/GPIO11, mic, reserved MSPI, and LED resource status.\n"
+        "Board GPIO diagnostics: ~BOARD:GPIO reports raw KEY1-KEY4 and EC11 A/B/key levels.\n"
         "Power diagnostics: ~POWER:STATUS reports state/blockers/battery/wake policy, ~POWER:SLEEP requests manual sleep.\n"
         "LED diagnostics: ~LED:STATUS reports four WS2812 groups; ~LED:TEST:RGBW and ~LED:TEST:MAP stay brightness-gated until VDD_LED sign-off.\n"
         "Watchdog diagnostics: ~WDT:STATUS reports config, ~WDT:DEADLOCK intentionally triggers Task WDT reset.\n"
@@ -345,6 +408,10 @@ bool board_consume_usb_command(const char *line)
     if (board_command_matches(line, BOARD_USB_PREFIX, &command)) {
         if (strcmp(command, "STATUS") == 0) {
             board_print_status();
+            return true;
+        }
+        if (strcmp(command, "GPIO") == 0) {
+            board_print_gpio_status();
             return true;
         }
         ESP_LOGW(TAG, "BOARD: unknown command: %s", command);
