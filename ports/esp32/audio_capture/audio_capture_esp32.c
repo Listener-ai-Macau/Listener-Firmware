@@ -22,6 +22,7 @@
 #endif
 
 #include "driver/i2s_std.h"
+#include "soc/soc_caps.h"
 #include "esp_check.h"
 
 #ifdef CONFIG_AUDIO_CAPTURE_MIC_ES8311
@@ -68,25 +69,10 @@
 #define AUDIO_CAPTURE_INPUT_GAIN_DB     (42.0f)
 #endif
 
-/* ---------- SPH0645-specific defines ---------- */
+/* ---------- SPH0655-specific defines ---------- */
 
-#ifdef CONFIG_AUDIO_CAPTURE_MIC_SPH0645
-#define AUDIO_CAPTURE_SPH0645_MCLK_MULTIPLE (256)
-#if CONFIG_AUDIO_CAPTURE_SPH0645_SLOT_RIGHT
-#define AUDIO_CAPTURE_SPH0645_SLOT_INDEX (1)
-#define AUDIO_CAPTURE_SPH0645_SLOT_NAME "right"
-#else
-#define AUDIO_CAPTURE_SPH0645_SLOT_INDEX (0)
-#define AUDIO_CAPTURE_SPH0645_SLOT_NAME "left"
-#endif
-#define AUDIO_CAPTURE_SPH0645_SLOT_COUNT (2)
-#define AUDIO_CAPTURE_SPH0645_SAMPLE_SHIFT (14)
-#define AUDIO_CAPTURE_SPH0645_DC_Q_SHIFT (8)
-#define AUDIO_CAPTURE_SPH0645_DC_FILTER_SHIFT (12)
-#ifndef CONFIG_AUDIO_CAPTURE_SPH0645_GAIN
-#define CONFIG_AUDIO_CAPTURE_SPH0645_GAIN (4)
-#endif
-#define AUDIO_CAPTURE_SPH0645_OUTPUT_GAIN CONFIG_AUDIO_CAPTURE_SPH0645_GAIN
+#ifdef CONFIG_AUDIO_CAPTURE_MIC_SPH0655_PDM
+#include "driver/i2s_pdm.h"
 #endif
 
 static const char *TAG = "audio_capture";
@@ -142,15 +128,11 @@ static SemaphoreHandle_t s_state_mutex;
 static uint32_t s_session_id_counter;
 static bool s_capture_backpressure_paused;
 static uint32_t s_capture_backpressure_frames;
-#ifdef CONFIG_AUDIO_CAPTURE_MIC_SPH0645
-static bool s_sph0645_dc_initialized;
-static int32_t s_sph0645_dc_q;
-#endif
 
 static const char *audio_capture_static_unavailable_reason(void)
 {
 #if defined(CONFIG_LISTENER_BOARD_PROFILE_V2_N16R8) && CONFIG_LISTENER_BOARD_PROFILE_V2_N16R8 && \
-    defined(CONFIG_AUDIO_CAPTURE_MIC_SPH0645) && CONFIG_AUDIO_CAPTURE_MIC_SPH0645 && \
+    defined(CONFIG_AUDIO_CAPTURE_MIC_SPH0655_PDM) && CONFIG_AUDIO_CAPTURE_MIC_SPH0655_PDM && \
     !CONFIG_AUDIO_CAPTURE_V2_MIC_INTERFACE_VALIDATED
     return AUDIO_CAPTURE_V2_MIC_BLOCKER;
 #else
@@ -324,6 +306,21 @@ static esp_err_t audio_capture_apply_idle_power_save(bool enabled)
 
 esp_err_t audio_capture_session_begin(void)
 {
+    const char *unavailable_reason = audio_capture_static_unavailable_reason();
+    if (unavailable_reason != NULL) {
+        ESP_LOGW(TAG, "record session start rejected: audio capture unavailable: %s", unavailable_reason);
+        diag_log(DIAG_SRC_AUDIO, DIAG_AUDIO_SESSION_REJ, DIAG_SEV_WARN,
+                 3, ESP_ERR_NOT_SUPPORTED, 0, 0);
+        return ESP_ERR_NOT_SUPPORTED;
+    }
+
+    if (!s_started) {
+        ESP_LOGW(TAG, "record session start rejected: audio capture not started");
+        diag_log(DIAG_SRC_AUDIO, DIAG_AUDIO_SESSION_REJ, DIAG_SEV_WARN,
+                 4, ESP_ERR_INVALID_STATE, 0, 0);
+        return ESP_ERR_INVALID_STATE;
+    }
+
     s_idle_power_save_requested = false;
     (void)audio_capture_apply_idle_power_save(false);
 
@@ -919,46 +916,12 @@ static esp_err_t audio_capture_codec_init(void)
 
 #endif /* CONFIG_AUDIO_CAPTURE_MIC_ES8311 */
 
-/* ========== SPH0645 hardware path ========== */
+/* ========== SPH0655 PDM hardware path ========== */
 
-#ifdef CONFIG_AUDIO_CAPTURE_MIC_SPH0645
-
-static int16_t clamp_i16(int32_t sample)
-{
-    if (sample > INT16_MAX) {
-        return INT16_MAX;
-    }
-    if (sample < INT16_MIN) {
-        return INT16_MIN;
-    }
-    return (int16_t)sample;
-}
-
-static void sph0645_to_int16(const int32_t *src, int16_t *dst, size_t out_samples)
-{
-    /* The SPH0645 drives only the WS slot selected by its SELECT pin. Capture
-     * both I2S slots and extract the configured active slot; the inactive slot
-     * is idle/floating and can appear as near-constant DC-offset PCM. The mic
-     * has 18 effective bits in a 24-bit I2S word; remove the observed DC term
-     * before applying product-level digital gain. */
-    for (size_t i = 0; i < out_samples; i++) {
-        const size_t raw_index = (i * AUDIO_CAPTURE_SPH0645_SLOT_COUNT) + AUDIO_CAPTURE_SPH0645_SLOT_INDEX;
-        const int32_t sample = src[raw_index] >> AUDIO_CAPTURE_SPH0645_SAMPLE_SHIFT;
-        const int32_t sample_q = sample << AUDIO_CAPTURE_SPH0645_DC_Q_SHIFT;
-        if (!s_sph0645_dc_initialized) {
-            s_sph0645_dc_q = sample_q;
-            s_sph0645_dc_initialized = true;
-        } else {
-            s_sph0645_dc_q += (sample_q - s_sph0645_dc_q) >> AUDIO_CAPTURE_SPH0645_DC_FILTER_SHIFT;
-        }
-        const int32_t centered = sample - (s_sph0645_dc_q >> AUDIO_CAPTURE_SPH0645_DC_Q_SHIFT);
-        dst[i] = clamp_i16(centered * AUDIO_CAPTURE_SPH0645_OUTPUT_GAIN);
-    }
-}
+#ifdef CONFIG_AUDIO_CAPTURE_MIC_SPH0655_PDM
 
 static void audio_capture_task(void *arg)
 {
-    int32_t raw_buffer[AUDIO_CAPTURE_FRAME_SAMPLES * 2];
     int16_t frame_buffer[AUDIO_CAPTURE_FRAME_SAMPLES];
     (void)watchdog_platform_subscribe_current_task("audio_capture_task");
 
@@ -978,21 +941,20 @@ static void audio_capture_task(void *arg)
 
         size_t bytes_read = 0;
         esp_err_t ret = i2s_channel_read(
-            s_i2s_rx_handle, raw_buffer, sizeof(raw_buffer),
+            s_i2s_rx_handle, frame_buffer, sizeof(frame_buffer),
             &bytes_read, portMAX_DELAY);
-        if (ret == ESP_OK && bytes_read == sizeof(raw_buffer)) {
+        if (ret == ESP_OK && bytes_read == sizeof(frame_buffer)) {
             if (audio_capture_backpressure_should_pause()) {
                 vTaskDelay(pdMS_TO_TICKS(AUDIO_CAPTURE_BACKPRESSURE_PAUSE_MS));
                 continue;
             }
-            sph0645_to_int16(raw_buffer, frame_buffer, AUDIO_CAPTURE_FRAME_SAMPLES);
             audio_capture_process_frame(frame_buffer);
             continue;
         }
 
         if (ret != ESP_OK) {
             s_dropped_frame_count++;
-            ESP_LOGW(TAG, "i2s read failed: dropped=%" PRIu32 " ret=%s",
+            ESP_LOGW(TAG, "pdm read failed: dropped=%" PRIu32 " ret=%s",
                      s_dropped_frame_count, esp_err_to_name(ret));
             diag_log(DIAG_SRC_AUDIO, DIAG_AUDIO_I2S_FAIL, DIAG_SEV_WARN, s_dropped_frame_count, ret, 0, 0);
         }
@@ -1002,47 +964,50 @@ static void audio_capture_task(void *arg)
 
 static esp_err_t audio_capture_i2s_init(void)
 {
+#if !SOC_I2S_SUPPORTS_PDM2PCM
+    ESP_LOGE(TAG, "SPH0655 PDM microphone requires hardware PDM2PCM support");
+    return ESP_ERR_NOT_SUPPORTED;
+#else
     i2s_chan_config_t chan_cfg = I2S_CHANNEL_DEFAULT_CONFIG(BOARD_PINS_I2S_PORT, I2S_ROLE_MASTER);
     chan_cfg.auto_clear = true;
     ESP_RETURN_ON_ERROR(i2s_new_channel(&chan_cfg, NULL, &s_i2s_rx_handle), TAG, "create i2s channel failed");
 
-    i2s_std_config_t std_cfg = {
-        .clk_cfg = {
-            .sample_rate_hz = AUDIO_CAPTURE_SAMPLE_RATE_HZ,
-            .clk_src = I2S_CLK_SRC_DEFAULT,
-            .mclk_multiple = AUDIO_CAPTURE_SPH0645_MCLK_MULTIPLE,
-        },
-        /* Capture full 32-bit slots to avoid 3-byte DMA packing;
-         * SPH0645 24-bit data is left-aligned in the 32-bit word. */
-        .slot_cfg = I2S_STD_PHILIPS_SLOT_DEFAULT_CONFIG(I2S_DATA_BIT_WIDTH_32BIT, I2S_SLOT_MODE_STEREO),
+    i2s_pdm_rx_config_t pdm_cfg = {
+        .clk_cfg = I2S_PDM_RX_CLK_DEFAULT_CONFIG(AUDIO_CAPTURE_SAMPLE_RATE_HZ),
+        .slot_cfg = I2S_PDM_RX_SLOT_PCM_FMT_DEFAULT_CONFIG(I2S_DATA_BIT_WIDTH_16BIT, I2S_SLOT_MODE_MONO),
         .gpio_cfg = {
-            .mclk = GPIO_NUM_NC,
-            .bclk = BOARD_PINS_I2S_BCLK_IO,
-            .ws = BOARD_PINS_I2S_WS_IO,
-            .dout = GPIO_NUM_NC,
-            .din = BOARD_PINS_I2S_DIN_IO,
+            .clk = BOARD_PINS_MIC_CLK_IO,
+            .din = BOARD_PINS_MIC_DOUT_IO,
             .invert_flags = {
-                .mclk_inv = false,
-                .bclk_inv = false,
-                .ws_inv = false,
+                .clk_inv = false,
             },
         },
     };
-    std_cfg.slot_cfg.slot_mask = I2S_STD_SLOT_BOTH;
+#if defined(SOC_I2S_SUPPORTS_PDM_RX_HP_FILTER) && SOC_I2S_SUPPORTS_PDM_RX_HP_FILTER
+    pdm_cfg.slot_cfg.hp_en = true;
+    pdm_cfg.slot_cfg.hp_cut_off_freq_hz = 35.5f;
+    pdm_cfg.slot_cfg.amplify_num = 1;
+#endif
 
-    ESP_RETURN_ON_ERROR(i2s_channel_init_std_mode(s_i2s_rx_handle, &std_cfg), TAG, "init i2s rx failed");
-    ESP_RETURN_ON_ERROR(i2s_channel_enable(s_i2s_rx_handle), TAG, "enable i2s rx failed");
+    ESP_RETURN_ON_ERROR(i2s_channel_init_pdm_rx_mode(s_i2s_rx_handle, &pdm_cfg), TAG, "init pdm rx failed");
+    ESP_RETURN_ON_ERROR(i2s_channel_enable(s_i2s_rx_handle), TAG, "enable pdm rx failed");
     ESP_LOGI(
         TAG,
-        "SPH0645 I2S init: %uHz 32-bit stereo slots no-MCLK selected_slot=%s gain=%d dc_filter_shift=%d",
+        "SPH0655 PDM mic init: %uHz 16-bit mono clk=%d din=%d hp_filter=%u",
         AUDIO_CAPTURE_SAMPLE_RATE_HZ,
-        AUDIO_CAPTURE_SPH0645_SLOT_NAME,
-        AUDIO_CAPTURE_SPH0645_OUTPUT_GAIN,
-        AUDIO_CAPTURE_SPH0645_DC_FILTER_SHIFT);
+        (int)BOARD_PINS_MIC_CLK_IO,
+        (int)BOARD_PINS_MIC_DOUT_IO,
+#if defined(SOC_I2S_SUPPORTS_PDM_RX_HP_FILTER) && SOC_I2S_SUPPORTS_PDM_RX_HP_FILTER
+        1u
+#else
+        0u
+#endif
+    );
     return ESP_OK;
+#endif
 }
 
-#endif /* CONFIG_AUDIO_CAPTURE_MIC_SPH0645 */
+#endif /* CONFIG_AUDIO_CAPTURE_MIC_SPH0655_PDM */
 
 /* ========== Public API ========== */
 
@@ -1112,8 +1077,8 @@ esp_err_t audio_capture_start(void)
         return ESP_ERR_NO_MEM;
     }
 
-#ifdef CONFIG_AUDIO_CAPTURE_MIC_SPH0645
-    ESP_LOGI(TAG, "audio capture started: SPH0645 I2S digital mic");
+#ifdef CONFIG_AUDIO_CAPTURE_MIC_SPH0655_PDM
+    ESP_LOGI(TAG, "audio capture started: SPH0655 PDM digital mic");
 #endif
 
     return ESP_OK;

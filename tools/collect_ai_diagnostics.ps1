@@ -3,7 +3,10 @@ param(
     [string]$Port = "",
     [int]$Baud = 115200,
     [int]$EventCount = 120,
+    [int]$RecentEventCount = 0,
     [int]$ReadSeconds = 8,
+    [string[]]$EnableSource = @(),
+    [string[]]$Source = @(),
     [string]$OutputDir = "tests\artifacts\ai_diagnostics"
 )
 
@@ -28,12 +31,46 @@ function Get-JsonLinesFromSerial {
         [Parameter(Mandatory = $true)][int]$SerialBaud,
         [Parameter(Mandatory = $true)][int]$RecentEventCount,
         [Parameter(Mandatory = $true)][int]$Seconds,
-        [Parameter(Mandatory = $true)][string]$TranscriptPath
+        [Parameter(Mandatory = $true)][string]$TranscriptPath,
+        [Parameter(Mandatory = $true)][string]$SourceStatePath,
+        [string[]]$TemporaryEnableSources = @(),
+        [string[]]$TailSources = @()
     )
 
     $serialPort = $null
-    $allLines = New-Object System.Collections.Generic.List[string]
-    $jsonLines = New-Object System.Collections.Generic.List[string]
+    $allLines = [System.Collections.Generic.List[string]]::new()
+    $jsonLines = [System.Collections.Generic.List[string]]::new()
+    $sourceLines = [System.Collections.Generic.List[string]]::new()
+
+    function Read-UntilDeadline {
+        param([Parameter(Mandatory = $true)][datetime]$Deadline)
+
+        while ((Get-Date) -lt $Deadline) {
+            try {
+                $line = $serialPort.ReadLine().Trim()
+                $allLines.Add($line)
+                if ($line -match '^\s*\{') {
+                    $jsonLines.Add($line)
+                }
+                if ($line -match '^~DIAGLOG:SOURCE\s+') {
+                    $sourceLines.Add($line)
+                }
+            } catch [System.TimeoutException] {
+            }
+        }
+    }
+
+    function Send-DiagCommand {
+        param(
+            [Parameter(Mandatory = $true)][string]$Command,
+            [int]$WaitMilliseconds = 700
+        )
+
+        $allLines.Add(("> ~DIAGLOG:{0}" -f $Command))
+        $serialPort.Write(("~DIAGLOG:{0}`n" -f $Command))
+        Read-UntilDeadline -Deadline (Get-Date).AddMilliseconds($WaitMilliseconds)
+    }
+
     try {
         $serialPort = [System.IO.Ports.SerialPort]::new(
             $SerialPortName,
@@ -56,25 +93,44 @@ function Get-JsonLinesFromSerial {
             Start-Sleep -Milliseconds 20
         }
 
-        $serialPort.Write(("~DIAGLOG:LAST:{0}`n" -f $RecentEventCount))
-        $deadline = (Get-Date).AddSeconds($Seconds)
-        while ((Get-Date) -lt $deadline) {
-            try {
-                $line = $serialPort.ReadLine().Trim()
-                $allLines.Add($line)
-                if ($line -match '^\s*\{') {
-                    $jsonLines.Add($line)
-                }
-            } catch [System.TimeoutException] {
+        Send-DiagCommand -Command "SOURCES"
+        foreach ($sourceName in @($TemporaryEnableSources)) {
+            if (-not [string]::IsNullOrWhiteSpace($sourceName)) {
+                Send-DiagCommand -Command ("ENABLE {0}" -f $sourceName)
             }
+        }
+
+        if (@($TailSources).Count -gt 0) {
+            foreach ($sourceName in @($TailSources)) {
+                if (-not [string]::IsNullOrWhiteSpace($sourceName)) {
+                    Send-DiagCommand -Command ("LAST:{0}:{1}" -f $RecentEventCount, $sourceName) -WaitMilliseconds ($Seconds * 1000)
+                }
+            }
+        } else {
+            Send-DiagCommand -Command ("LAST:{0}" -f $RecentEventCount) -WaitMilliseconds ($Seconds * 1000)
         }
     } finally {
         if ($serialPort -and $serialPort.IsOpen) {
+            foreach ($sourceName in @($TemporaryEnableSources)) {
+                if (-not [string]::IsNullOrWhiteSpace($sourceName)) {
+                    try {
+                        Send-DiagCommand -Command ("DISABLE {0}" -f $sourceName)
+                    } catch {
+                        $allLines.Add("cleanup disable failed for ${sourceName}: $($_.Exception.Message)")
+                    }
+                }
+            }
+            try {
+                Send-DiagCommand -Command "SOURCES"
+            } catch {
+                $allLines.Add("final sources failed: $($_.Exception.Message)")
+            }
             $serialPort.Close()
         }
     }
 
     Set-Content -LiteralPath $TranscriptPath -Value @($allLines) -Encoding UTF8
+    Set-Content -LiteralPath $SourceStatePath -Value @($sourceLines) -Encoding UTF8
     return @($jsonLines)
 }
 
@@ -84,6 +140,10 @@ if ($hasInput -eq $hasPort) {
     throw "Provide exactly one source: -InputJsonl <file> for offline decode, or -Port COMx for serial collection."
 }
 
+if ($RecentEventCount -gt 0) {
+    $EventCount = $RecentEventCount
+}
+
 $resolvedOutputDir = Resolve-RepoRelativePath -Path $OutputDir
 New-Item -ItemType Directory -Path $resolvedOutputDir -Force | Out-Null
 
@@ -91,6 +151,7 @@ $rawJsonlPath = Join-Path $resolvedOutputDir "diag_log_raw.jsonl"
 $decodedBundlePath = Join-Path $resolvedOutputDir "diag_log_ai_bundle.json"
 $manifestPath = Join-Path $resolvedOutputDir "manifest.json"
 $transcriptPath = Join-Path $resolvedOutputDir "serial_transcript.txt"
+$sourceStatePath = Join-Path $resolvedOutputDir "diag_log_sources.txt"
 
 $sourceMode = ""
 $sourcePath = ""
@@ -101,8 +162,10 @@ if ($hasInput) {
         throw "Input JSONL not found: $sourcePath"
     }
     Copy-Item -LiteralPath $sourcePath -Destination $rawJsonlPath -Force
-    if (Test-Path -LiteralPath $transcriptPath) {
-        Remove-Item -LiteralPath $transcriptPath -Force
+    foreach ($stalePath in @($transcriptPath, $sourceStatePath)) {
+        if (Test-Path -LiteralPath $stalePath) {
+            Remove-Item -LiteralPath $stalePath -Force
+        }
     }
 } else {
     $sourceMode = "serial"
@@ -112,7 +175,10 @@ if ($hasInput) {
         -SerialBaud $Baud `
         -RecentEventCount $EventCount `
         -Seconds $ReadSeconds `
-        -TranscriptPath $transcriptPath
+        -TranscriptPath $transcriptPath `
+        -SourceStatePath $sourceStatePath `
+        -TemporaryEnableSources $EnableSource `
+        -TailSources $Source
     Set-Content -LiteralPath $rawJsonlPath -Value @($jsonLines) -Encoding UTF8
     if (@($jsonLines).Count -eq 0) {
         throw "No JSON diag_log events captured from $Port. Transcript: $transcriptPath"
@@ -135,6 +201,12 @@ $manifest = [ordered]@{
     decoded_bundle_path = $decodedBundlePath
     manifest_path = $manifestPath
     serial_transcript_path = if ($hasPort) { $transcriptPath } else { $null }
+    source_state_path = if ($hasPort) { $sourceStatePath } else { $null }
+    bounded_export = $true
+    command_path = if ($hasPort) { "~DIAGLOG:SOURCES + ~DIAGLOG:ENABLE/DISABLE + ~DIAGLOG:LAST:N[:source]" } else { "offline decode" }
+    recent_event_count = $EventCount
+    source_filters = @($Source)
+    temporary_enabled_sources = @($EnableSource)
     event_count = [int]$bundle.summary.event_count
     warning_error_count = @($bundle.summary.recent_warning_error_refs).Count
     boot_segment_count = [int]$bundle.summary.boot_segment_count

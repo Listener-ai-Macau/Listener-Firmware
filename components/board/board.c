@@ -20,7 +20,7 @@ static const char *TAG = "board";
 #define BOARD_V2_CHARGER_POLARITY "v2_gpio14_chg_gpio21_std_active_low"
 #define BOARD_V2_PWR_HOLD_POLICY "v2_gpio11_power_latch_hold_high_release_low_for_hardware_shutdown"
 #define BOARD_V2_LED_POLICY "v2_four_zone_ws2812_status_gpio1_ec11_gpio5_key_gpio13_edge_gpio4"
-#define BOARD_V2_MIC_POLICY "v2_clk_gpio48_dout_gpio47_interface_degraded_until_hardware_validation"
+#define BOARD_V2_MIC_POLICY "v2_sph0655_pdm_clk_gpio48_dout_gpio47_enabled_for_a1_a2_hardware_validation"
 #define BOARD_V2_CURRENT_POLICY "v2_battery_side_input_branch_current_ina180a2_10mR_adc_mv_x2_with_battery_mv_from_gpio8_div2"
 
 typedef struct {
@@ -219,13 +219,17 @@ void board_get_v2_power_input_snapshot(board_v2_power_input_snapshot_t *out_snap
     board_configure_status_input(BOARD_PINS_USB_DET_IO);
     board_configure_status_input(BOARD_PINS_BAT_CHG_IO);
     board_configure_status_input(BOARD_PINS_BAT_STD_IO);
+    board_v2_power_hold_snapshot_t power_hold = {0};
+    board_get_v2_power_hold_snapshot(&power_hold);
 
     *out_snapshot = (board_v2_power_input_snapshot_t){
         .usb_det_level = board_read_gpio_level(BOARD_PINS_USB_DET_IO),
         .bat_chg_level = board_read_gpio_level(BOARD_PINS_BAT_CHG_IO),
         .bat_std_level = board_read_gpio_level(BOARD_PINS_BAT_STD_IO),
+        .pwr_hold_level = power_hold.level,
         .usb_det_policy = BOARD_V2_USB_DET_POLICY,
         .charger_polarity_policy = BOARD_V2_CHARGER_POLARITY,
+        .pwr_hold_policy = BOARD_V2_PWR_HOLD_POLICY,
     };
 }
 

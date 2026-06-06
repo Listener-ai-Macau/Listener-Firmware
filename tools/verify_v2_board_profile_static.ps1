@@ -78,6 +78,7 @@ $board = Read-RepoFile "components\board\board.c"
 $powerManager = Read-RepoFile "components\power_manager\power_manager.c"
 $batteryMonitor = Read-RepoFile "components\battery_monitor\battery_monitor.c"
 $statusLed = Read-RepoFile "components\status_led\status_led.c"
+$audioCapture = Read-RepoFile "ports\esp32\audio_capture\audio_capture_esp32.c"
 $statusLedDoc = Read-RepoFile "docs\features\status_led.md"
 $lowPowerDoc = Read-RepoFile "docs\features\low_power_wake_policy.md"
 $currentTelemetryTool = Read-RepoFile "tools\collect_v2_current_telemetry.ps1"
@@ -103,6 +104,10 @@ foreach ($item in @(
     @($boardPins, "BOARD_PINS_MIC_CLK_IO\s+BOARD_PINS_I2S_BCLK_IO", "mic clock macro"),
     @($boardPins, "BOARD_PINS_I2S_BCLK_IO\s+\(GPIO_NUM_48\)", "mic CLK GPIO48"),
     @($boardPins, "BOARD_PINS_I2S_DIN_IO\s+\(GPIO_NUM_47\)", "mic DOUT GPIO47"),
+    @($audioCapture, "CONFIG_AUDIO_CAPTURE_MIC_SPH0655_PDM", "SPH0655 PDM mic compile-time selector"),
+    @($audioCapture, "i2s_channel_init_pdm_rx_mode", "V2 PDM RX initialization"),
+    @($audioCapture, "I2S_PDM_RX_SLOT_PCM_FMT_DEFAULT_CONFIG", "V2 PDM2PCM slot configuration"),
+    @($audioCapture, "SPH0655 PDM mic init", "SPH0655 PDM mic init log"),
     @($boardPins, "BOARD_PINS_BAT_CHG_IO\s+\(GPIO_NUM_14\)", "charger CHG GPIO14"),
     @($boardPins, "BOARD_PINS_BAT_STD_IO\s+\(GPIO_NUM_21\)", "charger STD GPIO21"),
     @($boardPins, "BOARD_PINS_BAT_V_ADC_IO\s+\(GPIO_NUM_8\)", "battery ADC GPIO8"),
@@ -161,7 +166,9 @@ foreach ($token in @(
     "CONFIG_ESPTOOLPY_FLASHSIZE_16MB=y",
     'CONFIG_ESPTOOLPY_FLASHSIZE="16MB"',
     "CONFIG_SPIRAM=y",
-    "CONFIG_SPIRAM_MODE_OCT=y"
+    "CONFIG_SPIRAM_MODE_OCT=y",
+    "CONFIG_AUDIO_CAPTURE_MIC_SPH0655_PDM=y",
+    "CONFIG_AUDIO_CAPTURE_V2_MIC_INTERFACE_VALIDATED=y"
 )) {
     Assert-Contains -Text $sdkconfig -Pattern ([regex]::Escape($token)) -Description "sdkconfig token $token"
 }
@@ -173,6 +180,11 @@ foreach ($item in @(
     @($sdkconfig, "CONFIG_LISTENER_BOARD_PROFILE_N4=y", "active N4 sdkconfig"),
     @($sdkconfig, "CONFIG_ESPTOOLPY_FLASHSIZE_4MB=y", "active 4 MB flash sdkconfig"),
     @($sdkconfig, "# CONFIG_SPIRAM is not set", "disabled PSRAM sdkconfig"),
+    @($sdkconfig, "CONFIG_AUDIO_CAPTURE_MIC_SPH0645=y", "stale SPH0645 microphone sdkconfig"),
+    @($sdkconfig, "CONFIG_AUDIO_CAPTURE_SPH0645_SLOT_LEFT=y", "stale SPH0645 slot sdkconfig"),
+    @($sdkconfig, "CONFIG_AUDIO_CAPTURE_SPH0645_GAIN=4", "stale SPH0645 gain sdkconfig"),
+    @($sdkconfig, "# CONFIG_AUDIO_CAPTURE_MIC_SPH0655_PDM is not set", "disabled SPH0655 microphone sdkconfig"),
+    @($sdkconfig, "# CONFIG_AUDIO_CAPTURE_V2_MIC_INTERFACE_VALIDATED is not set", "disabled V2 microphone validation sdkconfig"),
     @($listenerDevice, "voice-keyboard-n4|esp32s3-wroom-1-n4|flash_4mb|no_psram", "N4 device metadata"),
     @($keyboard, "gpio35|gpio45|gpio48\.f14|gpio47\.f15|gpio21\.f16", "N4 keyboard diagnostic labels"),
     @($voiceKeyInput, "ec11_key\.gpio(11|35)", "stale EC11 recording label"),

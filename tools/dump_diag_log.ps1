@@ -1,19 +1,34 @@
 <#
 .SYNOPSIS
-Dump diag_log from device to a timestamped file.
+Capture a bounded diag_log tail from a device to a timestamped JSONL file.
 
 .PARAMETER Port
 Serial port (default: COM5)
 
 .PARAMETER OutputDir
 Directory for output files (default: tests/artifacts)
+
+.PARAMETER Count
+Recent event count for the normal bounded capture path.
+
+.PARAMETER Source
+Optional source name for firmware-side source-filtered tail capture.
+
+.PARAMETER Full
+Explicitly request the legacy unbounded dump. Normal AI validation should use
+bounded LAST captures or tools/collect_ai_diagnostics.ps1 instead.
 #>
 param(
     [string]$Port = "COM5",
-    [string]$OutputDir = "tests\artifacts"
+    [string]$OutputDir = "tests\artifacts",
+    [int]$Count = 200,
+    [string]$Source = "",
+    [switch]$Full,
+    [int]$ReadSeconds = 10
 )
 
 $ErrorActionPreference = "Stop"
+Set-StrictMode -Version Latest
 
 if (-not (Test-Path $OutputDir)) {
     New-Item -ItemType Directory -Path $OutputDir -Force | Out-Null
@@ -22,11 +37,18 @@ if (-not (Test-Path $OutputDir)) {
 $timestamp = Get-Date -Format "yyyyMMdd-HHmmss"
 $outputFile = Join-Path $OutputDir "diag_log_$timestamp.jsonl"
 
-# Send DIAGLOG:DUMP command and capture output
-$command = "~DIAGLOG:DUMP"
+if ($Full) {
+    $command = "~DIAGLOG:DUMP"
+    Write-Warning "Using unbounded ~DIAGLOG:DUMP because -Full was specified. Prefer bounded LAST captures for AI validation."
+} elseif (-not [string]::IsNullOrWhiteSpace($Source)) {
+    $command = ("~DIAGLOG:LAST:{0}:{1}" -f $Count, $Source)
+} else {
+    $command = ("~DIAGLOG:LAST:{0}" -f $Count)
+}
 
-Write-Host "Dumping diag_log from $Port to $outputFile ..."
+Write-Host "Capturing diag_log from $Port to $outputFile with $command ..."
 
+$serialPort = $null
 try {
     $serialPort = [System.IO.Ports.SerialPort]::new(
         $Port,
@@ -35,7 +57,7 @@ try {
         8,
         [System.IO.Ports.StopBits]::One
     )
-    $serialPort.ReadTimeout = 5000
+    $serialPort.ReadTimeout = 500
     $serialPort.WriteTimeout = 5000
     $serialPort.DtrEnable = $false
     $serialPort.RtsEnable = $false
@@ -43,26 +65,23 @@ try {
     $serialPort.DtrEnable = $false
     $serialPort.RtsEnable = $false
 
-    # Drain any pending data
     Start-Sleep -Milliseconds 500
     while ($serialPort.BytesToRead -gt 0) {
-        $serialPort.ReadByte() | Out-Null
+        [void]$serialPort.ReadExisting()
+        Start-Sleep -Milliseconds 20
     }
 
-    # Send dump command
     $serialPort.Write("$command`n")
 
-    # Read output until timeout
-    $output = @()
-    $readStart = Get-Date
-    while (((Get-Date) - $readStart).TotalSeconds -lt 10) {
+    $output = [System.Collections.Generic.List[string]]::new()
+    $readDeadline = (Get-Date).AddSeconds($ReadSeconds)
+    while ((Get-Date) -lt $readDeadline) {
         try {
-            $line = $serialPort.ReadLine()
+            $line = $serialPort.ReadLine().Trim()
             if ($line -match '^\{') {
-                $output += $line
+                $output.Add($line)
             }
         } catch [System.TimeoutException] {
-            break
         }
     }
 
@@ -80,4 +99,4 @@ if ($output.Count -eq 0) {
 }
 
 $output | Set-Content -Path $outputFile -Encoding UTF8
-Write-Host "Dumped $($output.Count) events to $outputFile"
+Write-Host "Captured $($output.Count) events to $outputFile"

@@ -53,6 +53,7 @@ typedef struct {
     int usb_det_level;
     int bat_chg_level;
     int bat_std_level;
+    int pwr_hold_level;
     bool usb_power_present;
     bool external_power_present;
     bool charging;
@@ -60,13 +61,12 @@ typedef struct {
     bool automatic_shutdown_blocked_by_external_power;
     const char *usb_det_policy;
     const char *charger_polarity_policy;
+    const char *pwr_hold_policy;
     power_manager_shutdown_reason_t last_shutdown_reason;
     uint32_t last_shutdown_idle_ms;
     uint32_t last_shutdown_blockers;
     int pwr_hold_gpio;
-    int pwr_hold_level;
     bool pwr_hold_configured;
-    const char *pwr_hold_policy;
     uint32_t voice_key_gpio;
     const char *hardware_shutdown_user_action;
 } power_manager_snapshot_t;

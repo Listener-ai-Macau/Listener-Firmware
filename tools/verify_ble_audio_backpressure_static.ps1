@@ -127,7 +127,7 @@ Assert-Contains -RelativePath $capture -Pattern "ble_audio_stream_get_backpressu
 Assert-Contains -RelativePath $capture -Pattern "DIAG_AUDIO_BACKPRESSURE" -Description "audio capture backpressure diagnostic event logging"
 Assert-Contains -RelativePath $capture -Pattern "stop_or_cancel_requested" -Description "stop/cancel bypass for backpressure pause"
 Assert-Order -RelativePath $capture -First "if (audio_capture_backpressure_should_pause())" -Second "esp_codec_dev_read" -Description "ES8311 read is gated before capture advances"
-Assert-Order -RelativePath $capture -First "if (audio_capture_backpressure_should_pause())" -Second "i2s_channel_read" -Description "SPH0645 read is gated before capture advances"
+Assert-Order -RelativePath $capture -First "if (audio_capture_backpressure_should_pause())" -Second "i2s_channel_read" -Description "SPH0655 PDM read is gated before capture advances"
 
 Assert-Contains -RelativePath $voiceRecording -Pattern "toggle_start_pending_transfer" -Description "rapid toggle start intent is queued while previous session transfers"
 Assert-Contains -RelativePath $voiceRecording -Pattern "audio_session_transferring" -Description "pending start records transferring reason"

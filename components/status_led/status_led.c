@@ -18,6 +18,7 @@
 #include "freertos/task.h"
 #include "nvs.h"
 #include "nvs_flash.h"
+#include "soc/soc_caps.h"
 
 #include "battery_monitor.h"
 #include "board_pins.h"
@@ -35,6 +36,7 @@
 #define STATUS_LED_REFRESH_MS 50U
 #define STATUS_LED_RMT_RESOLUTION_HZ 10000000U
 #define STATUS_LED_RMT_WAIT_MS 20
+#define STATUS_LED_TX_MUTEX_WAIT_MS 100
 #define STATUS_LED_WS2812_RESET_TICKS 250U
 #define STATUS_LED_POWER_POLL_MS 5000U
 #define STATUS_LED_STATUS_WINDOW_MS 6000U
@@ -162,6 +164,7 @@ typedef struct {
 static const char *TAG = "status_led";
 
 static SemaphoreHandle_t s_mutex;
+static SemaphoreHandle_t s_tx_mutex;
 static TaskHandle_t s_task_handle;
 static status_led_state_t s_state;
 static status_led_strip_t s_strips[STATUS_LED_STRIP_COUNT] = {
@@ -308,7 +311,7 @@ static esp_err_t status_led_new_ws2812_encoder(rmt_encoder_handle_t *ret_encoder
         return ret;
     }
 
-    rmt_copy_encoder_config_t copy_config = {0};
+    rmt_copy_encoder_config_t copy_config = {};
     ret = rmt_new_copy_encoder(&copy_config, &led_encoder->copy_encoder);
     if (ret != ESP_OK) {
         (void)rmt_del_encoder(led_encoder->bytes_encoder);
@@ -601,10 +604,25 @@ static esp_err_t status_led_transmit_strip(status_led_strip_t *strip, const stat
 
 static void status_led_transmit_frame(const status_led_frame_t *frame)
 {
+    bool tx_locked = false;
+    if (s_tx_mutex != NULL) {
+        if (xSemaphoreTake(s_tx_mutex, pdMS_TO_TICKS(STATUS_LED_TX_MUTEX_WAIT_MS)) != pdTRUE) {
+            ESP_LOGW(TAG, "LED transmit skipped: tx mutex timeout");
+            diag_log(DIAG_SRC_STATUS_LED, DIAG_LED_OUTPUT_FAIL, DIAG_SEV_WARN,
+                     0, (uint32_t)ESP_ERR_TIMEOUT, 2, 0);
+            return;
+        }
+        tx_locked = true;
+    }
+
     (void)status_led_transmit_strip(&s_strips[STATUS_LED_STRIP_STATUS], frame->status);
     (void)status_led_transmit_strip(&s_strips[STATUS_LED_STRIP_EC11], frame->ec11);
     (void)status_led_transmit_strip(&s_strips[STATUS_LED_STRIP_KEY], frame->key);
     (void)status_led_transmit_strip(&s_strips[STATUS_LED_STRIP_EDGE], frame->edge);
+
+    if (tx_locked) {
+        xSemaphoreGive(s_tx_mutex);
+    }
 }
 
 static uint32_t status_led_estimate_current_ma(const status_led_frame_t *frame)
@@ -1072,7 +1090,7 @@ static esp_err_t status_led_init_rmt_strip(status_led_strip_t *strip)
         .gpio_num = strip->gpio,
         .clk_src = RMT_CLK_SRC_DEFAULT,
         .resolution_hz = STATUS_LED_RMT_RESOLUTION_HZ,
-        .mem_block_symbols = 64,
+        .mem_block_symbols = SOC_RMT_MEM_WORDS_PER_CHANNEL,
         .trans_queue_depth = 1,
     };
     esp_err_t ret = rmt_new_tx_channel(&tx_config, &strip->channel);
@@ -1209,6 +1227,12 @@ esp_err_t status_led_init(void)
     if (s_mutex == NULL) {
         s_mutex = xSemaphoreCreateMutex();
         if (s_mutex == NULL) {
+            return ESP_ERR_NO_MEM;
+        }
+    }
+    if (s_tx_mutex == NULL) {
+        s_tx_mutex = xSemaphoreCreateMutex();
+        if (s_tx_mutex == NULL) {
             return ESP_ERR_NO_MEM;
         }
     }

@@ -13,8 +13,10 @@ typedef struct {
     int usb_det_level;
     int bat_chg_level;
     int bat_std_level;
+    int pwr_hold_level;
     const char *usb_det_policy;
     const char *charger_polarity_policy;
+    const char *pwr_hold_policy;
 } board_v2_power_input_snapshot_t;
 
 typedef struct {

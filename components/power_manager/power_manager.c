@@ -72,12 +72,14 @@ typedef struct {
     int usb_det_level;
     int bat_chg_level;
     int bat_std_level;
+    int pwr_hold_level;
     bool usb_power_present;
     bool external_power_present;
     bool charging;
     bool charge_full;
     const char *usb_det_policy;
     const char *charger_polarity_policy;
+    const char *pwr_hold_policy;
 } power_manager_power_source_snapshot_t;
 
 static SemaphoreHandle_t s_mutex;
@@ -96,6 +98,7 @@ static bool s_auto_shutdown_block_logged;
 static int s_usb_det_level = -1;
 static int s_bat_chg_level = -1;
 static int s_bat_std_level = -1;
+static int s_pwr_hold_level = -1;
 static uint32_t s_blockers;
 static uint64_t s_last_user_activity_ms;
 static uint64_t s_last_radio_activity_ms;
@@ -213,7 +216,8 @@ static uint32_t power_manager_encode_power_source_levels(const power_manager_pow
     }
     return power_manager_encode_gpio_level(source->usb_det_level) |
            (power_manager_encode_gpio_level(source->bat_chg_level) << 4) |
-           (power_manager_encode_gpio_level(source->bat_std_level) << 8);
+           (power_manager_encode_gpio_level(source->bat_std_level) << 8) |
+           (power_manager_encode_gpio_level(source->pwr_hold_level) << 12);
 }
 
 static uint32_t power_manager_encode_power_source_flags(
@@ -256,11 +260,13 @@ static void power_manager_read_power_source(power_manager_power_source_snapshot_
         .usb_det_level = board_snapshot.usb_det_level,
         .bat_chg_level = board_snapshot.bat_chg_level,
         .bat_std_level = board_snapshot.bat_std_level,
+        .pwr_hold_level = board_snapshot.pwr_hold_level,
         .usb_power_present = board_snapshot.usb_det_level > 0,
         .charging = board_snapshot.bat_chg_level == 0,
         .charge_full = board_snapshot.bat_std_level == 0,
         .usb_det_policy = board_snapshot.usb_det_policy,
         .charger_polarity_policy = board_snapshot.charger_polarity_policy,
+        .pwr_hold_policy = board_snapshot.pwr_hold_policy,
     };
     out_source->external_power_present =
         out_source->usb_power_present || out_source->charging || out_source->charge_full;
@@ -307,6 +313,41 @@ static void power_manager_log_power_source_diag(
         shutdown_blockers);
 }
 
+static void power_manager_log_power_transition_diag(
+    const power_manager_power_source_snapshot_t *source,
+    uint32_t idle_ms)
+{
+    if (source == NULL) {
+        return;
+    }
+
+    uint32_t raw_levels = power_manager_encode_power_source_levels(source);
+    diag_log(
+        DIAG_SRC_POWER,
+        DIAG_POWER_USB_DETECT,
+        DIAG_SEV_INFO,
+        power_manager_encode_gpio_level(source->usb_det_level),
+        source->usb_power_present ? 1u : 0u,
+        idle_ms,
+        raw_levels);
+    diag_log(
+        DIAG_SRC_POWER,
+        DIAG_POWER_CHARGE_STATE,
+        DIAG_SEV_INFO,
+        source->charging ? 1u : 0u,
+        source->charge_full ? 1u : 0u,
+        idle_ms,
+        raw_levels);
+    diag_log(
+        DIAG_SRC_POWER,
+        DIAG_POWER_HOLD_STATE,
+        DIAG_SEV_INFO,
+        source->pwr_hold_level > 0 ? 1u : 0u,
+        (uint32_t)BOARD_PINS_PWR_HOLD_IO,
+        power_manager_encode_gpio_level(source->pwr_hold_level),
+        0u);
+}
+
 static uint32_t power_manager_user_idle_ms_locked(uint64_t now_ms)
 {
     return power_manager_clamp_u64_to_u32(now_ms - s_last_user_activity_ms);
@@ -329,6 +370,7 @@ static bool power_manager_sync_power_source_locked(
                    s_usb_det_level != source->usb_det_level ||
                    s_bat_chg_level != source->bat_chg_level ||
                    s_bat_std_level != source->bat_std_level ||
+                   s_pwr_hold_level != source->pwr_hold_level ||
                    s_usb_power_present != source->usb_power_present ||
                    s_external_power_present != source->external_power_present ||
                    s_charging != source->charging ||
@@ -349,6 +391,7 @@ static bool power_manager_sync_power_source_locked(
     s_usb_det_level = source->usb_det_level;
     s_bat_chg_level = source->bat_chg_level;
     s_bat_std_level = source->bat_std_level;
+    s_pwr_hold_level = source->pwr_hold_level;
     s_usb_power_present = source->usb_power_present;
     s_external_power_present = source->external_power_present;
     s_charging = source->charging;
@@ -541,12 +584,14 @@ void power_manager_get_snapshot(power_manager_snapshot_t *snapshot)
     snapshot->usb_det_level = power_source.usb_det_level;
     snapshot->bat_chg_level = power_source.bat_chg_level;
     snapshot->bat_std_level = power_source.bat_std_level;
+    snapshot->pwr_hold_level = power_source.pwr_hold_level;
     snapshot->usb_power_present = power_source.usb_power_present;
     snapshot->external_power_present = power_source.external_power_present;
     snapshot->charging = power_source.charging;
     snapshot->charge_full = power_source.charge_full;
     snapshot->usb_det_policy = power_source.usb_det_policy;
     snapshot->charger_polarity_policy = power_source.charger_polarity_policy;
+    snapshot->pwr_hold_policy = power_source.pwr_hold_policy;
 
     if (s_mutex != NULL && xSemaphoreTake(s_mutex, portMAX_DELAY) == pdTRUE) {
         snapshot->state = s_state;
@@ -857,11 +902,12 @@ static void power_manager_evaluate(void)
         ESP_LOGI(
             TAG,
             "power source changed: usb_det=%s bat_chg=%s bat_std=%s"
-            " usb_power_present=%u charging=%u charge_full=%u external_power_present=%u"
-            " usb_policy=%s charger_policy=%s",
+            " pwr_hold=%s usb_power_present=%u charging=%u charge_full=%u external_power_present=%u"
+            " usb_policy=%s charger_policy=%s pwr_hold_policy=%s",
             power_manager_gpio_level_name(power_source.usb_det_level),
             power_manager_gpio_level_name(power_source.bat_chg_level),
             power_manager_gpio_level_name(power_source.bat_std_level),
+            power_manager_gpio_level_name(power_source.pwr_hold_level),
             power_source.usb_power_present ? 1u : 0u,
             power_source.charging ? 1u : 0u,
             power_source.charge_full ? 1u : 0u,
@@ -869,6 +915,9 @@ static void power_manager_evaluate(void)
             power_source.usb_det_policy != NULL ? power_source.usb_det_policy : "unknown",
             power_source.charger_polarity_policy != NULL
                 ? power_source.charger_polarity_policy
+                : "unknown",
+            power_source.pwr_hold_policy != NULL
+                ? power_source.pwr_hold_policy
                 : "unknown");
         power_manager_log_power_source_diag(
             DIAG_SEV_INFO,
@@ -876,6 +925,7 @@ static void power_manager_evaluate(void)
             user_idle_ms,
             shutdown_blockers,
             automatic_shutdown_blocked);
+        power_manager_log_power_transition_diag(&power_source, user_idle_ms);
     }
     if (ble_changed) {
         ESP_LOGI(TAG, "BLE connection state observed: connected=%u", s_ble_connected ? 1u : 0u);
@@ -1184,8 +1234,8 @@ static void power_manager_print_status(void)
         " user_idle_ms=%" PRIu32 " radio_idle_ms=%" PRIu32
         " ble_connected=%u automatic_shutdown_blocked_by_external_power=%u"
         " external_power_present=%u usb_power_present=%u charging=%u charge_full=%u"
-        " usb_det_level=%s bat_chg_level=%s bat_std_level=%s"
-        " usb_det_policy=%s charger_polarity=%s"
+        " usb_det_level=%s bat_chg_level=%s bat_std_level=%s pwr_hold_level=%s"
+        " usb_det_policy=%s charger_polarity=%s pwr_hold_policy=%s"
         " battery_mv=%" PRIu32 " battery_level=%u battery_valid=%u"
         " last_shutdown_reason=%s last_shutdown_idle_ms=%" PRIu32
         " last_shutdown_blockers=0x%08" PRIx32 " guard=%u audio_idle_ms=%" PRIu32
@@ -1210,8 +1260,10 @@ static void power_manager_print_status(void)
         power_manager_gpio_level_name(snapshot.usb_det_level),
         power_manager_gpio_level_name(snapshot.bat_chg_level),
         power_manager_gpio_level_name(snapshot.bat_std_level),
+        power_manager_gpio_level_name(snapshot.pwr_hold_level),
         snapshot.usb_det_policy != NULL ? snapshot.usb_det_policy : "unknown",
         snapshot.charger_polarity_policy != NULL ? snapshot.charger_polarity_policy : "unknown",
+        snapshot.pwr_hold_policy != NULL ? snapshot.pwr_hold_policy : "unknown",
         snapshot.battery_mv,
         snapshot.battery_level_percent,
         snapshot.battery_valid ? 1u : 0u,

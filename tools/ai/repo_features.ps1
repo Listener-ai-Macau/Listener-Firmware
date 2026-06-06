@@ -24,7 +24,7 @@ function New-FeatureSnapshot {
         stack = @(
             "ESP-IDF C firmware on ESP32-S3",
             "NimBLE BLE stack",
-            "FreeRTOS tasks, GPIO polling, I2S microphone capture, flash-backed diagnostics"
+            "FreeRTOS tasks, GPIO polling, digital microphone capture, flash-backed diagnostics"
         )
         responsibilities = @(
             "Expose BLE HID keyboard behavior for the physical keys.",
@@ -38,28 +38,28 @@ function New-FeatureSnapshot {
             "BLE HID keyboard fallback for logical KEY1-KEY4 custom keys using safe non-text gestures: single-click F13-F16, double-click F17-F20, and long-press F21-F24.",
             "BLE audio upload path for 16 kHz microphone audio sessions consumed by Listener-Type, including executable transport invariants for epoch, replay, backpressure, and stale GATT events.",
             "Voice key control for start/stop recording flow, including serial VREC commands.",
-            "diag_log flash ring buffer for boot, BLE, audio, health, and error events that survive reboot.",
+            "diag_log flash ring buffer for boot, BLE, audio, health, power, board, status LED, WARN, and ERROR events that survive reboot, with runtime INFO source masks for high-rate input and audio sources.",
             "BLE diagnostic log GATT export service for paginated CRC-tagged firmware log pulls by desktop diagnostics.",
-            "AI-readable diag_log JSON bundle tooling for deterministic event, argument, severity, boot-segment, and summary fields.",
+            "AI-readable diag_log JSON bundle tooling for deterministic event, argument, severity, boot-segment, source-count, warning/error, KEY1-KEY4, and EC11 input summary fields.",
             "Firmware OTA v1 using ESP-IDF otadata/ota_0/ota_1 slots, partition-derived flash offsets, BLE GATT control/data bridge, official rollback, pending verify, blockers, and diag_log OTA events.",
             "system_health heartbeat and resource checks for heap, task, BLE, and disconnect conditions.",
             "V2 N16R8 board profile with 16 MB flash, 8 MB Octal PSRAM, EC11 push recording control on GPIO18, KEY1/2/3/4 HID gesture map on GPIO38/39/40/41, four-zone WS2812 resources, and static checks rejecting stale N4 defaults.",
             "power_manager low-power state machine for connected idle, disconnected idle, charge-aware automatic hardware-shutdown blocking, and long-idle PWR_HOLD/GPIO11 hardware shutdown with reset/cold-boot diagnostics.",
             "V2 board diagnostics for ~BOARD:STATUS and ~LED:STATUS, including USB/charger status, battery ADC, battery-side TPS63020/SY7088 input branch current telemetry, LED resource mapping, and hardware blocker policy strings.",
-            "V2 current telemetry and low-power report tooling for TPS63020_I_ADC/GPIO10, SY7088_I_ADC/GPIO9, and ~POWER:STATUS hardware-shutdown/PWR_HOLD evidence; readings use reconstructed battery voltage and do not drive firmware power-control decisions.",
-            "V2 safety gates keep real PWR_HOLD/GPIO11 power-off validation in hardware-gated workflow evidence, LED calibration commands blocked until VDD_LED sign-off, and CLK/GPIO48 DOUT/GPIO47 microphone capture degraded until validated.",
+            "V2 current telemetry and low-power report tooling for TPS63020_I_ADC/GPIO10, SY7088_I_ADC/GPIO9, ~POWER:STATUS hardware-shutdown/PWR_HOLD evidence, and USB/charging/PWR_HOLD transition diagnostics; readings use reconstructed battery voltage and do not drive firmware power-control decisions.",
+            "V2 safety gates keep real PWR_HOLD/GPIO11 power-off validation in hardware-gated workflow evidence and LED calibration commands blocked until VDD_LED sign-off; the N16R8 validation build enables SPH0655 PDM microphone capture on CLK/GPIO48 and DOUT/GPIO47 for A1/A2.",
             "POST and degraded boot reporting for NVS, BLE, audio, heap, and board assumptions."
         )
         key_paths = @(
             [ordered]@{ path = "main/"; purpose = "Application startup, POST, BLE/audio/keyboard initialization." },
             [ordered]@{ path = "components/keyboard/"; purpose = "Physical key scanning and keyboard events." },
             [ordered]@{ path = "components/hid_keyboard/"; purpose = "Cross-platform HID keyboard abstraction." },
-            [ordered]@{ path = "components/diag_log/"; purpose = "Diagnostic event schema and ring-buffer API." },
-            [ordered]@{ path = "components/power_manager/"; purpose = "Low-power state machine, shutdown blockers, PWR_HOLD/GPIO11 hardware shutdown, and reset/status diagnostics." },
+            [ordered]@{ path = "components/diag_log/"; purpose = "Diagnostic event schema, source mask API, runtime source commands, and ring-buffer API." },
+            [ordered]@{ path = "components/power_manager/"; purpose = "Low-power state machine, shutdown blockers, PWR_HOLD/GPIO11 hardware shutdown, transition diagnostics, and reset/status diagnostics." },
             [ordered]@{ path = "components/battery_monitor/"; purpose = "Shared battery voltage and level reading for HID and power diagnostics." },
             [ordered]@{ path = "docs/features/low_power_wake_policy.md"; purpose = "Firmware long-idle hardware shutdown contract for PWR_HOLD/GPIO11 and external-power blockers." },
             [ordered]@{ path = "tools/decode_diag_log.py"; purpose = "Offline decoder for ~DIAGLOG JSONL into stable AI-readable JSON bundles." },
-            [ordered]@{ path = "tools/collect_ai_diagnostics.ps1"; purpose = "Collect recent serial diag_log events or decode saved JSONL into raw and decoded artifacts under tests/artifacts." },
+            [ordered]@{ path = "tools/collect_ai_diagnostics.ps1"; purpose = "Collect bounded recent serial diag_log events, optionally enable high-rate sources temporarily, save final source state, or decode saved JSONL into raw and decoded artifacts under tests/artifacts." },
             [ordered]@{ path = "tools/collect_v2_current_telemetry.ps1"; purpose = "V2 current telemetry helper for battery-side TPS63020/SY7088 branch measurements." },
             [ordered]@{ path = "ports/esp32/ble_diag_log/"; purpose = "BLE GATT service for paginated firmware diag_log export with per-chunk CRC." },
             [ordered]@{ path = "components/firmware_ota/"; purpose = "ESP-IDF OTA manager, rollback/pending-verify handling, blockers, and OTA serial diagnostics." },
@@ -68,14 +68,14 @@ function New-FeatureSnapshot {
             [ordered]@{ path = "components/voice_recording_control/"; purpose = "Voice key state machine and serial control contract." },
             [ordered]@{ path = "ports/esp32/ble_hid*"; purpose = "ESP32 BLE HID service, GAP, pairing, and host connection." },
             [ordered]@{ path = "ports/esp32/ble_audio_stream*"; purpose = "ESP32 BLE audio transport and notifications." },
-            [ordered]@{ path = "ports/esp32/audio_capture*"; purpose = "I2S microphone capture path." },
+            [ordered]@{ path = "ports/esp32/audio_capture*"; purpose = "Digital microphone capture path, including V2 PDM RX." },
             [ordered]@{ path = "partitions.csv"; purpose = "V2 16 MB flash layout including OTA app slots and diag_log partition." },
             [ordered]@{ path = "tools/verify_v2_board_profile_static.ps1"; purpose = "Static V2 board profile, memory, pin, LED, current telemetry, partition, and package identity check." },
             [ordered]@{ path = "tools/"; purpose = "Build, flash, monitor, BLE, audio, and diagnostic validation scripts." }
         )
         hardware_assumptions = @(
             "Default active board is ESP32-S3-WROOM-1-N16R8 with 16 MB flash and 8 MB Octal PSRAM.",
-            "Microphone path is SPH0645-style I2S digital audio at the product capture rate.",
+            "Microphone path captures product-rate PCM from the active digital mic path; N16R8 validation builds use ESP-IDF PDM RX on CLK/GPIO48 and DOUT/GPIO47.",
             "Physical key GPIO mapping and voice key GPIO live in board pin configuration, not desktop code.",
             "V2 EC11-KEY/GPIO18 controls recording; KEY1/KEY2/KEY3/KEY4 use GPIO38/GPIO39/GPIO40/GPIO41 and fall back to F13-F24 gesture usages; EC11 encoder uses GPIO42/GPIO2/GPIO18.",
             "V2 long-idle shutdown is firmware-controlled through PWR_HOLD/GPIO11; real power-off, short-press cold boot, and charging-blocker behavior require hardware-gated validation.",
@@ -94,7 +94,7 @@ function New-FeatureSnapshot {
             "pwsh -NoProfile -File .\tools\build.ps1",
             "pwsh -NoProfile -File .\tools\flash.ps1 -Port <COMx>",
             "pwsh -NoProfile -File .\tools\monitor.ps1 -Port <COMx>",
-            "pwsh -NoProfile -File .\tools\dump_diag_log.ps1 -Port <COMx>",
+            "pwsh -NoProfile -File .\tools\dump_diag_log.ps1 -Port <COMx> -Count 200",
             "pwsh -NoProfile -File .\tools\verify_v2_board_profile_static.ps1",
             "pwsh -NoProfile -File .\tools\verify_power_manager_static.ps1",
             "pwsh -NoProfile -File .\tools\verify_charging_awake_policy_static.ps1",
@@ -104,6 +104,7 @@ function New-FeatureSnapshot {
             "python .\tools\verify_ble_diag_log_gatt_contract.py",
             "pwsh -NoProfile -File .\tools\verify_ble_diag_log_audio_concurrency.ps1 -Port <COMx> -BluetoothAddress <addr>",
             "pwsh -NoProfile -File .\tools\collect_ai_diagnostics.ps1 -InputJsonl <diag_log.jsonl> -OutputDir .\tests\artifacts\ai_diagnostics",
+            "pwsh -NoProfile -File .\tools\collect_ai_diagnostics.ps1 -Port <COMx> -RecentEventCount 200 -EnableSource keyboard,voice_key -Source keyboard,voice_key -OutputDir .\tests\artifacts\ai_diagnostics",
             "pwsh -NoProfile -File .\tools\verify_ble_hid.ps1",
             "pwsh -NoProfile -File .\tools\verify_physical_custom_key_hid.ps1 -Port <COMx>",
             "pwsh -NoProfile -File .\tools\verify_audio_ble_product_matrix.ps1",
