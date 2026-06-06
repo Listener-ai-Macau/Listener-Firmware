@@ -50,6 +50,7 @@
 #define DIAG_KBD_EC11_DETENT   4   /* a1=direction(1=CW,2=CCW), a2=detent_count, a3=0, a4=0 */
 #define DIAG_KBD_QUEUE_DROP    5   /* a1=key_usage_or_ascii, a2=queue_depth, a3=0, a4=0 */
 #define DIAG_KBD_CUSTOM_KEY    6   /* a1=logical_key(1=KEY1..4=KEY4), a2=phase(1=press,2=release,3=single,4=double,5=long), a3=hid_usage, a4=esp_err */
+#define DIAG_KBD_INPUT_DEBUG   7   /* a1=kind(1=key_raw,2=key_stable,3=ec11_transition,4=ec11_invalid,5=ec11_partial,6=ec11_dispatch), a2=key_or_state_or_direction, a3=level_or_delta_or_action, a4=detail_or_usage */
 
 /* BLE HID events (DIAG_SRC_BLE_HID) */
 #define DIAG_BLE_CONNECT       1   /* a1=connected, a2=heap_kb, a3=disconnect_count, a4=0 */
@@ -100,6 +101,7 @@
 #define DIAG_VKEY_PRESS        1   /* a1=type(1=single_click_toggle,2=double_click_recovery,3=long_press_ignored), a2=detail_ms, a3=0, a4=0 */
 #define DIAG_VKEY_QUEUE_DROP   2   /* a1=type(1=single_click_toggle,2=double_click_recovery), a2=reason(1=no_queue,2=queue_full), a3=0, a4=0 */
 #define DIAG_VKEY_EXPANDER     3   /* a1=status(0=fail,1=degraded_fallback), a2=esp_err, a3=0, a4=0 */
+#define DIAG_VKEY_INPUT_DEBUG  4   /* a1=kind(1=raw,2=stable), a2=source(1=direct_gpio,2=legacy_io0_4,3=legacy_io0_5), a3=raw_high, a4=pressed_or_stable_high */
 
 /* Self-test events (DIAG_SRC_SELF_TEST) */
 #define DIAG_ST_POST_RESULT    1   /* a1=nvs_ok, a2=spiram_ok, a3=heap_free_kb, a4=critical_ok */

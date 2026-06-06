@@ -60,18 +60,26 @@
 #define VOICE_KEY_INPUT_DIRECT_GPIO    BOARD_PINS_EC11_KEY_IO
 #define VOICE_KEY_INPUT_DIRECT_LABEL   "ec11_key.gpio11"
 #endif
-#define VOICE_KEY_INPUT_POLL_MS        (20)
-#define VOICE_KEY_INPUT_DEBOUNCE_THRESHOLD (3)
+#define VOICE_KEY_INPUT_POLL_MS        (10)
+#define VOICE_KEY_INPUT_DEBOUNCE_MS    (30)
+#define VOICE_KEY_INPUT_DEBOUNCE_THRESHOLD \
+    ((VOICE_KEY_INPUT_DEBOUNCE_MS + VOICE_KEY_INPUT_POLL_MS - 1) / VOICE_KEY_INPUT_POLL_MS)
 #define VOICE_KEY_INPUT_EVENT_QUEUE_LENGTH (8)
 #define VOICE_KEY_INPUT_CLICK_MAX_MS (700)
 #define VOICE_KEY_INPUT_DOUBLE_CLICK_WINDOW_MS (200)
 #define VOICE_KEY_INPUT_LONG_PRESS_IGNORE_MS (1200)
 #define VOICE_KEY_INPUT_RECOVERY_IDLE_GUARD_MS (2000)
+#define VOICE_KEY_INPUT_DEBUG_RAW 1u
+#define VOICE_KEY_INPUT_DEBUG_STABLE 2u
+#define VOICE_KEY_INPUT_DEBUG_SOURCE_DIRECT_GPIO 1u
+#define VOICE_KEY_INPUT_DEBUG_SOURCE_LEGACY_IO0_4 2u
+#define VOICE_KEY_INPUT_DEBUG_SOURCE_LEGACY_IO0_5 3u
 
 static const char *TAG = "voice_key_input";
 
 typedef struct {
     const char *label;
+    uint32_t debug_source;
     bool active_low;
     bool idle_level_valid;
     bool idle_level_high;
@@ -114,17 +122,37 @@ static const char *s_selected_bus_label;
 static bool s_expander_available;
 static voice_key_button_state_t s_expander_io4_state = {
     .label = "xl9555.io0_4",
+    .debug_source = VOICE_KEY_INPUT_DEBUG_SOURCE_LEGACY_IO0_4,
     .active_low = true,
 };
 static voice_key_button_state_t s_expander_io5_state = {
     .label = "xl9555.io0_5",
+    .debug_source = VOICE_KEY_INPUT_DEBUG_SOURCE_LEGACY_IO0_5,
     .active_low = true,
 };
 #endif
 static voice_key_button_state_t s_direct_gpio_state = {
     .label = VOICE_KEY_INPUT_DIRECT_LABEL,
+    .debug_source = VOICE_KEY_INPUT_DEBUG_SOURCE_DIRECT_GPIO,
     .active_low = true,
 };
+
+static void voice_key_input_debug_log(
+    uint32_t kind,
+    const voice_key_button_state_t *button,
+    bool raw_high,
+    uint32_t detail)
+{
+    if (button == NULL || !diag_log_input_debug_enabled()) {
+        return;
+    }
+
+    diag_log(DIAG_SRC_VOICE_KEY, DIAG_VKEY_INPUT_DEBUG, DIAG_SEV_INFO,
+             kind,
+             button->debug_source,
+             raw_high ? 1u : 0u,
+             detail);
+}
 
 #if VOICE_KEY_INPUT_ENABLE_LEGACY_EXPANDER
 /* Legacy board compatibility only: old hardware used a TCA9555/XL9555 expander
@@ -248,6 +276,11 @@ static void voice_key_input_handle_button_sample(voice_key_button_state_t *butto
             button->stable_count++;
         }
     } else {
+        voice_key_input_debug_log(
+            VOICE_KEY_INPUT_DEBUG_RAW,
+            button,
+            raw_high,
+            button->stable_level_high ? 1u : 0u);
         button->last_sample_high = raw_high;
         button->stable_count = 1;
         return;
@@ -260,6 +293,12 @@ static void voice_key_input_handle_button_sample(voice_key_button_state_t *butto
     if (raw_high != button->stable_level_high) {
         button->stable_level_high = raw_high;
         ESP_LOGI(TAG, "recording gesture key level changed: source=%s raw_high=%d", button->label, raw_high ? 1 : 0);
+        bool pressed = raw_high != button->idle_level_high;
+        voice_key_input_debug_log(
+            VOICE_KEY_INPUT_DEBUG_STABLE,
+            button,
+            raw_high,
+            pressed ? 1u : 0u);
     }
 
     bool pressed = raw_high != button->idle_level_high;
@@ -532,11 +571,12 @@ esp_err_t voice_key_input_start(void)
     s_started = true;
     ESP_LOGI(
         TAG,
-        "voice key ready: source=%s gpio=%d active_low=1 legacy_expander=%d poll_ms=%d debounce_samples=%d",
+        "voice key ready: source=%s gpio=%d active_low=1 legacy_expander=%d poll_ms=%d debounce_ms=%d debounce_samples=%d",
         VOICE_KEY_INPUT_DIRECT_LABEL,
         VOICE_KEY_INPUT_DIRECT_GPIO,
         VOICE_KEY_INPUT_ENABLE_LEGACY_EXPANDER,
         VOICE_KEY_INPUT_POLL_MS,
+        VOICE_KEY_INPUT_DEBOUNCE_MS,
         VOICE_KEY_INPUT_DEBOUNCE_THRESHOLD);
     ESP_LOGI(
         TAG,

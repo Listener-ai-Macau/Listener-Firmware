@@ -11,6 +11,9 @@
 #include "diag_log.h"
 #include "esp_err.h"
 #include "esp_log.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
+#include "watchdog_platform.h"
 
 static const char *TAG = "board";
 
@@ -121,6 +124,83 @@ static int board_read_gpio_level(gpio_num_t gpio)
         return -1;
     }
     return gpio_get_level(gpio);
+}
+
+static bool board_gpio_scan_is_valid(gpio_num_t gpio)
+{
+    if (gpio == GPIO_NUM_NC || gpio < 0 || gpio >= GPIO_NUM_MAX) {
+        return false;
+    }
+#ifdef GPIO_IS_VALID_GPIO
+    return GPIO_IS_VALID_GPIO(gpio);
+#else
+    return true;
+#endif
+}
+
+static const char *board_gpio_scan_label(gpio_num_t gpio)
+{
+    if (gpio == BOARD_PINS_KEY1_IO) {
+        return "KEY1";
+    }
+    if (gpio == BOARD_PINS_KEY2_IO) {
+        return "KEY2";
+    }
+    if (gpio == BOARD_PINS_KEY3_IO) {
+        return "KEY3";
+    }
+    if (gpio == BOARD_PINS_KEY4_IO) {
+        return "KEY4";
+    }
+    if (gpio == BOARD_PINS_EC11_A_IO) {
+        return "EC11_A";
+    }
+    if (gpio == BOARD_PINS_EC11_B_IO) {
+        return "EC11_B";
+    }
+    if (gpio == BOARD_PINS_EC11_KEY_IO) {
+        return "EC11_KEY";
+    }
+    if (gpio == BOARD_PINS_USB_DET_IO) {
+        return "USB_DET";
+    }
+    if (gpio == BOARD_PINS_BAT_CHG_IO) {
+        return "BAT_CHG";
+    }
+    if (gpio == BOARD_PINS_BAT_STD_IO) {
+        return "BAT_STD";
+    }
+    if (gpio == BOARD_PINS_BAT_V_ADC_IO) {
+        return "BAT_V_ADC";
+    }
+    if (gpio == BOARD_PINS_TPS63020_I_ADC_IO) {
+        return "TPS_I_ADC";
+    }
+    if (gpio == BOARD_PINS_SY7088_I_ADC_IO) {
+        return "SY7088_I_ADC";
+    }
+    if (gpio == BOARD_PINS_I2S_BCLK_IO) {
+        return "MIC_CLK";
+    }
+    if (gpio == BOARD_PINS_I2S_DIN_IO) {
+        return "MIC_DOUT";
+    }
+    if (gpio == BOARD_PINS_RGB_STATUS_IO) {
+        return "RGB_STATUS";
+    }
+    if (gpio == BOARD_PINS_RGB_EC11_IO) {
+        return "RGB_EC11";
+    }
+    if (gpio == BOARD_PINS_RGB_KEY_IO) {
+        return "RGB_KEY";
+    }
+    if (gpio == BOARD_PINS_RGB_EDGE_IO) {
+        return "RGB_EDGE";
+    }
+    if (gpio == BOARD_PINS_PWR_HOLD_IO) {
+        return "PWR_HOLD";
+    }
+    return "-";
 }
 
 void board_get_v2_power_input_snapshot(board_v2_power_input_snapshot_t *out_snapshot)
@@ -265,6 +345,97 @@ static void board_print_gpio_status(void)
     fflush(stdout);
 }
 
+static void board_print_gpio_scan_mask(const char *prefix, uint64_t mask)
+{
+    printf("%s", prefix);
+    for (int gpio = 0; gpio < GPIO_NUM_MAX; ++gpio) {
+        if ((mask & (1ULL << (uint32_t)gpio)) == 0) {
+            continue;
+        }
+        printf(" gpio%d:%s", gpio, board_gpio_scan_label((gpio_num_t)gpio));
+    }
+    printf("\n");
+}
+
+static void board_print_gpio_scan(void)
+{
+    enum {
+        sample_count = 250,
+        interval_ms = 20,
+    };
+    int previous_levels[GPIO_NUM_MAX];
+    bool valid_gpios[GPIO_NUM_MAX];
+    memset(previous_levels, 0xff, sizeof(previous_levels));
+    memset(valid_gpios, 0, sizeof(valid_gpios));
+
+    uint64_t valid_mask = 0;
+    for (int gpio = 0; gpio < GPIO_NUM_MAX; ++gpio) {
+        gpio_num_t gpio_num = (gpio_num_t)gpio;
+        valid_gpios[gpio] = board_gpio_scan_is_valid(gpio_num);
+        if (valid_gpios[gpio]) {
+            valid_mask |= 1ULL << (uint32_t)gpio;
+        }
+    }
+
+    printf("~BOARD:GPIO_SCAN begin samples=%u interval_ms=%u mode=read_as_configured reconfigure=0 valid_mask=0x%016llx\n",
+           (unsigned)sample_count,
+           (unsigned)interval_ms,
+           (unsigned long long)valid_mask);
+    fflush(stdout);
+
+    uint64_t final_low_mask = 0;
+    uint64_t change_mask = 0;
+    for (unsigned sample = 0; sample < sample_count; ++sample) {
+        watchdog_platform_feed_current_task();
+        uint64_t low_mask = 0;
+        uint64_t high_mask = 0;
+        for (int gpio = 0; gpio < GPIO_NUM_MAX; ++gpio) {
+            if (!valid_gpios[gpio]) {
+                continue;
+            }
+            int level = board_read_gpio_level((gpio_num_t)gpio);
+            if (level == 0) {
+                low_mask |= 1ULL << (uint32_t)gpio;
+            } else if (level > 0) {
+                high_mask |= 1ULL << (uint32_t)gpio;
+            }
+
+            if (sample == 0) {
+                previous_levels[gpio] = level;
+                continue;
+            }
+            if (level != previous_levels[gpio]) {
+                previous_levels[gpio] = level;
+                change_mask |= 1ULL << (uint32_t)gpio;
+                printf("~BOARD:GPIO_SCAN_CHANGE sample=%u elapsed_ms=%u gpio=%d label=%s level=%s\n",
+                       sample,
+                       sample * interval_ms,
+                       gpio,
+                       board_gpio_scan_label((gpio_num_t)gpio),
+                       board_gpio_level_name(level));
+                fflush(stdout);
+            }
+        }
+        if (sample == 0) {
+            printf("~BOARD:GPIO_SCAN_INITIAL low_mask=0x%016llx high_mask=0x%016llx\n",
+                   (unsigned long long)low_mask,
+                   (unsigned long long)high_mask);
+            board_print_gpio_scan_mask("~BOARD:GPIO_SCAN_INITIAL_LOW", low_mask);
+            fflush(stdout);
+        }
+        final_low_mask = low_mask;
+        vTaskDelay(pdMS_TO_TICKS(interval_ms));
+    }
+    watchdog_platform_feed_current_task();
+
+    printf("~BOARD:GPIO_SCAN done change_mask=0x%016llx final_low_mask=0x%016llx\n",
+           (unsigned long long)change_mask,
+           (unsigned long long)final_low_mask);
+    board_print_gpio_scan_mask("~BOARD:GPIO_SCAN_CHANGED", change_mask);
+    board_print_gpio_scan_mask("~BOARD:GPIO_SCAN_FINAL_LOW", final_low_mask);
+    fflush(stdout);
+}
+
 static void board_print_status(void)
 {
     battery_monitor_status_t battery = {0};
@@ -388,6 +559,8 @@ void board_print_help(void)
         "Send ~VREC:RECOVERY to clear pairing/session state over USB.\n"
         "Board diagnostics: ~BOARD:STATUS reports V2 pin, USB, charger, battery, PWR_HOLD/GPIO46, mic, reserved MSPI, and LED resource status.\n"
         "Board GPIO diagnostics: ~BOARD:GPIO reports raw KEY1-KEY4 and EC11 A/B/key levels.\n"
+        "Board GPIO scan: ~BOARD:GPIO-SCAN samples all valid GPIO levels without reconfiguring pins and prints changed GPIOs.\n"
+        "Input flash debug: ~DIAGLOG:INPUTDBG:ON records high-volume key/EC11 debug events until ~DIAGLOG:INPUTDBG:OFF or reboot.\n"
         "Power diagnostics: ~POWER:STATUS reports state/blockers/battery/wake policy, ~POWER:SLEEP requests manual sleep.\n"
         "LED diagnostics: ~LED:STATUS reports four WS2812 groups; ~LED:TEST:RGBW and ~LED:TEST:MAP stay brightness-gated until VDD_LED sign-off.\n"
         "Watchdog diagnostics: ~WDT:STATUS reports config, ~WDT:DEADLOCK intentionally triggers Task WDT reset.\n"
@@ -412,6 +585,10 @@ bool board_consume_usb_command(const char *line)
         }
         if (strcmp(command, "GPIO") == 0) {
             board_print_gpio_status();
+            return true;
+        }
+        if (strcmp(command, "GPIO-SCAN") == 0) {
+            board_print_gpio_scan();
             return true;
         }
         ESP_LOGW(TAG, "BOARD: unknown command: %s", command);

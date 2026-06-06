@@ -64,6 +64,8 @@ static uint32_t s_capacity_events;
 static bool s_initialized;
 static bool s_dumping;
 static portMUX_TYPE s_dumping_lock = portMUX_INITIALIZER_UNLOCKED;
+static bool s_input_debug_enabled;
+static portMUX_TYPE s_input_debug_lock = portMUX_INITIALIZER_UNLOCKED;
 
 static void diag_log_platform_set_dumping(bool dumping)
 {
@@ -78,6 +80,22 @@ static bool diag_log_platform_get_dumping(void)
     bool dumping = s_dumping;
     portEXIT_CRITICAL(&s_dumping_lock);
     return dumping;
+}
+
+bool diag_log_input_debug_enabled(void)
+{
+    portENTER_CRITICAL(&s_input_debug_lock);
+    bool enabled = s_input_debug_enabled;
+    portEXIT_CRITICAL(&s_input_debug_lock);
+    return enabled;
+}
+
+void diag_log_set_input_debug_enabled(bool enabled)
+{
+    portENTER_CRITICAL(&s_input_debug_lock);
+    s_input_debug_enabled = enabled;
+    portEXIT_CRITICAL(&s_input_debug_lock);
+    ESP_LOGW(TAG, "DIAGLOG INPUTDBG: %s", enabled ? "ON" : "OFF");
 }
 
 #define DIAG_USB_CMD_PREFIX "DIAGLOG:"
@@ -657,6 +675,18 @@ bool diag_log_consume_usb_command(const char *line)
     }
     if (strcmp(cmd_buffer, "CLEAR") == 0) {
         diag_log_platform_clear();
+        return true;
+    }
+    if (strcmp(cmd_buffer, "INPUTDBG") == 0 || strcmp(cmd_buffer, "INPUTDBG:STATUS") == 0) {
+        ESP_LOGI(TAG, "DIAGLOG INPUTDBG: %s", diag_log_input_debug_enabled() ? "ON" : "OFF");
+        return true;
+    }
+    if (strcmp(cmd_buffer, "INPUTDBG:ON") == 0) {
+        diag_log_set_input_debug_enabled(true);
+        return true;
+    }
+    if (strcmp(cmd_buffer, "INPUTDBG:OFF") == 0) {
+        diag_log_set_input_debug_enabled(false);
         return true;
     }
     if (strncmp(cmd_buffer, "LAST:", 5) == 0) {
