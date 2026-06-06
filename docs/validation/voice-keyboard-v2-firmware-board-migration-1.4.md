@@ -5,6 +5,7 @@ Date: 2026-06-06
 Hardware resources used: COM6, BLE-A4CB8FF459A6
 Artifact root: `tests/artifacts/voice-keyboard-v2-firmware-board-migration-1.4-oai2/20260606-182357`
 Follow-up artifact root: `tests/artifacts/voice-keyboard-v2-firmware-board-migration-1.4-oai2/20260606-1909-user-led-keys`
+Latest V2 pin recheck artifact root: `tests/artifacts/voice-keyboard-v2-firmware-board-migration-1.4-oai2/20260606-ec11-gpio11-key-recheck`
 
 Status: blocked, do not submit from this evidence alone.
 
@@ -16,7 +17,8 @@ The automated and non-destructive hardware checks found one real firmware defect
 - The fix uses `SOC_RMT_MEM_WORDS_PER_CHANNEL` and serializes LED frame transmission with a TX mutex.
 - `tools/verify_status_led_static.py` now rejects the 64-symbol regression.
 - `tools/flash.ps1` now honors `LISTENER_IDF_BUILD_DIR`, which lets the plan's flash validation run from this long worktree path.
-- Follow-up user-observed LED/key testing added `~BOARD:GPIO`, a read-only raw GPIO diagnostic for KEY1-KEY4 and EC11 A/B/key. It reports the V2 wake candidate as `EC11_KEY/GPIO18`.
+- Follow-up user-observed LED/key testing added `~BOARD:GPIO`, a read-only raw GPIO diagnostic for KEY1-KEY4 and EC11 A/B/key.
+- Latest V2 hardware repository recheck found the firmware was still using an obsolete EC11 push/wake mapping. Current hardware docs/schematic/PCB expose `EC11-KEY_IO` on `GPIO11` and `PWR_HOLD` on `GPIO46`; this branch now matches that mapping.
 
 Do not mark 1.4 complete yet. Remaining acceptance needs external physical evidence: human visual confirmation of RGBW color/order and LED physical order, physical EC11 and KEY1-KEY4 operation, meter/fixture measurement for 3.3V and VDD_LED, and an OTA/sleep/wake/watchdog/recovery closure decision.
 
@@ -39,6 +41,9 @@ Results:
 | OTA GATT discovery after fix | BLOCKED/FAIL on Windows WinRT uncached discovery | `verify_ble_ota_gatt_discovery_after_fix_with_lock.txt`, `verify_ble_ota_gatt_discovery_after_fix_skip_prime_with_lock.txt`, `probe_ble_ota_gatt_after_fix_with_lock.txt` |
 | Follow-up LED and GPIO diagnostic flash | PASS, diagnostic command added and flashed | `flash_board_gpio_diag_with_lock.txt` |
 | Follow-up live key/EC11 GPIO polling | BLOCKED/FAIL, no physical GPIO change observed | `live_board_gpio_key_ec11_poll_60s_with_lock.txt` |
+| Latest V2 hardware pin-map recheck | PASS, latest hardware repo/PDF/SchDoc/PCB tokens confirm KEY1-4 GPIO38-41, EC11 A/B GPIO42/GPIO2, EC11 key GPIO11, PWR_HOLD GPIO46, EC11 RGB GPIO5 | local hardware repo HEAD `5a16e2e`, origin/master `234304b` |
+| Flash after EC11 GPIO11/PWR_HOLD GPIO46 correction | PASS | `flash_ec11_gpio11_with_lock.txt` |
+| Live key/EC11 GPIO polling after EC11 GPIO11 correction | BLOCKED/FAIL, no physical GPIO change observed across 90s and 180s locked captures | `serial_gpio_recheck_90s_with_lock.txt`, `serial_gpio_recheck_180s_with_lock.txt` |
 
 Static/build checks run after the fix:
 
@@ -51,6 +56,13 @@ Static/build checks run after the fix:
 - PASS after `~BOARD:GPIO` addition: `python tools\verify_status_led_static.py`
 - PASS after `~BOARD:GPIO` addition: `pwsh -NoProfile -File tools\verify_power_manager_static.ps1`
 - PASS after `~BOARD:GPIO` addition: `LISTENER_IDF_BUILD_DIR=%TEMP%\listener-idf-build-v2-1-4-oai2; pwsh -NoProfile -File tools/build.ps1 -Target esp32s3`
+- PASS after EC11 GPIO11/PWR_HOLD GPIO46 correction: `pwsh -NoProfile -File tools\verify_v2_board_profile_static.ps1`
+- PASS after EC11 GPIO11/PWR_HOLD GPIO46 correction: `python tools\verify_power_manager_static.py`
+- PASS after EC11 GPIO11/PWR_HOLD GPIO46 correction: `pwsh -NoProfile -File tools\ai\repo_features.ps1 -Check`
+- PASS after EC11 GPIO11/PWR_HOLD GPIO46 correction: `python tools\verify_status_led_static.py`
+- PASS after EC11 GPIO11/PWR_HOLD GPIO46 correction: `pwsh -NoProfile -File tools\verify_charging_awake_policy_static.ps1`
+- PASS after EC11 GPIO11/PWR_HOLD GPIO46 correction: `git diff --check`
+- PASS after EC11 GPIO11/PWR_HOLD GPIO46 correction: `LISTENER_IDF_BUILD_DIR=%TEMP%\listener-idf-build-v2-1-4-oai2; pwsh -NoProfile -File tools/build.ps1 -Target esp32s3`
 
 ## Observed PASS Evidence
 
@@ -67,7 +79,8 @@ Boot and board identity:
 - Bootloader reports SPI flash size 16MB.
 - Runtime reports 8MB octal PSRAM and POST SPIRAM `8388608 bytes`.
 - `~BOARD:STATUS` reports `profile=voice-keyboard-v2-n16r8`, module `ESP32-S3-WROOM-1-N16R8`, `flash_mb=16`, `psram_mb=8`, `psram_mode=octal`.
-- Pin map in boot/status logs matches V2: keys GPIO38/39/40/41, EC11 GPIO42/GPIO2/GPIO18, mic GPIO48/GPIO47, USB detect GPIO7, charger GPIO14/GPIO21, BAT_V_ADC GPIO8, current ADC GPIO10/GPIO9, LED GPIO1/GPIO5/GPIO13/GPIO4, PWR_HOLD GPIO11, reserved MSPI GPIO35/GPIO36/GPIO37.
+- Pin map in latest boot/status logs matches current V2 hardware docs: keys GPIO38/39/40/41, EC11 A/B/key GPIO42/GPIO2/GPIO11, mic GPIO48/GPIO47, USB detect GPIO7, charger GPIO14/GPIO21, BAT_V_ADC GPIO8, current ADC GPIO10/GPIO9, LED GPIO1/GPIO5/GPIO13/GPIO4, PWR_HOLD GPIO46, reserved MSPI GPIO35/GPIO36/GPIO37.
+- Hardware repository cross-check used `voice-keyboard-hardware` local HEAD `5a16e2e` (`Add SPH0655 microphone datasheet`) and origin/master `234304b` (`增加旋钮RGB`). `docs/v2-firmware-hardware-interface.md`, the PDF text stream, SchDoc binary text tokens, and PcbDoc binary text tokens all include the current V2 key/EC11/PWR_HOLD pin set.
 
 LED after the RMT fix:
 
@@ -91,11 +104,13 @@ Power and telemetry:
 
 Physical key/EC11 follow-up:
 
-- `~BOARD:GPIO` was added and flashed to read raw active-low levels for KEY1 GPIO38, KEY2 GPIO39, KEY3 GPIO40, KEY4 GPIO41, EC11 A GPIO42, EC11 B GPIO2, and EC11 key GPIO18.
-- A 60 second locked capture polled `~BOARD:GPIO` 56 times while the operator was asked to press KEY1-KEY4, EC11 key, and rotate EC11. Every sample reported `key_pressed_mask=0x00`, `ec11_key_pressed=0`, and `ec11_ab_state=0x03`.
+- `~BOARD:GPIO` reads raw active-low levels for KEY1 GPIO38, KEY2 GPIO39, KEY3 GPIO40, KEY4 GPIO41, EC11 A GPIO42, EC11 B GPIO2, and EC11 key GPIO11.
+- Before the latest hardware recheck, a 60 second locked capture polled `~BOARD:GPIO` 56 times with the obsolete EC11 key GPIO18 mapping. Every sample reported `key_pressed_mask=0x00`, `ec11_key_pressed=0`, and `ec11_ab_state=0x03`.
+- After the latest hardware recheck and EC11 GPIO11 correction, a 90 second locked capture reported 116 data samples with `key_pressed_mask=0x00`, `ec11_key_pressed=0`, and `ec11_ab_state=0x03`.
+- A second 180 second locked capture after the same correction reported 320 data samples with `key_pressed_mask=0x00`, `ec11_key_pressed=0`, and `ec11_ab_state=0x03`.
 - The same capture had no `custom key raw transition`, `custom key stable transition`, `custom key fallback queued`, `EC11 transition`, `EC11 detent`, `EC11 rotation queued`, or recording gesture log lines.
-- This does not validate the physical controls. It indicates either the controls were not actuated during the capture window, or the hardware wiring/pin map for KEY1-KEY4/EC11 does not match the current V2 firmware assumptions.
-- Deep-sleep wake is already mapped as an EC11/GPIO18 candidate in firmware diagnostics: `wake_candidate=EC11_KEY/GPIO18`, `wake_capable_keys=EC11_KEY/GPIO18`, `wake_key_gpio=18`, and `voice_key_gpio=18`. It remains disabled by default (`voice_key_deep_sleep_wake=0`) until power-latch isolation, leakage, pull policy, and false-wake behavior are signed off.
+- This does not validate the physical controls. It indicates either the controls were not actuated during the capture windows, the physical controls are not connected/soldered as expected, or the board under test differs from the current V2 schematic tokens despite the firmware now matching the latest hardware repo pin map.
+- Deep-sleep wake is mapped as a provisional EC11/GPIO11 candidate in firmware diagnostics: `wake_candidate=EC11_KEY/GPIO11`, `wake_capable_keys=EC11_KEY/GPIO11`, `wake_key_gpio=11`, and `voice_key_gpio=11`. It remains disabled by default (`voice_key_deep_sleep_wake=0`) until power-latch isolation, leakage, pull policy, and false-wake behavior are signed off.
 
 BLE/HID/OTA/watchdog status:
 

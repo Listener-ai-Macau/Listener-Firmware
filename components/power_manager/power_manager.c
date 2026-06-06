@@ -66,8 +66,8 @@ extern void status_led_prepare_sleep(void) __attribute__((weak));
 #define POWER_MANAGER_USB_PREFIX "POWER:"
 #define POWER_MANAGER_BATTERY_WARN_PERCENT 10U
 #define POWER_MANAGER_TASK_STACK_BYTES (4 * 1024)
-#define POWER_MANAGER_WAKE_CAPABLE_KEYS "EC11_KEY/GPIO18"
-#define POWER_MANAGER_VOICE_KEY_LIMITATION "V2 EC11-KEY_IO/GPIO18 is the RTC-capable wake candidate; deep-sleep wake remains disabled until power-latch isolation, leakage, pull policy, and false-wake behavior are signed off"
+#define POWER_MANAGER_WAKE_CAPABLE_KEYS "EC11_KEY/GPIO11"
+#define POWER_MANAGER_VOICE_KEY_LIMITATION "V2 EC11-KEY_IO/GPIO11 is the RTC-capable wake candidate; deep-sleep wake remains disabled until power-latch isolation, leakage, pull policy, and false-wake behavior are signed off"
 #define POWER_MANAGER_WAKE_USER_ACTION "use USB reset or power cycle until EC11 wake is signed off"
 #define POWER_MANAGER_WAKE_POLICY_ACTIVE POWER_MANAGER_WAKE_POLICY_V2_EC11_PROVISIONAL
 #define POWER_MANAGER_WAKE_POLICY_CODE ((uint32_t)POWER_MANAGER_WAKE_POLICY_ACTIVE)

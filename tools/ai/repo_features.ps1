@@ -43,11 +43,11 @@ function New-FeatureSnapshot {
             "AI-readable diag_log JSON bundle tooling for deterministic event, argument, severity, boot-segment, and summary fields.",
             "Firmware OTA v1 using ESP-IDF otadata/ota_0/ota_1 slots, partition-derived flash offsets, BLE GATT control/data bridge, official rollback, pending verify, blockers, and diag_log OTA events.",
             "system_health heartbeat and resource checks for heap, task, BLE, and disconnect conditions.",
-            "V2 N16R8 board profile with 16 MB flash, 8 MB Octal PSRAM, EC11 push recording control on GPIO18, KEY1/2/3/4 HID gesture map on GPIO38/39/40/41, four-zone WS2812 resources, and static checks rejecting stale N4 defaults.",
-            "power_manager low-power state machine for connected idle, disconnected idle, charge-aware automatic sleep blocking, overnight sleep, V2 EC11/GPIO18 provisional wake diagnostics, production wake-policy blockers, and power blockers.",
+            "V2 N16R8 board profile with 16 MB flash, 8 MB Octal PSRAM, EC11 push recording control on GPIO11, KEY1/2/3/4 HID gesture map on GPIO38/39/40/41, four-zone WS2812 resources, and static checks rejecting stale N4 defaults.",
+            "power_manager low-power state machine for connected idle, disconnected idle, charge-aware automatic sleep blocking, overnight sleep, V2 EC11/GPIO11 provisional wake diagnostics, production wake-policy blockers, and power blockers.",
             "V2 board diagnostics for ~BOARD:STATUS and ~LED:STATUS, including USB/charger status, battery ADC, battery-side TPS63020/SY7088 input branch current telemetry, LED resource mapping, and hardware blocker policy strings.",
             "V2 current telemetry and low-power report tooling for TPS63020_I_ADC/GPIO10, SY7088_I_ADC/GPIO9, and ~POWER:STATUS sleep drain evidence; readings use reconstructed battery voltage and do not drive firmware power-control decisions.",
-            "V2 safety gates keep PWR_HOLD/GPIO11 disabled until power-sequence validation, LED calibration commands blocked until VDD_LED sign-off, and CLK/GPIO48 DOUT/GPIO47 microphone capture degraded until validated.",
+            "V2 safety gates keep PWR_HOLD/GPIO46 disabled until power-sequence validation, LED calibration commands blocked until VDD_LED sign-off, and CLK/GPIO48 DOUT/GPIO47 microphone capture degraded until validated.",
             "POST and degraded boot reporting for NVS, BLE, audio, heap, and board assumptions."
         )
         key_paths = @(
@@ -57,7 +57,7 @@ function New-FeatureSnapshot {
             [ordered]@{ path = "components/diag_log/"; purpose = "Diagnostic event schema and ring-buffer API." },
             [ordered]@{ path = "components/power_manager/"; purpose = "Low-power state machine, sleep blockers, overnight deep sleep, wake/status diagnostics." },
             [ordered]@{ path = "components/battery_monitor/"; purpose = "Shared battery voltage and level reading for HID and power diagnostics." },
-            [ordered]@{ path = "docs/features/low_power_wake_policy.md"; purpose = "Firmware wake policy contract for V2 EC11/GPIO18 provisional deep-sleep wake and production primary voice/wake requirements." },
+            [ordered]@{ path = "docs/features/low_power_wake_policy.md"; purpose = "Firmware wake policy contract for V2 EC11/GPIO11 provisional deep-sleep wake and production primary voice/wake requirements." },
             [ordered]@{ path = "tools/decode_diag_log.py"; purpose = "Offline decoder for ~DIAGLOG JSONL into stable AI-readable JSON bundles." },
             [ordered]@{ path = "tools/collect_ai_diagnostics.ps1"; purpose = "Collect recent serial diag_log events or decode saved JSONL into raw and decoded artifacts under tests/artifacts." },
             [ordered]@{ path = "tools/collect_v2_current_telemetry.ps1"; purpose = "V2 current telemetry helper for battery-side TPS63020/SY7088 branch measurements." },
@@ -77,10 +77,10 @@ function New-FeatureSnapshot {
             "Default active board is ESP32-S3-WROOM-1-N16R8 with 16 MB flash and 8 MB Octal PSRAM.",
             "Microphone path is SPH0645-style I2S digital audio at the product capture rate.",
             "Physical key GPIO mapping and voice key GPIO live in board pin configuration, not desktop code.",
-            "V2 EC11-KEY/GPIO18 controls recording; KEY1/KEY2/KEY3/KEY4 use GPIO38/GPIO39/GPIO40/GPIO41 and fall back to F13-F24 gesture usages; EC11 encoder uses GPIO42/GPIO2/GPIO18.",
-            "V2 deep-sleep wake is provisional on EC11-KEY/GPIO18 and remains disabled by default until isolation, leakage, pull policy, and false-wake behavior are signed off.",
+            "V2 EC11-KEY/GPIO11 controls recording; KEY1/KEY2/KEY3/KEY4 use GPIO38/GPIO39/GPIO40/GPIO41 and fall back to F13-F24 gesture usages; EC11 encoder uses GPIO42/GPIO2/GPIO11.",
+            "V2 deep-sleep wake is provisional on EC11-KEY/GPIO11 and remains disabled by default until isolation, leakage, pull policy, and false-wake behavior are signed off.",
             "GPIO35/GPIO36/GPIO37 are reserved for the N16R8 module flash/PSRAM/MSPI interface.",
-            "PWR_HOLD/GPIO11, RGB LEDs, and V2 current-sense telemetry are populated in the active profile but gated by validation policy where required.",
+            "PWR_HOLD/GPIO46, RGB LEDs, and V2 current-sense telemetry are populated in the active profile but gated by validation policy where required.",
             "Real BLE, flash, serial, or audio capture validation requires a workflow hardware lock."
         )
         boundaries = @(

@@ -22,6 +22,6 @@ menu "Listener Board Profile"
         default n
         depends on LISTENER_BOARD_PROFILE_V2_N16R8
         help
-            Keep disabled until EC11-KEY_IO/GPIO18 isolation and off-state
+            Keep disabled until EC11-KEY_IO/GPIO11 isolation and off-state
             leakage are signed off on V2 hardware.
 endmenu

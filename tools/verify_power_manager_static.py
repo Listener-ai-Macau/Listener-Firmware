@@ -38,7 +38,7 @@ CHECKS = {
         "wake_policy=%s",
         "wake_capable_keys=%s",
         "voice_key_deep_sleep_wake=%u",
-        "V2 EC11-KEY_IO/GPIO18 is the RTC-capable wake candidate",
+        "V2 EC11-KEY_IO/GPIO11 is the RTC-capable wake candidate",
         "deep-sleep wake remains disabled until power-latch isolation",
         "use USB reset or power cycle until EC11 wake is signed off",
         "POWER_MANAGER_WAKE_POLICY_ACTIVE POWER_MANAGER_WAKE_POLICY_V2_EC11_PROVISIONAL",
@@ -134,8 +134,8 @@ CHECKS = {
     ],
     "components/board/board.c": [
         "Voice Keyboard V2",
-        "EC11 push/GPIO18",
-        "V2 EC11-KEY/GPIO18 deep-sleep wake remains disabled",
+        "EC11 push/GPIO11",
+        "V2 EC11-KEY/GPIO11 deep-sleep wake remains disabled",
     ],
 }
 
@@ -155,6 +155,7 @@ def main() -> int:
     power_manager = (REPO_ROOT / "components/power_manager/power_manager.c").read_text(encoding="utf-8")
     for stale in (
         "N4 validation profile: EC11-KEY/GPIO35",
+        "V2 EC11-KEY_IO/GPIO18 is the RTC-capable wake candidate",
         "press KEY4/GPIO21 after deep sleep on N4",
         "POWER_MANAGER_WAKE_POLICY_CODE ((uint32_t)POWER_MANAGER_WAKE_POLICY_KEY4_ONLY)",
     ):
@@ -162,7 +163,7 @@ def main() -> int:
             failures.append(f"components/power_manager/power_manager.c: stale token {stale!r}")
 
     board = (REPO_ROOT / "components/board/board.c").read_text(encoding="utf-8")
-    for stale in ("Voice Keyboard N4", "EC11 push/GPIO35", "N4 deep sleep wakes by KEY4/GPIO21"):
+    for stale in ("Voice Keyboard N4", "EC11 push/GPIO18", "EC11 push/GPIO35", "N4 deep sleep wakes by KEY4/GPIO21"):
         if stale in board:
             failures.append(f"components/board/board.c: stale token {stale!r}")
 

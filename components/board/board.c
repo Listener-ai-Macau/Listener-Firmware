@@ -18,7 +18,7 @@ static const char *TAG = "board";
 
 #define BOARD_V2_USB_DET_POLICY "v2_gpio7_r37_r32_10K_10K_divider"
 #define BOARD_V2_CHARGER_POLARITY "v2_gpio14_chg_gpio21_std_active_low"
-#define BOARD_V2_PWR_HOLD_POLICY "v2_gpio11_power_latch_hold_disabled_until_power_sequence_validation"
+#define BOARD_V2_PWR_HOLD_POLICY "v2_gpio46_power_latch_hold_disabled_until_strapping_power_sequence_validation"
 #define BOARD_V2_LED_POLICY "v2_four_zone_ws2812_status_gpio1_ec11_gpio5_key_gpio13_edge_gpio4"
 #define BOARD_V2_MIC_POLICY "v2_clk_gpio48_dout_gpio47_interface_degraded_until_hardware_validation"
 #define BOARD_V2_CURRENT_POLICY "v2_battery_side_input_branch_current_ina180a2_10mR_adc_mv_x2_with_battery_mv_from_gpio8_div2"
@@ -240,7 +240,7 @@ static void board_print_gpio_status(void)
         " ec11_b_gpio=%d ec11_b_level=%s"
         " ec11_ab_state=0x%02" PRIx32
         " ec11_key_gpio=%d ec11_key_level=%s ec11_key_pressed=%u"
-        " wake_candidate=EC11_KEY/GPIO18\n",
+        " wake_candidate=EC11_KEY/GPIO11\n",
         (int)BOARD_PINS_KEY1_IO,
         board_gpio_level_name(key1),
         key1 == 0 ? 1u : 0u,
@@ -381,18 +381,18 @@ void board_print_help(void)
         "Inject test bytes with tools/send_serial.ps1 or type in monitor.\n"
         "Capture 3s audio WAV with tools/capture_audio_wav.ps1 -Port COM3.\n"
         "Capture toggle session WAV with tools/capture_audio_session_wav.ps1 -Port COM3.\n"
-        "EC11 push/GPIO18 controls recording: single click starts or stops after the 200 ms double-click window.\n"
+        "EC11 push/GPIO11 controls recording: single click starts or stops after the 200 ms double-click window.\n"
         "EC11 push fast double-click clears BLE pairing/session state after recording has been idle; long press is reserved for hardware power control.\n"
         "Logical custom keys: single-click KEY1-KEY4 fallback=F13-F16, double-click=F17-F20, long-press=F21-F24.\n"
         "KEY1/GPIO38, KEY2/GPIO39, KEY3/GPIO40, KEY4/GPIO41 send safe non-text BLE HID usages while Listener-Type custom actions are unavailable.\n"
         "Send ~VREC:RECOVERY to clear pairing/session state over USB.\n"
-        "Board diagnostics: ~BOARD:STATUS reports V2 pin, USB, charger, battery, PWR_HOLD/GPIO11, mic, reserved MSPI, and LED resource status.\n"
+        "Board diagnostics: ~BOARD:STATUS reports V2 pin, USB, charger, battery, PWR_HOLD/GPIO46, mic, reserved MSPI, and LED resource status.\n"
         "Board GPIO diagnostics: ~BOARD:GPIO reports raw KEY1-KEY4 and EC11 A/B/key levels.\n"
         "Power diagnostics: ~POWER:STATUS reports state/blockers/battery/wake policy, ~POWER:SLEEP requests manual sleep.\n"
         "LED diagnostics: ~LED:STATUS reports four WS2812 groups; ~LED:TEST:RGBW and ~LED:TEST:MAP stay brightness-gated until VDD_LED sign-off.\n"
         "Watchdog diagnostics: ~WDT:STATUS reports config, ~WDT:DEADLOCK intentionally triggers Task WDT reset.\n"
         "Boot safety diagnostics: ~BOOT:STATUS reports crash counter, ~BOOT:CRASH restarts for validation, ~BOOT:CLEAR clears safe mode.\n"
-        "V2 EC11-KEY/GPIO18 deep-sleep wake remains disabled until power-latch isolation, leakage, pull policy, and false-wake behavior are signed off.\n"
+        "V2 EC11-KEY/GPIO11 deep-sleep wake remains disabled until power-latch isolation, leakage, pull policy, and false-wake behavior are signed off.\n"
         "Use ~OTA:STATUS, ~OTA:BLOCKER, or ~OTA:ABORT for firmware OTA diagnostics.\n"
         "Use ~DIAGLOG:COUNT, ~DIAGLOG:LAST:N, ~DIAGLOG:DUMP, or ~DIAGLOG:CLEAR for diagnostics.\n"
         "Device status logs use ready, recording, transferring, error, and recovery.\n"
