@@ -1,0 +1,1 @@
+PASS: V2 N16R8 board profile, memory defaults, pin map, four-zone LED resources, battery-side current telemetry, USB_Det divider policy, diagnostics, partitions, and package identity checks passed.
