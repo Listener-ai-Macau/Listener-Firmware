@@ -34,6 +34,12 @@ pwsh -NoProfile -File .\tools\verify_factory_firmware_package.ps1 -PackageDir .\
 
 Result: `PASS: factory firmware package valid`.
 
+Latest verifier log: `docs/validation/voice-keyboard-production-readiness-3.2/factory-package-verify-20260607-oai2.log`.
+
+Latest validation report: `docs/validation/voice-keyboard-production-readiness-3.2-validation-evidence.json`.
+
+Latest ESP-IDF build log: `docs/validation/voice-keyboard-production-readiness-3.2/idf-build-20260607-oai2-pass.log`.
+
 ## BLE And Readiness Contract
 
 The package manifest and `FLASHING.md` encode the first power-on assumptions:
