@@ -213,6 +213,7 @@ foreach ($relativePath in @(
     "tools/dump_diag_log.ps1",
     "tools/esp_idf_ci.ps1",
     "tools/package_factory_firmware.ps1",
+    "tools/verify_factory_firmware_package.ps1",
     "tools/ai/repo_features.ps1"
 )) {
     $fullPath = Join-Path $repoRoot $relativePath

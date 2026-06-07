@@ -12,17 +12,20 @@
         "ports/esp32/ble_hid/ble_hid.c",
         "ports/esp32/ble_audio_stream/",
         "components/self_test/",
-        "tools/package_factory_firmware.ps1"
+        "tools/package_factory_firmware.ps1",
+        "tools/verify_factory_firmware_package.ps1"
       ],
       "validation": [
         "idf.py build",
         "pwsh -NoProfile -File .\\tools\\package_factory_firmware.ps1",
-        "powershell -ExecutionPolicy Bypass -File .\\tools\\verify_ble_hid.ps1 -Port COM3 -Text \"hello\"",
-        "Manual BLE scan confirms name, appearance, DIS firmware/protocol, readiness, and capabilities"
+        "pwsh -NoProfile -File .\\tools\\verify_factory_firmware_package.ps1 -PackageDir .\\.cache\\factory_firmware\\<package>",
+        "powershell -ExecutionPolicy Bypass -File .\\tools\\verify_ble_hid.ps1 -Port COMx -Text \"hello\" when a unique ESP32 COM/BLE resource is available",
+        "Manual BLE scan confirms name, appearance, DIS firmware/protocol, readiness, and capabilities in later hardware or human gates when live scan is unavailable"
       ],
       "evidence": [
         "Factory package manifest records bootloader, partition table, app binary offsets, SHA256, git commit, version, and flash command",
-        "BLE custom audio service exposes read-only readiness and capabilities characteristics"
+        "BLE custom audio service exposes read-only readiness and capabilities characteristics",
+        "Serial commands expose OTA, DIS, diagnostic, board, power, and diagnostic-log status without requiring raw log interpretation"
       ],
       "invariants": [
         "Factory BLE name remains listener",
@@ -31,8 +34,8 @@
         "POST critical failures log and continue into degraded BLE mode"
       ],
       "known_limits": [
-        "Generated binary package lives under .cache/factory_firmware and is not committed to git",
-        "Readiness and capabilities are static factory capability strings, not the full diagnostic package"
+        "Default generated binary package lives under .cache/factory_firmware; workflow validation packages may be copied under docs/validation as review evidence",
+        "Live BLE scan or first power-on visual observation remains a later hardware or human gate when no current unique resource is available"
       ]
     },
     {

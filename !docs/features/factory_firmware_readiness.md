@@ -1,88 +1,112 @@
-# 出厂固件镜像与 BLE 就绪身份
+# Factory Firmware Image And BLE Readiness
 
-## 范围
+## Scope
 
-3.2 的固件出厂镜像交付覆盖四件事：
+The factory firmware image covers the first power-on state for production bring-up:
 
-- 固件包包含 bootloader、partition table、app 三个二进制，带 SHA256、版本、刷写偏移和刷写命令。
-- 首次上电无需串口命令，设备进入可发现/可配对 BLE HID 广播。
-- BLE 身份稳定：名称 `listener`，Appearance `0x03C1` keyboard，HID service `0x1812`，音频服务 `710af845-6d9f-6583-0c4d-9e5b3bc3091a`。
-- POST 失败不阻塞启动；关键失败会记录日志，固件继续进入 degraded BLE mode，让状态仍可被观察。
+- A deliverable package contains `bootloader.bin`, `partition-table.bin`, the app image, version metadata, SHA256 values, partition offsets, and flashing instructions.
+- First power-on does not require a serial command before the device advertises as a pairable and discoverable BLE HID keyboard.
+- BLE identity is stable: GAP name `listener`, Appearance `0x03C1` keyboard, HID service `0x1812`, and the Listener audio service `710af845-6d9f-6583-0c4d-9e5b3bc3091a`.
+- POST critical failures are logged, readiness marks degraded subsystems, and firmware continues into observable BLE/HID/serial recovery where possible.
 
-## BLE 可读信息
+## BLE Identity Contract
 
-标准 Device Information Service 暴露：
+Device Information Service fields:
 
 - Manufacturer: `listener`
-- Model Number: `keyboard-v1`
-- Hardware Revision: `esp32s3-devkit`
-- Firmware Revision: 构建注入的 `git describe --tags --always --dirty`
-- Software Revision: 协议版本 `1`
-- PnP ID: VID `0x16C0` / PID `0x05DF` / product version `1`
+- Model Number: `keyboard-v2`
+- Hardware Revision: `esp32s3-wroom-1-n16r8`
+- Firmware Revision: the package firmware version
+- Software Revision: protocol version `1`
+- PnP ID: VID `0x16C0`, PID `0x05DF`, product version `1`
 
-自定义音频服务额外提供两个只读特征：
+Custom Listener service fields:
 
+- Audio service: `710af845-6d9f-6583-0c4d-9e5b3bc3091a`
+- Audio notify: `710af845-6d9f-6583-0c4d-9e5b3bc3091b`
+- Audio control: `710af845-6d9f-6583-0c4d-9e5b3bc3091e`
 - Readiness: `710af845-6d9f-6583-0c4d-9e5b3bc3091c`
 - Capabilities: `710af845-6d9f-6583-0c4d-9e5b3bc3091d`
 
-当前值：
+Baseline readiness tokens:
 
 ```text
-factory_ready;pairable_on_boot;post_degraded_boot
-ble_hid_keyboard;ble_audio_vka1;usb_serial_text;key1_record_toggle;post_status
+factory_ready;pairable_on_boot;post_degraded_boot;board=voice-keyboard-v2-n16r8;model=keyboard-v2;fw_version=<version>
 ```
 
-## 打包
+Runtime readiness appends subsystem tokens such as `hid_ready`, `audio_ready`, `ota_ready`, `diagnostic_ready`, or the corresponding `*_degraded` tokens.
 
-出厂镜像包由以下命令生成：
+Capabilities include:
+
+```text
+ble_hid_keyboard;ble_audio_vka1;ble_audio_control_v1;usb_serial_text;voice_record_toggle;custom_keys_f13_f16;custom_key_gestures_f13_f24;post_status;firmware_ota_v1;flash_16mb;psram_8mb_octal
+```
+
+## Packaging
+
+Build first:
+
+```powershell
+idf.py build
+```
+
+Generate a package:
 
 ```powershell
 pwsh -NoProfile -File .\tools\package_factory_firmware.ps1
 ```
 
-默认输出到 `.cache\factory_firmware\listener-factory-<version>-<timestamp>\`，包含：
+Default output is `.cache\factory_firmware\listener-factory-<version>-<timestamp>\`. The package contains:
 
-- `bootloader.bin`，刷写偏移 `0x0`
-- `partition-table.bin`，刷写偏移 `0x8000`
-- `voice-keyboard-firmware.bin`，刷写偏移 `0x10000`
+- `bootloader.bin`, flash offset `0x0`
+- `partition-table.bin`, flash offset `0x8000`
+- `voice-keyboard-firmware.bin`, flash offset derived from the generated `ota_0` partition
 - `manifest.json`
 - `FLASHING.md`
 
-`manifest.json` 记录版本、git commit、dirty 状态、BLE 身份、DIS 字段、只读特征 UUID、每个二进制的 SHA256 和刷写命令。
+`manifest.json` records schema version, project version, git commit, dirty state, BLE identity, DIS fields, readiness/capabilities values, serial diagnostic commands, partition evidence, SHA256 values, and the complete flash command.
 
-## 主要路径
+Validate a generated package:
 
-- `protocols/listener_device/`
-- `ports/esp32/ble_hid/ble_hid.c`
-- `ports/esp32/ble_audio_stream/`
-- `main/main.c`
-- `components/self_test/`
-- `tools/package_factory_firmware.ps1`
+```powershell
+pwsh -NoProfile -File .\tools\verify_factory_firmware_package.ps1 -PackageDir .\.cache\factory_firmware\<package>
+```
 
-## 验证
+## Diagnostics Without Raw Log Interpretation
+
+Factory support can use serial commands instead of reading raw boot logs:
+
+- `~OTA:STATUS` prints running, boot, update partitions, version, blocker, readiness, and capabilities.
+- `~DIS:GATT`, `~OTA:GATT`, and `~DIAG:GATT` print service and characteristic registration handles.
+- `~BOARD:STATUS` and `~POWER:STATUS` print board, battery, wake policy, and power blockers.
+- `~DIAGLOG:COUNT` and `~DIAGLOG:LAST:32` expose recent structured diagnostic events.
+
+## Validation
+
+Scriptable validation:
 
 ```powershell
 idf.py build
 pwsh -NoProfile -File .\tools\package_factory_firmware.ps1
-powershell -ExecutionPolicy Bypass -File .\tools\verify_ble_hid.ps1 -Port COM3 -Text "hello"
+pwsh -NoProfile -File .\tools\verify_factory_firmware_package.ps1 -PackageDir .\.cache\factory_firmware\<package>
+pwsh -NoProfile -File .\tools\verify_v2_board_profile_static.ps1
+pwsh -NoProfile -File .\tools\verify_diagnostic_log_coverage.ps1
+git diff --check
 ```
 
-人工 BLE 扫描确认：
+If a current unique ESP32 COM/BLE resource is available, hardware validation should be run inside one short `aiw with-lock` window and can include:
 
-- 名称为 `listener`
-- Appearance 为 keyboard `0x03C1`
-- DIS Firmware Revision 等于包内版本
-- DIS Software Revision 为协议版本 `1`
-- 自定义 Readiness / Capabilities 特征可读
+```powershell
+powershell -ExecutionPolicy Bypass -File .\tools\verify_ble_hid.ps1 -Port COMx -Text "hello"
+```
 
-## 不变量
+The hardware check confirms BLE name, appearance, DIS firmware/protocol, readiness, and capabilities. If no physical BLE scan is available, the generated package manifest, SHA256 values, readiness contract, static checks, and validation report are the AI-owned evidence; live visual/BLE observation is deferred to later hardware or human gates.
 
-- `listener` 是出厂 BLE 名称；脚本和产品矩阵默认依赖该名称。
-- 广播包保留 `flags + appearance + 16-bit HID UUID + listener`，音频服务 UUID 保留在 scan response。
-- POST 不应因为 NVS 首烧初始化、SPIRAM 等状态直接挂死主流程；失败需要日志可见并继续进入 BLE 暴露状态。
-- 出厂包不提交二进制到 git，包产物位于 `.cache\factory_firmware\`。
+## Invariants
 
-## 已知限制
-
-- Readiness/Capabilities 是静态出厂能力声明，不替代完整运行期诊断包。
-- 真实电量仍取决于后续 ADC 电池读取实现；本能力声明没有声明 battery_level。
+- Factory BLE name remains `listener`.
+- Appearance remains keyboard `0x03C1`.
+- First power-on advertises without a serial command.
+- Factory app image offset is derived from `ota_0`, not hard-coded to `0x10000`.
+- POST critical failures log and continue into observable degraded BLE/HID/serial recovery where possible.
+- Default package output lives under `.cache\factory_firmware`; workflow validation packages may be copied under `docs/validation` as review evidence.
