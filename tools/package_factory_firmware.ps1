@@ -252,10 +252,7 @@ Capabilities characteristic: 710af845-6d9f-6583-0c4d-9e5b3bc3091d
 Run this command from this package directory:
 
 ~~~powershell
-python `$env:IDF_PATH\components\esptool_py\esptool\esptool.py --chip $target -p $Port -b $Baud --before=default_reset --after=hard_reset write_flash `
-    0x0 .\bootloader.bin `
-    0x8000 .\partition-table.bin `
-    $app_offset .\$project_name.bin
+python `$env:IDF_PATH\components\esptool_py\esptool\esptool.py --chip $target -p $Port -b $Baud --before=default_reset --after=hard_reset write_flash 0x0 .\bootloader.bin 0x8000 .\partition-table.bin $app_offset .\$project_name.bin
 ~~~
 
 Partition evidence from the generated partition table:
