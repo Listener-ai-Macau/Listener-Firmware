@@ -2,12 +2,12 @@
   "schema_version": 1,
   "plan": "voice-keyboard-production-readiness",
   "step_id": "3.2",
-  "generated_at": "2026-06-07T21:29:04.6925487+08:00",
+  "generated_at": "2026-06-07T21:45:07.7034206+08:00",
   "result": "PASS",
   "repo_root": "C:\\Users\\Billy\\Desktop\\listener\\voice-keyboard-firmware",
   "worktree": "C:\\Users\\Billy\\Desktop\\listener\\voice-keyboard-firmware-wt-oai2-voice-keyboard-production-readiness-3.2",
   "branch": "ai/oai2-voice-keyboard-production-readiness-3.2",
-  "commit": "3b586ea8136376d75ddab646fa33378c7ba324fc",
+  "commit": "0ee94b2d55bd28fd9bc9511c458a7c5efc01d7dd",
   "timeout_seconds": 900,
   "commands": [
     {
@@ -16,10 +16,10 @@
       "runnable": false,
       "worktree": "C:\\Users\\Billy\\Desktop\\listener\\voice-keyboard-firmware-wt-oai2-voice-keyboard-production-readiness-3.2",
       "branch": "ai/oai2-voice-keyboard-production-readiness-3.2",
-      "commit": "3b586ea8136376d75ddab646fa33378c7ba324fc",
+      "commit": "0ee94b2d55bd28fd9bc9511c458a7c5efc01d7dd",
       "status": "RECORDED",
-      "started_at": "2026-06-07T21:29:03.5112469+08:00",
-      "finished_at": "2026-06-07T21:29:03.5112469+08:00",
+      "started_at": "2026-06-07T21:45:07.0215553+08:00",
+      "finished_at": "2026-06-07T21:45:07.0215553+08:00",
       "duration_ms": 0,
       "exit_code": null,
       "timed_out": false,
@@ -27,14 +27,14 @@
       "stderr_summary": [],
       "output_sha256": null,
       "evidence_refs": [
-        "artifact:docs/validation/voice-keyboard-production-readiness-3.2/idf-build-20260607-oai2-pass.log"
+        "artifact:docs/validation/voice-keyboard-production-readiness-3.2/idf-build-20260607-oai2-v2-pass.log"
       ],
       "artifacts": [
         {
-          "ref": "artifact:docs/validation/voice-keyboard-production-readiness-3.2/idf-build-20260607-oai2-pass.log",
-          "path": "docs/validation/voice-keyboard-production-readiness-3.2/idf-build-20260607-oai2-pass.log",
+          "ref": "artifact:docs/validation/voice-keyboard-production-readiness-3.2/idf-build-20260607-oai2-v2-pass.log",
+          "path": "docs/validation/voice-keyboard-production-readiness-3.2/idf-build-20260607-oai2-v2-pass.log",
           "exists": true,
-          "sha256": "5b38aed267e9c192e39908bbffbb6667d18047ae4432b460c87dd03a0bab20ee"
+          "sha256": "97b276c46056f6e4d6f50783c875297cc01f0a6582262d3b1c0d296196b4fbfb"
         }
       ]
     },
@@ -44,11 +44,11 @@
       "runnable": true,
       "worktree": "C:\\Users\\Billy\\Desktop\\listener\\voice-keyboard-firmware-wt-oai2-voice-keyboard-production-readiness-3.2",
       "branch": "ai/oai2-voice-keyboard-production-readiness-3.2",
-      "commit": "3b586ea8136376d75ddab646fa33378c7ba324fc",
+      "commit": "0ee94b2d55bd28fd9bc9511c458a7c5efc01d7dd",
       "status": "PASS",
-      "started_at": "2026-06-07T21:29:03.5636434+08:00",
-      "finished_at": "2026-06-07T21:29:04.6276319+08:00",
-      "duration_ms": 1064,
+      "started_at": "2026-06-07T21:45:07.0537771+08:00",
+      "finished_at": "2026-06-07T21:45:07.6567759+08:00",
+      "duration_ms": 603,
       "exit_code": 0,
       "timed_out": false,
       "stdout_summary": [],
@@ -65,10 +65,10 @@
       "runnable": false,
       "worktree": "C:\\Users\\Billy\\Desktop\\listener\\voice-keyboard-firmware-wt-oai2-voice-keyboard-production-readiness-3.2",
       "branch": "ai/oai2-voice-keyboard-production-readiness-3.2",
-      "commit": "3b586ea8136376d75ddab646fa33378c7ba324fc",
+      "commit": "0ee94b2d55bd28fd9bc9511c458a7c5efc01d7dd",
       "status": "RECORDED",
-      "started_at": "2026-06-07T21:29:04.6722835+08:00",
-      "finished_at": "2026-06-07T21:29:04.6722835+08:00",
+      "started_at": "2026-06-07T21:45:07.6826523+08:00",
+      "finished_at": "2026-06-07T21:45:07.6826523+08:00",
       "duration_ms": 0,
       "exit_code": null,
       "timed_out": false,
@@ -77,34 +77,48 @@
       "output_sha256": null,
       "evidence_refs": [
         "artifact:docs/validation/voice-keyboard-production-readiness-3.2/readiness-evidence.md",
-        "artifact:docs/validation/voice-keyboard-production-readiness-3.2/factory-package-verify-20260607-oai2.log",
-        "artifact:docs/validation/voice-keyboard-production-readiness-3.2/factory_package/listener-factory-v1002.0.0-ota-test-108-g6f9311d-20260607-155115/manifest.json",
-        "artifact:docs/validation/voice-keyboard-production-readiness-3.2/factory_package/listener-factory-v1002.0.0-ota-test-108-g6f9311d-20260607-155115/FLASHING.md"
+        "artifact:docs/validation/voice-keyboard-production-readiness-3.2/factory-package-create-20260607-oai2-v2.log",
+        "artifact:docs/validation/voice-keyboard-production-readiness-3.2/factory-package-verify-20260607-oai2-v2.log",
+        "artifact:docs/validation/voice-keyboard-production-readiness-3.2/verify-v2-board-profile-static-20260607-oai2.log",
+        "artifact:docs/validation/voice-keyboard-production-readiness-3.2/factory_package/listener-factory-v1002.0.0-ota-test-161-g92ecd8f-20260607-214244/manifest.json",
+        "artifact:docs/validation/voice-keyboard-production-readiness-3.2/factory_package/listener-factory-v1002.0.0-ota-test-161-g92ecd8f-20260607-214244/FLASHING.md"
       ],
       "artifacts": [
         {
           "ref": "artifact:docs/validation/voice-keyboard-production-readiness-3.2/readiness-evidence.md",
           "path": "docs/validation/voice-keyboard-production-readiness-3.2/readiness-evidence.md",
           "exists": true,
-          "sha256": "9a5a755013e62ecfbf6d9ffe5849f4eafb2b08af500c3614465b8d45ef1d8cc1"
+          "sha256": "8ff4797f33e462fa5f64236f44feb65363068bb2f565730c09388ccdf899e27c"
         },
         {
-          "ref": "artifact:docs/validation/voice-keyboard-production-readiness-3.2/factory-package-verify-20260607-oai2.log",
-          "path": "docs/validation/voice-keyboard-production-readiness-3.2/factory-package-verify-20260607-oai2.log",
+          "ref": "artifact:docs/validation/voice-keyboard-production-readiness-3.2/factory-package-create-20260607-oai2-v2.log",
+          "path": "docs/validation/voice-keyboard-production-readiness-3.2/factory-package-create-20260607-oai2-v2.log",
           "exists": true,
-          "sha256": "e2f3d68bc14fea21ee53d1c61ca447185f4ebbe3a14be05749d6e35a5a820df3"
+          "sha256": "9ac34e02f94dd2d9dce073af9124640414f1b63f8ba9461da7dac7eb87b72cbb"
         },
         {
-          "ref": "artifact:docs/validation/voice-keyboard-production-readiness-3.2/factory_package/listener-factory-v1002.0.0-ota-test-108-g6f9311d-20260607-155115/manifest.json",
-          "path": "docs/validation/voice-keyboard-production-readiness-3.2/factory_package/listener-factory-v1002.0.0-ota-test-108-g6f9311d-20260607-155115/manifest.json",
+          "ref": "artifact:docs/validation/voice-keyboard-production-readiness-3.2/factory-package-verify-20260607-oai2-v2.log",
+          "path": "docs/validation/voice-keyboard-production-readiness-3.2/factory-package-verify-20260607-oai2-v2.log",
           "exists": true,
-          "sha256": "52b2283774bcbda916e2fdb752535a04f05106a959db69686d2402828f33568e"
+          "sha256": "442b51ffb3981efcb94c4b837a82bc5bdbc4872db278009fe2d1a00d09fc71c3"
         },
         {
-          "ref": "artifact:docs/validation/voice-keyboard-production-readiness-3.2/factory_package/listener-factory-v1002.0.0-ota-test-108-g6f9311d-20260607-155115/FLASHING.md",
-          "path": "docs/validation/voice-keyboard-production-readiness-3.2/factory_package/listener-factory-v1002.0.0-ota-test-108-g6f9311d-20260607-155115/FLASHING.md",
+          "ref": "artifact:docs/validation/voice-keyboard-production-readiness-3.2/verify-v2-board-profile-static-20260607-oai2.log",
+          "path": "docs/validation/voice-keyboard-production-readiness-3.2/verify-v2-board-profile-static-20260607-oai2.log",
           "exists": true,
-          "sha256": "8bd2b47a7544c24c60ebf63c980c510c04a12f4865f16b80d668ca0ff002c10a"
+          "sha256": "d1b735f3d11ce4914c7b285123fe0768a31e4b2253fb2734c0df7be37fe05905"
+        },
+        {
+          "ref": "artifact:docs/validation/voice-keyboard-production-readiness-3.2/factory_package/listener-factory-v1002.0.0-ota-test-161-g92ecd8f-20260607-214244/manifest.json",
+          "path": "docs/validation/voice-keyboard-production-readiness-3.2/factory_package/listener-factory-v1002.0.0-ota-test-161-g92ecd8f-20260607-214244/manifest.json",
+          "exists": true,
+          "sha256": "39eed23996cf9cc1b400c89192807a5281a5de754fd764bf8854fa319fc3a96a"
+        },
+        {
+          "ref": "artifact:docs/validation/voice-keyboard-production-readiness-3.2/factory_package/listener-factory-v1002.0.0-ota-test-161-g92ecd8f-20260607-214244/FLASHING.md",
+          "path": "docs/validation/voice-keyboard-production-readiness-3.2/factory_package/listener-factory-v1002.0.0-ota-test-161-g92ecd8f-20260607-214244/FLASHING.md",
+          "exists": true,
+          "sha256": "a4f84158933f2ca8844191ef0ae162867ef2d4346e37ece9d9b0d36ded81eac3"
         }
       ]
     },
@@ -114,10 +128,10 @@
       "runnable": false,
       "worktree": "C:\\Users\\Billy\\Desktop\\listener\\voice-keyboard-firmware-wt-oai2-voice-keyboard-production-readiness-3.2",
       "branch": "ai/oai2-voice-keyboard-production-readiness-3.2",
-      "commit": "3b586ea8136376d75ddab646fa33378c7ba324fc",
+      "commit": "0ee94b2d55bd28fd9bc9511c458a7c5efc01d7dd",
       "status": "RECORDED",
-      "started_at": "2026-06-07T21:29:04.6850567+08:00",
-      "finished_at": "2026-06-07T21:29:04.6850567+08:00",
+      "started_at": "2026-06-07T21:45:07.6992423+08:00",
+      "finished_at": "2026-06-07T21:45:07.6992423+08:00",
       "duration_ms": 0,
       "exit_code": null,
       "timed_out": false,
@@ -135,7 +149,7 @@
           "ref": "artifact:docs/validation/voice-keyboard-production-readiness-3.2/readiness-evidence.md",
           "path": "docs/validation/voice-keyboard-production-readiness-3.2/readiness-evidence.md",
           "exists": true,
-          "sha256": "9a5a755013e62ecfbf6d9ffe5849f4eafb2b08af500c3614465b8d45ef1d8cc1"
+          "sha256": "8ff4797f33e462fa5f64236f44feb65363068bb2f565730c09388ccdf899e27c"
         },
         {
           "ref": "artifact:docs/validation/voice-keyboard-production-readiness-3.2/locked-readiness-serial.log",

@@ -10,11 +10,11 @@ Branch: `ai/oai2-voice-keyboard-production-readiness-3.2`
 
 Package:
 
-`docs/validation/voice-keyboard-production-readiness-3.2/factory_package/listener-factory-v1002.0.0-ota-test-108-g6f9311d-20260607-155115/`
+`docs/validation/voice-keyboard-production-readiness-3.2/factory_package/listener-factory-v1002.0.0-ota-test-161-g92ecd8f-20260607-214244/`
 
-Package version: `v1002.0.0-ota-test-108-g6f9311d`
+Package version: `v1002.0.0-ota-test-161-g92ecd8f`
 
-Package source commit: `6f9311d4a1a83a957e2af02bffa690b9b5fefedf`
+Package source commit: `0ee94b2d55bd28fd9bc9511c458a7c5efc01d7dd`
 
 Manifest dirty flag: `false`
 
@@ -22,23 +22,25 @@ Package artifacts:
 
 | Role | File | Offset | SHA256 |
 | --- | --- | --- | --- |
-| bootloader | `bootloader.bin` | `0x0` | `fa280d8d94401a5439a4a72f30b8404e28711030c6c9ac640c6381f3f4804295` |
-| partition table | `partition-table.bin` | `0x8000` | `d2b4d3dd6dd60b393f1e1c864ad3aefe737d240ca1f42157a2b6c198cbef43d7` |
-| app | `voice-keyboard-firmware.bin` | `0x20000` | `04890f7dbf7d0b5cf07d94dee844024142d90fe6067ca99f3663d2dd2e3530cb` |
+| bootloader | `bootloader.bin` | `0x0` | `de63e475062b6ce26dc49b96861e2631396ebf0753cc38607e3d5be99d20b19a` |
+| partition table | `partition-table.bin` | `0x8000` | `a7f91539844d456d24a589cc77ca103df1a3c8b0a9d91d1c684149830cc44cb5` |
+| app | `voice-keyboard-firmware.bin` | `0x20000` | `558526dbc063fd8ddeefbae65c4062b6a010c8820d4d9404de33a3031626a412` |
 
 Package verifier:
 
 ```powershell
-pwsh -NoProfile -File .\tools\verify_factory_firmware_package.ps1 -PackageDir .\docs\validation\voice-keyboard-production-readiness-3.2\factory_package\listener-factory-v1002.0.0-ota-test-108-g6f9311d-20260607-155115
+pwsh -NoProfile -File .\tools\verify_factory_firmware_package.ps1 -PackageDir .\docs\validation\voice-keyboard-production-readiness-3.2\factory_package\listener-factory-v1002.0.0-ota-test-161-g92ecd8f-20260607-214244
 ```
 
 Result: `PASS: factory firmware package valid`.
 
-Latest verifier log: `docs/validation/voice-keyboard-production-readiness-3.2/factory-package-verify-20260607-oai2.log`.
+Latest package creation log: `docs/validation/voice-keyboard-production-readiness-3.2/factory-package-create-20260607-oai2-v2.log`.
+
+Latest verifier log: `docs/validation/voice-keyboard-production-readiness-3.2/factory-package-verify-20260607-oai2-v2.log`.
 
 Latest validation report: `docs/validation/voice-keyboard-production-readiness-3.2-validation-evidence.json`.
 
-Latest ESP-IDF build log: `docs/validation/voice-keyboard-production-readiness-3.2/idf-build-20260607-oai2-pass.log`.
+Latest ESP-IDF build log: `docs/validation/voice-keyboard-production-readiness-3.2/idf-build-20260607-oai2-v2-pass.log`.
 
 ## BLE And Readiness Contract
 
@@ -50,8 +52,8 @@ The package manifest and `FLASHING.md` encode the first power-on assumptions:
 - DIS manufacturer/model/hardware/firmware/protocol fields
 - Readiness characteristic `710af845-6d9f-6583-0c4d-9e5b3bc3091c`
 - Capabilities characteristic `710af845-6d9f-6583-0c4d-9e5b3bc3091d`
-- Baseline readiness `factory_ready;pairable_on_boot;post_degraded_boot;board=voice-keyboard-n4;model=keyboard-v2;fw_version=<package version>`
-- Capabilities include BLE HID, VKA1 audio, BLE audio control, USB serial text, voice recording toggle, custom F13-F24 fallback gestures, POST status, OTA, 4 MB flash, and no PSRAM.
+- Baseline readiness `factory_ready;pairable_on_boot;post_degraded_boot;board=voice-keyboard-v2-n16r8;model=keyboard-v2;fw_version=<package version>`
+- Capabilities include BLE HID, VKA1 audio, BLE audio control, USB serial text, voice recording toggle, custom F13-F24 fallback gestures, POST status, OTA, 16 MB flash, and 8 MB Octal PSRAM.
 
 ## Diagnostics Without Raw Log Interpretation
 
@@ -66,7 +68,7 @@ The package manifest and `FLASHING.md` encode the first power-on assumptions:
 - `~DIAGLOG:COUNT`
 - `~DIAGLOG:LAST:32`
 
-The current available device on `COM6` is a `voice-keyboard-v2-n16r8` prototype, not the N4 4 MB/no-PSRAM target for this factory package. The N4 package was not flashed onto that mismatched prototype. The locked serial capture still proves the diagnostic-command path is observable without raw log interpretation:
+The current available device on `COM6` is a `voice-keyboard-v2-n16r8` prototype. The package was not flashed during this rebase refresh, but the locked serial capture proves the V2 diagnostic-command path is observable without raw log interpretation:
 
 - `docs/validation/voice-keyboard-production-readiness-3.2/locked-readiness-serial.log`
 
@@ -81,7 +83,7 @@ That log shows:
 
 ## Hardware Observation Boundary
 
-No N4-target physical BLE scan was recorded in this step because the only current ESP32 COM resource was the V2/N16R8 prototype. This step therefore uses build, package, manifest, static contract, verifier, and locked serial diagnostic evidence for AI-owned validation. Physical N4 first-power BLE scan or visual observation remains deferred to later hardware or human gates.
+No new physical first-power BLE scan was recorded in this step. This step therefore uses build, package, manifest, static contract, verifier, and locked serial diagnostic evidence for AI-owned validation. Physical first-power BLE scan or visual observation remains deferred to later hardware or human gates.
 
 Locked HID smoke:
 
