@@ -78,6 +78,7 @@ typedef enum {
     STATUS_LED_TEST_NONE = 0,
     STATUS_LED_TEST_RGBW,
     STATUS_LED_TEST_MAP,
+    STATUS_LED_TEST_PIXEL,
 } status_led_test_mode_t;
 
 typedef enum {
@@ -157,6 +158,10 @@ typedef struct {
     status_led_test_mode_t test_mode;
     uint8_t test_strip_mask;
     uint32_t test_started_ms;
+    status_led_strip_id_t test_pixel_strip;
+    uint8_t test_pixel_index;
+    status_led_rgb_t test_pixel_color;
+    uint8_t test_pixel_percent;
     char last_reason[32];
     status_led_frame_t last_frame;
 } status_led_state_t;
@@ -731,6 +736,27 @@ static void status_led_render_test_locked(status_led_frame_t *frame, uint32_t no
         }
         if (s_state.test_strip_mask & (1U << STATUS_LED_STRIP_EDGE)) {
             frame->edge[step % STATUS_LED_EDGE_COUNT] = color;
+        }
+        return;
+    }
+
+    if (s_state.test_mode == STATUS_LED_TEST_PIXEL) {
+        color = status_led_token_locked(s_state.test_pixel_color, s_state.test_pixel_percent, true);
+        switch (s_state.test_pixel_strip) {
+        case STATUS_LED_STRIP_STATUS:
+            if (s_state.test_pixel_index < STATUS_LED_STATUS_COUNT) {
+                frame->status[s_state.test_pixel_index] = color;
+            }
+            break;
+        case STATUS_LED_STRIP_KEY:
+            if (s_state.test_pixel_index < STATUS_LED_KEY_COUNT) {
+                frame->key[s_state.test_pixel_index] = color;
+            }
+            break;
+        case STATUS_LED_STRIP_EC11:
+        case STATUS_LED_STRIP_EDGE:
+        default:
+            break;
         }
     }
 }
@@ -1563,6 +1589,91 @@ static bool status_led_parse_severity(const char *text, status_led_error_severit
     return true;
 }
 
+static bool status_led_parse_calibration_strip(const char *text, status_led_strip_id_t *strip, uint8_t *count, uint8_t *first_led)
+{
+    if (strcasecmp(text, "status") == 0) {
+        *strip = STATUS_LED_STRIP_STATUS;
+        *count = STATUS_LED_STATUS_COUNT;
+        *first_led = 1U;
+        return true;
+    }
+    if (strcasecmp(text, "key") == 0) {
+        *strip = STATUS_LED_STRIP_KEY;
+        *count = STATUS_LED_KEY_COUNT;
+        *first_led = 11U;
+        return true;
+    }
+    return false;
+}
+
+static bool status_led_parse_pixel_index(const char *text, uint8_t first_led, uint8_t count, uint8_t *zero_based_index)
+{
+    const char *cursor = text;
+    if (strncasecmp(cursor, "LED", 3) == 0) {
+        cursor += 3;
+    }
+
+    char *end = NULL;
+    long value = strtol(cursor, &end, 10);
+    if (cursor == end || *end != '\0') {
+        return false;
+    }
+
+    if (value >= 1 && value <= count) {
+        *zero_based_index = (uint8_t)(value - 1);
+        return true;
+    }
+
+    long last_led = (long)first_led + (long)count - 1L;
+    if (value >= first_led && value <= last_led) {
+        *zero_based_index = (uint8_t)(value - first_led);
+        return true;
+    }
+
+    return false;
+}
+
+static bool status_led_parse_color_token(const char *text, status_led_rgb_t *color)
+{
+    if (strcasecmp(text, "red") == 0) {
+        *color = status_led_rgb(255, 0, 0);
+    } else if (strcasecmp(text, "green") == 0) {
+        *color = status_led_rgb(0, 255, 0);
+    } else if (strcasecmp(text, "blue") == 0) {
+        *color = status_led_rgb(0, 0, 255);
+    } else if (strcasecmp(text, "white") == 0) {
+        *color = status_led_rgb(255, 255, 255);
+    } else if (strcasecmp(text, "off") == 0 || strcasecmp(text, "black") == 0) {
+        *color = status_led_rgb(0, 0, 0);
+    } else {
+        return false;
+    }
+    return true;
+}
+
+static void status_led_run_pixel_test(
+    status_led_strip_id_t strip,
+    uint8_t index,
+    status_led_rgb_t color,
+    uint8_t percent)
+{
+    uint32_t now_ms = status_led_now_ms();
+    if (xSemaphoreTake(s_mutex, portMAX_DELAY) == pdTRUE) {
+        s_state.test_mode = STATUS_LED_TEST_PIXEL;
+        s_state.test_strip_mask = 1U << strip;
+        s_state.test_pixel_strip = strip;
+        s_state.test_pixel_index = index;
+        s_state.test_pixel_color = color;
+        s_state.test_pixel_percent = percent;
+        s_state.test_started_ms = now_ms;
+        s_state.output_disabled = false;
+        s_state.low_power_disabled = false;
+        s_state.status_window_until_ms = now_ms + STATUS_LED_STATUS_WINDOW_MS;
+        status_led_set_last_reason_locked("test_pixel");
+        xSemaphoreGive(s_mutex);
+    }
+}
+
 static void status_led_print_status(void)
 {
     status_led_state_t snapshot;
@@ -1842,6 +1953,51 @@ bool status_led_consume_usb_command(const char *line)
             xSemaphoreGive(s_mutex);
         }
         ESP_LOGI(TAG, "LED map test running mask=0x%02x status_order=PWR,BLE,REC,AI,OK,WARN ec11_order=LED7..LED10+LED15..LED16+LED23..LED28 key_order=KEY1,KEY2,KEY3,KEY4 edge_order=LED17..LED22", mask);
+        return true;
+    }
+
+    if (strncmp(command, "TEST:PIXEL ", strlen("TEST:PIXEL ")) == 0) {
+        char strip_text[16] = {0};
+        char led_text[16] = {0};
+        char color_text[16] = {0};
+        unsigned percent = 25U;
+        int fields = sscanf(
+            command + strlen("TEST:PIXEL "),
+            "%15s %15s %15s %u",
+            strip_text,
+            led_text,
+            color_text,
+            &percent);
+        if (fields < 3) {
+            ESP_LOGW(TAG, "LED TEST:PIXEL requires <status|key> <LEDn|index> <red|green|blue|white|off> [percent]");
+            return true;
+        }
+
+        status_led_strip_id_t strip;
+        uint8_t count = 0;
+        uint8_t first_led = 0;
+        uint8_t index = 0;
+        status_led_rgb_t color = {0};
+        if (!status_led_parse_calibration_strip(strip_text, &strip, &count, &first_led) ||
+            !status_led_parse_pixel_index(led_text, first_led, count, &index) ||
+            !status_led_parse_color_token(color_text, &color) ||
+            percent > 100U) {
+            ESP_LOGW(TAG, "LED TEST:PIXEL invalid args: strip=%s led=%s color=%s percent=%u", strip_text, led_text, color_text, percent);
+            return true;
+        }
+
+        if (strcasecmp(color_text, "off") == 0 || strcasecmp(color_text, "black") == 0) {
+            percent = 0U;
+        }
+        status_led_run_pixel_test(strip, index, color, (uint8_t)percent);
+        ESP_LOGI(
+            TAG,
+            "LED pixel calibration strip=%s led=LED%u index=%u color=%s percent=%u status_key_only=1 ec11_edge_untouched=1",
+            strip_text,
+            (unsigned)(first_led + index),
+            (unsigned)index,
+            color_text,
+            percent);
         return true;
     }
 

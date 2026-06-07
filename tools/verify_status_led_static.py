@@ -55,6 +55,10 @@ CHECKS = {
         "~LED:PRIVACY",
         "TEST:RGBW",
         "TEST:MAP",
+        "TEST:PIXEL",
+        "STATUS_LED_TEST_PIXEL",
+        "status_led_parse_calibration_strip",
+        "status_key_only=1",
         "ec11_order=LED7..LED10+LED15..LED16+LED23..LED28",
         "PREVIEW ",
         "ERROR ",
@@ -124,6 +128,20 @@ CHECKS = {
         "`LED1=PWR`",
         "`LED6=WARN`",
         "`~LED:TEST:RGBW <status|ec11|knob|ring|key|edge|all>`",
+        "`~LED:TEST:PIXEL <status|key> <LEDn|index> <red|green|blue|white|off> [percent]`",
+    ],
+    "tools/status_led_camera_calibration.ps1": [
+        "rgbw-single-led",
+        "status,key",
+        "~LED:TEST:PIXEL",
+        "LED1",
+        "LED14",
+        "cv2.VideoCapture",
+        "serial.tools",
+        "manifest.json",
+        "serial-transcript.txt",
+        "per_led_results",
+        "brightness_steps",
     ],
 }
 
@@ -202,7 +220,7 @@ def main() -> int:
     print(
         "PASS: status LED static verification covers V2 four-zone WS2812 resources, "
         "EC11 GPIO5/count12, key GPIO13/count4, edge GPIO4/count6, diagnostics, "
-        "USB validation hooks, and low-power off path."
+        "USB validation hooks, camera one-pixel status/key harness, and low-power off path."
     )
     return 0
 

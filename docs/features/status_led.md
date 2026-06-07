@@ -47,6 +47,7 @@ Current is estimated per frame with 20 mA per RGB channel at full scale and clam
 - `~LED:PRIVACY`
 - `~LED:TEST:RGBW <status|ec11|knob|ring|key|edge|all>`
 - `~LED:TEST:MAP <status|ec11|knob|ring|key|edge|all>`
+- `~LED:TEST:PIXEL <status|key> <LEDn|index> <red|green|blue|white|off> [percent]`
 - `~LED:PREVIEW <ready|pairing|reconnect|capture|desktop_mic|rec_not_available|processing|ok|low_battery|critical_battery|charging|full|sleep|clear>`
 - `~LED:ERROR <ble|recording|ai|ota|power|system> <retryable|hard>`
 - `~LED:PROFILE <off|low|standard|ambient|factory>`
@@ -54,3 +55,4 @@ Current is estimated per frame with 20 mA per RGB channel at full scale and clam
 - `~LED:WAKE`
 
 Real V2 hardware validation still has to record the actual RGB color order and physical LED order with photos or video. The firmware default color order is `GRB` for all four strips.
+The `TEST:PIXEL` path is intentionally limited to `status` and `key` for camera calibration so EC11 ring and edge/frame LEDs are not driven during the first status/key bring-up pass.
