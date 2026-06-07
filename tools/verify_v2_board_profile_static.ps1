@@ -160,7 +160,15 @@ foreach ($item in @(
     @($statusLedDoc, "LED17.*LED22", "status LED doc edge LED refs"),
     @($otaPackage, 'hardware_revision = "keyboard-v2-n16r8"', "OTA package V2 hardware requirement"),
     @($otaPackage, 'hardware_revision = "esp32s3-wroom-1-n16r8"', "OTA package V2 DIS revision"),
-    @($factoryPackage, 'hardware_revision = "esp32s3-wroom-1-n16r8"', "factory package V2 DIS revision")
+    @($factoryPackage, 'hardware_revision = "esp32s3-wroom-1-n16r8"', "factory package V2 DIS revision"),
+    @($factoryPackage, "audio_control_uuid", "factory package audio control UUID"),
+    @($factoryPackage, "ble_audio_control_v1", "factory package audio control capability"),
+    @($factoryPackage, "board=voice-keyboard-v2-n16r8", "factory package V2 readiness token"),
+    @($factoryPackage, "firmware_ota_v1", "factory package OTA capability"),
+    @($factoryPackage, "flash_16mb", "factory package flash capability"),
+    @($factoryPackage, "psram_8mb_octal", "factory package PSRAM capability"),
+    @($factoryPackage, "post_failure_behavior", "factory package POST failure diagnostic contract"),
+    @($factoryPackage, "~OTA:STATUS", "factory package serial OTA status diagnostic command")
 )) {
     Assert-Contains -Text $item[0] -Pattern $item[1] -Description $item[2]
 }

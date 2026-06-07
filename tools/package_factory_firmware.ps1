@@ -179,7 +179,7 @@ $manifest = [ordered]@{
             software_revision_protocol = "1"
         }
     }
-    readiness = "factory_ready;pairable_on_boot;post_degraded_boot"
+    readiness = "factory_ready;pairable_on_boot;post_degraded_boot;board=voice-keyboard-v2-n16r8;model=keyboard-v2;fw_version=$project_version"
     capabilities = @(
         "ble_hid_keyboard",
         "ble_audio_vka1",
@@ -188,8 +188,29 @@ $manifest = [ordered]@{
         "voice_record_toggle",
         "custom_keys_f13_f16",
         "custom_key_gestures_f13_f24",
-        "post_status"
+        "post_status",
+        "firmware_ota_v1",
+        "flash_16mb",
+        "psram_8mb_octal"
     )
+    diagnostics = [ordered]@{
+        post_failure_behavior = "POST critical failures are logged, readiness marks the degraded subsystem, and firmware continues BLE/HID/serial recovery where possible."
+        readiness_logs = @(
+            "factory readiness: ble_name=listener appearance=0x03c1 readiness=... capabilities=...",
+            "device readiness: reason=init_complete ready_mask=... degraded_mask=... readiness=... capabilities=..."
+        )
+        serial_commands = @(
+            "~OTA:STATUS",
+            "~DIS:GATT",
+            "~OTA:GATT",
+            "~DIAG:GATT",
+            "~BOARD:STATUS",
+            "~POWER:STATUS",
+            "~DIAGLOG:COUNT",
+            "~DIAGLOG:LAST:32"
+        )
+        human_observation_deferred = "Physical BLE scan or first power-on visual observation can be recorded by later hardware/human gates; this package records build-time identity and diagnostic contracts."
+    }
     flash = [ordered]@{
         chip = $target
         port = $Port
@@ -231,10 +252,7 @@ Capabilities characteristic: 710af845-6d9f-6583-0c4d-9e5b3bc3091d
 Run this command from this package directory:
 
 ~~~powershell
-python `$env:IDF_PATH\components\esptool_py\esptool\esptool.py --chip $target -p $Port -b $Baud --before=default_reset --after=hard_reset write_flash `
-    0x0 .\bootloader.bin `
-    0x8000 .\partition-table.bin `
-    $app_offset .\$project_name.bin
+python `$env:IDF_PATH\components\esptool_py\esptool\esptool.py --chip $target -p $Port -b $Baud --before=default_reset --after=hard_reset write_flash 0x0 .\bootloader.bin 0x8000 .\partition-table.bin $app_offset .\$project_name.bin
 ~~~
 
 Partition evidence from the generated partition table:
@@ -260,6 +278,24 @@ $flash_doc += @"
 ## First Power-On Contract
 
 After flashing and reset, the device advertises as listener without any serial command. POST failures are logged and the firmware continues into degraded BLE mode so status remains observable.
+
+Expected first power-on identity:
+
+- BLE GAP name: listener
+- BLE appearance: 0x03C1 keyboard
+- HID service: 1812
+- DIS manufacturer/model/hardware/firmware/protocol fields match manifest.json
+- Readiness characteristic: 710af845-6d9f-6583-0c4d-9e5b3bc3091c
+- Capabilities characteristic: 710af845-6d9f-6583-0c4d-9e5b3bc3091d
+
+Serial diagnostics that do not require interpreting raw firmware logs:
+
+- `~OTA:STATUS` prints running/boot/update partitions, version, blocker, readiness and capabilities.
+- `~DIS:GATT`, `~OTA:GATT`, and `~DIAG:GATT` print service/characteristic registration handles.
+- `~BOARD:STATUS` and `~POWER:STATUS` print board, battery, wake-policy and power blockers.
+- `~DIAGLOG:COUNT` and `~DIAGLOG:LAST:32` expose recent structured diagnostic events.
+
+If a physical BLE scan is not available, treat this package's manifest, SHA256 values and readiness contract as build/package evidence. Record the live BLE observation in the next hardware or human gate.
 "@
 
 Set-Content -LiteralPath (Join-Path $package_dir "FLASHING.md") -Value $flash_doc -Encoding UTF8
