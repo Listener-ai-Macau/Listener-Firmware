@@ -24,6 +24,15 @@ Default order is fixed until real hardware silkscreen validation proves otherwis
 
 `PWR` owns battery and charge state. `BLE` owns pairing, reconnect, and connected confidence. `REC` only lights for a real capture/upload source named by firmware. If capture is unavailable, firmware shows `WARN + REC`. `AI` owns transfer, processing, thinking, and OTA progress. `OK` is a short success flash. `WARN` owns retryable and hard errors and pairs with a source LED.
 
+## Status/Key Mapping Calibration
+
+The camera calibration contract for the first product pass is intentionally limited to the ten status/key LEDs:
+
+- `LED1=PWR`, `LED2=BLE`, `LED3=REC`, `LED4=AI`, `LED5=OK`, `LED6=WARN` on the status strip.
+- `LED11=KEY1`, `LED12=KEY2`, `LED13=KEY3`, `LED14=KEY4` on the key strip.
+
+The status and key strips keep separate color-order storage in firmware, both defaulting to `GRB` until camera validation proves a different order for either strip. `~LED:STATUS` exposes `mapping_contract`, `status_physical_map`, `key_physical_map`, and `separate_status_key_color_order=1` so static and serial checks can reject EC11/edge assumptions before camera capture.
+
 ## Driver
 
 WS2812 output uses ESP-IDF RMT at 10 MHz with an 800 kHz WS2812 encoder and a 50 us reset latch. The status LED task refreshes every 50 ms and sends at most four short strip frames, so BLE, OTA, keyboard scan, power manager, and diagnostics are not blocked by software bit-banging.

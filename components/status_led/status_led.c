@@ -53,6 +53,11 @@
 #define STATUS_LED_NVS_KEY_ORDER_KEY "ord_key"
 #define STATUS_LED_NVS_EDGE_ORDER_KEY "ord_edge"
 #define STATUS_LED_USB_PREFIX "LED:"
+#define STATUS_LED_STATUS_FIRST_LED 1U
+#define STATUS_LED_KEY_FIRST_LED 11U
+#define STATUS_LED_STATUS_PHYSICAL_MAP "LED1:PWR,LED2:BLE,LED3:REC,LED4:AI,LED5:OK,LED6:WARN"
+#define STATUS_LED_KEY_PHYSICAL_MAP "LED11:KEY1,LED12:KEY2,LED13:KEY3,LED14:KEY4"
+#define STATUS_LED_STATUS_KEY_MAPPING_CONTRACT "status=LED1..LED6,key=LED11..LED14"
 
 typedef enum {
     STATUS_LED_STRIP_STATUS = 0,
@@ -73,6 +78,9 @@ typedef enum {
     STATUS_LED_COLOR_ORDER_GRB = 0,
     STATUS_LED_COLOR_ORDER_RGB,
 } status_led_color_order_t;
+
+#define STATUS_LED_STATUS_DEFAULT_COLOR_ORDER STATUS_LED_COLOR_ORDER_GRB
+#define STATUS_LED_KEY_DEFAULT_COLOR_ORDER STATUS_LED_COLOR_ORDER_GRB
 
 typedef enum {
     STATUS_LED_TEST_NONE = 0,
@@ -177,7 +185,7 @@ static status_led_strip_t s_strips[STATUS_LED_STRIP_COUNT] = {
         .name = "status",
         .gpio = BOARD_PINS_RGB_STATUS_IO,
         .led_count = STATUS_LED_STATUS_COUNT,
-        .color_order = STATUS_LED_COLOR_ORDER_GRB,
+        .color_order = STATUS_LED_STATUS_DEFAULT_COLOR_ORDER,
     },
     {
         .name = "ec11",
@@ -189,7 +197,7 @@ static status_led_strip_t s_strips[STATUS_LED_STRIP_COUNT] = {
         .name = "key",
         .gpio = BOARD_PINS_RGB_KEY_IO,
         .led_count = STATUS_LED_KEY_COUNT,
-        .color_order = STATUS_LED_COLOR_ORDER_GRB,
+        .color_order = STATUS_LED_KEY_DEFAULT_COLOR_ORDER,
     },
     {
         .name = "edge",
@@ -1594,13 +1602,13 @@ static bool status_led_parse_calibration_strip(const char *text, status_led_stri
     if (strcasecmp(text, "status") == 0) {
         *strip = STATUS_LED_STRIP_STATUS;
         *count = STATUS_LED_STATUS_COUNT;
-        *first_led = 1U;
+        *first_led = STATUS_LED_STATUS_FIRST_LED;
         return true;
     }
     if (strcasecmp(text, "key") == 0) {
         *strip = STATUS_LED_STRIP_KEY;
         *count = STATUS_LED_KEY_COUNT;
-        *first_led = 11U;
+        *first_led = STATUS_LED_KEY_FIRST_LED;
         return true;
     }
     return false;
@@ -1690,6 +1698,10 @@ static void status_led_print_status(void)
     printf(
         "~LED:STATUS profile=%s backend=rmt_ws2812_800khz refresh_ms=%u reset_us=50"
         " semantic_order=LED1:PWR,LED2:BLE,LED3:REC,LED4:AI,LED5:OK,LED6:WARN"
+        " mapping_contract=" STATUS_LED_STATUS_KEY_MAPPING_CONTRACT
+        " status_physical_map=" STATUS_LED_STATUS_PHYSICAL_MAP
+        " key_physical_map=" STATUS_LED_KEY_PHYSICAL_MAP
+        " separate_status_key_color_order=1 status_default_order=GRB key_default_order=GRB"
         " strips=status:gpio%d:count%u:order%s:refsLED1..LED6,ec11:gpio%d:count%u:order%s:refsLED7..LED10+LED15..LED16+LED23..LED28,key:gpio%d:count%u:order%s:refsLED11..LED14,edge:gpio%d:count%u:order%s:refsLED17..LED22"
         " key_pin_contract=PWM_RGB_KEY_GPIO13 ec11_pin_contract=PWM_RGB_EC11_GPIO5 edge_pin_contract=PWM_RGB_Edge_GPIO4 gpio14_reserved=BAT_CHG_IO vdd_led_enable=always_on_assumed"
         " ble=%s rec_active=%u rec_source=%s processing=%u"
@@ -1992,12 +2004,13 @@ bool status_led_consume_usb_command(const char *line)
         status_led_run_pixel_test(strip, index, color, (uint8_t)percent);
         ESP_LOGI(
             TAG,
-            "LED pixel calibration strip=%s led=LED%u index=%u color=%s percent=%u status_key_only=1 ec11_edge_untouched=1",
+            "LED pixel calibration strip=%s led=LED%u index=%u color=%s percent=%u status_key_only=1 ec11_edge_untouched=1 mapping_contract=%s",
             strip_text,
             (unsigned)(first_led + index),
             (unsigned)index,
             color_text,
-            percent);
+            percent,
+            STATUS_LED_STATUS_KEY_MAPPING_CONTRACT);
         return true;
     }
 
