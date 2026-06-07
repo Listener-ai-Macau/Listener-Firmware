@@ -36,6 +36,16 @@ function Require-String {
     }
 }
 
+function Require-NonEmpty {
+    param(
+        [AllowNull()][string]$Text,
+        [Parameter(Mandatory = $true)][string]$Description
+    )
+    if ([string]::IsNullOrWhiteSpace($Text)) {
+        Add-CheckError "$Description must not be empty"
+    }
+}
+
 function Require-ArrayContains {
     param(
         [AllowNull()]$Values,
@@ -85,9 +95,9 @@ $flashing = if (Test-Path -LiteralPath $flashingPath) {
 
 Require-True -Condition ([int]$manifest.schema_version -eq 1) -Message "manifest schema_version must be 1"
 Require-True -Condition ([string]$manifest.project -eq $ExpectedProject) -Message "manifest project must be $ExpectedProject"
-Require-String -Text ([string]$manifest.version) -Needle "" -Description "manifest version"
+Require-NonEmpty -Text ([string]$manifest.version) -Description "manifest version"
 Require-True -Condition ([string]$manifest.target -eq "esp32s3") -Message "manifest target must be esp32s3"
-Require-String -Text ([string]$manifest.git_commit) -Needle "" -Description "manifest git_commit"
+Require-NonEmpty -Text ([string]$manifest.git_commit) -Description "manifest git_commit"
 
 $identity = $manifest.ble_identity
 Require-True -Condition ([string]$identity.name -eq "listener") -Message "BLE name must be listener"
