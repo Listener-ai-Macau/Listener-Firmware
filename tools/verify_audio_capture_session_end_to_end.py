@@ -95,7 +95,7 @@ async def main_async(args) -> None:
         analysis = analyze_recording(source_wav_path, recorded_wav_path)
     else:
         serial_log_text = read_serial_log_text(serial_log_path)
-        physical_key_sources = ("ec11_key.gpio11", "ec11_key.gpio35")
+        physical_key_sources = ("ec11_key.gpio18", "ec11_key.gpio35")
         physical_key_start_seen = any(
             f"recording start source={source}" in serial_log_text for source in physical_key_sources
         )

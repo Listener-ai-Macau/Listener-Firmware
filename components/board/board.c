@@ -21,7 +21,7 @@ static const char *TAG = "board";
 
 #define BOARD_V2_USB_DET_POLICY "v2_gpio7_r37_r32_10K_10K_divider"
 #define BOARD_V2_CHARGER_POLARITY "v2_gpio14_chg_gpio21_std_active_low"
-#define BOARD_V2_PWR_HOLD_POLICY "v2_gpio46_power_latch_hold_high_release_low_for_hardware_shutdown"
+#define BOARD_V2_PWR_HOLD_POLICY "v2_gpio11_power_latch_hold_low_release_high_for_hardware_shutdown"
 #define BOARD_V2_LED_POLICY "v2_four_zone_ws2812_status_gpio1_ec11_gpio5_key_gpio13_edge_gpio4"
 #define BOARD_V2_MIC_POLICY "v2_sph0655_pdm_clk_gpio48_dout_gpio47_enabled_for_a1_a2_hardware_validation"
 #define BOARD_V2_CURRENT_POLICY "v2_battery_side_input_branch_current_ina180a2_10mR_adc_mv_x2_with_battery_mv_from_gpio8_div2"
@@ -224,17 +224,17 @@ esp_err_t board_configure_power_hold_latch(void)
     if (ret != ESP_OK) {
         ESP_LOGW(
             TAG,
-            "PWR_HOLD/GPIO46 output config failed: gpio=%d ret=%s",
+            "PWR_HOLD/GPIO11 output config failed: gpio=%d ret=%s",
             (int)BOARD_PINS_PWR_HOLD_IO,
             esp_err_to_name(ret));
         return ret;
     }
 
-    ret = gpio_set_level(BOARD_PINS_PWR_HOLD_IO, 1);
+    ret = gpio_set_level(BOARD_PINS_PWR_HOLD_IO, 0);
     if (ret != ESP_OK) {
         ESP_LOGW(
             TAG,
-            "PWR_HOLD/GPIO46 hold-high failed: gpio=%d ret=%s",
+            "PWR_HOLD/GPIO11 hold-low failed: gpio=%d ret=%s",
             (int)BOARD_PINS_PWR_HOLD_IO,
             esp_err_to_name(ret));
         return ret;
@@ -251,11 +251,12 @@ esp_err_t board_set_power_hold_enabled(bool enabled)
         return ret;
     }
 
-    ret = gpio_set_level(BOARD_PINS_PWR_HOLD_IO, enabled ? 1 : 0);
+    int level = enabled ? 0 : 1;
+    ret = gpio_set_level(BOARD_PINS_PWR_HOLD_IO, level);
     if (ret != ESP_OK) {
         ESP_LOGW(
             TAG,
-            "PWR_HOLD/GPIO46 set failed: enabled=%u gpio=%d ret=%s",
+            "PWR_HOLD/GPIO11 set failed: enabled=%u gpio=%d ret=%s",
             enabled ? 1u : 0u,
             (int)BOARD_PINS_PWR_HOLD_IO,
             esp_err_to_name(ret));
@@ -264,10 +265,10 @@ esp_err_t board_set_power_hold_enabled(bool enabled)
 
     ESP_LOGW(
         TAG,
-        "PWR_HOLD/GPIO46 %s: gpio=%d level=%d policy=%s",
-        enabled ? "held high" : "released low for hardware shutdown",
+        "PWR_HOLD/GPIO11 %s: gpio=%d level=%d policy=%s",
+        enabled ? "held low" : "released high for hardware shutdown",
         (int)BOARD_PINS_PWR_HOLD_IO,
-        enabled ? 1 : 0,
+        level,
         BOARD_V2_PWR_HOLD_POLICY);
     return ESP_OK;
 }
@@ -404,7 +405,7 @@ static void board_print_gpio_status(void)
         " ec11_b_gpio=%d ec11_b_level=%s"
         " ec11_ab_state=0x%02" PRIx32
         " ec11_key_gpio=%d ec11_key_level=%s ec11_key_pressed=%u"
-        " recording_key=EC11_KEY/GPIO11\n",
+        " recording_key=EC11_KEY/GPIO18\n",
         (int)BOARD_PINS_KEY1_IO,
         board_gpio_level_name(key1),
         key1 == 0 ? 1u : 0u,
@@ -621,7 +622,7 @@ void board_log_v2_diagnostics(void)
         power_hold.configured ? 1u : 0u,
         BOARD_PINS_RESERVED_MSPI_GPIOS);
     if (pwr_hold_ret != ESP_OK) {
-        ESP_LOGW(TAG, "PWR_HOLD/GPIO46 hold-high setup failed: %s", esp_err_to_name(pwr_hold_ret));
+        ESP_LOGW(TAG, "PWR_HOLD/GPIO11 hold-low setup failed: %s", esp_err_to_name(pwr_hold_ret));
     }
     ESP_LOGW(TAG, "board hardware provisional: usb_det=%s charger=%s pwr_hold=%s current=%s led=%s mic=%s",
              BOARD_V2_USB_DET_POLICY,
@@ -649,12 +650,12 @@ void board_print_help(void)
         "Inject test bytes with tools/send_serial.ps1 or type in monitor.\n"
         "Capture 3s audio WAV with tools/capture_audio_wav.ps1 -Port COM3.\n"
         "Capture toggle session WAV with tools/capture_audio_session_wav.ps1 -Port COM3.\n"
-        "EC11 push/GPIO11 controls recording: single click starts or stops after the 200 ms double-click window.\n"
+        "EC11 push/GPIO18 controls recording: single click starts or stops after the 200 ms double-click window.\n"
         "EC11 push fast double-click clears BLE pairing/session state after recording has been idle; long press is reserved for hardware power control.\n"
         "Logical custom keys: single-click KEY1-KEY4 fallback=F13-F16, double-click=F17-F20, long-press=F21-F24.\n"
         "KEY1/GPIO38, KEY2/GPIO39, KEY3/GPIO40, KEY4/GPIO41 send safe non-text BLE HID usages while Listener-Type custom actions are unavailable.\n"
         "Send ~VREC:RECOVERY to clear pairing/session state over USB.\n"
-        "Board diagnostics: ~BOARD:STATUS reports V2 pin, USB, charger, battery, PWR_HOLD/GPIO46, mic, reserved MSPI, and LED resource status.\n"
+        "Board diagnostics: ~BOARD:STATUS reports V2 pin, USB, charger, battery, PWR_HOLD/GPIO11, mic, reserved MSPI, and LED resource status.\n"
         "Board GPIO diagnostics: ~BOARD:GPIO reads raw KEY1-KEY4 and EC11 A/B/key levels without reconfiguring pins.\n"
         "Board GPIO scan: ~BOARD:GPIO-SCAN samples all valid GPIO levels without reconfiguring pins and prints changed GPIOs.\n"
         "Input flash debug: ~DIAGLOG:INPUTDBG:ON records high-volume key/EC11 debug events until ~DIAGLOG:INPUTDBG:OFF or reboot.\n"

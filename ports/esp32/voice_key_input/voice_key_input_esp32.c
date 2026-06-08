@@ -59,7 +59,7 @@
 #define VOICE_KEY_INPUT_DIRECT_LABEL   "gpio0.boot"
 #else
 #define VOICE_KEY_INPUT_DIRECT_GPIO    BOARD_PINS_EC11_KEY_IO
-#define VOICE_KEY_INPUT_DIRECT_LABEL   "ec11_key.gpio11"
+#define VOICE_KEY_INPUT_DIRECT_LABEL   "ec11_key.gpio18"
 #endif
 #define VOICE_KEY_INPUT_POLL_MS        (10)
 #define VOICE_KEY_INPUT_DEBOUNCE_MS    (30)
