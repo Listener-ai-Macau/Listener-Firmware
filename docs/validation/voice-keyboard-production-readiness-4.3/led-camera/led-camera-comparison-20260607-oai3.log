@@ -1,0 +1,2 @@
+baseline path=.\docs\validation\voice-keyboard-production-readiness-4.3\led-camera\camera0-probe-20260607-oai3.jpg width=640 height=480 mean=114.16 p95=201.00 p99=217.00 max=255 bright_ge_220=2880
+factory_rgbw path=.\docs\validation\voice-keyboard-production-readiness-4.3\led-camera\led-factory-rgbw-camera0-20260607-222433.jpg width=640 height=480 mean=132.18 p95=231.00 p99=255.00 max=255 bright_ge_220=17625

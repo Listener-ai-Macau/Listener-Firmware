@@ -3,6 +3,7 @@ import asyncio
 import pathlib
 
 from ble_audio_regression_common import (
+    WavPlayback,
     analyze_recording,
     detect_active_runs,
     generate_source_wav,
@@ -63,7 +64,14 @@ async def main_async(args) -> None:
     artifacts_dir.mkdir(parents=True, exist_ok=True)
 
     capture_args = build_capture_args(args, artifacts_dir)
-    summaries = await run_capture_with_args(capture_args)
+    source_wav_path = None
+    if args.trigger_mode == "serial-toggle":
+        source_wav_path = artifacts_dir / "source_ble_session_reference_latest_16k_mono.wav"
+        generate_source_wav(source_wav_path, args.capture_seconds)
+        with WavPlayback(source_wav_path):
+            summaries = await run_capture_with_args(capture_args)
+    else:
+        summaries = await run_capture_with_args(capture_args)
     summary = summaries[0]
     recorded_wav_path = pathlib.Path(summary["wav_path"])
     if args.trigger_mode == "physical-key":
@@ -76,7 +84,6 @@ async def main_async(args) -> None:
     else:
         transport = validate_transport_summary(summary, capture_seconds=args.capture_seconds)
 
-    source_wav_path = None
     analysis = None
     physical_key_analysis = None
     serial_log_path = pathlib.Path(str(summary["serial_log_path"]))
@@ -85,12 +92,10 @@ async def main_async(args) -> None:
     physical_key_stop_seen = False
 
     if args.trigger_mode == "serial-toggle":
-        source_wav_path = artifacts_dir / "source_ble_session_reference_latest_16k_mono.wav"
-        generate_source_wav(source_wav_path, args.capture_seconds)
         analysis = analyze_recording(source_wav_path, recorded_wav_path)
     else:
         serial_log_text = read_serial_log_text(serial_log_path)
-        physical_key_sources = ("ec11_key.gpio35",)
+        physical_key_sources = ("ec11_key.gpio11", "ec11_key.gpio35")
         physical_key_start_seen = any(
             f"recording start source={source}" in serial_log_text for source in physical_key_sources
         )

@@ -1,0 +1,268 @@
+Resolved COMx to 'COM6' (current ESP32 serial/COM device: COM6)
+Locked 'COM6' for 'oai3' (60 min)
+Running locked command: pwsh -NoProfile -File C:\Users\Billy\Desktop\listener\voice-keyboard-firmware-wt-oai3-voice-keyboard-production-readiness-4.3\docs\validation\voice-keyboard-production-readiness-4.3\run_locked_hardware_window_20260608_oai3.ps1 -Port COM6
+hardware_window_agent=oai3
+hardware_window_port=COM6
+hardware_window_started_at=2026-06-08T10:19:33.0832936+08:00
+
+[32;1mDeviceID    : [0mCOM6
+[32;1mName        : [0mUSB 串行设备 (COM6)
+[32;1mPNPDeviceID : [0mUSB\VID_303A&PID_1001&MI_00\7&2DA
+              1C99B&0&0000
+
+=== serial-capture-reset-before-flash begin 2026-06-08T10:19:33.1878663+08:00 ===
+Activating ESP-IDF 5.5
+Setting IDF_PATH to 'C:\Users\Billy\esp\esp-idf'.
+* Checking python version ... 3.11.9
+* Checking python dependencies ... OK
+* Deactivating the current ESP-IDF environment (if any) ... OK
+* Establishing a new ESP-IDF environment ... OK
+* Identifying shell ... pwsh.exe
+* Detecting outdated tools in system ... Found tools that are not used by active ESP-IDF version.
+For removing old versions of riscv32-esp-elf-gdb use command 'python.exe C:\Users\Billy\esp\esp-idf\tools\idf_tools.py uninstall'
+To free up even more space, remove installation packages of those tools.
+Use option python.exe C:\Users\Billy\esp\esp-idf\tools\idf_tools.py uninstall --remove-archives.
+
+Done! You can now compile ESP-IDF projects.
+Go to the project directory and run:
+
+  idf.py build
+
+I (3566) diag_log: diag_log ready: write_sector=223 write_offsetI (8226) audio_capture: frame captured count=200 bytes=128000
+
+I (9236) audio_capture: frame captured count=250 bytes=160000
+
+=== serial-capture-reset-before-flash exit_code=0 2026-06-08T10:19:41.2463408+08:00 ===
+=== idf-flash begin 2026-06-08T10:19:41.2487396+08:00 ===
+Activating ESP-IDF 5.5
+Setting IDF_PATH to 'C:\Users\Billy\esp\esp-idf'.
+* Checking python version ... 3.11.9
+* Checking python dependencies ... OK
+* Deactivating the current ESP-IDF environment (if any) ... OK
+* Establishing a new ESP-IDF environment ... OK
+* Identifying shell ... pwsh.exe
+* Detecting outdated tools in system ... Found tools that are not used by active ESP-IDF version.
+For removing old versions of riscv32-esp-elf-gdb use command 'python.exe C:\Users\Billy\esp\esp-idf\tools\idf_tools.py uninstall'
+To free up even more space, remove installation packages of those tools.
+Use option python.exe C:\Users\Billy\esp\esp-idf\tools\idf_tools.py uninstall --remove-archives.
+
+Done! You can now compile ESP-IDF projects.
+Go to the project directory and run:
+
+  idf.py build
+
+Executing action: flash
+Running ninja in directory C:\Users\Billy\Desktop\listener\voice-keyboard-firmware-wt-oai3-voice-keyboard-production-readiness-4.3\build
+Executing "ninja flash"...
+[1/5] C:\Windows\system32\cmd.exe /C "cd /D C:\Users\Billy\Desktop\listener\voice-keyboard-firmware-wt-oai3-voice-keyboard-production-readiness-4.3\build\esp-idf\esptool_py && C:\Users\Billy\.espressif\python_env\idf5.5_py3.11_env\Scripts\python.exe C:/Users/Billy/esp/esp-idf/components/partition_table/check_sizes.py --offset 0x8000 partition --type app C:/Users/Billy/Desktop/listener/voice-keyboard-firmware-wt-oai3-voice-keyboard-production-readiness-4.3/build/partition_table/partition-table.bin C:/Users/Billy/Desktop/listener/voice-keyboard-firmware-wt-oai3-voice-keyboard-production-readiness-4.3/build/voice-keyboard-firmware.bin"
+
+voice-keyboard-firmware.bin binary size 0xc0510 bytes. Smallest app partition is 0x600000 bytes. 0x53faf0 bytes (87%) free.
+
+
+[2/5] Performing build step for 'bootloader'
+
+[1/1] C:\Windows\system32\cmd.exe /C "cd /D C:\Users\Billy\Desktop\listener\voice-keyboard-firmware-wt-oai3-voice-keyboard-production-readiness-4.3\build\bootloader\esp-idf\esptool_py && C:\Users\Billy\.espressif\python_env\idf5.5_py3.11_env\Scripts\python.exe C:/Users/Billy/esp/esp-idf/components/partition_table/check_sizes.py --offset 0x8000 bootloader 0x0 C:/Users/Billy/Desktop/listener/voice-keyboard-firmware-wt-oai3-voice-keyboard-production-readiness-4.3/build/bootloader/bootloader.bin"
+
+Bootloader binary size 0x51b0 bytes. 0x2e50 bytes (36%) free.
+
+
+
+[3/5] No install step for 'bootloader'
+
+[4/5] Completed 'bootloader'
+
+[4/5] C:\Windows\system32\cmd.exe /C "cd /D C:\Users\Billy\esp\esp-idf\components\esptool_py && C:\Users\Billy\.espressif\tools\cmake\3.30.2\bin\cmake.exe -D IDF_PATH=C:/Users/Billy/esp/esp-idf -D SERIAL_TOOL=C:/Users/Billy/.espressif/python_env/idf5.5_py3.11_env/Scripts/python.exe;;C:/Users/Billy/esp/esp-idf/components/esptool_py/esptool/esptool.py;--chip;esp32s3 -D SERIAL_TOOL_ARGS=--before=default_reset;--after=hard_reset;write_flash;@flash_args -D WORKING_DIRECTORY=C:/Users/Billy/Desktop/listener/voice-keyboard-firmware-wt-oai3-voice-keyboard-production-readiness-4.3/build -P C:/Users/Billy/esp/esp-idf/components/esptool_py/run_serial_tool.cmake"
+
+esptool.py --chip esp32s3 -p COM6 -b 460800 --before=default_reset --after=hard_reset write_flash --flash_mode dio --flash_freq 80m --flash_size 16MB 0x0 bootloader/bootloader.bin 0x20000 voice-keyboard-firmware.bin 0x8000 partition_table/partition-table.bin 0xf000 ota_data_initial.bin
+
+esptool.py v4.12.dev2
+
+Serial port COM6
+
+Connecting...
+
+Chip is ESP32-S3 (QFN56) (revision v0.2)
+
+Features: WiFi, BLE, Embedded PSRAM 8MB (AP_3v3)
+
+Crystal is 40MHz
+
+USB mode: USB-Serial/JTAG
+
+MAC: a4:cb:8f:f4:59:a4
+
+Uploading stub...
+
+Running stub...
+
+Stub running...
+
+Changing baud rate to 460800
+
+Changed.
+
+Configuring flash size...
+
+Flash will be erased from 0x00000000 to 0x00005fff...
+
+Flash will be erased from 0x00020000 to 0x000e0fff...
+
+Flash will be erased from 0x00008000 to 0x00008fff...
+
+Flash will be erased from 0x0000f000 to 0x00010fff...
+
+SHA digest in image updated
+
+Compressed 20912 bytes to 13442...
+
+Writing at 0x00000000... (100 %)
+
+Wrote 20912 bytes (13442 compressed) at 0x00000000 in 0.3 seconds (effective 634.8 kbit/s)...
+
+Hash of data verified.
+
+Compressed 787728 bytes to 454695...
+
+Writing at 0x00020000... (3 %)
+
+Writing at 0x0002e040... (7 %)
+
+Writing at 0x0003b38c... (10 %)
+
+Writing at 0x00045de1... (14 %)
+
+Writing at 0x0004f33d... (17 %)
+
+Writing at 0x00055544... (21 %)
+
+Writing at 0x0005b946... (25 %)
+
+Writing at 0x00061a80... (28 %)
+
+Writing at 0x00067848... (32 %)
+
+Writing at 0x0006d7bf... (35 %)
+
+Writing at 0x00073a21... (39 %)
+
+Writing at 0x00079d4e... (42 %)
+
+Writing at 0x0008031d... (46 %)
+
+Writing at 0x00086304... (50 %)
+
+Writing at 0x0008c3eb... (53 %)
+
+Writing at 0x00091c70... (57 %)
+
+Writing at 0x000977c1... (60 %)
+
+Writing at 0x0009d1a9... (64 %)
+
+Writing at 0x000a33a6... (67 %)
+
+Writing at 0x000a9618... (71 %)
+
+Writing at 0x000aef31... (75 %)
+
+Writing at 0x000b4b27... (78 %)
+
+Writing at 0x000bd83b... (82 %)
+
+Writing at 0x000c386e... (85 %)
+
+Writing at 0x000c9805... (89 %)
+
+Writing at 0x000ced92... (92 %)
+
+Writing at 0x000d5178... (96 %)
+
+Writing at 0x000db8d3... (100 %)
+
+Wrote 787728 bytes (454695 compressed) at 0x00020000 in 4.8 seconds (effective 1323.0 kbit/s)...
+
+Hash of data verified.
+
+Compressed 3072 bytes to 145...
+
+Writing at 0x00008000... (100 %)
+
+Wrote 3072 bytes (145 compressed) at 0x00008000 in 0.1 seconds (effective 238.3 kbit/s)...
+
+Hash of data verified.
+
+Compressed 8192 bytes to 31...
+
+Writing at 0x0000f000... (100 %)
+
+Wrote 8192 bytes (31 compressed) at 0x0000f000 in 0.1 seconds (effective 631.7 kbit/s)...
+
+Hash of data verified.
+
+
+
+Leaving...
+
+Hard resetting via RTS pin...
+
+Done
+=== idf-flash exit_code=0 2026-06-08T10:19:57.7803014+08:00 ===
+=== scripted-serial-toggle-audio-capture begin 2026-06-08T10:19:57.7808967+08:00 ===
+playback_volume_set_target=70 previous=0.6000000238418579 muted=False
+ble_address_source=paired_device_lookup address=A4CB8FF459A6
+notify_enable_attempt=1
+ble_connection_status=1
+cached_service_probe_status=0 count=9
+notify_enable_status=0 protocol_error=None
+serial_toggle_attempt_1_stream_ready=already_ready
+wav_path=C:\Users\Billy\Desktop\listener\voice-keyboard-firmware-wt-oai3-voice-keyboard-production-readiness-4.3\tests\artifacts\audio\voice-keyboard-production-readiness-4.3-20260608-oai3\capture_ble_latest_16k_mono.wav
+session_id=1
+received_packet_count=344
+expected_packet_count=344
+missing_packet_count=0
+duplicate_packet_count=0
+duplicate_packet_sequences=<none>
+received_pcm_bytes=165120
+chunk_count=344
+expected_chunk_count=344
+missing_chunk_count=0
+pcm_bytes=165120
+duration_seconds=5.160
+capture_seconds_target=5
+pre_start_delay_seconds=0.00
+serial_stream_start_count=1
+serial_stream_audio_count=6
+serial_stream_chunk_count=6
+serial_stream_stop_count=1
+serial_transport_summary_count=1
+serial_transport_summary_last=I (17185) ble_audio_stream: audio session transport summary: session=1 reason=stop expected_packet_count=344 notify_sent=348 notify_failed=0 notify_retries=0 retry_mbuf=0 retry_enomem=0 retry_tx_timeout=0 retry_tx_status=0 retry_other=0 audio_sent=344 audio_failed=0 queue_jobs_purged=0 pool_high_water=23 pool_capacity=264 pool_high_water_pct=8 pool_alloc_failed=0 queue_full=0 replay_retained_high_water=1 replay_stored=344 replay_replaced=0 replay_removed=344 replay_resent=0 replay_resend_failed=0 replay_skip_current=0 replay_pending=0 last_drop_reason=none last_error=0
+explicit_start_received=1
+start_inferred_from_audio=0
+serial_upload_begin_count=0
+serial_upload_end_count=0
+serial_upload_skipped_count=0
+completed_session_count=1
+notify_disable_status=0
+playback_volume_restored=0.600 muted=False
+source_wav=C:\Users\Billy\Desktop\listener\voice-keyboard-firmware-wt-oai3-voice-keyboard-production-readiness-4.3\tests\artifacts\audio\voice-keyboard-production-readiness-4.3-20260608-oai3\source_ble_session_reference_latest_16k_mono.wav
+recorded_wav=C:\Users\Billy\Desktop\listener\voice-keyboard-firmware-wt-oai3-voice-keyboard-production-readiness-4.3\tests\artifacts\audio\voice-keyboard-production-readiness-4.3-20260608-oai3\capture_ble_latest_16k_mono.wav
+serial_log_path=C:\Users\Billy\Desktop\listener\voice-keyboard-firmware-wt-oai3-voice-keyboard-production-readiness-4.3\tests\artifacts\audio\voice-keyboard-production-readiness-4.3-20260608-oai3\verify_audio_capture_session_latest.log
+trigger_mode=serial-toggle
+duration_validation_mode=target_seconds_window
+received_packet_count=344
+expected_packet_count=344
+missing_packet_count=0
+received_pcm_bytes=165120
+duration_seconds=5.160
+duration_min_seconds=4.500
+duration_max_seconds=6.000
+packet_loss_ratio=0.0000
+best_corr=0.4533
+best_offset_frames=-196
+recorded_peak=712
+recorded_runs=[(1, 5), (8, 13), (14, 24), (25, 33), (86, 91), (93, 97), (111, 122), (124, 131), (164, 171), (177, 181), (196, 216), (217, 226), (229, 238), (240, 248), (251, 258)]
+active_frame_count=118
+=== scripted-serial-toggle-audio-capture exit_code=0 2026-06-08T10:20:15.5257248+08:00 ===
+=== physical-key-audio-capture begin 2026-06-08T10:20:15.5266104+08:00 ===
+serial_ready_fallback=firmware_runtime_marker
+ble_address_source=paired_device_lookup address=A4CB8FF459A6

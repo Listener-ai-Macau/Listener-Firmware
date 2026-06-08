@@ -1,0 +1,1222 @@
+{
+  "schema_version": 1,
+  "generated_at": "2026-06-08T10:13:21+0800",
+  "port": "COM6",
+  "baud": 115200,
+  "bluetooth_address": "A4CB8FF459A6",
+  "camera_index": 0,
+  "serial_log": "C:\\Users\\Billy\\Desktop\\listener\\voice-keyboard-firmware-wt-oai4-voice-keyboard-status-led-1.2\\docs\\validation\\voice-keyboard-status-led-1.2\\status-led-serial.log",
+  "commands": [
+    {
+      "command": "~LED:STATUS",
+      "settle_seconds": 0.8,
+      "duration_seconds": 0.803,
+      "serial_output_chars": 1170
+    },
+    {
+      "command": "~LED:BUDGET",
+      "settle_seconds": 0.8,
+      "duration_seconds": 0.803,
+      "serial_output_chars": 232
+    },
+    {
+      "command": "~LED:PRIVACY",
+      "settle_seconds": 0.8,
+      "duration_seconds": 0.801,
+      "serial_output_chars": 158
+    },
+    {
+      "command": "~BOARD:STATUS",
+      "settle_seconds": 0.8,
+      "duration_seconds": 0.802,
+      "serial_output_chars": 3582
+    },
+    {
+      "command": "~LED:PROFILE factory",
+      "settle_seconds": 0.8,
+      "duration_seconds": 0.802,
+      "serial_output_chars": 43
+    },
+    {
+      "command": "~LED:TEST:RGBW all",
+      "settle_seconds": 0.25,
+      "duration_seconds": 0.401,
+      "serial_output_chars": 126
+    },
+    {
+      "command": "~LED:STATUS",
+      "settle_seconds": 0.4,
+      "duration_seconds": 0.401,
+      "serial_output_chars": 1373
+    },
+    {
+      "command": "~LED:TEST:MAP status",
+      "settle_seconds": 0.25,
+      "duration_seconds": 0.401,
+      "serial_output_chars": 193
+    },
+    {
+      "command": "~LED:STATUS",
+      "settle_seconds": 0.35,
+      "duration_seconds": 0.401,
+      "serial_output_chars": 1615
+    },
+    {
+      "command": "~LED:TEST:MAP ec11",
+      "settle_seconds": 0.25,
+      "duration_seconds": 0.401,
+      "serial_output_chars": 193
+    },
+    {
+      "command": "~LED:STATUS",
+      "settle_seconds": 0.35,
+      "duration_seconds": 0.401,
+      "serial_output_chars": 2316
+    },
+    {
+      "command": "~LED:TEST:MAP key",
+      "settle_seconds": 0.25,
+      "duration_seconds": 0.401,
+      "serial_output_chars": 193
+    },
+    {
+      "command": "~LED:STATUS",
+      "settle_seconds": 0.35,
+      "duration_seconds": 0.401,
+      "serial_output_chars": 2363
+    },
+    {
+      "command": "~LED:TEST:MAP edge",
+      "settle_seconds": 0.25,
+      "duration_seconds": 0.401,
+      "serial_output_chars": 193
+    },
+    {
+      "command": "~LED:STATUS",
+      "settle_seconds": 0.35,
+      "duration_seconds": 0.402,
+      "serial_output_chars": 1848
+    },
+    {
+      "command": "~LED:PREVIEW ready",
+      "settle_seconds": 0.45,
+      "duration_seconds": 0.602,
+      "serial_output_chars": 107
+    },
+    {
+      "command": "~LED:STATUS",
+      "settle_seconds": 0.3,
+      "duration_seconds": 0.399,
+      "serial_output_chars": 5143
+    },
+    {
+      "command": "~LED:PREVIEW pairing",
+      "settle_seconds": 0.45,
+      "duration_seconds": 0.602,
+      "serial_output_chars": 2056
+    },
+    {
+      "command": "~LED:STATUS",
+      "settle_seconds": 0.3,
+      "duration_seconds": 3.454,
+      "serial_output_chars": 13659
+    },
+    {
+      "command": "~LED:PREVIEW capture",
+      "settle_seconds": 0.45,
+      "duration_seconds": 0.602,
+      "serial_output_chars": 103
+    },
+    {
+      "command": "~LED:STATUS",
+      "settle_seconds": 0.3,
+      "duration_seconds": 0.4,
+      "serial_output_chars": 3663
+    },
+    {
+      "command": "~LED:PREVIEW processing",
+      "settle_seconds": 0.45,
+      "duration_seconds": 0.602,
+      "serial_output_chars": 1510
+    },
+    {
+      "command": "~LED:STATUS",
+      "settle_seconds": 0.3,
+      "duration_seconds": 3.425,
+      "serial_output_chars": 14511
+    },
+    {
+      "command": "~LED:PREVIEW rec_not_available",
+      "settle_seconds": 0.45,
+      "duration_seconds": 0.601,
+      "serial_output_chars": 2055
+    },
+    {
+      "command": "~LED:STATUS",
+      "settle_seconds": 0.3,
+      "duration_seconds": 0.401,
+      "serial_output_chars": 1070
+    },
+    {
+      "command": "~LED:PREVIEW ok",
+      "settle_seconds": 0.45,
+      "duration_seconds": 0.601,
+      "serial_output_chars": 382
+    },
+    {
+      "command": "~LED:STATUS",
+      "settle_seconds": 0.3,
+      "duration_seconds": 0.401,
+      "serial_output_chars": 1068
+    },
+    {
+      "command": "~LED:PREVIEW low_battery",
+      "settle_seconds": 0.45,
+      "duration_seconds": 0.602,
+      "serial_output_chars": 109
+    },
+    {
+      "command": "~LED:STATUS",
+      "settle_seconds": 0.3,
+      "duration_seconds": 0.401,
+      "serial_output_chars": 1069
+    },
+    {
+      "command": "~LED:PREVIEW sleep",
+      "settle_seconds": 0.45,
+      "duration_seconds": 0.601,
+      "serial_output_chars": 40
+    },
+    {
+      "command": "~LED:STATUS",
+      "settle_seconds": 0.3,
+      "duration_seconds": 0.4,
+      "serial_output_chars": 1073
+    },
+    {
+      "command": "~LED:ERROR ota hard",
+      "settle_seconds": 0.45,
+      "duration_seconds": 0.601,
+      "serial_output_chars": 0
+    },
+    {
+      "command": "~LED:STATUS",
+      "settle_seconds": 0.3,
+      "duration_seconds": 0.402,
+      "serial_output_chars": 1066
+    },
+    {
+      "command": "~LED:OFF",
+      "settle_seconds": 0.45,
+      "duration_seconds": 0.601,
+      "serial_output_chars": 109
+    },
+    {
+      "command": "~LED:STATUS",
+      "settle_seconds": 0.3,
+      "duration_seconds": 0.402,
+      "serial_output_chars": 1061
+    }
+  ],
+  "captures": [
+    {
+      "label": "camera-baseline",
+      "path": "C:\\Users\\Billy\\Desktop\\listener\\voice-keyboard-firmware-wt-oai4-voice-keyboard-status-led-1.2\\docs\\validation\\voice-keyboard-status-led-1.2\\camera-baseline.jpg",
+      "relative_path": "camera-baseline.jpg",
+      "width": 1280,
+      "height": 720,
+      "mean_bgr": [
+        126.00049587673611,
+        129.09247721354166,
+        126.82829969618055
+      ],
+      "max_bgr": [
+        237,
+        237,
+        234
+      ],
+      "bright_sample_pixels": 47902,
+      "very_bright_sample_pixels": 24293,
+      "redish_sample_pixels": 100,
+      "greenish_sample_pixels": 0,
+      "blueish_sample_pixels": 0,
+      "sample_pixel_count": 57600
+    },
+    {
+      "label": "rgbw-red-phase",
+      "path": "C:\\Users\\Billy\\Desktop\\listener\\voice-keyboard-firmware-wt-oai4-voice-keyboard-status-led-1.2\\docs\\validation\\voice-keyboard-status-led-1.2\\rgbw-red-phase.jpg",
+      "relative_path": "rgbw-red-phase.jpg",
+      "width": 1280,
+      "height": 720,
+      "mean_bgr": [
+        123.22114474826388,
+        126.29948676215278,
+        124.17914171006944
+      ],
+      "max_bgr": [
+        237,
+        237,
+        236
+      ],
+      "bright_sample_pixels": 46825,
+      "very_bright_sample_pixels": 23457,
+      "redish_sample_pixels": 222,
+      "greenish_sample_pixels": 0,
+      "blueish_sample_pixels": 0,
+      "sample_pixel_count": 57600
+    },
+    {
+      "label": "rgbw-green-phase",
+      "path": "C:\\Users\\Billy\\Desktop\\listener\\voice-keyboard-firmware-wt-oai4-voice-keyboard-status-led-1.2\\docs\\validation\\voice-keyboard-status-led-1.2\\rgbw-green-phase.jpg",
+      "relative_path": "rgbw-green-phase.jpg",
+      "width": 1280,
+      "height": 720,
+      "mean_bgr": [
+        123.91228732638889,
+        127.03814887152778,
+        125.05133029513888
+      ],
+      "max_bgr": [
+        237,
+        237,
+        235
+      ],
+      "bright_sample_pixels": 47683,
+      "very_bright_sample_pixels": 23864,
+      "redish_sample_pixels": 156,
+      "greenish_sample_pixels": 0,
+      "blueish_sample_pixels": 0,
+      "sample_pixel_count": 57600
+    },
+    {
+      "label": "rgbw-blue-phase",
+      "path": "C:\\Users\\Billy\\Desktop\\listener\\voice-keyboard-firmware-wt-oai4-voice-keyboard-status-led-1.2\\docs\\validation\\voice-keyboard-status-led-1.2\\rgbw-blue-phase.jpg",
+      "relative_path": "rgbw-blue-phase.jpg",
+      "width": 1280,
+      "height": 720,
+      "mean_bgr": [
+        121.84715386284722,
+        124.92598415798611,
+        122.70794596354166
+      ],
+      "max_bgr": [
+        238,
+        238,
+        235
+      ],
+      "bright_sample_pixels": 46087,
+      "very_bright_sample_pixels": 23282,
+      "redish_sample_pixels": 223,
+      "greenish_sample_pixels": 0,
+      "blueish_sample_pixels": 0,
+      "sample_pixel_count": 57600
+    },
+    {
+      "label": "rgbw-white-phase",
+      "path": "C:\\Users\\Billy\\Desktop\\listener\\voice-keyboard-firmware-wt-oai4-voice-keyboard-status-led-1.2\\docs\\validation\\voice-keyboard-status-led-1.2\\rgbw-white-phase.jpg",
+      "relative_path": "rgbw-white-phase.jpg",
+      "width": 1280,
+      "height": 720,
+      "mean_bgr": [
+        124.14596354166666,
+        127.29164713541667,
+        125.31444661458333
+      ],
+      "max_bgr": [
+        238,
+        237,
+        236
+      ],
+      "bright_sample_pixels": 47817,
+      "very_bright_sample_pixels": 24070,
+      "redish_sample_pixels": 112,
+      "greenish_sample_pixels": 0,
+      "blueish_sample_pixels": 0,
+      "sample_pixel_count": 57600
+    },
+    {
+      "label": "map-status-01",
+      "path": "C:\\Users\\Billy\\Desktop\\listener\\voice-keyboard-firmware-wt-oai4-voice-keyboard-status-led-1.2\\docs\\validation\\voice-keyboard-status-led-1.2\\map-status-01.jpg",
+      "relative_path": "map-status-01.jpg",
+      "width": 1280,
+      "height": 720,
+      "mean_bgr": [
+        124.94837456597222,
+        128.09156032986112,
+        126.13849609375
+      ],
+      "max_bgr": [
+        237,
+        237,
+        236
+      ],
+      "bright_sample_pixels": 47947,
+      "very_bright_sample_pixels": 24274,
+      "redish_sample_pixels": 177,
+      "greenish_sample_pixels": 0,
+      "blueish_sample_pixels": 0,
+      "sample_pixel_count": 57600
+    },
+    {
+      "label": "map-status-02",
+      "path": "C:\\Users\\Billy\\Desktop\\listener\\voice-keyboard-firmware-wt-oai4-voice-keyboard-status-led-1.2\\docs\\validation\\voice-keyboard-status-led-1.2\\map-status-02.jpg",
+      "relative_path": "map-status-02.jpg",
+      "width": 1280,
+      "height": 720,
+      "mean_bgr": [
+        120.02099283854167,
+        123.68485568576389,
+        122.99804796006944
+      ],
+      "max_bgr": [
+        238,
+        238,
+        236
+      ],
+      "bright_sample_pixels": 46182,
+      "very_bright_sample_pixels": 22463,
+      "redish_sample_pixels": 63,
+      "greenish_sample_pixels": 0,
+      "blueish_sample_pixels": 0,
+      "sample_pixel_count": 57600
+    },
+    {
+      "label": "map-status-03",
+      "path": "C:\\Users\\Billy\\Desktop\\listener\\voice-keyboard-firmware-wt-oai4-voice-keyboard-status-led-1.2\\docs\\validation\\voice-keyboard-status-led-1.2\\map-status-03.jpg",
+      "relative_path": "map-status-03.jpg",
+      "width": 1280,
+      "height": 720,
+      "mean_bgr": [
+        107.23176215277778,
+        110.01684027777777,
+        107.37806206597222
+      ],
+      "max_bgr": [
+        215,
+        216,
+        214
+      ],
+      "bright_sample_pixels": 40132,
+      "very_bright_sample_pixels": 19933,
+      "redish_sample_pixels": 70,
+      "greenish_sample_pixels": 0,
+      "blueish_sample_pixels": 0,
+      "sample_pixel_count": 57600
+    },
+    {
+      "label": "map-status-04",
+      "path": "C:\\Users\\Billy\\Desktop\\listener\\voice-keyboard-firmware-wt-oai4-voice-keyboard-status-led-1.2\\docs\\validation\\voice-keyboard-status-led-1.2\\map-status-04.jpg",
+      "relative_path": "map-status-04.jpg",
+      "width": 1280,
+      "height": 720,
+      "mean_bgr": [
+        113.75684895833334,
+        116.65771484375,
+        114.599140625
+      ],
+      "max_bgr": [
+        225,
+        225,
+        222
+      ],
+      "bright_sample_pixels": 43474,
+      "very_bright_sample_pixels": 21901,
+      "redish_sample_pixels": 246,
+      "greenish_sample_pixels": 0,
+      "blueish_sample_pixels": 0,
+      "sample_pixel_count": 57600
+    },
+    {
+      "label": "map-status-05",
+      "path": "C:\\Users\\Billy\\Desktop\\listener\\voice-keyboard-firmware-wt-oai4-voice-keyboard-status-led-1.2\\docs\\validation\\voice-keyboard-status-led-1.2\\map-status-05.jpg",
+      "relative_path": "map-status-05.jpg",
+      "width": 1280,
+      "height": 720,
+      "mean_bgr": [
+        118.01263888888889,
+        120.89228081597223,
+        119.11412977430555
+      ],
+      "max_bgr": [
+        228,
+        230,
+        227
+      ],
+      "bright_sample_pixels": 45277,
+      "very_bright_sample_pixels": 23007,
+      "redish_sample_pixels": 193,
+      "greenish_sample_pixels": 0,
+      "blueish_sample_pixels": 0,
+      "sample_pixel_count": 57600
+    },
+    {
+      "label": "map-status-06",
+      "path": "C:\\Users\\Billy\\Desktop\\listener\\voice-keyboard-firmware-wt-oai4-voice-keyboard-status-led-1.2\\docs\\validation\\voice-keyboard-status-led-1.2\\map-status-06.jpg",
+      "relative_path": "map-status-06.jpg",
+      "width": 1280,
+      "height": 720,
+      "mean_bgr": [
+        118.16703559027778,
+        121.02737196180556,
+        119.25004340277778
+      ],
+      "max_bgr": [
+        229,
+        230,
+        228
+      ],
+      "bright_sample_pixels": 45118,
+      "very_bright_sample_pixels": 22905,
+      "redish_sample_pixels": 230,
+      "greenish_sample_pixels": 0,
+      "blueish_sample_pixels": 0,
+      "sample_pixel_count": 57600
+    },
+    {
+      "label": "map-ec11-01",
+      "path": "C:\\Users\\Billy\\Desktop\\listener\\voice-keyboard-firmware-wt-oai4-voice-keyboard-status-led-1.2\\docs\\validation\\voice-keyboard-status-led-1.2\\map-ec11-01.jpg",
+      "relative_path": "map-ec11-01.jpg",
+      "width": 1280,
+      "height": 720,
+      "mean_bgr": [
+        117.93180772569444,
+        120.78509114583333,
+        118.99696831597223
+      ],
+      "max_bgr": [
+        228,
+        230,
+        227
+      ],
+      "bright_sample_pixels": 44900,
+      "very_bright_sample_pixels": 22815,
+      "redish_sample_pixels": 265,
+      "greenish_sample_pixels": 0,
+      "blueish_sample_pixels": 0,
+      "sample_pixel_count": 57600
+    },
+    {
+      "label": "map-ec11-02",
+      "path": "C:\\Users\\Billy\\Desktop\\listener\\voice-keyboard-firmware-wt-oai4-voice-keyboard-status-led-1.2\\docs\\validation\\voice-keyboard-status-led-1.2\\map-ec11-02.jpg",
+      "relative_path": "map-ec11-02.jpg",
+      "width": 1280,
+      "height": 720,
+      "mean_bgr": [
+        118.25833550347222,
+        121.11913845486112,
+        119.31592230902778
+      ],
+      "max_bgr": [
+        228,
+        230,
+        228
+      ],
+      "bright_sample_pixels": 44848,
+      "very_bright_sample_pixels": 22908,
+      "redish_sample_pixels": 220,
+      "greenish_sample_pixels": 0,
+      "blueish_sample_pixels": 0,
+      "sample_pixel_count": 57600
+    },
+    {
+      "label": "map-ec11-03",
+      "path": "C:\\Users\\Billy\\Desktop\\listener\\voice-keyboard-firmware-wt-oai4-voice-keyboard-status-led-1.2\\docs\\validation\\voice-keyboard-status-led-1.2\\map-ec11-03.jpg",
+      "relative_path": "map-ec11-03.jpg",
+      "width": 1280,
+      "height": 720,
+      "mean_bgr": [
+        119.20929796006945,
+        122.0716525607639,
+        120.29567599826389
+      ],
+      "max_bgr": [
+        228,
+        230,
+        228
+      ],
+      "bright_sample_pixels": 45140,
+      "very_bright_sample_pixels": 23158,
+      "redish_sample_pixels": 273,
+      "greenish_sample_pixels": 0,
+      "blueish_sample_pixels": 0,
+      "sample_pixel_count": 57600
+    },
+    {
+      "label": "map-ec11-04",
+      "path": "C:\\Users\\Billy\\Desktop\\listener\\voice-keyboard-firmware-wt-oai4-voice-keyboard-status-led-1.2\\docs\\validation\\voice-keyboard-status-led-1.2\\map-ec11-04.jpg",
+      "relative_path": "map-ec11-04.jpg",
+      "width": 1280,
+      "height": 720,
+      "mean_bgr": [
+        117.59693250868055,
+        120.475341796875,
+        118.84228841145833
+      ],
+      "max_bgr": [
+        229,
+        231,
+        230
+      ],
+      "bright_sample_pixels": 45321,
+      "very_bright_sample_pixels": 22905,
+      "redish_sample_pixels": 176,
+      "greenish_sample_pixels": 0,
+      "blueish_sample_pixels": 0,
+      "sample_pixel_count": 57600
+    },
+    {
+      "label": "map-ec11-05",
+      "path": "C:\\Users\\Billy\\Desktop\\listener\\voice-keyboard-firmware-wt-oai4-voice-keyboard-status-led-1.2\\docs\\validation\\voice-keyboard-status-led-1.2\\map-ec11-05.jpg",
+      "relative_path": "map-ec11-05.jpg",
+      "width": 1280,
+      "height": 720,
+      "mean_bgr": [
+        119.29337782118056,
+        122.18156792534722,
+        120.36349500868056
+      ],
+      "max_bgr": [
+        230,
+        230,
+        228
+      ],
+      "bright_sample_pixels": 45570,
+      "very_bright_sample_pixels": 23389,
+      "redish_sample_pixels": 161,
+      "greenish_sample_pixels": 0,
+      "blueish_sample_pixels": 0,
+      "sample_pixel_count": 57600
+    },
+    {
+      "label": "map-ec11-06",
+      "path": "C:\\Users\\Billy\\Desktop\\listener\\voice-keyboard-firmware-wt-oai4-voice-keyboard-status-led-1.2\\docs\\validation\\voice-keyboard-status-led-1.2\\map-ec11-06.jpg",
+      "relative_path": "map-ec11-06.jpg",
+      "width": 1280,
+      "height": 720,
+      "mean_bgr": [
+        119.38401909722222,
+        122.26458550347222,
+        120.41096571180556
+      ],
+      "max_bgr": [
+        229,
+        231,
+        228
+      ],
+      "bright_sample_pixels": 45503,
+      "very_bright_sample_pixels": 23305,
+      "redish_sample_pixels": 184,
+      "greenish_sample_pixels": 0,
+      "blueish_sample_pixels": 0,
+      "sample_pixel_count": 57600
+    },
+    {
+      "label": "map-ec11-07",
+      "path": "C:\\Users\\Billy\\Desktop\\listener\\voice-keyboard-firmware-wt-oai4-voice-keyboard-status-led-1.2\\docs\\validation\\voice-keyboard-status-led-1.2\\map-ec11-07.jpg",
+      "relative_path": "map-ec11-07.jpg",
+      "width": 1280,
+      "height": 720,
+      "mean_bgr": [
+        119.40734157986111,
+        122.28426432291667,
+        120.39235026041666
+      ],
+      "max_bgr": [
+        228,
+        230,
+        228
+      ],
+      "bright_sample_pixels": 45335,
+      "very_bright_sample_pixels": 23256,
+      "redish_sample_pixels": 166,
+      "greenish_sample_pixels": 0,
+      "blueish_sample_pixels": 0,
+      "sample_pixel_count": 57600
+    },
+    {
+      "label": "map-ec11-08",
+      "path": "C:\\Users\\Billy\\Desktop\\listener\\voice-keyboard-firmware-wt-oai4-voice-keyboard-status-led-1.2\\docs\\validation\\voice-keyboard-status-led-1.2\\map-ec11-08.jpg",
+      "relative_path": "map-ec11-08.jpg",
+      "width": 1280,
+      "height": 720,
+      "mean_bgr": [
+        118.92214409722222,
+        121.80153211805556,
+        119.96442925347222
+      ],
+      "max_bgr": [
+        229,
+        231,
+        230
+      ],
+      "bright_sample_pixels": 45242,
+      "very_bright_sample_pixels": 23185,
+      "redish_sample_pixels": 177,
+      "greenish_sample_pixels": 0,
+      "blueish_sample_pixels": 0,
+      "sample_pixel_count": 57600
+    },
+    {
+      "label": "map-ec11-09",
+      "path": "C:\\Users\\Billy\\Desktop\\listener\\voice-keyboard-firmware-wt-oai4-voice-keyboard-status-led-1.2\\docs\\validation\\voice-keyboard-status-led-1.2\\map-ec11-09.jpg",
+      "relative_path": "map-ec11-09.jpg",
+      "width": 1280,
+      "height": 720,
+      "mean_bgr": [
+        118.44532118055555,
+        121.34749782986111,
+        119.63752387152778
+      ],
+      "max_bgr": [
+        228,
+        230,
+        228
+      ],
+      "bright_sample_pixels": 45564,
+      "very_bright_sample_pixels": 23250,
+      "redish_sample_pixels": 185,
+      "greenish_sample_pixels": 0,
+      "blueish_sample_pixels": 0,
+      "sample_pixel_count": 57600
+    },
+    {
+      "label": "map-ec11-10",
+      "path": "C:\\Users\\Billy\\Desktop\\listener\\voice-keyboard-firmware-wt-oai4-voice-keyboard-status-led-1.2\\docs\\validation\\voice-keyboard-status-led-1.2\\map-ec11-10.jpg",
+      "relative_path": "map-ec11-10.jpg",
+      "width": 1280,
+      "height": 720,
+      "mean_bgr": [
+        118.45782118055556,
+        121.32848524305555,
+        119.62054904513889
+      ],
+      "max_bgr": [
+        228,
+        230,
+        228
+      ],
+      "bright_sample_pixels": 45375,
+      "very_bright_sample_pixels": 23134,
+      "redish_sample_pixels": 228,
+      "greenish_sample_pixels": 0,
+      "blueish_sample_pixels": 0,
+      "sample_pixel_count": 57600
+    },
+    {
+      "label": "map-ec11-11",
+      "path": "C:\\Users\\Billy\\Desktop\\listener\\voice-keyboard-firmware-wt-oai4-voice-keyboard-status-led-1.2\\docs\\validation\\voice-keyboard-status-led-1.2\\map-ec11-11.jpg",
+      "relative_path": "map-ec11-11.jpg",
+      "width": 1280,
+      "height": 720,
+      "mean_bgr": [
+        117.5755295138889,
+        120.44645833333334,
+        118.77325954861111
+      ],
+      "max_bgr": [
+        229,
+        231,
+        230
+      ],
+      "bright_sample_pixels": 45105,
+      "very_bright_sample_pixels": 22801,
+      "redish_sample_pixels": 248,
+      "greenish_sample_pixels": 0,
+      "blueish_sample_pixels": 0,
+      "sample_pixel_count": 57600
+    },
+    {
+      "label": "map-ec11-12",
+      "path": "C:\\Users\\Billy\\Desktop\\listener\\voice-keyboard-firmware-wt-oai4-voice-keyboard-status-led-1.2\\docs\\validation\\voice-keyboard-status-led-1.2\\map-ec11-12.jpg",
+      "relative_path": "map-ec11-12.jpg",
+      "width": 1280,
+      "height": 720,
+      "mean_bgr": [
+        118.08484809027777,
+        120.96504557291667,
+        119.20658854166666
+      ],
+      "max_bgr": [
+        228,
+        230,
+        228
+      ],
+      "bright_sample_pixels": 44945,
+      "very_bright_sample_pixels": 22873,
+      "redish_sample_pixels": 245,
+      "greenish_sample_pixels": 0,
+      "blueish_sample_pixels": 0,
+      "sample_pixel_count": 57600
+    },
+    {
+      "label": "map-key-01",
+      "path": "C:\\Users\\Billy\\Desktop\\listener\\voice-keyboard-firmware-wt-oai4-voice-keyboard-status-led-1.2\\docs\\validation\\voice-keyboard-status-led-1.2\\map-key-01.jpg",
+      "relative_path": "map-key-01.jpg",
+      "width": 1280,
+      "height": 720,
+      "mean_bgr": [
+        127.83262912326389,
+        130.75250759548612,
+        128.32974717881945
+      ],
+      "max_bgr": [
+        233,
+        233,
+        230
+      ],
+      "bright_sample_pixels": 47579,
+      "very_bright_sample_pixels": 26902,
+      "redish_sample_pixels": 61,
+      "greenish_sample_pixels": 0,
+      "blueish_sample_pixels": 0,
+      "sample_pixel_count": 57600
+    },
+    {
+      "label": "map-key-02",
+      "path": "C:\\Users\\Billy\\Desktop\\listener\\voice-keyboard-firmware-wt-oai4-voice-keyboard-status-led-1.2\\docs\\validation\\voice-keyboard-status-led-1.2\\map-key-02.jpg",
+      "relative_path": "map-key-02.jpg",
+      "width": 1280,
+      "height": 720,
+      "mean_bgr": [
+        105.51319444444445,
+        108.29145616319444,
+        106.14809678819445
+      ],
+      "max_bgr": [
+        212,
+        215,
+        210
+      ],
+      "bright_sample_pixels": 40318,
+      "very_bright_sample_pixels": 18681,
+      "redish_sample_pixels": 158,
+      "greenish_sample_pixels": 0,
+      "blueish_sample_pixels": 0,
+      "sample_pixel_count": 57600
+    },
+    {
+      "label": "map-key-03",
+      "path": "C:\\Users\\Billy\\Desktop\\listener\\voice-keyboard-firmware-wt-oai4-voice-keyboard-status-led-1.2\\docs\\validation\\voice-keyboard-status-led-1.2\\map-key-03.jpg",
+      "relative_path": "map-key-03.jpg",
+      "width": 1280,
+      "height": 720,
+      "mean_bgr": [
+        113.73884114583333,
+        116.70176866319444,
+        115.02529079861111
+      ],
+      "max_bgr": [
+        225,
+        227,
+        223
+      ],
+      "bright_sample_pixels": 44071,
+      "very_bright_sample_pixels": 21312,
+      "redish_sample_pixels": 334,
+      "greenish_sample_pixels": 0,
+      "blueish_sample_pixels": 0,
+      "sample_pixel_count": 57600
+    },
+    {
+      "label": "map-key-04",
+      "path": "C:\\Users\\Billy\\Desktop\\listener\\voice-keyboard-firmware-wt-oai4-voice-keyboard-status-led-1.2\\docs\\validation\\voice-keyboard-status-led-1.2\\map-key-04.jpg",
+      "relative_path": "map-key-04.jpg",
+      "width": 1280,
+      "height": 720,
+      "mean_bgr": [
+        116.15794053819444,
+        119.09013020833333,
+        117.52685546875
+      ],
+      "max_bgr": [
+        227,
+        230,
+        225
+      ],
+      "bright_sample_pixels": 44932,
+      "very_bright_sample_pixels": 21921,
+      "redish_sample_pixels": 289,
+      "greenish_sample_pixels": 0,
+      "blueish_sample_pixels": 0,
+      "sample_pixel_count": 57600
+    },
+    {
+      "label": "map-edge-01",
+      "path": "C:\\Users\\Billy\\Desktop\\listener\\voice-keyboard-firmware-wt-oai4-voice-keyboard-status-led-1.2\\docs\\validation\\voice-keyboard-status-led-1.2\\map-edge-01.jpg",
+      "relative_path": "map-edge-01.jpg",
+      "width": 1280,
+      "height": 720,
+      "mean_bgr": [
+        116.57266927083333,
+        119.46772569444444,
+        117.85694661458334
+      ],
+      "max_bgr": [
+        228,
+        231,
+        225
+      ],
+      "bright_sample_pixels": 44692,
+      "very_bright_sample_pixels": 22064,
+      "redish_sample_pixels": 330,
+      "greenish_sample_pixels": 0,
+      "blueish_sample_pixels": 0,
+      "sample_pixel_count": 57600
+    },
+    {
+      "label": "map-edge-02",
+      "path": "C:\\Users\\Billy\\Desktop\\listener\\voice-keyboard-firmware-wt-oai4-voice-keyboard-status-led-1.2\\docs\\validation\\voice-keyboard-status-led-1.2\\map-edge-02.jpg",
+      "relative_path": "map-edge-02.jpg",
+      "width": 1280,
+      "height": 720,
+      "mean_bgr": [
+        114.61083550347222,
+        117.52075303819444,
+        115.99705512152778
+      ],
+      "max_bgr": [
+        228,
+        230,
+        227
+      ],
+      "bright_sample_pixels": 44144,
+      "very_bright_sample_pixels": 21399,
+      "redish_sample_pixels": 350,
+      "greenish_sample_pixels": 0,
+      "blueish_sample_pixels": 0,
+      "sample_pixel_count": 57600
+    },
+    {
+      "label": "map-edge-03",
+      "path": "C:\\Users\\Billy\\Desktop\\listener\\voice-keyboard-firmware-wt-oai4-voice-keyboard-status-led-1.2\\docs\\validation\\voice-keyboard-status-led-1.2\\map-edge-03.jpg",
+      "relative_path": "map-edge-03.jpg",
+      "width": 1280,
+      "height": 720,
+      "mean_bgr": [
+        121.07348524305556,
+        123.98405598958334,
+        122.71736979166667
+      ],
+      "max_bgr": [
+        233,
+        234,
+        231
+      ],
+      "bright_sample_pixels": 46578,
+      "very_bright_sample_pixels": 22890,
+      "redish_sample_pixels": 309,
+      "greenish_sample_pixels": 0,
+      "blueish_sample_pixels": 0,
+      "sample_pixel_count": 57600
+    },
+    {
+      "label": "map-edge-04",
+      "path": "C:\\Users\\Billy\\Desktop\\listener\\voice-keyboard-firmware-wt-oai4-voice-keyboard-status-led-1.2\\docs\\validation\\voice-keyboard-status-led-1.2\\map-edge-04.jpg",
+      "relative_path": "map-edge-04.jpg",
+      "width": 1280,
+      "height": 720,
+      "mean_bgr": [
+        121.34574110243055,
+        124.24093207465278,
+        122.95052191840277
+      ],
+      "max_bgr": [
+        233,
+        233,
+        232
+      ],
+      "bright_sample_pixels": 46496,
+      "very_bright_sample_pixels": 22989,
+      "redish_sample_pixels": 268,
+      "greenish_sample_pixels": 0,
+      "blueish_sample_pixels": 0,
+      "sample_pixel_count": 57600
+    },
+    {
+      "label": "map-edge-05",
+      "path": "C:\\Users\\Billy\\Desktop\\listener\\voice-keyboard-firmware-wt-oai4-voice-keyboard-status-led-1.2\\docs\\validation\\voice-keyboard-status-led-1.2\\map-edge-05.jpg",
+      "relative_path": "map-edge-05.jpg",
+      "width": 1280,
+      "height": 720,
+      "mean_bgr": [
+        120.47032443576389,
+        123.34380967881944,
+        122.05342339409722
+      ],
+      "max_bgr": [
+        233,
+        234,
+        231
+      ],
+      "bright_sample_pixels": 46219,
+      "very_bright_sample_pixels": 22766,
+      "redish_sample_pixels": 260,
+      "greenish_sample_pixels": 0,
+      "blueish_sample_pixels": 0,
+      "sample_pixel_count": 57600
+    },
+    {
+      "label": "map-edge-06",
+      "path": "C:\\Users\\Billy\\Desktop\\listener\\voice-keyboard-firmware-wt-oai4-voice-keyboard-status-led-1.2\\docs\\validation\\voice-keyboard-status-led-1.2\\map-edge-06.jpg",
+      "relative_path": "map-edge-06.jpg",
+      "width": 1280,
+      "height": 720,
+      "mean_bgr": [
+        121.21490559895834,
+        124.08851888020833,
+        122.76250759548611
+      ],
+      "max_bgr": [
+        233,
+        234,
+        231
+      ],
+      "bright_sample_pixels": 46293,
+      "very_bright_sample_pixels": 23006,
+      "redish_sample_pixels": 321,
+      "greenish_sample_pixels": 0,
+      "blueish_sample_pixels": 0,
+      "sample_pixel_count": 57600
+    },
+    {
+      "label": "preview-ready",
+      "path": "C:\\Users\\Billy\\Desktop\\listener\\voice-keyboard-firmware-wt-oai4-voice-keyboard-status-led-1.2\\docs\\validation\\voice-keyboard-status-led-1.2\\preview-ready.jpg",
+      "relative_path": "preview-ready.jpg",
+      "width": 1280,
+      "height": 720,
+      "mean_bgr": [
+        121.22178493923612,
+        124.10150065104166,
+        122.77142252604166
+      ],
+      "max_bgr": [
+        233,
+        233,
+        232
+      ],
+      "bright_sample_pixels": 46320,
+      "very_bright_sample_pixels": 22968,
+      "redish_sample_pixels": 297,
+      "greenish_sample_pixels": 0,
+      "blueish_sample_pixels": 0,
+      "sample_pixel_count": 57600
+    },
+    {
+      "label": "preview-pairing",
+      "path": "C:\\Users\\Billy\\Desktop\\listener\\voice-keyboard-firmware-wt-oai4-voice-keyboard-status-led-1.2\\docs\\validation\\voice-keyboard-status-led-1.2\\preview-pairing.jpg",
+      "relative_path": "preview-pairing.jpg",
+      "width": 1280,
+      "height": 720,
+      "mean_bgr": [
+        121.19276584201388,
+        124.08516818576389,
+        122.760263671875
+      ],
+      "max_bgr": [
+        233,
+        234,
+        231
+      ],
+      "bright_sample_pixels": 46285,
+      "very_bright_sample_pixels": 22958,
+      "redish_sample_pixels": 269,
+      "greenish_sample_pixels": 0,
+      "blueish_sample_pixels": 0,
+      "sample_pixel_count": 57600
+    },
+    {
+      "label": "preview-capture",
+      "path": "C:\\Users\\Billy\\Desktop\\listener\\voice-keyboard-firmware-wt-oai4-voice-keyboard-status-led-1.2\\docs\\validation\\voice-keyboard-status-led-1.2\\preview-capture.jpg",
+      "relative_path": "preview-capture.jpg",
+      "width": 1280,
+      "height": 720,
+      "mean_bgr": [
+        122.68850802951388,
+        125.59170464409722,
+        124.20568033854167
+      ],
+      "max_bgr": [
+        233,
+        234,
+        231
+      ],
+      "bright_sample_pixels": 47016,
+      "very_bright_sample_pixels": 23623,
+      "redish_sample_pixels": 243,
+      "greenish_sample_pixels": 0,
+      "blueish_sample_pixels": 0,
+      "sample_pixel_count": 57600
+    },
+    {
+      "label": "preview-processing",
+      "path": "C:\\Users\\Billy\\Desktop\\listener\\voice-keyboard-firmware-wt-oai4-voice-keyboard-status-led-1.2\\docs\\validation\\voice-keyboard-status-led-1.2\\preview-processing.jpg",
+      "relative_path": "preview-processing.jpg",
+      "width": 1280,
+      "height": 720,
+      "mean_bgr": [
+        125.595625,
+        128.50504557291666,
+        126.83606336805556
+      ],
+      "max_bgr": [
+        233,
+        235,
+        234
+      ],
+      "bright_sample_pixels": 47915,
+      "very_bright_sample_pixels": 25126,
+      "redish_sample_pixels": 209,
+      "greenish_sample_pixels": 0,
+      "blueish_sample_pixels": 0,
+      "sample_pixel_count": 57600
+    },
+    {
+      "label": "preview-rec_not_available",
+      "path": "C:\\Users\\Billy\\Desktop\\listener\\voice-keyboard-firmware-wt-oai4-voice-keyboard-status-led-1.2\\docs\\validation\\voice-keyboard-status-led-1.2\\preview-rec_not_available.jpg",
+      "relative_path": "preview-rec_not_available.jpg",
+      "width": 1280,
+      "height": 720,
+      "mean_bgr": [
+        113.21787543402777,
+        116.11241753472223,
+        113.95259982638889
+      ],
+      "max_bgr": [
+        226,
+        228,
+        225
+      ],
+      "bright_sample_pixels": 42869,
+      "very_bright_sample_pixels": 21833,
+      "redish_sample_pixels": 239,
+      "greenish_sample_pixels": 0,
+      "blueish_sample_pixels": 0,
+      "sample_pixel_count": 57600
+    },
+    {
+      "label": "preview-ok",
+      "path": "C:\\Users\\Billy\\Desktop\\listener\\voice-keyboard-firmware-wt-oai4-voice-keyboard-status-led-1.2\\docs\\validation\\voice-keyboard-status-led-1.2\\preview-ok.jpg",
+      "relative_path": "preview-ok.jpg",
+      "width": 1280,
+      "height": 720,
+      "mean_bgr": [
+        118.57186631944444,
+        121.45280164930556,
+        119.70397569444444
+      ],
+      "max_bgr": [
+        230,
+        232,
+        228
+      ],
+      "bright_sample_pixels": 45340,
+      "very_bright_sample_pixels": 23329,
+      "redish_sample_pixels": 208,
+      "greenish_sample_pixels": 0,
+      "blueish_sample_pixels": 0,
+      "sample_pixel_count": 57600
+    },
+    {
+      "label": "preview-low_battery",
+      "path": "C:\\Users\\Billy\\Desktop\\listener\\voice-keyboard-firmware-wt-oai4-voice-keyboard-status-led-1.2\\docs\\validation\\voice-keyboard-status-led-1.2\\preview-low_battery.jpg",
+      "relative_path": "preview-low_battery.jpg",
+      "width": 1280,
+      "height": 720,
+      "mean_bgr": [
+        119.69148980034723,
+        122.59772243923611,
+        120.85884874131945
+      ],
+      "max_bgr": [
+        230,
+        231,
+        228
+      ],
+      "bright_sample_pixels": 45879,
+      "very_bright_sample_pixels": 23746,
+      "redish_sample_pixels": 262,
+      "greenish_sample_pixels": 0,
+      "blueish_sample_pixels": 0,
+      "sample_pixel_count": 57600
+    },
+    {
+      "label": "preview-sleep",
+      "path": "C:\\Users\\Billy\\Desktop\\listener\\voice-keyboard-firmware-wt-oai4-voice-keyboard-status-led-1.2\\docs\\validation\\voice-keyboard-status-led-1.2\\preview-sleep.jpg",
+      "relative_path": "preview-sleep.jpg",
+      "width": 1280,
+      "height": 720,
+      "mean_bgr": [
+        121.60406358506944,
+        124.44891818576389,
+        122.23431532118056
+      ],
+      "max_bgr": [
+        233,
+        233,
+        230
+      ],
+      "bright_sample_pixels": 45076,
+      "very_bright_sample_pixels": 24468,
+      "redish_sample_pixels": 99,
+      "greenish_sample_pixels": 0,
+      "blueish_sample_pixels": 0,
+      "sample_pixel_count": 57600
+    },
+    {
+      "label": "preview-error-ota-hard",
+      "path": "C:\\Users\\Billy\\Desktop\\listener\\voice-keyboard-firmware-wt-oai4-voice-keyboard-status-led-1.2\\docs\\validation\\voice-keyboard-status-led-1.2\\preview-error-ota-hard.jpg",
+      "relative_path": "preview-error-ota-hard.jpg",
+      "width": 1280,
+      "height": 720,
+      "mean_bgr": [
+        97.69378146701389,
+        100.50662000868056,
+        97.82800672743056
+      ],
+      "max_bgr": [
+        206,
+        208,
+        205
+      ],
+      "bright_sample_pixels": 36170,
+      "very_bright_sample_pixels": 15501,
+      "redish_sample_pixels": 46,
+      "greenish_sample_pixels": 0,
+      "blueish_sample_pixels": 0,
+      "sample_pixel_count": 57600
+    },
+    {
+      "label": "preview-off",
+      "path": "C:\\Users\\Billy\\Desktop\\listener\\voice-keyboard-firmware-wt-oai4-voice-keyboard-status-led-1.2\\docs\\validation\\voice-keyboard-status-led-1.2\\preview-off.jpg",
+      "relative_path": "preview-off.jpg",
+      "width": 1280,
+      "height": 720,
+      "mean_bgr": [
+        114.02734157986112,
+        116.9769314236111,
+        115.01837890625
+      ],
+      "max_bgr": [
+        227,
+        230,
+        228
+      ],
+      "bright_sample_pixels": 43531,
+      "very_bright_sample_pixels": 22032,
+      "redish_sample_pixels": 194,
+      "greenish_sample_pixels": 0,
+      "blueish_sample_pixels": 0,
+      "sample_pixel_count": 57600
+    }
+  ],
+  "serial_required_tokens_missing": [],
+  "visual_quality": {
+    "image_count": 43,
+    "max_bright_sample_pixels": 47947,
+    "median_bright_sample_pixels": 45340,
+    "camera_opened": true,
+    "has_rgbw_phase_images": true,
+    "has_all_map_sequences": true
+  },
+  "result": "PASS"
+}

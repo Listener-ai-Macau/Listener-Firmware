@@ -1,0 +1,6 @@
+warning: in the working copy of 'docs/validation/voice-keyboard-production-readiness-4.3/readiness-4.3-oai3-summary.md', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'ports/esp32/audio_capture/audio_capture_esp32.c', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'tools/capture_audio_ble_wav.py', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'tools/verify_audio_capture_session_end_to_end.py', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'tools/verify_v2_board_profile_static.ps1', LF will be replaced by CRLF the next time Git touches it
+git_diff_check_exit_code=0

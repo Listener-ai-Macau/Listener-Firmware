@@ -52,8 +52,14 @@ SERIAL_RESET_SETTLE_SECONDS = 0.2
 SERIAL_OPEN_RETRY_COUNT = 12
 SERIAL_OPEN_RETRY_DELAY_SECONDS = 1.0
 READY_MARKERS = (
-    "voice recording control ready: source=ec11_key.gpio35 toggle start/stop",
+    "voice recording control ready: source=ec11_key.",
     "USB SERIAL INPUT READY",
+)
+RUNNING_READY_FALLBACK_MARKERS = (
+    "audio_capture: frame captured",
+    "ble_hid: battery notify",
+    "health: heartbeat:",
+    "power_manager:",
 )
 AUDIO_NOTIFY_PACKET_SIZE_MARKER = "audio notify packet size updated"
 AUDIO_NOTIFY_READY_MARKER = "audio notify subscription changed"
@@ -86,6 +92,7 @@ STREAM_READY_START_WAIT_SECONDS = 12.0
 SERIAL_TOGGLE_TRANSPORT_READY_RETRY_COUNT = 1
 SESSION_COMPLETE_IDLE_SECONDS = 0.2
 PHYSICAL_KEY_START_TIMEOUT_SECONDS = 300
+PHYSICAL_KEY_WAIT_PROGRESS_SECONDS = 10.0
 
 
 class SerialLogMonitor:
@@ -182,10 +189,11 @@ async def wait_for_ready_markers_or_running(
         await serial_monitor.wait_for_markers(READY_MARKERS, timeout_seconds=timeout_seconds)
         return
     except RuntimeError:
-        if "audio_capture: frame captured" not in serial_monitor.full_text():
+        full_text = serial_monitor.full_text()
+        if not any(marker in full_text for marker in RUNNING_READY_FALLBACK_MARKERS):
             raise
         print(
-            "serial_ready_fallback=audio_capture_running",
+            "serial_ready_fallback=firmware_runtime_marker",
             flush=True,
         )
 
@@ -1396,11 +1404,24 @@ async def run_ble_capture(args, ser: Serial, serial_monitor: SerialLogMonitor):
                 send_toggle(ser)
             else:
                 start_deadline = time.time() + PHYSICAL_KEY_START_TIMEOUT_SECONDS
+                start_wait_started_at = time.time()
+                next_progress_at = start_wait_started_at
                 while time.time() < start_deadline:
                     serial_monitor.poll_lines()
                     fail_if_unexpected_reset("during_physical_key_start_wait")
                     if collector.has_started_session():
                         break
+                    now = time.time()
+                    if now >= next_progress_at:
+                        elapsed_seconds = int(now - start_wait_started_at)
+                        remaining_seconds = max(0, int(start_deadline - now))
+                        print(
+                            "physical_key_waiting_for_start "
+                            f"elapsed_seconds={elapsed_seconds} "
+                            f"remaining_seconds={remaining_seconds}",
+                            flush=True,
+                        )
+                        next_progress_at = now + PHYSICAL_KEY_WAIT_PROGRESS_SECONDS
                     await asyncio.sleep(0.1)
 
                 if not collector.has_started_session():
@@ -1409,8 +1430,11 @@ async def run_ble_capture(args, ser: Serial, serial_monitor: SerialLogMonitor):
                         f"budget_seconds={PHYSICAL_KEY_START_TIMEOUT_SECONDS}; recent serial logs:\n"
                         f"{serial_monitor.recent_text()}"
                     )
+                print("physical_key_session_started=1", flush=True)
 
             deadline = time.time() + args.timeout_seconds
+            session_wait_started_at = time.time()
+            next_session_progress_at = session_wait_started_at
             while time.time() < deadline:
                 serial_monitor.poll_lines()
                 fail_if_unexpected_reset("during_session_complete_wait")
@@ -1420,6 +1444,18 @@ async def run_ble_capture(args, ser: Serial, serial_monitor: SerialLogMonitor):
                     break
                 if AUDIO_UPLOAD_SKIPPED_MARKER in serial_monitor.recent_text():
                     break
+                if args.trigger_mode == "physical-key":
+                    now = time.time()
+                    if now >= next_session_progress_at:
+                        elapsed_seconds = int(now - session_wait_started_at)
+                        remaining_seconds = max(0, int(deadline - now))
+                        print(
+                            "physical_key_waiting_for_stop "
+                            f"elapsed_seconds={elapsed_seconds} "
+                            f"remaining_seconds={remaining_seconds}",
+                            flush=True,
+                        )
+                        next_session_progress_at = now + PHYSICAL_KEY_WAIT_PROGRESS_SECONDS
                 await asyncio.sleep(0.1)
 
             if collector.session_id is None:

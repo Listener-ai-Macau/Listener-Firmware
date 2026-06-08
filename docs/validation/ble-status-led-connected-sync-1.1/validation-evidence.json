@@ -1,0 +1,213 @@
+{
+  "schema_version": 1,
+  "plan": "ble-status-led-connected-sync",
+  "step_id": "1.1",
+  "generated_at": "2026-06-08T12:41:45.2278205+08:00",
+  "result": "PASS",
+  "repo_root": "C:\\Users\\Billy\\Desktop\\listener\\voice-keyboard-firmware",
+  "worktree": "C:\\Users\\Billy\\Desktop\\listener\\voice-keyboard-firmware-wt-oai3-ble-status-led-connected-sync-1.1",
+  "branch": "ai/oai3-ble-status-led-connected-sync-1.1",
+  "commit": "f252dc07e614ca8fe3d830cc0208003538b87833",
+  "timeout_seconds": 120,
+  "commands": [
+    {
+      "index": 1,
+      "command": "pwsh -NoProfile -File .\\tools\\ai\\repo_features.ps1 -Check",
+      "runnable": true,
+      "worktree": "C:\\Users\\Billy\\Desktop\\listener\\voice-keyboard-firmware-wt-oai3-ble-status-led-connected-sync-1.1",
+      "branch": "ai/oai3-ble-status-led-connected-sync-1.1",
+      "commit": "f252dc07e614ca8fe3d830cc0208003538b87833",
+      "status": "PASS",
+      "started_at": "2026-06-08T12:41:35.5207277+08:00",
+      "finished_at": "2026-06-08T12:41:36.6799682+08:00",
+      "duration_ms": 1159,
+      "exit_code": 0,
+      "timed_out": false,
+      "stdout_summary": [
+        "PASS: firmware repo feature script is present, concise, and covers ESP32-S3 N16R8 BLE HID/audio diagnostics."
+      ],
+      "stderr_summary": [],
+      "output_sha256": "636c2c1d984d252efbd30c5dbb78fe8be7041892ffb74ae840dafe949e053e92",
+      "evidence_refs": [],
+      "artifacts": []
+    },
+    {
+      "index": 2,
+      "command": "python .\\tools\\verify_status_led_static.py",
+      "runnable": true,
+      "worktree": "C:\\Users\\Billy\\Desktop\\listener\\voice-keyboard-firmware-wt-oai3-ble-status-led-connected-sync-1.1",
+      "branch": "ai/oai3-ble-status-led-connected-sync-1.1",
+      "commit": "f252dc07e614ca8fe3d830cc0208003538b87833",
+      "status": "PASS",
+      "started_at": "2026-06-08T12:41:36.7155591+08:00",
+      "finished_at": "2026-06-08T12:41:37.2868336+08:00",
+      "duration_ms": 571,
+      "exit_code": 0,
+      "timed_out": false,
+      "stdout_summary": [
+        "PASS: status LED static verification covers V2 four-zone WS2812 resources, EC11 GPIO5/count12, key GPIO13/count4, edge GPIO4/count6, diagnostics, USB validation hooks, camera one-pixel status/key harness, and low-power off path."
+      ],
+      "stderr_summary": [],
+      "output_sha256": "d6ff083acbf836cbd8a60bae7b78620dc826dc590073b76e29b65886697ec409",
+      "evidence_refs": [],
+      "artifacts": []
+    },
+    {
+      "index": 3,
+      "command": "pwsh -NoProfile -File .\\tools\\verify_ble_hid.ps1",
+      "runnable": true,
+      "worktree": "C:\\Users\\Billy\\Desktop\\listener\\voice-keyboard-firmware-wt-oai3-ble-status-led-connected-sync-1.1",
+      "branch": "ai/oai3-ble-status-led-connected-sync-1.1",
+      "commit": "f252dc07e614ca8fe3d830cc0208003538b87833",
+      "status": "PASS",
+      "started_at": "2026-06-08T12:41:37.2885235+08:00",
+      "finished_at": "2026-06-08T12:41:38.3855262+08:00",
+      "duration_ms": 1097,
+      "exit_code": 0,
+      "timed_out": false,
+      "stdout_summary": [
+        "PASS: verify_ble_hid static checks cover BLE HID Battery Service live reporting, reconnect refresh, and ADC diagnostics."
+      ],
+      "stderr_summary": [],
+      "output_sha256": "332e5ff799bf2f92b80878ab4e2ccf1a90fe61c02d7c13827ae0b2fe47aefe2c",
+      "evidence_refs": [],
+      "artifacts": []
+    },
+    {
+      "index": 4,
+      "command": "pwsh -NoProfile -File .\\tools\\verify_ble_status_led_connected_sync.ps1",
+      "runnable": true,
+      "worktree": "C:\\Users\\Billy\\Desktop\\listener\\voice-keyboard-firmware-wt-oai3-ble-status-led-connected-sync-1.1",
+      "branch": "ai/oai3-ble-status-led-connected-sync-1.1",
+      "commit": "f252dc07e614ca8fe3d830cc0208003538b87833",
+      "status": "PASS",
+      "started_at": "2026-06-08T12:41:38.3865879+08:00",
+      "finished_at": "2026-06-08T12:41:39.5520619+08:00",
+      "duration_ms": 1165,
+      "exit_code": 0,
+      "timed_out": false,
+      "stdout_summary": [
+        "PASS: BLE status LED connected-sync checks cover GAP/HID connected source of truth, stale advertising suppression, bounded connected brightness, and disconnect/advertising negative transitions."
+      ],
+      "stderr_summary": [],
+      "output_sha256": "2290299b1c925607479b7f5754ab73912dda2d3b92794001018b7b84e4171de2",
+      "evidence_refs": [],
+      "artifacts": []
+    },
+    {
+      "index": 5,
+      "command": "pwsh -NoProfile -File .\\tools\\build.ps1 -Target esp32s3",
+      "runnable": true,
+      "worktree": "C:\\Users\\Billy\\Desktop\\listener\\voice-keyboard-firmware-wt-oai3-ble-status-led-connected-sync-1.1",
+      "branch": "ai/oai3-ble-status-led-connected-sync-1.1",
+      "commit": "f252dc07e614ca8fe3d830cc0208003538b87833",
+      "status": "PASS",
+      "started_at": "2026-06-08T12:41:39.5533270+08:00",
+      "finished_at": "2026-06-08T12:41:44.6096858+08:00",
+      "duration_ms": 5056,
+      "exit_code": 0,
+      "timed_out": false,
+      "stdout_summary": [
+        "Done! You can now compile ESP-IDF projects.",
+        "Go to the project directory and run:",
+        "  idf.py build",
+        "Configured target already 'esp32s3'; skipping set-target.",
+        "Using ESP-IDF build directory: C:\\Users\\Billy\\AppData\\Local\\Temp\\listener-idf-build-706ece82a8d5",
+        "Executing action: all (aliases: build)",
+        "Running ninja in directory C:\\Users\\Billy\\AppData\\Local\\Temp\\listener-idf-build-706ece82a8d5",
+        "Executing \"ninja all\"...",
+        "[1/4] C:\\Windows\\system32\\cmd.exe /C \"cd /D C:\\Users\\Billy\\AppData\\Local\\Temp\\listener-idf-build-706ece82a8d5\\esp-idf\\esptool_py && C:\\Users\\Billy\\.espressif\\python_env\\idf5.5_py3.11_env\\Scripts\\python.exe C:/Users/Billy/esp/esp-idf/components/partition_table/check_sizes.py --offset 0x8000 partition --type app C:/Users/Billy/AppData/Local/Temp/listener-idf-build-706ece82a8d5/partition_table/partition-table.bin C:/Users/Billy/AppData/Local/Temp/listener-idf-build-706ece82a8d5/voice-keyboard-firmware.bin\"\r",
+        "voice-keyboard-firmware.bin binary size 0xc0d30 bytes. Smallest app partition is 0x600000 bytes. 0x53f2d0 bytes (87%) free.\r\r",
+        "[2/4] Performing build step for 'bootloader'\r",
+        "[1/1] C:\\Windows\\system32\\cmd.exe /C \"cd /D C:\\Users\\Billy\\AppData\\Local\\Temp\\listener-idf-build-706ece82a8d5\\bootloader\\esp-idf\\esptool_py && C:\\Users\\Billy\\.espressif\\python_env\\idf5.5_py3.11_env\\Scripts\\python.exe C:/Users/Billy/esp/esp-idf/components/partition_table/check_sizes.py --offset 0x8000 bootloader 0x0 C:/Users/Billy/AppData/Local/Temp/listener-idf-build-706ece82a8d5/bootloader/bootloader.bin\"\r\r",
+        "Bootloader binary size 0x51b0 bytes. 0x2e50 bytes (36%) free.\r\r\r",
+        "[3/4] No install step for 'bootloader'\r",
+        "[4/4] Completed 'bootloader'\r",
+        "Project build complete. To flash, run:",
+        " idf.py flash",
+        "or",
+        " idf.py -p PORT flash",
+        "or",
+        " python -m esptool --chip esp32s3 -b 460800 --before default_reset --after hard_reset write_flash --flash_mode dio --flash_size 16MB --flash_freq 80m 0x0 ..\\..\\..\\AppData\\Local\\Temp\\listener-idf-build-706ece82a8d5\\bootloader\\bootloader.bin 0x8000 ..\\..\\..\\AppData\\Local\\Temp\\listener-idf-build-706ece82a8d5\\partition_table\\partition-table.bin 0xf000 ..\\..\\..\\AppData\\Local\\Temp\\listener-idf-build-706ece82a8d5\\ota_data_initial.bin 0x20000 ..\\..\\..\\AppData\\Local\\Temp\\listener-idf-build-706ece82a8d5\\voice-keyboard-firmware.bin",
+        "or from the \"C:\\Users\\Billy\\AppData\\Local\\Temp\\listener-idf-build-706ece82a8d5\" directory",
+        " python -m esptool --chip esp32s3 -b 460800 --before default_reset --after hard_reset write_flash \"@flash_args\"",
+        "proxy synced -> http://127.0.0.1:7892",
+        "clangd compilation database updated: C:\\Users\\Billy\\Desktop\\listener\\voice-keyboard-firmware-wt-oai3-ble-status-led-connected-sync-1.1\\.cache\\\\clangd\\compile_commands.json"
+      ],
+      "stderr_summary": [
+        "Activating ESP-IDF 5.5",
+        "Setting IDF_PATH to 'C:\\Users\\Billy\\esp\\esp-idf'.",
+        "* Checking python version ... 3.11.9",
+        "* Checking python dependencies ... OK",
+        "* Deactivating the current ESP-IDF environment (if any) ... OK",
+        "* Establishing a new ESP-IDF environment ... OK",
+        "* Identifying shell ... pwsh.exe",
+        "* Detecting outdated tools in system ... Found tools that are not used by active ESP-IDF version.",
+        "For removing old versions of riscv32-esp-elf-gdb use command 'python.exe C:\\Users\\Billy\\esp\\esp-idf\\tools\\idf_tools.py uninstall'",
+        "To free up even more space, remove installation packages of those tools.",
+        "Use option python.exe C:\\Users\\Billy\\esp\\esp-idf\\tools\\idf_tools.py uninstall --remove-archives."
+      ],
+      "output_sha256": "53cd89cbd8047593ac05d22198149164b246432bb3560df9d99b2ede7f0c02c3",
+      "evidence_refs": [],
+      "artifacts": []
+    },
+    {
+      "index": 6,
+      "command": "manual-hardware: if current V2 hardware is reachable use aiw with-lock only around flash serial BLE capture to prove post-flash host-connected state clears pairing blink and save logs under docs/validation/ble-status-led-connected-sync-1.1/",
+      "runnable": false,
+      "worktree": "C:\\Users\\Billy\\Desktop\\listener\\voice-keyboard-firmware-wt-oai3-ble-status-led-connected-sync-1.1",
+      "branch": "ai/oai3-ble-status-led-connected-sync-1.1",
+      "commit": "f252dc07e614ca8fe3d830cc0208003538b87833",
+      "status": "RECORDED",
+      "started_at": "2026-06-08T12:41:44.6129188+08:00",
+      "finished_at": "2026-06-08T12:41:44.6129188+08:00",
+      "duration_ms": 0,
+      "exit_code": null,
+      "timed_out": false,
+      "stdout_summary": [],
+      "stderr_summary": [],
+      "output_sha256": null,
+      "evidence_refs": [
+        "artifact:docs/validation/ble-status-led-connected-sync-1.1/connected-sync-hardware-summary-20260608-123947.md",
+        "screenshot:docs/validation/ble-status-led-connected-sync-1.1/connected-sync-led-status-20260608-123947.log"
+      ],
+      "artifacts": [
+        {
+          "ref": "artifact:docs/validation/ble-status-led-connected-sync-1.1/connected-sync-hardware-summary-20260608-123947.md",
+          "path": "docs/validation/ble-status-led-connected-sync-1.1/connected-sync-hardware-summary-20260608-123947.md",
+          "exists": true,
+          "sha256": "5f42af082744cea58a63f7bfaf22c5cb1161d32c19b48d4cc666c37fa9841b07"
+        },
+        {
+          "ref": "screenshot:docs/validation/ble-status-led-connected-sync-1.1/connected-sync-led-status-20260608-123947.log",
+          "path": "docs/validation/ble-status-led-connected-sync-1.1/connected-sync-led-status-20260608-123947.log",
+          "exists": true,
+          "sha256": null
+        }
+      ]
+    },
+    {
+      "index": 7,
+      "command": "git diff --check",
+      "runnable": true,
+      "worktree": "C:\\Users\\Billy\\Desktop\\listener\\voice-keyboard-firmware-wt-oai3-ble-status-led-connected-sync-1.1",
+      "branch": "ai/oai3-ble-status-led-connected-sync-1.1",
+      "commit": "f252dc07e614ca8fe3d830cc0208003538b87833",
+      "status": "PASS",
+      "started_at": "2026-06-08T12:41:44.6227009+08:00",
+      "finished_at": "2026-06-08T12:41:45.2269657+08:00",
+      "duration_ms": 604,
+      "exit_code": 0,
+      "timed_out": false,
+      "stdout_summary": [],
+      "stderr_summary": [
+        "warning: in the working copy of 'docs/features/status_led.md', LF will be replaced by CRLF the next time Git touches it",
+        "warning: in the working copy of 'ports/esp32/ble_hid_gap/ble_hid_gap_esp32.c', LF will be replaced by CRLF the next time Git touches it"
+      ],
+      "output_sha256": "076dedc66bccd73cde2b2fb9649623436025c17bc78b21203a483167030b49ed",
+      "evidence_refs": [],
+      "artifacts": []
+    }
+  ],
+  "errors": []
+}

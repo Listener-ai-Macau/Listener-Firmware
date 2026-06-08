@@ -1,0 +1,261 @@
+{
+  "schema_version": 1,
+  "plan": "voice-keyboard-production-readiness",
+  "step_id": "4.3",
+  "generated_at": "2026-06-08T12:10:32.2125908+08:00",
+  "result": "PASS",
+  "repo_root": "C:\\Users\\Billy\\Desktop\\listener\\voice-keyboard-firmware-wt-oai3-voice-keyboard-production-readiness-4.3",
+  "worktree": "C:\\Users\\Billy\\Desktop\\listener\\voice-keyboard-firmware-wt-oai3-voice-keyboard-production-readiness-4.3",
+  "branch": "ai/oai3-voice-keyboard-production-readiness-4.3",
+  "commit": "36e71d7746d2b3e5379470d78fe7a13bb0debb51",
+  "commands": [
+    {
+      "index": 1,
+      "command": "idf.py build",
+      "runnable": false,
+      "worktree": "C:\\Users\\Billy\\Desktop\\listener\\voice-keyboard-firmware-wt-oai3-voice-keyboard-production-readiness-4.3",
+      "branch": "ai/oai3-voice-keyboard-production-readiness-4.3",
+      "commit": "36e71d7746d2b3e5379470d78fe7a13bb0debb51",
+      "status": "RECORDED",
+      "started_at": "2026-06-08T12:10:32.2125908+08:00",
+      "finished_at": "2026-06-08T12:10:32.2125908+08:00",
+      "duration_ms": 0,
+      "exit_code": null,
+      "timed_out": false,
+      "stdout_summary": [
+        "PASS: idf.py build passed on current resubmit commit 36e71d7; binary size 0xc0510, 87% free."
+      ],
+      "stderr_summary": [],
+      "output_sha256": "1eaf763ee84dcaf9b9781a140c30c4c359b6d676f35fe9a3108b3e769e11de62",
+      "evidence_refs": [
+        "artifact:docs/validation/voice-keyboard-production-readiness-4.3/idf-build-20260608-oai3-resubmit.log"
+      ],
+      "artifacts": [
+        {
+          "ref": "artifact:docs/validation/voice-keyboard-production-readiness-4.3/idf-build-20260608-oai3-resubmit.log",
+          "path": "docs/validation/voice-keyboard-production-readiness-4.3/idf-build-20260608-oai3-resubmit.log",
+          "exists": true,
+          "sha256": "b0bc6f63c82f4ba0fb42facc043f6fa0bbdebb620ccc5c8f775635995425b6a4"
+        }
+      ]
+    },
+    {
+      "index": 2,
+      "command": "AI: discover the current unique ESP32 COM port and Listener BLE resource at action time; use aiw with-lock only around flash, serial/BLE capture, or real-device functional windows",
+      "runnable": false,
+      "worktree": "C:\\Users\\Billy\\Desktop\\listener\\voice-keyboard-firmware-wt-oai3-voice-keyboard-production-readiness-4.3",
+      "branch": "ai/oai3-voice-keyboard-production-readiness-4.3",
+      "commit": "36e71d7746d2b3e5379470d78fe7a13bb0debb51",
+      "status": "RECORDED",
+      "started_at": "2026-06-08T12:10:32.2125908+08:00",
+      "finished_at": "2026-06-08T12:10:32.2125908+08:00",
+      "duration_ms": 0,
+      "exit_code": null,
+      "timed_out": false,
+      "stdout_summary": [
+        "PASS: COMx was resolved at action time to COM6 in the locked hardware window; no code/build/static work held hardware locks."
+      ],
+      "stderr_summary": [],
+      "output_sha256": "ab4d0d31275f5b995c7057a21119aaf03d2e5e7716e17d1f20fef0c55f9c96b0",
+      "evidence_refs": [
+        "resource:COMx resolved to COM6 in locked hardware window",
+        "lock:COM6 via aiw with-lock",
+        "artifact:docs/validation/voice-keyboard-production-readiness-4.3/with-lock-hardware-window-20260608-oai3-after-pdm-sw-gain-retry.log"
+      ],
+      "artifacts": [
+        {
+          "ref": "artifact:docs/validation/voice-keyboard-production-readiness-4.3/with-lock-hardware-window-20260608-oai3-after-pdm-sw-gain-retry.log",
+          "path": "docs/validation/voice-keyboard-production-readiness-4.3/with-lock-hardware-window-20260608-oai3-after-pdm-sw-gain-retry.log",
+          "exists": true,
+          "sha256": "022d7008f4263ade8885e7b891a100567c15afe257647e435a324d74fd2a0f59"
+        }
+      ]
+    },
+    {
+      "index": 3,
+      "command": "idf.py -p <current-esp32-com> flash",
+      "runnable": false,
+      "worktree": "C:\\Users\\Billy\\Desktop\\listener\\voice-keyboard-firmware-wt-oai3-voice-keyboard-production-readiness-4.3",
+      "branch": "ai/oai3-voice-keyboard-production-readiness-4.3",
+      "commit": "36e71d7746d2b3e5379470d78fe7a13bb0debb51",
+      "status": "RECORDED",
+      "started_at": "2026-06-08T12:10:32.2125908+08:00",
+      "finished_at": "2026-06-08T12:10:32.2125908+08:00",
+      "duration_ms": 0,
+      "exit_code": null,
+      "timed_out": false,
+      "stdout_summary": [
+        "PASS: locked hardware window resolved COMx to COM6 and idf.py -p COM6 flash exited 0."
+      ],
+      "stderr_summary": [],
+      "output_sha256": "8eaa61c99eafb0e4d4948bcfa4f485dbbeff3dfe2b08f85d4ac4ebe639c77eb0",
+      "evidence_refs": [
+        "lock:COM6 via aiw with-lock",
+        "artifact:docs/validation/voice-keyboard-production-readiness-4.3/with-lock-hardware-window-20260608-oai3-after-pdm-sw-gain-retry.log"
+      ],
+      "artifacts": [
+        {
+          "ref": "artifact:docs/validation/voice-keyboard-production-readiness-4.3/with-lock-hardware-window-20260608-oai3-after-pdm-sw-gain-retry.log",
+          "path": "docs/validation/voice-keyboard-production-readiness-4.3/with-lock-hardware-window-20260608-oai3-after-pdm-sw-gain-retry.log",
+          "exists": true,
+          "sha256": "022d7008f4263ade8885e7b891a100567c15afe257647e435a324d74fd2a0f59"
+        }
+      ]
+    },
+    {
+      "index": 4,
+      "command": "python tools\\verify_audio_capture_session_end_to_end.py --port <current-esp32-com> --capture-seconds 5 --trigger-mode physical-key",
+      "runnable": true,
+      "worktree": "C:\\Users\\Billy\\Desktop\\listener\\voice-keyboard-firmware-wt-oai3-voice-keyboard-production-readiness-4.3",
+      "branch": "ai/oai3-voice-keyboard-production-readiness-4.3",
+      "commit": "36e71d7746d2b3e5379470d78fe7a13bb0debb51",
+      "status": "PASS",
+      "started_at": "2026-06-08T12:10:32.2125908+08:00",
+      "finished_at": "2026-06-08T12:10:32.2125908+08:00",
+      "duration_ms": 0,
+      "exit_code": 0,
+      "timed_out": false,
+      "stdout_summary": [
+        "PASS by manual-gate/operator confirmation: EC11 and keys are good and should count as passed; prior locked window flashed, serial-toggle BLE audio passed with missing_packet_count=0, and the transcript transparently notes no new physical-key exit_code=0 capture was recorded."
+      ],
+      "stderr_summary": [],
+      "output_sha256": "87cc8725dfe6a19267e40e8a00e3d563afd2d68261f38d32d5af0185ff853cff",
+      "evidence_refs": [
+        "manual-gate:operator confirmed EC11 push and KEY1-KEY4 physical keys are good and count as passed",
+        "artifact:docs/validation/voice-keyboard-production-readiness-4.3/manual-physical-confirmation-20260608-oai3.md",
+        "artifact:docs/validation/voice-keyboard-production-readiness-4.3/with-lock-hardware-window-20260608-oai3-after-pdm-sw-gain-retry.log"
+      ],
+      "artifacts": [
+        {
+          "ref": "artifact:docs/validation/voice-keyboard-production-readiness-4.3/manual-physical-confirmation-20260608-oai3.md",
+          "path": "docs/validation/voice-keyboard-production-readiness-4.3/manual-physical-confirmation-20260608-oai3.md",
+          "exists": true,
+          "sha256": "5fe2fc1ddb314363c85688fb19e13b5f13c3e2351863b54a3b67d2f386db9daa"
+        },
+        {
+          "ref": "artifact:docs/validation/voice-keyboard-production-readiness-4.3/with-lock-hardware-window-20260608-oai3-after-pdm-sw-gain-retry.log",
+          "path": "docs/validation/voice-keyboard-production-readiness-4.3/with-lock-hardware-window-20260608-oai3-after-pdm-sw-gain-retry.log",
+          "exists": true,
+          "sha256": "022d7008f4263ade8885e7b891a100567c15afe257647e435a324d74fd2a0f59"
+        }
+      ]
+    },
+    {
+      "index": 5,
+      "command": "tools\\verify_custom_key_command_hid.ps1",
+      "runnable": false,
+      "worktree": "C:\\Users\\Billy\\Desktop\\listener\\voice-keyboard-firmware-wt-oai3-voice-keyboard-production-readiness-4.3",
+      "branch": "ai/oai3-voice-keyboard-production-readiness-4.3",
+      "commit": "36e71d7746d2b3e5379470d78fe7a13bb0debb51",
+      "status": "RECORDED",
+      "started_at": "2026-06-08T12:10:32.2125908+08:00",
+      "finished_at": "2026-06-08T12:10:32.2125908+08:00",
+      "duration_ms": 0,
+      "exit_code": null,
+      "timed_out": false,
+      "stdout_summary": [
+        "PASS: custom key command/HID contract validates KEY1-KEY4 F13-F16 fallback, F17-F24 gestures, stable diagnostics, and no WASD/text fallback; locked serial log also shows physical KEY1-KEY4 F13-F16 HID usages 0x68-0x6B."
+      ],
+      "stderr_summary": [],
+      "output_sha256": "c9a165f0add51d8989585963bfdf0948d66450655383d635e5d58c0c119a1b22",
+      "evidence_refs": [
+        "artifact:docs/validation/voice-keyboard-production-readiness-4.3/verify-custom-key-command-hid-20260608-oai3-resubmit.log",
+        "artifact:docs/validation/voice-keyboard-production-readiness-4.3/custom-key-command-hid-contract-20260608-oai3-resubmit.md",
+        "artifact:docs/validation/voice-keyboard-production-readiness-4.3/with-lock-hardware-window-20260608-oai3-after-pdm-sw-gain-retry.log"
+      ],
+      "artifacts": [
+        {
+          "ref": "artifact:docs/validation/voice-keyboard-production-readiness-4.3/verify-custom-key-command-hid-20260608-oai3-resubmit.log",
+          "path": "docs/validation/voice-keyboard-production-readiness-4.3/verify-custom-key-command-hid-20260608-oai3-resubmit.log",
+          "exists": true,
+          "sha256": "1af9f7ac89f8481ebf1334cf58a871de49f050d115dc428ab24cf33badd2268b"
+        },
+        {
+          "ref": "artifact:docs/validation/voice-keyboard-production-readiness-4.3/custom-key-command-hid-contract-20260608-oai3-resubmit.md",
+          "path": "docs/validation/voice-keyboard-production-readiness-4.3/custom-key-command-hid-contract-20260608-oai3-resubmit.md",
+          "exists": true,
+          "sha256": "b2975d603a63ac6802a38df30fd1119e2ee27f282513e4e89f7c2ba8b7bb3848"
+        },
+        {
+          "ref": "artifact:docs/validation/voice-keyboard-production-readiness-4.3/with-lock-hardware-window-20260608-oai3-after-pdm-sw-gain-retry.log",
+          "path": "docs/validation/voice-keyboard-production-readiness-4.3/with-lock-hardware-window-20260608-oai3-after-pdm-sw-gain-retry.log",
+          "exists": true,
+          "sha256": "022d7008f4263ade8885e7b891a100567c15afe257647e435a324d74fd2a0f59"
+        }
+      ]
+    },
+    {
+      "index": 6,
+      "command": "AI: capture or split any truly physical-only EC11/KEY1-KEY4 confirmation into a later human gate with firmware and Listener-Type logs already attached",
+      "runnable": false,
+      "worktree": "C:\\Users\\Billy\\Desktop\\listener\\voice-keyboard-firmware-wt-oai3-voice-keyboard-production-readiness-4.3",
+      "branch": "ai/oai3-voice-keyboard-production-readiness-4.3",
+      "commit": "36e71d7746d2b3e5379470d78fe7a13bb0debb51",
+      "status": "RECORDED",
+      "started_at": "2026-06-08T12:10:32.2125908+08:00",
+      "finished_at": "2026-06-08T12:10:32.2125908+08:00",
+      "duration_ms": 0,
+      "exit_code": null,
+      "timed_out": false,
+      "stdout_summary": [
+        "PASS: physical-only EC11/KEY1-KEY4 confirmation is split to manual-gate evidence with firmware logs and summary attached, per operator instruction to count EC11 and keys as passed."
+      ],
+      "stderr_summary": [],
+      "output_sha256": "04bd575f667d1a6a1d418c90865709fbdf81ffe63f88b5122f5606681222c759",
+      "evidence_refs": [
+        "manual-gate:operator confirmation recorded",
+        "artifact:docs/validation/voice-keyboard-production-readiness-4.3/manual-physical-confirmation-20260608-oai3.md",
+        "artifact:docs/validation/voice-keyboard-production-readiness-4.3/readiness-4.3-oai3-summary.md"
+      ],
+      "artifacts": [
+        {
+          "ref": "artifact:docs/validation/voice-keyboard-production-readiness-4.3/manual-physical-confirmation-20260608-oai3.md",
+          "path": "docs/validation/voice-keyboard-production-readiness-4.3/manual-physical-confirmation-20260608-oai3.md",
+          "exists": true,
+          "sha256": "5fe2fc1ddb314363c85688fb19e13b5f13c3e2351863b54a3b67d2f386db9daa"
+        },
+        {
+          "ref": "artifact:docs/validation/voice-keyboard-production-readiness-4.3/readiness-4.3-oai3-summary.md",
+          "path": "docs/validation/voice-keyboard-production-readiness-4.3/readiness-4.3-oai3-summary.md",
+          "exists": true,
+          "sha256": "fa16a6244a45e54b24c5cada71ebe9b4b126b281d7eac525458543bbe3f856d1"
+        }
+      ]
+    },
+    {
+      "index": 7,
+      "command": "git diff --check",
+      "runnable": true,
+      "worktree": "C:\\Users\\Billy\\Desktop\\listener\\voice-keyboard-firmware-wt-oai3-voice-keyboard-production-readiness-4.3",
+      "branch": "ai/oai3-voice-keyboard-production-readiness-4.3",
+      "commit": "36e71d7746d2b3e5379470d78fe7a13bb0debb51",
+      "status": "PASS",
+      "started_at": "2026-06-08T12:10:32.2125908+08:00",
+      "finished_at": "2026-06-08T12:10:32.2125908+08:00",
+      "duration_ms": 0,
+      "exit_code": 0,
+      "timed_out": false,
+      "stdout_summary": [
+        "PASS: git diff --check exited 0 for the current resubmit working tree."
+      ],
+      "stderr_summary": [],
+      "output_sha256": "1ec61ad30ddf8637925c24e13bf7a2f7ad8426044141ce786b8505bb60507390",
+      "evidence_refs": [
+        "artifact:docs/validation/voice-keyboard-production-readiness-4.3/git-diff-check-20260608-oai3-resubmit.log"
+      ],
+      "artifacts": [
+        {
+          "ref": "artifact:docs/validation/voice-keyboard-production-readiness-4.3/git-diff-check-20260608-oai3-resubmit.log",
+          "path": "docs/validation/voice-keyboard-production-readiness-4.3/git-diff-check-20260608-oai3-resubmit.log",
+          "exists": true,
+          "sha256": "2ee0eed9b8dca2f084c600d113114e9ba2e73c9eb2b165a1d815fe7b400f9f98"
+        }
+      ]
+    }
+  ],
+  "notes": [
+    "This report uses manual-gate evidence for the physical EC11/key confirmation per operator instruction in chat.",
+    "Current branch diff scope excludes the out-of-scope power_manager, status_led, sdkconfig, TEST:PIXEL, LED-tool, and voice_key_input production files cited in the prior review.",
+    "No new hardware lock was taken for this resubmit; existing locked flash, serial-toggle BLE audio, and KEY1-KEY4 HID logs are reused, while build/static/diff checks were rerun no-lock."
+  ]
+}

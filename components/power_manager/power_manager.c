@@ -58,6 +58,10 @@ extern void status_led_prepare_sleep(void) __attribute__((weak));
 
 #define POWER_MANAGER_USB_PREFIX "POWER:"
 #define POWER_MANAGER_BATTERY_WARN_PERCENT 10U
+#ifndef CONFIG_POWER_MANAGER_BATTERY_CRITICAL_PERCENT
+#define CONFIG_POWER_MANAGER_BATTERY_CRITICAL_PERCENT 5
+#endif
+#define POWER_MANAGER_BATTERY_CRITICAL_PERCENT ((uint8_t)CONFIG_POWER_MANAGER_BATTERY_CRITICAL_PERCENT)
 #define POWER_MANAGER_TASK_STACK_BYTES (4 * 1024)
 #define POWER_MANAGER_SHUTDOWN_USER_ACTION "short-press hardware power key for cold boot after PWR_HOLD/GPIO46 release"
 #define POWER_MANAGER_POWER_SOURCE_USB_PRESENT (1u << 0)
@@ -143,6 +147,8 @@ const char *power_manager_shutdown_reason_name(power_manager_shutdown_reason_t r
         return "long_idle";
     case POWER_MANAGER_SHUTDOWN_REASON_MANUAL_COMMAND:
         return "manual_command";
+    case POWER_MANAGER_SHUTDOWN_REASON_LOW_BATTERY:
+        return "low_battery";
     default:
         return "unknown";
     }
@@ -397,6 +403,17 @@ static bool power_manager_sync_power_source_locked(
     s_charging = source->charging;
     s_charge_full = source->charge_full;
     s_auto_shutdown_block_logged = false;
+
+    /* Automatically set/clear EXTERNAL_POWER blocker so the
+       s_blockers != 0 early-return in target_state_locked always
+       prevents HARDWARE_SHUTDOWN when USB or charger is present.
+       This is a safety net beyond the s_external_power_present check
+       and protects against GPIO read jitter or timing races. */
+    if (source->external_power_present) {
+        s_blockers |= POWER_MANAGER_BLOCKER_EXTERNAL_POWER;
+    } else {
+        s_blockers &= ~(uint32_t)POWER_MANAGER_BLOCKER_EXTERNAL_POWER;
+    }
     return true;
 }
 
@@ -449,6 +466,9 @@ static bool power_manager_refresh_ble_connection_locked(uint64_t now_ms)
 
     s_ble_connected = connected;
     s_last_radio_activity_ms = now_ms;
+    if (connected) {
+        s_last_user_activity_ms = now_ms;
+    }
     s_state = POWER_MANAGER_STATE_ACTIVE;
     return true;
 }
@@ -871,6 +891,7 @@ static void power_manager_evaluate(void)
     bool automatic_shutdown_blocked = false;
     bool log_automatic_shutdown_blocked = false;
     power_manager_power_source_snapshot_t power_source = {0};
+    power_manager_snapshot_t battery_snapshot = {0};
     power_manager_read_power_source(&power_source);
 
     if (xSemaphoreTake(s_mutex, portMAX_DELAY) != pdTRUE) {
@@ -897,6 +918,31 @@ static void power_manager_evaluate(void)
         s_state = next;
     }
     xSemaphoreGive(s_mutex);
+
+    /* Low-battery protection: shut down immediately when battery is
+       critically low and no external power is present. This bypasses
+       the normal idle threshold and all blockers except EXTERNAL_POWER
+       to prevent battery over-discharge. */
+    power_manager_update_battery_snapshot(&battery_snapshot);
+    if (battery_snapshot.battery_valid &&
+        battery_snapshot.battery_level_percent <= POWER_MANAGER_BATTERY_CRITICAL_PERCENT &&
+        !power_source.external_power_present) {
+        ESP_LOGW(
+            TAG,
+            "low battery critical shutdown: level=%u%% mv=%" PRIu32 " threshold=%u%%"
+            " external_power=%u charging=%u",
+            battery_snapshot.battery_level_percent,
+            battery_snapshot.battery_mv,
+            (unsigned)POWER_MANAGER_BATTERY_CRITICAL_PERCENT,
+            power_source.external_power_present ? 1u : 0u,
+            power_source.charging ? 1u : 0u);
+        esp_err_t lb_ret =
+            power_manager_enter_hardware_shutdown(POWER_MANAGER_SHUTDOWN_REASON_LOW_BATTERY);
+        if (lb_ret != ESP_OK) {
+            ESP_LOGW(TAG, "low battery shutdown rejected, will retry next evaluate cycle");
+        }
+        return;
+    }
 
     if (power_source_changed) {
         ESP_LOGI(
@@ -1185,6 +1231,9 @@ void power_manager_set_ble_connected(bool connected)
         previous = s_state;
         s_ble_connected = connected;
         s_last_radio_activity_ms = power_manager_now_ms();
+        if (connected) {
+            s_last_user_activity_ms = s_last_radio_activity_ms;
+        }
         s_auto_shutdown_block_logged = false;
         s_state = POWER_MANAGER_STATE_ACTIVE;
         next = s_state;
