@@ -52,8 +52,14 @@ SERIAL_RESET_SETTLE_SECONDS = 0.2
 SERIAL_OPEN_RETRY_COUNT = 12
 SERIAL_OPEN_RETRY_DELAY_SECONDS = 1.0
 READY_MARKERS = (
-    "voice recording control ready: source=ec11_key.gpio35 toggle start/stop",
+    "voice recording control ready: source=ec11_key.",
     "USB SERIAL INPUT READY",
+)
+RUNNING_READY_FALLBACK_MARKERS = (
+    "audio_capture: frame captured",
+    "ble_hid: battery notify",
+    "health: heartbeat:",
+    "power_manager:",
 )
 AUDIO_NOTIFY_PACKET_SIZE_MARKER = "audio notify packet size updated"
 AUDIO_NOTIFY_READY_MARKER = "audio notify subscription changed"
@@ -182,10 +188,11 @@ async def wait_for_ready_markers_or_running(
         await serial_monitor.wait_for_markers(READY_MARKERS, timeout_seconds=timeout_seconds)
         return
     except RuntimeError:
-        if "audio_capture: frame captured" not in serial_monitor.full_text():
+        full_text = serial_monitor.full_text()
+        if not any(marker in full_text for marker in RUNNING_READY_FALLBACK_MARKERS):
             raise
         print(
-            "serial_ready_fallback=audio_capture_running",
+            "serial_ready_fallback=firmware_runtime_marker",
             flush=True,
         )
 
