@@ -43,9 +43,9 @@ The status LED task refreshes every 50 ms and sends at most four short strip fra
 
 Profiles are persisted in NVS through `~LED:PROFILE <off|low|standard|ambient|factory>`.
 
-- `standard` is the product default. Routine status/key effects are capped at 60% and use lower per-effect percentages for quiet idle state, connection confidence, key feedback, success, recording, processing, and warnings.
-- `low` caps routine effects at 25% for dark-room or low-power behavior.
-- `ambient` caps routine effects at 42% and permits restrained accent behavior when the edge chain is available.
+- `standard` is the product default. Routine status/key effects are capped at 85% and use brighter, saturated primary colors for daily readability.
+- `low` caps routine effects at 35% for dark-room or low-power behavior.
+- `ambient` caps routine effects at 65% and permits restrained accent behavior when the edge chain is available.
 - `off` turns routine non-safety output off; safety/error/test paths can still light.
 - `factory` keeps the full 100% path for calibration, manufacturing, and hardware bring-up.
 
@@ -53,12 +53,13 @@ Current is still estimated per frame with 20 mA per RGB channel at full scale. `
 
 ## Product Effect Language
 
-- Idle connected state is quiet: only low PWR/BLE confidence remains visible.
+- Idle connected state is readable but not dominant: PWR/BLE confidence remains visible without using factory brightness.
 - Pairing and reconnect use recognizable blue pulses without turning the whole status rail into an animation surface.
 - Recording is the strongest routine semantic state and also marks the voice key locally.
-- Processing uses a purple breath on `AI`; long processing settles to a calmer breath.
+- Processing uses a saturated purple breath on `AI`; long processing settles to a calmer breath.
 - Key LEDs are local transient feedback only: white on press/release, purple while processing, and green only during success confirmation.
 - Warnings pair `WARN` with the source LED; critical battery and hard errors are allowed to be much brighter than normal routine states.
+- The product palette favors pure/saturated colors on the current diffuser: green for power/OK, blue for BLE, red for recording/hard warning, amber for retryable warning, purple for AI, and white for local key feedback.
 - RGBW, map, chase, and pixel test commands remain calibration tools and can drive full brightness independent of the product profile.
 
 ## Validation Commands

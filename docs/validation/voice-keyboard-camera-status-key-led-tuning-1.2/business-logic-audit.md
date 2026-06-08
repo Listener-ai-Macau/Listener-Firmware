@@ -29,7 +29,7 @@ The source matches the accepted status rail scheme:
 - `LED6=WARN`: retryable/hard errors light WARN and pair with the source semantic LED.
 - `LED11..LED14=KEY1..KEY4`: key events drive local transient feedback only; they are not idle backlights.
 
-The current product-effect policy intentionally separates calibration brightness from routine product brightness. `factory` and explicit test/safety commands can still drive full brightness, while the default `standard` profile restores per-effect brightness, breathing, short-flash, and warning intensity levels. `docs/features/status_led.md` and `~LED:BUDGET` report this as `product_v1`.
+The current product-effect policy intentionally separates calibration brightness from routine product brightness. `factory` and explicit test/safety commands can still drive full brightness, while the default `standard` profile restores per-effect brightness, breathing, short-flash, and warning intensity levels. After operator feedback that the first product pass was too dim and not visually pure enough, `standard` was raised to a brighter saturated palette while preserving the factory full-brightness path. `docs/features/status_led.md` and `~LED:BUDGET` report this as `product_v1`.
 
 ## Scheme Review
 
