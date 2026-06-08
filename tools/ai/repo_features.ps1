@@ -37,7 +37,7 @@ function New-FeatureSnapshot {
         major_features = @(
             "BLE HID keyboard fallback for logical KEY1-KEY4 custom keys using safe non-text gestures: single-click F13-F16, double-click F17-F20, and long-press F21-F24.",
             "BLE audio upload path for 16 kHz microphone audio sessions consumed by Listener-Type, including executable transport invariants for epoch, replay, backpressure, and stale GATT events.",
-            "Voice key control for start/stop recording flow, including serial VREC commands.",
+            "Voice key control for start/stop recording flow, including serial VREC commands, quiet BLE-audio pending retries, and gold REC status feedback.",
             "diag_log flash ring buffer for boot, BLE, audio, health, power, board, status LED, WARN, and ERROR events that survive reboot, with runtime INFO source masks for high-rate input and audio sources.",
             "Default-off ~DIAGLOG:INPUTDBG mode records temporary KEY1-KEY4 raw/stable transitions, EC11 encoder dispatch traces, and EC11 push raw/stable states into flash diagnostics for hardware bring-up, then turns off with ~DIAGLOG:INPUTDBG:OFF or reboot.",
             "BLE diagnostic log GATT export service for paginated CRC-tagged firmware log pulls by desktop diagnostics.",
@@ -46,7 +46,7 @@ function New-FeatureSnapshot {
             "system_health heartbeat and resource checks for heap, task, BLE, and disconnect conditions.",
             "V2 N16R8 board profile with 16 MB flash, 8 MB Octal PSRAM, EC11 push recording control on GPIO18, KEY1/2/3/4 HID gesture map on GPIO38/39/40/41, four-zone WS2812 resources, and static checks rejecting stale N4 defaults.",
             "power_manager low-power state machine for connected idle, disconnected idle, charge-aware automatic hardware-shutdown blocking, and long-idle PWR_HOLD/GPIO11 active-low hardware shutdown with reset/cold-boot diagnostics.",
-            "V2 board diagnostics for ~BOARD:STATUS and ~LED:STATUS, including USB/charger status, battery ADC, battery-side TPS63020/SY7088 input branch current telemetry, LED resource mapping, and hardware blocker policy strings.",
+            "V2 board diagnostics for ~BOARD:STATUS and ~LED:STATUS, including USB/charger status, battery ADC, battery-side TPS63020/SY7088 input branch current telemetry, LED resource mapping, per-semantic status RGB, and hardware blocker policy strings.",
             "V2 current telemetry and low-power report tooling for TPS63020_I_ADC/GPIO10, SY7088_I_ADC/GPIO9, ~POWER:STATUS hardware-shutdown/PWR_HOLD evidence, and USB/charging/PWR_HOLD transition diagnostics; readings use reconstructed battery voltage and do not drive firmware power-control decisions.",
             "V2 safety gates keep real PWR_HOLD/GPIO11 power-off validation in hardware-gated workflow evidence and LED calibration commands blocked until VDD_LED sign-off; the N16R8 validation build enables SPH0655 PDM microphone capture on CLK/GPIO48 and DOUT/GPIO47 for A1/A2.",
             "POST and degraded boot reporting for NVS, BLE, audio, heap, and board assumptions."

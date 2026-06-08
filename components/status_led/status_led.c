@@ -64,6 +64,9 @@
 #define STATUS_LED_STATUS_PHYSICAL_MAP "LED1:PWR,LED2:BLE,LED3:REC,LED4:AI,LED5:OK,LED6:WARN"
 #define STATUS_LED_KEY_PHYSICAL_MAP "LED11:KEY1,LED12:KEY2,LED13:KEY3,LED14:KEY4"
 #define STATUS_LED_STATUS_KEY_MAPPING_CONTRACT "status=LED1..LED6,key=LED11..LED14"
+#define STATUS_LED_REC_GOLD_R 255U
+#define STATUS_LED_REC_GOLD_G 172U
+#define STATUS_LED_REC_GOLD_B 0U
 
 typedef enum {
     STATUS_LED_STRIP_STATUS = 0,
@@ -213,6 +216,14 @@ static status_led_rgb_t status_led_rgb(uint8_t r, uint8_t g, uint8_t b)
         .b = b,
     };
     return color;
+}
+
+static status_led_rgb_t status_led_rec_gold(void)
+{
+    return status_led_rgb(
+        STATUS_LED_REC_GOLD_R,
+        STATUS_LED_REC_GOLD_G,
+        STATUS_LED_REC_GOLD_B);
 }
 
 static status_led_rgb_t status_led_scale_raw(status_led_rgb_t color, uint8_t percent)
@@ -728,7 +739,7 @@ static void status_led_render_ble_locked(status_led_frame_t *frame, uint32_t now
     status_led_set_max(&frame->status[STATUS_LED_SEM_BLE], color);
 }
 
-static void status_led_render_recording_locked(status_led_frame_t *frame, bool *ret_safety)
+static void status_led_render_recording_locked(status_led_frame_t *frame, uint32_t now_ms, bool *ret_safety)
 {
     if (!s_state.recording_active) {
         return;
@@ -736,9 +747,10 @@ static void status_led_render_recording_locked(status_led_frame_t *frame, bool *
     if (s_state.rec_source == STATUS_LED_REC_SOURCE_NOT_AVAILABLE) {
         return;
     }
-    status_led_rgb_t rec = status_led_token_locked(status_led_rgb(255, 0, 0), 85U, true);
+    uint8_t breath = status_led_triangle_percent(now_ms, 2400U, 42U, 85U);
+    status_led_rgb_t rec = status_led_token_locked(status_led_rec_gold(), breath, true);
     status_led_set_max(&frame->status[STATUS_LED_SEM_REC], rec);
-    status_led_set_max(&frame->key[0], rec);
+    status_led_set_max(&frame->key[0], status_led_scale_raw(rec, 70U));
     *ret_safety = true;
 }
 
@@ -801,7 +813,7 @@ static status_led_rgb_t status_led_error_source_color(status_led_error_domain_t 
 {
     switch (domain) {
     case STATUS_LED_ERROR_DOMAIN_BLE: return status_led_rgb(0, 0, 255);
-    case STATUS_LED_ERROR_DOMAIN_REC: return status_led_rgb(255, 0, 0);
+    case STATUS_LED_ERROR_DOMAIN_REC: return status_led_rec_gold();
     case STATUS_LED_ERROR_DOMAIN_AI:
     case STATUS_LED_ERROR_DOMAIN_OTA: return status_led_rgb(160, 0, 255);
     case STATUS_LED_ERROR_DOMAIN_POWER:
@@ -908,7 +920,7 @@ static void status_led_render_frame_locked(status_led_frame_t *frame, uint32_t n
 
     status_led_render_power_locked(frame, now_ms, &safety);
     status_led_render_ble_locked(frame, now_ms);
-    status_led_render_recording_locked(frame, &safety);
+    status_led_render_recording_locked(frame, now_ms, &safety);
     status_led_render_processing_locked(frame, now_ms);
     status_led_render_keys_locked(frame, now_ms);
     status_led_render_edge_locked(frame, now_ms);
@@ -1644,6 +1656,7 @@ static void status_led_print_status(void)
         " oobe_confidence_ms_left=%" PRIu32 " last_transition_ms=%" PRIu32
         " current_ma=%" PRIu32 " current_budget_ma=%" PRIu32
         " active_flags=PWR:%u,BLE:%u,REC:%u,AI:%u,OK:%u,WARN:%u"
+        " status_rgb=PWR:%u,%u,%u;BLE:%u,%u,%u;REC:%u,%u,%u;AI:%u,%u,%u;OK:%u,%u,%u;WARN:%u,%u,%u"
         " key_mask=0x%02x test_mode=%u test_strip_mask=0x%02x last_reason=%s\n",
         status_led_profile_name(snapshot.profile),
         STATUS_LED_REFRESH_MS,
@@ -1685,6 +1698,24 @@ static void status_led_print_status(void)
         snapshot.last_frame.status[STATUS_LED_SEM_AI].r || snapshot.last_frame.status[STATUS_LED_SEM_AI].g || snapshot.last_frame.status[STATUS_LED_SEM_AI].b ? 1U : 0U,
         snapshot.last_frame.status[STATUS_LED_SEM_OK].r || snapshot.last_frame.status[STATUS_LED_SEM_OK].g || snapshot.last_frame.status[STATUS_LED_SEM_OK].b ? 1U : 0U,
         snapshot.last_frame.status[STATUS_LED_SEM_WARN].r || snapshot.last_frame.status[STATUS_LED_SEM_WARN].g || snapshot.last_frame.status[STATUS_LED_SEM_WARN].b ? 1U : 0U,
+        snapshot.last_frame.status[STATUS_LED_SEM_PWR].r,
+        snapshot.last_frame.status[STATUS_LED_SEM_PWR].g,
+        snapshot.last_frame.status[STATUS_LED_SEM_PWR].b,
+        snapshot.last_frame.status[STATUS_LED_SEM_BLE].r,
+        snapshot.last_frame.status[STATUS_LED_SEM_BLE].g,
+        snapshot.last_frame.status[STATUS_LED_SEM_BLE].b,
+        snapshot.last_frame.status[STATUS_LED_SEM_REC].r,
+        snapshot.last_frame.status[STATUS_LED_SEM_REC].g,
+        snapshot.last_frame.status[STATUS_LED_SEM_REC].b,
+        snapshot.last_frame.status[STATUS_LED_SEM_AI].r,
+        snapshot.last_frame.status[STATUS_LED_SEM_AI].g,
+        snapshot.last_frame.status[STATUS_LED_SEM_AI].b,
+        snapshot.last_frame.status[STATUS_LED_SEM_OK].r,
+        snapshot.last_frame.status[STATUS_LED_SEM_OK].g,
+        snapshot.last_frame.status[STATUS_LED_SEM_OK].b,
+        snapshot.last_frame.status[STATUS_LED_SEM_WARN].r,
+        snapshot.last_frame.status[STATUS_LED_SEM_WARN].g,
+        snapshot.last_frame.status[STATUS_LED_SEM_WARN].b,
         snapshot.key_pressed_mask,
         (unsigned)snapshot.test_mode,
         (unsigned)snapshot.test_strip_mask,
