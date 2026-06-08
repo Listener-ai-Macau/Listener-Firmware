@@ -52,6 +52,8 @@
 #define AUDIO_CAPTURE_STREAM_PROGRESS_LOG_PACKET_INTERVAL 64U
 #define AUDIO_CAPTURE_BACKPRESSURE_PAUSE_MS AUDIO_CAPTURE_FRAME_MS
 #define AUDIO_CAPTURE_BACKPRESSURE_LOG_INTERVAL_FRAMES 50U
+#define AUDIO_CAPTURE_PDM_HW_AMPLIFY_NUM 8U
+#define AUDIO_CAPTURE_PDM_SOFTWARE_GAIN_NUM 8
 
 /* ---------- ES8311-specific defines ---------- */
 
@@ -920,6 +922,28 @@ static esp_err_t audio_capture_codec_init(void)
 
 #ifdef CONFIG_AUDIO_CAPTURE_MIC_SPH0655_PDM
 
+static int16_t audio_capture_scale_sample(int16_t sample)
+{
+    int32_t scaled = (int32_t)sample * AUDIO_CAPTURE_PDM_SOFTWARE_GAIN_NUM;
+    if (scaled > INT16_MAX) {
+        return INT16_MAX;
+    }
+    if (scaled < INT16_MIN) {
+        return INT16_MIN;
+    }
+    return (int16_t)scaled;
+}
+
+static void audio_capture_apply_pdm_software_gain(int16_t *frame_buffer)
+{
+    if (AUDIO_CAPTURE_PDM_SOFTWARE_GAIN_NUM <= 1) {
+        return;
+    }
+    for (size_t i = 0; i < AUDIO_CAPTURE_FRAME_SAMPLES; i++) {
+        frame_buffer[i] = audio_capture_scale_sample(frame_buffer[i]);
+    }
+}
+
 static void audio_capture_task(void *arg)
 {
     int16_t frame_buffer[AUDIO_CAPTURE_FRAME_SAMPLES];
@@ -948,6 +972,7 @@ static void audio_capture_task(void *arg)
                 vTaskDelay(pdMS_TO_TICKS(AUDIO_CAPTURE_BACKPRESSURE_PAUSE_MS));
                 continue;
             }
+            audio_capture_apply_pdm_software_gain(frame_buffer);
             audio_capture_process_frame(frame_buffer);
             continue;
         }
@@ -986,21 +1011,25 @@ static esp_err_t audio_capture_i2s_init(void)
 #if defined(SOC_I2S_SUPPORTS_PDM_RX_HP_FILTER) && SOC_I2S_SUPPORTS_PDM_RX_HP_FILTER
     pdm_cfg.slot_cfg.hp_en = true;
     pdm_cfg.slot_cfg.hp_cut_off_freq_hz = 35.5f;
-    pdm_cfg.slot_cfg.amplify_num = 1;
+    pdm_cfg.slot_cfg.amplify_num = AUDIO_CAPTURE_PDM_HW_AMPLIFY_NUM;
 #endif
 
     ESP_RETURN_ON_ERROR(i2s_channel_init_pdm_rx_mode(s_i2s_rx_handle, &pdm_cfg), TAG, "init pdm rx failed");
     ESP_RETURN_ON_ERROR(i2s_channel_enable(s_i2s_rx_handle), TAG, "enable pdm rx failed");
     ESP_LOGI(
         TAG,
-        "SPH0655 PDM mic init: %uHz 16-bit mono clk=%d din=%d hp_filter=%u",
+        "SPH0655 PDM mic init: %uHz 16-bit mono clk=%d din=%d hp_filter=%u hw_amplify=%u sw_gain=%u",
         AUDIO_CAPTURE_SAMPLE_RATE_HZ,
         (int)BOARD_PINS_MIC_CLK_IO,
         (int)BOARD_PINS_MIC_DOUT_IO,
 #if defined(SOC_I2S_SUPPORTS_PDM_RX_HP_FILTER) && SOC_I2S_SUPPORTS_PDM_RX_HP_FILTER
-        1u
+        1u,
+        AUDIO_CAPTURE_PDM_HW_AMPLIFY_NUM,
+        (unsigned)AUDIO_CAPTURE_PDM_SOFTWARE_GAIN_NUM
 #else
-        0u
+        0u,
+        1u,
+        (unsigned)AUDIO_CAPTURE_PDM_SOFTWARE_GAIN_NUM
 #endif
     );
     return ESP_OK;

@@ -1,0 +1,8 @@
+Exception: C:\Users\Billy\Desktop\listener\ai-collaboration-workflow\scripts\with_lock_resource.ps1:79:9
+Line |
+  79 |          throw "COMx placeholder requires exactly one current openable …
+     |          ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+     | COMx placeholder requires exactly one
+     | current openable ESP32/serial port.
+     | resource lock is active: COM6
+with_lock_exit_code=1

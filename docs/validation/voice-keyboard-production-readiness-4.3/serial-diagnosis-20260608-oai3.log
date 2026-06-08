@@ -1,0 +1,858 @@
+Resolved COMx to 'COM6' (current ESP32 serial/COM device: COM6)
+Locked 'COM6' for 'oai3' (60 min)
+Running locked command: pwsh -NoProfile -Command $ErrorActionPreference="Continue"
+Set-Location -LiteralPath "C:\Users\Billy\Desktop\listener\voice-keyboard-firmware-wt-oai3-voice-keyboard-production-readiness-4.3"
+Write-Host "serial_diagnosis_started_at=$(Get-Date -Format o)"
+Write-Host "serial_diagnosis_port=COM6"
+Get-CimInstance Win32_SerialPort | Select-Object DeviceID,Name,Description,Manufacturer,PNPDeviceID,Status,ConfigManagerErrorCode | Format-List
+$py = @"
+import sys, time, serial
+port = 'COM6'
+
+def read_for(ser, seconds, label):
+    end = time.time() + seconds
+    chunks = []
+    while time.time() < end:
+        data = ser.read(4096)
+        if data:
+            chunks.append(data)
+    if chunks:
+        raw = b''.join(chunks)
+        text = raw.decode('utf-8', errors='replace')
+        print(f'--- {label}: {len(raw)} bytes / {len(text)} chars ---')
+        print(text)
+    else:
+        print(f'--- {label}: <no serial output> ---')
+
+def open_port(baud):
+    ser = serial.Serial()
+    ser.port = port
+    ser.baudrate = baud
+    ser.timeout = 0.2
+    ser.dsrdtr = False
+    ser.rtscts = False
+    ser.dtr = False
+    ser.rts = False
+    ser.open()
+    return ser
+
+for baud in (115200, 460800):
+    print(f'=== passive_read baud={baud} ===')
+    ser = open_port(baud)
+    try:
+        print(f'opened={ser.is_open} dtr={ser.dtr} rts={ser.rts}')
+        read_for(ser, 1.5, f'passive baud={baud}')
+        if baud == 115200:
+            for cmd in ['\n', '~BOARD:STATUS\n', '~BOARD:GPIO\n', '~DIAGLOG:COUNT\n', '~DIAGLOG:LAST:8\n']:
+                print(f'write={cmd.strip()!r}')
+                ser.write(cmd.encode('utf-8'))
+                ser.flush()
+                time.sleep(0.25)
+                read_for(ser, 0.75, f'after {cmd.strip() or "newline"}')
+    finally:
+        ser.close()
+
+print('=== dtr_rts_reset_probe baud=115200 ===')
+patterns = [
+    ('idle_false_false', False, False, 1.0),
+    ('rts_true_then_false', False, True, 0.15),
+    ('after_rts_release', False, False, 1.5),
+    ('dtr_true_then_false', True, False, 0.15),
+    ('after_dtr_release', False, False, 1.5),
+    ('both_true_then_false', True, True, 0.15),
+    ('after_both_release', False, False, 1.5),
+]
+ser = open_port(115200)
+try:
+    for label, dtr, rts, delay in patterns:
+        ser.dtr = dtr
+        ser.rts = rts
+        print(f'set {label}: dtr={ser.dtr} rts={ser.rts} delay={delay}')
+        time.sleep(delay)
+        read_for(ser, 0.5, label)
+finally:
+    ser.close()
+"@
+$py | python -
+serial_diagnosis_started_at=2026-06-08T09:19:51.1511535+08:00
+serial_diagnosis_port=COM6
+
+[32;1mDeviceID               : [0mCOM6
+[32;1mName                   : [0mUSB 串行设备 (COM6)
+[32;1mDescription            : [0mUSB 串行设备
+[32;1mManufacturer           : [0m
+[32;1mPNPDeviceID            : [0mUSB\VID_303A&PID_1001&MI_
+                         00\7&2DA1C99B&0&0000
+[32;1mStatus                 : [0mOK
+[32;1mConfigManagerErrorCode : [0m0
+
+=== passive_read baud=115200 ===
+opened=True dtr=False rts=False
+--- passive baud=115200: <no serial output> ---
+write=''
+--- after newline: 6534 bytes / 6534 chars ---
+I (3327) diag_log: diag_log ready: write_sector=204 write_offset=4 retained=34684
+
+I (3337) firmware_ota: OTA running partition=ota_0 offset=0x00020000 boot=ota_0 boot_offset=0x00020000 next=ota_1 next_offset=0x00620000 state=2 version=v1002.0.0-ota-test-156-ga7f1167
+
+I (3347) pm: Frequency switching config: CPU_MAX: 160, APB_MAX: 80, APB_MIN: 40, Light sleep: ENABLED
+
+I (3357) sleep: Code start at 0x42000020, total 492150, data start at 0x3c000000, total 33554432 Bytes
+
+I (3367) app_main: ESP power management enabled: max=160MHz min=40MHz light_sleep=1
+
+I (3367) watchdog: config: task_wdt=1 init=1 panic=1 timeout_s=5 int_wdt=1 int_timeout_ms=300
+
+I (3377) boot_safety: status: reset_reason=usb(11) crash_count=0 threshold=3 safe_mode=0
+
+I (3387) board: board profile: id=voice-keyboard-v2-n16r8 module=ESP32-S3-WROOM-1-N16R8 flash=16MB psram=8MB octal key_gpios=38,39,40,41 ec11=42,2,11 mic=48,47 usb_det=7 charger=14,21 battery_adc=8 current_adc=10,9 rgb=1,5,13,4 pwr_hold=46 pwr_hold_level=low pwr_hold_configured=1 reserved_mspi=GPIO35,GPIO36,GPIO37
+
+W (3417) board: board hardware provisional: usb_det=v2_gpio7_r37_r32_10K_10K_divider charger=v2_gpio14_chg_gpio21_std_active_low pwr_hold=v2_gpio46_power_latch_hold_high_release_low_for_hardware_shutdown current=v2_battery_side_input_branch_current_ina180a2_10mR_adc_mv_x2_with_battery_mv_from_gpio8_div2 led=v2_four_zone_ws2812_status_gpio1_ec11_gpio5_key_gpio13_edge_gpio4 mic=v2_sph0655_pdm_clk_gpio48_dout_gpio47_enabled_for_a1_a2_hardware_validation
+
+I (3457) app_main: power cold-boot status: reset_reason=11 pwr_hold_gpio=46 pwr_hold_level=0 configured=1 policy=v2_gpio46_power_latch_hold_high_release_low_for_hardware_shutdown
+
+I (3467) power_manager: power manager init: enabled=1 reset_reason=11 last_shutdown=none last_shutdown_idle_ms=0 last_shutdown_blockers=0x00000000 pwr_hold_gpio=46 pwr_hold_level=low pwr_hold_configured=1 pwr_hold_policy=v2_gpio46_power_latch_hold_high_release_low_for_hardware_shutdown voice_key_gpio=11 user_action="short-press hardware power key for cold boot after PWR_HOLD/GPIO46 release"
+
+I (3507) status_led: strip status ready: gpio=1 leds=6 backend=rmt_ws2812_800khz order=GRB reset_us=50
+
+I (3507) status_led: strip ec11 ready: gpio=5 leds=12 backend=rmt_ws2812_800khz order=GRB reset_us=50
+
+I (3517) status_led: strip key ready: gpio=13 leds=4 backend=rmt_ws2812_800khz order=GRB reset_us=50
+
+I (3527) status_led: strip edge ready: gpio=4 leds=6 backend=rmt_ws2812_800khz order=GRB reset_us=50
+
+I (3537) status_led: status LED init: profile=standard status_gpio=1 ec11_gpio=5 key_gpio=13 edge_gpio=4 key_pin_contract=GPIO13 ec11_pin_contract=GPIO5 vdd_led_enable=always_on_assumed
+
+I (3567) self_test_plat: NVS stats: used=102 free=654 total=756 recovered=no
+
+I (3567) self_test_plat: SPIRAM: 8388608 bytes
+
+I (3567) self_test: POST: nvs=OK nvs_err=0 ble=PENDING audio=PENDING spiram=OK heap=8621248 fw=v1002.0.0-ota-test-156-ga7f1167 proto=1
+
+I (3577) ble_hid: fw_version=v1002.0.0-ota-test-156-ga7f1167 protocol_version=1 build=Jun  7 2026 11:42:30 serial=A4:CB:8F:F4:59:A4
+
+I (3597) ble_hid: factory readiness: ble_name=listener appearance=0x03c1 readiness=factory_ready;pairable_on_boot;post_degraded_boot;board=voice-keyboard-v2-n16r8;model=keyboard-v2;fw_version=v1002.0.0-ota-test-156-ga7f1167 capabilities=ble_hid_keyboard;ble_audio_vka1;ble_audio_control_v1;usb_serial_text;voice_record_toggle;custom_keys_f13_f16;custom_key_gestures_f13_f24;post_status;firmware_ota_v1;flash_16mb;psram_8mb_octal
+
+I (3627) ESP_HID_GAP: audio GAP integration enabled=1
+
+I (3637) BLE_INIT: BT controller compile version [b7de11e]
+
+I (3637) BLE_INIT: Using main XTAL as clock source
+
+W (3647) BLE_INIT: light sleep mode will not be able to apply when bluetooth is enabled.
+
+I (3657) BLE_INIT: Feature Config, ADV:1, BLE_50:1, DTM:1, SCAN:1, CCA:0, SMP:1, CONNECT:1
+
+I (3657) BLE_INIT: Bluetooth MAC: a4:cb:8f:f4:59:a6
+
+I (3667) phy_init: phy_version 711,97bcf0a2,Aug 25 2025,19:04:10
+
+I (3737) ble_audio_stream: audio buffer pool initialized: buffers=264 buffer_bytes=1920 total_bytes=506880 heap=spiram
+
+I (3737) watchdog: task subscribed: ble_audio_stream_task timeout_s=5 panic=1
+
+I (3737) ble_audio_stream: audio GATT service registered
+
+I (3747) ble_firmware_ota: firmware OTA GATT service registered
+
+I (3747) ble_diag_log: diagnostic log GATT service registered
+
+I (3757) ESP_HID_GAP: NimBLE advertising configured: appearance=0x03c1 name=listener name_in_adv=yes io_cap=3 bonding=1 mitm=0 sc=1
+
+I (3767) ble_hid: DIS identity: manufacturer=listener model=keyboard-v2 hw=esp32s3-wroom-1-n16r8 fw=v1002.0.0-ota-test-156-ga7f1167 proto=1 serial=A4:CB:8F:F4:59:A4 vid=0x16c0 pid=0x05df product_version=1
+
+I (3787) ble_hid: DIS GATT state: svc_rc=5 svc_handle=0 model_rc=5 model_def=0 model_val=0 serial_rc=5 serial_def=0 serial_val=0 firmware_rc=5 firmware_def=0 firmware_val=0 hardware_rc=5 hardware_def=0 hardware_val=0 software_rc=5 software_def=0 software_val=0 manufacturer_rc=5 manufacturer_def=0 manufacturer_val=0 pnp_rc=5 pnp_def=0 pnp_val=0
+
+I (3817) ble_audio_stream: audio GATT state: registered=1 svc_rc=5 svc_handle=0 chr_rc=5 chr_def=0 chr_val=0 notify_attr=0
+
+I (3827) ble_firmware_ota: firmware OTA GATT state: registered=1 svc_rc=5 svc_handle=0 control_rc=5 control_def=0 control_val=0 data_rc=5 data_def=0 data_val=0 readiness_rc=5 readiness_def=0 readiness_val=0 capabilities_rc=5 capabilities_def=0 capabilities_val=0
+
+I (3847) ble_diag_log: diag log GATT state: registered=1 svc_rc=5 svc=0 control_rc=5 ctrl_def=0 ctrl_val=0 data_rc=5 data_def=0 data_val=0 count_rc=5 count_def=0 count_val=0
+
+I (3867) battery_monitor: battery ADC calibration: curve fitting
+
+I (3867) battery_monitor: ADC ready: gpio=8 unit=0 channel=7 calibrated=1
+
+I (3877) ble_hid: battery notify level=93 voltage_mv=4100 raw=2427 adc_mv=2050 reason=init forced=1
+
+I (3887) ble_hid: device readiness: reason=init_complete ready_mask=0x0000000f degraded_mask=0x00000000 readiness=factory_ready;pairable_on_boot;post_degraded_boot;board=voice-keyboard-v2-n16r8;model=keyboard-v2;fw_version=v1002.0.0-ota-test-156-ga7f1167;hid_ready;audio_ready;ota_ready;diagnostic_ready capabilities=ble_hid_keyboard;ble_audio_vka1;ble_audio_control_v1;usb_serial_text;voice_record_toggle;custom_keys_f13_f16;custom_key_gestures_f13_f24;post_status;firmware_ota_v1;flash_16mb;psram_8mb_octal;hid_ready;audio_ready;ota_ready
+
+I (3937) audio_capture: SPH0655 PDM mic init: 16000Hz 16-bit mono clk=48 din=47 hp_filter=0
+
+I (3937) audio_capture: i2s start ok
+
+
+write='~BOARD:STATUS'
+--- after ~BOARD:STATUS: 9676 bytes / 9676 chars ---
+I (3947) watchdog: task subscribed: audio_capture_task timeout_s=5 panic=1
+
+I (3947) audio_capture: audio capture started: SPH0655 PDM digital mic
+
+I (3957) watchdog: task subscribed: voice_key_input_task timeout_s=5 panic=1
+
+I (3967) voice_key_input: recording gesture key idle level detected: source=ec11_key.gpio11 raw_high=1 pressed_when=low
+
+I (3977) voice_key_input: voice key ready: source=ec11_key.gpio11 gpio=11 active_low=1 legacy_expander=0 poll_ms=10 debounce_ms=30 debounce_samples=3
+
+I (3987) voice_key_input: recording gesture key ready: single_click_toggle=1 double_click_recovery=1 double_click_window_ms=200 recovery_idle_guard_ms=2000 long_press_reserved_ms=1200
+
+I (4007) watchdog: task subscribed: voice_recording_control_task timeout_s=5 panic=1
+
+I (4007) voice_rec_ctrl: voice recording control ready: source=ec11_key.gpio11 toggle start/stop fsm_artifact_cases=13
+
+I (4017) voice_rec_ctrl: device_status state=ready detail=voice_recording_control_started
+
+I (4027) watchdog: task subscribed: keyboard_custom_task timeout_s=5 panic=1
+
+I (4037) keyboard: custom key idle detected: logical=KEY1 source=key1.gpio38.f13 raw_high=1
+
+I (4047) keyboard: custom key idle detected: logical=KEY2 source=key2.gpio39.f14 raw_high=1
+
+I (4047) keyboard: custom key idle detected: logical=KEY3 source=key3.gpio40.f15 raw_high=1
+
+I (4057) keyboard: custom key idle detected: logical=KEY4 source=key4.gpio41.f16 raw_high=1
+
+I (4067) keyboard: custom keys ready: key1=gpio38:f13/f17/f21 key2=gpio39:f14/f18/f22 key3=gpio40:f15/f19/f23 key4=gpio41:f16/f20/f24 active_low=1 poll_ms=10 debounce_ms=30 debounce_samples=3 double_ms=250 long_ms=1000
+
+I (4087) watchdog: task subscribed: keyboard_ec11_task timeout_s=5 panic=1
+
+I (4097) keyboard: EC11 idle detected: a_gpio=42 b_gpio=2 state=0x03 active_low=1
+
+I (4097) keyboard: EC11 ready: a=gpio42 b=gpio2 key=gpio11 key_policy=gpio11_recording_key_pwr_hold_gpio46_shutdown_separate decoder=interrupt_quadrature direction_policy=clockwise_increases_volume_brightness detent_state=0x03 idle_poll_ms=20 queue_depth=64
+
+I (4127) status_led: status LED task started: refresh_ms=50 backend=rmt_ws2812_800khz
+
+I (4137) ble_hid: BLE host task started
+
+I (4137) watchdog: task subscribed: health_task timeout_s=5 panic=1
+
+I (4147) health: system health monitoring started: interval_s=60
+
+I (4147) watchdog: task subscribed: power_manager_task timeout_s=5 panic=1
+
+I (4157) power_manager: power manager started: audio_idle_ms=5000 connected_idle_ms=30000 disconnected_idle_ms=30000 hardware_shutdown_ms=1800000 eval_ms=2000 pwr_hold_gpio=46
+
+I (4167) ESP_HID_GAP: BLE recovery identity: none stored; using controller identity
+
+I (4177) ESP_HID_GAP: NimBLE host sync complete: own_addr_type=0 addr=a6:59:f4:8f:cb:a4
+
+I (4187) ESP_HID_GAP: NimBLE host synced before HID START; advertising deferred
+
+I (4187) ble_hid: START
+
+I (4187) boot_safety: normal boot clear timer armed: delay_ms=30000
+
+I (4197) ble_audio_stream: audio GATT state: registered=1 svc_rc=0 svc_handle=1 chr_rc=0 chr_def=2 chr_val=3 notify_attr=3
+
+I (4197) main_task: Returned from app_main()
+
+I (4217) ESP_HID_GAP: NimBLE bonded peers=1
+
+I (4217) ESP_HID_GAP: NimBLE directed advertising started: peer_type=0 peer_addr=ac:92:ef:77:d5:4c
+
+I (4227) ble_hid: battery notify level=90 voltage_mv=4050 raw=2398 adc_mv=2025 reason=hid_start forced=1
+
+I (4237) watchdog: task subscribed: ble_hid_battery_task timeout_s=5 panic=1
+
+I (4237) ble_hid: USB SERIAL INPUT READY
+
+I (4247) board: ########################################################################
+
+Listener voice keyboard firmware usage:
+
+Board profile: Voice Keyboard V2, ESP32-S3-WROOM-1-N16R8, 16MB flash, 8MB Octal PSRAM.
+
+Inject test bytes with tools/send_serial.ps1 or type in monitor.
+
+Capture 3s audio WAV with tools/capture_audio_wav.ps1 -Port COM3.
+
+Capture toggle session WAV with tools/capture_audio_session_wav.ps1 -Port COM3.
+
+EC11 push/GPIO11 controls recording: single click starts or stops after the 200 ms double-click window.
+
+EC11 push fast double-click clears BLE pairing/session state after recording has been idle; long press is reserved for hardware power control.
+
+Logical custom keys: single-click KEY1-KEY4 fallback=F13-F16, double-click=F17-F20, long-press=F21-F24.
+
+KEY1/GPIO38, KEY2/GPIO39, KEY3/GPIO40, KEY4/GPIO41 send safe non-text BLE HID usages while Listener-Type custom actions are unavailable.
+
+Send ~VREC:RECOVERY to clear pairing/session state over USB.
+
+Board diagnostics: ~BOARD:STATUS reports V2 pin, USB, charger, battery, PWR_HOLD/GPIO46, mic, reserved MSPI, and LED resource status.
+
+Board GPIO diagnostics: ~BOARD:GPIO reads raw KEY1-KEY4 and EC11 A/B/key levels without reconfiguring pins.
+
+Board GPIO scan: ~BOARD:GPIO-SCAN samples all valid GPIO levels without reconfiguring pins and prints changed GPIOs.
+
+Input flash debug: ~DIAGLOG:INPUTDBG:ON records high-volume key/EC11 debug events until ~DIAGLOG:INPUTDBG:OFF or reboot.
+
+Power diagnostics: ~POWER:STATUS reports state/blockers/battery/power-hold status, ~POWER:SHUTDOWN requests manual hardware shutdown.
+
+LED diagnostics: ~LED:STATUS reports four WS2812 groups; ~LED:TEST:RGBW and ~LED:TEST:MAP stay brightness-gated until VDD_LED sign-off.
+
+Watchdog diagnostics: ~WDT:STATUS reports config, ~WDT:DEADLOCK intentionally triggers Task WDT reset.
+
+Boot safety diagnostics: ~BOOT:STATUS reports crash counter, ~BOOT:CRASH restarts for validation, ~BOOT:CLEAR clears safe mode.
+
+Use ~OTA:STATUS, ~OTA:BLOCKER, or ~OTA:ABORT for firmware OTA diagnostics.
+
+Use ~DIAGLOG:COUNT, ~DIAGLOG:LAST:N, ~DIAGLOG:DUMP, or ~DIAGLOG:CLEAR for diagnostics.
+
+Device status logs use ready, recording, transferring, error, and recovery.
+
+End-to-end keystroke delivery still requires a BLE host connection.
+
+########################################################################
+
+I (4447) watchdog: task subscribed: ble_hid_keyboard_task timeout_s=5 panic=1
+
+I (4457) ble_hid: SCRIPT RX input=0x0A display=.
+
+W (4457) ble_hid: SCRIPT dispatch dropped: HID host not connected
+
+W (4467) ble_hid: SCRIPT dispatch failed: ESP_ERR_INVALID_STATE
+
+~BOARD:STATUS profile=voice-keyboard-v2-n16r8 module=ESP32-S3-WROOM-1-N16R8 flash_mb=16 psram_mb=8 psram_mode=octal key_gpios=38,39,40,41 ec11_a_gpio=42 ec11_b_gpio=2 ec11_key_gpio=11 ec11_key_provisional=1 mic_clk_gpio=48 mic_dout_gpio=47 mic_policy=v2_sph0655_pdm_clk_gpio48_dout_gpio47_enabled_for_a1_a2_hardware_validation pwr_hold_gpio=46 pwr_hold_level=low pwr_hold_configured=1 pwr_hold_policy=v2_gpio46_power_latch_hold_high_release_low_for_hardware_shutdown usb_det_gpio=7 usb_det_level=high usb_det_policy=v2_gpio7_r37_r32_10K_10K_divider bat_chg_gpio=14 bat_chg_level=high bat_std_gpio=21 bat_std_level=low charger_polarity=v2_gpio14_chg_gpio21_std_active_low battery_gpio=8 battery_mv=4118 battery_adc_mv=2059 battery_raw=2438 battery_level=95 battery_valid=1 battery_adc_calibrated=1 battery_samples=4 battery_result=ESP_OK battery_scaling="68K/68K divider, VBAT~=2*ADC" battery_policy="source_impedance_filter_calibration_provisional" reserved_mspi_gpio=GPIO35,GPIO36,GPIO37
+
+I (4557) battery_monitor: battery ADC calibration: curve fitting
+
+I (4567) battery_monitor: ADC ready: gpio=10 unit=0 channel=9 calibrated=1
+
+~BOARD:POWER branch=TPS63020_input_branch gpio=10 raw_adc=67 adc_mv=60 adc_calibrated=1 sample_count=4 calibration_status=ina180a2_10mR_adc_calibrated_battery_adc_calibrated current_model="INA180A2 10mR current_mA=adc_mv*2" current_calibrated=1 current_ma_valid=1 estimated_input_current_ma=120 battery_side_mv=4082 battery_voltage_source="BAT_V_ADC/GPIO8 68K/68K midpoint, VBAT~=2*ADC" power_mw_valid=1 estimated_input_power_mw=489 result=ESP_OK policy=v2_battery_side_input_branch_current_ina180a2_10mR_adc_mv_x2_with_battery_mv_from_gpio8_div2
+
+I (4617) battery_monitor: battery ADC calibration: curve fitting
+
+I (4627) battery_monitor: ADC ready: gpio=9 unit=0 channel=8 calibrated=1
+
+~BOARD:POWER branch=SY7088_input_branch gpio=9 raw_adc=209 adc_mv=187 adc_calibrated=1 sample_count=4 calibration_status=ina180a2_10mR_adc_calibrated_battery_adc_calibrated current_model="INA180A2 10mR current_mA=adc_mv*2" current_calibrated=1 current_ma_valid=1 estimated_input_current_ma=374 battery_side_mv=4122 battery_voltage_source="BAT_V_ADC/GPIO8 68K/68K midpoint, VBAT~=2*ADC" power_mw_valid=1 estimated_input_power_mw=1541 result=ESP_OK policy=v2_battery_side_input_branch_current_ina180a2_10mR_adc_mv_x2_with_battery_mv_from_gpio8_div2
+
+~LED:STATUS group=status transport=WS2812 data_gpio=1 first_led=1 led_count=6 led_refs="LED1..LED6" brightness_cap_percent=8 vdd_led_signed_off=0 full_white_allowed=0 rgbw_calibration_path=provisional policy="LED1..LED6 semantic PWR/BLE/REC/AI/OK/WARN rail"
+
+~LED:STATUS group=ec11 transport=WS2812 data_gpio=5 first_led=7 led_count=12 led_refs="LED7..LED10+LED15..LED16+LED23..LED28" brightness_cap_percent=8 vdd_led_signed_off=0 full_white_allowed=0 rgbw_calibration_path=provisional policy="EC11 knob ring feedback on the dedicated PWM_RGB_EC11 strip"
+
+~LED:STATUS group=key transport=WS2812 data_gpio=13 first_led=11 led_count=4 led_refs="LED11..LED14" brightness_cap_percent=8 vdd_led_signed_off=0 full_white_allowed=0 rgbw_calibration_path=provisional policy="LED11..LED14 transient local key feedback"
+
+~LED:STATUS group=edge transport=WS2812 data_gpio=4 first_led=17 led_count=6 led_refs="LED17..LED22" brightness_cap_percent=4 vdd_led_signed_off=0 full_white_allowed=0 rgbw_calibration_path=provisional policy="LED17..LED22 restrained edge/frame effects"
+
+~LED:STATUS policy=v2_four_zone_ws2812_status_gpio1_ec11_gpio5_key_gpio13_edge_gpio4
+
+I (4937) audio_capture: frame captured count=50 bytes=32000
+
+
+write='~BOARD:GPIO'
+--- after ~BOARD:GPIO: 1122 bytes / 1122 chars ---
+~BOARD:GPIO active_low=1 mode=read_as_configured reconfigure=0 key1_gpio=38 key1_level=high key1_pressed=0 key2_gpio=39 key2_level=high key2_pressed=0 key3_gpio=40 key3_level=high key3_pressed=0 key4_gpio=41 key4_level=high key4_pressed=0 key_pressed_mask=0x00 ec11_a_gpio=42 ec11_a_level=high ec11_b_gpio=2 ec11_b_level=high ec11_ab_state=0x03 ec11_key_gpio=11 ec11_key_level=high ec11_key_pressed=0 recording_key=EC11_KEY/GPIO11
+
+I (5507) ESP_HID_GAP: advertise complete; reason=0
+
+I (5507) ESP_HID_GAP: directed advertising completed; falling back to undirected advertising
+
+I (5507) ESP_HID_GAP: NimBLE bonded peers=1
+
+I (5517) ESP_HID_GAP: NimBLE undirected advertising started: low_power=0 interval_ms=30-50
+
+I (5947) audio_capture: frame captured count=100 bytes=64000
+
+I (6157) power_manager: power source changed: usb_det=high bat_chg=high bat_std=low pwr_hold=low usb_power_present=1 charging=0 charge_full=1 external_power_present=1 usb_policy=v2_gpio7_r37_r32_10K_10K_divider charger_policy=v2_gpio14_chg_gpio21_std_active_low pwr_hold_policy=v2_gpio46_power_latch_hold_high_release_low_for_hardware_shutdown
+
+
+write='~DIAGLOG:COUNT'
+--- after ~DIAGLOG:COUNT: 296 bytes / 296 chars ---
+I (6387) power_manager: blocker set mask=0x00000064 blockers=0x00000064 (diag_export|flash_write|usb_command)
+
+I (6387) diag_log: DIAGLOG COUNT: 34719
+
+I (6387) power_manager: blocker clear mask=0x00000064 blockers=0x00000000 (none)
+
+I (6937) audio_capture: frame captured count=150 bytes=96000
+
+
+write='~DIAGLOG:LAST:8'
+--- after ~DIAGLOG:LAST:8: 2560 bytes / 2560 chars ---
+I (7457) power_manager: blocker set mask=0x00000064 blockers=0x00000064 (diag_export|flash_write|usb_command)
+
+I (7937) audio_capture: frame captured count=200 bytes=128000
+
+I (8187) ESP_HID_GAP: encryption change event; status=0
+
+I (8207) ESP_HID_GAP: service changed version state: current=v1002.0.0-ota-test-156-ga7f1167;diag_export_v2 stored=v1002.0.0-ota-test-156-ga7f1167;diag_export_v2 pending=0
+
+I (8207) ESP_HID_GAP: service changed indication skipped for encryption change: fw_version already confirmed
+
+I (8217) ESP_HID_GAP: security state after encryption: encrypted=1 authenticated=0 bonded=1 key_size=16
+
+I (8227) ESP_HID_GAP: subscribe event; conn_handle=1 attr_handle=45 reason=3 prevn=0 curn=1 previ=0 curi=0
+
+I (8237) ESP_HID_GAP: subscribe event; conn_handle=1 attr_handle=76 reason=3 prevn=0 curn=1 previ=0 curi=0
+
+I (8247) ESP_HID_GAP: subscribe event; conn_handle=1 attr_handle=83 reason=3 prevn=0 curn=1 previ=0 curi=0
+
+I (8277) ble_hid: CONNECT
+
+I (8277) ESP_HID_GAP: connection established; status=0
+
+I (8277) power_manager: BLE connection state changed: connected=1
+
+I (8277) ble_diag_log: diag export MTU updated: reason=connect conn=1 mtu=23 value_max=20
+
+I (8277) ble_hid: battery notify level=92 voltage_mv=4076 raw=2412 adc_mv=2038 reason=connect_restore forced=1
+
+I (8287) ble_audio_stream: audio transport epoch advanced: epoch=1 reason=gap_connect stale_subscribe=0 stale_mtu=0 stale_notify_tx=0 stale_disconnect=0
+
+I (8307) ble_audio_stream: audio transport state: disconnected -> connected reason=gap_connect epoch=1 conn=1 mtu_ready=0 notify=0 value_max=244
+
+I (8317) ESP_HID_GAP: service changed skipped for connect: fw_version already confirmed
+
+I (8327) ESP_HID_GAP: security state before initiate: encrypted=1 authenticated=0 bonded=1 key_size=16
+
+I (8347) ESP_HID_GAP: security initiate requested
+
+I (8347) ESP_HID_GAP: audio connection parameter update requested
+
+I (8347) ESP_HID_GAP: audio 2M PHY preference requested
+
+I (8397) ESP_HID_GAP: encryption change event; status=0
+
+I (8397) ESP_HID_GAP: service changed indication skipped for encryption change: fw_version already confirmed
+
+I (8397) ESP_HID_GAP: security state after encryption: encrypted=1 authenticated=0 bonded=1 key_size=16
+
+I (8417) ESP_HID_GAP: subscribe event; conn_handle=1 attr_handle=45 reason=3 prevn=0 curn=1 previ=0 curi=0
+
+I (8427) ESP_HID_GAP: subscribe event; conn_handle=1 attr_handle=76 reason=3 prevn=0 curn=1 previ=0 curi=0
+
+I (8427) ESP_HID_GAP: subscribe event; conn_handle=1 attr_handle=83 reason=3 prevn=0 curn=1 previ=0 curi=0
+
+
+=== passive_read baud=460800 ===
+opened=True dtr=False rts=False
+--- passive baud=460800: 595 bytes / 595 chars ---
+I (8597) ESP_HID_GAP: mtu update event; conn_handle=1 cid=4 mtu=517
+
+I (8607) ble_audio_stream: audio notify mtu updated: conn=1 mtu=517
+
+I (8607) ble_audio_stream: audio notify packet size updated: conn=1 value_max=500 payload_max=480
+
+I (8607) ble_audio_stream: audio transport state: connected -> mtu_ready reason=gap_mtu epoch=1 conn=1 mtu_ready=1 notify=0 value_max=500
+
+I (8627) ble_diag_log: diag export MTU updated: reason=gap_mtu conn=1 mtu=517 value_max=512
+
+I (8947) audio_capture: frame captured count=250 bytes=160000
+
+I (9937) audio_capture: frame captured count=300 bytes=192000
+
+
+=== dtr_rts_reset_probe baud=115200 ===
+set idle_false_false: dtr=False rts=False delay=1.0
+--- idle_false_false: <no serial output> ---
+set rts_true_then_false: dtr=False rts=True delay=0.15
+--- rts_true_then_false: <no serial output> ---
+set after_rts_release: dtr=False rts=False delay=1.5
+--- after_rts_release: 4353 bytes / 4353 chars ---
+I (10937) audio_capture: frame captured count=350 bytes=224000
+
+I (11947) audio_capture: frame captured count=400 bytes=256000
+
+ESP-ROM:esp32s3-20210327
+
+Build:Mar 27 2021
+
+rst:0x15 (USB_UART_CHIP_RESET),boot:0x8 (SPI_FAST_FLASH_BOOT)
+
+Saved PC:0x4037de95
+
+SPIWP:0xee
+
+mode:DIO, clock div:1
+
+load:0x3fce2820,len:0x14f0
+
+load:0x403c8700,len:0xd24
+
+load:0x403cb700,len:0x2f48
+
+entry 0x403c8924
+
+I (24) boot: ESP-IDF v5.5.4-668-g8e48797f0c 2nd stage bootloader
+
+I (25) boot: compile time Jun  7 2026 11:42:51
+
+I (25) boot: Multicore bootloader
+
+I (26) boot: chip revision: v0.2
+
+I (29) boot: efuse block revision: v1.4
+
+I (32) boot.esp32s3: Boot SPI Speed : 80MHz
+
+I (36) boot.esp32s3: SPI Mode       : DIO
+
+I (40) boot.esp32s3: SPI Flash Size : 16MB
+
+I (44) boot: Enabling RNG early entropy source...
+
+I (48) boot: Partition Table:
+
+I (51) boot: ## Label            Usage          Type ST Offset   Length
+
+I (57) boot:  0 nvs              WiFi data        01 02 00009000 00006000
+
+I (64) boot:  1 otadata          OTA data         01 00 0000f000 00002000
+
+I (70) boot:  2 phy_init         RF data          01 01 00011000 00001000
+
+I (77) boot:  3 ota_0            OTA app          00 10 00020000 00600000
+
+I (83) boot:  4 ota_1            OTA app          00 11 00620000 00600000
+
+I (90) boot:  5 diag_log         Unknown data     01 81 00c20000 00100000
+
+I (96) boot: End of partition table
+
+I (100) esp_image: segment 0: paddr=00020020 vaddr=3c080020 size=26f8ch (159628) map
+
+I (135) esp_image: segment 1: paddr=00046fb4 vaddr=3fca0100 size=05184h ( 20868) load
+
+I (140) esp_image: segment 2: paddr=0004c140 vaddr=40374000 size=03ed8h ( 16088) load
+
+I (144) esp_image: segment 3: paddr=00050020 vaddr=42000020 size=78278h (492152) map
+
+I (233) esp_image: segment 4: paddr=000c82a0 vaddr=40377ed8 size=18138h ( 98616) load
+
+I (255) esp_image: segment 5: paddr=000e03e0 vaddr=50000010 size=00020h (    32) load
+
+I (256) esp_image: segment 6: paddr=000e0408 vaddr=600fe000 size=00058h (    88) load
+
+I (270) boot: Loaded app from partition at offset 0x20000
+
+I (270) boot: Disabling RNG early entropy source...
+
+I (281) octal_psram: vendor id    : 0x0d (AP)
+
+I (281) octal_psram: dev id       : 0x02 (generation 3)
+
+I (281) octal_psram: density      : 0x03 (64 Mbit)
+
+I (283) octal_psram: good-die     : 0x01 (Pass)
+
+I (287) octal_psram: Latency      : 0x01 (Fixed)
+
+I (292) octal_psram: VCC          : 0x01 (3V)
+
+I (296) octal_psram: SRF          : 0x01 (Fast Refresh)
+
+I (301) octal_psram: BurstType    : 0x01 (Hybrid Wrap)
+
+I (306) octal_psram: BurstLen     : 0x01 (32 Byte)
+
+I (310) octal_psram: Readlatency  : 0x02 (10 cycles@Fixed)
+
+I (315) octal_psram: DriveStrength: 0x00 (1/1)
+
+I (319) MSPI Timing: Enter psram timing tuning
+
+I (324) esp_psram: Found 8MB PSRAM device
+
+I (327) esp_psram: Speed: 80MHz
+
+I (330) cpu_start: Multicore app
+
+I (759) esp_psram: SPI SRAM memory test OK
+
+I (768) cpu_start: GPIO 44 and 43 are used as console UART I/O pins
+
+I (768) cpu_start: Pro cpu start user code
+
+I (768) cpu_start: cpu freq: 160000000 Hz
+
+I (770) app_init: Application information:
+
+I (774) app_init: Project name:     voice-keyboard-firmware
+
+I (779) app_init: App version:      v1002.0.0-ota-test-156-ga7f1167
+
+I (785) app_init: Compile time:     Jun  7 2026 11:42:30
+
+I (790) app_init: ELF file SHA256:  45c6e0efd...
+
+I (794) app_init: ESP-IDF:          v5.5.4-668-g8e48797f0c
+
+I (800) efuse_init: Min chip rev:     v0.0
+
+I (803) efuse_init: Max chip rev:     v0.99
+
+I (807) efuse_init: Chip rev:         v0.2
+
+I (811) heap_init: Initializing. RAM available for dynamic allocation:
+
+I (818) heap_init: At 3FCAD698 len 0003C078 (240 KiB): RAM
+
+I (823) heap_init: At 3FCE9710 len 00005724 (21 KiB): RAM
+
+I (828) heap_init: At 3FCF0000 len 00008000 (32 KiB): DRAM
+
+I (833) heap_init: At 600FE058 len 00001F90 (7 KiB): RTCRAM
+
+I (838) esp_psram: Adding pool of 8192K of PSRAM memory to heap allocator
+
+I (846) spi_flash: detected chip: generic
+
+I (848) spi_flash: flash io: dio
+
+I (852) sleep_gpio: Configure to isolate all GPIO pins in sleep state
+
+I (858) sleep_gpio: Enable automatic switching of GPIO sleep configuration
+
+I (877) main_task: Started on CPU0
+
+I (887) esp_psram: Reserving pool of 32K of internal memory for DMA/internal allocations
+
+I (887) main_task: Calling app_main()
+
+I (887) diag_log: diag_log partition: 1024KB 256 sectors
+
+
+set dtr_true_then_false: dtr=True rts=False delay=0.15
+--- dtr_true_then_false: <no serial output> ---
+set after_dtr_release: dtr=False rts=False delay=1.5
+--- after_dtr_release: 12509 bytes / 12509 chars ---
+I (3327) diag_log: diag_log ready: write_sector=204 write_offset=54 retained=34734
+
+I (3337) firmware_ota: OTA running partition=ota_0 offset=0x00020000 boot=ota_0 boot_offset=0x00020000 next=ota_1 next_offset=0x00620000 state=2 version=v1002.0.0-ota-test-156-ga7f1167
+
+I (3337) pm: Frequency switching config: CPU_MAX: 160, APB_MAX: 80, APB_MIN: 40, Light sleep: ENABLED
+
+I (3347) sleep: Code start at 0x42000020, total 492150, data start at 0x3c000000, total 33554432 Bytes
+
+I (3357) app_main: ESP power management enabled: max=160MHz min=40MHz light_sleep=1
+
+I (3367) watchdog: config: task_wdt=1 init=1 panic=1 timeout_s=5 int_wdt=1 int_timeout_ms=300
+
+I (3377) boot_safety: status: reset_reason=usb(11) crash_count=0 threshold=3 safe_mode=0
+
+I (3377) board: board profile: id=voice-keyboard-v2-n16r8 module=ESP32-S3-WROOM-1-N16R8 flash=16MB psram=8MB octal key_gpios=38,39,40,41 ec11=42,2,11 mic=48,47 usb_det=7 charger=14,21 battery_adc=8 current_adc=10,9 rgb=1,5,13,4 pwr_hold=46 pwr_hold_level=low pwr_hold_configured=1 reserved_mspi=GPIO35,GPIO36,GPIO37
+
+W (3407) board: board hardware provisional: usb_det=v2_gpio7_r37_r32_10K_10K_divider charger=v2_gpio14_chg_gpio21_std_active_low pwr_hold=v2_gpio46_power_latch_hold_high_release_low_for_hardware_shutdown current=v2_battery_side_input_branch_current_ina180a2_10mR_adc_mv_x2_with_battery_mv_from_gpio8_div2 led=v2_four_zone_ws2812_status_gpio1_ec11_gpio5_key_gpio13_edge_gpio4 mic=v2_sph0655_pdm_clk_gpio48_dout_gpio47_enabled_for_a1_a2_hardware_validation
+
+I (3447) app_main: power cold-boot status: reset_reason=11 pwr_hold_gpio=46 pwr_hold_level=0 configured=1 policy=v2_gpio46_power_latch_hold_high_release_low_for_hardware_shutdown
+
+I (3467) power_manager: power manager init: enabled=1 reset_reason=11 last_shutdown=none last_shutdown_idle_ms=0 last_shutdown_blockers=0x00000000 pwr_hold_gpio=46 pwr_hold_level=low pwr_hold_configured=1 pwr_hold_policy=v2_gpio46_power_latch_hold_high_release_low_for_hardware_shutdown voice_key_gpio=11 user_action="short-press hardware power key for cold boot after PWR_HOLD/GPIO46 release"
+
+I (3497) status_led: strip status ready: gpio=1 leds=6 backend=rmt_ws2812_800khz order=GRB reset_us=50
+
+I (3507) status_led: strip ec11 ready: gpio=5 leds=12 backend=rmt_ws2812_800khz order=GRB reset_us=50
+
+I (3517) status_led: strip key ready: gpio=13 leds=4 backend=rmt_ws2812_800khz order=GRB reset_us=50
+
+I (3527) status_led: strip edge ready: gpio=4 leds=6 backend=rmt_ws2812_800khz order=GRB reset_us=50
+
+I (3537) status_led: status LED init: profile=standard status_gpio=1 ec11_gpio=5 key_gpio=13 edge_gpio=4 key_pin_contract=GPIO13 ec11_pin_contract=GPIO5 vdd_led_enable=always_on_assumed
+
+I (3567) self_test_plat: NVS stats: used=102 free=654 total=756 recovered=no
+
+I (3567) self_test_plat: SPIRAM: 8388608 bytes
+
+I (3567) self_test: POST: nvs=OK nvs_err=0 ble=PENDING audio=PENDING spiram=OK heap=8621248 fw=v1002.0.0-ota-test-156-ga7f1167 proto=1
+
+I (3577) ble_hid: fw_version=v1002.0.0-ota-test-156-ga7f1167 protocol_version=1 build=Jun  7 2026 11:42:30 serial=A4:CB:8F:F4:59:A4
+
+I (3587) ble_hid: factory readiness: ble_name=listener appearance=0x03c1 readiness=factory_ready;pairable_on_boot;post_degraded_boot;board=voice-keyboard-v2-n16r8;model=keyboard-v2;fw_version=v1002.0.0-ota-test-156-ga7f1167 capabilities=ble_hid_keyboard;ble_audio_vka1;ble_audio_control_v1;usb_serial_text;voice_record_toggle;custom_keys_f13_f16;custom_key_gestures_f13_f24;post_status;firmware_ota_v1;flash_16mb;psram_8mb_octal
+
+I (3627) ESP_HID_GAP: audio GAP integration enabled=1
+
+I (3627) BLE_INIT: BT controller compile version [b7de11e]
+
+I (3637) BLE_INIT: Using main XTAL as clock source
+
+W (3637) BLE_INIT: light sleep mode will not be able to apply when bluetooth is enabled.
+
+I (3647) BLE_INIT: Feature Config, ADV:1, BLE_50:1, DTM:1, SCAN:1, CCA:0, SMP:1, CONNECT:1
+
+I (3657) BLE_INIT: Bluetooth MAC: a4:cb:8f:f4:59:a6
+
+I (3657) phy_init: phy_version 711,97bcf0a2,Aug 25 2025,19:04:10
+
+I (3727) ble_audio_stream: audio buffer pool initialized: buffers=264 buffer_bytes=1920 total_bytes=506880 heap=spiram
+
+I (3727) watchdog: task subscribed: ble_audio_stream_task timeout_s=5 panic=1
+
+I (3727) ble_audio_stream: audio GATT service registered
+
+I (3737) ble_firmware_ota: firmware OTA GATT service registered
+
+I (3737) ble_diag_log: diagnostic log GATT service registered
+
+I (3747) ESP_HID_GAP: NimBLE advertising configured: appearance=0x03c1 name=listener name_in_adv=yes io_cap=3 bonding=1 mitm=0 sc=1
+
+I (3757) ble_hid: DIS identity: manufacturer=listener model=keyboard-v2 hw=esp32s3-wroom-1-n16r8 fw=v1002.0.0-ota-test-156-ga7f1167 proto=1 serial=A4:CB:8F:F4:59:A4 vid=0x16c0 pid=0x05df product_version=1
+
+I (3777) ble_hid: DIS GATT state: svc_rc=5 svc_handle=0 model_rc=5 model_def=0 model_val=0 serial_rc=5 serial_def=0 serial_val=0 firmware_rc=5 firmware_def=0 firmware_val=0 hardware_rc=5 hardware_def=0 hardware_val=0 software_rc=5 software_def=0 software_val=0 manufacturer_rc=5 manufacturer_def=0 manufacturer_val=0 pnp_rc=5 pnp_def=0 pnp_val=0
+
+I (3807) ble_audio_stream: audio GATT state: registered=1 svc_rc=5 svc_handle=0 chr_rc=5 chr_def=0 chr_val=0 notify_attr=0
+
+I (3817) ble_firmware_ota: firmware OTA GATT state: registered=1 svc_rc=5 svc_handle=0 control_rc=5 control_def=0 control_val=0 data_rc=5 data_def=0 data_val=0 readiness_rc=5 readiness_def=0 readiness_val=0 capabilities_rc=5 capabilities_def=0 capabilities_val=0
+
+I (3837) ble_diag_log: diag log GATT state: registered=1 svc_rc=5 svc=0 control_rc=5 ctrl_def=0 ctrl_val=0 data_rc=5 data_def=0 data_val=0 count_rc=5 count_def=0 count_val=0
+
+I (3857) battery_monitor: battery ADC calibration: curve fitting
+
+I (3857) battery_monitor: ADC ready: gpio=8 unit=0 channel=7 calibrated=1
+
+I (3867) ble_hid: battery notify level=91 voltage_mv=4060 raw=2403 adc_mv=2030 reason=init forced=1
+
+I (3877) ble_hid: device readiness: reason=init_complete ready_mask=0x0000000f degraded_mask=0x00000000 readiness=factory_ready;pairable_on_boot;post_degraded_boot;board=voice-keyboard-v2-n16r8;model=keyboard-v2;fw_version=v1002.0.0-ota-test-156-ga7f1167;hid_ready;audio_ready;ota_ready;diagnostic_ready capabilities=ble_hid_keyboard;ble_audio_vka1;ble_audio_control_v1;usb_serial_text;voice_record_toggle;custom_keys_f13_f16;custom_key_gestures_f13_f24;post_status;firmware_ota_v1;flash_16mb;psram_8mb_octal;hid_ready;audio_ready;ota_ready
+
+I (3927) audio_capture: SPH0655 PDM mic init: 16000Hz 16-bit mono clk=48 din=47 hp_filter=0
+
+I (3927) audio_capture: i2s start ok
+
+I (3937) watchdog: task subscribed: audio_capture_task timeout_s=5 panic=1
+
+I (3937) audio_capture: audio capture started: SPH0655 PDM digital mic
+
+I (3947) watchdog: task subscribed: voice_key_input_task timeout_s=5 panic=1
+
+I (3957) voice_key_input: recording gesture key idle level detected: source=ec11_key.gpio11 raw_high=1 pressed_when=low
+
+I (3967) voice_key_input: voice key ready: source=ec11_key.gpio11 gpio=11 active_low=1 legacy_expander=0 poll_ms=10 debounce_ms=30 debounce_samples=3
+
+I (3977) voice_key_input: recording gesture key ready: single_click_toggle=1 double_click_recovery=1 double_click_window_ms=200 recovery_idle_guard_ms=2000 long_press_reserved_ms=1200
+
+I (3997) watchdog: task subscribed: voice_recording_control_task timeout_s=5 panic=1
+
+I (3997) voice_rec_ctrl: voice recording control ready: source=ec11_key.gpio11 toggle start/stop fsm_artifact_cases=13
+
+I (4007) voice_rec_ctrl: device_status state=ready detail=voice_recording_control_started
+
+I (4017) watchdog: task subscribed: keyboard_custom_task timeout_s=5 panic=1
+
+I (4027) keyboard: custom key idle detected: logical=KEY1 source=key1.gpio38.f13 raw_high=1
+
+I (4037) keyboard: custom key idle detected: logical=KEY2 source=key2.gpio39.f14 raw_high=1
+
+I (4047) keyboard: custom key idle detected: logical=KEY3 source=key3.gpio40.f15 raw_high=1
+
+I (4047) keyboard: custom key idle detected: logical=KEY4 source=key4.gpio41.f16 raw_high=1
+
+I (4057) keyboard: custom keys ready: key1=gpio38:f13/f17/f21 key2=gpio39:f14/f18/f22 key3=gpio40:f15/f19/f23 key4=gpio41:f16/f20/f24 active_low=1 poll_ms=10 debounce_ms=30 debounce_samples=3 double_ms=250 long_ms=1000
+
+I (4077) watchdog: task subscribed: keyboard_ec11_task timeout_s=5 panic=1
+
+I (4087) keyboard: EC11 idle detected: a_gpio=42 b_gpio=2 state=0x03 active_low=1
+
+I (4087) keyboard: EC11 ready: a=gpio42 b=gpio2 key=gpio11 key_policy=gpio11_recording_key_pwr_hold_gpio46_shutdown_separate decoder=interrupt_quadrature direction_policy=clockwise_increases_volume_brightness detent_state=0x03 idle_poll_ms=20 queue_depth=64
+
+I (4117) status_led: status LED task started: refresh_ms=50 backend=rmt_ws2812_800khz
+
+I (4127) ble_hid: BLE host task started
+
+I (4127) watchdog: task subscribed: health_task timeout_s=5 panic=1
+
+I (4137) health: system health monitoring started: interval_s=60
+
+I (4137) watchdog: task subscribed: power_manager_task timeout_s=5 panic=1
+
+I (4147) power_manager: power manager started: audio_idle_ms=5000 connected_idle_ms=30000 disconnected_idle_ms=30000 hardware_shutdown_ms=1800000 eval_ms=2000 pwr_hold_gpio=46
+
+I (4167) ESP_HID_GAP: BLE recovery identity: none stored; using controller identity
+
+I (4167) ESP_HID_GAP: NimBLE host sync complete: own_addr_type=0 addr=a6:59:f4:8f:cb:a4
+
+I (4177) ESP_HID_GAP: NimBLE host synced before HID START; advertising deferred
+
+I (4177) ble_hid: START
+
+I (4177) boot_safety: normal boot clear timer armed: delay_ms=30000
+
+I (4187) ble_audio_stream: audio GATT state: registered=1 svc_rc=0 svc_handle=1 chr_rc=0 chr_def=2 chr_val=3 notify_attr=3
+
+I (4187) main_task: Returned from app_main()
+
+I (4207) ESP_HID_GAP: NimBLE bonded peers=1
+
+I (4207) ESP_HID_GAP: NimBLE directed advertising started: peer_type=0 peer_addr=ac:92:ef:77:d5:4c
+
+I (4217) ble_hid: battery notify level=94 voltage_mv=4110 raw=2433 adc_mv=2055 reason=hid_start forced=1
+
+I (4227) watchdog: task subscribed: ble_hid_battery_task timeout_s=5 panic=1
+
+I (4227) ble_hid: USB SERIAL INPUT READY
+
+I (4237) board: ########################################################################
+
+Listener voice keyboard firmware usage:
+
+Board profile: Voice Keyboard V2, ESP32-S3-WROOM-1-N16R8, 16MB flash, 8MB Octal PSRAM.
+
+Inject test bytes with tools/send_serial.ps1 or type in monitor.
+
+Capture 3s audio WAV with tools/capture_audio_wav.ps1 -Port COM3.
+
+Capture toggle session WAV with tools/capture_audio_session_wav.ps1 -Port COM3.
+
+EC11 push/GPIO11 controls recording: single click starts or stops after the 200 ms double-click window.
+
+EC11 push fast double-click clears BLE pairing/session state after recording has been idle; long press is reserved for hardware power control.
+
+Logical custom keys: single-click KEY1-KEY4 fallback=F13-F16, double-click=F17-F20, long-press=F21-F24.
+
+KEY1/GPIO38, KEY2/GPIO39, KEY3/GPIO40, KEY4/GPIO41 send safe non-text BLE HID usages while Listener-Type custom actions are unavailable.
+
+Send ~VREC:RECOVERY to clear pairing/session state over USB.
+
+Board diagnostics: ~BOARD:STATUS reports V2 pin, USB, charger, battery, PWR_HOLD/GPIO46, mic, reserved MSPI, and LED resource status.
+
+Board GPIO diagnostics: ~BOARD:GPIO reads raw KEY1-KEY4 and EC11 A/B/key levels without reconfiguring pins.
+
+Board GPIO scan: ~BOARD:GPIO-SCAN samples all valid GPIO levels without reconfiguring pins and prints changed GPIOs.
+
+Input flash debug: ~DIAGLOG:INPUTDBG:ON records high-volume key/EC11 debug events until ~DIAGLOG:INPUTDBG:OFF or reboot.
+
+Power diagnostics: ~POWER:STATUS reports state/blockers/battery/power-hold status, ~POWER:SHUTDOWN requests manual hardware shutdown.
+
+LED diagnostics: ~LED:STATUS reports four WS2812 groups; ~LED:TEST:RGBW and ~LED:TEST:MAP stay brightness-gated until VDD_LED sign-off.
+
+Watchdog diagnostics: ~WDT:STATUS reports config, ~WDT:DEADLOCK intentionally triggers Task WDT reset.
+
+Boot safety diagnostics: ~BOOT:STATUS reports crash counter, ~BOOT:CRASH restarts for validation, ~BOOT:CLEAR clears safe mode.
+
+Use ~OTA:STATUS, ~OTA:BLOCKER, or ~OTA:ABORT for firmware OTA diagnostics.
+
+Use ~DIAGLOG:COUNT, ~DIAGLOG:LAST:N, ~DIAGLOG:DUMP, or ~DIAGLOG:CLEAR for diagnostics.
+
+Device status logs use ready, recording, transferring, error, and recovery.
+
+End-to-end keystroke delivery still requires a BLE host connection.
+
+########################################################################
+
+I (4437) watchdog: task subscribed: ble_hid_keyboard_task timeout_s=5 panic=1
+
+I (4927) audio_capture: frame captured count=50 bytes=32000
+
+
+set both_true_then_false: dtr=True rts=True delay=0.15
+--- both_true_then_false: 283 bytes / 283 chars ---
+I (5497) ESP_HID_GAP: advertise complete; reason=0
+
+I (5497) ESP_HID_GAP: directed advertising completed; falling back to undirected advertising
+
+I (5497) ESP_HID_GAP: NimBLE bonded peers=1
+
+I (5507) ESP_HID_GAP: NimBLE undirected advertising started: low_power=0 interval_ms=30-50
+
+
+set after_both_release: dtr=False rts=False delay=1.5
+--- after_both_release: 151 bytes / 151 chars ---
+ESP-ROM:esp32s3-20210327
+
+Build:Mar 27 2021
+
+rst:0x15 (USB_UART_CHIP_RESET),boot:0x0 (DOWNLOAD(USB/UART0))
+
+Saved PC:0x40374080
+
+waiting for download
+
+
+Released 'COM6' (was locked by 'oai3')
