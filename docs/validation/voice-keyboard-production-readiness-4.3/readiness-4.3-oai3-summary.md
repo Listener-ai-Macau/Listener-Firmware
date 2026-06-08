@@ -38,6 +38,22 @@ Status: hardware blocked after AI-scriptable checks, follow-up LED/camera probin
   - Bootloader probe again tried `default_reset`, `usb_reset`, and `no_reset` at 115200 and 460800 baud; all failed with `No serial data received`.
   - `docs/validation/voice-keyboard-production-readiness-4.3/with-lock-hardware-window-20260608-oai3-rerun2.log`
 
+## 2026-06-08 rerun3
+
+- PASS: `idf.py build`
+  - `docs/validation/voice-keyboard-production-readiness-4.3/idf-build-20260608-oai3-rerun3.log`
+- PASS: `tools\verify_custom_key_command_hid.ps1`
+  - `docs/validation/voice-keyboard-production-readiness-4.3/verify-custom-key-command-hid-20260608-oai3-rerun3.log`
+  - `docs/validation/voice-keyboard-production-readiness-4.3/custom-key-command-hid-contract-20260608-oai3-rerun3.md`
+- PASS: `git diff --check`
+  - `docs/validation/voice-keyboard-production-readiness-4.3/git-diff-check-20260608-oai3-rerun3.log`
+- Hardware window result:
+  - `aiw with-lock -Resource COMx` resolved `COMx` to `COM6`, acquired and released the lock.
+  - Reset serial capture returned `<no serial output>`.
+  - `idf.py -p COM6 flash` failed with `Failed to connect to ESP32-S3: No serial data received`.
+  - Bootloader probe again tried `default_reset`, `usb_reset`, and `no_reset` at 115200 and 460800 baud; all failed with `No serial data received`.
+  - `docs/validation/voice-keyboard-production-readiness-4.3/with-lock-hardware-window-20260608-oai3-rerun3.log`
+
 ## Automated evidence
 
 - PASS: `idf.py build`
