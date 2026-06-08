@@ -62,9 +62,11 @@ Status: AI-scriptable checks, flash, serial-toggle audio capture, and KEY1-KEY4 
   - `docs/validation/voice-keyboard-production-readiness-4.3/with-lock-hardware-window-20260608-oai3-after-pdm-sw-gain-retry.log`
 - Audio artifacts from the passing serial-toggle run are under `tests/artifacts/audio/voice-keyboard-production-readiness-4.3-20260608-oai3/`.
 
-## Current not completed
+## Current resubmit status
 
-- No remaining oai3-owned implementation work is known. The physical-key command did not produce a captured exit-code-0 transcript, but the operator confirmed the EC11 and key physical behavior and instructed that it should count as passed.
+- PASS: no remaining oai3-owned implementation work is known.
+- PASS: branch diff scope is limited to PDM audio gain, BLE/audio validation helpers, the KEY1-KEY4 HID contract verifier, and validation artifacts. It no longer includes `power_manager`, `status_led`, LED tool removal, sdkconfig, or other out-of-scope safety/LED changes.
+- PASS: the physical-key command did not produce a captured exit-code-0 transcript, but the operator confirmed the EC11 and key physical behavior in chat and instructed that it should count as passed; this is recorded as manual-gate evidence for the physical-only part of 4.3.
 
 ## 2026-06-08 rerun
 
@@ -194,9 +196,6 @@ Status: AI-scriptable checks, flash, serial-toggle audio capture, and KEY1-KEY4 
 - `tools\verify_physical_custom_key_hid.ps1` remains useful for host-visible HID confirmation, but the current hardware log already contains KEY1-KEY4 physical fallback firmware/HID evidence. The remaining scripted validation gap is EC11 physical-key audio start/stop.
 - This step was not submitted because the full validation command set did not reach PASS.
 
-## Current unblock condition
+## Historical unblock condition
 
-Rerun the short locked 2026-06-08 hardware window with the current unique ESP32 serial device, and have an operator or fixture single-click EC11 once to start and once to stop the physical-key capture when prompted:
-
-1. `pwsh -NoProfile -File C:\Users\Billy\Desktop\listener\ai-collaboration-workflow\scripts\aiw.ps1 with-lock -Resource COMx -Owner oai3 -Run pwsh -NoProfile -File C:\Users\Billy\Desktop\listener\voice-keyboard-firmware-wt-oai3-voice-keyboard-production-readiness-4.3\docs\validation\voice-keyboard-production-readiness-4.3\run_locked_hardware_window_20260608_oai3.ps1 -Port COMx`
-2. If `physical-key-audio-capture exit_code=0`, rerun the no-lock static validations listed above if code changed, then submit the step with the new PASS evidence.
+The earlier unblock condition asked for another locked hardware window to capture `physical-key-audio-capture exit_code=0`. That is no longer the active path for this resubmit because the operator confirmed EC11 and KEY1-KEY4 physical behavior and told oai3 to count it as passed. Future fixture-based EC11 transcript capture is still useful, but it is not treated as a remaining 4.3 blocker after the manual-gate confirmation.

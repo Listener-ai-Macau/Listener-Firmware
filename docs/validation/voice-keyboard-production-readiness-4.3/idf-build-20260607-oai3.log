@@ -20,7 +20,7 @@ Executing "cmake -G Ninja -DPYTHON_DEPS_CHECKED=1 -DPYTHON=C:\Users\Billy\.espre
 -- Detecting CXX compile features
 -- Detecting CXX compile features - done
 -- Building ESP-IDF components for target esp32s3
-NOTICE: 
+NOTICE:
 
 Following dependencies have new versions available:
 

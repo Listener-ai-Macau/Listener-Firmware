@@ -40,7 +40,7 @@ Executing "cmake -G Ninja -DPYTHON_DEPS_CHECKED=1 -DPYTHON=C:\Users\Billy\.espre
 -- Detecting CXX compile features
 -- Detecting CXX compile features - done
 -- Building ESP-IDF components for target esp32s3
-NOTICE: 
+NOTICE:
 
 Following dependencies have new versions available:
 
@@ -2659,13 +2659,13 @@ A fatal error occurred: Could not open COM6, the port is busy or doesn't exist.
 
 
 CMake Error at run_serial_tool.cmake:67 (message):
-  
+
   C:/Users/Billy/.espressif/python_env/idf5.5_py3.11_env/Scripts/python.exe;;C:/Users/Billy/esp/esp-idf/components/esptool_py/esptool/esptool.py;--chip;esp32s3
   failed.
 
 
 
-FAILED: CMakeFiles/flash C:/Users/Billy/AppData/Local/Temp/listener-idf-build-c201e751824e/CMakeFiles/flash 
+FAILED: CMakeFiles/flash C:/Users/Billy/AppData/Local/Temp/listener-idf-build-c201e751824e/CMakeFiles/flash
 
 C:\Windows\system32\cmd.exe /C "cd /D C:\Users\Billy\esp\esp-idf\components\esptool_py && C:\Users\Billy\.espressif\tools\cmake\3.30.2\bin\cmake.exe -D IDF_PATH=C:/Users/Billy/esp/esp-idf -D SERIAL_TOOL=C:/Users/Billy/.espressif/python_env/idf5.5_py3.11_env/Scripts/python.exe;;C:/Users/Billy/esp/esp-idf/components/esptool_py/esptool/esptool.py;--chip;esp32s3 -D SERIAL_TOOL_ARGS=--before=default_reset;--after=hard_reset;write_flash;@flash_args -D WORKING_DIRECTORY=C:/Users/Billy/AppData/Local/Temp/listener-idf-build-c201e751824e -P C:/Users/Billy/esp/esp-idf/components/esptool_py/run_serial_tool.cmake"
 

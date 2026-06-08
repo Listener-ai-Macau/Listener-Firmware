@@ -37,4 +37,3 @@ scope=static source contract plus physical verifier expectations
 - PASS: WASD verifier is marked legacy
 - PASS: no active custom-key WASD or text fallback
 - PASS: no active feature map WASD fallback wording
-

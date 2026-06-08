@@ -1,0 +1,1 @@
+PASS: voice_recording_control FSM artifact covers 13 extreme transition cases and keeps decisions effect-free.
