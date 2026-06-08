@@ -1251,8 +1251,10 @@ void status_led_set_ble_state(status_led_ble_state_t state, bool confidence_wind
         status_led_resume_output_locked();
         bool changed = s_state.ble_state != state;
         s_state.ble_state = state;
-        s_state.status_window_until_ms = now_ms + STATUS_LED_STATUS_WINDOW_MS;
-        if (state == STATUS_LED_BLE_CONNECTED && confidence_window) {
+        if (changed) {
+            s_state.status_window_until_ms = now_ms + STATUS_LED_STATUS_WINDOW_MS;
+        }
+        if (changed && state == STATUS_LED_BLE_CONNECTED && confidence_window) {
             s_state.ble_confidence_until_ms = now_ms + STATUS_LED_BLE_CONFIDENCE_MS;
             if (!s_state.ever_connected) {
                 s_state.oobe_confidence_until_ms = now_ms + STATUS_LED_OOBE_CONFIDENCE_MS;

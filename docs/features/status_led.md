@@ -30,6 +30,8 @@ GAP/HID connection state is the source of truth for the BLE semantic LED. Advert
 
 After a connected event, the BLE LED uses the 6 second status window plus the bounded 8 second confidence window, with the first out-of-box connection allowed a longer bounded confidence window. Once those windows expire, an awake standard-profile device shows steady low blue on `LED2=BLE`.
 
+Repeated same-state BLE callbacks are idempotent: they do not restart the status window or confidence window. This prevents host subscription noise from making the PWR green status indication look like an irregular post-connect blink.
+
 ## Status/Key Mapping Calibration
 
 The camera calibration contract for the first product pass is intentionally limited to the ten status/key LEDs:
