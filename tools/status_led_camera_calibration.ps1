@@ -3,13 +3,14 @@ param(
     [string]$Camera = "auto",
     [string]$Zones = "status,key",
     [string]$Mode = "rgbw-single-led",
-    [string]$OutputDir = "docs\validation\voice-keyboard-camera-status-key-led-tuning-1.1",
+    [string]$OutputDir = "docs\validation\voice-keyboard-camera-status-key-led-tuning-1.2",
     [int]$Baud = 115200,
     [int]$SettleMs = 250,
     [int]$ReadbackMs = 350,
     [int]$PostFlashWaitMs = 3000,
     [switch]$ManifestOnly,
-    [switch]$SkipFlash
+    [switch]$SkipFlash,
+    [switch]$VerifyMapping
 )
 
 $ErrorActionPreference = "Stop"
@@ -19,8 +20,13 @@ if (-not $ManifestOnly.IsPresent -and $Camera.ToLowerInvariant() -ne "dry-run") 
 }
 
 $repoRoot = Split-Path -Parent $PSScriptRoot
+$outputDirPath = if ([System.IO.Path]::IsPathRooted($OutputDir)) {
+    $OutputDir
+} else {
+    Join-Path $repoRoot $OutputDir
+}
 $resolvedOutputDir = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath(
-    (Join-Path $repoRoot $OutputDir))
+    $outputDirPath)
 New-Item -ItemType Directory -Force -Path $resolvedOutputDir | Out-Null
 
 $pythonPath = (Get-Command python -ErrorAction Stop).Path
@@ -38,6 +44,7 @@ $payload = [ordered]@{
     post_flash_wait_ms = $PostFlashWaitMs
     manifest_only = $ManifestOnly.IsPresent
     flash_before_capture = -not $SkipFlash.IsPresent
+    verify_mapping = $VerifyMapping.IsPresent
 }
 $payloadJson = $payload | ConvertTo-Json -Depth 8 -Compress
 $payloadBase64 = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($payloadJson))
@@ -56,8 +63,40 @@ from pathlib import Path
 payload = json.loads(base64.b64decode("$payloadBase64").decode("utf-8"))
 
 PLAN = "voice-keyboard-camera-status-key-led-tuning"
-STEP = "1.1"
+STEP = "1.2"
 EXPECTED_MODE = "rgbw-single-led"
+FIRMWARE_MAPPING_CONTRACT = {
+    "status": {
+        "data_gpio": 1,
+        "led_refs": "LED1..LED6",
+        "first_led": 1,
+        "led_count": 6,
+        "default_color_order": "GRB",
+        "labels": ["PWR", "BLE", "REC", "AI", "OK", "WARN"],
+        "physical_map": {
+            "LED1": "PWR",
+            "LED2": "BLE",
+            "LED3": "REC",
+            "LED4": "AI",
+            "LED5": "OK",
+            "LED6": "WARN",
+        },
+    },
+    "key": {
+        "data_gpio": 13,
+        "led_refs": "LED11..LED14",
+        "first_led": 11,
+        "led_count": 4,
+        "default_color_order": "GRB",
+        "labels": ["KEY1", "KEY2", "KEY3", "KEY4"],
+        "physical_map": {
+            "LED11": "KEY1",
+            "LED12": "KEY2",
+            "LED13": "KEY3",
+            "LED14": "KEY4",
+        },
+    },
+}
 
 
 def utc_now():
@@ -181,10 +220,6 @@ def make_sequence(zones_text):
     if not zones:
         raise RuntimeError("at least one zone is required")
 
-    zone_defs = {
-        "status": {"first_led": 1, "count": 6, "labels": ["PWR", "BLE", "REC", "AI", "OK", "WARN"]},
-        "key": {"first_led": 11, "count": 4, "labels": ["KEY1", "KEY2", "KEY3", "KEY4"]},
-    }
     color_steps = [
         {"name": "red", "command_color": "red", "percent": 25, "expected": "red"},
         {"name": "green", "command_color": "green", "percent": 25, "expected": "green"},
@@ -198,18 +233,68 @@ def make_sequence(zones_text):
 
     sequence = []
     for zone in zones:
-        zone_def = zone_defs[zone]
-        for local_index in range(zone_def["count"]):
+        zone_def = FIRMWARE_MAPPING_CONTRACT[zone]
+        for local_index in range(zone_def["led_count"]):
             led = zone_def["first_led"] + local_index
             for color in color_steps:
                 sequence.append({
                     "zone": zone,
                     "led": f"LED{led}",
                     "local_index": local_index,
+                    "data_gpio": zone_def["data_gpio"],
+                    "firmware_color_order": zone_def["default_color_order"],
                     "label": zone_def["labels"][local_index],
                     **color,
                 })
     return zones, sequence
+
+
+def build_mapping_verification(manifest):
+    required_colors = {"red", "green", "blue", "white"}
+    expected_leds = {
+        zone: set(contract["physical_map"].keys())
+        for zone, contract in FIRMWARE_MAPPING_CONTRACT.items()
+        if zone in manifest.get("zones", [])
+    }
+    frames = manifest.get("frames", [])
+    residuals = []
+    by_zone_led_color = {}
+    for frame in frames:
+        key = (frame.get("zone"), frame.get("led"), frame.get("color"))
+        by_zone_led_color[key] = frame
+
+    per_strip = {}
+    for zone, leds in expected_leds.items():
+        strip_residuals = []
+        for led in sorted(leds, key=lambda value: int(value[3:])):
+            for color in sorted(required_colors):
+                frame = by_zone_led_color.get((zone, led, color))
+                if frame is None:
+                    strip_residuals.append(f"{zone} {led} {color}: missing frame")
+                    continue
+                if frame.get("result") != "PASS":
+                    strip_residuals.append(
+                        f"{zone} {led} {color}: {frame.get('result')} {frame.get('note')}"
+                    )
+        per_strip[zone] = {
+            "data_gpio": FIRMWARE_MAPPING_CONTRACT[zone]["data_gpio"],
+            "led_refs": FIRMWARE_MAPPING_CONTRACT[zone]["led_refs"],
+            "default_color_order": FIRMWARE_MAPPING_CONTRACT[zone]["default_color_order"],
+            "separate_color_order_supported": True,
+            "required_colors": sorted(required_colors),
+            "result": "PASS" if not strip_residuals else "FAIL",
+            "residuals": strip_residuals,
+        }
+        residuals.extend(strip_residuals)
+
+    return {
+        "result": "PASS" if not residuals else "FAIL",
+        "status_key_only": True,
+        "ec11_edge_untouched": True,
+        "firmware_mapping_contract": FIRMWARE_MAPPING_CONTRACT,
+        "per_strip": per_strip,
+        "residuals": residuals,
+    }
 
 
 def send_command(ser, text, readback_ms):
@@ -314,6 +399,8 @@ def main():
             "zone": item["zone"],
             "led": item["led"],
             "local_index": item["local_index"],
+            "data_gpio": item["data_gpio"],
+            "firmware_color_order": item["firmware_color_order"],
             "label": item["label"],
             "color": item["name"],
             "expected": item["expected"],
@@ -329,6 +416,7 @@ def main():
             "updated_at": utc_now(),
             "result": "PASS",
             "dry_run": True,
+            "verify_mapping": bool(payload.get("verify_mapping")),
             "mode": payload["mode"],
             "zones": zones,
             "hardware": {
@@ -344,6 +432,14 @@ def main():
                 "real_capture_prerequisites": "exact prerequisites before first hardware/camera run",
                 "frames": "populated only by real capture mode",
                 "per_led_results": "populated only by real capture mode",
+                "mapping_verification": "populated by -VerifyMapping real capture; records color-order and physical-map residuals",
+            },
+            "firmware_mapping_contract": FIRMWARE_MAPPING_CONTRACT,
+            "mapping_verification": {
+                "result": "RECORDED_ONLY",
+                "reason": "manifest-only dry run cannot verify camera-visible mapping",
+                "status_key_only": True,
+                "ec11_edge_untouched": True,
             },
             "expected_capture_layout": {
                 "frame_dir": str(frames_dir),
@@ -390,8 +486,10 @@ def main():
         "step_id": STEP,
         "generated_at": utc_now(),
         "result": "INCONCLUSIVE",
+        "verify_mapping": bool(payload.get("verify_mapping")),
         "mode": payload["mode"],
         "zones": zones,
+        "firmware_mapping_contract": FIRMWARE_MAPPING_CONTRACT,
         "hardware": {
             "requested_port": payload["port"],
             "resolved_port": port.device,
@@ -470,6 +568,8 @@ def main():
                         "zone": item["zone"],
                         "led": item["led"],
                         "local_index": item["local_index"],
+                        "data_gpio": item["data_gpio"],
+                        "firmware_color_order": item["firmware_color_order"],
                         "label": item["label"],
                         "color": item["name"],
                         "command": command,
@@ -512,12 +612,18 @@ def main():
         manifest["result"] = "INCONCLUSIVE"
     else:
         manifest["result"] = "PASS"
+    if payload.get("verify_mapping"):
+        manifest["mapping_verification"] = build_mapping_verification(manifest)
+        manifest["result"] = manifest["mapping_verification"]["result"]
     manifest["frame_count"] = len(manifest["frames"])
     manifest["updated_at"] = utc_now()
     write_manifest(manifest)
 
     if manifest["frame_count"] != len(sequence):
         fail(f"captured {manifest['frame_count']} frames, expected {len(sequence)}", manifest)
+    if payload.get("verify_mapping") and manifest["mapping_verification"]["result"] != "PASS":
+        residuals = manifest["mapping_verification"].get("residuals", [])
+        fail("VerifyMapping residuals: " + "; ".join(residuals[:8]), manifest)
 
     print(
         "status_led_camera_calibration: "
@@ -542,6 +648,8 @@ if __name__ == "__main__":
             "result": "FAIL",
             "mode": payload.get("mode"),
             "zones": payload.get("zones"),
+            "verify_mapping": bool(payload.get("verify_mapping")),
+            "firmware_mapping_contract": FIRMWARE_MAPPING_CONTRACT,
             "hardware": {
                 "requested_port": payload.get("port"),
                 "requested_camera": payload.get("camera"),
