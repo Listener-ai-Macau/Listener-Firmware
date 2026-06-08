@@ -1,0 +1,458 @@
+{
+  "schema_version": 1,
+  "plan": "voice-keyboard-camera-status-key-led-tuning",
+  "step_id": "1.2",
+  "instructions": "Fill observed_color/result/note from human-eye LED feedback. result is PASS when the commanded RGBW/off state matches the observed state.",
+  "observations": [
+    {
+      "zone": "status",
+      "led": "LED1",
+      "label": "PWR",
+      "commanded_color": "red",
+      "observed_color": "",
+      "result": "",
+      "note": ""
+    },
+    {
+      "zone": "status",
+      "led": "LED1",
+      "label": "PWR",
+      "commanded_color": "green",
+      "observed_color": "",
+      "result": "",
+      "note": ""
+    },
+    {
+      "zone": "status",
+      "led": "LED1",
+      "label": "PWR",
+      "commanded_color": "blue",
+      "observed_color": "",
+      "result": "",
+      "note": ""
+    },
+    {
+      "zone": "status",
+      "led": "LED1",
+      "label": "PWR",
+      "commanded_color": "white",
+      "observed_color": "",
+      "result": "",
+      "note": ""
+    },
+    {
+      "zone": "status",
+      "led": "LED1",
+      "label": "PWR",
+      "commanded_color": "off",
+      "observed_color": "",
+      "result": "",
+      "note": ""
+    },
+    {
+      "zone": "status",
+      "led": "LED2",
+      "label": "BLE",
+      "commanded_color": "red",
+      "observed_color": "",
+      "result": "",
+      "note": ""
+    },
+    {
+      "zone": "status",
+      "led": "LED2",
+      "label": "BLE",
+      "commanded_color": "green",
+      "observed_color": "",
+      "result": "",
+      "note": ""
+    },
+    {
+      "zone": "status",
+      "led": "LED2",
+      "label": "BLE",
+      "commanded_color": "blue",
+      "observed_color": "",
+      "result": "",
+      "note": ""
+    },
+    {
+      "zone": "status",
+      "led": "LED2",
+      "label": "BLE",
+      "commanded_color": "white",
+      "observed_color": "",
+      "result": "",
+      "note": ""
+    },
+    {
+      "zone": "status",
+      "led": "LED2",
+      "label": "BLE",
+      "commanded_color": "off",
+      "observed_color": "",
+      "result": "",
+      "note": ""
+    },
+    {
+      "zone": "status",
+      "led": "LED3",
+      "label": "REC",
+      "commanded_color": "red",
+      "observed_color": "",
+      "result": "",
+      "note": ""
+    },
+    {
+      "zone": "status",
+      "led": "LED3",
+      "label": "REC",
+      "commanded_color": "green",
+      "observed_color": "",
+      "result": "",
+      "note": ""
+    },
+    {
+      "zone": "status",
+      "led": "LED3",
+      "label": "REC",
+      "commanded_color": "blue",
+      "observed_color": "",
+      "result": "",
+      "note": ""
+    },
+    {
+      "zone": "status",
+      "led": "LED3",
+      "label": "REC",
+      "commanded_color": "white",
+      "observed_color": "",
+      "result": "",
+      "note": ""
+    },
+    {
+      "zone": "status",
+      "led": "LED3",
+      "label": "REC",
+      "commanded_color": "off",
+      "observed_color": "",
+      "result": "",
+      "note": ""
+    },
+    {
+      "zone": "status",
+      "led": "LED4",
+      "label": "AI",
+      "commanded_color": "red",
+      "observed_color": "",
+      "result": "",
+      "note": ""
+    },
+    {
+      "zone": "status",
+      "led": "LED4",
+      "label": "AI",
+      "commanded_color": "green",
+      "observed_color": "",
+      "result": "",
+      "note": ""
+    },
+    {
+      "zone": "status",
+      "led": "LED4",
+      "label": "AI",
+      "commanded_color": "blue",
+      "observed_color": "",
+      "result": "",
+      "note": ""
+    },
+    {
+      "zone": "status",
+      "led": "LED4",
+      "label": "AI",
+      "commanded_color": "white",
+      "observed_color": "",
+      "result": "",
+      "note": ""
+    },
+    {
+      "zone": "status",
+      "led": "LED4",
+      "label": "AI",
+      "commanded_color": "off",
+      "observed_color": "",
+      "result": "",
+      "note": ""
+    },
+    {
+      "zone": "status",
+      "led": "LED5",
+      "label": "OK",
+      "commanded_color": "red",
+      "observed_color": "",
+      "result": "",
+      "note": ""
+    },
+    {
+      "zone": "status",
+      "led": "LED5",
+      "label": "OK",
+      "commanded_color": "green",
+      "observed_color": "",
+      "result": "",
+      "note": ""
+    },
+    {
+      "zone": "status",
+      "led": "LED5",
+      "label": "OK",
+      "commanded_color": "blue",
+      "observed_color": "",
+      "result": "",
+      "note": ""
+    },
+    {
+      "zone": "status",
+      "led": "LED5",
+      "label": "OK",
+      "commanded_color": "white",
+      "observed_color": "",
+      "result": "",
+      "note": ""
+    },
+    {
+      "zone": "status",
+      "led": "LED5",
+      "label": "OK",
+      "commanded_color": "off",
+      "observed_color": "",
+      "result": "",
+      "note": ""
+    },
+    {
+      "zone": "status",
+      "led": "LED6",
+      "label": "WARN",
+      "commanded_color": "red",
+      "observed_color": "",
+      "result": "",
+      "note": ""
+    },
+    {
+      "zone": "status",
+      "led": "LED6",
+      "label": "WARN",
+      "commanded_color": "green",
+      "observed_color": "",
+      "result": "",
+      "note": ""
+    },
+    {
+      "zone": "status",
+      "led": "LED6",
+      "label": "WARN",
+      "commanded_color": "blue",
+      "observed_color": "",
+      "result": "",
+      "note": ""
+    },
+    {
+      "zone": "status",
+      "led": "LED6",
+      "label": "WARN",
+      "commanded_color": "white",
+      "observed_color": "",
+      "result": "",
+      "note": ""
+    },
+    {
+      "zone": "status",
+      "led": "LED6",
+      "label": "WARN",
+      "commanded_color": "off",
+      "observed_color": "",
+      "result": "",
+      "note": ""
+    },
+    {
+      "zone": "key",
+      "led": "LED11",
+      "label": "KEY1",
+      "commanded_color": "red",
+      "observed_color": "",
+      "result": "",
+      "note": ""
+    },
+    {
+      "zone": "key",
+      "led": "LED11",
+      "label": "KEY1",
+      "commanded_color": "green",
+      "observed_color": "",
+      "result": "",
+      "note": ""
+    },
+    {
+      "zone": "key",
+      "led": "LED11",
+      "label": "KEY1",
+      "commanded_color": "blue",
+      "observed_color": "",
+      "result": "",
+      "note": ""
+    },
+    {
+      "zone": "key",
+      "led": "LED11",
+      "label": "KEY1",
+      "commanded_color": "white",
+      "observed_color": "",
+      "result": "",
+      "note": ""
+    },
+    {
+      "zone": "key",
+      "led": "LED11",
+      "label": "KEY1",
+      "commanded_color": "off",
+      "observed_color": "",
+      "result": "",
+      "note": ""
+    },
+    {
+      "zone": "key",
+      "led": "LED12",
+      "label": "KEY2",
+      "commanded_color": "red",
+      "observed_color": "",
+      "result": "",
+      "note": ""
+    },
+    {
+      "zone": "key",
+      "led": "LED12",
+      "label": "KEY2",
+      "commanded_color": "green",
+      "observed_color": "",
+      "result": "",
+      "note": ""
+    },
+    {
+      "zone": "key",
+      "led": "LED12",
+      "label": "KEY2",
+      "commanded_color": "blue",
+      "observed_color": "",
+      "result": "",
+      "note": ""
+    },
+    {
+      "zone": "key",
+      "led": "LED12",
+      "label": "KEY2",
+      "commanded_color": "white",
+      "observed_color": "",
+      "result": "",
+      "note": ""
+    },
+    {
+      "zone": "key",
+      "led": "LED12",
+      "label": "KEY2",
+      "commanded_color": "off",
+      "observed_color": "",
+      "result": "",
+      "note": ""
+    },
+    {
+      "zone": "key",
+      "led": "LED13",
+      "label": "KEY3",
+      "commanded_color": "red",
+      "observed_color": "",
+      "result": "",
+      "note": ""
+    },
+    {
+      "zone": "key",
+      "led": "LED13",
+      "label": "KEY3",
+      "commanded_color": "green",
+      "observed_color": "",
+      "result": "",
+      "note": ""
+    },
+    {
+      "zone": "key",
+      "led": "LED13",
+      "label": "KEY3",
+      "commanded_color": "blue",
+      "observed_color": "",
+      "result": "",
+      "note": ""
+    },
+    {
+      "zone": "key",
+      "led": "LED13",
+      "label": "KEY3",
+      "commanded_color": "white",
+      "observed_color": "",
+      "result": "",
+      "note": ""
+    },
+    {
+      "zone": "key",
+      "led": "LED13",
+      "label": "KEY3",
+      "commanded_color": "off",
+      "observed_color": "",
+      "result": "",
+      "note": ""
+    },
+    {
+      "zone": "key",
+      "led": "LED14",
+      "label": "KEY4",
+      "commanded_color": "red",
+      "observed_color": "",
+      "result": "",
+      "note": ""
+    },
+    {
+      "zone": "key",
+      "led": "LED14",
+      "label": "KEY4",
+      "commanded_color": "green",
+      "observed_color": "",
+      "result": "",
+      "note": ""
+    },
+    {
+      "zone": "key",
+      "led": "LED14",
+      "label": "KEY4",
+      "commanded_color": "blue",
+      "observed_color": "",
+      "result": "",
+      "note": ""
+    },
+    {
+      "zone": "key",
+      "led": "LED14",
+      "label": "KEY4",
+      "commanded_color": "white",
+      "observed_color": "",
+      "result": "",
+      "note": ""
+    },
+    {
+      "zone": "key",
+      "led": "LED14",
+      "label": "KEY4",
+      "commanded_color": "off",
+      "observed_color": "",
+      "result": "",
+      "note": ""
+    }
+  ]
+}

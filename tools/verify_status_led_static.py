@@ -36,7 +36,9 @@ CHECKS = {
         "STATUS_LED_EDGE_COUNT 6",
         "STATUS_LED_STRIP_COUNT 4",
         "STATUS_LED_STATUS_FIRST_LED 1U",
+        "STATUS_LED_EC11_FIRST_LED 7U",
         "STATUS_LED_KEY_FIRST_LED 11U",
+        "STATUS_LED_EDGE_FIRST_LED 17U",
         "STATUS_LED_STATUS_PHYSICAL_MAP",
         "STATUS_LED_KEY_PHYSICAL_MAP",
         "STATUS_LED_STATUS_KEY_MAPPING_CONTRACT",
@@ -53,10 +55,23 @@ CHECKS = {
         "STATUS_LED_COLOR_ORDER_RGB",
         "STATUS_LED_STATUS_DEFAULT_COLOR_ORDER STATUS_LED_COLOR_ORDER_GRB",
         "STATUS_LED_KEY_DEFAULT_COLOR_ORDER STATUS_LED_COLOR_ORDER_GRB",
-        "status_led_new_ws2812_encoder",
-        "RMT_CLK_SRC_DEFAULT",
-        "STATUS_LED_RMT_RESOLUTION_HZ 10000000U",
-        "STATUS_LED_WS2812_RESET_TICKS 250U",
+        "STATUS_LED_FULL_BRIGHTNESS_PERCENT 100U",
+        "STATUS_LED_FULL_BRIGHTNESS_BUDGET_MA 2000U",
+        "STATUS_LED_CHASE_DEFAULT_STEP_MS 250U",
+        "STATUS_LED_CONTRACT_REV \"status_key_full_brightness_chase_pixel_4020timing_v4\"",
+        "led_contract_rev=",
+        "timing=ws2812_4020_compatible",
+        "active_brightness_percent=%u",
+        "profile_dimming_disabled=1",
+        "STATUS_LED_TEST_CHASE",
+        "status_led_parse_single_strip_mask",
+        "strtok_r(copy, \",+| \"",
+        "LED chase running",
+        "status_led_strip_backend.h",
+        "status_led_strip_backend_new",
+        "status_led_strip_backend_transmit",
+        "status_led_force_manual_off",
+        "manual_off",
         "~LED:STATUS",
         "mapping_contract=",
         "status_physical_map=",
@@ -69,7 +84,10 @@ CHECKS = {
         "TEST:PIXEL",
         "STATUS_LED_TEST_PIXEL",
         "status_led_parse_calibration_strip",
-        "status_key_only=1",
+        "led_prefixed",
+        "status_key_only=%u",
+        "ec11_edge_touched=%u",
+        "ec11_edge_untouched=%u",
         "mapping_contract=%s",
         "ec11_order=LED7..LED10+LED15..LED16+LED23..LED28",
         "PREVIEW ",
@@ -88,10 +106,38 @@ CHECKS = {
         "status_led_render_recording_locked",
         "status_led_render_processing_locked",
         "status_led_render_edge_locked",
-        "soc/soc_caps.h",
-        "SOC_RMT_MEM_WORDS_PER_CHANNEL",
         "STATUS_LED_TX_MUTEX_WAIT_MS",
         "s_tx_mutex",
+    ],
+    "components/status_led/status_led_strip_backend.h": [
+        "STATUS_LED_STRIP_BACKEND_MAX_LED_COUNT 12U",
+        "STATUS_LED_COLOR_ORDER_GRB",
+        "STATUS_LED_COLOR_ORDER_RGB",
+        "status_led_rgb_t",
+        "status_led_strip_backend_t",
+        "status_led_strip_backend_new",
+        "status_led_strip_backend_transmit",
+    ],
+    "components/status_led/status_led_strip_backend.c": [
+        "driver/rmt_encoder.h",
+        "driver/rmt_tx.h",
+        "soc/soc_caps.h",
+        "status_led_new_ws2812_encoder",
+        "RMT_CLK_SRC_DEFAULT",
+        "STATUS_LED_RMT_RESOLUTION_HZ 10000000U",
+        "STATUS_LED_WS2812_RESET_TICKS 1500U",
+        "STATUS_LED_WS2812_T0H_TICKS 3U",
+        "STATUS_LED_WS2812_T0L_TICKS 10U",
+        "STATUS_LED_WS2812_T1H_TICKS 7U",
+        "STATUS_LED_WS2812_T1L_TICKS 6U",
+        "SOC_RMT_MEM_WORDS_PER_CHANNEL",
+        "status_led_strip_backend_fill_pixels",
+        "status_led_color_order_name",
+        "reset_us=300",
+        "diag_log(DIAG_SRC_STATUS_LED, DIAG_LED_OUTPUT_FAIL",
+    ],
+    "components/status_led/CMakeLists.txt": [
+        '"status_led.c" "status_led_strip_backend.c"',
     ],
     "components/diag_log/include/diag_log_events.h": [
         "DIAG_SRC_STATUS_LED",
@@ -143,7 +189,7 @@ CHECKS = {
         "`LED14=KEY4`",
         "status and key strips keep separate color-order storage",
         "`~LED:TEST:RGBW <status|ec11|knob|ring|key|edge|all>`",
-        "`~LED:TEST:PIXEL <status|key> <LEDn|index> <red|green|blue|white|off> [percent]`",
+        "`~LED:TEST:PIXEL <status|ec11|knob|ring|key|edge> <LEDn|index> <red|green|blue|white|off> [percent]`",
     ],
     "tools/status_led_camera_calibration.ps1": [
         "voice-keyboard-camera-status-key-led-tuning-1.2",
@@ -164,6 +210,29 @@ CHECKS = {
         "serial-transcript.txt",
         "per_led_results",
         "brightness_steps",
+    ],
+    "tools/status_led_manual_calibration.ps1": [
+        "voice-keyboard-camera-status-key-led-tuning-1.2",
+        "manual_observation",
+        "status_key_only",
+        "ec11_edge_untouched",
+        "manual-feedback-template.md",
+        "manual-session.jsonl",
+        "open_serial_without_reset",
+        "[int]$Percent = 100",
+        "[switch]$RunSequence",
+        "manual_sequence",
+        "manual-sequence-summary.json",
+        "preclear_command",
+        "~LED:TEST:PIXEL",
+        "~LED:OFF",
+        "LED1",
+        "LED14",
+        "red",
+        "green",
+        "blue",
+        "white",
+        "off",
     ],
 }
 
@@ -202,19 +271,22 @@ def main() -> int:
         failures.append("board_pins.h: EC11 knob ring must use GPIO5, not the edge GPIO4 strip")
 
     status_led = read("components/status_led/status_led.c")
-    if "bit-bang" in status_led.lower():
-        failures.append("status_led.c: do not bit-bang WS2812 timing")
+    status_led_backend = read("components/status_led/status_led_strip_backend.c")
+    if "bit-bang" in status_led.lower() or "bit-bang" in status_led_backend.lower():
+        failures.append("status_led: do not bit-bang WS2812 timing")
     if "STATUS_LED_EC11_COUNT 4" in status_led:
         failures.append("status_led.c: stale EC11 four-LED strip count")
     if "STATUS_LED_EDGE_COUNT 14" in status_led:
         failures.append("status_led.c: stale edge/frame fourteen-LED strip count")
-    if re.search(r"\.mem_block_symbols\s*=\s*64\b", status_led):
+    if "driver/rmt_" in status_led or "soc/soc_caps.h" in status_led:
+        failures.append("status_led.c: business rendering layer must not include the RMT/WS2812 backend directly")
+    if re.search(r"\.mem_block_symbols\s*=\s*64\b", status_led_backend):
         failures.append(
-            "status_led.c: RMT mem_block_symbols=64 consumes two ESP32-S3 RMT blocks per strip and leaves fewer than four TX channels"
+            "status_led_strip_backend.c: RMT mem_block_symbols=64 consumes two ESP32-S3 RMT blocks per strip and leaves fewer than four TX channels"
         )
-    if not re.search(r"\.mem_block_symbols\s*=\s*SOC_RMT_MEM_WORDS_PER_CHANNEL\b", status_led):
+    if not re.search(r"\.mem_block_symbols\s*=\s*SOC_RMT_MEM_WORDS_PER_CHANNEL\b", status_led_backend):
         failures.append(
-            "status_led.c: RMT strip channels must use SOC_RMT_MEM_WORDS_PER_CHANNEL so all four V2 LED zones can initialize"
+            "status_led_strip_backend.c: RMT strip channels must use SOC_RMT_MEM_WORDS_PER_CHANNEL so all four V2 LED zones can initialize"
         )
 
     board_leds = read("components/board/board.c")
@@ -242,7 +314,7 @@ def main() -> int:
     print(
         "PASS: status LED static verification covers V2 four-zone WS2812 resources, "
         "EC11 GPIO5/count12, key GPIO13/count4, edge GPIO4/count6, diagnostics, "
-        "USB validation hooks, camera one-pixel status/key harness, and low-power off path."
+        "USB validation hooks, camera/manual one-pixel status/key/EC11/edge harness, and low-power off path."
     )
     return 0
 

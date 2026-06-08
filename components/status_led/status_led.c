@@ -5,11 +5,8 @@
 #include <stdlib.h>
 #include <string.h>
 #include <strings.h>
-#include <sys/cdefs.h>
 
 #include "driver/gpio.h"
-#include "driver/rmt_encoder.h"
-#include "driver/rmt_tx.h"
 #include "esp_err.h"
 #include "esp_log.h"
 #include "esp_timer.h"
@@ -18,12 +15,12 @@
 #include "freertos/task.h"
 #include "nvs.h"
 #include "nvs_flash.h"
-#include "soc/soc_caps.h"
 
 #include "battery_monitor.h"
 #include "board_pins.h"
 #include "diag_log.h"
 #include "power_manager.h"
+#include "status_led_strip_backend.h"
 
 #define STATUS_LED_STATUS_COUNT 6
 #define STATUS_LED_EC11_COUNT 12
@@ -34,10 +31,7 @@
 
 #define STATUS_LED_TASK_STACK_BYTES (5 * 1024)
 #define STATUS_LED_REFRESH_MS 50U
-#define STATUS_LED_RMT_RESOLUTION_HZ 10000000U
-#define STATUS_LED_RMT_WAIT_MS 20
 #define STATUS_LED_TX_MUTEX_WAIT_MS 100
-#define STATUS_LED_WS2812_RESET_TICKS 250U
 #define STATUS_LED_POWER_POLL_MS 5000U
 #define STATUS_LED_STATUS_WINDOW_MS 6000U
 #define STATUS_LED_BLE_CONFIDENCE_MS 8000U
@@ -46,6 +40,10 @@
 #define STATUS_LED_OK_TOTAL_MS 900U
 #define STATUS_LED_OK_PEAK_MS 160U
 #define STATUS_LED_KEY_FEEDBACK_MS 650U
+#define STATUS_LED_FULL_BRIGHTNESS_PERCENT 100U
+#define STATUS_LED_FULL_BRIGHTNESS_BUDGET_MA 2000U
+#define STATUS_LED_CHASE_DEFAULT_STEP_MS 250U
+#define STATUS_LED_CONTRACT_REV "status_key_full_brightness_chase_pixel_4020timing_v4"
 #define STATUS_LED_NVS_NAMESPACE "status_led"
 #define STATUS_LED_NVS_PROFILE_KEY "profile"
 #define STATUS_LED_NVS_STATUS_ORDER_KEY "ord_status"
@@ -54,7 +52,9 @@
 #define STATUS_LED_NVS_EDGE_ORDER_KEY "ord_edge"
 #define STATUS_LED_USB_PREFIX "LED:"
 #define STATUS_LED_STATUS_FIRST_LED 1U
+#define STATUS_LED_EC11_FIRST_LED 7U
 #define STATUS_LED_KEY_FIRST_LED 11U
+#define STATUS_LED_EDGE_FIRST_LED 17U
 #define STATUS_LED_STATUS_PHYSICAL_MAP "LED1:PWR,LED2:BLE,LED3:REC,LED4:AI,LED5:OK,LED6:WARN"
 #define STATUS_LED_KEY_PHYSICAL_MAP "LED11:KEY1,LED12:KEY2,LED13:KEY3,LED14:KEY4"
 #define STATUS_LED_STATUS_KEY_MAPPING_CONTRACT "status=LED1..LED6,key=LED11..LED14"
@@ -74,11 +74,6 @@ typedef enum {
     STATUS_LED_PROFILE_FACTORY,
 } status_led_profile_t;
 
-typedef enum {
-    STATUS_LED_COLOR_ORDER_GRB = 0,
-    STATUS_LED_COLOR_ORDER_RGB,
-} status_led_color_order_t;
-
 #define STATUS_LED_STATUS_DEFAULT_COLOR_ORDER STATUS_LED_COLOR_ORDER_GRB
 #define STATUS_LED_KEY_DEFAULT_COLOR_ORDER STATUS_LED_COLOR_ORDER_GRB
 
@@ -86,6 +81,7 @@ typedef enum {
     STATUS_LED_TEST_NONE = 0,
     STATUS_LED_TEST_RGBW,
     STATUS_LED_TEST_MAP,
+    STATUS_LED_TEST_CHASE,
     STATUS_LED_TEST_PIXEL,
 } status_led_test_mode_t;
 
@@ -99,12 +95,6 @@ typedef enum {
 } status_led_semantic_t;
 
 typedef struct {
-    uint8_t r;
-    uint8_t g;
-    uint8_t b;
-} status_led_rgb_t;
-
-typedef struct {
     status_led_rgb_t status[STATUS_LED_STATUS_COUNT];
     status_led_rgb_t ec11[STATUS_LED_EC11_COUNT];
     status_led_rgb_t key[STATUS_LED_KEY_COUNT];
@@ -112,22 +102,11 @@ typedef struct {
 } status_led_frame_t;
 
 typedef struct {
-    rmt_encoder_t base;
-    rmt_encoder_handle_t bytes_encoder;
-    rmt_encoder_handle_t copy_encoder;
-    int state;
-    rmt_symbol_word_t reset_code;
-} status_led_ws2812_encoder_t;
-
-typedef struct {
     const char *name;
     gpio_num_t gpio;
     uint8_t led_count;
     status_led_color_order_t color_order;
-    rmt_channel_handle_t channel;
-    rmt_encoder_handle_t encoder;
-    uint8_t pixels[STATUS_LED_MAX_STRIP_COUNT * 3];
-    bool available;
+    status_led_strip_backend_t *backend;
 } status_led_strip_t;
 
 typedef struct {
@@ -166,6 +145,7 @@ typedef struct {
     status_led_test_mode_t test_mode;
     uint8_t test_strip_mask;
     uint32_t test_started_ms;
+    uint16_t test_step_ms;
     status_led_strip_id_t test_pixel_strip;
     uint8_t test_pixel_index;
     status_led_rgb_t test_pixel_color;
@@ -207,134 +187,7 @@ static status_led_strip_t s_strips[STATUS_LED_STRIP_COUNT] = {
     },
 };
 
-RMT_ENCODER_FUNC_ATTR
-static size_t status_led_ws2812_encode(
-    rmt_encoder_t *encoder,
-    rmt_channel_handle_t channel,
-    const void *primary_data,
-    size_t data_size,
-    rmt_encode_state_t *ret_state)
-{
-    status_led_ws2812_encoder_t *led_encoder =
-        __containerof(encoder, status_led_ws2812_encoder_t, base);
-    rmt_encode_state_t session_state = RMT_ENCODING_RESET;
-    rmt_encode_state_t state = RMT_ENCODING_RESET;
-    size_t encoded_symbols = 0;
-
-    switch (led_encoder->state) {
-    case 0:
-        encoded_symbols += led_encoder->bytes_encoder->encode(
-            led_encoder->bytes_encoder,
-            channel,
-            primary_data,
-            data_size,
-            &session_state);
-        if (session_state & RMT_ENCODING_COMPLETE) {
-            led_encoder->state = 1;
-        }
-        if (session_state & RMT_ENCODING_MEM_FULL) {
-            state |= RMT_ENCODING_MEM_FULL;
-            goto out;
-        }
-        /* fall through */
-    case 1:
-        encoded_symbols += led_encoder->copy_encoder->encode(
-            led_encoder->copy_encoder,
-            channel,
-            &led_encoder->reset_code,
-            sizeof(led_encoder->reset_code),
-            &session_state);
-        if (session_state & RMT_ENCODING_COMPLETE) {
-            state |= RMT_ENCODING_COMPLETE;
-            led_encoder->state = RMT_ENCODING_RESET;
-        }
-        if (session_state & RMT_ENCODING_MEM_FULL) {
-            state |= RMT_ENCODING_MEM_FULL;
-            goto out;
-        }
-    }
-
-out:
-    *ret_state = state;
-    return encoded_symbols;
-}
-
-static esp_err_t status_led_ws2812_del(rmt_encoder_t *encoder)
-{
-    status_led_ws2812_encoder_t *led_encoder =
-        __containerof(encoder, status_led_ws2812_encoder_t, base);
-    if (led_encoder->bytes_encoder != NULL) {
-        (void)rmt_del_encoder(led_encoder->bytes_encoder);
-    }
-    if (led_encoder->copy_encoder != NULL) {
-        (void)rmt_del_encoder(led_encoder->copy_encoder);
-    }
-    free(led_encoder);
-    return ESP_OK;
-}
-
-RMT_ENCODER_FUNC_ATTR
-static esp_err_t status_led_ws2812_reset(rmt_encoder_t *encoder)
-{
-    status_led_ws2812_encoder_t *led_encoder =
-        __containerof(encoder, status_led_ws2812_encoder_t, base);
-    (void)rmt_encoder_reset(led_encoder->bytes_encoder);
-    (void)rmt_encoder_reset(led_encoder->copy_encoder);
-    led_encoder->state = RMT_ENCODING_RESET;
-    return ESP_OK;
-}
-
-static esp_err_t status_led_new_ws2812_encoder(rmt_encoder_handle_t *ret_encoder)
-{
-    status_led_ws2812_encoder_t *led_encoder =
-        rmt_alloc_encoder_mem(sizeof(status_led_ws2812_encoder_t));
-    if (led_encoder == NULL) {
-        return ESP_ERR_NO_MEM;
-    }
-
-    led_encoder->base.encode = status_led_ws2812_encode;
-    led_encoder->base.del = status_led_ws2812_del;
-    led_encoder->base.reset = status_led_ws2812_reset;
-    led_encoder->state = 0;
-    led_encoder->reset_code = (rmt_symbol_word_t) {
-        .level0 = 0,
-        .duration0 = STATUS_LED_WS2812_RESET_TICKS,
-        .level1 = 0,
-        .duration1 = STATUS_LED_WS2812_RESET_TICKS,
-    };
-
-    rmt_bytes_encoder_config_t bytes_config = {
-        .bit0 = {
-            .level0 = 1,
-            .duration0 = 3,
-            .level1 = 0,
-            .duration1 = 9,
-        },
-        .bit1 = {
-            .level0 = 1,
-            .duration0 = 9,
-            .level1 = 0,
-            .duration1 = 3,
-        },
-        .flags.msb_first = 1,
-    };
-    esp_err_t ret = rmt_new_bytes_encoder(&bytes_config, &led_encoder->bytes_encoder);
-    if (ret != ESP_OK) {
-        free(led_encoder);
-        return ret;
-    }
-
-    rmt_copy_encoder_config_t copy_config = {};
-    ret = rmt_new_copy_encoder(&copy_config, &led_encoder->copy_encoder);
-    if (ret != ESP_OK) {
-        (void)rmt_del_encoder(led_encoder->bytes_encoder);
-        free(led_encoder);
-        return ret;
-    }
-
-    *ret_encoder = &led_encoder->base;
-    return ESP_OK;
-}
+static void status_led_force_all_off(void);
 
 static uint32_t status_led_now_ms(void)
 {
@@ -411,15 +264,6 @@ static const char *status_led_profile_name(status_led_profile_t profile)
     }
 }
 
-static const char *status_led_color_order_name(status_led_color_order_t order)
-{
-    switch (order) {
-    case STATUS_LED_COLOR_ORDER_GRB: return "GRB";
-    case STATUS_LED_COLOR_ORDER_RGB: return "RGB";
-    default: return "unknown";
-    }
-}
-
 static const char *status_led_ble_name(status_led_ble_state_t state)
 {
     switch (state) {
@@ -467,44 +311,27 @@ static const char *status_led_error_severity_name(status_led_error_severity_t se
 
 static uint8_t status_led_profile_cap_percent_locked(bool safety)
 {
-    switch (s_state.profile) {
-    case STATUS_LED_PROFILE_OFF:
-        return safety ? 6U : 0U;
-    case STATUS_LED_PROFILE_LOW:
-        return safety ? 10U : 6U;
-    case STATUS_LED_PROFILE_STANDARD:
-        return safety ? 18U : 12U;
-    case STATUS_LED_PROFILE_AMBIENT:
-        return safety ? 22U : 16U;
-    case STATUS_LED_PROFILE_FACTORY:
-        return 35U;
-    default:
-        return 12U;
+    if (s_state.profile == STATUS_LED_PROFILE_OFF && !safety) {
+        return 0U;
     }
+    return STATUS_LED_FULL_BRIGHTNESS_PERCENT;
 }
 
 static uint32_t status_led_profile_budget_ma_locked(bool safety)
 {
-    switch (s_state.profile) {
-    case STATUS_LED_PROFILE_OFF:
-        return safety ? 30U : 0U;
-    case STATUS_LED_PROFILE_LOW:
-        return safety ? 60U : 25U;
-    case STATUS_LED_PROFILE_STANDARD:
-        return safety ? 80U : 40U;
-    case STATUS_LED_PROFILE_AMBIENT:
-        return safety ? 140U : 80U;
-    case STATUS_LED_PROFILE_FACTORY:
-        return 220U;
-    default:
-        return 40U;
+    if (s_state.profile == STATUS_LED_PROFILE_OFF && !safety) {
+        return 0U;
     }
+    return STATUS_LED_FULL_BRIGHTNESS_BUDGET_MA;
 }
 
 static uint8_t status_led_effect_percent_locked(uint8_t desired_percent, bool safety)
 {
+    if (desired_percent == 0U) {
+        return 0U;
+    }
     uint8_t cap = status_led_profile_cap_percent_locked(safety);
-    return desired_percent < cap ? desired_percent : cap;
+    return cap > 0U ? cap : 0U;
 }
 
 static status_led_rgb_t status_led_token_locked(status_led_rgb_t color, uint8_t desired_percent, bool safety)
@@ -559,60 +386,9 @@ static uint8_t status_led_error_percent_locked(uint32_t now_ms)
     return elapsed >= 1080U ? 3U : 14U;
 }
 
-static void status_led_fill_strip_pixels(status_led_strip_t *strip, const status_led_rgb_t *colors)
-{
-    for (uint8_t index = 0; index < strip->led_count; ++index) {
-        status_led_rgb_t color = colors[index];
-        size_t base = (size_t)index * 3U;
-        if (strip->color_order == STATUS_LED_COLOR_ORDER_RGB) {
-            strip->pixels[base + 0] = color.r;
-            strip->pixels[base + 1] = color.g;
-            strip->pixels[base + 2] = color.b;
-        } else {
-            strip->pixels[base + 0] = color.g;
-            strip->pixels[base + 1] = color.r;
-            strip->pixels[base + 2] = color.b;
-        }
-    }
-}
-
 static esp_err_t status_led_transmit_strip(status_led_strip_t *strip, const status_led_rgb_t *colors)
 {
-    if (!strip->available || strip->channel == NULL || strip->encoder == NULL) {
-        return ESP_OK;
-    }
-
-    status_led_fill_strip_pixels(strip, colors);
-    rmt_transmit_config_t transmit_config = {
-        .loop_count = 0,
-    };
-    esp_err_t ret = rmt_transmit(
-        strip->channel,
-        strip->encoder,
-        strip->pixels,
-        (size_t)strip->led_count * 3U,
-        &transmit_config);
-    if (ret == ESP_ERR_INVALID_STATE) {
-        (void)rmt_tx_wait_all_done(strip->channel, STATUS_LED_RMT_WAIT_MS);
-        ret = rmt_transmit(
-            strip->channel,
-            strip->encoder,
-            strip->pixels,
-            (size_t)strip->led_count * 3U,
-            &transmit_config);
-    }
-    if (ret != ESP_OK) {
-        diag_log(DIAG_SRC_STATUS_LED, DIAG_LED_OUTPUT_FAIL, DIAG_SEV_WARN,
-                 (uint32_t)strip->gpio, (uint32_t)ret, 0, 0);
-        return ret;
-    }
-
-    ret = rmt_tx_wait_all_done(strip->channel, STATUS_LED_RMT_WAIT_MS);
-    if (ret != ESP_OK) {
-        diag_log(DIAG_SRC_STATUS_LED, DIAG_LED_OUTPUT_FAIL, DIAG_SEV_WARN,
-                 (uint32_t)strip->gpio, (uint32_t)ret, 1, 0);
-    }
-    return ret;
+    return status_led_strip_backend_transmit(strip->backend, strip->color_order, colors);
 }
 
 static void status_led_transmit_frame(const status_led_frame_t *frame)
@@ -748,6 +524,64 @@ static void status_led_render_test_locked(status_led_frame_t *frame, uint32_t no
         return;
     }
 
+    if (s_state.test_mode == STATUS_LED_TEST_CHASE) {
+        const uint32_t step_ms = s_state.test_step_ms > 0U
+            ? (uint32_t)s_state.test_step_ms
+            : STATUS_LED_CHASE_DEFAULT_STEP_MS;
+        uint32_t total = 0;
+        if (s_state.test_strip_mask & (1U << STATUS_LED_STRIP_STATUS)) {
+            total += STATUS_LED_STATUS_COUNT;
+        }
+        if (s_state.test_strip_mask & (1U << STATUS_LED_STRIP_EC11)) {
+            total += STATUS_LED_EC11_COUNT;
+        }
+        if (s_state.test_strip_mask & (1U << STATUS_LED_STRIP_KEY)) {
+            total += STATUS_LED_KEY_COUNT;
+        }
+        if (s_state.test_strip_mask & (1U << STATUS_LED_STRIP_EDGE)) {
+            total += STATUS_LED_EDGE_COUNT;
+        }
+        if (total == 0U) {
+            return;
+        }
+
+        uint32_t step = elapsed / step_ms;
+        uint32_t cursor = step % total;
+        switch ((step / total) % 4U) {
+        case 0: color = status_led_token_locked(status_led_rgb(255, 0, 0), 100U, true); break;
+        case 1: color = status_led_token_locked(status_led_rgb(0, 255, 0), 100U, true); break;
+        case 2: color = status_led_token_locked(status_led_rgb(0, 0, 255), 100U, true); break;
+        default: color = status_led_token_locked(status_led_rgb(255, 255, 255), 100U, true); break;
+        }
+
+        if (s_state.test_strip_mask & (1U << STATUS_LED_STRIP_STATUS)) {
+            if (cursor < STATUS_LED_STATUS_COUNT) {
+                frame->status[cursor] = color;
+                return;
+            }
+            cursor -= STATUS_LED_STATUS_COUNT;
+        }
+        if (s_state.test_strip_mask & (1U << STATUS_LED_STRIP_EC11)) {
+            if (cursor < STATUS_LED_EC11_COUNT) {
+                frame->ec11[cursor] = color;
+                return;
+            }
+            cursor -= STATUS_LED_EC11_COUNT;
+        }
+        if (s_state.test_strip_mask & (1U << STATUS_LED_STRIP_KEY)) {
+            if (cursor < STATUS_LED_KEY_COUNT) {
+                frame->key[cursor] = color;
+                return;
+            }
+            cursor -= STATUS_LED_KEY_COUNT;
+        }
+        if (s_state.test_strip_mask & (1U << STATUS_LED_STRIP_EDGE) &&
+            cursor < STATUS_LED_EDGE_COUNT) {
+            frame->edge[cursor] = color;
+        }
+        return;
+    }
+
     if (s_state.test_mode == STATUS_LED_TEST_PIXEL) {
         color = status_led_token_locked(s_state.test_pixel_color, s_state.test_pixel_percent, true);
         switch (s_state.test_pixel_strip) {
@@ -762,7 +596,15 @@ static void status_led_render_test_locked(status_led_frame_t *frame, uint32_t no
             }
             break;
         case STATUS_LED_STRIP_EC11:
+            if (s_state.test_pixel_index < STATUS_LED_EC11_COUNT) {
+                frame->ec11[s_state.test_pixel_index] = color;
+            }
+            break;
         case STATUS_LED_STRIP_EDGE:
+            if (s_state.test_pixel_index < STATUS_LED_EDGE_COUNT) {
+                frame->edge[s_state.test_pixel_index] = color;
+            }
+            break;
         default:
             break;
         }
@@ -1058,6 +900,34 @@ static void status_led_set_last_reason_locked(const char *reason)
     snprintf(s_state.last_reason, sizeof(s_state.last_reason), "%s", reason != NULL ? reason : "none");
 }
 
+static void status_led_resume_output_locked(void)
+{
+    if (!s_state.low_power_disabled) {
+        s_state.output_disabled = false;
+    }
+}
+
+static void status_led_force_manual_off(void)
+{
+    if (s_mutex != NULL && xSemaphoreTake(s_mutex, portMAX_DELAY) == pdTRUE) {
+        s_state.output_disabled = true;
+        s_state.low_power_disabled = false;
+        s_state.test_mode = STATUS_LED_TEST_NONE;
+        s_state.key_pressed_mask = 0;
+        memset(s_state.key_until_ms, 0, sizeof(s_state.key_until_ms));
+        s_state.ok_until_ms = 0;
+        s_state.error_domain = STATUS_LED_ERROR_DOMAIN_NONE;
+        s_state.error_until_ms = 0;
+        s_state.status_window_until_ms = 0;
+        s_state.ble_confidence_until_ms = 0;
+        s_state.oobe_confidence_until_ms = 0;
+        s_state.last_transition_ms = status_led_now_ms();
+        status_led_set_last_reason_locked("manual_off");
+        xSemaphoreGive(s_mutex);
+    }
+    status_led_force_all_off();
+}
+
 static void status_led_poll_power_inputs(void)
 {
     uint32_t now_ms = status_led_now_ms();
@@ -1113,48 +983,15 @@ static void status_led_task(void *parameter)
     }
 }
 
-static esp_err_t status_led_init_rmt_strip(status_led_strip_t *strip)
+static esp_err_t status_led_init_strip_backend(status_led_strip_t *strip)
 {
-    if (strip->gpio == GPIO_NUM_NC) {
-        ESP_LOGW(TAG, "strip %s disabled: GPIO_NUM_NC", strip->name);
-        return ESP_OK;
-    }
-
-    rmt_tx_channel_config_t tx_config = {
-        .gpio_num = strip->gpio,
-        .clk_src = RMT_CLK_SRC_DEFAULT,
-        .resolution_hz = STATUS_LED_RMT_RESOLUTION_HZ,
-        .mem_block_symbols = SOC_RMT_MEM_WORDS_PER_CHANNEL,
-        .trans_queue_depth = 1,
+    status_led_strip_backend_config_t config = {
+        .name = strip->name,
+        .gpio = strip->gpio,
+        .led_count = strip->led_count,
+        .color_order = strip->color_order,
     };
-    esp_err_t ret = rmt_new_tx_channel(&tx_config, &strip->channel);
-    if (ret != ESP_OK) {
-        ESP_LOGW(TAG, "strip %s RMT channel init failed gpio=%d: %s",
-                 strip->name, (int)strip->gpio, esp_err_to_name(ret));
-        return ret;
-    }
-
-    ret = status_led_new_ws2812_encoder(&strip->encoder);
-    if (ret != ESP_OK) {
-        ESP_LOGW(TAG, "strip %s WS2812 encoder init failed: %s", strip->name, esp_err_to_name(ret));
-        return ret;
-    }
-
-    ret = rmt_enable(strip->channel);
-    if (ret != ESP_OK) {
-        ESP_LOGW(TAG, "strip %s RMT enable failed: %s", strip->name, esp_err_to_name(ret));
-        return ret;
-    }
-
-    strip->available = true;
-    ESP_LOGI(
-        TAG,
-        "strip %s ready: gpio=%d leds=%u backend=rmt_ws2812_800khz order=%s reset_us=50",
-        strip->name,
-        (int)strip->gpio,
-        (unsigned)strip->led_count,
-        status_led_color_order_name(strip->color_order));
-    return ESP_OK;
+    return status_led_strip_backend_new(&config, &strip->backend);
 }
 
 static void status_led_configure_power_inputs(void)
@@ -1289,7 +1126,7 @@ esp_err_t status_led_init(void)
 
     esp_err_t final_ret = ESP_OK;
     for (size_t index = 0; index < STATUS_LED_STRIP_COUNT; ++index) {
-        esp_err_t ret = status_led_init_rmt_strip(&s_strips[index]);
+        esp_err_t ret = status_led_init_strip_backend(&s_strips[index]);
         if (ret != ESP_OK && final_ret == ESP_OK) {
             final_ret = ret;
         }
@@ -1358,6 +1195,7 @@ void status_led_set_ble_state(status_led_ble_state_t state, bool confidence_wind
 {
     uint32_t now_ms = status_led_now_ms();
     if (xSemaphoreTake(s_mutex, portMAX_DELAY) == pdTRUE) {
+        status_led_resume_output_locked();
         bool changed = s_state.ble_state != state;
         s_state.ble_state = state;
         s_state.status_window_until_ms = now_ms + STATUS_LED_STATUS_WINDOW_MS;
@@ -1382,6 +1220,7 @@ void status_led_set_recording(bool active, status_led_rec_source_t source)
 {
     uint32_t now_ms = status_led_now_ms();
     if (xSemaphoreTake(s_mutex, portMAX_DELAY) == pdTRUE) {
+        status_led_resume_output_locked();
         s_state.recording_active = active && source != STATUS_LED_REC_SOURCE_NOT_AVAILABLE;
         s_state.rec_source = source;
         s_state.last_transition_ms = now_ms;
@@ -1403,6 +1242,7 @@ void status_led_set_processing(bool active, const char *reason)
 {
     uint32_t now_ms = status_led_now_ms();
     if (xSemaphoreTake(s_mutex, portMAX_DELAY) == pdTRUE) {
+        status_led_resume_output_locked();
         s_state.processing_active = active;
         if (active) {
             s_state.processing_started_ms = now_ms;
@@ -1419,6 +1259,7 @@ void status_led_notify_success(const char *reason)
 {
     uint32_t now_ms = status_led_now_ms();
     if (xSemaphoreTake(s_mutex, portMAX_DELAY) == pdTRUE) {
+        status_led_resume_output_locked();
         s_state.ok_started_ms = now_ms;
         s_state.ok_until_ms = now_ms + STATUS_LED_OK_TOTAL_MS;
         s_state.status_window_until_ms = now_ms + STATUS_LED_STATUS_WINDOW_MS;
@@ -1436,6 +1277,7 @@ void status_led_notify_key_event(uint8_t key_index, bool pressed)
     }
     uint32_t now_ms = status_led_now_ms();
     if (xSemaphoreTake(s_mutex, portMAX_DELAY) == pdTRUE) {
+        status_led_resume_output_locked();
         if (pressed) {
             s_state.key_pressed_mask |= 1U << key_index;
         } else {
@@ -1459,6 +1301,7 @@ void status_led_set_error(
     }
     uint32_t now_ms = status_led_now_ms();
     if (xSemaphoreTake(s_mutex, portMAX_DELAY) == pdTRUE) {
+        status_led_resume_output_locked();
         s_state.error_domain = domain;
         s_state.error_severity = severity;
         s_state.error_started_ms = now_ms;
@@ -1488,6 +1331,9 @@ void status_led_set_low_power_disabled(bool disabled)
     uint32_t now_ms = status_led_now_ms();
     if (xSemaphoreTake(s_mutex, portMAX_DELAY) == pdTRUE) {
         s_state.low_power_disabled = disabled;
+        if (!disabled) {
+            s_state.output_disabled = false;
+        }
         s_state.last_transition_ms = now_ms;
         status_led_set_last_reason_locked(disabled ? "low_power_off" : "low_power_resume");
         xSemaphoreGive(s_mutex);
@@ -1522,7 +1368,7 @@ static const char *status_led_strip_prefix(const char *line)
     return line + prefix_len;
 }
 
-static uint8_t status_led_parse_strip_mask(const char *text)
+static uint8_t status_led_parse_single_strip_mask(const char *text)
 {
     if (text == NULL || *text == '\0' || strcasecmp(text, "all") == 0) {
         return (1U << STATUS_LED_STRIP_STATUS) |
@@ -1545,6 +1391,28 @@ static uint8_t status_led_parse_strip_mask(const char *text)
         return 1U << STATUS_LED_STRIP_EDGE;
     }
     return 0;
+}
+
+static uint8_t status_led_parse_strip_mask(const char *text)
+{
+    if (text == NULL || *text == '\0') {
+        return status_led_parse_single_strip_mask(text);
+    }
+
+    char copy[64] = {0};
+    snprintf(copy, sizeof(copy), "%s", text);
+    uint8_t mask = 0;
+    char *save = NULL;
+    char *token = strtok_r(copy, ",+| ", &save);
+    while (token != NULL) {
+        uint8_t part = status_led_parse_single_strip_mask(token);
+        if (part == 0) {
+            return 0;
+        }
+        mask |= part;
+        token = strtok_r(NULL, ",+| ", &save);
+    }
+    return mask;
 }
 
 static bool status_led_parse_profile(const char *text, status_led_profile_t *profile)
@@ -1605,10 +1473,24 @@ static bool status_led_parse_calibration_strip(const char *text, status_led_stri
         *first_led = STATUS_LED_STATUS_FIRST_LED;
         return true;
     }
+    if (strcasecmp(text, "ec11") == 0 ||
+        strcasecmp(text, "knob") == 0 ||
+        strcasecmp(text, "ring") == 0) {
+        *strip = STATUS_LED_STRIP_EC11;
+        *count = STATUS_LED_EC11_COUNT;
+        *first_led = STATUS_LED_EC11_FIRST_LED;
+        return true;
+    }
     if (strcasecmp(text, "key") == 0) {
         *strip = STATUS_LED_STRIP_KEY;
         *count = STATUS_LED_KEY_COUNT;
         *first_led = STATUS_LED_KEY_FIRST_LED;
+        return true;
+    }
+    if (strcasecmp(text, "edge") == 0) {
+        *strip = STATUS_LED_STRIP_EDGE;
+        *count = STATUS_LED_EDGE_COUNT;
+        *first_led = STATUS_LED_EDGE_FIRST_LED;
         return true;
     }
     return false;
@@ -1617,8 +1499,10 @@ static bool status_led_parse_calibration_strip(const char *text, status_led_stri
 static bool status_led_parse_pixel_index(const char *text, uint8_t first_led, uint8_t count, uint8_t *zero_based_index)
 {
     const char *cursor = text;
+    bool led_prefixed = false;
     if (strncasecmp(cursor, "LED", 3) == 0) {
         cursor += 3;
+        led_prefixed = true;
     }
 
     char *end = NULL;
@@ -1627,13 +1511,18 @@ static bool status_led_parse_pixel_index(const char *text, uint8_t first_led, ui
         return false;
     }
 
+    long last_led = (long)first_led + (long)count - 1L;
+    if (led_prefixed && value >= first_led && value <= last_led) {
+        *zero_based_index = (uint8_t)(value - first_led);
+        return true;
+    }
+
     if (value >= 1 && value <= count) {
         *zero_based_index = (uint8_t)(value - 1);
         return true;
     }
 
-    long last_led = (long)first_led + (long)count - 1L;
-    if (value >= first_led && value <= last_led) {
+    if (!led_prefixed && value >= first_led && value <= last_led) {
         *zero_based_index = (uint8_t)(value - first_led);
         return true;
     }
@@ -1696,7 +1585,9 @@ static void status_led_print_status(void)
     }
 
     printf(
-        "~LED:STATUS profile=%s backend=rmt_ws2812_800khz refresh_ms=%u reset_us=50"
+        "~LED:STATUS profile=%s backend=rmt_ws2812_800khz refresh_ms=%u reset_us=300"
+        " timing=ws2812_4020_compatible"
+        " led_contract_rev=" STATUS_LED_CONTRACT_REV
         " semantic_order=LED1:PWR,LED2:BLE,LED3:REC,LED4:AI,LED5:OK,LED6:WARN"
         " mapping_contract=" STATUS_LED_STATUS_KEY_MAPPING_CONTRACT
         " status_physical_map=" STATUS_LED_STATUS_PHYSICAL_MAP
@@ -1769,11 +1660,14 @@ static void status_led_print_budget(void)
     }
     printf(
         "~LED:BUDGET profile=%s cap_current_ma=%" PRIu32 " estimated_current_ma=%" PRIu32
-        " standard_limit_ma=40 standard_transient_ma=80 low_limit_ma=25 ambient_limit_ma=80"
-        " per_led_full_white_ma=60 vdd_led_signed_off=0 vdd_led_enable=always_on_assumed\n",
+        " active_brightness_percent=%u full_brightness_budget_ma=%u"
+        " profile_dimming_disabled=1 off_zero_brightness=1"
+        " per_led_full_white_ma=60 vdd_led_enable=always_on_assumed\n",
         status_led_profile_name(snapshot.profile),
         snapshot.last_current_budget_ma,
-        snapshot.last_estimated_current_ma);
+        snapshot.last_estimated_current_ma,
+        STATUS_LED_FULL_BRIGHTNESS_PERCENT,
+        STATUS_LED_FULL_BRIGHTNESS_BUDGET_MA);
     fflush(stdout);
 }
 
@@ -1891,8 +1785,8 @@ bool status_led_consume_usb_command(const char *line)
         return true;
     }
     if (strcmp(command, "OFF") == 0) {
-        status_led_prepare_sleep();
-        ESP_LOGI(TAG, "LED output forced off");
+        status_led_force_manual_off();
+        ESP_LOGI(TAG, "LED output manually forced off until the next status/key event");
         return true;
     }
     if (strcmp(command, "WAKE") == 0) {
@@ -1968,6 +1862,40 @@ bool status_led_consume_usb_command(const char *line)
         return true;
     }
 
+    if (strncmp(command, "CHASE", strlen("CHASE")) == 0) {
+        char strip_text[48] = "status,key";
+        unsigned step_ms = STATUS_LED_CHASE_DEFAULT_STEP_MS;
+        const char *arg = command + strlen("CHASE");
+        while (*arg == ' ') {
+            arg++;
+        }
+        if (*arg != '\0') {
+            (void)sscanf(arg, "%47s %u", strip_text, &step_ms);
+        }
+        if (step_ms < 80U) {
+            step_ms = 80U;
+        } else if (step_ms > 2000U) {
+            step_ms = 2000U;
+        }
+        uint8_t mask = status_led_parse_strip_mask(strip_text);
+        if (mask == 0) {
+            ESP_LOGW(TAG, "LED CHASE unknown strip: %s", strip_text);
+            return true;
+        }
+        if (xSemaphoreTake(s_mutex, portMAX_DELAY) == pdTRUE) {
+            s_state.test_mode = STATUS_LED_TEST_CHASE;
+            s_state.test_strip_mask = mask;
+            s_state.test_started_ms = status_led_now_ms();
+            s_state.test_step_ms = (uint16_t)step_ms;
+            s_state.output_disabled = false;
+            s_state.low_power_disabled = false;
+            status_led_set_last_reason_locked("test_chase");
+            xSemaphoreGive(s_mutex);
+        }
+        ESP_LOGI(TAG, "LED chase running mask=0x%02x step_ms=%u full_brightness=1", mask, step_ms);
+        return true;
+    }
+
     if (strncmp(command, "TEST:PIXEL ", strlen("TEST:PIXEL ")) == 0) {
         char strip_text[16] = {0};
         char led_text[16] = {0};
@@ -1981,7 +1909,7 @@ bool status_led_consume_usb_command(const char *line)
             color_text,
             &percent);
         if (fields < 3) {
-            ESP_LOGW(TAG, "LED TEST:PIXEL requires <status|key> <LEDn|index> <red|green|blue|white|off> [percent]");
+            ESP_LOGW(TAG, "LED TEST:PIXEL requires <status|ec11|knob|ring|key|edge> <LEDn|index> <red|green|blue|white|off> [percent]");
             return true;
         }
 
@@ -2002,14 +1930,18 @@ bool status_led_consume_usb_command(const char *line)
             percent = 0U;
         }
         status_led_run_pixel_test(strip, index, color, (uint8_t)percent);
+        bool status_key_only = strip == STATUS_LED_STRIP_STATUS || strip == STATUS_LED_STRIP_KEY;
         ESP_LOGI(
             TAG,
-            "LED pixel calibration strip=%s led=LED%u index=%u color=%s percent=%u status_key_only=1 ec11_edge_untouched=1 mapping_contract=%s",
+            "LED pixel calibration strip=%s led=LED%u index=%u color=%s percent=%u status_key_only=%u ec11_edge_touched=%u ec11_edge_untouched=%u mapping_contract=%s",
             strip_text,
             (unsigned)(first_led + index),
             (unsigned)index,
             color_text,
             percent,
+            status_key_only ? 1U : 0U,
+            status_key_only ? 0U : 1U,
+            status_key_only ? 1U : 0U,
             STATUS_LED_STATUS_KEY_MAPPING_CONTRACT);
         return true;
     }
