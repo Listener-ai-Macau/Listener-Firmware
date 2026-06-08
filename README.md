@@ -10,6 +10,8 @@ ESP-IDF seed firmware for the voice keyboard product.
   `powershell -ExecutionPolicy Bypass -File .\tools\build.ps1`
 - Flash:
   `powershell -ExecutionPolicy Bypass -File .\tools\flash.ps1 -Port COM5`
+- Flash bootloader only:
+  `powershell -ExecutionPolicy Bypass -File .\tools\flash_bootloader.ps1 -Port COMx`
 - Monitor in an interactive terminal:
   `powershell -ExecutionPolicy Bypass -File .\tools\monitor.ps1 -Port COM5`
 - Capture boot logs in a non-interactive Codex session:
