@@ -168,7 +168,8 @@
       "stderr_summary": [],
       "output_sha256": null,
       "evidence_refs": [
-        "artifact:docs/validation/ble-status-led-connected-sync-1.1/connected-sync-hardware-summary-20260608-123947.md"
+        "artifact:docs/validation/ble-status-led-connected-sync-1.1/connected-sync-hardware-summary-20260608-123947.md",
+        "screenshot:docs/validation/ble-status-led-connected-sync-1.1/connected-sync-led-status-20260608-123947.log"
       ],
       "artifacts": [
         {
@@ -176,6 +177,12 @@
           "path": "docs/validation/ble-status-led-connected-sync-1.1/connected-sync-hardware-summary-20260608-123947.md",
           "exists": true,
           "sha256": "5f42af082744cea58a63f7bfaf22c5cb1161d32c19b48d4cc666c37fa9841b07"
+        },
+        {
+          "ref": "screenshot:docs/validation/ble-status-led-connected-sync-1.1/connected-sync-led-status-20260608-123947.log",
+          "path": "docs/validation/ble-status-led-connected-sync-1.1/connected-sync-led-status-20260608-123947.log",
+          "exists": true,
+          "sha256": null
         }
       ]
     },
