@@ -24,6 +24,12 @@ Default order is fixed until real hardware silkscreen validation proves otherwis
 
 `PWR` owns battery and charge state. `BLE` owns pairing, reconnect, and connected confidence. `REC` only lights for a real capture/upload source named by firmware. If capture is unavailable, firmware shows `WARN + REC`. `AI` owns transfer, processing, thinking, and OTA progress. `OK` is a short success flash. `WARN` owns retryable and hard errors and pairs with a source LED.
 
+## BLE Connection Source Of Truth
+
+GAP/HID connection state is the source of truth for the BLE semantic LED. Advertising is allowed to drive `pairing` or `reconnecting` only while the GAP layer has no active connection. If a stale advertising-complete or advertising-restart path fires after the host is already connected, firmware skips advertising and refreshes `connected` instead of allowing `pairing` to overwrite the LED state.
+
+After a connected event, the BLE LED uses the 6 second status window plus the bounded 8 second confidence window, with the first out-of-box connection allowed a longer bounded confidence window. Once those windows expire, an awake standard-profile device shows steady low blue on `LED2=BLE`.
+
 ## Driver
 
 WS2812 output uses ESP-IDF RMT at 10 MHz with an 800 kHz WS2812 encoder and a 50 us reset latch. The status LED task refreshes every 50 ms and sends at most four short strip frames, so BLE, OTA, keyboard scan, power manager, and diagnostics are not blocked by software bit-banging.
