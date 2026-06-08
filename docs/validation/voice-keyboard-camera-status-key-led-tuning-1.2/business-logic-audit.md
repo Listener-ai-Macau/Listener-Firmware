@@ -29,7 +29,7 @@ The source matches the accepted status rail scheme:
 - `LED6=WARN`: retryable/hard errors light WARN and pair with the source semantic LED.
 - `LED11..LED14=KEY1..KEY4`: key events drive local transient feedback only; they are not idle backlights.
 
-The current bring-up policy intentionally differs from the older budget text: active non-off colors now use full brightness, per operator request. `docs/features/status_led.md` and `~LED:BUDGET` were updated to make this explicit.
+The current product-effect policy intentionally separates calibration brightness from routine product brightness. `factory` and explicit test/safety commands can still drive full brightness, while the default `standard` profile restores per-effect brightness, breathing, short-flash, and warning intensity levels. `docs/features/status_led.md` and `~LED:BUDGET` report this as `product_v1`.
 
 ## Scheme Review
 
@@ -37,7 +37,7 @@ The high-level scheme is reasonable for this board because it keeps the six alwa
 
 Two constraints should remain explicit:
 
-- Full brightness is appropriate during visual bring-up. Product shipping may later want softer steady-state brightness, but that should be a product-tuning pass, not a driver/mapping repair.
+- Full brightness remains appropriate for visual bring-up and factory tests. Routine product behavior now uses profile-capped brightness so idle, status, key feedback, success, recording, and warning states have distinct visual weight.
 - EC11 ring and edge/frame LEDs are separate product surfaces. They should get their own visual mapping/effect pass instead of being silently accepted under the status/key step.
 
 ## Remaining Hardware Scope

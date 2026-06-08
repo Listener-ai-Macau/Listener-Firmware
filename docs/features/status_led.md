@@ -31,7 +31,7 @@ The camera calibration contract for the first product pass is intentionally limi
 - `LED1=PWR`, `LED2=BLE`, `LED3=REC`, `LED4=AI`, `LED5=OK`, `LED6=WARN` on the status strip.
 - `LED11=KEY1`, `LED12=KEY2`, `LED13=KEY3`, `LED14=KEY4` on the key strip.
 
-The status and key strips keep separate color-order storage in firmware, both defaulting to `GRB` until camera validation proves a different order for either strip. `~LED:STATUS` exposes `mapping_contract`, `status_physical_map`, `key_physical_map`, and `separate_status_key_color_order=1` so static and serial checks can reject EC11/edge assumptions before camera capture. Active LED colors are driven at full brightness; `off` remains the only zero-brightness command/state. The manual `TEST:PIXEL` path can also address EC11 and edge/frame LEDs for hardware bring-up, while the first camera contract remains limited to status/key.
+The status and key strips keep separate color-order storage in firmware, both defaulting to `GRB` until camera validation proves a different order for either strip. `~LED:STATUS` exposes `mapping_contract`, `status_physical_map`, `key_physical_map`, and `separate_status_key_color_order=1` so static and serial checks can reject EC11/edge assumptions before camera capture. The manual `TEST:PIXEL` path can also address EC11 and edge/frame LEDs for hardware bring-up, while the first camera contract remains limited to status/key.
 
 ## Driver Boundary
 
@@ -43,11 +43,23 @@ The status LED task refreshes every 50 ms and sends at most four short strip fra
 
 Profiles are persisted in NVS through `~LED:PROFILE <off|low|standard|ambient|factory>`.
 
-- Active non-off colors are currently driven at 100% brightness for visual bring-up and product evaluation.
-- `off` turns routine non-safety output off; safety/error/test paths can still light at full brightness.
-- `standard`, `low`, `ambient`, and `factory` no longer dim active colors during this bring-up pass. They remain named runtime modes so product policy can reintroduce brightness tiers later without changing business call sites.
+- `standard` is the product default. Routine status/key effects are capped at 60% and use lower per-effect percentages for quiet idle state, connection confidence, key feedback, success, recording, processing, and warnings.
+- `low` caps routine effects at 25% for dark-room or low-power behavior.
+- `ambient` caps routine effects at 42% and permits restrained accent behavior when the edge chain is available.
+- `off` turns routine non-safety output off; safety/error/test paths can still light.
+- `factory` keeps the full 100% path for calibration, manufacturing, and hardware bring-up.
 
-Current is still estimated per frame with 20 mA per RGB channel at full scale. The bring-up budget is intentionally high enough to avoid firmware dimming while LED order, color order, and user-visible semantics are being validated.
+Current is still estimated per frame with 20 mA per RGB channel at full scale. `standard`, `low`, and `ambient` have product budgets so a broad effect is dimmed instead of becoming a flashlight. `factory` and explicit safety/test paths retain the full bring-up budget.
+
+## Product Effect Language
+
+- Idle connected state is quiet: only low PWR/BLE confidence remains visible.
+- Pairing and reconnect use recognizable blue pulses without turning the whole status rail into an animation surface.
+- Recording is the strongest routine semantic state and also marks the voice key locally.
+- Processing uses a purple breath on `AI`; long processing settles to a calmer breath.
+- Key LEDs are local transient feedback only: white on press/release, purple while processing, and green only during success confirmation.
+- Warnings pair `WARN` with the source LED; critical battery and hard errors are allowed to be much brighter than normal routine states.
+- RGBW, map, chase, and pixel test commands remain calibration tools and can drive full brightness independent of the product profile.
 
 ## Validation Commands
 

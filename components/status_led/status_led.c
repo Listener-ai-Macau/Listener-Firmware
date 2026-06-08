@@ -42,8 +42,14 @@
 #define STATUS_LED_KEY_FEEDBACK_MS 650U
 #define STATUS_LED_FULL_BRIGHTNESS_PERCENT 100U
 #define STATUS_LED_FULL_BRIGHTNESS_BUDGET_MA 2000U
+#define STATUS_LED_LOW_PROFILE_CAP_PERCENT 25U
+#define STATUS_LED_STANDARD_PROFILE_CAP_PERCENT 60U
+#define STATUS_LED_AMBIENT_PROFILE_CAP_PERCENT 42U
+#define STATUS_LED_LOW_PROFILE_BUDGET_MA 220U
+#define STATUS_LED_STANDARD_PROFILE_BUDGET_MA 520U
+#define STATUS_LED_AMBIENT_PROFILE_BUDGET_MA 420U
 #define STATUS_LED_CHASE_DEFAULT_STEP_MS 250U
-#define STATUS_LED_CONTRACT_REV "status_key_full_brightness_chase_pixel_4020timing_v4"
+#define STATUS_LED_CONTRACT_REV "status_key_product_effect_profiles_v5"
 #define STATUS_LED_NVS_NAMESPACE "status_led"
 #define STATUS_LED_NVS_PROFILE_KEY "profile"
 #define STATUS_LED_NVS_STATUS_ORDER_KEY "ord_status"
@@ -309,20 +315,52 @@ static const char *status_led_error_severity_name(status_led_error_severity_t se
     }
 }
 
+static uint8_t status_led_profile_cap_percent_for(status_led_profile_t profile, bool safety)
+{
+    if (safety) {
+        return STATUS_LED_FULL_BRIGHTNESS_PERCENT;
+    }
+    switch (profile) {
+    case STATUS_LED_PROFILE_OFF:
+        return 0U;
+    case STATUS_LED_PROFILE_LOW:
+        return STATUS_LED_LOW_PROFILE_CAP_PERCENT;
+    case STATUS_LED_PROFILE_AMBIENT:
+        return STATUS_LED_AMBIENT_PROFILE_CAP_PERCENT;
+    case STATUS_LED_PROFILE_FACTORY:
+        return STATUS_LED_FULL_BRIGHTNESS_PERCENT;
+    case STATUS_LED_PROFILE_STANDARD:
+    default:
+        return STATUS_LED_STANDARD_PROFILE_CAP_PERCENT;
+    }
+}
+
 static uint8_t status_led_profile_cap_percent_locked(bool safety)
 {
-    if (s_state.profile == STATUS_LED_PROFILE_OFF && !safety) {
-        return 0U;
+    return status_led_profile_cap_percent_for(s_state.profile, safety);
+}
+
+static uint32_t status_led_profile_budget_ma_for(status_led_profile_t profile, bool safety)
+{
+    if (safety || profile == STATUS_LED_PROFILE_FACTORY) {
+        return STATUS_LED_FULL_BRIGHTNESS_BUDGET_MA;
     }
-    return STATUS_LED_FULL_BRIGHTNESS_PERCENT;
+    switch (profile) {
+    case STATUS_LED_PROFILE_OFF:
+        return 0U;
+    case STATUS_LED_PROFILE_LOW:
+        return STATUS_LED_LOW_PROFILE_BUDGET_MA;
+    case STATUS_LED_PROFILE_AMBIENT:
+        return STATUS_LED_AMBIENT_PROFILE_BUDGET_MA;
+    case STATUS_LED_PROFILE_STANDARD:
+    default:
+        return STATUS_LED_STANDARD_PROFILE_BUDGET_MA;
+    }
 }
 
 static uint32_t status_led_profile_budget_ma_locked(bool safety)
 {
-    if (s_state.profile == STATUS_LED_PROFILE_OFF && !safety) {
-        return 0U;
-    }
-    return STATUS_LED_FULL_BRIGHTNESS_BUDGET_MA;
+    return status_led_profile_budget_ma_for(s_state.profile, safety);
 }
 
 static uint8_t status_led_effect_percent_locked(uint8_t desired_percent, bool safety)
@@ -331,7 +369,7 @@ static uint8_t status_led_effect_percent_locked(uint8_t desired_percent, bool sa
         return 0U;
     }
     uint8_t cap = status_led_profile_cap_percent_locked(safety);
-    return cap > 0U ? cap : 0U;
+    return desired_percent < cap ? desired_percent : cap;
 }
 
 static status_led_rgb_t status_led_token_locked(status_led_rgb_t color, uint8_t desired_percent, bool safety)
@@ -381,9 +419,9 @@ static uint8_t status_led_error_percent_locked(uint32_t now_ms)
 {
     uint32_t elapsed = now_ms - s_state.error_started_ms;
     if (s_state.error_severity == STATUS_LED_ERROR_HARD) {
-        return elapsed >= 1200U ? 4U : 18U;
+        return elapsed >= 1200U ? 32U : 80U;
     }
-    return elapsed >= 1080U ? 3U : 14U;
+    return elapsed >= 1080U ? 24U : 55U;
 }
 
 static esp_err_t status_led_transmit_strip(status_led_strip_t *strip, const status_led_rgb_t *colors)
@@ -478,10 +516,10 @@ static void status_led_render_test_locked(status_led_frame_t *frame, uint32_t no
     uint32_t elapsed = now_ms - s_state.test_started_ms;
     if (s_state.test_mode == STATUS_LED_TEST_RGBW) {
         switch ((elapsed / 1000U) % 4U) {
-        case 0: color = status_led_token_locked(status_led_rgb(255, 0, 0), 25U, true); break;
-        case 1: color = status_led_token_locked(status_led_rgb(0, 255, 0), 25U, true); break;
-        case 2: color = status_led_token_locked(status_led_rgb(0, 0, 255), 25U, true); break;
-        default: color = status_led_token_locked(status_led_rgb(255, 255, 255), 25U, true); break;
+        case 0: color = status_led_token_locked(status_led_rgb(255, 0, 0), 100U, true); break;
+        case 1: color = status_led_token_locked(status_led_rgb(0, 255, 0), 100U, true); break;
+        case 2: color = status_led_token_locked(status_led_rgb(0, 0, 255), 100U, true); break;
+        default: color = status_led_token_locked(status_led_rgb(255, 255, 255), 100U, true); break;
         }
         if (s_state.test_strip_mask & (1U << STATUS_LED_STRIP_STATUS)) {
             for (size_t index = 0; index < STATUS_LED_STATUS_COUNT; ++index) {
@@ -507,7 +545,7 @@ static void status_led_render_test_locked(status_led_frame_t *frame, uint32_t no
     }
 
     if (s_state.test_mode == STATUS_LED_TEST_MAP) {
-        color = status_led_token_locked(status_led_rgb(207, 239, 255), 22U, true);
+        color = status_led_token_locked(status_led_rgb(207, 239, 255), 60U, true);
         uint32_t step = elapsed / 600U;
         if (s_state.test_strip_mask & (1U << STATUS_LED_STRIP_STATUS)) {
             frame->status[step % STATUS_LED_STATUS_COUNT] = color;
@@ -620,27 +658,27 @@ static void status_led_render_power_locked(status_led_frame_t *frame, uint32_t n
     status_led_rgb_t color = {0};
 
     if (s_state.charging) {
-        percent = status_led_triangle_percent(now_ms, 3200U, 2U, 10U);
+        percent = status_led_triangle_percent(now_ms, 3600U, 12U, 36U);
         color = status_led_token_locked(status_led_rgb(207, 239, 255), percent, true);
         safety = true;
     } else if (s_state.full) {
-        percent = status_window ? 8U : 2U;
+        percent = status_window ? 24U : 10U;
         color = status_led_token_locked(status_led_rgb(74, 222, 128), percent, false);
     } else if (s_state.battery_valid) {
         if (s_state.battery_level_percent < 10U) {
             safety = true;
             if (status_led_double_pulse_on(now_ms, 4000U)) {
-                color = status_led_token_locked(status_led_rgb(255, 59, 48), 18U, true);
+                color = status_led_token_locked(status_led_rgb(255, 59, 48), 85U, true);
             }
         } else if (s_state.battery_level_percent < 20U) {
             safety = true;
             if (status_led_blink_on(now_ms, 500U, 2500U)) {
-                color = status_led_token_locked(status_led_rgb(255, 59, 48), 12U, true);
+                color = status_led_token_locked(status_led_rgb(255, 59, 48), 55U, true);
             }
         } else {
-            percent = status_window ? 7U : (connected_ready ? 2U : 0U);
+            percent = status_window ? 22U : (connected_ready ? 10U : 0U);
             if (s_state.profile == STATUS_LED_PROFILE_LOW || s_state.profile == STATUS_LED_PROFILE_OFF) {
-                percent = status_window ? 5U : 0U;
+                percent = status_window ? 16U : 0U;
             }
             if (s_state.battery_level_percent >= 60U) {
                 color = status_led_token_locked(status_led_rgb(74, 222, 128), percent, false);
@@ -664,22 +702,22 @@ static void status_led_render_ble_locked(status_led_frame_t *frame, uint32_t now
 
     switch (s_state.ble_state) {
     case STATUS_LED_BLE_PAIRING:
-        if (status_led_blink_on(now_ms, 500U, 500U)) {
-            color = status_led_token_locked(ble_blue, 12U, false);
+        if (status_led_blink_on(now_ms, 420U, 680U)) {
+            color = status_led_token_locked(ble_blue, 35U, false);
         }
         break;
     case STATUS_LED_BLE_RECONNECTING:
         if (status_led_double_pulse_on(now_ms, 2000U)) {
-            color = status_led_token_locked(ble_blue, 12U, false);
+            color = status_led_token_locked(ble_blue, 32U, false);
         }
         break;
     case STATUS_LED_BLE_CONNECTED:
         if (confidence || status_window) {
-            color = status_led_token_locked(ble_blue, 7U, false);
+            color = status_led_token_locked(ble_blue, 20U, false);
         } else if (s_state.profile == STATUS_LED_PROFILE_STANDARD) {
-            color = status_led_token_locked(ble_blue, 2U, false);
+            color = status_led_token_locked(ble_blue, 10U, false);
         } else if (s_state.profile == STATUS_LED_PROFILE_AMBIENT) {
-            color = status_led_token_locked(ble_blue, 3U, false);
+            color = status_led_token_locked(ble_blue, 14U, false);
         }
         break;
     case STATUS_LED_BLE_DISCONNECTED:
@@ -698,7 +736,7 @@ static void status_led_render_recording_locked(status_led_frame_t *frame, bool *
     if (s_state.rec_source == STATUS_LED_REC_SOURCE_NOT_AVAILABLE) {
         return;
     }
-    status_led_rgb_t rec = status_led_token_locked(status_led_rgb(255, 45, 85), 16U, true);
+    status_led_rgb_t rec = status_led_token_locked(status_led_rgb(255, 45, 85), 55U, true);
     status_led_set_max(&frame->status[STATUS_LED_SEM_REC], rec);
     status_led_set_max(&frame->key[0], rec);
     *ret_safety = true;
@@ -710,14 +748,14 @@ static void status_led_render_processing_locked(status_led_frame_t *frame, uint3
         return;
     }
     uint32_t elapsed = now_ms - s_state.processing_started_ms;
-    uint8_t max_percent = elapsed > 10000U ? 7U : 14U;
-    uint8_t breath = status_led_triangle_percent(now_ms, 3200U, 2U, max_percent);
+    uint8_t max_percent = elapsed > 10000U ? 24U : 42U;
+    uint8_t breath = status_led_triangle_percent(now_ms, 3200U, 10U, max_percent);
     status_led_rgb_t ai = status_led_token_locked(status_led_rgb(139, 92, 246), breath, true);
     status_led_set_max(&frame->status[STATUS_LED_SEM_AI], ai);
 
     if (s_state.profile != STATUS_LED_PROFILE_OFF && s_state.profile != STATUS_LED_PROFILE_LOW) {
         uint32_t dot = (now_ms / 350U) % STATUS_LED_EDGE_COUNT;
-        status_led_rgb_t edge = status_led_token_locked(status_led_rgb(139, 92, 246), elapsed > 10000U ? 3U : 5U, false);
+        status_led_rgb_t edge = status_led_token_locked(status_led_rgb(139, 92, 246), elapsed > 10000U ? 12U : 18U, false);
         frame->edge[dot] = edge;
         frame->edge[(dot + 1U) % STATUS_LED_EDGE_COUNT] = status_led_scale_raw(edge, 35U);
     }
@@ -731,10 +769,10 @@ static void status_led_render_ok_locked(status_led_frame_t *frame, uint32_t now_
     uint32_t elapsed = now_ms - s_state.ok_started_ms;
     uint8_t percent = 0;
     if (elapsed <= STATUS_LED_OK_PEAK_MS) {
-        percent = 20U;
+        percent = 55U;
     } else if (elapsed < STATUS_LED_OK_TOTAL_MS) {
         uint32_t remaining = STATUS_LED_OK_TOTAL_MS - elapsed;
-        percent = (uint8_t)((20U * remaining) / (STATUS_LED_OK_TOTAL_MS - STATUS_LED_OK_PEAK_MS));
+        percent = (uint8_t)((55U * remaining) / (STATUS_LED_OK_TOTAL_MS - STATUS_LED_OK_PEAK_MS));
     }
     status_led_rgb_t ok = status_led_token_locked(status_led_rgb(34, 197, 94), percent, false);
     status_led_set_max(&frame->status[STATUS_LED_SEM_OK], ok);
@@ -807,9 +845,9 @@ static void status_led_render_keys_locked(status_led_frame_t *frame, uint32_t no
         if (!pressed && now_ms >= s_state.key_until_ms[index]) {
             continue;
         }
-        status_led_rgb_t color = status_led_token_locked(status_led_rgb(207, 239, 255), pressed ? 7U : 5U, false);
+        status_led_rgb_t color = status_led_token_locked(status_led_rgb(207, 239, 255), pressed ? 42U : 22U, false);
         if (s_state.processing_active) {
-            color = status_led_token_locked(status_led_rgb(139, 92, 246), 5U, false);
+            color = status_led_token_locked(status_led_rgb(139, 92, 246), 28U, false);
         }
         status_led_set_max(&frame->key[index], color);
     }
@@ -825,19 +863,19 @@ static void status_led_render_edge_locked(status_led_frame_t *frame, uint32_t no
     }
     if (s_state.ble_state == STATUS_LED_BLE_PAIRING) {
         uint32_t dot = (now_ms / 400U) % STATUS_LED_EDGE_COUNT;
-        frame->edge[dot] = status_led_token_locked(status_led_rgb(30, 139, 255), 4U, false);
+        frame->edge[dot] = status_led_token_locked(status_led_rgb(30, 139, 255), 18U, false);
         return;
     }
     if (s_state.ble_state == STATUS_LED_BLE_RECONNECTING) {
         if (status_led_double_pulse_on(now_ms, 2000U)) {
-            frame->edge[0] = status_led_token_locked(status_led_rgb(30, 139, 255), 3U, false);
-            frame->edge[3] = status_led_token_locked(status_led_rgb(30, 139, 255), 3U, false);
+            frame->edge[0] = status_led_token_locked(status_led_rgb(30, 139, 255), 14U, false);
+            frame->edge[3] = status_led_token_locked(status_led_rgb(30, 139, 255), 14U, false);
         }
         return;
     }
     if (s_state.profile == STATUS_LED_PROFILE_AMBIENT ||
         (s_state.profile == STATUS_LED_PROFILE_STANDARD && now_ms < s_state.status_window_until_ms)) {
-        uint8_t percent = status_led_triangle_percent(now_ms, 3600U, 1U, s_state.profile == STATUS_LED_PROFILE_AMBIENT ? 4U : 3U);
+        uint8_t percent = status_led_triangle_percent(now_ms, 4200U, 8U, s_state.profile == STATUS_LED_PROFILE_AMBIENT ? 18U : 14U);
         status_led_rgb_t color = status_led_token_locked(status_led_rgb(125, 211, 252), percent, false);
         for (size_t index = 0; index < STATUS_LED_EDGE_COUNT; ++index) {
             status_led_set_max(&frame->edge[index], color);
@@ -1588,6 +1626,7 @@ static void status_led_print_status(void)
         "~LED:STATUS profile=%s backend=rmt_ws2812_800khz refresh_ms=%u reset_us=300"
         " timing=ws2812_4020_compatible"
         " led_contract_rev=" STATUS_LED_CONTRACT_REV
+        " effect_profile=product_v1 profile_cap_percent=%u factory_full_brightness=1 safety_full_brightness=1"
         " semantic_order=LED1:PWR,LED2:BLE,LED3:REC,LED4:AI,LED5:OK,LED6:WARN"
         " mapping_contract=" STATUS_LED_STATUS_KEY_MAPPING_CONTRACT
         " status_physical_map=" STATUS_LED_STATUS_PHYSICAL_MAP
@@ -1605,6 +1644,7 @@ static void status_led_print_status(void)
         " key_mask=0x%02x test_mode=%u test_strip_mask=0x%02x last_reason=%s\n",
         status_led_profile_name(snapshot.profile),
         STATUS_LED_REFRESH_MS,
+        status_led_profile_cap_percent_for(snapshot.profile, false),
         (int)strips[STATUS_LED_STRIP_STATUS].gpio,
         (unsigned)strips[STATUS_LED_STRIP_STATUS].led_count,
         status_led_color_order_name(strips[STATUS_LED_STRIP_STATUS].color_order),
@@ -1660,13 +1700,16 @@ static void status_led_print_budget(void)
     }
     printf(
         "~LED:BUDGET profile=%s cap_current_ma=%" PRIu32 " estimated_current_ma=%" PRIu32
-        " active_brightness_percent=%u full_brightness_budget_ma=%u"
-        " profile_dimming_disabled=1 off_zero_brightness=1"
+        " profile_cap_percent=%u factory_brightness_percent=%u"
+        " configured_profile_budget_ma=%" PRIu32 " factory_budget_ma=%u"
+        " product_effect_profile=1 profile_dimming_disabled=0 off_zero_brightness=1 safety_full_brightness=1"
         " per_led_full_white_ma=60 vdd_led_enable=always_on_assumed\n",
         status_led_profile_name(snapshot.profile),
         snapshot.last_current_budget_ma,
         snapshot.last_estimated_current_ma,
+        status_led_profile_cap_percent_for(snapshot.profile, false),
         STATUS_LED_FULL_BRIGHTNESS_PERCENT,
+        status_led_profile_budget_ma_for(snapshot.profile, false),
         STATUS_LED_FULL_BRIGHTNESS_BUDGET_MA);
     fflush(stdout);
 }
