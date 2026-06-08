@@ -47,6 +47,7 @@ const char *status_led_color_order_name(status_led_color_order_t order)
     }
 }
 
+RMT_ENCODER_FUNC_ATTR
 static size_t status_led_ws2812_encode(
     rmt_encoder_t *encoder,
     rmt_channel_handle_t channel,
@@ -98,6 +99,7 @@ out:
     return encoded_symbols;
 }
 
+RMT_ENCODER_FUNC_ATTR
 static esp_err_t status_led_ws2812_del(rmt_encoder_t *encoder)
 {
     status_led_ws2812_encoder_t *led_encoder =
@@ -112,6 +114,7 @@ static esp_err_t status_led_ws2812_del(rmt_encoder_t *encoder)
     return ESP_OK;
 }
 
+RMT_ENCODER_FUNC_ATTR
 static esp_err_t status_led_ws2812_reset(rmt_encoder_t *encoder)
 {
     status_led_ws2812_encoder_t *led_encoder =
