@@ -1,0 +1,29 @@
+=== verify_v2_board_profile_static begin 2026-06-08T10:17:45.2137684+08:00 ===
+PASS: V2 N16R8 board profile, memory defaults, pin map, four-zone LED resources, battery-side current telemetry, USB_Det divider policy, diagnostics, partitions, and package identity checks passed.
+=== verify_v2_board_profile_static exit_code=0 2026-06-08T10:17:46.0023804+08:00 ===
+=== verify_diagnostic_log_coverage begin 2026-06-08T10:17:46.0039910+08:00 ===
+PASS: diagnostic log coverage checks passed.
+=== verify_diagnostic_log_coverage exit_code=0 2026-06-08T10:17:46.8176989+08:00 ===
+=== verify_voice_recording_control_fsm begin 2026-06-08T10:17:46.8249761+08:00 ===
+The argument '.\tools\verify_voice_recording_control_fsm.ps1' is not recognized as the name of a script file. Check the spelling of the name, or if a path was included, verify that the path is correct and try again.
+
+Usage: pwsh[.exe] [-Login] [[-File] <filePath> [args]]
+                  [-Command { - | <script-block> [-args <arg-array>]
+                                | <string> [<CommandParameters>] } ]
+                  [-CommandWithArgs <string> [<CommandParameters>]
+                  [-ConfigurationName <string>] [-ConfigurationFile <filePath>]
+                  [-CustomPipeName <string>] [-EncodedCommand <Base64EncodedCommand>]
+                  [-ExecutionPolicy <ExecutionPolicy>] [-InputFormat {Text | XML}]
+                  [-Interactive] [-MTA] [-NoExit] [-NoLogo] [-NonInteractive] [-NoProfile]
+                  [-NoProfileLoadTime] [-OutputFormat {Text | XML}]
+                  [-SettingsFile <filePath>] [-SSHServerMode] [-STA]
+                  [-Version] [-WindowStyle <style>]
+                  [-WorkingDirectory <directoryPath>]
+
+       pwsh[.exe] -h | -Help | -? | /?
+
+PowerShell Online Help https://aka.ms/powershell-docs
+
+All parameters are case-insensitive.
+=== verify_voice_recording_control_fsm exit_code=64 2026-06-08T10:17:47.2304922+08:00 ===
+static_extra_exit_code=64

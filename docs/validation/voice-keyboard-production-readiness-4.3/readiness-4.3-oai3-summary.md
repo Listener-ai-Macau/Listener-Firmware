@@ -2,6 +2,31 @@
 
 Status: AI-scriptable checks, flash, serial-toggle audio capture, and KEY1-KEY4 fallback evidence now pass. The remaining gate is human/fixture EC11 physical-key start/stop during the `physical-key` audio capture command, so this step is not submitted yet.
 
+## 2026-06-08 rerun5
+
+- Code change:
+  - Added `physical_key_waiting_for_start` and `physical_key_waiting_for_stop` progress lines every 10 seconds in `tools/capture_audio_ble_wav.py` so long physical-key waits remain visible to operators and do not look like a hung validation process.
+- PASS: `idf.py build` after loading the repo ESP-IDF environment.
+  - `docs/validation/voice-keyboard-production-readiness-4.3/idf-build-20260608-oai3-rerun5-progress.log`
+  - The first raw `idf.py build` attempt without `tools\idf_env.ps1` failed with missing `esp_idf_monitor`; this was a shell environment issue, then the same command passed after dot-sourcing `tools\idf_env.ps1`.
+- PASS: `tools\verify_custom_key_command_hid.ps1`
+  - `docs/validation/voice-keyboard-production-readiness-4.3/verify-custom-key-command-hid-20260608-oai3-rerun5.log`
+- PASS: extra no-lock static coverage for V2 board profile, diagnostic log coverage, and voice recording control FSM.
+  - `docs/validation/voice-keyboard-production-readiness-4.3/static-extra-20260608-oai3-rerun5-fixed.log`
+- PASS: Python syntax check for the edited audio verification scripts.
+  - `docs/validation/voice-keyboard-production-readiness-4.3/python-pycompile-20260608-oai3-rerun5-progress.log`
+- PASS: `git diff --check`
+  - `docs/validation/voice-keyboard-production-readiness-4.3/git-diff-check-20260608-oai3-rerun5-final.log`
+- Hardware window evidence:
+  - First rerun5 `aiw with-lock -Resource COMx` resolved `COMx` to `COM6`; no lock or process remained afterward.
+  - PASS before interruption: `idf.py -p COM6 flash` exited 0.
+  - PASS before interruption: scripted serial-toggle BLE audio capture exited 0 with `received_packet_count=344`, `expected_packet_count=344`, `missing_packet_count=0`, `best_corr=0.4533`, and `recorded_peak=712`.
+  - NOT COMPLETE: the process stopped at the start of physical-key capture before EC11 start/stop evidence; this led to the progress-output fix above.
+  - `docs/validation/voice-keyboard-production-readiness-4.3/with-lock-hardware-window-20260608-oai3-rerun5.log`
+  - Second rerun5 hardware attempt did not enter the locked command because `COM6` was already actively locked by `oai1`; oai3 did not release or override another agent's lock.
+  - `docs/validation/voice-keyboard-production-readiness-4.3/with-lock-hardware-window-20260608-oai3-rerun5-progress.log`
+- This step is still not submitted because the validation command set still lacks PASS evidence for the physical-key EC11 audio capture.
+
 ## 2026-06-08 current attempt after PDM software gain
 
 - Code changes:
