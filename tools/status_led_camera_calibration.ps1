@@ -15,6 +15,11 @@ param(
 
 $ErrorActionPreference = "Stop"
 
+$defaultOutputDir = "docs\validation\voice-keyboard-camera-status-key-led-tuning-1.2"
+if ($Mode.ToLowerInvariant() -eq "semantic-preview" -and $OutputDir -eq $defaultOutputDir) {
+    $OutputDir = "docs\validation\voice-keyboard-camera-status-key-led-tuning-1.3"
+}
+
 if (-not $ManifestOnly.IsPresent -and $Camera.ToLowerInvariant() -ne "dry-run") {
     . (Join-Path $PSScriptRoot "idf_env.ps1")
 }
@@ -29,7 +34,49 @@ $resolvedOutputDir = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPa
     $outputDirPath)
 New-Item -ItemType Directory -Force -Path $resolvedOutputDir | Out-Null
 
-$pythonPath = (Get-Command python -ErrorAction Stop).Path
+function Test-PythonModules {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$PythonPath,
+        [string[]]$Modules = @("cv2", "serial")
+    )
+
+    $moduleList = ($Modules | ForEach-Object { "import $_" }) -join "; "
+    & $PythonPath -c $moduleList 2>$null
+    return $LASTEXITCODE -eq 0
+}
+
+function Resolve-CapturePython {
+    $candidates = New-Object System.Collections.Generic.List[string]
+    $current = (Get-Command python -ErrorAction Stop).Path
+    $candidates.Add($current)
+
+    $pyLauncher = Get-Command py -ErrorAction SilentlyContinue
+    if ($pyLauncher) {
+        $probe = & $pyLauncher.Source -3.11 -c "import sys; print(sys.executable)" 2>$null
+        if ($LASTEXITCODE -eq 0 -and -not [string]::IsNullOrWhiteSpace($probe)) {
+            $candidates.Add($probe.Trim())
+        }
+    }
+
+    $systemPython = Join-Path $env:LOCALAPPDATA "Programs\Python\Python311\python.exe"
+    if (Test-Path -LiteralPath $systemPython) {
+        $candidates.Add($systemPython)
+    }
+
+    foreach ($candidate in ($candidates | Select-Object -Unique)) {
+        if (Test-PythonModules -PythonPath $candidate -Modules @("serial")) {
+            if ($ManifestOnly.IsPresent -or $Camera.ToLowerInvariant() -eq "dry-run" -or
+                (Test-PythonModules -PythonPath $candidate -Modules @("cv2", "serial"))) {
+                return $candidate
+            }
+        }
+    }
+
+    throw "No Python interpreter with required camera modules found. Need cv2 and pyserial for real capture."
+}
+
+$pythonPath = Resolve-CapturePython
 $payload = [ordered]@{
     port = $Port
     camera = $Camera
@@ -54,6 +101,7 @@ import base64
 import json
 import math
 import os
+import re
 import subprocess
 import sys
 import time
@@ -63,8 +111,20 @@ from pathlib import Path
 payload = json.loads(base64.b64decode("$payloadBase64").decode("utf-8"))
 
 PLAN = "voice-keyboard-camera-status-key-led-tuning"
-STEP = "1.2"
-EXPECTED_MODE = "rgbw-single-led"
+STEP_BY_MODE = {
+    "rgbw-single-led": "1.2",
+    "semantic-preview": "1.3",
+}
+MODE = payload["mode"].lower()
+STEP = STEP_BY_MODE.get(MODE, "unknown")
+EXPECTED_MODES = set(STEP_BY_MODE)
+STATUS_EFFECT_BASELINE = "status_key_brighter_pure_product_effects_v6"
+PROFILE_CAPS_PERCENT = {
+    "low": 35,
+    "standard": 85,
+    "ambient": 65,
+    "factory": 100,
+}
 FIRMWARE_MAPPING_CONTRACT = {
     "status": {
         "data_gpio": 1,
@@ -116,6 +176,96 @@ def write_manifest(manifest):
     manifest["updated_at"] = utc_now()
     manifest_path = output_dir / "manifest.json"
     manifest_path.write_text(json.dumps(manifest, indent=2), encoding="utf-8")
+
+
+def markdown_escape(text):
+    return str(text).replace("|", "\\|").replace("\n", " ")
+
+
+def write_status_effects_markdown(manifest):
+    if manifest.get("mode") != "semantic-preview":
+        return None
+
+    output_dir = Path(payload["output_dir"])
+    frames = manifest.get("frames", [])
+    profile_rows = manifest.get("profile_cap_observations", [])
+    failures = manifest.get("exact_failures", [])
+    status_path = output_dir / "status-effects.md"
+    lines = [
+        "# voice-keyboard-camera-status-key-led-tuning/1.3 status effects evidence",
+        "",
+        f"- result: {manifest.get('result')}",
+        f"- generated_at: {manifest.get('generated_at')}",
+        f"- baseline: {STATUS_EFFECT_BASELINE}",
+        f"- output_dir: {output_dir}",
+        f"- frame_dir: {output_dir / 'frames'}",
+        f"- serial_transcript: {manifest.get('serial_transcript_path')}",
+        f"- manifest: {output_dir / 'manifest.json'}",
+        "",
+        "## Baseline Decision",
+        "",
+        "The v6 product baseline is preserved in firmware. This run captures semantic previews and records exact residuals; it does not retune brightness or timing constants unless camera/operator evidence names a specific delta.",
+        "",
+        "## Profile Caps",
+        "",
+        "| profile | expected cap percent | observed status text |",
+        "|---|---:|---|",
+    ]
+    for row in profile_rows:
+        lines.append(
+            f"| {markdown_escape(row.get('profile'))} | {row.get('expected_cap_percent')} | {markdown_escape(row.get('status_summary'))} |"
+        )
+    if not profile_rows:
+        lines.append("| none |  | no profile observations recorded |")
+
+    lines.extend([
+        "",
+        "## Semantic Preview Frames",
+        "",
+        "| preview | expected LEDs | focus | timing sample ms | result | frame | note |",
+        "|---|---|---|---:|---|---|---|",
+    ])
+    for frame in frames:
+        frame_path = Path(frame.get("path", ""))
+        try:
+            frame_ref = frame_path.relative_to(output_dir.parent.parent.parent)
+        except Exception:
+            frame_ref = frame_path
+        lines.append(
+            "| {name} | {leds} | {focus} | {delay} | {result} | {path} | {note} |".format(
+                name=markdown_escape(frame.get("name")),
+                leds=markdown_escape(",".join(frame.get("expected_leds", []))),
+                focus=markdown_escape(frame.get("acceptance_focus")),
+                delay=frame.get("sample_delay_ms"),
+                result=markdown_escape(frame.get("result")),
+                path=markdown_escape(frame_ref),
+                note=markdown_escape(frame.get("note")),
+            )
+        )
+
+    lines.extend([
+        "",
+        "## Timing And Brightness Decisions",
+        "",
+        "- PWR/BLE: standard healthy awake preview keeps the low visual-weight v6 baseline; connected preview is steady blue instead of pairing/reconnect blink.",
+        "- REC: capture preview is the strongest routine status. rec_not_available preview records WARN + REC instead of active REC alone.",
+        "- AI: processing preview includes an initial breath sample and a settled long-processing sample.",
+        "- OK: preview captures the short 900 ms confirmation window.",
+        "- WARN: retryable and hard previews capture amber/red severity plus source pairing.",
+        f"- Profiles remain explicit: low={PROFILE_CAPS_PERCENT['low']}%, standard={PROFILE_CAPS_PERCENT['standard']}%, ambient={PROFILE_CAPS_PERCENT['ambient']}%, factory={PROFILE_CAPS_PERCENT['factory']}%.",
+        "",
+        "## Remaining Deltas",
+        "",
+    ])
+    if failures:
+        for failure in failures:
+            lines.append(f"- {failure}")
+    else:
+        lines.append("- None from this automated semantic preview pass; future changes should name the exact LED/effect/color/timing/brightness delta from the v6 baseline.")
+
+    lines.append("")
+    status_path.write_text("\n".join(lines), encoding="utf-8")
+    return status_path
 
 
 def resolve_esp32_port(requested):
@@ -249,6 +399,209 @@ def make_sequence(zones_text):
     return zones, sequence
 
 
+def make_semantic_sequence(zones_text):
+    zones = [z.strip().lower() for z in zones_text.split(",") if z.strip()]
+    if zones != ["status"]:
+        raise RuntimeError("semantic-preview supports only -Zones status for the six semantic LEDs")
+
+    return zones, [
+        {
+            "name": "standard_ready_connected",
+            "label": "PWR+BLE",
+            "profile": "standard",
+            "commands": ["~LED:PROFILE standard", "~LED:PREVIEW ready"],
+            "expected_leds": ["PWR", "BLE"],
+            "expected": "healthy awake baseline and connected confidence: low green PWR plus steady blue BLE",
+            "acceptance_focus": "PWR/BLE low visual weight in healthy awake state; connected BLE steady blue",
+            "sample_delay_ms": 700,
+            "state_expect": {"ble": "connected", "battery_level": 80},
+        },
+        {
+            "name": "low_profile_ready",
+            "label": "PWR+BLE low profile",
+            "profile": "low",
+            "commands": ["~LED:PROFILE low", "~LED:PREVIEW ready"],
+            "expected_leds": ["PWR", "BLE"],
+            "expected": "darker low-profile ready indication, still bounded by safety/status behavior",
+            "acceptance_focus": "low profile is explicitly darker than standard",
+            "sample_delay_ms": 700,
+            "state_expect": {"ble": "connected", "battery_level": 80},
+        },
+        {
+            "name": "ambient_profile_ready",
+            "label": "PWR+BLE ambient profile",
+            "profile": "ambient",
+            "commands": ["~LED:PROFILE ambient", "~LED:PREVIEW ready"],
+            "expected_leds": ["PWR", "BLE"],
+            "expected": "restrained ambient-ready status rail; no factory calibration brightness",
+            "acceptance_focus": "ambient profile is restrained and explicit",
+            "sample_delay_ms": 700,
+            "state_expect": {"ble": "connected", "battery_level": 80},
+        },
+        {
+            "name": "factory_profile_ready",
+            "label": "PWR+BLE factory profile",
+            "profile": "factory",
+            "commands": ["~LED:PROFILE factory", "~LED:PREVIEW ready"],
+            "expected_leds": ["PWR", "BLE"],
+            "expected": "factory keeps full-brightness calibration path available without changing product baseline",
+            "acceptance_focus": "factory profile keeps 100% calibration cap",
+            "sample_delay_ms": 700,
+            "state_expect": {"ble": "connected", "battery_level": 80},
+        },
+        {
+            "name": "ble_pairing",
+            "label": "BLE pairing",
+            "profile": "standard",
+            "commands": ["~LED:PROFILE standard", "~LED:PREVIEW clear", "~LED:PREVIEW pairing"],
+            "expected_leds": ["BLE"],
+            "expected": "blue pairing blink/pulse on LED2 without permanent bright lamp",
+            "acceptance_focus": "pairing is visible and diagnostic, not connected steady",
+            "sample_delay_ms": 900,
+            "sample_count": 5,
+            "sample_interval_ms": 260,
+            "state_expect": {"ble": "pairing"},
+        },
+        {
+            "name": "ble_reconnect",
+            "label": "BLE reconnect",
+            "profile": "standard",
+            "commands": ["~LED:PROFILE standard", "~LED:PREVIEW clear", "~LED:PREVIEW reconnect"],
+            "expected_leds": ["BLE"],
+            "expected": "blue reconnect double pulse on LED2",
+            "acceptance_focus": "reconnect is visible without becoming a permanent lamp",
+            "sample_delay_ms": 0,
+            "sample_count": 12,
+            "sample_interval_ms": 90,
+            "state_expect": {"ble": "reconnecting"},
+        },
+        {
+            "name": "rec_capture",
+            "label": "REC active",
+            "profile": "standard",
+            "commands": ["~LED:PROFILE standard", "~LED:PREVIEW clear", "~LED:PREVIEW capture"],
+            "expected_leds": ["REC"],
+            "expected": "REC is the strongest routine status while proven capture/upload is active",
+            "acceptance_focus": "REC only lights for capture/upload or preview command",
+            "sample_delay_ms": 500,
+            "state_expect": {"rec_active": 1, "rec_source": "device_mic"},
+        },
+        {
+            "name": "rec_unavailable_warn",
+            "label": "WARN + REC unavailable",
+            "profile": "standard",
+            "commands": ["~LED:PROFILE standard", "~LED:PREVIEW clear", "~LED:PREVIEW rec_not_available"],
+            "expected_leds": ["WARN", "REC"],
+            "expected": "capture unavailable is represented as WARN plus REC companion, not active REC alone",
+            "acceptance_focus": "unavailable capture maps to WARN + REC",
+            "sample_delay_ms": 220,
+            "sample_count": 6,
+            "sample_interval_ms": 180,
+            "state_expect": {"rec_active": 0, "rec_source": "not_available", "error_domain": "recording"},
+        },
+        {
+            "name": "ai_processing",
+            "label": "AI processing",
+            "profile": "standard",
+            "commands": ["~LED:PROFILE standard", "~LED:PREVIEW clear", "~LED:PREVIEW processing"],
+            "expected_leds": ["AI"],
+            "expected": "AI uses calm violet breathing during processing",
+            "acceptance_focus": "AI timing is camera-measured and settles for long processing",
+            "sample_delay_ms": 900,
+            "state_expect": {"processing": 1},
+        },
+        {
+            "name": "ai_processing_settled",
+            "label": "AI processing settled",
+            "profile": "standard",
+            "commands": ["~LED:PROFILE standard", "~LED:PREVIEW clear", "~LED:PREVIEW processing"],
+            "expected_leds": ["AI"],
+            "expected": "long processing sample is calmer than initial active processing",
+            "acceptance_focus": "AI long processing settles rather than escalating indefinitely",
+            "sample_delay_ms": 10800,
+            "state_expect": {"processing": 1},
+        },
+        {
+            "name": "ok_success",
+            "label": "OK success",
+            "profile": "standard",
+            "commands": ["~LED:PROFILE standard", "~LED:PREVIEW clear", "~LED:PREVIEW ok"],
+            "expected_leds": ["OK"],
+            "expected": "OK is a short green confirmation with 900 ms total hold/fade",
+            "acceptance_focus": "OK timing is short confirmation",
+            "sample_delay_ms": 120,
+            "state_expect": {},
+        },
+        {
+            "name": "warn_retryable",
+            "label": "WARN retryable",
+            "profile": "standard",
+            "commands": ["~LED:PROFILE standard", "~LED:PREVIEW clear", "~LED:ERROR ai retryable"],
+            "expected_leds": ["WARN", "AI"],
+            "expected": "retryable warning uses amber WARN and source pairing",
+            "acceptance_focus": "WARN amber severity with source pairing",
+            "sample_delay_ms": 220,
+            "sample_count": 7,
+            "sample_interval_ms": 180,
+            "state_expect": {"error_domain": "ai", "error_severity": "retryable"},
+        },
+        {
+            "name": "warn_hard",
+            "label": "WARN hard",
+            "profile": "standard",
+            "commands": ["~LED:PROFILE standard", "~LED:PREVIEW clear", "~LED:ERROR system hard"],
+            "expected_leds": ["WARN", "PWR"],
+            "expected": "hard warning uses red WARN and source pairing",
+            "acceptance_focus": "WARN red hard severity with source pairing",
+            "sample_delay_ms": 160,
+            "sample_count": 8,
+            "sample_interval_ms": 120,
+            "state_expect": {"error_domain": "system", "error_severity": "hard"},
+        },
+        {
+            "name": "charging",
+            "label": "PWR charging",
+            "profile": "standard",
+            "commands": ["~LED:PROFILE standard", "~LED:PREVIEW clear", "~LED:PREVIEW charging"],
+            "expected_leds": ["PWR"],
+            "expected": "PWR white slow breath for charging",
+            "acceptance_focus": "charging is visible without a permanent bright lamp",
+            "sample_delay_ms": 900,
+            "state_expect": {"charging": 1},
+        },
+        {
+            "name": "low_battery",
+            "label": "PWR low battery",
+            "profile": "standard",
+            "commands": ["~LED:PROFILE standard", "~LED:PREVIEW clear", "~LED:PREVIEW low_battery"],
+            "expected_leds": ["PWR"],
+            "expected": "PWR red low-battery pulse",
+            "acceptance_focus": "low battery is visible and source-specific",
+            "sample_delay_ms": 520,
+            "sample_count": 8,
+            "sample_interval_ms": 300,
+            "state_expect": {"battery_level": 15},
+        },
+        {
+            "name": "critical_battery",
+            "label": "PWR critical battery",
+            "profile": "standard",
+            "commands": ["~LED:PROFILE standard", "~LED:PREVIEW clear", "~LED:PREVIEW critical_battery"],
+            "expected_leds": ["PWR"],
+            "expected": "PWR critical battery double pulse",
+            "acceptance_focus": "critical battery escalates visibly",
+            "sample_delay_ms": 160,
+            "sample_count": 10,
+            "sample_interval_ms": 160,
+            "state_expect": {"battery_level": 5},
+        },
+    ]
+
+
+def is_semantic_mode():
+    return MODE == "semantic-preview"
+
+
 def build_mapping_verification(manifest):
     required_colors = {"red", "green", "blue", "white"}
     expected_leds = {
@@ -312,6 +665,117 @@ def send_command(ser, text, readback_ms):
             time.sleep(0.02)
     output = b"".join(chunks).decode("utf-8", errors="replace")
     return output
+
+
+def parse_led_status(text):
+    status_line = ""
+    for line in text.splitlines():
+        if "~LED:STATUS" in line:
+            status_line = line.strip()
+    result = {
+        "raw": status_line,
+        "profile": None,
+        "profile_cap_percent": None,
+        "ble": None,
+        "rec_active": None,
+        "rec_source": None,
+        "processing": None,
+        "error_domain": None,
+        "error_severity": None,
+        "battery_level": None,
+        "charging": None,
+        "full": None,
+        "active_flags": {},
+    }
+    if not status_line:
+        return result
+    for key in ["profile", "ble", "rec_source", "error_domain", "error_severity"]:
+        match = re.search(rf"(?:^|\s){key}=([^\s]+)", status_line)
+        if match:
+            result[key] = match.group(1)
+    for key in ["profile_cap_percent", "rec_active", "processing", "battery_level", "charging", "full"]:
+        match = re.search(rf"(?:^|\s){key}=([0-9]+)", status_line)
+        if match:
+            result[key] = int(match.group(1))
+    flags = re.search(r"active_flags=([^\s]+)", status_line)
+    if flags:
+        for item in flags.group(1).split(","):
+            if ":" not in item:
+                continue
+            name, value = item.split(":", 1)
+            result["active_flags"][name] = value == "1"
+    return result
+
+
+def status_matches_expect(status, expected):
+    mismatches = []
+    for key, expected_value in (expected or {}).items():
+        if status.get(key) != expected_value:
+            mismatches.append(f"{key}: expected {expected_value} observed {status.get(key)}")
+    return mismatches
+
+
+def semantic_status_matches(status, expected):
+    return bool(status.get("raw")) and not status_matches_expect(status, expected)
+
+
+def capture_semantic_samples(cap, ser, item, ordinal, frames_dir):
+    import cv2
+
+    sample_count = int(item.get("sample_count", 1))
+    sample_interval_ms = int(item.get("sample_interval_ms", 0))
+    sample_frames = []
+    best_metrics = None
+    best_path = None
+    best_luma = -1
+    best_status = None
+    first_status = None
+    last_status = None
+    expected_state = item.get("state_expect", {})
+    for sample_index in range(sample_count):
+        if sample_index == 0:
+            time.sleep(int(item["sample_delay_ms"]) / 1000.0)
+        elif sample_interval_ms > 0:
+            time.sleep(sample_interval_ms / 1000.0)
+        status_response = send_command(ser, "~LED:STATUS", int(payload["readback_ms"]))
+        status = parse_led_status(status_response)
+        if first_status is None:
+            first_status = status
+        last_status = status
+        frame = capture_frame(cap, int(payload["settle_ms"]))
+        suffix = "" if sample_count == 1 else f"_{sample_index + 1:02d}"
+        filename = f"{ordinal:03d}_{item['name']}{suffix}.jpg"
+        frame_path = frames_dir / filename
+        cv2.imwrite(str(frame_path), frame)
+        metrics = frame_metrics(frame)
+        expected_match = semantic_status_matches(status, expected_state)
+        prefer_this_frame = False
+        if expected_match and not semantic_status_matches(best_status or {}, expected_state):
+            prefer_this_frame = True
+        elif expected_match == semantic_status_matches(best_status or {}, expected_state) and metrics["max_luma"] > best_luma:
+            prefer_this_frame = True
+        if prefer_this_frame:
+            best_luma = metrics["max_luma"]
+            best_metrics = metrics
+            best_path = frame_path
+            best_status = status
+        sample_frames.append({
+            "sample": sample_index + 1,
+            "path": str(frame_path),
+            "metrics": metrics,
+            "status": status,
+            "active_flags": status.get("active_flags", {}),
+            "status_raw": status.get("raw"),
+            "state_matches_expect": expected_match,
+        })
+    return {
+        "path": str(best_path),
+        "metrics": best_metrics,
+        "status": best_status or last_status or {},
+        "first_status": first_status or {},
+        "last_status": last_status or {},
+        "sample_frames": sample_frames,
+    }
 
 
 def capture_frame(cap, settle_ms):
@@ -382,8 +846,258 @@ def main():
     frames_dir.mkdir(parents=True, exist_ok=True)
     transcript_path = output_dir / "serial-transcript.txt"
 
-    if payload["mode"] != EXPECTED_MODE:
-        raise RuntimeError(f"unsupported mode {payload['mode']}; expected {EXPECTED_MODE}")
+    if MODE not in EXPECTED_MODES:
+        raise RuntimeError(f"unsupported mode {payload['mode']}; expected one of {sorted(EXPECTED_MODES)}")
+
+    if is_semantic_mode():
+        zones, sequence = make_semantic_sequence(payload["zones"])
+        manifest_only = bool(payload.get("manifest_only")) or str(payload.get("camera", "")).lower() == "dry-run"
+        command_plan = []
+        for ordinal, item in enumerate(sequence, start=1):
+            command_plan.append({
+                "index": ordinal,
+                "name": item["name"],
+                "label": item["label"],
+                "profile": item["profile"],
+                "commands": item["commands"],
+                "expected_leds": item["expected_leds"],
+                "expected": item["expected"],
+                "acceptance_focus": item["acceptance_focus"],
+                "sample_delay_ms": item["sample_delay_ms"],
+                "sample_count": item.get("sample_count", 1),
+                "sample_interval_ms": item.get("sample_interval_ms", 0),
+                "state_expect": item.get("state_expect", {}),
+            })
+        if manifest_only:
+            manifest = {
+                "schema_version": 1,
+                "plan": PLAN,
+                "step_id": STEP,
+                "generated_at": utc_now(),
+                "updated_at": utc_now(),
+                "result": "PASS",
+                "dry_run": True,
+                "mode": payload["mode"],
+                "zones": zones,
+                "baseline": STATUS_EFFECT_BASELINE,
+                "profile_caps_percent": PROFILE_CAPS_PERCENT,
+                "hardware": {
+                    "requested_port": payload["port"],
+                    "requested_camera": payload["camera"],
+                    "resolved_port": None,
+                    "camera_index": None,
+                    "note": "Manifest-only semantic preview does not require ESP32 serial, OpenCV, or a camera.",
+                },
+                "manifest_schema": {
+                    "command_plan": "ordered semantic preview commands to send during real capture",
+                    "frames": "populated by real capture with status frame metrics and serial status",
+                    "profile_cap_observations": "profile cap values parsed from ~LED:STATUS",
+                    "status_effects_markdown": "human-readable evidence summary for review",
+                },
+                "expected_capture_layout": {
+                    "frame_dir": str(frames_dir),
+                    "frame_name_pattern": "NNN_<semantic-name>.jpg",
+                    "transcript_path": str(transcript_path),
+                    "per_preview_frame_count": 1,
+                },
+                "sequence_summary": {
+                    "preview_count": len(command_plan),
+                    "target_led_refs": ["LED1=PWR", "LED2=BLE", "LED3=REC", "LED4=AI", "LED5=OK", "LED6=WARN"],
+                    "profiles": sorted(PROFILE_CAPS_PERCENT.keys()),
+                    "baseline_preserved": True,
+                },
+                "real_capture_prerequisites": [
+                    "Current unique ESP32 serial resource is discoverable at capture time or passed as -Port <COMn>.",
+                    "Firmware has been built for esp32s3 and can be flashed, or -SkipFlash is used against already-flashed matching firmware.",
+                    "A usable camera is discoverable with OpenCV or passed as -Camera <index>.",
+                    "Camera is positioned to see status LEDs LED1..LED6 together.",
+                    "Run real semantic preview inside aiw with-lock for the current COM resource only during flash/serial/camera capture.",
+                ],
+                "command_plan": command_plan,
+                "frames": [],
+                "profile_cap_observations": [],
+                "serial_transcript_path": str(transcript_path),
+                "status_effects_markdown": str(output_dir / "status-effects.md"),
+                "exact_failures": [],
+            }
+            write_manifest(manifest)
+            write_status_effects_markdown(manifest)
+            print(
+                "status_led_camera_calibration: "
+                f"result=PASS dry_run=True mode=semantic-preview previews={len(command_plan)} manifest={output_dir / 'manifest.json'}"
+            )
+            return 0
+
+        import cv2
+        import serial
+
+        port, all_ports = resolve_esp32_port(payload["port"])
+        camera_index, cap, camera_probe = open_camera(payload["camera"])
+        manifest = {
+            "schema_version": 1,
+            "plan": PLAN,
+            "step_id": STEP,
+            "generated_at": utc_now(),
+            "result": "INCONCLUSIVE",
+            "mode": payload["mode"],
+            "zones": zones,
+            "baseline": STATUS_EFFECT_BASELINE,
+            "profile_caps_percent": PROFILE_CAPS_PERCENT,
+            "hardware": {
+                "requested_port": payload["port"],
+                "resolved_port": port.device,
+                "port_description": port.description,
+                "port_hwid": port.hwid,
+                "all_serial_ports": [
+                    {"device": p.device, "description": p.description, "hwid": p.hwid}
+                    for p in all_ports
+                ],
+                "requested_camera": payload["camera"],
+                "camera_index": camera_index,
+                "camera_backend": "opencv_dshow",
+                "camera_probe": camera_probe,
+            },
+            "capture_settings": {
+                "baud": payload["baud"],
+                "settle_ms": payload["settle_ms"],
+                "readback_ms": payload["readback_ms"],
+                "post_flash_wait_ms": payload["post_flash_wait_ms"],
+                "frame_dir": str(frames_dir),
+            },
+            "flash": {"pending": True},
+            "sequence_summary": {
+                "preview_count": len(sequence),
+                "target_led_refs": ["LED1=PWR", "LED2=BLE", "LED3=REC", "LED4=AI", "LED5=OK", "LED6=WARN"],
+                "profiles": sorted(PROFILE_CAPS_PERCENT.keys()),
+                "baseline_preserved": True,
+            },
+            "command_plan": command_plan,
+            "frames": [],
+            "profile_cap_observations": [],
+            "serial_transcript_path": str(transcript_path),
+            "status_effects_markdown": str(output_dir / "status-effects.md"),
+            "exact_failures": [],
+        }
+
+        transcript_lines = []
+        try:
+            manifest["flash"] = flash_current_build(port.device, output_dir)
+            with serial.Serial(
+                port=port.device,
+                baudrate=int(payload["baud"]),
+                timeout=0.08,
+                dsrdtr=False,
+                rtscts=False,
+            ) as ser:
+                ser.dtr = False
+                ser.rts = False
+                for command in ["~LED:STATUS", "~LED:OFF"]:
+                    response = send_command(ser, command, int(payload["readback_ms"]))
+                    transcript_lines.append(f"> {command}\n{response}")
+
+                for ordinal, item in enumerate(sequence, start=1):
+                    response_bundle = []
+                    for command in item["commands"]:
+                        response = send_command(ser, command, int(payload["readback_ms"]))
+                        response_bundle.append(f"> {command}\n{response}")
+                        transcript_lines.append(response_bundle[-1])
+                    capture = capture_semantic_samples(cap, ser, item, ordinal, frames_dir)
+                    for sample in capture["sample_frames"]:
+                        transcript_lines.append(f"> ~LED:STATUS sample={item['name']}#{sample['sample']}\n{sample.get('status_raw') or ''}")
+                    status = capture["status"]
+                    if item["profile"] in PROFILE_CAPS_PERCENT:
+                        manifest["profile_cap_observations"].append({
+                            "preview": item["name"],
+                            "profile": item["profile"],
+                            "expected_cap_percent": PROFILE_CAPS_PERCENT[item["profile"]],
+                            "observed_cap_percent": status.get("profile_cap_percent"),
+                            "status_summary": status.get("raw"),
+                        })
+                    metrics = capture["metrics"]
+                    frame_path = capture["path"]
+                    sample_frames = capture["sample_frames"]
+                    active_seen = {
+                        led: any(sample.get("active_flags", {}).get(led, False) for sample in sample_frames)
+                        for led in item["expected_leds"]
+                    }
+                    missing_leds = [led for led, seen in active_seen.items() if not seen]
+                    state_expect = item.get("state_expect", {})
+                    state_matched = any(sample.get("state_matches_expect", False) for sample in sample_frames)
+                    state_mismatches = [] if state_matched else status_matches_expect(status, state_expect)
+                    cap_ok = True
+                    if item["profile"] in PROFILE_CAPS_PERCENT and status.get("profile_cap_percent") != PROFILE_CAPS_PERCENT[item["profile"]]:
+                        cap_ok = False
+                    status_ok = bool(status.get("raw"))
+                    if not status_ok:
+                        result = "FAIL"
+                        note = "missing ~LED:STATUS response after preview"
+                    elif state_mismatches:
+                        result = "FAIL"
+                        note = "state mismatch: " + "; ".join(state_mismatches)
+                    elif not cap_ok:
+                        result = "FAIL"
+                        note = f"profile cap mismatch: expected {PROFILE_CAPS_PERCENT[item['profile']]} observed {status.get('profile_cap_percent')}"
+                    elif missing_leds and item["name"] not in {"low_profile_ready", "ambient_profile_ready", "factory_profile_ready"}:
+                        result = "INCONCLUSIVE"
+                        note = "semantic state matched but sample window did not catch active phase for: " + ",".join(missing_leds)
+                    elif metrics["max_luma"] < 20 and item["name"] != "low_profile_ready":
+                        result = "INCONCLUSIVE"
+                        note = "camera frame was dark; serial status is present but visual classification needs review"
+                    else:
+                        result = "PASS"
+                        note = "serial semantic state and camera sample window captured for preview"
+                    if result == "FAIL":
+                        manifest["exact_failures"].append(f"{item['name']}: {note}")
+                    manifest["frames"].append({
+                        "index": ordinal,
+                        "name": item["name"],
+                        "label": item["label"],
+                        "profile": item["profile"],
+                        "commands": item["commands"],
+                        "expected_leds": item["expected_leds"],
+                        "expected": item["expected"],
+                        "acceptance_focus": item["acceptance_focus"],
+                        "sample_delay_ms": item["sample_delay_ms"],
+                        "sample_count": item.get("sample_count", 1),
+                        "sample_interval_ms": item.get("sample_interval_ms", 0),
+                        "state_expect": item.get("state_expect", {}),
+                        "path": str(frame_path),
+                        "metrics": metrics,
+                        "status": status,
+                        "sample_frames": sample_frames,
+                        "active_seen": active_seen,
+                        "result": result,
+                        "note": note,
+                    })
+
+                response = send_command(ser, "~LED:PROFILE standard", int(payload["readback_ms"]))
+                transcript_lines.append(f"> ~LED:PROFILE standard\n{response}")
+                response = send_command(ser, "~LED:OFF", int(payload["readback_ms"]))
+                transcript_lines.append(f"> ~LED:OFF\n{response}")
+        finally:
+            cap.release()
+
+        transcript_path.write_text("\n".join(transcript_lines), encoding="utf-8")
+        if any(frame["result"] == "FAIL" for frame in manifest["frames"]):
+            manifest["result"] = "FAIL"
+        elif any(frame["result"] == "INCONCLUSIVE" for frame in manifest["frames"]):
+            manifest["result"] = "INCONCLUSIVE"
+        else:
+            manifest["result"] = "PASS"
+        manifest["frame_count"] = len(manifest["frames"])
+        manifest["updated_at"] = utc_now()
+        write_status_effects_markdown(manifest)
+        write_manifest(manifest)
+        if manifest["frame_count"] != len(sequence):
+            fail(f"captured {manifest['frame_count']} frames, expected {len(sequence)}", manifest)
+        print(
+            "status_led_camera_calibration: "
+            f"result={manifest['result']} mode=semantic-preview port={port.device} camera={camera_index} "
+            f"frames={manifest['frame_count']} manifest={output_dir / 'manifest.json'}"
+        )
+        if manifest["result"] != "PASS":
+            return 1
+        return 0
 
     zones, sequence = make_sequence(payload["zones"])
     manifest_only = bool(payload.get("manifest_only")) or str(payload.get("camera", "")).lower() == "dry-run"
@@ -630,6 +1344,8 @@ def main():
         f"result={manifest['result']} port={port.device} camera={camera_index} "
         f"frames={manifest['frame_count']} manifest={output_dir / 'manifest.json'}"
     )
+    if manifest["result"] != "PASS":
+        return 1
     return 0
 
 

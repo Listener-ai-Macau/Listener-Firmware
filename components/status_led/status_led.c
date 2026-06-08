@@ -707,7 +707,7 @@ static void status_led_render_ble_locked(status_led_frame_t *frame, uint32_t now
         }
         break;
     case STATUS_LED_BLE_RECONNECTING:
-        if (status_led_double_pulse_on(now_ms, 2000U)) {
+        if (status_led_double_pulse_on(now_ms - s_state.last_transition_ms, 2000U)) {
             color = status_led_token_locked(ble_blue, 58U, false);
         }
         break;
@@ -971,8 +971,11 @@ static void status_led_poll_power_inputs(void)
     uint32_t now_ms = status_led_now_ms();
     bool should_poll = false;
     if (xSemaphoreTake(s_mutex, portMAX_DELAY) == pdTRUE) {
-        should_poll = s_state.last_power_poll_ms == 0 ||
-                      now_ms - s_state.last_power_poll_ms >= STATUS_LED_POWER_POLL_MS;
+        bool preview_window_active = now_ms < s_state.status_window_until_ms &&
+                                     strcmp(s_state.last_reason, "preview") == 0;
+        should_poll = !preview_window_active &&
+                      (s_state.last_power_poll_ms == 0 ||
+                       now_ms - s_state.last_power_poll_ms >= STATUS_LED_POWER_POLL_MS);
         if (should_poll) {
             s_state.last_power_poll_ms = now_ms;
         }
@@ -1742,6 +1745,8 @@ static void status_led_preview_state(const char *state)
     s_state.low_power_disabled = false;
     s_state.test_mode = STATUS_LED_TEST_NONE;
     s_state.status_window_until_ms = now_ms + STATUS_LED_STATUS_WINDOW_MS;
+    s_state.last_power_poll_ms = now_ms;
+    s_state.last_transition_ms = now_ms;
     status_led_set_last_reason_locked("preview");
 
     if (strcasecmp(state, "ready") == 0 || strcasecmp(state, "connected") == 0) {
@@ -1797,9 +1802,19 @@ static void status_led_preview_state(const char *state)
         s_state.low_power_disabled = true;
         s_state.output_disabled = true;
     } else if (strcasecmp(state, "clear") == 0 || strcasecmp(state, "off") == 0) {
+        s_state.ble_state = STATUS_LED_BLE_DISCONNECTED;
+        s_state.ble_confidence_until_ms = 0;
+        s_state.oobe_confidence_until_ms = 0;
         s_state.recording_active = false;
+        s_state.rec_source = STATUS_LED_REC_SOURCE_NONE;
         s_state.processing_active = false;
+        s_state.battery_valid = false;
+        s_state.battery_level_percent = 0;
+        s_state.battery_mv = 0;
+        s_state.charging = false;
+        s_state.full = false;
         s_state.error_domain = STATUS_LED_ERROR_DOMAIN_NONE;
+        s_state.error_until_ms = 0;
         s_state.ok_until_ms = 0;
     } else {
         ESP_LOGW(TAG, "LED preview unknown state: %s", state);
