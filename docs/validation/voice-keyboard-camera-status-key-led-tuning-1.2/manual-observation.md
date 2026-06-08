@@ -39,7 +39,7 @@ Context: `oai1` implemented the recoverable manual-off fix and split the WS2812/
 
 Superseded hardware follow-up: an early `aiw with-lock -Resource COMx` run resolved `COMx` to `COM6`, but `tools\flash.ps1 -Port COM6 -Target esp32s3 -NoBuild` failed during `esptool.py write_flash` with `Failed to connect to ESP32-S3: No serial data received`. That was later resolved by reflashing from the active `oai1` hardware session; the final observations below are the acceptance evidence for the current firmware.
 
-Next required evidence at this point was to retry the flash and single-pixel validation. That follow-up is complete for status/key LEDs; EC11/edge 4020 darkness is tracked separately in `hardware-4020-pinout-audit.md`.
+Next required evidence at this point was to retry the flash and single-pixel validation. That follow-up is complete for status/key LEDs; EC11/edge darkness remains out of scope for this step and should be handled by a separate EC11/edge hardware continuity or pinout investigation.
 
 ## 2026-06-08 full-brightness live observation
 
@@ -62,6 +62,6 @@ Context: after LED1 RGBW/off was proven one command at a time, the operator appr
 | status strip `LED1..LED6` | "状态灯 ... 是好的" after the status/key chase and color cycle | PASS | The status strip is visually active as a strip and responds to the full-brightness color-cycle path |
 | key strip `LED11..LED14` | "按键灯是好的" after the status/key chase and color cycle | PASS | The key strip is visually active as a strip and responds to the full-brightness color-cycle path |
 | status/key combined chase | user observed the initial chase and then all colors cycling | PASS | The shared manual validation path can address status/key strips without cross-driving EC11/edge |
-| EC11 ring and edge/frame 4020 LEDs | "旋钮和板框灯不亮"; later confirmed still not lit | OUT_OF_SCOPE_RESIDUAL | EC11/edge are outside the original 1.2 status/key scope; see `hardware-4020-pinout-audit.md` for the likely 4020 pinout/footprint issue |
+| EC11 ring and edge/frame LEDs | "旋钮和板框灯不亮"; later confirmed still not lit | OUT_OF_SCOPE_RESIDUAL | EC11/edge are outside the original 1.2 status/key scope and need a separate hardware continuity or pinout investigation |
 
 Decision: status/key mapping, color order, full-brightness policy, recoverable manual off, and manual/chase validation tooling are sufficient for the 1.2 status/key scope. EC11 ring and edge/frame darkness is recorded as a hardware investigation residual rather than a status/key firmware blocker.

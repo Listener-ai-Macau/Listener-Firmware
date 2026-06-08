@@ -2,8 +2,8 @@
   "schema_version": 1,
   "plan": "voice-keyboard-camera-status-key-led-tuning",
   "step_id": "1.2",
-  "generated_at": "2026-06-08T02:51:39.323818Z",
-  "updated_at": "2026-06-08T02:51:39.323818Z",
+  "generated_at": "2026-06-08T05:27:26.217371Z",
+  "updated_at": "2026-06-08T05:27:26.217371Z",
   "result": "MANUAL_PENDING",
   "manual_observation": true,
   "status_key_only": true,
@@ -610,6 +610,6 @@
       "command": "~LED:TEST:PIXEL key LED14 off 0"
     }
   ],
-  "manual_feedback_template_json": "C:\\Users\\Billy\\Desktop\\listener\\voice-keyboard-firmware-wt-oai1-voice-keyboard-camera-status-key-led-tuning-1.2\\docs\\validation\\voice-keyboard-camera-status-key-led-tuning-1.2\\manual-feedback-template.json",
-  "manual_feedback_template_md": "C:\\Users\\Billy\\Desktop\\listener\\voice-keyboard-firmware-wt-oai1-voice-keyboard-camera-status-key-led-tuning-1.2\\docs\\validation\\voice-keyboard-camera-status-key-led-tuning-1.2\\manual-feedback-template.md"
+  "manual_feedback_template_json": "C:\\Users\\Billy\\Desktop\\listener\\voice-keyboard-firmware-wt-tai1-voice-keyboard-camera-status-key-led-tuning-1.2\\docs\\validation\\voice-keyboard-camera-status-key-led-tuning-1.2\\manual-feedback-template.json",
+  "manual_feedback_template_md": "C:\\Users\\Billy\\Desktop\\listener\\voice-keyboard-firmware-wt-tai1-voice-keyboard-camera-status-key-led-tuning-1.2\\docs\\validation\\voice-keyboard-camera-status-key-led-tuning-1.2\\manual-feedback-template.md"
 }

@@ -42,6 +42,4 @@ Two constraints should remain explicit:
 
 ## Remaining Hardware Scope
 
-`COM6` is currently locked by `oai1` for this LED tuning session so other agents do not overwrite the flashed LED firmware while the hardware evidence is being captured.
-
-EC11 ring and edge/frame LEDs were tested on the v4 firmware and did not light. That residual is no longer treated as a status/key business-logic blocker: `hardware-4020-pinout-audit.md` records the likely 4020 symbol/footprint pinout mismatch and the continuity checks needed to close the hardware question.
+EC11 ring and edge/frame LEDs are outside this status/key step. Earlier hardware bring-up reported those zones dark while status/key LEDs responded. Treat that as a separate EC11/edge hardware continuity or pinout investigation, not as a blocker for this status/key mapping and color-order closure.
