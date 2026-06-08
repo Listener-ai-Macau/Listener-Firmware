@@ -1,0 +1,2 @@
+artifact=C:\Users\Billy\Desktop\listener\voice-keyboard-firmware-wt-oai3-voice-keyboard-production-readiness-4.3\docs\validation\voice-keyboard-production-readiness-4.3\custom-key-command-hid-contract-20260608-oai3-rerun2.md
+PASS: custom key command/HID contract validates KEY1-KEY4 F13-F16 fallback, F17-F24 gestures, stable diagnostics, and no WASD/text fallback.
