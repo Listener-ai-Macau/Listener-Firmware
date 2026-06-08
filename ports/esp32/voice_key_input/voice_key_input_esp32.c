@@ -3,6 +3,7 @@
 #include <stdbool.h>
 #include <stdint.h>
 #include <inttypes.h>
+#include "power_manager.h"
 
 #ifdef CONFIG_AUDIO_CAPTURE_MIC_ES8311
 #define VOICE_KEY_INPUT_LEGACY_ES8311_BOARD 1
@@ -305,6 +306,7 @@ static void voice_key_input_handle_button_sample(voice_key_button_state_t *butto
     if (pressed && !button->pressed) {
         button->pressed_ms = 0;
         button->long_press_reported = false;
+        power_manager_record_activity("ec11_key_press");
     } else if (!pressed && button->pressed) {
         if (!button->long_press_reported && button->pressed_ms <= VOICE_KEY_INPUT_CLICK_MAX_MS) {
             if (button->pending_single_click) {
