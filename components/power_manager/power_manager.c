@@ -397,6 +397,17 @@ static bool power_manager_sync_power_source_locked(
     s_charging = source->charging;
     s_charge_full = source->charge_full;
     s_auto_shutdown_block_logged = false;
+
+    /* Automatically set/clear EXTERNAL_POWER blocker so the
+       s_blockers != 0 early-return in target_state_locked always
+       prevents HARDWARE_SHUTDOWN when USB or charger is present.
+       This is a safety net beyond the s_external_power_present check
+       and protects against GPIO read jitter or timing races. */
+    if (source->external_power_present) {
+        s_blockers |= POWER_MANAGER_BLOCKER_EXTERNAL_POWER;
+    } else {
+        s_blockers &= ~(uint32_t)POWER_MANAGER_BLOCKER_EXTERNAL_POWER;
+    }
     return true;
 }
 
