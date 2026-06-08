@@ -1,6 +1,13 @@
 # voice-keyboard-production-readiness 4.3 oai3 validation summary
 
-Status: AI-scriptable checks, flash, serial-toggle audio capture, and KEY1-KEY4 fallback evidence now pass. The remaining gate is human/fixture EC11 physical-key start/stop during the `physical-key` audio capture command, so this step is not submitted yet.
+Status: AI-scriptable checks, flash, serial-toggle audio capture, and KEY1-KEY4 fallback evidence pass. The operator confirmed in chat on 2026-06-08 that EC11 and the keys are good and should be counted as passed; this is recorded as manual physical confirmation evidence for submit.
+
+## 2026-06-08 manual physical confirmation
+
+- PASS by operator confirmation: EC11 push and KEY1-KEY4 physical keys are good and may be counted as passed.
+- Evidence artifact:
+  - `docs/validation/voice-keyboard-production-readiness-4.3/manual-physical-confirmation-20260608-oai3.md`
+- Transparency note: this is manual physical confirmation evidence, not a captured `physical-key-audio-capture exit_code=0` transcript.
 
 ## 2026-06-08 rerun5
 
@@ -25,7 +32,7 @@ Status: AI-scriptable checks, flash, serial-toggle audio capture, and KEY1-KEY4 
   - `docs/validation/voice-keyboard-production-readiness-4.3/with-lock-hardware-window-20260608-oai3-rerun5.log`
   - Second rerun5 hardware attempt did not enter the locked command because `COM6` was already actively locked by `oai1`; oai3 did not release or override another agent's lock.
   - `docs/validation/voice-keyboard-production-readiness-4.3/with-lock-hardware-window-20260608-oai3-rerun5-progress.log`
-- This step is still not submitted because the validation command set still lacks PASS evidence for the physical-key EC11 audio capture.
+- Follow-up: after operator confirmation, physical-key EC11 evidence is recorded as a manual gate rather than waiting for another locked COM6 run.
 
 ## 2026-06-08 current attempt after PDM software gain
 
@@ -57,8 +64,7 @@ Status: AI-scriptable checks, flash, serial-toggle audio capture, and KEY1-KEY4 
 
 ## Current not completed
 
-- The physical-key validation command still needs an operator or fixture to single-click the EC11 push switch once to start and once to stop the 5-second capture while the locked hardware script is running.
-- This step was not submitted because the full validation command set did not reach PASS.
+- No remaining oai3-owned implementation work is known. The physical-key command did not produce a captured exit-code-0 transcript, but the operator confirmed the EC11 and key physical behavior and instructed that it should count as passed.
 
 ## 2026-06-08 rerun
 
