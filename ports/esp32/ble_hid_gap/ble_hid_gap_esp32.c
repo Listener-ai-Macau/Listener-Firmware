@@ -921,6 +921,15 @@ esp_err_t esp_hid_ble_gap_adv_start(void)
         return ESP_OK;
     }
 
+    ble_hid_gap_connection_snapshot_t conn = ble_hid_gap_connection_snapshot();
+    if (conn.connected) {
+        ESP_LOGI(TAG, "NimBLE advertising skipped: GAP already connected conn_handle=%u", conn.conn_handle);
+        diag_log(DIAG_SRC_BLE_GAP, DIAG_GAP_ADV_START, DIAG_SEV_INFO,
+                 2, 0, 1, conn.conn_handle);
+        status_led_set_ble_state(STATUS_LED_BLE_CONNECTED, false);
+        return ESP_OK;
+    }
+
     if (ble_gap_adv_active()) {
         ESP_LOGI(TAG, "NimBLE advertising already active");
         return ESP_OK;

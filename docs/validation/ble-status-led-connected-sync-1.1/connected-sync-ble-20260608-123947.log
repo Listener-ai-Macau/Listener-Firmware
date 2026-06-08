@@ -1,0 +1,11 @@
+ensure_ble_hid_connection: target=listener addr=A4CB8FF459A6
+ensure_ble_hid_connection: status=Disconnected gatt=Success services=9 sessions=9 active_sessions=0 session_statuses=Closed,Closed,Closed,Closed,Closed,Closed,Closed,Closed,Closed
+WARNING: ensure_ble_hid_connection: GATT services 
+are cached but device is not connected/active yet;
+ status=Disconnected active_sessions=0
+ensure_ble_hid_connection: status=Disconnected gatt=Success services=9 sessions=9 active_sessions=0 session_statuses=Closed,Closed,Closed,Closed,Closed,Closed,Closed,Closed,Closed
+WARNING: ensure_ble_hid_connection: GATT services 
+are cached but device is not connected/active yet;
+ status=Disconnected active_sessions=0
+ensure_ble_hid_connection: status=Connected gatt=Success services=9 sessions=9 active_sessions=9 session_statuses=Active,Active,Active,Active,Active,Active,Active,Active,Active
+ensure_ble_hid_connection: maintain-connection session active
