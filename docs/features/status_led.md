@@ -22,13 +22,15 @@ Default order is fixed until real hardware silkscreen validation proves otherwis
 - `LED5=OK`
 - `LED6=WARN`
 
-`PWR` owns battery and charge state. `BLE` owns pairing, reconnect, and connected confidence. `REC` only lights for a real capture/upload source named by firmware. If capture is unavailable, firmware shows `WARN + REC`. `AI` owns transfer, processing, thinking, and OTA progress. `OK` is a short success flash. `WARN` owns retryable and hard errors and pairs with a source LED.
+`PWR` owns battery and external-power state. While unplugged, it uses green for healthy battery, amber for lower battery, and red for low or critical battery. While USB or charger status says external power is present, it uses white: an always-running, visible breath while plugged in and not full, steady white when full. `BLE` owns pairing, reconnect, and connected confidence. `REC` only lights for a real capture/upload source named by firmware. If capture is unavailable, firmware shows `WARN + REC`. `AI` owns transfer, processing, thinking, and OTA progress. `OK` is a short success flash. `WARN` owns retryable and hard errors and pairs with a source LED.
 
 ## BLE Connection Source Of Truth
 
 GAP/HID connection state is the source of truth for the BLE semantic LED. Advertising is allowed to drive `pairing` or `reconnecting` only while the GAP layer has no active connection. If a stale advertising-complete or advertising-restart path fires after the host is already connected, firmware skips advertising and refreshes `connected` instead of allowing `pairing` to overwrite the LED state.
 
 After a connected event, the BLE LED uses the 6 second status window plus the bounded 8 second confidence window, with the first out-of-box connection allowed a longer bounded confidence window. Once those windows expire, an awake standard-profile device shows steady low blue on `LED2=BLE`.
+
+Repeated same-state BLE callbacks are idempotent: they do not restart the status window or confidence window. This prevents host subscription noise from making the PWR green status indication look like an irregular post-connect blink.
 
 ## Status/Key Mapping Calibration
 
@@ -47,25 +49,28 @@ The status LED task refreshes every 50 ms and sends at most four short strip fra
 
 ## Profiles And Budget
 
-Profiles are persisted in NVS through `~LED:PROFILE <off|low|standard|ambient|factory>`.
+Profiles are persisted in NVS through `~LED:PROFILE <off|low|standard|ambient|factory>`. A separate user brightness cap is persisted through `~LED:BRIGHTNESS <0-100>` and applies to routine product effects across the status, key, EC11, and edge zones.
 
 - `standard` is the product default. Routine status/key effects are capped at 85% and use brighter, saturated primary colors for daily readability.
 - `low` caps routine effects at 35% for dark-room or low-power behavior.
 - `ambient` caps routine effects at 65% and permits restrained accent behavior when the edge chain is available.
 - `off` turns routine non-safety output off; safety/error/test paths can still light.
-- `factory` keeps the full 100% path for calibration, manufacturing, and hardware bring-up.
+- `factory` keeps the full 100% profile path for calibration, manufacturing, and hardware bring-up; routine product effects still respect the user brightness cap unless they are explicit safety/error/test output.
 
-Current is still estimated per frame with 20 mA per RGB channel at full scale. `standard`, `low`, and `ambient` have product budgets so a broad effect is dimmed instead of becoming a flashlight. `factory` and explicit safety/test paths retain the full bring-up budget.
+Current is still estimated per frame with 20 mA per RGB channel at full scale. `standard`, `low`, and `ambient` have product budgets so a broad effect is dimmed instead of becoming a flashlight. Explicit safety/error/test paths retain the full bring-up budget.
 
 ## Product Effect Language
 
 - Idle connected state is readable but not dominant: PWR/BLE confidence remains visible without using factory brightness.
+- External power overrides battery-color display on `PWR`: plugged and not full is a continuous, higher-contrast white breath, and full is steady white.
+- The external-power white breath, steady full-charge white, BLE, REC, AI, OK, key feedback, and ambient edge effects are routine product output and obey `~LED:BRIGHTNESS`.
 - Pairing and reconnect use recognizable blue pulses without turning the whole status rail into an animation surface.
-- Recording is the strongest routine semantic state and also marks the voice key locally.
+- Recording is a gold breathing semantic state on `LED3=REC` only; it does not borrow key LEDs.
 - Processing uses a saturated purple breath on `AI`; long processing settles to a calmer breath.
-- Key LEDs are local transient feedback only: white on press/release, purple while processing, and green only during success confirmation.
+- Key LEDs are local transient feedback only: white while pressed with a short dim white release tail. `REC`, `OK`, and routine `AI` states do not recolor key LEDs.
+- Edge/frame LEDs are quiet in the standard product profile unless an explicit test command is running. Ambient profile may use restrained edge accents, and factory/test modes remain available for bring-up.
 - Warnings pair `WARN` with the source LED; critical battery and hard errors are allowed to be much brighter than normal routine states.
-- The product palette favors pure/saturated colors on the current diffuser: green for power/OK, blue for BLE, red for recording/hard warning, amber for retryable warning, purple for AI, and white for local key feedback.
+- The product palette favors clear semantic colors on the current diffuser: green for battery-good/OK, white for external power and local key feedback, blue for BLE, gold for recording, red for hard warning, amber for lower battery or retryable warning, and purple for AI.
 - RGBW, map, chase, and pixel test commands remain calibration tools and can drive full brightness independent of the product profile.
 
 ## Validation Commands
@@ -73,6 +78,7 @@ Current is still estimated per frame with 20 mA per RGB channel at full scale. `
 - `~LED:STATUS`
 - `~LED:BUDGET`
 - `~LED:PRIVACY`
+- `~LED:BRIGHTNESS <0-100>`
 - `~LED:TEST:RGBW <status|ec11|knob|ring|key|edge|all>`
 - `~LED:TEST:MAP <status|ec11|knob|ring|key|edge|all>`
 - `~LED:CHASE [status,key|status|key|ec11|edge|all] [step_ms]`

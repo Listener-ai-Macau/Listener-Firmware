@@ -29,7 +29,7 @@ $powerHeader = Read-RepoFile "components/power_manager/include/power_manager.h"
 $diagEvents = Read-RepoFile "components/diag_log/include/diag_log_events.h"
 $cmake = Read-RepoFile "components/power_manager/CMakeLists.txt"
 
-Assert-Contains $powerHeader 'POWER_MANAGER_BLOCKER_EXTERNAL_POWER\s*=\s*1u\s*<<\s*7' 'external power shutdown-only blocker bit'
+Assert-Contains $powerHeader 'POWER_MANAGER_BLOCKER_EXTERNAL_POWER\s*=\s*1u\s*<<\s*7' 'external power awake blocker bit'
 Assert-Contains $powerHeader 'shutdown_blockers' 'snapshot shutdown blocker field'
 Assert-Contains $powerHeader 'usb_det_level' 'raw USB detect level in snapshot'
 Assert-Contains $powerHeader 'bat_chg_level' 'raw charger level in snapshot'
@@ -47,12 +47,15 @@ Assert-Contains $powerManager 'board_get_v2_power_input_snapshot\(&board_snapsho
 Assert-Contains $powerManager '\.usb_power_present\s*=\s*board_snapshot\.usb_det_level\s*>\s*0' 'USB_Det interpreted state'
 Assert-Contains $powerManager '\.charging\s*=\s*board_snapshot\.bat_chg_level\s*==\s*0' 'active-low charging interpretation'
 Assert-Contains $powerManager '\.charge_full\s*=\s*board_snapshot\.bat_std_level\s*==\s*0' 'active-low charge-full interpretation'
-Assert-Contains $powerManager 'out_source->external_power_present\s*=\s*[\s\S]*out_source->usb_power_present[\s\S]*out_source->charging[\s\S]*out_source->charge_full' 'external power derived from USB/charging/full'
+Assert-Contains $powerManager 'out_source->external_power_present\s*=\s*out_source->usb_power_present' 'external power follows USB_Det'
+Assert-Contains $powerManager 'CHG/STD are charger status outputs[\s\S]*must not keep long-idle hardware[\s\S]*shutdown blocked after VBUS/USB_DET is gone' 'charger status does not falsely block battery-only shutdown'
 
 Assert-Contains $powerManager 's_power_source_initialized\s*&&\s*external_changed[\s\S]*s_last_user_activity_ms\s*=\s*now_ms[\s\S]*s_last_radio_activity_ms\s*=\s*now_ms' 'plug/unplug idle reset'
-Assert-Contains $powerManager 'reason\s*==\s*POWER_MANAGER_SHUTDOWN_REASON_LONG_IDLE[\s\S]*source->external_power_present[\s\S]*shutdown_blockers\s*\|=\s*POWER_MANAGER_BLOCKER_EXTERNAL_POWER' 'external power blocks only automatic long-idle hardware shutdown'
-Assert-Contains $powerManager 'return\s+s_external_power_present\s*\?\s*power_manager_awake_idle_state_locked\(radio_idle_ms\)\s*:\s*POWER_MANAGER_STATE_HARDWARE_SHUTDOWN' 'automatic hardware shutdown falls back to awake idle when powered'
-Assert-Contains $powerManager 'power_manager_awake_idle_state_locked[\s\S]*POWER_MANAGER_STATE_CONNECTED_IDLE[\s\S]*POWER_MANAGER_STATE_DISCONNECTED_IDLE' 'plugged low-power awake idle remains reachable'
+Assert-Contains $powerManager 'reason\s*==\s*POWER_MANAGER_SHUTDOWN_REASON_LONG_IDLE[\s\S]*source->external_power_present[\s\S]*shutdown_blockers\s*\|=\s*POWER_MANAGER_BLOCKER_EXTERNAL_POWER' 'external power blocks automatic long-idle hardware shutdown'
+Assert-Contains $powerManager 'source->external_power_present[\s\S]*s_blockers\s*\|=\s*POWER_MANAGER_BLOCKER_EXTERNAL_POWER[\s\S]*s_blockers\s*&=\s*~\(uint32_t\)POWER_MANAGER_BLOCKER_EXTERNAL_POWER' 'external power sets and clears awake blocker'
+Assert-Contains $powerManager 'if\s*\(s_blockers\s*!=\s*0\)\s*\{[\s\S]*return\s+POWER_MANAGER_STATE_ACTIVE' 'external power blocker keeps plugged firmware ACTIVE'
+Assert-Contains $powerManager 'power_manager_without_external_power_blocker\(s_blockers\)\s*==\s*0[\s\S]*s_external_power_present[\s\S]*CONFIG_POWER_MANAGER_HARDWARE_SHUTDOWN_MS' 'automatic shutdown blocked status ignores external blocker itself'
+Assert-Contains $powerManager 'reason\s*==\s*POWER_MANAGER_SHUTDOWN_REASON_LONG_IDLE[\s\S]*\?\s*snapshot\.blockers[\s\S]*:\s*power_manager_without_external_power_blocker\(snapshot\.blockers\)' 'manual shutdown entry gate ignores external-power awake blocker'
 Assert-Contains $powerManager 'strcmp\(command,\s*"SHUTDOWN"\)[\s\S]*power_manager_enter_hardware_shutdown\(POWER_MANAGER_SHUTDOWN_REASON_MANUAL_COMMAND\)' 'manual hardware shutdown command remains explicit'
 Assert-Contains $powerManager 'final_shutdown_blockers\s*=\s*power_manager_shutdown_blockers_for_source\([\s\S]*reason\)' 'final shutdown gate rechecks power source'
 
@@ -61,8 +64,4 @@ Assert-Contains $powerManager 'DIAG_POWER_SLEEP_BLOCKED[\s\S]*POWER_MANAGER_SHUT
 Assert-Contains $powerManager 'DIAG_POWER_EXTERNAL_POWER' 'dedicated external-power diag event'
 Assert-Contains $diagEvents 'DIAG_POWER_EXTERNAL_POWER\s+9\s+/\*\s*a1=flags,\s*a2=raw_levels,\s*a3=idle_ms,\s*a4=shutdown_blockers\s+\*/' 'external-power diag event contract'
 
-if ($powerManager -match 's_blockers\s*\|=\s*POWER_MANAGER_BLOCKER_EXTERNAL_POWER') {
-    throw "External power must not be added to s_blockers; it must remain an automatic-shutdown-only blocker so plugged idle states stay reachable."
-}
-
-Write-Host "PASS: charging-awake policy static checks cover raw/interpreted power inputs, automatic hardware-shutdown blocking, manual shutdown override, plug/unplug idle reset, and diagnostics."
+Write-Host "PASS: charging-awake policy static checks cover raw/interpreted power inputs, plugged ACTIVE behavior, automatic hardware-shutdown blocking, manual shutdown override, plug/unplug idle reset, and diagnostics."

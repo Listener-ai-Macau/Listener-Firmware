@@ -40,7 +40,7 @@ extern "C" {
 #define BOARD_PINS_EC11_A_IO         (GPIO_NUM_42)
 #define BOARD_PINS_EC11_B_IO         (GPIO_NUM_2)
 #define BOARD_PINS_EC11_C_IO         (GPIO_NUM_NC)
-#define BOARD_PINS_EC11_KEY_IO       (GPIO_NUM_11)
+#define BOARD_PINS_EC11_KEY_IO       (GPIO_NUM_18)
 
 #define BOARD_PINS_BAT_CHG_IO        (GPIO_NUM_14)
 #define BOARD_PINS_BAT_STD_IO        (GPIO_NUM_21)
@@ -54,9 +54,13 @@ extern "C" {
 #define BOARD_PINS_RGB_KEY_IO        (GPIO_NUM_13)
 #define BOARD_PINS_RGB_EDGE_IO       (GPIO_NUM_4)
 
-#define BOARD_PINS_PWR_HOLD_IO       (GPIO_NUM_46)
-#define BOARD_PINS_TPS63020_I_ADC_IO (GPIO_NUM_10)
-#define BOARD_PINS_SY7088_I_ADC_IO   (GPIO_NUM_9)
+#define BOARD_PINS_PWR_HOLD_IO       (GPIO_NUM_11)
+
+/* Revised V2 does not populate the two INA180-style current telemetry inputs
+   used by earlier prototypes on the TPS63020/SY7088 input branches. */
+#define BOARD_PINS_CURRENT_TELEMETRY_PRESENT (0)
+#define BOARD_PINS_TPS63020_I_ADC_IO (GPIO_NUM_NC)
+#define BOARD_PINS_SY7088_I_ADC_IO   (GPIO_NUM_NC)
 
 #ifdef __cplusplus
 }

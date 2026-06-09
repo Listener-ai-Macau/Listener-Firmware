@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import sys
+import re
 from pathlib import Path
 
 
@@ -49,7 +50,7 @@ CHECKS = {
         "board_set_power_hold_enabled(true)",
         "board_configure_power_hold_latch",
         "board_get_v2_power_hold_snapshot",
-        "PWR_HOLD/GPIO46",
+        "PWR_HOLD/GPIO11",
         "pwr_hold_gpio=%d",
         "pwr_hold_level=%s",
         "pwr_hold_configured=%u",
@@ -133,6 +134,12 @@ CHECKS = {
         "POWER_MANAGER_ENABLE",
         "POWER_MANAGER_AUDIO_IDLE_MS",
         "POWER_MANAGER_HARDWARE_SHUTDOWN_MS",
+        "POWER_MANAGER_BATTERY_CRITICAL_PERCENT",
+        "default 0",
+        "range 0 100",
+    ],
+    "sdkconfig.defaults": [
+        "CONFIG_POWER_MANAGER_BATTERY_CRITICAL_PERCENT=0",
     ],
     "sdkconfig.defaults.esp32s3": [
         "CONFIG_PM_ENABLE=y",
@@ -155,10 +162,21 @@ CHECKS = {
     ],
     "components/board/board.c": [
         "Voice Keyboard V2",
-        "EC11 push/GPIO11",
-        "PWR_HOLD/GPIO46",
-        "v2_gpio46_power_latch_hold_high_release_low_for_hardware_shutdown",
+        "EC11 push/GPIO18",
+        "PWR_HOLD/GPIO11",
+        "v2_gpio11_power_latch_hold_low_release_high_for_hardware_shutdown",
+        "gpio_set_level(BOARD_PINS_PWR_HOLD_IO, 0)",
+        "gpio_set_level(BOARD_PINS_PWR_HOLD_IO, level)",
+        "released high for hardware shutdown",
+        "hold-low",
         "~POWER:SHUTDOWN",
+    ],
+    "docs/features/low_power_wake_policy.md": [
+        "3000mV=0%",
+        "4200mV=100%",
+        "2700mV",
+        "default critical threshold `0%`",
+        "forces hardware shutdown",
     ],
 }
 
@@ -189,6 +207,17 @@ FORBIDDEN = {
         "sleep_blockers=0x%08",
         "automatic overnight sleep",
         "entering deep sleep",
+        "restoring hold high",
+        "release-low",
+        "shutdown-low",
+    ],
+    "components/board/board.c": [
+        "v2_gpio46_power_latch_hold_high_release_low_for_hardware_shutdown",
+        "v2_gpio46_power_latch_hold_low_release_high_for_hardware_shutdown",
+        "v2_gpio11_power_latch_hold_high_release_low_for_hardware_shutdown",
+        "hold-high",
+        "released low for hardware shutdown",
+        "held high",
     ],
     "main/main.c": [
         "esp_sleep_get_wakeup_cause",
@@ -232,9 +261,76 @@ def main() -> int:
                 failures.append(f"{relative_path}: stale token {token!r}")
 
     board = (REPO_ROOT / "components/board/board.c").read_text(encoding="utf-8")
-    for stale in ("Voice Keyboard N4", "EC11 push/GPIO18", "EC11 push/GPIO35", "N4 deep sleep wakes by KEY4/GPIO21"):
+    for stale in ("Voice Keyboard N4", "EC11 push/GPIO11", "EC11 push/GPIO35", "N4 deep sleep wakes by KEY4/GPIO21"):
         if stale in board:
             failures.append(f"components/board/board.c: stale token {stale!r}")
+
+    power_manager = (REPO_ROOT / "components/power_manager/power_manager.c").read_text(encoding="utf-8")
+    if not re.search(
+        r"power_manager_refresh_ble_connection_locked[\s\S]*"
+        r"s_state\s*!=\s*POWER_MANAGER_STATE_HARDWARE_SHUTDOWN[\s\S]*"
+        r"s_state\s*=\s*POWER_MANAGER_STATE_ACTIVE",
+        power_manager,
+    ):
+        failures.append(
+            "components/power_manager/power_manager.c: BLE refresh must not resume ACTIVE during HARDWARE_SHUTDOWN"
+        )
+    if not re.search(
+        r"void\s+power_manager_set_ble_connected[\s\S]*"
+        r"s_state\s*!=\s*POWER_MANAGER_STATE_HARDWARE_SHUTDOWN[\s\S]*"
+        r"s_state\s*=\s*POWER_MANAGER_STATE_ACTIVE",
+        power_manager,
+    ):
+        failures.append(
+            "components/power_manager/power_manager.c: BLE callbacks must not resume ACTIVE during HARDWARE_SHUTDOWN"
+        )
+    if not re.search(
+        r"reason\s*==\s*POWER_MANAGER_SHUTDOWN_REASON_LONG_IDLE[\s\S]*"
+        r"power_manager_wait_for_power_removal\(\)",
+        power_manager,
+    ):
+        failures.append(
+            "components/power_manager/power_manager.c: automatic long-idle shutdown fallback must stay quiescent"
+        )
+    if not re.search(
+        r"power_manager_wait_for_power_removal[\s\S]*"
+        r"board_set_power_hold_enabled\(false\)[\s\S]*"
+        r"watchdog_platform_feed_current_task",
+        power_manager,
+    ):
+        failures.append(
+            "components/power_manager/power_manager.c: quiescent shutdown wait must keep PWR_HOLD released and feed watchdog"
+        )
+
+    ble_gap = (REPO_ROOT / "ports/esp32/ble_hid_gap/ble_hid_gap_esp32.c").read_text(encoding="utf-8")
+    if "s_shutdown_quiesce" not in ble_gap:
+        failures.append("ports/esp32/ble_hid_gap/ble_hid_gap_esp32.c: missing shutdown quiesce state")
+    for label, pattern in (
+        (
+            "advertising start",
+            r"esp_hid_ble_gap_adv_start[\s\S]*s_shutdown_quiesce[\s\S]*return\s+ESP_OK",
+        ),
+        (
+            "disconnect callback",
+            r"BLE_GAP_EVENT_DISCONNECT[\s\S]*s_shutdown_quiesce[\s\S]*suppressing advertising restart after disconnect[\s\S]*return\s+0",
+        ),
+        (
+            "advertise-complete callback",
+            r"BLE_GAP_EVENT_ADV_COMPLETE[\s\S]*s_shutdown_quiesce[\s\S]*suppressing advertising restart after adv complete[\s\S]*return\s+0",
+        ),
+        (
+            "shutdown entry",
+            r"ble_hid_gap_prepare_shutdown_disconnect[\s\S]*s_shutdown_quiesce\s*=\s*true",
+        ),
+        (
+            "explicit reconnect recovery",
+            r"ble_hid_gap_request_reconnect[\s\S]*s_shutdown_quiesce\s*=\s*false",
+        ),
+    ):
+        if not re.search(pattern, ble_gap):
+            failures.append(
+                f"ports/esp32/ble_hid_gap/ble_hid_gap_esp32.c: shutdown quiesce must suppress {label}"
+            )
 
     if failures:
         print("FAIL: power manager static verification failed")
@@ -243,7 +339,7 @@ def main() -> int:
         return 1
 
     print(
-        "PASS: power manager static verification covers hardware shutdown, PWR_HOLD/GPIO46, "
+        "PASS: power manager static verification covers hardware shutdown, PWR_HOLD/GPIO11, "
         "external-power blockers, idle actions, diagnostics, and Deep Sleep removal."
     )
     return 0

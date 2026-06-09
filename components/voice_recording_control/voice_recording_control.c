@@ -956,6 +956,8 @@ static void voice_recording_control_cancel_pending_start(const char *detail)
         source,
         ESP_OK,
         false);
+    status_led_set_recording(false, STATUS_LED_REC_SOURCE_NONE);
+    status_led_clear_error(STATUS_LED_ERROR_DOMAIN_REC);
     voice_recording_control_log_device_status("ready", detail);
 }
 
@@ -992,6 +994,8 @@ static void voice_recording_control_schedule_pending_start(
     power_manager_set_blocker(
         POWER_MANAGER_BLOCKER_RECORDING | POWER_MANAGER_BLOCKER_BLE_AUDIO,
         true);
+    status_led_set_recording(false, STATUS_LED_REC_SOURCE_NONE);
+    status_led_clear_error(STATUS_LED_ERROR_DOMAIN_REC);
     ESP_LOGW(
         TAG,
         "recording start pending source=%s timeout_ms=%u reason=%s",
@@ -1013,6 +1017,8 @@ static void voice_recording_control_timeout_pending_start(esp_err_t reason)
     voice_recording_control_reset_pending_start();
     voice_recording_control_clear_power_blockers();
     (void)voice_key_input_set_recording_output(false);
+    status_led_set_recording(false, STATUS_LED_REC_SOURCE_NOT_AVAILABLE);
+    status_led_set_error(STATUS_LED_ERROR_DOMAIN_REC, STATUS_LED_ERROR_RETRYABLE, "recording_start_transport_timeout");
     ESP_LOGW(
         TAG,
         "recording pending start timed out source=%s timeout_ms=%u reason=%s",
@@ -1053,8 +1059,12 @@ static esp_err_t voice_recording_control_enter_recording(const char *source, boo
         }
         voice_recording_control_clear_power_blockers();
         (void)voice_key_input_set_recording_output(false);
-        status_led_set_recording(false, STATUS_LED_REC_SOURCE_NOT_AVAILABLE);
-        status_led_set_error(STATUS_LED_ERROR_DOMAIN_REC, STATUS_LED_ERROR_RETRYABLE, detail);
+        bool transport_pending = ret == ESP_ERR_INVALID_STATE && !ble_audio_stream_is_ready();
+        bool suppress_retry_led_error = ret == ESP_ERR_INVALID_STATE && !log_rejection;
+        if (!transport_pending && !suppress_retry_led_error) {
+            status_led_set_recording(false, STATUS_LED_REC_SOURCE_NOT_AVAILABLE);
+            status_led_set_error(STATUS_LED_ERROR_DOMAIN_REC, STATUS_LED_ERROR_RETRYABLE, detail);
+        }
         if (log_rejection) {
             if (reason != NULL) {
                 ESP_LOGW(TAG, "recording start rejected source=%s: %s detail=%s", source, esp_err_to_name(ret), reason);
@@ -1082,6 +1092,7 @@ static esp_err_t voice_recording_control_enter_recording(const char *source, boo
     (void)voice_key_input_set_recording_output(true);
     s_session_count++;
     status_led_set_recording(true, STATUS_LED_REC_SOURCE_DEVICE_MIC);
+    status_led_clear_error(STATUS_LED_ERROR_DOMAIN_REC);
     ESP_LOGI(TAG, "recording start source=%s", source);
     voice_recording_control_log_flow(
         VOICE_RECORDING_FLOW_START_OK,

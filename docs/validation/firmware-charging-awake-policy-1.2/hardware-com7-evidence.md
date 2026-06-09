@@ -1,0 +1,163 @@
+# Charging Awake Hardware Evidence
+
+status=PASS
+hardware_mode=serial-read
+port=COM7
+observe_seconds=20
+
+## Evidence
+- PASS: board status identifies V2/N16R8 target
+- PASS: PWR_HOLD/GPIO11 is held low during runtime and releases high for hardware shutdown
+- PASS: power status response is present
+- PASS: power status reports hardware-shutdown threshold
+- PASS: power status uses EC11/GPIO18 voice-key contract
+- PASS: KEY1-KEY4 and EC11 key GPIO status are responsive
+- PASS: EC11 diagnostic command path is responsive
+- PASS: diagnostic log tail command path is responsive
+- PASS: final power status reports external_power_present=1
+- PASS: final power status reports usb_power_present=1
+- PASS: final power state is not HARDWARE_SHUTDOWN under external power
+
+## Manual Gates
+- Long-idle threshold was not reached by this short run: user_idle_ms=0, hardware_shutdown_ms=1800000. Use a plugged-in soak beyond the threshold for final awake proof.
+- Manual hardware-shutdown override was not executed. Re-run with -IncludeManualShutdown only when the operator is ready for a destructive power-off/recovery check.
+- Battery-only long-idle hardware-shutdown evidence requires an unplugged/battery run and cold-boot recovery artifact; serial-over-USB capture cannot prove this while USB power is attached.
+- Post-unplug stale-idle validation requires a physical charging/USB soak, unplug action, and follow-up power diagnostics.
+
+## Serial Transcript
+```text
+> ~BOARD:STATUS
+I (2822644) audio_capture: frame captured count=140900 bytes=901~BOARD:STATUS profile=voice-keyboard-v2-n16r8 module=ESP32-S3-WROOM-1-N16R8 flash_mb=16 psram_mb=8 psram_mode=octal key_gpios=38,39,40,41 ec11_a_gpio=42 ec11_b_gpio=2 ec11_key_gpio=18 ec11_key_provisional=1 mic_clk_gpio=48 mic_dout_gpio=47 mic_policy=v2_sph0655_pdm_clk_gpio48_dout_gpio47_enabled_for_a1_a2_hardware_validation pwr_hold_gpio=11 pwr_hold_level=low pwr_hold_configured=1 pwr_hold_policy=v2_gpio11_power_latch_hold_low_release_high_for_hardware_shutdown usb_det_gpio=7 usb_det_level=high usb_det_policy=v2_gpio7_r37_r32_10K_10K_divider bat_chg_gpio=14 bat_chg_level=high bat_std_gpio=21 bat_std_level=high charger_polarity=v2_gpio14_chg_gpio21_std_active_low battery_gpio=8 battery_mv=4028 battery_adc_mv=2014 battery_raw=2377 battery_level=86 battery_valid=1 battery_adc_calibrated=1 battery_samples=4 battery_result=ESP_OK battery_scaling="68K/68K divider, VBAT~=2*ADC" battery_policy="product_empty_3000mv_full_4200mv_absolute_min_2700mv" reserved_mspi_gpio=GPIO35,GPIO36,GPIO37
+~BOARD:POWER branch=TPS63020_input_branch present=0 gpio=-1 raw_adc=0 adc_mv=0 adc_calibrated=0 sample_count=0 calibration_status=current_telemetry_not_populated current_model="not_populated" current_calibrated=0 current_ma_valid=0 estimated_input_current_ma=0 battery_side_mv=0 battery_voltage_source="BAT_V_ADC/GPIO8 68K/68K midpoint, VBAT~=2*ADC" power_mw_valid=0 estimated_input_power_mw=0 result=ESP_ERR_NOT_SUPPORTED policy=v2_optional_current_telemetry_not_populated_battery_adc_only_no_power_decisions
+~BOARD:POWER branch=SY7088_input_branch present=0 gpio=-1 raw_adc=0 adc_mv=0 adc_calibrated=0 sample_count=0 calibration_status=current_telemetry_not_populated current_model="not_populated" current_calibrated=0 current_ma_valid=0 estimated_input_current_ma=0 battery_side_mv=0 battery_voltage_source="BAT_V_ADC/GPIO8 68K/68K midpoint, VBAT~=2*ADC" power_mw_valid=0 estimated_input_power_mw=0 result=ESP_ERR_NOT_SUPPORTED policy=v2_optional_current_telemetry_not_populated_battery_adc_only_no_power_decisions
+~LED:STATUS group=status transport=WS2812 data_gpio=1 first_led=1 led_count=6 led_refs="LED1..LED6" brightness_cap_percent=8 vdd_led_signed_off=0 full_white_allowed=0 rgbw_calibration_path=provisional policy="LED1..LED6 semantic PWR/BLE/REC/AI/OK/WARN rail"
+~LED:STATUS group=ec11 transport=WS2812 data_gpio=5 first_led=7 led_count=12 led_refs="LED7..LED10+LED15..LED16+LED23..LED28" brightness_cap_percent=8 vdd_led_signed_off=0 full_white_allowed=0 rgbw_calibration_path=provisional policy="EC11 knob ring feedback on the dedicated PWM_RGB_EC11 strip"
+~LED:STATUS group=key transport=WS2812 data_gpio=13 first_led=11 led_count=4 led_refs="LED11..LED14" brightness_cap_percent=8 vdd_led_signed_off=0 full_white_allowed=0 rgbw_calibration_path=provisional policy="LED11..LED14 transient local key feedback"
+~LED:STATUS group=edge transport=WS2812 data_gpio=4 first_led=17 led_count=6 led_refs="LED17..LED22" brightness_cap_percent=4 vdd_led_signed_off=0 full_white_allowed=0 rgbw_calibration_path=provisional policy="LED17..LED22 restrained edge/frame effects"
+~LED:STATUS policy=v2_four_zone_ws2812_status_gpio1_ec11_gpio5_key_gpio13_edge_gpio4
+I (2877644) audio_capture: frame captured count=143650 bytes=91936000
+I (2878634) audio_capture: frame captured count=143700 bytes=91968000
+> ~POWER:STATUS
+~POWER:STATUS state=ACTIVE blockers=0x00000080 blocker_names=external_power shutdown_blockers=0x00000080 shutdown_blocker_names=external_power idle_ms=0 user_idle_ms=0 radio_idle_ms=0 ble_connected=1 automatic_shutdown_blocked_by_external_power=0 external_power_present=1 usb_power_present=1 charging=0 charge_full=0 usb_det_level=high bat_chg_level=high bat_std_level=high pwr_hold_level=low usb_det_policy=v2_gpio7_r37_r32_10K_10K_divider charger_polarity=v2_gpio14_chg_gpio21_std_active_low pwr_hold_policy=v2_gpio11_power_latch_hold_low_release_high_for_hardware_shutdown battery_mv=4004 battery_level=84 battery_valid=1 last_shutdown_reason=none last_shutdown_idle_ms=0 last_shutdown_blockers=0x00000000 guard=1 audio_idle_ms=5000 connected_idle_ms=30000 disconnected_idle_ms=30000 hardware_shutdown_ms=1800000 pwr_hold_gpio=11 pwr_hold_level=low pwr_hold_configured=1 pwr_hold_policy=v2_gpio11_power_latch_hold_low_release_high_for_hardware_shutdown voice_key_gpio=18 hardware_shutdown_user_action="short-press hardware power key for cold boot after PWR_HOLD/GPIO11 release-high"
+I (2879644) audio_capture: frame captured count=143750 bytes=92000000
+I (2880074) ble_hid: battery notify level=85 voltage_mv=4022 raw=2374 adc_mv=2011 reason=threshold_sample forced=0
+> ~BOARD:GPIO
+~BOARD:GPIO active_low=1 mode=read_as_configured reconfigure=0 key1_gpio=38 key1_level=high key1_pressed=0 key2_gpio=39 key2_level=high key2_pressed=0 key3_gpio=40 key3_level=high key3_pressed=0 key4_gpio=41 key4_level=high key4_pressed=0 key_pressed_mask=0x00 ec11_a_gpio=42 ec11_a_level=high ec11_b_gpio=2 ec11_b_level=high ec11_ab_state=0x03 ec11_key_gpio=18 ec11_key_level=high ec11_key_pressed=0 recording_key=EC11_KEY/GPIO18
+I (2880644) audio_capture: frame captured count=143800 bytes=92032000
+I (2881634) audio_capture: frame captured count=143850 bytes=92064000
+> ~EC11:STATUS
+I (2881644) ec11_rotation: EC11 rotation status: action=system_volume
+I (2882644) audio_capture: frame captured count=143900 bytes=92096000
+> ~DIAGLOG:LAST:64
+I (2883144) power_manager: blocker set mask=0x00000064 blockers=0x000000e4 (diag_export|flash_write|usb_command|external_power)
+I (2883644) audio_capture: frame captured count=143950 bytes=92128000
+I (2884644) audio_capture: frame captured count=144000 bytes=92160000
+> observe-usb-awake seconds=20
+I (2885074) ble_hid: battery notify level=83 voltage_mv=4000 raw=2360 adc_mv=2000 reason=threshold_sample forced=0
+I (2885644) audio_capture: frame captured count=144050 bytes=92192000
+I (2885694) health: heartbeat: uptime=2884s heap_free=7776KB heap_min=7776KB ble=OK disconnects=0 audio_frames=144052 audio_drops=0 keys=0 sessions=0 usb_det_raw=1 bat_chg_raw=1 bat_std_raw=1 usb_det_policy=v2_gpio7_r37_r32_10K_10K_divider charger_policy=v2_gpio14_chg_gpio21_std_active_low
+I (2886644) audio_capture: frame captured count=144100 bytes=92224000
+I (2887634) audio_capture: frame captured count=144150 bytes=92256000
+I (2888644) audio_capture: frame captured count=144200 bytes=92288000
+I (2889644) audio_capture: frame captured count=144250 bytes=92320000
+I (2890094) ble_hid: battery notify level=86 voltage_mv=4026 raw=2375 adc_mv=2013 reason=threshold_sample forced=0
+I (2890634) audio_capture: frame captured count=144300 bytes=92352000
+I (2891644) audio_capture: frame captured count=144350 bytes=92384000
+{"t":1984165,"src":"ble_hid","evt":5,"sev":"INFO","a1":83,"a2":3996,"a3":2357,"a4":1998}
+{"t":1984577,"src":"health","evt":1,"sev":"INFO","a1":7781,"a2":7778,"a3":1,"a4":33}
+{"t":1989164,"src":"ble_hid","evt":5,"sev":"INFO","a1":85,"a2":4022,"a3":2374,"a4":2011}
+{"t":2024164,"src":"ble_hid","evt":5,"sev":"INFO","a1":83,"a2":3998,"a3":2359,"a4":1999}
+{"t":2029164,"src":"ble_hid","evt":5,"sev":"INFO","a1":85,"a2":4020,"a3":2372,"a4":2010}
+{"t":2039164,"src":"ble_hid","evt":5,"sev":"INFO","a1":83,"a2":4000,"a3":2360,"a4":2000}
+{"t":2044628,"src":"health","evt":1,"sev":"INFO","a1":7781,"a2":7778,"a3":1,"a4":34}
+{"t":2049164,"src":"ble_hid","evt":5,"sev":"INFO","a1":85,"a2":4016,"a3":2370,"a4":2008}
+{"t":2054164,"src":"ble_hid","evt":5,"sev":"INFO","a1":83,"a2":3998,"a3":2359,"a4":1999}
+{"t":2059214,"src":"ble_hid","evt":5,"sev":"INFO","a1":85,"a2":4016,"a3":2370,"a4":2008}
+{"t":2094214,"src":"ble_hid","evt":5,"sev":"INFO","a1":83,"a2":4000,"a3":2359,"a4":2000}
+{"t":2099214,"src":"ble_hid","evt":5,"sev":"INFO","a1":85,"a2":4016,"a3":2370,"a4":2008}
+{"t":2104638,"src":"health","evt":1,"sev":"INFO","a1":7781,"a2":7778,"a3":1,"a4":35}
+{"t":2164648,"src":"health","evt":1,"sev":"INFO","a1":7781,"a2":7778,"a3":1,"a4":36}
+{"t":2209214,"src":"ble_hid","evt":5,"sev":"INFO","a1":83,"a2":3992,"a3":2356,"a4":1996}
+{"t":2224214,"src":"ble_hid","evt":5,"sev":"INFO","a1":85,"a2":4016,"a3":2369,"a4":2008}
+{"t":2224658,"src":"health","evt":1,"sev":"INFO","a1":7781,"a2":7778,"a3":1,"a4":37}
+{"t":2284214,"src":"ble_hid","evt":5,"sev":"INFO","a1":83,"a2":4000,"a3":2360,"a4":2000}
+{"t":2284668,"src":"health","evt":1,"sev":"INFO","a1":7781,"a2":7778,"a3":1,"a4":38}
+{"t":2289214,"src":"ble_hid","evt":5,"sev":"INFO","a1":85,"a2":4016,"a3":2369,"a4":2008}
+{"t":2333260,"src":"ble_gap","evt":9,"sev":"INFO","a1":1,"a2":3,"a3":65792,"a4":0}
+{"t":2336020,"src":"ble_gap","evt":9,"sev":"INFO","a1":1,"a2":3,"a3":65537,"a4":0}
+{"t":2344678,"src":"health","evt":1,"sev":"INFO","a1":7781,"a2":7778,"a3":1,"a4":39}
+{"t":2394214,"src":"ble_hid","evt":5,"sev":"INFO","a1":83,"a2":3990,"a3":2353,"a4":1995}
+{"t":2404728,"src":"health","evt":1,"sev":"INFO","a1":7781,"a2":7778,"a3":1,"a4":40}
+{"t":2409214,"src":"ble_hid","evt":5,"sev":"INFO","a1":86,"a2":4026,"a3":2376,"a4":2013}
+{"t":2419214,"src":"ble_hid","evt":5,"sev":"INFO","a1":84,"a2":4006,"a3":2363,"a4":2003}
+{"t":2429214,"src":"ble_hid","evt":5,"sev":"INFO","a1":86,"a2":4028,"a3":2376,"a4":2014}
+{"t":2444214,"src":"ble_hid","evt":5,"sev":"INFO","a1":84,"a2":4006,"a3":2364,"a4":2003}
+{"t":2454214,"src":"ble_hid","evt":5,"sev":"INFO","a1":86,"a2":4026,"a3":2376,"a4":2013}
+{"t":2464214,"src":"ble_hid","evt":5,"sev":"INFO","a1":83,"a2":3998,"a3":2359,"a4":1999}
+{"t":2464738,"src":"health","evt":1,"sev":"INFO","a1":7781,"a2":7778,"a3":1,"a4":41}
+{"t":2469214,"src":"ble_hid","evt":5,"sev":"INFO","a1":85,"a2":4018,"a3":2370,"a4":2009}
+{"t":2499214,"src":"ble_hid","evt":5,"sev":"INFO","a1":83,"a2":3996,"a3":2357,"a4":1998}
+{"t":2504214,"src":"ble_hid","evt":5,"sev":"INFO","a1":85,"a2":4018,"a3":2371,"a4":2009}
+{"t":2524748,"src":"health","evt":1,"sev":"INFO","a1":7781,"a2":7778,"a3":1,"a4":42}
+{"t":2544214,"src":"ble_hid","evt":5,"sev":"INFO","a1":83,"a2":3990,"a3":2353,"a4":1995}
+{"t":2574214,"src":"ble_hid","evt":5,"sev":"INFO","a1":85,"a2":4016,"a3":2369,"a4":2008}
+{"t":2579214,"src":"ble_hid","evt":5,"sev":"INFO","a1":83,"a2":4000,"a3":2360,"a4":2000}
+{"t":2584214,"src":"ble_hid","evt":5,"sev":"INFO","a1":85,"a2":4024,"a3":2375,"a4":2012}
+{"t":2584758,"src":"health","evt":1,"sev":"INFO","a1":7781,"a2":7778,"a3":1,"a4":43}
+{"t":2594214,"src":"ble_hid","evt":5,"sev":"INFO","a1":83,"a2":3990,"a3":2353,"a4":1995}
+{"t":2619214,"src":"ble_hid","evt":5,"sev":"INFO","a1":85,"a2":4014,"a3":2369,"a4":2007}
+{"t":2644768,"src":"health","evt":1,"sev":"INFO","a1":7781,"a2":7778,"a3":1,"a4":44}
+{"t":2669214,"src":"ble_hid","evt":5,"sev":"INFO","a1":83,"a2":3996,"a3":2357,"a4":1998}
+{"t":2684214,"src":"ble_hid","evt":5,"sev":"INFO","a1":85,"a2":4022,"a3":2374,"a4":2011}
+{"t":2704778,"src":"health","evt":1,"sev":"INFO","a1":7781,"a2":7778,"a3":1,"a4":45}
+{"t":2724214,"src":"ble_hid","evt":5,"sev":"INFO","a1":83,"a2":4000,"a3":2359,"a4":2000}
+I (2892644) audio_capture: frame captured count=144400 bytes=92416000
+{"t":2764214,"src":"ble_hid","evt":5,"sev":"INFO","a1":85,"a2":4024,"a3":2374,"a4":2012}
+{"t":2764828,"src":"health","evt":1,"sev":"INFO","a1":7781,"a2":7778,"a3":1,"a4":46}
+{"t":2794214,"src":"ble_hid","evt":5,"sev":"INFO","a1":83,"a2":3998,"a3":2360,"a4":1999}
+{"t":2809214,"src":"ble_hid","evt":5,"sev":"INFO","a1":85,"a2":4016,"a3":2370,"a4":2008}
+{"t":2824838,"src":"health","evt":1,"sev":"INFO","a1":7781,"a2":7778,"a3":1,"a4":47}
+{"t":2854214,"src":"ble_hid","evt":5,"sev":"INFO","a1":83,"a2":3996,"a3":2357,"a4":1998}
+{"t":2859214,"src":"ble_hid","evt":5,"sev":"INFO","a1":85,"a2":4016,"a3":2370,"a4":2008}
+{"t":2869214,"src":"ble_hid","evt":5,"sev":"INFO","a1":83,"a2":4000,"a3":2360,"a4":2000}
+{"t":2876591,"src":"board","evt":3,"sev":"INFO","a1":1,"a2":0,"a3":0,"a4":0}
+{"t":2876636,"src":"board","evt":3,"sev":"INFO","a1":2,"a2":0,"a3":0,"a4":0}
+{"t":2876680,"src":"board","evt":4,"sev":"INFO","a1":1,"a2":1,"a3":1,"a4":6}
+{"t":2876702,"src":"board","evt":4,"sev":"INFO","a1":2,"a2":5,"a3":7,"a4":12}
+{"t":2876728,"src":"board","evt":4,"sev":"INFO","a1":3,"a2":13,"a3":11,"a4":4}
+{"t":2876750,"src":"board","evt":4,"sev":"INFO","a1":4,"a2":4,"a3":17,"a4":6}
+{"t":2879214,"src":"ble_hid","evt":5,"sev":"INFO","a1":85,"a2":4022,"a3":2374,"a4":2011}
+{"t":2882285,"src":"power","evt":6,"sev":"INFO","a1":128,"a2":228,"a3":100,"a4":1}
+I (2892994) diag_log: DIAGLOG LAST 64: dumped 64 events
+I (2892994) power_manager: blocker clear mask=0x00000064 blockers=0x00000080 (external_power)
+I (2893784) audio_capture: frame captured count=144450 bytes=92448000
+I (2894794) audio_capture: frame captured count=144500 bytes=92480000
+I (2895784) audio_capture: frame captured count=144550 bytes=92512000
+I (2896784) audio_capture: frame captured count=144600 bytes=92544000
+I (2897794) audio_capture: frame captured count=144650 bytes=92576000
+I (2898784) audio_capture: frame captured count=144700 bytes=92608000
+I (2899784) audio_capture: frame captured count=144750 bytes=92640000
+I (2900114) ble_hid: battery notify level=84 voltage_mv=4010 raw=2366 adc_mv=2005 reason=threshold_sample forced=0
+I (2900794) audio_capture: frame captured count=144800 bytes=92672000
+I (2901784) audio_capture: frame captured count=144850 bytes=92704000
+I (2902784) audio_capture: frame captured count=144900 bytes=92736000
+I (2903794) audio_capture: frame captured count=144950 bytes=92768000
+I (2904784) audio_capture: frame captured count=145000 bytes=92800000
+> ~POWER:STATUS
+~POWER:STATUS state=ACTIVE blockers=0x00000080 blocker_names=external_power shutdown_blockers=0x00000080 shutdown_blocker_names=external_power idle_ms=0 user_idle_ms=0 radio_idle_ms=0 ble_connected=1 automatic_shutdown_blocked_by_external_power=0 external_power_present=1 usb_power_present=1 charging=0 charge_full=0 usb_det_level=high bat_chg_level=high bat_std_level=high pwr_hold_level=low usb_det_policy=v2_gpio7_r37_r32_10K_10K_divider charger_polarity=v2_gpio14_chg_gpio21_std_active_low pwr_hold_policy=v2_gpio11_power_latch_hold_low_release_high_for_hardware_shutdown battery_mv=4024 battery_level=85 battery_valid=1 last_shutdown_reason=none last_shutdown_idle_ms=0 last_shutdown_blockers=0x00000000 guard=1 audio_idle_ms=5000 connected_idle_ms=30000 disconnected_idle_ms=30000 hardware_shutdown_ms=1800000 pwr_hold_gpio=11 pwr_hold_level=low pwr_hold_configured=1 pwr_hold_policy=v2_gpio11_power_latch_hold_low_release_high_for_hardware_shutdown voice_key_gpio=18 hardware_shutdown_user_action="short-press hardware power key for cold boot after PWR_HOLD/GPIO11 release-high"
+I (2905784) audio_capture: frame captured count=145050 bytes=92832000
+> ~BOARD:STATUS
+~BOARD:STATUS profile=voice-keyboard-v2-n16r8 module=ESP32-S3-WROOM-1-N16R8 flash_mb=16 psram_mb=8 psram_mode=octal key_gpios=38,39,40,41 ec11_a_gpio=42 ec11_b_gpio=2 ec11_key_gpio=18 ec11_key_provisional=1 mic_clk_gpio=48 mic_dout_gpio=47 mic_policy=v2_sph0655_pdm_clk_gpio48_dout_gpio47_enabled_for_a1_a2_hardware_validation pwr_hold_gpio=11 pwr_hold_level=low pwr_hold_configured=1 pwr_hold_policy=v2_gpio11_power_latch_hold_low_release_high_for_hardware_shutdown usb_det_gpio=7 usb_det_level=high usb_det_policy=v2_gpio7_r37_r32_10K_10K_divider bat_chg_gpio=14 bat_chg_level=high bat_std_gpio=21 bat_std_level=high charger_polarity=v2_gpio14_chg_gpio21_std_active_low battery_gpio=8 battery_mv=3996 battery_adc_mv=1998 battery_raw=2357 battery_level=83 battery_valid=1 battery_adc_calibrated=1 battery_samples=4 battery_result=ESP_OK battery_scaling="68K/68K divider, VBAT~=2*ADC" battery_policy="product_empty_3000mv_full_4200mv_absolute_min_2700mv" reserved_mspi_gpio=GPIO35,GPIO36,GPIO37
+~BOARD:POWER branch=TPS63020_input_branch present=0 gpio=-1 raw_adc=0 adc_mv=0 adc_calibrated=0 sample_count=0 calibration_status=current_telemetry_not_populated current_model="not_populated" current_calibrated=0 current_ma_valid=0 estimated_input_current_ma=0 battery_side_mv=0 battery_voltage_source="BAT_V_ADC/GPIO8 68K/68K midpoint, VBAT~=2*ADC" power_mw_valid=0 estimated_input_power_mw=0 result=ESP_ERR_NOT_SUPPORTED policy=v2_optional_current_telemetry_not_populated_battery_adc_only_no_power_decisions
+~BOARD:POWER branch=SY7088_input_branch present=0 gpio=-1 raw_adc=0 adc_mv=0 adc_calibrated=0 sample_count=0 calibration_status=current_telemetry_not_populated current_model="not_populated" current_calibrated=0 current_ma_valid=0 estimated_input_current_ma=0 battery_side_mv=0 battery_voltage_source="BAT_V_ADC/GPIO8 68K/68K midpoint, VBAT~=2*ADC" power_mw_valid=0 estimated_input_power_mw=0 result=ESP_ERR_NOT_SUPPORTED policy=v2_optional_current_telemetry_not_populated_battery_adc_only_no_power_decisions
+~LED:STATUS group=status transport=WS2812 data_gpio=1 first_led=1 led_count=6 led_refs="LED1..LED6" brightness_cap_percent=8 vdd_led_signed_off=0 full_white_allowed=0 rgbw_calibration_path=provisional policy="LED1..LED6 semantic PWR/BLE/REC/AI/OK/WARN rail"
+~LED:STATUS group=ec11 transport=WS2812 data_gpio=5 first_led=7 led_count=12 led_refs="LED7..LED10+LED15..LED16+LED23..LED28" brightness_cap_percent=8 vdd_led_signed_off=0 full_white_allowed=0 rgbw_calibration_path=provisional policy="EC11 knob ring feedback on the dedicated PWM_RGB_EC11 strip"
+~LED:STATUS group=key transport=WS2812 data_gpio=13 first_led=11 led_count=4 led_refs="LED11..LED14" brightness_cap_percent=8 vdd_led_signed_off=0 full_white_allowed=0 rgbw_calibration_path=provisional policy="LED11..LED14 transient local key feedback"
+~LED:STATUS group=edge transport=WS2812 data_gpio=4 first_led=17 led_count=6 led_refs="LED17..LED22" brightness_cap_percent=4 vdd_led_signed_off=0 full_white_allowed=0 rgbw_calibration_path=provisional policy="LED17..LED22 restrained edge/frame effects"
+~LED:STATUS policy=v2_four_zone_ws2812_status_gpio1_ec11_gpio5_key_gpio13_edge_gpio4
+I (2906794) audio_capture: frame captured count=145100 bytes=92864000
+I (2907784) audio_capture: frame captured count=145150 bytes=92896000
+> ~DIAGLOG:LAST:64
+I (2907784) power_manager: blocker set mask=0x00000064 blockers=0x000000e4 (diag_export|flash_write|usb_command|external_power)
+I (2908784) audio_capture: frame captured count=145200 bytes=92928000
+```

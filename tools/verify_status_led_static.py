@@ -64,11 +64,23 @@ CHECKS = {
         "STATUS_LED_STANDARD_PROFILE_BUDGET_MA 760U",
         "STATUS_LED_AMBIENT_PROFILE_BUDGET_MA 620U",
         "STATUS_LED_CHASE_DEFAULT_STEP_MS 250U",
-        "STATUS_LED_CONTRACT_REV \"status_key_brighter_pure_product_effects_v6\"",
+        "STATUS_LED_KEY_FEEDBACK_MS 240U",
+        "STATUS_LED_BOOT_ACK_MS 2500U",
+        "STATUS_LED_CHARGING_BREATH_PERIOD_MS 2600U",
+        "STATUS_LED_CHARGING_BREATH_MIN_PERCENT 14U",
+        "STATUS_LED_CHARGING_BREATH_MAX_PERCENT 82U",
+        "STATUS_LED_CONTRACT_REV \"status_key_isolated_power_breath_v7\"",
+        "boot_feedback_until_ms",
+        "status_led_force_boot_feedback",
+        "status_led_boot_power_color_locked",
+        "STATUS_LED_NVS_BRIGHTNESS_KEY \"brightness\"",
         "led_contract_rev=",
         "timing=ws2812_4020_compatible",
         "effect_profile=product_v1",
         "profile_cap_percent=%u",
+        "brightness_percent=%u",
+        "user_brightness_percent=%u",
+        "effective_cap_percent=%u",
         "profile_dimming_disabled=0",
         "factory_full_brightness=1",
         "safety_full_brightness=1",
@@ -89,6 +101,7 @@ CHECKS = {
         "key_physical_map=",
         "separate_status_key_color_order=1",
         "~LED:BUDGET",
+        "BRIGHTNESS ",
         "~LED:PRIVACY",
         "TEST:RGBW",
         "TEST:MAP",
@@ -121,6 +134,20 @@ CHECKS = {
         "status_led_clamp_current_locked",
         "status_led_render_error_locked",
         "status_led_render_recording_locked",
+        "STATUS_LED_REC_GOLD_R 255U",
+        "STATUS_LED_REC_GOLD_G 172U",
+        "status_led_rec_gold()",
+        "status_led_triangle_percent(now_ms, 2400U, 42U, 85U)",
+        "status_led_triangle_percent(\n                now_ms,\n                STATUS_LED_CHARGING_BREATH_PERIOD_MS,",
+        "s_state.external_power_present",
+        "BOARD_PINS_USB_DET_IO",
+        "bool external_power_present = usb_power_present || charging || full",
+        "external_power=%u charging=%u full=%u",
+        "status_led_rgb(255, 255, 255), percent, false",
+        "active_flags=PWR:%u,BLE:%u,REC:%u,AI:%u,OK:%u,WARN:%u,KEY:%u,EDGE:%u",
+        "status_rgb=PWR:%u,%u,%u;BLE:%u,%u,%u;REC:%u,%u,%u",
+        "if (changed) {\n            s_state.status_window_until_ms = now_ms + STATUS_LED_STATUS_WINDOW_MS;",
+        "if (changed && state == STATUS_LED_BLE_CONNECTED && confidence_window)",
         "status_led_render_processing_locked",
         "status_led_render_edge_locked",
         "STATUS_LED_TX_MUTEX_WAIT_MS",
@@ -185,6 +212,8 @@ CHECKS = {
     "components/voice_recording_control/voice_recording_control.c": [
         "status_led_set_recording(true, STATUS_LED_REC_SOURCE_DEVICE_MIC)",
         "status_led_set_recording(false, STATUS_LED_REC_SOURCE_NOT_AVAILABLE)",
+        "suppress_retry_led_error",
+        "status_led_clear_error(STATUS_LED_ERROR_DOMAIN_REC)",
         "status_led_set_processing(true, \"audio_session_finishing\")",
         "status_led_notify_success(\"recording_session_finished\")",
     ],
@@ -208,8 +237,15 @@ CHECKS = {
         "status and key strips keep separate color-order storage",
         "`standard` is the product default",
         "Product Effect Language",
+        "Repeated same-state BLE callbacks are idempotent",
+        "External power overrides battery-color display on `PWR`",
+        "continuous, higher-contrast white breath",
+        "full is steady white",
+        "does not borrow key LEDs",
+        "REC`, `OK`, and routine `AI` states do not recolor key LEDs",
+        "Edge/frame LEDs are quiet in the standard product profile",
         "brighter, saturated primary colors",
-        "pure/saturated colors",
+        "clear semantic colors",
         "RGBW, map, chase, and pixel test commands remain calibration tools",
         "`~LED:TEST:RGBW <status|ec11|knob|ring|key|edge|all>`",
         "`~LED:TEST:PIXEL <status|ec11|knob|ring|key|edge> <LEDn|index> <red|green|blue|white|off> [percent]`",
@@ -224,7 +260,7 @@ CHECKS = {
         "rgbw-single-led",
         "semantic-preview",
         "STATUS_EFFECT_BASELINE",
-        "status_key_brighter_pure_product_effects_v6",
+        "status_key_isolated_power_breath_v7",
         "make_semantic_sequence",
         "write_status_effects_markdown",
         "status-effects.md",
@@ -317,6 +353,7 @@ def main() -> int:
 
     status_led = read("components/status_led/status_led.c")
     status_led_backend = read("components/status_led/status_led_strip_backend.c")
+    main_c = read("main/main.c")
     if "bit-bang" in status_led.lower() or "bit-bang" in status_led_backend.lower():
         failures.append("status_led: do not bit-bang WS2812 timing")
     if "STATUS_LED_EC11_COUNT 4" in status_led:
@@ -325,6 +362,20 @@ def main() -> int:
         failures.append("status_led.c: stale edge/frame fourteen-LED strip count")
     if "driver/rmt_" in status_led or "soc/soc_caps.h" in status_led:
         failures.append("status_led.c: business rendering layer must not include the RMT/WS2812 backend directly")
+    if "status_led_set_max(&frame->key[0], status_led_scale_raw(rec" in status_led:
+        failures.append("status_led.c: REC must not borrow KEY1; key LEDs are local white feedback only")
+    if "status_led_set_max(&frame->key[index], ok)" in status_led:
+        failures.append("status_led.c: OK success must not recolor key LEDs")
+    if "status_led_rgb(160, 0, 255), 52U" in status_led:
+        failures.append("status_led.c: routine AI processing must not recolor key LEDs purple")
+    if "status_led_token_locked(status_led_rec_gold(), breath, true)" in status_led:
+        failures.append("status_led.c: REC must respect user brightness; do not render it as safety brightness")
+    if "status_led_token_locked(status_led_rgb(160, 0, 255), breath, true)" in status_led:
+        failures.append("status_led.c: routine AI must respect user brightness; do not render it as safety brightness")
+    if "status_led_token_locked(status_led_rgb(255, 255, 255), percent, true)" in status_led:
+        failures.append("status_led.c: routine external-power PWR white must respect user brightness")
+    if "s_state.profile == STATUS_LED_PROFILE_STANDARD && now_ms < s_state.status_window_until_ms" in status_led:
+        failures.append("status_led.c: standard profile edge LEDs must not light from generic status windows")
     if re.search(r"\.mem_block_symbols\s*=\s*64\b", status_led_backend):
         failures.append(
             "status_led_strip_backend.c: RMT mem_block_symbols=64 consumes two ESP32-S3 RMT blocks per strip and leaves fewer than four TX channels"
@@ -332,6 +383,30 @@ def main() -> int:
     if not re.search(r"\.mem_block_symbols\s*=\s*SOC_RMT_MEM_WORDS_PER_CHANNEL\b", status_led_backend):
         failures.append(
             "status_led_strip_backend.c: RMT strip channels must use SOC_RMT_MEM_WORDS_PER_CHANNEL so all four V2 LED zones can initialize"
+        )
+
+    led_init_index = main_c.find("status_led_init()")
+    led_start_index = main_c.find("status_led_start()")
+    diag_log_index = main_c.find("diag_log_init()")
+    post_index = main_c.find("self_test_run()")
+    ble_init_index = main_c.find("ble_hid_init()")
+    keyboard_start_index = main_c.find("keyboard_start")
+    boot_window_index = main_c.find('status_led_show_status_window("booting")')
+    if not (0 <= led_init_index < led_start_index < post_index):
+        failures.append(
+            "main.c: status_led_start() must run immediately after status_led_init() and before POST for cold-boot feedback"
+        )
+    if not (0 <= led_init_index < led_start_index < diag_log_index):
+        failures.append(
+            "main.c: status_led_start() must run before diag_log_init() so flash log replay cannot delay the PWR boot light"
+        )
+    if not (0 <= led_start_index < ble_init_index and led_start_index < keyboard_start_index):
+        failures.append(
+            "main.c: status_led_start() must not wait for BLE HID or keyboard startup"
+        )
+    if not (0 <= led_start_index < boot_window_index < post_index):
+        failures.append(
+            'main.c: cold boot must request status_led_show_status_window("booting") before POST'
         )
 
     board_leds = read("components/board/board.c")

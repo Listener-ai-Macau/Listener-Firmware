@@ -28,6 +28,7 @@ extern esp_err_t ble_hid_gap_set_low_power_advertising(bool enabled) __attribute
 extern esp_err_t ble_hid_gap_prepare_shutdown_disconnect(void) __attribute__((weak));
 extern esp_err_t ble_hid_gap_request_low_power_connection(void) __attribute__((weak));
 extern esp_err_t ble_hid_gap_request_active_connection(void) __attribute__((weak));
+extern esp_err_t ble_hid_gap_request_reconnect(void) __attribute__((weak));
 extern void system_health_set_low_power_mode(bool enabled) __attribute__((weak));
 extern void status_led_set_low_power_disabled(bool disabled) __attribute__((weak));
 extern void status_led_prepare_sleep(void) __attribute__((weak));
@@ -59,11 +60,11 @@ extern void status_led_prepare_sleep(void) __attribute__((weak));
 #define POWER_MANAGER_USB_PREFIX "POWER:"
 #define POWER_MANAGER_BATTERY_WARN_PERCENT 10U
 #ifndef CONFIG_POWER_MANAGER_BATTERY_CRITICAL_PERCENT
-#define CONFIG_POWER_MANAGER_BATTERY_CRITICAL_PERCENT 5
+#define CONFIG_POWER_MANAGER_BATTERY_CRITICAL_PERCENT 0
 #endif
 #define POWER_MANAGER_BATTERY_CRITICAL_PERCENT ((uint8_t)CONFIG_POWER_MANAGER_BATTERY_CRITICAL_PERCENT)
 #define POWER_MANAGER_TASK_STACK_BYTES (4 * 1024)
-#define POWER_MANAGER_SHUTDOWN_USER_ACTION "short-press hardware power key for cold boot after PWR_HOLD/GPIO46 release"
+#define POWER_MANAGER_SHUTDOWN_USER_ACTION "short-press hardware power key for cold boot after PWR_HOLD/GPIO11 release-high"
 #define POWER_MANAGER_POWER_SOURCE_USB_PRESENT (1u << 0)
 #define POWER_MANAGER_POWER_SOURCE_CHARGING (1u << 1)
 #define POWER_MANAGER_POWER_SOURCE_CHARGE_FULL (1u << 2)
@@ -274,8 +275,12 @@ static void power_manager_read_power_source(power_manager_power_source_snapshot_
         .charger_polarity_policy = board_snapshot.charger_polarity_policy,
         .pwr_hold_policy = board_snapshot.pwr_hold_policy,
     };
-    out_source->external_power_present =
-        out_source->usb_power_present || out_source->charging || out_source->charge_full;
+    /*
+     * CHG/STD are charger status outputs. They remain useful diagnostics, but
+     * on a battery-only full pack they must not keep long-idle hardware
+     * shutdown blocked after VBUS/USB_DET is gone.
+     */
+    out_source->external_power_present = out_source->usb_power_present;
 }
 
 static uint32_t power_manager_shutdown_blockers_for_source(
@@ -300,6 +305,11 @@ static uint32_t power_manager_automatic_shutdown_blockers_for_source(
         blockers,
         source,
         POWER_MANAGER_SHUTDOWN_REASON_LONG_IDLE);
+}
+
+static uint32_t power_manager_without_external_power_blocker(uint32_t blockers)
+{
+    return blockers & ~(uint32_t)POWER_MANAGER_BLOCKER_EXTERNAL_POWER;
 }
 
 static void power_manager_log_power_source_diag(
@@ -404,11 +414,8 @@ static bool power_manager_sync_power_source_locked(
     s_charge_full = source->charge_full;
     s_auto_shutdown_block_logged = false;
 
-    /* Automatically set/clear EXTERNAL_POWER blocker so the
-       s_blockers != 0 early-return in target_state_locked always
-       prevents HARDWARE_SHUTDOWN when USB or charger is present.
-       This is a safety net beyond the s_external_power_present check
-       and protects against GPIO read jitter or timing races. */
+    /* External power keeps the product fully awake while plugged, while
+       automatic-shutdown diagnostics still report it as the shutdown cause. */
     if (source->external_power_present) {
         s_blockers |= POWER_MANAGER_BLOCKER_EXTERNAL_POWER;
     } else {
@@ -433,7 +440,7 @@ static power_manager_state_t power_manager_awake_idle_state_locked(uint32_t radi
 static bool power_manager_automatic_shutdown_blocked_by_external_power_locked(uint64_t now_ms)
 {
     return CONFIG_POWER_MANAGER_ENABLE &&
-           s_blockers == 0 &&
+           power_manager_without_external_power_blocker(s_blockers) == 0 &&
            s_external_power_present &&
            power_manager_user_idle_ms_locked(now_ms) >=
                (uint32_t)CONFIG_POWER_MANAGER_HARDWARE_SHUTDOWN_MS;
@@ -465,11 +472,13 @@ static bool power_manager_refresh_ble_connection_locked(uint64_t now_ms)
     }
 
     s_ble_connected = connected;
-    s_last_radio_activity_ms = now_ms;
-    if (connected) {
-        s_last_user_activity_ms = now_ms;
+    if (s_state != POWER_MANAGER_STATE_HARDWARE_SHUTDOWN) {
+        s_last_radio_activity_ms = now_ms;
+        if (connected) {
+            s_last_user_activity_ms = now_ms;
+        }
+        s_state = POWER_MANAGER_STATE_ACTIVE;
     }
-    s_state = POWER_MANAGER_STATE_ACTIVE;
     return true;
 }
 
@@ -624,7 +633,7 @@ void power_manager_get_snapshot(power_manager_snapshot_t *snapshot)
         snapshot->ble_connected = s_ble_connected;
         snapshot->automatic_shutdown_blocked_by_external_power =
             CONFIG_POWER_MANAGER_ENABLE &&
-            s_blockers == 0 &&
+            power_manager_without_external_power_blocker(s_blockers) == 0 &&
             power_source.external_power_present &&
             snapshot->user_idle_ms >= (uint32_t)CONFIG_POWER_MANAGER_HARDWARE_SHUTDOWN_MS;
         snapshot->last_shutdown_reason = s_last_shutdown_reason;
@@ -663,6 +672,22 @@ static void power_manager_reset_idle_after_shutdown_failure(void)
     }
 }
 
+static void power_manager_wait_for_power_removal(void)
+{
+    ESP_LOGE(
+        TAG,
+        "automatic hardware shutdown did not remove power; keeping PWR_HOLD/GPIO11 released high and staying quiescent");
+    if (ble_hid_gap_prepare_shutdown_disconnect != NULL) {
+        (void)ble_hid_gap_prepare_shutdown_disconnect();
+    }
+    (void)board_set_power_hold_enabled(false);
+
+    while (1) {
+        watchdog_platform_feed_current_task();
+        vTaskDelay(pdMS_TO_TICKS(1000));
+    }
+}
+
 static esp_err_t power_manager_enter_hardware_shutdown(power_manager_shutdown_reason_t reason)
 {
     if (!CONFIG_POWER_MANAGER_ENABLE) {
@@ -672,19 +697,6 @@ static esp_err_t power_manager_enter_hardware_shutdown(power_manager_shutdown_re
 
     power_manager_snapshot_t snapshot;
     power_manager_get_snapshot(&snapshot);
-    if (snapshot.blockers != 0) {
-        char blocker_text[96];
-        power_manager_blocker_names(snapshot.blockers, blocker_text, sizeof(blocker_text));
-        ESP_LOGW(
-            TAG,
-            "hardware shutdown rejected: blockers=0x%08" PRIx32 " (%s) idle_ms=%" PRIu32,
-            snapshot.blockers,
-            blocker_text,
-            snapshot.idle_ms);
-        diag_log(DIAG_SRC_POWER, DIAG_POWER_SLEEP_BLOCKED, DIAG_SEV_WARN,
-                 snapshot.blockers, snapshot.idle_ms, (uint32_t)reason, 0);
-        return ESP_ERR_INVALID_STATE;
-    }
 
     if (reason == POWER_MANAGER_SHUTDOWN_REASON_LONG_IDLE &&
         snapshot.external_power_present) {
@@ -735,6 +747,23 @@ static esp_err_t power_manager_enter_hardware_shutdown(power_manager_shutdown_re
         return ESP_ERR_INVALID_STATE;
     }
 
+    uint32_t entry_blockers = reason == POWER_MANAGER_SHUTDOWN_REASON_LONG_IDLE
+        ? snapshot.blockers
+        : power_manager_without_external_power_blocker(snapshot.blockers);
+    if (entry_blockers != 0) {
+        char blocker_text[96];
+        power_manager_blocker_names(entry_blockers, blocker_text, sizeof(blocker_text));
+        ESP_LOGW(
+            TAG,
+            "hardware shutdown rejected: blockers=0x%08" PRIx32 " (%s) idle_ms=%" PRIu32,
+            entry_blockers,
+            blocker_text,
+            snapshot.idle_ms);
+        diag_log(DIAG_SRC_POWER, DIAG_POWER_SLEEP_BLOCKED, DIAG_SEV_WARN,
+                 entry_blockers, snapshot.idle_ms, (uint32_t)reason, 0);
+        return ESP_ERR_INVALID_STATE;
+    }
+
     if (audio_capture_session_is_active != NULL && audio_capture_session_is_active()) {
         ESP_LOGW(TAG, "hardware shutdown rejected: audio capture session active");
         diag_log(DIAG_SRC_POWER, DIAG_POWER_SLEEP_BLOCKED, DIAG_SEV_WARN,
@@ -752,7 +781,9 @@ static esp_err_t power_manager_enter_hardware_shutdown(power_manager_shutdown_re
         return ESP_ERR_TIMEOUT;
     }
 
-    uint32_t final_blockers = s_blockers;
+    uint32_t final_blockers = reason == POWER_MANAGER_SHUTDOWN_REASON_LONG_IDLE
+        ? s_blockers
+        : power_manager_without_external_power_blocker(s_blockers);
     uint32_t final_shutdown_blockers = power_manager_shutdown_blockers_for_source(
         final_blockers,
         &final_power_source,
@@ -855,7 +886,7 @@ static esp_err_t power_manager_enter_hardware_shutdown(power_manager_shutdown_re
     vTaskDelay(pdMS_TO_TICKS(150));
     esp_err_t hold_ret = board_set_power_hold_enabled(false);
     if (hold_ret != ESP_OK) {
-        ESP_LOGE(TAG, "hardware shutdown failed: PWR_HOLD/GPIO46 release ret=%s",
+        ESP_LOGE(TAG, "hardware shutdown failed: PWR_HOLD/GPIO11 release-high ret=%s",
                  esp_err_to_name(hold_ret));
         diag_log(DIAG_SRC_POWER, DIAG_POWER_SLEEP_BLOCKED, DIAG_SEV_ERROR,
                  0, final_idle_ms, (uint32_t)reason, (uint32_t)hold_ret);
@@ -864,10 +895,19 @@ static esp_err_t power_manager_enter_hardware_shutdown(power_manager_shutdown_re
     }
 
     vTaskDelay(pdMS_TO_TICKS(750));
+    if (reason == POWER_MANAGER_SHUTDOWN_REASON_LONG_IDLE) {
+        diag_log(DIAG_SRC_POWER, DIAG_POWER_SLEEP_BLOCKED, DIAG_SEV_ERROR,
+                 0, final_idle_ms, (uint32_t)reason, (uint32_t)ESP_FAIL);
+        power_manager_wait_for_power_removal();
+    }
+
     ESP_LOGE(
         TAG,
-        "hardware shutdown did not remove power after PWR_HOLD/GPIO46 release; restoring hold high");
+        "hardware shutdown did not remove power after PWR_HOLD/GPIO11 release-high; restoring hold low");
     (void)board_set_power_hold_enabled(true);
+    if (ble_hid_gap_request_reconnect != NULL) {
+        (void)ble_hid_gap_request_reconnect();
+    }
     diag_log(DIAG_SRC_POWER, DIAG_POWER_SLEEP_BLOCKED, DIAG_SEV_ERROR,
              0, final_idle_ms, (uint32_t)reason, (uint32_t)ESP_FAIL);
     power_manager_reset_idle_after_shutdown_failure();
@@ -1082,7 +1122,7 @@ esp_err_t power_manager_init(void)
              (uint32_t)s_last_shutdown_reason,
              s_last_shutdown_idle_ms);
     if (hold_ret != ESP_OK) {
-        ESP_LOGW(TAG, "PWR_HOLD/GPIO46 hold-high setup failed: %s", esp_err_to_name(hold_ret));
+        ESP_LOGW(TAG, "PWR_HOLD/GPIO11 hold-low setup failed: %s", esp_err_to_name(hold_ret));
     }
     return ESP_OK;
 }
@@ -1230,12 +1270,14 @@ void power_manager_set_ble_connected(bool connected)
         changed = s_ble_connected != connected;
         previous = s_state;
         s_ble_connected = connected;
-        s_last_radio_activity_ms = power_manager_now_ms();
-        if (connected) {
-            s_last_user_activity_ms = s_last_radio_activity_ms;
+        if (s_state != POWER_MANAGER_STATE_HARDWARE_SHUTDOWN) {
+            s_last_radio_activity_ms = power_manager_now_ms();
+            if (connected) {
+                s_last_user_activity_ms = s_last_radio_activity_ms;
+            }
+            s_auto_shutdown_block_logged = false;
+            s_state = POWER_MANAGER_STATE_ACTIVE;
         }
-        s_auto_shutdown_block_logged = false;
-        s_state = POWER_MANAGER_STATE_ACTIVE;
         next = s_state;
         blockers = s_blockers;
         xSemaphoreGive(s_mutex);

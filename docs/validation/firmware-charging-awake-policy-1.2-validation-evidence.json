@@ -1,0 +1,128 @@
+{
+  "schema_version": 1,
+  "plan": "firmware-charging-awake-policy",
+  "step_id": "1.2",
+  "generated_at": "2026-06-09T23:12:22.8861996+08:00",
+  "result": "PASS",
+  "repo_root": "C:\\Users\\Billy\\Desktop\\listener\\voice-keyboard-firmware",
+  "worktree": "C:\\Users\\Billy\\Desktop\\listener\\voice-keyboard-firmware-wt-claude-firmware-charging-awake-policy-1.2",
+  "branch": "ai/claude-firmware-charging-awake-policy-1.2",
+  "commit": "2efa4e1fbeef54047de0d4d59a4f6205cdde2984",
+  "timeout_seconds": 120,
+  "commands": [
+    {
+      "index": 1,
+      "command": "pwsh -NoProfile -File .\\tools\\verify_charging_awake_policy_hardware.ps1 -SelfTest -ExpectExternalPower -OutputDir .\\tests\\artifacts\\firmware-charging-awake-policy-1.2\\selftest-latest",
+      "runnable": true,
+      "worktree": "C:\\Users\\Billy\\Desktop\\listener\\voice-keyboard-firmware-wt-claude-firmware-charging-awake-policy-1.2",
+      "branch": "ai/claude-firmware-charging-awake-policy-1.2",
+      "commit": "2efa4e1fbeef54047de0d4d59a4f6205cdde2984",
+      "status": "PASS",
+      "started_at": "2026-06-09T23:12:18.1977271+08:00",
+      "finished_at": "2026-06-09T23:12:19.4947880+08:00",
+      "duration_ms": 1297,
+      "exit_code": 0,
+      "timed_out": false,
+      "stdout_summary": [
+        "PASS: charging-awake hardware evidence -> C:\\Users\\Billy\\Desktop\\listener\\voice-keyboard-firmware-wt-claude-firmware-charging-awake-policy-1.2\\tests\\artifacts\\firmware-charging-awake-policy-1.2\\selftest-latest\\charging-awake-hardware-evidence.json",
+        "manual-gates=4"
+      ],
+      "stderr_summary": [],
+      "output_sha256": "2b7e903081ffc0fa7f9e3470ee710231cbd20aec384be4fad1a2bcb7459ccce4",
+      "evidence_refs": [],
+      "artifacts": []
+    },
+    {
+      "index": 2,
+      "command": "manual: identify the current unique ESP32 COM port and current Listener BLE resource, then run aiw with-lock only around serial/BLE capture while executing .\\tools\\verify_charging_awake_policy_hardware.ps1 -Port <current-esp32-com> -ExpectExternalPower -OutputDir .\\tests\\artifacts\\firmware-charging-awake-policy-1.2\\<timestamp>",
+      "runnable": false,
+      "worktree": "C:\\Users\\Billy\\Desktop\\listener\\voice-keyboard-firmware-wt-claude-firmware-charging-awake-policy-1.2",
+      "branch": "ai/claude-firmware-charging-awake-policy-1.2",
+      "commit": "2efa4e1fbeef54047de0d4d59a4f6205cdde2984",
+      "status": "RECORDED",
+      "started_at": "2026-06-09T23:12:19.5400461+08:00",
+      "finished_at": "2026-06-09T23:12:19.5400461+08:00",
+      "duration_ms": 0,
+      "exit_code": null,
+      "timed_out": false,
+      "stdout_summary": [],
+      "stderr_summary": [],
+      "output_sha256": null,
+      "evidence_refs": [
+        "artifact:docs\\validation\\firmware-charging-awake-policy-1.2\\hardware-com7-evidence.json"
+      ],
+      "artifacts": [
+        {
+          "ref": "artifact:docs\\validation\\firmware-charging-awake-policy-1.2\\hardware-com7-evidence.json",
+          "path": "docs\\validation\\firmware-charging-awake-policy-1.2\\hardware-com7-evidence.json",
+          "exists": true,
+          "sha256": "4ca8928340fb13428725af6bda6b80d497bfe85f9f201ac28b17eea849faf41f"
+        }
+      ]
+    },
+    {
+      "index": 3,
+      "command": "pwsh -NoProfile -File .\\tools\\verify_charging_awake_policy_static.ps1",
+      "runnable": true,
+      "worktree": "C:\\Users\\Billy\\Desktop\\listener\\voice-keyboard-firmware-wt-claude-firmware-charging-awake-policy-1.2",
+      "branch": "ai/claude-firmware-charging-awake-policy-1.2",
+      "commit": "2efa4e1fbeef54047de0d4d59a4f6205cdde2984",
+      "status": "PASS",
+      "started_at": "2026-06-09T23:12:19.5532021+08:00",
+      "finished_at": "2026-06-09T23:12:20.9453232+08:00",
+      "duration_ms": 1392,
+      "exit_code": 0,
+      "timed_out": false,
+      "stdout_summary": [
+        "PASS: charging-awake policy static checks cover raw/interpreted power inputs, plugged ACTIVE behavior, automatic hardware-shutdown blocking, manual shutdown override, plug/unplug idle reset, and diagnostics."
+      ],
+      "stderr_summary": [],
+      "output_sha256": "978e5ab3c191228315d2a97aa1ae614a02be6c2ebd7b218ad9954c0c2a3f371b",
+      "evidence_refs": [],
+      "artifacts": []
+    },
+    {
+      "index": 4,
+      "command": "pwsh -NoProfile -File .\\tools\\ai\\repo_features.ps1 -Check",
+      "runnable": true,
+      "worktree": "C:\\Users\\Billy\\Desktop\\listener\\voice-keyboard-firmware-wt-claude-firmware-charging-awake-policy-1.2",
+      "branch": "ai/claude-firmware-charging-awake-policy-1.2",
+      "commit": "2efa4e1fbeef54047de0d4d59a4f6205cdde2984",
+      "status": "PASS",
+      "started_at": "2026-06-09T23:12:20.9478879+08:00",
+      "finished_at": "2026-06-09T23:12:22.2644653+08:00",
+      "duration_ms": 1317,
+      "exit_code": 0,
+      "timed_out": false,
+      "stdout_summary": [
+        "PASS: firmware repo feature script is present, concise, and covers ESP32-S3 N16R8 BLE HID/audio diagnostics."
+      ],
+      "stderr_summary": [],
+      "output_sha256": "636c2c1d984d252efbd30c5dbb78fe8be7041892ffb74ae840dafe949e053e92",
+      "evidence_refs": [],
+      "artifacts": []
+    },
+    {
+      "index": 5,
+      "command": "git diff --check",
+      "runnable": true,
+      "worktree": "C:\\Users\\Billy\\Desktop\\listener\\voice-keyboard-firmware-wt-claude-firmware-charging-awake-policy-1.2",
+      "branch": "ai/claude-firmware-charging-awake-policy-1.2",
+      "commit": "2efa4e1fbeef54047de0d4d59a4f6205cdde2984",
+      "status": "PASS",
+      "started_at": "2026-06-09T23:12:22.2660440+08:00",
+      "finished_at": "2026-06-09T23:12:22.8853502+08:00",
+      "duration_ms": 619,
+      "exit_code": 0,
+      "timed_out": false,
+      "stdout_summary": [],
+      "stderr_summary": [
+        "warning: in the working copy of 'tools/ai/repo_features.ps1', LF will be replaced by CRLF the next time Git touches it"
+      ],
+      "output_sha256": "d86665cf2989f992b464490fa5a16419db06f71bd6520898ba5e792d4e3f7742",
+      "evidence_refs": [],
+      "artifacts": []
+    }
+  ],
+  "errors": []
+}

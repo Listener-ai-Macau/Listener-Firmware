@@ -118,7 +118,7 @@ STEP_BY_MODE = {
 MODE = payload["mode"].lower()
 STEP = STEP_BY_MODE.get(MODE, "unknown")
 EXPECTED_MODES = set(STEP_BY_MODE)
-STATUS_EFFECT_BASELINE = "status_key_brighter_pure_product_effects_v6"
+STATUS_EFFECT_BASELINE = "status_key_isolated_power_breath_v7"
 PROFILE_CAPS_PERCENT = {
     "low": 35,
     "standard": 85,
@@ -247,7 +247,7 @@ def write_status_effects_markdown(manifest):
         "",
         "## Timing And Brightness Decisions",
         "",
-        "- PWR/BLE: standard healthy awake preview keeps the low visual-weight v6 baseline; connected preview is steady blue instead of pairing/reconnect blink.",
+        "- PWR/BLE: standard healthy awake preview keeps the low visual-weight v7 baseline; connected preview is steady blue instead of pairing/reconnect blink.",
         "- REC: capture preview is the strongest routine status. rec_not_available preview records WARN + REC instead of active REC alone.",
         "- AI: processing preview includes an initial breath sample and a settled long-processing sample.",
         "- OK: preview captures the short 900 ms confirmation window.",
@@ -261,7 +261,7 @@ def write_status_effects_markdown(manifest):
         for failure in failures:
             lines.append(f"- {failure}")
     else:
-        lines.append("- None from this automated semantic preview pass; future changes should name the exact LED/effect/color/timing/brightness delta from the v6 baseline.")
+        lines.append("- None from this automated semantic preview pass; future changes should name the exact LED/effect/color/timing/brightness delta from the v7 baseline.")
 
     lines.append("")
     status_path.write_text("\n".join(lines), encoding="utf-8")
