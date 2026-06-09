@@ -41,6 +41,7 @@ pwsh -NoProfile -File .\tools\flash.ps1 -Port <COMx>
 pwsh -NoProfile -File .\tools\monitor.ps1 -Port <COMx>
 pwsh -NoProfile -File .\tools\dump_diag_log.ps1 -Port <COMx> -Count 200
 pwsh -NoProfile -File .\tools\collect_ai_diagnostics.ps1 -Port <COMx> -RecentEventCount 200 -EnableSource keyboard,voice_key -Source keyboard,voice_key -OutputDir .\tests\artifacts\ai_diagnostics
+pwsh -NoProfile -File .\tools\read_key_status.ps1 -OutputPath .\tests\artifacts\key_status\key-status-static.md -OutputJson .\tests\artifacts\key_status\key-status-static.json
 pwsh -NoProfile -File .\tools\verify_v2_board_profile_static.ps1
 pwsh -NoProfile -File .\tools\verify_power_manager_static.ps1
 pwsh -NoProfile -File .\tools\verify_charging_awake_policy_static.ps1
