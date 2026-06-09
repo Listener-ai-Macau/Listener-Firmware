@@ -18,6 +18,7 @@
 #include "battery_monitor.h"
 #include "board.h"
 #include "board_pins.h"
+#include "device_settings.h"
 #include "diag_log.h"
 #include "watchdog_platform.h"
 
@@ -121,6 +122,11 @@ static uint64_t power_manager_now_ms(void)
 static uint32_t power_manager_clamp_u64_to_u32(uint64_t value)
 {
     return value > UINT32_MAX ? UINT32_MAX : (uint32_t)value;
+}
+
+static uint32_t power_manager_hardware_shutdown_ms(void)
+{
+    return device_settings_get_battery_auto_shutdown_ms();
 }
 
 const char *power_manager_state_name(power_manager_state_t state)
@@ -439,23 +445,25 @@ static power_manager_state_t power_manager_awake_idle_state_locked(uint32_t radi
 
 static bool power_manager_automatic_shutdown_blocked_by_external_power_locked(uint64_t now_ms)
 {
+    uint32_t hardware_shutdown_ms = power_manager_hardware_shutdown_ms();
     return CONFIG_POWER_MANAGER_ENABLE &&
            power_manager_without_external_power_blocker(s_blockers) == 0 &&
            s_external_power_present &&
            power_manager_user_idle_ms_locked(now_ms) >=
-               (uint32_t)CONFIG_POWER_MANAGER_HARDWARE_SHUTDOWN_MS;
+               hardware_shutdown_ms;
 }
 
 static power_manager_state_t power_manager_target_state_locked(uint64_t now_ms)
 {
     uint32_t user_idle_ms = power_manager_user_idle_ms_locked(now_ms);
     uint32_t radio_idle_ms = power_manager_radio_idle_ms_locked(now_ms);
+    uint32_t hardware_shutdown_ms = power_manager_hardware_shutdown_ms();
     if (s_blockers != 0) {
         return POWER_MANAGER_STATE_ACTIVE;
     }
 
     if (CONFIG_POWER_MANAGER_ENABLE &&
-        user_idle_ms >= (uint32_t)CONFIG_POWER_MANAGER_HARDWARE_SHUTDOWN_MS) {
+        user_idle_ms >= hardware_shutdown_ms) {
         return s_external_power_present
             ? power_manager_awake_idle_state_locked(radio_idle_ms)
             : POWER_MANAGER_STATE_HARDWARE_SHUTDOWN;
@@ -635,7 +643,7 @@ void power_manager_get_snapshot(power_manager_snapshot_t *snapshot)
             CONFIG_POWER_MANAGER_ENABLE &&
             power_manager_without_external_power_blocker(s_blockers) == 0 &&
             power_source.external_power_present &&
-            snapshot->user_idle_ms >= (uint32_t)CONFIG_POWER_MANAGER_HARDWARE_SHUTDOWN_MS;
+            snapshot->user_idle_ms >= power_manager_hardware_shutdown_ms();
         snapshot->last_shutdown_reason = s_last_shutdown_reason;
         snapshot->last_shutdown_idle_ms = s_last_shutdown_idle_ms;
         snapshot->last_shutdown_blockers = s_last_shutdown_blockers;
@@ -645,7 +653,7 @@ void power_manager_get_snapshot(power_manager_snapshot_t *snapshot)
     snapshot->connected_idle_threshold_ms = CONFIG_POWER_MANAGER_CONNECTED_IDLE_MS;
     snapshot->audio_idle_threshold_ms = CONFIG_POWER_MANAGER_AUDIO_IDLE_MS;
     snapshot->disconnected_idle_threshold_ms = CONFIG_POWER_MANAGER_DISCONNECTED_IDLE_MS;
-    snapshot->hardware_shutdown_threshold_ms = CONFIG_POWER_MANAGER_HARDWARE_SHUTDOWN_MS;
+    snapshot->hardware_shutdown_threshold_ms = power_manager_hardware_shutdown_ms();
     snapshot->hardware_shutdown_guard_enabled = CONFIG_POWER_MANAGER_ENABLE != 0;
     board_v2_power_hold_snapshot_t power_hold = {0};
     board_get_v2_power_hold_snapshot(&power_hold);
@@ -1162,7 +1170,7 @@ esp_err_t power_manager_start(void)
         (unsigned)CONFIG_POWER_MANAGER_AUDIO_IDLE_MS,
         (unsigned)CONFIG_POWER_MANAGER_CONNECTED_IDLE_MS,
         (unsigned)CONFIG_POWER_MANAGER_DISCONNECTED_IDLE_MS,
-        (unsigned)CONFIG_POWER_MANAGER_HARDWARE_SHUTDOWN_MS,
+        (unsigned)power_manager_hardware_shutdown_ms(),
         (unsigned)CONFIG_POWER_MANAGER_EVALUATE_INTERVAL_MS,
         (int)BOARD_PINS_PWR_HOLD_IO);
     return ESP_OK;

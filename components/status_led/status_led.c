@@ -18,6 +18,7 @@
 
 #include "battery_monitor.h"
 #include "board_pins.h"
+#include "device_settings.h"
 #include "diag_log.h"
 #include "power_manager.h"
 #include "status_led_strip_backend.h"
@@ -1040,24 +1041,44 @@ static void status_led_poll_power_inputs(void)
     bool usb_power_present = BOARD_PINS_USB_DET_IO != GPIO_NUM_NC &&
                              gpio_get_level(BOARD_PINS_USB_DET_IO) > 0;
     bool external_power_present = usb_power_present || charging || full;
+    uint8_t active_brightness = device_settings_get_active_brightness_percent(external_power_present);
 
     if (xSemaphoreTake(s_mutex, portMAX_DELAY) == pdTRUE) {
         bool band_changed = s_state.battery_valid != battery_valid ||
                             (battery_valid && (s_state.battery_level_percent / 10U) != (battery_level / 10U)) ||
                             s_state.external_power_present != external_power_present ||
                             s_state.charging != charging ||
-                            s_state.full != full;
+                            s_state.full != full ||
+                            s_state.brightness_percent != active_brightness;
         s_state.battery_valid = battery_valid;
         s_state.battery_mv = battery_mv;
         s_state.battery_level_percent = battery_level;
         s_state.external_power_present = external_power_present;
         s_state.charging = charging;
         s_state.full = full;
+        s_state.brightness_percent = active_brightness;
         if (band_changed) {
             s_state.status_window_until_ms = now_ms + STATUS_LED_STATUS_WINDOW_MS;
             s_state.last_transition_ms = now_ms;
             status_led_set_last_reason_locked("power_change");
         }
+        xSemaphoreGive(s_mutex);
+    }
+}
+
+void status_led_apply_device_settings(void)
+{
+    if (s_mutex == NULL) {
+        return;
+    }
+    uint32_t now_ms = status_led_now_ms();
+    if (xSemaphoreTake(s_mutex, portMAX_DELAY) == pdTRUE) {
+        uint8_t active_brightness =
+            device_settings_get_active_brightness_percent(s_state.external_power_present);
+        s_state.brightness_percent = active_brightness;
+        s_state.status_window_until_ms = now_ms + STATUS_LED_STATUS_WINDOW_MS;
+        s_state.last_transition_ms = now_ms;
+        status_led_set_last_reason_locked("device_settings");
         xSemaphoreGive(s_mutex);
     }
 }
@@ -1732,6 +1753,7 @@ static void status_led_print_status(void)
 {
     status_led_state_t snapshot;
     status_led_strip_t strips[STATUS_LED_STRIP_COUNT];
+    device_settings_snapshot_t device_settings = {0};
     uint32_t now_ms = status_led_now_ms();
     if (xSemaphoreTake(s_mutex, portMAX_DELAY) == pdTRUE) {
         snapshot = s_state;
@@ -1740,12 +1762,15 @@ static void status_led_print_status(void)
     } else {
         return;
     }
+    device_settings_get_snapshot(&device_settings);
 
     printf(
         "~LED:STATUS profile=%s backend=rmt_ws2812_800khz refresh_ms=%u reset_us=300"
         " timing=ws2812_4020_compatible"
         " led_contract_rev=" STATUS_LED_CONTRACT_REV
-        " effect_profile=product_v1 profile_cap_percent=%u brightness_percent=%u effective_cap_percent=%u factory_full_brightness=1 safety_full_brightness=1"
+        " effect_profile=product_v1 profile_cap_percent=%u brightness_percent=%u effective_cap_percent=%u"
+        " plugged_brightness_percent=%u battery_brightness_percent=%u active_power_brightness_percent=%u"
+        " factory_full_brightness=1 safety_full_brightness=1"
         " semantic_order=LED1:PWR,LED2:BLE,LED3:REC,LED4:AI,LED5:OK,LED6:WARN"
         " mapping_contract=" STATUS_LED_STATUS_KEY_MAPPING_CONTRACT
         " status_physical_map=" STATUS_LED_STATUS_PHYSICAL_MAP
@@ -1769,6 +1794,9 @@ static void status_led_print_status(void)
         snapshot.brightness_percent < status_led_profile_cap_percent_for(snapshot.profile, false)
             ? snapshot.brightness_percent
             : status_led_profile_cap_percent_for(snapshot.profile, false),
+        device_settings.plugged_brightness_percent,
+        device_settings.battery_brightness_percent,
+        snapshot.brightness_percent,
         (int)strips[STATUS_LED_STRIP_STATUS].gpio,
         (unsigned)strips[STATUS_LED_STRIP_STATUS].led_count,
         status_led_color_order_name(strips[STATUS_LED_STRIP_STATUS].color_order),
@@ -2028,6 +2056,7 @@ bool status_led_consume_usb_command(const char *line)
             status_led_set_last_reason_locked("brightness");
             xSemaphoreGive(s_mutex);
         }
+        (void)device_settings_set_brightness_profiles(brightness, brightness);
         status_led_save_brightness(brightness);
         diag_log(DIAG_SRC_STATUS_LED, DIAG_LED_PROFILE, DIAG_SEV_INFO,
                  (uint32_t)profile, brightness, 1, 0);

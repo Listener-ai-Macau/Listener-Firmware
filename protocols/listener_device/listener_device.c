@@ -6,6 +6,7 @@
 #include "esp_app_desc.h"
 #include "esp_log.h"
 #include "esp_mac.h"
+#include "device_settings.h"
 
 static const char *TAG = "listener_device";
 
@@ -96,7 +97,7 @@ const char *listener_device_get_serial(void)
 
 const char *listener_device_get_ble_name(void)
 {
-    return LISTENER_DEVICE_BLE_NAME;
+    return device_settings_get_ble_name();
 }
 
 const char *listener_device_get_protocol_version(void)

@@ -2,6 +2,7 @@
 #include "ble_hid.h"
 #include "board.h"
 #include "boot_safety.h"
+#include "device_settings.h"
 #include "self_test.h"
 #include "system_health.h"
 #include "diag_log.h"
@@ -115,6 +116,11 @@ void app_main(void)
     if (!self_test_critical_ok(&post)) {
         ESP_LOGE(TAG, "POST failed; continuing in degraded mode so BLE can expose device status");
     }
+    esp_err_t settings_ret = device_settings_init();
+    if (settings_ret != ESP_OK) {
+        ESP_LOGW(TAG, "device settings init skipped: %s", esp_err_to_name(settings_ret));
+    }
+    status_led_apply_device_settings();
 
     bool safe_mode = boot_safety_is_safe_mode();
     if (safe_mode) {
