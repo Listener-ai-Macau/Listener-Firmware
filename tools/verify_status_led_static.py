@@ -64,7 +64,11 @@ CHECKS = {
         "STATUS_LED_STANDARD_PROFILE_BUDGET_MA 760U",
         "STATUS_LED_AMBIENT_PROFILE_BUDGET_MA 620U",
         "STATUS_LED_CHASE_DEFAULT_STEP_MS 250U",
-        "STATUS_LED_CONTRACT_REV \"status_key_brighter_pure_product_effects_v6\"",
+        "STATUS_LED_KEY_FEEDBACK_MS 240U",
+        "STATUS_LED_CHARGING_BREATH_PERIOD_MS 2600U",
+        "STATUS_LED_CHARGING_BREATH_MIN_PERCENT 14U",
+        "STATUS_LED_CHARGING_BREATH_MAX_PERCENT 82U",
+        "STATUS_LED_CONTRACT_REV \"status_key_isolated_power_breath_v7\"",
         "led_contract_rev=",
         "timing=ws2812_4020_compatible",
         "effect_profile=product_v1",
@@ -125,11 +129,13 @@ CHECKS = {
         "STATUS_LED_REC_GOLD_G 172U",
         "status_led_rec_gold()",
         "status_led_triangle_percent(now_ms, 2400U, 42U, 85U)",
+        "status_led_triangle_percent(\n                now_ms,\n                STATUS_LED_CHARGING_BREATH_PERIOD_MS,",
         "s_state.external_power_present",
         "BOARD_PINS_USB_DET_IO",
         "bool external_power_present = usb_power_present || charging || full",
         "external_power=%u charging=%u full=%u",
         "status_led_rgb(255, 255, 255), percent, true",
+        "active_flags=PWR:%u,BLE:%u,REC:%u,AI:%u,OK:%u,WARN:%u,KEY:%u,EDGE:%u",
         "status_rgb=PWR:%u,%u,%u;BLE:%u,%u,%u;REC:%u,%u,%u",
         "if (changed) {\n            s_state.status_window_until_ms = now_ms + STATUS_LED_STATUS_WINDOW_MS;",
         "if (changed && state == STATUS_LED_BLE_CONNECTED && confidence_window)",
@@ -224,8 +230,11 @@ CHECKS = {
         "Product Effect Language",
         "Repeated same-state BLE callbacks are idempotent",
         "External power overrides battery-color display on `PWR`",
-        "plugged and not full is a white breath",
+        "continuous, higher-contrast white breath",
         "full is steady white",
+        "does not borrow key LEDs",
+        "REC`, `OK`, and routine `AI` states do not recolor key LEDs",
+        "Edge/frame LEDs are quiet in the standard product profile",
         "brighter, saturated primary colors",
         "clear semantic colors",
         "RGBW, map, chase, and pixel test commands remain calibration tools",
@@ -242,7 +251,7 @@ CHECKS = {
         "rgbw-single-led",
         "semantic-preview",
         "STATUS_EFFECT_BASELINE",
-        "status_key_brighter_pure_product_effects_v6",
+        "status_key_isolated_power_breath_v7",
         "make_semantic_sequence",
         "write_status_effects_markdown",
         "status-effects.md",
@@ -343,6 +352,14 @@ def main() -> int:
         failures.append("status_led.c: stale edge/frame fourteen-LED strip count")
     if "driver/rmt_" in status_led or "soc/soc_caps.h" in status_led:
         failures.append("status_led.c: business rendering layer must not include the RMT/WS2812 backend directly")
+    if "status_led_set_max(&frame->key[0], status_led_scale_raw(rec" in status_led:
+        failures.append("status_led.c: REC must not borrow KEY1; key LEDs are local white feedback only")
+    if "status_led_set_max(&frame->key[index], ok)" in status_led:
+        failures.append("status_led.c: OK success must not recolor key LEDs")
+    if "status_led_rgb(160, 0, 255), 52U" in status_led:
+        failures.append("status_led.c: routine AI processing must not recolor key LEDs purple")
+    if "s_state.profile == STATUS_LED_PROFILE_STANDARD && now_ms < s_state.status_window_until_ms" in status_led:
+        failures.append("status_led.c: standard profile edge LEDs must not light from generic status windows")
     if re.search(r"\.mem_block_symbols\s*=\s*64\b", status_led_backend):
         failures.append(
             "status_led_strip_backend.c: RMT mem_block_symbols=64 consumes two ESP32-S3 RMT blocks per strip and leaves fewer than four TX channels"
