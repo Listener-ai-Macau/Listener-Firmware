@@ -159,7 +159,7 @@ foreach ($item in @(
     @($currentTelemetryTool, "shutdown_blockers=0x00000000", "current telemetry self-test shutdown blockers"),
     @($currentTelemetryTool, "hardware_shutdown_ms=1800000", "current telemetry self-test hardware shutdown threshold"),
     @($currentTelemetryTool, "pwr_hold_gpio=11", "current telemetry self-test PWR_HOLD GPIO11"),
-    @($currentTelemetryTool, "pwr_hold_level=low", "current telemetry self-test PWR_HOLD low runtime level"),
+    @($currentTelemetryTool, "pwr_hold_level=high", "current telemetry self-test PWR_HOLD high runtime level"),
     @($currentTelemetryTool, "voice_key_gpio=18", "current telemetry self-test voice key GPIO18"),
     @($powerManager, "POWER_MANAGER_STATE_HARDWARE_SHUTDOWN", "power manager hardware shutdown state"),
     @($powerManager, "board_set_power_hold_enabled\(false\)", "power manager releases PWR_HOLD for shutdown"),

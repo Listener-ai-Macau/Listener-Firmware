@@ -21,7 +21,7 @@ static const char *TAG = "board";
 
 #define BOARD_V2_USB_DET_POLICY "v2_gpio7_r37_r32_10K_10K_divider"
 #define BOARD_V2_CHARGER_POLARITY "v2_gpio14_chg_gpio21_std_active_low"
-#define BOARD_V2_PWR_HOLD_POLICY "v2_gpio11_power_latch_hold_low_release_high_for_hardware_shutdown"
+#define BOARD_V2_PWR_HOLD_POLICY "v2_gpio11_power_latch_hold_high_release_low_for_hardware_shutdown"
 #define BOARD_V2_LED_POLICY "v2_four_zone_ws2812_status_gpio1_ec11_gpio5_key_gpio13_edge_gpio4"
 #define BOARD_V2_MIC_POLICY "v2_sph0655_pdm_clk_gpio48_dout_gpio47_enabled_for_a1_a2_hardware_validation"
 #if BOARD_PINS_CURRENT_TELEMETRY_PRESENT
@@ -209,6 +209,26 @@ static const char *board_gpio_scan_label(gpio_num_t gpio)
     return "-";
 }
 
+static void board_log_power_hold_readback(const char *action, int requested_level)
+{
+    int actual_level = board_read_gpio_level(BOARD_PINS_PWR_HOLD_IO);
+    ESP_LOGI(
+        TAG,
+        "PWR_HOLD/GPIO11 %s readback: gpio=%d requested_level=%d actual_level=%d policy=%s",
+        action != NULL ? action : "unknown",
+        (int)BOARD_PINS_PWR_HOLD_IO,
+        requested_level,
+        actual_level,
+        BOARD_V2_PWR_HOLD_POLICY);
+    if (requested_level >= 0 && actual_level >= 0 && actual_level != requested_level) {
+        ESP_LOGW(
+            TAG,
+            "PWR_HOLD/GPIO11 readback mismatch: requested_level=%d actual_level=%d; check latch wiring or external pull",
+            requested_level,
+            actual_level);
+    }
+}
+
 esp_err_t board_configure_power_hold_latch(void)
 {
     if (BOARD_PINS_PWR_HOLD_IO == GPIO_NUM_NC ||
@@ -216,6 +236,12 @@ esp_err_t board_configure_power_hold_latch(void)
         BOARD_PINS_PWR_HOLD_IO >= GPIO_NUM_MAX) {
         return ESP_ERR_NOT_SUPPORTED;
     }
+
+    /*
+     * Preload the output latch before switching the pad into output mode. This
+     * avoids a low glitch on the hold line during boot-time configuration.
+     */
+    (void)gpio_set_level(BOARD_PINS_PWR_HOLD_IO, 1);
 
     gpio_config_t config = {
         .pin_bit_mask = 1ULL << (uint32_t)BOARD_PINS_PWR_HOLD_IO,
@@ -234,17 +260,20 @@ esp_err_t board_configure_power_hold_latch(void)
         return ret;
     }
 
-    ret = gpio_set_level(BOARD_PINS_PWR_HOLD_IO, 0);
+    (void)gpio_set_drive_capability(BOARD_PINS_PWR_HOLD_IO, GPIO_DRIVE_CAP_3);
+
+    ret = gpio_set_level(BOARD_PINS_PWR_HOLD_IO, 1);
     if (ret != ESP_OK) {
         ESP_LOGW(
             TAG,
-            "PWR_HOLD/GPIO11 hold-low failed: gpio=%d ret=%s",
+            "PWR_HOLD/GPIO11 hold-high failed: gpio=%d ret=%s",
             (int)BOARD_PINS_PWR_HOLD_IO,
             esp_err_to_name(ret));
         return ret;
     }
 
     s_power_hold_configured = true;
+    board_log_power_hold_readback("hold-high configured", 1);
     return ESP_OK;
 }
 
@@ -255,7 +284,7 @@ esp_err_t board_set_power_hold_enabled(bool enabled)
         return ret;
     }
 
-    int level = enabled ? 0 : 1;
+    int level = enabled ? 1 : 0;
     ret = gpio_set_level(BOARD_PINS_PWR_HOLD_IO, level);
     if (ret != ESP_OK) {
         ESP_LOGW(
@@ -267,13 +296,9 @@ esp_err_t board_set_power_hold_enabled(bool enabled)
         return ret;
     }
 
-    ESP_LOGW(
-        TAG,
-        "PWR_HOLD/GPIO11 %s: gpio=%d level=%d policy=%s",
-        enabled ? "held low" : "released high for hardware shutdown",
-        (int)BOARD_PINS_PWR_HOLD_IO,
-        level,
-        BOARD_V2_PWR_HOLD_POLICY);
+    board_log_power_hold_readback(
+        enabled ? "held high" : "released low for hardware shutdown",
+        level);
     return ESP_OK;
 }
 
@@ -628,7 +653,7 @@ void board_log_v2_diagnostics(void)
         power_hold.configured ? 1u : 0u,
         BOARD_PINS_RESERVED_MSPI_GPIOS);
     if (pwr_hold_ret != ESP_OK) {
-        ESP_LOGW(TAG, "PWR_HOLD/GPIO11 hold-low setup failed: %s", esp_err_to_name(pwr_hold_ret));
+        ESP_LOGW(TAG, "PWR_HOLD/GPIO11 hold-high setup failed: %s", esp_err_to_name(pwr_hold_ret));
     }
     ESP_LOGW(TAG, "board hardware provisional: usb_det=%s charger=%s pwr_hold=%s current=%s led=%s mic=%s",
              BOARD_V2_USB_DET_POLICY,

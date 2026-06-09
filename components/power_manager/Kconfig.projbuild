@@ -23,6 +23,12 @@ menu "Listener Power Manager"
         default 1800000
         depends on POWER_MANAGER_ENABLE
 
+    config POWER_MANAGER_BATTERY_CRITICAL_PERCENT
+        int "Battery percentage threshold for critical hardware shutdown"
+        default 5
+        depends on POWER_MANAGER_ENABLE
+        range 1 100
+
     config POWER_MANAGER_EVALUATE_INTERVAL_MS
         int "Power manager evaluation interval in milliseconds"
         default 2000

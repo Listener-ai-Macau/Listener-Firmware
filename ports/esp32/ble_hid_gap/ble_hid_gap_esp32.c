@@ -81,6 +81,7 @@ static bool s_last_adv_was_directed = false;
 static bool s_ble_gap_connected = false;
 static bool s_audio_enabled = true;
 static bool s_low_power_advertising = false;
+static bool s_shutdown_quiesce = false;
 static uint16_t s_ble_gap_conn_handle = BLE_HS_CONN_HANDLE_NONE;
 static portMUX_TYPE s_ble_gap_state_lock = portMUX_INITIALIZER_UNLOCKED;
 static uint16_t s_service_changed_val_handle = BLE_HS_CONN_HANDLE_NONE;
@@ -604,6 +605,10 @@ nimble_hid_gap_event(struct ble_gap_event *event, void *arg)
             diag_log(DIAG_SRC_BLE_GAP, DIAG_GAP_BOND, DIAG_SEV_WARN,
                      0, (uint32_t)event->connect.status, event->connect.conn_handle, 0);
             status_led_set_error(STATUS_LED_ERROR_DOMAIN_BLE, STATUS_LED_ERROR_RETRYABLE, "ble_connect_failed");
+            if (s_shutdown_quiesce) {
+                ESP_LOGW(TAG, "shutdown quiesce active: suppressing advertising after connect failure");
+                return 0;
+            }
             s_directed_adv_pending = false;
             ble_hid_gap_start_advertising();
             return 0;
@@ -694,6 +699,11 @@ nimble_hid_gap_event(struct ble_gap_event *event, void *arg)
                 s_directed_adv_pending = false;
             }
         }
+        if (s_shutdown_quiesce) {
+            s_directed_adv_pending = false;
+            ESP_LOGW(TAG, "shutdown quiesce active: suppressing advertising restart after disconnect");
+            return 0;
+        }
         ble_hid_gap_start_advertising();
         return 0;
     case BLE_GAP_EVENT_CONN_UPDATE:
@@ -714,6 +724,10 @@ nimble_hid_gap_event(struct ble_gap_event *event, void *arg)
         if (s_last_adv_was_directed) {
             ESP_LOGI(TAG, "directed advertising completed; falling back to undirected advertising");
             s_last_adv_was_directed = false;
+        }
+        if (s_shutdown_quiesce) {
+            ESP_LOGW(TAG, "shutdown quiesce active: suppressing advertising restart after adv complete");
+            return 0;
         }
         ble_hid_gap_start_advertising();
         return 0;
@@ -910,6 +924,11 @@ esp_err_t esp_hid_ble_gap_adv_start(void)
     int bonded_peer_count = 0;
     bool start_directed = false;
     ble_addr_t direct_peer_addr = {0};
+
+    if (s_shutdown_quiesce) {
+        ESP_LOGI(TAG, "NimBLE advertising suppressed: shutdown quiesce active");
+        return ESP_OK;
+    }
 
     if (!s_hid_start_event_seen) {
         ESP_LOGI(TAG, "NimBLE advertising deferred: HID START not seen yet");
@@ -1267,6 +1286,7 @@ esp_err_t ble_hid_gap_set_low_power_advertising(bool enabled)
 
 esp_err_t ble_hid_gap_prepare_shutdown_disconnect(void)
 {
+    s_shutdown_quiesce = true;
     s_low_power_advertising = true;
     s_directed_adv_pending = false;
     s_last_adv_was_directed = false;
@@ -1333,6 +1353,7 @@ esp_err_t ble_hid_gap_request_reconnect(void)
              state_flags,
              s_ble_gap_conn_handle);
 
+    s_shutdown_quiesce = false;
     s_low_power_advertising = false;
     s_directed_adv_pending = true;
     s_last_adv_was_directed = false;

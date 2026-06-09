@@ -47,7 +47,8 @@ Assert-Contains $powerManager 'board_get_v2_power_input_snapshot\(&board_snapsho
 Assert-Contains $powerManager '\.usb_power_present\s*=\s*board_snapshot\.usb_det_level\s*>\s*0' 'USB_Det interpreted state'
 Assert-Contains $powerManager '\.charging\s*=\s*board_snapshot\.bat_chg_level\s*==\s*0' 'active-low charging interpretation'
 Assert-Contains $powerManager '\.charge_full\s*=\s*board_snapshot\.bat_std_level\s*==\s*0' 'active-low charge-full interpretation'
-Assert-Contains $powerManager 'out_source->external_power_present\s*=\s*[\s\S]*out_source->usb_power_present[\s\S]*out_source->charging[\s\S]*out_source->charge_full' 'external power derived from USB/charging/full'
+Assert-Contains $powerManager 'out_source->external_power_present\s*=\s*out_source->usb_power_present' 'external power follows USB_Det'
+Assert-Contains $powerManager 'CHG/STD are charger status outputs[\s\S]*must not keep long-idle hardware[\s\S]*shutdown blocked after VBUS/USB_DET is gone' 'charger status does not falsely block battery-only shutdown'
 
 Assert-Contains $powerManager 's_power_source_initialized\s*&&\s*external_changed[\s\S]*s_last_user_activity_ms\s*=\s*now_ms[\s\S]*s_last_radio_activity_ms\s*=\s*now_ms' 'plug/unplug idle reset'
 Assert-Contains $powerManager 'reason\s*==\s*POWER_MANAGER_SHUTDOWN_REASON_LONG_IDLE[\s\S]*source->external_power_present[\s\S]*shutdown_blockers\s*\|=\s*POWER_MANAGER_BLOCKER_EXTERNAL_POWER' 'external power blocks automatic long-idle hardware shutdown'
