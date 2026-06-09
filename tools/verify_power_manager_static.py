@@ -159,12 +159,18 @@ CHECKS = {
         "Voice Keyboard V2",
         "EC11 push/GPIO18",
         "PWR_HOLD/GPIO11",
-        "v2_gpio11_power_latch_hold_high_release_low_for_hardware_shutdown",
-        "gpio_set_level(BOARD_PINS_PWR_HOLD_IO, 1)",
+        "v2_gpio11_power_latch_hold_low_release_high_for_hardware_shutdown",
+        "gpio_set_level(BOARD_PINS_PWR_HOLD_IO, 0)",
         "gpio_set_level(BOARD_PINS_PWR_HOLD_IO, level)",
-        "released low for hardware shutdown",
-        "hold-high",
+        "released high for hardware shutdown",
+        "hold-low",
         "~POWER:SHUTDOWN",
+    ],
+    "docs/features/low_power_wake_policy.md": [
+        "3000mV=0%",
+        "4200mV=100%",
+        "2700mV",
+        "forces hardware shutdown",
     ],
 }
 
@@ -195,17 +201,17 @@ FORBIDDEN = {
         "sleep_blockers=0x%08",
         "automatic overnight sleep",
         "entering deep sleep",
-        "restoring hold low",
-        "release-high",
-        "shutdown-high",
+        "restoring hold high",
+        "release-low",
+        "shutdown-low",
     ],
     "components/board/board.c": [
         "v2_gpio46_power_latch_hold_high_release_low_for_hardware_shutdown",
         "v2_gpio46_power_latch_hold_low_release_high_for_hardware_shutdown",
-        "v2_gpio11_power_latch_hold_low_release_high_for_hardware_shutdown",
-        "hold-low",
-        "released high for hardware shutdown",
-        "held low",
+        "v2_gpio11_power_latch_hold_high_release_low_for_hardware_shutdown",
+        "hold-high",
+        "released low for hardware shutdown",
+        "held high",
     ],
     "main/main.c": [
         "esp_sleep_get_wakeup_cause",
@@ -287,7 +293,7 @@ def main() -> int:
         power_manager,
     ):
         failures.append(
-            "components/power_manager/power_manager.c: quiescent shutdown wait must keep PWR_HOLD low and feed watchdog"
+            "components/power_manager/power_manager.c: quiescent shutdown wait must keep PWR_HOLD released and feed watchdog"
         )
 
     ble_gap = (REPO_ROOT / "ports/esp32/ble_hid_gap/ble_hid_gap_esp32.c").read_text(encoding="utf-8")

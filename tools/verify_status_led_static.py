@@ -69,10 +69,14 @@ CHECKS = {
         "STATUS_LED_CHARGING_BREATH_MIN_PERCENT 14U",
         "STATUS_LED_CHARGING_BREATH_MAX_PERCENT 82U",
         "STATUS_LED_CONTRACT_REV \"status_key_isolated_power_breath_v7\"",
+        "STATUS_LED_NVS_BRIGHTNESS_KEY \"brightness\"",
         "led_contract_rev=",
         "timing=ws2812_4020_compatible",
         "effect_profile=product_v1",
         "profile_cap_percent=%u",
+        "brightness_percent=%u",
+        "user_brightness_percent=%u",
+        "effective_cap_percent=%u",
         "profile_dimming_disabled=0",
         "factory_full_brightness=1",
         "safety_full_brightness=1",
@@ -93,6 +97,7 @@ CHECKS = {
         "key_physical_map=",
         "separate_status_key_color_order=1",
         "~LED:BUDGET",
+        "BRIGHTNESS ",
         "~LED:PRIVACY",
         "TEST:RGBW",
         "TEST:MAP",
@@ -134,7 +139,7 @@ CHECKS = {
         "BOARD_PINS_USB_DET_IO",
         "bool external_power_present = usb_power_present || charging || full",
         "external_power=%u charging=%u full=%u",
-        "status_led_rgb(255, 255, 255), percent, true",
+        "status_led_rgb(255, 255, 255), percent, false",
         "active_flags=PWR:%u,BLE:%u,REC:%u,AI:%u,OK:%u,WARN:%u,KEY:%u,EDGE:%u",
         "status_rgb=PWR:%u,%u,%u;BLE:%u,%u,%u;REC:%u,%u,%u",
         "if (changed) {\n            s_state.status_window_until_ms = now_ms + STATUS_LED_STATUS_WINDOW_MS;",
@@ -358,6 +363,12 @@ def main() -> int:
         failures.append("status_led.c: OK success must not recolor key LEDs")
     if "status_led_rgb(160, 0, 255), 52U" in status_led:
         failures.append("status_led.c: routine AI processing must not recolor key LEDs purple")
+    if "status_led_token_locked(status_led_rec_gold(), breath, true)" in status_led:
+        failures.append("status_led.c: REC must respect user brightness; do not render it as safety brightness")
+    if "status_led_token_locked(status_led_rgb(160, 0, 255), breath, true)" in status_led:
+        failures.append("status_led.c: routine AI must respect user brightness; do not render it as safety brightness")
+    if "status_led_token_locked(status_led_rgb(255, 255, 255), percent, true)" in status_led:
+        failures.append("status_led.c: routine external-power PWR white must respect user brightness")
     if "s_state.profile == STATUS_LED_PROFILE_STANDARD && now_ms < s_state.status_window_until_ms" in status_led:
         failures.append("status_led.c: standard profile edge LEDs must not light from generic status windows")
     if re.search(r"\.mem_block_symbols\s*=\s*64\b", status_led_backend):

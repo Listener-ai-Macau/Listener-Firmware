@@ -21,7 +21,7 @@ static const char *TAG = "board";
 
 #define BOARD_V2_USB_DET_POLICY "v2_gpio7_r37_r32_10K_10K_divider"
 #define BOARD_V2_CHARGER_POLARITY "v2_gpio14_chg_gpio21_std_active_low"
-#define BOARD_V2_PWR_HOLD_POLICY "v2_gpio11_power_latch_hold_high_release_low_for_hardware_shutdown"
+#define BOARD_V2_PWR_HOLD_POLICY "v2_gpio11_power_latch_hold_low_release_high_for_hardware_shutdown"
 #define BOARD_V2_LED_POLICY "v2_four_zone_ws2812_status_gpio1_ec11_gpio5_key_gpio13_edge_gpio4"
 #define BOARD_V2_MIC_POLICY "v2_sph0655_pdm_clk_gpio48_dout_gpio47_enabled_for_a1_a2_hardware_validation"
 #if BOARD_PINS_CURRENT_TELEMETRY_PRESENT
@@ -239,9 +239,9 @@ esp_err_t board_configure_power_hold_latch(void)
 
     /*
      * Preload the output latch before switching the pad into output mode. This
-     * avoids a low glitch on the hold line during boot-time configuration.
+     * keeps the low-active hold asserted during boot-time configuration.
      */
-    (void)gpio_set_level(BOARD_PINS_PWR_HOLD_IO, 1);
+    (void)gpio_set_level(BOARD_PINS_PWR_HOLD_IO, 0);
 
     gpio_config_t config = {
         .pin_bit_mask = 1ULL << (uint32_t)BOARD_PINS_PWR_HOLD_IO,
@@ -262,18 +262,18 @@ esp_err_t board_configure_power_hold_latch(void)
 
     (void)gpio_set_drive_capability(BOARD_PINS_PWR_HOLD_IO, GPIO_DRIVE_CAP_3);
 
-    ret = gpio_set_level(BOARD_PINS_PWR_HOLD_IO, 1);
+    ret = gpio_set_level(BOARD_PINS_PWR_HOLD_IO, 0);
     if (ret != ESP_OK) {
         ESP_LOGW(
             TAG,
-            "PWR_HOLD/GPIO11 hold-high failed: gpio=%d ret=%s",
+            "PWR_HOLD/GPIO11 hold-low failed: gpio=%d ret=%s",
             (int)BOARD_PINS_PWR_HOLD_IO,
             esp_err_to_name(ret));
         return ret;
     }
 
     s_power_hold_configured = true;
-    board_log_power_hold_readback("hold-high configured", 1);
+    board_log_power_hold_readback("hold-low configured", 0);
     return ESP_OK;
 }
 
@@ -284,7 +284,7 @@ esp_err_t board_set_power_hold_enabled(bool enabled)
         return ret;
     }
 
-    int level = enabled ? 1 : 0;
+    int level = enabled ? 0 : 1;
     ret = gpio_set_level(BOARD_PINS_PWR_HOLD_IO, level);
     if (ret != ESP_OK) {
         ESP_LOGW(
@@ -297,7 +297,7 @@ esp_err_t board_set_power_hold_enabled(bool enabled)
     }
 
     board_log_power_hold_readback(
-        enabled ? "held high" : "released low for hardware shutdown",
+        enabled ? "held low" : "released high for hardware shutdown",
         level);
     return ESP_OK;
 }
@@ -570,7 +570,7 @@ static void board_print_status(void)
         " bat_chg_gpio=%d bat_chg_level=%s bat_std_gpio=%d bat_std_level=%s charger_polarity=%s"
         " battery_gpio=%d battery_mv=%" PRIu32 " battery_adc_mv=%d battery_raw=%d"
         " battery_level=%u battery_valid=%u battery_adc_calibrated=%u battery_samples=%u battery_result=%s"
-        " battery_scaling=\"68K/68K divider, VBAT~=2*ADC\" battery_policy=\"source_impedance_filter_calibration_provisional\""
+        " battery_scaling=\"68K/68K divider, VBAT~=2*ADC\" battery_policy=\"product_empty_3000mv_full_4200mv_absolute_min_2700mv\""
         " reserved_mspi_gpio=%s\n",
         BOARD_PINS_PROFILE_ID,
         BOARD_PINS_MODULE,
@@ -653,7 +653,7 @@ void board_log_v2_diagnostics(void)
         power_hold.configured ? 1u : 0u,
         BOARD_PINS_RESERVED_MSPI_GPIOS);
     if (pwr_hold_ret != ESP_OK) {
-        ESP_LOGW(TAG, "PWR_HOLD/GPIO11 hold-high setup failed: %s", esp_err_to_name(pwr_hold_ret));
+        ESP_LOGW(TAG, "PWR_HOLD/GPIO11 hold-low setup failed: %s", esp_err_to_name(pwr_hold_ret));
     }
     ESP_LOGW(TAG, "board hardware provisional: usb_det=%s charger=%s pwr_hold=%s current=%s led=%s mic=%s",
              BOARD_V2_USB_DET_POLICY,

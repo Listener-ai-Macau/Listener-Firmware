@@ -55,6 +55,7 @@
 #define STATUS_LED_CONTRACT_REV "status_key_isolated_power_breath_v7"
 #define STATUS_LED_NVS_NAMESPACE "status_led"
 #define STATUS_LED_NVS_PROFILE_KEY "profile"
+#define STATUS_LED_NVS_BRIGHTNESS_KEY "brightness"
 #define STATUS_LED_NVS_STATUS_ORDER_KEY "ord_status"
 #define STATUS_LED_NVS_EC11_ORDER_KEY "ord_ec11"
 #define STATUS_LED_NVS_KEY_ORDER_KEY "ord_key"
@@ -129,6 +130,7 @@ typedef struct {
     bool vdd_led_enable_assumed;
     bool ever_connected;
     status_led_profile_t profile;
+    uint8_t brightness_percent;
     status_led_ble_state_t ble_state;
     status_led_rec_source_t rec_source;
     status_led_error_domain_t error_domain;
@@ -367,7 +369,11 @@ static uint8_t status_led_profile_cap_percent_for(status_led_profile_t profile, 
 
 static uint8_t status_led_profile_cap_percent_locked(bool safety)
 {
-    return status_led_profile_cap_percent_for(s_state.profile, safety);
+    uint8_t cap = status_led_profile_cap_percent_for(s_state.profile, safety);
+    if (!safety && s_state.brightness_percent < cap) {
+        cap = s_state.brightness_percent;
+    }
+    return cap;
 }
 
 static uint32_t status_led_profile_budget_ma_for(status_led_profile_t profile, bool safety)
@@ -697,8 +703,7 @@ static void status_led_render_power_locked(status_led_frame_t *frame, uint32_t n
                 STATUS_LED_CHARGING_BREATH_MIN_PERCENT,
                 STATUS_LED_CHARGING_BREATH_MAX_PERCENT);
         }
-        color = status_led_token_locked(status_led_rgb(255, 255, 255), percent, true);
-        safety = true;
+        color = status_led_token_locked(status_led_rgb(255, 255, 255), percent, false);
     } else if (s_state.battery_valid) {
         if (s_state.battery_level_percent < 10U) {
             safety = true;
@@ -772,9 +777,9 @@ static void status_led_render_recording_locked(status_led_frame_t *frame, uint32
         return;
     }
     uint8_t breath = status_led_triangle_percent(now_ms, 2400U, 42U, 85U);
-    status_led_rgb_t rec = status_led_token_locked(status_led_rec_gold(), breath, true);
+    status_led_rgb_t rec = status_led_token_locked(status_led_rec_gold(), breath, false);
     status_led_set_max(&frame->status[STATUS_LED_SEM_REC], rec);
-    *ret_safety = true;
+    (void)ret_safety;
 }
 
 static void status_led_render_processing_locked(status_led_frame_t *frame, uint32_t now_ms)
@@ -785,7 +790,7 @@ static void status_led_render_processing_locked(status_led_frame_t *frame, uint3
     uint32_t elapsed = now_ms - s_state.processing_started_ms;
     uint8_t max_percent = elapsed > 10000U ? 42U : 70U;
     uint8_t breath = status_led_triangle_percent(now_ms, 3200U, 24U, max_percent);
-    status_led_rgb_t ai = status_led_token_locked(status_led_rgb(160, 0, 255), breath, true);
+    status_led_rgb_t ai = status_led_token_locked(status_led_rgb(160, 0, 255), breath, false);
     status_led_set_max(&frame->status[STATUS_LED_SEM_AI], ai);
 
     if (s_state.profile == STATUS_LED_PROFILE_AMBIENT) {
@@ -1109,6 +1114,11 @@ static status_led_profile_t status_led_profile_from_u8(uint8_t value)
     return STATUS_LED_PROFILE_STANDARD;
 }
 
+static uint8_t status_led_brightness_from_u8(uint8_t value)
+{
+    return value <= 100U ? value : 100U;
+}
+
 static void status_led_load_persistent_config(void)
 {
     nvs_handle_t nvs = 0;
@@ -1119,6 +1129,10 @@ static void status_led_load_persistent_config(void)
     uint8_t profile = (uint8_t)STATUS_LED_PROFILE_STANDARD;
     if (nvs_get_u8(nvs, STATUS_LED_NVS_PROFILE_KEY, &profile) == ESP_OK) {
         s_state.profile = status_led_profile_from_u8(profile);
+    }
+    uint8_t brightness = 100U;
+    if (nvs_get_u8(nvs, STATUS_LED_NVS_BRIGHTNESS_KEY, &brightness) == ESP_OK) {
+        s_state.brightness_percent = status_led_brightness_from_u8(brightness);
     }
     uint8_t order = 0;
     if (nvs_get_u8(nvs, STATUS_LED_NVS_STATUS_ORDER_KEY, &order) == ESP_OK) {
@@ -1162,6 +1176,24 @@ static void status_led_save_profile(status_led_profile_t profile)
     }
 }
 
+static void status_led_save_brightness(uint8_t brightness_percent)
+{
+    nvs_handle_t nvs = 0;
+    esp_err_t ret = nvs_open(STATUS_LED_NVS_NAMESPACE, NVS_READWRITE, &nvs);
+    if (ret != ESP_OK) {
+        ESP_LOGW(TAG, "brightness persist skipped: %s", esp_err_to_name(ret));
+        return;
+    }
+    ret = nvs_set_u8(nvs, STATUS_LED_NVS_BRIGHTNESS_KEY, brightness_percent);
+    if (ret == ESP_OK) {
+        ret = nvs_commit(nvs);
+    }
+    nvs_close(nvs);
+    if (ret != ESP_OK) {
+        ESP_LOGW(TAG, "brightness persist failed: %s", esp_err_to_name(ret));
+    }
+}
+
 static void status_led_force_all_off(void)
 {
     status_led_frame_t frame = {0};
@@ -1189,6 +1221,7 @@ esp_err_t status_led_init(void)
 
     memset(&s_state, 0, sizeof(s_state));
     s_state.profile = STATUS_LED_PROFILE_STANDARD;
+    s_state.brightness_percent = 100U;
     s_state.ble_state = STATUS_LED_BLE_DISCONNECTED;
     s_state.rec_source = STATUS_LED_REC_SOURCE_NONE;
     s_state.error_domain = STATUS_LED_ERROR_DOMAIN_NONE;
@@ -1665,7 +1698,7 @@ static void status_led_print_status(void)
         "~LED:STATUS profile=%s backend=rmt_ws2812_800khz refresh_ms=%u reset_us=300"
         " timing=ws2812_4020_compatible"
         " led_contract_rev=" STATUS_LED_CONTRACT_REV
-        " effect_profile=product_v1 profile_cap_percent=%u factory_full_brightness=1 safety_full_brightness=1"
+        " effect_profile=product_v1 profile_cap_percent=%u brightness_percent=%u effective_cap_percent=%u factory_full_brightness=1 safety_full_brightness=1"
         " semantic_order=LED1:PWR,LED2:BLE,LED3:REC,LED4:AI,LED5:OK,LED6:WARN"
         " mapping_contract=" STATUS_LED_STATUS_KEY_MAPPING_CONTRACT
         " status_physical_map=" STATUS_LED_STATUS_PHYSICAL_MAP
@@ -1685,6 +1718,10 @@ static void status_led_print_status(void)
         status_led_profile_name(snapshot.profile),
         STATUS_LED_REFRESH_MS,
         status_led_profile_cap_percent_for(snapshot.profile, false),
+        snapshot.brightness_percent,
+        snapshot.brightness_percent < status_led_profile_cap_percent_for(snapshot.profile, false)
+            ? snapshot.brightness_percent
+            : status_led_profile_cap_percent_for(snapshot.profile, false),
         (int)strips[STATUS_LED_STRIP_STATUS].gpio,
         (unsigned)strips[STATUS_LED_STRIP_STATUS].led_count,
         status_led_color_order_name(strips[STATUS_LED_STRIP_STATUS].color_order),
@@ -1761,7 +1798,7 @@ static void status_led_print_budget(void)
     }
     printf(
         "~LED:BUDGET profile=%s cap_current_ma=%" PRIu32 " estimated_current_ma=%" PRIu32
-        " profile_cap_percent=%u factory_brightness_percent=%u"
+        " profile_cap_percent=%u user_brightness_percent=%u effective_cap_percent=%u factory_brightness_percent=%u"
         " configured_profile_budget_ma=%" PRIu32 " factory_budget_ma=%u"
         " product_effect_profile=1 profile_dimming_disabled=0 off_zero_brightness=1 safety_full_brightness=1"
         " per_led_full_white_ma=60 vdd_led_enable=always_on_assumed\n",
@@ -1769,6 +1806,10 @@ static void status_led_print_budget(void)
         snapshot.last_current_budget_ma,
         snapshot.last_estimated_current_ma,
         status_led_profile_cap_percent_for(snapshot.profile, false),
+        snapshot.brightness_percent,
+        snapshot.brightness_percent < status_led_profile_cap_percent_for(snapshot.profile, false)
+            ? snapshot.brightness_percent
+            : status_led_profile_cap_percent_for(snapshot.profile, false),
         STATUS_LED_FULL_BRIGHTNESS_PERCENT,
         status_led_profile_budget_ma_for(snapshot.profile, false),
         STATUS_LED_FULL_BRIGHTNESS_BUDGET_MA);
@@ -1914,6 +1955,36 @@ bool status_led_consume_usb_command(const char *line)
     if (strcmp(command, "WAKE") == 0) {
         status_led_show_status_window("usb_wake");
         ESP_LOGI(TAG, "LED status window requested");
+        return true;
+    }
+
+    if (strncmp(command, "BRIGHTNESS ", strlen("BRIGHTNESS ")) == 0) {
+        const char *arg = command + strlen("BRIGHTNESS ");
+        char *end = NULL;
+        long value = strtol(arg, &end, 10);
+        char *parsed_end = end;
+        while (end != NULL && *end == ' ') {
+            end++;
+        }
+        if (parsed_end == arg || end == NULL || *end != '\0' || value < 0 || value > 100) {
+            ESP_LOGW(TAG, "LED brightness must be 0..100: %s", arg);
+            return true;
+        }
+        uint8_t brightness = (uint8_t)value;
+        status_led_profile_t profile = STATUS_LED_PROFILE_STANDARD;
+        if (xSemaphoreTake(s_mutex, portMAX_DELAY) == pdTRUE) {
+            s_state.brightness_percent = brightness;
+            profile = s_state.profile;
+            s_state.output_disabled = false;
+            s_state.low_power_disabled = false;
+            s_state.status_window_until_ms = status_led_now_ms() + STATUS_LED_STATUS_WINDOW_MS;
+            status_led_set_last_reason_locked("brightness");
+            xSemaphoreGive(s_mutex);
+        }
+        status_led_save_brightness(brightness);
+        diag_log(DIAG_SRC_STATUS_LED, DIAG_LED_PROFILE, DIAG_SEV_INFO,
+                 (uint32_t)profile, brightness, 1, 0);
+        ESP_LOGI(TAG, "LED brightness=%u", (unsigned)brightness);
         return true;
     }
 

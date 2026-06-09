@@ -64,7 +64,7 @@ extern void status_led_prepare_sleep(void) __attribute__((weak));
 #endif
 #define POWER_MANAGER_BATTERY_CRITICAL_PERCENT ((uint8_t)CONFIG_POWER_MANAGER_BATTERY_CRITICAL_PERCENT)
 #define POWER_MANAGER_TASK_STACK_BYTES (4 * 1024)
-#define POWER_MANAGER_SHUTDOWN_USER_ACTION "short-press hardware power key for cold boot after PWR_HOLD/GPIO11 release-low"
+#define POWER_MANAGER_SHUTDOWN_USER_ACTION "short-press hardware power key for cold boot after PWR_HOLD/GPIO11 release-high"
 #define POWER_MANAGER_POWER_SOURCE_USB_PRESENT (1u << 0)
 #define POWER_MANAGER_POWER_SOURCE_CHARGING (1u << 1)
 #define POWER_MANAGER_POWER_SOURCE_CHARGE_FULL (1u << 2)
@@ -676,7 +676,7 @@ static void power_manager_wait_for_power_removal(void)
 {
     ESP_LOGE(
         TAG,
-        "automatic hardware shutdown did not remove power; keeping PWR_HOLD/GPIO11 released low and staying quiescent");
+        "automatic hardware shutdown did not remove power; keeping PWR_HOLD/GPIO11 released high and staying quiescent");
     if (ble_hid_gap_prepare_shutdown_disconnect != NULL) {
         (void)ble_hid_gap_prepare_shutdown_disconnect();
     }
@@ -886,7 +886,7 @@ static esp_err_t power_manager_enter_hardware_shutdown(power_manager_shutdown_re
     vTaskDelay(pdMS_TO_TICKS(150));
     esp_err_t hold_ret = board_set_power_hold_enabled(false);
     if (hold_ret != ESP_OK) {
-        ESP_LOGE(TAG, "hardware shutdown failed: PWR_HOLD/GPIO11 release-low ret=%s",
+        ESP_LOGE(TAG, "hardware shutdown failed: PWR_HOLD/GPIO11 release-high ret=%s",
                  esp_err_to_name(hold_ret));
         diag_log(DIAG_SRC_POWER, DIAG_POWER_SLEEP_BLOCKED, DIAG_SEV_ERROR,
                  0, final_idle_ms, (uint32_t)reason, (uint32_t)hold_ret);
@@ -903,7 +903,7 @@ static esp_err_t power_manager_enter_hardware_shutdown(power_manager_shutdown_re
 
     ESP_LOGE(
         TAG,
-        "hardware shutdown did not remove power after PWR_HOLD/GPIO11 release-low; restoring hold high");
+        "hardware shutdown did not remove power after PWR_HOLD/GPIO11 release-high; restoring hold low");
     (void)board_set_power_hold_enabled(true);
     if (ble_hid_gap_request_reconnect != NULL) {
         (void)ble_hid_gap_request_reconnect();
@@ -1122,7 +1122,7 @@ esp_err_t power_manager_init(void)
              (uint32_t)s_last_shutdown_reason,
              s_last_shutdown_idle_ms);
     if (hold_ret != ESP_OK) {
-        ESP_LOGW(TAG, "PWR_HOLD/GPIO11 hold-high setup failed: %s", esp_err_to_name(hold_ret));
+        ESP_LOGW(TAG, "PWR_HOLD/GPIO11 hold-low setup failed: %s", esp_err_to_name(hold_ret));
     }
     return ESP_OK;
 }

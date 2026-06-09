@@ -1,5 +1,7 @@
 # firmware-power-off-replace-deep-sleep/1.2 Validation Artifact
 
+> Superseding polarity note, 2026-06-09: hardware/operator feedback corrected the V2 `PWR_HOLD/GPIO11` contract to low-active hold and high-release shutdown. Historical sections below that discuss active-high hold were evidence from the bad interim firmware and must not be used as current implementation guidance.
+
 Captured by: oai1
 Captured at: 2026-06-07 06:12-06:16 Asia/Shanghai
 Resumed/rechecked at: 2026-06-07 06:22 Asia/Shanghai
@@ -210,8 +212,26 @@ Acceptance status from this run:
 6. USB/external blocker: PARTIAL PASS, USB attach reported `external_power_present=1`; charger-only/no-USB scenario remains untested.
 7. Failure artifact: PASS, this section records resource, commit, symptoms, and next action.
 
-Current decision:
+Historical decision from the bad active-high run, superseded below:
 
 - Do not submit 1.2 as PASS.
-- The latest firmware now drives the correct active-high hold contract, but the actual GPIO11/PWR_HOLD line remains LOW after boot.
-- Required next step is physical/hardware retest or repair: verify the `PWR_HOLD/GPIO11` net with a meter/scope, confirm whether GPIO11 is actually connected to the latch input, check external pulls/latch domain, then rerun battery/no-USB short-press boot. The minimum pass signal before the idle shutdown test is still `pwr_hold_gpio=11 pwr_hold_level=high` after boot.
+- The interim firmware drove the wrong active-high hold contract, while the actual GPIO11/PWR_HOLD line remained LOW after boot.
+- This section is retained as failure evidence only. The current contract is low-active hold and high-release shutdown.
+
+## 2026-06-09 Polarity Correction After Hardware Feedback
+
+Billy corrected the hardware contract after the failed active-high run: the V2 `PWR_HOLD/GPIO11` line must be held LOW during boot/runtime, and driven/released HIGH for hardware shutdown. Driving it LOW for shutdown can make the board restart instead of staying off. This supersedes the earlier local hardware handoff wording that described active-high firmware hold.
+
+Firmware rework in progress:
+
+- `components/board/board.c` policy is now `v2_gpio11_power_latch_hold_low_release_high_for_hardware_shutdown`.
+- `board_configure_power_hold_latch()` preloads and drives GPIO11 LOW for runtime hold.
+- `board_set_power_hold_enabled(false)` now drives GPIO11 HIGH for shutdown release.
+- `components/power_manager/power_manager.c` shutdown messages now say `release-high` and restore `hold low` if power is not removed.
+- `docs/features/low_power_wake_policy.md`, `docs/features/firmware-feature-map.md`, `tools/ai/repo_features.ps1`, telemetry self-tests, and static verification were updated so future AI work sees low-active hold/high-release as the current contract.
+
+Current minimum pass signal after this correction:
+
+- Boot/runtime status should report `pwr_hold_gpio=11 pwr_hold_level=low`.
+- A real shutdown attempt should drive/release `PWR_HOLD/GPIO11` HIGH and then remove power without reboot looping.
+- Until that hardware run is captured, 1.2 remains unsubmitted.

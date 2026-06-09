@@ -49,20 +49,21 @@ The status LED task refreshes every 50 ms and sends at most four short strip fra
 
 ## Profiles And Budget
 
-Profiles are persisted in NVS through `~LED:PROFILE <off|low|standard|ambient|factory>`.
+Profiles are persisted in NVS through `~LED:PROFILE <off|low|standard|ambient|factory>`. A separate user brightness cap is persisted through `~LED:BRIGHTNESS <0-100>` and applies to routine product effects across the status, key, EC11, and edge zones.
 
 - `standard` is the product default. Routine status/key effects are capped at 85% and use brighter, saturated primary colors for daily readability.
 - `low` caps routine effects at 35% for dark-room or low-power behavior.
 - `ambient` caps routine effects at 65% and permits restrained accent behavior when the edge chain is available.
 - `off` turns routine non-safety output off; safety/error/test paths can still light.
-- `factory` keeps the full 100% path for calibration, manufacturing, and hardware bring-up.
+- `factory` keeps the full 100% profile path for calibration, manufacturing, and hardware bring-up; routine product effects still respect the user brightness cap unless they are explicit safety/error/test output.
 
-Current is still estimated per frame with 20 mA per RGB channel at full scale. `standard`, `low`, and `ambient` have product budgets so a broad effect is dimmed instead of becoming a flashlight. `factory` and explicit safety/test paths retain the full bring-up budget.
+Current is still estimated per frame with 20 mA per RGB channel at full scale. `standard`, `low`, and `ambient` have product budgets so a broad effect is dimmed instead of becoming a flashlight. Explicit safety/error/test paths retain the full bring-up budget.
 
 ## Product Effect Language
 
 - Idle connected state is readable but not dominant: PWR/BLE confidence remains visible without using factory brightness.
 - External power overrides battery-color display on `PWR`: plugged and not full is a continuous, higher-contrast white breath, and full is steady white.
+- The external-power white breath, steady full-charge white, BLE, REC, AI, OK, key feedback, and ambient edge effects are routine product output and obey `~LED:BRIGHTNESS`.
 - Pairing and reconnect use recognizable blue pulses without turning the whole status rail into an animation surface.
 - Recording is a gold breathing semantic state on `LED3=REC` only; it does not borrow key LEDs.
 - Processing uses a saturated purple breath on `AI`; long processing settles to a calmer breath.
@@ -77,6 +78,7 @@ Current is still estimated per frame with 20 mA per RGB channel at full scale. `
 - `~LED:STATUS`
 - `~LED:BUDGET`
 - `~LED:PRIVACY`
+- `~LED:BRIGHTNESS <0-100>`
 - `~LED:TEST:RGBW <status|ec11|knob|ring|key|edge|all>`
 - `~LED:TEST:MAP <status|ec11|knob|ring|key|edge|all>`
 - `~LED:CHASE [status,key|status|key|ec11|edge|all] [step_ms]`
