@@ -151,3 +151,67 @@ Current decision after this correction:
 
 - Do not approve 1.2 from static/build evidence alone.
 - Next hardware run should flash this corrected step branch, confirm short-press boot reports `pwr_hold_gpio=11 pwr_hold_level=high`, then test no-USB/battery-only long-idle shutdown and short-press cold-boot recovery.
+
+## 2026-06-09 Main Worktree Hardware Recheck
+
+Billy requested that `oai1` continue 1.2 in the main firmware worktree:
+
+- Worktree: `C:\Users\Billy\Desktop\listener\voice-keyboard-firmware`
+- Branch: `master`
+- Software correction commit: `5af5c874f2b9beb2b35da32e1bc1502069557c99`
+- Hardware interface context checked: local hardware docs report `PWR_HOLD/GPIO11` as signed off for active-high firmware hold after boot; `EC11-KEY_IO/GPIO18` remains the encoder push input.
+
+No-lock software validation before hardware:
+
+- PASS: `git diff --cached --check`
+- PASS: `python .\tools\verify_power_manager_static.py`
+- PASS: `pwsh -NoProfile -File .\tools\verify_v2_board_profile_static.ps1`
+- PASS: `pwsh -NoProfile -File .\tools\verify_charging_awake_policy_static.ps1`
+- PASS: `pwsh -NoProfile -File .\tools\verify_diagnostic_log_coverage.ps1`
+- PASS: `pwsh -NoProfile -File .\tools\ai\repo_features.ps1 -Check`
+- PASS: `python -m py_compile .\tools\export_ble_diag_log.py .\tools\monitor_ble_advertisements.py`
+- PASS: `pwsh -NoProfile -File .\tools\build.ps1 -Target esp32s3`
+- PASS: 60s validation firmware build after default `build` directory tooling failure was isolated by using a fresh temp build dir:
+  - Failed tooling attempt: `tests/artifacts/firmware_power_off_1_2/power_off_validation_build_60000ms_20260609-163420.log`
+  - PASS build manifest: `tests/artifacts/firmware_power_off_1_2/power_off_validation_manifest_60000ms_20260609-163533.json`
+  - Build dir: `C:\Users\Billy\AppData\Local\Temp\listener-power-off-5af5c87-60000-20260609163509`
+
+Short hardware lock:
+
+- Command: `pwsh -NoProfile -File C:\Users\Billy\Desktop\listener\ai-collaboration-workflow\scripts\aiw.ps1 with-lock -Resource COMx -Owner oai1 -TimeoutMinutes 12 -Run pwsh -NoProfile -File .\tests\artifacts\firmware_power_off_1_2\run_locked_power_off_1_2.ps1 -Port COMx -BuildDir C:\Users\Billy\AppData\Local\Temp\listener-power-off-5af5c87-60000-20260609163509 -ShutdownMs 60000`
+- `COMx` resolved to `COM7`.
+- Lock was released after the command.
+- Locked manifest: `tests/artifacts/firmware_power_off_1_2/power_off_1_2_locked_manifest_20260609-163902.json`
+- Flash transcript: `tests/artifacts/firmware_power_off_1_2/power_off_validation_flash_60000ms_20260609-163904.log`
+- Serial transcript: `tests/artifacts/firmware_power_off_1_2/power_off_1_2_serial_20260609-163902.log`
+- BLE advertisement observation: `tests/artifacts/firmware_power_off_1_2/power_off_1_2_ble_adv_20260609-163902.jsonl`
+
+Hardware results:
+
+- Flash PASS: ESP32-S3 on `COM7`, MAC `a4:cb:8f:f1:43:58`; app version `v1002.0.0-ota-test-210-g5af5c87`; `CONFIG_POWER_MANAGER_HARDWARE_SHUTDOWN_MS=60000`.
+- Firmware attempted the latest active-high hold contract, but readback failed:
+  - `PWR_HOLD/GPIO11 hold-high configured readback: gpio=11 requested_level=1 actual_level=0 policy=v2_gpio11_power_latch_hold_high_release_low_for_hardware_shutdown`
+  - `PWR_HOLD/GPIO11 readback mismatch: requested_level=1 actual_level=0`
+  - `board profile ... pwr_hold=11 pwr_hold_level=low pwr_hold_configured=1`
+  - `power cold-boot status: reset_reason=11 pwr_hold_gpio=11 pwr_hold_level=0 configured=1`
+  - `power manager init ... pwr_hold_gpio=11 pwr_hold_level=low`
+- USB/external blocker evidence was present while attached:
+  - `power source changed: usb_det=high ... pwr_hold=low usb_power_present=1 ... external_power_present=1`
+- After `~BOOT:STATUS`, the serial port returned `ClearCommError` / `WriteFile failed` and the active COM device disappeared from `Win32_SerialPort`; `Get-PnpDevice -Class Ports` listed prior ESP32 serial devices only as `Status=Unknown`.
+- BLE advertisement scan by name `listener` saw zero matching advertisements during the 24s window. This is not complete power-off proof by itself because the serial log also shows the device connected to a bonded BLE peer before the serial port disappeared.
+
+Acceptance status from this run:
+
+1. Short `aiw with-lock` resource evidence: PASS, `COMx` resolved to `COM7`, lock released.
+2. Flashed firmware commit recorded: PASS, `5af5c874f2b9beb2b35da32e1bc1502069557c99`.
+3. Short-press/cold-boot PWR_HOLD HIGH evidence: FAIL, the firmware requested HIGH but hardware read back LOW.
+4. Automatic long-idle complete power-off: NOT RUN after pin evidence failed; USB/external power was present during the locked capture.
+5. Cold-boot recovery after automatic off: NOT RUN because automatic-off evidence did not pass.
+6. USB/external blocker: PARTIAL PASS, USB attach reported `external_power_present=1`; charger-only/no-USB scenario remains untested.
+7. Failure artifact: PASS, this section records resource, commit, symptoms, and next action.
+
+Current decision:
+
+- Do not submit 1.2 as PASS.
+- The latest firmware now drives the correct active-high hold contract, but the actual GPIO11/PWR_HOLD line remains LOW after boot.
+- Required next step is physical/hardware retest or repair: verify the `PWR_HOLD/GPIO11` net with a meter/scope, confirm whether GPIO11 is actually connected to the latch input, check external pulls/latch domain, then rerun battery/no-USB short-press boot. The minimum pass signal before the idle shutdown test is still `pwr_hold_gpio=11 pwr_hold_level=high` after boot.
