@@ -135,6 +135,11 @@ CHECKS = {
         "POWER_MANAGER_AUDIO_IDLE_MS",
         "POWER_MANAGER_HARDWARE_SHUTDOWN_MS",
         "POWER_MANAGER_BATTERY_CRITICAL_PERCENT",
+        "default 0",
+        "range 0 100",
+    ],
+    "sdkconfig.defaults": [
+        "CONFIG_POWER_MANAGER_BATTERY_CRITICAL_PERCENT=0",
     ],
     "sdkconfig.defaults.esp32s3": [
         "CONFIG_PM_ENABLE=y",
@@ -170,6 +175,7 @@ CHECKS = {
         "3000mV=0%",
         "4200mV=100%",
         "2700mV",
+        "default critical threshold `0%`",
         "forces hardware shutdown",
     ],
 }
