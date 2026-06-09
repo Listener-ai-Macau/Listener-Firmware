@@ -24,7 +24,11 @@ static const char *TAG = "board";
 #define BOARD_V2_PWR_HOLD_POLICY "v2_gpio11_power_latch_hold_low_release_high_for_hardware_shutdown"
 #define BOARD_V2_LED_POLICY "v2_four_zone_ws2812_status_gpio1_ec11_gpio5_key_gpio13_edge_gpio4"
 #define BOARD_V2_MIC_POLICY "v2_sph0655_pdm_clk_gpio48_dout_gpio47_enabled_for_a1_a2_hardware_validation"
+#if BOARD_PINS_CURRENT_TELEMETRY_PRESENT
 #define BOARD_V2_CURRENT_POLICY "v2_battery_side_input_branch_current_ina180a2_10mR_adc_mv_x2_with_battery_mv_from_gpio8_div2"
+#else
+#define BOARD_V2_CURRENT_POLICY "v2_optional_current_telemetry_not_populated_battery_adc_only_no_power_decisions"
+#endif
 
 typedef struct {
     const char *name;
@@ -320,26 +324,28 @@ static void board_print_power_rail_status(battery_monitor_power_rail_t rail)
     esp_err_t ret = battery_monitor_read_power_rail(rail, &status);
     uint32_t rail_code = rail == BATTERY_MONITOR_POWER_RAIL_3V3 ? 1u : 2u;
     diag_log(DIAG_SRC_BOARD, DIAG_BOARD_POWER_RAIL,
-             status.valid ? DIAG_SEV_INFO : DIAG_SEV_WARN,
+             status.valid || !status.current_telemetry_present ? DIAG_SEV_INFO : DIAG_SEV_WARN,
              rail_code,
              (uint32_t)(status.raw_adc < 0 ? 0 : status.raw_adc),
              (uint32_t)(status.adc_mv < 0 ? 0 : status.adc_mv),
              status.adc_calibrated ? 1u : 0u);
     printf(
-        "~BOARD:POWER branch=%s gpio=%" PRIu32
+        "~BOARD:POWER branch=%s present=%u gpio=%" PRId32
         " raw_adc=%d adc_mv=%d adc_calibrated=%u sample_count=%u"
-        " calibration_status=%s current_model=\"INA180A2 10mR current_mA=adc_mv*2\""
+        " calibration_status=%s current_model=\"%s\""
         " current_calibrated=%u current_ma_valid=%u estimated_input_current_ma=%" PRId32
         " battery_side_mv=%" PRIu32 " battery_voltage_source=\"BAT_V_ADC/GPIO8 68K/68K midpoint, VBAT~=2*ADC\""
         " power_mw_valid=%u estimated_input_power_mw=%" PRId32
         " result=%s policy=%s\n",
         status.rail_name,
+        status.current_telemetry_present ? 1u : 0u,
         status.gpio,
         status.raw_adc,
         status.adc_mv,
         status.adc_calibrated ? 1u : 0u,
         status.sample_count,
         status.calibration_status,
+        status.current_telemetry_present ? "INA180A2 10mR current_mA=adc_mv*2" : "not_populated",
         status.current_calibrated ? 1u : 0u,
         status.current_ma_valid ? 1u : 0u,
         status.estimated_current_ma,

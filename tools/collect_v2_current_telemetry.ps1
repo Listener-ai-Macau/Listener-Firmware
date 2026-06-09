@@ -1,12 +1,12 @@
 <#
 .SYNOPSIS
-Collect V2 current telemetry and low-power status evidence.
+Collect optional V2 current telemetry and low-power status evidence.
 
 .DESCRIPTION
-Reads firmware diagnostics and writes a focused report for the two current
-telemetry inputs only:
-  - TPS63020_I_ADC / GPIO10 / BAT_IN -> VIN_TPS63020
-  - SY7088_I_ADC / GPIO9 / BAT_IN -> VIN_SY7088
+Reads firmware diagnostics and writes a focused report for the two optional
+current telemetry inputs used by early V2 prototypes:
+  - TPS63020_I_ADC / GPIO10 / BAT_IN -> VIN_TPS63020, or absent on revised boards
+  - SY7088_I_ADC / GPIO9 / BAT_IN -> VIN_SY7088, or absent on revised boards
 
 Serial mode also requests ~POWER:STATUS so the same report captures the
 hardware-shutdown threshold, external-power blocker state, and PWR_HOLD status.
@@ -30,14 +30,14 @@ $expectedSensors = @(
     [ordered]@{
         branch = "TPS63020_input_branch"
         net = "TPS63020_I_ADC"
-        gpio = 10
-        role = "BAT_IN -> VIN_TPS63020 input branch current telemetry"
+        allowed_gpios = @(-1, 10)
+        role = "optional BAT_IN -> VIN_TPS63020 input branch current telemetry"
     },
     [ordered]@{
         branch = "SY7088_input_branch"
         net = "SY7088_I_ADC"
-        gpio = 9
-        role = "BAT_IN -> VIN_SY7088 input branch current telemetry"
+        allowed_gpios = @(-1, 9)
+        role = "optional BAT_IN -> VIN_SY7088 input branch current telemetry"
     }
 )
 
@@ -185,8 +185,8 @@ function Read-DiagnosticsFromSerial {
 function New-SelfTestLines {
     return @(
         "~BOARD:STATUS profile=voice-keyboard-v2-n16r8 battery_mv=4012 battery_valid=1",
-        "~BOARD:POWER branch=TPS63020_input_branch gpio=10 raw_adc=1234 adc_mv=995 adc_calibrated=1 sample_count=4 calibration_status=uncalibrated current_model=""INA180A2 10mR current_mA=adc_mv*2"" current_calibrated=0 current_ma_valid=0 estimated_input_current_ma=0 battery_side_mv=4012 battery_voltage_source=""BAT_V_ADC/GPIO8 68K/68K midpoint, VBAT~=2*ADC"" power_mw_valid=0 estimated_input_power_mw=0 result=ESP_OK policy=v2_battery_side_input_branch_current_ina180a2_10mR_adc_mv_x2_with_battery_mv_from_gpio8_div2",
-        "~BOARD:POWER branch=SY7088_input_branch gpio=9 raw_adc=2345 adc_mv=1888 adc_calibrated=1 sample_count=4 calibration_status=uncalibrated current_model=""INA180A2 10mR current_mA=adc_mv*2"" current_calibrated=0 current_ma_valid=0 estimated_input_current_ma=0 battery_side_mv=4012 battery_voltage_source=""BAT_V_ADC/GPIO8 68K/68K midpoint, VBAT~=2*ADC"" power_mw_valid=0 estimated_input_power_mw=0 result=ESP_OK policy=v2_battery_side_input_branch_current_ina180a2_10mR_adc_mv_x2_with_battery_mv_from_gpio8_div2",
+        "~BOARD:POWER branch=TPS63020_input_branch present=0 gpio=-1 raw_adc=0 adc_mv=0 adc_calibrated=0 sample_count=0 calibration_status=current_telemetry_not_populated current_model=""not_populated"" current_calibrated=0 current_ma_valid=0 estimated_input_current_ma=0 battery_side_mv=0 battery_voltage_source=""BAT_V_ADC/GPIO8 68K/68K midpoint, VBAT~=2*ADC"" power_mw_valid=0 estimated_input_power_mw=0 result=ESP_ERR_NOT_SUPPORTED policy=v2_optional_current_telemetry_not_populated_battery_adc_only_no_power_decisions",
+        "~BOARD:POWER branch=SY7088_input_branch present=0 gpio=-1 raw_adc=0 adc_mv=0 adc_calibrated=0 sample_count=0 calibration_status=current_telemetry_not_populated current_model=""not_populated"" current_calibrated=0 current_ma_valid=0 estimated_input_current_ma=0 battery_side_mv=0 battery_voltage_source=""BAT_V_ADC/GPIO8 68K/68K midpoint, VBAT~=2*ADC"" power_mw_valid=0 estimated_input_power_mw=0 result=ESP_ERR_NOT_SUPPORTED policy=v2_optional_current_telemetry_not_populated_battery_adc_only_no_power_decisions",
         "~POWER:STATUS state=CONNECTED_IDLE blockers=0x00000000 blocker_names=none shutdown_blockers=0x00000000 shutdown_blocker_names=none idle_ms=100 user_idle_ms=100 radio_idle_ms=100 ble_connected=1 automatic_shutdown_blocked_by_external_power=0 external_power_present=0 usb_power_present=0 charging=0 charge_full=0 usb_det_level=low bat_chg_level=high bat_std_level=high usb_det_policy=v2_gpio7_r37_r32_10K_10K_divider charger_polarity=v2_gpio14_chg_gpio21_std_active_low battery_mv=3988 battery_level=82 battery_valid=1 last_shutdown_reason=manual_command last_shutdown_idle_ms=100 last_shutdown_blockers=0x00000000 guard=1 audio_idle_ms=60000 connected_idle_ms=300000 disconnected_idle_ms=600000 hardware_shutdown_ms=1800000 pwr_hold_gpio=11 pwr_hold_level=low pwr_hold_configured=1 pwr_hold_policy=v2_gpio11_power_latch_hold_low_release_high_for_hardware_shutdown voice_key_gpio=18 hardware_shutdown_user_action=""short-press hardware power key for cold boot after PWR_HOLD/GPIO11 shutdown-high"""
     )
 }
@@ -205,14 +205,15 @@ function New-MarkdownReport {
     $lines.Add("")
     $lines.Add("Policy: telemetry only. Firmware does not use these readings for power control, shutdown, LED limiting, or user-visible power decisions.")
     $lines.Add("")
-    $lines.Add("| Branch | Net | GPIO | Present | Raw ADC | ADC mV | ADC calibrated | Input current mA valid | Battery mV | Input power mW valid | Result |")
-    $lines.Add("|---|---|---:|---|---:|---:|---|---|---:|---|---|")
+    $lines.Add("| Branch | Net | Allowed GPIOs | Reported GPIO | Hardware present | Raw ADC | ADC mV | ADC calibrated | Input current mA valid | Battery mV | Input power mW valid | Result |")
+    $lines.Add("|---|---|---|---:|---|---:|---:|---|---|---:|---|---|")
     foreach ($reading in $Readings) {
         $lines.Add((
-            "| {0} | {1} | {2} | {3} | {4} | {5} | {6} | {7} | {8} | {9} | {10} |" -f
+            "| {0} | {1} | {2} | {3} | {4} | {5} | {6} | {7} | {8} | {9} | {10} | {11} |" -f
             $reading.branch,
             $reading.net,
-            $reading.gpio_expected,
+            $reading.gpio_allowed,
+            $reading.gpio_reported,
             $reading.present,
             $reading.raw_adc,
             $reading.adc_mv,
@@ -224,7 +225,8 @@ function New-MarkdownReport {
         ))
     }
     $lines.Add("")
-    $lines.Add(("All expected sensors present: {0}" -f $Manifest.summary.all_expected_present))
+    $lines.Add(("All expected branches reported: {0}" -f $Manifest.summary.all_expected_present))
+    $lines.Add(("Hardware sensors populated: {0}/{1}" -f $Manifest.summary.hardware_present_count, $Manifest.summary.expected_sensor_count))
     $lines.Add("")
     $lines.Add("## Power Status")
     if ($null -ne $Manifest.low_power_status -and $Manifest.low_power_status.present) {
@@ -313,17 +315,24 @@ try {
         }
 
         $gpio = if ($present -and ($row.PSObject.Properties.Name -contains "gpio")) { [int64]$row.gpio } else { $null }
-        if ($present -and $gpio -ne [int64]$sensor.gpio) {
-            $gpioMismatches.Add(("{0}: expected GPIO{1}, got GPIO{2}" -f $branch, $sensor.gpio, $gpio))
+        $allowedGpios = @($sensor.allowed_gpios | ForEach-Object { [int64]$_ })
+        if ($present -and -not $allowedGpios.Contains($gpio)) {
+            $gpioMismatches.Add(("{0}: expected one of GPIO {1}, got GPIO{2}" -f $branch, (@($allowedGpios) -join "/"), $gpio))
+        }
+        $hardwarePresent = if ($present -and ($row.PSObject.Properties.Name -contains "present")) {
+            Convert-ToBool $row.present
+        } else {
+            $present
         }
 
         $readings += [pscustomobject][ordered]@{
             branch = $branch
             net = [string]$sensor.net
             role = [string]$sensor.role
-            gpio_expected = [int]$sensor.gpio
+            gpio_allowed = (@($allowedGpios) -join "/")
             gpio_reported = $gpio
-            present = $present
+            present = $hardwarePresent
+            branch_reported = $present
             raw_adc = if ($present -and ($row.PSObject.Properties.Name -contains "raw_adc")) { [int64]$row.raw_adc } else { $null }
             adc_mv = if ($present -and ($row.PSObject.Properties.Name -contains "adc_mv")) { [int64]$row.adc_mv } else { $null }
             adc_calibrated = if ($present -and ($row.PSObject.Properties.Name -contains "adc_calibrated")) { Convert-ToBool $row.adc_calibrated } else { $false }
@@ -352,6 +361,7 @@ try {
         expected_sensor_count = @($expectedSensors).Count
         reading_count = @($boardPowerRows).Count
         all_expected_present = $missingBranches.Count -eq 0
+        hardware_present_count = @($readings | Where-Object { $_.present }).Count
         low_power_status_present = $null -ne $latestPowerStatus
         missing_branches = @($missingBranches)
         unexpected_branches = @($unexpectedBranches)

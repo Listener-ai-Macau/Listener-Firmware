@@ -30,7 +30,8 @@ typedef struct {
     bool valid;
     const char *rail_name;
     const char *calibration_status;
-    uint32_t gpio;
+    bool current_telemetry_present;
+    int32_t gpio;
     uint32_t nominal_rail_mv;
     bool rail_voltage_provisional;
     int raw_adc;

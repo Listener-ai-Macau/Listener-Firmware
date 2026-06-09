@@ -22,7 +22,7 @@ Default order is fixed until real hardware silkscreen validation proves otherwis
 - `LED5=OK`
 - `LED6=WARN`
 
-`PWR` owns battery and charge state. `BLE` owns pairing, reconnect, and connected confidence. `REC` only lights for a real capture/upload source named by firmware. If capture is unavailable, firmware shows `WARN + REC`. `AI` owns transfer, processing, thinking, and OTA progress. `OK` is a short success flash. `WARN` owns retryable and hard errors and pairs with a source LED.
+`PWR` owns battery and external-power state. While unplugged, it uses green for healthy battery, amber for lower battery, and red for low or critical battery. While USB or charger status says external power is present, it uses white: breathing while plugged in and not full, steady white when full. `BLE` owns pairing, reconnect, and connected confidence. `REC` only lights for a real capture/upload source named by firmware. If capture is unavailable, firmware shows `WARN + REC`. `AI` owns transfer, processing, thinking, and OTA progress. `OK` is a short success flash. `WARN` owns retryable and hard errors and pairs with a source LED.
 
 ## BLE Connection Source Of Truth
 
@@ -62,12 +62,13 @@ Current is still estimated per frame with 20 mA per RGB channel at full scale. `
 ## Product Effect Language
 
 - Idle connected state is readable but not dominant: PWR/BLE confidence remains visible without using factory brightness.
+- External power overrides battery-color display on `PWR`: plugged and not full is a white breath, and full is steady white.
 - Pairing and reconnect use recognizable blue pulses without turning the whole status rail into an animation surface.
 - Recording is a gold breathing semantic state and also marks the voice key locally without using warning red.
 - Processing uses a saturated purple breath on `AI`; long processing settles to a calmer breath.
 - Key LEDs are local transient feedback only: white on press/release, purple while processing, and green only during success confirmation.
 - Warnings pair `WARN` with the source LED; critical battery and hard errors are allowed to be much brighter than normal routine states.
-- The product palette favors clear semantic colors on the current diffuser: green for power/OK, blue for BLE, gold for recording, red for hard warning, amber for retryable warning, purple for AI, and white for local key feedback.
+- The product palette favors clear semantic colors on the current diffuser: green for battery-good/OK, white for external power and local key feedback, blue for BLE, gold for recording, red for hard warning, amber for lower battery or retryable warning, and purple for AI.
 - RGBW, map, chase, and pixel test commands remain calibration tools and can drive full brightness independent of the product profile.
 
 ## Validation Commands

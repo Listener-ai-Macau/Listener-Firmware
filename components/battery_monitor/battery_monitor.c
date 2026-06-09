@@ -353,6 +353,8 @@ esp_err_t battery_monitor_read_power_rail(
     out_status->valid = false;
     out_status->rail_name = battery_monitor_power_rail_name(rail);
     out_status->calibration_status = "ina180a2_10mR_nominal";
+    out_status->current_telemetry_present = false;
+    out_status->gpio = -1;
     out_status->nominal_rail_mv = 0;
     out_status->rail_voltage_provisional = false;
     out_status->current_calibrated = false;
@@ -365,7 +367,14 @@ esp_err_t battery_monitor_read_power_rail(
         out_status->result = ESP_ERR_INVALID_ARG;
         return ESP_ERR_INVALID_ARG;
     }
-    out_status->gpio = (uint32_t)adc->gpio;
+    out_status->gpio = (int32_t)adc->gpio;
+    out_status->current_telemetry_present =
+        adc->gpio != GPIO_NUM_NC && adc->gpio >= 0 && adc->gpio < GPIO_NUM_MAX;
+    if (!out_status->current_telemetry_present) {
+        out_status->calibration_status = "current_telemetry_not_populated";
+        out_status->result = ESP_ERR_NOT_SUPPORTED;
+        return ESP_ERR_NOT_SUPPORTED;
+    }
 
     esp_err_t mutex_ret = battery_monitor_ensure_mutex();
     if (mutex_ret != ESP_OK) {

@@ -133,6 +133,7 @@ typedef struct {
     bool recording_active;
     bool processing_active;
     bool battery_valid;
+    bool external_power_present;
     bool charging;
     bool full;
     uint8_t battery_level_percent;
@@ -668,13 +669,14 @@ static void status_led_render_power_locked(status_led_frame_t *frame, uint32_t n
     uint8_t percent = 0;
     status_led_rgb_t color = {0};
 
-    if (s_state.charging) {
-        percent = status_led_triangle_percent(now_ms, 3600U, 24U, 62U);
+    if (s_state.external_power_present) {
+        if (s_state.full) {
+            percent = status_window ? 55U : 38U;
+        } else {
+            percent = status_led_triangle_percent(now_ms, 3600U, 24U, 62U);
+        }
         color = status_led_token_locked(status_led_rgb(255, 255, 255), percent, true);
         safety = true;
-    } else if (s_state.full) {
-        percent = status_window ? 48U : 30U;
-        color = status_led_token_locked(status_led_rgb(0, 255, 0), percent, false);
     } else if (s_state.battery_valid) {
         if (s_state.battery_level_percent < 10U) {
             safety = true;
@@ -1006,15 +1008,20 @@ static void status_led_poll_power_inputs(void)
                     gpio_get_level(BOARD_PINS_BAT_CHG_IO) == 0;
     bool full = BOARD_PINS_BAT_STD_IO != GPIO_NUM_NC &&
                 gpio_get_level(BOARD_PINS_BAT_STD_IO) == 0;
+    bool usb_power_present = BOARD_PINS_USB_DET_IO != GPIO_NUM_NC &&
+                             gpio_get_level(BOARD_PINS_USB_DET_IO) > 0;
+    bool external_power_present = usb_power_present || charging || full;
 
     if (xSemaphoreTake(s_mutex, portMAX_DELAY) == pdTRUE) {
         bool band_changed = s_state.battery_valid != battery_valid ||
                             (battery_valid && (s_state.battery_level_percent / 10U) != (battery_level / 10U)) ||
+                            s_state.external_power_present != external_power_present ||
                             s_state.charging != charging ||
                             s_state.full != full;
         s_state.battery_valid = battery_valid;
         s_state.battery_mv = battery_mv;
         s_state.battery_level_percent = battery_level;
+        s_state.external_power_present = external_power_present;
         s_state.charging = charging;
         s_state.full = full;
         if (band_changed) {
@@ -1653,7 +1660,7 @@ static void status_led_print_status(void)
         " key_pin_contract=PWM_RGB_KEY_GPIO13 ec11_pin_contract=PWM_RGB_EC11_GPIO5 edge_pin_contract=PWM_RGB_Edge_GPIO4 gpio14_reserved=BAT_CHG_IO vdd_led_enable=always_on_assumed"
         " ble=%s rec_active=%u rec_source=%s processing=%u"
         " error_domain=%s error_severity=%s output_disabled=%u low_power_disabled=%u"
-        " battery_valid=%u battery_level=%u battery_mv=%" PRIu32 " charging=%u full=%u"
+        " battery_valid=%u battery_level=%u battery_mv=%" PRIu32 " external_power=%u charging=%u full=%u"
         " status_window_ms_left=%" PRIu32 " ble_confidence_ms_left=%" PRIu32
         " oobe_confidence_ms_left=%" PRIu32 " last_transition_ms=%" PRIu32
         " current_ma=%" PRIu32 " current_budget_ma=%" PRIu32
@@ -1686,6 +1693,7 @@ static void status_led_print_status(void)
         snapshot.battery_valid ? 1U : 0U,
         snapshot.battery_level_percent,
         snapshot.battery_mv,
+        snapshot.external_power_present ? 1U : 0U,
         snapshot.charging ? 1U : 0U,
         snapshot.full ? 1U : 0U,
         now_ms < snapshot.status_window_until_ms ? snapshot.status_window_until_ms - now_ms : 0U,
@@ -1788,6 +1796,7 @@ static void status_led_preview_state(const char *state)
         s_state.battery_valid = true;
         s_state.battery_level_percent = 80;
         s_state.battery_mv = 4000;
+        s_state.external_power_present = false;
         s_state.charging = false;
         s_state.full = false;
     } else if (strcasecmp(state, "pairing") == 0) {
@@ -1817,18 +1826,22 @@ static void status_led_preview_state(const char *state)
         s_state.battery_valid = true;
         s_state.battery_level_percent = 15;
         s_state.battery_mv = 3500;
+        s_state.external_power_present = false;
         s_state.charging = false;
         s_state.full = false;
     } else if (strcasecmp(state, "critical_battery") == 0) {
         s_state.battery_valid = true;
         s_state.battery_level_percent = 5;
         s_state.battery_mv = 3300;
+        s_state.external_power_present = false;
         s_state.charging = false;
         s_state.full = false;
     } else if (strcasecmp(state, "charging") == 0) {
+        s_state.external_power_present = true;
         s_state.charging = true;
         s_state.full = false;
     } else if (strcasecmp(state, "full") == 0) {
+        s_state.external_power_present = true;
         s_state.charging = false;
         s_state.full = true;
     } else if (strcasecmp(state, "sleep") == 0) {
@@ -1844,6 +1857,7 @@ static void status_led_preview_state(const char *state)
         s_state.battery_valid = false;
         s_state.battery_level_percent = 0;
         s_state.battery_mv = 0;
+        s_state.external_power_present = false;
         s_state.charging = false;
         s_state.full = false;
         s_state.error_domain = STATUS_LED_ERROR_DOMAIN_NONE;
