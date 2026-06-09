@@ -49,7 +49,7 @@ The status LED task refreshes every 50 ms and sends at most four short strip fra
 
 ## Profiles And Budget
 
-Profiles are persisted in NVS through `~LED:PROFILE <off|low|standard|ambient|factory>`. A separate user brightness cap is persisted through `~LED:BRIGHTNESS <0-100>` and applies to routine product effects across the status, key, EC11, and edge zones.
+Profiles are persisted in NVS through `~LED:PROFILE <off|low|standard|ambient|factory>`. A separate user brightness cap is persisted through `~LED:BRIGHTNESS <0-100>` and applies to routine product effects across the status, key, EC11, and edge zones. `~LED:BRIGHTNESS` remains a compatibility command and writes both device brightness profiles. New desktop/device settings should prefer `~DEVICE:SETTINGS` plus `~DEVICE:SET plugged_brightness=<0-100> battery_brightness=<0-100>` so plugged and battery operation can have different caps.
 
 - `standard` is the product default. Routine status/key effects are capped at 85% and use brighter, saturated primary colors for daily readability.
 - `low` caps routine effects at 35% for dark-room or low-power behavior.
@@ -79,6 +79,8 @@ Current is still estimated per frame with 20 mA per RGB channel at full scale. `
 - `~LED:BUDGET`
 - `~LED:PRIVACY`
 - `~LED:BRIGHTNESS <0-100>`
+- `~DEVICE:SETTINGS`
+- `~DEVICE:SET plugged_brightness=<0-100> battery_brightness=<0-100>`
 - `~LED:TEST:RGBW <status|ec11|knob|ring|key|edge|all>`
 - `~LED:TEST:MAP <status|ec11|knob|ring|key|edge|all>`
 - `~LED:CHASE [status,key|status|key|ec11|edge|all] [step_ms]`

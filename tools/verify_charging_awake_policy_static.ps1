@@ -40,7 +40,7 @@ Assert-Contains $powerHeader 'charging' 'interpreted charging status'
 Assert-Contains $powerHeader 'charge_full' 'interpreted charge-full status'
 Assert-Contains $powerHeader 'automatic_shutdown_blocked_by_external_power' 'observable automatic shutdown block status'
 
-Assert-Contains $cmake 'REQUIRES\s+battery_monitor\s+board\s+diag_log\s+board_pins\s+watchdog_platform' 'board dependency for power input snapshot'
+Assert-Contains $cmake 'REQUIRES\s+battery_monitor\s+board\s+device_settings\s+diag_log\s+board_pins\s+watchdog_platform' 'board and device settings dependency for power input snapshot and configurable timeout'
 
 Assert-Contains $powerManager '#include "board\.h"' 'board power input include'
 Assert-Contains $powerManager 'board_get_v2_power_input_snapshot\(&board_snapshot\)' 'board power input snapshot read'
@@ -54,7 +54,7 @@ Assert-Contains $powerManager 's_power_source_initialized\s*&&\s*external_change
 Assert-Contains $powerManager 'reason\s*==\s*POWER_MANAGER_SHUTDOWN_REASON_LONG_IDLE[\s\S]*source->external_power_present[\s\S]*shutdown_blockers\s*\|=\s*POWER_MANAGER_BLOCKER_EXTERNAL_POWER' 'external power blocks automatic long-idle hardware shutdown'
 Assert-Contains $powerManager 'source->external_power_present[\s\S]*s_blockers\s*\|=\s*POWER_MANAGER_BLOCKER_EXTERNAL_POWER[\s\S]*s_blockers\s*&=\s*~\(uint32_t\)POWER_MANAGER_BLOCKER_EXTERNAL_POWER' 'external power sets and clears awake blocker'
 Assert-Contains $powerManager 'if\s*\(s_blockers\s*!=\s*0\)\s*\{[\s\S]*return\s+POWER_MANAGER_STATE_ACTIVE' 'external power blocker keeps plugged firmware ACTIVE'
-Assert-Contains $powerManager 'power_manager_without_external_power_blocker\(s_blockers\)\s*==\s*0[\s\S]*s_external_power_present[\s\S]*CONFIG_POWER_MANAGER_HARDWARE_SHUTDOWN_MS' 'automatic shutdown blocked status ignores external blocker itself'
+Assert-Contains $powerManager 'power_manager_without_external_power_blocker\(s_blockers\)\s*==\s*0[\s\S]*s_external_power_present[\s\S]*hardware_shutdown_ms' 'automatic shutdown blocked status ignores external blocker itself'
 Assert-Contains $powerManager 'reason\s*==\s*POWER_MANAGER_SHUTDOWN_REASON_LONG_IDLE[\s\S]*\?\s*snapshot\.blockers[\s\S]*:\s*power_manager_without_external_power_blocker\(snapshot\.blockers\)' 'manual shutdown entry gate ignores external-power awake blocker'
 Assert-Contains $powerManager 'strcmp\(command,\s*"SHUTDOWN"\)[\s\S]*power_manager_enter_hardware_shutdown\(POWER_MANAGER_SHUTDOWN_REASON_MANUAL_COMMAND\)' 'manual hardware shutdown command remains explicit'
 Assert-Contains $powerManager 'final_shutdown_blockers\s*=\s*power_manager_shutdown_blockers_for_source\([\s\S]*reason\)' 'final shutdown gate rechecks power source'

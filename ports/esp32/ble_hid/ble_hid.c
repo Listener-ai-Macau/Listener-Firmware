@@ -31,6 +31,7 @@ void ble_store_config_init(void);
 #include "battery_monitor.h"
 #include "board.h"
 #include "boot_safety.h"
+#include "device_settings.h"
 #include "ec11_rotation_control.h"
 #include "listener_device.h"
 #include "ble_hid_gap.h"
@@ -53,7 +54,7 @@ static const char *TAG = "ble_hid";
 #define BLE_HID_BATTERY_LEVEL_INVALID UINT8_MAX
 #define BLE_HID_BATTERY_TASK_STACK_BYTES (4 * 1024)
 #define BLE_HID_USB_COMMAND_PREFIX '~'
-#define BLE_HID_USB_COMMAND_BUFFER_BYTES 64
+#define BLE_HID_USB_COMMAND_BUFFER_BYTES 192
 #define BLE_HID_ASCII_QUEUE_LENGTH 8
 #define BLE_HID_USAGE_QUEUE_LENGTH 8
 #define BLE_HID_KEY_SOURCE_BYTES 32
@@ -76,7 +77,7 @@ typedef struct {
 
 static ble_hid_ctx_t s_ble_hid_ctx = {0};
 
-static const char *s_device_name = LISTENER_DEVICE_BLE_NAME;
+static const char *s_device_name = DEVICE_SETTINGS_DEFAULT_BLE_NAME;
 
 static char s_ble_serial[18];
 
@@ -457,6 +458,11 @@ static bool ble_hid_dispatch_usb_command_line(const char *line)
     power_manager_record_activity("usb_control_line");
 
     if (power_manager_consume_usb_command(line)) {
+        return true;
+    }
+
+    if (device_settings_consume_usb_command(line)) {
+        status_led_apply_device_settings();
         return true;
     }
 
@@ -878,6 +884,7 @@ static void ble_hid_log_dis_gatt_state(void)
 esp_err_t ble_hid_init(void)
 {
     listener_device_set_safe_mode(s_safe_mode);
+    s_device_name = listener_device_get_ble_name();
     uint32_t ready_mask = LISTENER_DEVICE_READY_DIAGNOSTIC;
     uint32_t degraded_mask = 0;
     ESP_LOGI(TAG, "fw_version=%s protocol_version=%u build=%s serial=%s",

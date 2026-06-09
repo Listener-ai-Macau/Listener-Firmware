@@ -1,0 +1,608 @@
+#include "device_settings.h"
+
+#include <inttypes.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+
+#include "board.h"
+#include "esp_log.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/semphr.h"
+#include "nvs.h"
+#include "sdkconfig.h"
+
+#ifndef CONFIG_POWER_MANAGER_HARDWARE_SHUTDOWN_MS
+#define CONFIG_POWER_MANAGER_HARDWARE_SHUTDOWN_MS 1800000
+#endif
+
+#define DEVICE_SETTINGS_NVS_NAMESPACE "device"
+#define DEVICE_SETTINGS_NVS_PLUGGED_BRIGHTNESS_KEY "plug_brt"
+#define DEVICE_SETTINGS_NVS_BATTERY_BRIGHTNESS_KEY "bat_brt"
+#define DEVICE_SETTINGS_NVS_AUTO_SHUTDOWN_MS_KEY "shut_ms"
+#define DEVICE_SETTINGS_NVS_BLE_NAME_KEY "ble_name"
+#define DEVICE_SETTINGS_USB_PREFIX "DEVICE:"
+#define DEVICE_SETTINGS_COMMAND_BUFFER_BYTES 192
+#define DEVICE_SETTINGS_AUTO_SHUTDOWN_MIN_MS 60000U
+#define DEVICE_SETTINGS_AUTO_SHUTDOWN_MAX_MS 86400000U
+
+static const char *TAG = "device_settings";
+
+typedef struct {
+    uint8_t plugged_brightness_percent;
+    uint8_t battery_brightness_percent;
+    uint32_t battery_auto_shutdown_ms;
+    char ble_name[DEVICE_SETTINGS_BLE_NAME_MAX_LEN + 1];
+} device_settings_config_t;
+
+static SemaphoreHandle_t s_mutex;
+static device_settings_config_t s_settings;
+static bool s_loaded;
+static bool s_loaded_from_nvs;
+static bool s_ble_name_pending_restart;
+
+static void device_settings_set_defaults_locked(void)
+{
+    s_settings.plugged_brightness_percent = 100U;
+    s_settings.battery_brightness_percent = 100U;
+    s_settings.battery_auto_shutdown_ms = (uint32_t)CONFIG_POWER_MANAGER_HARDWARE_SHUTDOWN_MS;
+    snprintf(s_settings.ble_name, sizeof(s_settings.ble_name), "%s", DEVICE_SETTINGS_DEFAULT_BLE_NAME);
+}
+
+static bool device_settings_ensure_mutex(void)
+{
+    if (s_mutex != NULL) {
+        return true;
+    }
+    s_mutex = xSemaphoreCreateMutex();
+    return s_mutex != NULL;
+}
+
+static uint8_t device_settings_clamp_brightness(uint8_t value)
+{
+    return value <= 100U ? value : 100U;
+}
+
+static uint32_t device_settings_clamp_auto_shutdown_ms(uint32_t value)
+{
+    if (value < DEVICE_SETTINGS_AUTO_SHUTDOWN_MIN_MS) {
+        return DEVICE_SETTINGS_AUTO_SHUTDOWN_MIN_MS;
+    }
+    if (value > DEVICE_SETTINGS_AUTO_SHUTDOWN_MAX_MS) {
+        return DEVICE_SETTINGS_AUTO_SHUTDOWN_MAX_MS;
+    }
+    return value;
+}
+
+static bool device_settings_validate_ble_name(const char *name)
+{
+    if (name == NULL) {
+        return false;
+    }
+    size_t len = strlen(name);
+    if (len == 0 || len > DEVICE_SETTINGS_BLE_NAME_MAX_LEN) {
+        return false;
+    }
+    for (size_t index = 0; index < len; ++index) {
+        unsigned char ch = (unsigned char)name[index];
+        if (ch < 0x20 || ch > 0x7e) {
+            return false;
+        }
+        if (ch == '"' || ch == '\'' || ch == ';' || ch == '=' || ch == '\\') {
+            return false;
+        }
+    }
+    return true;
+}
+
+static esp_err_t device_settings_load_locked(void)
+{
+    device_settings_set_defaults_locked();
+    s_loaded_from_nvs = false;
+
+    nvs_handle_t nvs = 0;
+    esp_err_t ret = nvs_open(DEVICE_SETTINGS_NVS_NAMESPACE, NVS_READONLY, &nvs);
+    if (ret == ESP_ERR_NVS_NOT_FOUND) {
+        s_loaded = true;
+        return ESP_OK;
+    }
+    if (ret != ESP_OK) {
+        return ret;
+    }
+
+    uint8_t plugged = s_settings.plugged_brightness_percent;
+    if (nvs_get_u8(nvs, DEVICE_SETTINGS_NVS_PLUGGED_BRIGHTNESS_KEY, &plugged) == ESP_OK) {
+        s_settings.plugged_brightness_percent = device_settings_clamp_brightness(plugged);
+        s_loaded_from_nvs = true;
+    }
+
+    uint8_t battery = s_settings.battery_brightness_percent;
+    if (nvs_get_u8(nvs, DEVICE_SETTINGS_NVS_BATTERY_BRIGHTNESS_KEY, &battery) == ESP_OK) {
+        s_settings.battery_brightness_percent = device_settings_clamp_brightness(battery);
+        s_loaded_from_nvs = true;
+    }
+
+    uint32_t shutdown_ms = s_settings.battery_auto_shutdown_ms;
+    if (nvs_get_u32(nvs, DEVICE_SETTINGS_NVS_AUTO_SHUTDOWN_MS_KEY, &shutdown_ms) == ESP_OK) {
+        s_settings.battery_auto_shutdown_ms = device_settings_clamp_auto_shutdown_ms(shutdown_ms);
+        s_loaded_from_nvs = true;
+    }
+
+    char name[DEVICE_SETTINGS_BLE_NAME_MAX_LEN + 1] = {0};
+    size_t name_len = sizeof(name);
+    if (nvs_get_str(nvs, DEVICE_SETTINGS_NVS_BLE_NAME_KEY, name, &name_len) == ESP_OK &&
+        device_settings_validate_ble_name(name)) {
+        snprintf(s_settings.ble_name, sizeof(s_settings.ble_name), "%s", name);
+        s_loaded_from_nvs = true;
+    }
+
+    nvs_close(nvs);
+    s_loaded = true;
+    return ESP_OK;
+}
+
+static esp_err_t device_settings_ensure_loaded_locked(void)
+{
+    if (s_loaded) {
+        return ESP_OK;
+    }
+    return device_settings_load_locked();
+}
+
+static esp_err_t device_settings_persist_locked(void)
+{
+    nvs_handle_t nvs = 0;
+    esp_err_t ret = nvs_open(DEVICE_SETTINGS_NVS_NAMESPACE, NVS_READWRITE, &nvs);
+    if (ret != ESP_OK) {
+        return ret;
+    }
+
+    ret = nvs_set_u8(nvs, DEVICE_SETTINGS_NVS_PLUGGED_BRIGHTNESS_KEY, s_settings.plugged_brightness_percent);
+    if (ret == ESP_OK) {
+        ret = nvs_set_u8(nvs, DEVICE_SETTINGS_NVS_BATTERY_BRIGHTNESS_KEY, s_settings.battery_brightness_percent);
+    }
+    if (ret == ESP_OK) {
+        ret = nvs_set_u32(nvs, DEVICE_SETTINGS_NVS_AUTO_SHUTDOWN_MS_KEY, s_settings.battery_auto_shutdown_ms);
+    }
+    if (ret == ESP_OK) {
+        ret = nvs_set_str(nvs, DEVICE_SETTINGS_NVS_BLE_NAME_KEY, s_settings.ble_name);
+    }
+    if (ret == ESP_OK) {
+        ret = nvs_commit(nvs);
+    }
+    nvs_close(nvs);
+    if (ret == ESP_OK) {
+        s_loaded_from_nvs = true;
+    }
+    return ret;
+}
+
+esp_err_t device_settings_init(void)
+{
+    if (!device_settings_ensure_mutex()) {
+        return ESP_ERR_NO_MEM;
+    }
+
+    esp_err_t ret = ESP_OK;
+    if (xSemaphoreTake(s_mutex, portMAX_DELAY) == pdTRUE) {
+        s_loaded = false;
+        ret = device_settings_load_locked();
+        xSemaphoreGive(s_mutex);
+    }
+
+    if (ret == ESP_OK) {
+        ESP_LOGI(
+            TAG,
+            "device settings: plugged_brightness=%u battery_brightness=%u auto_shutdown_ms=%" PRIu32 " ble_name=%s loaded_from_nvs=%u",
+            s_settings.plugged_brightness_percent,
+            s_settings.battery_brightness_percent,
+            s_settings.battery_auto_shutdown_ms,
+            s_settings.ble_name,
+            s_loaded_from_nvs ? 1u : 0u);
+    } else {
+        ESP_LOGW(TAG, "device settings load skipped: %s", esp_err_to_name(ret));
+    }
+    return ret;
+}
+
+void device_settings_get_snapshot(device_settings_snapshot_t *out_snapshot)
+{
+    if (out_snapshot == NULL) {
+        return;
+    }
+    memset(out_snapshot, 0, sizeof(*out_snapshot));
+    out_snapshot->plugged_brightness_percent = 100U;
+    out_snapshot->battery_brightness_percent = 100U;
+    out_snapshot->battery_auto_shutdown_ms = (uint32_t)CONFIG_POWER_MANAGER_HARDWARE_SHUTDOWN_MS;
+    snprintf(out_snapshot->ble_name, sizeof(out_snapshot->ble_name), "%s", DEVICE_SETTINGS_DEFAULT_BLE_NAME);
+
+    if (!device_settings_ensure_mutex()) {
+        return;
+    }
+    if (xSemaphoreTake(s_mutex, portMAX_DELAY) == pdTRUE) {
+        esp_err_t ret = device_settings_ensure_loaded_locked();
+        if (ret == ESP_OK) {
+            out_snapshot->plugged_brightness_percent = s_settings.plugged_brightness_percent;
+            out_snapshot->battery_brightness_percent = s_settings.battery_brightness_percent;
+            out_snapshot->battery_auto_shutdown_ms = s_settings.battery_auto_shutdown_ms;
+            snprintf(out_snapshot->ble_name, sizeof(out_snapshot->ble_name), "%s", s_settings.ble_name);
+            out_snapshot->ble_name_pending_restart = s_ble_name_pending_restart;
+            out_snapshot->loaded_from_nvs = s_loaded_from_nvs;
+        }
+        xSemaphoreGive(s_mutex);
+    }
+}
+
+uint8_t device_settings_get_active_brightness_percent(bool external_power_present)
+{
+    device_settings_snapshot_t snapshot = {0};
+    device_settings_get_snapshot(&snapshot);
+    return external_power_present
+        ? snapshot.plugged_brightness_percent
+        : snapshot.battery_brightness_percent;
+}
+
+uint32_t device_settings_get_battery_auto_shutdown_ms(void)
+{
+    device_settings_snapshot_t snapshot = {0};
+    device_settings_get_snapshot(&snapshot);
+    return snapshot.battery_auto_shutdown_ms;
+}
+
+const char *device_settings_get_ble_name(void)
+{
+    if (!device_settings_ensure_mutex()) {
+        return DEVICE_SETTINGS_DEFAULT_BLE_NAME;
+    }
+    if (xSemaphoreTake(s_mutex, portMAX_DELAY) == pdTRUE) {
+        (void)device_settings_ensure_loaded_locked();
+        xSemaphoreGive(s_mutex);
+    }
+    return s_settings.ble_name[0] != '\0' ? s_settings.ble_name : DEVICE_SETTINGS_DEFAULT_BLE_NAME;
+}
+
+bool device_settings_ble_name_pending_restart(void)
+{
+    bool pending = false;
+    if (!device_settings_ensure_mutex()) {
+        return false;
+    }
+    if (xSemaphoreTake(s_mutex, portMAX_DELAY) == pdTRUE) {
+        pending = s_ble_name_pending_restart;
+        xSemaphoreGive(s_mutex);
+    }
+    return pending;
+}
+
+esp_err_t device_settings_set_brightness_profiles(uint8_t plugged_percent, uint8_t battery_percent)
+{
+    if (!device_settings_ensure_mutex()) {
+        return ESP_ERR_NO_MEM;
+    }
+
+    esp_err_t ret = ESP_OK;
+    if (xSemaphoreTake(s_mutex, portMAX_DELAY) == pdTRUE) {
+        (void)device_settings_ensure_loaded_locked();
+        s_settings.plugged_brightness_percent = device_settings_clamp_brightness(plugged_percent);
+        s_settings.battery_brightness_percent = device_settings_clamp_brightness(battery_percent);
+        ret = device_settings_persist_locked();
+        xSemaphoreGive(s_mutex);
+    }
+    if (ret != ESP_OK) {
+        ESP_LOGW(TAG, "brightness profile persist failed: %s", esp_err_to_name(ret));
+    }
+    return ret;
+}
+
+static const char *device_settings_strip_prefix(const char *line)
+{
+    if (line == NULL) {
+        return NULL;
+    }
+    if (*line == '~') {
+        line++;
+    }
+    size_t prefix_len = strlen(DEVICE_SETTINGS_USB_PREFIX);
+    if (strncmp(line, DEVICE_SETTINGS_USB_PREFIX, prefix_len) != 0) {
+        return NULL;
+    }
+    return line + prefix_len;
+}
+
+static void device_settings_print_error(const char *key, const char *reason)
+{
+    printf("~DEVICE:ERROR key=%s reason=%s\n",
+           key != NULL ? key : "command",
+           reason != NULL ? reason : "invalid");
+    fflush(stdout);
+}
+
+static void device_settings_print_status(const char *result)
+{
+    device_settings_snapshot_t snapshot = {0};
+    device_settings_get_snapshot(&snapshot);
+    board_v2_power_input_snapshot_t power = {0};
+    board_get_v2_power_input_snapshot(&power);
+    bool usb_power_present = power.usb_det_level > 0;
+    bool charging = power.bat_chg_level == 0;
+    bool charge_full = power.bat_std_level == 0;
+    bool external_power_present = usb_power_present || charging || charge_full;
+    uint8_t active_brightness = external_power_present
+        ? snapshot.plugged_brightness_percent
+        : snapshot.battery_brightness_percent;
+
+    printf(
+        "~DEVICE:SETTINGS schema=listener.device_settings.v1 result=%s"
+        " plugged_brightness=%u battery_brightness=%u active_power=%s active_brightness=%u"
+        " auto_shutdown_ms=%" PRIu32 " auto_shutdown_mode=battery_only"
+        " ble_name=\"%s\" ble_name_pending=%u ble_name_apply=%s"
+        " loaded_from_nvs=%u external_power_present=%u usb_power_present=%u charging=%u charge_full=%u"
+        " valid_ranges=brightness_0_100,auto_shutdown_ms_%u_%u,ble_name_ascii_1_%u\n",
+        result != NULL ? result : "OK",
+        snapshot.plugged_brightness_percent,
+        snapshot.battery_brightness_percent,
+        external_power_present ? "external" : "battery",
+        active_brightness,
+        snapshot.battery_auto_shutdown_ms,
+        snapshot.ble_name,
+        snapshot.ble_name_pending_restart ? 1u : 0u,
+        snapshot.ble_name_pending_restart ? "restart_ble_or_reboot" : "active_or_next_advertising",
+        snapshot.loaded_from_nvs ? 1u : 0u,
+        external_power_present ? 1u : 0u,
+        usb_power_present ? 1u : 0u,
+        charging ? 1u : 0u,
+        charge_full ? 1u : 0u,
+        (unsigned)DEVICE_SETTINGS_AUTO_SHUTDOWN_MIN_MS,
+        (unsigned)DEVICE_SETTINGS_AUTO_SHUTDOWN_MAX_MS,
+        (unsigned)DEVICE_SETTINGS_BLE_NAME_MAX_LEN);
+    fflush(stdout);
+}
+
+static bool device_settings_parse_u32(const char *value, uint32_t *out_value)
+{
+    if (value == NULL || out_value == NULL || value[0] == '\0') {
+        return false;
+    }
+    char *end = NULL;
+    unsigned long parsed = strtoul(value, &end, 10);
+    if (end == value || end == NULL || *end != '\0' || parsed > UINT32_MAX) {
+        return false;
+    }
+    *out_value = (uint32_t)parsed;
+    return true;
+}
+
+static bool device_settings_apply_key_value(
+    device_settings_config_t *config,
+    const char *key,
+    const char *value,
+    char *error_key,
+    size_t error_key_size,
+    const char **out_reason)
+{
+    if (config == NULL || key == NULL || value == NULL || value[0] == '\0') {
+        if (out_reason != NULL) {
+            *out_reason = "missing_value";
+        }
+        return false;
+    }
+    snprintf(error_key, error_key_size, "%s", key);
+
+    if (strcmp(key, "plugged_brightness") == 0 ||
+        strcmp(key, "plugged_brightness_percent") == 0 ||
+        strcmp(key, "external_brightness") == 0) {
+        uint32_t parsed = 0;
+        if (!device_settings_parse_u32(value, &parsed) || parsed > 100U) {
+            if (out_reason != NULL) {
+                *out_reason = "brightness_must_be_0_100";
+            }
+            return false;
+        }
+        config->plugged_brightness_percent = (uint8_t)parsed;
+        return true;
+    }
+
+    if (strcmp(key, "battery_brightness") == 0 ||
+        strcmp(key, "battery_brightness_percent") == 0) {
+        uint32_t parsed = 0;
+        if (!device_settings_parse_u32(value, &parsed) || parsed > 100U) {
+            if (out_reason != NULL) {
+                *out_reason = "brightness_must_be_0_100";
+            }
+            return false;
+        }
+        config->battery_brightness_percent = (uint8_t)parsed;
+        return true;
+    }
+
+    if (strcmp(key, "auto_shutdown_ms") == 0 ||
+        strcmp(key, "battery_auto_shutdown_ms") == 0 ||
+        strcmp(key, "shutdown_ms") == 0) {
+        uint32_t parsed = 0;
+        if (!device_settings_parse_u32(value, &parsed) ||
+            parsed < DEVICE_SETTINGS_AUTO_SHUTDOWN_MIN_MS ||
+            parsed > DEVICE_SETTINGS_AUTO_SHUTDOWN_MAX_MS) {
+            if (out_reason != NULL) {
+                *out_reason = "auto_shutdown_ms_out_of_range";
+            }
+            return false;
+        }
+        config->battery_auto_shutdown_ms = parsed;
+        return true;
+    }
+
+    if (strcmp(key, "auto_shutdown_minutes") == 0 ||
+        strcmp(key, "battery_auto_shutdown_minutes") == 0) {
+        uint32_t parsed = 0;
+        if (!device_settings_parse_u32(value, &parsed) || parsed > (DEVICE_SETTINGS_AUTO_SHUTDOWN_MAX_MS / 60000U)) {
+            if (out_reason != NULL) {
+                *out_reason = "auto_shutdown_minutes_out_of_range";
+            }
+            return false;
+        }
+        uint32_t ms = parsed * 60000U;
+        if (ms < DEVICE_SETTINGS_AUTO_SHUTDOWN_MIN_MS) {
+            if (out_reason != NULL) {
+                *out_reason = "auto_shutdown_minutes_out_of_range";
+            }
+            return false;
+        }
+        config->battery_auto_shutdown_ms = ms;
+        return true;
+    }
+
+    if (strcmp(key, "ble_name") == 0 || strcmp(key, "name") == 0) {
+        if (!device_settings_validate_ble_name(value)) {
+            if (out_reason != NULL) {
+                *out_reason = "ble_name_ascii_1_32_no_quotes_semicolon_equals";
+            }
+            return false;
+        }
+        snprintf(config->ble_name, sizeof(config->ble_name), "%s", value);
+        return true;
+    }
+
+    if (out_reason != NULL) {
+        *out_reason = "unknown_key";
+    }
+    return false;
+}
+
+static bool device_settings_apply_set_command(const char *arguments)
+{
+    if (!device_settings_ensure_mutex()) {
+        device_settings_print_error("system", "no_mutex");
+        return true;
+    }
+    if (arguments == NULL || arguments[0] == '\0') {
+        device_settings_print_error("SET", "missing_arguments");
+        return true;
+    }
+    if (strlen(arguments) >= DEVICE_SETTINGS_COMMAND_BUFFER_BYTES) {
+        device_settings_print_error("SET", "command_too_long");
+        return true;
+    }
+
+    char buffer[DEVICE_SETTINGS_COMMAND_BUFFER_BYTES];
+    snprintf(buffer, sizeof(buffer), "%s", arguments);
+
+    esp_err_t ret = ESP_OK;
+    bool ok = true;
+    bool saw_token = false;
+    char error_key[48] = "SET";
+    const char *error_reason = "invalid";
+
+    if (xSemaphoreTake(s_mutex, portMAX_DELAY) == pdTRUE) {
+        (void)device_settings_ensure_loaded_locked();
+        device_settings_config_t next = s_settings;
+
+        char *save = NULL;
+        for (char *token = strtok_r(buffer, " ", &save);
+             token != NULL;
+             token = strtok_r(NULL, " ", &save)) {
+            if (token[0] == '\0') {
+                continue;
+            }
+            saw_token = true;
+            char *equals = strchr(token, '=');
+            if (equals == NULL) {
+                snprintf(error_key, sizeof(error_key), "%s", token);
+                error_reason = "expected_key_value";
+                ok = false;
+                break;
+            }
+            *equals = '\0';
+            const char *key = token;
+            const char *value = equals + 1;
+            if (!device_settings_apply_key_value(
+                    &next,
+                    key,
+                    value,
+                    error_key,
+                    sizeof(error_key),
+                    &error_reason)) {
+                ok = false;
+                break;
+            }
+        }
+
+        if (!saw_token) {
+            ok = false;
+            snprintf(error_key, sizeof(error_key), "SET");
+            error_reason = "missing_arguments";
+        }
+
+        if (ok) {
+            bool name_changed = strcmp(s_settings.ble_name, next.ble_name) != 0;
+            s_settings = next;
+            if (name_changed) {
+                s_ble_name_pending_restart = true;
+            }
+            ret = device_settings_persist_locked();
+            if (ret != ESP_OK) {
+                ok = false;
+                snprintf(error_key, sizeof(error_key), "persist");
+                error_reason = esp_err_to_name(ret);
+            }
+        }
+        xSemaphoreGive(s_mutex);
+    }
+
+    if (!ok) {
+        device_settings_print_error(error_key, error_reason);
+        return true;
+    }
+
+    device_settings_print_status("OK");
+    return true;
+}
+
+bool device_settings_consume_usb_command(const char *line)
+{
+    const char *command = device_settings_strip_prefix(line);
+    if (command == NULL) {
+        return false;
+    }
+
+    if (strcmp(command, "SETTINGS") == 0 || strcmp(command, "STATUS") == 0) {
+        device_settings_print_status("OK");
+        return true;
+    }
+
+    if (strncmp(command, "SET ", strlen("SET ")) == 0) {
+        return device_settings_apply_set_command(command + strlen("SET "));
+    }
+
+    if (strcmp(command, "RESET") == 0) {
+        if (!device_settings_ensure_mutex()) {
+            device_settings_print_error("RESET", "no_mutex");
+            return true;
+        }
+        esp_err_t ret = ESP_OK;
+        if (xSemaphoreTake(s_mutex, portMAX_DELAY) == pdTRUE) {
+            char old_name[DEVICE_SETTINGS_BLE_NAME_MAX_LEN + 1];
+            snprintf(old_name, sizeof(old_name), "%s", s_settings.ble_name);
+            device_settings_set_defaults_locked();
+            if (strcmp(old_name, s_settings.ble_name) != 0) {
+                s_ble_name_pending_restart = true;
+            }
+            ret = device_settings_persist_locked();
+            xSemaphoreGive(s_mutex);
+        }
+        if (ret != ESP_OK) {
+            device_settings_print_error("RESET", esp_err_to_name(ret));
+        } else {
+            device_settings_print_status("RESET");
+        }
+        return true;
+    }
+
+    if (strcmp(command, "HELP") == 0 || strcmp(command, "?") == 0) {
+        printf("~DEVICE:HELP commands=SETTINGS,STATUS,SET,RESET keys=plugged_brightness,battery_brightness,auto_shutdown_ms,auto_shutdown_minutes,ble_name\n");
+        fflush(stdout);
+        return true;
+    }
+
+    device_settings_print_error(command, "unknown_command");
+    return true;
+}

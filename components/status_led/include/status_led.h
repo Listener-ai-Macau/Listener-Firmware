@@ -54,6 +54,7 @@ void status_led_set_error(
 void status_led_clear_error(status_led_error_domain_t domain);
 void status_led_set_low_power_disabled(bool disabled);
 void status_led_prepare_sleep(void);
+void status_led_apply_device_settings(void);
 bool status_led_consume_usb_command(const char *line);
 
 #ifdef __cplusplus
