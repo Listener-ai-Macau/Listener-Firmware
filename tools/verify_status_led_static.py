@@ -65,10 +65,14 @@ CHECKS = {
         "STATUS_LED_AMBIENT_PROFILE_BUDGET_MA 620U",
         "STATUS_LED_CHASE_DEFAULT_STEP_MS 250U",
         "STATUS_LED_KEY_FEEDBACK_MS 240U",
+        "STATUS_LED_BOOT_ACK_MS 2500U",
         "STATUS_LED_CHARGING_BREATH_PERIOD_MS 2600U",
         "STATUS_LED_CHARGING_BREATH_MIN_PERCENT 14U",
         "STATUS_LED_CHARGING_BREATH_MAX_PERCENT 82U",
         "STATUS_LED_CONTRACT_REV \"status_key_isolated_power_breath_v7\"",
+        "boot_feedback_until_ms",
+        "status_led_force_boot_feedback",
+        "status_led_boot_power_color_locked",
         "STATUS_LED_NVS_BRIGHTNESS_KEY \"brightness\"",
         "led_contract_rev=",
         "timing=ws2812_4020_compatible",
@@ -349,6 +353,7 @@ def main() -> int:
 
     status_led = read("components/status_led/status_led.c")
     status_led_backend = read("components/status_led/status_led_strip_backend.c")
+    main_c = read("main/main.c")
     if "bit-bang" in status_led.lower() or "bit-bang" in status_led_backend.lower():
         failures.append("status_led: do not bit-bang WS2812 timing")
     if "STATUS_LED_EC11_COUNT 4" in status_led:
@@ -378,6 +383,30 @@ def main() -> int:
     if not re.search(r"\.mem_block_symbols\s*=\s*SOC_RMT_MEM_WORDS_PER_CHANNEL\b", status_led_backend):
         failures.append(
             "status_led_strip_backend.c: RMT strip channels must use SOC_RMT_MEM_WORDS_PER_CHANNEL so all four V2 LED zones can initialize"
+        )
+
+    led_init_index = main_c.find("status_led_init()")
+    led_start_index = main_c.find("status_led_start()")
+    diag_log_index = main_c.find("diag_log_init()")
+    post_index = main_c.find("self_test_run()")
+    ble_init_index = main_c.find("ble_hid_init()")
+    keyboard_start_index = main_c.find("keyboard_start")
+    boot_window_index = main_c.find('status_led_show_status_window("booting")')
+    if not (0 <= led_init_index < led_start_index < post_index):
+        failures.append(
+            "main.c: status_led_start() must run immediately after status_led_init() and before POST for cold-boot feedback"
+        )
+    if not (0 <= led_init_index < led_start_index < diag_log_index):
+        failures.append(
+            "main.c: status_led_start() must run before diag_log_init() so flash log replay cannot delay the PWR boot light"
+        )
+    if not (0 <= led_start_index < ble_init_index and led_start_index < keyboard_start_index):
+        failures.append(
+            "main.c: status_led_start() must not wait for BLE HID or keyboard startup"
+        )
+    if not (0 <= led_start_index < boot_window_index < post_index):
+        failures.append(
+            'main.c: cold boot must request status_led_show_status_window("booting") before POST'
         )
 
     board_leds = read("components/board/board.c")

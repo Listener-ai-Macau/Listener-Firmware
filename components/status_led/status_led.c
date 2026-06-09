@@ -34,6 +34,7 @@
 #define STATUS_LED_TX_MUTEX_WAIT_MS 100
 #define STATUS_LED_POWER_POLL_MS 5000U
 #define STATUS_LED_STATUS_WINDOW_MS 6000U
+#define STATUS_LED_BOOT_ACK_MS 2500U
 #define STATUS_LED_BLE_CONFIDENCE_MS 8000U
 #define STATUS_LED_OOBE_CONFIDENCE_MS 25000U
 #define STATUS_LED_ERROR_HOLD_MS 6000U
@@ -144,6 +145,7 @@ typedef struct {
     uint8_t battery_level_percent;
     uint32_t battery_mv;
     uint32_t status_window_until_ms;
+    uint32_t boot_feedback_until_ms;
     uint32_t ble_confidence_until_ms;
     uint32_t oobe_confidence_until_ms;
     uint32_t ok_started_ms;
@@ -203,6 +205,7 @@ static status_led_strip_t s_strips[STATUS_LED_STRIP_COUNT] = {
 };
 
 static void status_led_force_all_off(void);
+static status_led_rgb_t status_led_boot_power_color_locked(void);
 
 static uint32_t status_led_now_ms(void)
 {
@@ -729,6 +732,12 @@ static void status_led_render_power_locked(status_led_frame_t *frame, uint32_t n
     }
 
     status_led_set_max(&frame->status[STATUS_LED_SEM_PWR], color);
+    if (now_ms < s_state.boot_feedback_until_ms) {
+        status_led_set_max(
+            &frame->status[STATUS_LED_SEM_PWR],
+            status_led_boot_power_color_locked());
+        safety = true;
+    }
     *ret_safety = *ret_safety || safety;
 }
 
@@ -1200,6 +1209,38 @@ static void status_led_force_all_off(void)
     status_led_transmit_frame(&frame);
 }
 
+static status_led_rgb_t status_led_boot_power_color_locked(void)
+{
+    return status_led_token_locked(status_led_rgb(255, 255, 255), 48U, true);
+}
+
+static bool status_led_reason_is_boot_feedback(const char *reason)
+{
+    return reason != NULL &&
+           (strcmp(reason, "boot") == 0 || strcmp(reason, "booting") == 0);
+}
+
+static void status_led_mark_boot_feedback_locked(uint32_t now_ms)
+{
+    uint32_t until_ms = now_ms + STATUS_LED_BOOT_ACK_MS;
+    if (s_state.boot_feedback_until_ms < until_ms) {
+        s_state.boot_feedback_until_ms = until_ms;
+    }
+}
+
+static void status_led_force_boot_feedback(void)
+{
+    status_led_frame_t frame = {0};
+    uint32_t now_ms = status_led_now_ms();
+    if (xSemaphoreTake(s_mutex, portMAX_DELAY) == pdTRUE) {
+        status_led_mark_boot_feedback_locked(now_ms);
+        frame.status[STATUS_LED_SEM_PWR] = status_led_boot_power_color_locked();
+        status_led_copy_frame_locked(&frame);
+        xSemaphoreGive(s_mutex);
+        status_led_transmit_frame(&frame);
+    }
+}
+
 esp_err_t status_led_init(void)
 {
     if (s_mutex == NULL) {
@@ -1226,7 +1267,9 @@ esp_err_t status_led_init(void)
     s_state.rec_source = STATUS_LED_REC_SOURCE_NONE;
     s_state.error_domain = STATUS_LED_ERROR_DOMAIN_NONE;
     s_state.vdd_led_enable_assumed = true;
-    s_state.status_window_until_ms = status_led_now_ms() + STATUS_LED_STATUS_WINDOW_MS;
+    uint32_t now_ms = status_led_now_ms();
+    s_state.status_window_until_ms = now_ms + STATUS_LED_STATUS_WINDOW_MS;
+    s_state.boot_feedback_until_ms = now_ms + STATUS_LED_BOOT_ACK_MS;
     status_led_set_last_reason_locked("boot");
 
     status_led_load_persistent_config();
@@ -1270,6 +1313,7 @@ esp_err_t status_led_start(void)
         status_led_load_persistent_config();
         xSemaphoreGive(s_mutex);
     }
+    status_led_force_boot_feedback();
 
     BaseType_t ok = xTaskCreate(
         status_led_task,
@@ -1294,6 +1338,9 @@ void status_led_show_status_window(const char *reason)
         s_state.last_transition_ms = now_ms;
         s_state.output_disabled = false;
         s_state.low_power_disabled = false;
+        if (status_led_reason_is_boot_feedback(reason)) {
+            status_led_mark_boot_feedback_locked(now_ms);
+        }
         status_led_set_last_reason_locked(reason);
         xSemaphoreGive(s_mutex);
     }
