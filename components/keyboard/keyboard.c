@@ -17,6 +17,7 @@
 #include "ble_audio_stream.h"
 #include "board_pins.h"
 #include "diag_log.h"
+#include "device_settings.h"
 #include "ec11_rotation_control.h"
 #include "hid_keyboard.h"
 #include "power_manager.h"
@@ -692,6 +693,12 @@ static esp_err_t keyboard_ble_control_write(
     esp_err_t ec11_ret = ESP_OK;
     if (ec11_rotation_control_consume_command(command, source, &ec11_ret)) {
         return ec11_ret;
+    }
+
+    if (device_settings_consume_usb_command(command)) {
+        power_manager_record_activity("device_settings_ble_control");
+        status_led_apply_device_settings();
+        return ESP_OK;
     }
 
     return voice_recording_control_dispatch_control_command(command, source);

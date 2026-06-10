@@ -47,6 +47,8 @@ $listenerDevice = Read-RepoFile "protocols/listener_device/listener_device.c"
 $listenerDeviceCmake = Read-RepoFile "protocols/listener_device/CMakeLists.txt"
 $bleHid = Read-RepoFile "ports/esp32/ble_hid/ble_hid.c"
 $bleHidCmake = Read-RepoFile "ports/esp32/ble_hid/CMakeLists.txt"
+$keyboard = Read-RepoFile "components/keyboard/keyboard.c"
+$keyboardCmake = Read-RepoFile "components/keyboard/CMakeLists.txt"
 $main = Read-RepoFile "main/main.c"
 $mainCmake = Read-RepoFile "main/CMakeLists.txt"
 $statusDoc = Read-RepoFile "docs/features/status_led.md"
@@ -99,6 +101,11 @@ Assert-Contains $bleHid 'device_settings_consume_usb_command\(line\)' 'BLE HID d
 Assert-Contains $bleHid 'status_led_apply_device_settings\(\)' 'DEVICE command applies status LED settings'
 Assert-Contains $bleHid 's_device_name\s*=\s*listener_device_get_ble_name\(\)' 'BLE HID uses configured BLE name at init'
 Assert-Contains $bleHidCmake 'device_settings' 'BLE HID CMake dependency'
+
+Assert-Contains $keyboard '#include "device_settings\.h"' 'keyboard BLE control includes device settings'
+Assert-Contains $keyboard 'device_settings_consume_usb_command\(command\)' 'keyboard BLE control dispatches DEVICE commands'
+Assert-Contains $keyboard 'status_led_apply_device_settings\(\)' 'keyboard BLE control applies DEVICE brightness updates'
+Assert-Contains $keyboardCmake 'device_settings' 'keyboard CMake dependency for DEVICE BLE commands'
 
 Assert-Contains $main '#include "device_settings\.h"' 'main includes device settings'
 Assert-Contains $main 'device_settings_init\(\)' 'main initializes device settings after NVS POST'
