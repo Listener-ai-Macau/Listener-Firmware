@@ -3,6 +3,7 @@
 #include "ble_audio_stream.h"
 #include "board_pins.h"
 #include "listener_audio_proto.h"
+#include "status_led.h"
 
 #include <assert.h>
 #include <inttypes.h>
@@ -54,6 +55,8 @@
 #define AUDIO_CAPTURE_BACKPRESSURE_LOG_INTERVAL_FRAMES 50U
 #define AUDIO_CAPTURE_PDM_HW_AMPLIFY_NUM 8U
 #define AUDIO_CAPTURE_PDM_SOFTWARE_GAIN_NUM 8
+#define AUDIO_CAPTURE_LEVEL_NOISE_FLOOR 220U
+#define AUDIO_CAPTURE_LEVEL_FULL_SCALE 14000U
 
 /* ---------- ES8311-specific defines ---------- */
 
@@ -149,6 +152,35 @@ static void audio_capture_export_cleanup(void)
     memset(&s_export_state, 0, sizeof(s_export_state));
     s_capture_backpressure_paused = false;
     s_capture_backpressure_frames = 0;
+}
+
+static uint8_t audio_capture_frame_level_percent(const int16_t *frame_buffer)
+{
+    if (frame_buffer == NULL) {
+        return 0U;
+    }
+
+    uint32_t sum_abs = 0U;
+    uint32_t peak_abs = 0U;
+    for (size_t index = 0; index < AUDIO_CAPTURE_FRAME_SAMPLES; ++index) {
+        int32_t sample = frame_buffer[index];
+        uint32_t abs_sample = sample < 0 ? (uint32_t)(-sample) : (uint32_t)sample;
+        sum_abs += abs_sample;
+        if (abs_sample > peak_abs) {
+            peak_abs = abs_sample;
+        }
+    }
+
+    uint32_t average_abs = sum_abs / AUDIO_CAPTURE_FRAME_SAMPLES;
+    uint32_t weighted_level = ((average_abs * 3U) + peak_abs) / 4U;
+    if (weighted_level <= AUDIO_CAPTURE_LEVEL_NOISE_FLOOR) {
+        return 0U;
+    }
+    if (weighted_level >= AUDIO_CAPTURE_LEVEL_FULL_SCALE) {
+        return 100U;
+    }
+    return (uint8_t)(((weighted_level - AUDIO_CAPTURE_LEVEL_NOISE_FLOOR) * 100U) /
+                     (AUDIO_CAPTURE_LEVEL_FULL_SCALE - AUDIO_CAPTURE_LEVEL_NOISE_FLOOR));
 }
 
 static bool audio_capture_backpressure_should_pause(void)
@@ -463,6 +495,7 @@ static void audio_capture_process_frame(const int16_t *frame_buffer)
     bool should_session_stop = false;
     bool should_session_cancel = false;
     bool should_session_error = false;
+    bool should_update_recording_level = false;
     uint32_t session_id = 0;
     uint16_t packet_sequence_start = 0;
     uint16_t batch_pcm_bytes = 0;
@@ -497,6 +530,7 @@ static void audio_capture_process_frame(const int16_t *frame_buffer)
                 /* Stop is a hard capture boundary; the frame that woke this
                  * call may already be after the user's stop edge. */
                 if (!stop_boundary_requested) {
+                    should_update_recording_level = true;
                     size_t batch_offset =
                         (size_t)s_export_state.stream_batch_frame_count * AUDIO_CAPTURE_FRAME_BYTES;
                     memcpy(s_export_state.stream_batch_buffer + batch_offset, frame_buffer, AUDIO_CAPTURE_FRAME_BYTES);
@@ -600,6 +634,10 @@ static void audio_capture_process_frame(const int16_t *frame_buffer)
 
         idle_for_logging = !s_export_state.active && !s_export_state.requested;
         xSemaphoreGive(s_state_mutex);
+    }
+
+    if (should_update_recording_level) {
+        status_led_set_recording_level(audio_capture_frame_level_percent(frame_buffer));
     }
 
     if (should_cancel) {

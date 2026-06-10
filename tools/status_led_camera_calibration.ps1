@@ -120,9 +120,9 @@ STEP = STEP_BY_MODE.get(MODE, "unknown")
 EXPECTED_MODES = set(STEP_BY_MODE)
 STATUS_EFFECT_BASELINE = "status_key_isolated_charge_full_latch_v9"
 PROFILE_CAPS_PERCENT = {
-    "low": 35,
-    "standard": 85,
-    "ambient": 65,
+    "low": 100,
+    "standard": 100,
+    "ambient": 100,
     "factory": 100,
 }
 FIRMWARE_MAPPING_CONTRACT = {
@@ -204,7 +204,7 @@ def write_status_effects_markdown(manifest):
         "",
         "## Baseline Decision",
         "",
-        "The v6 product baseline is preserved in firmware. This run captures semantic previews and records exact residuals; it does not retune brightness or timing constants unless camera/operator evidence names a specific delta.",
+        "The current product baseline is preserved in firmware. This run captures semantic previews and records exact residuals; it does not retune brightness or timing constants unless camera/operator evidence names a specific delta.",
         "",
         "## Profile Caps",
         "",
@@ -252,7 +252,7 @@ def write_status_effects_markdown(manifest):
         "- AI: processing preview includes an initial breath sample and a settled long-processing sample.",
         "- OK: preview captures the short 900 ms confirmation window.",
         "- WARN: retryable and hard previews capture amber/red severity plus source pairing.",
-        f"- Profiles remain explicit: low={PROFILE_CAPS_PERCENT['low']}%, standard={PROFILE_CAPS_PERCENT['standard']}%, ambient={PROFILE_CAPS_PERCENT['ambient']}%, factory={PROFILE_CAPS_PERCENT['factory']}%.",
+        f"- Routine profile percent caps remain explicit and user-capped: low={PROFILE_CAPS_PERCENT['low']}%, standard={PROFILE_CAPS_PERCENT['standard']}%, ambient={PROFILE_CAPS_PERCENT['ambient']}%, factory={PROFILE_CAPS_PERCENT['factory']}%; current-budget dimming is tracked separately.",
         "",
         "## Remaining Deltas",
         "",

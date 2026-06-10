@@ -57,9 +57,9 @@ CHECKS = {
         "STATUS_LED_KEY_DEFAULT_COLOR_ORDER STATUS_LED_COLOR_ORDER_GRB",
         "STATUS_LED_FULL_BRIGHTNESS_PERCENT 100U",
         "STATUS_LED_FULL_BRIGHTNESS_BUDGET_MA 2000U",
-        "STATUS_LED_LOW_PROFILE_CAP_PERCENT 35U",
-        "STATUS_LED_STANDARD_PROFILE_CAP_PERCENT 85U",
-        "STATUS_LED_AMBIENT_PROFILE_CAP_PERCENT 65U",
+        "STATUS_LED_LOW_PROFILE_CAP_PERCENT 100U",
+        "STATUS_LED_STANDARD_PROFILE_CAP_PERCENT 100U",
+        "STATUS_LED_AMBIENT_PROFILE_CAP_PERCENT 100U",
         "STATUS_LED_LOW_PROFILE_BUDGET_MA 300U",
         "STATUS_LED_STANDARD_PROFILE_BUDGET_MA 760U",
         "STATUS_LED_AMBIENT_PROFILE_BUDGET_MA 620U",
@@ -68,12 +68,12 @@ CHECKS = {
         "STATUS_LED_BOOT_ACK_MS 2500U",
         "STATUS_LED_CHARGING_BREATH_PERIOD_MS 2600U",
         "STATUS_LED_CHARGING_BREATH_MIN_PERCENT 14U",
-        "STATUS_LED_CHARGING_BREATH_MAX_PERCENT 82U",
+        "STATUS_LED_CHARGING_BREATH_MAX_PERCENT 100U",
         "STATUS_LED_CHARGE_FULL_DEBOUNCE_MS 10000U",
         "STATUS_LED_CHARGE_FULL_MIN_MV 4050U",
         "STATUS_LED_CHARGE_FULL_MIN_PERCENT 88U",
-        "STATUS_LED_FULL_STEADY_PERCENT 58U",
-        "STATUS_LED_FULL_STATUS_STEADY_PERCENT 68U",
+        "STATUS_LED_FULL_STEADY_PERCENT 100U",
+        "STATUS_LED_FULL_STATUS_STEADY_PERCENT 100U",
         "STATUS_LED_CONTRACT_REV \"status_key_isolated_charge_full_latch_v9\"",
         "boot_feedback_until_ms",
         "status_led_force_boot_feedback",
@@ -86,7 +86,8 @@ CHECKS = {
         "brightness_percent=%u",
         "user_brightness_percent=%u",
         "effective_cap_percent=%u",
-        "profile_dimming_disabled=0",
+        "user_brightness_is_hard_cap=1",
+        "profile_dimming_disabled=1",
         "factory_full_brightness=1",
         "safety_full_brightness=1",
         "status_led_profile_cap_percent_for",
@@ -149,7 +150,9 @@ CHECKS = {
         "STATUS_LED_REC_GOLD_R 255U",
         "STATUS_LED_REC_GOLD_G 172U",
         "status_led_rec_gold()",
-        "status_led_triangle_percent(now_ms, 2400U, 42U, 85U)",
+        "status_led_set_recording_level",
+        "rec_level=%u",
+        "status_led_triangle_percent(now_ms, 2200U, floor_percent, peak_percent)",
         "status_led_triangle_percent(\n                now_ms,\n                STATUS_LED_CHARGING_BREATH_PERIOD_MS,",
         "STATUS_LED_FULL_STATUS_STEADY_PERCENT",
         "s_state.external_power_present",
@@ -261,7 +264,8 @@ CHECKS = {
         "does not borrow key LEDs",
         "REC`, `OK`, and routine `AI` states do not recolor key LEDs",
         "Edge/frame LEDs are quiet in the standard product profile",
-        "brighter, saturated primary colors",
+        "It does not add a hidden percent cap above the user plugged/battery brightness setting",
+        "user brightness cap is persisted through `~LED:BRIGHTNESS <0-100>` and applies as the hard routine-product brightness limit",
         "clear semantic colors",
         "RGBW, map, chase, and pixel test commands remain calibration tools",
         "`~LED:TEST:RGBW <status|ec11|knob|ring|key|edge|all>`",
@@ -377,6 +381,18 @@ def main() -> int:
         failures.append("status_led.c: stale EC11 four-LED strip count")
     if "STATUS_LED_EDGE_COUNT 14" in status_led:
         failures.append("status_led.c: stale edge/frame fourteen-LED strip count")
+    for profile_name in ("LOW", "STANDARD", "AMBIENT"):
+        if f"STATUS_LED_{profile_name}_PROFILE_CAP_PERCENT 100U" not in status_led:
+            failures.append(
+                f"status_led.c: {profile_name.lower()} profile must not add a hidden percent cap over user brightness"
+            )
+    for token in (
+        "STATUS_LED_CHARGING_BREATH_MAX_PERCENT 100U",
+        "STATUS_LED_FULL_STEADY_PERCENT 100U",
+        "STATUS_LED_FULL_STATUS_STEADY_PERCENT 100U",
+    ):
+        if token not in status_led:
+            failures.append(f"status_led.c: routine PWR peak must be user-capped, missing {token}")
     if "driver/rmt_" in status_led or "soc/soc_caps.h" in status_led:
         failures.append("status_led.c: business rendering layer must not include the RMT/WS2812 backend directly")
     if "status_led_set_max(&frame->key[0], status_led_scale_raw(rec" in status_led:

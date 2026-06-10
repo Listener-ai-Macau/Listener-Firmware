@@ -44,17 +44,17 @@
 #define STATUS_LED_KEY_FEEDBACK_MS 240U
 #define STATUS_LED_CHARGING_BREATH_PERIOD_MS 2600U
 #define STATUS_LED_CHARGING_BREATH_MIN_PERCENT 14U
-#define STATUS_LED_CHARGING_BREATH_MAX_PERCENT 82U
+#define STATUS_LED_CHARGING_BREATH_MAX_PERCENT 100U
 #define STATUS_LED_CHARGE_FULL_DEBOUNCE_MS 10000U
 #define STATUS_LED_CHARGE_FULL_MIN_MV 4050U
 #define STATUS_LED_CHARGE_FULL_MIN_PERCENT 88U
-#define STATUS_LED_FULL_STEADY_PERCENT 58U
-#define STATUS_LED_FULL_STATUS_STEADY_PERCENT 68U
+#define STATUS_LED_FULL_STEADY_PERCENT 100U
+#define STATUS_LED_FULL_STATUS_STEADY_PERCENT 100U
 #define STATUS_LED_FULL_BRIGHTNESS_PERCENT 100U
 #define STATUS_LED_FULL_BRIGHTNESS_BUDGET_MA 2000U
-#define STATUS_LED_LOW_PROFILE_CAP_PERCENT 35U
-#define STATUS_LED_STANDARD_PROFILE_CAP_PERCENT 85U
-#define STATUS_LED_AMBIENT_PROFILE_CAP_PERCENT 65U
+#define STATUS_LED_LOW_PROFILE_CAP_PERCENT 100U
+#define STATUS_LED_STANDARD_PROFILE_CAP_PERCENT 100U
+#define STATUS_LED_AMBIENT_PROFILE_CAP_PERCENT 100U
 #define STATUS_LED_LOW_PROFILE_BUDGET_MA 300U
 #define STATUS_LED_STANDARD_PROFILE_BUDGET_MA 760U
 #define STATUS_LED_AMBIENT_PROFILE_BUDGET_MA 620U
@@ -152,6 +152,7 @@ typedef struct {
     bool raw_full;
     bool charge_full_latched;
     uint8_t battery_level_percent;
+    uint8_t recording_level_percent;
     uint32_t battery_mv;
     uint32_t status_window_until_ms;
     uint32_t boot_feedback_until_ms;
@@ -162,6 +163,7 @@ typedef struct {
     uint32_t error_started_ms;
     uint32_t error_until_ms;
     uint32_t processing_started_ms;
+    uint32_t recording_level_updated_ms;
     uint32_t last_transition_ms;
     uint32_t last_power_poll_ms;
     uint32_t charge_full_candidate_since_ms;
@@ -797,7 +799,14 @@ static void status_led_render_recording_locked(status_led_frame_t *frame, uint32
     if (s_state.rec_source == STATUS_LED_REC_SOURCE_NOT_AVAILABLE) {
         return;
     }
-    uint8_t breath = status_led_triangle_percent(now_ms, 2400U, 42U, 85U);
+    uint8_t level = s_state.recording_level_percent;
+    if (s_state.recording_level_updated_ms == 0U ||
+        now_ms - s_state.recording_level_updated_ms > 450U) {
+        level = 0U;
+    }
+    uint8_t floor_percent = (uint8_t)(30U + (level * 12U) / 100U);
+    uint8_t peak_percent = (uint8_t)(62U + (level * 38U) / 100U);
+    uint8_t breath = status_led_triangle_percent(now_ms, 2200U, floor_percent, peak_percent);
     status_led_rgb_t rec = status_led_token_locked(status_led_rec_gold(), breath, false);
     status_led_set_max(&frame->status[STATUS_LED_SEM_REC], rec);
     (void)ret_safety;
@@ -1437,6 +1446,8 @@ void status_led_set_recording(bool active, status_led_rec_source_t source)
         status_led_resume_output_locked();
         s_state.recording_active = active && source != STATUS_LED_REC_SOURCE_NOT_AVAILABLE;
         s_state.rec_source = source;
+        s_state.recording_level_percent = 0U;
+        s_state.recording_level_updated_ms = active ? now_ms : 0U;
         s_state.last_transition_ms = now_ms;
         s_state.status_window_until_ms = now_ms + STATUS_LED_STATUS_WINDOW_MS;
         status_led_set_last_reason_locked(active ? "recording_start" : "recording_stop");
@@ -1448,6 +1459,27 @@ void status_led_set_recording(bool active, status_led_rec_source_t source)
         }
         diag_log(DIAG_SRC_STATUS_LED, DIAG_LED_STATE, DIAG_SEV_INFO,
                  2, active ? 1U : 0U, (uint32_t)source, 0);
+        xSemaphoreGive(s_mutex);
+    }
+}
+
+void status_led_set_recording_level(uint8_t level_percent)
+{
+    if (level_percent > 100U) {
+        level_percent = 100U;
+    }
+    uint32_t now_ms = status_led_now_ms();
+    if (xSemaphoreTake(s_mutex, portMAX_DELAY) == pdTRUE) {
+        if (s_state.recording_active && s_state.rec_source != STATUS_LED_REC_SOURCE_NOT_AVAILABLE) {
+            uint8_t current = s_state.recording_level_percent;
+            if (level_percent > current) {
+                current = (uint8_t)((current + (level_percent * 3U)) / 4U);
+            } else {
+                current = (uint8_t)(((uint32_t)current * 7U + level_percent) / 8U);
+            }
+            s_state.recording_level_percent = current;
+            s_state.recording_level_updated_ms = now_ms;
+        }
         xSemaphoreGive(s_mutex);
     }
 }
@@ -1840,7 +1872,7 @@ static void status_led_print_status(void)
         "~LED:STATUS detail=brightness profile=%s effect_profile=product_v1"
         " profile_cap_percent=%u brightness_percent=%u effective_cap_percent=%u"
         " plugged_brightness_percent=%u battery_brightness_percent=%u active_power_brightness_percent=%u"
-        " profile_dimming_disabled=0\n",
+        " user_brightness_is_hard_cap=1 profile_dimming_disabled=1\n",
         status_led_profile_name(snapshot.profile),
         profile_cap_percent,
         snapshot.brightness_percent,
@@ -1866,11 +1898,12 @@ static void status_led_print_status(void)
         (unsigned)strips[STATUS_LED_STRIP_EDGE].led_count,
         status_led_color_order_name(strips[STATUS_LED_STRIP_EDGE].color_order));
     printf(
-        "~LED:STATUS detail=state ble=%s rec_active=%u rec_source=%s processing=%u"
+        "~LED:STATUS detail=state ble=%s rec_active=%u rec_source=%s rec_level=%u processing=%u"
         " error_domain=%s error_severity=%s output_disabled=%u low_power_disabled=%u\n",
         status_led_ble_name(snapshot.ble_state),
         snapshot.recording_active ? 1U : 0U,
         status_led_rec_source_name(snapshot.rec_source),
+        snapshot.recording_level_percent,
         snapshot.processing_active ? 1U : 0U,
         status_led_error_domain_name(snapshot.error_domain),
         status_led_error_severity_name(snapshot.error_severity),
@@ -1969,7 +2002,7 @@ static void status_led_print_budget(void)
         "~LED:BUDGET profile=%s cap_current_ma=%" PRIu32 " estimated_current_ma=%" PRIu32
         " profile_cap_percent=%u user_brightness_percent=%u effective_cap_percent=%u factory_brightness_percent=%u"
         " configured_profile_budget_ma=%" PRIu32 " factory_budget_ma=%u"
-        " product_effect_profile=1 profile_dimming_disabled=0 off_zero_brightness=1 safety_full_brightness=1"
+        " product_effect_profile=1 user_brightness_is_hard_cap=1 profile_dimming_disabled=1 off_zero_brightness=1 safety_full_brightness=1"
         " per_led_full_white_ma=60 vdd_led_enable=always_on_assumed\n",
         status_led_profile_name(snapshot.profile),
         snapshot.last_current_budget_ma,

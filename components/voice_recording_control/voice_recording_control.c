@@ -1515,6 +1515,18 @@ esp_err_t voice_recording_control_dispatch_control_command(const char *command, 
         voice_recording_control_unlock();
         return ESP_OK;
     }
+    if (strcmp(action, "PROCESSING:START") == 0 || strcmp(action, "PROCESSING_START") == 0) {
+        status_led_set_processing(true, "host_processing_start");
+        voice_recording_control_log_device_status("processing", "host_processing_start");
+        voice_recording_control_unlock();
+        return ESP_OK;
+    }
+    if (strcmp(action, "PROCESSING:STOP") == 0 || strcmp(action, "PROCESSING_STOP") == 0) {
+        status_led_set_processing(false, "host_processing_stop");
+        voice_recording_control_log_device_status("ready", "host_processing_stop");
+        voice_recording_control_unlock();
+        return ESP_OK;
+    }
     if (strcmp(action, "STOP") == 0 || strcmp(action, "CLEANUP") == 0) {
         voice_recording_control_stop(source);
         voice_recording_control_unlock();

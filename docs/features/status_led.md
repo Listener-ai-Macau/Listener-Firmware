@@ -49,21 +49,21 @@ The status LED task refreshes every 50 ms and sends at most four short strip fra
 
 ## Profiles And Budget
 
-Profiles are persisted in NVS through `~LED:PROFILE <off|low|standard|ambient|factory>`. A separate user brightness cap is persisted through `~LED:BRIGHTNESS <0-100>` and applies to routine product effects across the status, key, EC11, and edge zones. `~LED:BRIGHTNESS` remains a compatibility command and writes both device brightness profiles. New desktop/device settings should prefer `~DEVICE:SETTINGS` plus `~DEVICE:SET plugged_brightness=<0-100> battery_brightness=<0-100>` so plugged and battery operation can have different caps.
+Profiles are persisted in NVS through `~LED:PROFILE <off|low|standard|ambient|factory>`. A separate user brightness cap is persisted through `~LED:BRIGHTNESS <0-100>` and applies as the hard routine-product brightness limit across the status, key, EC11, and edge zones. `~LED:BRIGHTNESS` remains a compatibility command and writes both device brightness profiles. New desktop/device settings should prefer `~DEVICE:SETTINGS` plus `~DEVICE:SET plugged_brightness=<0-100> battery_brightness=<0-100>` so plugged and battery operation can have different caps.
 
-- `standard` is the product default. Routine status/key effects are capped at 85% and use brighter, saturated primary colors for daily readability.
-- `low` caps routine effects at 35% for dark-room or low-power behavior.
-- `ambient` caps routine effects at 65% and permits restrained accent behavior when the edge chain is available.
+- `standard` is the product default. It does not add a hidden percent cap above the user plugged/battery brightness setting.
+- `low` keeps low-power visual behavior and a smaller current budget, but the visible percent cap still comes from the user brightness setting.
+- `ambient` permits restrained accent behavior when the edge chain is available, without adding a hidden percent cap above the user brightness setting.
 - `off` turns routine non-safety output off; safety/error/test paths can still light.
 - `factory` keeps the full 100% profile path for calibration, manufacturing, and hardware bring-up; routine product effects still respect the user brightness cap unless they are explicit safety/error/test output.
 
-Current is still estimated per frame with 20 mA per RGB channel at full scale. `standard`, `low`, and `ambient` have product budgets so a broad effect is dimmed instead of becoming a flashlight. Explicit safety/error/test paths retain the full bring-up budget.
+Current is still estimated per frame with 20 mA per RGB channel at full scale. `standard`, `low`, and `ambient` have product budgets so broad multi-LED effects are dimmed by current budget when needed; those budgets are not a second fixed percent cap. Explicit safety/error/test paths retain the full bring-up budget.
 
 ## Product Effect Language
 
 - Idle connected state is readable but not dominant: PWR/BLE confidence remains visible without using factory brightness.
 - External power overrides battery-color display on `PWR`: USB plugged and not confirmed full is a continuous, higher-contrast white breath. Charge-full requires USB present, an active charge-full pin, no active charging pin, and a near-full battery reading for the debounce window; after that it latches for the current USB session and shows steady white until USB is unplugged.
-- The external-power white breath, full-charge steady white, BLE, REC, AI, OK, key feedback, and ambient edge effects are routine product output and obey `~LED:BRIGHTNESS`.
+- The external-power white breath, full-charge steady white, BLE, REC, AI, OK, key feedback, and ambient edge effects are routine product output and obey the active plugged/battery user brightness cap. Their animation curves may use lower intermediate levels, but their routine maximum is clipped by the user setting rather than a hidden profile constant.
 - Pairing and reconnect use recognizable blue pulses without turning the whole status rail into an animation surface.
 - Recording is a gold breathing semantic state on `LED3=REC` only; it does not borrow key LEDs.
 - Processing uses a saturated purple breath on `AI`; long processing settles to a calmer breath.

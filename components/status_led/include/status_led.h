@@ -44,6 +44,7 @@ esp_err_t status_led_start(void);
 void status_led_show_status_window(const char *reason);
 void status_led_set_ble_state(status_led_ble_state_t state, bool confidence_window);
 void status_led_set_recording(bool active, status_led_rec_source_t source);
+void status_led_set_recording_level(uint8_t level_percent);
 void status_led_set_processing(bool active, const char *reason);
 void status_led_notify_success(const char *reason);
 void status_led_notify_key_event(uint8_t key_index, bool pressed);
