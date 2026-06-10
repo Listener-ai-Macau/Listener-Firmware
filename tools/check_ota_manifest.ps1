@@ -19,6 +19,7 @@ if ($convertFromJsonCommand.Parameters.ContainsKey("DateKind")) {
     $manifest = $manifest_json | ConvertFrom-Json
 }
 $manifest_dir = Split-Path -Parent (Resolve-Path $ManifestPath)
+$esp_app_version_max_chars = 31
 
 function Test-JsonProperty {
     param(
@@ -141,7 +142,7 @@ if (-not (Test-JsonProperty -Object $manifest -Name "created_at_utc") -or $null 
 # firmware
 if (Require-Object "firmware") {
     Require-String "firmware.project" | Out-Null
-    Require-String "firmware.version" | Out-Null
+    $firmware_version = Require-String "firmware.version"
     Require-String "firmware.git_commit" | Out-Null
     Require-Bool "firmware.git_dirty" | Out-Null
     Require-String "firmware.target" | Out-Null
@@ -151,6 +152,9 @@ if (Require-Object "firmware") {
 
     if ($firmware_sha256 -and $firmware_sha256 -cnotmatch '^[0-9a-f]{64}$') {
         $errors += "Invalid firmware.sha256: expected lowercase 64-character hex digest"
+    }
+    if ($firmware_version -and $firmware_version.Length -gt $esp_app_version_max_chars) {
+        $errors += "Invalid firmware.version: expected <= $esp_app_version_max_chars characters for ESP app descriptor / BLE OTA control"
     }
 
     # Verify SHA256 against actual file

@@ -191,4 +191,7 @@ Assert-CompletePackage -Name "stable_complete" -BuildDir $stableBuild -Channel "
 $betaBuild = New-FakeBuild -Name "beta-complete" -Version "1.2.4-beta.1" -CompleteFactoryArtifacts $true
 Assert-CompletePackage -Name "beta_complete" -BuildDir $betaBuild -Channel "beta" -ExpectedVersion "1.2.4-beta.1"
 
+$longInternalBuild = New-FakeBuild -Name "long-internal-version" -Version "v1002.0.0-ota-test-226-g99934ff-dirty" -CompleteFactoryArtifacts $true
+Assert-CompletePackage -Name "internal_long_version_truncated" -BuildDir $longInternalBuild -Channel "internal-test" -ExpectedVersion "v1002.0.0-ota-test-226-g99934ff"
+
 Write-Host "PASS: OTA release package rules completed."

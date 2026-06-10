@@ -157,4 +157,8 @@ $missingRecoverySerial = Copy-ManifestObject $base
 $missingRecoverySerial.recovery.PSObject.Properties.Remove("serial_commands")
 Assert-ManifestFails -Name "missing_recovery_serial_commands" -Manifest $missingRecoverySerial -ExpectedText "Missing recovery.serial_commands"
 
+$tooLongVersion = Copy-ManifestObject $base
+$tooLongVersion.firmware.version = "v1002.0.0-ota-test-226-g99934ff-dirty"
+Assert-ManifestFails -Name "too_long_firmware_version" -Manifest $tooLongVersion -ExpectedText "Invalid firmware.version"
+
 Write-Host "PASS: OTA manifest validation negative coverage completed."

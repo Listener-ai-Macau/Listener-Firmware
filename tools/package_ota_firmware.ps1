@@ -20,6 +20,7 @@ $description_path = Join-Path $build_path "project_description.json"
 $project_name = "voice-keyboard-firmware"
 $project_version = $null
 $target = "esp32s3"
+$esp_app_version_max_chars = 31
 
 if (Test-Path $description_path) {
     $description = Get-Content -Raw $description_path | ConvertFrom-Json
@@ -51,6 +52,13 @@ function Test-ReleaseVersionString {
 
 Test-ReleaseVersionString -Version $project_version -ReleaseChannel $Channel
 
+$ota_version = $project_version.Trim()
+if ($ota_version.Length -gt $esp_app_version_max_chars) {
+    $truncated_version = $ota_version.Substring(0, $esp_app_version_max_chars)
+    Write-Warning "Project version '$project_version' exceeds ESP app descriptor / BLE OTA control limit ($esp_app_version_max_chars chars); using '$truncated_version' in ota_manifest.json."
+    $ota_version = $truncated_version
+}
+
 # --- Dirty tree check ---
 $git_commit = (& git -C $project_root rev-parse HEAD 2>$null)
 if (-not $git_commit) { $git_commit = "unknown" }
@@ -69,7 +77,7 @@ if (-not (Test-Path $app_bin_source)) {
 }
 
 # --- Create output directory ---
-$safe_version = $project_version -replace '[^A-Za-z0-9_.-]', '_'
+$safe_version = $ota_version -replace '[^A-Za-z0-9_.-]', '_'
 $timestamp = Get-Date -Format "yyyyMMdd-HHmmss"
 $package_name = "listener-ota-$safe_version-$timestamp"
 $package_dir = Join-Path $output_root_path $package_name
@@ -89,7 +97,7 @@ $manifest = [ordered]@{
     channel = $Channel
     firmware = [ordered]@{
         project = $project_name
-        version = $project_version
+        version = $ota_version
         git_commit = $git_commit
         git_dirty = $git_dirty
         target = $target
@@ -116,7 +124,7 @@ $manifest = [ordered]@{
             manufacturer = "listener"
             model = "keyboard-v2"
             hardware_revision = "esp32s3-wroom-1-n16r8"
-            firmware_revision = $project_version
+            firmware_revision = $ota_version
             software_revision_protocol = "1"
         }
     }
@@ -183,4 +191,4 @@ Write-Host "OTA firmware package: $package_dir"
 Write-Host "OTA zip package: $zip_path"
 Write-Host "OTA manifest: $manifest_path"
 Write-Host "OTA binary: $ota_bin_name ($ota_size bytes) sha256=$ota_hash"
-Write-Host "Channel: $Channel  Version: $project_version  Git dirty: $git_dirty"
+Write-Host "Channel: $Channel  Version: $ota_version  Source version: $project_version  Git dirty: $git_dirty"
