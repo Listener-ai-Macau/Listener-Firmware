@@ -57,6 +57,9 @@ $featureMap = Read-RepoFile "docs/features/firmware-feature-map.md"
 $repoFeatures = Read-RepoFile "tools/ai/repo_features.ps1"
 
 Assert-Contains $deviceHeader 'device_settings_snapshot_t' 'public snapshot type'
+Assert-Contains $deviceHeader 'DEVICE_SETTINGS_DEFAULT_BLE_NAME\s+"listener"' 'default BLE name is product default listener'
+Assert-Contains $deviceHeader 'DEVICE_SETTINGS_DEFAULT_PLUGGED_BRIGHTNESS_PERCENT\s+80U' 'default plugged brightness is 80 percent'
+Assert-Contains $deviceHeader 'DEVICE_SETTINGS_DEFAULT_BATTERY_BRIGHTNESS_PERCENT\s+50U' 'default battery brightness is 50 percent'
 Assert-Contains $deviceHeader 'plugged_brightness_percent' 'plugged brightness field'
 Assert-Contains $deviceHeader 'battery_brightness_percent' 'battery brightness field'
 Assert-Contains $deviceHeader 'battery_auto_shutdown_ms' 'battery-only shutdown timeout field'
@@ -70,6 +73,8 @@ Assert-Contains $deviceSettings 'DEVICE_SETTINGS_NVS_BATTERY_BRIGHTNESS_KEY' 'ba
 Assert-Contains $deviceSettings 'DEVICE_SETTINGS_NVS_AUTO_SHUTDOWN_MS_KEY' 'auto-shutdown NVS key'
 Assert-Contains $deviceSettings 'DEVICE_SETTINGS_NVS_BLE_NAME_KEY' 'BLE name NVS key'
 Assert-Contains $deviceSettings 'DEVICE_SETTINGS_NVS_KNOB_ROTATION_KEY' 'knob rotation NVS key'
+Assert-Contains $deviceSettings 'plugged_brightness_percent\s*=\s*DEVICE_SETTINGS_DEFAULT_PLUGGED_BRIGHTNESS_PERCENT' 'plugged brightness defaults through shared macro'
+Assert-Contains $deviceSettings 'battery_brightness_percent\s*=\s*DEVICE_SETTINGS_DEFAULT_BATTERY_BRIGHTNESS_PERCENT' 'battery brightness defaults through shared macro'
 Assert-Contains $deviceSettings 'DEVICE_SETTINGS_USB_PREFIX\s+"DEVICE:"' 'DEVICE serial command prefix'
 Assert-Contains $deviceSettings '~DEVICE:SETTINGS schema=listener\.device_settings\.v1' 'observable settings status line'
 Assert-Contains $deviceSettings 'auto_shutdown_mode=battery_only' 'battery-only timeout wording'

@@ -50,6 +50,7 @@ static const char *TAG = "ble_hid";
 
 #define BLE_HID_BATTERY_FALLBACK_LEVEL 50
 #define BLE_HID_BATTERY_SAMPLE_INTERVAL_MS 5000
+#define BLE_HID_BATTERY_FORCE_REFRESH_INTERVAL_MS 60000
 #define BLE_HID_BATTERY_NOTIFY_THRESHOLD_PERCENT 1
 #define BLE_HID_BATTERY_LEVEL_INVALID UINT8_MAX
 #define BLE_HID_BATTERY_TASK_STACK_BYTES (4 * 1024)
@@ -108,6 +109,7 @@ static bool s_ble_connected;
 static uint32_t s_disconnect_count;
 static portMUX_TYPE s_disconnect_count_lock = portMUX_INITIALIZER_UNLOCKED;
 static uint32_t s_connect_timestamp_ms;
+static uint32_t s_battery_forced_refresh_timestamp_ms;
 static QueueHandle_t s_ascii_queue;
 static QueueHandle_t s_usage_queue;
 static bool s_safe_mode;
@@ -161,7 +163,18 @@ static bool ble_hid_battery_level_exceeds_notify_threshold(uint8_t level)
     uint8_t delta = level > s_battery_service_level
         ? (uint8_t)(level - s_battery_service_level)
         : (uint8_t)(s_battery_service_level - level);
-    return delta > BLE_HID_BATTERY_NOTIFY_THRESHOLD_PERCENT;
+    return delta >= BLE_HID_BATTERY_NOTIFY_THRESHOLD_PERCENT;
+}
+
+static uint32_t ble_hid_now_ms(void)
+{
+    return (uint32_t)(esp_timer_get_time() / 1000LL);
+}
+
+static bool ble_hid_battery_force_refresh_due(uint32_t now_ms)
+{
+    uint32_t elapsed_ms = now_ms - s_battery_forced_refresh_timestamp_ms;
+    return elapsed_ms >= BLE_HID_BATTERY_FORCE_REFRESH_INTERVAL_MS;
 }
 
 static void ble_hid_update_battery_level(const char *reason, bool force_notify)
@@ -172,12 +185,22 @@ static void ble_hid_update_battery_level(const char *reason, bool force_notify)
 
     battery_monitor_status_t battery = {0};
     esp_err_t read_ret = battery_monitor_read(&battery);
+    board_v2_power_input_snapshot_t power = {0};
+    board_get_v2_power_input_snapshot(&power);
+    bool usb_power_present = power.usb_det_level > 0;
+    bool charge_full = usb_power_present && power.bat_std_level == 0;
     uint8_t level = (read_ret == ESP_OK && battery.valid)
         ? battery.level_percent
         : BLE_HID_BATTERY_FALLBACK_LEVEL;
+    if (charge_full) {
+        level = 100;
+    }
+    uint32_t now_ms = ble_hid_now_ms();
+    bool periodic_refresh = ble_hid_battery_force_refresh_due(now_ms);
     bool should_notify = force_notify ||
         (read_ret == ESP_OK && battery.valid &&
-         ble_hid_battery_level_exceeds_notify_threshold(level));
+         ble_hid_battery_level_exceeds_notify_threshold(level)) ||
+        periodic_refresh;
 
     firmware_ota_note_battery(
         level,
@@ -197,21 +220,30 @@ static void ble_hid_update_battery_level(const char *reason, bool force_notify)
     if (read_ret == ESP_OK) {
         ESP_LOGI(
             TAG,
-            "battery notify level=%u voltage_mv=%" PRIu32 " raw=%d adc_mv=%d reason=%s forced=%u",
+            "battery notify level=%u voltage_mv=%" PRIu32
+            " raw=%d adc_mv=%d usb_power=%u charge_full=%u"
+            " reason=%s forced=%u periodic=%u",
             level,
             battery.voltage_mv,
             battery.raw_adc,
             battery.adc_mv,
+            usb_power_present ? 1u : 0u,
+            charge_full ? 1u : 0u,
             reason != NULL ? reason : "unspecified",
-            force_notify ? 1u : 0u);
+            force_notify ? 1u : 0u,
+            periodic_refresh ? 1u : 0u);
     } else {
         ESP_LOGW(
             TAG,
-            "battery notify fallback=%u reason=%s read_failed=%s forced=%u",
+            "battery notify fallback=%u usb_power=%u charge_full=%u"
+            " reason=%s read_failed=%s forced=%u periodic=%u",
             level,
+            usb_power_present ? 1u : 0u,
+            charge_full ? 1u : 0u,
             reason != NULL ? reason : "unspecified",
             esp_err_to_name(read_ret),
-            force_notify ? 1u : 0u);
+            force_notify ? 1u : 0u,
+            periodic_refresh ? 1u : 0u);
     }
 
     esp_err_t ret = esp_hidd_dev_battery_set(s_ble_hid_ctx.hid_device, level);
@@ -222,6 +254,9 @@ static void ble_hid_update_battery_level(const char *reason, bool force_notify)
 
     s_battery_service_level = level;
     s_battery_service_valid = true;
+    if (force_notify || periodic_refresh) {
+        s_battery_forced_refresh_timestamp_ms = now_ms;
+    }
 
     if (read_ret == ESP_OK && battery.valid) {
         diag_log(DIAG_SRC_BLE_HID, DIAG_BLE_BATTERY_LEVEL, DIAG_SEV_INFO,

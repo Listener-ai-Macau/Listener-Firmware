@@ -46,8 +46,8 @@ static bool s_ble_name_pending_restart;
 
 static void device_settings_set_defaults_locked(void)
 {
-    s_settings.plugged_brightness_percent = 100U;
-    s_settings.battery_brightness_percent = 100U;
+    s_settings.plugged_brightness_percent = DEVICE_SETTINGS_DEFAULT_PLUGGED_BRIGHTNESS_PERCENT;
+    s_settings.battery_brightness_percent = DEVICE_SETTINGS_DEFAULT_BATTERY_BRIGHTNESS_PERCENT;
     s_settings.battery_auto_shutdown_ms = (uint32_t)CONFIG_POWER_MANAGER_HARDWARE_SHUTDOWN_MS;
     s_settings.knob_rotation_action = (uint8_t)EC11_ROTATION_ACTION_SYSTEM_VOLUME;
     snprintf(s_settings.ble_name, sizeof(s_settings.ble_name), "%s", DEVICE_SETTINGS_DEFAULT_BLE_NAME);
@@ -263,8 +263,8 @@ void device_settings_get_snapshot(device_settings_snapshot_t *out_snapshot)
         return;
     }
     memset(out_snapshot, 0, sizeof(*out_snapshot));
-    out_snapshot->plugged_brightness_percent = 100U;
-    out_snapshot->battery_brightness_percent = 100U;
+    out_snapshot->plugged_brightness_percent = DEVICE_SETTINGS_DEFAULT_PLUGGED_BRIGHTNESS_PERCENT;
+    out_snapshot->battery_brightness_percent = DEVICE_SETTINGS_DEFAULT_BATTERY_BRIGHTNESS_PERCENT;
     out_snapshot->battery_auto_shutdown_ms = (uint32_t)CONFIG_POWER_MANAGER_HARDWARE_SHUTDOWN_MS;
     snprintf(out_snapshot->ble_name, sizeof(out_snapshot->ble_name), "%s", DEVICE_SETTINGS_DEFAULT_BLE_NAME);
 

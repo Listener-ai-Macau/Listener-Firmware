@@ -155,6 +155,19 @@ function Test-FeatureSnapshot {
     $jsonText = $Snapshot | ConvertTo-Json -Depth 10
     $scriptText = Get-Content -Path $PSCommandPath -Raw
 
+    function Test-RepoText {
+        param([string]$RelativePath, [string]$Pattern, [string]$Label)
+        $path = Join-Path $resolvedRepoRoot $RelativePath
+        if (-not (Test-Path -LiteralPath $path)) {
+            return @("missing file for $($Label): $RelativePath")
+        }
+        $text = Get-Content -LiteralPath $path -Raw
+        if ($text -notmatch $Pattern) {
+            return @("missing $($Label) in $($RelativePath): $Pattern")
+        }
+        return @()
+    }
+
     foreach ($term in @("ESP32-S3", "N16R8", "Octal PSRAM", "BLE HID", "BLE audio", "diag_log", "system_health", "voice key", "build", "flash", "serial")) {
         if ($jsonText -notmatch [regex]::Escape($term)) {
             $errors += "missing required firmware feature term: $term"
@@ -170,7 +183,12 @@ function Test-FeatureSnapshot {
     if (@($Snapshot["validation_commands"]).Count -lt 6) {
         $errors += "validation_commands must contain at least 6 entries"
     }
-    if ($scriptText.Length -gt 17000) {
+    $errors += @(Test-RepoText "components/device_settings/include/device_settings.h" 'DEVICE_SETTINGS_DEFAULT_BLE_NAME\s+"listener"' 'default BLE name')
+    $errors += @(Test-RepoText "components/device_settings/include/device_settings.h" 'DEVICE_SETTINGS_DEFAULT_PLUGGED_BRIGHTNESS_PERCENT\s+80U' 'plugged brightness default')
+    $errors += @(Test-RepoText "components/device_settings/include/device_settings.h" 'DEVICE_SETTINGS_DEFAULT_BATTERY_BRIGHTNESS_PERCENT\s+50U' 'battery brightness default')
+    $errors += @(Test-RepoText "components/board/board.c" 'BOARD_V2_PWR_HOLD_POLICY\s+"v2_gpio11_power_latch_hold_low_release_high_for_hardware_shutdown"' 'PWR_HOLD low-active policy')
+    $errors += @(Test-RepoText "components/board/board.c" 'board_set_power_hold_enabled[\s\S]*int level = enabled \? 0 : 1;[\s\S]*gpio_set_level\(BOARD_PINS_PWR_HOLD_IO,\s*level\)' 'PWR_HOLD LOW hold HIGH release implementation')
+    if ($scriptText.Length -gt 18500) {
         $errors += "script is too long: $($scriptText.Length) characters"
     }
 

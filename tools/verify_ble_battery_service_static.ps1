@@ -1,0 +1,45 @@
+param(
+    [string]$RepoRoot = (Split-Path -Parent $PSScriptRoot)
+)
+
+$ErrorActionPreference = "Stop"
+
+function Read-RepoFile {
+    param([string]$RelativePath)
+    $path = Join-Path $RepoRoot $RelativePath
+    if (-not (Test-Path -LiteralPath $path)) {
+        throw "Missing required file: $RelativePath"
+    }
+    return Get-Content -LiteralPath $path -Raw
+}
+
+function Assert-Contains {
+    param(
+        [string]$Text,
+        [string]$Pattern,
+        [string]$Description
+    )
+    if ($Text -notmatch $Pattern) {
+        throw "Missing $Description ($Pattern)"
+    }
+}
+
+$bleHid = Read-RepoFile "ports/esp32/ble_hid/ble_hid.c"
+$batteryMonitor = Read-RepoFile "components/battery_monitor/battery_monitor.c"
+$featureMap = Read-RepoFile "docs/features/firmware-feature-map.md"
+
+Assert-Contains $bleHid 'battery_monitor_read\(&battery\)' 'BLE Battery Service reads live battery ADC status'
+Assert-Contains $bleHid 'board_get_v2_power_input_snapshot\(&power\)' 'BLE Battery Service reads charger full/USB power pins'
+Assert-Contains $bleHid 'usb_power_present\s*=\s*power\.usb_det_level\s*>\s*0' 'USB power interpretation for charge-full trust'
+Assert-Contains $bleHid 'charge_full\s*=\s*usb_power_present\s*&&\s*power\.bat_std_level\s*==\s*0' 'charge-full is active-low and trusted only while USB power is present'
+Assert-Contains $bleHid 'if\s*\(charge_full\)\s*\{\s*level\s*=\s*100;\s*\}' 'BLE battery level reports 100 when charger full is asserted'
+Assert-Contains $bleHid 'delta\s*>=\s*BLE_HID_BATTERY_NOTIFY_THRESHOLD_PERCENT' 'one-percent battery changes are notified'
+Assert-Contains $bleHid 'BLE_HID_BATTERY_FORCE_REFRESH_INTERVAL_MS\s+60000' 'periodic battery refresh interval'
+Assert-Contains $bleHid 'periodic_refresh' 'periodic battery notification refresh'
+Assert-Contains $bleHid 'esp_hidd_dev_battery_set\(s_ble_hid_ctx\.hid_device,\s*level\)' 'HID Battery Service value is updated through ESP HID'
+Assert-Contains $bleHid 'firmware_ota_note_battery\(' 'OTA battery gate receives the same live battery sample'
+Assert-Contains $batteryMonitor 'BATTERY_MONITOR_EMPTY_MV\s+3000U' 'product-empty battery voltage'
+Assert-Contains $batteryMonitor 'BATTERY_MONITOR_FULL_MV\s+4200U' 'full battery voltage'
+Assert-Contains $featureMap 'Battery ADC status uses the protected product range `3000mV=0%` and `4200mV=100%`' 'feature map documents protected battery range'
+
+Write-Host "PASS: BLE HID Battery Service uses live ADC, charger full status, 1% notifications, and periodic refresh instead of a fixed placeholder."
