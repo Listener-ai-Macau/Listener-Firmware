@@ -22,7 +22,7 @@ Default order is fixed until real hardware silkscreen validation proves otherwis
 - `LED5=OK`
 - `LED6=WARN`
 
-`PWR` owns battery and external-power state. While unplugged, it uses green for healthy battery, amber for lower battery, and red for low or critical battery. While USB or charger status says external power is present, it uses white: an always-running, visible breath while plugged in and not full, steady white when full. `BLE` owns pairing, reconnect, and connected confidence. `REC` only lights for a real capture/upload source named by firmware. If capture is unavailable, firmware shows `WARN + REC`. `AI` owns transfer, processing, thinking, and OTA progress. `OK` is a short success flash. `WARN` owns retryable and hard errors and pairs with a source LED.
+`PWR` owns battery and external-power state. While unplugged, it uses green for healthy battery, amber for lower battery, and red for low or critical battery. While USB or charger status says external power is present, it uses white: an always-running, visible breath while plugged in and not full, and a slower lower-contrast white breath when full. `BLE` owns pairing, reconnect, and connected confidence. `REC` only lights for a real capture/upload source named by firmware. If capture is unavailable, firmware shows `WARN + REC`. `AI` owns transfer, processing, thinking, and OTA progress. `OK` is a short success flash. `WARN` owns retryable and hard errors and pairs with a source LED.
 
 ## BLE Connection Source Of Truth
 
@@ -62,8 +62,8 @@ Current is still estimated per frame with 20 mA per RGB channel at full scale. `
 ## Product Effect Language
 
 - Idle connected state is readable but not dominant: PWR/BLE confidence remains visible without using factory brightness.
-- External power overrides battery-color display on `PWR`: plugged and not full is a continuous, higher-contrast white breath, and full is steady white.
-- The external-power white breath, steady full-charge white, BLE, REC, AI, OK, key feedback, and ambient edge effects are routine product output and obey `~LED:BRIGHTNESS`.
+- External power overrides battery-color display on `PWR`: plugged and not full is a continuous, higher-contrast white breath, and full is a slower, lower-contrast white breath.
+- The external-power white breath, full-charge alive white breath, BLE, REC, AI, OK, key feedback, and ambient edge effects are routine product output and obey `~LED:BRIGHTNESS`.
 - Pairing and reconnect use recognizable blue pulses without turning the whole status rail into an animation surface.
 - Recording is a gold breathing semantic state on `LED3=REC` only; it does not borrow key LEDs.
 - Processing uses a saturated purple breath on `AI`; long processing settles to a calmer breath.

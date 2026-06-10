@@ -45,6 +45,11 @@
 #define STATUS_LED_CHARGING_BREATH_PERIOD_MS 2600U
 #define STATUS_LED_CHARGING_BREATH_MIN_PERCENT 14U
 #define STATUS_LED_CHARGING_BREATH_MAX_PERCENT 82U
+#define STATUS_LED_FULL_BREATH_PERIOD_MS 5200U
+#define STATUS_LED_FULL_BREATH_MIN_PERCENT 30U
+#define STATUS_LED_FULL_BREATH_MAX_PERCENT 46U
+#define STATUS_LED_FULL_STATUS_BREATH_MIN_PERCENT 38U
+#define STATUS_LED_FULL_STATUS_BREATH_MAX_PERCENT 58U
 #define STATUS_LED_FULL_BRIGHTNESS_PERCENT 100U
 #define STATUS_LED_FULL_BRIGHTNESS_BUDGET_MA 2000U
 #define STATUS_LED_LOW_PROFILE_CAP_PERCENT 35U
@@ -54,7 +59,7 @@
 #define STATUS_LED_STANDARD_PROFILE_BUDGET_MA 760U
 #define STATUS_LED_AMBIENT_PROFILE_BUDGET_MA 620U
 #define STATUS_LED_CHASE_DEFAULT_STEP_MS 250U
-#define STATUS_LED_CONTRACT_REV "status_key_isolated_power_breath_v7"
+#define STATUS_LED_CONTRACT_REV "status_key_isolated_power_breath_v8"
 #define STATUS_LED_NVS_NAMESPACE "status_led"
 #define STATUS_LED_NVS_PROFILE_KEY "profile"
 #define STATUS_LED_NVS_BRIGHTNESS_KEY "brightness"
@@ -699,7 +704,15 @@ static void status_led_render_power_locked(status_led_frame_t *frame, uint32_t n
 
     if (s_state.external_power_present) {
         if (s_state.full) {
-            percent = status_window ? 55U : 38U;
+            percent = status_led_triangle_percent(
+                now_ms,
+                STATUS_LED_FULL_BREATH_PERIOD_MS,
+                status_window
+                    ? STATUS_LED_FULL_STATUS_BREATH_MIN_PERCENT
+                    : STATUS_LED_FULL_BREATH_MIN_PERCENT,
+                status_window
+                    ? STATUS_LED_FULL_STATUS_BREATH_MAX_PERCENT
+                    : STATUS_LED_FULL_BREATH_MAX_PERCENT);
         } else {
             percent = status_led_triangle_percent(
                 now_ms,
