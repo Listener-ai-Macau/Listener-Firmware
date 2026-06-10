@@ -26,6 +26,7 @@ typedef esp_err_t (*ec11_rotation_dispatcher_t)(
 void ec11_rotation_control_register_dispatcher(ec11_rotation_dispatcher_t dispatcher);
 ec11_rotation_action_t ec11_rotation_control_get_action(void);
 esp_err_t ec11_rotation_control_set_action(ec11_rotation_action_t action, const char *source);
+bool ec11_rotation_control_parse_action(const char *raw, ec11_rotation_action_t *out_action);
 const char *ec11_rotation_control_action_name(ec11_rotation_action_t action);
 const char *ec11_rotation_control_direction_name(ec11_rotation_direction_t direction);
 bool ec11_rotation_control_consume_command(const char *line, const char *source, esp_err_t *out_result);

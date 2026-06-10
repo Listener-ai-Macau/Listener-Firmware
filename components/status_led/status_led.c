@@ -1777,39 +1777,55 @@ static void status_led_print_status(void)
     }
     device_settings_get_snapshot(&device_settings);
 
+    const uint8_t profile_cap_percent = status_led_profile_cap_percent_for(snapshot.profile, false);
+    const uint8_t effective_cap_percent = snapshot.brightness_percent < profile_cap_percent
+        ? snapshot.brightness_percent
+        : profile_cap_percent;
+    const uint32_t status_window_ms_left =
+        now_ms < snapshot.status_window_until_ms ? snapshot.status_window_until_ms - now_ms : 0U;
+    const uint32_t ble_confidence_ms_left =
+        now_ms < snapshot.ble_confidence_until_ms ? snapshot.ble_confidence_until_ms - now_ms : 0U;
+    const uint32_t oobe_confidence_ms_left =
+        now_ms < snapshot.oobe_confidence_until_ms ? snapshot.oobe_confidence_until_ms - now_ms : 0U;
+    const uint8_t active_pwr = status_led_rgb_is_on(snapshot.last_frame.status[STATUS_LED_SEM_PWR]) ? 1U : 0U;
+    const uint8_t active_ble = status_led_rgb_is_on(snapshot.last_frame.status[STATUS_LED_SEM_BLE]) ? 1U : 0U;
+    const uint8_t active_rec = status_led_rgb_is_on(snapshot.last_frame.status[STATUS_LED_SEM_REC]) ? 1U : 0U;
+    const uint8_t active_ai = status_led_rgb_is_on(snapshot.last_frame.status[STATUS_LED_SEM_AI]) ? 1U : 0U;
+    const uint8_t active_ok = status_led_rgb_is_on(snapshot.last_frame.status[STATUS_LED_SEM_OK]) ? 1U : 0U;
+    const uint8_t active_warn = status_led_rgb_is_on(snapshot.last_frame.status[STATUS_LED_SEM_WARN]) ? 1U : 0U;
+    const uint8_t active_key =
+        status_led_strip_has_light(snapshot.last_frame.key, STATUS_LED_KEY_COUNT) ? 1U : 0U;
+    const uint8_t active_edge =
+        status_led_strip_has_light(snapshot.last_frame.edge, STATUS_LED_EDGE_COUNT) ? 1U : 0U;
+
     printf(
-        "~LED:STATUS profile=%s backend=rmt_ws2812_800khz refresh_ms=%u reset_us=300"
+        "~LED:STATUS detail=contract backend=rmt_ws2812_800khz refresh_ms=%u reset_us=300"
         " timing=ws2812_4020_compatible"
         " led_contract_rev=" STATUS_LED_CONTRACT_REV
-        " effect_profile=product_v1 profile_cap_percent=%u brightness_percent=%u effective_cap_percent=%u"
-        " plugged_brightness_percent=%u battery_brightness_percent=%u active_power_brightness_percent=%u"
         " factory_full_brightness=1 safety_full_brightness=1"
         " semantic_order=LED1:PWR,LED2:BLE,LED3:REC,LED4:AI,LED5:OK,LED6:WARN"
         " mapping_contract=" STATUS_LED_STATUS_KEY_MAPPING_CONTRACT
         " status_physical_map=" STATUS_LED_STATUS_PHYSICAL_MAP
         " key_physical_map=" STATUS_LED_KEY_PHYSICAL_MAP
-        " separate_status_key_color_order=1 status_default_order=GRB key_default_order=GRB"
-        " strips=status:gpio%d:count%u:order%s:refsLED1..LED6,ec11:gpio%d:count%u:order%s:refsLED7..LED10+LED15..LED16+LED23..LED28,key:gpio%d:count%u:order%s:refsLED11..LED14,edge:gpio%d:count%u:order%s:refsLED17..LED22"
-        " key_pin_contract=PWM_RGB_KEY_GPIO13 ec11_pin_contract=PWM_RGB_EC11_GPIO5 edge_pin_contract=PWM_RGB_Edge_GPIO4 gpio14_reserved=BAT_CHG_IO vdd_led_enable=always_on_assumed"
-        " ble=%s rec_active=%u rec_source=%s processing=%u"
-        " error_domain=%s error_severity=%s output_disabled=%u low_power_disabled=%u"
-        " battery_valid=%u battery_level=%u battery_mv=%" PRIu32 " external_power=%u charging=%u full=%u"
-        " status_window_ms_left=%" PRIu32 " ble_confidence_ms_left=%" PRIu32
-        " oobe_confidence_ms_left=%" PRIu32 " last_transition_ms=%" PRIu32
-        " current_ma=%" PRIu32 " current_budget_ma=%" PRIu32
-        " active_flags=PWR:%u,BLE:%u,REC:%u,AI:%u,OK:%u,WARN:%u,KEY:%u,EDGE:%u"
-        " status_rgb=PWR:%u,%u,%u;BLE:%u,%u,%u;REC:%u,%u,%u;AI:%u,%u,%u;OK:%u,%u,%u;WARN:%u,%u,%u"
-        " key_mask=0x%02x test_mode=%u test_strip_mask=0x%02x last_reason=%s\n",
+        " separate_status_key_color_order=1 status_default_order=GRB key_default_order=GRB\n",
+        STATUS_LED_REFRESH_MS);
+    printf(
+        "~LED:STATUS detail=brightness profile=%s effect_profile=product_v1"
+        " profile_cap_percent=%u brightness_percent=%u effective_cap_percent=%u"
+        " plugged_brightness_percent=%u battery_brightness_percent=%u active_power_brightness_percent=%u"
+        " profile_dimming_disabled=0\n",
         status_led_profile_name(snapshot.profile),
-        STATUS_LED_REFRESH_MS,
-        status_led_profile_cap_percent_for(snapshot.profile, false),
+        profile_cap_percent,
         snapshot.brightness_percent,
-        snapshot.brightness_percent < status_led_profile_cap_percent_for(snapshot.profile, false)
-            ? snapshot.brightness_percent
-            : status_led_profile_cap_percent_for(snapshot.profile, false),
+        effective_cap_percent,
         device_settings.plugged_brightness_percent,
         device_settings.battery_brightness_percent,
-        snapshot.brightness_percent,
+        snapshot.brightness_percent);
+    printf(
+        "~LED:STATUS detail=strips"
+        " strips=status:gpio%d:count%u:order%s:refsLED1..LED6,ec11:gpio%d:count%u:order%s:refsLED7..LED10+LED15..LED16+LED23..LED28,key:gpio%d:count%u:order%s:refsLED11..LED14,edge:gpio%d:count%u:order%s:refsLED17..LED22"
+        " key_pin_contract=PWM_RGB_KEY_GPIO13 ec11_pin_contract=PWM_RGB_EC11_GPIO5 edge_pin_contract=PWM_RGB_Edge_GPIO4 gpio14_reserved=BAT_CHG_IO vdd_led_enable=always_on_assumed"
+        "\n",
         (int)strips[STATUS_LED_STRIP_STATUS].gpio,
         (unsigned)strips[STATUS_LED_STRIP_STATUS].led_count,
         status_led_color_order_name(strips[STATUS_LED_STRIP_STATUS].color_order),
@@ -1821,7 +1837,10 @@ static void status_led_print_status(void)
         status_led_color_order_name(strips[STATUS_LED_STRIP_KEY].color_order),
         (int)strips[STATUS_LED_STRIP_EDGE].gpio,
         (unsigned)strips[STATUS_LED_STRIP_EDGE].led_count,
-        status_led_color_order_name(strips[STATUS_LED_STRIP_EDGE].color_order),
+        status_led_color_order_name(strips[STATUS_LED_STRIP_EDGE].color_order));
+    printf(
+        "~LED:STATUS detail=state ble=%s rec_active=%u rec_source=%s processing=%u"
+        " error_domain=%s error_severity=%s output_disabled=%u low_power_disabled=%u\n",
         status_led_ble_name(snapshot.ble_state),
         snapshot.recording_active ? 1U : 0U,
         status_led_rec_source_name(snapshot.rec_source),
@@ -1829,27 +1848,28 @@ static void status_led_print_status(void)
         status_led_error_domain_name(snapshot.error_domain),
         status_led_error_severity_name(snapshot.error_severity),
         snapshot.output_disabled ? 1U : 0U,
-        snapshot.low_power_disabled ? 1U : 0U,
+        snapshot.low_power_disabled ? 1U : 0U);
+    printf(
+        "~LED:STATUS detail=power battery_valid=%u battery_level=%u battery_mv=%" PRIu32
+        " external_power=%u charging=%u full=%u"
+        " status_window_ms_left=%" PRIu32 " ble_confidence_ms_left=%" PRIu32
+        " oobe_confidence_ms_left=%" PRIu32 " last_transition_ms=%" PRIu32
+        " current_ma=%" PRIu32 " current_budget_ma=%" PRIu32 "\n",
         snapshot.battery_valid ? 1U : 0U,
         snapshot.battery_level_percent,
         snapshot.battery_mv,
         snapshot.external_power_present ? 1U : 0U,
         snapshot.charging ? 1U : 0U,
         snapshot.full ? 1U : 0U,
-        now_ms < snapshot.status_window_until_ms ? snapshot.status_window_until_ms - now_ms : 0U,
-        now_ms < snapshot.ble_confidence_until_ms ? snapshot.ble_confidence_until_ms - now_ms : 0U,
-        now_ms < snapshot.oobe_confidence_until_ms ? snapshot.oobe_confidence_until_ms - now_ms : 0U,
+        status_window_ms_left,
+        ble_confidence_ms_left,
+        oobe_confidence_ms_left,
         snapshot.last_transition_ms,
         snapshot.last_estimated_current_ma,
-        snapshot.last_current_budget_ma,
-        status_led_rgb_is_on(snapshot.last_frame.status[STATUS_LED_SEM_PWR]) ? 1U : 0U,
-        status_led_rgb_is_on(snapshot.last_frame.status[STATUS_LED_SEM_BLE]) ? 1U : 0U,
-        status_led_rgb_is_on(snapshot.last_frame.status[STATUS_LED_SEM_REC]) ? 1U : 0U,
-        status_led_rgb_is_on(snapshot.last_frame.status[STATUS_LED_SEM_AI]) ? 1U : 0U,
-        status_led_rgb_is_on(snapshot.last_frame.status[STATUS_LED_SEM_OK]) ? 1U : 0U,
-        status_led_rgb_is_on(snapshot.last_frame.status[STATUS_LED_SEM_WARN]) ? 1U : 0U,
-        status_led_strip_has_light(snapshot.last_frame.key, STATUS_LED_KEY_COUNT) ? 1U : 0U,
-        status_led_strip_has_light(snapshot.last_frame.edge, STATUS_LED_EDGE_COUNT) ? 1U : 0U,
+        snapshot.last_current_budget_ma);
+    printf(
+        "~LED:STATUS detail=rgb"
+        " status_rgb=PWR:%u,%u,%u;BLE:%u,%u,%u;REC:%u,%u,%u;AI:%u,%u,%u;OK:%u,%u,%u;WARN:%u,%u,%u\n",
         snapshot.last_frame.status[STATUS_LED_SEM_PWR].r,
         snapshot.last_frame.status[STATUS_LED_SEM_PWR].g,
         snapshot.last_frame.status[STATUS_LED_SEM_PWR].b,
@@ -1867,7 +1887,32 @@ static void status_led_print_status(void)
         snapshot.last_frame.status[STATUS_LED_SEM_OK].b,
         snapshot.last_frame.status[STATUS_LED_SEM_WARN].r,
         snapshot.last_frame.status[STATUS_LED_SEM_WARN].g,
-        snapshot.last_frame.status[STATUS_LED_SEM_WARN].b,
+        snapshot.last_frame.status[STATUS_LED_SEM_WARN].b);
+    printf(
+        "~LED:STATUS profile=%s detail=summary profile_cap_percent=%u"
+        " ble=%s rec_active=%u rec_source=%s processing=%u"
+        " error_domain=%s error_severity=%s battery_level=%u charging=%u full=%u"
+        " active_flags=PWR:%u,BLE:%u,REC:%u,AI:%u,OK:%u,WARN:%u,KEY:%u,EDGE:%u"
+        " key_mask=0x%02x test_mode=%u test_strip_mask=0x%02x last_reason=%s\n",
+        status_led_profile_name(snapshot.profile),
+        profile_cap_percent,
+        status_led_ble_name(snapshot.ble_state),
+        snapshot.recording_active ? 1U : 0U,
+        status_led_rec_source_name(snapshot.rec_source),
+        snapshot.processing_active ? 1U : 0U,
+        status_led_error_domain_name(snapshot.error_domain),
+        status_led_error_severity_name(snapshot.error_severity),
+        snapshot.battery_level_percent,
+        snapshot.charging ? 1U : 0U,
+        snapshot.full ? 1U : 0U,
+        active_pwr,
+        active_ble,
+        active_rec,
+        active_ai,
+        active_ok,
+        active_warn,
+        active_key,
+        active_edge,
         snapshot.key_pressed_mask,
         (unsigned)snapshot.test_mode,
         (unsigned)snapshot.test_strip_mask,

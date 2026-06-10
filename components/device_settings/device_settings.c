@@ -6,6 +6,7 @@
 #include <string.h>
 
 #include "board.h"
+#include "ec11_rotation_control.h"
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
@@ -21,6 +22,7 @@
 #define DEVICE_SETTINGS_NVS_BATTERY_BRIGHTNESS_KEY "bat_brt"
 #define DEVICE_SETTINGS_NVS_AUTO_SHUTDOWN_MS_KEY "shut_ms"
 #define DEVICE_SETTINGS_NVS_BLE_NAME_KEY "ble_name"
+#define DEVICE_SETTINGS_NVS_KNOB_ROTATION_KEY "knob_rot"
 #define DEVICE_SETTINGS_USB_PREFIX "DEVICE:"
 #define DEVICE_SETTINGS_COMMAND_BUFFER_BYTES 192
 #define DEVICE_SETTINGS_AUTO_SHUTDOWN_MIN_MS 60000U
@@ -32,6 +34,7 @@ typedef struct {
     uint8_t plugged_brightness_percent;
     uint8_t battery_brightness_percent;
     uint32_t battery_auto_shutdown_ms;
+    uint8_t knob_rotation_action;
     char ble_name[DEVICE_SETTINGS_BLE_NAME_MAX_LEN + 1];
 } device_settings_config_t;
 
@@ -46,7 +49,28 @@ static void device_settings_set_defaults_locked(void)
     s_settings.plugged_brightness_percent = 100U;
     s_settings.battery_brightness_percent = 100U;
     s_settings.battery_auto_shutdown_ms = (uint32_t)CONFIG_POWER_MANAGER_HARDWARE_SHUTDOWN_MS;
+    s_settings.knob_rotation_action = (uint8_t)EC11_ROTATION_ACTION_SYSTEM_VOLUME;
     snprintf(s_settings.ble_name, sizeof(s_settings.ble_name), "%s", DEVICE_SETTINGS_DEFAULT_BLE_NAME);
+}
+
+static ec11_rotation_action_t device_settings_knob_rotation_action_locked(void)
+{
+    switch ((ec11_rotation_action_t)s_settings.knob_rotation_action) {
+    case EC11_ROTATION_ACTION_SCREEN_BRIGHTNESS:
+        return EC11_ROTATION_ACTION_SCREEN_BRIGHTNESS;
+    case EC11_ROTATION_ACTION_DISABLED:
+        return EC11_ROTATION_ACTION_DISABLED;
+    case EC11_ROTATION_ACTION_SYSTEM_VOLUME:
+    default:
+        return EC11_ROTATION_ACTION_SYSTEM_VOLUME;
+    }
+}
+
+static void device_settings_apply_runtime_locked(const char *source)
+{
+    (void)ec11_rotation_control_set_action(
+        device_settings_knob_rotation_action_locked(),
+        source != NULL ? source : "device_settings");
 }
 
 static bool device_settings_ensure_mutex(void)
@@ -128,6 +152,13 @@ static esp_err_t device_settings_load_locked(void)
         s_loaded_from_nvs = true;
     }
 
+    uint8_t knob_rotation = s_settings.knob_rotation_action;
+    if (nvs_get_u8(nvs, DEVICE_SETTINGS_NVS_KNOB_ROTATION_KEY, &knob_rotation) == ESP_OK &&
+        knob_rotation <= (uint8_t)EC11_ROTATION_ACTION_DISABLED) {
+        s_settings.knob_rotation_action = knob_rotation;
+        s_loaded_from_nvs = true;
+    }
+
     char name[DEVICE_SETTINGS_BLE_NAME_MAX_LEN + 1] = {0};
     size_t name_len = sizeof(name);
     if (nvs_get_str(nvs, DEVICE_SETTINGS_NVS_BLE_NAME_KEY, name, &name_len) == ESP_OK &&
@@ -168,6 +199,9 @@ static esp_err_t device_settings_persist_locked(void)
         ret = nvs_set_str(nvs, DEVICE_SETTINGS_NVS_BLE_NAME_KEY, s_settings.ble_name);
     }
     if (ret == ESP_OK) {
+        ret = nvs_set_u8(nvs, DEVICE_SETTINGS_NVS_KNOB_ROTATION_KEY, s_settings.knob_rotation_action);
+    }
+    if (ret == ESP_OK) {
         ret = nvs_commit(nvs);
     }
     nvs_close(nvs);
@@ -184,21 +218,39 @@ esp_err_t device_settings_init(void)
     }
 
     esp_err_t ret = ESP_OK;
+    uint8_t plugged_brightness = 100U;
+    uint8_t battery_brightness = 100U;
+    uint32_t auto_shutdown_ms = (uint32_t)CONFIG_POWER_MANAGER_HARDWARE_SHUTDOWN_MS;
+    ec11_rotation_action_t knob_rotation_action = EC11_ROTATION_ACTION_SYSTEM_VOLUME;
+    char ble_name[DEVICE_SETTINGS_BLE_NAME_MAX_LEN + 1];
+    snprintf(ble_name, sizeof(ble_name), "%s", DEVICE_SETTINGS_DEFAULT_BLE_NAME);
+    bool loaded_from_nvs = false;
     if (xSemaphoreTake(s_mutex, portMAX_DELAY) == pdTRUE) {
         s_loaded = false;
         ret = device_settings_load_locked();
+        if (ret == ESP_OK) {
+            plugged_brightness = s_settings.plugged_brightness_percent;
+            battery_brightness = s_settings.battery_brightness_percent;
+            auto_shutdown_ms = s_settings.battery_auto_shutdown_ms;
+            knob_rotation_action = device_settings_knob_rotation_action_locked();
+            snprintf(ble_name, sizeof(ble_name), "%s", s_settings.ble_name);
+            loaded_from_nvs = s_loaded_from_nvs;
+        }
         xSemaphoreGive(s_mutex);
     }
 
     if (ret == ESP_OK) {
+        (void)ec11_rotation_control_set_action(knob_rotation_action, "device_settings_init");
         ESP_LOGI(
             TAG,
-            "device settings: plugged_brightness=%u battery_brightness=%u auto_shutdown_ms=%" PRIu32 " ble_name=%s loaded_from_nvs=%u",
-            s_settings.plugged_brightness_percent,
-            s_settings.battery_brightness_percent,
-            s_settings.battery_auto_shutdown_ms,
-            s_settings.ble_name,
-            s_loaded_from_nvs ? 1u : 0u);
+            "device settings: plugged_brightness=%u battery_brightness=%u auto_shutdown_ms=%" PRIu32
+            " knob_rotation=%s ble_name=%s loaded_from_nvs=%u",
+            plugged_brightness,
+            battery_brightness,
+            auto_shutdown_ms,
+            ec11_rotation_control_action_name(knob_rotation_action),
+            ble_name,
+            loaded_from_nvs ? 1u : 0u);
     } else {
         ESP_LOGW(TAG, "device settings load skipped: %s", esp_err_to_name(ret));
     }
@@ -334,16 +386,17 @@ static void device_settings_print_status(const char *result)
     printf(
         "~DEVICE:SETTINGS schema=listener.device_settings.v1 result=%s"
         " plugged_brightness=%u battery_brightness=%u active_power=%s active_brightness=%u"
-        " auto_shutdown_ms=%" PRIu32 " auto_shutdown_mode=battery_only"
+        " auto_shutdown_ms=%" PRIu32 " auto_shutdown_mode=battery_only knob_rotation=%s"
         " ble_name=\"%s\" ble_name_pending=%u ble_name_apply=%s"
         " loaded_from_nvs=%u external_power_present=%u usb_power_present=%u charging=%u charge_full=%u"
-        " valid_ranges=brightness_0_100,auto_shutdown_ms_%u_%u,ble_name_ascii_1_%u\n",
+        " valid_ranges=brightness_0_100,auto_shutdown_ms_%u_%u,ble_name_ascii_1_%u,knob_rotation_system_volume_screen_brightness_disabled\n",
         result != NULL ? result : "OK",
         snapshot.plugged_brightness_percent,
         snapshot.battery_brightness_percent,
         external_power_present ? "external" : "battery",
         active_brightness,
         snapshot.battery_auto_shutdown_ms,
+        ec11_rotation_control_action_name(ec11_rotation_control_get_action()),
         snapshot.ble_name,
         snapshot.ble_name_pending_restart ? 1u : 0u,
         snapshot.ble_name_pending_restart ? "restart_ble_or_reboot" : "active_or_next_advertising",
@@ -462,25 +515,39 @@ static bool device_settings_apply_key_value(
         return true;
     }
 
+    if (strcmp(key, "knob_rotation") == 0 ||
+        strcmp(key, "ec11_rotation") == 0 ||
+        strcmp(key, "rotation_action") == 0) {
+        ec11_rotation_action_t action = EC11_ROTATION_ACTION_SYSTEM_VOLUME;
+        if (!ec11_rotation_control_parse_action(value, &action)) {
+            if (out_reason != NULL) {
+                *out_reason = "knob_rotation_must_be_system_volume_screen_brightness_disabled";
+            }
+            return false;
+        }
+        config->knob_rotation_action = (uint8_t)action;
+        return true;
+    }
+
     if (out_reason != NULL) {
         *out_reason = "unknown_key";
     }
     return false;
 }
 
-static bool device_settings_apply_set_command(const char *arguments)
+static esp_err_t device_settings_apply_set_command(const char *arguments)
 {
     if (!device_settings_ensure_mutex()) {
         device_settings_print_error("system", "no_mutex");
-        return true;
+        return ESP_ERR_NO_MEM;
     }
     if (arguments == NULL || arguments[0] == '\0') {
         device_settings_print_error("SET", "missing_arguments");
-        return true;
+        return ESP_ERR_INVALID_ARG;
     }
     if (strlen(arguments) >= DEVICE_SETTINGS_COMMAND_BUFFER_BYTES) {
         device_settings_print_error("SET", "command_too_long");
-        return true;
+        return ESP_ERR_INVALID_SIZE;
     }
 
     char buffer[DEVICE_SETTINGS_COMMAND_BUFFER_BYTES];
@@ -543,30 +610,37 @@ static bool device_settings_apply_set_command(const char *arguments)
                 ok = false;
                 snprintf(error_key, sizeof(error_key), "persist");
                 error_reason = esp_err_to_name(ret);
+            } else {
+                device_settings_apply_runtime_locked("device_settings");
             }
         }
         xSemaphoreGive(s_mutex);
+    } else {
+        ok = false;
+        snprintf(error_key, sizeof(error_key), "SET");
+        error_reason = "lock_timeout";
+        ret = ESP_ERR_TIMEOUT;
     }
 
     if (!ok) {
         device_settings_print_error(error_key, error_reason);
-        return true;
+        return ret != ESP_OK ? ret : ESP_ERR_INVALID_ARG;
     }
 
     device_settings_print_status("OK");
-    return true;
+    return ESP_OK;
 }
 
-bool device_settings_consume_usb_command(const char *line)
+esp_err_t device_settings_consume_control_command(const char *line)
 {
     const char *command = device_settings_strip_prefix(line);
     if (command == NULL) {
-        return false;
+        return ESP_ERR_NOT_FOUND;
     }
 
     if (strcmp(command, "SETTINGS") == 0 || strcmp(command, "STATUS") == 0) {
         device_settings_print_status("OK");
-        return true;
+        return ESP_OK;
     }
 
     if (strncmp(command, "SET ", strlen("SET ")) == 0) {
@@ -576,7 +650,7 @@ bool device_settings_consume_usb_command(const char *line)
     if (strcmp(command, "RESET") == 0) {
         if (!device_settings_ensure_mutex()) {
             device_settings_print_error("RESET", "no_mutex");
-            return true;
+            return ESP_ERR_NO_MEM;
         }
         esp_err_t ret = ESP_OK;
         if (xSemaphoreTake(s_mutex, portMAX_DELAY) == pdTRUE) {
@@ -587,22 +661,32 @@ bool device_settings_consume_usb_command(const char *line)
                 s_ble_name_pending_restart = true;
             }
             ret = device_settings_persist_locked();
+            if (ret == ESP_OK) {
+                device_settings_apply_runtime_locked("device_settings_reset");
+            }
             xSemaphoreGive(s_mutex);
+        } else {
+            ret = ESP_ERR_TIMEOUT;
         }
         if (ret != ESP_OK) {
             device_settings_print_error("RESET", esp_err_to_name(ret));
         } else {
             device_settings_print_status("RESET");
         }
-        return true;
+        return ret;
     }
 
     if (strcmp(command, "HELP") == 0 || strcmp(command, "?") == 0) {
-        printf("~DEVICE:HELP commands=SETTINGS,STATUS,SET,RESET keys=plugged_brightness,battery_brightness,auto_shutdown_ms,auto_shutdown_minutes,ble_name\n");
+        printf("~DEVICE:HELP commands=SETTINGS,STATUS,SET,RESET keys=plugged_brightness,battery_brightness,auto_shutdown_ms,auto_shutdown_minutes,ble_name,knob_rotation\n");
         fflush(stdout);
-        return true;
+        return ESP_OK;
     }
 
     device_settings_print_error(command, "unknown_command");
-    return true;
+    return ESP_ERR_INVALID_ARG;
+}
+
+bool device_settings_consume_usb_command(const char *line)
+{
+    return device_settings_consume_control_command(line) != ESP_ERR_NOT_FOUND;
 }

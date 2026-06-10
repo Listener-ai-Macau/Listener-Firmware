@@ -1,6 +1,7 @@
 #include "ec11_rotation_control.h"
 
 #include <string.h>
+#include <strings.h>
 
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
@@ -68,23 +69,23 @@ esp_err_t ec11_rotation_control_set_action(ec11_rotation_action_t action, const 
     return ESP_OK;
 }
 
-static bool ec11_rotation_parse_action(const char *raw, ec11_rotation_action_t *out_action)
+bool ec11_rotation_control_parse_action(const char *raw, ec11_rotation_action_t *out_action)
 {
     if (raw == NULL || out_action == NULL) {
         return false;
     }
-    if (strcmp(raw, "VOLUME") == 0 || strcmp(raw, "SYSTEM_VOLUME") == 0 ||
-        strcmp(raw, "SYSTEMVOLUME") == 0) {
+    if (strcasecmp(raw, "VOLUME") == 0 || strcasecmp(raw, "SYSTEM_VOLUME") == 0 ||
+        strcasecmp(raw, "SYSTEMVOLUME") == 0) {
         *out_action = EC11_ROTATION_ACTION_SYSTEM_VOLUME;
         return true;
     }
-    if (strcmp(raw, "BRIGHTNESS") == 0 || strcmp(raw, "SCREEN_BRIGHTNESS") == 0 ||
-        strcmp(raw, "SCREENBRIGHTNESS") == 0) {
+    if (strcasecmp(raw, "BRIGHTNESS") == 0 || strcasecmp(raw, "SCREEN_BRIGHTNESS") == 0 ||
+        strcasecmp(raw, "SCREENBRIGHTNESS") == 0) {
         *out_action = EC11_ROTATION_ACTION_SCREEN_BRIGHTNESS;
         return true;
     }
-    if (strcmp(raw, "DISABLED") == 0 || strcmp(raw, "DISABLE") == 0 ||
-        strcmp(raw, "OFF") == 0 || strcmp(raw, "NONE") == 0) {
+    if (strcasecmp(raw, "DISABLED") == 0 || strcasecmp(raw, "DISABLE") == 0 ||
+        strcasecmp(raw, "OFF") == 0 || strcasecmp(raw, "NONE") == 0) {
         *out_action = EC11_ROTATION_ACTION_DISABLED;
         return true;
     }
@@ -135,7 +136,7 @@ bool ec11_rotation_control_consume_command(const char *line, const char *source,
                strncmp(command, "ACTION:", strlen("ACTION:")) == 0) {
         const char *raw_action = strchr(command, ':');
         ec11_rotation_action_t action = EC11_ROTATION_ACTION_SYSTEM_VOLUME;
-        if (raw_action == NULL || !ec11_rotation_parse_action(raw_action + 1, &action)) {
+        if (raw_action == NULL || !ec11_rotation_control_parse_action(raw_action + 1, &action)) {
             ESP_LOGW(TAG, "EC11 rotation unknown action command=%s", command);
             result = ESP_ERR_INVALID_ARG;
         } else {

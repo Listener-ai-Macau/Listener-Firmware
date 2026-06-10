@@ -29,6 +29,7 @@ uint32_t device_settings_get_battery_auto_shutdown_ms(void);
 const char *device_settings_get_ble_name(void);
 bool device_settings_ble_name_pending_restart(void);
 esp_err_t device_settings_set_brightness_profiles(uint8_t plugged_percent, uint8_t battery_percent);
+esp_err_t device_settings_consume_control_command(const char *line);
 bool device_settings_consume_usb_command(const char *line);
 
 #ifdef __cplusplus

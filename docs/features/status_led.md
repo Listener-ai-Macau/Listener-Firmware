@@ -39,7 +39,7 @@ The camera calibration contract for the first product pass is intentionally limi
 - `LED1=PWR`, `LED2=BLE`, `LED3=REC`, `LED4=AI`, `LED5=OK`, `LED6=WARN` on the status strip.
 - `LED11=KEY1`, `LED12=KEY2`, `LED13=KEY3`, `LED14=KEY4` on the key strip.
 
-The status and key strips keep separate color-order storage in firmware, both defaulting to `GRB` until camera validation proves a different order for either strip. `~LED:STATUS` exposes `mapping_contract`, `status_physical_map`, `key_physical_map`, and `separate_status_key_color_order=1` so static and serial checks can reject EC11/edge assumptions before camera capture. The manual `TEST:PIXEL` path can also address EC11 and edge/frame LEDs for hardware bring-up, while the first camera contract remains limited to status/key.
+The status and key strips keep separate color-order storage in firmware, both defaulting to `GRB` until camera validation proves a different order for either strip. `~LED:STATUS` exposes `mapping_contract`, `status_physical_map`, `key_physical_map`, and `separate_status_key_color_order=1` so static and serial checks can reject EC11/edge assumptions before camera capture. The status command is intentionally split into bounded `detail=contract|brightness|strips|state|power|rgb|summary` lines; tools should parse the final `detail=summary` line for semantic state and use the earlier detail lines for diagnostics. The manual `TEST:PIXEL` path can also address EC11 and edge/frame LEDs for hardware bring-up, while the first camera contract remains limited to status/key.
 
 ## Driver Boundary
 
@@ -80,7 +80,11 @@ Current is still estimated per frame with 20 mA per RGB channel at full scale. `
 - `~LED:PRIVACY`
 - `~LED:BRIGHTNESS <0-100>`
 - `~DEVICE:SETTINGS`
-- `~DEVICE:SET plugged_brightness=<0-100> battery_brightness=<0-100>`
+- `~DEVICE:SET plugged_brightness=<0-100>`
+- `~DEVICE:SET battery_brightness=<0-100>`
+- `~DEVICE:SET auto_shutdown_minutes=<1-1440>`
+- `~DEVICE:SET ble_name=<ascii-1-32>`
+- `~DEVICE:SET knob_rotation=<system_volume|screen_brightness|disabled>`
 - `~LED:TEST:RGBW <status|ec11|knob|ring|key|edge|all>`
 - `~LED:TEST:MAP <status|ec11|knob|ring|key|edge|all>`
 - `~LED:CHASE [status,key|status|key|ec11|edge|all] [step_ms]`

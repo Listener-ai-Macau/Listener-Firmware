@@ -695,10 +695,13 @@ static esp_err_t keyboard_ble_control_write(
         return ec11_ret;
     }
 
-    if (device_settings_consume_usb_command(command)) {
+    esp_err_t device_settings_ret = device_settings_consume_control_command(command);
+    if (device_settings_ret != ESP_ERR_NOT_FOUND) {
         power_manager_record_activity("device_settings_ble_control");
-        status_led_apply_device_settings();
-        return ESP_OK;
+        if (device_settings_ret == ESP_OK) {
+            status_led_apply_device_settings();
+        }
+        return device_settings_ret;
     }
 
     return voice_recording_control_dispatch_control_command(command, source);
