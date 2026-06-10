@@ -22,7 +22,7 @@ Default order is fixed until real hardware silkscreen validation proves otherwis
 - `LED5=OK`
 - `LED6=WARN`
 
-`PWR` owns battery and external-power state. While unplugged, it uses green for healthy battery, amber for lower battery, and red for low or critical battery. While USB or charger status says external power is present, it uses white: an always-running, visible breath while plugged in and not full, and a slower lower-contrast white breath when full. `BLE` owns pairing, reconnect, and connected confidence. `REC` only lights for a real capture/upload source named by firmware. If capture is unavailable, firmware shows `WARN + REC`. `AI` owns transfer, processing, thinking, and OTA progress. `OK` is a short success flash. `WARN` owns retryable and hard errors and pairs with a source LED.
+`PWR` owns battery and external-power state. While unplugged, it uses green for healthy battery, amber for lower battery, and red for low or critical battery. While USB/VBUS is present, it uses white: an always-running, visible breath while plugged in and not confirmed full, then steady white once charge-full has been debounced and latched for that USB session. `BLE` owns pairing, reconnect, and connected confidence. `REC` only lights for a real capture/upload source named by firmware. If capture is unavailable, firmware shows `WARN + REC`. `AI` owns transfer, processing, thinking, and OTA progress. `OK` is a short success flash. `WARN` owns retryable and hard errors and pairs with a source LED.
 
 ## BLE Connection Source Of Truth
 
@@ -39,7 +39,7 @@ The camera calibration contract for the first product pass is intentionally limi
 - `LED1=PWR`, `LED2=BLE`, `LED3=REC`, `LED4=AI`, `LED5=OK`, `LED6=WARN` on the status strip.
 - `LED11=KEY1`, `LED12=KEY2`, `LED13=KEY3`, `LED14=KEY4` on the key strip.
 
-The status and key strips keep separate color-order storage in firmware, both defaulting to `GRB` until camera validation proves a different order for either strip. `~LED:STATUS` exposes `mapping_contract`, `status_physical_map`, `key_physical_map`, and `separate_status_key_color_order=1` so static and serial checks can reject EC11/edge assumptions before camera capture. The status command is intentionally split into bounded `detail=contract|brightness|strips|state|power|rgb|summary` lines; tools should parse the final `detail=summary` line for semantic state and use the earlier detail lines for diagnostics. The manual `TEST:PIXEL` path can also address EC11 and edge/frame LEDs for hardware bring-up, while the first camera contract remains limited to status/key.
+The status and key strips keep separate color-order storage in firmware, both defaulting to `GRB` until camera validation proves a different order for either strip. `~LED:STATUS` exposes `mapping_contract`, `status_physical_map`, `key_physical_map`, `separate_status_key_color_order=1`, and power diagnostics including `raw_charging`, `raw_full`, `full_latched`, and `full_candidate_ms` so static and serial checks can reject EC11/edge assumptions and explain charge-state pin jitter before camera capture. The status command is intentionally split into bounded `detail=contract|brightness|strips|state|power|rgb|summary` lines; tools should parse the final `detail=summary` line for semantic state and use the earlier detail lines for diagnostics. The manual `TEST:PIXEL` path can also address EC11 and edge/frame LEDs for hardware bring-up, while the first camera contract remains limited to status/key.
 
 ## Driver Boundary
 
@@ -62,8 +62,8 @@ Current is still estimated per frame with 20 mA per RGB channel at full scale. `
 ## Product Effect Language
 
 - Idle connected state is readable but not dominant: PWR/BLE confidence remains visible without using factory brightness.
-- External power overrides battery-color display on `PWR`: plugged and not full is a continuous, higher-contrast white breath, and full is a slower, lower-contrast white breath.
-- The external-power white breath, full-charge alive white breath, BLE, REC, AI, OK, key feedback, and ambient edge effects are routine product output and obey `~LED:BRIGHTNESS`.
+- External power overrides battery-color display on `PWR`: USB plugged and not confirmed full is a continuous, higher-contrast white breath. Charge-full requires USB present, an active charge-full pin, no active charging pin, and a near-full battery reading for the debounce window; after that it latches for the current USB session and shows steady white until USB is unplugged.
+- The external-power white breath, full-charge steady white, BLE, REC, AI, OK, key feedback, and ambient edge effects are routine product output and obey `~LED:BRIGHTNESS`.
 - Pairing and reconnect use recognizable blue pulses without turning the whole status rail into an animation surface.
 - Recording is a gold breathing semantic state on `LED3=REC` only; it does not borrow key LEDs.
 - Processing uses a saturated purple breath on `AI`; long processing settles to a calmer breath.
