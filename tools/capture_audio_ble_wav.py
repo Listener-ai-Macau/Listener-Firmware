@@ -1253,7 +1253,11 @@ async def run_ble_capture(args, ser: Serial, serial_monitor: SerialLogMonitor):
         if args.trigger_mode == "physical-key":
             print("ready_for_key=1", flush=True)
             print("trigger_mode=physical-key", flush=True)
-            print("instruction=single-click EC11 push to start recording, then single-click EC11 push again to stop", flush=True)
+            print(
+                "instruction=press configured recording custom key (default KEY3) to start recording, "
+                "then press it again to stop; EC11 single-click is the runtime custom key",
+                flush=True,
+            )
 
         target_sessions = args.max_sessions if args.max_sessions > 0 else None
         capture_seconds_per_session = getattr(args, "capture_seconds_per_session", None)

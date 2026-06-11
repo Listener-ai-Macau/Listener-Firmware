@@ -31,6 +31,8 @@
 
 #include "diag_log.h"
 #include "watchdog_platform.h"
+#include "ble_hid.h"
+#include "hid_keyboard.h"
 
 #if VOICE_KEY_INPUT_ENABLE_LEGACY_EXPANDER
 #include "audio_capture_platform.h"
@@ -78,6 +80,9 @@
 #define VOICE_KEY_INPUT_DEBUG_SOURCE_DIRECT_GPIO 1u
 #define VOICE_KEY_INPUT_DEBUG_SOURCE_LEGACY_IO0_4 2u
 #define VOICE_KEY_INPUT_DEBUG_SOURCE_LEGACY_IO0_5 3u
+#define VOICE_KEY_INPUT_EC11_LOGICAL_KEY 5u
+#define VOICE_KEY_INPUT_EC11_FALLBACK_USAGE HID_KEYBOARD_USAGE_F13
+#define VOICE_KEY_INPUT_EC11_FALLBACK_MODIFIER HID_KEYBOARD_MODIFIER_LEFT_SHIFT
 
 static const char *TAG = "voice_key_input";
 
@@ -113,7 +118,6 @@ static i2c_master_bus_handle_t s_i2c_bus_handle;
 static esp_io_expander_handle_t s_io_expander;
 #endif
 static TaskHandle_t s_poll_task_handle;
-static SemaphoreHandle_t s_toggle_event_sem;
 static SemaphoreHandle_t s_recovery_event_sem;
 static QueueHandle_t s_generated_single_click_queue;
 static volatile bool s_recording_output_enabled;
@@ -165,8 +169,8 @@ static void voice_key_input_debug_log(
 
 #if VOICE_KEY_INPUT_ENABLE_LEGACY_EXPANDER
 /* Legacy board compatibility only: old hardware used a TCA9555/XL9555 expander
- * and BOOT GPIO fallback. The active product path uses the EC11 push key for
- * recording gestures so KEY1-KEY4 can remain logical custom keys. */
+ * and BOOT GPIO fallback. The active product path uses EC11 push for a
+ * runtime custom-key single click plus fixed recovery/power gestures. */
 static const voice_key_input_bus_candidate_t s_bus_candidates[] = {
     {
         .label = "shared_sda1_scl1",
@@ -192,20 +196,37 @@ static const voice_key_input_bus_candidate_t s_bus_candidates[] = {
 };
 #endif
 
-static void voice_key_input_record_toggle_event(const char *source, uint32_t event_type, const char *edge_label)
+static void voice_key_input_dispatch_custom_key_event(const char *source, uint32_t event_type, const char *edge_label)
 {
-    if (s_toggle_event_sem == NULL) {
-        ESP_LOGW(TAG, "%s %s toggle dropped: event queue unavailable", source, edge_label);
-        diag_log(DIAG_SRC_VOICE_KEY, DIAG_VKEY_QUEUE_DROP, DIAG_SEV_WARN, event_type, 1, 0, 0);
-        return;
-    }
-
-    if (xSemaphoreGive(s_toggle_event_sem) == pdTRUE) {
-        ESP_LOGI(TAG, "%s %s toggle detected", source, edge_label);
-        diag_log(DIAG_SRC_VOICE_KEY, DIAG_VKEY_PRESS, DIAG_SEV_INFO, event_type, 0, 0, 0);
+    esp_err_t ret = ble_hid_send_keyboard_usage_with_modifier_async(
+        VOICE_KEY_INPUT_EC11_FALLBACK_USAGE,
+        VOICE_KEY_INPUT_EC11_FALLBACK_MODIFIER,
+        "ec11.push.custom");
+    if (ret == ESP_OK) {
+        ESP_LOGI(
+            TAG,
+            "%s %s custom fallback queued: logical=EC11 usage=Shift+F13 hid_usage=0x%02X modifier=0x%02X",
+            source,
+            edge_label,
+            VOICE_KEY_INPUT_EC11_FALLBACK_USAGE,
+            VOICE_KEY_INPUT_EC11_FALLBACK_MODIFIER);
+        diag_log(DIAG_SRC_KEYBOARD, DIAG_KBD_CUSTOM_KEY, DIAG_SEV_INFO,
+                 VOICE_KEY_INPUT_EC11_LOGICAL_KEY, 3, VOICE_KEY_INPUT_EC11_FALLBACK_USAGE, ESP_OK);
+        diag_log(DIAG_SRC_VOICE_KEY, DIAG_VKEY_PRESS, DIAG_SEV_INFO,
+                 event_type, VOICE_KEY_INPUT_EC11_FALLBACK_USAGE, VOICE_KEY_INPUT_EC11_FALLBACK_MODIFIER, 0);
     } else {
-        ESP_LOGW(TAG, "%s %s toggle dropped: event queue full", source, edge_label);
-        diag_log(DIAG_SRC_VOICE_KEY, DIAG_VKEY_QUEUE_DROP, DIAG_SEV_WARN, event_type, 2, 0, 0);
+        ESP_LOGW(
+            TAG,
+            "%s %s custom fallback dropped: logical=EC11 usage=Shift+F13 hid_usage=0x%02X modifier=0x%02X error=%s",
+            source,
+            edge_label,
+            VOICE_KEY_INPUT_EC11_FALLBACK_USAGE,
+            VOICE_KEY_INPUT_EC11_FALLBACK_MODIFIER,
+            esp_err_to_name(ret));
+        diag_log(DIAG_SRC_KEYBOARD, DIAG_KBD_CUSTOM_KEY, DIAG_SEV_WARN,
+                 VOICE_KEY_INPUT_EC11_LOGICAL_KEY, 3, VOICE_KEY_INPUT_EC11_FALLBACK_USAGE, ret);
+        diag_log(DIAG_SRC_VOICE_KEY, DIAG_VKEY_QUEUE_DROP, DIAG_SEV_WARN,
+                 event_type, ret, VOICE_KEY_INPUT_EC11_FALLBACK_USAGE, VOICE_KEY_INPUT_EC11_FALLBACK_MODIFIER);
     }
 }
 
@@ -223,7 +244,7 @@ esp_err_t voice_key_input_enqueue_generated_single_click(void)
     power_manager_record_activity("generated_ec11_key");
     ESP_LOGI(
         TAG,
-        "recording gesture key generated single-click queued: source=%s press_ms=%d double_ms=%d",
+        "EC11 push generated single-click queued: source=%s press_ms=%d double_ms=%d",
         VOICE_KEY_INPUT_DIRECT_LABEL,
         VOICE_KEY_INPUT_GENERATED_PRESS_MS,
         VOICE_KEY_INPUT_DOUBLE_CLICK_WINDOW_MS);
@@ -260,7 +281,7 @@ static void voice_key_input_drain_generated_events(TickType_t now)
         }
         s_direct_generated_active = true;
         s_direct_generated_start_tick = now;
-        ESP_LOGI(TAG, "recording gesture key generated single-click armed: source=%s", VOICE_KEY_INPUT_DIRECT_LABEL);
+        ESP_LOGI(TAG, "EC11 push generated single-click armed: source=%s", VOICE_KEY_INPUT_DIRECT_LABEL);
     }
 }
 
@@ -279,7 +300,7 @@ static bool voice_key_input_generated_raw_high(bool physical_raw_high, TickType_
     }
 
     s_direct_generated_active = false;
-    ESP_LOGI(TAG, "recording gesture key generated single-click completed: source=%s", VOICE_KEY_INPUT_DIRECT_LABEL);
+    ESP_LOGI(TAG, "EC11 push generated single-click completed: source=%s", VOICE_KEY_INPUT_DIRECT_LABEL);
     return physical_raw_high;
 }
 
@@ -309,7 +330,7 @@ static void voice_key_input_poll_pending_single_click(voice_key_button_state_t *
 
     button->pending_single_click = false;
     button->pending_click_ms = 0;
-    voice_key_input_record_toggle_event(button->label, 1, "single-click");
+    voice_key_input_dispatch_custom_key_event(button->label, 1, "single-click");
 }
 
 static void voice_key_input_handle_button_sample(voice_key_button_state_t *button, bool raw_high)
@@ -331,7 +352,7 @@ static void voice_key_input_handle_button_sample(voice_key_button_state_t *butto
         button->long_press_reported = false;
         ESP_LOGI(
             TAG,
-            "recording gesture key idle level detected: source=%s raw_high=%d pressed_when=%s",
+            "EC11 push key idle level detected: source=%s raw_high=%d pressed_when=%s",
             button->label,
             raw_high ? 1 : 0,
             button->idle_level_high ? "low" : "high");
@@ -359,7 +380,7 @@ static void voice_key_input_handle_button_sample(voice_key_button_state_t *butto
 
     if (raw_high != button->stable_level_high) {
         button->stable_level_high = raw_high;
-        ESP_LOGI(TAG, "recording gesture key level changed: source=%s raw_high=%d", button->label, raw_high ? 1 : 0);
+        ESP_LOGI(TAG, "EC11 push key level changed: source=%s raw_high=%d", button->label, raw_high ? 1 : 0);
         bool pressed = raw_high != button->idle_level_high;
         voice_key_input_debug_log(
             VOICE_KEY_INPUT_DEBUG_STABLE,
@@ -383,10 +404,10 @@ static void voice_key_input_handle_button_sample(voice_key_button_state_t *butto
                 } else {
                     ESP_LOGI(
                         TAG,
-                        "%s consecutive short click kept as recording toggle: recovery_idle_guard_ms=%d",
+                        "%s consecutive short click kept as custom-key gesture: recovery_idle_guard_ms=%d",
                         button->label,
                         VOICE_KEY_INPUT_RECOVERY_IDLE_GUARD_MS);
-                    voice_key_input_record_toggle_event(button->label, 1, "single-click");
+                    voice_key_input_dispatch_custom_key_event(button->label, 1, "single-click");
                     button->pending_single_click = true;
                     button->pending_click_ms = 0;
                 }
@@ -396,7 +417,7 @@ static void voice_key_input_handle_button_sample(voice_key_button_state_t *butto
                 ESP_LOGI(TAG, "%s single click pending for double-click window", button->label);
             }
         } else if (button->long_press_reported) {
-            ESP_LOGI(TAG, "%s long press released without recording gesture", button->label);
+            ESP_LOGI(TAG, "%s long press released without custom-key/recovery gesture", button->label);
         }
         button->pressed_ms = 0;
         button->long_press_reported = false;
@@ -608,8 +629,6 @@ esp_err_t voice_key_input_start(void)
         return ESP_OK;
     }
 
-    s_toggle_event_sem = xSemaphoreCreateCounting(VOICE_KEY_INPUT_EVENT_QUEUE_LENGTH, 0);
-    ESP_RETURN_ON_FALSE(s_toggle_event_sem != NULL, ESP_ERR_NO_MEM, TAG, "voice key event queue create failed");
     s_recovery_event_sem = xSemaphoreCreateCounting(VOICE_KEY_INPUT_EVENT_QUEUE_LENGTH, 0);
     ESP_RETURN_ON_FALSE(s_recovery_event_sem != NULL, ESP_ERR_NO_MEM, TAG, "voice key recovery event queue create failed");
     s_generated_single_click_queue = xQueueCreate(VOICE_KEY_INPUT_GENERATED_EVENT_QUEUE_LENGTH, sizeof(uint8_t));
@@ -652,7 +671,7 @@ esp_err_t voice_key_input_start(void)
         VOICE_KEY_INPUT_DEBOUNCE_THRESHOLD);
     ESP_LOGI(
         TAG,
-        "recording gesture key ready: single_click_toggle=1 double_click_recovery=1 double_click_window_ms=%d recovery_idle_guard_ms=%d long_press_reserved_ms=%d",
+        "EC11 push key ready: single_click_custom=Shift+F13 double_click_recovery=1 double_click_window_ms=%d recovery_idle_guard_ms=%d long_press_reserved_ms=%d",
         VOICE_KEY_INPUT_DOUBLE_CLICK_WINDOW_MS,
         VOICE_KEY_INPUT_RECOVERY_IDLE_GUARD_MS,
         VOICE_KEY_INPUT_LONG_PRESS_IGNORE_MS);
@@ -661,11 +680,7 @@ esp_err_t voice_key_input_start(void)
 
 bool voice_key_input_take_toggle_event(void)
 {
-    if (s_toggle_event_sem == NULL) {
-        return false;
-    }
-
-    return xSemaphoreTake(s_toggle_event_sem, pdMS_TO_TICKS(50)) == pdTRUE;
+    return false;
 }
 
 bool voice_key_input_take_recovery_event(void)

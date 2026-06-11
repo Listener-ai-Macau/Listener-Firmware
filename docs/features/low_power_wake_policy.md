@@ -1,6 +1,6 @@
 # Low-Power Hardware Shutdown Policy
 
-Current V2/N16R8 firmware uses `components/power_manager` for runtime idle power reduction and long-idle hardware shutdown. The long-idle path no longer uses ESP32-S3 Deep Sleep. Instead, battery-only long idle enters `POWER_MANAGER_STATE_HARDWARE_SHUTDOWN`, records diagnostics, prepares BLE/audio/LED shutdown, and releases `PWR_HOLD/GPIO11` HIGH through the board abstraction. `EC11-KEY_IO/GPIO18` remains the active runtime recording key.
+Current V2/N16R8 firmware uses `components/power_manager` for runtime idle power reduction and long-idle hardware shutdown. The long-idle path no longer uses ESP32-S3 Deep Sleep. Instead, battery-only long idle enters `POWER_MANAGER_STATE_HARDWARE_SHUTDOWN`, records diagnostics, prepares BLE/audio/LED shutdown, and releases `PWR_HOLD/GPIO11` HIGH through the board abstraction. `EC11-KEY_IO/GPIO18` is the power-on key while off, then a runtime custom-key/recovery input after boot; it is not the recording key.
 
 Observable firmware contract:
 

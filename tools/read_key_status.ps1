@@ -146,7 +146,7 @@ function Test-KeyStatusTranscript {
 
     Assert-Contains -Text $TranscriptText -Pattern "~BOARD:STATUS" -Description "serial transcript includes board status"
     Assert-Contains -Text $TranscriptText -Pattern "~BOARD:GPIO .*key1_gpio=.*key2_gpio=.*key3_gpio=.*key4_gpio=.*ec11_key_gpio=" -Description "serial transcript includes key GPIO snapshot"
-    Assert-Contains -Text $TranscriptText -Pattern "recording_key=EC11_KEY/GPIO18" -Description "serial transcript uses EC11 push GPIO18 recording-key contract"
+    Assert-Contains -Text $TranscriptText -Pattern "recording_key=custom_key_action ec11_key_action=power_on_runtime_custom" -Description "serial transcript uses custom-key recording and EC11 power/runtime-custom contract"
     Assert-Contains -Text $TranscriptText -Pattern "DIAGLOG INPUTDBG|~DIAGLOG:SOURCE" -Description "serial transcript includes input debug or diagnostic source state"
     Assert-Contains -Text $TranscriptText -Pattern "EC11 rotation status|~EC11:STATUS|EC11" -Description "serial transcript includes EC11 status command response"
     if ($Scan.IsPresent) {
@@ -163,7 +163,7 @@ $featureMap = Read-RepoText "docs\features\firmware-feature-map.md"
 
 Assert-Contains -Text $board -Pattern "~BOARD:GPIO active_low=1 mode=read_as_configured reconfigure=0" -Description "~BOARD:GPIO non-destructive GPIO status"
 Assert-Contains -Text $board -Pattern "key1_gpio=%d[\s\S]*key2_gpio=%d[\s\S]*key3_gpio=%d[\s\S]*key4_gpio=%d[\s\S]*ec11_key_gpio=%d" -Description "KEY1-KEY4 and EC11 key GPIO status fields"
-Assert-Contains -Text $board -Pattern "recording_key=EC11_KEY/GPIO18" -Description "EC11 push GPIO18 recording-key identity"
+Assert-Contains -Text $board -Pattern "recording_key=custom_key_action ec11_key_action=power_on_runtime_custom" -Description "custom-key recording and EC11 power/runtime-custom identity"
 Assert-Contains -Text $board -Pattern "~BOARD:GPIO_SCAN begin samples=%u interval_ms=%u mode=read_as_configured reconfigure=0" -Description "~BOARD:GPIO-SCAN bounded non-destructive scan"
 Assert-Contains -Text $board -Pattern "~BOARD:GPIO_SCAN done change_mask=" -Description "~BOARD:GPIO-SCAN completion summary"
 Assert-Contains -Text $keyboard -Pattern "custom key raw transition: logical=%s source=%s raw_high=%d stable_high=%d" -Description "custom key raw transition diagnostic"
@@ -175,7 +175,7 @@ Assert-Contains -Text $diagLog -Pattern "INPUTDBG:OFF" -Description "input debug
 Assert-Contains -Text $diagLog -Pattern "LAST:" -Description "bounded diagnostic tail command"
 Assert-Contains -Text $ec11 -Pattern "EC11 rotation status: action=%s" -Description "EC11 status command response"
 Assert-Contains -Text $featureMap -Pattern "GPIO38/GPIO39/GPIO40/GPIO41" -Description "feature map documents KEY1-KEY4 GPIO identity"
-Assert-Contains -Text $featureMap -Pattern "EC11 push/GPIO18" -Description "feature map documents EC11 recording key GPIO18"
+Assert-Contains -Text $featureMap -Pattern "EC11 push/GPIO18 no longer controls recording" -Description "feature map documents EC11 runtime custom key GPIO18"
 
 $hardwareMode = "static-contract-only"
 $transcript = @()

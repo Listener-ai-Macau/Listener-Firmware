@@ -75,6 +75,7 @@ typedef struct
 
 typedef struct {
     uint16_t usage;
+    uint8_t modifier;
     bool consumer;
     char source[BLE_HID_KEY_SOURCE_BYTES];
 } ble_hid_usage_event_t;
@@ -383,7 +384,7 @@ static esp_err_t ble_hid_dispatch_ascii(char input_char, const char *source)
     return hid_keyboard_send_ascii(input_char, s_ble_hid_ctx.hid_device);
 }
 
-static esp_err_t ble_hid_dispatch_usage(uint8_t usage, const char *source)
+static esp_err_t ble_hid_dispatch_usage(uint8_t usage, uint8_t modifier, const char *source)
 {
     if (s_ble_hid_ctx.hid_device == NULL) {
         ESP_LOGW(TAG, "%s dispatch dropped: HID device unavailable", source);
@@ -395,7 +396,7 @@ static esp_err_t ble_hid_dispatch_usage(uint8_t usage, const char *source)
         return ESP_ERR_INVALID_STATE;
     }
 
-    return hid_keyboard_send_usage(usage, s_ble_hid_ctx.hid_device);
+    return hid_keyboard_send_usage_with_modifier(usage, modifier, s_ble_hid_ctx.hid_device);
 }
 
 static esp_err_t ble_hid_dispatch_consumer_usage(uint16_t usage, const char *source)
@@ -439,13 +440,14 @@ static void ble_hid_drain_usage_queue(void)
         const char *source = event.source[0] != '\0' ? event.source : "CUSTOM_KEY";
         esp_err_t ret = event.consumer
             ? ble_hid_dispatch_consumer_usage(event.usage, source)
-            : ble_hid_dispatch_usage((uint8_t)event.usage, source);
+            : ble_hid_dispatch_usage((uint8_t)event.usage, event.modifier, source);
         if (ret != ESP_OK) {
             ESP_LOGW(
                 TAG,
-                "%s dispatch failed: usage=0x%04X consumer=%u error=%s",
+                "%s dispatch failed: usage=0x%04X modifier=0x%02X consumer=%u error=%s",
                 source,
                 event.usage,
+                event.modifier,
                 event.consumer ? 1u : 0u,
                 esp_err_to_name(ret));
         }
@@ -473,6 +475,11 @@ esp_err_t ble_hid_send_ascii_async(char input_char)
 
 esp_err_t ble_hid_send_keyboard_usage_async(uint8_t usage, const char *source)
 {
+    return ble_hid_send_keyboard_usage_with_modifier_async(usage, 0, source);
+}
+
+esp_err_t ble_hid_send_keyboard_usage_with_modifier_async(uint8_t usage, uint8_t modifier, const char *source)
+{
     if (s_usage_queue == NULL) {
         return ESP_ERR_INVALID_STATE;
     }
@@ -484,6 +491,7 @@ esp_err_t ble_hid_send_keyboard_usage_async(uint8_t usage, const char *source)
 
     ble_hid_usage_event_t event = {
         .usage = usage,
+        .modifier = modifier,
         .consumer = false,
     };
     if (source != NULL) {
@@ -492,7 +500,7 @@ esp_err_t ble_hid_send_keyboard_usage_async(uint8_t usage, const char *source)
 
     if (xQueueSend(s_usage_queue, &event, 0) != pdTRUE) {
         diag_log(DIAG_SRC_KEYBOARD, DIAG_KBD_QUEUE_DROP, DIAG_SEV_WARN,
-                 usage, BLE_HID_USAGE_QUEUE_LENGTH, 0, 0);
+                 usage, BLE_HID_USAGE_QUEUE_LENGTH, modifier, 0);
         return ESP_ERR_TIMEOUT;
     }
 

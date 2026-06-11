@@ -436,7 +436,7 @@ static void board_print_gpio_status(void)
         " ec11_b_gpio=%d ec11_b_level=%s"
         " ec11_ab_state=0x%02" PRIx32
         " ec11_key_gpio=%d ec11_key_level=%s ec11_key_pressed=%u"
-        " recording_key=EC11_KEY/GPIO18\n",
+        " recording_key=custom_key_action ec11_key_action=power_on_runtime_custom\n",
         (int)BOARD_PINS_KEY1_IO,
         board_gpio_level_name(key1),
         key1 == 0 ? 1u : 0u,
@@ -681,11 +681,11 @@ void board_print_help(void)
         "Inject test bytes with tools/send_serial.ps1 or type in monitor.\n"
         "Capture 3s audio WAV with tools/capture_audio_wav.ps1 -Port COM3.\n"
         "Capture toggle session WAV with tools/capture_audio_session_wav.ps1 -Port COM3.\n"
-        "EC11 push/GPIO18 controls recording: single click starts or stops after the 200 ms double-click window.\n"
-        "EC11 push fast double-click clears BLE pairing/session state after recording has been idle; long press is reserved for hardware power control.\n"
+        "EC11 push/GPIO18 is the physical power-on key; after boot, single click sends the EC11 custom-key fallback Shift+F13 after the 200 ms double-click window.\n"
+        "EC11 push fast double-click clears BLE pairing/session state when no recording is active; long press stays reserved for hardware power control.\n"
         "Logical custom keys: single-click KEY1-KEY4 fallback=F13-F16, double-click=F17-F20, long-press=F21-F24.\n"
-        "KEY1/GPIO38, KEY2/GPIO39, KEY3/GPIO40, KEY4/GPIO41 send safe non-text BLE HID usages while Listener-Type custom actions are unavailable.\n"
-        "Generated button diagnostics: ~KEY:KEY3:SINGLE and ~KEY:EC11:SINGLE simulate physical single-click press/release timing for automated A1/A2 tests.\n"
+        "KEY1/GPIO38, KEY2/GPIO39, KEY3/GPIO40, KEY4/GPIO41 send safe non-text BLE HID usages while Listener-Type custom actions are unavailable; recording is a configurable custom-key action.\n"
+        "Generated button diagnostics: ~KEY:KEY3:SINGLE simulates the recording custom-key path for automated A1/A2 tests; ~KEY:EC11:SINGLE simulates the EC11 runtime custom-key press/release path.\n"
         "Send ~VREC:RECOVERY to clear pairing/session state over USB.\n"
         "Board diagnostics: ~BOARD:STATUS reports V2 pin, USB, charger, battery, PWR_HOLD/GPIO11, mic, reserved MSPI, and LED resource status.\n"
         "Board GPIO diagnostics: ~BOARD:GPIO reads raw KEY1-KEY4 and EC11 A/B/key levels without reconfiguring pins.\n"

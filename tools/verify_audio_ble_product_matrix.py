@@ -99,8 +99,8 @@ CASE_SUITES = {
 PRODUCT_CHAIN_OVERLAY_CASES = CASE_ORDER
 PRODUCT_CHAIN_IN_RUNNER_CASES = ("A1", "A2", "A3")
 CASE_DESCRIPTIONS = {
-    "A1": "按键短录音时序：自动生成 KEY3 单击与 EC11 单击信号，各跑重启 Type + 持续 Type 短录音；gate 按键触发、胶囊、session、传输和插入，准确率只记录",
-    "A2": "按键长录音时序：自动生成 KEY3 单击与 EC11 单击信号，各跑一轮长段录音；gate 按键触发、胶囊保持/结束、session、传输和插入，准确率只记录",
+    "A1": "按键短录音时序：自动生成 KEY3 单击信号，跑重启 Type + 持续 Type 短录音；gate 按键触发、胶囊、session、传输和插入，准确率只记录",
+    "A2": "按键长录音时序：自动生成 KEY3 单击信号，跑一轮长段录音；gate 按键触发、胶囊保持/结束、session、传输和插入，准确率只记录",
     "A3": "识别准确率：在按键链路已通过后，用受控音频单独 gate ASR 准确率/CER",
     "A14": "取消后恢复：中途取消当前录音，确认没有插入旧文本，然后立刻重试一轮正常录音",
     "A15": "静音误触/负向 case：没有有效语音时不应产生可见文本、历史插入或成功假象",
@@ -108,7 +108,7 @@ CASE_DESCRIPTIONS = {
     "T1": "BLE 断连/回连：流式录音或准备阶段断开后恢复，合法下一次录音不被吞掉",
     "T3": "Notify disabled 或 Windows stale GATT/cache：host recovery 后重新达到 notify-ready",
     "L1": "Listener-Type 重启：桌面进程重启后设备和胶囊状态收敛到可继续录音",
-    "H1": "EC11 物理录音键压力：物理 EC11 start/stop/recovery 不产生 stuck capsule 或重复 session",
+    "H1": "EC11 物理开机/自定义/恢复键压力：物理 EC11 single-click custom action 与 double-click recovery 不产生 stuck capsule 或重复 session",
     "H4": "KEY1-KEY4 物理/注入压力：自定义键和 fallback HID 压力下录音链路仍稳定",
     "D1": "诊断导出：固件 diag、BLE、Listener-Type 日志和 UI timeline 可对齐并带 artifact 引用",
 }
@@ -125,11 +125,11 @@ MANUAL_OR_EXTERNAL_CASES = {
 }
 CASE_CONTRACTS = {
     "A1": {
-        "scenario": "Short recordings start from generated KEY3 single-click and generated EC11 single-click signals, split into restart-Type rounds and continuous-Type rounds with sub-1s capsule reopen latency.",
+        "scenario": "Short recordings start from generated KEY3 single-click signals, split into restart-Type rounds and continuous-Type rounds with sub-1s capsule reopen latency.",
         "expected_user_visible_behavior": "Each generated legal button press shows a new capsule quickly, creates a fresh session, and does not lose a round silently; transcript accuracy is evidence-only.",
         "firmware_observables": [
-            "generated KEY3 or EC11 single-click command evidence",
-            "custom key or EC11 key raw/stable/release/single-click logs",
+            "generated KEY3 single-click command evidence",
+            "custom key raw/stable/release/single-click logs",
             "voice recording source/state/session id",
             "BLE packet counts and missing/duplicate packet counters",
             "no QueueFull or session storm",
@@ -151,11 +151,11 @@ CASE_CONTRACTS = {
         "automation_status": "automated",
     },
     "A2": {
-        "scenario": "Long-form dictation starts from generated KEY3 single-click and generated EC11 single-click signals.",
+        "scenario": "Long-form dictation starts from generated KEY3 single-click signals.",
         "expected_user_visible_behavior": "Capsule stays visible through the long capture, final text inserts once, the stop press transitions cleanly, and the user can continue after completion; transcript accuracy is evidence-only.",
         "firmware_observables": [
-            "generated KEY3 or EC11 single-click command evidence",
-            "custom key or EC11 key raw/stable/release/single-click logs",
+            "generated KEY3 single-click command evidence",
+            "custom key raw/stable/release/single-click logs",
             "expected/received/missing packet counts",
             "duplicate packet count",
             "audio transport summary",
@@ -513,7 +513,7 @@ def parse_case_list(raw: str) -> list[str]:
 
 
 def parse_recording_trigger_modes(raw: str) -> tuple[str, ...]:
-    allowed = {"generated-key3", "generated-ec11"}
+    allowed = {"generated-key3"}
     modes: list[str] = []
     for item in raw.split(","):
         mode = item.strip().lower()
@@ -521,7 +521,7 @@ def parse_recording_trigger_modes(raw: str) -> tuple[str, ...]:
             continue
         if mode not in allowed:
             raise argparse.ArgumentTypeError(
-                f"unknown recording trigger mode {mode!r}; expected generated-key3 or generated-ec11"
+                f"unknown recording trigger mode {mode!r}; expected generated-key3"
             )
         if mode not in modes:
             modes.append(mode)
@@ -699,8 +699,8 @@ def parse_args():
     )
     parser.add_argument(
         "--recording-trigger-modes",
-        default="generated-key3,generated-ec11",
-        help="Comma-separated generated button triggers for A1/A2 timing cases: generated-key3,generated-ec11.",
+        default="generated-key3",
+        help="Comma-separated generated button triggers for A1/A2 timing cases. EC11 is not a recording trigger; use generated-key3.",
     )
     parser.add_argument("--no-reset-before-capture", action="store_false", dest="reset_before_capture")
     parser.set_defaults(reset_before_capture=True)
@@ -1679,7 +1679,7 @@ def print_case_catalog() -> None:
             "a1_continuous_round_count": A1_CONTINUOUS_ROUND_COUNT,
             "a1_continuous_max_hidden_to_visible_seconds": A1_CONTINUOUS_MAX_HIDDEN_TO_VISIBLE_SECONDS,
             "a1_a2_accuracy_gate": "evidence_only; A3 owns ASR accuracy acceptance",
-            "recording_trigger_modes_default": ["generated-key3", "generated-ec11"],
+            "recording_trigger_modes_default": ["generated-key3"],
             "legacy_a1_round_count": "accepted for compatibility; values above 3 are capped by the current product contract",
             "inter_session_gap_seconds": "0-1 for restart-mode compatibility; continuous mode measures capsule hidden-to-visible latency",
             "a2_long_capture_seconds": "about 60 seconds per generated trigger",
@@ -2047,7 +2047,7 @@ async def run_listener_type_background_rounds(
 
 
 async def run_a1(args) -> dict[str, object]:
-    """A1: generated KEY3 and EC11 short timing rounds."""
+    """A1: generated KEY3 short timing rounds."""
     restart_count, continuous_count = resolve_a1_round_plan(args)
     trigger_modes = tuple(args.recording_trigger_modes_resolved)
     budget = max(180, len(trigger_modes) * (restart_count + continuous_count) * 90)
