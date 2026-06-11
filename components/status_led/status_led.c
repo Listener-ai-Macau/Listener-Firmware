@@ -42,14 +42,17 @@
 #define STATUS_LED_OK_TOTAL_MS 900U
 #define STATUS_LED_OK_PEAK_MS 160U
 #define STATUS_LED_KEY_FEEDBACK_MS 240U
-#define STATUS_LED_CHARGING_BREATH_PERIOD_MS 2600U
-#define STATUS_LED_CHARGING_BREATH_MIN_PERCENT 14U
+#define STATUS_LED_CHARGING_BREATH_PERIOD_MS 1900U
+#define STATUS_LED_CHARGING_BREATH_MIN_PERCENT 32U
 #define STATUS_LED_CHARGING_BREATH_MAX_PERCENT 100U
 #define STATUS_LED_CHARGE_FULL_DEBOUNCE_MS 10000U
 #define STATUS_LED_CHARGE_FULL_MIN_MV 4050U
 #define STATUS_LED_CHARGE_FULL_MIN_PERCENT 88U
 #define STATUS_LED_FULL_STEADY_PERCENT 100U
 #define STATUS_LED_FULL_STATUS_STEADY_PERCENT 100U
+#define STATUS_LED_BATTERY_IDLE_BLE_HEARTBEAT_ON_MS 120U
+#define STATUS_LED_BATTERY_IDLE_BLE_HEARTBEAT_OFF_MS 7880U
+#define STATUS_LED_BATTERY_IDLE_BLE_HEARTBEAT_PERCENT 18U
 #define STATUS_LED_FULL_BRIGHTNESS_PERCENT 100U
 #define STATUS_LED_FULL_BRIGHTNESS_BUDGET_MA 2000U
 #define STATUS_LED_LOW_PROFILE_CAP_PERCENT 100U
@@ -59,7 +62,7 @@
 #define STATUS_LED_STANDARD_PROFILE_BUDGET_MA 760U
 #define STATUS_LED_AMBIENT_PROFILE_BUDGET_MA 620U
 #define STATUS_LED_CHASE_DEFAULT_STEP_MS 250U
-#define STATUS_LED_CONTRACT_REV "status_key_isolated_charge_full_latch_v9"
+#define STATUS_LED_CONTRACT_REV "status_key_isolated_charge_full_latch_v10"
 #define STATUS_LED_NVS_NAMESPACE "status_led"
 #define STATUS_LED_NVS_PROFILE_KEY "profile"
 #define STATUS_LED_NVS_BRIGHTNESS_KEY "brightness"
@@ -78,6 +81,13 @@
 #define STATUS_LED_REC_GOLD_R 255U
 #define STATUS_LED_REC_GOLD_G 172U
 #define STATUS_LED_REC_GOLD_B 0U
+#define STATUS_LED_RECORDING_BREATH_PERIOD_MS 1900U
+#define STATUS_LED_RECORDING_BREATH_MIN_PERCENT 24U
+#define STATUS_LED_RECORDING_BREATH_MAX_PERCENT 42U
+#define STATUS_LED_RECORDING_LEVEL_STALE_MS 300U
+#define STATUS_LED_RECORDING_LEVEL_BOOST_MULTIPLIER 4U
+#define STATUS_LED_RECORDING_LEVEL_FLOOR_PERCENT 35U
+#define STATUS_LED_RECORDING_LEVEL_RANGE_PERCENT 65U
 
 typedef enum {
     STATUS_LED_STRIP_STATUS = 0,
@@ -702,7 +712,6 @@ static void status_led_render_test_locked(status_led_frame_t *frame, uint32_t no
 static void status_led_render_power_locked(status_led_frame_t *frame, uint32_t now_ms, bool *ret_safety)
 {
     const bool status_window = now_ms < s_state.status_window_until_ms;
-    const bool connected_ready = s_state.ble_state == STATUS_LED_BLE_CONNECTED;
     bool safety = false;
     uint8_t percent = 0;
     status_led_rgb_t color = {0};
@@ -732,7 +741,7 @@ static void status_led_render_power_locked(status_led_frame_t *frame, uint32_t n
                 color = status_led_token_locked(status_led_rgb(255, 0, 0), 80U, true);
             }
         } else {
-            percent = status_window ? 46U : (connected_ready ? 30U : 0U);
+            percent = status_window ? 46U : 0U;
             if (s_state.profile == STATUS_LED_PROFILE_LOW || s_state.profile == STATUS_LED_PROFILE_OFF) {
                 percent = status_window ? 30U : 0U;
             }
@@ -761,24 +770,50 @@ static void status_led_render_ble_locked(status_led_frame_t *frame, uint32_t now
     const bool confidence = now_ms < s_state.ble_confidence_until_ms ||
                             now_ms < s_state.oobe_confidence_until_ms;
     const bool status_window = now_ms < s_state.status_window_until_ms;
+    const bool battery_idle = !s_state.external_power_present && !confidence && !status_window;
 
     switch (s_state.ble_state) {
     case STATUS_LED_BLE_PAIRING:
-        if (status_led_blink_on(now_ms, 420U, 680U)) {
+        if (battery_idle && status_led_blink_on(
+                                now_ms,
+                                STATUS_LED_BATTERY_IDLE_BLE_HEARTBEAT_ON_MS,
+                                STATUS_LED_BATTERY_IDLE_BLE_HEARTBEAT_OFF_MS)) {
+            color = status_led_token_locked(
+                ble_blue,
+                STATUS_LED_BATTERY_IDLE_BLE_HEARTBEAT_PERCENT,
+                false);
+        } else if (!battery_idle && status_led_blink_on(now_ms, 420U, 680U)) {
             color = status_led_token_locked(ble_blue, 65U, false);
         }
         break;
     case STATUS_LED_BLE_RECONNECTING:
-        if (status_led_double_pulse_on(now_ms - s_state.last_transition_ms, 2000U)) {
+        if (battery_idle && status_led_blink_on(
+                                now_ms - s_state.last_transition_ms,
+                                STATUS_LED_BATTERY_IDLE_BLE_HEARTBEAT_ON_MS,
+                                STATUS_LED_BATTERY_IDLE_BLE_HEARTBEAT_OFF_MS)) {
+            color = status_led_token_locked(
+                ble_blue,
+                STATUS_LED_BATTERY_IDLE_BLE_HEARTBEAT_PERCENT,
+                false);
+        } else if (!battery_idle &&
+                   status_led_double_pulse_on(now_ms - s_state.last_transition_ms, 2000U)) {
             color = status_led_token_locked(ble_blue, 58U, false);
         }
         break;
     case STATUS_LED_BLE_CONNECTED:
         if (confidence || status_window) {
             color = status_led_token_locked(ble_blue, 48U, false);
-        } else if (s_state.profile == STATUS_LED_PROFILE_STANDARD) {
+        } else if (battery_idle && status_led_blink_on(
+                                   now_ms - s_state.last_transition_ms,
+                                   STATUS_LED_BATTERY_IDLE_BLE_HEARTBEAT_ON_MS,
+                                   STATUS_LED_BATTERY_IDLE_BLE_HEARTBEAT_OFF_MS)) {
+            color = status_led_token_locked(
+                ble_blue,
+                STATUS_LED_BATTERY_IDLE_BLE_HEARTBEAT_PERCENT,
+                false);
+        } else if (!battery_idle && s_state.profile == STATUS_LED_PROFILE_STANDARD) {
             color = status_led_token_locked(ble_blue, 30U, false);
-        } else if (s_state.profile == STATUS_LED_PROFILE_AMBIENT) {
+        } else if (!battery_idle && s_state.profile == STATUS_LED_PROFILE_AMBIENT) {
             color = status_led_token_locked(ble_blue, 38U, false);
         }
         break;
@@ -798,15 +833,27 @@ static void status_led_render_recording_locked(status_led_frame_t *frame, uint32
     if (s_state.rec_source == STATUS_LED_REC_SOURCE_NOT_AVAILABLE) {
         return;
     }
+    uint8_t breath = status_led_triangle_percent(
+        now_ms,
+        STATUS_LED_RECORDING_BREATH_PERIOD_MS,
+        STATUS_LED_RECORDING_BREATH_MIN_PERCENT,
+        STATUS_LED_RECORDING_BREATH_MAX_PERCENT);
     uint8_t level = s_state.recording_level_percent;
     if (s_state.recording_level_updated_ms == 0U ||
-        now_ms - s_state.recording_level_updated_ms > 450U) {
+        now_ms - s_state.recording_level_updated_ms > STATUS_LED_RECORDING_LEVEL_STALE_MS) {
         level = 0U;
     }
-    uint8_t floor_percent = (uint8_t)(30U + (level * 12U) / 100U);
-    uint8_t peak_percent = (uint8_t)(62U + (level * 38U) / 100U);
-    uint8_t breath = status_led_triangle_percent(now_ms, 2200U, floor_percent, peak_percent);
-    status_led_rgb_t rec = status_led_token_locked(status_led_rec_gold(), breath, false);
+    uint8_t level_percent = 0U;
+    if (level > 0U) {
+        uint32_t boosted_level = (uint32_t)level * STATUS_LED_RECORDING_LEVEL_BOOST_MULTIPLIER;
+        if (boosted_level > 100U) {
+            boosted_level = 100U;
+        }
+        level_percent = STATUS_LED_RECORDING_LEVEL_FLOOR_PERCENT +
+            (uint8_t)((boosted_level * STATUS_LED_RECORDING_LEVEL_RANGE_PERCENT) / 100U);
+    }
+    uint8_t percent = level_percent > breath ? level_percent : breath;
+    status_led_rgb_t rec = status_led_token_locked(status_led_rec_gold(), percent, false);
     status_led_set_max(&frame->status[STATUS_LED_SEM_REC], rec);
     (void)ret_safety;
 }
@@ -1088,12 +1135,15 @@ static void status_led_poll_power_inputs(void)
         }
         bool full = usb_power_present && s_state.charge_full_latched;
         bool charging = usb_power_present && !full;
-        bool band_changed = s_state.battery_valid != battery_valid ||
-                            (battery_valid && (s_state.battery_level_percent / 10U) != (battery_level / 10U)) ||
-                            s_state.external_power_present != external_power_present ||
-                            s_state.charging != charging ||
-                            s_state.full != full ||
-                            s_state.brightness_percent != active_brightness;
+        bool battery_band_changed =
+            s_state.battery_valid != battery_valid ||
+            (battery_valid && (s_state.battery_level_percent / 10U) != (battery_level / 10U));
+        bool power_visual_changed =
+            s_state.external_power_present != external_power_present ||
+            s_state.charging != charging ||
+            s_state.full != full ||
+            s_state.brightness_percent != active_brightness ||
+            (!external_power_present && battery_band_changed);
         s_state.battery_valid = battery_valid;
         s_state.battery_mv = battery_mv;
         s_state.battery_level_percent = battery_level;
@@ -1103,7 +1153,7 @@ static void status_led_poll_power_inputs(void)
         s_state.raw_charging = raw_charging;
         s_state.raw_full = raw_full;
         s_state.brightness_percent = active_brightness;
-        if (band_changed) {
+        if (power_visual_changed) {
             s_state.status_window_until_ms = now_ms + STATUS_LED_STATUS_WINDOW_MS;
             s_state.last_transition_ms = now_ms;
             status_led_set_last_reason_locked("power_change");

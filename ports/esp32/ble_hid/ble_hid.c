@@ -563,9 +563,29 @@ static void ble_hid_dispatch_voice_recording_command(const char *line)
     voice_recording_control_consume_usb_control_byte((uint8_t)'\n');
 }
 
+static bool ble_hid_usb_command_is_passive_query(const char *line)
+{
+    if (line == NULL) {
+        return false;
+    }
+    if (line[0] == '~') {
+        line++;
+    }
+
+    return strcmp(line, "POWER:STATUS") == 0 ||
+           strcmp(line, "BOARD:STATUS") == 0 ||
+           strcmp(line, "LED:STATUS") == 0 ||
+           strcmp(line, "LED:BUDGET") == 0 ||
+           strcmp(line, "LED:PRIVACY") == 0 ||
+           strcmp(line, "DEVICE:SETTINGS") == 0 ||
+           strcmp(line, "DEVICE:STATUS") == 0;
+}
+
 static bool ble_hid_dispatch_usb_command_line(const char *line)
 {
-    power_manager_record_activity("usb_control_line");
+    if (!ble_hid_usb_command_is_passive_query(line)) {
+        power_manager_record_activity("usb_control_line");
+    }
 
     if (power_manager_consume_usb_command(line)) {
         return true;

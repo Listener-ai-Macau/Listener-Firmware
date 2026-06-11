@@ -23,9 +23,9 @@ and verified by `tools/verify_factory_firmware_package.ps1`.
 - USB/VBUS, charging, or charge-full-on-external-power blocks automatic
   battery-idle hardware shutdown. Manual/debug shutdown commands must log a
   distinct reason from automatic battery-idle shutdown.
-- Current telemetry inputs are optional. Revised boards without TPS63020/SY7088
-  current sense chips must use `GPIO_NUM_NC` and must not make power-control
-  decisions from absent telemetry.
+- Current V2 N16R8 boards populate TPS63020/SY7088 battery-side current sense
+  on GPIO10/GPIO9. Future revised board profiles without those chips must use
+  `GPIO_NUM_NC` and must not make power-control decisions from absent telemetry.
 - Readiness/capability strings expose BLE HID, BLE audio, OTA, diagnostics, board,
   battery, power, and degraded-boot status clearly enough for desktop OOBE and
   production diagnostics.

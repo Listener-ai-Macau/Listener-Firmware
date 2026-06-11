@@ -56,11 +56,11 @@ extern "C" {
 
 #define BOARD_PINS_PWR_HOLD_IO       (GPIO_NUM_11)
 
-/* Revised V2 does not populate the two INA180-style current telemetry inputs
-   used by earlier prototypes on the TPS63020/SY7088 input branches. */
-#define BOARD_PINS_CURRENT_TELEMETRY_PRESENT (0)
-#define BOARD_PINS_TPS63020_I_ADC_IO (GPIO_NUM_NC)
-#define BOARD_PINS_SY7088_I_ADC_IO   (GPIO_NUM_NC)
+/* Current V2 N16R8 boards populate the INA180-style battery-side current
+   telemetry inputs. A future revised board profile may set these to NC. */
+#define BOARD_PINS_CURRENT_TELEMETRY_PRESENT (1)
+#define BOARD_PINS_TPS63020_I_ADC_IO (GPIO_NUM_10)
+#define BOARD_PINS_SY7088_I_ADC_IO   (GPIO_NUM_9)
 
 #ifdef __cplusplus
 }

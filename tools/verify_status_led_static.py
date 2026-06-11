@@ -66,15 +66,15 @@ CHECKS = {
         "STATUS_LED_CHASE_DEFAULT_STEP_MS 250U",
         "STATUS_LED_KEY_FEEDBACK_MS 240U",
         "STATUS_LED_BOOT_ACK_MS 2500U",
-        "STATUS_LED_CHARGING_BREATH_PERIOD_MS 2600U",
-        "STATUS_LED_CHARGING_BREATH_MIN_PERCENT 14U",
+        "STATUS_LED_CHARGING_BREATH_PERIOD_MS 1900U",
+        "STATUS_LED_CHARGING_BREATH_MIN_PERCENT 32U",
         "STATUS_LED_CHARGING_BREATH_MAX_PERCENT 100U",
         "STATUS_LED_CHARGE_FULL_DEBOUNCE_MS 10000U",
         "STATUS_LED_CHARGE_FULL_MIN_MV 4050U",
         "STATUS_LED_CHARGE_FULL_MIN_PERCENT 88U",
         "STATUS_LED_FULL_STEADY_PERCENT 100U",
         "STATUS_LED_FULL_STATUS_STEADY_PERCENT 100U",
-        "STATUS_LED_CONTRACT_REV \"status_key_isolated_charge_full_latch_v9\"",
+        "STATUS_LED_CONTRACT_REV \"status_key_isolated_charge_full_latch_v10\"",
         "boot_feedback_until_ms",
         "status_led_force_boot_feedback",
         "status_led_boot_power_color_locked",
@@ -150,9 +150,18 @@ CHECKS = {
         "STATUS_LED_REC_GOLD_R 255U",
         "STATUS_LED_REC_GOLD_G 172U",
         "status_led_rec_gold()",
+        "STATUS_LED_RECORDING_BREATH_PERIOD_MS 1900U",
+        "STATUS_LED_RECORDING_BREATH_MIN_PERCENT 24U",
+        "STATUS_LED_RECORDING_BREATH_MAX_PERCENT 42U",
+        "STATUS_LED_RECORDING_LEVEL_STALE_MS 300U",
+        "STATUS_LED_RECORDING_LEVEL_BOOST_MULTIPLIER 4U",
+        "STATUS_LED_RECORDING_LEVEL_FLOOR_PERCENT 35U",
+        "STATUS_LED_RECORDING_LEVEL_RANGE_PERCENT 65U",
         "status_led_set_recording_level",
         "rec_level=%u",
-        "status_led_triangle_percent(now_ms, 2200U, floor_percent, peak_percent)",
+        "uint8_t level = s_state.recording_level_percent",
+        "uint8_t percent = level_percent > breath ? level_percent : breath",
+        "status_led_token_locked(status_led_rec_gold(), percent, false)",
         "status_led_triangle_percent(\n                now_ms,\n                STATUS_LED_CHARGING_BREATH_PERIOD_MS,",
         "STATUS_LED_FULL_STATUS_STEADY_PERCENT",
         "s_state.external_power_present",
@@ -234,8 +243,8 @@ CHECKS = {
         "status_led_set_recording(false, STATUS_LED_REC_SOURCE_NOT_AVAILABLE)",
         "suppress_retry_led_error",
         "status_led_clear_error(STATUS_LED_ERROR_DOMAIN_REC)",
-        "status_led_set_processing(true, \"audio_session_finishing\")",
-        "status_led_notify_success(\"recording_session_finished\")",
+        "PROCESSING:DONE",
+        "status_led_notify_success(\"host_processing_done\")",
     ],
     "components/firmware_ota/firmware_ota.c": [
         "status_led_set_processing(true, \"ota_begin\")",
@@ -258,10 +267,14 @@ CHECKS = {
         "`standard` is the product default",
         "Product Effect Language",
         "Repeated same-state BLE callbacks are idempotent",
+        "On battery, once confidence/status windows expire, connected BLE falls back to a sparse low-blue heartbeat",
         "External power overrides battery-color display on `PWR`",
-        "continuous, higher-contrast white breath",
+        "continuous, high-contrast white breath with a stronger visible floor and a quicker cycle",
         "steady white once charge-full has been debounced and latched",
-        "does not borrow key LEDs",
+        "`rec_level` adds a visible VU brightness envelope",
+        "host completion turns `AI` off and flashes green `OK`",
+        "audio transfer completion alone does not animate `AI`",
+        "`OK` is a short success flash after the host reports processing done",
         "REC`, `OK`, and routine `AI` states do not recolor key LEDs",
         "Edge/frame LEDs are quiet in the standard product profile",
         "It does not add a hidden percent cap above the user plugged/battery brightness setting",
@@ -281,7 +294,7 @@ CHECKS = {
         "rgbw-single-led",
         "semantic-preview",
         "STATUS_EFFECT_BASELINE",
-        "status_key_isolated_charge_full_latch_v9",
+        "status_key_isolated_charge_full_latch_v10",
         "make_semantic_sequence",
         "write_status_effects_markdown",
         "status-effects.md",
@@ -393,6 +406,21 @@ def main() -> int:
     ):
         if token not in status_led:
             failures.append(f"status_led.c: routine PWR peak must be user-capped, missing {token}")
+    for token in (
+        "STATUS_LED_RECORDING_LEVEL_STALE_MS",
+        "STATUS_LED_RECORDING_LEVEL_BOOST_MULTIPLIER",
+        "uint8_t level = s_state.recording_level_percent",
+        "uint8_t percent = level_percent > breath ? level_percent : breath",
+    ):
+        if token not in status_led:
+            failures.append(f"status_led.c: recording LED must visibly follow audio level, missing {token}")
+    if "status_led_token_locked(status_led_rec_gold(), breath, false)" in status_led:
+        failures.append("status_led.c: recording LED must not be fixed breath-only")
+    voice_recording_control = read("components/voice_recording_control/voice_recording_control.c")
+    if 'status_led_set_processing(true, "audio_session_finishing")' in voice_recording_control:
+        failures.append("voice_recording_control.c: audio transfer must not light AI processing LED")
+    if 'status_led_notify_success("recording_session_finished")' in voice_recording_control:
+        failures.append("voice_recording_control.c: firmware transfer completion must not show OK before host completion")
     if "driver/rmt_" in status_led or "soc/soc_caps.h" in status_led:
         failures.append("status_led.c: business rendering layer must not include the RMT/WS2812 backend directly")
     if "status_led_set_max(&frame->key[0], status_led_scale_raw(rec" in status_led:
@@ -407,6 +435,12 @@ def main() -> int:
         failures.append("status_led.c: routine AI must respect user brightness; do not render it as safety brightness")
     if "status_led_token_locked(status_led_rgb(255, 255, 255), percent, true)" in status_led:
         failures.append("status_led.c: routine external-power PWR white must respect user brightness")
+    if "percent = status_window ? 46U : (connected_ready ? 30U : 0U)" in status_led:
+        failures.append("status_led.c: battery PWR must not stay on just because BLE is connected")
+    if "STATUS_LED_BATTERY_IDLE_BLE_HEARTBEAT_PERCENT" not in status_led:
+        failures.append("status_led.c: battery idle BLE heartbeat constants are missing")
+    if "(!external_power_present && battery_band_changed)" not in status_led:
+        failures.append("status_led.c: plugged battery-percent jitter must not extend status windows")
     if "s_state.profile == STATUS_LED_PROFILE_STANDARD && now_ms < s_state.status_window_until_ms" in status_led:
         failures.append("status_led.c: standard profile edge LEDs must not light from generic status windows")
     if re.search(r"\.mem_block_symbols\s*=\s*64\b", status_led_backend):

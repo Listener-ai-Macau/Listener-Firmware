@@ -48,7 +48,7 @@ function New-FeatureSnapshot {
             "power_manager low-power state machine for connected idle, disconnected idle, USB/VBUS automatic hardware-shutdown blocking, and long-idle PWR_HOLD/GPIO11 low-active hold/release-high hardware shutdown with reset/cold-boot diagnostics.",
             "Persisted ~DEVICE:SETTINGS contract for plugged/battery brightness, battery-only auto-shutdown timeout, and BLE name used by Listener-Type.",
             "V2 board diagnostics cover ~BOARD:STATUS, ~LED:STATUS, USB/charger state, protected battery percent, LED resources, brightness cap, status RGB, and blocker policies.",
-            "V2 optional current telemetry supports early TPS63020/SY7088 logs; revised boards mark both sensors absent and never use them for power decisions.",
+            "V2 current telemetry reports TPS63020/SY7088 battery-side branch current on GPIO10/GPIO9 for the current N16R8 board; future revised boards may mark those sensors absent and still never use telemetry for power decisions.",
             "V2 safety gates keep real PWR_HOLD/GPIO11 power-off and LED VDD validation hardware-gated; N16R8 uses SPH0655 PDM on GPIO48/GPIO47.",
             "POST and degraded boot reporting for NVS, BLE, audio, heap, and board assumptions."
         )
@@ -64,7 +64,7 @@ function New-FeatureSnapshot {
             [ordered]@{ path = "tools/verify_charging_awake_policy_hardware.ps1"; purpose = "Hardware helper for USB/charging awake evidence plus unplugged/destructive manual gates." },
             [ordered]@{ path = "tools/decode_diag_log.py"; purpose = "Offline decoder for ~DIAGLOG JSONL into stable AI-readable JSON bundles." },
             [ordered]@{ path = "tools/collect_ai_diagnostics.ps1"; purpose = "Collect bounded serial diag_log evidence or decode saved JSONL into AI-readable artifacts." },
-            [ordered]@{ path = "tools/collect_v2_current_telemetry.ps1"; purpose = "V2 optional current telemetry helper for early TPS63020/SY7088 branch measurements and revised-board absent evidence." },
+            [ordered]@{ path = "tools/collect_v2_current_telemetry.ps1"; purpose = "V2 current telemetry helper for TPS63020/SY7088 branch measurements and future revised-board absent evidence." },
             [ordered]@{ path = "ports/esp32/ble_diag_log/"; purpose = "BLE GATT service for paginated firmware diag_log export with per-chunk CRC." },
             [ordered]@{ path = "components/firmware_ota/"; purpose = "ESP-IDF OTA manager, rollback/pending-verify handling, blockers, and OTA serial diagnostics." },
             [ordered]@{ path = "ports/esp32/ble_firmware_ota/"; purpose = "NimBLE firmware OTA service with control/data characteristics and BLE abort integration." },
@@ -85,7 +85,7 @@ function New-FeatureSnapshot {
             "V2 long-idle shutdown is firmware-controlled by driving low-active PWR_HOLD/GPIO11 high; real power-off, short-press cold boot, and USB/VBUS blocker behavior require hardware-gated validation.",
             "Battery percentage uses the protected product range 3000mV=0% and 4200mV=100%; 2700mV is an absolute danger marker, not usable empty capacity.",
             "GPIO35/GPIO36/GPIO37 are reserved for the N16R8 module flash/PSRAM/MSPI interface.",
-            "PWR_HOLD/GPIO11 and RGB LEDs are populated in the active profile; V2 current-sense telemetry is optional and absent on the revised board, so diagnostics must treat GPIO_NUM_NC current inputs as normal.",
+            "PWR_HOLD/GPIO11, RGB LEDs, and TPS63020/SY7088 current-sense telemetry on GPIO10/GPIO9 are populated in the active N16R8 profile; future revised board profiles may treat GPIO_NUM_NC current inputs as normal.",
             "Real BLE, flash, serial, or audio capture validation requires a workflow hardware lock."
         )
         boundaries = @(

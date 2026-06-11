@@ -1136,7 +1136,6 @@ static esp_err_t voice_recording_control_exit_recording(const char *source)
     s_state = VOICE_RECORDING_STATE_TRANSFERRING;
     (void)voice_key_input_set_recording_output(false);
     status_led_set_recording(false, STATUS_LED_REC_SOURCE_NONE);
-    status_led_set_processing(true, "audio_session_finishing");
     ESP_LOGI(TAG, "recording stop source=%s", source);
     voice_recording_control_log_flow(
         VOICE_RECORDING_FLOW_STOP_REQUESTED,
@@ -1527,6 +1526,13 @@ esp_err_t voice_recording_control_dispatch_control_command(const char *command, 
         voice_recording_control_unlock();
         return ESP_OK;
     }
+    if (strcmp(action, "PROCESSING:DONE") == 0 || strcmp(action, "PROCESSING_DONE") == 0) {
+        status_led_set_processing(false, "host_processing_done");
+        status_led_notify_success("host_processing_done");
+        voice_recording_control_log_device_status("ready", "host_processing_done");
+        voice_recording_control_unlock();
+        return ESP_OK;
+    }
     if (strcmp(action, "STOP") == 0 || strcmp(action, "CLEANUP") == 0) {
         voice_recording_control_stop(source);
         voice_recording_control_unlock();
@@ -1672,7 +1678,6 @@ static void voice_recording_control_handle_session_inactive(void)
     (void)voice_key_input_set_recording_output(false);
     status_led_set_recording(false, STATUS_LED_REC_SOURCE_NONE);
     status_led_set_processing(false, "recording_session_finished");
-    status_led_notify_success("recording_session_finished");
 
     if (decision.effect == VOICE_RECORDING_EFFECT_FINISH_TRANSFER) {
         ESP_LOGI(TAG, "recording session finished");

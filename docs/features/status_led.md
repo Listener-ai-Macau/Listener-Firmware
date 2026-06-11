@@ -22,13 +22,13 @@ Default order is fixed until real hardware silkscreen validation proves otherwis
 - `LED5=OK`
 - `LED6=WARN`
 
-`PWR` owns battery and external-power state. While unplugged, it uses green for healthy battery, amber for lower battery, and red for low or critical battery. While USB/VBUS is present, it uses white: an always-running, visible breath while plugged in and not confirmed full, then steady white once charge-full has been debounced and latched for that USB session. `BLE` owns pairing, reconnect, and connected confidence. `REC` only lights for a real capture/upload source named by firmware. If capture is unavailable, firmware shows `WARN + REC`. `AI` owns transfer, processing, thinking, and OTA progress. `OK` is a short success flash. `WARN` owns retryable and hard errors and pairs with a source LED.
+`PWR` owns battery and external-power state. While unplugged, it uses green for healthy battery, amber for lower battery, and red for low or critical battery. While USB/VBUS is present, it uses white: an always-running, high-contrast breath while plugged in and not confirmed full, then steady white once charge-full has been debounced and latched for that USB session. `BLE` owns pairing, reconnect, and connected confidence. `REC` only lights for a real capture/upload source named by firmware. If capture is unavailable, firmware shows `WARN + REC`. `AI` owns host-confirmed text processing, thinking, and OTA progress; audio transfer completion alone does not animate `AI`. `OK` is a short success flash after the host reports processing done. `WARN` owns retryable and hard errors and pairs with a source LED.
 
 ## BLE Connection Source Of Truth
 
 GAP/HID connection state is the source of truth for the BLE semantic LED. Advertising is allowed to drive `pairing` or `reconnecting` only while the GAP layer has no active connection. If a stale advertising-complete or advertising-restart path fires after the host is already connected, firmware skips advertising and refreshes `connected` instead of allowing `pairing` to overwrite the LED state.
 
-After a connected event, the BLE LED uses the 6 second status window plus the bounded 8 second confidence window, with the first out-of-box connection allowed a longer bounded confidence window. Once those windows expire, an awake standard-profile device shows steady low blue on `LED2=BLE`.
+After a connected event, the BLE LED uses the 6 second status window plus the bounded 8 second confidence window, with the first out-of-box connection allowed a longer bounded confidence window. Once those windows expire, plugged/external-power standard-profile devices show steady low blue on `LED2=BLE`. On battery, once confidence/status windows expire, connected BLE falls back to a sparse low-blue heartbeat and `PWR` turns off unless the battery is low enough to require a warning.
 
 Repeated same-state BLE callbacks are idempotent: they do not restart the status window or confidence window. This prevents host subscription noise from making the PWR green status indication look like an irregular post-connect blink.
 
@@ -63,12 +63,12 @@ Current is still estimated per frame with 20 mA per RGB channel at full scale. `
 
 ## Product Effect Language
 
-- Idle connected state is readable but not dominant: PWR/BLE confidence remains visible without using factory brightness.
-- External power overrides battery-color display on `PWR`: USB plugged and not confirmed full is a continuous, higher-contrast white breath. Charge-full requires USB present, an active charge-full pin, no active charging pin, and a near-full battery reading for the debounce window; after that it latches for the current USB session and shows steady white until USB is unplugged.
+- Idle connected state is readable but not dominant: PWR/BLE confidence remains visible without using factory brightness, and battery idle falls back to a sparse low-blue BLE heartbeat instead of keeping the 5V LED rail continuously active.
+- External power overrides battery-color display on `PWR`: USB plugged and not confirmed full is a continuous, high-contrast white breath with a stronger visible floor and a quicker cycle. Charge-full requires USB present, an active charge-full pin, no active charging pin, and a near-full battery reading for the debounce window; after that it latches for the current USB session and shows steady white until USB is unplugged.
 - The external-power white breath, full-charge steady white, BLE, REC, AI, OK, key feedback, and ambient edge effects are routine product output and obey the active plugged/battery user brightness cap. Their animation curves may use lower intermediate levels, but their routine maximum is clipped by the user setting rather than a hidden profile constant.
 - Pairing and reconnect use recognizable blue pulses without turning the whole status rail into an animation surface.
-- Recording is a gold breathing semantic state on `LED3=REC` only; it does not borrow key LEDs.
-- Processing uses a saturated purple breath on `AI`; long processing settles to a calmer breath.
+- Recording is a gold breathing semantic state on `LED3=REC` only; `rec_level` adds a visible VU brightness envelope while keeping the user brightness cap as the hard maximum.
+- Processing uses a saturated purple breath on `AI` after the desktop host accepts stop and enters transcribing/ASR/polish/insert work; host completion turns `AI` off and flashes green `OK`.
 - Key LEDs are local transient feedback only: white while pressed with a short dim white release tail. `REC`, `OK`, and routine `AI` states do not recolor key LEDs.
 - Edge/frame LEDs are quiet in the standard product profile unless an explicit test command is running. Ambient profile may use restrained edge accents, and factory/test modes remain available for bring-up.
 - Warnings pair `WARN` with the source LED; critical battery and hard errors are allowed to be much brighter than normal routine states.

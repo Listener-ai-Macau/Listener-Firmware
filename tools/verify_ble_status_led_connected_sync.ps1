@@ -75,8 +75,12 @@ Assert-Contains $statusLed 'STATUS_LED_STATUS_WINDOW_MS\s+6000U' `
     "connected status window must remain bounded"
 Assert-Contains $statusLed 'STATUS_LED_BLE_CONFIDENCE_MS\s+8000U' `
     "connected BLE confidence window must remain bounded"
-Assert-Contains $statusLed 'case STATUS_LED_BLE_CONNECTED:[\s\S]*?status_led_token_locked\(ble_blue,\s*7U,\s*false\)[\s\S]*?STATUS_LED_PROFILE_STANDARD[\s\S]*?status_led_token_locked\(ble_blue,\s*2U,\s*false\)' `
-    "connected rendering must transition from confidence brightness to steady low blue"
+Assert-Contains $statusLed 'STATUS_LED_BATTERY_IDLE_BLE_HEARTBEAT_ON_MS\s+120U' `
+    "battery idle BLE heartbeat must be brief"
+Assert-Contains $statusLed 'case STATUS_LED_BLE_CONNECTED:[\s\S]*?confidence \|\| status_window[\s\S]*?status_led_token_locked\(ble_blue,\s*48U,\s*false\)[\s\S]*?battery_idle[\s\S]*?STATUS_LED_BATTERY_IDLE_BLE_HEARTBEAT_PERCENT[\s\S]*?STATUS_LED_PROFILE_STANDARD[\s\S]*?status_led_token_locked\(ble_blue,\s*30U,\s*false\)' `
+    "connected rendering must transition from confidence brightness to battery idle heartbeat or plugged steady low blue"
+Assert-Contains $statusLed 'percent = status_window \? 46U : 0U;' `
+    "battery PWR must turn off after the status window instead of staying on while connected"
 Assert-Contains $statusDoc 'BLE Connection Source Of Truth' `
     "status LED documentation must describe the BLE connection source of truth"
 
@@ -138,4 +142,4 @@ if ($modelState -ne "connected") {
     throw "verify_ble_status_led_connected_sync failed: reconnect-to-connected model regressed to $modelState"
 }
 
-Write-Host "PASS: BLE status LED connected-sync checks cover GAP/HID connected source of truth, stale advertising suppression, bounded connected brightness, and disconnect/advertising negative transitions."
+Write-Host "PASS: BLE status LED connected-sync checks cover GAP/HID connected source of truth, stale advertising suppression, bounded connected brightness, battery idle heartbeat, and disconnect/advertising negative transitions."

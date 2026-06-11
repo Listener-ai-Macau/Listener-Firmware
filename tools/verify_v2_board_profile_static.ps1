@@ -122,9 +122,9 @@ foreach ($item in @(
     @($boardPins, "BOARD_PINS_RGB_KEY_IO\s+\(GPIO_NUM_13\)", "key strip GPIO13"),
     @($boardPins, "BOARD_PINS_RGB_EDGE_IO\s+\(GPIO_NUM_4\)", "edge strip GPIO4"),
     @($boardPins, "BOARD_PINS_PWR_HOLD_IO\s+\(GPIO_NUM_11\)", "PWR_HOLD GPIO11"),
-    @($boardPins, "BOARD_PINS_CURRENT_TELEMETRY_PRESENT\s+\(0\)", "revised board current telemetry absent flag"),
-    @($boardPins, "BOARD_PINS_TPS63020_I_ADC_IO\s+\(GPIO_NUM_NC\)", "absent TPS63020 input current ADC"),
-    @($boardPins, "BOARD_PINS_SY7088_I_ADC_IO\s+\(GPIO_NUM_NC\)", "absent SY7088 input current ADC"),
+    @($boardPins, "BOARD_PINS_CURRENT_TELEMETRY_PRESENT\s+\(1\)", "current V2 board current telemetry present flag"),
+    @($boardPins, "BOARD_PINS_TPS63020_I_ADC_IO\s+\(GPIO_NUM_10\)", "TPS63020 input current ADC GPIO10"),
+    @($boardPins, "BOARD_PINS_SY7088_I_ADC_IO\s+\(GPIO_NUM_9\)", "SY7088 input current ADC GPIO9"),
     @($listenerDevice, 'LISTENER_DEVICE_HW_REV\s+"esp32s3-wroom-1-n16r8"', "BLE/DIS hardware revision"),
     @($listenerDevice, "board=voice-keyboard-v2-n16r8", "factory readiness board metadata"),
     @($listenerDevice, "flash_16mb;psram_8mb_octal", "V2 memory capabilities"),
@@ -149,17 +149,17 @@ foreach ($item in @(
     @($batteryMonitor, "BATTERY_MONITOR_V2_CURRENT_MA_PER_ADC_MV 2U", "INA180A2 10mR current model"),
     @($batteryMonitor, "TPS63020_input_branch", "TPS63020 input branch naming"),
     @($batteryMonitor, "SY7088_input_branch", "SY7088 input branch naming"),
-    @($batteryMonitor, "current_telemetry_not_populated", "current telemetry absent status"),
+    @($batteryMonitor, "ina180a2_10mR_adc_calibrated_battery_adc_calibrated", "current telemetry calibrated status"),
     @($board, "battery_side_mv", "battery-side power telemetry output"),
     @($board, "product_empty_3000mv_full_4200mv_absolute_min_2700mv", "battery percentage policy output"),
-    @($board, "v2_optional_current_telemetry_not_populated_battery_adc_only_no_power_decisions", "optional current telemetry policy"),
+    @($board, "v2_battery_side_input_branch_current_ina180a2_10mR_adc_mv_x2_with_battery_mv_from_gpio8_div2", "current telemetry policy"),
     @($board, "present=%u gpio=%", "current telemetry present flag output"),
     @($board, 'current_model=\\"%s\\"', "current telemetry variable current model output"),
     @($currentTelemetryTool, 'branch\s*=\s*"TPS63020_input_branch"', "current telemetry TPS63020 branch parser"),
     @($currentTelemetryTool, 'branch\s*=\s*"SY7088_input_branch"', "current telemetry SY7088 branch parser"),
     @($currentTelemetryTool, "allowed_gpios = @\(-1, 10\)", "current telemetry TPS63020 optional GPIO parser"),
     @($currentTelemetryTool, "allowed_gpios = @\(-1, 9\)", "current telemetry SY7088 optional GPIO parser"),
-    @($currentTelemetryTool, "current_telemetry_not_populated", "current telemetry absent self-test"),
+    @($currentTelemetryTool, "ina180a2_10mR_adc_calibrated_battery_adc_calibrated", "current telemetry populated self-test"),
     @($currentTelemetryTool, "shutdown_blockers=0x00000000", "current telemetry self-test shutdown blockers"),
     @($currentTelemetryTool, "hardware_shutdown_ms=1800000", "current telemetry self-test hardware shutdown threshold"),
     @($currentTelemetryTool, "pwr_hold_gpio=11", "current telemetry self-test PWR_HOLD GPIO11"),
@@ -256,4 +256,4 @@ if ($errors.Count -gt 0) {
     exit 1
 }
 
-Write-Host "PASS: V2 N16R8 board profile, memory defaults, pin map, four-zone LED resources, optional absent-safe current telemetry, USB_Det divider policy, diagnostics, partitions, and package identity checks passed."
+Write-Host "PASS: V2 N16R8 board profile, memory defaults, pin map, four-zone LED resources, battery-side current telemetry, USB_Det divider policy, diagnostics, partitions, and package identity checks passed."

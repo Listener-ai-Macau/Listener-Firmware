@@ -94,6 +94,8 @@ Assert-Contains $statusLed 'plugged_brightness_percent=%u battery_brightness_per
 Assert-Contains $statusLed 'user_brightness_is_hard_cap=1' 'routine product LEDs expose user brightness as hard cap'
 Assert-Contains $statusLed 'STATUS_LED_STANDARD_PROFILE_CAP_PERCENT 100U' 'standard profile has no hidden percent cap above user brightness'
 Assert-Contains $statusLed 'STATUS_LED_AMBIENT_PROFILE_CAP_PERCENT 100U' 'ambient profile has no hidden percent cap above user brightness'
+Assert-Contains $statusLed 'STATUS_LED_CHARGING_BREATH_PERIOD_MS 1900U' 'plugged charging breath uses stronger visible cycle'
+Assert-Contains $statusLed 'STATUS_LED_CHARGING_BREATH_MIN_PERCENT 32U' 'plugged charging breath has stronger visible floor'
 Assert-Contains $statusLed 'STATUS_LED_CHARGING_BREATH_MAX_PERCENT 100U' 'plugged charging breath peak is user-capped instead of fixed below user brightness'
 Assert-Contains $statusLed 'STATUS_LED_FULL_STEADY_PERCENT 100U' 'charge-full steady brightness peak is user-capped instead of fixed below user brightness'
 Assert-Contains $statusLed 'device_settings_set_brightness_profiles\(brightness,\s*brightness\)' 'legacy LED brightness writes both profiles'

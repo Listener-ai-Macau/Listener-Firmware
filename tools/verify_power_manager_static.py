@@ -23,6 +23,8 @@ CHECKS = {
         "shutdown_blockers",
         "user_idle_ms",
         "radio_idle_ms",
+        "audio_idle_power_save_enabled",
+        "audio_idle_blockers",
         "hardware_shutdown_threshold_ms",
         "external_power_present",
         "usb_power_present",
@@ -76,6 +78,8 @@ CHECKS = {
         "pwr_hold_level=%s",
         "pwr_hold_policy=%s",
         "POWER_MANAGER_BLOCKER_EXTERNAL_POWER",
+        "power_manager_awake_blockers",
+        "power_manager_audio_idle_blockers",
         "power_manager_read_power_source",
         "DIAG_POWER_SLEEP_ENTRY",
         "DIAG_POWER_SLEEP_BLOCKED",
@@ -91,6 +95,8 @@ CHECKS = {
         "ble_hid_gap_request_low_power_connection",
         "ble_hid_gap_set_low_power_advertising",
         "audio_capture_set_idle_power_save",
+        "audio_idle_power_save=%u",
+        "audio_idle_blockers=0x%08",
         "status_led_prepare_sleep",
         'strcmp(command, "SHUTDOWN")',
     ],
@@ -111,6 +117,11 @@ CHECKS = {
         "power_manager_consume_usb_command",
         "POWER_MANAGER_BLOCKER_DIAG_EXPORT",
         "power_manager_set_ble_connected",
+        "ble_hid_usb_command_is_passive_query",
+        "POWER:STATUS",
+        "BOARD:STATUS",
+        "LED:STATUS",
+        "DEVICE:SETTINGS",
     ],
     "components/voice_recording_control/voice_recording_control.c": [
         "POWER_MANAGER_BLOCKER_RECORDING",
@@ -301,6 +312,24 @@ def main() -> int:
         failures.append(
             "components/power_manager/power_manager.c: quiescent shutdown wait must keep PWR_HOLD released and feed watchdog"
         )
+    if not re.search(
+        r"power_manager_target_state_locked[\s\S]*"
+        r"power_manager_awake_blockers\(s_blockers\)\s*!=\s*0[\s\S]*"
+        r"POWER_MANAGER_STATE_ACTIVE",
+        power_manager,
+    ):
+        failures.append(
+            "components/power_manager/power_manager.c: external power must not block connected/disconnected awake idle"
+        )
+    if not re.search(
+        r"strcmp\(command,\s*\"STATUS\"\)[\s\S]*"
+        r"power_manager_print_status\(\)[\s\S]*"
+        r"power_manager_record_activity\(\"usb_power_command\"\)",
+        power_manager,
+    ):
+        failures.append(
+            "components/power_manager/power_manager.c: POWER:STATUS must remain a passive query before activity recording"
+        )
 
     ble_gap = (REPO_ROOT / "ports/esp32/ble_hid_gap/ble_hid_gap_esp32.c").read_text(encoding="utf-8")
     if "s_shutdown_quiesce" not in ble_gap:
@@ -331,6 +360,19 @@ def main() -> int:
             failures.append(
                 f"ports/esp32/ble_hid_gap/ble_hid_gap_esp32.c: shutdown quiesce must suppress {label}"
             )
+
+    ble_hid = (REPO_ROOT / "ports/esp32/ble_hid/ble_hid.c").read_text(encoding="utf-8")
+    if not re.search(
+        r"ble_hid_usb_command_is_passive_query[\s\S]*"
+        r"POWER:STATUS[\s\S]*BOARD:STATUS[\s\S]*LED:STATUS[\s\S]*DEVICE:SETTINGS[\s\S]*"
+        r"ble_hid_dispatch_usb_command_line[\s\S]*"
+        r"if\s*\(!ble_hid_usb_command_is_passive_query\(line\)\)[\s\S]*"
+        r"power_manager_record_activity\(\"usb_control_line\"\)",
+        ble_hid,
+    ):
+        failures.append(
+            "ports/esp32/ble_hid/ble_hid.c: passive status queries must not reset activity"
+        )
 
     if failures:
         print("FAIL: power manager static verification failed")
