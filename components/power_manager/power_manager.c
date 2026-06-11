@@ -941,7 +941,7 @@ static esp_err_t power_manager_enter_hardware_shutdown(power_manager_shutdown_re
 
     ESP_LOGE(
         TAG,
-        "hardware shutdown did not remove power after PWR_HOLD/GPIO11 drive-high; restoring runtime input-pulldown");
+        "hardware shutdown did not remove power after PWR_HOLD/GPIO11 drive-high; restoring runtime low");
     (void)board_set_power_hold_enabled(true);
     if (ble_hid_gap_request_reconnect != NULL) {
         (void)ble_hid_gap_request_reconnect();
@@ -1161,7 +1161,7 @@ esp_err_t power_manager_init(void)
              (uint32_t)s_last_shutdown_reason,
              s_last_shutdown_idle_ms);
     if (hold_ret != ESP_OK) {
-        ESP_LOGW(TAG, "PWR_HOLD/GPIO11 input-pulldown setup failed: %s", esp_err_to_name(hold_ret));
+        ESP_LOGW(TAG, "PWR_HOLD/GPIO11 runtime-low setup failed: %s", esp_err_to_name(hold_ret));
     }
     return ESP_OK;
 }
