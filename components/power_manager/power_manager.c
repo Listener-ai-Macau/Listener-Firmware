@@ -500,6 +500,32 @@ static power_manager_state_t power_manager_target_state_locked(uint64_t now_ms)
     return power_manager_awake_idle_state_locked(radio_idle_ms);
 }
 
+static bool power_manager_should_preserve_idle_for_ble_change_locked(uint64_t now_ms)
+{
+    return power_manager_awake_blockers(s_blockers) == 0 &&
+           power_manager_user_idle_ms_locked(now_ms) >=
+               (uint32_t)CONFIG_POWER_MANAGER_AUDIO_IDLE_MS;
+}
+
+static void power_manager_apply_ble_connection_change_locked(
+    bool connected,
+    uint64_t now_ms)
+{
+    s_ble_connected = connected;
+    if (s_state == POWER_MANAGER_STATE_HARDWARE_SHUTDOWN) {
+        return;
+    }
+
+    if (power_manager_should_preserve_idle_for_ble_change_locked(now_ms)) {
+        s_state = power_manager_target_state_locked(now_ms);
+        return;
+    }
+
+    s_last_radio_activity_ms = now_ms;
+    s_auto_shutdown_block_logged = false;
+    s_state = POWER_MANAGER_STATE_ACTIVE;
+}
+
 static bool power_manager_refresh_ble_connection_locked(uint64_t now_ms)
 {
     bool connected = ble_hid_gap_is_connected != NULL && ble_hid_gap_is_connected();
@@ -507,14 +533,7 @@ static bool power_manager_refresh_ble_connection_locked(uint64_t now_ms)
         return false;
     }
 
-    s_ble_connected = connected;
-    if (s_state != POWER_MANAGER_STATE_HARDWARE_SHUTDOWN) {
-        s_last_radio_activity_ms = now_ms;
-        if (connected) {
-            s_last_user_activity_ms = now_ms;
-        }
-        s_state = POWER_MANAGER_STATE_ACTIVE;
-    }
+    power_manager_apply_ble_connection_change_locked(connected, now_ms);
     return true;
 }
 
@@ -1306,18 +1325,15 @@ void power_manager_set_ble_connected(bool connected)
     power_manager_state_t previous = POWER_MANAGER_STATE_ACTIVE;
     power_manager_state_t next = POWER_MANAGER_STATE_ACTIVE;
     uint32_t blockers = 0;
+    uint32_t user_idle_ms = 0;
     if (xSemaphoreTake(s_mutex, portMAX_DELAY) == pdTRUE) {
         changed = s_ble_connected != connected;
         previous = s_state;
-        s_ble_connected = connected;
-        if (s_state != POWER_MANAGER_STATE_HARDWARE_SHUTDOWN) {
-            s_last_radio_activity_ms = power_manager_now_ms();
-            if (connected) {
-                s_last_user_activity_ms = s_last_radio_activity_ms;
-            }
-            s_auto_shutdown_block_logged = false;
-            s_state = POWER_MANAGER_STATE_ACTIVE;
+        uint64_t now_ms = power_manager_now_ms();
+        if (changed) {
+            power_manager_apply_ble_connection_change_locked(connected, now_ms);
         }
+        user_idle_ms = power_manager_user_idle_ms_locked(now_ms);
         next = s_state;
         blockers = s_blockers;
         xSemaphoreGive(s_mutex);
@@ -1330,6 +1346,7 @@ void power_manager_set_ble_connected(bool connected)
         power_manager_log_transition(previous, next, 0, blockers);
         power_manager_apply_state(previous, next);
     }
+    power_manager_apply_fast_idle_actions(next, user_idle_ms, blockers);
 }
 
 static const char *power_manager_strip_prefix(const char *line)

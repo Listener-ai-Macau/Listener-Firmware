@@ -45,7 +45,7 @@ function New-FeatureSnapshot {
             "Firmware OTA v1 using ESP-IDF otadata/ota_0/ota_1 slots, partition-derived flash offsets, BLE GATT control/data bridge, official rollback, pending verify, blockers, and diag_log OTA events.",
             "system_health heartbeat and resource checks for heap, task, BLE, and disconnect conditions.",
             "V2 N16R8 board profile with 16 MB flash, 8 MB Octal PSRAM, EC11 push power-on/runtime-custom/recovery on GPIO18, KEY1/2/3/4 HID gesture map on GPIO38/39/40/41, four-zone WS2812 resources, and static checks rejecting stale N4 defaults.",
-            "power_manager low-power state machine for connected idle, disconnected idle, USB/VBUS or charger-present automatic hardware-shutdown blocking, and runtime-low / drive-high PWR_HOLD/GPIO11 hardware shutdown with reset/cold-boot diagnostics.",
+            "power_manager low-power state machine for connected idle, disconnected idle, BLE churn idle preservation, USB/VBUS or charger-present automatic hardware-shutdown blocking, and runtime-low / drive-high PWR_HOLD/GPIO11 hardware shutdown with reset/cold-boot diagnostics.",
             "Persisted ~DEVICE:SETTINGS contract for plugged/battery brightness, battery-only auto-shutdown timeout, and BLE name used by Listener-Type.",
             "V2 board diagnostics cover ~BOARD:STATUS, ~LED:STATUS, USB/charger state, protected battery percent, LED resources, brightness cap, status RGB, and blocker policies.",
             "V2 current telemetry reports TPS63020/SY7088 battery-side branch current on GPIO10/GPIO9 for the current N16R8 board; future revised boards may mark those sensors absent and still never use telemetry for power decisions.",

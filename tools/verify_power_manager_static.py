@@ -81,6 +81,8 @@ CHECKS = {
         "power_manager_awake_blockers",
         "power_manager_audio_idle_blockers",
         "power_manager_read_power_source",
+        "power_manager_should_preserve_idle_for_ble_change_locked",
+        "power_manager_apply_ble_connection_change_locked",
         "DIAG_POWER_SLEEP_ENTRY",
         "DIAG_POWER_SLEEP_BLOCKED",
         "DIAG_POWER_STATUS",
@@ -191,6 +193,7 @@ CHECKS = {
         "forces hardware shutdown",
         "actively driven LOW during normal boot and runtime",
         "USB/VBUS, active charging, or charge-full status blocks this automatic low-battery shutdown",
+        "BLE link churn is radio activity, not user activity",
     ],
 }
 
@@ -289,21 +292,58 @@ def main() -> int:
     power_manager = (REPO_ROOT / "components/power_manager/power_manager.c").read_text(encoding="utf-8")
     if not re.search(
         r"power_manager_refresh_ble_connection_locked[\s\S]*"
-        r"s_state\s*!=\s*POWER_MANAGER_STATE_HARDWARE_SHUTDOWN[\s\S]*"
-        r"s_state\s*=\s*POWER_MANAGER_STATE_ACTIVE",
+        r"power_manager_apply_ble_connection_change_locked\(connected,\s*now_ms\)",
         power_manager,
     ):
         failures.append(
-            "components/power_manager/power_manager.c: BLE refresh must not resume ACTIVE during HARDWARE_SHUTDOWN"
+            "components/power_manager/power_manager.c: BLE refresh must use the shared idle-preserving connection-change helper"
         )
     if not re.search(
         r"void\s+power_manager_set_ble_connected[\s\S]*"
-        r"s_state\s*!=\s*POWER_MANAGER_STATE_HARDWARE_SHUTDOWN[\s\S]*"
+        r"power_manager_apply_ble_connection_change_locked\(connected,\s*now_ms\)",
+        power_manager,
+    ):
+        failures.append(
+            "components/power_manager/power_manager.c: BLE callbacks must use the shared idle-preserving connection-change helper"
+        )
+    if not re.search(
+        r"power_manager_should_preserve_idle_for_ble_change_locked[\s\S]*"
+        r"power_manager_awake_blockers\(s_blockers\)\s*==\s*0[\s\S]*"
+        r"power_manager_user_idle_ms_locked\(now_ms\)\s*>=\s*"
+        r"\(uint32_t\)CONFIG_POWER_MANAGER_AUDIO_IDLE_MS",
+        power_manager,
+    ):
+        failures.append(
+            "components/power_manager/power_manager.c: BLE churn must preserve idle after the audio/user idle threshold"
+        )
+    if not re.search(
+        r"power_manager_apply_ble_connection_change_locked[\s\S]*"
+        r"s_ble_connected\s*=\s*connected[\s\S]*"
+        r"power_manager_should_preserve_idle_for_ble_change_locked\(now_ms\)[\s\S]*"
+        r"s_state\s*=\s*power_manager_target_state_locked\(now_ms\)[\s\S]*"
+        r"s_last_radio_activity_ms\s*=\s*now_ms[\s\S]*"
         r"s_state\s*=\s*POWER_MANAGER_STATE_ACTIVE",
         power_manager,
     ):
         failures.append(
-            "components/power_manager/power_manager.c: BLE callbacks must not resume ACTIVE during HARDWARE_SHUTDOWN"
+            "components/power_manager/power_manager.c: BLE connection changes must preserve idle when possible and only refresh radio idle for real active windows"
+        )
+    if not re.search(
+        r"void\s+power_manager_set_ble_connected[\s\S]*"
+        r"if\s*\(changed\)\s*\{[\s\S]*"
+        r"power_manager_apply_ble_connection_change_locked\(connected,\s*now_ms\)[\s\S]*"
+        r"power_manager_apply_fast_idle_actions\(next,\s*user_idle_ms,\s*blockers\)",
+        power_manager,
+    ):
+        failures.append(
+            "components/power_manager/power_manager.c: BLE callback must ignore duplicate same-state callbacks and immediately re-apply fast idle actions"
+        )
+    if re.search(
+        r"if\s*\(connected\)\s*\{[\s\S]{0,120}s_last_user_activity_ms\s*=",
+        power_manager,
+    ):
+        failures.append(
+            "components/power_manager/power_manager.c: BLE reconnect must not reset the user-idle clock"
         )
     if not re.search(
         r"reason\s*==\s*POWER_MANAGER_SHUTDOWN_REASON_LONG_IDLE[\s\S]*"
