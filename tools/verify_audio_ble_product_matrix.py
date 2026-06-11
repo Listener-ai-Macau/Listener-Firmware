@@ -76,6 +76,7 @@ CASE_ORDER = ("A1", "A2")
 EXTREME_CASES = (
     "A1",
     "A2",
+    "A3",
     "A14",
     "T1",
     "T3",
@@ -96,10 +97,11 @@ CASE_SUITES = {
     "auto": CASE_ORDER,
 }
 PRODUCT_CHAIN_OVERLAY_CASES = CASE_ORDER
-PRODUCT_CHAIN_IN_RUNNER_CASES = ("A1", "A2")
+PRODUCT_CHAIN_IN_RUNNER_CASES = ("A1", "A2", "A3")
 CASE_DESCRIPTIONS = {
-    "A1": "短录音稳定性：3 轮重启 Type + 3 轮持续打开 Type；持续模式胶囊关闭到下一次开启需小于 1 秒，短句准确率只记录不做 gate",
-    "A2": "长段录音（约一分钟，默认 14 个分句）：验证完整传输 + partial preview 质量 + 最终识别准确率；extreme suite 使用 fast profile",
+    "A1": "按键短录音时序：自动生成 KEY3 单击与 EC11 单击信号，各跑重启 Type + 持续 Type 短录音；gate 按键触发、胶囊、session、传输和插入，准确率只记录",
+    "A2": "按键长录音时序：自动生成 KEY3 单击与 EC11 单击信号，各跑一轮长段录音；gate 按键触发、胶囊保持/结束、session、传输和插入，准确率只记录",
+    "A3": "识别准确率：在按键链路已通过后，用受控音频单独 gate ASR 准确率/CER",
     "A14": "取消后恢复：中途取消当前录音，确认没有插入旧文本，然后立刻重试一轮正常录音",
     "A15": "静音误触/负向 case：没有有效语音时不应产生可见文本、历史插入或成功假象",
     "A17": "空闲/睡眠恢复：长时间 idle 或低功耗恢复后的首轮录音仍可解释并继续使用",
@@ -123,9 +125,11 @@ MANUAL_OR_EXTERNAL_CASES = {
 }
 CASE_CONTRACTS = {
     "A1": {
-        "scenario": "Short recordings split into restart-Type rounds and continuous-Type rounds with sub-1s capsule reopen latency.",
-        "expected_user_visible_behavior": "Each legal short recording shows a new capsule quickly and does not lose a round silently; short transcript text is evidence-only by default because ambient speech can interfere.",
+        "scenario": "Short recordings start from generated KEY3 single-click and generated EC11 single-click signals, split into restart-Type rounds and continuous-Type rounds with sub-1s capsule reopen latency.",
+        "expected_user_visible_behavior": "Each generated legal button press shows a new capsule quickly, creates a fresh session, and does not lose a round silently; transcript accuracy is evidence-only.",
         "firmware_observables": [
+            "generated KEY3 or EC11 single-click command evidence",
+            "custom key or EC11 key raw/stable/release/single-click logs",
             "voice recording source/state/session id",
             "BLE packet counts and missing/duplicate packet counters",
             "no QueueFull or session storm",
@@ -136,7 +140,7 @@ CASE_CONTRACTS = {
             "continuous Type hidden_to_visible_seconds",
             "ASR partial/final text",
         ],
-        "failure_classification": "latency, dropped_round, transport, asr, insertion, capsule",
+        "failure_classification": "button_path, latency, dropped_round, transport, insertion, capsule",
         "artifact_requirements": [
             "matrix JSON",
             "summary log",
@@ -147,9 +151,11 @@ CASE_CONTRACTS = {
         "automation_status": "automated",
     },
     "A2": {
-        "scenario": "About 60 seconds of fast long-form dictation in the extreme suite.",
-        "expected_user_visible_behavior": "Capsule stays visible through the long capture, final text inserts once, and the user can continue after completion.",
+        "scenario": "Long-form dictation starts from generated KEY3 single-click and generated EC11 single-click signals.",
+        "expected_user_visible_behavior": "Capsule stays visible through the long capture, final text inserts once, the stop press transitions cleanly, and the user can continue after completion; transcript accuracy is evidence-only.",
         "firmware_observables": [
+            "generated KEY3 or EC11 single-click command evidence",
+            "custom key or EC11 key raw/stable/release/single-click logs",
             "expected/received/missing packet counts",
             "duplicate packet count",
             "audio transport summary",
@@ -159,15 +165,36 @@ CASE_CONTRACTS = {
             "partial preview count and content quality",
             "history session id",
             "insert status",
-            "accuracy/CER",
+            "accuracy/CER recorded but not gated",
         ],
-        "failure_classification": "transport, packet_loss, duplicate_packet, asr, insertion, stuck_capsule",
+        "failure_classification": "button_path, transport, packet_loss, duplicate_packet, insertion, stuck_capsule",
         "artifact_requirements": [
             "matrix JSON",
             "summary log",
             "Listener-Type smoke report",
             "generated WAV path",
             "firmware diag reference when available",
+        ],
+        "automation_status": "automated",
+    },
+    "A3": {
+        "scenario": "Controlled ASR accuracy pass after A1/A2 prove key/capsule timing.",
+        "expected_user_visible_behavior": "A legal generated-button recording produces the expected transcript above the configured profile threshold.",
+        "firmware_observables": [
+            "generated key command evidence",
+            "complete BLE audio session with no packet loss",
+        ],
+        "desktop_observables": [
+            "ASR final text",
+            "accuracy/CER",
+            "history session id",
+        ],
+        "failure_classification": "asr_accuracy, transcript_missing, transport",
+        "artifact_requirements": [
+            "matrix JSON",
+            "summary log",
+            "Listener-Type smoke report",
+            "generated WAV path",
         ],
         "automation_status": "automated",
     },
@@ -419,6 +446,7 @@ A2_LONG_DICTATION_ENDINGS = (
 CASE_PRODUCT_CHAIN_AUDIO_PROFILES = {
     "A1": ("normal",),
     "A2": ("normal",),
+    "A3": ("normal",),
 }
 COMPACT_STDOUT_PREFIXES = (
     "execution_profile=",
@@ -484,6 +512,24 @@ def parse_case_list(raw: str) -> list[str]:
     return cases
 
 
+def parse_recording_trigger_modes(raw: str) -> tuple[str, ...]:
+    allowed = {"generated-key3", "generated-ec11"}
+    modes: list[str] = []
+    for item in raw.split(","):
+        mode = item.strip().lower()
+        if not mode:
+            continue
+        if mode not in allowed:
+            raise argparse.ArgumentTypeError(
+                f"unknown recording trigger mode {mode!r}; expected generated-key3 or generated-ec11"
+            )
+        if mode not in modes:
+            modes.append(mode)
+    if not modes:
+        raise argparse.ArgumentTypeError("at least one recording trigger mode is required")
+    return tuple(modes)
+
+
 def parse_args():
     parser = argparse.ArgumentParser(
         description="Run the BLE audio product-surface test matrix."
@@ -495,8 +541,8 @@ def parse_args():
         default="auto",
         help=(
             "Case IDs or suite name. Suites: smoke/daily/full/auto (A1,A2), "
-            "extreme (A1,A2,A14,T1,T3,L1,H1,H4,A17,A15,D1). "
-            "Or comma-separated IDs: A1,A2,A14."
+            "extreme (A1,A2,A3,A14,T1,T3,L1,H1,H4,A17,A15,D1). "
+            "Or comma-separated IDs: A1,A2,A3,A14."
         ),
     )
     parser.add_argument("--list-cases", action="store_true")
@@ -649,11 +695,20 @@ def parse_args():
     parser.add_argument(
         "--a1-short-check-accuracy",
         action="store_true",
-        help="Also gate short A1 recordings by ASR accuracy. Default is evidence-only; long A2 still gates accuracy.",
+        help="Legacy option. A1/A2 no longer gate ASR accuracy; use A3 for accuracy acceptance.",
+    )
+    parser.add_argument(
+        "--recording-trigger-modes",
+        default="generated-key3,generated-ec11",
+        help="Comma-separated generated button triggers for A1/A2 timing cases: generated-key3,generated-ec11.",
     )
     parser.add_argument("--no-reset-before-capture", action="store_false", dest="reset_before_capture")
     parser.set_defaults(reset_before_capture=True)
     args = parser.parse_args()
+    try:
+        args.recording_trigger_modes_resolved = parse_recording_trigger_modes(args.recording_trigger_modes)
+    except argparse.ArgumentTypeError as exc:
+        parser.error(str(exc))
     if not args.list_cases and not args.port:
         parser.error("--port is required unless --list-cases is used")
     return args
@@ -1623,11 +1678,13 @@ def print_case_catalog() -> None:
             "a1_restart_round_count": A1_RESTART_ROUND_COUNT,
             "a1_continuous_round_count": A1_CONTINUOUS_ROUND_COUNT,
             "a1_continuous_max_hidden_to_visible_seconds": A1_CONTINUOUS_MAX_HIDDEN_TO_VISIBLE_SECONDS,
-            "a1_short_accuracy_gate": "evidence_only",
+            "a1_a2_accuracy_gate": "evidence_only; A3 owns ASR accuracy acceptance",
+            "recording_trigger_modes_default": ["generated-key3", "generated-ec11"],
             "legacy_a1_round_count": "accepted for compatibility; values above 3 are capped by the current product contract",
             "inter_session_gap_seconds": "0-1 for restart-mode compatibility; continuous mode measures capsule hidden-to-visible latency",
-            "a2_long_capture_seconds": "60",
-            "a2_audio_profile": "fast",
+            "a2_long_capture_seconds": "about 60 seconds per generated trigger",
+            "a2_audio_profile": "normal",
+            "a3_accuracy_gate": "uses configured audio profile threshold",
             "required_lock": "aiw with-lock for COMx and BLE-<address> before real hardware execution",
             "artifact_root": str(MATRIX_ARTIFACT_DIR),
         },
@@ -1803,9 +1860,11 @@ def resolve_a1_round_plan(args) -> tuple[int, int]:
 async def run_listener_type_background_rounds(
     args,
     *,
+    trigger_mode: str,
     round_count: int,
 ) -> dict[str, object]:
-    output_dir = case_output_dir("A1") / "continuous_type"
+    trigger_label = trigger_mode.replace("-", "_")
+    output_dir = case_output_dir("A1") / "continuous_type" / trigger_label
     output_dir.mkdir(parents=True, exist_ok=True)
     listener_repo = resolve_listener_type_repo(args)
     script_path = listener_repo / "tools" / "embedded_audio_replay" / "run_ble_background_rounds.ps1"
@@ -1864,6 +1923,8 @@ async def run_listener_type_background_rounds(
         str(script_path),
         "-Port",
         args.port,
+        "-TriggerMode",
+        trigger_mode,
         "-DeviceName",
         args.device_name,
         "-RoundSpecJson",
@@ -1874,15 +1935,17 @@ async def run_listener_type_background_rounds(
         str(firmware_repo_root()),
         "-MaxHiddenToVisibleSeconds",
         str(float(args.a1_continuous_max_hidden_to_visible_seconds)),
+        "-RecordingStartTimeoutMs",
+        "15000",
     ]
-    if not bool(args.a1_short_check_accuracy):
-        command.append("-SkipAccuracyGate")
+    command.append("-SkipAccuracyGate")
     if bluetooth_address:
         command.extend(["-BluetoothAddress", bluetooth_address])
     if args.listener_exe:
         command.extend(["-ListenerExe", str(pathlib.Path(args.listener_exe).resolve())])
 
     print(f"a1_continuous_listener_type_repo={listener_repo}", flush=True)
+    print(f"a1_continuous_trigger_mode={trigger_mode}", flush=True)
     print(f"a1_continuous_background_script={script_path}", flush=True)
     print(f"a1_continuous_bluetooth_address_source={bluetooth_address_source}", flush=True)
     if bluetooth_address:
@@ -1969,7 +2032,8 @@ async def run_listener_type_background_rounds(
     reason = "" if result == "pass" else "continuous_background_rounds_failed"
     details = {
         "continuous_type": True,
-        "accuracy_gate_skipped": not bool(args.a1_short_check_accuracy),
+        "trigger_mode": trigger_mode,
+        "accuracy_gate_skipped": True,
         "listener_type_repo": str(listener_repo),
         "listener_type_stdout_path": str(stdout_log),
         "listener_type_stderr_path": str(stderr_log),
@@ -1983,70 +2047,102 @@ async def run_listener_type_background_rounds(
 
 
 async def run_a1(args) -> dict[str, object]:
-    """A1: three restart-Type short rounds plus three continuous-Type short rounds."""
+    """A1: generated KEY3 and EC11 short timing rounds."""
     restart_count, continuous_count = resolve_a1_round_plan(args)
-    budget = max(180, (restart_count + continuous_count) * 90)
-    print_case_header("A1", "short recordings: 3 restart rounds + 3 continuous Type rounds", budget)
+    trigger_modes = tuple(args.recording_trigger_modes_resolved)
+    budget = max(180, len(trigger_modes) * (restart_count + continuous_count) * 90)
+    print_case_header("A1", "generated-button short timing: restart + continuous Type rounds", budget)
     print(f"transport_capture_skipped=A1:product_chain_primary", flush=True)
     print(f"a1_restart_round_count={restart_count}", flush=True)
     print(f"a1_continuous_round_count={continuous_count}", flush=True)
+    print(f"a1_trigger_modes={','.join(trigger_modes)}", flush=True)
     print(
         f"a1_continuous_max_hidden_to_visible_seconds={float(args.a1_continuous_max_hidden_to_visible_seconds):.3f}",
         flush=True,
     )
-    print(
-        f"a1_short_accuracy_gate={'enabled' if args.a1_short_check_accuracy else 'evidence_only'}",
-        flush=True,
-    )
 
-    restart_results: list[dict[str, object]] = []
-    capsule_checks: list[dict[str, object]] = []
     failures: list[str] = []
     warnings: list[str] = []
-    skip_short_accuracy_gate = not bool(args.a1_short_check_accuracy)
+    trigger_results: list[dict[str, object]] = []
 
-    for round_idx in range(restart_count):
-        sentence_seed = deterministic_sentence_seed(args, "A1", "restart", round_idx)
-        sentence = pick_short_commands(sentence_seed, 1)[0]
-        print(f"a1_restart_round={round_idx + 1}/{restart_count}:sentence={sentence}", flush=True)
-        product_chain = await run_listener_type_product_chain(
-            args,
-            "A1",
-            trigger_mode="serial-toggle",
-            artifact_label=f"restart_round{round_idx + 1}_normal",
-            audio_profile="normal",
-            sentence_override=sentence,
-            skip_accuracy_gate=skip_short_accuracy_gate,
+    for trigger_mode in trigger_modes:
+        trigger_label = trigger_mode.replace("-", "_")
+        restart_results: list[dict[str, object]] = []
+        capsule_checks: list[dict[str, object]] = []
+        trigger_failures: list[str] = []
+        trigger_warnings: list[str] = []
+        print(f"a1_trigger_start={trigger_mode}", flush=True)
+
+        for round_idx in range(restart_count):
+            sentence_seed = deterministic_sentence_seed(args, "A1", trigger_mode, "restart", round_idx)
+            sentence = pick_short_commands(sentence_seed, 1)[0]
+            print(
+                f"a1_restart_round={trigger_mode}:{round_idx + 1}/{restart_count}:sentence={sentence}",
+                flush=True,
+            )
+            product_chain = await run_listener_type_product_chain(
+                args,
+                "A1",
+                trigger_mode=trigger_mode,
+                artifact_label=f"{trigger_label}_restart_round{round_idx + 1}",
+                audio_profile="normal",
+                sentence_override=sentence,
+                skip_accuracy_gate=True,
+            )
+            restart_results.append(product_chain)
+            result_str = str(product_chain.get("result"))
+            if result_str == "fail":
+                trigger_failures.append(f"restart_round{round_idx + 1}")
+            elif result_str == "warning":
+                trigger_warnings.append(f"restart_round{round_idx + 1}")
+            check = validate_capsule_evidence("A1", product_chain, expect_partial=False, expect_no_text=False)
+            capsule_checks.append(check)
+            print(
+                f"capsule_evidence=A1:{trigger_mode}:restart_round{round_idx + 1}:{check.get('pass')}:{check.get('reason')}",
+                flush=True,
+            )
+            if result_str == "fail" and not args.continue_on_failure:
+                break
+
+        continuous_result: dict[str, object] | None = None
+        if continuous_count > 0 and not trigger_failures:
+            continuous_result = await run_listener_type_background_rounds(
+                args,
+                trigger_mode=trigger_mode,
+                round_count=continuous_count,
+            )
+            if str(continuous_result.get("result")) == "fail":
+                trigger_failures.append("continuous_background_rounds")
+            elif str(continuous_result.get("result")) == "warning":
+                trigger_warnings.append("continuous_background_rounds")
+
+        if trigger_failures:
+            failures.append(f"{trigger_mode}:{','.join(trigger_failures)}")
+        elif trigger_warnings:
+            warnings.append(f"{trigger_mode}:{','.join(trigger_warnings)}")
+
+        trigger_results.append(
+            {
+                "trigger_mode": trigger_mode,
+                "result": "fail" if trigger_failures else "warning" if trigger_warnings else "pass",
+                "failures": trigger_failures,
+                "warnings": trigger_warnings,
+                "restart_rounds": restart_results,
+                "continuous_rounds": continuous_result,
+                "capsule_evidence": capsule_checks,
+            }
         )
-        restart_results.append(product_chain)
-        result_str = str(product_chain.get("result"))
-        if result_str == "fail":
-            failures.append(f"restart_round{round_idx + 1}")
-        elif result_str == "warning":
-            warnings.append(f"restart_round{round_idx + 1}")
-        check = validate_capsule_evidence("A1", product_chain, expect_partial=False, expect_no_text=False)
-        capsule_checks.append(check)
-        print(f"capsule_evidence=A1:restart_round{round_idx + 1}:{check.get('pass')}:{check.get('reason')}", flush=True)
-        if result_str == "fail" and not args.continue_on_failure:
+        if trigger_failures and not args.continue_on_failure:
             break
-
-    continuous_result: dict[str, object] | None = None
-    if continuous_count > 0 and not failures:
-        continuous_result = await run_listener_type_background_rounds(args, round_count=continuous_count)
-        if str(continuous_result.get("result")) == "fail":
-            failures.append("continuous_background_rounds")
-        elif str(continuous_result.get("result")) == "warning":
-            warnings.append("continuous_background_rounds")
 
     details: dict[str, object] = {
         "transport_capture_skipped": True,
         "transport_skip_reason": "product_chain_primary_requires_capsule_before_playback",
-        "restart_rounds": restart_results,
-        "continuous_rounds": continuous_result,
-        "capsule_evidence": capsule_checks,
+        "trigger_modes": list(trigger_modes),
+        "trigger_results": trigger_results,
         "restart_round_count": restart_count,
         "continuous_round_count": continuous_count,
-        "short_accuracy_gate": "enabled" if args.a1_short_check_accuracy else "evidence_only",
+        "accuracy_gate": "A1 evidence-only; use A3 for accuracy acceptance",
     }
 
     if failures:
@@ -2063,13 +2159,75 @@ async def run_a1(args) -> dict[str, object]:
 
 
 async def run_a2(args) -> dict[str, object]:
-    profiles = product_chain_profiles_for_case(args, "A2")
-    budget = max(300, len(profiles) * A2_PRODUCT_CHAIN_MIN_TIMEOUT_SECONDS)
-    return await run_product_chain_primary_case(
+    trigger_modes = tuple(args.recording_trigger_modes_resolved)
+    budget = max(300, len(trigger_modes) * A2_PRODUCT_CHAIN_MIN_TIMEOUT_SECONDS)
+    print_case_header("A2", "generated-button long recording timing", budget)
+    print(f"transport_capture_skipped=A2:product_chain_primary", flush=True)
+    print(f"a2_trigger_modes={','.join(trigger_modes)}", flush=True)
+
+    failures: list[str] = []
+    warnings: list[str] = []
+    trigger_results: list[dict[str, object]] = []
+    for trigger_mode in trigger_modes:
+        trigger_label = trigger_mode.replace("-", "_")
+        print(f"a2_trigger_start={trigger_mode}", flush=True)
+        product_chain = await run_listener_type_product_chain(
+            args,
+            "A2",
+            trigger_mode=trigger_mode,
+            artifact_label=f"{trigger_label}_long",
+            audio_profile="normal",
+            skip_accuracy_gate=True,
+        )
+        product_result = str(product_chain.get("result"))
+        if product_result == "fail":
+            failures.append(trigger_mode)
+        elif product_result == "warning":
+            warnings.append(trigger_mode)
+        trigger_results.append(product_chain)
+        if product_result == "fail" and not args.continue_on_failure:
+            break
+
+    details = {
+        "transport_capture_skipped": True,
+        "transport_skip_reason": "product_chain_primary_requires_capsule_before_playback",
+        "trigger_modes": list(trigger_modes),
+        "trigger_results": trigger_results,
+        "accuracy_gate": "A2 evidence-only; use A3 for accuracy acceptance",
+    }
+    if failures:
+        return print_summary("A2", "fail", "product_chain_failed:" + ",".join(failures), details=details)
+    if warnings:
+        return print_summary("A2", "warning", "product_chain_warning:" + ",".join(warnings), details=details)
+    return print_summary("A2", "pass", "", details=details)
+
+
+async def run_a3(args) -> dict[str, object]:
+    budget = A2_PRODUCT_CHAIN_MIN_TIMEOUT_SECONDS
+    print_case_header("A3", "controlled ASR accuracy gate", budget)
+    trigger_mode = tuple(args.recording_trigger_modes_resolved)[0]
+    trigger_label = trigger_mode.replace("-", "_")
+    print(f"a3_trigger_mode={trigger_mode}", flush=True)
+    product_chain = await run_listener_type_product_chain(
         args,
-        "A2",
-        "single long recording product chain",
-        budget,
+        "A3",
+        trigger_mode=trigger_mode,
+        artifact_label=f"{trigger_label}_accuracy",
+        audio_profile=args.full_chain_audio_profile,
+        random_sentence_count_override=3,
+        skip_accuracy_gate=False,
+    )
+    result = str(product_chain.get("result"))
+    reason = str(product_chain.get("reason") or "")
+    return print_summary(
+        "A3",
+        result,
+        reason,
+        details={
+            "trigger_mode": trigger_mode,
+            "accuracy_gate": "enabled",
+            "product_chain": product_chain,
+        },
     )
 
 
@@ -2088,6 +2246,31 @@ def make_product_chain_result(
         "reason": reason,
         "details": details or {},
     }
+
+
+PRODUCT_CHAIN_PRESTART_TRANSIENT_ERRORS = (
+    "Timed out waiting for BLE notify registration",
+    "Listener-Type BLE stream failed before notify was ready",
+    "Listener-Type exited before BLE notify was ready",
+)
+
+
+def is_product_chain_prestart_transient(report: dict[str, object] | None) -> bool:
+    if not isinstance(report, dict):
+        return False
+    error = first_non_empty(report.get("error"))
+    if not any(item in error for item in PRODUCT_CHAIN_PRESTART_TRANSIENT_ERRORS):
+        return False
+    return not any(
+        first_non_empty(report.get(key))
+        for key in (
+            "serial_report",
+            "record_playback_actual_ms",
+            "pcm_bytes",
+            "transcript",
+            "final_text",
+        )
+    )
 
 
 def deterministic_sentence_seed(args, *parts: object) -> int:
@@ -2255,6 +2438,8 @@ async def run_listener_type_product_chain(
         profile_name,
         "-FirmwareRepo",
         str(firmware_repo_root()),
+        "-RecordingStartTimeoutMs",
+        "6000",
         "-VerifyHistory",
     ]
     if bluetooth_address:
@@ -2301,44 +2486,160 @@ async def run_listener_type_product_chain(
     print(f"product_chain_listener_stdout={stdout_log}", flush=True)
     print(f"product_chain_listener_stderr={stderr_log}", flush=True)
 
-    try:
-        completed = run_with_process_tree_timeout(
-            command,
-            cwd=str(listener_repo),
-            timeout=max(1, int(timeout_seconds)),
+    max_attempts = 2
+    completed: subprocess.CompletedProcess[str] | None = None
+    report: dict[str, object] | None = None
+    attempt_records: list[dict[str, object]] = []
+    report_json_error: str | None = None
+    for attempt in range(1, max_attempts + 1):
+        attempt_stdout_log = output_dir / f"listener_type_{trigger_label}_attempt{attempt}_stdout.log"
+        attempt_stderr_log = output_dir / f"listener_type_{trigger_label}_attempt{attempt}_stderr.log"
+        print(f"product_chain_attempt={attempt}/{max_attempts}", flush=True)
+        try:
+            attempt_completed = run_with_process_tree_timeout(
+                command,
+                cwd=str(listener_repo),
+                timeout=max(1, int(timeout_seconds)),
+            )
+        except subprocess.TimeoutExpired as exc:
+            stdout_text = (
+                exc.stdout
+                if isinstance(exc.stdout, str)
+                else (exc.stdout or b"").decode("utf-8", errors="replace")
+            )
+            stderr_text = (
+                exc.stderr
+                if isinstance(exc.stderr, str)
+                else (exc.stderr or b"").decode("utf-8", errors="replace")
+            )
+            attempt_stdout_log.write_text(stdout_text, encoding="utf-8", errors="replace")
+            attempt_stderr_log.write_text(stderr_text, encoding="utf-8", errors="replace")
+            stdout_log.write_text(stdout_text, encoding="utf-8", errors="replace")
+            stderr_log.write_text(stderr_text, encoding="utf-8", errors="replace")
+            return make_product_chain_result(
+                case_id,
+                "fail",
+                "full_chain_timeout",
+                {
+                    "timeout_seconds": timeout_seconds,
+                    "listener_type_repo": str(listener_repo),
+                    "listener_type_stdout_path": str(stdout_log),
+                    "listener_type_stderr_path": str(stderr_log),
+                    "attempts": [
+                        *attempt_records,
+                        {
+                            "attempt": attempt,
+                            "result": "timeout",
+                            "stdout_path": str(attempt_stdout_log),
+                            "stderr_path": str(attempt_stderr_log),
+                        },
+                    ],
+                },
+            )
+
+        stdout_text = attempt_completed.stdout or ""
+        stderr_text = attempt_completed.stderr or ""
+        attempt_stdout_log.write_text(stdout_text, encoding="utf-8", errors="replace")
+        attempt_stderr_log.write_text(stderr_text, encoding="utf-8", errors="replace")
+
+        try:
+            attempt_report = extract_prefixed_json(stdout_text, "ble_stream_smoke_result_json=")
+        except json.JSONDecodeError as exc:
+            report_json_error = str(exc)
+            completed = attempt_completed
+            report = None
+            stdout_log.write_text(stdout_text, encoding="utf-8", errors="replace")
+            stderr_log.write_text(stderr_text, encoding="utf-8", errors="replace")
+            attempt_records.append(
+                {
+                    "attempt": attempt,
+                    "result": "report_json_invalid",
+                    "returncode": attempt_completed.returncode,
+                    "stdout_path": str(attempt_stdout_log),
+                    "stderr_path": str(attempt_stderr_log),
+                }
+            )
+            break
+        if attempt_report is None:
+            completed = attempt_completed
+            report = None
+            stdout_log.write_text(stdout_text, encoding="utf-8", errors="replace")
+            stderr_log.write_text(stderr_text, encoding="utf-8", errors="replace")
+            attempt_records.append(
+                {
+                    "attempt": attempt,
+                    "result": "report_missing",
+                    "returncode": attempt_completed.returncode,
+                    "stdout_path": str(attempt_stdout_log),
+                    "stderr_path": str(attempt_stderr_log),
+                }
+            )
+            break
+
+        transient_prestart = (
+            attempt_completed.returncode != 0
+            and attempt < max_attempts
+            and is_product_chain_prestart_transient(attempt_report)
         )
-    except subprocess.TimeoutExpired as exc:
-        stdout_text = exc.stdout if isinstance(exc.stdout, str) else (exc.stdout or b"").decode("utf-8", errors="replace")
-        stderr_text = exc.stderr if isinstance(exc.stderr, str) else (exc.stderr or b"").decode("utf-8", errors="replace")
+        attempt_records.append(
+            {
+                "attempt": attempt,
+                "result": str(attempt_report.get("status") or "UNKNOWN"),
+                "returncode": attempt_completed.returncode,
+                "error": first_non_empty(attempt_report.get("error")),
+                "prestart_transient": transient_prestart,
+                "stdout_path": str(attempt_stdout_log),
+                "stderr_path": str(attempt_stderr_log),
+            }
+        )
+        if transient_prestart:
+            print(
+                "product_chain_prestart_transient_retry="
+                f"{attempt}:{first_non_empty(attempt_report.get('error'))}",
+                flush=True,
+            )
+            try:
+                print(f"product_chain_recover_before_retry_start={attempt + 1}", flush=True)
+                recover_ble_hid_host(args.device_name, bluetooth_address)
+                print(f"product_chain_recover_before_retry_done={attempt + 1}", flush=True)
+            except Exception as exc:
+                print(
+                    "product_chain_recover_before_retry_error="
+                    f"{type(exc).__name__}:{exc}",
+                    flush=True,
+                )
+            time.sleep(2.0)
+            continue
+
+        completed = attempt_completed
+        report = attempt_report
         stdout_log.write_text(stdout_text, encoding="utf-8", errors="replace")
         stderr_log.write_text(stderr_text, encoding="utf-8", errors="replace")
+        break
+
+    if completed is None:
         return make_product_chain_result(
             case_id,
             "fail",
-            "full_chain_timeout",
+            "full_chain_not_run",
             {
-                "timeout_seconds": timeout_seconds,
                 "listener_type_repo": str(listener_repo),
                 "listener_type_stdout_path": str(stdout_log),
                 "listener_type_stderr_path": str(stderr_log),
+                "attempts": attempt_records,
             },
         )
-
-    stdout_log.write_text(completed.stdout or "", encoding="utf-8", errors="replace")
-    stderr_log.write_text(completed.stderr or "", encoding="utf-8", errors="replace")
-
-    try:
-        report = extract_prefixed_json(completed.stdout or "", "ble_stream_smoke_result_json=")
-    except json.JSONDecodeError as exc:
+    if report_json_error is not None:
         return make_product_chain_result(
             case_id,
             "fail",
             "full_chain_report_json_invalid",
             {
-                "json_error": str(exc),
+                "json_error": report_json_error,
                 "returncode": completed.returncode,
                 "listener_type_stdout_path": str(stdout_log),
                 "listener_type_stderr_path": str(stderr_log),
+                "attempts": attempt_records,
             },
         )
     if report is None:
@@ -2350,6 +2651,7 @@ async def run_listener_type_product_chain(
                 "returncode": completed.returncode,
                 "listener_type_stdout_path": str(stdout_log),
                 "listener_type_stderr_path": str(stderr_log),
+                "attempts": attempt_records,
             },
         )
 
@@ -2537,6 +2839,11 @@ async def run_listener_type_product_chain(
         "full_chain_returncode": completed.returncode,
         "trigger_mode": trigger_mode,
         "artifact_label": trigger_label,
+        "attempt_count": len(attempt_records),
+        "attempts": attempt_records,
+        "prestart_transient_retry_count": sum(
+            1 for item in attempt_records if bool(item.get("prestart_transient"))
+        ),
         "audio_profile": profile_name,
         "accuracy_gate_skipped": skip_accuracy_gate,
         "source_tts_rate": profile_tts_rate,
@@ -2609,6 +2916,7 @@ async def run_listener_type_product_chain(
 CASE_RUNNERS = {
     "A1": run_a1,
     "A2": run_a2,
+    "A3": run_a3,
 }
 
 

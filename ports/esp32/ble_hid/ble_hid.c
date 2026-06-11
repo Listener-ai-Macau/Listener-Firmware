@@ -107,6 +107,7 @@ static bool s_usb_serial_ready = false;
 static bool s_usb_command_active;
 static size_t s_usb_command_length;
 static char s_usb_command_buffer[BLE_HID_USB_COMMAND_BUFFER_BYTES];
+static ble_hid_usb_command_handler_t s_usb_command_handler;
 
 static bool s_ble_connected;
 static uint32_t s_disconnect_count;
@@ -628,6 +629,20 @@ static bool ble_hid_dispatch_usb_command_line(const char *line)
 
     if (diag_log_consume_usb_command(line)) {
         return true;
+    }
+
+    if (s_usb_command_handler != NULL) {
+        esp_err_t handler_ret = ESP_ERR_NOT_FOUND;
+        if (s_usb_command_handler(line, &handler_ret)) {
+            if (handler_ret != ESP_OK) {
+                ESP_LOGW(
+                    TAG,
+                    "USB extension command failed: line=%s error=%s",
+                    line,
+                    esp_err_to_name(handler_ret));
+            }
+            return true;
+        }
     }
 
     esp_err_t ec11_ret = ESP_OK;
@@ -1167,4 +1182,9 @@ bool ble_hid_is_connected(void)
 uint32_t ble_hid_get_disconnect_count(void)
 {
     return ble_hid_disconnect_count_snapshot();
+}
+
+void ble_hid_register_usb_command_handler(ble_hid_usb_command_handler_t handler)
+{
+    s_usb_command_handler = handler;
 }

@@ -685,6 +685,7 @@ void board_print_help(void)
         "EC11 push fast double-click clears BLE pairing/session state after recording has been idle; long press is reserved for hardware power control.\n"
         "Logical custom keys: single-click KEY1-KEY4 fallback=F13-F16, double-click=F17-F20, long-press=F21-F24.\n"
         "KEY1/GPIO38, KEY2/GPIO39, KEY3/GPIO40, KEY4/GPIO41 send safe non-text BLE HID usages while Listener-Type custom actions are unavailable.\n"
+        "Generated button diagnostics: ~KEY:KEY3:SINGLE and ~KEY:EC11:SINGLE simulate physical single-click press/release timing for automated A1/A2 tests.\n"
         "Send ~VREC:RECOVERY to clear pairing/session state over USB.\n"
         "Board diagnostics: ~BOARD:STATUS reports V2 pin, USB, charger, battery, PWR_HOLD/GPIO11, mic, reserved MSPI, and LED resource status.\n"
         "Board GPIO diagnostics: ~BOARD:GPIO reads raw KEY1-KEY4 and EC11 A/B/key levels without reconfiguring pins.\n"

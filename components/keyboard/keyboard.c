@@ -22,6 +22,7 @@
 #include "hid_keyboard.h"
 #include "power_manager.h"
 #include "status_led.h"
+#include "voice_key_input.h"
 #include "voice_recording_control.h"
 #include "watchdog_platform.h"
 
@@ -31,6 +32,9 @@
     ((KEYBOARD_CUSTOM_DEBOUNCE_MS + KEYBOARD_CUSTOM_POLL_MS - 1) / KEYBOARD_CUSTOM_POLL_MS)
 #define KEYBOARD_CUSTOM_DOUBLE_CLICK_WINDOW_MS 250
 #define KEYBOARD_CUSTOM_LONG_PRESS_MS 1000
+#define KEYBOARD_CUSTOM_GENERATED_PRESS_MS 80
+#define KEYBOARD_CUSTOM_GENERATED_RELEASE_SETTLE_MS 80
+#define KEYBOARD_CUSTOM_GENERATED_EVENT_QUEUE_DEPTH 8
 #define KEYBOARD_EC11_IDLE_POLL_MS 20
 #define KEYBOARD_EC11_EVENT_QUEUE_DEPTH 64
 #define KEYBOARD_EC11_DETENT_STATE 0x03u
@@ -98,10 +102,22 @@ typedef struct {
     uint8_t raw_state;
 } keyboard_ec11_event_t;
 
+typedef struct {
+    uint8_t logical_key;
+    keyboard_custom_gesture_t gesture;
+} keyboard_custom_generated_event_t;
+
+typedef struct {
+    bool active;
+    keyboard_custom_gesture_t gesture;
+    TickType_t started_tick;
+} keyboard_custom_generated_state_t;
+
 static const char *TAG = "keyboard";
 static TaskHandle_t s_custom_task_handle;
 static TaskHandle_t s_ec11_task_handle;
 static QueueHandle_t s_ec11_event_queue;
+static QueueHandle_t s_custom_generated_event_queue;
 static keyboard_custom_key_t s_custom_keys[] = {
     {
         .gpio = BOARD_PINS_KEY1_IO,
@@ -148,6 +164,9 @@ static keyboard_custom_key_t s_custom_keys[] = {
         .index = 3,
     },
 };
+static keyboard_custom_generated_state_t s_custom_generated_states[
+    sizeof(s_custom_keys) / sizeof(s_custom_keys[0])
+];
 static keyboard_ec11_state_t s_ec11_state = {
     .a_gpio = BOARD_PINS_EC11_A_IO,
     .b_gpio = BOARD_PINS_EC11_B_IO,
@@ -238,6 +257,16 @@ static uint32_t keyboard_custom_elapsed_ms(TickType_t now, TickType_t start)
 static bool keyboard_custom_tick_reached(TickType_t now, TickType_t deadline)
 {
     return (int32_t)(now - deadline) >= 0;
+}
+
+static keyboard_custom_key_t *keyboard_custom_find_key(uint8_t logical_key)
+{
+    for (size_t index = 0; index < sizeof(s_custom_keys) / sizeof(s_custom_keys[0]); ++index) {
+        if (s_custom_keys[index].logical_key == logical_key) {
+            return &s_custom_keys[index];
+        }
+    }
+    return NULL;
 }
 
 static uint8_t keyboard_custom_usage_for_gesture(
@@ -342,6 +371,75 @@ static void keyboard_custom_send_gesture(
             keyboard_custom_gesture_name(gesture),
             esp_err_to_name(ret));
     }
+}
+
+static esp_err_t keyboard_custom_enqueue_generated_single_click(uint8_t logical_key)
+{
+    keyboard_custom_key_t *key = keyboard_custom_find_key(logical_key);
+    if (key == NULL) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    if (s_custom_generated_event_queue == NULL) {
+        return ESP_ERR_INVALID_STATE;
+    }
+
+    keyboard_custom_generated_event_t event = {
+        .logical_key = logical_key,
+        .gesture = KEYBOARD_CUSTOM_GESTURE_SINGLE,
+    };
+    if (xQueueSend(s_custom_generated_event_queue, &event, pdMS_TO_TICKS(20)) != pdTRUE) {
+        return ESP_ERR_TIMEOUT;
+    }
+
+    power_manager_record_activity("generated_custom_key");
+    ESP_LOGI(
+        TAG,
+        "custom key generated single-click queued: logical=%s source=%s press_ms=%d double_ms=%d",
+        key->logical_name,
+        key->label,
+        KEYBOARD_CUSTOM_GENERATED_PRESS_MS,
+        KEYBOARD_CUSTOM_DOUBLE_CLICK_WINDOW_MS);
+    return ESP_OK;
+}
+
+static bool keyboard_consume_usb_command(const char *line, esp_err_t *out_ret)
+{
+    if (line == NULL || out_ret == NULL) {
+        return false;
+    }
+
+    const char *command = NULL;
+    if (strncmp(line, "~KEY:", strlen("~KEY:")) == 0) {
+        command = line + strlen("~KEY:");
+    } else if (strncmp(line, "KEY:", strlen("KEY:")) == 0) {
+        command = line + strlen("KEY:");
+    }
+    if (command == NULL) {
+        return false;
+    }
+
+    power_manager_set_blocker(POWER_MANAGER_BLOCKER_USB_COMMAND, true);
+    if (strcmp(command, "KEY3:SINGLE") == 0 || strcmp(command, "3:SINGLE") == 0) {
+        *out_ret = keyboard_custom_enqueue_generated_single_click(3);
+        printf(
+            "~KEY:GENERATED logical=KEY3 gesture=single result=%s\n",
+            esp_err_to_name(*out_ret));
+        power_manager_set_blocker(POWER_MANAGER_BLOCKER_USB_COMMAND, false);
+        return true;
+    }
+    if (strcmp(command, "EC11:SINGLE") == 0 || strcmp(command, "VOICE:SINGLE") == 0) {
+        *out_ret = voice_key_input_enqueue_generated_single_click();
+        printf(
+            "~KEY:GENERATED logical=EC11 gesture=single result=%s\n",
+            esp_err_to_name(*out_ret));
+        power_manager_set_blocker(POWER_MANAGER_BLOCKER_USB_COMMAND, false);
+        return true;
+    }
+
+    *out_ret = ESP_ERR_INVALID_ARG;
+    printf("~KEY:GENERATED command=%s result=%s\n", command, esp_err_to_name(*out_ret));
+    power_manager_set_blocker(POWER_MANAGER_BLOCKER_USB_COMMAND, false);
+    return true;
 }
 
 static void keyboard_custom_cancel_pending_single(keyboard_custom_key_t *key)
@@ -474,6 +572,62 @@ static void keyboard_custom_handle_sample(keyboard_custom_key_t *key, bool raw_h
     }
 }
 
+static bool keyboard_custom_generated_raw_high(
+    const keyboard_custom_key_t *key,
+    bool physical_raw_high,
+    TickType_t now)
+{
+    keyboard_custom_generated_state_t *state = &s_custom_generated_states[key->index];
+    if (!state->active) {
+        return physical_raw_high;
+    }
+
+    uint32_t elapsed_ms = keyboard_custom_elapsed_ms(now, state->started_tick);
+    if (elapsed_ms < KEYBOARD_CUSTOM_GENERATED_PRESS_MS) {
+        return false;
+    }
+    if (elapsed_ms < KEYBOARD_CUSTOM_GENERATED_PRESS_MS + KEYBOARD_CUSTOM_GENERATED_RELEASE_SETTLE_MS) {
+        return true;
+    }
+
+    state->active = false;
+    ESP_LOGI(
+        TAG,
+        "custom key generated single-click completed: logical=%s source=%s gesture=%s",
+        key->logical_name,
+        key->label,
+        keyboard_custom_gesture_name(state->gesture));
+    return physical_raw_high;
+}
+
+static void keyboard_custom_drain_generated_events(TickType_t now)
+{
+    if (s_custom_generated_event_queue == NULL) {
+        return;
+    }
+
+    keyboard_custom_generated_event_t event = {0};
+    while (xQueueReceive(s_custom_generated_event_queue, &event, 0) == pdTRUE) {
+        keyboard_custom_key_t *key = keyboard_custom_find_key(event.logical_key);
+        if (key == NULL) {
+            ESP_LOGW(TAG, "drop generated custom key event: logical=%u", event.logical_key);
+            continue;
+        }
+        if (!key->initialized) {
+            keyboard_custom_handle_sample(key, true, now);
+        }
+        keyboard_custom_generated_state_t *state = &s_custom_generated_states[key->index];
+        state->active = true;
+        state->gesture = event.gesture;
+        state->started_tick = now;
+        ESP_LOGI(
+            TAG,
+            "custom key generated single-click armed: logical=%s source=%s",
+            key->logical_name,
+            key->label);
+    }
+}
+
 static void keyboard_custom_task(void *parameter)
 {
     (void)parameter;
@@ -482,10 +636,12 @@ static void keyboard_custom_task(void *parameter)
     while (1) {
         watchdog_platform_feed_current_task();
         TickType_t now = xTaskGetTickCount();
+        keyboard_custom_drain_generated_events(now);
         for (size_t index = 0; index < sizeof(s_custom_keys) / sizeof(s_custom_keys[0]); ++index) {
             keyboard_custom_handle_timers(&s_custom_keys[index], now);
             int level = gpio_get_level(s_custom_keys[index].gpio);
-            keyboard_custom_handle_sample(&s_custom_keys[index], level != 0, now);
+            bool raw_high = keyboard_custom_generated_raw_high(&s_custom_keys[index], level != 0, now);
+            keyboard_custom_handle_sample(&s_custom_keys[index], raw_high, now);
             keyboard_custom_handle_timers(&s_custom_keys[index], now);
         }
         vTaskDelay(pdMS_TO_TICKS(KEYBOARD_CUSTOM_POLL_MS));
@@ -742,6 +898,16 @@ static esp_err_t keyboard_custom_start(void)
         return ESP_OK;
     }
 
+    if (s_custom_generated_event_queue == NULL) {
+        s_custom_generated_event_queue = xQueueCreate(
+            KEYBOARD_CUSTOM_GENERATED_EVENT_QUEUE_DEPTH,
+            sizeof(keyboard_custom_generated_event_t));
+        if (s_custom_generated_event_queue == NULL) {
+            ESP_LOGE(TAG, "custom key generated event queue create failed");
+            return ESP_ERR_NO_MEM;
+        }
+    }
+
     gpio_config_t io_conf = {
         .pin_bit_mask = (1ULL << BOARD_PINS_KEY1_IO) |
                         (1ULL << BOARD_PINS_KEY2_IO) |
@@ -858,6 +1024,7 @@ static esp_err_t keyboard_ec11_start(void)
 esp_err_t keyboard_start(void)
 {
     hid_keyboard_init();
+    ble_hid_register_usb_command_handler(keyboard_consume_usb_command);
     ec11_rotation_control_register_dispatcher(keyboard_ec11_dispatch_rotation);
 
     esp_err_t voice_ret = voice_recording_control_start();
@@ -885,6 +1052,7 @@ esp_err_t keyboard_start(void)
 esp_err_t keyboard_start_safe_mode(void)
 {
     hid_keyboard_init();
+    ble_hid_register_usb_command_handler(keyboard_consume_usb_command);
     ec11_rotation_control_register_dispatcher(keyboard_ec11_dispatch_rotation);
     ble_audio_stream_set_control_write_handler(keyboard_ble_control_write);
     ESP_LOGW(TAG, "safe mode: voice recording control and audio capture are disabled");

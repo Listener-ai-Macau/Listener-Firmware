@@ -66,10 +66,13 @@
 #define VOICE_KEY_INPUT_DEBOUNCE_THRESHOLD \
     ((VOICE_KEY_INPUT_DEBOUNCE_MS + VOICE_KEY_INPUT_POLL_MS - 1) / VOICE_KEY_INPUT_POLL_MS)
 #define VOICE_KEY_INPUT_EVENT_QUEUE_LENGTH (8)
+#define VOICE_KEY_INPUT_GENERATED_EVENT_QUEUE_LENGTH (8)
 #define VOICE_KEY_INPUT_CLICK_MAX_MS (700)
 #define VOICE_KEY_INPUT_DOUBLE_CLICK_WINDOW_MS (200)
 #define VOICE_KEY_INPUT_LONG_PRESS_IGNORE_MS (1200)
 #define VOICE_KEY_INPUT_RECOVERY_IDLE_GUARD_MS (2000)
+#define VOICE_KEY_INPUT_GENERATED_PRESS_MS (80)
+#define VOICE_KEY_INPUT_GENERATED_RELEASE_SETTLE_MS (80)
 #define VOICE_KEY_INPUT_DEBUG_RAW 1u
 #define VOICE_KEY_INPUT_DEBUG_STABLE 2u
 #define VOICE_KEY_INPUT_DEBUG_SOURCE_DIRECT_GPIO 1u
@@ -112,9 +115,12 @@ static esp_io_expander_handle_t s_io_expander;
 static TaskHandle_t s_poll_task_handle;
 static SemaphoreHandle_t s_toggle_event_sem;
 static SemaphoreHandle_t s_recovery_event_sem;
+static QueueHandle_t s_generated_single_click_queue;
 static volatile bool s_recording_output_enabled;
 static volatile bool s_recording_output_change_seen;
 static volatile TickType_t s_recording_output_last_change_tick;
+static bool s_direct_generated_active;
+static TickType_t s_direct_generated_start_tick;
 #if VOICE_KEY_INPUT_ENABLE_LEGACY_EXPANDER
 static bool s_prev_input_valid;
 static uint32_t s_prev_input_levels;
@@ -137,6 +143,8 @@ static voice_key_button_state_t s_direct_gpio_state = {
     .debug_source = VOICE_KEY_INPUT_DEBUG_SOURCE_DIRECT_GPIO,
     .active_low = true,
 };
+
+static void voice_key_input_handle_button_sample(voice_key_button_state_t *button, bool raw_high);
 
 static void voice_key_input_debug_log(
     uint32_t kind,
@@ -201,6 +209,27 @@ static void voice_key_input_record_toggle_event(const char *source, uint32_t eve
     }
 }
 
+esp_err_t voice_key_input_enqueue_generated_single_click(void)
+{
+    if (s_generated_single_click_queue == NULL) {
+        return ESP_ERR_INVALID_STATE;
+    }
+
+    uint8_t event = 1;
+    if (xQueueSend(s_generated_single_click_queue, &event, pdMS_TO_TICKS(20)) != pdTRUE) {
+        return ESP_ERR_TIMEOUT;
+    }
+
+    power_manager_record_activity("generated_ec11_key");
+    ESP_LOGI(
+        TAG,
+        "recording gesture key generated single-click queued: source=%s press_ms=%d double_ms=%d",
+        VOICE_KEY_INPUT_DIRECT_LABEL,
+        VOICE_KEY_INPUT_GENERATED_PRESS_MS,
+        VOICE_KEY_INPUT_DOUBLE_CLICK_WINDOW_MS);
+    return ESP_OK;
+}
+
 static void voice_key_input_record_recovery_event(const char *source)
 {
     if (s_recovery_event_sem == NULL) {
@@ -215,6 +244,43 @@ static void voice_key_input_record_recovery_event(const char *source)
         ESP_LOGW(TAG, "%s double-click recovery dropped: event queue full", source);
         diag_log(DIAG_SRC_VOICE_KEY, DIAG_VKEY_QUEUE_DROP, DIAG_SEV_WARN, 2, 2, 0, 0);
     }
+}
+
+static void voice_key_input_drain_generated_events(TickType_t now)
+{
+    if (s_generated_single_click_queue == NULL) {
+        return;
+    }
+
+    uint8_t event = 0;
+    while (xQueueReceive(s_generated_single_click_queue, &event, 0) == pdTRUE) {
+        (void)event;
+        if (!s_direct_gpio_state.idle_level_valid) {
+            voice_key_input_handle_button_sample(&s_direct_gpio_state, true);
+        }
+        s_direct_generated_active = true;
+        s_direct_generated_start_tick = now;
+        ESP_LOGI(TAG, "recording gesture key generated single-click armed: source=%s", VOICE_KEY_INPUT_DIRECT_LABEL);
+    }
+}
+
+static bool voice_key_input_generated_raw_high(bool physical_raw_high, TickType_t now)
+{
+    if (!s_direct_generated_active) {
+        return physical_raw_high;
+    }
+
+    uint32_t elapsed_ms = (uint32_t)((now - s_direct_generated_start_tick) * portTICK_PERIOD_MS);
+    if (elapsed_ms < VOICE_KEY_INPUT_GENERATED_PRESS_MS) {
+        return false;
+    }
+    if (elapsed_ms < VOICE_KEY_INPUT_GENERATED_PRESS_MS + VOICE_KEY_INPUT_GENERATED_RELEASE_SETTLE_MS) {
+        return true;
+    }
+
+    s_direct_generated_active = false;
+    ESP_LOGI(TAG, "recording gesture key generated single-click completed: source=%s", VOICE_KEY_INPUT_DIRECT_LABEL);
+    return physical_raw_high;
 }
 
 static bool voice_key_input_recovery_allowed(void)
@@ -494,6 +560,8 @@ static void voice_key_input_poll_task(void *parameter)
 
     while (1) {
         watchdog_platform_feed_current_task();
+        TickType_t now = xTaskGetTickCount();
+        voice_key_input_drain_generated_events(now);
 #if VOICE_KEY_INPUT_ENABLE_LEGACY_EXPANDER
         if (s_io_expander != NULL) {
             uint32_t pin_levels = 0;
@@ -528,7 +596,7 @@ static void voice_key_input_poll_task(void *parameter)
 
         voice_key_input_handle_button_sample(
             &s_direct_gpio_state,
-            gpio_get_level(VOICE_KEY_INPUT_DIRECT_GPIO) != 0);
+            voice_key_input_generated_raw_high(gpio_get_level(VOICE_KEY_INPUT_DIRECT_GPIO) != 0, now));
 
         vTaskDelay(pdMS_TO_TICKS(VOICE_KEY_INPUT_POLL_MS));
     }
@@ -544,6 +612,8 @@ esp_err_t voice_key_input_start(void)
     ESP_RETURN_ON_FALSE(s_toggle_event_sem != NULL, ESP_ERR_NO_MEM, TAG, "voice key event queue create failed");
     s_recovery_event_sem = xSemaphoreCreateCounting(VOICE_KEY_INPUT_EVENT_QUEUE_LENGTH, 0);
     ESP_RETURN_ON_FALSE(s_recovery_event_sem != NULL, ESP_ERR_NO_MEM, TAG, "voice key recovery event queue create failed");
+    s_generated_single_click_queue = xQueueCreate(VOICE_KEY_INPUT_GENERATED_EVENT_QUEUE_LENGTH, sizeof(uint8_t));
+    ESP_RETURN_ON_FALSE(s_generated_single_click_queue != NULL, ESP_ERR_NO_MEM, TAG, "voice key generated event queue create failed");
 
 #if VOICE_KEY_INPUT_ENABLE_LEGACY_EXPANDER
     esp_err_t expander_ret = voice_key_input_expander_init();
