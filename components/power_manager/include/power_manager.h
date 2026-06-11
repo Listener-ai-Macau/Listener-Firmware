@@ -44,6 +44,7 @@ typedef struct {
     uint32_t radio_idle_ms;
     uint32_t audio_idle_threshold_ms;
     uint32_t audio_idle_blockers;
+    uint32_t low_power_idle_threshold_ms;
     uint32_t connected_idle_threshold_ms;
     uint32_t disconnected_idle_threshold_ms;
     uint32_t hardware_shutdown_threshold_ms;

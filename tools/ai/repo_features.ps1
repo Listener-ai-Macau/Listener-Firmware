@@ -45,8 +45,8 @@ function New-FeatureSnapshot {
             "Firmware OTA v1 using ESP-IDF otadata/ota_0/ota_1 slots, partition-derived flash offsets, BLE GATT control/data bridge, official rollback, pending verify, blockers, and diag_log OTA events.",
             "system_health heartbeat and resource checks for heap, task, BLE, and disconnect conditions.",
             "V2 N16R8 board profile with 16 MB flash, 8 MB Octal PSRAM, EC11 push power-on/runtime-custom/recovery on GPIO18, KEY1/2/3/4 HID gesture map on GPIO38/39/40/41, four-zone WS2812 resources, and static checks rejecting stale N4 defaults.",
-            "power_manager low-power state machine for connected idle, disconnected idle, BLE churn idle preservation, USB/VBUS or charger-present automatic hardware-shutdown blocking, and runtime-low / drive-high PWR_HOLD/GPIO11 hardware shutdown with reset/cold-boot diagnostics.",
-            "Persisted ~DEVICE:SETTINGS contract for plugged/battery brightness, battery-only auto-shutdown timeout, and BLE name used by Listener-Type.",
+            "power_manager low-power state machine for configurable connected/disconnected idle, BLE churn idle preservation, USB/VBUS long-idle blocking, charger-aware low-battery shutdown blocking, and runtime-low / drive-high PWR_HOLD/GPIO11 hardware shutdown diagnostics.",
+            "Persisted ~DEVICE:SETTINGS contract for plugged/battery brightness, low-power idle timeout, battery-only auto-shutdown timeout, and BLE name used by Listener-Type.",
             "V2 board diagnostics cover ~BOARD:STATUS, ~LED:STATUS, USB/charger state, protected battery percent, LED resources, brightness cap, status RGB, and blocker policies.",
             "V2 current telemetry reports TPS63020/SY7088 battery-side branch current on GPIO10/GPIO9 for the current N16R8 board; future revised boards may mark those sensors absent and still never use telemetry for power decisions.",
             "V2 safety gates keep real PWR_HOLD/GPIO11 power-off and LED VDD validation hardware-gated; N16R8 uses SPH0655 PDM on GPIO48/GPIO47.",
@@ -82,7 +82,7 @@ function New-FeatureSnapshot {
             "Microphone path captures product-rate PCM from the active digital mic path; N16R8 validation builds use ESP-IDF PDM RX on CLK/GPIO48 and DOUT/GPIO47.",
             "Physical key GPIO mapping and voice key GPIO live in board pin configuration, not desktop code.",
             "V2 EC11-KEY/GPIO18 is the power-on key while off and sends the runtime custom-key fallback Shift+F13 after boot; KEY1/KEY2/KEY3/KEY4 use GPIO38/GPIO39/GPIO40/GPIO41 and fall back to F13-F24 gesture usages; EC11 encoder uses GPIO42/GPIO2/GPIO18.",
-            "V2 long-idle shutdown is firmware-controlled by driving runtime-low PWR_HOLD/GPIO11 high; real power-off, short-press cold boot, and USB/VBUS/charger blocker behavior require hardware-gated validation.",
+            "V2 long-idle shutdown is firmware-controlled by driving runtime-low PWR_HOLD/GPIO11 high; real power-off, short-press cold boot, USB/VBUS long-idle blocking, and charger-aware low-battery blocking require hardware-gated validation.",
             "Battery percentage uses the protected product range 3000mV=0% and 4200mV=100%; 2700mV is an absolute danger marker, not usable empty capacity.",
             "GPIO35/GPIO36/GPIO37 are reserved for the N16R8 module flash/PSRAM/MSPI interface.",
             "PWR_HOLD/GPIO11, RGB LEDs, and TPS63020/SY7088 current-sense telemetry on GPIO10/GPIO9 are populated in the active N16R8 profile; future revised board profiles may treat GPIO_NUM_NC current inputs as normal.",
@@ -186,6 +186,7 @@ function Test-FeatureSnapshot {
     $errors += @(Test-RepoText "components/device_settings/include/device_settings.h" 'DEVICE_SETTINGS_DEFAULT_BLE_NAME\s+"listener"' 'default BLE name')
     $errors += @(Test-RepoText "components/device_settings/include/device_settings.h" 'DEVICE_SETTINGS_DEFAULT_PLUGGED_BRIGHTNESS_PERCENT\s+80U' 'plugged brightness default')
     $errors += @(Test-RepoText "components/device_settings/include/device_settings.h" 'DEVICE_SETTINGS_DEFAULT_BATTERY_BRIGHTNESS_PERCENT\s+50U' 'battery brightness default')
+    $errors += @(Test-RepoText "components/device_settings/include/device_settings.h" 'DEVICE_SETTINGS_DEFAULT_LOW_POWER_IDLE_MS\s+60000U' 'low-power idle default')
     $errors += @(Test-RepoText "components/board/board.c" 'BOARD_V2_PWR_HOLD_POLICY\s+"v2_gpio11_power_latch_runtime_low_drive_high_for_hardware_shutdown"' 'PWR_HOLD runtime-low policy')
     $errors += @(Test-RepoText "components/board/board.c" 'gpio_set_level\(BOARD_PINS_PWR_HOLD_IO,\s*0\)[\s\S]*GPIO_MODE_OUTPUT[\s\S]*runtime low configured[\s\S]*gpio_set_level\(BOARD_PINS_PWR_HOLD_IO,\s*1\)[\s\S]*driven high for hardware shutdown' 'PWR_HOLD runtime-low drive-high shutdown implementation')
     if ($scriptText.Length -gt 18500) {

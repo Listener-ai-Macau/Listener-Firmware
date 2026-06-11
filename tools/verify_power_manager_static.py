@@ -25,6 +25,7 @@ CHECKS = {
         "radio_idle_ms",
         "audio_idle_power_save_enabled",
         "audio_idle_blockers",
+        "low_power_idle_threshold_ms",
         "hardware_shutdown_threshold_ms",
         "external_power_present",
         "usb_power_present",
@@ -99,7 +100,11 @@ CHECKS = {
         "audio_capture_set_idle_power_save",
         "audio_idle_power_save=%u",
         "audio_idle_blockers=0x%08",
+        "low_power_idle_ms=%",
         "status_led_prepare_sleep",
+        "power_manager_low_power_idle_ms",
+        "power_manager_guard_runtime_power_hold_low",
+        "PWR_HOLD/GPIO11 runtime guard reasserting low",
         'strcmp(command, "SHUTDOWN")',
     ],
     "ports/esp32/audio_capture/audio_capture_esp32.c": [
@@ -163,7 +168,8 @@ CHECKS = {
         "CONFIG_ESPTOOLPY_FLASHSIZE_16MB=y",
         "CONFIG_SPIRAM=y",
         "CONFIG_POWER_MANAGER_AUDIO_IDLE_MS=5000",
-        "CONFIG_POWER_MANAGER_CONNECTED_IDLE_MS=30000",
+        "CONFIG_POWER_MANAGER_CONNECTED_IDLE_MS=60000",
+        "CONFIG_POWER_MANAGER_DISCONNECTED_IDLE_MS=60000",
         "CONFIG_POWER_MANAGER_HARDWARE_SHUTDOWN_MS=1800000",
     ],
     "main/main.c": [
@@ -411,6 +417,34 @@ def main() -> int:
             "components/power_manager/power_manager.c: external power must not block connected/disconnected awake idle"
         )
     if not re.search(
+        r"power_manager_awake_idle_state_locked[\s\S]*"
+        r"uint32_t low_power_idle_ms\s*=\s*power_manager_low_power_idle_ms\(\)[\s\S]*"
+        r"radio_idle_ms\s*>=\s*low_power_idle_ms",
+        power_manager,
+    ):
+        failures.append(
+            "components/power_manager/power_manager.c: connected/disconnected idle must use the device-settings low-power timeout"
+        )
+    if not re.search(
+        r"power_manager_get_snapshot[\s\S]*"
+        r"low_power_idle_threshold_ms\s*=\s*power_manager_low_power_idle_ms\(\)[\s\S]*"
+        r"connected_idle_threshold_ms\s*=\s*snapshot->low_power_idle_threshold_ms[\s\S]*"
+        r"disconnected_idle_threshold_ms\s*=\s*snapshot->low_power_idle_threshold_ms",
+        power_manager,
+    ):
+        failures.append(
+            "components/power_manager/power_manager.c: POWER:STATUS must report the effective low-power timeout for connected and disconnected idle"
+        )
+    if not re.search(
+        r"power_manager_guard_runtime_power_hold_low[\s\S]*"
+        r"state\s*==\s*POWER_MANAGER_STATE_HARDWARE_SHUTDOWN[\s\S]*"
+        r"board_set_power_hold_enabled\(true\)",
+        power_manager,
+    ):
+        failures.append(
+            "components/power_manager/power_manager.c: runtime PWR_HOLD guard must reassert low outside hardware shutdown"
+        )
+    if not re.search(
         r"strcmp\(command,\s*\"STATUS\"\)[\s\S]*"
         r"power_manager_print_status\(\)[\s\S]*"
         r"power_manager_record_activity\(\"usb_power_command\"\)",
@@ -471,7 +505,7 @@ def main() -> int:
 
     print(
         "PASS: power manager static verification covers hardware shutdown, PWR_HOLD/GPIO11, "
-        "external-power blockers, idle actions, diagnostics, and Deep Sleep removal."
+        "external-power blockers, configurable idle actions, PWR_HOLD guard, diagnostics, and Deep Sleep removal."
     )
     return 0
 

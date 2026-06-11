@@ -5,7 +5,7 @@ menu "Listener Power Manager"
 
     config POWER_MANAGER_CONNECTED_IDLE_MS
         int "BLE connected idle threshold in milliseconds"
-        default 30000
+        default 60000
         depends on POWER_MANAGER_ENABLE
 
     config POWER_MANAGER_AUDIO_IDLE_MS
@@ -15,7 +15,7 @@ menu "Listener Power Manager"
 
     config POWER_MANAGER_DISCONNECTED_IDLE_MS
         int "BLE disconnected idle threshold in milliseconds"
-        default 30000
+        default 60000
         depends on POWER_MANAGER_ENABLE
 
     config POWER_MANAGER_HARDWARE_SHUTDOWN_MS

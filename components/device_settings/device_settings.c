@@ -20,11 +20,14 @@
 #define DEVICE_SETTINGS_NVS_NAMESPACE "device"
 #define DEVICE_SETTINGS_NVS_PLUGGED_BRIGHTNESS_KEY "plug_brt"
 #define DEVICE_SETTINGS_NVS_BATTERY_BRIGHTNESS_KEY "bat_brt"
+#define DEVICE_SETTINGS_NVS_LOW_POWER_IDLE_MS_KEY "lp_ms"
 #define DEVICE_SETTINGS_NVS_AUTO_SHUTDOWN_MS_KEY "shut_ms"
 #define DEVICE_SETTINGS_NVS_BLE_NAME_KEY "ble_name"
 #define DEVICE_SETTINGS_NVS_KNOB_ROTATION_KEY "knob_rot"
 #define DEVICE_SETTINGS_USB_PREFIX "DEVICE:"
 #define DEVICE_SETTINGS_COMMAND_BUFFER_BYTES 192
+#define DEVICE_SETTINGS_LOW_POWER_IDLE_MIN_MS 60000U
+#define DEVICE_SETTINGS_LOW_POWER_IDLE_MAX_MS 86400000U
 #define DEVICE_SETTINGS_AUTO_SHUTDOWN_MIN_MS 60000U
 #define DEVICE_SETTINGS_AUTO_SHUTDOWN_MAX_MS 86400000U
 
@@ -33,6 +36,7 @@ static const char *TAG = "device_settings";
 typedef struct {
     uint8_t plugged_brightness_percent;
     uint8_t battery_brightness_percent;
+    uint32_t low_power_idle_ms;
     uint32_t battery_auto_shutdown_ms;
     uint8_t knob_rotation_action;
     char ble_name[DEVICE_SETTINGS_BLE_NAME_MAX_LEN + 1];
@@ -48,6 +52,7 @@ static void device_settings_set_defaults_locked(void)
 {
     s_settings.plugged_brightness_percent = DEVICE_SETTINGS_DEFAULT_PLUGGED_BRIGHTNESS_PERCENT;
     s_settings.battery_brightness_percent = DEVICE_SETTINGS_DEFAULT_BATTERY_BRIGHTNESS_PERCENT;
+    s_settings.low_power_idle_ms = DEVICE_SETTINGS_DEFAULT_LOW_POWER_IDLE_MS;
     s_settings.battery_auto_shutdown_ms = (uint32_t)CONFIG_POWER_MANAGER_HARDWARE_SHUTDOWN_MS;
     s_settings.knob_rotation_action = (uint8_t)EC11_ROTATION_ACTION_SYSTEM_VOLUME;
     snprintf(s_settings.ble_name, sizeof(s_settings.ble_name), "%s", DEVICE_SETTINGS_DEFAULT_BLE_NAME);
@@ -94,6 +99,17 @@ static uint32_t device_settings_clamp_auto_shutdown_ms(uint32_t value)
     }
     if (value > DEVICE_SETTINGS_AUTO_SHUTDOWN_MAX_MS) {
         return DEVICE_SETTINGS_AUTO_SHUTDOWN_MAX_MS;
+    }
+    return value;
+}
+
+static uint32_t device_settings_clamp_low_power_idle_ms(uint32_t value)
+{
+    if (value < DEVICE_SETTINGS_LOW_POWER_IDLE_MIN_MS) {
+        return DEVICE_SETTINGS_LOW_POWER_IDLE_MIN_MS;
+    }
+    if (value > DEVICE_SETTINGS_LOW_POWER_IDLE_MAX_MS) {
+        return DEVICE_SETTINGS_LOW_POWER_IDLE_MAX_MS;
     }
     return value;
 }
@@ -146,6 +162,12 @@ static esp_err_t device_settings_load_locked(void)
         s_loaded_from_nvs = true;
     }
 
+    uint32_t low_power_idle_ms = s_settings.low_power_idle_ms;
+    if (nvs_get_u32(nvs, DEVICE_SETTINGS_NVS_LOW_POWER_IDLE_MS_KEY, &low_power_idle_ms) == ESP_OK) {
+        s_settings.low_power_idle_ms = device_settings_clamp_low_power_idle_ms(low_power_idle_ms);
+        s_loaded_from_nvs = true;
+    }
+
     uint32_t shutdown_ms = s_settings.battery_auto_shutdown_ms;
     if (nvs_get_u32(nvs, DEVICE_SETTINGS_NVS_AUTO_SHUTDOWN_MS_KEY, &shutdown_ms) == ESP_OK) {
         s_settings.battery_auto_shutdown_ms = device_settings_clamp_auto_shutdown_ms(shutdown_ms);
@@ -193,6 +215,9 @@ static esp_err_t device_settings_persist_locked(void)
         ret = nvs_set_u8(nvs, DEVICE_SETTINGS_NVS_BATTERY_BRIGHTNESS_KEY, s_settings.battery_brightness_percent);
     }
     if (ret == ESP_OK) {
+        ret = nvs_set_u32(nvs, DEVICE_SETTINGS_NVS_LOW_POWER_IDLE_MS_KEY, s_settings.low_power_idle_ms);
+    }
+    if (ret == ESP_OK) {
         ret = nvs_set_u32(nvs, DEVICE_SETTINGS_NVS_AUTO_SHUTDOWN_MS_KEY, s_settings.battery_auto_shutdown_ms);
     }
     if (ret == ESP_OK) {
@@ -220,6 +245,7 @@ esp_err_t device_settings_init(void)
     esp_err_t ret = ESP_OK;
     uint8_t plugged_brightness = 100U;
     uint8_t battery_brightness = 100U;
+    uint32_t low_power_idle_ms = DEVICE_SETTINGS_DEFAULT_LOW_POWER_IDLE_MS;
     uint32_t auto_shutdown_ms = (uint32_t)CONFIG_POWER_MANAGER_HARDWARE_SHUTDOWN_MS;
     ec11_rotation_action_t knob_rotation_action = EC11_ROTATION_ACTION_SYSTEM_VOLUME;
     char ble_name[DEVICE_SETTINGS_BLE_NAME_MAX_LEN + 1];
@@ -231,6 +257,7 @@ esp_err_t device_settings_init(void)
         if (ret == ESP_OK) {
             plugged_brightness = s_settings.plugged_brightness_percent;
             battery_brightness = s_settings.battery_brightness_percent;
+            low_power_idle_ms = s_settings.low_power_idle_ms;
             auto_shutdown_ms = s_settings.battery_auto_shutdown_ms;
             knob_rotation_action = device_settings_knob_rotation_action_locked();
             snprintf(ble_name, sizeof(ble_name), "%s", s_settings.ble_name);
@@ -243,10 +270,11 @@ esp_err_t device_settings_init(void)
         (void)ec11_rotation_control_set_action(knob_rotation_action, "device_settings_init");
         ESP_LOGI(
             TAG,
-            "device settings: plugged_brightness=%u battery_brightness=%u auto_shutdown_ms=%" PRIu32
-            " knob_rotation=%s ble_name=%s loaded_from_nvs=%u",
+            "device settings: plugged_brightness=%u battery_brightness=%u low_power_idle_ms=%" PRIu32
+            " auto_shutdown_ms=%" PRIu32 " knob_rotation=%s ble_name=%s loaded_from_nvs=%u",
             plugged_brightness,
             battery_brightness,
+            low_power_idle_ms,
             auto_shutdown_ms,
             ec11_rotation_control_action_name(knob_rotation_action),
             ble_name,
@@ -265,6 +293,7 @@ void device_settings_get_snapshot(device_settings_snapshot_t *out_snapshot)
     memset(out_snapshot, 0, sizeof(*out_snapshot));
     out_snapshot->plugged_brightness_percent = DEVICE_SETTINGS_DEFAULT_PLUGGED_BRIGHTNESS_PERCENT;
     out_snapshot->battery_brightness_percent = DEVICE_SETTINGS_DEFAULT_BATTERY_BRIGHTNESS_PERCENT;
+    out_snapshot->low_power_idle_ms = DEVICE_SETTINGS_DEFAULT_LOW_POWER_IDLE_MS;
     out_snapshot->battery_auto_shutdown_ms = (uint32_t)CONFIG_POWER_MANAGER_HARDWARE_SHUTDOWN_MS;
     snprintf(out_snapshot->ble_name, sizeof(out_snapshot->ble_name), "%s", DEVICE_SETTINGS_DEFAULT_BLE_NAME);
 
@@ -276,6 +305,7 @@ void device_settings_get_snapshot(device_settings_snapshot_t *out_snapshot)
         if (ret == ESP_OK) {
             out_snapshot->plugged_brightness_percent = s_settings.plugged_brightness_percent;
             out_snapshot->battery_brightness_percent = s_settings.battery_brightness_percent;
+            out_snapshot->low_power_idle_ms = s_settings.low_power_idle_ms;
             out_snapshot->battery_auto_shutdown_ms = s_settings.battery_auto_shutdown_ms;
             snprintf(out_snapshot->ble_name, sizeof(out_snapshot->ble_name), "%s", s_settings.ble_name);
             out_snapshot->ble_name_pending_restart = s_ble_name_pending_restart;
@@ -292,6 +322,13 @@ uint8_t device_settings_get_active_brightness_percent(bool external_power_presen
     return external_power_present
         ? snapshot.plugged_brightness_percent
         : snapshot.battery_brightness_percent;
+}
+
+uint32_t device_settings_get_low_power_idle_ms(void)
+{
+    device_settings_snapshot_t snapshot = {0};
+    device_settings_get_snapshot(&snapshot);
+    return snapshot.low_power_idle_ms;
 }
 
 uint32_t device_settings_get_battery_auto_shutdown_ms(void)
@@ -378,7 +415,7 @@ static void device_settings_print_status(const char *result)
     bool usb_power_present = power.usb_det_level > 0;
     bool charging = power.bat_chg_level == 0;
     bool charge_full = power.bat_std_level == 0;
-    bool external_power_present = usb_power_present || charging || charge_full;
+    bool external_power_present = usb_power_present;
     uint8_t active_brightness = external_power_present
         ? snapshot.plugged_brightness_percent
         : snapshot.battery_brightness_percent;
@@ -386,15 +423,17 @@ static void device_settings_print_status(const char *result)
     printf(
         "~DEVICE:SETTINGS schema=listener.device_settings.v1 result=%s"
         " plugged_brightness=%u battery_brightness=%u active_power=%s active_brightness=%u"
+        " low_power_idle_ms=%" PRIu32 " low_power_idle_mode=connected_and_disconnected"
         " auto_shutdown_ms=%" PRIu32 " auto_shutdown_mode=battery_only knob_rotation=%s"
         " ble_name=\"%s\" ble_name_pending=%u ble_name_apply=%s"
         " loaded_from_nvs=%u external_power_present=%u usb_power_present=%u charging=%u charge_full=%u"
-        " valid_ranges=brightness_0_100,auto_shutdown_ms_%u_%u,ble_name_ascii_1_%u,knob_rotation_system_volume_screen_brightness_disabled\n",
+        " valid_ranges=brightness_0_100,low_power_idle_ms_%u_%u,auto_shutdown_ms_%u_%u,ble_name_ascii_1_%u,knob_rotation_system_volume_screen_brightness_disabled\n",
         result != NULL ? result : "OK",
         snapshot.plugged_brightness_percent,
         snapshot.battery_brightness_percent,
         external_power_present ? "external" : "battery",
         active_brightness,
+        snapshot.low_power_idle_ms,
         snapshot.battery_auto_shutdown_ms,
         ec11_rotation_control_action_name(ec11_rotation_control_get_action()),
         snapshot.ble_name,
@@ -405,6 +444,8 @@ static void device_settings_print_status(const char *result)
         usb_power_present ? 1u : 0u,
         charging ? 1u : 0u,
         charge_full ? 1u : 0u,
+        (unsigned)DEVICE_SETTINGS_LOW_POWER_IDLE_MIN_MS,
+        (unsigned)DEVICE_SETTINGS_LOW_POWER_IDLE_MAX_MS,
         (unsigned)DEVICE_SETTINGS_AUTO_SHUTDOWN_MIN_MS,
         (unsigned)DEVICE_SETTINGS_AUTO_SHUTDOWN_MAX_MS,
         (unsigned)DEVICE_SETTINGS_BLE_NAME_MAX_LEN);
@@ -481,6 +522,44 @@ static bool device_settings_apply_key_value(
             return false;
         }
         config->battery_auto_shutdown_ms = parsed;
+        return true;
+    }
+
+    if (strcmp(key, "low_power_idle_ms") == 0 ||
+        strcmp(key, "low_power_ms") == 0 ||
+        strcmp(key, "idle_ms") == 0) {
+        uint32_t parsed = 0;
+        if (!device_settings_parse_u32(value, &parsed) ||
+            parsed < DEVICE_SETTINGS_LOW_POWER_IDLE_MIN_MS ||
+            parsed > DEVICE_SETTINGS_LOW_POWER_IDLE_MAX_MS) {
+            if (out_reason != NULL) {
+                *out_reason = "low_power_idle_ms_out_of_range";
+            }
+            return false;
+        }
+        config->low_power_idle_ms = parsed;
+        return true;
+    }
+
+    if (strcmp(key, "low_power_idle_minutes") == 0 ||
+        strcmp(key, "low_power_minutes") == 0 ||
+        strcmp(key, "idle_minutes") == 0) {
+        uint32_t parsed = 0;
+        if (!device_settings_parse_u32(value, &parsed) ||
+            parsed > (DEVICE_SETTINGS_LOW_POWER_IDLE_MAX_MS / 60000U)) {
+            if (out_reason != NULL) {
+                *out_reason = "low_power_idle_minutes_out_of_range";
+            }
+            return false;
+        }
+        uint32_t ms = parsed * 60000U;
+        if (ms < DEVICE_SETTINGS_LOW_POWER_IDLE_MIN_MS) {
+            if (out_reason != NULL) {
+                *out_reason = "low_power_idle_minutes_out_of_range";
+            }
+            return false;
+        }
+        config->low_power_idle_ms = ms;
         return true;
     }
 
@@ -677,7 +756,7 @@ esp_err_t device_settings_consume_control_command(const char *line)
     }
 
     if (strcmp(command, "HELP") == 0 || strcmp(command, "?") == 0) {
-        printf("~DEVICE:HELP commands=SETTINGS,STATUS,SET,RESET keys=plugged_brightness,battery_brightness,auto_shutdown_ms,auto_shutdown_minutes,ble_name,knob_rotation\n");
+        printf("~DEVICE:HELP commands=SETTINGS,STATUS,SET,RESET keys=plugged_brightness,battery_brightness,low_power_idle_ms,low_power_idle_minutes,auto_shutdown_ms,auto_shutdown_minutes,ble_name,knob_rotation\n");
         fflush(stdout);
         return ESP_OK;
     }

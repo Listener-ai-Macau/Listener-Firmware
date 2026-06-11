@@ -68,7 +68,7 @@ Current is still estimated per frame with 20 mA per RGB channel at full scale. `
 - The external-power white breath, full-charge steady white, BLE, REC, AI, OK, key feedback, and ambient edge effects are routine product output and obey the active plugged/battery user brightness cap. Their animation curves may use lower intermediate levels, but their routine maximum is clipped by the user setting rather than a hidden profile constant.
 - Pairing and reconnect use recognizable blue pulses without turning the whole status rail into an animation surface.
 - Recording is a gold breathing semantic state on `LED3=REC` only; `rec_level` adds a visible VU brightness envelope while keeping the user brightness cap as the hard maximum.
-- Processing uses a saturated purple breath on `AI` after the desktop host accepts stop and enters transcribing/ASR/polish/insert work; host completion turns `AI` off and flashes green `OK`.
+- Processing uses a saturated purple breath on `AI` once the desktop host starts streaming/ASR processing; host completion turns `AI` off and flashes green `OK`.
 - Key LEDs are local transient feedback only: white while pressed with a short dim white release tail. `REC`, `OK`, and routine `AI` states do not recolor key LEDs.
 - Edge/frame LEDs are quiet in the standard product profile unless an explicit test command is running. Ambient profile may use restrained edge accents, and factory/test modes remain available for bring-up.
 - Warnings pair `WARN` with the source LED; critical battery and hard errors are allowed to be much brighter than normal routine states.
@@ -84,6 +84,7 @@ Current is still estimated per frame with 20 mA per RGB channel at full scale. `
 - `~DEVICE:SETTINGS`
 - `~DEVICE:SET plugged_brightness=<0-100>`
 - `~DEVICE:SET battery_brightness=<0-100>`
+- `~DEVICE:SET low_power_idle_minutes=<1-1440>`
 - `~DEVICE:SET auto_shutdown_minutes=<1-1440>`
 - `~DEVICE:SET ble_name=<ascii-1-32>`
 - `~DEVICE:SET knob_rotation=<system_volume|screen_brightness|disabled>`

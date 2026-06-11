@@ -129,6 +129,11 @@ static uint32_t power_manager_hardware_shutdown_ms(void)
     return device_settings_get_battery_auto_shutdown_ms();
 }
 
+static uint32_t power_manager_low_power_idle_ms(void)
+{
+    return device_settings_get_low_power_idle_ms();
+}
+
 const char *power_manager_state_name(power_manager_state_t state)
 {
     switch (state) {
@@ -460,13 +465,14 @@ static bool power_manager_sync_power_source_locked(
 
 static power_manager_state_t power_manager_awake_idle_state_locked(uint32_t radio_idle_ms)
 {
+    uint32_t low_power_idle_ms = power_manager_low_power_idle_ms();
     if (s_ble_connected) {
-        return radio_idle_ms >= (uint32_t)CONFIG_POWER_MANAGER_CONNECTED_IDLE_MS
+        return radio_idle_ms >= low_power_idle_ms
             ? POWER_MANAGER_STATE_CONNECTED_IDLE
             : POWER_MANAGER_STATE_ACTIVE;
     }
 
-    return radio_idle_ms >= (uint32_t)CONFIG_POWER_MANAGER_DISCONNECTED_IDLE_MS
+    return radio_idle_ms >= low_power_idle_ms
         ? POWER_MANAGER_STATE_DISCONNECTED_IDLE
         : POWER_MANAGER_STATE_ACTIVE;
 }
@@ -643,6 +649,39 @@ static void power_manager_apply_fast_idle_actions(power_manager_state_t state, u
     power_manager_set_audio_idle_power_save(audio_idle);
 }
 
+static void power_manager_guard_runtime_power_hold_low(power_manager_state_t state)
+{
+    if (state == POWER_MANAGER_STATE_HARDWARE_SHUTDOWN) {
+        return;
+    }
+
+    board_v2_power_hold_snapshot_t power_hold = {0};
+    board_get_v2_power_hold_snapshot(&power_hold);
+    if (power_hold.configured && power_hold.level == 0) {
+        return;
+    }
+
+    ESP_LOGW(
+        TAG,
+        "PWR_HOLD/GPIO11 runtime guard reasserting low: state=%s level=%s configured=%u policy=%s",
+        power_manager_state_name(state),
+        power_manager_gpio_level_name(power_hold.level),
+        power_hold.configured ? 1u : 0u,
+        power_hold.policy != NULL ? power_hold.policy : "unknown");
+    diag_log(
+        DIAG_SRC_POWER,
+        DIAG_POWER_HOLD_STATE,
+        DIAG_SEV_WARN,
+        power_hold.level > 0 ? 1u : 0u,
+        (uint32_t)BOARD_PINS_PWR_HOLD_IO,
+        power_manager_encode_gpio_level(power_hold.level),
+        (uint32_t)state);
+    esp_err_t ret = board_set_power_hold_enabled(true);
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "PWR_HOLD/GPIO11 runtime-low guard failed: %s", esp_err_to_name(ret));
+    }
+}
+
 static void power_manager_update_battery_snapshot(power_manager_snapshot_t *snapshot)
 {
     battery_monitor_status_t battery = {0};
@@ -705,9 +744,10 @@ void power_manager_get_snapshot(power_manager_snapshot_t *snapshot)
         xSemaphoreGive(s_mutex);
     }
 
-    snapshot->connected_idle_threshold_ms = CONFIG_POWER_MANAGER_CONNECTED_IDLE_MS;
     snapshot->audio_idle_threshold_ms = CONFIG_POWER_MANAGER_AUDIO_IDLE_MS;
-    snapshot->disconnected_idle_threshold_ms = CONFIG_POWER_MANAGER_DISCONNECTED_IDLE_MS;
+    snapshot->low_power_idle_threshold_ms = power_manager_low_power_idle_ms();
+    snapshot->connected_idle_threshold_ms = snapshot->low_power_idle_threshold_ms;
+    snapshot->disconnected_idle_threshold_ms = snapshot->low_power_idle_threshold_ms;
     snapshot->hardware_shutdown_threshold_ms = power_manager_hardware_shutdown_ms();
     snapshot->hardware_shutdown_guard_enabled = CONFIG_POWER_MANAGER_ENABLE != 0;
     board_v2_power_hold_snapshot_t power_hold = {0};
@@ -1085,6 +1125,7 @@ static void power_manager_evaluate(void)
     power_manager_log_transition(previous, next, user_idle_ms, blockers);
     power_manager_apply_state(previous, next);
     power_manager_apply_fast_idle_actions(next, user_idle_ms, blockers);
+    power_manager_guard_runtime_power_hold_low(next);
 
     if (log_automatic_shutdown_blocked) {
         char shutdown_blocker_text[96];
@@ -1221,11 +1262,12 @@ esp_err_t power_manager_start(void)
     s_started = true;
     ESP_LOGI(
         TAG,
-        "power manager started: audio_idle_ms=%u connected_idle_ms=%u disconnected_idle_ms=%u"
+        "power manager started: audio_idle_ms=%u low_power_idle_ms=%u connected_idle_ms=%u disconnected_idle_ms=%u"
         " hardware_shutdown_ms=%u eval_ms=%u pwr_hold_gpio=%d",
         (unsigned)CONFIG_POWER_MANAGER_AUDIO_IDLE_MS,
-        (unsigned)CONFIG_POWER_MANAGER_CONNECTED_IDLE_MS,
-        (unsigned)CONFIG_POWER_MANAGER_DISCONNECTED_IDLE_MS,
+        (unsigned)power_manager_low_power_idle_ms(),
+        (unsigned)power_manager_low_power_idle_ms(),
+        (unsigned)power_manager_low_power_idle_ms(),
         (unsigned)power_manager_hardware_shutdown_ms(),
         (unsigned)CONFIG_POWER_MANAGER_EVALUATE_INTERVAL_MS,
         (int)BOARD_PINS_PWR_HOLD_IO);
@@ -1394,6 +1436,7 @@ static void power_manager_print_status(void)
         " last_shutdown_reason=%s last_shutdown_idle_ms=%" PRIu32
         " last_shutdown_blockers=0x%08" PRIx32 " guard=%u audio_idle_ms=%" PRIu32
         " audio_idle_power_save=%u audio_idle_blockers=0x%08" PRIx32
+        " low_power_idle_ms=%" PRIu32
         " connected_idle_ms=%" PRIu32 " disconnected_idle_ms=%" PRIu32
         " hardware_shutdown_ms=%" PRIu32
         " pwr_hold_gpio=%d pwr_hold_level=%s pwr_hold_configured=%u pwr_hold_policy=%s"
@@ -1429,6 +1472,7 @@ static void power_manager_print_status(void)
         snapshot.audio_idle_threshold_ms,
         snapshot.audio_idle_power_save_enabled ? 1u : 0u,
         snapshot.audio_idle_blockers,
+        snapshot.low_power_idle_threshold_ms,
         snapshot.connected_idle_threshold_ms,
         snapshot.disconnected_idle_threshold_ms,
         snapshot.hardware_shutdown_threshold_ms,

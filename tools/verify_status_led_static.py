@@ -278,6 +278,7 @@ CHECKS = {
         "continuous, high-contrast white breath with a stronger visible floor and a quicker cycle",
         "steady white once charge-full has been debounced and latched",
         "`rec_level` adds a visible VU brightness envelope",
+        "desktop host starts streaming/ASR processing",
         "host completion turns `AI` off and flashes green `OK`",
         "audio transfer completion alone does not animate `AI`",
         "`OK` is a short success flash after the host reports processing done",
