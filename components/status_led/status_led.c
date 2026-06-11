@@ -32,6 +32,7 @@
 
 #define STATUS_LED_TASK_STACK_BYTES (5 * 1024)
 #define STATUS_LED_REFRESH_MS 50U
+#define STATUS_LED_IDLE_REFRESH_MS 1000U
 #define STATUS_LED_TX_MUTEX_WAIT_MS 100
 #define STATUS_LED_POWER_POLL_MS 5000U
 #define STATUS_LED_STATUS_WINDOW_MS 6000U
@@ -482,6 +483,11 @@ static esp_err_t status_led_transmit_strip(status_led_strip_t *strip, const stat
     return status_led_strip_backend_transmit(strip->backend, strip->color_order, colors);
 }
 
+static bool status_led_frame_equal(const status_led_frame_t *left, const status_led_frame_t *right)
+{
+    return memcmp(left, right, sizeof(*left)) == 0;
+}
+
 static void status_led_transmit_frame(const status_led_frame_t *frame)
 {
     bool tx_locked = false;
@@ -568,6 +574,60 @@ static void status_led_clamp_current_locked(status_led_frame_t *frame, bool safe
 static void status_led_copy_frame_locked(const status_led_frame_t *frame)
 {
     memcpy(&s_state.last_frame, frame, sizeof(s_state.last_frame));
+}
+
+static void status_led_request_refresh(void)
+{
+    if (s_task_handle != NULL) {
+        xTaskNotifyGive(s_task_handle);
+    }
+}
+
+static bool status_led_timed_output_active_locked(uint32_t now_ms)
+{
+    if (s_state.output_disabled || s_state.low_power_disabled) {
+        return false;
+    }
+    if (s_state.test_mode != STATUS_LED_TEST_NONE ||
+        s_state.recording_active ||
+        s_state.processing_active) {
+        return true;
+    }
+    if (now_ms < s_state.boot_feedback_until_ms ||
+        now_ms < s_state.status_window_until_ms ||
+        now_ms < s_state.ble_confidence_until_ms ||
+        now_ms < s_state.oobe_confidence_until_ms ||
+        now_ms < s_state.error_until_ms ||
+        now_ms < s_state.ok_until_ms) {
+        return true;
+    }
+    if (s_state.key_pressed_mask != 0U) {
+        return true;
+    }
+    for (size_t index = 0; index < STATUS_LED_KEY_COUNT; ++index) {
+        if (now_ms < s_state.key_until_ms[index]) {
+            return true;
+        }
+    }
+    if (s_state.external_power_present && s_state.charging && !s_state.full) {
+        return true;
+    }
+    if (!s_state.external_power_present && s_state.battery_valid &&
+        s_state.battery_level_percent < 20U) {
+        return true;
+    }
+    if (!s_state.external_power_present &&
+        s_state.ble_state != STATUS_LED_BLE_DISCONNECTED) {
+        return true;
+    }
+    return s_state.profile == STATUS_LED_PROFILE_AMBIENT;
+}
+
+static uint32_t status_led_refresh_delay_ms_locked(uint32_t now_ms)
+{
+    return status_led_timed_output_active_locked(now_ms)
+        ? STATUS_LED_REFRESH_MS
+        : STATUS_LED_IDLE_REFRESH_MS;
 }
 
 static void status_led_render_test_locked(status_led_frame_t *frame, uint32_t now_ms)
@@ -1003,14 +1063,12 @@ static void status_led_render_frame_locked(status_led_frame_t *frame, uint32_t n
         s_state.last_current_budget_ma = 0;
         s_state.last_budget_scale_percent = 0U;
         s_state.current_limited_by_budget = false;
-        status_led_copy_frame_locked(frame);
         return;
     }
 
     if (s_state.test_mode != STATUS_LED_TEST_NONE) {
         status_led_render_test_locked(frame, now_ms);
         status_led_clamp_current_locked(frame, true);
-        status_led_copy_frame_locked(frame);
         return;
     }
 
@@ -1028,21 +1086,28 @@ static void status_led_render_frame_locked(status_led_frame_t *frame, uint32_t n
     status_led_render_error_locked(frame, now_ms, &safety);
 
     status_led_clamp_current_locked(frame, safety);
-    status_led_copy_frame_locked(frame);
 }
 
-static void status_led_refresh_once(void)
+static uint32_t status_led_refresh_once(void)
 {
     status_led_frame_t frame;
     uint32_t now_ms = status_led_now_ms();
+    bool changed = false;
+    uint32_t delay_ms = STATUS_LED_IDLE_REFRESH_MS;
 
     if (xSemaphoreTake(s_mutex, portMAX_DELAY) != pdTRUE) {
-        return;
+        return STATUS_LED_REFRESH_MS;
     }
     status_led_render_frame_locked(&frame, now_ms);
+    changed = !status_led_frame_equal(&s_state.last_frame, &frame);
+    status_led_copy_frame_locked(&frame);
+    delay_ms = status_led_refresh_delay_ms_locked(now_ms);
     xSemaphoreGive(s_mutex);
 
-    status_led_transmit_frame(&frame);
+    if (changed) {
+        status_led_transmit_frame(&frame);
+    }
+    return delay_ms;
 }
 
 static void status_led_set_last_reason_locked(const char *reason)
@@ -1164,6 +1229,7 @@ static void status_led_poll_power_inputs(void)
 
 void status_led_apply_device_settings(void)
 {
+    bool changed = false;
     if (s_mutex == NULL) {
         return;
     }
@@ -1175,7 +1241,11 @@ void status_led_apply_device_settings(void)
         s_state.status_window_until_ms = now_ms + STATUS_LED_STATUS_WINDOW_MS;
         s_state.last_transition_ms = now_ms;
         status_led_set_last_reason_locked("device_settings");
+        changed = true;
         xSemaphoreGive(s_mutex);
+    }
+    if (changed) {
+        status_led_request_refresh();
     }
 }
 
@@ -1184,8 +1254,8 @@ static void status_led_task(void *parameter)
     (void)parameter;
     while (1) {
         status_led_poll_power_inputs();
-        status_led_refresh_once();
-        vTaskDelay(pdMS_TO_TICKS(STATUS_LED_REFRESH_MS));
+        uint32_t delay_ms = status_led_refresh_once();
+        (void)ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(delay_ms));
     }
 }
 
@@ -1323,6 +1393,10 @@ static void status_led_save_brightness(uint8_t brightness_percent)
 static void status_led_force_all_off(void)
 {
     status_led_frame_t frame = {0};
+    if (s_mutex != NULL && xSemaphoreTake(s_mutex, portMAX_DELAY) == pdTRUE) {
+        status_led_copy_frame_locked(&frame);
+        xSemaphoreGive(s_mutex);
+    }
     status_led_transmit_frame(&frame);
 }
 
@@ -1443,13 +1517,17 @@ esp_err_t status_led_start(void)
         return ESP_ERR_NO_MEM;
     }
     s_state.started = true;
-    ESP_LOGI(TAG, "status LED task started: refresh_ms=%u backend=rmt_ws2812_800khz", STATUS_LED_REFRESH_MS);
+    ESP_LOGI(TAG,
+             "status LED task started: refresh_ms=%u idle_refresh_ms=%u backend=rmt_ws2812_800khz",
+             STATUS_LED_REFRESH_MS,
+             STATUS_LED_IDLE_REFRESH_MS);
     return ESP_OK;
 }
 
 void status_led_show_status_window(const char *reason)
 {
     uint32_t now_ms = status_led_now_ms();
+    bool changed = false;
     if (xSemaphoreTake(s_mutex, portMAX_DELAY) == pdTRUE) {
         s_state.status_window_until_ms = now_ms + STATUS_LED_STATUS_WINDOW_MS;
         s_state.last_transition_ms = now_ms;
@@ -1459,16 +1537,21 @@ void status_led_show_status_window(const char *reason)
             status_led_mark_boot_feedback_locked(now_ms);
         }
         status_led_set_last_reason_locked(reason);
+        changed = true;
         xSemaphoreGive(s_mutex);
+    }
+    if (changed) {
+        status_led_request_refresh();
     }
 }
 
 void status_led_set_ble_state(status_led_ble_state_t state, bool confidence_window)
 {
     uint32_t now_ms = status_led_now_ms();
+    bool changed = false;
     if (xSemaphoreTake(s_mutex, portMAX_DELAY) == pdTRUE) {
         status_led_resume_output_locked();
-        bool changed = s_state.ble_state != state;
+        changed = s_state.ble_state != state;
         s_state.ble_state = state;
         if (changed) {
             s_state.status_window_until_ms = now_ms + STATUS_LED_STATUS_WINDOW_MS;
@@ -1488,11 +1571,15 @@ void status_led_set_ble_state(status_led_ble_state_t state, bool confidence_wind
         }
         xSemaphoreGive(s_mutex);
     }
+    if (changed) {
+        status_led_request_refresh();
+    }
 }
 
 void status_led_set_recording(bool active, status_led_rec_source_t source)
 {
     uint32_t now_ms = status_led_now_ms();
+    bool changed = false;
     if (xSemaphoreTake(s_mutex, portMAX_DELAY) == pdTRUE) {
         status_led_resume_output_locked();
         s_state.recording_active = active && source != STATUS_LED_REC_SOURCE_NOT_AVAILABLE;
@@ -1510,7 +1597,11 @@ void status_led_set_recording(bool active, status_led_rec_source_t source)
         }
         diag_log(DIAG_SRC_STATUS_LED, DIAG_LED_STATE, DIAG_SEV_INFO,
                  2, active ? 1U : 0U, (uint32_t)source, 0);
+        changed = true;
         xSemaphoreGive(s_mutex);
+    }
+    if (changed) {
+        status_led_request_refresh();
     }
 }
 
@@ -1520,6 +1611,7 @@ void status_led_set_recording_level(uint8_t level_percent)
         level_percent = 100U;
     }
     uint32_t now_ms = status_led_now_ms();
+    bool changed = false;
     if (xSemaphoreTake(s_mutex, portMAX_DELAY) == pdTRUE) {
         if (s_state.recording_active && s_state.rec_source != STATUS_LED_REC_SOURCE_NOT_AVAILABLE) {
             uint8_t current = s_state.recording_level_percent;
@@ -1530,14 +1622,19 @@ void status_led_set_recording_level(uint8_t level_percent)
             }
             s_state.recording_level_percent = current;
             s_state.recording_level_updated_ms = now_ms;
+            changed = true;
         }
         xSemaphoreGive(s_mutex);
+    }
+    if (changed) {
+        status_led_request_refresh();
     }
 }
 
 void status_led_set_processing(bool active, const char *reason)
 {
     uint32_t now_ms = status_led_now_ms();
+    bool changed = false;
     if (xSemaphoreTake(s_mutex, portMAX_DELAY) == pdTRUE) {
         status_led_resume_output_locked();
         s_state.processing_active = active;
@@ -1548,13 +1645,18 @@ void status_led_set_processing(bool active, const char *reason)
         status_led_set_last_reason_locked(reason != NULL ? reason : (active ? "processing_start" : "processing_stop"));
         diag_log(DIAG_SRC_STATUS_LED, DIAG_LED_STATE, DIAG_SEV_INFO,
                  3, active ? 1U : 0U, now_ms - s_state.processing_started_ms, 0);
+        changed = true;
         xSemaphoreGive(s_mutex);
+    }
+    if (changed) {
+        status_led_request_refresh();
     }
 }
 
 void status_led_notify_success(const char *reason)
 {
     uint32_t now_ms = status_led_now_ms();
+    bool changed = false;
     if (xSemaphoreTake(s_mutex, portMAX_DELAY) == pdTRUE) {
         status_led_resume_output_locked();
         s_state.ok_started_ms = now_ms;
@@ -1563,7 +1665,11 @@ void status_led_notify_success(const char *reason)
         s_state.last_transition_ms = now_ms;
         status_led_set_last_reason_locked(reason != NULL ? reason : "success");
         diag_log(DIAG_SRC_STATUS_LED, DIAG_LED_STATE, DIAG_SEV_INFO, 4, 1, 0, 0);
+        changed = true;
         xSemaphoreGive(s_mutex);
+    }
+    if (changed) {
+        status_led_request_refresh();
     }
 }
 
@@ -1573,6 +1679,7 @@ void status_led_notify_key_event(uint8_t key_index, bool pressed)
         return;
     }
     uint32_t now_ms = status_led_now_ms();
+    bool changed = false;
     if (xSemaphoreTake(s_mutex, portMAX_DELAY) == pdTRUE) {
         status_led_resume_output_locked();
         if (pressed) {
@@ -1584,7 +1691,11 @@ void status_led_notify_key_event(uint8_t key_index, bool pressed)
         s_state.status_window_until_ms = now_ms + STATUS_LED_STATUS_WINDOW_MS;
         s_state.last_transition_ms = now_ms;
         status_led_set_last_reason_locked(pressed ? "key_press" : "key_release");
+        changed = true;
         xSemaphoreGive(s_mutex);
+    }
+    if (changed) {
+        status_led_request_refresh();
     }
 }
 
@@ -1597,6 +1708,7 @@ void status_led_set_error(
         return;
     }
     uint32_t now_ms = status_led_now_ms();
+    bool changed = false;
     if (xSemaphoreTake(s_mutex, portMAX_DELAY) == pdTRUE) {
         status_led_resume_output_locked();
         s_state.error_domain = domain;
@@ -1608,25 +1720,37 @@ void status_led_set_error(
         status_led_set_last_reason_locked(reason != NULL ? reason : "error");
         diag_log(DIAG_SRC_STATUS_LED, DIAG_LED_ERROR, DIAG_SEV_WARN,
                  (uint32_t)domain, (uint32_t)severity, 0, 0);
+        changed = true;
         xSemaphoreGive(s_mutex);
+    }
+    if (changed) {
+        status_led_request_refresh();
     }
 }
 
 void status_led_clear_error(status_led_error_domain_t domain)
 {
+    bool changed = false;
     if (xSemaphoreTake(s_mutex, portMAX_DELAY) == pdTRUE) {
         if (domain == STATUS_LED_ERROR_DOMAIN_NONE || s_state.error_domain == domain) {
             s_state.error_domain = STATUS_LED_ERROR_DOMAIN_NONE;
             s_state.error_until_ms = 0;
+            changed = true;
         }
         xSemaphoreGive(s_mutex);
+    }
+    if (changed) {
+        status_led_request_refresh();
     }
 }
 
 void status_led_set_low_power_disabled(bool disabled)
 {
     uint32_t now_ms = status_led_now_ms();
+    bool changed = false;
     if (xSemaphoreTake(s_mutex, portMAX_DELAY) == pdTRUE) {
+        changed = s_state.low_power_disabled != disabled ||
+                  (s_state.output_disabled && !disabled);
         s_state.low_power_disabled = disabled;
         if (!disabled) {
             s_state.output_disabled = false;
@@ -1635,17 +1759,25 @@ void status_led_set_low_power_disabled(bool disabled)
         status_led_set_last_reason_locked(disabled ? "low_power_off" : "low_power_resume");
         xSemaphoreGive(s_mutex);
     }
+    if (changed) {
+        status_led_request_refresh();
+    }
 }
 
 void status_led_prepare_sleep(void)
 {
+    bool changed = false;
     if (s_mutex != NULL && xSemaphoreTake(s_mutex, portMAX_DELAY) == pdTRUE) {
         s_state.low_power_disabled = true;
         s_state.output_disabled = true;
         s_state.test_mode = STATUS_LED_TEST_NONE;
         s_state.last_transition_ms = status_led_now_ms();
         status_led_set_last_reason_locked("prepare_sleep");
+        changed = true;
         xSemaphoreGive(s_mutex);
+    }
+    if (changed) {
+        status_led_request_refresh();
     }
     status_led_force_all_off();
 }
@@ -1866,6 +1998,7 @@ static void status_led_run_pixel_test(
         status_led_set_last_reason_locked("test_pixel");
         xSemaphoreGive(s_mutex);
     }
+    status_led_request_refresh();
 }
 
 static void status_led_print_status(void)
@@ -1912,7 +2045,7 @@ static void status_led_print_status(void)
 
     printf(
         "~LED:STATUS detail=contract backend=rmt_ws2812_800khz refresh_ms=%u reset_us=300"
-        " timing=ws2812_4020_compatible"
+        " idle_refresh_ms=%u unchanged_tx_suppression=1 timing=ws2812_4020_compatible"
         " led_contract_rev=" STATUS_LED_CONTRACT_REV
         " factory_full_brightness=1 safety_full_brightness=1"
         " semantic_order=LED1:PWR,LED2:BLE,LED3:REC,LED4:AI,LED5:OK,LED6:WARN"
@@ -1920,7 +2053,8 @@ static void status_led_print_status(void)
         " status_physical_map=" STATUS_LED_STATUS_PHYSICAL_MAP
         " key_physical_map=" STATUS_LED_KEY_PHYSICAL_MAP
         " separate_status_key_color_order=1 status_default_order=GRB key_default_order=GRB\n",
-        STATUS_LED_REFRESH_MS);
+        STATUS_LED_REFRESH_MS,
+        STATUS_LED_IDLE_REFRESH_MS);
     printf(
         "~LED:STATUS detail=brightness profile=%s effect_profile=product_v1"
         " profile_cap_percent=%u brightness_percent=%u effective_cap_percent=%u"
@@ -2075,10 +2209,10 @@ static void status_led_print_budget(void)
         snapshot.brightness_percent < status_led_profile_cap_percent_for(snapshot.profile, false)
             ? snapshot.brightness_percent
             : status_led_profile_cap_percent_for(snapshot.profile, false),
+        STATUS_LED_FULL_BRIGHTNESS_PERCENT,
         status_led_linear_percent_to_255(snapshot.brightness_percent),
         snapshot.last_budget_scale_percent,
         snapshot.current_limited_by_budget ? 1U : 0U,
-        STATUS_LED_FULL_BRIGHTNESS_PERCENT,
         status_led_profile_budget_ma_for(snapshot.profile, false),
         STATUS_LED_FULL_BRIGHTNESS_BUDGET_MA);
     fflush(stdout);
@@ -2218,6 +2352,7 @@ static void status_led_preview_state(const char *state)
     }
     s_state.last_transition_ms = now_ms;
     xSemaphoreGive(s_mutex);
+    status_led_request_refresh();
 }
 
 bool status_led_consume_usb_command(const char *line)
@@ -2275,6 +2410,7 @@ bool status_led_consume_usb_command(const char *line)
         }
         (void)device_settings_set_brightness_profiles(brightness, brightness);
         status_led_save_brightness(brightness);
+        status_led_request_refresh();
         diag_log(DIAG_SRC_STATUS_LED, DIAG_LED_PROFILE, DIAG_SEV_INFO,
                  (uint32_t)profile, brightness, 1, 0);
         ESP_LOGI(TAG, "LED brightness=%u", (unsigned)brightness);
@@ -2297,6 +2433,7 @@ bool status_led_consume_usb_command(const char *line)
             xSemaphoreGive(s_mutex);
         }
         status_led_save_profile(profile);
+        status_led_request_refresh();
         diag_log(DIAG_SRC_STATUS_LED, DIAG_LED_PROFILE, DIAG_SEV_INFO, (uint32_t)profile, 0, 0, 0);
         ESP_LOGI(TAG, "LED profile=%s", status_led_profile_name(profile));
         return true;
@@ -2321,6 +2458,7 @@ bool status_led_consume_usb_command(const char *line)
             status_led_set_last_reason_locked("test_rgbw");
             xSemaphoreGive(s_mutex);
         }
+        status_led_request_refresh();
         ESP_LOGI(TAG, "LED RGBW calibration running mask=0x%02x", mask);
         return true;
     }
@@ -2344,6 +2482,7 @@ bool status_led_consume_usb_command(const char *line)
             status_led_set_last_reason_locked("test_map");
             xSemaphoreGive(s_mutex);
         }
+        status_led_request_refresh();
         ESP_LOGI(TAG, "LED map test running mask=0x%02x status_order=PWR,BLE,REC,AI,OK,WARN ec11_order=LED7..LED10+LED15..LED16+LED23..LED28 key_order=KEY1,KEY2,KEY3,KEY4 edge_order=LED17..LED22", mask);
         return true;
     }
@@ -2378,6 +2517,7 @@ bool status_led_consume_usb_command(const char *line)
             status_led_set_last_reason_locked("test_chase");
             xSemaphoreGive(s_mutex);
         }
+        status_led_request_refresh();
         ESP_LOGI(TAG, "LED chase running mask=0x%02x step_ms=%u full_brightness=1", mask, step_ms);
         return true;
     }

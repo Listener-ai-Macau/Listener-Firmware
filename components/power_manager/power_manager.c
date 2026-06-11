@@ -600,6 +600,9 @@ static void power_manager_apply_state(power_manager_state_t previous, power_mana
         }
         break;
     case POWER_MANAGER_STATE_CONNECTED_IDLE:
+        if (status_led_set_low_power_disabled != NULL) {
+            status_led_set_low_power_disabled(true);
+        }
         power_manager_set_audio_idle_power_save(true);
         if (system_health_set_low_power_mode != NULL) {
             system_health_set_low_power_mode(true);
@@ -613,6 +616,9 @@ static void power_manager_apply_state(power_manager_state_t previous, power_mana
         break;
     case POWER_MANAGER_STATE_DISCONNECTED_IDLE:
     case POWER_MANAGER_STATE_HARDWARE_SHUTDOWN:
+        if (status_led_set_low_power_disabled != NULL) {
+            status_led_set_low_power_disabled(true);
+        }
         power_manager_set_audio_idle_power_save(true);
         if (system_health_set_low_power_mode != NULL) {
             system_health_set_low_power_mode(true);
