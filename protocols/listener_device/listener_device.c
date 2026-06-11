@@ -7,12 +7,13 @@
 #include "esp_log.h"
 #include "esp_mac.h"
 #include "device_settings.h"
+#include "power_manager.h"
 
 static const char *TAG = "listener_device";
 
 static char s_serial_str[18];
 static char s_build_id_str[32];
-static char s_readiness_str[192];
+static char s_readiness_str[256];
 static char s_capabilities_str[224];
 static bool s_serial_initialized = false;
 static bool s_safe_mode;
@@ -59,6 +60,28 @@ static void listener_device_append_subsystem_tokens(
         snprintf(token, sizeof(token), "%s_%s", entries[index].name, suffix);
         listener_device_append_token(buffer, buffer_size, token);
     }
+}
+
+static void listener_device_append_bool_token(
+    char *buffer,
+    size_t buffer_size,
+    const char *key,
+    bool value)
+{
+    char token[32];
+    snprintf(token, sizeof(token), "%s=%u", key, value ? 1u : 0u);
+    listener_device_append_token(buffer, buffer_size, token);
+}
+
+static void listener_device_append_u8_token(
+    char *buffer,
+    size_t buffer_size,
+    const char *key,
+    uint8_t value)
+{
+    char token[32];
+    snprintf(token, sizeof(token), "%s=%u", key, (unsigned)value);
+    listener_device_append_token(buffer, buffer_size, token);
 }
 
 const char *listener_device_get_fw_version(void)
@@ -108,6 +131,8 @@ const char *listener_device_get_protocol_version(void)
 const char *listener_device_get_factory_readiness(void)
 {
     s_readiness_str[0] = '\0';
+    power_manager_snapshot_t power = {0};
+    power_manager_get_snapshot(&power);
     listener_device_append_token(
         s_readiness_str,
         sizeof(s_readiness_str),
@@ -140,6 +165,36 @@ const char *listener_device_get_factory_readiness(void)
             sizeof(s_readiness_str),
             "boot_safety_safe_mode");
     }
+    listener_device_append_bool_token(
+        s_readiness_str,
+        sizeof(s_readiness_str),
+        "external_power_present",
+        power.external_power_present);
+    listener_device_append_bool_token(
+        s_readiness_str,
+        sizeof(s_readiness_str),
+        "usb_power_present",
+        power.usb_power_present);
+    listener_device_append_bool_token(
+        s_readiness_str,
+        sizeof(s_readiness_str),
+        "charging",
+        power.charging);
+    listener_device_append_bool_token(
+        s_readiness_str,
+        sizeof(s_readiness_str),
+        "charge_full",
+        power.charge_full);
+    listener_device_append_bool_token(
+        s_readiness_str,
+        sizeof(s_readiness_str),
+        "battery_valid",
+        power.battery_valid);
+    listener_device_append_u8_token(
+        s_readiness_str,
+        sizeof(s_readiness_str),
+        "battery_level",
+        power.battery_valid ? power.battery_level_percent : 0xFF);
     return s_readiness_str;
 }
 

@@ -152,6 +152,11 @@ $decodedBundlePath = Join-Path $resolvedOutputDir "diag_log_ai_bundle.json"
 $manifestPath = Join-Path $resolvedOutputDir "manifest.json"
 $transcriptPath = Join-Path $resolvedOutputDir "serial_transcript.txt"
 $sourceStatePath = Join-Path $resolvedOutputDir "diag_log_sources.txt"
+$headerPath = Join-Path $repoRoot "components\diag_log\include\diag_log_events.h"
+
+if (-not (Test-Path -LiteralPath $headerPath)) {
+    throw "Unable to locate diag_log_events.h at: $headerPath"
+}
 
 $sourceMode = ""
 $sourcePath = ""
@@ -186,7 +191,7 @@ if ($hasInput) {
 }
 
 $python = (Get-Command python -ErrorAction Stop).Path
-& $python $decoder --input $rawJsonlPath --output $decodedBundlePath
+& $python $decoder --input $rawJsonlPath --output $decodedBundlePath --header $headerPath
 if ($LASTEXITCODE -ne 0) {
     throw "decode_diag_log.py failed with exit code $LASTEXITCODE"
 }

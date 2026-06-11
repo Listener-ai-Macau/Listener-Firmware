@@ -129,7 +129,12 @@ function Invoke-SerialKeyStatus {
         }
     } finally {
         if ($serialPort -and $serialPort.IsOpen) {
-            $serialPort.Close()
+            try {
+                $serialPort.Close()
+            } catch {
+                # Non-critical: some USB bridges throw on close after transient disconnects.
+                Write-Verbose "serial close failed: $($_.Exception.Message)"
+            }
         }
     }
 

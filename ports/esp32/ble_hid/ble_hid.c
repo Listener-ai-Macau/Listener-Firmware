@@ -54,6 +54,9 @@ static const char *TAG = "ble_hid";
 #define BLE_HID_BATTERY_NOTIFY_THRESHOLD_PERCENT 1
 #define BLE_HID_BATTERY_LEVEL_INVALID UINT8_MAX
 #define BLE_HID_BATTERY_TASK_STACK_BYTES (4 * 1024)
+#define BLE_HID_BATTERY_CHARGE_FULL_MIN_MV 4050U
+#define BLE_HID_BATTERY_CHARGE_FULL_MIN_PERCENT 88U
+#define BLE_HID_BATTERY_CHARGE_FULL_DEBOUNCE_MS 10000U
 #define BLE_HID_USB_COMMAND_PREFIX '~'
 #define BLE_HID_USB_COMMAND_BUFFER_BYTES 192
 #define BLE_HID_ASCII_QUEUE_LENGTH 8
@@ -115,6 +118,8 @@ static QueueHandle_t s_usage_queue;
 static bool s_safe_mode;
 static bool s_battery_service_valid;
 static uint8_t s_battery_service_level = BLE_HID_BATTERY_LEVEL_INVALID;
+static bool s_battery_charge_full_latched;
+static uint32_t s_battery_charge_full_candidate_since_ms;
 
 static void ble_hid_log_dis_gatt_state(void);
 
@@ -166,6 +171,43 @@ static bool ble_hid_battery_level_exceeds_notify_threshold(uint8_t level)
     return delta >= BLE_HID_BATTERY_NOTIFY_THRESHOLD_PERCENT;
 }
 
+static bool ble_hid_battery_estimate_charge_full(
+    bool usb_power_present,
+    bool battery_valid,
+    uint8_t battery_level_percent,
+    uint32_t battery_mv,
+    bool raw_charging,
+    bool raw_full,
+    uint32_t now_ms)
+{
+    if (!usb_power_present) {
+        s_battery_charge_full_latched = false;
+        s_battery_charge_full_candidate_since_ms = 0U;
+        return false;
+    }
+
+    if (!s_battery_charge_full_latched) {
+        bool battery_allows_full =
+            !battery_valid || battery_mv >= BLE_HID_BATTERY_CHARGE_FULL_MIN_MV ||
+            battery_level_percent >= BLE_HID_BATTERY_CHARGE_FULL_MIN_PERCENT;
+        bool full_candidate = raw_full && !raw_charging && battery_allows_full;
+
+        if (full_candidate) {
+            if (s_battery_charge_full_candidate_since_ms == 0U) {
+                s_battery_charge_full_candidate_since_ms = now_ms;
+            } else if (
+                now_ms - s_battery_charge_full_candidate_since_ms >=
+                BLE_HID_BATTERY_CHARGE_FULL_DEBOUNCE_MS) {
+                s_battery_charge_full_latched = true;
+            }
+        } else {
+            s_battery_charge_full_candidate_since_ms = 0U;
+        }
+    }
+
+    return usb_power_present && s_battery_charge_full_latched;
+}
+
 static uint32_t ble_hid_now_ms(void)
 {
     return (uint32_t)(esp_timer_get_time() / 1000LL);
@@ -185,17 +227,33 @@ static void ble_hid_update_battery_level(const char *reason, bool force_notify)
 
     battery_monitor_status_t battery = {0};
     esp_err_t read_ret = battery_monitor_read(&battery);
+    bool battery_valid = read_ret == ESP_OK && battery.valid;
+    uint8_t level = battery_valid ? battery.level_percent : BLE_HID_BATTERY_FALLBACK_LEVEL;
+    uint32_t battery_mv = battery_valid ? battery.voltage_mv : 0U;
     board_v2_power_input_snapshot_t power = {0};
     board_get_v2_power_input_snapshot(&power);
     bool usb_power_present = power.usb_det_level > 0;
-    bool charge_full = usb_power_present && power.bat_std_level == 0;
-    uint8_t level = (read_ret == ESP_OK && battery.valid)
-        ? battery.level_percent
-        : BLE_HID_BATTERY_FALLBACK_LEVEL;
+    bool raw_charging = usb_power_present && power.bat_chg_level == 0;
+    bool raw_full = usb_power_present && power.bat_std_level == 0;
+    uint32_t now_ms = ble_hid_now_ms();
+    bool charge_full = ble_hid_battery_estimate_charge_full(
+        usb_power_present,
+        battery_valid,
+        level,
+        battery_mv,
+        raw_charging,
+        raw_full,
+        now_ms);
+    uint32_t full_candidate_ms =
+        (s_battery_charge_full_candidate_since_ms != 0U &&
+         now_ms >= s_battery_charge_full_candidate_since_ms)
+            ? (now_ms - s_battery_charge_full_candidate_since_ms)
+            : 0U;
     if (charge_full) {
         level = 100;
+    } else if (raw_charging && level >= 100U) {
+        level = 99;
     }
-    uint32_t now_ms = ble_hid_now_ms();
     bool periodic_refresh = ble_hid_battery_force_refresh_due(now_ms);
     bool should_notify = force_notify ||
         (read_ret == ESP_OK && battery.valid &&
@@ -221,13 +279,17 @@ static void ble_hid_update_battery_level(const char *reason, bool force_notify)
         ESP_LOGI(
             TAG,
             "battery notify level=%u voltage_mv=%" PRIu32
-            " raw=%d adc_mv=%d usb_power=%u charge_full=%u"
+            " raw_adc=%d adc_mv=%d usb_power=%u raw_charging=%u raw_full=%u full_latched=%u full_candidate_ms=%u charge_full=%u"
             " reason=%s forced=%u periodic=%u",
             level,
             battery.voltage_mv,
             battery.raw_adc,
             battery.adc_mv,
             usb_power_present ? 1u : 0u,
+            raw_charging ? 1u : 0u,
+            raw_full ? 1u : 0u,
+            s_battery_charge_full_latched ? 1u : 0u,
+            (unsigned)full_candidate_ms,
             charge_full ? 1u : 0u,
             reason != NULL ? reason : "unspecified",
             force_notify ? 1u : 0u,
@@ -235,10 +297,14 @@ static void ble_hid_update_battery_level(const char *reason, bool force_notify)
     } else {
         ESP_LOGW(
             TAG,
-            "battery notify fallback=%u usb_power=%u charge_full=%u"
+            "battery notify fallback=%u usb_power=%u raw_charging=%u raw_full=%u full_latched=%u full_candidate_ms=%u charge_full=%u"
             " reason=%s read_failed=%s forced=%u periodic=%u",
             level,
             usb_power_present ? 1u : 0u,
+            raw_charging ? 1u : 0u,
+            raw_full ? 1u : 0u,
+            s_battery_charge_full_latched ? 1u : 0u,
+            (unsigned)full_candidate_ms,
             charge_full ? 1u : 0u,
             reason != NULL ? reason : "unspecified",
             esp_err_to_name(read_ret),
