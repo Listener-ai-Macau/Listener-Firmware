@@ -18,11 +18,12 @@ and verified by `tools/verify_factory_firmware_package.ps1`.
   explicitly supersedes it.
 - Battery percentage uses `3000mV=0%` and `4200mV=100%`; `2700mV` is an absolute
   danger marker and must not be treated as usable empty capacity.
-- `PWR_HOLD/GPIO11` is low-active: boot/runtime holds the rail with LOW, while
-  long-idle hardware shutdown releases or drives HIGH.
+- `PWR_HOLD/GPIO11` stays input/pulldown during boot/runtime and is driven
+  HIGH only by the hardware-shutdown path.
 - USB/VBUS, charging, or charge-full-on-external-power blocks automatic
-  battery-idle hardware shutdown. Manual/debug shutdown commands must log a
-  distinct reason from automatic battery-idle shutdown.
+  battery-idle and critical-low-battery hardware shutdown. Manual/debug
+  shutdown commands must log a distinct reason from automatic battery-idle
+  shutdown.
 - Current V2 N16R8 boards populate TPS63020/SY7088 battery-side current sense
   on GPIO10/GPIO9. Future revised board profiles without those chips must use
   `GPIO_NUM_NC` and must not make power-control decisions from absent telemetry.

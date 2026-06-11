@@ -65,7 +65,7 @@ extern void status_led_prepare_sleep(void) __attribute__((weak));
 #endif
 #define POWER_MANAGER_BATTERY_CRITICAL_PERCENT ((uint8_t)CONFIG_POWER_MANAGER_BATTERY_CRITICAL_PERCENT)
 #define POWER_MANAGER_TASK_STACK_BYTES (4 * 1024)
-#define POWER_MANAGER_SHUTDOWN_USER_ACTION "short-press hardware power key for cold boot after PWR_HOLD/GPIO11 release-high"
+#define POWER_MANAGER_SHUTDOWN_USER_ACTION "short-press hardware power key for cold boot after PWR_HOLD/GPIO11 drive-high shutdown"
 #define POWER_MANAGER_POWER_SOURCE_USB_PRESENT (1u << 0)
 #define POWER_MANAGER_POWER_SOURCE_CHARGING (1u << 1)
 #define POWER_MANAGER_POWER_SOURCE_CHARGE_FULL (1u << 2)
@@ -300,7 +300,25 @@ static uint32_t power_manager_shutdown_blockers_for_source(
         source->external_power_present) {
         shutdown_blockers |= POWER_MANAGER_BLOCKER_EXTERNAL_POWER;
     }
+    if (reason == POWER_MANAGER_SHUTDOWN_REASON_LOW_BATTERY &&
+        source != NULL &&
+        (source->usb_power_present ||
+         source->external_power_present ||
+         source->charging ||
+         source->charge_full)) {
+        shutdown_blockers |= POWER_MANAGER_BLOCKER_EXTERNAL_POWER;
+    }
     return shutdown_blockers;
+}
+
+static bool power_manager_low_battery_shutdown_allowed(
+    const power_manager_power_source_snapshot_t *source)
+{
+    return source != NULL &&
+           !source->usb_power_present &&
+           !source->external_power_present &&
+           !source->charging &&
+           !source->charge_full;
 }
 
 static uint32_t power_manager_automatic_shutdown_blockers_for_source(
@@ -696,7 +714,7 @@ static void power_manager_wait_for_power_removal(void)
 {
     ESP_LOGE(
         TAG,
-        "automatic hardware shutdown did not remove power; keeping PWR_HOLD/GPIO11 released high and staying quiescent");
+        "automatic hardware shutdown did not remove power; keeping PWR_HOLD/GPIO11 driven high and staying quiescent");
     if (ble_hid_gap_prepare_shutdown_disconnect != NULL) {
         (void)ble_hid_gap_prepare_shutdown_disconnect();
     }
@@ -906,7 +924,7 @@ static esp_err_t power_manager_enter_hardware_shutdown(power_manager_shutdown_re
     vTaskDelay(pdMS_TO_TICKS(150));
     esp_err_t hold_ret = board_set_power_hold_enabled(false);
     if (hold_ret != ESP_OK) {
-        ESP_LOGE(TAG, "hardware shutdown failed: PWR_HOLD/GPIO11 release-high ret=%s",
+        ESP_LOGE(TAG, "hardware shutdown failed: PWR_HOLD/GPIO11 drive-high ret=%s",
                  esp_err_to_name(hold_ret));
         diag_log(DIAG_SRC_POWER, DIAG_POWER_SLEEP_BLOCKED, DIAG_SEV_ERROR,
                  0, final_idle_ms, (uint32_t)reason, (uint32_t)hold_ret);
@@ -923,7 +941,7 @@ static esp_err_t power_manager_enter_hardware_shutdown(power_manager_shutdown_re
 
     ESP_LOGE(
         TAG,
-        "hardware shutdown did not remove power after PWR_HOLD/GPIO11 release-high; restoring hold low");
+        "hardware shutdown did not remove power after PWR_HOLD/GPIO11 drive-high; restoring runtime input-pulldown");
     (void)board_set_power_hold_enabled(true);
     if (ble_hid_gap_request_reconnect != NULL) {
         (void)ble_hid_gap_request_reconnect();
@@ -979,23 +997,24 @@ static void power_manager_evaluate(void)
     }
     xSemaphoreGive(s_mutex);
 
-    /* Low-battery protection: shut down immediately when battery is
-       critically low and no external power is present. This bypasses
-       the normal idle threshold and all blockers except EXTERNAL_POWER
-       to prevent battery over-discharge. */
+    /* Low-battery protection: shut down immediately only on battery power.
+       USB/VBUS, charging, or charge-full status blocks automatic low-battery
+       shutdown even if the battery estimate is critical. */
     power_manager_update_battery_snapshot(&battery_snapshot);
     if (battery_snapshot.battery_valid &&
         battery_snapshot.battery_level_percent <= POWER_MANAGER_BATTERY_CRITICAL_PERCENT &&
-        !power_source.external_power_present) {
+        power_manager_low_battery_shutdown_allowed(&power_source)) {
         ESP_LOGW(
             TAG,
             "low battery critical shutdown: level=%u%% mv=%" PRIu32 " threshold=%u%%"
-            " external_power=%u charging=%u",
+            " usb_power=%u external_power=%u charging=%u charge_full=%u",
             battery_snapshot.battery_level_percent,
             battery_snapshot.battery_mv,
             (unsigned)POWER_MANAGER_BATTERY_CRITICAL_PERCENT,
+            power_source.usb_power_present ? 1u : 0u,
             power_source.external_power_present ? 1u : 0u,
-            power_source.charging ? 1u : 0u);
+            power_source.charging ? 1u : 0u,
+            power_source.charge_full ? 1u : 0u);
         esp_err_t lb_ret =
             power_manager_enter_hardware_shutdown(POWER_MANAGER_SHUTDOWN_REASON_LOW_BATTERY);
         if (lb_ret != ESP_OK) {
@@ -1142,7 +1161,7 @@ esp_err_t power_manager_init(void)
              (uint32_t)s_last_shutdown_reason,
              s_last_shutdown_idle_ms);
     if (hold_ret != ESP_OK) {
-        ESP_LOGW(TAG, "PWR_HOLD/GPIO11 hold-low setup failed: %s", esp_err_to_name(hold_ret));
+        ESP_LOGW(TAG, "PWR_HOLD/GPIO11 input-pulldown setup failed: %s", esp_err_to_name(hold_ret));
     }
     return ESP_OK;
 }

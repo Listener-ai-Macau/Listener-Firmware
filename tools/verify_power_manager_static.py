@@ -175,11 +175,13 @@ CHECKS = {
         "Voice Keyboard V2",
         "EC11 push/GPIO18",
         "PWR_HOLD/GPIO11",
-        "v2_gpio11_power_latch_hold_low_release_high_for_hardware_shutdown",
-        "gpio_set_level(BOARD_PINS_PWR_HOLD_IO, 0)",
-        "gpio_set_level(BOARD_PINS_PWR_HOLD_IO, level)",
-        "released high for hardware shutdown",
-        "hold-low",
+        "v2_gpio11_power_latch_input_pulldown_runtime_drive_high_for_hardware_shutdown",
+        "GPIO_MODE_INPUT",
+        "GPIO_PULLDOWN_ENABLE",
+        "runtime input-pulldown configured",
+        "GPIO_MODE_OUTPUT",
+        "gpio_set_level(BOARD_PINS_PWR_HOLD_IO, 1)",
+        "driven high for hardware shutdown",
         "~POWER:SHUTDOWN",
     ],
     "docs/features/low_power_wake_policy.md": [
@@ -188,6 +190,8 @@ CHECKS = {
         "2700mV",
         "default critical threshold `0%`",
         "forces hardware shutdown",
+        "input/pulldown during normal boot and runtime",
+        "USB/VBUS, active charging, or charge-full status blocks this automatic low-battery shutdown",
     ],
 }
 
@@ -219,16 +223,23 @@ FORBIDDEN = {
         "automatic overnight sleep",
         "entering deep sleep",
         "restoring hold high",
+        "restoring hold low",
         "release-low",
+        "release-high",
+        "released high",
         "shutdown-low",
     ],
     "components/board/board.c": [
         "v2_gpio46_power_latch_hold_high_release_low_for_hardware_shutdown",
         "v2_gpio46_power_latch_hold_low_release_high_for_hardware_shutdown",
         "v2_gpio11_power_latch_hold_high_release_low_for_hardware_shutdown",
+        "v2_gpio11_power_latch_hold_low_release_high_for_hardware_shutdown",
         "hold-high",
+        "hold-low",
         "released low for hardware shutdown",
+        "released high for hardware shutdown",
         "held high",
+        "held low",
     ],
     "main/main.c": [
         "esp_sleep_get_wakeup_cause",
@@ -310,7 +321,27 @@ def main() -> int:
         power_manager,
     ):
         failures.append(
-            "components/power_manager/power_manager.c: quiescent shutdown wait must keep PWR_HOLD released and feed watchdog"
+            "components/power_manager/power_manager.c: quiescent shutdown wait must keep PWR_HOLD driven high and feed watchdog"
+        )
+    if not re.search(
+        r"POWER_MANAGER_SHUTDOWN_REASON_LOW_BATTERY[\s\S]*"
+        r"source->usb_power_present[\s\S]*"
+        r"source->external_power_present[\s\S]*"
+        r"source->charging[\s\S]*"
+        r"source->charge_full[\s\S]*"
+        r"POWER_MANAGER_BLOCKER_EXTERNAL_POWER",
+        power_manager,
+    ):
+        failures.append(
+            "components/power_manager/power_manager.c: low-battery automatic shutdown must be blocked by USB/charging/full power source"
+        )
+    if not re.search(
+        r"battery_snapshot\.battery_level_percent\s*<=\s*POWER_MANAGER_BATTERY_CRITICAL_PERCENT[\s\S]*"
+        r"power_manager_low_battery_shutdown_allowed\(&power_source\)",
+        power_manager,
+    ):
+        failures.append(
+            "components/power_manager/power_manager.c: critical low-battery path must use the explicit power-source allow gate"
         )
     if not re.search(
         r"power_manager_target_state_locked[\s\S]*"

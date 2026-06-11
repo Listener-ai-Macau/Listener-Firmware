@@ -45,7 +45,7 @@ function New-FeatureSnapshot {
             "Firmware OTA v1 using ESP-IDF otadata/ota_0/ota_1 slots, partition-derived flash offsets, BLE GATT control/data bridge, official rollback, pending verify, blockers, and diag_log OTA events.",
             "system_health heartbeat and resource checks for heap, task, BLE, and disconnect conditions.",
             "V2 N16R8 board profile with 16 MB flash, 8 MB Octal PSRAM, EC11 push power-on/runtime-custom/recovery on GPIO18, KEY1/2/3/4 HID gesture map on GPIO38/39/40/41, four-zone WS2812 resources, and static checks rejecting stale N4 defaults.",
-            "power_manager low-power state machine for connected idle, disconnected idle, USB/VBUS automatic hardware-shutdown blocking, and long-idle PWR_HOLD/GPIO11 low-active hold/release-high hardware shutdown with reset/cold-boot diagnostics.",
+            "power_manager low-power state machine for connected idle, disconnected idle, USB/VBUS or charger-present automatic hardware-shutdown blocking, and input-pulldown runtime / drive-high PWR_HOLD/GPIO11 hardware shutdown with reset/cold-boot diagnostics.",
             "Persisted ~DEVICE:SETTINGS contract for plugged/battery brightness, battery-only auto-shutdown timeout, and BLE name used by Listener-Type.",
             "V2 board diagnostics cover ~BOARD:STATUS, ~LED:STATUS, USB/charger state, protected battery percent, LED resources, brightness cap, status RGB, and blocker policies.",
             "V2 current telemetry reports TPS63020/SY7088 battery-side branch current on GPIO10/GPIO9 for the current N16R8 board; future revised boards may mark those sensors absent and still never use telemetry for power decisions.",
@@ -60,7 +60,7 @@ function New-FeatureSnapshot {
             [ordered]@{ path = "components/power_manager/"; purpose = "Low-power state machine, shutdown blockers, PWR_HOLD/GPIO11 hardware shutdown, and diagnostics." },
             [ordered]@{ path = "components/device_settings/"; purpose = "Persisted Type-facing board settings and ~DEVICE:SETTINGS command contract." },
             [ordered]@{ path = "components/battery_monitor/"; purpose = "Battery voltage and protected level: 3000mV empty, 4200mV full, 2700mV danger marker." },
-            [ordered]@{ path = "docs/features/low_power_wake_policy.md"; purpose = "Firmware long-idle hardware shutdown contract for low-active PWR_HOLD/GPIO11 and USB/VBUS external-power blockers." },
+            [ordered]@{ path = "docs/features/low_power_wake_policy.md"; purpose = "Firmware long-idle hardware shutdown contract for input-pulldown runtime / drive-high PWR_HOLD/GPIO11 and USB/VBUS external-power blockers." },
             [ordered]@{ path = "tools/verify_charging_awake_policy_hardware.ps1"; purpose = "Hardware helper for USB/charging awake evidence plus unplugged/destructive manual gates." },
             [ordered]@{ path = "tools/decode_diag_log.py"; purpose = "Offline decoder for ~DIAGLOG JSONL into stable AI-readable JSON bundles." },
             [ordered]@{ path = "tools/collect_ai_diagnostics.ps1"; purpose = "Collect bounded serial diag_log evidence or decode saved JSONL into AI-readable artifacts." },
@@ -82,7 +82,7 @@ function New-FeatureSnapshot {
             "Microphone path captures product-rate PCM from the active digital mic path; N16R8 validation builds use ESP-IDF PDM RX on CLK/GPIO48 and DOUT/GPIO47.",
             "Physical key GPIO mapping and voice key GPIO live in board pin configuration, not desktop code.",
             "V2 EC11-KEY/GPIO18 is the power-on key while off and sends the runtime custom-key fallback Shift+F13 after boot; KEY1/KEY2/KEY3/KEY4 use GPIO38/GPIO39/GPIO40/GPIO41 and fall back to F13-F24 gesture usages; EC11 encoder uses GPIO42/GPIO2/GPIO18.",
-            "V2 long-idle shutdown is firmware-controlled by driving low-active PWR_HOLD/GPIO11 high; real power-off, short-press cold boot, and USB/VBUS blocker behavior require hardware-gated validation.",
+            "V2 long-idle shutdown is firmware-controlled by driving input-pulldown-runtime PWR_HOLD/GPIO11 high; real power-off, short-press cold boot, and USB/VBUS/charger blocker behavior require hardware-gated validation.",
             "Battery percentage uses the protected product range 3000mV=0% and 4200mV=100%; 2700mV is an absolute danger marker, not usable empty capacity.",
             "GPIO35/GPIO36/GPIO37 are reserved for the N16R8 module flash/PSRAM/MSPI interface.",
             "PWR_HOLD/GPIO11, RGB LEDs, and TPS63020/SY7088 current-sense telemetry on GPIO10/GPIO9 are populated in the active N16R8 profile; future revised board profiles may treat GPIO_NUM_NC current inputs as normal.",
@@ -186,8 +186,8 @@ function Test-FeatureSnapshot {
     $errors += @(Test-RepoText "components/device_settings/include/device_settings.h" 'DEVICE_SETTINGS_DEFAULT_BLE_NAME\s+"listener"' 'default BLE name')
     $errors += @(Test-RepoText "components/device_settings/include/device_settings.h" 'DEVICE_SETTINGS_DEFAULT_PLUGGED_BRIGHTNESS_PERCENT\s+80U' 'plugged brightness default')
     $errors += @(Test-RepoText "components/device_settings/include/device_settings.h" 'DEVICE_SETTINGS_DEFAULT_BATTERY_BRIGHTNESS_PERCENT\s+50U' 'battery brightness default')
-    $errors += @(Test-RepoText "components/board/board.c" 'BOARD_V2_PWR_HOLD_POLICY\s+"v2_gpio11_power_latch_hold_low_release_high_for_hardware_shutdown"' 'PWR_HOLD low-active policy')
-    $errors += @(Test-RepoText "components/board/board.c" 'board_set_power_hold_enabled[\s\S]*int level = enabled \? 0 : 1;[\s\S]*gpio_set_level\(BOARD_PINS_PWR_HOLD_IO,\s*level\)' 'PWR_HOLD LOW hold HIGH release implementation')
+    $errors += @(Test-RepoText "components/board/board.c" 'BOARD_V2_PWR_HOLD_POLICY\s+"v2_gpio11_power_latch_input_pulldown_runtime_drive_high_for_hardware_shutdown"' 'PWR_HOLD input-pulldown runtime policy')
+    $errors += @(Test-RepoText "components/board/board.c" 'GPIO_MODE_INPUT[\s\S]*GPIO_PULLDOWN_ENABLE[\s\S]*runtime input-pulldown configured[\s\S]*GPIO_MODE_OUTPUT[\s\S]*driven high for hardware shutdown' 'PWR_HOLD input-pulldown runtime drive-high shutdown implementation')
     if ($scriptText.Length -gt 18500) {
         $errors += "script is too long: $($scriptText.Length) characters"
     }

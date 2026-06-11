@@ -52,6 +52,8 @@ Assert-Contains $powerManager 'CHG/STD are charger status outputs[\s\S]*must not
 
 Assert-Contains $powerManager 's_power_source_initialized\s*&&\s*external_changed[\s\S]*s_last_user_activity_ms\s*=\s*now_ms[\s\S]*s_last_radio_activity_ms\s*=\s*now_ms' 'plug/unplug idle reset'
 Assert-Contains $powerManager 'reason\s*==\s*POWER_MANAGER_SHUTDOWN_REASON_LONG_IDLE[\s\S]*source->external_power_present[\s\S]*shutdown_blockers\s*\|=\s*POWER_MANAGER_BLOCKER_EXTERNAL_POWER' 'external power blocks automatic long-idle hardware shutdown'
+Assert-Contains $powerManager 'reason\s*==\s*POWER_MANAGER_SHUTDOWN_REASON_LOW_BATTERY[\s\S]*source->usb_power_present[\s\S]*source->external_power_present[\s\S]*source->charging[\s\S]*source->charge_full[\s\S]*shutdown_blockers\s*\|=\s*POWER_MANAGER_BLOCKER_EXTERNAL_POWER' 'USB/charging/full blocks automatic low-battery hardware shutdown'
+Assert-Contains $powerManager 'battery_snapshot\.battery_level_percent\s*<=\s*POWER_MANAGER_BATTERY_CRITICAL_PERCENT[\s\S]*power_manager_low_battery_shutdown_allowed\(&power_source\)' 'critical low-battery shutdown uses explicit battery-only allow gate'
 Assert-Contains $powerManager 'source->external_power_present[\s\S]*s_blockers\s*\|=\s*POWER_MANAGER_BLOCKER_EXTERNAL_POWER[\s\S]*s_blockers\s*&=\s*~\(uint32_t\)POWER_MANAGER_BLOCKER_EXTERNAL_POWER' 'external power sets and clears blocker'
 Assert-Contains $powerManager 'power_manager_awake_blockers\(s_blockers\)\s*!=\s*0[\s\S]*return\s+POWER_MANAGER_STATE_ACTIVE' 'external power does not block connected/disconnected awake idle'
 Assert-Contains $powerManager 'power_manager_audio_idle_blockers\(uint32_t blockers\)[\s\S]*return\s+power_manager_awake_blockers\(blockers\)' 'audio idle uses same non-external blocker mask'
@@ -65,4 +67,4 @@ Assert-Contains $powerManager 'DIAG_POWER_SLEEP_BLOCKED[\s\S]*POWER_MANAGER_SHUT
 Assert-Contains $powerManager 'DIAG_POWER_EXTERNAL_POWER' 'dedicated external-power diag event'
 Assert-Contains $diagEvents 'DIAG_POWER_EXTERNAL_POWER\s+9\s+/\*\s*a1=flags,\s*a2=raw_levels,\s*a3=idle_ms,\s*a4=shutdown_blockers\s+\*/' 'external-power diag event contract'
 
-Write-Host "PASS: charging-awake policy static checks cover raw/interpreted power inputs, plugged idle behavior, automatic hardware-shutdown blocking, manual shutdown override, plug/unplug idle reset, and diagnostics."
+Write-Host "PASS: charging-awake policy static checks cover raw/interpreted power inputs, plugged idle behavior, automatic long-idle/low-battery shutdown blocking, manual shutdown override, plug/unplug idle reset, and diagnostics."
