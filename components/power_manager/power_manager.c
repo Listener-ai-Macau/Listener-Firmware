@@ -1776,14 +1776,14 @@ bool power_manager_consume_usb_command(const char *line)
         return true;
     }
 
-    power_manager_record_activity("usb_power_command");
-
     if (strcmp(command, "SHUTDOWN") == 0) {
+        power_manager_record_activity("usb_power_command");
         (void)power_manager_enter_hardware_shutdown(POWER_MANAGER_SHUTDOWN_REASON_MANUAL_COMMAND);
         return true;
     }
 
     if (strcmp(command, "ACTIVITY") == 0) {
+        power_manager_record_activity("usb_power_command");
         power_manager_record_activity("manual_activity");
         ESP_LOGI(TAG, "manual activity accepted");
         return true;

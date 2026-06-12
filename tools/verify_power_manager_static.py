@@ -143,8 +143,10 @@ CHECKS = {
         "POWER_MANAGER_BLOCKER_DIAG_EXPORT",
         "power_manager_set_ble_connected",
         "ble_hid_usb_command_is_passive_query",
+        "ble_hid_usb_command_records_activity",
         "POWER:STATUS",
         "BOARD:STATUS",
+        "BOARD:POWER",
         "LED:STATUS",
         "DEVICE:SETTINGS",
     ],
@@ -679,14 +681,64 @@ def main() -> int:
         )
     if not re.search(
         r"ble_hid_usb_command_is_passive_query[\s\S]*"
-        r"POWER:STATUS[\s\S]*BOARD:STATUS[\s\S]*BOARD:POWER[\s\S]*BOARD:POWER:FORCE[\s\S]*LED:STATUS[\s\S]*DEVICE:SETTINGS[\s\S]*"
-        r"ble_hid_dispatch_usb_command_line[\s\S]*"
-        r"if\s*\(!ble_hid_usb_command_is_passive_query\(line\)\)[\s\S]*"
+        r"POWER:STATUS[\s\S]*BOARD:STATUS[\s\S]*BOARD:POWER[\s\S]*BOARD:POWER:FORCE[\s\S]*LED:STATUS[\s\S]*DEVICE:SETTINGS",
+        ble_hid,
+    ):
+        failures.append(
+            "ports/esp32/ble_hid/ble_hid.c: passive board, power, LED, and device queries must be enumerated"
+        )
+    if not re.search(
+        r"ble_hid_usb_command_records_activity[\s\S]*"
+        r"ble_hid_usb_command_is_passive_query\(line\)[\s\S]*return\s+false[\s\S]*"
+        r"POWER:SHUTDOWN[\s\S]*POWER:ACTIVITY[\s\S]*LED:WAKE[\s\S]*DEVICE:SET",
+        ble_hid,
+    ):
+        failures.append(
+            "ports/esp32/ble_hid/ble_hid.c: USB activity must be gated to explicit active commands"
+        )
+    if re.search(
+        r"ble_hid_dispatch_usb_command_line[\s\S]{0,240}"
+        r"if\s*\(!ble_hid_usb_command_is_passive_query\(line\)\)[\s\S]{0,240}"
         r"power_manager_record_activity\(\"usb_control_line\"\)",
         ble_hid,
     ):
         failures.append(
-            "ports/esp32/ble_hid/ble_hid.c: passive status queries must not reset activity"
+            "ports/esp32/ble_hid/ble_hid.c: USB activity must not be recorded for every non-passive command"
+        )
+    if not re.search(
+        r"ble_hid_dispatch_usb_command_line[\s\S]{0,240}"
+        r"if\s*\(ble_hid_usb_command_records_activity\(line\)\)[\s\S]{0,180}"
+        r"power_manager_record_activity\(\"usb_control_line\"\)",
+        ble_hid,
+    ):
+        failures.append(
+            "ports/esp32/ble_hid/ble_hid.c: dispatch must record usb_control_line only through the explicit activity gate"
+        )
+    activity_gate = re.search(
+        r"static\s+bool\s+ble_hid_usb_command_records_activity[\s\S]*?\n\}",
+        ble_hid,
+    )
+    if activity_gate is None:
+        failures.append("ports/esp32/ble_hid/ble_hid.c: missing USB activity gate body")
+    else:
+        gate_text = activity_gate.group(0)
+        for token in ("BOARD:NO_SUCH_COMMAND", "LED:NO_SUCH_COMMAND", "NO_SUCH:COMMAND"):
+            if token in gate_text:
+                failures.append(
+                    f"ports/esp32/ble_hid/ble_hid.c: invalid command {token!r} must not be activity-gated"
+                )
+    if not re.search(
+        r"strcmp\(command,\s*\"STATUS\"\)[\s\S]*"
+        r"power_manager_print_status\(\)[\s\S]*"
+        r"strcmp\(command,\s*\"SHUTDOWN\"\)[\s\S]*"
+        r"power_manager_record_activity\(\"usb_power_command\"\)[\s\S]*"
+        r"strcmp\(command,\s*\"ACTIVITY\"\)[\s\S]*"
+        r"power_manager_record_activity\(\"usb_power_command\"\)[\s\S]*"
+        r"POWER:\s+unknown command",
+        power_manager,
+    ):
+        failures.append(
+            "components/power_manager/power_manager.c: POWER unknown/status commands must stay passive while SHUTDOWN/ACTIVITY record activity"
         )
 
     monitor = (REPO_ROOT / "tools/monitor_idle_power.py").read_text(encoding="utf-8")

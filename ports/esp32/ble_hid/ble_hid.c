@@ -615,9 +615,121 @@ static bool ble_hid_usb_command_is_passive_query(const char *line)
            strcmp(line, "DEVICE:STATUS") == 0;
 }
 
+static bool ble_hid_usb_command_matches(const char *line, const char *command)
+{
+    if (line == NULL || command == NULL) {
+        return false;
+    }
+    if (line[0] == '~') {
+        line++;
+    }
+    return strcmp(line, command) == 0;
+}
+
+static bool ble_hid_usb_command_starts_with(const char *line, const char *prefix)
+{
+    if (line == NULL || prefix == NULL) {
+        return false;
+    }
+    if (line[0] == '~') {
+        line++;
+    }
+    return strncmp(line, prefix, strlen(prefix)) == 0;
+}
+
+static bool ble_hid_usb_command_starts_with_boundary(const char *line, const char *prefix)
+{
+    if (!ble_hid_usb_command_starts_with(line, prefix)) {
+        return false;
+    }
+    if (line[0] == '~') {
+        line++;
+    }
+    char next = line[strlen(prefix)];
+    return next == '\0' || next == ' ' || next == ':' || next == '\r' || next == '\n';
+}
+
+static bool ble_hid_usb_command_records_activity(const char *line)
+{
+    if (ble_hid_usb_command_is_passive_query(line)) {
+        return false;
+    }
+
+    return
+        ble_hid_usb_command_matches(line, "POWER:SHUTDOWN") ||
+        ble_hid_usb_command_matches(line, "POWER:ACTIVITY") ||
+        ble_hid_usb_command_matches(line, "LED:OFF") ||
+        ble_hid_usb_command_matches(line, "LED:WAKE") ||
+        ble_hid_usb_command_starts_with(line, "LED:BRIGHTNESS ") ||
+        ble_hid_usb_command_starts_with(line, "LED:PROFILE ") ||
+        ble_hid_usb_command_starts_with_boundary(line, "LED:TEST:RGBW") ||
+        ble_hid_usb_command_starts_with_boundary(line, "LED:TEST:MAP") ||
+        ble_hid_usb_command_starts_with_boundary(line, "LED:CHASE") ||
+        ble_hid_usb_command_starts_with(line, "LED:TEST:PIXEL ") ||
+        ble_hid_usb_command_starts_with(line, "LED:PREVIEW ") ||
+        ble_hid_usb_command_starts_with(line, "LED:ERROR ") ||
+        ble_hid_usb_command_starts_with(line, "DEVICE:SET ") ||
+        ble_hid_usb_command_matches(line, "DEVICE:RESET") ||
+        ble_hid_usb_command_matches(line, "BOOT:CLEAR") ||
+        ble_hid_usb_command_matches(line, "BOOT:CRASH") ||
+        ble_hid_usb_command_matches(line, "WDT:DEADLOCK") ||
+        ble_hid_usb_command_matches(line, "OTA:ABORT") ||
+        ble_hid_usb_command_matches(line, "OTA:TEST_BOOT_INACTIVE") ||
+        ble_hid_usb_command_matches(line, "DIAGLOG:CLEAR") ||
+        ble_hid_usb_command_matches(line, "DIAGLOG:INPUTDBG:ON") ||
+        ble_hid_usb_command_matches(line, "DIAGLOG:INPUTDBG:OFF") ||
+        ble_hid_usb_command_starts_with_boundary(line, "DIAGLOG:ENABLE") ||
+        ble_hid_usb_command_starts_with_boundary(line, "DIAGLOG:DISABLE") ||
+        ble_hid_usb_command_matches(line, "KEY:KEY3:SINGLE") ||
+        ble_hid_usb_command_matches(line, "KEY:3:SINGLE") ||
+        ble_hid_usb_command_matches(line, "KEY:EC11:SINGLE") ||
+        ble_hid_usb_command_matches(line, "KEY:VOICE:SINGLE") ||
+        ble_hid_usb_command_matches(line, "EC11:MODE:VOLUME") ||
+        ble_hid_usb_command_matches(line, "EC11:MODE:SYSTEM_VOLUME") ||
+        ble_hid_usb_command_matches(line, "EC11:MODE:SYSTEMVOLUME") ||
+        ble_hid_usb_command_matches(line, "EC11:MODE:BRIGHTNESS") ||
+        ble_hid_usb_command_matches(line, "EC11:MODE:SCREEN_BRIGHTNESS") ||
+        ble_hid_usb_command_matches(line, "EC11:MODE:SCREENBRIGHTNESS") ||
+        ble_hid_usb_command_matches(line, "EC11:MODE:DISABLED") ||
+        ble_hid_usb_command_matches(line, "EC11:MODE:DISABLE") ||
+        ble_hid_usb_command_matches(line, "EC11:MODE:OFF") ||
+        ble_hid_usb_command_matches(line, "EC11:MODE:NONE") ||
+        ble_hid_usb_command_matches(line, "EC11:ACTION:VOLUME") ||
+        ble_hid_usb_command_matches(line, "EC11:ACTION:SYSTEM_VOLUME") ||
+        ble_hid_usb_command_matches(line, "EC11:ACTION:SYSTEMVOLUME") ||
+        ble_hid_usb_command_matches(line, "EC11:ACTION:BRIGHTNESS") ||
+        ble_hid_usb_command_matches(line, "EC11:ACTION:SCREEN_BRIGHTNESS") ||
+        ble_hid_usb_command_matches(line, "EC11:ACTION:SCREENBRIGHTNESS") ||
+        ble_hid_usb_command_matches(line, "EC11:ACTION:DISABLED") ||
+        ble_hid_usb_command_matches(line, "EC11:ACTION:DISABLE") ||
+        ble_hid_usb_command_matches(line, "EC11:ACTION:OFF") ||
+        ble_hid_usb_command_matches(line, "EC11:ACTION:NONE") ||
+        ble_hid_usb_command_matches(line, "EC11:ROTATE:CW") ||
+        ble_hid_usb_command_matches(line, "EC11:ROTATE:UP") ||
+        ble_hid_usb_command_matches(line, "EC11:ROTATE:INCREASE") ||
+        ble_hid_usb_command_matches(line, "EC11:ROTATE:RIGHT") ||
+        ble_hid_usb_command_matches(line, "EC11:ROTATE:CCW") ||
+        ble_hid_usb_command_matches(line, "EC11:ROTATE:DOWN") ||
+        ble_hid_usb_command_matches(line, "EC11:ROTATE:DECREASE") ||
+        ble_hid_usb_command_matches(line, "EC11:ROTATE:LEFT") ||
+        ble_hid_usb_command_matches(line, "VREC:TOGGLE") ||
+        ble_hid_usb_command_matches(line, "VREC:CANCEL") ||
+        ble_hid_usb_command_matches(line, "VREC:PROCESSING:START") ||
+        ble_hid_usb_command_matches(line, "VREC:PROCESSING_START") ||
+        ble_hid_usb_command_matches(line, "VREC:PROCESSING:STOP") ||
+        ble_hid_usb_command_matches(line, "VREC:PROCESSING_STOP") ||
+        ble_hid_usb_command_matches(line, "VREC:PROCESSING:DONE") ||
+        ble_hid_usb_command_matches(line, "VREC:PROCESSING_DONE") ||
+        ble_hid_usb_command_matches(line, "VREC:STOP") ||
+        ble_hid_usb_command_matches(line, "VREC:CLEANUP") ||
+        ble_hid_usb_command_matches(line, "VREC:RECOVERY") ||
+        ble_hid_usb_command_matches(line, "VREC:RESET") ||
+        ble_hid_usb_command_matches(line, "VREC:FORGET");
+}
+
 static bool ble_hid_dispatch_usb_command_line(const char *line)
 {
-    if (!ble_hid_usb_command_is_passive_query(line)) {
+    if (ble_hid_usb_command_records_activity(line)) {
         power_manager_record_activity("usb_control_line");
     }
 
