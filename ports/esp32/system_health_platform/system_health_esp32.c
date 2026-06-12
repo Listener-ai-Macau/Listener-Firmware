@@ -42,7 +42,11 @@ static void system_health_task(void *parameter)
         uint32_t interval_s = s_low_power_mode
             ? (uint32_t)CONFIG_POWER_MANAGER_LOW_POWER_HEALTH_INTERVAL_S
             : HEALTH_INTERVAL_S;
-        (void)watchdog_platform_task_notify_take(pdTRUE, interval_s * 1000U);
+        if (s_low_power_mode) {
+            (void)watchdog_platform_task_notify_take_low_power(pdTRUE, interval_s * 1000U);
+        } else {
+            (void)watchdog_platform_task_notify_take(pdTRUE, interval_s * 1000U);
+        }
         watchdog_platform_feed_current_task();
 
         uint32_t heap_free = esp_get_free_heap_size();

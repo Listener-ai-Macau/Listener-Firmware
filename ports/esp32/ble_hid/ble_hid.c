@@ -50,6 +50,7 @@ static const char *TAG = "ble_hid";
 
 #define BLE_HID_BATTERY_FALLBACK_LEVEL 50
 #define BLE_HID_BATTERY_SAMPLE_INTERVAL_MS 5000
+#define BLE_HID_BATTERY_DISCONNECTED_IDLE_INTERVAL_MS 600000
 #define BLE_HID_BATTERY_FORCE_REFRESH_INTERVAL_MS 60000
 #define BLE_HID_BATTERY_NOTIFY_THRESHOLD_PERCENT 1
 #define BLE_HID_BATTERY_LEVEL_INVALID UINT8_MAX
@@ -221,9 +222,29 @@ static bool ble_hid_battery_force_refresh_due(uint32_t now_ms)
     return elapsed_ms >= BLE_HID_BATTERY_FORCE_REFRESH_INTERVAL_MS;
 }
 
+static uint32_t ble_hid_battery_sample_interval_ms(void)
+{
+    return s_ble_connected
+        ? BLE_HID_BATTERY_SAMPLE_INTERVAL_MS
+        : BLE_HID_BATTERY_DISCONNECTED_IDLE_INTERVAL_MS;
+}
+
+static void ble_hid_battery_task_wake(void)
+{
+    if (s_ble_hid_ctx.battery_task_handle != NULL) {
+        xTaskNotifyGive(s_ble_hid_ctx.battery_task_handle);
+    }
+}
+
 static void ble_hid_update_battery_level(const char *reason, bool force_notify)
 {
     if (s_ble_hid_ctx.hid_device == NULL) {
+        return;
+    }
+
+    if (!s_ble_connected && !force_notify) {
+        ESP_LOGD(TAG, "battery update skipped while disconnected reason=%s",
+                 reason != NULL ? reason : "unspecified");
         return;
     }
 
@@ -345,8 +366,16 @@ static void ble_hid_battery_task(void *parameter)
     (void)watchdog_platform_subscribe_current_task("ble_hid_battery_task");
 
     while (1) {
-        watchdog_platform_delay_ms(BLE_HID_BATTERY_SAMPLE_INTERVAL_MS);
-        ble_hid_update_battery_level("threshold_sample", false);
+        if (s_ble_connected) {
+            (void)watchdog_platform_task_notify_take(
+                pdTRUE,
+                ble_hid_battery_sample_interval_ms());
+        } else {
+            (void)watchdog_platform_task_notify_take_low_power(
+                pdTRUE,
+                ble_hid_battery_sample_interval_ms());
+        }
+        ble_hid_update_battery_level(s_ble_connected ? "threshold_sample" : "idle_sample", false);
         watchdog_platform_feed_current_task();
     }
 }
@@ -461,6 +490,7 @@ esp_err_t ble_hid_send_ascii_async(char input_char)
     }
 
     if (!ble_hid_is_connected()) {
+        power_manager_record_activity("hid_key_wake");
         (void)ble_hid_gap_request_reconnect();
         return ESP_ERR_INVALID_STATE;
     }
@@ -485,6 +515,7 @@ esp_err_t ble_hid_send_keyboard_usage_with_modifier_async(uint8_t usage, uint8_t
     }
 
     if (!ble_hid_is_connected()) {
+        power_manager_record_activity("hid_usage_wake");
         (void)ble_hid_gap_request_reconnect();
         return ESP_ERR_INVALID_STATE;
     }
@@ -515,6 +546,7 @@ esp_err_t ble_hid_send_consumer_usage_async(uint16_t usage, const char *source)
     }
 
     if (!ble_hid_is_connected()) {
+        power_manager_record_activity("hid_consumer_wake");
         (void)ble_hid_gap_request_reconnect();
         return ESP_ERR_INVALID_STATE;
     }
@@ -574,6 +606,8 @@ static bool ble_hid_usb_command_is_passive_query(const char *line)
 
     return strcmp(line, "POWER:STATUS") == 0 ||
            strcmp(line, "BOARD:STATUS") == 0 ||
+           strcmp(line, "BOARD:POWER") == 0 ||
+           strcmp(line, "BOARD:POWER:FORCE") == 0 ||
            strcmp(line, "LED:STATUS") == 0 ||
            strcmp(line, "LED:BUDGET") == 0 ||
            strcmp(line, "LED:PRIVACY") == 0 ||
@@ -832,6 +866,7 @@ static void ble_hid_event_callback(void *handler_args, esp_event_base_t base, in
     case ESP_HIDD_CONNECT_EVENT:
         ESP_LOGI(TAG, "CONNECT");
         s_ble_connected = true;
+        ble_hid_battery_task_wake();
         power_manager_set_ble_connected(true);
         status_led_set_ble_state(STATUS_LED_BLE_CONNECTED, true);
         s_connect_timestamp_ms = (uint32_t)(esp_timer_get_time() / 1000LL);
@@ -882,6 +917,7 @@ static void ble_hid_event_callback(void *handler_args, esp_event_base_t base, in
     case ESP_HIDD_DISCONNECT_EVENT:
         {
             s_ble_connected = false;
+            ble_hid_battery_task_wake();
             uint32_t disconnect_count = ble_hid_increment_disconnect_count();
             uint32_t conn_duration = (uint32_t)(esp_timer_get_time() / 1000LL) - s_connect_timestamp_ms;
             uint32_t heap_kb = esp_get_free_heap_size() / 1024;

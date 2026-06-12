@@ -26,6 +26,7 @@ extern esp_err_t audio_capture_set_idle_power_save(bool enabled) __attribute__((
 extern bool audio_capture_session_is_active(void) __attribute__((weak));
 extern bool ble_hid_gap_is_connected(void) __attribute__((weak));
 extern esp_err_t ble_hid_gap_set_low_power_advertising(bool enabled) __attribute__((weak));
+extern esp_err_t ble_hid_gap_stop_advertising_for_key_wake(void) __attribute__((weak));
 extern esp_err_t ble_hid_gap_prepare_shutdown_disconnect(void) __attribute__((weak));
 extern esp_err_t ble_hid_gap_request_low_power_connection(void) __attribute__((weak));
 extern esp_err_t ble_hid_gap_request_active_connection(void) __attribute__((weak));
@@ -60,6 +61,13 @@ extern void status_led_prepare_sleep(void) __attribute__((weak));
 
 #define POWER_MANAGER_USB_PREFIX "POWER:"
 #define POWER_MANAGER_BATTERY_WARN_PERCENT 10U
+#define POWER_MANAGER_CHARGE_FULL_DEBOUNCE_MS 10000U
+#define POWER_MANAGER_CHARGE_FULL_MIN_MV 4050U
+#define POWER_MANAGER_CHARGE_FULL_MIN_PERCENT 88U
+#define POWER_MANAGER_IDLE_BATTERY_REFRESH_MS 600000U
+#define POWER_MANAGER_LOW_POWER_EVALUATE_INTERVAL_MS 60000U
+#define POWER_MANAGER_LOW_BATTERY_SHUTDOWN_MAX_MV 3000U
+#define POWER_MANAGER_LOW_BATTERY_BOOT_GRACE_MS 15000U
 #ifndef CONFIG_POWER_MANAGER_BATTERY_CRITICAL_PERCENT
 #define CONFIG_POWER_MANAGER_BATTERY_CRITICAL_PERCENT 0
 #endif
@@ -83,6 +91,8 @@ typedef struct {
     bool external_power_present;
     bool charging;
     bool charge_full;
+    bool charge_full_latched;
+    uint32_t charge_full_candidate_ms;
     const char *usb_det_policy;
     const char *charger_polarity_policy;
     const char *pwr_hold_policy;
@@ -100,11 +110,17 @@ static bool s_usb_power_present;
 static bool s_external_power_present;
 static bool s_charging;
 static bool s_charge_full;
+static bool s_charge_full_latched;
 static bool s_auto_shutdown_block_logged;
+static bool s_cached_battery_valid;
 static int s_usb_det_level = -1;
 static int s_bat_chg_level = -1;
 static int s_bat_std_level = -1;
 static int s_pwr_hold_level = -1;
+static uint64_t s_charge_full_candidate_since_ms;
+static uint64_t s_cached_battery_read_ms;
+static uint32_t s_cached_battery_mv;
+static uint8_t s_cached_battery_level_percent = 0xFF;
 static uint32_t s_blockers;
 static uint64_t s_last_user_activity_ms;
 static uint64_t s_last_radio_activity_ms;
@@ -265,6 +281,61 @@ static uint32_t power_manager_encode_power_source_flags(
     return flags;
 }
 
+static bool power_manager_charge_full_battery_allowed(const power_manager_snapshot_t *battery_snapshot)
+{
+    return battery_snapshot == NULL ||
+           !battery_snapshot->battery_valid ||
+           battery_snapshot->battery_mv >= POWER_MANAGER_CHARGE_FULL_MIN_MV ||
+           battery_snapshot->battery_level_percent >= POWER_MANAGER_CHARGE_FULL_MIN_PERCENT;
+}
+
+static uint32_t power_manager_charge_full_candidate_ms_locked(uint64_t now_ms)
+{
+    if (s_charge_full_candidate_since_ms == 0 || now_ms < s_charge_full_candidate_since_ms) {
+        return 0;
+    }
+    return power_manager_clamp_u64_to_u32(now_ms - s_charge_full_candidate_since_ms);
+}
+
+static void power_manager_apply_charge_state_filter_locked(
+    power_manager_power_source_snapshot_t *source,
+    uint64_t now_ms,
+    const power_manager_snapshot_t *battery_snapshot)
+{
+    if (source == NULL) {
+        return;
+    }
+
+    bool raw_charging = source->usb_power_present && source->bat_chg_level == 0;
+    bool raw_full = source->usb_power_present && source->bat_std_level == 0;
+
+    if (!source->usb_power_present) {
+        s_charge_full_latched = false;
+        s_charge_full_candidate_since_ms = 0;
+    } else if (!s_charge_full_latched) {
+        bool full_candidate =
+            raw_full &&
+            !raw_charging &&
+            power_manager_charge_full_battery_allowed(battery_snapshot);
+        if (full_candidate) {
+            if (s_charge_full_candidate_since_ms == 0) {
+                s_charge_full_candidate_since_ms = now_ms;
+            } else if (
+                now_ms - s_charge_full_candidate_since_ms >=
+                POWER_MANAGER_CHARGE_FULL_DEBOUNCE_MS) {
+                s_charge_full_latched = true;
+            }
+        } else {
+            s_charge_full_candidate_since_ms = 0;
+        }
+    }
+
+    source->charge_full = source->usb_power_present && s_charge_full_latched;
+    source->charging = raw_charging && !source->charge_full;
+    source->charge_full_latched = s_charge_full_latched;
+    source->charge_full_candidate_ms = power_manager_charge_full_candidate_ms_locked(now_ms);
+}
+
 static void power_manager_read_power_source(power_manager_power_source_snapshot_t *out_source)
 {
     if (out_source == NULL) {
@@ -274,14 +345,16 @@ static void power_manager_read_power_source(power_manager_power_source_snapshot_
     board_v2_power_input_snapshot_t board_snapshot = {0};
     board_get_v2_power_input_snapshot(&board_snapshot);
 
+    bool usb_power_present = board_snapshot.usb_det_level > 0;
+
     *out_source = (power_manager_power_source_snapshot_t){
         .usb_det_level = board_snapshot.usb_det_level,
         .bat_chg_level = board_snapshot.bat_chg_level,
         .bat_std_level = board_snapshot.bat_std_level,
         .pwr_hold_level = board_snapshot.pwr_hold_level,
-        .usb_power_present = board_snapshot.usb_det_level > 0,
-        .charging = board_snapshot.bat_chg_level == 0,
-        .charge_full = board_snapshot.bat_std_level == 0,
+        .usb_power_present = usb_power_present,
+        .charging = usb_power_present && board_snapshot.bat_chg_level == 0,
+        .charge_full = usb_power_present && board_snapshot.bat_std_level == 0,
         .usb_det_policy = board_snapshot.usb_det_policy,
         .charger_polarity_policy = board_snapshot.charger_polarity_policy,
         .pwr_hold_policy = board_snapshot.pwr_hold_policy,
@@ -421,23 +494,24 @@ static bool power_manager_sync_power_source_locked(
         return false;
     }
 
-    bool changed = !s_power_source_initialized ||
-                   s_usb_det_level != source->usb_det_level ||
-                   s_bat_chg_level != source->bat_chg_level ||
-                   s_bat_std_level != source->bat_std_level ||
-                   s_pwr_hold_level != source->pwr_hold_level ||
-                   s_usb_power_present != source->usb_power_present ||
-                   s_external_power_present != source->external_power_present ||
-                   s_charging != source->charging ||
-                   s_charge_full != source->charge_full;
+    bool state_changed = !s_power_source_initialized ||
+                         s_usb_det_level != source->usb_det_level ||
+                         s_pwr_hold_level != source->pwr_hold_level ||
+                         s_usb_power_present != source->usb_power_present ||
+                         s_external_power_present != source->external_power_present ||
+                         s_charging != source->charging ||
+                         s_charge_full != source->charge_full;
+    bool raw_status_changed = !s_power_source_initialized ||
+                              s_bat_chg_level != source->bat_chg_level ||
+                              s_bat_std_level != source->bat_std_level;
     bool external_changed = !s_power_source_initialized ||
                             s_external_power_present != source->external_power_present;
 
-    if (!changed) {
+    if (!state_changed && !raw_status_changed) {
         return false;
     }
 
-    if (s_power_source_initialized && external_changed) {
+    if (s_power_source_initialized && state_changed && external_changed) {
         s_last_user_activity_ms = now_ms;
         s_last_radio_activity_ms = now_ms;
     }
@@ -451,16 +525,18 @@ static bool power_manager_sync_power_source_locked(
     s_external_power_present = source->external_power_present;
     s_charging = source->charging;
     s_charge_full = source->charge_full;
-    s_auto_shutdown_block_logged = false;
+    if (state_changed) {
+        s_auto_shutdown_block_logged = false;
+    }
 
-    /* External power keeps the product fully awake while plugged, while
-       automatic-shutdown diagnostics still report it as the shutdown cause. */
+    /* External power blocks automatic hardware shutdown while still allowing
+       connected/disconnected idle and audio idle power save. */
     if (source->external_power_present) {
         s_blockers |= POWER_MANAGER_BLOCKER_EXTERNAL_POWER;
     } else {
         s_blockers &= ~(uint32_t)POWER_MANAGER_BLOCKER_EXTERNAL_POWER;
     }
-    return true;
+    return state_changed;
 }
 
 static power_manager_state_t power_manager_awake_idle_state_locked(uint32_t radio_idle_ms)
@@ -543,6 +619,26 @@ static bool power_manager_refresh_ble_connection_locked(uint64_t now_ms)
     return true;
 }
 
+static bool power_manager_low_battery_shutdown_confirmed_locked(
+    const power_manager_snapshot_t *battery_snapshot,
+    const power_manager_power_source_snapshot_t *source,
+    uint64_t now_ms)
+{
+    if (battery_snapshot == NULL || source == NULL) {
+        return false;
+    }
+    if (!battery_snapshot->battery_valid ||
+        battery_snapshot->battery_mv == 0 ||
+        battery_snapshot->battery_mv > POWER_MANAGER_LOW_BATTERY_SHUTDOWN_MAX_MV ||
+        battery_snapshot->battery_level_percent > POWER_MANAGER_BATTERY_CRITICAL_PERCENT) {
+        return false;
+    }
+    if (!power_manager_low_battery_shutdown_allowed(source)) {
+        return false;
+    }
+    return power_manager_user_idle_ms_locked(now_ms) >= POWER_MANAGER_LOW_BATTERY_BOOT_GRACE_MS;
+}
+
 static void power_manager_log_transition(
     power_manager_state_t previous,
     power_manager_state_t next,
@@ -589,6 +685,10 @@ static void power_manager_apply_state(power_manager_state_t previous, power_mana
         return;
     }
 
+    if (s_task_handle != NULL) {
+        xTaskNotifyGive(s_task_handle);
+    }
+
     switch (next) {
     case POWER_MANAGER_STATE_ACTIVE:
         if (status_led_set_low_power_disabled != NULL) {
@@ -629,7 +729,10 @@ static void power_manager_apply_state(power_manager_state_t previous, power_mana
         if (system_health_set_low_power_mode != NULL) {
             system_health_set_low_power_mode(true);
         }
-        if (ble_hid_gap_set_low_power_advertising != NULL) {
+        if (next == POWER_MANAGER_STATE_DISCONNECTED_IDLE &&
+            ble_hid_gap_stop_advertising_for_key_wake != NULL) {
+            (void)ble_hid_gap_stop_advertising_for_key_wake();
+        } else if (ble_hid_gap_set_low_power_advertising != NULL) {
             (void)ble_hid_gap_set_low_power_advertising(true);
         }
         break;
@@ -684,6 +787,10 @@ static void power_manager_guard_runtime_power_hold_low(power_manager_state_t sta
 
 static void power_manager_update_battery_snapshot(power_manager_snapshot_t *snapshot)
 {
+    if (snapshot == NULL) {
+        return;
+    }
+
     battery_monitor_status_t battery = {0};
     esp_err_t ret = battery_monitor_read(&battery);
     snapshot->battery_valid = ret == ESP_OK && battery.valid;
@@ -699,6 +806,72 @@ static void power_manager_update_battery_snapshot(power_manager_snapshot_t *snap
     }
 }
 
+static void power_manager_store_battery_snapshot_locked(
+    const power_manager_snapshot_t *snapshot,
+    uint64_t now_ms)
+{
+    if (snapshot == NULL) {
+        return;
+    }
+
+    s_cached_battery_valid = snapshot->battery_valid;
+    s_cached_battery_mv = snapshot->battery_mv;
+    s_cached_battery_level_percent = snapshot->battery_level_percent;
+    s_cached_battery_read_ms = now_ms;
+}
+
+static bool power_manager_copy_cached_battery_snapshot_locked(power_manager_snapshot_t *snapshot)
+{
+    if (snapshot == NULL || s_cached_battery_read_ms == 0) {
+        return false;
+    }
+
+    snapshot->battery_valid = s_cached_battery_valid;
+    snapshot->battery_mv = s_cached_battery_mv;
+    snapshot->battery_level_percent = s_cached_battery_level_percent;
+    return true;
+}
+
+static bool power_manager_should_refresh_battery_for_evaluate_locked(
+    uint64_t now_ms,
+    const power_manager_power_source_snapshot_t *source)
+{
+    if (s_cached_battery_read_ms == 0) {
+        return true;
+    }
+    if (s_state != POWER_MANAGER_STATE_DISCONNECTED_IDLE || s_ble_connected) {
+        return true;
+    }
+    if (source != NULL &&
+        (source->usb_power_present != s_usb_power_present ||
+         source->external_power_present != s_external_power_present)) {
+        return true;
+    }
+    if (now_ms < s_cached_battery_read_ms) {
+        return true;
+    }
+
+    return now_ms - s_cached_battery_read_ms >= POWER_MANAGER_IDLE_BATTERY_REFRESH_MS;
+}
+
+static bool power_manager_should_refresh_battery_for_snapshot_locked(
+    const power_manager_power_source_snapshot_t *source)
+{
+    if (s_cached_battery_read_ms == 0) {
+        return true;
+    }
+    if (s_state != POWER_MANAGER_STATE_DISCONNECTED_IDLE || s_ble_connected) {
+        return true;
+    }
+    if (source != NULL &&
+        (source->usb_power_present != s_usb_power_present ||
+         source->external_power_present != s_external_power_present)) {
+        return true;
+    }
+
+    return false;
+}
+
 void power_manager_get_snapshot(power_manager_snapshot_t *snapshot)
 {
     if (snapshot == NULL) {
@@ -708,21 +881,44 @@ void power_manager_get_snapshot(power_manager_snapshot_t *snapshot)
     memset(snapshot, 0, sizeof(*snapshot));
     uint64_t now_ms = power_manager_now_ms();
     power_manager_power_source_snapshot_t power_source = {0};
+    power_manager_snapshot_t battery_snapshot = {0};
+    bool refresh_battery = true;
+    bool battery_refreshed = false;
     power_manager_read_power_source(&power_source);
 
-    snapshot->usb_det_level = power_source.usb_det_level;
-    snapshot->bat_chg_level = power_source.bat_chg_level;
-    snapshot->bat_std_level = power_source.bat_std_level;
-    snapshot->pwr_hold_level = power_source.pwr_hold_level;
-    snapshot->usb_power_present = power_source.usb_power_present;
-    snapshot->external_power_present = power_source.external_power_present;
-    snapshot->charging = power_source.charging;
-    snapshot->charge_full = power_source.charge_full;
-    snapshot->usb_det_policy = power_source.usb_det_policy;
-    snapshot->charger_polarity_policy = power_source.charger_polarity_policy;
-    snapshot->pwr_hold_policy = power_source.pwr_hold_policy;
+    if (s_mutex != NULL && xSemaphoreTake(s_mutex, portMAX_DELAY) == pdTRUE) {
+        refresh_battery =
+            power_manager_should_refresh_battery_for_snapshot_locked(&power_source);
+        if (!refresh_battery &&
+            !power_manager_copy_cached_battery_snapshot_locked(&battery_snapshot)) {
+            refresh_battery = true;
+        }
+        xSemaphoreGive(s_mutex);
+    }
+
+    if (refresh_battery) {
+        power_manager_update_battery_snapshot(&battery_snapshot);
+        battery_refreshed = true;
+    }
 
     if (s_mutex != NULL && xSemaphoreTake(s_mutex, portMAX_DELAY) == pdTRUE) {
+        if (battery_refreshed) {
+            power_manager_store_battery_snapshot_locked(&battery_snapshot, now_ms);
+        }
+        power_manager_apply_charge_state_filter_locked(&power_source, now_ms, &battery_snapshot);
+        snapshot->usb_det_level = power_source.usb_det_level;
+        snapshot->bat_chg_level = power_source.bat_chg_level;
+        snapshot->bat_std_level = power_source.bat_std_level;
+        snapshot->pwr_hold_level = power_source.pwr_hold_level;
+        snapshot->usb_power_present = power_source.usb_power_present;
+        snapshot->external_power_present = power_source.external_power_present;
+        snapshot->charging = power_source.charging;
+        snapshot->charge_full = power_source.charge_full;
+        snapshot->charge_full_latched = power_source.charge_full_latched;
+        snapshot->charge_full_candidate_ms = power_source.charge_full_candidate_ms;
+        snapshot->usb_det_policy = power_source.usb_det_policy;
+        snapshot->charger_polarity_policy = power_source.charger_polarity_policy;
+        snapshot->pwr_hold_policy = power_source.pwr_hold_policy;
         snapshot->state = s_state;
         snapshot->blockers = s_blockers;
         snapshot->audio_idle_blockers = power_manager_audio_idle_blockers(s_blockers);
@@ -742,8 +938,26 @@ void power_manager_get_snapshot(power_manager_snapshot_t *snapshot)
         snapshot->last_shutdown_idle_ms = s_last_shutdown_idle_ms;
         snapshot->last_shutdown_blockers = s_last_shutdown_blockers;
         xSemaphoreGive(s_mutex);
+    } else {
+        snapshot->usb_det_level = power_source.usb_det_level;
+        snapshot->bat_chg_level = power_source.bat_chg_level;
+        snapshot->bat_std_level = power_source.bat_std_level;
+        snapshot->pwr_hold_level = power_source.pwr_hold_level;
+        snapshot->usb_power_present = power_source.usb_power_present;
+        snapshot->external_power_present = power_source.external_power_present;
+        snapshot->charging = power_source.charging;
+        snapshot->charge_full = power_source.charge_full;
+        snapshot->usb_det_policy = power_source.usb_det_policy;
+        snapshot->charger_polarity_policy = power_source.charger_polarity_policy;
+        snapshot->pwr_hold_policy = power_source.pwr_hold_policy;
     }
 
+    snapshot->battery_valid = battery_snapshot.battery_valid;
+    snapshot->battery_mv = battery_snapshot.battery_mv;
+    snapshot->battery_level_percent = battery_snapshot.battery_level_percent;
+    snapshot->charge_full_debounce_ms = POWER_MANAGER_CHARGE_FULL_DEBOUNCE_MS;
+    snapshot->charge_full_min_mv = POWER_MANAGER_CHARGE_FULL_MIN_MV;
+    snapshot->charge_full_min_percent = POWER_MANAGER_CHARGE_FULL_MIN_PERCENT;
     snapshot->audio_idle_threshold_ms = CONFIG_POWER_MANAGER_AUDIO_IDLE_MS;
     snapshot->low_power_idle_threshold_ms = power_manager_low_power_idle_ms();
     snapshot->connected_idle_threshold_ms = snapshot->low_power_idle_threshold_ms;
@@ -758,7 +972,6 @@ void power_manager_get_snapshot(power_manager_snapshot_t *snapshot)
     snapshot->pwr_hold_policy = power_hold.policy;
     snapshot->voice_key_gpio = (uint32_t)BOARD_PINS_EC11_KEY_IO;
     snapshot->hardware_shutdown_user_action = POWER_MANAGER_SHUTDOWN_USER_ACTION;
-    power_manager_update_battery_snapshot(snapshot);
 }
 
 static void power_manager_reset_idle_after_shutdown_failure(void)
@@ -875,7 +1088,9 @@ static esp_err_t power_manager_enter_hardware_shutdown(power_manager_shutdown_re
     }
 
     power_manager_power_source_snapshot_t final_power_source = {0};
+    power_manager_snapshot_t final_battery_snapshot = {0};
     power_manager_read_power_source(&final_power_source);
+    power_manager_update_battery_snapshot(&final_battery_snapshot);
 
     if (s_mutex == NULL || xSemaphoreTake(s_mutex, portMAX_DELAY) != pdTRUE) {
         ESP_LOGW(TAG, "hardware shutdown rejected: failed to acquire final shutdown gate");
@@ -884,6 +1099,10 @@ static esp_err_t power_manager_enter_hardware_shutdown(power_manager_shutdown_re
         return ESP_ERR_TIMEOUT;
     }
 
+    power_manager_apply_charge_state_filter_locked(
+        &final_power_source,
+        power_manager_now_ms(),
+        &final_battery_snapshot);
     uint32_t final_blockers = reason == POWER_MANAGER_SHUTDOWN_REASON_LONG_IDLE
         ? s_blockers
         : power_manager_without_external_power_blocker(s_blockers);
@@ -1035,13 +1254,34 @@ static void power_manager_evaluate(void)
     bool log_automatic_shutdown_blocked = false;
     power_manager_power_source_snapshot_t power_source = {0};
     power_manager_snapshot_t battery_snapshot = {0};
+    bool refresh_battery = true;
+    bool battery_refreshed = false;
     power_manager_read_power_source(&power_source);
+
+    if (xSemaphoreTake(s_mutex, portMAX_DELAY) == pdTRUE) {
+        refresh_battery =
+            power_manager_should_refresh_battery_for_evaluate_locked(now_ms, &power_source);
+        if (!refresh_battery &&
+            !power_manager_copy_cached_battery_snapshot_locked(&battery_snapshot)) {
+            refresh_battery = true;
+        }
+        xSemaphoreGive(s_mutex);
+    }
+
+    if (refresh_battery) {
+        power_manager_update_battery_snapshot(&battery_snapshot);
+        battery_refreshed = true;
+    }
 
     if (xSemaphoreTake(s_mutex, portMAX_DELAY) != pdTRUE) {
         return;
     }
 
     previous = s_state;
+    if (battery_refreshed) {
+        power_manager_store_battery_snapshot_locked(&battery_snapshot, now_ms);
+    }
+    power_manager_apply_charge_state_filter_locked(&power_source, now_ms, &battery_snapshot);
     power_source_changed = power_manager_sync_power_source_locked(&power_source, now_ms);
     bool ble_changed = power_manager_refresh_ble_connection_locked(now_ms);
     automatic_shutdown_blocked =
@@ -1065,10 +1305,16 @@ static void power_manager_evaluate(void)
     /* Low-battery protection: shut down immediately only on battery power.
        USB/VBUS, charging, or charge-full status blocks automatic low-battery
        shutdown even if the battery estimate is critical. */
-    power_manager_update_battery_snapshot(&battery_snapshot);
-    if (battery_snapshot.battery_valid &&
-        battery_snapshot.battery_level_percent <= POWER_MANAGER_BATTERY_CRITICAL_PERCENT &&
-        power_manager_low_battery_shutdown_allowed(&power_source)) {
+    bool low_battery_shutdown_confirmed = false;
+    if (xSemaphoreTake(s_mutex, portMAX_DELAY) == pdTRUE) {
+        low_battery_shutdown_confirmed =
+            power_manager_low_battery_shutdown_confirmed_locked(
+                &battery_snapshot,
+                &power_source,
+                now_ms);
+        xSemaphoreGive(s_mutex);
+    }
+    if (low_battery_shutdown_confirmed) {
         ESP_LOGW(
             TAG,
             "low battery critical shutdown: level=%u%% mv=%" PRIu32 " threshold=%u%%"
@@ -1179,7 +1425,21 @@ static void power_manager_task(void *parameter)
     (void)watchdog_platform_subscribe_current_task("power_manager_task");
 
     while (1) {
-        watchdog_platform_delay_ms(CONFIG_POWER_MANAGER_EVALUATE_INTERVAL_MS);
+        power_manager_state_t state = POWER_MANAGER_STATE_ACTIVE;
+        if (s_mutex != NULL && xSemaphoreTake(s_mutex, portMAX_DELAY) == pdTRUE) {
+            state = s_state;
+            xSemaphoreGive(s_mutex);
+        }
+
+        if (state == POWER_MANAGER_STATE_ACTIVE) {
+            (void)watchdog_platform_task_notify_take(
+                pdTRUE,
+                CONFIG_POWER_MANAGER_EVALUATE_INTERVAL_MS);
+        } else {
+            (void)watchdog_platform_task_notify_take_low_power(
+                pdTRUE,
+                POWER_MANAGER_LOW_POWER_EVALUATE_INTERVAL_MS);
+        }
         power_manager_evaluate();
         watchdog_platform_feed_current_task();
     }
@@ -1308,6 +1568,9 @@ void power_manager_record_activity(const char *reason)
     } else {
         power_manager_set_audio_idle_power_save(false);
     }
+    if (s_task_handle != NULL) {
+        xTaskNotifyGive(s_task_handle);
+    }
 }
 
 void power_manager_set_blocker(uint32_t blocker_mask, bool enabled)
@@ -1361,6 +1624,9 @@ void power_manager_set_blocker(uint32_t blocker_mask, bool enabled)
     } else if (new_blockers != 0) {
         power_manager_set_audio_idle_power_save(false);
     }
+    if (s_task_handle != NULL) {
+        xTaskNotifyGive(s_task_handle);
+    }
 }
 
 void power_manager_set_ble_connected(bool connected)
@@ -1395,6 +1661,9 @@ void power_manager_set_ble_connected(bool connected)
         power_manager_apply_state(previous, next);
     }
     power_manager_apply_fast_idle_actions(next, user_idle_ms, blockers);
+    if (s_task_handle != NULL) {
+        xTaskNotifyGive(s_task_handle);
+    }
 }
 
 static const char *power_manager_strip_prefix(const char *line)
@@ -1430,6 +1699,9 @@ static void power_manager_print_status(void)
         " user_idle_ms=%" PRIu32 " radio_idle_ms=%" PRIu32
         " ble_connected=%u automatic_shutdown_blocked_by_external_power=%u"
         " external_power_present=%u usb_power_present=%u charging=%u charge_full=%u"
+        " charge_full_latched=%u charge_full_candidate_ms=%" PRIu32
+        " charge_full_debounce_ms=%" PRIu32
+        " charge_full_min_mv=%" PRIu32 " charge_full_min_percent=%u"
         " usb_det_level=%s bat_chg_level=%s bat_std_level=%s pwr_hold_level=%s"
         " usb_det_policy=%s charger_polarity=%s pwr_hold_policy=%s"
         " battery_mv=%" PRIu32 " battery_level=%u battery_valid=%u"
@@ -1455,6 +1727,11 @@ static void power_manager_print_status(void)
         snapshot.usb_power_present ? 1u : 0u,
         snapshot.charging ? 1u : 0u,
         snapshot.charge_full ? 1u : 0u,
+        snapshot.charge_full_latched ? 1u : 0u,
+        snapshot.charge_full_candidate_ms,
+        snapshot.charge_full_debounce_ms,
+        snapshot.charge_full_min_mv,
+        snapshot.charge_full_min_percent,
         power_manager_gpio_level_name(snapshot.usb_det_level),
         power_manager_gpio_level_name(snapshot.bat_chg_level),
         power_manager_gpio_level_name(snapshot.bat_std_level),

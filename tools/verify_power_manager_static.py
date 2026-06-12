@@ -31,6 +31,9 @@ CHECKS = {
         "usb_power_present",
         "charging",
         "charge_full",
+        "charge_full_latched",
+        "charge_full_candidate_ms",
+        "charge_full_debounce_ms",
         "automatic_shutdown_blocked_by_external_power",
         "last_shutdown_reason",
         "last_shutdown_idle_ms",
@@ -82,6 +85,16 @@ CHECKS = {
         "power_manager_awake_blockers",
         "power_manager_audio_idle_blockers",
         "power_manager_read_power_source",
+        "power_manager_apply_charge_state_filter_locked",
+        "POWER_MANAGER_CHARGE_FULL_DEBOUNCE_MS",
+        "POWER_MANAGER_IDLE_BATTERY_REFRESH_MS",
+        "POWER_MANAGER_LOW_POWER_EVALUATE_INTERVAL_MS",
+        "POWER_MANAGER_LOW_BATTERY_SHUTDOWN_MAX_MV",
+        "POWER_MANAGER_LOW_BATTERY_BOOT_GRACE_MS",
+        "power_manager_should_refresh_battery_for_evaluate_locked",
+        "power_manager_should_refresh_battery_for_snapshot_locked",
+        "power_manager_low_battery_shutdown_confirmed_locked",
+        "power_manager_copy_cached_battery_snapshot_locked",
         "power_manager_should_preserve_idle_for_ble_change_locked",
         "power_manager_apply_ble_connection_change_locked",
         "DIAG_POWER_SLEEP_ENTRY",
@@ -97,6 +110,7 @@ CHECKS = {
         "ble_hid_gap_prepare_shutdown_disconnect",
         "ble_hid_gap_request_low_power_connection",
         "ble_hid_gap_set_low_power_advertising",
+        "ble_hid_gap_stop_advertising_for_key_wake",
         "audio_capture_set_idle_power_save",
         "audio_idle_power_save=%u",
         "audio_idle_blockers=0x%08",
@@ -114,10 +128,14 @@ CHECKS = {
     ],
     "ports/esp32/ble_hid_gap/ble_hid_gap_esp32.c": [
         "ble_hid_gap_set_low_power_advertising",
+        "ble_hid_gap_stop_advertising_for_key_wake",
         "ble_hid_gap_prepare_shutdown_disconnect",
         "ble_gap_terminate",
         "ble_gap_adv_stop",
-        "BLE_GAP_ADV_ITVL_MS(s_low_power_advertising ? 1000 : 30)",
+        "s_key_wake_only_advertising",
+        "BLE advertising stopped: key-wake-only idle",
+        "NimBLE advertising suppressed: key-wake-only idle",
+        "BLE_GAP_ADV_ITVL_MS(adv_min_ms)",
         "DIAG_GAP_RECOVERY",
     ],
     "ports/esp32/ble_hid/ble_hid.c": [
@@ -294,8 +312,122 @@ def main() -> int:
     for stale in ("Voice Keyboard N4", "EC11 push/GPIO11", "EC11 push/GPIO35", "N4 deep sleep wakes by KEY4/GPIO21"):
         if stale in board:
             failures.append(f"components/board/board.c: stale token {stale!r}")
+    if not re.search(
+        r"board_print_power_rail_status\(battery_monitor_power_rail_t rail,\s*bool force_sample\)[\s\S]*"
+        r"if\s*\(force_sample\)[\s\S]*battery_monitor_read_power_rail\(rail,\s*&status\)[\s\S]*"
+        r"battery_monitor_get_cached_power_rail\(rail,\s*&status\)",
+        board,
+    ):
+        failures.append(
+            "components/board/board.c: BOARD:POWER must use cached current telemetry unless FORCE is requested"
+        )
+    if not re.search(
+        r"sample_mode=%s cache_valid=%u cache_sequence=%[\s\S]*"
+        r"force_sample\s*\?\s*\"force\"\s*:\s*\"cached\"",
+        board,
+    ):
+        failures.append(
+            "components/board/board.c: BOARD:POWER must report sample mode and cache state"
+        )
+    if not re.search(
+        r"strcmp\(command,\s*\"POWER\"\)[\s\S]*board_print_power_status\(false\)[\s\S]*"
+        r"strcmp\(command,\s*\"POWER:FORCE\"\)[\s\S]*board_print_power_status\(true\)",
+        board,
+    ):
+        failures.append(
+            "components/board/board.c: BOARD:POWER:FORCE must be the explicit ADC current sampling command"
+        )
 
     power_manager = (REPO_ROOT / "components/power_manager/power_manager.c").read_text(encoding="utf-8")
+    if not re.search(
+        r"power_manager_apply_charge_state_filter_locked[\s\S]*"
+        r"raw_full\s*&&[\s\S]*"
+        r"!raw_charging\s*&&[\s\S]*"
+        r"power_manager_charge_full_battery_allowed[\s\S]*"
+        r"POWER_MANAGER_CHARGE_FULL_DEBOUNCE_MS[\s\S]*"
+        r"source->charge_full\s*=\s*source->usb_power_present\s*&&\s*s_charge_full_latched",
+        power_manager,
+    ):
+        failures.append(
+            "components/power_manager/power_manager.c: charge-full must be USB-gated and debounced against raw BAT_STD jitter"
+        )
+    if not re.search(
+        r"power_manager_sync_power_source_locked[\s\S]*"
+        r"state_changed[\s\S]*"
+        r"s_charge_full\s*!=\s*source->charge_full[\s\S]*"
+        r"raw_status_changed[\s\S]*"
+        r"return\s+state_changed",
+        power_manager,
+    ):
+        failures.append(
+            "components/power_manager/power_manager.c: raw charger pin changes must not by themselves emit power-source transitions"
+        )
+    if not re.search(
+        r"POWER_MANAGER_IDLE_BATTERY_REFRESH_MS\s+600000U[\s\S]*"
+        r"power_manager_should_refresh_battery_for_evaluate_locked[\s\S]*"
+        r"s_state\s*!=\s*POWER_MANAGER_STATE_DISCONNECTED_IDLE[\s\S]*"
+        r"source->usb_power_present\s*!=\s*s_usb_power_present[\s\S]*"
+        r"now_ms\s*-\s*s_cached_battery_read_ms\s*>=\s*POWER_MANAGER_IDLE_BATTERY_REFRESH_MS",
+        power_manager,
+    ):
+        failures.append(
+            "components/power_manager/power_manager.c: stable disconnected idle must use cached battery snapshots between long refresh intervals"
+        )
+    if not re.search(
+        r"power_manager_should_refresh_battery_for_snapshot_locked[\s\S]*"
+        r"s_state\s*!=\s*POWER_MANAGER_STATE_DISCONNECTED_IDLE[\s\S]*"
+        r"source->usb_power_present\s*!=\s*s_usb_power_present[\s\S]*"
+        r"return\s+false",
+        power_manager,
+    ):
+        failures.append(
+            "components/power_manager/power_manager.c: POWER:STATUS must not force a battery ADC read during stable disconnected idle"
+        )
+    for function_name in (
+        "power_manager_should_refresh_battery_for_evaluate_locked",
+        "power_manager_should_refresh_battery_for_snapshot_locked",
+    ):
+        match = re.search(
+            rf"static bool {function_name}\([^{{]+{{(?P<body>[\s\S]*?)\n}}\n",
+            power_manager,
+        )
+        if match and re.search(r"source->bat_(?:chg|std)_level\s*!=", match.group("body")):
+            failures.append(
+                f"components/power_manager/power_manager.c: {function_name} must ignore raw charger-pin jitter while disconnected idle"
+            )
+    if not re.search(
+        r"power_manager_evaluate[\s\S]*"
+        r"power_manager_should_refresh_battery_for_evaluate_locked\(now_ms,\s*&power_source\)[\s\S]*"
+        r"power_manager_copy_cached_battery_snapshot_locked\(&battery_snapshot\)[\s\S]*"
+        r"power_manager_update_battery_snapshot\(&battery_snapshot\)[\s\S]*"
+        r"power_manager_store_battery_snapshot_locked\(&battery_snapshot,\s*now_ms\)",
+        power_manager,
+    ):
+        failures.append(
+            "components/power_manager/power_manager.c: evaluate loop must avoid unconditional 2s battery ADC reads in disconnected idle"
+        )
+    if not re.search(
+        r"POWER_MANAGER_LOW_POWER_EVALUATE_INTERVAL_MS\s+60000U[\s\S]*"
+        r"power_manager_task[\s\S]*"
+        r"state\s*==\s*POWER_MANAGER_STATE_ACTIVE[\s\S]*"
+        r"watchdog_platform_task_notify_take\([\s\S]*CONFIG_POWER_MANAGER_EVALUATE_INTERVAL_MS[\s\S]*"
+        r"watchdog_platform_task_notify_take_low_power\([\s\S]*POWER_MANAGER_LOW_POWER_EVALUATE_INTERVAL_MS",
+        power_manager,
+    ):
+        failures.append(
+            "components/power_manager/power_manager.c: stable idle must use a long low-power evaluate wait instead of 2s polling"
+        )
+    if not re.search(
+        r"POWER_MANAGER_LOW_BATTERY_SHUTDOWN_MAX_MV\s+3000U[\s\S]*"
+        r"POWER_MANAGER_LOW_BATTERY_BOOT_GRACE_MS\s+15000U[\s\S]*"
+        r"power_manager_low_battery_shutdown_confirmed_locked[\s\S]*"
+        r"battery_snapshot->battery_mv\s*>\s*POWER_MANAGER_LOW_BATTERY_SHUTDOWN_MAX_MV[\s\S]*"
+        r"power_manager_user_idle_ms_locked\(now_ms\)\s*>=\s*POWER_MANAGER_LOW_BATTERY_BOOT_GRACE_MS",
+        power_manager,
+    ):
+        failures.append(
+            "components/power_manager/power_manager.c: low-battery hardware shutdown must reject ADC/USB_DET startup transients"
+        )
     if not re.search(
         r"power_manager_refresh_ble_connection_locked[\s\S]*"
         r"power_manager_apply_ble_connection_change_locked\(connected,\s*now_ms\)",
@@ -400,12 +532,16 @@ def main() -> int:
             "components/power_manager/power_manager.c: low-battery automatic shutdown must be blocked by USB/charging/full power source"
         )
     if not re.search(
-        r"battery_snapshot\.battery_level_percent\s*<=\s*POWER_MANAGER_BATTERY_CRITICAL_PERCENT[\s\S]*"
-        r"power_manager_low_battery_shutdown_allowed\(&power_source\)",
+        r"power_manager_low_battery_shutdown_confirmed_locked[\s\S]*"
+        r"battery_snapshot->battery_level_percent\s*>\s*POWER_MANAGER_BATTERY_CRITICAL_PERCENT[\s\S]*"
+        r"power_manager_low_battery_shutdown_allowed\(source\)[\s\S]*"
+        r"power_manager_user_idle_ms_locked\(now_ms\)[\s\S]*"
+        r"low_battery_shutdown_confirmed[\s\S]*"
+        r"power_manager_enter_hardware_shutdown\(POWER_MANAGER_SHUTDOWN_REASON_LOW_BATTERY\)",
         power_manager,
     ):
         failures.append(
-            "components/power_manager/power_manager.c: critical low-battery path must use the explicit power-source allow gate"
+            "components/power_manager/power_manager.c: critical low-battery path must use the explicit power-source allow gate and transient guard"
         )
     if not re.search(
         r"power_manager_target_state_locked[\s\S]*"
@@ -457,6 +593,44 @@ def main() -> int:
     ble_gap = (REPO_ROOT / "ports/esp32/ble_hid_gap/ble_hid_gap_esp32.c").read_text(encoding="utf-8")
     if "s_shutdown_quiesce" not in ble_gap:
         failures.append("ports/esp32/ble_hid_gap/ble_hid_gap_esp32.c: missing shutdown quiesce state")
+    if not re.search(
+        r"ble_hid_gap_stop_advertising_for_key_wake[\s\S]*"
+        r"s_key_wake_only_advertising\s*=\s*true[\s\S]*"
+        r"s_directed_adv_pending\s*=\s*false[\s\S]*"
+        r"ble_gap_adv_stop\(\)",
+        ble_gap,
+    ):
+        failures.append(
+            "ports/esp32/ble_hid_gap/ble_hid_gap_esp32.c: disconnected idle must stop advertising for key-wake-only mode"
+        )
+    if not re.search(
+        r"esp_hid_ble_gap_adv_start[\s\S]*"
+        r"s_key_wake_only_advertising[\s\S]*"
+        r"NimBLE advertising suppressed: key-wake-only idle[\s\S]*"
+        r"return\s+ESP_OK",
+        ble_gap,
+    ):
+        failures.append(
+            "ports/esp32/ble_hid_gap/ble_hid_gap_esp32.c: key-wake-only mode must suppress advertising starts"
+        )
+    if not re.search(
+        r"ble_hid_gap_request_reconnect[\s\S]*"
+        r"s_key_wake_only_advertising\s*=\s*false[\s\S]*"
+        r"s_directed_adv_pending\s*=\s*true[\s\S]*"
+        r"ble_hid_gap_start_advertising\(\)",
+        ble_gap,
+    ):
+        failures.append(
+            "ports/esp32/ble_hid_gap/ble_hid_gap_esp32.c: physical wake reconnect must leave key-wake-only mode and restart advertising"
+        )
+    if not re.search(
+        r"ble_hid_gap_forget_bonds_and_repair[\s\S]{0,260}"
+        r"s_key_wake_only_advertising\s*=\s*false",
+        ble_gap,
+    ):
+        failures.append(
+            "ports/esp32/ble_hid_gap/ble_hid_gap_esp32.c: recovery pairing must be able to reopen advertising from key-wake-only idle"
+        )
     for label, pattern in (
         (
             "advertising start",
@@ -486,8 +660,26 @@ def main() -> int:
 
     ble_hid = (REPO_ROOT / "ports/esp32/ble_hid/ble_hid.c").read_text(encoding="utf-8")
     if not re.search(
+        r"if\s*\(!ble_hid_is_connected\(\)\)\s*\{[\s\S]{0,120}"
+        r"power_manager_record_activity\(\"hid_(?:key|usage|consumer)_wake\"\)[\s\S]{0,120}"
+        r"ble_hid_gap_request_reconnect\(\)",
+        ble_hid,
+    ):
+        failures.append(
+            "ports/esp32/ble_hid/ble_hid.c: physical HID activity must wake key-only idle before requesting reconnect"
+        )
+    if not re.search(
+        r"BLE_HID_BATTERY_DISCONNECTED_IDLE_INTERVAL_MS\s+600000[\s\S]*"
+        r"!s_ble_connected\s*&&\s*!force_notify[\s\S]*"
+        r"battery update skipped while disconnected",
+        ble_hid,
+    ):
+        failures.append(
+            "ports/esp32/ble_hid/ble_hid.c: disconnected idle must skip routine HID battery updates"
+        )
+    if not re.search(
         r"ble_hid_usb_command_is_passive_query[\s\S]*"
-        r"POWER:STATUS[\s\S]*BOARD:STATUS[\s\S]*LED:STATUS[\s\S]*DEVICE:SETTINGS[\s\S]*"
+        r"POWER:STATUS[\s\S]*BOARD:STATUS[\s\S]*BOARD:POWER[\s\S]*BOARD:POWER:FORCE[\s\S]*LED:STATUS[\s\S]*DEVICE:SETTINGS[\s\S]*"
         r"ble_hid_dispatch_usb_command_line[\s\S]*"
         r"if\s*\(!ble_hid_usb_command_is_passive_query\(line\)\)[\s\S]*"
         r"power_manager_record_activity\(\"usb_control_line\"\)",
@@ -495,6 +687,23 @@ def main() -> int:
     ):
         failures.append(
             "ports/esp32/ble_hid/ble_hid.c: passive status queries must not reset activity"
+        )
+
+    monitor = (REPO_ROOT / "tools/monitor_idle_power.py").read_text(encoding="utf-8")
+    if not re.search(
+        r"--board-power[\s\S]*choices=\(\"none\",\s*\"cached\",\s*\"force\"\)[\s\S]*default=\"none\"",
+        monitor,
+    ):
+        failures.append(
+            "tools/monitor_idle_power.py: idle monitor must default to status-only telemetry"
+        )
+    if not re.search(
+        r"args\.board_power\s*==\s*\"force\"[\s\S]*~BOARD:POWER:FORCE\\n[\s\S]*"
+        r"elif args\.board_power\s*==\s*\"cached\"[\s\S]*~BOARD:POWER\\n",
+        monitor,
+    ):
+        failures.append(
+            "tools/monitor_idle_power.py: forced current ADC sampling must be explicit and separate from cached idle polling"
         )
 
     if failures:

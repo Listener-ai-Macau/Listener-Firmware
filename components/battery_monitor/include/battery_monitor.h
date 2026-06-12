@@ -43,11 +43,15 @@ typedef struct {
     bool power_mw_valid;
     int32_t estimated_power_mw;
     uint8_t sample_count;
+    uint32_t sequence;
     esp_err_t result;
 } battery_monitor_power_rail_status_t;
 
 esp_err_t battery_monitor_read(battery_monitor_status_t *out_status);
 esp_err_t battery_monitor_read_power_rail(
+    battery_monitor_power_rail_t rail,
+    battery_monitor_power_rail_status_t *out_status);
+bool battery_monitor_get_cached_power_rail(
     battery_monitor_power_rail_t rail,
     battery_monitor_power_rail_status_t *out_status);
 uint8_t battery_monitor_percent_from_mv(uint32_t battery_mv);

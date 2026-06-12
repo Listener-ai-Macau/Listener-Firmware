@@ -49,6 +49,11 @@ static battery_monitor_adc_channel_state_t s_3v3_current_adc = {
 static battery_monitor_adc_channel_state_t s_led_current_adc = {
     .gpio = BOARD_PINS_SY7088_I_ADC_IO,
 };
+static battery_monitor_power_rail_status_t s_cached_3v3_power_rail;
+static battery_monitor_power_rail_status_t s_cached_led_power_rail;
+static bool s_cached_3v3_power_rail_valid;
+static bool s_cached_led_power_rail_valid;
+static uint32_t s_power_rail_sequence;
 
 static bool battery_monitor_calibration_init(
     adc_unit_t unit,
@@ -342,6 +347,43 @@ static const char *battery_monitor_power_rail_name(battery_monitor_power_rail_t 
     }
 }
 
+static battery_monitor_power_rail_status_t *battery_monitor_power_rail_cache(
+    battery_monitor_power_rail_t rail,
+    bool **out_valid)
+{
+    if (out_valid == NULL) {
+        return NULL;
+    }
+
+    switch (rail) {
+    case BATTERY_MONITOR_POWER_RAIL_3V3:
+        *out_valid = &s_cached_3v3_power_rail_valid;
+        return &s_cached_3v3_power_rail;
+    case BATTERY_MONITOR_POWER_RAIL_LED_5V:
+        *out_valid = &s_cached_led_power_rail_valid;
+        return &s_cached_led_power_rail;
+    default:
+        *out_valid = NULL;
+        return NULL;
+    }
+}
+
+static void battery_monitor_store_power_rail_cache_locked(
+    battery_monitor_power_rail_t rail,
+    battery_monitor_power_rail_status_t *status)
+{
+    bool *valid = NULL;
+    battery_monitor_power_rail_status_t *cache =
+        battery_monitor_power_rail_cache(rail, &valid);
+    if (cache == NULL || valid == NULL || status == NULL || !status->valid) {
+        return;
+    }
+
+    status->sequence = ++s_power_rail_sequence;
+    *cache = *status;
+    *valid = true;
+}
+
 esp_err_t battery_monitor_read_power_rail(
     battery_monitor_power_rail_t rail,
     battery_monitor_power_rail_status_t *out_status)
@@ -433,7 +475,36 @@ esp_err_t battery_monitor_read_power_rail(
         out_status->calibration_status = battery_ret == ESP_OK && battery_calibrated
             ? "ina180a2_10mR_adc_calibrated_battery_adc_calibrated"
             : "ina180a2_10mR_nominal_battery_mv_reconstructed";
+        battery_monitor_store_power_rail_cache_locked(rail, out_status);
     }
     xSemaphoreGive(s_mutex);
     return ret;
+}
+
+bool battery_monitor_get_cached_power_rail(
+    battery_monitor_power_rail_t rail,
+    battery_monitor_power_rail_status_t *out_status)
+{
+    if (out_status == NULL) {
+        return false;
+    }
+
+    esp_err_t mutex_ret = battery_monitor_ensure_mutex();
+    if (mutex_ret != ESP_OK) {
+        return false;
+    }
+
+    if (xSemaphoreTake(s_mutex, portMAX_DELAY) != pdTRUE) {
+        return false;
+    }
+
+    bool *valid = NULL;
+    battery_monitor_power_rail_status_t *cache =
+        battery_monitor_power_rail_cache(rail, &valid);
+    bool found = cache != NULL && valid != NULL && *valid;
+    if (found) {
+        *out_status = *cache;
+    }
+    xSemaphoreGive(s_mutex);
+    return found;
 }

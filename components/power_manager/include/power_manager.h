@@ -62,6 +62,11 @@ typedef struct {
     bool external_power_present;
     bool charging;
     bool charge_full;
+    bool charge_full_latched;
+    uint32_t charge_full_candidate_ms;
+    uint32_t charge_full_debounce_ms;
+    uint32_t charge_full_min_mv;
+    uint8_t charge_full_min_percent;
     bool automatic_shutdown_blocked_by_external_power;
     const char *usb_det_policy;
     const char *charger_polarity_policy;

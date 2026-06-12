@@ -108,6 +108,36 @@ uint32_t watchdog_platform_task_notify_take(BaseType_t clear_on_exit, uint32_t w
     return 0;
 }
 
+uint32_t watchdog_platform_task_notify_take_low_power(BaseType_t clear_on_exit, uint32_t wait_ms)
+{
+#if CONFIG_ESP_TASK_WDT_EN
+    bool was_subscribed = esp_task_wdt_status(NULL) == ESP_OK;
+    if (was_subscribed) {
+        esp_err_t ret = esp_task_wdt_delete(NULL);
+        if (ret != ESP_OK) {
+            ESP_LOGW(TAG, "low-power wait WDT unsubscribe failed: %s", esp_err_to_name(ret));
+            return watchdog_platform_task_notify_take(clear_on_exit, wait_ms);
+        }
+    }
+#else
+    bool was_subscribed = false;
+#endif
+
+    uint32_t notified = ulTaskNotifyTake(clear_on_exit, pdMS_TO_TICKS(wait_ms));
+
+#if CONFIG_ESP_TASK_WDT_EN
+    if (was_subscribed) {
+        esp_err_t ret = esp_task_wdt_add(NULL);
+        if (ret == ESP_OK) {
+            (void)esp_task_wdt_reset();
+        } else {
+            ESP_LOGW(TAG, "low-power wait WDT resubscribe failed: %s", esp_err_to_name(ret));
+        }
+    }
+#endif
+    return notified;
+}
+
 void watchdog_platform_log_config(void)
 {
     ESP_LOGI(

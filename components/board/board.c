@@ -369,19 +369,83 @@ void board_get_v2_power_input_snapshot(board_v2_power_input_snapshot_t *out_snap
     };
 }
 
-static void board_print_power_rail_status(battery_monitor_power_rail_t rail)
+static const char *board_power_rail_name(battery_monitor_power_rail_t rail)
+{
+    switch (rail) {
+    case BATTERY_MONITOR_POWER_RAIL_3V3:
+        return "TPS63020_input_branch";
+    case BATTERY_MONITOR_POWER_RAIL_LED_5V:
+        return "SY7088_input_branch";
+    default:
+        return "unknown";
+    }
+}
+
+static gpio_num_t board_power_rail_gpio(battery_monitor_power_rail_t rail)
+{
+    switch (rail) {
+    case BATTERY_MONITOR_POWER_RAIL_3V3:
+        return BOARD_PINS_TPS63020_I_ADC_IO;
+    case BATTERY_MONITOR_POWER_RAIL_LED_5V:
+        return BOARD_PINS_SY7088_I_ADC_IO;
+    default:
+        return GPIO_NUM_NC;
+    }
+}
+
+static bool board_power_rail_present(gpio_num_t gpio)
+{
+    return gpio != GPIO_NUM_NC && gpio >= 0 && gpio < GPIO_NUM_MAX;
+}
+
+static void board_init_uncached_power_rail_status(
+    battery_monitor_power_rail_t rail,
+    battery_monitor_power_rail_status_t *status)
+{
+    if (status == NULL) {
+        return;
+    }
+
+    memset(status, 0, sizeof(*status));
+    gpio_num_t gpio = board_power_rail_gpio(rail);
+    status->rail_name = board_power_rail_name(rail);
+    status->gpio = (int32_t)gpio;
+    status->current_telemetry_present = board_power_rail_present(gpio);
+    status->calibration_status = status->current_telemetry_present
+        ? "no_cached_sample"
+        : "current_telemetry_not_populated";
+    status->result = status->current_telemetry_present
+        ? ESP_ERR_INVALID_STATE
+        : ESP_ERR_NOT_SUPPORTED;
+}
+
+static void board_print_power_rail_status(battery_monitor_power_rail_t rail, bool force_sample)
 {
     battery_monitor_power_rail_status_t status = {0};
-    esp_err_t ret = battery_monitor_read_power_rail(rail, &status);
+    bool cached = false;
+    esp_err_t ret = ESP_OK;
+    if (force_sample) {
+        ret = battery_monitor_read_power_rail(rail, &status);
+    } else if (battery_monitor_get_cached_power_rail(rail, &status)) {
+        ret = status.result;
+        cached = true;
+    } else {
+        board_init_uncached_power_rail_status(rail, &status);
+        ret = status.result;
+    }
+
     uint32_t rail_code = rail == BATTERY_MONITOR_POWER_RAIL_3V3 ? 1u : 2u;
-    diag_log(DIAG_SRC_BOARD, DIAG_BOARD_POWER_RAIL,
-             status.valid || !status.current_telemetry_present ? DIAG_SEV_INFO : DIAG_SEV_WARN,
-             rail_code,
-             (uint32_t)(status.raw_adc < 0 ? 0 : status.raw_adc),
-             (uint32_t)(status.adc_mv < 0 ? 0 : status.adc_mv),
-             status.adc_calibrated ? 1u : 0u);
+    if (force_sample) {
+        diag_log(DIAG_SRC_BOARD, DIAG_BOARD_POWER_RAIL,
+                 status.valid || !status.current_telemetry_present ? DIAG_SEV_INFO : DIAG_SEV_WARN,
+                 rail_code,
+                 (uint32_t)(status.raw_adc < 0 ? 0 : status.raw_adc),
+                 (uint32_t)(status.adc_mv < 0 ? 0 : status.adc_mv),
+                 status.adc_calibrated ? 1u : 0u);
+    }
     printf(
         "~BOARD:POWER branch=%s present=%u gpio=%" PRId32
+        " sample_mode=%s cache_valid=%u cache_sequence=%" PRIu32
         " raw_adc=%d adc_mv=%d adc_calibrated=%u sample_count=%u"
         " calibration_status=%s current_model=\"%s\""
         " current_calibrated=%u current_ma_valid=%u estimated_input_current_ma=%" PRId32
@@ -391,6 +455,9 @@ static void board_print_power_rail_status(battery_monitor_power_rail_t rail)
         status.rail_name,
         status.current_telemetry_present ? 1u : 0u,
         status.gpio,
+        force_sample ? "force" : "cached",
+        cached ? 1u : 0u,
+        status.sequence,
         status.raw_adc,
         status.adc_mv,
         status.adc_calibrated ? 1u : 0u,
@@ -405,6 +472,13 @@ static void board_print_power_rail_status(battery_monitor_power_rail_t rail)
         status.estimated_power_mw,
         esp_err_to_name(ret),
         BOARD_V2_CURRENT_POLICY);
+}
+
+static void board_print_power_status(bool force_sample)
+{
+    board_print_power_rail_status(BATTERY_MONITOR_POWER_RAIL_3V3, force_sample);
+    board_print_power_rail_status(BATTERY_MONITOR_POWER_RAIL_LED_5V, force_sample);
+    fflush(stdout);
 }
 
 static void board_print_led_status(void)
@@ -635,8 +709,7 @@ static void board_print_status(void)
         battery.sample_count,
         esp_err_to_name(battery_ret),
         BOARD_PINS_RESERVED_MSPI_GPIOS);
-    board_print_power_rail_status(BATTERY_MONITOR_POWER_RAIL_3V3);
-    board_print_power_rail_status(BATTERY_MONITOR_POWER_RAIL_LED_5V);
+    board_print_power_status(false);
     board_print_led_status();
     fflush(stdout);
 }
@@ -713,7 +786,7 @@ void board_print_help(void)
         "KEY1/GPIO38, KEY2/GPIO39, KEY3/GPIO40, KEY4/GPIO41 send safe non-text BLE HID usages while Listener-Type custom actions are unavailable; recording is a configurable custom-key action.\n"
         "Generated button diagnostics: ~KEY:KEY3:SINGLE simulates the recording custom-key path for automated A1/A2 tests; ~KEY:EC11:SINGLE simulates the EC11 runtime custom-key press/release path.\n"
         "Send ~VREC:RECOVERY to clear pairing/session state over USB.\n"
-        "Board diagnostics: ~BOARD:STATUS reports V2 pin, USB, charger, battery, PWR_HOLD/GPIO11, mic, reserved MSPI, and LED resource status.\n"
+        "Board diagnostics: ~BOARD:STATUS reports V2 pin, USB, charger, battery, PWR_HOLD/GPIO11, mic, reserved MSPI, and LED resource status; ~BOARD:POWER reports cached current rails, ~BOARD:POWER:FORCE samples ADC current rails.\n"
         "Board GPIO diagnostics: ~BOARD:GPIO reads raw KEY1-KEY4 and EC11 A/B/key levels without reconfiguring pins.\n"
         "Board GPIO scan: ~BOARD:GPIO-SCAN samples all valid GPIO levels without reconfiguring pins and prints changed GPIOs.\n"
         "Input flash debug: ~DIAGLOG:INPUTDBG:ON records high-volume key/EC11 debug events until ~DIAGLOG:INPUTDBG:OFF or reboot.\n"
@@ -737,6 +810,14 @@ bool board_consume_usb_command(const char *line)
     if (board_command_matches(line, BOARD_USB_PREFIX, &command)) {
         if (strcmp(command, "STATUS") == 0) {
             board_print_status();
+            return true;
+        }
+        if (strcmp(command, "POWER") == 0) {
+            board_print_power_status(false);
+            return true;
+        }
+        if (strcmp(command, "POWER:FORCE") == 0) {
+            board_print_power_status(true);
             return true;
         }
         if (strcmp(command, "GPIO") == 0) {

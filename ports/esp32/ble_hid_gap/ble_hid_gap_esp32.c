@@ -68,6 +68,8 @@ static void ble_hid_gap_log_conn_desc(const char *context, uint16_t conn_handle)
  */
 
 #define GATT_SVR_SVC_HID_UUID 0x1812
+#define BLE_HID_GAP_FAST_ADV_MIN_MS 30U
+#define BLE_HID_GAP_FAST_ADV_MAX_MS 50U
 
 static struct ble_hs_adv_fields s_adv_fields;
 static struct ble_hs_adv_fields s_scan_rsp_fields;
@@ -81,6 +83,7 @@ static bool s_last_adv_was_directed = false;
 static bool s_ble_gap_connected = false;
 static bool s_audio_enabled = true;
 static bool s_low_power_advertising = false;
+static bool s_key_wake_only_advertising = false;
 static bool s_shutdown_quiesce = false;
 static uint16_t s_ble_gap_conn_handle = BLE_HS_CONN_HANDLE_NONE;
 static portMUX_TYPE s_ble_gap_state_lock = portMUX_INITIALIZER_UNLOCKED;
@@ -609,6 +612,10 @@ nimble_hid_gap_event(struct ble_gap_event *event, void *arg)
                 ESP_LOGW(TAG, "shutdown quiesce active: suppressing advertising after connect failure");
                 return 0;
             }
+            if (s_key_wake_only_advertising) {
+                ESP_LOGI(TAG, "key-wake-only idle: suppressing advertising after connect failure");
+                return 0;
+            }
             s_directed_adv_pending = false;
             ble_hid_gap_start_advertising();
             return 0;
@@ -704,6 +711,11 @@ nimble_hid_gap_event(struct ble_gap_event *event, void *arg)
             ESP_LOGW(TAG, "shutdown quiesce active: suppressing advertising restart after disconnect");
             return 0;
         }
+        if (s_key_wake_only_advertising) {
+            s_directed_adv_pending = false;
+            ESP_LOGI(TAG, "key-wake-only idle: suppressing advertising restart after disconnect");
+            return 0;
+        }
         ble_hid_gap_start_advertising();
         return 0;
     case BLE_GAP_EVENT_CONN_UPDATE:
@@ -727,6 +739,10 @@ nimble_hid_gap_event(struct ble_gap_event *event, void *arg)
         }
         if (s_shutdown_quiesce) {
             ESP_LOGW(TAG, "shutdown quiesce active: suppressing advertising restart after adv complete");
+            return 0;
+        }
+        if (s_key_wake_only_advertising) {
+            ESP_LOGI(TAG, "key-wake-only idle: suppressing advertising restart after adv complete");
             return 0;
         }
         ble_hid_gap_start_advertising();
@@ -930,6 +946,11 @@ esp_err_t esp_hid_ble_gap_adv_start(void)
         return ESP_OK;
     }
 
+    if (s_key_wake_only_advertising) {
+        ESP_LOGI(TAG, "NimBLE advertising suppressed: key-wake-only idle");
+        return ESP_OK;
+    }
+
     if (!s_hid_start_event_seen) {
         ESP_LOGI(TAG, "NimBLE advertising deferred: HID START not seen yet");
         return ESP_OK;
@@ -1023,8 +1044,10 @@ esp_err_t esp_hid_ble_gap_adv_start(void)
     memset(&adv_params, 0, sizeof adv_params);
     adv_params.conn_mode = BLE_GAP_CONN_MODE_UND;
     adv_params.disc_mode = BLE_GAP_DISC_MODE_GEN;
-    adv_params.itvl_min = BLE_GAP_ADV_ITVL_MS(s_low_power_advertising ? 1000 : 30);
-    adv_params.itvl_max = BLE_GAP_ADV_ITVL_MS(s_low_power_advertising ? 1200 : 50);
+    const uint32_t adv_min_ms = BLE_HID_GAP_FAST_ADV_MIN_MS;
+    const uint32_t adv_max_ms = BLE_HID_GAP_FAST_ADV_MAX_MS;
+    adv_params.itvl_min = BLE_GAP_ADV_ITVL_MS(adv_min_ms);
+    adv_params.itvl_max = BLE_GAP_ADV_ITVL_MS(adv_max_ms);
     rc = ble_gap_adv_start(s_own_addr_type, NULL, BLE_HS_FOREVER,
                            &adv_params, nimble_hid_gap_event, NULL);
     if (rc != 0) {
@@ -1039,8 +1062,8 @@ esp_err_t esp_hid_ble_gap_adv_start(void)
         TAG,
         "NimBLE undirected advertising started: low_power=%u interval_ms=%u-%u",
         s_low_power_advertising ? 1u : 0u,
-        s_low_power_advertising ? 1000u : 30u,
-        s_low_power_advertising ? 1200u : 50u);
+        (unsigned)adv_min_ms,
+        (unsigned)adv_max_ms);
     diag_log(DIAG_SRC_BLE_GAP, DIAG_GAP_ADV_START, DIAG_SEV_INFO,
              1, s_low_power_advertising ? 2 : 0, bonded_peer_count, 0);
     if (!s_low_power_advertising) {
@@ -1143,6 +1166,10 @@ esp_err_t ble_hid_gap_mark_stack_ready(void)
 
 esp_err_t ble_hid_gap_forget_bonds_and_repair(void)
 {
+    s_shutdown_quiesce = false;
+    s_low_power_advertising = false;
+    s_key_wake_only_advertising = false;
+
     ble_addr_t bonded_peers[8];
     int bonded_peer_count = 0;
     int rc = ble_store_util_bonded_peers(
@@ -1265,10 +1292,16 @@ bool ble_hid_gap_is_connected(void)
 esp_err_t ble_hid_gap_set_low_power_advertising(bool enabled)
 {
     if (s_low_power_advertising == enabled) {
+        if (!enabled) {
+            s_key_wake_only_advertising = false;
+        }
         return ESP_OK;
     }
 
     s_low_power_advertising = enabled;
+    if (!enabled) {
+        s_key_wake_only_advertising = false;
+    }
     ESP_LOGI(TAG, "low-power advertising=%u", enabled ? 1u : 0u);
 
     if (!s_nimble_stack_ready || s_ble_gap_connected || !ble_gap_adv_active()) {
@@ -1284,10 +1317,32 @@ esp_err_t ble_hid_gap_set_low_power_advertising(bool enabled)
     return ble_hid_gap_start_advertising();
 }
 
+esp_err_t ble_hid_gap_stop_advertising_for_key_wake(void)
+{
+    s_low_power_advertising = true;
+    s_key_wake_only_advertising = true;
+    s_directed_adv_pending = false;
+    s_last_adv_was_directed = false;
+    ESP_LOGI(TAG, "BLE advertising stopped: key-wake-only idle");
+
+    if (!s_nimble_stack_ready || s_ble_gap_connected || !ble_gap_adv_active()) {
+        return ESP_OK;
+    }
+
+    int rc = ble_gap_adv_stop();
+    if (rc != 0) {
+        ESP_LOGW(TAG, "key-wake-only advertising stop failed: rc=%d", rc);
+        return ESP_FAIL;
+    }
+
+    return ESP_OK;
+}
+
 esp_err_t ble_hid_gap_prepare_shutdown_disconnect(void)
 {
     s_shutdown_quiesce = true;
     s_low_power_advertising = true;
+    s_key_wake_only_advertising = true;
     s_directed_adv_pending = false;
     s_last_adv_was_directed = false;
 
@@ -1338,13 +1393,15 @@ esp_err_t ble_hid_gap_request_reconnect(void)
     const uint32_t state_flags =
         (adv_active ? 1U : 0U) |
         (s_low_power_advertising ? 2U : 0U) |
-        (s_directed_adv_pending ? 4U : 0U);
+        (s_directed_adv_pending ? 4U : 0U) |
+        (s_key_wake_only_advertising ? 8U : 0U);
 
     ESP_LOGI(TAG,
-             "BLE reconnect requested: adv_active=%u low_power_adv=%u directed_pending=%u",
+             "BLE reconnect requested: adv_active=%u low_power_adv=%u directed_pending=%u key_wake_only=%u",
              adv_active ? 1U : 0U,
              s_low_power_advertising ? 1U : 0U,
-             s_directed_adv_pending ? 1U : 0U);
+             s_directed_adv_pending ? 1U : 0U,
+             s_key_wake_only_advertising ? 1U : 0U);
     diag_log(DIAG_SRC_BLE_GAP,
              DIAG_GAP_RECOVERY,
              DIAG_SEV_INFO,
@@ -1355,6 +1412,7 @@ esp_err_t ble_hid_gap_request_reconnect(void)
 
     s_shutdown_quiesce = false;
     s_low_power_advertising = false;
+    s_key_wake_only_advertising = false;
     s_directed_adv_pending = true;
     s_last_adv_was_directed = false;
 

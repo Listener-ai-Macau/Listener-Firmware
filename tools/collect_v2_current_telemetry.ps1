@@ -165,6 +165,8 @@ function Read-DiagnosticsFromSerial {
 
         $serialPort.Write("~BOARD:STATUS`n")
         Start-Sleep -Milliseconds 100
+        $serialPort.Write("~BOARD:POWER:FORCE`n")
+        Start-Sleep -Milliseconds 100
         $serialPort.Write("~POWER:STATUS`n")
         $deadline = (Get-Date).AddSeconds($Seconds)
         while ((Get-Date) -lt $deadline) {
