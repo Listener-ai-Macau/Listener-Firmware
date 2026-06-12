@@ -184,9 +184,11 @@ def run() -> int:
     ser.timeout = 0.2
     ser.dsrdtr = False
     ser.rtscts = False
-    ser.dtr = True
+    ser.dtr = False
     ser.rts = False
     ser.open()
+    ser.dtr = False
+    ser.rts = False
     try:
         append_serial(f"# status LED hardware validation on {port} baud={baud}\n")
         drain(ser, 5.0)

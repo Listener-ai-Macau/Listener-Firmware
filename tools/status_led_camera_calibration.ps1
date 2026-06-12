@@ -667,6 +667,21 @@ def send_command(ser, text, readback_ms):
     return output
 
 
+def open_serial_no_reset(serial_module, port_device, baudrate, timeout=0.08):
+    ser = serial_module.Serial()
+    ser.port = port_device
+    ser.baudrate = int(baudrate)
+    ser.timeout = timeout
+    ser.dsrdtr = False
+    ser.rtscts = False
+    ser.dtr = False
+    ser.rts = False
+    ser.open()
+    ser.dtr = False
+    ser.rts = False
+    return ser
+
+
 def parse_led_status(text):
     status_line = ""
     for line in text.splitlines():
@@ -982,15 +997,7 @@ def main():
         transcript_lines = []
         try:
             manifest["flash"] = flash_current_build(port.device, output_dir)
-            with serial.Serial(
-                port=port.device,
-                baudrate=int(payload["baud"]),
-                timeout=0.08,
-                dsrdtr=False,
-                rtscts=False,
-            ) as ser:
-                ser.dtr = False
-                ser.rts = False
+            with open_serial_no_reset(serial, port.device, payload["baud"]) as ser:
                 for command in ["~LED:STATUS", "~LED:OFF"]:
                     response = send_command(ser, command, int(payload["readback_ms"]))
                     transcript_lines.append(f"> {command}\n{response}")
@@ -1242,15 +1249,7 @@ def main():
     transcript_lines = []
     try:
         manifest["flash"] = flash_current_build(port.device, output_dir)
-        with serial.Serial(
-            port=port.device,
-            baudrate=int(payload["baud"]),
-            timeout=0.08,
-            dsrdtr=False,
-            rtscts=False,
-        ) as ser:
-            ser.dtr = False
-            ser.rts = False
+        with open_serial_no_reset(serial, port.device, payload["baud"]) as ser:
             startup_commands = [
                 "~LED:STATUS",
                 "~LED:OFF",
