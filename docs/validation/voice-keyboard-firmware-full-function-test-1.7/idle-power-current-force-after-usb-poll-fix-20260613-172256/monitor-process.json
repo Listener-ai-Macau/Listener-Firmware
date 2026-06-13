@@ -1,0 +1,6 @@
+{
+  "pid": 16596,
+  "output_dir": "C:\\Users\\Billy\\Desktop\\listener\\voice-keyboard-firmware\\docs\\validation\\voice-keyboard-firmware-full-function-test-1.7\\idle-power-current-force-after-usb-poll-fix-20260613-172256",
+  "started_at": "2026-06-13T17:22:56.4908216+08:00",
+  "command": "python .\\tools\\monitor_idle_power.py --port COM7 --duration-seconds 240 --interval-seconds 30 --sample-read-seconds 4 --warmup-seconds 75 --board-power force --spike-ma 80 --output-dir C:\\Users\\Billy\\Desktop\\listener\\voice-keyboard-firmware\\docs\\validation\\voice-keyboard-firmware-full-function-test-1.7\\idle-power-current-force-after-usb-poll-fix-20260613-172256"
+}

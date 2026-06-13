@@ -31,6 +31,7 @@ extern esp_err_t ble_hid_gap_prepare_shutdown_disconnect(void) __attribute__((we
 extern esp_err_t ble_hid_gap_request_low_power_connection(void) __attribute__((weak));
 extern esp_err_t ble_hid_gap_request_active_connection(void) __attribute__((weak));
 extern esp_err_t ble_hid_gap_request_reconnect(void) __attribute__((weak));
+extern void ble_hid_battery_task_wake(void) __attribute__((weak));
 extern void system_health_set_low_power_mode(bool enabled) __attribute__((weak));
 extern void status_led_set_low_power_disabled(bool disabled) __attribute__((weak));
 extern void status_led_prepare_sleep(void) __attribute__((weak));
@@ -148,6 +149,11 @@ static uint32_t power_manager_hardware_shutdown_ms(void)
 static uint32_t power_manager_low_power_idle_ms(void)
 {
     return device_settings_get_low_power_idle_ms();
+}
+
+static bool power_manager_plugged_low_power_enabled(void)
+{
+    return device_settings_get_plugged_low_power_enabled();
 }
 
 const char *power_manager_state_name(power_manager_state_t state)
@@ -541,6 +547,10 @@ static bool power_manager_sync_power_source_locked(
 
 static power_manager_state_t power_manager_awake_idle_state_locked(uint32_t radio_idle_ms)
 {
+    if (s_external_power_present && !power_manager_plugged_low_power_enabled()) {
+        return POWER_MANAGER_STATE_ACTIVE;
+    }
+
     uint32_t low_power_idle_ms = power_manager_low_power_idle_ms();
     if (s_ble_connected) {
         return radio_idle_ms >= low_power_idle_ms
@@ -739,6 +749,10 @@ static void power_manager_apply_state(power_manager_state_t previous, power_mana
     default:
         break;
     }
+
+    if (ble_hid_battery_task_wake != NULL) {
+        ble_hid_battery_task_wake();
+    }
 }
 
 static void power_manager_apply_fast_idle_actions(power_manager_state_t state, uint32_t user_idle_ms, uint32_t blockers)
@@ -872,6 +886,16 @@ static bool power_manager_should_refresh_battery_for_snapshot_locked(
     return false;
 }
 
+power_manager_state_t power_manager_get_state(void)
+{
+    power_manager_state_t state = s_state;
+    if (s_mutex != NULL && xSemaphoreTake(s_mutex, portMAX_DELAY) == pdTRUE) {
+        state = s_state;
+        xSemaphoreGive(s_mutex);
+    }
+    return state;
+}
+
 void power_manager_get_snapshot(power_manager_snapshot_t *snapshot)
 {
     if (snapshot == NULL) {
@@ -962,6 +986,9 @@ void power_manager_get_snapshot(power_manager_snapshot_t *snapshot)
     snapshot->low_power_idle_threshold_ms = power_manager_low_power_idle_ms();
     snapshot->connected_idle_threshold_ms = snapshot->low_power_idle_threshold_ms;
     snapshot->disconnected_idle_threshold_ms = snapshot->low_power_idle_threshold_ms;
+    snapshot->plugged_low_power_enabled = power_manager_plugged_low_power_enabled();
+    snapshot->low_power_idle_allowed =
+        !snapshot->external_power_present || snapshot->plugged_low_power_enabled;
     snapshot->hardware_shutdown_threshold_ms = power_manager_hardware_shutdown_ms();
     snapshot->hardware_shutdown_guard_enabled = CONFIG_POWER_MANAGER_ENABLE != 0;
     board_v2_power_hold_snapshot_t power_hold = {0};
@@ -1523,11 +1550,12 @@ esp_err_t power_manager_start(void)
     ESP_LOGI(
         TAG,
         "power manager started: audio_idle_ms=%u low_power_idle_ms=%u connected_idle_ms=%u disconnected_idle_ms=%u"
-        " hardware_shutdown_ms=%u eval_ms=%u pwr_hold_gpio=%d",
+        " plugged_low_power_enabled=%u hardware_shutdown_ms=%u eval_ms=%u pwr_hold_gpio=%d",
         (unsigned)CONFIG_POWER_MANAGER_AUDIO_IDLE_MS,
         (unsigned)power_manager_low_power_idle_ms(),
         (unsigned)power_manager_low_power_idle_ms(),
         (unsigned)power_manager_low_power_idle_ms(),
+        power_manager_plugged_low_power_enabled() ? 1u : 0u,
         (unsigned)power_manager_hardware_shutdown_ms(),
         (unsigned)CONFIG_POWER_MANAGER_EVALUATE_INTERVAL_MS,
         (int)BOARD_PINS_PWR_HOLD_IO);
@@ -1702,6 +1730,7 @@ static void power_manager_print_status(void)
         " charge_full_latched=%u charge_full_candidate_ms=%" PRIu32
         " charge_full_debounce_ms=%" PRIu32
         " charge_full_min_mv=%" PRIu32 " charge_full_min_percent=%u"
+        " plugged_low_power_enabled=%u low_power_idle_allowed=%u"
         " usb_det_level=%s bat_chg_level=%s bat_std_level=%s pwr_hold_level=%s"
         " usb_det_policy=%s charger_polarity=%s pwr_hold_policy=%s"
         " battery_mv=%" PRIu32 " battery_level=%u battery_valid=%u"
@@ -1732,6 +1761,8 @@ static void power_manager_print_status(void)
         snapshot.charge_full_debounce_ms,
         snapshot.charge_full_min_mv,
         snapshot.charge_full_min_percent,
+        snapshot.plugged_low_power_enabled ? 1u : 0u,
+        snapshot.low_power_idle_allowed ? 1u : 0u,
         power_manager_gpio_level_name(snapshot.usb_det_level),
         power_manager_gpio_level_name(snapshot.bat_chg_level),
         power_manager_gpio_level_name(snapshot.bat_std_level),

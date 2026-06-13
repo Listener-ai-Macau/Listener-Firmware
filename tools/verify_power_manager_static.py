@@ -115,8 +115,11 @@ CHECKS = {
         "audio_idle_power_save=%u",
         "audio_idle_blockers=0x%08",
         "low_power_idle_ms=%",
+        "plugged_low_power_enabled=%u",
+        "low_power_idle_allowed=%u",
         "status_led_prepare_sleep",
         "power_manager_low_power_idle_ms",
+        "power_manager_plugged_low_power_enabled",
         "power_manager_guard_runtime_power_hold_low",
         "PWR_HOLD/GPIO11 runtime guard reasserting low",
         'strcmp(command, "SHUTDOWN")',
@@ -556,22 +559,26 @@ def main() -> int:
         )
     if not re.search(
         r"power_manager_awake_idle_state_locked[\s\S]*"
+        r"s_external_power_present\s*&&\s*!power_manager_plugged_low_power_enabled\(\)[\s\S]*"
+        r"POWER_MANAGER_STATE_ACTIVE[\s\S]*"
         r"uint32_t low_power_idle_ms\s*=\s*power_manager_low_power_idle_ms\(\)[\s\S]*"
         r"radio_idle_ms\s*>=\s*low_power_idle_ms",
         power_manager,
     ):
         failures.append(
-            "components/power_manager/power_manager.c: connected/disconnected idle must use the device-settings low-power timeout"
+            "components/power_manager/power_manager.c: connected/disconnected idle must use the device-settings low-power timeout and plugged low-power switch"
         )
     if not re.search(
         r"power_manager_get_snapshot[\s\S]*"
         r"low_power_idle_threshold_ms\s*=\s*power_manager_low_power_idle_ms\(\)[\s\S]*"
         r"connected_idle_threshold_ms\s*=\s*snapshot->low_power_idle_threshold_ms[\s\S]*"
-        r"disconnected_idle_threshold_ms\s*=\s*snapshot->low_power_idle_threshold_ms",
+        r"disconnected_idle_threshold_ms\s*=\s*snapshot->low_power_idle_threshold_ms[\s\S]*"
+        r"plugged_low_power_enabled\s*=\s*power_manager_plugged_low_power_enabled\(\)[\s\S]*"
+        r"low_power_idle_allowed",
         power_manager,
     ):
         failures.append(
-            "components/power_manager/power_manager.c: POWER:STATUS must report the effective low-power timeout for connected and disconnected idle"
+            "components/power_manager/power_manager.c: POWER:STATUS must report the effective low-power timeout and plugged low-power allowance"
         )
     if not re.search(
         r"power_manager_guard_runtime_power_hold_low[\s\S]*"
@@ -672,12 +679,13 @@ def main() -> int:
         )
     if not re.search(
         r"BLE_HID_BATTERY_DISCONNECTED_IDLE_INTERVAL_MS\s+600000[\s\S]*"
+        r"POWER_MANAGER_STATE_CONNECTED_IDLE[\s\S]*"
         r"!s_ble_connected\s*&&\s*!force_notify[\s\S]*"
         r"battery update skipped while disconnected",
         ble_hid,
     ):
         failures.append(
-            "ports/esp32/ble_hid/ble_hid.c: disconnected idle must skip routine HID battery updates"
+            "ports/esp32/ble_hid/ble_hid.c: BLE battery task must back off connected/disconnected low-power idle and skip routine disconnected updates"
         )
     if not re.search(
         r"ble_hid_usb_command_is_passive_query[\s\S]*"

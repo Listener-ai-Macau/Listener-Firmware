@@ -791,7 +791,7 @@ void board_print_help(void)
         "Board GPIO scan: ~BOARD:GPIO-SCAN samples all valid GPIO levels without reconfiguring pins and prints changed GPIOs.\n"
         "Input flash debug: ~DIAGLOG:INPUTDBG:ON records high-volume key/EC11 debug events until ~DIAGLOG:INPUTDBG:OFF or reboot.\n"
         "Power diagnostics: ~POWER:STATUS reports state/blockers/battery/power-hold status, ~POWER:SHUTDOWN requests manual hardware shutdown.\n"
-        "Device settings: ~DEVICE:SETTINGS reports user device config; ~DEVICE:SET plugged_brightness=80 battery_brightness=50 low_power_idle_minutes=1 auto_shutdown_minutes=30 ble_name=listener updates persisted settings.\n"
+        "Device settings: ~DEVICE:SETTINGS reports user device config; ~DEVICE:SET plugged_brightness=80 battery_brightness=50 low_power_idle_minutes=1 plugged_low_power_enabled=1 auto_shutdown_minutes=30 ble_name=listener updates persisted settings.\n"
         "LED diagnostics: ~LED:STATUS reports four WS2812 groups; ~LED:TEST:RGBW and ~LED:TEST:MAP stay brightness-gated until VDD_LED sign-off.\n"
         "Watchdog diagnostics: ~WDT:STATUS reports config, ~WDT:DEADLOCK intentionally triggers Task WDT reset.\n"
         "Boot safety diagnostics: ~BOOT:STATUS reports crash counter, ~BOOT:CRASH restarts for validation, ~BOOT:CLEAR clears safe mode.\n"

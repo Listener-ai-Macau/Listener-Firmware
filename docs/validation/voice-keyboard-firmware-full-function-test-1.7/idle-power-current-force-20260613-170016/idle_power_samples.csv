@@ -1,0 +1,11 @@
+sample,elapsed_s,captured_at_epoch,state,idle_ms,user_idle_ms,radio_idle_ms,ble_connected,external_power_present,usb_power_present,charging,charge_full,charge_full_latched,charge_full_candidate_ms,audio_idle_power_save,low_power_idle_ms,hardware_shutdown_ms,battery_mv,tps_current_ma,tps_power_mw,tps_adc_mv,tps_sample_mode,tps_cache_valid,tps_cache_sequence,sy_current_ma,sy_power_mw,sy_adc_mv,sy_sample_mode,sy_cache_valid,sy_cache_sequence,raw_line_count,has_tps,has_sy,has_power_status
+1,4.094,1781341220.8431559,CONNECTED_IDLE,1428250,1428250,1428250,1,1,1,0,0,0,0,1,60000,1800000,3516,,,,,,,0,0,0,force,0,4,3,False,True,True
+2,34.071,1781341250.8201623,CONNECTED_IDLE,1458250,1458250,1458250,1,1,1,0,0,0,0,1,60000,1800000,3504,48,168,24,force,0,5,0,0,0,force,0,6,9,True,True,True
+3,64.05,1781341280.7993267,CONNECTED_IDLE,1488250,1488250,1488250,1,1,1,0,0,0,0,1,60000,1800000,3536,118,412,59,force,0,7,0,0,0,force,0,8,8,True,True,True
+4,94.091,1781341310.8399043,CONNECTED_IDLE,1518249,1518249,1518249,1,1,1,0,0,0,0,1,60000,1800000,3502,2,6,1,force,0,9,0,0,0,force,0,10,7,True,True,True
+5,124.094,1781341340.8429785,CONNECTED_IDLE,1548249,1548249,1548249,1,1,1,0,0,0,0,1,60000,1800000,3508,112,394,56,force,0,11,10,35,5,force,0,12,9,True,True,True
+6,154.047,1781341370.7961605,CONNECTED_IDLE,1578249,1578249,1578249,1,1,1,0,0,0,0,1,60000,1800000,3508,98,343,49,force,0,13,36,126,18,force,0,14,8,True,True,True
+7,184.063,1781341400.8122494,CONNECTED_IDLE,1608247,1608247,1608247,1,1,1,0,0,0,0,1,60000,1800000,3484,12,42,6,force,0,15,6,21,3,force,0,16,17,True,True,True
+8,214.104,1781341430.8530009,CONNECTED_IDLE,1638248,1638248,1638248,1,1,1,0,0,0,0,1,60000,1800000,3524,104,365,52,force,0,17,0,0,0,force,0,18,8,True,True,True
+9,244.077,1781341460.8263223,CONNECTED_IDLE,1668247,1668247,1668247,1,1,1,0,0,0,0,1,60000,1800000,3528,140,493,70,force,0,19,0,0,0,force,0,20,7,True,True,True
+10,274.085,1781341490.834149,CONNECTED_IDLE,1698246,1698246,1698246,1,1,1,0,0,0,0,1,60000,1800000,3512,86,302,43,force,0,21,0,0,0,force,0,22,7,True,True,True

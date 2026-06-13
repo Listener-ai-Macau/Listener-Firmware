@@ -14,12 +14,14 @@ extern "C" {
 #define DEVICE_SETTINGS_DEFAULT_PLUGGED_BRIGHTNESS_PERCENT 80U
 #define DEVICE_SETTINGS_DEFAULT_BATTERY_BRIGHTNESS_PERCENT 50U
 #define DEVICE_SETTINGS_DEFAULT_LOW_POWER_IDLE_MS 60000U
+#define DEVICE_SETTINGS_DEFAULT_PLUGGED_LOW_POWER_ENABLED 1
 #define DEVICE_SETTINGS_BLE_NAME_MAX_LEN 32
 
 typedef struct {
     uint8_t plugged_brightness_percent;
     uint8_t battery_brightness_percent;
     uint32_t low_power_idle_ms;
+    bool plugged_low_power_enabled;
     uint32_t battery_auto_shutdown_ms;
     char ble_name[DEVICE_SETTINGS_BLE_NAME_MAX_LEN + 1];
     bool ble_name_pending_restart;
@@ -30,6 +32,7 @@ esp_err_t device_settings_init(void);
 void device_settings_get_snapshot(device_settings_snapshot_t *out_snapshot);
 uint8_t device_settings_get_active_brightness_percent(bool external_power_present);
 uint32_t device_settings_get_low_power_idle_ms(void);
+bool device_settings_get_plugged_low_power_enabled(void);
 uint32_t device_settings_get_battery_auto_shutdown_ms(void);
 const char *device_settings_get_ble_name(void);
 bool device_settings_ble_name_pending_restart(void);
