@@ -155,6 +155,7 @@ typedef struct {
     status_led_error_severity_t error_severity;
     bool recording_active;
     bool processing_active;
+    uint8_t recording_level_percent;
     bool battery_valid;
     bool external_power_present;
     bool charging;
@@ -163,7 +164,6 @@ typedef struct {
     bool raw_full;
     bool charge_full_latched;
     uint8_t battery_level_percent;
-    uint8_t recording_level_percent;
     uint32_t battery_mv;
     uint32_t status_window_until_ms;
     uint32_t boot_feedback_until_ms;
@@ -173,8 +173,8 @@ typedef struct {
     uint32_t ok_until_ms;
     uint32_t error_started_ms;
     uint32_t error_until_ms;
-    uint32_t processing_started_ms;
     uint32_t recording_level_updated_ms;
+    uint32_t processing_started_ms;
     uint32_t last_transition_ms;
     uint32_t last_power_poll_ms;
     uint32_t charge_full_candidate_since_ms;
@@ -385,15 +385,6 @@ static uint8_t status_led_profile_cap_percent_for(status_led_profile_t profile, 
     }
 }
 
-static uint8_t status_led_profile_cap_percent_locked(bool safety)
-{
-    uint8_t cap = status_led_profile_cap_percent_for(s_state.profile, safety);
-    if (!safety && s_state.brightness_percent < cap) {
-        cap = s_state.brightness_percent;
-    }
-    return cap;
-}
-
 static uint32_t status_led_profile_budget_ma_for(status_led_profile_t profile, bool safety)
 {
     if (safety || profile == STATUS_LED_PROFILE_FACTORY) {
@@ -422,8 +413,16 @@ static uint8_t status_led_effect_percent_locked(uint8_t desired_percent, bool sa
     if (desired_percent == 0U) {
         return 0U;
     }
-    uint8_t cap = status_led_profile_cap_percent_locked(safety);
-    return desired_percent < cap ? desired_percent : cap;
+    uint32_t scaled = desired_percent;
+    if (!safety) {
+        uint8_t user_brightness = s_state.brightness_percent;
+        scaled = ((uint32_t)desired_percent * user_brightness + 50U) / 100U;
+    }
+    uint8_t cap = status_led_profile_cap_percent_for(s_state.profile, safety);
+    if (scaled > cap) {
+        scaled = cap;
+    }
+    return status_led_clamp_u32_to_u8(scaled);
 }
 
 static status_led_rgb_t status_led_token_locked(status_led_rgb_t color, uint8_t desired_percent, bool safety)

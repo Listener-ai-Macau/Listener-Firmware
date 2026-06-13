@@ -131,6 +131,7 @@ static uint32_t s_dropped_frame_count;
 static audio_capture_export_state_t s_export_state;
 static SemaphoreHandle_t s_state_mutex;
 static uint32_t s_session_id_counter;
+
 static bool s_capture_backpressure_paused;
 static uint32_t s_capture_backpressure_frames;
 
@@ -514,6 +515,12 @@ static void audio_capture_process_frame(const int16_t *frame_buffer)
             s_export_state.stream_batch_frame_count = 0;
             s_export_state.ble_session_started = false;
         }
+
+        should_update_recording_level =
+            s_export_state.active &&
+            s_export_state.mode == AUDIO_CAPTURE_EXPORT_MODE_SESSION &&
+            !s_export_state.stop_requested &&
+            !s_export_state.cancel_requested;
 
         if (s_export_state.active && s_export_state.captured_frames < s_export_state.total_frames) {
             bool stop_boundary_requested =

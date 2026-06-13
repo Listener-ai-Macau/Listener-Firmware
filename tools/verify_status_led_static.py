@@ -22,6 +22,7 @@ CHECKS = {
         "status_led_consume_usb_command",
         "status_led_set_ble_state",
         "status_led_set_recording",
+        "status_led_set_recording_level",
         "status_led_set_processing",
         "status_led_prepare_sleep",
         "STATUS_LED_REC_SOURCE_DEVICE_MIC",
@@ -74,6 +75,9 @@ CHECKS = {
         "STATUS_LED_CHARGE_FULL_MIN_PERCENT 88U",
         "STATUS_LED_FULL_STEADY_PERCENT 100U",
         "STATUS_LED_FULL_STATUS_STEADY_PERCENT 100U",
+        "STATUS_LED_BATTERY_IDLE_BLE_HEARTBEAT_ON_MS 120U",
+        "STATUS_LED_BATTERY_IDLE_BLE_HEARTBEAT_OFF_MS 7880U",
+        "STATUS_LED_BATTERY_IDLE_BLE_HEARTBEAT_PERCENT 18U",
         "STATUS_LED_IDLE_REFRESH_MS 1000U",
         "STATUS_LED_CONTRACT_REV \"status_key_isolated_charge_full_latch_v10\"",
         "boot_feedback_until_ms",
@@ -93,7 +97,8 @@ CHECKS = {
         "factory_full_brightness=1",
         "safety_full_brightness=1",
         "status_led_profile_cap_percent_for",
-        "return desired_percent < cap ? desired_percent : cap",
+        "uint8_t user_brightness = s_state.brightness_percent",
+        "scaled = ((uint32_t)desired_percent * user_brightness + 50U) / 100U",
         "STATUS_LED_TEST_CHASE",
         "status_led_parse_single_strip_mask",
         "strtok_r(copy, \",+| \"",
@@ -153,6 +158,9 @@ CHECKS = {
         "status_led_clamp_current_locked",
         "status_led_render_error_locked",
         "status_led_render_recording_locked",
+        "recording_level_percent",
+        "recording_level_updated_ms",
+        "status_led_set_recording_level",
         "STATUS_LED_REC_GOLD_R 255U",
         "STATUS_LED_REC_GOLD_G 172U",
         "status_led_rec_gold()",
@@ -249,8 +257,26 @@ CHECKS = {
         "status_led_set_recording(false, STATUS_LED_REC_SOURCE_NOT_AVAILABLE)",
         "suppress_retry_led_error",
         "status_led_clear_error(STATUS_LED_ERROR_DOMAIN_REC)",
+        "PROCESSING:START",
+        "PROCESSING_START",
+        "PROCESSING:STOP",
+        "PROCESSING_STOP",
         "PROCESSING:DONE",
+        "PROCESSING_DONE",
+        "voice_recording_control_host_processing_start(source)",
+        "voice_recording_control_host_processing_stop(source)",
+        "voice_recording_control_host_processing_done(source)",
         "status_led_notify_success(\"host_processing_done\")",
+    ],
+    "ports/esp32/audio_capture/audio_capture_esp32.c": [
+        "#include \"status_led.h\"",
+        "AUDIO_CAPTURE_LEVEL_NOISE_FLOOR",
+        "AUDIO_CAPTURE_LEVEL_FULL_SCALE",
+        "audio_capture_frame_level_percent",
+        "status_led_set_recording_level(audio_capture_frame_level_percent(frame_buffer))",
+    ],
+    "ports/esp32/audio_capture/CMakeLists.txt": [
+        "status_led",
     ],
     "components/firmware_ota/firmware_ota.c": [
         "status_led_set_processing(true, \"ota_begin\")",
@@ -277,9 +303,17 @@ CHECKS = {
         "External power overrides battery-color display on `PWR`",
         "continuous, high-contrast white breath with a stronger visible floor and a quicker cycle",
         "steady white once charge-full has been debounced and latched",
-        "`rec_level` adds a visible VU brightness envelope",
+        "User brightness scales the whole routine effect envelope before the profile cap is applied",
+        "50% user brightness setting turns a 32-100% external-power breath into roughly 16-50%",
+        "Recording is a gold voice-reactive semantic state",
+        "exposes `rec_level`, and adds a visible VU brightness envelope",
+        "speech makes `REC` visibly brighter",
         "desktop host starts streaming/ASR processing",
-        "host completion turns `AI` off and flashes green `OK`",
+        "Firmware recording transfer does not animate `AI` by itself",
+        "`VREC:PROCESSING:START`",
+        "`VREC:PROCESSING:STOP`",
+        "`VREC:PROCESSING:DONE`",
+        "`DONE` turns `AI` off and flashes green `OK`",
         "audio transfer completion alone does not animate `AI`",
         "`OK` is a short success flash after the host reports processing done",
         "REC`, `OK`, and routine `AI` states do not recolor key LEDs",
@@ -450,6 +484,10 @@ def main() -> int:
         failures.append("status_led.c: plugged battery-percent jitter must not extend status windows")
     if "s_state.profile == STATUS_LED_PROFILE_STANDARD && now_ms < s_state.status_window_until_ms" in status_led:
         failures.append("status_led.c: standard profile edge LEDs must not light from generic status windows")
+    if "return desired_percent < cap ? desired_percent : cap" in status_led:
+        failures.append("status_led.c: user brightness must scale the whole routine effect envelope, not only clamp max brightness")
+    if "status_led_triangle_percent(now_ms, 2400U, 42U, 85U)" in status_led:
+        failures.append("status_led.c: REC must be voice-reactive, not a fixed 42-85 percent breath")
     if re.search(r"\.mem_block_symbols\s*=\s*64\b", status_led_backend):
         failures.append(
             "status_led_strip_backend.c: RMT mem_block_symbols=64 consumes two ESP32-S3 RMT blocks per strip and leaves fewer than four TX channels"
@@ -498,6 +536,21 @@ def main() -> int:
         failures.append("ble_hid.c: missing status_led_consume_usb_command dispatch")
     if board_dispatch >= 0 and status_dispatch > board_dispatch:
         failures.append("ble_hid.c: status_led_consume_usb_command must run before board_consume_usb_command")
+
+    voice_recording_control = read("components/voice_recording_control/voice_recording_control.c")
+    forbidden_voice_recording_tokens = {
+        'status_led_set_processing(true, "audio_session_finishing")':
+            "audio transfer must not light AI processing LED; wait for host PROCESSING:START",
+        'status_led_set_processing(false, "recording_session_cleanup")':
+            "host cleanup/STOP must not clear AI processing LED; wait for host PROCESSING:STOP or DONE",
+        'status_led_set_processing(false, "recording_session_finished")':
+            "firmware transfer completion must not clear AI processing LED; wait for host PROCESSING:STOP or DONE",
+        'status_led_notify_success("recording_session_finished")':
+            "firmware transfer completion must not show OK before host PROCESSING:DONE",
+    }
+    for token, message in forbidden_voice_recording_tokens.items():
+        if token in voice_recording_control:
+            failures.append(f"voice_recording_control.c: {message}")
 
     if failures:
         print("FAIL: status LED static verification failed")

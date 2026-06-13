@@ -1159,7 +1159,6 @@ static void voice_recording_control_complete_transfer_cleanup(
     voice_recording_control_clear_power_blockers();
     (void)voice_key_input_set_recording_output(false);
     status_led_set_recording(false, STATUS_LED_REC_SOURCE_NONE);
-    status_led_set_processing(false, "recording_session_cleanup");
     voice_recording_control_log_toggle_ignored(
         source,
         detail != NULL ? detail : "host_cleanup_stop_completed",
@@ -1487,6 +1486,28 @@ static void voice_recording_control_recovery(const char *source)
     voice_recording_control_log_device_status("ready", "recovery_complete_pair_again");
 }
 
+static void voice_recording_control_host_processing_start(const char *source)
+{
+    status_led_set_processing(true, "host_processing_start");
+    ESP_LOGI(TAG, "host processing start source=%s", source);
+    voice_recording_control_log_device_status(voice_recording_state_name(s_state), "host_processing_start");
+}
+
+static void voice_recording_control_host_processing_stop(const char *source)
+{
+    status_led_set_processing(false, "host_processing_stop");
+    ESP_LOGI(TAG, "host processing stop source=%s", source);
+    voice_recording_control_log_device_status(voice_recording_state_name(s_state), "host_processing_stop");
+}
+
+static void voice_recording_control_host_processing_done(const char *source)
+{
+    status_led_set_processing(false, "host_processing_done");
+    status_led_notify_success("host_processing_done");
+    ESP_LOGI(TAG, "host processing done source=%s", source);
+    voice_recording_control_log_device_status(voice_recording_state_name(s_state), "host_processing_done");
+}
+
 esp_err_t voice_recording_control_dispatch_control_command(const char *command, const char *source)
 {
     if (command == NULL || source == NULL) {
@@ -1515,21 +1536,17 @@ esp_err_t voice_recording_control_dispatch_control_command(const char *command, 
         return ESP_OK;
     }
     if (strcmp(action, "PROCESSING:START") == 0 || strcmp(action, "PROCESSING_START") == 0) {
-        status_led_set_processing(true, "host_processing_start");
-        voice_recording_control_log_device_status("processing", "host_processing_start");
+        voice_recording_control_host_processing_start(source);
         voice_recording_control_unlock();
         return ESP_OK;
     }
     if (strcmp(action, "PROCESSING:STOP") == 0 || strcmp(action, "PROCESSING_STOP") == 0) {
-        status_led_set_processing(false, "host_processing_stop");
-        voice_recording_control_log_device_status("ready", "host_processing_stop");
+        voice_recording_control_host_processing_stop(source);
         voice_recording_control_unlock();
         return ESP_OK;
     }
     if (strcmp(action, "PROCESSING:DONE") == 0 || strcmp(action, "PROCESSING_DONE") == 0) {
-        status_led_set_processing(false, "host_processing_done");
-        status_led_notify_success("host_processing_done");
-        voice_recording_control_log_device_status("ready", "host_processing_done");
+        voice_recording_control_host_processing_done(source);
         voice_recording_control_unlock();
         return ESP_OK;
     }
@@ -1677,7 +1694,6 @@ static void voice_recording_control_handle_session_inactive(void)
     voice_recording_control_clear_power_blockers();
     (void)voice_key_input_set_recording_output(false);
     status_led_set_recording(false, STATUS_LED_REC_SOURCE_NONE);
-    status_led_set_processing(false, "recording_session_finished");
 
     if (decision.effect == VOICE_RECORDING_EFFECT_FINISH_TRANSFER) {
         ESP_LOGI(TAG, "recording session finished");
