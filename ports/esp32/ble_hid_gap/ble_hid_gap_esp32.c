@@ -156,6 +156,37 @@ static bool ble_hid_gap_recovery_pairing_window_open(void)
     return true;
 }
 
+static bool ble_hid_gap_recovery_pairing_needs_connectable_adv(void)
+{
+    return ble_hid_gap_recovery_pairing_window_open() && !s_ble_gap_connected;
+}
+
+static void ble_hid_gap_keep_recovery_adv_connectable(const char *reason)
+{
+    if (!ble_hid_gap_recovery_pairing_needs_connectable_adv()) {
+        return;
+    }
+
+    const uint32_t state_flags =
+        (s_low_power_advertising ? 2U : 0U) |
+        (s_directed_adv_pending ? 4U : 0U) |
+        (s_key_wake_only_advertising ? 8U : 0U);
+
+    if (state_flags != 0U) {
+        ESP_LOGI(TAG,
+                 "recovery: keeping connectable advertising during pairing window: reason=%s flags=0x%lx",
+                 reason != NULL ? reason : "unknown",
+                 (unsigned long)state_flags);
+        diag_log(DIAG_SRC_BLE_GAP, DIAG_GAP_RECOVERY, DIAG_SEV_INFO,
+                 8, 0, state_flags, s_ble_gap_conn_handle);
+    }
+
+    s_low_power_advertising = false;
+    s_key_wake_only_advertising = false;
+    s_directed_adv_pending = false;
+    s_last_adv_was_directed = false;
+}
+
 static void ble_hid_gap_open_recovery_pairing_window(void)
 {
     s_recovery_pairing_window_active = true;
@@ -548,6 +579,7 @@ nimble_hid_gap_event(struct ble_gap_event *event, void *arg)
                 ESP_LOGW(TAG, "shutdown quiesce active: suppressing advertising after connect failure");
                 return 0;
             }
+            ble_hid_gap_keep_recovery_adv_connectable("connect failure");
             if (s_key_wake_only_advertising) {
                 ESP_LOGI(TAG, "key-wake-only idle: suppressing advertising after connect failure");
                 return 0;
@@ -638,6 +670,7 @@ nimble_hid_gap_event(struct ble_gap_event *event, void *arg)
             ESP_LOGW(TAG, "shutdown quiesce active: suppressing advertising restart after disconnect");
             return 0;
         }
+        ble_hid_gap_keep_recovery_adv_connectable("disconnect");
         if (s_key_wake_only_advertising) {
             s_directed_adv_pending = false;
             ESP_LOGI(TAG, "key-wake-only idle: suppressing advertising restart after disconnect");
@@ -668,6 +701,7 @@ nimble_hid_gap_event(struct ble_gap_event *event, void *arg)
             ESP_LOGW(TAG, "shutdown quiesce active: suppressing advertising restart after adv complete");
             return 0;
         }
+        ble_hid_gap_keep_recovery_adv_connectable("adv complete");
         if (s_key_wake_only_advertising) {
             ESP_LOGI(TAG, "key-wake-only idle: suppressing advertising restart after adv complete");
             return 0;
@@ -873,6 +907,7 @@ esp_err_t esp_hid_ble_gap_adv_start(void)
         return ESP_OK;
     }
 
+    ble_hid_gap_keep_recovery_adv_connectable("advertising start");
     if (s_key_wake_only_advertising) {
         ESP_LOGI(TAG, "NimBLE advertising suppressed: key-wake-only idle");
         return ESP_OK;
@@ -1210,6 +1245,11 @@ bool ble_hid_gap_is_connected(void)
 
 esp_err_t ble_hid_gap_set_low_power_advertising(bool enabled)
 {
+    if (enabled && ble_hid_gap_recovery_pairing_needs_connectable_adv()) {
+        ble_hid_gap_keep_recovery_adv_connectable("low-power request");
+        return ESP_OK;
+    }
+
     if (s_low_power_advertising == enabled) {
         if (!enabled) {
             s_key_wake_only_advertising = false;
@@ -1238,6 +1278,15 @@ esp_err_t ble_hid_gap_set_low_power_advertising(bool enabled)
 
 esp_err_t ble_hid_gap_stop_advertising_for_key_wake(void)
 {
+    if (ble_hid_gap_recovery_pairing_needs_connectable_adv()) {
+        ble_hid_gap_keep_recovery_adv_connectable("key-wake-only stop");
+        ESP_LOGI(TAG, "BLE key-wake-only advertising stop deferred: recovery pairing window active");
+        if (!ble_gap_adv_active()) {
+            return ble_hid_gap_start_advertising();
+        }
+        return ESP_OK;
+    }
+
     s_low_power_advertising = true;
     s_key_wake_only_advertising = true;
     s_directed_adv_pending = false;
