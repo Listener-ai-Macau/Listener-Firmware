@@ -60,6 +60,8 @@ static const char *TAG = "ble_hid";
 #define BLE_HID_BATTERY_CHARGE_FULL_DEBOUNCE_MS 10000U
 #define BLE_HID_USB_COMMAND_PREFIX '~'
 #define BLE_HID_USB_COMMAND_BUFFER_BYTES 192
+#define BLE_HID_USB_READ_ACTIVE_TIMEOUT_MS 20
+#define BLE_HID_USB_READ_LOW_POWER_TIMEOUT_MS 500
 #define BLE_HID_ASCII_QUEUE_LENGTH 8
 #define BLE_HID_USAGE_QUEUE_LENGTH 8
 #define BLE_HID_KEY_SOURCE_BYTES 32
@@ -222,14 +224,27 @@ static bool ble_hid_battery_force_refresh_due(uint32_t now_ms)
     return elapsed_ms >= BLE_HID_BATTERY_FORCE_REFRESH_INTERVAL_MS;
 }
 
-static uint32_t ble_hid_battery_sample_interval_ms(void)
+static bool ble_hid_low_power_idle_active(void)
 {
-    return s_ble_connected
+    power_manager_state_t state = power_manager_get_state();
+    return state == POWER_MANAGER_STATE_CONNECTED_IDLE ||
+           state == POWER_MANAGER_STATE_DISCONNECTED_IDLE ||
+           state == POWER_MANAGER_STATE_HARDWARE_SHUTDOWN;
+}
+
+static uint32_t ble_hid_battery_sample_interval_ms(bool low_power_idle)
+{
+    return (s_ble_connected && !low_power_idle)
         ? BLE_HID_BATTERY_SAMPLE_INTERVAL_MS
         : BLE_HID_BATTERY_DISCONNECTED_IDLE_INTERVAL_MS;
 }
 
-static void ble_hid_battery_task_wake(void)
+static const char *ble_hid_battery_sample_reason(bool low_power_idle)
+{
+    return (s_ble_connected && !low_power_idle) ? "threshold_sample" : "idle_sample";
+}
+
+void ble_hid_battery_task_wake(void)
 {
     if (s_ble_hid_ctx.battery_task_handle != NULL) {
         xTaskNotifyGive(s_ble_hid_ctx.battery_task_handle);
@@ -366,16 +381,26 @@ static void ble_hid_battery_task(void *parameter)
     (void)watchdog_platform_subscribe_current_task("ble_hid_battery_task");
 
     while (1) {
-        if (s_ble_connected) {
-            (void)watchdog_platform_task_notify_take(
+        bool low_power_idle = ble_hid_low_power_idle_active();
+        uint32_t wait_ms = ble_hid_battery_sample_interval_ms(low_power_idle);
+        uint32_t notified = 0;
+        if (s_ble_connected && !low_power_idle) {
+            notified = watchdog_platform_task_notify_take(
                 pdTRUE,
-                ble_hid_battery_sample_interval_ms());
+                wait_ms);
         } else {
-            (void)watchdog_platform_task_notify_take_low_power(
+            notified = watchdog_platform_task_notify_take_low_power(
                 pdTRUE,
-                ble_hid_battery_sample_interval_ms());
+                wait_ms);
         }
-        ble_hid_update_battery_level(s_ble_connected ? "threshold_sample" : "idle_sample", false);
+
+        low_power_idle = ble_hid_low_power_idle_active();
+        if (notified != 0 && low_power_idle) {
+            watchdog_platform_feed_current_task();
+            continue;
+        }
+
+        ble_hid_update_battery_level(ble_hid_battery_sample_reason(low_power_idle), false);
         watchdog_platform_feed_current_task();
     }
 }
@@ -894,7 +919,13 @@ static void ble_hid_keyboard_task(void *parameter)
         ble_hid_drain_ascii_queue();
         ble_hid_drain_usage_queue();
 
-        int bytes_read = usb_serial_jtag_read_bytes(rx_buffer, sizeof(rx_buffer), pdMS_TO_TICKS(20));
+        uint32_t usb_read_timeout_ms = ble_hid_low_power_idle_active()
+            ? BLE_HID_USB_READ_LOW_POWER_TIMEOUT_MS
+            : BLE_HID_USB_READ_ACTIVE_TIMEOUT_MS;
+        int bytes_read = usb_serial_jtag_read_bytes(
+            rx_buffer,
+            sizeof(rx_buffer),
+            pdMS_TO_TICKS(usb_read_timeout_ms));
         if (bytes_read > 0) {
             for (int index = 0; index < bytes_read; ++index) {
                 int input_char = (unsigned char)rx_buffer[index];

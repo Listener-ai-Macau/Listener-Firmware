@@ -1,0 +1,8 @@
+sample,elapsed_s,captured_at_epoch,state,idle_ms,user_idle_ms,radio_idle_ms,ble_connected,external_power_present,usb_power_present,charging,charge_full,charge_full_latched,charge_full_candidate_ms,audio_idle_power_save,low_power_idle_ms,hardware_shutdown_ms,battery_mv,tps_current_ma,tps_power_mw,tps_adc_mv,tps_sample_mode,tps_cache_valid,tps_cache_sequence,sy_current_ma,sy_power_mw,sy_adc_mv,sy_sample_mode,sy_cache_valid,sy_cache_sequence,raw_line_count,has_tps,has_sy,has_power_status
+1,4.062,1781340921.3363392,CONNECTED_IDLE,1128685,1128685,1128685,1,1,1,0,0,0,0,1,60000,1800000,3500,,,,,,,,,,,,,1,False,False,True
+2,34.005,1781340951.2791378,CONNECTED_IDLE,1158685,1158685,1158685,1,1,1,0,0,0,0,1,60000,1800000,3514,,,,,,,,,,,,,7,False,False,True
+3,64.007,1781340981.2810168,CONNECTED_IDLE,1188685,1188685,1188685,1,1,1,0,0,0,0,1,60000,1800000,3528,,,,,,,,,,,,,6,False,False,True
+4,94.039,1781341011.313664,CONNECTED_IDLE,1218684,1218684,1218684,1,1,1,0,0,0,0,1,60000,1800000,3538,,,,,,,,,,,,,5,False,False,True
+5,124.191,1781341041.4656537,CONNECTED_IDLE,1248683,1248683,1248683,1,1,1,0,0,0,0,1,60000,1800000,3540,,,,,,,,,,,,,5,False,False,True
+6,154.207,1781341071.4810245,CONNECTED_IDLE,1278683,1278683,1278683,1,1,1,0,0,0,0,1,60000,1800000,3524,,,,,,,,,,,,,12,False,False,True
+7,184.175,1781341101.4496703,CONNECTED_IDLE,1308682,1308682,1308682,1,1,1,0,0,0,0,1,60000,1800000,3520,,,,,,,,,,,,,12,False,False,True

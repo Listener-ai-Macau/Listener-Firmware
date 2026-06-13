@@ -32,23 +32,23 @@ function New-FeatureSnapshot {
             "Own device-side voice key state, serial commands, diagnostics, system health, and recovery evidence.",
             "Own firmware OTA slot/rollback primitives, BLE OTA GATT bridge, pending-verify checks, and OTA diagnostics used by desktop update flows.",
             "Provide build, flash, serial monitor, BLE HID, BLE audio, and diagnostic-log validation tools.",
-            "Provide AI-readable firmware diagnostic bundles that preserve raw diag_log events, decode schema names from firmware headers, and summarize key parameter highlights."
+            "Provide AI-readable diagnostic bundles for raw diag_log events, schema names, and key parameters."
         )
         major_features = @(
             "BLE HID keyboard fallback for logical KEY1-KEY4 custom keys using safe non-text gestures: single-click F13-F16, double-click F17-F20, and long-press F21-F24.",
-            "BLE audio upload path for 16 kHz microphone audio sessions consumed by Listener-Type, including executable transport invariants for epoch, replay, backpressure, and stale GATT events.",
+            "BLE audio upload path for 16 kHz Listener-Type sessions, with executable transport invariants.",
             "Voice key control for start/stop recording flow, including serial VREC commands, quiet BLE-audio pending retries, and gold REC status feedback.",
             "diag_log flash ring buffer for boot, BLE, audio, health, power, board, LED, WARN, and ERROR events, with runtime INFO masks for noisy sources.",
             "Default-off ~DIAGLOG:INPUTDBG records temporary KEY1-KEY4 and EC11 input traces for hardware bring-up.",
             "BLE diagnostic log GATT export service for paginated CRC-tagged firmware log pulls by desktop diagnostics.",
-            "AI-readable diag_log JSON bundle tooling for deterministic event, argument, severity, boot-segment, source-count, warning/error, parameter-highlight, KEY1-KEY4, and EC11 input summary fields.",
-            "Firmware OTA v1 using ESP-IDF otadata/ota_0/ota_1 slots, partition-derived flash offsets, BLE GATT control/data bridge, official rollback, pending verify, blockers, and diag_log OTA events.",
+            "AI-readable diag_log JSON bundle tooling for deterministic event, severity, boot, source, warning/error, parameter, KEY1-KEY4, and EC11 summaries.",
+            "Firmware OTA v1 using ESP-IDF OTA slots, partition-derived flash offsets, BLE GATT bridge, rollback, pending verify, blockers, and diag_log OTA events.",
             "system_health heartbeat and resource checks for heap, task, BLE, and disconnect conditions.",
-            "V2 N16R8 board profile with 16 MB flash, 8 MB Octal PSRAM, EC11 push power-on/runtime-custom/recovery on GPIO18, KEY1/2/3/4 HID gesture map on GPIO38/39/40/41, four-zone WS2812 resources, and static checks rejecting stale N4 defaults.",
-            "power_manager low-power state machine for configurable connected/disconnected idle, BLE churn idle preservation, USB/VBUS long-idle blocking, charger-aware low-battery shutdown blocking, and runtime-low / drive-high PWR_HOLD/GPIO11 hardware shutdown diagnostics.",
-            "Persisted ~DEVICE:SETTINGS contract for plugged/battery brightness, low-power idle timeout, battery-only auto-shutdown timeout, and BLE name used by Listener-Type.",
+            "V2 N16R8 profile with 16 MB flash, 8 MB Octal PSRAM, EC11 GPIO18, KEY1-KEY4 HID GPIOs, WS2812 zones, and N4 rejection checks.",
+            "power_manager low-power state machine for configurable idle, BLE churn preservation, USB/VBUS blockers, charger-aware low-battery blocking, and PWR_HOLD/GPIO11 diagnostics.",
+            "Persisted ~DEVICE:SETTINGS contract for plugged/battery brightness, low-power idle timeout, plugged low-power enable switch, battery-only auto-shutdown timeout, and BLE name used by Listener-Type.",
             "V2 board diagnostics cover ~BOARD:STATUS, ~LED:STATUS, USB/charger state, protected battery percent, LED resources, brightness cap, status RGB, and blocker policies.",
-            "V2 current telemetry reports TPS63020/SY7088 battery-side branch current on GPIO10/GPIO9 for the current N16R8 board; future revised boards may mark those sensors absent and still never use telemetry for power decisions.",
+            "V2 current telemetry reports TPS63020/SY7088 battery-side current on GPIO10/GPIO9; telemetry is diagnostic only.",
             "V2 safety gates keep real PWR_HOLD/GPIO11 power-off and LED VDD validation hardware-gated; N16R8 uses SPH0655 PDM on GPIO48/GPIO47.",
             "POST and degraded boot reporting for NVS, BLE, audio, heap, and board assumptions."
         )
@@ -56,12 +56,12 @@ function New-FeatureSnapshot {
             [ordered]@{ path = "main/"; purpose = "Application startup, POST, BLE/audio/keyboard initialization." },
             [ordered]@{ path = "components/keyboard/"; purpose = "Physical key scanning and keyboard events." },
             [ordered]@{ path = "components/hid_keyboard/"; purpose = "Cross-platform HID keyboard abstraction." },
-            [ordered]@{ path = "components/diag_log/"; purpose = "Diagnostic event schema, source mask API, runtime source commands, default-off input debug mode, and ring-buffer API." },
+            [ordered]@{ path = "components/diag_log/"; purpose = "Diagnostic event schema, source masks, input debug, and ring buffer." },
             [ordered]@{ path = "components/power_manager/"; purpose = "Low-power state machine, shutdown blockers, PWR_HOLD/GPIO11 hardware shutdown, and diagnostics." },
             [ordered]@{ path = "components/device_settings/"; purpose = "Persisted Type-facing board settings and ~DEVICE:SETTINGS command contract." },
             [ordered]@{ path = "components/battery_monitor/"; purpose = "Battery voltage and protected level: 3000mV empty, 4200mV full, 2700mV danger marker." },
-            [ordered]@{ path = "docs/features/low_power_wake_policy.md"; purpose = "Firmware long-idle hardware shutdown contract for runtime-low / drive-high PWR_HOLD/GPIO11 and USB/VBUS external-power blockers." },
-            [ordered]@{ path = "tools/verify_charging_awake_policy_hardware.ps1"; purpose = "Hardware helper for USB/charging awake evidence plus unplugged/destructive manual gates." },
+            [ordered]@{ path = "docs/features/low_power_wake_policy.md"; purpose = "PWR_HOLD/GPIO11 shutdown and USB/VBUS blocker contract." },
+            [ordered]@{ path = "tools/verify_charging_awake_policy_hardware.ps1"; purpose = "USB/charging awake hardware helper and manual gates." },
             [ordered]@{ path = "tools/decode_diag_log.py"; purpose = "Offline decoder for ~DIAGLOG JSONL into stable AI-readable JSON bundles." },
             [ordered]@{ path = "tools/collect_ai_diagnostics.ps1"; purpose = "Collect bounded serial diag_log evidence or decode saved JSONL into AI-readable artifacts." },
             [ordered]@{ path = "tools/collect_v2_current_telemetry.ps1"; purpose = "V2 current telemetry helper for TPS63020/SY7088 branch measurements and future revised-board absent evidence." },
@@ -188,6 +188,8 @@ function Test-FeatureSnapshot {
     $errors += @(Test-RepoText "components/device_settings/include/device_settings.h" 'DEVICE_SETTINGS_DEFAULT_PLUGGED_BRIGHTNESS_PERCENT\s+80U' 'plugged brightness default')
     $errors += @(Test-RepoText "components/device_settings/include/device_settings.h" 'DEVICE_SETTINGS_DEFAULT_BATTERY_BRIGHTNESS_PERCENT\s+50U' 'battery brightness default')
     $errors += @(Test-RepoText "components/device_settings/include/device_settings.h" 'DEVICE_SETTINGS_DEFAULT_LOW_POWER_IDLE_MS\s+60000U' 'low-power idle default')
+    $errors += @(Test-RepoText "components/device_settings/include/device_settings.h" 'DEVICE_SETTINGS_DEFAULT_PLUGGED_LOW_POWER_ENABLED\s+1' 'plugged low-power default')
+    $errors += @(Test-RepoText "components/power_manager/power_manager.c" 'plugged_low_power_enabled' 'plugged low-power effective status')
     $errors += @(Test-RepoText "components/board/board.c" 'BOARD_V2_PWR_HOLD_POLICY\s+"v2_gpio11_power_latch_runtime_low_drive_high_for_hardware_shutdown"' 'PWR_HOLD runtime-low policy')
     $errors += @(Test-RepoText "components/board/board.c" 'gpio_set_level\(BOARD_PINS_PWR_HOLD_IO,\s*0\)[\s\S]*GPIO_MODE_OUTPUT[\s\S]*runtime low configured[\s\S]*gpio_set_level\(BOARD_PINS_PWR_HOLD_IO,\s*1\)[\s\S]*driven high for hardware shutdown' 'PWR_HOLD runtime-low drive-high shutdown implementation')
     if ($scriptText.Length -gt 18500) {

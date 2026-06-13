@@ -1,0 +1,8 @@
+warmup_seconds=75
+sample=1 elapsed_s=4.062 state=CONNECTED_IDLE idle_ms=1128685 tps=NonemA sy=NonemA battery=3500mV audio_idle=1 charge_full=0
+sample=2 elapsed_s=34.005 state=CONNECTED_IDLE idle_ms=1158685 tps=NonemA sy=NonemA battery=3514mV audio_idle=1 charge_full=0
+sample=3 elapsed_s=64.007 state=CONNECTED_IDLE idle_ms=1188685 tps=NonemA sy=NonemA battery=3528mV audio_idle=1 charge_full=0
+sample=4 elapsed_s=94.039 state=CONNECTED_IDLE idle_ms=1218684 tps=NonemA sy=NonemA battery=3538mV audio_idle=1 charge_full=0
+sample=5 elapsed_s=124.191 state=CONNECTED_IDLE idle_ms=1248683 tps=NonemA sy=NonemA battery=3540mV audio_idle=1 charge_full=0
+sample=6 elapsed_s=154.207 state=CONNECTED_IDLE idle_ms=1278683 tps=NonemA sy=NonemA battery=3524mV audio_idle=1 charge_full=0
+sample=7 elapsed_s=184.175 state=CONNECTED_IDLE idle_ms=1308682 tps=NonemA sy=NonemA battery=3520mV audio_idle=1 charge_full=0

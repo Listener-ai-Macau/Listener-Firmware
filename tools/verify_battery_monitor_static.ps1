@@ -65,20 +65,28 @@ if ($bleHid -notmatch '#define BLE_HID_BATTERY_DISCONNECTED_IDLE_INTERVAL_MS 600
     throw "BLE HID battery monitor must heavily back off while disconnected/idle."
 }
 
-if ($bleHid -notmatch 's_ble_connected\s*\?\s*BLE_HID_BATTERY_SAMPLE_INTERVAL_MS\s*:\s*BLE_HID_BATTERY_DISCONNECTED_IDLE_INTERVAL_MS') {
-    throw "BLE HID battery monitor must use the disconnected idle sample interval when disconnected."
+if ($bleHid -notmatch 'ble_hid_low_power_idle_active[\s\S]*POWER_MANAGER_STATE_CONNECTED_IDLE[\s\S]*POWER_MANAGER_STATE_DISCONNECTED_IDLE') {
+    throw "BLE HID battery monitor must detect connected and disconnected low-power idle states."
 }
 
-if ($bleHid -notmatch 's_ble_connected\s*\?\s*"threshold_sample"\s*:\s*"idle_sample"') {
-    throw "BLE HID battery monitor must mark disconnected low-power samples as idle_sample."
+if ($bleHid -notmatch 's_ble_connected\s*&&\s*!low_power_idle[\s\S]*BLE_HID_BATTERY_SAMPLE_INTERVAL_MS[\s\S]*BLE_HID_BATTERY_DISCONNECTED_IDLE_INTERVAL_MS') {
+    throw "BLE HID battery monitor must use the active interval only while connected and not in low-power idle."
+}
+
+if ($bleHid -notmatch 's_ble_connected\s*&&\s*!low_power_idle[\s\S]*"threshold_sample"[\s\S]*"idle_sample"') {
+    throw "BLE HID battery monitor must mark connected/disconnected low-power samples as idle_sample."
 }
 
 if ($bleHid -notmatch '!s_ble_connected\s*&&\s*!force_notify[\s\S]*battery update skipped while disconnected') {
     throw "BLE HID battery monitor must skip routine HID battery service updates while disconnected."
 }
 
-if ($bleHid -notmatch 's_ble_connected[\s\S]*watchdog_platform_task_notify_take\([\s\S]*ble_hid_battery_sample_interval_ms\(\)[\s\S]*watchdog_platform_task_notify_take_low_power\([\s\S]*ble_hid_battery_sample_interval_ms\(\)') {
-    throw "BLE HID battery task must use a low-power long wait while disconnected and wake promptly on connect/disconnect."
+if ($bleHid -notmatch 's_ble_connected\s*&&\s*!low_power_idle[\s\S]*watchdog_platform_task_notify_take\([\s\S]*watchdog_platform_task_notify_take_low_power\(') {
+    throw "BLE HID battery task must use a low-power long wait while disconnected or connected-idle and wake promptly on state changes."
+}
+
+if ($bleHid -notmatch 'notified\s*!=\s*0\s*&&\s*low_power_idle[\s\S]*continue;') {
+    throw "BLE HID battery task must not take an immediate ADC sample just because low-power idle notified it."
 }
 
 if ($bleHid -notmatch 'ble_hid_battery_level_exceeds_notify_threshold') {

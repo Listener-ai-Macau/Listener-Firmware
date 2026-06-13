@@ -1,0 +1,30 @@
+{
+  "sample_count": 7,
+  "spike_threshold_ma": 50,
+  "spike_count": 0,
+  "states": [
+    "CONNECTED_IDLE"
+  ],
+  "tps_current_ma": {
+    "count": 0
+  },
+  "sy_current_ma": {
+    "count": 0
+  },
+  "battery_mv": {
+    "count": 7,
+    "min": 3500.0,
+    "max": 3540.0,
+    "mean": 3523.4285714285716,
+    "median": 3524.0
+  },
+  "telemetry_modes": [],
+  "spikes": [],
+  "artifacts": {
+    "jsonl": "C:\\Users\\Billy\\Desktop\\listener\\voice-keyboard-firmware\\docs\\validation\\voice-keyboard-firmware-full-function-test-1.7\\idle-power-monitor-20260613-165401\\idle_power_samples.jsonl",
+    "csv": "C:\\Users\\Billy\\Desktop\\listener\\voice-keyboard-firmware\\docs\\validation\\voice-keyboard-firmware-full-function-test-1.7\\idle-power-monitor-20260613-165401\\idle_power_samples.csv",
+    "raw_log": "C:\\Users\\Billy\\Desktop\\listener\\voice-keyboard-firmware\\docs\\validation\\voice-keyboard-firmware-full-function-test-1.7\\idle-power-monitor-20260613-165401\\idle_power_raw.log",
+    "summary_json": "C:\\Users\\Billy\\Desktop\\listener\\voice-keyboard-firmware\\docs\\validation\\voice-keyboard-firmware-full-function-test-1.7\\idle-power-monitor-20260613-165401\\idle_power_summary.json",
+    "summary_md": "C:\\Users\\Billy\\Desktop\\listener\\voice-keyboard-firmware\\docs\\validation\\voice-keyboard-firmware-full-function-test-1.7\\idle-power-monitor-20260613-165401\\idle_power_summary.md"
+  }
+}
