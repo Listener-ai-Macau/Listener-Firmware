@@ -82,7 +82,7 @@ function New-FeatureSnapshot {
             "Microphone path captures product-rate PCM from the active digital mic path; N16R8 validation builds use ESP-IDF PDM RX on CLK/GPIO48 and DOUT/GPIO47.",
             "Physical key GPIO mapping and voice key GPIO live in board pin configuration, not desktop code.",
             "V2 EC11-KEY/GPIO18 is the power-on key while off and sends the runtime custom-key fallback Shift+F13 after boot; KEY1/KEY2/KEY3/KEY4 use GPIO38/GPIO39/GPIO40/GPIO41 and fall back to F13-F24 gesture usages; EC11 encoder uses GPIO42/GPIO2/GPIO18.",
-            "V2 long-idle shutdown is firmware-controlled by driving runtime-low PWR_HOLD/GPIO11 high; failed readback or still-powered fallback restores LOW and BLE reconnects, while real power-off, short-press cold boot, USB/VBUS long-idle blocking, and charger-aware low-battery blocking require hardware-gated validation.",
+            "V2 long-idle shutdown is firmware-controlled by releasing runtime-low PWR_HOLD/GPIO11 high; failed readback or still-powered fallback restores LOW and BLE reconnects, while real power-off, short-press cold boot, USB/VBUS long-idle blocking, and charger-aware low-battery blocking require hardware-gated validation.",
             "Battery percentage uses the protected product range 3000mV=0% and 4200mV=100%; 2700mV is an absolute danger marker, not usable empty capacity.",
             "GPIO35/GPIO36/GPIO37 are reserved for the N16R8 module flash/PSRAM/MSPI interface.",
             "PWR_HOLD/GPIO11, RGB LEDs, and TPS63020/SY7088 current-sense telemetry on GPIO10/GPIO9 are populated in the active N16R8 profile; future revised board profiles may treat GPIO_NUM_NC current inputs as normal.",
@@ -190,8 +190,8 @@ function Test-FeatureSnapshot {
     $errors += @(Test-RepoText "components/device_settings/include/device_settings.h" 'DEVICE_SETTINGS_DEFAULT_LOW_POWER_IDLE_MS\s+60000U' 'low-power idle default')
     $errors += @(Test-RepoText "components/device_settings/include/device_settings.h" 'DEVICE_SETTINGS_DEFAULT_PLUGGED_LOW_POWER_ENABLED\s+1' 'plugged low-power default')
     $errors += @(Test-RepoText "components/power_manager/power_manager.c" 'plugged_low_power_enabled' 'plugged low-power effective status')
-    $errors += @(Test-RepoText "components/board/board.c" 'BOARD_V2_PWR_HOLD_POLICY\s+"v2_gpio11_power_latch_runtime_low_drive_high_for_hardware_shutdown"' 'PWR_HOLD runtime-low policy')
-    $errors += @(Test-RepoText "components/board/board.c" 'gpio_set_level\(BOARD_PINS_PWR_HOLD_IO,\s*0\)[\s\S]*GPIO_MODE_OUTPUT[\s\S]*runtime low configured[\s\S]*gpio_set_level\(BOARD_PINS_PWR_HOLD_IO,\s*1\)[\s\S]*driven high for hardware shutdown' 'PWR_HOLD runtime-low drive-high shutdown implementation')
+    $errors += @(Test-RepoText "components/board/board.c" 'BOARD_V2_PWR_HOLD_POLICY\s+"v2_gpio11_power_latch_runtime_low_release_high_for_hardware_shutdown"' 'PWR_HOLD runtime-low policy')
+    $errors += @(Test-RepoText "components/board/board.c" 'gpio_set_level\(BOARD_PINS_PWR_HOLD_IO,\s*0\)[\s\S]*GPIO_MODE_OUTPUT[\s\S]*runtime low configured[\s\S]*gpio_set_level\(BOARD_PINS_PWR_HOLD_IO,\s*1\)[\s\S]*GPIO_MODE_INPUT[\s\S]*board_wait_power_hold_readback\("released high for hardware shutdown",\s*1\)' 'PWR_HOLD runtime-low release-high shutdown implementation')
     if ($scriptText.Length -gt 18500) {
         $errors += "script is too long: $($scriptText.Length) characters"
     }

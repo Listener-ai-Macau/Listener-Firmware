@@ -206,12 +206,14 @@ CHECKS = {
         "Voice Keyboard V2",
         "EC11 push/GPIO18",
         "PWR_HOLD/GPIO11",
-        "v2_gpio11_power_latch_runtime_low_drive_high_for_hardware_shutdown",
+        "v2_gpio11_power_latch_runtime_low_release_high_for_hardware_shutdown",
         "GPIO_MODE_OUTPUT",
         "gpio_set_level(BOARD_PINS_PWR_HOLD_IO, 0)",
         "runtime low configured",
         "gpio_set_level(BOARD_PINS_PWR_HOLD_IO, 1)",
-        "driven high for hardware shutdown",
+        "released high for hardware shutdown",
+        "BOARD_PWR_HOLD_RELEASE_SETTLE_MS",
+        "board_wait_power_hold_readback",
         "board_verify_power_hold_readback",
         "refusing to enter silent hardware-shutdown wait",
         "~POWER:SHUTDOWN",
@@ -258,7 +260,6 @@ FORBIDDEN = {
         "restoring hold high",
         "restoring hold low",
         "release-low",
-        "release-high",
         "released high",
         "shutdown-low",
     ],
@@ -270,7 +271,6 @@ FORBIDDEN = {
         "hold-high",
         "hold-low",
         "released low for hardware shutdown",
-        "released high for hardware shutdown",
         "held high",
         "held low",
     ],
@@ -356,12 +356,13 @@ def main() -> int:
     if not re.search(
         r"board_set_power_hold_enabled[\s\S]*"
         r"gpio_set_level\(BOARD_PINS_PWR_HOLD_IO,\s*1\)[\s\S]*"
-        r"board_verify_power_hold_readback\(\"driven high for hardware shutdown\",\s*1\)[\s\S]*"
+        r"GPIO_MODE_INPUT[\s\S]*"
+        r"board_wait_power_hold_readback\(\"released high for hardware shutdown\",\s*1\)[\s\S]*"
         r"return\s+ret",
         board,
     ):
         failures.append(
-            "components/board/board.c: hardware shutdown drive-high must verify PWR_HOLD readback before reporting success"
+            "components/board/board.c: hardware shutdown release-high must wait for PWR_HOLD readback before reporting success"
         )
 
     power_manager = (REPO_ROOT / "components/power_manager/power_manager.c").read_text(encoding="utf-8")
@@ -562,7 +563,7 @@ def main() -> int:
         power_manager,
     ):
         failures.append(
-            "components/power_manager/power_manager.c: PWR_HOLD drive-high/readback failure must use the shutdown restore path"
+            "components/power_manager/power_manager.c: PWR_HOLD release-high/readback failure must use the shutdown restore path"
         )
     if not re.search(
         r"vTaskDelay\(pdMS_TO_TICKS\(POWER_MANAGER_POWER_REMOVAL_WAIT_MS\)\)[\s\S]*"

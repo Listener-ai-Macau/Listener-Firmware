@@ -75,7 +75,7 @@ extern void status_led_prepare_sleep(void) __attribute__((weak));
 #endif
 #define POWER_MANAGER_BATTERY_CRITICAL_PERCENT ((uint8_t)CONFIG_POWER_MANAGER_BATTERY_CRITICAL_PERCENT)
 #define POWER_MANAGER_TASK_STACK_BYTES (4 * 1024)
-#define POWER_MANAGER_SHUTDOWN_USER_ACTION "short-press hardware power key for cold boot after PWR_HOLD/GPIO11 drive-high shutdown"
+#define POWER_MANAGER_SHUTDOWN_USER_ACTION "short-press hardware power key for cold boot after PWR_HOLD/GPIO11 release-high shutdown"
 #define POWER_MANAGER_POWER_SOURCE_USB_PRESENT (1u << 0)
 #define POWER_MANAGER_POWER_SOURCE_CHARGING (1u << 1)
 #define POWER_MANAGER_POWER_SOURCE_CHARGE_FULL (1u << 2)
@@ -1238,7 +1238,7 @@ static esp_err_t power_manager_enter_hardware_shutdown(power_manager_shutdown_re
     vTaskDelay(pdMS_TO_TICKS(150));
     esp_err_t hold_ret = board_set_power_hold_enabled(false);
     if (hold_ret != ESP_OK) {
-        ESP_LOGE(TAG, "hardware shutdown failed: PWR_HOLD/GPIO11 drive-high ret=%s",
+        ESP_LOGE(TAG, "hardware shutdown failed: PWR_HOLD/GPIO11 release-high ret=%s",
                  esp_err_to_name(hold_ret));
         power_manager_restore_after_shutdown_failure(reason, final_idle_ms, hold_ret);
         return hold_ret;
@@ -1248,7 +1248,7 @@ static esp_err_t power_manager_enter_hardware_shutdown(power_manager_shutdown_re
 
     ESP_LOGE(
         TAG,
-        "hardware shutdown did not remove power after PWR_HOLD/GPIO11 drive-high within %u ms; restoring runtime low",
+        "hardware shutdown did not remove power after PWR_HOLD/GPIO11 release-high within %u ms; restoring runtime low",
         (unsigned)POWER_MANAGER_POWER_REMOVAL_WAIT_MS);
     power_manager_restore_after_shutdown_failure(reason, final_idle_ms, ESP_FAIL);
     return ESP_FAIL;

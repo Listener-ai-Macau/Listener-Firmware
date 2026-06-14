@@ -1,0 +1,61 @@
+[2026-06-14T22:55:22+0800] serial_opened dtr=0 rts=0
+[2026-06-14T22:55:22+0800] tx ~POWER:STATUS
+I (33790) boot_safety: normal boot survived 30000ms; crash count~POWER:STATUS state=ACTIVE blockers=0x00000080 blocker_names=external_power shutdown_blockers=0x00000080 shutdown_blocker_names=external_power idle_ms=38931 user_idle_ms=38931 radio_idle_ms=38931 ble_connected=0 automatic_shutdown_blocked_by_external_power=0 external_power_present=1 usb_power_present=1 charging=0 charge_full=0 charge_full_latched=0 charge_full_candidate_ms=0 charge_full_debounce_ms=10000 charge_full_min_mv=4050 charge_full_min_percent=88 plugged_low_power_enabled=1 low_power_idle_allowed=1 usb_det_level=high bat_chg_level=high bat_std_level=high pwr_hold_level=low usb_det_policy=v2_gpio7_r37_r32_10K_10K_divider charger_polarity=v2_gpio14_chg_gpio21_std_active_low pwr_hold_policy=v2_gpio11_power_latch_runtime_low_release_high_for_hardware_shutdown battery_mv=3926 battery_level=77 battery_valid=1 last_shutdown_reason=none last_shutdown_idle_ms=0 last_shutdown_blockers=0x00000000 guard=1 audio_idle_ms=5000 audio_idle_power_save=1 audio_idle_blockers=0x00000000 low_power_idle_ms=60000 connected_idle_ms=60000 disconnected_idle_ms=60000 hardware_shutdown_ms=1800000 pwr_hold_gpio=11 pwr_hold_level=low pwr_hold_configured=1 pwr_hold_policy=v2_gpio11_power_latch_runtime_low_release_high_for_hardware_shutdown voice_key_gpio=18 hardware_shutdown_user_action="short-press hardware power key for cold boot after PWR_HOLD/GPIO11 release-high shutdown"
+
+[2026-06-14T22:55:24+0800] tx ~BOARD:STATUS
+~BOARD:STATUS profile=voice-keyboard-v2-n16r8 module=ESP32-S3-WROOM-1-N16R8 flash_mb=16 psram_mb=8 psram_mode=octal key_gpios=38,39,40,41 ec11_a_gpio=42 ec11_b_gpio=2 ec11_key_gpio=18 ec11_key_provisional=1 mic_clk_gpio=48 mic_dout_gpio=47 mic_policy=v2_sph0655_pdm_clk_gpio48_dout_gpio47_enabled_for_a1_a2_hardware_validation pwr_hold_gpio=11 pwr_hold_level=low pwr_hold_configured=1 pwr_hold_policy=v2_gpio11_power_latch_runtime_low_release_high_for_hardware_shutdown usb_det_gpio=7 usb_det_level=high usb_det_policy=v2_gpio7_r37_r32_10K_10K_divider bat_chg_gpio=14 bat_chg_level=high bat_std_gpio=21 bat_std_level=low charger_polarity=v2_gpio14_chg_gpio21_std_active_low battery_gpio=8 battery_mv=3956 battery_adc_mv=1978 battery_raw=2333 battery_level=80 battery_valid=1 battery_adc_calibrated=1 battery_samples=4 battery_result=ESP_OK battery_scaling="68K/68K divider, VBAT~=2*ADC" battery_policy="product_empty_3000mv_full_4200mv_absolute_min_2700mv" reserved_mspi_gpio=GPIO35,GPIO36,GPIO37
+
+~BOARD:POWER branch=TPS63020_input_branch present=1 gpio=10 sample_mode=cached cache_valid=0 cache_sequence=0 raw_adc=0 adc_mv=0 adc_calibrated=0 sample_count=0 calibration_status=no_cached_sample current_model="INA180A2 10mR current_mA=adc_mv*2" current_calibrated=0 current_ma_valid=0 estimated_input_current_ma=0 battery_side_mv=0 battery_voltage_source="BAT_V_ADC/GPIO8 68K/68K midpoint, VBAT~=2*ADC" power_mw_valid=0 estimated_input_power_mw=0 result=ESP_ERR_INVALID_STATE policy=v2_battery_side_input_branch_current_ina180a2_10mR_adc_mv_x2_with_battery_mv_from_gpio8_div2
+
+~BOARD:POWER branch=SY7088_input_branch present=1 gpio=9 sample_mode=cached cache_valid=0 cache_sequence=0 raw_adc=0 adc_mv=0 adc_calibrated=0 sample_count=0 calibration_status=no_cached_sample current_model="INA180A2 10mR current_mA=adc_mv*2" current_calibrated=0 current_ma_valid=0 estimated_input_current_ma=0 battery_side_mv=0 battery_voltage_source="BAT_V_ADC/GPIO8 68K/68K midpoint, VBAT~=2*ADC" power_mw_valid=0 estimated_input_power_mw=0 result=ESP_ERR_INVALID_STATE policy=v2_battery_side_input_branch_current_ina180a2_10mR_adc_mv_x2_with_battery_mv_from_gpio8_div2
+
+~LED:STATUS group=status transport=WS2812 data_gpio=1 first_led=1 led_count=6 led_refs="LED1..LED6" brightness_cap_percent=8 vdd_led_signed_off=0 full_white_allowed=0 rgbw_calibration_path=provisional policy="LED1..LED6 semantic PWR/BLE/REC/AI/OK/WARN rail"
+
+~LED:STATUS group=ec11 transport=WS2812 data_gpio=5 first_led=7 led_count=12 led_refs="LED7..LED10+LED15..LED16+LED23..LED28" brightness_cap_percent=8 vdd_led_signed_off=0 full_white_allowed=0 rgbw_calibration_path=provisional policy="EC11 knob ring feedback on the dedicated PWM_RGB_EC11 strip"
+
+~LED:STATUS group=key transport=WS2812 data_gpio=13 first_led=11 led_count=4 led_refs="LED11..LED14" brightness_cap_percent=8 vdd_led_signed_off=0 full_white_allowed=0 rgbw_calibration_path=provisional policy="LED11..LED14 transient local key feedback"
+
+~LED:STATUS group=edge transport=WS2812 data_gpio=4 first_led=17 led_count=6 led_refs="LED17..LED22" brightness_cap_percent=4 vdd_led_signed_off=0 full_white_allowed=0 rgbw_calibration_path=provisional policy="LED17..LED22 restrained edge/frame effects"
+
+~LED:STATUS policy=v2_four_zone_ws2812_status_gpio1_ec11_gpio5_key_gpio13_edge_gpio4
+
+[2026-06-14T22:55:26+0800] tx ~POWER:SHUTDOWN
+I (46880) audio_capture: audio idle power save disabled: ESP_OK
+
+W (46890) power_manager: entering hardware shutdown reason=manual_command idle_ms=1 battery_mv=3932 level=78 pwr_hold_gpio=11 pwr_hold_level=low pwr_hold_configured=1 pwr_hold_policy=v2_gpio11_power_latch_runtime_low_release_high_for_hardware_shutdown user_action="short-press hardware power key for cold boot after PWR_HOLD/GPIO11 release-high shutdown"
+
+I (46890) power_manager: state HARDWARE_SHUTDOWN -> ACTIVE idle_ms=1 blockers=0x00000080 (external_power) ble_connected=0
+
+I (46910) health: system health low-power mode=1 interval_s=600
+
+I (46910) health: heartbeat: uptime=46s heap_free=7781KB heap_min=7777KB ble=OFF disconnects=0 audio_frames=315 audio_drops=0 keys=0 sessions=0 usb_det_raw=1 bat_chg_raw=1 bat_std_raw=1 usb_det_policy=v2_gpio7_r37_r32_10K_10K_divider charger_policy=v2_gpio14_chg_gpio21_std_active_low
+
+W (46930) ESP_HID_GAP: shutdown BLE advertising stopped
+
+I (46960) health: heartbeat: uptime=46s heap_free=7781KB heap_min=7777KB ble=OFF disconnects=0 audio_frames=315 audio_drops=0 keys=0 sessions=0 usb_det_raw=1 bat_chg_raw=1 bat_std_raw=0 usb_det_policy=v2_gpio7_r37_r32_10K_10K_divider charger_policy=v2_gpio14_chg_gpio21_std_active_low
+
+I (46930) health: system health low-power mode=0 interval_s=60
+
+I (46990) ESP_HID_GAP: low-power advertising=0
+
+I (47120) board: PWR_HOLD/GPIO11 released high for hardware shutdown readback: gpio=11 requested_level=1 actual_level=0 policy=v2_gpio11_power_latch_runtime_low_release_high_for_hardware_shutdown
+
+E (47120) board: PWR_HOLD/GPIO11 readback mismatch: requested_level=1 actual_level=0; check latch wiring or external pull; refusing to enter silent hardware-shutdown wait
+
+E (47140) power_manager: hardware shutdown failed: PWR_HOLD/GPIO11 release-high ret=ESP_ERR_INVALID_STATE
+
+I (47150) board: PWR_HOLD/GPIO11 runtime low configured readback: gpio=11 requested_level=0 actual_level=0 policy=v2_gpio11_power_latch_runtime_low_release_high_for_hardware_shutdown
+
+I (47160) ESP_HID_GAP: BLE reconnect requested: adv_active=0 low_power_adv=0 directed_pending=0 key_wake_only=0
+
+I (47180) ESP_HID_GAP: NimBLE bonded peers=0
+
+I (47180) ESP_HID_GAP: NimBLE undirected advertising started: low_power=0 interval_ms=30-50
+
+I (47690) audio_capture: frame captured count=350 bytes=224000
+
+I (48700) audio_capture: frame captured count=400 bytes=256000
+
+I (48990) power_manager: state DISCONNECTED_IDLE -> ACTIVE idle_ms=1801 blockers=0x00000080 (external_power) ble_connected=0
+
+[2026-06-14T22:55:34+0800] serial_closed

@@ -21,9 +21,11 @@ static const char *TAG = "board";
 
 #define BOARD_V2_USB_DET_POLICY "v2_gpio7_r37_r32_10K_10K_divider"
 #define BOARD_V2_CHARGER_POLARITY "v2_gpio14_chg_gpio21_std_active_low"
-#define BOARD_V2_PWR_HOLD_POLICY "v2_gpio11_power_latch_runtime_low_drive_high_for_hardware_shutdown"
+#define BOARD_V2_PWR_HOLD_POLICY "v2_gpio11_power_latch_runtime_low_release_high_for_hardware_shutdown"
 #define BOARD_V2_LED_POLICY "v2_four_zone_ws2812_status_gpio1_ec11_gpio5_key_gpio13_edge_gpio4"
 #define BOARD_V2_MIC_POLICY "v2_sph0655_pdm_clk_gpio48_dout_gpio47_enabled_for_a1_a2_hardware_validation"
+#define BOARD_PWR_HOLD_RELEASE_SETTLE_MS 500U
+#define BOARD_PWR_HOLD_RELEASE_POLL_MS 25U
 #if BOARD_PINS_CURRENT_TELEMETRY_PRESENT
 #define BOARD_V2_CURRENT_POLICY "v2_battery_side_input_branch_current_ina180a2_10mR_adc_mv_x2_with_battery_mv_from_gpio8_div2"
 #else
@@ -238,6 +240,39 @@ static esp_err_t board_verify_power_hold_readback(const char *action, int reques
     return ESP_OK;
 }
 
+static esp_err_t board_wait_power_hold_readback(const char *action, int requested_level)
+{
+    esp_err_t last_ret = ESP_FAIL;
+    for (uint32_t elapsed_ms = 0; elapsed_ms <= BOARD_PWR_HOLD_RELEASE_SETTLE_MS;
+         elapsed_ms += BOARD_PWR_HOLD_RELEASE_POLL_MS) {
+        if (elapsed_ms > 0) {
+            vTaskDelay(pdMS_TO_TICKS(BOARD_PWR_HOLD_RELEASE_POLL_MS));
+        }
+        int actual_level = board_read_gpio_level(BOARD_PINS_PWR_HOLD_IO);
+        if (actual_level == requested_level) {
+            ESP_LOGI(
+                TAG,
+                "PWR_HOLD/GPIO11 %s settled: gpio=%d requested_level=%d actual_level=%d elapsed_ms=%" PRIu32
+                " policy=%s",
+                action != NULL ? action : "unknown",
+                (int)BOARD_PINS_PWR_HOLD_IO,
+                requested_level,
+                actual_level,
+                elapsed_ms,
+                BOARD_V2_PWR_HOLD_POLICY);
+            return ESP_OK;
+        }
+        last_ret = actual_level < 0 ? ESP_FAIL : ESP_ERR_INVALID_STATE;
+    }
+
+    ESP_LOGE(
+        TAG,
+        "PWR_HOLD/GPIO11 %s did not settle high within %u ms; check latch wiring or external pull",
+        action != NULL ? action : "unknown",
+        (unsigned)BOARD_PWR_HOLD_RELEASE_SETTLE_MS);
+    return last_ret;
+}
+
 esp_err_t board_configure_power_hold_latch(void)
 {
     if (BOARD_PINS_PWR_HOLD_IO == GPIO_NUM_NC ||
@@ -248,7 +283,8 @@ esp_err_t board_configure_power_hold_latch(void)
 
     /*
      * Preload the output latch before switching the pad into output mode.
-     * Runtime actively drives PWR_HOLD low; hardware shutdown drives it high.
+     * Runtime actively drives PWR_HOLD low; hardware shutdown releases the
+     * output driver so the external latch can pull the line high.
      */
     (void)gpio_set_level(BOARD_PINS_PWR_HOLD_IO, 0);
 
@@ -304,13 +340,14 @@ esp_err_t board_set_power_hold_enabled(bool enabled)
     }
 
     /*
-     * Runtime actively drives PWR_HOLD low. Only the shutdown path drives it
-     * high, which requests the external latch to remove power.
+     * Runtime actively drives PWR_HOLD low. The shutdown path preloads the
+     * output latch high, then switches to input/high-Z so the external latch
+     * can pull PWR_HOLD high and remove power.
      */
     (void)gpio_set_level(BOARD_PINS_PWR_HOLD_IO, 1);
     gpio_config_t config = {
         .pin_bit_mask = 1ULL << (uint32_t)BOARD_PINS_PWR_HOLD_IO,
-        .mode = GPIO_MODE_OUTPUT,
+        .mode = GPIO_MODE_INPUT,
         .pull_up_en = GPIO_PULLUP_DISABLE,
         .pull_down_en = GPIO_PULLDOWN_DISABLE,
         .intr_type = GPIO_INTR_DISABLE,
@@ -319,25 +356,13 @@ esp_err_t board_set_power_hold_enabled(bool enabled)
     if (ret != ESP_OK) {
         ESP_LOGW(
             TAG,
-            "PWR_HOLD/GPIO11 shutdown-high output config failed: gpio=%d ret=%s",
+            "PWR_HOLD/GPIO11 shutdown release-high input config failed: gpio=%d ret=%s",
             (int)BOARD_PINS_PWR_HOLD_IO,
             esp_err_to_name(ret));
         return ret;
     }
 
-    (void)gpio_set_drive_capability(BOARD_PINS_PWR_HOLD_IO, GPIO_DRIVE_CAP_3);
-
-    ret = gpio_set_level(BOARD_PINS_PWR_HOLD_IO, 1);
-    if (ret != ESP_OK) {
-        ESP_LOGW(
-            TAG,
-            "PWR_HOLD/GPIO11 shutdown-high set failed: gpio=%d ret=%s",
-            (int)BOARD_PINS_PWR_HOLD_IO,
-            esp_err_to_name(ret));
-        return ret;
-    }
-
-    ret = board_verify_power_hold_readback("driven high for hardware shutdown", 1);
+    ret = board_wait_power_hold_readback("released high for hardware shutdown", 1);
     if (ret != ESP_OK) {
         s_power_hold_configured = false;
         return ret;
