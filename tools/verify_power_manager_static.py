@@ -38,6 +38,10 @@ CHECKS = {
         "last_shutdown_reason",
         "last_shutdown_idle_ms",
         "last_shutdown_blockers",
+        "last_shutdown_persisted",
+        "last_shutdown_battery_mv",
+        "last_shutdown_battery_level_percent",
+        "last_shutdown_power_flags",
         "pwr_hold_gpio",
         "pwr_hold_level",
         "pwr_hold_configured",
@@ -55,6 +59,16 @@ CHECKS = {
         "board_set_power_hold_enabled(false)",
         "board_set_power_hold_enabled(true)",
         "board_configure_power_hold_latch",
+        "POWER_MANAGER_NVS_NAMESPACE",
+        "POWER_MANAGER_NVS_SHUTDOWN_REASON_KEY",
+        "POWER_MANAGER_NVS_SHUTDOWN_IDLE_MS_KEY",
+        "POWER_MANAGER_NVS_SHUTDOWN_BLOCKERS_KEY",
+        "POWER_MANAGER_NVS_SHUTDOWN_BATTERY_MV_KEY",
+        "POWER_MANAGER_NVS_SHUTDOWN_BATTERY_LEVEL_KEY",
+        "POWER_MANAGER_NVS_SHUTDOWN_POWER_FLAGS_KEY",
+        "POWER_MANAGER_SHUTDOWN_TRACE_MAGIC",
+        "power_manager_load_persisted_shutdown_trace",
+        "power_manager_persist_shutdown_trace",
         "board_get_v2_power_hold_snapshot",
         "PWR_HOLD/GPIO11",
         "pwr_hold_gpio=%d",
@@ -115,6 +129,10 @@ CHECKS = {
         "audio_idle_power_save=%u",
         "audio_idle_blockers=0x%08",
         "low_power_idle_ms=%",
+        "last_shutdown_persisted=%u",
+        "last_shutdown_battery_mv=%",
+        "last_shutdown_battery_level=%u",
+        "last_shutdown_power_flags=0x%08",
         "status_led_prepare_sleep",
         "power_manager_low_power_idle_ms",
         "power_manager_guard_runtime_power_hold_low",
@@ -175,6 +193,9 @@ CHECKS = {
         "POWER_MANAGER_BATTERY_CRITICAL_PERCENT",
         "default 0",
         "range 0 100",
+    ],
+    "components/power_manager/CMakeLists.txt": [
+        "nvs_flash",
     ],
     "sdkconfig.defaults": [
         "CONFIG_POWER_MANAGER_BATTERY_CRITICAL_PERCENT=0",
@@ -341,6 +362,55 @@ def main() -> int:
         )
 
     power_manager = (REPO_ROOT / "components/power_manager/power_manager.c").read_text(encoding="utf-8")
+    if not re.search(
+        r"power_manager_load_persisted_shutdown_trace[\s\S]*"
+        r"POWER_MANAGER_NVS_SHUTDOWN_MAGIC_KEY[\s\S]*"
+        r"POWER_MANAGER_NVS_SHUTDOWN_REASON_KEY[\s\S]*"
+        r"power_manager_store_shutdown_trace_locked",
+        power_manager,
+    ):
+        failures.append(
+            "components/power_manager/power_manager.c: boot must load the persisted shutdown trace from NVS"
+        )
+    if not re.search(
+        r"power_manager_init[\s\S]*"
+        r"power_manager_load_persisted_shutdown_trace\(\)[\s\S]*"
+        r"DIAG_POWER_WAKE",
+        power_manager,
+    ):
+        failures.append(
+            "components/power_manager/power_manager.c: init must load persisted shutdown trace before wake diagnostics"
+        )
+    if not re.search(
+        r"power_manager_persist_shutdown_trace[\s\S]*"
+        r"POWER_MANAGER_NVS_SHUTDOWN_REASON_KEY[\s\S]*"
+        r"POWER_MANAGER_NVS_SHUTDOWN_IDLE_MS_KEY[\s\S]*"
+        r"POWER_MANAGER_NVS_SHUTDOWN_POWER_FLAGS_KEY[\s\S]*"
+        r"nvs_commit",
+        power_manager,
+    ):
+        failures.append(
+            "components/power_manager/power_manager.c: shutdown trace must persist reason, idle, blockers, battery, and power flags"
+        )
+    if not re.search(
+        r"power_manager_enter_hardware_shutdown[\s\S]*"
+        r"power_manager_store_shutdown_trace_locked[\s\S]*"
+        r"power_manager_persist_shutdown_trace\([\s\S]*"
+        r"board_set_power_hold_enabled\(false\)",
+        power_manager,
+    ):
+        failures.append(
+            "components/power_manager/power_manager.c: shutdown trace must be persisted before PWR_HOLD/GPIO11 drive-high"
+        )
+    if not re.search(
+        r"power_manager_get_snapshot[\s\S]*"
+        r"snapshot->last_shutdown_persisted\s*=\s*s_last_shutdown_persisted[\s\S]*"
+        r"snapshot->last_shutdown_power_flags\s*=\s*s_last_shutdown_power_flags",
+        power_manager,
+    ):
+        failures.append(
+            "components/power_manager/power_manager.c: POWER:STATUS snapshot must expose persisted shutdown trace details"
+        )
     if not re.search(
         r"power_manager_apply_charge_state_filter_locked[\s\S]*"
         r"raw_full\s*&&[\s\S]*"

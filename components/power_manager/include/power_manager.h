@@ -74,6 +74,10 @@ typedef struct {
     power_manager_shutdown_reason_t last_shutdown_reason;
     uint32_t last_shutdown_idle_ms;
     uint32_t last_shutdown_blockers;
+    bool last_shutdown_persisted;
+    uint32_t last_shutdown_battery_mv;
+    uint8_t last_shutdown_battery_level_percent;
+    uint32_t last_shutdown_power_flags;
     int pwr_hold_gpio;
     bool pwr_hold_configured;
     uint32_t voice_key_gpio;
