@@ -69,6 +69,7 @@ extern void status_led_prepare_sleep(void) __attribute__((weak));
 #define POWER_MANAGER_LOW_POWER_EVALUATE_INTERVAL_MS 60000U
 #define POWER_MANAGER_LOW_BATTERY_SHUTDOWN_MAX_MV 3000U
 #define POWER_MANAGER_LOW_BATTERY_BOOT_GRACE_MS 15000U
+#define POWER_MANAGER_POWER_REMOVAL_WAIT_MS 750U
 #ifndef CONFIG_POWER_MANAGER_BATTERY_CRITICAL_PERCENT
 #define CONFIG_POWER_MANAGER_BATTERY_CRITICAL_PERCENT 0
 #endif
@@ -1015,20 +1016,22 @@ static void power_manager_reset_idle_after_shutdown_failure(void)
     }
 }
 
-static void power_manager_wait_for_power_removal(void)
+static void power_manager_restore_after_shutdown_failure(
+    power_manager_shutdown_reason_t reason,
+    uint32_t final_idle_ms,
+    esp_err_t failure_ret)
 {
-    ESP_LOGE(
-        TAG,
-        "automatic hardware shutdown did not remove power; keeping PWR_HOLD/GPIO11 driven high and staying quiescent");
-    if (ble_hid_gap_prepare_shutdown_disconnect != NULL) {
-        (void)ble_hid_gap_prepare_shutdown_disconnect();
+    esp_err_t restore_ret = board_set_power_hold_enabled(true);
+    if (restore_ret != ESP_OK) {
+        ESP_LOGE(TAG, "PWR_HOLD/GPIO11 runtime-low restore failed after shutdown failure: %s",
+                 esp_err_to_name(restore_ret));
     }
-    (void)board_set_power_hold_enabled(false);
-
-    while (1) {
-        watchdog_platform_feed_current_task();
-        vTaskDelay(pdMS_TO_TICKS(1000));
+    if (ble_hid_gap_request_reconnect != NULL) {
+        (void)ble_hid_gap_request_reconnect();
     }
+    diag_log(DIAG_SRC_POWER, DIAG_POWER_SLEEP_BLOCKED, DIAG_SEV_ERROR,
+             0, final_idle_ms, (uint32_t)reason, (uint32_t)failure_ret);
+    power_manager_reset_idle_after_shutdown_failure();
 }
 
 static esp_err_t power_manager_enter_hardware_shutdown(power_manager_shutdown_reason_t reason)
@@ -1237,29 +1240,17 @@ static esp_err_t power_manager_enter_hardware_shutdown(power_manager_shutdown_re
     if (hold_ret != ESP_OK) {
         ESP_LOGE(TAG, "hardware shutdown failed: PWR_HOLD/GPIO11 drive-high ret=%s",
                  esp_err_to_name(hold_ret));
-        diag_log(DIAG_SRC_POWER, DIAG_POWER_SLEEP_BLOCKED, DIAG_SEV_ERROR,
-                 0, final_idle_ms, (uint32_t)reason, (uint32_t)hold_ret);
-        power_manager_reset_idle_after_shutdown_failure();
+        power_manager_restore_after_shutdown_failure(reason, final_idle_ms, hold_ret);
         return hold_ret;
     }
 
-    vTaskDelay(pdMS_TO_TICKS(750));
-    if (reason == POWER_MANAGER_SHUTDOWN_REASON_LONG_IDLE) {
-        diag_log(DIAG_SRC_POWER, DIAG_POWER_SLEEP_BLOCKED, DIAG_SEV_ERROR,
-                 0, final_idle_ms, (uint32_t)reason, (uint32_t)ESP_FAIL);
-        power_manager_wait_for_power_removal();
-    }
+    vTaskDelay(pdMS_TO_TICKS(POWER_MANAGER_POWER_REMOVAL_WAIT_MS));
 
     ESP_LOGE(
         TAG,
-        "hardware shutdown did not remove power after PWR_HOLD/GPIO11 drive-high; restoring runtime low");
-    (void)board_set_power_hold_enabled(true);
-    if (ble_hid_gap_request_reconnect != NULL) {
-        (void)ble_hid_gap_request_reconnect();
-    }
-    diag_log(DIAG_SRC_POWER, DIAG_POWER_SLEEP_BLOCKED, DIAG_SEV_ERROR,
-             0, final_idle_ms, (uint32_t)reason, (uint32_t)ESP_FAIL);
-    power_manager_reset_idle_after_shutdown_failure();
+        "hardware shutdown did not remove power after PWR_HOLD/GPIO11 drive-high within %u ms; restoring runtime low",
+        (unsigned)POWER_MANAGER_POWER_REMOVAL_WAIT_MS);
+    power_manager_restore_after_shutdown_failure(reason, final_idle_ms, ESP_FAIL);
     return ESP_FAIL;
 }
 

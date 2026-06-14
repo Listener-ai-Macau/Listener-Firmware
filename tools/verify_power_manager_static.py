@@ -212,6 +212,8 @@ CHECKS = {
         "runtime low configured",
         "gpio_set_level(BOARD_PINS_PWR_HOLD_IO, 1)",
         "driven high for hardware shutdown",
+        "board_verify_power_hold_readback",
+        "refusing to enter silent hardware-shutdown wait",
         "~POWER:SHUTDOWN",
     ],
     "docs/features/low_power_wake_policy.md": [
@@ -341,6 +343,25 @@ def main() -> int:
     ):
         failures.append(
             "components/board/board.c: BOARD:POWER:FORCE must be the explicit ADC current sampling command"
+        )
+    if not re.search(
+        r"board_verify_power_hold_readback[\s\S]*"
+        r"actual_level\s*<\s*0[\s\S]*return\s+ESP_FAIL[\s\S]*"
+        r"actual_level\s*!=\s*requested_level[\s\S]*return\s+ESP_ERR_INVALID_STATE",
+        board,
+    ):
+        failures.append(
+            "components/board/board.c: PWR_HOLD readback failure or mismatch must be a hard error"
+        )
+    if not re.search(
+        r"board_set_power_hold_enabled[\s\S]*"
+        r"gpio_set_level\(BOARD_PINS_PWR_HOLD_IO,\s*1\)[\s\S]*"
+        r"board_verify_power_hold_readback\(\"driven high for hardware shutdown\",\s*1\)[\s\S]*"
+        r"return\s+ret",
+        board,
+    ):
+        failures.append(
+            "components/board/board.c: hardware shutdown drive-high must verify PWR_HOLD readback before reporting success"
         )
 
     power_manager = (REPO_ROOT / "components/power_manager/power_manager.c").read_text(encoding="utf-8")
@@ -507,22 +528,50 @@ def main() -> int:
         failures.append(
             "components/power_manager/power_manager.c: BLE reconnect must not reset the user-idle clock"
         )
-    if not re.search(
-        r"reason\s*==\s*POWER_MANAGER_SHUTDOWN_REASON_LONG_IDLE[\s\S]*"
-        r"power_manager_wait_for_power_removal\(\)",
+    if "power_manager_wait_for_power_removal" in power_manager:
+        failures.append(
+            "components/power_manager/power_manager.c: shutdown failure must not enter an unbounded wait-for-power-removal loop"
+        )
+    if re.search(
+        r"while\s*\(\s*1\s*\)\s*\{[\s\S]{0,180}"
+        r"watchdog_platform_feed_current_task\(\)",
         power_manager,
     ):
         failures.append(
-            "components/power_manager/power_manager.c: automatic long-idle shutdown fallback must stay quiescent"
+            "components/power_manager/power_manager.c: shutdown failure must not stay in a silent watchdog-fed loop"
+        )
+    if "POWER_MANAGER_POWER_REMOVAL_WAIT_MS 750U" not in power_manager:
+        failures.append(
+            "components/power_manager/power_manager.c: shutdown power-removal observation window must be explicit and bounded"
         )
     if not re.search(
-        r"power_manager_wait_for_power_removal[\s\S]*"
-        r"board_set_power_hold_enabled\(false\)[\s\S]*"
-        r"watchdog_platform_feed_current_task",
+        r"power_manager_restore_after_shutdown_failure[\s\S]*"
+        r"board_set_power_hold_enabled\(true\)[\s\S]*"
+        r"ble_hid_gap_request_reconnect[\s\S]*"
+        r"DIAG_POWER_SLEEP_BLOCKED[\s\S]*"
+        r"power_manager_reset_idle_after_shutdown_failure",
         power_manager,
     ):
         failures.append(
-            "components/power_manager/power_manager.c: quiescent shutdown wait must keep PWR_HOLD driven high and feed watchdog"
+            "components/power_manager/power_manager.c: failed shutdown must restore PWR_HOLD low, reopen BLE reconnect, record diag, and reset idle"
+        )
+    if not re.search(
+        r"board_set_power_hold_enabled\(false\)[\s\S]*"
+        r"hold_ret\s*!=\s*ESP_OK[\s\S]*"
+        r"power_manager_restore_after_shutdown_failure\(reason,\s*final_idle_ms,\s*hold_ret\)",
+        power_manager,
+    ):
+        failures.append(
+            "components/power_manager/power_manager.c: PWR_HOLD drive-high/readback failure must use the shutdown restore path"
+        )
+    if not re.search(
+        r"vTaskDelay\(pdMS_TO_TICKS\(POWER_MANAGER_POWER_REMOVAL_WAIT_MS\)\)[\s\S]*"
+        r"hardware shutdown did not remove power[\s\S]*"
+        r"power_manager_restore_after_shutdown_failure\(reason,\s*final_idle_ms,\s*ESP_FAIL\)",
+        power_manager,
+    ):
+        failures.append(
+            "components/power_manager/power_manager.c: powered-after-shutdown fallback must restore runtime low after the bounded wait"
         )
     if not re.search(
         r"POWER_MANAGER_SHUTDOWN_REASON_LOW_BATTERY[\s\S]*"

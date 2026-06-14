@@ -82,7 +82,7 @@ function New-FeatureSnapshot {
             "Microphone path captures product-rate PCM from the active digital mic path; N16R8 validation builds use ESP-IDF PDM RX on CLK/GPIO48 and DOUT/GPIO47.",
             "Physical key GPIO mapping and voice key GPIO live in board pin configuration, not desktop code.",
             "V2 EC11-KEY/GPIO18 is the power-on key while off and sends the runtime custom-key fallback Shift+F13 after boot; KEY1/KEY2/KEY3/KEY4 use GPIO38/GPIO39/GPIO40/GPIO41 and fall back to F13-F24 gesture usages; EC11 encoder uses GPIO42/GPIO2/GPIO18.",
-            "V2 long-idle shutdown is firmware-controlled by driving runtime-low PWR_HOLD/GPIO11 high; real power-off, short-press cold boot, USB/VBUS long-idle blocking, and charger-aware low-battery blocking require hardware-gated validation.",
+            "V2 long-idle shutdown is firmware-controlled by driving runtime-low PWR_HOLD/GPIO11 high; failed readback or still-powered fallback restores LOW and BLE reconnects, while real power-off, short-press cold boot, USB/VBUS long-idle blocking, and charger-aware low-battery blocking require hardware-gated validation.",
             "Battery percentage uses the protected product range 3000mV=0% and 4200mV=100%; 2700mV is an absolute danger marker, not usable empty capacity.",
             "GPIO35/GPIO36/GPIO37 are reserved for the N16R8 module flash/PSRAM/MSPI interface.",
             "PWR_HOLD/GPIO11, RGB LEDs, and TPS63020/SY7088 current-sense telemetry on GPIO10/GPIO9 are populated in the active N16R8 profile; future revised board profiles may treat GPIO_NUM_NC current inputs as normal.",

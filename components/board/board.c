@@ -209,7 +209,7 @@ static const char *board_gpio_scan_label(gpio_num_t gpio)
     return "-";
 }
 
-static void board_log_power_hold_readback(const char *action, int requested_level)
+static esp_err_t board_verify_power_hold_readback(const char *action, int requested_level)
 {
     int actual_level = board_read_gpio_level(BOARD_PINS_PWR_HOLD_IO);
     ESP_LOGI(
@@ -220,13 +220,22 @@ static void board_log_power_hold_readback(const char *action, int requested_leve
         requested_level,
         actual_level,
         BOARD_V2_PWR_HOLD_POLICY);
-    if (requested_level >= 0 && actual_level >= 0 && actual_level != requested_level) {
+    if (actual_level < 0) {
         ESP_LOGW(
             TAG,
-            "PWR_HOLD/GPIO11 readback mismatch: requested_level=%d actual_level=%d; check latch wiring or external pull",
+            "PWR_HOLD/GPIO11 readback failed after %s; refusing to treat shutdown request as successful",
+            action != NULL ? action : "unknown");
+        return ESP_FAIL;
+    }
+    if (requested_level >= 0 && actual_level >= 0 && actual_level != requested_level) {
+        ESP_LOGE(
+            TAG,
+            "PWR_HOLD/GPIO11 readback mismatch: requested_level=%d actual_level=%d; check latch wiring or external pull; refusing to enter silent hardware-shutdown wait",
             requested_level,
             actual_level);
+        return ESP_ERR_INVALID_STATE;
     }
+    return ESP_OK;
 }
 
 esp_err_t board_configure_power_hold_latch(void)
@@ -272,8 +281,13 @@ esp_err_t board_configure_power_hold_latch(void)
         return ret;
     }
 
+    ret = board_verify_power_hold_readback("runtime low configured", 0);
+    if (ret != ESP_OK) {
+        s_power_hold_configured = false;
+        return ret;
+    }
+
     s_power_hold_configured = true;
-    board_log_power_hold_readback("runtime low configured", 0);
     return ESP_OK;
 }
 
@@ -323,8 +337,13 @@ esp_err_t board_set_power_hold_enabled(bool enabled)
         return ret;
     }
 
+    ret = board_verify_power_hold_readback("driven high for hardware shutdown", 1);
+    if (ret != ESP_OK) {
+        s_power_hold_configured = false;
+        return ret;
+    }
+
     s_power_hold_configured = true;
-    board_log_power_hold_readback("driven high for hardware shutdown", 1);
     return ESP_OK;
 }
 
