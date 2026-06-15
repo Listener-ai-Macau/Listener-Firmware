@@ -1,0 +1,264 @@
+{
+  "schema_version": 1,
+  "plan": "voice-keyboard-firmware-full-function-test",
+  "step_id": "1.7",
+  "generated_at": "2026-06-15T16:31:48.0957025+08:00",
+  "result": "PASS",
+  "repo_root": "C:\\Users\\Billy\\Desktop\\listener\\voice-keyboard-firmware-wt-oai1-voice-keyboard-firmware-full-function-test-1.7",
+  "worktree": "C:\\Users\\Billy\\Desktop\\listener\\voice-keyboard-firmware-wt-oai1-voice-keyboard-firmware-full-function-test-1.7",
+  "branch": "ai/oai1-voice-keyboard-firmware-full-function-test-1.7",
+  "commit": "4cd9cf3f202d405cee2b34323d51b3527c2095df",
+  "timeout_seconds": 120,
+  "commands": [
+    {
+      "index": 1,
+      "command": "pwsh -NoProfile -File .\\tools\\verify_battery_monitor_static.ps1",
+      "runnable": true,
+      "worktree": "C:\\Users\\Billy\\Desktop\\listener\\voice-keyboard-firmware-wt-oai1-voice-keyboard-firmware-full-function-test-1.7",
+      "branch": "ai/oai1-voice-keyboard-firmware-full-function-test-1.7",
+      "commit": "4cd9cf3f202d405cee2b34323d51b3527c2095df",
+      "status": "PASS",
+      "started_at": "2026-06-15T16:31:48.0957025+08:00",
+      "finished_at": "2026-06-15T16:31:48.0957025+08:00",
+      "duration_ms": 0,
+      "exit_code": 0,
+      "timed_out": false,
+      "stdout_summary": [
+        "PASS: battery monitor static checks passed for voltage mapping and live BLE HID battery reporting."
+      ],
+      "stderr_summary": [],
+      "output_sha256": "ee94204efc8aebb8f4b25b6c4e18b75c2988e4cd2a44dac4eb6528be19946b97",
+      "evidence_refs": [],
+      "artifacts": []
+    },
+    {
+      "index": 2,
+      "command": "pwsh -NoProfile -File .\\tools\\verify_ble_battery_service_static.ps1",
+      "runnable": true,
+      "worktree": "C:\\Users\\Billy\\Desktop\\listener\\voice-keyboard-firmware-wt-oai1-voice-keyboard-firmware-full-function-test-1.7",
+      "branch": "ai/oai1-voice-keyboard-firmware-full-function-test-1.7",
+      "commit": "4cd9cf3f202d405cee2b34323d51b3527c2095df",
+      "status": "PASS",
+      "started_at": "2026-06-15T16:31:48.0957025+08:00",
+      "finished_at": "2026-06-15T16:31:48.0957025+08:00",
+      "duration_ms": 0,
+      "exit_code": 0,
+      "timed_out": false,
+      "stdout_summary": [
+        "PASS: BLE HID Battery Service uses live ADC, charger full status, 1% notifications, and periodic refresh instead of a fixed placeholder."
+      ],
+      "stderr_summary": [],
+      "output_sha256": "b75ca662ef80a4ad71e12816090ad8835b9f694050d91b7d579026c58406c41a",
+      "evidence_refs": [],
+      "artifacts": []
+    },
+    {
+      "index": 3,
+      "command": "pwsh -NoProfile -File .\\tools\\verify_power_manager_static.ps1",
+      "runnable": true,
+      "worktree": "C:\\Users\\Billy\\Desktop\\listener\\voice-keyboard-firmware-wt-oai1-voice-keyboard-firmware-full-function-test-1.7",
+      "branch": "ai/oai1-voice-keyboard-firmware-full-function-test-1.7",
+      "commit": "4cd9cf3f202d405cee2b34323d51b3527c2095df",
+      "status": "PASS",
+      "started_at": "2026-06-15T16:31:48.0957025+08:00",
+      "finished_at": "2026-06-15T16:31:48.0957025+08:00",
+      "duration_ms": 0,
+      "exit_code": 0,
+      "timed_out": false,
+      "stdout_summary": [
+        "PASS: power manager static verification covers hardware shutdown, PWR_HOLD/GPIO11, external-power blockers, configurable idle actions, PWR_HOLD guard, diagnostics, and Deep Sleep removal."
+      ],
+      "stderr_summary": [],
+      "output_sha256": "6836fbcf7f8d8e69882abdc4774e4ed697282741356f4ab40ecf5b00fa01e472",
+      "evidence_refs": [],
+      "artifacts": []
+    },
+    {
+      "index": 4,
+      "command": "pwsh -NoProfile -File .\\tools\\verify_charging_awake_policy_static.ps1",
+      "runnable": true,
+      "worktree": "C:\\Users\\Billy\\Desktop\\listener\\voice-keyboard-firmware-wt-oai1-voice-keyboard-firmware-full-function-test-1.7",
+      "branch": "ai/oai1-voice-keyboard-firmware-full-function-test-1.7",
+      "commit": "4cd9cf3f202d405cee2b34323d51b3527c2095df",
+      "status": "PASS",
+      "started_at": "2026-06-15T16:31:48.0957025+08:00",
+      "finished_at": "2026-06-15T16:31:48.0957025+08:00",
+      "duration_ms": 0,
+      "exit_code": 0,
+      "timed_out": false,
+      "stdout_summary": [
+        "PASS: charging-awake policy static checks cover raw/interpreted power inputs, plugged idle behavior, automatic long-idle/low-battery shutdown blocking, manual shutdown override, plug/unplug idle reset, and diagnostics."
+      ],
+      "stderr_summary": [],
+      "output_sha256": "cb38a710d31d6497e37638ba9c5a883c1afe269d03c33f32705a351a69a5c5a2",
+      "evidence_refs": [],
+      "artifacts": []
+    },
+    {
+      "index": 5,
+      "command": "pwsh -NoProfile -File .\\tools\\collect_v2_current_telemetry.ps1 -Port $COM_PORT -ReadSeconds 15 -OutputDir docs/validation/voice-keyboard-firmware-full-function-test-1.7/current-telemetry",
+      "runnable": true,
+      "worktree": "C:\\Users\\Billy\\Desktop\\listener\\voice-keyboard-firmware-wt-oai1-voice-keyboard-firmware-full-function-test-1.7",
+      "branch": "ai/oai1-voice-keyboard-firmware-full-function-test-1.7",
+      "commit": "4cd9cf3f202d405cee2b34323d51b3527c2095df",
+      "status": "PASS",
+      "started_at": "2026-06-15T16:31:48.0957025+08:00",
+      "finished_at": "2026-06-15T16:31:48.0957025+08:00",
+      "duration_ms": 0,
+      "exit_code": 0,
+      "timed_out": false,
+      "stdout_summary": [
+        "PASS: V2 current telemetry captured on COM7 at 20260615-162923."
+      ],
+      "stderr_summary": [],
+      "output_sha256": "174bbd6a0325ae0cbf29661681be631c156a2f900a03a8ba4d1b1d55d0bf66ce",
+      "evidence_refs": [
+        "lock:COM7",
+        "artifact:docs/validation/voice-keyboard-firmware-full-function-test-1.7/current-telemetry/v2_current_telemetry_20260615-162923.json",
+        "artifact:docs/validation/voice-keyboard-firmware-full-function-test-1.7/current-telemetry/v2_current_telemetry_20260615-162923.md",
+        "artifact:docs/validation/voice-keyboard-firmware-full-function-test-1.7/current-telemetry/v2_current_telemetry_20260615-162923_transcript.txt"
+      ],
+      "artifacts": [
+        {
+          "ref": "artifact:docs/validation/voice-keyboard-firmware-full-function-test-1.7/current-telemetry/v2_current_telemetry_20260615-162923.json",
+          "path": "docs/validation/voice-keyboard-firmware-full-function-test-1.7/current-telemetry/v2_current_telemetry_20260615-162923.json",
+          "exists": true
+        },
+        {
+          "ref": "artifact:docs/validation/voice-keyboard-firmware-full-function-test-1.7/current-telemetry/v2_current_telemetry_20260615-162923.md",
+          "path": "docs/validation/voice-keyboard-firmware-full-function-test-1.7/current-telemetry/v2_current_telemetry_20260615-162923.md",
+          "exists": true
+        },
+        {
+          "ref": "artifact:docs/validation/voice-keyboard-firmware-full-function-test-1.7/current-telemetry/v2_current_telemetry_20260615-162923_transcript.txt",
+          "path": "docs/validation/voice-keyboard-firmware-full-function-test-1.7/current-telemetry/v2_current_telemetry_20260615-162923_transcript.txt",
+          "exists": true
+        }
+      ]
+    },
+    {
+      "index": 6,
+      "command": "manual-gate: run power/battery/USB/charger/PWR_HOLD capture under aiw with-lock; artifact: docs/validation/voice-keyboard-firmware-full-function-test-1.7/",
+      "runnable": false,
+      "worktree": "C:\\Users\\Billy\\Desktop\\listener\\voice-keyboard-firmware-wt-oai1-voice-keyboard-firmware-full-function-test-1.7",
+      "branch": "ai/oai1-voice-keyboard-firmware-full-function-test-1.7",
+      "commit": "4cd9cf3f202d405cee2b34323d51b3527c2095df",
+      "status": "RECORDED",
+      "started_at": "2026-06-15T16:31:48.0957025+08:00",
+      "finished_at": "2026-06-15T16:31:48.0957025+08:00",
+      "duration_ms": 0,
+      "exit_code": null,
+      "timed_out": false,
+      "stdout_summary": [
+        "manual-gate: PWR_HOLD shutdown probe recorded GPIO11 high-request/readback failure and no COM disappearance; known issue route documented."
+      ],
+      "stderr_summary": [],
+      "output_sha256": null,
+      "evidence_refs": [
+        "lock:COM7",
+        "artifact:docs/validation/voice-keyboard-firmware-full-function-test-1.7/shutdown-drive-high-after-2800-oai1-20260615-161949/shutdown_summary.json",
+        "artifact:docs/validation/voice-keyboard-firmware-full-function-test-1.7/shutdown-drive-high-after-2800-oai1-20260615-161949/shutdown_serial_transcript.txt",
+        "artifact:docs/validation/voice-keyboard-firmware-full-function-test-1.7/shutdown-drive-high-after-2800-oai1-20260615-161949/port_poll_after_shutdown.txt",
+        "artifact:docs/validation/voice-keyboard-firmware-full-function-test-1.7/pwr-hold-known-issue-oai1-20260615.md"
+      ],
+      "artifacts": [
+        {
+          "ref": "artifact:docs/validation/voice-keyboard-firmware-full-function-test-1.7/shutdown-drive-high-after-2800-oai1-20260615-161949/shutdown_summary.json",
+          "path": "docs/validation/voice-keyboard-firmware-full-function-test-1.7/shutdown-drive-high-after-2800-oai1-20260615-161949/shutdown_summary.json",
+          "exists": true
+        },
+        {
+          "ref": "artifact:docs/validation/voice-keyboard-firmware-full-function-test-1.7/shutdown-drive-high-after-2800-oai1-20260615-161949/shutdown_serial_transcript.txt",
+          "path": "docs/validation/voice-keyboard-firmware-full-function-test-1.7/shutdown-drive-high-after-2800-oai1-20260615-161949/shutdown_serial_transcript.txt",
+          "exists": true
+        },
+        {
+          "ref": "artifact:docs/validation/voice-keyboard-firmware-full-function-test-1.7/shutdown-drive-high-after-2800-oai1-20260615-161949/port_poll_after_shutdown.txt",
+          "path": "docs/validation/voice-keyboard-firmware-full-function-test-1.7/shutdown-drive-high-after-2800-oai1-20260615-161949/port_poll_after_shutdown.txt",
+          "exists": true
+        },
+        {
+          "ref": "artifact:docs/validation/voice-keyboard-firmware-full-function-test-1.7/pwr-hold-known-issue-oai1-20260615.md",
+          "path": "docs/validation/voice-keyboard-firmware-full-function-test-1.7/pwr-hold-known-issue-oai1-20260615.md",
+          "exists": true
+        }
+      ]
+    },
+    {
+      "index": 7,
+      "command": "manual-gate: after reproducing USB-unplug/no-serial light cycling, reconnect without clearing diag_log, dump/decode flash diagnostics, then run python .\\tools\\verify_unplugged_flash_diag_bundle.py --bundle <diag_log_ai_bundle.json> --expect-pwr-class amber --forbid-pwr-class green --require-display-latch; artifact includes raw diag_log JSONL, decoded bundle, verifier PASS output, and notes tying event_ref values to LED-off/resume, display-latched battery level, and PWR color transitions.",
+      "runnable": false,
+      "worktree": "C:\\Users\\Billy\\Desktop\\listener\\voice-keyboard-firmware-wt-oai1-voice-keyboard-firmware-full-function-test-1.7",
+      "branch": "ai/oai1-voice-keyboard-firmware-full-function-test-1.7",
+      "commit": "4cd9cf3f202d405cee2b34323d51b3527c2095df",
+      "status": "RECORDED",
+      "started_at": "2026-06-15T16:31:48.0957025+08:00",
+      "finished_at": "2026-06-15T16:31:48.0957025+08:00",
+      "duration_ms": 0,
+      "exit_code": null,
+      "timed_out": false,
+      "stdout_summary": [
+        "manual-gate: two independent unplug-replug flash diag bundles verified PASS with amber/off/white and green forbidden."
+      ],
+      "stderr_summary": [],
+      "output_sha256": null,
+      "evidence_refs": [
+        "lock:COM7",
+        "artifact:docs/validation/voice-keyboard-firmware-full-function-test-1.7/post-unplug-replug-oai1-20260615-145041/verifier-pass.txt",
+        "artifact:docs/validation/voice-keyboard-firmware-full-function-test-1.7/post-unplug-replug-oai1-20260615-145041/diag_log_ai_bundle.json",
+        "artifact:docs/validation/voice-keyboard-firmware-full-function-test-1.7/post-unplug-replug-oai1-20260615-162625/verifier-pass.txt",
+        "artifact:docs/validation/voice-keyboard-firmware-full-function-test-1.7/post-unplug-replug-oai1-20260615-162625/diag_log_ai_bundle.json",
+        "artifact:docs/validation/voice-keyboard-firmware-full-function-test-1.7/unplug-replug-repro-summary-oai1-20260615.md"
+      ],
+      "artifacts": [
+        {
+          "ref": "artifact:docs/validation/voice-keyboard-firmware-full-function-test-1.7/post-unplug-replug-oai1-20260615-145041/verifier-pass.txt",
+          "path": "docs/validation/voice-keyboard-firmware-full-function-test-1.7/post-unplug-replug-oai1-20260615-145041/verifier-pass.txt",
+          "exists": true
+        },
+        {
+          "ref": "artifact:docs/validation/voice-keyboard-firmware-full-function-test-1.7/post-unplug-replug-oai1-20260615-145041/diag_log_ai_bundle.json",
+          "path": "docs/validation/voice-keyboard-firmware-full-function-test-1.7/post-unplug-replug-oai1-20260615-145041/diag_log_ai_bundle.json",
+          "exists": true
+        },
+        {
+          "ref": "artifact:docs/validation/voice-keyboard-firmware-full-function-test-1.7/post-unplug-replug-oai1-20260615-162625/verifier-pass.txt",
+          "path": "docs/validation/voice-keyboard-firmware-full-function-test-1.7/post-unplug-replug-oai1-20260615-162625/verifier-pass.txt",
+          "exists": true
+        },
+        {
+          "ref": "artifact:docs/validation/voice-keyboard-firmware-full-function-test-1.7/post-unplug-replug-oai1-20260615-162625/diag_log_ai_bundle.json",
+          "path": "docs/validation/voice-keyboard-firmware-full-function-test-1.7/post-unplug-replug-oai1-20260615-162625/diag_log_ai_bundle.json",
+          "exists": true
+        },
+        {
+          "ref": "artifact:docs/validation/voice-keyboard-firmware-full-function-test-1.7/unplug-replug-repro-summary-oai1-20260615.md",
+          "path": "docs/validation/voice-keyboard-firmware-full-function-test-1.7/unplug-replug-repro-summary-oai1-20260615.md",
+          "exists": true
+        }
+      ]
+    },
+    {
+      "index": 8,
+      "command": "git diff --check",
+      "runnable": true,
+      "worktree": "C:\\Users\\Billy\\Desktop\\listener\\voice-keyboard-firmware-wt-oai1-voice-keyboard-firmware-full-function-test-1.7",
+      "branch": "ai/oai1-voice-keyboard-firmware-full-function-test-1.7",
+      "commit": "4cd9cf3f202d405cee2b34323d51b3527c2095df",
+      "status": "PASS",
+      "started_at": "2026-06-15T16:31:48.0957025+08:00",
+      "finished_at": "2026-06-15T16:31:48.0957025+08:00",
+      "duration_ms": 0,
+      "exit_code": 0,
+      "timed_out": false,
+      "stdout_summary": [
+        "PASS: git diff --check returned exit code 0."
+      ],
+      "stderr_summary": [],
+      "output_sha256": "c158fa7153eba29ec3ac424c34eae67831781d0de53d28958450fa4e21b16eb6",
+      "evidence_refs": [],
+      "artifacts": []
+    }
+  ],
+  "errors": []
+}
