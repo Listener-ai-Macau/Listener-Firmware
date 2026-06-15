@@ -1,0 +1,1 @@
+PASS: unplugged flash diag bundle captures status_led power_input, visual_state, output_state, power external_power, and sleep_wake timelines; pwr_classes=['amber', 'off', 'white']
