@@ -118,7 +118,7 @@ STEP_BY_MODE = {
 MODE = payload["mode"].lower()
 STEP = STEP_BY_MODE.get(MODE, "unknown")
 EXPECTED_MODES = set(STEP_BY_MODE)
-STATUS_EFFECT_BASELINE = "status_key_isolated_charge_full_latch_v10"
+STATUS_EFFECT_BASELINE = "status_key_isolated_charge_high_contrast_v11"
 PROFILE_CAPS_PERCENT = {
     "low": 100,
     "standard": 100,
@@ -564,8 +564,8 @@ def make_semantic_sequence(zones_text):
             "profile": "standard",
             "commands": ["~LED:PROFILE standard", "~LED:PREVIEW clear", "~LED:PREVIEW charging"],
             "expected_leds": ["PWR"],
-            "expected": "PWR white slow breath for charging",
-            "acceptance_focus": "charging is visible without a permanent bright lamp",
+            "expected": "PWR high-contrast white breath for charging",
+            "acceptance_focus": "charging visibly breathes without reading as steady full-charge white",
             "sample_delay_ms": 900,
             "state_expect": {"charging": 1},
         },
