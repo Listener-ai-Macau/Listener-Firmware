@@ -25,7 +25,9 @@ function Assert-Contains {
 }
 
 $bleHid = Read-RepoFile "ports/esp32/ble_hid/ble_hid.c"
+$bleHidHeader = Read-RepoFile "ports/esp32/ble_hid/include/ble_hid.h"
 $batteryMonitor = Read-RepoFile "components/battery_monitor/battery_monitor.c"
+$powerManager = Read-RepoFile "components/power_manager/power_manager.c"
 $featureMap = Read-RepoFile "docs/features/firmware-feature-map.md"
 
 Assert-Contains $bleHid 'battery_monitor_read\(&battery\)' 'BLE Battery Service reads live battery ADC status'
@@ -40,8 +42,20 @@ Assert-Contains $bleHid 'BLE_HID_BATTERY_FORCE_REFRESH_INTERVAL_MS\s+60000' 'per
 Assert-Contains $bleHid 'periodic_refresh' 'periodic battery notification refresh'
 Assert-Contains $bleHid 'esp_hidd_dev_battery_set\(s_ble_hid_ctx\.hid_device,\s*level\)' 'HID Battery Service value is updated through ESP HID'
 Assert-Contains $bleHid 'firmware_ota_note_battery\(' 'OTA battery gate receives the same live battery sample'
+Assert-Contains $bleHidHeader 'esp_err_t\s+ble_hid_battery_force_refresh\(const char \*reason\)' 'public forced battery refresh API'
+Assert-Contains $bleHid 'esp_err_t\s+ble_hid_battery_force_refresh\(const char \*reason\)' 'forced battery refresh implementation'
+Assert-Contains $powerManager 'ble_hid_battery_force_refresh\("pre_shutdown"\)' 'hardware shutdown forces a final battery refresh before BLE disconnect'
+Assert-Contains $powerManager 'POWER_MANAGER_SHUTDOWN_BATTERY_NOTIFY_WAIT_MS\s+100U' 'shutdown allows the final battery notification to leave before disconnect'
+$preShutdownBatteryRefreshIndex = $powerManager.IndexOf('ble_hid_battery_force_refresh("pre_shutdown")')
+$shutdownBleDisconnectIndex = $powerManager.IndexOf('esp_err_t ble_ret = ble_hid_gap_prepare_shutdown_disconnect()')
+if ($preShutdownBatteryRefreshIndex -lt 0 -or
+    $shutdownBleDisconnectIndex -lt 0 -or
+    $preShutdownBatteryRefreshIndex -gt $shutdownBleDisconnectIndex) {
+    throw "Hardware shutdown battery refresh must run before BLE disconnect preparation"
+}
 Assert-Contains $batteryMonitor 'BATTERY_MONITOR_EMPTY_MV\s+3000U' 'product-empty battery voltage'
 Assert-Contains $batteryMonitor 'BATTERY_MONITOR_FULL_MV\s+4200U' 'full battery voltage'
 Assert-Contains $featureMap 'Battery ADC status uses the protected product range `3000mV=0%` and `4200mV=100%`' 'feature map documents protected battery range'
+Assert-Contains $featureMap 'forces a final pre-disconnect battery refresh before hardware shutdown' 'feature map documents final battery refresh before shutdown'
 
 Write-Host "PASS: BLE HID Battery Service uses live ADC, charger full status, 1% notifications, and periodic refresh instead of a fixed placeholder."

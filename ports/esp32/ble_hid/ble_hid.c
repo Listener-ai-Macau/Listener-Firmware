@@ -251,16 +251,16 @@ void ble_hid_battery_task_wake(void)
     }
 }
 
-static void ble_hid_update_battery_level(const char *reason, bool force_notify)
+static esp_err_t ble_hid_update_battery_level(const char *reason, bool force_notify)
 {
     if (s_ble_hid_ctx.hid_device == NULL) {
-        return;
+        return ESP_ERR_INVALID_STATE;
     }
 
     if (!s_ble_connected && !force_notify) {
         ESP_LOGD(TAG, "battery update skipped while disconnected reason=%s",
                  reason != NULL ? reason : "unspecified");
-        return;
+        return ESP_ERR_INVALID_STATE;
     }
 
     battery_monitor_status_t battery = {0};
@@ -310,7 +310,7 @@ static void ble_hid_update_battery_level(const char *reason, bool force_notify)
             level,
             s_battery_service_level,
             reason != NULL ? reason : "unspecified");
-        return;
+        return ESP_OK;
     }
 
     if (read_ret == ESP_OK) {
@@ -353,7 +353,7 @@ static void ble_hid_update_battery_level(const char *reason, bool force_notify)
     esp_err_t ret = esp_hidd_dev_battery_set(s_ble_hid_ctx.hid_device, level);
     if (ret != ESP_OK) {
         ESP_LOGW(TAG, "battery level notify failed: %s", esp_err_to_name(ret));
-        return;
+        return ret;
     }
 
     s_battery_service_level = level;
@@ -373,6 +373,19 @@ static void ble_hid_update_battery_level(const char *reason, bool force_notify)
                  level, battery.voltage_mv, (uint32_t)battery.raw_adc,
                  (uint32_t)battery.adc_mv);
     }
+
+    return ESP_OK;
+}
+
+esp_err_t ble_hid_battery_force_refresh(const char *reason)
+{
+    if (!s_ble_connected) {
+        ESP_LOGI(TAG, "battery force refresh skipped while disconnected reason=%s",
+                 reason != NULL ? reason : "unspecified");
+        return ESP_ERR_INVALID_STATE;
+    }
+
+    return ble_hid_update_battery_level(reason != NULL ? reason : "force_refresh", true);
 }
 
 static void ble_hid_battery_task(void *parameter)

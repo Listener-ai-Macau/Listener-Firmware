@@ -31,6 +31,7 @@ extern esp_err_t ble_hid_gap_prepare_shutdown_disconnect(void) __attribute__((we
 extern esp_err_t ble_hid_gap_request_low_power_connection(void) __attribute__((weak));
 extern esp_err_t ble_hid_gap_request_active_connection(void) __attribute__((weak));
 extern esp_err_t ble_hid_gap_request_reconnect(void) __attribute__((weak));
+extern esp_err_t ble_hid_battery_force_refresh(const char *reason) __attribute__((weak));
 extern void ble_hid_battery_task_wake(void) __attribute__((weak));
 extern void system_health_set_low_power_mode(bool enabled) __attribute__((weak));
 extern void status_led_set_low_power_disabled(bool disabled) __attribute__((weak));
@@ -69,6 +70,7 @@ extern void status_led_prepare_sleep(void) __attribute__((weak));
 #define POWER_MANAGER_LOW_POWER_EVALUATE_INTERVAL_MS 60000U
 #define POWER_MANAGER_LOW_BATTERY_SHUTDOWN_MAX_MV 3000U
 #define POWER_MANAGER_LOW_BATTERY_BOOT_GRACE_MS 15000U
+#define POWER_MANAGER_SHUTDOWN_BATTERY_NOTIFY_WAIT_MS 100U
 #define POWER_MANAGER_POWER_REMOVAL_WAIT_MS 750U
 #ifndef CONFIG_POWER_MANAGER_BATTERY_CRITICAL_PERCENT
 #define CONFIG_POWER_MANAGER_BATTERY_CRITICAL_PERCENT 0
@@ -1218,6 +1220,18 @@ static esp_err_t power_manager_enter_hardware_shutdown(power_manager_shutdown_re
         power_hold.configured ? 1u : 0u,
         power_hold.policy != NULL ? power_hold.policy : "unknown",
         POWER_MANAGER_SHUTDOWN_USER_ACTION);
+
+    if (ble_hid_battery_force_refresh != NULL) {
+        esp_err_t battery_notify_ret = ble_hid_battery_force_refresh("pre_shutdown");
+        if (battery_notify_ret == ESP_OK) {
+            vTaskDelay(pdMS_TO_TICKS(POWER_MANAGER_SHUTDOWN_BATTERY_NOTIFY_WAIT_MS));
+        } else if (battery_notify_ret != ESP_ERR_INVALID_STATE) {
+            ESP_LOGW(
+                TAG,
+                "shutdown pre-disconnect battery refresh failed: %s",
+                esp_err_to_name(battery_notify_ret));
+        }
+    }
 
     if (status_led_prepare_sleep != NULL) {
         status_led_prepare_sleep();
