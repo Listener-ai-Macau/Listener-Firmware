@@ -1,0 +1,106 @@
+{
+  "schema_version": 1,
+  "schema_id": "listener.firmware.v2_current_telemetry_report.v1",
+  "captured_at": "2026-06-15T08:35:10.4790647+08:00",
+  "source_mode": "serial",
+  "source": "COM7",
+  "expected_sensors": [
+    {
+      "branch": "TPS63020_input_branch",
+      "net": "TPS63020_I_ADC",
+      "allowed_gpios": [
+        -1,
+        10
+      ],
+      "role": "BAT_IN -> VIN_TPS63020 input branch current telemetry"
+    },
+    {
+      "branch": "SY7088_input_branch",
+      "net": "SY7088_I_ADC",
+      "allowed_gpios": [
+        -1,
+        9
+      ],
+      "role": "BAT_IN -> VIN_SY7088 input branch current telemetry"
+    }
+  ],
+  "readings": [
+    {
+      "branch": "TPS63020_input_branch",
+      "net": "TPS63020_I_ADC",
+      "role": "BAT_IN -> VIN_TPS63020 input branch current telemetry",
+      "gpio_allowed": "-1/10",
+      "gpio_reported": 10,
+      "present": true,
+      "branch_reported": true,
+      "raw_adc": 4,
+      "adc_mv": 3,
+      "adc_calibrated": true,
+      "sample_count": 4,
+      "current_ma_valid": true,
+      "estimated_input_current_ma": 6,
+      "battery_side_mv": 3806,
+      "power_mw_valid": true,
+      "estimated_input_power_mw": 22,
+      "result": "ESP_OK",
+      "policy": "v2_battery_side_input_branch_current_ina180a2_10mR_adc_mv_x2_with_battery_mv_from_gpio8_div2",
+      "raw_line": "~BOARD:POWER branch=TPS63020_input_branch present=1 gpio=10 sample_mode=force cache_valid=0 cache_sequence=1 raw_adc=4 adc_mv=3 adc_calibrated=1 sample_count=4 calibration_status=ina180a2_10mR_adc_calibrated_battery_adc_calibrated current_model=\"INA180A2 10mR current_mA=adc_mv*2\" current_calibrated=1 current_ma_valid=1 estimated_input_current_ma=6 battery_side_mv=3806 battery_voltage_source=\"BAT_V_ADC/GPIO8 68K/68K midpoint, VBAT~=2*ADC\" power_mw_valid=1 estimated_input_power_mw=22 result=ESP_OK policy=v2_battery_side_input_branch_current_ina180a2_10mR_adc_mv_x2_with_battery_mv_from_gpio8_div2"
+    },
+    {
+      "branch": "SY7088_input_branch",
+      "net": "SY7088_I_ADC",
+      "role": "BAT_IN -> VIN_SY7088 input branch current telemetry",
+      "gpio_allowed": "-1/9",
+      "gpio_reported": 9,
+      "present": true,
+      "branch_reported": true,
+      "raw_adc": 0,
+      "adc_mv": 0,
+      "adc_calibrated": true,
+      "sample_count": 4,
+      "current_ma_valid": true,
+      "estimated_input_current_ma": 0,
+      "battery_side_mv": 3782,
+      "power_mw_valid": true,
+      "estimated_input_power_mw": 0,
+      "result": "ESP_OK",
+      "policy": "v2_battery_side_input_branch_current_ina180a2_10mR_adc_mv_x2_with_battery_mv_from_gpio8_div2",
+      "raw_line": "~BOARD:POWER branch=SY7088_input_branch present=1 gpio=9 sample_mode=force cache_valid=0 cache_sequence=2 raw_adc=0 adc_mv=0 adc_calibrated=1 sample_count=4 calibration_status=ina180a2_10mR_adc_calibrated_battery_adc_calibrated current_model=\"INA180A2 10mR current_mA=adc_mv*2\" current_calibrated=1 current_ma_valid=1 estimated_input_current_ma=0 battery_side_mv=3782 battery_voltage_source=\"BAT_V_ADC/GPIO8 68K/68K midpoint, VBAT~=2*ADC\" power_mw_valid=1 estimated_input_power_mw=0 result=ESP_OK policy=v2_battery_side_input_branch_current_ina180a2_10mR_adc_mv_x2_with_battery_mv_from_gpio8_div2"
+    }
+  ],
+  "low_power_status": {
+    "present": true,
+    "shutdown_blockers": "0x00000080",
+    "automatic_shutdown_blocked_by_external_power": false,
+    "hardware_shutdown_ms": 1800000,
+    "pwr_hold_gpio": 11,
+    "pwr_hold_level": "low",
+    "pwr_hold_configured": true,
+    "pwr_hold_policy": "v2_gpio11_power_latch_runtime_low_release_high_for_hardware_shutdown",
+    "battery_mv": 3794,
+    "battery_level": 66,
+    "battery_valid": true,
+    "last_shutdown_reason": "none",
+    "last_shutdown_idle_ms": 0,
+    "last_shutdown_blockers": "0x00000000",
+    "voice_key_gpio": 18,
+    "hardware_shutdown_user_action": "short-press hardware power key for cold boot after PWR_HOLD/GPIO11 release-high shutdown",
+    "raw_line": "~POWER:STATUS state=ACTIVE blockers=0x00000080 blocker_names=external_power shutdown_blockers=0x00000080 shutdown_blocker_names=external_power idle_ms=57868 user_idle_ms=57868 radio_idle_ms=57868 ble_connected=0 automatic_shutdown_blocked_by_external_power=0 external_power_present=1 usb_power_present=1 charging=0 charge_full=0 charge_full_latched=0 charge_full_candidate_ms=0 charge_full_debounce_ms=10000 charge_full_min_mv=4050 charge_full_min_percent=88 plugged_low_power_enabled=1 low_power_idle_allowed=1 usb_det_level=high bat_chg_level=high bat_std_level=high pwr_hold_level=low usb_det_policy=v2_gpio7_r37_r32_10K_10K_divider charger_polarity=v2_gpio14_chg_gpio21_std_active_low pwr_hold_policy=v2_gpio11_power_latch_runtime_low_release_high_for_hardware_shutdown battery_mv=3794 battery_level=66 battery_valid=1 last_shutdown_reason=none last_shutdown_idle_ms=0 last_shutdown_blockers=0x00000000 guard=1 audio_idle_ms=5000 audio_idle_power_save=1 audio_idle_blockers=0x00000000 low_power_idle_ms=60000 connected_idle_ms=60000 disconnected_idle_ms=60000 hardware_shutdown_ms=1800000 pwr_hold_gpio=11 pwr_hold_level=low pwr_hold_configured=1 pwr_hold_policy=v2_gpio11_power_latch_runtime_low_release_high_for_hardware_shutdown voice_key_gpio=18 hardware_shutdown_user_action=\"short-press hardware power key for cold boot after PWR_HOLD/GPIO11 release-high shutdown\""
+  },
+  "summary": {
+    "expected_sensor_count": 2,
+    "reading_count": 4,
+    "all_expected_present": true,
+    "hardware_present_count": 2,
+    "low_power_status_present": true,
+    "missing_branches": [],
+    "unexpected_branches": [],
+    "gpio_mismatches": [],
+    "software_power_control": false,
+    "telemetry_only": true,
+    "valid_for_power_decisions": false
+  },
+  "transcript_path": "C:\\Users\\Billy\\Desktop\\listener\\voice-keyboard-firmware-wt-adhoc-oai1-pwr-hold-shutdown-failsafe\\docs\\validation\\voice-keyboard-firmware-full-function-test-1.7\\current-telemetry\\v2_current_telemetry_20260615-083454_transcript.txt",
+  "json_path": "C:\\Users\\Billy\\Desktop\\listener\\voice-keyboard-firmware-wt-adhoc-oai1-pwr-hold-shutdown-failsafe\\docs\\validation\\voice-keyboard-firmware-full-function-test-1.7\\current-telemetry\\v2_current_telemetry_20260615-083454.json",
+  "markdown_path": "C:\\Users\\Billy\\Desktop\\listener\\voice-keyboard-firmware-wt-adhoc-oai1-pwr-hold-shutdown-failsafe\\docs\\validation\\voice-keyboard-firmware-full-function-test-1.7\\current-telemetry\\v2_current_telemetry_20260615-083454.md"
+}
