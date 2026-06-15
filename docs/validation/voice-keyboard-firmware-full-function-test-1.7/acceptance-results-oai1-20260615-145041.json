@@ -1,0 +1,48 @@
+[
+  {
+    "acceptance_index": 1,
+    "status": "PASS",
+    "note": "Battery mapping and live BLE battery reporting static checks pass; flash diag preserves raw battery_mv/level with display latch.",
+    "evidence": [
+      "command:pwsh -NoProfile -File .\\tools\\verify_battery_monitor_static.ps1",
+      "command:pwsh -NoProfile -File .\\tools\\verify_ble_battery_service_static.ps1",
+      "artifact:docs/validation/voice-keyboard-firmware-full-function-test-1.7/post-unplug-replug-oai1-20260615-145041/diag_log_ai_bundle.json"
+    ]
+  },
+  {
+    "acceptance_index": 2,
+    "status": "PASS",
+    "note": "Runtime/PWR_HOLD evidence captured: plugged runtime low, battery-only shutdown entry, drive-high request, failed restore/backoff, and cold boot wake records.",
+    "evidence": [
+      "artifact:docs/validation/voice-keyboard-firmware-full-function-test-1.7/post-unplug-replug-oai1-20260615-145041/diag_log_ai_bundle.json",
+      "command:pwsh -NoProfile -File .\\tools\\verify_power_manager_static.ps1"
+    ]
+  },
+  {
+    "acceptance_index": 3,
+    "status": "PASS",
+    "note": "USB plugged long-idle is blocked by external_power; unplug resets idle and battery-only low-power/shutdown policy runs without stale immediate shutdown.",
+    "evidence": [
+      "artifact:docs/validation/voice-keyboard-firmware-full-function-test-1.7/post-unplug-replug-oai1-20260615-145041/diag_log_ai_bundle.json",
+      "command:pwsh -NoProfile -File .\\tools\\verify_charging_awake_policy_static.ps1"
+    ]
+  },
+  {
+    "acceptance_index": 4,
+    "status": "PASS",
+    "note": "V2 current telemetry captured on COM7 with JSON/report/transcript artifacts.",
+    "evidence": [
+      "artifact:docs/validation/voice-keyboard-firmware-full-function-test-1.7/current-telemetry/v2_current_telemetry_20260615-142937.json",
+      "artifact:docs/validation/voice-keyboard-firmware-full-function-test-1.7/current-telemetry/v2_current_telemetry_20260615-142937.md"
+    ]
+  },
+  {
+    "acceptance_index": 5,
+    "status": "PASS",
+    "note": "Unplug/no-serial flash diag verifier PASS: power_input, visual_state, output_state, external_power, sleep_wake reconstruct amber/off/white recovery; green suppressed; display-latched level and raw battery preserved.",
+    "evidence": [
+      "artifact:docs/validation/voice-keyboard-firmware-full-function-test-1.7/post-unplug-replug-oai1-20260615-145041/verifier-pass.txt",
+      "artifact:docs/validation/voice-keyboard-firmware-full-function-test-1.7/post-unplug-replug-oai1-20260615-145041/diag_log_ai_bundle.json"
+    ]
+  }
+]

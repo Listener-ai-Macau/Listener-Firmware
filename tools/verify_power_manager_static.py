@@ -208,12 +208,12 @@ CHECKS = {
         "Voice Keyboard V2",
         "EC11 push/GPIO18",
         "PWR_HOLD/GPIO11",
-        "v2_gpio11_power_latch_runtime_low_release_high_for_hardware_shutdown",
+        "v2_gpio11_power_latch_runtime_low_drive_high_for_hardware_shutdown",
         "GPIO_MODE_OUTPUT",
         "gpio_set_level(BOARD_PINS_PWR_HOLD_IO, 0)",
         "runtime low configured",
         "gpio_set_level(BOARD_PINS_PWR_HOLD_IO, 1)",
-        "released high for hardware shutdown",
+        "driven high for hardware shutdown",
         "BOARD_PWR_HOLD_RELEASE_SETTLE_MS",
         "board_wait_power_hold_readback",
         "board_verify_power_hold_readback",
@@ -262,7 +262,6 @@ FORBIDDEN = {
         "restoring hold high",
         "restoring hold low",
         "release-low",
-        "released high",
         "shutdown-low",
     ],
     "components/board/board.c": [
@@ -358,13 +357,13 @@ def main() -> int:
     if not re.search(
         r"board_set_power_hold_enabled[\s\S]*"
         r"gpio_set_level\(BOARD_PINS_PWR_HOLD_IO,\s*1\)[\s\S]*"
-        r"GPIO_MODE_INPUT[\s\S]*"
-        r"board_wait_power_hold_readback\(\"released high for hardware shutdown\",\s*1\)[\s\S]*"
+        r"GPIO_MODE_OUTPUT[\s\S]*"
+        r"board_wait_power_hold_readback\(\"driven high for hardware shutdown\",\s*1\)[\s\S]*"
         r"return\s+ret",
         board,
     ):
         failures.append(
-            "components/board/board.c: hardware shutdown release-high must wait for PWR_HOLD readback before reporting success"
+            "components/board/board.c: hardware shutdown drive-high must wait for PWR_HOLD readback before reporting success"
         )
 
     main_source = (REPO_ROOT / "main/main.c").read_text(encoding="utf-8")
@@ -567,13 +566,20 @@ def main() -> int:
     if not re.search(
         r"power_manager_restore_after_shutdown_failure[\s\S]*"
         r"board_set_power_hold_enabled\(true\)[\s\S]*"
-        r"ble_hid_gap_request_reconnect[\s\S]*"
         r"DIAG_POWER_SLEEP_BLOCKED[\s\S]*"
-        r"power_manager_reset_idle_after_shutdown_failure",
+        r"power_manager_schedule_shutdown_failure_retry",
         power_manager,
     ):
         failures.append(
-            "components/power_manager/power_manager.c: failed shutdown must restore PWR_HOLD low, reopen BLE reconnect, record diag, and reset idle"
+            "components/power_manager/power_manager.c: automatic failed shutdown must restore PWR_HOLD low, record diag, and enter retry cooldown"
+        )
+    if "POWER_MANAGER_SHUTDOWN_FAILURE_RETRY_MS 900000U" not in power_manager:
+        failures.append(
+            "components/power_manager/power_manager.c: shutdown failure retry cooldown must be explicit"
+        )
+    if "power_manager_shutdown_failure_retry_active_locked" not in power_manager:
+        failures.append(
+            "components/power_manager/power_manager.c: target state must honor shutdown failure retry cooldown"
         )
     if not re.search(
         r"board_set_power_hold_enabled\(false\)[\s\S]*"
@@ -582,7 +588,7 @@ def main() -> int:
         power_manager,
     ):
         failures.append(
-            "components/power_manager/power_manager.c: PWR_HOLD release-high/readback failure must use the shutdown restore path"
+            "components/power_manager/power_manager.c: PWR_HOLD drive-high/readback failure must use the shutdown restore path"
         )
     if not re.search(
         r"vTaskDelay\(pdMS_TO_TICKS\(POWER_MANAGER_POWER_REMOVAL_WAIT_MS\)\)[\s\S]*"

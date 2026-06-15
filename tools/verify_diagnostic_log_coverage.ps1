@@ -125,7 +125,11 @@ foreach ($macro in @(
     "DIAG_POWER_USB_DETECT",
     "DIAG_POWER_CHARGE_STATE",
     "DIAG_POWER_HOLD_STATE",
+    "DIAG_LED_POWER_INPUT",
+    "DIAG_LED_VISUAL_STATE",
+    "DIAG_LED_OUTPUT_STATE",
     "DIAG_GAP_RECOVERY",
+    "DIAG_GAP_ADV_STATE",
     "DIAG_BAUD_REPLAY"
 )) {
     if ($events -notmatch "(?m)^\s*#define\s+$macro\b") {
@@ -171,6 +175,13 @@ Assert-Contains -RelativePath "ports/esp32/diag_log_platform/diag_log_flash.c" -
 Assert-Contains -RelativePath "components/power_manager/power_manager.c" -Pattern "DIAG_POWER_USB_DETECT" -Description "USB detect transition diag"
 Assert-Contains -RelativePath "components/power_manager/power_manager.c" -Pattern "DIAG_POWER_CHARGE_STATE" -Description "charge state transition diag"
 Assert-Contains -RelativePath "components/power_manager/power_manager.c" -Pattern "DIAG_POWER_HOLD_STATE" -Description "PWR_HOLD transition diag"
+Assert-Contains -RelativePath "components/power_manager/power_manager.c" -Pattern "POWER_MANAGER_POWER_HOLD_ACTION_SHUTDOWN_DRIVE_HIGH" -Description "PWR_HOLD shutdown drive-high action diag"
+Assert-Contains -RelativePath "components/diag_log/include/diag_log_events.h" -Pattern "shutdown_drive_high" -Description "PWR_HOLD action decode labels"
+Assert-Contains -RelativePath "components/status_led/status_led.c" -Pattern "DIAG_LED_POWER_INPUT" -Description "status LED power input flash diag event logging"
+Assert-Contains -RelativePath "components/status_led/status_led.c" -Pattern "DIAG_LED_VISUAL_STATE" -Description "status LED visible semantic flash diag event logging"
+Assert-Contains -RelativePath "components/status_led/status_led.c" -Pattern "DIAG_LED_OUTPUT_STATE" -Description "status LED output/low-power flash diag event logging"
+Assert-Contains -RelativePath "components/status_led/status_led.c" -Pattern "status_led_log_visual_state_locked" -Description "status LED compressed frame-state flash diag logger"
+Assert-Contains -RelativePath "components/diag_log/include/diag_log_events.h" -Pattern "pwr_rgb_0xRRGGBB" -Description "status LED PWR RGB flash diag field contract"
 
 Assert-Contains -RelativePath "tools/esp_idf_ci.ps1" -Pattern "Get-IdfPartitionTable" -Description "partition table parser"
 Assert-Contains -RelativePath "tools/esp_idf_ci.ps1" -Pattern "Write-OtaPartitionEvidence" -Description "OTA partition evidence output"
@@ -187,6 +198,7 @@ Assert-Contains -RelativePath "ports/esp32/ble_audio_stream/ble_audio_stream_esp
 Assert-Contains -RelativePath "ports/esp32/ble_audio_stream/ble_audio_stream_esp32.c" -Pattern "audio transport link suspended: reason=notify_disabled" -Description "notify-disabled recovery suspension log"
 Assert-NotContains -RelativePath "ports/esp32/ble_audio_stream/ble_audio_stream_esp32.c" -Pattern "notify_disabled_session_abort" -Description "obsolete notify-disabled immediate abort"
 Assert-Contains -RelativePath "ports/esp32/ble_hid_gap/ble_hid_gap_esp32.c" -Pattern "DIAG_GAP_RECOVERY" -Description "BLE recovery diag event logging"
+Assert-Contains -RelativePath "ports/esp32/ble_hid_gap/ble_hid_gap_esp32.c" -Pattern "DIAG_GAP_ADV_STATE" -Description "BLE advertising state diag event logging"
 Assert-Contains -RelativePath "ports/esp32/ble_hid_gap/ble_hid_gap_esp32.c" -Pattern "recovery: clearing pairing bonds" -Description "BLE recovery serial action log"
 Assert-Contains -RelativePath "ports/esp32/ble_hid_gap/ble_hid_gap_esp32.c" -Pattern "recovery: pairing reset complete" -Description "BLE recovery completion serial log"
 Assert-Contains -RelativePath "ports/esp32/ble_hid_gap/ble_hid_gap_esp32.c" -Pattern "ble_hid_gap_prepare_shutdown_disconnect" -Description "hardware shutdown BLE disconnect preparation"
@@ -199,6 +211,14 @@ Assert-Contains -RelativePath "tools/decode_diag_log.py" -Pattern "kbd_ec11_dete
 Assert-Contains -RelativePath "tools/decode_diag_log.py" -Pattern "vkey_press" -Description "EC11 press summary source"
 Assert-Contains -RelativePath "tools/decode_diag_log.py" -Pattern "build_param_highlights" -Description "parameter highlight summary builder"
 Assert-Contains -RelativePath "tools/decode_diag_log.py" -Pattern "field_sources" -Description "parameter highlight header field provenance"
+Assert-Contains -RelativePath "tools/decode_diag_log.py" -Pattern "gap_adv_state" -Description "BLE advertising state highlight"
+Assert-Contains -RelativePath "tools/decode_diag_log.py" -Pattern "adv_state_flags" -Description "BLE advertising state flag expansion"
+Assert-Contains -RelativePath "tools/decode_diag_log.py" -Pattern "led_visual_state_flags" -Description "status LED visual state flag expansion"
+Assert-Contains -RelativePath "tools/decode_diag_log.py" -Pattern "led_power_flags" -Description "status LED power input flag expansion"
+Assert-Contains -RelativePath "tools/decode_diag_log.py" -Pattern "pwr_rgb" -Description "status LED PWR RGB expansion"
+Assert-Contains -RelativePath "tools/verify_unplugged_flash_diag_bundle.py" -Pattern "status_led.*power_input" -Description "unplugged flash diag verifier requires status_led power input timeline"
+Assert-Contains -RelativePath "tools/verify_unplugged_flash_diag_bundle.py" -Pattern "status_led.*visual_state" -Description "unplugged flash diag verifier requires status_led visible-state timeline"
+Assert-Contains -RelativePath "tools/verify_unplugged_flash_diag_bundle.py" -Pattern "power.*sleep_wake" -Description "unplugged flash diag verifier requires power sleep/wake timeline"
 Assert-Contains -RelativePath "tools/collect_ai_diagnostics.ps1" -Pattern "TemporaryEnableSources" -Description "temporary source enable collection option"
 Assert-Contains -RelativePath "tools/collect_ai_diagnostics.ps1" -Pattern "DISABLE" -Description "source cleanup disable path"
 Assert-Contains -RelativePath "tools/collect_ai_diagnostics.ps1" -Pattern "source_state_path" -Description "final source state artifact"

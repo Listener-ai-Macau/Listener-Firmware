@@ -27,66 +27,67 @@ function New-FeatureSnapshot {
             "FreeRTOS tasks, GPIO polling, digital microphone capture, flash-backed diagnostics"
         )
         responsibilities = @(
-            "Expose BLE HID keyboard behavior for the physical keys.",
-            "Capture microphone audio and stream Listener BLE audio to the desktop app.",
-            "Own device-side voice key state, serial commands, diagnostics, system health, and recovery evidence.",
-            "Own firmware OTA slot/rollback primitives, BLE OTA GATT bridge, pending-verify checks, and OTA diagnostics used by desktop update flows.",
-            "Provide build, flash, serial monitor, BLE HID, BLE audio, and diagnostic-log validation tools.",
-            "Provide AI-readable diagnostic bundles for raw diag_log events, schema names, and key parameters."
+            "Expose BLE HID keyboard behavior and voice key state.",
+            "Capture microphone audio and stream Listener BLE audio.",
+            "Own serial commands, diagnostics, system health, recovery, and OTA primitives.",
+            "Provide build, flash, serial, BLE, audio, and diag_log validation tools.",
+            "Provide AI-readable diagnostic bundles from raw diag_log events."
         )
         major_features = @(
-            "BLE HID keyboard fallback for logical KEY1-KEY4 custom keys using safe non-text gestures: single-click F13-F16, double-click F17-F20, and long-press F21-F24.",
-            "BLE audio upload path for 16 kHz Listener-Type sessions, with executable transport invariants.",
-            "Voice key control for start/stop recording flow, including serial VREC commands, quiet BLE-audio pending retries, and gold REC status feedback.",
+            "BLE HID fallback for KEY1-KEY4 custom keys: single F13-F16, double F17-F20, long F21-F24.",
+            "BLE audio upload path for 16 kHz Listener-Type sessions.",
+            "Voice key start/stop flow with serial VREC commands and gold REC feedback.",
             "diag_log flash ring buffer for boot, BLE, audio, health, power, board, LED, WARN, and ERROR events, with runtime INFO masks for noisy sources.",
+            "Status LED flash diagnostics persist PWR/BLE/OK/WARN flags, PWR RGB/class, output off/resume, and LED-side power state.",
             "Default-off ~DIAGLOG:INPUTDBG records temporary KEY1-KEY4 and EC11 input traces for hardware bring-up.",
-            "BLE diagnostic log GATT export service for paginated CRC-tagged firmware log pulls by desktop diagnostics.",
-            "AI-readable diag_log JSON bundle tooling for deterministic event, severity, boot, source, warning/error, parameter, KEY1-KEY4, and EC11 summaries.",
-            "Firmware OTA v1 using ESP-IDF OTA slots, partition-derived flash offsets, BLE GATT bridge, rollback, pending verify, blockers, and diag_log OTA events.",
-            "system_health heartbeat and resource checks for heap, task, BLE, and disconnect conditions.",
-            "V2 N16R8 profile with 16 MB flash, 8 MB Octal PSRAM, EC11 GPIO18, KEY1-KEY4 HID GPIOs, WS2812 zones, and N4 rejection checks.",
-            "power_manager low-power state machine for configurable idle, BLE churn preservation, USB/VBUS blockers, charger-aware low-battery blocking, and PWR_HOLD/GPIO11 diagnostics.",
-            "Persisted ~DEVICE:SETTINGS contract for plugged/battery brightness, low-power idle timeout, plugged low-power enable switch, battery-only auto-shutdown timeout, and BLE name used by Listener-Type.",
-            "V2 board diagnostics cover ~BOARD:STATUS, ~LED:STATUS, USB/charger state, protected battery percent, LED resources, brightness cap, status RGB, and blocker policies.",
-            "V2 current telemetry reports TPS63020/SY7088 battery-side current on GPIO10/GPIO9; telemetry is diagnostic only.",
-            "V2 safety gates keep real PWR_HOLD/GPIO11 power-off and LED VDD validation hardware-gated; N16R8 uses SPH0655 PDM on GPIO48/GPIO47.",
-            "POST and degraded boot reporting for NVS, BLE, audio, heap, and board assumptions."
+            "BLE diag_log GATT export with paginated CRC-tagged pulls.",
+            "AI-readable diag_log JSON bundles for event, warning/error, parameter, key, and EC11 summaries.",
+            "Firmware OTA v1 with ESP-IDF OTA slots, BLE bridge, rollback, pending verify, blockers, and diag events.",
+            "system_health heartbeat for heap, task, BLE, and disconnect conditions.",
+            "V2 N16R8 profile: 16 MB flash, 8 MB Octal PSRAM, EC11 GPIO18, KEY1-KEY4 GPIOs, WS2812 zones.",
+            "power_manager handles idle, BLE churn, USB/VBUS blockers, low-battery blocking, and PWR_HOLD/GPIO11 diagnostics.",
+            "Persisted ~DEVICE:SETTINGS for brightness, idle timeouts, plugged low-power, auto-shutdown, and BLE name.",
+            "V2 current telemetry reports TPS63020/SY7088 battery-side current on GPIO10/GPIO9.",
+            "Real PWR_HOLD/GPIO11 power-off and LED VDD validation stay hardware-gated."
         )
         key_paths = @(
-            [ordered]@{ path = "main/"; purpose = "Application startup, POST, BLE/audio/keyboard initialization." },
-            [ordered]@{ path = "components/keyboard/"; purpose = "Physical key scanning and keyboard events." },
-            [ordered]@{ path = "components/hid_keyboard/"; purpose = "Cross-platform HID keyboard abstraction." },
-            [ordered]@{ path = "components/diag_log/"; purpose = "Diagnostic event schema, source masks, input debug, and ring buffer." },
-            [ordered]@{ path = "components/power_manager/"; purpose = "Low-power state machine, shutdown blockers, PWR_HOLD/GPIO11 hardware shutdown, and diagnostics." },
-            [ordered]@{ path = "components/device_settings/"; purpose = "Persisted Type-facing board settings and ~DEVICE:SETTINGS command contract." },
-            [ordered]@{ path = "components/battery_monitor/"; purpose = "Battery voltage and protected level: 3000mV empty, 4200mV full, 2700mV danger marker." },
-            [ordered]@{ path = "docs/features/low_power_wake_policy.md"; purpose = "PWR_HOLD/GPIO11 shutdown and USB/VBUS blocker contract." },
-            [ordered]@{ path = "tools/verify_charging_awake_policy_hardware.ps1"; purpose = "USB/charging awake hardware helper and manual gates." },
-            [ordered]@{ path = "tools/decode_diag_log.py"; purpose = "Offline decoder for ~DIAGLOG JSONL into stable AI-readable JSON bundles." },
-            [ordered]@{ path = "tools/collect_ai_diagnostics.ps1"; purpose = "Collect bounded serial diag_log evidence or decode saved JSONL into AI-readable artifacts." },
-            [ordered]@{ path = "tools/collect_v2_current_telemetry.ps1"; purpose = "V2 current telemetry helper for TPS63020/SY7088 branch measurements and future revised-board absent evidence." },
-            [ordered]@{ path = "ports/esp32/ble_diag_log/"; purpose = "BLE GATT service for paginated firmware diag_log export with per-chunk CRC." },
-            [ordered]@{ path = "components/firmware_ota/"; purpose = "ESP-IDF OTA manager, rollback/pending-verify handling, blockers, and OTA serial diagnostics." },
-            [ordered]@{ path = "ports/esp32/ble_firmware_ota/"; purpose = "NimBLE firmware OTA service with control/data characteristics and BLE abort integration." },
-            [ordered]@{ path = "components/system_health/"; purpose = "Health status, heartbeat, and fault reporting." },
-            [ordered]@{ path = "components/voice_recording_control/"; purpose = "Voice key state machine and serial control contract." },
-            [ordered]@{ path = "ports/esp32/ble_hid*"; purpose = "ESP32 BLE HID service, GAP, pairing, and host connection." },
-            [ordered]@{ path = "ports/esp32/ble_audio_stream*"; purpose = "ESP32 BLE audio transport and notifications." },
-            [ordered]@{ path = "ports/esp32/audio_capture*"; purpose = "Digital microphone capture path, including V2 PDM RX." },
+            [ordered]@{ path = "main/"; purpose = "Startup, POST, BLE/audio/keyboard init." },
+            [ordered]@{ path = "components/keyboard/"; purpose = "Physical key scanning." },
+            [ordered]@{ path = "components/hid_keyboard/"; purpose = "HID keyboard abstraction." },
+            [ordered]@{ path = "components/diag_log/"; purpose = "diag_log schema, masks, input debug, ring buffer." },
+            [ordered]@{ path = "components/power_manager/"; purpose = "Low-power, blockers, PWR_HOLD/GPIO11, diagnostics." },
+            [ordered]@{ path = "components/status_led/"; purpose = "LED rendering plus flash LED diagnostics." },
+            [ordered]@{ path = "components/device_settings/"; purpose = "Persisted ~DEVICE:SETTINGS contract." },
+            [ordered]@{ path = "components/battery_monitor/"; purpose = "3000-4200mV protected battery level." },
+            [ordered]@{ path = "docs/features/low_power_wake_policy.md"; purpose = "PWR_HOLD and USB/VBUS blocker contract." },
+            [ordered]@{ path = "tools/verify_charging_awake_policy_hardware.ps1"; purpose = "USB/charging awake hardware gate." },
+            [ordered]@{ path = "tools/decode_diag_log.py"; purpose = "Decode ~DIAGLOG JSONL to AI bundle." },
+            [ordered]@{ path = "tools/verify_unplugged_flash_diag_bundle.py"; purpose = "Verify unplugged LED flash diag evidence." },
+            [ordered]@{ path = "tools/collect_ai_diagnostics.ps1"; purpose = "Collect/decode bounded diag_log evidence." },
+            [ordered]@{ path = "tools/collect_v2_current_telemetry.ps1"; purpose = "TPS63020/SY7088 current telemetry helper." },
+            [ordered]@{ path = "ports/esp32/ble_diag_log/"; purpose = "BLE GATT diag_log export." },
+            [ordered]@{ path = "components/firmware_ota/"; purpose = "ESP-IDF OTA manager and diagnostics." },
+            [ordered]@{ path = "ports/esp32/ble_firmware_ota/"; purpose = "NimBLE firmware OTA service." },
+            [ordered]@{ path = "components/system_health/"; purpose = "Health heartbeat and fault reporting." },
+            [ordered]@{ path = "components/voice_recording_control/"; purpose = "Voice key state machine." },
+            [ordered]@{ path = "ports/esp32/ble_hid*"; purpose = "ESP32 BLE HID and GAP." },
+            [ordered]@{ path = "ports/esp32/ble_audio_stream*"; purpose = "ESP32 BLE audio transport." },
+            [ordered]@{ path = "ports/esp32/audio_capture*"; purpose = "Digital microphone capture path." },
             [ordered]@{ path = "partitions.csv"; purpose = "V2 16 MB flash layout including OTA app slots and diag_log partition." },
             [ordered]@{ path = "tools/verify_v2_board_profile_static.ps1"; purpose = "Static V2 board profile, memory, pin, LED, current telemetry, partition, and package identity check." },
             [ordered]@{ path = "tools/"; purpose = "Build, flash, monitor, BLE, audio, and diagnostic validation scripts." }
         )
         hardware_assumptions = @(
-            "Default active board is ESP32-S3-WROOM-1-N16R8 with 16 MB flash and 8 MB Octal PSRAM.",
-            "Microphone path captures product-rate PCM from the active digital mic path; N16R8 validation builds use ESP-IDF PDM RX on CLK/GPIO48 and DOUT/GPIO47.",
-            "Physical key GPIO mapping and voice key GPIO live in board pin configuration, not desktop code.",
-            "V2 EC11-KEY/GPIO18 is the power-on key while off and sends the runtime custom-key fallback Shift+F13 after boot; KEY1/KEY2/KEY3/KEY4 use GPIO38/GPIO39/GPIO40/GPIO41 and fall back to F13-F24 gesture usages; EC11 encoder uses GPIO42/GPIO2/GPIO18.",
-            "V2 long-idle shutdown is firmware-controlled by releasing runtime-low PWR_HOLD/GPIO11 high; failed readback or still-powered fallback restores LOW and BLE reconnects, while real power-off, short-press cold boot, USB/VBUS long-idle blocking, and charger-aware low-battery blocking require hardware-gated validation.",
+            "Active board is ESP32-S3-WROOM-1-N16R8 with 16 MB flash and 8 MB Octal PSRAM.",
+            "N16R8 validation uses PDM RX on CLK/GPIO48 and DOUT/GPIO47.",
+            "Physical key GPIO mapping lives in board pins, not desktop code.",
+            "V2 EC11-KEY/GPIO18 powers on while off; after boot it sends Shift+F13. KEY1-KEY4 use GPIO38-41.",
+            "V2 shutdown drives runtime-low PWR_HOLD/GPIO11 high; real power-off and blockers require hardware validation.",
+            "USB-unplug light-cycle claims require decoded flash diag timelines: status_led power_input/visual/output plus power external/sleep_wake.",
             "Battery percentage uses the protected product range 3000mV=0% and 4200mV=100%; 2700mV is an absolute danger marker, not usable empty capacity.",
             "GPIO35/GPIO36/GPIO37 are reserved for the N16R8 module flash/PSRAM/MSPI interface.",
-            "PWR_HOLD/GPIO11, RGB LEDs, and TPS63020/SY7088 current-sense telemetry on GPIO10/GPIO9 are populated in the active N16R8 profile; future revised board profiles may treat GPIO_NUM_NC current inputs as normal.",
-            "Real BLE, flash, serial, or audio capture validation requires a workflow hardware lock."
+            "PWR_HOLD/GPIO11, RGB LEDs, and TPS63020/SY7088 current telemetry on GPIO10/GPIO9 are populated.",
+            "Real BLE, flash, serial, or audio validation requires a hardware lock."
         )
         boundaries = @(
             "Desktop ASR, text polish, insertion, and settings UI live in Listener-Type.",
@@ -98,8 +99,8 @@ function New-FeatureSnapshot {
             "python -m compileall -q tools",
             "pwsh -NoProfile -File .\tools\build.ps1",
             "pwsh -NoProfile -File .\tools\flash.ps1 -Port <COMx>",
-            "pwsh -NoProfile -File .\tools\monitor.ps1 -Port <COMx>",
             "pwsh -NoProfile -File .\tools\dump_diag_log.ps1 -Port <COMx> -Count 200",
+            "python .\tools\verify_unplugged_flash_diag_bundle.py --bundle <diag_log_ai_bundle.json> --expect-pwr-class amber --expect-pwr-class green",
             "python .\tools\verify_serial_no_reset_static.py",
             "pwsh -NoProfile -File .\tools\verify_v2_board_profile_static.ps1",
             "pwsh -NoProfile -File .\tools\verify_power_manager_static.ps1",
@@ -108,16 +109,7 @@ function New-FeatureSnapshot {
             "pwsh -NoProfile -File .\tools\verify_charging_awake_policy_hardware.ps1 -Port <COMx> -ExpectExternalPower",
             "python .\tools\verify_ble_audio_transport_model.py",
             "pwsh -NoProfile -File .\tools\verify_diagnostic_log_coverage.ps1",
-            "pwsh -NoProfile -File .\tools\verify_ble_audio_backpressure_static.ps1",
-            "python .\tools\verify_ble_diag_log_gatt_contract.py",
-            "pwsh -NoProfile -File .\tools\verify_ble_diag_log_audio_concurrency.ps1 -Port <COMx> -BluetoothAddress <addr>",
-            "pwsh -NoProfile -File .\tools\collect_ai_diagnostics.ps1 -InputJsonl <diag_log.jsonl> -OutputDir .\tests\artifacts\ai_diagnostics",
             "pwsh -NoProfile -File .\tools\collect_ai_diagnostics.ps1 -Port <COMx> -RecentEventCount 200 -EnableSource keyboard,voice_key -Source keyboard,voice_key -OutputDir .\tests\artifacts\ai_diagnostics",
-            "pwsh -NoProfile -File .\tools\verify_ble_hid.ps1",
-            "pwsh -NoProfile -File .\tools\verify_physical_custom_key_hid.ps1 -Port <COMx>",
-            "pwsh -NoProfile -File .\tools\verify_audio_ble_product_matrix.ps1",
-            "python .\tools\verify_ble_ota_gatt_contract.py",
-            "powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\tools\verify_ble_ota_gatt_discovery.ps1 -DeviceName listener -BluetoothAddress <addr>",
             "git diff --check"
         )
         update_policy = "Record accepted changes only when they alter important firmware capabilities, hardware assumptions, BLE/audio/HID contracts, diagnostic behavior, or validation entry points."
@@ -190,8 +182,12 @@ function Test-FeatureSnapshot {
     $errors += @(Test-RepoText "components/device_settings/include/device_settings.h" 'DEVICE_SETTINGS_DEFAULT_LOW_POWER_IDLE_MS\s+60000U' 'low-power idle default')
     $errors += @(Test-RepoText "components/device_settings/include/device_settings.h" 'DEVICE_SETTINGS_DEFAULT_PLUGGED_LOW_POWER_ENABLED\s+1' 'plugged low-power default')
     $errors += @(Test-RepoText "components/power_manager/power_manager.c" 'plugged_low_power_enabled' 'plugged low-power effective status')
-    $errors += @(Test-RepoText "components/board/board.c" 'BOARD_V2_PWR_HOLD_POLICY\s+"v2_gpio11_power_latch_runtime_low_release_high_for_hardware_shutdown"' 'PWR_HOLD runtime-low policy')
-    $errors += @(Test-RepoText "components/board/board.c" 'gpio_set_level\(BOARD_PINS_PWR_HOLD_IO,\s*0\)[\s\S]*GPIO_MODE_OUTPUT[\s\S]*runtime low configured[\s\S]*gpio_set_level\(BOARD_PINS_PWR_HOLD_IO,\s*1\)[\s\S]*GPIO_MODE_INPUT[\s\S]*board_wait_power_hold_readback\("released high for hardware shutdown",\s*1\)' 'PWR_HOLD runtime-low release-high shutdown implementation')
+    $errors += @(Test-RepoText "components/board/board.c" 'BOARD_V2_PWR_HOLD_POLICY\s+"v2_gpio11_power_latch_runtime_low_drive_high_for_hardware_shutdown"' 'PWR_HOLD runtime-low policy')
+    $errors += @(Test-RepoText "components/board/board.c" 'gpio_set_level\(BOARD_PINS_PWR_HOLD_IO,\s*0\)[\s\S]*GPIO_MODE_OUTPUT[\s\S]*runtime low configured[\s\S]*gpio_set_level\(BOARD_PINS_PWR_HOLD_IO,\s*1\)[\s\S]*GPIO_MODE_OUTPUT[\s\S]*board_wait_power_hold_readback\("driven high for hardware shutdown",\s*1\)' 'PWR_HOLD runtime-low drive-high shutdown implementation')
+    $errors += @(Test-RepoText "components/status_led/status_led.c" 'DIAG_LED_VISUAL_STATE' 'status LED visual flash diagnostics')
+    $errors += @(Test-RepoText "tools/decode_diag_log.py" 'led_visual_state_flags' 'decoded status LED visual flash diagnostics')
+    $errors += @(Test-RepoText "tools/verify_unplugged_flash_diag_bundle.py" 'off followed by visible-on recovery' 'unplugged flash diag verifier')
+    $errors += @(Test-RepoText "docs/features/low_power_wake_policy.md" 'decoded `status_led\.power_input`, `status_led\.visual_state`, `status_led\.output_state`' 'unplugged flash diag validation requirement')
     if ($scriptText.Length -gt 18500) {
         $errors += "script is too long: $($scriptText.Length) characters"
     }

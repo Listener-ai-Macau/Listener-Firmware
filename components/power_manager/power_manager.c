@@ -72,17 +72,26 @@ extern void status_led_prepare_sleep(void) __attribute__((weak));
 #define POWER_MANAGER_LOW_BATTERY_BOOT_GRACE_MS 15000U
 #define POWER_MANAGER_SHUTDOWN_BATTERY_NOTIFY_WAIT_MS 100U
 #define POWER_MANAGER_POWER_REMOVAL_WAIT_MS 750U
+#define POWER_MANAGER_SHUTDOWN_FAILURE_RETRY_MS 900000U
 #ifndef CONFIG_POWER_MANAGER_BATTERY_CRITICAL_PERCENT
 #define CONFIG_POWER_MANAGER_BATTERY_CRITICAL_PERCENT 0
 #endif
 #define POWER_MANAGER_BATTERY_CRITICAL_PERCENT ((uint8_t)CONFIG_POWER_MANAGER_BATTERY_CRITICAL_PERCENT)
 #define POWER_MANAGER_TASK_STACK_BYTES (4 * 1024)
-#define POWER_MANAGER_SHUTDOWN_USER_ACTION "short-press hardware power key for cold boot after PWR_HOLD/GPIO11 release-high shutdown"
+#define POWER_MANAGER_SHUTDOWN_USER_ACTION "short-press hardware power key for cold boot after PWR_HOLD/GPIO11 drive-high shutdown"
 #define POWER_MANAGER_POWER_SOURCE_USB_PRESENT (1u << 0)
 #define POWER_MANAGER_POWER_SOURCE_CHARGING (1u << 1)
 #define POWER_MANAGER_POWER_SOURCE_CHARGE_FULL (1u << 2)
 #define POWER_MANAGER_POWER_SOURCE_EXTERNAL_PRESENT (1u << 3)
 #define POWER_MANAGER_POWER_SOURCE_AUTO_SHUTDOWN_BLOCKED (1u << 4)
+
+#define POWER_MANAGER_POWER_HOLD_ACTION_SOURCE_SNAPSHOT 0u
+#define POWER_MANAGER_POWER_HOLD_ACTION_RUNTIME_GUARD 1u
+#define POWER_MANAGER_POWER_HOLD_ACTION_SHUTDOWN_ENTRY 2u
+#define POWER_MANAGER_POWER_HOLD_ACTION_SHUTDOWN_DRIVE_HIGH 3u
+#define POWER_MANAGER_POWER_HOLD_ACTION_SHUTDOWN_FAILED_RESTORE 4u
+#define POWER_MANAGER_POWER_HOLD_ACTION_INIT 5u
+#define POWER_MANAGER_POWER_HOLD_ACTION_SHUTDOWN_FAILURE_BACKOFF 6u
 
 static const char *TAG = "power_manager";
 
@@ -132,6 +141,8 @@ static power_manager_shutdown_reason_t s_last_shutdown_reason =
     POWER_MANAGER_SHUTDOWN_REASON_NONE;
 static uint32_t s_last_shutdown_idle_ms;
 static uint32_t s_last_shutdown_blockers;
+static uint64_t s_shutdown_failure_retry_after_ms;
+static esp_err_t s_last_shutdown_failure_ret = ESP_OK;
 static power_manager_state_t s_state = POWER_MANAGER_STATE_ACTIVE;
 
 static uint64_t power_manager_now_ms(void)
@@ -261,6 +272,26 @@ static uint32_t power_manager_encode_power_source_levels(const power_manager_pow
            (power_manager_encode_gpio_level(source->bat_chg_level) << 4) |
            (power_manager_encode_gpio_level(source->bat_std_level) << 8) |
            (power_manager_encode_gpio_level(source->pwr_hold_level) << 12);
+}
+
+static void power_manager_log_power_hold_diag(
+    uint8_t severity,
+    const board_v2_power_hold_snapshot_t *snapshot,
+    uint32_t action)
+{
+    board_v2_power_hold_snapshot_t local_snapshot = {0};
+    if (snapshot == NULL) {
+        board_get_v2_power_hold_snapshot(&local_snapshot);
+        snapshot = &local_snapshot;
+    }
+    diag_log(
+        DIAG_SRC_POWER,
+        DIAG_POWER_HOLD_STATE,
+        severity,
+        snapshot->configured ? 1u : 0u,
+        snapshot->gpio >= 0 ? (uint32_t)snapshot->gpio : UINT32_MAX,
+        power_manager_encode_gpio_level(snapshot->level),
+        action);
 }
 
 static uint32_t power_manager_encode_power_source_flags(
@@ -479,15 +510,34 @@ static void power_manager_log_power_transition_diag(
         DIAG_SRC_POWER,
         DIAG_POWER_HOLD_STATE,
         DIAG_SEV_INFO,
-        source->pwr_hold_level > 0 ? 1u : 0u,
+        1u,
         (uint32_t)BOARD_PINS_PWR_HOLD_IO,
         power_manager_encode_gpio_level(source->pwr_hold_level),
-        0u);
+        POWER_MANAGER_POWER_HOLD_ACTION_SOURCE_SNAPSHOT);
 }
 
 static uint32_t power_manager_user_idle_ms_locked(uint64_t now_ms)
 {
     return power_manager_clamp_u64_to_u32(now_ms - s_last_user_activity_ms);
+}
+
+static uint32_t power_manager_shutdown_failure_retry_ms_left_locked(uint64_t now_ms)
+{
+    if (s_shutdown_failure_retry_after_ms == 0 || now_ms >= s_shutdown_failure_retry_after_ms) {
+        return 0;
+    }
+    return power_manager_clamp_u64_to_u32(s_shutdown_failure_retry_after_ms - now_ms);
+}
+
+static bool power_manager_shutdown_failure_retry_active_locked(uint64_t now_ms)
+{
+    return power_manager_shutdown_failure_retry_ms_left_locked(now_ms) > 0;
+}
+
+static void power_manager_clear_shutdown_failure_retry_locked(void)
+{
+    s_shutdown_failure_retry_after_ms = 0;
+    s_last_shutdown_failure_ret = ESP_OK;
 }
 
 static uint32_t power_manager_radio_idle_ms_locked(uint64_t now_ms)
@@ -523,6 +573,7 @@ static bool power_manager_sync_power_source_locked(
     if (s_power_source_initialized && state_changed && external_changed) {
         s_last_user_activity_ms = now_ms;
         s_last_radio_activity_ms = now_ms;
+        power_manager_clear_shutdown_failure_retry_locked();
     }
 
     s_power_source_initialized = true;
@@ -587,9 +638,11 @@ static power_manager_state_t power_manager_target_state_locked(uint64_t now_ms)
 
     if (CONFIG_POWER_MANAGER_ENABLE &&
         user_idle_ms >= hardware_shutdown_ms) {
-        return s_external_power_present
-            ? power_manager_awake_idle_state_locked(radio_idle_ms)
-            : POWER_MANAGER_STATE_HARDWARE_SHUTDOWN;
+        if (s_external_power_present ||
+            power_manager_shutdown_failure_retry_active_locked(now_ms)) {
+            return power_manager_awake_idle_state_locked(radio_idle_ms);
+        }
+        return POWER_MANAGER_STATE_HARDWARE_SHUTDOWN;
     }
 
     return power_manager_awake_idle_state_locked(radio_idle_ms);
@@ -788,14 +841,10 @@ static void power_manager_guard_runtime_power_hold_low(power_manager_state_t sta
         power_manager_gpio_level_name(power_hold.level),
         power_hold.configured ? 1u : 0u,
         power_hold.policy != NULL ? power_hold.policy : "unknown");
-    diag_log(
-        DIAG_SRC_POWER,
-        DIAG_POWER_HOLD_STATE,
+    power_manager_log_power_hold_diag(
         DIAG_SEV_WARN,
-        power_hold.level > 0 ? 1u : 0u,
-        (uint32_t)BOARD_PINS_PWR_HOLD_IO,
-        power_manager_encode_gpio_level(power_hold.level),
-        (uint32_t)state);
+        &power_hold,
+        POWER_MANAGER_POWER_HOLD_ACTION_RUNTIME_GUARD);
     esp_err_t ret = board_set_power_hold_enabled(true);
     if (ret != ESP_OK) {
         ESP_LOGE(TAG, "PWR_HOLD/GPIO11 runtime-low guard failed: %s", esp_err_to_name(ret));
@@ -964,6 +1013,9 @@ void power_manager_get_snapshot(power_manager_snapshot_t *snapshot)
         snapshot->last_shutdown_reason = s_last_shutdown_reason;
         snapshot->last_shutdown_idle_ms = s_last_shutdown_idle_ms;
         snapshot->last_shutdown_blockers = s_last_shutdown_blockers;
+        snapshot->last_shutdown_failure_ret = s_last_shutdown_failure_ret;
+        snapshot->shutdown_failure_retry_ms_left =
+            power_manager_shutdown_failure_retry_ms_left_locked(now_ms);
         xSemaphoreGive(s_mutex);
     } else {
         snapshot->usb_det_level = power_source.usb_det_level;
@@ -993,6 +1045,7 @@ void power_manager_get_snapshot(power_manager_snapshot_t *snapshot)
     snapshot->low_power_idle_allowed =
         !snapshot->external_power_present || snapshot->plugged_low_power_enabled;
     snapshot->hardware_shutdown_threshold_ms = power_manager_hardware_shutdown_ms();
+    snapshot->shutdown_failure_retry_ms = POWER_MANAGER_SHUTDOWN_FAILURE_RETRY_MS;
     snapshot->hardware_shutdown_guard_enabled = CONFIG_POWER_MANAGER_ENABLE != 0;
     board_v2_power_hold_snapshot_t power_hold = {0};
     board_get_v2_power_hold_snapshot(&power_hold);
@@ -1011,11 +1064,45 @@ static void power_manager_reset_idle_after_shutdown_failure(void)
         s_last_user_activity_ms = reset_ms;
         s_last_radio_activity_ms = reset_ms;
         s_auto_shutdown_block_logged = false;
+        power_manager_clear_shutdown_failure_retry_locked();
         s_state = s_ble_connected
             ? POWER_MANAGER_STATE_CONNECTED_IDLE
             : POWER_MANAGER_STATE_DISCONNECTED_IDLE;
         xSemaphoreGive(s_mutex);
     }
+}
+
+static void power_manager_schedule_shutdown_failure_retry(
+    power_manager_shutdown_reason_t reason,
+    uint32_t final_idle_ms,
+    esp_err_t failure_ret)
+{
+    uint32_t retry_ms_left = 0;
+    if (s_mutex != NULL && xSemaphoreTake(s_mutex, portMAX_DELAY) == pdTRUE) {
+        uint64_t now_ms = power_manager_now_ms();
+        s_shutdown_failure_retry_after_ms = now_ms + POWER_MANAGER_SHUTDOWN_FAILURE_RETRY_MS;
+        s_last_shutdown_failure_ret = failure_ret;
+        if (s_state == POWER_MANAGER_STATE_HARDWARE_SHUTDOWN) {
+            s_state = s_ble_connected
+                ? POWER_MANAGER_STATE_CONNECTED_IDLE
+                : POWER_MANAGER_STATE_DISCONNECTED_IDLE;
+        }
+        retry_ms_left = power_manager_shutdown_failure_retry_ms_left_locked(now_ms);
+        xSemaphoreGive(s_mutex);
+    }
+
+    ESP_LOGW(
+        TAG,
+        "hardware shutdown failed; staying in low-power idle until retry window expires"
+        " reason=%s idle_ms=%" PRIu32 " ret=%s retry_ms=%" PRIu32,
+        power_manager_shutdown_reason_name(reason),
+        final_idle_ms,
+        esp_err_to_name(failure_ret),
+        retry_ms_left);
+    power_manager_log_power_hold_diag(
+        DIAG_SEV_WARN,
+        NULL,
+        POWER_MANAGER_POWER_HOLD_ACTION_SHUTDOWN_FAILURE_BACKOFF);
 }
 
 static void power_manager_restore_after_shutdown_failure(
@@ -1028,12 +1115,21 @@ static void power_manager_restore_after_shutdown_failure(
         ESP_LOGE(TAG, "PWR_HOLD/GPIO11 runtime-low restore failed after shutdown failure: %s",
                  esp_err_to_name(restore_ret));
     }
-    if (ble_hid_gap_request_reconnect != NULL) {
+    power_manager_log_power_hold_diag(
+        restore_ret == ESP_OK ? DIAG_SEV_WARN : DIAG_SEV_ERROR,
+        NULL,
+        POWER_MANAGER_POWER_HOLD_ACTION_SHUTDOWN_FAILED_RESTORE);
+    if (reason == POWER_MANAGER_SHUTDOWN_REASON_MANUAL_COMMAND &&
+        ble_hid_gap_request_reconnect != NULL) {
         (void)ble_hid_gap_request_reconnect();
     }
     diag_log(DIAG_SRC_POWER, DIAG_POWER_SLEEP_BLOCKED, DIAG_SEV_ERROR,
              0, final_idle_ms, (uint32_t)reason, (uint32_t)failure_ret);
-    power_manager_reset_idle_after_shutdown_failure();
+    if (reason == POWER_MANAGER_SHUTDOWN_REASON_MANUAL_COMMAND) {
+        power_manager_reset_idle_after_shutdown_failure();
+    } else {
+        power_manager_schedule_shutdown_failure_retry(reason, final_idle_ms, failure_ret);
+    }
 }
 
 static esp_err_t power_manager_enter_hardware_shutdown(power_manager_shutdown_reason_t reason)
@@ -1196,6 +1292,10 @@ static esp_err_t power_manager_enter_hardware_shutdown(power_manager_shutdown_re
 
     board_v2_power_hold_snapshot_t power_hold = {0};
     board_get_v2_power_hold_snapshot(&power_hold);
+    power_manager_log_power_hold_diag(
+        DIAG_SEV_WARN,
+        &power_hold,
+        POWER_MANAGER_POWER_HOLD_ACTION_SHUTDOWN_ENTRY);
     diag_log(DIAG_SRC_POWER, DIAG_POWER_SLEEP_ENTRY, DIAG_SEV_INFO,
              final_idle_ms,
              snapshot.battery_valid ? snapshot.battery_mv : 0,
@@ -1252,17 +1352,29 @@ static esp_err_t power_manager_enter_hardware_shutdown(power_manager_shutdown_re
     vTaskDelay(pdMS_TO_TICKS(150));
     esp_err_t hold_ret = board_set_power_hold_enabled(false);
     if (hold_ret != ESP_OK) {
-        ESP_LOGE(TAG, "hardware shutdown failed: PWR_HOLD/GPIO11 release-high ret=%s",
+        diag_log(
+            DIAG_SRC_POWER,
+            DIAG_POWER_HOLD_STATE,
+            DIAG_SEV_ERROR,
+            0u,
+            (uint32_t)BOARD_PINS_PWR_HOLD_IO,
+            2u,
+            POWER_MANAGER_POWER_HOLD_ACTION_SHUTDOWN_DRIVE_HIGH);
+        ESP_LOGE(TAG, "hardware shutdown failed: PWR_HOLD/GPIO11 drive-high ret=%s",
                  esp_err_to_name(hold_ret));
         power_manager_restore_after_shutdown_failure(reason, final_idle_ms, hold_ret);
         return hold_ret;
     }
+    power_manager_log_power_hold_diag(
+        DIAG_SEV_WARN,
+        NULL,
+        POWER_MANAGER_POWER_HOLD_ACTION_SHUTDOWN_DRIVE_HIGH);
 
     vTaskDelay(pdMS_TO_TICKS(POWER_MANAGER_POWER_REMOVAL_WAIT_MS));
 
     ESP_LOGE(
         TAG,
-        "hardware shutdown did not remove power after PWR_HOLD/GPIO11 release-high within %u ms; restoring runtime low",
+        "hardware shutdown did not remove power after PWR_HOLD/GPIO11 drive-high within %u ms; restoring runtime low",
         (unsigned)POWER_MANAGER_POWER_REMOVAL_WAIT_MS);
     power_manager_restore_after_shutdown_failure(reason, final_idle_ms, ESP_FAIL);
     return ESP_FAIL;
@@ -1361,7 +1473,7 @@ static void power_manager_evaluate(void)
         esp_err_t lb_ret =
             power_manager_enter_hardware_shutdown(POWER_MANAGER_SHUTDOWN_REASON_LOW_BATTERY);
         if (lb_ret != ESP_OK) {
-            ESP_LOGW(TAG, "low battery shutdown rejected, will retry next evaluate cycle");
+            ESP_LOGW(TAG, "low battery shutdown rejected, retry is gated by shutdown-failure cooldown");
         }
         return;
     }
@@ -1446,7 +1558,7 @@ static void power_manager_evaluate(void)
         esp_err_t shutdown_ret =
             power_manager_enter_hardware_shutdown(POWER_MANAGER_SHUTDOWN_REASON_LONG_IDLE);
         if (shutdown_ret != ESP_OK) {
-            power_manager_reset_idle_after_shutdown_failure();
+            ESP_LOGW(TAG, "automatic hardware shutdown failed, restore path handled retry policy");
         }
     }
 }
@@ -1518,6 +1630,10 @@ esp_err_t power_manager_init(void)
              power_hold.gpio >= 0 ? (uint32_t)power_hold.gpio : UINT32_MAX,
              (uint32_t)s_last_shutdown_reason,
              s_last_shutdown_idle_ms);
+    power_manager_log_power_hold_diag(
+        hold_ret == ESP_OK ? DIAG_SEV_INFO : DIAG_SEV_WARN,
+        &power_hold,
+        POWER_MANAGER_POWER_HOLD_ACTION_INIT);
     if (hold_ret != ESP_OK) {
         ESP_LOGW(TAG, "PWR_HOLD/GPIO11 runtime-low setup failed: %s", esp_err_to_name(hold_ret));
     }
@@ -1582,6 +1698,7 @@ void power_manager_record_activity(const char *reason)
         s_last_user_activity_ms = now_ms;
         s_last_radio_activity_ms = now_ms;
         s_auto_shutdown_block_logged = false;
+        power_manager_clear_shutdown_failure_retry_locked();
         if (s_state != POWER_MANAGER_STATE_ACTIVE) {
             s_state = POWER_MANAGER_STATE_ACTIVE;
         }
@@ -1740,7 +1857,10 @@ static void power_manager_print_status(void)
         " usb_det_policy=%s charger_polarity=%s pwr_hold_policy=%s"
         " battery_mv=%" PRIu32 " battery_level=%u battery_valid=%u"
         " last_shutdown_reason=%s last_shutdown_idle_ms=%" PRIu32
-        " last_shutdown_blockers=0x%08" PRIx32 " guard=%u audio_idle_ms=%" PRIu32
+        " last_shutdown_blockers=0x%08" PRIx32
+        " last_shutdown_failure_ret=%s shutdown_failure_retry_ms_left=%" PRIu32
+        " shutdown_failure_retry_ms=%" PRIu32
+        " guard=%u audio_idle_ms=%" PRIu32
         " audio_idle_power_save=%u audio_idle_blockers=0x%08" PRIx32
         " low_power_idle_ms=%" PRIu32
         " connected_idle_ms=%" PRIu32 " disconnected_idle_ms=%" PRIu32
@@ -1781,6 +1901,9 @@ static void power_manager_print_status(void)
         power_manager_shutdown_reason_name(snapshot.last_shutdown_reason),
         snapshot.last_shutdown_idle_ms,
         snapshot.last_shutdown_blockers,
+        esp_err_to_name(snapshot.last_shutdown_failure_ret),
+        snapshot.shutdown_failure_retry_ms_left,
+        snapshot.shutdown_failure_retry_ms,
         snapshot.hardware_shutdown_guard_enabled ? 1u : 0u,
         snapshot.audio_idle_threshold_ms,
         snapshot.audio_idle_power_save_enabled ? 1u : 0u,

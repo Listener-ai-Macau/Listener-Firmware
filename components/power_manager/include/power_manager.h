@@ -76,6 +76,9 @@ typedef struct {
     power_manager_shutdown_reason_t last_shutdown_reason;
     uint32_t last_shutdown_idle_ms;
     uint32_t last_shutdown_blockers;
+    esp_err_t last_shutdown_failure_ret;
+    uint32_t shutdown_failure_retry_ms_left;
+    uint32_t shutdown_failure_retry_ms;
     int pwr_hold_gpio;
     bool pwr_hold_configured;
     uint32_t voice_key_gpio;
