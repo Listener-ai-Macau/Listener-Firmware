@@ -58,7 +58,7 @@ function New-FeatureSnapshot {
             [ordered]@{ path = "components/power_manager/"; purpose = "Low-power, blockers, PWR_HOLD/GPIO11, diagnostics." },
             [ordered]@{ path = "components/status_led/"; purpose = "LED rendering plus flash LED diagnostics." },
             [ordered]@{ path = "components/device_settings/"; purpose = "Persisted ~DEVICE:SETTINGS contract." },
-            [ordered]@{ path = "components/battery_monitor/"; purpose = "3000-4200mV protected battery level." },
+            [ordered]@{ path = "components/battery_monitor/"; purpose = "2800-4200mV protected battery level." },
             [ordered]@{ path = "docs/features/low_power_wake_policy.md"; purpose = "PWR_HOLD and USB/VBUS blocker contract." },
             [ordered]@{ path = "tools/verify_charging_awake_policy_hardware.ps1"; purpose = "USB/charging awake hardware gate." },
             [ordered]@{ path = "tools/decode_diag_log.py"; purpose = "Decode ~DIAGLOG JSONL to AI bundle." },
@@ -84,7 +84,7 @@ function New-FeatureSnapshot {
             "V2 EC11-KEY/GPIO18 powers on while off; after boot it sends Shift+F13. KEY1-KEY4 use GPIO38-41.",
             "V2 shutdown drives runtime-low PWR_HOLD/GPIO11 high; real power-off and blockers require hardware validation.",
             "USB-unplug light-cycle claims require decoded flash diag timelines: status_led power_input/visual/output plus power external/sleep_wake.",
-            "Battery percentage uses the protected product range 3000mV=0% and 4200mV=100%; 2700mV is an absolute danger marker, not usable empty capacity.",
+            "Battery percentage uses the protected product range 2800mV=0% and 4200mV=100%; 2700mV is an absolute danger marker, not usable empty capacity.",
             "GPIO35/GPIO36/GPIO37 are reserved for the N16R8 module flash/PSRAM/MSPI interface.",
             "PWR_HOLD/GPIO11, RGB LEDs, and TPS63020/SY7088 current telemetry on GPIO10/GPIO9 are populated.",
             "Real BLE, flash, serial, or audio validation requires a hardware lock."

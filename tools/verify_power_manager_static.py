@@ -221,7 +221,7 @@ CHECKS = {
         "~POWER:SHUTDOWN",
     ],
     "docs/features/low_power_wake_policy.md": [
-        "3000mV=0%",
+        "2800mV=0%",
         "4200mV=100%",
         "2700mV",
         "default critical threshold `0%`",
@@ -463,10 +463,13 @@ def main() -> int:
             "components/power_manager/power_manager.c: stable idle must use a long low-power evaluate wait instead of 2s polling"
         )
     if not re.search(
-        r"POWER_MANAGER_LOW_BATTERY_SHUTDOWN_MAX_MV\s+3000U[\s\S]*"
+        r"POWER_MANAGER_LOW_BATTERY_SHUTDOWN_MAX_MV\s+2800U[\s\S]*"
+        r"POWER_MANAGER_LOW_BATTERY_CONFIRM_MS\s+5000U[\s\S]*"
         r"POWER_MANAGER_LOW_BATTERY_BOOT_GRACE_MS\s+15000U[\s\S]*"
         r"power_manager_low_battery_shutdown_confirmed_locked[\s\S]*"
         r"battery_snapshot->battery_mv\s*>\s*POWER_MANAGER_LOW_BATTERY_SHUTDOWN_MAX_MV[\s\S]*"
+        r"s_low_battery_critical_since_ms[\s\S]*"
+        r"POWER_MANAGER_LOW_BATTERY_CONFIRM_MS[\s\S]*"
         r"power_manager_user_idle_ms_locked\(now_ms\)\s*>=\s*POWER_MANAGER_LOW_BATTERY_BOOT_GRACE_MS",
         power_manager,
     ):
@@ -615,6 +618,7 @@ def main() -> int:
         r"power_manager_low_battery_shutdown_confirmed_locked[\s\S]*"
         r"battery_snapshot->battery_level_percent\s*>\s*POWER_MANAGER_BATTERY_CRITICAL_PERCENT[\s\S]*"
         r"power_manager_low_battery_shutdown_allowed\(source\)[\s\S]*"
+        r"POWER_MANAGER_LOW_BATTERY_CONFIRM_MS[\s\S]*"
         r"power_manager_user_idle_ms_locked\(now_ms\)[\s\S]*"
         r"low_battery_shutdown_confirmed[\s\S]*"
         r"power_manager_enter_hardware_shutdown\(POWER_MANAGER_SHUTDOWN_REASON_LOW_BATTERY\)",

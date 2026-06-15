@@ -25,8 +25,8 @@ if ($text -notmatch '(?m)^#define BATTERY_MONITOR_ABSOLUTE_MIN_MV 2700U\r?$') {
     throw "Battery absolute minimum marker must remain 2700mV."
 }
 
-if ($text -notmatch '(?m)^#define BATTERY_MONITOR_EMPTY_MV 3000U\r?$') {
-    throw "Battery product empty voltage must be 3000mV."
+if ($text -notmatch '(?m)^#define BATTERY_MONITOR_EMPTY_MV 2800U\r?$') {
+    throw "Battery product empty voltage must be 2800mV."
 }
 
 if ($text -notmatch '(?m)^#define BATTERY_MONITOR_FULL_MV 4200U\r?$') {

@@ -68,7 +68,8 @@ extern void status_led_prepare_sleep(void) __attribute__((weak));
 #define POWER_MANAGER_CHARGE_FULL_MIN_PERCENT 88U
 #define POWER_MANAGER_IDLE_BATTERY_REFRESH_MS 600000U
 #define POWER_MANAGER_LOW_POWER_EVALUATE_INTERVAL_MS 60000U
-#define POWER_MANAGER_LOW_BATTERY_SHUTDOWN_MAX_MV 3000U
+#define POWER_MANAGER_LOW_BATTERY_SHUTDOWN_MAX_MV 2800U
+#define POWER_MANAGER_LOW_BATTERY_CONFIRM_MS 5000U
 #define POWER_MANAGER_LOW_BATTERY_BOOT_GRACE_MS 15000U
 #define POWER_MANAGER_SHUTDOWN_BATTERY_NOTIFY_WAIT_MS 100U
 #define POWER_MANAGER_POWER_REMOVAL_WAIT_MS 750U
@@ -134,6 +135,7 @@ static uint64_t s_charge_full_candidate_since_ms;
 static uint64_t s_cached_battery_read_ms;
 static uint32_t s_cached_battery_mv;
 static uint8_t s_cached_battery_level_percent = 0xFF;
+static uint64_t s_low_battery_critical_since_ms;
 static uint32_t s_blockers;
 static uint64_t s_last_user_activity_ms;
 static uint64_t s_last_radio_activity_ms;
@@ -697,9 +699,18 @@ static bool power_manager_low_battery_shutdown_confirmed_locked(
         battery_snapshot->battery_mv == 0 ||
         battery_snapshot->battery_mv > POWER_MANAGER_LOW_BATTERY_SHUTDOWN_MAX_MV ||
         battery_snapshot->battery_level_percent > POWER_MANAGER_BATTERY_CRITICAL_PERCENT) {
+        s_low_battery_critical_since_ms = 0;
         return false;
     }
     if (!power_manager_low_battery_shutdown_allowed(source)) {
+        s_low_battery_critical_since_ms = 0;
+        return false;
+    }
+    if (s_low_battery_critical_since_ms == 0 || now_ms < s_low_battery_critical_since_ms) {
+        s_low_battery_critical_since_ms = now_ms;
+        return false;
+    }
+    if (now_ms - s_low_battery_critical_since_ms < POWER_MANAGER_LOW_BATTERY_CONFIRM_MS) {
         return false;
     }
     return power_manager_user_idle_ms_locked(now_ms) >= POWER_MANAGER_LOW_BATTERY_BOOT_GRACE_MS;
@@ -1462,10 +1473,11 @@ static void power_manager_evaluate(void)
         ESP_LOGW(
             TAG,
             "low battery critical shutdown: level=%u%% mv=%" PRIu32 " threshold=%u%%"
-            " usb_power=%u external_power=%u charging=%u charge_full=%u",
+            " confirm_ms=%u usb_power=%u external_power=%u charging=%u charge_full=%u",
             battery_snapshot.battery_level_percent,
             battery_snapshot.battery_mv,
             (unsigned)POWER_MANAGER_BATTERY_CRITICAL_PERCENT,
+            (unsigned)POWER_MANAGER_LOW_BATTERY_CONFIRM_MS,
             power_source.usb_power_present ? 1u : 0u,
             power_source.external_power_present ? 1u : 0u,
             power_source.charging ? 1u : 0u,

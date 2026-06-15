@@ -725,7 +725,7 @@ static void board_print_status(void)
         " bat_chg_gpio=%d bat_chg_level=%s bat_std_gpio=%d bat_std_level=%s charger_polarity=%s"
         " battery_gpio=%d battery_mv=%" PRIu32 " battery_adc_mv=%d battery_raw=%d"
         " battery_level=%u battery_valid=%u battery_adc_calibrated=%u battery_samples=%u battery_result=%s"
-        " battery_scaling=\"68K/68K divider, VBAT~=2*ADC\" battery_policy=\"product_empty_3000mv_full_4200mv_absolute_min_2700mv\""
+        " battery_scaling=\"68K/68K divider, VBAT~=2*ADC\" battery_policy=\"product_empty_2800mv_full_4200mv_absolute_min_2700mv\""
         " reserved_mspi_gpio=%s\n",
         BOARD_PINS_PROFILE_ID,
         BOARD_PINS_MODULE,
