@@ -20,6 +20,14 @@
 
 static const char *TAG = "app_main";
 
+static void configure_boot_power_hold_latch(void)
+{
+    esp_err_t ret = board_configure_power_hold_latch();
+    if (ret != ESP_OK) {
+        ESP_LOGW(TAG, "early PWR_HOLD/GPIO11 runtime-low setup failed: %s", esp_err_to_name(ret));
+    }
+}
+
 static void configure_power_management(void)
 {
 #if CONFIG_PM_ENABLE
@@ -75,6 +83,8 @@ static void log_power_boot_diagnostics(void)
 
 void app_main(void)
 {
+    configure_boot_power_hold_latch();
+
     self_test_init();
     esp_err_t led_ret = status_led_init();
     if (led_ret != ESP_OK) {

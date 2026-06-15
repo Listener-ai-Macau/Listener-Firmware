@@ -200,6 +200,8 @@ CHECKS = {
         "light_sleep_enable = true",
         "esp_reset_reason",
         "board_get_v2_power_hold_snapshot",
+        "configure_boot_power_hold_latch",
+        "board_configure_power_hold_latch",
         "power cold-boot status",
     ],
     "components/board/board.c": [
@@ -363,6 +365,23 @@ def main() -> int:
     ):
         failures.append(
             "components/board/board.c: hardware shutdown release-high must wait for PWR_HOLD readback before reporting success"
+        )
+
+    main_source = (REPO_ROOT / "main/main.c").read_text(encoding="utf-8")
+    if not re.search(
+        r"static\s+void\s+configure_boot_power_hold_latch\(void\)[\s\S]*"
+        r"board_configure_power_hold_latch\(\)",
+        main_source,
+    ):
+        failures.append(
+            "main/main.c: early boot PWR_HOLD helper must configure the runtime-low latch"
+        )
+    if not re.search(
+        r"void\s+app_main\(void\)\s*\{\s*configure_boot_power_hold_latch\(\);",
+        main_source,
+    ):
+        failures.append(
+            "main/main.c: app_main must drive PWR_HOLD/GPIO11 low before LED/BLE/diagnostic init"
         )
 
     power_manager = (REPO_ROOT / "components/power_manager/power_manager.c").read_text(encoding="utf-8")
