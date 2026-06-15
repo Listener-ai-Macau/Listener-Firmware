@@ -70,6 +70,7 @@
 #define DIAG_GAP_CONN_PARAM_REQ 8  /* a1=mode(1=active,2=low_power), a2=result, a3=conn_handle, a4=latency */
 #define DIAG_GAP_SUBSCRIBE     9   /* a1=conn_handle, a2=attr_handle, a3=(reason<<16|prevn<<8|curn), a4=(previ<<8|curi) */
 #define DIAG_GAP_RECOVERY      10  /* a1=action(1=clear_bonds,2=terminate_conn,3=restart_adv,4=complete,5=rotate_identity,6=refresh_pairing_window,7=request_reconnect), a2=result, a3=bond_count_or_state_flags, a4=conn_handle */
+#define DIAG_GAP_ADV_STATE     11  /* a1=action(1=suppress_shutdown,2=suppress_key_wake,3=defer_hid_start,4=defer_stack_sync,5=skip_connected,6=already_active,7=low_power_set,8=key_wake_stop,9=shutdown_prepare,10=reconnect_request,11=connect_fail_suppress,12=disconnect_suppress,13=adv_complete_suppress,14=stop_for_restart,15=stop_for_shutdown,16=stop_for_reconnect,17=start_directed,18=start_undirected), a2=result_or_detail, a3=state_flags(1=adv_active,2=low_power,4=directed_pending,8=key_wake_only,16=shutdown_quiesce,32=nimble_ready,64=hid_started,128=connected), a4=conn_handle */
 
 /* Audio capture events (DIAG_SRC_AUDIO) */
 #define DIAG_AUDIO_INIT_FAIL   1   /* a1=component(1=I2S/PDM,2=I2C,3=codec,4=mutex,5=task), a2=esp_err, a3=0, a4=0 */
@@ -123,7 +124,7 @@
 #define DIAG_POWER_EXTERNAL_POWER 9 /* a1=flags, a2=raw_levels, a3=idle_ms, a4=shutdown_blockers */
 #define DIAG_POWER_USB_DETECT     10 /* a1=level, a2=usb_power_present, a3=idle_ms, a4=raw_levels */
 #define DIAG_POWER_CHARGE_STATE   11 /* a1=charging, a2=charge_full, a3=idle_ms, a4=raw_levels */
-#define DIAG_POWER_HOLD_STATE     12 /* a1=enabled, a2=gpio, a3=level, a4=policy */
+#define DIAG_POWER_HOLD_STATE     12 /* a1=configured, a2=gpio, a3=level(0=low,1=high,2=unknown), a4=action(0=source_snapshot,1=runtime_guard,2=shutdown_entry,3=shutdown_drive_high,4=shutdown_failed_restore,5=init,6=shutdown_failure_backoff) */
 
 /* Board events (DIAG_SRC_BOARD) */
 #define DIAG_BOARD_PROFILE        1 /* a1=flash_mb, a2=psram_mb, a3=key1_gpio, a4=ec11_key_gpio */
@@ -136,6 +137,9 @@
 #define DIAG_LED_ERROR       2 /* a1=domain, a2=severity, a3=0, a4=0 */
 #define DIAG_LED_OUTPUT_FAIL 3 /* a1=gpio, a2=esp_err, a3=stage, a4=0 */
 #define DIAG_LED_PROFILE     4 /* a1=profile, a2=0, a3=0, a4=0 */
+#define DIAG_LED_POWER_INPUT 5 /* a1=power_flags(1=external_power,2=charging,4=full,8=raw_charging,16=raw_full,32=full_latched,64=battery_valid,128=low_power_disabled,256=output_disabled,bit24=display_valid,bit25=display_rise_suppressed,bits16_23=display_level), a2=battery_mv, a3=battery_level(255=unknown), a4=reason(1=boot,2=power_change,3=ble_state,4=recording_start,5=recording_stop,6=processing_start,7=processing_stop,8=success,9=error,10=low_power_off,11=low_power_resume,12=prepare_sleep,13=manual_off,14=device_settings,15=render,16=preview,17=brightness,18=profile,19=test,20=key,21=booting,255=other) */
+#define DIAG_LED_VISUAL_STATE 6 /* a1=active_flags(1=PWR,2=BLE,4=REC,8=AI,16=OK,32=WARN,64=KEY,128=EDGE), a2=pwr_rgb_0xRRGGBB, a3=visual_flags(1=external_power,2=charging,4=full,8=battery_valid,16=output_disabled,32=low_power_disabled,64=status_window,128=boot_feedback,pwr_class_bits8_11(0=off,1=green,2=amber,3=red,4=white,5=blue,6=violet,7=gold,15=other),ble_state_bits12_15,error_domain_bits16_19), a4=reason(1=boot,2=power_change,3=ble_state,4=recording_start,5=recording_stop,6=processing_start,7=processing_stop,8=success,9=error,10=low_power_off,11=low_power_resume,12=prepare_sleep,13=manual_off,14=device_settings,15=render,16=preview,17=brightness,18=profile,19=test,20=key,21=booting,255=other) */
+#define DIAG_LED_OUTPUT_STATE 7 /* a1=output_disabled, a2=low_power_disabled, a3=active_flags(1=PWR,2=BLE,4=REC,8=AI,16=OK,32=WARN,64=KEY,128=EDGE), a4=reason(1=boot,2=power_change,3=ble_state,4=recording_start,5=recording_stop,6=processing_start,7=processing_stop,8=success,9=error,10=low_power_off,11=low_power_resume,12=prepare_sleep,13=manual_off,14=device_settings,15=render,16=preview,17=brightness,18=profile,19=test,20=key,21=booting,255=other) */
 
 /* Firmware OTA events (DIAG_SRC_OTA) */
 #define DIAG_OTA_STATE          1   /* a1=partition_subtype, a2=ota_state, a3=0, a4=0 */

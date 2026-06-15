@@ -1,0 +1,12 @@
+sample=1 elapsed_s=4.094 state=CONNECTED_IDLE idle_ms=1428250 tps=NonemA sy=0mA battery=3516mV audio_idle=1 charge_full=0
+sample=2 elapsed_s=34.071 state=CONNECTED_IDLE idle_ms=1458250 tps=48mA sy=0mA battery=3504mV audio_idle=1 charge_full=0
+sample=3 elapsed_s=64.05 state=CONNECTED_IDLE idle_ms=1488250 tps=118mA sy=0mA battery=3536mV audio_idle=1 charge_full=0
+sample=4 elapsed_s=94.091 state=CONNECTED_IDLE idle_ms=1518249 tps=2mA sy=0mA battery=3502mV audio_idle=1 charge_full=0
+sample=5 elapsed_s=124.094 state=CONNECTED_IDLE idle_ms=1548249 tps=112mA sy=10mA battery=3508mV audio_idle=1 charge_full=0
+sample=6 elapsed_s=154.047 state=CONNECTED_IDLE idle_ms=1578249 tps=98mA sy=36mA battery=3508mV audio_idle=1 charge_full=0
+sample=7 elapsed_s=184.063 state=CONNECTED_IDLE idle_ms=1608247 tps=12mA sy=6mA battery=3484mV audio_idle=1 charge_full=0
+sample=8 elapsed_s=214.104 state=CONNECTED_IDLE idle_ms=1638248 tps=104mA sy=0mA battery=3524mV audio_idle=1 charge_full=0
+sample=9 elapsed_s=244.077 state=CONNECTED_IDLE idle_ms=1668247 tps=140mA sy=0mA battery=3528mV audio_idle=1 charge_full=0
+sample=10 elapsed_s=274.085 state=CONNECTED_IDLE idle_ms=1698246 tps=86mA sy=0mA battery=3512mV audio_idle=1 charge_full=0
+summary=C:\Users\Billy\Desktop\listener\voice-keyboard-firmware\docs\validation\voice-keyboard-firmware-full-function-test-1.7\idle-power-current-force-20260613-170016\idle_power_summary.json
+report=C:\Users\Billy\Desktop\listener\voice-keyboard-firmware\docs\validation\voice-keyboard-firmware-full-function-test-1.7\idle-power-current-force-20260613-170016\idle_power_summary.md

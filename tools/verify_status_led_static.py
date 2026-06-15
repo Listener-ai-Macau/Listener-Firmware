@@ -73,13 +73,27 @@ CHECKS = {
         "STATUS_LED_CHARGE_FULL_DEBOUNCE_MS 10000U",
         "STATUS_LED_CHARGE_FULL_MIN_MV 4050U",
         "STATUS_LED_CHARGE_FULL_MIN_PERCENT 88U",
+        "STATUS_LED_BATTERY_DISPLAY_GREEN_PERCENT 60U",
         "STATUS_LED_FULL_STEADY_PERCENT 100U",
         "STATUS_LED_FULL_STATUS_STEADY_PERCENT 100U",
         "STATUS_LED_BATTERY_IDLE_BLE_HEARTBEAT_ON_MS 120U",
         "STATUS_LED_BATTERY_IDLE_BLE_HEARTBEAT_OFF_MS 7880U",
         "STATUS_LED_BATTERY_IDLE_BLE_HEARTBEAT_PERCENT 18U",
+        "STATUS_LED_PWR_COLOR_AMBER",
+        "STATUS_LED_DIAG_VIS_LOW_POWER_OFF",
+        "battery_display_level_percent",
+        "status_led_update_battery_display_locked",
+        "battery_display_rise_suppressed",
+        "status_led_log_power_input_locked",
+        "status_led_log_visual_state_locked",
+        "status_led_log_output_state_locked",
+        "visible_pwr_flags",
+        "status_led_log_power_input_locked();",
+        "DIAG_LED_POWER_INPUT",
+        "DIAG_LED_VISUAL_STATE",
+        "DIAG_LED_OUTPUT_STATE",
         "STATUS_LED_IDLE_REFRESH_MS 1000U",
-        "STATUS_LED_CONTRACT_REV \"status_key_isolated_charge_full_latch_v10\"",
+        "STATUS_LED_CONTRACT_REV \"status_key_isolated_charge_full_latch_battery_display_latch_v11\"",
         "boot_feedback_until_ms",
         "status_led_force_boot_feedback",
         "status_led_boot_power_color_locked",
@@ -233,6 +247,20 @@ CHECKS = {
         "DIAG_LED_ERROR",
         "DIAG_LED_OUTPUT_FAIL",
         "DIAG_LED_PROFILE",
+        "DIAG_LED_POWER_INPUT",
+        "DIAG_LED_VISUAL_STATE",
+        "DIAG_LED_OUTPUT_STATE",
+        "bit24=display_valid",
+        "bits16_23=display_level",
+    ],
+    "tools/verify_unplugged_flash_diag_bundle.py": [
+        "status_led\", \"power_input",
+        "status_led\", \"visual_state",
+        "status_led\", \"output_state",
+        "power\", \"external_power",
+        "power\", \"sleep_wake",
+        "off followed by visible-on recovery",
+        "--expect-pwr-class",
     ],
     "main/main.c": [
         "status_led_init()",
@@ -335,7 +363,7 @@ CHECKS = {
         "rgbw-single-led",
         "semantic-preview",
         "STATUS_EFFECT_BASELINE",
-        "status_key_isolated_charge_full_latch_v10",
+        "status_key_isolated_charge_full_latch_battery_display_latch_v11",
         "make_semantic_sequence",
         "write_status_effects_markdown",
         "status-effects.md",
@@ -480,8 +508,8 @@ def main() -> int:
         failures.append("status_led.c: battery PWR must not stay on just because BLE is connected")
     if "STATUS_LED_BATTERY_IDLE_BLE_HEARTBEAT_PERCENT" not in status_led:
         failures.append("status_led.c: battery idle BLE heartbeat constants are missing")
-    if "(!external_power_present && battery_band_changed)" not in status_led:
-        failures.append("status_led.c: plugged battery-percent jitter must not extend status windows")
+    if "(!external_power_present && battery_display_band_changed)" not in status_led:
+        failures.append("status_led.c: plugged/raw battery-percent jitter must not extend status windows")
     if "s_state.profile == STATUS_LED_PROFILE_STANDARD && now_ms < s_state.status_window_until_ms" in status_led:
         failures.append("status_led.c: standard profile edge LEDs must not light from generic status windows")
     if "return desired_percent < cap ? desired_percent : cap" in status_led:

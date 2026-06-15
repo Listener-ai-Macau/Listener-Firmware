@@ -497,7 +497,9 @@ def build_input_debug_summary(events: list[dict[str, Any]]) -> dict[str, Any]:
 PARAM_HIGHLIGHT_EVENT_MAP: dict[tuple[str, str], tuple[str, str]] = {
     ("ble_gap", "gap_conn_param"): ("ble_gap", "connection_params"),
     ("ble_gap", "gap_conn_param_req"): ("ble_gap", "connection_params"),
+    ("ble_gap", "gap_adv_start"): ("ble_gap", "advertising"),
     ("ble_gap", "gap_subscribe"): ("ble_gap", "subscriptions"),
+    ("ble_gap", "gap_adv_state"): ("ble_gap", "advertising"),
     ("ble_audio", "baud_notify_state"): ("ble_audio", "notify"),
     ("ble_audio", "baud_notify_fail"): ("ble_audio", "notify"),
     ("ble_audio", "baud_pool_exhaust"): ("ble_audio", "pressure"),
@@ -526,6 +528,9 @@ PARAM_HIGHLIGHT_EVENT_MAP: dict[tuple[str, str], tuple[str, str]] = {
     ("power", "power_hold_state"): ("power", "external_power"),
     ("power", "power_battery_warn"): ("power", "external_power"),
     ("power", "power_blocker_change"): ("power", "state"),
+    ("status_led", "led_power_input"): ("status_led", "power_input"),
+    ("status_led", "led_visual_state"): ("status_led", "visual_state"),
+    ("status_led", "led_output_state"): ("status_led", "output_state"),
     ("board", "board_profile"): ("board", "profile"),
     ("board", "board_provisional"): ("board", "profile"),
     ("board", "board_power_rail"): ("board", "rails"),
@@ -598,6 +603,246 @@ def add_gap_subscribe_state(ref: dict[str, Any], event: dict[str, Any]) -> None:
         ref["subscribe_state"] = state
 
 
+def add_gap_adv_state(ref: dict[str, Any], event: dict[str, Any]) -> None:
+    raw_args = event.get("args_raw", {})
+    state_flags = raw_args.get("a3")
+    if not isinstance(state_flags, int):
+        return
+    ref["adv_state_flags"] = {
+        "adv_active": bool(state_flags & 0x01),
+        "low_power": bool(state_flags & 0x02),
+        "directed_pending": bool(state_flags & 0x04),
+        "key_wake_only": bool(state_flags & 0x08),
+        "shutdown_quiesce": bool(state_flags & 0x10),
+        "nimble_ready": bool(state_flags & 0x20),
+        "hid_started": bool(state_flags & 0x40),
+        "connected": bool(state_flags & 0x80),
+    }
+
+
+def led_active_flags(value: Any) -> dict[str, bool]:
+    flags = value if isinstance(value, int) else 0
+    return {
+        "pwr": bool(flags & 0x01),
+        "ble": bool(flags & 0x02),
+        "rec": bool(flags & 0x04),
+        "ai": bool(flags & 0x08),
+        "ok": bool(flags & 0x10),
+        "warn": bool(flags & 0x20),
+        "key": bool(flags & 0x40),
+        "edge": bool(flags & 0x80),
+    }
+
+
+def led_power_color_label(value: int) -> str:
+    return {
+        0: "off",
+        1: "green",
+        2: "amber",
+        3: "red",
+        4: "white",
+        5: "blue",
+        6: "violet",
+        7: "gold",
+        15: "other",
+    }.get(value, f"unknown_{value}")
+
+
+def add_led_power_input_flags(ref: dict[str, Any], event: dict[str, Any]) -> None:
+    raw_args = event.get("args_raw", {})
+    power_flags = raw_args.get("a1")
+    if not isinstance(power_flags, int):
+        return
+    ref["led_power_flags"] = {
+        "external_power": bool(power_flags & 0x001),
+        "charging": bool(power_flags & 0x002),
+        "full": bool(power_flags & 0x004),
+        "raw_charging": bool(power_flags & 0x008),
+        "raw_full": bool(power_flags & 0x010),
+        "full_latched": bool(power_flags & 0x020),
+        "battery_valid": bool(power_flags & 0x040),
+        "low_power_disabled": bool(power_flags & 0x080),
+        "output_disabled": bool(power_flags & 0x100),
+        "display_valid": bool(power_flags & 0x1000000),
+        "display_rise_suppressed": bool(power_flags & 0x2000000),
+    }
+    if power_flags & 0x1000000:
+        ref["battery_display_level"] = (power_flags >> 16) & 0xFF
+
+
+def add_led_visual_state_flags(ref: dict[str, Any], event: dict[str, Any]) -> None:
+    raw_args = event.get("args_raw", {})
+    active_flags = raw_args.get("a1")
+    pwr_rgb = raw_args.get("a2")
+    visual_flags = raw_args.get("a3")
+    ref["led_active_flags"] = led_active_flags(active_flags)
+    if isinstance(pwr_rgb, int):
+        ref["pwr_rgb"] = {
+            "r": (pwr_rgb >> 16) & 0xFF,
+            "g": (pwr_rgb >> 8) & 0xFF,
+            "b": pwr_rgb & 0xFF,
+            "hex": f"#{pwr_rgb & 0xFFFFFF:06X}",
+        }
+    if not isinstance(visual_flags, int):
+        return
+    pwr_class = (visual_flags >> 8) & 0x0F
+    ref["led_visual_state_flags"] = {
+        "external_power": bool(visual_flags & 0x001),
+        "charging": bool(visual_flags & 0x002),
+        "full": bool(visual_flags & 0x004),
+        "battery_valid": bool(visual_flags & 0x008),
+        "output_disabled": bool(visual_flags & 0x010),
+        "low_power_disabled": bool(visual_flags & 0x020),
+        "status_window": bool(visual_flags & 0x040),
+        "boot_feedback": bool(visual_flags & 0x080),
+        "pwr_class": pwr_class,
+        "pwr_class_label": led_power_color_label(pwr_class),
+        "ble_state": (visual_flags >> 12) & 0x0F,
+        "error_domain": (visual_flags >> 16) & 0x0F,
+    }
+
+
+def add_led_output_state_flags(ref: dict[str, Any], event: dict[str, Any]) -> None:
+    raw_args = event.get("args_raw", {})
+    ref["led_output_state"] = {
+        "output_disabled": bool(raw_args.get("a1")),
+        "low_power_disabled": bool(raw_args.get("a2")),
+        "active_flags": led_active_flags(raw_args.get("a3")),
+    }
+
+
+POWER_BLOCKERS = (
+    (0x01, "recording"),
+    (0x02, "ble_audio"),
+    (0x04, "diag_export"),
+    (0x08, "pairing"),
+    (0x10, "reconnect"),
+    (0x20, "flash_write"),
+    (0x40, "usb_command"),
+    (0x80, "external_power"),
+)
+
+POWER_STATES = {
+    0: "active",
+    1: "connected_idle",
+    2: "disconnected_idle",
+    3: "hardware_shutdown",
+}
+
+POWER_SHUTDOWN_REASONS = {
+    0: "none",
+    1: "long_idle",
+    2: "manual_command",
+    3: "low_battery",
+}
+
+POWER_HOLD_ACTIONS = {
+    0: "source_snapshot",
+    1: "runtime_guard",
+    2: "shutdown_entry",
+    3: "shutdown_drive_high",
+    4: "shutdown_failed_restore",
+    5: "init",
+    6: "shutdown_failure_backoff",
+}
+
+
+def power_blocker_names(value: Any) -> list[str]:
+    blockers = value if isinstance(value, int) else 0
+    names = [name for mask, name in POWER_BLOCKERS if blockers & mask]
+    return names or ["none"]
+
+
+def power_gpio_level_label(value: Any) -> str:
+    if value == 0:
+        return "low"
+    if value == 1:
+        return "high"
+    if value == 2:
+        return "unknown"
+    if value == 0xFFFFFFFF:
+        return "not_configured"
+    return f"raw_{value}"
+
+
+def power_raw_levels(value: Any) -> dict[str, Any]:
+    levels = value if isinstance(value, int) else 0
+    return {
+        "usb_det": power_gpio_level_label(levels & 0x0F),
+        "bat_chg": power_gpio_level_label((levels >> 4) & 0x0F),
+        "bat_std": power_gpio_level_label((levels >> 8) & 0x0F),
+        "pwr_hold": power_gpio_level_label((levels >> 12) & 0x0F),
+    }
+
+
+def add_power_decoded_state(ref: dict[str, Any], event: dict[str, Any]) -> None:
+    raw_args = event.get("args_raw", {})
+    event_name = event["event"].get("name")
+    if event_name == "power_state":
+        ref["power_state"] = {
+            "previous": POWER_STATES.get(raw_args.get("a1"), f"unknown_{raw_args.get('a1')}"),
+            "next": POWER_STATES.get(raw_args.get("a2"), f"unknown_{raw_args.get('a2')}"),
+            "blocker_names": power_blocker_names(raw_args.get("a4")),
+        }
+    elif event_name == "power_status":
+        ref["power_status"] = {
+            "state": POWER_STATES.get(raw_args.get("a1"), f"unknown_{raw_args.get('a1')}"),
+            "blocker_names": power_blocker_names(raw_args.get("a2")),
+            "pwr_hold_level": power_gpio_level_label(raw_args.get("a4")),
+        }
+    elif event_name == "power_sleep_entry":
+        reason = raw_args.get("a4")
+        ref["shutdown_reason_label"] = POWER_SHUTDOWN_REASONS.get(
+            reason,
+            f"unknown_{reason}",
+        )
+    elif event_name == "power_sleep_blocked":
+        reason = raw_args.get("a3")
+        ref["sleep_blocked"] = {
+            "blocker_names": power_blocker_names(raw_args.get("a1")),
+            "shutdown_reason_label": POWER_SHUTDOWN_REASONS.get(
+                reason,
+                f"unknown_{reason}",
+            ),
+            "external_power_blocker": bool((raw_args.get("a1") or 0) & 0x80),
+        }
+    elif event_name == "power_external_power":
+        flags = raw_args.get("a1") if isinstance(raw_args.get("a1"), int) else 0
+        ref["power_source_flags"] = {
+            "usb_present": bool(flags & 0x01),
+            "charging": bool(flags & 0x02),
+            "charge_full": bool(flags & 0x04),
+            "external_power_present": bool(flags & 0x08),
+            "auto_shutdown_blocked": bool(flags & 0x10),
+        }
+        ref["power_source_levels"] = power_raw_levels(raw_args.get("a2"))
+        ref["shutdown_blocker_names"] = power_blocker_names(raw_args.get("a4"))
+    elif event_name == "power_usb_detect":
+        ref["power_source_levels"] = power_raw_levels(raw_args.get("a4"))
+        ref["usb_power_present"] = bool(raw_args.get("a2"))
+    elif event_name == "power_charge_state":
+        ref["power_source_levels"] = power_raw_levels(raw_args.get("a4"))
+        ref["charge_state"] = {
+            "charging": bool(raw_args.get("a1")),
+            "charge_full": bool(raw_args.get("a2")),
+        }
+    elif event_name == "power_blocker_change":
+        ref["blocker_change"] = {
+            "old_blocker_names": power_blocker_names(raw_args.get("a1")),
+            "new_blocker_names": power_blocker_names(raw_args.get("a2")),
+            "changed_names": power_blocker_names(raw_args.get("a3")),
+            "enabled": bool(raw_args.get("a4")),
+        }
+    elif event_name == "power_hold_state":
+        action = raw_args.get("a4")
+        ref["power_hold_state"] = {
+            "configured": bool(raw_args.get("a1")),
+            "gpio": raw_args.get("a2"),
+            "level": power_gpio_level_label(raw_args.get("a3")),
+            "action": POWER_HOLD_ACTIONS.get(action, f"unknown_{action}"),
+        }
+
+
 def build_param_highlights(events: list[dict[str, Any]]) -> dict[str, Any]:
     highlights: dict[str, Any] = {
         "schema_version": 1,
@@ -605,10 +850,11 @@ def build_param_highlights(events: list[dict[str, Any]]) -> dict[str, Any]:
             "field_source": "events[*].args_named and field_sources are derived from diag_log_events.h comments through arg_definitions.",
             "event_ref": "Each highlight contains event_index/event_ref back to events[*], which preserves args_raw, args_named, args_decoded, and raw_event.",
         },
-        "ble_gap": {"connection_params": [], "subscriptions": []},
+        "ble_gap": {"connection_params": [], "subscriptions": [], "advertising": []},
         "ble_audio": {"notify": [], "pressure": [], "replay": [], "session_flow": []},
         "audio_voice": {"audio_sessions": [], "voice_recording": [], "rejects_and_flow": []},
         "power": {"state": [], "sleep_wake": [], "external_power": []},
+        "status_led": {"power_input": [], "visual_state": [], "output_state": []},
         "board": {"profile": [], "rails": []},
         "inputs": {"counts": build_input_debug_summary(events), "events": []},
     }
@@ -623,6 +869,16 @@ def build_param_highlights(events: list[dict[str, Any]]) -> dict[str, Any]:
         ref = build_param_highlight_ref(event)
         if source_name == "ble_gap" and event_name == "gap_subscribe":
             add_gap_subscribe_state(ref, event)
+        elif source_name == "ble_gap" and event_name == "gap_adv_state":
+            add_gap_adv_state(ref, event)
+        elif source_name == "status_led" and event_name == "led_power_input":
+            add_led_power_input_flags(ref, event)
+        elif source_name == "status_led" and event_name == "led_visual_state":
+            add_led_visual_state_flags(ref, event)
+        elif source_name == "status_led" and event_name == "led_output_state":
+            add_led_output_state_flags(ref, event)
+        elif source_name == "power":
+            add_power_decoded_state(ref, event)
         highlights[section_name][subsection_name].append(ref)
 
     present_sections: list[str] = []

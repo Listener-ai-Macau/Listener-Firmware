@@ -32,6 +32,12 @@ After a connected event, the BLE LED uses the 6 second status window plus the bo
 
 Repeated same-state BLE callbacks are idempotent: they do not restart the status window or confidence window. This prevents host subscription noise from making the PWR green status indication look like an irregular post-connect blink.
 
+## Flash Diagnostics
+
+Unplugged/no-serial LED behavior must be reconstructed from flash-backed diagnostics after reconnect, not from live serial output. The status LED component persists `DIAG_LED_POWER_INPUT`, `DIAG_LED_VISUAL_STATE`, and `DIAG_LED_OUTPUT_STATE` so a post-reconnect dump can show LED-side power/charge/full flags, raw and display-latched battery level, suppressed battery-only display rises, PWR RGB and color class, active PWR/BLE/REC/AI/OK/WARN bits, and output disable/resume transitions. Raw battery readings remain unchanged for diagnostics and safety; the PWR battery color uses the display-latched level so battery-only voltage rebound cannot flip amber/green.
+
+For the USB-unplug light-cycle issue, a PASS or root-cause claim must cite decoded `summary.param_highlights.status_led.power_input`, `status_led.visual_state`, `status_led.output_state`, `power.external_power`, and `power.sleep_wake` event refs from the unplugged interval. Dump flash diagnostics with `tools/dump_diag_log.ps1`, decode with `tools/decode_diag_log.py`, then validate the decoded bundle with `tools/verify_unplugged_flash_diag_bundle.py --expect-pwr-class amber --expect-pwr-class green` when reproducing the observed yellow/green PWR cycling.
+
 ## Status/Key Mapping Calibration
 
 The camera calibration contract for the first product pass is intentionally limited to the ten status/key LEDs:
@@ -89,6 +95,7 @@ Current is still estimated per frame with 20 mA per RGB channel at full scale. `
 - `~DEVICE:SET plugged_brightness=<0-100>`
 - `~DEVICE:SET battery_brightness=<0-100>`
 - `~DEVICE:SET low_power_idle_minutes=<1-1440>`
+- `~DEVICE:SET plugged_low_power_enabled=<0|1>`
 - `~DEVICE:SET auto_shutdown_minutes=<1-1440>`
 - `~DEVICE:SET ble_name=<ascii-1-32>`
 - `~DEVICE:SET knob_rotation=<system_volume|screen_brightness|disabled>`

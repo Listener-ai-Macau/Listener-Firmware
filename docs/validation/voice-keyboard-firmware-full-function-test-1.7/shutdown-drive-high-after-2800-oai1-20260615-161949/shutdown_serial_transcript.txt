@@ -1,0 +1,109 @@
+[2026-06-15T16:19:51+0800] serial_opened dtr=0 rts=0
+[2026-06-15T16:19:51+0800] tx ~POWER:STATUS
+I (242041) health: heartbeat: uptime=241s heap_free=7780KB heap_~POWER:STATUS state=ACTIVE blockers=0x00000080 blocker_names=external_power shutdown_blockers=0x00000080 shutdown_blocker_names=external_power idle_ms=295242 user_idle_ms=295242 radio_idle_ms=294870 ble_connected=1 automatic_shutdown_blocked_by_external_power=1 external_power_present=1 usb_power_present=1 charging=0 charge_full=0 charge_full_latched=0 charge_full_candidate_ms=0 charge_full_debounce_ms=10000 charge_full_min_mv=4050 charge_full_min_percent=88 plugged_low_power_enabled=0 low_power_idle_allowed=0 usb_det_level=high bat_chg_level=high bat_std_level=low pwr_hold_level=low usb_det_policy=v2_gpio7_r37_r32_10K_10K_divider charger_polarity=v2_gpio14_chg_gpio21_std_active_low pwr_hold_policy=v2_gpio11_power_latch_runtime_low_drive_high_for_hardware_shutdown battery_mv=3524 battery_level=52 battery_valid=1 last_shutdown_reason=none last_shutdown_idle_ms=0 last_shutdown_blockers=0x00000000 last_shutdown_failure_ret=ESP_OK shutdown_failure_retry_ms_left=0 shutdown_failure_retry_ms=900000 guard=1 audio_idle_ms=5000 audio_idle_power_save=1 audio_idle_blockers=0x00000000 low_power_idle_ms=60000 connected_idle_ms=60000 disconnected_idle_ms=60000 hardware_shutdown_ms=60000 pwr_hold_gpio=11 pwr_hold_level=low pwr_hold_configured=1 pwr_hold_policy=v2_gpio11_power_latch_runtime_low_drive_high_for_hardware_shutdown voice_key_gpio=18 hardware_shutdown_user_action="short-press hardware power key for cold boot after PWR_HOLD/GPIO11 drive-high shutdown"
+[2026-06-15T16:19:53+0800] tx ~BOARD:STATUS
+~BOARD:STATUS profile=voice-keyboard-v2-n16r8 module=ESP32-S3-WROOM-1-N16R8 flash_mb=16 psram_mb=8 psram_mode=octal key_gpios=38,39,40,41 ec11_a_gpio=42 ec11_b_gpio=2 ec11_key_gpio=18 ec11_key_provisional=1 mic_clk_gpio=48 mic_dout_gpio=47 mic_policy=v2_sph0655_pdm_clk_gpio48_dout_gpio47_enabled_for_a1_a2_hardware_validation pwr_hold_gpio=11 pwr_hold_level=low pwr_hold_configured=1 pwr_hold_policy=v2_gpio11_power_latch_runtime_low_drive_high_for_hardware_shutdown usb_det_gpio=7 usb_det_level=high usb_det_policy=v2_gpio7_r37_r32_10K_10K_divider bat_chg_gpio=14 bat_chg_level=high bat_std_gpio=21 bat_std_level=high charger_polarity=v2_gpio14_chg_gpio21_std_active_low battery_gpio=8 battery_mv=3536 battery_adc_mv=1768 battery_raw=2082 battery_level=53 battery_valid=1 battery_adc_calibrated=1 battery_samples=4 battery_result=ESP_OK battery_scaling="68K/68K divider, VBAT~=2*ADC" battery_policy="product_empty_2800mv_full_4200mv_absolute_min_2700mv" reserved_mspi_gpio=GPIO35,GPIO36,GPIO37
+~BOARD:POWER branch=TPS63020_input_branch present=1 gpio=10 sample_mode=cached cache_valid=1 cache_sequence=1 raw_adc=1 adc_mv=1 adc_calibrated=1 sample_count=4 calibration_status=ina180a2_10mR_adc_calibrated_battery_adc_calibrated current_model="INA180A2 10mR current_mA=adc_mv*2" current_calibrated=1 current_ma_valid=1 estimated_input_current_ma=2 battery_side_mv=3514 battery_voltage_source="BAT_V_ADC/GPIO8 68K/68K midpoint, VBAT~=2*ADC" power_mw_valid=1 estimated_input_power_mw=7 result=ESP_OK policy=v2_battery_side_input_branch_current_ina180a2_10mR_adc_mv_x2_with_battery_mv_from_gpio8_div2
+~BOARD:POWER branch=SY7088_input_branch present=1 gpio=9 sample_mode=cached cache_valid=1 cache_sequence=2 raw_adc=0 adc_mv=0 adc_calibrated=1 sample_count=4 calibration_status=ina180a2_10mR_adc_calibrated_battery_adc_calibrated current_model="INA180A2 10mR current_mA=adc_mv*2" current_calibrated=1 current_ma_valid=1 estimated_input_current_ma=0 battery_side_mv=3534 battery_voltage_source="BAT_V_ADC/GPIO8 68K/68K midpoint, VBAT~=2*ADC" power_mw_valid=1 estimated_input_power_mw=0 result=ESP_OK policy=v2_battery_side_input_branch_current_ina180a2_10mR_adc_mv_x2_with_battery_mv_from_gpio8_div2
+~LED:STATUS group=status transport=WS2812 data_gpio=1 first_led=1 led_count=6 led_refs="LED1..LED6" brightness_cap_percent=8 vdd_led_signed_off=0 full_white_allowed=0 rgbw_calibration_path=provisional policy="LED1..LED6 semantic PWR/BLE/REC/AI/OK/WARN rail"
+~LED:STATUS group=ec11 transport=WS2812 data_gpio=5 first_led=7 led_count=12 led_refs="LED7..LED10+LED15..LED16+LED23..LED28" brightness_cap_percent=8 vdd_led_signed_off=0 full_white_allowed=0 rgbw_calibration_path=provisional policy="EC11 knob ring feedback on the dedicated PWM_RGB_EC11 strip"
+~LED:STATUS group=key transport=WS2812 data_gpio=13 first_led=11 led_count=4 led_refs="LED11..LED14" brightness_cap_percent=8 vdd_led_signed_off=0 full_white_allowed=0 rgbw_calibration_path=provisional policy="LED11..LED14 transient local key feedback"
+~LED:STATUS group=edge transport=WS2812 data_gpio=4 first_led=17 led_count=6 led_refs="LED17..LED22" brightness_cap_percent=4 vdd_led_signed_off=0 full_white_allowed=0 rgbw_calibration_path=provisional policy="LED17..LED22 restrained edge/frame effects"
+~LED:STATUS policy=v2_four_zone_ws2812_status_gpio1_ec11_gpio5_key_gpio13_edge_gpio4
+[2026-06-15T16:19:56+0800] tx ~POWER:SHUTDOWN
+I (301411) audio_capture: audio idle power save disabled: ESP_OK
+W (301411) power_manager: entering hardware shutdown reason=manual_command idle_ms=1 battery_mv=3498 level=50 pwr_hold_gpio=11 pwr_hold_level=low pwr_hold_configured=1 pwr_hold_policy=v2_gpio11_power_latch_runtime_low_drive_high_for_hardware_shutdown user_action="short-press hardware power key for cold boot after PWR_HOLD/GPIO11 drive-high shutdown"
+I (301411) power_manager: state HARDWARE_SHUTDOWN -> ACTIVE idle_ms=1 blockers=0x00000080 (external_power) ble_connected=1
+I (301441) ble_hid: battery notify level=53 voltage_mv=3538 raw_adc=2084 adc_mv=1769 usb_power=1 raw_charging=0 raw_full=1 full_latched=0 full_candidate_ms=0 charge_full=0 reason=pre_shutdown forced=1 periodic=0
+I (301451) ESP_HID_GAP: active connection parameter update requested: conn=1 itvl=6-12 latency=0 timeout=800
+I (301571) health: system health low-power mode=1 interval_s=600
+I (301571) health: heartbeat: uptime=300s heap_free=7780KB heap_min=7777KB ble=OK disconnects=4 audio_frames=339 audio_drops=0 keys=0 sessions=0 usb_det_raw=1 bat_chg_raw=1 bat_std_raw=0 usb_det_policy=v2_gpio7_r37_r32_10K_10K_divider charger_policy=v2_gpio14_chg_gpio21_std_active_low
+W (301571) ESP_HID_GAP: shutdown BLE disconnect requested: conn_handle=1
+I (301581) ESP_HID_GAP: subscribe event; conn_handle=1 attr_handle=3 reason=2 prevn=1 curn=0 previ=0 curi=0
+I (301581) audio_capture: audio idle power save enabled: ESP_OK
+I (301601) ble_audio_stream: audio notify subscription changed: epoch=9 conn=1 attr=3 notify=0 window=3
+I (301621) ble_audio_stream: audio transport state: stream_ready -> mtu_ready reason=gap_subscribe_notify_off epoch=9 conn=1 mtu_ready=1 notify=0 value_max=500
+I (301631) ESP_HID_GAP: subscribe event; conn_handle=1 attr_handle=35 reason=2 prevn=0 curn=0 previ=1 curi=0
+I (301641) ESP_HID_GAP: subscribe event; conn_handle=1 attr_handle=45 reason=2 prevn=1 curn=0 previ=0 curi=0
+I (301651) ESP_HID_GAP: subscribe event; conn_handle=1 attr_handle=76 reason=2 prevn=1 curn=0 previ=0 curi=0
+I (301661) ESP_HID_GAP: subscribe event; conn_handle=1 attr_handle=83 reason=2 prevn=1 curn=0 previ=0 curi=0
+I (301681) ESP_HID_GAP: disconnect; reason=534
+I (301681) ble_hid: DISCONNECT: UNKNOWN
+I (301681) power_manager: BLE connection state changed: connected=0
+I (301681) ble_audio_stream: audio transport epoch advanced: epoch=10 reason=gap_disconnect stale_subscribe=0 stale_mtu=0 stale_notify_tx=0 stale_disconnect=0
+I (301691) audio_capture: audio idle power save disabled: ESP_OK
+I (301701) ble_audio_stream: audio transport state: mtu_ready -> disconnected reason=gap_disconnect epoch=10 conn=65535 mtu_ready=0 notify=0 value_max=244
+W (301721) ESP_HID_GAP: shutdown quiesce active: suppressing advertising restart after disconnect
+I (301991) audio_capture: frame captured count=350 bytes=224000
+E (302151) board: PWR_HOLD/GPIO11 driven high for hardware shutdown did not settle high within 500 ms; check latch wiring or external load
+E (302151) power_manager: hardware shutdown failed: PWR_HOLD/GPIO11 drive-high ret=ESP_ERR_INVALID_STATE
+I (302161) board: PWR_HOLD/GPIO11 runtime low configured readback: gpio=11 requested_level=0 actual_level=0 policy=v2_gpio11_power_latch_runtime_low_drive_high_for_hardware_shutdown
+I (302171) ESP_HID_GAP: BLE reconnect requested: adv_active=0 low_power_adv=1 directed_pending=0 key_wake_only=1
+I (302191) ESP_HID_GAP: NimBLE bonded peers=1
+I (302191) ESP_HID_GAP: NimBLE directed advertising started: peer_type=0 peer_addr=ac:92:ef:77:d5:4c
+I (302351) ESP_HID_GAP: encryption change event; status=0
+I (302351) ESP_HID_GAP: service changed indication skipped for encryption change: fw_version already confirmed
+I (302351) ESP_HID_GAP: security state after encryption: encrypted=1 authenticated=0 bonded=1 key_size=16
+I (302361) ESP_HID_GAP: subscribe event; conn_handle=1 attr_handle=45 reason=3 prevn=0 curn=1 previ=0 curi=0
+I (302371) ESP_HID_GAP: subscribe event; conn_handle=1 attr_handle=76 reason=3 prevn=0 curn=1 previ=0 curi=0
+I (302381) ESP_HID_GAP: subscribe event; conn_handle=1 attr_handle=83 reason=3 prevn=0 curn=1 previ=0 curi=0
+I (302391) ESP_HID_GAP: subscribe event; conn_handle=1 attr_handle=35 reason=3 prevn=0 curn=0 previ=0 curi=1
+I (302411) ESP_HID_GAP: subscribe event; conn_handle=1 attr_handle=3 reason=3 prevn=0 curn=1 previ=0 curi=0
+I (302411) ble_audio_stream: audio notify subscription deferred until connect: pending_epoch=11 conn=1 attr=3 notify=1
+I (302421) ESP_HID_GAP: audio notify subscribed: conn_handle=1 interval_units=9 interval_ms=11.25 latency=0 supervision_timeout_units=800 supervision_timeout_ms=8000
+I (302431) ESP_HID_GAP: connection established; status=0
+I (302431) ble_hid: CONNECT
+I (302441) ble_diag_log: diag export MTU updated: reason=connect conn=1 mtu=23 value_max=20
+I (302441) power_manager: BLE connection state changed: connected=1
+I (302461) power_manager: state DISCONNECTED_IDLE -> ACTIVE idle_ms=0 blockers=0x00000080 (external_power) ble_connected=1
+I (302451) ble_audio_stream: audio transport epoch advanced: epoch=11 reason=gap_connect stale_subscribe=0 stale_mtu=0 stale_notify_tx=0 stale_disconnect=0
+I (302471) health: system health low-power mode=0 interval_s=60
+I (302481) ble_audio_stream: audio transport state: disconnected -> connected reason=gap_connect epoch=11 conn=1 mtu_ready=0 notify=0 value_max=244
+I (302491) ESP_HID_GAP: active connection parameter update requested: conn=1 itvl=6-12 latency=0 timeout=800
+I (302501) ble_audio_stream: audio notify subscription restored before connect: epoch=11 conn=1 notify=1 window=3
+I (302511) ble_hid: battery notify level=52 voltage_mv=3524 raw_adc=2075 adc_mv=1762 usb_power=1 raw_charging=0 raw_full=0 full_latched=0 full_candidate_ms=0 charge_full=0 reason=connect_restore forced=1 periodic=0
+I (302521) ble_audio_stream: audio notify packet size updated: conn=1 value_max=244 payload_max=224
+I (302471) health: heartbeat: uptime=301s heap_free=7780KB heap_min=7777KB ble=OK disconnects=5 audio_frames=374 audio_drops=0 keys=0 sessions=0 usb_det_raw=1 bat_chg_raw=1 bat_std_raw=0 usb_det_policy=v2_gpio7_r37_r32_10K_10K_divider charger_policy=v2_gpio14_chg_gpio21_std_active_low
+I (302551) ESP_HID_GAP: service changed skipped for connect: fw_version already confirmed
+I (302511) ble_hid: battery notify level=52 voltage_mv=3524 raw_adc=2076 adc_mv=1762 usb_power=1 raw_charging=0 raw_full=1 full_latched=0 full_candidate_ms=0 charge_full=0 reason=threshold_sample forced=0 periodic=0
+I (302581) ESP_HID_GAP: security state before initiate: encrypted=1 authenticated=0 bonded=1 key_size=16
+I (302611) ESP_HID_GAP: security initiate requested
+W (302611) ESP_HID_GAP: audio connection parameter update failed: rc=2
+I (302621) ESP_HID_GAP: audio 2M PHY preference requested
+I (302621) ESP_HID_GAP: mtu update event; conn_handle=1 cid=4 mtu=517
+I (302631) ble_audio_stream: audio notify mtu updated: conn=1 mtu=517
+I (302631) ble_audio_stream: audio notify packet size updated: conn=1 value_max=500 payload_max=480
+I (302641) ble_audio_stream: audio transport state: connected -> subscribed reason=gap_mtu epoch=11 conn=1 mtu_ready=1 notify=1 value_max=500
+I (302651) ble_audio_stream: audio transport state: subscribed -> stream_ready reason=gap_mtu epoch=11 conn=1 mtu_ready=1 notify=1 value_max=500
+I (302671) ble_diag_log: diag export MTU updated: reason=gap_mtu conn=1 mtu=517 value_max=512
+I (302701) ESP_HID_GAP: encryption change event; status=0
+I (302701) ESP_HID_GAP: service changed indication skipped for encryption change: fw_version already confirmed
+I (302701) ESP_HID_GAP: security state after encryption: encrypted=1 authenticated=0 bonded=1 key_size=16
+I (302711) ESP_HID_GAP: subscribe event; conn_handle=1 attr_handle=45 reason=3 prevn=0 curn=1 previ=0 curi=0
+I (302721) ESP_HID_GAP: subscribe event; conn_handle=1 attr_handle=76 reason=3 prevn=0 curn=1 previ=0 curi=0
+I (302731) ESP_HID_GAP: subscribe event; conn_handle=1 attr_handle=83 reason=3 prevn=0 curn=1 previ=0 curi=0
+I (302751) ESP_HID_GAP: subscribe event; conn_handle=1 attr_handle=35 reason=3 prevn=0 curn=0 previ=0 curi=1
+I (302751) ESP_HID_GAP: subscribe event; conn_handle=1 attr_handle=3 reason=3 prevn=0 curn=1 previ=0 curi=0
+I (302761) ble_audio_stream: audio notify subscription changed: epoch=11 conn=1 attr=3 notify=1 window=3
+I (302771) ble_audio_stream: audio notify packet size updated: conn=1 value_max=500 payload_max=480
+I (302781) ble_audio_stream: audio transport state: stream_ready -> subscribed reason=gap_subscribe_notify_on epoch=11 conn=1 mtu_ready=1 notify=1 value_max=500
+I (302791) ble_audio_stream: audio transport state: subscribed -> stream_ready reason=gap_subscribe_notify_on epoch=11 conn=1 mtu_ready=1 notify=1 value_max=500
+I (302801) ESP_HID_GAP: audio notify subscribed: conn_handle=1 interval_units=9 interval_ms=11.25 latency=0 supervision_timeout_units=800 supervision_timeout_ms=8000
+I (302821) ESP_HID_GAP: subscribe event; conn_handle=1 attr_handle=3 reason=1 prevn=1 curn=0 previ=0 curi=0
+I (302831) ble_audio_stream: audio notify subscription changed: epoch=11 conn=1 attr=3 notify=0 window=3
+I (302841) ble_audio_stream: audio transport state: stream_ready -> mtu_ready reason=gap_subscribe_notify_off epoch=11 conn=1 mtu_ready=1 notify=0 value_max=500
+I (302981) audio_capture: frame captured count=400 bytes=256000
+I (303981) audio_capture: frame captured count=450 bytes=288000
+I (304001) ESP_HID_GAP: subscribe event; conn_handle=1 attr_handle=3 reason=1 prevn=0 curn=1 previ=0 curi=0
+I (304001) ble_audio_stream: audio notify subscription changed: epoch=11 conn=1 attr=3 notify=1 window=3
+I (304011) ble_audio_stream: audio notify packet size updated: conn=1 value_max=500 payload_max=480
+I (304021) ble_audio_stream: audio transport state: mtu_ready -> subscribed reason=gap_subscribe_notify_on epoch=11 conn=1 mtu_ready=1 notify=1 value_max=500
+I (304031) ble_audio_stream: audio transport state: subscribed -> stream_ready reason=gap_subscribe_notify_on epoch=11 conn=1 mtu_ready=1 notify=1 value_max=500
+I (304051) ESP_HID_GAP: audio notify subscribed: conn_handle=1 interval_units=9 interval_ms=11.25 latency=0 supervision_timeout_units=800 supervision_timeout_ms=8000
+I (304991) audio_capture: frame captured count=500 bytes=320000
+I (305981) audio_capture: frame captured count=550 bytes=352000
+I (306981) audio_capture: frame captured count=600 bytes=384000
+I (307601) ble_hid: battery notify level=53 voltage_mv=3546 raw_adc=2088 adc_mv=1773 usb_power=1 raw_charging=0 raw_full=0 full_latched=0 full_candidate_ms=0 charge_full=0 reason=threshold_sample forced=0 periodic=0
+I (307991) audio_capture: frame captured count=650 bytes=416000
+I (308531) audio_capture: audio idle power save enabled: ESP_OK
+[2026-06-15T16:20:04+0800] serial_closed

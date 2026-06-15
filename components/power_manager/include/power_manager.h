@@ -62,6 +62,8 @@ typedef struct {
     bool external_power_present;
     bool charging;
     bool charge_full;
+    bool plugged_low_power_enabled;
+    bool low_power_idle_allowed;
     bool charge_full_latched;
     uint32_t charge_full_candidate_ms;
     uint32_t charge_full_debounce_ms;
@@ -74,6 +76,9 @@ typedef struct {
     power_manager_shutdown_reason_t last_shutdown_reason;
     uint32_t last_shutdown_idle_ms;
     uint32_t last_shutdown_blockers;
+    esp_err_t last_shutdown_failure_ret;
+    uint32_t shutdown_failure_retry_ms_left;
+    uint32_t shutdown_failure_retry_ms;
     int pwr_hold_gpio;
     bool pwr_hold_configured;
     uint32_t voice_key_gpio;
@@ -86,6 +91,7 @@ void power_manager_record_activity(const char *reason);
 void power_manager_set_blocker(uint32_t blocker_mask, bool enabled);
 void power_manager_set_ble_connected(bool connected);
 bool power_manager_consume_usb_command(const char *line);
+power_manager_state_t power_manager_get_state(void);
 void power_manager_get_snapshot(power_manager_snapshot_t *snapshot);
 
 const char *power_manager_state_name(power_manager_state_t state);

@@ -204,7 +204,7 @@ function Test-ChargingAwakeTranscript {
 
     $text = ($Lines -join "`n")
     Assert-Contains -Text $text -Pattern '(?m)^~BOARD:STATUS\s+.*profile=voice-keyboard-v2-n16r8' -Description "board status identifies V2/N16R8 target"
-    Assert-Contains -Text $text -Pattern '(?m)^~BOARD:STATUS\s+.*pwr_hold_gpio=11.*pwr_hold_configured=1.*runtime_low_drive_high' -Description "PWR_HOLD/GPIO11 is actively driven low during runtime and drives high for hardware shutdown"
+    Assert-Contains -Text $text -Pattern '(?m)^~BOARD:STATUS\s+.*pwr_hold_gpio=11.*pwr_hold_configured=1.*runtime_low_drive_high' -Description "PWR_HOLD/GPIO11 is actively driven low during runtime and driven high for hardware shutdown"
     Assert-Contains -Text $text -Pattern '(?m)^~POWER:STATUS\s+.*state=' -Description "power status response is present"
     Assert-Contains -Text $text -Pattern '(?m)^~POWER:STATUS\s+.*hardware_shutdown_ms=' -Description "power status reports hardware-shutdown threshold"
     Assert-Contains -Text $text -Pattern '(?m)^~POWER:STATUS\s+.*voice_key_gpio=18' -Description "power status uses EC11/GPIO18 voice-key contract"

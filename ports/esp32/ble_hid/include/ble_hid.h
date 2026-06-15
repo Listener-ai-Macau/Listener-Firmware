@@ -17,6 +17,7 @@ void ble_hid_task_start_up(void);
 void ble_hid_set_safe_mode(bool enabled);
 bool ble_hid_is_connected(void);
 uint32_t ble_hid_get_disconnect_count(void);
+esp_err_t ble_hid_battery_force_refresh(const char *reason);
 void ble_hid_register_usb_command_handler(ble_hid_usb_command_handler_t handler);
 esp_err_t ble_hid_send_ascii_async(char input_char);
 esp_err_t ble_hid_send_keyboard_usage_async(uint8_t usage, const char *source);

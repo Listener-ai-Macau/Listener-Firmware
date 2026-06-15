@@ -24,6 +24,8 @@ static const char *TAG = "board";
 #define BOARD_V2_PWR_HOLD_POLICY "v2_gpio11_power_latch_runtime_low_drive_high_for_hardware_shutdown"
 #define BOARD_V2_LED_POLICY "v2_four_zone_ws2812_status_gpio1_ec11_gpio5_key_gpio13_edge_gpio4"
 #define BOARD_V2_MIC_POLICY "v2_sph0655_pdm_clk_gpio48_dout_gpio47_enabled_for_a1_a2_hardware_validation"
+#define BOARD_PWR_HOLD_RELEASE_SETTLE_MS 500U
+#define BOARD_PWR_HOLD_RELEASE_POLL_MS 25U
 #if BOARD_PINS_CURRENT_TELEMETRY_PRESENT
 #define BOARD_V2_CURRENT_POLICY "v2_battery_side_input_branch_current_ina180a2_10mR_adc_mv_x2_with_battery_mv_from_gpio8_div2"
 #else
@@ -209,7 +211,7 @@ static const char *board_gpio_scan_label(gpio_num_t gpio)
     return "-";
 }
 
-static void board_log_power_hold_readback(const char *action, int requested_level)
+static esp_err_t board_verify_power_hold_readback(const char *action, int requested_level)
 {
     int actual_level = board_read_gpio_level(BOARD_PINS_PWR_HOLD_IO);
     ESP_LOGI(
@@ -220,13 +222,55 @@ static void board_log_power_hold_readback(const char *action, int requested_leve
         requested_level,
         actual_level,
         BOARD_V2_PWR_HOLD_POLICY);
-    if (requested_level >= 0 && actual_level >= 0 && actual_level != requested_level) {
+    if (actual_level < 0) {
         ESP_LOGW(
             TAG,
-            "PWR_HOLD/GPIO11 readback mismatch: requested_level=%d actual_level=%d; check latch wiring or external pull",
+            "PWR_HOLD/GPIO11 readback failed after %s; refusing to treat shutdown request as successful",
+            action != NULL ? action : "unknown");
+        return ESP_FAIL;
+    }
+    if (requested_level >= 0 && actual_level >= 0 && actual_level != requested_level) {
+        ESP_LOGE(
+            TAG,
+            "PWR_HOLD/GPIO11 readback mismatch: requested_level=%d actual_level=%d; check latch wiring or external pull; refusing to enter silent hardware-shutdown wait",
             requested_level,
             actual_level);
+        return ESP_ERR_INVALID_STATE;
     }
+    return ESP_OK;
+}
+
+static esp_err_t board_wait_power_hold_readback(const char *action, int requested_level)
+{
+    esp_err_t last_ret = ESP_FAIL;
+    for (uint32_t elapsed_ms = 0; elapsed_ms <= BOARD_PWR_HOLD_RELEASE_SETTLE_MS;
+         elapsed_ms += BOARD_PWR_HOLD_RELEASE_POLL_MS) {
+        if (elapsed_ms > 0) {
+            vTaskDelay(pdMS_TO_TICKS(BOARD_PWR_HOLD_RELEASE_POLL_MS));
+        }
+        int actual_level = board_read_gpio_level(BOARD_PINS_PWR_HOLD_IO);
+        if (actual_level == requested_level) {
+            ESP_LOGI(
+                TAG,
+                "PWR_HOLD/GPIO11 %s settled: gpio=%d requested_level=%d actual_level=%d elapsed_ms=%" PRIu32
+                " policy=%s",
+                action != NULL ? action : "unknown",
+                (int)BOARD_PINS_PWR_HOLD_IO,
+                requested_level,
+                actual_level,
+                elapsed_ms,
+                BOARD_V2_PWR_HOLD_POLICY);
+            return ESP_OK;
+        }
+        last_ret = actual_level < 0 ? ESP_FAIL : ESP_ERR_INVALID_STATE;
+    }
+
+    ESP_LOGE(
+        TAG,
+        "PWR_HOLD/GPIO11 %s did not settle high within %u ms; check latch wiring or external load",
+        action != NULL ? action : "unknown",
+        (unsigned)BOARD_PWR_HOLD_RELEASE_SETTLE_MS);
+    return last_ret;
 }
 
 esp_err_t board_configure_power_hold_latch(void)
@@ -239,7 +283,8 @@ esp_err_t board_configure_power_hold_latch(void)
 
     /*
      * Preload the output latch before switching the pad into output mode.
-     * Runtime actively drives PWR_HOLD low; hardware shutdown drives it high.
+     * Runtime actively drives PWR_HOLD low; hardware shutdown actively drives
+     * it high to request the external latch to remove power.
      */
     (void)gpio_set_level(BOARD_PINS_PWR_HOLD_IO, 0);
 
@@ -272,8 +317,13 @@ esp_err_t board_configure_power_hold_latch(void)
         return ret;
     }
 
+    ret = board_verify_power_hold_readback("runtime low configured", 0);
+    if (ret != ESP_OK) {
+        s_power_hold_configured = false;
+        return ret;
+    }
+
     s_power_hold_configured = true;
-    board_log_power_hold_readback("runtime low configured", 0);
     return ESP_OK;
 }
 
@@ -290,8 +340,8 @@ esp_err_t board_set_power_hold_enabled(bool enabled)
     }
 
     /*
-     * Runtime actively drives PWR_HOLD low. Only the shutdown path drives it
-     * high, which requests the external latch to remove power.
+     * Runtime actively drives PWR_HOLD low. Only the shutdown path keeps the
+     * GPIO in output mode and drives it high to request power removal.
      */
     (void)gpio_set_level(BOARD_PINS_PWR_HOLD_IO, 1);
     gpio_config_t config = {
@@ -323,8 +373,13 @@ esp_err_t board_set_power_hold_enabled(bool enabled)
         return ret;
     }
 
+    ret = board_wait_power_hold_readback("driven high for hardware shutdown", 1);
+    if (ret != ESP_OK) {
+        s_power_hold_configured = false;
+        return ret;
+    }
+
     s_power_hold_configured = true;
-    board_log_power_hold_readback("driven high for hardware shutdown", 1);
     return ESP_OK;
 }
 
@@ -670,7 +725,7 @@ static void board_print_status(void)
         " bat_chg_gpio=%d bat_chg_level=%s bat_std_gpio=%d bat_std_level=%s charger_polarity=%s"
         " battery_gpio=%d battery_mv=%" PRIu32 " battery_adc_mv=%d battery_raw=%d"
         " battery_level=%u battery_valid=%u battery_adc_calibrated=%u battery_samples=%u battery_result=%s"
-        " battery_scaling=\"68K/68K divider, VBAT~=2*ADC\" battery_policy=\"product_empty_3000mv_full_4200mv_absolute_min_2700mv\""
+        " battery_scaling=\"68K/68K divider, VBAT~=2*ADC\" battery_policy=\"product_empty_2800mv_full_4200mv_absolute_min_2700mv\""
         " reserved_mspi_gpio=%s\n",
         BOARD_PINS_PROFILE_ID,
         BOARD_PINS_MODULE,
@@ -791,7 +846,7 @@ void board_print_help(void)
         "Board GPIO scan: ~BOARD:GPIO-SCAN samples all valid GPIO levels without reconfiguring pins and prints changed GPIOs.\n"
         "Input flash debug: ~DIAGLOG:INPUTDBG:ON records high-volume key/EC11 debug events until ~DIAGLOG:INPUTDBG:OFF or reboot.\n"
         "Power diagnostics: ~POWER:STATUS reports state/blockers/battery/power-hold status, ~POWER:SHUTDOWN requests manual hardware shutdown.\n"
-        "Device settings: ~DEVICE:SETTINGS reports user device config; ~DEVICE:SET plugged_brightness=80 battery_brightness=50 low_power_idle_minutes=1 auto_shutdown_minutes=30 ble_name=listener updates persisted settings.\n"
+        "Device settings: ~DEVICE:SETTINGS reports user device config; ~DEVICE:SET plugged_brightness=80 battery_brightness=50 low_power_idle_minutes=1 plugged_low_power_enabled=1 auto_shutdown_minutes=30 ble_name=listener updates persisted settings.\n"
         "LED diagnostics: ~LED:STATUS reports four WS2812 groups; ~LED:TEST:RGBW and ~LED:TEST:MAP stay brightness-gated until VDD_LED sign-off.\n"
         "Watchdog diagnostics: ~WDT:STATUS reports config, ~WDT:DEADLOCK intentionally triggers Task WDT reset.\n"
         "Boot safety diagnostics: ~BOOT:STATUS reports crash counter, ~BOOT:CRASH restarts for validation, ~BOOT:CLEAR clears safe mode.\n"

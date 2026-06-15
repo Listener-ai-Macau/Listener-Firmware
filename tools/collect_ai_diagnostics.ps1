@@ -140,6 +140,24 @@ if ($hasInput -eq $hasPort) {
     throw "Provide exactly one source: -InputJsonl <file> for offline decode, or -Port COMx for serial collection."
 }
 
+function Expand-CommaSeparatedValues {
+    param([string[]]$Values)
+
+    $expanded = @()
+    foreach ($value in @($Values)) {
+        foreach ($part in ([string]$value).Split(",")) {
+            $trimmed = $part.Trim()
+            if ($trimmed) {
+                $expanded += $trimmed
+            }
+        }
+    }
+    return @($expanded)
+}
+
+$EnableSource = @(Expand-CommaSeparatedValues -Values $EnableSource)
+$Source = @(Expand-CommaSeparatedValues -Values $Source)
+
 if ($RecentEventCount -gt 0) {
     $EventCount = $RecentEventCount
 }

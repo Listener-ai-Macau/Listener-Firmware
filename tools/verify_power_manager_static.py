@@ -115,8 +115,11 @@ CHECKS = {
         "audio_idle_power_save=%u",
         "audio_idle_blockers=0x%08",
         "low_power_idle_ms=%",
+        "plugged_low_power_enabled=%u",
+        "low_power_idle_allowed=%u",
         "status_led_prepare_sleep",
         "power_manager_low_power_idle_ms",
+        "power_manager_plugged_low_power_enabled",
         "power_manager_guard_runtime_power_hold_low",
         "PWR_HOLD/GPIO11 runtime guard reasserting low",
         'strcmp(command, "SHUTDOWN")',
@@ -197,6 +200,8 @@ CHECKS = {
         "light_sleep_enable = true",
         "esp_reset_reason",
         "board_get_v2_power_hold_snapshot",
+        "configure_boot_power_hold_latch",
+        "board_configure_power_hold_latch",
         "power cold-boot status",
     ],
     "components/board/board.c": [
@@ -209,10 +214,14 @@ CHECKS = {
         "runtime low configured",
         "gpio_set_level(BOARD_PINS_PWR_HOLD_IO, 1)",
         "driven high for hardware shutdown",
+        "BOARD_PWR_HOLD_RELEASE_SETTLE_MS",
+        "board_wait_power_hold_readback",
+        "board_verify_power_hold_readback",
+        "refusing to enter silent hardware-shutdown wait",
         "~POWER:SHUTDOWN",
     ],
     "docs/features/low_power_wake_policy.md": [
-        "3000mV=0%",
+        "2800mV=0%",
         "4200mV=100%",
         "2700mV",
         "default critical threshold `0%`",
@@ -253,8 +262,6 @@ FORBIDDEN = {
         "restoring hold high",
         "restoring hold low",
         "release-low",
-        "release-high",
-        "released high",
         "shutdown-low",
     ],
     "components/board/board.c": [
@@ -265,7 +272,6 @@ FORBIDDEN = {
         "hold-high",
         "hold-low",
         "released low for hardware shutdown",
-        "released high for hardware shutdown",
         "held high",
         "held low",
     ],
@@ -338,6 +344,43 @@ def main() -> int:
     ):
         failures.append(
             "components/board/board.c: BOARD:POWER:FORCE must be the explicit ADC current sampling command"
+        )
+    if not re.search(
+        r"board_verify_power_hold_readback[\s\S]*"
+        r"actual_level\s*<\s*0[\s\S]*return\s+ESP_FAIL[\s\S]*"
+        r"actual_level\s*!=\s*requested_level[\s\S]*return\s+ESP_ERR_INVALID_STATE",
+        board,
+    ):
+        failures.append(
+            "components/board/board.c: PWR_HOLD readback failure or mismatch must be a hard error"
+        )
+    if not re.search(
+        r"board_set_power_hold_enabled[\s\S]*"
+        r"gpio_set_level\(BOARD_PINS_PWR_HOLD_IO,\s*1\)[\s\S]*"
+        r"GPIO_MODE_OUTPUT[\s\S]*"
+        r"board_wait_power_hold_readback\(\"driven high for hardware shutdown\",\s*1\)[\s\S]*"
+        r"return\s+ret",
+        board,
+    ):
+        failures.append(
+            "components/board/board.c: hardware shutdown drive-high must wait for PWR_HOLD readback before reporting success"
+        )
+
+    main_source = (REPO_ROOT / "main/main.c").read_text(encoding="utf-8")
+    if not re.search(
+        r"static\s+void\s+configure_boot_power_hold_latch\(void\)[\s\S]*"
+        r"board_configure_power_hold_latch\(\)",
+        main_source,
+    ):
+        failures.append(
+            "main/main.c: early boot PWR_HOLD helper must configure the runtime-low latch"
+        )
+    if not re.search(
+        r"void\s+app_main\(void\)\s*\{\s*configure_boot_power_hold_latch\(\);",
+        main_source,
+    ):
+        failures.append(
+            "main/main.c: app_main must drive PWR_HOLD/GPIO11 low before LED/BLE/diagnostic init"
         )
 
     power_manager = (REPO_ROOT / "components/power_manager/power_manager.c").read_text(encoding="utf-8")
@@ -420,10 +463,13 @@ def main() -> int:
             "components/power_manager/power_manager.c: stable idle must use a long low-power evaluate wait instead of 2s polling"
         )
     if not re.search(
-        r"POWER_MANAGER_LOW_BATTERY_SHUTDOWN_MAX_MV\s+3000U[\s\S]*"
+        r"POWER_MANAGER_LOW_BATTERY_SHUTDOWN_MAX_MV\s+2800U[\s\S]*"
+        r"POWER_MANAGER_LOW_BATTERY_CONFIRM_MS\s+5000U[\s\S]*"
         r"POWER_MANAGER_LOW_BATTERY_BOOT_GRACE_MS\s+15000U[\s\S]*"
         r"power_manager_low_battery_shutdown_confirmed_locked[\s\S]*"
         r"battery_snapshot->battery_mv\s*>\s*POWER_MANAGER_LOW_BATTERY_SHUTDOWN_MAX_MV[\s\S]*"
+        r"s_low_battery_critical_since_ms[\s\S]*"
+        r"POWER_MANAGER_LOW_BATTERY_CONFIRM_MS[\s\S]*"
         r"power_manager_user_idle_ms_locked\(now_ms\)\s*>=\s*POWER_MANAGER_LOW_BATTERY_BOOT_GRACE_MS",
         power_manager,
     ):
@@ -504,22 +550,57 @@ def main() -> int:
         failures.append(
             "components/power_manager/power_manager.c: BLE reconnect must not reset the user-idle clock"
         )
-    if not re.search(
-        r"reason\s*==\s*POWER_MANAGER_SHUTDOWN_REASON_LONG_IDLE[\s\S]*"
-        r"power_manager_wait_for_power_removal\(\)",
+    if "power_manager_wait_for_power_removal" in power_manager:
+        failures.append(
+            "components/power_manager/power_manager.c: shutdown failure must not enter an unbounded wait-for-power-removal loop"
+        )
+    if re.search(
+        r"while\s*\(\s*1\s*\)\s*\{[\s\S]{0,180}"
+        r"watchdog_platform_feed_current_task\(\)",
         power_manager,
     ):
         failures.append(
-            "components/power_manager/power_manager.c: automatic long-idle shutdown fallback must stay quiescent"
+            "components/power_manager/power_manager.c: shutdown failure must not stay in a silent watchdog-fed loop"
+        )
+    if "POWER_MANAGER_POWER_REMOVAL_WAIT_MS 750U" not in power_manager:
+        failures.append(
+            "components/power_manager/power_manager.c: shutdown power-removal observation window must be explicit and bounded"
         )
     if not re.search(
-        r"power_manager_wait_for_power_removal[\s\S]*"
-        r"board_set_power_hold_enabled\(false\)[\s\S]*"
-        r"watchdog_platform_feed_current_task",
+        r"power_manager_restore_after_shutdown_failure[\s\S]*"
+        r"board_set_power_hold_enabled\(true\)[\s\S]*"
+        r"DIAG_POWER_SLEEP_BLOCKED[\s\S]*"
+        r"power_manager_schedule_shutdown_failure_retry",
         power_manager,
     ):
         failures.append(
-            "components/power_manager/power_manager.c: quiescent shutdown wait must keep PWR_HOLD driven high and feed watchdog"
+            "components/power_manager/power_manager.c: automatic failed shutdown must restore PWR_HOLD low, record diag, and enter retry cooldown"
+        )
+    if "POWER_MANAGER_SHUTDOWN_FAILURE_RETRY_MS 900000U" not in power_manager:
+        failures.append(
+            "components/power_manager/power_manager.c: shutdown failure retry cooldown must be explicit"
+        )
+    if "power_manager_shutdown_failure_retry_active_locked" not in power_manager:
+        failures.append(
+            "components/power_manager/power_manager.c: target state must honor shutdown failure retry cooldown"
+        )
+    if not re.search(
+        r"board_set_power_hold_enabled\(false\)[\s\S]*"
+        r"hold_ret\s*!=\s*ESP_OK[\s\S]*"
+        r"power_manager_restore_after_shutdown_failure\(reason,\s*final_idle_ms,\s*hold_ret\)",
+        power_manager,
+    ):
+        failures.append(
+            "components/power_manager/power_manager.c: PWR_HOLD drive-high/readback failure must use the shutdown restore path"
+        )
+    if not re.search(
+        r"vTaskDelay\(pdMS_TO_TICKS\(POWER_MANAGER_POWER_REMOVAL_WAIT_MS\)\)[\s\S]*"
+        r"hardware shutdown did not remove power[\s\S]*"
+        r"power_manager_restore_after_shutdown_failure\(reason,\s*final_idle_ms,\s*ESP_FAIL\)",
+        power_manager,
+    ):
+        failures.append(
+            "components/power_manager/power_manager.c: powered-after-shutdown fallback must restore runtime low after the bounded wait"
         )
     if not re.search(
         r"POWER_MANAGER_SHUTDOWN_REASON_LOW_BATTERY[\s\S]*"
@@ -537,6 +618,7 @@ def main() -> int:
         r"power_manager_low_battery_shutdown_confirmed_locked[\s\S]*"
         r"battery_snapshot->battery_level_percent\s*>\s*POWER_MANAGER_BATTERY_CRITICAL_PERCENT[\s\S]*"
         r"power_manager_low_battery_shutdown_allowed\(source\)[\s\S]*"
+        r"POWER_MANAGER_LOW_BATTERY_CONFIRM_MS[\s\S]*"
         r"power_manager_user_idle_ms_locked\(now_ms\)[\s\S]*"
         r"low_battery_shutdown_confirmed[\s\S]*"
         r"power_manager_enter_hardware_shutdown\(POWER_MANAGER_SHUTDOWN_REASON_LOW_BATTERY\)",
@@ -556,22 +638,26 @@ def main() -> int:
         )
     if not re.search(
         r"power_manager_awake_idle_state_locked[\s\S]*"
+        r"s_external_power_present\s*&&\s*!power_manager_plugged_low_power_enabled\(\)[\s\S]*"
+        r"POWER_MANAGER_STATE_ACTIVE[\s\S]*"
         r"uint32_t low_power_idle_ms\s*=\s*power_manager_low_power_idle_ms\(\)[\s\S]*"
         r"radio_idle_ms\s*>=\s*low_power_idle_ms",
         power_manager,
     ):
         failures.append(
-            "components/power_manager/power_manager.c: connected/disconnected idle must use the device-settings low-power timeout"
+            "components/power_manager/power_manager.c: connected/disconnected idle must use the device-settings low-power timeout and plugged low-power switch"
         )
     if not re.search(
         r"power_manager_get_snapshot[\s\S]*"
         r"low_power_idle_threshold_ms\s*=\s*power_manager_low_power_idle_ms\(\)[\s\S]*"
         r"connected_idle_threshold_ms\s*=\s*snapshot->low_power_idle_threshold_ms[\s\S]*"
-        r"disconnected_idle_threshold_ms\s*=\s*snapshot->low_power_idle_threshold_ms",
+        r"disconnected_idle_threshold_ms\s*=\s*snapshot->low_power_idle_threshold_ms[\s\S]*"
+        r"plugged_low_power_enabled\s*=\s*power_manager_plugged_low_power_enabled\(\)[\s\S]*"
+        r"low_power_idle_allowed",
         power_manager,
     ):
         failures.append(
-            "components/power_manager/power_manager.c: POWER:STATUS must report the effective low-power timeout for connected and disconnected idle"
+            "components/power_manager/power_manager.c: POWER:STATUS must report the effective low-power timeout and plugged low-power allowance"
         )
     if not re.search(
         r"power_manager_guard_runtime_power_hold_low[\s\S]*"
@@ -672,12 +758,13 @@ def main() -> int:
         )
     if not re.search(
         r"BLE_HID_BATTERY_DISCONNECTED_IDLE_INTERVAL_MS\s+600000[\s\S]*"
+        r"POWER_MANAGER_STATE_CONNECTED_IDLE[\s\S]*"
         r"!s_ble_connected\s*&&\s*!force_notify[\s\S]*"
         r"battery update skipped while disconnected",
         ble_hid,
     ):
         failures.append(
-            "ports/esp32/ble_hid/ble_hid.c: disconnected idle must skip routine HID battery updates"
+            "ports/esp32/ble_hid/ble_hid.c: BLE battery task must back off connected/disconnected low-power idle and skip routine disconnected updates"
         )
     if not re.search(
         r"ble_hid_usb_command_is_passive_query[\s\S]*"

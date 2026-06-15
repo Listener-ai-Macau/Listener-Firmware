@@ -1,0 +1,6 @@
+{
+  "pid": 27364,
+  "output_dir": "C:\\Users\\Billy\\Desktop\\listener\\voice-keyboard-firmware\\docs\\validation\\voice-keyboard-firmware-full-function-test-1.7\\idle-power-monitor-20260613-165401",
+  "started_at": "2026-06-13T16:54:01.6905136+08:00",
+  "command": "python .\\tools\\monitor_idle_power.py --port COM7 --duration-seconds 900 --interval-seconds 30 --sample-read-seconds 4 --warmup-seconds 75 --output-dir C:\\Users\\Billy\\Desktop\\listener\\voice-keyboard-firmware\\docs\\validation\\voice-keyboard-firmware-full-function-test-1.7\\idle-power-monitor-20260613-165401"
+}
