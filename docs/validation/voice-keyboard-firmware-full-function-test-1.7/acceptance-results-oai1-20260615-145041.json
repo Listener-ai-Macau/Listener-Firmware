@@ -32,8 +32,9 @@
     "status": "PASS",
     "note": "V2 current telemetry captured on COM7 with JSON/report/transcript artifacts.",
     "evidence": [
-      "artifact:docs/validation/voice-keyboard-firmware-full-function-test-1.7/current-telemetry/v2_current_telemetry_20260615-142937.json",
-      "artifact:docs/validation/voice-keyboard-firmware-full-function-test-1.7/current-telemetry/v2_current_telemetry_20260615-142937.md"
+      "artifact:docs/validation/voice-keyboard-firmware-full-function-test-1.7/current-telemetry/v2_current_telemetry_20260615-152704.json",
+      "artifact:docs/validation/voice-keyboard-firmware-full-function-test-1.7/current-telemetry/v2_current_telemetry_20260615-152704.md",
+      "artifact:docs/validation/voice-keyboard-firmware-full-function-test-1.7/current-telemetry/v2_current_telemetry_20260615-152704_transcript.txt"
     ]
   },
   {
