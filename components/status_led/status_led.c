@@ -44,7 +44,7 @@
 #define STATUS_LED_OK_PEAK_MS 160U
 #define STATUS_LED_KEY_FEEDBACK_MS 240U
 #define STATUS_LED_CHARGING_BREATH_PERIOD_MS 2200U
-#define STATUS_LED_CHARGING_BREATH_MIN_PERCENT 3U
+#define STATUS_LED_CHARGING_BREATH_MIN_PERCENT 1U
 #define STATUS_LED_CHARGING_BREATH_MAX_PERCENT 100U
 #define STATUS_LED_CHARGE_FULL_DEBOUNCE_MS 10000U
 #define STATUS_LED_CHARGE_FULL_MIN_MV 4050U
@@ -63,7 +63,7 @@
 #define STATUS_LED_STANDARD_PROFILE_BUDGET_MA 760U
 #define STATUS_LED_AMBIENT_PROFILE_BUDGET_MA 620U
 #define STATUS_LED_CHASE_DEFAULT_STEP_MS 250U
-#define STATUS_LED_CONTRACT_REV "status_key_isolated_charge_deep_breath_v12"
+#define STATUS_LED_CONTRACT_REV "status_key_isolated_charge_deeper_breath_v13"
 #define STATUS_LED_NVS_NAMESPACE "status_led"
 #define STATUS_LED_NVS_PROFILE_KEY "profile"
 #define STATUS_LED_NVS_BRIGHTNESS_KEY "brightness"
@@ -444,6 +444,23 @@ static uint8_t status_led_triangle_percent(uint32_t now_ms, uint32_t period_ms, 
     return (uint8_t)(min_percent + (range * (period_ms - phase)) / half);
 }
 
+static uint8_t status_led_eased_triangle_percent(uint32_t now_ms, uint32_t period_ms, uint8_t min_percent, uint8_t max_percent)
+{
+    if (period_ms == 0 || max_percent <= min_percent) {
+        return max_percent;
+    }
+    uint32_t half = period_ms / 2U;
+    if (half == 0U) {
+        return max_percent;
+    }
+    uint32_t phase = now_ms % period_ms;
+    uint32_t ramp = phase <= half ? phase : (period_ms - phase);
+    uint32_t linear = (100U * ramp) / half;
+    uint32_t eased = (linear * linear + 50U) / 100U;
+    uint32_t range = (uint32_t)(max_percent - min_percent);
+    return (uint8_t)(min_percent + (range * eased) / 100U);
+}
+
 static bool status_led_blink_on(uint32_t now_ms, uint32_t on_ms, uint32_t off_ms)
 {
     uint32_t period = on_ms + off_ms;
@@ -781,7 +798,7 @@ static void status_led_render_power_locked(status_led_frame_t *frame, uint32_t n
                 ? STATUS_LED_FULL_STATUS_STEADY_PERCENT
                 : STATUS_LED_FULL_STEADY_PERCENT;
         } else {
-            percent = status_led_triangle_percent(
+            percent = status_led_eased_triangle_percent(
                 now_ms,
                 STATUS_LED_CHARGING_BREATH_PERIOD_MS,
                 STATUS_LED_CHARGING_BREATH_MIN_PERCENT,

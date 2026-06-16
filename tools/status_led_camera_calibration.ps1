@@ -118,7 +118,7 @@ STEP_BY_MODE = {
 MODE = payload["mode"].lower()
 STEP = STEP_BY_MODE.get(MODE, "unknown")
 EXPECTED_MODES = set(STEP_BY_MODE)
-STATUS_EFFECT_BASELINE = "status_key_isolated_charge_deep_breath_v12"
+STATUS_EFFECT_BASELINE = "status_key_isolated_charge_deeper_breath_v13"
 PROFILE_CAPS_PERCENT = {
     "low": 100,
     "standard": 100,
