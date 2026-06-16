@@ -339,6 +339,7 @@ CHECKS = {
         "steady white once charge-full has been debounced and latched",
         "User brightness scales the whole routine effect envelope before the profile cap is applied",
         "50% user brightness setting keeps the external-power breath's 1% valley near-off",
+        "charging breath includes a short 1% valley hold, smooth inhale, and longer smooth exhale",
         "Recording is a gold voice-reactive semantic state",
         "exposes `rec_level`, and adds a visible VU brightness envelope",
         "speech makes `REC` visibly brighter",
