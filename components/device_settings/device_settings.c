@@ -31,6 +31,7 @@
 #define DEVICE_SETTINGS_LOW_POWER_IDLE_MAX_MS 86400000U
 #define DEVICE_SETTINGS_AUTO_SHUTDOWN_MIN_MS 60000U
 #define DEVICE_SETTINGS_AUTO_SHUTDOWN_MAX_MS 86400000U
+#define DEVICE_SETTINGS_AUTO_SHUTDOWN_DISABLED_MS 0U
 
 static const char *TAG = "device_settings";
 
@@ -97,6 +98,9 @@ static uint8_t device_settings_clamp_brightness(uint8_t value)
 
 static uint32_t device_settings_clamp_auto_shutdown_ms(uint32_t value)
 {
+    if (value == DEVICE_SETTINGS_AUTO_SHUTDOWN_DISABLED_MS) {
+        return DEVICE_SETTINGS_AUTO_SHUTDOWN_DISABLED_MS;
+    }
     if (value < DEVICE_SETTINGS_AUTO_SHUTDOWN_MIN_MS) {
         return DEVICE_SETTINGS_AUTO_SHUTDOWN_MIN_MS;
     }
@@ -453,10 +457,10 @@ static void device_settings_print_status(const char *result)
         " plugged_brightness=%u battery_brightness=%u active_power=%s active_brightness=%u"
         " low_power_idle_ms=%" PRIu32 " low_power_idle_mode=connected_and_disconnected"
         " plugged_low_power_enabled=%u"
-        " auto_shutdown_ms=%" PRIu32 " auto_shutdown_mode=battery_only knob_rotation=%s"
+        " auto_shutdown_ms=%" PRIu32 " auto_shutdown_enabled=%u auto_shutdown_mode=%s knob_rotation=%s"
         " ble_name=\"%s\" ble_name_pending=%u ble_name_apply=%s"
         " loaded_from_nvs=%u external_power_present=%u usb_power_present=%u charging=%u charge_full=%u"
-        " valid_ranges=brightness_0_100,low_power_idle_ms_%u_%u,plugged_low_power_enabled_0_1,auto_shutdown_ms_%u_%u,ble_name_ascii_1_%u,knob_rotation_system_volume_screen_brightness_disabled\n",
+        " valid_ranges=brightness_0_100,low_power_idle_ms_%u_%u,plugged_low_power_enabled_0_1,auto_shutdown_ms_0_off_or_%u_%u,ble_name_ascii_1_%u,knob_rotation_system_volume_screen_brightness_disabled\n",
         result != NULL ? result : "OK",
         snapshot.plugged_brightness_percent,
         snapshot.battery_brightness_percent,
@@ -465,6 +469,8 @@ static void device_settings_print_status(const char *result)
         snapshot.low_power_idle_ms,
         snapshot.plugged_low_power_enabled ? 1u : 0u,
         snapshot.battery_auto_shutdown_ms,
+        snapshot.battery_auto_shutdown_ms != DEVICE_SETTINGS_AUTO_SHUTDOWN_DISABLED_MS ? 1u : 0u,
+        snapshot.battery_auto_shutdown_ms != DEVICE_SETTINGS_AUTO_SHUTDOWN_DISABLED_MS ? "battery_only" : "disabled",
         ec11_rotation_control_action_name(ec11_rotation_control_get_action()),
         snapshot.ble_name,
         snapshot.ble_name_pending_restart ? 1u : 0u,
@@ -496,28 +502,79 @@ static bool device_settings_parse_u32(const char *value, uint32_t *out_value)
     return true;
 }
 
+static bool device_settings_ascii_iequals(const char *left, const char *right)
+{
+    if (left == NULL || right == NULL) {
+        return false;
+    }
+    while (*left != '\0' && *right != '\0') {
+        char l = *left;
+        char r = *right;
+        if (l >= 'A' && l <= 'Z') {
+            l = (char)(l - 'A' + 'a');
+        }
+        if (r >= 'A' && r <= 'Z') {
+            r = (char)(r - 'A' + 'a');
+        }
+        if (l != r) {
+            return false;
+        }
+        ++left;
+        ++right;
+    }
+    return *left == '\0' && *right == '\0';
+}
+
+static bool device_settings_auto_shutdown_disabled_value(const char *value)
+{
+    return device_settings_ascii_iequals(value, "0") ||
+           device_settings_ascii_iequals(value, "off") ||
+           device_settings_ascii_iequals(value, "disable") ||
+           device_settings_ascii_iequals(value, "disabled") ||
+           device_settings_ascii_iequals(value, "none");
+}
+
 static bool device_settings_parse_bool(const char *value, bool *out_value)
 {
     if (value == NULL || out_value == NULL) {
         return false;
     }
-    if (strcmp(value, "1") == 0 ||
-        strcmp(value, "true") == 0 ||
-        strcmp(value, "on") == 0 ||
-        strcmp(value, "yes") == 0 ||
-        strcmp(value, "enabled") == 0) {
+    if (device_settings_ascii_iequals(value, "1") ||
+        device_settings_ascii_iequals(value, "true") ||
+        device_settings_ascii_iequals(value, "on") ||
+        device_settings_ascii_iequals(value, "yes") ||
+        device_settings_ascii_iequals(value, "enabled")) {
         *out_value = true;
         return true;
     }
-    if (strcmp(value, "0") == 0 ||
-        strcmp(value, "false") == 0 ||
-        strcmp(value, "off") == 0 ||
-        strcmp(value, "no") == 0 ||
-        strcmp(value, "disabled") == 0) {
+    if (device_settings_ascii_iequals(value, "0") ||
+        device_settings_ascii_iequals(value, "false") ||
+        device_settings_ascii_iequals(value, "off") ||
+        device_settings_ascii_iequals(value, "no") ||
+        device_settings_ascii_iequals(value, "disabled")) {
         *out_value = false;
         return true;
     }
     return false;
+}
+
+static bool device_settings_parse_auto_shutdown_ms(const char *value, uint32_t *out_value)
+{
+    if (value == NULL || out_value == NULL || value[0] == '\0') {
+        return false;
+    }
+    if (device_settings_auto_shutdown_disabled_value(value)) {
+        *out_value = DEVICE_SETTINGS_AUTO_SHUTDOWN_DISABLED_MS;
+        return true;
+    }
+    uint32_t parsed = 0;
+    if (!device_settings_parse_u32(value, &parsed) ||
+        parsed < DEVICE_SETTINGS_AUTO_SHUTDOWN_MIN_MS ||
+        parsed > DEVICE_SETTINGS_AUTO_SHUTDOWN_MAX_MS) {
+        return false;
+    }
+    *out_value = parsed;
+    return true;
 }
 
 static bool device_settings_apply_key_value(
@@ -567,9 +624,7 @@ static bool device_settings_apply_key_value(
         strcmp(key, "battery_auto_shutdown_ms") == 0 ||
         strcmp(key, "shutdown_ms") == 0) {
         uint32_t parsed = 0;
-        if (!device_settings_parse_u32(value, &parsed) ||
-            parsed < DEVICE_SETTINGS_AUTO_SHUTDOWN_MIN_MS ||
-            parsed > DEVICE_SETTINGS_AUTO_SHUTDOWN_MAX_MS) {
+        if (!device_settings_parse_auto_shutdown_ms(value, &parsed)) {
             if (out_reason != NULL) {
                 *out_reason = "auto_shutdown_ms_out_of_range";
             }
@@ -634,6 +689,10 @@ static bool device_settings_apply_key_value(
 
     if (strcmp(key, "auto_shutdown_minutes") == 0 ||
         strcmp(key, "battery_auto_shutdown_minutes") == 0) {
+        if (device_settings_auto_shutdown_disabled_value(value)) {
+            config->battery_auto_shutdown_ms = DEVICE_SETTINGS_AUTO_SHUTDOWN_DISABLED_MS;
+            return true;
+        }
         uint32_t parsed = 0;
         if (!device_settings_parse_u32(value, &parsed) || parsed > (DEVICE_SETTINGS_AUTO_SHUTDOWN_MAX_MS / 60000U)) {
             if (out_reason != NULL) {

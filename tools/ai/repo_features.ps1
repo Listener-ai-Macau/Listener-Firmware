@@ -45,8 +45,8 @@ function New-FeatureSnapshot {
             "Firmware OTA v1 with ESP-IDF OTA slots, BLE bridge, rollback, pending verify, blockers, and diag events.",
             "system_health heartbeat for heap, task, BLE, and disconnect conditions.",
             "V2 N16R8 profile: 16 MB flash, 8 MB Octal PSRAM, EC11 GPIO18, KEY1-KEY4 GPIOs, WS2812 zones.",
-            "power_manager handles idle, BLE churn, USB/VBUS blockers, low-battery blocking, and PWR_HOLD/GPIO9 diagnostics.",
-            "Persisted ~DEVICE:SETTINGS for brightness, idle timeouts, plugged low-power, auto-shutdown, and BLE name.",
+            "power_manager handles idle, BLE churn, USB/VBUS blockers, low-battery blocking, manual ~POWER:TEST:SHUTDOWN, and PWR_HOLD/GPIO9 diagnostics.",
+            "Persisted ~DEVICE:SETTINGS for brightness, idle timeouts, plugged low-power, disable-able auto-shutdown, and BLE name.",
             "Latest V2 N16R8 pin map uses PWR_HOLD/GPIO9, BAT_V_ADC/GPIO10, and no populated current-sense chips.",
             "Real PWR_HOLD/GPIO9 power-off and LED VDD validation stay hardware-gated."
         )
@@ -60,6 +60,7 @@ function New-FeatureSnapshot {
             [ordered]@{ path = "components/device_settings/"; purpose = "Persisted ~DEVICE:SETTINGS contract." },
             [ordered]@{ path = "components/battery_monitor/"; purpose = "2800-4200mV protected battery level." },
             [ordered]@{ path = "docs/features/low_power_wake_policy.md"; purpose = "PWR_HOLD and USB/VBUS blocker contract." },
+            [ordered]@{ path = "tools/device_maintenance.ps1"; purpose = "Operator maintenance entry for ports, probe, flash, bootloader restore, and flash checks." },
             [ordered]@{ path = "tools/verify_charging_awake_policy_hardware.ps1"; purpose = "USB/charging awake hardware gate." },
             [ordered]@{ path = "tools/decode_diag_log.py"; purpose = "Decode ~DIAGLOG JSONL to AI bundle." },
             [ordered]@{ path = "tools/verify_unplugged_flash_diag_bundle.py"; purpose = "Verify unplugged LED flash diag evidence." },
@@ -83,6 +84,7 @@ function New-FeatureSnapshot {
             "Physical key GPIO mapping lives in board pins, not desktop code.",
             "V2 EC11-KEY/GPIO18 powers on while off; after boot it sends Shift+F13. KEY1-KEY4 use GPIO38-41.",
             "V2 shutdown drives runtime-low PWR_HOLD/GPIO9 high; real power-off and blockers require hardware validation.",
+            "Bench sessions can disable inactivity shutdown with ~DEVICE:SET auto_shutdown_minutes=off, then use ~POWER:TEST:SHUTDOWN for true serial-triggered shutdown.",
             "USB-unplug light-cycle claims require decoded flash diag timelines: status_led power_input/visual/output plus power external/sleep_wake.",
             "Battery percentage uses the protected product range 2800mV=0% and 4200mV=100%; 2700mV is an absolute danger marker, not usable empty capacity.",
             "GPIO35/GPIO36/GPIO37 are reserved for the N16R8 module flash/PSRAM/MSPI interface.",
@@ -99,6 +101,7 @@ function New-FeatureSnapshot {
             "python -m compileall -q tools",
             "pwsh -NoProfile -File .\tools\build.ps1",
             "pwsh -NoProfile -File .\tools\flash.ps1 -Port <COMx>",
+            "pwsh -NoProfile -File .\tools\device_maintenance.ps1 -Action help",
             "pwsh -NoProfile -File .\tools\dump_diag_log.ps1 -Port <COMx> -Count 200",
             "python .\tools\verify_unplugged_flash_diag_bundle.py --bundle <diag_log_ai_bundle.json> --expect-pwr-class amber --expect-pwr-class green",
             "python .\tools\verify_serial_no_reset_static.py",
@@ -182,6 +185,9 @@ function Test-FeatureSnapshot {
     $errors += @(Test-RepoText "components/device_settings/include/device_settings.h" 'DEVICE_SETTINGS_DEFAULT_LOW_POWER_IDLE_MS\s+60000U' 'low-power idle default')
     $errors += @(Test-RepoText "components/device_settings/include/device_settings.h" 'DEVICE_SETTINGS_DEFAULT_PLUGGED_LOW_POWER_ENABLED\s+1' 'plugged low-power default')
     $errors += @(Test-RepoText "components/power_manager/power_manager.c" 'plugged_low_power_enabled' 'plugged low-power effective status')
+    $errors += @(Test-RepoText "components/power_manager/power_manager.c" 'TEST:SHUTDOWN' 'serial manual shutdown test alias')
+    $errors += @(Test-RepoText "components/device_settings/device_settings.c" 'auto_shutdown_ms_0_off_or_' 'auto-shutdown disabled setting contract')
+    $errors += @(Test-RepoText "tools/device_maintenance.ps1" 'restore-bootloader' 'device maintenance helper')
     $errors += @(Test-RepoText "components/board/board.c" 'BOARD_V2_PWR_HOLD_POLICY\s+"v2_gpio9_power_latch_runtime_low_drive_high_for_hardware_shutdown"' 'PWR_HOLD runtime-low policy')
     $errors += @(Test-RepoText "ports/esp32/board_pins/include/board_pins.h" 'BOARD_PINS_BAT_V_ADC_IO\s+\(GPIO_NUM_10\)[\s\S]*BOARD_PINS_PWR_HOLD_IO\s+\(GPIO_NUM_9\)[\s\S]*BOARD_PINS_CURRENT_TELEMETRY_PRESENT\s+\(0\)[\s\S]*BOARD_PINS_TPS63020_I_ADC_IO\s+\(GPIO_NUM_NC\)[\s\S]*BOARD_PINS_SY7088_I_ADC_IO\s+\(GPIO_NUM_NC\)' 'latest V2 pin map and absent current telemetry')
     $errors += @(Test-RepoText "components/board/board.c" 'gpio_set_level\(BOARD_PINS_PWR_HOLD_IO,\s*0\)[\s\S]*GPIO_MODE_OUTPUT[\s\S]*runtime low configured[\s\S]*gpio_set_level\(BOARD_PINS_PWR_HOLD_IO,\s*1\)[\s\S]*GPIO_MODE_OUTPUT[\s\S]*board_wait_power_hold_readback\("driven high for hardware shutdown",\s*1\)' 'PWR_HOLD runtime-low drive-high shutdown implementation')

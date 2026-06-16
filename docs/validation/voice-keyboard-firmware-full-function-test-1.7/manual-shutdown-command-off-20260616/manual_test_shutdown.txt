@@ -1,0 +1,23 @@
+﻿serial_opened port=COM9 baud=115200 dtr=0 rts=0
+> ~POWER:STATUS
+~POWER:STATUS state=ACTIVE blockers=0x00000080 blocker_names=external_power shutdown_blockers=0x00000080 shutdown_blocker_names=external_power idle_ms=19412 user_idle_ms=19412 radio_idle_ms=19412 ble_connected=0 automatic_shutdown_enabled=0 automatic_shutdown_blocked_by_external_power=0 external_power_present=1 usb_power_present=1 charging=1 charge_full=0 charge_full_latched=0 charge_full_candidate_ms=0 charge_full_debounce_ms=10000 charge_full_min_mv=4050 charge_full_min_percent=88 plugged_low_power_enabled=1 low_power_idle_allowed=1 usb_det_level=high bat_chg_level=low bat_std_level=high pwr_hold_level=low usb_det_policy=v2_gpio7_r37_r32_10K_10K_divider charger_polarity=v2_gpio14_chg_gpio21_std_active_low pwr_hold_policy=v2_gpio9_power_latch_runtime_low_drive_high_for_hardware_shutdown battery_mv=4052 battery_level=89 battery_valid=1 last_shutdown_reason=none last_shutdown_idle_ms=0 last_shutdown_blockers=0x00000000 last_shutdown_failure_ret=ESP_OK shutdown_failure_retry_ms_left=0 shutdown_failure_retry_ms=900000 guard=1 audio_idle_ms=5000 audio_idle_power_save=1 audio_idle_blockers=0x00000000 low_power_idle_ms=60000 connected_idle_ms=60000 disconnected_idle_ms=60000 hardware_shutdown_ms=0 pwr_hold_gpio=9 pwr_hold_level=low pwr_hold_configured=1 pwr_hold_policy=v2_gpio9_power_latch_runtime_low_drive_high_for_hardware_shutdown voice_key_gpio=18 hardware_shutdown_user_action="short-press hardware power key for cold boot after PWR_HOLD/GPIO9 drive-high shutdown"
+> ~POWER:TEST:SHUTDOWN
+I (31694) audio_capture: audio idle power save disabled: ESP_OK
+~POWER:SHUTDOWN result=accepted trigger=serial_manual command=TEST:SHUTDOWN
+W (31694) power_manager: entering hardware shutdown reason=manual_command idle_ms=3 battery_mv=4052 level=89 pwr_hold_gpio=9 pwr_hold_level=low pwr_hold_configured=1 pwr_hold_policy=v2_gpio9_power_latch_runtime_low_drive_high_for_hardware_shutdown user_action="short-press hardware power key for cold boot after PWR_HOLD/GPIO9 drive-high shutdown"
+I (31724) ble_hid: battery force refresh skipped while disconnected reason=pre_shutdown
+I (31734) health: system health low-power mode=1 interval_s=600
+I (31734) health: heartbeat: uptime=30s heap_free=7778KB heap_min=7777KB ble=OFF disconnects=0 audio_frames=415 audio_drops=0 keys=0 sessions=0 usb_det_raw=1 bat_chg_raw=0 bat_std_raw=1 usb_det_policy=v2_gpio7_r37_r32_10K_10K_divider charger_policy=v2_gpio14_chg_gpio21_std_active_low
+W (31734) ESP_HID_GAP: shutdown BLE advertising stopped
+I (31734) audio_capture: audio idle power save enabled: ESP_OK
+I (32204) boot_safety: normal boot survived 30000ms; crash counter cleared
+E (32314) board: PWR_HOLD/GPIO9 driven high for hardware shutdown did not settle high within 500 ms; check latch wiring or external load
+E (32314) power_manager: hardware shutdown failed: PWR_HOLD/GPIO9 drive-high ret=ESP_ERR_INVALID_STATE
+I (32324) board: PWR_HOLD/GPIO9 runtime low configured readback: gpio=9 requested_level=0 actual_level=0 policy=v2_gpio9_power_latch_runtime_low_drive_high_for_hardware_shutdown
+I (32334) ESP_HID_GAP: BLE reconnect requested: adv_active=0 low_power_adv=1 directed_pending=0 key_wake_only=1
+I (32354) ESP_HID_GAP: NimBLE bonded peers=0
+I (32354) ESP_HID_GAP: NimBLE undirected advertising started: low_power=0 interval_ms=30-50
+I (33694) power_manager: state DISCONNECTED_IDLE -> ACTIVE idle_ms=1331 blockers=0x00000080 (external_power) ble_connected=0
+I (33694) audio_capture: audio idle power save disabled: ESP_OK
+I (33694) health: heartbeat: uptime=32s heap_free=7781KB heap_min=7777KB ble=OFF disconnects=0 audio_frames=416 audio_drops=0 keys=0 sessions=0 usb_det_raw=1 bat_chg_raw=0 bat_std_raw=1 usb_det_policy=v2_gpio7_r37_r32_10K_10K_divider charger_policy=v2_gpio14_chg_gpio21_std_active_low
+serial_closed

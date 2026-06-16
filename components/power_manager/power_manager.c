@@ -162,6 +162,11 @@ static uint32_t power_manager_hardware_shutdown_ms(void)
     return device_settings_get_battery_auto_shutdown_ms();
 }
 
+static bool power_manager_automatic_shutdown_enabled(void)
+{
+    return power_manager_hardware_shutdown_ms() > 0U;
+}
+
 static uint32_t power_manager_low_power_idle_ms(void)
 {
     return device_settings_get_low_power_idle_ms();
@@ -623,6 +628,7 @@ static bool power_manager_automatic_shutdown_blocked_by_external_power_locked(ui
 {
     uint32_t hardware_shutdown_ms = power_manager_hardware_shutdown_ms();
     return CONFIG_POWER_MANAGER_ENABLE &&
+           hardware_shutdown_ms > 0U &&
            power_manager_without_external_power_blocker(s_blockers) == 0 &&
            s_external_power_present &&
            power_manager_user_idle_ms_locked(now_ms) >=
@@ -639,6 +645,7 @@ static power_manager_state_t power_manager_target_state_locked(uint64_t now_ms)
     }
 
     if (CONFIG_POWER_MANAGER_ENABLE &&
+        hardware_shutdown_ms > 0U &&
         user_idle_ms >= hardware_shutdown_ms) {
         if (s_external_power_present ||
             power_manager_shutdown_failure_retry_active_locked(now_ms)) {
@@ -1016,11 +1023,13 @@ void power_manager_get_snapshot(power_manager_snapshot_t *snapshot)
         snapshot->idle_ms = snapshot->user_idle_ms;
         snapshot->ble_connected = s_ble_connected;
         snapshot->audio_idle_power_save_enabled = s_audio_idle_power_save_enabled;
+        uint32_t hardware_shutdown_ms = power_manager_hardware_shutdown_ms();
         snapshot->automatic_shutdown_blocked_by_external_power =
             CONFIG_POWER_MANAGER_ENABLE &&
+            hardware_shutdown_ms > 0U &&
             power_manager_without_external_power_blocker(s_blockers) == 0 &&
             power_source.external_power_present &&
-            snapshot->user_idle_ms >= power_manager_hardware_shutdown_ms();
+            snapshot->user_idle_ms >= hardware_shutdown_ms;
         snapshot->last_shutdown_reason = s_last_shutdown_reason;
         snapshot->last_shutdown_idle_ms = s_last_shutdown_idle_ms;
         snapshot->last_shutdown_blockers = s_last_shutdown_blockers;
@@ -1859,7 +1868,7 @@ static void power_manager_print_status(void)
         "~POWER:STATUS state=%s blockers=0x%08" PRIx32 " blocker_names=%s"
         " shutdown_blockers=0x%08" PRIx32 " shutdown_blocker_names=%s idle_ms=%" PRIu32
         " user_idle_ms=%" PRIu32 " radio_idle_ms=%" PRIu32
-        " ble_connected=%u automatic_shutdown_blocked_by_external_power=%u"
+        " ble_connected=%u automatic_shutdown_enabled=%u automatic_shutdown_blocked_by_external_power=%u"
         " external_power_present=%u usb_power_present=%u charging=%u charge_full=%u"
         " charge_full_latched=%u charge_full_candidate_ms=%" PRIu32
         " charge_full_debounce_ms=%" PRIu32
@@ -1888,6 +1897,7 @@ static void power_manager_print_status(void)
         snapshot.user_idle_ms,
         snapshot.radio_idle_ms,
         snapshot.ble_connected ? 1u : 0u,
+        power_manager_automatic_shutdown_enabled() ? 1u : 0u,
         snapshot.automatic_shutdown_blocked_by_external_power ? 1u : 0u,
         snapshot.external_power_present ? 1u : 0u,
         snapshot.usb_power_present ? 1u : 0u,
@@ -1947,8 +1957,12 @@ bool power_manager_consume_usb_command(const char *line)
         return true;
     }
 
-    if (strcmp(command, "SHUTDOWN") == 0) {
+    if (strcmp(command, "SHUTDOWN") == 0 ||
+        strcmp(command, "TEST:SHUTDOWN") == 0 ||
+        strcmp(command, "TEST-SHUTDOWN") == 0) {
         power_manager_record_activity("usb_power_command");
+        printf("~POWER:SHUTDOWN result=accepted trigger=serial_manual command=%s\n", command);
+        fflush(stdout);
         (void)power_manager_enter_hardware_shutdown(POWER_MANAGER_SHUTDOWN_REASON_MANUAL_COMMAND);
         return true;
     }
