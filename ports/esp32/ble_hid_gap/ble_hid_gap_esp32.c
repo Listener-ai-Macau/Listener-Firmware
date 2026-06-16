@@ -557,8 +557,8 @@ static void ble_hid_gap_indicate_service_changed(uint16_t conn_handle, const cha
     }
 }
 
-static esp_err_t ble_hid_gap_request_connection_params(
-    const char *label,
+static esp_err_t ble_hid_gap_leave_connection_params_to_central(
+    const char *policy_log,
     uint16_t itvl_min,
     uint16_t itvl_max,
     uint16_t latency,
@@ -570,35 +570,17 @@ static esp_err_t ble_hid_gap_request_connection_params(
         return ESP_ERR_INVALID_STATE;
     }
 
-    struct ble_gap_upd_params params = {
-        .itvl_min = itvl_min,
-        .itvl_max = itvl_max,
-        .latency = latency,
-        .supervision_timeout = supervision_timeout,
-        .min_ce_len = 0,
-        .max_ce_len = 0,
-    };
-    int rc = ble_gap_update_params(conn.conn_handle, &params);
-    if (rc == 0) {
-        ESP_LOGI(
-            TAG,
-            "%s connection parameter update requested: conn=%u itvl=%u-%u latency=%u timeout=%u",
-            label,
-            conn.conn_handle,
-            itvl_min,
-            itvl_max,
-            latency,
-            supervision_timeout);
-        diag_log(DIAG_SRC_BLE_GAP, DIAG_GAP_CONN_PARAM_REQ, DIAG_SEV_INFO,
-                 mode_code, 0, conn.conn_handle, latency);
-        return ESP_OK;
-    }
-
-    ESP_LOGW(TAG, "%s connection parameter update failed: conn=%u rc=%d",
-             label, conn.conn_handle, rc);
-    diag_log(DIAG_SRC_BLE_GAP, DIAG_GAP_CONN_PARAM_REQ, DIAG_SEV_WARN,
-             mode_code, (uint32_t)rc, conn.conn_handle, latency);
-    return ESP_FAIL;
+    ESP_LOGI(
+        TAG,
+        "%s: conn=%u preferred_itvl=%u-%u latency=%u timeout=%u mode=%u",
+        policy_log,
+        conn.conn_handle,
+        itvl_min,
+        itvl_max,
+        latency,
+        supervision_timeout,
+        (unsigned)mode_code);
+    return ESP_OK;
 }
 
 esp_err_t esp_hid_ble_gap_adv_init(uint16_t appearance, const char *device_name)
@@ -1662,8 +1644,8 @@ esp_err_t ble_hid_gap_request_reconnect(void)
 
 esp_err_t ble_hid_gap_request_low_power_connection(void)
 {
-    return ble_hid_gap_request_connection_params(
-        "low-power idle",
+    return ble_hid_gap_leave_connection_params_to_central(
+        "low-power idle connection parameters left to central",
         36,
         72,
         4,
@@ -1673,8 +1655,8 @@ esp_err_t ble_hid_gap_request_low_power_connection(void)
 
 esp_err_t ble_hid_gap_request_active_connection(void)
 {
-    return ble_hid_gap_request_connection_params(
-        "active",
+    return ble_hid_gap_leave_connection_params_to_central(
+        "active connection parameters left to central",
         6,
         12,
         0,
