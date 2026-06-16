@@ -202,6 +202,8 @@ Assert-Contains -RelativePath "ports/esp32/ble_hid_gap/ble_hid_gap_esp32.c" -Pat
 Assert-Contains -RelativePath "ports/esp32/ble_hid_gap/ble_hid_gap_esp32.c" -Pattern "DIAG_GAP_ADV_STATE" -Description "BLE advertising state diag event logging"
 Assert-Contains -RelativePath "ports/esp32/ble_hid_gap/ble_hid_gap_esp32.c" -Pattern "BLE_GAP_EVENT_PHY_UPDATE_COMPLETE" -Description "BLE PHY update completion handling"
 Assert-Contains -RelativePath "ports/esp32/ble_hid_gap/ble_hid_gap_esp32.c" -Pattern "DIAG_GAP_PHY" -Description "BLE PHY update diag event logging"
+Assert-Contains -RelativePath "ports/esp32/ble_hid_gap/ble_hid_gap_esp32.c" -Pattern "audio connection parameters left to central" -Description "central-owned audio connection parameter policy"
+Assert-NotContains -RelativePath "ports/esp32/ble_hid_gap/ble_hid_gap_esp32.c" -Pattern 'ble_hid_gap_request_connection_params\s*\(\s*"audio"' -Description "device-initiated audio connection parameter request"
 Assert-NotContains -RelativePath "ports/esp32/ble_hid_gap/ble_hid_gap_esp32.c" -Pattern "ble_gap_set_prefered_le_phy" -Description "device-initiated 2M PHY request"
 Assert-Contains -RelativePath "ports/esp32/ble_hid_gap/ble_hid_gap_esp32.c" -Pattern "recovery: clearing pairing bonds" -Description "BLE recovery serial action log"
 Assert-Contains -RelativePath "ports/esp32/ble_hid_gap/ble_hid_gap_esp32.c" -Pattern "recovery: pairing reset complete" -Description "BLE recovery completion serial log"

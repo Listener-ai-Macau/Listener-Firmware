@@ -732,13 +732,7 @@ nimble_hid_gap_event(struct ble_gap_event *event, void *arg)
         }
 
         if (s_audio_enabled) {
-            (void)ble_hid_gap_request_connection_params(
-                "audio",
-                6,
-                6,
-                0,
-                800,
-                1);
+            ESP_LOGI(TAG, "audio connection parameters left to central");
             ESP_LOGI(TAG, "audio PHY preference left to central");
         }
         return 0;

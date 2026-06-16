@@ -260,11 +260,13 @@ def check_dis_identity(repo: Path) -> None:
     )
     require(
         "ble_gap_set_prefered_le_phy" not in gap
+        and re.search(r'ble_hid_gap_request_connection_params\(\s*"audio"', gap) is None
+        and "audio connection parameters left to central" in gap
         and "audio PHY preference left to central" in gap
         and "BLE_GAP_EVENT_PHY_UPDATE_COMPLETE" in gap
         and "DIAG_GAP_PHY" in gap
         and "DIAG_GAP_PHY" in diag,
-        "GAP connect must not initiate a 2M PHY request that can leave Windows bonded but disconnected after an LL response timeout",
+        "GAP connect must not initiate audio LL parameter or 2M PHY requests that can leave Windows bonded but disconnected after an LL response timeout",
     )
 
 
