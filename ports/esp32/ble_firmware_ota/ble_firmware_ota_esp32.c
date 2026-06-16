@@ -24,6 +24,7 @@
 #define BLE_FIRMWARE_OTA_DATA_MAX_BYTES 512
 #define BLE_FIRMWARE_OTA_REBOOT_DELAY_MS 500
 #define BLE_FIRMWARE_OTA_REBOOT_TASK_STACK_BYTES 2048
+#define BLE_FIRMWARE_OTA_COMPACT_CAPABILITIES "firmware_ota_v1"
 
 typedef enum {
     BLE_FIRMWARE_OTA_GATT_ATTR_CONTROL = 1,
@@ -76,6 +77,34 @@ static int ble_firmware_ota_copy_mbuf(
 
     *out_len = len;
     return 0;
+}
+
+static const char *ble_firmware_ota_compact_read_value_if_needed(
+    uint16_t conn_handle,
+    ble_firmware_ota_gatt_attr_t attr,
+    const char *value)
+{
+    if (value == NULL) {
+        return "";
+    }
+    if (attr != BLE_FIRMWARE_OTA_GATT_ATTR_DATA &&
+        attr != BLE_FIRMWARE_OTA_GATT_ATTR_CAPABILITIES) {
+        return value;
+    }
+
+    uint16_t mtu = ble_att_mtu(conn_handle);
+    uint16_t value_max = mtu > 1 ? (uint16_t)(mtu - 1U) : 0U;
+    if (mtu <= BLE_ATT_MTU_DFLT && strlen(value) > value_max) {
+        ESP_LOGI(
+            TAG,
+            "OTA identity compact read attr=%u mtu=%u full_len=%u value=%s",
+            (unsigned)attr,
+            mtu,
+            (unsigned)strlen(value),
+            BLE_FIRMWARE_OTA_COMPACT_CAPABILITIES);
+        return BLE_FIRMWARE_OTA_COMPACT_CAPABILITIES;
+    }
+    return value;
 }
 
 static const char *ble_firmware_ota_find_json_value(const char *json, const char *key)
@@ -288,7 +317,6 @@ static int ble_firmware_ota_access(
     struct ble_gatt_access_ctxt *ctxt,
     void *arg)
 {
-    (void)conn_handle;
     (void)attr_handle;
 
     if (ctxt == NULL) {
@@ -311,6 +339,7 @@ static int ble_firmware_ota_access(
             return BLE_ATT_ERR_READ_NOT_PERMITTED;
         }
 
+        value = ble_firmware_ota_compact_read_value_if_needed(conn_handle, attr, value);
         int rc = os_mbuf_append(ctxt->om, value, strlen(value));
         if (rc != 0) {
             return BLE_ATT_ERR_INSUFFICIENT_RES;

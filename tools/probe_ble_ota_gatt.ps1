@@ -25,6 +25,7 @@ $null = [Windows.Devices.Bluetooth.GenericAttributeProfile.GattCharacteristicsRe
 $null = [Windows.Devices.Bluetooth.GenericAttributeProfile.GattReadResult, Windows.Devices.Bluetooth, ContentType = WindowsRuntime]
 $null = [Windows.Devices.Enumeration.DeviceInformation, Windows.Devices.Enumeration, ContentType = WindowsRuntime]
 $null = [Windows.Security.Cryptography.CryptographicBuffer, Windows.Security.Cryptography, ContentType = WindowsRuntime]
+$null = [Windows.Storage.Streams.DataReader, Windows.Storage.Streams, ContentType = WindowsRuntime]
 
 function Invoke-WinRtAsync {
     param(
@@ -100,19 +101,44 @@ function Get-CollectionItems {
     }
 }
 
-function Convert-BufferToUtf8 {
+function Convert-BufferToBytes {
     param([object]$Buffer)
 
-    if ($null -eq $Buffer -or $Buffer.Length -le 0) {
-        return ""
+    if ($null -eq $Buffer) {
+        return [byte[]]@()
     }
+
+    try {
+        return [System.Runtime.InteropServices.WindowsRuntime.WindowsRuntimeBufferExtensions]::ToArray($Buffer)
+    } catch {
+    }
+
     try {
         [byte[]]$bytes = @()
         [Windows.Security.Cryptography.CryptographicBuffer]::CopyToByteArray($Buffer, [ref]$bytes)
-        return [System.Text.Encoding]::UTF8.GetString($bytes)
+        return $bytes
     } catch {
+    }
+
+    try {
+        $reader = [Windows.Storage.Streams.DataReader]::FromBuffer($Buffer)
+        [byte[]]$bytes = New-Object byte[] ([int]$reader.UnconsumedBufferLength)
+        $reader.ReadBytes($bytes)
+        $reader.Dispose()
+        return $bytes
+    } catch {
+    }
+
+    return [byte[]]@()
+}
+
+function Convert-BufferToUtf8 {
+    param([byte[]]$Bytes)
+
+    if ($null -eq $Bytes -or $Bytes.Length -le 0) {
         return ""
     }
+    return [System.Text.Encoding]::UTF8.GetString($Bytes)
 }
 
 function Read-CharacteristicProbe {
@@ -160,8 +186,9 @@ function Read-CharacteristicProbe {
                     $entry.protocol_error = [int]$read.ProtocolError
                 }
                 if ($read.Value) {
-                    $entry.value_length = [int]$read.Value.Length
-                    $entry.value_utf8 = Convert-BufferToUtf8 -Buffer $read.Value
+                    [byte[]]$bytes = Convert-BufferToBytes -Buffer $read.Value
+                    $entry.value_length = $bytes.Length
+                    $entry.value_utf8 = Convert-BufferToUtf8 -Bytes $bytes
                 }
             }
         } catch {
@@ -229,8 +256,9 @@ function Read-DeviceCharacteristicProbe {
                         $entry.protocol_error = [int]$read.ProtocolError
                     }
                     if ($read.Value) {
-                        $entry.value_length = [int]$read.Value.Length
-                        $entry.value_utf8 = Convert-BufferToUtf8 -Buffer $read.Value
+                        [byte[]]$bytes = Convert-BufferToBytes -Buffer $read.Value
+                        $entry.value_length = $bytes.Length
+                        $entry.value_utf8 = Convert-BufferToUtf8 -Bytes $bytes
                     }
                 }
             }
