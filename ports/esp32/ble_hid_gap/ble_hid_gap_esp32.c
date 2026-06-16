@@ -18,7 +18,6 @@
 #include "ble_firmware_ota.h"
 #include "ble_diag_log.h"
 #include "diag_log.h"
-#include "listener_device.h"
 #include "status_led.h"
 
 #include "esp_bt.h"
@@ -91,7 +90,7 @@ static uint16_t s_service_changed_val_handle = BLE_HS_CONN_HANDLE_NONE;
 static bool s_service_changed_state_loaded = false;
 static bool s_service_changed_pending = false;
 static bool s_service_changed_queued_for_conn = false;
-static char s_service_changed_fw_version[64];
+static char s_service_changed_schema_id[64];
 static bool s_recovery_identity_rotation_pending = false;
 static bool s_recovery_pairing_window_active = false;
 static int64_t s_recovery_identity_rotated_at_ms = 0;
@@ -191,7 +190,7 @@ static void ble_hid_gap_log_adv_state(
  */
 #define BLE_HID_ADV_NAME_MAX_LEN 17
 #define BLE_HID_GAP_SERVICE_CHANGED_NVS_NAMESPACE "ble_gap"
-#define BLE_HID_GAP_SERVICE_CHANGED_FW_KEY "svcchg_fw"
+#define BLE_HID_GAP_SERVICE_CHANGED_STATE_KEY "svcchg_fw"
 #define BLE_HID_GAP_RANDOM_IDENTITY_ADDR_KEY "rnd_id_addr"
 #define BLE_HID_GAP_GATT_SCHEMA_REV "diag_export_v2"
 #define BLE_HID_GAP_SERVICE_CHANGED_START_HANDLE 0x0001
@@ -403,10 +402,25 @@ static uint16_t ble_hid_gap_get_service_changed_val_handle(void)
     return s_service_changed_val_handle;
 }
 
-static const char *ble_hid_gap_current_fw_version(void)
+static bool ble_hid_gap_stored_service_changed_schema_matches(const char *stored)
 {
-    const char *version = listener_device_get_fw_version();
-    return version != NULL && version[0] != '\0' ? version : "unknown";
+    if (strcmp(stored, s_service_changed_schema_id) == 0) {
+        return true;
+    }
+
+    /*
+     * Older firmware persisted "fw_version;schema".  Treat that as confirmed
+     * when the schema suffix matches so normal OTA version changes do not force
+     * Windows through another GATT cache refresh.
+     */
+    size_t stored_len = strlen(stored);
+    size_t schema_len = strlen(s_service_changed_schema_id);
+    if (stored_len <= schema_len + 1U) {
+        return false;
+    }
+    size_t suffix_index = stored_len - schema_len;
+    return stored[suffix_index - 1U] == ';' &&
+           strcmp(&stored[suffix_index], s_service_changed_schema_id) == 0;
 }
 
 static bool ble_hid_gap_service_changed_pending(void)
@@ -415,16 +429,14 @@ static bool ble_hid_gap_service_changed_pending(void)
         return s_service_changed_pending;
     }
 
-    const char *current_version = ble_hid_gap_current_fw_version();
     snprintf(
-        s_service_changed_fw_version,
-        sizeof(s_service_changed_fw_version),
-        "%s;%s",
-        current_version,
+        s_service_changed_schema_id,
+        sizeof(s_service_changed_schema_id),
+        "%s",
         BLE_HID_GAP_GATT_SCHEMA_REV);
 
-    char stored_version[sizeof(s_service_changed_fw_version)] = {0};
-    size_t stored_len = sizeof(stored_version);
+    char stored_schema[sizeof(s_service_changed_schema_id)] = {0};
+    size_t stored_len = sizeof(stored_schema);
     nvs_handle_t nvs = 0;
     esp_err_t ret = nvs_open(
         BLE_HID_GAP_SERVICE_CHANGED_NVS_NAMESPACE,
@@ -433,27 +445,28 @@ static bool ble_hid_gap_service_changed_pending(void)
     if (ret == ESP_OK) {
         ret = nvs_get_str(
             nvs,
-            BLE_HID_GAP_SERVICE_CHANGED_FW_KEY,
-            stored_version,
+            BLE_HID_GAP_SERVICE_CHANGED_STATE_KEY,
+            stored_schema,
             &stored_len);
         nvs_close(nvs);
     }
 
     if (ret == ESP_OK) {
-        s_service_changed_pending = strcmp(stored_version, s_service_changed_fw_version) != 0;
+        s_service_changed_pending =
+            !ble_hid_gap_stored_service_changed_schema_matches(stored_schema);
     } else if (ret == ESP_ERR_NVS_NOT_FOUND) {
         s_service_changed_pending = true;
     } else {
         s_service_changed_pending = true;
-        ESP_LOGW(TAG, "service changed version state unavailable: %s", esp_err_to_name(ret));
+        ESP_LOGW(TAG, "service changed schema state unavailable: %s", esp_err_to_name(ret));
     }
 
     s_service_changed_state_loaded = true;
     ESP_LOGI(
         TAG,
-        "service changed version state: current=%s stored=%s pending=%u",
-        s_service_changed_fw_version,
-        ret == ESP_OK ? stored_version : "none",
+        "service changed schema state: current=%s stored=%s pending=%u",
+        s_service_changed_schema_id,
+        ret == ESP_OK ? stored_schema : "none",
         s_service_changed_pending ? 1U : 0U);
     return s_service_changed_pending;
 }
@@ -468,8 +481,8 @@ static void ble_hid_gap_mark_service_changed_confirmed(void)
     if (ret == ESP_OK) {
         ret = nvs_set_str(
             nvs,
-            BLE_HID_GAP_SERVICE_CHANGED_FW_KEY,
-            s_service_changed_fw_version);
+            BLE_HID_GAP_SERVICE_CHANGED_STATE_KEY,
+            s_service_changed_schema_id);
         if (ret == ESP_OK) {
             ret = nvs_commit(nvs);
         }
@@ -480,8 +493,8 @@ static void ble_hid_gap_mark_service_changed_confirmed(void)
         s_service_changed_pending = false;
         ESP_LOGI(
             TAG,
-            "service changed confirmed for fw_version=%s; future reconnects skip GATT refresh",
-            s_service_changed_fw_version);
+            "service changed confirmed for schema_id=%s; future reconnects skip GATT refresh",
+            s_service_changed_schema_id);
     } else {
         ESP_LOGW(TAG, "service changed confirmation persist failed: %s", esp_err_to_name(ret));
     }
@@ -490,7 +503,7 @@ static void ble_hid_gap_mark_service_changed_confirmed(void)
 static void ble_hid_gap_queue_service_changed(const char *reason)
 {
     if (!ble_hid_gap_service_changed_pending()) {
-        ESP_LOGI(TAG, "service changed skipped for %s: fw_version already confirmed", reason);
+        ESP_LOGI(TAG, "service changed skipped for %s: schema already confirmed", reason);
         return;
     }
     if (s_service_changed_queued_for_conn) {
@@ -508,16 +521,16 @@ static void ble_hid_gap_queue_service_changed(const char *reason)
         BLE_HID_GAP_SERVICE_CHANGED_START_HANDLE,
         BLE_HID_GAP_SERVICE_CHANGED_END_HANDLE);
     ESP_LOGI(TAG,
-             "service changed marked for %s: attr_handle=%u fw_version=%s range=0x0001-0xffff",
+             "service changed marked for %s: attr_handle=%u schema_id=%s range=0x0001-0xffff",
              reason,
              service_changed_val_handle,
-             s_service_changed_fw_version);
+             s_service_changed_schema_id);
 }
 
 static void ble_hid_gap_indicate_service_changed(uint16_t conn_handle, const char *reason)
 {
     if (!ble_hid_gap_service_changed_pending()) {
-        ESP_LOGI(TAG, "service changed indication skipped for %s: fw_version already confirmed", reason);
+        ESP_LOGI(TAG, "service changed indication skipped for %s: schema already confirmed", reason);
         return;
     }
     if (s_service_changed_queued_for_conn) {
@@ -542,11 +555,11 @@ static void ble_hid_gap_indicate_service_changed(uint16_t conn_handle, const cha
     if (rc == 0) {
         s_service_changed_queued_for_conn = true;
         ESP_LOGI(TAG,
-                 "service changed indication sent for %s: conn_handle=%u attr_handle=%u fw_version=%s range=0x0001-0xffff",
+                 "service changed indication sent for %s: conn_handle=%u attr_handle=%u schema_id=%s range=0x0001-0xffff",
                  reason,
                  conn_handle,
                  service_changed_val_handle,
-                 s_service_changed_fw_version);
+                 s_service_changed_schema_id);
     } else {
         ESP_LOGW(TAG,
                  "service changed indication send deferred for %s: conn_handle=%u attr_handle=%u rc=%d",

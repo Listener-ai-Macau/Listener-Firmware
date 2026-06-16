@@ -234,11 +234,12 @@ def check_dis_identity(repo: Path) -> None:
     require(
         "ble_hid_gap_queue_service_changed(\"connect\")" in gap
         and "ble_hid_gap_service_changed_pending()" in gap
+        and "ble_hid_gap_stored_service_changed_schema_matches" in gap
         and "BLE_HID_GAP_GATT_SCHEMA_REV" in gap
         and "diag_export_v2" in gap
         and "nvs_get_str" in gap
         and "nvs_set_str" in gap,
-        "BLE connect path must version/schema-gate Service Changed so Windows refreshes OTA/DIS GATT once after firmware or GATT-shape updates",
+        "BLE connect path must schema-gate Service Changed so Windows refreshes OTA/DIS GATT only after GATT-shape updates",
     )
     require(
         "BLE_SVC_GATT_CHR_SERVICE_CHANGED_UUID16" in gap
@@ -247,9 +248,10 @@ def check_dis_identity(repo: Path) -> None:
         and "ble_hid_gap_indicate_service_changed(event->enc_change.conn_handle, \"encryption change\")" in gap
         and "ble_gatts_indicate_custom(conn_handle, service_changed_val_handle, om)" in gap
         and "service changed marked for %s" in gap
+        and "schema already confirmed" in gap
         and "service changed indication skipped" in gap
         and "service changed indication tx complete" in gap,
-        "BLE subscribe path must mark GATT changed on connect, then send or skip Service Changed according to the version-gated pending state",
+        "BLE subscribe path must mark GATT changed on connect, then send or skip Service Changed according to the schema-gated pending state",
     )
     require(
         "DIAG_GAP_RECOVERY" in diag
