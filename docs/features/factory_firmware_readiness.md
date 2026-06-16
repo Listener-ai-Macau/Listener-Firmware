@@ -59,3 +59,10 @@ git diff --check
 
 Hardware validation, flashing, serial capture, BLE capture, and recovery reflash
 must use the workflow hardware lock for the shortest practical action window.
+For operator recovery on Windows, double-click `tools\flash_bootloader_double_click.cmd`.
+It wraps `tools\flash_bootloader.ps1`, prompts for the COM port/confirmation,
+uses a conservative `115200` repair baud plus ROM no-stub flashing by default,
+checks `flash_id` before writing so users get a hardware/power/flash-connection
+failure instead of repeated erases when SPI flash is unreadable, and flashes only
+the ESP32-S3 bootloader at `0x0` without erasing app, NVS, pairing, or `diag_log`
+partitions.

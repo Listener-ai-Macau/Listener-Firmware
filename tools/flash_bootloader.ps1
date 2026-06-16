@@ -2,6 +2,14 @@ param(
     [string]$Port = "COMx",
     [string]$Target = "esp32s3",
     [string]$BuildDir = $env:LISTENER_IDF_BUILD_DIR,
+    [int]$Baud = 115200,
+    [ValidateSet("default_reset", "usb_reset", "no_reset", "no_reset_no_sync")]
+    [string]$Before = "default_reset",
+    [ValidateSet("hard_reset", "soft_reset", "no_reset", "no_reset_stub", "watchdog_reset")]
+    [string]$After = "hard_reset",
+    [switch]$NoStub,
+    [switch]$NoCompress,
+    [switch]$SkipFlashIdCheck,
     [switch]$DryRun
 )
 
@@ -127,18 +135,98 @@ function Invoke-CheckedCommand {
     }
 }
 
+function Invoke-CapturedCommand {
+    param(
+        [Parameter(Mandatory = $true)][string]$File,
+        [Parameter(Mandatory = $true)][string[]]$Arguments
+    )
+
+    $output = @(& $File @Arguments 2>&1)
+    $exitCode = $LASTEXITCODE
+    foreach ($line in $output) {
+        Write-Host ([string]$line)
+    }
+    if ($exitCode -ne 0) {
+        throw "$File $($Arguments -join ' ') failed with exit code $exitCode"
+    }
+    return ($output | ForEach-Object { [string]$_ }) -join [Environment]::NewLine
+}
+
+function Test-UsableFlashIdOutput {
+    param([Parameter(Mandatory = $true)][string]$Text)
+
+    if ($Text -match '(?im)^\s*Device:\s*(?:ffff|0000)\s*$') {
+        return $false
+    }
+    if ($Text -match '(?im)^\s*Manufacturer:\s*(?:ff|00)\s*$') {
+        return $false
+    }
+    if ($Text -match '(?im)^\s*Detected flash size:\s*Unknown\s*$') {
+        return $false
+    }
+    return $true
+}
+
+function Get-Sha256FileHash {
+    param([Parameter(Mandatory = $true)][string]$Path)
+
+    $resolvedPath = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($Path)
+    $getFileHash = Get-Command Get-FileHash -ErrorAction SilentlyContinue
+    if ($getFileHash) {
+        $hash = Get-FileHash -Algorithm SHA256 -LiteralPath $resolvedPath
+        return [PSCustomObject]@{
+            Path = $hash.Path
+            Hash = $hash.Hash
+        }
+    }
+
+    $sha256 = [System.Security.Cryptography.SHA256]::Create()
+    try {
+        $stream = [System.IO.File]::OpenRead($resolvedPath)
+        try {
+            $bytes = $sha256.ComputeHash($stream)
+        } finally {
+            $stream.Dispose()
+        }
+    } finally {
+        $sha256.Dispose()
+    }
+
+    return [PSCustomObject]@{
+        Path = $resolvedPath
+        Hash = (-join ($bytes | ForEach-Object { $_.ToString("X2") }))
+    }
+}
+
 $resolvedPort = Resolve-FlasherPort -RequestedPort $Port
 $buildDirResolved = Get-ShortBuildDir -ProjectRoot $projectRoot
 $bootloaderPath = Join-Path $buildDirResolved "bootloader\bootloader.bin"
+$esptoolPathForDisplay = if ([string]::IsNullOrWhiteSpace($env:IDF_PATH)) {
+    "<IDF_PATH>\components\esptool_py\esptool\esptool.py"
+} else {
+    Join-Path $env:IDF_PATH "components\esptool_py\esptool\esptool.py"
+}
 
 Write-Host "Bootloader-only flash"
 Write-Host "  Port: $resolvedPort"
 Write-Host "  Target: $Target"
+Write-Host "  Baud: $Baud"
+Write-Host "  Mode: $(if ($NoStub) { 'ROM no-stub' } else { 'IDF bootloader-flash' })"
+if ($NoStub) {
+    Write-Host "  Transfer: $(if ($NoCompress) { 'no-compress' } else { 'esptool default' })"
+}
+Write-Host "  Reset: before=$Before after=$After"
 Write-Host "  Build dir: $buildDirResolved"
-Write-Host "  Command: idf.py -B `"$buildDirResolved`" -p $resolvedPort bootloader-flash"
+if ($NoStub) {
+    Write-Host "  Build command: idf.py -B `"$buildDirResolved`" bootloader"
+    $compressDisplay = if ($NoCompress) { " --no-compress" } else { "" }
+    Write-Host "  Flash command: python `"$esptoolPathForDisplay`" --chip $Target -p $resolvedPort -b $Baud --before=$Before --after=$After --no-stub write_flash --flash_mode dio --flash_freq 80m --flash_size 16MB$compressDisplay 0x0 `"$bootloaderPath`""
+} else {
+    Write-Host "  Command: idf.py -B `"$buildDirResolved`" -p $resolvedPort -b $Baud bootloader-flash"
+}
 
 if (Test-Path -LiteralPath $bootloaderPath -PathType Leaf) {
-    $hash = Get-FileHash -Algorithm SHA256 -LiteralPath $bootloaderPath
+    $hash = Get-Sha256FileHash -Path $bootloaderPath
     Write-Host "  Current bootloader: $($hash.Path)"
     Write-Host "  Current SHA256: $($hash.Hash)"
 }
@@ -149,10 +237,51 @@ if ($DryRun) {
 }
 
 . (Join-Path $PSScriptRoot "idf_env.ps1") -Target $Target
-Invoke-CheckedCommand -File "idf.py" -Arguments @("-B", $buildDirResolved, "-p", $resolvedPort, "bootloader-flash")
+if ($NoStub) {
+    $esptoolPath = Join-Path $env:IDF_PATH "components\esptool_py\esptool\esptool.py"
+    if (-not $SkipFlashIdCheck) {
+        Write-Host "Checking SPI flash identity before write..."
+        $flashIdOutput = Invoke-CapturedCommand -File "python" -Arguments @(
+            $esptoolPath,
+            "--chip", $Target,
+            "-p", $resolvedPort,
+            "-b", ([string]$Baud),
+            "--before=$Before",
+            "--after=no_reset",
+            "--no-stub",
+            "flash_id"
+        )
+        if (-not (Test-UsableFlashIdOutput -Text $flashIdOutput)) {
+            Write-Host "ERROR: SPI flash identity is not usable. The chip connected, but flash_id returned an invalid/unknown flash device. Check USB power, cable, board power-hold, and SPI flash/module hardware before retrying."
+            exit 42
+        }
+    }
+
+    Invoke-CheckedCommand -File "idf.py" -Arguments @("-B", $buildDirResolved, "bootloader")
+    $writeFlashArgs = @(
+        $esptoolPath,
+        "--chip", $Target,
+        "-p", $resolvedPort,
+        "-b", ([string]$Baud),
+        "--before=$Before",
+        "--after=$After",
+        "--no-stub",
+        "write_flash",
+        "--flash_mode", "dio",
+        "--flash_freq", "80m",
+        "--flash_size", "16MB"
+    )
+    if ($NoCompress) {
+        $writeFlashArgs += "--no-compress"
+    }
+    $writeFlashArgs += @("0x0", $bootloaderPath)
+    Invoke-CheckedCommand -File "python" -Arguments $writeFlashArgs
+} else {
+    Invoke-CheckedCommand -File "idf.py" -Arguments @("-B", $buildDirResolved, "-p", $resolvedPort, "-b", ([string]$Baud), "bootloader-flash")
+}
 
 if (Test-Path -LiteralPath $bootloaderPath -PathType Leaf) {
-    $hash = Get-FileHash -Algorithm SHA256 -LiteralPath $bootloaderPath
+    $hash = Get-Sha256FileHash -Path $bootloaderPath
     Write-Host "Bootloader flash completed."
     Write-Host "  File: $($hash.Path)"
     Write-Host "  SHA256: $($hash.Hash)"
