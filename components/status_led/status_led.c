@@ -43,8 +43,11 @@
 #define STATUS_LED_OK_TOTAL_MS 900U
 #define STATUS_LED_OK_PEAK_MS 160U
 #define STATUS_LED_KEY_FEEDBACK_MS 240U
-#define STATUS_LED_CHARGING_BREATH_PERIOD_MS 1900U
-#define STATUS_LED_CHARGING_BREATH_MIN_PERCENT 32U
+#define STATUS_LED_CHARGING_BREATH_PERIOD_MS 3600U
+#define STATUS_LED_CHARGING_BREATH_LOW_HOLD_MS 300U
+#define STATUS_LED_CHARGING_BREATH_RISE_MS 1050U
+#define STATUS_LED_CHARGING_BREATH_HIGH_HOLD_MS 80U
+#define STATUS_LED_CHARGING_BREATH_MIN_PERCENT 1U
 #define STATUS_LED_CHARGING_BREATH_MAX_PERCENT 100U
 #define STATUS_LED_CHARGE_FULL_DEBOUNCE_MS 10000U
 #define STATUS_LED_CHARGE_FULL_MIN_MV 4050U
@@ -64,7 +67,7 @@
 #define STATUS_LED_STANDARD_PROFILE_BUDGET_MA 760U
 #define STATUS_LED_AMBIENT_PROFILE_BUDGET_MA 620U
 #define STATUS_LED_CHASE_DEFAULT_STEP_MS 250U
-#define STATUS_LED_CONTRACT_REV "status_key_isolated_charge_full_latch_battery_display_latch_v11"
+#define STATUS_LED_CONTRACT_REV "status_key_isolated_charge_natural_breath_v15"
 #define STATUS_LED_NVS_NAMESPACE "status_led"
 #define STATUS_LED_NVS_PROFILE_KEY "profile"
 #define STATUS_LED_NVS_BRIGHTNESS_KEY "brightness"
@@ -840,6 +843,63 @@ static uint8_t status_led_triangle_percent(uint32_t now_ms, uint32_t period_ms, 
     return (uint8_t)(min_percent + (range * (period_ms - phase)) / half);
 }
 
+static uint32_t status_led_smoothstep_per_mille(uint32_t position_ms, uint32_t duration_ms)
+{
+    if (duration_ms == 0U || position_ms >= duration_ms) {
+        return 1000U;
+    }
+    uint64_t x = ((uint64_t)position_ms * 1000ULL) / duration_ms;
+    uint64_t x2 = x * x;
+    uint64_t x3 = x2 * x;
+    return (uint32_t)((3ULL * x2 * 1000ULL - 2ULL * x3 + 500000ULL) / 1000000ULL);
+}
+
+static uint8_t status_led_charging_breath_lerp_percent(uint32_t eased_per_mille)
+{
+    uint32_t range =
+        (uint32_t)(STATUS_LED_CHARGING_BREATH_MAX_PERCENT -
+                   STATUS_LED_CHARGING_BREATH_MIN_PERCENT);
+    return (uint8_t)(STATUS_LED_CHARGING_BREATH_MIN_PERCENT +
+                     (range * eased_per_mille + 500U) / 1000U);
+}
+
+static uint8_t status_led_charging_breath_percent(uint32_t now_ms)
+{
+    if (STATUS_LED_CHARGING_BREATH_PERIOD_MS == 0U ||
+        STATUS_LED_CHARGING_BREATH_MAX_PERCENT <= STATUS_LED_CHARGING_BREATH_MIN_PERCENT) {
+        return STATUS_LED_CHARGING_BREATH_MAX_PERCENT;
+    }
+    uint32_t phase = now_ms % STATUS_LED_CHARGING_BREATH_PERIOD_MS;
+    if (phase < STATUS_LED_CHARGING_BREATH_LOW_HOLD_MS) {
+        return STATUS_LED_CHARGING_BREATH_MIN_PERCENT;
+    }
+    phase -= STATUS_LED_CHARGING_BREATH_LOW_HOLD_MS;
+
+    if (phase < STATUS_LED_CHARGING_BREATH_RISE_MS) {
+        uint32_t eased = status_led_smoothstep_per_mille(
+            phase,
+            STATUS_LED_CHARGING_BREATH_RISE_MS);
+        return status_led_charging_breath_lerp_percent(eased);
+    }
+    phase -= STATUS_LED_CHARGING_BREATH_RISE_MS;
+
+    if (phase < STATUS_LED_CHARGING_BREATH_HIGH_HOLD_MS) {
+        return STATUS_LED_CHARGING_BREATH_MAX_PERCENT;
+    }
+    phase -= STATUS_LED_CHARGING_BREATH_HIGH_HOLD_MS;
+
+    uint32_t fall_ms =
+        STATUS_LED_CHARGING_BREATH_PERIOD_MS -
+        STATUS_LED_CHARGING_BREATH_LOW_HOLD_MS -
+        STATUS_LED_CHARGING_BREATH_RISE_MS -
+        STATUS_LED_CHARGING_BREATH_HIGH_HOLD_MS;
+    if (fall_ms == 0U || phase >= fall_ms) {
+        return STATUS_LED_CHARGING_BREATH_MIN_PERCENT;
+    }
+    uint32_t eased = status_led_smoothstep_per_mille(phase, fall_ms);
+    return status_led_charging_breath_lerp_percent(1000U - eased);
+}
+
 static bool status_led_blink_on(uint32_t now_ms, uint32_t on_ms, uint32_t off_ms)
 {
     uint32_t period = on_ms + off_ms;
@@ -1177,11 +1237,7 @@ static void status_led_render_power_locked(status_led_frame_t *frame, uint32_t n
                 ? STATUS_LED_FULL_STATUS_STEADY_PERCENT
                 : STATUS_LED_FULL_STEADY_PERCENT;
         } else {
-            percent = status_led_triangle_percent(
-                now_ms,
-                STATUS_LED_CHARGING_BREATH_PERIOD_MS,
-                STATUS_LED_CHARGING_BREATH_MIN_PERCENT,
-                STATUS_LED_CHARGING_BREATH_MAX_PERCENT);
+            percent = status_led_charging_breath_percent(now_ms);
         }
         color = status_led_token_locked(status_led_rgb(255, 255, 255), percent, false);
     } else if (s_state.battery_valid) {
