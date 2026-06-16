@@ -43,7 +43,9 @@
 #define STATUS_LED_OK_TOTAL_MS 900U
 #define STATUS_LED_OK_PEAK_MS 160U
 #define STATUS_LED_KEY_FEEDBACK_MS 240U
-#define STATUS_LED_CHARGING_BREATH_PERIOD_MS 2200U
+#define STATUS_LED_CHARGING_BREATH_PERIOD_MS 2600U
+#define STATUS_LED_CHARGING_BREATH_LOW_HOLD_MS 450U
+#define STATUS_LED_CHARGING_BREATH_HIGH_HOLD_MS 120U
 #define STATUS_LED_CHARGING_BREATH_MIN_PERCENT 1U
 #define STATUS_LED_CHARGING_BREATH_MAX_PERCENT 100U
 #define STATUS_LED_CHARGE_FULL_DEBOUNCE_MS 10000U
@@ -63,7 +65,7 @@
 #define STATUS_LED_STANDARD_PROFILE_BUDGET_MA 760U
 #define STATUS_LED_AMBIENT_PROFILE_BUDGET_MA 620U
 #define STATUS_LED_CHASE_DEFAULT_STEP_MS 250U
-#define STATUS_LED_CONTRACT_REV "status_key_isolated_charge_deeper_breath_v13"
+#define STATUS_LED_CONTRACT_REV "status_key_isolated_charge_valley_hold_v14"
 #define STATUS_LED_NVS_NAMESPACE "status_led"
 #define STATUS_LED_NVS_PROFILE_KEY "profile"
 #define STATUS_LED_NVS_BRIGHTNESS_KEY "brightness"
@@ -444,21 +446,44 @@ static uint8_t status_led_triangle_percent(uint32_t now_ms, uint32_t period_ms, 
     return (uint8_t)(min_percent + (range * (period_ms - phase)) / half);
 }
 
-static uint8_t status_led_eased_triangle_percent(uint32_t now_ms, uint32_t period_ms, uint8_t min_percent, uint8_t max_percent)
+static uint8_t status_led_charging_breath_percent(uint32_t now_ms)
 {
-    if (period_ms == 0 || max_percent <= min_percent) {
-        return max_percent;
+    if (STATUS_LED_CHARGING_BREATH_PERIOD_MS == 0U ||
+        STATUS_LED_CHARGING_BREATH_MAX_PERCENT <= STATUS_LED_CHARGING_BREATH_MIN_PERCENT) {
+        return STATUS_LED_CHARGING_BREATH_MAX_PERCENT;
     }
-    uint32_t half = period_ms / 2U;
-    if (half == 0U) {
-        return max_percent;
+    uint32_t phase = now_ms % STATUS_LED_CHARGING_BREATH_PERIOD_MS;
+    if (phase < STATUS_LED_CHARGING_BREATH_LOW_HOLD_MS) {
+        return STATUS_LED_CHARGING_BREATH_MIN_PERCENT;
     }
-    uint32_t phase = now_ms % period_ms;
-    uint32_t ramp = phase <= half ? phase : (period_ms - phase);
-    uint32_t linear = (100U * ramp) / half;
+    phase -= STATUS_LED_CHARGING_BREATH_LOW_HOLD_MS;
+    uint32_t ramp_ms =
+        (STATUS_LED_CHARGING_BREATH_PERIOD_MS -
+         STATUS_LED_CHARGING_BREATH_LOW_HOLD_MS -
+         STATUS_LED_CHARGING_BREATH_HIGH_HOLD_MS) / 2U;
+    if (ramp_ms == 0U) {
+        return STATUS_LED_CHARGING_BREATH_MAX_PERCENT;
+    }
+    uint32_t range =
+        (uint32_t)(STATUS_LED_CHARGING_BREATH_MAX_PERCENT -
+                   STATUS_LED_CHARGING_BREATH_MIN_PERCENT);
+
+    if (phase < ramp_ms) {
+        uint32_t linear = (100U * phase) / ramp_ms;
+        uint32_t eased = (linear * linear + 50U) / 100U;
+        return (uint8_t)(STATUS_LED_CHARGING_BREATH_MIN_PERCENT + (range * eased) / 100U);
+    }
+    phase -= ramp_ms;
+    if (phase < STATUS_LED_CHARGING_BREATH_HIGH_HOLD_MS) {
+        return STATUS_LED_CHARGING_BREATH_MAX_PERCENT;
+    }
+    phase -= STATUS_LED_CHARGING_BREATH_HIGH_HOLD_MS;
+    if (phase >= ramp_ms) {
+        return STATUS_LED_CHARGING_BREATH_MIN_PERCENT;
+    }
+    uint32_t linear = (100U * (ramp_ms - phase)) / ramp_ms;
     uint32_t eased = (linear * linear + 50U) / 100U;
-    uint32_t range = (uint32_t)(max_percent - min_percent);
-    return (uint8_t)(min_percent + (range * eased) / 100U);
+    return (uint8_t)(STATUS_LED_CHARGING_BREATH_MIN_PERCENT + (range * eased) / 100U);
 }
 
 static bool status_led_blink_on(uint32_t now_ms, uint32_t on_ms, uint32_t off_ms)
@@ -798,11 +823,7 @@ static void status_led_render_power_locked(status_led_frame_t *frame, uint32_t n
                 ? STATUS_LED_FULL_STATUS_STEADY_PERCENT
                 : STATUS_LED_FULL_STEADY_PERCENT;
         } else {
-            percent = status_led_eased_triangle_percent(
-                now_ms,
-                STATUS_LED_CHARGING_BREATH_PERIOD_MS,
-                STATUS_LED_CHARGING_BREATH_MIN_PERCENT,
-                STATUS_LED_CHARGING_BREATH_MAX_PERCENT);
+            percent = status_led_charging_breath_percent(now_ms);
         }
         color = status_led_token_locked(status_led_rgb(255, 255, 255), percent, false);
     } else if (s_state.battery_valid) {
