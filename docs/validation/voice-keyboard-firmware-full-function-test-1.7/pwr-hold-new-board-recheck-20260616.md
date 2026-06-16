@@ -15,6 +15,7 @@ FAIL for real hardware power-off. Firmware now uses the latest physical board co
 
 - `final-post-flash-status-20260616-1209/status.txt`: final flashed firmware reports `pwr_hold_gpio=9`, `battery_gpio=10`, both current telemetry rows `present=0 gpio=-1`, and `auto_shutdown_ms=1800000`.
 - `pwr-hold-new-board-gpio9-direct-20260616-1152/pwr_hold_high_transcript.txt`: direct `~BOARD:PWR-HOLD:HIGH` on the GPIO9 firmware returns `ESP_ERR_INVALID_STATE`; GPIO9 remains low and firmware restores runtime low.
+- `pwr-hold-new-board-gpio9-rerun-20260616-1215/pwr_hold_high_rerun.txt`: after the board was replugged and powered on again, `~BOARD:STATUS` still reports `pwr_hold_gpio=9`; direct `~BOARD:PWR-HOLD:HIGH` again returns `ESP_ERR_INVALID_STATE`, with `before_level=low` and `after_level=low`.
 - `battery-only-auto-shutdown-resume-20260616-1202/diag_log_ai_bundle.json`: battery-only idle reaches `power_sleep_entry` after about 61 seconds with `shutdown_reason=long_idle`, but `power_hold_state action=shutdown_drive_high` records `level=unknown`, then `shutdown_failed_restore`, `power_sleep_blocked`, and shutdown-failure backoff.
 - `pwr-hold-new-board-20260616-113854/` shows the pre-fix stale GPIO11 behavior.
 - `pwr-hold-new-board-20260616-114418/` shows the GPIO9 firmware still failing `PWR_HOLD` high readback while USB is attached.
