@@ -26,7 +26,59 @@ $null = [Windows.Devices.Bluetooth.GenericAttributeProfile.GattReadResult, Windo
 $null = [Windows.Devices.Enumeration.DeviceInformation, Windows.Devices.Enumeration, ContentType = WindowsRuntime]
 $null = [Windows.Security.Cryptography.CryptographicBuffer, Windows.Security.Cryptography, ContentType = WindowsRuntime]
 $null = [Windows.Security.Cryptography.BinaryStringEncoding, Windows.Security.Cryptography, ContentType = WindowsRuntime]
+$null = [Windows.Storage.Streams.IBuffer, Windows.Storage.Streams, ContentType = WindowsRuntime]
 $null = [Windows.Storage.Streams.DataReader, Windows.Storage.Streams, ContentType = WindowsRuntime]
+
+$script:WinRtBufferAccessAvailable = $false
+try {
+    if ($null -eq ("WinRtBufferAccess" -as [type])) {
+        Add-Type -Language CSharp -TypeDefinition @"
+using System;
+using System.Runtime.InteropServices;
+
+[ComImport]
+[Guid("905a0fe0-bc53-11df-8c49-001e4fc686da")]
+[InterfaceType(ComInterfaceType.InterfaceIsIInspectable)]
+interface IWinRtBuffer
+{
+    uint Capacity { get; }
+    uint Length { get; set; }
+}
+
+[ComImport]
+[Guid("905a0fef-bc53-11df-8c49-001e4fc686da")]
+[InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+interface IBufferByteAccess
+{
+    void Buffer(out IntPtr value);
+}
+
+public static class WinRtBufferAccess
+{
+    public static byte[] ToBytes(object buffer)
+    {
+        if (buffer == null) {
+            return new byte[0];
+        }
+        var ibuffer = (IWinRtBuffer)buffer;
+        var length = checked((int)ibuffer.Length);
+        if (length <= 0) {
+            return new byte[0];
+        }
+        var access = (IBufferByteAccess)buffer;
+        IntPtr ptr;
+        access.Buffer(out ptr);
+        var bytes = new byte[length];
+        Marshal.Copy(ptr, bytes, 0, length);
+        return bytes;
+    }
+}
+"@
+    }
+    $script:WinRtBufferAccessAvailable = $true
+} catch {
+    $script:WinRtBufferAccessAvailable = $false
+}
 
 function Invoke-WinRtAsync {
     param(
@@ -102,15 +154,129 @@ function Get-CollectionItems {
     }
 }
 
+function Open-BleDeviceByAddress {
+    param([Parameter(Mandatory = $true)][UInt64]$Address)
+
+    $device = Invoke-WinRtAsync `
+        -AsyncOp ([Windows.Devices.Bluetooth.BluetoothLEDevice]::FromBluetoothAddressAsync($Address)) `
+        -ResultType ([Windows.Devices.Bluetooth.BluetoothLEDevice]) `
+        -TimeoutMs ($TimeoutSeconds * 1000)
+    if ($null -eq $device -or [string]::IsNullOrWhiteSpace($device.DeviceId)) {
+        return $device
+    }
+
+    $deviceById = Invoke-WinRtAsync `
+        -AsyncOp ([Windows.Devices.Bluetooth.BluetoothLEDevice]::FromIdAsync($device.DeviceId)) `
+        -ResultType ([Windows.Devices.Bluetooth.BluetoothLEDevice]) `
+        -TimeoutMs ($TimeoutSeconds * 1000)
+    if ($null -ne $deviceById) {
+        return $deviceById
+    }
+    return $device
+}
+
+function Resolve-GattServiceFromDevice {
+    param(
+        [Parameter(Mandatory = $true)][object]$Device,
+        [Parameter(Mandatory = $true)][Guid]$Uuid
+    )
+
+    foreach ($mode in @(
+        [Windows.Devices.Bluetooth.BluetoothCacheMode]::Uncached,
+        [Windows.Devices.Bluetooth.BluetoothCacheMode]::Cached
+    )) {
+        try {
+            $result = Invoke-WinRtAsync `
+                -AsyncOp ($Device.GetGattServicesForUuidAsync($Uuid, $mode)) `
+                -ResultType ([Windows.Devices.Bluetooth.GenericAttributeProfile.GattDeviceServicesResult]) `
+                -TimeoutMs ($TimeoutSeconds * 1000)
+            $services = @(Get-CollectionItems -Collection $result.Services)
+            if ($result.Status.ToString() -eq "Success" -and $services.Count -gt 0) {
+                return [pscustomobject]@{
+                    service = $services[0]
+                    source = "device_$($mode.ToString())"
+                    status = $result.Status.ToString()
+                    count = $services.Count
+                }
+            }
+        } catch {
+        }
+    }
+
+    return $null
+}
+
+function Convert-ToIBuffer {
+    param([object]$Buffer)
+
+    if ($null -eq $Buffer) {
+        return $null
+    }
+    try {
+        return [Windows.Storage.Streams.IBuffer]$Buffer
+    } catch {
+        return $Buffer
+    }
+}
+
+function Convert-HexStringToBytes {
+    param([string]$Hex)
+
+    if ([string]::IsNullOrWhiteSpace($Hex) -or ($Hex.Length % 2) -ne 0) {
+        return [byte[]]@()
+    }
+    [byte[]]$bytes = New-Object byte[] ($Hex.Length / 2)
+    for ($i = 0; $i -lt $bytes.Length; $i++) {
+        $bytes[$i] = [Convert]::ToByte($Hex.Substring($i * 2, 2), 16)
+    }
+    return $bytes
+}
+
+function Convert-BufferToHexString {
+    param([object]$Buffer)
+
+    if ($null -eq $Buffer) {
+        return ""
+    }
+    foreach ($candidate in @($Buffer, (Convert-ToIBuffer -Buffer $Buffer))) {
+        if ($null -eq $candidate) {
+            continue
+        }
+        try {
+            $hex = [Windows.Security.Cryptography.CryptographicBuffer]::EncodeToHexString($candidate)
+            if (-not [string]::IsNullOrWhiteSpace($hex)) {
+                return $hex
+            }
+        } catch {
+        }
+    }
+    return ""
+}
+
 function Convert-BufferToBytes {
     param([object]$Buffer)
 
     if ($null -eq $Buffer) {
         return [byte[]]@()
     }
+    if ($script:WinRtBufferAccessAvailable) {
+        try {
+            [byte[]]$bytes = [WinRtBufferAccess]::ToBytes($Buffer)
+            if ($null -ne $bytes -and $bytes.Length -gt 0) {
+                return $bytes
+            }
+        } catch {
+        }
+    }
+    $readBuffer = Convert-ToIBuffer -Buffer $Buffer
+    $hex = Convert-BufferToHexString -Buffer $Buffer
+    if (-not [string]::IsNullOrWhiteSpace($hex)) {
+        return Convert-HexStringToBytes -Hex $hex
+    }
+
     $length = 0
     try {
-        $length = [int]$Buffer.Length
+        $length = [int]$readBuffer.Length
     } catch {
     }
     if ($length -le 0) {
@@ -119,7 +285,7 @@ function Convert-BufferToBytes {
 
     try {
         return [System.Runtime.InteropServices.WindowsRuntime.WindowsRuntimeBufferExtensions]::ToArray(
-            $Buffer,
+            $readBuffer,
             [uint32]0,
             $length)
     } catch {
@@ -127,14 +293,14 @@ function Convert-BufferToBytes {
 
     try {
         [byte[]]$bytes = New-Object byte[] $length
-        [System.Runtime.InteropServices.WindowsRuntime.WindowsRuntimeBufferExtensions]::CopyTo($Buffer, $bytes)
+        [System.Runtime.InteropServices.WindowsRuntime.WindowsRuntimeBufferExtensions]::CopyTo($readBuffer, $bytes)
         return $bytes
     } catch {
     }
 
     try {
         [byte[]]$bytes = $null
-        [Windows.Security.Cryptography.CryptographicBuffer]::CopyToByteArray($Buffer, [ref]$bytes)
+        [Windows.Security.Cryptography.CryptographicBuffer]::CopyToByteArray($readBuffer, [ref]$bytes)
         if ($null -ne $bytes) {
             return $bytes
         }
@@ -142,7 +308,7 @@ function Convert-BufferToBytes {
     }
 
     try {
-        $reader = [Windows.Storage.Streams.DataReader]::FromBuffer($Buffer)
+        $reader = [Windows.Storage.Streams.DataReader]::FromBuffer($readBuffer)
         [byte[]]$bytes = New-Object byte[] ([int]$reader.UnconsumedBufferLength)
         $reader.ReadBytes($bytes)
         $reader.Dispose()
@@ -159,10 +325,11 @@ function Convert-BufferToUtf8FromBuffer {
     if ($null -eq $Buffer) {
         return ""
     }
+    $readBuffer = Convert-ToIBuffer -Buffer $Buffer
     try {
         return [Windows.Security.Cryptography.CryptographicBuffer]::ConvertBinaryToString(
             [Windows.Security.Cryptography.BinaryStringEncoding]::Utf8,
-            $Buffer)
+            $readBuffer)
     } catch {
         return ""
     }
@@ -351,29 +518,50 @@ $probe = [ordered]@{
         })
     service_info_count = $infoItems.Count
     selected_service_id = $null
+    selected_service_source = $null
     device_connection_status = $null
     characteristics = @()
     dis = @()
 }
 
-if ($null -eq $matchingInfo) {
-    $probe.error = "OTA service not found by AQS selector."
-    $probe | ConvertTo-Json -Depth 8
-    exit 1
-}
-
-$probe.selected_service_id = $matchingInfo.Id
-$service = Invoke-WinRtAsync `
-    -AsyncOp ([Windows.Devices.Bluetooth.GenericAttributeProfile.GattDeviceService]::FromIdAsync($matchingInfo.Id)) `
-    -ResultType ([Windows.Devices.Bluetooth.GenericAttributeProfile.GattDeviceService]) `
-    -TimeoutMs ($TimeoutSeconds * 1000)
-$device = $service.DeviceId.ToString()
-$bleDevice = Invoke-WinRtAsync `
-    -AsyncOp ([Windows.Devices.Bluetooth.BluetoothLEDevice]::FromIdAsync($device)) `
-    -ResultType ([Windows.Devices.Bluetooth.BluetoothLEDevice]) `
-    -TimeoutMs ($TimeoutSeconds * 1000)
+$bleDevice = Open-BleDeviceByAddress -Address $address
 if ($bleDevice) {
     $probe.device_connection_status = $bleDevice.ConnectionStatus.ToString()
+}
+
+$service = $null
+if ($bleDevice) {
+    $resolvedService = Resolve-GattServiceFromDevice -Device $bleDevice -Uuid $ServiceUuid
+    if ($resolvedService) {
+        $service = $resolvedService.service
+        $probe.selected_service_id = $service.DeviceId
+        $probe.selected_service_source = $resolvedService.source
+    }
+}
+
+if ($null -eq $service) {
+    if ($null -eq $matchingInfo) {
+        $probe.error = "OTA service not found by direct Bluetooth address or AQS selector."
+        $probe | ConvertTo-Json -Depth 8
+        exit 1
+    }
+
+    $probe.selected_service_id = $matchingInfo.Id
+    $probe.selected_service_source = "aqs_service_id"
+    $service = Invoke-WinRtAsync `
+        -AsyncOp ([Windows.Devices.Bluetooth.GenericAttributeProfile.GattDeviceService]::FromIdAsync($matchingInfo.Id)) `
+        -ResultType ([Windows.Devices.Bluetooth.GenericAttributeProfile.GattDeviceService]) `
+        -TimeoutMs ($TimeoutSeconds * 1000)
+    if ($null -eq $bleDevice) {
+        $device = $service.DeviceId.ToString()
+        $bleDevice = Invoke-WinRtAsync `
+            -AsyncOp ([Windows.Devices.Bluetooth.BluetoothLEDevice]::FromIdAsync($device)) `
+            -ResultType ([Windows.Devices.Bluetooth.BluetoothLEDevice]) `
+            -TimeoutMs ($TimeoutSeconds * 1000)
+        if ($bleDevice) {
+            $probe.device_connection_status = $bleDevice.ConnectionStatus.ToString()
+        }
+    }
 }
 
 $probe.characteristics = @(
