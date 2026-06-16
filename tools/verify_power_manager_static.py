@@ -563,7 +563,7 @@ def main() -> int:
         failures.append(
             "components/power_manager/power_manager.c: shutdown failure must not stay in a silent watchdog-fed loop"
         )
-    if "POWER_MANAGER_POWER_REMOVAL_WAIT_MS 750U" not in power_manager:
+    if "POWER_MANAGER_POWER_REMOVAL_WAIT_MS 10000U" not in power_manager:
         failures.append(
             "components/power_manager/power_manager.c: shutdown power-removal observation window must be explicit and bounded"
         )
@@ -595,7 +595,7 @@ def main() -> int:
             "components/power_manager/power_manager.c: PWR_HOLD drive-high/readback failure must use the shutdown restore path"
         )
     if not re.search(
-        r"vTaskDelay\(pdMS_TO_TICKS\(POWER_MANAGER_POWER_REMOVAL_WAIT_MS\)\)[\s\S]*"
+        r"watchdog_platform_delay_ms\(POWER_MANAGER_POWER_REMOVAL_WAIT_MS\)[\s\S]*"
         r"hardware shutdown did not remove power[\s\S]*"
         r"power_manager_restore_after_shutdown_failure\(reason,\s*final_idle_ms,\s*ESP_FAIL\)",
         power_manager,

@@ -24,7 +24,8 @@ static const char *TAG = "board";
 #define BOARD_V2_PWR_HOLD_POLICY "v2_gpio9_power_latch_runtime_low_drive_high_for_hardware_shutdown"
 #define BOARD_V2_LED_POLICY "v2_four_zone_ws2812_status_gpio1_ec11_gpio5_key_gpio13_edge_gpio4"
 #define BOARD_V2_MIC_POLICY "v2_sph0655_pdm_clk_gpio48_dout_gpio47_enabled_for_a1_a2_hardware_validation"
-#define BOARD_PWR_HOLD_RELEASE_SETTLE_MS 500U
+#define BOARD_PWR_HOLD_SHUTDOWN_MIN_HIGH_MS 10000U
+#define BOARD_PWR_HOLD_RELEASE_SETTLE_MS 15000U
 #define BOARD_PWR_HOLD_RELEASE_POLL_MS 25U
 #if BOARD_PINS_CURRENT_TELEMETRY_PRESENT
 #define BOARD_V2_CURRENT_POLICY "v2_battery_side_input_branch_current_ina180a2_10mR_adc_mv_x2_with_battery_mv_from_gpio10_div2"
@@ -243,33 +244,59 @@ static esp_err_t board_verify_power_hold_readback(const char *action, int reques
 static esp_err_t board_wait_power_hold_readback(const char *action, int requested_level)
 {
     esp_err_t last_ret = ESP_FAIL;
+    bool saw_requested_level = false;
+    uint32_t first_seen_ms = 0;
     for (uint32_t elapsed_ms = 0; elapsed_ms <= BOARD_PWR_HOLD_RELEASE_SETTLE_MS;
          elapsed_ms += BOARD_PWR_HOLD_RELEASE_POLL_MS) {
         if (elapsed_ms > 0) {
-            vTaskDelay(pdMS_TO_TICKS(BOARD_PWR_HOLD_RELEASE_POLL_MS));
+            watchdog_platform_delay_ms(BOARD_PWR_HOLD_RELEASE_POLL_MS);
+        } else {
+            watchdog_platform_feed_current_task();
         }
         int actual_level = board_read_gpio_level(BOARD_PINS_PWR_HOLD_IO);
         if (actual_level == requested_level) {
-            ESP_LOGI(
-                TAG,
-                "PWR_HOLD/GPIO9 %s settled: gpio=%d requested_level=%d actual_level=%d elapsed_ms=%" PRIu32
-                " policy=%s",
-                action != NULL ? action : "unknown",
-                (int)BOARD_PINS_PWR_HOLD_IO,
-                requested_level,
-                actual_level,
-                elapsed_ms,
-                BOARD_V2_PWR_HOLD_POLICY);
-            return ESP_OK;
+            if (!saw_requested_level) {
+                saw_requested_level = true;
+                first_seen_ms = elapsed_ms;
+                ESP_LOGI(
+                    TAG,
+                    "PWR_HOLD/GPIO9 %s observed requested level: gpio=%d requested_level=%d actual_level=%d elapsed_ms=%" PRIu32
+                    " min_high_ms=%u policy=%s",
+                    action != NULL ? action : "unknown",
+                    (int)BOARD_PINS_PWR_HOLD_IO,
+                    requested_level,
+                    actual_level,
+                    elapsed_ms,
+                    (unsigned)BOARD_PWR_HOLD_SHUTDOWN_MIN_HIGH_MS,
+                    BOARD_V2_PWR_HOLD_POLICY);
+            }
+            if (elapsed_ms >= BOARD_PWR_HOLD_SHUTDOWN_MIN_HIGH_MS) {
+                ESP_LOGI(
+                    TAG,
+                    "PWR_HOLD/GPIO9 %s settled after minimum high hold: gpio=%d requested_level=%d actual_level=%d elapsed_ms=%" PRIu32
+                    " first_seen_ms=%" PRIu32 " policy=%s",
+                    action != NULL ? action : "unknown",
+                    (int)BOARD_PINS_PWR_HOLD_IO,
+                    requested_level,
+                    actual_level,
+                    elapsed_ms,
+                    first_seen_ms,
+                    BOARD_V2_PWR_HOLD_POLICY);
+                return ESP_OK;
+            }
+            last_ret = ESP_OK;
+        } else {
+            last_ret = actual_level < 0 ? ESP_FAIL : ESP_ERR_INVALID_STATE;
         }
-        last_ret = actual_level < 0 ? ESP_FAIL : ESP_ERR_INVALID_STATE;
     }
 
     ESP_LOGE(
         TAG,
-        "PWR_HOLD/GPIO9 %s did not settle high within %u ms; check latch wiring or external load",
+        "PWR_HOLD/GPIO9 %s did not settle high within %u ms after min_high_ms=%u; saw_requested_level=%u check latch wiring, capacitor charge time, or external load",
         action != NULL ? action : "unknown",
-        (unsigned)BOARD_PWR_HOLD_RELEASE_SETTLE_MS);
+        (unsigned)BOARD_PWR_HOLD_RELEASE_SETTLE_MS,
+        (unsigned)BOARD_PWR_HOLD_SHUTDOWN_MIN_HIGH_MS,
+        saw_requested_level ? 1u : 0u);
     return last_ret;
 }
 

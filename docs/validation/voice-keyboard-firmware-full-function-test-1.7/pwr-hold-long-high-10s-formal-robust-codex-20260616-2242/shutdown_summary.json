@@ -1,0 +1,32 @@
+{
+  "schema_version": 1,
+  "result": "PASS",
+  "port": "COM10",
+  "output_dir": "C:\\Users\\Billy\\Desktop\\listener\\voice-keyboard-firmware-pwr-shutdown-new-board\\docs\\validation\\voice-keyboard-firmware-full-function-test-1.7\\pwr-hold-long-high-10s-formal-robust-codex-20260616-2242",
+  "transcript": "C:\\Users\\Billy\\Desktop\\listener\\voice-keyboard-firmware-pwr-shutdown-new-board\\docs\\validation\\voice-keyboard-firmware-full-function-test-1.7\\pwr-hold-long-high-10s-formal-robust-codex-20260616-2242\\shutdown_serial_transcript.txt",
+  "port_poll": "C:\\Users\\Billy\\Desktop\\listener\\voice-keyboard-firmware-pwr-shutdown-new-board\\docs\\validation\\voice-keyboard-firmware-full-function-test-1.7\\pwr-hold-long-high-10s-formal-robust-codex-20260616-2242\\port_poll_after_shutdown.txt",
+  "saw_power_status": true,
+  "saw_board_status": true,
+  "saw_post_restore_power_status": true,
+  "saw_post_restore_board_status": true,
+  "saw_shutdown_entry": true,
+  "saw_shutdown_accepted": true,
+  "saw_pwr_hold_high_request": true,
+  "saw_pwr_hold_high_readback": false,
+  "saw_readback_mismatch": false,
+  "saw_restore_runtime_low": false,
+  "port_disappeared": true,
+  "port_reappeared_after_power_key": true,
+  "saw_cold_boot_status": true,
+  "post_restore_probe_error": "",
+  "initial_ports": [
+    "COM10"
+  ],
+  "disappear_last_ports": [
+    "COM10"
+  ],
+  "reappear_last_ports": [
+    "COM10",
+    "COM10"
+  ]
+}

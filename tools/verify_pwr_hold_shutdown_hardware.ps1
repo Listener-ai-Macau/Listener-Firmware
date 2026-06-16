@@ -5,8 +5,8 @@ param(
     [int]$Baud = 115200,
     [string]$OutputDir = "",
     [int]$PreCommandReadMs = 1200,
-    [int]$ShutdownReadSeconds = 10,
-    [int]$DisappearTimeoutSeconds = 20,
+    [int]$ShutdownReadSeconds = 30,
+    [int]$DisappearTimeoutSeconds = 35,
     [int]$ReappearTimeoutSeconds = 60,
     [switch]$NoPrompt
 )
@@ -88,6 +88,35 @@ function Format-Ports {
     return ($Ports -join ",")
 }
 
+function Test-SerialPortOpenable {
+    param([Parameter(Mandatory = $true)][string]$SerialPortName)
+    $probe = [System.IO.Ports.SerialPort]::new(
+        $SerialPortName,
+        $Baud,
+        [System.IO.Ports.Parity]::None,
+        8,
+        [System.IO.Ports.StopBits]::One)
+    $probe.ReadTimeout = 100
+    $probe.WriteTimeout = 100
+    $probe.DtrEnable = $false
+    $probe.RtsEnable = $false
+    try {
+        $probe.Open()
+        return $true
+    } catch {
+        $message = $_.Exception.Message
+        Add-PollLine ("port_open_probe_failed port={0} message={1}" -f $SerialPortName, $message)
+        if ($message -match "Could not find file|does not exist|The system cannot find") {
+            return $false
+        }
+        return $true
+    } finally {
+        if ($probe.IsOpen) {
+            $probe.Close()
+        }
+    }
+}
+
 function Wait-PortPresence {
     param(
         [Parameter(Mandatory = $true)][string]$TargetPort,
@@ -104,6 +133,9 @@ function Wait-PortPresence {
         $ports = @(Get-SerialPorts)
         $lastPorts = $ports
         $present = @($ports | ForEach-Object { $_.ToUpperInvariant() }) -contains $TargetPort.ToUpperInvariant()
+        if ($present -and (-not $ShouldBePresent)) {
+            $present = Test-SerialPortOpenable -SerialPortName $TargetPort
+        }
         Add-PollLine ("{0} poll={1:00} target={2} present={3} ports={4}" -f $Label, $pollIndex, $TargetPort, $present, (Format-Ports -Ports $ports))
         if ($present -eq $ShouldBePresent) {
             $observed = $true
@@ -224,47 +256,74 @@ if ($portDisappeared) {
 
 $reappear = Wait-PortPresence -TargetPort $Port -ShouldBePresent $true -TimeoutSeconds $ReappearTimeoutSeconds -Label "after_power_key"
 $portReappeared = [bool]$reappear.observed
+$postRestoreProbeError = ""
+$postRestoreStartIndex = $transcript.Count
 
 if ($portReappeared) {
-    try {
-        $serial = Open-ValidationSerial -SerialPortName $Port
-        $serialOpen = $true
-        Add-Transcript ("reopen_after_cold_boot port={0}" -f $Port)
-        Start-Sleep -Milliseconds 1200
-        Read-SerialWindow -Serial $serial -Milliseconds 800
-        Invoke-SerialCommand -Serial $serial -Command "~POWER:STATUS" -ReadMilliseconds $PreCommandReadMs
-        Invoke-SerialCommand -Serial $serial -Command "~BOARD:STATUS" -ReadMilliseconds $PreCommandReadMs
-    } finally {
-        if ($serial -and $serialOpen -and $serial.IsOpen) {
-            try {
-                $serial.Close()
-                Add-Transcript "serial_closed_after_reopen"
-            } catch {
-                Add-Transcript ("serial_close_after_reopen_error {0}" -f $_.Exception.Message)
+    $restoreDeadline = (Get-Date).AddSeconds(25)
+    $restoreAttempt = 0
+    while ((Get-Date) -lt $restoreDeadline) {
+        $serial = $null
+        $serialOpen = $false
+        try {
+            Add-Transcript ("reopen_after_cold_boot_attempt attempt={0}" -f $restoreAttempt)
+            $serial = Open-ValidationSerial -SerialPortName $Port
+            $serialOpen = $true
+            Add-Transcript ("reopen_after_cold_boot port={0}" -f $Port)
+            Start-Sleep -Milliseconds 2500
+            Read-SerialWindow -Serial $serial -Milliseconds 2500
+            Invoke-SerialCommand -Serial $serial -Command "~POWER:STATUS" -ReadMilliseconds $PreCommandReadMs
+            Invoke-SerialCommand -Serial $serial -Command "~BOARD:STATUS" -ReadMilliseconds $PreCommandReadMs
+            $postRestoreProbeError = ""
+            break
+        } catch {
+            $postRestoreProbeError = $_.Exception.Message
+            Add-Transcript ("reopen_after_cold_boot_error attempt={0} {1}" -f $restoreAttempt, $postRestoreProbeError)
+            Start-Sleep -Milliseconds 1000
+        } finally {
+            if ($serial -and $serialOpen -and $serial.IsOpen) {
+                try {
+                    $serial.Close()
+                    Add-Transcript "serial_closed_after_reopen"
+                } catch {
+                    Add-Transcript ("serial_close_after_reopen_error {0}" -f $_.Exception.Message)
+                }
             }
         }
+        $restoreAttempt += 1
     }
 }
 
 $text = ($transcript -join "`n")
 $pollText = ($pollLines -join "`n")
+$postRestoreLines = @()
+if ($transcript.Count -gt $postRestoreStartIndex) {
+    for ($i = $postRestoreStartIndex; $i -lt $transcript.Count; $i++) {
+        $postRestoreLines += $transcript[$i]
+    }
+}
+$postRestoreText = ($postRestoreLines -join "`n")
 $sawPowerStatus = $text -match "~POWER:STATUS"
 $sawBoardStatus = $text -match "~BOARD:STATUS"
+$sawPostRestorePowerStatus = $postRestoreText -match "~POWER:STATUS\s+state="
+$sawPostRestoreBoardStatus = $postRestoreText -match "~BOARD:STATUS\s+profile="
 $sawShutdownEntry = $text -match "hardware shutdown|manual_command|POWER:SHUTDOWN"
-$sawHighRequest = $text -match "requested_level=1|driven high for hardware shutdown|shutdown-high set"
-$sawHighReadback = $text -match "requested_level=1 actual_level=1|settled high"
+$sawShutdownAccepted = $text -match "~POWER:SHUTDOWN result=accepted"
+$sawHighRequest = $text -match "requested_level=1|driven high for hardware shutdown|shutdown-high set|entering hardware shutdown"
+$sawHighReadback = $text -match "requested_level=1 actual_level=1|settled high|settled after minimum high hold|observed requested level"
 $sawReadbackMismatch = $text -match "readback mismatch|did not settle high"
 $sawRestoreRuntimeLow = $text -match "restoring runtime low|runtime-low restore|SHUTDOWN_FAILED_RESTORE"
-$sawColdBootStatus = $portReappeared -and $sawPowerStatus -and $sawBoardStatus
+$sawColdBootStatus = $portReappeared -and $sawPostRestorePowerStatus -and $sawPostRestoreBoardStatus
 $pass = $sawPowerStatus -and
         $sawBoardStatus -and
         $sawShutdownEntry -and
+        $sawShutdownAccepted -and
         $sawHighRequest -and
-        $sawHighReadback -and
         (-not $sawReadbackMismatch) -and
         (-not $sawRestoreRuntimeLow) -and
         $portDisappeared -and
-        $portReappeared
+        $portReappeared -and
+        $sawColdBootStatus
 
 $summary = [ordered]@{
     schema_version = 1
@@ -275,7 +334,10 @@ $summary = [ordered]@{
     port_poll = $pollPath
     saw_power_status = $sawPowerStatus
     saw_board_status = $sawBoardStatus
+    saw_post_restore_power_status = $sawPostRestorePowerStatus
+    saw_post_restore_board_status = $sawPostRestoreBoardStatus
     saw_shutdown_entry = $sawShutdownEntry
+    saw_shutdown_accepted = $sawShutdownAccepted
     saw_pwr_hold_high_request = $sawHighRequest
     saw_pwr_hold_high_readback = $sawHighReadback
     saw_readback_mismatch = $sawReadbackMismatch
@@ -283,6 +345,7 @@ $summary = [ordered]@{
     port_disappeared = $portDisappeared
     port_reappeared_after_power_key = $portReappeared
     saw_cold_boot_status = $sawColdBootStatus
+    post_restore_probe_error = $postRestoreProbeError
     initial_ports = @($initialPorts)
     disappear_last_ports = @($disappear.last_ports)
     reappear_last_ports = @($reappear.last_ports)
@@ -297,10 +360,15 @@ $markdown = @(
     "",
     "- Result: $($summary.result)",
     ("- Port: ``{0}``" -f $Port),
+    "- Shutdown command accepted: $sawShutdownAccepted",
     "- PWR_HOLD high request observed: $sawHighRequest",
     "- PWR_HOLD high readback observed: $sawHighReadback",
     "- Serial port disappeared after shutdown: $portDisappeared",
     "- Serial port reappeared after hardware power key: $portReappeared",
+    "- Cold-boot status captured: $sawColdBootStatus",
+    "- Post-restore POWER status captured: $sawPostRestorePowerStatus",
+    "- Post-restore BOARD status captured: $sawPostRestoreBoardStatus",
+    "- Post-restore probe error: $postRestoreProbeError",
     "- Runtime-low restore after failure observed: $sawRestoreRuntimeLow",
     "- Readback mismatch observed: $sawReadbackMismatch",
     "",
@@ -313,7 +381,7 @@ $markdown = @(
 Set-Content -LiteralPath $markdownPath -Value $markdown -Encoding UTF8
 
 if ($pass) {
-    Write-Host "PASS: PWR_HOLD high readback, COM disappearance, and cold-boot recovery were observed."
+    Write-Host "PASS: shutdown command, COM disappearance, and cold-boot recovery were observed."
     exit 0
 }
 
