@@ -649,6 +649,16 @@ def main() -> int:
             "components/power_manager/power_manager.c: connected/disconnected idle must use the device-settings low-power timeout and plugged low-power switch"
         )
     if not re.search(
+        r"case\s+POWER_MANAGER_STATE_DISCONNECTED_IDLE:[\s\S]*"
+        r"s_external_power_present[\s\S]*"
+        r"ble_hid_gap_set_low_power_advertising\(false\)[\s\S]*"
+        r"ble_hid_gap_stop_advertising_for_key_wake",
+        power_manager,
+    ):
+        failures.append(
+            "components/power_manager/power_manager.c: externally powered disconnected idle must keep connectable BLE advertising before battery key-wake-only fallback"
+        )
+    if not re.search(
         r"power_manager_get_snapshot[\s\S]*"
         r"low_power_idle_threshold_ms\s*=\s*power_manager_low_power_idle_ms\(\)[\s\S]*"
         r"connected_idle_threshold_ms\s*=\s*snapshot->low_power_idle_threshold_ms[\s\S]*"

@@ -814,6 +814,15 @@ static void power_manager_apply_state(power_manager_state_t previous, power_mana
             system_health_set_low_power_mode(true);
         }
         if (next == POWER_MANAGER_STATE_DISCONNECTED_IDLE &&
+            s_external_power_present &&
+            ble_hid_gap_set_low_power_advertising != NULL) {
+            /*
+             * USB/external power can still use idle audio/LED savings, but
+             * keeping connectable advertising avoids Windows getting stuck
+             * with only cached GATT services after a host Bluetooth restart.
+             */
+            (void)ble_hid_gap_set_low_power_advertising(false);
+        } else if (next == POWER_MANAGER_STATE_DISCONNECTED_IDLE &&
             ble_hid_gap_stop_advertising_for_key_wake != NULL) {
             (void)ble_hid_gap_stop_advertising_for_key_wake();
         } else if (ble_hid_gap_set_low_power_advertising != NULL) {

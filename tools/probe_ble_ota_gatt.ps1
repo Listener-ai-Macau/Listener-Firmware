@@ -25,6 +25,7 @@ $null = [Windows.Devices.Bluetooth.GenericAttributeProfile.GattCharacteristicsRe
 $null = [Windows.Devices.Bluetooth.GenericAttributeProfile.GattReadResult, Windows.Devices.Bluetooth, ContentType = WindowsRuntime]
 $null = [Windows.Devices.Enumeration.DeviceInformation, Windows.Devices.Enumeration, ContentType = WindowsRuntime]
 $null = [Windows.Security.Cryptography.CryptographicBuffer, Windows.Security.Cryptography, ContentType = WindowsRuntime]
+$null = [Windows.Security.Cryptography.BinaryStringEncoding, Windows.Security.Cryptography, ContentType = WindowsRuntime]
 $null = [Windows.Storage.Streams.DataReader, Windows.Storage.Streams, ContentType = WindowsRuntime]
 
 function Invoke-WinRtAsync {
@@ -107,16 +108,36 @@ function Convert-BufferToBytes {
     if ($null -eq $Buffer) {
         return [byte[]]@()
     }
+    $length = 0
+    try {
+        $length = [int]$Buffer.Length
+    } catch {
+    }
+    if ($length -le 0) {
+        return [byte[]]@()
+    }
 
     try {
-        return [System.Runtime.InteropServices.WindowsRuntime.WindowsRuntimeBufferExtensions]::ToArray($Buffer)
+        return [System.Runtime.InteropServices.WindowsRuntime.WindowsRuntimeBufferExtensions]::ToArray(
+            $Buffer,
+            [uint32]0,
+            $length)
     } catch {
     }
 
     try {
-        [byte[]]$bytes = @()
-        [Windows.Security.Cryptography.CryptographicBuffer]::CopyToByteArray($Buffer, [ref]$bytes)
+        [byte[]]$bytes = New-Object byte[] $length
+        [System.Runtime.InteropServices.WindowsRuntime.WindowsRuntimeBufferExtensions]::CopyTo($Buffer, $bytes)
         return $bytes
+    } catch {
+    }
+
+    try {
+        [byte[]]$bytes = $null
+        [Windows.Security.Cryptography.CryptographicBuffer]::CopyToByteArray($Buffer, [ref]$bytes)
+        if ($null -ne $bytes) {
+            return $bytes
+        }
     } catch {
     }
 
@@ -130,6 +151,21 @@ function Convert-BufferToBytes {
     }
 
     return [byte[]]@()
+}
+
+function Convert-BufferToUtf8FromBuffer {
+    param([object]$Buffer)
+
+    if ($null -eq $Buffer) {
+        return ""
+    }
+    try {
+        return [Windows.Security.Cryptography.CryptographicBuffer]::ConvertBinaryToString(
+            [Windows.Security.Cryptography.BinaryStringEncoding]::Utf8,
+            $Buffer)
+    } catch {
+        return ""
+    }
 }
 
 function Convert-BufferToUtf8 {
@@ -189,6 +225,12 @@ function Read-CharacteristicProbe {
                     [byte[]]$bytes = Convert-BufferToBytes -Buffer $read.Value
                     $entry.value_length = $bytes.Length
                     $entry.value_utf8 = Convert-BufferToUtf8 -Bytes $bytes
+                    if ([string]::IsNullOrWhiteSpace($entry.value_utf8)) {
+                        $entry.value_utf8 = Convert-BufferToUtf8FromBuffer -Buffer $read.Value
+                        if (-not [string]::IsNullOrWhiteSpace($entry.value_utf8)) {
+                            $entry.value_length = [Text.Encoding]::UTF8.GetByteCount($entry.value_utf8)
+                        }
+                    }
                 }
             }
         } catch {
@@ -259,6 +301,12 @@ function Read-DeviceCharacteristicProbe {
                         [byte[]]$bytes = Convert-BufferToBytes -Buffer $read.Value
                         $entry.value_length = $bytes.Length
                         $entry.value_utf8 = Convert-BufferToUtf8 -Bytes $bytes
+                        if ([string]::IsNullOrWhiteSpace($entry.value_utf8)) {
+                            $entry.value_utf8 = Convert-BufferToUtf8FromBuffer -Buffer $read.Value
+                            if (-not [string]::IsNullOrWhiteSpace($entry.value_utf8)) {
+                                $entry.value_length = [Text.Encoding]::UTF8.GetByteCount($entry.value_utf8)
+                            }
+                        }
                     }
                 }
             }
