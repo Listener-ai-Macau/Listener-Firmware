@@ -732,31 +732,14 @@ nimble_hid_gap_event(struct ble_gap_event *event, void *arg)
         }
 
         if (s_audio_enabled) {
-            struct ble_gap_upd_params audio_params = {
-                .itvl_min = 6,
-                .itvl_max = 6,
-                .latency = 0,
-                .supervision_timeout = 800,
-                .min_ce_len = 0,
-                .max_ce_len = 0,
-            };
-            rc = ble_gap_update_params(event->connect.conn_handle, &audio_params);
-            if (rc == 0) {
-                ESP_LOGI(TAG, "audio connection parameter update requested");
-            } else {
-                ESP_LOGW(TAG, "audio connection parameter update failed: rc=%d", rc);
-            }
-
-            rc = ble_gap_set_prefered_le_phy(
-                event->connect.conn_handle,
-                BLE_GAP_LE_PHY_2M_MASK,
-                BLE_GAP_LE_PHY_2M_MASK,
-                0);
-            if (rc == 0) {
-                ESP_LOGI(TAG, "audio 2M PHY preference requested");
-            } else {
-                ESP_LOGW(TAG, "audio 2M PHY preference failed: rc=%d", rc);
-            }
+            (void)ble_hid_gap_request_connection_params(
+                "audio",
+                6,
+                6,
+                0,
+                800,
+                1);
+            ESP_LOGI(TAG, "audio PHY preference left to central");
         }
         return 0;
     case BLE_GAP_EVENT_DISCONNECT:
@@ -816,6 +799,23 @@ nimble_hid_gap_event(struct ble_gap_event *event, void *arg)
             diag_log(DIAG_SRC_BLE_GAP, DIAG_GAP_CONN_PARAM, DIAG_SEV_INFO,
                      desc.conn_itvl, desc.conn_latency, desc.supervision_timeout, event->conn_update.conn_handle);
         }
+        return 0;
+
+    case BLE_GAP_EVENT_PHY_UPDATE_COMPLETE:
+        ESP_LOGI(
+            TAG,
+            "PHY update complete; status=%d conn_handle=%u tx_phy=%u rx_phy=%u",
+            event->phy_updated.status,
+            event->phy_updated.conn_handle,
+            event->phy_updated.tx_phy,
+            event->phy_updated.rx_phy);
+        diag_log(DIAG_SRC_BLE_GAP,
+                 DIAG_GAP_PHY,
+                 event->phy_updated.status == 0 ? DIAG_SEV_INFO : DIAG_SEV_WARN,
+                 (uint32_t)event->phy_updated.status,
+                 event->phy_updated.tx_phy,
+                 event->phy_updated.rx_phy,
+                 event->phy_updated.conn_handle);
         return 0;
 
     case BLE_GAP_EVENT_ADV_COMPLETE:

@@ -258,6 +258,14 @@ def check_dis_identity(repo: Path) -> None:
         and "recovery: pairing reset complete" in gap,
         "BLE recovery actions must be logged in serial and diag_log",
     )
+    require(
+        "ble_gap_set_prefered_le_phy" not in gap
+        and "audio PHY preference left to central" in gap
+        and "BLE_GAP_EVENT_PHY_UPDATE_COMPLETE" in gap
+        and "DIAG_GAP_PHY" in gap
+        and "DIAG_GAP_PHY" in diag,
+        "GAP connect must not initiate a 2M PHY request that can leave Windows bonded but disconnected after an LL response timeout",
+    )
 
 
 def candidate_desktop_contracts(repo: Path) -> list[Path]:

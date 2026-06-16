@@ -130,6 +130,7 @@ foreach ($macro in @(
     "DIAG_LED_OUTPUT_STATE",
     "DIAG_GAP_RECOVERY",
     "DIAG_GAP_ADV_STATE",
+    "DIAG_GAP_PHY",
     "DIAG_BAUD_REPLAY"
 )) {
     if ($events -notmatch "(?m)^\s*#define\s+$macro\b") {
@@ -199,6 +200,9 @@ Assert-Contains -RelativePath "ports/esp32/ble_audio_stream/ble_audio_stream_esp
 Assert-NotContains -RelativePath "ports/esp32/ble_audio_stream/ble_audio_stream_esp32.c" -Pattern "notify_disabled_session_abort" -Description "obsolete notify-disabled immediate abort"
 Assert-Contains -RelativePath "ports/esp32/ble_hid_gap/ble_hid_gap_esp32.c" -Pattern "DIAG_GAP_RECOVERY" -Description "BLE recovery diag event logging"
 Assert-Contains -RelativePath "ports/esp32/ble_hid_gap/ble_hid_gap_esp32.c" -Pattern "DIAG_GAP_ADV_STATE" -Description "BLE advertising state diag event logging"
+Assert-Contains -RelativePath "ports/esp32/ble_hid_gap/ble_hid_gap_esp32.c" -Pattern "BLE_GAP_EVENT_PHY_UPDATE_COMPLETE" -Description "BLE PHY update completion handling"
+Assert-Contains -RelativePath "ports/esp32/ble_hid_gap/ble_hid_gap_esp32.c" -Pattern "DIAG_GAP_PHY" -Description "BLE PHY update diag event logging"
+Assert-NotContains -RelativePath "ports/esp32/ble_hid_gap/ble_hid_gap_esp32.c" -Pattern "ble_gap_set_prefered_le_phy" -Description "device-initiated 2M PHY request"
 Assert-Contains -RelativePath "ports/esp32/ble_hid_gap/ble_hid_gap_esp32.c" -Pattern "recovery: clearing pairing bonds" -Description "BLE recovery serial action log"
 Assert-Contains -RelativePath "ports/esp32/ble_hid_gap/ble_hid_gap_esp32.c" -Pattern "recovery: pairing reset complete" -Description "BLE recovery completion serial log"
 Assert-Contains -RelativePath "ports/esp32/ble_hid_gap/ble_hid_gap_esp32.c" -Pattern "ble_hid_gap_prepare_shutdown_disconnect" -Description "hardware shutdown BLE disconnect preparation"
