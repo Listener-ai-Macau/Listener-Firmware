@@ -79,7 +79,7 @@ extern void status_led_prepare_sleep(void) __attribute__((weak));
 #endif
 #define POWER_MANAGER_BATTERY_CRITICAL_PERCENT ((uint8_t)CONFIG_POWER_MANAGER_BATTERY_CRITICAL_PERCENT)
 #define POWER_MANAGER_TASK_STACK_BYTES (4 * 1024)
-#define POWER_MANAGER_SHUTDOWN_USER_ACTION "short-press hardware power key for cold boot after PWR_HOLD/GPIO11 drive-high shutdown"
+#define POWER_MANAGER_SHUTDOWN_USER_ACTION "short-press hardware power key for cold boot after PWR_HOLD/GPIO9 drive-high shutdown"
 #define POWER_MANAGER_POWER_SOURCE_USB_PRESENT (1u << 0)
 #define POWER_MANAGER_POWER_SOURCE_CHARGING (1u << 1)
 #define POWER_MANAGER_POWER_SOURCE_CHARGE_FULL (1u << 2)
@@ -847,7 +847,7 @@ static void power_manager_guard_runtime_power_hold_low(power_manager_state_t sta
 
     ESP_LOGW(
         TAG,
-        "PWR_HOLD/GPIO11 runtime guard reasserting low: state=%s level=%s configured=%u policy=%s",
+        "PWR_HOLD/GPIO9 runtime guard reasserting low: state=%s level=%s configured=%u policy=%s",
         power_manager_state_name(state),
         power_manager_gpio_level_name(power_hold.level),
         power_hold.configured ? 1u : 0u,
@@ -858,7 +858,7 @@ static void power_manager_guard_runtime_power_hold_low(power_manager_state_t sta
         POWER_MANAGER_POWER_HOLD_ACTION_RUNTIME_GUARD);
     esp_err_t ret = board_set_power_hold_enabled(true);
     if (ret != ESP_OK) {
-        ESP_LOGE(TAG, "PWR_HOLD/GPIO11 runtime-low guard failed: %s", esp_err_to_name(ret));
+        ESP_LOGE(TAG, "PWR_HOLD/GPIO9 runtime-low guard failed: %s", esp_err_to_name(ret));
     }
 }
 
@@ -1123,7 +1123,7 @@ static void power_manager_restore_after_shutdown_failure(
 {
     esp_err_t restore_ret = board_set_power_hold_enabled(true);
     if (restore_ret != ESP_OK) {
-        ESP_LOGE(TAG, "PWR_HOLD/GPIO11 runtime-low restore failed after shutdown failure: %s",
+        ESP_LOGE(TAG, "PWR_HOLD/GPIO9 runtime-low restore failed after shutdown failure: %s",
                  esp_err_to_name(restore_ret));
     }
     power_manager_log_power_hold_diag(
@@ -1371,7 +1371,7 @@ static esp_err_t power_manager_enter_hardware_shutdown(power_manager_shutdown_re
             (uint32_t)BOARD_PINS_PWR_HOLD_IO,
             2u,
             POWER_MANAGER_POWER_HOLD_ACTION_SHUTDOWN_DRIVE_HIGH);
-        ESP_LOGE(TAG, "hardware shutdown failed: PWR_HOLD/GPIO11 drive-high ret=%s",
+        ESP_LOGE(TAG, "hardware shutdown failed: PWR_HOLD/GPIO9 drive-high ret=%s",
                  esp_err_to_name(hold_ret));
         power_manager_restore_after_shutdown_failure(reason, final_idle_ms, hold_ret);
         return hold_ret;
@@ -1385,7 +1385,7 @@ static esp_err_t power_manager_enter_hardware_shutdown(power_manager_shutdown_re
 
     ESP_LOGE(
         TAG,
-        "hardware shutdown did not remove power after PWR_HOLD/GPIO11 drive-high within %u ms; restoring runtime low",
+        "hardware shutdown did not remove power after PWR_HOLD/GPIO9 drive-high within %u ms; restoring runtime low",
         (unsigned)POWER_MANAGER_POWER_REMOVAL_WAIT_MS);
     power_manager_restore_after_shutdown_failure(reason, final_idle_ms, ESP_FAIL);
     return ESP_FAIL;
@@ -1647,7 +1647,7 @@ esp_err_t power_manager_init(void)
         &power_hold,
         POWER_MANAGER_POWER_HOLD_ACTION_INIT);
     if (hold_ret != ESP_OK) {
-        ESP_LOGW(TAG, "PWR_HOLD/GPIO11 runtime-low setup failed: %s", esp_err_to_name(hold_ret));
+        ESP_LOGW(TAG, "PWR_HOLD/GPIO9 runtime-low setup failed: %s", esp_err_to_name(hold_ret));
     }
     return ESP_OK;
 }

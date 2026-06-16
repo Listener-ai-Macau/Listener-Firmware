@@ -21,13 +21,13 @@ static const char *TAG = "board";
 
 #define BOARD_V2_USB_DET_POLICY "v2_gpio7_r37_r32_10K_10K_divider"
 #define BOARD_V2_CHARGER_POLARITY "v2_gpio14_chg_gpio21_std_active_low"
-#define BOARD_V2_PWR_HOLD_POLICY "v2_gpio11_power_latch_runtime_low_drive_high_for_hardware_shutdown"
+#define BOARD_V2_PWR_HOLD_POLICY "v2_gpio9_power_latch_runtime_low_drive_high_for_hardware_shutdown"
 #define BOARD_V2_LED_POLICY "v2_four_zone_ws2812_status_gpio1_ec11_gpio5_key_gpio13_edge_gpio4"
 #define BOARD_V2_MIC_POLICY "v2_sph0655_pdm_clk_gpio48_dout_gpio47_enabled_for_a1_a2_hardware_validation"
 #define BOARD_PWR_HOLD_RELEASE_SETTLE_MS 500U
 #define BOARD_PWR_HOLD_RELEASE_POLL_MS 25U
 #if BOARD_PINS_CURRENT_TELEMETRY_PRESENT
-#define BOARD_V2_CURRENT_POLICY "v2_battery_side_input_branch_current_ina180a2_10mR_adc_mv_x2_with_battery_mv_from_gpio8_div2"
+#define BOARD_V2_CURRENT_POLICY "v2_battery_side_input_branch_current_ina180a2_10mR_adc_mv_x2_with_battery_mv_from_gpio10_div2"
 #else
 #define BOARD_V2_CURRENT_POLICY "v2_optional_current_telemetry_not_populated_battery_adc_only_no_power_decisions"
 #endif
@@ -216,7 +216,7 @@ static esp_err_t board_verify_power_hold_readback(const char *action, int reques
     int actual_level = board_read_gpio_level(BOARD_PINS_PWR_HOLD_IO);
     ESP_LOGI(
         TAG,
-        "PWR_HOLD/GPIO11 %s readback: gpio=%d requested_level=%d actual_level=%d policy=%s",
+        "PWR_HOLD/GPIO9 %s readback: gpio=%d requested_level=%d actual_level=%d policy=%s",
         action != NULL ? action : "unknown",
         (int)BOARD_PINS_PWR_HOLD_IO,
         requested_level,
@@ -225,14 +225,14 @@ static esp_err_t board_verify_power_hold_readback(const char *action, int reques
     if (actual_level < 0) {
         ESP_LOGW(
             TAG,
-            "PWR_HOLD/GPIO11 readback failed after %s; refusing to treat shutdown request as successful",
+            "PWR_HOLD/GPIO9 readback failed after %s; refusing to treat shutdown request as successful",
             action != NULL ? action : "unknown");
         return ESP_FAIL;
     }
     if (requested_level >= 0 && actual_level >= 0 && actual_level != requested_level) {
         ESP_LOGE(
             TAG,
-            "PWR_HOLD/GPIO11 readback mismatch: requested_level=%d actual_level=%d; check latch wiring or external pull; refusing to enter silent hardware-shutdown wait",
+            "PWR_HOLD/GPIO9 readback mismatch: requested_level=%d actual_level=%d; check latch wiring or external pull; refusing to enter silent hardware-shutdown wait",
             requested_level,
             actual_level);
         return ESP_ERR_INVALID_STATE;
@@ -252,7 +252,7 @@ static esp_err_t board_wait_power_hold_readback(const char *action, int requeste
         if (actual_level == requested_level) {
             ESP_LOGI(
                 TAG,
-                "PWR_HOLD/GPIO11 %s settled: gpio=%d requested_level=%d actual_level=%d elapsed_ms=%" PRIu32
+                "PWR_HOLD/GPIO9 %s settled: gpio=%d requested_level=%d actual_level=%d elapsed_ms=%" PRIu32
                 " policy=%s",
                 action != NULL ? action : "unknown",
                 (int)BOARD_PINS_PWR_HOLD_IO,
@@ -267,7 +267,7 @@ static esp_err_t board_wait_power_hold_readback(const char *action, int requeste
 
     ESP_LOGE(
         TAG,
-        "PWR_HOLD/GPIO11 %s did not settle high within %u ms; check latch wiring or external load",
+        "PWR_HOLD/GPIO9 %s did not settle high within %u ms; check latch wiring or external load",
         action != NULL ? action : "unknown",
         (unsigned)BOARD_PWR_HOLD_RELEASE_SETTLE_MS);
     return last_ret;
@@ -299,7 +299,7 @@ esp_err_t board_configure_power_hold_latch(void)
     if (ret != ESP_OK) {
         ESP_LOGW(
             TAG,
-            "PWR_HOLD/GPIO11 runtime-low output config failed: gpio=%d ret=%s",
+            "PWR_HOLD/GPIO9 runtime-low output config failed: gpio=%d ret=%s",
             (int)BOARD_PINS_PWR_HOLD_IO,
             esp_err_to_name(ret));
         return ret;
@@ -311,7 +311,7 @@ esp_err_t board_configure_power_hold_latch(void)
     if (ret != ESP_OK) {
         ESP_LOGW(
             TAG,
-            "PWR_HOLD/GPIO11 runtime-low set failed: gpio=%d ret=%s",
+            "PWR_HOLD/GPIO9 runtime-low set failed: gpio=%d ret=%s",
             (int)BOARD_PINS_PWR_HOLD_IO,
             esp_err_to_name(ret));
         return ret;
@@ -355,7 +355,7 @@ esp_err_t board_set_power_hold_enabled(bool enabled)
     if (ret != ESP_OK) {
         ESP_LOGW(
             TAG,
-            "PWR_HOLD/GPIO11 shutdown-high output config failed: gpio=%d ret=%s",
+            "PWR_HOLD/GPIO9 shutdown-high output config failed: gpio=%d ret=%s",
             (int)BOARD_PINS_PWR_HOLD_IO,
             esp_err_to_name(ret));
         return ret;
@@ -367,7 +367,7 @@ esp_err_t board_set_power_hold_enabled(bool enabled)
     if (ret != ESP_OK) {
         ESP_LOGW(
             TAG,
-            "PWR_HOLD/GPIO11 shutdown-high set failed: gpio=%d ret=%s",
+            "PWR_HOLD/GPIO9 shutdown-high set failed: gpio=%d ret=%s",
             (int)BOARD_PINS_PWR_HOLD_IO,
             esp_err_to_name(ret));
         return ret;
@@ -381,6 +381,39 @@ esp_err_t board_set_power_hold_enabled(bool enabled)
 
     s_power_hold_configured = true;
     return ESP_OK;
+}
+
+static void board_print_power_hold_test(bool drive_high)
+{
+    board_v2_power_hold_snapshot_t before = {0};
+    board_v2_power_hold_snapshot_t after = {0};
+    board_v2_power_hold_snapshot_t restored = {0};
+    board_get_v2_power_hold_snapshot(&before);
+
+    esp_err_t ret = drive_high ? board_set_power_hold_enabled(false) : board_set_power_hold_enabled(true);
+    board_get_v2_power_hold_snapshot(&after);
+
+    esp_err_t restore_ret = ESP_OK;
+    bool restored_low = false;
+    if (drive_high && ret != ESP_OK) {
+        restore_ret = board_set_power_hold_enabled(true);
+        board_get_v2_power_hold_snapshot(&restored);
+        restored_low = true;
+    }
+
+    printf(
+        "~BOARD:PWR_HOLD_TEST action=%s ret=%s pwr_hold_gpio=%d before_level=%s after_level=%s"
+        " after_configured=%u restored_low=%u restore_ret=%s restored_level=%s policy=%s\n",
+        drive_high ? "drive_high" : "drive_low",
+        esp_err_to_name(ret),
+        (int)BOARD_PINS_PWR_HOLD_IO,
+        board_gpio_level_name(before.level),
+        board_gpio_level_name(after.level),
+        after.configured ? 1u : 0u,
+        restored_low ? 1u : 0u,
+        restored_low ? esp_err_to_name(restore_ret) : "not_needed",
+        restored_low ? board_gpio_level_name(restored.level) : "not_needed",
+        BOARD_V2_PWR_HOLD_POLICY);
 }
 
 void board_get_v2_power_hold_snapshot(board_v2_power_hold_snapshot_t *out_snapshot)
@@ -504,7 +537,7 @@ static void board_print_power_rail_status(battery_monitor_power_rail_t rail, boo
         " raw_adc=%d adc_mv=%d adc_calibrated=%u sample_count=%u"
         " calibration_status=%s current_model=\"%s\""
         " current_calibrated=%u current_ma_valid=%u estimated_input_current_ma=%" PRId32
-        " battery_side_mv=%" PRIu32 " battery_voltage_source=\"BAT_V_ADC/GPIO8 68K/68K midpoint, VBAT~=2*ADC\""
+        " battery_side_mv=%" PRIu32 " battery_voltage_source=\"BAT_V_ADC/GPIO10 68K/68K midpoint, VBAT~=2*ADC\""
         " power_mw_valid=%u estimated_input_power_mw=%" PRId32
         " result=%s policy=%s\n",
         status.rail_name,
@@ -807,7 +840,7 @@ void board_log_v2_diagnostics(void)
         power_hold.configured ? 1u : 0u,
         BOARD_PINS_RESERVED_MSPI_GPIOS);
     if (pwr_hold_ret != ESP_OK) {
-        ESP_LOGW(TAG, "PWR_HOLD/GPIO11 runtime-low setup failed: %s", esp_err_to_name(pwr_hold_ret));
+        ESP_LOGW(TAG, "PWR_HOLD/GPIO9 runtime-low setup failed: %s", esp_err_to_name(pwr_hold_ret));
     }
     ESP_LOGW(TAG, "board hardware provisional: usb_det=%s charger=%s pwr_hold=%s current=%s led=%s mic=%s",
              BOARD_V2_USB_DET_POLICY,
@@ -841,9 +874,10 @@ void board_print_help(void)
         "KEY1/GPIO38, KEY2/GPIO39, KEY3/GPIO40, KEY4/GPIO41 send safe non-text BLE HID usages while Listener-Type custom actions are unavailable; recording is a configurable custom-key action.\n"
         "Generated button diagnostics: ~KEY:KEY3:SINGLE simulates the recording custom-key path for automated A1/A2 tests; ~KEY:EC11:SINGLE simulates the EC11 runtime custom-key press/release path.\n"
         "Send ~VREC:RECOVERY to clear pairing/session state over USB.\n"
-        "Board diagnostics: ~BOARD:STATUS reports V2 pin, USB, charger, battery, PWR_HOLD/GPIO11, mic, reserved MSPI, and LED resource status; ~BOARD:POWER reports cached current rails, ~BOARD:POWER:FORCE samples ADC current rails.\n"
+        "Board diagnostics: ~BOARD:STATUS reports V2 pin, USB, charger, battery, PWR_HOLD/GPIO9, mic, reserved MSPI, and LED resource status; ~BOARD:POWER reports optional current rails as not_populated on the current board.\n"
         "Board GPIO diagnostics: ~BOARD:GPIO reads raw KEY1-KEY4 and EC11 A/B/key levels without reconfiguring pins.\n"
         "Board GPIO scan: ~BOARD:GPIO-SCAN samples all valid GPIO levels without reconfiguring pins and prints changed GPIOs.\n"
+        "Board PWR_HOLD diagnostics: ~BOARD:PWR-HOLD:LOW restores runtime low; ~BOARD:PWR-HOLD:HIGH attempts the shutdown high drive and may power off the board.\n"
         "Input flash debug: ~DIAGLOG:INPUTDBG:ON records high-volume key/EC11 debug events until ~DIAGLOG:INPUTDBG:OFF or reboot.\n"
         "Power diagnostics: ~POWER:STATUS reports state/blockers/battery/power-hold status, ~POWER:SHUTDOWN requests manual hardware shutdown.\n"
         "Device settings: ~DEVICE:SETTINGS reports user device config; ~DEVICE:SET plugged_brightness=80 battery_brightness=50 low_power_idle_minutes=1 plugged_low_power_enabled=1 auto_shutdown_minutes=30 ble_name=listener updates persisted settings.\n"
@@ -881,6 +915,14 @@ bool board_consume_usb_command(const char *line)
         }
         if (strcmp(command, "GPIO-SCAN") == 0) {
             board_print_gpio_scan();
+            return true;
+        }
+        if (strcmp(command, "PWR-HOLD:LOW") == 0) {
+            board_print_power_hold_test(false);
+            return true;
+        }
+        if (strcmp(command, "PWR-HOLD:HIGH") == 0) {
+            board_print_power_hold_test(true);
             return true;
         }
         ESP_LOGW(TAG, "BOARD: unknown command: %s", command);

@@ -45,17 +45,17 @@ function New-FeatureSnapshot {
             "Firmware OTA v1 with ESP-IDF OTA slots, BLE bridge, rollback, pending verify, blockers, and diag events.",
             "system_health heartbeat for heap, task, BLE, and disconnect conditions.",
             "V2 N16R8 profile: 16 MB flash, 8 MB Octal PSRAM, EC11 GPIO18, KEY1-KEY4 GPIOs, WS2812 zones.",
-            "power_manager handles idle, BLE churn, USB/VBUS blockers, low-battery blocking, and PWR_HOLD/GPIO11 diagnostics.",
+            "power_manager handles idle, BLE churn, USB/VBUS blockers, low-battery blocking, and PWR_HOLD/GPIO9 diagnostics.",
             "Persisted ~DEVICE:SETTINGS for brightness, idle timeouts, plugged low-power, auto-shutdown, and BLE name.",
-            "V2 current telemetry reports TPS63020/SY7088 battery-side current on GPIO10/GPIO9.",
-            "Real PWR_HOLD/GPIO11 power-off and LED VDD validation stay hardware-gated."
+            "Latest V2 N16R8 pin map uses PWR_HOLD/GPIO9, BAT_V_ADC/GPIO10, and no populated current-sense chips.",
+            "Real PWR_HOLD/GPIO9 power-off and LED VDD validation stay hardware-gated."
         )
         key_paths = @(
             [ordered]@{ path = "main/"; purpose = "Startup, POST, BLE/audio/keyboard init." },
             [ordered]@{ path = "components/keyboard/"; purpose = "Physical key scanning." },
             [ordered]@{ path = "components/hid_keyboard/"; purpose = "HID keyboard abstraction." },
             [ordered]@{ path = "components/diag_log/"; purpose = "diag_log schema, masks, input debug, ring buffer." },
-            [ordered]@{ path = "components/power_manager/"; purpose = "Low-power, blockers, PWR_HOLD/GPIO11, diagnostics." },
+            [ordered]@{ path = "components/power_manager/"; purpose = "Low-power, blockers, PWR_HOLD/GPIO9, diagnostics." },
             [ordered]@{ path = "components/status_led/"; purpose = "LED rendering plus flash LED diagnostics." },
             [ordered]@{ path = "components/device_settings/"; purpose = "Persisted ~DEVICE:SETTINGS contract." },
             [ordered]@{ path = "components/battery_monitor/"; purpose = "2800-4200mV protected battery level." },
@@ -64,7 +64,7 @@ function New-FeatureSnapshot {
             [ordered]@{ path = "tools/decode_diag_log.py"; purpose = "Decode ~DIAGLOG JSONL to AI bundle." },
             [ordered]@{ path = "tools/verify_unplugged_flash_diag_bundle.py"; purpose = "Verify unplugged LED flash diag evidence." },
             [ordered]@{ path = "tools/collect_ai_diagnostics.ps1"; purpose = "Collect/decode bounded diag_log evidence." },
-            [ordered]@{ path = "tools/collect_v2_current_telemetry.ps1"; purpose = "TPS63020/SY7088 current telemetry helper." },
+            [ordered]@{ path = "tools/collect_v2_current_telemetry.ps1"; purpose = "Optional current-rail diagnostic helper; current board reports not_populated." },
             [ordered]@{ path = "ports/esp32/ble_diag_log/"; purpose = "BLE GATT diag_log export." },
             [ordered]@{ path = "components/firmware_ota/"; purpose = "ESP-IDF OTA manager and diagnostics." },
             [ordered]@{ path = "ports/esp32/ble_firmware_ota/"; purpose = "NimBLE firmware OTA service." },
@@ -82,11 +82,11 @@ function New-FeatureSnapshot {
             "N16R8 validation uses PDM RX on CLK/GPIO48 and DOUT/GPIO47.",
             "Physical key GPIO mapping lives in board pins, not desktop code.",
             "V2 EC11-KEY/GPIO18 powers on while off; after boot it sends Shift+F13. KEY1-KEY4 use GPIO38-41.",
-            "V2 shutdown drives runtime-low PWR_HOLD/GPIO11 high; real power-off and blockers require hardware validation.",
+            "V2 shutdown drives runtime-low PWR_HOLD/GPIO9 high; real power-off and blockers require hardware validation.",
             "USB-unplug light-cycle claims require decoded flash diag timelines: status_led power_input/visual/output plus power external/sleep_wake.",
             "Battery percentage uses the protected product range 2800mV=0% and 4200mV=100%; 2700mV is an absolute danger marker, not usable empty capacity.",
             "GPIO35/GPIO36/GPIO37 are reserved for the N16R8 module flash/PSRAM/MSPI interface.",
-            "PWR_HOLD/GPIO11, RGB LEDs, and TPS63020/SY7088 current telemetry on GPIO10/GPIO9 are populated.",
+            "PWR_HOLD/GPIO9 and BAT_V_ADC/GPIO10 are populated; TPS63020/SY7088 current-sense telemetry is not populated and must report GPIO_NUM_NC.",
             "Real BLE, flash, serial, or audio validation requires a hardware lock."
         )
         boundaries = @(
@@ -182,7 +182,8 @@ function Test-FeatureSnapshot {
     $errors += @(Test-RepoText "components/device_settings/include/device_settings.h" 'DEVICE_SETTINGS_DEFAULT_LOW_POWER_IDLE_MS\s+60000U' 'low-power idle default')
     $errors += @(Test-RepoText "components/device_settings/include/device_settings.h" 'DEVICE_SETTINGS_DEFAULT_PLUGGED_LOW_POWER_ENABLED\s+1' 'plugged low-power default')
     $errors += @(Test-RepoText "components/power_manager/power_manager.c" 'plugged_low_power_enabled' 'plugged low-power effective status')
-    $errors += @(Test-RepoText "components/board/board.c" 'BOARD_V2_PWR_HOLD_POLICY\s+"v2_gpio11_power_latch_runtime_low_drive_high_for_hardware_shutdown"' 'PWR_HOLD runtime-low policy')
+    $errors += @(Test-RepoText "components/board/board.c" 'BOARD_V2_PWR_HOLD_POLICY\s+"v2_gpio9_power_latch_runtime_low_drive_high_for_hardware_shutdown"' 'PWR_HOLD runtime-low policy')
+    $errors += @(Test-RepoText "ports/esp32/board_pins/include/board_pins.h" 'BOARD_PINS_BAT_V_ADC_IO\s+\(GPIO_NUM_10\)[\s\S]*BOARD_PINS_PWR_HOLD_IO\s+\(GPIO_NUM_9\)[\s\S]*BOARD_PINS_CURRENT_TELEMETRY_PRESENT\s+\(0\)[\s\S]*BOARD_PINS_TPS63020_I_ADC_IO\s+\(GPIO_NUM_NC\)[\s\S]*BOARD_PINS_SY7088_I_ADC_IO\s+\(GPIO_NUM_NC\)' 'latest V2 pin map and absent current telemetry')
     $errors += @(Test-RepoText "components/board/board.c" 'gpio_set_level\(BOARD_PINS_PWR_HOLD_IO,\s*0\)[\s\S]*GPIO_MODE_OUTPUT[\s\S]*runtime low configured[\s\S]*gpio_set_level\(BOARD_PINS_PWR_HOLD_IO,\s*1\)[\s\S]*GPIO_MODE_OUTPUT[\s\S]*board_wait_power_hold_readback\("driven high for hardware shutdown",\s*1\)' 'PWR_HOLD runtime-low drive-high shutdown implementation')
     $errors += @(Test-RepoText "components/status_led/status_led.c" 'DIAG_LED_VISUAL_STATE' 'status LED visual flash diagnostics')
     $errors += @(Test-RepoText "tools/decode_diag_log.py" 'led_visual_state_flags' 'decoded status LED visual flash diagnostics')

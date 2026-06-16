@@ -24,7 +24,7 @@ static void configure_boot_power_hold_latch(void)
 {
     esp_err_t ret = board_configure_power_hold_latch();
     if (ret != ESP_OK) {
-        ESP_LOGW(TAG, "early PWR_HOLD/GPIO11 runtime-low setup failed: %s", esp_err_to_name(ret));
+        ESP_LOGW(TAG, "early PWR_HOLD/GPIO9 runtime-low setup failed: %s", esp_err_to_name(ret));
     }
 }
 

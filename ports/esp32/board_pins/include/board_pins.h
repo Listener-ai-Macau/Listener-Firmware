@@ -44,7 +44,7 @@ extern "C" {
 
 #define BOARD_PINS_BAT_CHG_IO        (GPIO_NUM_14)
 #define BOARD_PINS_BAT_STD_IO        (GPIO_NUM_21)
-#define BOARD_PINS_BAT_V_ADC_IO      (GPIO_NUM_8)
+#define BOARD_PINS_BAT_V_ADC_IO      (GPIO_NUM_10)
 #define BOARD_PINS_USB_DET_IO        (GPIO_NUM_7)
 #define BOARD_PINS_USB_DP_IO         (GPIO_NUM_20)
 #define BOARD_PINS_USB_DN_IO         (GPIO_NUM_19)
@@ -54,13 +54,14 @@ extern "C" {
 #define BOARD_PINS_RGB_KEY_IO        (GPIO_NUM_13)
 #define BOARD_PINS_RGB_EDGE_IO       (GPIO_NUM_4)
 
-#define BOARD_PINS_PWR_HOLD_IO       (GPIO_NUM_11)
+#define BOARD_PINS_PWR_HOLD_IO       (GPIO_NUM_9)
 
-/* Current V2 N16R8 boards populate the INA180-style battery-side current
-   telemetry inputs. A future revised board profile may set these to NC. */
-#define BOARD_PINS_CURRENT_TELEMETRY_PRESENT (1)
-#define BOARD_PINS_TPS63020_I_ADC_IO (GPIO_NUM_10)
-#define BOARD_PINS_SY7088_I_ADC_IO   (GPIO_NUM_9)
+/* Latest V2 N16R8 board revision does not populate battery-side current
+   telemetry chips. Keep the diagnostic rails as not-populated so GPIO9 can be
+   PWR_HOLD and GPIO10 can be BAT_V_ADC without accidental reuse. */
+#define BOARD_PINS_CURRENT_TELEMETRY_PRESENT (0)
+#define BOARD_PINS_TPS63020_I_ADC_IO (GPIO_NUM_NC)
+#define BOARD_PINS_SY7088_I_ADC_IO   (GPIO_NUM_NC)
 
 #ifdef __cplusplus
 }

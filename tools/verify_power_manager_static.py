@@ -56,7 +56,7 @@ CHECKS = {
         "board_set_power_hold_enabled(true)",
         "board_configure_power_hold_latch",
         "board_get_v2_power_hold_snapshot",
-        "PWR_HOLD/GPIO11",
+        "PWR_HOLD/GPIO9",
         "pwr_hold_gpio=%d",
         "pwr_hold_level=%s",
         "pwr_hold_configured=%u",
@@ -121,7 +121,7 @@ CHECKS = {
         "power_manager_low_power_idle_ms",
         "power_manager_plugged_low_power_enabled",
         "power_manager_guard_runtime_power_hold_low",
-        "PWR_HOLD/GPIO11 runtime guard reasserting low",
+        "PWR_HOLD/GPIO9 runtime guard reasserting low",
         'strcmp(command, "SHUTDOWN")',
     ],
     "ports/esp32/audio_capture/audio_capture_esp32.c": [
@@ -207,8 +207,8 @@ CHECKS = {
     "components/board/board.c": [
         "Voice Keyboard V2",
         "EC11 push/GPIO18",
-        "PWR_HOLD/GPIO11",
-        "v2_gpio11_power_latch_runtime_low_drive_high_for_hardware_shutdown",
+        "PWR_HOLD/GPIO9",
+        "v2_gpio9_power_latch_runtime_low_drive_high_for_hardware_shutdown",
         "GPIO_MODE_OUTPUT",
         "gpio_set_level(BOARD_PINS_PWR_HOLD_IO, 0)",
         "runtime low configured",
@@ -267,6 +267,7 @@ FORBIDDEN = {
     "components/board/board.c": [
         "v2_gpio46_power_latch_hold_high_release_low_for_hardware_shutdown",
         "v2_gpio46_power_latch_hold_low_release_high_for_hardware_shutdown",
+        "v2_gpio11_power_latch_runtime_low_drive_high_for_hardware_shutdown",
         "v2_gpio11_power_latch_hold_high_release_low_for_hardware_shutdown",
         "v2_gpio11_power_latch_hold_low_release_high_for_hardware_shutdown",
         "hold-high",
@@ -380,7 +381,7 @@ def main() -> int:
         main_source,
     ):
         failures.append(
-            "main/main.c: app_main must drive PWR_HOLD/GPIO11 low before LED/BLE/diagnostic init"
+            "main/main.c: app_main must drive PWR_HOLD/GPIO9 low before LED/BLE/diagnostic init"
         )
 
     power_manager = (REPO_ROOT / "components/power_manager/power_manager.c").read_text(encoding="utf-8")
@@ -852,7 +853,7 @@ def main() -> int:
         return 1
 
     print(
-        "PASS: power manager static verification covers hardware shutdown, PWR_HOLD/GPIO11, "
+        "PASS: power manager static verification covers hardware shutdown, PWR_HOLD/GPIO9, "
         "external-power blockers, configurable idle actions, PWR_HOLD guard, diagnostics, and Deep Sleep removal."
     )
     return 0

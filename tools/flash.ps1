@@ -3,7 +3,8 @@ param(
     [string]$Port,
     [string]$Target = "esp32s3",
     [string]$BuildDir = $env:LISTENER_IDF_BUILD_DIR,
-    [switch]$NoBuild
+    [switch]$NoBuild,
+    [switch]$PreserveOtaData
 )
 
 $ErrorActionPreference = "Stop"
@@ -162,6 +163,10 @@ if (-not $NoBuild) {
         "-BuildDir",
         $buildDirResolved
     )
+}
+
+if (-not $PreserveOtaData.IsPresent) {
+    Invoke-CheckedCommand -File "idf.py" -Arguments @("-B", $buildDirResolved, "-p", $resolvedPort, "erase-otadata")
 }
 
 Invoke-CheckedCommand -File "idf.py" -Arguments @("-B", $buildDirResolved, "-p", $resolvedPort, "flash")

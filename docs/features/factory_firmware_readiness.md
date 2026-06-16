@@ -18,15 +18,16 @@ and verified by `tools/verify_factory_firmware_package.ps1`.
   explicitly supersedes it.
 - Battery percentage uses `2800mV=0%` and `4200mV=100%`; `2700mV` is an absolute
   danger marker and must not be treated as usable empty capacity.
-- `PWR_HOLD/GPIO11` stays actively driven LOW during boot/runtime and is
+- `PWR_HOLD/GPIO9` stays actively driven LOW during boot/runtime and is
   driven HIGH only by the hardware-shutdown path.
 - USB/VBUS, charging, or charge-full-on-external-power blocks automatic
   battery-idle and critical-low-battery hardware shutdown. Manual/debug
   shutdown commands must log a distinct reason from automatic battery-idle
   shutdown.
-- Current V2 N16R8 boards populate TPS63020/SY7088 battery-side current sense
-  on GPIO10/GPIO9. Future revised board profiles without those chips must use
-  `GPIO_NUM_NC` and must not make power-control decisions from absent telemetry.
+- Latest V2 N16R8 boards map `BAT_V_ADC` to GPIO10 and do not populate the
+  TPS63020/SY7088 battery-side current-sense chips. Current telemetry pins must
+  remain `GPIO_NUM_NC`, and firmware must not make power-control decisions from
+  absent telemetry.
 - Readiness/capability strings expose BLE HID, BLE audio, OTA, diagnostics, board,
   battery, power, and degraded-boot status clearly enough for desktop OOBE and
   production diagnostics.
@@ -59,3 +60,8 @@ git diff --check
 
 Hardware validation, flashing, serial capture, BLE capture, and recovery reflash
 must use the workflow hardware lock for the shortest practical action window.
+For operator recovery on Windows, double-click `tools\flash_bootloader_double_click.cmd`.
+It wraps `tools\flash_bootloader.ps1`, prompts for the COM port/confirmation,
+uses a conservative `115200` repair baud plus ROM no-stub flashing by default,
+and flashes only the ESP32-S3 bootloader at `0x0` without erasing app, NVS,
+pairing, or `diag_log` partitions.
