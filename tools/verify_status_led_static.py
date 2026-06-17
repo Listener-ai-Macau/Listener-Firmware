@@ -24,6 +24,7 @@ CHECKS = {
         "status_led_set_recording",
         "status_led_set_recording_level",
         "status_led_set_processing",
+        "status_led_notify_shutdown_confirm",
         "status_led_prepare_sleep",
         "STATUS_LED_REC_SOURCE_DEVICE_MIC",
         "STATUS_LED_REC_SOURCE_DESKTOP_MIC",
@@ -206,11 +207,21 @@ CHECKS = {
         "STATUS_LED_RECORDING_LEVEL_BOOST_MULTIPLIER 4U",
         "STATUS_LED_RECORDING_LEVEL_FLOOR_PERCENT 35U",
         "STATUS_LED_RECORDING_LEVEL_RANGE_PERCENT 65U",
+        "STATUS_LED_RECORDING_STATUS_MAX_PERCENT 54U",
+        "STATUS_LED_PROCESSING_STATUS_MAX_PERCENT 52U",
         "status_led_set_recording_level",
         "rec_level=%u",
         "uint8_t level = s_state.recording_level_percent",
         "uint8_t percent = level_percent > breath ? level_percent : breath",
         "status_led_token_locked(status_led_rec_gold(), percent, false)",
+        "STATUS_LED_SHUTDOWN_CONFIRM_MS 1800U",
+        "STATUS_LED_SHUTDOWN_FINAL_CONFIRM_MS 700U",
+        "status_led_render_shutdown_confirm_locked",
+        "status_led_apply_status_tail_guard_locked",
+        "status_led_notify_shutdown_confirm",
+        "shutdown_confirm_started_ms",
+        "s_state.low_power_disabled = false;",
+        "shutdown_final",
         "status_led_smoothstep_per_mille",
         "status_led_charging_breath_lerp_percent",
         "status_led_charging_breath_percent",
@@ -263,6 +274,7 @@ CHECKS = {
         "STATUS_LED_WS2812_T1L_TICKS 6U",
         "SOC_RMT_MEM_WORDS_PER_CHANNEL",
         "status_led_strip_backend_fill_pixels",
+        "rmt_encoder_reset(backend->encoder)",
         "status_led_color_order_name",
         "reset_us=300",
         "diag_log(DIAG_SRC_STATUS_LED, DIAG_LED_OUTPUT_FAIL",
@@ -354,6 +366,16 @@ CHECKS = {
     "components/power_manager/power_manager.c": [
         "status_led_prepare_sleep",
         "status_led_set_low_power_disabled",
+        "status_led_notify_shutdown_confirm",
+        "POWER_MANAGER_SHUTDOWN_LED_CONFIRM_MS 700U",
+        "hardware_shutdown_confirmed",
+    ],
+    "ports/esp32/voice_key_input/voice_key_input_esp32.c": [
+        "#include \"status_led.h\"",
+        "status_led_notify_shutdown_confirm(false, \"ec11_long_press_shutdown_confirm\")",
+    ],
+    "ports/esp32/voice_key_input/CMakeLists.txt": [
+        "status_led",
     ],
     "docs/features/status_led.md": [
         "GPIO5",
@@ -387,6 +409,9 @@ CHECKS = {
         "`OK` is a visible 2.2 second success confirmation after the host reports processing done",
         "REC`, `OK`, and routine `AI` states do not recolor key LEDs",
         "EC11 knob and edge/frame LEDs are independent accent surfaces",
+        "Status-tail anti-flicker guard",
+        "Long-press shutdown confirmation",
+        "`~LED:PREVIEW <ready|pairing|reconnect|capture|desktop_mic|recording_processing|rec_not_available|processing|ok|low_battery|critical_battery|charging|full|shutdown_confirm|shutdown_final|sleep|clear>`",
         "It does not add a hidden percent cap above the user plugged/battery brightness setting",
         "user brightness cap is persisted through `~LED:BRIGHTNESS <0-100>` and applies as the hard routine-product brightness limit",
         "clear semantic colors",
@@ -599,6 +624,48 @@ def main() -> int:
         failures.append("status_led.c: user brightness must scale the whole routine effect envelope, not only clamp max brightness")
     if "status_led_triangle_percent(now_ms, 2400U, 42U, 85U)" in status_led:
         failures.append("status_led.c: REC must be voice-reactive, not a fixed 42-85 percent breath")
+    if not re.search(
+        r"status_led_render_recording_locked[\s\S]*?"
+        r"percent\s*>\s*STATUS_LED_RECORDING_STATUS_MAX_PERCENT[\s\S]*?"
+        r"percent\s*=\s*STATUS_LED_RECORDING_STATUS_MAX_PERCENT",
+        status_led,
+    ):
+        failures.append("status_led.c: recording semantic LED must have a status-rail brightness cap")
+    if not re.search(
+        r"status_led_render_processing_locked[\s\S]*?"
+        r"breath\s*>\s*STATUS_LED_PROCESSING_STATUS_MAX_PERCENT[\s\S]*?"
+        r"breath\s*=\s*STATUS_LED_PROCESSING_STATUS_MAX_PERCENT",
+        status_led,
+    ):
+        failures.append("status_led.c: processing semantic LED must have a status-rail brightness cap")
+    if not re.search(
+        r"status_led_render_power_locked\(frame, now_ms, &safety\);[\s\S]*?"
+        r"status_led_render_ble_locked\(frame, now_ms\);[\s\S]*?"
+        r"status_led_render_shutdown_confirm_locked\(frame, now_ms\)[\s\S]*?"
+        r"status_led_apply_status_tail_guard_locked\(frame, now_ms\);[\s\S]*?"
+        r"return;[\s\S]*?"
+        r"status_led_render_recording_locked\(frame, now_ms, &safety\);",
+        status_led,
+    ):
+        failures.append("status_led.c: shutdown confirmation must render after PWR/BLE and before REC/AI effects")
+    if not re.search(
+        r"status_led_render_ok_locked\(frame, now_ms\);[\s\S]*?"
+        r"status_led_render_error_locked\(frame, now_ms, &safety\);[\s\S]*?"
+        r"status_led_apply_status_tail_guard_locked\(frame, now_ms\);",
+        status_led,
+    ):
+        failures.append("status_led.c: OK/WARN tail guard must run after normal OK/error rendering")
+    if "frame->status[STATUS_LED_SEM_OK] = (status_led_rgb_t){0};" not in status_led:
+        failures.append("status_led.c: OK tail guard must explicitly clear LED5 when inactive")
+    if "frame->status[STATUS_LED_SEM_WARN] = (status_led_rgb_t){0};" not in status_led:
+        failures.append("status_led.c: WARN tail guard must explicitly clear LED6 when inactive")
+    if not re.search(
+        r"void\s+status_led_notify_shutdown_confirm\([^)]*\)[\s\S]*?"
+        r"s_state\.low_power_disabled\s*=\s*false;[\s\S]*?"
+        r"s_state\.output_disabled\s*=\s*false;",
+        status_led,
+    ):
+        failures.append("status_led.c: shutdown confirmation must wake LED output even from low-power-off state")
     if re.search(r"\.mem_block_symbols\s*=\s*64\b", status_led_backend):
         failures.append(
             "status_led_strip_backend.c: RMT mem_block_symbols=64 consumes two ESP32-S3 RMT blocks per strip and leaves fewer than four TX channels"
@@ -607,6 +674,15 @@ def main() -> int:
         failures.append(
             "status_led_strip_backend.c: RMT strip channels must use SOC_RMT_MEM_WORDS_PER_CHANNEL so all four V2 LED zones can initialize"
         )
+    if not re.search(
+        r"status_led_strip_backend_fill_pixels\(backend, color_order, colors\);[\s\S]*?"
+        r"rmt_encoder_reset\(backend->encoder\);[\s\S]*?"
+        r"rmt_transmit\(",
+        status_led_backend,
+    ):
+        failures.append("status_led_strip_backend.c: RMT encoder must reset before each strip transmit")
+    if status_led_backend.count("rmt_encoder_reset(backend->encoder)") < 2:
+        failures.append("status_led_strip_backend.c: invalid-state retry must also reset the RMT encoder")
 
     led_init_index = main_c.find("status_led_init()")
     led_start_index = main_c.find("status_led_start()")

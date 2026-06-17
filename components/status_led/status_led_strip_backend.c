@@ -287,6 +287,7 @@ esp_err_t status_led_strip_backend_transmit(
     }
 
     status_led_strip_backend_fill_pixels(backend, color_order, colors);
+    (void)rmt_encoder_reset(backend->encoder);
     rmt_transmit_config_t transmit_config = {
         .loop_count = 0,
     };
@@ -298,6 +299,7 @@ esp_err_t status_led_strip_backend_transmit(
         &transmit_config);
     if (ret == ESP_ERR_INVALID_STATE) {
         (void)rmt_tx_wait_all_done(backend->channel, STATUS_LED_RMT_WAIT_MS);
+        (void)rmt_encoder_reset(backend->encoder);
         ret = rmt_transmit(
             backend->channel,
             backend->encoder,

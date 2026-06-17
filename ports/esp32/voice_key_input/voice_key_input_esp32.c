@@ -33,6 +33,7 @@
 #include "watchdog_platform.h"
 #include "ble_hid.h"
 #include "hid_keyboard.h"
+#include "status_led.h"
 
 #if VOICE_KEY_INPUT_ENABLE_LEGACY_EXPANDER
 #include "audio_capture_platform.h"
@@ -429,6 +430,7 @@ static void voice_key_input_handle_button_sample(voice_key_button_state_t *butto
             button->pending_single_click = false;
             button->pending_click_ms = 0;
             ESP_LOGI(TAG, "%s long press reserved for power control: hold_ms=%" PRIu32, button->label, next_pressed_ms);
+            status_led_notify_shutdown_confirm(false, "ec11_long_press_shutdown_confirm");
             diag_log(DIAG_SRC_VOICE_KEY, DIAG_VKEY_PRESS, DIAG_SEV_INFO, 3, next_pressed_ms, 0, 0);
         }
     }

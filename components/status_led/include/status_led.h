@@ -48,6 +48,7 @@ void status_led_set_recording_level(uint8_t level_percent);
 void status_led_set_processing(bool active, const char *reason);
 void status_led_notify_success(const char *reason);
 void status_led_notify_key_event(uint8_t key_index, bool pressed);
+void status_led_notify_shutdown_confirm(bool final, const char *reason);
 void status_led_set_error(
     status_led_error_domain_t domain,
     status_led_error_severity_t severity,

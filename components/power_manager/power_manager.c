@@ -36,6 +36,7 @@ extern void ble_hid_battery_task_wake(void) __attribute__((weak));
 extern void system_health_set_low_power_mode(bool enabled) __attribute__((weak));
 extern void status_led_set_low_power_disabled(bool disabled) __attribute__((weak));
 extern void status_led_prepare_sleep(void) __attribute__((weak));
+extern void status_led_notify_shutdown_confirm(bool final, const char *reason) __attribute__((weak));
 
 #ifndef CONFIG_POWER_MANAGER_ENABLE
 #define CONFIG_POWER_MANAGER_ENABLE 1
@@ -72,6 +73,7 @@ extern void status_led_prepare_sleep(void) __attribute__((weak));
 #define POWER_MANAGER_LOW_BATTERY_CONFIRM_MS 5000U
 #define POWER_MANAGER_LOW_BATTERY_BOOT_GRACE_MS 15000U
 #define POWER_MANAGER_SHUTDOWN_BATTERY_NOTIFY_WAIT_MS 100U
+#define POWER_MANAGER_SHUTDOWN_LED_CONFIRM_MS 700U
 #define POWER_MANAGER_POWER_REMOVAL_WAIT_MS 10000U
 #define POWER_MANAGER_SHUTDOWN_FAILURE_RETRY_MS 900000U
 #ifndef CONFIG_POWER_MANAGER_BATTERY_CRITICAL_PERCENT
@@ -1349,6 +1351,11 @@ static esp_err_t power_manager_enter_hardware_shutdown(power_manager_shutdown_re
         power_hold.configured ? 1u : 0u,
         power_hold.policy != NULL ? power_hold.policy : "unknown",
         POWER_MANAGER_SHUTDOWN_USER_ACTION);
+
+    if (status_led_notify_shutdown_confirm != NULL) {
+        status_led_notify_shutdown_confirm(true, "hardware_shutdown_confirmed");
+        vTaskDelay(pdMS_TO_TICKS(POWER_MANAGER_SHUTDOWN_LED_CONFIRM_MS));
+    }
 
     if (ble_hid_battery_force_refresh != NULL) {
         esp_err_t battery_notify_ret = ble_hid_battery_force_refresh("pre_shutdown");
