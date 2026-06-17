@@ -200,6 +200,14 @@ if ($board -match "(?s)static void board_print_gpio_status\(void\)\s*\{(?<body>.
     Add-CheckError "missing board_print_gpio_status function"
 }
 
+if ($keyboard -match "(?s)static int8_t keyboard_ec11_quadrature_delta\(uint8_t previous, uint8_t current\)\s*\{(?<body>.*?)\n\}") {
+    $ec11DeltaBody = $Matches["body"]
+    Assert-Contains -Text $ec11DeltaBody -Pattern "case 0x01:\s*case 0x07:\s*case 0x0E:\s*case 0x08:\s*return 1;" -Description "V2 EC11 observed clockwise phase table"
+    Assert-Contains -Text $ec11DeltaBody -Pattern "case 0x02:\s*case 0x0B:\s*case 0x0D:\s*case 0x04:\s*return -1;" -Description "V2 EC11 observed counter-clockwise phase table"
+} else {
+    Add-CheckError "missing keyboard_ec11_quadrature_delta function"
+}
+
 foreach ($token in @(
     "CONFIG_LISTENER_BOARD_PROFILE_V2_N16R8=y",
     "CONFIG_ESPTOOLPY_FLASHSIZE_16MB=y",

@@ -184,12 +184,12 @@ static int8_t keyboard_ec11_quadrature_delta(uint8_t previous, uint8_t current)
     case 0x07:
     case 0x0E:
     case 0x08:
-        return -1;
+        return 1;
     case 0x02:
     case 0x0B:
     case 0x0D:
     case 0x04:
-        return 1;
+        return -1;
     default:
         return 0;
     }
