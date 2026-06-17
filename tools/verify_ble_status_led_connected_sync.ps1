@@ -79,8 +79,10 @@ Assert-Contains $statusLed 'STATUS_LED_BATTERY_IDLE_BLE_HEARTBEAT_ON_MS\s+120U' 
     "battery idle BLE heartbeat must be brief"
 Assert-Contains $statusLed 'case STATUS_LED_BLE_CONNECTED:[\s\S]*?confidence \|\| status_window[\s\S]*?status_led_token_locked\(ble_blue,\s*48U,\s*false\)[\s\S]*?battery_idle[\s\S]*?STATUS_LED_BATTERY_IDLE_BLE_HEARTBEAT_PERCENT[\s\S]*?STATUS_LED_PROFILE_STANDARD[\s\S]*?status_led_token_locked\(ble_blue,\s*30U,\s*false\)' `
     "connected rendering must transition from confidence brightness to battery idle heartbeat or plugged steady low blue"
-Assert-Contains $statusLed 'percent = status_window \? 46U : 0U;' `
-    "battery PWR must turn off after the status window instead of staying on while connected"
+Assert-Contains $statusLed 'const bool active_work = s_state\.recording_active \|\| s_state\.processing_active;' `
+    "status LED renderer must define active work for recording/processing visibility"
+Assert-Contains $statusLed 'percent = \(status_window \|\| active_work\) \? 46U : 0U;' `
+    "battery PWR must stay readable during active recording/processing and turn off after idle status window"
 Assert-Contains $statusDoc 'BLE Connection Source Of Truth' `
     "status LED documentation must describe the BLE connection source of truth"
 
@@ -142,4 +144,4 @@ if ($modelState -ne "connected") {
     throw "verify_ble_status_led_connected_sync failed: reconnect-to-connected model regressed to $modelState"
 }
 
-Write-Host "PASS: BLE status LED connected-sync checks cover GAP/HID connected source of truth, stale advertising suppression, bounded connected brightness, battery idle heartbeat, and disconnect/advertising negative transitions."
+Write-Host "PASS: BLE status LED connected-sync checks cover GAP/HID connected source of truth, stale advertising suppression, bounded connected brightness, active-work PWR/BLE visibility, battery idle heartbeat, and disconnect/advertising negative transitions."

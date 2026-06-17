@@ -40,8 +40,8 @@
 #define STATUS_LED_BLE_CONFIDENCE_MS 8000U
 #define STATUS_LED_OOBE_CONFIDENCE_MS 25000U
 #define STATUS_LED_ERROR_HOLD_MS 6000U
-#define STATUS_LED_OK_TOTAL_MS 900U
-#define STATUS_LED_OK_PEAK_MS 160U
+#define STATUS_LED_OK_TOTAL_MS 2200U
+#define STATUS_LED_OK_PEAK_MS 360U
 #define STATUS_LED_KEY_FEEDBACK_MS 240U
 #define STATUS_LED_CHARGING_BREATH_PERIOD_MS 3600U
 #define STATUS_LED_CHARGING_BREATH_LOW_HOLD_MS 300U
@@ -49,6 +49,7 @@
 #define STATUS_LED_CHARGING_BREATH_HIGH_HOLD_MS 80U
 #define STATUS_LED_CHARGING_BREATH_MIN_PERCENT 1U
 #define STATUS_LED_CHARGING_BREATH_MAX_PERCENT 100U
+#define STATUS_LED_CHARGING_ACTIVE_WORK_MIN_PERCENT 46U
 #define STATUS_LED_CHARGE_FULL_DEBOUNCE_MS 10000U
 #define STATUS_LED_CHARGE_FULL_MIN_MV 4050U
 #define STATUS_LED_CHARGE_FULL_MIN_PERCENT 88U
@@ -67,7 +68,7 @@
 #define STATUS_LED_STANDARD_PROFILE_BUDGET_MA 760U
 #define STATUS_LED_AMBIENT_PROFILE_BUDGET_MA 620U
 #define STATUS_LED_CHASE_DEFAULT_STEP_MS 250U
-#define STATUS_LED_CONTRACT_REV "status_key_ec11_edge_accents_v18"
+#define STATUS_LED_CONTRACT_REV "status_key_ec11_edge_true_state_v19"
 #define STATUS_LED_NVS_NAMESPACE "status_led"
 #define STATUS_LED_NVS_PROFILE_KEY "profile"
 #define STATUS_LED_NVS_BRIGHTNESS_KEY "brightness"
@@ -97,6 +98,8 @@
 #define STATUS_LED_EC11_ACCENT_MAX_PERCENT 34U
 #define STATUS_LED_EDGE_ACCENT_MIN_PERCENT 8U
 #define STATUS_LED_EDGE_ACCENT_MAX_PERCENT 28U
+#define STATUS_LED_POWER_SOURCE_USB_DET (1U << 0)
+#define STATUS_LED_POWER_SOURCE_CHARGER_STATUS (1U << 1)
 
 typedef enum {
     STATUS_LED_STRIP_STATUS = 0,
@@ -191,6 +194,8 @@ typedef enum {
 #define STATUS_LED_DIAG_POWER_OUTPUT_OFF     (1U << 8)
 #define STATUS_LED_DIAG_POWER_DISPLAY_VALID  (1U << 24)
 #define STATUS_LED_DIAG_POWER_DISPLAY_RISE_SUPPRESSED (1U << 25)
+#define STATUS_LED_DIAG_POWER_EXTERNAL_USB_DET (1U << 26)
+#define STATUS_LED_DIAG_POWER_EXTERNAL_CHARGER_STATUS (1U << 27)
 #define STATUS_LED_DIAG_POWER_DISPLAY_LEVEL_SHIFT 16U
 #define STATUS_LED_DIAG_POWER_DISPLAY_LEVEL_MASK (0xFFU << STATUS_LED_DIAG_POWER_DISPLAY_LEVEL_SHIFT)
 
@@ -236,6 +241,7 @@ typedef struct {
     uint8_t recording_level_percent;
     bool battery_valid;
     bool external_power_present;
+    uint32_t external_power_source_flags;
     bool charging;
     bool full;
     bool raw_charging;
@@ -265,6 +271,7 @@ typedef struct {
     uint8_t last_budget_scale_percent;
     bool current_limited_by_budget;
     uint32_t last_logged_visual_key;
+    uint32_t last_logged_frame_rgb_key;
     bool visual_log_initialized;
     uint8_t key_pressed_mask;
     uint32_t key_until_ms[STATUS_LED_KEY_COUNT];
@@ -356,6 +363,18 @@ static uint32_t status_led_pack_rgb(status_led_rgb_t color)
     return ((uint32_t)color.r << 16) | ((uint32_t)color.g << 8) | (uint32_t)color.b;
 }
 
+static uint8_t status_led_rgb_max_channel(status_led_rgb_t color)
+{
+    uint8_t max = color.r;
+    if (max < color.g) {
+        max = color.g;
+    }
+    if (max < color.b) {
+        max = color.b;
+    }
+    return max;
+}
+
 static status_led_power_color_class_t status_led_power_color_class(status_led_rgb_t color)
 {
     if (!status_led_rgb_is_on(color)) {
@@ -371,6 +390,11 @@ static status_led_power_color_class_t status_led_power_color_class(status_led_rg
         return STATUS_LED_PWR_COLOR_OTHER;
     }
     if (color.r > 0U && color.g > 0U) {
+        if (color.b == 0U &&
+            color.r >= color.g &&
+            ((uint32_t)color.g * 100U) >= ((uint32_t)color.r * 60U)) {
+            return STATUS_LED_PWR_COLOR_GOLD;
+        }
         if (color.r >= color.g) {
             return STATUS_LED_PWR_COLOR_AMBER;
         }
@@ -419,6 +443,44 @@ static uint32_t status_led_active_flags_from_frame(const status_led_frame_t *fra
         flags |= STATUS_LED_DIAG_ACTIVE_EDGE;
     }
     return flags;
+}
+
+static uint8_t status_led_strip_max_channel(const status_led_rgb_t *colors, size_t count)
+{
+    uint8_t max = 0;
+    for (size_t index = 0; index < count; ++index) {
+        uint8_t channel = status_led_rgb_max_channel(colors[index]);
+        if (max < channel) {
+            max = channel;
+        }
+    }
+    return max;
+}
+
+static uint32_t status_led_pack_status_color_classes(const status_led_frame_t *frame)
+{
+    uint32_t packed = 0;
+    for (size_t index = 0; index < STATUS_LED_STATUS_COUNT; ++index) {
+        packed |= ((uint32_t)status_led_power_color_class(frame->status[index]) & 0x0FU) <<
+                  (index * 4U);
+    }
+    return packed;
+}
+
+static uint32_t status_led_pack_status_intensity_a(const status_led_frame_t *frame)
+{
+    return ((uint32_t)status_led_rgb_max_channel(frame->status[STATUS_LED_SEM_PWR])) |
+           ((uint32_t)status_led_rgb_max_channel(frame->status[STATUS_LED_SEM_BLE]) << 8) |
+           ((uint32_t)status_led_rgb_max_channel(frame->status[STATUS_LED_SEM_REC]) << 16) |
+           ((uint32_t)status_led_rgb_max_channel(frame->status[STATUS_LED_SEM_AI]) << 24);
+}
+
+static uint32_t status_led_pack_status_intensity_b(const status_led_frame_t *frame)
+{
+    return ((uint32_t)status_led_rgb_max_channel(frame->status[STATUS_LED_SEM_OK])) |
+           ((uint32_t)status_led_rgb_max_channel(frame->status[STATUS_LED_SEM_WARN]) << 8) |
+           ((uint32_t)status_led_strip_max_channel(frame->ec11, STATUS_LED_EC11_COUNT) << 16) |
+           ((uint32_t)status_led_strip_max_channel(frame->edge, STATUS_LED_EDGE_COUNT) << 24);
 }
 
 static uint32_t status_led_diag_reason_code(const char *reason)
@@ -532,6 +594,12 @@ static uint32_t status_led_power_flags_locked(void)
     }
     if (s_state.battery_display_rise_suppressed) {
         flags |= STATUS_LED_DIAG_POWER_DISPLAY_RISE_SUPPRESSED;
+    }
+    if (s_state.external_power_source_flags & STATUS_LED_POWER_SOURCE_USB_DET) {
+        flags |= STATUS_LED_DIAG_POWER_EXTERNAL_USB_DET;
+    }
+    if (s_state.external_power_source_flags & STATUS_LED_POWER_SOURCE_CHARGER_STATUS) {
+        flags |= STATUS_LED_DIAG_POWER_EXTERNAL_CHARGER_STATUS;
     }
     return flags;
 }
@@ -650,19 +718,20 @@ static void status_led_log_visual_state_locked(const status_led_frame_t *frame, 
     const status_led_power_color_class_t pwr_class = status_led_power_color_class(pwr);
     const uint32_t active_flags = status_led_active_flags_from_frame(frame);
     const uint32_t visual_flags = status_led_visual_flags_locked(now_ms, pwr_class);
-    const uint32_t visible_pwr_flags =
-        (active_flags & STATUS_LED_DIAG_ACTIVE_PWR) |
-        ((active_flags != 0U) ? (1U << 8) : 0U);
     const uint32_t reason_code = status_led_diag_reason_code(s_state.last_reason);
+    const uint32_t frame_rgb_key = status_led_pack_status_color_classes(frame);
     const uint32_t visual_key =
-        (visible_pwr_flags & 0x1FFU) |
+        (active_flags & 0x1FFU) |
         ((visual_flags & 0x000FFFFFU) << 9);
 
-    if (s_state.visual_log_initialized && s_state.last_logged_visual_key == visual_key) {
+    if (s_state.visual_log_initialized &&
+        s_state.last_logged_visual_key == visual_key &&
+        s_state.last_logged_frame_rgb_key == frame_rgb_key) {
         return;
     }
     s_state.visual_log_initialized = true;
     s_state.last_logged_visual_key = visual_key;
+    s_state.last_logged_frame_rgb_key = frame_rgb_key;
 
     diag_log(
         DIAG_SRC_STATUS_LED,
@@ -671,6 +740,14 @@ static void status_led_log_visual_state_locked(const status_led_frame_t *frame, 
         active_flags,
         status_led_pack_rgb(pwr),
         visual_flags,
+        reason_code);
+    diag_log(
+        DIAG_SRC_STATUS_LED,
+        DIAG_LED_FRAME_RGB,
+        DIAG_SEV_INFO,
+        status_led_pack_status_color_classes(frame),
+        status_led_pack_status_intensity_a(frame),
+        status_led_pack_status_intensity_b(frame),
         reason_code);
 }
 
@@ -769,6 +846,20 @@ static const char *status_led_error_severity_name(status_led_error_severity_t se
     case STATUS_LED_ERROR_RETRYABLE: return "retryable";
     case STATUS_LED_ERROR_HARD: return "hard";
     default: return "unknown";
+    }
+}
+
+static const char *status_led_external_power_source_name(uint32_t source_flags)
+{
+    switch (source_flags & (STATUS_LED_POWER_SOURCE_USB_DET | STATUS_LED_POWER_SOURCE_CHARGER_STATUS)) {
+    case STATUS_LED_POWER_SOURCE_USB_DET:
+        return "usb_det";
+    case STATUS_LED_POWER_SOURCE_CHARGER_STATUS:
+        return "charger_status";
+    case STATUS_LED_POWER_SOURCE_USB_DET | STATUS_LED_POWER_SOURCE_CHARGER_STATUS:
+        return "usb_det|charger_status";
+    default:
+        return "none";
     }
 }
 
@@ -1235,6 +1326,7 @@ static void status_led_render_test_locked(status_led_frame_t *frame, uint32_t no
 static void status_led_render_power_locked(status_led_frame_t *frame, uint32_t now_ms, bool *ret_safety)
 {
     const bool status_window = now_ms < s_state.status_window_until_ms;
+    const bool active_work = s_state.recording_active || s_state.processing_active;
     bool safety = false;
     uint8_t percent = 0;
     status_led_rgb_t color = {0};
@@ -1246,6 +1338,9 @@ static void status_led_render_power_locked(status_led_frame_t *frame, uint32_t n
                 : STATUS_LED_FULL_STEADY_PERCENT;
         } else {
             percent = status_led_charging_breath_percent(now_ms);
+            if (active_work && percent < STATUS_LED_CHARGING_ACTIVE_WORK_MIN_PERCENT) {
+                percent = STATUS_LED_CHARGING_ACTIVE_WORK_MIN_PERCENT;
+            }
         }
         color = status_led_token_locked(status_led_rgb(255, 255, 255), percent, false);
     } else if (s_state.battery_valid) {
@@ -1261,9 +1356,9 @@ static void status_led_render_power_locked(status_led_frame_t *frame, uint32_t n
                 color = status_led_token_locked(status_led_rgb(255, 0, 0), 80U, true);
             }
         } else {
-            percent = status_window ? 46U : 0U;
+            percent = (status_window || active_work) ? 46U : 0U;
             if (s_state.profile == STATUS_LED_PROFILE_LOW || s_state.profile == STATUS_LED_PROFILE_OFF) {
-                percent = status_window ? 30U : 0U;
+                percent = (status_window || active_work) ? 30U : 0U;
             }
             if (battery_level >= STATUS_LED_BATTERY_DISPLAY_GREEN_PERCENT) {
                 color = status_led_token_locked(status_led_rgb(0, 255, 0), percent, false);
@@ -1290,7 +1385,11 @@ static void status_led_render_ble_locked(status_led_frame_t *frame, uint32_t now
     const bool confidence = now_ms < s_state.ble_confidence_until_ms ||
                             now_ms < s_state.oobe_confidence_until_ms;
     const bool status_window = now_ms < s_state.status_window_until_ms;
-    const bool battery_idle = !s_state.external_power_present && !confidence && !status_window;
+    const bool active_work = s_state.recording_active || s_state.processing_active;
+    const bool battery_idle = !s_state.external_power_present &&
+                              !confidence &&
+                              !status_window &&
+                              !active_work;
 
     switch (s_state.ble_state) {
     case STATUS_LED_BLE_PAIRING:
@@ -1331,6 +1430,8 @@ static void status_led_render_ble_locked(status_led_frame_t *frame, uint32_t now
                 ble_blue,
                 STATUS_LED_BATTERY_IDLE_BLE_HEARTBEAT_PERCENT,
                 false);
+        } else if (!battery_idle && s_state.profile == STATUS_LED_PROFILE_LOW) {
+            color = status_led_token_locked(ble_blue, 22U, false);
         } else if (!battery_idle && s_state.profile == STATUS_LED_PROFILE_STANDARD) {
             color = status_led_token_locked(ble_blue, 30U, false);
         } else if (!battery_idle && s_state.profile == STATUS_LED_PROFILE_AMBIENT) {
@@ -1504,6 +1605,7 @@ static void status_led_render_ec11_locked(status_led_frame_t *frame, uint32_t no
         return;
     }
 
+    uint8_t rec_percent = status_led_recording_visual_percent_locked(now_ms);
     uint8_t ok_percent = status_led_ok_visual_percent_locked(now_ms);
     if (ok_percent > 0U) {
         uint8_t percent = ok_percent > STATUS_LED_EC11_ACCENT_MAX_PERCENT
@@ -1519,28 +1621,41 @@ static void status_led_render_ec11_locked(status_led_frame_t *frame, uint32_t no
     if (s_state.processing_active) {
         uint32_t elapsed = now_ms - s_state.processing_started_ms;
         uint8_t percent = elapsed > 10000U ? 24U : STATUS_LED_EC11_ACCENT_MAX_PERCENT;
-        uint32_t dot = (now_ms / 180U) % STATUS_LED_EC11_COUNT;
+        uint32_t dot = (now_ms / 220U) % STATUS_LED_EC11_COUNT;
         status_led_rgb_t head = status_led_token_locked(status_led_rgb(160, 0, 255), percent, false);
         status_led_rgb_t tail = status_led_scale_raw(head, 35U);
         status_led_set_max(&frame->ec11[dot], head);
         status_led_set_max(&frame->ec11[(dot + STATUS_LED_EC11_COUNT - 1U) % STATUS_LED_EC11_COUNT], tail);
         status_led_set_max(&frame->ec11[(dot + 1U) % STATUS_LED_EC11_COUNT], tail);
+        if (rec_percent > 0U) {
+            uint8_t rec_accent_percent =
+                STATUS_LED_EC11_ACCENT_MIN_PERCENT +
+                (uint8_t)(((uint32_t)rec_percent *
+                           (STATUS_LED_EC11_ACCENT_MAX_PERCENT - STATUS_LED_EC11_ACCENT_MIN_PERCENT)) / 100U);
+            uint32_t anchor = (dot + (STATUS_LED_EC11_COUNT / 2U)) % STATUS_LED_EC11_COUNT;
+            status_led_rgb_t rec = status_led_token_locked(status_led_rec_gold(), rec_accent_percent, false);
+            status_led_rgb_t rec_tail = status_led_scale_raw(rec, 28U);
+            status_led_set_max(&frame->ec11[anchor], rec);
+            status_led_set_max(&frame->ec11[(anchor + STATUS_LED_EC11_COUNT - 1U) % STATUS_LED_EC11_COUNT], rec_tail);
+            status_led_set_max(&frame->ec11[(anchor + 1U) % STATUS_LED_EC11_COUNT], rec_tail);
+        }
         return;
     }
 
-    uint8_t rec_percent = status_led_recording_visual_percent_locked(now_ms);
     if (rec_percent > 0U) {
         uint8_t accent_percent =
             STATUS_LED_EC11_ACCENT_MIN_PERCENT +
             (uint8_t)(((uint32_t)rec_percent *
                        (STATUS_LED_EC11_ACCENT_MAX_PERCENT - STATUS_LED_EC11_ACCENT_MIN_PERCENT)) / 100U);
-        uint32_t dot = (now_ms / 240U) % STATUS_LED_EC11_COUNT;
+        uint32_t dot = (now_ms / 360U) % STATUS_LED_EC11_COUNT;
         status_led_rgb_t head = status_led_token_locked(status_led_rec_gold(), accent_percent, false);
         status_led_rgb_t tail = status_led_scale_raw(head, 32U);
         uint32_t opposite = (dot + (STATUS_LED_EC11_COUNT / 2U)) % STATUS_LED_EC11_COUNT;
         status_led_set_max(&frame->ec11[dot], head);
         status_led_set_max(&frame->ec11[opposite], head);
         status_led_set_max(&frame->ec11[(dot + STATUS_LED_EC11_COUNT - 1U) % STATUS_LED_EC11_COUNT], tail);
+        status_led_set_max(&frame->ec11[(dot + 1U) % STATUS_LED_EC11_COUNT], tail);
+        status_led_set_max(&frame->ec11[(opposite + STATUS_LED_EC11_COUNT - 1U) % STATUS_LED_EC11_COUNT], tail);
         status_led_set_max(&frame->ec11[(opposite + 1U) % STATUS_LED_EC11_COUNT], tail);
         return;
     }
@@ -1576,6 +1691,7 @@ static void status_led_render_edge_locked(status_led_frame_t *frame, uint32_t no
         return;
     }
 
+    uint8_t rec_percent = status_led_recording_visual_percent_locked(now_ms);
     uint8_t ok_percent = status_led_ok_visual_percent_locked(now_ms);
     if (ok_percent > 0U) {
         uint8_t percent = ok_percent > STATUS_LED_EDGE_ACCENT_MAX_PERCENT
@@ -1596,18 +1712,37 @@ static void status_led_render_edge_locked(status_led_frame_t *frame, uint32_t no
         status_led_rgb_t tail = status_led_scale_raw(head, 30U);
         status_led_set_max(&frame->edge[dot], head);
         status_led_set_max(&frame->edge[(dot + 1U) % STATUS_LED_EDGE_COUNT], tail);
+        status_led_set_max(&frame->edge[(dot + STATUS_LED_EDGE_COUNT - 1U) % STATUS_LED_EDGE_COUNT], tail);
+        if (rec_percent > 0U) {
+            uint8_t accent_percent =
+                STATUS_LED_EDGE_ACCENT_MIN_PERCENT +
+                (uint8_t)(((uint32_t)rec_percent *
+                           (STATUS_LED_EDGE_ACCENT_MAX_PERCENT - STATUS_LED_EDGE_ACCENT_MIN_PERCENT)) / 100U);
+            status_led_rgb_t gold = status_led_token_locked(status_led_rec_gold(), accent_percent, false);
+            status_led_rgb_t gold_tail = status_led_scale_raw(gold, 35U);
+            status_led_set_max(&frame->edge[1], gold);
+            status_led_set_max(&frame->edge[4], gold);
+            status_led_set_max(&frame->edge[0], gold_tail);
+            status_led_set_max(&frame->edge[2], gold_tail);
+            status_led_set_max(&frame->edge[3], gold_tail);
+            status_led_set_max(&frame->edge[5], gold_tail);
+        }
         return;
     }
 
-    uint8_t rec_percent = status_led_recording_visual_percent_locked(now_ms);
     if (rec_percent > 0U) {
         uint8_t accent_percent =
             STATUS_LED_EDGE_ACCENT_MIN_PERCENT +
             (uint8_t)(((uint32_t)rec_percent *
                        (STATUS_LED_EDGE_ACCENT_MAX_PERCENT - STATUS_LED_EDGE_ACCENT_MIN_PERCENT)) / 100U);
         status_led_rgb_t color = status_led_token_locked(status_led_rec_gold(), accent_percent, false);
+        status_led_rgb_t tail = status_led_scale_raw(color, 35U);
+        status_led_set_max(&frame->edge[0], tail);
         status_led_set_max(&frame->edge[1], color);
+        status_led_set_max(&frame->edge[2], tail);
+        status_led_set_max(&frame->edge[3], tail);
         status_led_set_max(&frame->edge[4], color);
+        status_led_set_max(&frame->edge[5], tail);
         return;
     }
 
@@ -1625,7 +1760,7 @@ static void status_led_render_edge_locked(status_led_frame_t *frame, uint32_t no
         return;
     }
     if (s_state.profile == STATUS_LED_PROFILE_AMBIENT) {
-        uint8_t percent = status_led_triangle_percent(now_ms, 4200U, 22U, 42U);
+        uint8_t percent = status_led_triangle_percent(now_ms, 4200U, 12U, 24U);
         status_led_rgb_t color = status_led_token_locked(status_led_rgb(0, 0, 255), percent, false);
         for (size_t index = 0; index < STATUS_LED_EDGE_COUNT; ++index) {
             status_led_set_max(&frame->edge[index], color);
@@ -1720,6 +1855,7 @@ static void status_led_preview_ready_baseline_locked(uint32_t now_ms)
         s_state.battery_valid = true;
         s_state.battery_level_percent = 80;
         s_state.battery_mv = 4000;
+        s_state.external_power_source_flags = 0;
         s_state.charging = false;
         s_state.full = false;
         s_state.raw_charging = false;
@@ -1784,17 +1920,29 @@ static void status_led_poll_power_inputs(void)
     uint8_t battery_level = battery_valid ? battery.level_percent : 0xFF;
     bool usb_power_present = BOARD_PINS_USB_DET_IO != GPIO_NUM_NC &&
                              gpio_get_level(BOARD_PINS_USB_DET_IO) > 0;
-    bool raw_charging = usb_power_present &&
-                        BOARD_PINS_BAT_CHG_IO != GPIO_NUM_NC &&
+    bool raw_charging = BOARD_PINS_BAT_CHG_IO != GPIO_NUM_NC &&
                         gpio_get_level(BOARD_PINS_BAT_CHG_IO) == 0;
-    bool raw_full = usb_power_present &&
-                    BOARD_PINS_BAT_STD_IO != GPIO_NUM_NC &&
+    bool raw_full = BOARD_PINS_BAT_STD_IO != GPIO_NUM_NC &&
                     gpio_get_level(BOARD_PINS_BAT_STD_IO) == 0;
-    bool external_power_present = usb_power_present;
-    uint8_t active_brightness = device_settings_get_active_brightness_percent(external_power_present);
+    uint32_t external_power_source_flags = 0;
+    if (usb_power_present) {
+        external_power_source_flags |= STATUS_LED_POWER_SOURCE_USB_DET;
+    }
+    if (raw_charging) {
+        external_power_source_flags |= STATUS_LED_POWER_SOURCE_CHARGER_STATUS;
+    }
+    bool external_power_present = external_power_source_flags != 0U;
+    uint8_t active_brightness = 0;
 
     if (xSemaphoreTake(s_mutex, portMAX_DELAY) == pdTRUE) {
-        if (!usb_power_present) {
+        if (!usb_power_present &&
+            raw_full &&
+            (s_state.external_power_source_flags & STATUS_LED_POWER_SOURCE_CHARGER_STATUS)) {
+            external_power_source_flags |= STATUS_LED_POWER_SOURCE_CHARGER_STATUS;
+            external_power_present = true;
+        }
+        active_brightness = device_settings_get_active_brightness_percent(external_power_present);
+        if (!external_power_present) {
             s_state.charge_full_latched = false;
             s_state.charge_full_candidate_since_ms = 0;
         } else if (!s_state.charge_full_latched) {
@@ -1813,8 +1961,8 @@ static void status_led_poll_power_inputs(void)
                 s_state.charge_full_candidate_since_ms = 0;
             }
         }
-        bool full = usb_power_present && s_state.charge_full_latched;
-        bool charging = usb_power_present && !full;
+        bool full = external_power_present && s_state.charge_full_latched;
+        bool charging = external_power_present && !full;
         bool battery_band_changed =
             s_state.battery_valid != battery_valid ||
             (battery_valid && (s_state.battery_level_percent / 10U) != (battery_level / 10U));
@@ -1832,6 +1980,7 @@ static void status_led_poll_power_inputs(void)
                  (s_state.battery_display_level_percent / 10U));
         bool power_visual_changed =
             s_state.external_power_present != external_power_present ||
+            s_state.external_power_source_flags != external_power_source_flags ||
             s_state.charging != charging ||
             s_state.full != full ||
             s_state.brightness_percent != active_brightness ||
@@ -1844,6 +1993,7 @@ static void status_led_poll_power_inputs(void)
         s_state.battery_mv = battery_mv;
         s_state.battery_level_percent = battery_level;
         s_state.external_power_present = external_power_present;
+        s_state.external_power_source_flags = external_power_source_flags;
         s_state.charging = charging;
         s_state.full = full;
         s_state.raw_charging = raw_charging;
@@ -2646,6 +2796,25 @@ static void status_led_run_pixel_test(
     status_led_request_refresh();
 }
 
+static void status_led_print_strip_rgb_line(
+    const char *detail,
+    const char *name,
+    const status_led_rgb_t *colors,
+    size_t count)
+{
+    printf("~LED:STATUS detail=%s %s_rgb=", detail, name);
+    for (size_t index = 0; index < count; ++index) {
+        printf(
+            "%spx%u:%u,%u,%u",
+            index == 0 ? "" : ";",
+            (unsigned)(index + 1U),
+            colors[index].r,
+            colors[index].g,
+            colors[index].b);
+    }
+    printf("\n");
+}
+
 static void status_led_print_status(void)
 {
     status_led_state_t snapshot;
@@ -2752,7 +2921,8 @@ static void status_led_print_status(void)
         "~LED:STATUS detail=power battery_valid=%u battery_level=%u battery_mv=%" PRIu32
         " battery_display_valid=%u battery_display_level=%u battery_display_mv=%" PRIu32
         " battery_display_rise_suppressed=%u"
-        " external_power=%u charging=%u full=%u raw_charging=%u raw_full=%u"
+        " external_power=%u external_power_source=%s source_flags=0x%02" PRIx32
+        " charging=%u full=%u raw_charging=%u raw_full=%u"
         " full_latched=%u full_candidate_ms=%" PRIu32
         " full_debounce_ms=%u full_min_mv=%u full_min_percent=%u"
         " status_window_ms_left=%" PRIu32 " ble_confidence_ms_left=%" PRIu32
@@ -2766,6 +2936,8 @@ static void status_led_print_status(void)
         snapshot.battery_display_mv,
         snapshot.battery_display_rise_suppressed ? 1U : 0U,
         snapshot.external_power_present ? 1U : 0U,
+        status_led_external_power_source_name(snapshot.external_power_source_flags),
+        snapshot.external_power_source_flags,
         snapshot.charging ? 1U : 0U,
         snapshot.full ? 1U : 0U,
         snapshot.raw_charging ? 1U : 0U,
@@ -2802,11 +2974,14 @@ static void status_led_print_status(void)
         snapshot.last_frame.status[STATUS_LED_SEM_WARN].r,
         snapshot.last_frame.status[STATUS_LED_SEM_WARN].g,
         snapshot.last_frame.status[STATUS_LED_SEM_WARN].b);
+    status_led_print_strip_rgb_line("rgb_ec11", "ec11", snapshot.last_frame.ec11, STATUS_LED_EC11_COUNT);
+    status_led_print_strip_rgb_line("rgb_key", "key", snapshot.last_frame.key, STATUS_LED_KEY_COUNT);
+    status_led_print_strip_rgb_line("rgb_edge", "edge", snapshot.last_frame.edge, STATUS_LED_EDGE_COUNT);
     printf(
         "~LED:STATUS profile=%s detail=summary profile_cap_percent=%u"
         " budget_scale_percent=%u budget_limited_by_current=%u"
         " ble=%s rec_active=%u rec_source=%s processing=%u"
-        " error_domain=%s error_severity=%s battery_level=%u charging=%u full=%u"
+        " error_domain=%s error_severity=%s battery_level=%u external_power=%u external_power_source=%s charging=%u full=%u"
         " active_flags=PWR:%u,BLE:%u,REC:%u,AI:%u,OK:%u,WARN:%u,EC11:%u,KEY:%u,EDGE:%u"
         " key_mask=0x%02x test_mode=%u test_strip_mask=0x%02x last_reason=%s\n",
         status_led_profile_name(snapshot.profile),
@@ -2820,6 +2995,8 @@ static void status_led_print_status(void)
         status_led_error_domain_name(snapshot.error_domain),
         status_led_error_severity_name(snapshot.error_severity),
         snapshot.battery_level_percent,
+        snapshot.external_power_present ? 1U : 0U,
+        status_led_external_power_source_name(snapshot.external_power_source_flags),
         snapshot.charging ? 1U : 0U,
         snapshot.full ? 1U : 0U,
         active_pwr,
@@ -2911,6 +3088,7 @@ static void status_led_preview_state(const char *state)
         s_state.battery_level_percent = 80;
         s_state.battery_mv = 4000;
         s_state.external_power_present = false;
+        s_state.external_power_source_flags = 0;
         s_state.charging = false;
         s_state.full = false;
         s_state.raw_charging = false;
@@ -2963,6 +3141,7 @@ static void status_led_preview_state(const char *state)
         s_state.battery_level_percent = 15;
         s_state.battery_mv = 3500;
         s_state.external_power_present = false;
+        s_state.external_power_source_flags = 0;
         s_state.charging = false;
         s_state.full = false;
         s_state.raw_charging = false;
@@ -2974,6 +3153,7 @@ static void status_led_preview_state(const char *state)
         s_state.battery_level_percent = 5;
         s_state.battery_mv = 3300;
         s_state.external_power_present = false;
+        s_state.external_power_source_flags = 0;
         s_state.charging = false;
         s_state.full = false;
         s_state.raw_charging = false;
@@ -2982,6 +3162,7 @@ static void status_led_preview_state(const char *state)
         s_state.charge_full_candidate_since_ms = 0;
     } else if (strcasecmp(state, "charging") == 0) {
         s_state.external_power_present = true;
+        s_state.external_power_source_flags = STATUS_LED_POWER_SOURCE_CHARGER_STATUS;
         s_state.charging = true;
         s_state.full = false;
         s_state.raw_charging = true;
@@ -2990,6 +3171,7 @@ static void status_led_preview_state(const char *state)
         s_state.charge_full_candidate_since_ms = 0;
     } else if (strcasecmp(state, "full") == 0) {
         s_state.external_power_present = true;
+        s_state.external_power_source_flags = STATUS_LED_POWER_SOURCE_CHARGER_STATUS;
         s_state.charging = false;
         s_state.full = true;
         s_state.raw_charging = false;
@@ -3010,6 +3192,7 @@ static void status_led_preview_state(const char *state)
         s_state.battery_level_percent = 0;
         s_state.battery_mv = 0;
         s_state.external_power_present = false;
+        s_state.external_power_source_flags = 0;
         s_state.charging = false;
         s_state.full = false;
         s_state.raw_charging = false;

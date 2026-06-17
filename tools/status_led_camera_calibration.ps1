@@ -118,7 +118,7 @@ STEP_BY_MODE = {
 MODE = payload["mode"].lower()
 STEP = STEP_BY_MODE.get(MODE, "unknown")
 EXPECTED_MODES = set(STEP_BY_MODE)
-STATUS_EFFECT_BASELINE = "status_key_ec11_edge_accents_v18"
+STATUS_EFFECT_BASELINE = "status_key_ec11_edge_true_state_v19"
 PROFILE_CAPS_PERCENT = {
     "low": 100,
     "standard": 100,
@@ -251,7 +251,7 @@ def write_status_effects_markdown(manifest):
         "- PWR/BLE: standard healthy awake preview keeps the low visual-weight v7 baseline; connected preview is steady blue instead of pairing/reconnect blink.",
         "- REC: capture preview is the strongest routine status. rec_not_available preview records WARN + REC instead of active REC alone.",
         "- AI: processing preview includes an initial breath sample and a settled long-processing sample.",
-        "- OK: preview captures the short 900 ms confirmation window.",
+        "- OK: preview captures the visible 2.2 s confirmation window.",
         "- WARN: retryable and hard previews capture amber/red severity plus source pairing.",
         f"- Routine profile percent caps remain explicit and user-capped: low={PROFILE_CAPS_PERCENT['low']}%, standard={PROFILE_CAPS_PERCENT['standard']}%, ambient={PROFILE_CAPS_PERCENT['ambient']}%, factory={PROFILE_CAPS_PERCENT['factory']}%; current-budget dimming is tracked separately.",
         "",
@@ -542,7 +542,7 @@ def make_semantic_sequence(zones_text):
             "profile": "standard",
             "commands": ["~LED:PROFILE standard", "~LED:PREVIEW clear", "~LED:PREVIEW ok"],
             "expected_leds": ["OK"],
-            "expected": "OK is a short green confirmation with 900 ms total hold/fade",
+            "expected": "OK is a visible green confirmation with 2.2 s total hold/fade",
             "acceptance_focus": "OK timing is short confirmation",
             "sample_delay_ms": 120,
             "state_expect": {},

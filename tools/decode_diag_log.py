@@ -531,6 +531,7 @@ PARAM_HIGHLIGHT_EVENT_MAP: dict[tuple[str, str], tuple[str, str]] = {
     ("status_led", "led_power_input"): ("status_led", "power_input"),
     ("status_led", "led_visual_state"): ("status_led", "visual_state"),
     ("status_led", "led_output_state"): ("status_led", "output_state"),
+    ("status_led", "led_frame_rgb"): ("status_led", "frame_rgb"),
     ("board", "board_profile"): ("board", "profile"),
     ("board", "board_provisional"): ("board", "profile"),
     ("board", "board_power_rail"): ("board", "rails"),
@@ -666,6 +667,8 @@ def add_led_power_input_flags(ref: dict[str, Any], event: dict[str, Any]) -> Non
         "output_disabled": bool(power_flags & 0x100),
         "display_valid": bool(power_flags & 0x1000000),
         "display_rise_suppressed": bool(power_flags & 0x2000000),
+        "external_from_usb_det": bool(power_flags & 0x4000000),
+        "external_from_charger_status": bool(power_flags & 0x8000000),
     }
     if power_flags & 0x1000000:
         ref["battery_display_level"] = (power_flags >> 16) & 0xFF
@@ -710,6 +713,35 @@ def add_led_output_state_flags(ref: dict[str, Any], event: dict[str, Any]) -> No
         "low_power_disabled": bool(raw_args.get("a2")),
         "active_flags": led_active_flags(raw_args.get("a3")),
     }
+
+
+def unpack_led_intensity_bytes(value: Any, names: tuple[str, ...]) -> dict[str, int]:
+    packed = value if isinstance(value, int) else 0
+    return {
+        name: (packed >> (index * 8)) & 0xFF
+        for index, name in enumerate(names)
+    }
+
+
+def add_led_frame_rgb_summary(ref: dict[str, Any], event: dict[str, Any]) -> None:
+    raw_args = event.get("args_raw", {})
+    color_classes = raw_args.get("a1") if isinstance(raw_args.get("a1"), int) else 0
+    status_names = ("pwr", "ble", "rec", "ai", "ok", "warn")
+    ref["status_color_classes"] = {
+        name: {
+            "class": (color_classes >> (index * 4)) & 0x0F,
+            "label": led_power_color_label((color_classes >> (index * 4)) & 0x0F),
+        }
+        for index, name in enumerate(status_names)
+    }
+    ref["status_intensity"] = unpack_led_intensity_bytes(
+        raw_args.get("a2"),
+        ("pwr", "ble", "rec", "ai"),
+    )
+    ref["zone_intensity"] = unpack_led_intensity_bytes(
+        raw_args.get("a3"),
+        ("ok", "warn", "ec11", "edge"),
+    )
 
 
 POWER_BLOCKERS = (
@@ -855,7 +887,7 @@ def build_param_highlights(events: list[dict[str, Any]]) -> dict[str, Any]:
         "ble_audio": {"notify": [], "pressure": [], "replay": [], "session_flow": []},
         "audio_voice": {"audio_sessions": [], "voice_recording": [], "rejects_and_flow": []},
         "power": {"state": [], "sleep_wake": [], "external_power": []},
-        "status_led": {"power_input": [], "visual_state": [], "output_state": []},
+        "status_led": {"power_input": [], "visual_state": [], "output_state": [], "frame_rgb": []},
         "board": {"profile": [], "rails": []},
         "inputs": {"counts": build_input_debug_summary(events), "events": []},
     }
@@ -878,6 +910,8 @@ def build_param_highlights(events: list[dict[str, Any]]) -> dict[str, Any]:
             add_led_visual_state_flags(ref, event)
         elif source_name == "status_led" and event_name == "led_output_state":
             add_led_output_state_flags(ref, event)
+        elif source_name == "status_led" and event_name == "led_frame_rgb":
+            add_led_frame_rgb_summary(ref, event)
         elif source_name == "power":
             add_power_decoded_state(ref, event)
         highlights[section_name][subsection_name].append(ref)
