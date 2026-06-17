@@ -13,6 +13,7 @@ extern "C" {
 #define DEVICE_SETTINGS_DEFAULT_BLE_NAME "listener"
 #define DEVICE_SETTINGS_DEFAULT_PLUGGED_BRIGHTNESS_PERCENT 80U
 #define DEVICE_SETTINGS_DEFAULT_BATTERY_BRIGHTNESS_PERCENT 50U
+#define DEVICE_SETTINGS_DEFAULT_LED_ZONE_BRIGHTNESS_PERCENT 100U
 #define DEVICE_SETTINGS_DEFAULT_LOW_POWER_IDLE_MS 60000U
 #define DEVICE_SETTINGS_DEFAULT_PLUGGED_LOW_POWER_IDLE_MS DEVICE_SETTINGS_DEFAULT_LOW_POWER_IDLE_MS
 #define DEVICE_SETTINGS_DEFAULT_BATTERY_LOW_POWER_IDLE_MS DEVICE_SETTINGS_DEFAULT_LOW_POWER_IDLE_MS
@@ -23,6 +24,10 @@ extern "C" {
 typedef struct {
     uint8_t plugged_brightness_percent;
     uint8_t battery_brightness_percent;
+    uint8_t status_led_brightness_percent;
+    uint8_t key_led_brightness_percent;
+    uint8_t ec11_led_brightness_percent;
+    uint8_t edge_led_brightness_percent;
     uint32_t low_power_idle_ms;
     uint32_t plugged_low_power_idle_ms;
     uint32_t battery_low_power_idle_ms;
