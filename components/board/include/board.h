@@ -2,6 +2,7 @@
 #define BOARD_H
 
 #include <stdbool.h>
+#include <stdint.h>
 
 #include "esp_err.h"
 
@@ -11,6 +12,15 @@ extern "C" {
 
 typedef struct {
     int usb_det_level;
+    bool usb_power_present;
+    bool usb_det_highz;
+    bool usb_det_adc_valid;
+    int usb_det_adc_mv;
+    int usb_det_raw_adc;
+    bool usb_det_adc_calibrated;
+    uint8_t usb_det_adc_samples;
+    esp_err_t usb_det_adc_result;
+    bool usb_det_mismatch;
     int bat_chg_level;
     int bat_std_level;
     int pwr_hold_level;

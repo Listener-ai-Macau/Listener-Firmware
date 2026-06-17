@@ -2017,6 +2017,9 @@ static void status_led_poll_power_inputs(void)
     if (raw_charging) {
         external_power_source_flags |= STATUS_LED_POWER_SOURCE_CHARGER_STATUS;
     }
+    if (raw_full) {
+        external_power_source_flags |= STATUS_LED_POWER_SOURCE_CHARGER_STATUS;
+    }
     bool external_power_present = external_power_source_flags != 0U;
     uint8_t active_brightness = 0;
 
@@ -2141,15 +2144,18 @@ static esp_err_t status_led_init_strip_backend(status_led_strip_t *strip)
     return status_led_strip_backend_new(&config, &strip->backend);
 }
 
+static uint64_t status_led_gpio_input_mask(gpio_num_t gpio)
+{
+    if (gpio == GPIO_NUM_NC || gpio < 0 || gpio >= GPIO_NUM_MAX) {
+        return 0;
+    }
+    return 1ULL << (uint32_t)gpio;
+}
+
 static void status_led_configure_power_inputs(void)
 {
-    uint64_t charge_mask = 0;
-    if (BOARD_PINS_BAT_CHG_IO != GPIO_NUM_NC) {
-        charge_mask |= 1ULL << (uint32_t)BOARD_PINS_BAT_CHG_IO;
-    }
-    if (BOARD_PINS_BAT_STD_IO != GPIO_NUM_NC) {
-        charge_mask |= 1ULL << (uint32_t)BOARD_PINS_BAT_STD_IO;
-    }
+    uint64_t charge_mask = status_led_gpio_input_mask(BOARD_PINS_BAT_CHG_IO) |
+                           status_led_gpio_input_mask(BOARD_PINS_BAT_STD_IO);
     if (charge_mask != 0) {
         gpio_config_t charge_config = {
             .pin_bit_mask = charge_mask,
@@ -2161,9 +2167,10 @@ static void status_led_configure_power_inputs(void)
         (void)gpio_config(&charge_config);
     }
 
-    if (BOARD_PINS_USB_DET_IO != GPIO_NUM_NC) {
+    uint64_t usb_mask = status_led_gpio_input_mask(BOARD_PINS_USB_DET_IO);
+    if (usb_mask != 0) {
         gpio_config_t usb_config = {
-            .pin_bit_mask = 1ULL << (uint32_t)BOARD_PINS_USB_DET_IO,
+            .pin_bit_mask = usb_mask,
             .mode = GPIO_MODE_INPUT,
             .pull_up_en = GPIO_PULLUP_DISABLE,
             .pull_down_en = GPIO_PULLDOWN_DISABLE,

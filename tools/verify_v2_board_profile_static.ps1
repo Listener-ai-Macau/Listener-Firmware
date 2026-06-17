@@ -116,7 +116,8 @@ foreach ($item in @(
     @($boardPins, "BOARD_PINS_BAT_CHG_IO\s+\(GPIO_NUM_14\)", "charger CHG GPIO14"),
     @($boardPins, "BOARD_PINS_BAT_STD_IO\s+\(GPIO_NUM_21\)", "charger STD GPIO21"),
     @($boardPins, "BOARD_PINS_BAT_V_ADC_IO\s+\(GPIO_NUM_10\)", "battery ADC GPIO10"),
-    @($boardPins, "BOARD_PINS_USB_DET_IO\s+\(GPIO_NUM_7\)", "USB detect GPIO7"),
+    @($boardPins, "BOARD_PINS_USB_DET_DISABLED_IO\s+\(GPIO_NUM_7\)", "disabled USB detect physical GPIO7"),
+    @($boardPins, "BOARD_PINS_USB_DET_IO\s+\(GPIO_NUM_NC\)", "USB detect disabled in runtime pin map"),
     @($boardPins, "BOARD_PINS_RGB_STATUS_IO\s+\(GPIO_NUM_1\)", "status strip GPIO1"),
     @($boardPins, "BOARD_PINS_RGB_EC11_IO\s+\(GPIO_NUM_5\)", "EC11 strip GPIO5"),
     @($boardPins, "BOARD_PINS_RGB_KEY_IO\s+\(GPIO_NUM_13\)", "key strip GPIO13"),
@@ -132,7 +133,14 @@ foreach ($item in @(
     @($keyboard, "key4\.gpio41\.f16", "KEY4 V2 diagnostic label"),
     @($keyboard, "EC11 ready: a=gpio42 b=gpio2 key=gpio18", "EC11 V2 ready log"),
     @($voiceKeyInput, 'VOICE_KEY_INPUT_DIRECT_LABEL\s+"ec11_key\.gpio18"', "EC11 custom/recovery diagnostic label"),
-    @($board, "v2_gpio7_r37_r32_10K_10K_divider", "USB_Det 10K/10K policy"),
+    @($board, "v2_gpio7_usb_det_disabled_highz_charger_status_fallback", "USB_Det disabled high-Z policy"),
+    @($board, "\.usb_power_present\s*=\s*false", "USB_Det disabled never reports runtime USB power"),
+    @($board, "usb_det_adc_ret\s*=\s*ESP_ERR_INVALID_STATE", "USB_Det disabled skips ADC sampling"),
+    @($board, "BOARD_PINS_USB_DET_DISABLED_IO", "USB_Det disabled physical GPIO7 diagnostic"),
+    @($board, "USB_DET:HIGHZ", "USB_Det high-Z diagnostic command"),
+    @($board, "s_usb_det_highz_mode\s*=\s*true", "USB_Det high-Z mode defaults on"),
+    @($board, "usb_det_highz=%u", "USB_Det high-Z diagnostic status field"),
+    @($board, "usb_det_adc_mv=%d", "USB_Det ADC millivolt diagnostic"),
     @($board, "PWR_HOLD/GPIO9", "PWR_HOLD help text"),
     @($board, "reserved_mspi_gpio=%s", "reserved MSPI status field"),
     @($board, "~BOARD:GPIO", "raw V2 key and EC11 GPIO diagnostics command"),
@@ -241,6 +249,7 @@ foreach ($item in @(
     @($voiceKeyInput, "ec11_key\.gpio(11|35)", "stale EC11 key GPIO label"),
     @($board, "5\.1K|PWR_HOLD/GPIO(11|46)|Voice Keyboard N4|EC11 push/GPIO(11|35)|N4 deep sleep|BAT_V_ADC/GPIO8", "stale board diagnostics/help"),
     @($board, "LED11..LED16|LED15..LED28", "stale LED three-zone refs in board diagnostics"),
+    @($batteryMonitor, "battery_monitor_read_usb_det_adc|s_usb_det_adc|BOARD_PINS_USB_DET_IO", "stale USB_Det ADC reader in battery monitor"),
     @($currentTelemetryTool, 'rail=TPS63020_3V3|rail=SY7088_LED_5V|wake_key_gpio=|wake_user_action=""press_ec11_key_or_usb_reset""|voice_key_gpio=11|pwr_hold_gpio=(11|46)|PWR_HOLD/GPIO(11|46)|BAT_V_ADC/GPIO8|allowed_gpios = @\(-1, 10\)|allowed_gpios = @\(-1, 9\)', "stale current telemetry collector diagnostics"),
     @($powerManager, "KEY4/GPIO21|EC11-KEY/GPIO35|wake_policy|wake_gpio|PWR_HOLD/GPIO(11|46)|v2_gpio11_|hold-low", "stale wake diagnostics"),
     @($lowPowerDoc, "EC11-KEY_IO/GPIO11|EC11-KEY/GPIO35|KEY4/GPIO21|wake_policy|wake_gpio|deep-sleep|PWR_HOLD/GPIO(11|46)", "stale low-power wake doc GPIO"),
@@ -268,4 +277,4 @@ if ($errors.Count -gt 0) {
     exit 1
 }
 
-Write-Host "PASS: V2 N16R8 board profile, memory defaults, pin map, four-zone LED resources, GPIO10 battery ADC, GPIO9 PWR_HOLD, absent current telemetry, USB_Det divider policy, diagnostics, partitions, and package identity checks passed."
+Write-Host "PASS: V2 N16R8 board profile, memory defaults, pin map, four-zone LED resources, GPIO10 battery ADC, GPIO9 PWR_HOLD, absent current telemetry, disabled USB_Det high-Z policy, diagnostics, partitions, and package identity checks passed."

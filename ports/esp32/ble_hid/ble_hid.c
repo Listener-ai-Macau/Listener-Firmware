@@ -177,7 +177,7 @@ static bool ble_hid_battery_level_exceeds_notify_threshold(uint8_t level)
 }
 
 static bool ble_hid_battery_estimate_charge_full(
-    bool usb_power_present,
+    bool charge_power_present,
     bool battery_valid,
     uint8_t battery_level_percent,
     uint32_t battery_mv,
@@ -185,7 +185,8 @@ static bool ble_hid_battery_estimate_charge_full(
     bool raw_full,
     uint32_t now_ms)
 {
-    if (!usb_power_present) {
+    bool charge_status_present = charge_power_present || raw_full;
+    if (!charge_status_present) {
         s_battery_charge_full_latched = false;
         s_battery_charge_full_candidate_since_ms = 0U;
         return false;
@@ -210,7 +211,7 @@ static bool ble_hid_battery_estimate_charge_full(
         }
     }
 
-    return usb_power_present && s_battery_charge_full_latched;
+    return charge_status_present && s_battery_charge_full_latched;
 }
 
 static uint32_t ble_hid_now_ms(void)
@@ -270,18 +271,21 @@ static esp_err_t ble_hid_update_battery_level(const char *reason, bool force_not
     uint32_t battery_mv = battery_valid ? battery.voltage_mv : 0U;
     board_v2_power_input_snapshot_t power = {0};
     board_get_v2_power_input_snapshot(&power);
-    bool usb_power_present = power.usb_det_level > 0;
-    bool raw_charging = usb_power_present && power.bat_chg_level == 0;
-    bool raw_full = usb_power_present && power.bat_std_level == 0;
+    bool usb_power_present = power.usb_power_present;
+    bool charger_active = power.bat_chg_level == 0;
+    bool charge_power_present = usb_power_present || charger_active;
+    bool raw_charging = charger_active;
+    bool raw_full = power.bat_std_level == 0;
     uint32_t now_ms = ble_hid_now_ms();
     bool charge_full = ble_hid_battery_estimate_charge_full(
-        usb_power_present,
+        charge_power_present,
         battery_valid,
         level,
         battery_mv,
         raw_charging,
         raw_full,
         now_ms);
+    charge_power_present = charge_power_present || charge_full;
     uint32_t full_candidate_ms =
         (s_battery_charge_full_candidate_since_ms != 0U &&
          now_ms >= s_battery_charge_full_candidate_since_ms)
@@ -317,33 +321,47 @@ static esp_err_t ble_hid_update_battery_level(const char *reason, bool force_not
         ESP_LOGI(
             TAG,
             "battery notify level=%u voltage_mv=%" PRIu32
-            " raw_adc=%d adc_mv=%d usb_power=%u raw_charging=%u raw_full=%u full_latched=%u full_candidate_ms=%u charge_full=%u"
+            " raw_adc=%d adc_mv=%d usb_power=%u charger_active=%u charge_power=%u"
+            " raw_charging=%u raw_full=%u full_latched=%u full_candidate_ms=%u charge_full=%u"
+            " usb_det_adc_valid=%u usb_det_adc_mv=%d usb_det_mismatch=%u"
             " reason=%s forced=%u periodic=%u",
             level,
             battery.voltage_mv,
             battery.raw_adc,
             battery.adc_mv,
             usb_power_present ? 1u : 0u,
+            charger_active ? 1u : 0u,
+            charge_power_present ? 1u : 0u,
             raw_charging ? 1u : 0u,
             raw_full ? 1u : 0u,
             s_battery_charge_full_latched ? 1u : 0u,
             (unsigned)full_candidate_ms,
             charge_full ? 1u : 0u,
+            power.usb_det_adc_valid ? 1u : 0u,
+            power.usb_det_adc_mv,
+            power.usb_det_mismatch ? 1u : 0u,
             reason != NULL ? reason : "unspecified",
             force_notify ? 1u : 0u,
             periodic_refresh ? 1u : 0u);
     } else {
         ESP_LOGW(
             TAG,
-            "battery notify fallback=%u usb_power=%u raw_charging=%u raw_full=%u full_latched=%u full_candidate_ms=%u charge_full=%u"
+            "battery notify fallback=%u usb_power=%u charger_active=%u charge_power=%u"
+            " raw_charging=%u raw_full=%u full_latched=%u full_candidate_ms=%u charge_full=%u"
+            " usb_det_adc_valid=%u usb_det_adc_mv=%d usb_det_mismatch=%u"
             " reason=%s read_failed=%s forced=%u periodic=%u",
             level,
             usb_power_present ? 1u : 0u,
+            charger_active ? 1u : 0u,
+            charge_power_present ? 1u : 0u,
             raw_charging ? 1u : 0u,
             raw_full ? 1u : 0u,
             s_battery_charge_full_latched ? 1u : 0u,
             (unsigned)full_candidate_ms,
             charge_full ? 1u : 0u,
+            power.usb_det_adc_valid ? 1u : 0u,
+            power.usb_det_adc_mv,
+            power.usb_det_mismatch ? 1u : 0u,
             reason != NULL ? reason : "unspecified",
             esp_err_to_name(read_ret),
             force_notify ? 1u : 0u,

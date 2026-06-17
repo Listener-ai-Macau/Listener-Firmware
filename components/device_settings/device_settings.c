@@ -444,10 +444,13 @@ static void device_settings_print_status(const char *result)
     device_settings_get_snapshot(&snapshot);
     board_v2_power_input_snapshot_t power = {0};
     board_get_v2_power_input_snapshot(&power);
-    bool usb_power_present = power.usb_det_level > 0;
-    bool charging = power.bat_chg_level == 0;
-    bool charge_full = power.bat_std_level == 0;
-    bool external_power_present = usb_power_present;
+    bool usb_power_present = power.usb_power_present;
+    bool charger_active = power.bat_chg_level == 0;
+    bool raw_full = power.bat_std_level == 0;
+    bool charging = charger_active;
+    bool charge_full = raw_full && !charging;
+    bool charge_power_present = usb_power_present || charger_active || charge_full;
+    bool external_power_present = usb_power_present || charging || charge_full;
     uint8_t active_brightness = external_power_present
         ? snapshot.plugged_brightness_percent
         : snapshot.battery_brightness_percent;
@@ -459,7 +462,8 @@ static void device_settings_print_status(const char *result)
         " plugged_low_power_enabled=%u"
         " auto_shutdown_ms=%" PRIu32 " auto_shutdown_enabled=%u auto_shutdown_mode=%s knob_rotation=%s"
         " ble_name=\"%s\" ble_name_pending=%u ble_name_apply=%s"
-        " loaded_from_nvs=%u external_power_present=%u usb_power_present=%u charging=%u charge_full=%u"
+        " loaded_from_nvs=%u external_power_present=%u usb_power_present=%u charger_active=%u"
+        " charge_power_present=%u charging=%u charge_full=%u usb_det_adc_valid=%u usb_det_adc_mv=%d usb_det_mismatch=%u"
         " valid_ranges=brightness_0_100,low_power_idle_ms_%u_%u,plugged_low_power_enabled_0_1,auto_shutdown_ms_0_off_or_%u_%u,ble_name_ascii_1_%u,knob_rotation_system_volume_screen_brightness_disabled\n",
         result != NULL ? result : "OK",
         snapshot.plugged_brightness_percent,
@@ -478,8 +482,13 @@ static void device_settings_print_status(const char *result)
         snapshot.loaded_from_nvs ? 1u : 0u,
         external_power_present ? 1u : 0u,
         usb_power_present ? 1u : 0u,
+        charger_active ? 1u : 0u,
+        charge_power_present ? 1u : 0u,
         charging ? 1u : 0u,
         charge_full ? 1u : 0u,
+        power.usb_det_adc_valid ? 1u : 0u,
+        power.usb_det_adc_mv,
+        power.usb_det_mismatch ? 1u : 0u,
         (unsigned)DEVICE_SETTINGS_LOW_POWER_IDLE_MIN_MS,
         (unsigned)DEVICE_SETTINGS_LOW_POWER_IDLE_MAX_MS,
         (unsigned)DEVICE_SETTINGS_AUTO_SHUTDOWN_MIN_MS,
