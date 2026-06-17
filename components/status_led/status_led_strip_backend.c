@@ -1,6 +1,7 @@
 #include "status_led_strip_backend.h"
 
 #include <stdlib.h>
+#include <string.h>
 #include <sys/cdefs.h>
 
 #include "driver/rmt_encoder.h"
@@ -30,6 +31,8 @@ struct status_led_strip_backend {
     const char *name;
     gpio_num_t gpio;
     uint8_t led_count;
+    uint8_t tail_guard_pixels;
+    uint8_t transmit_led_count;
     rmt_channel_handle_t channel;
     rmt_encoder_handle_t encoder;
     uint8_t pixels[STATUS_LED_STRIP_BACKEND_MAX_LED_COUNT * 3U];
@@ -182,6 +185,7 @@ static void status_led_strip_backend_fill_pixels(
     status_led_color_order_t color_order,
     const status_led_rgb_t *colors)
 {
+    memset(backend->pixels, 0, sizeof(backend->pixels));
     for (uint8_t index = 0; index < backend->led_count; ++index) {
         status_led_rgb_t color = colors[index];
         size_t base = (size_t)index * 3U;
@@ -214,7 +218,9 @@ esp_err_t status_led_strip_backend_new(
     const status_led_strip_backend_config_t *config,
     status_led_strip_backend_t **ret_backend)
 {
-    if (config == NULL || ret_backend == NULL || config->led_count > STATUS_LED_STRIP_BACKEND_MAX_LED_COUNT) {
+    if (config == NULL || ret_backend == NULL || config->led_count > STATUS_LED_STRIP_BACKEND_MAX_LED_COUNT ||
+        config->tail_guard_pixels > STATUS_LED_STRIP_BACKEND_MAX_LED_COUNT ||
+        config->led_count + config->tail_guard_pixels > STATUS_LED_STRIP_BACKEND_MAX_LED_COUNT) {
         return ESP_ERR_INVALID_ARG;
     }
 
@@ -225,6 +231,8 @@ esp_err_t status_led_strip_backend_new(
     backend->name = config->name;
     backend->gpio = config->gpio;
     backend->led_count = config->led_count;
+    backend->tail_guard_pixels = config->tail_guard_pixels;
+    backend->transmit_led_count = config->led_count + config->tail_guard_pixels;
     *ret_backend = backend;
 
     if (backend->gpio == GPIO_NUM_NC) {
@@ -264,10 +272,12 @@ esp_err_t status_led_strip_backend_new(
     backend->available = true;
     ESP_LOGI(
         TAG,
-        "strip %s ready: gpio=%d leds=%u backend=rmt_ws2812_800khz order=%s reset_us=300 timing=ws2812_4020_compatible",
+        "strip %s ready: gpio=%d leds=%u tx_leds=%u tail_guard_pixels=%u backend=rmt_ws2812_800khz order=%s reset_us=300 timing=ws2812_4020_compatible",
         backend->name,
         (int)backend->gpio,
         (unsigned)backend->led_count,
+        (unsigned)backend->transmit_led_count,
+        (unsigned)backend->tail_guard_pixels,
         status_led_color_order_name(config->color_order));
     return ESP_OK;
 }
@@ -295,7 +305,7 @@ esp_err_t status_led_strip_backend_transmit(
         backend->channel,
         backend->encoder,
         backend->pixels,
-        (size_t)backend->led_count * 3U,
+        (size_t)backend->transmit_led_count * 3U,
         &transmit_config);
     if (ret == ESP_ERR_INVALID_STATE) {
         (void)rmt_tx_wait_all_done(backend->channel, STATUS_LED_RMT_WAIT_MS);
@@ -304,7 +314,7 @@ esp_err_t status_led_strip_backend_transmit(
             backend->channel,
             backend->encoder,
             backend->pixels,
-            (size_t)backend->led_count * 3U,
+            (size_t)backend->transmit_led_count * 3U,
             &transmit_config);
     }
     if (ret != ESP_OK) {

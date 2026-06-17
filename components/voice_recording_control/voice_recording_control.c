@@ -1136,6 +1136,7 @@ static esp_err_t voice_recording_control_exit_recording(const char *source)
     s_state = VOICE_RECORDING_STATE_TRANSFERRING;
     (void)voice_key_input_set_recording_output(false);
     status_led_set_recording(false, STATUS_LED_REC_SOURCE_NONE);
+    status_led_notify_success("recording_stop_done");
     ESP_LOGI(TAG, "recording stop source=%s", source);
     voice_recording_control_log_flow(
         VOICE_RECORDING_FLOW_STOP_REQUESTED,
@@ -1696,6 +1697,7 @@ static void voice_recording_control_handle_session_inactive(void)
     status_led_set_recording(false, STATUS_LED_REC_SOURCE_NONE);
 
     if (decision.effect == VOICE_RECORDING_EFFECT_FINISH_TRANSFER) {
+        status_led_notify_success("recording_session_done");
         ESP_LOGI(TAG, "recording session finished");
         voice_recording_control_log_flow(
             decision.flow_stage,

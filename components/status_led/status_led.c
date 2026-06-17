@@ -29,6 +29,7 @@
 #define STATUS_LED_EDGE_COUNT 6
 #define STATUS_LED_STRIP_COUNT 4
 #define STATUS_LED_MAX_STRIP_COUNT STATUS_LED_EC11_COUNT
+#define STATUS_LED_STATUS_TAIL_GUARD_PIXELS 6U
 
 #define STATUS_LED_TASK_STACK_BYTES (5 * 1024)
 #define STATUS_LED_REFRESH_MS 50U
@@ -223,6 +224,7 @@ typedef struct {
     const char *name;
     gpio_num_t gpio;
     uint8_t led_count;
+    uint8_t tail_guard_pixels;
     status_led_color_order_t color_order;
     status_led_strip_backend_t *backend;
 } status_led_strip_t;
@@ -305,6 +307,7 @@ static status_led_strip_t s_strips[STATUS_LED_STRIP_COUNT] = {
         .name = "status",
         .gpio = BOARD_PINS_RGB_STATUS_IO,
         .led_count = STATUS_LED_STATUS_COUNT,
+        .tail_guard_pixels = STATUS_LED_STATUS_TAIL_GUARD_PIXELS,
         .color_order = STATUS_LED_STATUS_DEFAULT_COLOR_ORDER,
     },
     {
@@ -1049,6 +1052,14 @@ static bool status_led_frame_equal(const status_led_frame_t *left, const status_
     return memcmp(left, right, sizeof(*left)) == 0;
 }
 
+static bool status_led_status_tail_reinforce_needed(const status_led_frame_t *frame)
+{
+    return (status_led_rgb_is_on(frame->status[STATUS_LED_SEM_REC]) ||
+            status_led_rgb_is_on(frame->status[STATUS_LED_SEM_AI])) &&
+           !status_led_rgb_is_on(frame->status[STATUS_LED_SEM_OK]) &&
+           !status_led_rgb_is_on(frame->status[STATUS_LED_SEM_WARN]);
+}
+
 static void status_led_transmit_frame(const status_led_frame_t *frame)
 {
     bool tx_locked = false;
@@ -1062,7 +1073,10 @@ static void status_led_transmit_frame(const status_led_frame_t *frame)
         tx_locked = true;
     }
 
-    (void)status_led_transmit_strip(&s_strips[STATUS_LED_STRIP_STATUS], frame->status);
+    esp_err_t status_ret = status_led_transmit_strip(&s_strips[STATUS_LED_STRIP_STATUS], frame->status);
+    if (status_ret == ESP_OK && status_led_status_tail_reinforce_needed(frame)) {
+        (void)status_led_transmit_strip(&s_strips[STATUS_LED_STRIP_STATUS], frame->status);
+    }
     (void)status_led_transmit_strip(&s_strips[STATUS_LED_STRIP_EC11], frame->ec11);
     (void)status_led_transmit_strip(&s_strips[STATUS_LED_STRIP_KEY], frame->key);
     (void)status_led_transmit_strip(&s_strips[STATUS_LED_STRIP_EDGE], frame->edge);
@@ -2136,6 +2150,7 @@ static esp_err_t status_led_init_strip_backend(status_led_strip_t *strip)
         .name = strip->name,
         .gpio = strip->gpio,
         .led_count = strip->led_count,
+        .tail_guard_pixels = strip->tail_guard_pixels,
         .color_order = strip->color_order,
     };
     return status_led_strip_backend_new(&config, &strip->backend);
@@ -2972,6 +2987,7 @@ static void status_led_print_status(void)
     printf(
         "~LED:STATUS detail=contract backend=rmt_ws2812_800khz refresh_ms=%u reset_us=300"
         " idle_refresh_ms=%u unchanged_tx_suppression=1 timing=ws2812_4020_compatible"
+        " status_tail_guard_pixels=%u status_tail_reinforce=recording_processing"
         " led_contract_rev=" STATUS_LED_CONTRACT_REV
         " factory_full_brightness=1 safety_full_brightness=1"
         " semantic_order=LED1:PWR,LED2:BLE,LED3:REC,LED4:AI,LED5:OK,LED6:WARN"
@@ -2980,7 +2996,8 @@ static void status_led_print_status(void)
         " key_physical_map=" STATUS_LED_KEY_PHYSICAL_MAP
         " separate_status_key_color_order=1 status_default_order=GRB key_default_order=GRB\n",
         STATUS_LED_REFRESH_MS,
-        STATUS_LED_IDLE_REFRESH_MS);
+        STATUS_LED_IDLE_REFRESH_MS,
+        STATUS_LED_STATUS_TAIL_GUARD_PIXELS);
     printf(
         "~LED:STATUS detail=brightness profile=%s effect_profile=product_v1"
         " profile_cap_percent=%u brightness_percent=%u effective_cap_percent=%u"
@@ -3001,6 +3018,7 @@ static void status_led_print_status(void)
     printf(
         "~LED:STATUS detail=strips"
         " strips=status:gpio%d:count%u:order%s:refsLED1..LED6,ec11:gpio%d:count%u:order%s:refsLED7..LED10+LED15..LED16+LED23..LED28,key:gpio%d:count%u:order%s:refsLED11..LED14,edge:gpio%d:count%u:order%s:refsLED17..LED22"
+        " status_tail_guard_pixels=%u"
         " key_pin_contract=PWM_RGB_KEY_GPIO13 ec11_pin_contract=PWM_RGB_EC11_GPIO5 edge_pin_contract=PWM_RGB_Edge_GPIO4 gpio14_reserved=BAT_CHG_IO vdd_led_enable=always_on_assumed"
         "\n",
         (int)strips[STATUS_LED_STRIP_STATUS].gpio,
@@ -3014,7 +3032,8 @@ static void status_led_print_status(void)
         status_led_color_order_name(strips[STATUS_LED_STRIP_KEY].color_order),
         (int)strips[STATUS_LED_STRIP_EDGE].gpio,
         (unsigned)strips[STATUS_LED_STRIP_EDGE].led_count,
-        status_led_color_order_name(strips[STATUS_LED_STRIP_EDGE].color_order));
+        status_led_color_order_name(strips[STATUS_LED_STRIP_EDGE].color_order),
+        (unsigned)strips[STATUS_LED_STRIP_STATUS].tail_guard_pixels);
     printf(
         "~LED:STATUS detail=state ble=%s rec_active=%u rec_source=%s rec_level=%u processing=%u"
         " error_domain=%s error_severity=%s output_disabled=%u low_power_disabled=%u\n",

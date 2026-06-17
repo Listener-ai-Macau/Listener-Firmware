@@ -37,6 +37,7 @@ CHECKS = {
         "STATUS_LED_KEY_COUNT 4",
         "STATUS_LED_EDGE_COUNT 6",
         "STATUS_LED_STRIP_COUNT 4",
+        "STATUS_LED_STATUS_TAIL_GUARD_PIXELS 6U",
         "STATUS_LED_STATUS_FIRST_LED 1U",
         "STATUS_LED_EC11_FIRST_LED 7U",
         "STATUS_LED_KEY_FIRST_LED 11U",
@@ -115,6 +116,8 @@ CHECKS = {
         "led_contract_rev=",
         "unchanged_tx_suppression=1",
         "timing=ws2812_4020_compatible",
+        "status_tail_guard_pixels=%u",
+        "status_tail_reinforce=recording_processing",
         "effect_profile=product_v1",
         "profile_cap_percent=%u",
         "brightness_percent=%u",
@@ -135,6 +138,7 @@ CHECKS = {
         "status_led_strip_backend_new",
         "status_led_strip_backend_transmit",
         "status_led_frame_equal",
+        "status_led_status_tail_reinforce_needed",
         "status_led_refresh_delay_ms_locked",
         "status_led_request_refresh",
         "ulTaskNotifyTake",
@@ -218,6 +222,7 @@ CHECKS = {
         "STATUS_LED_SHUTDOWN_FINAL_CONFIRM_MS 700U",
         "status_led_render_shutdown_confirm_locked",
         "status_led_apply_status_tail_guard_locked",
+        "status_led_transmit_strip(&s_strips[STATUS_LED_STRIP_STATUS], frame->status)",
         "status_led_notify_shutdown_confirm",
         "shutdown_confirm_started_ms",
         "s_state.low_power_disabled = false;",
@@ -254,6 +259,7 @@ CHECKS = {
         "STATUS_LED_STRIP_BACKEND_MAX_LED_COUNT 12U",
         "STATUS_LED_COLOR_ORDER_GRB",
         "STATUS_LED_COLOR_ORDER_RGB",
+        "tail_guard_pixels",
         "status_led_rgb_t",
         "status_led_strip_backend_t",
         "status_led_strip_backend_new",
@@ -274,6 +280,10 @@ CHECKS = {
         "STATUS_LED_WS2812_T1L_TICKS 6U",
         "SOC_RMT_MEM_WORDS_PER_CHANNEL",
         "status_led_strip_backend_fill_pixels",
+        "memset(backend->pixels, 0, sizeof(backend->pixels));",
+        "transmit_led_count",
+        "tail_guard_pixels=%u",
+        "config->led_count + config->tail_guard_pixels",
         "rmt_encoder_reset(backend->encoder)",
         "status_led_color_order_name",
         "reset_us=300",
@@ -346,6 +356,8 @@ CHECKS = {
         "voice_recording_control_host_processing_start(source)",
         "voice_recording_control_host_processing_stop(source)",
         "voice_recording_control_host_processing_done(source)",
+        "status_led_notify_success(\"recording_stop_done\")",
+        "status_led_notify_success(\"recording_session_done\")",
         "status_led_notify_success(\"host_processing_done\")",
     ],
     "ports/esp32/audio_capture/audio_capture_esp32.c": [
@@ -405,11 +417,15 @@ CHECKS = {
         "`VREC:PROCESSING:STOP`",
         "`VREC:PROCESSING:DONE`",
         "`DONE` turns `AI` off and flashes green `OK`",
+        "local recording stop/session completion",
+        "A successful local stop and a completed local recording session each refresh the green `OK` confirmation window",
         "audio transfer completion alone does not animate `AI`",
-        "`OK` is a visible 2.2 second success confirmation after the host reports processing done",
+        "`OK` is a visible 2.2 second success confirmation after local recording stop/session completion and after the host reports processing done",
         "REC`, `OK`, and routine `AI` states do not recolor key LEDs",
         "EC11 knob and edge/frame LEDs are independent accent surfaces",
         "Status-tail anti-flicker guard",
+        "six black guard pixels",
+        "status_tail_reinforce=recording_processing",
         "Long-press shutdown confirmation",
         "`~LED:PREVIEW <ready|pairing|reconnect|capture|desktop_mic|recording_processing|rec_not_available|processing|ok|low_battery|critical_battery|charging|full|shutdown_confirm|shutdown_final|sleep|clear>`",
         "It does not add a hidden percent cap above the user plugged/battery brightness setting",
@@ -596,8 +612,13 @@ def main() -> int:
     voice_recording_control = read("components/voice_recording_control/voice_recording_control.c")
     if 'status_led_set_processing(true, "audio_session_finishing")' in voice_recording_control:
         failures.append("voice_recording_control.c: audio transfer must not light AI processing LED")
-    if 'status_led_notify_success("recording_session_finished")' in voice_recording_control:
-        failures.append("voice_recording_control.c: firmware transfer completion must not show OK before host completion")
+    for token in (
+        'status_led_notify_success("recording_stop_done")',
+        'status_led_notify_success("recording_session_done")',
+        'status_led_notify_success("host_processing_done")',
+    ):
+        if token not in voice_recording_control:
+            failures.append(f"voice_recording_control.c: missing success LED confirmation {token}")
     if "driver/rmt_" in status_led or "soc/soc_caps.h" in status_led:
         failures.append("status_led.c: business rendering layer must not include the RMT/WS2812 backend directly")
     if "status_led_set_max(&frame->key[0], status_led_scale_raw(rec" in status_led:
@@ -732,8 +753,6 @@ def main() -> int:
             "host cleanup/STOP must not clear AI processing LED; wait for host PROCESSING:STOP or DONE",
         'status_led_set_processing(false, "recording_session_finished")':
             "firmware transfer completion must not clear AI processing LED; wait for host PROCESSING:STOP or DONE",
-        'status_led_notify_success("recording_session_finished")':
-            "firmware transfer completion must not show OK before host PROCESSING:DONE",
     }
     for token, message in forbidden_voice_recording_tokens.items():
         if token in voice_recording_control:

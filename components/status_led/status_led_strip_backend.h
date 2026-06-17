@@ -30,6 +30,7 @@ typedef struct {
     const char *name;
     gpio_num_t gpio;
     uint8_t led_count;
+    uint8_t tail_guard_pixels;
     status_led_color_order_t color_order;
 } status_led_strip_backend_config_t;
 
