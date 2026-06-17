@@ -96,7 +96,12 @@ CHECKS = {
         "DIAG_LED_VISUAL_STATE",
         "DIAG_LED_OUTPUT_STATE",
         "STATUS_LED_IDLE_REFRESH_MS 1000U",
-        "STATUS_LED_CONTRACT_REV \"status_key_isolated_charge_natural_breath_v15\"",
+        "STATUS_LED_CONTRACT_REV \"status_key_ec11_edge_accents_v18\"",
+        "STATUS_LED_EC11_ACCENT_MIN_PERCENT",
+        "STATUS_LED_EC11_ACCENT_MAX_PERCENT",
+        "STATUS_LED_EDGE_ACCENT_MIN_PERCENT",
+        "STATUS_LED_EDGE_ACCENT_MAX_PERCENT",
+        "STATUS_LED_DIAG_ACTIVE_EC11",
         "boot_feedback_until_ms",
         "status_led_force_boot_feedback",
         "status_led_boot_power_color_locked",
@@ -175,6 +180,10 @@ CHECKS = {
         "status_led_clamp_current_locked",
         "status_led_render_error_locked",
         "status_led_render_recording_locked",
+        "status_led_clear_ok_locked",
+        "status_led_clear_retryable_error_locked",
+        "status_led_preview_ready_baseline_locked",
+        "recording_processing",
         "recording_level_percent",
         "recording_level_updated_ms",
         "status_led_set_recording_level",
@@ -207,11 +216,12 @@ CHECKS = {
         "full_latched=%u full_candidate_ms=%",
         "external_power=%u charging=%u full=%u",
         "status_led_rgb(255, 255, 255), percent, false",
-        "active_flags=PWR:%u,BLE:%u,REC:%u,AI:%u,OK:%u,WARN:%u,KEY:%u,EDGE:%u",
+        "active_flags=PWR:%u,BLE:%u,REC:%u,AI:%u,OK:%u,WARN:%u,EC11:%u,KEY:%u,EDGE:%u",
         "status_rgb=PWR:%u,%u,%u;BLE:%u,%u,%u;REC:%u,%u,%u",
         "if (changed) {\n            s_state.status_window_until_ms = now_ms + STATUS_LED_STATUS_WINDOW_MS;",
         "if (changed && state == STATUS_LED_BLE_CONNECTED && confidence_window)",
         "status_led_render_processing_locked",
+        "status_led_render_ec11_locked",
         "status_led_render_edge_locked",
         "STATUS_LED_TX_MUTEX_WAIT_MS",
         "s_tx_mutex",
@@ -352,7 +362,7 @@ CHECKS = {
         "audio transfer completion alone does not animate `AI`",
         "`OK` is a short success flash after the host reports processing done",
         "REC`, `OK`, and routine `AI` states do not recolor key LEDs",
-        "Edge/frame LEDs are quiet in the standard product profile",
+        "EC11 knob and edge/frame LEDs are independent accent surfaces",
         "It does not add a hidden percent cap above the user plugged/battery brightness setting",
         "user brightness cap is persisted through `~LED:BRIGHTNESS <0-100>` and applies as the hard routine-product brightness limit",
         "clear semantic colors",
@@ -370,7 +380,9 @@ CHECKS = {
         "rgbw-single-led",
         "semantic-preview",
         "STATUS_EFFECT_BASELINE",
-        "status_key_isolated_charge_natural_breath_v15",
+        "status_key_ec11_edge_accents_v18",
+        "\"expected_leds\": [\"PWR\", \"BLE\", \"REC\", \"AI\", \"EC11\", \"EDGE\"]",
+        "\"forbidden_leds\": [\"OK\", \"WARN\"]",
         "make_semantic_sequence",
         "write_status_effects_markdown",
         "status-effects.md",
@@ -496,6 +508,39 @@ def main() -> int:
             failures.append(f"status_led.c: recording LED must visibly follow audio level, missing {token}")
     if "status_led_token_locked(status_led_rec_gold(), breath, false)" in status_led:
         failures.append("status_led.c: recording LED must not be fixed breath-only")
+    if not re.search(
+        r"void\s+status_led_set_recording\([^)]*\)[\s\S]*?"
+        r"if\s*\(\s*s_state\.recording_active\s*\)\s*\{[\s\S]*?"
+        r"status_led_clear_ok_locked\(\);[\s\S]*?"
+        r"status_led_clear_retryable_error_locked\(STATUS_LED_ERROR_DOMAIN_REC\);",
+        status_led,
+    ):
+        failures.append(
+            "status_led.c: recording start must atomically clear stale OK and retryable REC warning windows"
+        )
+    if not re.search(
+        r"void\s+status_led_set_processing\([^)]*\)[\s\S]*?"
+        r"if\s*\(\s*active\s*\)\s*\{[\s\S]*?"
+        r"status_led_clear_ok_locked\(\);[\s\S]*?"
+        r"status_led_clear_retryable_error_locked\(STATUS_LED_ERROR_DOMAIN_AI\);[\s\S]*?"
+        r"status_led_clear_retryable_error_locked\(STATUS_LED_ERROR_DOMAIN_OTA\);",
+        status_led,
+    ):
+        failures.append(
+            "status_led.c: processing start must atomically clear stale OK and retryable AI/OTA warning windows"
+        )
+    if not re.search(
+        r"recording_processing[\s\S]*?"
+        r"capture_processing[\s\S]*?"
+        r"rec_ai[\s\S]*?"
+        r"status_led_preview_ready_baseline_locked\(now_ms\);[\s\S]*?"
+        r"s_state\.recording_active\s*=\s*true;[\s\S]*?"
+        r"s_state\.processing_active\s*=\s*true;",
+        status_led,
+    ):
+        failures.append(
+            "status_led.c: recording_processing preview must add REC/AI over a ready PWR/BLE baseline"
+        )
     voice_recording_control = read("components/voice_recording_control/voice_recording_control.c")
     if 'status_led_set_processing(true, "audio_session_finishing")' in voice_recording_control:
         failures.append("voice_recording_control.c: audio transfer must not light AI processing LED")

@@ -96,7 +96,7 @@ $payload = [ordered]@{
 $payloadJson = $payload | ConvertTo-Json -Depth 8 -Compress
 $payloadBase64 = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($payloadJson))
 
-@"
+$pythonScript = @"
 import base64
 import json
 import math
@@ -118,7 +118,7 @@ STEP_BY_MODE = {
 MODE = payload["mode"].lower()
 STEP = STEP_BY_MODE.get(MODE, "unknown")
 EXPECTED_MODES = set(STEP_BY_MODE)
-STATUS_EFFECT_BASELINE = "status_key_isolated_charge_natural_breath_v15"
+STATUS_EFFECT_BASELINE = "status_key_ec11_edge_accents_v18"
 PROFILE_CAPS_PERCENT = {
     "low": 100,
     "standard": 100,
@@ -222,8 +222,8 @@ def write_status_effects_markdown(manifest):
         "",
         "## Semantic Preview Frames",
         "",
-        "| preview | expected LEDs | focus | timing sample ms | result | frame | note |",
-        "|---|---|---|---:|---|---|---|",
+        "| preview | expected LEDs | forbidden LEDs | focus | timing sample ms | result | frame | note |",
+        "|---|---|---|---|---:|---|---|---|",
     ])
     for frame in frames:
         frame_path = Path(frame.get("path", ""))
@@ -232,9 +232,10 @@ def write_status_effects_markdown(manifest):
         except Exception:
             frame_ref = frame_path
         lines.append(
-            "| {name} | {leds} | {focus} | {delay} | {result} | {path} | {note} |".format(
+            "| {name} | {leds} | {forbidden} | {focus} | {delay} | {result} | {path} | {note} |".format(
                 name=markdown_escape(frame.get("name")),
                 leds=markdown_escape(",".join(frame.get("expected_leds", []))),
+                forbidden=markdown_escape(",".join(frame.get("forbidden_leds", []))),
                 focus=markdown_escape(frame.get("acceptance_focus")),
                 delay=frame.get("sample_delay_ms"),
                 result=markdown_escape(frame.get("result")),
@@ -485,6 +486,20 @@ def make_semantic_sequence(zones_text):
             "acceptance_focus": "REC only lights for capture/upload or preview command",
             "sample_delay_ms": 500,
             "state_expect": {"rec_active": 1, "rec_source": "device_mic"},
+        },
+        {
+            "name": "recording_processing",
+            "label": "PWR+BLE + REC+AI",
+            "profile": "standard",
+            "commands": ["~LED:PROFILE standard", "~LED:PREVIEW clear", "~LED:PREVIEW recording_processing"],
+            "expected_leds": ["PWR", "BLE", "REC", "AI", "EC11", "EDGE"],
+            "forbidden_leds": ["OK", "WARN"],
+            "expected": "connected ready PWR/BLE remain visible while active capture plus host processing adds REC and AI; OK/WARN stay off until a fresh success or error",
+            "acceptance_focus": "REC/AI overlap is independent from PWR/BLE and does not leak stale completion or warning timing onto LED5/LED6",
+            "sample_delay_ms": 500,
+            "sample_count": 5,
+            "sample_interval_ms": 180,
+            "state_expect": {"ble": "connected", "rec_active": 1, "rec_source": "device_mic", "processing": 1, "battery_level": 80},
         },
         {
             "name": "rec_unavailable_warn",
@@ -876,6 +891,7 @@ def main():
                 "profile": item["profile"],
                 "commands": item["commands"],
                 "expected_leds": item["expected_leds"],
+                "forbidden_leds": item.get("forbidden_leds", []),
                 "expected": item["expected"],
                 "acceptance_focus": item["acceptance_focus"],
                 "sample_delay_ms": item["sample_delay_ms"],
@@ -1027,7 +1043,12 @@ def main():
                         led: any(sample.get("active_flags", {}).get(led, False) for sample in sample_frames)
                         for led in item["expected_leds"]
                     }
+                    forbidden_seen = {
+                        led: any(sample.get("active_flags", {}).get(led, False) for sample in sample_frames)
+                        for led in item.get("forbidden_leds", [])
+                    }
                     missing_leds = [led for led, seen in active_seen.items() if not seen]
+                    leaked_leds = [led for led, seen in forbidden_seen.items() if seen]
                     state_expect = item.get("state_expect", {})
                     state_matched = any(sample.get("state_matches_expect", False) for sample in sample_frames)
                     state_mismatches = [] if state_matched else status_matches_expect(status, state_expect)
@@ -1041,6 +1062,9 @@ def main():
                     elif state_mismatches:
                         result = "FAIL"
                         note = "state mismatch: " + "; ".join(state_mismatches)
+                    elif leaked_leds:
+                        result = "FAIL"
+                        note = "forbidden semantic LED active during preview: " + ",".join(leaked_leds)
                     elif not cap_ok:
                         result = "FAIL"
                         note = f"profile cap mismatch: expected {PROFILE_CAPS_PERCENT[item['profile']]} observed {status.get('profile_cap_percent')}"
@@ -1062,6 +1086,7 @@ def main():
                         "profile": item["profile"],
                         "commands": item["commands"],
                         "expected_leds": item["expected_leds"],
+                        "forbidden_leds": item.get("forbidden_leds", []),
                         "expected": item["expected"],
                         "acceptance_focus": item["acceptance_focus"],
                         "sample_delay_ms": item["sample_delay_ms"],
@@ -1073,6 +1098,7 @@ def main():
                         "status": status,
                         "sample_frames": sample_frames,
                         "active_seen": active_seen,
+                        "forbidden_seen": forbidden_seen,
                         "result": result,
                         "note": note,
                     })
@@ -1375,7 +1401,18 @@ if __name__ == "__main__":
         }
         write_manifest(manifest)
         raise
-"@ | & $pythonPath -
+"@
+
+$pythonScriptPath = Join-Path $env:TEMP ("status_led_camera_calibration_{0}.py" -f ([Guid]::NewGuid().ToString("N")))
+[System.IO.File]::WriteAllText(
+    $pythonScriptPath,
+    $pythonScript,
+    [System.Text.UTF8Encoding]::new($false))
+try {
+    & $pythonPath $pythonScriptPath
+} finally {
+    Remove-Item -LiteralPath $pythonScriptPath -Force -ErrorAction SilentlyContinue
+}
 
 if ($LASTEXITCODE -ne 0) {
     throw "status_led_camera_calibration failed with exit code $LASTEXITCODE"

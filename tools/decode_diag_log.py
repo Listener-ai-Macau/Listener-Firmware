@@ -631,6 +631,7 @@ def led_active_flags(value: Any) -> dict[str, bool]:
         "warn": bool(flags & 0x20),
         "key": bool(flags & 0x40),
         "edge": bool(flags & 0x80),
+        "ec11": bool(flags & 0x100),
     }
 
 
