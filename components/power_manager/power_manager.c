@@ -161,7 +161,7 @@ static uint32_t power_manager_clamp_u64_to_u32(uint64_t value)
 
 static uint32_t power_manager_hardware_shutdown_ms(void)
 {
-    return device_settings_get_battery_auto_shutdown_ms();
+    return device_settings_get_active_auto_shutdown_ms(s_external_power_present);
 }
 
 static bool power_manager_automatic_shutdown_enabled(void)
@@ -171,12 +171,17 @@ static bool power_manager_automatic_shutdown_enabled(void)
 
 static uint32_t power_manager_low_power_idle_ms(void)
 {
-    return device_settings_get_low_power_idle_ms();
+    return device_settings_get_active_low_power_idle_ms(s_external_power_present);
 }
 
 static bool power_manager_plugged_low_power_enabled(void)
 {
     return device_settings_get_plugged_low_power_enabled();
+}
+
+static bool power_manager_plugged_auto_shutdown_enabled(void)
+{
+    return device_settings_get_plugged_auto_shutdown_ms() > 0U;
 }
 
 const char *power_manager_state_name(power_manager_state_t state)
@@ -425,7 +430,11 @@ static uint32_t power_manager_shutdown_blockers_for_source(
     if (reason == POWER_MANAGER_SHUTDOWN_REASON_LONG_IDLE &&
         source != NULL &&
         source->external_power_present) {
-        shutdown_blockers |= POWER_MANAGER_BLOCKER_EXTERNAL_POWER;
+        if (power_manager_plugged_auto_shutdown_enabled()) {
+            shutdown_blockers &= ~(uint32_t)POWER_MANAGER_BLOCKER_EXTERNAL_POWER;
+        } else {
+            shutdown_blockers |= POWER_MANAGER_BLOCKER_EXTERNAL_POWER;
+        }
     }
     if (reason == POWER_MANAGER_SHUTDOWN_REASON_LOW_BATTERY &&
         source != NULL &&
@@ -471,6 +480,25 @@ static uint32_t power_manager_awake_blockers(uint32_t blockers)
 static uint32_t power_manager_audio_idle_blockers(uint32_t blockers)
 {
     return power_manager_awake_blockers(blockers);
+}
+
+static power_manager_power_source_snapshot_t power_manager_cached_power_source_locked(void)
+{
+    return (power_manager_power_source_snapshot_t){
+        .usb_det_level = s_usb_det_level,
+        .bat_chg_level = s_bat_chg_level,
+        .bat_std_level = s_bat_std_level,
+        .pwr_hold_level = s_pwr_hold_level,
+        .usb_power_present = s_usb_power_present,
+        .external_power_present = s_external_power_present,
+        .charging = s_charging,
+        .charge_full = s_charge_full,
+        .charge_full_latched = s_charge_full_latched,
+        .charge_full_candidate_ms = 0,
+        .usb_det_policy = "",
+        .charger_polarity_policy = "",
+        .pwr_hold_policy = "",
+    };
 }
 
 static void power_manager_log_power_source_diag(
@@ -633,6 +661,7 @@ static bool power_manager_automatic_shutdown_blocked_by_external_power_locked(ui
            hardware_shutdown_ms > 0U &&
            power_manager_without_external_power_blocker(s_blockers) == 0 &&
            s_external_power_present &&
+           !power_manager_plugged_auto_shutdown_enabled() &&
            power_manager_user_idle_ms_locked(now_ms) >=
                hardware_shutdown_ms;
 }
@@ -649,7 +678,10 @@ static power_manager_state_t power_manager_target_state_locked(uint64_t now_ms)
     if (CONFIG_POWER_MANAGER_ENABLE &&
         hardware_shutdown_ms > 0U &&
         user_idle_ms >= hardware_shutdown_ms) {
-        if (s_external_power_present ||
+        power_manager_power_source_snapshot_t source = power_manager_cached_power_source_locked();
+        uint32_t shutdown_blockers =
+            power_manager_automatic_shutdown_blockers_for_source(s_blockers, &source);
+        if (shutdown_blockers != 0 ||
             power_manager_shutdown_failure_retry_active_locked(now_ms)) {
             return power_manager_awake_idle_state_locked(radio_idle_ms);
         }
@@ -1040,6 +1072,7 @@ void power_manager_get_snapshot(power_manager_snapshot_t *snapshot)
             hardware_shutdown_ms > 0U &&
             power_manager_without_external_power_blocker(s_blockers) == 0 &&
             power_source.external_power_present &&
+            !power_manager_plugged_auto_shutdown_enabled() &&
             snapshot->user_idle_ms >= hardware_shutdown_ms;
         snapshot->last_shutdown_reason = s_last_shutdown_reason;
         snapshot->last_shutdown_idle_ms = s_last_shutdown_idle_ms;
@@ -1070,12 +1103,16 @@ void power_manager_get_snapshot(power_manager_snapshot_t *snapshot)
     snapshot->charge_full_min_percent = POWER_MANAGER_CHARGE_FULL_MIN_PERCENT;
     snapshot->audio_idle_threshold_ms = CONFIG_POWER_MANAGER_AUDIO_IDLE_MS;
     snapshot->low_power_idle_threshold_ms = power_manager_low_power_idle_ms();
+    snapshot->plugged_low_power_idle_threshold_ms = device_settings_get_plugged_low_power_idle_ms();
+    snapshot->battery_low_power_idle_threshold_ms = device_settings_get_battery_low_power_idle_ms();
     snapshot->connected_idle_threshold_ms = snapshot->low_power_idle_threshold_ms;
     snapshot->disconnected_idle_threshold_ms = snapshot->low_power_idle_threshold_ms;
     snapshot->plugged_low_power_enabled = power_manager_plugged_low_power_enabled();
     snapshot->low_power_idle_allowed =
         !snapshot->external_power_present || snapshot->plugged_low_power_enabled;
     snapshot->hardware_shutdown_threshold_ms = power_manager_hardware_shutdown_ms();
+    snapshot->plugged_auto_shutdown_threshold_ms = device_settings_get_plugged_auto_shutdown_ms();
+    snapshot->battery_auto_shutdown_threshold_ms = device_settings_get_battery_auto_shutdown_ms();
     snapshot->shutdown_failure_retry_ms = POWER_MANAGER_SHUTDOWN_FAILURE_RETRY_MS;
     snapshot->hardware_shutdown_guard_enabled = CONFIG_POWER_MANAGER_ENABLE != 0;
     board_v2_power_hold_snapshot_t power_hold = {0};
@@ -1900,8 +1937,10 @@ static void power_manager_print_status(void)
         " guard=%u audio_idle_ms=%" PRIu32
         " audio_idle_power_save=%u audio_idle_blockers=0x%08" PRIx32
         " low_power_idle_ms=%" PRIu32
+        " plugged_low_power_idle_ms=%" PRIu32 " battery_low_power_idle_ms=%" PRIu32
         " connected_idle_ms=%" PRIu32 " disconnected_idle_ms=%" PRIu32
         " hardware_shutdown_ms=%" PRIu32
+        " plugged_auto_shutdown_ms=%" PRIu32 " battery_auto_shutdown_ms=%" PRIu32
         " pwr_hold_gpio=%d pwr_hold_level=%s pwr_hold_configured=%u pwr_hold_policy=%s"
         " voice_key_gpio=%" PRIu32 " hardware_shutdown_user_action=\"%s\"\n",
         power_manager_state_name(snapshot.state),
@@ -1947,9 +1986,13 @@ static void power_manager_print_status(void)
         snapshot.audio_idle_power_save_enabled ? 1u : 0u,
         snapshot.audio_idle_blockers,
         snapshot.low_power_idle_threshold_ms,
+        snapshot.plugged_low_power_idle_threshold_ms,
+        snapshot.battery_low_power_idle_threshold_ms,
         snapshot.connected_idle_threshold_ms,
         snapshot.disconnected_idle_threshold_ms,
         snapshot.hardware_shutdown_threshold_ms,
+        snapshot.plugged_auto_shutdown_threshold_ms,
+        snapshot.battery_auto_shutdown_threshold_ms,
         snapshot.pwr_hold_gpio,
         power_manager_gpio_level_name(snapshot.pwr_hold_level),
         snapshot.pwr_hold_configured ? 1u : 0u,

@@ -45,9 +45,13 @@ typedef struct {
     uint32_t audio_idle_threshold_ms;
     uint32_t audio_idle_blockers;
     uint32_t low_power_idle_threshold_ms;
+    uint32_t plugged_low_power_idle_threshold_ms;
+    uint32_t battery_low_power_idle_threshold_ms;
     uint32_t connected_idle_threshold_ms;
     uint32_t disconnected_idle_threshold_ms;
     uint32_t hardware_shutdown_threshold_ms;
+    uint32_t plugged_auto_shutdown_threshold_ms;
+    uint32_t battery_auto_shutdown_threshold_ms;
     uint32_t battery_mv;
     uint8_t battery_level_percent;
     bool battery_valid;

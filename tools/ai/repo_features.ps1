@@ -84,7 +84,7 @@ function New-FeatureSnapshot {
             "Physical key GPIO mapping lives in board pins, not desktop code.",
             "V2 EC11-KEY/GPIO18 powers on while off; after boot it sends Shift+F13. KEY1-KEY4 use GPIO38-41.",
             "V2 shutdown drives runtime-low PWR_HOLD/GPIO9 high; real power-off and blockers require hardware validation.",
-            "Bench sessions can disable inactivity shutdown with ~DEVICE:SET auto_shutdown_minutes=off, then use ~POWER:TEST:SHUTDOWN for true serial-triggered shutdown.",
+            "Bench sessions can disable battery and plugged inactivity shutdown with ~DEVICE:SET auto_shutdown_minutes=off plugged_auto_shutdown_minutes=off, then use ~POWER:TEST:SHUTDOWN for true serial-triggered shutdown.",
             "USB-unplug light-cycle claims require decoded flash diag timelines: status_led power_input/visual/output plus power external/sleep_wake.",
             "Battery percentage uses the protected product range 2800mV=0% and 4200mV=100%; 2700mV is an absolute danger marker, not usable empty capacity.",
             "GPIO35/GPIO36/GPIO37 are reserved for the N16R8 module flash/PSRAM/MSPI interface.",

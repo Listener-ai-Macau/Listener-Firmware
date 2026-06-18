@@ -56,12 +56,13 @@ powershell -ExecutionPolicy Bypass -File .\tools\device_maintenance.ps1 -Action 
 
 ```text
 ~DEVICE:SET auto_shutdown_minutes=off
+~DEVICE:SET plugged_auto_shutdown_minutes=off
 ~DEVICE:SETTINGS
 ~POWER:STATUS
 ~POWER:TEST:SHUTDOWN
 ```
 
-`~POWER:TEST:SHUTDOWN` 和 `~POWER:SHUTDOWN` 等效，都是串口手动测试命令；`auto_shutdown_minutes=off` 只关闭 inactivity 自动关机，不会屏蔽手动测试。
+`~POWER:TEST:SHUTDOWN` 和 `~POWER:SHUTDOWN` 等效，都是串口手动测试命令；`auto_shutdown_minutes=off` 关闭电池模式 inactivity 自动关机，`plugged_auto_shutdown_minutes=off` 关闭插电模式 inactivity 自动关机，都不会屏蔽手动测试。
 
 ## 恢复 bootloader / OTA 选择区
 
