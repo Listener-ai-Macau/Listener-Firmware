@@ -1,0 +1,18 @@
+{
+  "schema_version": 1,
+  "generated_at": "2026-06-19T18:18:05.7764353+08:00",
+  "result": "HUMAN_REVIEW_PASS",
+  "mode": "ComboOnly",
+  "port": "COM10",
+  "step_count": 1,
+  "observed_count": 1,
+  "pass_count": 1,
+  "fail_count": 0,
+  "skip_count": 0,
+  "led56_follow_count": 0,
+  "irregular_flicker_count": 0,
+  "brightness_wrong_count": 0,
+  "plan": "C:\\Users\\Billy\\Desktop\\Denzic\\Listener\\Listener-Firmware-wt-adhoc-oai1-led-flicker-guard-shutdown-confirm\\docs\\validation\\voice-keyboard-firmware-full-function-test-1.9\\human-led-confirm-final-combo-ultra-low-slow-20260619-rerun24\\human-effect-plan.md",
+  "session_jsonl": "C:\\Users\\Billy\\Desktop\\Denzic\\Listener\\Listener-Firmware-wt-adhoc-oai1-led-flicker-guard-shutdown-confirm\\docs\\validation\\voice-keyboard-firmware-full-function-test-1.9\\human-led-confirm-final-combo-ultra-low-slow-20260619-rerun24\\human-effect-session.jsonl",
+  "serial_log": "C:\\Users\\Billy\\Desktop\\Denzic\\Listener\\Listener-Firmware-wt-adhoc-oai1-led-flicker-guard-shutdown-confirm\\docs\\validation\\voice-keyboard-firmware-full-function-test-1.9\\human-led-confirm-final-combo-ultra-low-slow-20260619-rerun24\\human-effect-serial.log"
+}

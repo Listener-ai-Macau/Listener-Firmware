@@ -31,6 +31,11 @@
 #define STATUS_LED_MAX_STRIP_COUNT STATUS_LED_EC11_COUNT
 #define STATUS_LED_STATUS_TAIL_GUARD_PIXELS 6U
 #define STATUS_LED_STATUS_TAIL_REINFORCE_WRITES 3U
+#define STATUS_LED_STATUS_TAIL_SAFE_EFFECT_MIN_PERCENT 14U
+#define STATUS_LED_STATUS_TAIL_SAFE_EFFECT_MAX_PERCENT 20U
+#define STATUS_LED_STATUS_TAIL_OVERLAP_EFFECT_MIN_PERCENT 14U
+#define STATUS_LED_STATUS_TAIL_OVERLAP_EFFECT_MAX_PERCENT 16U
+#define STATUS_LED_STATUS_TAIL_OVERLAP_BREATH_PERIOD_MS 3600U
 #define STATUS_LED_STRIP_MASK_STATUS (1U << STATUS_LED_STRIP_STATUS)
 #define STATUS_LED_STRIP_MASK_EC11 (1U << STATUS_LED_STRIP_EC11)
 #define STATUS_LED_STRIP_MASK_KEY (1U << STATUS_LED_STRIP_KEY)
@@ -125,10 +130,10 @@
 #define STATUS_LED_EDGE_PROCESSING_SETTLED_PERCENT 11U
 #define STATUS_LED_EDGE_OVERLAP_RECORDING_ANCHOR_PERCENT 10U
 #define STATUS_LED_ACCENT_BREATHE_QUANTUM_PERCENT 2U
-#define STATUS_LED_EC11_RECORDING_BASE_MIN_PERCENT 6U
-#define STATUS_LED_EC11_RECORDING_BASE_MAX_PERCENT 8U
-#define STATUS_LED_EDGE_RECORDING_SURFACE_BASE_MIN_PERCENT 6U
-#define STATUS_LED_EDGE_RECORDING_SURFACE_BASE_MAX_PERCENT 10U
+#define STATUS_LED_EC11_RECORDING_BASE_MIN_PERCENT 4U
+#define STATUS_LED_EC11_RECORDING_BASE_MAX_PERCENT 5U
+#define STATUS_LED_EDGE_RECORDING_SURFACE_BASE_MIN_PERCENT 4U
+#define STATUS_LED_EDGE_RECORDING_SURFACE_BASE_MAX_PERCENT 5U
 #define STATUS_LED_ACCENT_ENTRY_RAMP_MS 900U
 #define STATUS_LED_EC11_RECORDING_FLOW_STEP_MS 360U
 #define STATUS_LED_EDGE_RECORDING_FLOW_STEP_MS 720U
@@ -1205,11 +1210,6 @@ static void status_led_transmit_changed_frame(const status_led_frame_t *frame, u
         return;
     }
 
-    if ((strip_mask & (STATUS_LED_STRIP_MASK_EC11 | STATUS_LED_STRIP_MASK_EDGE)) != 0U &&
-        status_led_status_tail_reinforce_needed(frame)) {
-        strip_mask |= STATUS_LED_STRIP_MASK_STATUS;
-    }
-
     bool tx_locked = false;
     if (s_tx_mutex != NULL) {
         if (xSemaphoreTake(s_tx_mutex, pdMS_TO_TICKS(STATUS_LED_TX_MUTEX_WAIT_MS)) != pdTRUE) {
@@ -1763,13 +1763,97 @@ static uint8_t status_led_recording_visual_percent_locked(uint32_t now_ms)
     return status_led_quantize_percent(breath, STATUS_LED_DYNAMIC_STATUS_QUANTUM_PERCENT);
 }
 
+static uint8_t status_led_status_tail_desired_for_effect_percent_locked(
+    uint8_t desired_percent,
+    uint8_t target_effect_percent)
+{
+    if (desired_percent == 0U) {
+        return 0U;
+    }
+
+    uint32_t user_percent = s_state.brightness_percent;
+    uint32_t zone_percent = s_state.status_zone_brightness_percent;
+    if (user_percent == 0U || zone_percent == 0U) {
+        return 0U;
+    }
+
+    uint32_t combined_percent = user_percent * zone_percent;
+    uint32_t max_desired =
+        ((uint32_t)target_effect_percent * 10000U + combined_percent - 1U) /
+        combined_percent;
+    if (max_desired >= desired_percent) {
+        return desired_percent;
+    }
+    return (uint8_t)max_desired;
+}
+
+static uint8_t status_led_status_tail_safe_range_percent_locked(
+    uint8_t desired_percent,
+    uint8_t desired_min_percent,
+    uint8_t desired_max_percent,
+    uint8_t safe_min,
+    uint8_t safe_max)
+{
+    uint8_t target_effect = safe_max;
+    if (desired_max_percent > desired_min_percent && desired_percent < desired_max_percent) {
+        if (desired_percent <= desired_min_percent) {
+            target_effect = safe_min;
+        } else {
+            uint32_t position = desired_percent - desired_min_percent;
+            uint32_t range = desired_max_percent - desired_min_percent;
+            uint32_t safe_range = safe_max - safe_min;
+            target_effect = (uint8_t)(safe_min + ((position * safe_range) + (range / 2U)) / range);
+        }
+    }
+    return status_led_status_tail_desired_for_effect_percent_locked(desired_percent, target_effect);
+}
+
+static uint8_t status_led_status_tail_safe_dynamic_percent_locked(
+    uint8_t desired_percent,
+    uint8_t desired_min_percent,
+    uint8_t desired_max_percent)
+{
+    return status_led_status_tail_safe_range_percent_locked(
+        desired_percent,
+        desired_min_percent,
+        desired_max_percent,
+        STATUS_LED_STATUS_TAIL_SAFE_EFFECT_MIN_PERCENT,
+        STATUS_LED_STATUS_TAIL_SAFE_EFFECT_MAX_PERCENT);
+}
+
+static uint8_t status_led_status_tail_overlap_breath_percent_locked(
+    uint32_t now_ms,
+    uint32_t phase_offset_ms,
+    uint8_t desired_max_percent)
+{
+    uint32_t elapsed_ms = s_state.processing_started_ms != 0U
+        ? now_ms - s_state.processing_started_ms
+        : now_ms;
+    uint8_t target_effect = status_led_triangle_percent(
+        elapsed_ms + phase_offset_ms,
+        STATUS_LED_STATUS_TAIL_OVERLAP_BREATH_PERIOD_MS,
+        STATUS_LED_STATUS_TAIL_OVERLAP_EFFECT_MIN_PERCENT,
+        STATUS_LED_STATUS_TAIL_OVERLAP_EFFECT_MAX_PERCENT);
+    return status_led_status_tail_desired_for_effect_percent_locked(desired_max_percent, target_effect);
+}
+
 static uint8_t status_led_recording_status_percent_locked(uint32_t now_ms)
 {
+    if (s_state.processing_active) {
+        return status_led_status_tail_overlap_breath_percent_locked(
+            now_ms,
+            0U,
+            STATUS_LED_ACTIVE_WORK_REC_MAX_PERCENT);
+    }
+
     uint8_t percent = status_led_recording_visual_percent_locked(now_ms);
     if (percent > STATUS_LED_ACTIVE_WORK_REC_MAX_PERCENT) {
         percent = STATUS_LED_ACTIVE_WORK_REC_MAX_PERCENT;
     }
-    return status_led_quantize_percent(percent, STATUS_LED_DYNAMIC_STATUS_QUANTUM_PERCENT);
+    return status_led_status_tail_safe_dynamic_percent_locked(
+        status_led_quantize_percent(percent, STATUS_LED_DYNAMIC_STATUS_QUANTUM_PERCENT),
+        STATUS_LED_RECORDING_BREATH_MIN_PERCENT,
+        STATUS_LED_ACTIVE_WORK_REC_MAX_PERCENT);
 }
 
 static uint8_t status_led_processing_status_percent_locked(uint32_t now_ms)
@@ -1777,6 +1861,13 @@ static uint8_t status_led_processing_status_percent_locked(uint32_t now_ms)
     if (!s_state.processing_active) {
         return 0U;
     }
+    if (s_state.recording_active) {
+        return status_led_status_tail_overlap_breath_percent_locked(
+            now_ms,
+            STATUS_LED_STATUS_TAIL_OVERLAP_BREATH_PERIOD_MS / 2U,
+            STATUS_LED_PROCESSING_BREATH_MAX_PERCENT);
+    }
+
     uint8_t max_percent = STATUS_LED_PROCESSING_BREATH_MAX_PERCENT;
     if (s_state.processing_started_ms != 0U &&
         now_ms - s_state.processing_started_ms > 10000U &&
@@ -1788,7 +1879,10 @@ static uint8_t status_led_processing_status_percent_locked(uint32_t now_ms)
         STATUS_LED_PROCESSING_BREATH_PERIOD_MS,
         STATUS_LED_PROCESSING_BREATH_MIN_PERCENT,
         max_percent);
-    return status_led_quantize_percent(percent, STATUS_LED_DYNAMIC_STATUS_QUANTUM_PERCENT);
+    return status_led_status_tail_safe_dynamic_percent_locked(
+        status_led_quantize_percent(percent, STATUS_LED_DYNAMIC_STATUS_QUANTUM_PERCENT),
+        STATUS_LED_PROCESSING_BREATH_MIN_PERCENT,
+        STATUS_LED_PROCESSING_BREATH_MAX_PERCENT);
 }
 
 static uint8_t status_led_ok_visual_percent_locked(uint32_t now_ms)
@@ -1888,7 +1982,7 @@ static void status_led_render_ec11_recording_flow_locked(
         false);
     status_led_rgb_t head = status_led_token_locked(
         status_led_rec_gold(),
-        status_led_recording_accent_percent_locked(now_ms, 18U, 22U),
+        status_led_recording_accent_percent_locked(now_ms, 10U, 12U),
         false);
     status_led_rgb_t tail = status_led_scale_raw(head, 68U);
     status_led_rgb_t fade = status_led_scale_raw(head, 38U);
@@ -1919,9 +2013,9 @@ static void status_led_render_edge_recording_flow_locked(
         status_led_effect_elapsed_ms_locked(now_ms),
         status_led_rec_gold(),
         base_percent,
-        status_led_scale_effect_percent_locked(24U, now_ms),
-        status_led_scale_effect_percent_locked(16U, now_ms),
-        status_led_scale_effect_percent_locked(10U, now_ms),
+        status_led_scale_effect_percent_locked(12U, now_ms),
+        status_led_scale_effect_percent_locked(8U, now_ms),
+        status_led_scale_effect_percent_locked(5U, now_ms),
         STATUS_LED_EDGE_RECORDING_FLOW_STEP_MS);
 }
 
@@ -3808,6 +3902,8 @@ static void status_led_print_status(void)
         " idle_refresh_ms=%u unchanged_tx_suppression=1 timing=ws2812_4020_compatible"
         " status_tail_guard_pixels=%u status_tail_reinforce=recording_processing"
         " status_tail_reinforce_writes=%u"
+        " status_tail_safe_effect_percent=%u..%u"
+        " status_tail_overlap_effect_percent=%u..%u_slow"
         " strip_dirty_tx=1 status_tx_last=1 dynamic_active_accents=1"
         " status_query_samples_current_render=1"
         " effect_only_preview=1"
@@ -3822,7 +3918,11 @@ static void status_led_print_status(void)
         STATUS_LED_REFRESH_MS,
         STATUS_LED_IDLE_REFRESH_MS,
         STATUS_LED_STATUS_TAIL_GUARD_PIXELS,
-        STATUS_LED_STATUS_TAIL_REINFORCE_WRITES);
+        STATUS_LED_STATUS_TAIL_REINFORCE_WRITES,
+        STATUS_LED_STATUS_TAIL_SAFE_EFFECT_MIN_PERCENT,
+        STATUS_LED_STATUS_TAIL_SAFE_EFFECT_MAX_PERCENT,
+        STATUS_LED_STATUS_TAIL_OVERLAP_EFFECT_MIN_PERCENT,
+        STATUS_LED_STATUS_TAIL_OVERLAP_EFFECT_MAX_PERCENT);
     printf(
         "~LED:STATUS detail=brightness profile=%s effect_profile=product_v1"
         " profile_cap_percent=%u brightness_percent=%u effective_cap_percent=%u"

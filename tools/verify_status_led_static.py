@@ -45,6 +45,11 @@ CHECKS = {
         "STATUS_LED_STRIP_COUNT 4",
         "STATUS_LED_STATUS_TAIL_GUARD_PIXELS 6U",
         "STATUS_LED_STATUS_TAIL_REINFORCE_WRITES 3U",
+        "STATUS_LED_STATUS_TAIL_SAFE_EFFECT_MIN_PERCENT 14U",
+        "STATUS_LED_STATUS_TAIL_SAFE_EFFECT_MAX_PERCENT 20U",
+        "STATUS_LED_STATUS_TAIL_OVERLAP_EFFECT_MIN_PERCENT 14U",
+        "STATUS_LED_STATUS_TAIL_OVERLAP_EFFECT_MAX_PERCENT 16U",
+        "STATUS_LED_STATUS_TAIL_OVERLAP_BREATH_PERIOD_MS 3600U",
         "STATUS_LED_STATUS_FIRST_LED 1U",
         "STATUS_LED_EC11_FIRST_LED 7U",
         "STATUS_LED_KEY_FIRST_LED 11U",
@@ -131,6 +136,8 @@ CHECKS = {
         "timing=ws2812_4020_compatible",
         "status_tail_guard_pixels=%u",
         "status_tail_reinforce=recording_processing",
+        "status_tail_safe_effect_percent=%u..%u",
+        "status_tail_overlap_effect_percent=%u..%u_slow",
         "effect_only_preview=1",
         "effect_profile=product_v1",
         "profile_cap_percent=%u",
@@ -143,8 +150,8 @@ CHECKS = {
         "status_led_apply_zone_brightness_caps_locked",
         "status_led_apply_device_settings_snapshot_locked",
         "STATUS_LED_ACCENT_ENTRY_RAMP_MS 900U",
-        "STATUS_LED_EC11_RECORDING_BASE_MAX_PERCENT 8U",
-        "STATUS_LED_EDGE_RECORDING_SURFACE_BASE_MAX_PERCENT 10U",
+        "STATUS_LED_EC11_RECORDING_BASE_MAX_PERCENT 5U",
+        "STATUS_LED_EDGE_RECORDING_SURFACE_BASE_MAX_PERCENT 5U",
         "STATUS_LED_EC11_RECORDING_FLOW_STEP_MS 360U",
         "STATUS_LED_EDGE_RECORDING_FLOW_STEP_MS 720U",
         "STATUS_LED_EC11_REPAIR_ORBIT_STEP_MS 220U",
@@ -168,7 +175,6 @@ CHECKS = {
         "status_led_strip_backend_transmit",
         "status_led_frame_equal",
         "status_led_status_tail_reinforce_needed",
-        "strip_mask |= STATUS_LED_STRIP_MASK_STATUS",
         "status_led_refresh_delay_ms_locked",
         "status_led_request_refresh",
         "status_query_samples_current_render=1",
@@ -277,10 +283,10 @@ CHECKS = {
         "STATUS_LED_PROCESSING_BREATH_MIN_PERCENT 28U",
         "STATUS_LED_PROCESSING_BREATH_MAX_PERCENT 52U",
         "STATUS_LED_ACCENT_BREATHE_QUANTUM_PERCENT 2U",
-        "STATUS_LED_EC11_RECORDING_BASE_MIN_PERCENT 6U",
-        "STATUS_LED_EC11_RECORDING_BASE_MAX_PERCENT 8U",
-        "STATUS_LED_EDGE_RECORDING_SURFACE_BASE_MIN_PERCENT 6U",
-        "STATUS_LED_EDGE_RECORDING_SURFACE_BASE_MAX_PERCENT 10U",
+        "STATUS_LED_EC11_RECORDING_BASE_MIN_PERCENT 4U",
+        "STATUS_LED_EC11_RECORDING_BASE_MAX_PERCENT 5U",
+        "STATUS_LED_EDGE_RECORDING_SURFACE_BASE_MIN_PERCENT 4U",
+        "STATUS_LED_EDGE_RECORDING_SURFACE_BASE_MAX_PERCENT 5U",
         "STATUS_LED_ACCENT_ENTRY_RAMP_MS 900U",
         "STATUS_LED_EC11_ORBIT_STEP_MS 240U",
         "STATUS_LED_EDGE_ORBIT_STEP_MS 480U",
@@ -668,7 +674,9 @@ CHECKS = {
         "scene-processing-live",
         "scene-sleep",
         "Get-ReproSteps",
-        'ValidateSet("Foundation", "Scenes", "Complex", "Volume", "Product", "RootCause", "StaticRoot", "Repro", "Full")',
+        "Get-TailOnlySteps",
+        "Get-ComboOnlySteps",
+        'ValidateSet("Foundation", "Scenes", "Complex", "Volume", "Product", "RootCause", "StaticRoot", "Repro", "TailOnly", "ComboOnly", "Full")',
         "preview_effect_only=1",
         "effect-only preview commands",
     ],
@@ -750,6 +758,13 @@ def main() -> int:
         "STATUS_LED_RECORDING_LEVEL_STALE_MS",
         "STATUS_LED_EC11_RECORDING_FLOW_STEP_MS 360U",
         "STATUS_LED_EDGE_RECORDING_FLOW_STEP_MS 720U",
+        "status_led_status_tail_safe_dynamic_percent_locked",
+        "status_led_status_tail_safe_range_percent_locked",
+        "status_led_status_tail_overlap_breath_percent_locked",
+        "status_led_status_tail_desired_for_effect_percent_locked",
+        "STATUS_LED_STATUS_TAIL_OVERLAP_EFFECT_MIN_PERCENT",
+        "STATUS_LED_STATUS_TAIL_OVERLAP_EFFECT_MAX_PERCENT",
+        "STATUS_LED_STATUS_TAIL_OVERLAP_BREATH_PERIOD_MS",
         "status_led_render_ec11_recording_flow_locked",
         "status_led_render_edge_recording_flow_locked",
         "return status_led_quantize_percent(breath, STATUS_LED_DYNAMIC_STATUS_QUANTUM_PERCENT)",
@@ -758,7 +773,7 @@ def main() -> int:
             failures.append(f"status_led.c: recording LED must use deterministic low-amplitude flow without PCM brightness drive, missing {token}")
     for token in (
         "uint8_t head_rank = step;",
-        "status_led_scale_effect_percent_locked(10U, now_ms)",
+        "status_led_scale_effect_percent_locked(5U, now_ms)",
         "(head_rank + (STATUS_LED_EDGE_COUNT / 2U)) % STATUS_LED_EDGE_COUNT",
     ):
         if token not in status_led:
@@ -988,6 +1003,8 @@ def main() -> int:
         failures.append("status_led.c: user brightness must scale the whole routine effect envelope, not only clamp max brightness")
     if "status_led_triangle_percent(now_ms, 2400U, 42U, 85U)" in status_led:
         failures.append("status_led.c: REC must not use the old high-amplitude breath on the status rail")
+    if "strip_mask |= STATUS_LED_STRIP_MASK_STATUS" in status_led:
+        failures.append("status_led.c: unchanged status rail must not be retransmitted just because EC11/edge accents changed")
     if not re.search(
         r"status_led_render_recording_locked[\s\S]*?"
         r"status_led_recording_status_percent_locked\(now_ms\)",
