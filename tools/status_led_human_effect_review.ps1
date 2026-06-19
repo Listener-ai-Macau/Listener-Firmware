@@ -442,11 +442,11 @@ function Get-TailOnlySteps {
     $steps = @(
         New-LedReviewStep `
             -Id "tail-only-recording-processing-dynamic" `
-            -Title "1.9目标确认：录音+处理中状态尾灯极低幅慢动态" `
+            -Title "1.9目标确认：录音+处理中状态尾灯低幅可见慢动态" `
             -Commands @("~LED:BRIGHTNESS 100", "~LED:PREVIEW recording_processing_status_led_only", "~LED:STATUS", "WAIT 1600", "~LED:STATUS", "WAIT 1600", "~LED:STATUS") `
-            -Expected "专用 effect-only 状态轨：只有 LED3/REC 暖金和 LED4/AI 紫色/蓝紫做极低幅慢动态；PWR/BLE、旋钮、按键、边框都应熄灭；LED5/OK 和 LED6/WARN 在软件状态和肉眼观察中都必须保持熄灭。" `
-            -HumanFocus "重点看 LED3/4 是否有一点柔和慢变化且不抖，以及 LED5/6 是否不再跟着 3/4 闪同色、绿/红或随机闪。" `
-            -PassRule "LED3/4 有极低幅慢动态且不刺眼，LED5/6 全程不跟闪，~LED:STATUS 显示 preview_effect_only=1 且 OK/WARN 为 0。"
+            -Expected "专用 effect-only 状态轨：只有 LED3/REC 暖金和 LED4/AI 紫色/蓝紫做低幅但可见的慢动态；PWR/BLE、旋钮、按键、边框都应熄灭；LED5/OK 和 LED6/WARN 在软件状态和肉眼观察中都必须保持熄灭。" `
+            -HumanFocus "重点看 LED3/4 是否有柔和可见的慢变化且不抖，以及 LED5/6 是否不再跟着 3/4 闪同色、绿/红或随机闪。" `
+            -PassRule "LED3/4 有低幅可见慢动态且不刺眼，LED5/6 全程不跟闪，~LED:STATUS 显示 preview_effect_only=1 且 OK/WARN 为 0。"
     )
     return @($steps)
 }
@@ -458,9 +458,9 @@ function Get-ComboOnlySteps {
             -Title "1.9目标确认：录音+处理与旋钮/板框低负载组合" `
             -Commands @("~LED:BRIGHTNESS 100", "~LED:PREVIEW recording_processing_led_only", "~LED:REC_LEVEL 100 60000", "WAIT 1600", "~LED:STATUS", "WAIT 900", "~LED:STATUS", "WAIT 900", "~LED:STATUS") `
             -When "调校录音+AI 同时存在时的组合灯效：状态 REC/AI、旋钮底座、板框一起参与，不让 PWR/BLE/按键参与。" `
-            -Expected "专用 effect-only 组合预览：LED3/REC 暖金和 LED4/AI 紫色/蓝紫有极低幅慢动态；旋钮 12 颗和边框 6 颗有低亮暖金底光加慢速低幅流动；按键、PWR/BLE 不参与；LED5/OK 和 LED6/WARN 必须保持熄灭。" `
+            -Expected "专用 effect-only 组合预览：LED3/REC 暖金和 LED4/AI 紫色/蓝紫有低幅可见慢动态；旋钮 12 颗和边框 6 颗有低亮暖金底光加慢速低幅流动；按键、PWR/BLE 不参与；LED5/OK 和 LED6/WARN 必须保持熄灭。" `
             -HumanFocus "重点看整体是否稳定：状态灯应只有柔和慢变化；旋钮、板框应低亮慢速流动；LED5/6 不能跟闪、乱闪或被误点亮。" `
-            -PassRule "状态 REC/AI 极低幅慢动态且不刺眼，旋钮/板框低亮慢速流动，LED5/6 全程不跟闪，~LED:STATUS 显示 preview_effect_only=1 且 OK/WARN 为 0。"
+            -PassRule "状态 REC/AI 低幅可见慢动态且不刺眼，旋钮/板框低亮慢速流动，LED5/6 全程不跟闪，~LED:STATUS 显示 preview_effect_only=1 且 OK/WARN 为 0。"
     )
     return @($steps)
 }
@@ -535,7 +535,7 @@ function Write-PlanMarkdown {
     $lines.Add("- RootCause mode temporarily lowers global brightness to test whether the visible 5/6 flicker is brightness/electrical-threshold sensitive, then restores brightness to 50%.") | Out-Null
     $lines.Add("- StaticRoot mode compares fixed REC+AI output with and without a status query, separating dynamic-refresh flicker from static physical bleed or query/log interference.") | Out-Null
     $lines.Add("- Repro mode intentionally drives the status rail and key LEDs with a known-bad broad dynamic pattern while keeping software OK/WARN at zero, so human observation can separate logical status from physical cross-zone disturbance.") | Out-Null
-    $lines.Add("- TailOnly mode is a narrow 1.9 confirmation: REC+AI status-tail remains subtly dynamic while LED5/OK and LED6/WARN stay physically and logically off.") | Out-Null
+    $lines.Add("- TailOnly mode is a narrow 1.9 confirmation: REC+AI status-tail remains visibly but gently dynamic while LED5/OK and LED6/WARN stay physically and logically off.") | Out-Null
     $lines.Add("- ComboOnly mode is a narrow 1.9 confirmation for the combined REC+AI, EC11, and edge/frame effect without PWR/BLE/key participation.") | Out-Null
     $lines.Add("- Product direction for this pass: quiet but alive semantic status rail; blue BLE for connected/pairing/reconnect states, user re-pair uses BLE plus a low blue EC11 confirmation with edge/frame off, recording uses low-load warm-gold fixed flow, processing accents move clockwise, EC11 press/rotate uses short white feedback, green OK only for success, amber/red WARN only for errors, and warm amber PWR+EC11 for shutdown confirmation.") | Out-Null
     $lines.Add("") | Out-Null

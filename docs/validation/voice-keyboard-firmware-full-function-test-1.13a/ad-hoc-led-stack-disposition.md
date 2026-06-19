@@ -17,6 +17,7 @@ Branch: `ai/oai1-voice-keyboard-firmware-full-function-test-1.13a`
 | `adhoc/oai1/led-flicker-guard-shutdown-confirm` commit `29403fd` | Included as 1.13a commit `c41ee3d Add flicker-safe LED zone brightness controls`. | Carries `~DEVICE:SET led_status/led_key/led_ec11/led_edge` persisted 0-100 caps, LED status brightness reporting, and human review tooling. |
 | `adhoc/oai1/led-flicker-guard-shutdown-confirm` commit `d48b366` | Included as 1.13a commit `d0e3f4f Finish LED product effect pass`. | Carries the product-scene LED pass: slow low-load REC/AI, EC11/edge motion, BLE re-pair cue, EC11 input feedback, low battery/charging behavior, and 1.13a disposition scaffold. |
 | `adhoc/oai1/led-flicker-guard-shutdown-confirm` commit `99fa8a1` | Included as 1.13a commit `94d9d38 Stabilize REC AI status tail for LED review`. | Carries the 1.9 root-cause fix: REC/AI overlap capped to a 14%-16% slow status-tail envelope, explicit LED5/6 zeroing, effect-only preview isolation, and the final 1.9 human PASS artifacts. |
+| 2026-06-19 TailOnly rework | Included in the current 1.13a branch after human precheck. | The first TailOnly 1.13b precheck kept software and observed `LED5=OK`/`LED6=WARN` off, but failed because REC/AI motion was too subtle. The overlap envelope is now `16%-30%` on a `1.4s` processing-start phase, with the same explicit LED5/6 zeroing, guard pixels, status-strip-last transmit order, and effect-only isolation. |
 
 ## Excluded Or Preserved Work
 
@@ -30,7 +31,7 @@ Branch: `ai/oai1-voice-keyboard-firmware-full-function-test-1.13a`
 
 ## Current 1.13a Scope Covered
 
-- Slow, low-duty REC/AI status LEDs that keep `LED5=OK` and `LED6=WARN` semantically off unless a real success/error/shutdown owner is active.
+- Slow, low-duty but human-visible REC/AI status LEDs that keep `LED5=OK` and `LED6=WARN` semantically off unless a real success/error/shutdown owner is active.
 - Per-zone persisted LED caps: `led_status`, `led_key`, `led_ec11`, and `led_edge`.
 - `~LED:STATUS detail=contract|brightness|state|power|rgb|summary` lines needed for 1.13b review, including RGB frames for status, key, EC11, and edge zones.
 - Recording/processing product effects that avoid high-speed full-zone chasing on shared status paths while preserving visible EC11 and edge/frame motion.
@@ -39,7 +40,7 @@ Branch: `ai/oai1-voice-keyboard-firmware-full-function-test-1.13a`
 
 ## Visual Model Artifact
 
-`docs/validation/voice-keyboard-firmware-full-function-test-1.13a/led-effect-static-model.png` is a static model screenshot for the AI-verifiable 1.13a evidence audit. It shows the intended no-flicker baseline: REC/AI active at low duty, OK/WARN held black, EC11 all-present low warm-gold flow, and edge/frame all-present without refreshing an unchanged status rail. It is not a substitute for the real hardware visual review in 1.13b.
+`docs/validation/voice-keyboard-firmware-full-function-test-1.13a/led-effect-static-model.png` is a static model screenshot for the AI-verifiable 1.13a evidence audit. It shows the intended no-flicker baseline: REC/AI active at low duty, OK/WARN held black, EC11 all-present low warm-gold flow, and edge/frame all-present without refreshing an unchanged status rail. The current rework makes the REC/AI overlap more visible than the original static model while preserving the same OK/WARN-off invariant. It is not a substitute for the real hardware visual review in 1.13b.
 
 ## Remaining Gate
 
