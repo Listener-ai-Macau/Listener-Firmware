@@ -550,7 +550,7 @@ CHECKS = {
         "low violet clockwise motion",
         "EC11 short press and rotation add a brief white confirmation",
         "adds a low blue EC11 ring orbit as the user-action confirmation",
-        "actively re-zeroed during advanced effects",
+        "EC11/edge accent-only motion does not repeatedly refresh the status rail",
         "Status-tail anti-flicker guard",
         "six black guard pixels",
         "status_tail_reinforce=recording_processing",
@@ -728,6 +728,7 @@ def main() -> int:
     status_led_backend = read("components/status_led/status_led_strip_backend.c")
     main_c = read("main/main.c")
     human_review = read("tools/status_led_human_effect_review.ps1")
+    status_doc = read("docs/features/status_led.md")
     if "bit-bang" in status_led.lower() or "bit-bang" in status_led_backend.lower():
         failures.append("status_led: do not bit-bang WS2812 timing")
     if "STATUS_LED_EC11_COUNT 4" in status_led:
@@ -1005,6 +1006,10 @@ def main() -> int:
         failures.append("status_led.c: REC must not use the old high-amplitude breath on the status rail")
     if "strip_mask |= STATUS_LED_STRIP_MASK_STATUS" in status_led:
         failures.append("status_led.c: unchanged status rail must not be retransmitted just because EC11/edge accents changed")
+    if "EC11/edge accent updates also include a final status-strip transmit" in status_doc:
+        failures.append("status_led.md: docs must not claim EC11/edge accent-only motion retransmits the status rail")
+    if "EC11/edge accent-only motion does not repeatedly refresh the status rail" not in status_doc:
+        failures.append("status_led.md: docs must state accent-only motion leaves an unchanged status rail alone")
     if not re.search(
         r"status_led_render_recording_locked[\s\S]*?"
         r"status_led_recording_status_percent_locked\(now_ms\)",

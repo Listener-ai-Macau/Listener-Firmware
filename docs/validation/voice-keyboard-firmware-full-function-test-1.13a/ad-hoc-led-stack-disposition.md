@@ -1,33 +1,42 @@
 # Ad-hoc LED Stack Disposition
 
-Date: 2026-06-19T15:27:51+08:00
+Date: 2026-06-19
 Agent: oai1
-Worktree: `C:\Users\Billy\Desktop\Denzic\Listener\Listener-Firmware-wt-adhoc-oai1-led-flicker-guard-shutdown-confirm`
-Scratch checkpoint before final staging: `human/scratch/listener-firmware/led-effect-1-13a-before-final-commit-20260619-152751` (`2ca77a4`)
+Workflow step: `voice-keyboard-firmware-full-function-test/1.13a`
+Worktree: `C:\Users\Billy\Desktop\Denzic\Listener\Listener-Firmware-wt-oai1-voice-keyboard-firmware-full-function-test-1.13a`
+Branch: `ai/oai1-voice-keyboard-firmware-full-function-test-1.13a`
 
-## Audited Branches
+## Included LED Work
 
-| Branch | Disposition | Evidence |
+| Source | Disposition | Evidence |
 |---|---|---|
-| `adhoc/oai1/led-flicker-guard-shutdown-confirm` | Included as the active 1.13a normalization base. The branch is `ahead 3` from `origin/master` before the current working-tree edits. | `git log --oneline origin/master..HEAD` shows `8ee6812 Harden status LED tail and restore recording OK`, `29403fd Add flicker-safe LED zone brightness controls`, and `52c3041 Merge branch 'master' into adhoc/oai1/led-flicker-guard-shutdown-confirm`. The 2026-06-19 working-tree edits complete the product-effect pass on top of that stack. |
-| `adhoc/oai1/status-led-recording-effect` | Included through ancestry; no separate cherry-pick remains. | `git merge-base --is-ancestor adhoc/oai1/status-led-recording-effect HEAD` returned success; `git log --oneline HEAD..adhoc/oai1/status-led-recording-effect` returned no commits. |
-| `adhoc/oai1/led-true-state-accents` | Included through ancestry; no separate cherry-pick remains. | `git merge-base --is-ancestor adhoc/oai1/led-true-state-accents HEAD` returned success; `git log --oneline HEAD..adhoc/oai1/led-true-state-accents` returned no commits. |
+| `origin/master` through `eabcc9b` | Included by fast-forward before 1.13a LED work. | Brings the accepted base, including `83490b6 Add EC11 and edge status LED accents`, `9b52989 Fix EC11 rotation direction`, `54a837c Improve LED true-state diagnostics`, `3fa3fbf Improve status LED flicker guard and shutdown confirm`, and `eabcc9b Split device timing by power source`. |
+| `adhoc/oai1/status-led-recording-effect` | Included through master ancestry; no separate cherry-pick needed. | The branch tip is an ancestor of the 1.13a branch. |
+| `adhoc/oai1/led-true-state-accents` | Included through master ancestry; no separate cherry-pick needed. | The branch tip is an ancestor of the 1.13a branch. |
+| `adhoc/oai1/led-flicker-guard-shutdown-confirm` commit `8ee6812` | Included as 1.13a commit `def85f4 Harden status LED tail and restore recording OK`. | Carries the REC/AI status-tail guard and restores the recording OK path. |
+| `adhoc/oai1/led-flicker-guard-shutdown-confirm` commit `29403fd` | Included as 1.13a commit `c41ee3d Add flicker-safe LED zone brightness controls`. | Carries `~DEVICE:SET led_status/led_key/led_ec11/led_edge` persisted 0-100 caps, LED status brightness reporting, and human review tooling. |
+| `adhoc/oai1/led-flicker-guard-shutdown-confirm` commit `d48b366` | Included as 1.13a commit `d0e3f4f Finish LED product effect pass`. | Carries the product-scene LED pass: slow low-load REC/AI, EC11/edge motion, BLE re-pair cue, EC11 input feedback, low battery/charging behavior, and 1.13a disposition scaffold. |
+| `adhoc/oai1/led-flicker-guard-shutdown-confirm` commit `99fa8a1` | Included as 1.13a commit `94d9d38 Stabilize REC AI status tail for LED review`. | Carries the 1.9 root-cause fix: REC/AI overlap capped to a 14%-16% slow status-tail envelope, explicit LED5/6 zeroing, effect-only preview isolation, and the final 1.9 human PASS artifacts. |
 
-## Current Scope
+## Excluded Or Preserved Work
 
-The active branch plus working-tree edits cover the LED-only 1.13a scope: status-tail anti-flicker guard, per-zone LED brightness caps, deterministic low-load REC/AI status behavior, slow EC11 and edge/frame dynamic primitives, BLE re-pair cue, EC11 press/rotate feedback, long-press shutdown confirmation, human review tooling, static checks, and status LED documentation.
+| Source | Disposition | Reason |
+|---|---|---|
+| `adhoc/oai1/led-flicker-guard-shutdown-confirm` merge-only commit `52c3041` | Excluded as a separate cherry-pick. | The 1.13a branch was first fast-forwarded to `origin/master`; the merge commit carries no unique product change needed after replaying the content commits above. |
+| Power-hold shutdown failsafe ad-hoc stacks | Excluded and preserved. | Out of 1.13a LED-device-settings scope; belongs to a power/shutdown workflow step. |
+| Hardware-revision/current-sense ad-hoc stacks | Excluded and preserved. | Out of 1.13a LED-device-settings scope; belongs to hardware revision or current-sense integration. |
+| Low-power battery sampling stacks | Excluded and preserved. | Out of 1.13a LED-device-settings scope; belongs to low-power/battery behavior work. |
+| BLE recovery capsule and Listener-Type settings readback stacks | Excluded and preserved. | Cross-repo or desktop-side scope; not needed for firmware LED effect readiness. |
 
-Unrelated ad-hoc stacks remain excluded from 1.13a: power-hold shutdown failsafe, hardware-revision/current-sense changes, low-power battery sampling, BLE recovery capsule work, and Type desktop settings readback. Those require their own workflow disposition if they are still product intent.
+## Current 1.13a Scope Covered
 
-## Validation Snapshot
-
-- `python .\tools\verify_status_led_static.py`: PASS
-- `pwsh -NoProfile -ExecutionPolicy Bypass -File .\tools\verify_device_settings_static.ps1`: PASS
-- `python -m compileall -q tools`: PASS
-- `git diff --check`: PASS
-- `pwsh -NoProfile -ExecutionPolicy Bypass -File .\tools\build.ps1`: PASS, ESP32-S3 build completed in `C:\Users\Billy\AppData\Local\Temp\listener-idf-build-67018ce2a915`
-- `pwsh -NoProfile -File C:\Users\Billy\Desktop\Denzic\ai-collaboration-workflow\scripts\aiw.ps1 doctor -RepoRoot .`: PASS for inspection; reports this ad-hoc stack as manual scratch risk and requires an explicit merge-through-workflow or keep-local disposition before release.
+- Slow, low-duty REC/AI status LEDs that keep `LED5=OK` and `LED6=WARN` semantically off unless a real success/error/shutdown owner is active.
+- Per-zone persisted LED caps: `led_status`, `led_key`, `led_ec11`, and `led_edge`.
+- `~LED:STATUS detail=contract|brightness|state|power|rgb|summary` lines needed for 1.13b review, including RGB frames for status, key, EC11, and edge zones.
+- Recording/processing product effects that avoid high-speed full-zone chasing on shared status paths while preserving visible EC11 and edge/frame motion.
+- BLE re-pair confirmation, key/EC11 input feedback, low battery, plugged/charging/full, OK completion, and long-press shutdown confirmation coverage.
+- Human review tooling and docs explaining effect-only preview modes and the 1.9 LED5/6 flicker root cause.
 
 ## Remaining Gate
 
-The final visual outcome still needs the 1.13b hardware/human review after flashing this working tree or its workflow branch. Latest human feedback before this note asked for clockwise REC/AI flow, visible BLE re-pair EC11 confirmation, and EC11 rotation feedback that keeps all ring LEDs present instead of resetting to an off/dot pattern.
+This step prepares firmware that is safe to flash for the next human/hardware visual review. The final visual judgment is intentionally left to `voice-keyboard-firmware-full-function-test/1.13b`.
