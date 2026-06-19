@@ -1415,8 +1415,22 @@ static esp_err_t ble_audio_stream_send_packet(
             fragment_index,
             fragment_count);
         if (credit_err != ESP_OK) {
-            ble_audio_stream_stats_packet_result(session_id, packet_type, credit_err);
-            return credit_err;
+            ble_audio_stream_stats_retry(
+                session_id,
+                credit_err,
+                BLE_AUDIO_STREAM_RETRY_CAUSE_NOTIFY_TX_TIMEOUT);
+            ESP_LOGW(
+                TAG,
+                "notify credit retry: type=%u session=%" PRIu32 " seq_or_count=%u frag=%u/%u attempts=%d retries=%" PRIu32,
+                (unsigned)packet_type,
+                session_id,
+                sequence_or_count,
+                fragment_index,
+                fragment_count,
+                attempt + 1,
+                s_session_stats.notify_retries);
+            ble_audio_stream_notify_retry_delay();
+            continue;
         }
 
         struct os_mbuf *om = ble_hs_mbuf_from_flat(packet, packet_len);
@@ -1468,9 +1482,6 @@ static esp_err_t ble_audio_stream_send_packet(
                         BLE_AUDIO_STREAM_RETRY_CAUSE_NOTIFY_TX_TIMEOUT);
                     diag_log(DIAG_SRC_BLE_AUDIO, DIAG_BAUD_NOTIFY_FAIL, DIAG_SEV_WARN,
                              session_id, sequence_or_count, ESP_ERR_TIMEOUT, s_session_stats.notify_retries);
-                    if (packet_type == LISTENER_AUDIO_PACKET_TYPE_AUDIO_DATA) {
-                        ble_audio_stream_replay_remove_packet(session_id, sequence_or_count);
-                    }
                     xSemaphoreGive(s_notify_credit_sem);
                     ble_audio_stream_notify_retry_delay();
                     continue;
@@ -1497,9 +1508,6 @@ static esp_err_t ble_audio_stream_send_packet(
                             fragment_count,
                             s_last_notify_tx_status,
                             s_session_stats.notify_retries);
-                        if (packet_type == LISTENER_AUDIO_PACKET_TYPE_AUDIO_DATA) {
-                            ble_audio_stream_replay_remove_packet(session_id, sequence_or_count);
-                        }
                         ble_audio_stream_notify_retry_delay();
                         continue;
                     }
@@ -1508,9 +1516,6 @@ static esp_err_t ble_audio_stream_send_packet(
                 s_notify_tx_wait_active = false;
             }
             ble_audio_stream_notify_success_delay();
-            if (packet_type == LISTENER_AUDIO_PACKET_TYPE_AUDIO_DATA) {
-                ble_audio_stream_replay_remove_packet(session_id, sequence_or_count);
-            }
             ble_audio_stream_stats_packet_result(session_id, packet_type, ESP_OK);
             return ESP_OK;
         }
@@ -1518,9 +1523,6 @@ static esp_err_t ble_audio_stream_send_packet(
         s_notify_tx_wait_active = false;
         os_mbuf_free_chain(om);
         if (rc == BLE_HS_ENOMEM) {
-            if (packet_type == LISTENER_AUDIO_PACKET_TYPE_AUDIO_DATA) {
-                ble_audio_stream_replay_remove_packet(session_id, sequence_or_count);
-            }
             ble_audio_stream_stats_retry(
                 session_id,
                 rc,
