@@ -4,7 +4,8 @@ param(
     [string]$Port,
     [int]$CaptureSeconds = 10,
     [string]$DeviceName = "listener",
-    [switch]$RestartPanAdapter
+    [switch]$RestartPanAdapter,
+    [switch]$ResetBeforeCapture
 )
 
 $ErrorActionPreference = "Stop"
@@ -16,6 +17,10 @@ $arguments = @(
     "--capture-seconds", $CaptureSeconds,
     "--device-name", $DeviceName
 )
+
+if (-not $ResetBeforeCapture.IsPresent) {
+    $arguments += "--no-reset-before-capture"
+}
 
 if ($RestartPanAdapter) {
     $arguments += "--restart-pan-adapter"
