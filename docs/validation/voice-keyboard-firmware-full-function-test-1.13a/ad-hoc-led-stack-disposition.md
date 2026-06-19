@@ -37,6 +37,10 @@ Branch: `ai/oai1-voice-keyboard-firmware-full-function-test-1.13a`
 - BLE re-pair confirmation, key/EC11 input feedback, low battery, plugged/charging/full, OK completion, and long-press shutdown confirmation coverage.
 - Human review tooling and docs explaining effect-only preview modes and the 1.9 LED5/6 flicker root cause.
 
+## Visual Model Artifact
+
+`docs/validation/voice-keyboard-firmware-full-function-test-1.13a/led-effect-static-model.png` is a static model screenshot for the AI-verifiable 1.13a evidence audit. It shows the intended no-flicker baseline: REC/AI active at low duty, OK/WARN held black, EC11 all-present low warm-gold flow, and edge/frame all-present without refreshing an unchanged status rail. It is not a substitute for the real hardware visual review in 1.13b.
+
 ## Remaining Gate
 
 This step prepares firmware that is safe to flash for the next human/hardware visual review. The final visual judgment is intentionally left to `voice-keyboard-firmware-full-function-test/1.13b`.
