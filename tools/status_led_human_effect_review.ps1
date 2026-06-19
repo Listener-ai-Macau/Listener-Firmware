@@ -3,7 +3,7 @@ param(
     [string]$Port = "COMx",
     [int]$Baud = 115200,
     [string]$OutputDir = "",
-    [ValidateSet("Foundation", "Scenes", "Complex", "Volume", "RootCause", "StaticRoot", "Repro", "Full")]
+    [ValidateSet("Foundation", "Scenes", "Complex", "Volume", "Product", "RootCause", "StaticRoot", "Repro", "Full")]
     [string]$Mode = "Foundation",
     [int]$CommandReadMs = 700,
     [int]$InitialReadMs = 1200,
@@ -41,6 +41,7 @@ function New-LedReviewStep {
         [Parameter(Mandatory = $true)][string[]]$Commands,
         [Parameter(Mandatory = $true)][string]$Expected,
         [Parameter(Mandatory = $true)][string]$HumanFocus,
+        [string]$When = "",
         [string]$PassRule = ""
     )
 
@@ -48,6 +49,7 @@ function New-LedReviewStep {
         id = $Id
         title = $Title
         commands = @($Commands)
+        when = $When
         expected = $Expected
         human_focus = $HumanFocus
         pass_rule = $PassRule
@@ -150,27 +152,122 @@ function Get-SceneSteps {
         New-LedReviewStep `
             -Id "scene-ready" `
             -Title "产品场景：就绪" `
-            -Commands @("~LED:PREVIEW ready", "~LED:STATUS") `
-            -Expected "PWR/BLE 清楚但不抢眼；其它语义灯不亮。" `
-            -HumanFocus "确认状态轨安静，不像跑马灯。"
+            -Commands @("~LED:PREVIEW ready", "WAIT 250", "~LED:STATUS", "WAIT 1600", "~LED:STATUS") `
+            -When "设备已开机且 BLE 已连接，当前没有录音、AI 处理、错误或成功确认；PWR/BLE 用于告诉用户设备在线但不要抢注意力。" `
+            -Expected "PWR/BLE 清楚但不抢眼；BLE 连接初始可有一次短蓝色成功确认，随后回到安静在线状态；其它语义灯不亮。" `
+            -HumanFocus "确认蓝牙连接成功提示只在 BLE 语义灯上完成，不带动旋钮/板框，也不像跑马灯。"
+        New-LedReviewStep `
+            -Id "scene-pairing" `
+            -Title "产品场景：蓝牙等待配对" `
+            -Commands @("~LED:PREVIEW pairing", "WAIT 120", "~LED:STATUS", "WAIT 780", "~LED:STATUS", "WAIT 900", "~LED:STATUS") `
+            -When "新设备首次开机、清除绑定完成、或没有可重连主机时进入 BLE 可发现配对窗口；只表达可以配对，不是错误。" `
+            -Expected "LED2/BLE 蓝色低频脉冲；旋钮和板框不参与配对提示；若插电 PWR 可保持独立充电/在线基线；REC、AI、OK、WARN 不应乱入。" `
+            -HumanFocus "确认蓝牙灯明确但不刺眼；旋钮/板框应保持灭，OK/WARN 必须灭。"
+        New-LedReviewStep `
+            -Id "scene-reconnecting" `
+            -Title "产品场景：蓝牙重连中" `
+            -Commands @("~LED:PREVIEW reconnecting", "WAIT 80", "~LED:STATUS", "WAIT 240", "~LED:STATUS", "WAIT 700", "~LED:STATUS") `
+            -When "设备从睡眠/断链恢复，正在尝试找回已绑定主机；这是暂态连接状态，不应该亮错误灯。" `
+            -Expected "LED2/BLE 蓝色双脉冲；旋钮和板框不参与重连提示；若插电 PWR 可保持独立充电/在线基线；REC、AI、OK、WARN 不应乱入。" `
+            -HumanFocus "确认能和普通 pairing 区分，但仍然安静；旋钮/板框应保持灭，LED6/WARN 不能参与。"
+        New-LedReviewStep `
+            -Id "scene-ble-repairing" `
+            -Title "产品场景：双击旋钮重新配对" `
+            -Commands @("~LED:PREVIEW repairing", "WAIT 80", "~LED:STATUS", "WAIT 570", "~LED:STATUS", "WAIT 850", "~LED:STATUS") `
+            -When "用户双击 EC11 旋钮或发 `~VREC:RECOVERY` 清除旧绑定并重新进入配对；这是用户主动重配确认，不是故障。" `
+            -Expected "LED2/BLE 较明显蓝色双脉冲；EC11 旋钮有低亮蓝色用户重配确认；板框不参与；REC、AI、OK、WARN 必须灭。" `
+            -HumanFocus "确认这是用户主动重配：BLE 语义灯明确，旋钮有低亮确认，板框保持灭，不要误读为错误或录音。"
+        New-LedReviewStep `
+            -Id "scene-charging" `
+            -Title "产品场景：插电充电中" `
+            -Commands @("~LED:PREVIEW charging", "WAIT 1700", "~LED:STATUS", "WAIT 900", "~LED:STATUS") `
+            -When "USB/VBUS 在位、充电芯片显示正在充电且未确认满电；只由 PWR 表达外接电源/充电。" `
+            -Expected "PWR 应是白色、慢速、成熟的充电呼吸；亮度范围要看得出来但不能像警告闪烁；BLE、REC、AI、OK、WARN 不应乱入。" `
+            -HumanFocus "重点看充电呼吸是否舒服：最暗和最亮之间要有可感知差异，节奏要慢；如果人眼看到绿灯或蓝灯，请记录是哪一颗。"
+        New-LedReviewStep `
+            -Id "scene-full" `
+            -Title "产品场景：插电满电" `
+            -Commands @("~LED:PREVIEW full", "~LED:STATUS") `
+            -When "USB/VBUS 在位，充电完成信号和电量经过 debounce 后本轮插电锁定为满电；只由 PWR 表达满电。" `
+            -Expected "PWR 应是稳定白色满电状态；不是 OK 绿灯，也不是 BLE 蓝灯。" `
+            -HumanFocus "确认满电语义只在 PWR，不误读为录音结束 OK。"
+        New-LedReviewStep `
+            -Id "scene-low-battery" `
+            -Title "产品场景：低电量" `
+            -Commands @("~LED:PREVIEW low_battery", "~LED:STATUS") `
+            -When "未插电且电量进入低电阈值；由 PWR 用 amber/red 系提示电源风险，不代表录音或 BLE 状态。" `
+            -Expected "PWR 应是稳定红色低电提示，不做呼吸或双闪；其它工作态灯不应出现。" `
+            -HumanFocus "确认低电提示可读、安静，不像严重低电双闪、充电呼吸或录音。"
+        New-LedReviewStep `
+            -Id "scene-critical-battery" `
+            -Title "产品场景：严重低电" `
+            -Commands @("~LED:PREVIEW critical_battery", "WAIT 900", "~LED:STATUS", "WAIT 900", "~LED:STATUS") `
+            -When "未插电且电量进入严重低电阈值；这是电源安全提示，优先于普通氛围灯。" `
+            -Expected "PWR 应给出明确红色双闪严重低电警示；其它工作态灯不应出现。" `
+            -HumanFocus "确认严重低电是红色双闪，不是黄色/琥珀常亮，也没有 LED5/6 乱跟闪。"
+        New-LedReviewStep `
+            -Id "scene-recording-processing-live" `
+            -Title "产品场景：真实录音+处理叠加（含 PWR/BLE）" `
+            -Commands @("~LED:PREVIEW recording_processing", "~LED:REC_LEVEL 75 60000", "~LED:STATUS", "~LED:STATUS", "~LED:STATUS") `
+            -When "设备正在录音并且桌面端已经发 `VREC:PROCESSING:START`；PWR/BLE 仍表达电源和连接，REC/AI 同时表达工作状态。" `
+            -Expected "真实产品预览：PWR/BLE 应保持独立可读，REC 暖金和 AI 紫色同时存在；旋钮/边框用低亮暖金底光加慢速固定流动，不跟 PCM 变亮、不高频跳；LED5/OK 和 LED6/WARN 不应出现。" `
+            -HumanFocus "这一步重点复查 5/6 闪烁：状态 REC/AI 可有轻微呼吸但不要乱闪；旋钮/边框应有一点固定变化，OK/WARN 必须保持灭。"
+        New-LedReviewStep `
+            -Id "scene-processing-live" `
+            -Title "产品场景：AI 处理中（未录音）" `
+            -Commands @("~LED:PREVIEW processing", "WAIT 900", "~LED:STATUS", "WAIT 900", "~LED:STATUS") `
+            -When "桌面端进入 ASR/AI/OTA 处理阶段但当前没有本地录音；AI 灯只由 host-confirmed processing/OTA 开始触发。" `
+            -Expected "PWR/BLE 保持独立可读；LED4/AI 紫色低频活性；旋钮和边框用低亮紫色顺时针转动；REC、OK、WARN 必须灭。" `
+            -HumanFocus "确认 AI 灯的出现时机明确，旋钮/边框方向是顺时针；LED5/6 不应跟闪。"
         New-LedReviewStep `
             -Id "scene-ok" `
             -Title "产品场景：OK 确认" `
             -Commands @("~LED:PREVIEW ok", "~LED:STATUS") `
-            -Expected "LED5 绿色短确认，旋钮/边框可有低亮绿色辅助；不应长时间常亮。" `
-            -HumanFocus "确认 OK 位置和持续感，不能消失太快或太暗。"
+            -When "本地录音停止/会话完成，或桌面端发 `VREC:PROCESSING:DONE`；只表示成功确认，持续约 2.0 秒。" `
+            -Expected "PWR/BLE 保持就绪基线；LED5 绿色短确认，旋钮/边框可有低亮绿色辅助；不应长时间常亮。" `
+            -HumanFocus "确认 OK 位置和持续感，不能消失太快或太暗，也不能被 PWR/BLE 误读。"
         New-LedReviewStep `
             -Id "scene-rec-not-available" `
             -Title "产品场景：录音不可用警告" `
             -Commands @("~LED:PREVIEW rec_not_available", "~LED:STATUS") `
-            -Expected "WARN 与 REC 成对提示，颜色应像警告，不应误读为正常录音。" `
-            -HumanFocus "确认错误灯可以覆盖 5/6，且和普通闪烁区别明显。"
+            -When "用户请求录音但当前没有可用录音源、权限/传输不满足或录音被拒绝；这是错误/警告语义，只用 WARN。" `
+            -Expected "只用 LED6/WARN 提示录音不可用；REC、OK、旋钮、按键、边框不应参与。" `
+            -HumanFocus "确认错误语义干净：只看 error/WARN 灯，不要被误读成正常录音或其它状态。"
         New-LedReviewStep `
             -Id "scene-shutdown-confirm" `
             -Title "产品场景：长按关机确认" `
-            -Commands @("~LED:PREVIEW shutdown_confirm", "~LED:STATUS") `
-            -Expected "暖琥珀 PWR + 旋钮进度感 + 边框角落提示；状态灯语义仍清楚。" `
-            -HumanFocus "确认这是关机确认感，不像错误或录音。"
+            -Commands @("~LED:PREVIEW shutdown_confirm", "WAIT 600", "~LED:STATUS", "WAIT 1800", "~LED:STATUS") `
+            -When "用户长按 EC11 到达关机确认阈值但尚未真正断电；用于告诉用户继续按住会关机。" `
+            -Expected "暖琥珀 PWR + 旋钮顺时针进度感；板框不参与；绕满一圈后保持全圈亮，不应自己灭，直到最终长按关机/睡眠/clear 才灭。" `
+            -HumanFocus "确认这是关机确认感，不像错误或录音；第二次状态读取时旋钮应已经满圈且仍亮，板框应保持灭。"
+        New-LedReviewStep `
+            -Id "scene-ec11-short-press" `
+            -Title "产品场景：短按旋钮反馈" `
+            -Commands @("WAIT 2200", "~LED:STATUS") `
+            -When "点击确定后马上短按一次 EC11 旋钮；这是用户输入反馈，不代表 OK 成功、错误或 BLE 状态。" `
+            -Expected "EC11 旋钮出现一次短白色确认；PWR/BLE 保持自己的状态；LED5/OK、LED6/WARN、板框和按键不应被点亮。" `
+            -HumanFocus "点确定后立刻短按旋钮一次，确认旋钮有干净短反馈，不能像成功 OK 或错误 WARN。"
+        New-LedReviewStep `
+            -Id "scene-ec11-rotate" `
+            -Title "产品场景：旋转旋钮反馈" `
+            -Commands @("WAIT 2600", "~LED:STATUS") `
+            -When "点击确定后先顺时针旋转 EC11 一格，再逆时针旋转一格；这是音量/亮度等 HID 动作成功排队后的输入反馈。" `
+            -Expected "EC11 旋钮出现短白色方向性反馈，顺/逆方向可区分；PWR/BLE 保持自己的状态；LED5/OK、LED6/WARN、板框和按键不应乱入。" `
+            -HumanFocus "点确定后马上顺时针、逆时针各转一下，确认有方向感但不抢眼，不能触发 OK/WARN。"
+        New-LedReviewStep `
+            -Id "scene-key-feedback" `
+            -Title "产品场景：按键反馈" `
+            -Commands @("WAIT 3000", "~LED:STATUS") `
+            -When "点击确定后依次短按 KEY1、KEY2、KEY3、KEY4；这是本地按键输入反馈，不代表录音/处理/错误。" `
+            -Expected "只有被按下的 KEY 灯有短白色反馈；PWR/BLE 保持自己的状态；REC、AI、OK、WARN、EC11、板框不应被错误点亮。" `
+            -HumanFocus "点确定后依次按四个按键，确认每颗按键反馈位置正确、时间短、不会带动 5/6 或旋钮/板框。"
+        New-LedReviewStep `
+            -Id "scene-sleep" `
+            -Title "产品场景：睡眠/低功耗熄灯" `
+            -Commands @("~LED:PREVIEW sleep", "~LED:STATUS") `
+            -When "空闲超时、低功耗策略或硬件关机准备阶段；除非有唤醒/错误/充电状态，灯应进入明确的低功耗熄灭。" `
+            -Expected "所有状态灯、旋钮灯、按键灯、边框灯都应熄灭；不应残留蓝牙、AI、OK 或错误灯。" `
+            -HumanFocus "确认睡眠不是暗闪或随机残光，尤其确认 BLE/AI/OK/WARN 都灭。"
     )
     return @($steps)
 }
@@ -181,32 +278,37 @@ function Get-ComplexSteps {
             -Id "complex-recording-processing-product" `
             -Title "复杂灯效：录音+处理 专用动态效果" `
             -Commands @("~LED:PREVIEW recording_processing_led_only", "~LED:REC_LEVEL 100 60000", "~LED:STATUS", "~LED:STATUS", "~LED:STATUS") `
-            -Expected "专用 effect-only 预览：状态灯只看 REC/AI，PWR/BLE 不参与；KEY1/KEY2 允许低亮工作态辅助；旋钮/边框由录音暖金优先，带同色慢速高光/扫动，不做同区金紫混色；LED5/OK 和 LED6/WARN 不应跟闪。" `
-            -HumanFocus "按灯效本身判断：按键辅助是否克制，旋钮底座环是否有稳定音量感且不是全静态，边框是否像环境支撑而不是乱闪；叠加态应该有同色高光运动感；~LED:STATUS 必须显示 preview_effect_only=1。"
+            -When "调校录音+AI 同时存在时的高级灯效，不让 PWR/BLE/按键参与；用于验收 REC/AI、旋钮底座、板框三者组合是否不闪、不串色。" `
+            -Expected "专用 effect-only 预览：状态灯只看 REC/AI，PWR/BLE 不参与；按键灯不参与；旋钮 12 颗和边框 6 颗用低亮暖金底光加慢速固定流动，不跟 PCM 变亮、不高频跳；LED5/OK 和 LED6/WARN 不应跟闪。" `
+            -HumanFocus "按整体灯效判断：REC/AI 状态灯要有轻微活性但不乱闪；旋钮和边框应有一点固定变化、低亮、不抢眼；~LED:STATUS 必须显示 preview_effect_only=1。"
         New-LedReviewStep `
             -Id "complex-recording-processing-status-only" `
             -Title "复杂灯效：录音+处理 仅状态灯动态" `
             -Commands @("~LED:PREVIEW recording_processing_status_led_only", "~LED:STATUS", "~LED:STATUS", "~LED:STATUS") `
+            -When "隔离检查状态灯 LED3/REC 与 LED4/AI 的动态本体，排除旋钮/板框/按键干扰，用于判断 LED5/6 跟闪根因。" `
             -Expected "专用 effect-only 状态轨：只保留 LED3/REC 和 LED4/AI 的低频量化动态；PWR/BLE、旋钮和边框应熄灭；LED5/OK 和 LED6/WARN 不应跟闪。" `
             -HumanFocus "这里验证动态状态轨本身：如果这里稳定，说明状态灯高级动态可用；如果仍闪，问题在状态灯物理链路、日志或刷新策略。"
         New-LedReviewStep `
             -Id "complex-capture-only" `
             -Title "复杂灯效：仅录音 暖金旋转底光" `
             -Commands @("~LED:PREVIEW capture_led_only", "~LED:REC_LEVEL 75 60000", "~LED:STATUS", "~LED:STATUS", "~LED:STATUS") `
-            -Expected "专用 effect-only 预览：LED3 金色录音随音量和慢呼吸有克制亮度变化；KEY1 可有低亮暖金辅助；旋钮底座一圈应是暖金低亮底光加同色高光旋转，边框应是更低亮度的暖金框体支撑；不应靠缺几颗灯表达亮度；LED5/6 应保持熄灭。" `
-            -HumanFocus "看单独录音是否像旋钮底座氛围灯，按键辅助是否不抢眼，是否稳定不闪，旋钮不要像随机闪或缺灯；~LED:STATUS 必须显示 preview_effect_only=1。"
+            -When "只调录音中的高级灯效；真实产品中对应用户按下录音后、AI 还未开始处理时的 REC/旋钮/板框表达。" `
+            -Expected "专用 effect-only 预览：LED3 暖金录音只有轻微慢呼吸；按键灯不参与；旋钮 12 颗、边框 6 颗为低亮暖金底光加慢速固定流动，不跟音量变化、不高频跳；LED5/6 应保持熄灭。" `
+            -HumanFocus "看单独录音是否稳定且不是死灯：颜色偏金黄而不是红，旋钮/边框有一点固定变化但不能跳闪，~LED:STATUS 必须显示 preview_effect_only=1。"
         New-LedReviewStep `
             -Id "complex-processing-only" `
             -Title "复杂灯效：仅处理 紫色环绕" `
             -Commands @("~LED:PREVIEW processing_led_only", "~LED:STATUS", "~LED:STATUS", "~LED:STATUS") `
-            -Expected "专用 effect-only 预览：LED4 紫色处理可低频量化呼吸；KEY2 可有低亮紫色辅助；旋钮底座一圈应有低亮紫色底光和一个慢速环绕高光，边框应有更低亮度的紫色框体波动；LED5/6 应保持熄灭，且查询状态不应导致重启。" `
-            -HumanFocus "看单独处理是否有围绕旋钮的旋转感、按键辅助是否克制、边框是否好看且克制、是否稳定不闪；~LED:STATUS 必须显示 preview_effect_only=1。"
+            -When "只调 AI/处理中的高级灯效；真实产品中对应 host-confirmed processing/OTA 阶段的 AI 紫色语义和旋钮/板框辅助。" `
+            -Expected "专用 effect-only 预览：LED4 紫色处理可低频量化呼吸；按键灯不参与；旋钮底座和边框都应低亮紫色顺时针转动；LED5/6 应保持熄灭，且查询状态不应导致重启。" `
+            -HumanFocus "看单独处理是否顺时针、克制、稳定；状态灯不能是死灯，也不能让 LED5/6 跟闪；~LED:STATUS 必须显示 preview_effect_only=1。"
         New-LedReviewStep `
             -Id "complex-shutdown-confirm" `
             -Title "复杂灯效：长按关机确认" `
-            -Commands @("~LED:PREVIEW shutdown_confirm", "~LED:STATUS", "~LED:STATUS", "~LED:STATUS") `
-            -Expected "暖琥珀 PWR + 旋钮进度/边框角落提示；应明显像关机确认，不像错误或录音。" `
-            -HumanFocus "确认长按关机确认灯效是否能被人眼理解。"
+            -Commands @("~LED:PREVIEW shutdown_confirm", "WAIT 400", "~LED:STATUS", "WAIT 900", "~LED:STATUS", "WAIT 1200", "~LED:STATUS") `
+            -When "调校长按关机确认的高级提示；真实产品中对应 EC11 长按超过确认阈值、尚未进入最终断电。" `
+            -Expected "暖琥珀 PWR + 旋钮顺时针填充；板框不参与；旋钮绕满一圈后保持全圈亮，不应自己灭，直到最终长按关机/睡眠/clear 才灭。" `
+            -HumanFocus "确认长按关机确认灯效是否能被人眼理解；重点看方向是否顺时针、超过 1.8 秒后是否仍保持亮、板框是否保持灭。"
     )
     return @($steps)
 }
@@ -215,7 +317,7 @@ function Get-VolumeSteps {
     $steps = @(
         New-LedReviewStep `
             -Id "volume-capture-sweep" `
-            -Title "音量响应：录音动态扫动" `
+            -Title "音量响应：录音固定流动抗闪" `
             -Commands @(
                 "~LED:PREVIEW capture_led_only",
                 "~LED:REC_LEVEL 0 2200",
@@ -227,14 +329,15 @@ function Get-VolumeSteps {
                 "~LED:REC_LEVEL 100 60000",
                 "WAIT 2200",
                 "~LED:STATUS") `
-            -Expected "专用 effect-only 预览：LED3/REC、KEY1 低亮暖金辅助、旋钮暖金音量弧、边框暖金侧轨应按 0/30/65/100 四档明显变亮、变长；高音量时有小范围同色高光顺滑移动；PWR/BLE 不参与；LED5/6 必须灭。" `
-            -HumanFocus "这是动态音量验收：点确定后马上盯着灯，每档约 2 秒；重点看旋钮/边框是否有可接受的音量跟随，按键辅助是否不抢眼，颜色是否是暖金而不是绿闪，高音量不能像完全静态或一开始跳闪；允许不是全环全框都亮，因为当前硬件上 broad 动态会触发 5/6；~LED:STATUS 必须显示 preview_effect_only=1。"
+            -When "回归录音稳定性；命令仍模拟 0/30/65/100 rec_level，但当前产品策略不再用 PCM 电平驱动灯效亮度。" `
+            -Expected "专用 effect-only 预览：LED3/REC 只有轻微慢呼吸，旋钮全圈和边框 6 颗保持低亮暖金底光加慢速固定流动；四档 rec_level 不应造成明显亮度跳变或高频扫动；按键灯、PWR/BLE 不参与；LED5/6 必须灭。" `
+            -HumanFocus "这是抗闪验收：点确定后盯着灯，每档约 2 秒；重点看 5/6 是否还会绿/红闪、旋钮/边框是否有稳定固定变化，~LED:STATUS 必须显示 preview_effect_only=1。"
         New-LedReviewStep `
             -Id "volume-overlap-high" `
             -Title "音量响应：录音+处理 高音量叠加" `
             -Commands @("~LED:PREVIEW recording_processing_led_only", "~LED:REC_LEVEL 100 60000", "WAIT 1800", "~LED:STATUS", "WAIT 700", "~LED:STATUS", "WAIT 700", "~LED:STATUS") `
-            -Expected "专用 effect-only 预览：REC 暖金高音量反馈和 AI 紫色语义可同时存在；PWR/BLE 不参与；KEY1/KEY2 允许低亮工作态辅助；状态 LED4 仍显示 AI 紫色，但旋钮/边框应由录音暖金优先，带同相位的小范围高光/扫动，不做同区金紫混色；LED5/6 必须灭，不应跟 LED3/4 闪。" `
-            -HumanFocus "这是最接近之前闪烁痛点的高级效果验收：重点看暖金是否稳定保持、开始阶段是否跳闪、按键辅助是否克制、板框是否是低亮支撑而不是乱闪；还要看是否有 5/6 跟闪或随机绿闪；~LED:STATUS 必须显示 preview_effect_only=1。"
+            -Expected "专用 effect-only 预览：REC 暖金和 AI 紫色语义可同时存在；按键灯、PWR/BLE 不参与；旋钮/边框保持低亮暖金底光加慢速固定流动，不做同区金紫混色或高频扫动；LED5/6 必须灭，不应跟 LED3/4 闪。" `
+            -HumanFocus "这是最接近之前闪烁痛点的稳定性验收：重点看旋钮/边框是否低亮且有固定变化、是否有 5/6 跟闪或随机绿闪；~LED:STATUS 必须显示 preview_effect_only=1。"
     )
     return @($steps)
 }
@@ -352,6 +455,17 @@ function Get-ReviewSteps {
     if ($Mode -eq "Volume") {
         return $volume
     }
+    if ($Mode -eq "Product") {
+        return @(
+            $scenes | Where-Object { $_.id -eq "scene-charging" }
+            $scenes | Where-Object { $_.id -eq "scene-ble-repairing" }
+            $scenes | Where-Object { $_.id -eq "scene-recording-processing-live" }
+            $scenes | Where-Object { $_.id -eq "scene-ec11-short-press" }
+            $scenes | Where-Object { $_.id -eq "scene-ec11-rotate" }
+            $scenes | Where-Object { $_.id -eq "scene-key-feedback" }
+            $scenes | Where-Object { $_.id -eq "scene-sleep" }
+        )
+    }
     $rootCause = @(Get-RootCauseSteps)
     if ($Mode -eq "RootCause") {
         return $rootCause
@@ -380,24 +494,26 @@ function Write-PlanMarkdown {
     $lines.Add("- Foundation first: one commanded LED means one physical LED; all other LEDs stay off.") | Out-Null
     $lines.Add("- Brightness must be monotonic by eye: 10% < 35% < 70%, with no saturation plateau at normal settings.") | Out-Null
     $lines.Add("- During recording/processing, status LED3 and LED4 may use capped, slow, quantized brightness changes; LED5/OK and LED6/WARN must stay off unless success/error owns them.") | Out-Null
-    $lines.Add("- Volume mode drives the same recording-level renderer with `~LED:REC_LEVEL`; this pass uses effect-only preview commands so PWR/BLE, live reconnects, and charge-state changes do not participate in the judged effect.") | Out-Null
-    $lines.Add("- EC11, key, and edge/frame LEDs are independent accent surfaces. For this pass, EC11 uses a knob-base warm-gold volume arc for REC and a slow violet orbit for AI-only; REC+AI overlap gives EC11/edge priority to recording warm gold with a slow same-color highlight instead of same-zone color mixing.") | Out-Null
+    $lines.Add("- Volume mode still sends `~LED:REC_LEVEL` review commands, but current product rendering treats recording as a deterministic low-load effect instead of PCM-driven brightness; this pass uses effect-only preview commands so PWR/BLE, live reconnects, and charge-state changes do not participate in the judged effect.") | Out-Null
+    $lines.Add("- EC11 and edge/frame LEDs are independent accent surfaces. For this pass, REC uses a low-load warm-gold base with slow fixed flow, AI-only uses a violet orbit, REC+AI overlap keeps the warm-gold recording cue instead of same-zone color mixing, and physical EC11 input uses brief white knob feedback. Key LEDs stay off unless there is a real key event or a diagnostic stress step.") | Out-Null
     $lines.Add("- Complex mode uses effect-only preview commands for REC/AI, EC11, and edge/frame validation; ordinary product previews remain in Scenes, not in the LED-effect tuning pass.") | Out-Null
     $lines.Add("- RootCause mode temporarily lowers global brightness to test whether the visible 5/6 flicker is brightness/electrical-threshold sensitive, then restores brightness to 50%.") | Out-Null
     $lines.Add("- StaticRoot mode compares fixed REC+AI output with and without a status query, separating dynamic-refresh flicker from static physical bleed or query/log interference.") | Out-Null
     $lines.Add("- Repro mode intentionally drives the status rail and key LEDs with a known-bad broad dynamic pattern while keeping software OK/WARN at zero, so human observation can separate logical status from physical cross-zone disturbance.") | Out-Null
-    $lines.Add("- Product direction for this pass: quiet but alive semantic status rail; mature controller/speaker-style ring feedback on the EC11 base; restrained edge/frame support; green OK only for success; amber/red WARN only for errors; warm amber for shutdown confirmation.") | Out-Null
+    $lines.Add("- Product direction for this pass: quiet but alive semantic status rail; blue BLE for connected/pairing/reconnect states, user re-pair uses BLE plus a low blue EC11 confirmation with edge/frame off, recording uses low-load warm-gold fixed flow, processing accents move clockwise, EC11 press/rotate uses short white feedback, green OK only for success, amber/red WARN only for errors, and warm amber PWR+EC11 for shutdown confirmation.") | Out-Null
     $lines.Add("") | Out-Null
     $lines.Add("## Review Steps") | Out-Null
     $lines.Add("") | Out-Null
-    $lines.Add("| # | id | expected | human focus | commands |") | Out-Null
-    $lines.Add("|---:|---|---|---|---|") | Out-Null
+    $lines.Add("| # | id | application timing | semantic lights | expected | human focus | commands |") | Out-Null
+    $lines.Add("|---:|---|---|---|---|---|---|") | Out-Null
     for ($i = 0; $i -lt $Steps.Count; $i++) {
         $step = $Steps[$i]
         $commands = ($step.commands | ForEach-Object { "``$_``" }) -join "<br>"
-        $row = "| {0} | {1} | {2} | {3} | {4} |" -f @(
+        $row = "| {0} | {1} | {2} | {3} | {4} | {5} | {6} |" -f @(
             ($i + 1),
             $step.id,
+            $step.when,
+            (Get-LedSemanticText -Step $step),
             $step.expected,
             $step.human_focus,
             $commands)
@@ -428,7 +544,7 @@ function Open-SerialNoReset {
         8,
         [System.IO.Ports.StopBits]::One)
     $serial.ReadTimeout = 80
-    $serial.WriteTimeout = 1000
+    $serial.WriteTimeout = 5000
     $serial.DtrEnable = $false
     $serial.RtsEnable = $false
     $serial.Open()
@@ -518,31 +634,108 @@ function Send-SerialCommand {
 
 function Get-StatusLines {
     param([Parameter(Mandatory = $true)][object[]]$Responses)
-    $text = (($Responses | ForEach-Object { [string]$_.response }) -join "`n")
-    $statusRgb = ""
-    $ec11Rgb = ""
-    $keyRgb = ""
-    $edgeRgb = ""
-    $summary = ""
-    foreach ($line in ($text -split "`r?`n")) {
-        if ($line -like "~LED:STATUS detail=rgb status_rgb=*") {
-            $statusRgb = $line
-        } elseif ($line -like "~LED:STATUS detail=rgb_ec11 ec11_rgb=*") {
-            $ec11Rgb = $line
-        } elseif ($line -like "~LED:STATUS detail=rgb_key key_rgb=*") {
-            $keyRgb = $line
-        } elseif ($line -like "~LED:STATUS detail=rgb_edge edge_rgb=*") {
-            $edgeRgb = $line
-        } elseif ($line -like "~LED:STATUS profile=* detail=summary*") {
-            $summary = $line
+    $groups = [System.Collections.Generic.List[object]]::new()
+    for ($i = 0; $i -lt $Responses.Count; $i++) {
+        $response = $Responses[$i]
+        if ([string]$response.command -notlike "~LED:STATUS*") {
+            continue
+        }
+        $statusRgb = ""
+        $ec11Rgb = ""
+        $keyRgb = ""
+        $edgeRgb = ""
+        $summary = ""
+        foreach ($line in ([string]$response.response -split "`r?`n")) {
+            if ($line -like "~LED:STATUS detail=rgb status_rgb=*") {
+                $statusRgb = $line
+            } elseif ($line -like "~LED:STATUS detail=rgb_ec11 ec11_rgb=*") {
+                $ec11Rgb = $line
+            } elseif ($line -like "~LED:STATUS detail=rgb_key key_rgb=*") {
+                $keyRgb = $line
+            } elseif ($line -like "~LED:STATUS detail=rgb_edge edge_rgb=*") {
+                $edgeRgb = $line
+            } elseif ($line -like "~LED:STATUS profile=* detail=summary*") {
+                $summary = $line
+            }
+        }
+        if ([string]::IsNullOrWhiteSpace($statusRgb) -and [string]::IsNullOrWhiteSpace($summary)) {
+            continue
+        }
+        $score = $i
+        if ($summary -match "active_flags=[^ ]*:1") {
+            $score += 1000
+        }
+        if ($summary -match "active_flags=[^ ]*BLE:1") {
+            $score += 160
+        }
+        if ($summary -match "ble_repair_ms_left=(\d+)" -and [int]$Matches[1] -gt 0) {
+            $score += 1200
+        }
+        $groups.Add([PSCustomObject]@{
+            status_rgb = $statusRgb
+            ec11_rgb = $ec11Rgb
+            key_rgb = $keyRgb
+            edge_rgb = $edgeRgb
+            summary = $summary
+            selection = ("status-command-{0}" -f ($i + 1))
+            selection_score = $score
+        }) | Out-Null
+    }
+    $selected = $groups | Sort-Object -Property selection_score -Descending | Select-Object -First 1
+    if (-not $selected) {
+        $selected = [PSCustomObject]@{
+            status_rgb = ""
+            ec11_rgb = ""
+            key_rgb = ""
+            edge_rgb = ""
+            summary = ""
+            selection = "none"
+            selection_score = 0
         }
     }
     [PSCustomObject]@{
-        status_rgb = $statusRgb
-        ec11_rgb = $ec11Rgb
-        key_rgb = $keyRgb
-        edge_rgb = $edgeRgb
-        summary = $summary
+        status_rgb = $selected.status_rgb
+        ec11_rgb = $selected.ec11_rgb
+        key_rgb = $selected.key_rgb
+        edge_rgb = $selected.edge_rgb
+        summary = $selected.summary
+        selection = $selected.selection
+        selection_score = $selected.selection_score
+    }
+}
+
+function Get-LedSemanticText {
+    param([Parameter(Mandatory = $true)][object]$Step)
+
+    switch ([string]$Step.id) {
+        "scene-ready" { return "PWR=电源在线；BLE=已连接/就绪；REC、AI、OK、WARN 都应灭。" }
+        "scene-pairing" { return "BLE=等待配对；旋钮/板框不参与；PWR 可独立表达插电/电源；REC、AI、OK、WARN 都不参与，WARN 不代表配对。" }
+        "scene-reconnecting" { return "BLE=找回已绑定主机；旋钮/板框不参与；PWR 可独立表达插电/电源；WARN/错误灯不亮，因为重连不是错误。" }
+        "scene-ble-repairing" { return "BLE=用户主动重新配对确认；EC11=低亮蓝色用户确认；板框不参与；AI、OK、WARN 必须灭。" }
+        "scene-charging" { return "PWR=插电充电；BLE、REC、AI、OK、WARN 都不用于表达充电。" }
+        "scene-full" { return "PWR=插电满电；OK 绿灯不亮，避免把满电误读为会话成功。" }
+        "scene-low-battery" { return "PWR=低电量提示；WARN 不亮，除非进入真实错误/安全保护。" }
+        "scene-critical-battery" { return "PWR=严重低电提示；其它语义灯保持灭，避免和录音/BLE/错误混在一起。" }
+        "scene-recording-processing-live" { return "PWR/BLE=基础在线状态；REC=正在录音且只做慢呼吸；AI=host-confirmed processing/OTA；OK/WARN 灭。" }
+        "scene-processing-live" { return "AI=host-confirmed processing/OTA；PWR/BLE 保持基线；旋钮/边框做顺时针紫色辅助；REC、OK、WARN 灭。" }
+        "scene-ok" { return "OK=成功短确认，只在录音/处理完成时出现；PWR/BLE 保持基线；WARN 灭。" }
+        "scene-rec-not-available" { return "WARN=录音不可用/被拒绝/权限或传输不满足；REC、AI、OK、旋钮、边框都不参与。" }
+        "scene-shutdown-confirm" { return "PWR/旋钮=长按关机确认；板框不参与；BLE、REC、AI、OK、WARN 不抢占。" }
+        "complex-shutdown-confirm" { return "PWR/旋钮=长按关机确认；板框不参与；BLE、REC、AI、OK、WARN 不抢占。" }
+        "scene-ec11-short-press" { return "EC11=短按输入白色确认；OK/WARN 不参与；PWR/BLE 仍按自身状态显示。" }
+        "scene-ec11-rotate" { return "EC11=旋转输入方向性白色确认；OK/WARN 不参与；PWR/BLE 仍按自身状态显示。" }
+        "scene-key-feedback" { return "KEY=本地按键短白色反馈；REC、AI、OK、WARN、EC11、板框不参与。" }
+        "scene-sleep" { return "睡眠/低功耗=全灭；BLE、AI、OK、WARN 都不应残留。" }
+        "complex-capture-only" { return "REC=录音高级灯效；旋钮/边框做暖金辅助；PWR/BLE/AI/OK/WARN/按键不参与。" }
+        "volume-capture-sweep" { return "REC=录音固定流动抗闪；rec_level 不再驱动亮度层级；PWR/BLE/AI/OK/WARN 不参与。" }
+        "complex-recording-processing-product" { return "REC=录音暖金；AI=处理紫色语义；旋钮/边框保持低亮暖金固定流动；OK/WARN 必须灭。" }
+        "complex-processing-only" { return "AI=处理/OTA 紫色语义；旋钮/边框做低亮紫色顺时针辅助；REC、OK、WARN、按键不参与。" }
+        default {
+            if ([string]::IsNullOrWhiteSpace([string]$Step.when)) {
+                return "基础/诊断步骤：按本步骤预期判断，不代表产品常态语义。"
+            }
+            return "按本步骤应用时机判断语义归属；未在预期中点名的灯都不应乱入。"
+        }
     }
 }
 
@@ -555,12 +748,59 @@ function Ensure-FormsLoaded {
     [System.Windows.Forms.Application]::EnableVisualStyles()
 }
 
+function Show-TopMostMessageBox {
+    param(
+        [Parameter(Mandatory = $true)][string]$Message,
+        [Parameter(Mandatory = $true)][string]$Title,
+        [Parameter(Mandatory = $true)][System.Windows.Forms.MessageBoxButtons]$Buttons,
+        [Parameter(Mandatory = $true)][System.Windows.Forms.MessageBoxIcon]$Icon
+    )
+
+    Ensure-FormsLoaded
+    $owner = [System.Windows.Forms.Form]::new()
+    try {
+        $owner.StartPosition = "CenterScreen"
+        $owner.ShowInTaskbar = $false
+        $owner.TopMost = $true
+        $owner.WindowState = [System.Windows.Forms.FormWindowState]::Minimized
+        $owner.Show()
+        $owner.Activate()
+        return [System.Windows.Forms.MessageBox]::Show($owner, $Message, $Title, $Buttons, $Icon)
+    } finally {
+        $owner.Close()
+        $owner.Dispose()
+    }
+}
+
 function Show-IntroPrompt {
     param([Parameter(Mandatory = $true)][int]$StepCount)
     if ($NoPrompt.IsPresent) {
         return $true
     }
     Ensure-FormsLoaded
+    if ($Mode -eq "Product") {
+        $message = @"
+这次只做整体产品灯效验收，不测单颗静态灯。
+
+验收顺序：
+1. 插电充电呼吸节奏。
+2. 双击旋钮重新配对。
+3. 真实录音+处理叠加，包含 PWR/BLE 状态灯。
+4. 短按旋钮、旋转旋钮、按键反馈。
+5. 睡眠熄灯。
+
+重点看人眼效果：LED5/6 是否乱闪，重配时 BLE 加低亮旋钮确认是否存在，LED3/4 是否有可见但不吵的变化，录音时旋钮 12 颗和边框 6 颗是否低亮且顺时针固定流动，实际旋钮/按键输入是否有短反馈且旋转反馈不会每格复位。
+每个场景弹窗都会写明应用时机和灯位语义：BLE 蓝灯只用于配对/重连/重配，AI 灯只用于 host-confirmed processing/OTA，OK 绿灯只用于成功确认，WARN 只用于错误/警告。
+
+共 $StepCount 个整体场景。准备好看板子后点“确定”；不方便就点“取消”。
+"@
+        $result = Show-TopMostMessageBox `
+            -Message $message `
+            -Title "Listener 整体产品灯效验收" `
+            -Buttons ([System.Windows.Forms.MessageBoxButtons]::OKCancel) `
+            -Icon ([System.Windows.Forms.MessageBoxIcon]::Information)
+        return $result -eq [System.Windows.Forms.DialogResult]::OK
+    }
     $message = @"
 这次先做人眼基础验收，不继续闷头改复杂效果。
 
@@ -568,17 +808,17 @@ function Show-IntroPrompt {
 1. 单灯命令只亮一个真实 LED，其他灯完全不跟亮。
 2. 亮度 10% / 35% / 70% 人眼递增，不能抖、不能平台化。
 3. 录音+处理中允许 LED3/REC 和 LED4/AI 做低频量化亮度变化，LED5/OK 与 LED6/WARN 必须灭，不能不规则跟前灯闪。
-4. 音量响应模式会模拟低/中/高 rec_level；你要判断人眼是否真的看到亮度层级，而不是只看日志。
+4. 音量响应模式会模拟低/中/高 rec_level；当前产品策略要求灯效保持低亮固定流动，用它来判断是否还会因 rec_level 变化诱发闪烁。
 5. 旋钮灯、按键灯、边框灯是独立区域，不能污染状态灯语义。
 
 接下来会逐步发串口命令，每一步弹窗让你记录看到的颜色、亮度、闪烁、串灯。
 共 $StepCount 步。准备好看板子后点“确定”；不方便就点“取消”。
 "@
-    $result = [System.Windows.Forms.MessageBox]::Show(
-        $message,
-        "Listener 灯效基础人眼确认",
-        [System.Windows.Forms.MessageBoxButtons]::OKCancel,
-        [System.Windows.Forms.MessageBoxIcon]::Information)
+    $result = Show-TopMostMessageBox `
+        -Message $message `
+        -Title "Listener 灯效基础人眼确认" `
+        -Buttons ([System.Windows.Forms.MessageBoxButtons]::OKCancel) `
+        -Icon ([System.Windows.Forms.MessageBoxIcon]::Information)
     return $result -eq [System.Windows.Forms.DialogResult]::OK
 }
 
@@ -608,7 +848,7 @@ function Show-StepPrompt {
     $form.StartPosition = "CenterScreen"
     $form.TopMost = $true
     $form.Width = 850
-    $form.Height = 690
+    $form.Height = 775
     $form.Font = [System.Drawing.Font]::new("Microsoft YaHei UI", 9)
 
     $y = 12
@@ -626,13 +866,19 @@ function Show-StepPrompt {
     $expected.Left = 12
     $expected.Top = $y
     $expected.Width = 805
-    $expected.Height = 105
+    $expected.Height = 165
     $expected.Multiline = $true
     $expected.ReadOnly = $true
     $expected.ScrollBars = "Vertical"
-    $expected.Text = "预期：$($Step.expected)`r`n观察重点：$($Step.human_focus)`r`n通过规则：$($Step.pass_rule)"
+    $whenText = if ([string]::IsNullOrWhiteSpace([string]$Step.when)) {
+        "应用时机：本步骤用于基础/诊断确认，没有单独产品时机。"
+    } else {
+        "应用时机：$($Step.when)"
+    }
+    $semanticText = "灯位语义：$(Get-LedSemanticText -Step $Step)"
+    $expected.Text = "$whenText`r`n$semanticText`r`n预期：$($Step.expected)`r`n观察重点：$($Step.human_focus)`r`n通过规则：$($Step.pass_rule)"
     $form.Controls.Add($expected)
-    $y += 115
+    $y += 175
 
     $cmdBox = [System.Windows.Forms.TextBox]::new()
     $cmdBox.Left = 12
@@ -654,7 +900,7 @@ function Show-StepPrompt {
     $statusBox.Multiline = $true
     $statusBox.ReadOnly = $true
     $statusBox.ScrollBars = "Vertical"
-    $statusBox.Text = "串口状态：`r`n$($StatusLines.status_rgb)`r`n$($StatusLines.ec11_rgb)`r`n$($StatusLines.key_rgb)`r`n$($StatusLines.edge_rgb)`r`n$($StatusLines.summary)"
+    $statusBox.Text = "串口状态（选中 $($StatusLines.selection)）：`r`n$($StatusLines.status_rgb)`r`n$($StatusLines.ec11_rgb)`r`n$($StatusLines.key_rgb)`r`n$($StatusLines.edge_rgb)`r`n$($StatusLines.summary)"
     $form.Controls.Add($statusBox)
     $y += 96
 
@@ -795,10 +1041,21 @@ function Show-StepStartPrompt {
         return $true
     }
     Ensure-FormsLoaded
+    $whenText = if ([string]::IsNullOrWhiteSpace([string]$Step.when)) {
+        "本步骤用于基础/诊断确认，没有单独产品时机。"
+    } else {
+        $Step.when
+    }
     $message = @"
 第 $Index / $Total 步即将开始：$($Step.title)
 
 点“确定”后我会立刻发送这一组串口命令，请马上看板子。
+
+应用时机：
+$whenText
+
+灯位语义：
+$(Get-LedSemanticText -Step $Step)
 
 预期：
 $($Step.expected)
@@ -806,11 +1063,11 @@ $($Step.expected)
 观察重点：
 $($Step.human_focus)
 "@
-    $result = [System.Windows.Forms.MessageBox]::Show(
-        $message,
-        "即将播放灯效 $Index/$Total",
-        [System.Windows.Forms.MessageBoxButtons]::OKCancel,
-        [System.Windows.Forms.MessageBoxIcon]::Information)
+    $result = Show-TopMostMessageBox `
+        -Message $message `
+        -Title "即将播放灯效 $Index/$Total" `
+        -Buttons ([System.Windows.Forms.MessageBoxButtons]::OKCancel) `
+        -Icon ([System.Windows.Forms.MessageBoxIcon]::Information)
     return $result -eq [System.Windows.Forms.DialogResult]::OK
 }
 
@@ -864,14 +1121,16 @@ function Write-Outputs {
     $lines.Add("") | Out-Null
     $lines.Add("## Human Observations") | Out-Null
     $lines.Add("") | Out-Null
-    $lines.Add("| # | id | result | brightness | LED5/6 follow | flicker | unexpected | observed | notes |") | Out-Null
-    $lines.Add("|---:|---|---|---|---|---|---|---|---|") | Out-Null
+    $lines.Add("| # | id | application timing | semantic lights | result | brightness | LED5/6 follow | flicker | unexpected | observed | notes |") | Out-Null
+    $lines.Add("|---:|---|---|---|---|---|---|---|---|---|---|") | Out-Null
     for ($i = 0; $i -lt $records.Count; $i++) {
         $record = $records[$i]
         $h = $record.human
-        $row = "| {0} | {1} | {2} | {3} | {4} | {5} | {6} | {7} | {8} |" -f @(
+        $row = "| {0} | {1} | {2} | {3} | {4} | {5} | {6} | {7} | {8} | {9} | {10} |" -f @(
             ($i + 1),
             $record.step_id,
+            (($record.when -replace "\|", "/") -replace "`r?`n", " "),
+            (($record.semantic -replace "\|", "/") -replace "`r?`n", " "),
             $h.result,
             (($h.brightness -replace "\|", "/") -replace "`r?`n", " "),
             $h.led56_follow,
@@ -965,6 +1224,8 @@ try {
             sequence_index = $index + 1
             step_id = $step.id
             title = $step.title
+            when = $step.when
+            semantic = (Get-LedSemanticText -Step $step)
             expected = $step.expected
             human_focus = $step.human_focus
             commands = @($step.commands)
@@ -975,6 +1236,8 @@ try {
             key_rgb = $statusLines.key_rgb
             edge_rgb = $statusLines.edge_rgb
             status_summary = $statusLines.summary
+            status_selection = $statusLines.selection
+            status_selection_score = $statusLines.selection_score
             human = $human
         }
         $records.Add($record) | Out-Null

@@ -55,6 +55,7 @@ static const char *TAG = "ble_hid";
 #define BLE_HID_BATTERY_NOTIFY_THRESHOLD_PERCENT 1
 #define BLE_HID_BATTERY_LEVEL_INVALID UINT8_MAX
 #define BLE_HID_BATTERY_TASK_STACK_BYTES (4 * 1024)
+#define BLE_HID_KEYBOARD_TASK_STACK_BYTES (5 * 1024)
 #define BLE_HID_BATTERY_CHARGE_FULL_MIN_MV 4050U
 #define BLE_HID_BATTERY_CHARGE_FULL_MIN_PERCENT 88U
 #define BLE_HID_BATTERY_CHARGE_FULL_DEBOUNCE_MS 10000U
@@ -975,7 +976,7 @@ static void ble_hid_task_start(void)
     BaseType_t task_ok = xTaskCreate(
         ble_hid_keyboard_task,
         "ble_hid_keyboard_task",
-        3 * 1024,
+        BLE_HID_KEYBOARD_TASK_STACK_BYTES,
         NULL,
         configMAX_PRIORITIES - 3,
         &s_ble_hid_ctx.task_handle);

@@ -21,10 +21,16 @@ CHECKS = {
         "status_led_start",
         "status_led_consume_usb_command",
         "status_led_set_ble_state",
+        "STATUS_LED_BLE_REPAIRING",
+        "status_led_notify_ble_repairing",
         "status_led_set_recording",
         "status_led_set_recording_level",
         "status_led_set_processing",
         "status_led_notify_shutdown_confirm",
+        "STATUS_LED_EC11_FEEDBACK_PRESS",
+        "STATUS_LED_EC11_FEEDBACK_ROTATE_CW",
+        "STATUS_LED_EC11_FEEDBACK_ROTATE_CCW",
+        "status_led_notify_ec11_feedback",
         "status_led_prepare_sleep",
         "STATUS_LED_REC_SOURCE_DEVICE_MIC",
         "STATUS_LED_REC_SOURCE_DESKTOP_MIC",
@@ -38,7 +44,7 @@ CHECKS = {
         "STATUS_LED_EDGE_COUNT 6",
         "STATUS_LED_STRIP_COUNT 4",
         "STATUS_LED_STATUS_TAIL_GUARD_PIXELS 6U",
-        "STATUS_LED_STATUS_TAIL_REINFORCE_WRITES 1U",
+        "STATUS_LED_STATUS_TAIL_REINFORCE_WRITES 3U",
         "STATUS_LED_STATUS_FIRST_LED 1U",
         "STATUS_LED_EC11_FIRST_LED 7U",
         "STATUS_LED_KEY_FIRST_LED 11U",
@@ -69,23 +75,29 @@ CHECKS = {
         "STATUS_LED_AMBIENT_PROFILE_BUDGET_MA 620U",
         "STATUS_LED_CHASE_DEFAULT_STEP_MS 250U",
         "STATUS_LED_KEY_FEEDBACK_MS 240U",
+        "STATUS_LED_EC11_FEEDBACK_MS 900U",
         "STATUS_LED_BOOT_ACK_MS 2500U",
+        "STATUS_LED_OK_TOTAL_MS 2000U",
         "STATUS_LED_CHARGING_BREATH_PERIOD_MS 3600U",
-        "STATUS_LED_CHARGING_BREATH_LOW_HOLD_MS 300U",
-        "STATUS_LED_CHARGING_BREATH_RISE_MS 1050U",
-        "STATUS_LED_CHARGING_BREATH_HIGH_HOLD_MS 80U",
-        "STATUS_LED_CHARGING_BREATH_MIN_PERCENT 1U",
-        "STATUS_LED_CHARGING_BREATH_MAX_PERCENT 100U",
-        "STATUS_LED_CHARGING_ACTIVE_WORK_MIN_PERCENT 46U",
+        "STATUS_LED_CHARGING_BREATH_LOW_HOLD_MS 450U",
+        "STATUS_LED_CHARGING_BREATH_RISE_MS 1300U",
+        "STATUS_LED_CHARGING_BREATH_HIGH_HOLD_MS 300U",
+        "STATUS_LED_CHARGING_BREATH_MIN_PERCENT 8U",
+        "STATUS_LED_CHARGING_BREATH_MAX_PERCENT 38U",
+        "STATUS_LED_CHARGING_ACTIVE_WORK_MIN_PERCENT 28U",
         "STATUS_LED_CHARGE_FULL_DEBOUNCE_MS 10000U",
         "STATUS_LED_CHARGE_FULL_MIN_MV 4050U",
         "STATUS_LED_CHARGE_FULL_MIN_PERCENT 88U",
         "STATUS_LED_BATTERY_DISPLAY_GREEN_PERCENT 60U",
+        "STATUS_LED_LOW_BATTERY_STEADY_PERCENT 38U",
         "STATUS_LED_FULL_STEADY_PERCENT 100U",
         "STATUS_LED_FULL_STATUS_STEADY_PERCENT 100U",
         "STATUS_LED_BATTERY_IDLE_BLE_HEARTBEAT_ON_MS 120U",
         "STATUS_LED_BATTERY_IDLE_BLE_HEARTBEAT_OFF_MS 7880U",
         "STATUS_LED_BATTERY_IDLE_BLE_HEARTBEAT_PERCENT 18U",
+        "STATUS_LED_PREVIEW_BLE_OVERRIDE_MS 15000U",
+        "STATUS_LED_BLE_REPAIR_CUE_MS 3500U",
+        "STATUS_LED_BLE_CONNECTED_CONFIRM_MS 1600U",
         "STATUS_LED_PWR_COLOR_AMBER",
         "STATUS_LED_DIAG_VIS_LOW_POWER_OFF",
         "battery_display_level_percent",
@@ -131,13 +143,13 @@ CHECKS = {
         "status_led_apply_zone_brightness_caps_locked",
         "status_led_apply_device_settings_snapshot_locked",
         "STATUS_LED_ACCENT_ENTRY_RAMP_MS 900U",
-        "STATUS_LED_EC11_RECORDING_BREATHE_MAX_PERCENT 38U",
-        "STATUS_LED_EDGE_RECORDING_BREATHE_MAX_PERCENT 24U",
-        "STATUS_LED_EC11_ORBIT_STEP_MS 620U",
-        "STATUS_LED_EDGE_ORBIT_STEP_MS 900U",
-        "STATUS_LED_KEY_ACTIVE_WORK_BASE_PERCENT 4U",
-        "STATUS_LED_KEY_RECORDING_MAX_PERCENT 14U",
-        "STATUS_LED_KEY_PROCESSING_MAX_PERCENT 12U",
+        "STATUS_LED_EC11_RECORDING_BASE_MAX_PERCENT 8U",
+        "STATUS_LED_EDGE_RECORDING_SURFACE_BASE_MAX_PERCENT 10U",
+        "STATUS_LED_EC11_RECORDING_FLOW_STEP_MS 360U",
+        "STATUS_LED_EDGE_RECORDING_FLOW_STEP_MS 720U",
+        "STATUS_LED_EC11_REPAIR_ORBIT_STEP_MS 220U",
+        "STATUS_LED_EC11_ORBIT_STEP_MS 240U",
+        "STATUS_LED_EDGE_ORBIT_STEP_MS 480U",
         "status_led_render_key_active_work_locked",
         "effective_cap_percent=%u",
         "user_brightness_is_hard_cap=1",
@@ -159,6 +171,9 @@ CHECKS = {
         "strip_mask |= STATUS_LED_STRIP_MASK_STATUS",
         "status_led_refresh_delay_ms_locked",
         "status_led_request_refresh",
+        "status_query_samples_current_render=1",
+        "status_led_render_frame_locked(&sampled_frame, now_ms);",
+        "snapshot.last_frame = sampled_frame;",
         "ulTaskNotifyTake",
         "status_led_force_manual_off",
         "manual_off",
@@ -185,11 +200,24 @@ CHECKS = {
         "ERROR ",
         "PROFILE ",
         "s_state.ble_state = STATUS_LED_BLE_DISCONNECTED",
+        "status_led_start_ble_repair_locked",
+        "ble_transition_ms",
+        "status_led_ble_elapsed_locked",
+        "preview_ble_override_until_ms",
+        "preview_ble_override_ms_left",
+        "state != STATUS_LED_BLE_REPAIRING",
+        "uint8_t percent = status_led_double_pulse_on(ble_elapsed_ms, 2000U) ? 58U : 22U;",
+        "ble_elapsed_ms < STATUS_LED_BLE_CONNECTED_CONFIRM_MS",
+        "STATUS_LED_BLE_CONNECTED_CONFIRM_MS,\n                    32U,\n                    70U",
+        "status_led_preview_clear_activity_locked",
+        "status_led_render_edge_clockwise_chase_locked",
+        "ble_repair_ms_left=%",
+        "ble_transition_ms=%",
         "s_state.rec_source = STATUS_LED_REC_SOURCE_NONE",
         "s_state.battery_valid = false",
         "s_state.error_until_ms = 0",
         "strcmp(s_state.last_reason, \"preview\") == 0",
-        "now_ms - s_state.last_transition_ms",
+        "status_led_ble_elapsed_locked(now_ms)",
         "PWM_RGB_EC11_GPIO5",
         "PWM_RGB_KEY_GPIO13",
         "gpio14_reserved=BAT_CHG_IO",
@@ -208,7 +236,7 @@ CHECKS = {
         "~LED:STATUS profile=%s detail=summary",
         "external_power_source=%s",
         "semantic_order=LED1:PWR,LED2:BLE,LED3:REC,LED4:AI,LED5:OK,LED6:WARN",
-        "rec_not_available_shows=WARN+REC",
+        "rec_not_available_shows=WARN_ONLY",
         "status_led_profile_budget_ma_locked",
         "status_led_estimate_current_ma",
         "status_led_clamp_current_locked",
@@ -228,67 +256,43 @@ CHECKS = {
         "status_key_stress34",
         "STATUS_LED_TEST_STATUS_KEY_STRESS",
         "processing_led_only",
+        "repairing",
         "recording_processing",
         "recording_level_percent",
         "recording_level_updated_ms",
         "status_led_set_recording_level",
         "STATUS_LED_REC_GOLD_R 255U",
-        "STATUS_LED_REC_GOLD_G 132U",
+        "STATUS_LED_REC_GOLD_G 176U",
+        "STATUS_LED_REC_GOLD_B 12U",
         "status_led_rec_gold()",
-        "STATUS_LED_RECORDING_BREATH_PERIOD_MS 1900U",
-        "STATUS_LED_RECORDING_BREATH_MIN_PERCENT 24U",
-        "STATUS_LED_RECORDING_BREATH_MAX_PERCENT 42U",
+        "STATUS_LED_RECORDING_BREATH_PERIOD_MS 1500U",
+        "STATUS_LED_RECORDING_BREATH_MIN_PERCENT 28U",
+        "STATUS_LED_RECORDING_BREATH_MAX_PERCENT 50U",
         "STATUS_LED_RECORDING_LEVEL_STALE_MS 300U",
         "STATUS_LED_RECORDING_LEVEL_HOLD_MAX_MS 120000U",
         "STATUS_LED_ACTIVE_WORK_REC_PERCENT 34U",
         "STATUS_LED_ACTIVE_WORK_AI_PERCENT 32U",
-        "STATUS_LED_ACTIVE_WORK_REC_MAX_PERCENT 52U",
-        "STATUS_LED_RECORDING_STATUS_LEVEL_MIN_PERCENT 28U",
-        "STATUS_LED_RECORDING_STATUS_LEVEL_MAX_PERCENT 52U",
-        "STATUS_LED_PROCESSING_BREATH_PERIOD_MS 3200U",
+        "STATUS_LED_ACTIVE_WORK_REC_MAX_PERCENT 44U",
+        "STATUS_LED_PROCESSING_BREATH_PERIOD_MS 1800U",
         "STATUS_LED_PROCESSING_BREATH_MIN_PERCENT 28U",
-        "STATUS_LED_PROCESSING_BREATH_MAX_PERCENT 42U",
+        "STATUS_LED_PROCESSING_BREATH_MAX_PERCENT 52U",
         "STATUS_LED_ACCENT_BREATHE_QUANTUM_PERCENT 2U",
-        "STATUS_LED_EC11_RECORDING_BREATHE_MIN_PERCENT 8U",
-        "STATUS_LED_EC11_RECORDING_BREATHE_MAX_PERCENT 38U",
-        "STATUS_LED_EDGE_RECORDING_BREATHE_MIN_PERCENT 6U",
-        "STATUS_LED_EDGE_RECORDING_BREATHE_MAX_PERCENT 24U",
-        "STATUS_LED_EC11_RECORDING_BASE_MIN_PERCENT 1U",
-        "STATUS_LED_EC11_RECORDING_BASE_MAX_PERCENT 4U",
-        "STATUS_LED_EDGE_RECORDING_BASE_MIN_PERCENT 1U",
-        "STATUS_LED_EDGE_RECORDING_BASE_MAX_PERCENT 3U",
+        "STATUS_LED_EC11_RECORDING_BASE_MIN_PERCENT 6U",
+        "STATUS_LED_EC11_RECORDING_BASE_MAX_PERCENT 8U",
+        "STATUS_LED_EDGE_RECORDING_SURFACE_BASE_MIN_PERCENT 6U",
+        "STATUS_LED_EDGE_RECORDING_SURFACE_BASE_MAX_PERCENT 10U",
         "STATUS_LED_ACCENT_ENTRY_RAMP_MS 900U",
-        "STATUS_LED_EC11_ORBIT_STEP_MS 620U",
-        "STATUS_LED_EDGE_ORBIT_STEP_MS 900U",
-        "STATUS_LED_EC11_PROCESSING_BASE_PERCENT 3U",
-        "STATUS_LED_EDGE_PROCESSING_BASE_PERCENT 2U",
-        "STATUS_LED_EC11_PROCESSING_ORBIT_PERCENT 16U",
-        "STATUS_LED_EDGE_PROCESSING_ORBIT_PERCENT 10U",
-        "STATUS_LED_KEY_ACTIVE_WORK_BASE_PERCENT 4U",
-        "STATUS_LED_KEY_RECORDING_MAX_PERCENT 14U",
-        "STATUS_LED_KEY_PROCESSING_MAX_PERCENT 12U",
-        "STATUS_LED_KEY_ACTIVE_WORK_BREATH_MS 3200U",
-        "STATUS_LED_EC11_RECORDING_ARC_MIN_LEDS 1U",
-        "STATUS_LED_EC11_RECORDING_ARC_MAX_LEDS 8U",
-        "STATUS_LED_EDGE_RECORDING_RAIL_MIN_LEDS 1U",
-        "STATUS_LED_EDGE_RECORDING_RAIL_MAX_LEDS 4U",
-        "STATUS_LED_EC11_RECORDING_GLEAM_STEP_MS 900U",
-        "STATUS_LED_EDGE_RECORDING_GLEAM_STEP_MS 1200U",
-        "STATUS_LED_EC11_OVERLAP_GLEAM_STEP_MS 1100U",
-        "STATUS_LED_EDGE_OVERLAP_GLEAM_STEP_MS 1300U",
-        "STATUS_LED_EC11_RECORDING_TAIL_SCALE_PERCENT 58U",
-        "STATUS_LED_EDGE_RECORDING_TAIL_SCALE_PERCENT 52U",
-        "status_led_wrapped_rank_distance",
+        "STATUS_LED_EC11_ORBIT_STEP_MS 240U",
+        "STATUS_LED_EDGE_ORBIT_STEP_MS 480U",
+        "STATUS_LED_EC11_PROCESSING_BASE_PERCENT 7U",
+        "STATUS_LED_EDGE_PROCESSING_BASE_PERCENT 6U",
+        "STATUS_LED_EC11_PROCESSING_ORBIT_PERCENT 26U",
+        "STATUS_LED_EDGE_PROCESSING_ORBIT_PERCENT 24U",
         "status_led_effect_elapsed_ms_locked",
-        "status_led_gleam_rank_locked",
-        "status_led_recording_highlight_color",
         "status_led_set_recording_level",
         "rec_level=%u",
-        "uint8_t level = status_led_recording_level_fresh_locked(now_ms)",
-        "status_led_recording_level_is_fresh_locked",
-        "uint8_t percent = level_fresh ? level_percent : breath",
+        "return status_led_quantize_percent(breath, STATUS_LED_DYNAMIC_STATUS_QUANTUM_PERCENT)",
         "recording_level_hold_until_ms",
-        "status_led_recording_level_fresh_locked",
         "status_led_recording_status_percent_locked",
         "status_led_processing_status_percent_locked",
         "REC_LEVEL ",
@@ -296,11 +300,20 @@ CHECKS = {
         "STATUS_LED_ACTIVE_WORK_REC_PERCENT",
         "STATUS_LED_ACTIVE_WORK_AI_PERCENT",
         "status_led_recording_accent_percent_locked",
-        "status_led_render_ec11_recording_arc_locked",
-        "status_led_render_edge_recording_rails_locked",
+        "status_led_render_ec11_recording_flow_locked",
+        "status_led_render_edge_recording_flow_locked",
+        "status_led_render_ec11_repair_locked",
+        "status_led_render_ec11_feedback_locked",
+        "status_led_notify_ec11_feedback",
+        "status_led_clear_ec11_feedback_locked",
         "STATUS_LED_SHUTDOWN_CONFIRM_MS 1800U",
         "STATUS_LED_SHUTDOWN_FINAL_CONFIRM_MS 700U",
         "status_led_render_shutdown_confirm_locked",
+        "if (!s_state.shutdown_confirm_final) {\n        return true;",
+        "uint8_t accent_percent = final ? 36U : 24U;",
+        "clockwise_index = (STATUS_LED_EC11_COUNT - 1U - index) % STATUS_LED_EC11_COUNT",
+        "shutdown_confirm_active=%u shutdown_confirm_final=%u shutdown_confirm_latched=%u shutdown_confirm_elapsed_ms=%",
+        "shutdown_confirm_active=%u shutdown_confirm_latched=%u",
         "status_led_apply_status_tail_guard_locked",
         "status_led_transmit_strip(&s_strips[STATUS_LED_STRIP_STATUS], frame->status)",
         "status_led_notify_shutdown_confirm",
@@ -325,6 +338,7 @@ CHECKS = {
         "status_rgb=PWR:%u,%u,%u;BLE:%u,%u,%u;REC:%u,%u,%u",
         "if (changed && !effect_only) {\n            s_state.status_window_until_ms = now_ms + STATUS_LED_STATUS_WINDOW_MS;",
         "if (changed && state == STATUS_LED_BLE_CONNECTED && confidence_window)",
+        "state == STATUS_LED_BLE_PAIRING && status_led_ble_repair_active_locked(now_ms)",
         "status_led_render_processing_locked",
         "status_led_render_ec11_locked",
         "status_led_render_edge_locked",
@@ -415,6 +429,8 @@ CHECKS = {
     ],
     "ports/esp32/ble_hid_gap/ble_hid_gap_esp32.c": [
         "status_led_set_ble_state(STATUS_LED_BLE_PAIRING, false)",
+        "status_led_notify_ble_repairing(\"ble_recovery_clear_bonds\")",
+        "status_led_notify_ble_repairing(\"ble_recovery_refresh_pairing\")",
         "status_led_set_error(STATUS_LED_ERROR_DOMAIN_BLE",
         "status_led_clear_error(STATUS_LED_ERROR_DOMAIN_BLE)",
     ],
@@ -439,6 +455,7 @@ CHECKS = {
         "status_led_notify_success(\"recording_stop_done\")",
         "status_led_notify_success(\"recording_session_done\")",
         "status_led_notify_success(\"host_processing_done\")",
+        "status_led_notify_ble_repairing(\"voice_recovery_requested\")",
     ],
     "ports/esp32/audio_capture/audio_capture_esp32.c": [
         "#include \"status_led.h\"",
@@ -481,16 +498,30 @@ CHECKS = {
         "`standard` is the product default",
         "Product Effect Language",
         "Repeated same-state BLE callbacks are idempotent",
+        "User-requested re-pairing",
+        "status_led_notify_ble_repairing()",
+        "ble_repair_ms_left",
+        "short blue connected-success confirmation",
+        "BLE animation phase is tracked separately",
+        "`ble_transition_ms`",
+        "Manual `~LED:PREVIEW` scenes temporarily hold their requested BLE state",
+        "for 15 seconds",
+        "`preview_ble_override_ms_left`",
+        "Reconnect keeps a low blue BLE floor",
+        "Pairing and reconnect use only the `BLE` semantic LED",
+        "User-requested re-pair/reset uses `BLE` plus a low blue EC11 confirmation orbit",
+        "current render-sampled RGB frame",
+        "status_query_samples_current_render=1",
         "On battery, once confidence/status windows expire, connected BLE falls back to a sparse low-blue heartbeat",
         "External power overrides battery-color display on `PWR`",
-        "continuous, natural white breath that reaches a real 1% valley",
+        "continuous slow white breath",
         "steady white once charge-full has been debounced and latched",
         "User brightness scales the whole routine effect envelope before the profile cap is applied",
-        "50% user brightness setting keeps the external-power breath's 1% valley near-off",
-        "charging breath includes a short 1% valley hold, smooth inhale, and longer smooth exhale",
+        "50% user brightness setting scales the external-power breath's low and high points together",
+        "charging breath is intentionally shallow and slow",
         "Recording is a controlled warm-gold semantic state",
         "exposes `rec_level`",
-        "capped status brightness lift",
+        "no longer uses PCM level to drive brightness",
         "`~LED:REC_LEVEL <0-100> [hold_ms]`",
         "Processing is a controlled saturated purple semantic state",
         "Firmware recording transfer does not animate `AI` by itself",
@@ -501,28 +532,35 @@ CHECKS = {
         "local recording stop/session completion",
         "A successful local stop and a completed local recording session each refresh the green `OK` confirmation window",
         "audio transfer completion alone does not animate `AI`",
-        "`OK` is a visible 2.2 second success confirmation after local recording stop/session completion and after the host reports processing done",
-        "KEY1 may show a very low warm-gold recording support light",
-        "KEY2 may show a very low purple processing support light",
+        "`OK` is a visible 2.0 second success confirmation after local recording stop/session completion and after the host reports processing done",
+        "Key LEDs remain local transient feedback only",
+        "Recording and processing no longer light the key strip",
         "EC11 knob and edge/frame LEDs are independent accent surfaces",
-        "warm-gold volume arc",
-        "900 ms or slower step",
-        "900 ms entry ramp",
-        "fresh `rec_level` drives arc length, brightness",
-        "same recording phase",
-        "Recording dynamics are capped below the full ring/full frame",
-        "Broad full-ring/full-frame dynamic loads are avoided",
-        "low violet orbit",
+        "low warm-gold base plus a broad slow deterministic flow",
+        "low deterministic warm-gold same-cycle flow accents",
+        "`rec_level` remains diagnostic input but does not change the product brightness envelope",
+        "keeps the EC11 ring fully present with a low warm-gold base and broad slow deterministic flow on all 12 LEDs",
+        "keeps a low warm-gold base and a wider same-cycle clockwise flow on all 6 LEDs",
+        "low violet clockwise motion",
+        "EC11 short press and rotation add a brief white confirmation",
+        "adds a low blue EC11 ring orbit as the user-action confirmation",
         "actively re-zeroed during advanced effects",
         "Status-tail anti-flicker guard",
         "six black guard pixels",
         "status_tail_reinforce=recording_processing",
-        "status_tail_reinforce_writes=1",
+        "status_tail_reinforce_writes=3",
         "dynamic_active_accents=1",
         "active_work_status_dynamic=1",
         "active_work_status_static=0",
         "Long-press shutdown confirmation",
-        "`~LED:PREVIEW <ready|pairing|reconnect|capture|capture_led_only|desktop_mic|recording_processing|recording_processing_led_only|recording_processing_status_only|recording_processing_status_led_only|recording_processing_status_key_stress|status_key_stress3|status_key_stress4|status_key_stress34|rec_not_available|processing|processing_led_only|ok|low_battery|critical_battery|charging|full|shutdown_confirm|shutdown_final|sleep|clear>`",
+        "filling the EC11 ring clockwise over 1.8 seconds",
+        "pending cue stays latched at full ring",
+        "wait longer than 1.8 seconds",
+        "`shutdown_confirm_active`",
+        "`shutdown_confirm_latched`",
+        "`shutdown_confirm_elapsed_ms`",
+        "`~LED:PREVIEW <ready|pairing|reconnect|repairing|capture|capture_led_only|desktop_mic|recording_processing|recording_processing_led_only|recording_processing_status_only|recording_processing_status_led_only|recording_processing_status_key_stress|status_key_stress3|status_key_stress4|status_key_stress34|rec_not_available|processing|processing_led_only|ok|low_battery|critical_battery|charging|full|shutdown_confirm|shutdown_final|sleep|clear>`",
+        "`~LED:PREVIEW pairing`, `~LED:PREVIEW reconnect`, and `~LED:PREVIEW repairing`",
         "`~LED:PREVIEW capture_led_only`",
         "`~LED:PREVIEW recording_processing_led_only`",
         "`~LED:PREVIEW recording_processing_status_led_only`",
@@ -530,7 +568,7 @@ CHECKS = {
         "`~LED:PREVIEW processing_led_only`",
         "`preview_effect_only=1`",
         "keep PWR/BLE and physical key-press feedback out of the rendered frame",
-        "Product active-work key accents remain visible in full effect-only modes",
+        "the key strip stays off",
         "`~DEVICE:SET led_status=<0-100>`",
         "`~DEVICE:SET led_key=<0-100>`",
         "`~DEVICE:SET led_ec11=<0-100>`",
@@ -621,10 +659,26 @@ CHECKS = {
         "~LED:PREVIEW status_key_stress34",
         "~LED:PREVIEW recording_processing_status_key_stress",
         "~LED:PREVIEW processing_led_only",
+        "~LED:PREVIEW repairing",
+        "scene-ec11-short-press",
+        "scene-ec11-rotate",
+        "scene-key-feedback",
+        "应用时机",
+        "scene-ble-repairing",
+        "scene-processing-live",
+        "scene-sleep",
         "Get-ReproSteps",
-        'ValidateSet("Foundation", "Scenes", "Complex", "Volume", "RootCause", "StaticRoot", "Repro", "Full")',
+        'ValidateSet("Foundation", "Scenes", "Complex", "Volume", "Product", "RootCause", "StaticRoot", "Repro", "Full")',
         "preview_effect_only=1",
         "effect-only preview commands",
+    ],
+    "components/keyboard/keyboard.c": [
+        "status_led_notify_ec11_feedback(direction == EC11_ROTATION_DIRECTION_CW",
+        "STATUS_LED_EC11_FEEDBACK_ROTATE_CW",
+        "STATUS_LED_EC11_FEEDBACK_ROTATE_CCW",
+    ],
+    "ports/esp32/voice_key_input/voice_key_input_esp32.c": [
+        "status_led_notify_ec11_feedback(STATUS_LED_EC11_FEEDBACK_PRESS)",
     ],
 }
 
@@ -678,12 +732,13 @@ def main() -> int:
                 f"status_led.c: {profile_name.lower()} profile must not add a hidden percent cap over user brightness"
             )
     for token in (
-        "STATUS_LED_CHARGING_BREATH_MIN_PERCENT 1U",
-        "STATUS_LED_CHARGING_BREATH_LOW_HOLD_MS 300U",
-        "STATUS_LED_CHARGING_BREATH_RISE_MS 1050U",
-        "STATUS_LED_CHARGING_BREATH_HIGH_HOLD_MS 80U",
-        "STATUS_LED_CHARGING_BREATH_MAX_PERCENT 100U",
-        "STATUS_LED_CHARGING_ACTIVE_WORK_MIN_PERCENT 46U",
+        "STATUS_LED_CHARGING_BREATH_MIN_PERCENT 8U",
+        "STATUS_LED_CHARGING_BREATH_LOW_HOLD_MS 450U",
+        "STATUS_LED_CHARGING_BREATH_RISE_MS 1300U",
+        "STATUS_LED_CHARGING_BREATH_HIGH_HOLD_MS 300U",
+        "STATUS_LED_CHARGING_BREATH_MAX_PERCENT 38U",
+        "STATUS_LED_CHARGING_ACTIVE_WORK_MIN_PERCENT 28U",
+        "STATUS_LED_LOW_BATTERY_STEADY_PERCENT 38U",
         "STATUS_LED_FULL_STEADY_PERCENT 100U",
         "STATUS_LED_FULL_STATUS_STEADY_PERCENT 100U",
     ):
@@ -693,26 +748,66 @@ def main() -> int:
         failures.append("status_led.c: charging PWR must hold a steady readable level during recording/processing")
     for token in (
         "STATUS_LED_RECORDING_LEVEL_STALE_MS",
-        "uint8_t level = status_led_recording_level_fresh_locked(now_ms)",
-        "status_led_recording_level_is_fresh_locked",
-        "uint8_t percent = level_fresh ? level_percent : breath",
+        "STATUS_LED_EC11_RECORDING_FLOW_STEP_MS 360U",
+        "STATUS_LED_EDGE_RECORDING_FLOW_STEP_MS 720U",
+        "status_led_render_ec11_recording_flow_locked",
+        "status_led_render_edge_recording_flow_locked",
+        "return status_led_quantize_percent(breath, STATUS_LED_DYNAMIC_STATUS_QUANTUM_PERCENT)",
     ):
         if token not in status_led:
-            failures.append(f"status_led.c: recording LED must visibly follow audio level, missing {token}")
-    if "status_led_token_locked(status_led_rec_gold(), breath, false)" in status_led:
-        failures.append("status_led.c: recording LED must not be fixed breath-only")
-    for stale_call, surface in (
-        (
-            "status_led_render_ec11_recording_arc_locked(frame, now_ms, STATUS_LED_EC11_COUNT)",
-            "EC11 recording arc",
-        ),
-        (
-            "status_led_render_edge_recording_rails_locked(frame, now_ms, STATUS_LED_EDGE_COUNT)",
-            "edge recording rails",
-        ),
+            failures.append(f"status_led.c: recording LED must use deterministic low-amplitude flow without PCM brightness drive, missing {token}")
+    for token in (
+        "uint8_t head_rank = step;",
+        "status_led_scale_effect_percent_locked(10U, now_ms)",
+        "(head_rank + (STATUS_LED_EDGE_COUNT / 2U)) % STATUS_LED_EDGE_COUNT",
     ):
-        if stale_call in status_led:
-            failures.append(f"status_led.c: {surface} must stay capped below full dynamic load")
+        if token not in status_led:
+            failures.append(f"status_led.c: edge/frame accent must keep the current full-frame wide clockwise flow, missing {token}")
+    for stale_token, reason in (
+        ("uint8_t percent = level_fresh ? level_percent : breath", "recording LED must not switch brightness from fresh PCM rec_level"),
+        ("status_led_recording_level_is_fresh_locked", "recording render must not gate visuals on fresh PCM rec_level"),
+        ("status_led_recording_level_fresh_locked", "recording render must not read fresh PCM rec_level"),
+        ("status_led_render_ec11_recording_arc_locked", "EC11 recording accent must be steady full-ring warm gold"),
+        ("status_led_render_edge_recording_rails_locked", "edge recording accent must be steady full-frame warm gold"),
+        ("status_led_recording_highlight_color", "recording accent must not add moving warm-gold highlights"),
+        ("status_led_gleam_rank_locked", "recording accent must not keep gleam rank motion"),
+        ("status_led_wrapped_rank_distance", "recording accent must not keep wrapped gleam distance"),
+        ("status_led_render_ec11_recording_steady_locked", "EC11 recording accent must use the current low fixed-flow renderer"),
+        ("status_led_render_edge_recording_steady_locked", "edge recording accent must use the current low fixed-flow renderer"),
+    ):
+        if stale_token in status_led:
+            failures.append(f"status_led.c: {reason}")
+    recording_level_block = re.search(
+        r"void\s+status_led_set_recording_level[\s\S]*?\nstatic\s+void\s+status_led_force_recording_level_for_review",
+        status_led,
+    )
+    if not recording_level_block:
+        failures.append("status_led.c: missing status_led_set_recording_level block")
+    elif "status_led_request_refresh" in recording_level_block.group(0):
+        failures.append("status_led.c: live rec_level diagnostics must not request LED refresh")
+    forced_level_block = re.search(
+        r"static\s+void\s+status_led_force_recording_level_for_review[\s\S]*?\nvoid\s+status_led_set_processing",
+        status_led,
+    )
+    if not forced_level_block:
+        failures.append("status_led.c: missing status_led_force_recording_level_for_review block")
+    elif "status_led_request_refresh" in forced_level_block.group(0):
+        failures.append("status_led.c: review rec_level diagnostics must not request LED refresh")
+    edge_block = re.search(
+        r"static\s+void\s+status_led_render_edge_locked[\s\S]*?\nstatic\s+void\s+status_led_render_frame_locked",
+        status_led,
+    )
+    if not edge_block:
+        failures.append("status_led.c: missing status_led_render_edge_locked block")
+    else:
+        edge_text = edge_block.group(0)
+        for stale_token, reason in (
+            ("status_led_ble_repair_active_locked", "BLE re-pair must not use edge/frame cues"),
+            ("s_state.ble_state == STATUS_LED_BLE_PAIRING", "pairing must not use edge/frame cues"),
+            ("s_state.ble_state == STATUS_LED_BLE_RECONNECTING", "reconnect must not use edge/frame cues"),
+        ):
+            if stale_token in edge_text:
+                failures.append(f"status_led.c: {reason}")
     if not re.search(
         r"void\s+status_led_set_recording\([^)]*\)[\s\S]*?"
         r"if\s*\(\s*s_state\.recording_active\s*\)\s*\{[\s\S]*?"
@@ -746,6 +841,17 @@ def main() -> int:
         failures.append(
             "status_led.c: recording_processing preview must add REC/AI over a ready PWR/BLE baseline"
         )
+    if "uint32_t dot = (STATUS_LED_EC11_COUNT - 1U - step) % STATUS_LED_EC11_COUNT;" not in status_led:
+        failures.append("status_led.c: EC11 processing and rotation motion must use the current clockwise index convention")
+    if "uint32_t head_index = (STATUS_LED_EC11_COUNT - 1U - step) % STATUS_LED_EC11_COUNT;" not in status_led:
+        failures.append("status_led.c: BLE re-pair EC11 orbit must use the current clockwise index convention")
+    if not re.search(
+        r"static\s+void\s+status_led_preview_state[^{]*\{[\s\S]*?"
+        r"status_led_preview_clear_activity_locked\(\);[\s\S]*?"
+        r"status_led_set_last_reason_locked\(\"preview\"\);",
+        status_led,
+    ):
+        failures.append("status_led.c: every preview state must clear stale REC/AI/OK/WARN/BLE cue state first")
     if not re.search(
         r"status_led_render_power_locked[^{]*\{[\s\S]*?"
         r"if\s*\(\s*s_state\.preview_effect_only\s*\)\s*\{[\s\S]*?return;",
@@ -767,13 +873,16 @@ def main() -> int:
         status_led,
     ):
         failures.append("status_led.c: effect-only preview must suppress physical key feedback rendering")
+    if "status_led_key_recording_percent_locked" in status_led:
+        failures.append("status_led.c: recording must not light key-strip active-work accents")
+    if "status_led_key_processing_percent_locked" in status_led:
+        failures.append("status_led.c: processing must not light key-strip active-work accents")
     if not re.search(
-        r"status_led_render_keys_locked[^{]*\{[\s\S]*?"
-        r"if\s*\(\s*!s_state\.preview_effect_only\s*\)\s*\{[\s\S]*?"
-        r"status_led_render_key_active_work_locked\(frame,\s*now_ms\);",
+        r"status_led_render_key_active_work_locked[^{]*\{[\s\S]*?"
+        r"\(void\)frame;[\s\S]*?\(void\)now_ms;[\s\S]*?return;",
         status_led,
     ):
-        failures.append("status_led.c: effect-only preview must still allow low active-work key accents")
+        failures.append("status_led.c: active-work key renderer must be an intentional no-op")
     if not re.search(
         r"void\s+status_led_notify_key_event[^{]*\{[\s\S]*?"
         r"if\s*\(\s*s_state\.preview_effect_only\s*\)\s*\{[\s\S]*?"
@@ -818,9 +927,32 @@ def main() -> int:
         ):
             if token not in complex_text:
                 failures.append(f"status_led_human_effect_review.ps1: Complex mode must use effect-only command {token}")
+    product_block = re.search(
+        r'if\s*\(\$Mode\s+-eq\s+"Product"\)\s*\{([\s\S]*?)\n\s*\$rootCause',
+        human_review,
+    )
+    if not product_block:
+        failures.append("status_led_human_effect_review.ps1: missing Product review block")
+    else:
+        product_text = product_block.group(1)
+        for token in ("scene-ec11-short-press", "scene-ec11-rotate", "scene-key-feedback"):
+            if token not in product_text:
+                failures.append(f"status_led_human_effect_review.ps1: Product review must include physical input step {token}")
+        for stale_token in (
+            'volume-capture-sweep',
+            'complex-recording-processing-product',
+            'complex-processing-only',
+        ):
+            if stale_token in product_text:
+                failures.append(f"status_led_human_effect_review.ps1: Product review must not include repeated tuning step {stale_token}")
     voice_recording_control = read("components/voice_recording_control/voice_recording_control.c")
+    ble_hid_gap = read("ports/esp32/ble_hid_gap/ble_hid_gap_esp32.c")
     if 'status_led_set_processing(true, "audio_session_finishing")' in voice_recording_control:
         failures.append("voice_recording_control.c: audio transfer must not light AI processing LED")
+    if 'status_led_set_error(STATUS_LED_ERROR_DOMAIN_BLE, STATUS_LED_ERROR_RETRYABLE, "voice_recovery_requested")' in voice_recording_control:
+        failures.append("voice_recording_control.c: user-requested recovery must use BLE re-pair cue, not WARN/error")
+    if 'status_led_set_error(STATUS_LED_ERROR_DOMAIN_BLE, STATUS_LED_ERROR_RETRYABLE, "ble_recovery_clear_bonds")' in ble_hid_gap:
+        failures.append("ble_hid_gap_esp32.c: clearing bonds for user-requested re-pair must use BLE cue, not WARN/error")
     for token in (
         'status_led_notify_success("recording_stop_done")',
         'status_led_notify_success("recording_session_done")',
@@ -830,10 +962,10 @@ def main() -> int:
             failures.append(f"voice_recording_control.c: missing success LED confirmation {token}")
     if "driver/rmt_" in status_led or "soc/soc_caps.h" in status_led:
         failures.append("status_led.c: business rendering layer must not include the RMT/WS2812 backend directly")
-    if "STATUS_LED_KEY_RECORDING_MAX_PERCENT 14U" not in status_led:
-        failures.append("status_led.c: KEY1 recording support must stay low and capped")
-    if "STATUS_LED_KEY_PROCESSING_MAX_PERCENT 12U" not in status_led:
-        failures.append("status_led.c: KEY2 processing support must stay low and capped")
+    if "STATUS_LED_KEY_RECORDING_MAX_PERCENT" in status_led:
+        failures.append("status_led.c: key recording active-work cap should be removed")
+    if "STATUS_LED_KEY_PROCESSING_MAX_PERCENT" in status_led:
+        failures.append("status_led.c: key processing active-work cap should be removed")
     if "status_led_set_max(&frame->key[index], ok)" in status_led:
         failures.append("status_led.c: OK success must not recolor key LEDs")
     if "status_led_rgb(160, 0, 255), 52U" in status_led:

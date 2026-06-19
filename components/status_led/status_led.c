@@ -30,7 +30,7 @@
 #define STATUS_LED_STRIP_COUNT 4
 #define STATUS_LED_MAX_STRIP_COUNT STATUS_LED_EC11_COUNT
 #define STATUS_LED_STATUS_TAIL_GUARD_PIXELS 6U
-#define STATUS_LED_STATUS_TAIL_REINFORCE_WRITES 1U
+#define STATUS_LED_STATUS_TAIL_REINFORCE_WRITES 3U
 #define STATUS_LED_STRIP_MASK_STATUS (1U << STATUS_LED_STRIP_STATUS)
 #define STATUS_LED_STRIP_MASK_EC11 (1U << STATUS_LED_STRIP_EC11)
 #define STATUS_LED_STRIP_MASK_KEY (1U << STATUS_LED_STRIP_KEY)
@@ -44,24 +44,29 @@
 #define STATUS_LED_TX_MUTEX_WAIT_MS 100
 #define STATUS_LED_POWER_POLL_MS 5000U
 #define STATUS_LED_STATUS_WINDOW_MS 6000U
+#define STATUS_LED_PREVIEW_BLE_OVERRIDE_MS 15000U
 #define STATUS_LED_BOOT_ACK_MS 2500U
 #define STATUS_LED_BLE_CONFIDENCE_MS 8000U
+#define STATUS_LED_BLE_REPAIR_CUE_MS 3500U
+#define STATUS_LED_BLE_CONNECTED_CONFIRM_MS 1600U
 #define STATUS_LED_OOBE_CONFIDENCE_MS 25000U
 #define STATUS_LED_ERROR_HOLD_MS 6000U
-#define STATUS_LED_OK_TOTAL_MS 2200U
+#define STATUS_LED_OK_TOTAL_MS 2000U
 #define STATUS_LED_OK_PEAK_MS 360U
 #define STATUS_LED_KEY_FEEDBACK_MS 240U
+#define STATUS_LED_EC11_FEEDBACK_MS 900U
 #define STATUS_LED_CHARGING_BREATH_PERIOD_MS 3600U
-#define STATUS_LED_CHARGING_BREATH_LOW_HOLD_MS 300U
-#define STATUS_LED_CHARGING_BREATH_RISE_MS 1050U
-#define STATUS_LED_CHARGING_BREATH_HIGH_HOLD_MS 80U
-#define STATUS_LED_CHARGING_BREATH_MIN_PERCENT 1U
-#define STATUS_LED_CHARGING_BREATH_MAX_PERCENT 100U
-#define STATUS_LED_CHARGING_ACTIVE_WORK_MIN_PERCENT 46U
+#define STATUS_LED_CHARGING_BREATH_LOW_HOLD_MS 450U
+#define STATUS_LED_CHARGING_BREATH_RISE_MS 1300U
+#define STATUS_LED_CHARGING_BREATH_HIGH_HOLD_MS 300U
+#define STATUS_LED_CHARGING_BREATH_MIN_PERCENT 8U
+#define STATUS_LED_CHARGING_BREATH_MAX_PERCENT 38U
+#define STATUS_LED_CHARGING_ACTIVE_WORK_MIN_PERCENT 28U
 #define STATUS_LED_CHARGE_FULL_DEBOUNCE_MS 10000U
 #define STATUS_LED_CHARGE_FULL_MIN_MV 4050U
 #define STATUS_LED_CHARGE_FULL_MIN_PERCENT 88U
 #define STATUS_LED_BATTERY_DISPLAY_GREEN_PERCENT 60U
+#define STATUS_LED_LOW_BATTERY_STEADY_PERCENT 38U
 #define STATUS_LED_FULL_STEADY_PERCENT 100U
 #define STATUS_LED_FULL_STATUS_STEADY_PERCENT 100U
 #define STATUS_LED_BATTERY_IDLE_BLE_HEARTBEAT_ON_MS 120U
@@ -93,22 +98,20 @@
 #define STATUS_LED_KEY_PHYSICAL_MAP "LED11:KEY1,LED12:KEY2,LED13:KEY3,LED14:KEY4"
 #define STATUS_LED_STATUS_KEY_MAPPING_CONTRACT "status=LED1..LED6,key=LED11..LED14"
 #define STATUS_LED_REC_GOLD_R 255U
-#define STATUS_LED_REC_GOLD_G 132U
-#define STATUS_LED_REC_GOLD_B 0U
-#define STATUS_LED_RECORDING_BREATH_PERIOD_MS 1900U
-#define STATUS_LED_RECORDING_BREATH_MIN_PERCENT 24U
-#define STATUS_LED_RECORDING_BREATH_MAX_PERCENT 42U
+#define STATUS_LED_REC_GOLD_G 176U
+#define STATUS_LED_REC_GOLD_B 12U
+#define STATUS_LED_RECORDING_BREATH_PERIOD_MS 1500U
+#define STATUS_LED_RECORDING_BREATH_MIN_PERCENT 28U
+#define STATUS_LED_RECORDING_BREATH_MAX_PERCENT 50U
 #define STATUS_LED_RECORDING_LEVEL_STALE_MS 300U
 #define STATUS_LED_RECORDING_LEVEL_HOLD_MAX_MS 120000U
 #define STATUS_LED_DYNAMIC_STATUS_QUANTUM_PERCENT 4U
 #define STATUS_LED_ACTIVE_WORK_REC_PERCENT 34U
 #define STATUS_LED_ACTIVE_WORK_AI_PERCENT 32U
-#define STATUS_LED_ACTIVE_WORK_REC_MAX_PERCENT 52U
-#define STATUS_LED_RECORDING_STATUS_LEVEL_MIN_PERCENT 28U
-#define STATUS_LED_RECORDING_STATUS_LEVEL_MAX_PERCENT 52U
-#define STATUS_LED_PROCESSING_BREATH_PERIOD_MS 3200U
+#define STATUS_LED_ACTIVE_WORK_REC_MAX_PERCENT 44U
+#define STATUS_LED_PROCESSING_BREATH_PERIOD_MS 1800U
 #define STATUS_LED_PROCESSING_BREATH_MIN_PERCENT 28U
-#define STATUS_LED_PROCESSING_BREATH_MAX_PERCENT 42U
+#define STATUS_LED_PROCESSING_BREATH_MAX_PERCENT 52U
 #define STATUS_LED_EC11_ACCENT_MIN_PERCENT 10U
 #define STATUS_LED_EC11_ACCENT_MAX_PERCENT 28U
 #define STATUS_LED_EDGE_ACCENT_MIN_PERCENT 8U
@@ -122,37 +125,20 @@
 #define STATUS_LED_EDGE_PROCESSING_SETTLED_PERCENT 11U
 #define STATUS_LED_EDGE_OVERLAP_RECORDING_ANCHOR_PERCENT 10U
 #define STATUS_LED_ACCENT_BREATHE_QUANTUM_PERCENT 2U
-#define STATUS_LED_EC11_RECORDING_BREATHE_MIN_PERCENT 8U
-#define STATUS_LED_EC11_RECORDING_BREATHE_MAX_PERCENT 38U
-#define STATUS_LED_EDGE_RECORDING_BREATHE_MIN_PERCENT 6U
-#define STATUS_LED_EDGE_RECORDING_BREATHE_MAX_PERCENT 24U
-#define STATUS_LED_EC11_RECORDING_BASE_MIN_PERCENT 1U
-#define STATUS_LED_EC11_RECORDING_BASE_MAX_PERCENT 4U
-#define STATUS_LED_EDGE_RECORDING_BASE_MIN_PERCENT 1U
-#define STATUS_LED_EDGE_RECORDING_BASE_MAX_PERCENT 3U
+#define STATUS_LED_EC11_RECORDING_BASE_MIN_PERCENT 6U
+#define STATUS_LED_EC11_RECORDING_BASE_MAX_PERCENT 8U
+#define STATUS_LED_EDGE_RECORDING_SURFACE_BASE_MIN_PERCENT 6U
+#define STATUS_LED_EDGE_RECORDING_SURFACE_BASE_MAX_PERCENT 10U
 #define STATUS_LED_ACCENT_ENTRY_RAMP_MS 900U
-#define STATUS_LED_EC11_ORBIT_STEP_MS 620U
-#define STATUS_LED_EDGE_ORBIT_STEP_MS 900U
-#define STATUS_LED_EC11_PROCESSING_BASE_PERCENT 3U
-#define STATUS_LED_EDGE_PROCESSING_BASE_PERCENT 2U
-#define STATUS_LED_EC11_PROCESSING_ORBIT_PERCENT 16U
-#define STATUS_LED_EDGE_PROCESSING_ORBIT_PERCENT 10U
-#define STATUS_LED_KEY_ACTIVE_WORK_BASE_PERCENT 4U
-#define STATUS_LED_KEY_RECORDING_MAX_PERCENT 14U
-#define STATUS_LED_KEY_PROCESSING_MAX_PERCENT 12U
-#define STATUS_LED_KEY_ACTIVE_WORK_BREATH_MS 3200U
-#define STATUS_LED_EC11_RECORDING_ARC_MIN_LEDS 1U
-#define STATUS_LED_EC11_RECORDING_ARC_MAX_LEDS 8U
-#define STATUS_LED_EDGE_RECORDING_RAIL_MIN_LEDS 1U
-#define STATUS_LED_EDGE_RECORDING_RAIL_MAX_LEDS 4U
-#define STATUS_LED_EC11_RECORDING_GLEAM_STEP_MS 900U
-#define STATUS_LED_EDGE_RECORDING_GLEAM_STEP_MS 1200U
-#define STATUS_LED_EC11_OVERLAP_GLEAM_STEP_MS 1100U
-#define STATUS_LED_EDGE_OVERLAP_GLEAM_STEP_MS 1300U
-#define STATUS_LED_EC11_RECORDING_TAIL_SCALE_PERCENT 58U
-#define STATUS_LED_EC11_RECORDING_FADE_SCALE_PERCENT 34U
-#define STATUS_LED_EDGE_RECORDING_TAIL_SCALE_PERCENT 52U
-#define STATUS_LED_EDGE_RECORDING_FADE_SCALE_PERCENT 30U
+#define STATUS_LED_EC11_RECORDING_FLOW_STEP_MS 360U
+#define STATUS_LED_EDGE_RECORDING_FLOW_STEP_MS 720U
+#define STATUS_LED_EC11_ORBIT_STEP_MS 240U
+#define STATUS_LED_EDGE_ORBIT_STEP_MS 480U
+#define STATUS_LED_EC11_REPAIR_ORBIT_STEP_MS 220U
+#define STATUS_LED_EC11_PROCESSING_BASE_PERCENT 7U
+#define STATUS_LED_EDGE_PROCESSING_BASE_PERCENT 6U
+#define STATUS_LED_EC11_PROCESSING_ORBIT_PERCENT 26U
+#define STATUS_LED_EDGE_PROCESSING_ORBIT_PERCENT 24U
 #define STATUS_LED_SHUTDOWN_CONFIRM_MS 1800U
 #define STATUS_LED_SHUTDOWN_FINAL_CONFIRM_MS 700U
 #define STATUS_LED_POWER_SOURCE_USB_DET (1U << 0)
@@ -320,6 +306,7 @@ typedef struct {
     uint32_t status_window_until_ms;
     uint32_t boot_feedback_until_ms;
     uint32_t ble_confidence_until_ms;
+    uint32_t ble_repair_until_ms;
     uint32_t oobe_confidence_until_ms;
     uint32_t ok_started_ms;
     uint32_t ok_until_ms;
@@ -331,6 +318,7 @@ typedef struct {
     uint32_t recording_level_updated_ms;
     uint32_t recording_level_hold_until_ms;
     uint32_t processing_started_ms;
+    uint32_t ble_transition_ms;
     uint32_t last_transition_ms;
     uint32_t last_power_poll_ms;
     uint32_t charge_full_candidate_since_ms;
@@ -343,8 +331,12 @@ typedef struct {
     bool visual_log_initialized;
     bool preview_suppress_accents;
     bool preview_effect_only;
+    uint32_t preview_ble_override_until_ms;
     uint8_t key_pressed_mask;
     uint32_t key_until_ms[STATUS_LED_KEY_COUNT];
+    uint32_t ec11_feedback_started_ms;
+    uint32_t ec11_feedback_until_ms;
+    status_led_ec11_feedback_t ec11_feedback;
     status_led_test_mode_t test_mode;
     uint8_t test_strip_mask;
     uint32_t test_started_ms;
@@ -388,8 +380,14 @@ typedef struct {
     uint32_t battery_display_mv;
     uint32_t status_window_until_ms;
     uint32_t ble_confidence_until_ms;
+    uint32_t ble_repair_until_ms;
     uint32_t oobe_confidence_until_ms;
+    uint32_t shutdown_confirm_started_ms;
+    uint32_t shutdown_confirm_until_ms;
+    bool shutdown_confirm_final;
     uint32_t charge_full_candidate_since_ms;
+    uint32_t ble_transition_ms;
+    uint32_t preview_ble_override_until_ms;
     uint32_t last_transition_ms;
     uint32_t last_estimated_current_ma;
     uint32_t last_current_budget_ma;
@@ -933,6 +931,7 @@ static const char *status_led_ble_name(status_led_ble_state_t state)
     case STATUS_LED_BLE_PAIRING: return "pairing";
     case STATUS_LED_BLE_RECONNECTING: return "reconnecting";
     case STATUS_LED_BLE_CONNECTED: return "connected";
+    case STATUS_LED_BLE_REPAIRING: return "repairing";
     default: return "unknown";
     }
 }
@@ -1355,6 +1354,19 @@ static void status_led_request_refresh(void)
     }
 }
 
+static bool status_led_ble_repair_active_locked(uint32_t now_ms)
+{
+    return now_ms < s_state.ble_repair_until_ms;
+}
+
+static uint32_t status_led_ble_elapsed_locked(uint32_t now_ms)
+{
+    uint32_t start_ms = s_state.ble_transition_ms != 0U
+        ? s_state.ble_transition_ms
+        : s_state.last_transition_ms;
+    return now_ms - start_ms;
+}
+
 static bool status_led_timed_output_active_locked(uint32_t now_ms)
 {
     if (s_state.output_disabled || s_state.low_power_disabled) {
@@ -1368,6 +1380,7 @@ static bool status_led_timed_output_active_locked(uint32_t now_ms)
     if (now_ms < s_state.boot_feedback_until_ms ||
         now_ms < s_state.status_window_until_ms ||
         now_ms < s_state.ble_confidence_until_ms ||
+        now_ms < s_state.ble_repair_until_ms ||
         now_ms < s_state.oobe_confidence_until_ms ||
         now_ms < s_state.error_until_ms ||
         now_ms < s_state.ok_until_ms) {
@@ -1609,14 +1622,15 @@ static void status_led_render_power_locked(status_led_frame_t *frame, uint32_t n
         const uint8_t battery_level = status_led_battery_display_level_locked();
         if (battery_level < 10U) {
             safety = true;
-            if (status_led_double_pulse_on(now_ms, 4000U)) {
-                color = status_led_token_locked(status_led_rgb(255, 0, 0), 100U, true);
+            if (status_led_double_pulse_on(now_ms, 1800U)) {
+                color = status_led_token_locked(status_led_rgb(255, 0, 0), 90U, true);
             }
         } else if (battery_level < 20U) {
             safety = true;
-            if (status_led_blink_on(now_ms, 500U, 2500U)) {
-                color = status_led_token_locked(status_led_rgb(255, 0, 0), 80U, true);
-            }
+            color = status_led_token_locked(
+                status_led_rgb(255, 0, 0),
+                STATUS_LED_LOW_BATTERY_STEADY_PERCENT,
+                true);
         } else {
             percent = (status_window || active_work) ? 46U : 0U;
             if (s_state.profile == STATUS_LED_PROFILE_LOW || s_state.profile == STATUS_LED_PROFILE_OFF) {
@@ -1656,40 +1670,61 @@ static void status_led_render_ble_locked(status_led_frame_t *frame, uint32_t now
                               !confidence &&
                               !status_window &&
                               !active_work;
+    const uint32_t ble_elapsed_ms = status_led_ble_elapsed_locked(now_ms);
+    if (status_led_ble_repair_active_locked(now_ms)) {
+        uint8_t percent = 22U;
+        if (status_led_double_pulse_on(ble_elapsed_ms, 900U) ||
+            status_led_blink_on(ble_elapsed_ms + 450U, 120U, 780U)) {
+            percent = 72U;
+        }
+        color = status_led_token_locked(ble_blue, percent, false);
+        status_led_set_max(&frame->status[STATUS_LED_SEM_BLE], color);
+        return;
+    }
 
     switch (s_state.ble_state) {
     case STATUS_LED_BLE_PAIRING:
+    case STATUS_LED_BLE_REPAIRING:
         if (battery_idle && status_led_blink_on(
-                                now_ms,
+                                ble_elapsed_ms,
                                 STATUS_LED_BATTERY_IDLE_BLE_HEARTBEAT_ON_MS,
                                 STATUS_LED_BATTERY_IDLE_BLE_HEARTBEAT_OFF_MS)) {
             color = status_led_token_locked(
                 ble_blue,
                 STATUS_LED_BATTERY_IDLE_BLE_HEARTBEAT_PERCENT,
                 false);
-        } else if (!battery_idle && status_led_blink_on(now_ms, 420U, 680U)) {
+        } else if (!battery_idle && status_led_blink_on(ble_elapsed_ms, 420U, 680U)) {
             color = status_led_token_locked(ble_blue, 65U, false);
         }
         break;
     case STATUS_LED_BLE_RECONNECTING:
         if (battery_idle && status_led_blink_on(
-                                now_ms - s_state.last_transition_ms,
+                                ble_elapsed_ms,
                                 STATUS_LED_BATTERY_IDLE_BLE_HEARTBEAT_ON_MS,
                                 STATUS_LED_BATTERY_IDLE_BLE_HEARTBEAT_OFF_MS)) {
             color = status_led_token_locked(
                 ble_blue,
                 STATUS_LED_BATTERY_IDLE_BLE_HEARTBEAT_PERCENT,
                 false);
-        } else if (!battery_idle &&
-                   status_led_double_pulse_on(now_ms - s_state.last_transition_ms, 2000U)) {
-            color = status_led_token_locked(ble_blue, 58U, false);
+        } else if (!battery_idle) {
+            uint8_t percent = status_led_double_pulse_on(ble_elapsed_ms, 2000U) ? 58U : 22U;
+            color = status_led_token_locked(ble_blue, percent, false);
         }
         break;
     case STATUS_LED_BLE_CONNECTED:
-        if (confidence || status_window) {
+        if (ble_elapsed_ms < STATUS_LED_BLE_CONNECTED_CONFIRM_MS) {
+            color = status_led_token_locked(
+                ble_blue,
+                status_led_triangle_percent(
+                    ble_elapsed_ms,
+                    STATUS_LED_BLE_CONNECTED_CONFIRM_MS,
+                    32U,
+                    70U),
+                false);
+        } else if (confidence || status_window) {
             color = status_led_token_locked(ble_blue, 48U, false);
         } else if (battery_idle && status_led_blink_on(
-                                   now_ms - s_state.last_transition_ms,
+                                   ble_elapsed_ms,
                                    STATUS_LED_BATTERY_IDLE_BLE_HEARTBEAT_ON_MS,
                                    STATUS_LED_BATTERY_IDLE_BLE_HEARTBEAT_OFF_MS)) {
             color = status_led_token_locked(
@@ -1712,23 +1747,6 @@ static void status_led_render_ble_locked(status_led_frame_t *frame, uint32_t now
     status_led_set_max(&frame->status[STATUS_LED_SEM_BLE], color);
 }
 
-static bool status_led_recording_level_is_fresh_locked(uint32_t now_ms)
-{
-    if (s_state.recording_level_updated_ms == 0U) {
-        return false;
-    }
-    return now_ms <= s_state.recording_level_hold_until_ms ||
-           now_ms - s_state.recording_level_updated_ms <= STATUS_LED_RECORDING_LEVEL_STALE_MS;
-}
-
-static uint8_t status_led_recording_level_fresh_locked(uint32_t now_ms)
-{
-    if (status_led_recording_level_is_fresh_locked(now_ms)) {
-        return s_state.recording_level_percent;
-    }
-    return 0U;
-}
-
 static uint8_t status_led_recording_visual_percent_locked(uint32_t now_ms)
 {
     if (!s_state.recording_active) {
@@ -1742,17 +1760,7 @@ static uint8_t status_led_recording_visual_percent_locked(uint32_t now_ms)
         STATUS_LED_RECORDING_BREATH_PERIOD_MS,
         STATUS_LED_RECORDING_BREATH_MIN_PERCENT,
         STATUS_LED_RECORDING_BREATH_MAX_PERCENT);
-    bool level_fresh = status_led_recording_level_is_fresh_locked(now_ms);
-    uint8_t level_percent = 0U;
-    if (level_fresh) {
-        uint8_t level = s_state.recording_level_percent;
-        level_percent = STATUS_LED_RECORDING_STATUS_LEVEL_MIN_PERCENT +
-            (uint8_t)(((uint32_t)level *
-                       (STATUS_LED_RECORDING_STATUS_LEVEL_MAX_PERCENT -
-                        STATUS_LED_RECORDING_STATUS_LEVEL_MIN_PERCENT)) / 100U);
-    }
-    uint8_t percent = level_fresh ? level_percent : breath;
-    return status_led_quantize_percent(percent, STATUS_LED_DYNAMIC_STATUS_QUANTUM_PERCENT);
+    return status_led_quantize_percent(breath, STATUS_LED_DYNAMIC_STATUS_QUANTUM_PERCENT);
 }
 
 static uint8_t status_led_recording_status_percent_locked(uint32_t now_ms)
@@ -1801,8 +1809,13 @@ static uint8_t status_led_ok_visual_percent_locked(uint32_t now_ms)
 
 static bool status_led_shutdown_confirm_active_locked(uint32_t now_ms)
 {
-    if (s_state.shutdown_confirm_started_ms == 0U ||
-        now_ms >= s_state.shutdown_confirm_until_ms) {
+    if (s_state.shutdown_confirm_started_ms == 0U) {
+        return false;
+    }
+    if (!s_state.shutdown_confirm_final) {
+        return true;
+    }
+    if (now_ms >= s_state.shutdown_confirm_until_ms) {
         return false;
     }
     return true;
@@ -1818,29 +1831,10 @@ static uint8_t status_led_recording_accent_percent_locked(
     uint8_t min_percent,
     uint8_t max_percent)
 {
-    if (status_led_recording_level_is_fresh_locked(now_ms)) {
-        uint8_t level = s_state.recording_level_percent;
-        uint8_t level_percent = min_percent +
-            (uint8_t)(((uint32_t)level * (max_percent - min_percent)) / 100U);
-        return status_led_scale_effect_percent_locked(
-            status_led_quantize_percent(level_percent, STATUS_LED_ACCENT_BREATHE_QUANTUM_PERCENT),
-            now_ms);
-    }
-
-    uint8_t percent = status_led_triangle_percent(now_ms, 2600U, min_percent, max_percent);
+    uint8_t percent = min_percent + (uint8_t)(((uint32_t)(max_percent - min_percent) + 1U) / 2U);
     return status_led_scale_effect_percent_locked(
         status_led_quantize_percent(percent, STATUS_LED_ACCENT_BREATHE_QUANTUM_PERCENT),
         now_ms);
-}
-
-static uint8_t status_led_wrapped_rank_distance(uint8_t left, uint8_t right, uint8_t modulo)
-{
-    if (modulo <= 1U) {
-        return 0U;
-    }
-    uint8_t distance = left > right ? (uint8_t)(left - right) : (uint8_t)(right - left);
-    uint8_t wrapped = (uint8_t)(modulo - distance);
-    return distance < wrapped ? distance : wrapped;
 }
 
 static uint32_t status_led_effect_elapsed_ms_locked(uint32_t now_ms)
@@ -1871,51 +1865,20 @@ static uint8_t status_led_scale_effect_percent_locked(uint8_t percent, uint32_t 
     return status_led_clamp_u32_to_u8(scaled);
 }
 
-static uint8_t status_led_gleam_rank_locked(uint32_t now_ms, uint32_t step_ms, uint8_t modulo)
-{
-    if (modulo <= 1U || step_ms == 0U) {
-        return 0U;
-    }
-    return (uint8_t)((status_led_effect_elapsed_ms_locked(now_ms) / step_ms) % modulo);
-}
-
-static status_led_rgb_t status_led_recording_highlight_color(
-    status_led_rgb_t base,
-    status_led_rgb_t head,
-    uint8_t distance,
-    uint8_t tail_scale,
-    uint8_t fade_scale)
-{
-    status_led_rgb_t color = base;
-    if (distance == 0U) {
-        status_led_set_max(&color, head);
-    } else if (distance == 1U) {
-        status_led_set_max(&color, status_led_scale_raw(head, tail_scale));
-    } else if (distance == 2U) {
-        status_led_set_max(&color, status_led_scale_raw(head, fade_scale));
-    }
-    return color;
-}
-
-static void status_led_render_ec11_recording_arc_locked(
+static void status_led_render_edge_clockwise_chase_locked(
     status_led_frame_t *frame,
-    uint32_t now_ms,
-    uint8_t max_lit)
+    uint32_t elapsed_ms,
+    status_led_rgb_t hue,
+    uint8_t base_percent,
+    uint8_t head_percent,
+    uint8_t tail_percent,
+    uint8_t fade_percent,
+    uint32_t step_ms);
+
+static void status_led_render_ec11_recording_flow_locked(
+    status_led_frame_t *frame,
+    uint32_t now_ms)
 {
-    static const uint8_t arc_order[STATUS_LED_EC11_COUNT] = {
-        6U, 5U, 7U, 4U, 8U, 3U, 9U, 2U, 10U, 1U, 11U, 0U,
-    };
-
-    uint8_t level = status_led_recording_level_fresh_locked(now_ms);
-    uint8_t lit = STATUS_LED_EC11_RECORDING_ARC_MIN_LEDS +
-        (uint8_t)(((uint32_t)level * (STATUS_LED_EC11_COUNT - STATUS_LED_EC11_RECORDING_ARC_MIN_LEDS)) / 100U);
-    if (lit < STATUS_LED_EC11_RECORDING_ARC_MIN_LEDS) {
-        lit = STATUS_LED_EC11_RECORDING_ARC_MIN_LEDS;
-    }
-    if (lit > max_lit) {
-        lit = max_lit;
-    }
-
     status_led_rgb_t base = status_led_token_locked(
         status_led_rec_gold(),
         status_led_recording_accent_percent_locked(
@@ -1925,100 +1888,41 @@ static void status_led_render_ec11_recording_arc_locked(
         false);
     status_led_rgb_t head = status_led_token_locked(
         status_led_rec_gold(),
-        status_led_recording_accent_percent_locked(
-            now_ms,
-            STATUS_LED_EC11_RECORDING_BREATHE_MIN_PERCENT,
-            STATUS_LED_EC11_RECORDING_BREATHE_MAX_PERCENT),
+        status_led_recording_accent_percent_locked(now_ms, 18U, 22U),
         false);
+    status_led_rgb_t tail = status_led_scale_raw(head, 68U);
+    status_led_rgb_t fade = status_led_scale_raw(head, 38U);
+    uint32_t step = (status_led_effect_elapsed_ms_locked(now_ms) / STATUS_LED_EC11_RECORDING_FLOW_STEP_MS) %
+                    STATUS_LED_EC11_COUNT;
+    uint32_t head_index = (STATUS_LED_EC11_COUNT - 1U - step) % STATUS_LED_EC11_COUNT;
 
-    const bool overlap_dynamic = s_state.processing_active && lit >= 6U;
-    const bool recording_gleam = !s_state.processing_active && lit >= 6U;
-    const bool gleam_dynamic = overlap_dynamic || recording_gleam;
-    uint8_t gleam_rank = 0U;
-    if (gleam_dynamic) {
-        uint32_t step_ms = overlap_dynamic
-            ? STATUS_LED_EC11_OVERLAP_GLEAM_STEP_MS
-            : STATUS_LED_EC11_RECORDING_GLEAM_STEP_MS;
-        if (!overlap_dynamic && step_ms > 140U) {
-            step_ms -= ((uint32_t)level * 120U) / 100U;
-        }
-        gleam_rank = status_led_gleam_rank_locked(now_ms, step_ms, lit);
+    for (size_t index = 0; index < STATUS_LED_EC11_COUNT; ++index) {
+        status_led_set_max(&frame->ec11[index], base);
     }
-
-    for (uint8_t rank = 0; rank < lit; ++rank) {
-        uint8_t distance = gleam_dynamic
-            ? status_led_wrapped_rank_distance(rank, gleam_rank, lit)
-            : 3U;
-        status_led_rgb_t color = status_led_recording_highlight_color(
-            base,
-            head,
-            distance,
-            STATUS_LED_EC11_RECORDING_TAIL_SCALE_PERCENT,
-            STATUS_LED_EC11_RECORDING_FADE_SCALE_PERCENT);
-        status_led_set_max(&frame->ec11[arc_order[rank]], color);
-    }
+    status_led_set_max(&frame->ec11[head_index], head);
+    status_led_set_max(&frame->ec11[(head_index + STATUS_LED_EC11_COUNT - 1U) % STATUS_LED_EC11_COUNT], tail);
+    status_led_set_max(&frame->ec11[(head_index + 1U) % STATUS_LED_EC11_COUNT], tail);
+    status_led_set_max(&frame->ec11[(head_index + STATUS_LED_EC11_COUNT - 2U) % STATUS_LED_EC11_COUNT], fade);
+    status_led_set_max(&frame->ec11[(head_index + 2U) % STATUS_LED_EC11_COUNT], fade);
 }
 
-static void status_led_render_edge_recording_rails_locked(
+static void status_led_render_edge_recording_flow_locked(
     status_led_frame_t *frame,
-    uint32_t now_ms,
-    uint8_t max_lit)
+    uint32_t now_ms)
 {
-    static const uint8_t rail_order[STATUS_LED_EDGE_COUNT] = {
-        1U, 4U, 0U, 2U, 3U, 5U,
-    };
-
-    uint8_t level = status_led_recording_level_fresh_locked(now_ms);
-    uint8_t lit = STATUS_LED_EDGE_RECORDING_RAIL_MIN_LEDS +
-        (uint8_t)(((uint32_t)level * (STATUS_LED_EDGE_COUNT - STATUS_LED_EDGE_RECORDING_RAIL_MIN_LEDS)) / 100U);
-    if (lit < STATUS_LED_EDGE_RECORDING_RAIL_MIN_LEDS) {
-        lit = STATUS_LED_EDGE_RECORDING_RAIL_MIN_LEDS;
-    }
-    if (lit > max_lit) {
-        lit = max_lit;
-    }
-
-    status_led_rgb_t base = status_led_token_locked(
+    uint8_t base_percent = status_led_recording_accent_percent_locked(
+        now_ms,
+        STATUS_LED_EDGE_RECORDING_SURFACE_BASE_MIN_PERCENT,
+        STATUS_LED_EDGE_RECORDING_SURFACE_BASE_MAX_PERCENT);
+    status_led_render_edge_clockwise_chase_locked(
+        frame,
+        status_led_effect_elapsed_ms_locked(now_ms),
         status_led_rec_gold(),
-        status_led_recording_accent_percent_locked(
-            now_ms,
-            STATUS_LED_EDGE_RECORDING_BASE_MIN_PERCENT,
-            STATUS_LED_EDGE_RECORDING_BASE_MAX_PERCENT),
-        false);
-    status_led_rgb_t head = status_led_token_locked(
-        status_led_rec_gold(),
-        status_led_recording_accent_percent_locked(
-            now_ms,
-            STATUS_LED_EDGE_RECORDING_BREATHE_MIN_PERCENT,
-            STATUS_LED_EDGE_RECORDING_BREATHE_MAX_PERCENT),
-        false);
-
-    const bool overlap_dynamic = s_state.processing_active && lit >= 4U;
-    const bool recording_gleam = !s_state.processing_active && lit >= 4U;
-    const bool gleam_dynamic = overlap_dynamic || recording_gleam;
-    uint8_t gleam_rank = 0U;
-    if (gleam_dynamic) {
-        uint32_t step_ms = overlap_dynamic
-            ? STATUS_LED_EDGE_OVERLAP_GLEAM_STEP_MS
-            : STATUS_LED_EDGE_RECORDING_GLEAM_STEP_MS;
-        if (!overlap_dynamic && step_ms > 180U) {
-            step_ms -= ((uint32_t)level * 160U) / 100U;
-        }
-        gleam_rank = status_led_gleam_rank_locked(now_ms, step_ms, lit);
-    }
-
-    for (uint8_t rank = 0; rank < lit; ++rank) {
-        uint8_t distance = gleam_dynamic
-            ? status_led_wrapped_rank_distance(rank, gleam_rank, lit)
-            : 3U;
-        status_led_rgb_t color = status_led_recording_highlight_color(
-            base,
-            head,
-            distance,
-            STATUS_LED_EDGE_RECORDING_TAIL_SCALE_PERCENT,
-            STATUS_LED_EDGE_RECORDING_FADE_SCALE_PERCENT);
-        status_led_set_max(&frame->edge[rail_order[rank]], color);
-    }
+        base_percent,
+        status_led_scale_effect_percent_locked(24U, now_ms),
+        status_led_scale_effect_percent_locked(16U, now_ms),
+        status_led_scale_effect_percent_locked(10U, now_ms),
+        STATUS_LED_EDGE_RECORDING_FLOW_STEP_MS);
 }
 
 static void status_led_render_recording_locked(status_led_frame_t *frame, uint32_t now_ms, bool *ret_safety)
@@ -2067,13 +1971,9 @@ static bool status_led_render_shutdown_confirm_locked(status_led_frame_t *frame,
     const bool final = s_state.shutdown_confirm_final;
     status_led_rgb_t amber = status_led_rgb(255, 96, 0);
     uint8_t pwr_percent = final ? 72U : 46U;
-    uint8_t accent_percent = final
-        ? 36U
-        : status_led_triangle_percent(now_ms, 1400U, 16U, 28U);
+    uint8_t accent_percent = final ? 36U : 24U;
 
-    status_led_set_max(
-        &frame->status[STATUS_LED_SEM_PWR],
-        status_led_token_locked(amber, pwr_percent, false));
+    frame->status[STATUS_LED_SEM_PWR] = status_led_token_locked(amber, pwr_percent, false);
 
     uint32_t lit = final
         ? STATUS_LED_EC11_COUNT
@@ -2083,53 +1983,14 @@ static bool status_led_render_shutdown_confirm_locked(status_led_frame_t *frame,
     }
     for (size_t index = 0; index < STATUS_LED_EC11_COUNT; ++index) {
         if (index < lit) {
+            size_t clockwise_index = (STATUS_LED_EC11_COUNT - 1U - index) % STATUS_LED_EC11_COUNT;
             status_led_set_max(
-                &frame->ec11[index],
+                &frame->ec11[clockwise_index],
                 status_led_token_locked(amber, accent_percent, false));
         }
     }
 
-    status_led_rgb_t edge = status_led_token_locked(amber, final ? 30U : 18U, false);
-    if (final) {
-        for (size_t index = 0; index < STATUS_LED_EDGE_COUNT; ++index) {
-            status_led_set_max(&frame->edge[index], edge);
-        }
-    } else {
-        status_led_set_max(&frame->edge[0], edge);
-        status_led_set_max(&frame->edge[2], edge);
-        status_led_set_max(&frame->edge[3], edge);
-        status_led_set_max(&frame->edge[5], edge);
-    }
-
     return true;
-}
-
-static status_led_semantic_t status_led_error_source_semantic(status_led_error_domain_t domain)
-{
-    switch (domain) {
-    case STATUS_LED_ERROR_DOMAIN_BLE: return STATUS_LED_SEM_BLE;
-    case STATUS_LED_ERROR_DOMAIN_REC: return STATUS_LED_SEM_REC;
-    case STATUS_LED_ERROR_DOMAIN_AI:
-    case STATUS_LED_ERROR_DOMAIN_OTA: return STATUS_LED_SEM_AI;
-    case STATUS_LED_ERROR_DOMAIN_POWER: return STATUS_LED_SEM_PWR;
-    case STATUS_LED_ERROR_DOMAIN_SYSTEM:
-    case STATUS_LED_ERROR_DOMAIN_NONE:
-    default: return STATUS_LED_SEM_PWR;
-    }
-}
-
-static status_led_rgb_t status_led_error_source_color(status_led_error_domain_t domain)
-{
-    switch (domain) {
-    case STATUS_LED_ERROR_DOMAIN_BLE: return status_led_rgb(0, 0, 255);
-    case STATUS_LED_ERROR_DOMAIN_REC: return status_led_rec_gold();
-    case STATUS_LED_ERROR_DOMAIN_AI:
-    case STATUS_LED_ERROR_DOMAIN_OTA: return status_led_rgb(160, 0, 255);
-    case STATUS_LED_ERROR_DOMAIN_POWER:
-    case STATUS_LED_ERROR_DOMAIN_SYSTEM:
-    case STATUS_LED_ERROR_DOMAIN_NONE:
-    default: return status_led_rgb(255, 255, 255);
-    }
 }
 
 static void status_led_render_error_locked(status_led_frame_t *frame, uint32_t now_ms, bool *ret_safety)
@@ -2147,28 +2008,8 @@ static void status_led_render_error_locked(status_led_frame_t *frame, uint32_t n
         ? status_led_rgb(255, 0, 0)
         : status_led_rgb(255, 140, 0);
     status_led_rgb_t warn = status_led_token_locked(warn_color, percent, true);
-    status_led_rgb_t source = status_led_token_locked(
-        status_led_error_source_color(s_state.error_domain),
-        percent > 4U ? (uint8_t)(percent - 3U) : percent,
-        true);
 
     status_led_set_max(&frame->status[STATUS_LED_SEM_WARN], warn);
-    status_led_set_max(
-        &frame->status[status_led_error_source_semantic(s_state.error_domain)],
-        source);
-    for (size_t index = 0; index < STATUS_LED_EC11_COUNT; ++index) {
-        if (hard || (index % 2U) == 0U) {
-            frame->ec11[index] = warn;
-        }
-    }
-    for (size_t index = 0; index < STATUS_LED_KEY_COUNT; ++index) {
-        frame->key[index] = warn;
-    }
-    for (size_t index = 0; index < STATUS_LED_EDGE_COUNT; ++index) {
-        if (hard || (index % 2U) == 0U) {
-            frame->edge[index] = warn;
-        }
-    }
     *ret_safety = true;
 }
 
@@ -2181,6 +2022,106 @@ static void status_led_apply_status_tail_guard_locked(status_led_frame_t *frame,
     if (!status_led_error_active_locked(now_ms)) {
         frame->status[STATUS_LED_SEM_WARN] = (status_led_rgb_t){0};
     }
+}
+
+static void status_led_render_edge_clockwise_chase_locked(
+    status_led_frame_t *frame,
+    uint32_t elapsed_ms,
+    status_led_rgb_t hue,
+    uint8_t base_percent,
+    uint8_t head_percent,
+    uint8_t tail_percent,
+    uint8_t fade_percent,
+    uint32_t step_ms)
+{
+    static const uint8_t clockwise_order[STATUS_LED_EDGE_COUNT] = {
+        0U, 1U, 2U, 5U, 4U, 3U,
+    };
+    if (step_ms == 0U) {
+        step_ms = 1U;
+    }
+    uint8_t step = (uint8_t)((elapsed_ms / step_ms) % STATUS_LED_EDGE_COUNT);
+    uint8_t head_rank = step;
+    status_led_rgb_t base = status_led_token_locked(hue, base_percent, false);
+    status_led_rgb_t head = status_led_token_locked(hue, head_percent, false);
+    status_led_rgb_t tail = status_led_token_locked(hue, tail_percent, false);
+    status_led_rgb_t fade = status_led_token_locked(hue, fade_percent, false);
+    for (size_t index = 0; index < STATUS_LED_EDGE_COUNT; ++index) {
+        status_led_set_max(&frame->edge[index], base);
+    }
+    status_led_set_max(&frame->edge[clockwise_order[head_rank]], head);
+    status_led_set_max(
+        &frame->edge[clockwise_order[(head_rank + STATUS_LED_EDGE_COUNT - 1U) % STATUS_LED_EDGE_COUNT]],
+        tail);
+    status_led_set_max(
+        &frame->edge[clockwise_order[(head_rank + 1U) % STATUS_LED_EDGE_COUNT]],
+        tail);
+    status_led_set_max(
+        &frame->edge[clockwise_order[(head_rank + STATUS_LED_EDGE_COUNT - 2U) % STATUS_LED_EDGE_COUNT]],
+        fade);
+    status_led_set_max(
+        &frame->edge[clockwise_order[(head_rank + 2U) % STATUS_LED_EDGE_COUNT]],
+        fade);
+    status_led_set_max(
+        &frame->edge[clockwise_order[(head_rank + (STATUS_LED_EDGE_COUNT / 2U)) % STATUS_LED_EDGE_COUNT]],
+        fade);
+}
+
+static bool status_led_ec11_feedback_active_locked(uint32_t now_ms)
+{
+    return s_state.ec11_feedback_started_ms != 0U && now_ms < s_state.ec11_feedback_until_ms;
+}
+
+static void status_led_render_ec11_repair_locked(status_led_frame_t *frame, uint32_t now_ms)
+{
+    status_led_rgb_t base = status_led_token_locked(status_led_rgb(0, 0, 255), 4U, false);
+    status_led_rgb_t head = status_led_token_locked(status_led_rgb(0, 0, 255), 22U, false);
+    status_led_rgb_t tail = status_led_scale_raw(head, 45U);
+    uint32_t step = (status_led_ble_elapsed_locked(now_ms) / STATUS_LED_EC11_REPAIR_ORBIT_STEP_MS) %
+                    STATUS_LED_EC11_COUNT;
+    uint32_t head_index = (STATUS_LED_EC11_COUNT - 1U - step) % STATUS_LED_EC11_COUNT;
+    for (size_t index = 0; index < STATUS_LED_EC11_COUNT; ++index) {
+        status_led_set_max(&frame->ec11[index], base);
+    }
+    status_led_set_max(&frame->ec11[head_index], head);
+    status_led_set_max(&frame->ec11[(head_index + STATUS_LED_EC11_COUNT - 1U) % STATUS_LED_EC11_COUNT], tail);
+    status_led_set_max(&frame->ec11[(head_index + 1U) % STATUS_LED_EC11_COUNT], tail);
+}
+
+static void status_led_render_ec11_feedback_locked(status_led_frame_t *frame, uint32_t now_ms)
+{
+    if (!status_led_ec11_feedback_active_locked(now_ms)) {
+        return;
+    }
+    uint32_t elapsed = now_ms - s_state.ec11_feedback_started_ms;
+    uint8_t peak = status_led_triangle_percent(elapsed, STATUS_LED_EC11_FEEDBACK_MS, 10U, 30U);
+    status_led_rgb_t white = status_led_token_locked(status_led_rgb(255, 255, 255), peak, false);
+    if (s_state.ec11_feedback == STATUS_LED_EC11_FEEDBACK_PRESS) {
+        for (size_t index = 0; index < STATUS_LED_EC11_COUNT; ++index) {
+            status_led_set_max(&frame->ec11[index], white);
+        }
+        return;
+    }
+
+    status_led_rgb_t base = status_led_token_locked(
+        status_led_rgb(255, 255, 255),
+        status_led_triangle_percent(elapsed, STATUS_LED_EC11_FEEDBACK_MS, 5U, 10U),
+        false);
+    for (size_t index = 0; index < STATUS_LED_EC11_COUNT; ++index) {
+        status_led_set_max(&frame->ec11[index], base);
+    }
+
+    uint32_t step = (elapsed / 90U) % STATUS_LED_EC11_COUNT;
+    uint32_t dot = s_state.ec11_feedback == STATUS_LED_EC11_FEEDBACK_ROTATE_CW
+        ? (STATUS_LED_EC11_COUNT - 1U - step) % STATUS_LED_EC11_COUNT
+        : step;
+    status_led_rgb_t tail = status_led_scale_raw(white, 70U);
+    status_led_rgb_t fade = status_led_scale_raw(white, 45U);
+    status_led_set_max(&frame->ec11[dot], white);
+    status_led_set_max(&frame->ec11[(dot + STATUS_LED_EC11_COUNT - 1U) % STATUS_LED_EC11_COUNT], tail);
+    status_led_set_max(&frame->ec11[(dot + 1U) % STATUS_LED_EC11_COUNT], tail);
+    status_led_set_max(&frame->ec11[(dot + STATUS_LED_EC11_COUNT - 2U) % STATUS_LED_EC11_COUNT], fade);
+    status_led_set_max(&frame->ec11[(dot + 2U) % STATUS_LED_EC11_COUNT], fade);
 }
 
 static void status_led_render_ec11_locked(status_led_frame_t *frame, uint32_t now_ms)
@@ -2205,8 +2146,14 @@ static void status_led_render_ec11_locked(status_led_frame_t *frame, uint32_t no
         return;
     }
 
+    if (status_led_ble_repair_active_locked(now_ms)) {
+        status_led_render_ec11_repair_locked(frame, now_ms);
+        return;
+    }
+
     if (s_state.processing_active && rec_percent > 0U) {
-        status_led_render_ec11_recording_arc_locked(frame, now_ms, STATUS_LED_EC11_RECORDING_ARC_MAX_LEDS);
+        status_led_render_ec11_recording_flow_locked(frame, now_ms);
+        status_led_render_ec11_feedback_locked(frame, now_ms);
         return;
     }
 
@@ -2231,16 +2178,20 @@ static void status_led_render_ec11_locked(status_led_frame_t *frame, uint32_t no
         status_led_rgb_t head = status_led_token_locked(status_led_rgb(160, 0, 255), percent, false);
         status_led_rgb_t tail = status_led_scale_raw(head, 58U);
         status_led_rgb_t fade = status_led_scale_raw(head, 30U);
-        uint32_t dot = (now_ms / STATUS_LED_EC11_ORBIT_STEP_MS) % STATUS_LED_EC11_COUNT;
+        uint32_t step = (status_led_effect_elapsed_ms_locked(now_ms) / STATUS_LED_EC11_ORBIT_STEP_MS) %
+                        STATUS_LED_EC11_COUNT;
+        uint32_t dot = (STATUS_LED_EC11_COUNT - 1U - step) % STATUS_LED_EC11_COUNT;
         status_led_set_max(&frame->ec11[dot], head);
         status_led_set_max(&frame->ec11[(dot + 1U) % STATUS_LED_EC11_COUNT], tail);
         status_led_set_max(&frame->ec11[(dot + STATUS_LED_EC11_COUNT - 1U) % STATUS_LED_EC11_COUNT], tail);
         status_led_set_max(&frame->ec11[(dot + STATUS_LED_EC11_COUNT - 2U) % STATUS_LED_EC11_COUNT], fade);
+        status_led_render_ec11_feedback_locked(frame, now_ms);
         return;
     }
 
     if (rec_percent > 0U) {
-        status_led_render_ec11_recording_arc_locked(frame, now_ms, STATUS_LED_EC11_RECORDING_ARC_MAX_LEDS);
+        status_led_render_ec11_recording_flow_locked(frame, now_ms);
+        status_led_render_ec11_feedback_locked(frame, now_ms);
         return;
     }
 
@@ -2252,69 +2203,15 @@ static void status_led_render_ec11_locked(status_led_frame_t *frame, uint32_t no
             status_led_set_max(&frame->ec11[index], color);
         }
     }
-}
 
-static uint8_t status_led_key_recording_percent_locked(uint32_t now_ms)
-{
-    if (!s_state.recording_active ||
-        s_state.rec_source == STATUS_LED_REC_SOURCE_NOT_AVAILABLE) {
-        return 0U;
-    }
-    uint8_t percent = STATUS_LED_KEY_ACTIVE_WORK_BASE_PERCENT;
-    if (status_led_recording_level_is_fresh_locked(now_ms)) {
-        percent = STATUS_LED_KEY_ACTIVE_WORK_BASE_PERCENT +
-            (uint8_t)(((uint32_t)s_state.recording_level_percent *
-                       (STATUS_LED_KEY_RECORDING_MAX_PERCENT - STATUS_LED_KEY_ACTIVE_WORK_BASE_PERCENT)) / 100U);
-    } else {
-        percent = status_led_triangle_percent(
-            now_ms,
-            STATUS_LED_KEY_ACTIVE_WORK_BREATH_MS,
-            STATUS_LED_KEY_ACTIVE_WORK_BASE_PERCENT,
-            STATUS_LED_KEY_RECORDING_MAX_PERCENT);
-    }
-    return status_led_scale_effect_percent_locked(
-        status_led_quantize_percent(percent, STATUS_LED_ACCENT_BREATHE_QUANTUM_PERCENT),
-        now_ms);
-}
-
-static uint8_t status_led_key_processing_percent_locked(uint32_t now_ms)
-{
-    if (!s_state.processing_active) {
-        return 0U;
-    }
-    uint8_t percent = status_led_triangle_percent(
-        now_ms + 900U,
-        STATUS_LED_KEY_ACTIVE_WORK_BREATH_MS,
-        STATUS_LED_KEY_ACTIVE_WORK_BASE_PERCENT,
-        STATUS_LED_KEY_PROCESSING_MAX_PERCENT);
-    return status_led_scale_effect_percent_locked(
-        status_led_quantize_percent(percent, STATUS_LED_ACCENT_BREATHE_QUANTUM_PERCENT),
-        now_ms);
+    status_led_render_ec11_feedback_locked(frame, now_ms);
 }
 
 static void status_led_render_key_active_work_locked(status_led_frame_t *frame, uint32_t now_ms)
 {
-    if (status_led_error_active_locked(now_ms) || s_state.preview_suppress_accents) {
-        return;
-    }
-    if (!s_state.preview_effect_only &&
-        s_state.battery_valid && status_led_battery_display_level_locked() < 20U) {
-        return;
-    }
-
-    uint8_t rec_percent = status_led_key_recording_percent_locked(now_ms);
-    if (rec_percent > 0U) {
-        status_led_set_max(
-            &frame->key[0],
-            status_led_token_locked(status_led_rec_gold(), rec_percent, false));
-    }
-
-    uint8_t ai_percent = status_led_key_processing_percent_locked(now_ms);
-    if (ai_percent > 0U && STATUS_LED_KEY_COUNT > 1U) {
-        status_led_set_max(
-            &frame->key[1],
-            status_led_token_locked(status_led_rgb(160, 0, 255), ai_percent, false));
-    }
+    (void)frame;
+    (void)now_ms;
+    return;
 }
 
 static void status_led_render_keys_locked(status_led_frame_t *frame, uint32_t now_ms)
@@ -2362,57 +2259,28 @@ static void status_led_render_edge_locked(status_led_frame_t *frame, uint32_t no
     }
 
     if (s_state.processing_active && rec_percent > 0U) {
-        status_led_render_edge_recording_rails_locked(frame, now_ms, STATUS_LED_EDGE_RECORDING_RAIL_MAX_LEDS);
+        status_led_render_edge_recording_flow_locked(frame, now_ms);
         return;
     }
 
     if (s_state.processing_active) {
-        uint8_t percent = STATUS_LED_EDGE_PROCESSING_ORBIT_PERCENT;
-        if (s_state.processing_started_ms != 0U &&
-            now_ms - s_state.processing_started_ms > 10000U &&
-            percent > 2U) {
-            percent = (uint8_t)(percent - 2U);
-        }
-        percent = status_led_scale_effect_percent_locked(percent, now_ms);
-        uint8_t base_percent = status_led_scale_effect_percent_locked(
-            STATUS_LED_EDGE_PROCESSING_BASE_PERCENT,
-            now_ms);
-        status_led_rgb_t base = status_led_token_locked(
+        status_led_render_edge_clockwise_chase_locked(
+            frame,
+            status_led_effect_elapsed_ms_locked(now_ms),
             status_led_rgb(160, 0, 255),
-            base_percent,
-            false);
-        for (size_t index = 0; index < STATUS_LED_EDGE_COUNT; ++index) {
-            status_led_set_max(&frame->edge[index], base);
-        }
-        status_led_rgb_t head = status_led_token_locked(status_led_rgb(160, 0, 255), percent, false);
-        status_led_rgb_t tail = status_led_scale_raw(head, 48U);
-        uint32_t dot = (now_ms / STATUS_LED_EDGE_ORBIT_STEP_MS) % STATUS_LED_EDGE_COUNT;
-        uint32_t opposite = (dot + (STATUS_LED_EDGE_COUNT / 2U)) % STATUS_LED_EDGE_COUNT;
-        status_led_set_max(&frame->edge[dot], head);
-        status_led_set_max(&frame->edge[opposite], tail);
-        status_led_set_max(&frame->edge[(dot + 1U) % STATUS_LED_EDGE_COUNT], tail);
-        status_led_set_max(&frame->edge[(dot + STATUS_LED_EDGE_COUNT - 1U) % STATUS_LED_EDGE_COUNT], tail);
+            STATUS_LED_EDGE_PROCESSING_BASE_PERCENT,
+            STATUS_LED_EDGE_PROCESSING_ORBIT_PERCENT,
+            13U,
+            8U,
+            STATUS_LED_EDGE_ORBIT_STEP_MS);
         return;
     }
 
     if (rec_percent > 0U) {
-        status_led_render_edge_recording_rails_locked(frame, now_ms, STATUS_LED_EDGE_RECORDING_RAIL_MAX_LEDS);
+        status_led_render_edge_recording_flow_locked(frame, now_ms);
         return;
     }
 
-    if (s_state.ble_state == STATUS_LED_BLE_PAIRING) {
-        uint32_t dot = (now_ms / 400U) % STATUS_LED_EDGE_COUNT;
-        status_led_set_max(&frame->edge[dot], status_led_token_locked(status_led_rgb(0, 0, 255), 40U, false));
-        return;
-    }
-    if (s_state.ble_state == STATUS_LED_BLE_RECONNECTING) {
-        if (status_led_double_pulse_on(now_ms, 2000U)) {
-            status_led_rgb_t color = status_led_token_locked(status_led_rgb(0, 0, 255), 34U, false);
-            status_led_set_max(&frame->edge[0], color);
-            status_led_set_max(&frame->edge[3], color);
-        }
-        return;
-    }
     if (s_state.profile == STATUS_LED_PROFILE_AMBIENT) {
         uint8_t percent = status_led_triangle_percent(now_ms, 4200U, 12U, 24U);
         status_led_rgb_t color = status_led_token_locked(status_led_rgb(0, 0, 255), percent, false);
@@ -2506,6 +2374,13 @@ static void status_led_clear_ok_locked(void)
     s_state.ok_until_ms = 0;
 }
 
+static void status_led_clear_ec11_feedback_locked(void)
+{
+    s_state.ec11_feedback_started_ms = 0U;
+    s_state.ec11_feedback_until_ms = 0U;
+    s_state.ec11_feedback = STATUS_LED_EC11_FEEDBACK_PRESS;
+}
+
 static void status_led_clear_retryable_error_locked(status_led_error_domain_t domain)
 {
     if (s_state.error_domain == domain &&
@@ -2515,10 +2390,68 @@ static void status_led_clear_retryable_error_locked(status_led_error_domain_t do
     }
 }
 
+static void status_led_start_ble_repair_locked(uint32_t now_ms)
+{
+    s_state.ble_state = STATUS_LED_BLE_REPAIRING;
+    s_state.ble_transition_ms = now_ms;
+    s_state.ble_confidence_until_ms = now_ms + STATUS_LED_BLE_REPAIR_CUE_MS;
+    s_state.ble_repair_until_ms = now_ms + STATUS_LED_BLE_REPAIR_CUE_MS;
+    s_state.status_window_until_ms = now_ms + STATUS_LED_STATUS_WINDOW_MS;
+    s_state.recording_active = false;
+    s_state.rec_source = STATUS_LED_REC_SOURCE_NONE;
+    s_state.recording_level_percent = 0U;
+    s_state.recording_level_updated_ms = 0U;
+    s_state.recording_level_hold_until_ms = 0U;
+    s_state.processing_active = false;
+    s_state.processing_started_ms = 0U;
+    status_led_clear_ok_locked();
+    status_led_clear_ec11_feedback_locked();
+    status_led_clear_retryable_error_locked(STATUS_LED_ERROR_DOMAIN_BLE);
+}
+
+static void status_led_preview_clear_activity_locked(void)
+{
+    s_state.ble_state = STATUS_LED_BLE_DISCONNECTED;
+    s_state.ble_transition_ms = 0U;
+    s_state.ble_confidence_until_ms = 0U;
+    s_state.ble_repair_until_ms = 0U;
+    s_state.preview_ble_override_until_ms = 0U;
+    s_state.oobe_confidence_until_ms = 0U;
+    s_state.recording_active = false;
+    s_state.rec_source = STATUS_LED_REC_SOURCE_NONE;
+    s_state.recording_level_percent = 0U;
+    s_state.recording_level_updated_ms = 0U;
+    s_state.recording_level_hold_until_ms = 0U;
+    s_state.processing_active = false;
+    s_state.processing_started_ms = 0U;
+    s_state.battery_valid = false;
+    s_state.battery_level_percent = 0U;
+    s_state.battery_mv = 0U;
+    s_state.external_power_present = false;
+    s_state.external_power_source_flags = 0U;
+    s_state.charging = false;
+    s_state.full = false;
+    s_state.raw_charging = false;
+    s_state.raw_full = false;
+    s_state.charge_full_latched = false;
+    s_state.charge_full_candidate_since_ms = 0U;
+    s_state.error_domain = STATUS_LED_ERROR_DOMAIN_NONE;
+    s_state.error_until_ms = 0U;
+    s_state.key_pressed_mask = 0U;
+    memset(s_state.key_until_ms, 0, sizeof(s_state.key_until_ms));
+    status_led_clear_ok_locked();
+    status_led_clear_ec11_feedback_locked();
+    s_state.shutdown_confirm_started_ms = 0U;
+    s_state.shutdown_confirm_until_ms = 0U;
+    s_state.shutdown_confirm_final = false;
+}
+
 static void status_led_preview_ready_baseline_locked(uint32_t now_ms)
 {
     s_state.ble_state = STATUS_LED_BLE_CONNECTED;
+    s_state.ble_transition_ms = now_ms;
     s_state.ble_confidence_until_ms = now_ms + STATUS_LED_BLE_CONFIDENCE_MS;
+    s_state.ble_repair_until_ms = 0U;
     if (!s_state.external_power_present && !s_state.battery_valid) {
         s_state.battery_valid = true;
         s_state.battery_level_percent = 80;
@@ -2537,8 +2470,18 @@ static void status_led_preview_effect_only_baseline_locked(void)
 {
     s_state.preview_effect_only = true;
     s_state.ble_state = STATUS_LED_BLE_DISCONNECTED;
+    s_state.ble_transition_ms = 0;
     s_state.ble_confidence_until_ms = 0;
+    s_state.ble_repair_until_ms = 0;
+    s_state.preview_ble_override_until_ms = 0;
     s_state.oobe_confidence_until_ms = 0;
+    s_state.recording_active = false;
+    s_state.rec_source = STATUS_LED_REC_SOURCE_NONE;
+    s_state.recording_level_percent = 0U;
+    s_state.recording_level_updated_ms = 0U;
+    s_state.recording_level_hold_until_ms = 0U;
+    s_state.processing_active = false;
+    s_state.processing_started_ms = 0U;
     s_state.battery_valid = false;
     s_state.battery_level_percent = 0;
     s_state.battery_mv = 0;
@@ -2554,9 +2497,12 @@ static void status_led_preview_effect_only_baseline_locked(void)
     s_state.error_until_ms = 0;
     s_state.ok_started_ms = 0;
     s_state.ok_until_ms = 0;
+    status_led_clear_ec11_feedback_locked();
     s_state.shutdown_confirm_started_ms = 0;
     s_state.shutdown_confirm_until_ms = 0;
     s_state.shutdown_confirm_final = false;
+    s_state.key_pressed_mask = 0U;
+    memset(s_state.key_until_ms, 0, sizeof(s_state.key_until_ms));
 }
 
 static void status_led_resume_output_locked(void)
@@ -2576,12 +2522,14 @@ static void status_led_force_manual_off(void)
         s_state.key_pressed_mask = 0;
         memset(s_state.key_until_ms, 0, sizeof(s_state.key_until_ms));
         s_state.ok_until_ms = 0;
+        status_led_clear_ec11_feedback_locked();
         s_state.error_domain = STATUS_LED_ERROR_DOMAIN_NONE;
         s_state.error_until_ms = 0;
         s_state.preview_suppress_accents = false;
         s_state.preview_effect_only = false;
         s_state.status_window_until_ms = 0;
         s_state.ble_confidence_until_ms = 0;
+        s_state.ble_repair_until_ms = 0;
         s_state.oobe_confidence_until_ms = 0;
         s_state.last_transition_ms = status_led_now_ms();
         status_led_set_last_reason_locked("manual_off");
@@ -3070,7 +3018,23 @@ void status_led_set_ble_state(status_led_ble_state_t state, bool confidence_wind
         if (!effect_only) {
             status_led_resume_output_locked();
         }
+        if (now_ms < s_state.preview_ble_override_until_ms &&
+            state != STATUS_LED_BLE_REPAIRING) {
+            xSemaphoreGive(s_mutex);
+            return;
+        }
         changed = s_state.ble_state != state;
+        const bool keep_repair_cue =
+            state == STATUS_LED_BLE_PAIRING && status_led_ble_repair_active_locked(now_ms);
+        if (state == STATUS_LED_BLE_REPAIRING) {
+            status_led_start_ble_repair_locked(now_ms);
+            changed = true;
+        } else if (!keep_repair_cue) {
+            s_state.ble_repair_until_ms = 0U;
+        }
+        if (changed && state != STATUS_LED_BLE_REPAIRING && !keep_repair_cue) {
+            s_state.ble_transition_ms = now_ms;
+        }
         s_state.ble_state = state;
         if (changed && !effect_only) {
             s_state.status_window_until_ms = now_ms + STATUS_LED_STATUS_WINDOW_MS;
@@ -3095,6 +3059,28 @@ void status_led_set_ble_state(status_led_ble_state_t state, bool confidence_wind
     }
 }
 
+void status_led_notify_ble_repairing(const char *reason)
+{
+    uint32_t now_ms = status_led_now_ms();
+    bool changed = false;
+    if (xSemaphoreTake(s_mutex, portMAX_DELAY) == pdTRUE) {
+        status_led_resume_output_locked();
+        s_state.preview_suppress_accents = false;
+        s_state.preview_effect_only = false;
+        s_state.preview_ble_override_until_ms = 0U;
+        status_led_start_ble_repair_locked(now_ms);
+        s_state.last_transition_ms = now_ms;
+        status_led_set_last_reason_locked(reason != NULL ? reason : "ble_repairing");
+        diag_log(DIAG_SRC_STATUS_LED, DIAG_LED_STATE, DIAG_SEV_INFO,
+                 1, (uint32_t)STATUS_LED_BLE_REPAIRING, 0, 0);
+        changed = true;
+        xSemaphoreGive(s_mutex);
+    }
+    if (changed) {
+        status_led_request_refresh();
+    }
+}
+
 void status_led_set_recording(bool active, status_led_rec_source_t source)
 {
     uint32_t now_ms = status_led_now_ms();
@@ -3108,6 +3094,7 @@ void status_led_set_recording(bool active, status_led_rec_source_t source)
         s_state.recording_level_updated_ms = active ? now_ms : 0U;
         s_state.recording_level_hold_until_ms = 0U;
         if (s_state.recording_active) {
+            s_state.ble_repair_until_ms = 0U;
             status_led_clear_ok_locked();
             status_led_clear_retryable_error_locked(STATUS_LED_ERROR_DOMAIN_REC);
         }
@@ -3136,24 +3123,13 @@ void status_led_set_recording_level(uint8_t level_percent)
         level_percent = 100U;
     }
     uint32_t now_ms = status_led_now_ms();
-    bool changed = false;
     if (xSemaphoreTake(s_mutex, portMAX_DELAY) == pdTRUE) {
         if (s_state.recording_active && s_state.rec_source != STATUS_LED_REC_SOURCE_NOT_AVAILABLE) {
-            uint8_t current = s_state.recording_level_percent;
-            if (level_percent > current) {
-                current = (uint8_t)((current + (level_percent * 3U)) / 4U);
-            } else {
-                current = (uint8_t)(((uint32_t)current * 7U + level_percent) / 8U);
-            }
-            s_state.recording_level_percent = current;
+            s_state.recording_level_percent = level_percent;
             s_state.recording_level_updated_ms = now_ms;
             s_state.recording_level_hold_until_ms = 0U;
-            changed = true;
         }
         xSemaphoreGive(s_mutex);
-    }
-    if (changed) {
-        status_led_request_refresh();
     }
 }
 
@@ -3170,18 +3146,13 @@ static void status_led_force_recording_level_for_review(uint8_t level_percent, u
     }
 
     uint32_t now_ms = status_led_now_ms();
-    bool changed = false;
     if (xSemaphoreTake(s_mutex, portMAX_DELAY) == pdTRUE) {
         if (s_state.recording_active && s_state.rec_source != STATUS_LED_REC_SOURCE_NOT_AVAILABLE) {
             s_state.recording_level_percent = level_percent;
             s_state.recording_level_updated_ms = now_ms;
             s_state.recording_level_hold_until_ms = now_ms + hold_ms;
-            changed = true;
         }
         xSemaphoreGive(s_mutex);
-    }
-    if (changed) {
-        status_led_request_refresh();
     }
 }
 
@@ -3194,6 +3165,7 @@ void status_led_set_processing(bool active, const char *reason)
         s_state.preview_effect_only = false;
         s_state.processing_active = active;
         if (active) {
+            s_state.ble_repair_until_ms = 0U;
             s_state.processing_started_ms = now_ms;
             status_led_clear_ok_locked();
             status_led_clear_retryable_error_locked(STATUS_LED_ERROR_DOMAIN_AI);
@@ -3262,6 +3234,52 @@ void status_led_notify_key_event(uint8_t key_index, bool pressed)
     }
 }
 
+void status_led_notify_ec11_feedback(status_led_ec11_feedback_t feedback)
+{
+    if (feedback != STATUS_LED_EC11_FEEDBACK_PRESS &&
+        feedback != STATUS_LED_EC11_FEEDBACK_ROTATE_CW &&
+        feedback != STATUS_LED_EC11_FEEDBACK_ROTATE_CCW) {
+        return;
+    }
+
+    uint32_t now_ms = status_led_now_ms();
+    bool changed = false;
+    if (xSemaphoreTake(s_mutex, portMAX_DELAY) == pdTRUE) {
+        if (s_state.preview_effect_only) {
+            xSemaphoreGive(s_mutex);
+            return;
+        }
+        status_led_resume_output_locked();
+        bool rotation_feedback =
+            feedback == STATUS_LED_EC11_FEEDBACK_ROTATE_CW ||
+            feedback == STATUS_LED_EC11_FEEDBACK_ROTATE_CCW;
+        bool active_rotation_feedback =
+            status_led_ec11_feedback_active_locked(now_ms) &&
+            s_state.ec11_feedback != STATUS_LED_EC11_FEEDBACK_PRESS;
+        s_state.ec11_feedback = feedback;
+        if (!rotation_feedback || !active_rotation_feedback) {
+            s_state.ec11_feedback_started_ms = now_ms;
+        }
+        s_state.ec11_feedback_until_ms = now_ms + STATUS_LED_EC11_FEEDBACK_MS;
+        s_state.status_window_until_ms = now_ms + STATUS_LED_STATUS_WINDOW_MS;
+        s_state.last_transition_ms = now_ms;
+        status_led_set_last_reason_locked("ec11_feedback");
+        diag_log(
+            DIAG_SRC_STATUS_LED,
+            DIAG_LED_STATE,
+            DIAG_SEV_INFO,
+            6,
+            (uint32_t)feedback,
+            STATUS_LED_EC11_FEEDBACK_MS,
+            0);
+        changed = true;
+        xSemaphoreGive(s_mutex);
+    }
+    if (changed) {
+        status_led_request_refresh();
+    }
+}
+
 void status_led_notify_shutdown_confirm(bool final, const char *reason)
 {
     uint32_t now_ms = status_led_now_ms();
@@ -3301,6 +3319,12 @@ void status_led_set_error(
     if (xSemaphoreTake(s_mutex, portMAX_DELAY) == pdTRUE) {
         status_led_resume_output_locked();
         s_state.preview_effect_only = false;
+        s_state.preview_ble_override_until_ms = 0U;
+        s_state.ble_repair_until_ms = 0U;
+        if (s_state.ble_state == STATUS_LED_BLE_REPAIRING) {
+            s_state.ble_state = STATUS_LED_BLE_DISCONNECTED;
+            s_state.ble_transition_ms = now_ms;
+        }
         s_state.error_domain = domain;
         s_state.error_severity = severity;
         s_state.error_started_ms = now_ms;
@@ -3347,6 +3371,15 @@ void status_led_set_low_power_disabled(bool disabled)
         }
         s_state.preview_suppress_accents = false;
         s_state.preview_effect_only = false;
+        s_state.preview_ble_override_until_ms = 0U;
+        if (disabled) {
+            s_state.ble_repair_until_ms = 0U;
+            status_led_clear_ec11_feedback_locked();
+            if (s_state.ble_state == STATUS_LED_BLE_REPAIRING) {
+                s_state.ble_state = STATUS_LED_BLE_DISCONNECTED;
+                s_state.ble_transition_ms = now_ms;
+            }
+        }
         s_state.last_transition_ms = now_ms;
         status_led_set_last_reason_locked(disabled ? "low_power_off" : "low_power_resume");
         status_led_log_output_state_locked(
@@ -3367,7 +3400,15 @@ void status_led_prepare_sleep(void)
         s_state.test_mode = STATUS_LED_TEST_NONE;
         s_state.preview_suppress_accents = false;
         s_state.preview_effect_only = false;
-        s_state.last_transition_ms = status_led_now_ms();
+        s_state.preview_ble_override_until_ms = 0U;
+        s_state.ble_repair_until_ms = 0U;
+        status_led_clear_ec11_feedback_locked();
+        uint32_t now_ms = status_led_now_ms();
+        if (s_state.ble_state == STATUS_LED_BLE_REPAIRING) {
+            s_state.ble_state = STATUS_LED_BLE_DISCONNECTED;
+            s_state.ble_transition_ms = now_ms;
+        }
+        s_state.last_transition_ms = now_ms;
         status_led_set_last_reason_locked("prepare_sleep");
         status_led_log_output_state_locked(0);
         changed = true;
@@ -3666,8 +3707,14 @@ static void status_led_fill_print_snapshot_locked(status_led_print_snapshot_t *s
     snapshot->battery_display_mv = s_state.battery_display_mv;
     snapshot->status_window_until_ms = s_state.status_window_until_ms;
     snapshot->ble_confidence_until_ms = s_state.ble_confidence_until_ms;
+    snapshot->ble_repair_until_ms = s_state.ble_repair_until_ms;
     snapshot->oobe_confidence_until_ms = s_state.oobe_confidence_until_ms;
+    snapshot->shutdown_confirm_started_ms = s_state.shutdown_confirm_started_ms;
+    snapshot->shutdown_confirm_until_ms = s_state.shutdown_confirm_until_ms;
+    snapshot->shutdown_confirm_final = s_state.shutdown_confirm_final;
     snapshot->charge_full_candidate_since_ms = s_state.charge_full_candidate_since_ms;
+    snapshot->ble_transition_ms = s_state.ble_transition_ms;
+    snapshot->preview_ble_override_until_ms = s_state.preview_ble_override_until_ms;
     snapshot->last_transition_ms = s_state.last_transition_ms;
     snapshot->last_estimated_current_ma = s_state.last_estimated_current_ma;
     snapshot->last_current_budget_ma = s_state.last_current_budget_ma;
@@ -3694,7 +3741,10 @@ static void status_led_print_status(void)
     device_settings_snapshot_t device_settings = {0};
     uint32_t now_ms = status_led_now_ms();
     if (xSemaphoreTake(s_mutex, portMAX_DELAY) == pdTRUE) {
+        status_led_frame_t sampled_frame;
+        status_led_render_frame_locked(&sampled_frame, now_ms);
         status_led_fill_print_snapshot_locked(&snapshot);
+        snapshot.last_frame = sampled_frame;
         for (size_t index = 0; index < STATUS_LED_STRIP_COUNT; ++index) {
             strip_gpios[index] = s_strips[index].gpio;
             strip_counts[index] = s_strips[index].led_count;
@@ -3715,8 +3765,23 @@ static void status_led_print_status(void)
         now_ms < snapshot.status_window_until_ms ? snapshot.status_window_until_ms - now_ms : 0U;
     const uint32_t ble_confidence_ms_left =
         now_ms < snapshot.ble_confidence_until_ms ? snapshot.ble_confidence_until_ms - now_ms : 0U;
+    const uint32_t ble_repair_ms_left =
+        now_ms < snapshot.ble_repair_until_ms ? snapshot.ble_repair_until_ms - now_ms : 0U;
     const uint32_t oobe_confidence_ms_left =
         now_ms < snapshot.oobe_confidence_until_ms ? snapshot.oobe_confidence_until_ms - now_ms : 0U;
+    const uint32_t preview_ble_override_ms_left =
+        now_ms < snapshot.preview_ble_override_until_ms ? snapshot.preview_ble_override_until_ms - now_ms : 0U;
+    const uint32_t shutdown_confirm_elapsed_ms =
+        snapshot.shutdown_confirm_started_ms != 0U && now_ms >= snapshot.shutdown_confirm_started_ms
+            ? now_ms - snapshot.shutdown_confirm_started_ms
+            : 0U;
+    const bool shutdown_confirm_active =
+        snapshot.shutdown_confirm_started_ms != 0U &&
+        (!snapshot.shutdown_confirm_final || now_ms < snapshot.shutdown_confirm_until_ms);
+    const bool shutdown_confirm_latched =
+        shutdown_confirm_active &&
+        !snapshot.shutdown_confirm_final &&
+        shutdown_confirm_elapsed_ms >= STATUS_LED_SHUTDOWN_CONFIRM_MS;
     const uint32_t charge_full_candidate_ms =
         snapshot.charge_full_candidate_since_ms != 0 && now_ms >= snapshot.charge_full_candidate_since_ms
             ? now_ms - snapshot.charge_full_candidate_since_ms
@@ -3744,6 +3809,7 @@ static void status_led_print_status(void)
         " status_tail_guard_pixels=%u status_tail_reinforce=recording_processing"
         " status_tail_reinforce_writes=%u"
         " strip_dirty_tx=1 status_tx_last=1 dynamic_active_accents=1"
+        " status_query_samples_current_render=1"
         " effect_only_preview=1"
         " active_work_status_dynamic=1 active_work_status_static=0"
         " led_contract_rev=" STATUS_LED_CONTRACT_REV
@@ -3801,20 +3867,28 @@ static void status_led_print_status(void)
         (unsigned)status_tail_guard_pixels);
     printf(
         "~LED:STATUS detail=state ble=%s rec_active=%u rec_source=%s rec_level=%u rec_level_hold_ms_left=%" PRIu32 " processing=%u"
+        " ble_repair_ms_left=%" PRIu32
         " error_domain=%s error_severity=%s output_disabled=%u low_power_disabled=%u"
-        " preview_suppress_accents=%u preview_effect_only=%u\n",
+        " preview_suppress_accents=%u preview_effect_only=%u preview_ble_override_ms_left=%" PRIu32
+        " shutdown_confirm_active=%u shutdown_confirm_final=%u shutdown_confirm_latched=%u shutdown_confirm_elapsed_ms=%" PRIu32 "\n",
         status_led_ble_name(snapshot.ble_state),
         snapshot.recording_active ? 1U : 0U,
         status_led_rec_source_name(snapshot.rec_source),
         snapshot.recording_level_percent,
         rec_level_hold_ms_left,
         snapshot.processing_active ? 1U : 0U,
+        ble_repair_ms_left,
         status_led_error_domain_name(snapshot.error_domain),
         status_led_error_severity_name(snapshot.error_severity),
         snapshot.output_disabled ? 1U : 0U,
         snapshot.low_power_disabled ? 1U : 0U,
         snapshot.preview_suppress_accents ? 1U : 0U,
-        snapshot.preview_effect_only ? 1U : 0U);
+        snapshot.preview_effect_only ? 1U : 0U,
+        preview_ble_override_ms_left,
+        shutdown_confirm_active ? 1U : 0U,
+        snapshot.shutdown_confirm_final ? 1U : 0U,
+        shutdown_confirm_latched ? 1U : 0U,
+        shutdown_confirm_elapsed_ms);
     printf(
         "~LED:STATUS detail=power battery_valid=%u battery_level=%u battery_mv=%" PRIu32
         " battery_display_valid=%u battery_display_level=%u battery_display_mv=%" PRIu32
@@ -3824,7 +3898,9 @@ static void status_led_print_status(void)
         " full_latched=%u full_candidate_ms=%" PRIu32
         " full_debounce_ms=%u full_min_mv=%u full_min_percent=%u"
         " status_window_ms_left=%" PRIu32 " ble_confidence_ms_left=%" PRIu32
-        " oobe_confidence_ms_left=%" PRIu32 " last_transition_ms=%" PRIu32
+        " ble_repair_ms_left=%" PRIu32
+        " oobe_confidence_ms_left=%" PRIu32 " preview_ble_override_ms_left=%" PRIu32
+        " ble_transition_ms=%" PRIu32 " last_transition_ms=%" PRIu32
         " current_ma=%" PRIu32 " current_budget_ma=%" PRIu32 "\n",
         snapshot.battery_valid ? 1U : 0U,
         snapshot.battery_level_percent,
@@ -3847,7 +3923,10 @@ static void status_led_print_status(void)
         STATUS_LED_CHARGE_FULL_MIN_PERCENT,
         status_window_ms_left,
         ble_confidence_ms_left,
+        ble_repair_ms_left,
         oobe_confidence_ms_left,
+        preview_ble_override_ms_left,
+        snapshot.ble_transition_ms,
         snapshot.last_transition_ms,
         snapshot.last_estimated_current_ma,
         snapshot.last_current_budget_ma);
@@ -3879,10 +3958,13 @@ static void status_led_print_status(void)
         "~LED:STATUS profile=%s detail=summary profile_cap_percent=%u"
         " budget_scale_percent=%u budget_limited_by_current=%u"
         " ble=%s rec_active=%u rec_source=%s processing=%u"
+        " ble_repair_ms_left=%" PRIu32
         " error_domain=%s error_severity=%s battery_level=%u external_power=%u external_power_source=%s charging=%u full=%u"
         " active_flags=PWR:%u,BLE:%u,REC:%u,AI:%u,OK:%u,WARN:%u,EC11:%u,KEY:%u,EDGE:%u"
         " key_mask=0x%02x test_mode=%u test_strip_mask=0x%02x"
-        " preview_suppress_accents=%u preview_effect_only=%u last_reason=%s\n",
+        " preview_suppress_accents=%u preview_effect_only=%u preview_ble_override_ms_left=%" PRIu32
+        " shutdown_confirm_active=%u shutdown_confirm_latched=%u"
+        " last_reason=%s\n",
         status_led_profile_name(snapshot.profile),
         profile_cap_percent,
         snapshot.last_budget_scale_percent,
@@ -3891,6 +3973,7 @@ static void status_led_print_status(void)
         snapshot.recording_active ? 1U : 0U,
         status_led_rec_source_name(snapshot.rec_source),
         snapshot.processing_active ? 1U : 0U,
+        ble_repair_ms_left,
         status_led_error_domain_name(snapshot.error_domain),
         status_led_error_severity_name(snapshot.error_severity),
         snapshot.battery_level_percent,
@@ -3912,6 +3995,9 @@ static void status_led_print_status(void)
         (unsigned)snapshot.test_strip_mask,
         snapshot.preview_suppress_accents ? 1U : 0U,
         snapshot.preview_effect_only ? 1U : 0U,
+        preview_ble_override_ms_left,
+        shutdown_confirm_active ? 1U : 0U,
+        shutdown_confirm_latched ? 1U : 0U,
         snapshot.last_reason);
     fflush(stdout);
 }
@@ -3978,7 +4064,7 @@ static void status_led_print_privacy(void)
         return;
     }
     printf(
-        "~LED:PRIVACY rec_allowed=%u rec_active=%u capture_source=%s rec_not_available_shows=WARN+REC\n",
+        "~LED:PRIVACY rec_allowed=%u rec_active=%u capture_source=%s rec_not_available_shows=WARN_ONLY\n",
         snapshot.recording_active && snapshot.rec_source != STATUS_LED_REC_SOURCE_NOT_AVAILABLE ? 1U : 0U,
         snapshot.recording_active ? 1U : 0U,
         status_led_rec_source_name(snapshot.rec_source));
@@ -4000,10 +4086,13 @@ static void status_led_preview_state(const char *state)
     s_state.status_window_until_ms = now_ms + STATUS_LED_STATUS_WINDOW_MS;
     s_state.last_power_poll_ms = now_ms;
     s_state.last_transition_ms = now_ms;
+    status_led_preview_clear_activity_locked();
+    s_state.preview_ble_override_until_ms = now_ms + STATUS_LED_PREVIEW_BLE_OVERRIDE_MS;
     status_led_set_last_reason_locked("preview");
 
     if (strcasecmp(state, "ready") == 0 || strcasecmp(state, "connected") == 0) {
         s_state.ble_state = STATUS_LED_BLE_CONNECTED;
+        s_state.ble_transition_ms = now_ms;
         s_state.ble_confidence_until_ms = now_ms + STATUS_LED_BLE_CONFIDENCE_MS;
         s_state.battery_valid = true;
         s_state.battery_level_percent = 80;
@@ -4018,9 +4107,19 @@ static void status_led_preview_state(const char *state)
         s_state.charge_full_candidate_since_ms = 0;
     } else if (strcasecmp(state, "pairing") == 0) {
         s_state.ble_state = STATUS_LED_BLE_PAIRING;
+        s_state.ble_transition_ms = now_ms;
     } else if (strcasecmp(state, "reconnect") == 0 || strcasecmp(state, "reconnecting") == 0) {
         s_state.ble_state = STATUS_LED_BLE_RECONNECTING;
+        s_state.ble_transition_ms = now_ms;
+    } else if (strcasecmp(state, "repair") == 0 ||
+               strcasecmp(state, "repairing") == 0 ||
+               strcasecmp(state, "re_pair") == 0 ||
+               strcasecmp(state, "re-pair") == 0 ||
+               strcasecmp(state, "ble_repair") == 0 ||
+               strcasecmp(state, "recovery") == 0) {
+        status_led_start_ble_repair_locked(now_ms);
     } else if (strcasecmp(state, "capture") == 0 || strcasecmp(state, "device_mic") == 0) {
+        status_led_preview_ready_baseline_locked(now_ms);
         s_state.recording_active = true;
         s_state.rec_source = STATUS_LED_REC_SOURCE_DEVICE_MIC;
         status_led_clear_ok_locked();
@@ -4038,6 +4137,7 @@ static void status_led_preview_state(const char *state)
         s_state.processing_active = false;
         s_state.processing_started_ms = 0;
     } else if (strcasecmp(state, "desktop_mic") == 0) {
+        status_led_preview_ready_baseline_locked(now_ms);
         s_state.recording_active = true;
         s_state.rec_source = STATUS_LED_REC_SOURCE_DESKTOP_MIC;
         status_led_clear_ok_locked();
@@ -4144,6 +4244,7 @@ static void status_led_preview_state(const char *state)
         s_state.error_started_ms = now_ms;
         s_state.error_until_ms = now_ms + STATUS_LED_ERROR_HOLD_MS;
     } else if (strcasecmp(state, "processing") == 0 || strcasecmp(state, "thinking") == 0 || strcasecmp(state, "ota") == 0) {
+        status_led_preview_ready_baseline_locked(now_ms);
         s_state.processing_active = true;
         s_state.processing_started_ms = now_ms;
         status_led_clear_ok_locked();
@@ -4164,6 +4265,7 @@ static void status_led_preview_state(const char *state)
         s_state.processing_active = true;
         s_state.processing_started_ms = now_ms;
     } else if (strcasecmp(state, "ok") == 0 || strcasecmp(state, "success") == 0) {
+        status_led_preview_ready_baseline_locked(now_ms);
         s_state.ok_started_ms = now_ms;
         s_state.ok_until_ms = now_ms + STATUS_LED_OK_TOTAL_MS;
     } else if (strcasecmp(state, "shutdown_confirm") == 0 ||
@@ -4222,9 +4324,14 @@ static void status_led_preview_state(const char *state)
     } else if (strcasecmp(state, "sleep") == 0) {
         s_state.low_power_disabled = true;
         s_state.output_disabled = true;
+        s_state.preview_ble_override_until_ms = 0;
+        status_led_clear_ec11_feedback_locked();
     } else if (strcasecmp(state, "clear") == 0 || strcasecmp(state, "off") == 0) {
         s_state.ble_state = STATUS_LED_BLE_DISCONNECTED;
+        s_state.ble_transition_ms = 0;
         s_state.ble_confidence_until_ms = 0;
+        s_state.ble_repair_until_ms = 0;
+        s_state.preview_ble_override_until_ms = 0;
         s_state.oobe_confidence_until_ms = 0;
         s_state.recording_active = false;
         s_state.rec_source = STATUS_LED_REC_SOURCE_NONE;
@@ -4248,6 +4355,7 @@ static void status_led_preview_state(const char *state)
         s_state.preview_suppress_accents = false;
         s_state.preview_effect_only = false;
         status_led_clear_ok_locked();
+        status_led_clear_ec11_feedback_locked();
     } else {
         ESP_LOGW(TAG, "LED preview unknown state: %s", state);
     }

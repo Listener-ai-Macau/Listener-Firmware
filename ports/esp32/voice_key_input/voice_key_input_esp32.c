@@ -204,6 +204,7 @@ static void voice_key_input_dispatch_custom_key_event(const char *source, uint32
         VOICE_KEY_INPUT_EC11_FALLBACK_MODIFIER,
         "ec11.push.custom");
     if (ret == ESP_OK) {
+        status_led_notify_ec11_feedback(STATUS_LED_EC11_FEEDBACK_PRESS);
         ESP_LOGI(
             TAG,
             "%s %s custom fallback queued: logical=EC11 usage=Shift+F13 hid_usage=0x%02X modifier=0x%02X",
