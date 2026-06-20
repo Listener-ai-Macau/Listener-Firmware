@@ -59,13 +59,14 @@ CHECKS = {
         "STATUS_LED_STATUS_TAIL_OVERLAP_FALL_MS 2500U",
         "STATUS_LED_STATUS_TAIL_OVERLAP_LOW_HOLD_MS 1600U",
         "STATUS_LED_STATUS_TAIL_OVERLAP_QUANTUM_PERCENT 1U",
+        "STATUS_LED_TYPE_DEFINED_MAX_PERCENT 100U",
         "STATUS_LED_RECORDING_LEVEL_EFFECT_MIN_PERCENT 8U",
-        "STATUS_LED_RECORDING_LEVEL_EFFECT_MAX_PERCENT 72U",
+        "STATUS_LED_RECORDING_LEVEL_EFFECT_MAX_PERCENT 100U",
         "STATUS_LED_RECORDING_LEVEL_ATTACK_PERCENT_PER_SEC 100U",
         "STATUS_LED_RECORDING_LEVEL_RELEASE_PERCENT_PER_SEC 45U",
         "STATUS_LED_RECORDING_LEVEL_QUANTUM_PERCENT 2U",
         "STATUS_LED_PROCESSING_THINK_EFFECT_MIN_PERCENT 0U",
-        "STATUS_LED_PROCESSING_THINK_EFFECT_MAX_PERCENT 90U",
+        "STATUS_LED_PROCESSING_THINK_EFFECT_MAX_PERCENT 100U",
         "STATUS_LED_PROCESSING_THINK_QUANTUM_PERCENT 2U",
         "STATUS_LED_PROCESSING_THINK_PERIOD_MS 1950U",
         "STATUS_LED_PROCESSING_THINK_BEAT_RISE_MS 50U",
@@ -73,8 +74,8 @@ CHECKS = {
         "STATUS_LED_PROCESSING_THINK_BEAT_FALL_MS 60U",
         "STATUS_LED_PROCESSING_THINK_GROUP_GAP_MS 520U",
         "STATUS_LED_PROCESSING_THINK_BEAT_GAP_MS 50U",
-        "STATUS_LED_PROCESSING_THINK_EFFECT_BEAT2_PERCENT 82U",
-        "STATUS_LED_PROCESSING_THINK_EFFECT_BEAT3_PERCENT 90U",
+        "STATUS_LED_PROCESSING_THINK_EFFECT_BEAT2_PERCENT 78U",
+        "STATUS_LED_PROCESSING_THINK_EFFECT_BEAT3_PERCENT 100U",
         "recording_level_visual_percent",
         "status_led_processing_thinking_phase_ms_locked",
         "status_led_recording_level_smoothed_percent_locked",
@@ -277,9 +278,15 @@ CHECKS = {
         "preview_ble_override_until_ms",
         "preview_ble_override_ms_left",
         "state != STATUS_LED_BLE_REPAIRING",
-        "uint8_t percent = status_led_double_pulse_on(ble_elapsed_ms, 2000U) ? 58U : 22U;",
+        "STATUS_LED_BLE_REPAIR_MIN_PERCENT 30U",
+        "STATUS_LED_BLE_REPAIR_MAX_PERCENT 100U",
+        "STATUS_LED_BLE_PAIRING_PULSE_PERCENT 100U",
+        "STATUS_LED_BLE_RECONNECT_MIN_PERCENT 30U",
+        "STATUS_LED_BLE_RECONNECT_MAX_PERCENT 100U",
+        "STATUS_LED_BLE_CONNECTED_CONFIRM_MIN_PERCENT 35U",
+        "STATUS_LED_BLE_CONNECTED_STEADY_PERCENT 100U",
         "ble_elapsed_ms < STATUS_LED_BLE_CONNECTED_CONFIRM_MS",
-        "STATUS_LED_BLE_CONNECTED_CONFIRM_MS,\n                    32U,\n                    70U",
+        "STATUS_LED_BLE_CONNECTED_CONFIRM_MS,\n                    STATUS_LED_BLE_CONNECTED_CONFIRM_MIN_PERCENT,\n                    STATUS_LED_BLE_CONNECTED_STEADY_PERCENT",
         "status_led_preview_clear_activity_locked",
         "status_led_render_edge_clockwise_chase_locked",
         "ble_repair_ms_left=%",
@@ -348,12 +355,14 @@ CHECKS = {
         "STATUS_LED_RECORDING_LEVEL_HOLD_MAX_MS 120000U",
         "STATUS_LED_ACTIVE_WORK_REC_PERCENT 34U",
         "STATUS_LED_ACTIVE_WORK_AI_PERCENT 32U",
-        "STATUS_LED_ACTIVE_WORK_REC_MAX_PERCENT 72U",
+        "STATUS_LED_ACTIVE_WORK_REC_MAX_PERCENT 100U",
         "STATUS_LED_PROCESSING_BREATH_PERIOD_MS 1800U",
         "STATUS_LED_PROCESSING_BREATH_MIN_PERCENT 28U",
-        "STATUS_LED_PROCESSING_BREATH_MAX_PERCENT 92U",
+        "STATUS_LED_PROCESSING_BREATH_MAX_PERCENT 100U",
         "STATUS_LED_ACCENT_BREATHE_QUANTUM_PERCENT 2U",
         "STATUS_LED_EC11_RECORDING_BASE_MIN_PERCENT 4U",
+        "STATUS_LED_EC11_ACCENT_MAX_PERCENT 100U",
+        "STATUS_LED_EDGE_ACCENT_MAX_PERCENT 100U",
         "STATUS_LED_EC11_RECORDING_BASE_MAX_PERCENT 5U",
         "STATUS_LED_EDGE_RECORDING_SURFACE_BASE_MIN_PERCENT 4U",
         "STATUS_LED_EDGE_RECORDING_SURFACE_BASE_MAX_PERCENT 5U",
@@ -878,12 +887,12 @@ def main() -> int:
     for token in (
         "STATUS_LED_RECORDING_LEVEL_STALE_MS",
         "STATUS_LED_RECORDING_LEVEL_EFFECT_MIN_PERCENT 8U",
-        "STATUS_LED_RECORDING_LEVEL_EFFECT_MAX_PERCENT 72U",
+        "STATUS_LED_RECORDING_LEVEL_EFFECT_MAX_PERCENT 100U",
         "STATUS_LED_RECORDING_LEVEL_ATTACK_PERCENT_PER_SEC 100U",
         "STATUS_LED_RECORDING_LEVEL_RELEASE_PERCENT_PER_SEC 45U",
         "STATUS_LED_RECORDING_LEVEL_QUANTUM_PERCENT 2U",
         "STATUS_LED_PROCESSING_THINK_EFFECT_MIN_PERCENT 0U",
-        "STATUS_LED_PROCESSING_THINK_EFFECT_MAX_PERCENT 90U",
+        "STATUS_LED_PROCESSING_THINK_EFFECT_MAX_PERCENT 100U",
         "STATUS_LED_PROCESSING_THINK_QUANTUM_PERCENT 2U",
         "STATUS_LED_PROCESSING_THINK_PERIOD_MS 1950U",
         "STATUS_LED_PROCESSING_THINK_BEAT_RISE_MS 50U",
@@ -891,8 +900,8 @@ def main() -> int:
         "STATUS_LED_PROCESSING_THINK_BEAT_FALL_MS 60U",
         "STATUS_LED_PROCESSING_THINK_GROUP_GAP_MS 520U",
         "STATUS_LED_PROCESSING_THINK_BEAT_GAP_MS 50U",
-        "STATUS_LED_PROCESSING_THINK_EFFECT_BEAT2_PERCENT 82U",
-        "STATUS_LED_PROCESSING_THINK_EFFECT_BEAT3_PERCENT 90U",
+        "STATUS_LED_PROCESSING_THINK_EFFECT_BEAT2_PERCENT 78U",
+        "STATUS_LED_PROCESSING_THINK_EFFECT_BEAT3_PERCENT 100U",
         "STATUS_LED_EC11_RECORDING_FLOW_STEP_MS 360U",
         "STATUS_LED_EDGE_RECORDING_FLOW_STEP_MS 720U",
         "status_led_recording_level_target_percent_locked",
@@ -1010,7 +1019,7 @@ def main() -> int:
         )
     if "uint32_t dot = (STATUS_LED_EC11_COUNT - 1U - step) % STATUS_LED_EC11_COUNT;" not in status_led:
         failures.append("status_led.c: EC11 processing and rotation motion must use the current clockwise index convention")
-    if "status_led_ble_repair_percent_locked(now_ms, 22U, 72U)" not in status_led:
+    if "status_led_ble_repair_percent_locked(\n            now_ms,\n            STATUS_LED_BLE_REPAIR_MIN_PERCENT,\n            STATUS_LED_BLE_REPAIR_MAX_PERCENT)" not in status_led:
         failures.append("status_led.c: BLE repair status LED must use the shared repair blink envelope")
     repair_envelope = re.search(
         r"static\s+uint8_t\s+status_led_ble_repair_percent_locked[^{]*\{(?P<body>[\s\S]*?)\n\}",
@@ -1247,6 +1256,22 @@ def main() -> int:
         status_led,
     ):
         failures.append("status_led.c: AI status LED must use the smooth thinking pulse effect through the tail-safe desired mapper")
+    tail_mapper = re.search(
+        r"static\s+uint8_t\s+status_led_status_tail_desired_for_effect_percent_locked[^{]*\{(?P<body>[\s\S]*?)\n\}",
+        status_led,
+    )
+    if not tail_mapper:
+        failures.append("status_led.c: missing status tail dynamic brightness mapper")
+    else:
+        tail_mapper_body = tail_mapper.group("body")
+        for forbidden in ("s_state.brightness_percent", "status_zone_brightness_percent", "combined_percent"):
+            if forbidden in tail_mapper_body:
+                failures.append(
+                    "status_led.c: status tail dynamic brightness must remain a Type-cap ratio, not inverse-compensate user brightness"
+                )
+                break
+        if "return target_effect_percent > desired_percent ? desired_percent : target_effect_percent;" not in tail_mapper_body:
+            failures.append("status_led.c: status tail dynamic mapper must clamp effect percent before Type/user caps scale it")
     if not re.search(
         r"static\s+uint8_t\s+status_led_status_tail_reinforce_write_count[\s\S]*?"
         r"STATUS_LED_STATUS_TAIL_OVERLAP_REINFORCE_WRITES",

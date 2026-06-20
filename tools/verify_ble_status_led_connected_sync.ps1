@@ -77,8 +77,8 @@ Assert-Contains $statusLed 'STATUS_LED_BLE_CONFIDENCE_MS\s+8000U' `
     "connected BLE confidence window must remain bounded"
 Assert-Contains $statusLed 'STATUS_LED_BATTERY_IDLE_BLE_HEARTBEAT_ON_MS\s+120U' `
     "battery idle BLE heartbeat must be brief"
-Assert-Contains $statusLed 'case STATUS_LED_BLE_CONNECTED:[\s\S]*?confidence \|\| status_window[\s\S]*?status_led_token_locked\(ble_blue,\s*48U,\s*false\)[\s\S]*?battery_idle[\s\S]*?STATUS_LED_BATTERY_IDLE_BLE_HEARTBEAT_PERCENT[\s\S]*?STATUS_LED_PROFILE_STANDARD[\s\S]*?status_led_token_locked\(ble_blue,\s*30U,\s*false\)' `
-    "connected rendering must transition from confidence brightness to battery idle heartbeat or plugged steady low blue"
+Assert-Contains $statusLed 'case STATUS_LED_BLE_CONNECTED:[\s\S]*?confidence \|\| status_window[\s\S]*?STATUS_LED_BLE_CONNECTED_STEADY_PERCENT[\s\S]*?battery_idle[\s\S]*?STATUS_LED_BATTERY_IDLE_BLE_HEARTBEAT_PERCENT[\s\S]*?else if \(!battery_idle\)[\s\S]*?STATUS_LED_BLE_CONNECTED_STEADY_PERCENT' `
+    "connected rendering must use the Type/user-capped full-scale blue outside battery idle heartbeat"
 Assert-Contains $statusLed 'const bool active_work = s_state\.recording_active \|\| s_state\.processing_active;' `
     "status LED renderer must define active work for recording/processing visibility"
 Assert-Contains $statusLed 'percent = \(status_window \|\| active_work\) \? 46U : 0U;' `

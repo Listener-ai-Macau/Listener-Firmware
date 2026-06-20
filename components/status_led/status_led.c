@@ -42,14 +42,17 @@
 #define STATUS_LED_STATUS_TAIL_OVERLAP_FALL_MS 2500U
 #define STATUS_LED_STATUS_TAIL_OVERLAP_LOW_HOLD_MS 1600U
 #define STATUS_LED_STATUS_TAIL_OVERLAP_QUANTUM_PERCENT 1U
+// Routine effects express their peaks against the Type/user-defined maximum; the
+// renderer applies plugged/battery and per-zone caps after these ratios.
+#define STATUS_LED_TYPE_DEFINED_MAX_PERCENT 100U
 // REC/AI motion stays on the DMA-backed status strip; audio only updates a sampled envelope.
 #define STATUS_LED_RECORDING_LEVEL_EFFECT_MIN_PERCENT 8U
-#define STATUS_LED_RECORDING_LEVEL_EFFECT_MAX_PERCENT 72U
+#define STATUS_LED_RECORDING_LEVEL_EFFECT_MAX_PERCENT 100U
 #define STATUS_LED_RECORDING_LEVEL_ATTACK_PERCENT_PER_SEC 100U
 #define STATUS_LED_RECORDING_LEVEL_RELEASE_PERCENT_PER_SEC 45U
 #define STATUS_LED_RECORDING_LEVEL_QUANTUM_PERCENT 2U
 #define STATUS_LED_PROCESSING_THINK_EFFECT_MIN_PERCENT 0U
-#define STATUS_LED_PROCESSING_THINK_EFFECT_MAX_PERCENT 90U
+#define STATUS_LED_PROCESSING_THINK_EFFECT_MAX_PERCENT 100U
 #define STATUS_LED_PROCESSING_THINK_QUANTUM_PERCENT 2U
 #define STATUS_LED_PROCESSING_THINK_PERIOD_MS 1950U
 #define STATUS_LED_PROCESSING_THINK_BEAT_RISE_MS 50U
@@ -57,8 +60,8 @@
 #define STATUS_LED_PROCESSING_THINK_BEAT_FALL_MS 60U
 #define STATUS_LED_PROCESSING_THINK_GROUP_GAP_MS 520U
 #define STATUS_LED_PROCESSING_THINK_BEAT_GAP_MS 50U
-#define STATUS_LED_PROCESSING_THINK_EFFECT_BEAT2_PERCENT 82U
-#define STATUS_LED_PROCESSING_THINK_EFFECT_BEAT3_PERCENT 90U
+#define STATUS_LED_PROCESSING_THINK_EFFECT_BEAT2_PERCENT 78U
+#define STATUS_LED_PROCESSING_THINK_EFFECT_BEAT3_PERCENT 100U
 #define STATUS_LED_STRIP_MASK_STATUS (1U << STATUS_LED_STRIP_STATUS)
 #define STATUS_LED_STRIP_MASK_EC11 (1U << STATUS_LED_STRIP_EC11)
 #define STATUS_LED_STRIP_MASK_KEY (1U << STATUS_LED_STRIP_KEY)
@@ -97,9 +100,17 @@
 #define STATUS_LED_LOW_BATTERY_STEADY_PERCENT 24U
 #define STATUS_LED_FULL_STEADY_PERCENT 100U
 #define STATUS_LED_FULL_STATUS_STEADY_PERCENT 100U
+#define STATUS_LED_BLE_REPAIR_MIN_PERCENT 30U
+#define STATUS_LED_BLE_REPAIR_MAX_PERCENT 100U
+#define STATUS_LED_BLE_PAIRING_PULSE_PERCENT 100U
+#define STATUS_LED_BLE_RECONNECT_MIN_PERCENT 30U
+#define STATUS_LED_BLE_RECONNECT_MAX_PERCENT 100U
+#define STATUS_LED_BLE_CONNECTED_CONFIRM_MIN_PERCENT 35U
+#define STATUS_LED_BLE_CONNECTED_STEADY_PERCENT 100U
 #define STATUS_LED_BATTERY_IDLE_BLE_HEARTBEAT_ON_MS 120U
 #define STATUS_LED_BATTERY_IDLE_BLE_HEARTBEAT_OFF_MS 7880U
 #define STATUS_LED_BATTERY_IDLE_BLE_HEARTBEAT_PERCENT 18U
+#define STATUS_LED_RESULT_PEAK_PERCENT 100U
 #define STATUS_LED_FULL_BRIGHTNESS_PERCENT 100U
 #define STATUS_LED_FULL_BRIGHTNESS_BUDGET_MA 2000U
 #define STATUS_LED_LOW_PROFILE_CAP_PERCENT 100U
@@ -136,14 +147,14 @@
 #define STATUS_LED_DYNAMIC_STATUS_QUANTUM_PERCENT 4U
 #define STATUS_LED_ACTIVE_WORK_REC_PERCENT 34U
 #define STATUS_LED_ACTIVE_WORK_AI_PERCENT 32U
-#define STATUS_LED_ACTIVE_WORK_REC_MAX_PERCENT 72U
+#define STATUS_LED_ACTIVE_WORK_REC_MAX_PERCENT 100U
 #define STATUS_LED_PROCESSING_BREATH_PERIOD_MS 1800U
 #define STATUS_LED_PROCESSING_BREATH_MIN_PERCENT 28U
-#define STATUS_LED_PROCESSING_BREATH_MAX_PERCENT 92U
+#define STATUS_LED_PROCESSING_BREATH_MAX_PERCENT 100U
 #define STATUS_LED_EC11_ACCENT_MIN_PERCENT 10U
-#define STATUS_LED_EC11_ACCENT_MAX_PERCENT 28U
+#define STATUS_LED_EC11_ACCENT_MAX_PERCENT 100U
 #define STATUS_LED_EDGE_ACCENT_MIN_PERCENT 8U
-#define STATUS_LED_EDGE_ACCENT_MAX_PERCENT 22U
+#define STATUS_LED_EDGE_ACCENT_MAX_PERCENT 100U
 #define STATUS_LED_EC11_RECORDING_ANCHOR_PERCENT 14U
 #define STATUS_LED_EC11_PROCESSING_ANCHOR_PERCENT 18U
 #define STATUS_LED_EC11_PROCESSING_SETTLED_PERCENT 15U
@@ -1750,7 +1761,10 @@ static void status_led_render_ble_locked(status_led_frame_t *frame, uint32_t now
                               !active_work;
     const uint32_t ble_elapsed_ms = status_led_ble_elapsed_locked(now_ms);
     if (status_led_ble_repair_active_locked(now_ms)) {
-        uint8_t percent = status_led_ble_repair_percent_locked(now_ms, 22U, 72U);
+        uint8_t percent = status_led_ble_repair_percent_locked(
+            now_ms,
+            STATUS_LED_BLE_REPAIR_MIN_PERCENT,
+            STATUS_LED_BLE_REPAIR_MAX_PERCENT);
         color = status_led_token_locked(ble_blue, percent, false);
         status_led_set_max(&frame->status[STATUS_LED_SEM_BLE], color);
         return;
@@ -1768,7 +1782,7 @@ static void status_led_render_ble_locked(status_led_frame_t *frame, uint32_t now
                 STATUS_LED_BATTERY_IDLE_BLE_HEARTBEAT_PERCENT,
                 false);
         } else if (!battery_idle && status_led_blink_on(ble_elapsed_ms, 420U, 680U)) {
-            color = status_led_token_locked(ble_blue, 65U, false);
+            color = status_led_token_locked(ble_blue, STATUS_LED_BLE_PAIRING_PULSE_PERCENT, false);
         }
         break;
     case STATUS_LED_BLE_RECONNECTING:
@@ -1781,7 +1795,9 @@ static void status_led_render_ble_locked(status_led_frame_t *frame, uint32_t now
                 STATUS_LED_BATTERY_IDLE_BLE_HEARTBEAT_PERCENT,
                 false);
         } else if (!battery_idle) {
-            uint8_t percent = status_led_double_pulse_on(ble_elapsed_ms, 2000U) ? 58U : 22U;
+            uint8_t percent = status_led_double_pulse_on(ble_elapsed_ms, 2000U)
+                ? STATUS_LED_BLE_RECONNECT_MAX_PERCENT
+                : STATUS_LED_BLE_RECONNECT_MIN_PERCENT;
             color = status_led_token_locked(ble_blue, percent, false);
         }
         break;
@@ -1792,11 +1808,11 @@ static void status_led_render_ble_locked(status_led_frame_t *frame, uint32_t now
                 status_led_triangle_percent(
                     ble_elapsed_ms,
                     STATUS_LED_BLE_CONNECTED_CONFIRM_MS,
-                    32U,
-                    70U),
+                    STATUS_LED_BLE_CONNECTED_CONFIRM_MIN_PERCENT,
+                    STATUS_LED_BLE_CONNECTED_STEADY_PERCENT),
                 false);
         } else if (confidence || status_window) {
-            color = status_led_token_locked(ble_blue, 48U, false);
+            color = status_led_token_locked(ble_blue, STATUS_LED_BLE_CONNECTED_STEADY_PERCENT, false);
         } else if (battery_idle && status_led_blink_on(
                                    ble_elapsed_ms,
                                    STATUS_LED_BATTERY_IDLE_BLE_HEARTBEAT_ON_MS,
@@ -1805,12 +1821,8 @@ static void status_led_render_ble_locked(status_led_frame_t *frame, uint32_t now
                 ble_blue,
                 STATUS_LED_BATTERY_IDLE_BLE_HEARTBEAT_PERCENT,
                 false);
-        } else if (!battery_idle && s_state.profile == STATUS_LED_PROFILE_LOW) {
-            color = status_led_token_locked(ble_blue, 22U, false);
-        } else if (!battery_idle && s_state.profile == STATUS_LED_PROFILE_STANDARD) {
-            color = status_led_token_locked(ble_blue, 30U, false);
-        } else if (!battery_idle && s_state.profile == STATUS_LED_PROFILE_AMBIENT) {
-            color = status_led_token_locked(ble_blue, 38U, false);
+        } else if (!battery_idle) {
+            color = status_led_token_locked(ble_blue, STATUS_LED_BLE_CONNECTED_STEADY_PERCENT, false);
         }
         break;
     case STATUS_LED_BLE_DISCONNECTED:
@@ -1920,24 +1932,10 @@ static uint8_t status_led_status_tail_desired_for_effect_percent_locked(
     uint8_t desired_percent,
     uint8_t target_effect_percent)
 {
-    if (desired_percent == 0U) {
+    if (desired_percent == 0U || target_effect_percent == 0U) {
         return 0U;
     }
-
-    uint32_t user_percent = s_state.brightness_percent;
-    uint32_t zone_percent = s_state.status_zone_brightness_percent;
-    if (user_percent == 0U || zone_percent == 0U) {
-        return 0U;
-    }
-
-    uint32_t combined_percent = user_percent * zone_percent;
-    uint32_t max_desired =
-        ((uint32_t)target_effect_percent * 10000U + combined_percent - 1U) /
-        combined_percent;
-    if (max_desired >= desired_percent) {
-        return desired_percent;
-    }
-    return (uint8_t)max_desired;
+    return target_effect_percent > desired_percent ? desired_percent : target_effect_percent;
 }
 
 static uint32_t status_led_processing_thinking_phase_ms_locked(uint32_t now_ms)
@@ -2061,11 +2059,12 @@ static uint8_t status_led_ok_visual_percent_locked(uint32_t now_ms)
     }
     uint32_t elapsed = now_ms - s_state.ok_started_ms;
     if (elapsed <= STATUS_LED_OK_PEAK_MS) {
-        return 85U;
+        return STATUS_LED_RESULT_PEAK_PERCENT;
     }
     if (elapsed < STATUS_LED_OK_TOTAL_MS) {
         uint32_t remaining = STATUS_LED_OK_TOTAL_MS - elapsed;
-        return (uint8_t)((85U * remaining) / (STATUS_LED_OK_TOTAL_MS - STATUS_LED_OK_PEAK_MS));
+        return (uint8_t)(((uint32_t)STATUS_LED_RESULT_PEAK_PERCENT * remaining) /
+                         (STATUS_LED_OK_TOTAL_MS - STATUS_LED_OK_PEAK_MS));
     }
     return 0U;
 }
