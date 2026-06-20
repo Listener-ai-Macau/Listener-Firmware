@@ -130,15 +130,15 @@ CHECKS = {
         "STATUS_LED_CHARGE_FULL_MIN_PERCENT 88U",
         "STATUS_LED_BATTERY_DISPLAY_GREEN_PERCENT 60U",
         "STATUS_LED_LOW_BATTERY_STEADY_PERCENT 24U",
-        "STATUS_LED_PWR_WHITE_VISUAL_BALANCE_PERCENT 38U",
+        "STATUS_LED_PWR_WHITE_VISUAL_BALANCE_PERCENT 28U",
         "STATUS_LED_FULL_STEADY_PERCENT STATUS_LED_PWR_WHITE_VISUAL_BALANCE_PERCENT",
         "STATUS_LED_FULL_STATUS_STEADY_PERCENT STATUS_LED_PWR_WHITE_VISUAL_BALANCE_PERCENT",
         "STATUS_LED_BATTERY_IDLE_BLE_HEARTBEAT_ON_MS 120U",
         "STATUS_LED_BATTERY_IDLE_BLE_HEARTBEAT_OFF_MS 7880U",
         "STATUS_LED_BATTERY_IDLE_BLE_HEARTBEAT_PERCENT 18U",
-        "STATUS_LED_OK_SUCCESS_BLUE_BALANCE 64U",
+        "STATUS_LED_OK_SUCCESS_BLUE_BALANCE 0U",
         "STATUS_LED_PREVIEW_BLE_OVERRIDE_MS 15000U",
-        "STATUS_LED_BLE_REPAIR_CUE_MS 3500U",
+        "STATUS_LED_BLE_REPAIR_CUE_MS 2700U",
         "STATUS_LED_BLE_CONNECTED_CONFIRM_MS 1600U",
         "STATUS_LED_PWR_COLOR_AMBER",
         "STATUS_LED_DIAG_VIS_LOW_POWER_OFF",
@@ -159,8 +159,10 @@ CHECKS = {
         "STATUS_LED_CONTRACT_REV \"status_key_ec11_edge_true_state_v19\"",
         "STATUS_LED_EC11_ACCENT_MIN_PERCENT",
         "STATUS_LED_EC11_ACCENT_MAX_PERCENT",
+        "STATUS_LED_EC11_OK_ACCENT_MAX_PERCENT",
         "STATUS_LED_EDGE_ACCENT_MIN_PERCENT",
         "STATUS_LED_EDGE_ACCENT_MAX_PERCENT",
+        "STATUS_LED_EDGE_OK_ACCENT_MAX_PERCENT",
         "STATUS_LED_POWER_SOURCE_CHARGER_STATUS",
         "STATUS_LED_DIAG_POWER_EXTERNAL_CHARGER_STATUS",
         "STATUS_LED_DIAG_ACTIVE_EC11",
@@ -215,8 +217,8 @@ CHECKS = {
         "status_led_apply_zone_brightness_caps_locked",
         "status_led_apply_device_settings_snapshot_locked",
         "STATUS_LED_ACCENT_ENTRY_RAMP_MS 900U",
-        "STATUS_LED_EC11_RECORDING_BASE_MAX_PERCENT 5U",
-        "STATUS_LED_EDGE_RECORDING_SURFACE_BASE_MAX_PERCENT 5U",
+        "STATUS_LED_EC11_RECORDING_BASE_MAX_PERCENT 16U",
+        "STATUS_LED_EDGE_RECORDING_SURFACE_BASE_MAX_PERCENT 14U",
         "STATUS_LED_EC11_RECORDING_FLOW_STEP_MS 360U",
         "STATUS_LED_EDGE_RECORDING_FLOW_STEP_MS 720U",
         "STATUS_LED_EC11_REPAIR_BLINK_MIN_PERCENT 4U",
@@ -362,19 +364,21 @@ CHECKS = {
         "STATUS_LED_PROCESSING_BREATH_MIN_PERCENT 28U",
         "STATUS_LED_PROCESSING_BREATH_MAX_PERCENT 100U",
         "STATUS_LED_ACCENT_BREATHE_QUANTUM_PERCENT 2U",
-        "STATUS_LED_EC11_RECORDING_BASE_MIN_PERCENT 4U",
+        "STATUS_LED_EC11_RECORDING_BASE_MIN_PERCENT 12U",
         "STATUS_LED_EC11_ACCENT_MAX_PERCENT 100U",
         "STATUS_LED_EDGE_ACCENT_MAX_PERCENT 100U",
-        "STATUS_LED_EC11_RECORDING_BASE_MAX_PERCENT 5U",
-        "STATUS_LED_EDGE_RECORDING_SURFACE_BASE_MIN_PERCENT 4U",
-        "STATUS_LED_EDGE_RECORDING_SURFACE_BASE_MAX_PERCENT 5U",
+        "STATUS_LED_EC11_OK_ACCENT_MAX_PERCENT 36U",
+        "STATUS_LED_EDGE_OK_ACCENT_MAX_PERCENT 36U",
+        "STATUS_LED_EC11_RECORDING_BASE_MAX_PERCENT 16U",
+        "STATUS_LED_EDGE_RECORDING_SURFACE_BASE_MIN_PERCENT 10U",
+        "STATUS_LED_EDGE_RECORDING_SURFACE_BASE_MAX_PERCENT 14U",
         "STATUS_LED_ACCENT_ENTRY_RAMP_MS 900U",
         "STATUS_LED_EC11_ORBIT_STEP_MS 240U",
         "STATUS_LED_EDGE_ORBIT_STEP_MS 480U",
-        "STATUS_LED_EC11_PROCESSING_BASE_PERCENT 7U",
-        "STATUS_LED_EDGE_PROCESSING_BASE_PERCENT 6U",
-        "STATUS_LED_EC11_PROCESSING_ORBIT_PERCENT 26U",
-        "STATUS_LED_EDGE_PROCESSING_ORBIT_PERCENT 24U",
+        "STATUS_LED_EC11_PROCESSING_BASE_PERCENT 12U",
+        "STATUS_LED_EDGE_PROCESSING_BASE_PERCENT 10U",
+        "STATUS_LED_EC11_PROCESSING_ORBIT_PERCENT 40U",
+        "STATUS_LED_EDGE_PROCESSING_ORBIT_PERCENT 36U",
         "status_led_effect_elapsed_ms_locked",
         "status_led_set_recording_level",
         "rec_level=%u",
@@ -806,7 +810,7 @@ CHECKS = {
         "Get-ReproSteps",
         "Get-TailOnlySteps",
         "Get-ComboOnlySteps",
-        'ValidateSet("Foundation", "Scenes", "Complex", "Volume", "Product", "RootCause", "StaticRoot", "Repro", "TailOnly", "ComboOnly", "Full")',
+        'ValidateSet("Foundation", "Scenes", "Complex", "Volume", "Product", "FinalVisual", "FinalRetest", "FinalCombo", "RootCause", "StaticRoot", "Repro", "TailOnly", "ComboOnly", "Full")',
         "preview_effect_only=1",
         "effect-only preview commands",
     ],
@@ -879,7 +883,7 @@ def main() -> int:
         "STATUS_LED_CHARGING_BREATH_MAX_PERCENT 38U",
         "STATUS_LED_CHARGING_ACTIVE_WORK_MIN_PERCENT 28U",
         "STATUS_LED_LOW_BATTERY_STEADY_PERCENT 24U",
-        "STATUS_LED_PWR_WHITE_VISUAL_BALANCE_PERCENT 38U",
+        "STATUS_LED_PWR_WHITE_VISUAL_BALANCE_PERCENT 28U",
         "STATUS_LED_FULL_STEADY_PERCENT STATUS_LED_PWR_WHITE_VISUAL_BALANCE_PERCENT",
         "STATUS_LED_FULL_STATUS_STEADY_PERCENT STATUS_LED_PWR_WHITE_VISUAL_BALANCE_PERCENT",
     ):
@@ -935,7 +939,7 @@ def main() -> int:
             failures.append(f"status_led.c: recording/AI status LEDs must use bounded audio-reactive REC and thinking AI paths, missing {token}")
     for token in (
         "uint8_t head_rank = step;",
-        "status_led_scale_effect_percent_locked(5U, now_ms)",
+        "status_led_scale_effect_percent_locked(12U, now_ms)",
         "(head_rank + (STATUS_LED_EDGE_COUNT / 2U)) % STATUS_LED_EDGE_COUNT",
     ):
         if token not in status_led:
@@ -964,6 +968,8 @@ def main() -> int:
         failures.append("status_led.c: live rec_level diagnostics must not request LED refresh")
     elif "s_mutex == NULL" not in recording_level_block.group(0):
         failures.append("status_led.c: live rec_level diagnostics must guard early calls before the LED mutex exists")
+    elif "now_ms >= s_state.recording_level_hold_until_ms" not in recording_level_block.group(0):
+        failures.append("status_led.c: live REC level must not override a manual review hold")
     if "should_update_recording_level" in audio_capture:
         failures.append("audio_capture_esp32.c: live REC level must be sampled every mic frame, not only inside an active BLE session")
     forced_level_block = re.search(
@@ -1135,7 +1141,7 @@ def main() -> int:
             if token not in complex_text:
                 failures.append(f"status_led_human_effect_review.ps1: Complex mode must use effect-only command {token}")
     product_block = re.search(
-        r'if\s*\(\$Mode\s+-eq\s+"Product"\)\s*\{([\s\S]*?)\n\s*\$rootCause',
+        r'if\s*\(\$Mode\s+-eq\s+"Product"\)\s*\{([\s\S]*?)\n\s*\$tailOnly',
         human_review,
     )
     if not product_block:
@@ -1152,6 +1158,25 @@ def main() -> int:
         ):
             if stale_token in product_text:
                 failures.append(f"status_led_human_effect_review.ps1: Product review must not include repeated tuning step {stale_token}")
+    for token in (
+        'if ($Mode -eq "FinalVisual")',
+        'if ($Mode -eq "FinalRetest")',
+        'if ($Mode -eq "FinalCombo")',
+        'Get-FinalVisualSteps',
+        'Get-FinalRetestSteps',
+        'Get-FinalZoneBrightnessComboStep',
+        'scene-full',
+        'scene-ok',
+        'scene-rec-not-available',
+        'tail-only-ai-da-dada-grouped',
+        'final-zone-100-recording-processing',
+        '~DEVICE:SET led_status=100 led_key=100 led_ec11=100 led_edge=100',
+        '~LED:REC_LEVEL 100 120000',
+        'volume-capture-sweep',
+        'scene-shutdown-confirm',
+    ):
+        if token not in human_review:
+            failures.append(f"status_led_human_effect_review.ps1: FinalVisual review must include {token}")
     voice_recording_control = read("components/voice_recording_control/voice_recording_control.c")
     ble_hid_gap = read("ports/esp32/ble_hid_gap/ble_hid_gap_esp32.c")
     if 'status_led_set_processing(true, "audio_session_finishing")' in voice_recording_control:

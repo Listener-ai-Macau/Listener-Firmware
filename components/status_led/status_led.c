@@ -78,7 +78,7 @@
 #define STATUS_LED_PREVIEW_BLE_OVERRIDE_MS 15000U
 #define STATUS_LED_BOOT_ACK_MS 2500U
 #define STATUS_LED_BLE_CONFIDENCE_MS 8000U
-#define STATUS_LED_BLE_REPAIR_CUE_MS 3500U
+#define STATUS_LED_BLE_REPAIR_CUE_MS 2700U
 #define STATUS_LED_BLE_CONNECTED_CONFIRM_MS 1600U
 #define STATUS_LED_OOBE_CONFIDENCE_MS 25000U
 #define STATUS_LED_ERROR_HOLD_MS 6000U
@@ -98,7 +98,7 @@
 #define STATUS_LED_CHARGE_FULL_MIN_PERCENT 88U
 #define STATUS_LED_BATTERY_DISPLAY_GREEN_PERCENT 60U
 #define STATUS_LED_LOW_BATTERY_STEADY_PERCENT 24U
-#define STATUS_LED_PWR_WHITE_VISUAL_BALANCE_PERCENT 38U
+#define STATUS_LED_PWR_WHITE_VISUAL_BALANCE_PERCENT 28U
 #define STATUS_LED_FULL_STEADY_PERCENT STATUS_LED_PWR_WHITE_VISUAL_BALANCE_PERCENT
 #define STATUS_LED_FULL_STATUS_STEADY_PERCENT STATUS_LED_PWR_WHITE_VISUAL_BALANCE_PERCENT
 #define STATUS_LED_BLE_REPAIR_MIN_PERCENT 30U
@@ -112,7 +112,7 @@
 #define STATUS_LED_BATTERY_IDLE_BLE_HEARTBEAT_OFF_MS 7880U
 #define STATUS_LED_BATTERY_IDLE_BLE_HEARTBEAT_PERCENT 18U
 #define STATUS_LED_RESULT_PEAK_PERCENT 100U
-#define STATUS_LED_OK_SUCCESS_BLUE_BALANCE 64U
+#define STATUS_LED_OK_SUCCESS_BLUE_BALANCE 0U
 #define STATUS_LED_FULL_BRIGHTNESS_PERCENT 100U
 #define STATUS_LED_FULL_BRIGHTNESS_BUDGET_MA 2000U
 #define STATUS_LED_LOW_PROFILE_CAP_PERCENT 100U
@@ -155,8 +155,10 @@
 #define STATUS_LED_PROCESSING_BREATH_MAX_PERCENT 100U
 #define STATUS_LED_EC11_ACCENT_MIN_PERCENT 10U
 #define STATUS_LED_EC11_ACCENT_MAX_PERCENT 100U
+#define STATUS_LED_EC11_OK_ACCENT_MAX_PERCENT 36U
 #define STATUS_LED_EDGE_ACCENT_MIN_PERCENT 8U
 #define STATUS_LED_EDGE_ACCENT_MAX_PERCENT 100U
+#define STATUS_LED_EDGE_OK_ACCENT_MAX_PERCENT 36U
 #define STATUS_LED_EC11_RECORDING_ANCHOR_PERCENT 14U
 #define STATUS_LED_EC11_PROCESSING_ANCHOR_PERCENT 18U
 #define STATUS_LED_EC11_PROCESSING_SETTLED_PERCENT 15U
@@ -166,10 +168,10 @@
 #define STATUS_LED_EDGE_PROCESSING_SETTLED_PERCENT 11U
 #define STATUS_LED_EDGE_OVERLAP_RECORDING_ANCHOR_PERCENT 10U
 #define STATUS_LED_ACCENT_BREATHE_QUANTUM_PERCENT 2U
-#define STATUS_LED_EC11_RECORDING_BASE_MIN_PERCENT 4U
-#define STATUS_LED_EC11_RECORDING_BASE_MAX_PERCENT 5U
-#define STATUS_LED_EDGE_RECORDING_SURFACE_BASE_MIN_PERCENT 4U
-#define STATUS_LED_EDGE_RECORDING_SURFACE_BASE_MAX_PERCENT 5U
+#define STATUS_LED_EC11_RECORDING_BASE_MIN_PERCENT 12U
+#define STATUS_LED_EC11_RECORDING_BASE_MAX_PERCENT 16U
+#define STATUS_LED_EDGE_RECORDING_SURFACE_BASE_MIN_PERCENT 10U
+#define STATUS_LED_EDGE_RECORDING_SURFACE_BASE_MAX_PERCENT 14U
 #define STATUS_LED_ACCENT_ENTRY_RAMP_MS 900U
 #define STATUS_LED_EC11_RECORDING_FLOW_STEP_MS 360U
 #define STATUS_LED_EDGE_RECORDING_FLOW_STEP_MS 720U
@@ -177,10 +179,10 @@
 #define STATUS_LED_EDGE_ORBIT_STEP_MS 480U
 #define STATUS_LED_EC11_REPAIR_BLINK_MIN_PERCENT 4U
 #define STATUS_LED_EC11_REPAIR_BLINK_MAX_PERCENT 16U
-#define STATUS_LED_EC11_PROCESSING_BASE_PERCENT 7U
-#define STATUS_LED_EDGE_PROCESSING_BASE_PERCENT 6U
-#define STATUS_LED_EC11_PROCESSING_ORBIT_PERCENT 26U
-#define STATUS_LED_EDGE_PROCESSING_ORBIT_PERCENT 24U
+#define STATUS_LED_EC11_PROCESSING_BASE_PERCENT 12U
+#define STATUS_LED_EDGE_PROCESSING_BASE_PERCENT 10U
+#define STATUS_LED_EC11_PROCESSING_ORBIT_PERCENT 40U
+#define STATUS_LED_EDGE_PROCESSING_ORBIT_PERCENT 36U
 #define STATUS_LED_SHUTDOWN_CONFIRM_MS 1800U
 #define STATUS_LED_SHUTDOWN_FINAL_CONFIRM_MS 700U
 #define STATUS_LED_POWER_SOURCE_USB_DET (1U << 0)
@@ -2159,7 +2161,7 @@ static void status_led_render_ec11_recording_flow_locked(
         false);
     status_led_rgb_t head = status_led_token_locked(
         status_led_rec_gold(),
-        status_led_recording_accent_percent_locked(now_ms, 10U, 12U),
+        status_led_recording_accent_percent_locked(now_ms, 28U, 34U),
         false);
     status_led_rgb_t tail = status_led_scale_raw(head, 68U);
     status_led_rgb_t fade = status_led_scale_raw(head, 38U);
@@ -2190,9 +2192,9 @@ static void status_led_render_edge_recording_flow_locked(
         status_led_effect_elapsed_ms_locked(now_ms),
         status_led_rec_gold(),
         base_percent,
+        status_led_scale_effect_percent_locked(30U, now_ms),
+        status_led_scale_effect_percent_locked(20U, now_ms),
         status_led_scale_effect_percent_locked(12U, now_ms),
-        status_led_scale_effect_percent_locked(8U, now_ms),
-        status_led_scale_effect_percent_locked(5U, now_ms),
         STATUS_LED_EDGE_RECORDING_FLOW_STEP_MS);
 }
 
@@ -2407,8 +2409,8 @@ static void status_led_render_ec11_locked(status_led_frame_t *frame, uint32_t no
     uint8_t rec_percent = status_led_recording_visual_percent_locked(now_ms);
     uint8_t ok_percent = status_led_ok_visual_percent_locked(now_ms);
     if (ok_percent > 0U) {
-        uint8_t percent = ok_percent > STATUS_LED_EC11_ACCENT_MAX_PERCENT
-            ? STATUS_LED_EC11_ACCENT_MAX_PERCENT
+        uint8_t percent = ok_percent > STATUS_LED_EC11_OK_ACCENT_MAX_PERCENT
+            ? STATUS_LED_EC11_OK_ACCENT_MAX_PERCENT
             : ok_percent;
         status_led_rgb_t ok = status_led_token_locked(status_led_result_color_locked(), percent, false);
         for (size_t index = 0; index < STATUS_LED_EC11_COUNT; ++index) {
@@ -2519,8 +2521,8 @@ static void status_led_render_edge_locked(status_led_frame_t *frame, uint32_t no
     uint8_t rec_percent = status_led_recording_visual_percent_locked(now_ms);
     uint8_t ok_percent = status_led_ok_visual_percent_locked(now_ms);
     if (ok_percent > 0U) {
-        uint8_t percent = ok_percent > STATUS_LED_EDGE_ACCENT_MAX_PERCENT
-            ? STATUS_LED_EDGE_ACCENT_MAX_PERCENT
+        uint8_t percent = ok_percent > STATUS_LED_EDGE_OK_ACCENT_MAX_PERCENT
+            ? STATUS_LED_EDGE_OK_ACCENT_MAX_PERCENT
             : ok_percent;
         status_led_rgb_t color = status_led_token_locked(status_led_result_color_locked(), percent, false);
         for (size_t index = 0; index < STATUS_LED_EDGE_COUNT; ++index) {
@@ -3409,9 +3411,12 @@ void status_led_set_recording_level(uint8_t level_percent)
     uint32_t now_ms = status_led_now_ms();
     if (xSemaphoreTake(s_mutex, portMAX_DELAY) == pdTRUE) {
         if (s_state.recording_active && s_state.rec_source != STATUS_LED_REC_SOURCE_NOT_AVAILABLE) {
-            s_state.recording_level_percent = level_percent;
-            s_state.recording_level_updated_ms = now_ms;
-            s_state.recording_level_hold_until_ms = 0U;
+            if (s_state.recording_level_hold_until_ms == 0U ||
+                now_ms >= s_state.recording_level_hold_until_ms) {
+                s_state.recording_level_percent = level_percent;
+                s_state.recording_level_updated_ms = now_ms;
+                s_state.recording_level_hold_until_ms = 0U;
+            }
         }
         xSemaphoreGive(s_mutex);
     }

@@ -159,7 +159,7 @@ Assert-Contains $statusLed 'STATUS_LED_CHARGING_ACTIVE_WORK_MIN_PERCENT 28U' 'pl
 Assert-Contains $statusLed 'STATUS_LED_LOW_BATTERY_STEADY_PERCENT 24U' 'low battery uses a steady red cue instead of an unnecessary breathing effect'
 Assert-Contains $statusLed 'status_led_charging_breath_percent\(now_ms\)' 'plugged charging breath uses the dedicated natural curve'
 Assert-Contains $statusLed 'status_led_smoothstep_per_mille' 'plugged charging breath uses smoothstep easing'
-Assert-Contains $statusLed 'STATUS_LED_FULL_STEADY_PERCENT 100U' 'charge-full steady brightness peak is user-capped instead of fixed below user brightness'
+Assert-Contains $statusLed 'STATUS_LED_FULL_STEADY_PERCENT STATUS_LED_PWR_WHITE_VISUAL_BALANCE_PERCENT' 'charge-full steady white is visually balanced and still user-capped'
 Assert-Contains $statusLed 'device_settings_set_brightness_profiles\(brightness,\s*brightness\)' 'legacy LED brightness writes both profiles'
 Assert-NotContains $statusLed 'status_led_apply_device_settings[\s\S]*?s_state\.output_disabled\s*=\s*false;[\s\S]*?status_led_set_last_reason_locked\("device_settings"\)' 'device settings brightness apply must not silently re-enable LEDs disabled by user or low-power state'
 Assert-Contains $statusLedHeader 'status_led_apply_device_settings' 'status LED runtime apply API'

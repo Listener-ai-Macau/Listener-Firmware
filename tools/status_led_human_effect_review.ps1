@@ -3,7 +3,7 @@ param(
     [string]$Port = "COMx",
     [int]$Baud = 115200,
     [string]$OutputDir = "",
-    [ValidateSet("Foundation", "Scenes", "Complex", "Volume", "Product", "RootCause", "StaticRoot", "Repro", "TailOnly", "ComboOnly", "Full")]
+    [ValidateSet("Foundation", "Scenes", "Complex", "Volume", "Product", "FinalVisual", "FinalRetest", "FinalCombo", "RootCause", "StaticRoot", "Repro", "TailOnly", "ComboOnly", "Full")]
     [string]$Mode = "Foundation",
     [int]$CommandReadMs = 700,
     [int]$InitialReadMs = 1200,
@@ -469,6 +469,66 @@ function Get-ComboOnlySteps {
     return @($steps)
 }
 
+function Get-FinalZoneBrightnessComboStep {
+    return New-LedReviewStep `
+        -Id "final-zone-100-recording-processing" `
+        -Title "最终复测：旋钮/板框按 Type 100% 亮度" `
+        -Commands @(
+            "~DEVICE:SET led_status=100 led_key=100 led_ec11=100 led_edge=100",
+            "~DEVICE:SETTINGS",
+            "~LED:BRIGHTNESS 100",
+            "~LED:PREVIEW recording_processing_led_only",
+            "~LED:REC_LEVEL 100 120000",
+            "WAIT 7000"
+        ) `
+        -When "验证 Type 写入 100% 最大亮度时，firmware 组合灯效按 Type 最大亮度比例输出，不再沿用过低的避闪烁调试值。" `
+        -Expected "专用 effect-only 组合预览：LED3/REC 高音量暖金、LED4/AI 固定紫色哒  哒哒；旋钮 12 颗和边框 6 颗应明显可见，有暖金底光加慢速流动，但不应盖过状态语义灯；按键、PWR/BLE 不参与；LED5/OK 和 LED6/WARN 必须熄灭。" `
+        -HumanFocus "重点看旋钮/板框在 Type 100% 设置下是否足够亮、流动是否可读、有没有抢过 LED3/4；同时确认 LED5/6 不跟闪。" `
+        -PassRule "~DEVICE:SETTINGS 或 ~LED:STATUS 显示 led_status/led_key/led_ec11/led_edge 或对应 zone_brightness_percent 均为 100，旋钮/板框亮度足够可读且稳定，LED5/6 全程不跟闪。" `
+        -PostCommands @(
+            "~LED:STATUS",
+            "~DEVICE:SETTINGS",
+            "~POWER:STATUS"
+        )
+}
+
+function Get-FinalVisualSteps {
+    param(
+        [Parameter(Mandatory = $true)][object[]]$Scenes,
+        [Parameter(Mandatory = $true)][object[]]$Volume,
+        [Parameter(Mandatory = $true)][object[]]$TailOnly,
+        [Parameter(Mandatory = $true)][object[]]$ComboOnly
+    )
+
+    return @(
+        $Scenes | Where-Object { $_.id -eq "scene-full" }
+        $Scenes | Where-Object { $_.id -eq "scene-ok" }
+        $Scenes | Where-Object { $_.id -eq "scene-rec-not-available" }
+        $TailOnly | Where-Object { $_.id -eq "tail-only-ai-da-dada-grouped" }
+        Get-FinalZoneBrightnessComboStep
+        $Volume | Where-Object { $_.id -eq "volume-capture-sweep" }
+        $Scenes | Where-Object { $_.id -eq "scene-ble-repairing" }
+        $Scenes | Where-Object { $_.id -eq "scene-shutdown-confirm" }
+        $Scenes | Where-Object { $_.id -eq "scene-ec11-short-press" }
+        $Scenes | Where-Object { $_.id -eq "scene-ec11-rotate" }
+        $Scenes | Where-Object { $_.id -eq "scene-key-feedback" }
+        $Scenes | Where-Object { $_.id -eq "scene-sleep" }
+    )
+}
+
+function Get-FinalRetestSteps {
+    param(
+        [Parameter(Mandatory = $true)][object[]]$Scenes
+    )
+
+    return @(
+        $Scenes | Where-Object { $_.id -eq "scene-full" }
+        $Scenes | Where-Object { $_.id -eq "scene-ok" }
+        Get-FinalZoneBrightnessComboStep
+        $Scenes | Where-Object { $_.id -eq "scene-ble-repairing" }
+    )
+}
+
 function Get-ReviewSteps {
     $foundation = @(Get-FoundationSteps)
     if ($Mode -eq "Foundation") {
@@ -498,6 +558,17 @@ function Get-ReviewSteps {
             $scenes | Where-Object { $_.id -eq "scene-sleep" }
         )
     }
+    $tailOnly = @(Get-TailOnlySteps)
+    $comboOnly = @(Get-ComboOnlySteps)
+    if ($Mode -eq "FinalVisual") {
+        return @(Get-FinalVisualSteps -Scenes $scenes -Volume $volume -TailOnly $tailOnly -ComboOnly $comboOnly)
+    }
+    if ($Mode -eq "FinalRetest") {
+        return @(Get-FinalRetestSteps -Scenes $scenes)
+    }
+    if ($Mode -eq "FinalCombo") {
+        return @(Get-FinalZoneBrightnessComboStep)
+    }
     $rootCause = @(Get-RootCauseSteps)
     if ($Mode -eq "RootCause") {
         return $rootCause
@@ -510,11 +581,9 @@ function Get-ReviewSteps {
     if ($Mode -eq "Repro") {
         return $repro
     }
-    $tailOnly = @(Get-TailOnlySteps)
     if ($Mode -eq "TailOnly") {
         return $tailOnly
     }
-    $comboOnly = @(Get-ComboOnlySteps)
     if ($Mode -eq "ComboOnly") {
         return $comboOnly
     }
@@ -876,6 +945,40 @@ function Show-IntroPrompt {
         $result = Show-TopMostMessageBox `
             -Message $message `
             -Title "Listener 整体产品灯效验收" `
+            -Buttons ([System.Windows.Forms.MessageBoxButtons]::OKCancel) `
+            -Icon ([System.Windows.Forms.MessageBoxIcon]::Information)
+        return $result -eq [System.Windows.Forms.DialogResult]::OK
+    }
+    if ($Mode -eq "FinalRetest") {
+        $message = @"
+这次只复测刚才失败或刚改过的灯效，不重测已经通过的场景。
+
+验收顺序：
+1. 满电 PWR 白灯：只应是 LED1 白色，不应让 3/5 看起来也亮。
+2. OK 成功灯：LED5 应是明确绿色，WARN 灭；旋钮/板框只做低亮绿色辅助。
+3. 录音+AI 组合：脚本会把四路 LED 自定义亮度都写为 100%，看旋钮/板框是否按 Type 最大亮度比例变得足够可读。
+4. BLE 重新配对：应是三轮蓝色确认，不是四轮。
+
+共 $StepCount 步。准备好看板子后点确定；不方便就点取消。
+"@
+        $result = Show-TopMostMessageBox `
+            -Message $message `
+            -Title "Listener 灯效最终复测" `
+            -Buttons ([System.Windows.Forms.MessageBoxButtons]::OKCancel) `
+            -Icon ([System.Windows.Forms.MessageBoxIcon]::Information)
+        return $result -eq [System.Windows.Forms.DialogResult]::OK
+    }
+    if ($Mode -eq "FinalCombo") {
+        $message = @"
+这次只复测刚才跳过的录音+AI 组合亮度。
+
+脚本会把四路 LED 自定义亮度都写为 100%，然后播放录音+AI 组合：状态 LED3/4、旋钮 12 颗、板框 6 颗一起参与。重点只看旋钮/板框是否足够亮、流动是否可读、LED5/6 是否仍不跟闪。
+
+共 $StepCount 步。准备好看板子后点确定；不方便就点取消。
+"@
+        $result = Show-TopMostMessageBox `
+            -Message $message `
+            -Title "Listener 组合灯效亮度复测" `
             -Buttons ([System.Windows.Forms.MessageBoxButtons]::OKCancel) `
             -Icon ([System.Windows.Forms.MessageBoxIcon]::Information)
         return $result -eq [System.Windows.Forms.DialogResult]::OK
