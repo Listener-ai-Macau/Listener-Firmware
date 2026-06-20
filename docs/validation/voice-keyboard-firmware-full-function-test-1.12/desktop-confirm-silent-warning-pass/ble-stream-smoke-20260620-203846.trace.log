@@ -1,0 +1,42 @@
+2026-06-20T20:38:46.9609679+08:00 start trigger=desktop-confirm port=COM10 timeout_ms=60000
+2026-06-20T20:38:47.0265068+08:00 wav_ready path=C:\Users\Billy\Desktop\Denzic\Listener\Listener-Firmware-pwr-shutdown-new-board\docs\validation\voice-keyboard-firmware-full-function-test-1.12\desktop-confirm-silent-warning-pass\ble-stream-smoke-20260620-203846.wav sentence=蓝牙手动按键测试成功。 profile=normal rate=0 gain=4 silent=True
+2026-06-20T20:38:47.0647561+08:00 serial_cancel_start
+2026-06-20T20:38:47.8270437+08:00 serial_cancel_done
+2026-06-20T20:38:47.8397705+08:00 ensure_ble_start
+2026-06-20T20:38:48.5190008+08:00 ensure_ble_done
+2026-06-20T20:38:49.5668110+08:00 before_listener_start foreground_pid=29164 foreground_visible=True foreground_title=Denzic - Visual Studio Code [Administrator]
+2026-06-20T20:38:49.6143824+08:00 serial_window_started path=C:\Users\Billy\Desktop\Denzic\Listener\Listener-Firmware-pwr-shutdown-new-board\docs\validation\voice-keyboard-firmware-full-function-test-1.12\desktop-confirm-silent-warning-pass\ble-stream-smoke-20260620-203846.serial.log
+2026-06-20T20:38:52.0444163+08:00 listener_started pid=13788
+2026-06-20T20:38:54.1900549+08:00 notify_ready
+2026-06-20T20:38:54.2331571+08:00 window_visible pid=13788 title=Listener Type Capsule rect=568,756,304,84
+2026-06-20T20:38:54.2433336+08:00 notify_ready_capsule_visible
+2026-06-20T20:38:55.0637308+08:00 after_listener_ready foreground_pid=29164 foreground_visible=True foreground_title=Denzic - Visual Studio Code [Administrator]
+2026-06-20T20:38:55.2915045+08:00 playback_volume_set target=70 previous=0.7 muted=False
+2026-06-20T20:38:55.3040054+08:00 before_capsule foreground_pid=29164 foreground_visible=True foreground_title=Denzic - Visual Studio Code [Administrator]
+2026-06-20T20:38:55.3175271+08:00 serial_start_signal_written
+2026-06-20T20:38:55.4384242+08:00 firmware_recording_start_seen
+2026-06-20T20:38:55.4503302+08:00 window_visible pid=13788 title=Listener Type Capsule rect=568,756,304,84
+2026-06-20T20:38:55.4609052+08:00 capsule_visible
+2026-06-20T20:38:55.5634591+08:00 after_capsule foreground_pid=29164 foreground_visible=True foreground_title=Denzic - Visual Studio Code [Administrator]
+2026-06-20T20:38:55.8808244+08:00 playback_start index=1
+2026-06-20T20:38:58.5247180+08:00 playback_done index=1 actual_ms=2630
+2026-06-20T20:38:59.0184695+08:00 window_visible pid=13788 title=Listener Type Capsule rect=568,756,304,84
+2026-06-20T20:38:59.0912967+08:00 desktop_cancel_screenshot path=C:\Users\Billy\Desktop\Denzic\Listener\Listener-Firmware-pwr-shutdown-new-board\docs\validation\voice-keyboard-firmware-full-function-test-1.12\desktop-confirm-silent-warning-pass\ble-stream-smoke-20260620-203846.desktop-confirm.png
+2026-06-20T20:38:59.1708661+08:00 desktop_cancel_screen_screenshot path=C:\Users\Billy\Desktop\Denzic\Listener\Listener-Firmware-pwr-shutdown-new-board\docs\validation\voice-keyboard-firmware-full-function-test-1.12\desktop-confirm-silent-warning-pass\ble-stream-smoke-20260620-203846.desktop-confirm.screen.png
+2026-06-20T20:38:59.4098051+08:00 desktop_confirm_clicked x=839 y=798 rect=568,756,304,84
+2026-06-20T20:38:59.4223839+08:00 desktop_confirm_requested
+2026-06-20T20:39:02.0813304+08:00 expected_stream_failure=ASR returned empty transcript
+2026-06-20T20:39:02.0969976+08:00 desktop_action_serial_cleanup_signal_written
+2026-06-20T20:39:04.2512738+08:00 desktop_action_serial_cleanup_done
+2026-06-20T20:39:04.4907034+08:00 parse_transcript_start
+2026-06-20T20:39:04.5646780+08:00 parse_transcript_done transcript_len=0 pcm=0 missing=0
+2026-06-20T20:39:04.5756441+08:00 recording_archive_lookup_skipped reason=expect_no_text
+2026-06-20T20:39:04.6040185+08:00 report_object_start
+2026-06-20T20:39:04.6438379+08:00 report_object_done
+2026-06-20T20:39:04.6528174+08:00 json_convert_start
+2026-06-20T20:39:04.7290760+08:00 json_convert_done
+2026-06-20T20:39:04.7396092+08:00 report_write_start path=C:\Users\Billy\Desktop\Denzic\Listener\Listener-Firmware-pwr-shutdown-new-board\docs\validation\voice-keyboard-firmware-full-function-test-1.12\desktop-confirm-silent-warning-pass\ble-stream-smoke.20260620-203904.json status=PASS
+2026-06-20T20:39:04.7519748+08:00 report_write_done
+2026-06-20T20:39:04.7620186+08:00 finally_start
+2026-06-20T20:39:04.7782909+08:00 playback_volume_restored volume=0.7 muted=False
+2026-06-20T20:39:04.8313224+08:00 finally_done

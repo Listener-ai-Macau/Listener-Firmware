@@ -1,6 +1,6 @@
 # Voice Keyboard Firmware Full Function Test 1.12 Unified Ship Smoke
 
-Status: partial AI evidence collected; final human go/no-go is still pending.
+Status: expanded AI evidence collected; clean-install/OOBE, physical trigger, and long real-use go/no-go are still pending.
 
 Date: 2026-06-20
 Agent: oai1
@@ -10,6 +10,9 @@ Agent: oai1
 - Firmware product commit under test: `5584dc7e5b56863a0fcea2c2d930bb380ce85aca`.
 - This matches the accepted 1.13c disposition source: firmware master only.
 - Listener-Type commit used by the passing A1 smoke: `1096b98fe62515da777a8673f68bf1b316ded1a4`.
+- Listener-Type commits used by capsule cancel/confirm/warning sync smokes:
+  - `e947b37fa6a3dae7d85b7b0f125832049cfe75e8` for capsule cancel-before-teardown sync.
+  - `0b58d26c5ecb7aac20d1f65e10c6eaf104a152f4` for stale active-capture audio-control fallback and no-transcript WARN validation.
 
 ## Automated Evidence Collected
 
@@ -50,20 +53,31 @@ Initial A1 attempts proved the audio/Type path but failed LED evidence parsing:
 - Listener-Type commits `e6139124d1ded483adb9b4353a232946ea057182` and `1096b98fe62515da777a8673f68bf1b316ded1a4` fixed the parser to read all phase-scoped LED status lines and wait for the full summary sample.
 - After the fix, A1 passed with the same firmware product commit `5584dc7e5b56863a0fcea2c2d930bb380ce85aca`.
 
+### Capsule cancel/confirm firmware sync
+
+- Additional artifact summary: `capsule-firmware-sync-smoke.md`
+- Desktop cancel PASS: `desktop-cancel-sync-post-fallback-pass/ble-stream-smoke.20260620-204009.json`
+- Desktop confirm OK PASS: `desktop-confirm-sync-post-fallback-pass/ble-stream-smoke.20260620-203943.json`
+- Desktop confirm no-transcript WARN PASS: `desktop-confirm-silent-warning-pass/ble-stream-smoke.20260620-203904.json`
+- Desktop cancel now proves firmware received `VREC:CANCEL` through BLE audio control: `recording_cancel_ble_control_seen=true`, `audio_control_cancel_write_seen=true`, `recording_cancel_usb_seen=false`.
+- Desktop confirm now proves firmware received `VREC:STOP`, `VREC:PROCESSING:START`, and `VREC:PROCESSING:DONE` through BLE audio control; insertion/history passed with `missing_packets=0`.
+- Desktop confirm no-transcript now proves firmware received `VREC:PROCESSING:WARN` through BLE audio control; no transcript/history text was produced.
+- LED evidence from the desktop confirm OK run: `led_recording_active_seen=true`, `led_recording_cleared_seen=true`, `led_ai_active_seen=true`, `led_ok_active_seen=true`, `led_warn_active_seen=false`.
+- LED evidence from the desktop confirm no-transcript run: `led_recording_active_seen=true`, `led_recording_cleared_seen=true`, `led_ai_active_seen=true`, `led_warn_active_seen=true`, `led_ok_active_seen=false`.
+
 ## Still Required Before 1.12 Can Be Accepted
 
-The following items are not proven by the minimal generated KEY3 A1 smoke:
+The following items are not proven by the minimal generated KEY3 A1 smoke plus scripted desktop capsule cancel/confirm smokes:
 
 - Clean Windows or non-development setup install/package path.
 - Representative physical trigger: physical KEY3 or EC11 Shift+F13, not only generated `~KEY:KEY3:SINGLE`.
 - 30 second real recording path with human-observed capsule timing.
-- Human-visible OK light on successful capsule exit, and warning light for a failure/no-recognition path.
 - Sampled reconnect/re-pair, battery/power, settings persistence, factory-state, and one failure UX case cited from accepted subgates or freshly observed if the operator wants a final spot check.
 - Explicit product go/no-go decision and residual issue list.
 
 ## Suggested Human Gate Script
 
-1. Use the current Listener-Type build at commit `1096b98fe62515da777a8673f68bf1b316ded1a4` and firmware package/flash based on `5584dc7e5b56863a0fcea2c2d930bb380ce85aca`.
+1. Use the current Listener-Type build at commit `0b58d26c5ecb7aac20d1f65e10c6eaf104a152f4` and firmware package/flash based on `5584dc7e5b56863a0fcea2c2d930bb380ce85aca`.
 2. Pair the device as a normal user, without serial commands or manual UUID entry.
 3. Press physical KEY3 once to start a recording, speak for about 30 seconds, then press KEY3 again to stop.
 4. Confirm capsule opens, records, processes, inserts text/history, and exits successfully.
