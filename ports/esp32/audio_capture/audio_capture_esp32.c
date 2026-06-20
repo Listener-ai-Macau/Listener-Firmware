@@ -55,8 +55,9 @@
 #define AUDIO_CAPTURE_BACKPRESSURE_LOG_INTERVAL_FRAMES 50U
 #define AUDIO_CAPTURE_PDM_HW_AMPLIFY_NUM 8U
 #define AUDIO_CAPTURE_PDM_SOFTWARE_GAIN_NUM 8
-#define AUDIO_CAPTURE_LEVEL_NOISE_FLOOR 220U
-#define AUDIO_CAPTURE_LEVEL_FULL_SCALE 14000U
+// Status LED level is a visual envelope, so keep it more sensitive than stream clipping.
+#define AUDIO_CAPTURE_LEVEL_NOISE_FLOOR 160U
+#define AUDIO_CAPTURE_LEVEL_FULL_SCALE 5000U
 
 /* ---------- ES8311-specific defines ---------- */
 
@@ -496,7 +497,6 @@ static void audio_capture_process_frame(const int16_t *frame_buffer)
     bool should_session_stop = false;
     bool should_session_cancel = false;
     bool should_session_error = false;
-    bool should_update_recording_level = false;
     uint32_t session_id = 0;
     uint16_t packet_sequence_start = 0;
     uint16_t batch_pcm_bytes = 0;
@@ -516,12 +516,6 @@ static void audio_capture_process_frame(const int16_t *frame_buffer)
             s_export_state.ble_session_started = false;
         }
 
-        should_update_recording_level =
-            s_export_state.active &&
-            s_export_state.mode == AUDIO_CAPTURE_EXPORT_MODE_SESSION &&
-            !s_export_state.stop_requested &&
-            !s_export_state.cancel_requested;
-
         if (s_export_state.active && s_export_state.captured_frames < s_export_state.total_frames) {
             bool stop_boundary_requested =
                 s_export_state.mode == AUDIO_CAPTURE_EXPORT_MODE_SESSION &&
@@ -537,7 +531,6 @@ static void audio_capture_process_frame(const int16_t *frame_buffer)
                 /* Stop is a hard capture boundary; the frame that woke this
                  * call may already be after the user's stop edge. */
                 if (!stop_boundary_requested) {
-                    should_update_recording_level = true;
                     size_t batch_offset =
                         (size_t)s_export_state.stream_batch_frame_count * AUDIO_CAPTURE_FRAME_BYTES;
                     memcpy(s_export_state.stream_batch_buffer + batch_offset, frame_buffer, AUDIO_CAPTURE_FRAME_BYTES);
@@ -643,9 +636,7 @@ static void audio_capture_process_frame(const int16_t *frame_buffer)
         xSemaphoreGive(s_state_mutex);
     }
 
-    if (should_update_recording_level) {
-        status_led_set_recording_level(audio_capture_frame_level_percent(frame_buffer));
-    }
+    status_led_set_recording_level(audio_capture_frame_level_percent(frame_buffer));
 
     if (should_cancel) {
         if (should_session_error) {

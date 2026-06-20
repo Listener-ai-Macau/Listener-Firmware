@@ -555,6 +555,9 @@ static void power_manager_log_power_transition_diag(
 
 static uint32_t power_manager_user_idle_ms_locked(uint64_t now_ms)
 {
+    if (now_ms < s_last_user_activity_ms) {
+        return 0;
+    }
     return power_manager_clamp_u64_to_u32(now_ms - s_last_user_activity_ms);
 }
 
@@ -579,6 +582,9 @@ static void power_manager_clear_shutdown_failure_retry_locked(void)
 
 static uint32_t power_manager_radio_idle_ms_locked(uint64_t now_ms)
 {
+    if (now_ms < s_last_radio_activity_ms) {
+        return 0;
+    }
     return power_manager_clamp_u64_to_u32(now_ms - s_last_radio_activity_ms);
 }
 

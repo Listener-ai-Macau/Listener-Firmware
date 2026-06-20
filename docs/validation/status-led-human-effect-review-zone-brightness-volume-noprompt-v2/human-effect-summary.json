@@ -1,0 +1,18 @@
+{
+  "schema_version": 1,
+  "generated_at": "2026-06-17T23:30:35.4226379+08:00",
+  "result": "HUMAN_REVIEW_INCOMPLETE",
+  "mode": "Volume",
+  "port": "COM10",
+  "step_count": 2,
+  "observed_count": 2,
+  "pass_count": 0,
+  "fail_count": 0,
+  "skip_count": 2,
+  "led56_follow_count": 0,
+  "irregular_flicker_count": 0,
+  "brightness_wrong_count": 0,
+  "plan": "C:\\Users\\Billy\\Desktop\\listener\\voice-keyboard-firmware-wt-adhoc-oai1-led-flicker-guard-shutdown-confirm\\docs\\validation\\status-led-human-effect-review-zone-brightness-volume-noprompt-v2\\human-effect-plan.md",
+  "session_jsonl": "C:\\Users\\Billy\\Desktop\\listener\\voice-keyboard-firmware-wt-adhoc-oai1-led-flicker-guard-shutdown-confirm\\docs\\validation\\status-led-human-effect-review-zone-brightness-volume-noprompt-v2\\human-effect-session.jsonl",
+  "serial_log": "C:\\Users\\Billy\\Desktop\\listener\\voice-keyboard-firmware-wt-adhoc-oai1-led-flicker-guard-shutdown-confirm\\docs\\validation\\status-led-human-effect-review-zone-brightness-volume-noprompt-v2\\human-effect-serial.log"
+}

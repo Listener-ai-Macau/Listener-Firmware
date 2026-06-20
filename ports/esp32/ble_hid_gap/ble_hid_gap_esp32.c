@@ -1350,12 +1350,13 @@ esp_err_t ble_hid_gap_forget_bonds_and_repair(void)
         }
 
         ESP_LOGW(TAG, "recovery: pairing window refreshed, device remains discoverable for first-time pairing");
+        status_led_notify_ble_repairing("ble_recovery_refresh_pairing");
         status_led_set_ble_state(STATUS_LED_BLE_PAIRING, false);
         return ESP_OK;
     }
 
     ESP_LOGW(TAG, "recovery: clearing pairing bonds count=%d", bonded_peer_count);
-    status_led_set_error(STATUS_LED_ERROR_DOMAIN_BLE, STATUS_LED_ERROR_RETRYABLE, "ble_recovery_clear_bonds");
+    status_led_notify_ble_repairing("ble_recovery_clear_bonds");
     diag_log(DIAG_SRC_BLE_GAP, DIAG_GAP_RECOVERY, DIAG_SEV_WARN,
              1, 0, (uint32_t)bonded_peer_count, s_ble_gap_conn_handle);
     rc = ble_store_clear();

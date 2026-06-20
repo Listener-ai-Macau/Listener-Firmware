@@ -817,6 +817,9 @@ static esp_err_t keyboard_ec11_dispatch_rotation(
         return ret;
     }
 
+    status_led_notify_ec11_feedback(direction == EC11_ROTATION_DIRECTION_CW
+        ? STATUS_LED_EC11_FEEDBACK_ROTATE_CW
+        : STATUS_LED_EC11_FEEDBACK_ROTATE_CCW);
     keyboard_input_debug_log(
         KEYBOARD_INPUT_DEBUG_EC11_DISPATCH,
         (uint32_t)direction,

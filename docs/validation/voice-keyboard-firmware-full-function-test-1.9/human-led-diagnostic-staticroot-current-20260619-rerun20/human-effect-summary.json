@@ -1,0 +1,18 @@
+{
+  "schema_version": 1,
+  "generated_at": "2026-06-19T17:55:47.6423235+08:00",
+  "result": "HUMAN_REVIEW_PASS",
+  "mode": "StaticRoot",
+  "port": "COM10",
+  "step_count": 3,
+  "observed_count": 3,
+  "pass_count": 3,
+  "fail_count": 0,
+  "skip_count": 0,
+  "led56_follow_count": 0,
+  "irregular_flicker_count": 0,
+  "brightness_wrong_count": 0,
+  "plan": "C:\\Users\\Billy\\Desktop\\Denzic\\Listener\\Listener-Firmware-wt-adhoc-oai1-led-flicker-guard-shutdown-confirm\\docs\\validation\\voice-keyboard-firmware-full-function-test-1.9\\human-led-diagnostic-staticroot-current-20260619-rerun20\\human-effect-plan.md",
+  "session_jsonl": "C:\\Users\\Billy\\Desktop\\Denzic\\Listener\\Listener-Firmware-wt-adhoc-oai1-led-flicker-guard-shutdown-confirm\\docs\\validation\\voice-keyboard-firmware-full-function-test-1.9\\human-led-diagnostic-staticroot-current-20260619-rerun20\\human-effect-session.jsonl",
+  "serial_log": "C:\\Users\\Billy\\Desktop\\Denzic\\Listener\\Listener-Firmware-wt-adhoc-oai1-led-flicker-guard-shutdown-confirm\\docs\\validation\\voice-keyboard-firmware-full-function-test-1.9\\human-led-diagnostic-staticroot-current-20260619-rerun20\\human-effect-serial.log"
+}
