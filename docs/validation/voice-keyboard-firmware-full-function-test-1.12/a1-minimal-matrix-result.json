@@ -1,0 +1,463 @@
+{
+  "schema": "voice_keyboard_extreme_matrix_result.v1",
+  "status": "FAIL",
+  "fail_on_warning": false,
+  "matrix_incomplete": false,
+  "skipped_is_not_pass_evidence": false,
+  "case_suite": "custom",
+  "requested_cases": [
+    "A1"
+  ],
+  "run_metadata": {
+    "schema": "voice_keyboard_extreme_matrix.v1",
+    "generated_at_utc": "2026-06-20T11:49:02.584085+00:00",
+    "firmware": {
+      "path": "C:\\Users\\Billy\\Desktop\\Denzic\\Listener\\Listener-Firmware-pwr-shutdown-new-board",
+      "commit": "5584dc7e5b56863a0fcea2c2d930bb380ce85aca",
+      "branch": "master",
+      "dirty": true
+    },
+    "listener_type": {
+      "path": "C:\\Users\\Billy\\Desktop\\Denzic\\Listener\\Listener-Type",
+      "commit": "5bed19be967d94f1a8b7ded50ae4a5b859bcacb7",
+      "branch": "main",
+      "dirty": false
+    },
+    "package": {
+      "listener_exe": null,
+      "package_hash": null
+    }
+  },
+  "case_contracts": {
+    "A1": {
+      "scenario": "Short recordings start from generated KEY3 single-click signals, split into restart-Type rounds and continuous-Type rounds with sub-1s capsule reopen latency.",
+      "expected_user_visible_behavior": "Each generated legal button press shows a new capsule quickly, creates a fresh session, and does not lose a round silently; transcript accuracy is evidence-only.",
+      "firmware_observables": [
+        "generated KEY3 single-click command evidence",
+        "custom key raw/stable/release/single-click logs",
+        "voice recording source/state/session id",
+        "BLE packet counts and missing/duplicate packet counters",
+        "no QueueFull or session storm"
+      ],
+      "desktop_observables": [
+        "capsule visible timestamp/source",
+        "history session id",
+        "continuous Type hidden_to_visible_seconds",
+        "ASR partial/final text"
+      ],
+      "failure_classification": "button_path, latency, dropped_round, transport, insertion, capsule",
+      "artifact_requirements": [
+        "matrix JSON",
+        "summary log",
+        "Listener-Type smoke report",
+        "continuous Type background-round report",
+        "firmware serial or diag reference when available"
+      ],
+      "automation_status": "automated"
+    }
+  },
+  "matrix_total": 1,
+  "matrix_failed": 1,
+  "matrix_warning": 0,
+  "matrix_skipped": 0,
+  "failed_cases": [
+    "A1"
+  ],
+  "warning_cases": [],
+  "skipped_cases": [],
+  "summary_log": "docs\\validation\\voice-keyboard-firmware-full-function-test-1.12\\a1-minimal-summary.log",
+  "cases": [
+    {
+      "case_id": "A1",
+      "description": "按键短录音时序：自动生成 KEY3 单击信号，跑重启 Type + 持续 Type 短录音；gate 按键触发、胶囊、session、传输和插入，准确率只记录",
+      "automation_status": "automated",
+      "failure_classification": "button_path, latency, dropped_round, transport, insertion, capsule",
+      "artifact_requirements": [
+        "matrix JSON",
+        "summary log",
+        "Listener-Type smoke report",
+        "continuous Type background-round report",
+        "firmware serial or diag reference when available"
+      ],
+      "result": "fail",
+      "reason": "product_chain_failed:generated-key3:restart_round1",
+      "failure_timestamp_utc": "2026-06-20T11:50:15.960927+00:00",
+      "details": {
+        "contract": {
+          "scenario": "Short recordings start from generated KEY3 single-click signals, split into restart-Type rounds and continuous-Type rounds with sub-1s capsule reopen latency.",
+          "expected_user_visible_behavior": "Each generated legal button press shows a new capsule quickly, creates a fresh session, and does not lose a round silently; transcript accuracy is evidence-only.",
+          "firmware_observables": [
+            "generated KEY3 single-click command evidence",
+            "custom key raw/stable/release/single-click logs",
+            "voice recording source/state/session id",
+            "BLE packet counts and missing/duplicate packet counters",
+            "no QueueFull or session storm"
+          ],
+          "desktop_observables": [
+            "capsule visible timestamp/source",
+            "history session id",
+            "continuous Type hidden_to_visible_seconds",
+            "ASR partial/final text"
+          ],
+          "failure_classification": "button_path, latency, dropped_round, transport, insertion, capsule",
+          "artifact_requirements": [
+            "matrix JSON",
+            "summary log",
+            "Listener-Type smoke report",
+            "continuous Type background-round report",
+            "firmware serial or diag reference when available"
+          ],
+          "automation_status": "automated"
+        },
+        "transport_capture_skipped": true,
+        "transport_skip_reason": "product_chain_primary_requires_capsule_before_playback",
+        "trigger_modes": [
+          "generated-key3"
+        ],
+        "trigger_results": [
+          {
+            "trigger_mode": "generated-key3",
+            "result": "fail",
+            "failures": [
+              "restart_round1"
+            ],
+            "warnings": [],
+            "restart_rounds": [
+              {
+                "case_id": "A1",
+                "result": "fail",
+                "reason": "status LED REC active evidence was not seen in firmware log; status LED REC clear evidence was not seen after recording stop",
+                "details": {
+                  "full_chain_status": "FAIL",
+                  "listener_type_report_status": "FAIL",
+                  "full_chain_returncode": 1,
+                  "trigger_mode": "generated-key3",
+                  "artifact_label": "generated_key3_restart_round1",
+                  "attempt_count": 1,
+                  "attempts": [
+                    {
+                      "attempt": 1,
+                      "result": "FAIL",
+                      "returncode": 1,
+                      "error": "",
+                      "prestart_transient": false,
+                      "stdout_path": "tests\\artifacts\\ble_product_matrix\\a1\\product_chain\\listener_type_generated_key3_restart_round1_attempt1_stdout.log",
+                      "stderr_path": "tests\\artifacts\\ble_product_matrix\\a1\\product_chain\\listener_type_generated_key3_restart_round1_attempt1_stderr.log"
+                    }
+                  ],
+                  "prestart_transient_retry_count": 0,
+                  "audio_profile": "normal",
+                  "accuracy_gate_skipped": true,
+                  "source_tts_rate": 0,
+                  "source_tts_gain": 4.0,
+                  "generated_wav_path": "tests\\artifacts\\ble_product_matrix\\a1\\product_chain\\ble-stream-generated_key3_restart_round1-normal.wav",
+                  "expect_no_text": false,
+                  "listener_type_repo": "C:\\Users\\Billy\\Desktop\\Denzic\\Listener\\Listener-Type",
+                  "listener_type_stdout_path": "tests\\artifacts\\ble_product_matrix\\a1\\product_chain\\listener_type_generated_key3_restart_round1_stdout.log",
+                  "listener_type_stderr_path": "tests\\artifacts\\ble_product_matrix\\a1\\product_chain\\listener_type_generated_key3_restart_round1_stderr.log",
+                  "listener_type_report_path": "tests\\artifacts\\ble_product_matrix\\a1\\product_chain\\ble-stream-smoke.20260620-195015.json",
+                  "listener_type_log_refs": [
+                    "tests\\artifacts\\ble_product_matrix\\a1\\product_chain\\listener_type_generated_key3_restart_round1_stdout.log",
+                    "tests\\artifacts\\ble_product_matrix\\a1\\product_chain\\listener_type_generated_key3_restart_round1_stderr.log",
+                    "C:\\Users\\Billy\\AppData\\Local\\Listener Type\\Logs\\listener-type.log"
+                  ],
+                  "firmware_diag_refs": [
+                    "C:\\Users\\Billy\\Desktop\\Denzic\\Listener\\Listener-Firmware-pwr-shutdown-new-board\\tests\\artifacts\\ble_product_matrix\\a1\\product_chain\\ble-stream-smoke-20260620-194909.serial.log"
+                  ],
+                  "sentence": "确认发送",
+                  "expected_text": "确认发送",
+                  "normalized_expected": "确认发送",
+                  "normalized_transcript": "确认发送",
+                  "edit_distance": 0,
+                  "reference_length": 4,
+                  "cer": 0.0,
+                  "accuracy": 1.0,
+                  "accuracy_threshold": 0.85,
+                  "accuracy_warning_only": false,
+                  "transcript": "确认发送。",
+                  "final_text": "确认发送。",
+                  "partial_preview_count": 0,
+                  "last_partial_preview": "",
+                  "asr_text_update_count": 1,
+                  "asr_text_updates": [
+                    "确认发送。"
+                  ],
+                  "insert_status": "inserted",
+                  "inserted_text": "",
+                  "insertion_verified": false,
+                  "history_session_id": "3213e499-7295-4d3a-98eb-b4de07ba83c3",
+                  "expected_packet_count": 264,
+                  "received_packet_count": null,
+                  "missing_packet_count": "0",
+                  "duplicate_packet_count": null,
+                  "missing_packets": 0,
+                  "pcm_bytes": 126720,
+                  "embedded_audio_stats": {
+                    "receivedPcmBytes": 126720,
+                    "reconstructedPcmBytes": 126720,
+                    "missingPacketCount": 0,
+                    "expectedPacketCount": 264,
+                    "terminalReceived": true
+                  },
+                  "recording_archive_path": "C:\\Users\\Billy\\AppData\\Roaming\\Listener Type\\recordings\\3213e499-7295-4d3a-98eb-b4de07ba83c3.wav",
+                  "timeline": {
+                    "smoke_started_at_utc": "2026-06-20T11:50:01.6480176Z",
+                    "listener_started_at_utc": "2026-06-20T11:50:04.0630253Z",
+                    "notify_ready_at_utc": "2026-06-20T11:50:06.8595113Z",
+                    "notify_ready_capsule_visible_at_utc": "2026-06-20T11:50:06.9197591Z",
+                    "serial_start_signal_at_utc": "2026-06-20T11:50:08.3736223Z",
+                    "firmware_recording_started_at_utc": "2026-06-20T11:50:08.9412215Z",
+                    "capsule_visible_at_utc": "2026-06-20T11:50:08.9412215Z",
+                    "record_playback_started_at_utc": "2026-06-20T11:50:09.3586042Z",
+                    "record_playback_done_at_utc": "2026-06-20T11:50:12.2978846Z",
+                    "serial_stop_signal_at_utc": "2026-06-20T11:50:12.8009812Z",
+                    "serial_window_done_at_utc": "2026-06-20T11:50:14.8725728Z",
+                    "stream_done_at_utc": "2026-06-20T11:50:15.2051566Z",
+                    "transcript_parsed_at_utc": "2026-06-20T11:50:15.5294272Z",
+                    "history_wait_started_at_utc": "2026-06-20T11:50:15.5304293Z",
+                    "history_wait_done_at_utc": "2026-06-20T11:50:15.6196748Z"
+                  },
+                  "verify_insertion": false,
+                  "verify_history": true,
+                  "history_lookup_fallback": false,
+                  "verification_errors": [
+                    "status LED REC active evidence was not seen in firmware log",
+                    "status LED REC clear evidence was not seen after recording stop"
+                  ],
+                  "no_text_acceptance": null,
+                  "listener_type_report": {
+                    "report_schema": {
+                      "name": "ble_stream_smoke_report",
+                      "schema_version": 1,
+                      "required": [
+                        "status",
+                        "trigger",
+                        "audio_profile",
+                        "expected_text",
+                        "transcript",
+                        "final_text",
+                        "partial_preview_count",
+                        "last_partial_preview",
+                        "asr_text_update_count",
+                        "asr_text_updates",
+                        "inserted_text",
+                        "history_session",
+                        "recording_archive_path",
+                        "timeline",
+                        "started_at_utc",
+                        "log_path"
+                      ],
+                      "optional": [
+                        "history_session.embeddedAudioStats",
+                        "history_session.insertStatus",
+                        "serial_report",
+                        "serial_log_path",
+                        "desktop_cancel_report",
+                        "insertion_target_path",
+                        "expected_stream_failure",
+                        "error"
+                      ],
+                      "diagnostic": [
+                        "normalized_expected",
+                        "normalized_transcript",
+                        "cer",
+                        "accuracy",
+                        "accuracy_threshold",
+                        "accuracy_warning_only",
+                        "accuracy_warning",
+                        "accuracy_warning_message",
+                        "wav_path",
+                        "tts_rate",
+                        "tts_gain",
+                        "random_sentence_count",
+                        "serial_report.led_recording_active_seen",
+                        "serial_report.led_recording_cleared_seen",
+                        "serial_report.led_ai_active_seen",
+                        "serial_report.led_ok_active_seen",
+                        "serial_report.led_warn_active_seen",
+                        "pcm_bytes",
+                        "missing_packets",
+                        "verification_errors"
+                      ]
+                    },
+                    "status": "FAIL",
+                    "trigger": "generated-key3",
+                    "trigger_start_command": "~KEY:KEY3:SINGLE",
+                    "trigger_end_command": "~KEY:KEY3:SINGLE",
+                    "port": "COM10",
+                    "audio_profile": "normal",
+                    "sentence": "确认发送",
+                    "expected_text": "确认发送",
+                    "transcript": "确认发送。",
+                    "final_text": "确认发送。",
+                    "partial_preview_count": 0,
+                    "last_partial_preview": "",
+                    "asr_text_update_count": 1,
+                    "asr_text_updates": [
+                      "确认发送。"
+                    ],
+                    "normalized_expected": "确认发送",
+                    "normalized_transcript": "确认发送",
+                    "cer": 0,
+                    "accuracy": 1,
+                    "accuracy_threshold": 0.85,
+                    "accuracy_warning_only": false,
+                    "accuracy_gate_skipped": true,
+                    "accuracy_warning": false,
+                    "accuracy_warning_message": null,
+                    "wav_path": "C:\\Users\\Billy\\Desktop\\Denzic\\Listener\\Listener-Firmware-pwr-shutdown-new-board\\tests\\artifacts\\ble_product_matrix\\a1\\product_chain\\ble-stream-generated_key3_restart_round1-normal.wav",
+                    "tts_rate": 0,
+                    "tts_gain": 4,
+                    "random_sentence_count": 1,
+                    "silent_audio": false,
+                    "silent_audio_ms": 2500,
+                    "expect_no_text": false,
+                    "expected_stream_failure": null,
+                    "playback_count": 1,
+                    "record_playback_index": 1,
+                    "record_playback_actual_ms": 2930,
+                    "wav_duration_ms": 1810,
+                    "recording_window_ms": 2610,
+                    "pre_record_delay_ms": 300,
+                    "recording_start_timeout_ms": 6000,
+                    "post_playback_record_ms": 500,
+                    "no_notification_timeout_seconds": 8,
+                    "manual_trigger_ready_delay_ms": 20000,
+                    "playback_volume_percent": 70,
+                    "keep_playback_volume": false,
+                    "serial_log_path": "C:\\Users\\Billy\\Desktop\\Denzic\\Listener\\Listener-Firmware-pwr-shutdown-new-board\\tests\\artifacts\\ble_product_matrix\\a1\\product_chain\\ble-stream-smoke-20260620-194909.serial.log",
+                    "serial_report": {
+                      "serial_log_path": "C:\\Users\\Billy\\Desktop\\Denzic\\Listener\\Listener-Firmware-pwr-shutdown-new-board\\tests\\artifacts\\ble_product_matrix\\a1\\product_chain\\ble-stream-smoke-20260620-194909.serial.log",
+                      "serial_line_count": 120,
+                      "notify_enabled": true,
+                      "stream_ready": true,
+                      "stream_ready_confirmed_line_index": 24,
+                      "streaming_queued": true,
+                      "transport_not_ready": false,
+                      "transport_not_ready_rejection_line_index": null,
+                      "pre_start_cancel_sent": true,
+                      "stream_ready_wait_count": 0,
+                      "transport_ready_retry_count": 0,
+                      "record_start_rejected": false,
+                      "recording_start_seen": true,
+                      "recording_stop_seen": true,
+                      "recording_cancel_seen": false,
+                      "cancel_requested": false,
+                      "cancel_completed": false,
+                      "generated_button_logical": "KEY3",
+                      "generated_button_command": "~KEY:KEY3:SINGLE",
+                      "generated_button_ack_count": 2,
+                      "generated_button_start_stop_ack_seen": true,
+                      "generated_button_timing_seen": true,
+                      "generated_button_single_seen": true,
+                      "generated_button_evidence_summary": "KEY3 generated press/release -> custom key debounce/single-click/F15 path",
+                      "led_status_seen": true,
+                      "led_status_sample_ranges": {
+                        "recording": [
+                          49,
+                          58
+                        ],
+                        "post_stop": [
+                          97,
+                          111
+                        ]
+                      },
+                      "led_status_summary_count": 2,
+                      "led_status_recording_summary_count": 0,
+                      "led_status_post_stop_summary_count": 0,
+                      "led_recording_active_seen": false,
+                      "led_recording_cleared_seen": false,
+                      "led_ai_active_seen": true,
+                      "led_ok_active_seen": false,
+                      "led_warn_active_seen": false,
+                      "led_diag_visual_state_seen": false,
+                      "led_diag_output_state_seen": false,
+                      "led_diag_recording_active_seen": false,
+                      "led_diag_recording_cleared_seen": false,
+                      "led_status_evidence_summary": "status LED REC active/clear sampled via ~LED:STATUS; AI/OK/WARN evidence is reported when host processing/error feedback is observed"
+                    },
+                    "desktop_cancel_report": null,
+                    "pcm_bytes": 126720,
+                    "missing_packets": 0,
+                    "max_missing_packets": 0,
+                    "verify_insertion": false,
+                    "verify_history": true,
+                    "history_lookup_skipped": false,
+                    "insert_status": "inserted",
+                    "insertion_verified": false,
+                    "insertion_target_used": false,
+                    "insertion_target_path": null,
+                    "inserted_text": null,
+                    "history_path": "C:\\Users\\Billy\\AppData\\Roaming\\Listener Type\\history.json",
+                    "recording_archive_path": "C:\\Users\\Billy\\AppData\\Roaming\\Listener Type\\recordings\\3213e499-7295-4d3a-98eb-b4de07ba83c3.wav",
+                    "history_session": {
+                      "id": "3213e499-7295-4d3a-98eb-b4de07ba83c3",
+                      "createdAt": "2026-06-20T11:50:14.860691300+00:00",
+                      "rawTranscript": "确认发送。",
+                      "finalText": "确认发送。",
+                      "insertStatus": "inserted",
+                      "embeddedAudioStats": {
+                        "receivedPcmBytes": 126720,
+                        "reconstructedPcmBytes": 126720,
+                        "missingPacketCount": 0,
+                        "expectedPacketCount": 264,
+                        "terminalReceived": true
+                      }
+                    },
+                    "verification_errors": [
+                      "status LED REC active evidence was not seen in firmware log",
+                      "status LED REC clear evidence was not seen after recording stop"
+                    ],
+                    "timeline": {
+                      "smoke_started_at_utc": "2026-06-20T11:50:01.6480176Z",
+                      "listener_started_at_utc": "2026-06-20T11:50:04.0630253Z",
+                      "notify_ready_at_utc": "2026-06-20T11:50:06.8595113Z",
+                      "notify_ready_capsule_visible_at_utc": "2026-06-20T11:50:06.9197591Z",
+                      "serial_start_signal_at_utc": "2026-06-20T11:50:08.3736223Z",
+                      "firmware_recording_started_at_utc": "2026-06-20T11:50:08.9412215Z",
+                      "capsule_visible_at_utc": "2026-06-20T11:50:08.9412215Z",
+                      "record_playback_started_at_utc": "2026-06-20T11:50:09.3586042Z",
+                      "record_playback_done_at_utc": "2026-06-20T11:50:12.2978846Z",
+                      "serial_stop_signal_at_utc": "2026-06-20T11:50:12.8009812Z",
+                      "serial_window_done_at_utc": "2026-06-20T11:50:14.8725728Z",
+                      "stream_done_at_utc": "2026-06-20T11:50:15.2051566Z",
+                      "transcript_parsed_at_utc": "2026-06-20T11:50:15.5294272Z",
+                      "history_wait_started_at_utc": "2026-06-20T11:50:15.5304293Z",
+                      "history_wait_done_at_utc": "2026-06-20T11:50:15.6196748Z"
+                    },
+                    "temporary_preferences": {
+                      "path": "C:\\Users\\Billy\\AppData\\Roaming\\Listener Type\\preferences.json",
+                      "backup_path": "C:\\Users\\Billy\\Desktop\\Denzic\\Listener\\Listener-Firmware-pwr-shutdown-new-board\\tests\\artifacts\\ble_product_matrix\\a1\\product_chain\\preferences-before-ble-stream-smoke-20260620-194909.json",
+                      "active_snapshot_path": "C:\\Users\\Billy\\Desktop\\Denzic\\Listener\\Listener-Firmware-pwr-shutdown-new-board\\tests\\artifacts\\ble_product_matrix\\a1\\product_chain\\preferences-active-ble-stream-smoke-20260620-194909.json",
+                      "key3_single_click_action": "dictation",
+                      "dictation_input_source": "embeddedBle",
+                      "restored_after_run": true
+                    },
+                    "started_at_utc": "2026-06-20T11:50:01.6480176Z",
+                    "log_path": "C:\\Users\\Billy\\AppData\\Local\\Listener Type\\Logs\\listener-type.log"
+                  }
+                }
+              }
+            ],
+            "continuous_rounds": null,
+            "capsule_evidence": [
+              {
+                "pass": true,
+                "reason": "capsule_check_not_required",
+                "capsule_validated": false
+              }
+            ]
+          }
+        ],
+        "restart_round_count": 1,
+        "continuous_round_count": 0,
+        "accuracy_gate": "A1 evidence-only; use A3 for accuracy acceptance"
+      },
+      "artifacts": {
+        "output_dir": "tests\\artifacts\\ble_product_matrix\\a1",
+        "serial_logs": [],
+        "wav_files": []
+      }
+    }
+  ]
+}

@@ -1,0 +1,7057 @@
+{
+  "schema_version": 1,
+  "schema_id": "listener.firmware.diag_log.ai_bundle.v1",
+  "source_metadata": {
+    "input_path": "C:\\Users\\Billy\\Desktop\\Denzic\\Listener\\Listener-Firmware-pwr-shutdown-new-board\\docs\\validation\\voice-keyboard-firmware-full-function-test-1.12\\collect-ai-diagnostics\\diag_log_raw.jsonl",
+    "input_sha256": "88677c654933ca90c33ce586e2997a328d2c488ea4c271c88d03f165f78ba646",
+    "input_bytes": 6921,
+    "input_line_count": 85,
+    "event_schema_header_path": "C:\\Users\\Billy\\Desktop\\Denzic\\Listener\\Listener-Firmware-pwr-shutdown-new-board\\components\\diag_log\\include\\diag_log_events.h",
+    "event_schema_header_sha256": "af6ce0c8304aace140a195eb8e54c27696c0628844d2046bfff7aecc45348e51",
+    "event_schema_macro_count": 136,
+    "decoder": "tools/decode_diag_log.py"
+  },
+  "parse": {
+    "json_event_count": 85,
+    "skipped_line_count": 0,
+    "parse_errors": [],
+    "parse_error_count": 0
+  },
+  "timebase": {
+    "field": "t",
+    "unit": "milliseconds since boot segment",
+    "boot_segment_rule": "boot_segment_index increments when t_ms decreases between ordered events",
+    "t_decrease_events": [],
+    "segments": [
+      {
+        "index": 0,
+        "start_event_index": 0,
+        "end_event_index": 84,
+        "event_count": 85,
+        "start_t_ms": 4515,
+        "end_t_ms": 202241,
+        "duration_ms": 197726,
+        "boot_reason": null
+      }
+    ]
+  },
+  "summary": {
+    "event_count": 85,
+    "boot_segment_count": 1,
+    "counts_by_source": {
+      "keyboard": 84,
+      "voice_key": 1
+    },
+    "counts_by_severity": {
+      "WARN": 85
+    },
+    "counts_by_event": {
+      "keyboard.kbd_custom_key": 1,
+      "keyboard.kbd_key_fail": 83,
+      "voice_key.vkey_queue_drop": 1
+    },
+    "input_debug_summary": {
+      "custom_keys": {
+        "KEY1": {
+          "press": 0,
+          "release": 0,
+          "single": 0,
+          "double": 0,
+          "long": 0
+        },
+        "KEY2": {
+          "press": 0,
+          "release": 0,
+          "single": 0,
+          "double": 0,
+          "long": 0
+        },
+        "KEY3": {
+          "press": 0,
+          "release": 0,
+          "single": 0,
+          "double": 0,
+          "long": 0
+        },
+        "KEY4": {
+          "press": 0,
+          "release": 0,
+          "single": 0,
+          "double": 0,
+          "long": 0
+        }
+      },
+      "ec11": {
+        "clockwise": 0,
+        "counterclockwise": 0,
+        "last_detent_count": null,
+        "press": 0,
+        "double_click_recovery": 0,
+        "long_press_ignored": 0
+      },
+      "notes": "Counts are populated when keyboard.kbd_custom_key, keyboard.kbd_ec11_detent, or voice_key.vkey_press events exist in the input log."
+    },
+    "param_highlights": {
+      "schema_version": 1,
+      "derivation": {
+        "field_source": "events[*].args_named and field_sources are derived from diag_log_events.h comments through arg_definitions.",
+        "event_ref": "Each highlight contains event_index/event_ref back to events[*], which preserves args_raw, args_named, args_decoded, and raw_event."
+      },
+      "ble_gap": {
+        "connection_params": [],
+        "subscriptions": [],
+        "advertising": []
+      },
+      "ble_audio": {
+        "notify": [],
+        "pressure": [],
+        "replay": [],
+        "session_flow": []
+      },
+      "audio_voice": {
+        "audio_sessions": [],
+        "voice_recording": [],
+        "rejects_and_flow": []
+      },
+      "power": {
+        "state": [],
+        "sleep_wake": [],
+        "external_power": []
+      },
+      "status_led": {
+        "power_input": [],
+        "visual_state": [],
+        "output_state": [],
+        "frame_rgb": []
+      },
+      "board": {
+        "profile": [],
+        "rails": []
+      },
+      "inputs": {
+        "counts": {
+          "custom_keys": {
+            "KEY1": {
+              "press": 0,
+              "release": 0,
+              "single": 0,
+              "double": 0,
+              "long": 0
+            },
+            "KEY2": {
+              "press": 0,
+              "release": 0,
+              "single": 0,
+              "double": 0,
+              "long": 0
+            },
+            "KEY3": {
+              "press": 0,
+              "release": 0,
+              "single": 0,
+              "double": 0,
+              "long": 0
+            },
+            "KEY4": {
+              "press": 0,
+              "release": 0,
+              "single": 0,
+              "double": 0,
+              "long": 0
+            }
+          },
+          "ec11": {
+            "clockwise": 0,
+            "counterclockwise": 0,
+            "last_detent_count": null,
+            "press": 0,
+            "double_click_recovery": 0,
+            "long_press_ignored": 0
+          },
+          "notes": "Counts are populated when keyboard.kbd_custom_key, keyboard.kbd_ec11_detent, or voice_key.vkey_press events exist in the input log."
+        },
+        "events": [
+          {
+            "event_index": 83,
+            "event_ref": "events[83]",
+            "boot_segment_index": 0,
+            "t_ms": 202240,
+            "source": "keyboard",
+            "event": "kbd_custom_key",
+            "event_macro": "DIAG_KBD_CUSTOM_KEY",
+            "severity": "WARN",
+            "fields": {
+              "logical_key": 5,
+              "phase": 3,
+              "hid_usage": 104,
+              "esp_err": 259
+            },
+            "decoded": {
+              "logical_key": "EC11",
+              "phase": "single"
+            },
+            "field_sources": {
+              "logical_key": {
+                "slot": "a1",
+                "header_name": "logical_key",
+                "header_detail": "logical_key(1=KEY1..4=KEY4,5=EC11)"
+              },
+              "phase": {
+                "slot": "a2",
+                "header_name": "phase",
+                "header_detail": "phase(1=press,2=release,3=single,4=double,5=long)"
+              },
+              "hid_usage": {
+                "slot": "a3",
+                "header_name": "hid_usage",
+                "header_detail": "hid_usage"
+              },
+              "esp_err": {
+                "slot": "a4",
+                "header_name": "esp_err",
+                "header_detail": "esp_err"
+              }
+            }
+          },
+          {
+            "event_index": 84,
+            "event_ref": "events[84]",
+            "boot_segment_index": 0,
+            "t_ms": 202241,
+            "source": "voice_key",
+            "event": "vkey_queue_drop",
+            "event_macro": "DIAG_VKEY_QUEUE_DROP",
+            "severity": "WARN",
+            "fields": {
+              "type": 1,
+              "reason": 259
+            },
+            "decoded": {
+              "type": "single_click_toggle"
+            },
+            "field_sources": {
+              "type": {
+                "slot": "a1",
+                "header_name": "type",
+                "header_detail": "type(1=single_click_toggle,2=double_click_recovery)"
+              },
+              "reason": {
+                "slot": "a2",
+                "header_name": "reason",
+                "header_detail": "reason(1=no_queue,2=queue_full)"
+              }
+            }
+          }
+        ]
+      },
+      "coverage": {
+        "highlighted_event_count": 2,
+        "sections_present": [
+          "inputs"
+        ]
+      }
+    },
+    "recent_warning_error_refs": [
+      {
+        "event_index": 65,
+        "boot_segment_index": 0,
+        "t_ms": 37711,
+        "severity": "WARN",
+        "source": "keyboard",
+        "event": "kbd_key_fail",
+        "args_named": {
+          "key_usage_or_ascii": 0,
+          "esp_err": 262,
+          "ble_connected": 1
+        },
+        "args_decoded": {},
+        "raw_args": {
+          "a1": 0,
+          "a2": 262,
+          "a3": 1,
+          "a4": 0
+        }
+      },
+      {
+        "event_index": 66,
+        "boot_segment_index": 0,
+        "t_ms": 37727,
+        "severity": "WARN",
+        "source": "keyboard",
+        "event": "kbd_key_fail",
+        "args_named": {
+          "key_usage_or_ascii": 0,
+          "esp_err": 262,
+          "ble_connected": 1
+        },
+        "args_decoded": {},
+        "raw_args": {
+          "a1": 0,
+          "a2": 262,
+          "a3": 1,
+          "a4": 0
+        }
+      },
+      {
+        "event_index": 67,
+        "boot_segment_index": 0,
+        "t_ms": 37743,
+        "severity": "WARN",
+        "source": "keyboard",
+        "event": "kbd_key_fail",
+        "args_named": {
+          "key_usage_or_ascii": 0,
+          "esp_err": 262,
+          "ble_connected": 1
+        },
+        "args_decoded": {},
+        "raw_args": {
+          "a1": 0,
+          "a2": 262,
+          "a3": 1,
+          "a4": 0
+        }
+      },
+      {
+        "event_index": 68,
+        "boot_segment_index": 0,
+        "t_ms": 37758,
+        "severity": "WARN",
+        "source": "keyboard",
+        "event": "kbd_key_fail",
+        "args_named": {
+          "key_usage_or_ascii": 7,
+          "esp_err": 262,
+          "ble_connected": 1
+        },
+        "args_decoded": {},
+        "raw_args": {
+          "a1": 7,
+          "a2": 262,
+          "a3": 1,
+          "a4": 0
+        }
+      },
+      {
+        "event_index": 69,
+        "boot_segment_index": 0,
+        "t_ms": 37774,
+        "severity": "WARN",
+        "source": "keyboard",
+        "event": "kbd_key_fail",
+        "args_named": {
+          "key_usage_or_ascii": 7,
+          "esp_err": 262,
+          "ble_connected": 1
+        },
+        "args_decoded": {},
+        "raw_args": {
+          "a1": 7,
+          "a2": 262,
+          "a3": 1,
+          "a4": 0
+        }
+      },
+      {
+        "event_index": 70,
+        "boot_segment_index": 0,
+        "t_ms": 37790,
+        "severity": "WARN",
+        "source": "keyboard",
+        "event": "kbd_key_fail",
+        "args_named": {
+          "key_usage_or_ascii": 18,
+          "esp_err": 262,
+          "ble_connected": 1
+        },
+        "args_decoded": {},
+        "raw_args": {
+          "a1": 18,
+          "a2": 262,
+          "a3": 1,
+          "a4": 0
+        }
+      },
+      {
+        "event_index": 71,
+        "boot_segment_index": 0,
+        "t_ms": 39780,
+        "severity": "WARN",
+        "source": "keyboard",
+        "event": "kbd_key_fail",
+        "args_named": {
+          "key_usage_or_ascii": 192,
+          "esp_err": 262,
+          "ble_connected": 1
+        },
+        "args_decoded": {},
+        "raw_args": {
+          "a1": 192,
+          "a2": 262,
+          "a3": 1,
+          "a4": 0
+        }
+      },
+      {
+        "event_index": 72,
+        "boot_segment_index": 0,
+        "t_ms": 39796,
+        "severity": "WARN",
+        "source": "keyboard",
+        "event": "kbd_key_fail",
+        "args_named": {
+          "key_usage_or_ascii": 192,
+          "esp_err": 262,
+          "ble_connected": 1
+        },
+        "args_decoded": {},
+        "raw_args": {
+          "a1": 192,
+          "a2": 262,
+          "a3": 1,
+          "a4": 0
+        }
+      },
+      {
+        "event_index": 73,
+        "boot_segment_index": 0,
+        "t_ms": 39811,
+        "severity": "WARN",
+        "source": "keyboard",
+        "event": "kbd_key_fail",
+        "args_named": {
+          "key_usage_or_ascii": 0,
+          "esp_err": 262,
+          "ble_connected": 1
+        },
+        "args_decoded": {},
+        "raw_args": {
+          "a1": 0,
+          "a2": 262,
+          "a3": 1,
+          "a4": 0
+        }
+      },
+      {
+        "event_index": 74,
+        "boot_segment_index": 0,
+        "t_ms": 39940,
+        "severity": "WARN",
+        "source": "keyboard",
+        "event": "kbd_key_fail",
+        "args_named": {
+          "key_usage_or_ascii": 0,
+          "esp_err": 262,
+          "ble_connected": 1
+        },
+        "args_decoded": {},
+        "raw_args": {
+          "a1": 0,
+          "a2": 262,
+          "a3": 1,
+          "a4": 0
+        }
+      },
+      {
+        "event_index": 75,
+        "boot_segment_index": 0,
+        "t_ms": 39955,
+        "severity": "WARN",
+        "source": "keyboard",
+        "event": "kbd_key_fail",
+        "args_named": {
+          "key_usage_or_ascii": 0,
+          "esp_err": 262,
+          "ble_connected": 1
+        },
+        "args_decoded": {},
+        "raw_args": {
+          "a1": 0,
+          "a2": 262,
+          "a3": 1,
+          "a4": 0
+        }
+      },
+      {
+        "event_index": 76,
+        "boot_segment_index": 0,
+        "t_ms": 39971,
+        "severity": "WARN",
+        "source": "keyboard",
+        "event": "kbd_key_fail",
+        "args_named": {
+          "key_usage_or_ascii": 0,
+          "esp_err": 262,
+          "ble_connected": 1
+        },
+        "args_decoded": {},
+        "raw_args": {
+          "a1": 0,
+          "a2": 262,
+          "a3": 1,
+          "a4": 0
+        }
+      },
+      {
+        "event_index": 77,
+        "boot_segment_index": 0,
+        "t_ms": 39987,
+        "severity": "WARN",
+        "source": "keyboard",
+        "event": "kbd_key_fail",
+        "args_named": {
+          "key_usage_or_ascii": 0,
+          "esp_err": 262,
+          "ble_connected": 1
+        },
+        "args_decoded": {},
+        "raw_args": {
+          "a1": 0,
+          "a2": 262,
+          "a3": 1,
+          "a4": 0
+        }
+      },
+      {
+        "event_index": 78,
+        "boot_segment_index": 0,
+        "t_ms": 40003,
+        "severity": "WARN",
+        "source": "keyboard",
+        "event": "kbd_key_fail",
+        "args_named": {
+          "key_usage_or_ascii": 0,
+          "esp_err": 262,
+          "ble_connected": 1
+        },
+        "args_decoded": {},
+        "raw_args": {
+          "a1": 0,
+          "a2": 262,
+          "a3": 1,
+          "a4": 0
+        }
+      },
+      {
+        "event_index": 79,
+        "boot_segment_index": 0,
+        "t_ms": 40018,
+        "severity": "WARN",
+        "source": "keyboard",
+        "event": "kbd_key_fail",
+        "args_named": {
+          "key_usage_or_ascii": 7,
+          "esp_err": 262,
+          "ble_connected": 1
+        },
+        "args_decoded": {},
+        "raw_args": {
+          "a1": 7,
+          "a2": 262,
+          "a3": 1,
+          "a4": 0
+        }
+      },
+      {
+        "event_index": 80,
+        "boot_segment_index": 0,
+        "t_ms": 40034,
+        "severity": "WARN",
+        "source": "keyboard",
+        "event": "kbd_key_fail",
+        "args_named": {
+          "key_usage_or_ascii": 7,
+          "esp_err": 262,
+          "ble_connected": 1
+        },
+        "args_decoded": {},
+        "raw_args": {
+          "a1": 7,
+          "a2": 262,
+          "a3": 1,
+          "a4": 0
+        }
+      },
+      {
+        "event_index": 81,
+        "boot_segment_index": 0,
+        "t_ms": 40050,
+        "severity": "WARN",
+        "source": "keyboard",
+        "event": "kbd_key_fail",
+        "args_named": {
+          "key_usage_or_ascii": 18,
+          "esp_err": 262,
+          "ble_connected": 1
+        },
+        "args_decoded": {},
+        "raw_args": {
+          "a1": 18,
+          "a2": 262,
+          "a3": 1,
+          "a4": 0
+        }
+      },
+      {
+        "event_index": 82,
+        "boot_segment_index": 0,
+        "t_ms": 42030,
+        "severity": "WARN",
+        "source": "keyboard",
+        "event": "kbd_key_fail",
+        "args_named": {
+          "key_usage_or_ascii": 192,
+          "esp_err": 262,
+          "ble_connected": 1
+        },
+        "args_decoded": {},
+        "raw_args": {
+          "a1": 192,
+          "a2": 262,
+          "a3": 1,
+          "a4": 0
+        }
+      },
+      {
+        "event_index": 83,
+        "boot_segment_index": 0,
+        "t_ms": 202240,
+        "severity": "WARN",
+        "source": "keyboard",
+        "event": "kbd_custom_key",
+        "args_named": {
+          "logical_key": 5,
+          "phase": 3,
+          "hid_usage": 104,
+          "esp_err": 259
+        },
+        "args_decoded": {
+          "logical_key": "EC11",
+          "phase": "single"
+        },
+        "raw_args": {
+          "a1": 5,
+          "a2": 3,
+          "a3": 104,
+          "a4": 259
+        }
+      },
+      {
+        "event_index": 84,
+        "boot_segment_index": 0,
+        "t_ms": 202241,
+        "severity": "WARN",
+        "source": "voice_key",
+        "event": "vkey_queue_drop",
+        "args_named": {
+          "type": 1,
+          "reason": 259
+        },
+        "args_decoded": {
+          "type": "single_click_toggle"
+        },
+        "raw_args": {
+          "a1": 1,
+          "a2": 259,
+          "a3": 104,
+          "a4": 2
+        }
+      }
+    ],
+    "session_refs": []
+  },
+  "definitions": {
+    "sources_seen": {
+      "keyboard": {
+        "id": 2,
+        "macro": "DIAG_SRC_KEYBOARD"
+      },
+      "voice_key": {
+        "id": 7,
+        "macro": "DIAG_SRC_VOICE_KEY"
+      }
+    },
+    "events_seen": {
+      "keyboard.kbd_custom_key": {
+        "value": 6,
+        "macro": "DIAG_KBD_CUSTOM_KEY",
+        "comment": "a1=logical_key(1=KEY1..4=KEY4,5=EC11), a2=phase(1=press,2=release,3=single,4=double,5=long), a3=hid_usage, a4=esp_err",
+        "args": {
+          "a1": {
+            "name": "logical_key",
+            "raw_name": "logical_key",
+            "detail": "logical_key(1=KEY1..4=KEY4,5=EC11)",
+            "enum": {
+              "1": "KEY1..4=KEY4",
+              "5": "EC11"
+            }
+          },
+          "a2": {
+            "name": "phase",
+            "raw_name": "phase",
+            "detail": "phase(1=press,2=release,3=single,4=double,5=long)",
+            "enum": {
+              "1": "press",
+              "2": "release",
+              "3": "single",
+              "4": "double",
+              "5": "long"
+            }
+          },
+          "a3": {
+            "name": "hid_usage",
+            "raw_name": "hid_usage",
+            "detail": "hid_usage",
+            "enum": {}
+          },
+          "a4": {
+            "name": "esp_err",
+            "raw_name": "esp_err",
+            "detail": "esp_err",
+            "enum": {}
+          }
+        }
+      },
+      "keyboard.kbd_key_fail": {
+        "value": 2,
+        "macro": "DIAG_KBD_KEY_FAIL",
+        "comment": "a1=key_usage_or_ascii, a2=esp_err, a3=ble_connected, a4=0",
+        "args": {
+          "a1": {
+            "name": "key_usage_or_ascii",
+            "raw_name": "key_usage_or_ascii",
+            "detail": "key_usage_or_ascii",
+            "enum": {}
+          },
+          "a2": {
+            "name": "esp_err",
+            "raw_name": "esp_err",
+            "detail": "esp_err",
+            "enum": {}
+          },
+          "a3": {
+            "name": "ble_connected",
+            "raw_name": "ble_connected",
+            "detail": "ble_connected",
+            "enum": {}
+          },
+          "a4": {
+            "name": "unused_a4",
+            "raw_name": "0",
+            "detail": "0",
+            "enum": {}
+          }
+        }
+      },
+      "voice_key.vkey_queue_drop": {
+        "value": 2,
+        "macro": "DIAG_VKEY_QUEUE_DROP",
+        "comment": "a1=type(1=single_click_toggle,2=double_click_recovery), a2=reason(1=no_queue,2=queue_full), a3=0, a4=0",
+        "args": {
+          "a1": {
+            "name": "type",
+            "raw_name": "type",
+            "detail": "type(1=single_click_toggle,2=double_click_recovery)",
+            "enum": {
+              "1": "single_click_toggle",
+              "2": "double_click_recovery"
+            }
+          },
+          "a2": {
+            "name": "reason",
+            "raw_name": "reason",
+            "detail": "reason(1=no_queue,2=queue_full)",
+            "enum": {
+              "1": "no_queue",
+              "2": "queue_full"
+            }
+          },
+          "a3": {
+            "name": "unused_a3",
+            "raw_name": "0",
+            "detail": "0",
+            "enum": {}
+          },
+          "a4": {
+            "name": "unused_a4",
+            "raw_name": "0",
+            "detail": "0",
+            "enum": {}
+          }
+        }
+      }
+    },
+    "constant_groups": {
+      "DIAG_BOOT": {
+        "1": {
+          "value": 1,
+          "macro": "DIAG_BOOT_POWER_ON",
+          "name": "boot_power_on",
+          "line": 30
+        },
+        "2": {
+          "value": 2,
+          "macro": "DIAG_BOOT_RESET",
+          "name": "boot_reset",
+          "line": 31
+        },
+        "3": {
+          "value": 3,
+          "macro": "DIAG_BOOT_WATCHDOG",
+          "name": "boot_watchdog",
+          "line": 32
+        },
+        "4": {
+          "value": 4,
+          "macro": "DIAG_BOOT_EXCEPTION",
+          "name": "boot_exception",
+          "line": 33
+        },
+        "5": {
+          "value": 5,
+          "macro": "DIAG_BOOT_DEEP_SLEEP",
+          "name": "boot_deep_sleep",
+          "line": 34
+        }
+      },
+      "DIAG_COMP": {
+        "1": {
+          "value": 1,
+          "macro": "DIAG_COMP_NVS",
+          "name": "comp_nvs",
+          "line": 36
+        },
+        "2": {
+          "value": 2,
+          "macro": "DIAG_COMP_SPIRAM",
+          "name": "comp_spiram",
+          "line": 37
+        },
+        "3": {
+          "value": 3,
+          "macro": "DIAG_COMP_BLE_CTRL",
+          "name": "comp_ble_ctrl",
+          "line": 38
+        },
+        "4": {
+          "value": 4,
+          "macro": "DIAG_COMP_AUDIO_CODEC",
+          "name": "comp_audio_codec",
+          "line": 39
+        },
+        "5": {
+          "value": 5,
+          "macro": "DIAG_COMP_DIAG_LOG",
+          "name": "comp_diag_log",
+          "line": 40
+        },
+        "6": {
+          "value": 6,
+          "macro": "DIAG_COMP_KEYBOARD",
+          "name": "comp_keyboard",
+          "line": 41
+        },
+        "7": {
+          "value": 7,
+          "macro": "DIAG_COMP_HEALTH",
+          "name": "comp_health",
+          "line": 42
+        },
+        "8": {
+          "value": 8,
+          "macro": "DIAG_COMP_OTA",
+          "name": "comp_ota",
+          "line": 43
+        },
+        "9": {
+          "value": 9,
+          "macro": "DIAG_COMP_POWER_MANAGER",
+          "name": "comp_power_manager",
+          "line": 44
+        }
+      },
+      "DIAG_POWER": {
+        "8": {
+          "value": 8,
+          "macro": "DIAG_POWER_WAKE_POLICY",
+          "name": "power_wake_policy",
+          "line": 124
+        }
+      },
+      "DIAG_OTA": {
+        "1": {
+          "value": 1,
+          "macro": "DIAG_OTA_PARTITION_RUNNING",
+          "name": "ota_partition_running",
+          "line": 171
+        },
+        "2": {
+          "value": 2,
+          "macro": "DIAG_OTA_PARTITION_BOOT",
+          "name": "ota_partition_boot",
+          "line": 172
+        },
+        "3": {
+          "value": 3,
+          "macro": "DIAG_OTA_PARTITION_UPDATE",
+          "name": "ota_partition_update",
+          "line": 173
+        },
+        "4": {
+          "value": 4,
+          "macro": "DIAG_OTA_PARTITION_NEXT",
+          "name": "ota_partition_next",
+          "line": 174
+        },
+        "5": {
+          "value": 5,
+          "macro": "DIAG_OTA_ABORT_BLE_DISCONNECT",
+          "name": "ota_abort_ble_disconnect",
+          "line": 166
+        }
+      }
+    }
+  },
+  "events": [
+    {
+      "index": 0,
+      "line_number": 1,
+      "boot_segment_index": 0,
+      "t_ms": 4515,
+      "source": {
+        "raw": "keyboard",
+        "id": 2,
+        "name": "keyboard",
+        "macro": "DIAG_SRC_KEYBOARD"
+      },
+      "event": {
+        "raw": 2,
+        "name": "kbd_key_fail",
+        "macro": "DIAG_KBD_KEY_FAIL",
+        "comment": "a1=key_usage_or_ascii, a2=esp_err, a3=ble_connected, a4=0"
+      },
+      "severity": {
+        "raw": "WARN",
+        "level": 1,
+        "name": "WARN",
+        "macro": "DIAG_SEV_WARN"
+      },
+      "args_raw": {
+        "a1": 0,
+        "a2": 262,
+        "a3": 1,
+        "a4": 0
+      },
+      "args_named": {
+        "key_usage_or_ascii": 0,
+        "esp_err": 262,
+        "ble_connected": 1
+      },
+      "args_decoded": {},
+      "arg_definitions": {
+        "a1": {
+          "name": "key_usage_or_ascii",
+          "raw_name": "key_usage_or_ascii",
+          "detail": "key_usage_or_ascii",
+          "enum": {}
+        },
+        "a2": {
+          "name": "esp_err",
+          "raw_name": "esp_err",
+          "detail": "esp_err",
+          "enum": {}
+        },
+        "a3": {
+          "name": "ble_connected",
+          "raw_name": "ble_connected",
+          "detail": "ble_connected",
+          "enum": {}
+        },
+        "a4": {
+          "name": "unused_a4",
+          "raw_name": "0",
+          "detail": "0",
+          "enum": {}
+        }
+      },
+      "raw_event": {
+        "t": 4515,
+        "src": "keyboard",
+        "evt": 2,
+        "sev": "WARN",
+        "a1": 0,
+        "a2": 262,
+        "a3": 1,
+        "a4": 0
+      }
+    },
+    {
+      "index": 1,
+      "line_number": 2,
+      "boot_segment_index": 0,
+      "t_ms": 4530,
+      "source": {
+        "raw": "keyboard",
+        "id": 2,
+        "name": "keyboard",
+        "macro": "DIAG_SRC_KEYBOARD"
+      },
+      "event": {
+        "raw": 2,
+        "name": "kbd_key_fail",
+        "macro": "DIAG_KBD_KEY_FAIL",
+        "comment": "a1=key_usage_or_ascii, a2=esp_err, a3=ble_connected, a4=0"
+      },
+      "severity": {
+        "raw": "WARN",
+        "level": 1,
+        "name": "WARN",
+        "macro": "DIAG_SEV_WARN"
+      },
+      "args_raw": {
+        "a1": 0,
+        "a2": 262,
+        "a3": 1,
+        "a4": 0
+      },
+      "args_named": {
+        "key_usage_or_ascii": 0,
+        "esp_err": 262,
+        "ble_connected": 1
+      },
+      "args_decoded": {},
+      "arg_definitions": {
+        "a1": {
+          "name": "key_usage_or_ascii",
+          "raw_name": "key_usage_or_ascii",
+          "detail": "key_usage_or_ascii",
+          "enum": {}
+        },
+        "a2": {
+          "name": "esp_err",
+          "raw_name": "esp_err",
+          "detail": "esp_err",
+          "enum": {}
+        },
+        "a3": {
+          "name": "ble_connected",
+          "raw_name": "ble_connected",
+          "detail": "ble_connected",
+          "enum": {}
+        },
+        "a4": {
+          "name": "unused_a4",
+          "raw_name": "0",
+          "detail": "0",
+          "enum": {}
+        }
+      },
+      "raw_event": {
+        "t": 4530,
+        "src": "keyboard",
+        "evt": 2,
+        "sev": "WARN",
+        "a1": 0,
+        "a2": 262,
+        "a3": 1,
+        "a4": 0
+      }
+    },
+    {
+      "index": 2,
+      "line_number": 3,
+      "boot_segment_index": 0,
+      "t_ms": 4551,
+      "source": {
+        "raw": "keyboard",
+        "id": 2,
+        "name": "keyboard",
+        "macro": "DIAG_SRC_KEYBOARD"
+      },
+      "event": {
+        "raw": 2,
+        "name": "kbd_key_fail",
+        "macro": "DIAG_KBD_KEY_FAIL",
+        "comment": "a1=key_usage_or_ascii, a2=esp_err, a3=ble_connected, a4=0"
+      },
+      "severity": {
+        "raw": "WARN",
+        "level": 1,
+        "name": "WARN",
+        "macro": "DIAG_SEV_WARN"
+      },
+      "args_raw": {
+        "a1": 0,
+        "a2": 262,
+        "a3": 1,
+        "a4": 0
+      },
+      "args_named": {
+        "key_usage_or_ascii": 0,
+        "esp_err": 262,
+        "ble_connected": 1
+      },
+      "args_decoded": {},
+      "arg_definitions": {
+        "a1": {
+          "name": "key_usage_or_ascii",
+          "raw_name": "key_usage_or_ascii",
+          "detail": "key_usage_or_ascii",
+          "enum": {}
+        },
+        "a2": {
+          "name": "esp_err",
+          "raw_name": "esp_err",
+          "detail": "esp_err",
+          "enum": {}
+        },
+        "a3": {
+          "name": "ble_connected",
+          "raw_name": "ble_connected",
+          "detail": "ble_connected",
+          "enum": {}
+        },
+        "a4": {
+          "name": "unused_a4",
+          "raw_name": "0",
+          "detail": "0",
+          "enum": {}
+        }
+      },
+      "raw_event": {
+        "t": 4551,
+        "src": "keyboard",
+        "evt": 2,
+        "sev": "WARN",
+        "a1": 0,
+        "a2": 262,
+        "a3": 1,
+        "a4": 0
+      }
+    },
+    {
+      "index": 3,
+      "line_number": 4,
+      "boot_segment_index": 0,
+      "t_ms": 4585,
+      "source": {
+        "raw": "keyboard",
+        "id": 2,
+        "name": "keyboard",
+        "macro": "DIAG_SRC_KEYBOARD"
+      },
+      "event": {
+        "raw": 2,
+        "name": "kbd_key_fail",
+        "macro": "DIAG_KBD_KEY_FAIL",
+        "comment": "a1=key_usage_or_ascii, a2=esp_err, a3=ble_connected, a4=0"
+      },
+      "severity": {
+        "raw": "WARN",
+        "level": 1,
+        "name": "WARN",
+        "macro": "DIAG_SEV_WARN"
+      },
+      "args_raw": {
+        "a1": 0,
+        "a2": 262,
+        "a3": 1,
+        "a4": 0
+      },
+      "args_named": {
+        "key_usage_or_ascii": 0,
+        "esp_err": 262,
+        "ble_connected": 1
+      },
+      "args_decoded": {},
+      "arg_definitions": {
+        "a1": {
+          "name": "key_usage_or_ascii",
+          "raw_name": "key_usage_or_ascii",
+          "detail": "key_usage_or_ascii",
+          "enum": {}
+        },
+        "a2": {
+          "name": "esp_err",
+          "raw_name": "esp_err",
+          "detail": "esp_err",
+          "enum": {}
+        },
+        "a3": {
+          "name": "ble_connected",
+          "raw_name": "ble_connected",
+          "detail": "ble_connected",
+          "enum": {}
+        },
+        "a4": {
+          "name": "unused_a4",
+          "raw_name": "0",
+          "detail": "0",
+          "enum": {}
+        }
+      },
+      "raw_event": {
+        "t": 4585,
+        "src": "keyboard",
+        "evt": 2,
+        "sev": "WARN",
+        "a1": 0,
+        "a2": 262,
+        "a3": 1,
+        "a4": 0
+      }
+    },
+    {
+      "index": 4,
+      "line_number": 5,
+      "boot_segment_index": 0,
+      "t_ms": 4600,
+      "source": {
+        "raw": "keyboard",
+        "id": 2,
+        "name": "keyboard",
+        "macro": "DIAG_SRC_KEYBOARD"
+      },
+      "event": {
+        "raw": 2,
+        "name": "kbd_key_fail",
+        "macro": "DIAG_KBD_KEY_FAIL",
+        "comment": "a1=key_usage_or_ascii, a2=esp_err, a3=ble_connected, a4=0"
+      },
+      "severity": {
+        "raw": "WARN",
+        "level": 1,
+        "name": "WARN",
+        "macro": "DIAG_SEV_WARN"
+      },
+      "args_raw": {
+        "a1": 0,
+        "a2": 262,
+        "a3": 1,
+        "a4": 0
+      },
+      "args_named": {
+        "key_usage_or_ascii": 0,
+        "esp_err": 262,
+        "ble_connected": 1
+      },
+      "args_decoded": {},
+      "arg_definitions": {
+        "a1": {
+          "name": "key_usage_or_ascii",
+          "raw_name": "key_usage_or_ascii",
+          "detail": "key_usage_or_ascii",
+          "enum": {}
+        },
+        "a2": {
+          "name": "esp_err",
+          "raw_name": "esp_err",
+          "detail": "esp_err",
+          "enum": {}
+        },
+        "a3": {
+          "name": "ble_connected",
+          "raw_name": "ble_connected",
+          "detail": "ble_connected",
+          "enum": {}
+        },
+        "a4": {
+          "name": "unused_a4",
+          "raw_name": "0",
+          "detail": "0",
+          "enum": {}
+        }
+      },
+      "raw_event": {
+        "t": 4600,
+        "src": "keyboard",
+        "evt": 2,
+        "sev": "WARN",
+        "a1": 0,
+        "a2": 262,
+        "a3": 1,
+        "a4": 0
+      }
+    },
+    {
+      "index": 5,
+      "line_number": 6,
+      "boot_segment_index": 0,
+      "t_ms": 4616,
+      "source": {
+        "raw": "keyboard",
+        "id": 2,
+        "name": "keyboard",
+        "macro": "DIAG_SRC_KEYBOARD"
+      },
+      "event": {
+        "raw": 2,
+        "name": "kbd_key_fail",
+        "macro": "DIAG_KBD_KEY_FAIL",
+        "comment": "a1=key_usage_or_ascii, a2=esp_err, a3=ble_connected, a4=0"
+      },
+      "severity": {
+        "raw": "WARN",
+        "level": 1,
+        "name": "WARN",
+        "macro": "DIAG_SEV_WARN"
+      },
+      "args_raw": {
+        "a1": 0,
+        "a2": 262,
+        "a3": 1,
+        "a4": 0
+      },
+      "args_named": {
+        "key_usage_or_ascii": 0,
+        "esp_err": 262,
+        "ble_connected": 1
+      },
+      "args_decoded": {},
+      "arg_definitions": {
+        "a1": {
+          "name": "key_usage_or_ascii",
+          "raw_name": "key_usage_or_ascii",
+          "detail": "key_usage_or_ascii",
+          "enum": {}
+        },
+        "a2": {
+          "name": "esp_err",
+          "raw_name": "esp_err",
+          "detail": "esp_err",
+          "enum": {}
+        },
+        "a3": {
+          "name": "ble_connected",
+          "raw_name": "ble_connected",
+          "detail": "ble_connected",
+          "enum": {}
+        },
+        "a4": {
+          "name": "unused_a4",
+          "raw_name": "0",
+          "detail": "0",
+          "enum": {}
+        }
+      },
+      "raw_event": {
+        "t": 4616,
+        "src": "keyboard",
+        "evt": 2,
+        "sev": "WARN",
+        "a1": 0,
+        "a2": 262,
+        "a3": 1,
+        "a4": 0
+      }
+    },
+    {
+      "index": 6,
+      "line_number": 7,
+      "boot_segment_index": 0,
+      "t_ms": 26300,
+      "source": {
+        "raw": "keyboard",
+        "id": 2,
+        "name": "keyboard",
+        "macro": "DIAG_SRC_KEYBOARD"
+      },
+      "event": {
+        "raw": 2,
+        "name": "kbd_key_fail",
+        "macro": "DIAG_KBD_KEY_FAIL",
+        "comment": "a1=key_usage_or_ascii, a2=esp_err, a3=ble_connected, a4=0"
+      },
+      "severity": {
+        "raw": "WARN",
+        "level": 1,
+        "name": "WARN",
+        "macro": "DIAG_SEV_WARN"
+      },
+      "args_raw": {
+        "a1": 192,
+        "a2": 262,
+        "a3": 1,
+        "a4": 0
+      },
+      "args_named": {
+        "key_usage_or_ascii": 192,
+        "esp_err": 262,
+        "ble_connected": 1
+      },
+      "args_decoded": {},
+      "arg_definitions": {
+        "a1": {
+          "name": "key_usage_or_ascii",
+          "raw_name": "key_usage_or_ascii",
+          "detail": "key_usage_or_ascii",
+          "enum": {}
+        },
+        "a2": {
+          "name": "esp_err",
+          "raw_name": "esp_err",
+          "detail": "esp_err",
+          "enum": {}
+        },
+        "a3": {
+          "name": "ble_connected",
+          "raw_name": "ble_connected",
+          "detail": "ble_connected",
+          "enum": {}
+        },
+        "a4": {
+          "name": "unused_a4",
+          "raw_name": "0",
+          "detail": "0",
+          "enum": {}
+        }
+      },
+      "raw_event": {
+        "t": 26300,
+        "src": "keyboard",
+        "evt": 2,
+        "sev": "WARN",
+        "a1": 192,
+        "a2": 262,
+        "a3": 1,
+        "a4": 0
+      }
+    },
+    {
+      "index": 7,
+      "line_number": 8,
+      "boot_segment_index": 0,
+      "t_ms": 26315,
+      "source": {
+        "raw": "keyboard",
+        "id": 2,
+        "name": "keyboard",
+        "macro": "DIAG_SRC_KEYBOARD"
+      },
+      "event": {
+        "raw": 2,
+        "name": "kbd_key_fail",
+        "macro": "DIAG_KBD_KEY_FAIL",
+        "comment": "a1=key_usage_or_ascii, a2=esp_err, a3=ble_connected, a4=0"
+      },
+      "severity": {
+        "raw": "WARN",
+        "level": 1,
+        "name": "WARN",
+        "macro": "DIAG_SEV_WARN"
+      },
+      "args_raw": {
+        "a1": 0,
+        "a2": 262,
+        "a3": 1,
+        "a4": 0
+      },
+      "args_named": {
+        "key_usage_or_ascii": 0,
+        "esp_err": 262,
+        "ble_connected": 1
+      },
+      "args_decoded": {},
+      "arg_definitions": {
+        "a1": {
+          "name": "key_usage_or_ascii",
+          "raw_name": "key_usage_or_ascii",
+          "detail": "key_usage_or_ascii",
+          "enum": {}
+        },
+        "a2": {
+          "name": "esp_err",
+          "raw_name": "esp_err",
+          "detail": "esp_err",
+          "enum": {}
+        },
+        "a3": {
+          "name": "ble_connected",
+          "raw_name": "ble_connected",
+          "detail": "ble_connected",
+          "enum": {}
+        },
+        "a4": {
+          "name": "unused_a4",
+          "raw_name": "0",
+          "detail": "0",
+          "enum": {}
+        }
+      },
+      "raw_event": {
+        "t": 26315,
+        "src": "keyboard",
+        "evt": 2,
+        "sev": "WARN",
+        "a1": 0,
+        "a2": 262,
+        "a3": 1,
+        "a4": 0
+      }
+    },
+    {
+      "index": 8,
+      "line_number": 9,
+      "boot_segment_index": 0,
+      "t_ms": 26455,
+      "source": {
+        "raw": "keyboard",
+        "id": 2,
+        "name": "keyboard",
+        "macro": "DIAG_SRC_KEYBOARD"
+      },
+      "event": {
+        "raw": 2,
+        "name": "kbd_key_fail",
+        "macro": "DIAG_KBD_KEY_FAIL",
+        "comment": "a1=key_usage_or_ascii, a2=esp_err, a3=ble_connected, a4=0"
+      },
+      "severity": {
+        "raw": "WARN",
+        "level": 1,
+        "name": "WARN",
+        "macro": "DIAG_SEV_WARN"
+      },
+      "args_raw": {
+        "a1": 0,
+        "a2": 262,
+        "a3": 1,
+        "a4": 0
+      },
+      "args_named": {
+        "key_usage_or_ascii": 0,
+        "esp_err": 262,
+        "ble_connected": 1
+      },
+      "args_decoded": {},
+      "arg_definitions": {
+        "a1": {
+          "name": "key_usage_or_ascii",
+          "raw_name": "key_usage_or_ascii",
+          "detail": "key_usage_or_ascii",
+          "enum": {}
+        },
+        "a2": {
+          "name": "esp_err",
+          "raw_name": "esp_err",
+          "detail": "esp_err",
+          "enum": {}
+        },
+        "a3": {
+          "name": "ble_connected",
+          "raw_name": "ble_connected",
+          "detail": "ble_connected",
+          "enum": {}
+        },
+        "a4": {
+          "name": "unused_a4",
+          "raw_name": "0",
+          "detail": "0",
+          "enum": {}
+        }
+      },
+      "raw_event": {
+        "t": 26455,
+        "src": "keyboard",
+        "evt": 2,
+        "sev": "WARN",
+        "a1": 0,
+        "a2": 262,
+        "a3": 1,
+        "a4": 0
+      }
+    },
+    {
+      "index": 9,
+      "line_number": 10,
+      "boot_segment_index": 0,
+      "t_ms": 26471,
+      "source": {
+        "raw": "keyboard",
+        "id": 2,
+        "name": "keyboard",
+        "macro": "DIAG_SRC_KEYBOARD"
+      },
+      "event": {
+        "raw": 2,
+        "name": "kbd_key_fail",
+        "macro": "DIAG_KBD_KEY_FAIL",
+        "comment": "a1=key_usage_or_ascii, a2=esp_err, a3=ble_connected, a4=0"
+      },
+      "severity": {
+        "raw": "WARN",
+        "level": 1,
+        "name": "WARN",
+        "macro": "DIAG_SEV_WARN"
+      },
+      "args_raw": {
+        "a1": 0,
+        "a2": 262,
+        "a3": 1,
+        "a4": 0
+      },
+      "args_named": {
+        "key_usage_or_ascii": 0,
+        "esp_err": 262,
+        "ble_connected": 1
+      },
+      "args_decoded": {},
+      "arg_definitions": {
+        "a1": {
+          "name": "key_usage_or_ascii",
+          "raw_name": "key_usage_or_ascii",
+          "detail": "key_usage_or_ascii",
+          "enum": {}
+        },
+        "a2": {
+          "name": "esp_err",
+          "raw_name": "esp_err",
+          "detail": "esp_err",
+          "enum": {}
+        },
+        "a3": {
+          "name": "ble_connected",
+          "raw_name": "ble_connected",
+          "detail": "ble_connected",
+          "enum": {}
+        },
+        "a4": {
+          "name": "unused_a4",
+          "raw_name": "0",
+          "detail": "0",
+          "enum": {}
+        }
+      },
+      "raw_event": {
+        "t": 26471,
+        "src": "keyboard",
+        "evt": 2,
+        "sev": "WARN",
+        "a1": 0,
+        "a2": 262,
+        "a3": 1,
+        "a4": 0
+      }
+    },
+    {
+      "index": 10,
+      "line_number": 11,
+      "boot_segment_index": 0,
+      "t_ms": 26486,
+      "source": {
+        "raw": "keyboard",
+        "id": 2,
+        "name": "keyboard",
+        "macro": "DIAG_SRC_KEYBOARD"
+      },
+      "event": {
+        "raw": 2,
+        "name": "kbd_key_fail",
+        "macro": "DIAG_KBD_KEY_FAIL",
+        "comment": "a1=key_usage_or_ascii, a2=esp_err, a3=ble_connected, a4=0"
+      },
+      "severity": {
+        "raw": "WARN",
+        "level": 1,
+        "name": "WARN",
+        "macro": "DIAG_SEV_WARN"
+      },
+      "args_raw": {
+        "a1": 0,
+        "a2": 262,
+        "a3": 1,
+        "a4": 0
+      },
+      "args_named": {
+        "key_usage_or_ascii": 0,
+        "esp_err": 262,
+        "ble_connected": 1
+      },
+      "args_decoded": {},
+      "arg_definitions": {
+        "a1": {
+          "name": "key_usage_or_ascii",
+          "raw_name": "key_usage_or_ascii",
+          "detail": "key_usage_or_ascii",
+          "enum": {}
+        },
+        "a2": {
+          "name": "esp_err",
+          "raw_name": "esp_err",
+          "detail": "esp_err",
+          "enum": {}
+        },
+        "a3": {
+          "name": "ble_connected",
+          "raw_name": "ble_connected",
+          "detail": "ble_connected",
+          "enum": {}
+        },
+        "a4": {
+          "name": "unused_a4",
+          "raw_name": "0",
+          "detail": "0",
+          "enum": {}
+        }
+      },
+      "raw_event": {
+        "t": 26486,
+        "src": "keyboard",
+        "evt": 2,
+        "sev": "WARN",
+        "a1": 0,
+        "a2": 262,
+        "a3": 1,
+        "a4": 0
+      }
+    },
+    {
+      "index": 11,
+      "line_number": 12,
+      "boot_segment_index": 0,
+      "t_ms": 26502,
+      "source": {
+        "raw": "keyboard",
+        "id": 2,
+        "name": "keyboard",
+        "macro": "DIAG_SRC_KEYBOARD"
+      },
+      "event": {
+        "raw": 2,
+        "name": "kbd_key_fail",
+        "macro": "DIAG_KBD_KEY_FAIL",
+        "comment": "a1=key_usage_or_ascii, a2=esp_err, a3=ble_connected, a4=0"
+      },
+      "severity": {
+        "raw": "WARN",
+        "level": 1,
+        "name": "WARN",
+        "macro": "DIAG_SEV_WARN"
+      },
+      "args_raw": {
+        "a1": 0,
+        "a2": 262,
+        "a3": 1,
+        "a4": 0
+      },
+      "args_named": {
+        "key_usage_or_ascii": 0,
+        "esp_err": 262,
+        "ble_connected": 1
+      },
+      "args_decoded": {},
+      "arg_definitions": {
+        "a1": {
+          "name": "key_usage_or_ascii",
+          "raw_name": "key_usage_or_ascii",
+          "detail": "key_usage_or_ascii",
+          "enum": {}
+        },
+        "a2": {
+          "name": "esp_err",
+          "raw_name": "esp_err",
+          "detail": "esp_err",
+          "enum": {}
+        },
+        "a3": {
+          "name": "ble_connected",
+          "raw_name": "ble_connected",
+          "detail": "ble_connected",
+          "enum": {}
+        },
+        "a4": {
+          "name": "unused_a4",
+          "raw_name": "0",
+          "detail": "0",
+          "enum": {}
+        }
+      },
+      "raw_event": {
+        "t": 26502,
+        "src": "keyboard",
+        "evt": 2,
+        "sev": "WARN",
+        "a1": 0,
+        "a2": 262,
+        "a3": 1,
+        "a4": 0
+      }
+    },
+    {
+      "index": 12,
+      "line_number": 13,
+      "boot_segment_index": 0,
+      "t_ms": 26518,
+      "source": {
+        "raw": "keyboard",
+        "id": 2,
+        "name": "keyboard",
+        "macro": "DIAG_SRC_KEYBOARD"
+      },
+      "event": {
+        "raw": 2,
+        "name": "kbd_key_fail",
+        "macro": "DIAG_KBD_KEY_FAIL",
+        "comment": "a1=key_usage_or_ascii, a2=esp_err, a3=ble_connected, a4=0"
+      },
+      "severity": {
+        "raw": "WARN",
+        "level": 1,
+        "name": "WARN",
+        "macro": "DIAG_SEV_WARN"
+      },
+      "args_raw": {
+        "a1": 0,
+        "a2": 262,
+        "a3": 1,
+        "a4": 0
+      },
+      "args_named": {
+        "key_usage_or_ascii": 0,
+        "esp_err": 262,
+        "ble_connected": 1
+      },
+      "args_decoded": {},
+      "arg_definitions": {
+        "a1": {
+          "name": "key_usage_or_ascii",
+          "raw_name": "key_usage_or_ascii",
+          "detail": "key_usage_or_ascii",
+          "enum": {}
+        },
+        "a2": {
+          "name": "esp_err",
+          "raw_name": "esp_err",
+          "detail": "esp_err",
+          "enum": {}
+        },
+        "a3": {
+          "name": "ble_connected",
+          "raw_name": "ble_connected",
+          "detail": "ble_connected",
+          "enum": {}
+        },
+        "a4": {
+          "name": "unused_a4",
+          "raw_name": "0",
+          "detail": "0",
+          "enum": {}
+        }
+      },
+      "raw_event": {
+        "t": 26518,
+        "src": "keyboard",
+        "evt": 2,
+        "sev": "WARN",
+        "a1": 0,
+        "a2": 262,
+        "a3": 1,
+        "a4": 0
+      }
+    },
+    {
+      "index": 13,
+      "line_number": 14,
+      "boot_segment_index": 0,
+      "t_ms": 26534,
+      "source": {
+        "raw": "keyboard",
+        "id": 2,
+        "name": "keyboard",
+        "macro": "DIAG_SRC_KEYBOARD"
+      },
+      "event": {
+        "raw": 2,
+        "name": "kbd_key_fail",
+        "macro": "DIAG_KBD_KEY_FAIL",
+        "comment": "a1=key_usage_or_ascii, a2=esp_err, a3=ble_connected, a4=0"
+      },
+      "severity": {
+        "raw": "WARN",
+        "level": 1,
+        "name": "WARN",
+        "macro": "DIAG_SEV_WARN"
+      },
+      "args_raw": {
+        "a1": 7,
+        "a2": 262,
+        "a3": 1,
+        "a4": 0
+      },
+      "args_named": {
+        "key_usage_or_ascii": 7,
+        "esp_err": 262,
+        "ble_connected": 1
+      },
+      "args_decoded": {},
+      "arg_definitions": {
+        "a1": {
+          "name": "key_usage_or_ascii",
+          "raw_name": "key_usage_or_ascii",
+          "detail": "key_usage_or_ascii",
+          "enum": {}
+        },
+        "a2": {
+          "name": "esp_err",
+          "raw_name": "esp_err",
+          "detail": "esp_err",
+          "enum": {}
+        },
+        "a3": {
+          "name": "ble_connected",
+          "raw_name": "ble_connected",
+          "detail": "ble_connected",
+          "enum": {}
+        },
+        "a4": {
+          "name": "unused_a4",
+          "raw_name": "0",
+          "detail": "0",
+          "enum": {}
+        }
+      },
+      "raw_event": {
+        "t": 26534,
+        "src": "keyboard",
+        "evt": 2,
+        "sev": "WARN",
+        "a1": 7,
+        "a2": 262,
+        "a3": 1,
+        "a4": 0
+      }
+    },
+    {
+      "index": 14,
+      "line_number": 15,
+      "boot_segment_index": 0,
+      "t_ms": 26549,
+      "source": {
+        "raw": "keyboard",
+        "id": 2,
+        "name": "keyboard",
+        "macro": "DIAG_SRC_KEYBOARD"
+      },
+      "event": {
+        "raw": 2,
+        "name": "kbd_key_fail",
+        "macro": "DIAG_KBD_KEY_FAIL",
+        "comment": "a1=key_usage_or_ascii, a2=esp_err, a3=ble_connected, a4=0"
+      },
+      "severity": {
+        "raw": "WARN",
+        "level": 1,
+        "name": "WARN",
+        "macro": "DIAG_SEV_WARN"
+      },
+      "args_raw": {
+        "a1": 7,
+        "a2": 262,
+        "a3": 1,
+        "a4": 0
+      },
+      "args_named": {
+        "key_usage_or_ascii": 7,
+        "esp_err": 262,
+        "ble_connected": 1
+      },
+      "args_decoded": {},
+      "arg_definitions": {
+        "a1": {
+          "name": "key_usage_or_ascii",
+          "raw_name": "key_usage_or_ascii",
+          "detail": "key_usage_or_ascii",
+          "enum": {}
+        },
+        "a2": {
+          "name": "esp_err",
+          "raw_name": "esp_err",
+          "detail": "esp_err",
+          "enum": {}
+        },
+        "a3": {
+          "name": "ble_connected",
+          "raw_name": "ble_connected",
+          "detail": "ble_connected",
+          "enum": {}
+        },
+        "a4": {
+          "name": "unused_a4",
+          "raw_name": "0",
+          "detail": "0",
+          "enum": {}
+        }
+      },
+      "raw_event": {
+        "t": 26549,
+        "src": "keyboard",
+        "evt": 2,
+        "sev": "WARN",
+        "a1": 7,
+        "a2": 262,
+        "a3": 1,
+        "a4": 0
+      }
+    },
+    {
+      "index": 15,
+      "line_number": 16,
+      "boot_segment_index": 0,
+      "t_ms": 26565,
+      "source": {
+        "raw": "keyboard",
+        "id": 2,
+        "name": "keyboard",
+        "macro": "DIAG_SRC_KEYBOARD"
+      },
+      "event": {
+        "raw": 2,
+        "name": "kbd_key_fail",
+        "macro": "DIAG_KBD_KEY_FAIL",
+        "comment": "a1=key_usage_or_ascii, a2=esp_err, a3=ble_connected, a4=0"
+      },
+      "severity": {
+        "raw": "WARN",
+        "level": 1,
+        "name": "WARN",
+        "macro": "DIAG_SEV_WARN"
+      },
+      "args_raw": {
+        "a1": 18,
+        "a2": 262,
+        "a3": 1,
+        "a4": 0
+      },
+      "args_named": {
+        "key_usage_or_ascii": 18,
+        "esp_err": 262,
+        "ble_connected": 1
+      },
+      "args_decoded": {},
+      "arg_definitions": {
+        "a1": {
+          "name": "key_usage_or_ascii",
+          "raw_name": "key_usage_or_ascii",
+          "detail": "key_usage_or_ascii",
+          "enum": {}
+        },
+        "a2": {
+          "name": "esp_err",
+          "raw_name": "esp_err",
+          "detail": "esp_err",
+          "enum": {}
+        },
+        "a3": {
+          "name": "ble_connected",
+          "raw_name": "ble_connected",
+          "detail": "ble_connected",
+          "enum": {}
+        },
+        "a4": {
+          "name": "unused_a4",
+          "raw_name": "0",
+          "detail": "0",
+          "enum": {}
+        }
+      },
+      "raw_event": {
+        "t": 26565,
+        "src": "keyboard",
+        "evt": 2,
+        "sev": "WARN",
+        "a1": 18,
+        "a2": 262,
+        "a3": 1,
+        "a4": 0
+      }
+    },
+    {
+      "index": 16,
+      "line_number": 17,
+      "boot_segment_index": 0,
+      "t_ms": 28559,
+      "source": {
+        "raw": "keyboard",
+        "id": 2,
+        "name": "keyboard",
+        "macro": "DIAG_SRC_KEYBOARD"
+      },
+      "event": {
+        "raw": 2,
+        "name": "kbd_key_fail",
+        "macro": "DIAG_KBD_KEY_FAIL",
+        "comment": "a1=key_usage_or_ascii, a2=esp_err, a3=ble_connected, a4=0"
+      },
+      "severity": {
+        "raw": "WARN",
+        "level": 1,
+        "name": "WARN",
+        "macro": "DIAG_SEV_WARN"
+      },
+      "args_raw": {
+        "a1": 192,
+        "a2": 262,
+        "a3": 1,
+        "a4": 0
+      },
+      "args_named": {
+        "key_usage_or_ascii": 192,
+        "esp_err": 262,
+        "ble_connected": 1
+      },
+      "args_decoded": {},
+      "arg_definitions": {
+        "a1": {
+          "name": "key_usage_or_ascii",
+          "raw_name": "key_usage_or_ascii",
+          "detail": "key_usage_or_ascii",
+          "enum": {}
+        },
+        "a2": {
+          "name": "esp_err",
+          "raw_name": "esp_err",
+          "detail": "esp_err",
+          "enum": {}
+        },
+        "a3": {
+          "name": "ble_connected",
+          "raw_name": "ble_connected",
+          "detail": "ble_connected",
+          "enum": {}
+        },
+        "a4": {
+          "name": "unused_a4",
+          "raw_name": "0",
+          "detail": "0",
+          "enum": {}
+        }
+      },
+      "raw_event": {
+        "t": 28559,
+        "src": "keyboard",
+        "evt": 2,
+        "sev": "WARN",
+        "a1": 192,
+        "a2": 262,
+        "a3": 1,
+        "a4": 0
+      }
+    },
+    {
+      "index": 17,
+      "line_number": 18,
+      "boot_segment_index": 0,
+      "t_ms": 28575,
+      "source": {
+        "raw": "keyboard",
+        "id": 2,
+        "name": "keyboard",
+        "macro": "DIAG_SRC_KEYBOARD"
+      },
+      "event": {
+        "raw": 2,
+        "name": "kbd_key_fail",
+        "macro": "DIAG_KBD_KEY_FAIL",
+        "comment": "a1=key_usage_or_ascii, a2=esp_err, a3=ble_connected, a4=0"
+      },
+      "severity": {
+        "raw": "WARN",
+        "level": 1,
+        "name": "WARN",
+        "macro": "DIAG_SEV_WARN"
+      },
+      "args_raw": {
+        "a1": 192,
+        "a2": 262,
+        "a3": 1,
+        "a4": 0
+      },
+      "args_named": {
+        "key_usage_or_ascii": 192,
+        "esp_err": 262,
+        "ble_connected": 1
+      },
+      "args_decoded": {},
+      "arg_definitions": {
+        "a1": {
+          "name": "key_usage_or_ascii",
+          "raw_name": "key_usage_or_ascii",
+          "detail": "key_usage_or_ascii",
+          "enum": {}
+        },
+        "a2": {
+          "name": "esp_err",
+          "raw_name": "esp_err",
+          "detail": "esp_err",
+          "enum": {}
+        },
+        "a3": {
+          "name": "ble_connected",
+          "raw_name": "ble_connected",
+          "detail": "ble_connected",
+          "enum": {}
+        },
+        "a4": {
+          "name": "unused_a4",
+          "raw_name": "0",
+          "detail": "0",
+          "enum": {}
+        }
+      },
+      "raw_event": {
+        "t": 28575,
+        "src": "keyboard",
+        "evt": 2,
+        "sev": "WARN",
+        "a1": 192,
+        "a2": 262,
+        "a3": 1,
+        "a4": 0
+      }
+    },
+    {
+      "index": 18,
+      "line_number": 19,
+      "boot_segment_index": 0,
+      "t_ms": 28590,
+      "source": {
+        "raw": "keyboard",
+        "id": 2,
+        "name": "keyboard",
+        "macro": "DIAG_SRC_KEYBOARD"
+      },
+      "event": {
+        "raw": 2,
+        "name": "kbd_key_fail",
+        "macro": "DIAG_KBD_KEY_FAIL",
+        "comment": "a1=key_usage_or_ascii, a2=esp_err, a3=ble_connected, a4=0"
+      },
+      "severity": {
+        "raw": "WARN",
+        "level": 1,
+        "name": "WARN",
+        "macro": "DIAG_SEV_WARN"
+      },
+      "args_raw": {
+        "a1": 0,
+        "a2": 262,
+        "a3": 1,
+        "a4": 0
+      },
+      "args_named": {
+        "key_usage_or_ascii": 0,
+        "esp_err": 262,
+        "ble_connected": 1
+      },
+      "args_decoded": {},
+      "arg_definitions": {
+        "a1": {
+          "name": "key_usage_or_ascii",
+          "raw_name": "key_usage_or_ascii",
+          "detail": "key_usage_or_ascii",
+          "enum": {}
+        },
+        "a2": {
+          "name": "esp_err",
+          "raw_name": "esp_err",
+          "detail": "esp_err",
+          "enum": {}
+        },
+        "a3": {
+          "name": "ble_connected",
+          "raw_name": "ble_connected",
+          "detail": "ble_connected",
+          "enum": {}
+        },
+        "a4": {
+          "name": "unused_a4",
+          "raw_name": "0",
+          "detail": "0",
+          "enum": {}
+        }
+      },
+      "raw_event": {
+        "t": 28590,
+        "src": "keyboard",
+        "evt": 2,
+        "sev": "WARN",
+        "a1": 0,
+        "a2": 262,
+        "a3": 1,
+        "a4": 0
+      }
+    },
+    {
+      "index": 19,
+      "line_number": 20,
+      "boot_segment_index": 0,
+      "t_ms": 28719,
+      "source": {
+        "raw": "keyboard",
+        "id": 2,
+        "name": "keyboard",
+        "macro": "DIAG_SRC_KEYBOARD"
+      },
+      "event": {
+        "raw": 2,
+        "name": "kbd_key_fail",
+        "macro": "DIAG_KBD_KEY_FAIL",
+        "comment": "a1=key_usage_or_ascii, a2=esp_err, a3=ble_connected, a4=0"
+      },
+      "severity": {
+        "raw": "WARN",
+        "level": 1,
+        "name": "WARN",
+        "macro": "DIAG_SEV_WARN"
+      },
+      "args_raw": {
+        "a1": 0,
+        "a2": 262,
+        "a3": 1,
+        "a4": 0
+      },
+      "args_named": {
+        "key_usage_or_ascii": 0,
+        "esp_err": 262,
+        "ble_connected": 1
+      },
+      "args_decoded": {},
+      "arg_definitions": {
+        "a1": {
+          "name": "key_usage_or_ascii",
+          "raw_name": "key_usage_or_ascii",
+          "detail": "key_usage_or_ascii",
+          "enum": {}
+        },
+        "a2": {
+          "name": "esp_err",
+          "raw_name": "esp_err",
+          "detail": "esp_err",
+          "enum": {}
+        },
+        "a3": {
+          "name": "ble_connected",
+          "raw_name": "ble_connected",
+          "detail": "ble_connected",
+          "enum": {}
+        },
+        "a4": {
+          "name": "unused_a4",
+          "raw_name": "0",
+          "detail": "0",
+          "enum": {}
+        }
+      },
+      "raw_event": {
+        "t": 28719,
+        "src": "keyboard",
+        "evt": 2,
+        "sev": "WARN",
+        "a1": 0,
+        "a2": 262,
+        "a3": 1,
+        "a4": 0
+      }
+    },
+    {
+      "index": 20,
+      "line_number": 21,
+      "boot_segment_index": 0,
+      "t_ms": 28735,
+      "source": {
+        "raw": "keyboard",
+        "id": 2,
+        "name": "keyboard",
+        "macro": "DIAG_SRC_KEYBOARD"
+      },
+      "event": {
+        "raw": 2,
+        "name": "kbd_key_fail",
+        "macro": "DIAG_KBD_KEY_FAIL",
+        "comment": "a1=key_usage_or_ascii, a2=esp_err, a3=ble_connected, a4=0"
+      },
+      "severity": {
+        "raw": "WARN",
+        "level": 1,
+        "name": "WARN",
+        "macro": "DIAG_SEV_WARN"
+      },
+      "args_raw": {
+        "a1": 0,
+        "a2": 262,
+        "a3": 1,
+        "a4": 0
+      },
+      "args_named": {
+        "key_usage_or_ascii": 0,
+        "esp_err": 262,
+        "ble_connected": 1
+      },
+      "args_decoded": {},
+      "arg_definitions": {
+        "a1": {
+          "name": "key_usage_or_ascii",
+          "raw_name": "key_usage_or_ascii",
+          "detail": "key_usage_or_ascii",
+          "enum": {}
+        },
+        "a2": {
+          "name": "esp_err",
+          "raw_name": "esp_err",
+          "detail": "esp_err",
+          "enum": {}
+        },
+        "a3": {
+          "name": "ble_connected",
+          "raw_name": "ble_connected",
+          "detail": "ble_connected",
+          "enum": {}
+        },
+        "a4": {
+          "name": "unused_a4",
+          "raw_name": "0",
+          "detail": "0",
+          "enum": {}
+        }
+      },
+      "raw_event": {
+        "t": 28735,
+        "src": "keyboard",
+        "evt": 2,
+        "sev": "WARN",
+        "a1": 0,
+        "a2": 262,
+        "a3": 1,
+        "a4": 0
+      }
+    },
+    {
+      "index": 21,
+      "line_number": 22,
+      "boot_segment_index": 0,
+      "t_ms": 28750,
+      "source": {
+        "raw": "keyboard",
+        "id": 2,
+        "name": "keyboard",
+        "macro": "DIAG_SRC_KEYBOARD"
+      },
+      "event": {
+        "raw": 2,
+        "name": "kbd_key_fail",
+        "macro": "DIAG_KBD_KEY_FAIL",
+        "comment": "a1=key_usage_or_ascii, a2=esp_err, a3=ble_connected, a4=0"
+      },
+      "severity": {
+        "raw": "WARN",
+        "level": 1,
+        "name": "WARN",
+        "macro": "DIAG_SEV_WARN"
+      },
+      "args_raw": {
+        "a1": 0,
+        "a2": 262,
+        "a3": 1,
+        "a4": 0
+      },
+      "args_named": {
+        "key_usage_or_ascii": 0,
+        "esp_err": 262,
+        "ble_connected": 1
+      },
+      "args_decoded": {},
+      "arg_definitions": {
+        "a1": {
+          "name": "key_usage_or_ascii",
+          "raw_name": "key_usage_or_ascii",
+          "detail": "key_usage_or_ascii",
+          "enum": {}
+        },
+        "a2": {
+          "name": "esp_err",
+          "raw_name": "esp_err",
+          "detail": "esp_err",
+          "enum": {}
+        },
+        "a3": {
+          "name": "ble_connected",
+          "raw_name": "ble_connected",
+          "detail": "ble_connected",
+          "enum": {}
+        },
+        "a4": {
+          "name": "unused_a4",
+          "raw_name": "0",
+          "detail": "0",
+          "enum": {}
+        }
+      },
+      "raw_event": {
+        "t": 28750,
+        "src": "keyboard",
+        "evt": 2,
+        "sev": "WARN",
+        "a1": 0,
+        "a2": 262,
+        "a3": 1,
+        "a4": 0
+      }
+    },
+    {
+      "index": 22,
+      "line_number": 23,
+      "boot_segment_index": 0,
+      "t_ms": 28766,
+      "source": {
+        "raw": "keyboard",
+        "id": 2,
+        "name": "keyboard",
+        "macro": "DIAG_SRC_KEYBOARD"
+      },
+      "event": {
+        "raw": 2,
+        "name": "kbd_key_fail",
+        "macro": "DIAG_KBD_KEY_FAIL",
+        "comment": "a1=key_usage_or_ascii, a2=esp_err, a3=ble_connected, a4=0"
+      },
+      "severity": {
+        "raw": "WARN",
+        "level": 1,
+        "name": "WARN",
+        "macro": "DIAG_SEV_WARN"
+      },
+      "args_raw": {
+        "a1": 0,
+        "a2": 262,
+        "a3": 1,
+        "a4": 0
+      },
+      "args_named": {
+        "key_usage_or_ascii": 0,
+        "esp_err": 262,
+        "ble_connected": 1
+      },
+      "args_decoded": {},
+      "arg_definitions": {
+        "a1": {
+          "name": "key_usage_or_ascii",
+          "raw_name": "key_usage_or_ascii",
+          "detail": "key_usage_or_ascii",
+          "enum": {}
+        },
+        "a2": {
+          "name": "esp_err",
+          "raw_name": "esp_err",
+          "detail": "esp_err",
+          "enum": {}
+        },
+        "a3": {
+          "name": "ble_connected",
+          "raw_name": "ble_connected",
+          "detail": "ble_connected",
+          "enum": {}
+        },
+        "a4": {
+          "name": "unused_a4",
+          "raw_name": "0",
+          "detail": "0",
+          "enum": {}
+        }
+      },
+      "raw_event": {
+        "t": 28766,
+        "src": "keyboard",
+        "evt": 2,
+        "sev": "WARN",
+        "a1": 0,
+        "a2": 262,
+        "a3": 1,
+        "a4": 0
+      }
+    },
+    {
+      "index": 23,
+      "line_number": 24,
+      "boot_segment_index": 0,
+      "t_ms": 28782,
+      "source": {
+        "raw": "keyboard",
+        "id": 2,
+        "name": "keyboard",
+        "macro": "DIAG_SRC_KEYBOARD"
+      },
+      "event": {
+        "raw": 2,
+        "name": "kbd_key_fail",
+        "macro": "DIAG_KBD_KEY_FAIL",
+        "comment": "a1=key_usage_or_ascii, a2=esp_err, a3=ble_connected, a4=0"
+      },
+      "severity": {
+        "raw": "WARN",
+        "level": 1,
+        "name": "WARN",
+        "macro": "DIAG_SEV_WARN"
+      },
+      "args_raw": {
+        "a1": 0,
+        "a2": 262,
+        "a3": 1,
+        "a4": 0
+      },
+      "args_named": {
+        "key_usage_or_ascii": 0,
+        "esp_err": 262,
+        "ble_connected": 1
+      },
+      "args_decoded": {},
+      "arg_definitions": {
+        "a1": {
+          "name": "key_usage_or_ascii",
+          "raw_name": "key_usage_or_ascii",
+          "detail": "key_usage_or_ascii",
+          "enum": {}
+        },
+        "a2": {
+          "name": "esp_err",
+          "raw_name": "esp_err",
+          "detail": "esp_err",
+          "enum": {}
+        },
+        "a3": {
+          "name": "ble_connected",
+          "raw_name": "ble_connected",
+          "detail": "ble_connected",
+          "enum": {}
+        },
+        "a4": {
+          "name": "unused_a4",
+          "raw_name": "0",
+          "detail": "0",
+          "enum": {}
+        }
+      },
+      "raw_event": {
+        "t": 28782,
+        "src": "keyboard",
+        "evt": 2,
+        "sev": "WARN",
+        "a1": 0,
+        "a2": 262,
+        "a3": 1,
+        "a4": 0
+      }
+    },
+    {
+      "index": 24,
+      "line_number": 25,
+      "boot_segment_index": 0,
+      "t_ms": 28798,
+      "source": {
+        "raw": "keyboard",
+        "id": 2,
+        "name": "keyboard",
+        "macro": "DIAG_SRC_KEYBOARD"
+      },
+      "event": {
+        "raw": 2,
+        "name": "kbd_key_fail",
+        "macro": "DIAG_KBD_KEY_FAIL",
+        "comment": "a1=key_usage_or_ascii, a2=esp_err, a3=ble_connected, a4=0"
+      },
+      "severity": {
+        "raw": "WARN",
+        "level": 1,
+        "name": "WARN",
+        "macro": "DIAG_SEV_WARN"
+      },
+      "args_raw": {
+        "a1": 7,
+        "a2": 262,
+        "a3": 1,
+        "a4": 0
+      },
+      "args_named": {
+        "key_usage_or_ascii": 7,
+        "esp_err": 262,
+        "ble_connected": 1
+      },
+      "args_decoded": {},
+      "arg_definitions": {
+        "a1": {
+          "name": "key_usage_or_ascii",
+          "raw_name": "key_usage_or_ascii",
+          "detail": "key_usage_or_ascii",
+          "enum": {}
+        },
+        "a2": {
+          "name": "esp_err",
+          "raw_name": "esp_err",
+          "detail": "esp_err",
+          "enum": {}
+        },
+        "a3": {
+          "name": "ble_connected",
+          "raw_name": "ble_connected",
+          "detail": "ble_connected",
+          "enum": {}
+        },
+        "a4": {
+          "name": "unused_a4",
+          "raw_name": "0",
+          "detail": "0",
+          "enum": {}
+        }
+      },
+      "raw_event": {
+        "t": 28798,
+        "src": "keyboard",
+        "evt": 2,
+        "sev": "WARN",
+        "a1": 7,
+        "a2": 262,
+        "a3": 1,
+        "a4": 0
+      }
+    },
+    {
+      "index": 25,
+      "line_number": 26,
+      "boot_segment_index": 0,
+      "t_ms": 28813,
+      "source": {
+        "raw": "keyboard",
+        "id": 2,
+        "name": "keyboard",
+        "macro": "DIAG_SRC_KEYBOARD"
+      },
+      "event": {
+        "raw": 2,
+        "name": "kbd_key_fail",
+        "macro": "DIAG_KBD_KEY_FAIL",
+        "comment": "a1=key_usage_or_ascii, a2=esp_err, a3=ble_connected, a4=0"
+      },
+      "severity": {
+        "raw": "WARN",
+        "level": 1,
+        "name": "WARN",
+        "macro": "DIAG_SEV_WARN"
+      },
+      "args_raw": {
+        "a1": 7,
+        "a2": 262,
+        "a3": 1,
+        "a4": 0
+      },
+      "args_named": {
+        "key_usage_or_ascii": 7,
+        "esp_err": 262,
+        "ble_connected": 1
+      },
+      "args_decoded": {},
+      "arg_definitions": {
+        "a1": {
+          "name": "key_usage_or_ascii",
+          "raw_name": "key_usage_or_ascii",
+          "detail": "key_usage_or_ascii",
+          "enum": {}
+        },
+        "a2": {
+          "name": "esp_err",
+          "raw_name": "esp_err",
+          "detail": "esp_err",
+          "enum": {}
+        },
+        "a3": {
+          "name": "ble_connected",
+          "raw_name": "ble_connected",
+          "detail": "ble_connected",
+          "enum": {}
+        },
+        "a4": {
+          "name": "unused_a4",
+          "raw_name": "0",
+          "detail": "0",
+          "enum": {}
+        }
+      },
+      "raw_event": {
+        "t": 28813,
+        "src": "keyboard",
+        "evt": 2,
+        "sev": "WARN",
+        "a1": 7,
+        "a2": 262,
+        "a3": 1,
+        "a4": 0
+      }
+    },
+    {
+      "index": 26,
+      "line_number": 27,
+      "boot_segment_index": 0,
+      "t_ms": 28829,
+      "source": {
+        "raw": "keyboard",
+        "id": 2,
+        "name": "keyboard",
+        "macro": "DIAG_SRC_KEYBOARD"
+      },
+      "event": {
+        "raw": 2,
+        "name": "kbd_key_fail",
+        "macro": "DIAG_KBD_KEY_FAIL",
+        "comment": "a1=key_usage_or_ascii, a2=esp_err, a3=ble_connected, a4=0"
+      },
+      "severity": {
+        "raw": "WARN",
+        "level": 1,
+        "name": "WARN",
+        "macro": "DIAG_SEV_WARN"
+      },
+      "args_raw": {
+        "a1": 18,
+        "a2": 262,
+        "a3": 1,
+        "a4": 0
+      },
+      "args_named": {
+        "key_usage_or_ascii": 18,
+        "esp_err": 262,
+        "ble_connected": 1
+      },
+      "args_decoded": {},
+      "arg_definitions": {
+        "a1": {
+          "name": "key_usage_or_ascii",
+          "raw_name": "key_usage_or_ascii",
+          "detail": "key_usage_or_ascii",
+          "enum": {}
+        },
+        "a2": {
+          "name": "esp_err",
+          "raw_name": "esp_err",
+          "detail": "esp_err",
+          "enum": {}
+        },
+        "a3": {
+          "name": "ble_connected",
+          "raw_name": "ble_connected",
+          "detail": "ble_connected",
+          "enum": {}
+        },
+        "a4": {
+          "name": "unused_a4",
+          "raw_name": "0",
+          "detail": "0",
+          "enum": {}
+        }
+      },
+      "raw_event": {
+        "t": 28829,
+        "src": "keyboard",
+        "evt": 2,
+        "sev": "WARN",
+        "a1": 18,
+        "a2": 262,
+        "a3": 1,
+        "a4": 0
+      }
+    },
+    {
+      "index": 27,
+      "line_number": 28,
+      "boot_segment_index": 0,
+      "t_ms": 30839,
+      "source": {
+        "raw": "keyboard",
+        "id": 2,
+        "name": "keyboard",
+        "macro": "DIAG_SRC_KEYBOARD"
+      },
+      "event": {
+        "raw": 2,
+        "name": "kbd_key_fail",
+        "macro": "DIAG_KBD_KEY_FAIL",
+        "comment": "a1=key_usage_or_ascii, a2=esp_err, a3=ble_connected, a4=0"
+      },
+      "severity": {
+        "raw": "WARN",
+        "level": 1,
+        "name": "WARN",
+        "macro": "DIAG_SEV_WARN"
+      },
+      "args_raw": {
+        "a1": 192,
+        "a2": 262,
+        "a3": 1,
+        "a4": 0
+      },
+      "args_named": {
+        "key_usage_or_ascii": 192,
+        "esp_err": 262,
+        "ble_connected": 1
+      },
+      "args_decoded": {},
+      "arg_definitions": {
+        "a1": {
+          "name": "key_usage_or_ascii",
+          "raw_name": "key_usage_or_ascii",
+          "detail": "key_usage_or_ascii",
+          "enum": {}
+        },
+        "a2": {
+          "name": "esp_err",
+          "raw_name": "esp_err",
+          "detail": "esp_err",
+          "enum": {}
+        },
+        "a3": {
+          "name": "ble_connected",
+          "raw_name": "ble_connected",
+          "detail": "ble_connected",
+          "enum": {}
+        },
+        "a4": {
+          "name": "unused_a4",
+          "raw_name": "0",
+          "detail": "0",
+          "enum": {}
+        }
+      },
+      "raw_event": {
+        "t": 30839,
+        "src": "keyboard",
+        "evt": 2,
+        "sev": "WARN",
+        "a1": 192,
+        "a2": 262,
+        "a3": 1,
+        "a4": 0
+      }
+    },
+    {
+      "index": 28,
+      "line_number": 29,
+      "boot_segment_index": 0,
+      "t_ms": 30855,
+      "source": {
+        "raw": "keyboard",
+        "id": 2,
+        "name": "keyboard",
+        "macro": "DIAG_SRC_KEYBOARD"
+      },
+      "event": {
+        "raw": 2,
+        "name": "kbd_key_fail",
+        "macro": "DIAG_KBD_KEY_FAIL",
+        "comment": "a1=key_usage_or_ascii, a2=esp_err, a3=ble_connected, a4=0"
+      },
+      "severity": {
+        "raw": "WARN",
+        "level": 1,
+        "name": "WARN",
+        "macro": "DIAG_SEV_WARN"
+      },
+      "args_raw": {
+        "a1": 192,
+        "a2": 262,
+        "a3": 1,
+        "a4": 0
+      },
+      "args_named": {
+        "key_usage_or_ascii": 192,
+        "esp_err": 262,
+        "ble_connected": 1
+      },
+      "args_decoded": {},
+      "arg_definitions": {
+        "a1": {
+          "name": "key_usage_or_ascii",
+          "raw_name": "key_usage_or_ascii",
+          "detail": "key_usage_or_ascii",
+          "enum": {}
+        },
+        "a2": {
+          "name": "esp_err",
+          "raw_name": "esp_err",
+          "detail": "esp_err",
+          "enum": {}
+        },
+        "a3": {
+          "name": "ble_connected",
+          "raw_name": "ble_connected",
+          "detail": "ble_connected",
+          "enum": {}
+        },
+        "a4": {
+          "name": "unused_a4",
+          "raw_name": "0",
+          "detail": "0",
+          "enum": {}
+        }
+      },
+      "raw_event": {
+        "t": 30855,
+        "src": "keyboard",
+        "evt": 2,
+        "sev": "WARN",
+        "a1": 192,
+        "a2": 262,
+        "a3": 1,
+        "a4": 0
+      }
+    },
+    {
+      "index": 29,
+      "line_number": 30,
+      "boot_segment_index": 0,
+      "t_ms": 30871,
+      "source": {
+        "raw": "keyboard",
+        "id": 2,
+        "name": "keyboard",
+        "macro": "DIAG_SRC_KEYBOARD"
+      },
+      "event": {
+        "raw": 2,
+        "name": "kbd_key_fail",
+        "macro": "DIAG_KBD_KEY_FAIL",
+        "comment": "a1=key_usage_or_ascii, a2=esp_err, a3=ble_connected, a4=0"
+      },
+      "severity": {
+        "raw": "WARN",
+        "level": 1,
+        "name": "WARN",
+        "macro": "DIAG_SEV_WARN"
+      },
+      "args_raw": {
+        "a1": 0,
+        "a2": 262,
+        "a3": 1,
+        "a4": 0
+      },
+      "args_named": {
+        "key_usage_or_ascii": 0,
+        "esp_err": 262,
+        "ble_connected": 1
+      },
+      "args_decoded": {},
+      "arg_definitions": {
+        "a1": {
+          "name": "key_usage_or_ascii",
+          "raw_name": "key_usage_or_ascii",
+          "detail": "key_usage_or_ascii",
+          "enum": {}
+        },
+        "a2": {
+          "name": "esp_err",
+          "raw_name": "esp_err",
+          "detail": "esp_err",
+          "enum": {}
+        },
+        "a3": {
+          "name": "ble_connected",
+          "raw_name": "ble_connected",
+          "detail": "ble_connected",
+          "enum": {}
+        },
+        "a4": {
+          "name": "unused_a4",
+          "raw_name": "0",
+          "detail": "0",
+          "enum": {}
+        }
+      },
+      "raw_event": {
+        "t": 30871,
+        "src": "keyboard",
+        "evt": 2,
+        "sev": "WARN",
+        "a1": 0,
+        "a2": 262,
+        "a3": 1,
+        "a4": 0
+      }
+    },
+    {
+      "index": 30,
+      "line_number": 31,
+      "boot_segment_index": 0,
+      "t_ms": 30999,
+      "source": {
+        "raw": "keyboard",
+        "id": 2,
+        "name": "keyboard",
+        "macro": "DIAG_SRC_KEYBOARD"
+      },
+      "event": {
+        "raw": 2,
+        "name": "kbd_key_fail",
+        "macro": "DIAG_KBD_KEY_FAIL",
+        "comment": "a1=key_usage_or_ascii, a2=esp_err, a3=ble_connected, a4=0"
+      },
+      "severity": {
+        "raw": "WARN",
+        "level": 1,
+        "name": "WARN",
+        "macro": "DIAG_SEV_WARN"
+      },
+      "args_raw": {
+        "a1": 0,
+        "a2": 262,
+        "a3": 1,
+        "a4": 0
+      },
+      "args_named": {
+        "key_usage_or_ascii": 0,
+        "esp_err": 262,
+        "ble_connected": 1
+      },
+      "args_decoded": {},
+      "arg_definitions": {
+        "a1": {
+          "name": "key_usage_or_ascii",
+          "raw_name": "key_usage_or_ascii",
+          "detail": "key_usage_or_ascii",
+          "enum": {}
+        },
+        "a2": {
+          "name": "esp_err",
+          "raw_name": "esp_err",
+          "detail": "esp_err",
+          "enum": {}
+        },
+        "a3": {
+          "name": "ble_connected",
+          "raw_name": "ble_connected",
+          "detail": "ble_connected",
+          "enum": {}
+        },
+        "a4": {
+          "name": "unused_a4",
+          "raw_name": "0",
+          "detail": "0",
+          "enum": {}
+        }
+      },
+      "raw_event": {
+        "t": 30999,
+        "src": "keyboard",
+        "evt": 2,
+        "sev": "WARN",
+        "a1": 0,
+        "a2": 262,
+        "a3": 1,
+        "a4": 0
+      }
+    },
+    {
+      "index": 31,
+      "line_number": 32,
+      "boot_segment_index": 0,
+      "t_ms": 31015,
+      "source": {
+        "raw": "keyboard",
+        "id": 2,
+        "name": "keyboard",
+        "macro": "DIAG_SRC_KEYBOARD"
+      },
+      "event": {
+        "raw": 2,
+        "name": "kbd_key_fail",
+        "macro": "DIAG_KBD_KEY_FAIL",
+        "comment": "a1=key_usage_or_ascii, a2=esp_err, a3=ble_connected, a4=0"
+      },
+      "severity": {
+        "raw": "WARN",
+        "level": 1,
+        "name": "WARN",
+        "macro": "DIAG_SEV_WARN"
+      },
+      "args_raw": {
+        "a1": 0,
+        "a2": 262,
+        "a3": 1,
+        "a4": 0
+      },
+      "args_named": {
+        "key_usage_or_ascii": 0,
+        "esp_err": 262,
+        "ble_connected": 1
+      },
+      "args_decoded": {},
+      "arg_definitions": {
+        "a1": {
+          "name": "key_usage_or_ascii",
+          "raw_name": "key_usage_or_ascii",
+          "detail": "key_usage_or_ascii",
+          "enum": {}
+        },
+        "a2": {
+          "name": "esp_err",
+          "raw_name": "esp_err",
+          "detail": "esp_err",
+          "enum": {}
+        },
+        "a3": {
+          "name": "ble_connected",
+          "raw_name": "ble_connected",
+          "detail": "ble_connected",
+          "enum": {}
+        },
+        "a4": {
+          "name": "unused_a4",
+          "raw_name": "0",
+          "detail": "0",
+          "enum": {}
+        }
+      },
+      "raw_event": {
+        "t": 31015,
+        "src": "keyboard",
+        "evt": 2,
+        "sev": "WARN",
+        "a1": 0,
+        "a2": 262,
+        "a3": 1,
+        "a4": 0
+      }
+    },
+    {
+      "index": 32,
+      "line_number": 33,
+      "boot_segment_index": 0,
+      "t_ms": 31031,
+      "source": {
+        "raw": "keyboard",
+        "id": 2,
+        "name": "keyboard",
+        "macro": "DIAG_SRC_KEYBOARD"
+      },
+      "event": {
+        "raw": 2,
+        "name": "kbd_key_fail",
+        "macro": "DIAG_KBD_KEY_FAIL",
+        "comment": "a1=key_usage_or_ascii, a2=esp_err, a3=ble_connected, a4=0"
+      },
+      "severity": {
+        "raw": "WARN",
+        "level": 1,
+        "name": "WARN",
+        "macro": "DIAG_SEV_WARN"
+      },
+      "args_raw": {
+        "a1": 0,
+        "a2": 262,
+        "a3": 1,
+        "a4": 0
+      },
+      "args_named": {
+        "key_usage_or_ascii": 0,
+        "esp_err": 262,
+        "ble_connected": 1
+      },
+      "args_decoded": {},
+      "arg_definitions": {
+        "a1": {
+          "name": "key_usage_or_ascii",
+          "raw_name": "key_usage_or_ascii",
+          "detail": "key_usage_or_ascii",
+          "enum": {}
+        },
+        "a2": {
+          "name": "esp_err",
+          "raw_name": "esp_err",
+          "detail": "esp_err",
+          "enum": {}
+        },
+        "a3": {
+          "name": "ble_connected",
+          "raw_name": "ble_connected",
+          "detail": "ble_connected",
+          "enum": {}
+        },
+        "a4": {
+          "name": "unused_a4",
+          "raw_name": "0",
+          "detail": "0",
+          "enum": {}
+        }
+      },
+      "raw_event": {
+        "t": 31031,
+        "src": "keyboard",
+        "evt": 2,
+        "sev": "WARN",
+        "a1": 0,
+        "a2": 262,
+        "a3": 1,
+        "a4": 0
+      }
+    },
+    {
+      "index": 33,
+      "line_number": 34,
+      "boot_segment_index": 0,
+      "t_ms": 31046,
+      "source": {
+        "raw": "keyboard",
+        "id": 2,
+        "name": "keyboard",
+        "macro": "DIAG_SRC_KEYBOARD"
+      },
+      "event": {
+        "raw": 2,
+        "name": "kbd_key_fail",
+        "macro": "DIAG_KBD_KEY_FAIL",
+        "comment": "a1=key_usage_or_ascii, a2=esp_err, a3=ble_connected, a4=0"
+      },
+      "severity": {
+        "raw": "WARN",
+        "level": 1,
+        "name": "WARN",
+        "macro": "DIAG_SEV_WARN"
+      },
+      "args_raw": {
+        "a1": 0,
+        "a2": 262,
+        "a3": 1,
+        "a4": 0
+      },
+      "args_named": {
+        "key_usage_or_ascii": 0,
+        "esp_err": 262,
+        "ble_connected": 1
+      },
+      "args_decoded": {},
+      "arg_definitions": {
+        "a1": {
+          "name": "key_usage_or_ascii",
+          "raw_name": "key_usage_or_ascii",
+          "detail": "key_usage_or_ascii",
+          "enum": {}
+        },
+        "a2": {
+          "name": "esp_err",
+          "raw_name": "esp_err",
+          "detail": "esp_err",
+          "enum": {}
+        },
+        "a3": {
+          "name": "ble_connected",
+          "raw_name": "ble_connected",
+          "detail": "ble_connected",
+          "enum": {}
+        },
+        "a4": {
+          "name": "unused_a4",
+          "raw_name": "0",
+          "detail": "0",
+          "enum": {}
+        }
+      },
+      "raw_event": {
+        "t": 31046,
+        "src": "keyboard",
+        "evt": 2,
+        "sev": "WARN",
+        "a1": 0,
+        "a2": 262,
+        "a3": 1,
+        "a4": 0
+      }
+    },
+    {
+      "index": 34,
+      "line_number": 35,
+      "boot_segment_index": 0,
+      "t_ms": 31062,
+      "source": {
+        "raw": "keyboard",
+        "id": 2,
+        "name": "keyboard",
+        "macro": "DIAG_SRC_KEYBOARD"
+      },
+      "event": {
+        "raw": 2,
+        "name": "kbd_key_fail",
+        "macro": "DIAG_KBD_KEY_FAIL",
+        "comment": "a1=key_usage_or_ascii, a2=esp_err, a3=ble_connected, a4=0"
+      },
+      "severity": {
+        "raw": "WARN",
+        "level": 1,
+        "name": "WARN",
+        "macro": "DIAG_SEV_WARN"
+      },
+      "args_raw": {
+        "a1": 0,
+        "a2": 262,
+        "a3": 1,
+        "a4": 0
+      },
+      "args_named": {
+        "key_usage_or_ascii": 0,
+        "esp_err": 262,
+        "ble_connected": 1
+      },
+      "args_decoded": {},
+      "arg_definitions": {
+        "a1": {
+          "name": "key_usage_or_ascii",
+          "raw_name": "key_usage_or_ascii",
+          "detail": "key_usage_or_ascii",
+          "enum": {}
+        },
+        "a2": {
+          "name": "esp_err",
+          "raw_name": "esp_err",
+          "detail": "esp_err",
+          "enum": {}
+        },
+        "a3": {
+          "name": "ble_connected",
+          "raw_name": "ble_connected",
+          "detail": "ble_connected",
+          "enum": {}
+        },
+        "a4": {
+          "name": "unused_a4",
+          "raw_name": "0",
+          "detail": "0",
+          "enum": {}
+        }
+      },
+      "raw_event": {
+        "t": 31062,
+        "src": "keyboard",
+        "evt": 2,
+        "sev": "WARN",
+        "a1": 0,
+        "a2": 262,
+        "a3": 1,
+        "a4": 0
+      }
+    },
+    {
+      "index": 35,
+      "line_number": 36,
+      "boot_segment_index": 0,
+      "t_ms": 31078,
+      "source": {
+        "raw": "keyboard",
+        "id": 2,
+        "name": "keyboard",
+        "macro": "DIAG_SRC_KEYBOARD"
+      },
+      "event": {
+        "raw": 2,
+        "name": "kbd_key_fail",
+        "macro": "DIAG_KBD_KEY_FAIL",
+        "comment": "a1=key_usage_or_ascii, a2=esp_err, a3=ble_connected, a4=0"
+      },
+      "severity": {
+        "raw": "WARN",
+        "level": 1,
+        "name": "WARN",
+        "macro": "DIAG_SEV_WARN"
+      },
+      "args_raw": {
+        "a1": 7,
+        "a2": 262,
+        "a3": 1,
+        "a4": 0
+      },
+      "args_named": {
+        "key_usage_or_ascii": 7,
+        "esp_err": 262,
+        "ble_connected": 1
+      },
+      "args_decoded": {},
+      "arg_definitions": {
+        "a1": {
+          "name": "key_usage_or_ascii",
+          "raw_name": "key_usage_or_ascii",
+          "detail": "key_usage_or_ascii",
+          "enum": {}
+        },
+        "a2": {
+          "name": "esp_err",
+          "raw_name": "esp_err",
+          "detail": "esp_err",
+          "enum": {}
+        },
+        "a3": {
+          "name": "ble_connected",
+          "raw_name": "ble_connected",
+          "detail": "ble_connected",
+          "enum": {}
+        },
+        "a4": {
+          "name": "unused_a4",
+          "raw_name": "0",
+          "detail": "0",
+          "enum": {}
+        }
+      },
+      "raw_event": {
+        "t": 31078,
+        "src": "keyboard",
+        "evt": 2,
+        "sev": "WARN",
+        "a1": 7,
+        "a2": 262,
+        "a3": 1,
+        "a4": 0
+      }
+    },
+    {
+      "index": 36,
+      "line_number": 37,
+      "boot_segment_index": 0,
+      "t_ms": 31093,
+      "source": {
+        "raw": "keyboard",
+        "id": 2,
+        "name": "keyboard",
+        "macro": "DIAG_SRC_KEYBOARD"
+      },
+      "event": {
+        "raw": 2,
+        "name": "kbd_key_fail",
+        "macro": "DIAG_KBD_KEY_FAIL",
+        "comment": "a1=key_usage_or_ascii, a2=esp_err, a3=ble_connected, a4=0"
+      },
+      "severity": {
+        "raw": "WARN",
+        "level": 1,
+        "name": "WARN",
+        "macro": "DIAG_SEV_WARN"
+      },
+      "args_raw": {
+        "a1": 7,
+        "a2": 262,
+        "a3": 1,
+        "a4": 0
+      },
+      "args_named": {
+        "key_usage_or_ascii": 7,
+        "esp_err": 262,
+        "ble_connected": 1
+      },
+      "args_decoded": {},
+      "arg_definitions": {
+        "a1": {
+          "name": "key_usage_or_ascii",
+          "raw_name": "key_usage_or_ascii",
+          "detail": "key_usage_or_ascii",
+          "enum": {}
+        },
+        "a2": {
+          "name": "esp_err",
+          "raw_name": "esp_err",
+          "detail": "esp_err",
+          "enum": {}
+        },
+        "a3": {
+          "name": "ble_connected",
+          "raw_name": "ble_connected",
+          "detail": "ble_connected",
+          "enum": {}
+        },
+        "a4": {
+          "name": "unused_a4",
+          "raw_name": "0",
+          "detail": "0",
+          "enum": {}
+        }
+      },
+      "raw_event": {
+        "t": 31093,
+        "src": "keyboard",
+        "evt": 2,
+        "sev": "WARN",
+        "a1": 7,
+        "a2": 262,
+        "a3": 1,
+        "a4": 0
+      }
+    },
+    {
+      "index": 37,
+      "line_number": 38,
+      "boot_segment_index": 0,
+      "t_ms": 31109,
+      "source": {
+        "raw": "keyboard",
+        "id": 2,
+        "name": "keyboard",
+        "macro": "DIAG_SRC_KEYBOARD"
+      },
+      "event": {
+        "raw": 2,
+        "name": "kbd_key_fail",
+        "macro": "DIAG_KBD_KEY_FAIL",
+        "comment": "a1=key_usage_or_ascii, a2=esp_err, a3=ble_connected, a4=0"
+      },
+      "severity": {
+        "raw": "WARN",
+        "level": 1,
+        "name": "WARN",
+        "macro": "DIAG_SEV_WARN"
+      },
+      "args_raw": {
+        "a1": 18,
+        "a2": 262,
+        "a3": 1,
+        "a4": 0
+      },
+      "args_named": {
+        "key_usage_or_ascii": 18,
+        "esp_err": 262,
+        "ble_connected": 1
+      },
+      "args_decoded": {},
+      "arg_definitions": {
+        "a1": {
+          "name": "key_usage_or_ascii",
+          "raw_name": "key_usage_or_ascii",
+          "detail": "key_usage_or_ascii",
+          "enum": {}
+        },
+        "a2": {
+          "name": "esp_err",
+          "raw_name": "esp_err",
+          "detail": "esp_err",
+          "enum": {}
+        },
+        "a3": {
+          "name": "ble_connected",
+          "raw_name": "ble_connected",
+          "detail": "ble_connected",
+          "enum": {}
+        },
+        "a4": {
+          "name": "unused_a4",
+          "raw_name": "0",
+          "detail": "0",
+          "enum": {}
+        }
+      },
+      "raw_event": {
+        "t": 31109,
+        "src": "keyboard",
+        "evt": 2,
+        "sev": "WARN",
+        "a1": 18,
+        "a2": 262,
+        "a3": 1,
+        "a4": 0
+      }
+    },
+    {
+      "index": 38,
+      "line_number": 39,
+      "boot_segment_index": 0,
+      "t_ms": 33059,
+      "source": {
+        "raw": "keyboard",
+        "id": 2,
+        "name": "keyboard",
+        "macro": "DIAG_SRC_KEYBOARD"
+      },
+      "event": {
+        "raw": 2,
+        "name": "kbd_key_fail",
+        "macro": "DIAG_KBD_KEY_FAIL",
+        "comment": "a1=key_usage_or_ascii, a2=esp_err, a3=ble_connected, a4=0"
+      },
+      "severity": {
+        "raw": "WARN",
+        "level": 1,
+        "name": "WARN",
+        "macro": "DIAG_SEV_WARN"
+      },
+      "args_raw": {
+        "a1": 192,
+        "a2": 262,
+        "a3": 1,
+        "a4": 0
+      },
+      "args_named": {
+        "key_usage_or_ascii": 192,
+        "esp_err": 262,
+        "ble_connected": 1
+      },
+      "args_decoded": {},
+      "arg_definitions": {
+        "a1": {
+          "name": "key_usage_or_ascii",
+          "raw_name": "key_usage_or_ascii",
+          "detail": "key_usage_or_ascii",
+          "enum": {}
+        },
+        "a2": {
+          "name": "esp_err",
+          "raw_name": "esp_err",
+          "detail": "esp_err",
+          "enum": {}
+        },
+        "a3": {
+          "name": "ble_connected",
+          "raw_name": "ble_connected",
+          "detail": "ble_connected",
+          "enum": {}
+        },
+        "a4": {
+          "name": "unused_a4",
+          "raw_name": "0",
+          "detail": "0",
+          "enum": {}
+        }
+      },
+      "raw_event": {
+        "t": 33059,
+        "src": "keyboard",
+        "evt": 2,
+        "sev": "WARN",
+        "a1": 192,
+        "a2": 262,
+        "a3": 1,
+        "a4": 0
+      }
+    },
+    {
+      "index": 39,
+      "line_number": 40,
+      "boot_segment_index": 0,
+      "t_ms": 33075,
+      "source": {
+        "raw": "keyboard",
+        "id": 2,
+        "name": "keyboard",
+        "macro": "DIAG_SRC_KEYBOARD"
+      },
+      "event": {
+        "raw": 2,
+        "name": "kbd_key_fail",
+        "macro": "DIAG_KBD_KEY_FAIL",
+        "comment": "a1=key_usage_or_ascii, a2=esp_err, a3=ble_connected, a4=0"
+      },
+      "severity": {
+        "raw": "WARN",
+        "level": 1,
+        "name": "WARN",
+        "macro": "DIAG_SEV_WARN"
+      },
+      "args_raw": {
+        "a1": 192,
+        "a2": 262,
+        "a3": 1,
+        "a4": 0
+      },
+      "args_named": {
+        "key_usage_or_ascii": 192,
+        "esp_err": 262,
+        "ble_connected": 1
+      },
+      "args_decoded": {},
+      "arg_definitions": {
+        "a1": {
+          "name": "key_usage_or_ascii",
+          "raw_name": "key_usage_or_ascii",
+          "detail": "key_usage_or_ascii",
+          "enum": {}
+        },
+        "a2": {
+          "name": "esp_err",
+          "raw_name": "esp_err",
+          "detail": "esp_err",
+          "enum": {}
+        },
+        "a3": {
+          "name": "ble_connected",
+          "raw_name": "ble_connected",
+          "detail": "ble_connected",
+          "enum": {}
+        },
+        "a4": {
+          "name": "unused_a4",
+          "raw_name": "0",
+          "detail": "0",
+          "enum": {}
+        }
+      },
+      "raw_event": {
+        "t": 33075,
+        "src": "keyboard",
+        "evt": 2,
+        "sev": "WARN",
+        "a1": 192,
+        "a2": 262,
+        "a3": 1,
+        "a4": 0
+      }
+    },
+    {
+      "index": 40,
+      "line_number": 41,
+      "boot_segment_index": 0,
+      "t_ms": 33090,
+      "source": {
+        "raw": "keyboard",
+        "id": 2,
+        "name": "keyboard",
+        "macro": "DIAG_SRC_KEYBOARD"
+      },
+      "event": {
+        "raw": 2,
+        "name": "kbd_key_fail",
+        "macro": "DIAG_KBD_KEY_FAIL",
+        "comment": "a1=key_usage_or_ascii, a2=esp_err, a3=ble_connected, a4=0"
+      },
+      "severity": {
+        "raw": "WARN",
+        "level": 1,
+        "name": "WARN",
+        "macro": "DIAG_SEV_WARN"
+      },
+      "args_raw": {
+        "a1": 0,
+        "a2": 262,
+        "a3": 1,
+        "a4": 0
+      },
+      "args_named": {
+        "key_usage_or_ascii": 0,
+        "esp_err": 262,
+        "ble_connected": 1
+      },
+      "args_decoded": {},
+      "arg_definitions": {
+        "a1": {
+          "name": "key_usage_or_ascii",
+          "raw_name": "key_usage_or_ascii",
+          "detail": "key_usage_or_ascii",
+          "enum": {}
+        },
+        "a2": {
+          "name": "esp_err",
+          "raw_name": "esp_err",
+          "detail": "esp_err",
+          "enum": {}
+        },
+        "a3": {
+          "name": "ble_connected",
+          "raw_name": "ble_connected",
+          "detail": "ble_connected",
+          "enum": {}
+        },
+        "a4": {
+          "name": "unused_a4",
+          "raw_name": "0",
+          "detail": "0",
+          "enum": {}
+        }
+      },
+      "raw_event": {
+        "t": 33090,
+        "src": "keyboard",
+        "evt": 2,
+        "sev": "WARN",
+        "a1": 0,
+        "a2": 262,
+        "a3": 1,
+        "a4": 0
+      }
+    },
+    {
+      "index": 41,
+      "line_number": 42,
+      "boot_segment_index": 0,
+      "t_ms": 33219,
+      "source": {
+        "raw": "keyboard",
+        "id": 2,
+        "name": "keyboard",
+        "macro": "DIAG_SRC_KEYBOARD"
+      },
+      "event": {
+        "raw": 2,
+        "name": "kbd_key_fail",
+        "macro": "DIAG_KBD_KEY_FAIL",
+        "comment": "a1=key_usage_or_ascii, a2=esp_err, a3=ble_connected, a4=0"
+      },
+      "severity": {
+        "raw": "WARN",
+        "level": 1,
+        "name": "WARN",
+        "macro": "DIAG_SEV_WARN"
+      },
+      "args_raw": {
+        "a1": 0,
+        "a2": 262,
+        "a3": 1,
+        "a4": 0
+      },
+      "args_named": {
+        "key_usage_or_ascii": 0,
+        "esp_err": 262,
+        "ble_connected": 1
+      },
+      "args_decoded": {},
+      "arg_definitions": {
+        "a1": {
+          "name": "key_usage_or_ascii",
+          "raw_name": "key_usage_or_ascii",
+          "detail": "key_usage_or_ascii",
+          "enum": {}
+        },
+        "a2": {
+          "name": "esp_err",
+          "raw_name": "esp_err",
+          "detail": "esp_err",
+          "enum": {}
+        },
+        "a3": {
+          "name": "ble_connected",
+          "raw_name": "ble_connected",
+          "detail": "ble_connected",
+          "enum": {}
+        },
+        "a4": {
+          "name": "unused_a4",
+          "raw_name": "0",
+          "detail": "0",
+          "enum": {}
+        }
+      },
+      "raw_event": {
+        "t": 33219,
+        "src": "keyboard",
+        "evt": 2,
+        "sev": "WARN",
+        "a1": 0,
+        "a2": 262,
+        "a3": 1,
+        "a4": 0
+      }
+    },
+    {
+      "index": 42,
+      "line_number": 43,
+      "boot_segment_index": 0,
+      "t_ms": 33235,
+      "source": {
+        "raw": "keyboard",
+        "id": 2,
+        "name": "keyboard",
+        "macro": "DIAG_SRC_KEYBOARD"
+      },
+      "event": {
+        "raw": 2,
+        "name": "kbd_key_fail",
+        "macro": "DIAG_KBD_KEY_FAIL",
+        "comment": "a1=key_usage_or_ascii, a2=esp_err, a3=ble_connected, a4=0"
+      },
+      "severity": {
+        "raw": "WARN",
+        "level": 1,
+        "name": "WARN",
+        "macro": "DIAG_SEV_WARN"
+      },
+      "args_raw": {
+        "a1": 0,
+        "a2": 262,
+        "a3": 1,
+        "a4": 0
+      },
+      "args_named": {
+        "key_usage_or_ascii": 0,
+        "esp_err": 262,
+        "ble_connected": 1
+      },
+      "args_decoded": {},
+      "arg_definitions": {
+        "a1": {
+          "name": "key_usage_or_ascii",
+          "raw_name": "key_usage_or_ascii",
+          "detail": "key_usage_or_ascii",
+          "enum": {}
+        },
+        "a2": {
+          "name": "esp_err",
+          "raw_name": "esp_err",
+          "detail": "esp_err",
+          "enum": {}
+        },
+        "a3": {
+          "name": "ble_connected",
+          "raw_name": "ble_connected",
+          "detail": "ble_connected",
+          "enum": {}
+        },
+        "a4": {
+          "name": "unused_a4",
+          "raw_name": "0",
+          "detail": "0",
+          "enum": {}
+        }
+      },
+      "raw_event": {
+        "t": 33235,
+        "src": "keyboard",
+        "evt": 2,
+        "sev": "WARN",
+        "a1": 0,
+        "a2": 262,
+        "a3": 1,
+        "a4": 0
+      }
+    },
+    {
+      "index": 43,
+      "line_number": 44,
+      "boot_segment_index": 0,
+      "t_ms": 33250,
+      "source": {
+        "raw": "keyboard",
+        "id": 2,
+        "name": "keyboard",
+        "macro": "DIAG_SRC_KEYBOARD"
+      },
+      "event": {
+        "raw": 2,
+        "name": "kbd_key_fail",
+        "macro": "DIAG_KBD_KEY_FAIL",
+        "comment": "a1=key_usage_or_ascii, a2=esp_err, a3=ble_connected, a4=0"
+      },
+      "severity": {
+        "raw": "WARN",
+        "level": 1,
+        "name": "WARN",
+        "macro": "DIAG_SEV_WARN"
+      },
+      "args_raw": {
+        "a1": 0,
+        "a2": 262,
+        "a3": 1,
+        "a4": 0
+      },
+      "args_named": {
+        "key_usage_or_ascii": 0,
+        "esp_err": 262,
+        "ble_connected": 1
+      },
+      "args_decoded": {},
+      "arg_definitions": {
+        "a1": {
+          "name": "key_usage_or_ascii",
+          "raw_name": "key_usage_or_ascii",
+          "detail": "key_usage_or_ascii",
+          "enum": {}
+        },
+        "a2": {
+          "name": "esp_err",
+          "raw_name": "esp_err",
+          "detail": "esp_err",
+          "enum": {}
+        },
+        "a3": {
+          "name": "ble_connected",
+          "raw_name": "ble_connected",
+          "detail": "ble_connected",
+          "enum": {}
+        },
+        "a4": {
+          "name": "unused_a4",
+          "raw_name": "0",
+          "detail": "0",
+          "enum": {}
+        }
+      },
+      "raw_event": {
+        "t": 33250,
+        "src": "keyboard",
+        "evt": 2,
+        "sev": "WARN",
+        "a1": 0,
+        "a2": 262,
+        "a3": 1,
+        "a4": 0
+      }
+    },
+    {
+      "index": 44,
+      "line_number": 45,
+      "boot_segment_index": 0,
+      "t_ms": 33266,
+      "source": {
+        "raw": "keyboard",
+        "id": 2,
+        "name": "keyboard",
+        "macro": "DIAG_SRC_KEYBOARD"
+      },
+      "event": {
+        "raw": 2,
+        "name": "kbd_key_fail",
+        "macro": "DIAG_KBD_KEY_FAIL",
+        "comment": "a1=key_usage_or_ascii, a2=esp_err, a3=ble_connected, a4=0"
+      },
+      "severity": {
+        "raw": "WARN",
+        "level": 1,
+        "name": "WARN",
+        "macro": "DIAG_SEV_WARN"
+      },
+      "args_raw": {
+        "a1": 0,
+        "a2": 262,
+        "a3": 1,
+        "a4": 0
+      },
+      "args_named": {
+        "key_usage_or_ascii": 0,
+        "esp_err": 262,
+        "ble_connected": 1
+      },
+      "args_decoded": {},
+      "arg_definitions": {
+        "a1": {
+          "name": "key_usage_or_ascii",
+          "raw_name": "key_usage_or_ascii",
+          "detail": "key_usage_or_ascii",
+          "enum": {}
+        },
+        "a2": {
+          "name": "esp_err",
+          "raw_name": "esp_err",
+          "detail": "esp_err",
+          "enum": {}
+        },
+        "a3": {
+          "name": "ble_connected",
+          "raw_name": "ble_connected",
+          "detail": "ble_connected",
+          "enum": {}
+        },
+        "a4": {
+          "name": "unused_a4",
+          "raw_name": "0",
+          "detail": "0",
+          "enum": {}
+        }
+      },
+      "raw_event": {
+        "t": 33266,
+        "src": "keyboard",
+        "evt": 2,
+        "sev": "WARN",
+        "a1": 0,
+        "a2": 262,
+        "a3": 1,
+        "a4": 0
+      }
+    },
+    {
+      "index": 45,
+      "line_number": 46,
+      "boot_segment_index": 0,
+      "t_ms": 33282,
+      "source": {
+        "raw": "keyboard",
+        "id": 2,
+        "name": "keyboard",
+        "macro": "DIAG_SRC_KEYBOARD"
+      },
+      "event": {
+        "raw": 2,
+        "name": "kbd_key_fail",
+        "macro": "DIAG_KBD_KEY_FAIL",
+        "comment": "a1=key_usage_or_ascii, a2=esp_err, a3=ble_connected, a4=0"
+      },
+      "severity": {
+        "raw": "WARN",
+        "level": 1,
+        "name": "WARN",
+        "macro": "DIAG_SEV_WARN"
+      },
+      "args_raw": {
+        "a1": 0,
+        "a2": 262,
+        "a3": 1,
+        "a4": 0
+      },
+      "args_named": {
+        "key_usage_or_ascii": 0,
+        "esp_err": 262,
+        "ble_connected": 1
+      },
+      "args_decoded": {},
+      "arg_definitions": {
+        "a1": {
+          "name": "key_usage_or_ascii",
+          "raw_name": "key_usage_or_ascii",
+          "detail": "key_usage_or_ascii",
+          "enum": {}
+        },
+        "a2": {
+          "name": "esp_err",
+          "raw_name": "esp_err",
+          "detail": "esp_err",
+          "enum": {}
+        },
+        "a3": {
+          "name": "ble_connected",
+          "raw_name": "ble_connected",
+          "detail": "ble_connected",
+          "enum": {}
+        },
+        "a4": {
+          "name": "unused_a4",
+          "raw_name": "0",
+          "detail": "0",
+          "enum": {}
+        }
+      },
+      "raw_event": {
+        "t": 33282,
+        "src": "keyboard",
+        "evt": 2,
+        "sev": "WARN",
+        "a1": 0,
+        "a2": 262,
+        "a3": 1,
+        "a4": 0
+      }
+    },
+    {
+      "index": 46,
+      "line_number": 47,
+      "boot_segment_index": 0,
+      "t_ms": 33298,
+      "source": {
+        "raw": "keyboard",
+        "id": 2,
+        "name": "keyboard",
+        "macro": "DIAG_SRC_KEYBOARD"
+      },
+      "event": {
+        "raw": 2,
+        "name": "kbd_key_fail",
+        "macro": "DIAG_KBD_KEY_FAIL",
+        "comment": "a1=key_usage_or_ascii, a2=esp_err, a3=ble_connected, a4=0"
+      },
+      "severity": {
+        "raw": "WARN",
+        "level": 1,
+        "name": "WARN",
+        "macro": "DIAG_SEV_WARN"
+      },
+      "args_raw": {
+        "a1": 7,
+        "a2": 262,
+        "a3": 1,
+        "a4": 0
+      },
+      "args_named": {
+        "key_usage_or_ascii": 7,
+        "esp_err": 262,
+        "ble_connected": 1
+      },
+      "args_decoded": {},
+      "arg_definitions": {
+        "a1": {
+          "name": "key_usage_or_ascii",
+          "raw_name": "key_usage_or_ascii",
+          "detail": "key_usage_or_ascii",
+          "enum": {}
+        },
+        "a2": {
+          "name": "esp_err",
+          "raw_name": "esp_err",
+          "detail": "esp_err",
+          "enum": {}
+        },
+        "a3": {
+          "name": "ble_connected",
+          "raw_name": "ble_connected",
+          "detail": "ble_connected",
+          "enum": {}
+        },
+        "a4": {
+          "name": "unused_a4",
+          "raw_name": "0",
+          "detail": "0",
+          "enum": {}
+        }
+      },
+      "raw_event": {
+        "t": 33298,
+        "src": "keyboard",
+        "evt": 2,
+        "sev": "WARN",
+        "a1": 7,
+        "a2": 262,
+        "a3": 1,
+        "a4": 0
+      }
+    },
+    {
+      "index": 47,
+      "line_number": 48,
+      "boot_segment_index": 0,
+      "t_ms": 33313,
+      "source": {
+        "raw": "keyboard",
+        "id": 2,
+        "name": "keyboard",
+        "macro": "DIAG_SRC_KEYBOARD"
+      },
+      "event": {
+        "raw": 2,
+        "name": "kbd_key_fail",
+        "macro": "DIAG_KBD_KEY_FAIL",
+        "comment": "a1=key_usage_or_ascii, a2=esp_err, a3=ble_connected, a4=0"
+      },
+      "severity": {
+        "raw": "WARN",
+        "level": 1,
+        "name": "WARN",
+        "macro": "DIAG_SEV_WARN"
+      },
+      "args_raw": {
+        "a1": 7,
+        "a2": 262,
+        "a3": 1,
+        "a4": 0
+      },
+      "args_named": {
+        "key_usage_or_ascii": 7,
+        "esp_err": 262,
+        "ble_connected": 1
+      },
+      "args_decoded": {},
+      "arg_definitions": {
+        "a1": {
+          "name": "key_usage_or_ascii",
+          "raw_name": "key_usage_or_ascii",
+          "detail": "key_usage_or_ascii",
+          "enum": {}
+        },
+        "a2": {
+          "name": "esp_err",
+          "raw_name": "esp_err",
+          "detail": "esp_err",
+          "enum": {}
+        },
+        "a3": {
+          "name": "ble_connected",
+          "raw_name": "ble_connected",
+          "detail": "ble_connected",
+          "enum": {}
+        },
+        "a4": {
+          "name": "unused_a4",
+          "raw_name": "0",
+          "detail": "0",
+          "enum": {}
+        }
+      },
+      "raw_event": {
+        "t": 33313,
+        "src": "keyboard",
+        "evt": 2,
+        "sev": "WARN",
+        "a1": 7,
+        "a2": 262,
+        "a3": 1,
+        "a4": 0
+      }
+    },
+    {
+      "index": 48,
+      "line_number": 49,
+      "boot_segment_index": 0,
+      "t_ms": 33329,
+      "source": {
+        "raw": "keyboard",
+        "id": 2,
+        "name": "keyboard",
+        "macro": "DIAG_SRC_KEYBOARD"
+      },
+      "event": {
+        "raw": 2,
+        "name": "kbd_key_fail",
+        "macro": "DIAG_KBD_KEY_FAIL",
+        "comment": "a1=key_usage_or_ascii, a2=esp_err, a3=ble_connected, a4=0"
+      },
+      "severity": {
+        "raw": "WARN",
+        "level": 1,
+        "name": "WARN",
+        "macro": "DIAG_SEV_WARN"
+      },
+      "args_raw": {
+        "a1": 18,
+        "a2": 262,
+        "a3": 1,
+        "a4": 0
+      },
+      "args_named": {
+        "key_usage_or_ascii": 18,
+        "esp_err": 262,
+        "ble_connected": 1
+      },
+      "args_decoded": {},
+      "arg_definitions": {
+        "a1": {
+          "name": "key_usage_or_ascii",
+          "raw_name": "key_usage_or_ascii",
+          "detail": "key_usage_or_ascii",
+          "enum": {}
+        },
+        "a2": {
+          "name": "esp_err",
+          "raw_name": "esp_err",
+          "detail": "esp_err",
+          "enum": {}
+        },
+        "a3": {
+          "name": "ble_connected",
+          "raw_name": "ble_connected",
+          "detail": "ble_connected",
+          "enum": {}
+        },
+        "a4": {
+          "name": "unused_a4",
+          "raw_name": "0",
+          "detail": "0",
+          "enum": {}
+        }
+      },
+      "raw_event": {
+        "t": 33329,
+        "src": "keyboard",
+        "evt": 2,
+        "sev": "WARN",
+        "a1": 18,
+        "a2": 262,
+        "a3": 1,
+        "a4": 0
+      }
+    },
+    {
+      "index": 49,
+      "line_number": 50,
+      "boot_segment_index": 0,
+      "t_ms": 35280,
+      "source": {
+        "raw": "keyboard",
+        "id": 2,
+        "name": "keyboard",
+        "macro": "DIAG_SRC_KEYBOARD"
+      },
+      "event": {
+        "raw": 2,
+        "name": "kbd_key_fail",
+        "macro": "DIAG_KBD_KEY_FAIL",
+        "comment": "a1=key_usage_or_ascii, a2=esp_err, a3=ble_connected, a4=0"
+      },
+      "severity": {
+        "raw": "WARN",
+        "level": 1,
+        "name": "WARN",
+        "macro": "DIAG_SEV_WARN"
+      },
+      "args_raw": {
+        "a1": 192,
+        "a2": 262,
+        "a3": 1,
+        "a4": 0
+      },
+      "args_named": {
+        "key_usage_or_ascii": 192,
+        "esp_err": 262,
+        "ble_connected": 1
+      },
+      "args_decoded": {},
+      "arg_definitions": {
+        "a1": {
+          "name": "key_usage_or_ascii",
+          "raw_name": "key_usage_or_ascii",
+          "detail": "key_usage_or_ascii",
+          "enum": {}
+        },
+        "a2": {
+          "name": "esp_err",
+          "raw_name": "esp_err",
+          "detail": "esp_err",
+          "enum": {}
+        },
+        "a3": {
+          "name": "ble_connected",
+          "raw_name": "ble_connected",
+          "detail": "ble_connected",
+          "enum": {}
+        },
+        "a4": {
+          "name": "unused_a4",
+          "raw_name": "0",
+          "detail": "0",
+          "enum": {}
+        }
+      },
+      "raw_event": {
+        "t": 35280,
+        "src": "keyboard",
+        "evt": 2,
+        "sev": "WARN",
+        "a1": 192,
+        "a2": 262,
+        "a3": 1,
+        "a4": 0
+      }
+    },
+    {
+      "index": 50,
+      "line_number": 51,
+      "boot_segment_index": 0,
+      "t_ms": 35296,
+      "source": {
+        "raw": "keyboard",
+        "id": 2,
+        "name": "keyboard",
+        "macro": "DIAG_SRC_KEYBOARD"
+      },
+      "event": {
+        "raw": 2,
+        "name": "kbd_key_fail",
+        "macro": "DIAG_KBD_KEY_FAIL",
+        "comment": "a1=key_usage_or_ascii, a2=esp_err, a3=ble_connected, a4=0"
+      },
+      "severity": {
+        "raw": "WARN",
+        "level": 1,
+        "name": "WARN",
+        "macro": "DIAG_SEV_WARN"
+      },
+      "args_raw": {
+        "a1": 192,
+        "a2": 262,
+        "a3": 1,
+        "a4": 0
+      },
+      "args_named": {
+        "key_usage_or_ascii": 192,
+        "esp_err": 262,
+        "ble_connected": 1
+      },
+      "args_decoded": {},
+      "arg_definitions": {
+        "a1": {
+          "name": "key_usage_or_ascii",
+          "raw_name": "key_usage_or_ascii",
+          "detail": "key_usage_or_ascii",
+          "enum": {}
+        },
+        "a2": {
+          "name": "esp_err",
+          "raw_name": "esp_err",
+          "detail": "esp_err",
+          "enum": {}
+        },
+        "a3": {
+          "name": "ble_connected",
+          "raw_name": "ble_connected",
+          "detail": "ble_connected",
+          "enum": {}
+        },
+        "a4": {
+          "name": "unused_a4",
+          "raw_name": "0",
+          "detail": "0",
+          "enum": {}
+        }
+      },
+      "raw_event": {
+        "t": 35296,
+        "src": "keyboard",
+        "evt": 2,
+        "sev": "WARN",
+        "a1": 192,
+        "a2": 262,
+        "a3": 1,
+        "a4": 0
+      }
+    },
+    {
+      "index": 51,
+      "line_number": 52,
+      "boot_segment_index": 0,
+      "t_ms": 35311,
+      "source": {
+        "raw": "keyboard",
+        "id": 2,
+        "name": "keyboard",
+        "macro": "DIAG_SRC_KEYBOARD"
+      },
+      "event": {
+        "raw": 2,
+        "name": "kbd_key_fail",
+        "macro": "DIAG_KBD_KEY_FAIL",
+        "comment": "a1=key_usage_or_ascii, a2=esp_err, a3=ble_connected, a4=0"
+      },
+      "severity": {
+        "raw": "WARN",
+        "level": 1,
+        "name": "WARN",
+        "macro": "DIAG_SEV_WARN"
+      },
+      "args_raw": {
+        "a1": 0,
+        "a2": 262,
+        "a3": 1,
+        "a4": 0
+      },
+      "args_named": {
+        "key_usage_or_ascii": 0,
+        "esp_err": 262,
+        "ble_connected": 1
+      },
+      "args_decoded": {},
+      "arg_definitions": {
+        "a1": {
+          "name": "key_usage_or_ascii",
+          "raw_name": "key_usage_or_ascii",
+          "detail": "key_usage_or_ascii",
+          "enum": {}
+        },
+        "a2": {
+          "name": "esp_err",
+          "raw_name": "esp_err",
+          "detail": "esp_err",
+          "enum": {}
+        },
+        "a3": {
+          "name": "ble_connected",
+          "raw_name": "ble_connected",
+          "detail": "ble_connected",
+          "enum": {}
+        },
+        "a4": {
+          "name": "unused_a4",
+          "raw_name": "0",
+          "detail": "0",
+          "enum": {}
+        }
+      },
+      "raw_event": {
+        "t": 35311,
+        "src": "keyboard",
+        "evt": 2,
+        "sev": "WARN",
+        "a1": 0,
+        "a2": 262,
+        "a3": 1,
+        "a4": 0
+      }
+    },
+    {
+      "index": 52,
+      "line_number": 53,
+      "boot_segment_index": 0,
+      "t_ms": 35430,
+      "source": {
+        "raw": "keyboard",
+        "id": 2,
+        "name": "keyboard",
+        "macro": "DIAG_SRC_KEYBOARD"
+      },
+      "event": {
+        "raw": 2,
+        "name": "kbd_key_fail",
+        "macro": "DIAG_KBD_KEY_FAIL",
+        "comment": "a1=key_usage_or_ascii, a2=esp_err, a3=ble_connected, a4=0"
+      },
+      "severity": {
+        "raw": "WARN",
+        "level": 1,
+        "name": "WARN",
+        "macro": "DIAG_SEV_WARN"
+      },
+      "args_raw": {
+        "a1": 0,
+        "a2": 262,
+        "a3": 1,
+        "a4": 0
+      },
+      "args_named": {
+        "key_usage_or_ascii": 0,
+        "esp_err": 262,
+        "ble_connected": 1
+      },
+      "args_decoded": {},
+      "arg_definitions": {
+        "a1": {
+          "name": "key_usage_or_ascii",
+          "raw_name": "key_usage_or_ascii",
+          "detail": "key_usage_or_ascii",
+          "enum": {}
+        },
+        "a2": {
+          "name": "esp_err",
+          "raw_name": "esp_err",
+          "detail": "esp_err",
+          "enum": {}
+        },
+        "a3": {
+          "name": "ble_connected",
+          "raw_name": "ble_connected",
+          "detail": "ble_connected",
+          "enum": {}
+        },
+        "a4": {
+          "name": "unused_a4",
+          "raw_name": "0",
+          "detail": "0",
+          "enum": {}
+        }
+      },
+      "raw_event": {
+        "t": 35430,
+        "src": "keyboard",
+        "evt": 2,
+        "sev": "WARN",
+        "a1": 0,
+        "a2": 262,
+        "a3": 1,
+        "a4": 0
+      }
+    },
+    {
+      "index": 53,
+      "line_number": 54,
+      "boot_segment_index": 0,
+      "t_ms": 35446,
+      "source": {
+        "raw": "keyboard",
+        "id": 2,
+        "name": "keyboard",
+        "macro": "DIAG_SRC_KEYBOARD"
+      },
+      "event": {
+        "raw": 2,
+        "name": "kbd_key_fail",
+        "macro": "DIAG_KBD_KEY_FAIL",
+        "comment": "a1=key_usage_or_ascii, a2=esp_err, a3=ble_connected, a4=0"
+      },
+      "severity": {
+        "raw": "WARN",
+        "level": 1,
+        "name": "WARN",
+        "macro": "DIAG_SEV_WARN"
+      },
+      "args_raw": {
+        "a1": 0,
+        "a2": 262,
+        "a3": 1,
+        "a4": 0
+      },
+      "args_named": {
+        "key_usage_or_ascii": 0,
+        "esp_err": 262,
+        "ble_connected": 1
+      },
+      "args_decoded": {},
+      "arg_definitions": {
+        "a1": {
+          "name": "key_usage_or_ascii",
+          "raw_name": "key_usage_or_ascii",
+          "detail": "key_usage_or_ascii",
+          "enum": {}
+        },
+        "a2": {
+          "name": "esp_err",
+          "raw_name": "esp_err",
+          "detail": "esp_err",
+          "enum": {}
+        },
+        "a3": {
+          "name": "ble_connected",
+          "raw_name": "ble_connected",
+          "detail": "ble_connected",
+          "enum": {}
+        },
+        "a4": {
+          "name": "unused_a4",
+          "raw_name": "0",
+          "detail": "0",
+          "enum": {}
+        }
+      },
+      "raw_event": {
+        "t": 35446,
+        "src": "keyboard",
+        "evt": 2,
+        "sev": "WARN",
+        "a1": 0,
+        "a2": 262,
+        "a3": 1,
+        "a4": 0
+      }
+    },
+    {
+      "index": 54,
+      "line_number": 55,
+      "boot_segment_index": 0,
+      "t_ms": 35467,
+      "source": {
+        "raw": "keyboard",
+        "id": 2,
+        "name": "keyboard",
+        "macro": "DIAG_SRC_KEYBOARD"
+      },
+      "event": {
+        "raw": 2,
+        "name": "kbd_key_fail",
+        "macro": "DIAG_KBD_KEY_FAIL",
+        "comment": "a1=key_usage_or_ascii, a2=esp_err, a3=ble_connected, a4=0"
+      },
+      "severity": {
+        "raw": "WARN",
+        "level": 1,
+        "name": "WARN",
+        "macro": "DIAG_SEV_WARN"
+      },
+      "args_raw": {
+        "a1": 0,
+        "a2": 262,
+        "a3": 1,
+        "a4": 0
+      },
+      "args_named": {
+        "key_usage_or_ascii": 0,
+        "esp_err": 262,
+        "ble_connected": 1
+      },
+      "args_decoded": {},
+      "arg_definitions": {
+        "a1": {
+          "name": "key_usage_or_ascii",
+          "raw_name": "key_usage_or_ascii",
+          "detail": "key_usage_or_ascii",
+          "enum": {}
+        },
+        "a2": {
+          "name": "esp_err",
+          "raw_name": "esp_err",
+          "detail": "esp_err",
+          "enum": {}
+        },
+        "a3": {
+          "name": "ble_connected",
+          "raw_name": "ble_connected",
+          "detail": "ble_connected",
+          "enum": {}
+        },
+        "a4": {
+          "name": "unused_a4",
+          "raw_name": "0",
+          "detail": "0",
+          "enum": {}
+        }
+      },
+      "raw_event": {
+        "t": 35467,
+        "src": "keyboard",
+        "evt": 2,
+        "sev": "WARN",
+        "a1": 0,
+        "a2": 262,
+        "a3": 1,
+        "a4": 0
+      }
+    },
+    {
+      "index": 55,
+      "line_number": 56,
+      "boot_segment_index": 0,
+      "t_ms": 35482,
+      "source": {
+        "raw": "keyboard",
+        "id": 2,
+        "name": "keyboard",
+        "macro": "DIAG_SRC_KEYBOARD"
+      },
+      "event": {
+        "raw": 2,
+        "name": "kbd_key_fail",
+        "macro": "DIAG_KBD_KEY_FAIL",
+        "comment": "a1=key_usage_or_ascii, a2=esp_err, a3=ble_connected, a4=0"
+      },
+      "severity": {
+        "raw": "WARN",
+        "level": 1,
+        "name": "WARN",
+        "macro": "DIAG_SEV_WARN"
+      },
+      "args_raw": {
+        "a1": 0,
+        "a2": 262,
+        "a3": 1,
+        "a4": 0
+      },
+      "args_named": {
+        "key_usage_or_ascii": 0,
+        "esp_err": 262,
+        "ble_connected": 1
+      },
+      "args_decoded": {},
+      "arg_definitions": {
+        "a1": {
+          "name": "key_usage_or_ascii",
+          "raw_name": "key_usage_or_ascii",
+          "detail": "key_usage_or_ascii",
+          "enum": {}
+        },
+        "a2": {
+          "name": "esp_err",
+          "raw_name": "esp_err",
+          "detail": "esp_err",
+          "enum": {}
+        },
+        "a3": {
+          "name": "ble_connected",
+          "raw_name": "ble_connected",
+          "detail": "ble_connected",
+          "enum": {}
+        },
+        "a4": {
+          "name": "unused_a4",
+          "raw_name": "0",
+          "detail": "0",
+          "enum": {}
+        }
+      },
+      "raw_event": {
+        "t": 35482,
+        "src": "keyboard",
+        "evt": 2,
+        "sev": "WARN",
+        "a1": 0,
+        "a2": 262,
+        "a3": 1,
+        "a4": 0
+      }
+    },
+    {
+      "index": 56,
+      "line_number": 57,
+      "boot_segment_index": 0,
+      "t_ms": 35498,
+      "source": {
+        "raw": "keyboard",
+        "id": 2,
+        "name": "keyboard",
+        "macro": "DIAG_SRC_KEYBOARD"
+      },
+      "event": {
+        "raw": 2,
+        "name": "kbd_key_fail",
+        "macro": "DIAG_KBD_KEY_FAIL",
+        "comment": "a1=key_usage_or_ascii, a2=esp_err, a3=ble_connected, a4=0"
+      },
+      "severity": {
+        "raw": "WARN",
+        "level": 1,
+        "name": "WARN",
+        "macro": "DIAG_SEV_WARN"
+      },
+      "args_raw": {
+        "a1": 0,
+        "a2": 262,
+        "a3": 1,
+        "a4": 0
+      },
+      "args_named": {
+        "key_usage_or_ascii": 0,
+        "esp_err": 262,
+        "ble_connected": 1
+      },
+      "args_decoded": {},
+      "arg_definitions": {
+        "a1": {
+          "name": "key_usage_or_ascii",
+          "raw_name": "key_usage_or_ascii",
+          "detail": "key_usage_or_ascii",
+          "enum": {}
+        },
+        "a2": {
+          "name": "esp_err",
+          "raw_name": "esp_err",
+          "detail": "esp_err",
+          "enum": {}
+        },
+        "a3": {
+          "name": "ble_connected",
+          "raw_name": "ble_connected",
+          "detail": "ble_connected",
+          "enum": {}
+        },
+        "a4": {
+          "name": "unused_a4",
+          "raw_name": "0",
+          "detail": "0",
+          "enum": {}
+        }
+      },
+      "raw_event": {
+        "t": 35498,
+        "src": "keyboard",
+        "evt": 2,
+        "sev": "WARN",
+        "a1": 0,
+        "a2": 262,
+        "a3": 1,
+        "a4": 0
+      }
+    },
+    {
+      "index": 57,
+      "line_number": 58,
+      "boot_segment_index": 0,
+      "t_ms": 35514,
+      "source": {
+        "raw": "keyboard",
+        "id": 2,
+        "name": "keyboard",
+        "macro": "DIAG_SRC_KEYBOARD"
+      },
+      "event": {
+        "raw": 2,
+        "name": "kbd_key_fail",
+        "macro": "DIAG_KBD_KEY_FAIL",
+        "comment": "a1=key_usage_or_ascii, a2=esp_err, a3=ble_connected, a4=0"
+      },
+      "severity": {
+        "raw": "WARN",
+        "level": 1,
+        "name": "WARN",
+        "macro": "DIAG_SEV_WARN"
+      },
+      "args_raw": {
+        "a1": 7,
+        "a2": 262,
+        "a3": 1,
+        "a4": 0
+      },
+      "args_named": {
+        "key_usage_or_ascii": 7,
+        "esp_err": 262,
+        "ble_connected": 1
+      },
+      "args_decoded": {},
+      "arg_definitions": {
+        "a1": {
+          "name": "key_usage_or_ascii",
+          "raw_name": "key_usage_or_ascii",
+          "detail": "key_usage_or_ascii",
+          "enum": {}
+        },
+        "a2": {
+          "name": "esp_err",
+          "raw_name": "esp_err",
+          "detail": "esp_err",
+          "enum": {}
+        },
+        "a3": {
+          "name": "ble_connected",
+          "raw_name": "ble_connected",
+          "detail": "ble_connected",
+          "enum": {}
+        },
+        "a4": {
+          "name": "unused_a4",
+          "raw_name": "0",
+          "detail": "0",
+          "enum": {}
+        }
+      },
+      "raw_event": {
+        "t": 35514,
+        "src": "keyboard",
+        "evt": 2,
+        "sev": "WARN",
+        "a1": 7,
+        "a2": 262,
+        "a3": 1,
+        "a4": 0
+      }
+    },
+    {
+      "index": 58,
+      "line_number": 59,
+      "boot_segment_index": 0,
+      "t_ms": 35530,
+      "source": {
+        "raw": "keyboard",
+        "id": 2,
+        "name": "keyboard",
+        "macro": "DIAG_SRC_KEYBOARD"
+      },
+      "event": {
+        "raw": 2,
+        "name": "kbd_key_fail",
+        "macro": "DIAG_KBD_KEY_FAIL",
+        "comment": "a1=key_usage_or_ascii, a2=esp_err, a3=ble_connected, a4=0"
+      },
+      "severity": {
+        "raw": "WARN",
+        "level": 1,
+        "name": "WARN",
+        "macro": "DIAG_SEV_WARN"
+      },
+      "args_raw": {
+        "a1": 7,
+        "a2": 262,
+        "a3": 1,
+        "a4": 0
+      },
+      "args_named": {
+        "key_usage_or_ascii": 7,
+        "esp_err": 262,
+        "ble_connected": 1
+      },
+      "args_decoded": {},
+      "arg_definitions": {
+        "a1": {
+          "name": "key_usage_or_ascii",
+          "raw_name": "key_usage_or_ascii",
+          "detail": "key_usage_or_ascii",
+          "enum": {}
+        },
+        "a2": {
+          "name": "esp_err",
+          "raw_name": "esp_err",
+          "detail": "esp_err",
+          "enum": {}
+        },
+        "a3": {
+          "name": "ble_connected",
+          "raw_name": "ble_connected",
+          "detail": "ble_connected",
+          "enum": {}
+        },
+        "a4": {
+          "name": "unused_a4",
+          "raw_name": "0",
+          "detail": "0",
+          "enum": {}
+        }
+      },
+      "raw_event": {
+        "t": 35530,
+        "src": "keyboard",
+        "evt": 2,
+        "sev": "WARN",
+        "a1": 7,
+        "a2": 262,
+        "a3": 1,
+        "a4": 0
+      }
+    },
+    {
+      "index": 59,
+      "line_number": 60,
+      "boot_segment_index": 0,
+      "t_ms": 35545,
+      "source": {
+        "raw": "keyboard",
+        "id": 2,
+        "name": "keyboard",
+        "macro": "DIAG_SRC_KEYBOARD"
+      },
+      "event": {
+        "raw": 2,
+        "name": "kbd_key_fail",
+        "macro": "DIAG_KBD_KEY_FAIL",
+        "comment": "a1=key_usage_or_ascii, a2=esp_err, a3=ble_connected, a4=0"
+      },
+      "severity": {
+        "raw": "WARN",
+        "level": 1,
+        "name": "WARN",
+        "macro": "DIAG_SEV_WARN"
+      },
+      "args_raw": {
+        "a1": 18,
+        "a2": 262,
+        "a3": 1,
+        "a4": 0
+      },
+      "args_named": {
+        "key_usage_or_ascii": 18,
+        "esp_err": 262,
+        "ble_connected": 1
+      },
+      "args_decoded": {},
+      "arg_definitions": {
+        "a1": {
+          "name": "key_usage_or_ascii",
+          "raw_name": "key_usage_or_ascii",
+          "detail": "key_usage_or_ascii",
+          "enum": {}
+        },
+        "a2": {
+          "name": "esp_err",
+          "raw_name": "esp_err",
+          "detail": "esp_err",
+          "enum": {}
+        },
+        "a3": {
+          "name": "ble_connected",
+          "raw_name": "ble_connected",
+          "detail": "ble_connected",
+          "enum": {}
+        },
+        "a4": {
+          "name": "unused_a4",
+          "raw_name": "0",
+          "detail": "0",
+          "enum": {}
+        }
+      },
+      "raw_event": {
+        "t": 35545,
+        "src": "keyboard",
+        "evt": 2,
+        "sev": "WARN",
+        "a1": 18,
+        "a2": 262,
+        "a3": 1,
+        "a4": 0
+      }
+    },
+    {
+      "index": 60,
+      "line_number": 61,
+      "boot_segment_index": 0,
+      "t_ms": 37530,
+      "source": {
+        "raw": "keyboard",
+        "id": 2,
+        "name": "keyboard",
+        "macro": "DIAG_SRC_KEYBOARD"
+      },
+      "event": {
+        "raw": 2,
+        "name": "kbd_key_fail",
+        "macro": "DIAG_KBD_KEY_FAIL",
+        "comment": "a1=key_usage_or_ascii, a2=esp_err, a3=ble_connected, a4=0"
+      },
+      "severity": {
+        "raw": "WARN",
+        "level": 1,
+        "name": "WARN",
+        "macro": "DIAG_SEV_WARN"
+      },
+      "args_raw": {
+        "a1": 192,
+        "a2": 262,
+        "a3": 1,
+        "a4": 0
+      },
+      "args_named": {
+        "key_usage_or_ascii": 192,
+        "esp_err": 262,
+        "ble_connected": 1
+      },
+      "args_decoded": {},
+      "arg_definitions": {
+        "a1": {
+          "name": "key_usage_or_ascii",
+          "raw_name": "key_usage_or_ascii",
+          "detail": "key_usage_or_ascii",
+          "enum": {}
+        },
+        "a2": {
+          "name": "esp_err",
+          "raw_name": "esp_err",
+          "detail": "esp_err",
+          "enum": {}
+        },
+        "a3": {
+          "name": "ble_connected",
+          "raw_name": "ble_connected",
+          "detail": "ble_connected",
+          "enum": {}
+        },
+        "a4": {
+          "name": "unused_a4",
+          "raw_name": "0",
+          "detail": "0",
+          "enum": {}
+        }
+      },
+      "raw_event": {
+        "t": 37530,
+        "src": "keyboard",
+        "evt": 2,
+        "sev": "WARN",
+        "a1": 192,
+        "a2": 262,
+        "a3": 1,
+        "a4": 0
+      }
+    },
+    {
+      "index": 61,
+      "line_number": 62,
+      "boot_segment_index": 0,
+      "t_ms": 37546,
+      "source": {
+        "raw": "keyboard",
+        "id": 2,
+        "name": "keyboard",
+        "macro": "DIAG_SRC_KEYBOARD"
+      },
+      "event": {
+        "raw": 2,
+        "name": "kbd_key_fail",
+        "macro": "DIAG_KBD_KEY_FAIL",
+        "comment": "a1=key_usage_or_ascii, a2=esp_err, a3=ble_connected, a4=0"
+      },
+      "severity": {
+        "raw": "WARN",
+        "level": 1,
+        "name": "WARN",
+        "macro": "DIAG_SEV_WARN"
+      },
+      "args_raw": {
+        "a1": 192,
+        "a2": 262,
+        "a3": 1,
+        "a4": 0
+      },
+      "args_named": {
+        "key_usage_or_ascii": 192,
+        "esp_err": 262,
+        "ble_connected": 1
+      },
+      "args_decoded": {},
+      "arg_definitions": {
+        "a1": {
+          "name": "key_usage_or_ascii",
+          "raw_name": "key_usage_or_ascii",
+          "detail": "key_usage_or_ascii",
+          "enum": {}
+        },
+        "a2": {
+          "name": "esp_err",
+          "raw_name": "esp_err",
+          "detail": "esp_err",
+          "enum": {}
+        },
+        "a3": {
+          "name": "ble_connected",
+          "raw_name": "ble_connected",
+          "detail": "ble_connected",
+          "enum": {}
+        },
+        "a4": {
+          "name": "unused_a4",
+          "raw_name": "0",
+          "detail": "0",
+          "enum": {}
+        }
+      },
+      "raw_event": {
+        "t": 37546,
+        "src": "keyboard",
+        "evt": 2,
+        "sev": "WARN",
+        "a1": 192,
+        "a2": 262,
+        "a3": 1,
+        "a4": 0
+      }
+    },
+    {
+      "index": 62,
+      "line_number": 63,
+      "boot_segment_index": 0,
+      "t_ms": 37561,
+      "source": {
+        "raw": "keyboard",
+        "id": 2,
+        "name": "keyboard",
+        "macro": "DIAG_SRC_KEYBOARD"
+      },
+      "event": {
+        "raw": 2,
+        "name": "kbd_key_fail",
+        "macro": "DIAG_KBD_KEY_FAIL",
+        "comment": "a1=key_usage_or_ascii, a2=esp_err, a3=ble_connected, a4=0"
+      },
+      "severity": {
+        "raw": "WARN",
+        "level": 1,
+        "name": "WARN",
+        "macro": "DIAG_SEV_WARN"
+      },
+      "args_raw": {
+        "a1": 0,
+        "a2": 262,
+        "a3": 1,
+        "a4": 0
+      },
+      "args_named": {
+        "key_usage_or_ascii": 0,
+        "esp_err": 262,
+        "ble_connected": 1
+      },
+      "args_decoded": {},
+      "arg_definitions": {
+        "a1": {
+          "name": "key_usage_or_ascii",
+          "raw_name": "key_usage_or_ascii",
+          "detail": "key_usage_or_ascii",
+          "enum": {}
+        },
+        "a2": {
+          "name": "esp_err",
+          "raw_name": "esp_err",
+          "detail": "esp_err",
+          "enum": {}
+        },
+        "a3": {
+          "name": "ble_connected",
+          "raw_name": "ble_connected",
+          "detail": "ble_connected",
+          "enum": {}
+        },
+        "a4": {
+          "name": "unused_a4",
+          "raw_name": "0",
+          "detail": "0",
+          "enum": {}
+        }
+      },
+      "raw_event": {
+        "t": 37561,
+        "src": "keyboard",
+        "evt": 2,
+        "sev": "WARN",
+        "a1": 0,
+        "a2": 262,
+        "a3": 1,
+        "a4": 0
+      }
+    },
+    {
+      "index": 63,
+      "line_number": 64,
+      "boot_segment_index": 0,
+      "t_ms": 37680,
+      "source": {
+        "raw": "keyboard",
+        "id": 2,
+        "name": "keyboard",
+        "macro": "DIAG_SRC_KEYBOARD"
+      },
+      "event": {
+        "raw": 2,
+        "name": "kbd_key_fail",
+        "macro": "DIAG_KBD_KEY_FAIL",
+        "comment": "a1=key_usage_or_ascii, a2=esp_err, a3=ble_connected, a4=0"
+      },
+      "severity": {
+        "raw": "WARN",
+        "level": 1,
+        "name": "WARN",
+        "macro": "DIAG_SEV_WARN"
+      },
+      "args_raw": {
+        "a1": 0,
+        "a2": 262,
+        "a3": 1,
+        "a4": 0
+      },
+      "args_named": {
+        "key_usage_or_ascii": 0,
+        "esp_err": 262,
+        "ble_connected": 1
+      },
+      "args_decoded": {},
+      "arg_definitions": {
+        "a1": {
+          "name": "key_usage_or_ascii",
+          "raw_name": "key_usage_or_ascii",
+          "detail": "key_usage_or_ascii",
+          "enum": {}
+        },
+        "a2": {
+          "name": "esp_err",
+          "raw_name": "esp_err",
+          "detail": "esp_err",
+          "enum": {}
+        },
+        "a3": {
+          "name": "ble_connected",
+          "raw_name": "ble_connected",
+          "detail": "ble_connected",
+          "enum": {}
+        },
+        "a4": {
+          "name": "unused_a4",
+          "raw_name": "0",
+          "detail": "0",
+          "enum": {}
+        }
+      },
+      "raw_event": {
+        "t": 37680,
+        "src": "keyboard",
+        "evt": 2,
+        "sev": "WARN",
+        "a1": 0,
+        "a2": 262,
+        "a3": 1,
+        "a4": 0
+      }
+    },
+    {
+      "index": 64,
+      "line_number": 65,
+      "boot_segment_index": 0,
+      "t_ms": 37695,
+      "source": {
+        "raw": "keyboard",
+        "id": 2,
+        "name": "keyboard",
+        "macro": "DIAG_SRC_KEYBOARD"
+      },
+      "event": {
+        "raw": 2,
+        "name": "kbd_key_fail",
+        "macro": "DIAG_KBD_KEY_FAIL",
+        "comment": "a1=key_usage_or_ascii, a2=esp_err, a3=ble_connected, a4=0"
+      },
+      "severity": {
+        "raw": "WARN",
+        "level": 1,
+        "name": "WARN",
+        "macro": "DIAG_SEV_WARN"
+      },
+      "args_raw": {
+        "a1": 0,
+        "a2": 262,
+        "a3": 1,
+        "a4": 0
+      },
+      "args_named": {
+        "key_usage_or_ascii": 0,
+        "esp_err": 262,
+        "ble_connected": 1
+      },
+      "args_decoded": {},
+      "arg_definitions": {
+        "a1": {
+          "name": "key_usage_or_ascii",
+          "raw_name": "key_usage_or_ascii",
+          "detail": "key_usage_or_ascii",
+          "enum": {}
+        },
+        "a2": {
+          "name": "esp_err",
+          "raw_name": "esp_err",
+          "detail": "esp_err",
+          "enum": {}
+        },
+        "a3": {
+          "name": "ble_connected",
+          "raw_name": "ble_connected",
+          "detail": "ble_connected",
+          "enum": {}
+        },
+        "a4": {
+          "name": "unused_a4",
+          "raw_name": "0",
+          "detail": "0",
+          "enum": {}
+        }
+      },
+      "raw_event": {
+        "t": 37695,
+        "src": "keyboard",
+        "evt": 2,
+        "sev": "WARN",
+        "a1": 0,
+        "a2": 262,
+        "a3": 1,
+        "a4": 0
+      }
+    },
+    {
+      "index": 65,
+      "line_number": 66,
+      "boot_segment_index": 0,
+      "t_ms": 37711,
+      "source": {
+        "raw": "keyboard",
+        "id": 2,
+        "name": "keyboard",
+        "macro": "DIAG_SRC_KEYBOARD"
+      },
+      "event": {
+        "raw": 2,
+        "name": "kbd_key_fail",
+        "macro": "DIAG_KBD_KEY_FAIL",
+        "comment": "a1=key_usage_or_ascii, a2=esp_err, a3=ble_connected, a4=0"
+      },
+      "severity": {
+        "raw": "WARN",
+        "level": 1,
+        "name": "WARN",
+        "macro": "DIAG_SEV_WARN"
+      },
+      "args_raw": {
+        "a1": 0,
+        "a2": 262,
+        "a3": 1,
+        "a4": 0
+      },
+      "args_named": {
+        "key_usage_or_ascii": 0,
+        "esp_err": 262,
+        "ble_connected": 1
+      },
+      "args_decoded": {},
+      "arg_definitions": {
+        "a1": {
+          "name": "key_usage_or_ascii",
+          "raw_name": "key_usage_or_ascii",
+          "detail": "key_usage_or_ascii",
+          "enum": {}
+        },
+        "a2": {
+          "name": "esp_err",
+          "raw_name": "esp_err",
+          "detail": "esp_err",
+          "enum": {}
+        },
+        "a3": {
+          "name": "ble_connected",
+          "raw_name": "ble_connected",
+          "detail": "ble_connected",
+          "enum": {}
+        },
+        "a4": {
+          "name": "unused_a4",
+          "raw_name": "0",
+          "detail": "0",
+          "enum": {}
+        }
+      },
+      "raw_event": {
+        "t": 37711,
+        "src": "keyboard",
+        "evt": 2,
+        "sev": "WARN",
+        "a1": 0,
+        "a2": 262,
+        "a3": 1,
+        "a4": 0
+      }
+    },
+    {
+      "index": 66,
+      "line_number": 67,
+      "boot_segment_index": 0,
+      "t_ms": 37727,
+      "source": {
+        "raw": "keyboard",
+        "id": 2,
+        "name": "keyboard",
+        "macro": "DIAG_SRC_KEYBOARD"
+      },
+      "event": {
+        "raw": 2,
+        "name": "kbd_key_fail",
+        "macro": "DIAG_KBD_KEY_FAIL",
+        "comment": "a1=key_usage_or_ascii, a2=esp_err, a3=ble_connected, a4=0"
+      },
+      "severity": {
+        "raw": "WARN",
+        "level": 1,
+        "name": "WARN",
+        "macro": "DIAG_SEV_WARN"
+      },
+      "args_raw": {
+        "a1": 0,
+        "a2": 262,
+        "a3": 1,
+        "a4": 0
+      },
+      "args_named": {
+        "key_usage_or_ascii": 0,
+        "esp_err": 262,
+        "ble_connected": 1
+      },
+      "args_decoded": {},
+      "arg_definitions": {
+        "a1": {
+          "name": "key_usage_or_ascii",
+          "raw_name": "key_usage_or_ascii",
+          "detail": "key_usage_or_ascii",
+          "enum": {}
+        },
+        "a2": {
+          "name": "esp_err",
+          "raw_name": "esp_err",
+          "detail": "esp_err",
+          "enum": {}
+        },
+        "a3": {
+          "name": "ble_connected",
+          "raw_name": "ble_connected",
+          "detail": "ble_connected",
+          "enum": {}
+        },
+        "a4": {
+          "name": "unused_a4",
+          "raw_name": "0",
+          "detail": "0",
+          "enum": {}
+        }
+      },
+      "raw_event": {
+        "t": 37727,
+        "src": "keyboard",
+        "evt": 2,
+        "sev": "WARN",
+        "a1": 0,
+        "a2": 262,
+        "a3": 1,
+        "a4": 0
+      }
+    },
+    {
+      "index": 67,
+      "line_number": 68,
+      "boot_segment_index": 0,
+      "t_ms": 37743,
+      "source": {
+        "raw": "keyboard",
+        "id": 2,
+        "name": "keyboard",
+        "macro": "DIAG_SRC_KEYBOARD"
+      },
+      "event": {
+        "raw": 2,
+        "name": "kbd_key_fail",
+        "macro": "DIAG_KBD_KEY_FAIL",
+        "comment": "a1=key_usage_or_ascii, a2=esp_err, a3=ble_connected, a4=0"
+      },
+      "severity": {
+        "raw": "WARN",
+        "level": 1,
+        "name": "WARN",
+        "macro": "DIAG_SEV_WARN"
+      },
+      "args_raw": {
+        "a1": 0,
+        "a2": 262,
+        "a3": 1,
+        "a4": 0
+      },
+      "args_named": {
+        "key_usage_or_ascii": 0,
+        "esp_err": 262,
+        "ble_connected": 1
+      },
+      "args_decoded": {},
+      "arg_definitions": {
+        "a1": {
+          "name": "key_usage_or_ascii",
+          "raw_name": "key_usage_or_ascii",
+          "detail": "key_usage_or_ascii",
+          "enum": {}
+        },
+        "a2": {
+          "name": "esp_err",
+          "raw_name": "esp_err",
+          "detail": "esp_err",
+          "enum": {}
+        },
+        "a3": {
+          "name": "ble_connected",
+          "raw_name": "ble_connected",
+          "detail": "ble_connected",
+          "enum": {}
+        },
+        "a4": {
+          "name": "unused_a4",
+          "raw_name": "0",
+          "detail": "0",
+          "enum": {}
+        }
+      },
+      "raw_event": {
+        "t": 37743,
+        "src": "keyboard",
+        "evt": 2,
+        "sev": "WARN",
+        "a1": 0,
+        "a2": 262,
+        "a3": 1,
+        "a4": 0
+      }
+    },
+    {
+      "index": 68,
+      "line_number": 69,
+      "boot_segment_index": 0,
+      "t_ms": 37758,
+      "source": {
+        "raw": "keyboard",
+        "id": 2,
+        "name": "keyboard",
+        "macro": "DIAG_SRC_KEYBOARD"
+      },
+      "event": {
+        "raw": 2,
+        "name": "kbd_key_fail",
+        "macro": "DIAG_KBD_KEY_FAIL",
+        "comment": "a1=key_usage_or_ascii, a2=esp_err, a3=ble_connected, a4=0"
+      },
+      "severity": {
+        "raw": "WARN",
+        "level": 1,
+        "name": "WARN",
+        "macro": "DIAG_SEV_WARN"
+      },
+      "args_raw": {
+        "a1": 7,
+        "a2": 262,
+        "a3": 1,
+        "a4": 0
+      },
+      "args_named": {
+        "key_usage_or_ascii": 7,
+        "esp_err": 262,
+        "ble_connected": 1
+      },
+      "args_decoded": {},
+      "arg_definitions": {
+        "a1": {
+          "name": "key_usage_or_ascii",
+          "raw_name": "key_usage_or_ascii",
+          "detail": "key_usage_or_ascii",
+          "enum": {}
+        },
+        "a2": {
+          "name": "esp_err",
+          "raw_name": "esp_err",
+          "detail": "esp_err",
+          "enum": {}
+        },
+        "a3": {
+          "name": "ble_connected",
+          "raw_name": "ble_connected",
+          "detail": "ble_connected",
+          "enum": {}
+        },
+        "a4": {
+          "name": "unused_a4",
+          "raw_name": "0",
+          "detail": "0",
+          "enum": {}
+        }
+      },
+      "raw_event": {
+        "t": 37758,
+        "src": "keyboard",
+        "evt": 2,
+        "sev": "WARN",
+        "a1": 7,
+        "a2": 262,
+        "a3": 1,
+        "a4": 0
+      }
+    },
+    {
+      "index": 69,
+      "line_number": 70,
+      "boot_segment_index": 0,
+      "t_ms": 37774,
+      "source": {
+        "raw": "keyboard",
+        "id": 2,
+        "name": "keyboard",
+        "macro": "DIAG_SRC_KEYBOARD"
+      },
+      "event": {
+        "raw": 2,
+        "name": "kbd_key_fail",
+        "macro": "DIAG_KBD_KEY_FAIL",
+        "comment": "a1=key_usage_or_ascii, a2=esp_err, a3=ble_connected, a4=0"
+      },
+      "severity": {
+        "raw": "WARN",
+        "level": 1,
+        "name": "WARN",
+        "macro": "DIAG_SEV_WARN"
+      },
+      "args_raw": {
+        "a1": 7,
+        "a2": 262,
+        "a3": 1,
+        "a4": 0
+      },
+      "args_named": {
+        "key_usage_or_ascii": 7,
+        "esp_err": 262,
+        "ble_connected": 1
+      },
+      "args_decoded": {},
+      "arg_definitions": {
+        "a1": {
+          "name": "key_usage_or_ascii",
+          "raw_name": "key_usage_or_ascii",
+          "detail": "key_usage_or_ascii",
+          "enum": {}
+        },
+        "a2": {
+          "name": "esp_err",
+          "raw_name": "esp_err",
+          "detail": "esp_err",
+          "enum": {}
+        },
+        "a3": {
+          "name": "ble_connected",
+          "raw_name": "ble_connected",
+          "detail": "ble_connected",
+          "enum": {}
+        },
+        "a4": {
+          "name": "unused_a4",
+          "raw_name": "0",
+          "detail": "0",
+          "enum": {}
+        }
+      },
+      "raw_event": {
+        "t": 37774,
+        "src": "keyboard",
+        "evt": 2,
+        "sev": "WARN",
+        "a1": 7,
+        "a2": 262,
+        "a3": 1,
+        "a4": 0
+      }
+    },
+    {
+      "index": 70,
+      "line_number": 71,
+      "boot_segment_index": 0,
+      "t_ms": 37790,
+      "source": {
+        "raw": "keyboard",
+        "id": 2,
+        "name": "keyboard",
+        "macro": "DIAG_SRC_KEYBOARD"
+      },
+      "event": {
+        "raw": 2,
+        "name": "kbd_key_fail",
+        "macro": "DIAG_KBD_KEY_FAIL",
+        "comment": "a1=key_usage_or_ascii, a2=esp_err, a3=ble_connected, a4=0"
+      },
+      "severity": {
+        "raw": "WARN",
+        "level": 1,
+        "name": "WARN",
+        "macro": "DIAG_SEV_WARN"
+      },
+      "args_raw": {
+        "a1": 18,
+        "a2": 262,
+        "a3": 1,
+        "a4": 0
+      },
+      "args_named": {
+        "key_usage_or_ascii": 18,
+        "esp_err": 262,
+        "ble_connected": 1
+      },
+      "args_decoded": {},
+      "arg_definitions": {
+        "a1": {
+          "name": "key_usage_or_ascii",
+          "raw_name": "key_usage_or_ascii",
+          "detail": "key_usage_or_ascii",
+          "enum": {}
+        },
+        "a2": {
+          "name": "esp_err",
+          "raw_name": "esp_err",
+          "detail": "esp_err",
+          "enum": {}
+        },
+        "a3": {
+          "name": "ble_connected",
+          "raw_name": "ble_connected",
+          "detail": "ble_connected",
+          "enum": {}
+        },
+        "a4": {
+          "name": "unused_a4",
+          "raw_name": "0",
+          "detail": "0",
+          "enum": {}
+        }
+      },
+      "raw_event": {
+        "t": 37790,
+        "src": "keyboard",
+        "evt": 2,
+        "sev": "WARN",
+        "a1": 18,
+        "a2": 262,
+        "a3": 1,
+        "a4": 0
+      }
+    },
+    {
+      "index": 71,
+      "line_number": 72,
+      "boot_segment_index": 0,
+      "t_ms": 39780,
+      "source": {
+        "raw": "keyboard",
+        "id": 2,
+        "name": "keyboard",
+        "macro": "DIAG_SRC_KEYBOARD"
+      },
+      "event": {
+        "raw": 2,
+        "name": "kbd_key_fail",
+        "macro": "DIAG_KBD_KEY_FAIL",
+        "comment": "a1=key_usage_or_ascii, a2=esp_err, a3=ble_connected, a4=0"
+      },
+      "severity": {
+        "raw": "WARN",
+        "level": 1,
+        "name": "WARN",
+        "macro": "DIAG_SEV_WARN"
+      },
+      "args_raw": {
+        "a1": 192,
+        "a2": 262,
+        "a3": 1,
+        "a4": 0
+      },
+      "args_named": {
+        "key_usage_or_ascii": 192,
+        "esp_err": 262,
+        "ble_connected": 1
+      },
+      "args_decoded": {},
+      "arg_definitions": {
+        "a1": {
+          "name": "key_usage_or_ascii",
+          "raw_name": "key_usage_or_ascii",
+          "detail": "key_usage_or_ascii",
+          "enum": {}
+        },
+        "a2": {
+          "name": "esp_err",
+          "raw_name": "esp_err",
+          "detail": "esp_err",
+          "enum": {}
+        },
+        "a3": {
+          "name": "ble_connected",
+          "raw_name": "ble_connected",
+          "detail": "ble_connected",
+          "enum": {}
+        },
+        "a4": {
+          "name": "unused_a4",
+          "raw_name": "0",
+          "detail": "0",
+          "enum": {}
+        }
+      },
+      "raw_event": {
+        "t": 39780,
+        "src": "keyboard",
+        "evt": 2,
+        "sev": "WARN",
+        "a1": 192,
+        "a2": 262,
+        "a3": 1,
+        "a4": 0
+      }
+    },
+    {
+      "index": 72,
+      "line_number": 73,
+      "boot_segment_index": 0,
+      "t_ms": 39796,
+      "source": {
+        "raw": "keyboard",
+        "id": 2,
+        "name": "keyboard",
+        "macro": "DIAG_SRC_KEYBOARD"
+      },
+      "event": {
+        "raw": 2,
+        "name": "kbd_key_fail",
+        "macro": "DIAG_KBD_KEY_FAIL",
+        "comment": "a1=key_usage_or_ascii, a2=esp_err, a3=ble_connected, a4=0"
+      },
+      "severity": {
+        "raw": "WARN",
+        "level": 1,
+        "name": "WARN",
+        "macro": "DIAG_SEV_WARN"
+      },
+      "args_raw": {
+        "a1": 192,
+        "a2": 262,
+        "a3": 1,
+        "a4": 0
+      },
+      "args_named": {
+        "key_usage_or_ascii": 192,
+        "esp_err": 262,
+        "ble_connected": 1
+      },
+      "args_decoded": {},
+      "arg_definitions": {
+        "a1": {
+          "name": "key_usage_or_ascii",
+          "raw_name": "key_usage_or_ascii",
+          "detail": "key_usage_or_ascii",
+          "enum": {}
+        },
+        "a2": {
+          "name": "esp_err",
+          "raw_name": "esp_err",
+          "detail": "esp_err",
+          "enum": {}
+        },
+        "a3": {
+          "name": "ble_connected",
+          "raw_name": "ble_connected",
+          "detail": "ble_connected",
+          "enum": {}
+        },
+        "a4": {
+          "name": "unused_a4",
+          "raw_name": "0",
+          "detail": "0",
+          "enum": {}
+        }
+      },
+      "raw_event": {
+        "t": 39796,
+        "src": "keyboard",
+        "evt": 2,
+        "sev": "WARN",
+        "a1": 192,
+        "a2": 262,
+        "a3": 1,
+        "a4": 0
+      }
+    },
+    {
+      "index": 73,
+      "line_number": 74,
+      "boot_segment_index": 0,
+      "t_ms": 39811,
+      "source": {
+        "raw": "keyboard",
+        "id": 2,
+        "name": "keyboard",
+        "macro": "DIAG_SRC_KEYBOARD"
+      },
+      "event": {
+        "raw": 2,
+        "name": "kbd_key_fail",
+        "macro": "DIAG_KBD_KEY_FAIL",
+        "comment": "a1=key_usage_or_ascii, a2=esp_err, a3=ble_connected, a4=0"
+      },
+      "severity": {
+        "raw": "WARN",
+        "level": 1,
+        "name": "WARN",
+        "macro": "DIAG_SEV_WARN"
+      },
+      "args_raw": {
+        "a1": 0,
+        "a2": 262,
+        "a3": 1,
+        "a4": 0
+      },
+      "args_named": {
+        "key_usage_or_ascii": 0,
+        "esp_err": 262,
+        "ble_connected": 1
+      },
+      "args_decoded": {},
+      "arg_definitions": {
+        "a1": {
+          "name": "key_usage_or_ascii",
+          "raw_name": "key_usage_or_ascii",
+          "detail": "key_usage_or_ascii",
+          "enum": {}
+        },
+        "a2": {
+          "name": "esp_err",
+          "raw_name": "esp_err",
+          "detail": "esp_err",
+          "enum": {}
+        },
+        "a3": {
+          "name": "ble_connected",
+          "raw_name": "ble_connected",
+          "detail": "ble_connected",
+          "enum": {}
+        },
+        "a4": {
+          "name": "unused_a4",
+          "raw_name": "0",
+          "detail": "0",
+          "enum": {}
+        }
+      },
+      "raw_event": {
+        "t": 39811,
+        "src": "keyboard",
+        "evt": 2,
+        "sev": "WARN",
+        "a1": 0,
+        "a2": 262,
+        "a3": 1,
+        "a4": 0
+      }
+    },
+    {
+      "index": 74,
+      "line_number": 75,
+      "boot_segment_index": 0,
+      "t_ms": 39940,
+      "source": {
+        "raw": "keyboard",
+        "id": 2,
+        "name": "keyboard",
+        "macro": "DIAG_SRC_KEYBOARD"
+      },
+      "event": {
+        "raw": 2,
+        "name": "kbd_key_fail",
+        "macro": "DIAG_KBD_KEY_FAIL",
+        "comment": "a1=key_usage_or_ascii, a2=esp_err, a3=ble_connected, a4=0"
+      },
+      "severity": {
+        "raw": "WARN",
+        "level": 1,
+        "name": "WARN",
+        "macro": "DIAG_SEV_WARN"
+      },
+      "args_raw": {
+        "a1": 0,
+        "a2": 262,
+        "a3": 1,
+        "a4": 0
+      },
+      "args_named": {
+        "key_usage_or_ascii": 0,
+        "esp_err": 262,
+        "ble_connected": 1
+      },
+      "args_decoded": {},
+      "arg_definitions": {
+        "a1": {
+          "name": "key_usage_or_ascii",
+          "raw_name": "key_usage_or_ascii",
+          "detail": "key_usage_or_ascii",
+          "enum": {}
+        },
+        "a2": {
+          "name": "esp_err",
+          "raw_name": "esp_err",
+          "detail": "esp_err",
+          "enum": {}
+        },
+        "a3": {
+          "name": "ble_connected",
+          "raw_name": "ble_connected",
+          "detail": "ble_connected",
+          "enum": {}
+        },
+        "a4": {
+          "name": "unused_a4",
+          "raw_name": "0",
+          "detail": "0",
+          "enum": {}
+        }
+      },
+      "raw_event": {
+        "t": 39940,
+        "src": "keyboard",
+        "evt": 2,
+        "sev": "WARN",
+        "a1": 0,
+        "a2": 262,
+        "a3": 1,
+        "a4": 0
+      }
+    },
+    {
+      "index": 75,
+      "line_number": 76,
+      "boot_segment_index": 0,
+      "t_ms": 39955,
+      "source": {
+        "raw": "keyboard",
+        "id": 2,
+        "name": "keyboard",
+        "macro": "DIAG_SRC_KEYBOARD"
+      },
+      "event": {
+        "raw": 2,
+        "name": "kbd_key_fail",
+        "macro": "DIAG_KBD_KEY_FAIL",
+        "comment": "a1=key_usage_or_ascii, a2=esp_err, a3=ble_connected, a4=0"
+      },
+      "severity": {
+        "raw": "WARN",
+        "level": 1,
+        "name": "WARN",
+        "macro": "DIAG_SEV_WARN"
+      },
+      "args_raw": {
+        "a1": 0,
+        "a2": 262,
+        "a3": 1,
+        "a4": 0
+      },
+      "args_named": {
+        "key_usage_or_ascii": 0,
+        "esp_err": 262,
+        "ble_connected": 1
+      },
+      "args_decoded": {},
+      "arg_definitions": {
+        "a1": {
+          "name": "key_usage_or_ascii",
+          "raw_name": "key_usage_or_ascii",
+          "detail": "key_usage_or_ascii",
+          "enum": {}
+        },
+        "a2": {
+          "name": "esp_err",
+          "raw_name": "esp_err",
+          "detail": "esp_err",
+          "enum": {}
+        },
+        "a3": {
+          "name": "ble_connected",
+          "raw_name": "ble_connected",
+          "detail": "ble_connected",
+          "enum": {}
+        },
+        "a4": {
+          "name": "unused_a4",
+          "raw_name": "0",
+          "detail": "0",
+          "enum": {}
+        }
+      },
+      "raw_event": {
+        "t": 39955,
+        "src": "keyboard",
+        "evt": 2,
+        "sev": "WARN",
+        "a1": 0,
+        "a2": 262,
+        "a3": 1,
+        "a4": 0
+      }
+    },
+    {
+      "index": 76,
+      "line_number": 77,
+      "boot_segment_index": 0,
+      "t_ms": 39971,
+      "source": {
+        "raw": "keyboard",
+        "id": 2,
+        "name": "keyboard",
+        "macro": "DIAG_SRC_KEYBOARD"
+      },
+      "event": {
+        "raw": 2,
+        "name": "kbd_key_fail",
+        "macro": "DIAG_KBD_KEY_FAIL",
+        "comment": "a1=key_usage_or_ascii, a2=esp_err, a3=ble_connected, a4=0"
+      },
+      "severity": {
+        "raw": "WARN",
+        "level": 1,
+        "name": "WARN",
+        "macro": "DIAG_SEV_WARN"
+      },
+      "args_raw": {
+        "a1": 0,
+        "a2": 262,
+        "a3": 1,
+        "a4": 0
+      },
+      "args_named": {
+        "key_usage_or_ascii": 0,
+        "esp_err": 262,
+        "ble_connected": 1
+      },
+      "args_decoded": {},
+      "arg_definitions": {
+        "a1": {
+          "name": "key_usage_or_ascii",
+          "raw_name": "key_usage_or_ascii",
+          "detail": "key_usage_or_ascii",
+          "enum": {}
+        },
+        "a2": {
+          "name": "esp_err",
+          "raw_name": "esp_err",
+          "detail": "esp_err",
+          "enum": {}
+        },
+        "a3": {
+          "name": "ble_connected",
+          "raw_name": "ble_connected",
+          "detail": "ble_connected",
+          "enum": {}
+        },
+        "a4": {
+          "name": "unused_a4",
+          "raw_name": "0",
+          "detail": "0",
+          "enum": {}
+        }
+      },
+      "raw_event": {
+        "t": 39971,
+        "src": "keyboard",
+        "evt": 2,
+        "sev": "WARN",
+        "a1": 0,
+        "a2": 262,
+        "a3": 1,
+        "a4": 0
+      }
+    },
+    {
+      "index": 77,
+      "line_number": 78,
+      "boot_segment_index": 0,
+      "t_ms": 39987,
+      "source": {
+        "raw": "keyboard",
+        "id": 2,
+        "name": "keyboard",
+        "macro": "DIAG_SRC_KEYBOARD"
+      },
+      "event": {
+        "raw": 2,
+        "name": "kbd_key_fail",
+        "macro": "DIAG_KBD_KEY_FAIL",
+        "comment": "a1=key_usage_or_ascii, a2=esp_err, a3=ble_connected, a4=0"
+      },
+      "severity": {
+        "raw": "WARN",
+        "level": 1,
+        "name": "WARN",
+        "macro": "DIAG_SEV_WARN"
+      },
+      "args_raw": {
+        "a1": 0,
+        "a2": 262,
+        "a3": 1,
+        "a4": 0
+      },
+      "args_named": {
+        "key_usage_or_ascii": 0,
+        "esp_err": 262,
+        "ble_connected": 1
+      },
+      "args_decoded": {},
+      "arg_definitions": {
+        "a1": {
+          "name": "key_usage_or_ascii",
+          "raw_name": "key_usage_or_ascii",
+          "detail": "key_usage_or_ascii",
+          "enum": {}
+        },
+        "a2": {
+          "name": "esp_err",
+          "raw_name": "esp_err",
+          "detail": "esp_err",
+          "enum": {}
+        },
+        "a3": {
+          "name": "ble_connected",
+          "raw_name": "ble_connected",
+          "detail": "ble_connected",
+          "enum": {}
+        },
+        "a4": {
+          "name": "unused_a4",
+          "raw_name": "0",
+          "detail": "0",
+          "enum": {}
+        }
+      },
+      "raw_event": {
+        "t": 39987,
+        "src": "keyboard",
+        "evt": 2,
+        "sev": "WARN",
+        "a1": 0,
+        "a2": 262,
+        "a3": 1,
+        "a4": 0
+      }
+    },
+    {
+      "index": 78,
+      "line_number": 79,
+      "boot_segment_index": 0,
+      "t_ms": 40003,
+      "source": {
+        "raw": "keyboard",
+        "id": 2,
+        "name": "keyboard",
+        "macro": "DIAG_SRC_KEYBOARD"
+      },
+      "event": {
+        "raw": 2,
+        "name": "kbd_key_fail",
+        "macro": "DIAG_KBD_KEY_FAIL",
+        "comment": "a1=key_usage_or_ascii, a2=esp_err, a3=ble_connected, a4=0"
+      },
+      "severity": {
+        "raw": "WARN",
+        "level": 1,
+        "name": "WARN",
+        "macro": "DIAG_SEV_WARN"
+      },
+      "args_raw": {
+        "a1": 0,
+        "a2": 262,
+        "a3": 1,
+        "a4": 0
+      },
+      "args_named": {
+        "key_usage_or_ascii": 0,
+        "esp_err": 262,
+        "ble_connected": 1
+      },
+      "args_decoded": {},
+      "arg_definitions": {
+        "a1": {
+          "name": "key_usage_or_ascii",
+          "raw_name": "key_usage_or_ascii",
+          "detail": "key_usage_or_ascii",
+          "enum": {}
+        },
+        "a2": {
+          "name": "esp_err",
+          "raw_name": "esp_err",
+          "detail": "esp_err",
+          "enum": {}
+        },
+        "a3": {
+          "name": "ble_connected",
+          "raw_name": "ble_connected",
+          "detail": "ble_connected",
+          "enum": {}
+        },
+        "a4": {
+          "name": "unused_a4",
+          "raw_name": "0",
+          "detail": "0",
+          "enum": {}
+        }
+      },
+      "raw_event": {
+        "t": 40003,
+        "src": "keyboard",
+        "evt": 2,
+        "sev": "WARN",
+        "a1": 0,
+        "a2": 262,
+        "a3": 1,
+        "a4": 0
+      }
+    },
+    {
+      "index": 79,
+      "line_number": 80,
+      "boot_segment_index": 0,
+      "t_ms": 40018,
+      "source": {
+        "raw": "keyboard",
+        "id": 2,
+        "name": "keyboard",
+        "macro": "DIAG_SRC_KEYBOARD"
+      },
+      "event": {
+        "raw": 2,
+        "name": "kbd_key_fail",
+        "macro": "DIAG_KBD_KEY_FAIL",
+        "comment": "a1=key_usage_or_ascii, a2=esp_err, a3=ble_connected, a4=0"
+      },
+      "severity": {
+        "raw": "WARN",
+        "level": 1,
+        "name": "WARN",
+        "macro": "DIAG_SEV_WARN"
+      },
+      "args_raw": {
+        "a1": 7,
+        "a2": 262,
+        "a3": 1,
+        "a4": 0
+      },
+      "args_named": {
+        "key_usage_or_ascii": 7,
+        "esp_err": 262,
+        "ble_connected": 1
+      },
+      "args_decoded": {},
+      "arg_definitions": {
+        "a1": {
+          "name": "key_usage_or_ascii",
+          "raw_name": "key_usage_or_ascii",
+          "detail": "key_usage_or_ascii",
+          "enum": {}
+        },
+        "a2": {
+          "name": "esp_err",
+          "raw_name": "esp_err",
+          "detail": "esp_err",
+          "enum": {}
+        },
+        "a3": {
+          "name": "ble_connected",
+          "raw_name": "ble_connected",
+          "detail": "ble_connected",
+          "enum": {}
+        },
+        "a4": {
+          "name": "unused_a4",
+          "raw_name": "0",
+          "detail": "0",
+          "enum": {}
+        }
+      },
+      "raw_event": {
+        "t": 40018,
+        "src": "keyboard",
+        "evt": 2,
+        "sev": "WARN",
+        "a1": 7,
+        "a2": 262,
+        "a3": 1,
+        "a4": 0
+      }
+    },
+    {
+      "index": 80,
+      "line_number": 81,
+      "boot_segment_index": 0,
+      "t_ms": 40034,
+      "source": {
+        "raw": "keyboard",
+        "id": 2,
+        "name": "keyboard",
+        "macro": "DIAG_SRC_KEYBOARD"
+      },
+      "event": {
+        "raw": 2,
+        "name": "kbd_key_fail",
+        "macro": "DIAG_KBD_KEY_FAIL",
+        "comment": "a1=key_usage_or_ascii, a2=esp_err, a3=ble_connected, a4=0"
+      },
+      "severity": {
+        "raw": "WARN",
+        "level": 1,
+        "name": "WARN",
+        "macro": "DIAG_SEV_WARN"
+      },
+      "args_raw": {
+        "a1": 7,
+        "a2": 262,
+        "a3": 1,
+        "a4": 0
+      },
+      "args_named": {
+        "key_usage_or_ascii": 7,
+        "esp_err": 262,
+        "ble_connected": 1
+      },
+      "args_decoded": {},
+      "arg_definitions": {
+        "a1": {
+          "name": "key_usage_or_ascii",
+          "raw_name": "key_usage_or_ascii",
+          "detail": "key_usage_or_ascii",
+          "enum": {}
+        },
+        "a2": {
+          "name": "esp_err",
+          "raw_name": "esp_err",
+          "detail": "esp_err",
+          "enum": {}
+        },
+        "a3": {
+          "name": "ble_connected",
+          "raw_name": "ble_connected",
+          "detail": "ble_connected",
+          "enum": {}
+        },
+        "a4": {
+          "name": "unused_a4",
+          "raw_name": "0",
+          "detail": "0",
+          "enum": {}
+        }
+      },
+      "raw_event": {
+        "t": 40034,
+        "src": "keyboard",
+        "evt": 2,
+        "sev": "WARN",
+        "a1": 7,
+        "a2": 262,
+        "a3": 1,
+        "a4": 0
+      }
+    },
+    {
+      "index": 81,
+      "line_number": 82,
+      "boot_segment_index": 0,
+      "t_ms": 40050,
+      "source": {
+        "raw": "keyboard",
+        "id": 2,
+        "name": "keyboard",
+        "macro": "DIAG_SRC_KEYBOARD"
+      },
+      "event": {
+        "raw": 2,
+        "name": "kbd_key_fail",
+        "macro": "DIAG_KBD_KEY_FAIL",
+        "comment": "a1=key_usage_or_ascii, a2=esp_err, a3=ble_connected, a4=0"
+      },
+      "severity": {
+        "raw": "WARN",
+        "level": 1,
+        "name": "WARN",
+        "macro": "DIAG_SEV_WARN"
+      },
+      "args_raw": {
+        "a1": 18,
+        "a2": 262,
+        "a3": 1,
+        "a4": 0
+      },
+      "args_named": {
+        "key_usage_or_ascii": 18,
+        "esp_err": 262,
+        "ble_connected": 1
+      },
+      "args_decoded": {},
+      "arg_definitions": {
+        "a1": {
+          "name": "key_usage_or_ascii",
+          "raw_name": "key_usage_or_ascii",
+          "detail": "key_usage_or_ascii",
+          "enum": {}
+        },
+        "a2": {
+          "name": "esp_err",
+          "raw_name": "esp_err",
+          "detail": "esp_err",
+          "enum": {}
+        },
+        "a3": {
+          "name": "ble_connected",
+          "raw_name": "ble_connected",
+          "detail": "ble_connected",
+          "enum": {}
+        },
+        "a4": {
+          "name": "unused_a4",
+          "raw_name": "0",
+          "detail": "0",
+          "enum": {}
+        }
+      },
+      "raw_event": {
+        "t": 40050,
+        "src": "keyboard",
+        "evt": 2,
+        "sev": "WARN",
+        "a1": 18,
+        "a2": 262,
+        "a3": 1,
+        "a4": 0
+      }
+    },
+    {
+      "index": 82,
+      "line_number": 83,
+      "boot_segment_index": 0,
+      "t_ms": 42030,
+      "source": {
+        "raw": "keyboard",
+        "id": 2,
+        "name": "keyboard",
+        "macro": "DIAG_SRC_KEYBOARD"
+      },
+      "event": {
+        "raw": 2,
+        "name": "kbd_key_fail",
+        "macro": "DIAG_KBD_KEY_FAIL",
+        "comment": "a1=key_usage_or_ascii, a2=esp_err, a3=ble_connected, a4=0"
+      },
+      "severity": {
+        "raw": "WARN",
+        "level": 1,
+        "name": "WARN",
+        "macro": "DIAG_SEV_WARN"
+      },
+      "args_raw": {
+        "a1": 192,
+        "a2": 262,
+        "a3": 1,
+        "a4": 0
+      },
+      "args_named": {
+        "key_usage_or_ascii": 192,
+        "esp_err": 262,
+        "ble_connected": 1
+      },
+      "args_decoded": {},
+      "arg_definitions": {
+        "a1": {
+          "name": "key_usage_or_ascii",
+          "raw_name": "key_usage_or_ascii",
+          "detail": "key_usage_or_ascii",
+          "enum": {}
+        },
+        "a2": {
+          "name": "esp_err",
+          "raw_name": "esp_err",
+          "detail": "esp_err",
+          "enum": {}
+        },
+        "a3": {
+          "name": "ble_connected",
+          "raw_name": "ble_connected",
+          "detail": "ble_connected",
+          "enum": {}
+        },
+        "a4": {
+          "name": "unused_a4",
+          "raw_name": "0",
+          "detail": "0",
+          "enum": {}
+        }
+      },
+      "raw_event": {
+        "t": 42030,
+        "src": "keyboard",
+        "evt": 2,
+        "sev": "WARN",
+        "a1": 192,
+        "a2": 262,
+        "a3": 1,
+        "a4": 0
+      }
+    },
+    {
+      "index": 83,
+      "line_number": 84,
+      "boot_segment_index": 0,
+      "t_ms": 202240,
+      "source": {
+        "raw": "keyboard",
+        "id": 2,
+        "name": "keyboard",
+        "macro": "DIAG_SRC_KEYBOARD"
+      },
+      "event": {
+        "raw": 6,
+        "name": "kbd_custom_key",
+        "macro": "DIAG_KBD_CUSTOM_KEY",
+        "comment": "a1=logical_key(1=KEY1..4=KEY4,5=EC11), a2=phase(1=press,2=release,3=single,4=double,5=long), a3=hid_usage, a4=esp_err"
+      },
+      "severity": {
+        "raw": "WARN",
+        "level": 1,
+        "name": "WARN",
+        "macro": "DIAG_SEV_WARN"
+      },
+      "args_raw": {
+        "a1": 5,
+        "a2": 3,
+        "a3": 104,
+        "a4": 259
+      },
+      "args_named": {
+        "logical_key": 5,
+        "phase": 3,
+        "hid_usage": 104,
+        "esp_err": 259
+      },
+      "args_decoded": {
+        "logical_key": "EC11",
+        "phase": "single"
+      },
+      "arg_definitions": {
+        "a1": {
+          "name": "logical_key",
+          "raw_name": "logical_key",
+          "detail": "logical_key(1=KEY1..4=KEY4,5=EC11)",
+          "enum": {
+            "1": "KEY1..4=KEY4",
+            "5": "EC11"
+          }
+        },
+        "a2": {
+          "name": "phase",
+          "raw_name": "phase",
+          "detail": "phase(1=press,2=release,3=single,4=double,5=long)",
+          "enum": {
+            "1": "press",
+            "2": "release",
+            "3": "single",
+            "4": "double",
+            "5": "long"
+          }
+        },
+        "a3": {
+          "name": "hid_usage",
+          "raw_name": "hid_usage",
+          "detail": "hid_usage",
+          "enum": {}
+        },
+        "a4": {
+          "name": "esp_err",
+          "raw_name": "esp_err",
+          "detail": "esp_err",
+          "enum": {}
+        }
+      },
+      "raw_event": {
+        "t": 202240,
+        "src": "keyboard",
+        "evt": 6,
+        "sev": "WARN",
+        "a1": 5,
+        "a2": 3,
+        "a3": 104,
+        "a4": 259
+      }
+    },
+    {
+      "index": 84,
+      "line_number": 85,
+      "boot_segment_index": 0,
+      "t_ms": 202241,
+      "source": {
+        "raw": "voice_key",
+        "id": 7,
+        "name": "voice_key",
+        "macro": "DIAG_SRC_VOICE_KEY"
+      },
+      "event": {
+        "raw": 2,
+        "name": "vkey_queue_drop",
+        "macro": "DIAG_VKEY_QUEUE_DROP",
+        "comment": "a1=type(1=single_click_toggle,2=double_click_recovery), a2=reason(1=no_queue,2=queue_full), a3=0, a4=0"
+      },
+      "severity": {
+        "raw": "WARN",
+        "level": 1,
+        "name": "WARN",
+        "macro": "DIAG_SEV_WARN"
+      },
+      "args_raw": {
+        "a1": 1,
+        "a2": 259,
+        "a3": 104,
+        "a4": 2
+      },
+      "args_named": {
+        "type": 1,
+        "reason": 259
+      },
+      "args_decoded": {
+        "type": "single_click_toggle"
+      },
+      "arg_definitions": {
+        "a1": {
+          "name": "type",
+          "raw_name": "type",
+          "detail": "type(1=single_click_toggle,2=double_click_recovery)",
+          "enum": {
+            "1": "single_click_toggle",
+            "2": "double_click_recovery"
+          }
+        },
+        "a2": {
+          "name": "reason",
+          "raw_name": "reason",
+          "detail": "reason(1=no_queue,2=queue_full)",
+          "enum": {
+            "1": "no_queue",
+            "2": "queue_full"
+          }
+        },
+        "a3": {
+          "name": "unused_a3",
+          "raw_name": "0",
+          "detail": "0",
+          "enum": {}
+        },
+        "a4": {
+          "name": "unused_a4",
+          "raw_name": "0",
+          "detail": "0",
+          "enum": {}
+        }
+      },
+      "raw_event": {
+        "t": 202241,
+        "src": "voice_key",
+        "evt": 2,
+        "sev": "WARN",
+        "a1": 1,
+        "a2": 259,
+        "a3": 104,
+        "a4": 2
+      }
+    }
+  ]
+}

@@ -1,0 +1,38 @@
+﻿2026-06-20T19:57:40.2218261+08:00 start trigger=generated-key3 port=COM10 timeout_ms=90000
+2026-06-20T19:57:40.2288276+08:00 wav_ready path=C:\Users\Billy\Desktop\Denzic\Listener\Listener-Firmware-vkfft-1.12-clean2-5584dc7\tests\artifacts\ble_product_matrix\a1\product_chain\ble-stream-generated_key3_restart_round1-normal.wav sentence=撤销操作 profile=normal rate=0 gain=4 silent=False
+2026-06-20T19:57:40.2670223+08:00 serial_reset_start
+2026-06-20T19:57:42.6626705+08:00 serial_reset_done
+2026-06-20T19:57:42.6637230+08:00 ensure_ble_start
+2026-06-20T19:57:43.2045853+08:00 ensure_ble_done
+2026-06-20T19:57:43.8305718+08:00 before_listener_start foreground_pid=29164 foreground_visible=True foreground_title=Denzic - Visual Studio Code [Administrator]
+2026-06-20T19:57:43.8671614+08:00 serial_window_started path=C:\Users\Billy\Desktop\Denzic\Listener\Listener-Firmware-vkfft-1.12-clean2-5584dc7\tests\artifacts\ble_product_matrix\a1\product_chain\ble-stream-smoke-20260620-195740.serial.log
+2026-06-20T19:57:43.8915140+08:00 listener_started pid=26084
+2026-06-20T19:57:45.7471664+08:00 notify_ready
+2026-06-20T19:57:45.7994327+08:00 window_visible pid=26084 title=Listener Type Capsule rect=568,756,304,84
+2026-06-20T19:57:45.8004295+08:00 notify_ready_capsule_visible
+2026-06-20T19:57:46.6146946+08:00 after_listener_ready foreground_pid=29164 foreground_visible=True foreground_title=Denzic - Visual Studio Code [Administrator]
+2026-06-20T19:57:46.7857482+08:00 playback_volume_set target=70 previous=0.7 muted=False
+2026-06-20T19:57:46.7890604+08:00 before_capsule foreground_pid=29164 foreground_visible=True foreground_title=Denzic - Visual Studio Code [Administrator]
+2026-06-20T19:57:46.7909551+08:00 serial_start_signal_written
+2026-06-20T19:57:47.2827806+08:00 firmware_recording_start_seen
+2026-06-20T19:57:47.2827806+08:00 window_visible pid=26084 title=Listener Type Capsule rect=568,756,304,84
+2026-06-20T19:57:47.2900986+08:00 capsule_visible
+2026-06-20T19:57:47.3829919+08:00 after_capsule foreground_pid=29164 foreground_visible=True foreground_title=Denzic - Visual Studio Code [Administrator]
+2026-06-20T19:57:47.6902192+08:00 playback_start index=1
+2026-06-20T19:57:49.7263984+08:00 playback_done index=1 actual_ms=2027
+2026-06-20T19:57:50.2416449+08:00 serial_stop_signal_written
+2026-06-20T19:57:52.4843648+08:00 serial_window_done
+2026-06-20T19:57:52.8037474+08:00 done_match
+2026-06-20T19:57:53.0165372+08:00 parse_transcript_start
+2026-06-20T19:57:53.0666372+08:00 parse_transcript_done transcript_len=5 pcm=101120 missing=0
+2026-06-20T19:57:53.0687078+08:00 history_wait_start
+2026-06-20T19:57:53.1172884+08:00 history_wait_done found=True
+2026-06-20T19:57:53.1648488+08:00 report_object_start
+2026-06-20T19:57:53.2106683+08:00 report_object_done
+2026-06-20T19:57:53.2106683+08:00 json_convert_start
+2026-06-20T19:57:53.2852767+08:00 json_convert_done
+2026-06-20T19:57:53.2887126+08:00 report_write_start path=C:\Users\Billy\Desktop\Denzic\Listener\Listener-Firmware-vkfft-1.12-clean2-5584dc7\tests\artifacts\ble_product_matrix\a1\product_chain\ble-stream-smoke.20260620-195753.json status=PASS
+2026-06-20T19:57:53.2931940+08:00 report_write_done
+2026-06-20T19:57:53.2942007+08:00 finally_start
+2026-06-20T19:57:53.2977144+08:00 playback_volume_restored volume=0.7 muted=False
+2026-06-20T19:57:53.3334884+08:00 finally_done
