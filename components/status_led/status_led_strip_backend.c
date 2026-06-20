@@ -40,6 +40,7 @@ struct status_led_strip_backend {
     bool dma_requested;
     bool dma_enabled;
     bool dma_fallback;
+    bool channel_enabled;
     bool available;
 };
 
@@ -207,6 +208,10 @@ static void status_led_strip_backend_fill_pixels(
 
 static void status_led_strip_backend_release_transport(status_led_strip_backend_t *backend)
 {
+    if (backend->channel != NULL && backend->channel_enabled) {
+        (void)rmt_disable(backend->channel);
+        backend->channel_enabled = false;
+    }
     if (backend->encoder != NULL) {
         (void)rmt_del_encoder(backend->encoder);
         backend->encoder = NULL;
@@ -230,6 +235,21 @@ static esp_err_t status_led_strip_backend_new_channel(status_led_strip_backend_t
         .flags.with_dma = with_dma,
     };
     return rmt_new_tx_channel(&tx_config, &backend->channel);
+}
+
+static esp_err_t status_led_strip_backend_set_channel_enabled(
+    status_led_strip_backend_t *backend,
+    bool enabled)
+{
+    if (backend == NULL || backend->channel == NULL || backend->channel_enabled == enabled) {
+        return ESP_OK;
+    }
+
+    esp_err_t ret = enabled ? rmt_enable(backend->channel) : rmt_disable(backend->channel);
+    if (ret == ESP_OK) {
+        backend->channel_enabled = enabled;
+    }
+    return ret;
 }
 
 esp_err_t status_led_strip_backend_new(
@@ -279,13 +299,6 @@ esp_err_t status_led_strip_backend_new(
     ret = status_led_new_ws2812_encoder(&backend->encoder);
     if (ret != ESP_OK) {
         ESP_LOGW(TAG, "strip %s WS2812 encoder init failed: %s", backend->name, esp_err_to_name(ret));
-        status_led_strip_backend_release_transport(backend);
-        return ret;
-    }
-
-    ret = rmt_enable(backend->channel);
-    if (ret != ESP_OK) {
-        ESP_LOGW(TAG, "strip %s RMT enable failed: %s", backend->name, esp_err_to_name(ret));
         status_led_strip_backend_release_transport(backend);
         return ret;
     }
@@ -343,10 +356,17 @@ esp_err_t status_led_strip_backend_transmit(
 
     status_led_strip_backend_fill_pixels(backend, color_order, colors);
     (void)rmt_encoder_reset(backend->encoder);
+    esp_err_t ret = status_led_strip_backend_set_channel_enabled(backend, true);
+    if (ret != ESP_OK) {
+        diag_log(DIAG_SRC_STATUS_LED, DIAG_LED_OUTPUT_FAIL, DIAG_SEV_WARN,
+                 (uint32_t)backend->gpio, (uint32_t)ret, 2, 0);
+        return ret;
+    }
+
     rmt_transmit_config_t transmit_config = {
         .loop_count = 0,
     };
-    esp_err_t ret = rmt_transmit(
+    ret = rmt_transmit(
         backend->channel,
         backend->encoder,
         backend->pixels,
@@ -365,6 +385,7 @@ esp_err_t status_led_strip_backend_transmit(
     if (ret != ESP_OK) {
         diag_log(DIAG_SRC_STATUS_LED, DIAG_LED_OUTPUT_FAIL, DIAG_SEV_WARN,
                  (uint32_t)backend->gpio, (uint32_t)ret, 0, 0);
+        (void)status_led_strip_backend_set_channel_enabled(backend, false);
         return ret;
     }
 
@@ -372,6 +393,12 @@ esp_err_t status_led_strip_backend_transmit(
     if (ret != ESP_OK) {
         diag_log(DIAG_SRC_STATUS_LED, DIAG_LED_OUTPUT_FAIL, DIAG_SEV_WARN,
                  (uint32_t)backend->gpio, (uint32_t)ret, 1, 0);
+    }
+    esp_err_t disable_ret = status_led_strip_backend_set_channel_enabled(backend, false);
+    if (disable_ret != ESP_OK) {
+        diag_log(DIAG_SRC_STATUS_LED, DIAG_LED_OUTPUT_FAIL, DIAG_SEV_WARN,
+                 (uint32_t)backend->gpio, (uint32_t)disable_ret, 3, 0);
+        return ret == ESP_OK ? disable_ret : ret;
     }
     return ret;
 }

@@ -8,6 +8,7 @@
 
 #include "esp_err.h"
 #include "esp_log.h"
+#include "esp_pm.h"
 #include "esp_timer.h"
 #include "esp_system.h"
 #include "freertos/FreeRTOS.h"
@@ -2080,6 +2081,24 @@ static void power_manager_print_status(void)
     fflush(stdout);
 }
 
+static void power_manager_print_pm_locks(void)
+{
+#if CONFIG_PM_ENABLE
+    printf("~POWER:PM begin pm_enable=1 profiling=%u\n",
+#if CONFIG_PM_PROFILING
+           1u
+#else
+           0u
+#endif
+    );
+    esp_err_t ret = esp_pm_dump_locks(stdout);
+    printf("~POWER:PM end result=%s\n", esp_err_to_name(ret));
+#else
+    printf("~POWER:PM result=ESP_ERR_NOT_SUPPORTED pm_enable=0\n");
+#endif
+    fflush(stdout);
+}
+
 bool power_manager_consume_usb_command(const char *line)
 {
     const char *command = power_manager_strip_prefix(line);
@@ -2089,6 +2108,11 @@ bool power_manager_consume_usb_command(const char *line)
 
     if (strcmp(command, "STATUS") == 0) {
         power_manager_print_status();
+        return true;
+    }
+
+    if (strcmp(command, "PM") == 0 || strcmp(command, "PM:LOCKS") == 0) {
+        power_manager_print_pm_locks();
         return true;
     }
 
