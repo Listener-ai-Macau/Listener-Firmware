@@ -45,11 +45,40 @@ CHECKS = {
         "STATUS_LED_STRIP_COUNT 4",
         "STATUS_LED_STATUS_TAIL_GUARD_PIXELS 6U",
         "STATUS_LED_STATUS_TAIL_REINFORCE_WRITES 3U",
+        "STATUS_LED_STATUS_TAIL_OVERLAP_REINFORCE_WRITES 1U",
         "STATUS_LED_STATUS_TAIL_SAFE_EFFECT_MIN_PERCENT 14U",
         "STATUS_LED_STATUS_TAIL_SAFE_EFFECT_MAX_PERCENT 20U",
-        "STATUS_LED_STATUS_TAIL_OVERLAP_EFFECT_MIN_PERCENT 16U",
-        "STATUS_LED_STATUS_TAIL_OVERLAP_EFFECT_MAX_PERCENT 30U",
-        "STATUS_LED_STATUS_TAIL_OVERLAP_BREATH_PERIOD_MS 1400U",
+        "STATUS_LED_STATUS_TAIL_OVERLAP_EFFECT_MIN_PERCENT 14U",
+        "STATUS_LED_STATUS_TAIL_OVERLAP_EFFECT_MAX_PERCENT 40U",
+        "STATUS_LED_STATUS_TAIL_OVERLAP_BREATH_PERIOD_MS 6800U",
+        "STATUS_LED_STATUS_TAIL_OVERLAP_RISE_MS 2200U",
+        "STATUS_LED_STATUS_TAIL_OVERLAP_HIGH_HOLD_MS 500U",
+        "STATUS_LED_STATUS_TAIL_OVERLAP_FALL_MS 2500U",
+        "STATUS_LED_STATUS_TAIL_OVERLAP_LOW_HOLD_MS 1600U",
+        "STATUS_LED_STATUS_TAIL_OVERLAP_QUANTUM_PERCENT 1U",
+        "STATUS_LED_RECORDING_LEVEL_EFFECT_MIN_PERCENT 8U",
+        "STATUS_LED_RECORDING_LEVEL_EFFECT_MAX_PERCENT 72U",
+        "STATUS_LED_RECORDING_LEVEL_ATTACK_PERCENT_PER_SEC 100U",
+        "STATUS_LED_RECORDING_LEVEL_RELEASE_PERCENT_PER_SEC 45U",
+        "STATUS_LED_RECORDING_LEVEL_QUANTUM_PERCENT 2U",
+        "STATUS_LED_PROCESSING_THINK_EFFECT_MIN_PERCENT 0U",
+        "STATUS_LED_PROCESSING_THINK_EFFECT_MAX_PERCENT 90U",
+        "STATUS_LED_PROCESSING_THINK_QUANTUM_PERCENT 2U",
+        "STATUS_LED_PROCESSING_THINK_PERIOD_MS 1950U",
+        "STATUS_LED_PROCESSING_THINK_BEAT_RISE_MS 50U",
+        "STATUS_LED_PROCESSING_THINK_BEAT_HOLD_MS 50U",
+        "STATUS_LED_PROCESSING_THINK_BEAT_FALL_MS 60U",
+        "STATUS_LED_PROCESSING_THINK_GROUP_GAP_MS 520U",
+        "STATUS_LED_PROCESSING_THINK_BEAT_GAP_MS 50U",
+        "STATUS_LED_PROCESSING_THINK_EFFECT_BEAT2_PERCENT 82U",
+        "STATUS_LED_PROCESSING_THINK_EFFECT_BEAT3_PERCENT 90U",
+        "recording_level_visual_percent",
+        "status_led_processing_thinking_phase_ms_locked",
+        "status_led_recording_level_smoothed_percent_locked",
+        "status_led_recording_level_effect_percent_locked",
+        "status_led_processing_thinking_effect_percent_locked",
+        "status_led_processing_thinking_color_locked",
+        "return status_led_rgb(160, 0, 255)",
         "STATUS_LED_STATUS_FIRST_LED 1U",
         "STATUS_LED_EC11_FIRST_LED 7U",
         "STATUS_LED_KEY_FIRST_LED 11U",
@@ -132,12 +161,40 @@ CHECKS = {
         "status_led_boot_power_color_locked",
         "STATUS_LED_NVS_BRIGHTNESS_KEY \"brightness\"",
         "led_contract_rev=",
+        "rmt_tx_dma_supported=%u",
+        "rmt_tx_dma_strategy=status_strip_priority_single_rmt_dma_channel",
+        "rmt_strip_all_available=%u",
+        "rmt_tx_dma_all_strips=%u",
+        "rmt_tx_dma_requested=status:%u,ec11:%u,key:%u,edge:%u",
+        "rmt_tx_dma_actual=status:%u,ec11:%u,key:%u,edge:%u",
+        "rmt_tx_dma_fallback=status:%u,ec11:%u,key:%u,edge:%u",
         "unchanged_tx_suppression=1",
         "timing=ws2812_4020_compatible",
         "status_tail_guard_pixels=%u",
         "status_tail_reinforce=recording_processing",
-        "status_tail_safe_effect_percent=%u..%u",
-        "status_tail_overlap_effect_percent=%u..%u_slow",
+        "status_tail_overlap_reinforce_writes=%u",
+        "status_tail_legacy_safe_effect_percent=%u..%u",
+        "status_tail_overlap_effect_percent=rec_audio_%u..%u_%upct_ai_think_%u..%u_%upct",
+        "status_tail_overlap_style=dma_audio_rec_ai_da_dada",
+        "status_tail_overlap_legacy_effect_percent=%u..%u_1pct_eased_dual_core",
+        "status_tail_overlap_legacy_period_ms=%u",
+        "status_tail_overlap_legacy_rise_ms=%u",
+        "status_tail_overlap_legacy_high_hold_ms=%u",
+        "status_tail_overlap_legacy_fall_ms=%u",
+        "status_tail_overlap_legacy_low_hold_ms=%u",
+        "status_tail_overlap_legacy_quantum_percent=%u",
+        "recording_level_reactive=1",
+        "recording_level_effect_percent=%u..%u_smooth_%upct",
+        "recording_level_smoothing=attack%u_release%u",
+        "processing_thinking_style=single_then_double_beat",
+        "processing_thinking_color=purple_static",
+        "processing_thinking_effect_percent=%u..%u_%upct",
+        "processing_thinking_scan_profile=da_long_gap_grouped_dada_rest",
+        "processing_thinking_period_ms=%u",
+        "rec_level_visual=%u",
+        "active_work_status_overlap_dynamic_1pct_eased=0",
+        "active_work_status_audio_reactive_rec=1",
+        "active_work_status_thinking_ai=1",
         "effect_only_preview=1",
         "effect_profile=product_v1",
         "profile_cap_percent=%u",
@@ -182,6 +239,8 @@ CHECKS = {
         "snapshot.last_frame = sampled_frame;",
         "ulTaskNotifyTake",
         "status_led_force_manual_off",
+        "power_manager_set_blocker(POWER_MANAGER_BLOCKER_USB_COMMAND, false)",
+        "power_manager_record_activity(\"usb_led_command\")",
         "manual_off",
         "~LED:STATUS",
         "mapping_contract=",
@@ -253,6 +312,11 @@ CHECKS = {
         "status_led_preview_ready_baseline_locked",
         "status_led_preview_effect_only_baseline_locked",
         "preview_effect_only",
+        "bool effect_only_after = false;",
+        "bool keep_usb_command_blocker_after = false;",
+        "keep_usb_command_blocker_after = true;",
+        "effect_only_after = s_state.preview_effect_only || keep_usb_command_blocker_after;",
+        "power_manager_set_blocker(POWER_MANAGER_BLOCKER_USB_COMMAND, effect_only_after)",
         "capture_led_only",
         "recording_processing_led_only",
         "recording_processing_status_led_only",
@@ -278,10 +342,10 @@ CHECKS = {
         "STATUS_LED_RECORDING_LEVEL_HOLD_MAX_MS 120000U",
         "STATUS_LED_ACTIVE_WORK_REC_PERCENT 34U",
         "STATUS_LED_ACTIVE_WORK_AI_PERCENT 32U",
-        "STATUS_LED_ACTIVE_WORK_REC_MAX_PERCENT 44U",
+        "STATUS_LED_ACTIVE_WORK_REC_MAX_PERCENT 72U",
         "STATUS_LED_PROCESSING_BREATH_PERIOD_MS 1800U",
         "STATUS_LED_PROCESSING_BREATH_MIN_PERCENT 28U",
-        "STATUS_LED_PROCESSING_BREATH_MAX_PERCENT 52U",
+        "STATUS_LED_PROCESSING_BREATH_MAX_PERCENT 92U",
         "STATUS_LED_ACCENT_BREATHE_QUANTUM_PERCENT 2U",
         "STATUS_LED_EC11_RECORDING_BASE_MIN_PERCENT 4U",
         "STATUS_LED_EC11_RECORDING_BASE_MAX_PERCENT 5U",
@@ -297,7 +361,8 @@ CHECKS = {
         "status_led_effect_elapsed_ms_locked",
         "status_led_set_recording_level",
         "rec_level=%u",
-        "return status_led_quantize_percent(breath, STATUS_LED_DYNAMIC_STATUS_QUANTUM_PERCENT)",
+        "rec_level_visual=%u",
+        "return status_led_quantize_percent(percent, STATUS_LED_RECORDING_LEVEL_QUANTUM_PERCENT)",
         "recording_level_hold_until_ms",
         "status_led_recording_status_percent_locked",
         "status_led_processing_status_percent_locked",
@@ -360,9 +425,14 @@ CHECKS = {
         "STATUS_LED_COLOR_ORDER_GRB",
         "STATUS_LED_COLOR_ORDER_RGB",
         "tail_guard_pixels",
+        "prefer_dma",
         "status_led_rgb_t",
         "status_led_strip_backend_t",
         "status_led_strip_backend_new",
+        "status_led_strip_backend_dma_supported",
+        "status_led_strip_backend_dma_requested",
+        "status_led_strip_backend_uses_dma",
+        "status_led_strip_backend_dma_fallback",
         "status_led_strip_backend_transmit",
     ],
     "components/status_led/status_led_strip_backend.c": [
@@ -378,7 +448,16 @@ CHECKS = {
         "STATUS_LED_WS2812_T0L_TICKS 10U",
         "STATUS_LED_WS2812_T1H_TICKS 7U",
         "STATUS_LED_WS2812_T1L_TICKS 6U",
+        "STATUS_LED_RMT_WITH_DMA SOC_RMT_SUPPORT_DMA",
+        "status_led_strip_backend_new_channel",
+        "rmt_dma_requested=%u",
+        "rmt_dma_fallback=%u",
+        "status_led_strip_backend_dma_supported",
+        "status_led_strip_backend_dma_requested",
+        "status_led_strip_backend_uses_dma",
+        "status_led_strip_backend_dma_fallback",
         "SOC_RMT_MEM_WORDS_PER_CHANNEL",
+        ".flags.with_dma = with_dma",
         "status_led_strip_backend_fill_pixels",
         "memset(backend->pixels, 0, sizeof(backend->pixels));",
         "transmit_led_count",
@@ -466,7 +545,9 @@ CHECKS = {
     "ports/esp32/audio_capture/audio_capture_esp32.c": [
         "#include \"status_led.h\"",
         "AUDIO_CAPTURE_LEVEL_NOISE_FLOOR",
+        "AUDIO_CAPTURE_LEVEL_NOISE_FLOOR 160U",
         "AUDIO_CAPTURE_LEVEL_FULL_SCALE",
+        "AUDIO_CAPTURE_LEVEL_FULL_SCALE 5000U",
         "audio_capture_frame_level_percent",
         "status_led_set_recording_level(audio_capture_frame_level_percent(frame_buffer))",
     ],
@@ -525,11 +606,14 @@ CHECKS = {
         "User brightness scales the whole routine effect envelope before the profile cap is applied",
         "50% user brightness setting scales the external-power breath's low and high points together",
         "charging breath is intentionally shallow and slow",
-        "Recording is a controlled warm-gold semantic state",
-        "exposes `rec_level`",
-        "no longer uses PCM level to drive brightness",
+        "Source Of Truth",
+        "Code constants and `~LED:STATUS detail=contract` are the source of truth",
+        "Recording uses `rec_level` only for status `LED3=REC`",
+        "smoothed, rate-limited, and quantized",
+        "EC11, key, and edge/frame do not follow PCM brightness",
         "`~LED:REC_LEVEL <0-100> [hold_ms]`",
-        "Processing is a controlled saturated purple semantic state",
+        "Processing uses status `LED4=AI`",
+        "exact scan parameters live in the code constants and `~LED:STATUS detail=contract`",
         "Firmware recording transfer does not animate `AI` by itself",
         "`VREC:PROCESSING:START`",
         "`VREC:PROCESSING:STOP`",
@@ -542,22 +626,29 @@ CHECKS = {
         "Key LEDs remain local transient feedback only",
         "Recording and processing no longer light the key strip",
         "EC11 knob and edge/frame LEDs are independent accent surfaces",
-        "low warm-gold base plus a broad slow deterministic flow",
-        "low deterministic warm-gold same-cycle flow accents",
-        "`rec_level` remains diagnostic input but does not change the product brightness envelope",
-        "keeps the EC11 ring fully present with a low warm-gold base and broad slow deterministic flow on all 12 LEDs",
-        "keeps a low warm-gold base and a wider same-cycle clockwise flow on all 6 LEDs",
-        "low violet clockwise motion",
+        "`rec_level` drives only status `LED3=REC`",
+        "EC11, key, and edge/frame do not follow PCM brightness",
+        "processing-only uses matched low violet clockwise motion",
         "EC11 short press and rotation add a brief white confirmation",
         "adds a low blue EC11 ring orbit as the user-action confirmation",
         "EC11/edge accent-only motion does not repeatedly refresh the status rail",
-        "Status-tail anti-flicker guard",
+        "Status-tail anti-flicker contract",
         "six black guard pixels",
         "status_tail_reinforce=recording_processing",
         "status_tail_reinforce_writes=3",
+        "status_tail_overlap_reinforce_writes=1",
+        "rmt_tx_dma_strategy=status_strip_priority_single_rmt_dma_channel",
+        "rmt_tx_dma_all_strips=0",
+        "rmt_tx_dma_actual=status:1,ec11:0,key:0,edge:0",
         "dynamic_active_accents=1",
-        "active_work_status_dynamic=1",
-        "active_work_status_static=0",
+        "status_tail_overlap_style=dma_audio_rec_ai_da_dada",
+        "recording_level_reactive=1",
+        "processing_thinking_style=single_then_double_beat",
+        "processing_thinking_color=purple_static",
+        "processing_thinking_scan_profile=da_long_gap_grouped_dada_rest",
+        "active_work_status_overlap_dynamic_1pct_eased=0",
+        "active_work_status_audio_reactive_rec=1",
+        "active_work_status_thinking_ai=1",
         "Long-press shutdown confirmation",
         "filling the EC11 ring clockwise over 1.8 seconds",
         "pending cue stays latched at full ring",
@@ -565,13 +656,14 @@ CHECKS = {
         "`shutdown_confirm_active`",
         "`shutdown_confirm_latched`",
         "`shutdown_confirm_elapsed_ms`",
-        "`~LED:PREVIEW <ready|pairing|reconnect|repairing|capture|capture_led_only|desktop_mic|recording_processing|recording_processing_led_only|recording_processing_status_only|recording_processing_status_led_only|recording_processing_status_key_stress|status_key_stress3|status_key_stress4|status_key_stress34|rec_not_available|processing|processing_led_only|ok|low_battery|critical_battery|charging|full|shutdown_confirm|shutdown_final|sleep|clear>`",
+        "`~LED:PREVIEW <ready|pairing|reconnect|repairing|capture|capture_led_only|desktop_mic|recording_processing|recording_processing_led_only|recording_processing_status_only|recording_processing_status_led_only|recording_processing_status_key_stress|status_key_stress3|status_key_stress4|status_key_stress34|rec_not_available|processing|processing_led_only|processing_status_led_only|ok|low_battery|critical_battery|charging|full|shutdown_confirm|shutdown_final|sleep|clear>`",
         "`~LED:PREVIEW pairing`, `~LED:PREVIEW reconnect`, and `~LED:PREVIEW repairing`",
         "`~LED:PREVIEW capture_led_only`",
         "`~LED:PREVIEW recording_processing_led_only`",
         "`~LED:PREVIEW recording_processing_status_led_only`",
         "`~LED:PREVIEW recording_processing_status_key_stress`",
         "`~LED:PREVIEW processing_led_only`",
+        "`~LED:PREVIEW processing_status_led_only`",
         "`preview_effect_only=1`",
         "keep PWR/BLE and physical key-press feedback out of the rendered frame",
         "the key strip stays off",
@@ -665,6 +757,7 @@ CHECKS = {
         "~LED:PREVIEW status_key_stress34",
         "~LED:PREVIEW recording_processing_status_key_stress",
         "~LED:PREVIEW processing_led_only",
+        "~LED:PREVIEW processing_status_led_only",
         "~LED:PREVIEW repairing",
         "scene-ec11-short-press",
         "scene-ec11-rotate",
@@ -726,6 +819,7 @@ def main() -> int:
 
     status_led = read("components/status_led/status_led.c")
     status_led_backend = read("components/status_led/status_led_strip_backend.c")
+    audio_capture = read("ports/esp32/audio_capture/audio_capture_esp32.c")
     main_c = read("main/main.c")
     human_review = read("tools/status_led_human_effect_review.ps1")
     status_doc = read("docs/features/status_led.md")
@@ -757,21 +851,48 @@ def main() -> int:
         failures.append("status_led.c: charging PWR must hold a steady readable level during recording/processing")
     for token in (
         "STATUS_LED_RECORDING_LEVEL_STALE_MS",
+        "STATUS_LED_RECORDING_LEVEL_EFFECT_MIN_PERCENT 8U",
+        "STATUS_LED_RECORDING_LEVEL_EFFECT_MAX_PERCENT 72U",
+        "STATUS_LED_RECORDING_LEVEL_ATTACK_PERCENT_PER_SEC 100U",
+        "STATUS_LED_RECORDING_LEVEL_RELEASE_PERCENT_PER_SEC 45U",
+        "STATUS_LED_RECORDING_LEVEL_QUANTUM_PERCENT 2U",
+        "STATUS_LED_PROCESSING_THINK_EFFECT_MIN_PERCENT 0U",
+        "STATUS_LED_PROCESSING_THINK_EFFECT_MAX_PERCENT 90U",
+        "STATUS_LED_PROCESSING_THINK_QUANTUM_PERCENT 2U",
+        "STATUS_LED_PROCESSING_THINK_PERIOD_MS 1950U",
+        "STATUS_LED_PROCESSING_THINK_BEAT_RISE_MS 50U",
+        "STATUS_LED_PROCESSING_THINK_BEAT_HOLD_MS 50U",
+        "STATUS_LED_PROCESSING_THINK_BEAT_FALL_MS 60U",
+        "STATUS_LED_PROCESSING_THINK_GROUP_GAP_MS 520U",
+        "STATUS_LED_PROCESSING_THINK_BEAT_GAP_MS 50U",
+        "STATUS_LED_PROCESSING_THINK_EFFECT_BEAT2_PERCENT 82U",
+        "STATUS_LED_PROCESSING_THINK_EFFECT_BEAT3_PERCENT 90U",
         "STATUS_LED_EC11_RECORDING_FLOW_STEP_MS 360U",
         "STATUS_LED_EDGE_RECORDING_FLOW_STEP_MS 720U",
-        "status_led_status_tail_safe_dynamic_percent_locked",
-        "status_led_status_tail_safe_range_percent_locked",
-        "status_led_status_tail_overlap_breath_percent_locked",
+        "status_led_recording_level_target_percent_locked",
+        "status_led_recording_level_smoothed_percent_locked",
+        "status_led_recording_level_effect_percent_locked",
+        "status_led_processing_thinking_phase_ms_locked",
+        "status_led_processing_thinking_beat_percent",
+        "status_led_processing_thinking_effect_percent_locked",
+        "status_led_processing_thinking_color_locked",
+        "return status_led_rgb(160, 0, 255)",
+        "status_led_step_percent_towards",
         "status_led_status_tail_desired_for_effect_percent_locked",
         "STATUS_LED_STATUS_TAIL_OVERLAP_EFFECT_MIN_PERCENT",
         "STATUS_LED_STATUS_TAIL_OVERLAP_EFFECT_MAX_PERCENT",
         "STATUS_LED_STATUS_TAIL_OVERLAP_BREATH_PERIOD_MS",
+        "STATUS_LED_STATUS_TAIL_OVERLAP_RISE_MS",
+        "STATUS_LED_STATUS_TAIL_OVERLAP_HIGH_HOLD_MS",
+        "STATUS_LED_STATUS_TAIL_OVERLAP_FALL_MS",
+        "STATUS_LED_STATUS_TAIL_OVERLAP_LOW_HOLD_MS",
+        "STATUS_LED_STATUS_TAIL_OVERLAP_QUANTUM_PERCENT",
         "status_led_render_ec11_recording_flow_locked",
         "status_led_render_edge_recording_flow_locked",
-        "return status_led_quantize_percent(breath, STATUS_LED_DYNAMIC_STATUS_QUANTUM_PERCENT)",
+        "return status_led_quantize_percent(percent, STATUS_LED_RECORDING_LEVEL_QUANTUM_PERCENT)",
     ):
         if token not in status_led:
-            failures.append(f"status_led.c: recording LED must use deterministic low-amplitude flow without PCM brightness drive, missing {token}")
+            failures.append(f"status_led.c: recording/AI status LEDs must use bounded audio-reactive REC and thinking AI paths, missing {token}")
     for token in (
         "uint8_t head_rank = step;",
         "status_led_scale_effect_percent_locked(5U, now_ms)",
@@ -801,6 +922,10 @@ def main() -> int:
         failures.append("status_led.c: missing status_led_set_recording_level block")
     elif "status_led_request_refresh" in recording_level_block.group(0):
         failures.append("status_led.c: live rec_level diagnostics must not request LED refresh")
+    elif "s_mutex == NULL" not in recording_level_block.group(0):
+        failures.append("status_led.c: live rec_level diagnostics must guard early calls before the LED mutex exists")
+    if "should_update_recording_level" in audio_capture:
+        failures.append("audio_capture_esp32.c: live REC level must be sampled every mic frame, not only inside an active BLE session")
     forced_level_block = re.search(
         r"static\s+void\s+status_led_force_recording_level_for_review[\s\S]*?\nvoid\s+status_led_set_processing",
         status_led,
@@ -921,12 +1046,26 @@ def main() -> int:
         failures.append("status_led_human_effect_review.ps1: missing Get-VolumeSteps block")
     else:
         volume_text = volume_block.group(1)
-        for token in ("~LED:PREVIEW capture_led_only", "~LED:PREVIEW recording_processing_led_only"):
+        for token in ("~LED:PREVIEW capture", "~LED:PREVIEW recording_processing_led_only"):
             if token not in volume_text:
-                failures.append(f"status_led_human_effect_review.ps1: Volume mode must use effect-only command {token}")
-        for stale in ('"~LED:PREVIEW capture"', '"~LED:PREVIEW recording_processing"'):
+                failures.append(f"status_led_human_effect_review.ps1: Volume mode must use command {token}")
+        live_volume_step = re.search(
+            r'-Id\s+"volume-capture-sweep"([\s\S]*?)(?:New-LedReviewStep|return\s+@\(\$steps\))',
+            volume_text,
+        )
+        if not live_volume_step:
+            failures.append("status_led_human_effect_review.ps1: Volume mode must keep the live volume capture step")
+        else:
+            live_text = live_volume_step.group(1)
+            for token in ("WAIT 12000", "麦克风实时音量", "真实声音"):
+                if token not in live_text:
+                    failures.append(f"status_led_human_effect_review.ps1: live Volume step must instruct real microphone audio, missing {token}")
+            for stale in ("~LED:REC_LEVEL 0 4200", "~LED:REC_LEVEL 30 4200", "~LED:REC_LEVEL 65 4200", "~LED:REC_LEVEL 100 60000"):
+                if stale in live_text:
+                    failures.append(f"status_led_human_effect_review.ps1: live Volume step must not simulate audio with {stale}")
+        for stale in ('"~LED:PREVIEW capture_led_only"', '"~LED:PREVIEW recording_processing"'):
             if stale in volume_text:
-                failures.append(f"status_led_human_effect_review.ps1: Volume mode must not use mixed product preview {stale}")
+                failures.append(f"status_led_human_effect_review.ps1: Volume mode must not use stale preview {stale}")
     complex_block = re.search(
         r"function\s+Get-ComplexSteps\s*\{([\s\S]*?)\nfunction\s+Get-VolumeSteps",
         human_review,
@@ -940,6 +1079,7 @@ def main() -> int:
             "~LED:PREVIEW recording_processing_status_led_only",
             "~LED:PREVIEW capture_led_only",
             "~LED:PREVIEW processing_led_only",
+            "~LED:PREVIEW processing_status_led_only",
         ):
             if token not in complex_text:
                 failures.append(f"status_led_human_effect_review.ps1: Complex mode must use effect-only command {token}")
@@ -1043,6 +1183,36 @@ def main() -> int:
         failures.append("status_led.c: OK tail guard must explicitly clear LED5 when inactive")
     if "frame->status[STATUS_LED_SEM_WARN] = (status_led_rgb_t){0};" not in status_led:
         failures.append("status_led.c: WARN tail guard must explicitly clear LED6 when inactive")
+    if "status_led_status_tail_overlap_static_percent_locked" in status_led:
+        failures.append("status_led.c: REC+AI overlap must not use the fixed static helper after dynamic LED3/4 retune")
+    for stale_helper in (
+        "status_led_status_tail_safe_dynamic_percent_locked",
+        "status_led_status_tail_safe_range_percent_locked",
+        "status_led_status_tail_overlap_dynamic_percent_locked",
+        "status_led_status_tail_overlap_eased_wave_percent_locked",
+    ):
+        if stale_helper in status_led:
+            failures.append(f"status_led.c: REC+AI status rendering must not keep stale overlap helper {stale_helper}")
+    if not re.search(
+        r"static\s+uint8_t\s+status_led_recording_status_percent_locked[\s\S]*?"
+        r"status_led_recording_level_effect_percent_locked\(now_ms\)[\s\S]*?"
+        r"status_led_status_tail_desired_for_effect_percent_locked",
+        status_led,
+    ):
+        failures.append("status_led.c: REC status LED must use the smoothed rec_level effect through the tail-safe desired mapper")
+    if not re.search(
+        r"static\s+uint8_t\s+status_led_processing_status_percent_locked[\s\S]*?"
+        r"status_led_processing_thinking_effect_percent_locked\(now_ms\)[\s\S]*?"
+        r"status_led_status_tail_desired_for_effect_percent_locked",
+        status_led,
+    ):
+        failures.append("status_led.c: AI status LED must use the smooth thinking pulse effect through the tail-safe desired mapper")
+    if not re.search(
+        r"static\s+uint8_t\s+status_led_status_tail_reinforce_write_count[\s\S]*?"
+        r"STATUS_LED_STATUS_TAIL_OVERLAP_REINFORCE_WRITES",
+        status_led,
+    ):
+        failures.append("status_led.c: REC+AI overlap must limit status-tail reinforce writes to the overlap write count")
     if not re.search(
         r"void\s+status_led_notify_shutdown_confirm\([^)]*\)[\s\S]*?"
         r"s_state\.low_power_disabled\s*=\s*false;[\s\S]*?"
@@ -1058,6 +1228,27 @@ def main() -> int:
         failures.append(
             "status_led_strip_backend.c: RMT strip channels must use SOC_RMT_MEM_WORDS_PER_CHANNEL so all four V2 LED zones can initialize"
         )
+    if not re.search(r"\.flags\.with_dma\s*=\s*with_dma\b", status_led_backend):
+        failures.append("status_led_strip_backend.c: RMT TX DMA must be selectable per strip")
+    if not re.search(
+        r"bool\s+status_led_strip_backend_uses_dma\([^)]*\)[\s\S]*?"
+        r"backend\s*!=\s*NULL[\s\S]*?backend->available[\s\S]*?backend->dma_enabled",
+        status_led_backend,
+    ):
+        failures.append("status_led_strip_backend.c: runtime status must expose whether each available strip uses RMT TX DMA")
+    if (
+        "rmt_tx_dma_strategy=status_strip_priority_single_rmt_dma_channel" not in status_led or
+        "rmt_tx_dma_actual=status:%u,ec11:%u,key:%u,edge:%u" not in status_led or
+        "rmt_tx_dma_fallback=status:%u,ec11:%u,key:%u,edge:%u" not in status_led
+    ):
+        failures.append("status_led.c: ~LED:STATUS contract must expose status-only RMT TX DMA strategy and per-strip actual state")
+    if not re.search(
+        r"status_led_strip_backend_new_channel\(backend,\s*channel_with_dma\);[\s\S]*?"
+        r"falling back to non-DMA RMT[\s\S]*?"
+        r"status_led_strip_backend_new_channel\(backend,\s*channel_with_dma\)",
+        status_led_backend,
+    ):
+        failures.append("status_led_strip_backend.c: DMA-preferring strip init must fall back to non-DMA RMT if DMA channel allocation fails")
     if not re.search(
         r"status_led_strip_backend_fill_pixels\(backend, color_order, colors\);[\s\S]*?"
         r"rmt_encoder_reset\(backend->encoder\);[\s\S]*?"

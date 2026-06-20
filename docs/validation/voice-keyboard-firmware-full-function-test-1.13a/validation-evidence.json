@@ -2,12 +2,12 @@
   "schema_version": 1,
   "plan": "voice-keyboard-firmware-full-function-test",
   "step_id": "1.13a",
-  "generated_at": "2026-06-19T19:33:51.5139534+08:00",
+  "generated_at": "2026-06-20T15:50:21.7984566+08:00",
   "result": "PASS",
   "repo_root": "C:\\Users\\Billy\\Desktop\\Denzic\\Listener\\Listener-Firmware",
   "worktree": "C:\\Users\\Billy\\Desktop\\Denzic\\Listener\\Listener-Firmware-wt-oai1-voice-keyboard-firmware-full-function-test-1.13a",
   "branch": "ai/oai1-voice-keyboard-firmware-full-function-test-1.13a",
-  "commit": "2284afd3aedc75a1182d27643def33f013aa27d8",
+  "commit": "08e196701ccc5db0ae4c676de1e54cc4b5be3767",
   "branch_mode": "branch_required",
   "timeout_seconds": 120,
   "commands": [
@@ -17,11 +17,11 @@
       "runnable": true,
       "worktree": "C:\\Users\\Billy\\Desktop\\Denzic\\Listener\\Listener-Firmware-wt-oai1-voice-keyboard-firmware-full-function-test-1.13a",
       "branch": "ai/oai1-voice-keyboard-firmware-full-function-test-1.13a",
-      "commit": "2284afd3aedc75a1182d27643def33f013aa27d8",
+      "commit": "08e196701ccc5db0ae4c676de1e54cc4b5be3767",
       "status": "PASS",
-      "started_at": "2026-06-19T19:33:40.1105333+08:00",
-      "finished_at": "2026-06-19T19:33:40.7979648+08:00",
-      "duration_ms": 687,
+      "started_at": "2026-06-20T15:50:09.9705950+08:00",
+      "finished_at": "2026-06-20T15:50:10.6438942+08:00",
+      "duration_ms": 673,
       "exit_code": 0,
       "timed_out": false,
       "stdout_summary": [
@@ -38,11 +38,11 @@
       "runnable": true,
       "worktree": "C:\\Users\\Billy\\Desktop\\Denzic\\Listener\\Listener-Firmware-wt-oai1-voice-keyboard-firmware-full-function-test-1.13a",
       "branch": "ai/oai1-voice-keyboard-firmware-full-function-test-1.13a",
-      "commit": "2284afd3aedc75a1182d27643def33f013aa27d8",
+      "commit": "08e196701ccc5db0ae4c676de1e54cc4b5be3767",
       "status": "PASS",
-      "started_at": "2026-06-19T19:33:40.8327821+08:00",
-      "finished_at": "2026-06-19T19:33:42.1157510+08:00",
-      "duration_ms": 1283,
+      "started_at": "2026-06-20T15:50:10.6809983+08:00",
+      "finished_at": "2026-06-20T15:50:11.9562499+08:00",
+      "duration_ms": 1275,
       "exit_code": 0,
       "timed_out": false,
       "stdout_summary": [
@@ -59,11 +59,11 @@
       "runnable": true,
       "worktree": "C:\\Users\\Billy\\Desktop\\Denzic\\Listener\\Listener-Firmware-wt-oai1-voice-keyboard-firmware-full-function-test-1.13a",
       "branch": "ai/oai1-voice-keyboard-firmware-full-function-test-1.13a",
-      "commit": "2284afd3aedc75a1182d27643def33f013aa27d8",
+      "commit": "08e196701ccc5db0ae4c676de1e54cc4b5be3767",
       "status": "PASS",
-      "started_at": "2026-06-19T19:33:42.1172588+08:00",
-      "finished_at": "2026-06-19T19:33:50.2527147+08:00",
-      "duration_ms": 8135,
+      "started_at": "2026-06-20T15:50:11.9575829+08:00",
+      "finished_at": "2026-06-20T15:50:20.4385428+08:00",
+      "duration_ms": 8481,
       "exit_code": 0,
       "timed_out": false,
       "stdout_summary": [
@@ -76,7 +76,7 @@
         "Running ninja in directory C:\\Users\\Billy\\AppData\\Local\\Temp\\listener-idf-build-b0de1f0c5acb",
         "Executing \"ninja all\"...",
         "[1/4] C:\\Windows\\system32\\cmd.exe /C \"cd /D C:\\Users\\Billy\\AppData\\Local\\Temp\\listener-idf-build-b0de1f0c5acb\\esp-idf\\esptool_py && C:\\Users\\Billy\\.espressif\\python_env\\idf5.5_py3.11_env\\Scripts\\python.exe C:/Users/Billy/esp/esp-idf/components/partition_table/check_sizes.py --offset 0x8000 partition --type app C:/Users/Billy/AppData/Local/Temp/listener-idf-build-b0de1f0c5acb/partition_table/partition-table.bin C:/Users/Billy/AppData/Local/Temp/listener-idf-build-b0de1f0c5acb/voice-keyboard-firmware.bin\"\r",
-        "voice-keyboard-firmware.bin binary size 0xcdb80 bytes. Smallest app partition is 0x600000 bytes. 0x532480 bytes (87%) free.\r\r",
+        "voice-keyboard-firmware.bin binary size 0xcea50 bytes. Smallest app partition is 0x600000 bytes. 0x5315b0 bytes (87%) free.\r\r",
         "[2/4] Performing build step for 'bootloader'\r",
         "[1/1] C:\\Windows\\system32\\cmd.exe /C \"cd /D C:\\Users\\Billy\\AppData\\Local\\Temp\\listener-idf-build-b0de1f0c5acb\\bootloader\\esp-idf\\esptool_py && C:\\Users\\Billy\\.espressif\\python_env\\idf5.5_py3.11_env\\Scripts\\python.exe C:/Users/Billy/esp/esp-idf/components/partition_table/check_sizes.py --offset 0x8000 bootloader 0x0 C:/Users/Billy/AppData/Local/Temp/listener-idf-build-b0de1f0c5acb/bootloader/bootloader.bin\"\r\r",
         "Bootloader binary size 0x51b0 bytes. 0x2e50 bytes (36%) free.\r\r\r",
@@ -106,7 +106,7 @@
         "To free up even more space, remove installation packages of those tools.",
         "Use option python.exe C:\\Users\\Billy\\esp\\esp-idf\\tools\\idf_tools.py uninstall --remove-archives."
       ],
-      "output_sha256": "8e2212aacbcb1e983e6e7348650cd3cbddb68018c08d045e4193f91c7825b50f",
+      "output_sha256": "742933bc612e0da5a66bdd86f13e21e57140923d4c8703c9d47d3e7e0183366b",
       "evidence_refs": [],
       "artifacts": []
     },
@@ -116,11 +116,11 @@
       "runnable": true,
       "worktree": "C:\\Users\\Billy\\Desktop\\Denzic\\Listener\\Listener-Firmware-wt-oai1-voice-keyboard-firmware-full-function-test-1.13a",
       "branch": "ai/oai1-voice-keyboard-firmware-full-function-test-1.13a",
-      "commit": "2284afd3aedc75a1182d27643def33f013aa27d8",
+      "commit": "08e196701ccc5db0ae4c676de1e54cc4b5be3767",
       "status": "PASS",
-      "started_at": "2026-06-19T19:33:50.2543587+08:00",
-      "finished_at": "2026-06-19T19:33:50.9270477+08:00",
-      "duration_ms": 673,
+      "started_at": "2026-06-20T15:50:20.4404004+08:00",
+      "finished_at": "2026-06-20T15:50:21.1118335+08:00",
+      "duration_ms": 671,
       "exit_code": 0,
       "timed_out": false,
       "stdout_summary": [],
@@ -135,10 +135,10 @@
       "runnable": false,
       "worktree": "C:\\Users\\Billy\\Desktop\\Denzic\\Listener\\Listener-Firmware-wt-oai1-voice-keyboard-firmware-full-function-test-1.13a",
       "branch": "ai/oai1-voice-keyboard-firmware-full-function-test-1.13a",
-      "commit": "2284afd3aedc75a1182d27643def33f013aa27d8",
+      "commit": "08e196701ccc5db0ae4c676de1e54cc4b5be3767",
       "status": "RECORDED",
-      "started_at": "2026-06-19T19:33:50.9294323+08:00",
-      "finished_at": "2026-06-19T19:33:50.9294323+08:00",
+      "started_at": "2026-06-20T15:50:21.1149010+08:00",
+      "finished_at": "2026-06-20T15:50:21.1149010+08:00",
       "duration_ms": 0,
       "exit_code": null,
       "timed_out": false,
@@ -147,20 +147,34 @@
       "output_sha256": null,
       "evidence_refs": [
         "artifact:docs/validation/voice-keyboard-firmware-full-function-test-1.13a/ad-hoc-led-stack-disposition.md",
-        "screenshot:docs/validation/voice-keyboard-firmware-full-function-test-1.13a/led-effect-static-model.png"
+        "screenshot:docs/validation/voice-keyboard-firmware-full-function-test-1.13a/led-effect-static-model.png",
+        "artifact:docs/validation/voice-keyboard-firmware-full-function-test-1.13a/status-ai-da-dada-balanced-contract-20260620-153153.log",
+        "artifact:docs/validation/voice-keyboard-firmware-full-function-test-1.13a/human-ai-da-dada-1950-summary.md"
       ],
       "artifacts": [
         {
           "ref": "artifact:docs/validation/voice-keyboard-firmware-full-function-test-1.13a/ad-hoc-led-stack-disposition.md",
           "path": "docs/validation/voice-keyboard-firmware-full-function-test-1.13a/ad-hoc-led-stack-disposition.md",
           "exists": true,
-          "sha256": "add3d3d4284d6cbe85beaf878c0bd5a1db6cbaf48beeae6bc76815c8553a3e01"
+          "sha256": "214b9fa2d7980520023d32cb7bac064be9b3eaf2b90ece73cfc48ffbd42d084e"
         },
         {
           "ref": "screenshot:docs/validation/voice-keyboard-firmware-full-function-test-1.13a/led-effect-static-model.png",
           "path": "docs/validation/voice-keyboard-firmware-full-function-test-1.13a/led-effect-static-model.png",
           "exists": true,
           "sha256": "cc454b74f17e9675dfa37c9dda2b972578d5acc7a1dcdc1c6ee4127512341035"
+        },
+        {
+          "ref": "artifact:docs/validation/voice-keyboard-firmware-full-function-test-1.13a/status-ai-da-dada-balanced-contract-20260620-153153.log",
+          "path": "docs/validation/voice-keyboard-firmware-full-function-test-1.13a/status-ai-da-dada-balanced-contract-20260620-153153.log",
+          "exists": true,
+          "sha256": "a93e799211fea56fc05653b58c2ca000b75cdb31cfe0510eb012eee5f9490e8e"
+        },
+        {
+          "ref": "artifact:docs/validation/voice-keyboard-firmware-full-function-test-1.13a/human-ai-da-dada-1950-summary.md",
+          "path": "docs/validation/voice-keyboard-firmware-full-function-test-1.13a/human-ai-da-dada-1950-summary.md",
+          "exists": true,
+          "sha256": "1edf75a070d07e25346d4e037f9bcf26da13ea319466f3bb436d07b2e54bc873"
         }
       ]
     },
@@ -170,16 +184,23 @@
       "runnable": true,
       "worktree": "C:\\Users\\Billy\\Desktop\\Denzic\\Listener\\Listener-Firmware-wt-oai1-voice-keyboard-firmware-full-function-test-1.13a",
       "branch": "ai/oai1-voice-keyboard-firmware-full-function-test-1.13a",
-      "commit": "2284afd3aedc75a1182d27643def33f013aa27d8",
+      "commit": "08e196701ccc5db0ae4c676de1e54cc4b5be3767",
       "status": "PASS",
-      "started_at": "2026-06-19T19:33:50.9379770+08:00",
-      "finished_at": "2026-06-19T19:33:51.5128798+08:00",
-      "duration_ms": 575,
+      "started_at": "2026-06-20T15:50:21.1253260+08:00",
+      "finished_at": "2026-06-20T15:50:21.7973645+08:00",
+      "duration_ms": 672,
       "exit_code": 0,
       "timed_out": false,
       "stdout_summary": [],
-      "stderr_summary": [],
-      "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderr_summary": [
+        "warning: in the working copy of 'components/status_led/status_led.c', LF will be replaced by CRLF the next time Git touches it",
+        "warning: in the working copy of 'docs/features/status_led.md', LF will be replaced by CRLF the next time Git touches it",
+        "warning: in the working copy of 'docs/validation/voice-keyboard-firmware-full-function-test-1.13a/ad-hoc-led-stack-disposition.md', LF will be replaced by CRLF the next time Git touches it",
+        "warning: in the working copy of 'ports/esp32/audio_capture/audio_capture_esp32.c', LF will be replaced by CRLF the next time Git touches it",
+        "warning: in the working copy of 'tools/status_led_human_effect_review.ps1', LF will be replaced by CRLF the next time Git touches it",
+        "warning: in the working copy of 'tools/verify_status_led_static.py', LF will be replaced by CRLF the next time Git touches it"
+      ],
+      "output_sha256": "5f39c0c8fcccc55941cde08e1fb4ea9258ccd04aae54c0c3e8cb4e71eb21306b",
       "evidence_refs": [],
       "artifacts": []
     }

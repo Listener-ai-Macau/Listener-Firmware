@@ -42,13 +42,15 @@ function New-LedReviewStep {
         [Parameter(Mandatory = $true)][string]$Expected,
         [Parameter(Mandatory = $true)][string]$HumanFocus,
         [string]$When = "",
-        [string]$PassRule = ""
+        [string]$PassRule = "",
+        [string[]]$PostCommands = @()
     )
 
     [PSCustomObject]@{
         id = $Id
         title = $Title
         commands = @($Commands)
+        post_commands = @($PostCommands)
         when = $When
         expected = $Expected
         human_focus = $HumanFocus
@@ -117,7 +119,7 @@ function Get-FoundationSteps {
             -Id "recording-processing-tail" `
             -Title "录音+处理中状态尾灯隔离" `
             -Commands @("~LED:PREVIEW recording_processing_status_led_only", "~LED:STATUS", "~LED:STATUS", "~LED:STATUS") `
-            -Expected "专用 effect-only 状态轨：只有 LED3 金色录音和 LED4 紫色/蓝紫处理参与；PWR/BLE、旋钮、边框不参与；LED5/OK 和 LED6/WARN 必须保持熄灭。" `
+            -Expected "专用 effect-only 状态轨：只有 LED3 金色录音和 LED4 固定紫色处理参与；PWR/BLE、旋钮、边框不参与；LED5/OK 和 LED6/WARN 必须保持熄灭。" `
             -HumanFocus "重点观察 5/6 是否不规则跟着 3/4 闪同样颜色；~LED:STATUS 必须显示 preview_effect_only=1。"
         New-LedReviewStep `
             -Id "key-led11-white-35" `
@@ -211,7 +213,7 @@ function Get-SceneSteps {
             -Commands @("~LED:PREVIEW recording_processing", "~LED:REC_LEVEL 75 60000", "~LED:STATUS", "~LED:STATUS", "~LED:STATUS") `
             -When "设备正在录音并且桌面端已经发 `VREC:PROCESSING:START`；PWR/BLE 仍表达电源和连接，REC/AI 同时表达工作状态。" `
             -Expected "真实产品预览：PWR/BLE 应保持独立可读，REC 暖金和 AI 紫色同时存在；旋钮/边框用低亮暖金底光加慢速低幅流动参与，不跟 PCM 变亮、不高频跳；LED5/OK 和 LED6/WARN 不应出现。" `
-            -HumanFocus "这一步重点复查 5/6 闪烁：状态 REC/AI 可有轻微呼吸但不要乱闪；旋钮/边框应有一点固定变化，OK/WARN 必须保持灭。"
+            -HumanFocus "这一步重点复查 5/6 闪烁：状态 REC 可随音量变化，AI 固定紫色并只做哒  停顿  紧凑哒哒的思考节奏；旋钮/边框应有一点固定变化，OK/WARN 必须保持灭。"
         New-LedReviewStep `
             -Id "scene-processing-live" `
             -Title "产品场景：AI 处理中（未录音）" `
@@ -293,15 +295,22 @@ function Get-ComplexSteps {
             -Title "复杂灯效：仅录音 暖金旋转底光" `
             -Commands @("~LED:PREVIEW capture_led_only", "~LED:REC_LEVEL 75 60000", "~LED:STATUS", "~LED:STATUS", "~LED:STATUS") `
             -When "只调录音中的高级灯效；真实产品中对应用户按下录音后、AI 还未开始处理时的 REC/旋钮/板框表达。" `
-            -Expected "专用 effect-only 预览：LED3 暖金录音只有轻微慢呼吸；按键灯不参与；旋钮 12 颗、边框 6 颗为低亮暖金底光加慢速固定流动，不跟音量变化、不高频跳；LED5/6 应保持熄灭。" `
+            -Expected "专用 effect-only 预览：LED3 暖金录音应按模拟 rec_level 平滑亮起；按键灯不参与；旋钮 12 颗、边框 6 颗为低亮暖金底光加慢速固定流动，不跟 PCM 亮度跳变；LED5/6 应保持熄灭。" `
             -HumanFocus "看单独录音是否稳定且不是死灯：颜色偏金黄而不是红，旋钮/边框有一点固定变化但不能跳闪，~LED:STATUS 必须显示 preview_effect_only=1。"
         New-LedReviewStep `
             -Id "complex-processing-only" `
             -Title "复杂灯效：仅处理 紫色环绕" `
             -Commands @("~LED:PREVIEW processing_led_only", "~LED:STATUS", "~LED:STATUS", "~LED:STATUS") `
             -When "只调 AI/处理中的高级灯效；真实产品中对应 host-confirmed processing/OTA 阶段的 AI 紫色语义和旋钮/板框辅助。" `
-            -Expected "专用 effect-only 预览：LED4 紫色处理可低频量化呼吸；按键灯不参与；旋钮底座和边框都应低亮紫色顺时针转动；LED5/6 应保持熄灭，且查询状态不应导致重启。" `
+            -Expected "专用 effect-only 预览：LED4 紫色处理为哒  哒哒的 AI 思考节奏；按键灯不参与；旋钮底座和边框都应低亮紫色顺时针转动；LED5/6 应保持熄灭，且查询状态不应导致重启。" `
             -HumanFocus "看单独处理是否顺时针、克制、稳定；状态灯不能是死灯，也不能让 LED5/6 跟闪；~LED:STATUS 必须显示 preview_effect_only=1。"
+        New-LedReviewStep `
+            -Id "complex-ai-status-only" `
+            -Title "复杂灯效：仅 AI 状态灯哒 哒哒" `
+            -Commands @("~LED:PREVIEW processing_status_led_only", "~LED:STATUS", "~LED:STATUS", "~LED:STATUS") `
+            -When "隔离检查 AI 单灯高级灯效；不让 PWR/BLE、REC、旋钮、按键、板框参与。" `
+            -Expected "专用 effect-only 状态轨：只有 LED4/AI 紫色哒  哒哒节奏，然后回到低亮保持；LED1/2/3/5/6、旋钮、按键、边框都应熄灭。" `
+            -HumanFocus "重点看 AI 单灯是否是哒、停顿、哒哒的节奏，高级但不刺眼、不像故障闪烁；LED5/6 不能跟着 LED4 闪，~LED:STATUS 必须显示 preview_effect_only=1 且 OK/WARN 为 0。"
         New-LedReviewStep `
             -Id "complex-shutdown-confirm" `
             -Title "复杂灯效：长按关机确认" `
@@ -317,27 +326,20 @@ function Get-VolumeSteps {
     $steps = @(
         New-LedReviewStep `
             -Id "volume-capture-sweep" `
-            -Title "音量响应：录音固定流动抗闪" `
+            -Title "音量响应：录音灯按音量变亮抗闪" `
             -Commands @(
-                "~LED:PREVIEW capture_led_only",
-                "~LED:REC_LEVEL 0 2200",
-                "WAIT 1300",
-                "~LED:REC_LEVEL 30 2200",
-                "WAIT 1300",
-                "~LED:REC_LEVEL 65 2200",
-                "WAIT 1300",
-                "~LED:REC_LEVEL 100 60000",
-                "WAIT 2200",
+                "~LED:PREVIEW capture",
+                "WAIT 12000",
                 "~LED:STATUS") `
-            -When "回归录音稳定性；命令仍模拟 0/30/65/100 rec_level，但当前产品策略不再用 PCM 电平驱动灯效亮度。" `
-            -Expected "专用 effect-only 预览：LED3/REC 只有轻微慢呼吸，旋钮全圈和边框 6 颗保持低亮暖金底光加慢速固定流动；四档 rec_level 不应造成明显亮度跳变或高频扫动；按键灯、PWR/BLE 不参与；LED5/6 必须灭。" `
-            -HumanFocus "这是抗闪验收：点确定后盯着灯，每档约 2 秒；重点看 5/6 是否还会绿/红闪、旋钮/边框是否有稳定固定变化，~LED:STATUS 必须显示 preview_effect_only=1。"
+            -When "真实录音场景；不发送 REC_LEVEL 档位，直接用麦克风实时音量驱动 LED3，通过限幅路径验证录音灯音量响应。" `
+            -Expected "真实录音场景预览：安静时 LED3/REC 保持低亮或弱亮，靠近麦克风说话、拍手或敲击时 LED3 明显变亮，回到安静后变暗；过渡不能突跳或高频闪；PWR/BLE 可保持自己的在线状态；旋钮全圈和边框 6 颗保持低亮暖金底光加慢速固定流动，不跟音量跳变；按键灯不参与；LED5/6 必须灭。" `
+            -HumanFocus "这是真实音量响应抗闪验收：点确定后先安静约 2 秒，再对麦克风说话、拍手或轻敲约 6 秒，再安静约 2 秒；重点看 LED3 是否直接跟真实声音大小变亮变暗、5/6 是否还会绿/红闪、旋钮/边框是否稳定，~LED:STATUS 必须显示 preview_effect_only=0 和 recording_level_reactive=1。"
         New-LedReviewStep `
             -Id "volume-overlap-high" `
             -Title "音量响应：录音+处理 高音量叠加" `
-            -Commands @("~LED:PREVIEW recording_processing_led_only", "~LED:REC_LEVEL 100 60000", "WAIT 1800", "~LED:STATUS", "WAIT 700", "~LED:STATUS", "WAIT 700", "~LED:STATUS") `
-            -Expected "专用 effect-only 预览：REC 暖金和 AI 紫色语义可同时存在；按键灯、PWR/BLE 不参与；旋钮/边框保持低亮暖金底光和慢速低幅流动，不做同区金紫混色或高频扫动；LED5/6 必须灭，不应跟 LED3/4 闪。" `
-            -HumanFocus "这是最接近之前闪烁痛点的稳定性验收：重点看旋钮/边框是否低亮慢速流动、是否有 5/6 跟闪或随机绿闪；~LED:STATUS 必须显示 preview_effect_only=1。"
+            -Commands @("~LED:PREVIEW recording_processing_led_only", "~LED:REC_LEVEL 100 60000", "WAIT 5200", "~LED:STATUS", "WAIT 900", "~LED:STATUS", "WAIT 900", "~LED:STATUS") `
+            -Expected "专用 effect-only 预览：REC 暖金应保持高音量亮度，AI 应一直是紫色，只用亮度做哒  哒哒思考节奏；按键灯、PWR/BLE 不参与；旋钮/边框保持低亮暖金底光和慢速低幅流动，不做同区金紫混色或高频扫动；LED5/6 必须灭，不应跟 LED3/4 闪。" `
+            -HumanFocus "这是最接近之前闪烁痛点的稳定性验收：点确定后先看 LED4 是否固定紫色、是否像哒、停顿、哒哒的 AI 思考节奏而不是普通呼吸灯，再看 LED3 高音量、旋钮/边框低亮慢速流动，以及是否有 5/6 跟闪或随机绿闪；~LED:STATUS 必须显示 preview_effect_only=1。"
     )
     return @($steps)
 }
@@ -441,12 +443,13 @@ function Get-ReproSteps {
 function Get-TailOnlySteps {
     $steps = @(
         New-LedReviewStep `
-            -Id "tail-only-recording-processing-dynamic" `
-            -Title "1.9目标确认：录音+处理中状态尾灯低幅可见慢动态" `
-            -Commands @("~LED:BRIGHTNESS 100", "~LED:PREVIEW recording_processing_status_led_only", "~LED:STATUS", "WAIT 1600", "~LED:STATUS", "WAIT 1600", "~LED:STATUS") `
-            -Expected "专用 effect-only 状态轨：只有 LED3/REC 暖金和 LED4/AI 紫色/蓝紫做低幅但可见的慢动态；PWR/BLE、旋钮、按键、边框都应熄灭；LED5/OK 和 LED6/WARN 在软件状态和肉眼观察中都必须保持熄灭。" `
-            -HumanFocus "重点看 LED3/4 是否有柔和可见的慢变化且不抖，以及 LED5/6 是否不再跟着 3/4 闪同色、绿/红或随机闪。" `
-            -PassRule "LED3/4 有低幅可见慢动态且不刺眼，LED5/6 全程不跟闪，~LED:STATUS 显示 preview_effect_only=1 且 OK/WARN 为 0。"
+            -Id "tail-only-ai-da-dada-grouped" `
+            -Title "1.9目标确认：AI 单灯哒 哒哒" `
+            -Commands @("~LED:BRIGHTNESS 100", "~LED:PREVIEW processing_status_led_only", "WAIT 6200") `
+            -Expected "专用 effect-only 状态轨：只有 LED4/AI 固定紫色，亮度呈短促哒、明显停顿、紧凑哒哒，然后到下一轮一闪前有更长停顿；LED1/2/3/5/6、旋钮、按键、边框都应熄灭。" `
+            -HumanFocus "重点看 LED4 是否有清楚的哒、停顿、后两闪连在一起成一组哒哒、再长停顿到下一轮一闪的 AI 思考节奏，而不是普通呼吸或故障闪烁；LED5/6 不能跟着 LED4 亮或闪。" `
+            -PassRule "LED4 固定紫色哒  哒哒节奏可读，双闪到下一轮一闪之间的停顿清楚，后两闪像一个小组，不抖不刺眼；LED5/6 全程不跟闪，~LED:STATUS 显示 preview_effect_only=1 且 OK/WARN 为 0。" `
+            -PostCommands @("~LED:STATUS", "~POWER:STATUS")
     )
     return @($steps)
 }
@@ -456,11 +459,12 @@ function Get-ComboOnlySteps {
         New-LedReviewStep `
             -Id "combo-recording-processing-dynamic" `
             -Title "1.9目标确认：录音+处理与旋钮/板框低负载组合" `
-            -Commands @("~LED:BRIGHTNESS 100", "~LED:PREVIEW recording_processing_led_only", "~LED:REC_LEVEL 100 60000", "WAIT 1600", "~LED:STATUS", "WAIT 900", "~LED:STATUS", "WAIT 900", "~LED:STATUS") `
+            -Commands @("~LED:BRIGHTNESS 100", "~LED:PREVIEW recording_processing_led_only", "~LED:REC_LEVEL 100 60000", "WAIT 7000") `
             -When "调校录音+AI 同时存在时的组合灯效：状态 REC/AI、旋钮底座、板框一起参与，不让 PWR/BLE/按键参与。" `
-            -Expected "专用 effect-only 组合预览：LED3/REC 暖金和 LED4/AI 紫色/蓝紫有低幅可见慢动态；旋钮 12 颗和边框 6 颗有低亮暖金底光加慢速低幅流动；按键、PWR/BLE 不参与；LED5/OK 和 LED6/WARN 必须保持熄灭。" `
-            -HumanFocus "重点看整体是否稳定：状态灯应只有柔和慢变化；旋钮、板框应低亮慢速流动；LED5/6 不能跟闪、乱闪或被误点亮。" `
-            -PassRule "状态 REC/AI 低幅可见慢动态且不刺眼，旋钮/板框低亮慢速流动，LED5/6 全程不跟闪，~LED:STATUS 显示 preview_effect_only=1 且 OK/WARN 为 0。"
+            -Expected "专用 effect-only 组合预览：LED3/REC 暖金保持高音量亮度，LED4/AI 固定紫色短促哒、明显停顿、紧凑哒哒；旋钮 12 颗和边框 6 颗有低亮暖金底光加慢速低幅流动；按键、PWR/BLE 不参与；LED5/OK 和 LED6/WARN 必须保持熄灭。" `
+            -HumanFocus "重点看整体是否稳定：状态 LED3 高音量应可读，LED4 应固定紫色并有哒、停顿、后两闪成组的哒哒、再停顿 AI 思考节奏但不抖；旋钮、板框应低亮慢速流动；LED5/6 不能跟闪、乱闪或被误点亮。" `
+            -PassRule "状态 REC 高音量可读，AI 是固定紫色哒  哒哒节奏且停顿感清楚、后两闪成组、不刺眼，旋钮/板框低亮慢速流动，LED5/6 全程不跟闪，~LED:STATUS 显示 preview_effect_only=1 且 OK/WARN 为 0。" `
+            -PostCommands @("~LED:STATUS", "~POWER:STATUS")
     )
     return @($steps)
 }
@@ -529,15 +533,16 @@ function Write-PlanMarkdown {
     $lines.Add("- Foundation first: one commanded LED means one physical LED; all other LEDs stay off.") | Out-Null
     $lines.Add("- Brightness must be monotonic by eye: 10% < 35% < 70%, with no saturation plateau at normal settings.") | Out-Null
     $lines.Add("- During recording/processing, status LED3 and LED4 may use capped, slow, quantized brightness changes; LED5/OK and LED6/WARN must stay off unless success/error owns them.") | Out-Null
-    $lines.Add("- Volume mode still sends `~LED:REC_LEVEL` review commands, but current product rendering treats recording as a deterministic low-load effect instead of PCM-driven brightness; this pass uses effect-only preview commands so PWR/BLE, live reconnects, and charge-state changes do not participate in the judged effect.") | Out-Null
-    $lines.Add("- EC11 and edge/frame LEDs are independent accent surfaces. For this pass, REC uses a low-load warm-gold base with slow fixed flow, AI-only uses a violet orbit, REC+AI overlap keeps the warm-gold recording cue instead of same-zone color mixing, and physical EC11 input uses brief white knob feedback. Key LEDs stay off unless there is a real key event or a diagnostic stress step.") | Out-Null
+    $lines.Add("- Volume mode uses real capture preview and expects only status LED3 to follow the smoothed bounded live-audio envelope; `~LED:REC_LEVEL` remains only for the overlap/high-level diagnostic step.") | Out-Null
+    $lines.Add("- EC11 and edge/frame LEDs are independent accent surfaces. For this pass, REC volume changes only the status REC LED through a bounded envelope, AI stays static purple and uses a brightness-only grouped da-dada thinking beat, REC+AI overlap keeps the warm-gold recording cue instead of same-zone color mixing, and physical EC11 input uses brief white knob feedback. Key LEDs stay off unless there is a real key event or a diagnostic stress step.") | Out-Null
     $lines.Add("- Complex mode uses effect-only preview commands for REC/AI, EC11, and edge/frame validation; ordinary product previews remain in Scenes, not in the LED-effect tuning pass.") | Out-Null
     $lines.Add("- RootCause mode temporarily lowers global brightness to test whether the visible 5/6 flicker is brightness/electrical-threshold sensitive, then restores brightness to 50%.") | Out-Null
     $lines.Add("- StaticRoot mode compares fixed REC+AI output with and without a status query, separating dynamic-refresh flicker from static physical bleed or query/log interference.") | Out-Null
+    $lines.Add("- TailOnly and ComboOnly collect `~LED:STATUS` after the human observation result, so serial status sampling and log output do not disturb the visible effect while the operator is watching.") | Out-Null
     $lines.Add("- Repro mode intentionally drives the status rail and key LEDs with a known-bad broad dynamic pattern while keeping software OK/WARN at zero, so human observation can separate logical status from physical cross-zone disturbance.") | Out-Null
-    $lines.Add("- TailOnly mode is a narrow 1.9 confirmation: REC+AI status-tail remains visibly but gently dynamic while LED5/OK and LED6/WARN stay physically and logically off.") | Out-Null
+    $lines.Add("- TailOnly mode is a narrow 1.9 confirmation: AI-only and REC+AI status-tail effects remain visibly but gently dynamic while LED5/OK and LED6/WARN stay physically and logically off.") | Out-Null
     $lines.Add("- ComboOnly mode is a narrow 1.9 confirmation for the combined REC+AI, EC11, and edge/frame effect without PWR/BLE/key participation.") | Out-Null
-    $lines.Add("- Product direction for this pass: quiet but alive semantic status rail; blue BLE for connected/pairing/reconnect states, user re-pair uses BLE plus a low blue EC11 confirmation with edge/frame off, recording uses low-load warm-gold fixed flow, processing accents move clockwise, EC11 press/rotate uses short white feedback, green OK only for success, amber/red WARN only for errors, and warm amber PWR+EC11 for shutdown confirmation.") | Out-Null
+    $lines.Add("- Product direction for this pass: quiet but alive semantic status rail; blue BLE for connected/pairing/reconnect states, user re-pair uses BLE plus a low blue EC11 confirmation with edge/frame off, recording status reacts smoothly to volume, processing shows a purple da-dada thinking beat, EC11 press/rotate uses short white feedback, green OK only for success, amber/red WARN only for errors, and warm amber PWR+EC11 for shutdown confirmation.") | Out-Null
     $lines.Add("") | Out-Null
     $lines.Add("## Review Steps") | Out-Null
     $lines.Add("") | Out-Null
@@ -546,6 +551,10 @@ function Write-PlanMarkdown {
     for ($i = 0; $i -lt $Steps.Count; $i++) {
         $step = $Steps[$i]
         $commands = ($step.commands | ForEach-Object { "``$_``" }) -join "<br>"
+        $postCommands = ($step.post_commands | ForEach-Object { "``$_``" }) -join "<br>"
+        if (-not [string]::IsNullOrWhiteSpace($postCommands)) {
+            $commands = "$commands<br>post-observation:<br>$postCommands"
+        }
         $row = "| {0} | {1} | {2} | {3} | {4} | {5} | {6} |" -f @(
             ($i + 1),
             $step.id,
@@ -669,6 +678,38 @@ function Send-SerialCommand {
     return Read-SerialFor -Serial $Serial -Milliseconds $ReadMilliseconds
 }
 
+function Invoke-LedReviewCommands {
+    param(
+        [Parameter(Mandatory = $true)][System.IO.Ports.SerialPort]$Serial,
+        [Parameter(Mandatory = $true)][string[]]$Commands
+    )
+
+    foreach ($command in @($Commands)) {
+        if ($command -match "^(WAIT|SLEEP)\s+(\d+)$") {
+            $waitMs = [int]$Matches[2]
+            $serialLines.Add(("> {0}" -f $command)) | Out-Null
+            $response = Read-SerialFor -Serial $Serial -Milliseconds $waitMs
+        } else {
+            $readMs = $CommandReadMs
+            if ($command -like "~LED:STATUS*" -and $readMs -lt 1800) {
+                $readMs = 1800
+            }
+            $response = Send-SerialCommand -Serial $Serial -Command $command -ReadMilliseconds $readMs
+            if ($command -like "~LED:STATUS*" -and [string]::IsNullOrWhiteSpace($response)) {
+                $extraResponse = Read-SerialFor -Serial $Serial -Milliseconds 1200
+                if (-not [string]::IsNullOrWhiteSpace($extraResponse)) {
+                    $response = $extraResponse
+                }
+            }
+        }
+        [PSCustomObject]@{
+            command = $command
+            response = $response
+        }
+        Start-Sleep -Milliseconds 100
+    }
+}
+
 function Get-StatusLines {
     param([Parameter(Mandatory = $true)][object[]]$Responses)
     $groups = [System.Collections.Generic.List[object]]::new()
@@ -764,7 +805,7 @@ function Get-LedSemanticText {
         "scene-key-feedback" { return "KEY=本地按键短白色反馈；REC、AI、OK、WARN、EC11、板框不参与。" }
         "scene-sleep" { return "睡眠/低功耗=全灭；BLE、AI、OK、WARN 都不应残留。" }
         "complex-capture-only" { return "REC=录音高级灯效；旋钮/边框做暖金辅助；PWR/BLE/AI/OK/WARN/按键不参与。" }
-        "volume-capture-sweep" { return "REC=录音固定流动抗闪；rec_level 不再驱动亮度层级；PWR/BLE/AI/OK/WARN 不参与。" }
+        "volume-capture-sweep" { return "REC=真实录音音量响应；麦克风实时音量只驱动状态 LED3 亮度；PWR/BLE 可保持自己的在线状态；AI/OK/WARN 不参与。" }
         "complex-recording-processing-product" { return "REC=录音暖金；AI=处理紫色语义；旋钮/边框保持低亮暖金慢速流动；OK/WARN 必须灭。" }
         "complex-processing-only" { return "AI=处理/OTA 紫色语义；旋钮/边框做低亮紫色顺时针辅助；REC、OK、WARN、按键不参与。" }
         default {
@@ -826,10 +867,10 @@ function Show-IntroPrompt {
 4. 短按旋钮、旋转旋钮、按键反馈。
 5. 睡眠熄灯。
 
-重点看人眼效果：LED5/6 是否乱闪，重配时 BLE 加低亮旋钮确认是否存在，LED3/4 是否有可见但不吵的变化，录音时旋钮 12 颗和边框 6 颗是否低亮且顺时针固定流动，实际旋钮/按键输入是否有短反馈且旋转反馈不会每格复位。
+重点看人眼效果：LED5/6 是否乱闪，重配时 BLE 加低亮旋钮确认是否存在，LED3 是否可随真实音量变亮，LED4 是否保持紫色并有哒  哒哒 AI 节奏，录音时旋钮 12 颗和边框 6 颗是否低亮且顺时针固定流动，实际旋钮/按键输入是否有短反馈且旋转反馈不会每格复位。
 每个场景弹窗都会写明应用时机和灯位语义：BLE 蓝灯只用于配对/重连/重配，AI 灯只用于 host-confirmed processing/OTA，OK 绿灯只用于成功确认，WARN 只用于错误/警告。
 
-共 $StepCount 个整体场景。准备好看板子后点“确定”；不方便就点“取消”。
+共 $StepCount 个整体场景。准备好看板子后点确定；不方便就点取消。
 "@
         $result = Show-TopMostMessageBox `
             -Message $message `
@@ -844,12 +885,12 @@ function Show-IntroPrompt {
 我希望看到的基础效果：
 1. 单灯命令只亮一个真实 LED，其他灯完全不跟亮。
 2. 亮度 10% / 35% / 70% 人眼递增，不能抖、不能平台化。
-3. 录音+处理中允许 LED3/REC 和 LED4/AI 做低频量化亮度变化，LED5/OK 与 LED6/WARN 必须灭，不能不规则跟前灯闪。
-4. 音量响应模式会模拟低/中/高 rec_level；当前产品策略要求灯效保持低亮固定流动，用它来判断是否还会因 rec_level 变化诱发闪烁。
+3. 录音+处理中允许 LED3/REC 随音量变亮、LED4/AI 做固定紫色哒  哒哒节奏，LED5/OK 与 LED6/WARN 必须灭，不能不规则跟前灯闪。
+4. 音量响应模式会使用真实麦克风音量；当前产品策略要求只有状态 LED3 跟随音量，旋钮/边框不跟 PCM 亮度跳变。
 5. 旋钮灯、按键灯、边框灯是独立区域，不能污染状态灯语义。
 
 接下来会逐步发串口命令，每一步弹窗让你记录看到的颜色、亮度、闪烁、串灯。
-共 $StepCount 步。准备好看板子后点“确定”；不方便就点“取消”。
+共 $StepCount 步。准备好看板子后点确定；不方便就点取消。
 "@
     $result = Show-TopMostMessageBox `
         -Message $message `
@@ -925,7 +966,11 @@ function Show-StepPrompt {
     $cmdBox.Multiline = $true
     $cmdBox.ReadOnly = $true
     $cmdBox.ScrollBars = "Vertical"
-    $cmdBox.Text = "命令：`r`n" + (($Step.commands | ForEach-Object { "  $_" }) -join "`r`n")
+    $commandText = "观察前命令：`r`n" + (($Step.commands | ForEach-Object { "  $_" }) -join "`r`n")
+    if (@($Step.post_commands).Count -gt 0) {
+        $commandText += "`r`n观察后证据命令：`r`n" + (($Step.post_commands | ForEach-Object { "  $_" }) -join "`r`n")
+    }
+    $cmdBox.Text = $commandText
     $form.Controls.Add($cmdBox)
     $y += 82
 
@@ -937,7 +982,11 @@ function Show-StepPrompt {
     $statusBox.Multiline = $true
     $statusBox.ReadOnly = $true
     $statusBox.ScrollBars = "Vertical"
-    $statusBox.Text = "串口状态（选中 $($StatusLines.selection)）：`r`n$($StatusLines.status_rgb)`r`n$($StatusLines.ec11_rgb)`r`n$($StatusLines.key_rgb)`r`n$($StatusLines.edge_rgb)`r`n$($StatusLines.summary)"
+    if ($StatusLines.selection_score -le 0) {
+        $statusBox.Text = "串口状态：`r`n观察期间不查询 STATUS；你点通过/失败后再采集状态，避免串口查询影响肉眼观察。"
+    } else {
+        $statusBox.Text = "串口状态（选中 $($StatusLines.selection)）：`r`n$($StatusLines.status_rgb)`r`n$($StatusLines.ec11_rgb)`r`n$($StatusLines.key_rgb)`r`n$($StatusLines.edge_rgb)`r`n$($StatusLines.summary)"
+    }
     $form.Controls.Add($statusBox)
     $y += 96
 
@@ -1086,7 +1135,7 @@ function Show-StepStartPrompt {
     $message = @"
 第 $Index / $Total 步即将开始：$($Step.title)
 
-点“确定”后我会立刻发送这一组串口命令，请马上看板子。
+点确定后我会立刻发送这一组串口命令，请马上看板子。
 
 应用时机：
 $whenText
@@ -1225,35 +1274,20 @@ try {
         }
         $serial = Open-SerialNoReset -PortName $portName
         [void](Read-SerialFor -Serial $serial -Milliseconds 180)
-        $responses = [System.Collections.Generic.List[object]]::new()
-        foreach ($command in @($step.commands)) {
-            if ($command -match "^(WAIT|SLEEP)\s+(\d+)$") {
-                $waitMs = [int]$Matches[2]
-                $serialLines.Add(("> {0}" -f $command)) | Out-Null
-                $response = Read-SerialFor -Serial $serial -Milliseconds $waitMs
-            } else {
-                $readMs = $CommandReadMs
-                if ($command -like "~LED:STATUS*" -and $readMs -lt 1800) {
-                    $readMs = 1800
-                }
-                $response = Send-SerialCommand -Serial $serial -Command $command -ReadMilliseconds $readMs
-                if ($command -like "~LED:STATUS*" -and [string]::IsNullOrWhiteSpace($response)) {
-                    $extraResponse = Read-SerialFor -Serial $serial -Milliseconds 1200
-                    if (-not [string]::IsNullOrWhiteSpace($extraResponse)) {
-                        $response = $extraResponse
-                    }
-                }
-            }
-            $responses.Add([PSCustomObject]@{
-                command = $command
-                response = $response
-            }) | Out-Null
-            Start-Sleep -Milliseconds 100
-        }
+        $responses = @(Invoke-LedReviewCommands -Serial $serial -Commands @($step.commands))
         Close-SerialQuiet -Serial $serial
         $serial = $null
-        $statusLines = Get-StatusLines -Responses $responses
-        $human = Show-StepPrompt -Step $step -Index ($index + 1) -Total $steps.Count -StatusLines $statusLines
+        $promptStatusLines = Get-StatusLines -Responses $responses
+        $human = Show-StepPrompt -Step $step -Index ($index + 1) -Total $steps.Count -StatusLines $promptStatusLines
+        $postResponses = @()
+        if (@($step.post_commands).Count -gt 0 -and $human.result -ne "ABORT") {
+            $serial = Open-SerialNoReset -PortName $portName
+            [void](Read-SerialFor -Serial $serial -Milliseconds 180)
+            $postResponses = @(Invoke-LedReviewCommands -Serial $serial -Commands @($step.post_commands))
+            Close-SerialQuiet -Serial $serial
+            $serial = $null
+        }
+        $statusLines = Get-StatusLines -Responses (@($responses) + @($postResponses))
         $record = [PSCustomObject]@{
             at = (Get-Date).ToString("o")
             mode = $Mode
@@ -1266,8 +1300,13 @@ try {
             expected = $step.expected
             human_focus = $step.human_focus
             commands = @($step.commands)
+            post_commands = @($step.post_commands)
             preclear_responses = @($preclearResponses)
             responses = @($responses)
+            post_responses = @($postResponses)
+            prompt_status_rgb = $promptStatusLines.status_rgb
+            prompt_status_summary = $promptStatusLines.summary
+            prompt_status_selection = $promptStatusLines.selection
             status_rgb = $statusLines.status_rgb
             ec11_rgb = $statusLines.ec11_rgb
             key_rgb = $statusLines.key_rgb

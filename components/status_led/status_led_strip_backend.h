@@ -32,6 +32,7 @@ typedef struct {
     uint8_t led_count;
     uint8_t tail_guard_pixels;
     status_led_color_order_t color_order;
+    bool prefer_dma;
 } status_led_strip_backend_config_t;
 
 const char *status_led_color_order_name(status_led_color_order_t order);
@@ -40,6 +41,10 @@ esp_err_t status_led_strip_backend_new(
     const status_led_strip_backend_config_t *config,
     status_led_strip_backend_t **ret_backend);
 bool status_led_strip_backend_available(const status_led_strip_backend_t *backend);
+bool status_led_strip_backend_dma_supported(void);
+bool status_led_strip_backend_dma_requested(const status_led_strip_backend_t *backend);
+bool status_led_strip_backend_uses_dma(const status_led_strip_backend_t *backend);
+bool status_led_strip_backend_dma_fallback(const status_led_strip_backend_t *backend);
 esp_err_t status_led_strip_backend_transmit(
     status_led_strip_backend_t *backend,
     status_led_color_order_t color_order,
