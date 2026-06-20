@@ -130,11 +130,13 @@ CHECKS = {
         "STATUS_LED_CHARGE_FULL_MIN_PERCENT 88U",
         "STATUS_LED_BATTERY_DISPLAY_GREEN_PERCENT 60U",
         "STATUS_LED_LOW_BATTERY_STEADY_PERCENT 24U",
-        "STATUS_LED_FULL_STEADY_PERCENT 100U",
-        "STATUS_LED_FULL_STATUS_STEADY_PERCENT 100U",
+        "STATUS_LED_PWR_WHITE_VISUAL_BALANCE_PERCENT 38U",
+        "STATUS_LED_FULL_STEADY_PERCENT STATUS_LED_PWR_WHITE_VISUAL_BALANCE_PERCENT",
+        "STATUS_LED_FULL_STATUS_STEADY_PERCENT STATUS_LED_PWR_WHITE_VISUAL_BALANCE_PERCENT",
         "STATUS_LED_BATTERY_IDLE_BLE_HEARTBEAT_ON_MS 120U",
         "STATUS_LED_BATTERY_IDLE_BLE_HEARTBEAT_OFF_MS 7880U",
         "STATUS_LED_BATTERY_IDLE_BLE_HEARTBEAT_PERCENT 18U",
+        "STATUS_LED_OK_SUCCESS_BLUE_BALANCE 64U",
         "STATUS_LED_PREVIEW_BLE_OVERRIDE_MS 15000U",
         "STATUS_LED_BLE_REPAIR_CUE_MS 3500U",
         "STATUS_LED_BLE_CONNECTED_CONFIRM_MS 1600U",
@@ -877,11 +879,14 @@ def main() -> int:
         "STATUS_LED_CHARGING_BREATH_MAX_PERCENT 38U",
         "STATUS_LED_CHARGING_ACTIVE_WORK_MIN_PERCENT 28U",
         "STATUS_LED_LOW_BATTERY_STEADY_PERCENT 24U",
-        "STATUS_LED_FULL_STEADY_PERCENT 100U",
-        "STATUS_LED_FULL_STATUS_STEADY_PERCENT 100U",
+        "STATUS_LED_PWR_WHITE_VISUAL_BALANCE_PERCENT 38U",
+        "STATUS_LED_FULL_STEADY_PERCENT STATUS_LED_PWR_WHITE_VISUAL_BALANCE_PERCENT",
+        "STATUS_LED_FULL_STATUS_STEADY_PERCENT STATUS_LED_PWR_WHITE_VISUAL_BALANCE_PERCENT",
     ):
         if token not in status_led:
-            failures.append(f"status_led.c: routine PWR peak must be user-capped, missing {token}")
+            failures.append(f"status_led.c: routine PWR white must be visually balanced and user-capped, missing {token}")
+    if "status_led_rgb(0, 255, STATUS_LED_OK_SUCCESS_BLUE_BALANCE)" not in status_led:
+        failures.append("status_led.c: OK success must use cool green, not pure green that reads yellow on the diffuser")
     if "} else if (active_work) {\n            percent = STATUS_LED_CHARGING_ACTIVE_WORK_MIN_PERCENT;" not in status_led:
         failures.append("status_led.c: charging PWR must hold a steady readable level during recording/processing")
     for token in (
