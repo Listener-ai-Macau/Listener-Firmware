@@ -1,0 +1,18 @@
+﻿{
+    "schema_version":  1,
+    "generated_at":  "2026-06-20T18:55:50.6690332+08:00",
+    "result":  "HUMAN_REVIEW_PASS",
+    "mode":  "Product",
+    "port":  "COM10",
+    "step_count":  8,
+    "observed_count":  8,
+    "pass_count":  8,
+    "fail_count":  0,
+    "skip_count":  0,
+    "led56_follow_count":  0,
+    "irregular_flicker_count":  0,
+    "brightness_wrong_count":  0,
+    "plan":  "C:\\Users\\Billy\\Desktop\\Denzic\\Listener\\Listener-Firmware-pwr-shutdown-new-board\\docs\\validation\\voice-keyboard-firmware-full-function-test-1.13b\\human-led-effect-review-product-retest3\\human-effect-plan.md",
+    "session_jsonl":  "C:\\Users\\Billy\\Desktop\\Denzic\\Listener\\Listener-Firmware-pwr-shutdown-new-board\\docs\\validation\\voice-keyboard-firmware-full-function-test-1.13b\\human-led-effect-review-product-retest3\\human-effect-session.jsonl",
+    "serial_log":  "C:\\Users\\Billy\\Desktop\\Denzic\\Listener\\Listener-Firmware-pwr-shutdown-new-board\\docs\\validation\\voice-keyboard-firmware-full-function-test-1.13b\\human-led-effect-review-product-retest3\\human-effect-serial.log"
+}

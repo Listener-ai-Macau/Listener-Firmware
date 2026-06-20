@@ -37,6 +37,11 @@ extern void system_health_set_low_power_mode(bool enabled) __attribute__((weak))
 extern void status_led_set_low_power_disabled(bool disabled) __attribute__((weak));
 extern void status_led_prepare_sleep(void) __attribute__((weak));
 extern void status_led_notify_shutdown_confirm(bool final, const char *reason) __attribute__((weak));
+extern void status_led_set_error(int domain, int severity, const char *reason) __attribute__((weak));
+
+#define POWER_MANAGER_STATUS_LED_ERROR_DOMAIN_POWER 5
+#define POWER_MANAGER_STATUS_LED_ERROR_RETRYABLE 0
+#define POWER_MANAGER_STATUS_LED_ERROR_HARD 1
 
 #ifndef CONFIG_POWER_MANAGER_ENABLE
 #define CONFIG_POWER_MANAGER_ENABLE 1
@@ -1146,6 +1151,16 @@ static void power_manager_reset_idle_after_shutdown_failure(void)
     }
 }
 
+static void power_manager_notify_power_led_error(bool hard, const char *reason)
+{
+    if (status_led_set_error != NULL) {
+        status_led_set_error(
+            POWER_MANAGER_STATUS_LED_ERROR_DOMAIN_POWER,
+            hard ? POWER_MANAGER_STATUS_LED_ERROR_HARD : POWER_MANAGER_STATUS_LED_ERROR_RETRYABLE,
+            reason);
+    }
+}
+
 static void power_manager_schedule_shutdown_failure_retry(
     power_manager_shutdown_reason_t reason,
     uint32_t final_idle_ms,
@@ -1199,6 +1214,7 @@ static void power_manager_restore_after_shutdown_failure(
     }
     diag_log(DIAG_SRC_POWER, DIAG_POWER_SLEEP_BLOCKED, DIAG_SEV_ERROR,
              0, final_idle_ms, (uint32_t)reason, (uint32_t)failure_ret);
+    power_manager_notify_power_led_error(true, "hardware_shutdown_failed");
     if (reason == POWER_MANAGER_SHUTDOWN_REASON_MANUAL_COMMAND) {
         power_manager_reset_idle_after_shutdown_failure();
     } else {
@@ -1554,6 +1570,9 @@ static void power_manager_evaluate(void)
             power_manager_enter_hardware_shutdown(POWER_MANAGER_SHUTDOWN_REASON_LOW_BATTERY);
         if (lb_ret != ESP_OK) {
             ESP_LOGW(TAG, "low battery shutdown rejected, retry is gated by shutdown-failure cooldown");
+            if (lb_ret == ESP_ERR_INVALID_STATE || lb_ret == ESP_ERR_TIMEOUT) {
+                power_manager_notify_power_led_error(false, "low_battery_shutdown_rejected");
+            }
         }
         return;
     }

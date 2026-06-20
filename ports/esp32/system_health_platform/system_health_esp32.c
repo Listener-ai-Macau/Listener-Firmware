@@ -26,9 +26,21 @@ static const char *TAG = "health";
 #define HEALTH_HEAP_WARN_KB     20U
 #define HEALTH_BLE_DISCONNECT_RATE_WINDOW_S 60U
 #define HEALTH_BLE_DISCONNECT_RATE_LIMIT    2U
+#define SYSTEM_HEALTH_STATUS_LED_ERROR_DOMAIN_BLE 1
+#define SYSTEM_HEALTH_STATUS_LED_ERROR_DOMAIN_SYSTEM 6
+#define SYSTEM_HEALTH_STATUS_LED_ERROR_RETRYABLE 0
 
 static TaskHandle_t s_health_task;
 static bool s_low_power_mode;
+
+extern void status_led_set_error(int domain, int severity, const char *reason) __attribute__((weak));
+
+static void system_health_notify_led_warning(int domain, const char *reason)
+{
+    if (status_led_set_error != NULL) {
+        status_led_set_error(domain, SYSTEM_HEALTH_STATUS_LED_ERROR_RETRYABLE, reason);
+    }
+}
 
 static void system_health_task(void *parameter)
 {
@@ -88,6 +100,9 @@ static void system_health_task(void *parameter)
                      heap_free / 1024, HEALTH_HEAP_WARN_KB);
             diag_log(DIAG_SRC_HEALTH, DIAG_HEALTH_ALERT, DIAG_SEV_WARN,
                      1, heap_free / 1024, HEALTH_HEAP_WARN_KB, 0);
+            system_health_notify_led_warning(
+                SYSTEM_HEALTH_STATUS_LED_ERROR_DOMAIN_SYSTEM,
+                "health_heap_pressure");
         }
 
         /* BLE disconnect rate alert */
@@ -99,6 +114,9 @@ static void system_health_task(void *parameter)
                          window_disconnects, HEALTH_BLE_DISCONNECT_RATE_WINDOW_S);
                 diag_log(DIAG_SRC_HEALTH, DIAG_HEALTH_ALERT, DIAG_SEV_WARN,
                          2, window_disconnects, HEALTH_BLE_DISCONNECT_RATE_LIMIT, 0);
+                system_health_notify_led_warning(
+                    SYSTEM_HEALTH_STATUS_LED_ERROR_DOMAIN_BLE,
+                    "health_ble_unstable");
             }
             last_disconnect_count = disconnects;
             window_start_ms = now_ms;

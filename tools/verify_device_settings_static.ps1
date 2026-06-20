@@ -156,7 +156,7 @@ Assert-Contains $statusLed 'STATUS_LED_CHARGING_BREATH_HIGH_HOLD_MS 300U' 'plugg
 Assert-Contains $statusLed 'STATUS_LED_CHARGING_BREATH_MIN_PERCENT 8U' 'plugged charging breath keeps a visible floor'
 Assert-Contains $statusLed 'STATUS_LED_CHARGING_BREATH_MAX_PERCENT 38U' 'plugged charging breath has enough range to be seen'
 Assert-Contains $statusLed 'STATUS_LED_CHARGING_ACTIVE_WORK_MIN_PERCENT 28U' 'plugged charging PWR stays readable without overpowering recording or processing'
-Assert-Contains $statusLed 'STATUS_LED_LOW_BATTERY_STEADY_PERCENT 38U' 'low battery uses a steady red cue instead of an unnecessary breathing effect'
+Assert-Contains $statusLed 'STATUS_LED_LOW_BATTERY_STEADY_PERCENT 24U' 'low battery uses a steady red cue instead of an unnecessary breathing effect'
 Assert-Contains $statusLed 'status_led_charging_breath_percent\(now_ms\)' 'plugged charging breath uses the dedicated natural curve'
 Assert-Contains $statusLed 'status_led_smoothstep_per_mille' 'plugged charging breath uses smoothstep easing'
 Assert-Contains $statusLed 'STATUS_LED_FULL_STEADY_PERCENT 100U' 'charge-full steady brightness peak is user-capped instead of fixed below user brightness'

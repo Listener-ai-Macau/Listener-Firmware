@@ -91,6 +91,7 @@ void app_main(void)
         ESP_LOGW(TAG, "status LED init degraded: %s", esp_err_to_name(led_ret));
     }
     led_ret = status_led_start();
+    bool status_led_ready = led_ret == ESP_OK;
     if (led_ret != ESP_OK) {
         ESP_LOGW(TAG, "status LED start degraded: %s", esp_err_to_name(led_ret));
     } else {
@@ -120,11 +121,17 @@ void app_main(void)
     esp_err_t power_ret = power_manager_init();
     if (power_ret != ESP_OK) {
         ESP_LOGW(TAG, "power manager init failed: %s", esp_err_to_name(power_ret));
+        if (status_led_ready) {
+            status_led_set_error(STATUS_LED_ERROR_DOMAIN_POWER, STATUS_LED_ERROR_HARD, "power_manager_init_failed");
+        }
     }
 
     self_test_result_t post = self_test_run();
     if (!self_test_critical_ok(&post)) {
         ESP_LOGE(TAG, "POST failed; continuing in degraded mode so BLE can expose device status");
+        if (status_led_ready) {
+            status_led_set_error(STATUS_LED_ERROR_DOMAIN_SYSTEM, STATUS_LED_ERROR_HARD, "post_failed");
+        }
     }
     esp_err_t settings_ret = device_settings_init();
     if (settings_ret != ESP_OK) {
@@ -136,16 +143,25 @@ void app_main(void)
     if (safe_mode) {
         ESP_LOGW(TAG, "boot safety safe mode active: BLE HID and recovery diagnostics only; audio disabled");
         ESP_LOGW(TAG, "device_status state=recovery detail=boot_safety_safe_mode");
+        if (status_led_ready) {
+            status_led_set_error(STATUS_LED_ERROR_DOMAIN_SYSTEM, STATUS_LED_ERROR_HARD, "boot_safety_safe_mode");
+        }
     }
 
     ble_hid_set_safe_mode(safe_mode);
     esp_err_t ble_ret = ble_hid_init();
     if (ble_ret != ESP_OK) {
         ESP_LOGW(TAG, "BLE HID init degraded: %s", esp_err_to_name(ble_ret));
+        if (status_led_ready) {
+            status_led_set_error(STATUS_LED_ERROR_DOMAIN_BLE, STATUS_LED_ERROR_HARD, "ble_hid_init_failed");
+        }
     }
     esp_err_t keyboard_ret = safe_mode ? keyboard_start_safe_mode() : keyboard_start();
     if (keyboard_ret != ESP_OK) {
         ESP_LOGW(TAG, "keyboard start degraded; continuing BLE startup: %s", esp_err_to_name(keyboard_ret));
+        if (status_led_ready) {
+            status_led_set_error(STATUS_LED_ERROR_DOMAIN_SYSTEM, STATUS_LED_ERROR_HARD, "keyboard_start_failed");
+        }
     }
     system_health_init();
     esp_err_t ble_start_ret = ble_ret == ESP_OK ? ble_hid_start() : ble_ret;
@@ -153,6 +169,9 @@ void app_main(void)
     power_ret = power_manager_start();
     if (power_ret != ESP_OK) {
         ESP_LOGW(TAG, "power manager start failed: %s", esp_err_to_name(power_ret));
+        if (status_led_ready) {
+            status_led_set_error(STATUS_LED_ERROR_DOMAIN_POWER, STATUS_LED_ERROR_HARD, "power_manager_start_failed");
+        }
     }
     bool ota_post_ok = self_test_critical_ok(&post);
     bool ota_ble_ready = ble_ret == ESP_OK && ble_start_ret == ESP_OK;

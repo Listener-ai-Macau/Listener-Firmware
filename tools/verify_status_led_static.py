@@ -37,6 +37,8 @@ CHECKS = {
         "STATUS_LED_REC_SOURCE_DESKTOP_MIC",
         "STATUS_LED_REC_SOURCE_NOT_AVAILABLE",
         "STATUS_LED_ERROR_DOMAIN_OTA",
+        "STATUS_LED_ERROR_DOMAIN_POWER",
+        "STATUS_LED_ERROR_DOMAIN_SYSTEM",
     ],
     "components/status_led/status_led.c": [
         "STATUS_LED_STATUS_COUNT 6",
@@ -126,7 +128,7 @@ CHECKS = {
         "STATUS_LED_CHARGE_FULL_MIN_MV 4050U",
         "STATUS_LED_CHARGE_FULL_MIN_PERCENT 88U",
         "STATUS_LED_BATTERY_DISPLAY_GREEN_PERCENT 60U",
-        "STATUS_LED_LOW_BATTERY_STEADY_PERCENT 38U",
+        "STATUS_LED_LOW_BATTERY_STEADY_PERCENT 24U",
         "STATUS_LED_FULL_STEADY_PERCENT 100U",
         "STATUS_LED_FULL_STATUS_STEADY_PERCENT 100U",
         "STATUS_LED_BATTERY_IDLE_BLE_HEARTBEAT_ON_MS 120U",
@@ -214,7 +216,8 @@ CHECKS = {
         "STATUS_LED_EDGE_RECORDING_SURFACE_BASE_MAX_PERCENT 5U",
         "STATUS_LED_EC11_RECORDING_FLOW_STEP_MS 360U",
         "STATUS_LED_EDGE_RECORDING_FLOW_STEP_MS 720U",
-        "STATUS_LED_EC11_REPAIR_ORBIT_STEP_MS 220U",
+        "STATUS_LED_EC11_REPAIR_BLINK_MIN_PERCENT 4U",
+        "STATUS_LED_EC11_REPAIR_BLINK_MAX_PERCENT 16U",
         "STATUS_LED_EC11_ORBIT_STEP_MS 240U",
         "STATUS_LED_EDGE_ORBIT_STEP_MS 480U",
         "status_led_render_key_active_work_locked",
@@ -509,6 +512,12 @@ CHECKS = {
     "main/main.c": [
         "status_led_init()",
         "status_led_start()",
+        "status_led_set_error(STATUS_LED_ERROR_DOMAIN_POWER, STATUS_LED_ERROR_HARD, \"power_manager_init_failed\")",
+        "status_led_set_error(STATUS_LED_ERROR_DOMAIN_POWER, STATUS_LED_ERROR_HARD, \"power_manager_start_failed\")",
+        "status_led_set_error(STATUS_LED_ERROR_DOMAIN_SYSTEM, STATUS_LED_ERROR_HARD, \"post_failed\")",
+        "status_led_set_error(STATUS_LED_ERROR_DOMAIN_SYSTEM, STATUS_LED_ERROR_HARD, \"boot_safety_safe_mode\")",
+        "status_led_set_error(STATUS_LED_ERROR_DOMAIN_SYSTEM, STATUS_LED_ERROR_HARD, \"keyboard_start_failed\")",
+        "status_led_set_error(STATUS_LED_ERROR_DOMAIN_BLE, STATUS_LED_ERROR_HARD, \"ble_hid_init_failed\")",
     ],
     "ports/esp32/ble_hid/ble_hid.c": [
         "status_led_consume_usb_command(line)",
@@ -559,6 +568,13 @@ CHECKS = {
     "ports/esp32/audio_capture/CMakeLists.txt": [
         "status_led",
     ],
+    "ports/esp32/system_health_platform/system_health_esp32.c": [
+        "status_led_set_error",
+        "SYSTEM_HEALTH_STATUS_LED_ERROR_DOMAIN_BLE 1",
+        "SYSTEM_HEALTH_STATUS_LED_ERROR_DOMAIN_SYSTEM 6",
+        "system_health_notify_led_warning(\n                SYSTEM_HEALTH_STATUS_LED_ERROR_DOMAIN_SYSTEM,\n                \"health_heap_pressure\")",
+        "system_health_notify_led_warning(\n                    SYSTEM_HEALTH_STATUS_LED_ERROR_DOMAIN_BLE,\n                    \"health_ble_unstable\")",
+    ],
     "components/firmware_ota/firmware_ota.c": [
         "status_led_set_processing(true, \"ota_begin\")",
         "status_led_set_processing(false, \"ota_finish\")",
@@ -568,6 +584,11 @@ CHECKS = {
         "status_led_prepare_sleep",
         "status_led_set_low_power_disabled",
         "status_led_notify_shutdown_confirm",
+        "status_led_set_error",
+        "POWER_MANAGER_STATUS_LED_ERROR_DOMAIN_POWER 5",
+        "POWER_MANAGER_STATUS_LED_ERROR_HARD 1",
+        "power_manager_notify_power_led_error(true, \"hardware_shutdown_failed\")",
+        "power_manager_notify_power_led_error(false, \"low_battery_shutdown_rejected\")",
         "POWER_MANAGER_SHUTDOWN_LED_CONFIRM_MS 700U",
         "hardware_shutdown_confirmed",
     ],
@@ -846,7 +867,7 @@ def main() -> int:
         "STATUS_LED_CHARGING_BREATH_HIGH_HOLD_MS 300U",
         "STATUS_LED_CHARGING_BREATH_MAX_PERCENT 38U",
         "STATUS_LED_CHARGING_ACTIVE_WORK_MIN_PERCENT 28U",
-        "STATUS_LED_LOW_BATTERY_STEADY_PERCENT 38U",
+        "STATUS_LED_LOW_BATTERY_STEADY_PERCENT 24U",
         "STATUS_LED_FULL_STEADY_PERCENT 100U",
         "STATUS_LED_FULL_STATUS_STEADY_PERCENT 100U",
     ):
@@ -989,8 +1010,19 @@ def main() -> int:
         )
     if "uint32_t dot = (STATUS_LED_EC11_COUNT - 1U - step) % STATUS_LED_EC11_COUNT;" not in status_led:
         failures.append("status_led.c: EC11 processing and rotation motion must use the current clockwise index convention")
-    if "uint32_t head_index = (STATUS_LED_EC11_COUNT - 1U - step) % STATUS_LED_EC11_COUNT;" not in status_led:
-        failures.append("status_led.c: BLE re-pair EC11 orbit must use the current clockwise index convention")
+    if "status_led_ble_repair_percent_locked(now_ms, 22U, 72U)" not in status_led:
+        failures.append("status_led.c: BLE repair status LED must use the shared repair blink envelope")
+    repair_envelope = re.search(
+        r"static\s+uint8_t\s+status_led_ble_repair_percent_locked[^{]*\{(?P<body>[\s\S]*?)\n\}",
+        status_led,
+    )
+    if not repair_envelope or "status_led_double_pulse_on(ble_elapsed_ms, 900U)" not in repair_envelope.group("body"):
+        failures.append("status_led.c: BLE repair blink envelope must be the two-hit double-pulse cue")
+    elif "status_led_blink_on" in repair_envelope.group("body"):
+        failures.append("status_led.c: BLE repair blink envelope must not add a third offset blink")
+    if "STATUS_LED_EC11_REPAIR_BLINK_MIN_PERCENT" not in status_led or \
+       "STATUS_LED_EC11_REPAIR_BLINK_MAX_PERCENT" not in status_led:
+        failures.append("status_led.c: BLE re-pair EC11 must use full-ring synced blink levels, not orbit motion")
     if not re.search(
         r"static\s+void\s+status_led_preview_state[^{]*\{[\s\S]*?"
         r"status_led_preview_clear_activity_locked\(\);[\s\S]*?"

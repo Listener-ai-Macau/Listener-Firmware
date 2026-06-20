@@ -177,8 +177,8 @@ function Get-SceneSteps {
             -Title "产品场景：双击旋钮重新配对" `
             -Commands @("~LED:PREVIEW repairing", "WAIT 80", "~LED:STATUS", "WAIT 570", "~LED:STATUS", "WAIT 850", "~LED:STATUS") `
             -When "用户双击 EC11 旋钮或发 `~VREC:RECOVERY` 清除旧绑定并重新进入配对；这是用户主动重配确认，不是故障。" `
-            -Expected "LED2/BLE 较明显蓝色双脉冲；EC11 旋钮有低亮蓝色用户重配确认；板框不参与；REC、AI、OK、WARN 必须灭。" `
-            -HumanFocus "确认这是用户主动重配：BLE 语义灯明确，旋钮有低亮确认，板框保持灭，不要误读为错误或录音。"
+            -Expected "LED2/BLE 较明显蓝色双脉冲；EC11 旋钮全圈低亮蓝色，并且和 BLE 同步闪烁，不再绕圈旋转；板框不参与；REC、AI、OK、WARN 必须灭。" `
+            -HumanFocus "确认这是用户主动重配：BLE 语义灯明确，旋钮只做同步低亮蓝色确认，板框保持灭，不要误读为错误或录音。"
         New-LedReviewStep `
             -Id "scene-charging" `
             -Title "产品场景：插电充电中" `
@@ -198,8 +198,8 @@ function Get-SceneSteps {
             -Title "产品场景：低电量" `
             -Commands @("~LED:PREVIEW low_battery", "~LED:STATUS") `
             -When "未插电且电量进入低电阈值；由 PWR 用 amber/red 系提示电源风险，不代表录音或 BLE 状态。" `
-            -Expected "PWR 应是稳定红色低电提示，不做呼吸或双闪；其它工作态灯不应出现。" `
-            -HumanFocus "确认低电提示可读、安静，不像严重低电双闪、充电呼吸或录音。"
+            -Expected "PWR 应是稳定低亮红琥珀低电提示，不做呼吸或双闪；其它工作态灯不应出现。" `
+            -HumanFocus "确认低电提示可读、安静，不像严重低电双闪、充电呼吸或录音；如果看起来像 LED3 也亮，请记录。"
         New-LedReviewStep `
             -Id "scene-critical-battery" `
             -Title "产品场景：严重低电" `
@@ -489,6 +489,7 @@ function Get-ReviewSteps {
     if ($Mode -eq "Product") {
         return @(
             $scenes | Where-Object { $_.id -eq "scene-charging" }
+            $scenes | Where-Object { $_.id -eq "scene-low-battery" }
             $scenes | Where-Object { $_.id -eq "scene-ble-repairing" }
             $scenes | Where-Object { $_.id -eq "scene-recording-processing-live" }
             $scenes | Where-Object { $_.id -eq "scene-ec11-short-press" }
@@ -542,7 +543,7 @@ function Write-PlanMarkdown {
     $lines.Add("- Repro mode intentionally drives the status rail and key LEDs with a known-bad broad dynamic pattern while keeping software OK/WARN at zero, so human observation can separate logical status from physical cross-zone disturbance.") | Out-Null
     $lines.Add("- TailOnly mode is a narrow 1.9 confirmation: AI-only and REC+AI status-tail effects remain visibly but gently dynamic while LED5/OK and LED6/WARN stay physically and logically off.") | Out-Null
     $lines.Add("- ComboOnly mode is a narrow 1.9 confirmation for the combined REC+AI, EC11, and edge/frame effect without PWR/BLE/key participation.") | Out-Null
-    $lines.Add("- Product direction for this pass: quiet but alive semantic status rail; blue BLE for connected/pairing/reconnect states, user re-pair uses BLE plus a low blue EC11 confirmation with edge/frame off, recording status reacts smoothly to volume, processing shows a purple da-dada thinking beat, EC11 press/rotate uses short white feedback, green OK only for success, amber/red WARN only for errors, and warm amber PWR+EC11 for shutdown confirmation.") | Out-Null
+    $lines.Add("- Product direction for this pass: quiet but alive semantic status rail; blue BLE for connected/pairing/reconnect states, user re-pair uses BLE plus a synced low blue EC11 blink with edge/frame off, recording status reacts smoothly to volume, processing shows a purple da-dada thinking beat, EC11 press/rotate uses short white feedback, green OK only for success, amber/red WARN only for errors, and warm amber PWR+EC11 for shutdown confirmation.") | Out-Null
     $lines.Add("") | Out-Null
     $lines.Add("## Review Steps") | Out-Null
     $lines.Add("") | Out-Null
@@ -789,7 +790,7 @@ function Get-LedSemanticText {
         "scene-ready" { return "PWR=电源在线；BLE=已连接/就绪；REC、AI、OK、WARN 都应灭。" }
         "scene-pairing" { return "BLE=等待配对；旋钮/板框不参与；PWR 可独立表达插电/电源；REC、AI、OK、WARN 都不参与，WARN 不代表配对。" }
         "scene-reconnecting" { return "BLE=找回已绑定主机；旋钮/板框不参与；PWR 可独立表达插电/电源；WARN/错误灯不亮，因为重连不是错误。" }
-        "scene-ble-repairing" { return "BLE=用户主动重新配对确认；EC11=低亮蓝色用户确认；板框不参与；AI、OK、WARN 必须灭。" }
+        "scene-ble-repairing" { return "BLE=用户主动重新配对确认；EC11=低亮蓝色同步闪烁确认；板框不参与；AI、OK、WARN 必须灭。" }
         "scene-charging" { return "PWR=插电充电；BLE、REC、AI、OK、WARN 都不用于表达充电。" }
         "scene-full" { return "PWR=插电满电；OK 绿灯不亮，避免把满电误读为会话成功。" }
         "scene-low-battery" { return "PWR=低电量提示；WARN 不亮，除非进入真实错误/安全保护。" }

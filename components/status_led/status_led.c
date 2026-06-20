@@ -94,7 +94,7 @@
 #define STATUS_LED_CHARGE_FULL_MIN_MV 4050U
 #define STATUS_LED_CHARGE_FULL_MIN_PERCENT 88U
 #define STATUS_LED_BATTERY_DISPLAY_GREEN_PERCENT 60U
-#define STATUS_LED_LOW_BATTERY_STEADY_PERCENT 38U
+#define STATUS_LED_LOW_BATTERY_STEADY_PERCENT 24U
 #define STATUS_LED_FULL_STEADY_PERCENT 100U
 #define STATUS_LED_FULL_STATUS_STEADY_PERCENT 100U
 #define STATUS_LED_BATTERY_IDLE_BLE_HEARTBEAT_ON_MS 120U
@@ -162,7 +162,8 @@
 #define STATUS_LED_EDGE_RECORDING_FLOW_STEP_MS 720U
 #define STATUS_LED_EC11_ORBIT_STEP_MS 240U
 #define STATUS_LED_EDGE_ORBIT_STEP_MS 480U
-#define STATUS_LED_EC11_REPAIR_ORBIT_STEP_MS 220U
+#define STATUS_LED_EC11_REPAIR_BLINK_MIN_PERCENT 4U
+#define STATUS_LED_EC11_REPAIR_BLINK_MAX_PERCENT 16U
 #define STATUS_LED_EC11_PROCESSING_BASE_PERCENT 7U
 #define STATUS_LED_EDGE_PROCESSING_BASE_PERCENT 6U
 #define STATUS_LED_EC11_PROCESSING_ORBIT_PERCENT 26U
@@ -1432,6 +1433,18 @@ static uint32_t status_led_ble_elapsed_locked(uint32_t now_ms)
     return now_ms - start_ms;
 }
 
+static uint8_t status_led_ble_repair_percent_locked(
+    uint32_t now_ms,
+    uint8_t base_percent,
+    uint8_t peak_percent)
+{
+    uint32_t ble_elapsed_ms = status_led_ble_elapsed_locked(now_ms);
+    if (status_led_double_pulse_on(ble_elapsed_ms, 900U)) {
+        return peak_percent;
+    }
+    return base_percent;
+}
+
 static bool status_led_timed_output_active_locked(uint32_t now_ms)
 {
     if (s_state.output_disabled || s_state.low_power_disabled) {
@@ -1693,7 +1706,7 @@ static void status_led_render_power_locked(status_led_frame_t *frame, uint32_t n
         } else if (battery_level < 20U) {
             safety = true;
             color = status_led_token_locked(
-                status_led_rgb(255, 0, 0),
+                status_led_rgb(255, 48, 0),
                 STATUS_LED_LOW_BATTERY_STEADY_PERCENT,
                 true);
         } else {
@@ -1737,11 +1750,7 @@ static void status_led_render_ble_locked(status_led_frame_t *frame, uint32_t now
                               !active_work;
     const uint32_t ble_elapsed_ms = status_led_ble_elapsed_locked(now_ms);
     if (status_led_ble_repair_active_locked(now_ms)) {
-        uint8_t percent = 22U;
-        if (status_led_double_pulse_on(ble_elapsed_ms, 900U) ||
-            status_led_blink_on(ble_elapsed_ms + 450U, 120U, 780U)) {
-            percent = 72U;
-        }
+        uint8_t percent = status_led_ble_repair_percent_locked(now_ms, 22U, 72U);
         color = status_led_token_locked(ble_blue, percent, false);
         status_led_set_max(&frame->status[STATUS_LED_SEM_BLE], color);
         return;
@@ -2337,18 +2346,14 @@ static bool status_led_ec11_feedback_active_locked(uint32_t now_ms)
 
 static void status_led_render_ec11_repair_locked(status_led_frame_t *frame, uint32_t now_ms)
 {
-    status_led_rgb_t base = status_led_token_locked(status_led_rgb(0, 0, 255), 4U, false);
-    status_led_rgb_t head = status_led_token_locked(status_led_rgb(0, 0, 255), 22U, false);
-    status_led_rgb_t tail = status_led_scale_raw(head, 45U);
-    uint32_t step = (status_led_ble_elapsed_locked(now_ms) / STATUS_LED_EC11_REPAIR_ORBIT_STEP_MS) %
-                    STATUS_LED_EC11_COUNT;
-    uint32_t head_index = (STATUS_LED_EC11_COUNT - 1U - step) % STATUS_LED_EC11_COUNT;
+    uint8_t percent = status_led_ble_repair_percent_locked(
+        now_ms,
+        STATUS_LED_EC11_REPAIR_BLINK_MIN_PERCENT,
+        STATUS_LED_EC11_REPAIR_BLINK_MAX_PERCENT);
+    status_led_rgb_t blue = status_led_token_locked(status_led_rgb(0, 0, 255), percent, false);
     for (size_t index = 0; index < STATUS_LED_EC11_COUNT; ++index) {
-        status_led_set_max(&frame->ec11[index], base);
+        status_led_set_max(&frame->ec11[index], blue);
     }
-    status_led_set_max(&frame->ec11[head_index], head);
-    status_led_set_max(&frame->ec11[(head_index + STATUS_LED_EC11_COUNT - 1U) % STATUS_LED_EC11_COUNT], tail);
-    status_led_set_max(&frame->ec11[(head_index + 1U) % STATUS_LED_EC11_COUNT], tail);
 }
 
 static void status_led_render_ec11_feedback_locked(status_led_frame_t *frame, uint32_t now_ms)
