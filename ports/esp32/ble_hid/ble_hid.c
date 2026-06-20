@@ -759,6 +759,16 @@ static bool ble_hid_usb_command_records_activity(const char *line)
         ble_hid_usb_command_matches(line, "VREC:PROCESSING_STOP") ||
         ble_hid_usb_command_matches(line, "VREC:PROCESSING:DONE") ||
         ble_hid_usb_command_matches(line, "VREC:PROCESSING_DONE") ||
+        ble_hid_usb_command_matches(line, "VREC:PROCESSING:WARN") ||
+        ble_hid_usb_command_matches(line, "VREC:PROCESSING_WARN") ||
+        ble_hid_usb_command_matches(line, "VREC:PROCESSING:WARNING") ||
+        ble_hid_usb_command_matches(line, "VREC:PROCESSING_WARNING") ||
+        ble_hid_usb_command_matches(line, "VREC:PROCESSING:FAIL") ||
+        ble_hid_usb_command_matches(line, "VREC:PROCESSING_FAIL") ||
+        ble_hid_usb_command_matches(line, "VREC:PROCESSING:FAILED") ||
+        ble_hid_usb_command_matches(line, "VREC:PROCESSING_FAILED") ||
+        ble_hid_usb_command_matches(line, "VREC:PROCESSING:ERROR") ||
+        ble_hid_usb_command_matches(line, "VREC:PROCESSING_ERROR") ||
         ble_hid_usb_command_matches(line, "VREC:STOP") ||
         ble_hid_usb_command_matches(line, "VREC:CLEANUP") ||
         ble_hid_usb_command_matches(line, "VREC:RECOVERY") ||

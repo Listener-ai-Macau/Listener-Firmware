@@ -340,6 +340,7 @@ typedef struct {
     uint32_t oobe_confidence_until_ms;
     uint32_t ok_started_ms;
     uint32_t ok_until_ms;
+    bool ok_warning;
     uint32_t shutdown_confirm_started_ms;
     uint32_t shutdown_confirm_until_ms;
     bool shutdown_confirm_final;
@@ -666,6 +667,13 @@ static uint32_t status_led_diag_reason_code(const char *reason)
     if (strstr(reason, "processing_stop") != NULL ||
         strcmp(reason, "host_processing_done") == 0) {
         return STATUS_LED_DIAG_REASON_PROCESSING_STOP;
+    }
+    if (strstr(reason, "warning") != NULL ||
+        strstr(reason, "warn") != NULL ||
+        strstr(reason, "failed") != NULL ||
+        strstr(reason, "timeout") != NULL ||
+        strstr(reason, "rejected") != NULL) {
+        return STATUS_LED_DIAG_REASON_ERROR;
     }
     if (strcmp(reason, "success") == 0 ||
         strstr(reason, "_done") != NULL) {
@@ -2053,6 +2061,11 @@ static uint8_t status_led_ok_visual_percent_locked(uint32_t now_ms)
     return 0U;
 }
 
+static status_led_rgb_t status_led_result_color_locked(void)
+{
+    return s_state.ok_warning ? status_led_rgb(255, 140, 0) : status_led_rgb(0, 255, 0);
+}
+
 static bool status_led_shutdown_confirm_active_locked(uint32_t now_ms)
 {
     if (s_state.shutdown_confirm_started_ms == 0U) {
@@ -2203,8 +2216,10 @@ static void status_led_render_ok_locked(status_led_frame_t *frame, uint32_t now_
     if (percent == 0U) {
         return;
     }
-    status_led_rgb_t ok = status_led_token_locked(status_led_rgb(0, 255, 0), percent, false);
-    status_led_set_max(&frame->status[STATUS_LED_SEM_OK], ok);
+    status_led_rgb_t result = status_led_token_locked(status_led_result_color_locked(), percent, false);
+    status_led_set_max(
+        &frame->status[s_state.ok_warning ? STATUS_LED_SEM_WARN : STATUS_LED_SEM_OK],
+        result);
 }
 
 static bool status_led_render_shutdown_confirm_locked(status_led_frame_t *frame, uint32_t now_ms)
@@ -2261,11 +2276,13 @@ static void status_led_render_error_locked(status_led_frame_t *frame, uint32_t n
 
 static void status_led_apply_status_tail_guard_locked(status_led_frame_t *frame, uint32_t now_ms)
 {
-    if (status_led_ok_visual_percent_locked(now_ms) == 0U &&
+    uint8_t result_percent = status_led_ok_visual_percent_locked(now_ms);
+    if (result_percent == 0U &&
         !status_led_shutdown_confirm_active_locked(now_ms)) {
         frame->status[STATUS_LED_SEM_OK] = (status_led_rgb_t){0};
     }
-    if (!status_led_error_active_locked(now_ms)) {
+    if (!status_led_error_active_locked(now_ms) &&
+        !(result_percent > 0U && s_state.ok_warning)) {
         frame->status[STATUS_LED_SEM_WARN] = (status_led_rgb_t){0};
     }
 }
@@ -2385,7 +2402,7 @@ static void status_led_render_ec11_locked(status_led_frame_t *frame, uint32_t no
         uint8_t percent = ok_percent > STATUS_LED_EC11_ACCENT_MAX_PERCENT
             ? STATUS_LED_EC11_ACCENT_MAX_PERCENT
             : ok_percent;
-        status_led_rgb_t ok = status_led_token_locked(status_led_rgb(0, 255, 0), percent, false);
+        status_led_rgb_t ok = status_led_token_locked(status_led_result_color_locked(), percent, false);
         for (size_t index = 0; index < STATUS_LED_EC11_COUNT; ++index) {
             status_led_set_max(&frame->ec11[index], ok);
         }
@@ -2497,7 +2514,7 @@ static void status_led_render_edge_locked(status_led_frame_t *frame, uint32_t no
         uint8_t percent = ok_percent > STATUS_LED_EDGE_ACCENT_MAX_PERCENT
             ? STATUS_LED_EDGE_ACCENT_MAX_PERCENT
             : ok_percent;
-        status_led_rgb_t color = status_led_token_locked(status_led_rgb(0, 255, 0), percent, false);
+        status_led_rgb_t color = status_led_token_locked(status_led_result_color_locked(), percent, false);
         for (size_t index = 0; index < STATUS_LED_EDGE_COUNT; ++index) {
             status_led_set_max(&frame->edge[index], color);
         }
@@ -2618,6 +2635,7 @@ static void status_led_clear_ok_locked(void)
 {
     s_state.ok_started_ms = 0;
     s_state.ok_until_ms = 0;
+    s_state.ok_warning = false;
 }
 
 static void status_led_clear_ec11_feedback_locked(void)
@@ -2746,6 +2764,7 @@ static void status_led_preview_effect_only_baseline_locked(void)
     s_state.error_until_ms = 0;
     s_state.ok_started_ms = 0;
     s_state.ok_until_ms = 0;
+    s_state.ok_warning = false;
     status_led_clear_ec11_feedback_locked();
     s_state.shutdown_confirm_started_ms = 0;
     s_state.shutdown_confirm_until_ms = 0;
@@ -2771,6 +2790,7 @@ static void status_led_force_manual_off(void)
         s_state.key_pressed_mask = 0;
         memset(s_state.key_until_ms, 0, sizeof(s_state.key_until_ms));
         s_state.ok_until_ms = 0;
+        s_state.ok_warning = false;
         status_led_clear_ec11_feedback_locked();
         s_state.error_domain = STATUS_LED_ERROR_DOMAIN_NONE;
         s_state.error_until_ms = 0;
@@ -3448,10 +3468,33 @@ void status_led_notify_success(const char *reason)
         s_state.preview_effect_only = false;
         s_state.ok_started_ms = now_ms;
         s_state.ok_until_ms = now_ms + STATUS_LED_OK_TOTAL_MS;
+        s_state.ok_warning = false;
         s_state.status_window_until_ms = now_ms + STATUS_LED_STATUS_WINDOW_MS;
         s_state.last_transition_ms = now_ms;
         status_led_set_last_reason_locked(reason != NULL ? reason : "success");
         diag_log(DIAG_SRC_STATUS_LED, DIAG_LED_STATE, DIAG_SEV_INFO, 4, 1, 0, 0);
+        changed = true;
+        xSemaphoreGive(s_mutex);
+    }
+    if (changed) {
+        status_led_request_refresh();
+    }
+}
+
+void status_led_notify_warning(const char *reason)
+{
+    uint32_t now_ms = status_led_now_ms();
+    bool changed = false;
+    if (xSemaphoreTake(s_mutex, portMAX_DELAY) == pdTRUE) {
+        status_led_resume_output_locked();
+        s_state.preview_effect_only = false;
+        s_state.ok_started_ms = now_ms;
+        s_state.ok_until_ms = now_ms + STATUS_LED_OK_TOTAL_MS;
+        s_state.ok_warning = true;
+        s_state.status_window_until_ms = now_ms + STATUS_LED_STATUS_WINDOW_MS;
+        s_state.last_transition_ms = now_ms;
+        status_led_set_last_reason_locked(reason != NULL ? reason : "warning");
+        diag_log(DIAG_SRC_STATUS_LED, DIAG_LED_ERROR, DIAG_SEV_WARN, 4, 1, 0, 0);
         changed = true;
         xSemaphoreGive(s_mutex);
     }
@@ -4682,6 +4725,15 @@ static void status_led_preview_state(const char *state)
         status_led_preview_ready_baseline_locked(now_ms);
         s_state.ok_started_ms = now_ms;
         s_state.ok_until_ms = now_ms + STATUS_LED_OK_TOTAL_MS;
+        s_state.ok_warning = false;
+    } else if (strcasecmp(state, "warn") == 0 ||
+               strcasecmp(state, "warning") == 0 ||
+               strcasecmp(state, "fail") == 0 ||
+               strcasecmp(state, "failed") == 0) {
+        status_led_preview_ready_baseline_locked(now_ms);
+        s_state.ok_started_ms = now_ms;
+        s_state.ok_until_ms = now_ms + STATUS_LED_OK_TOTAL_MS;
+        s_state.ok_warning = true;
     } else if (strcasecmp(state, "shutdown_confirm") == 0 ||
                strcasecmp(state, "power_hold") == 0 ||
                strcasecmp(state, "poweroff_confirm") == 0) {

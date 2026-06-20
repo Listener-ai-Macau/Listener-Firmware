@@ -55,6 +55,7 @@ void status_led_set_recording(bool active, status_led_rec_source_t source);
 void status_led_set_recording_level(uint8_t level_percent);
 void status_led_set_processing(bool active, const char *reason);
 void status_led_notify_success(const char *reason);
+void status_led_notify_warning(const char *reason);
 void status_led_notify_key_event(uint8_t key_index, bool pressed);
 void status_led_notify_ec11_feedback(status_led_ec11_feedback_t feedback);
 void status_led_notify_shutdown_confirm(bool final, const char *reason);

@@ -26,6 +26,7 @@ CHECKS = {
         "status_led_set_recording",
         "status_led_set_recording_level",
         "status_led_set_processing",
+        "status_led_notify_warning",
         "status_led_notify_shutdown_confirm",
         "STATUS_LED_EC11_FEEDBACK_PRESS",
         "STATUS_LED_EC11_FEEDBACK_ROTATE_CW",
@@ -112,6 +113,8 @@ CHECKS = {
         "STATUS_LED_EC11_FEEDBACK_MS 900U",
         "STATUS_LED_BOOT_ACK_MS 2500U",
         "STATUS_LED_OK_TOTAL_MS 2000U",
+        "ok_warning",
+        "status_led_notify_warning",
         "STATUS_LED_CHARGING_BREATH_PERIOD_MS 3600U",
         "STATUS_LED_CHARGING_BREATH_LOW_HOLD_MS 450U",
         "STATUS_LED_CHARGING_BREATH_RISE_MS 1300U",
@@ -534,11 +537,13 @@ CHECKS = {
         "PROCESSING_STOP",
         "PROCESSING:DONE",
         "PROCESSING_DONE",
+        "PROCESSING:WARN",
+        "PROCESSING_WARN",
         "voice_recording_control_host_processing_start(source)",
         "voice_recording_control_host_processing_stop(source)",
         "voice_recording_control_host_processing_done(source)",
-        "status_led_notify_success(\"recording_stop_done\")",
-        "status_led_notify_success(\"recording_session_done\")",
+        "voice_recording_control_host_processing_warning(source)",
+        "status_led_notify_warning(\"host_processing_warning\")",
         "status_led_notify_success(\"host_processing_done\")",
         "status_led_notify_ble_repairing(\"voice_recovery_requested\")",
     ],
@@ -1109,13 +1114,16 @@ def main() -> int:
         failures.append("voice_recording_control.c: user-requested recovery must use BLE re-pair cue, not WARN/error")
     if 'status_led_set_error(STATUS_LED_ERROR_DOMAIN_BLE, STATUS_LED_ERROR_RETRYABLE, "ble_recovery_clear_bonds")' in ble_hid_gap:
         failures.append("ble_hid_gap_esp32.c: clearing bonds for user-requested re-pair must use BLE cue, not WARN/error")
+    if 'status_led_notify_success("recording_stop_done")' in voice_recording_control:
+        failures.append("voice_recording_control.c: recording STOP must not show OK before Type final success")
+    if 'status_led_notify_success("recording_session_done")' in voice_recording_control:
+        failures.append("voice_recording_control.c: firmware transfer completion must not show OK before Type final success")
     for token in (
-        'status_led_notify_success("recording_stop_done")',
-        'status_led_notify_success("recording_session_done")',
         'status_led_notify_success("host_processing_done")',
+        'status_led_notify_warning("host_processing_warning")',
     ):
         if token not in voice_recording_control:
-            failures.append(f"voice_recording_control.c: missing success LED confirmation {token}")
+            failures.append(f"voice_recording_control.c: missing host final LED confirmation {token}")
     if "driver/rmt_" in status_led or "soc/soc_caps.h" in status_led:
         failures.append("status_led.c: business rendering layer must not include the RMT/WS2812 backend directly")
     if "STATUS_LED_KEY_RECORDING_MAX_PERCENT" in status_led:
