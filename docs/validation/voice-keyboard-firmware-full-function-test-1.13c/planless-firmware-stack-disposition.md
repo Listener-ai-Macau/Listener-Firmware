@@ -67,10 +67,41 @@ Listener-Type worktree audit reported no AI worktrees or orphan worktree directo
 3. Keep dirty worktrees and unmerged branches intact until their owner/product disposition is explicitly approved.
 4. After approval, cleanup may start only with merged clean branches and clean disposable worktrees. Dirty or unmerged stacks require a checkpoint or a named follow-up step before deletion.
 
+## Delegated Decision And Cleanup
+
+User instruction on 2026-06-20: "你自己拿主意吧, 继续推进这个工作".
+
+Decision:
+
+1. Use firmware `master` as the only release/ship-smoke source.
+2. Exclude all unmerged ad-hoc, preserve, and human scratch branches from the next ship smoke.
+3. Preserve dirty or unmerged worktrees/branches instead of force-deleting them.
+4. Clean only local branches already merged into `master` and not checked out by any worktree.
+
+Deleted local merged branches:
+
+- `adhoc/codex/device-power-split`
+- `adhoc/oai1/ble-flash-diagnostics`
+- `adhoc/oai1/ble-gatt-probe-datareader`
+- `adhoc/oai1/led-true-state-accents`
+- `adhoc/oai1/pwr-hold-force-high`
+- `adhoc/oai1/restore-ok-green-pulse`
+- `adhoc/oai1/status-led-recording-effect`
+- `adhoc/oai2/ble-central-owned-params`
+- `adhoc/oai2/ble-repair-cache-fix`
+- `feature/voice-keyboard-firmware-full-function-test`
+
+Post-cleanup preserved active worktrees:
+
+- `Listener-Firmware` on `adhoc/oai2/low-power-battery-sampling`, clean but unmerged.
+- `Listener-Firmware-vkfft-1.6-oai2-clean`, dirty detached validation worktree.
+- `Listener-Firmware-wt-adhoc-codex-open-source-prune`, clean but unmerged.
+- `Listener-Firmware-wt-adhoc-oai1-hw-rev-io9-io10-no-current-sense`, dirty ad-hoc worktree.
+
 ## Human Approval Slot
 
-Pending human/product owner decision:
+Resolved by delegated user instruction above:
 
 - Approve this exclusion matrix for the next ship smoke.
-- Optionally approve cleanup of merged clean local branches listed above.
-- Optionally choose follow-up workflow steps for the preserved dirty/unmerged stacks.
+- Approve cleanup of merged clean local branches listed above.
+- Preserve dirty/unmerged stacks as excluded release inputs unless a later workflow step claims them.
