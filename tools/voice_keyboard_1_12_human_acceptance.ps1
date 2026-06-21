@@ -1,7 +1,7 @@
 param(
     [string]$OutputDir = "",
     [string]$TypeRepo = "C:\Users\Billy\Desktop\Denzic\Listener\Listener-Type",
-    [ValidateSet("Full", "NoTranscript")]
+    [ValidateSet("Full", "NoTranscript", "AiLamp")]
     [string]$Scenario = "Full",
     [switch]$OpenNotepad
 )
@@ -304,6 +304,17 @@ $intro = if ($Scenario -eq "NoTranscript") {
 每一步请按实际观察选择 PASS、FAIL 或 SKIP。
 点击 OK 开始；点击 Cancel 退出。
 "@
+} elseif ($Scenario -eq "AiLamp") {
+@"
+接下来只复验 1.12 刚才失败的实体录音 AI 灯场景。
+
+这个向导会弹窗：
+1. 物理 KEY3 / 真实录音，重点看 ASR 文本出来后的 AI 紫灯是否至少能被人眼看到
+2. 最终 go/no-go
+
+已经通过的取消、WARN、重连、设置、OOBE 不重复测试。
+点击 OK 开始；点击 Cancel 退出。
+"@
 } else {
 @"
 接下来做 1.12 人工整机验收。
@@ -467,6 +478,8 @@ $steps = @(
 
 if ($Scenario -eq "NoTranscript") {
     $steps = @($steps | Where-Object { $_.id -in @("no-transcript-warning", "final-go-no-go") })
+} elseif ($Scenario -eq "AiLamp") {
+    $steps = @($steps | Where-Object { $_.id -in @("physical-key3-30s-recording", "final-go-no-go") })
 }
 
 $records = [System.Collections.Generic.List[object]]::new()
