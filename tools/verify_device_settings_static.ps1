@@ -62,7 +62,7 @@ Assert-Contains $deviceHeader 'DEVICE_SETTINGS_DEFAULT_PLUGGED_BRIGHTNESS_PERCEN
 Assert-Contains $deviceHeader 'DEVICE_SETTINGS_DEFAULT_BATTERY_BRIGHTNESS_PERCENT\s+50U' 'default battery brightness is 50 percent'
 Assert-Contains $deviceHeader 'DEVICE_SETTINGS_DEFAULT_LED_ZONE_BRIGHTNESS_PERCENT\s+100U' 'default per-zone LED brightness is 100 percent'
 Assert-Contains $deviceHeader 'DEVICE_SETTINGS_DEFAULT_LOW_POWER_IDLE_MS\s+60000U' 'default low-power idle is one minute'
-Assert-Contains $deviceHeader 'DEVICE_SETTINGS_DEFAULT_PLUGGED_LOW_POWER_ENABLED\s+1' 'default plugged low-power remains enabled'
+Assert-Contains $deviceHeader 'DEVICE_SETTINGS_DEFAULT_PLUGGED_LOW_POWER_ENABLED\s+0' 'default plugged low-power is disabled for immediate USB wake'
 Assert-Contains $deviceHeader 'plugged_brightness_percent' 'plugged brightness field'
 Assert-Contains $deviceHeader 'battery_brightness_percent' 'battery brightness field'
 Assert-Contains $deviceHeader 'status_led_brightness_percent' 'status LED zone brightness field'
@@ -178,6 +178,8 @@ Assert-Contains $powerManager 'TEST:SHUTDOWN' 'manual serial shutdown test alias
 Assert-Contains $powerManager 'low_power_idle_threshold_ms\s*=\s*power_manager_low_power_idle_ms\(\)' 'POWER:STATUS reports effective low-power timeout'
 Assert-Contains $powerManager 's_external_power_present\s*&&\s*!power_manager_plugged_low_power_enabled\(\)[\s\S]*POWER_MANAGER_STATE_ACTIVE' 'plugged low-power switch blocks runtime idle while externally powered'
 Assert-Contains $powerManager 'low_power_idle_allowed' 'POWER:STATUS reports effective low-power idle allowance'
+Assert-Contains $powerManager 'power_input_wake_configured' 'POWER:STATUS reports power-input wake configuration'
+Assert-Contains $powerManager 'power_input_irq_armed' 'POWER:STATUS reports battery-idle plug-in wake IRQ arm state'
 Assert-Contains $powerManager 'hardware_shutdown_threshold_ms\s*=\s*power_manager_hardware_shutdown_ms\(\)' 'POWER:STATUS reports effective timeout'
 Assert-Contains $powerManager 'power_manager_guard_runtime_power_hold_low' 'runtime PWR_HOLD low guard'
 Assert-Contains $powerCmake 'device_settings' 'power manager CMake dependency'
@@ -212,6 +214,7 @@ Assert-Contains $powerDoc '~DEVICE:SET low_power_idle_ms' 'low-power docs name c
 Assert-Contains $powerDoc '~DEVICE:SET plugged_low_power_enabled' 'low-power docs name plugged low-power switch'
 Assert-Contains $powerDoc '~DEVICE:SET auto_shutdown_ms' 'low-power docs name configurable timeout'
 Assert-Contains $featureMap 'components/device_settings/' 'feature map includes device settings'
+Assert-Contains $featureMap 'plugged low-power disabled' 'feature map documents plugged low-power default off'
 Assert-Contains $repoFeatures 'verify_device_settings_static.ps1' 'repo feature script includes device settings verifier'
 
 Write-Host "PASS: device settings static checks cover firmware command contract, persisted settings, status LED brightness profiles, per-zone LED brightness caps, split low-power idle timeouts, split auto-shutdown timeouts, BLE name source, CMake dependencies, and docs."

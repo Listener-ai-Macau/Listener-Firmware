@@ -50,6 +50,10 @@ Assert-Contains $boardPins 'BOARD_PINS_USB_DET_IO\s+\(GPIO_NUM_NC\)' 'retired US
 Assert-Contains $boardSource '#include "driver/usb_serial_jtag\.h"' 'board public USB Serial/JTAG include'
 Assert-Contains $boardSource 'usb_serial_jtag_is_connected\(\)' 'board USB host presence follows ESP-IDF SOF connection monitor'
 Assert-Contains $boardSource 'not_populated_use_usb_serial_jtag_sof_and_charger_status' 'board policy documents USB_DET removal'
+Assert-Contains $boardSource 's_status_input_configured_mask' 'charger status inputs are configured once so power-manager wake settings are not overwritten'
+Assert-Contains $boardSource 'board_configure_status_input[\s\S]*GPIO_INTR_DISABLE' 'board charger status input init does not claim runtime interrupt mode'
+Assert-Contains $boardSource 'bool\s+usb_serial_jtag_sof_active\s*=\s*board_usb_serial_jtag_sof_active\(\)' 'board samples USB host SOF once per power snapshot'
+Assert-Contains $boardSource '\.usb_power_present\s*=\s*usb_serial_jtag_sof_active' 'board snapshot exposes USB host power without reading GPIO7'
 if ($boardSource -match 'usb_serial_jtag_ll_module_is_enabled') {
     throw "board.c must not call usb_serial_jtag_ll_module_is_enabled directly; use the ESP-IDF USB Serial/JTAG connection monitor"
 }
@@ -57,7 +61,7 @@ if ($boardSource -match 'usb_serial_jtag_ll_module_is_enabled') {
 Assert-Contains $powerManager '#include "board\.h"' 'board power input include'
 Assert-Contains $powerManager 'board_get_v2_power_input_snapshot\(&board_snapshot\)' 'board power input snapshot read'
 Assert-Contains $powerManager 'bool\s+usb_serial_jtag_sof_active\s*=\s*board_snapshot\.usb_serial_jtag_sof_active' 'USB Serial/JTAG SOF interpreted state'
-Assert-Contains $powerManager 'bool\s+usb_power_present\s*=\s*board_snapshot\.usb_det_level\s*>\s*0\s*\|\|[\s\r\n ]*usb_serial_jtag_sof_active' 'USB power follows USB Serial/JTAG SOF while retired USB_DET stays nc/false'
+Assert-Contains $powerManager 'bool\s+usb_power_present\s*=\s*board_snapshot\.usb_power_present' 'USB power follows the board snapshot instead of retired GPIO7'
 Assert-Contains $powerManager 'bool\s+raw_charging\s*=\s*board_snapshot\.bat_chg_level\s*==\s*0' 'active-low charging fallback interpretation'
 Assert-Contains $powerManager 'bool\s+raw_full\s*=\s*board_snapshot\.bat_std_level\s*==\s*0' 'active-low charge-full fallback interpretation'
 Assert-Contains $powerManager 'bool\s+external_power_present\s*=\s*usb_power_present\s*\|\|\s*raw_charging\s*\|\|\s*raw_full' 'external power follows USB SOF, active charging, or charger full status'
@@ -78,6 +82,9 @@ Assert-Contains $powerManager 'state_changed[\s\S]*s_charge_full\s*!=\s*source->
 Assert-Contains $powerManager 'Active CHG and validated STD/full are[\s\S]*fallback when USB_DET is not populated[\s\S]*debounces full and bounds standby retention' 'charger fallback covers charging and full after USB_DET removal'
 
 Assert-Contains $powerManager 's_power_source_initialized\s*&&\s*state_changed\s*&&\s*external_changed[\s\S]*s_last_user_activity_ms\s*=\s*now_ms[\s\S]*s_last_radio_activity_ms\s*=\s*now_ms' 'plug/unplug idle reset'
+Assert-Contains $powerManager 'power_manager_configure_power_input_wake_pin[\s\S]*gpio_wakeup_enable\(gpio,\s*GPIO_INTR_LOW_LEVEL\)[\s\S]*BOARD_PINS_BAT_CHG_IO[\s\S]*BOARD_PINS_BAT_STD_IO[\s\S]*esp_sleep_enable_gpio_wakeup\(\)' 'BAT_CHG/BAT_STD wake power manager from light sleep on charger attach'
+Assert-Contains $powerManager 'power_manager_power_input_wake_from_isr[\s\S]*s_power_input_irq_armed\s*=\s*false[\s\S]*vTaskNotifyGiveFromISR' 'charger attach ISR one-shot disarms and notifies power manager task'
+Assert-Contains $powerManager 'power_manager_update_power_input_irq_arm[\s\S]*POWER_MANAGER_STATE_CONNECTED_IDLE[\s\S]*POWER_MANAGER_STATE_DISCONNECTED_IDLE[\s\S]*!source->external_power_present' 'charger attach IRQ is armed only for battery idle states'
 Assert-Contains $powerManager 'reason\s*==\s*POWER_MANAGER_SHUTDOWN_REASON_LONG_IDLE[\s\S]*source->external_power_present[\s\S]*shutdown_blockers\s*\|=\s*POWER_MANAGER_BLOCKER_EXTERNAL_POWER' 'external power blocks automatic long-idle hardware shutdown'
 Assert-Contains $powerManager 'reason\s*==\s*POWER_MANAGER_SHUTDOWN_REASON_LOW_BATTERY[\s\S]*source->usb_power_present[\s\S]*source->external_power_present[\s\S]*source->charging[\s\S]*source->charge_full[\s\S]*shutdown_blockers\s*\|=\s*POWER_MANAGER_BLOCKER_EXTERNAL_POWER' 'USB/charging/full blocks automatic low-battery hardware shutdown'
 Assert-Contains $powerManager 'POWER_MANAGER_LOW_BATTERY_SHUTDOWN_MAX_MV\s+2800U' 'critical low-battery shutdown requires product-empty voltage'
@@ -86,7 +93,7 @@ Assert-Contains $powerManager 'POWER_MANAGER_LOW_BATTERY_BOOT_GRACE_MS\s+15000U'
 Assert-Contains $powerManager 'power_manager_low_battery_shutdown_confirmed_locked[\s\S]*battery_snapshot->battery_level_percent\s*>\s*POWER_MANAGER_BATTERY_CRITICAL_PERCENT[\s\S]*power_manager_low_battery_shutdown_allowed\(source\)[\s\S]*s_low_battery_critical_since_ms[\s\S]*POWER_MANAGER_LOW_BATTERY_CONFIRM_MS[\s\S]*power_manager_user_idle_ms_locked\(now_ms\)' 'critical low-battery shutdown uses explicit battery-only allow gate, continuous confirmation, and startup-transient guard'
 Assert-Contains $powerManager 'low_battery_shutdown_confirmed[\s\S]*power_manager_enter_hardware_shutdown\(POWER_MANAGER_SHUTDOWN_REASON_LOW_BATTERY\)' 'critical low-battery shutdown uses confirmed helper result'
 Assert-Contains $powerManager 'source->external_power_present[\s\S]*s_blockers\s*\|=\s*POWER_MANAGER_BLOCKER_EXTERNAL_POWER[\s\S]*s_blockers\s*&=\s*~\(uint32_t\)POWER_MANAGER_BLOCKER_EXTERNAL_POWER' 'external power sets and clears blocker'
-Assert-Contains $powerManager 'power_manager_awake_blockers\(s_blockers\)\s*!=\s*0[\s\S]*return\s+POWER_MANAGER_STATE_ACTIVE' 'external power does not block connected/disconnected awake idle'
+Assert-Contains $powerManager 's_external_power_present\s*&&\s*!power_manager_plugged_low_power_enabled\(\)[\s\S]*return\s+POWER_MANAGER_STATE_ACTIVE' 'external power keeps runtime active when plugged low-power is disabled'
 Assert-Contains $powerManager 'power_manager_audio_idle_blockers\(uint32_t blockers\)[\s\S]*return\s+power_manager_awake_blockers\(blockers\)' 'audio idle uses same non-external blocker mask'
 Assert-Contains $powerManager 'power_manager_without_external_power_blocker\(s_blockers\)\s*==\s*0[\s\S]*s_external_power_present[\s\S]*hardware_shutdown_ms' 'automatic shutdown blocked status ignores external blocker itself'
 Assert-Contains $powerManager 'reason\s*==\s*POWER_MANAGER_SHUTDOWN_REASON_LONG_IDLE[\s\S]*\?\s*snapshot\.blockers[\s\S]*:\s*power_manager_without_external_power_blocker\(snapshot\.blockers\)' 'manual shutdown entry gate ignores external-power awake blocker'

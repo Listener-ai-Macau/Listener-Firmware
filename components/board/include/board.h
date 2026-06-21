@@ -15,6 +15,7 @@ typedef struct {
     int bat_std_level;
     int pwr_hold_level;
     bool usb_serial_jtag_sof_active;
+    bool usb_power_present;
     const char *usb_det_policy;
     const char *charger_polarity_policy;
     const char *pwr_hold_policy;
