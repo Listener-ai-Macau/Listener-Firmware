@@ -65,6 +65,8 @@
 #define VOICE_KEY_INPUT_DIRECT_LABEL   "ec11_key.gpio18"
 #endif
 #define VOICE_KEY_INPUT_POLL_MS        (10)
+#define VOICE_KEY_INPUT_IDLE_BACKUP_POLL_MS (1000)
+#define VOICE_KEY_INPUT_LOW_POWER_IDLE_BACKUP_POLL_MS (5000)
 #define VOICE_KEY_INPUT_DEBOUNCE_MS    (30)
 #define VOICE_KEY_INPUT_DEBOUNCE_THRESHOLD \
     ((VOICE_KEY_INPUT_DEBOUNCE_MS + VOICE_KEY_INPUT_POLL_MS - 1) / VOICE_KEY_INPUT_POLL_MS)
@@ -150,6 +152,7 @@ static voice_key_button_state_t s_direct_gpio_state = {
 };
 
 static void voice_key_input_handle_button_sample(voice_key_button_state_t *button, bool raw_high);
+static void voice_key_input_wake_task(void);
 
 static void voice_key_input_debug_log(
     uint32_t kind,
@@ -243,6 +246,7 @@ esp_err_t voice_key_input_enqueue_generated_single_click(void)
         return ESP_ERR_TIMEOUT;
     }
 
+    voice_key_input_wake_task();
     power_manager_record_activity("generated_ec11_key");
     ESP_LOGI(
         TAG,
@@ -439,6 +443,64 @@ static void voice_key_input_handle_button_sample(voice_key_button_state_t *butto
     voice_key_input_poll_pending_single_click(button);
 }
 
+static bool voice_key_input_power_state_is_low_power_idle(void)
+{
+    power_manager_state_t state = power_manager_get_state();
+    return state == POWER_MANAGER_STATE_CONNECTED_IDLE ||
+           state == POWER_MANAGER_STATE_DISCONNECTED_IDLE ||
+           state == POWER_MANAGER_STATE_HARDWARE_SHUTDOWN;
+}
+
+static bool voice_key_input_button_needs_fast_poll(const voice_key_button_state_t *button)
+{
+    if (button == NULL || !button->idle_level_valid) {
+        return true;
+    }
+    if (button->last_sample_high != button->stable_level_high &&
+        button->stable_count < VOICE_KEY_INPUT_DEBOUNCE_THRESHOLD) {
+        return true;
+    }
+    return button->pressed || button->pending_single_click;
+}
+
+static void voice_key_input_wake_task(void)
+{
+    if (s_poll_task_handle != NULL) {
+        xTaskNotifyGive(s_poll_task_handle);
+    }
+}
+
+static uint32_t voice_key_input_next_wait_ms(void)
+{
+    if (s_direct_generated_active || voice_key_input_button_needs_fast_poll(&s_direct_gpio_state)) {
+        return VOICE_KEY_INPUT_POLL_MS;
+    }
+#if VOICE_KEY_INPUT_ENABLE_LEGACY_EXPANDER
+    if (s_io_expander != NULL &&
+        (voice_key_input_button_needs_fast_poll(&s_expander_io4_state) ||
+         voice_key_input_button_needs_fast_poll(&s_expander_io5_state))) {
+        return VOICE_KEY_INPUT_POLL_MS;
+    }
+#endif
+    return voice_key_input_power_state_is_low_power_idle()
+        ? VOICE_KEY_INPUT_LOW_POWER_IDLE_BACKUP_POLL_MS
+        : VOICE_KEY_INPUT_IDLE_BACKUP_POLL_MS;
+}
+
+static void voice_key_input_direct_gpio_wake_from_isr(void *arg)
+{
+    (void)arg;
+    if (s_poll_task_handle == NULL) {
+        return;
+    }
+
+    BaseType_t higher_priority_woken = pdFALSE;
+    vTaskNotifyGiveFromISR(s_poll_task_handle, &higher_priority_woken);
+    if (higher_priority_woken == pdTRUE) {
+        portYIELD_FROM_ISR();
+    }
+}
+
 #if VOICE_KEY_INPUT_ENABLE_LEGACY_EXPANDER
 static esp_err_t voice_key_input_probe_candidate(
     const voice_key_input_bus_candidate_t *candidate,
@@ -571,9 +633,18 @@ static esp_err_t voice_key_input_direct_gpio_init(void)
         .mode = GPIO_MODE_INPUT,
         .pull_up_en = GPIO_PULLUP_ENABLE,
         .pull_down_en = GPIO_PULLDOWN_DISABLE,
-        .intr_type = GPIO_INTR_DISABLE,
+        .intr_type = GPIO_INTR_ANYEDGE,
     };
     ESP_RETURN_ON_ERROR(gpio_config(&direct_cfg), TAG, "direct gpio config failed");
+    esp_err_t ret = gpio_install_isr_service(0);
+    if (ret != ESP_OK && ret != ESP_ERR_INVALID_STATE) {
+        ESP_LOGE(TAG, "direct gpio ISR service install failed: %s", esp_err_to_name(ret));
+        return ret;
+    }
+    ESP_RETURN_ON_ERROR(
+        gpio_isr_handler_add(VOICE_KEY_INPUT_DIRECT_GPIO, voice_key_input_direct_gpio_wake_from_isr, NULL),
+        TAG,
+        "direct gpio ISR handler add failed");
     return ESP_OK;
 }
 
@@ -622,7 +693,12 @@ static void voice_key_input_poll_task(void *parameter)
             &s_direct_gpio_state,
             voice_key_input_generated_raw_high(gpio_get_level(VOICE_KEY_INPUT_DIRECT_GPIO) != 0, now));
 
-        vTaskDelay(pdMS_TO_TICKS(VOICE_KEY_INPUT_POLL_MS));
+        uint32_t wait_ms = voice_key_input_next_wait_ms();
+        if (voice_key_input_power_state_is_low_power_idle() && wait_ms > VOICE_KEY_INPUT_POLL_MS) {
+            (void)watchdog_platform_task_notify_take_low_power(pdTRUE, wait_ms);
+        } else {
+            (void)watchdog_platform_task_notify_take(pdTRUE, wait_ms);
+        }
     }
 }
 
@@ -660,16 +736,22 @@ esp_err_t voice_key_input_start(void)
         NULL,
         5,
         &s_poll_task_handle);
-    ESP_RETURN_ON_FALSE(task_ok == pdPASS, ESP_ERR_NO_MEM, TAG, "voice key task create failed");
+    if (task_ok != pdPASS) {
+        (void)gpio_isr_handler_remove(VOICE_KEY_INPUT_DIRECT_GPIO);
+        ESP_LOGE(TAG, "voice key task create failed");
+        return ESP_ERR_NO_MEM;
+    }
 
     s_started = true;
     ESP_LOGI(
         TAG,
-        "voice key ready: source=%s gpio=%d active_low=1 legacy_expander=%d poll_ms=%d debounce_ms=%d debounce_samples=%d",
+        "voice key ready: source=%s gpio=%d active_low=1 wake=interrupt_anyedge legacy_expander=%d poll_ms=%d idle_backup_ms=%d low_power_idle_backup_ms=%d debounce_ms=%d debounce_samples=%d",
         VOICE_KEY_INPUT_DIRECT_LABEL,
         VOICE_KEY_INPUT_DIRECT_GPIO,
         VOICE_KEY_INPUT_ENABLE_LEGACY_EXPANDER,
         VOICE_KEY_INPUT_POLL_MS,
+        VOICE_KEY_INPUT_IDLE_BACKUP_POLL_MS,
+        VOICE_KEY_INPUT_LOW_POWER_IDLE_BACKUP_POLL_MS,
         VOICE_KEY_INPUT_DEBOUNCE_MS,
         VOICE_KEY_INPUT_DEBOUNCE_THRESHOLD);
     ESP_LOGI(

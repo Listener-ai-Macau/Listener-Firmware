@@ -1,4 +1,5 @@
 build/
+build-usb-light-sleep-debug/
 .cache/
 compile_commands.json
 sdkconfig

@@ -79,8 +79,9 @@
 #define STATUS_LED_LOW_POWER_POLL_MS 60000U
 #define STATUS_LED_CHARGER_STATUS_EXTERNAL_HOLD_MS 8000U
 #define STATUS_LED_LOW_POWER_PWR_PERCENT 8U
-#define STATUS_LED_LOW_POWER_PWR_WHITE_PERCENT 11U
-#define STATUS_LED_LOW_POWER_BLE_CONNECTED_PERCENT 11U
+#define STATUS_LED_LOW_POWER_PWR_WHITE_PERCENT 3U
+#define STATUS_LED_LOW_POWER_BLE_CONNECTED_PERCENT 8U
+#define STATUS_LED_LOW_POWER_BLE_ATTENTION_PERCENT 12U
 #define STATUS_LED_STATUS_WINDOW_MS 6000U
 #define STATUS_LED_PREVIEW_BLE_OVERRIDE_MS 15000U
 #define STATUS_LED_BOOT_ACK_MS 2500U
@@ -1950,15 +1951,27 @@ static void status_led_render_low_power_power_locked(status_led_frame_t *frame, 
 
 static void status_led_render_low_power_ble_locked(status_led_frame_t *frame)
 {
-    if (!status_led_ble_state_ready_locked(s_state.ble_state)) {
+    uint8_t percent = 0U;
+    switch (s_state.ble_state) {
+    case STATUS_LED_BLE_PAIRING:
+    case STATUS_LED_BLE_REPAIRING:
+    case STATUS_LED_BLE_RECONNECTING:
+        percent = STATUS_LED_LOW_POWER_BLE_ATTENTION_PERCENT;
+        break;
+    case STATUS_LED_BLE_CONNECTED:
+    case STATUS_LED_BLE_TYPE_READY:
+        percent = STATUS_LED_LOW_POWER_BLE_CONNECTED_PERCENT;
+        break;
+    case STATUS_LED_BLE_DISCONNECTED:
+    default:
+        break;
+    }
+    if (percent == 0U) {
         return;
     }
     status_led_set_max(
         &frame->status[STATUS_LED_SEM_BLE],
-        status_led_token_locked(
-            status_led_rgb(0, 0, 255),
-            STATUS_LED_LOW_POWER_BLE_CONNECTED_PERCENT,
-            false));
+        status_led_token_locked(status_led_rgb(0, 0, 255), percent, false));
 }
 
 static uint8_t status_led_step_percent_towards(uint8_t current, uint8_t target, uint8_t max_step)

@@ -593,7 +593,7 @@ static void ble_hid_gap_indicate_service_changed(uint16_t conn_handle, const cha
     }
 }
 
-static esp_err_t ble_hid_gap_leave_connection_params_to_central(
+static esp_err_t ble_hid_gap_request_connection_params(
     const char *policy_log,
     uint16_t itvl_min,
     uint16_t itvl_max,
@@ -606,17 +606,31 @@ static esp_err_t ble_hid_gap_leave_connection_params_to_central(
         return ESP_ERR_INVALID_STATE;
     }
 
+    struct ble_gap_upd_params params = {
+        .itvl_min = itvl_min,
+        .itvl_max = itvl_max,
+        .latency = latency,
+        .supervision_timeout = supervision_timeout,
+        .min_ce_len = 0,
+        .max_ce_len = 0,
+    };
+    int rc = ble_gap_update_params(conn.conn_handle, &params);
     ESP_LOGI(
         TAG,
-        "%s: conn=%u preferred_itvl=%u-%u latency=%u timeout=%u mode=%u",
+        "%s: conn=%u preferred_itvl=%u-%u latency=%u timeout=%u mode=%u rc=%d",
         policy_log,
         conn.conn_handle,
         itvl_min,
         itvl_max,
         latency,
         supervision_timeout,
-        (unsigned)mode_code);
-    return ESP_OK;
+        (unsigned)mode_code,
+        rc);
+
+    if (rc == 0 || rc == BLE_HS_EALREADY) {
+        return ESP_OK;
+    }
+    return ESP_FAIL;
 }
 
 esp_err_t esp_hid_ble_gap_adv_init(uint16_t appearance, const char *device_name)
@@ -1684,8 +1698,8 @@ esp_err_t ble_hid_gap_request_reconnect(void)
 
 esp_err_t ble_hid_gap_request_low_power_connection(void)
 {
-    return ble_hid_gap_leave_connection_params_to_central(
-        "low-power idle connection parameters left to central",
+    return ble_hid_gap_request_connection_params(
+        "low-power idle connection parameters requested",
         36,
         72,
         4,
@@ -1695,8 +1709,8 @@ esp_err_t ble_hid_gap_request_low_power_connection(void)
 
 esp_err_t ble_hid_gap_request_active_connection(void)
 {
-    return ble_hid_gap_leave_connection_params_to_central(
-        "active connection parameters left to central",
+    return ble_hid_gap_request_connection_params(
+        "active connection parameters requested",
         6,
         12,
         0,
