@@ -27,15 +27,18 @@
 #include "watchdog_platform.h"
 
 #define KEYBOARD_CUSTOM_POLL_MS 10
+#define KEYBOARD_CUSTOM_IDLE_BACKUP_POLL_MS 1000
+#define KEYBOARD_CUSTOM_LOW_POWER_IDLE_BACKUP_POLL_MS 5000
 #define KEYBOARD_CUSTOM_DEBOUNCE_MS 30
 #define KEYBOARD_CUSTOM_DEBOUNCE_SAMPLES \
     ((KEYBOARD_CUSTOM_DEBOUNCE_MS + KEYBOARD_CUSTOM_POLL_MS - 1) / KEYBOARD_CUSTOM_POLL_MS)
 #define KEYBOARD_CUSTOM_DOUBLE_CLICK_WINDOW_MS 250
 #define KEYBOARD_CUSTOM_LONG_PRESS_MS 1000
-#define KEYBOARD_CUSTOM_GENERATED_PRESS_MS 80
+#define KEYBOARD_CUSTOM_GENERATED_PRESS_MS 160
 #define KEYBOARD_CUSTOM_GENERATED_RELEASE_SETTLE_MS 80
 #define KEYBOARD_CUSTOM_GENERATED_EVENT_QUEUE_DEPTH 8
 #define KEYBOARD_EC11_IDLE_POLL_MS 20
+#define KEYBOARD_EC11_LOW_POWER_IDLE_POLL_MS 250
 #define KEYBOARD_EC11_EVENT_QUEUE_DEPTH 64
 #define KEYBOARD_EC11_DETENT_STATE 0x03u
 
@@ -175,6 +178,7 @@ static keyboard_ec11_state_t s_ec11_state = {
 static esp_err_t keyboard_ec11_dispatch_rotation(
     ec11_rotation_direction_t direction,
     const char *source);
+static void keyboard_custom_wake_task(void);
 
 static int8_t keyboard_ec11_quadrature_delta(uint8_t previous, uint8_t current)
 {
@@ -254,9 +258,27 @@ static uint32_t keyboard_custom_elapsed_ms(TickType_t now, TickType_t start)
     return elapsed_ms > UINT32_MAX ? UINT32_MAX : (uint32_t)elapsed_ms;
 }
 
+static uint32_t keyboard_custom_ticks_until_ms(TickType_t now, TickType_t deadline)
+{
+    int32_t remaining_ticks = (int32_t)(deadline - now);
+    if (remaining_ticks <= 0) {
+        return 0;
+    }
+    uint64_t remaining_ms = (uint64_t)remaining_ticks * (uint64_t)portTICK_PERIOD_MS;
+    return remaining_ms > UINT32_MAX ? UINT32_MAX : (uint32_t)remaining_ms;
+}
+
 static bool keyboard_custom_tick_reached(TickType_t now, TickType_t deadline)
 {
     return (int32_t)(now - deadline) >= 0;
+}
+
+static bool keyboard_power_state_is_low_power_idle(void)
+{
+    power_manager_state_t state = power_manager_get_state();
+    return state == POWER_MANAGER_STATE_CONNECTED_IDLE ||
+           state == POWER_MANAGER_STATE_DISCONNECTED_IDLE ||
+           state == POWER_MANAGER_STATE_HARDWARE_SHUTDOWN;
 }
 
 static keyboard_custom_key_t *keyboard_custom_find_key(uint8_t logical_key)
@@ -391,6 +413,7 @@ static esp_err_t keyboard_custom_enqueue_generated_single_click(uint8_t logical_
         return ESP_ERR_TIMEOUT;
     }
 
+    keyboard_custom_wake_task();
     power_manager_record_activity("generated_custom_key");
     ESP_LOGI(
         TAG,
@@ -446,6 +469,13 @@ static void keyboard_custom_cancel_pending_single(keyboard_custom_key_t *key)
 {
     key->pending_single = false;
     key->double_candidate = false;
+}
+
+static void keyboard_custom_wake_task(void)
+{
+    if (s_custom_task_handle != NULL) {
+        xTaskNotifyGive(s_custom_task_handle);
+    }
 }
 
 static void keyboard_custom_handle_timers(keyboard_custom_key_t *key, TickType_t now)
@@ -628,6 +658,61 @@ static void keyboard_custom_drain_generated_events(TickType_t now)
     }
 }
 
+static bool keyboard_custom_generated_active(void)
+{
+    for (size_t index = 0; index < sizeof(s_custom_generated_states) / sizeof(s_custom_generated_states[0]); ++index) {
+        if (s_custom_generated_states[index].active) {
+            return true;
+        }
+    }
+    return false;
+}
+
+static bool keyboard_custom_debounce_active(const keyboard_custom_key_t *key)
+{
+    return key->initialized &&
+           key->last_sample_high != key->stable_level_high &&
+           key->stable_count < KEYBOARD_CUSTOM_DEBOUNCE_SAMPLES;
+}
+
+static uint32_t keyboard_custom_next_wait_ms(TickType_t now)
+{
+    if (keyboard_custom_generated_active()) {
+        return KEYBOARD_CUSTOM_POLL_MS;
+    }
+
+    uint32_t wait_ms = keyboard_power_state_is_low_power_idle()
+        ? KEYBOARD_CUSTOM_LOW_POWER_IDLE_BACKUP_POLL_MS
+        : KEYBOARD_CUSTOM_IDLE_BACKUP_POLL_MS;
+    for (size_t index = 0; index < sizeof(s_custom_keys) / sizeof(s_custom_keys[0]); ++index) {
+        keyboard_custom_key_t *key = &s_custom_keys[index];
+        if (!key->initialized || keyboard_custom_debounce_active(key)) {
+            return KEYBOARD_CUSTOM_POLL_MS;
+        }
+        if (key->pressed && !key->long_sent) {
+            uint32_t remaining_ms = keyboard_custom_ticks_until_ms(
+                now,
+                key->press_tick + pdMS_TO_TICKS(KEYBOARD_CUSTOM_LONG_PRESS_MS));
+            if (remaining_ms == 0) {
+                return KEYBOARD_CUSTOM_POLL_MS;
+            }
+            if (remaining_ms < wait_ms) {
+                wait_ms = remaining_ms;
+            }
+        }
+        if (!key->pressed && key->pending_single) {
+            uint32_t remaining_ms = keyboard_custom_ticks_until_ms(now, key->pending_single_due_tick);
+            if (remaining_ms == 0) {
+                return KEYBOARD_CUSTOM_POLL_MS;
+            }
+            if (remaining_ms < wait_ms) {
+                wait_ms = remaining_ms;
+            }
+        }
+    }
+    return wait_ms;
+}
+
 static void keyboard_custom_task(void *parameter)
 {
     (void)parameter;
@@ -644,8 +729,48 @@ static void keyboard_custom_task(void *parameter)
             keyboard_custom_handle_sample(&s_custom_keys[index], raw_high, now);
             keyboard_custom_handle_timers(&s_custom_keys[index], now);
         }
-        vTaskDelay(pdMS_TO_TICKS(KEYBOARD_CUSTOM_POLL_MS));
+        uint32_t wait_ms = keyboard_custom_next_wait_ms(xTaskGetTickCount());
+        if (keyboard_power_state_is_low_power_idle() && wait_ms > KEYBOARD_CUSTOM_POLL_MS) {
+            (void)watchdog_platform_task_notify_take_low_power(pdTRUE, wait_ms);
+        } else {
+            (void)watchdog_platform_task_notify_take(pdTRUE, wait_ms);
+        }
     }
+}
+
+static void keyboard_custom_wake_from_isr(void *arg)
+{
+    (void)arg;
+    if (s_custom_task_handle == NULL) {
+        return;
+    }
+
+    BaseType_t higher_priority_woken = pdFALSE;
+    vTaskNotifyGiveFromISR(s_custom_task_handle, &higher_priority_woken);
+    if (higher_priority_woken == pdTRUE) {
+        portYIELD_FROM_ISR();
+    }
+}
+
+static esp_err_t keyboard_custom_add_isr_handlers(void)
+{
+    for (size_t index = 0; index < sizeof(s_custom_keys) / sizeof(s_custom_keys[0]); ++index) {
+        esp_err_t ret = gpio_isr_handler_add(s_custom_keys[index].gpio, keyboard_custom_wake_from_isr, NULL);
+        if (ret != ESP_OK) {
+            for (size_t cleanup = 0; cleanup < index; ++cleanup) {
+                (void)gpio_isr_handler_remove(s_custom_keys[cleanup].gpio);
+            }
+            ESP_LOGE(
+                TAG,
+                "custom key ISR handler add failed: logical=%s gpio=%d error=%s",
+                s_custom_keys[index].logical_name,
+                s_custom_keys[index].gpio,
+                esp_err_to_name(ret));
+            diag_log(DIAG_SRC_KEYBOARD, DIAG_KBD_GPIO_FAIL, DIAG_SEV_ERROR, 1, ret, 0, 0);
+            return ret;
+        }
+    }
+    return ESP_OK;
 }
 
 static void keyboard_ec11_queue_edge_from_isr(void *arg)
@@ -866,6 +991,14 @@ static esp_err_t keyboard_ble_control_write(
     return voice_recording_control_dispatch_control_command(command, source);
 }
 
+static uint32_t keyboard_ec11_backup_poll_ms(void)
+{
+    if (keyboard_power_state_is_low_power_idle()) {
+        return KEYBOARD_EC11_LOW_POWER_IDLE_POLL_MS;
+    }
+    return KEYBOARD_EC11_IDLE_POLL_MS;
+}
+
 static void keyboard_ec11_task(void *parameter)
 {
     (void)parameter;
@@ -875,7 +1008,10 @@ static void keyboard_ec11_task(void *parameter)
     while (1) {
         watchdog_platform_feed_current_task();
         keyboard_ec11_event_t event = {0};
-        if (xQueueReceive(s_ec11_event_queue, &event, pdMS_TO_TICKS(KEYBOARD_EC11_IDLE_POLL_MS)) == pdTRUE) {
+        if (xQueueReceive(
+                s_ec11_event_queue,
+                &event,
+                pdMS_TO_TICKS(keyboard_ec11_backup_poll_ms())) == pdTRUE) {
             keyboard_ec11_handle_state(&s_ec11_state, event.raw_state);
             while (xQueueReceive(s_ec11_event_queue, &event, 0) == pdTRUE) {
                 keyboard_ec11_handle_state(&s_ec11_state, event.raw_state);
@@ -919,12 +1055,23 @@ static esp_err_t keyboard_custom_start(void)
         .mode = GPIO_MODE_INPUT,
         .pull_up_en = GPIO_PULLUP_ENABLE,
         .pull_down_en = GPIO_PULLDOWN_DISABLE,
-        .intr_type = GPIO_INTR_DISABLE,
+        .intr_type = GPIO_INTR_ANYEDGE,
     };
     esp_err_t ret = gpio_config(&io_conf);
     if (ret != ESP_OK) {
         ESP_LOGE(TAG, "custom key GPIO config failed: %s", esp_err_to_name(ret));
         diag_log(DIAG_SRC_KEYBOARD, DIAG_KBD_GPIO_FAIL, DIAG_SEV_ERROR, 1, ret, 0, 0);
+        return ret;
+    }
+
+    ret = gpio_install_isr_service(0);
+    if (ret != ESP_OK && ret != ESP_ERR_INVALID_STATE) {
+        ESP_LOGE(TAG, "custom key GPIO ISR service install failed: %s", esp_err_to_name(ret));
+        diag_log(DIAG_SRC_KEYBOARD, DIAG_KBD_GPIO_FAIL, DIAG_SEV_ERROR, 1, ret, 0, 0);
+        return ret;
+    }
+    ret = keyboard_custom_add_isr_handlers();
+    if (ret != ESP_OK) {
         return ret;
     }
 
@@ -936,14 +1083,19 @@ static esp_err_t keyboard_custom_start(void)
         4,
         &s_custom_task_handle);
     if (task_ok != pdPASS) {
+        for (size_t index = 0; index < sizeof(s_custom_keys) / sizeof(s_custom_keys[0]); ++index) {
+            (void)gpio_isr_handler_remove(s_custom_keys[index].gpio);
+        }
         ESP_LOGE(TAG, "custom key task create failed");
         return ESP_ERR_NO_MEM;
     }
 
     ESP_LOGI(
         TAG,
-        "custom keys ready: key1=gpio38:f13/f17/f21 key2=gpio39:f14/f18/f22 key3=gpio40:f15/f19/f23 key4=gpio41:f16/f20/f24 active_low=1 poll_ms=%d debounce_ms=%d debounce_samples=%d double_ms=%d long_ms=%d",
+        "custom keys ready: key1=gpio38:f13/f17/f21 key2=gpio39:f14/f18/f22 key3=gpio40:f15/f19/f23 key4=gpio41:f16/f20/f24 active_low=1 wake=interrupt_anyedge poll_ms=%d idle_backup_ms=%d low_power_idle_backup_ms=%d debounce_ms=%d debounce_samples=%d double_ms=%d long_ms=%d",
         KEYBOARD_CUSTOM_POLL_MS,
+        KEYBOARD_CUSTOM_IDLE_BACKUP_POLL_MS,
+        KEYBOARD_CUSTOM_LOW_POWER_IDLE_BACKUP_POLL_MS,
         KEYBOARD_CUSTOM_DEBOUNCE_MS,
         KEYBOARD_CUSTOM_DEBOUNCE_SAMPLES,
         KEYBOARD_CUSTOM_DOUBLE_CLICK_WINDOW_MS,
@@ -1017,9 +1169,10 @@ static esp_err_t keyboard_ec11_start(void)
 
     ESP_LOGI(
         TAG,
-        "EC11 ready: a=gpio42 b=gpio2 key=gpio18 key_policy=gpio18_power_on_runtime_custom_single_click_double_click_recovery_pwr_hold_gpio9_shutdown_separate decoder=interrupt_quadrature direction_policy=clockwise_increases_volume_brightness detent_state=0x%02x idle_poll_ms=%d queue_depth=%d",
+        "EC11 ready: a=gpio42 b=gpio2 key=gpio18 key_policy=gpio18_power_on_runtime_custom_single_click_double_click_recovery_pwr_hold_gpio9_shutdown_separate decoder=interrupt_quadrature direction_policy=clockwise_increases_volume_brightness detent_state=0x%02x idle_poll_ms=%d low_power_idle_poll_ms=%d queue_depth=%d",
         KEYBOARD_EC11_DETENT_STATE,
         KEYBOARD_EC11_IDLE_POLL_MS,
+        KEYBOARD_EC11_LOW_POWER_IDLE_POLL_MS,
         KEYBOARD_EC11_EVENT_QUEUE_DEPTH);
     return ESP_OK;
 }

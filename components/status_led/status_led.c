@@ -72,8 +72,13 @@
 #define STATUS_LED_TASK_STACK_BYTES (5 * 1024)
 #define STATUS_LED_REFRESH_MS 50U
 #define STATUS_LED_IDLE_REFRESH_MS 1000U
+#define STATUS_LED_LOW_POWER_IDLE_REFRESH_MS 60000U
 #define STATUS_LED_TX_MUTEX_WAIT_MS 100
 #define STATUS_LED_POWER_POLL_MS 5000U
+#define STATUS_LED_LOW_POWER_POLL_MS 60000U
+#define STATUS_LED_LOW_POWER_PWR_PERCENT 8U
+#define STATUS_LED_LOW_POWER_PWR_WHITE_PERCENT 3U
+#define STATUS_LED_LOW_POWER_BLE_CONNECTED_PERCENT 8U
 #define STATUS_LED_STATUS_WINDOW_MS 6000U
 #define STATUS_LED_PREVIEW_BLE_OVERRIDE_MS 15000U
 #define STATUS_LED_BOOT_ACK_MS 2500U
@@ -1518,6 +1523,9 @@ static bool status_led_timed_output_active_locked(uint32_t now_ms)
 
 static uint32_t status_led_refresh_delay_ms_locked(uint32_t now_ms)
 {
+    if (s_state.output_disabled || s_state.low_power_disabled) {
+        return STATUS_LED_LOW_POWER_IDLE_REFRESH_MS;
+    }
     return status_led_timed_output_active_locked(now_ms)
         ? STATUS_LED_REFRESH_MS
         : STATUS_LED_IDLE_REFRESH_MS;
@@ -1850,6 +1858,44 @@ static void status_led_render_ble_locked(status_led_frame_t *frame, uint32_t now
     }
 
     status_led_set_max(&frame->status[STATUS_LED_SEM_BLE], color);
+}
+
+static void status_led_render_low_power_power_locked(status_led_frame_t *frame, uint32_t now_ms, bool *ret_safety)
+{
+    status_led_render_power_locked(frame, now_ms, ret_safety);
+    if (status_led_rgb_is_on(frame->status[STATUS_LED_SEM_PWR])) {
+        return;
+    }
+
+    status_led_rgb_t color = {0};
+    if (s_state.external_power_present) {
+        color = status_led_token_locked(
+            status_led_rgb(255, 255, 255),
+            STATUS_LED_LOW_POWER_PWR_WHITE_PERCENT,
+            false);
+    } else if (s_state.battery_valid) {
+        const uint8_t battery_level = status_led_battery_display_level_locked();
+        color = status_led_token_locked(
+            battery_level >= STATUS_LED_BATTERY_DISPLAY_GREEN_PERCENT
+                ? status_led_rgb(0, 255, 0)
+                : status_led_rgb(255, 140, 0),
+            STATUS_LED_LOW_POWER_PWR_PERCENT,
+            false);
+    }
+    status_led_set_max(&frame->status[STATUS_LED_SEM_PWR], color);
+}
+
+static void status_led_render_low_power_ble_locked(status_led_frame_t *frame)
+{
+    if (s_state.ble_state != STATUS_LED_BLE_CONNECTED) {
+        return;
+    }
+    status_led_set_max(
+        &frame->status[STATUS_LED_SEM_BLE],
+        status_led_token_locked(
+            status_led_rgb(0, 0, 255),
+            STATUS_LED_LOW_POWER_BLE_CONNECTED_PERCENT,
+            false));
 }
 
 static uint8_t status_led_step_percent_towards(uint8_t current, uint8_t target, uint8_t max_step)
@@ -2583,11 +2629,21 @@ static void status_led_render_frame_locked(status_led_frame_t *frame, uint32_t n
     memset(frame, 0, sizeof(*frame));
     bool safety = false;
 
-    if (s_state.output_disabled || s_state.low_power_disabled) {
+    if (s_state.output_disabled) {
         s_state.last_estimated_current_ma = 0;
         s_state.last_current_budget_ma = 0;
         s_state.last_budget_scale_percent = 0U;
         s_state.current_limited_by_budget = false;
+        return;
+    }
+    if (s_state.low_power_disabled) {
+        if (now_ms >= s_state.error_until_ms) {
+            s_state.error_domain = STATUS_LED_ERROR_DOMAIN_NONE;
+        }
+        status_led_render_low_power_power_locked(frame, now_ms, &safety);
+        status_led_render_low_power_ble_locked(frame);
+        status_led_apply_zone_brightness_caps_locked(frame);
+        status_led_clamp_current_locked(frame, safety);
         return;
     }
 
@@ -2865,9 +2921,12 @@ static void status_led_poll_power_inputs(void)
     if (xSemaphoreTake(s_mutex, portMAX_DELAY) == pdTRUE) {
         bool preview_window_active = now_ms < s_state.status_window_until_ms &&
                                      strcmp(s_state.last_reason, "preview") == 0;
+        uint32_t poll_ms = s_state.low_power_disabled
+            ? STATUS_LED_LOW_POWER_POLL_MS
+            : STATUS_LED_POWER_POLL_MS;
         should_poll = !preview_window_active &&
                       (s_state.last_power_poll_ms == 0 ||
-                       now_ms - s_state.last_power_poll_ms >= STATUS_LED_POWER_POLL_MS);
+                       now_ms - s_state.last_power_poll_ms >= poll_ms);
         if (should_poll) {
             s_state.last_power_poll_ms = now_ms;
         }
@@ -3695,6 +3754,7 @@ void status_led_set_low_power_disabled(bool disabled)
         s_state.low_power_disabled = disabled;
         if (!disabled) {
             s_state.output_disabled = false;
+            s_state.last_power_poll_ms = 0;
         }
         s_state.preview_suppress_accents = false;
         s_state.preview_effect_only = false;

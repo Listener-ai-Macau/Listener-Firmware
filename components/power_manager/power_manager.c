@@ -365,10 +365,10 @@ static void power_manager_apply_charge_state_filter_locked(
         return;
     }
 
-    bool raw_charging = source->usb_power_present && source->bat_chg_level == 0;
+    bool raw_charging = source->external_power_present && source->bat_chg_level == 0;
     bool raw_full = source->usb_power_present && source->bat_std_level == 0;
 
-    if (!source->usb_power_present) {
+    if (!source->external_power_present) {
         s_charge_full_latched = false;
         s_charge_full_candidate_since_ms = 0;
     } else if (!s_charge_full_latched) {
@@ -405,6 +405,8 @@ static void power_manager_read_power_source(power_manager_power_source_snapshot_
     board_get_v2_power_input_snapshot(&board_snapshot);
 
     bool usb_power_present = board_snapshot.usb_det_level > 0;
+    bool raw_charging = board_snapshot.bat_chg_level == 0;
+    bool external_power_present = usb_power_present || raw_charging;
 
     *out_source = (power_manager_power_source_snapshot_t){
         .usb_det_level = board_snapshot.usb_det_level,
@@ -412,18 +414,19 @@ static void power_manager_read_power_source(power_manager_power_source_snapshot_
         .bat_std_level = board_snapshot.bat_std_level,
         .pwr_hold_level = board_snapshot.pwr_hold_level,
         .usb_power_present = usb_power_present,
-        .charging = usb_power_present && board_snapshot.bat_chg_level == 0,
+        .external_power_present = external_power_present,
+        .charging = raw_charging,
         .charge_full = usb_power_present && board_snapshot.bat_std_level == 0,
         .usb_det_policy = board_snapshot.usb_det_policy,
         .charger_polarity_policy = board_snapshot.charger_polarity_policy,
         .pwr_hold_policy = board_snapshot.pwr_hold_policy,
     };
     /*
-     * CHG/STD are charger status outputs. They remain useful diagnostics, but
-     * on a battery-only full pack they must not keep long-idle hardware
-     * shutdown blocked after VBUS/USB_DET is gone.
+     * CHG/STD are charger status outputs. Treat active CHG as external power so
+     * boards with a quiet USB_DET divider still use plugged idle policy while
+     * charging. Do not use STD/full by itself as an external-power fallback:
+     * on a battery-only full pack it must not keep long-idle shutdown blocked.
      */
-    out_source->external_power_present = out_source->usb_power_present;
 }
 
 static uint32_t power_manager_shutdown_blockers_for_source(

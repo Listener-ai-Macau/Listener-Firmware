@@ -53,6 +53,7 @@
 #define AUDIO_CAPTURE_STREAM_PROGRESS_LOG_PACKET_INTERVAL 64U
 #define AUDIO_CAPTURE_BACKPRESSURE_PAUSE_MS AUDIO_CAPTURE_FRAME_MS
 #define AUDIO_CAPTURE_BACKPRESSURE_LOG_INTERVAL_FRAMES 50U
+#define AUDIO_CAPTURE_IDLE_POWER_SAVE_WAIT_MS 5000U
 #define AUDIO_CAPTURE_PDM_HW_AMPLIFY_NUM 8U
 #define AUDIO_CAPTURE_PDM_SOFTWARE_GAIN_NUM 8
 // Status LED level is a visual envelope, so keep it more sensitive than stream clipping.
@@ -135,6 +136,13 @@ static uint32_t s_session_id_counter;
 
 static bool s_capture_backpressure_paused;
 static uint32_t s_capture_backpressure_frames;
+
+static void audio_capture_wake_task(void)
+{
+    if (s_capture_task_handle != NULL) {
+        xTaskNotifyGive(s_capture_task_handle);
+    }
+}
 
 static const char *audio_capture_static_unavailable_reason(void)
 {
@@ -402,6 +410,7 @@ esp_err_t audio_capture_session_begin(void)
 
     s_export_state.requested = true;
     xSemaphoreGive(s_state_mutex);
+    audio_capture_wake_task();
     ESP_LOGI(
         TAG,
         "record session begin requested: session_id=%" PRIu32 " buffer_ms=%u buffer_bytes=%u packet_payload_bytes=%u packet_safe_max_s=%" PRIu32,
@@ -471,6 +480,7 @@ bool audio_capture_session_is_active(void)
 esp_err_t audio_capture_set_idle_power_save(bool enabled)
 {
     s_idle_power_save_requested = enabled;
+    audio_capture_wake_task();
     if (!enabled) {
         return audio_capture_apply_idle_power_save(false);
     }
@@ -791,7 +801,9 @@ static void audio_capture_task(void *arg)
         watchdog_platform_feed_current_task();
         if (s_idle_power_save_requested && !audio_capture_session_is_active()) {
             (void)audio_capture_apply_idle_power_save(true);
-            vTaskDelay(pdMS_TO_TICKS(250));
+            (void)watchdog_platform_task_notify_take_low_power(
+                pdTRUE,
+                AUDIO_CAPTURE_IDLE_POWER_SAVE_WAIT_MS);
             continue;
         }
         (void)audio_capture_apply_idle_power_save(false);
@@ -989,7 +1001,9 @@ static void audio_capture_task(void *arg)
         watchdog_platform_feed_current_task();
         if (s_idle_power_save_requested && !audio_capture_session_is_active()) {
             (void)audio_capture_apply_idle_power_save(true);
-            vTaskDelay(pdMS_TO_TICKS(250));
+            (void)watchdog_platform_task_notify_take_low_power(
+                pdTRUE,
+                AUDIO_CAPTURE_IDLE_POWER_SAVE_WAIT_MS);
             continue;
         }
         (void)audio_capture_apply_idle_power_save(false);
