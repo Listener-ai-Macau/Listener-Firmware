@@ -387,15 +387,18 @@ def main() -> int:
     power_manager = (REPO_ROOT / "components/power_manager/power_manager.c").read_text(encoding="utf-8")
     if not re.search(
         r"power_manager_apply_charge_state_filter_locked[\s\S]*"
+        r"raw_full_external\s*=[\s\S]*"
+        r"power_manager_charge_full_battery_allowed[\s\S]*"
+        r"power_manager_charger_status_external_locked[\s\S]*"
         r"raw_full\s*&&[\s\S]*"
         r"!raw_charging\s*&&[\s\S]*"
         r"power_manager_charge_full_battery_allowed[\s\S]*"
         r"POWER_MANAGER_CHARGE_FULL_DEBOUNCE_MS[\s\S]*"
-        r"source->charge_full\s*=\s*source->usb_power_present\s*&&\s*s_charge_full_latched",
+        r"source->charge_full\s*=\s*source->external_power_present\s*&&\s*s_charge_full_latched",
         power_manager,
     ):
         failures.append(
-            "components/power_manager/power_manager.c: charge-full must be USB-gated and debounced against raw BAT_STD jitter"
+            "components/power_manager/power_manager.c: charge-full must be external-power gated, battery-validated, and debounced against raw BAT_STD jitter"
         )
     if not re.search(
         r"power_manager_sync_power_source_locked[\s\S]*"

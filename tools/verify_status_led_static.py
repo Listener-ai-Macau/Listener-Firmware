@@ -15,6 +15,7 @@ CHECKS = {
         r"BOARD_PINS_RGB_KEY_IO\s+\(GPIO_NUM_13\)",
         r"BOARD_PINS_RGB_EDGE_IO\s+\(GPIO_NUM_4\)",
         r"BOARD_PINS_BAT_CHG_IO\s+\(GPIO_NUM_14\)",
+        r"BOARD_PINS_USB_DET_IO\s+\(GPIO_NUM_NC\)",
     ],
     "components/status_led/include/status_led.h": [
         "status_led_init",
@@ -424,7 +425,8 @@ CHECKS = {
         "status_led_charging_breath_percent_locked(now_ms)",
         "STATUS_LED_FULL_STATUS_STEADY_PERCENT",
         "s_state.external_power_present",
-        "BOARD_PINS_USB_DET_IO",
+        "raw_full_external",
+        "status_led_charger_status_external_locked(\n                usb_power_present,\n                raw_charging,\n                raw_full_external,",
         "external_power_source_flags |= STATUS_LED_POWER_SOURCE_CHARGER_STATUS",
         "s_state.charge_full_latched = true",
         "s_state.charge_full_latched = false",

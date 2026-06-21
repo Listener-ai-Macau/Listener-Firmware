@@ -630,7 +630,7 @@ static void device_settings_print_status(const char *result)
                              power.usb_serial_jtag_sof_active;
     bool charging = power.bat_chg_level == 0;
     bool charge_full = power.bat_std_level == 0;
-    bool external_power_present = usb_power_present || charging;
+    bool external_power_present = usb_power_present || charging || charge_full;
     uint8_t active_brightness = external_power_present
         ? snapshot.plugged_brightness_percent
         : snapshot.battery_brightness_percent;

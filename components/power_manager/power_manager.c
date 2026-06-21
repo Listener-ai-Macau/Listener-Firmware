@@ -273,7 +273,7 @@ static void power_manager_blocker_names(uint32_t blockers, char *buffer, size_t 
 static const char *power_manager_gpio_level_name(int level)
 {
     if (level < 0) {
-        return "unknown";
+        return "nc";
     }
     return level != 0 ? "high" : "low";
 }
@@ -363,9 +363,10 @@ static uint32_t power_manager_charge_full_candidate_ms_locked(uint64_t now_ms)
 static bool power_manager_charger_status_external_locked(
     bool usb_power_present,
     bool raw_charging,
+    bool raw_full_external,
     uint64_t now_ms)
 {
-    if (usb_power_present || raw_charging) {
+    if (usb_power_present || raw_charging || raw_full_external) {
         s_charger_status_external_until_ms =
             now_ms + POWER_MANAGER_CHARGER_STATUS_EXTERNAL_HOLD_MS;
         return true;
@@ -390,13 +391,18 @@ static void power_manager_apply_charge_state_filter_locked(
     }
 
     bool raw_charging = source->bat_chg_level == 0;
+    bool raw_full_status = source->bat_std_level == 0;
+    bool raw_full_external =
+        raw_full_status &&
+        power_manager_charge_full_battery_allowed(battery_snapshot);
     bool charger_status_external = power_manager_charger_status_external_locked(
         source->usb_power_present,
         raw_charging,
+        raw_full_external,
         now_ms);
     source->external_power_present = source->usb_power_present || charger_status_external;
     raw_charging = source->external_power_present && raw_charging;
-    bool raw_full = source->usb_power_present && source->bat_std_level == 0;
+    bool raw_full = source->external_power_present && raw_full_status;
 
     if (!source->external_power_present) {
         s_charge_full_latched = false;
@@ -419,7 +425,7 @@ static void power_manager_apply_charge_state_filter_locked(
         }
     }
 
-    source->charge_full = source->usb_power_present && s_charge_full_latched;
+    source->charge_full = source->external_power_present && s_charge_full_latched;
     source->charging = raw_charging && !source->charge_full;
     source->charge_full_latched = s_charge_full_latched;
     source->charge_full_candidate_ms = power_manager_charge_full_candidate_ms_locked(now_ms);
@@ -438,7 +444,8 @@ static void power_manager_read_power_source(power_manager_power_source_snapshot_
     bool usb_power_present = board_snapshot.usb_det_level > 0 ||
                              usb_serial_jtag_sof_active;
     bool raw_charging = board_snapshot.bat_chg_level == 0;
-    bool external_power_present = usb_power_present || raw_charging;
+    bool raw_full = board_snapshot.bat_std_level == 0;
+    bool external_power_present = usb_power_present || raw_charging || raw_full;
 
     *out_source = (power_manager_power_source_snapshot_t){
         .usb_det_level = board_snapshot.usb_det_level,
@@ -449,15 +456,15 @@ static void power_manager_read_power_source(power_manager_power_source_snapshot_
         .usb_power_present = usb_power_present,
         .external_power_present = external_power_present,
         .charging = raw_charging,
-        .charge_full = usb_power_present && board_snapshot.bat_std_level == 0,
+        .charge_full = external_power_present && raw_full,
         .usb_det_policy = board_snapshot.usb_det_policy,
         .charger_polarity_policy = board_snapshot.charger_polarity_policy,
         .pwr_hold_policy = board_snapshot.pwr_hold_policy,
     };
     /*
-     * CHG/STD are charger status outputs. Active CHG is the only safe immediate
-     * fallback when USB_DET is quiet; the locked charge-state filter retains it
-     * for a bounded window so charger standby does not look like battery power.
+     * CHG/STD are charger status outputs. Active CHG and validated STD/full are
+     * the charger fallback when USB_DET is not populated and no USB host SOF is
+     * present; the locked filter debounces full and bounds standby retention.
      */
 }
 

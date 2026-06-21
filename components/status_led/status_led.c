@@ -1070,9 +1070,10 @@ static const char *status_led_external_power_source_name(uint32_t source_flags)
 static bool status_led_charger_status_external_locked(
     bool usb_power_present,
     bool raw_charging,
+    bool raw_full_external,
     uint32_t now_ms)
 {
-    if (usb_power_present || raw_charging) {
+    if (usb_power_present || raw_charging || raw_full_external) {
         s_state.charger_status_external_until_ms =
             now_ms + STATUS_LED_CHARGER_STATUS_EXTERNAL_HOLD_MS;
         return true;
@@ -2994,6 +2995,10 @@ static void status_led_poll_power_inputs(void)
     bool usb_power_present = usb_det_present || usb_serial_jtag_sof_active;
     bool raw_charging = power_input.bat_chg_level == 0;
     bool raw_full = power_input.bat_std_level == 0;
+    bool battery_allows_full = !battery_valid ||
+                               battery_mv >= STATUS_LED_CHARGE_FULL_MIN_MV ||
+                               battery_level >= STATUS_LED_CHARGE_FULL_MIN_PERCENT;
+    bool raw_full_external = raw_full && battery_allows_full;
     uint32_t external_power_source_flags = 0;
     if (usb_det_present) {
         external_power_source_flags |= STATUS_LED_POWER_SOURCE_USB_DET;
@@ -3006,14 +3011,12 @@ static void status_led_poll_power_inputs(void)
 
     if (xSemaphoreTake(s_mutex, portMAX_DELAY) == pdTRUE) {
         bool charger_status_external =
-            status_led_charger_status_external_locked(usb_power_present, raw_charging, now_ms);
+            status_led_charger_status_external_locked(
+                usb_power_present,
+                raw_charging,
+                raw_full_external,
+                now_ms);
         if (charger_status_external) {
-            external_power_source_flags |= STATUS_LED_POWER_SOURCE_CHARGER_STATUS;
-            external_power_present = true;
-        }
-        if (!usb_power_present &&
-            raw_full &&
-            (s_state.external_power_source_flags & STATUS_LED_POWER_SOURCE_CHARGER_STATUS)) {
             external_power_source_flags |= STATUS_LED_POWER_SOURCE_CHARGER_STATUS;
             external_power_present = true;
         }
@@ -3024,9 +3027,6 @@ static void status_led_poll_power_inputs(void)
             s_state.charge_full_latched = false;
             s_state.charge_full_candidate_since_ms = 0;
         } else if (!s_state.charge_full_latched) {
-            bool battery_allows_full = !battery_valid ||
-                                       battery_mv >= STATUS_LED_CHARGE_FULL_MIN_MV ||
-                                       battery_level >= STATUS_LED_CHARGE_FULL_MIN_PERCENT;
             bool full_candidate = raw_full && !raw_charging && battery_allows_full;
             if (full_candidate) {
                 if (s_state.charge_full_candidate_since_ms == 0) {
@@ -3136,15 +3136,21 @@ static esp_err_t status_led_init_strip_backend(status_led_strip_t *strip)
     return status_led_strip_backend_new(&config, &strip->backend);
 }
 
+static bool status_led_gpio_is_valid(gpio_num_t gpio)
+{
+    return gpio != GPIO_NUM_NC && gpio >= 0 && gpio < GPIO_NUM_MAX;
+}
+
+static uint64_t status_led_gpio_mask(gpio_num_t gpio)
+{
+    return status_led_gpio_is_valid(gpio) ? (1ULL << (uint32_t)gpio) : 0ULL;
+}
+
 static void status_led_configure_power_inputs(void)
 {
     uint64_t charge_mask = 0;
-    if (BOARD_PINS_BAT_CHG_IO != GPIO_NUM_NC) {
-        charge_mask |= 1ULL << (uint32_t)BOARD_PINS_BAT_CHG_IO;
-    }
-    if (BOARD_PINS_BAT_STD_IO != GPIO_NUM_NC) {
-        charge_mask |= 1ULL << (uint32_t)BOARD_PINS_BAT_STD_IO;
-    }
+    charge_mask |= status_led_gpio_mask(BOARD_PINS_BAT_CHG_IO);
+    charge_mask |= status_led_gpio_mask(BOARD_PINS_BAT_STD_IO);
     if (charge_mask != 0) {
         gpio_config_t charge_config = {
             .pin_bit_mask = charge_mask,
@@ -3156,9 +3162,10 @@ static void status_led_configure_power_inputs(void)
         (void)gpio_config(&charge_config);
     }
 
-    if (BOARD_PINS_USB_DET_IO != GPIO_NUM_NC) {
+    gpio_num_t usb_det_gpio = BOARD_PINS_USB_DET_IO;
+    if (status_led_gpio_is_valid(usb_det_gpio)) {
         gpio_config_t usb_config = {
-            .pin_bit_mask = 1ULL << (uint32_t)BOARD_PINS_USB_DET_IO,
+            .pin_bit_mask = status_led_gpio_mask(usb_det_gpio),
             .mode = GPIO_MODE_INPUT,
             .pull_up_en = GPIO_PULLUP_DISABLE,
             .pull_down_en = GPIO_PULLDOWN_DISABLE,

@@ -20,7 +20,7 @@ static const char *TAG = "board";
 
 #define BOARD_USB_PREFIX "BOARD:"
 
-#define BOARD_V2_USB_DET_POLICY "v2_gpio7_r37_r32_10K_10K_divider"
+#define BOARD_V2_USB_DET_POLICY "not_populated_use_usb_serial_jtag_sof_and_charger_status"
 #define BOARD_V2_CHARGER_POLARITY "v2_gpio14_chg_gpio21_std_active_low"
 #define BOARD_V2_PWR_HOLD_POLICY "v2_gpio9_power_latch_runtime_low_drive_high_for_hardware_shutdown"
 #define BOARD_V2_LED_POLICY "v2_four_zone_ws2812_status_gpio1_ec11_gpio5_key_gpio13_edge_gpio4"
@@ -122,7 +122,7 @@ static void board_configure_status_input(gpio_num_t gpio)
 static const char *board_gpio_level_name(int level)
 {
     if (level < 0) {
-        return "unknown";
+        return "nc";
     }
     return level ? "high" : "low";
 }
