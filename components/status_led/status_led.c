@@ -110,11 +110,13 @@
 #define STATUS_LED_FULL_STATUS_STEADY_PERCENT STATUS_LED_PWR_WHITE_VISUAL_BALANCE_PERCENT
 #define STATUS_LED_BLE_REPAIR_MIN_PERCENT 30U
 #define STATUS_LED_BLE_REPAIR_MAX_PERCENT 100U
-#define STATUS_LED_BLE_PAIRING_PULSE_PERCENT 100U
-#define STATUS_LED_BLE_RECONNECT_MIN_PERCENT 30U
-#define STATUS_LED_BLE_RECONNECT_MAX_PERCENT 100U
-#define STATUS_LED_BLE_CONNECTED_CONFIRM_MIN_PERCENT 35U
-#define STATUS_LED_BLE_CONNECTED_STEADY_PERCENT 100U
+#define STATUS_LED_BLE_ATTENTION_PERCENT 44U
+#define STATUS_LED_BLE_PAIRING_PULSE_PERCENT STATUS_LED_BLE_ATTENTION_PERCENT
+#define STATUS_LED_BLE_RECONNECT_MIN_PERCENT 24U
+#define STATUS_LED_BLE_RECONNECT_MAX_PERCENT STATUS_LED_BLE_ATTENTION_PERCENT
+#define STATUS_LED_BLE_CONNECTED_CONFIRM_MIN_PERCENT 32U
+#define STATUS_LED_BLE_CONNECTED_GENERIC_PERCENT 38U
+#define STATUS_LED_BLE_CONNECTED_STEADY_PERCENT STATUS_LED_BLE_CONNECTED_GENERIC_PERCENT
 #define STATUS_LED_BATTERY_IDLE_BLE_HEARTBEAT_ON_MS 120U
 #define STATUS_LED_BATTERY_IDLE_BLE_HEARTBEAT_OFF_MS 7880U
 #define STATUS_LED_BATTERY_IDLE_BLE_HEARTBEAT_PERCENT 18U
@@ -477,7 +479,7 @@ static status_led_strip_t s_strips[STATUS_LED_STRIP_COUNT] = {
         .led_count = STATUS_LED_STATUS_COUNT,
         .tail_guard_pixels = STATUS_LED_STATUS_TAIL_GUARD_PIXELS,
         .color_order = STATUS_LED_STATUS_DEFAULT_COLOR_ORDER,
-        // ESP32-S3's ESP-IDF RMT TX driver exposes one DMA-capable TX channel; keep it on the semantic status strip.
+        // Current V2 hardware has one DMA-prioritized status rail; other LED rails stay on ordinary RMT.
         .prefer_dma = true,
     },
     {
@@ -4188,6 +4190,7 @@ static void status_led_print_status(void)
     uint8_t strip_dma_requested[STATUS_LED_STRIP_COUNT];
     uint8_t strip_dma[STATUS_LED_STRIP_COUNT];
     uint8_t strip_dma_fallback[STATUS_LED_STRIP_COUNT];
+    unsigned int strip_mem_block_symbols[STATUS_LED_STRIP_COUNT];
     uint8_t status_tail_guard_pixels = 0U;
     status_led_color_order_t strip_orders[STATUS_LED_STRIP_COUNT];
     device_settings_snapshot_t device_settings = {0};
@@ -4207,6 +4210,8 @@ static void status_led_print_status(void)
             strip_dma[index] = status_led_strip_backend_uses_dma(s_strips[index].backend) ? 1U : 0U;
             strip_dma_fallback[index] =
                 status_led_strip_backend_dma_fallback(s_strips[index].backend) ? 1U : 0U;
+            strip_mem_block_symbols[index] =
+                (unsigned int)status_led_strip_backend_mem_block_symbols(s_strips[index].backend);
         }
         status_tail_guard_pixels = s_strips[STATUS_LED_STRIP_STATUS].tail_guard_pixels;
         xSemaphoreGive(s_mutex);
@@ -4279,11 +4284,12 @@ static void status_led_print_status(void)
 
     printf(
         "~LED:STATUS detail=contract backend=rmt_ws2812_800khz refresh_ms=%u reset_us=300"
-        " rmt_tx_dma_supported=%u rmt_tx_dma_strategy=status_strip_priority_single_rmt_dma_channel"
+        " rmt_tx_dma_supported=%u rmt_tx_dma_strategy=status_strip_dma_full_frame_buffer"
         " rmt_strip_all_available=%u rmt_tx_dma_all_strips=%u"
         " rmt_tx_dma_requested=status:%u,ec11:%u,key:%u,edge:%u"
         " rmt_tx_dma_actual=status:%u,ec11:%u,key:%u,edge:%u"
         " rmt_tx_dma_fallback=status:%u,ec11:%u,key:%u,edge:%u"
+        " rmt_mem_block_symbols=status:%u,ec11:%u,key:%u,edge:%u"
         " idle_refresh_ms=%u unchanged_tx_suppression=1 timing=ws2812_4020_compatible"
         " status_tail_guard_pixels=%u status_tail_reinforce=recording_processing"
         " status_tail_reinforce_writes=%u"
@@ -4330,6 +4336,10 @@ static void status_led_print_status(void)
         strip_dma_fallback[STATUS_LED_STRIP_EC11],
         strip_dma_fallback[STATUS_LED_STRIP_KEY],
         strip_dma_fallback[STATUS_LED_STRIP_EDGE],
+        strip_mem_block_symbols[STATUS_LED_STRIP_STATUS],
+        strip_mem_block_symbols[STATUS_LED_STRIP_EC11],
+        strip_mem_block_symbols[STATUS_LED_STRIP_KEY],
+        strip_mem_block_symbols[STATUS_LED_STRIP_EDGE],
         STATUS_LED_IDLE_REFRESH_MS,
         STATUS_LED_STATUS_TAIL_GUARD_PIXELS,
         STATUS_LED_STATUS_TAIL_REINFORCE_WRITES,

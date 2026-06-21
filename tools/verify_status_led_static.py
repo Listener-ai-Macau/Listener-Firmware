@@ -176,12 +176,13 @@ CHECKS = {
         "STATUS_LED_NVS_BRIGHTNESS_KEY \"brightness\"",
         "led_contract_rev=",
         "rmt_tx_dma_supported=%u",
-        "rmt_tx_dma_strategy=status_strip_priority_single_rmt_dma_channel",
+        "rmt_tx_dma_strategy=status_strip_dma_full_frame_buffer",
         "rmt_strip_all_available=%u",
         "rmt_tx_dma_all_strips=%u",
         "rmt_tx_dma_requested=status:%u,ec11:%u,key:%u,edge:%u",
         "rmt_tx_dma_actual=status:%u,ec11:%u,key:%u,edge:%u",
         "rmt_tx_dma_fallback=status:%u,ec11:%u,key:%u,edge:%u",
+        "rmt_mem_block_symbols=status:%u,ec11:%u,key:%u,edge:%u",
         "unchanged_tx_suppression=1",
         "timing=ws2812_4020_compatible",
         "status_tail_guard_pixels=%u",
@@ -288,11 +289,13 @@ CHECKS = {
         "state != STATUS_LED_BLE_REPAIRING",
         "STATUS_LED_BLE_REPAIR_MIN_PERCENT 30U",
         "STATUS_LED_BLE_REPAIR_MAX_PERCENT 100U",
-        "STATUS_LED_BLE_PAIRING_PULSE_PERCENT 100U",
-        "STATUS_LED_BLE_RECONNECT_MIN_PERCENT 30U",
-        "STATUS_LED_BLE_RECONNECT_MAX_PERCENT 100U",
-        "STATUS_LED_BLE_CONNECTED_CONFIRM_MIN_PERCENT 35U",
-        "STATUS_LED_BLE_CONNECTED_STEADY_PERCENT 100U",
+        "STATUS_LED_BLE_ATTENTION_PERCENT 44U",
+        "STATUS_LED_BLE_PAIRING_PULSE_PERCENT STATUS_LED_BLE_ATTENTION_PERCENT",
+        "STATUS_LED_BLE_RECONNECT_MIN_PERCENT 24U",
+        "STATUS_LED_BLE_RECONNECT_MAX_PERCENT STATUS_LED_BLE_ATTENTION_PERCENT",
+        "STATUS_LED_BLE_CONNECTED_CONFIRM_MIN_PERCENT 32U",
+        "STATUS_LED_BLE_CONNECTED_GENERIC_PERCENT 38U",
+        "STATUS_LED_BLE_CONNECTED_STEADY_PERCENT STATUS_LED_BLE_CONNECTED_GENERIC_PERCENT",
         "ble_elapsed_ms < STATUS_LED_BLE_CONNECTED_CONFIRM_MS",
         "STATUS_LED_BLE_CONNECTED_CONFIRM_MS,\n                    STATUS_LED_BLE_CONNECTED_CONFIRM_MIN_PERCENT,\n                    STATUS_LED_BLE_CONNECTED_STEADY_PERCENT",
         "status_led_preview_clear_activity_locked",
@@ -462,6 +465,7 @@ CHECKS = {
         "status_led_strip_backend_dma_requested",
         "status_led_strip_backend_uses_dma",
         "status_led_strip_backend_dma_fallback",
+        "status_led_strip_backend_mem_block_symbols",
         "status_led_strip_backend_transmit",
     ],
     "components/status_led/status_led_strip_backend.c": [
@@ -478,14 +482,18 @@ CHECKS = {
         "STATUS_LED_WS2812_T1H_TICKS 7U",
         "STATUS_LED_WS2812_T1L_TICKS 6U",
         "STATUS_LED_RMT_WITH_DMA SOC_RMT_SUPPORT_DMA",
+        "STATUS_LED_RMT_DMA_MEM_BLOCK_SYMBOLS 1024U",
         "status_led_strip_backend_new_channel",
         "rmt_dma_requested=%u",
         "rmt_dma_fallback=%u",
+        "mem_block_symbols=%u",
         "status_led_strip_backend_dma_supported",
         "status_led_strip_backend_dma_requested",
         "status_led_strip_backend_uses_dma",
         "status_led_strip_backend_dma_fallback",
+        "status_led_strip_backend_mem_block_symbols",
         "SOC_RMT_MEM_WORDS_PER_CHANNEL",
+        ".mem_block_symbols = mem_block_symbols",
         ".flags.with_dma = with_dma",
         "status_led_strip_backend_fill_pixels",
         "memset(backend->pixels, 0, sizeof(backend->pixels));",
@@ -686,9 +694,10 @@ CHECKS = {
         "status_tail_reinforce=recording_processing",
         "status_tail_reinforce_writes=3",
         "status_tail_overlap_reinforce_writes=1",
-        "rmt_tx_dma_strategy=status_strip_priority_single_rmt_dma_channel",
+        "rmt_tx_dma_strategy=status_strip_dma_full_frame_buffer",
         "rmt_tx_dma_all_strips=0",
         "rmt_tx_dma_actual=status:1,ec11:0,key:0,edge:0",
+        "rmt_mem_block_symbols=status:1024,ec11:48,key:48,edge:48",
         "dynamic_active_accents=1",
         "status_tail_overlap_style=dma_audio_rec_ai_da_dada",
         "recording_level_reactive=1",
@@ -1352,9 +1361,19 @@ def main() -> int:
         failures.append(
             "status_led_strip_backend.c: RMT mem_block_symbols=64 consumes two ESP32-S3 RMT blocks per strip and leaves fewer than four TX channels"
         )
-    if not re.search(r"\.mem_block_symbols\s*=\s*SOC_RMT_MEM_WORDS_PER_CHANNEL\b", status_led_backend):
+    if "STATUS_LED_RMT_DMA_MEM_BLOCK_SYMBOLS 1024U" not in status_led_backend:
         failures.append(
-            "status_led_strip_backend.c: RMT strip channels must use SOC_RMT_MEM_WORDS_PER_CHANNEL so all four V2 LED zones can initialize"
+            "status_led_strip_backend.c: RMT DMA channels must use a full-frame-sized 1024-symbol DMA buffer"
+        )
+    if not re.search(
+        r"const\s+size_t\s+mem_block_symbols\s*=\s*with_dma[\s\S]*?"
+        r"STATUS_LED_RMT_DMA_MEM_BLOCK_SYMBOLS[\s\S]*?"
+        r"SOC_RMT_MEM_WORDS_PER_CHANNEL[\s\S]*?"
+        r"\.mem_block_symbols\s*=\s*mem_block_symbols",
+        status_led_backend,
+    ):
+        failures.append(
+            "status_led_strip_backend.c: DMA channels must use the larger DMA buffer while non-DMA fallback stays on one SOC RMT block"
         )
     if not re.search(r"\.flags\.with_dma\s*=\s*with_dma\b", status_led_backend):
         failures.append("status_led_strip_backend.c: RMT TX DMA must be selectable per strip")
@@ -1365,11 +1384,19 @@ def main() -> int:
     ):
         failures.append("status_led_strip_backend.c: runtime status must expose whether each available strip uses RMT TX DMA")
     if (
-        "rmt_tx_dma_strategy=status_strip_priority_single_rmt_dma_channel" not in status_led or
+        "rmt_tx_dma_strategy=status_strip_dma_full_frame_buffer" not in status_led or
         "rmt_tx_dma_actual=status:%u,ec11:%u,key:%u,edge:%u" not in status_led or
-        "rmt_tx_dma_fallback=status:%u,ec11:%u,key:%u,edge:%u" not in status_led
+        "rmt_tx_dma_fallback=status:%u,ec11:%u,key:%u,edge:%u" not in status_led or
+        "rmt_mem_block_symbols=status:%u,ec11:%u,key:%u,edge:%u" not in status_led
     ):
-        failures.append("status_led.c: ~LED:STATUS contract must expose status-only RMT TX DMA strategy and per-strip actual state")
+        failures.append("status_led.c: ~LED:STATUS contract must expose the status-strip RMT TX DMA strategy, per-strip actual state, and DMA buffer size")
+    if status_led.count(".prefer_dma = true") != 1 or not re.search(
+        r"\.name\s*=\s*\"status\"[\s\S]*?\.prefer_dma\s*=\s*true",
+        status_led,
+    ):
+        failures.append("status_led.c: current V2 hardware must request RMT TX DMA only for the status strip")
+    if ".flags.eot_level = 0" not in status_led_backend:
+        failures.append("status_led_strip_backend.c: RMT transmit config must explicitly hold the WS2812 line low at EOT")
     if not re.search(
         r"status_led_strip_backend_new_channel\(backend,\s*channel_with_dma\);[\s\S]*?"
         r"falling back to non-DMA RMT[\s\S]*?"

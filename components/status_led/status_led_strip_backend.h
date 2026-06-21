@@ -2,6 +2,7 @@
 #define STATUS_LED_STRIP_BACKEND_H
 
 #include <stdbool.h>
+#include <stddef.h>
 #include <stdint.h>
 
 #include "driver/gpio.h"
@@ -45,6 +46,7 @@ bool status_led_strip_backend_dma_supported(void);
 bool status_led_strip_backend_dma_requested(const status_led_strip_backend_t *backend);
 bool status_led_strip_backend_uses_dma(const status_led_strip_backend_t *backend);
 bool status_led_strip_backend_dma_fallback(const status_led_strip_backend_t *backend);
+size_t status_led_strip_backend_mem_block_symbols(const status_led_strip_backend_t *backend);
 esp_err_t status_led_strip_backend_transmit(
     status_led_strip_backend_t *backend,
     status_led_color_order_t color_order,
