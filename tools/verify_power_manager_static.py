@@ -195,6 +195,23 @@ CHECKS = {
         "CONFIG_POWER_MANAGER_DISCONNECTED_IDLE_MS=60000",
         "CONFIG_POWER_MANAGER_HARDWARE_SHUTDOWN_MS=1800000",
     ],
+    "sdkconfig.defaults.usb-light-sleep-debug": [
+        "USB Serial/JTAG",
+        "# CONFIG_USJ_NO_AUTO_LS_ON_CONNECTION is not set",
+        "CONFIG_BT_CTRL_MAIN_XTAL_PU_DURING_LIGHT_SLEEP=y",
+    ],
+    "tools/build_usb_light_sleep_debug.ps1": [
+        "sdkconfig.defaults.usb-light-sleep-debug",
+        "SDKCONFIG_DEFAULTS",
+        "SDKCONFIG=",
+        "listener-idf-build-usb-light-sleep-debug",
+    ],
+    "tools/flash_usb_light_sleep_debug.ps1": [
+        "build_usb_light_sleep_debug.ps1",
+        "flash.ps1",
+        "-NoBuild",
+        "listener-idf-build-usb-light-sleep-debug",
+    ],
     "main/main.c": [
         "esp_pm_configure",
         "light_sleep_enable = true",
