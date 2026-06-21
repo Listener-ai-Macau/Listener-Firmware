@@ -46,10 +46,14 @@ Assert-Contains $powerHeader 'automatic_shutdown_blocked_by_external_power' 'obs
 
 Assert-Contains $cmake 'REQUIRES\s+battery_monitor\s+board\s+device_settings\s+diag_log\s+board_pins\s+watchdog_platform' 'board and device settings dependency for power input snapshot and configurable timeout'
 Assert-Contains $boardCmake 'esp_driver_usb_serial_jtag' 'board dependency on USB Serial/JTAG public driver API'
+Assert-Contains $boardPins 'BOARD_PINS_USB_DET_DISABLED_IO\s+\(GPIO_NUM_7\)' 'retired physical USB_DET GPIO7 kept only for high-Z diagnostics'
 Assert-Contains $boardPins 'BOARD_PINS_USB_DET_IO\s+\(GPIO_NUM_NC\)' 'retired USB_DET divider is not configured as a GPIO input'
 Assert-Contains $boardSource '#include "driver/usb_serial_jtag\.h"' 'board public USB Serial/JTAG include'
 Assert-Contains $boardSource 'usb_serial_jtag_is_connected\(\)' 'board USB host presence follows ESP-IDF SOF connection monitor'
 Assert-Contains $boardSource 'not_populated_use_usb_serial_jtag_sof_and_charger_status' 'board policy documents USB_DET removal'
+Assert-Contains $boardSource 'board_configure_usb_det_highz' 'board keeps physical USB_DET pad high-Z'
+Assert-Contains $boardSource '\.usb_power_present\s*=\s*usb_serial_jtag_sof_active' 'board snapshot exposes USB host power without reading GPIO7'
+Assert-Contains $boardSource 'USB_DET:HIGHZ' 'board exposes USB_DET disabled/high-Z diagnostic'
 if ($boardSource -match 'usb_serial_jtag_ll_module_is_enabled') {
     throw "board.c must not call usb_serial_jtag_ll_module_is_enabled directly; use the ESP-IDF USB Serial/JTAG connection monitor"
 }
@@ -57,7 +61,7 @@ if ($boardSource -match 'usb_serial_jtag_ll_module_is_enabled') {
 Assert-Contains $powerManager '#include "board\.h"' 'board power input include'
 Assert-Contains $powerManager 'board_get_v2_power_input_snapshot\(&board_snapshot\)' 'board power input snapshot read'
 Assert-Contains $powerManager 'bool\s+usb_serial_jtag_sof_active\s*=\s*board_snapshot\.usb_serial_jtag_sof_active' 'USB Serial/JTAG SOF interpreted state'
-Assert-Contains $powerManager 'bool\s+usb_power_present\s*=\s*board_snapshot\.usb_det_level\s*>\s*0\s*\|\|[\s\r\n ]*usb_serial_jtag_sof_active' 'USB power follows USB Serial/JTAG SOF while retired USB_DET stays nc/false'
+Assert-Contains $powerManager 'bool\s+usb_power_present\s*=\s*board_snapshot\.usb_power_present' 'USB power follows board USB Serial/JTAG SOF snapshot while retired USB_DET stays nc/false'
 Assert-Contains $powerManager 'bool\s+raw_charging\s*=\s*board_snapshot\.bat_chg_level\s*==\s*0' 'active-low charging fallback interpretation'
 Assert-Contains $powerManager 'bool\s+raw_full\s*=\s*board_snapshot\.bat_std_level\s*==\s*0' 'active-low charge-full fallback interpretation'
 Assert-Contains $powerManager 'bool\s+external_power_present\s*=\s*usb_power_present\s*\|\|\s*raw_charging\s*\|\|\s*raw_full' 'external power follows USB SOF, active charging, or charger full status'

@@ -626,8 +626,7 @@ static void device_settings_print_status(const char *result)
     device_settings_get_snapshot(&snapshot);
     board_v2_power_input_snapshot_t power = {0};
     board_get_v2_power_input_snapshot(&power);
-    bool usb_power_present = power.usb_det_level > 0 ||
-                             power.usb_serial_jtag_sof_active;
+    bool usb_power_present = power.usb_power_present;
     bool charging = power.bat_chg_level == 0;
     bool charge_full = power.bat_std_level == 0;
     bool external_power_present = usb_power_present || charging || charge_full;

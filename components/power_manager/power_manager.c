@@ -442,8 +442,7 @@ static void power_manager_read_power_source(power_manager_power_source_snapshot_
     board_get_v2_power_input_snapshot(&board_snapshot);
 
     bool usb_serial_jtag_sof_active = board_snapshot.usb_serial_jtag_sof_active;
-    bool usb_power_present = board_snapshot.usb_det_level > 0 ||
-                             usb_serial_jtag_sof_active;
+    bool usb_power_present = board_snapshot.usb_power_present;
     bool raw_charging = board_snapshot.bat_chg_level == 0;
     bool raw_full = board_snapshot.bat_std_level == 0;
     bool external_power_present = usb_power_present || raw_charging || raw_full;
