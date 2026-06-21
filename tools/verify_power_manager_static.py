@@ -181,7 +181,7 @@ CHECKS = {
     ],
     "sdkconfig.defaults": [
         "CONFIG_POWER_MANAGER_BATTERY_CRITICAL_PERCENT=0",
-        "# CONFIG_USJ_NO_AUTO_LS_ON_CONNECTION is not set",
+        "CONFIG_USJ_NO_AUTO_LS_ON_CONNECTION=y",
         "CONFIG_BT_CTRL_MAIN_XTAL_PU_DURING_LIGHT_SLEEP=y",
     ],
     "sdkconfig.defaults.esp32s3": [
@@ -189,7 +189,7 @@ CHECKS = {
         "CONFIG_PM_SLEEP_FUNC_IN_IRAM=y",
         "CONFIG_FREERTOS_USE_TICKLESS_IDLE=y",
         "CONFIG_BT_CTRL_MODEM_SLEEP=y",
-        "# CONFIG_USJ_NO_AUTO_LS_ON_CONNECTION is not set",
+        "CONFIG_USJ_NO_AUTO_LS_ON_CONNECTION=y",
         "CONFIG_BT_CTRL_MAIN_XTAL_PU_DURING_LIGHT_SLEEP=y",
         "CONFIG_ESPTOOLPY_FLASHSIZE_16MB=y",
         "CONFIG_SPIRAM=y",
@@ -200,6 +200,7 @@ CHECKS = {
     ],
     "sdkconfig.defaults.usb-light-sleep-debug": [
         "USB Serial/JTAG",
+        "opt-in profile",
         "# CONFIG_USJ_NO_AUTO_LS_ON_CONNECTION is not set",
         "CONFIG_BT_CTRL_MAIN_XTAL_PU_DURING_LIGHT_SLEEP=y",
     ],
@@ -208,6 +209,11 @@ CHECKS = {
         "SDKCONFIG_DEFAULTS",
         "SDKCONFIG=",
         "listener-idf-build-usb-light-sleep-debug",
+    ],
+    "tools/build.ps1": [
+        "Reset-StaleGeneratedSdkconfig",
+        "# CONFIG_USJ_NO_AUTO_LS_ON_CONNECTION is not set",
+        "moved stale sdkconfig",
     ],
     "tools/flash_usb_light_sleep_debug.ps1": [
         "build_usb_light_sleep_debug.ps1",
