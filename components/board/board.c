@@ -6,6 +6,7 @@
 #include <string.h>
 
 #include "driver/gpio.h"
+#include "driver/usb_serial_jtag.h"
 #include "battery_monitor.h"
 #include "board_pins.h"
 #include "diag_log.h"
@@ -32,7 +33,6 @@ static const char *TAG = "board";
 #else
 #define BOARD_V2_CURRENT_POLICY "v2_optional_current_telemetry_not_populated_battery_adc_only_no_power_decisions"
 #endif
-
 typedef struct {
     const char *name;
     gpio_num_t data_gpio;
@@ -125,6 +125,11 @@ static const char *board_gpio_level_name(int level)
         return "unknown";
     }
     return level ? "high" : "low";
+}
+
+static bool board_usb_serial_jtag_sof_active(void)
+{
+    return usb_serial_jtag_is_connected();
 }
 
 static int board_read_gpio_level(gpio_num_t gpio)
@@ -478,6 +483,7 @@ void board_get_v2_power_input_snapshot(board_v2_power_input_snapshot_t *out_snap
         .bat_chg_level = board_read_gpio_level(BOARD_PINS_BAT_CHG_IO),
         .bat_std_level = board_read_gpio_level(BOARD_PINS_BAT_STD_IO),
         .pwr_hold_level = power_hold.level,
+        .usb_serial_jtag_sof_active = board_usb_serial_jtag_sof_active(),
         .usb_det_policy = BOARD_V2_USB_DET_POLICY,
         .charger_polarity_policy = BOARD_V2_CHARGER_POLARITY,
         .pwr_hold_policy = BOARD_V2_PWR_HOLD_POLICY,
@@ -781,7 +787,7 @@ static void board_print_status(void)
         " key_gpios=%d,%d,%d,%d ec11_a_gpio=%d ec11_b_gpio=%d ec11_key_gpio=%d"
         " ec11_key_provisional=1 mic_clk_gpio=%d mic_dout_gpio=%d mic_policy=%s"
         " pwr_hold_gpio=%d pwr_hold_level=%s pwr_hold_configured=%u pwr_hold_policy=%s"
-        " usb_det_gpio=%d usb_det_level=%s usb_det_policy=%s"
+        " usb_det_gpio=%d usb_det_level=%s usb_serial_jtag_sof_active=%u usb_det_policy=%s"
         " bat_chg_gpio=%d bat_chg_level=%s bat_std_gpio=%d bat_std_level=%s charger_polarity=%s"
         " battery_gpio=%d battery_mv=%" PRIu32 " battery_adc_mv=%d battery_raw=%d"
         " battery_level=%u battery_valid=%u battery_adc_calibrated=%u battery_samples=%u battery_result=%s"
@@ -808,6 +814,7 @@ static void board_print_status(void)
         power_hold.policy,
         (int)BOARD_PINS_USB_DET_IO,
         board_gpio_level_name(power_inputs.usb_det_level),
+        power_inputs.usb_serial_jtag_sof_active ? 1u : 0u,
         power_inputs.usb_det_policy,
         (int)BOARD_PINS_BAT_CHG_IO,
         board_gpio_level_name(power_inputs.bat_chg_level),

@@ -626,7 +626,8 @@ static void device_settings_print_status(const char *result)
     device_settings_get_snapshot(&snapshot);
     board_v2_power_input_snapshot_t power = {0};
     board_get_v2_power_input_snapshot(&power);
-    bool usb_power_present = power.usb_det_level > 0;
+    bool usb_power_present = power.usb_det_level > 0 ||
+                             power.usb_serial_jtag_sof_active;
     bool charging = power.bat_chg_level == 0;
     bool charge_full = power.bat_std_level == 0;
     bool external_power_present = usb_power_present || charging;
@@ -652,7 +653,8 @@ static void device_settings_print_status(const char *result)
         " plugged_auto_shutdown_ms=%" PRIu32 " battery_auto_shutdown_ms=%" PRIu32
         " auto_shutdown_enabled=%u auto_shutdown_mode=%s knob_rotation=%s"
         " ble_name=\"%s\" ble_name_pending=%u ble_name_apply=%s"
-        " loaded_from_nvs=%u external_power_present=%u usb_power_present=%u charging=%u charge_full=%u"
+        " loaded_from_nvs=%u external_power_present=%u usb_power_present=%u"
+        " usb_serial_jtag_sof_active=%u charging=%u charge_full=%u"
         " valid_ranges=brightness_0_100,led_zone_brightness_0_100,low_power_idle_ms_%u_%u,plugged_low_power_idle_ms_%u_%u,battery_low_power_idle_ms_%u_%u,plugged_low_power_enabled_0_1,auto_shutdown_ms_0_off_or_%u_%u,plugged_auto_shutdown_ms_0_off_or_%u_%u,battery_auto_shutdown_ms_0_off_or_%u_%u,ble_name_ascii_1_%u,knob_rotation_system_volume_screen_brightness_disabled\n",
         result != NULL ? result : "OK",
         snapshot.plugged_brightness_percent,
@@ -681,6 +683,7 @@ static void device_settings_print_status(const char *result)
         snapshot.loaded_from_nvs ? 1u : 0u,
         external_power_present ? 1u : 0u,
         usb_power_present ? 1u : 0u,
+        power.usb_serial_jtag_sof_active ? 1u : 0u,
         charging ? 1u : 0u,
         charge_full ? 1u : 0u,
         (unsigned)DEVICE_SETTINGS_LOW_POWER_IDLE_MIN_MS,

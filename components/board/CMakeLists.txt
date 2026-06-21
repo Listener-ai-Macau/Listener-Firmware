@@ -1,5 +1,5 @@
 idf_component_register(
     SRCS "board.c"
     INCLUDE_DIRS "include"
-    REQUIRES board_pins battery_monitor diag_log esp_driver_gpio watchdog_platform
+    REQUIRES board_pins battery_monitor diag_log esp_driver_gpio esp_driver_usb_serial_jtag watchdog_platform
 )

@@ -17,6 +17,7 @@
 #include "nvs_flash.h"
 
 #include "battery_monitor.h"
+#include "board.h"
 #include "board_pins.h"
 #include "device_settings.h"
 #include "diag_log.h"
@@ -76,10 +77,10 @@
 #define STATUS_LED_TX_MUTEX_WAIT_MS 100
 #define STATUS_LED_POWER_POLL_MS 5000U
 #define STATUS_LED_LOW_POWER_POLL_MS 60000U
-#define STATUS_LED_CHARGER_STATUS_EXTERNAL_HOLD_MS (24U * 60U * 60U * 1000U)
+#define STATUS_LED_CHARGER_STATUS_EXTERNAL_HOLD_MS 8000U
 #define STATUS_LED_LOW_POWER_PWR_PERCENT 8U
-#define STATUS_LED_LOW_POWER_PWR_WHITE_PERCENT 3U
-#define STATUS_LED_LOW_POWER_BLE_CONNECTED_PERCENT 8U
+#define STATUS_LED_LOW_POWER_PWR_WHITE_PERCENT 11U
+#define STATUS_LED_LOW_POWER_BLE_CONNECTED_PERCENT 11U
 #define STATUS_LED_STATUS_WINDOW_MS 6000U
 #define STATUS_LED_PREVIEW_BLE_OVERRIDE_MS 15000U
 #define STATUS_LED_BOOT_ACK_MS 2500U
@@ -193,6 +194,7 @@
 #define STATUS_LED_SHUTDOWN_FINAL_CONFIRM_MS 700U
 #define STATUS_LED_POWER_SOURCE_USB_DET (1U << 0)
 #define STATUS_LED_POWER_SOURCE_CHARGER_STATUS (1U << 1)
+#define STATUS_LED_POWER_SOURCE_USB_SERIAL_JTAG (1U << 2)
 
 typedef enum {
     STATUS_LED_STRIP_STATUS = 0,
@@ -291,6 +293,7 @@ typedef enum {
 #define STATUS_LED_DIAG_POWER_DISPLAY_RISE_SUPPRESSED (1U << 25)
 #define STATUS_LED_DIAG_POWER_EXTERNAL_USB_DET (1U << 26)
 #define STATUS_LED_DIAG_POWER_EXTERNAL_CHARGER_STATUS (1U << 27)
+#define STATUS_LED_DIAG_POWER_EXTERNAL_USB_SERIAL_JTAG (1U << 28)
 #define STATUS_LED_DIAG_POWER_DISPLAY_LEVEL_SHIFT 16U
 #define STATUS_LED_DIAG_POWER_DISPLAY_LEVEL_MASK (0xFFU << STATUS_LED_DIAG_POWER_DISPLAY_LEVEL_SHIFT)
 
@@ -786,6 +789,9 @@ static uint32_t status_led_power_flags_locked(void)
     if (s_state.external_power_source_flags & STATUS_LED_POWER_SOURCE_CHARGER_STATUS) {
         flags |= STATUS_LED_DIAG_POWER_EXTERNAL_CHARGER_STATUS;
     }
+    if (s_state.external_power_source_flags & STATUS_LED_POWER_SOURCE_USB_SERIAL_JTAG) {
+        flags |= STATUS_LED_DIAG_POWER_EXTERNAL_USB_SERIAL_JTAG;
+    }
     return flags;
 }
 
@@ -1037,13 +1043,25 @@ static const char *status_led_error_severity_name(status_led_error_severity_t se
 
 static const char *status_led_external_power_source_name(uint32_t source_flags)
 {
-    switch (source_flags & (STATUS_LED_POWER_SOURCE_USB_DET | STATUS_LED_POWER_SOURCE_CHARGER_STATUS)) {
+    switch (source_flags & (STATUS_LED_POWER_SOURCE_USB_DET |
+                            STATUS_LED_POWER_SOURCE_CHARGER_STATUS |
+                            STATUS_LED_POWER_SOURCE_USB_SERIAL_JTAG)) {
     case STATUS_LED_POWER_SOURCE_USB_DET:
         return "usb_det";
     case STATUS_LED_POWER_SOURCE_CHARGER_STATUS:
         return "charger_status";
+    case STATUS_LED_POWER_SOURCE_USB_SERIAL_JTAG:
+        return "usb_serial_jtag";
     case STATUS_LED_POWER_SOURCE_USB_DET | STATUS_LED_POWER_SOURCE_CHARGER_STATUS:
         return "usb_det|charger_status";
+    case STATUS_LED_POWER_SOURCE_USB_DET | STATUS_LED_POWER_SOURCE_USB_SERIAL_JTAG:
+        return "usb_det|usb_serial_jtag";
+    case STATUS_LED_POWER_SOURCE_CHARGER_STATUS | STATUS_LED_POWER_SOURCE_USB_SERIAL_JTAG:
+        return "charger_status|usb_serial_jtag";
+    case STATUS_LED_POWER_SOURCE_USB_DET |
+        STATUS_LED_POWER_SOURCE_CHARGER_STATUS |
+        STATUS_LED_POWER_SOURCE_USB_SERIAL_JTAG:
+        return "usb_det|charger_status|usb_serial_jtag";
     default:
         return "none";
     }
@@ -1884,18 +1902,23 @@ static void status_led_render_ble_locked(status_led_frame_t *frame, uint32_t now
 
 static void status_led_render_low_power_power_locked(status_led_frame_t *frame, uint32_t now_ms, bool *ret_safety)
 {
+    if (s_state.external_power_present) {
+        status_led_set_max(
+            &frame->status[STATUS_LED_SEM_PWR],
+            status_led_token_locked(
+                status_led_rgb(255, 255, 255),
+                STATUS_LED_LOW_POWER_PWR_WHITE_PERCENT,
+                false));
+        return;
+    }
+
     status_led_render_power_locked(frame, now_ms, ret_safety);
     if (status_led_rgb_is_on(frame->status[STATUS_LED_SEM_PWR])) {
         return;
     }
 
     status_led_rgb_t color = {0};
-    if (s_state.external_power_present) {
-        color = status_led_token_locked(
-            status_led_rgb(255, 255, 255),
-            STATUS_LED_LOW_POWER_PWR_WHITE_PERCENT,
-            false);
-    } else if (s_state.battery_valid) {
+    if (s_state.battery_valid) {
         const uint8_t battery_level = status_led_battery_display_level_locked();
         color = status_led_token_locked(
             battery_level >= STATUS_LED_BATTERY_DISPLAY_GREEN_PERCENT
@@ -2964,15 +2987,19 @@ static void status_led_poll_power_inputs(void)
     bool battery_valid = battery_ret == ESP_OK && battery.valid;
     uint32_t battery_mv = battery_valid ? battery.voltage_mv : 0;
     uint8_t battery_level = battery_valid ? battery.level_percent : 0xFF;
-    bool usb_power_present = BOARD_PINS_USB_DET_IO != GPIO_NUM_NC &&
-                             gpio_get_level(BOARD_PINS_USB_DET_IO) > 0;
-    bool raw_charging = BOARD_PINS_BAT_CHG_IO != GPIO_NUM_NC &&
-                        gpio_get_level(BOARD_PINS_BAT_CHG_IO) == 0;
-    bool raw_full = BOARD_PINS_BAT_STD_IO != GPIO_NUM_NC &&
-                    gpio_get_level(BOARD_PINS_BAT_STD_IO) == 0;
+    board_v2_power_input_snapshot_t power_input = {0};
+    board_get_v2_power_input_snapshot(&power_input);
+    bool usb_det_present = power_input.usb_det_level > 0;
+    bool usb_serial_jtag_sof_active = power_input.usb_serial_jtag_sof_active;
+    bool usb_power_present = usb_det_present || usb_serial_jtag_sof_active;
+    bool raw_charging = power_input.bat_chg_level == 0;
+    bool raw_full = power_input.bat_std_level == 0;
     uint32_t external_power_source_flags = 0;
-    if (usb_power_present) {
+    if (usb_det_present) {
         external_power_source_flags |= STATUS_LED_POWER_SOURCE_USB_DET;
+    }
+    if (usb_serial_jtag_sof_active) {
+        external_power_source_flags |= STATUS_LED_POWER_SOURCE_USB_SERIAL_JTAG;
     }
     bool external_power_present = usb_power_present;
     device_settings_snapshot_t device_settings = {0};

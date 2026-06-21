@@ -133,6 +133,9 @@ CHECKS = {
         "STATUS_LED_PWR_WHITE_VISUAL_BALANCE_PERCENT 28U",
         "STATUS_LED_FULL_STEADY_PERCENT STATUS_LED_PWR_WHITE_VISUAL_BALANCE_PERCENT",
         "STATUS_LED_FULL_STATUS_STEADY_PERCENT STATUS_LED_PWR_WHITE_VISUAL_BALANCE_PERCENT",
+        "STATUS_LED_LOW_POWER_PWR_PERCENT 8U",
+        "STATUS_LED_LOW_POWER_PWR_WHITE_PERCENT 11U",
+        "STATUS_LED_LOW_POWER_BLE_CONNECTED_PERCENT 11U",
         "STATUS_LED_BATTERY_IDLE_BLE_HEARTBEAT_ON_MS 120U",
         "STATUS_LED_BATTERY_IDLE_BLE_HEARTBEAT_OFF_MS 7880U",
         "STATUS_LED_BATTERY_IDLE_BLE_HEARTBEAT_PERCENT 18U",
@@ -896,6 +899,31 @@ def main() -> int:
         failures.append("status_led.c: OK success must use cool green, not pure green that reads yellow on the diffuser")
     if "} else if (active_work) {\n            percent = STATUS_LED_CHARGING_ACTIVE_WORK_MIN_PERCENT;" not in status_led:
         failures.append("status_led.c: charging PWR must hold a steady readable level during recording/processing")
+    low_power_power = re.search(
+        r"static\s+void\s+status_led_render_low_power_power_locked[^{]*\{(?P<body>[\s\S]*?)\n\}",
+        status_led,
+    )
+    if not low_power_power:
+        failures.append("status_led.c: missing low-power PWR renderer")
+    else:
+        body = low_power_power.group("body")
+        plugged_branch = re.search(
+            r"if\s*\(s_state\.external_power_present\)\s*\{(?P<branch>[\s\S]*?)\n\s*return;\n\s*\}",
+            body,
+        )
+        if not plugged_branch:
+            failures.append("status_led.c: plugged low-power PWR must have a direct white branch")
+        else:
+            branch = plugged_branch.group("branch")
+            if "STATUS_LED_LOW_POWER_PWR_WHITE_PERCENT" not in branch:
+                failures.append("status_led.c: plugged low-power PWR must use the low-power white percent")
+            if "status_led_render_power_locked" in branch:
+                failures.append("status_led.c: plugged low-power PWR must not reuse charging/full breath rendering")
+        if (
+            "STATUS_LED_LOW_POWER_PWR_WHITE_PERCENT 11U" not in status_led or
+            "STATUS_LED_LOW_POWER_BLE_CONNECTED_PERCENT 11U" not in status_led
+        ):
+            failures.append("status_led.c: idle PWR white and BLE blue must share the 11 percent low-power level")
     for token in (
         "STATUS_LED_RECORDING_LEVEL_STALE_MS",
         "STATUS_LED_RECORDING_LEVEL_EFFECT_MIN_PERCENT 8U",

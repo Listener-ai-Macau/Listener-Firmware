@@ -62,6 +62,7 @@ typedef struct {
     int bat_chg_level;
     int bat_std_level;
     int pwr_hold_level;
+    bool usb_serial_jtag_sof_active;
     bool usb_power_present;
     bool external_power_present;
     bool charging;

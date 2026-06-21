@@ -26,12 +26,15 @@ function Assert-Contains {
 
 $powerManager = Read-RepoFile "components/power_manager/power_manager.c"
 $powerHeader = Read-RepoFile "components/power_manager/include/power_manager.h"
+$boardSource = Read-RepoFile "components/board/board.c"
+$boardCmake = Read-RepoFile "components/board/CMakeLists.txt"
 $diagEvents = Read-RepoFile "components/diag_log/include/diag_log_events.h"
 $cmake = Read-RepoFile "components/power_manager/CMakeLists.txt"
 
 Assert-Contains $powerHeader 'POWER_MANAGER_BLOCKER_EXTERNAL_POWER\s*=\s*1u\s*<<\s*7' 'external power blocker bit'
 Assert-Contains $powerHeader 'shutdown_blockers' 'snapshot shutdown blocker field'
 Assert-Contains $powerHeader 'usb_det_level' 'raw USB detect level in snapshot'
+Assert-Contains $powerHeader 'usb_serial_jtag_sof_active' 'USB Serial/JTAG SOF activity in snapshot'
 Assert-Contains $powerHeader 'bat_chg_level' 'raw charger level in snapshot'
 Assert-Contains $powerHeader 'bat_std_level' 'raw charge-full level in snapshot'
 Assert-Contains $powerHeader 'external_power_present' 'interpreted external power status'
@@ -41,10 +44,17 @@ Assert-Contains $powerHeader 'charge_full' 'interpreted charge-full status'
 Assert-Contains $powerHeader 'automatic_shutdown_blocked_by_external_power' 'observable automatic shutdown block status'
 
 Assert-Contains $cmake 'REQUIRES\s+battery_monitor\s+board\s+device_settings\s+diag_log\s+board_pins\s+watchdog_platform' 'board and device settings dependency for power input snapshot and configurable timeout'
+Assert-Contains $boardCmake 'esp_driver_usb_serial_jtag' 'board dependency on USB Serial/JTAG public driver API'
+Assert-Contains $boardSource '#include "driver/usb_serial_jtag\.h"' 'board public USB Serial/JTAG include'
+Assert-Contains $boardSource 'usb_serial_jtag_is_connected\(\)' 'board USB host presence follows ESP-IDF SOF connection monitor'
+if ($boardSource -match 'usb_serial_jtag_ll_module_is_enabled') {
+    throw "board.c must not call usb_serial_jtag_ll_module_is_enabled directly; use the ESP-IDF USB Serial/JTAG connection monitor"
+}
 
 Assert-Contains $powerManager '#include "board\.h"' 'board power input include'
 Assert-Contains $powerManager 'board_get_v2_power_input_snapshot\(&board_snapshot\)' 'board power input snapshot read'
-Assert-Contains $powerManager 'bool\s+usb_power_present\s*=\s*board_snapshot\.usb_det_level\s*>\s*0' 'USB_Det interpreted state'
+Assert-Contains $powerManager 'bool\s+usb_serial_jtag_sof_active\s*=\s*board_snapshot\.usb_serial_jtag_sof_active' 'USB Serial/JTAG SOF interpreted state'
+Assert-Contains $powerManager 'bool\s+usb_power_present\s*=\s*board_snapshot\.usb_det_level\s*>\s*0\s*\|\|[\s\r\n ]*usb_serial_jtag_sof_active' 'USB power follows USB_Det or USB Serial/JTAG SOF'
 Assert-Contains $powerManager 'bool\s+raw_charging\s*=\s*board_snapshot\.bat_chg_level\s*==\s*0' 'active-low charging fallback interpretation'
 Assert-Contains $powerManager 'bool\s+external_power_present\s*=\s*usb_power_present\s*\|\|\s*raw_charging' 'external power follows USB_Det or active charging'
 Assert-Contains $powerManager '\.usb_power_present\s*=\s*usb_power_present' 'USB_Det copied into power source snapshot'
@@ -54,7 +64,7 @@ Assert-Contains $powerManager '\.charge_full\s*=\s*usb_power_present\s*&&\s*boar
 Assert-Contains $powerManager 'POWER_MANAGER_CHARGE_FULL_DEBOUNCE_MS\s+10000U' 'charge-full debounce window'
 Assert-Contains $powerManager 'POWER_MANAGER_CHARGE_FULL_MIN_MV\s+4050U' 'charge-full minimum voltage guard'
 Assert-Contains $powerManager 'POWER_MANAGER_CHARGE_FULL_MIN_PERCENT\s+88U' 'charge-full minimum percent guard'
-Assert-Contains $powerManager 'POWER_MANAGER_CHARGER_STATUS_EXTERNAL_HOLD_MS\s+\(24U\s*\*\s*60U\s*\*\s*60U\s*\*\s*1000U\)' 'charger-status external-power retention window'
+Assert-Contains $powerManager 'POWER_MANAGER_CHARGER_STATUS_EXTERNAL_HOLD_MS\s+8000U' 'short charger-status external-power retention window'
 Assert-Contains $powerManager 'power_manager_apply_charge_state_filter_locked' 'central charge-state filter'
 Assert-Contains $powerManager 'power_manager_charger_status_external_locked[\s\S]*usb_power_present\s*\|\|\s*raw_charging[\s\S]*s_charger_status_external_until_ms[\s\S]*POWER_MANAGER_CHARGER_STATUS_EXTERNAL_HOLD_MS' 'active charging or USB refreshes retained external-power state'
 Assert-Contains $powerManager 'source->external_power_present\s*=\s*source->usb_power_present\s*\|\|\s*charger_status_external' 'external power follows USB_Det or retained charger status'
