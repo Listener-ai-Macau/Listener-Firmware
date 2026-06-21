@@ -1,8 +1,10 @@
-# Debug-only profile: allow automatic light sleep while the USB Serial/JTAG
-# device is connected to a host. Expect serial monitor disconnects or missed
-# console traffic during idle light-sleep windows.
+# Separate-build debug profile: release defaults also allow automatic light
+# sleep while USB Serial/JTAG is connected. Keep the repeated options here so
+# the debug build stays a known USB-light-sleep profile if release defaults
+# change later. Expect serial monitor disconnects or missed console traffic
+# during idle light-sleep windows.
 # CONFIG_USJ_NO_AUTO_LS_ON_CONNECTION is not set
 
 # Keep the BLE controller on the accurate main XTAL path, but allow automatic
-# light sleep by powering the main XTAL during light sleep in this debug build.
+# light sleep by powering the main XTAL during light sleep.
 CONFIG_BT_CTRL_MAIN_XTAL_PU_DURING_LIGHT_SLEEP=y
