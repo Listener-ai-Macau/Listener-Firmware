@@ -76,6 +76,7 @@
 #define STATUS_LED_TX_MUTEX_WAIT_MS 100
 #define STATUS_LED_POWER_POLL_MS 5000U
 #define STATUS_LED_LOW_POWER_POLL_MS 60000U
+#define STATUS_LED_CHARGER_STATUS_EXTERNAL_HOLD_MS (24U * 60U * 60U * 1000U)
 #define STATUS_LED_LOW_POWER_PWR_PERCENT 8U
 #define STATUS_LED_LOW_POWER_PWR_WHITE_PERCENT 3U
 #define STATUS_LED_LOW_POWER_BLE_CONNECTED_PERCENT 8U
@@ -374,6 +375,7 @@ typedef struct {
     uint32_t ble_transition_ms;
     uint32_t last_transition_ms;
     uint32_t last_power_poll_ms;
+    uint32_t charger_status_external_until_ms;
     uint32_t charge_full_candidate_since_ms;
     uint32_t last_estimated_current_ma;
     uint32_t last_current_budget_ma;
@@ -1045,6 +1047,26 @@ static const char *status_led_external_power_source_name(uint32_t source_flags)
     default:
         return "none";
     }
+}
+
+static bool status_led_charger_status_external_locked(
+    bool usb_power_present,
+    bool raw_charging,
+    uint32_t now_ms)
+{
+    if (usb_power_present || raw_charging) {
+        s_state.charger_status_external_until_ms =
+            now_ms + STATUS_LED_CHARGER_STATUS_EXTERNAL_HOLD_MS;
+        return true;
+    }
+
+    if (s_state.charger_status_external_until_ms != 0U &&
+        now_ms < s_state.charger_status_external_until_ms) {
+        return true;
+    }
+
+    s_state.charger_status_external_until_ms = 0U;
+    return false;
 }
 
 static uint8_t status_led_profile_cap_percent_for(status_led_profile_t profile, bool safety)
@@ -2781,6 +2803,7 @@ static void status_led_preview_clear_activity_locked(void)
     s_state.raw_charging = false;
     s_state.raw_full = false;
     s_state.charge_full_latched = false;
+    s_state.charger_status_external_until_ms = 0U;
     s_state.charge_full_candidate_since_ms = 0U;
     s_state.error_domain = STATUS_LED_ERROR_DOMAIN_NONE;
     s_state.error_until_ms = 0U;
@@ -2951,13 +2974,16 @@ static void status_led_poll_power_inputs(void)
     if (usb_power_present) {
         external_power_source_flags |= STATUS_LED_POWER_SOURCE_USB_DET;
     }
-    if (raw_charging) {
-        external_power_source_flags |= STATUS_LED_POWER_SOURCE_CHARGER_STATUS;
-    }
-    bool external_power_present = external_power_source_flags != 0U;
+    bool external_power_present = usb_power_present;
     device_settings_snapshot_t device_settings = {0};
 
     if (xSemaphoreTake(s_mutex, portMAX_DELAY) == pdTRUE) {
+        bool charger_status_external =
+            status_led_charger_status_external_locked(usb_power_present, raw_charging, now_ms);
+        if (charger_status_external) {
+            external_power_source_flags |= STATUS_LED_POWER_SOURCE_CHARGER_STATUS;
+            external_power_present = true;
+        }
         if (!usb_power_present &&
             raw_full &&
             (s_state.external_power_source_flags & STATUS_LED_POWER_SOURCE_CHARGER_STATUS)) {
@@ -4865,6 +4891,8 @@ static void status_led_preview_state(const char *state)
         s_state.raw_charging = true;
         s_state.raw_full = false;
         s_state.charge_full_latched = false;
+        s_state.charger_status_external_until_ms =
+            now_ms + STATUS_LED_CHARGER_STATUS_EXTERNAL_HOLD_MS;
         s_state.charge_full_candidate_since_ms = 0;
     } else if (strcasecmp(state, "full") == 0) {
         s_state.external_power_present = true;
@@ -4874,6 +4902,8 @@ static void status_led_preview_state(const char *state)
         s_state.raw_charging = false;
         s_state.raw_full = true;
         s_state.charge_full_latched = true;
+        s_state.charger_status_external_until_ms =
+            now_ms + STATUS_LED_CHARGER_STATUS_EXTERNAL_HOLD_MS;
         s_state.charge_full_candidate_since_ms = now_ms;
     } else if (strcasecmp(state, "sleep") == 0) {
         s_state.low_power_disabled = true;

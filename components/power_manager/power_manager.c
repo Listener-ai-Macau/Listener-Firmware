@@ -72,6 +72,7 @@ extern void status_led_set_error(int domain, int severity, const char *reason) _
 #define POWER_MANAGER_CHARGE_FULL_DEBOUNCE_MS 10000U
 #define POWER_MANAGER_CHARGE_FULL_MIN_MV 4050U
 #define POWER_MANAGER_CHARGE_FULL_MIN_PERCENT 88U
+#define POWER_MANAGER_CHARGER_STATUS_EXTERNAL_HOLD_MS (24U * 60U * 60U * 1000U)
 #define POWER_MANAGER_IDLE_BATTERY_REFRESH_MS 600000U
 #define POWER_MANAGER_LOW_POWER_EVALUATE_INTERVAL_MS 60000U
 #define POWER_MANAGER_LOW_BATTERY_SHUTDOWN_MAX_MV 2800U
@@ -139,6 +140,7 @@ static int s_bat_chg_level = -1;
 static int s_bat_std_level = -1;
 static int s_pwr_hold_level = -1;
 static uint64_t s_charge_full_candidate_since_ms;
+static uint64_t s_charger_status_external_until_ms;
 static uint64_t s_cached_battery_read_ms;
 static uint32_t s_cached_battery_mv;
 static uint8_t s_cached_battery_level_percent = 0xFF;
@@ -356,6 +358,26 @@ static uint32_t power_manager_charge_full_candidate_ms_locked(uint64_t now_ms)
     return power_manager_clamp_u64_to_u32(now_ms - s_charge_full_candidate_since_ms);
 }
 
+static bool power_manager_charger_status_external_locked(
+    bool usb_power_present,
+    bool raw_charging,
+    uint64_t now_ms)
+{
+    if (usb_power_present || raw_charging) {
+        s_charger_status_external_until_ms =
+            now_ms + POWER_MANAGER_CHARGER_STATUS_EXTERNAL_HOLD_MS;
+        return true;
+    }
+
+    if (s_charger_status_external_until_ms != 0 &&
+        now_ms < s_charger_status_external_until_ms) {
+        return true;
+    }
+
+    s_charger_status_external_until_ms = 0;
+    return false;
+}
+
 static void power_manager_apply_charge_state_filter_locked(
     power_manager_power_source_snapshot_t *source,
     uint64_t now_ms,
@@ -365,7 +387,13 @@ static void power_manager_apply_charge_state_filter_locked(
         return;
     }
 
-    bool raw_charging = source->external_power_present && source->bat_chg_level == 0;
+    bool raw_charging = source->bat_chg_level == 0;
+    bool charger_status_external = power_manager_charger_status_external_locked(
+        source->usb_power_present,
+        raw_charging,
+        now_ms);
+    source->external_power_present = source->usb_power_present || charger_status_external;
+    raw_charging = source->external_power_present && raw_charging;
     bool raw_full = source->usb_power_present && source->bat_std_level == 0;
 
     if (!source->external_power_present) {
@@ -422,10 +450,9 @@ static void power_manager_read_power_source(power_manager_power_source_snapshot_
         .pwr_hold_policy = board_snapshot.pwr_hold_policy,
     };
     /*
-     * CHG/STD are charger status outputs. Treat active CHG as external power so
-     * boards with a quiet USB_DET divider still use plugged idle policy while
-     * charging. Do not use STD/full by itself as an external-power fallback:
-     * on a battery-only full pack it must not keep long-idle shutdown blocked.
+     * CHG/STD are charger status outputs. Active CHG is the only safe immediate
+     * fallback when USB_DET is quiet; the locked charge-state filter retains it
+     * for a bounded window so charger standby does not look like battery power.
      */
 }
 
