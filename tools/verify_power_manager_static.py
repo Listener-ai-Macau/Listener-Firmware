@@ -538,6 +538,17 @@ def main() -> int:
             "components/power_manager/power_manager.c: connected idle must turn off routine status LEDs before sleeping audio"
         )
     if not re.search(
+        r"case\s+POWER_MANAGER_STATE_CONNECTED_IDLE:[\s\S]*"
+        r"s_external_power_present[\s\S]*"
+        r"keeping active BLE connection parameters[\s\S]*"
+        r"ble_hid_gap_request_active_connection\(\)[\s\S]*"
+        r"else if\s*\(ble_hid_gap_request_low_power_connection != NULL\)",
+        power_manager,
+    ):
+        failures.append(
+            "components/power_manager/power_manager.c: externally powered connected idle must keep active BLE connection parameters before battery low-power fallback"
+        )
+    if not re.search(
         r"case\s+POWER_MANAGER_STATE_DISCONNECTED_IDLE:[\s\S]{0,80}"
         r"case\s+POWER_MANAGER_STATE_HARDWARE_SHUTDOWN:[\s\S]{0,220}"
         r"status_led_set_low_power_disabled\(true\)[\s\S]{0,240}"

@@ -119,6 +119,29 @@ static void ble_hid_gap_set_connection_state(bool connected, uint16_t conn_handl
     portEXIT_CRITICAL(&s_ble_gap_state_lock);
 }
 
+static status_led_ble_state_t ble_hid_gap_status_led_connected_state(void)
+{
+    return (s_audio_enabled && ble_audio_stream_is_ready())
+        ? STATUS_LED_BLE_TYPE_READY
+        : STATUS_LED_BLE_CONNECTED;
+}
+
+static void ble_hid_gap_refresh_connected_status_led(bool confidence_window)
+{
+    ble_hid_gap_connection_snapshot_t conn = ble_hid_gap_connection_snapshot();
+    if (!conn.connected) {
+        return;
+    }
+    status_led_ble_state_t state = ble_hid_gap_status_led_connected_state();
+    ESP_LOGI(
+        TAG,
+        "BLE status LED refresh: state=%s confidence=%u audio_ready=%u",
+        state == STATUS_LED_BLE_TYPE_READY ? "type_ready" : "connected",
+        confidence_window ? 1U : 0U,
+        (s_audio_enabled && ble_audio_stream_is_ready()) ? 1U : 0U);
+    status_led_set_ble_state(state, confidence_window);
+}
+
 typedef enum {
     BLE_HID_GAP_ADV_STATE_SUPPRESS_SHUTDOWN = 1,
     BLE_HID_GAP_ADV_STATE_SUPPRESS_KEY_WAKE = 2,
@@ -698,6 +721,7 @@ nimble_hid_gap_event(struct ble_gap_event *event, void *arg)
         if (s_audio_enabled) {
             ble_audio_stream_on_gap_connect(event->connect.conn_handle);
         }
+        ble_hid_gap_refresh_connected_status_led(false);
         s_last_adv_was_directed = false;
         s_service_changed_queued_for_conn = false;
         ble_hid_gap_queue_service_changed("connect");
@@ -861,6 +885,7 @@ nimble_hid_gap_event(struct ble_gap_event *event, void *arg)
                 event->subscribe.attr_handle,
                 event->subscribe.cur_notify,
                 event->subscribe.cur_indicate);
+            ble_hid_gap_refresh_connected_status_led(false);
         }
         if (event->subscribe.reason == BLE_GAP_SUBSCRIBE_REASON_WRITE &&
             event->subscribe.attr_handle == ble_hid_gap_get_service_changed_val_handle() &&
@@ -883,6 +908,7 @@ nimble_hid_gap_event(struct ble_gap_event *event, void *arg)
                  0, event->mtu.value, event->mtu.conn_handle, event->mtu.channel_id);
         if (s_audio_enabled) {
             ble_audio_stream_on_gap_mtu(event->mtu.conn_handle, event->mtu.value);
+            ble_hid_gap_refresh_connected_status_led(false);
         }
         ble_diag_log_on_gap_mtu(event->mtu.conn_handle, event->mtu.value);
         return 0;
@@ -1085,7 +1111,7 @@ esp_err_t esp_hid_ble_gap_adv_start(void)
             DIAG_SEV_INFO);
         diag_log(DIAG_SRC_BLE_GAP, DIAG_GAP_ADV_START, DIAG_SEV_INFO,
                  2, 0, 1, conn.conn_handle);
-        status_led_set_ble_state(STATUS_LED_BLE_CONNECTED, false);
+        ble_hid_gap_refresh_connected_status_led(false);
         return ESP_OK;
     }
 

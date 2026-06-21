@@ -1,0 +1,9 @@
+2026-06-21T16:53:01.2012088+08:00 visible Chinese operator prompt launching
+2026-06-21T16:53:01.9437979+08:00 starting temporary Vite dev server on 127.0.0.1:1420
+2026-06-21T16:53:03.0998974+08:00 starting Listener-Type debug app hidden
+2026-06-21T16:53:06.2478860+08:00 background listener notify ready observed
+2026-06-21T16:53:06.2491007+08:00 capturing firmware serial idle log for 125 seconds
+2026-06-21T16:53:14.8707803+08:00 querying final firmware power and LED status
+2026-06-21T16:53:15.7704436+08:00 stopping Listener-Type pid=28944
+2026-06-21T16:53:15.7780872+08:00 stopping temporary Vite process tree pid=25840
+2026-06-21T16:53:16.3631315+08:00 analysis=C:\\Users\\Billy\\Desktop\\Denzic\\Listener\\Listener-Firmware-pwr-shutdown-new-board\\docs\\validation\\voice-keyboard-firmware-full-function-test-1.12\\focused-led-fix-20260621-161102\\quiet-idle-type-fix-20260621-165258\quiet-idle-analysis.json
