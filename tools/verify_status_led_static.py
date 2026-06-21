@@ -135,8 +135,9 @@ CHECKS = {
         "STATUS_LED_FULL_STEADY_PERCENT STATUS_LED_PWR_WHITE_VISUAL_BALANCE_PERCENT",
         "STATUS_LED_FULL_STATUS_STEADY_PERCENT STATUS_LED_PWR_WHITE_VISUAL_BALANCE_PERCENT",
         "STATUS_LED_LOW_POWER_PWR_PERCENT 8U",
-        "STATUS_LED_LOW_POWER_PWR_WHITE_PERCENT 11U",
-        "STATUS_LED_LOW_POWER_BLE_CONNECTED_PERCENT 11U",
+        "STATUS_LED_LOW_POWER_PWR_WHITE_PERCENT 3U",
+        "STATUS_LED_LOW_POWER_BLE_CONNECTED_PERCENT 8U",
+        "STATUS_LED_LOW_POWER_BLE_ATTENTION_PERCENT 12U",
         "STATUS_LED_BATTERY_IDLE_BLE_HEARTBEAT_ON_MS 120U",
         "STATUS_LED_BATTERY_IDLE_BLE_HEARTBEAT_OFF_MS 7880U",
         "STATUS_LED_BATTERY_IDLE_BLE_HEARTBEAT_PERCENT 18U",
@@ -292,9 +293,13 @@ CHECKS = {
         "STATUS_LED_BLE_RECONNECT_MIN_PERCENT 30U",
         "STATUS_LED_BLE_RECONNECT_MAX_PERCENT 100U",
         "STATUS_LED_BLE_CONNECTED_CONFIRM_MIN_PERCENT 35U",
+        "STATUS_LED_BLE_CONNECTED_GENERIC_PERCENT 38U",
         "STATUS_LED_BLE_CONNECTED_STEADY_PERCENT 100U",
+        "STATUS_LED_BLE_TYPE_READY_STEADY_PERCENT STATUS_LED_BLE_CONNECTED_STEADY_PERCENT",
+        "case STATUS_LED_BLE_TYPE_READY: return \"type_ready\"",
+        "status_led_ble_state_ready_locked",
         "ble_elapsed_ms < STATUS_LED_BLE_CONNECTED_CONFIRM_MS",
-        "STATUS_LED_BLE_CONNECTED_CONFIRM_MS,\n                    STATUS_LED_BLE_CONNECTED_CONFIRM_MIN_PERCENT,\n                    STATUS_LED_BLE_CONNECTED_STEADY_PERCENT",
+        "STATUS_LED_BLE_TYPE_READY_STEADY_PERCENT\n                        : STATUS_LED_BLE_CONNECTED_STEADY_PERCENT",
         "status_led_preview_clear_activity_locked",
         "status_led_render_edge_clockwise_chase_locked",
         "ble_repair_ms_left=%",
@@ -437,7 +442,7 @@ CHECKS = {
         "active_flags=PWR:%u,BLE:%u,REC:%u,AI:%u,OK:%u,WARN:%u,EC11:%u,KEY:%u,EDGE:%u",
         "status_rgb=PWR:%u,%u,%u;BLE:%u,%u,%u;REC:%u,%u,%u",
         "if (changed && !effect_only) {\n            s_state.status_window_until_ms = now_ms + STATUS_LED_STATUS_WINDOW_MS;",
-        "if (changed && state == STATUS_LED_BLE_CONNECTED && confidence_window)",
+        "if (changed && status_led_ble_state_ready_locked(state) && confidence_window)",
         "state == STATUS_LED_BLE_PAIRING && status_led_ble_repair_active_locked(now_ms)",
         "status_led_render_processing_locked",
         "status_led_render_ec11_locked",
@@ -922,10 +927,13 @@ def main() -> int:
             if "status_led_render_power_locked" in branch:
                 failures.append("status_led.c: plugged low-power PWR must not reuse charging/full breath rendering")
         if (
-            "STATUS_LED_LOW_POWER_PWR_WHITE_PERCENT 11U" not in status_led or
-            "STATUS_LED_LOW_POWER_BLE_CONNECTED_PERCENT 11U" not in status_led
+            "STATUS_LED_LOW_POWER_PWR_WHITE_PERCENT 3U" not in status_led or
+            "STATUS_LED_LOW_POWER_BLE_CONNECTED_PERCENT 8U" not in status_led or
+            "STATUS_LED_LOW_POWER_BLE_ATTENTION_PERCENT 12U" not in status_led
         ):
-            failures.append("status_led.c: idle PWR white and BLE blue must share the 11 percent low-power level")
+            failures.append(
+                "status_led.c: low-power PWR white must stay visually balanced below BLE blue, with attention states brighter"
+            )
     for token in (
         "STATUS_LED_RECORDING_LEVEL_STALE_MS",
         "STATUS_LED_RECORDING_LEVEL_EFFECT_MIN_PERCENT 8U",

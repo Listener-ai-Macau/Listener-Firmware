@@ -891,7 +891,12 @@ static void power_manager_apply_state(power_manager_state_t previous, power_mana
         if (ble_hid_gap_set_low_power_advertising != NULL) {
             (void)ble_hid_gap_set_low_power_advertising(false);
         }
-        if (ble_hid_gap_request_low_power_connection != NULL) {
+        if (s_external_power_present) {
+            ESP_LOGI(TAG, "externally powered connected idle: keeping active BLE connection parameters");
+            if (s_ble_connected && ble_hid_gap_request_active_connection != NULL) {
+                (void)ble_hid_gap_request_active_connection();
+            }
+        } else if (ble_hid_gap_request_low_power_connection != NULL) {
             (void)ble_hid_gap_request_low_power_connection();
         }
         break;

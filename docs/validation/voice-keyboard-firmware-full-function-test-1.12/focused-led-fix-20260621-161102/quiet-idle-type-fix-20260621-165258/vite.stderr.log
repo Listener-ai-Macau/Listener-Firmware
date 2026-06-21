@@ -1,0 +1,18 @@
+node:events:487
+      throw er; // Unhandled 'error' event
+      ^
+
+Error: read EPIPE
+    at TTY.onStreamRead (node:internal/stream_base_commons:216:20)
+Emitted 'error' event on Interface instance at:
+    at ReadStream.onerror (node:internal/readline/interface:259:10)
+    at ReadStream.emit (node:events:509:28)
+    at emitErrorNT (node:internal/streams/destroy:170:8)
+    at emitErrorCloseNT (node:internal/streams/destroy:129:3)
+    at process.processTicksAndRejections (node:internal/process/task_queues:90:21) {
+  errno: -4047,
+  code: 'EPIPE',
+  syscall: 'read'
+}
+
+Node.js v24.15.0
