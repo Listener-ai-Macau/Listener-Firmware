@@ -242,9 +242,12 @@ static esp_err_t device_settings_load_locked(void)
         s_loaded_from_nvs = true;
     }
 
-    uint32_t plugged_shutdown_ms = s_settings.plugged_auto_shutdown_ms;
+    uint32_t plugged_shutdown_ms = DEVICE_SETTINGS_DEFAULT_PLUGGED_AUTO_SHUTDOWN_MS;
     if (nvs_get_u32(nvs, DEVICE_SETTINGS_NVS_PLUGGED_AUTO_SHUTDOWN_MS_KEY, &plugged_shutdown_ms) == ESP_OK) {
-        s_settings.plugged_auto_shutdown_ms = device_settings_clamp_auto_shutdown_ms(plugged_shutdown_ms);
+        if (plugged_shutdown_ms != DEVICE_SETTINGS_DEFAULT_PLUGGED_AUTO_SHUTDOWN_MS) {
+            ESP_LOGW(TAG, "ignoring legacy plugged_auto_shutdown_ms=%" PRIu32 "; external power auto-shutdown is disabled", plugged_shutdown_ms);
+        }
+        s_settings.plugged_auto_shutdown_ms = DEVICE_SETTINGS_DEFAULT_PLUGGED_AUTO_SHUTDOWN_MS;
         s_loaded_from_nvs = true;
     }
 
@@ -343,7 +346,7 @@ static esp_err_t device_settings_persist_locked(void)
         ret = nvs_set_u32(
             nvs,
             DEVICE_SETTINGS_NVS_PLUGGED_AUTO_SHUTDOWN_MS_KEY,
-            s_settings.plugged_auto_shutdown_ms);
+            DEVICE_SETTINGS_DEFAULT_PLUGGED_AUTO_SHUTDOWN_MS);
     }
     if (ret == ESP_OK) {
         ret = nvs_set_u32(nvs, DEVICE_SETTINGS_NVS_AUTO_SHUTDOWN_MS_KEY, s_settings.battery_auto_shutdown_ms);
@@ -654,7 +657,7 @@ static void device_settings_print_status(const char *result)
         " ble_name=\"%s\" ble_name_pending=%u ble_name_apply=%s"
         " loaded_from_nvs=%u external_power_present=%u usb_power_present=%u"
         " usb_serial_jtag_sof_active=%u charging=%u charge_full=%u"
-        " valid_ranges=brightness_0_100,led_zone_brightness_0_100,low_power_idle_ms_%u_%u,plugged_low_power_idle_ms_%u_%u,battery_low_power_idle_ms_%u_%u,plugged_low_power_enabled_0_1,auto_shutdown_ms_0_off_or_%u_%u,plugged_auto_shutdown_ms_0_off_or_%u_%u,battery_auto_shutdown_ms_0_off_or_%u_%u,ble_name_ascii_1_%u,knob_rotation_system_volume_screen_brightness_disabled\n",
+        " valid_ranges=brightness_0_100,led_zone_brightness_0_100,low_power_idle_ms_%u_%u,plugged_low_power_idle_ms_%u_%u,battery_low_power_idle_ms_%u_%u,plugged_low_power_enabled_0_1,auto_shutdown_ms_0_off_or_%u_%u,plugged_auto_shutdown_ms_off_only,battery_auto_shutdown_ms_0_off_or_%u_%u,ble_name_ascii_1_%u,knob_rotation_system_volume_screen_brightness_disabled\n",
         result != NULL ? result : "OK",
         snapshot.plugged_brightness_percent,
         snapshot.battery_brightness_percent,
@@ -691,8 +694,6 @@ static void device_settings_print_status(const char *result)
         (unsigned)DEVICE_SETTINGS_LOW_POWER_IDLE_MAX_MS,
         (unsigned)DEVICE_SETTINGS_LOW_POWER_IDLE_MIN_MS,
         (unsigned)DEVICE_SETTINGS_LOW_POWER_IDLE_MAX_MS,
-        (unsigned)DEVICE_SETTINGS_AUTO_SHUTDOWN_MIN_MS,
-        (unsigned)DEVICE_SETTINGS_AUTO_SHUTDOWN_MAX_MS,
         (unsigned)DEVICE_SETTINGS_AUTO_SHUTDOWN_MIN_MS,
         (unsigned)DEVICE_SETTINGS_AUTO_SHUTDOWN_MAX_MS,
         (unsigned)DEVICE_SETTINGS_AUTO_SHUTDOWN_MIN_MS,
@@ -890,14 +891,13 @@ static bool device_settings_apply_key_value(
     if (strcmp(key, "plugged_auto_shutdown_ms") == 0 ||
         strcmp(key, "external_auto_shutdown_ms") == 0 ||
         strcmp(key, "usb_auto_shutdown_ms") == 0) {
-        uint32_t parsed = 0;
-        if (!device_settings_parse_auto_shutdown_ms(value, &parsed)) {
+        if (!device_settings_auto_shutdown_disabled_value(value)) {
             if (out_reason != NULL) {
-                *out_reason = "plugged_auto_shutdown_ms_out_of_range";
+                *out_reason = "plugged_auto_shutdown_disabled";
             }
             return false;
         }
-        config->plugged_auto_shutdown_ms = parsed;
+        config->plugged_auto_shutdown_ms = DEVICE_SETTINGS_AUTO_SHUTDOWN_DISABLED_MS;
         return true;
     }
 
@@ -1059,25 +1059,13 @@ static bool device_settings_apply_key_value(
     if (strcmp(key, "plugged_auto_shutdown_minutes") == 0 ||
         strcmp(key, "external_auto_shutdown_minutes") == 0 ||
         strcmp(key, "usb_auto_shutdown_minutes") == 0) {
-        if (device_settings_auto_shutdown_disabled_value(value)) {
-            config->plugged_auto_shutdown_ms = DEVICE_SETTINGS_AUTO_SHUTDOWN_DISABLED_MS;
-            return true;
-        }
-        uint32_t parsed = 0;
-        if (!device_settings_parse_u32(value, &parsed) || parsed > (DEVICE_SETTINGS_AUTO_SHUTDOWN_MAX_MS / 60000U)) {
+        if (!device_settings_auto_shutdown_disabled_value(value)) {
             if (out_reason != NULL) {
-                *out_reason = "plugged_auto_shutdown_minutes_out_of_range";
+                *out_reason = "plugged_auto_shutdown_disabled";
             }
             return false;
         }
-        uint32_t ms = parsed * 60000U;
-        if (ms < DEVICE_SETTINGS_AUTO_SHUTDOWN_MIN_MS) {
-            if (out_reason != NULL) {
-                *out_reason = "plugged_auto_shutdown_minutes_out_of_range";
-            }
-            return false;
-        }
-        config->plugged_auto_shutdown_ms = ms;
+        config->plugged_auto_shutdown_ms = DEVICE_SETTINGS_AUTO_SHUTDOWN_DISABLED_MS;
         return true;
     }
 
@@ -1254,7 +1242,7 @@ esp_err_t device_settings_consume_control_command(const char *line)
     }
 
     if (strcmp(command, "HELP") == 0 || strcmp(command, "?") == 0) {
-        printf("~DEVICE:HELP commands=SETTINGS,STATUS,SET,RESET keys=plugged_brightness,battery_brightness,led_status,led_key,led_ec11,led_edge,low_power_idle_ms,low_power_idle_minutes,plugged_low_power_idle_ms,plugged_low_power_idle_minutes,battery_low_power_idle_ms,battery_low_power_idle_minutes,plugged_low_power_enabled,auto_shutdown_ms,auto_shutdown_minutes,plugged_auto_shutdown_ms,plugged_auto_shutdown_minutes,battery_auto_shutdown_ms,battery_auto_shutdown_minutes,ble_name,knob_rotation\n");
+        printf("~DEVICE:HELP commands=SETTINGS,STATUS,SET,RESET keys=plugged_brightness,battery_brightness,led_status,led_key,led_ec11,led_edge,low_power_idle_ms,low_power_idle_minutes,plugged_low_power_idle_ms,plugged_low_power_idle_minutes,battery_low_power_idle_ms,battery_low_power_idle_minutes,plugged_low_power_enabled,auto_shutdown_ms,auto_shutdown_minutes,battery_auto_shutdown_ms,battery_auto_shutdown_minutes,ble_name,knob_rotation\n");
         fflush(stdout);
         return ESP_OK;
     }
