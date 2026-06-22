@@ -72,6 +72,7 @@ esp_err_t ble_audio_stream_send_session_error(
     uint16_t expected_packet_count,
     uint16_t error_code);
 bool ble_audio_stream_is_ready(void);
+bool ble_audio_stream_is_type_link_ready(void);
 bool ble_audio_stream_is_busy(void);
 void ble_audio_stream_get_backpressure(ble_audio_stream_backpressure_t *snapshot);
 uint16_t ble_audio_stream_get_notify_attr_handle(void);

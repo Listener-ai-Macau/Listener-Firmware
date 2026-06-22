@@ -365,6 +365,11 @@ static uint32_t power_manager_low_power_idle_ms(void)
     return device_settings_get_active_low_power_idle_ms(s_external_power_present);
 }
 
+static uint32_t power_manager_remaining_ms(uint32_t elapsed_ms, uint32_t threshold_ms)
+{
+    return elapsed_ms >= threshold_ms ? 0U : threshold_ms - elapsed_ms;
+}
+
 static bool power_manager_plugged_low_power_enabled(void)
 {
     return device_settings_get_plugged_low_power_enabled();
@@ -2308,6 +2313,103 @@ static void power_manager_print_status(void)
     fflush(stdout);
 }
 
+static void power_manager_print_idle_diag(void)
+{
+    power_manager_snapshot_t snapshot;
+    power_manager_get_snapshot(&snapshot);
+
+    uint32_t awake_blockers = power_manager_awake_blockers(snapshot.blockers);
+    uint32_t audio_idle_blockers = snapshot.audio_idle_blockers;
+    bool low_power_active =
+        snapshot.state == POWER_MANAGER_STATE_CONNECTED_IDLE ||
+        snapshot.state == POWER_MANAGER_STATE_DISCONNECTED_IDLE;
+    bool low_power_wait_valid = snapshot.low_power_idle_allowed && awake_blockers == 0U;
+    bool low_power_ready =
+        low_power_wait_valid &&
+        snapshot.radio_idle_ms >= snapshot.low_power_idle_threshold_ms;
+    bool audio_wait_valid = audio_idle_blockers == 0U;
+    bool audio_idle_ready =
+        audio_wait_valid &&
+        snapshot.user_idle_ms >= snapshot.audio_idle_threshold_ms;
+    uint32_t low_power_wait_ms = low_power_wait_valid
+        ? power_manager_remaining_ms(snapshot.radio_idle_ms, snapshot.low_power_idle_threshold_ms)
+        : 0U;
+    uint32_t audio_wait_ms = audio_wait_valid
+        ? power_manager_remaining_ms(snapshot.user_idle_ms, snapshot.audio_idle_threshold_ms)
+        : 0U;
+
+    const char *reason = "pending_evaluate";
+    const char *next_action = "wait_next_power_evaluate";
+    if (!CONFIG_POWER_MANAGER_ENABLE) {
+        reason = "power_manager_disabled";
+        next_action = "enable_power_manager";
+    } else if (!snapshot.low_power_idle_allowed) {
+        reason = "plugged_low_power_disabled";
+        next_action = "unplug_usb_or_enable_plugged_low_power";
+    } else if (awake_blockers != 0U) {
+        reason = "awake_blockers";
+        next_action = "clear_awake_blockers";
+    } else if (!low_power_ready) {
+        reason = "waiting_radio_idle";
+        next_action = "wait_idle_without_input";
+    } else if (low_power_active) {
+        reason = "low_power_active";
+        next_action = "measure_current";
+    }
+
+    char blocker_text[96];
+    power_manager_blocker_names(snapshot.blockers, blocker_text, sizeof(blocker_text));
+    char awake_blocker_text[96];
+    power_manager_blocker_names(awake_blockers, awake_blocker_text, sizeof(awake_blocker_text));
+    char audio_blocker_text[96];
+    power_manager_blocker_names(audio_idle_blockers, audio_blocker_text, sizeof(audio_blocker_text));
+
+    printf(
+        "~POWER:IDLE_DIAG state=%s reason=%s next=%s low_power_active=%u low_power_ready=%u"
+        " low_power_wait_valid=%u low_power_wait_ms=%" PRIu32
+        " audio_idle_ready=%u audio_wait_valid=%u audio_wait_ms=%" PRIu32
+        " audio_idle_power_save=%u blockers=0x%08" PRIx32 " blocker_names=%s"
+        " awake_blockers=0x%08" PRIx32 " awake_blocker_names=%s"
+        " audio_idle_blockers=0x%08" PRIx32 " audio_idle_blocker_names=%s"
+        " external_power_present=%u plugged_low_power_enabled=%u low_power_idle_allowed=%u"
+        " usb_power_present=%u usb_serial_jtag_sof_active=%u charger_active=%u charge_power_present=%u"
+        " ble_connected=%u user_idle_ms=%" PRIu32 " radio_idle_ms=%" PRIu32
+        " audio_idle_ms=%" PRIu32 " low_power_idle_ms=%" PRIu32
+        " power_input_wake_configured=%u power_input_irq_armed=%u\n",
+        power_manager_state_name(snapshot.state),
+        reason,
+        next_action,
+        low_power_active ? 1u : 0u,
+        low_power_ready ? 1u : 0u,
+        low_power_wait_valid ? 1u : 0u,
+        low_power_wait_ms,
+        audio_idle_ready ? 1u : 0u,
+        audio_wait_valid ? 1u : 0u,
+        audio_wait_ms,
+        snapshot.audio_idle_power_save_enabled ? 1u : 0u,
+        snapshot.blockers,
+        blocker_text,
+        awake_blockers,
+        awake_blocker_text,
+        audio_idle_blockers,
+        audio_blocker_text,
+        snapshot.external_power_present ? 1u : 0u,
+        snapshot.plugged_low_power_enabled ? 1u : 0u,
+        snapshot.low_power_idle_allowed ? 1u : 0u,
+        snapshot.usb_power_present ? 1u : 0u,
+        snapshot.usb_serial_jtag_sof_active ? 1u : 0u,
+        snapshot.charger_active ? 1u : 0u,
+        snapshot.charge_power_present ? 1u : 0u,
+        snapshot.ble_connected ? 1u : 0u,
+        snapshot.user_idle_ms,
+        snapshot.radio_idle_ms,
+        snapshot.audio_idle_threshold_ms,
+        snapshot.low_power_idle_threshold_ms,
+        snapshot.power_input_wake_configured ? 1u : 0u,
+        snapshot.power_input_irq_armed ? 1u : 0u);
+    fflush(stdout);
+}
+
 static void power_manager_print_pm_locks(void)
 {
 #if CONFIG_PM_ENABLE
@@ -2335,6 +2437,13 @@ bool power_manager_consume_usb_command(const char *line)
 
     if (strcmp(command, "STATUS") == 0) {
         power_manager_print_status();
+        return true;
+    }
+
+    if (strcmp(command, "IDLE") == 0 ||
+        strcmp(command, "IDLE:DIAG") == 0 ||
+        strcmp(command, "IDLE_DIAG") == 0) {
+        power_manager_print_idle_diag();
         return true;
     }
 

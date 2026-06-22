@@ -52,6 +52,7 @@ CHECKS = {
     ],
     "components/power_manager/power_manager.c": [
         "~POWER:STATUS",
+        "~POWER:IDLE_DIAG",
         "POWER_MANAGER_STATE_HARDWARE_SHUTDOWN",
         "CONFIG_POWER_MANAGER_HARDWARE_SHUTDOWN_MS",
         "POWER_MANAGER_SHUTDOWN_REASON_LONG_IDLE",
@@ -78,6 +79,11 @@ CHECKS = {
         "power_manager_radio_idle_ms_locked",
         "user_idle_ms=%",
         "radio_idle_ms=%",
+        "reason=%s",
+        "next=%s",
+        "low_power_wait_ms=%",
+        "audio_wait_ms=%",
+        "awake_blocker_names=%s",
         "external_power_present=%u",
         "charger_active=%u",
         "charge_power_present=%u",
@@ -171,6 +177,9 @@ CHECKS = {
         "ble_hid_usb_command_is_passive_query",
         "ble_hid_usb_command_records_activity",
         "POWER:STATUS",
+        "POWER:IDLE",
+        "POWER:IDLE:DIAG",
+        "POWER:IDLE_DIAG",
         "POWER:PM",
         "POWER:PM:LOCKS",
         "BOARD:STATUS",
@@ -201,8 +210,10 @@ CHECKS = {
         "GPIO_INTR_LOW_LEVEL",
         "gpio_wakeup_enable",
         "esp_sleep_enable_gpio_wakeup",
-        "watchdog_platform_task_notify_take_low_power",
-        "wake=interrupt_anyedge",
+        "GPIO_INTR_DISABLE",
+        "watchdog_platform_task_notify_take(pdTRUE, wait_ms)",
+        "wake=poll_10ms",
+        "low_power_wake=gpio_wakeup_only",
     ],
     "components/keyboard/CMakeLists.txt": [
         "esp_hw_support",
@@ -800,6 +811,19 @@ def main() -> int:
             "components/power_manager/power_manager.c: runtime PWR_HOLD guard must reassert low outside hardware shutdown"
         )
     if not re.search(
+        r"power_manager_print_idle_diag\(void\)[\s\S]*"
+        r"~POWER:IDLE_DIAG[\s\S]*"
+        r"reason=%s[\s\S]*"
+        r"low_power_wait_valid=%u[\s\S]*"
+        r"low_power_wait_ms=%[\s\S]*"
+        r"audio_idle_ready=%u[\s\S]*"
+        r"awake_blocker_names=%s",
+        power_manager,
+    ):
+        failures.append(
+            "components/power_manager/power_manager.c: POWER:IDLE_DIAG must summarize idle blockers, wait time, audio idle, and next action"
+        )
+    if not re.search(
         r"strcmp\(command,\s*\"STATUS\"\)[\s\S]*"
         r"power_manager_print_status\(\)[\s\S]*"
         r"power_manager_record_activity\(\"usb_power_command\"\)",
@@ -906,7 +930,7 @@ def main() -> int:
         )
     if not re.search(
         r"ble_hid_usb_command_is_passive_query[\s\S]*"
-        r"POWER:STATUS[\s\S]*POWER:PM[\s\S]*BOARD:STATUS[\s\S]*BOARD:POWER[\s\S]*BOARD:POWER:FORCE[\s\S]*LED:STATUS[\s\S]*DEVICE:SETTINGS",
+        r"POWER:STATUS[\s\S]*POWER:IDLE[\s\S]*POWER:PM[\s\S]*BOARD:STATUS[\s\S]*BOARD:POWER[\s\S]*BOARD:POWER:FORCE[\s\S]*LED:STATUS[\s\S]*DEVICE:SETTINGS",
         ble_hid,
     ):
         failures.append(
@@ -971,12 +995,14 @@ def main() -> int:
             "components/keyboard/keyboard.c: physical keys/EC11 must configure active-low GPIO wake for light sleep"
         )
     if not re.search(
-        r"keyboard_custom_start[\s\S]*keyboard_enable_active_low_light_sleep_wake\([\s\S]*"
-        r"keyboard_custom_add_isr_handlers",
+        r"keyboard_custom_start[\s\S]*GPIO_INTR_DISABLE[\s\S]*"
+        r"keyboard_enable_active_low_light_sleep_wake\([\s\S]*"
+        r"wake=poll_10ms[\s\S]*"
+        r"low_power_wake=gpio_wakeup_only",
         keyboard,
     ):
         failures.append(
-            "components/keyboard/keyboard.c: custom keys must enable light-sleep wake before ISR-backed idle operation"
+            "components/keyboard/keyboard.c: custom keys must use polling for mechanical debounce while keeping GPIO wake for light sleep"
         )
     if not re.search(
         r"keyboard_ec11_start[\s\S]*"
@@ -1012,6 +1038,8 @@ def main() -> int:
     if not re.search(
         r"strcmp\(command,\s*\"STATUS\"\)[\s\S]*"
         r"power_manager_print_status\(\)[\s\S]*"
+        r"strcmp\(command,\s*\"IDLE\"\)[\s\S]*"
+        r"power_manager_print_idle_diag\(\)[\s\S]*"
         r"strcmp\(command,\s*\"SHUTDOWN\"\)[\s\S]*"
         r"power_manager_record_activity\(\"usb_power_command\"\)[\s\S]*"
         r"strcmp\(command,\s*\"ACTIVITY\"\)[\s\S]*"
@@ -1020,7 +1048,7 @@ def main() -> int:
         power_manager,
     ):
         failures.append(
-            "components/power_manager/power_manager.c: POWER unknown/status commands must stay passive while SHUTDOWN/ACTIVITY record activity"
+            "components/power_manager/power_manager.c: POWER unknown/status/idle commands must stay passive while SHUTDOWN/ACTIVITY record activity"
         )
 
     monitor = (REPO_ROOT / "tools/monitor_idle_power.py").read_text(encoding="utf-8")

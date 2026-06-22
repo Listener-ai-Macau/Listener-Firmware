@@ -179,7 +179,7 @@ static bool ble_hid_battery_level_exceeds_notify_threshold(uint8_t level)
 
 static status_led_ble_state_t ble_hid_connected_status_led_state(void)
 {
-    return ble_audio_stream_is_ready()
+    return ble_audio_stream_is_type_link_ready()
         ? STATUS_LED_BLE_TYPE_READY
         : STATUS_LED_BLE_CONNECTED;
 }
@@ -687,6 +687,9 @@ static bool ble_hid_usb_command_is_passive_query(const char *line)
     }
 
     return strcmp(line, "POWER:STATUS") == 0 ||
+           strcmp(line, "POWER:IDLE") == 0 ||
+           strcmp(line, "POWER:IDLE:DIAG") == 0 ||
+           strcmp(line, "POWER:IDLE_DIAG") == 0 ||
            strcmp(line, "POWER:PM") == 0 ||
            strcmp(line, "POWER:PM:LOCKS") == 0 ||
            strcmp(line, "BOARD:STATUS") == 0 ||

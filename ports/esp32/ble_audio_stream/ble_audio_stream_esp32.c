@@ -24,6 +24,7 @@
 #include "diag_log.h"
 #include "listener_device.h"
 #include "listener_audio_proto.h"
+#include "status_led.h"
 #include "watchdog_platform.h"
 
 #define BLE_AUDIO_STREAM_TASK_STACK_BYTES (5 * 1024)
@@ -641,6 +642,15 @@ static uint32_t ble_audio_stream_reason_code(const char *reason)
     return hash;
 }
 
+static bool ble_audio_stream_transport_state_type_ready(ble_audio_stream_transport_state_t state)
+{
+    return state == BLE_AUDIO_STREAM_TRANSPORT_STATE_STREAM_READY ||
+           state == BLE_AUDIO_STREAM_TRANSPORT_STATE_STREAMING ||
+           state == BLE_AUDIO_STREAM_TRANSPORT_STATE_DRAINING;
+}
+
+static bool ble_audio_stream_transport_link_ready(void);
+
 static void ble_audio_stream_set_transport_state(
     ble_audio_stream_transport_state_t next_state,
     const char *reason)
@@ -668,6 +678,13 @@ static void ble_audio_stream_set_transport_state(
              ble_audio_stream_reason_code(reason),
              s_transport_session_id);
     s_transport_state = next_state;
+    if (ble_audio_stream_transport_link_ready()) {
+        status_led_set_ble_state(
+            ble_audio_stream_transport_state_type_ready(next_state)
+                ? STATUS_LED_BLE_TYPE_READY
+                : STATUS_LED_BLE_CONNECTED,
+            false);
+    }
 }
 
 static void ble_audio_stream_log_notify_state(
@@ -2508,6 +2525,12 @@ bool ble_audio_stream_is_ready(void)
 {
     return ble_audio_stream_transport_link_ready() &&
            s_transport_state == BLE_AUDIO_STREAM_TRANSPORT_STATE_STREAM_READY;
+}
+
+bool ble_audio_stream_is_type_link_ready(void)
+{
+    return ble_audio_stream_transport_link_ready() &&
+           ble_audio_stream_transport_state_type_ready(s_transport_state);
 }
 
 bool ble_audio_stream_is_busy(void)

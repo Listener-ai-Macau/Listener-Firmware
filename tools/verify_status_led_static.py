@@ -980,6 +980,31 @@ def main() -> int:
             failures.append("status_led.c: battery low-power PWR must use display-valid fallback, not only live battery_valid")
         if "status_led_rgb(255, 140, 0)" not in body:
             failures.append("status_led.c: battery low-power PWR must keep an amber idle fallback when battery sampling is unavailable")
+    low_power_ble_helper = re.search(
+        r"static\s+uint8_t\s+status_led_low_power_ble_percent_locked[^{]*\{(?P<body>[\s\S]*?)\n\}",
+        status_led,
+    )
+    if not low_power_ble_helper:
+        failures.append("status_led.c: missing shared low-power BLE percent helper")
+    else:
+        body = low_power_ble_helper.group("body")
+        if not re.search(
+            r"case\s+STATUS_LED_BLE_PAIRING:\s*\n\s*case\s+STATUS_LED_BLE_REPAIRING:\s*\n\s*"
+            r"case\s+STATUS_LED_BLE_RECONNECTING:[\s\S]*?"
+            r"STATUS_LED_BATTERY_IDLE_BLE_HEARTBEAT_ON_MS[\s\S]*?"
+            r"STATUS_LED_LOW_POWER_BLE_ATTENTION_PERCENT",
+            body,
+        ):
+            failures.append("status_led.c: low-power BLE helper must blink pairing/reconnecting instead of latching solid")
+        if not re.search(
+            r"case\s+STATUS_LED_BLE_CONNECTED:[\s\S]*?"
+            r"STATUS_LED_BATTERY_IDLE_BLE_HEARTBEAT_ON_MS[\s\S]*?"
+            r"STATUS_LED_LOW_POWER_BLE_CONNECTED_PERCENT[\s\S]*?"
+            r"case\s+STATUS_LED_BLE_TYPE_READY:[\s\S]*?"
+            r"return\s+STATUS_LED_LOW_POWER_BLE_CONNECTED_PERCENT;",
+            body,
+        ):
+            failures.append("status_led.c: low-power BLE helper must blink HID-only connected and latch only TYPE_READY")
     low_power_ble = re.search(
         r"static\s+void\s+status_led_render_low_power_ble_locked[^{]*\{(?P<body>[\s\S]*?)\n\}",
         status_led,
@@ -988,12 +1013,8 @@ def main() -> int:
         failures.append("status_led.c: missing low-power BLE renderer")
     else:
         body = low_power_ble.group("body")
-        if not re.search(
-            r"case\s+STATUS_LED_BLE_CONNECTED:\s*\n\s*case\s+STATUS_LED_BLE_TYPE_READY:\s*\n\s*"
-            r"percent\s*=\s*STATUS_LED_LOW_POWER_BLE_CONNECTED_PERCENT;",
-            body,
-        ):
-            failures.append("status_led.c: low-power BLE must keep TYPE_READY latched like CONNECTED")
+        if "status_led_low_power_ble_percent_locked(status_led_ble_elapsed_locked(now_ms))" not in body:
+            failures.append("status_led.c: low-power BLE renderer must use the shared low-power BLE helper")
     if not re.search(
         r"case\s+STATUS_LED_BLE_CONNECTED:\s*\n\s*case\s+STATUS_LED_BLE_TYPE_READY:\s*\{[\s\S]*?"
         r"STATUS_LED_BLE_TYPE_READY_STEADY_PERCENT[\s\S]*?"
@@ -1354,8 +1375,24 @@ def main() -> int:
         failures.append("status_led.c: battery PWR must not stay on just because BLE is connected")
     if re.search(r"\(status_window\s*\|\|\s*active_work\)\s*\?\s*\d+U\s*:\s*0U", status_led):
         failures.append("status_led.c: battery PWR status-window brightness must use the low visual-balance constant")
+    if not re.search(
+        r"status_led_render_power_locked[^{]*\{[\s\S]*?"
+        r"STATUS_LED_BATTERY_STATUS_WINDOW_PWR_PERCENT[\s\S]*?"
+        r"STATUS_LED_LOW_POWER_PWR_PERCENT",
+        status_led,
+    ):
+        failures.append("status_led.c: battery PWR must keep the low-power level during unplugged idle wait")
     if "STATUS_LED_BATTERY_IDLE_BLE_HEARTBEAT_PERCENT" not in status_led:
         failures.append("status_led.c: battery idle BLE heartbeat constants are missing")
+    if not re.search(
+        r"status_led_render_ble_locked[^{]*\{[\s\S]*?"
+        r"battery_quiet[\s\S]*?"
+        r"status_led_low_power_ble_percent_locked\(ble_elapsed_ms\)[\s\S]*?"
+        r"status_led_set_max\(&frame->status\[STATUS_LED_SEM_BLE\], color\);[\s\S]*?"
+        r"return;",
+        status_led,
+    ):
+        failures.append("status_led.c: unplugged idle wait must use the same low-power BLE indicator instead of going dark or solid-pairing")
     if "(!external_power_present && battery_display_band_changed)" not in status_led:
         failures.append("status_led.c: plugged/raw battery-percent jitter must not extend status windows")
     if "s_state.profile == STATUS_LED_PROFILE_STANDARD && now_ms < s_state.status_window_until_ms" in status_led:
