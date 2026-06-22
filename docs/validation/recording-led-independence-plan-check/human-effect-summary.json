@@ -1,0 +1,18 @@
+{
+  "schema_version": 1,
+  "generated_at": "2026-06-22T12:36:56.8949257+08:00",
+  "result": "PLAN_ONLY",
+  "mode": "RecordingIndependence",
+  "port": "",
+  "step_count": 1,
+  "observed_count": 0,
+  "pass_count": 0,
+  "fail_count": 0,
+  "skip_count": 0,
+  "led56_follow_count": 0,
+  "irregular_flicker_count": 0,
+  "brightness_wrong_count": 0,
+  "plan": "C:\\Users\\Billy\\Desktop\\Denzic\\Listener\\Listener-Firmware-wt-adhoc-oai2-low-power-40ma-consolidate-20260622-114937\\docs\\validation\\recording-led-independence-plan-check\\human-effect-plan.md",
+  "session_jsonl": "C:\\Users\\Billy\\Desktop\\Denzic\\Listener\\Listener-Firmware-wt-adhoc-oai2-low-power-40ma-consolidate-20260622-114937\\docs\\validation\\recording-led-independence-plan-check\\human-effect-session.jsonl",
+  "serial_log": "C:\\Users\\Billy\\Desktop\\Denzic\\Listener\\Listener-Firmware-wt-adhoc-oai2-low-power-40ma-consolidate-20260622-114937\\docs\\validation\\recording-led-independence-plan-check\\human-effect-serial.log"
+}
