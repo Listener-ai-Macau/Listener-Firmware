@@ -1019,6 +1019,7 @@ static const char *status_led_ble_name(status_led_ble_state_t state)
     case STATUS_LED_BLE_PAIRING: return "pairing";
     case STATUS_LED_BLE_RECONNECTING: return "reconnecting";
     case STATUS_LED_BLE_CONNECTED: return "connected";
+    case STATUS_LED_BLE_TYPE_READY: return "type_ready";
     case STATUS_LED_BLE_REPAIRING: return "repairing";
     default: return "unknown";
     }
@@ -1026,7 +1027,7 @@ static const char *status_led_ble_name(status_led_ble_state_t state)
 
 static bool status_led_ble_state_ready_locked(status_led_ble_state_t state)
 {
-    return state == STATUS_LED_BLE_CONNECTED;
+    return state == STATUS_LED_BLE_CONNECTED || state == STATUS_LED_BLE_TYPE_READY;
 }
 
 static const char *status_led_rec_source_name(status_led_rec_source_t source)
