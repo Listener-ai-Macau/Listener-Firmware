@@ -3,7 +3,7 @@ param(
     [string]$Port = "COMx",
     [int]$Baud = 115200,
     [string]$OutputDir = "",
-    [ValidateSet("Foundation", "Scenes", "Complex", "Volume", "Product", "FinalVisual", "FinalRetest", "FinalCombo", "RootCause", "StaticRoot", "Repro", "TailOnly", "ComboOnly", "Full")]
+    [ValidateSet("Foundation", "Scenes", "Complex", "Volume", "Product", "FinalVisual", "FinalRetest", "FinalCombo", "RootCause", "StaticRoot", "Repro", "IdleTransition", "TailOnly", "ComboOnly", "Full")]
     [string]$Mode = "Foundation",
     [int]$CommandReadMs = 700,
     [int]$InitialReadMs = 1200,
@@ -440,6 +440,48 @@ function Get-ReproSteps {
     return @($steps)
 }
 
+function Get-IdleTransitionSteps {
+    $steps = @(
+        New-LedReviewStep `
+            -Id "idle-transition-status-active-to-connected" `
+            -Title "idle切换：状态REC/AI -> connected idle" `
+            -Commands @("~LED:PREVIEW recording_processing_status_led_only", "~LED:REC_LEVEL 100 60000", "WAIT 1800", "~LED:PREVIEW connected", "WAIT 1200") `
+            -When "隔离检查从工作状态进入 connected idle；前置状态只允许状态灯 LED3/REC 和 LED4/AI 参与，不让旋钮、按键、边框作为干扰源。" `
+            -Expected "切换前只有 LED3/REC 与 LED4/AI 可有低频动态；切到 connected idle 后只保留 PWR/BLE，LED3/4/5/6 不得全亮、规律闪或拖尾；旋钮、按键、边框应保持熄灭。" `
+            -HumanFocus "重点看发送 connected 后第一秒，以及随后约 8 秒；切换前的 REC/AI 动态不算 idle 复现，只有切到 idle 后 LED3-LED6 再亮才算失败。" `
+            -PassRule "connected idle 后未出现 LED3-LED6 全亮、一起闪、规律复现或拖尾；~LED:STATUS 显示 active_flags 只有 PWR/BLE，EC11/KEY/EDGE 为 0。" `
+            -PostCommands @("~LED:STATUS", "~DIAGLOG:LAST:80:status_led", "~POWER:STATUS")
+        New-LedReviewStep `
+            -Id "idle-transition-ble-reconnect-to-connected" `
+            -Title "idle切换：BLE reconnecting -> connected idle" `
+            -Commands @("~LED:PREVIEW reconnecting", "WAIT 1800", "~LED:PREVIEW connected", "WAIT 1200") `
+            -When "隔离检查蓝牙重连闪烁进入 connected idle；这一步不经过 REC/AI 工作态。" `
+            -Expected "重连阶段只允许 BLE 蓝色提示；切到 connected idle 后只保留 PWR/BLE，REC、AI、OK、WARN、旋钮、按键、边框不应被带亮。" `
+            -HumanFocus "重点看 BLE 从闪烁到常亮/低亮在线的第一秒，确认没有后四颗状态灯一起亮。" `
+            -PassRule "connected idle 后未出现 LED3-LED6 全亮或规律闪；~LED:STATUS 显示 active_flags 只有 PWR/BLE。"`
+            -PostCommands @("~LED:STATUS", "~DIAGLOG:LAST:80:status_led", "~POWER:STATUS")
+        New-LedReviewStep `
+            -Id "idle-transition-status-active-to-clear" `
+            -Title "idle切换：状态REC/AI -> clear/off" `
+            -Commands @("~LED:PREVIEW recording_processing_status_led_only", "~LED:REC_LEVEL 100 60000", "WAIT 1200", "~LED:PREVIEW clear", "WAIT 1200") `
+            -When "隔离检查工作状态收尾到全灭/clear；用于排除动态状态轨残帧。" `
+            -Expected "clear 后所有状态灯、旋钮、按键、边框都应熄灭；不应周期性回亮。" `
+            -HumanFocus "重点看 clear 后 1 秒和随后几秒，确认 LED3-LED6 没有再规律全亮。" `
+            -PassRule "clear 后所有 LED 逻辑和肉眼都为灭；没有规律回闪。" `
+            -PostCommands @("~LED:STATUS", "~DIAGLOG:LAST:80:status_led", "~POWER:STATUS")
+        New-LedReviewStep `
+            -Id "idle-transition-settled-connected" `
+            -Title "idle稳定：connected idle 8 秒" `
+            -Commands @("~LED:PREVIEW connected", "WAIT 8000") `
+            -When "确认 idle 稳态本身，不再经过任何工作态。" `
+            -Expected "8 秒内只保留 PWR/BLE 的 idle 指示；LED3-LED6、旋钮、按键、边框都应保持灭。" `
+            -HumanFocus "如果这一步还会周期性亮后四颗，问题就是 idle 周期刷新；如果通过，问题在进入 idle 的路径。" `
+            -PassRule "connected idle 稳定 8 秒未出现 LED3-LED6 规律闪或全亮。" `
+            -PostCommands @("~LED:STATUS", "~DIAGLOG:LAST:80:status_led", "~POWER:STATUS")
+    )
+    return @($steps)
+}
+
 function Get-TailOnlySteps {
     $steps = @(
         New-LedReviewStep `
@@ -581,6 +623,10 @@ function Get-ReviewSteps {
     if ($Mode -eq "Repro") {
         return $repro
     }
+    $idleTransition = @(Get-IdleTransitionSteps)
+    if ($Mode -eq "IdleTransition") {
+        return $idleTransition
+    }
     if ($Mode -eq "TailOnly") {
         return $tailOnly
     }
@@ -610,6 +656,7 @@ function Write-PlanMarkdown {
     $lines.Add("- StaticRoot mode compares fixed REC+AI output with and without a status query, separating dynamic-refresh flicker from static physical bleed or query/log interference.") | Out-Null
     $lines.Add("- TailOnly and ComboOnly collect `~LED:STATUS` after the human observation result, so serial status sampling and log output do not disturb the visible effect while the operator is watching.") | Out-Null
     $lines.Add("- Repro mode intentionally drives the status rail and key LEDs with a known-bad broad dynamic pattern while keeping software OK/WARN at zero, so human observation can separate logical status from physical cross-zone disturbance.") | Out-Null
+    $lines.Add("- IdleTransition mode isolates idle-entry validation from the full REC/AI/EC11/edge combo effect: it uses status-only REC/AI setup states, then checks that connected idle keeps only PWR/BLE active and LED3-LED6 stay off after the transition.") | Out-Null
     $lines.Add("- TailOnly mode is a narrow 1.9 confirmation: AI-only and REC+AI status-tail effects remain visibly but gently dynamic while LED5/OK and LED6/WARN stay physically and logically off.") | Out-Null
     $lines.Add("- ComboOnly mode is a narrow 1.9 confirmation for the combined REC+AI, EC11, and edge/frame effect without PWR/BLE/key participation.") | Out-Null
     $lines.Add("- Product direction for this pass: quiet but alive semantic status rail; blue BLE for connected/pairing/reconnect states, user re-pair uses BLE plus a synced low blue EC11 blink with edge/frame off, recording status reacts smoothly to volume, processing shows a purple da-dada thinking beat, EC11 press/rotate uses short white feedback, green OK only for success, amber/red WARN only for errors, and warm amber PWR+EC11 for shutdown confirmation.") | Out-Null

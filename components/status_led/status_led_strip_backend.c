@@ -389,6 +389,16 @@ esp_err_t status_led_strip_backend_transmit(
     if (ret != ESP_OK) {
         diag_log(DIAG_SRC_STATUS_LED, DIAG_LED_OUTPUT_FAIL, DIAG_SEV_WARN,
                  (uint32_t)backend->gpio, (uint32_t)ret, 1, 0);
+        (void)status_led_strip_backend_set_channel_enabled(backend, false);
+        return ret;
     }
-    return ret;
+    return ESP_OK;
+}
+
+esp_err_t status_led_strip_backend_suspend(status_led_strip_backend_t *backend)
+{
+    if (backend == NULL || !backend->available || backend->channel == NULL) {
+        return ESP_OK;
+    }
+    return status_led_strip_backend_set_channel_enabled(backend, false);
 }

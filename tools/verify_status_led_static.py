@@ -471,6 +471,7 @@ CHECKS = {
         "status_led_strip_backend_dma_fallback",
         "status_led_strip_backend_mem_block_symbols",
         "status_led_strip_backend_transmit",
+        "status_led_strip_backend_suspend",
     ],
     "components/status_led/status_led_strip_backend.c": [
         "driver/rmt_encoder.h",
@@ -496,6 +497,7 @@ CHECKS = {
         "status_led_strip_backend_uses_dma",
         "status_led_strip_backend_dma_fallback",
         "status_led_strip_backend_mem_block_symbols",
+        "status_led_strip_backend_suspend",
         "SOC_RMT_MEM_WORDS_PER_CHANNEL",
         ".mem_block_symbols = mem_block_symbols",
         ".flags.with_dma = with_dma",
@@ -831,7 +833,7 @@ CHECKS = {
         "Get-ReproSteps",
         "Get-TailOnlySteps",
         "Get-ComboOnlySteps",
-        'ValidateSet("Foundation", "Scenes", "Complex", "Volume", "Product", "FinalVisual", "FinalRetest", "FinalCombo", "RootCause", "StaticRoot", "Repro", "TailOnly", "ComboOnly", "Full")',
+        'ValidateSet("Foundation", "Scenes", "Complex", "Volume", "Product", "FinalVisual", "FinalRetest", "FinalCombo", "RootCause", "StaticRoot", "Repro", "IdleTransition", "TailOnly", "ComboOnly", "Full")',
         "preview_effect_only=1",
         "effect-only preview commands",
     ],
@@ -1110,7 +1112,11 @@ def main() -> int:
         status_led,
     ):
         failures.append("status_led.c: effect-only preview must suppress BLE rendering")
-    if "s_state.preview_effect_only = false;\n        s_state.recording_active = active" not in status_led:
+    if not re.search(
+        r"s_state\.preview_effect_only\s*=\s*false;[\s\S]*?"
+        r"s_state\.recording_active\s*=\s*next_recording_active;",
+        status_led,
+    ):
         failures.append("status_led.c: real recording state changes must exit effect-only preview")
     if not re.search(
         r"status_led_render_keys_locked[^{]*\{[\s\S]*?"
@@ -1206,6 +1212,29 @@ def main() -> int:
         ):
             if stale_token in product_text:
                 failures.append(f"status_led_human_effect_review.ps1: Product review must not include repeated tuning step {stale_token}")
+    idle_transition_block = re.search(
+        r"function\s+Get-IdleTransitionSteps\s*\{([\s\S]*?)\nfunction\s+Get-TailOnlySteps",
+        human_review,
+    )
+    if not idle_transition_block:
+        failures.append("status_led_human_effect_review.ps1: missing IdleTransition review block")
+    else:
+        idle_transition_text = idle_transition_block.group(1)
+        for token in (
+            'ValidateSet("Foundation", "Scenes", "Complex", "Volume", "Product", "FinalVisual", "FinalRetest", "FinalCombo", "RootCause", "StaticRoot", "Repro", "IdleTransition", "TailOnly", "ComboOnly", "Full")',
+            'if ($Mode -eq "IdleTransition")',
+            "~LED:PREVIEW recording_processing_status_led_only",
+            "~LED:REC_LEVEL 100 60000",
+            "~LED:PREVIEW connected",
+            "~LED:PREVIEW reconnecting",
+            "~LED:PREVIEW clear",
+            "~DIAGLOG:LAST:80:status_led",
+            "IdleTransition mode isolates idle-entry validation",
+        ):
+            if token not in human_review:
+                failures.append(f"status_led_human_effect_review.ps1: IdleTransition review must include {token}")
+        if "~LED:PREVIEW recording_processing_led_only" in idle_transition_text:
+            failures.append("status_led_human_effect_review.ps1: IdleTransition must use status-only setup, not full combo recording_processing_led_only")
     for token in (
         'if ($Mode -eq "FinalVisual")',
         'if ($Mode -eq "FinalRetest")',
@@ -1397,9 +1426,10 @@ def main() -> int:
         "rmt_tx_dma_strategy=status_strip_dma_full_frame_buffer" not in status_led or
         "rmt_tx_dma_actual=status:%u,ec11:%u,key:%u,edge:%u" not in status_led or
         "rmt_tx_dma_fallback=status:%u,ec11:%u,key:%u,edge:%u" not in status_led or
-        "rmt_mem_block_symbols=status:%u,ec11:%u,key:%u,edge:%u" not in status_led
+        "rmt_mem_block_symbols=status:%u,ec11:%u,key:%u,edge:%u" not in status_led or
+        "rmt_idle_drive=enabled_hold_low_after_tx" not in status_led
     ):
-        failures.append("status_led.c: ~LED:STATUS contract must expose the status-strip RMT TX DMA strategy, per-strip actual state, and DMA buffer size")
+        failures.append("status_led.c: ~LED:STATUS contract must expose the status-strip RMT TX DMA strategy, per-strip actual state, DMA buffer size, and idle-drive policy")
     if status_led.count(".prefer_dma = true") != 1 or not re.search(
         r"\.name\s*=\s*\"status\"[\s\S]*?\.prefer_dma\s*=\s*true",
         status_led,
@@ -1407,6 +1437,19 @@ def main() -> int:
         failures.append("status_led.c: current V2 hardware must request RMT TX DMA only for the status strip")
     if ".flags.eot_level = 0" not in status_led_backend:
         failures.append("status_led_strip_backend.c: RMT transmit config must explicitly hold the WS2812 line low at EOT")
+    if not re.search(
+        r"ret\s*=\s*rmt_tx_wait_all_done\(backend->channel,\s*STATUS_LED_RMT_WAIT_MS\);[\s\S]*?"
+        r"if\s*\(\s*ret\s*!=\s*ESP_OK\s*\)\s*\{[\s\S]*?"
+        r"status_led_strip_backend_set_channel_enabled\(backend,\s*false\);[\s\S]*?"
+        r"return\s+ret;[\s\S]*?"
+        r"\}\s*return\s+ESP_OK;",
+        status_led_backend,
+    ):
+        failures.append("status_led_strip_backend.c: successful RMT transmit must keep the channel enabled so the WS2812 line stays driven low")
+    if re.search(r"disable_ret\s*=\s*status_led_strip_backend_set_channel_enabled\(backend,\s*false\)", status_led_backend):
+        failures.append("status_led_strip_backend.c: do not disable the RMT channel after every successful transmit")
+    if "status_led_suspend_all_strips" not in status_led or "status_led_strip_backend_suspend(s_strips[index].backend)" not in status_led:
+        failures.append("status_led.c: prepare_sleep must explicitly suspend strip backends after the all-off frame")
     if not re.search(
         r"status_led_strip_backend_new_channel\(backend,\s*channel_with_dma\);[\s\S]*?"
         r"falling back to non-DMA RMT[\s\S]*?"
