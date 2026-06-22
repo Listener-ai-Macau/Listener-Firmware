@@ -171,6 +171,7 @@ static keyboard_custom_key_t s_custom_keys[] = {
 static keyboard_custom_generated_state_t s_custom_generated_states[
     sizeof(s_custom_keys) / sizeof(s_custom_keys[0])
 ];
+static volatile bool s_custom_low_power_irq_mode;
 static keyboard_ec11_state_t s_ec11_state = {
     .a_gpio = BOARD_PINS_EC11_A_IO,
     .b_gpio = BOARD_PINS_EC11_B_IO,
@@ -180,6 +181,7 @@ static esp_err_t keyboard_ec11_dispatch_rotation(
     ec11_rotation_direction_t direction,
     const char *source);
 static void keyboard_custom_wake_task(void);
+static void keyboard_custom_set_low_power_irq(bool enabled);
 
 static void keyboard_enable_active_low_light_sleep_wake(gpio_num_t gpio, const char *label)
 {
@@ -759,8 +761,13 @@ static void keyboard_custom_task(void *parameter)
             keyboard_custom_handle_timers(&s_custom_keys[index], now);
         }
         uint32_t wait_ms = keyboard_custom_next_wait_ms(xTaskGetTickCount());
-        if (keyboard_power_state_is_low_power_idle() && wait_ms > KEYBOARD_CUSTOM_POLL_MS) {
+        bool low_power_wait =
+            keyboard_power_state_is_low_power_idle() &&
+            wait_ms > KEYBOARD_CUSTOM_POLL_MS;
+        keyboard_custom_set_low_power_irq(low_power_wait);
+        if (low_power_wait) {
             (void)watchdog_platform_task_notify_take_low_power(pdTRUE, wait_ms);
+            keyboard_custom_set_low_power_irq(false);
         } else {
             (void)watchdog_platform_task_notify_take(pdTRUE, wait_ms);
         }
@@ -769,7 +776,10 @@ static void keyboard_custom_task(void *parameter)
 
 static void keyboard_custom_wake_from_isr(void *arg)
 {
-    (void)arg;
+    gpio_num_t gpio = (gpio_num_t)(intptr_t)arg;
+    if (s_custom_low_power_irq_mode && gpio != GPIO_NUM_NC) {
+        (void)gpio_intr_disable(gpio);
+    }
     if (s_custom_task_handle == NULL) {
         return;
     }
@@ -781,10 +791,55 @@ static void keyboard_custom_wake_from_isr(void *arg)
     }
 }
 
+static void keyboard_custom_set_low_power_irq(bool enabled)
+{
+    if (s_custom_low_power_irq_mode == enabled) {
+        return;
+    }
+
+    gpio_int_type_t intr_type = enabled ? GPIO_INTR_LOW_LEVEL : GPIO_INTR_ANYEDGE;
+    bool all_ok = true;
+    for (size_t index = 0; index < sizeof(s_custom_keys) / sizeof(s_custom_keys[0]); ++index) {
+        esp_err_t ret = gpio_set_intr_type(s_custom_keys[index].gpio, intr_type);
+        if (ret != ESP_OK) {
+            all_ok = false;
+            ESP_LOGW(
+                TAG,
+                "custom key IRQ mode change failed: logical=%s gpio=%d low_power=%u ret=%s",
+                s_custom_keys[index].logical_name,
+                s_custom_keys[index].gpio,
+                enabled ? 1u : 0u,
+                esp_err_to_name(ret));
+            continue;
+        }
+        ret = gpio_intr_enable(s_custom_keys[index].gpio);
+        if (ret != ESP_OK) {
+            all_ok = false;
+            ESP_LOGW(
+                TAG,
+                "custom key IRQ enable failed: logical=%s gpio=%d low_power=%u ret=%s",
+                s_custom_keys[index].logical_name,
+                s_custom_keys[index].gpio,
+                enabled ? 1u : 0u,
+                esp_err_to_name(ret));
+        }
+    }
+    s_custom_low_power_irq_mode = enabled;
+    if (!all_ok) {
+        ESP_LOGW(
+            TAG,
+            "custom key IRQ mode partially applied: low_power=%u; next mode switch will retry all keys",
+            enabled ? 1u : 0u);
+    }
+}
+
 static esp_err_t keyboard_custom_add_isr_handlers(void)
 {
     for (size_t index = 0; index < sizeof(s_custom_keys) / sizeof(s_custom_keys[0]); ++index) {
-        esp_err_t ret = gpio_isr_handler_add(s_custom_keys[index].gpio, keyboard_custom_wake_from_isr, NULL);
+        esp_err_t ret = gpio_isr_handler_add(
+            s_custom_keys[index].gpio,
+            keyboard_custom_wake_from_isr,
+            (void *)(intptr_t)s_custom_keys[index].gpio);
         if (ret != ESP_OK) {
             for (size_t cleanup = 0; cleanup < index; ++cleanup) {
                 (void)gpio_isr_handler_remove(s_custom_keys[cleanup].gpio);
@@ -1092,6 +1147,7 @@ static esp_err_t keyboard_custom_start(void)
         diag_log(DIAG_SRC_KEYBOARD, DIAG_KBD_GPIO_FAIL, DIAG_SEV_ERROR, 1, ret, 0, 0);
         return ret;
     }
+    s_custom_low_power_irq_mode = false;
 
     ret = gpio_install_isr_service(0);
     if (ret != ESP_OK && ret != ESP_ERR_INVALID_STATE) {
@@ -1126,7 +1182,7 @@ static esp_err_t keyboard_custom_start(void)
 
     ESP_LOGI(
         TAG,
-        "custom keys ready: key1=gpio38:f13/f17/f21 key2=gpio39:f14/f18/f22 key3=gpio40:f15/f19/f23 key4=gpio41:f16/f20/f24 active_low=1 wake=interrupt_anyedge poll_ms=%d idle_backup_ms=%d low_power_idle_backup_ms=%d debounce_ms=%d debounce_samples=%d double_ms=%d long_ms=%d",
+        "custom keys ready: key1=gpio38:f13/f17/f21 key2=gpio39:f14/f18/f22 key3=gpio40:f15/f19/f23 key4=gpio41:f16/f20/f24 active_low=1 wake=interrupt_anyedge low_power_wake=active_low_level_one_shot poll_ms=%d idle_backup_ms=%d low_power_idle_backup_ms=%d debounce_ms=%d debounce_samples=%d double_ms=%d long_ms=%d",
         KEYBOARD_CUSTOM_POLL_MS,
         KEYBOARD_CUSTOM_IDLE_BACKUP_POLL_MS,
         KEYBOARD_CUSTOM_LOW_POWER_IDLE_BACKUP_POLL_MS,

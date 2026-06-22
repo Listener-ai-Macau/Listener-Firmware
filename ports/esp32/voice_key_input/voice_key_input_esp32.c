@@ -127,6 +127,7 @@ static QueueHandle_t s_generated_single_click_queue;
 static volatile bool s_recording_output_enabled;
 static volatile bool s_recording_output_change_seen;
 static volatile TickType_t s_recording_output_last_change_tick;
+static volatile bool s_direct_gpio_low_power_irq_mode;
 static bool s_direct_generated_active;
 static TickType_t s_direct_generated_start_tick;
 #if VOICE_KEY_INPUT_ENABLE_LEGACY_EXPANDER
@@ -492,6 +493,9 @@ static uint32_t voice_key_input_next_wait_ms(void)
 static void voice_key_input_direct_gpio_wake_from_isr(void *arg)
 {
     (void)arg;
+    if (s_direct_gpio_low_power_irq_mode) {
+        (void)gpio_intr_disable(VOICE_KEY_INPUT_DIRECT_GPIO);
+    }
     if (s_poll_task_handle == NULL) {
         return;
     }
@@ -501,6 +505,37 @@ static void voice_key_input_direct_gpio_wake_from_isr(void *arg)
     if (higher_priority_woken == pdTRUE) {
         portYIELD_FROM_ISR();
     }
+}
+
+static void voice_key_input_set_direct_gpio_low_power_irq(bool enabled)
+{
+    if (s_direct_gpio_low_power_irq_mode == enabled) {
+        return;
+    }
+
+    gpio_int_type_t intr_type = enabled ? GPIO_INTR_LOW_LEVEL : GPIO_INTR_ANYEDGE;
+    esp_err_t ret = gpio_set_intr_type(VOICE_KEY_INPUT_DIRECT_GPIO, intr_type);
+    if (ret != ESP_OK) {
+        ESP_LOGW(
+            TAG,
+            "direct gpio IRQ mode change failed: gpio=%d low_power=%u ret=%s",
+            (int)VOICE_KEY_INPUT_DIRECT_GPIO,
+            enabled ? 1u : 0u,
+            esp_err_to_name(ret));
+        return;
+    }
+
+    ret = gpio_intr_enable(VOICE_KEY_INPUT_DIRECT_GPIO);
+    if (ret != ESP_OK) {
+        ESP_LOGW(
+            TAG,
+            "direct gpio IRQ enable failed: gpio=%d low_power=%u ret=%s",
+            (int)VOICE_KEY_INPUT_DIRECT_GPIO,
+            enabled ? 1u : 0u,
+            esp_err_to_name(ret));
+        return;
+    }
+    s_direct_gpio_low_power_irq_mode = enabled;
 }
 
 static void voice_key_input_enable_light_sleep_wake(void)
@@ -660,6 +695,7 @@ static esp_err_t voice_key_input_direct_gpio_init(void)
         .intr_type = GPIO_INTR_ANYEDGE,
     };
     ESP_RETURN_ON_ERROR(gpio_config(&direct_cfg), TAG, "direct gpio config failed");
+    s_direct_gpio_low_power_irq_mode = false;
     voice_key_input_enable_light_sleep_wake();
     esp_err_t ret = gpio_install_isr_service(0);
     if (ret != ESP_OK && ret != ESP_ERR_INVALID_STATE) {
@@ -719,8 +755,13 @@ static void voice_key_input_poll_task(void *parameter)
             voice_key_input_generated_raw_high(gpio_get_level(VOICE_KEY_INPUT_DIRECT_GPIO) != 0, now));
 
         uint32_t wait_ms = voice_key_input_next_wait_ms();
-        if (voice_key_input_power_state_is_low_power_idle() && wait_ms > VOICE_KEY_INPUT_POLL_MS) {
+        bool low_power_wait =
+            voice_key_input_power_state_is_low_power_idle() &&
+            wait_ms > VOICE_KEY_INPUT_POLL_MS;
+        voice_key_input_set_direct_gpio_low_power_irq(low_power_wait);
+        if (low_power_wait) {
             (void)watchdog_platform_task_notify_take_low_power(pdTRUE, wait_ms);
+            voice_key_input_set_direct_gpio_low_power_irq(false);
         } else {
             (void)watchdog_platform_task_notify_take(pdTRUE, wait_ms);
         }
@@ -770,7 +811,7 @@ esp_err_t voice_key_input_start(void)
     s_started = true;
     ESP_LOGI(
         TAG,
-        "voice key ready: source=%s gpio=%d active_low=1 wake=interrupt_anyedge legacy_expander=%d poll_ms=%d idle_backup_ms=%d low_power_idle_backup_ms=%d debounce_ms=%d debounce_samples=%d",
+        "voice key ready: source=%s gpio=%d active_low=1 wake=interrupt_anyedge low_power_wake=active_low_level_one_shot legacy_expander=%d poll_ms=%d idle_backup_ms=%d low_power_idle_backup_ms=%d debounce_ms=%d debounce_samples=%d",
         VOICE_KEY_INPUT_DIRECT_LABEL,
         VOICE_KEY_INPUT_DIRECT_GPIO,
         VOICE_KEY_INPUT_ENABLE_LEGACY_EXPANDER,
