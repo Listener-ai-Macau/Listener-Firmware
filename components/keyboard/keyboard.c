@@ -9,6 +9,7 @@
 
 #include "driver/gpio.h"
 #include "esp_log.h"
+#include "esp_sleep.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/queue.h"
 #include "freertos/task.h"
@@ -38,7 +39,7 @@
 #define KEYBOARD_CUSTOM_GENERATED_RELEASE_SETTLE_MS 80
 #define KEYBOARD_CUSTOM_GENERATED_EVENT_QUEUE_DEPTH 8
 #define KEYBOARD_EC11_IDLE_POLL_MS 20
-#define KEYBOARD_EC11_LOW_POWER_IDLE_POLL_MS 250
+#define KEYBOARD_EC11_LOW_POWER_IDLE_POLL_MS 5000
 #define KEYBOARD_EC11_EVENT_QUEUE_DEPTH 64
 #define KEYBOARD_EC11_DETENT_STATE 0x03u
 
@@ -179,6 +180,34 @@ static esp_err_t keyboard_ec11_dispatch_rotation(
     ec11_rotation_direction_t direction,
     const char *source);
 static void keyboard_custom_wake_task(void);
+
+static void keyboard_enable_active_low_light_sleep_wake(gpio_num_t gpio, const char *label)
+{
+    if (gpio == GPIO_NUM_NC) {
+        return;
+    }
+
+    esp_err_t ret = gpio_wakeup_enable(gpio, GPIO_INTR_LOW_LEVEL);
+    if (ret != ESP_OK) {
+        ESP_LOGW(
+            TAG,
+            "GPIO light-sleep wake enable failed: label=%s gpio=%d ret=%s",
+            label != NULL ? label : "unknown",
+            (int)gpio,
+            esp_err_to_name(ret));
+        return;
+    }
+
+    ret = esp_sleep_enable_gpio_wakeup();
+    if (ret != ESP_OK) {
+        ESP_LOGW(
+            TAG,
+            "GPIO light-sleep wake source enable failed: label=%s gpio=%d ret=%s",
+            label != NULL ? label : "unknown",
+            (int)gpio,
+            esp_err_to_name(ret));
+    }
+}
 
 static int8_t keyboard_ec11_quadrature_delta(uint8_t previous, uint8_t current)
 {
@@ -1070,6 +1099,11 @@ static esp_err_t keyboard_custom_start(void)
         diag_log(DIAG_SRC_KEYBOARD, DIAG_KBD_GPIO_FAIL, DIAG_SEV_ERROR, 1, ret, 0, 0);
         return ret;
     }
+    for (size_t index = 0; index < sizeof(s_custom_keys) / sizeof(s_custom_keys[0]); ++index) {
+        keyboard_enable_active_low_light_sleep_wake(
+            s_custom_keys[index].gpio,
+            s_custom_keys[index].logical_name);
+    }
     ret = keyboard_custom_add_isr_handlers();
     if (ret != ESP_OK) {
         return ret;
@@ -1141,6 +1175,8 @@ static esp_err_t keyboard_ec11_start(void)
         diag_log(DIAG_SRC_KEYBOARD, DIAG_KBD_GPIO_FAIL, DIAG_SEV_ERROR, 2, ret, 0, 0);
         return ret;
     }
+    keyboard_enable_active_low_light_sleep_wake(BOARD_PINS_EC11_A_IO, "EC11_A");
+    keyboard_enable_active_low_light_sleep_wake(BOARD_PINS_EC11_B_IO, "EC11_B");
     ret = gpio_isr_handler_add(BOARD_PINS_EC11_A_IO, keyboard_ec11_queue_edge_from_isr, NULL);
     if (ret != ESP_OK) {
         ESP_LOGE(TAG, "EC11 A ISR handler add failed: %s", esp_err_to_name(ret));
