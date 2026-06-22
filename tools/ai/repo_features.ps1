@@ -105,6 +105,7 @@ function New-FeatureSnapshot {
             "pwsh -NoProfile -File .\tools\dump_diag_log.ps1 -Port <COMx> -Count 200",
             "python .\tools\verify_unplugged_flash_diag_bundle.py --bundle <diag_log_ai_bundle.json> --expect-pwr-class amber --expect-pwr-class green",
             "python .\tools\verify_serial_no_reset_static.py",
+            "python .\tools\verify_current_docs_static.py",
             "pwsh -NoProfile -File .\tools\verify_v2_board_profile_static.ps1",
             "pwsh -NoProfile -File .\tools\verify_power_manager_static.ps1",
             "pwsh -NoProfile -File .\tools\verify_device_settings_static.ps1",
@@ -193,6 +194,7 @@ function Test-FeatureSnapshot {
     $errors += @(Test-RepoText "ports/esp32/board_pins/include/board_pins.h" 'BOARD_PINS_BAT_V_ADC_IO\s+\(GPIO_NUM_10\)[\s\S]*BOARD_PINS_PWR_HOLD_IO\s+\(GPIO_NUM_9\)[\s\S]*BOARD_PINS_CURRENT_TELEMETRY_PRESENT\s+\(0\)[\s\S]*BOARD_PINS_TPS63020_I_ADC_IO\s+\(GPIO_NUM_NC\)[\s\S]*BOARD_PINS_SY7088_I_ADC_IO\s+\(GPIO_NUM_NC\)' 'latest V2 pin map and absent current telemetry')
     $errors += @(Test-RepoText "components/board/board.c" 'gpio_set_level\(BOARD_PINS_PWR_HOLD_IO,\s*0\)[\s\S]*GPIO_MODE_OUTPUT[\s\S]*runtime low configured[\s\S]*gpio_set_level\(BOARD_PINS_PWR_HOLD_IO,\s*1\)[\s\S]*GPIO_MODE_OUTPUT[\s\S]*board_wait_power_hold_readback\("driven high for hardware shutdown",\s*1\)' 'PWR_HOLD runtime-low drive-high shutdown implementation')
     $errors += @(Test-RepoText "components/status_led/status_led.c" 'DIAG_LED_VISUAL_STATE' 'status LED visual flash diagnostics')
+    $errors += @(Test-RepoText "tools/verify_current_docs_static.py" 'keeps restrained PWR/BLE status visible' 'current docs stale-rollback guard')
     $errors += @(Test-RepoText "tools/decode_diag_log.py" 'led_visual_state_flags' 'decoded status LED visual flash diagnostics')
     $errors += @(Test-RepoText "tools/verify_unplugged_flash_diag_bundle.py" 'off followed by visible-on recovery' 'unplugged flash diag verifier')
     $errors += @(Test-RepoText "docs/features/low_power_wake_policy.md" 'decoded `status_led\.power_input`, `status_led\.visual_state`, `status_led\.output_state`' 'unplugged flash diag validation requirement')
