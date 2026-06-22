@@ -6,7 +6,8 @@ param(
     [string]$OutputPath,
     [int]$Baud = 115200,
     [int]$InitialReadMs = 5000,
-    [int]$CommandReadMs = 1600
+    [int]$CommandReadMs = 1600,
+    [string]$MeasuredVoltage
 )
 
 $ErrorActionPreference = "Stop"
@@ -138,6 +139,13 @@ function Get-LastMatchInt {
     return $value
 }
 
+$measuredVoltage = $MeasuredVoltage
+if ([string]::IsNullOrWhiteSpace($measuredVoltage)) {
+    $measuredVoltage = Show-TopmostMeasurementPrompt
+} else {
+    Add-Line ("PROMPT_SKIPPED measured_voltage={0}" -f $measuredVoltage)
+}
+
 $serial = [System.IO.Ports.SerialPort]::new($Port, $Baud)
 $serial.ReadTimeout = 200
 $serial.WriteTimeout = 1000
@@ -148,8 +156,6 @@ try {
     $serial.Open()
     Add-Line ("serial_opened port={0} baud={1} dtr=0 rts=0" -f $Port, $Baud)
     Read-SerialFor -Serial $serial -Milliseconds $InitialReadMs
-
-    $measuredVoltage = Show-TopmostMeasurementPrompt
 
     Send-Command -Serial $serial -Command "~BOARD:STATUS"
     Send-Command -Serial $serial -Command "~POWER:STATUS"
