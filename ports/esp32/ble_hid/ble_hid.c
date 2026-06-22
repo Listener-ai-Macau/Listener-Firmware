@@ -177,6 +177,21 @@ static bool ble_hid_battery_level_exceeds_notify_threshold(uint8_t level)
     return delta >= BLE_HID_BATTERY_NOTIFY_THRESHOLD_PERCENT;
 }
 
+static status_led_ble_state_t ble_hid_connected_status_led_state(void)
+{
+    return ble_audio_stream_is_ready()
+        ? STATUS_LED_BLE_TYPE_READY
+        : STATUS_LED_BLE_CONNECTED;
+}
+
+static void ble_hid_resync_connected_status_led(void)
+{
+    if (!s_ble_connected) {
+        return;
+    }
+    status_led_set_ble_state(ble_hid_connected_status_led_state(), false);
+}
+
 static bool ble_hid_battery_estimate_charge_full(
     bool charge_power_present,
     bool battery_valid,
@@ -307,6 +322,8 @@ static esp_err_t ble_hid_update_battery_level(const char *reason, bool force_not
         level,
         (read_ret == ESP_OK && battery.valid) ? battery.voltage_mv : 0,
         read_ret == ESP_OK && battery.valid);
+
+    ble_hid_resync_connected_status_led();
 
     if (!should_notify) {
         ESP_LOGD(

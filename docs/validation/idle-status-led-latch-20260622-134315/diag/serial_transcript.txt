@@ -1,0 +1,171 @@
+> ~DIAGLOG:SOURCES
+I (393536) ble_hid: battery notify level=90 voltage_mv=4058 raw_I (436006) power_manager: blocker set mask=0x00000064 blockers=0x000000e4 (diag_export|flash_write|usb_command|external_power)
+I (436006) audio_capture: audio idle power save disabled: ESP_OK
+~DIAGLOG:SOURCE name=system id=0x01 info_enabled=1 info_default=1 warn_error_always=1 mask=0x00007b1a
+~DIAGLOG:SOURCE name=keyboard id=0x02 info_enabled=0 info_default=0 warn_error_always=1 mask=0x00007b1a
+~DIAGLOG:SOURCE name=ble_hid id=0x03 info_enabled=1 info_default=1 warn_error_always=1 mask=0x00007b1a
+~DIAGLOG:SOURCE name=ble_gap id=0x04 info_enabled=1 info_default=1 warn_error_always=1 mask=0x00007b1a
+~DIAGLOG:SOURCE name=audio id=0x05 info_enabled=0 info_default=0 warn_error_always=1 mask=0x00007b1a
+~DIAGLOG:SOURCE name=voice_rec id=0x06 info_enabled=0 info_default=0 warn_error_always=1 mask=0x00007b1a
+~DIAGLOG:SOURCE name=voice_key id=0x07 info_enabled=0 info_default=0 warn_error_always=1 mask=0x00007b1a
+~DIAGLOG:SOURCE name=self_test id=0x08 info_enabled=1 info_default=1 warn_error_always=1 mask=0x00007b1a
+~DIAGLOG:SOURCE name=health id=0x09 info_enabled=1 info_default=1 warn_error_always=1 mask=0x00007b1a
+~DIAGLOG:SOURCE name=ble_audio id=0x0a info_enabled=0 info_default=0 warn_error_always=1 mask=0x00007b1a
+~DIAGLOG:SOURCE name=ota id=0x0b info_enabled=1 info_default=1 warn_error_always=1 mask=0x00007b1a
+~DIAGLOG:SOURCE name=power id=0x0c info_enabled=1 info_default=1 warn_error_always=1 mask=0x00007b1a
+~DIAGLOG:SOURCE name=board id=0x0d info_enabled=1 info_default=1 warn_error_always=1 mask=0x00007b1a
+~DIAGLOG:SOURCE name=status_led id=0x0e info_enabled=1 info_default=1 warn_error_always=1 mask=0x00007b1a
+I (436136) power_manager: blocker clear mask=0x00000064 blockers=0x00000080 (external_power)
+I (436786) audio_capture: frame captured count=4450 bytes=2848000
+> ~DIAGLOG:LAST:120
+I (436786) power_manager: blocker set mask=0x00000064 blockers=0x000000e4 (diag_export|flash_write|usb_command|external_power)
+I (437786) audio_capture: frame captured count=4500 bytes=2880000
+I (438696) ble_hid: battery notify level=90 voltage_mv=4058 raw_adc=2365 adc_mv=2029 usb_power=1 charger_active=1 charge_power=1 raw_charging=1 raw_full=0 full_latched=0 full_candidate_ms=0 charge_full=0 usb_det_adc_valid=0 usb_det_adc_mv=0 usb_det_mismatch=0 reason=threshold_sample forced=0 periodic=0
+I (438796) audio_capture: frame captured count=4550 bytes=2912000
+I (439786) audio_capture: frame captured count=4600 bytes=2944000
+I (440786) audio_capture: frame captured count=4650 bytes=2976000
+I (441796) audio_capture: frame captured count=4700 bytes=3008000
+I (442786) audio_capture: frame captured count=4750 bytes=3040000
+{"t":11494,"src":"status_led","evt":8,"sev":"INFO","a1":4,"a2":16,"a3":0,"a4":3}
+{"t":11899,"src":"ble_gap","evt":2,"sev":"INFO","a1":1,"a2":0,"a3":1,"a4":0}
+{"t":11930,"src":"ble_gap","evt":9,"sev":"INFO","a1":1,"a2":35,"a3":196608,"a4":1}
+{"t":11940,"src":"ble_gap","evt":9,"sev":"INFO","a1":1,"a2":45,"a3":196609,"a4":0}
+{"t":11955,"src":"ble_gap","evt":9,"sev":"INFO","a1":1,"a2":76,"a3":196609,"a4":0}
+{"t":11964,"src":"ble_gap","evt":9,"sev":"INFO","a1":1,"a2":83,"a3":196609,"a4":0}
+{"t":11972,"src":"ble_gap","evt":9,"sev":"INFO","a1":1,"a2":3,"a3":196609,"a4":0}
+{"t":12022,"src":"status_led","evt":1,"sev":"INFO","a1":1,"a2":3,"a3":1,"a4":0}
+{"t":12036,"src":"status_led","evt":6,"sev":"INFO","a1":0,"a2":0,"a3":12363,"a4":3}
+{"t":12036,"src":"status_led","evt":8,"sev":"INFO","a1":0,"a2":0,"a3":0,"a4":3}
+{"t":12044,"src":"ble_hid","evt":5,"sev":"INFO","a1":90,"a2":4066,"a3":2369,"a4":2033}
+{"t":12070,"src":"ble_hid","evt":5,"sev":"INFO","a1":91,"a2":4070,"a3":2373,"a4":2035}
+{"t":12071,"src":"ble_hid","evt":1,"sev":"INFO","a1":1,"a2":7762,"a3":0,"a4":0}
+{"t":12119,"src":"status_led","evt":6,"sev":"INFO","a1":3,"a2":1184274,"a3":13387,"a4":3}
+{"t":12119,"src":"status_led","evt":8,"sev":"INFO","a1":84,"a2":4626,"a3":0,"a4":3}
+{"t":12132,"src":"ble_gap","evt":7,"sev":"INFO","a1":9,"a2":0,"a3":800,"a4":1}
+{"t":12154,"src":"ble_gap","evt":1,"sev":"INFO","a1":0,"a2":517,"a3":1,"a4":4}
+{"t":12244,"src":"ble_gap","evt":2,"sev":"INFO","a1":1,"a2":0,"a3":1,"a4":0}
+{"t":12271,"src":"ble_gap","evt":9,"sev":"INFO","a1":1,"a2":35,"a3":196608,"a4":1}
+{"t":12284,"src":"ble_gap","evt":9,"sev":"INFO","a1":1,"a2":45,"a3":196609,"a4":0}
+{"t":12290,"src":"ble_gap","evt":9,"sev":"INFO","a1":1,"a2":76,"a3":196609,"a4":0}
+{"t":12299,"src":"ble_gap","evt":9,"sev":"INFO","a1":1,"a2":83,"a3":196609,"a4":0}
+{"t":12309,"src":"ble_gap","evt":9,"sev":"INFO","a1":1,"a2":3,"a3":196609,"a4":0}
+{"t":17077,"src":"power","evt":6,"sev":"INFO","a1":228,"a2":128,"a3":100,"a4":0}
+{"t":17088,"src":"power","evt":6,"sev":"INFO","a1":128,"a2":228,"a3":100,"a4":1}
+{"t":18053,"src":"status_led","evt":6,"sev":"INFO","a1":3,"a2":1052688,"a3":13323,"a4":3}
+{"t":18063,"src":"status_led","evt":8,"sev":"INFO","a1":84,"a2":6416,"a3":0,"a4":3}
+{"t":22064,"src":"ble_hid","evt":5,"sev":"INFO","a1":90,"a2":4064,"a3":2370,"a4":2032}
+{"t":24332,"src":"power","evt":6,"sev":"INFO","a1":228,"a2":128,"a3":100,"a4":0}
+{"t":24343,"src":"power","evt":6,"sev":"INFO","a1":128,"a2":228,"a3":100,"a4":1}
+{"t":24477,"src":"power","evt":6,"sev":"INFO","a1":228,"a2":128,"a3":100,"a4":0}
+{"t":27091,"src":"ble_hid","evt":5,"sev":"INFO","a1":91,"a2":4068,"a3":2371,"a4":2034}
+{"t":33084,"src":"system","evt":3,"sev":"INFO","a1":11,"a2":0,"a3":0,"a4":0}
+{"t":37101,"src":"ble_hid","evt":5,"sev":"INFO","a1":90,"a2":4060,"a3":2368,"a4":2030}
+{"t":47111,"src":"ble_hid","evt":5,"sev":"INFO","a1":91,"a2":4068,"a3":2370,"a4":2034}
+{"t":52121,"src":"ble_hid","evt":5,"sev":"INFO","a1":90,"a2":4060,"a3":2365,"a4":2030}
+{"t":62131,"src":"ble_hid","evt":5,"sev":"INFO","a1":91,"a2":4076,"a3":2376,"a4":2038}
+{"t":63030,"src":"health","evt":1,"sev":"INFO","a1":7774,"a2":7762,"a3":1,"a4":1}
+{"t":67141,"src":"ble_hid","evt":5,"sev":"INFO","a1":90,"a2":4064,"a3":2369,"a4":2032}
+{"t":72151,"src":"ble_hid","evt":5,"sev":"INFO","a1":90,"a2":4058,"a3":2365,"a4":2029}
+{"t":77161,"src":"ble_hid","evt":5,"sev":"INFO","a1":91,"a2":4070,"a3":2372,"a4":2035}
+{"t":77345,"src":"status_led","evt":6,"sev":"INFO","a1":257,"a2":5381888,"a3":576,"a4":16}
+{"t":77346,"src":"status_led","evt":8,"sev":"INFO","a1":2,"a2":82,"a3":3997696,"a4":16}
+{"t":81060,"src":"status_led","evt":6,"sev":"INFO","a1":0,"a2":0,"a3":64,"a4":16}
+{"t":81060,"src":"status_led","evt":8,"sev":"INFO","a1":0,"a2":0,"a3":0,"a4":16}
+{"t":82171,"src":"ble_hid","evt":5,"sev":"INFO","a1":90,"a2":4056,"a3":2363,"a4":2028}
+{"t":87086,"src":"status_led","evt":5,"sev":"INFO","a1":425328715,"a2":4066,"a3":90,"a4":2}
+{"t":87086,"src":"status_led","evt":6,"sev":"INFO","a1":1,"a2":1052688,"a3":1099,"a4":2}
+{"t":87087,"src":"status_led","evt":8,"sev":"INFO","a1":4,"a2":16,"a3":0,"a4":2}
+{"t":92181,"src":"ble_hid","evt":5,"sev":"INFO","a1":91,"a2":4076,"a3":2376,"a4":2038}
+{"t":93084,"src":"status_led","evt":6,"sev":"INFO","a1":1,"a2":1052688,"a3":1035,"a4":2}
+{"t":93084,"src":"status_led","evt":8,"sev":"INFO","a1":4,"a2":16,"a3":0,"a4":2}
+{"t":112191,"src":"ble_hid","evt":5,"sev":"INFO","a1":89,"a2":4050,"a3":2361,"a4":2025}
+{"t":117201,"src":"ble_hid","evt":5,"sev":"INFO","a1":90,"a2":4054,"a3":2363,"a4":2027}
+{"t":122211,"src":"ble_hid","evt":5,"sev":"INFO","a1":91,"a2":4078,"a3":2376,"a4":2039}
+{"t":123040,"src":"health","evt":1,"sev":"INFO","a1":7774,"a2":7762,"a3":1,"a4":2}
+{"t":127221,"src":"ble_hid","evt":5,"sev":"INFO","a1":89,"a2":4052,"a3":2362,"a4":2026}
+{"t":132231,"src":"ble_hid","evt":5,"sev":"INFO","a1":90,"a2":4066,"a3":2370,"a4":2033}
+{"t":147241,"src":"ble_hid","evt":5,"sev":"INFO","a1":91,"a2":4070,"a3":2372,"a4":2035}
+{"t":152251,"src":"ble_hid","evt":5,"sev":"INFO","a1":90,"a2":4060,"a3":2366,"a4":2030}
+{"t":162261,"src":"ble_hid","evt":5,"sev":"INFO","a1":91,"a2":4076,"a3":2376,"a4":2038}
+{"t":172271,"src":"ble_hid","evt":5,"sev":"INFO","a1":90,"a2":4058,"a3":2365,"a4":2029}
+{"t":177281,"src":"ble_hid","evt":5,"sev":"INFO","a1":91,"a2":4072,"a3":2373,"a4":2036}
+{"t":182291,"src":"ble_hid","evt":5,"sev":"INFO","a1":90,"a2":4060,"a3":2366,"a4":2030}
+{"t":183050,"src":"health","evt":1,"sev":"INFO","a1":7774,"a2":7762,"a3":1,"a4":3}
+{"t":192301,"src":"ble_hid","evt":5,"sev":"INFO","a1":91,"a2":4076,"a3":2376,"a4":2038}
+{"t":202311,"src":"ble_hid","evt":5,"sev":"INFO","a1":89,"a2":4046,"a3":2359,"a4":2023}
+{"t":207321,"src":"ble_hid","evt":5,"sev":"INFO","a1":91,"a2":4072,"a3":2374,"a4":2036}
+{"t":217331,"src":"ble_hid","evt":5,"sev":"INFO","a1":90,"a2":4058,"a3":2365,"a4":2029}
+{"t":227341,"src":"ble_hid","evt":5,"sev":"INFO","a1":91,"a2":4072,"a3":2374,"a4":2036}
+{"t":232351,"src":"ble_hid","evt":5,"sev":"INFO","a1":89,"a2":4050,"a3":2361,"a4":2025}
+{"t":237361,"src":"ble_hid","evt":5,"sev":"INFO","a1":91,"a2":4070,"a3":2372,"a4":2035}
+{"t":243060,"src":"health","evt":1,"sev":"INFO","a1":7774,"a2":7762,"a3":1,"a4":4}
+{"t":247371,"src":"ble_hid","evt":5,"sev":"INFO","a1":89,"a2":4050,"a3":2360,"a4":2025}
+{"t":252381,"src":"ble_hid","evt":5,"sev":"INFO","a1":90,"a2":4066,"a3":2369,"a4":2033}
+{"t":257391,"src":"ble_hid","evt":5,"sev":"INFO","a1":91,"a2":4072,"a3":2373,"a4":2036}
+{"t":262401,"src":"ble_hid","evt":5,"sev":"INFO","a1":90,"a2":4054,"a3":2364,"a4":2027}
+{"t":297451,"src":"ble_hid","evt":5,"sev":"INFO","a1":91,"a2":4068,"a3":2372,"a4":2034}
+{"t":302461,"src":"ble_hid","evt":5,"sev":"INFO","a1":89,"a2":4052,"a3":2362,"a4":2026}
+{"t":303070,"src":"health","evt":1,"sev":"INFO","a1":7774,"a2":7762,"a3":1,"a4":5}
+{"t":307472,"src":"ble_hid","evt":5,"sev":"INFO","a1":90,"a2":4066,"a3":2370,"a4":2033}
+{"t":312481,"src":"ble_hid","evt":5,"sev":"INFO","a1":90,"a2":4056,"a3":2365,"a4":2028}
+{"t":317491,"src":"ble_hid","evt":5,"sev":"INFO","a1":91,"a2":4072,"a3":2374,"a4":2036}
+{"t":322541,"src":"ble_hid","evt":5,"sev":"INFO","a1":90,"a2":4054,"a3":2363,"a4":2027}
+{"t":337551,"src":"ble_hid","evt":5,"sev":"INFO","a1":91,"a2":4070,"a3":2372,"a4":2035}
+{"t":340388,"src":"board","evt":4,"sev":"INFO","a1":1,"a2":1,"a3":1,"a4":6}
+{"t":340410,"src":"board","evt":4,"sev":"INFO","a1":2,"a2":5,"a3":7,"a4":12}
+{"t":340436,"src":"board","evt":4,"sev":"INFO","a1":3,"a2":13,"a3":11,"a4":4}
+{"t":340458,"src":"board","evt":4,"sev":"INFO","a1":4,"a2":4,"a3":17,"a4":6}
+{"t":342561,"src":"ble_hid","evt":5,"sev":"INFO","a1":90,"a2":4066,"a3":2370,"a4":2033}
+{"t":347571,"src":"ble_hid","evt":5,"sev":"INFO","a1":88,"a2":4034,"a3":2352,"a4":2017}
+{"t":353267,"src":"power","evt":6,"sev":"INFO","a1":128,"a2":228,"a3":100,"a4":1}
+{"t":357630,"src":"ble_hid","evt":5,"sev":"INFO","a1":90,"a2":4058,"a3":2366,"a4":2029}
+{"t":359930,"src":"power","evt":6,"sev":"INFO","a1":228,"a2":128,"a3":100,"a4":0}
+{"t":363080,"src":"health","evt":1,"sev":"INFO","a1":7774,"a2":7762,"a3":1,"a4":6}
+{"t":372391,"src":"power","evt":6,"sev":"INFO","a1":128,"a2":228,"a3":100,"a4":1}
+{"t":372402,"src":"power","evt":6,"sev":"INFO","a1":228,"a2":128,"a3":100,"a4":0}
+{"t":372642,"src":"ble_hid","evt":5,"sev":"INFO","a1":89,"a2":4048,"a3":2359,"a4":2024}
+{"t":377651,"src":"ble_hid","evt":5,"sev":"INFO","a1":90,"a2":4054,"a3":2363,"a4":2027}
+{"t":381613,"src":"power","evt":6,"sev":"INFO","a1":128,"a2":228,"a3":100,"a4":1}
+{"t":387678,"src":"ble_hid","evt":5,"sev":"INFO","a1":89,"a2":4046,"a3":2359,"a4":2023}
+{"t":387707,"src":"power","evt":6,"sev":"INFO","a1":228,"a2":128,"a3":100,"a4":0}
+{"t":387718,"src":"power","evt":6,"sev":"INFO","a1":128,"a2":228,"a3":100,"a4":1}
+{"t":392740,"src":"ble_hid","evt":5,"sev":"INFO","a1":90,"a2":4058,"a3":2366,"a4":2029}
+{"t":394385,"src":"power","evt":6,"sev":"INFO","a1":228,"a2":128,"a3":100,"a4":0}
+{"t":394916,"src":"power","evt":6,"sev":"INFO","a1":128,"a2":228,"a3":100,"a4":1}
+{"t":397753,"src":"ble_hid","evt":5,"sev":"INFO","a1":89,"a2":4040,"a3":2355,"a4":2020}
+{"t":400970,"src":"power","evt":6,"sev":"INFO","a1":228,"a2":128,"a3":100,"a4":0}
+{"t":400981,"src":"power","evt":6,"sev":"INFO","a1":128,"a2":228,"a3":100,"a4":1}
+{"t":402784,"src":"ble_hid","evt":5,"sev":"INFO","a1":88,"a2":4034,"a3":2351,"a4":2017}
+{"t":407750,"src":"power","evt":6,"sev":"INFO","a1":228,"a2":128,"a3":100,"a4":0}
+{"t":407762,"src":"power","evt":6,"sev":"INFO","a1":128,"a2":228,"a3":100,"a4":1}
+{"t":407774,"src":"power","evt":6,"sev":"INFO","a1":228,"a2":128,"a3":100,"a4":0}
+{"t":407821,"src":"ble_hid","evt":5,"sev":"INFO","a1":89,"a2":4044,"a3":2358,"a4":2022}
+{"t":412831,"src":"ble_hid","evt":5,"sev":"INFO","a1":90,"a2":4062,"a3":2368,"a4":2031}
+{"t":423090,"src":"health","evt":1,"sev":"INFO","a1":7774,"a2":7762,"a3":1,"a4":7}
+{"t":432841,"src":"ble_hid","evt":5,"sev":"INFO","a1":89,"a2":4048,"a3":2360,"a4":2024}
+{"t":435145,"src":"power","evt":6,"sev":"INFO","a1":128,"a2":228,"a3":100,"a4":1}
+{"t":435285,"src":"power","evt":6,"sev":"INFO","a1":228,"a2":128,"a3":100,"a4":0}
+{"t":435932,"src":"power","evt":6,"sev":"INFO","a1":128,"a2":228,"a3":100,"a4":1}
+I (443686) diag_log: DIAGLOG LAST 120: dumped 120 events
+I (443686) power_manager: blocker clear mask=0x00000064 blockers=0x00000080 (external_power)
+I (443726) ble_hid: battery notify level=88 voltage_mv=4038 raw_adc=2354 adc_mv=2019 usb_power=1 charger_active=1 charge_power=1 raw_charging=1 raw_full=0 full_latched=0 full_candidate_ms=0 charge_full=0 usb_det_adc_valid=0 usb_det_adc_mv=0 usb_det_mismatch=0 reason=threshold_sample forced=0 periodic=0
+I (443786) audio_capture: frame captured count=4800 bytes=3072000
+I (444796) audio_capture: frame captured count=4850 bytes=3104000
+> ~DIAGLOG:SOURCES
+I (444796) power_manager: blocker set mask=0x00000064 blockers=0x000000e4 (diag_export|flash_write|usb_command|external_power)
+~DIAGLOG:SOURCE name=system id=0x01 info_enabled=1 info_default=1 warn_error_always=1 mask=0x00007b1a
+~DIAGLOG:SOURCE name=keyboard id=0x02 info_enabled=0 info_default=0 warn_error_always=1 mask=0x00007b1a
+~DIAGLOG:SOURCE name=ble_hid id=0x03 info_enabled=1 info_default=1 warn_error_always=1 mask=0x00007b1a
+~DIAGLOG:SOURCE name=ble_gap id=0x04 info_enabled=1 info_default=1 warn_error_always=1 mask=0x00007b1a
+~DIAGLOG:SOURCE name=audio id=0x05 info_enabled=0 info_default=0 warn_error_always=1 mask=0x00007b1a
+~DIAGLOG:SOURCE name=voice_rec id=0x06 info_enabled=0 info_default=0 warn_error_always=1 mask=0x00007b1a
+~DIAGLOG:SOURCE name=voice_key id=0x07 info_enabled=0 info_default=0 warn_error_always=1 mask=0x00007b1a
+~DIAGLOG:SOURCE name=self_test id=0x08 info_enabled=1 info_default=1 warn_error_always=1 mask=0x00007b1a
+~DIAGLOG:SOURCE name=health id=0x09 info_enabled=1 info_default=1 warn_error_always=1 mask=0x00007b1a
+~DIAGLOG:SOURCE name=ble_audio id=0x0a info_enabled=0 info_default=0 warn_error_always=1 mask=0x00007b1a
+~DIAGLOG:SOURCE name=ota id=0x0b info_enabled=1 info_default=1 warn_error_always=1 mask=0x00007b1a
+~DIAGLOG:SOURCE name=power id=0x0c info_enabled=1 info_default=1 warn_error_always=1 mask=0x00007b1a
+~DIAGLOG:SOURCE name=board id=0x0d info_enabled=1 info_default=1 warn_error_always=1 mask=0x00007b1a
+~DIAGLOG:SOURCE name=status_led id=0x0e info_enabled=1 info_default=1 warn_error_always=1 mask=0x00007b1a
+I (444926) power_manager: blocker clear mask=0x00000064 blockers=0x00000080 (external_power)
+I (445786) audio_capture: frame captured count=4900 bytes=3136000
