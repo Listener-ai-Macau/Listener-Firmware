@@ -3944,6 +3944,30 @@ void status_led_notify_shutdown_confirm(bool final, const char *reason)
     }
 }
 
+void status_led_cancel_shutdown_confirm(const char *reason)
+{
+    uint32_t now_ms = status_led_now_ms();
+    bool changed = false;
+    if (xSemaphoreTake(s_mutex, portMAX_DELAY) == pdTRUE) {
+        if (s_state.shutdown_confirm_started_ms != 0U &&
+            !s_state.shutdown_confirm_final) {
+            s_state.shutdown_confirm_started_ms = 0U;
+            s_state.shutdown_confirm_until_ms = 0U;
+            s_state.shutdown_confirm_final = false;
+            s_state.status_window_until_ms = now_ms + STATUS_LED_STATUS_WINDOW_MS;
+            s_state.last_transition_ms = now_ms;
+            status_led_set_last_reason_locked(reason != NULL ? reason : "shutdown_confirm_cancel");
+            diag_log(DIAG_SRC_STATUS_LED, DIAG_LED_STATE, DIAG_SEV_INFO,
+                     5, 0, 0, 0);
+            changed = true;
+        }
+        xSemaphoreGive(s_mutex);
+    }
+    if (changed) {
+        status_led_request_refresh();
+    }
+}
+
 void status_led_set_error(
     status_led_error_domain_t domain,
     status_led_error_severity_t severity,

@@ -29,6 +29,7 @@ CHECKS = {
         "status_led_set_processing",
         "status_led_notify_warning",
         "status_led_notify_shutdown_confirm",
+        "status_led_cancel_shutdown_confirm",
         "STATUS_LED_EC11_FEEDBACK_PRESS",
         "STATUS_LED_EC11_FEEDBACK_ROTATE_CW",
         "STATUS_LED_EC11_FEEDBACK_ROTATE_CCW",
@@ -428,6 +429,7 @@ CHECKS = {
         "status_led_apply_status_tail_guard_locked",
         "status_led_transmit_strip(&s_strips[STATUS_LED_STRIP_STATUS], frame->status)",
         "status_led_notify_shutdown_confirm",
+        "status_led_cancel_shutdown_confirm",
         "shutdown_confirm_started_ms",
         "s_state.low_power_disabled = false;",
         "shutdown_final",
@@ -640,6 +642,7 @@ CHECKS = {
     "ports/esp32/voice_key_input/voice_key_input_esp32.c": [
         "#include \"status_led.h\"",
         "status_led_notify_shutdown_confirm(false, \"ec11_long_press_shutdown_confirm\")",
+        "status_led_cancel_shutdown_confirm(\"ec11_long_press_released\")",
     ],
     "ports/esp32/voice_key_input/CMakeLists.txt": [
         "status_led",

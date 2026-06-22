@@ -1,0 +1,110 @@
+2026-06-22T13:43:15.7014099+08:00 serial_opened port=COM10 baud=115200 dtr=0 rts=0 phase=preflash
+2026-06-22T13:43:16.5936299+08:00 > ~DIAGLOG:ENABLE voice_key
+2026-06-22T13:43:16.6548309+08:00 I (422146) ble_hid: battery notify level=100 voltage_mv=4086 rawI (454656) audio_capture: audio idle power save disabled: ESP_OK
+2026-06-22T13:43:16.6562801+08:00 I (454656) power_manager: blocker set mask=0x00000064 blockers=0x000000e4 (diag_export|flash_write|usb_command|external_power)
+2026-06-22T13:43:16.6574602+08:00 I (454656) diag_log: DIAGLOG SOURCE: voice_key enabled
+2026-06-22T13:43:16.6588134+08:00 ~DIAGLOG:SOURCE name=system id=0x01 info_enabled=1 info_default=1 warn_error_always=1 mask=0x00007b9a
+2026-06-22T13:43:16.6601755+08:00 ~DIAGLOG:SOURCE name=keyboard id=0x02 info_enabled=0 info_default=0 warn_error_always=1 mask=0x00007b9a
+2026-06-22T13:43:16.6613488+08:00 ~DIAGLOG:SOURCE name=ble_hid id=0x03 info_enabled=1 info_default=1 warn_error_always=1 mask=0x00007b9a
+2026-06-22T13:43:16.6624327+08:00 ~DIAGLOG:SOURCE name=ble_gap id=0x04 info_enabled=1 info_default=1 warn_error_always=1 mask=0x00007b9a
+2026-06-22T13:43:16.7264920+08:00 ~DIAGLOG:SOURCE name=audio id=0x05 info_enabled=0 info_default=0 warn_error_always=1 mask=0x00007b9a
+2026-06-22T13:43:16.7278703+08:00 ~DIAGLOG:SOURCE name=voice_rec id=0x06 info_enabled=0 info_default=0 warn_error_always=1 mask=0x00007b9a
+2026-06-22T13:43:16.7291111+08:00 ~DIAGLOG:SOURCE name=voice_key id=0x07 info_enabled=1 info_default=0 warn_error_always=1 mask=0x00007b9a
+2026-06-22T13:43:16.7303620+08:00 ~DIAGLOG:SOURCE name=self_test id=0x08 info_enabled=1 info_default=1 warn_error_always=1 mask=0x00007b9a
+2026-06-22T13:43:16.7313543+08:00 ~DIAGLOG:SOURCE name=health id=0x09 info_enabled=1 info_default=1 warn_error_always=1 mask=0x00007b9a
+2026-06-22T13:43:16.7324242+08:00 ~DIAGLOG:SOURCE name=ble_audio id=0x0a info_enabled=0 info_default=0 warn_error_always=1 mask=0x00007b9a
+2026-06-22T13:43:16.7338835+08:00 ~DIAGLOG:SOURCE name=ota id=0x0b info_enabled=1 info_default=1 warn_error_always=1 mask=0x00007b9a
+2026-06-22T13:43:16.7356230+08:00 ~DIAGLOG:SOURCE name=power id=0x0c info_enabled=1 info_default=1 warn_error_always=1 mask=0x00007b9a
+2026-06-22T13:43:16.7955037+08:00 ~DIAGLOG:SOURCE name=board id=0x0d info_enabled=1 info_default=1 warn_error_always=1 mask=0x00007b9a
+2026-06-22T13:43:16.7973435+08:00 I (454776) audio_capture: frame captured count=350 bytes=224000
+2026-06-22T13:43:16.7985160+08:00 ~DIAGLOG:SOURCE name=status_led id=0x0e info_enabled=1 info_default=1 warn_error_always=1 mask=0x00007b9a
+2026-06-22T13:43:16.7997909+08:00 I (454796) power_manager: blocker clear mask=0x00000064 blockers=0x00000080 (external_power)
+2026-06-22T13:43:17.5002823+08:00 > ~DIAGLOG:ENABLE status_led
+2026-06-22T13:43:17.5590618+08:00 I (455556) power_manager: blocker set mask=0x00000064 blockers=0x000000e4 (diag_export|flash_write|usb_command|external_power)
+2026-06-22T13:43:17.5601104+08:00 I (455556) diag_log: DIAGLOG SOURCE: status_led enabled
+2026-06-22T13:43:17.5609659+08:00 ~DIAGLOG:SOURCE name=system id=0x01 info_enabled=1 info_default=1 warn_error_always=1 mask=0x00007b9a
+2026-06-22T13:43:17.5618436+08:00 ~DIAGLOG:SOURCE name=keyboard id=0x02 info_enabled=0 info_default=0 warn_error_always=1 mask=0x00007b9a
+2026-06-22T13:43:17.5628130+08:00 ~DIAGLOG:SOURCE name=ble_hid id=0x03 info_enabled=1 info_default=1 warn_error_always=1 mask=0x00007b9a
+2026-06-22T13:43:17.5636546+08:00 ~DIAGLOG:SOURCE name=ble_gap id=0x04 info_enabled=1 info_default=1 warn_error_always=1 mask=0x00007b9a
+2026-06-22T13:43:17.5647237+08:00 ~DIAGLOG:SOURCE name=audio id=0x05 info_enabled=0 info_default=0 warn_error_always=1 mask=0x00007b9a
+2026-06-22T13:43:17.6210453+08:00 ~DIAGLOG:SOURCE name=voice_rec id=0x06 info_enabled=0 info_default=0 warn_error_always=1 mask=0x00007b9a
+2026-06-22T13:43:17.6225172+08:00 ~DIAGLOG:SOURCE name=voice_key id=0x07 info_enabled=1 info_default=0 warn_error_always=1 mask=0x00007b9a
+2026-06-22T13:43:17.6235821+08:00 ~DIAGLOG:SOURCE name=self_test id=0x08 info_enabled=1 info_default=1 warn_error_always=1 mask=0x00007b9a
+2026-06-22T13:43:17.6244282+08:00 ~DIAGLOG:SOURCE name=health id=0x09 info_enabled=1 info_default=1 warn_error_always=1 mask=0x00007b9a
+2026-06-22T13:43:17.6259005+08:00 ~DIAGLOG:SOURCE name=ble_audio id=0x0a info_enabled=0 info_default=0 warn_error_always=1 mask=0x00007b9a
+2026-06-22T13:43:17.6270174+08:00 ~DIAGLOG:SOURCE name=ota id=0x0b info_enabled=1 info_default=1 warn_error_always=1 mask=0x00007b9a
+2026-06-22T13:43:17.6282670+08:00 ~DIAGLOG:SOURCE name=power id=0x0c info_enabled=1 info_default=1 warn_error_always=1 mask=0x00007b9a
+2026-06-22T13:43:17.6917045+08:00 ~DIAGLOG:SOURCE name=board id=0x0d info_enabled=1 info_default=1 warn_error_always=1 mask=0x00007b9a
+2026-06-22T13:43:17.6928546+08:00 ~DIAGLOG:SOURCE name=status_led id=0x0e info_enabled=1 info_default=1 warn_error_always=1 mask=0x00007b9a
+2026-06-22T13:43:17.6937058+08:00 I (455696) power_manager: blocker clear mask=0x00000064 blockers=0x00000080 (external_power)
+2026-06-22T13:43:17.7587572+08:00 I (455776) audio_capture: frame captured count=400 bytes=256000
+2026-06-22T13:43:18.4439477+08:00 > ~DIAGLOG:ENABLE power
+2026-06-22T13:43:18.5059348+08:00 I (456506) power_manager: blocker set mask=0x00000064 blockers=0x000000e4 (diag_export|flash_write|usb_command|external_power)
+2026-06-22T13:43:18.5070325+08:00 I (456506) diag_log: DIAGLOG SOURCE: power enabled
+2026-06-22T13:43:18.5080772+08:00 ~DIAGLOG:SOURCE name=system id=0x01 info_enabled=1 info_default=1 warn_error_always=1 mask=0x00007b9a
+2026-06-22T13:43:18.5093961+08:00 ~DIAGLOG:SOURCE name=keyboard id=0x02 info_enabled=0 info_default=0 warn_error_always=1 mask=0x00007b9a
+2026-06-22T13:43:18.5106715+08:00 ~DIAGLOG:SOURCE name=ble_hid id=0x03 info_enabled=1 info_default=1 warn_error_always=1 mask=0x00007b9a
+2026-06-22T13:43:18.5118723+08:00 ~DIAGLOG:SOURCE name=ble_gap id=0x04 info_enabled=1 info_default=1 warn_error_always=1 mask=0x00007b9a
+2026-06-22T13:43:18.5129508+08:00 ~DIAGLOG:SOURCE name=audio id=0x05 info_enabled=0 info_default=0 warn_error_always=1 mask=0x00007b9a
+2026-06-22T13:43:18.5716720+08:00 ~DIAGLOG:SOURCE name=voice_rec id=0x06 info_enabled=0 info_default=0 warn_error_always=1 mask=0x00007b9a
+2026-06-22T13:43:18.5728576+08:00 ~DIAGLOG:SOURCE name=voice_key id=0x07 info_enabled=1 info_default=0 warn_error_always=1 mask=0x00007b9a
+2026-06-22T13:43:18.5738064+08:00 ~DIAGLOG:SOURCE name=self_test id=0x08 info_enabled=1 info_default=1 warn_error_always=1 mask=0x00007b9a
+2026-06-22T13:43:18.5746654+08:00 ~DIAGLOG:SOURCE name=health id=0x09 info_enabled=1 info_default=1 warn_error_always=1 mask=0x00007b9a
+2026-06-22T13:43:18.5757448+08:00 ~DIAGLOG:SOURCE name=ble_audio id=0x0a info_enabled=0 info_default=0 warn_error_always=1 mask=0x00007b9a
+2026-06-22T13:43:18.5769791+08:00 ~DIAGLOG:SOURCE name=ota id=0x0b info_enabled=1 info_default=1 warn_error_always=1 mask=0x00007b9a
+2026-06-22T13:43:18.5780199+08:00 ~DIAGLOG:SOURCE name=power id=0x0c info_enabled=1 info_default=1 warn_error_always=1 mask=0x00007b9a
+2026-06-22T13:43:18.5793362+08:00 ~DIAGLOG:SOURCE name=board id=0x0d info_enabled=1 info_default=1 warn_error_always=1 mask=0x00007b9a
+2026-06-22T13:43:18.6400054+08:00 ~DIAGLOG:SOURCE name=status_led id=0x0e info_enabled=1 info_default=1 warn_error_always=1 mask=0x00007b9a
+2026-06-22T13:43:18.6410240+08:00 I (456636) power_manager: blocker clear mask=0x00000064 blockers=0x00000080 (external_power)
+2026-06-22T13:43:18.7680511+08:00 I (456786) audio_capture: frame captured count=450 bytes=288000
+2026-06-22T13:43:19.3800060+08:00 > ~DIAGLOG:INPUTDBG:ON
+2026-06-22T13:43:19.4467182+08:00 I (457436) power_manager: blocker set mask=0x00000064 blockers=0x000000e4 (diag_export|flash_write|usb_command|external_power)
+2026-06-22T13:43:19.4477898+08:00 W (457436) diag_log: DIAGLOG INPUTDBG: ON
+2026-06-22T13:43:19.4484710+08:00 I (457446) power_manager: blocker clear mask=0x00000064 blockers=0x00000080 (external_power)
+2026-06-22T13:43:19.7593684+08:00 I (457776) audio_capture: frame captured count=500 bytes=320000
+2026-06-22T13:43:20.3343095+08:00 > ~BOARD:GPIO
+2026-06-22T13:43:20.4025205+08:00 ~BOARD:GPIO active_low=1 mode=read_as_configured reconfigure=0 key1_gpio=38 key1_level=high key1_pressed=0 key2_gpio=39 key2_level=high key2_pressed=0 key3_gpio=40 key3_level=high key3_pressed=0 key4_gpio=41 key4_level=high key4_pressed=0 key_pressed_mask=0x00 ec11_a_gpio=42 ec11_a_level=high ec11_b_gpio=2 ec11_b_level=high ec11_ab_state=0x03 ec11_key_gpio=18 ec11_key_level=high ec11_key_pressed=0 recording_key=custom_key_action ec11_key_action=power_on_runtime_custom
+2026-06-22T13:43:20.7763911+08:00 I (458776) audio_capture: frame captured count=550 bytes=352000
+2026-06-22T13:43:21.2856752+08:00 > ~POWER:STATUS
+2026-06-22T13:43:21.4742240+08:00 ~POWER:STATUS state=ACTIVE blockers=0x00000080 blocker_names=external_power shutdown_blockers=0x00000080 shutdown_blocker_names=external_power idle_ms=1900 user_idle_ms=1900 radio_idle_ms=1900 ble_connected=1 automatic_shutdown_enabled=0 automatic_shutdown_blocked_by_external_power=0 external_power_present=1 usb_power_present=1 usb_serial_jtag_sof_active=1 charger_active=1 charge_power_present=1 charging=0 charge_full=1 charge_full_latched=1 charge_full_candidate_ms=456088 charge_full_debounce_ms=10000 charge_full_min_mv=4050 charge_full_min_percent=88 plugged_low_power_enabled=0 low_power_idle_allowed=0 power_input_wake_configured=1 power_input_irq_armed=0 usb_det_level=high usb_det_adc_valid=0 usb_det_adc_mv=0 usb_det_mismatch=0 bat_chg_level=low bat_std_level=high pwr_hold_level=low usb_det_policy=v2_gpio7_usb_det_disabled_highz_usb_sof_and_charger_status charger_polarity=v2_gpio14_chg_gpio21_std_active_low pwr_hold_policy=v2_gpio9_power_latch_runtime_low_drive_high_for_hardware_shutdown battery_mv=4084 battery_level=92 battery_valid=1 last_shutdown_reason=none last_shutdown_idle_ms=0 last_shutdown_blockers=0x00000000 last_shutdown_failure_ret=ESP_OK shutdown_failure_retry_ms_left=0 shutdown_failure_retry_ms=900000 guard=1 audio_idle_ms=5000 audio_idle_power_save=0 audio_idle_blockers=0x00000000 low_power_idle_ms=60000 plugged_low_power_idle_ms=60000 battery_low_power_idle_ms=60000 connected_idle_ms=60000 disconnected_idle_ms=60000 hardware_shutdown_ms=0 plugged_auto_shutdown_ms=0 battery_auto_shutdown_ms=1800000 pwr_hold_gpio=9 pwr_hold_level=low pwr_hold_configured=1 pwr_hold_policy=v2_gpio9_power_latch_runtime_low_drive_high_for_hardware_shutdown voice_key_gpio=18 hardware_shutdown_user_action="short-press hardware power key for cold boot after PWR_HOLD/GPIO9 drive-high shutdown"
+2026-06-22T13:43:21.7859030+08:00 I (459786) audio_capture: frame captured count=600 bytes=384000
+2026-06-22T13:43:22.2275494+08:00 > ~LED:STATUS sample=before_ec11_short_press_preflash
+2026-06-22T13:43:22.2942054+08:00 W (460286) status_led: LED unknown command: STATUS sample=before_ec11_short_press_preflash
+2026-06-22T13:43:22.7285081+08:00 I (460776) audio_capture: frame captured count=650 bytes=416000
+2026-06-22T13:43:23.4302886+08:00 PROMPT 请在 20 秒内短按一次旋钮并松开，然后点 OK。
+2026-06-22T13:43:38.0431040+08:00 PROMPT_RESULT 1
+2026-06-22T13:43:38.0449521+08:00 I (461776) audio_capture: frame captured count=700 bytes=448000
+2026-06-22T13:43:38.0461003+08:00 I (462786) audio_capture: frame captured count=750 bytes=480000
+2026-06-22T13:43:38.0474582+08:00 I (463776) audio_capture: frame captured count=800 bytes=512000
+2026-06-22T13:43:38.0488853+08:00 I (464776) audio_capture: frame captured count=850 bytes=544000
+2026-06-22T13:43:38.0503018+08:00 I (465786) audio_capture: frame captured count=900 bytes=576000
+2026-06-22T13:43:38.0515236+08:00 I (466296) audio_capture: audio idle power save enabled: ESP_OK
+2026-06-22T13:43:38.0534070+08:00 l_jtag_sof_active=0 charger_active=1 charge_power_present=1 charging=0 charge_full=1 external_power_present=1 usb_det_adc_valid=0 usb_det_adc_mv=0 usb_det_mismatch=0 usb_policy=v2_gpio7_usb_det_disabled_highz_usb_sof_and_charger_status charger_policy=v2_gpio14_chg_gpio21_std_active_low pwr_hold_policy=v2_gpio9_power_latch_runtime_low_drive_high_for_hardware_shutdown
+2026-06-22T13:43:38.0553378+08:00 I (474516) power_manager: power source changed: usb_det=high bat_chg=low bat_std=high pwr_hold=low usb_power_present=1 usb_serial_jtag_sof_active=1 charger_active=1 charge_power_present=1 charging=0 charge_full=1 external_power_present=1 usb_det_adc_valid=0 usb_det_adc_mv=0 usb_det_mismatch=0 usb_policy=v2_gpio7_usb_det_disabled_highz_usb_sof_and_charger_status charger_policy=v2_gpio14_chg_gpio21_std_active_low pwr_hold_policy=v2_gpio9_power_latch_runtime_low_drive_high_for_hardware_shutdown
+2026-06-22T13:43:41.0625363+08:00 > ~BOARD:GPIO
+2026-06-22T13:43:41.1152853+08:00 ~BOARD:GPIO active_low=1 mode=read_as_configured reconfigure=0 key1_gpio=38 key1_level=high key1_pressed=0 key2_gpio=39 key2_level=high key2_pressed=0 key3_gpio=40 key3_level=high key3_pressed=0 key4_gpio=41 key4_level=high key4_pressed=0 key_pressed_mask=0x00 ec11_a_gpio=42 ec11_a_level=high ec11_b_gpio=2 ec11_b_level=high ec11_ab_state=0x03 ec11_key_gpio=18 ec11_key_level=high ec11_key_pressed=0 recording_key=custom_key_action ec11_key_action=power_on_runtime_custom
+2026-06-22T13:43:41.9963247+08:00 > ~LED:STATUS sample=after_ec11_short_press_preflash
+2026-06-22T13:43:42.0557895+08:00 I (480056) audio_capture: audio idle power save disabled: ESP_OK
+2026-06-22T13:43:42.0567954+08:00 W (480056) status_led: LED unknown command: STATUS sample=after_ec11_short_press_preflash
+2026-06-22T13:43:42.4975729+08:00 I (480536) audio_capture: frame captured count=950 bytes=608000
+2026-06-22T13:43:43.2417649+08:00 > ~DIAGLOG:LAST:100:voice_key
+2026-06-22T13:43:43.5062103+08:00 I (481296) power_manager: blocker set mask=0x00000064 blockers=0x000000e4 (diag_export|flash_write|usb_command|external_power)
+2026-06-22T13:43:43.5071927+08:00 I (481546) audio_capture: frame captured count=1000 bytes=640000
+2026-06-22T13:43:44.1997519+08:00 I (482196) ble_hid: battery notify level=100 voltage_mv=4086 raw_adc=2381 adc_mv=2043 usb_power=1 charger_active=1 charge_power=1 raw_charging=1 raw_full=0 full_latched=1 full_candidate_ms=478667 charge_full=1 usb_det_adc_valid=0 usb_det_adc_mv=0 usb_det_mismatch=0 reason=threshold_sample forced=0 periodic=1
+2026-06-22T13:43:44.5094656+08:00 I (482546) audio_capture: frame captured count=1050 bytes=672000
+2026-06-22T13:43:45.5096669+08:00 I (483536) audio_capture: frame captured count=1100 bytes=704000
+2026-06-22T13:43:46.0910394+08:00 I (484076) health: heartbeat: uptime=483s heap_free=7767KB heap_min=7767KB ble=OK disconnects=2 audio_frames=1126 audio_drops=0 keys=0 sessions=0 usb_det_raw=1 bat_chg_raw=0 bat_std_raw=1 usb_det_policy=v2_gpio7_usb_det_disabled_highz_usb_sof_and_charger_status charger_policy=v2_gpio14_chg_gpio21_std_active_low
+2026-06-22T13:43:46.5364893+08:00 I (484536) audio_capture: frame captured count=1150 bytes=736000
+2026-06-22T13:43:46.7900551+08:00 > ~DIAGLOG:LAST:80:status_led
+2026-06-22T13:43:47.5426018+08:00 I (485546) audio_capture: frame captured count=1200 bytes=768000
+2026-06-22T13:43:48.5462879+08:00 I (486536) audio_capture: frame captured count=1250 bytes=800000
+2026-06-22T13:43:49.1673227+08:00 {"t":471408,"src":"voice_key","evt":4,"sev":"INFO","a1":1,"a2":1,"a3":0,"a4":1}
+2026-06-22T13:43:49.2268915+08:00 {"t":471624,"src":"voice_key","evt":4,"sev":"INFO","a1":1,"a2":1,"a3":1,"a4":1}
+2026-06-22T13:43:49.2277972+08:00 {"t":473008,"src":"voice_key","evt":4,"sev":"INFO","a1":1,"a2":1,"a3":0,"a4":1}
+2026-06-22T13:43:49.2285967+08:00 {"t":473221,"src":"voice_key","evt":4,"sev":"INFO","a1":1,"a2":1,"a3":1,"a4":1}
+2026-06-22T13:43:49.2293077+08:00 I (487236) diag_log: DIAGLOG LAST 100 source=voice_key: dumped 4 of 4 matching events
+2026-06-22T13:43:49.2300199+08:00 I (487246) power_manager: blocker clear mask=0x00000064 blockers=0x00000080 (external_power)
+2026-06-22T13:43:49.5429861+08:00 I (487256) power_manager: blocker set mask=0x00000064 blockers=0x000000e4 (diag_export|flash_write|usb_command|external_power)
+2026-06-22T13:43:49.5442140+08:00 I (487536) audio_capture: frame captured count=1300 bytes=832000
+2026-06-22T13:43:49.7925716+08:00 > ~DIAGLOG:INPUTDBG:OFF
+2026-06-22T13:43:50.4225844+08:00 serial_closed

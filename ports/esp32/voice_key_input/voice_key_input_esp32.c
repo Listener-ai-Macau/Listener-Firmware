@@ -425,6 +425,7 @@ static void voice_key_input_handle_button_sample(voice_key_button_state_t *butto
             }
         } else if (button->long_press_reported) {
             ESP_LOGI(TAG, "%s long press released without custom-key/recovery gesture", button->label);
+            status_led_cancel_shutdown_confirm("ec11_long_press_released");
         }
         button->pressed_ms = 0;
         button->long_press_reported = false;

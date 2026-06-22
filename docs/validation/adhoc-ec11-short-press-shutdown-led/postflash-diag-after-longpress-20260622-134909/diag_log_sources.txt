@@ -1,0 +1,14 @@
+~DIAGLOG:SOURCE name=system id=0x01 info_enabled=1 info_default=1 warn_error_always=1 mask=0x00007b1a
+~DIAGLOG:SOURCE name=keyboard id=0x02 info_enabled=0 info_default=0 warn_error_always=1 mask=0x00007b1a
+~DIAGLOG:SOURCE name=ble_hid id=0x03 info_enabled=1 info_default=1 warn_error_always=1 mask=0x00007b1a
+~DIAGLOG:SOURCE name=ble_gap id=0x04 info_enabled=1 info_default=1 warn_error_always=1 mask=0x00007b1a
+~DIAGLOG:SOURCE name=audio id=0x05 info_enabled=0 info_default=0 warn_error_always=1 mask=0x00007b1a
+~DIAGLOG:SOURCE name=voice_rec id=0x06 info_enabled=0 info_default=0 warn_error_always=1 mask=0x00007b1a
+~DIAGLOG:SOURCE name=voice_key id=0x07 info_enabled=0 info_default=0 warn_error_always=1 mask=0x00007b1a
+~DIAGLOG:SOURCE name=self_test id=0x08 info_enabled=1 info_default=1 warn_error_always=1 mask=0x00007b1a
+~DIAGLOG:SOURCE name=health id=0x09 info_enabled=1 info_default=1 warn_error_always=1 mask=0x00007b1a
+~DIAGLOG:SOURCE name=ble_audio id=0x0a info_enabled=0 info_default=0 warn_error_always=1 mask=0x00007b1a
+~DIAGLOG:SOURCE name=ota id=0x0b info_enabled=1 info_default=1 warn_error_always=1 mask=0x00007b1a
+~DIAGLOG:SOURCE name=power id=0x0c info_enabled=1 info_default=1 warn_error_always=1 mask=0x00007b1a
+~DIAGLOG:SOURCE name=board id=0x0d info_enabled=1 info_default=1 warn_error_always=1 mask=0x00007b1a
+~DIAGLOG:SOURCE name=status_led id=0x0e info_enabled=1 info_default=1 warn_error_always=1 mask=0x00007b1a
