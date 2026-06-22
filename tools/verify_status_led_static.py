@@ -1431,7 +1431,7 @@ def main() -> int:
         "rmt_tx_dma_actual=status:%u,ec11:%u,key:%u,edge:%u" not in status_led or
         "rmt_tx_dma_fallback=status:%u,ec11:%u,key:%u,edge:%u" not in status_led or
         "rmt_mem_block_symbols=status:%u,ec11:%u,key:%u,edge:%u" not in status_led or
-        "rmt_idle_drive=enabled_hold_low_after_tx" not in status_led
+        "rmt_idle_drive=gpio_low_after_tx" not in status_led
     ):
         failures.append("status_led.c: ~LED:STATUS contract must expose the status-strip RMT TX DMA strategy, per-strip actual state, DMA buffer size, and idle-drive policy")
     if status_led.count(".prefer_dma = true") != 1 or not re.search(
@@ -1446,12 +1446,19 @@ def main() -> int:
         r"if\s*\(\s*ret\s*!=\s*ESP_OK\s*\)\s*\{[\s\S]*?"
         r"status_led_strip_backend_set_channel_enabled\(backend,\s*false\);[\s\S]*?"
         r"return\s+ret;[\s\S]*?"
-        r"\}\s*return\s+ESP_OK;",
+        r"disable_ret\s*=\s*status_led_strip_backend_set_channel_enabled\(backend,\s*false\);[\s\S]*?"
+        r"return\s+disable_ret;",
         status_led_backend,
     ):
-        failures.append("status_led_strip_backend.c: successful RMT transmit must keep the channel enabled so the WS2812 line stays driven low")
-    if re.search(r"disable_ret\s*=\s*status_led_strip_backend_set_channel_enabled\(backend,\s*false\)", status_led_backend):
-        failures.append("status_led_strip_backend.c: do not disable the RMT channel after every successful transmit")
+        failures.append("status_led_strip_backend.c: successful RMT transmit must disable the channel to release PM locks")
+    if not re.search(
+        r"rmt_tx_switch_gpio\(backend->channel,\s*backend->gpio,\s*false\)[\s\S]*?"
+        r"rmt_enable\(backend->channel\)[\s\S]*?"
+        r"rmt_disable\(backend->channel\)[\s\S]*?"
+        r"gpio_set_direction\(backend->gpio,\s*GPIO_MODE_OUTPUT\)",
+        status_led_backend,
+    ):
+        failures.append("status_led_strip_backend.c: backend must reconnect RMT before TX and drive GPIO low after disabling RMT")
     if "status_led_suspend_all_strips" not in status_led or "status_led_strip_backend_suspend(s_strips[index].backend)" not in status_led:
         failures.append("status_led.c: prepare_sleep must explicitly suspend strip backends after the all-off frame")
     if not re.search(

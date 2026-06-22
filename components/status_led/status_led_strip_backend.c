@@ -255,9 +255,23 @@ static esp_err_t status_led_strip_backend_set_channel_enabled(
         return ESP_OK;
     }
 
-    esp_err_t ret = enabled ? rmt_enable(backend->channel) : rmt_disable(backend->channel);
+    esp_err_t ret = ESP_OK;
+    if (enabled) {
+        ret = rmt_tx_switch_gpio(backend->channel, backend->gpio, false);
+        if (ret != ESP_OK) {
+            return ret;
+        }
+        ret = rmt_enable(backend->channel);
+    } else {
+        ret = rmt_disable(backend->channel);
+    }
     if (ret == ESP_OK) {
         backend->channel_enabled = enabled;
+        if (!enabled) {
+            (void)gpio_set_level(backend->gpio, 0);
+            (void)gpio_set_direction(backend->gpio, GPIO_MODE_OUTPUT);
+            (void)gpio_set_level(backend->gpio, 0);
+        }
     }
     return ret;
 }
@@ -401,6 +415,7 @@ esp_err_t status_led_strip_backend_transmit(
     if (ret != ESP_OK) {
         diag_log(DIAG_SRC_STATUS_LED, DIAG_LED_OUTPUT_FAIL, DIAG_SEV_WARN,
                  (uint32_t)backend->gpio, (uint32_t)ret, 0, 0);
+        (void)status_led_strip_backend_set_channel_enabled(backend, false);
         return ret;
     }
 
@@ -410,6 +425,12 @@ esp_err_t status_led_strip_backend_transmit(
                  (uint32_t)backend->gpio, (uint32_t)ret, 1, 0);
         (void)status_led_strip_backend_set_channel_enabled(backend, false);
         return ret;
+    }
+    esp_err_t disable_ret = status_led_strip_backend_set_channel_enabled(backend, false);
+    if (disable_ret != ESP_OK) {
+        diag_log(DIAG_SRC_STATUS_LED, DIAG_LED_OUTPUT_FAIL, DIAG_SEV_WARN,
+                 (uint32_t)backend->gpio, (uint32_t)disable_ret, 3, 0);
+        return disable_ret;
     }
     return ESP_OK;
 }

@@ -4426,7 +4426,7 @@ static void status_led_print_status(void)
         " processing_thinking_effect_percent=%u..%u_%upct"
         " processing_thinking_scan_profile=da_long_gap_grouped_dada_rest"
         " processing_thinking_period_ms=%u"
-        " strip_dirty_tx=1 status_tx_last=1 rmt_idle_drive=enabled_hold_low_after_tx"
+        " strip_dirty_tx=1 status_tx_last=1 rmt_idle_drive=gpio_low_after_tx"
         " dynamic_active_accents=1"
         " status_query_samples_current_render=1"
         " effect_only_preview=1"
