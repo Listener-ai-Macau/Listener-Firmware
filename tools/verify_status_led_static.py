@@ -78,6 +78,8 @@ CHECKS = {
         "STATUS_LED_PROCESSING_THINK_EFFECT_BEAT2_PERCENT 78U",
         "STATUS_LED_PROCESSING_THINK_EFFECT_BEAT3_PERCENT 100U",
         "recording_level_visual_percent",
+        '"recording_active"',
+        '"capture_active"',
         "status_led_processing_thinking_phase_ms_locked",
         "status_led_recording_level_smoothed_percent_locked",
         "status_led_recording_level_effect_percent_locked",
@@ -723,7 +725,8 @@ CHECKS = {
         "`shutdown_confirm_active`",
         "`shutdown_confirm_latched`",
         "`shutdown_confirm_elapsed_ms`",
-        "`~LED:PREVIEW <ready|pairing|reconnect|repairing|capture|capture_led_only|desktop_mic|recording_processing|recording_processing_led_only|recording_processing_status_only|recording_processing_status_led_only|recording_processing_status_key_stress|status_key_stress3|status_key_stress4|status_key_stress34|rec_not_available|processing|processing_led_only|processing_status_led_only|ok|low_battery|critical_battery|charging|full|shutdown_confirm|shutdown_final|sleep|clear>`",
+        "`~LED:PREVIEW <ready|pairing|reconnect|repairing|capture|recording_active|capture_active|capture_led_only|desktop_mic|recording_processing|recording_processing_led_only|recording_processing_status_only|recording_processing_status_led_only|recording_processing_status_key_stress|status_key_stress3|status_key_stress4|status_key_stress34|rec_not_available|processing|processing_led_only|processing_status_led_only|ok|low_battery|critical_battery|charging|full|shutdown_confirm|shutdown_final|sleep|clear>`",
+        "`~LED:PREVIEW recording_active` and `~LED:PREVIEW capture_active` are aliases for active device-mic capture",
         "`~LED:PREVIEW pairing`, `~LED:PREVIEW reconnect`, and `~LED:PREVIEW repairing`",
         "`~LED:PREVIEW capture_led_only`",
         "`~LED:PREVIEW recording_processing_led_only`",
@@ -834,9 +837,11 @@ CHECKS = {
         "scene-processing-live",
         "scene-sleep",
         "Get-ReproSteps",
+        "Get-RecordingIndependenceSteps",
+        "~LED:PREVIEW recording_active",
         "Get-TailOnlySteps",
         "Get-ComboOnlySteps",
-        'ValidateSet("Foundation", "Scenes", "Complex", "Volume", "Product", "FinalVisual", "FinalRetest", "FinalCombo", "RootCause", "StaticRoot", "Repro", "IdleTransition", "TailOnly", "ComboOnly", "Full")',
+        'ValidateSet("Foundation", "Scenes", "Complex", "Volume", "Product", "FinalVisual", "FinalRetest", "FinalCombo", "RootCause", "StaticRoot", "Repro", "RecordingIndependence", "IdleTransition", "TailOnly", "ComboOnly", "Full")',
         "preview_effect_only=1",
         "effect-only preview commands",
     ],
@@ -890,6 +895,23 @@ def main() -> int:
     main_c = read("main/main.c")
     human_review = read("tools/status_led_human_effect_review.ps1")
     status_doc = read("docs/features/status_led.md")
+    recording_active_preview = re.search(
+        r"}\s*else\s+if\s*\(\s*strcasecmp\(state,\s*\"capture\"\)\s*==\s*0\s*\|\|"
+        r"[\s\S]*?strcasecmp\(state,\s*\"recording_active\"\)\s*==\s*0"
+        r"[\s\S]*?strcasecmp\(state,\s*\"capture_active\"\)\s*==\s*0"
+        r"[\s\S]*?\)\s*\{(?P<body>[\s\S]*?)\n\s*\}\s*else\s+if",
+        status_led,
+    )
+    if not recording_active_preview:
+        failures.append("status_led.c: recording_active/capture_active preview aliases must share the capture branch")
+    else:
+        body = recording_active_preview.group("body")
+        if "status_led_preview_ready_baseline_locked(now_ms);" not in body:
+            failures.append("status_led.c: recording_active preview must preserve PWR/BLE ready baseline")
+        if "status_led_preview_effect_only_baseline_locked" in body:
+            failures.append("status_led.c: recording_active preview must not be effect-only")
+        if "s_state.recording_active = true;" not in body:
+            failures.append("status_led.c: recording_active preview must light the REC semantic state")
     if "bit-bang" in status_led.lower() or "bit-bang" in status_led_backend.lower():
         failures.append("status_led: do not bit-bang WS2812 timing")
     if "STATUS_LED_EC11_COUNT 4" in status_led:
@@ -1225,7 +1247,7 @@ def main() -> int:
     else:
         idle_transition_text = idle_transition_block.group(1)
         for token in (
-            'ValidateSet("Foundation", "Scenes", "Complex", "Volume", "Product", "FinalVisual", "FinalRetest", "FinalCombo", "RootCause", "StaticRoot", "Repro", "IdleTransition", "TailOnly", "ComboOnly", "Full")',
+            'ValidateSet("Foundation", "Scenes", "Complex", "Volume", "Product", "FinalVisual", "FinalRetest", "FinalCombo", "RootCause", "StaticRoot", "Repro", "RecordingIndependence", "IdleTransition", "TailOnly", "ComboOnly", "Full")',
             'if ($Mode -eq "IdleTransition")',
             "~LED:PREVIEW recording_processing_status_led_only",
             "~LED:REC_LEVEL 100 60000",

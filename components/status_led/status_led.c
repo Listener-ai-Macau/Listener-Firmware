@@ -4868,7 +4868,11 @@ static void status_led_preview_state(const char *state)
                strcasecmp(state, "ble_repair") == 0 ||
                strcasecmp(state, "recovery") == 0) {
         status_led_start_ble_repair_locked(now_ms);
-    } else if (strcasecmp(state, "capture") == 0 || strcasecmp(state, "device_mic") == 0) {
+    } else if (strcasecmp(state, "capture") == 0 ||
+               strcasecmp(state, "device_mic") == 0 ||
+               strcasecmp(state, "recording") == 0 ||
+               strcasecmp(state, "recording_active") == 0 ||
+               strcasecmp(state, "capture_active") == 0) {
         status_led_preview_ready_baseline_locked(now_ms);
         s_state.recording_active = true;
         s_state.rec_source = STATUS_LED_REC_SOURCE_DEVICE_MIC;
