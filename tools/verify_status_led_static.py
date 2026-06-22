@@ -570,6 +570,21 @@ CHECKS = {
         "status_led_consume_usb_command(line)",
         "status_led_set_ble_state(STATUS_LED_BLE_CONNECTED, true)",
         "status_led_set_ble_state(STATUS_LED_BLE_RECONNECTING, false)",
+        "ble_audio_stream_type_link_poll_wait_ms(",
+        "ble_audio_stream_poll_type_link()",
+    ],
+    "ports/esp32/ble_audio_stream/ble_audio_stream_esp32.c": [
+        "BLE_AUDIO_STREAM_TYPE_HEARTBEAT_TIMEOUT_MS 12000",
+        "TYPE:READY",
+        "TYPE:HB",
+        "TYPE:BYE",
+        "ble_audio_stream_type_heartbeat_recent()",
+        "ble_audio_stream_sync_status_led_for_type_link(\"type_heartbeat_timeout\")",
+    ],
+    "ports/esp32/ble_audio_stream/include/ble_audio_stream.h": [
+        "ble_audio_stream_consume_type_control_command",
+        "ble_audio_stream_type_link_poll_wait_ms",
+        "ble_audio_stream_poll_type_link",
     ],
     "ports/esp32/ble_hid_gap/ble_hid_gap_esp32.c": [
         "status_led_set_ble_state(STATUS_LED_BLE_PAIRING, false)",
@@ -602,6 +617,8 @@ CHECKS = {
         "status_led_notify_warning(\"host_processing_warning\")",
         "status_led_notify_success(\"host_processing_done\")",
         "status_led_notify_ble_repairing(\"voice_recovery_requested\")",
+        "ble_audio_stream_consume_type_control_command(command, source)",
+        "power_manager_record_activity(\"voice_recording_ble_control\")",
     ],
     "ports/esp32/audio_capture/audio_capture_esp32.c": [
         "#include \"status_led.h\"",

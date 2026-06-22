@@ -73,6 +73,9 @@ esp_err_t ble_audio_stream_send_session_error(
     uint16_t error_code);
 bool ble_audio_stream_is_ready(void);
 bool ble_audio_stream_is_type_link_ready(void);
+bool ble_audio_stream_consume_type_control_command(const char *command, const char *source);
+uint32_t ble_audio_stream_type_link_poll_wait_ms(uint32_t fallback_ms);
+void ble_audio_stream_poll_type_link(void);
 bool ble_audio_stream_is_busy(void);
 void ble_audio_stream_get_backpressure(ble_audio_stream_backpressure_t *snapshot);
 uint16_t ble_audio_stream_get_notify_attr_handle(void);

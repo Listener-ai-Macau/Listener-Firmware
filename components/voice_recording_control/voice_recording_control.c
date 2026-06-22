@@ -1603,6 +1603,10 @@ static esp_err_t voice_recording_control_ble_control_write(
     command[len] = '\0';
     command[strcspn(command, "\r\n")] = '\0';
 
+    if (ble_audio_stream_consume_type_control_command(command, source)) {
+        return ESP_OK;
+    }
+
     power_manager_record_activity("voice_recording_ble_control");
     return voice_recording_control_dispatch_control_command(command, source);
 }

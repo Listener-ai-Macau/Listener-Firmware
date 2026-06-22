@@ -439,7 +439,8 @@ static void ble_hid_battery_task(void *parameter)
 
     while (1) {
         bool low_power_idle = ble_hid_low_power_idle_active();
-        uint32_t wait_ms = ble_hid_battery_sample_interval_ms(low_power_idle);
+        uint32_t wait_ms = ble_audio_stream_type_link_poll_wait_ms(
+            ble_hid_battery_sample_interval_ms(low_power_idle));
         uint32_t notified = 0;
         if (s_ble_connected && !low_power_idle) {
             notified = watchdog_platform_task_notify_take(
@@ -453,11 +454,13 @@ static void ble_hid_battery_task(void *parameter)
 
         low_power_idle = ble_hid_low_power_idle_active();
         if (notified != 0 && low_power_idle) {
+            ble_audio_stream_poll_type_link();
             watchdog_platform_feed_current_task();
             continue;
         }
 
         ble_hid_update_battery_level(ble_hid_battery_sample_reason(low_power_idle), false);
+        ble_audio_stream_poll_type_link();
         watchdog_platform_feed_current_task();
     }
 }

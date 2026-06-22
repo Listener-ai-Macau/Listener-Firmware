@@ -68,6 +68,7 @@
 #define BLE_AUDIO_STREAM_CONTROL_NOTIFY_REPEAT_DELAY_MS 5
 #define BLE_AUDIO_STREAM_TASK_QUEUE_WAIT_MS 1000
 #define BLE_AUDIO_STREAM_CONTROL_MAX_BYTES 64
+#define BLE_AUDIO_STREAM_TYPE_HEARTBEAT_TIMEOUT_MS 12000
 
 typedef enum {
     BLE_AUDIO_STREAM_JOB_TYPE_SESSION_START = 0,
@@ -220,6 +221,9 @@ static bool s_audio_pool_used[BLE_AUDIO_STREAM_AUDIO_POOL_LENGTH];
 static uint32_t s_audio_pool_in_use;
 static uint32_t s_audio_pool_global_high_water;
 static bool s_backpressure_active;
+static bool s_type_heartbeat_active;
+static TickType_t s_type_heartbeat_deadline_tick;
+static uint32_t s_type_heartbeat_count;
 static ble_audio_stream_replay_packet_t s_replay_window[BLE_AUDIO_STREAM_REPLAY_WINDOW_PACKETS];
 static uint32_t s_replay_next_index;
 static bool s_replay_pending;
@@ -237,7 +241,14 @@ typedef struct {
     uint32_t connection_epoch;
 } ble_audio_stream_link_snapshot_t;
 
+typedef struct {
+    bool active;
+    TickType_t deadline_tick;
+    uint32_t count;
+} ble_audio_stream_type_heartbeat_snapshot_t;
+
 static ble_audio_stream_link_snapshot_t ble_audio_stream_get_link_snapshot(void);
+static void ble_audio_stream_sync_status_led_for_type_link(const char *reason);
 static esp_err_t ble_audio_stream_send_packet(
     listener_audio_packet_type_t packet_type,
     uint32_t session_id,
@@ -306,6 +317,63 @@ static ble_audio_stream_link_snapshot_t ble_audio_stream_get_link_snapshot(void)
     };
     portEXIT_CRITICAL(&s_link_state_lock);
     return snapshot;
+}
+
+static ble_audio_stream_type_heartbeat_snapshot_t ble_audio_stream_get_type_heartbeat_snapshot(void)
+{
+    portENTER_CRITICAL(&s_link_state_lock);
+    ble_audio_stream_type_heartbeat_snapshot_t snapshot = {
+        .active = s_type_heartbeat_active,
+        .deadline_tick = s_type_heartbeat_deadline_tick,
+        .count = s_type_heartbeat_count,
+    };
+    portEXIT_CRITICAL(&s_link_state_lock);
+    return snapshot;
+}
+
+static bool ble_audio_stream_tick_reached(TickType_t now, TickType_t target)
+{
+    return (int32_t)(now - target) >= 0;
+}
+
+static bool ble_audio_stream_type_heartbeat_recent(void)
+{
+    ble_audio_stream_type_heartbeat_snapshot_t heartbeat =
+        ble_audio_stream_get_type_heartbeat_snapshot();
+    return heartbeat.active &&
+           !ble_audio_stream_tick_reached(xTaskGetTickCount(), heartbeat.deadline_tick);
+}
+
+static void ble_audio_stream_set_type_heartbeat_active(bool active, const char *reason)
+{
+    bool changed = false;
+    uint32_t count = 0;
+
+    portENTER_CRITICAL(&s_link_state_lock);
+    changed = s_type_heartbeat_active != active;
+    s_type_heartbeat_active = active;
+    if (active) {
+        s_type_heartbeat_deadline_tick =
+            xTaskGetTickCount() + pdMS_TO_TICKS(BLE_AUDIO_STREAM_TYPE_HEARTBEAT_TIMEOUT_MS);
+        s_type_heartbeat_count++;
+    } else {
+        s_type_heartbeat_deadline_tick = 0;
+    }
+    count = s_type_heartbeat_count;
+    portEXIT_CRITICAL(&s_link_state_lock);
+
+    bool periodic_heartbeat = reason != NULL && strcmp(reason, "TYPE:HB") == 0;
+    if (active || changed) {
+        esp_log_level_t level = periodic_heartbeat && !changed ? ESP_LOG_DEBUG : ESP_LOG_INFO;
+        ESP_LOG_LEVEL(
+            level,
+            TAG,
+            "type heartbeat %s reason=%s timeout_ms=%u count=%" PRIu32,
+            active ? "active" : "inactive",
+            reason != NULL ? reason : "unspecified",
+            (unsigned)BLE_AUDIO_STREAM_TYPE_HEARTBEAT_TIMEOUT_MS,
+            count);
+    }
 }
 
 uint16_t ble_audio_stream_count_audio_packets(uint16_t pcm_bytes)
@@ -679,11 +747,7 @@ static void ble_audio_stream_set_transport_state(
              s_transport_session_id);
     s_transport_state = next_state;
     if (ble_audio_stream_transport_link_ready()) {
-        status_led_set_ble_state(
-            ble_audio_stream_transport_state_type_ready(next_state)
-                ? STATUS_LED_BLE_TYPE_READY
-                : STATUS_LED_BLE_CONNECTED,
-            false);
+        ble_audio_stream_sync_status_led_for_type_link(reason);
     }
 }
 
@@ -709,6 +773,20 @@ static bool ble_audio_stream_transport_link_ready(void)
 {
     ble_audio_stream_link_snapshot_t link = ble_audio_stream_get_link_snapshot();
     return link.conn_handle != BLE_HS_CONN_HANDLE_NONE && link.mtu_ready && link.notify_enabled;
+}
+
+static void ble_audio_stream_sync_status_led_for_type_link(const char *reason)
+{
+    if (!ble_audio_stream_transport_link_ready()) {
+        return;
+    }
+
+    status_led_set_ble_state(
+        ble_audio_stream_is_type_link_ready()
+            ? STATUS_LED_BLE_TYPE_READY
+            : STATUS_LED_BLE_CONNECTED,
+        false);
+    ESP_LOGD(TAG, "type link LED sync reason=%s", reason != NULL ? reason : "unspecified");
 }
 
 static uint32_t ble_audio_stream_next_epoch_value(void)
@@ -1122,6 +1200,10 @@ static void ble_audio_stream_apply_notify_enabled(bool notify_enabled)
 {
     portENTER_CRITICAL(&s_link_state_lock);
     s_notify_enabled = notify_enabled;
+    if (!notify_enabled) {
+        s_type_heartbeat_active = false;
+        s_type_heartbeat_deadline_tick = 0;
+    }
     portEXIT_CRITICAL(&s_link_state_lock);
     if (notify_enabled) {
         ble_audio_stream_prime_notify_credit();
@@ -1231,6 +1313,12 @@ static int ble_audio_stream_handle_control_write(struct os_mbuf *om)
         return att_err;
     }
     buffer[len] = '\0';
+    buffer[strcspn((const char *)buffer, "\r\n")] = '\0';
+
+    if (ble_audio_stream_consume_type_control_command((const char *)buffer, "ble_audio_control")) {
+        ESP_LOGI(TAG, "audio control write handled: payload=%s", (const char *)buffer);
+        return 0;
+    }
 
     if (s_control_write_handler == NULL) {
         ESP_LOGW(TAG, "audio control write dropped: no handler payload=%s", (const char *)buffer);
@@ -2337,6 +2425,8 @@ void ble_audio_stream_on_gap_disconnect(uint16_t conn_handle)
     s_conn_handle = BLE_HS_CONN_HANDLE_NONE;
     s_mtu_ready = false;
     s_notify_enabled = false;
+    s_type_heartbeat_active = false;
+    s_type_heartbeat_deadline_tick = 0;
     s_packet_value_max_bytes = BLE_AUDIO_STREAM_PACKET_DEFAULT_BYTES;
     portEXIT_CRITICAL(&s_link_state_lock);
     ble_audio_stream_reset_notify_credit();
@@ -2530,7 +2620,81 @@ bool ble_audio_stream_is_ready(void)
 bool ble_audio_stream_is_type_link_ready(void)
 {
     return ble_audio_stream_transport_link_ready() &&
-           ble_audio_stream_transport_state_type_ready(s_transport_state);
+           ble_audio_stream_transport_state_type_ready(s_transport_state) &&
+           ble_audio_stream_type_heartbeat_recent();
+}
+
+bool ble_audio_stream_consume_type_control_command(const char *command, const char *source)
+{
+    if (command == NULL) {
+        return false;
+    }
+    if (command[0] == '~') {
+        command++;
+    }
+
+    if (strcmp(command, "TYPE:READY") == 0 || strcmp(command, "TYPE:HB") == 0) {
+        ble_audio_stream_set_type_heartbeat_active(true, command);
+        ble_audio_stream_sync_status_led_for_type_link(command);
+        if (strcmp(command, "TYPE:HB") == 0) {
+            ESP_LOGD(
+                TAG,
+                "type heartbeat received source=%s command=%s",
+                source != NULL ? source : "unknown",
+                command);
+        } else {
+            ESP_LOGI(
+                TAG,
+                "type heartbeat received source=%s command=%s",
+                source != NULL ? source : "unknown",
+                command);
+        }
+        return true;
+    }
+
+    if (strcmp(command, "TYPE:BYE") == 0 || strcmp(command, "TYPE:STOP") == 0) {
+        ble_audio_stream_set_type_heartbeat_active(false, command);
+        ble_audio_stream_sync_status_led_for_type_link(command);
+        ESP_LOGI(
+            TAG,
+            "type heartbeat stopped source=%s command=%s",
+            source != NULL ? source : "unknown",
+            command);
+        return true;
+    }
+
+    return false;
+}
+
+uint32_t ble_audio_stream_type_link_poll_wait_ms(uint32_t fallback_ms)
+{
+    ble_audio_stream_type_heartbeat_snapshot_t heartbeat =
+        ble_audio_stream_get_type_heartbeat_snapshot();
+    if (!heartbeat.active) {
+        return fallback_ms;
+    }
+
+    TickType_t now = xTaskGetTickCount();
+    if (ble_audio_stream_tick_reached(now, heartbeat.deadline_tick)) {
+        return 0;
+    }
+
+    uint32_t remaining_ms =
+        (uint32_t)((heartbeat.deadline_tick - now) * portTICK_PERIOD_MS);
+    return remaining_ms < fallback_ms ? remaining_ms : fallback_ms;
+}
+
+void ble_audio_stream_poll_type_link(void)
+{
+    ble_audio_stream_type_heartbeat_snapshot_t heartbeat =
+        ble_audio_stream_get_type_heartbeat_snapshot();
+    if (!heartbeat.active ||
+        !ble_audio_stream_tick_reached(xTaskGetTickCount(), heartbeat.deadline_tick)) {
+        return;
+    }
+
+    ble_audio_stream_set_type_heartbeat_active(false, "timeout");
+    ble_audio_stream_sync_status_led_for_type_link("type_heartbeat_timeout");
 }
 
 bool ble_audio_stream_is_busy(void)
