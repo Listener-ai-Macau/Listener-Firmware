@@ -1,0 +1,2 @@
+operator_result_code=-1
+meaning=Timeout_no_operator_answer

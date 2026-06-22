@@ -262,18 +262,18 @@ def check_dis_identity(repo: Path) -> None:
     )
     require(
         "ble_gap_set_prefered_le_phy" not in gap
-        and "ble_gap_update_params" not in gap
-        and "ble_hid_gap_request_connection_params" not in gap
-        and "connection parameter update requested" not in gap
         and re.search(r'ble_hid_gap_request_connection_params\(\s*"audio"', gap) is None
         and "audio connection parameters left to central" in gap
-        and "active connection parameters left to central" in gap
-        and "low-power idle connection parameters left to central" in gap
+        and "ble_gap_update_params(conn.conn_handle, &params)" in gap
+        and "connection parameter update requested" in gap
+        and "BLE_HID_CONN_PARAM_MODE_ACTIVE" in gap
+        and "BLE_HID_CONN_PARAM_MODE_LOW_POWER" in gap
+        and "DIAG_GAP_CONN_PARAM_REQ" in gap
         and "audio PHY preference left to central" in gap
         and "BLE_GAP_EVENT_PHY_UPDATE_COMPLETE" in gap
         and "DIAG_GAP_PHY" in gap
         and "DIAG_GAP_PHY" in diag,
-        "GAP must not initiate audio/active/low-power LL parameter or 2M PHY requests that can leave Windows bonded but disconnected after an LL response timeout",
+        "GAP must keep audio/PHY central-owned while allowing bounded active/low-power idle connection parameter requests with diagnostics",
     )
 
 

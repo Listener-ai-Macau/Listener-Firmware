@@ -1,0 +1,8 @@
+{
+  "name": "firmware-build",
+  "command": "pwsh -NoProfile -File .\\tools\\build.ps1",
+  "exit_code": 0,
+  "started_at": "2026-06-21T17:41:54.6037992+08:00",
+  "ended_at": "2026-06-21T17:43:00.4112836+08:00",
+  "log": "C:\\Users\\Billy\\Desktop\\Denzic\\Listener\\Listener-Firmware-pwr-shutdown-new-board\\docs\\validation\\voice-keyboard-firmware-full-function-test-1.12\\final-regression-20260621-174113\\firmware-build.log"
+}

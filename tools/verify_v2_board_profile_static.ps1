@@ -116,6 +116,7 @@ foreach ($item in @(
     @($boardPins, "BOARD_PINS_BAT_CHG_IO\s+\(GPIO_NUM_14\)", "charger CHG GPIO14"),
     @($boardPins, "BOARD_PINS_BAT_STD_IO\s+\(GPIO_NUM_21\)", "charger STD GPIO21"),
     @($boardPins, "BOARD_PINS_BAT_V_ADC_IO\s+\(GPIO_NUM_10\)", "battery ADC GPIO10"),
+    @($boardPins, "BOARD_PINS_USB_DET_DISABLED_IO\s+\(GPIO_NUM_7\)", "retired physical USB_DET GPIO7"),
     @($boardPins, "BOARD_PINS_USB_DET_IO\s+\(GPIO_NUM_NC\)", "retired USB_DET not configured"),
     @($boardPins, "BOARD_PINS_RGB_STATUS_IO\s+\(GPIO_NUM_1\)", "status strip GPIO1"),
     @($boardPins, "BOARD_PINS_RGB_EC11_IO\s+\(GPIO_NUM_5\)", "EC11 strip GPIO5"),
@@ -133,6 +134,10 @@ foreach ($item in @(
     @($keyboard, "EC11 ready: a=gpio42 b=gpio2 key=gpio18", "EC11 V2 ready log"),
     @($voiceKeyInput, 'VOICE_KEY_INPUT_DIRECT_LABEL\s+"ec11_key\.gpio18"', "EC11 custom/recovery diagnostic label"),
     @($board, "not_populated_use_usb_serial_jtag_sof_and_charger_status", "USB_DET retired policy"),
+    @($board, "board_configure_usb_det_highz", "USB_DET physical GPIO7 high-Z configuration"),
+    @($board, "USB_DET:HIGHZ", "USB_DET disabled high-Z diagnostic command"),
+    @($board, "usb_power_present=%u", "USB host power diagnostic field"),
+    @($board, "usb_det_highz=%u", "USB_DET high-Z diagnostic field"),
     @($board, "PWR_HOLD/GPIO9", "PWR_HOLD help text"),
     @($board, "reserved_mspi_gpio=%s", "reserved MSPI status field"),
     @($board, "~BOARD:GPIO", "raw V2 key and EC11 GPIO diagnostics command"),
@@ -268,4 +273,4 @@ if ($errors.Count -gt 0) {
     exit 1
 }
 
-Write-Host "PASS: V2 N16R8 board profile, memory defaults, pin map, four-zone LED resources, GPIO10 battery ADC, GPIO9 PWR_HOLD, absent current telemetry, USB_Det divider policy, diagnostics, partitions, and package identity checks passed."
+Write-Host "PASS: V2 N16R8 board profile, memory defaults, pin map, four-zone LED resources, GPIO10 battery ADC, GPIO9 PWR_HOLD, absent current telemetry, retired USB_DET high-Z policy, diagnostics, partitions, and package identity checks passed."

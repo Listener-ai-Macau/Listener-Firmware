@@ -82,7 +82,9 @@ static const board_led_group_t s_led_groups[] = {
     },
 };
 
+static bool s_usb_det_highz_mode = true;
 static bool s_power_hold_configured;
+static uint64_t s_status_input_configured_mask;
 
 static bool board_command_matches(const char *line, const char *prefix, const char **out_command)
 {
@@ -106,8 +108,13 @@ static void board_configure_status_input(gpio_num_t gpio)
         return;
     }
 
+    uint64_t pin_mask = 1ULL << (uint32_t)gpio;
+    if ((s_status_input_configured_mask & pin_mask) != 0) {
+        return;
+    }
+
     gpio_config_t config = {
-        .pin_bit_mask = 1ULL << (uint32_t)gpio,
+        .pin_bit_mask = pin_mask,
         .mode = GPIO_MODE_INPUT,
         .pull_up_en = GPIO_PULLUP_ENABLE,
         .pull_down_en = GPIO_PULLDOWN_DISABLE,
@@ -116,6 +123,41 @@ static void board_configure_status_input(gpio_num_t gpio)
     esp_err_t ret = gpio_config(&config);
     if (ret != ESP_OK) {
         ESP_LOGW(TAG, "status input config failed: gpio=%d ret=%s", (int)gpio, esp_err_to_name(ret));
+        return;
+    }
+    s_status_input_configured_mask |= pin_mask;
+}
+
+static esp_err_t board_configure_usb_det_highz(void)
+{
+    if (BOARD_PINS_USB_DET_DISABLED_IO == GPIO_NUM_NC ||
+        BOARD_PINS_USB_DET_DISABLED_IO < 0 ||
+        BOARD_PINS_USB_DET_DISABLED_IO >= GPIO_NUM_MAX) {
+        return ESP_ERR_NOT_SUPPORTED;
+    }
+
+    gpio_config_t config = {
+        .pin_bit_mask = 1ULL << (uint32_t)BOARD_PINS_USB_DET_DISABLED_IO,
+        .mode = GPIO_MODE_INPUT,
+        .pull_up_en = GPIO_PULLUP_DISABLE,
+        .pull_down_en = GPIO_PULLDOWN_DISABLE,
+        .intr_type = GPIO_INTR_DISABLE,
+    };
+    return gpio_config(&config);
+}
+
+static void board_set_usb_det_highz_mode(bool enabled)
+{
+    (void)enabled;
+    s_usb_det_highz_mode = true;
+
+    esp_err_t ret = board_configure_usb_det_highz();
+    if (ret != ESP_OK) {
+        ESP_LOGW(
+            TAG,
+            "USB_DET disabled high-z config failed: gpio=%d ret=%s",
+            (int)BOARD_PINS_USB_DET_DISABLED_IO,
+            esp_err_to_name(ret));
     }
 }
 
@@ -472,18 +514,21 @@ void board_get_v2_power_input_snapshot(board_v2_power_input_snapshot_t *out_snap
         return;
     }
 
-    board_configure_status_input(BOARD_PINS_USB_DET_IO);
+    board_set_usb_det_highz_mode(true);
     board_configure_status_input(BOARD_PINS_BAT_CHG_IO);
     board_configure_status_input(BOARD_PINS_BAT_STD_IO);
     board_v2_power_hold_snapshot_t power_hold = {0};
     board_get_v2_power_hold_snapshot(&power_hold);
+    bool usb_serial_jtag_sof_active = board_usb_serial_jtag_sof_active();
 
     *out_snapshot = (board_v2_power_input_snapshot_t){
         .usb_det_level = board_read_gpio_level(BOARD_PINS_USB_DET_IO),
         .bat_chg_level = board_read_gpio_level(BOARD_PINS_BAT_CHG_IO),
         .bat_std_level = board_read_gpio_level(BOARD_PINS_BAT_STD_IO),
         .pwr_hold_level = power_hold.level,
-        .usb_serial_jtag_sof_active = board_usb_serial_jtag_sof_active(),
+        .usb_serial_jtag_sof_active = usb_serial_jtag_sof_active,
+        .usb_power_present = usb_serial_jtag_sof_active,
+        .usb_det_highz = s_usb_det_highz_mode,
         .usb_det_policy = BOARD_V2_USB_DET_POLICY,
         .charger_polarity_policy = BOARD_V2_CHARGER_POLARITY,
         .pwr_hold_policy = BOARD_V2_PWR_HOLD_POLICY,
@@ -682,6 +727,27 @@ static void board_print_gpio_status(void)
     fflush(stdout);
 }
 
+static void board_print_usb_det_highz_mode(void)
+{
+    board_set_usb_det_highz_mode(true);
+    board_v2_power_input_snapshot_t power_inputs = {0};
+    board_get_v2_power_input_snapshot(&power_inputs);
+
+    printf(
+        "~BOARD:USB_DET mode=disabled_highz physical_gpio=%d runtime_gpio=%d"
+        " runtime_level=%s usb_power_present=%u usb_serial_jtag_sof_active=%u"
+        " highz=%u pull_up=0 pull_down=0 policy=%s"
+        " note=\"GPIO7 USB_DET is disabled; computer USB uses USB Serial/JTAG SOF and chargers use BAT_CHG/BAT_STD\"\n",
+        (int)BOARD_PINS_USB_DET_DISABLED_IO,
+        (int)BOARD_PINS_USB_DET_IO,
+        board_gpio_level_name(power_inputs.usb_det_level),
+        power_inputs.usb_power_present ? 1u : 0u,
+        power_inputs.usb_serial_jtag_sof_active ? 1u : 0u,
+        power_inputs.usb_det_highz ? 1u : 0u,
+        power_inputs.usb_det_policy);
+    fflush(stdout);
+}
+
 static void board_print_gpio_scan_mask(const char *prefix, uint64_t mask)
 {
     printf("%s", prefix);
@@ -787,7 +853,8 @@ static void board_print_status(void)
         " key_gpios=%d,%d,%d,%d ec11_a_gpio=%d ec11_b_gpio=%d ec11_key_gpio=%d"
         " ec11_key_provisional=1 mic_clk_gpio=%d mic_dout_gpio=%d mic_policy=%s"
         " pwr_hold_gpio=%d pwr_hold_level=%s pwr_hold_configured=%u pwr_hold_policy=%s"
-        " usb_det_gpio=%d usb_det_level=%s usb_serial_jtag_sof_active=%u usb_det_policy=%s"
+        " usb_det_gpio=%d usb_det_disabled_gpio=%d usb_det_level=%s usb_power_present=%u"
+        " usb_serial_jtag_sof_active=%u usb_det_highz=%u usb_det_policy=%s"
         " bat_chg_gpio=%d bat_chg_level=%s bat_std_gpio=%d bat_std_level=%s charger_polarity=%s"
         " battery_gpio=%d battery_mv=%" PRIu32 " battery_adc_mv=%d battery_raw=%d"
         " battery_level=%u battery_valid=%u battery_adc_calibrated=%u battery_samples=%u battery_result=%s"
@@ -813,8 +880,11 @@ static void board_print_status(void)
         power_hold.configured ? 1u : 0u,
         power_hold.policy,
         (int)BOARD_PINS_USB_DET_IO,
+        (int)BOARD_PINS_USB_DET_DISABLED_IO,
         board_gpio_level_name(power_inputs.usb_det_level),
+        power_inputs.usb_power_present ? 1u : 0u,
         power_inputs.usb_serial_jtag_sof_active ? 1u : 0u,
+        power_inputs.usb_det_highz ? 1u : 0u,
         power_inputs.usb_det_policy,
         (int)BOARD_PINS_BAT_CHG_IO,
         board_gpio_level_name(power_inputs.bat_chg_level),
@@ -909,12 +979,13 @@ void board_print_help(void)
         "Generated button diagnostics: ~KEY:KEY3:SINGLE simulates the recording custom-key path for automated A1/A2 tests; ~KEY:EC11:SINGLE simulates the EC11 runtime custom-key press/release path.\n"
         "Send ~VREC:RECOVERY to clear pairing/session state over USB.\n"
         "Board diagnostics: ~BOARD:STATUS reports V2 pin, USB, charger, battery, PWR_HOLD/GPIO9, mic, reserved MSPI, and LED resource status; ~BOARD:POWER reports optional current rails as not_populated on the current board.\n"
+        "Board USB_DET diagnostics: GPIO7 USB_DET is disabled/high-Z; ~BOARD:USB_DET:HIGHZ reports the disabled state.\n"
         "Board GPIO diagnostics: ~BOARD:GPIO reads raw KEY1-KEY4 and EC11 A/B/key levels without reconfiguring pins.\n"
         "Board GPIO scan: ~BOARD:GPIO-SCAN samples all valid GPIO levels without reconfiguring pins and prints changed GPIOs.\n"
         "Board PWR_HOLD diagnostics: ~BOARD:PWR-HOLD:LOW restores runtime low; ~BOARD:PWR-HOLD:HIGH attempts the shutdown high drive and may power off the board.\n"
         "Input flash debug: ~DIAGLOG:INPUTDBG:ON records high-volume key/EC11 debug events until ~DIAGLOG:INPUTDBG:OFF or reboot.\n"
-        "Power diagnostics: ~POWER:STATUS reports state/blockers/battery/power-hold status, ~POWER:SHUTDOWN or ~POWER:TEST:SHUTDOWN requests manual hardware shutdown.\n"
-        "Device settings: ~DEVICE:SETTINGS reports user device config; ~DEVICE:SET plugged_brightness=80 battery_brightness=50 low_power_idle_minutes=1 plugged_low_power_enabled=1 auto_shutdown_minutes=off ble_name=listener updates persisted settings.\n"
+        "Power diagnostics: ~POWER:STATUS reports state/blockers/battery/power-hold status; ~POWER:PM reports ESP PM locks; ~POWER:SHUTDOWN or ~POWER:TEST:SHUTDOWN requests manual hardware shutdown.\n"
+        "Device settings: ~DEVICE:SETTINGS reports user device config; ~DEVICE:SET plugged_brightness=80 battery_brightness=50 low_power_idle_minutes=1 plugged_low_power_enabled=0 auto_shutdown_minutes=off ble_name=listener updates persisted settings.\n"
         "LED diagnostics: ~LED:STATUS reports four WS2812 groups; ~LED:TEST:RGBW and ~LED:TEST:MAP stay brightness-gated until VDD_LED sign-off.\n"
         "Watchdog diagnostics: ~WDT:STATUS reports config, ~WDT:DEADLOCK intentionally triggers Task WDT reset.\n"
         "Boot safety diagnostics: ~BOOT:STATUS reports crash counter, ~BOOT:CRASH restarts for validation, ~BOOT:CLEAR clears safe mode.\n"
@@ -949,6 +1020,10 @@ bool board_consume_usb_command(const char *line)
         }
         if (strcmp(command, "GPIO-SCAN") == 0) {
             board_print_gpio_scan();
+            return true;
+        }
+        if (strcmp(command, "USB_DET:HIGHZ") == 0) {
+            board_print_usb_det_highz_mode();
             return true;
         }
         if (strcmp(command, "PWR-HOLD:LOW") == 0) {

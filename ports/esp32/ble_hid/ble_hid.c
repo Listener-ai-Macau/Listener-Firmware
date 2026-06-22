@@ -644,6 +644,8 @@ static bool ble_hid_usb_command_is_passive_query(const char *line)
     }
 
     return strcmp(line, "POWER:STATUS") == 0 ||
+           strcmp(line, "POWER:PM") == 0 ||
+           strcmp(line, "POWER:PM:LOCKS") == 0 ||
            strcmp(line, "BOARD:STATUS") == 0 ||
            strcmp(line, "BOARD:POWER") == 0 ||
            strcmp(line, "BOARD:POWER:FORCE") == 0 ||

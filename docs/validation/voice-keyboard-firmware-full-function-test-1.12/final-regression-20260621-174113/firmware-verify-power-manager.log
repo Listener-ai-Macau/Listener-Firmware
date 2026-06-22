@@ -1,0 +1,1 @@
+PASS: power manager static verification covers hardware shutdown, PWR_HOLD/GPIO9, external-power blockers, configurable idle actions, PWR_HOLD guard, diagnostics, and Deep Sleep removal.

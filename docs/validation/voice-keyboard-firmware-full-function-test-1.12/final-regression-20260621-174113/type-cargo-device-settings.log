@@ -1,0 +1,24 @@
+   Compiling listener-type v1.3.3 (C:\Users\Billy\Desktop\Denzic\Listener\Listener-Type\src-tauri)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 31.18s
+     Running unittests src\lib.rs (src-tauri\target\debug\deps\listener_type_lib-74bff12caece41e4.exe)
+
+running 10 tests
+test embedded_ble::tests::device_settings_command_hardware_smoke ... ignored, requires a paired or USB-connected Listener device
+test embedded_ble::tests::device_settings_status_refresh_hardware_smoke ... ignored, requires a USB-connected Listener device
+test commands::tests::device_settings_request_accepts_safe_values ... ok
+test commands::tests::device_settings_request_rejects_ble_name_spaces ... ok
+test commands::tests::device_settings_request_rejects_invalid_low_power_idle ... ok
+test commands::tests::device_settings_snapshot_uses_firmware_readback_values ... ok
+test commands::tests::device_settings_request_rejects_unsafe_ble_name ... ok
+test commands::tests::device_settings_update_commands_fit_ble_audio_control ... ok
+test embedded_ble::tests::parses_legacy_device_settings_status_without_led_zone_brightness ... ok
+test embedded_ble::tests::parses_device_settings_status_line ... ok
+
+test result: ok. 8 passed; 0 failed; 2 ignored; 0 measured; 527 filtered out; finished in 0.00s
+
+     Running unittests src\main.rs (src-tauri\target\debug\deps\listener_type-c00f2cabfa5716a1.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
