@@ -111,6 +111,7 @@ function New-FeatureSnapshot {
             "pwsh -NoProfile -File .\tools\verify_device_settings_static.ps1",
             "pwsh -NoProfile -File .\tools\verify_charging_awake_policy_static.ps1",
             "pwsh -NoProfile -File .\tools\verify_charging_awake_policy_hardware.ps1 -Port <COMx> -ExpectExternalPower",
+            "pwsh -NoProfile -File .\tools\verify_low_power_unplug_wake_hardware.ps1 -Port <COMx>",
             "python .\tools\verify_ble_audio_transport_model.py",
             "pwsh -NoProfile -File .\tools\verify_diagnostic_log_coverage.ps1",
             "pwsh -NoProfile -File .\tools\collect_ai_diagnostics.ps1 -Port <COMx> -RecentEventCount 200 -EnableSource keyboard,voice_key -Source keyboard,voice_key -OutputDir .\tests\artifacts\ai_diagnostics",
@@ -197,6 +198,7 @@ function Test-FeatureSnapshot {
     $errors += @(Test-RepoText "tools/verify_current_docs_static.py" 'keeps restrained PWR/BLE status visible' 'current docs stale-rollback guard')
     $errors += @(Test-RepoText "tools/decode_diag_log.py" 'led_visual_state_flags' 'decoded status LED visual flash diagnostics')
     $errors += @(Test-RepoText "tools/verify_unplugged_flash_diag_bundle.py" 'off followed by visible-on recovery' 'unplugged flash diag verifier')
+    $errors += @(Test-RepoText "tools/verify_low_power_unplug_wake_hardware.ps1" '\[System\.Windows\.Forms\.MessageBox\]::Show[\s\S]*serial_opened port=.*dtr=0 rts=0[\s\S]*power_input_wake_configured=1' 'low-power unplug wake guided hardware validation')
     $errors += @(Test-RepoText "docs/features/low_power_wake_policy.md" 'decoded `status_led\.power_input`, `status_led\.visual_state`, `status_led\.output_state`' 'unplugged flash diag validation requirement')
     if ($scriptText.Length -gt 18500) {
         $errors += "script is too long: $($scriptText.Length) characters"
