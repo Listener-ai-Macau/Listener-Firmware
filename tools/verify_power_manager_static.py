@@ -279,7 +279,7 @@ CHECKS = {
     ],
     "docs/features/low_power_wake_policy.md": [
         "2800mV=0%",
-        "4200mV=100%",
+        "4150mV=100%",
         "2700mV",
         "default critical threshold `0%`",
         "forces hardware shutdown",

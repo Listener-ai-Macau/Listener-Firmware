@@ -16,7 +16,7 @@ and verified by `tools/verify_factory_firmware_package.ps1`.
 
 - Board profile is `voice-keyboard-v2-n16r8` unless a newer reviewed board profile
   explicitly supersedes it.
-- Battery percentage uses `3000mV=0%` and `4200mV=100%`; `2700mV` is an absolute
+- Battery percentage uses `2800mV=0%` and `4150mV=100%`; `2700mV` is an absolute
   danger marker and must not be treated as usable empty capacity.
 - `PWR_HOLD/GPIO11` stays actively driven LOW during boot/runtime and is
   driven HIGH only by the hardware-shutdown path.

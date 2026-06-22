@@ -34,8 +34,8 @@ if ($text -notmatch '(?m)^#define BATTERY_MONITOR_EMPTY_MV 2800U\r?$') {
     throw "Battery product empty voltage must be 2800mV."
 }
 
-if ($text -notmatch '(?m)^#define BATTERY_MONITOR_FULL_MV 4200U\r?$') {
-    throw "Battery full voltage must be 4200mV."
+if ($text -notmatch '(?m)^#define BATTERY_MONITOR_FULL_MV 4150U\r?$') {
+    throw "Battery full voltage must be 4150mV."
 }
 
 if ($text -match 'BATTERY_MONITOR_ADC_SOURCE_IMPEDANCE|source_impedance') {
