@@ -71,6 +71,12 @@ Assert-Contains $hid 'ESP_HIDD_CONNECT_EVENT:[\s\S]*?s_ble_connected\s*=\s*true;
     "HID connect event must refresh connected LED and confidence window"
 Assert-Contains $hid 'ESP_HIDD_DISCONNECT_EVENT:[\s\S]*?s_ble_connected\s*=\s*false;[\s\S]*?status_led_set_ble_state\(STATUS_LED_BLE_RECONNECTING,\s*false\);' `
     "HID disconnect event must still drive reconnecting LED"
+Assert-Contains $hid 'static\s+status_led_ble_state_t\s+ble_hid_connected_status_led_state\([^)]*\)[\s\S]*?ble_audio_stream_is_ready\(\)[\s\S]*?STATUS_LED_BLE_TYPE_READY[\s\S]*?STATUS_LED_BLE_CONNECTED' `
+    "HID connected-status resync must preserve TYPE_READY when the audio stream is ready"
+Assert-Contains $hid 'static\s+void\s+ble_hid_resync_connected_status_led\([^)]*\)[\s\S]*?if\s*\(\s*!s_ble_connected\s*\)[\s\S]*?status_led_set_ble_state\(ble_hid_connected_status_led_state\(\),\s*false\);' `
+    "HID connected-status resync must restore the BLE LED without restarting the confidence animation"
+Assert-Contains $hid 'firmware_ota_note_battery\([\s\S]*?\);[\s\S]*?ble_hid_resync_connected_status_led\(\);[\s\S]*?if\s*\(\s*!should_notify\s*\)' `
+    "battery updates must resync connected BLE LED before unchanged-level early return"
 Assert-Contains $statusLed 'STATUS_LED_STATUS_WINDOW_MS\s+6000U' `
     "connected status window must remain bounded"
 Assert-Contains $statusLed 'STATUS_LED_BLE_CONFIDENCE_MS\s+8000U' `
@@ -146,4 +152,4 @@ if ($modelState -ne "connected") {
     throw "verify_ble_status_led_connected_sync failed: reconnect-to-connected model regressed to $modelState"
 }
 
-Write-Host "PASS: BLE status LED connected-sync checks cover GAP/HID connected source of truth, stale advertising suppression, bounded connected brightness, active-work PWR/BLE visibility, battery idle heartbeat, and disconnect/advertising negative transitions."
+Write-Host "PASS: BLE status LED connected-sync checks cover GAP/HID connected source of truth, stale advertising suppression, connected battery resync after preview clears, bounded connected/type-ready brightness, active-work PWR/BLE visibility, battery idle heartbeat, and disconnect/advertising negative transitions."
