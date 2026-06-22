@@ -28,6 +28,7 @@
 #include "esp_io_expander_tca95xx_16bit.h"
 #endif
 #include "esp_log.h"
+#include "esp_sleep.h"
 
 #include "diag_log.h"
 #include "watchdog_platform.h"
@@ -501,6 +502,28 @@ static void voice_key_input_direct_gpio_wake_from_isr(void *arg)
     }
 }
 
+static void voice_key_input_enable_light_sleep_wake(void)
+{
+    esp_err_t ret = gpio_wakeup_enable(VOICE_KEY_INPUT_DIRECT_GPIO, GPIO_INTR_LOW_LEVEL);
+    if (ret != ESP_OK) {
+        ESP_LOGW(
+            TAG,
+            "direct gpio light-sleep wake enable failed: gpio=%d ret=%s",
+            (int)VOICE_KEY_INPUT_DIRECT_GPIO,
+            esp_err_to_name(ret));
+        return;
+    }
+
+    ret = esp_sleep_enable_gpio_wakeup();
+    if (ret != ESP_OK) {
+        ESP_LOGW(
+            TAG,
+            "direct gpio light-sleep wake source enable failed: gpio=%d ret=%s",
+            (int)VOICE_KEY_INPUT_DIRECT_GPIO,
+            esp_err_to_name(ret));
+    }
+}
+
 #if VOICE_KEY_INPUT_ENABLE_LEGACY_EXPANDER
 static esp_err_t voice_key_input_probe_candidate(
     const voice_key_input_bus_candidate_t *candidate,
@@ -636,6 +659,7 @@ static esp_err_t voice_key_input_direct_gpio_init(void)
         .intr_type = GPIO_INTR_ANYEDGE,
     };
     ESP_RETURN_ON_ERROR(gpio_config(&direct_cfg), TAG, "direct gpio config failed");
+    voice_key_input_enable_light_sleep_wake();
     esp_err_t ret = gpio_install_isr_service(0);
     if (ret != ESP_OK && ret != ESP_ERR_INVALID_STATE) {
         ESP_LOGE(TAG, "direct gpio ISR service install failed: %s", esp_err_to_name(ret));

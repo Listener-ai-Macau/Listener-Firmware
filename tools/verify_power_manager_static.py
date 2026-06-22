@@ -157,6 +157,7 @@ CHECKS = {
         "power_manager_consume_usb_command",
         "POWER_MANAGER_BLOCKER_DIAG_EXPORT",
         "power_manager_set_ble_connected",
+        "BLE_HID_USB_READ_LOW_POWER_TIMEOUT_MS 5000",
         "ble_hid_usb_command_is_passive_query",
         "ble_hid_usb_command_records_activity",
         "POWER:STATUS",
@@ -171,10 +172,30 @@ CHECKS = {
         "VOICE_KEY_INPUT_IDLE_BACKUP_POLL_MS (1000)",
         "VOICE_KEY_INPUT_LOW_POWER_IDLE_BACKUP_POLL_MS (5000)",
         "voice_key_input_next_wait_ms",
+        "voice_key_input_enable_light_sleep_wake",
         "GPIO_INTR_ANYEDGE",
+        "GPIO_INTR_LOW_LEVEL",
+        "gpio_wakeup_enable",
+        "esp_sleep_enable_gpio_wakeup",
         "gpio_isr_handler_add",
         "watchdog_platform_task_notify_take_low_power",
         "wake=interrupt_anyedge",
+    ],
+    "ports/esp32/voice_key_input/CMakeLists.txt": [
+        "esp_hw_support",
+    ],
+    "components/keyboard/keyboard.c": [
+        "KEYBOARD_CUSTOM_LOW_POWER_IDLE_BACKUP_POLL_MS 5000",
+        "KEYBOARD_EC11_LOW_POWER_IDLE_POLL_MS 5000",
+        "keyboard_enable_active_low_light_sleep_wake",
+        "GPIO_INTR_LOW_LEVEL",
+        "gpio_wakeup_enable",
+        "esp_sleep_enable_gpio_wakeup",
+        "watchdog_platform_task_notify_take_low_power",
+        "wake=interrupt_anyedge",
+    ],
+    "components/keyboard/CMakeLists.txt": [
+        "esp_hw_support",
     ],
     "components/voice_recording_control/voice_recording_control.c": [
         "POWER_MANAGER_BLOCKER_RECORDING",
@@ -846,6 +867,13 @@ def main() -> int:
 
     ble_hid = (REPO_ROOT / "ports/esp32/ble_hid/ble_hid.c").read_text(encoding="utf-8")
     if not re.search(
+        r"#define\s+BLE_HID_USB_READ_LOW_POWER_TIMEOUT_MS\s+5000\b",
+        ble_hid,
+    ):
+        failures.append(
+            "ports/esp32/ble_hid/ble_hid.c: low-power USB read timeout must stay at 5000 ms to avoid frequent idle wakeups"
+        )
+    if not re.search(
         r"if\s*\(!ble_hid_is_connected\(\)\)\s*\{[\s\S]{0,120}"
         r"power_manager_record_activity\(\"hid_(?:key|usage|consumer)_wake\"\)[\s\S]{0,120}"
         r"ble_hid_gap_request_reconnect\(\)",
@@ -912,6 +940,63 @@ def main() -> int:
                 failures.append(
                     f"ports/esp32/ble_hid/ble_hid.c: invalid command {token!r} must not be activity-gated"
                 )
+
+    keyboard = (REPO_ROOT / "components/keyboard/keyboard.c").read_text(encoding="utf-8")
+    if not re.search(
+        r"#define\s+KEYBOARD_EC11_LOW_POWER_IDLE_POLL_MS\s+5000\b",
+        keyboard,
+    ):
+        failures.append(
+            "components/keyboard/keyboard.c: EC11 low-power backup poll must stay at 5000 ms; 250 ms polling keeps waking idle"
+        )
+    if not re.search(
+        r"keyboard_enable_active_low_light_sleep_wake[\s\S]{0,900}"
+        r"gpio_wakeup_enable\([^;]*GPIO_INTR_LOW_LEVEL\)[\s\S]{0,900}"
+        r"esp_sleep_enable_gpio_wakeup\(\)",
+        keyboard,
+    ):
+        failures.append(
+            "components/keyboard/keyboard.c: physical keys/EC11 must configure active-low GPIO wake for light sleep"
+        )
+    if not re.search(
+        r"keyboard_custom_start[\s\S]*keyboard_enable_active_low_light_sleep_wake\([\s\S]*"
+        r"keyboard_custom_add_isr_handlers",
+        keyboard,
+    ):
+        failures.append(
+            "components/keyboard/keyboard.c: custom keys must enable light-sleep wake before ISR-backed idle operation"
+        )
+    if not re.search(
+        r"keyboard_ec11_start[\s\S]*"
+        r"keyboard_enable_active_low_light_sleep_wake\(BOARD_PINS_EC11_A_IO[\s\S]*"
+        r"keyboard_enable_active_low_light_sleep_wake\(BOARD_PINS_EC11_B_IO",
+        keyboard,
+    ):
+        failures.append(
+            "components/keyboard/keyboard.c: EC11 A/B pins must both be light-sleep wake sources"
+        )
+
+    voice_key = (
+        REPO_ROOT / "ports/esp32/voice_key_input/voice_key_input_esp32.c"
+    ).read_text(encoding="utf-8")
+    if not re.search(
+        r"voice_key_input_enable_light_sleep_wake[\s\S]{0,900}"
+        r"gpio_wakeup_enable\([^;]*GPIO_INTR_LOW_LEVEL\)[\s\S]{0,900}"
+        r"esp_sleep_enable_gpio_wakeup\(\)",
+        voice_key,
+    ):
+        failures.append(
+            "ports/esp32/voice_key_input/voice_key_input_esp32.c: EC11 push/direct key must configure active-low GPIO wake for light sleep"
+        )
+    if not re.search(
+        r"voice_key_input_direct_gpio_init[\s\S]{0,420}"
+        r"gpio_config\(&direct_cfg\)[\s\S]{0,240}"
+        r"voice_key_input_enable_light_sleep_wake\(\)",
+        voice_key,
+    ):
+        failures.append(
+            "ports/esp32/voice_key_input/voice_key_input_esp32.c: direct key wake must be armed during GPIO init"
+        )
     if not re.search(
         r"strcmp\(command,\s*\"STATUS\"\)[\s\S]*"
         r"power_manager_print_status\(\)[\s\S]*"
@@ -951,7 +1036,8 @@ def main() -> int:
 
     print(
         "PASS: power manager static verification covers hardware shutdown, PWR_HOLD/GPIO9, "
-        "external-power blockers, configurable idle actions, PWR_HOLD guard, diagnostics, and Deep Sleep removal."
+        "external-power blockers, configurable idle actions, low-power input wake/poll guards, "
+        "PWR_HOLD guard, diagnostics, and Deep Sleep removal."
     )
     return 0
 
