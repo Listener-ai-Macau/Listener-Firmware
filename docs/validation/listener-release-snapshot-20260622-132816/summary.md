@@ -49,4 +49,8 @@ Listener-Type:
 
 ## Hardware Status
 
-No flash was performed for this snapshot. The workflow board ledger still reports COM10 at firmware `183f9557c960`, so the physical board may be behind this `master` snapshot until the next locked flash.
+- PASS: COM10 was flashed through `aiw with-lock` using the current code tree (`e72019f`, same firmware tree as this snapshot before validation-only commits).
+- PASS: `tools\verify_status_led_hardware.ps1 -Port COM10 -OutputDir docs\validation\listener-release-snapshot-20260622-132816\hardware-status-led -NoBuild` captured 43 camera frames plus serial status; required serial tokens missing: `0`.
+- Evidence: `docs\validation\listener-release-snapshot-20260622-132816\hardware-status-led\hardware-led-validation.md`.
+- Additional status capture: `docs\validation\idle-recording-led-debug-20260622-1330\post-flash-status.txt`.
+- FAIL/follow-up: `docs\validation\idle-current-guided-e72019f-20260622-1332\unplug_wake_summary.json` detected unplug/replug recovery but found a reset banner after replug (`post_no_reset_banner=false`). Treat this as a low-power wake/replug defect to investigate next; it does not invalidate the status LED hardware PASS.

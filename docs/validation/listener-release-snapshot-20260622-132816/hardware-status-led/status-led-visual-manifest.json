@@ -1,0 +1,1222 @@
+{
+  "schema_version": 1,
+  "generated_at": "2026-06-22T13:33:21+0800",
+  "port": "COM10",
+  "baud": 115200,
+  "bluetooth_address": "",
+  "camera_index": 0,
+  "serial_log": "C:\\Users\\Billy\\Desktop\\Denzic\\Listener\\Listener-Firmware\\docs\\validation\\listener-release-snapshot-20260622-132816\\hardware-status-led\\status-led-serial.log",
+  "commands": [
+    {
+      "command": "~LED:STATUS",
+      "settle_seconds": 0.8,
+      "duration_seconds": 0.802,
+      "serial_output_chars": 5583
+    },
+    {
+      "command": "~LED:BUDGET",
+      "settle_seconds": 0.8,
+      "duration_seconds": 0.802,
+      "serial_output_chars": 941
+    },
+    {
+      "command": "~LED:PRIVACY",
+      "settle_seconds": 0.8,
+      "duration_seconds": 0.804,
+      "serial_output_chars": 95
+    },
+    {
+      "command": "~BOARD:STATUS",
+      "settle_seconds": 0.8,
+      "duration_seconds": 0.802,
+      "serial_output_chars": 3704
+    },
+    {
+      "command": "~LED:PROFILE factory",
+      "settle_seconds": 0.8,
+      "duration_seconds": 0.802,
+      "serial_output_chars": 108
+    },
+    {
+      "command": "~LED:TEST:RGBW all",
+      "settle_seconds": 0.25,
+      "duration_seconds": 0.402,
+      "serial_output_chars": 62
+    },
+    {
+      "command": "~LED:STATUS",
+      "settle_seconds": 0.4,
+      "duration_seconds": 0.401,
+      "serial_output_chars": 5879
+    },
+    {
+      "command": "~LED:TEST:MAP status",
+      "settle_seconds": 0.25,
+      "duration_seconds": 0.401,
+      "serial_output_chars": 1132
+    },
+    {
+      "command": "~LED:STATUS",
+      "settle_seconds": 0.35,
+      "duration_seconds": 0.401,
+      "serial_output_chars": 5724
+    },
+    {
+      "command": "~LED:TEST:MAP ec11",
+      "settle_seconds": 0.25,
+      "duration_seconds": 0.401,
+      "serial_output_chars": 1112
+    },
+    {
+      "command": "~LED:STATUS",
+      "settle_seconds": 0.35,
+      "duration_seconds": 0.402,
+      "serial_output_chars": 6076
+    },
+    {
+      "command": "~LED:TEST:MAP key",
+      "settle_seconds": 0.25,
+      "duration_seconds": 0.401,
+      "serial_output_chars": 975
+    },
+    {
+      "command": "~LED:STATUS",
+      "settle_seconds": 0.35,
+      "duration_seconds": 0.4,
+      "serial_output_chars": 4822
+    },
+    {
+      "command": "~LED:TEST:MAP edge",
+      "settle_seconds": 0.25,
+      "duration_seconds": 0.401,
+      "serial_output_chars": 1149
+    },
+    {
+      "command": "~LED:STATUS",
+      "settle_seconds": 0.35,
+      "duration_seconds": 0.401,
+      "serial_output_chars": 5118
+    },
+    {
+      "command": "~LED:PREVIEW ready",
+      "settle_seconds": 0.45,
+      "duration_seconds": 0.601,
+      "serial_output_chars": 901
+    },
+    {
+      "command": "~LED:STATUS",
+      "settle_seconds": 0.3,
+      "duration_seconds": 0.403,
+      "serial_output_chars": 4786
+    },
+    {
+      "command": "~LED:PREVIEW pairing",
+      "settle_seconds": 0.45,
+      "duration_seconds": 0.601,
+      "serial_output_chars": 799
+    },
+    {
+      "command": "~LED:STATUS",
+      "settle_seconds": 0.3,
+      "duration_seconds": 0.401,
+      "serial_output_chars": 4695
+    },
+    {
+      "command": "~LED:PREVIEW capture",
+      "settle_seconds": 0.45,
+      "duration_seconds": 0.601,
+      "serial_output_chars": 909
+    },
+    {
+      "command": "~LED:STATUS",
+      "settle_seconds": 0.3,
+      "duration_seconds": 0.4,
+      "serial_output_chars": 4744
+    },
+    {
+      "command": "~LED:PREVIEW processing",
+      "settle_seconds": 0.45,
+      "duration_seconds": 0.603,
+      "serial_output_chars": 989
+    },
+    {
+      "command": "~LED:STATUS",
+      "settle_seconds": 0.3,
+      "duration_seconds": 0.401,
+      "serial_output_chars": 4551
+    },
+    {
+      "command": "~LED:PREVIEW rec_not_available",
+      "settle_seconds": 0.45,
+      "duration_seconds": 0.601,
+      "serial_output_chars": 1017
+    },
+    {
+      "command": "~LED:STATUS",
+      "settle_seconds": 0.3,
+      "duration_seconds": 0.401,
+      "serial_output_chars": 4786
+    },
+    {
+      "command": "~LED:PREVIEW ok",
+      "settle_seconds": 0.45,
+      "duration_seconds": 0.601,
+      "serial_output_chars": 810
+    },
+    {
+      "command": "~LED:STATUS",
+      "settle_seconds": 0.3,
+      "duration_seconds": 0.401,
+      "serial_output_chars": 4726
+    },
+    {
+      "command": "~LED:PREVIEW low_battery",
+      "settle_seconds": 0.45,
+      "duration_seconds": 0.602,
+      "serial_output_chars": 819
+    },
+    {
+      "command": "~LED:STATUS",
+      "settle_seconds": 0.3,
+      "duration_seconds": 0.401,
+      "serial_output_chars": 4782
+    },
+    {
+      "command": "~LED:PREVIEW sleep",
+      "settle_seconds": 0.45,
+      "duration_seconds": 0.601,
+      "serial_output_chars": 1112
+    },
+    {
+      "command": "~LED:STATUS",
+      "settle_seconds": 0.3,
+      "duration_seconds": 0.406,
+      "serial_output_chars": 4759
+    },
+    {
+      "command": "~LED:ERROR ota hard",
+      "settle_seconds": 0.45,
+      "duration_seconds": 0.602,
+      "serial_output_chars": 995
+    },
+    {
+      "command": "~LED:STATUS",
+      "settle_seconds": 0.3,
+      "duration_seconds": 0.401,
+      "serial_output_chars": 4753
+    },
+    {
+      "command": "~LED:OFF",
+      "settle_seconds": 0.45,
+      "duration_seconds": 0.601,
+      "serial_output_chars": 842
+    },
+    {
+      "command": "~LED:STATUS",
+      "settle_seconds": 0.3,
+      "duration_seconds": 0.402,
+      "serial_output_chars": 4675
+    }
+  ],
+  "captures": [
+    {
+      "label": "camera-baseline",
+      "path": "C:\\Users\\Billy\\Desktop\\Denzic\\Listener\\Listener-Firmware\\docs\\validation\\listener-release-snapshot-20260622-132816\\hardware-status-led\\camera-baseline.jpg",
+      "relative_path": "camera-baseline.jpg",
+      "width": 1280,
+      "height": 720,
+      "mean_bgr": [
+        109.37262369791667,
+        113.20147352430556,
+        107.75124891493056
+      ],
+      "max_bgr": [
+        255,
+        255,
+        255
+      ],
+      "bright_sample_pixels": 44352,
+      "very_bright_sample_pixels": 21635,
+      "redish_sample_pixels": 4,
+      "greenish_sample_pixels": 0,
+      "blueish_sample_pixels": 10,
+      "sample_pixel_count": 57600
+    },
+    {
+      "label": "rgbw-red-phase",
+      "path": "C:\\Users\\Billy\\Desktop\\Denzic\\Listener\\Listener-Firmware\\docs\\validation\\listener-release-snapshot-20260622-132816\\hardware-status-led\\rgbw-red-phase.jpg",
+      "relative_path": "rgbw-red-phase.jpg",
+      "width": 1280,
+      "height": 720,
+      "mean_bgr": [
+        110.41408528645833,
+        114.71087999131944,
+        108.85170464409723
+      ],
+      "max_bgr": [
+        249,
+        247,
+        250
+      ],
+      "bright_sample_pixels": 45082,
+      "very_bright_sample_pixels": 22561,
+      "redish_sample_pixels": 19,
+      "greenish_sample_pixels": 0,
+      "blueish_sample_pixels": 10,
+      "sample_pixel_count": 57600
+    },
+    {
+      "label": "rgbw-green-phase",
+      "path": "C:\\Users\\Billy\\Desktop\\Denzic\\Listener\\Listener-Firmware\\docs\\validation\\listener-release-snapshot-20260622-132816\\hardware-status-led\\rgbw-green-phase.jpg",
+      "relative_path": "rgbw-green-phase.jpg",
+      "width": 1280,
+      "height": 720,
+      "mean_bgr": [
+        110.15765516493056,
+        112.11570421006944,
+        106.14891818576389
+      ],
+      "max_bgr": [
+        194,
+        198,
+        192
+      ],
+      "bright_sample_pixels": 43521,
+      "very_bright_sample_pixels": 21634,
+      "redish_sample_pixels": 4,
+      "greenish_sample_pixels": 0,
+      "blueish_sample_pixels": 31,
+      "sample_pixel_count": 57600
+    },
+    {
+      "label": "rgbw-blue-phase",
+      "path": "C:\\Users\\Billy\\Desktop\\Denzic\\Listener\\Listener-Firmware\\docs\\validation\\listener-release-snapshot-20260622-132816\\hardware-status-led\\rgbw-blue-phase.jpg",
+      "relative_path": "rgbw-blue-phase.jpg",
+      "width": 1280,
+      "height": 720,
+      "mean_bgr": [
+        109.96541124131944,
+        113.149873046875,
+        108.99863389756945
+      ],
+      "max_bgr": [
+        193,
+        196,
+        192
+      ],
+      "bright_sample_pixels": 45176,
+      "very_bright_sample_pixels": 21929,
+      "redish_sample_pixels": 496,
+      "greenish_sample_pixels": 0,
+      "blueish_sample_pixels": 6,
+      "sample_pixel_count": 57600
+    },
+    {
+      "label": "rgbw-white-phase",
+      "path": "C:\\Users\\Billy\\Desktop\\Denzic\\Listener\\Listener-Firmware\\docs\\validation\\listener-release-snapshot-20260622-132816\\hardware-status-led\\rgbw-white-phase.jpg",
+      "relative_path": "rgbw-white-phase.jpg",
+      "width": 1280,
+      "height": 720,
+      "mean_bgr": [
+        108.30071940104166,
+        112.91965169270833,
+        106.13489474826389
+      ],
+      "max_bgr": [
+        193,
+        197,
+        187
+      ],
+      "bright_sample_pixels": 42975,
+      "very_bright_sample_pixels": 22003,
+      "redish_sample_pixels": 0,
+      "greenish_sample_pixels": 0,
+      "blueish_sample_pixels": 4,
+      "sample_pixel_count": 57600
+    },
+    {
+      "label": "map-status-01",
+      "path": "C:\\Users\\Billy\\Desktop\\Denzic\\Listener\\Listener-Firmware\\docs\\validation\\listener-release-snapshot-20260622-132816\\hardware-status-led\\map-status-01.jpg",
+      "relative_path": "map-status-01.jpg",
+      "width": 1280,
+      "height": 720,
+      "mean_bgr": [
+        108.96470594618056,
+        112.77503689236111,
+        107.65192491319445
+      ],
+      "max_bgr": [
+        255,
+        255,
+        255
+      ],
+      "bright_sample_pixels": 44168,
+      "very_bright_sample_pixels": 21482,
+      "redish_sample_pixels": 14,
+      "greenish_sample_pixels": 0,
+      "blueish_sample_pixels": 4,
+      "sample_pixel_count": 57600
+    },
+    {
+      "label": "map-status-02",
+      "path": "C:\\Users\\Billy\\Desktop\\Denzic\\Listener\\Listener-Firmware\\docs\\validation\\listener-release-snapshot-20260622-132816\\hardware-status-led\\map-status-02.jpg",
+      "relative_path": "map-status-02.jpg",
+      "width": 1280,
+      "height": 720,
+      "mean_bgr": [
+        108.87029405381945,
+        112.69598090277778,
+        107.59601888020833
+      ],
+      "max_bgr": [
+        255,
+        255,
+        255
+      ],
+      "bright_sample_pixels": 44315,
+      "very_bright_sample_pixels": 21380,
+      "redish_sample_pixels": 7,
+      "greenish_sample_pixels": 0,
+      "blueish_sample_pixels": 6,
+      "sample_pixel_count": 57600
+    },
+    {
+      "label": "map-status-03",
+      "path": "C:\\Users\\Billy\\Desktop\\Denzic\\Listener\\Listener-Firmware\\docs\\validation\\listener-release-snapshot-20260622-132816\\hardware-status-led\\map-status-03.jpg",
+      "relative_path": "map-status-03.jpg",
+      "width": 1280,
+      "height": 720,
+      "mean_bgr": [
+        108.98014539930556,
+        112.80484700520833,
+        107.7046799045139
+      ],
+      "max_bgr": [
+        255,
+        255,
+        255
+      ],
+      "bright_sample_pixels": 44400,
+      "very_bright_sample_pixels": 21422,
+      "redish_sample_pixels": 13,
+      "greenish_sample_pixels": 0,
+      "blueish_sample_pixels": 7,
+      "sample_pixel_count": 57600
+    },
+    {
+      "label": "map-status-04",
+      "path": "C:\\Users\\Billy\\Desktop\\Denzic\\Listener\\Listener-Firmware\\docs\\validation\\listener-release-snapshot-20260622-132816\\hardware-status-led\\map-status-04.jpg",
+      "relative_path": "map-status-04.jpg",
+      "width": 1280,
+      "height": 720,
+      "mean_bgr": [
+        108.96916558159722,
+        112.76757052951389,
+        107.72297200520833
+      ],
+      "max_bgr": [
+        255,
+        255,
+        255
+      ],
+      "bright_sample_pixels": 44372,
+      "very_bright_sample_pixels": 21490,
+      "redish_sample_pixels": 12,
+      "greenish_sample_pixels": 0,
+      "blueish_sample_pixels": 5,
+      "sample_pixel_count": 57600
+    },
+    {
+      "label": "map-status-05",
+      "path": "C:\\Users\\Billy\\Desktop\\Denzic\\Listener\\Listener-Firmware\\docs\\validation\\listener-release-snapshot-20260622-132816\\hardware-status-led\\map-status-05.jpg",
+      "relative_path": "map-status-05.jpg",
+      "width": 1280,
+      "height": 720,
+      "mean_bgr": [
+        108.33820638020833,
+        112.15729058159722,
+        107.03444552951389
+      ],
+      "max_bgr": [
+        255,
+        255,
+        255
+      ],
+      "bright_sample_pixels": 43837,
+      "very_bright_sample_pixels": 21262,
+      "redish_sample_pixels": 2,
+      "greenish_sample_pixels": 0,
+      "blueish_sample_pixels": 5,
+      "sample_pixel_count": 57600
+    },
+    {
+      "label": "map-status-06",
+      "path": "C:\\Users\\Billy\\Desktop\\Denzic\\Listener\\Listener-Firmware\\docs\\validation\\listener-release-snapshot-20260622-132816\\hardware-status-led\\map-status-06.jpg",
+      "relative_path": "map-status-06.jpg",
+      "width": 1280,
+      "height": 720,
+      "mean_bgr": [
+        103.86399739583334,
+        107.83033637152778,
+        103.34275824652778
+      ],
+      "max_bgr": [
+        190,
+        192,
+        185
+      ],
+      "bright_sample_pixels": 43794,
+      "very_bright_sample_pixels": 18171,
+      "redish_sample_pixels": 5,
+      "greenish_sample_pixels": 0,
+      "blueish_sample_pixels": 8,
+      "sample_pixel_count": 57600
+    },
+    {
+      "label": "map-ec11-01",
+      "path": "C:\\Users\\Billy\\Desktop\\Denzic\\Listener\\Listener-Firmware\\docs\\validation\\listener-release-snapshot-20260622-132816\\hardware-status-led\\map-ec11-01.jpg",
+      "relative_path": "map-ec11-01.jpg",
+      "width": 1280,
+      "height": 720,
+      "mean_bgr": [
+        108.48482964409722,
+        112.53618815104167,
+        107.731162109375
+      ],
+      "max_bgr": [
+        202,
+        206,
+        198
+      ],
+      "bright_sample_pixels": 46755,
+      "very_bright_sample_pixels": 20593,
+      "redish_sample_pixels": 78,
+      "greenish_sample_pixels": 0,
+      "blueish_sample_pixels": 25,
+      "sample_pixel_count": 57600
+    },
+    {
+      "label": "map-ec11-02",
+      "path": "C:\\Users\\Billy\\Desktop\\Denzic\\Listener\\Listener-Firmware\\docs\\validation\\listener-release-snapshot-20260622-132816\\hardware-status-led\\map-ec11-02.jpg",
+      "relative_path": "map-ec11-02.jpg",
+      "width": 1280,
+      "height": 720,
+      "mean_bgr": [
+        116.3405859375,
+        120.55944118923611,
+        115.73969618055555
+      ],
+      "max_bgr": [
+        255,
+        255,
+        255
+      ],
+      "bright_sample_pixels": 48757,
+      "very_bright_sample_pixels": 23726,
+      "redish_sample_pixels": 209,
+      "greenish_sample_pixels": 0,
+      "blueish_sample_pixels": 27,
+      "sample_pixel_count": 57600
+    },
+    {
+      "label": "map-ec11-03",
+      "path": "C:\\Users\\Billy\\Desktop\\Denzic\\Listener\\Listener-Firmware\\docs\\validation\\listener-release-snapshot-20260622-132816\\hardware-status-led\\map-ec11-03.jpg",
+      "relative_path": "map-ec11-03.jpg",
+      "width": 1280,
+      "height": 720,
+      "mean_bgr": [
+        107.74896050347222,
+        111.59038411458333,
+        106.32707573784722
+      ],
+      "max_bgr": [
+        255,
+        255,
+        255
+      ],
+      "bright_sample_pixels": 44570,
+      "very_bright_sample_pixels": 20412,
+      "redish_sample_pixels": 14,
+      "greenish_sample_pixels": 0,
+      "blueish_sample_pixels": 13,
+      "sample_pixel_count": 57600
+    },
+    {
+      "label": "map-ec11-04",
+      "path": "C:\\Users\\Billy\\Desktop\\Denzic\\Listener\\Listener-Firmware\\docs\\validation\\listener-release-snapshot-20260622-132816\\hardware-status-led\\map-ec11-04.jpg",
+      "relative_path": "map-ec11-04.jpg",
+      "width": 1280,
+      "height": 720,
+      "mean_bgr": [
+        110.91181315104167,
+        114.80263346354167,
+        109.67613932291667
+      ],
+      "max_bgr": [
+        255,
+        255,
+        255
+      ],
+      "bright_sample_pixels": 46379,
+      "very_bright_sample_pixels": 21794,
+      "redish_sample_pixels": 46,
+      "greenish_sample_pixels": 0,
+      "blueish_sample_pixels": 15,
+      "sample_pixel_count": 57600
+    },
+    {
+      "label": "map-ec11-05",
+      "path": "C:\\Users\\Billy\\Desktop\\Denzic\\Listener\\Listener-Firmware\\docs\\validation\\listener-release-snapshot-20260622-132816\\hardware-status-led\\map-ec11-05.jpg",
+      "relative_path": "map-ec11-05.jpg",
+      "width": 1280,
+      "height": 720,
+      "mean_bgr": [
+        111.05907552083333,
+        114.96362413194444,
+        109.80957465277778
+      ],
+      "max_bgr": [
+        255,
+        255,
+        255
+      ],
+      "bright_sample_pixels": 46567,
+      "very_bright_sample_pixels": 21846,
+      "redish_sample_pixels": 37,
+      "greenish_sample_pixels": 0,
+      "blueish_sample_pixels": 15,
+      "sample_pixel_count": 57600
+    },
+    {
+      "label": "map-ec11-06",
+      "path": "C:\\Users\\Billy\\Desktop\\Denzic\\Listener\\Listener-Firmware\\docs\\validation\\listener-release-snapshot-20260622-132816\\hardware-status-led\\map-ec11-06.jpg",
+      "relative_path": "map-ec11-06.jpg",
+      "width": 1280,
+      "height": 720,
+      "mean_bgr": [
+        111.07464952256944,
+        114.97786783854167,
+        109.85823676215277
+      ],
+      "max_bgr": [
+        255,
+        255,
+        255
+      ],
+      "bright_sample_pixels": 46685,
+      "very_bright_sample_pixels": 21752,
+      "redish_sample_pixels": 44,
+      "greenish_sample_pixels": 0,
+      "blueish_sample_pixels": 16,
+      "sample_pixel_count": 57600
+    },
+    {
+      "label": "map-ec11-07",
+      "path": "C:\\Users\\Billy\\Desktop\\Denzic\\Listener\\Listener-Firmware\\docs\\validation\\listener-release-snapshot-20260622-132816\\hardware-status-led\\map-ec11-07.jpg",
+      "relative_path": "map-ec11-07.jpg",
+      "width": 1280,
+      "height": 720,
+      "mean_bgr": [
+        111.15111870659722,
+        115.02691731770834,
+        109.87996310763889
+      ],
+      "max_bgr": [
+        255,
+        255,
+        255
+      ],
+      "bright_sample_pixels": 46703,
+      "very_bright_sample_pixels": 21806,
+      "redish_sample_pixels": 40,
+      "greenish_sample_pixels": 0,
+      "blueish_sample_pixels": 14,
+      "sample_pixel_count": 57600
+    },
+    {
+      "label": "map-ec11-08",
+      "path": "C:\\Users\\Billy\\Desktop\\Denzic\\Listener\\Listener-Firmware\\docs\\validation\\listener-release-snapshot-20260622-132816\\hardware-status-led\\map-ec11-08.jpg",
+      "relative_path": "map-ec11-08.jpg",
+      "width": 1280,
+      "height": 720,
+      "mean_bgr": [
+        111.10864040798612,
+        114.97549262152778,
+        109.87350911458333
+      ],
+      "max_bgr": [
+        255,
+        255,
+        255
+      ],
+      "bright_sample_pixels": 46616,
+      "very_bright_sample_pixels": 21845,
+      "redish_sample_pixels": 53,
+      "greenish_sample_pixels": 0,
+      "blueish_sample_pixels": 13,
+      "sample_pixel_count": 57600
+    },
+    {
+      "label": "map-ec11-09",
+      "path": "C:\\Users\\Billy\\Desktop\\Denzic\\Listener\\Listener-Firmware\\docs\\validation\\listener-release-snapshot-20260622-132816\\hardware-status-led\\map-ec11-09.jpg",
+      "relative_path": "map-ec11-09.jpg",
+      "width": 1280,
+      "height": 720,
+      "mean_bgr": [
+        111.15996419270833,
+        115.02205729166667,
+        109.91231770833333
+      ],
+      "max_bgr": [
+        255,
+        255,
+        255
+      ],
+      "bright_sample_pixels": 46620,
+      "very_bright_sample_pixels": 21922,
+      "redish_sample_pixels": 49,
+      "greenish_sample_pixels": 0,
+      "blueish_sample_pixels": 12,
+      "sample_pixel_count": 57600
+    },
+    {
+      "label": "map-ec11-10",
+      "path": "C:\\Users\\Billy\\Desktop\\Denzic\\Listener\\Listener-Firmware\\docs\\validation\\listener-release-snapshot-20260622-132816\\hardware-status-led\\map-ec11-10.jpg",
+      "relative_path": "map-ec11-10.jpg",
+      "width": 1280,
+      "height": 720,
+      "mean_bgr": [
+        111.1100173611111,
+        114.97922526041667,
+        109.8403200954861
+      ],
+      "max_bgr": [
+        255,
+        255,
+        255
+      ],
+      "bright_sample_pixels": 46578,
+      "very_bright_sample_pixels": 21937,
+      "redish_sample_pixels": 37,
+      "greenish_sample_pixels": 0,
+      "blueish_sample_pixels": 14,
+      "sample_pixel_count": 57600
+    },
+    {
+      "label": "map-ec11-11",
+      "path": "C:\\Users\\Billy\\Desktop\\Denzic\\Listener\\Listener-Firmware\\docs\\validation\\listener-release-snapshot-20260622-132816\\hardware-status-led\\map-ec11-11.jpg",
+      "relative_path": "map-ec11-11.jpg",
+      "width": 1280,
+      "height": 720,
+      "mean_bgr": [
+        110.5895876736111,
+        114.42367078993055,
+        109.262021484375
+      ],
+      "max_bgr": [
+        255,
+        255,
+        255
+      ],
+      "bright_sample_pixels": 45947,
+      "very_bright_sample_pixels": 22041,
+      "redish_sample_pixels": 32,
+      "greenish_sample_pixels": 0,
+      "blueish_sample_pixels": 15,
+      "sample_pixel_count": 57600
+    },
+    {
+      "label": "map-ec11-12",
+      "path": "C:\\Users\\Billy\\Desktop\\Denzic\\Listener\\Listener-Firmware\\docs\\validation\\listener-release-snapshot-20260622-132816\\hardware-status-led\\map-ec11-12.jpg",
+      "relative_path": "map-ec11-12.jpg",
+      "width": 1280,
+      "height": 720,
+      "mean_bgr": [
+        110.67130859375,
+        114.52405490451389,
+        109.34005967881944
+      ],
+      "max_bgr": [
+        255,
+        255,
+        255
+      ],
+      "bright_sample_pixels": 45995,
+      "very_bright_sample_pixels": 22017,
+      "redish_sample_pixels": 40,
+      "greenish_sample_pixels": 0,
+      "blueish_sample_pixels": 11,
+      "sample_pixel_count": 57600
+    },
+    {
+      "label": "map-key-01",
+      "path": "C:\\Users\\Billy\\Desktop\\Denzic\\Listener\\Listener-Firmware\\docs\\validation\\listener-release-snapshot-20260622-132816\\hardware-status-led\\map-key-01.jpg",
+      "relative_path": "map-key-01.jpg",
+      "width": 1280,
+      "height": 720,
+      "mean_bgr": [
+        111.17103949652778,
+        114.91068901909722,
+        109.78424587673611
+      ],
+      "max_bgr": [
+        255,
+        255,
+        255
+      ],
+      "bright_sample_pixels": 46279,
+      "very_bright_sample_pixels": 22280,
+      "redish_sample_pixels": 57,
+      "greenish_sample_pixels": 0,
+      "blueish_sample_pixels": 13,
+      "sample_pixel_count": 57600
+    },
+    {
+      "label": "map-key-02",
+      "path": "C:\\Users\\Billy\\Desktop\\Denzic\\Listener\\Listener-Firmware\\docs\\validation\\listener-release-snapshot-20260622-132816\\hardware-status-led\\map-key-02.jpg",
+      "relative_path": "map-key-02.jpg",
+      "width": 1280,
+      "height": 720,
+      "mean_bgr": [
+        111.20352105034722,
+        114.96478949652777,
+        109.81513888888888
+      ],
+      "max_bgr": [
+        255,
+        255,
+        255
+      ],
+      "bright_sample_pixels": 46487,
+      "very_bright_sample_pixels": 22168,
+      "redish_sample_pixels": 51,
+      "greenish_sample_pixels": 0,
+      "blueish_sample_pixels": 15,
+      "sample_pixel_count": 57600
+    },
+    {
+      "label": "map-key-03",
+      "path": "C:\\Users\\Billy\\Desktop\\Denzic\\Listener\\Listener-Firmware\\docs\\validation\\listener-release-snapshot-20260622-132816\\hardware-status-led\\map-key-03.jpg",
+      "relative_path": "map-key-03.jpg",
+      "width": 1280,
+      "height": 720,
+      "mean_bgr": [
+        111.43960394965278,
+        115.21300130208333,
+        110.03455512152777
+      ],
+      "max_bgr": [
+        255,
+        255,
+        255
+      ],
+      "bright_sample_pixels": 46617,
+      "very_bright_sample_pixels": 22272,
+      "redish_sample_pixels": 48,
+      "greenish_sample_pixels": 0,
+      "blueish_sample_pixels": 15,
+      "sample_pixel_count": 57600
+    },
+    {
+      "label": "map-key-04",
+      "path": "C:\\Users\\Billy\\Desktop\\Denzic\\Listener\\Listener-Firmware\\docs\\validation\\listener-release-snapshot-20260622-132816\\hardware-status-led\\map-key-04.jpg",
+      "relative_path": "map-key-04.jpg",
+      "width": 1280,
+      "height": 720,
+      "mean_bgr": [
+        111.45449327256945,
+        115.20909288194444,
+        110.08796115451389
+      ],
+      "max_bgr": [
+        255,
+        255,
+        255
+      ],
+      "bright_sample_pixels": 46638,
+      "very_bright_sample_pixels": 22240,
+      "redish_sample_pixels": 70,
+      "greenish_sample_pixels": 0,
+      "blueish_sample_pixels": 12,
+      "sample_pixel_count": 57600
+    },
+    {
+      "label": "map-edge-01",
+      "path": "C:\\Users\\Billy\\Desktop\\Denzic\\Listener\\Listener-Firmware\\docs\\validation\\listener-release-snapshot-20260622-132816\\hardware-status-led\\map-edge-01.jpg",
+      "relative_path": "map-edge-01.jpg",
+      "width": 1280,
+      "height": 720,
+      "mean_bgr": [
+        111.61252821180555,
+        115.343212890625,
+        110.23370442708334
+      ],
+      "max_bgr": [
+        255,
+        255,
+        255
+      ],
+      "bright_sample_pixels": 46600,
+      "very_bright_sample_pixels": 22238,
+      "redish_sample_pixels": 70,
+      "greenish_sample_pixels": 0,
+      "blueish_sample_pixels": 14,
+      "sample_pixel_count": 57600
+    },
+    {
+      "label": "map-edge-02",
+      "path": "C:\\Users\\Billy\\Desktop\\Denzic\\Listener\\Listener-Firmware\\docs\\validation\\listener-release-snapshot-20260622-132816\\hardware-status-led\\map-edge-02.jpg",
+      "relative_path": "map-edge-02.jpg",
+      "width": 1280,
+      "height": 720,
+      "mean_bgr": [
+        109.687060546875,
+        113.55256618923612,
+        108.32652235243056
+      ],
+      "max_bgr": [
+        195,
+        197,
+        190
+      ],
+      "bright_sample_pixels": 46231,
+      "very_bright_sample_pixels": 21124,
+      "redish_sample_pixels": 50,
+      "greenish_sample_pixels": 0,
+      "blueish_sample_pixels": 14,
+      "sample_pixel_count": 57600
+    },
+    {
+      "label": "map-edge-03",
+      "path": "C:\\Users\\Billy\\Desktop\\Denzic\\Listener\\Listener-Firmware\\docs\\validation\\listener-release-snapshot-20260622-132816\\hardware-status-led\\map-edge-03.jpg",
+      "relative_path": "map-edge-03.jpg",
+      "width": 1280,
+      "height": 720,
+      "mean_bgr": [
+        109.35907552083333,
+        113.23672200520834,
+        108.25066514756945
+      ],
+      "max_bgr": [
+        255,
+        255,
+        255
+      ],
+      "bright_sample_pixels": 46628,
+      "very_bright_sample_pixels": 20564,
+      "redish_sample_pixels": 60,
+      "greenish_sample_pixels": 0,
+      "blueish_sample_pixels": 15,
+      "sample_pixel_count": 57600
+    },
+    {
+      "label": "map-edge-04",
+      "path": "C:\\Users\\Billy\\Desktop\\Denzic\\Listener\\Listener-Firmware\\docs\\validation\\listener-release-snapshot-20260622-132816\\hardware-status-led\\map-edge-04.jpg",
+      "relative_path": "map-edge-04.jpg",
+      "width": 1280,
+      "height": 720,
+      "mean_bgr": [
+        109.94733615451389,
+        113.66187282986111,
+        108.67379557291666
+      ],
+      "max_bgr": [
+        255,
+        255,
+        255
+      ],
+      "bright_sample_pixels": 47124,
+      "very_bright_sample_pixels": 20670,
+      "redish_sample_pixels": 65,
+      "greenish_sample_pixels": 0,
+      "blueish_sample_pixels": 17,
+      "sample_pixel_count": 57600
+    },
+    {
+      "label": "map-edge-05",
+      "path": "C:\\Users\\Billy\\Desktop\\Denzic\\Listener\\Listener-Firmware\\docs\\validation\\listener-release-snapshot-20260622-132816\\hardware-status-led\\map-edge-05.jpg",
+      "relative_path": "map-edge-05.jpg",
+      "width": 1280,
+      "height": 720,
+      "mean_bgr": [
+        107.63683702256944,
+        111.49137912326388,
+        106.3299587673611
+      ],
+      "max_bgr": [
+        255,
+        255,
+        255
+      ],
+      "bright_sample_pixels": 48047,
+      "very_bright_sample_pixels": 18163,
+      "redish_sample_pixels": 99,
+      "greenish_sample_pixels": 0,
+      "blueish_sample_pixels": 14,
+      "sample_pixel_count": 57600
+    },
+    {
+      "label": "map-edge-06",
+      "path": "C:\\Users\\Billy\\Desktop\\Denzic\\Listener\\Listener-Firmware\\docs\\validation\\listener-release-snapshot-20260622-132816\\hardware-status-led\\map-edge-06.jpg",
+      "relative_path": "map-edge-06.jpg",
+      "width": 1280,
+      "height": 720,
+      "mean_bgr": [
+        107.89732313368056,
+        111.64996853298611,
+        106.55588216145833
+      ],
+      "max_bgr": [
+        204,
+        208,
+        202
+      ],
+      "bright_sample_pixels": 48079,
+      "very_bright_sample_pixels": 18565,
+      "redish_sample_pixels": 72,
+      "greenish_sample_pixels": 0,
+      "blueish_sample_pixels": 17,
+      "sample_pixel_count": 57600
+    },
+    {
+      "label": "preview-ready",
+      "path": "C:\\Users\\Billy\\Desktop\\Denzic\\Listener\\Listener-Firmware\\docs\\validation\\listener-release-snapshot-20260622-132816\\hardware-status-led\\preview-ready.jpg",
+      "relative_path": "preview-ready.jpg",
+      "width": 1280,
+      "height": 720,
+      "mean_bgr": [
+        114.41062608506944,
+        118.30775716145833,
+        113.67959092881945
+      ],
+      "max_bgr": [
+        209,
+        213,
+        209
+      ],
+      "bright_sample_pixels": 47980,
+      "very_bright_sample_pixels": 22527,
+      "redish_sample_pixels": 271,
+      "greenish_sample_pixels": 0,
+      "blueish_sample_pixels": 33,
+      "sample_pixel_count": 57600
+    },
+    {
+      "label": "preview-pairing",
+      "path": "C:\\Users\\Billy\\Desktop\\Denzic\\Listener\\Listener-Firmware\\docs\\validation\\listener-release-snapshot-20260622-132816\\hardware-status-led\\preview-pairing.jpg",
+      "relative_path": "preview-pairing.jpg",
+      "width": 1280,
+      "height": 720,
+      "mean_bgr": [
+        117.39502170138888,
+        121.20905598958333,
+        116.48415364583333
+      ],
+      "max_bgr": [
+        232,
+        230,
+        227
+      ],
+      "bright_sample_pixels": 47207,
+      "very_bright_sample_pixels": 24248,
+      "redish_sample_pixels": 171,
+      "greenish_sample_pixels": 0,
+      "blueish_sample_pixels": 33,
+      "sample_pixel_count": 57600
+    },
+    {
+      "label": "preview-capture",
+      "path": "C:\\Users\\Billy\\Desktop\\Denzic\\Listener\\Listener-Firmware\\docs\\validation\\listener-release-snapshot-20260622-132816\\hardware-status-led\\preview-capture.jpg",
+      "relative_path": "preview-capture.jpg",
+      "width": 1280,
+      "height": 720,
+      "mean_bgr": [
+        116.95603515625,
+        120.78549479166666,
+        116.16487847222223
+      ],
+      "max_bgr": [
+        241,
+        239,
+        240
+      ],
+      "bright_sample_pixels": 47006,
+      "very_bright_sample_pixels": 24235,
+      "redish_sample_pixels": 229,
+      "greenish_sample_pixels": 0,
+      "blueish_sample_pixels": 31,
+      "sample_pixel_count": 57600
+    },
+    {
+      "label": "preview-processing",
+      "path": "C:\\Users\\Billy\\Desktop\\Denzic\\Listener\\Listener-Firmware\\docs\\validation\\listener-release-snapshot-20260622-132816\\hardware-status-led\\preview-processing.jpg",
+      "relative_path": "preview-processing.jpg",
+      "width": 1280,
+      "height": 720,
+      "mean_bgr": [
+        117.73393446180556,
+        121.46006727430556,
+        116.62822482638889
+      ],
+      "max_bgr": [
+        212,
+        216,
+        210
+      ],
+      "bright_sample_pixels": 47724,
+      "very_bright_sample_pixels": 24429,
+      "redish_sample_pixels": 104,
+      "greenish_sample_pixels": 0,
+      "blueish_sample_pixels": 33,
+      "sample_pixel_count": 57600
+    },
+    {
+      "label": "preview-rec_not_available",
+      "path": "C:\\Users\\Billy\\Desktop\\Denzic\\Listener\\Listener-Firmware\\docs\\validation\\listener-release-snapshot-20260622-132816\\hardware-status-led\\preview-rec_not_available.jpg",
+      "relative_path": "preview-rec_not_available.jpg",
+      "width": 1280,
+      "height": 720,
+      "mean_bgr": [
+        116.98626193576389,
+        120.86197808159723,
+        116.074501953125
+      ],
+      "max_bgr": [
+        212,
+        216,
+        210
+      ],
+      "bright_sample_pixels": 47764,
+      "very_bright_sample_pixels": 24084,
+      "redish_sample_pixels": 153,
+      "greenish_sample_pixels": 0,
+      "blueish_sample_pixels": 36,
+      "sample_pixel_count": 57600
+    },
+    {
+      "label": "preview-ok",
+      "path": "C:\\Users\\Billy\\Desktop\\Denzic\\Listener\\Listener-Firmware\\docs\\validation\\listener-release-snapshot-20260622-132816\\hardware-status-led\\preview-ok.jpg",
+      "relative_path": "preview-ok.jpg",
+      "width": 1280,
+      "height": 720,
+      "mean_bgr": [
+        117.0046560329861,
+        121.00496636284723,
+        116.00957139756945
+      ],
+      "max_bgr": [
+        211,
+        215,
+        207
+      ],
+      "bright_sample_pixels": 47567,
+      "very_bright_sample_pixels": 24082,
+      "redish_sample_pixels": 89,
+      "greenish_sample_pixels": 0,
+      "blueish_sample_pixels": 37,
+      "sample_pixel_count": 57600
+    },
+    {
+      "label": "preview-low_battery",
+      "path": "C:\\Users\\Billy\\Desktop\\Denzic\\Listener\\Listener-Firmware\\docs\\validation\\listener-release-snapshot-20260622-132816\\hardware-status-led\\preview-low_battery.jpg",
+      "relative_path": "preview-low_battery.jpg",
+      "width": 1280,
+      "height": 720,
+      "mean_bgr": [
+        108.66628255208333,
+        112.24833984375,
+        108.48753472222222
+      ],
+      "max_bgr": [
+        211,
+        216,
+        209
+      ],
+      "bright_sample_pixels": 41152,
+      "very_bright_sample_pixels": 23495,
+      "redish_sample_pixels": 96,
+      "greenish_sample_pixels": 0,
+      "blueish_sample_pixels": 35,
+      "sample_pixel_count": 57600
+    },
+    {
+      "label": "preview-sleep",
+      "path": "C:\\Users\\Billy\\Desktop\\Denzic\\Listener\\Listener-Firmware\\docs\\validation\\listener-release-snapshot-20260622-132816\\hardware-status-led\\preview-sleep.jpg",
+      "relative_path": "preview-sleep.jpg",
+      "width": 1280,
+      "height": 720,
+      "mean_bgr": [
+        121.63007486979167,
+        126.05052625868055,
+        121.88310438368056
+      ],
+      "max_bgr": [
+        222,
+        224,
+        218
+      ],
+      "bright_sample_pixels": 48113,
+      "very_bright_sample_pixels": 26029,
+      "redish_sample_pixels": 120,
+      "greenish_sample_pixels": 0,
+      "blueish_sample_pixels": 61,
+      "sample_pixel_count": 57600
+    },
+    {
+      "label": "preview-error-ota-hard",
+      "path": "C:\\Users\\Billy\\Desktop\\Denzic\\Listener\\Listener-Firmware\\docs\\validation\\listener-release-snapshot-20260622-132816\\hardware-status-led\\preview-error-ota-hard.jpg",
+      "relative_path": "preview-error-ota-hard.jpg",
+      "width": 1280,
+      "height": 720,
+      "mean_bgr": [
+        126.68076171875,
+        131.12771050347223,
+        125.77020616319444
+      ],
+      "max_bgr": [
+        217,
+        220,
+        214
+      ],
+      "bright_sample_pixels": 51595,
+      "very_bright_sample_pixels": 26799,
+      "redish_sample_pixels": 129,
+      "greenish_sample_pixels": 0,
+      "blueish_sample_pixels": 54,
+      "sample_pixel_count": 57600
+    },
+    {
+      "label": "preview-off",
+      "path": "C:\\Users\\Billy\\Desktop\\Denzic\\Listener\\Listener-Firmware\\docs\\validation\\listener-release-snapshot-20260622-132816\\hardware-status-led\\preview-off.jpg",
+      "relative_path": "preview-off.jpg",
+      "width": 1280,
+      "height": 720,
+      "mean_bgr": [
+        115.42791124131945,
+        119.32956271701389,
+        114.59635308159723
+      ],
+      "max_bgr": [
+        208,
+        212,
+        206
+      ],
+      "bright_sample_pixels": 45856,
+      "very_bright_sample_pixels": 25287,
+      "redish_sample_pixels": 30,
+      "greenish_sample_pixels": 0,
+      "blueish_sample_pixels": 23,
+      "sample_pixel_count": 57600
+    }
+  ],
+  "serial_required_tokens_missing": [],
+  "visual_quality": {
+    "image_count": 43,
+    "max_bright_sample_pixels": 51595,
+    "median_bright_sample_pixels": 46578,
+    "camera_opened": true,
+    "has_rgbw_phase_images": true,
+    "has_all_map_sequences": true
+  },
+  "result": "PASS"
+}

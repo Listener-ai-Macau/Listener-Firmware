@@ -1,0 +1,302 @@
+Activating ESP-IDF 5.5
+Setting IDF_PATH to 'C:\Users\Billy\esp\esp-idf'.
+* Checking python version ... 3.11.9
+* Checking python dependencies ... OK
+* Deactivating the current ESP-IDF environment (if any) ... OK
+* Establishing a new ESP-IDF environment ... OK
+* Identifying shell ... pwsh.exe
+* Detecting outdated tools in system ... Found tools that are not used by active ESP-IDF version.
+For removing old versions of riscv32-esp-elf-gdb use command 'python.exe C:\Users\Billy\esp\esp-idf\tools\idf_tools.py uninstall'
+To free up even more space, remove installation packages of those tools.
+Use option python.exe C:\Users\Billy\esp\esp-idf\tools\idf_tools.py uninstall --remove-archives.
+
+Done! You can now compile ESP-IDF projects.
+Go to the project directory and run:
+
+  idf.py build
+
+Executing action: erase-otadata
+Running ninja in directory C:\Users\Billy\Desktop\Denzic\Listener\Listener-Firmware\build
+Executing "ninja erase-otadata"...
+[0/1] C:\Windows\system32\cmd.exe /C "cd /D C:\Users\Billy\Desktop\Denzic\Listener\Listener-Firmware\build && C:\Users\Billy\.espressif\tools\cmake\3.30.2\bin\cmake.exe -D IDF_PATH=C:/Users/Billy/esp/esp-idf -D SERIAL_TOOL=C:/Users/Billy/.espressif/python_env/idf5.5_py3.11_env/Scripts/python.exe;C:/Users/Billy/esp/esp-idf/components/app_update/otatool.py -D SERIAL_TOOL_ARGS=--esptool-args;before=default_reset;after=hard_reset;--partition-table-file;C:/Users/Billy/Desktop/Denzic/Listener/Listener-Firmware/partitions.csv;--partition-table-offset;0x8000;erase_otadata -D WORKING_DIRECTORY=C:/Users/Billy/Desktop/Denzic/Listener/Listener-Firmware/build -P C:/Users/Billy/esp/esp-idf/components/esptool_py/run_serial_tool.cmake"
+
+esptool.py v4.12.dev2
+
+Serial port COM10
+
+Connecting...
+
+Detecting chip type... ESP32-S3
+
+Chip is ESP32-S3 (QFN56) (revision v0.2)
+
+Features: WiFi, BLE, Embedded PSRAM 8MB (AP_3v3)
+
+Crystal is 40MHz
+
+USB mode: USB-Serial/JTAG
+
+MAC: a4:cb:8f:f4:59:d4
+
+Uploading stub...
+
+Running stub...
+
+Stub running...
+
+Changing baud rate to 460800
+
+Changed.
+
+Configuring flash size...
+
+3072 (100 %)
+
+3072 (100 %)
+
+Read 3072 bytes at 0x00008000 in 0.1 seconds (254.2 kbit/s)...
+
+Hard resetting via RTS pin...
+
+esptool.py v4.12.dev2
+
+Serial port COM10
+
+Connecting...
+
+Detecting chip type... ESP32-S3
+
+Chip is ESP32-S3 (QFN56) (revision v0.2)
+
+Features: WiFi, BLE, Embedded PSRAM 8MB (AP_3v3)
+
+Crystal is 40MHz
+
+USB mode: USB-Serial/JTAG
+
+MAC: a4:cb:8f:f4:59:d4
+
+Uploading stub...
+
+Running stub...
+
+Stub running...
+
+Changing baud rate to 460800
+
+Changed.
+
+Configuring flash size...
+
+4096 (50 %)8192 (100 %)
+
+8192 (100 %)
+
+Read 8192 bytes at 0x0000f000 in 0.2 seconds (306.8 kbit/s)...
+
+Hard resetting via RTS pin...
+
+esptool.py v4.12.dev2
+
+Serial port COM10
+
+Connecting...
+
+Detecting chip type... ESP32-S3
+
+Chip is ESP32-S3 (QFN56) (revision v0.2)
+
+Features: WiFi, BLE, Embedded PSRAM 8MB (AP_3v3)
+
+Crystal is 40MHz
+
+USB mode: USB-Serial/JTAG
+
+MAC: a4:cb:8f:f4:59:d4
+
+Uploading stub...
+
+Running stub...
+
+Stub running...
+
+Changing baud rate to 460800
+
+Changed.
+
+Erasing region (may be slow depending on size)...
+
+Erase completed successfully in 0.1 seconds.
+
+Hard resetting via RTS pin...
+
+Running C:\Users\Billy\.espressif\python_env\idf5.5_py3.11_env\Scripts\python.exe C:\Users\Billy\esp\esp-idf\components\esptool_py\esptool\esptool.py --port COM10 --baud 460800 read_flash 32768 3072 C:\Users\Billy\AppData\Local\Temp\tmp6bkv78ld...
+
+Running C:\Users\Billy\.espressif\python_env\idf5.5_py3.11_env\Scripts\python.exe C:\Users\Billy\esp\esp-idf\components\esptool_py\esptool\esptool.py --port COM10 --baud 460800 read_flash 61440 8192 C:\Users\Billy\AppData\Local\Temp\tmpall4lzry...
+
+Running C:\Users\Billy\.espressif\python_env\idf5.5_py3.11_env\Scripts\python.exe C:\Users\Billy\esp\esp-idf\components\esptool_py\esptool\esptool.py --port COM10 --baud 460800 erase_region 61440 8192...
+
+Erased ota_data partition contents
+
+Executing action: flash
+Running ninja in directory C:\Users\Billy\Desktop\Denzic\Listener\Listener-Firmware\build
+Executing "ninja flash"...
+[1/5] C:\Windows\system32\cmd.exe /C "cd /D C:\Users\Billy\Desktop\Denzic\Listener\Listener-Firmware\build\esp-idf\esptool_py && C:\Users\Billy\.espressif\python_env\idf5.5_py3.11_env\Scripts\python.exe C:/Users/Billy/esp/esp-idf/components/partition_table/check_sizes.py --offset 0x8000 partition --type app C:/Users/Billy/Desktop/Denzic/Listener/Listener-Firmware/build/partition_table/partition-table.bin C:/Users/Billy/Desktop/Denzic/Listener/Listener-Firmware/build/voice-keyboard-firmware.bin"
+
+voice-keyboard-firmware.bin binary size 0xd1fc0 bytes. Smallest app partition is 0x600000 bytes. 0x52e040 bytes (86%) free.
+
+
+[2/5] Performing build step for 'bootloader'
+
+[1/1] C:\Windows\system32\cmd.exe /C "cd /D C:\Users\Billy\Desktop\Denzic\Listener\Listener-Firmware\build\bootloader\esp-idf\esptool_py && C:\Users\Billy\.espressif\python_env\idf5.5_py3.11_env\Scripts\python.exe C:/Users/Billy/esp/esp-idf/components/partition_table/check_sizes.py --offset 0x8000 bootloader 0x0 C:/Users/Billy/Desktop/Denzic/Listener/Listener-Firmware/build/bootloader/bootloader.bin"
+
+
+Bootloader binary size 0x51b0 bytes. 0x2e50 bytes (36%) free.
+
+
+
+[3/5] No install step for 'bootloader'
+
+[4/5] Completed 'bootloader'
+
+[4/5] C:\Windows\system32\cmd.exe /C "cd /D C:\Users\Billy\esp\esp-idf\components\esptool_py && C:\Users\Billy\.espressif\tools\cmake\3.30.2\bin\cmake.exe -D IDF_PATH=C:/Users/Billy/esp/esp-idf -D SERIAL_TOOL=C:/Users/Billy/.espressif/python_env/idf5.5_py3.11_env/Scripts/python.exe;;C:/Users/Billy/esp/esp-idf/components/esptool_py/esptool/esptool.py;--chip;esp32s3 -D SERIAL_TOOL_ARGS=--before=default_reset;--after=hard_reset;write_flash;@flash_args -D WORKING_DIRECTORY=C:/Users/Billy/Desktop/Denzic/Listener/Listener-Firmware/build -P C:/Users/Billy/esp/esp-idf/components/esptool_py/run_serial_tool.cmake"
+
+esptool.py --chip esp32s3 -p COM10 -b 460800 --before=default_reset --after=hard_reset write_flash --flash_mode dio --flash_freq 80m --flash_size 16MB 0x0 bootloader/bootloader.bin 0x20000 voice-keyboard-firmware.bin 0x8000 partition_table/partition-table.bin 0xf000 ota_data_initial.bin
+
+esptool.py v4.12.dev2
+
+Serial port COM10
+
+Connecting...
+
+Chip is ESP32-S3 (QFN56) (revision v0.2)
+
+Features: WiFi, BLE, Embedded PSRAM 8MB (AP_3v3)
+
+Crystal is 40MHz
+
+USB mode: USB-Serial/JTAG
+
+MAC: a4:cb:8f:f4:59:d4
+
+Uploading stub...
+
+Running stub...
+
+Stub running...
+
+Changing baud rate to 460800
+
+Changed.
+
+Configuring flash size...
+
+Flash will be erased from 0x00000000 to 0x00005fff...
+
+Flash will be erased from 0x00020000 to 0x000f1fff...
+
+Flash will be erased from 0x00008000 to 0x00008fff...
+
+Flash will be erased from 0x0000f000 to 0x00010fff...
+
+SHA digest in image updated
+
+Compressed 20912 bytes to 13440...
+
+Writing at 0x00000000... (100 %)
+
+Wrote 20912 bytes (13440 compressed) at 0x00000000 in 0.3 seconds (effective 610.0 kbit/s)...
+
+Hash of data verified.
+
+Compressed 860096 bytes to 492389...
+
+Writing at 0x00020000... (3 %)
+
+Writing at 0x0002e070... (6 %)
+
+Writing at 0x0003c627... (9 %)
+
+Writing at 0x00047d24... (12 %)
+
+Writing at 0x000523d1... (16 %)
+
+Writing at 0x000587bd... (19 %)
+
+Writing at 0x0005e9ac... (22 %)
+
+Writing at 0x00064a75... (25 %)
+
+Writing at 0x0006a93a... (29 %)
+
+Writing at 0x00070e43... (32 %)
+
+Writing at 0x00076d81... (35 %)
+
+Writing at 0x0007d1f2... (38 %)
+
+Writing at 0x0008347c... (41 %)
+
+Writing at 0x00089601... (45 %)
+
+Writing at 0x0008f689... (48 %)
+
+Writing at 0x00094e4e... (51 %)
+
+Writing at 0x0009a7f1... (54 %)
+
+Writing at 0x000a04e7... (58 %)
+
+Writing at 0x000a62b3... (61 %)
+
+Writing at 0x000ac901... (64 %)
+
+Writing at 0x000b2a0c... (67 %)
+
+Writing at 0x000b8593... (70 %)
+
+Writing at 0x000bde7e... (74 %)
+
+Writing at 0x000c5b8f... (77 %)
+
+Writing at 0x000ccccb... (80 %)
+
+Writing at 0x000d2ed4... (83 %)
+
+Writing at 0x000d9934... (87 %)
+
+Writing at 0x000dec4c... (90 %)
+
+Writing at 0x000e50d4... (93 %)
+
+Writing at 0x000eb092... (96 %)
+
+Writing at 0x000f1af8... (100 %)
+
+Wrote 860096 bytes (492389 compressed) at 0x00020000 in 5.2 seconds (effective 1321.1 kbit/s)...
+
+Hash of data verified.
+
+Compressed 3072 bytes to 145...
+
+Writing at 0x00008000... (100 %)
+
+Wrote 3072 bytes (145 compressed) at 0x00008000 in 0.1 seconds (effective 227.0 kbit/s)...
+
+Hash of data verified.
+
+Compressed 8192 bytes to 31...
+
+Writing at 0x0000f000... (100 %)
+
+Wrote 8192 bytes (31 compressed) at 0x0000f000 in 0.1 seconds (effective 670.7 kbit/s)...
+
+Hash of data verified.
+
+
+
+Leaving...
+
+Hard resetting via RTS pin...
+
+Done
