@@ -21,6 +21,7 @@
 #include "status_led.h"
 
 #include "esp_bt.h"
+#include "esp_err.h"
 #include "esp_log.h"
 #include "esp_timer.h"
 #include "host/ble_hs.h"
@@ -1287,6 +1288,17 @@ static esp_err_t init_low_level(uint8_t mode)
         diag_log(DIAG_SRC_BLE_GAP, DIAG_GAP_CTRL_INIT, DIAG_SEV_ERROR, 3, (uint32_t)ret, 0, 0);
         return ret;
     }
+
+#if CONFIG_BT_CTRL_MODEM_SLEEP
+    ret = esp_bt_sleep_enable();
+    if (ret != ESP_OK) {
+        ESP_LOGW(TAG, "esp_bt_sleep_enable failed: %s", esp_err_to_name(ret));
+        diag_log(DIAG_SRC_BLE_GAP, DIAG_GAP_CTRL_INIT, DIAG_SEV_WARN, 6, (uint32_t)ret, mode, 0);
+    } else {
+        ESP_LOGI(TAG, "Bluetooth controller modem sleep enabled");
+        diag_log(DIAG_SRC_BLE_GAP, DIAG_GAP_CTRL_INIT, DIAG_SEV_INFO, 6, 0, mode, 0);
+    }
+#endif
 
     ret = esp_nimble_init();
     if (ret) {

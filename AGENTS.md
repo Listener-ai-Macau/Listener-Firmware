@@ -8,22 +8,22 @@
 
 公共 workflow 仓库：
 
-`C:\Users\Billy\Desktop\listener\ai-collaboration-workflow`
+`C:\Users\Billy\Desktop\Denzic\ai-collaboration-workflow`
 
 完整协议见：
 
-`C:\Users\Billy\Desktop\listener\ai-collaboration-workflow\docs\ai_collaboration_protocol.md`
+`C:\Users\Billy\Desktop\Denzic\ai-collaboration-workflow\docs\ai_collaboration_protocol.md`
 
 共享计划状态：
 
-`C:\Users\Billy\Desktop\listener\ai-collaboration-workflow\docs\plans\*_status.json`
+`C:\Users\Billy\Desktop\Denzic\ai-collaboration-workflow\docs\plans\*_status.json`
 
 本仓库不维护协作脚本；协作命令一律通过公共 workflow 仓库的 `scripts\aiw.ps1` 调用。
 
 常用命令：
 
 ```powershell
-$aiw = "..\ai-collaboration-workflow\scripts\aiw.ps1"
+$aiw = "..\..\ai-collaboration-workflow\scripts\aiw.ps1"
 pwsh -NoProfile -File $aiw status
 pwsh -NoProfile -File $aiw list -Plan <plan> -IncludeStale
 pwsh -NoProfile -File $aiw claim -Plan <plan> -StepId <id> -Assignee <you> -RepoRoot .
@@ -47,7 +47,7 @@ pwsh -NoProfile -File ./tools/esp_idf_ci.ps1 build
 
 ## 文档位置
 
-- 协作状态/计划：`C:\Users\Billy\Desktop\listener\ai-collaboration-workflow\docs\plans\`
-- 协作修复计划：`C:\Users\Billy\Desktop\listener\ai-collaboration-workflow\docs\fixes\`
+- 协作状态/计划：`C:\Users\Billy\Desktop\Denzic\ai-collaboration-workflow\docs\plans\`
+- 协作修复计划：`C:\Users\Billy\Desktop\Denzic\ai-collaboration-workflow\docs\fixes\`
 - 仓库级功能文档：`!docs/features/`
 - 人类文档默认中文
