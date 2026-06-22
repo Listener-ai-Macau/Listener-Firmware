@@ -132,6 +132,8 @@ CHECKS = {
         "power_manager_plugged_low_power_enabled",
         "power_manager_guard_runtime_power_hold_low",
         "PWR_HOLD/GPIO9 runtime guard reasserting low",
+        "esp_pm_dump_locks",
+        'strcmp(command, "PM")',
         'strcmp(command, "SHUTDOWN")',
     ],
     "ports/esp32/audio_capture/audio_capture_esp32.c": [
@@ -158,10 +160,21 @@ CHECKS = {
         "ble_hid_usb_command_is_passive_query",
         "ble_hid_usb_command_records_activity",
         "POWER:STATUS",
+        "POWER:PM",
+        "POWER:PM:LOCKS",
         "BOARD:STATUS",
         "BOARD:POWER",
         "LED:STATUS",
         "DEVICE:SETTINGS",
+    ],
+    "ports/esp32/voice_key_input/voice_key_input_esp32.c": [
+        "VOICE_KEY_INPUT_IDLE_BACKUP_POLL_MS (1000)",
+        "VOICE_KEY_INPUT_LOW_POWER_IDLE_BACKUP_POLL_MS (5000)",
+        "voice_key_input_next_wait_ms",
+        "GPIO_INTR_ANYEDGE",
+        "gpio_isr_handler_add",
+        "watchdog_platform_task_notify_take_low_power",
+        "wake=interrupt_anyedge",
     ],
     "components/voice_recording_control/voice_recording_control.c": [
         "POWER_MANAGER_BLOCKER_RECORDING",
@@ -191,12 +204,15 @@ CHECKS = {
     ],
     "sdkconfig.defaults": [
         "CONFIG_POWER_MANAGER_BATTERY_CRITICAL_PERCENT=0",
+        "CONFIG_BT_CTRL_MAIN_XTAL_PU_DURING_LIGHT_SLEEP=y",
+        "CONFIG_USJ_NO_AUTO_LS_ON_CONNECTION=y",
     ],
     "sdkconfig.defaults.esp32s3": [
         "CONFIG_PM_ENABLE=y",
         "CONFIG_PM_SLEEP_FUNC_IN_IRAM=y",
         "CONFIG_FREERTOS_USE_TICKLESS_IDLE=y",
         "CONFIG_BT_CTRL_MODEM_SLEEP=y",
+        "CONFIG_BT_CTRL_MAIN_XTAL_PU_DURING_LIGHT_SLEEP=y",
         "CONFIG_USJ_NO_AUTO_LS_ON_CONNECTION=y",
         "CONFIG_ESPTOOLPY_FLASHSIZE_16MB=y",
         "CONFIG_SPIRAM=y",
@@ -850,11 +866,11 @@ def main() -> int:
         )
     if not re.search(
         r"ble_hid_usb_command_is_passive_query[\s\S]*"
-        r"POWER:STATUS[\s\S]*BOARD:STATUS[\s\S]*BOARD:POWER[\s\S]*BOARD:POWER:FORCE[\s\S]*LED:STATUS[\s\S]*DEVICE:SETTINGS",
+        r"POWER:STATUS[\s\S]*POWER:PM[\s\S]*BOARD:STATUS[\s\S]*BOARD:POWER[\s\S]*BOARD:POWER:FORCE[\s\S]*LED:STATUS[\s\S]*DEVICE:SETTINGS",
         ble_hid,
     ):
         failures.append(
-            "ports/esp32/ble_hid/ble_hid.c: passive board, power, LED, and device queries must be enumerated"
+            "ports/esp32/ble_hid/ble_hid.c: passive board, power/PM, LED, and device queries must be enumerated"
         )
     if not re.search(
         r"ble_hid_usb_command_records_activity[\s\S]*"

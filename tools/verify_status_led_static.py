@@ -137,8 +137,9 @@ CHECKS = {
         "STATUS_LED_FULL_STEADY_PERCENT STATUS_LED_PWR_WHITE_VISUAL_BALANCE_PERCENT",
         "STATUS_LED_FULL_STATUS_STEADY_PERCENT STATUS_LED_PWR_WHITE_VISUAL_BALANCE_PERCENT",
         "STATUS_LED_LOW_POWER_PWR_PERCENT 8U",
-        "STATUS_LED_LOW_POWER_PWR_WHITE_PERCENT 11U",
-        "STATUS_LED_LOW_POWER_BLE_CONNECTED_PERCENT 11U",
+        "STATUS_LED_LOW_POWER_PWR_WHITE_PERCENT 3U",
+        "STATUS_LED_LOW_POWER_BLE_CONNECTED_PERCENT 8U",
+        "STATUS_LED_LOW_POWER_BLE_ATTENTION_PERCENT 12U",
         "STATUS_LED_BATTERY_IDLE_BLE_HEARTBEAT_ON_MS 120U",
         "STATUS_LED_BATTERY_IDLE_BLE_HEARTBEAT_OFF_MS 7880U",
         "STATUS_LED_BATTERY_IDLE_BLE_HEARTBEAT_PERCENT 18U",
@@ -940,10 +941,11 @@ def main() -> int:
             if "status_led_render_power_locked" in branch:
                 failures.append("status_led.c: plugged low-power PWR must not reuse charging/full breath rendering")
         if (
-            "STATUS_LED_LOW_POWER_PWR_WHITE_PERCENT 11U" not in status_led or
-            "STATUS_LED_LOW_POWER_BLE_CONNECTED_PERCENT 11U" not in status_led
+            "STATUS_LED_LOW_POWER_PWR_WHITE_PERCENT 3U" not in status_led or
+            "STATUS_LED_LOW_POWER_BLE_CONNECTED_PERCENT 8U" not in status_led or
+            "STATUS_LED_LOW_POWER_BLE_ATTENTION_PERCENT 12U" not in status_led
         ):
-            failures.append("status_led.c: idle PWR white and BLE blue must share the 11 percent low-power level")
+            failures.append("status_led.c: idle PWR white and BLE blue must use dim low-power levels")
     for token in (
         "STATUS_LED_RECORDING_LEVEL_STALE_MS",
         "STATUS_LED_RECORDING_LEVEL_EFFECT_MIN_PERCENT 8U",

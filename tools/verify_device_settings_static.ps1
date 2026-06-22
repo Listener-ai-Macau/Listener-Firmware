@@ -155,7 +155,7 @@ Assert-Contains $statusLed 'STATUS_LED_CHARGING_BREATH_RISE_MS 1300U' 'plugged c
 Assert-Contains $statusLed 'STATUS_LED_CHARGING_BREATH_HIGH_HOLD_MS 300U' 'plugged charging breath holds a readable peak without flashing'
 Assert-Contains $statusLed 'STATUS_LED_CHARGING_BREATH_UNKNOWN_FLOOR_PERCENT 8U' 'plugged charging breath keeps a visible fallback floor when battery is unknown'
 Assert-Contains $statusLed 'STATUS_LED_CHARGING_BREATH_MAX_PERCENT STATUS_LED_PWR_WHITE_VISUAL_BALANCE_PERCENT' 'plugged charging breath peak follows balanced PWR white'
-Assert-Contains $statusLed 'STATUS_LED_CHARGING_ACTIVE_WORK_MIN_PERCENT 28U' 'plugged charging PWR stays readable without overpowering recording or processing'
+Assert-Contains $statusLed 'STATUS_LED_CHARGING_ACTIVE_WORK_MIN_PERCENT 12U' 'plugged charging PWR stays readable without overpowering recording or processing'
 Assert-Contains $statusLed 'STATUS_LED_LOW_BATTERY_STEADY_PERCENT 24U' 'low battery uses a steady red cue instead of an unnecessary breathing effect'
 Assert-Contains $statusLed 'status_led_charging_breath_floor_percent_locked' 'plugged charging breath floor follows current battery level'
 Assert-Contains $statusLed 'status_led_charging_breath_percent_locked\(now_ms\)' 'plugged charging breath uses the dedicated natural curve'
