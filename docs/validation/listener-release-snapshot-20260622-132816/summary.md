@@ -2,8 +2,9 @@
 
 ## Revisions
 
-- Firmware: `Listener-Firmware` `master` at `e72019fa269ec6d5b88156c0d362e366bfb5de87`.
-- Firmware tree: `11c5ac4696e9ad924bda364d49d9579ddf64e13b`.
+- Firmware release base: `Listener-Firmware` `master` at `e72019fa269ec6d5b88156c0d362e366bfb5de87`.
+- Firmware release base tree: `11c5ac4696e9ad924bda364d49d9579ddf64e13b`.
+- Current local `master`: `d7ea9fee2c5db6b686c8d70934673f2436404a0a` (`7ec06b7935b615590749632c3262c2db5d1fd732` firmware code plus post-flash evidence).
 - Listener-Type: `main` at `08f557233339b094761651b2cbd79d3cc87a2f70`.
 
 `e72019f` is tree-identical to the validated `37b6948`; it records the low-power LED consolidation branch after the useful fixes were cherry-picked into `master`.
@@ -14,6 +15,7 @@
 - Status LEDs keep the DMA-backed RMT path, full-frame DMA buffer contract, low idle-drive policy, and restrained idle brightness.
 - `recording_active` and `capture_active` preview states now share the device-mic capture path, so recording effect review preserves PWR/BLE baseline LEDs.
 - BLE `TYPE_READY` is reported as `type_ready` and is treated as a ready BLE state for status LED rendering.
+- Idle PWR/BLE latch follow-up: `7ec06b7` keeps low-power PWR visible using the retained battery display sample with an amber fallback, and treats BLE `TYPE_READY` as connected for the low-blue idle latch.
 
 ## Cleanup
 
@@ -37,6 +39,7 @@ Firmware:
 - PASS: `pwsh -NoProfile -File tools\verify_battery_monitor_static.ps1`
 - PASS: `pwsh -NoProfile -File tools\ai\repo_features.ps1 -Check`
 - PASS: `pwsh -NoProfile -File tools\test.ps1` (`voice-keyboard-firmware.bin` size `0xd1fc0`, app partition free `0x52e040`, 86%).
+- PASS: follow-up `7ec06b7` checks: `git diff --check`, `python tools\verify_status_led_static.py`, `pwsh -NoProfile -File tools\verify_power_manager_static.ps1`, `pwsh -NoProfile -File tools\verify_charging_awake_policy_static.ps1`, and `pwsh -NoProfile -File tools\build.ps1` (`voice-keyboard-firmware.bin` size `0xd2000`, app partition free `0x52e000`, 86%).
 
 Listener-Type:
 
@@ -53,4 +56,5 @@ Listener-Type:
 - PASS: `tools\verify_status_led_hardware.ps1 -Port COM10 -OutputDir docs\validation\listener-release-snapshot-20260622-132816\hardware-status-led -NoBuild` captured 43 camera frames plus serial status; required serial tokens missing: `0`.
 - Evidence: `docs\validation\listener-release-snapshot-20260622-132816\hardware-status-led\hardware-led-validation.md`.
 - Additional status capture: `docs\validation\idle-recording-led-debug-20260622-1330\post-flash-status.txt`.
+- PASS: COM10 board ledger and post-flash serial status were updated after flashing `7ec06b7`; evidence: `docs\validation\idle-status-led-latch-20260622-134315\post_flash_serial_status_after_peer.txt`.
 - FAIL/follow-up: `docs\validation\idle-current-guided-e72019f-20260622-1332\unplug_wake_summary.json` detected unplug/replug recovery but found a reset banner after replug (`post_no_reset_banner=false`). Treat this as a low-power wake/replug defect to investigate next; it does not invalidate the status LED hardware PASS.
