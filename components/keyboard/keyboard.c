@@ -171,7 +171,6 @@ static keyboard_custom_key_t s_custom_keys[] = {
 static keyboard_custom_generated_state_t s_custom_generated_states[
     sizeof(s_custom_keys) / sizeof(s_custom_keys[0])
 ];
-static volatile bool s_custom_low_power_irq_mode;
 static keyboard_ec11_state_t s_ec11_state = {
     .a_gpio = BOARD_PINS_EC11_A_IO,
     .b_gpio = BOARD_PINS_EC11_B_IO,
@@ -181,7 +180,6 @@ static esp_err_t keyboard_ec11_dispatch_rotation(
     ec11_rotation_direction_t direction,
     const char *source);
 static void keyboard_custom_wake_task(void);
-static void keyboard_custom_set_low_power_irq(bool enabled);
 
 static void keyboard_enable_active_low_light_sleep_wake(gpio_num_t gpio, const char *label)
 {
@@ -363,6 +361,20 @@ static const char *keyboard_custom_gesture_name(keyboard_custom_gesture_t gestur
     }
 }
 
+static status_led_key_feedback_t keyboard_custom_led_feedback_for_gesture(
+    keyboard_custom_gesture_t gesture)
+{
+    switch (gesture) {
+    case KEYBOARD_CUSTOM_GESTURE_DOUBLE:
+        return STATUS_LED_KEY_FEEDBACK_DOUBLE;
+    case KEYBOARD_CUSTOM_GESTURE_LONG:
+        return STATUS_LED_KEY_FEEDBACK_LONG;
+    case KEYBOARD_CUSTOM_GESTURE_SINGLE:
+    default:
+        return STATUS_LED_KEY_FEEDBACK_SINGLE;
+    }
+}
+
 static unsigned int keyboard_custom_function_number(uint8_t usage)
 {
     if (usage >= HID_KEYBOARD_USAGE_F13 && usage <= HID_KEYBOARD_USAGE_F24) {
@@ -394,6 +406,7 @@ static void keyboard_custom_send_gesture(
     char source_label[32];
     keyboard_custom_make_source_label(key, usage, source_label, sizeof(source_label));
 
+    status_led_notify_key_feedback(key->index, keyboard_custom_led_feedback_for_gesture(gesture));
     esp_err_t ret = ble_hid_send_keyboard_usage_async(usage, source_label);
     keyboard_custom_log_event(key, keyboard_custom_phase_for_gesture(gesture), usage, ret);
     if (ret == ESP_OK) {
@@ -426,7 +439,9 @@ static void keyboard_custom_send_gesture(
     }
 }
 
-static esp_err_t keyboard_custom_enqueue_generated_single_click(uint8_t logical_key)
+static esp_err_t keyboard_custom_enqueue_generated_gesture(
+    uint8_t logical_key,
+    keyboard_custom_gesture_t gesture)
 {
     keyboard_custom_key_t *key = keyboard_custom_find_key(logical_key);
     if (key == NULL) {
@@ -438,7 +453,7 @@ static esp_err_t keyboard_custom_enqueue_generated_single_click(uint8_t logical_
 
     keyboard_custom_generated_event_t event = {
         .logical_key = logical_key,
-        .gesture = KEYBOARD_CUSTOM_GESTURE_SINGLE,
+        .gesture = gesture,
     };
     if (xQueueSend(s_custom_generated_event_queue, &event, pdMS_TO_TICKS(20)) != pdTRUE) {
         return ESP_ERR_TIMEOUT;
@@ -448,12 +463,51 @@ static esp_err_t keyboard_custom_enqueue_generated_single_click(uint8_t logical_
     power_manager_record_activity("generated_custom_key");
     ESP_LOGI(
         TAG,
-        "custom key generated single-click queued: logical=%s source=%s press_ms=%d double_ms=%d",
+        "custom key generated gesture queued: logical=%s source=%s gesture=%s press_ms=%d double_ms=%d long_ms=%d",
         key->logical_name,
         key->label,
+        keyboard_custom_gesture_name(gesture),
         KEYBOARD_CUSTOM_GENERATED_PRESS_MS,
-        KEYBOARD_CUSTOM_DOUBLE_CLICK_WINDOW_MS);
+        KEYBOARD_CUSTOM_DOUBLE_CLICK_WINDOW_MS,
+        KEYBOARD_CUSTOM_LONG_PRESS_MS);
     return ESP_OK;
+}
+
+static bool keyboard_custom_parse_generated_command(
+    const char *command,
+    uint8_t *logical_key,
+    keyboard_custom_gesture_t *gesture)
+{
+    if (command == NULL || logical_key == NULL || gesture == NULL) {
+        return false;
+    }
+
+    const char *gesture_text = NULL;
+    if (strncmp(command, "KEY", strlen("KEY")) == 0 &&
+        command[3] >= '1' && command[3] <= '4' &&
+        command[4] == ':') {
+        *logical_key = (uint8_t)(command[3] - '0');
+        gesture_text = command + 5;
+    } else if (command[0] >= '1' && command[0] <= '4' && command[1] == ':') {
+        *logical_key = (uint8_t)(command[0] - '0');
+        gesture_text = command + 2;
+    } else {
+        return false;
+    }
+
+    if (strcmp(gesture_text, "SINGLE") == 0) {
+        *gesture = KEYBOARD_CUSTOM_GESTURE_SINGLE;
+        return true;
+    }
+    if (strcmp(gesture_text, "DOUBLE") == 0) {
+        *gesture = KEYBOARD_CUSTOM_GESTURE_DOUBLE;
+        return true;
+    }
+    if (strcmp(gesture_text, "LONG") == 0) {
+        *gesture = KEYBOARD_CUSTOM_GESTURE_LONG;
+        return true;
+    }
+    return false;
 }
 
 static bool keyboard_consume_usb_command(const char *line, esp_err_t *out_ret)
@@ -473,10 +527,15 @@ static bool keyboard_consume_usb_command(const char *line, esp_err_t *out_ret)
     }
 
     power_manager_set_blocker(POWER_MANAGER_BLOCKER_USB_COMMAND, true);
-    if (strcmp(command, "KEY3:SINGLE") == 0 || strcmp(command, "3:SINGLE") == 0) {
-        *out_ret = keyboard_custom_enqueue_generated_single_click(3);
+    uint8_t logical_key = 0;
+    keyboard_custom_gesture_t gesture = KEYBOARD_CUSTOM_GESTURE_SINGLE;
+    if (keyboard_custom_parse_generated_command(command, &logical_key, &gesture)) {
+        keyboard_custom_key_t *key = keyboard_custom_find_key(logical_key);
+        *out_ret = keyboard_custom_enqueue_generated_gesture(logical_key, gesture);
         printf(
-            "~KEY:GENERATED logical=KEY3 gesture=single result=%s\n",
+            "~KEY:GENERATED logical=%s gesture=%s result=%s\n",
+            key != NULL ? key->logical_name : "UNKNOWN",
+            keyboard_custom_gesture_name(gesture),
             esp_err_to_name(*out_ret));
         power_manager_set_blocker(POWER_MANAGER_BLOCKER_USB_COMMAND, false);
         return true;
@@ -530,63 +589,30 @@ static void keyboard_custom_handle_timers(keyboard_custom_key_t *key, TickType_t
     }
 }
 
-static void keyboard_custom_handle_sample(keyboard_custom_key_t *key, bool raw_high, TickType_t now)
+static void keyboard_custom_apply_stable_transition(
+    keyboard_custom_key_t *key,
+    bool raw_high,
+    TickType_t now,
+    const char *origin)
 {
-    if (!key->initialized) {
-        key->initialized = true;
-        key->last_sample_high = raw_high;
-        key->stable_level_high = raw_high;
-        key->stable_count = 1;
-        key->pressed = false;
-        key->long_sent = false;
-        key->pending_single = false;
-        key->double_candidate = false;
-        ESP_LOGI(
-            TAG,
-            "custom key idle detected: logical=%s source=%s raw_high=%d",
-            key->logical_name,
-            key->label,
-            raw_high ? 1 : 0);
+    if (!key->initialized || raw_high == key->stable_level_high) {
         return;
     }
 
-    if (raw_high == key->last_sample_high) {
-        if (key->stable_count < UINT8_MAX) {
-            key->stable_count++;
-        }
-    } else {
-        ESP_LOGI(
-            TAG,
-            "custom key raw transition: logical=%s source=%s raw_high=%d stable_high=%d",
-            key->logical_name,
-            key->label,
-            raw_high ? 1 : 0,
-            key->stable_level_high ? 1 : 0);
-        keyboard_input_debug_log(
-            KEYBOARD_INPUT_DEBUG_KEY_RAW,
-            key->logical_key,
-            raw_high ? 1u : 0u,
-            key->stable_level_high ? 1u : 0u);
-        key->last_sample_high = raw_high;
-        key->stable_count = 1;
-        return;
-    }
-
-    if (key->stable_count < KEYBOARD_CUSTOM_DEBOUNCE_SAMPLES || raw_high == key->stable_level_high) {
-        return;
-    }
-
+    key->last_sample_high = raw_high;
     key->stable_level_high = raw_high;
+    key->stable_count = KEYBOARD_CUSTOM_DEBOUNCE_SAMPLES;
     bool pressed = !raw_high;
     power_manager_record_activity(key->logical_name);
     status_led_notify_key_event(key->index, pressed);
     ESP_LOGI(
         TAG,
-        "custom key stable transition: logical=%s source=%s raw_high=%d pressed=%d",
+        "custom key stable transition: logical=%s source=%s raw_high=%d pressed=%d origin=%s",
         key->logical_name,
         key->label,
         raw_high ? 1 : 0,
-        pressed ? 1 : 0);
+        pressed ? 1 : 0,
+        origin != NULL ? origin : "unknown");
     keyboard_input_debug_log(
         KEYBOARD_INPUT_DEBUG_KEY_STABLE,
         key->logical_key,
@@ -633,6 +659,55 @@ static void keyboard_custom_handle_sample(keyboard_custom_key_t *key, bool raw_h
     }
 }
 
+static void keyboard_custom_handle_sample(keyboard_custom_key_t *key, bool raw_high, TickType_t now)
+{
+    if (!key->initialized) {
+        key->initialized = true;
+        key->last_sample_high = raw_high;
+        key->stable_level_high = raw_high;
+        key->stable_count = 1;
+        key->pressed = false;
+        key->long_sent = false;
+        key->pending_single = false;
+        key->double_candidate = false;
+        ESP_LOGI(
+            TAG,
+            "custom key idle detected: logical=%s source=%s raw_high=%d",
+            key->logical_name,
+            key->label,
+            raw_high ? 1 : 0);
+        return;
+    }
+
+    if (raw_high == key->last_sample_high) {
+        if (key->stable_count < UINT8_MAX) {
+            key->stable_count++;
+        }
+    } else {
+        ESP_LOGI(
+            TAG,
+            "custom key raw transition: logical=%s source=%s raw_high=%d stable_high=%d",
+            key->logical_name,
+            key->label,
+            raw_high ? 1 : 0,
+            key->stable_level_high ? 1 : 0);
+        keyboard_input_debug_log(
+            KEYBOARD_INPUT_DEBUG_KEY_RAW,
+            key->logical_key,
+            raw_high ? 1u : 0u,
+            key->stable_level_high ? 1u : 0u);
+        key->last_sample_high = raw_high;
+        key->stable_count = 1;
+        return;
+    }
+
+    if (key->stable_count < KEYBOARD_CUSTOM_DEBOUNCE_SAMPLES || raw_high == key->stable_level_high) {
+        return;
+    }
+
+    keyboard_custom_apply_stable_transition(key, raw_high, now, "poll");
+}
+
 static bool keyboard_custom_generated_raw_high(
     const keyboard_custom_key_t *key,
     bool physical_raw_high,
@@ -644,17 +719,31 @@ static bool keyboard_custom_generated_raw_high(
     }
 
     uint32_t elapsed_ms = keyboard_custom_elapsed_ms(now, state->started_tick);
-    if (elapsed_ms < KEYBOARD_CUSTOM_GENERATED_PRESS_MS) {
+    uint32_t press_ms = KEYBOARD_CUSTOM_GENERATED_PRESS_MS;
+    uint32_t release_ms = KEYBOARD_CUSTOM_GENERATED_RELEASE_SETTLE_MS;
+    if (state->gesture == KEYBOARD_CUSTOM_GESTURE_LONG) {
+        press_ms = KEYBOARD_CUSTOM_LONG_PRESS_MS + KEYBOARD_CUSTOM_GENERATED_PRESS_MS;
+    }
+
+    if (elapsed_ms < press_ms) {
         return false;
     }
-    if (elapsed_ms < KEYBOARD_CUSTOM_GENERATED_PRESS_MS + KEYBOARD_CUSTOM_GENERATED_RELEASE_SETTLE_MS) {
+    if (elapsed_ms < press_ms + release_ms) {
         return true;
+    }
+    if (state->gesture == KEYBOARD_CUSTOM_GESTURE_DOUBLE) {
+        if (elapsed_ms < press_ms + release_ms + KEYBOARD_CUSTOM_GENERATED_PRESS_MS) {
+            return false;
+        }
+        if (elapsed_ms < press_ms + release_ms + KEYBOARD_CUSTOM_GENERATED_PRESS_MS + release_ms) {
+            return true;
+        }
     }
 
     state->active = false;
     ESP_LOGI(
         TAG,
-        "custom key generated single-click completed: logical=%s source=%s gesture=%s",
+        "custom key generated gesture completed: logical=%s source=%s gesture=%s",
         key->logical_name,
         key->label,
         keyboard_custom_gesture_name(state->gesture));
@@ -683,9 +772,10 @@ static void keyboard_custom_drain_generated_events(TickType_t now)
         state->started_tick = now;
         ESP_LOGI(
             TAG,
-            "custom key generated single-click armed: logical=%s source=%s",
+            "custom key generated gesture armed: logical=%s source=%s gesture=%s",
             key->logical_name,
-            key->label);
+            key->label,
+            keyboard_custom_gesture_name(event.gesture));
     }
 }
 
@@ -712,9 +802,7 @@ static uint32_t keyboard_custom_next_wait_ms(TickType_t now)
         return KEYBOARD_CUSTOM_POLL_MS;
     }
 
-    uint32_t wait_ms = keyboard_power_state_is_low_power_idle()
-        ? KEYBOARD_CUSTOM_LOW_POWER_IDLE_BACKUP_POLL_MS
-        : KEYBOARD_CUSTOM_IDLE_BACKUP_POLL_MS;
+    uint32_t wait_ms = KEYBOARD_CUSTOM_POLL_MS;
     for (size_t index = 0; index < sizeof(s_custom_keys) / sizeof(s_custom_keys[0]); ++index) {
         keyboard_custom_key_t *key = &s_custom_keys[index];
         if (!key->initialized || keyboard_custom_debounce_active(key)) {
@@ -761,100 +849,8 @@ static void keyboard_custom_task(void *parameter)
             keyboard_custom_handle_timers(&s_custom_keys[index], now);
         }
         uint32_t wait_ms = keyboard_custom_next_wait_ms(xTaskGetTickCount());
-        bool low_power_wait =
-            keyboard_power_state_is_low_power_idle() &&
-            wait_ms > KEYBOARD_CUSTOM_POLL_MS;
-        keyboard_custom_set_low_power_irq(low_power_wait);
-        if (low_power_wait) {
-            (void)watchdog_platform_task_notify_take_low_power(pdTRUE, wait_ms);
-            keyboard_custom_set_low_power_irq(false);
-        } else {
-            (void)watchdog_platform_task_notify_take(pdTRUE, wait_ms);
-        }
+        (void)watchdog_platform_task_notify_take(pdTRUE, wait_ms);
     }
-}
-
-static void keyboard_custom_wake_from_isr(void *arg)
-{
-    gpio_num_t gpio = (gpio_num_t)(intptr_t)arg;
-    if (s_custom_low_power_irq_mode && gpio != GPIO_NUM_NC) {
-        (void)gpio_intr_disable(gpio);
-    }
-    if (s_custom_task_handle == NULL) {
-        return;
-    }
-
-    BaseType_t higher_priority_woken = pdFALSE;
-    vTaskNotifyGiveFromISR(s_custom_task_handle, &higher_priority_woken);
-    if (higher_priority_woken == pdTRUE) {
-        portYIELD_FROM_ISR();
-    }
-}
-
-static void keyboard_custom_set_low_power_irq(bool enabled)
-{
-    if (s_custom_low_power_irq_mode == enabled) {
-        return;
-    }
-
-    gpio_int_type_t intr_type = enabled ? GPIO_INTR_LOW_LEVEL : GPIO_INTR_ANYEDGE;
-    bool all_ok = true;
-    for (size_t index = 0; index < sizeof(s_custom_keys) / sizeof(s_custom_keys[0]); ++index) {
-        esp_err_t ret = gpio_set_intr_type(s_custom_keys[index].gpio, intr_type);
-        if (ret != ESP_OK) {
-            all_ok = false;
-            ESP_LOGW(
-                TAG,
-                "custom key IRQ mode change failed: logical=%s gpio=%d low_power=%u ret=%s",
-                s_custom_keys[index].logical_name,
-                s_custom_keys[index].gpio,
-                enabled ? 1u : 0u,
-                esp_err_to_name(ret));
-            continue;
-        }
-        ret = gpio_intr_enable(s_custom_keys[index].gpio);
-        if (ret != ESP_OK) {
-            all_ok = false;
-            ESP_LOGW(
-                TAG,
-                "custom key IRQ enable failed: logical=%s gpio=%d low_power=%u ret=%s",
-                s_custom_keys[index].logical_name,
-                s_custom_keys[index].gpio,
-                enabled ? 1u : 0u,
-                esp_err_to_name(ret));
-        }
-    }
-    s_custom_low_power_irq_mode = enabled;
-    if (!all_ok) {
-        ESP_LOGW(
-            TAG,
-            "custom key IRQ mode partially applied: low_power=%u; next mode switch will retry all keys",
-            enabled ? 1u : 0u);
-    }
-}
-
-static esp_err_t keyboard_custom_add_isr_handlers(void)
-{
-    for (size_t index = 0; index < sizeof(s_custom_keys) / sizeof(s_custom_keys[0]); ++index) {
-        esp_err_t ret = gpio_isr_handler_add(
-            s_custom_keys[index].gpio,
-            keyboard_custom_wake_from_isr,
-            (void *)(intptr_t)s_custom_keys[index].gpio);
-        if (ret != ESP_OK) {
-            for (size_t cleanup = 0; cleanup < index; ++cleanup) {
-                (void)gpio_isr_handler_remove(s_custom_keys[cleanup].gpio);
-            }
-            ESP_LOGE(
-                TAG,
-                "custom key ISR handler add failed: logical=%s gpio=%d error=%s",
-                s_custom_keys[index].logical_name,
-                s_custom_keys[index].gpio,
-                esp_err_to_name(ret));
-            diag_log(DIAG_SRC_KEYBOARD, DIAG_KBD_GPIO_FAIL, DIAG_SEV_ERROR, 1, ret, 0, 0);
-            return ret;
-        }
-    }
-    return ESP_OK;
 }
 
 static void keyboard_ec11_queue_edge_from_isr(void *arg)
@@ -1130,7 +1126,6 @@ static esp_err_t keyboard_custom_start(void)
             return ESP_ERR_NO_MEM;
         }
     }
-
     gpio_config_t io_conf = {
         .pin_bit_mask = (1ULL << BOARD_PINS_KEY1_IO) |
                         (1ULL << BOARD_PINS_KEY2_IO) |
@@ -1139,7 +1134,7 @@ static esp_err_t keyboard_custom_start(void)
         .mode = GPIO_MODE_INPUT,
         .pull_up_en = GPIO_PULLUP_ENABLE,
         .pull_down_en = GPIO_PULLDOWN_DISABLE,
-        .intr_type = GPIO_INTR_ANYEDGE,
+        .intr_type = GPIO_INTR_DISABLE,
     };
     esp_err_t ret = gpio_config(&io_conf);
     if (ret != ESP_OK) {
@@ -1147,22 +1142,10 @@ static esp_err_t keyboard_custom_start(void)
         diag_log(DIAG_SRC_KEYBOARD, DIAG_KBD_GPIO_FAIL, DIAG_SEV_ERROR, 1, ret, 0, 0);
         return ret;
     }
-    s_custom_low_power_irq_mode = false;
-
-    ret = gpio_install_isr_service(0);
-    if (ret != ESP_OK && ret != ESP_ERR_INVALID_STATE) {
-        ESP_LOGE(TAG, "custom key GPIO ISR service install failed: %s", esp_err_to_name(ret));
-        diag_log(DIAG_SRC_KEYBOARD, DIAG_KBD_GPIO_FAIL, DIAG_SEV_ERROR, 1, ret, 0, 0);
-        return ret;
-    }
     for (size_t index = 0; index < sizeof(s_custom_keys) / sizeof(s_custom_keys[0]); ++index) {
         keyboard_enable_active_low_light_sleep_wake(
             s_custom_keys[index].gpio,
             s_custom_keys[index].logical_name);
-    }
-    ret = keyboard_custom_add_isr_handlers();
-    if (ret != ESP_OK) {
-        return ret;
     }
 
     BaseType_t task_ok = xTaskCreate(
@@ -1173,19 +1156,14 @@ static esp_err_t keyboard_custom_start(void)
         4,
         &s_custom_task_handle);
     if (task_ok != pdPASS) {
-        for (size_t index = 0; index < sizeof(s_custom_keys) / sizeof(s_custom_keys[0]); ++index) {
-            (void)gpio_isr_handler_remove(s_custom_keys[index].gpio);
-        }
         ESP_LOGE(TAG, "custom key task create failed");
         return ESP_ERR_NO_MEM;
     }
 
     ESP_LOGI(
         TAG,
-        "custom keys ready: key1=gpio38:f13/f17/f21 key2=gpio39:f14/f18/f22 key3=gpio40:f15/f19/f23 key4=gpio41:f16/f20/f24 active_low=1 wake=interrupt_anyedge low_power_wake=active_low_level_one_shot poll_ms=%d idle_backup_ms=%d low_power_idle_backup_ms=%d debounce_ms=%d debounce_samples=%d double_ms=%d long_ms=%d",
+        "custom keys ready: key1=gpio38:f13/f17/f21 key2=gpio39:f14/f18/f22 key3=gpio40:f15/f19/f23 key4=gpio41:f16/f20/f24 active_low=1 wake=poll_10ms low_power_wake=gpio_wakeup_only poll_ms=%d debounce_ms=%d debounce_samples=%d double_ms=%d long_ms=%d",
         KEYBOARD_CUSTOM_POLL_MS,
-        KEYBOARD_CUSTOM_IDLE_BACKUP_POLL_MS,
-        KEYBOARD_CUSTOM_LOW_POWER_IDLE_BACKUP_POLL_MS,
         KEYBOARD_CUSTOM_DEBOUNCE_MS,
         KEYBOARD_CUSTOM_DEBOUNCE_SAMPLES,
         KEYBOARD_CUSTOM_DOUBLE_CLICK_WINDOW_MS,

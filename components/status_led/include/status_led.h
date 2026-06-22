@@ -47,6 +47,12 @@ typedef enum {
     STATUS_LED_EC11_FEEDBACK_ROTATE_CCW,
 } status_led_ec11_feedback_t;
 
+typedef enum {
+    STATUS_LED_KEY_FEEDBACK_SINGLE = 0,
+    STATUS_LED_KEY_FEEDBACK_DOUBLE,
+    STATUS_LED_KEY_FEEDBACK_LONG,
+} status_led_key_feedback_t;
+
 esp_err_t status_led_init(void);
 esp_err_t status_led_start(void);
 void status_led_show_status_window(const char *reason);
@@ -58,6 +64,7 @@ void status_led_set_processing(bool active, const char *reason);
 void status_led_notify_success(const char *reason);
 void status_led_notify_warning(const char *reason);
 void status_led_notify_key_event(uint8_t key_index, bool pressed);
+void status_led_notify_key_feedback(uint8_t key_index, status_led_key_feedback_t feedback);
 void status_led_notify_ec11_feedback(status_led_ec11_feedback_t feedback);
 void status_led_notify_shutdown_confirm(bool final, const char *reason);
 void status_led_cancel_shutdown_confirm(const char *reason);
