@@ -93,6 +93,14 @@ CHECKS = {
         "POWER_MANAGER_LOW_BATTERY_BOOT_GRACE_MS",
         "power_manager_should_refresh_battery_for_evaluate_locked",
         "power_manager_should_refresh_battery_for_snapshot_locked",
+        "power_manager_configure_power_input_wake",
+        "power_manager_update_power_input_irq_arm",
+        "s_power_input_irq_armed",
+        "esp_sleep_enable_gpio_wakeup",
+        "gpio_wakeup_enable",
+        "gpio_intr_enable",
+        "gpio_intr_disable",
+        "power input wake ready",
         "power_manager_low_battery_shutdown_confirmed_locked",
         "power_manager_copy_cached_battery_snapshot_locked",
         "power_manager_should_preserve_idle_for_ble_change_locked",
@@ -117,11 +125,15 @@ CHECKS = {
         "low_power_idle_ms=%",
         "plugged_low_power_enabled=%u",
         "low_power_idle_allowed=%u",
+        "power_input_wake_configured=%u",
+        "power_input_irq_armed=%u",
         "status_led_prepare_sleep",
         "power_manager_low_power_idle_ms",
         "power_manager_plugged_low_power_enabled",
         "power_manager_guard_runtime_power_hold_low",
         "PWR_HOLD/GPIO9 runtime guard reasserting low",
+        "esp_pm_dump_locks",
+        'strcmp(command, "PM")',
         'strcmp(command, "SHUTDOWN")',
     ],
     "ports/esp32/audio_capture/audio_capture_esp32.c": [
@@ -148,10 +160,21 @@ CHECKS = {
         "ble_hid_usb_command_is_passive_query",
         "ble_hid_usb_command_records_activity",
         "POWER:STATUS",
+        "POWER:PM",
+        "POWER:PM:LOCKS",
         "BOARD:STATUS",
         "BOARD:POWER",
         "LED:STATUS",
         "DEVICE:SETTINGS",
+    ],
+    "ports/esp32/voice_key_input/voice_key_input_esp32.c": [
+        "VOICE_KEY_INPUT_IDLE_BACKUP_POLL_MS (1000)",
+        "VOICE_KEY_INPUT_LOW_POWER_IDLE_BACKUP_POLL_MS (5000)",
+        "voice_key_input_next_wait_ms",
+        "GPIO_INTR_ANYEDGE",
+        "gpio_isr_handler_add",
+        "watchdog_platform_task_notify_take_low_power",
+        "wake=interrupt_anyedge",
     ],
     "components/voice_recording_control/voice_recording_control.c": [
         "POWER_MANAGER_BLOCKER_RECORDING",
@@ -181,45 +204,22 @@ CHECKS = {
     ],
     "sdkconfig.defaults": [
         "CONFIG_POWER_MANAGER_BATTERY_CRITICAL_PERCENT=0",
-        "CONFIG_USJ_NO_AUTO_LS_ON_CONNECTION=y",
         "CONFIG_BT_CTRL_MAIN_XTAL_PU_DURING_LIGHT_SLEEP=y",
+        "CONFIG_USJ_NO_AUTO_LS_ON_CONNECTION=y",
     ],
     "sdkconfig.defaults.esp32s3": [
         "CONFIG_PM_ENABLE=y",
         "CONFIG_PM_SLEEP_FUNC_IN_IRAM=y",
         "CONFIG_FREERTOS_USE_TICKLESS_IDLE=y",
         "CONFIG_BT_CTRL_MODEM_SLEEP=y",
-        "CONFIG_USJ_NO_AUTO_LS_ON_CONNECTION=y",
         "CONFIG_BT_CTRL_MAIN_XTAL_PU_DURING_LIGHT_SLEEP=y",
+        "CONFIG_USJ_NO_AUTO_LS_ON_CONNECTION=y",
         "CONFIG_ESPTOOLPY_FLASHSIZE_16MB=y",
         "CONFIG_SPIRAM=y",
         "CONFIG_POWER_MANAGER_AUDIO_IDLE_MS=5000",
         "CONFIG_POWER_MANAGER_CONNECTED_IDLE_MS=60000",
         "CONFIG_POWER_MANAGER_DISCONNECTED_IDLE_MS=60000",
         "CONFIG_POWER_MANAGER_HARDWARE_SHUTDOWN_MS=1800000",
-    ],
-    "sdkconfig.defaults.usb-light-sleep-debug": [
-        "USB Serial/JTAG",
-        "opt-in profile",
-        "# CONFIG_USJ_NO_AUTO_LS_ON_CONNECTION is not set",
-        "CONFIG_BT_CTRL_MAIN_XTAL_PU_DURING_LIGHT_SLEEP=y",
-    ],
-    "tools/build_usb_light_sleep_debug.ps1": [
-        "sdkconfig.defaults.usb-light-sleep-debug",
-        "SDKCONFIG_DEFAULTS",
-        "SDKCONFIG=",
-        "listener-idf-build-usb-light-sleep-debug",
-    ],
-    "tools/build.ps1": [
-        "Reset-StaleGeneratedSdkconfig",
-        "# CONFIG_USJ_NO_AUTO_LS_ON_CONNECTION is not set",
-        "moved stale sdkconfig",
-    ],
-    "tools/flash_usb_light_sleep_debug.ps1": [
-        "build_usb_light_sleep_debug.ps1",
-        "flash.ps1",
-        "-NoBuild",
-        "listener-idf-build-usb-light-sleep-debug",
     ],
     "main/main.c": [
         "esp_pm_configure",
@@ -272,7 +272,11 @@ FORBIDDEN = {
     ],
     "components/power_manager/power_manager.c": [
         "esp_deep_sleep_start",
-        "esp_sleep_",
+        "esp_sleep_get_wakeup_cause",
+        "esp_sleep_get_ext1_wakeup_status",
+        "esp_sleep_enable_ext",
+        "esp_sleep_enable_timer_wakeup",
+        "esp_sleep_disable_wakeup_source",
         "rtc_gpio_",
         "RTC_DATA_ATTR",
         "CONFIG_POWER_MANAGER_OVERNIGHT_SLEEP_MS",
@@ -492,6 +496,58 @@ def main() -> int:
         failures.append(
             "components/power_manager/power_manager.c: stable idle must use a long low-power evaluate wait instead of 2s polling"
         )
+    wake_checks = {
+        "isr_one_shot_notify": (
+            r"power_manager_disable_power_input_interrupt_from_isr[\s\S]*"
+            r"gpio_intr_disable[\s\S]*"
+            r"power_manager_power_input_wake_from_isr[\s\S]*"
+            r"s_power_input_irq_armed\s*=\s*false[\s\S]*"
+            r"vTaskNotifyGiveFromISR"
+        ),
+        "pin_low_level_wake": (
+            r"power_manager_configure_power_input_wake_pin[\s\S]*"
+            r"GPIO_INTR_DISABLE[\s\S]*"
+            r"gpio_isr_handler_add\(gpio,\s*power_manager_power_input_wake_from_isr[\s\S]*"
+            r"gpio_wakeup_enable\(gpio,\s*GPIO_INTR_LOW_LEVEL\)[\s\S]*"
+            r"gpio_intr_disable\(gpio\)"
+        ),
+        "gpio_wakeup_source": (
+            r"power_manager_configure_power_input_wake[\s\S]*"
+            r"board_get_v2_power_input_snapshot[\s\S]*"
+            r"BOARD_PINS_BAT_CHG_IO[\s\S]*"
+            r"BOARD_PINS_BAT_STD_IO[\s\S]*"
+            r"esp_sleep_enable_gpio_wakeup\(\)"
+        ),
+        "irq_arm_helper": (
+            r"power_manager_set_power_input_interrupt[\s\S]*"
+            r"gpio_intr_enable[\s\S]*"
+            r"gpio_intr_disable[\s\S]*"
+            r"power_manager_set_power_input_irq_armed"
+        ),
+        "battery_idle_arm_policy": (
+            r"power_manager_update_power_input_irq_arm[\s\S]*"
+            r"!source->external_power_present[\s\S]*"
+            r"POWER_MANAGER_STATE_CONNECTED_IDLE[\s\S]*"
+            r"POWER_MANAGER_STATE_DISCONNECTED_IDLE[\s\S]*"
+            r"power_manager_set_power_input_irq_armed\(should_arm\)"
+        ),
+        "evaluate_wiring": (
+            r"power_manager_evaluate[\s\S]*"
+            r"power_manager_update_power_input_irq_arm\(next,\s*&power_source\)"
+        ),
+        "start_wiring": (
+            r"power_manager_start[\s\S]*"
+            r"power_manager_configure_power_input_wake\(\)"
+        ),
+    }
+    missing_wake_checks = [
+        name for name, pattern in wake_checks.items() if not re.search(pattern, power_manager)
+    ]
+    if missing_wake_checks:
+        failures.append(
+            "components/power_manager/power_manager.c: plugged attach must notify power manager from BAT_CHG/BAT_STD GPIO light-sleep wake"
+            f" (missing: {', '.join(missing_wake_checks)})"
+        )
     if not re.search(
         r"POWER_MANAGER_LOW_BATTERY_SHUTDOWN_MAX_MV\s+2800U[\s\S]*"
         r"POWER_MANAGER_LOW_BATTERY_CONFIRM_MS\s+5000U[\s\S]*"
@@ -561,18 +617,7 @@ def main() -> int:
         power_manager,
     ):
         failures.append(
-            "components/power_manager/power_manager.c: connected idle must turn off routine status LEDs before sleeping audio"
-        )
-    if not re.search(
-        r"case\s+POWER_MANAGER_STATE_CONNECTED_IDLE:[\s\S]*"
-        r"s_external_power_present[\s\S]*"
-        r"keeping active BLE connection parameters[\s\S]*"
-        r"ble_hid_gap_request_active_connection\(\)[\s\S]*"
-        r"else if\s*\(ble_hid_gap_request_low_power_connection != NULL\)",
-        power_manager,
-    ):
-        failures.append(
-            "components/power_manager/power_manager.c: externally powered connected idle must keep active BLE connection parameters before battery low-power fallback"
+            "components/power_manager/power_manager.c: connected idle must enter status LED low-power rendering before sleeping audio"
         )
     if not re.search(
         r"case\s+POWER_MANAGER_STATE_DISCONNECTED_IDLE:[\s\S]{0,80}"
@@ -582,7 +627,7 @@ def main() -> int:
         power_manager,
     ):
         failures.append(
-            "components/power_manager/power_manager.c: disconnected idle and hardware shutdown must turn off routine status LEDs"
+            "components/power_manager/power_manager.c: disconnected idle and hardware shutdown must enter status LED low-power rendering"
         )
     if re.search(
         r"if\s*\(connected\)\s*\{[\s\S]{0,120}s_last_user_activity_ms\s*=",
@@ -704,11 +749,13 @@ def main() -> int:
         r"connected_idle_threshold_ms\s*=\s*snapshot->low_power_idle_threshold_ms[\s\S]*"
         r"disconnected_idle_threshold_ms\s*=\s*snapshot->low_power_idle_threshold_ms[\s\S]*"
         r"plugged_low_power_enabled\s*=\s*power_manager_plugged_low_power_enabled\(\)[\s\S]*"
-        r"low_power_idle_allowed",
+        r"low_power_idle_allowed[\s\S]*"
+        r"power_input_wake_configured[\s\S]*"
+        r"power_input_irq_armed",
         power_manager,
     ):
         failures.append(
-            "components/power_manager/power_manager.c: POWER:STATUS must report the effective low-power timeout and plugged low-power allowance"
+            "components/power_manager/power_manager.c: POWER:STATUS must report the effective low-power timeout, plugged low-power allowance, and power-input wake diagnostics"
         )
     if not re.search(
         r"power_manager_guard_runtime_power_hold_low[\s\S]*"
@@ -819,11 +866,11 @@ def main() -> int:
         )
     if not re.search(
         r"ble_hid_usb_command_is_passive_query[\s\S]*"
-        r"POWER:STATUS[\s\S]*BOARD:STATUS[\s\S]*BOARD:POWER[\s\S]*BOARD:POWER:FORCE[\s\S]*LED:STATUS[\s\S]*DEVICE:SETTINGS",
+        r"POWER:STATUS[\s\S]*POWER:PM[\s\S]*BOARD:STATUS[\s\S]*BOARD:POWER[\s\S]*BOARD:POWER:FORCE[\s\S]*LED:STATUS[\s\S]*DEVICE:SETTINGS",
         ble_hid,
     ):
         failures.append(
-            "ports/esp32/ble_hid/ble_hid.c: passive board, power, LED, and device queries must be enumerated"
+            "ports/esp32/ble_hid/ble_hid.c: passive board, power/PM, LED, and device queries must be enumerated"
         )
     if not re.search(
         r"ble_hid_usb_command_records_activity[\s\S]*"

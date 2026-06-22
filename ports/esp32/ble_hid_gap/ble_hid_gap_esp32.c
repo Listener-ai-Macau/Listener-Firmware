@@ -94,6 +94,12 @@ static char s_service_changed_schema_id[64];
 static bool s_recovery_identity_rotation_pending = false;
 static bool s_recovery_pairing_window_active = false;
 static int64_t s_recovery_identity_rotated_at_ms = 0;
+static uint32_t s_last_conn_param_mode = 0;
+
+typedef enum {
+    BLE_HID_CONN_PARAM_MODE_ACTIVE = 1,
+    BLE_HID_CONN_PARAM_MODE_LOW_POWER = 2,
+} ble_hid_conn_param_mode_t;
 
 typedef struct {
     bool connected;
@@ -116,30 +122,8 @@ static void ble_hid_gap_set_connection_state(bool connected, uint16_t conn_handl
     portENTER_CRITICAL(&s_ble_gap_state_lock);
     s_ble_gap_connected = connected;
     s_ble_gap_conn_handle = conn_handle;
+    s_last_conn_param_mode = 0;
     portEXIT_CRITICAL(&s_ble_gap_state_lock);
-}
-
-static status_led_ble_state_t ble_hid_gap_status_led_connected_state(void)
-{
-    return (s_audio_enabled && ble_audio_stream_is_ready())
-        ? STATUS_LED_BLE_TYPE_READY
-        : STATUS_LED_BLE_CONNECTED;
-}
-
-static void ble_hid_gap_refresh_connected_status_led(bool confidence_window)
-{
-    ble_hid_gap_connection_snapshot_t conn = ble_hid_gap_connection_snapshot();
-    if (!conn.connected) {
-        return;
-    }
-    status_led_ble_state_t state = ble_hid_gap_status_led_connected_state();
-    ESP_LOGI(
-        TAG,
-        "BLE status LED refresh: state=%s confidence=%u audio_ready=%u",
-        state == STATUS_LED_BLE_TYPE_READY ? "type_ready" : "connected",
-        confidence_window ? 1U : 0U,
-        (s_audio_enabled && ble_audio_stream_is_ready()) ? 1U : 0U);
-    status_led_set_ble_state(state, confidence_window);
 }
 
 typedef enum {
@@ -594,16 +578,30 @@ static void ble_hid_gap_indicate_service_changed(uint16_t conn_handle, const cha
 }
 
 static esp_err_t ble_hid_gap_request_connection_params(
-    const char *policy_log,
+    const char *policy,
     uint16_t itvl_min,
     uint16_t itvl_max,
     uint16_t latency,
     uint16_t supervision_timeout,
-    uint32_t mode_code)
+    ble_hid_conn_param_mode_t mode)
 {
     ble_hid_gap_connection_snapshot_t conn = ble_hid_gap_connection_snapshot();
     if (!conn.connected || conn.conn_handle == BLE_HS_CONN_HANDLE_NONE) {
         return ESP_ERR_INVALID_STATE;
+    }
+
+    if (s_last_conn_param_mode == (uint32_t)mode) {
+        ESP_LOGI(
+            TAG,
+            "%s connection parameters already requested: conn=%u preferred_itvl=%u-%u latency=%u timeout=%u mode=%u",
+            policy,
+            conn.conn_handle,
+            itvl_min,
+            itvl_max,
+            latency,
+            supervision_timeout,
+            (unsigned)mode);
+        return ESP_OK;
     }
 
     struct ble_gap_upd_params params = {
@@ -615,22 +613,35 @@ static esp_err_t ble_hid_gap_request_connection_params(
         .max_ce_len = 0,
     };
     int rc = ble_gap_update_params(conn.conn_handle, &params);
+    if (rc == 0 || rc == BLE_HS_EALREADY) {
+        portENTER_CRITICAL(&s_ble_gap_state_lock);
+        if (s_ble_gap_connected && s_ble_gap_conn_handle == conn.conn_handle) {
+            s_last_conn_param_mode = (uint32_t)mode;
+        }
+        portEXIT_CRITICAL(&s_ble_gap_state_lock);
+    }
+
     ESP_LOGI(
         TAG,
-        "%s: conn=%u preferred_itvl=%u-%u latency=%u timeout=%u mode=%u rc=%d",
-        policy_log,
+        "%s connection parameter update requested: conn=%u preferred_itvl=%u-%u latency=%u timeout=%u mode=%u rc=%d",
+        policy,
         conn.conn_handle,
         itvl_min,
         itvl_max,
         latency,
         supervision_timeout,
-        (unsigned)mode_code,
+        (unsigned)mode,
         rc);
-
-    if (rc == 0 || rc == BLE_HS_EALREADY) {
-        return ESP_OK;
-    }
-    return ESP_FAIL;
+    diag_log(
+        DIAG_SRC_BLE_GAP,
+        DIAG_GAP_CONN_PARAM_REQ,
+        rc == 0 || rc == BLE_HS_EALREADY ? DIAG_SEV_INFO : DIAG_SEV_WARN,
+        (uint32_t)mode,
+        (uint32_t)rc,
+        conn.conn_handle,
+        latency);
+    ble_hid_gap_log_conn_desc(policy, conn.conn_handle);
+    return (rc == 0 || rc == BLE_HS_EALREADY) ? ESP_OK : ESP_FAIL;
 }
 
 esp_err_t esp_hid_ble_gap_adv_init(uint16_t appearance, const char *device_name)
@@ -735,7 +746,6 @@ nimble_hid_gap_event(struct ble_gap_event *event, void *arg)
         if (s_audio_enabled) {
             ble_audio_stream_on_gap_connect(event->connect.conn_handle);
         }
-        ble_hid_gap_refresh_connected_status_led(false);
         s_last_adv_was_directed = false;
         s_service_changed_queued_for_conn = false;
         ble_hid_gap_queue_service_changed("connect");
@@ -899,7 +909,6 @@ nimble_hid_gap_event(struct ble_gap_event *event, void *arg)
                 event->subscribe.attr_handle,
                 event->subscribe.cur_notify,
                 event->subscribe.cur_indicate);
-            ble_hid_gap_refresh_connected_status_led(false);
         }
         if (event->subscribe.reason == BLE_GAP_SUBSCRIBE_REASON_WRITE &&
             event->subscribe.attr_handle == ble_hid_gap_get_service_changed_val_handle() &&
@@ -922,7 +931,6 @@ nimble_hid_gap_event(struct ble_gap_event *event, void *arg)
                  0, event->mtu.value, event->mtu.conn_handle, event->mtu.channel_id);
         if (s_audio_enabled) {
             ble_audio_stream_on_gap_mtu(event->mtu.conn_handle, event->mtu.value);
-            ble_hid_gap_refresh_connected_status_led(false);
         }
         ble_diag_log_on_gap_mtu(event->mtu.conn_handle, event->mtu.value);
         return 0;
@@ -1125,7 +1133,7 @@ esp_err_t esp_hid_ble_gap_adv_start(void)
             DIAG_SEV_INFO);
         diag_log(DIAG_SRC_BLE_GAP, DIAG_GAP_ADV_START, DIAG_SEV_INFO,
                  2, 0, 1, conn.conn_handle);
-        ble_hid_gap_refresh_connected_status_led(false);
+        status_led_set_ble_state(STATUS_LED_BLE_CONNECTED, false);
         return ESP_OK;
     }
 
@@ -1699,21 +1707,21 @@ esp_err_t ble_hid_gap_request_reconnect(void)
 esp_err_t ble_hid_gap_request_low_power_connection(void)
 {
     return ble_hid_gap_request_connection_params(
-        "low-power idle connection parameters requested",
+        "low-power idle",
         36,
         72,
         4,
         600,
-        2);
+        BLE_HID_CONN_PARAM_MODE_LOW_POWER);
 }
 
 esp_err_t ble_hid_gap_request_active_connection(void)
 {
     return ble_hid_gap_request_connection_params(
-        "active connection parameters requested",
+        "active",
         6,
         12,
         0,
         800,
-        1);
+        BLE_HID_CONN_PARAM_MODE_ACTIVE);
 }

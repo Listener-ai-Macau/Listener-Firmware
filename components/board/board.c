@@ -84,6 +84,7 @@ static const board_led_group_t s_led_groups[] = {
 
 static bool s_usb_det_highz_mode = true;
 static bool s_power_hold_configured;
+static uint64_t s_status_input_configured_mask;
 
 static bool board_command_matches(const char *line, const char *prefix, const char **out_command)
 {
@@ -107,8 +108,13 @@ static void board_configure_status_input(gpio_num_t gpio)
         return;
     }
 
+    uint64_t pin_mask = 1ULL << (uint32_t)gpio;
+    if ((s_status_input_configured_mask & pin_mask) != 0) {
+        return;
+    }
+
     gpio_config_t config = {
-        .pin_bit_mask = 1ULL << (uint32_t)gpio,
+        .pin_bit_mask = pin_mask,
         .mode = GPIO_MODE_INPUT,
         .pull_up_en = GPIO_PULLUP_ENABLE,
         .pull_down_en = GPIO_PULLDOWN_DISABLE,
@@ -117,7 +123,9 @@ static void board_configure_status_input(gpio_num_t gpio)
     esp_err_t ret = gpio_config(&config);
     if (ret != ESP_OK) {
         ESP_LOGW(TAG, "status input config failed: gpio=%d ret=%s", (int)gpio, esp_err_to_name(ret));
+        return;
     }
+    s_status_input_configured_mask |= pin_mask;
 }
 
 static esp_err_t board_configure_usb_det_highz(void)
@@ -977,7 +985,7 @@ void board_print_help(void)
         "Board PWR_HOLD diagnostics: ~BOARD:PWR-HOLD:LOW restores runtime low; ~BOARD:PWR-HOLD:HIGH attempts the shutdown high drive and may power off the board.\n"
         "Input flash debug: ~DIAGLOG:INPUTDBG:ON records high-volume key/EC11 debug events until ~DIAGLOG:INPUTDBG:OFF or reboot.\n"
         "Power diagnostics: ~POWER:STATUS reports state/blockers/battery/power-hold status; ~POWER:PM reports ESP PM locks; ~POWER:SHUTDOWN or ~POWER:TEST:SHUTDOWN requests manual hardware shutdown.\n"
-        "Device settings: ~DEVICE:SETTINGS reports user device config; ~DEVICE:SET plugged_brightness=80 battery_brightness=50 low_power_idle_minutes=1 plugged_low_power_enabled=1 auto_shutdown_minutes=off ble_name=listener updates persisted settings.\n"
+        "Device settings: ~DEVICE:SETTINGS reports user device config; ~DEVICE:SET plugged_brightness=80 battery_brightness=50 low_power_idle_minutes=1 plugged_low_power_enabled=0 auto_shutdown_minutes=off ble_name=listener updates persisted settings.\n"
         "LED diagnostics: ~LED:STATUS reports four WS2812 groups; ~LED:TEST:RGBW and ~LED:TEST:MAP stay brightness-gated until VDD_LED sign-off.\n"
         "Watchdog diagnostics: ~WDT:STATUS reports config, ~WDT:DEADLOCK intentionally triggers Task WDT reset.\n"
         "Boot safety diagnostics: ~BOOT:STATUS reports crash counter, ~BOOT:CRASH restarts for validation, ~BOOT:CLEAR clears safe mode.\n"

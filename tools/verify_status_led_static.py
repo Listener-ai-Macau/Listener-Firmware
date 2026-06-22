@@ -125,13 +125,15 @@ CHECKS = {
         "STATUS_LED_CHARGING_BREATH_HIGH_HOLD_MS 300U",
         "STATUS_LED_CHARGING_BREATH_UNKNOWN_FLOOR_PERCENT 8U",
         "STATUS_LED_CHARGING_BREATH_MAX_PERCENT STATUS_LED_PWR_WHITE_VISUAL_BALANCE_PERCENT",
-        "STATUS_LED_CHARGING_ACTIVE_WORK_MIN_PERCENT 28U",
+        "STATUS_LED_CHARGING_ACTIVE_WORK_MIN_PERCENT 12U",
         "STATUS_LED_CHARGE_FULL_DEBOUNCE_MS 10000U",
         "STATUS_LED_CHARGE_FULL_MIN_MV 4050U",
         "STATUS_LED_CHARGE_FULL_MIN_PERCENT 88U",
         "STATUS_LED_BATTERY_DISPLAY_GREEN_PERCENT 60U",
+        "STATUS_LED_BATTERY_STATUS_WINDOW_PWR_PERCENT 14U",
+        "STATUS_LED_BATTERY_STATUS_WINDOW_LOW_PROFILE_PWR_PERCENT STATUS_LED_LOW_POWER_PWR_PERCENT",
         "STATUS_LED_LOW_BATTERY_STEADY_PERCENT 24U",
-        "STATUS_LED_PWR_WHITE_VISUAL_BALANCE_PERCENT 28U",
+        "STATUS_LED_PWR_WHITE_VISUAL_BALANCE_PERCENT 10U",
         "STATUS_LED_FULL_STEADY_PERCENT STATUS_LED_PWR_WHITE_VISUAL_BALANCE_PERCENT",
         "STATUS_LED_FULL_STATUS_STEADY_PERCENT STATUS_LED_PWR_WHITE_VISUAL_BALANCE_PERCENT",
         "STATUS_LED_LOW_POWER_PWR_PERCENT 8U",
@@ -177,12 +179,13 @@ CHECKS = {
         "STATUS_LED_NVS_BRIGHTNESS_KEY \"brightness\"",
         "led_contract_rev=",
         "rmt_tx_dma_supported=%u",
-        "rmt_tx_dma_strategy=status_strip_priority_single_rmt_dma_channel",
+        "rmt_tx_dma_strategy=status_strip_dma_full_frame_buffer",
         "rmt_strip_all_available=%u",
         "rmt_tx_dma_all_strips=%u",
         "rmt_tx_dma_requested=status:%u,ec11:%u,key:%u,edge:%u",
         "rmt_tx_dma_actual=status:%u,ec11:%u,key:%u,edge:%u",
         "rmt_tx_dma_fallback=status:%u,ec11:%u,key:%u,edge:%u",
+        "rmt_mem_block_symbols=status:%u,ec11:%u,key:%u,edge:%u",
         "unchanged_tx_suppression=1",
         "timing=ws2812_4020_compatible",
         "status_tail_guard_pixels=%u",
@@ -289,17 +292,17 @@ CHECKS = {
         "state != STATUS_LED_BLE_REPAIRING",
         "STATUS_LED_BLE_REPAIR_MIN_PERCENT 30U",
         "STATUS_LED_BLE_REPAIR_MAX_PERCENT 100U",
-        "STATUS_LED_BLE_PAIRING_PULSE_PERCENT 100U",
-        "STATUS_LED_BLE_RECONNECT_MIN_PERCENT 30U",
-        "STATUS_LED_BLE_RECONNECT_MAX_PERCENT 100U",
-        "STATUS_LED_BLE_CONNECTED_CONFIRM_MIN_PERCENT 35U",
-        "STATUS_LED_BLE_CONNECTED_GENERIC_PERCENT 38U",
-        "STATUS_LED_BLE_CONNECTED_STEADY_PERCENT 100U",
-        "STATUS_LED_BLE_TYPE_READY_STEADY_PERCENT STATUS_LED_BLE_CONNECTED_STEADY_PERCENT",
-        "case STATUS_LED_BLE_TYPE_READY: return \"type_ready\"",
-        "status_led_ble_state_ready_locked",
+        "STATUS_LED_PWR_WHITE_VISUAL_BALANCE_PERCENT 10U",
+        "STATUS_LED_CHARGING_ACTIVE_WORK_MIN_PERCENT 12U",
+        "STATUS_LED_BLE_ATTENTION_PERCENT 18U",
+        "STATUS_LED_BLE_PAIRING_PULSE_PERCENT STATUS_LED_BLE_ATTENTION_PERCENT",
+        "STATUS_LED_BLE_RECONNECT_MIN_PERCENT 10U",
+        "STATUS_LED_BLE_RECONNECT_MAX_PERCENT STATUS_LED_BLE_ATTENTION_PERCENT",
+        "STATUS_LED_BLE_CONNECTED_CONFIRM_MIN_PERCENT 10U",
+        "STATUS_LED_BLE_CONNECTED_GENERIC_PERCENT 14U",
+        "STATUS_LED_BLE_CONNECTED_STEADY_PERCENT STATUS_LED_BLE_CONNECTED_GENERIC_PERCENT",
         "ble_elapsed_ms < STATUS_LED_BLE_CONNECTED_CONFIRM_MS",
-        "STATUS_LED_BLE_TYPE_READY_STEADY_PERCENT\n                        : STATUS_LED_BLE_CONNECTED_STEADY_PERCENT",
+        "STATUS_LED_BLE_CONNECTED_CONFIRM_MS,\n                    STATUS_LED_BLE_CONNECTED_CONFIRM_MIN_PERCENT,\n                    STATUS_LED_BLE_CONNECTED_STEADY_PERCENT",
         "status_led_preview_clear_activity_locked",
         "status_led_render_edge_clockwise_chase_locked",
         "ble_repair_ms_left=%",
@@ -442,7 +445,7 @@ CHECKS = {
         "active_flags=PWR:%u,BLE:%u,REC:%u,AI:%u,OK:%u,WARN:%u,EC11:%u,KEY:%u,EDGE:%u",
         "status_rgb=PWR:%u,%u,%u;BLE:%u,%u,%u;REC:%u,%u,%u",
         "if (changed && !effect_only) {\n            s_state.status_window_until_ms = now_ms + STATUS_LED_STATUS_WINDOW_MS;",
-        "if (changed && status_led_ble_state_ready_locked(state) && confidence_window)",
+        "if (changed && state == STATUS_LED_BLE_CONNECTED && confidence_window)",
         "state == STATUS_LED_BLE_PAIRING && status_led_ble_repair_active_locked(now_ms)",
         "status_led_render_processing_locked",
         "status_led_render_ec11_locked",
@@ -467,7 +470,9 @@ CHECKS = {
         "status_led_strip_backend_dma_requested",
         "status_led_strip_backend_uses_dma",
         "status_led_strip_backend_dma_fallback",
+        "status_led_strip_backend_mem_block_symbols",
         "status_led_strip_backend_transmit",
+        "status_led_strip_backend_suspend",
     ],
     "components/status_led/status_led_strip_backend.c": [
         "driver/rmt_encoder.h",
@@ -483,14 +488,19 @@ CHECKS = {
         "STATUS_LED_WS2812_T1H_TICKS 7U",
         "STATUS_LED_WS2812_T1L_TICKS 6U",
         "STATUS_LED_RMT_WITH_DMA SOC_RMT_SUPPORT_DMA",
+        "STATUS_LED_RMT_DMA_MEM_BLOCK_SYMBOLS 1024U",
         "status_led_strip_backend_new_channel",
         "rmt_dma_requested=%u",
         "rmt_dma_fallback=%u",
+        "mem_block_symbols=%u",
         "status_led_strip_backend_dma_supported",
         "status_led_strip_backend_dma_requested",
         "status_led_strip_backend_uses_dma",
         "status_led_strip_backend_dma_fallback",
+        "status_led_strip_backend_mem_block_symbols",
+        "status_led_strip_backend_suspend",
         "SOC_RMT_MEM_WORDS_PER_CHANNEL",
+        ".mem_block_symbols = mem_block_symbols",
         ".flags.with_dma = with_dma",
         "status_led_strip_backend_fill_pixels",
         "memset(backend->pixels, 0, sizeof(backend->pixels));",
@@ -653,7 +663,8 @@ CHECKS = {
         "User-requested re-pair/reset uses `BLE` plus a low blue EC11 confirmation orbit",
         "current render-sampled RGB frame",
         "status_query_samples_current_render=1",
-        "On battery, once confidence/status windows expire, connected BLE falls back to a sparse low-blue heartbeat",
+        "On battery before the power manager enters low-power idle, connected BLE falls back to a sparse low-blue heartbeat",
+        "In connected/disconnected low-power idle, the low-power renderer takes over and keeps restrained PWR/BLE status visible",
         "External power overrides battery-color display on `PWR`",
         "continuous slow white breath",
         "steady white once charge-full has been debounced and latched",
@@ -691,9 +702,10 @@ CHECKS = {
         "status_tail_reinforce=recording_processing",
         "status_tail_reinforce_writes=3",
         "status_tail_overlap_reinforce_writes=1",
-        "rmt_tx_dma_strategy=status_strip_priority_single_rmt_dma_channel",
+        "rmt_tx_dma_strategy=status_strip_dma_full_frame_buffer",
         "rmt_tx_dma_all_strips=0",
         "rmt_tx_dma_actual=status:1,ec11:0,key:0,edge:0",
+        "rmt_mem_block_symbols=status:1024,ec11:48,key:48,edge:48",
         "dynamic_active_accents=1",
         "status_tail_overlap_style=dma_audio_rec_ai_da_dada",
         "recording_level_reactive=1",
@@ -823,7 +835,7 @@ CHECKS = {
         "Get-ReproSteps",
         "Get-TailOnlySteps",
         "Get-ComboOnlySteps",
-        'ValidateSet("Foundation", "Scenes", "Complex", "Volume", "Product", "FinalVisual", "FinalRetest", "FinalCombo", "RootCause", "StaticRoot", "Repro", "TailOnly", "ComboOnly", "Full")',
+        'ValidateSet("Foundation", "Scenes", "Complex", "Volume", "Product", "FinalVisual", "FinalRetest", "FinalCombo", "RootCause", "StaticRoot", "Repro", "IdleTransition", "TailOnly", "ComboOnly", "Full")',
         "preview_effect_only=1",
         "effect-only preview commands",
     ],
@@ -894,9 +906,11 @@ def main() -> int:
         "STATUS_LED_CHARGING_BREATH_RISE_MS 1300U",
         "STATUS_LED_CHARGING_BREATH_HIGH_HOLD_MS 300U",
         "STATUS_LED_CHARGING_BREATH_MAX_PERCENT STATUS_LED_PWR_WHITE_VISUAL_BALANCE_PERCENT",
-        "STATUS_LED_CHARGING_ACTIVE_WORK_MIN_PERCENT 28U",
+        "STATUS_LED_CHARGING_ACTIVE_WORK_MIN_PERCENT 12U",
+        "STATUS_LED_BATTERY_STATUS_WINDOW_PWR_PERCENT 14U",
+        "STATUS_LED_BATTERY_STATUS_WINDOW_LOW_PROFILE_PWR_PERCENT STATUS_LED_LOW_POWER_PWR_PERCENT",
         "STATUS_LED_LOW_BATTERY_STEADY_PERCENT 24U",
-        "STATUS_LED_PWR_WHITE_VISUAL_BALANCE_PERCENT 28U",
+        "STATUS_LED_PWR_WHITE_VISUAL_BALANCE_PERCENT 10U",
         "STATUS_LED_FULL_STEADY_PERCENT STATUS_LED_PWR_WHITE_VISUAL_BALANCE_PERCENT",
         "STATUS_LED_FULL_STATUS_STEADY_PERCENT STATUS_LED_PWR_WHITE_VISUAL_BALANCE_PERCENT",
     ):
@@ -931,9 +945,7 @@ def main() -> int:
             "STATUS_LED_LOW_POWER_BLE_CONNECTED_PERCENT 8U" not in status_led or
             "STATUS_LED_LOW_POWER_BLE_ATTENTION_PERCENT 12U" not in status_led
         ):
-            failures.append(
-                "status_led.c: low-power PWR white must stay visually balanced below BLE blue, with attention states brighter"
-            )
+            failures.append("status_led.c: idle PWR white and BLE blue must use dim low-power levels")
     for token in (
         "STATUS_LED_RECORDING_LEVEL_STALE_MS",
         "STATUS_LED_RECORDING_LEVEL_EFFECT_MIN_PERCENT 8U",
@@ -1103,7 +1115,11 @@ def main() -> int:
         status_led,
     ):
         failures.append("status_led.c: effect-only preview must suppress BLE rendering")
-    if "s_state.preview_effect_only = false;\n        s_state.recording_active = active" not in status_led:
+    if not re.search(
+        r"s_state\.preview_effect_only\s*=\s*false;[\s\S]*?"
+        r"s_state\.recording_active\s*=\s*next_recording_active;",
+        status_led,
+    ):
         failures.append("status_led.c: real recording state changes must exit effect-only preview")
     if not re.search(
         r"status_led_render_keys_locked[^{]*\{[\s\S]*?"
@@ -1199,6 +1215,29 @@ def main() -> int:
         ):
             if stale_token in product_text:
                 failures.append(f"status_led_human_effect_review.ps1: Product review must not include repeated tuning step {stale_token}")
+    idle_transition_block = re.search(
+        r"function\s+Get-IdleTransitionSteps\s*\{([\s\S]*?)\nfunction\s+Get-TailOnlySteps",
+        human_review,
+    )
+    if not idle_transition_block:
+        failures.append("status_led_human_effect_review.ps1: missing IdleTransition review block")
+    else:
+        idle_transition_text = idle_transition_block.group(1)
+        for token in (
+            'ValidateSet("Foundation", "Scenes", "Complex", "Volume", "Product", "FinalVisual", "FinalRetest", "FinalCombo", "RootCause", "StaticRoot", "Repro", "IdleTransition", "TailOnly", "ComboOnly", "Full")',
+            'if ($Mode -eq "IdleTransition")',
+            "~LED:PREVIEW recording_processing_status_led_only",
+            "~LED:REC_LEVEL 100 60000",
+            "~LED:PREVIEW connected",
+            "~LED:PREVIEW reconnecting",
+            "~LED:PREVIEW clear",
+            "~DIAGLOG:LAST:80:status_led",
+            "IdleTransition mode isolates idle-entry validation",
+        ):
+            if token not in human_review:
+                failures.append(f"status_led_human_effect_review.ps1: IdleTransition review must include {token}")
+        if "~LED:PREVIEW recording_processing_led_only" in idle_transition_text:
+            failures.append("status_led_human_effect_review.ps1: IdleTransition must use status-only setup, not full combo recording_processing_led_only")
     for token in (
         'if ($Mode -eq "FinalVisual")',
         'if ($Mode -eq "FinalRetest")',
@@ -1252,8 +1291,13 @@ def main() -> int:
         failures.append("status_led.c: routine AI must respect user brightness; do not render it as safety brightness")
     if "status_led_token_locked(status_led_rgb(255, 255, 255), percent, true)" in status_led:
         failures.append("status_led.c: routine external-power PWR white must respect user brightness")
-    if "percent = status_window ? 46U : (connected_ready ? 30U : 0U)" in status_led:
+    if re.search(
+        r"percent\s*=\s*status_window\s*\?\s*\d+U\s*:\s*\(connected_ready\s*\?\s*\d+U\s*:\s*0U\)",
+        status_led,
+    ):
         failures.append("status_led.c: battery PWR must not stay on just because BLE is connected")
+    if re.search(r"\(status_window\s*\|\|\s*active_work\)\s*\?\s*\d+U\s*:\s*0U", status_led):
+        failures.append("status_led.c: battery PWR status-window brightness must use the low visual-balance constant")
     if "STATUS_LED_BATTERY_IDLE_BLE_HEARTBEAT_PERCENT" not in status_led:
         failures.append("status_led.c: battery idle BLE heartbeat constants are missing")
     if "(!external_power_present && battery_display_band_changed)" not in status_led:
@@ -1360,9 +1404,19 @@ def main() -> int:
         failures.append(
             "status_led_strip_backend.c: RMT mem_block_symbols=64 consumes two ESP32-S3 RMT blocks per strip and leaves fewer than four TX channels"
         )
-    if not re.search(r"\.mem_block_symbols\s*=\s*SOC_RMT_MEM_WORDS_PER_CHANNEL\b", status_led_backend):
+    if "STATUS_LED_RMT_DMA_MEM_BLOCK_SYMBOLS 1024U" not in status_led_backend:
         failures.append(
-            "status_led_strip_backend.c: RMT strip channels must use SOC_RMT_MEM_WORDS_PER_CHANNEL so all four V2 LED zones can initialize"
+            "status_led_strip_backend.c: RMT DMA channels must use a full-frame-sized 1024-symbol DMA buffer"
+        )
+    if not re.search(
+        r"const\s+size_t\s+mem_block_symbols\s*=\s*with_dma[\s\S]*?"
+        r"STATUS_LED_RMT_DMA_MEM_BLOCK_SYMBOLS[\s\S]*?"
+        r"SOC_RMT_MEM_WORDS_PER_CHANNEL[\s\S]*?"
+        r"\.mem_block_symbols\s*=\s*mem_block_symbols",
+        status_led_backend,
+    ):
+        failures.append(
+            "status_led_strip_backend.c: DMA channels must use the larger DMA buffer while non-DMA fallback stays on one SOC RMT block"
         )
     if not re.search(r"\.flags\.with_dma\s*=\s*with_dma\b", status_led_backend):
         failures.append("status_led_strip_backend.c: RMT TX DMA must be selectable per strip")
@@ -1373,11 +1427,51 @@ def main() -> int:
     ):
         failures.append("status_led_strip_backend.c: runtime status must expose whether each available strip uses RMT TX DMA")
     if (
-        "rmt_tx_dma_strategy=status_strip_priority_single_rmt_dma_channel" not in status_led or
+        "rmt_tx_dma_strategy=status_strip_dma_full_frame_buffer" not in status_led or
         "rmt_tx_dma_actual=status:%u,ec11:%u,key:%u,edge:%u" not in status_led or
-        "rmt_tx_dma_fallback=status:%u,ec11:%u,key:%u,edge:%u" not in status_led
+        "rmt_tx_dma_fallback=status:%u,ec11:%u,key:%u,edge:%u" not in status_led or
+        "rmt_mem_block_symbols=status:%u,ec11:%u,key:%u,edge:%u" not in status_led or
+        "rmt_idle_drive=active_frames_enabled_low_power_quiet_suspend" not in status_led
     ):
-        failures.append("status_led.c: ~LED:STATUS contract must expose status-only RMT TX DMA strategy and per-strip actual state")
+        failures.append("status_led.c: ~LED:STATUS contract must expose the status-strip RMT TX DMA strategy, per-strip actual state, DMA buffer size, and idle-drive policy")
+    if status_led.count(".prefer_dma = true") != 1 or not re.search(
+        r"\.name\s*=\s*\"status\"[\s\S]*?\.prefer_dma\s*=\s*true",
+        status_led,
+    ):
+        failures.append("status_led.c: current V2 hardware must request RMT TX DMA only for the status strip")
+    if ".flags.eot_level = 0" not in status_led_backend:
+        failures.append("status_led_strip_backend.c: RMT transmit config must explicitly hold the WS2812 line low at EOT")
+    if "disable_ret" in status_led_backend or re.search(
+        r"ret\s*=\s*rmt_tx_wait_all_done\(backend->channel,\s*STATUS_LED_RMT_WAIT_MS\);[\s\S]*?"
+        r"if\s*\(\s*ret\s*!=\s*ESP_OK\s*\)[\s\S]*?"
+        r"status_led_strip_backend_set_channel_enabled\(backend,\s*false\);[\s\S]*?"
+        r"return\s+ret;[\s\S]*?"
+        r"status_led_strip_backend_set_channel_enabled\(backend,\s*false\);[\s\S]*?"
+        r"return\s+ESP_OK;",
+        status_led_backend,
+    ):
+        failures.append("status_led_strip_backend.c: successful dynamic RMT transmit must stay enabled; only idle/sleep paths may suspend")
+    if "rmt_tx_switch_gpio" in status_led_backend or re.search(r"gpio_set_direction\(backend->gpio", status_led_backend):
+        failures.append("status_led_strip_backend.c: normal RMT idle must not switch the status data pin to GPIO between frames")
+    if not re.search(
+        r"if\s*\(\s*enabled\s*\)\s*\{[\s\S]*?"
+        r"ret\s*=\s*rmt_enable\(backend->channel\);[\s\S]*?"
+        r"\}\s*else\s*\{[\s\S]*?"
+        r"ret\s*=\s*rmt_disable\(backend->channel\);",
+        status_led_backend,
+    ):
+        failures.append("status_led_strip_backend.c: backend must release PM locks with rmt_disable while leaving the RMT GPIO matrix binding intact")
+    if (
+        "STATUS_LED_RMT_IDLE_RELEASE_MS" not in status_led or
+        "status_led_suspend_quiet_idle_transports" not in status_led or
+        "status_led_idle_transport_release_pending" not in status_led or
+        "s_strip_transport_suspended" not in status_led or
+        "s_strip_last_tx_ms" not in status_led or
+        "low_power_active = s_state.output_disabled || s_state.low_power_disabled" not in status_led
+    ):
+        failures.append("status_led.c: low-power idle must be the only PM-lock release path for normal LED frames")
+    if "status_led_suspend_all_strips" not in status_led or "status_led_strip_backend_suspend(s_strips[index].backend)" not in status_led:
+        failures.append("status_led.c: prepare_sleep must explicitly suspend strip backends after the all-off frame")
     if not re.search(
         r"status_led_strip_backend_new_channel\(backend,\s*channel_with_dma\);[\s\S]*?"
         r"falling back to non-DMA RMT[\s\S]*?"
@@ -1457,7 +1551,7 @@ def main() -> int:
     print(
         "PASS: status LED static verification covers V2 four-zone WS2812 resources, "
         "EC11 GPIO5/count12, key GPIO13/count4, edge GPIO4/count6, diagnostics, "
-        "USB validation hooks, camera/manual one-pixel status/key/EC11/edge harness, and low-power off path."
+        "USB validation hooks, camera/manual one-pixel status/key/EC11/edge harness, and sleep all-off path."
     )
     return 0
 

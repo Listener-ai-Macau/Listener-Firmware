@@ -1,0 +1,4 @@
+operator_result_code=-1
+meaning=Timeout_no_operator_answer
+artifact=docs\validation\adhoc-status-led-ble-transition-20260621-213628\status-dma-full-frame-operator-check.txt
+prep_popup_code=-1

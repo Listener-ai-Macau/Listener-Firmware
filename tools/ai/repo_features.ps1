@@ -105,11 +105,13 @@ function New-FeatureSnapshot {
             "pwsh -NoProfile -File .\tools\dump_diag_log.ps1 -Port <COMx> -Count 200",
             "python .\tools\verify_unplugged_flash_diag_bundle.py --bundle <diag_log_ai_bundle.json> --expect-pwr-class amber --expect-pwr-class green",
             "python .\tools\verify_serial_no_reset_static.py",
+            "python .\tools\verify_current_docs_static.py",
             "pwsh -NoProfile -File .\tools\verify_v2_board_profile_static.ps1",
             "pwsh -NoProfile -File .\tools\verify_power_manager_static.ps1",
             "pwsh -NoProfile -File .\tools\verify_device_settings_static.ps1",
             "pwsh -NoProfile -File .\tools\verify_charging_awake_policy_static.ps1",
             "pwsh -NoProfile -File .\tools\verify_charging_awake_policy_hardware.ps1 -Port <COMx> -ExpectExternalPower",
+            "pwsh -NoProfile -File .\tools\verify_low_power_unplug_wake_hardware.ps1 -Port <COMx>",
             "python .\tools\verify_ble_audio_transport_model.py",
             "pwsh -NoProfile -File .\tools\verify_diagnostic_log_coverage.ps1",
             "pwsh -NoProfile -File .\tools\collect_ai_diagnostics.ps1 -Port <COMx> -RecentEventCount 200 -EnableSource keyboard,voice_key -Source keyboard,voice_key -OutputDir .\tests\artifacts\ai_diagnostics",
@@ -183,7 +185,7 @@ function Test-FeatureSnapshot {
     $errors += @(Test-RepoText "components/device_settings/include/device_settings.h" 'DEVICE_SETTINGS_DEFAULT_PLUGGED_BRIGHTNESS_PERCENT\s+80U' 'plugged brightness default')
     $errors += @(Test-RepoText "components/device_settings/include/device_settings.h" 'DEVICE_SETTINGS_DEFAULT_BATTERY_BRIGHTNESS_PERCENT\s+50U' 'battery brightness default')
     $errors += @(Test-RepoText "components/device_settings/include/device_settings.h" 'DEVICE_SETTINGS_DEFAULT_LOW_POWER_IDLE_MS\s+60000U' 'low-power idle default')
-    $errors += @(Test-RepoText "components/device_settings/include/device_settings.h" 'DEVICE_SETTINGS_DEFAULT_PLUGGED_LOW_POWER_ENABLED\s+1' 'plugged low-power default')
+    $errors += @(Test-RepoText "components/device_settings/include/device_settings.h" 'DEVICE_SETTINGS_DEFAULT_PLUGGED_LOW_POWER_ENABLED\s+0' 'plugged low-power default off')
     $errors += @(Test-RepoText "sdkconfig.defaults.esp32s3" 'CONFIG_USJ_NO_AUTO_LS_ON_CONNECTION=y' 'USB Serial/JTAG stays awake while connected in release defaults')
     $errors += @(Test-RepoText "components/power_manager/power_manager.c" 'plugged_low_power_enabled' 'plugged low-power effective status')
     $errors += @(Test-RepoText "components/power_manager/power_manager.c" 'TEST:SHUTDOWN' 'serial manual shutdown test alias')
@@ -193,8 +195,10 @@ function Test-FeatureSnapshot {
     $errors += @(Test-RepoText "ports/esp32/board_pins/include/board_pins.h" 'BOARD_PINS_BAT_V_ADC_IO\s+\(GPIO_NUM_10\)[\s\S]*BOARD_PINS_PWR_HOLD_IO\s+\(GPIO_NUM_9\)[\s\S]*BOARD_PINS_CURRENT_TELEMETRY_PRESENT\s+\(0\)[\s\S]*BOARD_PINS_TPS63020_I_ADC_IO\s+\(GPIO_NUM_NC\)[\s\S]*BOARD_PINS_SY7088_I_ADC_IO\s+\(GPIO_NUM_NC\)' 'latest V2 pin map and absent current telemetry')
     $errors += @(Test-RepoText "components/board/board.c" 'gpio_set_level\(BOARD_PINS_PWR_HOLD_IO,\s*0\)[\s\S]*GPIO_MODE_OUTPUT[\s\S]*runtime low configured[\s\S]*gpio_set_level\(BOARD_PINS_PWR_HOLD_IO,\s*1\)[\s\S]*GPIO_MODE_OUTPUT[\s\S]*board_wait_power_hold_readback\("driven high for hardware shutdown",\s*1\)' 'PWR_HOLD runtime-low drive-high shutdown implementation')
     $errors += @(Test-RepoText "components/status_led/status_led.c" 'DIAG_LED_VISUAL_STATE' 'status LED visual flash diagnostics')
+    $errors += @(Test-RepoText "tools/verify_current_docs_static.py" 'keeps restrained PWR/BLE status visible' 'current docs stale-rollback guard')
     $errors += @(Test-RepoText "tools/decode_diag_log.py" 'led_visual_state_flags' 'decoded status LED visual flash diagnostics')
     $errors += @(Test-RepoText "tools/verify_unplugged_flash_diag_bundle.py" 'off followed by visible-on recovery' 'unplugged flash diag verifier')
+    $errors += @(Test-RepoText "tools/verify_low_power_unplug_wake_hardware.ps1" '\[System\.Windows\.Forms\.MessageBox\]::Show[\s\S]*serial_opened port=.*dtr=0 rts=0[\s\S]*power_input_wake_configured=1' 'low-power unplug wake guided hardware validation')
     $errors += @(Test-RepoText "docs/features/low_power_wake_policy.md" 'decoded `status_led\.power_input`, `status_led\.visual_state`, `status_led\.output_state`' 'unplugged flash diag validation requirement')
     if ($scriptText.Length -gt 18500) {
         $errors += "script is too long: $($scriptText.Length) characters"

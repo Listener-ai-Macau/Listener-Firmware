@@ -55,12 +55,8 @@ $advStart = $gap.Substring($advStartIndex, $advEndIndex - $advStartIndex)
 
 Assert-Contains $gap 'ble_hid_gap_connection_snapshot_t\s+conn\s*=\s*ble_hid_gap_connection_snapshot\(\);' `
     "GAP advertising entry must read the shared connection snapshot"
-Assert-Contains $gap 'static\s+status_led_ble_state_t\s+ble_hid_gap_status_led_connected_state\(void\)[\s\S]*?ble_audio_stream_is_ready\(\)[\s\S]*?STATUS_LED_BLE_TYPE_READY[\s\S]*?STATUS_LED_BLE_CONNECTED;' `
-    "GAP connected LED helper must promote only audio-ready Type sessions to type_ready"
-Assert-Contains $gap 'static\s+void\s+ble_hid_gap_refresh_connected_status_led\(bool\s+confidence_window\)[\s\S]*?ble_hid_gap_connection_snapshot\(\)[\s\S]*?status_led_set_ble_state\(state,\s*confidence_window\);' `
-    "GAP connected LED refresh must use the shared connection snapshot and chosen connected/type_ready state"
-Assert-Contains $gap 'if\s*\(\s*conn\.connected\s*\)\s*\{[\s\S]*?NimBLE advertising skipped: GAP already connected[\s\S]*?ble_hid_gap_refresh_connected_status_led\(false\);[\s\S]*?return ESP_OK;' `
-    "GAP advertising must skip stale advertising while connected and restore the connected/type-ready LED"
+Assert-Contains $gap 'if\s*\(\s*conn\.connected\s*\)\s*\{[\s\S]*?NimBLE advertising skipped: GAP already connected[\s\S]*?status_led_set_ble_state\(STATUS_LED_BLE_CONNECTED,\s*false\);[\s\S]*?return ESP_OK;' `
+    "GAP advertising must skip stale advertising while connected and restore connected LED"
 Assert-Order $advStart 'if (conn.connected)' 'if (ble_gap_adv_active())' `
     "connected guard must run before advertising-active handling"
 Assert-Order $advStart 'if (conn.connected)' 'status_led_set_ble_state(STATUS_LED_BLE_RECONNECTING, false);' `
@@ -69,12 +65,6 @@ Assert-Order $advStart 'if (conn.connected)' 'status_led_set_ble_state(STATUS_LE
     "connected guard must run before undirected advertising can set pairing LED"
 Assert-Contains $gap 'ble_hid_gap_set_connection_state\(true,\s*event->connect\.conn_handle\);[\s\S]*?status_led_set_ble_state\(STATUS_LED_BLE_CONNECTED,\s*true\);' `
     "GAP connect event must mark connected before refreshing connected LED"
-Assert-Contains $gap 'ble_audio_stream_on_gap_connect\(event->connect\.conn_handle\);[\s\S]*?ble_hid_gap_refresh_connected_status_led\(false\);' `
-    "GAP connect event must refresh the LED after audio transport observes the connection"
-Assert-Contains $gap 'ble_audio_stream_on_gap_subscribe\([\s\S]*?event->subscribe\.cur_indicate\);[\s\S]*?ble_hid_gap_refresh_connected_status_led\(false\);' `
-    "GAP subscribe event must promote the LED when Type enables audio notify"
-Assert-Contains $gap 'ble_audio_stream_on_gap_mtu\(event->mtu\.conn_handle,\s*event->mtu\.value\);[\s\S]*?ble_hid_gap_refresh_connected_status_led\(false\);' `
-    "GAP MTU event must refresh the Type-ready LED after the transport becomes ready"
 Assert-Contains $gap 'ble_hid_gap_set_connection_state\(false,\s*BLE_HS_CONN_HANDLE_NONE\);[\s\S]*?status_led_set_ble_state\(STATUS_LED_BLE_RECONNECTING,\s*false\);' `
     "GAP disconnect event must clear connected before reconnecting LED"
 Assert-Contains $hid 'ESP_HIDD_CONNECT_EVENT:[\s\S]*?s_ble_connected\s*=\s*true;[\s\S]*?status_led_set_ble_state\(STATUS_LED_BLE_CONNECTED,\s*true\);' `
@@ -87,16 +77,14 @@ Assert-Contains $statusLed 'STATUS_LED_BLE_CONFIDENCE_MS\s+8000U' `
     "connected BLE confidence window must remain bounded"
 Assert-Contains $statusLed 'STATUS_LED_BATTERY_IDLE_BLE_HEARTBEAT_ON_MS\s+120U' `
     "battery idle BLE heartbeat must be brief"
-Assert-Contains $statusLed 'STATUS_LED_BLE_CONNECTED_GENERIC_PERCENT\s+38U[\s\S]*?STATUS_LED_BLE_TYPE_READY_STEADY_PERCENT\s+STATUS_LED_BLE_CONNECTED_STEADY_PERCENT' `
-    "status LED must distinguish generic BLE connected from Type-ready brightness"
-Assert-Contains $statusLed 'case STATUS_LED_BLE_CONNECTED:[\s\S]*?case STATUS_LED_BLE_TYPE_READY:[\s\S]*?STATUS_LED_BLE_CONNECTED_GENERIC_PERCENT[\s\S]*?STATUS_LED_BLE_TYPE_READY_STEADY_PERCENT[\s\S]*?STATUS_LED_BATTERY_IDLE_BLE_HEARTBEAT_PERCENT' `
-    "connected rendering must keep Type-ready distinct while preserving battery idle heartbeat"
-Assert-Contains $statusLed 'if \(changed && status_led_ble_state_ready_locked\(state\) && confidence_window\)' `
-    "connected confidence window must apply to both generic connected and Type-ready states"
+Assert-Contains $statusLed 'STATUS_LED_BLE_CONNECTED_GENERIC_PERCENT\s+14U[\s\S]*?STATUS_LED_BLE_CONNECTED_STEADY_PERCENT\s+STATUS_LED_BLE_CONNECTED_GENERIC_PERCENT' `
+    "connected BLE steady brightness must stay at the current low visible level"
+Assert-Contains $statusLed 'case STATUS_LED_BLE_CONNECTED:[\s\S]*?STATUS_LED_BLE_CONNECTED_CONFIRM_MIN_PERCENT[\s\S]*?STATUS_LED_BLE_CONNECTED_STEADY_PERCENT[\s\S]*?confidence \|\| status_window[\s\S]*?STATUS_LED_BLE_CONNECTED_STEADY_PERCENT[\s\S]*?battery_idle[\s\S]*?STATUS_LED_BATTERY_IDLE_BLE_HEARTBEAT_PERCENT[\s\S]*?else if \(!battery_idle\)[\s\S]*?STATUS_LED_BLE_CONNECTED_STEADY_PERCENT' `
+    "connected rendering must stay low-visible outside battery idle and use a brief heartbeat during battery idle"
 Assert-Contains $statusLed 'const bool active_work = s_state\.recording_active \|\| s_state\.processing_active;' `
     "status LED renderer must define active work for recording/processing visibility"
-Assert-Contains $statusLed 'percent = \(status_window \|\| active_work\) \? 46U : 0U;' `
-    "battery PWR must stay readable during active recording/processing and turn off after idle status window"
+Assert-Contains $statusLed 'STATUS_LED_BATTERY_STATUS_WINDOW_PWR_PERCENT\s+14U[\s\S]*?percent = \(status_window \|\| active_work\)[\s\S]*?\? STATUS_LED_BATTERY_STATUS_WINDOW_PWR_PERCENT[\s\S]*?: 0U;' `
+    "battery PWR active-rendering window must stay readable during active work and then hand off to low-power rendering"
 Assert-Contains $statusDoc 'BLE Connection Source Of Truth' `
     "status LED documentation must describe the BLE connection source of truth"
 
@@ -122,16 +110,9 @@ function Apply-ModelEvent {
             $script:connected = $true
             $script:modelState = "connected"
         }
-        "type_ready" {
-            if ($script:connected) {
-                $script:modelState = "type_ready"
-            }
-        }
         "stale_adv_complete" {
             if ($script:connected) {
-                if ($script:modelState -ne "type_ready") {
-                    $script:modelState = "connected"
-                }
+                $script:modelState = "connected"
             } else {
                 $script:modelState = "pairing"
             }
@@ -148,9 +129,8 @@ function Apply-ModelEvent {
 
 Apply-ModelEvent "advertising"
 Apply-ModelEvent "connect"
-Apply-ModelEvent "type_ready"
 Apply-ModelEvent "stale_adv_complete"
-if ($modelState -ne "type_ready") {
+if ($modelState -ne "connected") {
     throw "verify_ble_status_led_connected_sync failed: pairing-to-connected model regressed to $modelState"
 }
 
@@ -161,10 +141,9 @@ if ($modelState -ne "reconnecting") {
 
 Apply-ModelEvent "directed_advertising"
 Apply-ModelEvent "connect"
-Apply-ModelEvent "type_ready"
 Apply-ModelEvent "stale_adv_complete"
-if ($modelState -ne "type_ready") {
+if ($modelState -ne "connected") {
     throw "verify_ble_status_led_connected_sync failed: reconnect-to-connected model regressed to $modelState"
 }
 
-Write-Host "PASS: BLE status LED connected-sync checks cover GAP/HID connected source of truth, Type audio notify readiness, stale advertising suppression, bounded connected/type-ready brightness, active-work PWR/BLE visibility, battery idle heartbeat, and disconnect/advertising negative transitions."
+Write-Host "PASS: BLE status LED connected-sync checks cover GAP/HID connected source of truth, stale advertising suppression, bounded connected brightness, active-work PWR/BLE visibility, battery idle heartbeat, and disconnect/advertising negative transitions."

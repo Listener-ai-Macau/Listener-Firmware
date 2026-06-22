@@ -69,6 +69,8 @@ typedef struct {
     bool charge_full;
     bool plugged_low_power_enabled;
     bool low_power_idle_allowed;
+    bool power_input_wake_configured;
+    bool power_input_irq_armed;
     bool charge_full_latched;
     uint32_t charge_full_candidate_ms;
     uint32_t charge_full_debounce_ms;
