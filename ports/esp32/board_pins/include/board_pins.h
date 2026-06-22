@@ -45,7 +45,8 @@ extern "C" {
 #define BOARD_PINS_BAT_CHG_IO        (GPIO_NUM_14)
 #define BOARD_PINS_BAT_STD_IO        (GPIO_NUM_21)
 #define BOARD_PINS_BAT_V_ADC_IO      (GPIO_NUM_10)
-/* USB_DET divider is retired; USB power uses USB Serial/JTAG SOF plus charger status. */
+/* USB_DET divider is retired; keep physical GPIO7 high-Z and do not use it for runtime power decisions. */
+#define BOARD_PINS_USB_DET_DISABLED_IO (GPIO_NUM_7)
 #define BOARD_PINS_USB_DET_IO        (GPIO_NUM_NC)
 #define BOARD_PINS_USB_DP_IO         (GPIO_NUM_20)
 #define BOARD_PINS_USB_DN_IO         (GPIO_NUM_19)

@@ -1,0 +1,72 @@
+   Compiling listener-type v1.3.3 (C:\Users\Billy\Desktop\Denzic\Listener\Listener-Type\src-tauri)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 1m 14s
+     Running unittests src\lib.rs (src-tauri\target\debug\deps\listener_type_lib-74bff12caece41e4.exe)
+
+running 58 tests
+test cli::tests::parse_recognizes_embedded_ble_once_with_timeout ... ok
+test cli::tests::parse_recognizes_embedded_ble_once_without_timeout ... ok
+test cli::tests::parse_recognizes_embedded_ble_probe_with_timeout ... ok
+test cli::tests::parse_recognizes_embedded_ble_probe_without_timeout ... ok
+test cli::tests::parse_recognizes_embedded_ble_stream ... ok
+test coordinator::dictation::tests::caller_cancelled_embedded_ble_stream_returns_cancel_result ... ok
+test coordinator::dictation::tests::embedded_ble_background_stream_has_no_idle_timeout ... ok
+test coordinator::tests::embedded_ble_background_retry_backs_off_for_offline_gatt_failures ... ok
+test coordinator::tests::embedded_ble_background_retry_caps_generic_errors ... ok
+test coordinator::tests::embedded_ble_background_retry_is_fast_for_link_loss_events ... ok
+test coordinator::tests::embedded_ble_background_retry_backs_off_for_transient_reopen_errors ... ok
+test coordinator::tests::embedded_ble_background_retry_keeps_idle_timeout_responsive ... ok
+test coordinator::tests::embedded_ble_auto_input_source_prefers_connected_device ... ok
+test coordinator::tests::embedded_ble_foreground_probe_refreshes_active_background_even_when_unready ... ok
+test coordinator::tests::embedded_ble_foreground_probe_routes_selected_source_to_background_listener ... ok
+test coordinator::tests::embedded_ble_recording_control_guidance_calls_out_stale_firmware_or_gatt_cache ... ok
+test coordinator::dictation::tests::cancel_session_requests_registered_embedded_ble_capture_cancel ... ok
+test coordinator::dictation::tests::cancel_session_requests_embedded_ble_capture_cancel_even_when_idle ... ok
+test coordinator::dictation::tests::embedded_ble_cancel_registration_only_clears_matching_flag ... ok
+test coordinator::tests::embedded_ble_notify_ready_suppresses_internal_refresh_capsule ... ok
+test coordinator::tests::embedded_ble_listener_cancel_replacement_is_pointer_safe ... ok
+test embedded_ble::tests::active_capture_link_recovery_only_during_open_audio_session ... ok
+test embedded_ble::tests::ble_failure_taxonomy_covers_customer_recovery_cases ... ok
+test coordinator::dictation::tests::session_actor_stop_command_owns_embedded_ble_stop_transition ... ok
+test embedded_ble::tests::device_settings_command_hardware_smoke ... ignored, requires a paired or USB-connected Listener device
+test embedded_ble::tests::device_settings_status_refresh_hardware_smoke ... ignored, requires a USB-connected Listener device
+test embedded_ble::tests::crc32_matches_standard_vector ... ok
+test embedded_ble::tests::invalid_notification_is_not_terminal ... ok
+test coordinator::tests::embedded_ble_notify_ready_suppresses_battery_idle_recovery_capsule ... ok
+test embedded_ble::tests::notify_target_open_retry_classifies_windows_gatt_transients ... ok
+test coordinator::tests::embedded_ble_background_recovery_capsule_respects_power_state ... ok
+test coordinator::dictation::tests::host_stop_request_routes_by_embedded_ble_preference_without_capture_flag ... ok
+test coordinator::tests::embedded_ble_listener_error_snapshot_records_and_clears_setup_failures ... ok
+test embedded_ble::tests::ota_chunk_selection_uses_manifest_and_transport_limits ... ok
+test embedded_ble::tests::parses_bluetooth_address_from_bluetooth_le_selector_id ... ok
+test embedded_ble::tests::parses_bluetooth_address_from_device_instance_id ... ok
+test embedded_ble::tests::parses_bluetooth_address_from_service_instance_id ... ok
+test embedded_ble::tests::parses_bluetooth_address_from_vid_pid_service_instance_id ... ok
+test embedded_ble::tests::parses_configured_bluetooth_address_hex_forms ... ok
+test embedded_ble::tests::parses_legacy_device_settings_status_without_led_zone_brightness ... ok
+test embedded_ble::tests::parses_device_settings_status_line ... ok
+test embedded_ble::tests::pnp_device_instance_normalizer_extracts_bthle_devnode ... ok
+test coordinator::tests::embedded_ble_notify_ready_reports_recovered_for_powered_disconnect ... ok
+test embedded_ble::tests::terminal_detection_only_matches_stop_cancel_error ... ok
+test embedded_ble::windows_ble::tests::foreground_probe_success_leaves_notify_cccd_enabled ... ok
+test embedded_ble::windows_ble::tests::active_audio_control_registration_only_clears_matching_capture ... ok
+test embedded_ble::windows_ble::tests::ota_transfer_chunk_selection_uses_transport_and_test_override ... ok
+test embedded_ble::windows_ble::tests::ota_write_option_prefers_with_response_and_accepts_overrides ... ok
+test coordinator::dictation::tests::capsule_cancel_routes_by_embedded_ble_preference_without_capture_flag ... ok
+test coordinator::tests::embedded_ble_notify_ready_suppresses_unknown_power_idle_recovery_capsule ... ok
+test coordinator::tests::embedded_ble_start_dictation_reuses_ready_background_without_reopen ... ok
+test coordinator::tests::embedded_ble_wake_recovery_tracks_idle_disconnect_as_reconnecting ... ok
+test coordinator::tests::embedded_ble_repeated_notification_disconnects_stay_fast_and_diagnostic ... ok
+test coordinator::tests::embedded_ble_wake_recovery_snapshot_guides_idle_recovery ... ok
+test coordinator::tests::embedded_ble_startup_power_snapshot_keeps_plugged_recovery_context ... ok
+test types::tests::dictation_input_source_defaults_to_embedded_ble_until_user_override ... ok
+test coordinator::tests::embedded_ble_foreground_probe_refreshes_ready_background_capture ... ok
+test coordinator::tests::embedded_ble_repair_refreshes_ready_background_status ... ok
+
+test result: ok. 56 passed; 0 failed; 2 ignored; 0 measured; 479 filtered out; finished in 1.44s
+
+     Running unittests src\main.rs (src-tauri\target\debug\deps\listener_type-c00f2cabfa5716a1.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+

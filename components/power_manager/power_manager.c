@@ -8,8 +8,11 @@
 
 #include "esp_err.h"
 #include "esp_log.h"
+#include "esp_pm.h"
+#include "esp_sleep.h"
 #include "esp_timer.h"
 #include "esp_system.h"
+#include "driver/gpio.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
 #include "freertos/task.h"
@@ -125,6 +128,8 @@ static SemaphoreHandle_t s_mutex;
 static TaskHandle_t s_task_handle;
 static bool s_initialized;
 static bool s_started;
+static bool s_power_input_wake_configured;
+static volatile bool s_power_input_irq_armed;
 static bool s_ble_connected;
 static bool s_battery_warning_logged;
 static bool s_audio_idle_power_save_enabled;
@@ -157,6 +162,178 @@ static uint32_t s_last_shutdown_blockers;
 static uint64_t s_shutdown_failure_retry_after_ms;
 static esp_err_t s_last_shutdown_failure_ret = ESP_OK;
 static power_manager_state_t s_state = POWER_MANAGER_STATE_ACTIVE;
+
+static bool power_manager_gpio_is_valid(gpio_num_t gpio)
+{
+    return gpio != GPIO_NUM_NC && gpio >= 0 && gpio < GPIO_NUM_MAX;
+}
+
+static void power_manager_disable_power_input_interrupt_from_isr(gpio_num_t gpio)
+{
+    if (!power_manager_gpio_is_valid(gpio)) {
+        return;
+    }
+    (void)gpio_intr_disable(gpio);
+}
+
+static void power_manager_power_input_wake_from_isr(void *arg)
+{
+    (void)arg;
+    if (s_power_input_irq_armed) {
+        s_power_input_irq_armed = false;
+        power_manager_disable_power_input_interrupt_from_isr(BOARD_PINS_BAT_CHG_IO);
+        power_manager_disable_power_input_interrupt_from_isr(BOARD_PINS_BAT_STD_IO);
+    }
+
+    TaskHandle_t task_handle = s_task_handle;
+    if (task_handle == NULL) {
+        return;
+    }
+
+    BaseType_t higher_priority_woken = pdFALSE;
+    vTaskNotifyGiveFromISR(task_handle, &higher_priority_woken);
+    if (higher_priority_woken == pdTRUE) {
+        portYIELD_FROM_ISR();
+    }
+}
+
+static esp_err_t power_manager_configure_power_input_wake_pin(gpio_num_t gpio, const char *name)
+{
+    if (!power_manager_gpio_is_valid(gpio)) {
+        return ESP_ERR_NOT_SUPPORTED;
+    }
+
+    gpio_config_t config = {
+        .pin_bit_mask = 1ULL << (uint32_t)gpio,
+        .mode = GPIO_MODE_INPUT,
+        .pull_up_en = GPIO_PULLUP_ENABLE,
+        .pull_down_en = GPIO_PULLDOWN_DISABLE,
+        .intr_type = GPIO_INTR_DISABLE,
+    };
+    esp_err_t ret = gpio_config(&config);
+    if (ret != ESP_OK) {
+        ESP_LOGW(TAG, "power input wake GPIO config failed: name=%s gpio=%d ret=%s",
+                 name, (int)gpio, esp_err_to_name(ret));
+        return ret;
+    }
+
+    ret = gpio_isr_handler_add(gpio, power_manager_power_input_wake_from_isr, NULL);
+    if (ret != ESP_OK) {
+        ESP_LOGW(TAG, "power input ISR handler add failed: name=%s gpio=%d ret=%s",
+                 name, (int)gpio, esp_err_to_name(ret));
+        return ret;
+    }
+
+    ret = gpio_intr_disable(gpio);
+    if (ret != ESP_OK) {
+        ESP_LOGW(TAG, "power input ISR initial disarm failed: name=%s gpio=%d ret=%s",
+                 name, (int)gpio, esp_err_to_name(ret));
+        return ret;
+    }
+
+    ret = gpio_wakeup_enable(gpio, GPIO_INTR_LOW_LEVEL);
+    if (ret != ESP_OK) {
+        ESP_LOGW(TAG, "power input light-sleep wake enable failed: name=%s gpio=%d ret=%s",
+                 name, (int)gpio, esp_err_to_name(ret));
+        return ret;
+    }
+
+    ret = gpio_intr_disable(gpio);
+    if (ret != ESP_OK) {
+        ESP_LOGW(TAG, "power input ISR disarm failed: name=%s gpio=%d ret=%s",
+                 name, (int)gpio, esp_err_to_name(ret));
+        return ret;
+    }
+    return ESP_OK;
+}
+
+static esp_err_t power_manager_set_power_input_interrupt(gpio_num_t gpio, bool enabled)
+{
+    if (!power_manager_gpio_is_valid(gpio)) {
+        return ESP_ERR_NOT_SUPPORTED;
+    }
+    return enabled ? gpio_intr_enable(gpio) : gpio_intr_disable(gpio);
+}
+
+static esp_err_t power_manager_set_power_input_irq_armed(bool armed)
+{
+    if (!s_power_input_wake_configured) {
+        return ESP_OK;
+    }
+    if (s_power_input_irq_armed == armed) {
+        return ESP_OK;
+    }
+
+    esp_err_t chg_ret =
+        power_manager_set_power_input_interrupt(BOARD_PINS_BAT_CHG_IO, armed);
+    esp_err_t std_ret =
+        power_manager_set_power_input_interrupt(BOARD_PINS_BAT_STD_IO, armed);
+    if (chg_ret != ESP_OK && std_ret != ESP_OK) {
+        return chg_ret != ESP_ERR_NOT_SUPPORTED ? chg_ret : std_ret;
+    }
+
+    s_power_input_irq_armed = armed;
+    ESP_LOGI(TAG, "power input wake interrupt %s", armed ? "armed" : "disarmed");
+    return ESP_OK;
+}
+
+static esp_err_t power_manager_configure_power_input_wake(void)
+{
+    if (s_power_input_wake_configured) {
+        return ESP_OK;
+    }
+
+    board_v2_power_input_snapshot_t warmup_snapshot = {0};
+    board_get_v2_power_input_snapshot(&warmup_snapshot);
+
+    esp_err_t ret = gpio_install_isr_service(0);
+    if (ret != ESP_OK && ret != ESP_ERR_INVALID_STATE) {
+        ESP_LOGW(TAG, "power input GPIO ISR service install failed: %s", esp_err_to_name(ret));
+        return ret;
+    }
+
+    esp_err_t chg_ret =
+        power_manager_configure_power_input_wake_pin(BOARD_PINS_BAT_CHG_IO, "BAT_CHG");
+    esp_err_t std_ret =
+        power_manager_configure_power_input_wake_pin(BOARD_PINS_BAT_STD_IO, "BAT_STD");
+    if (chg_ret != ESP_OK && std_ret != ESP_OK) {
+        return chg_ret != ESP_ERR_NOT_SUPPORTED ? chg_ret : std_ret;
+    }
+
+    ret = esp_sleep_enable_gpio_wakeup();
+    if (ret != ESP_OK) {
+        ESP_LOGW(TAG, "power input GPIO light-sleep wake source enable failed: %s",
+                 esp_err_to_name(ret));
+        return ret;
+    }
+
+    s_power_input_wake_configured = true;
+    ESP_LOGI(
+        TAG,
+        "power input wake ready: BAT_CHG_GPIO=%d BAT_STD_GPIO=%d interrupt=one_shot_low_level light_sleep_wake=active_low",
+        (int)BOARD_PINS_BAT_CHG_IO,
+        (int)BOARD_PINS_BAT_STD_IO);
+    return ESP_OK;
+}
+
+static void power_manager_update_power_input_irq_arm(
+    power_manager_state_t state,
+    const power_manager_power_source_snapshot_t *source)
+{
+    bool should_arm =
+        source != NULL &&
+        !source->external_power_present &&
+        (state == POWER_MANAGER_STATE_CONNECTED_IDLE ||
+         state == POWER_MANAGER_STATE_DISCONNECTED_IDLE);
+    esp_err_t ret = power_manager_set_power_input_irq_armed(should_arm);
+    if (ret != ESP_OK) {
+        ESP_LOGW(
+            TAG,
+            "power input wake interrupt %s failed: %s",
+            should_arm ? "arm" : "disarm",
+            esp_err_to_name(ret));
+    }
+}
 
 static uint64_t power_manager_now_ms(void)
 {
@@ -441,8 +618,7 @@ static void power_manager_read_power_source(power_manager_power_source_snapshot_
     board_get_v2_power_input_snapshot(&board_snapshot);
 
     bool usb_serial_jtag_sof_active = board_snapshot.usb_serial_jtag_sof_active;
-    bool usb_power_present = board_snapshot.usb_det_level > 0 ||
-                             usb_serial_jtag_sof_active;
+    bool usb_power_present = board_snapshot.usb_power_present;
     bool raw_charging = board_snapshot.bat_chg_level == 0;
     bool raw_full = board_snapshot.bat_std_level == 0;
     bool external_power_present = usb_power_present || raw_charging || raw_full;
@@ -682,8 +858,8 @@ static bool power_manager_sync_power_source_locked(
         s_auto_shutdown_block_logged = false;
     }
 
-    /* External power blocks automatic hardware shutdown while still allowing
-       connected/disconnected idle and audio idle power save. */
+    /* External power blocks automatic hardware shutdown. Runtime low-power idle
+       while plugged is opt-in through the persisted device setting. */
     if (source->external_power_present) {
         s_blockers |= POWER_MANAGER_BLOCKER_EXTERNAL_POWER;
     } else {
@@ -1165,10 +1341,12 @@ void power_manager_get_snapshot(power_manager_snapshot_t *snapshot)
     snapshot->battery_low_power_idle_threshold_ms = device_settings_get_battery_low_power_idle_ms();
     snapshot->connected_idle_threshold_ms = snapshot->low_power_idle_threshold_ms;
     snapshot->disconnected_idle_threshold_ms = snapshot->low_power_idle_threshold_ms;
-    snapshot->plugged_low_power_enabled = power_manager_plugged_low_power_enabled();
-    snapshot->low_power_idle_allowed =
-        !snapshot->external_power_present || snapshot->plugged_low_power_enabled;
-    snapshot->hardware_shutdown_threshold_ms = power_manager_hardware_shutdown_ms();
+        snapshot->plugged_low_power_enabled = power_manager_plugged_low_power_enabled();
+        snapshot->low_power_idle_allowed =
+            !snapshot->external_power_present || snapshot->plugged_low_power_enabled;
+        snapshot->power_input_wake_configured = s_power_input_wake_configured;
+        snapshot->power_input_irq_armed = s_power_input_irq_armed;
+        snapshot->hardware_shutdown_threshold_ms = power_manager_hardware_shutdown_ms();
     snapshot->plugged_auto_shutdown_threshold_ms = device_settings_get_plugged_auto_shutdown_ms();
     snapshot->battery_auto_shutdown_threshold_ms = device_settings_get_battery_auto_shutdown_ms();
     snapshot->shutdown_failure_retry_ms = POWER_MANAGER_SHUTDOWN_FAILURE_RETRY_MS;
@@ -1664,6 +1842,7 @@ static void power_manager_evaluate(void)
     power_manager_apply_state(previous, next);
     power_manager_apply_fast_idle_actions(next, user_idle_ms, blockers);
     power_manager_guard_runtime_power_hold_low(next);
+    power_manager_update_power_input_irq_arm(next, &power_source);
 
     if (log_automatic_shutdown_blocked) {
         char shutdown_blocker_text[96];
@@ -1816,6 +1995,10 @@ esp_err_t power_manager_start(void)
     }
 
     s_started = true;
+    ret = power_manager_configure_power_input_wake();
+    if (ret != ESP_OK && ret != ESP_ERR_NOT_SUPPORTED) {
+        ESP_LOGW(TAG, "power input wake degraded: %s", esp_err_to_name(ret));
+    }
     ESP_LOGI(
         TAG,
         "power manager started: audio_idle_ms=%u low_power_idle_ms=%u connected_idle_ms=%u disconnected_idle_ms=%u"
@@ -2002,6 +2185,7 @@ static void power_manager_print_status(void)
         " charge_full_debounce_ms=%" PRIu32
         " charge_full_min_mv=%" PRIu32 " charge_full_min_percent=%u"
         " plugged_low_power_enabled=%u low_power_idle_allowed=%u"
+        " power_input_wake_configured=%u power_input_irq_armed=%u"
         " usb_det_level=%s bat_chg_level=%s bat_std_level=%s pwr_hold_level=%s"
         " usb_det_policy=%s charger_polarity=%s pwr_hold_policy=%s"
         " battery_mv=%" PRIu32 " battery_level=%u battery_valid=%u"
@@ -2041,6 +2225,8 @@ static void power_manager_print_status(void)
         snapshot.charge_full_min_percent,
         snapshot.plugged_low_power_enabled ? 1u : 0u,
         snapshot.low_power_idle_allowed ? 1u : 0u,
+        snapshot.power_input_wake_configured ? 1u : 0u,
+        snapshot.power_input_irq_armed ? 1u : 0u,
         power_manager_gpio_level_name(snapshot.usb_det_level),
         power_manager_gpio_level_name(snapshot.bat_chg_level),
         power_manager_gpio_level_name(snapshot.bat_std_level),
@@ -2080,6 +2266,24 @@ static void power_manager_print_status(void)
     fflush(stdout);
 }
 
+static void power_manager_print_pm_locks(void)
+{
+#if CONFIG_PM_ENABLE
+    printf("~POWER:PM begin pm_enable=1 profiling=%u\n",
+#if CONFIG_PM_PROFILING
+           1u
+#else
+           0u
+#endif
+    );
+    esp_err_t ret = esp_pm_dump_locks(stdout);
+    printf("~POWER:PM end result=%s\n", esp_err_to_name(ret));
+#else
+    printf("~POWER:PM result=ESP_ERR_NOT_SUPPORTED pm_enable=0\n");
+#endif
+    fflush(stdout);
+}
+
 bool power_manager_consume_usb_command(const char *line)
 {
     const char *command = power_manager_strip_prefix(line);
@@ -2089,6 +2293,11 @@ bool power_manager_consume_usb_command(const char *line)
 
     if (strcmp(command, "STATUS") == 0) {
         power_manager_print_status();
+        return true;
+    }
+
+    if (strcmp(command, "PM") == 0 || strcmp(command, "PM:LOCKS") == 0) {
+        power_manager_print_pm_locks();
         return true;
     }
 

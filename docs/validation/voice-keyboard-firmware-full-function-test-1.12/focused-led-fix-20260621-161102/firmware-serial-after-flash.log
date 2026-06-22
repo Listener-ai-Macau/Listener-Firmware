@@ -1,0 +1,10 @@
+
+Done! You can now compile ESP-IDF projects.
+Go to the project directory and run:
+
+  idf.py build
+
+I (50973) ble_hid: battery notify level=91 voltage_mv=4076 raw_adc=2376 adc_mv=2038 usb_power=0 raw_charging=0 raw_full=0 full_latched=0 full_candidate_ms=0 charge_full=0 reason=threshold_sample forced=0 periodic=0
+
+I (55973) ble_hid: battery notify level=92 voltage_mv=4092 raw_adc=2384 adc_mv=2046 usb_power=0 raw_charging=0 raw_full=0 full_latched=0 full_candidate_ms=0 charge_full=0 reason=threshold_sample forced=0 periodic=0
+

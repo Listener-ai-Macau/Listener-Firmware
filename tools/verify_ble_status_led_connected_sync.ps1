@@ -77,12 +77,14 @@ Assert-Contains $statusLed 'STATUS_LED_BLE_CONFIDENCE_MS\s+8000U' `
     "connected BLE confidence window must remain bounded"
 Assert-Contains $statusLed 'STATUS_LED_BATTERY_IDLE_BLE_HEARTBEAT_ON_MS\s+120U' `
     "battery idle BLE heartbeat must be brief"
-Assert-Contains $statusLed 'case STATUS_LED_BLE_CONNECTED:[\s\S]*?confidence \|\| status_window[\s\S]*?STATUS_LED_BLE_CONNECTED_STEADY_PERCENT[\s\S]*?battery_idle[\s\S]*?STATUS_LED_BATTERY_IDLE_BLE_HEARTBEAT_PERCENT[\s\S]*?else if \(!battery_idle\)[\s\S]*?STATUS_LED_BLE_CONNECTED_STEADY_PERCENT' `
-    "connected rendering must use the Type/user-capped full-scale blue outside battery idle heartbeat"
+Assert-Contains $statusLed 'STATUS_LED_BLE_CONNECTED_GENERIC_PERCENT\s+14U[\s\S]*?STATUS_LED_BLE_CONNECTED_STEADY_PERCENT\s+STATUS_LED_BLE_CONNECTED_GENERIC_PERCENT' `
+    "connected BLE steady brightness must stay at the current low visible level"
+Assert-Contains $statusLed 'case STATUS_LED_BLE_CONNECTED:[\s\S]*?STATUS_LED_BLE_CONNECTED_CONFIRM_MIN_PERCENT[\s\S]*?STATUS_LED_BLE_CONNECTED_STEADY_PERCENT[\s\S]*?confidence \|\| status_window[\s\S]*?STATUS_LED_BLE_CONNECTED_STEADY_PERCENT[\s\S]*?battery_idle[\s\S]*?STATUS_LED_BATTERY_IDLE_BLE_HEARTBEAT_PERCENT[\s\S]*?else if \(!battery_idle\)[\s\S]*?STATUS_LED_BLE_CONNECTED_STEADY_PERCENT' `
+    "connected rendering must stay low-visible outside battery idle and use a brief heartbeat during battery idle"
 Assert-Contains $statusLed 'const bool active_work = s_state\.recording_active \|\| s_state\.processing_active;' `
     "status LED renderer must define active work for recording/processing visibility"
-Assert-Contains $statusLed 'percent = \(status_window \|\| active_work\) \? 46U : 0U;' `
-    "battery PWR must stay readable during active recording/processing and turn off after idle status window"
+Assert-Contains $statusLed 'STATUS_LED_BATTERY_STATUS_WINDOW_PWR_PERCENT\s+14U[\s\S]*?percent = \(status_window \|\| active_work\)[\s\S]*?\? STATUS_LED_BATTERY_STATUS_WINDOW_PWR_PERCENT[\s\S]*?: 0U;' `
+    "battery PWR active-rendering window must stay readable during active work and then hand off to low-power rendering"
 Assert-Contains $statusDoc 'BLE Connection Source Of Truth' `
     "status LED documentation must describe the BLE connection source of truth"
 

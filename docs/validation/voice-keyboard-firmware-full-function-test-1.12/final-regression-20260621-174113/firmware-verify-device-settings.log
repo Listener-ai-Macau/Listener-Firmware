@@ -1,0 +1,1 @@
+PASS: device settings static checks cover firmware command contract, persisted settings, status LED brightness profiles, per-zone LED brightness caps, split low-power idle timeouts, split auto-shutdown timeouts, BLE name source, CMake dependencies, and docs.
