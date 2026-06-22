@@ -23,7 +23,7 @@ Agent: oai2
 - DIAG: COM10 post-replug serial status plus bounded diagnostic export captured BLE source-of-truth drift: `~POWER:STATUS` reported `ble_connected=1`, while `~LED:STATUS` reported `ble=disconnected` after preview/clear activity. The connected-HID resync change covers this regression path.
 - DIAG: COM10 post-flash preview-clear replay on `f5a11d1` restored the semantic state to `ble=type_ready`, but physical `status_rgb` still showed `BLE:0,0,0`; the active `TYPE_READY` renderer change covers this second layer.
 
-Build result: `voice-keyboard-firmware.bin` size `0xd2060`; smallest app partition free `0x52dfa0`.
+Clean flash build result: `voice-keyboard-firmware.bin` size `0xd2130`; smallest app partition free `0x52ded0`.
 
 ## Evidence
 
