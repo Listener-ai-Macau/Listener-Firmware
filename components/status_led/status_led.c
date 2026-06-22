@@ -76,6 +76,7 @@
 #define STATUS_LED_LOW_POWER_IDLE_REFRESH_MS 60000U
 #define STATUS_LED_IDLE_TRANSITION_CLEAR_MS 80U
 #define STATUS_LED_TX_MUTEX_WAIT_MS 100
+#define STATUS_LED_RMT_IDLE_RELEASE_MS 500U
 #define STATUS_LED_POWER_POLL_MS 5000U
 #define STATUS_LED_LOW_POWER_POLL_MS 60000U
 #define STATUS_LED_CHARGER_STATUS_EXTERNAL_HOLD_MS 8000U
@@ -506,6 +507,13 @@ static status_led_strip_t s_strips[STATUS_LED_STRIP_COUNT] = {
         .led_count = STATUS_LED_EDGE_COUNT,
         .color_order = STATUS_LED_COLOR_ORDER_GRB,
     },
+};
+static uint32_t s_strip_last_tx_ms[STATUS_LED_STRIP_COUNT];
+static bool s_strip_transport_suspended[STATUS_LED_STRIP_COUNT] = {
+    true,
+    true,
+    true,
+    true,
 };
 
 static void status_led_force_all_off(void);
@@ -1361,6 +1369,42 @@ static uint8_t status_led_status_tail_reinforce_write_count(const status_led_fra
     return STATUS_LED_STATUS_TAIL_REINFORCE_WRITES;
 }
 
+static void status_led_note_strip_transmitted(status_led_strip_id_t strip_index, uint32_t now_ms)
+{
+    if (strip_index >= STATUS_LED_STRIP_COUNT) {
+        return;
+    }
+    s_strip_last_tx_ms[strip_index] = now_ms;
+    s_strip_transport_suspended[strip_index] = false;
+}
+
+static bool status_led_idle_transport_release_pending(void)
+{
+    for (size_t index = 0; index < STATUS_LED_STRIP_COUNT; ++index) {
+        if (!s_strip_transport_suspended[index] && s_strip_last_tx_ms[index] != 0U) {
+            return true;
+        }
+    }
+    return false;
+}
+
+static void status_led_suspend_quiet_idle_transports(bool low_power_active, uint32_t now_ms)
+{
+    if (!low_power_active || !status_led_idle_transport_release_pending()) {
+        return;
+    }
+    for (size_t index = 0; index < STATUS_LED_STRIP_COUNT; ++index) {
+        if (s_strip_transport_suspended[index] || s_strip_last_tx_ms[index] == 0U) {
+            continue;
+        }
+        if ((uint32_t)(now_ms - s_strip_last_tx_ms[index]) < STATUS_LED_RMT_IDLE_RELEASE_MS) {
+            continue;
+        }
+        (void)status_led_strip_backend_suspend(s_strips[index].backend);
+        s_strip_transport_suspended[index] = true;
+    }
+}
+
 static void status_led_transmit_changed_frame(const status_led_frame_t *frame, uint8_t strip_mask)
 {
     if (strip_mask == 0U) {
@@ -1378,22 +1422,34 @@ static void status_led_transmit_changed_frame(const status_led_frame_t *frame, u
         tx_locked = true;
     }
 
+    const uint32_t tx_ms = status_led_now_ms();
     if ((strip_mask & STATUS_LED_STRIP_MASK_EC11) != 0U) {
-        (void)status_led_transmit_strip(&s_strips[STATUS_LED_STRIP_EC11], frame->ec11);
+        if (status_led_transmit_strip(&s_strips[STATUS_LED_STRIP_EC11], frame->ec11) == ESP_OK) {
+            status_led_note_strip_transmitted(STATUS_LED_STRIP_EC11, tx_ms);
+        }
     }
     if ((strip_mask & STATUS_LED_STRIP_MASK_KEY) != 0U) {
-        (void)status_led_transmit_strip(&s_strips[STATUS_LED_STRIP_KEY], frame->key);
+        if (status_led_transmit_strip(&s_strips[STATUS_LED_STRIP_KEY], frame->key) == ESP_OK) {
+            status_led_note_strip_transmitted(STATUS_LED_STRIP_KEY, tx_ms);
+        }
     }
     if ((strip_mask & STATUS_LED_STRIP_MASK_EDGE) != 0U) {
-        (void)status_led_transmit_strip(&s_strips[STATUS_LED_STRIP_EDGE], frame->edge);
+        if (status_led_transmit_strip(&s_strips[STATUS_LED_STRIP_EDGE], frame->edge) == ESP_OK) {
+            status_led_note_strip_transmitted(STATUS_LED_STRIP_EDGE, tx_ms);
+        }
     }
     if ((strip_mask & STATUS_LED_STRIP_MASK_STATUS) != 0U) {
         uint8_t status_writes = status_led_status_tail_reinforce_write_count(frame);
+        bool status_transmitted = false;
         for (uint8_t write_index = 0; write_index < status_writes; ++write_index) {
             esp_err_t status_ret = status_led_transmit_strip(&s_strips[STATUS_LED_STRIP_STATUS], frame->status);
             if (status_ret != ESP_OK) {
                 break;
             }
+            status_transmitted = true;
+        }
+        if (status_transmitted) {
+            status_led_note_strip_transmitted(STATUS_LED_STRIP_STATUS, tx_ms);
         }
     }
 
@@ -2830,6 +2886,7 @@ static uint32_t status_led_refresh_once(void)
     uint32_t now_ms = status_led_now_ms();
     bool changed = false;
     uint8_t changed_strip_mask = 0;
+    bool low_power_active = false;
     uint32_t delay_ms = STATUS_LED_IDLE_REFRESH_MS;
 
     if (xSemaphoreTake(s_mutex, portMAX_DELAY) != pdTRUE) {
@@ -2843,12 +2900,19 @@ static uint32_t status_led_refresh_once(void)
     }
     changed = !status_led_frame_equal(&s_state.last_frame, &frame);
     changed_strip_mask = status_led_frame_changed_strip_mask(&s_state.last_frame, &frame);
+    low_power_active = s_state.output_disabled || s_state.low_power_disabled;
     status_led_copy_frame_locked(&frame);
     status_led_log_visual_state_locked(&frame, now_ms);
     xSemaphoreGive(s_mutex);
 
     if (changed) {
         status_led_transmit_changed_frame(&frame, changed_strip_mask);
+    }
+    now_ms = status_led_now_ms();
+    status_led_suspend_quiet_idle_transports(low_power_active, now_ms);
+    if (low_power_active && status_led_idle_transport_release_pending() &&
+        delay_ms > STATUS_LED_RMT_IDLE_RELEASE_MS) {
+        delay_ms = STATUS_LED_RMT_IDLE_RELEASE_MS;
     }
     return delay_ms;
 }
@@ -3378,6 +3442,7 @@ static void status_led_suspend_all_strips(void)
 {
     for (size_t index = 0; index < STATUS_LED_STRIP_COUNT; ++index) {
         (void)status_led_strip_backend_suspend(s_strips[index].backend);
+        s_strip_transport_suspended[index] = true;
     }
 }
 
@@ -4426,7 +4491,7 @@ static void status_led_print_status(void)
         " processing_thinking_effect_percent=%u..%u_%upct"
         " processing_thinking_scan_profile=da_long_gap_grouped_dada_rest"
         " processing_thinking_period_ms=%u"
-        " strip_dirty_tx=1 status_tx_last=1 rmt_idle_drive=gpio_low_after_tx"
+        " strip_dirty_tx=1 status_tx_last=1 rmt_idle_drive=active_frames_enabled_low_power_quiet_suspend"
         " dynamic_active_accents=1"
         " status_query_samples_current_render=1"
         " effect_only_preview=1"
