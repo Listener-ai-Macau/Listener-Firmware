@@ -33,7 +33,7 @@ if ($text -notmatch '(?m)^#define BATTERY_MONITOR_FULL_MV 4200U\r?$') {
     throw "Battery full voltage must be 4200mV."
 }
 
-if ($text -notmatch '(?m)^#define BATTERY_MONITOR_ADC_SOURCE_IMPEDANCE_NUMERATOR 1010U\r?$') {
+if ($text -notmatch '(?m)^#define BATTERY_MONITOR_ADC_SOURCE_IMPEDANCE_NUMERATOR 1045U\r?$') {
     throw "Battery ADC source-impedance correction must match the 2.083V DMM bench point."
 }
 

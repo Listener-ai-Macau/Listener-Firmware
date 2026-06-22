@@ -876,7 +876,7 @@ static void board_print_status(void)
         " battery_adc_correction_mv=%d battery_raw=%d"
         " battery_level=%u battery_valid=%u battery_adc_calibrated=%u battery_samples=%u battery_result=%s"
         " battery_scaling=\"68K/68K divider, VBAT~=2*source_impedance_compensated_ADC\""
-        " battery_policy=\"product_empty_2800mv_full_4200mv_absolute_min_2700mv_adc_source_impedance_x1010\""
+        " battery_policy=\"product_empty_2800mv_full_4200mv_absolute_min_2700mv_adc_source_impedance_x1045\""
         " reserved_mspi_gpio=%s\n",
         BOARD_PINS_PROFILE_ID,
         BOARD_PINS_MODULE,
