@@ -662,7 +662,8 @@ CHECKS = {
         "User-requested re-pair/reset uses `BLE` plus a low blue EC11 confirmation orbit",
         "current render-sampled RGB frame",
         "status_query_samples_current_render=1",
-        "On battery, once confidence/status windows expire, connected BLE falls back to a sparse low-blue heartbeat",
+        "On battery before the power manager enters low-power idle, connected BLE falls back to a sparse low-blue heartbeat",
+        "In connected/disconnected low-power idle, the low-power renderer takes over and keeps restrained PWR/BLE status visible",
         "External power overrides battery-color display on `PWR`",
         "continuous slow white breath",
         "steady white once charge-full has been debounced and latched",
@@ -1288,12 +1289,13 @@ def main() -> int:
         failures.append("status_led.c: routine AI must respect user brightness; do not render it as safety brightness")
     if "status_led_token_locked(status_led_rgb(255, 255, 255), percent, true)" in status_led:
         failures.append("status_led.c: routine external-power PWR white must respect user brightness")
-    if "percent = status_window ? 46U : (connected_ready ? 30U : 0U)" in status_led:
+    if re.search(
+        r"percent\s*=\s*status_window\s*\?\s*\d+U\s*:\s*\(connected_ready\s*\?\s*\d+U\s*:\s*0U\)",
+        status_led,
+    ):
         failures.append("status_led.c: battery PWR must not stay on just because BLE is connected")
-    if "(status_window || active_work) ? 46U : 0U" in status_led:
+    if re.search(r"\(status_window\s*\|\|\s*active_work\)\s*\?\s*\d+U\s*:\s*0U", status_led):
         failures.append("status_led.c: battery PWR status-window brightness must use the low visual-balance constant")
-    if "(status_window || active_work) ? 30U : 0U" in status_led:
-        failures.append("status_led.c: low-profile battery PWR status-window brightness must use the low-power constant")
     if "STATUS_LED_BATTERY_IDLE_BLE_HEARTBEAT_PERCENT" not in status_led:
         failures.append("status_led.c: battery idle BLE heartbeat constants are missing")
     if "(!external_power_present && battery_display_band_changed)" not in status_led:
@@ -1529,7 +1531,7 @@ def main() -> int:
     print(
         "PASS: status LED static verification covers V2 four-zone WS2812 resources, "
         "EC11 GPIO5/count12, key GPIO13/count4, edge GPIO4/count6, diagnostics, "
-        "USB validation hooks, camera/manual one-pixel status/key/EC11/edge harness, and low-power off path."
+        "USB validation hooks, camera/manual one-pixel status/key/EC11/edge harness, and sleep all-off path."
     )
     return 0
 

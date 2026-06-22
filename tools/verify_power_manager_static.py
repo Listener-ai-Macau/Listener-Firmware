@@ -601,7 +601,7 @@ def main() -> int:
         power_manager,
     ):
         failures.append(
-            "components/power_manager/power_manager.c: connected idle must turn off routine status LEDs before sleeping audio"
+            "components/power_manager/power_manager.c: connected idle must enter status LED low-power rendering before sleeping audio"
         )
     if not re.search(
         r"case\s+POWER_MANAGER_STATE_DISCONNECTED_IDLE:[\s\S]{0,80}"
@@ -611,7 +611,7 @@ def main() -> int:
         power_manager,
     ):
         failures.append(
-            "components/power_manager/power_manager.c: disconnected idle and hardware shutdown must turn off routine status LEDs"
+            "components/power_manager/power_manager.c: disconnected idle and hardware shutdown must enter status LED low-power rendering"
         )
     if re.search(
         r"if\s*\(connected\)\s*\{[\s\S]{0,120}s_last_user_activity_ms\s*=",
