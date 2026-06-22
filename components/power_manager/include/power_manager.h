@@ -59,11 +59,16 @@ typedef struct {
     bool audio_idle_power_save_enabled;
     bool hardware_shutdown_guard_enabled;
     int usb_det_level;
+    bool usb_det_adc_valid;
+    int usb_det_adc_mv;
+    bool usb_det_mismatch;
     int bat_chg_level;
     int bat_std_level;
     int pwr_hold_level;
     bool usb_serial_jtag_sof_active;
     bool usb_power_present;
+    bool charger_active;
+    bool charge_power_present;
     bool external_power_present;
     bool charging;
     bool charge_full;

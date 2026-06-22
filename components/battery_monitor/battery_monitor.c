@@ -8,6 +8,7 @@
 #include "esp_adc/adc_cali_scheme.h"
 #include "esp_adc/adc_oneshot.h"
 #include "esp_log.h"
+#include "esp_rom_sys.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
 
@@ -22,6 +23,8 @@
 #define BATTERY_MONITOR_EMPTY_MV 2800U
 #define BATTERY_MONITOR_FULL_MV 4200U
 #define BATTERY_MONITOR_SAMPLE_COUNT 4U
+#define BATTERY_MONITOR_ADC_DISCARD_COUNT 3U
+#define BATTERY_MONITOR_ADC_SETTLE_US 300U
 #define BATTERY_MONITOR_V2_CURRENT_MA_PER_ADC_MV 2U
 
 static const char *TAG = "battery_monitor";
@@ -193,6 +196,16 @@ static esp_err_t battery_monitor_read_adc_locked(
     esp_err_t ret = battery_monitor_adc_channel_init(state);
     if (ret != ESP_OK) {
         return ret;
+    }
+
+    esp_rom_delay_us(BATTERY_MONITOR_ADC_SETTLE_US);
+    for (uint8_t i = 0; i < BATTERY_MONITOR_ADC_DISCARD_COUNT; ++i) {
+        int discard_raw = 0;
+        ret = adc_oneshot_read(s_adc1_handle, state->channel, &discard_raw);
+        if (ret != ESP_OK) {
+            return ret;
+        }
+        esp_rom_delay_us(BATTERY_MONITOR_ADC_SETTLE_US);
     }
 
     int raw_total = 0;

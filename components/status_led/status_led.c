@@ -3155,9 +3155,8 @@ static void status_led_poll_power_inputs(void)
     uint8_t battery_level = battery_valid ? battery.level_percent : 0xFF;
     board_v2_power_input_snapshot_t power_input = {0};
     board_get_v2_power_input_snapshot(&power_input);
-    bool usb_det_present = power_input.usb_det_level > 0;
     bool usb_serial_jtag_sof_active = power_input.usb_serial_jtag_sof_active;
-    bool usb_power_present = usb_det_present || usb_serial_jtag_sof_active;
+    bool usb_power_present = power_input.usb_power_present;
     bool raw_charging = power_input.bat_chg_level == 0;
     bool raw_full = power_input.bat_std_level == 0;
     bool battery_allows_full = !battery_valid ||
@@ -3165,10 +3164,7 @@ static void status_led_poll_power_inputs(void)
                                battery_level >= STATUS_LED_CHARGE_FULL_MIN_PERCENT;
     bool raw_full_external = raw_full && battery_allows_full;
     uint32_t external_power_source_flags = 0;
-    if (usb_det_present) {
-        external_power_source_flags |= STATUS_LED_POWER_SOURCE_USB_DET;
-    }
-    if (usb_serial_jtag_sof_active) {
+    if (usb_power_present && usb_serial_jtag_sof_active) {
         external_power_source_flags |= STATUS_LED_POWER_SOURCE_USB_SERIAL_JTAG;
     }
     bool external_power_present = usb_power_present;

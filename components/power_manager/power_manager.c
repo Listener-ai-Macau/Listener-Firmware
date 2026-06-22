@@ -109,11 +109,16 @@ static const char *TAG = "power_manager";
 
 typedef struct {
     int usb_det_level;
+    bool usb_det_adc_valid;
+    int usb_det_adc_mv;
+    bool usb_det_mismatch;
     int bat_chg_level;
     int bat_std_level;
     int pwr_hold_level;
     bool usb_serial_jtag_sof_active;
     bool usb_power_present;
+    bool charger_active;
+    bool charge_power_present;
     bool external_power_present;
     bool charging;
     bool charge_full;
@@ -567,7 +572,7 @@ static void power_manager_apply_charge_state_filter_locked(
         return;
     }
 
-    bool raw_charging = source->bat_chg_level == 0;
+    bool raw_charging = source->charger_active;
     bool raw_full_status = source->bat_std_level == 0;
     bool raw_full_external =
         raw_full_status &&
@@ -577,11 +582,11 @@ static void power_manager_apply_charge_state_filter_locked(
         raw_charging,
         raw_full_external,
         now_ms);
-    source->external_power_present = source->usb_power_present || charger_status_external;
-    raw_charging = source->external_power_present && raw_charging;
-    bool raw_full = source->external_power_present && raw_full_status;
+    source->charge_power_present = source->charge_power_present || charger_status_external;
+    raw_charging = source->charge_power_present && raw_charging;
+    bool raw_full = source->charge_power_present && raw_full_status;
 
-    if (!source->external_power_present) {
+    if (!source->charge_power_present) {
         s_charge_full_latched = false;
         s_charge_full_candidate_since_ms = 0;
     } else if (!s_charge_full_latched) {
@@ -602,8 +607,11 @@ static void power_manager_apply_charge_state_filter_locked(
         }
     }
 
-    source->charge_full = source->external_power_present && s_charge_full_latched;
+    source->charge_full = source->charge_power_present && s_charge_full_latched;
     source->charging = raw_charging && !source->charge_full;
+    source->charge_power_present = source->charge_power_present || source->charge_full;
+    source->external_power_present =
+        source->usb_power_present || source->charging || source->charge_full || charger_status_external;
     source->charge_full_latched = s_charge_full_latched;
     source->charge_full_candidate_ms = power_manager_charge_full_candidate_ms_locked(now_ms);
 }
@@ -619,28 +627,34 @@ static void power_manager_read_power_source(power_manager_power_source_snapshot_
 
     bool usb_serial_jtag_sof_active = board_snapshot.usb_serial_jtag_sof_active;
     bool usb_power_present = board_snapshot.usb_power_present;
-    bool raw_charging = board_snapshot.bat_chg_level == 0;
+    bool charger_active = board_snapshot.bat_chg_level == 0;
     bool raw_full = board_snapshot.bat_std_level == 0;
-    bool external_power_present = usb_power_present || raw_charging || raw_full;
+    bool charge_power_present = usb_power_present || charger_active || raw_full;
 
     *out_source = (power_manager_power_source_snapshot_t){
         .usb_det_level = board_snapshot.usb_det_level,
+        .usb_det_adc_valid = board_snapshot.usb_det_adc_valid,
+        .usb_det_adc_mv = board_snapshot.usb_det_adc_mv,
+        .usb_det_mismatch = board_snapshot.usb_det_mismatch,
         .bat_chg_level = board_snapshot.bat_chg_level,
         .bat_std_level = board_snapshot.bat_std_level,
         .pwr_hold_level = board_snapshot.pwr_hold_level,
         .usb_serial_jtag_sof_active = usb_serial_jtag_sof_active,
         .usb_power_present = usb_power_present,
-        .external_power_present = external_power_present,
-        .charging = raw_charging,
-        .charge_full = external_power_present && raw_full,
+        .charger_active = charger_active,
+        .charge_power_present = charge_power_present,
+        .external_power_present = usb_power_present || charger_active || raw_full,
+        .charging = charger_active,
+        .charge_full = charge_power_present && board_snapshot.bat_std_level == 0,
         .usb_det_policy = board_snapshot.usb_det_policy,
         .charger_polarity_policy = board_snapshot.charger_polarity_policy,
         .pwr_hold_policy = board_snapshot.pwr_hold_policy,
     };
     /*
-     * CHG/STD are charger status outputs. Active CHG and validated STD/full are
-     * the charger fallback when USB_DET is not populated and no USB host SOF is
-     * present; the locked filter debounces full and bounds standby retention.
+     * GPIO7 USB_DET is disabled on this hardware revision because the pad is
+     * unreliable at runtime. USB Serial/JTAG SOF identifies a computer USB host;
+     * BAT_CHG is the active-charging signal, and BAT_STD can prove
+     * charger-standby/full after the central debounce/near-full guard.
      */
 }
 
@@ -1276,11 +1290,16 @@ void power_manager_get_snapshot(power_manager_snapshot_t *snapshot)
         }
         power_manager_apply_charge_state_filter_locked(&power_source, now_ms, &battery_snapshot);
         snapshot->usb_det_level = power_source.usb_det_level;
+        snapshot->usb_det_adc_valid = power_source.usb_det_adc_valid;
+        snapshot->usb_det_adc_mv = power_source.usb_det_adc_mv;
+        snapshot->usb_det_mismatch = power_source.usb_det_mismatch;
         snapshot->bat_chg_level = power_source.bat_chg_level;
         snapshot->bat_std_level = power_source.bat_std_level;
         snapshot->pwr_hold_level = power_source.pwr_hold_level;
         snapshot->usb_serial_jtag_sof_active = power_source.usb_serial_jtag_sof_active;
         snapshot->usb_power_present = power_source.usb_power_present;
+        snapshot->charger_active = power_source.charger_active;
+        snapshot->charge_power_present = power_source.charge_power_present;
         snapshot->external_power_present = power_source.external_power_present;
         snapshot->charging = power_source.charging;
         snapshot->charge_full = power_source.charge_full;
@@ -1316,11 +1335,16 @@ void power_manager_get_snapshot(power_manager_snapshot_t *snapshot)
         xSemaphoreGive(s_mutex);
     } else {
         snapshot->usb_det_level = power_source.usb_det_level;
+        snapshot->usb_det_adc_valid = power_source.usb_det_adc_valid;
+        snapshot->usb_det_adc_mv = power_source.usb_det_adc_mv;
+        snapshot->usb_det_mismatch = power_source.usb_det_mismatch;
         snapshot->bat_chg_level = power_source.bat_chg_level;
         snapshot->bat_std_level = power_source.bat_std_level;
         snapshot->pwr_hold_level = power_source.pwr_hold_level;
         snapshot->usb_serial_jtag_sof_active = power_source.usb_serial_jtag_sof_active;
         snapshot->usb_power_present = power_source.usb_power_present;
+        snapshot->charger_active = power_source.charger_active;
+        snapshot->charge_power_present = power_source.charge_power_present;
         snapshot->external_power_present = power_source.external_power_present;
         snapshot->charging = power_source.charging;
         snapshot->charge_full = power_source.charge_full;
@@ -1461,9 +1485,14 @@ static esp_err_t power_manager_enter_hardware_shutdown(power_manager_shutdown_re
         snapshot.external_power_present) {
         power_manager_power_source_snapshot_t power_source = {
             .usb_det_level = snapshot.usb_det_level,
+            .usb_det_adc_valid = snapshot.usb_det_adc_valid,
+            .usb_det_adc_mv = snapshot.usb_det_adc_mv,
+            .usb_det_mismatch = snapshot.usb_det_mismatch,
             .bat_chg_level = snapshot.bat_chg_level,
             .bat_std_level = snapshot.bat_std_level,
             .usb_power_present = snapshot.usb_power_present,
+            .charger_active = snapshot.charger_active,
+            .charge_power_present = snapshot.charge_power_present,
             .external_power_present = snapshot.external_power_present,
             .charging = snapshot.charging,
             .charge_full = snapshot.charge_full,
@@ -1767,8 +1796,8 @@ static void power_manager_evaluate(void)
     xSemaphoreGive(s_mutex);
 
     /* Low-battery protection: shut down immediately only on battery power.
-       USB/VBUS, charging, or charge-full status blocks automatic low-battery
-       shutdown even if the battery estimate is critical. */
+       Active charging or debounced charge-full status blocks automatic
+       low-battery shutdown even if the battery estimate is critical. */
     bool low_battery_shutdown_confirmed = false;
     if (xSemaphoreTake(s_mutex, portMAX_DELAY) == pdTRUE) {
         low_battery_shutdown_confirmed =
@@ -1807,7 +1836,8 @@ static void power_manager_evaluate(void)
             TAG,
             "power source changed: usb_det=%s bat_chg=%s bat_std=%s"
             " pwr_hold=%s usb_power_present=%u usb_serial_jtag_sof_active=%u"
-            " charging=%u charge_full=%u external_power_present=%u"
+            " charger_active=%u charge_power_present=%u"
+            " charging=%u charge_full=%u external_power_present=%u usb_det_adc_valid=%u usb_det_adc_mv=%d usb_det_mismatch=%u"
             " usb_policy=%s charger_policy=%s pwr_hold_policy=%s",
             power_manager_gpio_level_name(power_source.usb_det_level),
             power_manager_gpio_level_name(power_source.bat_chg_level),
@@ -1815,9 +1845,14 @@ static void power_manager_evaluate(void)
             power_manager_gpio_level_name(power_source.pwr_hold_level),
             power_source.usb_power_present ? 1u : 0u,
             power_source.usb_serial_jtag_sof_active ? 1u : 0u,
+            power_source.charger_active ? 1u : 0u,
+            power_source.charge_power_present ? 1u : 0u,
             power_source.charging ? 1u : 0u,
             power_source.charge_full ? 1u : 0u,
             power_source.external_power_present ? 1u : 0u,
+            power_source.usb_det_adc_valid ? 1u : 0u,
+            power_source.usb_det_adc_mv,
+            power_source.usb_det_mismatch ? 1u : 0u,
             power_source.usb_det_policy != NULL ? power_source.usb_det_policy : "unknown",
             power_source.charger_polarity_policy != NULL
                 ? power_source.charger_polarity_policy
@@ -2180,13 +2215,15 @@ static void power_manager_print_status(void)
         " user_idle_ms=%" PRIu32 " radio_idle_ms=%" PRIu32
         " ble_connected=%u automatic_shutdown_enabled=%u automatic_shutdown_blocked_by_external_power=%u"
         " external_power_present=%u usb_power_present=%u usb_serial_jtag_sof_active=%u"
+        " charger_active=%u charge_power_present=%u"
         " charging=%u charge_full=%u"
         " charge_full_latched=%u charge_full_candidate_ms=%" PRIu32
         " charge_full_debounce_ms=%" PRIu32
         " charge_full_min_mv=%" PRIu32 " charge_full_min_percent=%u"
         " plugged_low_power_enabled=%u low_power_idle_allowed=%u"
         " power_input_wake_configured=%u power_input_irq_armed=%u"
-        " usb_det_level=%s bat_chg_level=%s bat_std_level=%s pwr_hold_level=%s"
+        " usb_det_level=%s usb_det_adc_valid=%u usb_det_adc_mv=%d usb_det_mismatch=%u"
+        " bat_chg_level=%s bat_std_level=%s pwr_hold_level=%s"
         " usb_det_policy=%s charger_polarity=%s pwr_hold_policy=%s"
         " battery_mv=%" PRIu32 " battery_level=%u battery_valid=%u"
         " last_shutdown_reason=%s last_shutdown_idle_ms=%" PRIu32
@@ -2216,6 +2253,8 @@ static void power_manager_print_status(void)
         snapshot.external_power_present ? 1u : 0u,
         snapshot.usb_power_present ? 1u : 0u,
         snapshot.usb_serial_jtag_sof_active ? 1u : 0u,
+        snapshot.charger_active ? 1u : 0u,
+        snapshot.charge_power_present ? 1u : 0u,
         snapshot.charging ? 1u : 0u,
         snapshot.charge_full ? 1u : 0u,
         snapshot.charge_full_latched ? 1u : 0u,
@@ -2228,6 +2267,9 @@ static void power_manager_print_status(void)
         snapshot.power_input_wake_configured ? 1u : 0u,
         snapshot.power_input_irq_armed ? 1u : 0u,
         power_manager_gpio_level_name(snapshot.usb_det_level),
+        snapshot.usb_det_adc_valid ? 1u : 0u,
+        snapshot.usb_det_adc_mv,
+        snapshot.usb_det_mismatch ? 1u : 0u,
         power_manager_gpio_level_name(snapshot.bat_chg_level),
         power_manager_gpio_level_name(snapshot.bat_std_level),
         power_manager_gpio_level_name(snapshot.pwr_hold_level),

@@ -45,7 +45,7 @@ function New-FeatureSnapshot {
             "Firmware OTA v1 with ESP-IDF OTA slots, BLE bridge, rollback, pending verify, blockers, and diag events.",
             "system_health heartbeat for heap, task, BLE, and disconnect conditions.",
             "V2 N16R8 profile: 16 MB flash, 8 MB Octal PSRAM, EC11 GPIO18, KEY1-KEY4 GPIOs, WS2812 zones.",
-            "power_manager handles idle, BLE churn, USB/VBUS blockers, low-battery blocking, manual ~POWER:TEST:SHUTDOWN, and PWR_HOLD/GPIO9 diagnostics.",
+            "power_manager handles idle, BLE churn, charger-status blockers, low-battery blocking, manual ~POWER:TEST:SHUTDOWN, and PWR_HOLD/GPIO9 diagnostics.",
             "Persisted ~DEVICE:SETTINGS for brightness, idle timeouts, plugged low-power, disable-able auto-shutdown, and BLE name.",
             "Latest V2 N16R8 pin map uses PWR_HOLD/GPIO9, BAT_V_ADC/GPIO10, and no populated current-sense chips.",
             "Real PWR_HOLD/GPIO9 power-off and LED VDD validation stay hardware-gated."
@@ -59,7 +59,7 @@ function New-FeatureSnapshot {
             [ordered]@{ path = "components/status_led/"; purpose = "LED rendering plus flash LED diagnostics." },
             [ordered]@{ path = "components/device_settings/"; purpose = "Persisted ~DEVICE:SETTINGS contract." },
             [ordered]@{ path = "components/battery_monitor/"; purpose = "2800-4200mV protected battery level." },
-            [ordered]@{ path = "docs/features/low_power_wake_policy.md"; purpose = "PWR_HOLD and USB/VBUS blocker contract." },
+            [ordered]@{ path = "docs/features/low_power_wake_policy.md"; purpose = "PWR_HOLD and charger-status blocker contract." },
             [ordered]@{ path = "tools/device_maintenance.ps1"; purpose = "Operator maintenance entry for ports, probe, flash, bootloader restore, and flash checks." },
             [ordered]@{ path = "tools/verify_charging_awake_policy_hardware.ps1"; purpose = "USB/charging awake hardware gate." },
             [ordered]@{ path = "tools/decode_diag_log.py"; purpose = "Decode ~DIAGLOG JSONL to AI bundle." },

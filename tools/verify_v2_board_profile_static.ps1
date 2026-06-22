@@ -133,11 +133,17 @@ foreach ($item in @(
     @($keyboard, "key4\.gpio41\.f16", "KEY4 V2 diagnostic label"),
     @($keyboard, "EC11 ready: a=gpio42 b=gpio2 key=gpio18", "EC11 V2 ready log"),
     @($voiceKeyInput, 'VOICE_KEY_INPUT_DIRECT_LABEL\s+"ec11_key\.gpio18"', "EC11 custom/recovery diagnostic label"),
-    @($board, "not_populated_use_usb_serial_jtag_sof_and_charger_status", "USB_DET retired policy"),
+    @($board, "v2_gpio7_usb_det_disabled_highz_usb_sof_and_charger_status", "USB_DET retired policy"),
     @($board, "board_configure_usb_det_highz", "USB_DET physical GPIO7 high-Z configuration"),
     @($board, "USB_DET:HIGHZ", "USB_DET disabled high-Z diagnostic command"),
     @($board, "usb_power_present=%u", "USB host power diagnostic field"),
+    @($board, "usb_serial_jtag_sof_active=%u", "USB Serial/JTAG SOF diagnostic field"),
     @($board, "usb_det_highz=%u", "USB_DET high-Z diagnostic field"),
+    @($board, "\.usb_power_present\s*=\s*usb_serial_jtag_sof_active", "USB_Det disabled while USB host power follows SOF"),
+    @($board, "usb_det_adc_ret\s*=\s*ESP_ERR_INVALID_STATE", "USB_Det disabled skips ADC sampling"),
+    @($board, "BOARD_PINS_USB_DET_DISABLED_IO", "USB_Det disabled physical GPIO7 diagnostic"),
+    @($board, "s_usb_det_highz_mode\s*=\s*true", "USB_Det high-Z mode defaults on"),
+    @($board, "usb_det_adc_mv=%d", "USB_Det ADC millivolt diagnostic"),
     @($board, "PWR_HOLD/GPIO9", "PWR_HOLD help text"),
     @($board, "reserved_mspi_gpio=%s", "reserved MSPI status field"),
     @($board, "~BOARD:GPIO", "raw V2 key and EC11 GPIO diagnostics command"),
@@ -246,6 +252,7 @@ foreach ($item in @(
     @($voiceKeyInput, "ec11_key\.gpio(11|35)", "stale EC11 key GPIO label"),
     @($board, "5\.1K|PWR_HOLD/GPIO(11|46)|Voice Keyboard N4|EC11 push/GPIO(11|35)|N4 deep sleep|BAT_V_ADC/GPIO8", "stale board diagnostics/help"),
     @($board, "LED11..LED16|LED15..LED28", "stale LED three-zone refs in board diagnostics"),
+    @($batteryMonitor, "battery_monitor_read_usb_det_adc|s_usb_det_adc|BOARD_PINS_USB_DET_IO", "stale USB_Det ADC reader in battery monitor"),
     @($currentTelemetryTool, 'rail=TPS63020_3V3|rail=SY7088_LED_5V|wake_key_gpio=|wake_user_action=""press_ec11_key_or_usb_reset""|voice_key_gpio=11|pwr_hold_gpio=(11|46)|PWR_HOLD/GPIO(11|46)|BAT_V_ADC/GPIO8|allowed_gpios = @\(-1, 10\)|allowed_gpios = @\(-1, 9\)', "stale current telemetry collector diagnostics"),
     @($powerManager, "KEY4/GPIO21|EC11-KEY/GPIO35|wake_policy|wake_gpio|PWR_HOLD/GPIO(11|46)|v2_gpio11_|hold-low", "stale wake diagnostics"),
     @($lowPowerDoc, "EC11-KEY_IO/GPIO11|EC11-KEY/GPIO35|KEY4/GPIO21|wake_policy|wake_gpio|deep-sleep|PWR_HOLD/GPIO(11|46)", "stale low-power wake doc GPIO"),
@@ -273,4 +280,4 @@ if ($errors.Count -gt 0) {
     exit 1
 }
 
-Write-Host "PASS: V2 N16R8 board profile, memory defaults, pin map, four-zone LED resources, GPIO10 battery ADC, GPIO9 PWR_HOLD, absent current telemetry, retired USB_DET high-Z policy, diagnostics, partitions, and package identity checks passed."
+Write-Host "PASS: V2 N16R8 board profile, memory defaults, pin map, four-zone LED resources, GPIO10 battery ADC, GPIO9 PWR_HOLD, absent current telemetry, disabled USB_Det high-Z plus USB SOF policy, diagnostics, partitions, and package identity checks passed."

@@ -20,7 +20,7 @@ static const char *TAG = "board";
 
 #define BOARD_USB_PREFIX "BOARD:"
 
-#define BOARD_V2_USB_DET_POLICY "not_populated_use_usb_serial_jtag_sof_and_charger_status"
+#define BOARD_V2_USB_DET_POLICY "v2_gpio7_usb_det_disabled_highz_usb_sof_and_charger_status"
 #define BOARD_V2_CHARGER_POLARITY "v2_gpio14_chg_gpio21_std_active_low"
 #define BOARD_V2_PWR_HOLD_POLICY "v2_gpio9_power_latch_runtime_low_drive_high_for_hardware_shutdown"
 #define BOARD_V2_LED_POLICY "v2_four_zone_ws2812_status_gpio1_ec11_gpio5_key_gpio13_edge_gpio4"
@@ -217,8 +217,8 @@ static const char *board_gpio_scan_label(gpio_num_t gpio)
     if (gpio == BOARD_PINS_EC11_KEY_IO) {
         return "EC11_KEY";
     }
-    if (gpio == BOARD_PINS_USB_DET_IO) {
-        return "USB_DET";
+    if (gpio == BOARD_PINS_USB_DET_DISABLED_IO) {
+        return "USB_DET_DISABLED";
     }
     if (gpio == BOARD_PINS_BAT_CHG_IO) {
         return "BAT_CHG";
@@ -520,15 +520,25 @@ void board_get_v2_power_input_snapshot(board_v2_power_input_snapshot_t *out_snap
     board_v2_power_hold_snapshot_t power_hold = {0};
     board_get_v2_power_hold_snapshot(&power_hold);
     bool usb_serial_jtag_sof_active = board_usb_serial_jtag_sof_active();
+    esp_err_t usb_det_adc_ret = ESP_ERR_INVALID_STATE;
+    bool usb_det_adc_valid = false;
+    int usb_det_level = board_read_gpio_level(BOARD_PINS_USB_DET_DISABLED_IO);
 
     *out_snapshot = (board_v2_power_input_snapshot_t){
-        .usb_det_level = board_read_gpio_level(BOARD_PINS_USB_DET_IO),
+        .usb_det_level = usb_det_level,
+        .usb_power_present = usb_serial_jtag_sof_active,
+        .usb_serial_jtag_sof_active = usb_serial_jtag_sof_active,
+        .usb_det_highz = true,
+        .usb_det_adc_valid = usb_det_adc_valid,
+        .usb_det_adc_mv = 0,
+        .usb_det_raw_adc = 0,
+        .usb_det_adc_calibrated = false,
+        .usb_det_adc_samples = 0,
+        .usb_det_adc_result = usb_det_adc_ret,
+        .usb_det_mismatch = false,
         .bat_chg_level = board_read_gpio_level(BOARD_PINS_BAT_CHG_IO),
         .bat_std_level = board_read_gpio_level(BOARD_PINS_BAT_STD_IO),
         .pwr_hold_level = power_hold.level,
-        .usb_serial_jtag_sof_active = usb_serial_jtag_sof_active,
-        .usb_power_present = usb_serial_jtag_sof_active,
-        .usb_det_highz = s_usb_det_highz_mode,
         .usb_det_policy = BOARD_V2_USB_DET_POLICY,
         .charger_polarity_policy = BOARD_V2_CHARGER_POLARITY,
         .pwr_hold_policy = BOARD_V2_PWR_HOLD_POLICY,
@@ -727,16 +737,17 @@ static void board_print_gpio_status(void)
     fflush(stdout);
 }
 
-static void board_print_usb_det_highz_mode(void)
+static void board_print_usb_det_highz_mode(bool enabled)
 {
-    board_set_usb_det_highz_mode(true);
+    board_set_usb_det_highz_mode(enabled);
     board_v2_power_input_snapshot_t power_inputs = {0};
     board_get_v2_power_input_snapshot(&power_inputs);
 
     printf(
         "~BOARD:USB_DET mode=disabled_highz physical_gpio=%d runtime_gpio=%d"
         " runtime_level=%s usb_power_present=%u usb_serial_jtag_sof_active=%u"
-        " highz=%u pull_up=0 pull_down=0 policy=%s"
+        " highz=%u adc_sampling=0 adc_valid=%u adc_mv=%d adc_result=%s"
+        " pull_up=0 pull_down=0 policy=%s"
         " note=\"GPIO7 USB_DET is disabled; computer USB uses USB Serial/JTAG SOF and chargers use BAT_CHG/BAT_STD\"\n",
         (int)BOARD_PINS_USB_DET_DISABLED_IO,
         (int)BOARD_PINS_USB_DET_IO,
@@ -744,6 +755,9 @@ static void board_print_usb_det_highz_mode(void)
         power_inputs.usb_power_present ? 1u : 0u,
         power_inputs.usb_serial_jtag_sof_active ? 1u : 0u,
         power_inputs.usb_det_highz ? 1u : 0u,
+        power_inputs.usb_det_adc_valid ? 1u : 0u,
+        power_inputs.usb_det_adc_mv,
+        esp_err_to_name(power_inputs.usb_det_adc_result),
         power_inputs.usb_det_policy);
     fflush(stdout);
 }
@@ -854,7 +868,9 @@ static void board_print_status(void)
         " ec11_key_provisional=1 mic_clk_gpio=%d mic_dout_gpio=%d mic_policy=%s"
         " pwr_hold_gpio=%d pwr_hold_level=%s pwr_hold_configured=%u pwr_hold_policy=%s"
         " usb_det_gpio=%d usb_det_disabled_gpio=%d usb_det_level=%s usb_power_present=%u"
-        " usb_serial_jtag_sof_active=%u usb_det_highz=%u usb_det_policy=%s"
+        " usb_serial_jtag_sof_active=%u usb_det_highz=%u usb_det_adc_valid=%u"
+        " usb_det_adc_mv=%d usb_det_raw_adc=%d usb_det_adc_calibrated=%u usb_det_adc_samples=%u"
+        " usb_det_adc_result=%s usb_det_mismatch=%u usb_det_threshold_mv=disabled usb_det_policy=%s"
         " bat_chg_gpio=%d bat_chg_level=%s bat_std_gpio=%d bat_std_level=%s charger_polarity=%s"
         " battery_gpio=%d battery_mv=%" PRIu32 " battery_adc_mv=%d battery_raw=%d"
         " battery_level=%u battery_valid=%u battery_adc_calibrated=%u battery_samples=%u battery_result=%s"
@@ -885,6 +901,13 @@ static void board_print_status(void)
         power_inputs.usb_power_present ? 1u : 0u,
         power_inputs.usb_serial_jtag_sof_active ? 1u : 0u,
         power_inputs.usb_det_highz ? 1u : 0u,
+        power_inputs.usb_det_adc_valid ? 1u : 0u,
+        power_inputs.usb_det_adc_mv,
+        power_inputs.usb_det_raw_adc,
+        power_inputs.usb_det_adc_calibrated ? 1u : 0u,
+        power_inputs.usb_det_adc_samples,
+        esp_err_to_name(power_inputs.usb_det_adc_result),
+        power_inputs.usb_det_mismatch ? 1u : 0u,
         power_inputs.usb_det_policy,
         (int)BOARD_PINS_BAT_CHG_IO,
         board_gpio_level_name(power_inputs.bat_chg_level),
@@ -929,7 +952,7 @@ void board_log_v2_diagnostics(void)
         (int)BOARD_PINS_EC11_KEY_IO,
         (int)BOARD_PINS_MIC_CLK_IO,
         (int)BOARD_PINS_MIC_DOUT_IO,
-        (int)BOARD_PINS_USB_DET_IO,
+        (int)BOARD_PINS_USB_DET_DISABLED_IO,
         (int)BOARD_PINS_BAT_CHG_IO,
         (int)BOARD_PINS_BAT_STD_IO,
         (int)BOARD_PINS_BAT_V_ADC_IO,
@@ -957,7 +980,7 @@ void board_log_v2_diagnostics(void)
              BOARD_PINS_FLASH_SIZE_MB, BOARD_PINS_PSRAM_SIZE_MB,
              (uint32_t)BOARD_PINS_KEY1_IO, (uint32_t)BOARD_PINS_EC11_KEY_IO);
     diag_log(DIAG_SRC_BOARD, DIAG_BOARD_PROVISIONAL, DIAG_SEV_WARN,
-             (uint32_t)BOARD_PINS_USB_DET_IO,
+             (uint32_t)BOARD_PINS_USB_DET_DISABLED_IO,
              (uint32_t)BOARD_PINS_PWR_HOLD_IO,
              (uint32_t)BOARD_PINS_TPS63020_I_ADC_IO,
              (uint32_t)BOARD_PINS_SY7088_I_ADC_IO);
@@ -979,7 +1002,7 @@ void board_print_help(void)
         "Generated button diagnostics: ~KEY:KEY3:SINGLE simulates the recording custom-key path for automated A1/A2 tests; ~KEY:EC11:SINGLE simulates the EC11 runtime custom-key press/release path.\n"
         "Send ~VREC:RECOVERY to clear pairing/session state over USB.\n"
         "Board diagnostics: ~BOARD:STATUS reports V2 pin, USB, charger, battery, PWR_HOLD/GPIO9, mic, reserved MSPI, and LED resource status; ~BOARD:POWER reports optional current rails as not_populated on the current board.\n"
-        "Board USB_DET diagnostics: GPIO7 USB_DET is disabled/high-Z; ~BOARD:USB_DET:HIGHZ reports the disabled state.\n"
+        "Board USB_DET diagnostics: GPIO7 USB_DET is disabled/high-Z; computer USB is inferred from USB Serial/JTAG SOF and charger state from BAT_CHG/BAT_STD; ~BOARD:USB_DET:HIGHZ reports the disabled state.\n"
         "Board GPIO diagnostics: ~BOARD:GPIO reads raw KEY1-KEY4 and EC11 A/B/key levels without reconfiguring pins.\n"
         "Board GPIO scan: ~BOARD:GPIO-SCAN samples all valid GPIO levels without reconfiguring pins and prints changed GPIOs.\n"
         "Board PWR_HOLD diagnostics: ~BOARD:PWR-HOLD:LOW restores runtime low; ~BOARD:PWR-HOLD:HIGH attempts the shutdown high drive and may power off the board.\n"
@@ -1023,7 +1046,7 @@ bool board_consume_usb_command(const char *line)
             return true;
         }
         if (strcmp(command, "USB_DET:HIGHZ") == 0) {
-            board_print_usb_det_highz_mode();
+            board_print_usb_det_highz_mode(true);
             return true;
         }
         if (strcmp(command, "PWR-HOLD:LOW") == 0) {

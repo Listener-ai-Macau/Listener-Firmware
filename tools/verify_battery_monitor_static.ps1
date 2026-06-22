@@ -33,6 +33,14 @@ if ($text -notmatch '(?m)^#define BATTERY_MONITOR_FULL_MV 4200U\r?$') {
     throw "Battery full voltage must be 4200mV."
 }
 
+if ($text -notmatch '(?m)^#define BATTERY_MONITOR_ADC_DISCARD_COUNT [1-9][0-9]*U\r?$') {
+    throw "ADC channel switching must discard at least one sample before reporting battery/current telemetry readings."
+}
+
+if ($text -notmatch 'esp_rom_delay_us\(BATTERY_MONITOR_ADC_SETTLE_US\)[\s\S]*adc_oneshot_read\(s_adc1_handle,\s*state->channel,\s*&discard_raw\)[\s\S]*esp_rom_delay_us\(BATTERY_MONITOR_ADC_SETTLE_US\)[\s\S]*for\s*\(uint8_t i = 0; i < BATTERY_MONITOR_SAMPLE_COUNT') {
+    throw "ADC reads must allow mux settle and discard stale samples before averaging reported samples."
+}
+
 if ($text -notmatch 'battery_mv <= BATTERY_MONITOR_EMPTY_MV[\s\S]*return 0;') {
     throw "Battery percentage must clamp at empty voltage."
 }

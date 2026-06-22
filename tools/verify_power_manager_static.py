@@ -29,6 +29,11 @@ CHECKS = {
         "hardware_shutdown_threshold_ms",
         "external_power_present",
         "usb_power_present",
+        "usb_det_adc_valid",
+        "usb_det_adc_mv",
+        "usb_det_mismatch",
+        "charger_active",
+        "charge_power_present",
         "charging",
         "charge_full",
         "charge_full_latched",
@@ -74,9 +79,14 @@ CHECKS = {
         "user_idle_ms=%",
         "radio_idle_ms=%",
         "external_power_present=%u",
+        "charger_active=%u",
+        "charge_power_present=%u",
         "charging=%u",
         "charge_full=%u",
         "usb_det_level=%s",
+        "usb_det_adc_valid=%u",
+        "usb_det_adc_mv=%d",
+        "usb_det_mismatch=%u",
         "bat_chg_level=%s",
         "bat_std_level=%s",
         "pwr_hold_level=%s",
@@ -274,7 +284,7 @@ CHECKS = {
         "default critical threshold `0%`",
         "forces hardware shutdown",
         "actively driven LOW during normal boot and runtime",
-        "USB/VBUS, active charging, or charge-full status blocks this automatic low-battery shutdown",
+        "Active charging or charge-full status blocks this automatic low-battery shutdown",
         "BLE link churn is radio activity, not user activity",
     ],
 }
@@ -441,15 +451,17 @@ def main() -> int:
         r"raw_full_external\s*=[\s\S]*"
         r"power_manager_charge_full_battery_allowed[\s\S]*"
         r"power_manager_charger_status_external_locked[\s\S]*"
+        r"source->charge_power_present\s*=\s*source->charge_power_present\s*\|\|\s*charger_status_external[\s\S]*"
         r"raw_full\s*&&[\s\S]*"
         r"!raw_charging\s*&&[\s\S]*"
         r"power_manager_charge_full_battery_allowed[\s\S]*"
         r"POWER_MANAGER_CHARGE_FULL_DEBOUNCE_MS[\s\S]*"
-        r"source->charge_full\s*=\s*source->external_power_present\s*&&\s*s_charge_full_latched",
+        r"source->charge_full\s*=\s*source->charge_power_present\s*&&\s*s_charge_full_latched[\s\S]*"
+        r"source->external_power_present\s*=[\s\S]*source->usb_power_present\s*\|\|\s*source->charging\s*\|\|\s*source->charge_full\s*\|\|\s*charger_status_external",
         power_manager,
     ):
         failures.append(
-            "components/power_manager/power_manager.c: charge-full must be external-power gated, battery-validated, and debounced against raw BAT_STD jitter"
+            "components/power_manager/power_manager.c: charge-full must be debounce/near-full guarded while allowing USB SOF or BAT_STD/BAT_CHG to prove external power with GPIO7 disabled"
         )
     if not re.search(
         r"power_manager_sync_power_source_locked[\s\S]*"
@@ -581,7 +593,7 @@ def main() -> int:
         power_manager,
     ):
         failures.append(
-            "components/power_manager/power_manager.c: low-battery hardware shutdown must reject ADC/USB_DET startup transients"
+            "components/power_manager/power_manager.c: low-battery hardware shutdown must reject ADC startup transients"
         )
     if not re.search(
         r"power_manager_refresh_ble_connection_locked[\s\S]*"
