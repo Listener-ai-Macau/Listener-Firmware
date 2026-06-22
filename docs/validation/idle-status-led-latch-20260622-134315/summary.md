@@ -8,6 +8,7 @@ Agent: oai2
 - Battery low-power idle keeps `LED1=PWR` visible using `battery_display_valid || battery_valid`, with a low amber fallback when live battery sampling is temporarily unavailable.
 - Low-power idle treats BLE `TYPE_READY` the same as `CONNECTED`, so `LED2=BLE` remains latched at the restrained idle blue level.
 - Connected HID battery/status updates now resynchronize `LED2=BLE` to `connected` or `TYPE_READY` when manual preview/clear commands have cleared the LED semantic state while BLE is still connected.
+- Active plugged rendering now treats `TYPE_READY` as a visible connected-like BLE state, so resyncing the semantic state also lights the physical `LED2=BLE`.
 - `status_led_prepare_sleep()` and explicit output-off paths remain the all-off paths.
 
 ## Validation
@@ -19,9 +20,10 @@ Agent: oai2
 - PASS: `git diff --check`
 - PASS: `pwsh -NoProfile -File .\tools\build.ps1`
 - PASS: COM10 post-flash serial status captured idle PWR/BLE output after `7ec06b7`; `PWR` remained visible and `TYPE_READY`/connected BLE used the low-blue latch.
-- DIAG: COM10 post-replug serial status plus bounded diagnostic export captured BLE source-of-truth drift: `~POWER:STATUS` reported `ble_connected=1`, while `~LED:STATUS` reported `ble=disconnected` after preview/clear activity. The follow-up connected-HID resync change covers this regression path.
+- DIAG: COM10 post-replug serial status plus bounded diagnostic export captured BLE source-of-truth drift: `~POWER:STATUS` reported `ble_connected=1`, while `~LED:STATUS` reported `ble=disconnected` after preview/clear activity. The connected-HID resync change covers this regression path.
+- DIAG: COM10 post-flash preview-clear replay on `f5a11d1` restored the semantic state to `ble=type_ready`, but physical `status_rgb` still showed `BLE:0,0,0`; the active `TYPE_READY` renderer change covers this second layer.
 
-Build result: `voice-keyboard-firmware.bin` size `0xd2040`; smallest app partition free `0x52dfc0`.
+Build result: `voice-keyboard-firmware.bin` size `0xd2060`; smallest app partition free `0x52dfa0`.
 
 ## Evidence
 
@@ -29,3 +31,4 @@ Build result: `voice-keyboard-firmware.bin` size `0xd2040`; smallest app partiti
 - `post_replug_serial_status.txt`
 - `diag/manifest.json`
 - `diag/diag_log_ai_bundle.json`
+- `post_flash_preview_clear_resync.txt`

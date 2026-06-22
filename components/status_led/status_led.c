@@ -2018,17 +2018,22 @@ static void status_led_render_ble_locked(status_led_frame_t *frame, uint32_t now
         }
         break;
     case STATUS_LED_BLE_CONNECTED:
-        if (ble_elapsed_ms < STATUS_LED_BLE_CONNECTED_CONFIRM_MS) {
+    case STATUS_LED_BLE_TYPE_READY: {
+        const bool type_ready = s_state.ble_state == STATUS_LED_BLE_TYPE_READY;
+        const uint8_t steady_percent = type_ready
+            ? STATUS_LED_BLE_TYPE_READY_STEADY_PERCENT
+            : STATUS_LED_BLE_CONNECTED_STEADY_PERCENT;
+        if (!type_ready && ble_elapsed_ms < STATUS_LED_BLE_CONNECTED_CONFIRM_MS) {
             color = status_led_token_locked(
                 ble_blue,
                 status_led_triangle_percent(
                     ble_elapsed_ms,
                     STATUS_LED_BLE_CONNECTED_CONFIRM_MS,
                     STATUS_LED_BLE_CONNECTED_CONFIRM_MIN_PERCENT,
-                    STATUS_LED_BLE_CONNECTED_STEADY_PERCENT),
+                    steady_percent),
                 false);
         } else if (confidence || status_window) {
-            color = status_led_token_locked(ble_blue, STATUS_LED_BLE_CONNECTED_STEADY_PERCENT, false);
+            color = status_led_token_locked(ble_blue, steady_percent, false);
         } else if (battery_idle && status_led_blink_on(
                                    ble_elapsed_ms,
                                    STATUS_LED_BATTERY_IDLE_BLE_HEARTBEAT_ON_MS,
@@ -2038,9 +2043,10 @@ static void status_led_render_ble_locked(status_led_frame_t *frame, uint32_t now
                 STATUS_LED_BATTERY_IDLE_BLE_HEARTBEAT_PERCENT,
                 false);
         } else if (!battery_idle) {
-            color = status_led_token_locked(ble_blue, STATUS_LED_BLE_CONNECTED_STEADY_PERCENT, false);
+            color = status_led_token_locked(ble_blue, steady_percent, false);
         }
         break;
+    }
     case STATUS_LED_BLE_DISCONNECTED:
     default:
         break;

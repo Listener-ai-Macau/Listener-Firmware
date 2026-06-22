@@ -310,7 +310,7 @@ CHECKS = {
         "case STATUS_LED_BLE_TYPE_READY: return \"type_ready\"",
         "status_led_ble_state_ready_locked",
         "ble_elapsed_ms < STATUS_LED_BLE_CONNECTED_CONFIRM_MS",
-        "STATUS_LED_BLE_CONNECTED_CONFIRM_MS,\n                    STATUS_LED_BLE_CONNECTED_CONFIRM_MIN_PERCENT,\n                    STATUS_LED_BLE_CONNECTED_STEADY_PERCENT",
+        "const uint8_t steady_percent = type_ready",
         "status_led_preview_clear_activity_locked",
         "status_led_render_edge_clockwise_chase_locked",
         "ble_repair_ms_left=%",
@@ -994,6 +994,14 @@ def main() -> int:
             body,
         ):
             failures.append("status_led.c: low-power BLE must keep TYPE_READY latched like CONNECTED")
+    if not re.search(
+        r"case\s+STATUS_LED_BLE_CONNECTED:\s*\n\s*case\s+STATUS_LED_BLE_TYPE_READY:\s*\{[\s\S]*?"
+        r"STATUS_LED_BLE_TYPE_READY_STEADY_PERCENT[\s\S]*?"
+        r"STATUS_LED_BLE_CONNECTED_STEADY_PERCENT[\s\S]*?"
+        r"steady_percent",
+        status_led,
+    ):
+        failures.append("status_led.c: active BLE rendering must keep TYPE_READY visible like CONNECTED")
     for token in (
         "STATUS_LED_RECORDING_LEVEL_STALE_MS",
         "STATUS_LED_RECORDING_LEVEL_EFFECT_MIN_PERCENT 8U",

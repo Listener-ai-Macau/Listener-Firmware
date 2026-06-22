@@ -85,8 +85,8 @@ Assert-Contains $statusLed 'STATUS_LED_BATTERY_IDLE_BLE_HEARTBEAT_ON_MS\s+120U' 
     "battery idle BLE heartbeat must be brief"
 Assert-Contains $statusLed 'STATUS_LED_BLE_CONNECTED_GENERIC_PERCENT\s+14U[\s\S]*?STATUS_LED_BLE_CONNECTED_STEADY_PERCENT\s+STATUS_LED_BLE_CONNECTED_GENERIC_PERCENT' `
     "connected BLE steady brightness must stay at the current low visible level"
-Assert-Contains $statusLed 'case STATUS_LED_BLE_CONNECTED:[\s\S]*?STATUS_LED_BLE_CONNECTED_CONFIRM_MIN_PERCENT[\s\S]*?STATUS_LED_BLE_CONNECTED_STEADY_PERCENT[\s\S]*?confidence \|\| status_window[\s\S]*?STATUS_LED_BLE_CONNECTED_STEADY_PERCENT[\s\S]*?battery_idle[\s\S]*?STATUS_LED_BATTERY_IDLE_BLE_HEARTBEAT_PERCENT[\s\S]*?else if \(!battery_idle\)[\s\S]*?STATUS_LED_BLE_CONNECTED_STEADY_PERCENT' `
-    "connected rendering must stay low-visible outside battery idle and use a brief heartbeat during battery idle"
+Assert-Contains $statusLed 'case STATUS_LED_BLE_CONNECTED:\s*\n\s*case STATUS_LED_BLE_TYPE_READY:\s*\{[\s\S]*?const bool type_ready = s_state\.ble_state == STATUS_LED_BLE_TYPE_READY;[\s\S]*?STATUS_LED_BLE_TYPE_READY_STEADY_PERCENT[\s\S]*?STATUS_LED_BLE_CONNECTED_STEADY_PERCENT[\s\S]*?!type_ready && ble_elapsed_ms < STATUS_LED_BLE_CONNECTED_CONFIRM_MS[\s\S]*?confidence \|\| status_window[\s\S]*?steady_percent[\s\S]*?battery_idle[\s\S]*?STATUS_LED_BATTERY_IDLE_BLE_HEARTBEAT_PERCENT[\s\S]*?else if \(!battery_idle\)[\s\S]*?steady_percent' `
+    "connected and TYPE_READY rendering must stay low-visible outside battery idle and use a brief heartbeat during battery idle"
 Assert-Contains $statusLed 'const bool active_work = s_state\.recording_active \|\| s_state\.processing_active;' `
     "status LED renderer must define active work for recording/processing visibility"
 Assert-Contains $statusLed 'STATUS_LED_BATTERY_STATUS_WINDOW_PWR_PERCENT\s+14U[\s\S]*?percent = \(status_window \|\| active_work\)[\s\S]*?\? STATUS_LED_BATTERY_STATUS_WINDOW_PWR_PERCENT[\s\S]*?: 0U;' `
