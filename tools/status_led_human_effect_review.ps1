@@ -3,7 +3,7 @@ param(
     [string]$Port = "COMx",
     [int]$Baud = 115200,
     [string]$OutputDir = "",
-    [ValidateSet("Foundation", "Scenes", "Complex", "Volume", "Product", "FinalVisual", "FinalRetest", "FinalCombo", "RootCause", "StaticRoot", "Repro", "IdleTransition", "TailOnly", "ComboOnly", "Full")]
+    [ValidateSet("Foundation", "Scenes", "Complex", "Volume", "Product", "FinalVisual", "FinalRetest", "FinalCombo", "RootCause", "StaticRoot", "Repro", "RecordingIndependence", "IdleTransition", "TailOnly", "ComboOnly", "Full")]
     [string]$Mode = "Foundation",
     [int]$CommandReadMs = 700,
     [int]$InitialReadMs = 1200,
@@ -482,6 +482,21 @@ function Get-IdleTransitionSteps {
     return @($steps)
 }
 
+function Get-RecordingIndependenceSteps {
+    $steps = @(
+        New-LedReviewStep `
+            -Id "recording-active-keeps-pwr-ble" `
+            -Title "录音灯独立：LED1/LED2 不被录音覆盖" `
+            -Commands @("~LED:PREVIEW connected", "~LED:STATUS", "WAIT 500", "~LED:PREVIEW recording_active", "WAIT 900", "~LED:STATUS", "WAIT 1200", "~LED:STATUS") `
+            -When "隔离检查从 connected idle 进入录音状态；这是产品状态预览，不是 effect-only 调灯模式。" `
+            -Expected "先只有 LED1/PWR 与 LED2/BLE 作为在线基线；进入 recording_active 后 LED3/REC 加入，LED1/PWR 和 LED2/BLE 必须继续亮，LED4/AI、LED5/OK、LED6/WARN 不应乱入。" `
+            -HumanFocus "重点看发送 recording_active 后第一秒：LED1 和 LED2 不能灭，LED3 可以亮；如果 LED1/2 灭掉或所有状态灯闪一下，点失败并写备注。" `
+            -PassRule "~LED:STATUS 显示 active_flags 至少包含 PWR:1,BLE:1,REC:1，且 OK/WARN 为 0；人眼也确认 LED1/LED2 没被录音灯覆盖。" `
+            -PostCommands @("~DIAGLOG:LAST:80:status_led", "~LED:PREVIEW connected", "~LED:STATUS")
+    )
+    return @($steps)
+}
+
 function Get-TailOnlySteps {
     $steps = @(
         New-LedReviewStep `
@@ -622,6 +637,10 @@ function Get-ReviewSteps {
     $repro = @(Get-ReproSteps)
     if ($Mode -eq "Repro") {
         return $repro
+    }
+    $recordingIndependence = @(Get-RecordingIndependenceSteps)
+    if ($Mode -eq "RecordingIndependence") {
+        return $recordingIndependence
     }
     $idleTransition = @(Get-IdleTransitionSteps)
     if ($Mode -eq "IdleTransition") {
@@ -1026,6 +1045,25 @@ function Show-IntroPrompt {
         $result = Show-TopMostMessageBox `
             -Message $message `
             -Title "Listener 组合灯效亮度复测" `
+            -Buttons ([System.Windows.Forms.MessageBoxButtons]::OKCancel) `
+            -Icon ([System.Windows.Forms.MessageBoxIcon]::Information)
+        return $result -eq [System.Windows.Forms.DialogResult]::OK
+    }
+    if ($Mode -eq "RecordingIndependence") {
+        $message = @"
+这次只测一个问题：录音灯亮起时，LED1/PWR 和 LED2/BLE 是否保持独立。
+
+脚本会按顺序发送：
+1. connected：先让 LED1/LED2 成为在线基线。
+2. recording_active：只加入 LED3/REC。
+3. 读取两次状态和 status_led 日志。
+
+你只需要看板子：LED1 和 LED2 在录音灯出现时不能灭，也不能所有状态灯闪一下。
+看到异常就点“失败”并写一句备注；正常就点“通过”。
+"@
+        $result = Show-TopMostMessageBox `
+            -Message $message `
+            -Title "Listener 录音灯独立性验收" `
             -Buttons ([System.Windows.Forms.MessageBoxButtons]::OKCancel) `
             -Icon ([System.Windows.Forms.MessageBoxIcon]::Information)
         return $result -eq [System.Windows.Forms.DialogResult]::OK
