@@ -1,0 +1,34 @@
+serial_opened port=COM10 baud=115200 dtr=0 rts=0
+I (100) boot: No factory image, trying OTA 0
+> ~POWER:STATUS
+~POWER:STATUS state=ACTIVE blockers=0x00000080 blocker_names=external_power shutdown_blockers=0x00000080 shutdown_blocker_names=external_power idle_ms=9119 user_idle_ms=9119 radio_idle_ms=9119 ble_connected=0 automatic_shutdown_enabled=0 automatic_shutdown_blocked_by_external_power=0 external_power_present=1 usb_power_present=1 usb_serial_jtag_sof_active=1 charging=0 charge_full=0 charge_full_latched=0 charge_full_candidate_ms=9769 charge_full_debounce_ms=10000 charge_full_min_mv=4050 charge_full_min_percent=88 plugged_low_power_enabled=0 low_power_idle_allowed=0 power_input_wake_configured=1 power_input_irq_armed=0 usb_det_level=nc bat_chg_level=high bat_std_level=low pwr_hold_level=low usb_det_policy=not_populated_use_usb_serial_jtag_sof_and_charger_status charger_polarity=v2_gpio14_chg_gpio21_std_active_low pwr_hold_policy=v2_gpio9_power_latch_runtime_low_drive_high_for_hardware_shutdown battery_mv=4138 battery_level=96 battery_valid=1 last_shutdown_reason=none last_shutdown_idle_ms=0 last_shutdown_blockers=0x00000000 last_shutdown_failure_ret=ESP_OK shutdown_failure_retry_ms_left=0 shutdown_failure_retry_ms=900000 guard=1 audio_idle_ms=5000 audio_idle_power_save=1 audio_idle_blockers=0x00000000 low_power_idle_ms=60000 plugged_low_power_idle_ms=60000 battery_low_power_idle_ms=60000 connected_idle_ms=60000 disconnected_idle_ms=60000 hardware_shutdown_ms=0 plugged_auto_shutdown_ms=0 battery_auto_shutdown_ms=1800000 pwr_hold_gpio=9 pwr_hold_level=low pwr_hold_configured=1 pwr_hold_policy=v2_gpio9_power_latch_runtime_low_drive_high_for_hardware_shutdown voice_key_gpio=18 hardware_shutdown_user_action="short-press hardware power key for cold boot after PWR_HOLD/GPIO9 drive-high shutdown"
+I (13544) power_manager: power source changed: usb_det=nc bat_chg=high bat_std=low pwr_hold=low usb_power_present=1 usb_serial_jtag_sof_active=1 charging=0 charge_full=1 external_power_present=1 usb_policy=not_populated_use_usb_serial_jtag_sof_and_charger_status charger_policy=v2_gpio14_chg_gpio21_std_active_low pwr_hold_policy=v2_gpio9_power_latch_runtime_low_drive_high_for_hardware_shutdown
+> ~POWER:PM
+~POWER:PM begin pm_enable=1 profiling=0
+Lock stats:
+Name            Type            Arg    Active  
+i2s_driver      APB_FREQ_MAX    0      0       
+bt              APB_FREQ_MAX    0      0       
+rmt_0_2         CPU_FREQ_MAX    0      1       
+rmt_0_1         CPU_FREQ_MAX    0      1       
+rmt_0_0         CPU_FREQ_MAX    0      1       
+rmt_0_3         NO_LIGHT_SLEEP  0      1       
+usb_serial_jtag NO_LIGHT_SLEEP  0      1       
+rtos1           CPU_FREQ_MAX    0      1       
+rtos0           CPU_FREQ_MAX    0      0       
+~POWER:PM end result=ESP_OK
+> ~POWER:PM:LOCKS
+~POWER:PM begin pm_enable=1 profiling=0
+Lock stats:
+Name            Type            Arg    Active  
+i2s_driver      APB_FREQ_MAX    0      0       
+bt              APB_FREQ_MAX    0      0       
+rmt_0_2         CPU_FREQ_MAX    0      1       
+rmt_0_1         CPU_FREQ_MAX    0      1       
+rmt_0_0         CPU_FREQ_MAX    0      1       
+rmt_0_3         NO_LIGHT_SLEEP  0      1       
+usb_serial_jtag NO_LIGHT_SLEEP  0      1       
+rtos1           CPU_FREQ_MAX    0      1       
+rtos0           CPU_FREQ_MAX    0      0       
+~POWER:PM end result=ESP_OK
+serial_closed
