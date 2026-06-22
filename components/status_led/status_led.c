@@ -820,6 +820,11 @@ static uint8_t status_led_battery_display_level_locked(void)
     return s_state.battery_valid ? s_state.battery_level_percent : 0xFFU;
 }
 
+static bool status_led_battery_display_available_locked(void)
+{
+    return s_state.battery_display_valid || s_state.battery_valid;
+}
+
 static bool status_led_update_battery_display_locked(
     bool external_power_present,
     bool battery_valid,
@@ -2062,12 +2067,17 @@ static void status_led_render_low_power_power_locked(status_led_frame_t *frame, 
     }
 
     status_led_rgb_t color = {0};
-    if (s_state.battery_valid) {
+    if (status_led_battery_display_available_locked()) {
         const uint8_t battery_level = status_led_battery_display_level_locked();
         color = status_led_token_locked(
             battery_level >= STATUS_LED_BATTERY_DISPLAY_GREEN_PERCENT
                 ? status_led_rgb(0, 255, 0)
                 : status_led_rgb(255, 140, 0),
+            STATUS_LED_LOW_POWER_PWR_PERCENT,
+            false);
+    } else {
+        color = status_led_token_locked(
+            status_led_rgb(255, 140, 0),
             STATUS_LED_LOW_POWER_PWR_PERCENT,
             false);
     }
@@ -2084,6 +2094,7 @@ static void status_led_render_low_power_ble_locked(status_led_frame_t *frame)
         percent = STATUS_LED_LOW_POWER_BLE_ATTENTION_PERCENT;
         break;
     case STATUS_LED_BLE_CONNECTED:
+    case STATUS_LED_BLE_TYPE_READY:
         percent = STATUS_LED_LOW_POWER_BLE_CONNECTED_PERCENT;
         break;
     case STATUS_LED_BLE_DISCONNECTED:

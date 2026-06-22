@@ -152,6 +152,7 @@ CHECKS = {
         "STATUS_LED_PWR_COLOR_AMBER",
         "STATUS_LED_DIAG_VIS_LOW_POWER_OFF",
         "battery_display_level_percent",
+        "status_led_battery_display_available_locked",
         "status_led_update_battery_display_locked",
         "battery_display_rise_suppressed",
         "status_led_log_power_input_locked",
@@ -972,6 +973,24 @@ def main() -> int:
             "STATUS_LED_LOW_POWER_BLE_ATTENTION_PERCENT 12U" not in status_led
         ):
             failures.append("status_led.c: idle PWR white and BLE blue must use dim low-power levels")
+        if "status_led_battery_display_available_locked()" not in body:
+            failures.append("status_led.c: battery low-power PWR must use display-valid fallback, not only live battery_valid")
+        if "status_led_rgb(255, 140, 0)" not in body:
+            failures.append("status_led.c: battery low-power PWR must keep an amber idle fallback when battery sampling is unavailable")
+    low_power_ble = re.search(
+        r"static\s+void\s+status_led_render_low_power_ble_locked[^{]*\{(?P<body>[\s\S]*?)\n\}",
+        status_led,
+    )
+    if not low_power_ble:
+        failures.append("status_led.c: missing low-power BLE renderer")
+    else:
+        body = low_power_ble.group("body")
+        if not re.search(
+            r"case\s+STATUS_LED_BLE_CONNECTED:\s*\n\s*case\s+STATUS_LED_BLE_TYPE_READY:\s*\n\s*"
+            r"percent\s*=\s*STATUS_LED_LOW_POWER_BLE_CONNECTED_PERCENT;",
+            body,
+        ):
+            failures.append("status_led.c: low-power BLE must keep TYPE_READY latched like CONNECTED")
     for token in (
         "STATUS_LED_RECORDING_LEVEL_STALE_MS",
         "STATUS_LED_RECORDING_LEVEL_EFFECT_MIN_PERCENT 8U",
