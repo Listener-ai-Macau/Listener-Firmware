@@ -172,6 +172,7 @@ CHECKS = {
         "STATUS_LED_EDGE_OK_ACCENT_MAX_PERCENT",
         "STATUS_LED_POWER_SOURCE_CHARGER_STATUS",
         "STATUS_LED_DIAG_POWER_EXTERNAL_CHARGER_STATUS",
+        "status_led_gpio_mask",
         "STATUS_LED_DIAG_ACTIVE_EC11",
         "boot_feedback_until_ms",
         "status_led_force_boot_feedback",

@@ -1,0 +1,321 @@
+> ~DIAGLOG:SOURCES
+I (124673) power_manager: blocker set mask=0x00000064 blockers=0x000000e4 (diag_export|flash_write|usb_command|external_power)
+I (124673) power_manager: state CONNECTED_IDLE -> ACTIVE idle_ms=0 blockers=0x000000e4 (diag_export|flash_write|usb_command|external_power) ble_connected=1
+I (124693) audio_capture: audio idle power save disabled: ESP_OK
+I (124693) health: system health low-power mode=0 interval_s=60
+I (124693) health: heartbeat: uptime=123s heap_free=7780KB heap_min=7777KB ble=OK disconnects=2 audio_frames=340 audio_drops=0 keys=0 sessions=0 usb_det_raw=0 bat_chg_raw=0 bat_std_raw=1 usb_det_policy=v2_gpio7_usb_det_disabled_highz_charger_status_fallback charger_policy=v2_gpio14_chg_gpio21_std_active_low
+I (124703) ESP_HID_GAP: active connection parameters left to central: conn=1 preferred_itvl=6-12 latency=0 timeout=800 mode=1
+~DIAGLOG:SOURCE name=system id=0x01 info_enabled=1 info_default=1 warn_error_always=1 mask=0x00007b1a
+~DIAGLOG:SOURCE name=keyboard id=0x02 info_enabled=0 info_default=0 warn_error_always=1 mask=0x00007b1a
+~DIAGLOG:SOURCE name=ble_hid id=0x03 info_enabled=1 info_default=1 warn_error_always=1 mask=0x00007b1a
+~DIAGLOG:SOURCE name=ble_gap id=0x04 info_enabled=1 info_default=1 warn_error_always=1 mask=0x00007b1a
+~DIAGLOG:SOURCE name=audio id=0x05 info_enabled=0 info_default=0 warn_error_always=1 mask=0x00007b1a
+~DIAGLOG:SOURCE name=voice_rec id=0x06 info_enabled=0 info_default=0 warn_error_always=1 mask=0x00007b1a
+~DIAGLOG:SOURCE name=voice_key id=0x07 info_enabled=0 info_default=0 warn_error_always=1 mask=0x00007b1a
+~DIAGLOG:SOURCE name=self_test id=0x08 info_enabled=1 info_default=1 warn_error_always=1 mask=0x00007b1a
+~DIAGLOG:SOURCE name=health id=0x09 info_enabled=1 info_default=1 warn_error_always=1 mask=0x00007b1a
+~DIAGLOG:SOURCE name=ble_audio id=0x0a info_enabled=0 info_default=0 warn_error_always=1 mask=0x00007b1a
+~DIAGLOG:SOURCE name=ota id=0x0b info_enabled=1 info_default=1 warn_error_always=1 mask=0x00007b1a
+~DIAGLOG:SOURCE name=power id=0x0c info_enabled=1 info_default=1 warn_error_always=1 mask=0x00007b1a
+~DIAGLOG:SOURCE name=board id=0x0d info_enabled=1 info_default=1 warn_error_always=1 mask=0x00007b1a
+~DIAGLOG:SOURCE name=status_led id=0x0e info_enabled=1 info_default=1 warn_error_always=1 mask=0x00007b1a
+I (124863) power_manager: blocker clear mask=0x00000064 blockers=0x00000080 (external_power)
+I (124903) audio_capture: frame captured count=350 bytes=224000
+> ~DIAGLOG:LAST:80:power
+I (125413) power_manager: blocker set mask=0x00000064 blockers=0x000000e4 (diag_export|flash_write|usb_command|external_power)
+I (125893) audio_capture: frame captured count=400 bytes=256000
+I (126893) audio_capture: frame captured count=450 bytes=288000
+I (127903) audio_capture: frame captured count=500 bytes=320000
+I (128893) audio_capture: frame captured count=550 bytes=352000
+I (129893) audio_capture: frame captured count=600 bytes=384000
+I (130903) audio_capture: frame captured count=650 bytes=416000
+I (131893) audio_capture: frame captured count=700 bytes=448000
+{"t":3293,"src":"power","evt":11,"sev":"INFO","a1":0,"a2":0,"a3":0,"a4":16}
+{"t":3294,"src":"power","evt":12,"sev":"INFO","a1":1,"a2":9,"a3":0,"a4":0}
+{"t":13707,"src":"power","evt":9,"sev":"INFO","a1":12,"a2":16,"a3":0,"a4":128}
+{"t":13707,"src":"power","evt":10,"sev":"INFO","a1":0,"a2":0,"a3":0,"a4":16}
+{"t":13707,"src":"power","evt":11,"sev":"INFO","a1":0,"a2":1,"a3":0,"a4":16}
+{"t":13707,"src":"power","evt":12,"sev":"INFO","a1":1,"a2":9,"a3":0,"a4":0}
+{"t":28748,"src":"power","evt":6,"sev":"INFO","a1":128,"a2":224,"a3":96,"a4":1}
+{"t":28833,"src":"power","evt":6,"sev":"INFO","a1":224,"a2":128,"a3":96,"a4":0}
+{"t":89214,"src":"power","evt":1,"sev":"INFO","a1":0,"a2":1,"a3":0,"a4":128}
+{"t":129521,"src":"power","evt":1,"sev":"INFO","a1":1,"a2":2,"a3":0,"a4":128}
+{"t":131799,"src":"power","evt":1,"sev":"INFO","a1":2,"a2":1,"a3":0,"a4":128}
+{"t":171070,"src":"power","evt":1,"sev":"INFO","a1":1,"a2":0,"a3":0,"a4":128}
+{"t":2550,"src":"power","evt":3,"sev":"INFO","a1":1,"a2":9,"a3":0,"a4":0}
+{"t":2550,"src":"power","evt":7,"sev":"INFO","a1":0,"a2":0,"a3":0,"a4":9}
+{"t":2615,"src":"power","evt":3,"sev":"INFO","a1":1,"a2":9,"a3":0,"a4":0}
+{"t":2615,"src":"power","evt":12,"sev":"INFO","a1":1,"a2":9,"a3":0,"a4":5}
+{"t":3357,"src":"power","evt":9,"sev":"INFO","a1":0,"a2":16,"a3":0,"a4":0}
+{"t":3358,"src":"power","evt":10,"sev":"INFO","a1":0,"a2":0,"a3":0,"a4":16}
+{"t":3358,"src":"power","evt":11,"sev":"INFO","a1":0,"a2":0,"a3":0,"a4":16}
+{"t":3358,"src":"power","evt":12,"sev":"INFO","a1":1,"a2":9,"a3":0,"a4":0}
+{"t":14206,"src":"power","evt":9,"sev":"INFO","a1":12,"a2":16,"a3":0,"a4":128}
+{"t":14207,"src":"power","evt":10,"sev":"INFO","a1":0,"a2":0,"a3":0,"a4":16}
+{"t":14207,"src":"power","evt":11,"sev":"INFO","a1":0,"a2":1,"a3":0,"a4":16}
+{"t":14207,"src":"power","evt":12,"sev":"INFO","a1":1,"a2":9,"a3":0,"a4":0}
+{"t":75028,"src":"power","evt":1,"sev":"INFO","a1":0,"a2":1,"a3":60850,"a4":128}
+{"t":87297,"src":"power","evt":1,"sev":"INFO","a1":1,"a2":2,"a3":0,"a4":128}
+{"t":89613,"src":"power","evt":1,"sev":"INFO","a1":2,"a2":1,"a3":0,"a4":128}
+{"t":129898,"src":"power","evt":1,"sev":"INFO","a1":1,"a2":2,"a3":0,"a4":128}
+{"t":132104,"src":"power","evt":1,"sev":"INFO","a1":2,"a2":1,"a3":0,"a4":128}
+{"t":2537,"src":"power","evt":3,"sev":"INFO","a1":11,"a2":9,"a3":0,"a4":0}
+{"t":2537,"src":"power","evt":7,"sev":"INFO","a1":0,"a2":0,"a3":0,"a4":9}
+{"t":2602,"src":"power","evt":3,"sev":"INFO","a1":11,"a2":9,"a3":0,"a4":0}
+{"t":2603,"src":"power","evt":12,"sev":"INFO","a1":1,"a2":9,"a3":0,"a4":5}
+{"t":3316,"src":"power","evt":9,"sev":"INFO","a1":0,"a2":16,"a3":1,"a4":0}
+{"t":3317,"src":"power","evt":10,"sev":"INFO","a1":0,"a2":0,"a3":1,"a4":16}
+{"t":3317,"src":"power","evt":11,"sev":"INFO","a1":0,"a2":0,"a3":1,"a4":16}
+{"t":3317,"src":"power","evt":12,"sev":"INFO","a1":1,"a2":9,"a3":0,"a4":0}
+{"t":181925,"src":"power","evt":1,"sev":"INFO","a1":0,"a2":1,"a3":61993,"a4":0}
+{"t":2554,"src":"power","evt":3,"sev":"INFO","a1":11,"a2":9,"a3":0,"a4":0}
+{"t":2554,"src":"power","evt":7,"sev":"INFO","a1":0,"a2":0,"a3":0,"a4":9}
+{"t":2619,"src":"power","evt":3,"sev":"INFO","a1":11,"a2":9,"a3":0,"a4":0}
+{"t":2619,"src":"power","evt":12,"sev":"INFO","a1":1,"a2":9,"a3":0,"a4":5}
+{"t":3336,"src":"power","evt":9,"sev":"INFO","a1":0,"a2":256,"a3":0,"a4":0}
+{"t":3337,"src":"power","evt":10,"sev":"INFO","a1":0,"a2":0,"a3":0,"a4":256}
+{"t":3337,"src":"power","evt":11,"sev":"INFO","a1":0,"a2":0,"a3":0,"a4":256}
+{"t":3337,"src":"power","evt":12,"sev":"INFO","a1":1,"a2":9,"a3":0,"a4":0}
+{"t":64345,"src":"power","evt":1,"sev":"INFO","a1":0,"a2":1,"a3":61043,"a4":0}
+{"t":86602,"src":"power","evt":1,"sev":"INFO","a1":1,"a2":2,"a3":0,"a4":0}
+{"t":120875,"src":"power","evt":1,"sev":"INFO","a1":2,"a2":0,"a3":0,"a4":0}
+{"t":306825,"src":"power","evt":1,"sev":"INFO","a1":0,"a2":2,"a3":60002,"a4":0}
+{"t":2578,"src":"power","evt":3,"sev":"INFO","a1":11,"a2":9,"a3":0,"a4":0}
+{"t":2578,"src":"power","evt":7,"sev":"INFO","a1":0,"a2":0,"a3":0,"a4":9}
+{"t":2634,"src":"power","evt":3,"sev":"INFO","a1":11,"a2":9,"a3":0,"a4":0}
+{"t":2634,"src":"power","evt":12,"sev":"INFO","a1":1,"a2":9,"a3":0,"a4":5}
+{"t":3348,"src":"power","evt":9,"sev":"INFO","a1":0,"a2":256,"a3":0,"a4":0}
+{"t":3348,"src":"power","evt":10,"sev":"INFO","a1":0,"a2":0,"a3":0,"a4":256}
+{"t":3349,"src":"power","evt":11,"sev":"INFO","a1":0,"a2":0,"a3":0,"a4":256}
+{"t":3349,"src":"power","evt":12,"sev":"INFO","a1":1,"a2":9,"a3":0,"a4":0}
+{"t":163925,"src":"power","evt":1,"sev":"INFO","a1":0,"a2":1,"a3":60000,"a4":0}
+{"t":244684,"src":"power","evt":1,"sev":"INFO","a1":1,"a2":0,"a3":0,"a4":0}
+{"t":310205,"src":"power","evt":1,"sev":"INFO","a1":0,"a2":1,"a3":61998,"a4":0}
+{"t":331964,"src":"power","evt":1,"sev":"INFO","a1":1,"a2":0,"a3":0,"a4":0}
+{"t":397205,"src":"power","evt":1,"sev":"INFO","a1":0,"a2":1,"a3":61997,"a4":0}
+{"t":400613,"src":"power","evt":1,"sev":"INFO","a1":1,"a2":0,"a3":0,"a4":0}
+{"t":485775,"src":"power","evt":1,"sev":"INFO","a1":0,"a2":1,"a3":61998,"a4":0}
+{"t":2585,"src":"power","evt":3,"sev":"INFO","a1":11,"a2":9,"a3":0,"a4":0}
+{"t":2586,"src":"power","evt":7,"sev":"INFO","a1":0,"a2":0,"a3":0,"a4":9}
+{"t":2651,"src":"power","evt":3,"sev":"INFO","a1":11,"a2":9,"a3":0,"a4":0}
+{"t":2651,"src":"power","evt":12,"sev":"INFO","a1":1,"a2":9,"a3":0,"a4":5}
+{"t":3387,"src":"power","evt":9,"sev":"INFO","a1":10,"a2":256,"a3":0,"a4":128}
+{"t":3387,"src":"power","evt":10,"sev":"INFO","a1":0,"a2":0,"a3":0,"a4":256}
+{"t":3388,"src":"power","evt":11,"sev":"INFO","a1":1,"a2":0,"a3":0,"a4":256}
+{"t":3388,"src":"power","evt":12,"sev":"INFO","a1":1,"a2":9,"a3":0,"a4":0}
+{"t":64647,"src":"power","evt":1,"sev":"INFO","a1":0,"a2":1,"a3":61302,"a4":128}
+{"t":87251,"src":"power","evt":1,"sev":"INFO","a1":1,"a2":2,"a3":0,"a4":128}
+{"t":89727,"src":"power","evt":1,"sev":"INFO","a1":2,"a2":1,"a3":0,"a4":128}
+{"t":123809,"src":"power","evt":6,"sev":"INFO","a1":128,"a2":228,"a3":100,"a4":1}
+I (132893) audio_capture: frame captured count=750 bytes=480000
+{"t":123822,"src":"power","evt":1,"sev":"INFO","a1":1,"a2":0,"a3":0,"a4":228}
+{"t":124006,"src":"power","evt":6,"sev":"INFO","a1":228,"a2":128,"a3":100,"a4":0}
+{"t":124552,"src":"power","evt":6,"sev":"INFO","a1":128,"a2":228,"a3":100,"a4":1}
+I (132923) diag_log: DIAGLOG LAST 80 source=power: dumped 80 of 2327 matching events
+I (132933) power_manager: blocker clear mask=0x00000064 blockers=0x00000080 (external_power)
+> ~DIAGLOG:LAST:80:status_led
+I (133443) power_manager: blocker set mask=0x00000064 blockers=0x000000e4 (diag_export|flash_write|usb_command|external_power)
+I (133903) audio_capture: frame captured count=800 bytes=512000
+I (134743) ble_hid: battery notify level=89 voltage_mv=4044 raw_adc=2357 adc_mv=2022 usb_power=0 charger_active=1 charge_power=1 raw_charging=1 raw_full=0 full_latched=0 full_candidate_ms=0 charge_full=0 usb_det_adc_valid=0 usb_det_adc_mv=0 usb_det_mismatch=0 reason=threshold_sample forced=0 periodic=0
+I (134893) audio_capture: frame captured count=850 bytes=544000
+I (135893) audio_capture: frame captured count=900 bytes=576000
+I (136903) audio_capture: frame captured count=950 bytes=608000
+I (137893) audio_capture: frame captured count=1000 bytes=640000
+I (138893) audio_capture: frame captured count=1050 bytes=672000
+I (139753) ble_hid: battery notify level=90 voltage_mv=4054 raw_adc=2362 adc_mv=2027 usb_power=0 charger_active=1 charge_power=1 raw_charging=1 raw_full=0 full_latched=0 full_candidate_ms=0 charge_full=0 usb_det_adc_valid=0 usb_det_adc_mv=0 usb_det_mismatch=0 reason=threshold_sample forced=0 periodic=0
+I (139903) audio_capture: frame captured count=1100 bytes=704000
+{"t":406115,"src":"status_led","evt":8,"sev":"INFO","a1":0,"a2":0,"a3":0,"a4":2}
+{"t":412113,"src":"status_led","evt":6,"sev":"INFO","a1":0,"a2":0,"a3":27,"a4":2}
+{"t":412114,"src":"status_led","evt":8,"sev":"INFO","a1":0,"a2":0,"a3":0,"a4":2}
+{"t":423615,"src":"status_led","evt":6,"sev":"INFO","a1":0,"a2":0,"a3":64,"a4":16}
+{"t":423615,"src":"status_led","evt":8,"sev":"INFO","a1":0,"a2":0,"a3":0,"a4":16}
+{"t":423776,"src":"status_led","evt":5,"sev":"INFO","a1":256,"a2":0,"a3":255,"a4":13}
+{"t":423776,"src":"status_led","evt":7,"sev":"INFO","a1":1,"a2":0,"a3":0,"a4":13}
+{"t":423813,"src":"status_led","evt":6,"sev":"INFO","a1":0,"a2":0,"a3":16,"a4":13}
+{"t":423814,"src":"status_led","evt":8,"sev":"INFO","a1":0,"a2":0,"a3":0,"a4":13}
+{"t":428814,"src":"status_led","evt":5,"sev":"INFO","a1":157090123,"a2":4098,"a3":93,"a4":2}
+{"t":428814,"src":"status_led","evt":6,"sev":"INFO","a1":0,"a2":0,"a3":91,"a4":2}
+{"t":428815,"src":"status_led","evt":8,"sev":"INFO","a1":0,"a2":0,"a3":0,"a4":2}
+{"t":434813,"src":"status_led","evt":6,"sev":"INFO","a1":0,"a2":0,"a3":27,"a4":2}
+{"t":434814,"src":"status_led","evt":8,"sev":"INFO","a1":0,"a2":0,"a3":0,"a4":2}
+{"t":485775,"src":"status_led","evt":5,"sev":"INFO","a1":157024715,"a2":4086,"a3":92,"a4":10}
+{"t":485776,"src":"status_led","evt":7,"sev":"INFO","a1":1,"a2":1,"a3":0,"a4":10}
+{"t":485776,"src":"status_led","evt":6,"sev":"INFO","a1":0,"a2":0,"a3":59,"a4":10}
+{"t":485776,"src":"status_led","evt":8,"sev":"INFO","a1":0,"a2":0,"a3":0,"a4":10}
+{"t":2703,"src":"status_led","evt":6,"sev":"INFO","a1":1,"a2":5066061,"a3":1099,"a4":21}
+{"t":2704,"src":"status_led","evt":8,"sev":"INFO","a1":4,"a2":77,"a3":0,"a4":21}
+{"t":2711,"src":"status_led","evt":5,"sev":"INFO","a1":156827723,"a2":4052,"a3":89,"a4":14}
+{"t":3415,"src":"status_led","evt":1,"sev":"INFO","a1":1,"a2":2,"a3":0,"a4":0}
+{"t":3416,"src":"status_led","evt":6,"sev":"INFO","a1":3,"a2":328965,"a3":9291,"a4":3}
+{"t":3416,"src":"status_led","evt":8,"sev":"INFO","a1":84,"a2":18949,"a3":0,"a4":3}
+{"t":3563,"src":"status_led","evt":6,"sev":"INFO","a1":1,"a2":197379,"a3":9291,"a4":3}
+{"t":3564,"src":"status_led","evt":8,"sev":"INFO","a1":4,"a2":3,"a3":0,"a4":3}
+{"t":3664,"src":"status_led","evt":6,"sev":"INFO","a1":3,"a2":197379,"a3":9291,"a4":3}
+{"t":3665,"src":"status_led","evt":8,"sev":"INFO","a1":84,"a2":18947,"a3":0,"a4":3}
+{"t":3819,"src":"status_led","evt":6,"sev":"INFO","a1":1,"a2":197379,"a3":9291,"a4":3}
+{"t":3819,"src":"status_led","evt":8,"sev":"INFO","a1":4,"a2":3,"a3":0,"a4":3}
+{"t":3853,"src":"status_led","evt":1,"sev":"INFO","a1":1,"a2":3,"a3":1,"a4":0}
+{"t":3854,"src":"status_led","evt":6,"sev":"INFO","a1":3,"a2":197379,"a3":13387,"a4":3}
+{"t":3854,"src":"status_led","evt":8,"sev":"INFO","a1":84,"a2":15619,"a3":0,"a4":3}
+{"t":9853,"src":"status_led","evt":6,"sev":"INFO","a1":3,"a2":3552822,"a3":13323,"a4":3}
+{"t":9854,"src":"status_led","evt":8,"sev":"INFO","a1":84,"a2":15670,"a3":0,"a4":3}
+{"t":44124,"src":"status_led","evt":1,"sev":"INFO","a1":1,"a2":2,"a3":0,"a4":0}
+{"t":44125,"src":"status_led","evt":6,"sev":"INFO","a1":3,"a2":5395026,"a3":9291,"a4":3}
+{"t":44125,"src":"status_led","evt":8,"sev":"INFO","a1":84,"a2":19026,"a3":0,"a4":3}
+{"t":44273,"src":"status_led","evt":6,"sev":"INFO","a1":129,"a2":7039851,"a3":9291,"a4":3}
+{"t":44273,"src":"status_led","evt":8,"sev":"INFO","a1":4,"a2":107,"a3":721420288,"a4":3}
+{"t":44373,"src":"status_led","evt":6,"sev":"INFO","a1":3,"a2":7697781,"a3":9291,"a4":3}
+{"t":44373,"src":"status_led","evt":8,"sev":"INFO","a1":84,"a2":19061,"a3":0,"a4":3}
+{"t":44523,"src":"status_led","evt":6,"sev":"INFO","a1":1,"a2":8421504,"a3":9291,"a4":3}
+{"t":44524,"src":"status_led","evt":8,"sev":"INFO","a1":4,"a2":128,"a3":0,"a4":3}
+{"t":45456,"src":"status_led","evt":1,"sev":"INFO","a1":1,"a2":1,"a3":0,"a4":0}
+{"t":45457,"src":"status_led","evt":6,"sev":"INFO","a1":131,"a2":5723991,"a3":5195,"a4":3}
+{"t":45457,"src":"status_led","evt":8,"sev":"INFO","a1":84,"a2":21591,"a3":855638016,"a4":3}
+{"t":45553,"src":"status_led","evt":6,"sev":"INFO","a1":129,"a2":5197647,"a3":5195,"a4":3}
+{"t":45554,"src":"status_led","evt":8,"sev":"INFO","a1":4,"a2":79,"a3":855638016,"a4":3}
+{"t":46203,"src":"status_led","evt":6,"sev":"INFO","a1":131,"a2":1710618,"a3":5195,"a4":3}
+{"t":46204,"src":"status_led","evt":8,"sev":"INFO","a1":84,"a2":21530,"a3":855638016,"a4":3}
+{"t":46634,"src":"status_led","evt":1,"sev":"INFO","a1":1,"a2":3,"a3":1,"a4":0}
+{"t":46635,"src":"status_led","evt":6,"sev":"INFO","a1":3,"a2":328965,"a3":13387,"a4":3}
+{"t":46635,"src":"status_led","evt":8,"sev":"INFO","a1":84,"a2":15621,"a3":0,"a4":3}
+{"t":51827,"src":"status_led","evt":5,"sev":"INFO","a1":156893259,"a2":4056,"a3":90,"a4":14}
+{"t":57873,"src":"status_led","evt":6,"sev":"INFO","a1":3,"a2":197379,"a3":13323,"a4":14}
+{"t":57874,"src":"status_led","evt":8,"sev":"INFO","a1":84,"a2":9731,"a3":0,"a4":14}
+{"t":64647,"src":"status_led","evt":5,"sev":"INFO","a1":156893387,"a2":4066,"a3":90,"a4":10}
+{"t":64647,"src":"status_led","evt":7,"sev":"INFO","a1":0,"a2":1,"a3":3,"a4":10}
+{"t":64648,"src":"status_led","evt":6,"sev":"INFO","a1":0,"a2":0,"a3":12331,"a4":10}
+{"t":64648,"src":"status_led","evt":8,"sev":"INFO","a1":0,"a2":0,"a3":0,"a4":10}
+{"t":87214,"src":"status_led","evt":1,"sev":"INFO","a1":1,"a2":2,"a3":0,"a4":0}
+{"t":87214,"src":"status_led","evt":6,"sev":"INFO","a1":0,"a2":0,"a3":8299,"a4":3}
+I (140893) audio_capture: frame captured count=1150 bytes=736000
+{"t":87214,"src":"status_led","evt":8,"sev":"INFO","a1":0,"a2":0,"a3":0,"a4":3}
+{"t":87252,"src":"status_led","evt":5,"sev":"INFO","a1":156827851,"a2":4050,"a3":89,"a4":10}
+{"t":87252,"src":"status_led","evt":7,"sev":"INFO","a1":0,"a2":1,"a3":0,"a4":10}
+{"t":88556,"src":"status_led","evt":1,"sev":"INFO","a1":1,"a2":1,"a3":0,"a4":0}
+{"t":88557,"src":"status_led","evt":6,"sev":"INFO","a1":0,"a2":0,"a3":4203,"a4":3}
+{"t":88557,"src":"status_led","evt":8,"sev":"INFO","a1":0,"a2":0,"a3":0,"a4":3}
+{"t":89710,"src":"status_led","evt":1,"sev":"INFO","a1":1,"a2":3,"a3":1,"a4":0}
+{"t":89711,"src":"status_led","evt":6,"sev":"INFO","a1":0,"a2":0,"a3":12395,"a4":3}
+{"t":89711,"src":"status_led","evt":8,"sev":"INFO","a1":0,"a2":0,"a3":0,"a4":3}
+{"t":89727,"src":"status_led","evt":5,"sev":"INFO","a1":156827851,"a2":4050,"a3":89,"a4":10}
+{"t":89728,"src":"status_led","evt":7,"sev":"INFO","a1":0,"a2":1,"a3":0,"a4":10}
+{"t":96703,"src":"status_led","evt":6,"sev":"INFO","a1":0,"a2":0,"a3":12331,"a4":10}
+{"t":96704,"src":"status_led","evt":8,"sev":"INFO","a1":0,"a2":0,"a3":0,"a4":10}
+{"t":123822,"src":"status_led","evt":5,"sev":"INFO","a1":156893259,"a2":4064,"a3":90,"a4":11}
+{"t":123823,"src":"status_led","evt":7,"sev":"INFO","a1":0,"a2":0,"a3":0,"a4":11}
+{"t":123826,"src":"status_led","evt":6,"sev":"INFO","a1":3,"a2":8421504,"a3":13323,"a4":11}
+{"t":123826,"src":"status_led","evt":8,"sev":"INFO","a1":84,"a2":9856,"a3":0,"a4":11}
+I (141023) diag_log: DIAGLOG LAST 80 source=status_led: dumped 80 of 20636 matching events
+I (141033) power_manager: blocker clear mask=0x00000064 blockers=0x00000080 (external_power)
+> ~DIAGLOG:LAST:80:board
+I (141543) power_manager: blocker set mask=0x00000064 blockers=0x000000e4 (diag_export|flash_write|usb_command|external_power)
+I (141893) audio_capture: frame captured count=1200 bytes=768000
+I (142903) audio_capture: frame captured count=1250 bytes=800000
+I (143893) audio_capture: frame captured count=1300 bytes=832000
+I (144773) ble_hid: battery notify level=89 voltage_mv=4044 raw_adc=2358 adc_mv=2022 usb_power=0 charger_active=1 charge_power=1 raw_charging=1 raw_full=0 full_latched=0 full_candidate_ms=0 charge_full=0 usb_det_adc_valid=0 usb_det_adc_mv=0 usb_det_mismatch=0 reason=threshold_sample forced=0 periodic=0
+I (144893) audio_capture: frame captured count=1350 bytes=864000
+I (145903) audio_capture: frame captured count=1400 bytes=896000
+I (146893) audio_capture: frame captured count=1450 bytes=928000
+I (147893) audio_capture: frame captured count=1500 bytes=960000
+{"t":2323,"src":"board","evt":1,"sev":"INFO","a1":16,"a2":8,"a3":38,"a4":18}
+{"t":2324,"src":"board","evt":2,"sev":"WARN","a1":7,"a2":9,"a3":4294967295,"a4":4294967295}
+{"t":2326,"src":"board","evt":1,"sev":"INFO","a1":16,"a2":8,"a3":38,"a4":18}
+{"t":2326,"src":"board","evt":2,"sev":"WARN","a1":7,"a2":9,"a3":4294967295,"a4":4294967295}
+{"t":2347,"src":"board","evt":1,"sev":"INFO","a1":16,"a2":8,"a3":38,"a4":18}
+{"t":2347,"src":"board","evt":2,"sev":"WARN","a1":7,"a2":9,"a3":4294967295,"a4":4294967295}
+{"t":2353,"src":"board","evt":1,"sev":"INFO","a1":16,"a2":8,"a3":38,"a4":18}
+{"t":2353,"src":"board","evt":2,"sev":"WARN","a1":7,"a2":9,"a3":4294967295,"a4":4294967295}
+{"t":2374,"src":"board","evt":1,"sev":"INFO","a1":16,"a2":8,"a3":38,"a4":18}
+{"t":2374,"src":"board","evt":2,"sev":"WARN","a1":7,"a2":9,"a3":4294967295,"a4":4294967295}
+{"t":17016,"src":"board","evt":4,"sev":"INFO","a1":1,"a2":1,"a3":1,"a4":6}
+{"t":17038,"src":"board","evt":4,"sev":"INFO","a1":2,"a2":5,"a3":7,"a4":12}
+{"t":17064,"src":"board","evt":4,"sev":"INFO","a1":3,"a2":13,"a3":11,"a4":4}
+{"t":17086,"src":"board","evt":4,"sev":"INFO","a1":4,"a2":4,"a3":17,"a4":6}
+{"t":2383,"src":"board","evt":1,"sev":"INFO","a1":16,"a2":8,"a3":38,"a4":18}
+{"t":2383,"src":"board","evt":2,"sev":"WARN","a1":7,"a2":9,"a3":4294967295,"a4":4294967295}
+{"t":2398,"src":"board","evt":1,"sev":"INFO","a1":16,"a2":8,"a3":38,"a4":18}
+{"t":2398,"src":"board","evt":2,"sev":"WARN","a1":7,"a2":9,"a3":4294967295,"a4":4294967295}
+{"t":2408,"src":"board","evt":1,"sev":"INFO","a1":16,"a2":8,"a3":38,"a4":18}
+{"t":2408,"src":"board","evt":2,"sev":"WARN","a1":7,"a2":9,"a3":4294967295,"a4":4294967295}
+{"t":2423,"src":"board","evt":1,"sev":"INFO","a1":16,"a2":8,"a3":38,"a4":18}
+{"t":2424,"src":"board","evt":2,"sev":"WARN","a1":7,"a2":9,"a3":4294967295,"a4":4294967295}
+{"t":2415,"src":"board","evt":1,"sev":"INFO","a1":16,"a2":8,"a3":38,"a4":18}
+{"t":2415,"src":"board","evt":2,"sev":"WARN","a1":7,"a2":9,"a3":4294967295,"a4":4294967295}
+{"t":232111,"src":"board","evt":4,"sev":"INFO","a1":1,"a2":1,"a3":1,"a4":6}
+{"t":232133,"src":"board","evt":4,"sev":"INFO","a1":2,"a2":5,"a3":7,"a4":12}
+{"t":232159,"src":"board","evt":4,"sev":"INFO","a1":3,"a2":13,"a3":11,"a4":4}
+{"t":232181,"src":"board","evt":4,"sev":"INFO","a1":4,"a2":4,"a3":17,"a4":6}
+{"t":234098,"src":"board","evt":4,"sev":"INFO","a1":1,"a2":1,"a3":1,"a4":6}
+{"t":234120,"src":"board","evt":4,"sev":"INFO","a1":2,"a2":5,"a3":7,"a4":12}
+{"t":234146,"src":"board","evt":4,"sev":"INFO","a1":3,"a2":13,"a3":11,"a4":4}
+{"t":234168,"src":"board","evt":4,"sev":"INFO","a1":4,"a2":4,"a3":17,"a4":6}
+{"t":236059,"src":"board","evt":4,"sev":"INFO","a1":1,"a2":1,"a3":1,"a4":6}
+{"t":236081,"src":"board","evt":4,"sev":"INFO","a1":2,"a2":5,"a3":7,"a4":12}
+{"t":236107,"src":"board","evt":4,"sev":"INFO","a1":3,"a2":13,"a3":11,"a4":4}
+{"t":236129,"src":"board","evt":4,"sev":"INFO","a1":4,"a2":4,"a3":17,"a4":6}
+{"t":238025,"src":"board","evt":4,"sev":"INFO","a1":1,"a2":1,"a3":1,"a4":6}
+{"t":238048,"src":"board","evt":4,"sev":"INFO","a1":2,"a2":5,"a3":7,"a4":12}
+{"t":238074,"src":"board","evt":4,"sev":"INFO","a1":3,"a2":13,"a3":11,"a4":4}
+{"t":238096,"src":"board","evt":4,"sev":"INFO","a1":4,"a2":4,"a3":17,"a4":6}
+{"t":239995,"src":"board","evt":4,"sev":"INFO","a1":1,"a2":1,"a3":1,"a4":6}
+{"t":240017,"src":"board","evt":4,"sev":"INFO","a1":2,"a2":5,"a3":7,"a4":12}
+{"t":240043,"src":"board","evt":4,"sev":"INFO","a1":3,"a2":13,"a3":11,"a4":4}
+{"t":240065,"src":"board","evt":4,"sev":"INFO","a1":4,"a2":4,"a3":17,"a4":6}
+{"t":2436,"src":"board","evt":1,"sev":"INFO","a1":16,"a2":8,"a3":38,"a4":18}
+{"t":2437,"src":"board","evt":2,"sev":"WARN","a1":7,"a2":9,"a3":4294967295,"a4":4294967295}
+{"t":18723,"src":"board","evt":4,"sev":"INFO","a1":1,"a2":1,"a3":1,"a4":6}
+{"t":18746,"src":"board","evt":4,"sev":"INFO","a1":2,"a2":5,"a3":7,"a4":12}
+{"t":18771,"src":"board","evt":4,"sev":"INFO","a1":3,"a2":13,"a3":11,"a4":4}
+{"t":18794,"src":"board","evt":4,"sev":"INFO","a1":4,"a2":4,"a3":17,"a4":6}
+{"t":2440,"src":"board","evt":1,"sev":"INFO","a1":16,"a2":8,"a3":38,"a4":18}
+{"t":2440,"src":"board","evt":2,"sev":"WARN","a1":7,"a2":9,"a3":4294967295,"a4":4294967295}
+{"t":2454,"src":"board","evt":1,"sev":"INFO","a1":16,"a2":8,"a3":38,"a4":18}
+{"t":2454,"src":"board","evt":2,"sev":"WARN","a1":7,"a2":9,"a3":4294967295,"a4":4294967295}
+{"t":29277,"src":"board","evt":4,"sev":"INFO","a1":1,"a2":1,"a3":1,"a4":6}
+{"t":29299,"src":"board","evt":4,"sev":"INFO","a1":2,"a2":5,"a3":7,"a4":12}
+I (148903) audio_capture: frame captured count=1550 bytes=992000
+{"t":29325,"src":"board","evt":4,"sev":"INFO","a1":3,"a2":13,"a3":11,"a4":4}
+{"t":29353,"src":"board","evt":4,"sev":"INFO","a1":4,"a2":4,"a3":17,"a4":6}
+{"t":2474,"src":"board","evt":1,"sev":"INFO","a1":16,"a2":8,"a3":38,"a4":18}
+{"t":2474,"src":"board","evt":2,"sev":"WARN","a1":7,"a2":9,"a3":4294967295,"a4":4294967295}
+{"t":2484,"src":"board","evt":1,"sev":"INFO","a1":16,"a2":8,"a3":38,"a4":18}
+{"t":2484,"src":"board","evt":2,"sev":"WARN","a1":7,"a2":9,"a3":4294967295,"a4":4294967295}
+{"t":33568,"src":"board","evt":4,"sev":"INFO","a1":1,"a2":1,"a3":1,"a4":6}
+{"t":33590,"src":"board","evt":4,"sev":"INFO","a1":2,"a2":5,"a3":7,"a4":12}
+{"t":33616,"src":"board","evt":4,"sev":"INFO","a1":3,"a2":13,"a3":11,"a4":4}
+{"t":33638,"src":"board","evt":4,"sev":"INFO","a1":4,"a2":4,"a3":17,"a4":6}
+{"t":2549,"src":"board","evt":1,"sev":"INFO","a1":16,"a2":8,"a3":38,"a4":18}
+{"t":2549,"src":"board","evt":2,"sev":"WARN","a1":7,"a2":9,"a3":4294967295,"a4":4294967295}
+{"t":2536,"src":"board","evt":1,"sev":"INFO","a1":16,"a2":8,"a3":38,"a4":18}
+{"t":2536,"src":"board","evt":2,"sev":"WARN","a1":7,"a2":9,"a3":4294967295,"a4":4294967295}
+{"t":2553,"src":"board","evt":1,"sev":"INFO","a1":16,"a2":8,"a3":38,"a4":18}
+{"t":2553,"src":"board","evt":2,"sev":"WARN","a1":7,"a2":9,"a3":4294967295,"a4":4294967295}
+{"t":2567,"src":"board","evt":1,"sev":"INFO","a1":16,"a2":8,"a3":38,"a4":18}
+{"t":2578,"src":"board","evt":2,"sev":"WARN","a1":7,"a2":9,"a3":4294967295,"a4":4294967295}
+{"t":2585,"src":"board","evt":1,"sev":"INFO","a1":16,"a2":8,"a3":38,"a4":18}
+{"t":2585,"src":"board","evt":2,"sev":"WARN","a1":7,"a2":9,"a3":4294967295,"a4":4294967295}
+{"t":46897,"src":"board","evt":4,"sev":"INFO","a1":1,"a2":1,"a3":1,"a4":6}
+{"t":46946,"src":"board","evt":4,"sev":"INFO","a1":2,"a2":5,"a3":7,"a4":12}
+{"t":46981,"src":"board","evt":4,"sev":"INFO","a1":3,"a2":13,"a3":11,"a4":4}
+{"t":47012,"src":"board","evt":4,"sev":"INFO","a1":4,"a2":4,"a3":17,"a4":6}
+I (149083) diag_log: DIAGLOG LAST 80 source=board: dumped 80 of 370 matching events
+I (149083) power_manager: blocker clear mask=0x00000064 blockers=0x00000080 (external_power)
+> ~DIAGLOG:SOURCES
+I (149613) power_manager: blocker set mask=0x00000064 blockers=0x000000e4 (diag_export|flash_write|usb_command|external_power)
+~DIAGLOG:SOURCE name=system id=0x01 info_enabled=1 info_default=1 warn_error_always=1 mask=0x00007b1a
+~DIAGLOG:SOURCE name=keyboard id=0x02 info_enabled=0 info_default=0 warn_error_always=1 mask=0x00007b1a
+~DIAGLOG:SOURCE name=ble_hid id=0x03 info_enabled=1 info_default=1 warn_error_always=1 mask=0x00007b1a
+~DIAGLOG:SOURCE name=ble_gap id=0x04 info_enabled=1 info_default=1 warn_error_always=1 mask=0x00007b1a
+~DIAGLOG:SOURCE name=audio id=0x05 info_enabled=0 info_default=0 warn_error_always=1 mask=0x00007b1a
+~DIAGLOG:SOURCE name=voice_rec id=0x06 info_enabled=0 info_default=0 warn_error_always=1 mask=0x00007b1a
+~DIAGLOG:SOURCE name=voice_key id=0x07 info_enabled=0 info_default=0 warn_error_always=1 mask=0x00007b1a
+~DIAGLOG:SOURCE name=self_test id=0x08 info_enabled=1 info_default=1 warn_error_always=1 mask=0x00007b1a
+~DIAGLOG:SOURCE name=health id=0x09 info_enabled=1 info_default=1 warn_error_always=1 mask=0x00007b1a
+~DIAGLOG:SOURCE name=ble_audio id=0x0a info_enabled=0 info_default=0 warn_error_always=1 mask=0x00007b1a
+~DIAGLOG:SOURCE name=ota id=0x0b info_enabled=1 info_default=1 warn_error_always=1 mask=0x00007b1a
+~DIAGLOG:SOURCE name=power id=0x0c info_enabled=1 info_default=1 warn_error_always=1 mask=0x00007b1a
+~DIAGLOG:SOURCE name=board id=0x0d info_enabled=1 info_default=1 warn_error_always=1 mask=0x00007b1a
+~DIAGLOG:SOURCE name=status_led id=0x0e info_enabled=1 info_default=1 warn_error_always=1 mask=0x00007b1a
+I (149743) power_manager: blocker clear mask=0x00000064 blockers=0x00000080 (external_power)
+I (149783) ble_hid: battery notify level=90 voltage_mv=4064 raw_adc=2368 adc_mv=2032 usb_power=0 charger_active=1 charge_power=1 raw_charging=1 raw_full=0 full_latched=0 full_candidate_ms=0 charge_full=0 usb_det_adc_valid=0 usb_det_adc_mv=0 usb_det_mismatch=0 reason=threshold_sample forced=0 periodic=0
+I (149893) audio_capture: frame captured count=1600 bytes=1024000
