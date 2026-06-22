@@ -60,11 +60,13 @@ if ($preShutdownBatteryRefreshIndex -lt 0 -or
 }
 Assert-Contains $batteryMonitor 'BATTERY_MONITOR_EMPTY_MV\s+2800U' 'product-empty battery voltage'
 Assert-Contains $batteryMonitor 'BATTERY_MONITOR_FULL_MV\s+4200U' 'full battery voltage'
-Assert-Contains $batteryMonitor 'BATTERY_MONITOR_ADC_SOURCE_IMPEDANCE_NUMERATOR\s+1045U' 'battery ADC source-impedance compensation numerator'
+Assert-Contains $batteryMonitor 'BATTERY_MONITOR_NVS_ADC_TRIM_KEY\s+"adc_trim_mv"' 'battery ADC DMM trim NVS key'
+Assert-Contains $batteryMonitor 'battery_monitor_calibrate_adc_trim_from_dmm_mv' 'battery ADC DMM trim calibration API'
 Assert-Contains $batteryMonitor 'adc_raw_mv' 'battery monitor exposes raw ADC pad millivolts'
-Assert-Contains $batteryMonitor 'adc_correction_mv' 'battery monitor exposes ADC correction millivolts'
+Assert-Contains $batteryMonitor 'adc_driver_mv' 'battery monitor exposes driver ADC pad millivolts'
+Assert-Contains $batteryMonitor 'adc_trim_mv' 'battery monitor exposes DMM trim millivolts'
 Assert-Contains $featureMap 'Battery ADC status uses the protected product range `2800mV=0%` and `4200mV=100%`' 'feature map documents protected battery range'
-Assert-Contains $featureMap 'source-impedance compensation' 'feature map documents battery ADC source-impedance compensation'
+Assert-Contains $featureMap 'NVS-persisted DMM trim' 'feature map documents battery ADC DMM trim'
 Assert-Contains $featureMap 'forces a final pre-disconnect battery refresh before hardware shutdown' 'feature map documents final battery refresh before shutdown'
 
 Write-Host "PASS: BLE HID Battery Service uses live ADC, charger full status, 1% notifications, and periodic refresh instead of a fixed placeholder."

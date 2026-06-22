@@ -1,8 +1,10 @@
 #include "board.h"
 
 #include <inttypes.h>
+#include <limits.h>
 #include <stdbool.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 #include "driver/gpio.h"
@@ -19,6 +21,7 @@
 static const char *TAG = "board";
 
 #define BOARD_USB_PREFIX "BOARD:"
+#define BOARD_BATTERY_USB_PREFIX "BATTERY:"
 
 #define BOARD_V2_USB_DET_POLICY "v2_gpio7_usb_det_disabled_highz_usb_sof_and_charger_status"
 #define BOARD_V2_CHARGER_POLARITY "v2_gpio14_chg_gpio21_std_active_low"
@@ -853,6 +856,143 @@ static void board_print_gpio_scan(void)
     fflush(stdout);
 }
 
+static void board_print_battery_status_from_sample(
+    const char *source,
+    const battery_monitor_status_t *battery,
+    esp_err_t ret)
+{
+    if (battery == NULL) {
+        printf("~BATTERY:STATUS source=%s battery_valid=0 battery_result=%s\n",
+               source != NULL ? source : "unknown",
+               esp_err_to_name(ESP_ERR_INVALID_ARG));
+        fflush(stdout);
+        return;
+    }
+
+    printf(
+        "~BATTERY:STATUS source=%s battery_mv=%" PRIu32
+        " battery_adc_mv=%d battery_adc_driver_mv=%d battery_adc_raw_mv=%d"
+        " battery_adc_trim_mv=%d battery_adc_correction_mv=%d"
+        " battery_raw=%d battery_level=%u battery_valid=%u"
+        " battery_adc_calibrated=%u battery_samples=%u battery_result=%s"
+        " battery_adc_trim_valid=%u battery_adc_trim_result=%s"
+        " battery_scaling=\"68K/68K divider, VBAT~=2*(ADC_driver_mv+NVS_DMM_trim_mv)\""
+        " battery_policy=\"product_empty_2800mv_full_4200mv_absolute_min_2700mv_adc_dmm_trim_nvs\"\n",
+        source != NULL ? source : "unknown",
+        battery->voltage_mv,
+        battery->adc_mv,
+        battery->adc_driver_mv,
+        battery->adc_raw_mv,
+        battery->adc_trim_mv,
+        battery->adc_correction_mv,
+        battery->raw_adc,
+        battery->level_percent,
+        battery->valid ? 1u : 0u,
+        battery->adc_calibrated ? 1u : 0u,
+        battery->sample_count,
+        esp_err_to_name(ret),
+        battery->adc_trim_valid ? 1u : 0u,
+        esp_err_to_name(battery->adc_trim_result));
+    fflush(stdout);
+}
+
+static void board_print_battery_status(void)
+{
+    battery_monitor_status_t battery = {0};
+    esp_err_t ret = battery_monitor_read(&battery);
+    board_print_battery_status_from_sample("read", &battery, ret);
+}
+
+static bool board_parse_int_arg(const char *text, int *out_value)
+{
+    if (text == NULL || out_value == NULL) {
+        return false;
+    }
+    while (*text == ' ' || *text == '\t' || *text == ':') {
+        text++;
+    }
+
+    char *end = NULL;
+    long parsed = strtol(text, &end, 10);
+    if (end == text || parsed < INT_MIN || parsed > INT_MAX) {
+        return false;
+    }
+    while (*end == ' ' || *end == '\t' || *end == '\r' || *end == '\n') {
+        end++;
+    }
+    if (*end != '\0') {
+        return false;
+    }
+
+    *out_value = (int)parsed;
+    return true;
+}
+
+static void board_print_battery_calibration_result(
+    const char *action,
+    int dmm_adc_mv,
+    esp_err_t ret,
+    const battery_monitor_status_t *battery)
+{
+    printf(
+        "~BATTERY:CAL action=%s dmm_adc_mv=%d"
+        " driver_adc_mv=%d trim_mv=%d battery_adc_mv=%d"
+        " battery_mv=%" PRIu32 " battery_level=%u result=%s\n",
+        action != NULL ? action : "unknown",
+        dmm_adc_mv,
+        battery != NULL ? battery->adc_driver_mv : 0,
+        battery != NULL ? battery->adc_trim_mv : 0,
+        battery != NULL ? battery->adc_mv : 0,
+        battery != NULL ? battery->voltage_mv : 0U,
+        battery != NULL ? battery->level_percent : 0U,
+        esp_err_to_name(ret));
+    fflush(stdout);
+}
+
+static bool board_consume_battery_usb_command(const char *line)
+{
+    const char *command = NULL;
+    if (!board_command_matches(line, BOARD_BATTERY_USB_PREFIX, &command)) {
+        return false;
+    }
+
+    if (strcmp(command, "STATUS") == 0) {
+        board_print_battery_status();
+        return true;
+    }
+
+    const char *cal_dmm = "CAL:DMM";
+    size_t cal_dmm_len = strlen(cal_dmm);
+    if (strncmp(command, cal_dmm, cal_dmm_len) == 0) {
+        int dmm_adc_mv = 0;
+        if (!board_parse_int_arg(command + cal_dmm_len, &dmm_adc_mv)) {
+            printf("~BATTERY:CAL action=dmm result=%s reason=expected_divider_pad_mv command=\"~BATTERY:CAL:DMM <mV>\"\n",
+                   esp_err_to_name(ESP_ERR_INVALID_ARG));
+            fflush(stdout);
+            return true;
+        }
+
+        battery_monitor_status_t battery = {0};
+        esp_err_t ret =
+            battery_monitor_calibrate_adc_trim_from_dmm_mv(dmm_adc_mv, &battery);
+        board_print_battery_calibration_result("dmm", dmm_adc_mv, ret, &battery);
+        board_print_battery_status_from_sample("cal_dmm", &battery, ret);
+        return true;
+    }
+
+    if (strcmp(command, "CAL:RESET") == 0) {
+        esp_err_t ret = battery_monitor_clear_adc_trim();
+        battery_monitor_status_t battery = {0};
+        esp_err_t read_ret = battery_monitor_read(&battery);
+        board_print_battery_calibration_result("reset", 0, ret, &battery);
+        board_print_battery_status_from_sample("cal_reset", &battery, read_ret);
+        return true;
+    }
+
+    ESP_LOGW(TAG, "BATTERY: unknown command: %s", command);
+    return true;
+}
+
 static void board_print_status(void)
 {
     battery_monitor_status_t battery = {0};
@@ -872,11 +1012,13 @@ static void board_print_status(void)
         " usb_det_adc_mv=%d usb_det_raw_adc=%d usb_det_adc_calibrated=%u usb_det_adc_samples=%u"
         " usb_det_adc_result=%s usb_det_mismatch=%u usb_det_threshold_mv=disabled usb_det_policy=%s"
         " bat_chg_gpio=%d bat_chg_level=%s bat_std_gpio=%d bat_std_level=%s charger_polarity=%s"
-        " battery_gpio=%d battery_mv=%" PRIu32 " battery_adc_mv=%d battery_adc_raw_mv=%d"
-        " battery_adc_correction_mv=%d battery_raw=%d"
+        " battery_gpio=%d battery_mv=%" PRIu32 " battery_adc_mv=%d"
+        " battery_adc_driver_mv=%d battery_adc_raw_mv=%d"
+        " battery_adc_trim_mv=%d battery_adc_correction_mv=%d battery_raw=%d"
         " battery_level=%u battery_valid=%u battery_adc_calibrated=%u battery_samples=%u battery_result=%s"
-        " battery_scaling=\"68K/68K divider, VBAT~=2*source_impedance_compensated_ADC\""
-        " battery_policy=\"product_empty_2800mv_full_4200mv_absolute_min_2700mv_adc_source_impedance_x1045\""
+        " battery_adc_trim_valid=%u battery_adc_trim_result=%s"
+        " battery_scaling=\"68K/68K divider, VBAT~=2*(ADC_driver_mv+NVS_DMM_trim_mv)\""
+        " battery_policy=\"product_empty_2800mv_full_4200mv_absolute_min_2700mv_adc_dmm_trim_nvs\""
         " reserved_mspi_gpio=%s\n",
         BOARD_PINS_PROFILE_ID,
         BOARD_PINS_MODULE,
@@ -919,7 +1061,9 @@ static void board_print_status(void)
         (int)BOARD_PINS_BAT_V_ADC_IO,
         battery.voltage_mv,
         battery.adc_mv,
+        battery.adc_driver_mv,
         battery.adc_raw_mv,
+        battery.adc_trim_mv,
         battery.adc_correction_mv,
         battery.raw_adc,
         battery.level_percent,
@@ -927,6 +1071,8 @@ static void board_print_status(void)
         battery.adc_calibrated ? 1u : 0u,
         battery.sample_count,
         esp_err_to_name(battery_ret),
+        battery.adc_trim_valid ? 1u : 0u,
+        esp_err_to_name(battery.adc_trim_result),
         BOARD_PINS_RESERVED_MSPI_GPIOS);
     board_print_power_status(false);
     board_print_led_status();
@@ -1006,6 +1152,7 @@ void board_print_help(void)
         "Generated button diagnostics: ~KEY:KEY3:SINGLE simulates the recording custom-key path for automated A1/A2 tests; ~KEY:EC11:SINGLE simulates the EC11 runtime custom-key press/release path.\n"
         "Send ~VREC:RECOVERY to clear pairing/session state over USB.\n"
         "Board diagnostics: ~BOARD:STATUS reports V2 pin, USB, charger, battery, PWR_HOLD/GPIO9, mic, reserved MSPI, and LED resource status; ~BOARD:POWER reports optional current rails as not_populated on the current board.\n"
+        "Battery diagnostics: ~BATTERY:STATUS reports driver ADC pad mV, NVS DMM trim mV, reconstructed VBAT, and level; ~BATTERY:CAL:DMM <mV> stores the measured BAT_V_ADC/GPIO10 divider pad trim; ~BATTERY:CAL:RESET clears it.\n"
         "Board USB_DET diagnostics: GPIO7 USB_DET is disabled/high-Z; computer USB is inferred from USB Serial/JTAG SOF and charger state from BAT_CHG/BAT_STD; ~BOARD:USB_DET:HIGHZ reports the disabled state.\n"
         "Board GPIO diagnostics: ~BOARD:GPIO reads raw KEY1-KEY4 and EC11 A/B/key levels without reconfiguring pins.\n"
         "Board GPIO scan: ~BOARD:GPIO-SCAN samples all valid GPIO levels without reconfiguring pins and prints changed GPIOs.\n"
@@ -1027,6 +1174,10 @@ void board_print_help(void)
 
 bool board_consume_usb_command(const char *line)
 {
+    if (board_consume_battery_usb_command(line)) {
+        return true;
+    }
+
     const char *command = NULL;
     if (board_command_matches(line, BOARD_USB_PREFIX, &command)) {
         if (strcmp(command, "STATUS") == 0) {

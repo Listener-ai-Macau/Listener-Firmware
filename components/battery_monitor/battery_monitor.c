@@ -11,6 +11,7 @@
 #include "esp_rom_sys.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
+#include "nvs.h"
 
 #include "board_pins.h"
 
@@ -22,11 +23,15 @@
 #define BATTERY_MONITOR_ABSOLUTE_MIN_MV 2700U
 #define BATTERY_MONITOR_EMPTY_MV 2800U
 #define BATTERY_MONITOR_FULL_MV 4200U
-#define BATTERY_MONITOR_SAMPLE_COUNT 4U
-#define BATTERY_MONITOR_ADC_DISCARD_COUNT 3U
-#define BATTERY_MONITOR_ADC_SETTLE_US 300U
-#define BATTERY_MONITOR_ADC_SOURCE_IMPEDANCE_NUMERATOR 1045U
-#define BATTERY_MONITOR_ADC_SOURCE_IMPEDANCE_DENOMINATOR 1000U
+#define BATTERY_MONITOR_SAMPLE_COUNT 16U
+#define BATTERY_MONITOR_ADC_DISCARD_COUNT 8U
+#define BATTERY_MONITOR_ADC_SETTLE_US 1000U
+#define BATTERY_MONITOR_ADC_DMM_TRIM_MIN_MV (-300)
+#define BATTERY_MONITOR_ADC_DMM_TRIM_MAX_MV 300
+#define BATTERY_MONITOR_ADC_DMM_MIN_MV 1000
+#define BATTERY_MONITOR_ADC_DMM_MAX_MV 2600
+#define BATTERY_MONITOR_NVS_NAMESPACE "battery"
+#define BATTERY_MONITOR_NVS_ADC_TRIM_KEY "adc_trim_mv"
 #define BATTERY_MONITOR_V2_CURRENT_MA_PER_ADC_MV 2U
 
 static const char *TAG = "battery_monitor";
@@ -59,6 +64,9 @@ static battery_monitor_power_rail_status_t s_cached_led_power_rail;
 static bool s_cached_3v3_power_rail_valid;
 static bool s_cached_led_power_rail_valid;
 static uint32_t s_power_rail_sequence;
+static bool s_adc_trim_loaded;
+static esp_err_t s_adc_trim_load_result = ESP_ERR_INVALID_STATE;
+static int32_t s_adc_trim_mv;
 
 static bool battery_monitor_calibration_init(
     adc_unit_t unit,
@@ -243,25 +251,131 @@ static esp_err_t battery_monitor_read_adc_locked(
     return ESP_OK;
 }
 
-static int battery_monitor_apply_source_impedance_correction(int pad_mv)
+static int battery_monitor_apply_adc_trim(int driver_pad_mv, int32_t trim_mv)
 {
-    if (pad_mv <= 0) {
-        return pad_mv;
+    int32_t trimmed_mv = (int32_t)driver_pad_mv + trim_mv;
+    if (trimmed_mv <= 0) {
+        return 0;
     }
 
-    return (int)((((uint32_t)pad_mv * BATTERY_MONITOR_ADC_SOURCE_IMPEDANCE_NUMERATOR) +
-                  (BATTERY_MONITOR_ADC_SOURCE_IMPEDANCE_DENOMINATOR / 2U)) /
-                 BATTERY_MONITOR_ADC_SOURCE_IMPEDANCE_DENOMINATOR);
+    return (int)trimmed_mv;
 }
 
-static uint32_t battery_monitor_battery_mv_from_pad_mv(int corrected_pad_mv)
+static esp_err_t battery_monitor_load_adc_trim_locked(void)
 {
-    if (corrected_pad_mv <= 0) {
+    if (s_adc_trim_loaded) {
+        return s_adc_trim_load_result;
+    }
+
+    nvs_handle_t handle = 0;
+    int32_t trim_mv = 0;
+    esp_err_t ret = nvs_open(BATTERY_MONITOR_NVS_NAMESPACE, NVS_READONLY, &handle);
+    if (ret == ESP_ERR_NVS_NOT_FOUND) {
+        ret = ESP_OK;
+        trim_mv = 0;
+    } else if (ret == ESP_OK) {
+        ret = nvs_get_i32(handle, BATTERY_MONITOR_NVS_ADC_TRIM_KEY, &trim_mv);
+        nvs_close(handle);
+        if (ret == ESP_ERR_NVS_NOT_FOUND) {
+            ret = ESP_OK;
+            trim_mv = 0;
+        }
+    }
+
+    if (ret == ESP_OK) {
+        if (trim_mv < BATTERY_MONITOR_ADC_DMM_TRIM_MIN_MV) {
+            trim_mv = BATTERY_MONITOR_ADC_DMM_TRIM_MIN_MV;
+        } else if (trim_mv > BATTERY_MONITOR_ADC_DMM_TRIM_MAX_MV) {
+            trim_mv = BATTERY_MONITOR_ADC_DMM_TRIM_MAX_MV;
+        }
+        s_adc_trim_mv = trim_mv;
+        s_adc_trim_loaded = true;
+    } else if (ret != ESP_ERR_NVS_NOT_INITIALIZED) {
+        s_adc_trim_mv = 0;
+        s_adc_trim_loaded = true;
+    }
+    s_adc_trim_load_result = ret;
+    return ret;
+}
+
+static int32_t battery_monitor_get_adc_trim_locked(esp_err_t *out_trim_result)
+{
+    esp_err_t ret = battery_monitor_load_adc_trim_locked();
+    if (out_trim_result != NULL) {
+        *out_trim_result = ret;
+    }
+    return ret == ESP_OK ? s_adc_trim_mv : 0;
+}
+
+static esp_err_t battery_monitor_store_adc_trim_locked(int32_t trim_mv)
+{
+    if (trim_mv < BATTERY_MONITOR_ADC_DMM_TRIM_MIN_MV ||
+        trim_mv > BATTERY_MONITOR_ADC_DMM_TRIM_MAX_MV) {
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    nvs_handle_t handle = 0;
+    esp_err_t ret = nvs_open(BATTERY_MONITOR_NVS_NAMESPACE, NVS_READWRITE, &handle);
+    if (ret != ESP_OK) {
+        return ret;
+    }
+
+    ret = nvs_set_i32(handle, BATTERY_MONITOR_NVS_ADC_TRIM_KEY, trim_mv);
+    if (ret == ESP_OK) {
+        ret = nvs_commit(handle);
+    }
+    nvs_close(handle);
+
+    if (ret == ESP_OK) {
+        s_adc_trim_mv = trim_mv;
+        s_adc_trim_load_result = ESP_OK;
+        s_adc_trim_loaded = true;
+    }
+    return ret;
+}
+
+static uint32_t battery_monitor_battery_mv_from_pad_mv(int calibrated_pad_mv)
+{
+    if (calibrated_pad_mv <= 0) {
         return 0U;
     }
 
-    return ((uint32_t)corrected_pad_mv * BATTERY_MONITOR_DIVIDER_NUMERATOR) /
+    return ((uint32_t)calibrated_pad_mv * BATTERY_MONITOR_DIVIDER_NUMERATOR) /
            BATTERY_MONITOR_DIVIDER_DENOMINATOR;
+}
+
+static void battery_monitor_fill_status(
+    battery_monitor_status_t *out_status,
+    int raw,
+    int driver_pad_mv,
+    int calibrated_pad_mv,
+    int32_t trim_mv,
+    esp_err_t trim_result,
+    bool adc_calibrated,
+    uint8_t sample_count,
+    esp_err_t result)
+{
+    if (out_status == NULL) {
+        return;
+    }
+
+    uint32_t battery_mv = battery_monitor_battery_mv_from_pad_mv(calibrated_pad_mv);
+    *out_status = (battery_monitor_status_t){
+        .valid = result == ESP_OK,
+        .voltage_mv = battery_mv,
+        .level_percent = battery_monitor_percent_from_mv(battery_mv),
+        .raw_adc = raw,
+        .adc_raw_mv = driver_pad_mv,
+        .adc_driver_mv = driver_pad_mv,
+        .adc_mv = calibrated_pad_mv,
+        .adc_correction_mv = (int)trim_mv,
+        .adc_trim_mv = (int)trim_mv,
+        .adc_trim_valid = trim_result == ESP_OK,
+        .adc_trim_result = trim_result,
+        .adc_calibrated = adc_calibrated,
+        .sample_count = sample_count,
+        .result = result,
+    };
 }
 
 uint8_t battery_monitor_percent_from_mv(uint32_t battery_mv)
@@ -312,6 +426,7 @@ esp_err_t battery_monitor_read(battery_monitor_status_t *out_status)
 
     *out_status = (battery_monitor_status_t){
         .valid = false,
+        .adc_trim_result = ESP_ERR_INVALID_STATE,
         .result = ESP_FAIL,
     };
 
@@ -342,22 +457,123 @@ esp_err_t battery_monitor_read(battery_monitor_status_t *out_status)
         return ret;
     }
 
-    int corrected_pad_mv =
-        battery_monitor_apply_source_impedance_correction(measured_pad_mv);
-    uint32_t battery_mv = battery_monitor_battery_mv_from_pad_mv(corrected_pad_mv);
+    esp_err_t trim_result = ESP_OK;
+    int32_t trim_mv = battery_monitor_get_adc_trim_locked(&trim_result);
+    int calibrated_pad_mv = battery_monitor_apply_adc_trim(measured_pad_mv, trim_mv);
 
-    out_status->valid = true;
-    out_status->voltage_mv = battery_mv;
-    out_status->level_percent = battery_monitor_percent_from_mv(battery_mv);
-    out_status->raw_adc = raw;
-    out_status->adc_raw_mv = measured_pad_mv;
-    out_status->adc_mv = corrected_pad_mv;
-    out_status->adc_correction_mv = corrected_pad_mv - measured_pad_mv;
-    out_status->adc_calibrated = calibrated;
-    out_status->sample_count = sample_count;
-    out_status->result = ESP_OK;
+    battery_monitor_fill_status(
+        out_status,
+        raw,
+        measured_pad_mv,
+        calibrated_pad_mv,
+        trim_mv,
+        trim_result,
+        calibrated,
+        sample_count,
+        ESP_OK);
     xSemaphoreGive(s_mutex);
     return ESP_OK;
+}
+
+esp_err_t battery_monitor_calibrate_adc_trim_from_dmm_mv(
+    int dmm_pad_mv,
+    battery_monitor_status_t *out_status)
+{
+    if (out_status != NULL) {
+        *out_status = (battery_monitor_status_t){
+            .valid = false,
+            .adc_trim_result = ESP_ERR_INVALID_ARG,
+            .result = ESP_ERR_INVALID_ARG,
+        };
+    }
+    if (dmm_pad_mv < BATTERY_MONITOR_ADC_DMM_MIN_MV ||
+        dmm_pad_mv > BATTERY_MONITOR_ADC_DMM_MAX_MV) {
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    esp_err_t mutex_ret = battery_monitor_ensure_mutex();
+    if (mutex_ret != ESP_OK) {
+        if (out_status != NULL) {
+            out_status->result = mutex_ret;
+        }
+        return mutex_ret;
+    }
+
+    if (xSemaphoreTake(s_mutex, portMAX_DELAY) != pdTRUE) {
+        if (out_status != NULL) {
+            out_status->result = ESP_ERR_TIMEOUT;
+        }
+        return ESP_ERR_TIMEOUT;
+    }
+
+    int raw = 0;
+    int measured_pad_mv = 0;
+    bool calibrated = false;
+    uint8_t sample_count = 0;
+    esp_err_t ret = battery_monitor_read_adc_locked(
+        &s_battery_adc,
+        &raw,
+        &measured_pad_mv,
+        &calibrated,
+        &sample_count);
+    if (ret != ESP_OK) {
+        if (out_status != NULL) {
+            out_status->result = ret;
+        }
+        xSemaphoreGive(s_mutex);
+        return ret;
+    }
+
+    int32_t trim_mv = (int32_t)dmm_pad_mv - (int32_t)measured_pad_mv;
+    if (trim_mv < BATTERY_MONITOR_ADC_DMM_TRIM_MIN_MV ||
+        trim_mv > BATTERY_MONITOR_ADC_DMM_TRIM_MAX_MV) {
+        if (out_status != NULL) {
+            battery_monitor_fill_status(
+                out_status,
+                raw,
+                measured_pad_mv,
+                battery_monitor_apply_adc_trim(measured_pad_mv, trim_mv),
+                trim_mv,
+                ESP_ERR_INVALID_ARG,
+                calibrated,
+                sample_count,
+                ESP_ERR_INVALID_ARG);
+        }
+        xSemaphoreGive(s_mutex);
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    ret = battery_monitor_store_adc_trim_locked(trim_mv);
+    if (out_status != NULL) {
+        battery_monitor_fill_status(
+            out_status,
+            raw,
+            measured_pad_mv,
+            battery_monitor_apply_adc_trim(measured_pad_mv, ret == ESP_OK ? trim_mv : 0),
+            ret == ESP_OK ? trim_mv : 0,
+            ret,
+            calibrated,
+            sample_count,
+            ret);
+    }
+    xSemaphoreGive(s_mutex);
+    return ret;
+}
+
+esp_err_t battery_monitor_clear_adc_trim(void)
+{
+    esp_err_t mutex_ret = battery_monitor_ensure_mutex();
+    if (mutex_ret != ESP_OK) {
+        return mutex_ret;
+    }
+
+    if (xSemaphoreTake(s_mutex, portMAX_DELAY) != pdTRUE) {
+        return ESP_ERR_TIMEOUT;
+    }
+
+    esp_err_t ret = battery_monitor_store_adc_trim_locked(0);
+    xSemaphoreGive(s_mutex);
+    return ret;
 }
 
 static battery_monitor_adc_channel_state_t *battery_monitor_power_rail_adc(
@@ -491,10 +707,11 @@ esp_err_t battery_monitor_read_power_rail(
             &battery_pad_mv,
             &battery_calibrated,
             &battery_sample_count);
-        int corrected_battery_pad_mv =
-            battery_monitor_apply_source_impedance_correction(battery_pad_mv);
+        esp_err_t trim_result = ESP_OK;
+        int32_t trim_mv = battery_monitor_get_adc_trim_locked(&trim_result);
+        int calibrated_battery_pad_mv = battery_monitor_apply_adc_trim(battery_pad_mv, trim_mv);
         uint32_t battery_mv = battery_ret == ESP_OK
-            ? battery_monitor_battery_mv_from_pad_mv(corrected_battery_pad_mv)
+            ? battery_monitor_battery_mv_from_pad_mv(calibrated_battery_pad_mv)
             : 0U;
         int32_t current_ma = (int32_t)((uint32_t)pad_mv * BATTERY_MONITOR_V2_CURRENT_MA_PER_ADC_MV);
 
@@ -511,9 +728,10 @@ esp_err_t battery_monitor_read_power_rail(
             ? (int32_t)(((uint64_t)(uint32_t)current_ma * (uint64_t)battery_mv) / 1000ULL)
             : 0;
         out_status->sample_count = sample_count;
-        out_status->calibration_status = battery_ret == ESP_OK && battery_calibrated
-            ? "ina180a2_10mR_adc_calibrated_battery_adc_calibrated"
-            : "ina180a2_10mR_nominal_battery_mv_reconstructed";
+        out_status->calibration_status =
+            battery_ret == ESP_OK && battery_calibrated && trim_result == ESP_OK
+                ? "ina180a2_10mR_adc_calibrated_battery_adc_calibrated_dmm_trim"
+                : "ina180a2_10mR_nominal_battery_mv_reconstructed";
         battery_monitor_store_power_rail_cache_locked(rail, out_status);
     }
     xSemaphoreGive(s_mutex);

@@ -11,14 +11,19 @@ if (-not (Test-Path -LiteralPath $batteryMonitor)) {
 
 $text = Get-Content -LiteralPath $batteryMonitor -Raw
 $bleHidPath = Join-Path $RepoRoot "ports\esp32\ble_hid\ble_hid.c"
+$boardPath = Join-Path $RepoRoot "components\board\board.c"
 $diagEventsPath = Join-Path $RepoRoot "components\diag_log\include\diag_log_events.h"
 if (-not (Test-Path -LiteralPath $bleHidPath)) {
     throw "Missing BLE HID source: $bleHidPath"
+}
+if (-not (Test-Path -LiteralPath $boardPath)) {
+    throw "Missing board source: $boardPath"
 }
 if (-not (Test-Path -LiteralPath $diagEventsPath)) {
     throw "Missing diag log events header: $diagEventsPath"
 }
 $bleHid = Get-Content -LiteralPath $bleHidPath -Raw
+$board = Get-Content -LiteralPath $boardPath -Raw
 $diagEvents = Get-Content -LiteralPath $diagEventsPath -Raw
 
 if ($text -notmatch '(?m)^#define BATTERY_MONITOR_ABSOLUTE_MIN_MV 2700U\r?$') {
@@ -33,12 +38,18 @@ if ($text -notmatch '(?m)^#define BATTERY_MONITOR_FULL_MV 4200U\r?$') {
     throw "Battery full voltage must be 4200mV."
 }
 
-if ($text -notmatch '(?m)^#define BATTERY_MONITOR_ADC_SOURCE_IMPEDANCE_NUMERATOR 1045U\r?$') {
-    throw "Battery ADC source-impedance correction must match the 2.083V DMM bench point."
+if ($text -match 'BATTERY_MONITOR_ADC_SOURCE_IMPEDANCE|source_impedance') {
+    throw "Battery ADC must not use a fixed source-impedance multiplier."
 }
 
-if ($text -notmatch '(?m)^#define BATTERY_MONITOR_ADC_SOURCE_IMPEDANCE_DENOMINATOR 1000U\r?$') {
-    throw "Battery ADC source-impedance correction denominator must remain explicit."
+if ($text -notmatch '(?m)^#define BATTERY_MONITOR_ADC_DMM_TRIM_MIN_MV \(-300\)\r?$' -or
+    $text -notmatch '(?m)^#define BATTERY_MONITOR_ADC_DMM_TRIM_MAX_MV 300\r?$') {
+    throw "Battery ADC DMM trim must be bounded to a plausible board-level offset."
+}
+
+if ($text -notmatch '(?m)^#define BATTERY_MONITOR_NVS_NAMESPACE "battery"\r?$' -or
+    $text -notmatch '(?m)^#define BATTERY_MONITOR_NVS_ADC_TRIM_KEY "adc_trim_mv"\r?$') {
+    throw "Battery ADC DMM trim must use the expected NVS namespace/key."
 }
 
 if ($text -notmatch '(?m)^#define BATTERY_MONITOR_ADC_DISCARD_COUNT [1-9][0-9]*U\r?$') {
@@ -61,12 +72,25 @@ if ($text -notmatch 'BATTERY_MONITOR_FULL_MV - BATTERY_MONITOR_EMPTY_MV') {
     throw "Battery percentage must derive range from configured endpoints."
 }
 
-if ($text -notmatch 'battery_monitor_apply_source_impedance_correction[\s\S]*BATTERY_MONITOR_ADC_SOURCE_IMPEDANCE_NUMERATOR[\s\S]*BATTERY_MONITOR_ADC_SOURCE_IMPEDANCE_DENOMINATOR') {
-    throw "Battery ADC pad voltage must apply source-impedance compensation before VBAT reconstruction."
+if ($text -notmatch 'battery_monitor_load_adc_trim_locked[\s\S]*nvs_get_i32[\s\S]*BATTERY_MONITOR_NVS_ADC_TRIM_KEY[\s\S]*s_adc_trim_mv') {
+    throw "Battery ADC DMM trim must load the persisted trim from NVS."
 }
 
-if ($text -notmatch 'out_status->adc_raw_mv\s*=\s*measured_pad_mv[\s\S]*out_status->adc_mv\s*=\s*corrected_pad_mv[\s\S]*out_status->adc_correction_mv\s*=\s*corrected_pad_mv - measured_pad_mv') {
-    throw "Battery status must expose raw pad mV, corrected pad mV, and correction mV."
+if ($text -notmatch 'battery_monitor_store_adc_trim_locked[\s\S]*nvs_set_i32[\s\S]*nvs_commit') {
+    throw "Battery ADC DMM trim must be persisted through NVS commit."
+}
+
+if ($text -notmatch 'battery_monitor_calibrate_adc_trim_from_dmm_mv[\s\S]*dmm_pad_mv[\s\S]*measured_pad_mv[\s\S]*battery_monitor_store_adc_trim_locked') {
+    throw "Battery ADC DMM trim calibration must derive trim from the current ADC sample and DMM pad mV."
+}
+
+if ($text -notmatch 'battery_monitor_apply_adc_trim[\s\S]*driver_pad_mv[\s\S]*trim_mv' -or
+    $text -notmatch 'battery_monitor_battery_mv_from_pad_mv\(calibrated_pad_mv\)') {
+    throw "Battery ADC pad voltage must apply NVS DMM trim before VBAT reconstruction."
+}
+
+if ($text -notmatch '\.adc_raw_mv\s*=\s*driver_pad_mv[\s\S]*\.adc_driver_mv\s*=\s*driver_pad_mv[\s\S]*\.adc_mv\s*=\s*calibrated_pad_mv[\s\S]*\.adc_trim_mv\s*=\s*\(int\)trim_mv') {
+    throw "Battery status must expose driver pad mV, final pad mV, and DMM trim mV."
 }
 
 if ($text -notmatch 'battery_monitor_store_power_rail_cache_locked[\s\S]*status->sequence\s*=\s*\+\+s_power_rail_sequence[\s\S]*\*cache\s*=\s*\*status') {
@@ -133,8 +157,16 @@ if ($bleHid -notmatch 'DIAG_BLE_BATTERY_LEVEL[\s\S]*battery\.raw_adc[\s\S]*batte
     throw "BLE HID battery diagnostics must include raw ADC and ADC mV values."
 }
 
-if ($bleHid -notmatch 'adc_raw_mv=%d[\s\S]*adc_correction_mv=%d[\s\S]*battery\.adc_raw_mv[\s\S]*battery\.adc_correction_mv') {
-    throw "BLE HID battery logs must include raw ADC pad mV and source-impedance correction mV."
+if ($bleHid -notmatch 'adc_driver_mv=%d[\s\S]*adc_trim_mv=%d[\s\S]*adc_trim_result=%s[\s\S]*battery\.adc_driver_mv[\s\S]*battery\.adc_trim_mv[\s\S]*battery\.adc_trim_result') {
+    throw "BLE HID battery logs must include driver ADC pad mV and DMM trim diagnostics."
+}
+
+if ($board -notmatch '~BATTERY:STATUS' -or
+    $board -notmatch '~BATTERY:CAL:DMM <mV>' -or
+    $board -notmatch 'battery_adc_driver_mv=%d' -or
+    $board -notmatch 'battery_adc_trim_mv=%d' -or
+    $board -notmatch 'adc_dmm_trim_nvs') {
+    throw "Board diagnostics must expose BATTERY status/calibration commands and DMM trim fields."
 }
 
 if ($diagEvents -notmatch 'DIAG_BLE_BATTERY_LEVEL\s+5\s+/\*\s*a1=level, a2=voltage_mv, a3=raw_adc, a4=adc_mv\s+\*/') {

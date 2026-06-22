@@ -339,7 +339,8 @@ static esp_err_t ble_hid_update_battery_level(const char *reason, bool force_not
         ESP_LOGI(
             TAG,
             "battery notify level=%u voltage_mv=%" PRIu32
-            " raw_adc=%d adc_mv=%d adc_raw_mv=%d adc_correction_mv=%d"
+            " raw_adc=%d adc_mv=%d adc_driver_mv=%d adc_raw_mv=%d"
+            " adc_trim_mv=%d adc_correction_mv=%d adc_trim_valid=%u adc_trim_result=%s"
             " usb_power=%u charger_active=%u charge_power=%u"
             " raw_charging=%u raw_full=%u full_latched=%u full_candidate_ms=%u charge_full=%u"
             " usb_det_adc_valid=%u usb_det_adc_mv=%d usb_det_mismatch=%u"
@@ -348,8 +349,12 @@ static esp_err_t ble_hid_update_battery_level(const char *reason, bool force_not
             battery.voltage_mv,
             battery.raw_adc,
             battery.adc_mv,
+            battery.adc_driver_mv,
             battery.adc_raw_mv,
+            battery.adc_trim_mv,
             battery.adc_correction_mv,
+            battery.adc_trim_valid ? 1u : 0u,
+            esp_err_to_name(battery.adc_trim_result),
             usb_power_present ? 1u : 0u,
             charger_active ? 1u : 0u,
             charge_power_present ? 1u : 0u,
@@ -687,6 +692,7 @@ static bool ble_hid_usb_command_is_passive_query(const char *line)
            strcmp(line, "BOARD:STATUS") == 0 ||
            strcmp(line, "BOARD:POWER") == 0 ||
            strcmp(line, "BOARD:POWER:FORCE") == 0 ||
+           strcmp(line, "BATTERY:STATUS") == 0 ||
            strcmp(line, "LED:STATUS") == 0 ||
            strcmp(line, "LED:BUDGET") == 0 ||
            strcmp(line, "LED:PRIVACY") == 0 ||

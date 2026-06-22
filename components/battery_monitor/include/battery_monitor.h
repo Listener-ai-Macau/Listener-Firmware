@@ -16,8 +16,12 @@ typedef struct {
     uint8_t level_percent;
     int raw_adc;
     int adc_raw_mv;
+    int adc_driver_mv;
     int adc_mv;
     int adc_correction_mv;
+    int adc_trim_mv;
+    bool adc_trim_valid;
+    esp_err_t adc_trim_result;
     bool adc_calibrated;
     uint8_t sample_count;
     esp_err_t result;
@@ -57,6 +61,10 @@ bool battery_monitor_get_cached_power_rail(
     battery_monitor_power_rail_t rail,
     battery_monitor_power_rail_status_t *out_status);
 uint8_t battery_monitor_percent_from_mv(uint32_t battery_mv);
+esp_err_t battery_monitor_calibrate_adc_trim_from_dmm_mv(
+    int dmm_pad_mv,
+    battery_monitor_status_t *out_status);
+esp_err_t battery_monitor_clear_adc_trim(void);
 
 #ifdef __cplusplus
 }
