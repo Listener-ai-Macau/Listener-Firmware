@@ -872,9 +872,11 @@ static void board_print_status(void)
         " usb_det_adc_mv=%d usb_det_raw_adc=%d usb_det_adc_calibrated=%u usb_det_adc_samples=%u"
         " usb_det_adc_result=%s usb_det_mismatch=%u usb_det_threshold_mv=disabled usb_det_policy=%s"
         " bat_chg_gpio=%d bat_chg_level=%s bat_std_gpio=%d bat_std_level=%s charger_polarity=%s"
-        " battery_gpio=%d battery_mv=%" PRIu32 " battery_adc_mv=%d battery_raw=%d"
+        " battery_gpio=%d battery_mv=%" PRIu32 " battery_adc_mv=%d battery_adc_raw_mv=%d"
+        " battery_adc_correction_mv=%d battery_raw=%d"
         " battery_level=%u battery_valid=%u battery_adc_calibrated=%u battery_samples=%u battery_result=%s"
-        " battery_scaling=\"68K/68K divider, VBAT~=2*ADC\" battery_policy=\"product_empty_2800mv_full_4200mv_absolute_min_2700mv\""
+        " battery_scaling=\"68K/68K divider, VBAT~=2*source_impedance_compensated_ADC\""
+        " battery_policy=\"product_empty_2800mv_full_4200mv_absolute_min_2700mv_adc_source_impedance_x1010\""
         " reserved_mspi_gpio=%s\n",
         BOARD_PINS_PROFILE_ID,
         BOARD_PINS_MODULE,
@@ -917,6 +919,8 @@ static void board_print_status(void)
         (int)BOARD_PINS_BAT_V_ADC_IO,
         battery.voltage_mv,
         battery.adc_mv,
+        battery.adc_raw_mv,
+        battery.adc_correction_mv,
         battery.raw_adc,
         battery.level_percent,
         battery.valid ? 1u : 0u,

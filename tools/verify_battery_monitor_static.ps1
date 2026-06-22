@@ -33,6 +33,14 @@ if ($text -notmatch '(?m)^#define BATTERY_MONITOR_FULL_MV 4200U\r?$') {
     throw "Battery full voltage must be 4200mV."
 }
 
+if ($text -notmatch '(?m)^#define BATTERY_MONITOR_ADC_SOURCE_IMPEDANCE_NUMERATOR 1010U\r?$') {
+    throw "Battery ADC source-impedance correction must match the 2.083V DMM bench point."
+}
+
+if ($text -notmatch '(?m)^#define BATTERY_MONITOR_ADC_SOURCE_IMPEDANCE_DENOMINATOR 1000U\r?$') {
+    throw "Battery ADC source-impedance correction denominator must remain explicit."
+}
+
 if ($text -notmatch '(?m)^#define BATTERY_MONITOR_ADC_DISCARD_COUNT [1-9][0-9]*U\r?$') {
     throw "ADC channel switching must discard at least one sample before reporting battery/current telemetry readings."
 }
@@ -51,6 +59,14 @@ if ($text -notmatch 'battery_mv >= BATTERY_MONITOR_FULL_MV[\s\S]*return 100;') {
 
 if ($text -notmatch 'BATTERY_MONITOR_FULL_MV - BATTERY_MONITOR_EMPTY_MV') {
     throw "Battery percentage must derive range from configured endpoints."
+}
+
+if ($text -notmatch 'battery_monitor_apply_source_impedance_correction[\s\S]*BATTERY_MONITOR_ADC_SOURCE_IMPEDANCE_NUMERATOR[\s\S]*BATTERY_MONITOR_ADC_SOURCE_IMPEDANCE_DENOMINATOR') {
+    throw "Battery ADC pad voltage must apply source-impedance compensation before VBAT reconstruction."
+}
+
+if ($text -notmatch 'out_status->adc_raw_mv\s*=\s*measured_pad_mv[\s\S]*out_status->adc_mv\s*=\s*corrected_pad_mv[\s\S]*out_status->adc_correction_mv\s*=\s*corrected_pad_mv - measured_pad_mv') {
+    throw "Battery status must expose raw pad mV, corrected pad mV, and correction mV."
 }
 
 if ($text -notmatch 'battery_monitor_store_power_rail_cache_locked[\s\S]*status->sequence\s*=\s*\+\+s_power_rail_sequence[\s\S]*\*cache\s*=\s*\*status') {
@@ -115,6 +131,10 @@ if ($bleHid -notmatch 'firmware_ota_note_battery\(') {
 
 if ($bleHid -notmatch 'DIAG_BLE_BATTERY_LEVEL[\s\S]*battery\.raw_adc[\s\S]*battery\.adc_mv') {
     throw "BLE HID battery diagnostics must include raw ADC and ADC mV values."
+}
+
+if ($bleHid -notmatch 'adc_raw_mv=%d[\s\S]*adc_correction_mv=%d[\s\S]*battery\.adc_raw_mv[\s\S]*battery\.adc_correction_mv') {
+    throw "BLE HID battery logs must include raw ADC pad mV and source-impedance correction mV."
 }
 
 if ($diagEvents -notmatch 'DIAG_BLE_BATTERY_LEVEL\s+5\s+/\*\s*a1=level, a2=voltage_mv, a3=raw_adc, a4=adc_mv\s+\*/') {

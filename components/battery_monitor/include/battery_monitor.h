@@ -15,7 +15,9 @@ typedef struct {
     uint32_t voltage_mv;
     uint8_t level_percent;
     int raw_adc;
+    int adc_raw_mv;
     int adc_mv;
+    int adc_correction_mv;
     bool adc_calibrated;
     uint8_t sample_count;
     esp_err_t result;

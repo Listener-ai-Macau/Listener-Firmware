@@ -25,6 +25,8 @@
 #define BATTERY_MONITOR_SAMPLE_COUNT 4U
 #define BATTERY_MONITOR_ADC_DISCARD_COUNT 3U
 #define BATTERY_MONITOR_ADC_SETTLE_US 300U
+#define BATTERY_MONITOR_ADC_SOURCE_IMPEDANCE_NUMERATOR 1010U
+#define BATTERY_MONITOR_ADC_SOURCE_IMPEDANCE_DENOMINATOR 1000U
 #define BATTERY_MONITOR_V2_CURRENT_MA_PER_ADC_MV 2U
 
 static const char *TAG = "battery_monitor";
@@ -241,6 +243,27 @@ static esp_err_t battery_monitor_read_adc_locked(
     return ESP_OK;
 }
 
+static int battery_monitor_apply_source_impedance_correction(int pad_mv)
+{
+    if (pad_mv <= 0) {
+        return pad_mv;
+    }
+
+    return (int)((((uint32_t)pad_mv * BATTERY_MONITOR_ADC_SOURCE_IMPEDANCE_NUMERATOR) +
+                  (BATTERY_MONITOR_ADC_SOURCE_IMPEDANCE_DENOMINATOR / 2U)) /
+                 BATTERY_MONITOR_ADC_SOURCE_IMPEDANCE_DENOMINATOR);
+}
+
+static uint32_t battery_monitor_battery_mv_from_pad_mv(int corrected_pad_mv)
+{
+    if (corrected_pad_mv <= 0) {
+        return 0U;
+    }
+
+    return ((uint32_t)corrected_pad_mv * BATTERY_MONITOR_DIVIDER_NUMERATOR) /
+           BATTERY_MONITOR_DIVIDER_DENOMINATOR;
+}
+
 uint8_t battery_monitor_percent_from_mv(uint32_t battery_mv)
 {
     if (battery_mv <= BATTERY_MONITOR_EMPTY_MV) {
@@ -304,13 +327,13 @@ esp_err_t battery_monitor_read(battery_monitor_status_t *out_status)
     }
 
     int raw = 0;
-    int pad_mv = 0;
+    int measured_pad_mv = 0;
     bool calibrated = false;
     uint8_t sample_count = 0;
     esp_err_t ret = battery_monitor_read_adc_locked(
         &s_battery_adc,
         &raw,
-        &pad_mv,
+        &measured_pad_mv,
         &calibrated,
         &sample_count);
     if (ret != ESP_OK) {
@@ -319,15 +342,17 @@ esp_err_t battery_monitor_read(battery_monitor_status_t *out_status)
         return ret;
     }
 
-    uint32_t battery_mv =
-        ((uint32_t)pad_mv * BATTERY_MONITOR_DIVIDER_NUMERATOR) /
-        BATTERY_MONITOR_DIVIDER_DENOMINATOR;
+    int corrected_pad_mv =
+        battery_monitor_apply_source_impedance_correction(measured_pad_mv);
+    uint32_t battery_mv = battery_monitor_battery_mv_from_pad_mv(corrected_pad_mv);
 
     out_status->valid = true;
     out_status->voltage_mv = battery_mv;
     out_status->level_percent = battery_monitor_percent_from_mv(battery_mv);
     out_status->raw_adc = raw;
-    out_status->adc_mv = pad_mv;
+    out_status->adc_raw_mv = measured_pad_mv;
+    out_status->adc_mv = corrected_pad_mv;
+    out_status->adc_correction_mv = corrected_pad_mv - measured_pad_mv;
     out_status->adc_calibrated = calibrated;
     out_status->sample_count = sample_count;
     out_status->result = ESP_OK;
@@ -466,9 +491,10 @@ esp_err_t battery_monitor_read_power_rail(
             &battery_pad_mv,
             &battery_calibrated,
             &battery_sample_count);
+        int corrected_battery_pad_mv =
+            battery_monitor_apply_source_impedance_correction(battery_pad_mv);
         uint32_t battery_mv = battery_ret == ESP_OK
-            ? ((uint32_t)battery_pad_mv * BATTERY_MONITOR_DIVIDER_NUMERATOR) /
-                  BATTERY_MONITOR_DIVIDER_DENOMINATOR
+            ? battery_monitor_battery_mv_from_pad_mv(corrected_battery_pad_mv)
             : 0U;
         int32_t current_ma = (int32_t)((uint32_t)pad_mv * BATTERY_MONITOR_V2_CURRENT_MA_PER_ADC_MV);
 

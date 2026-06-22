@@ -339,7 +339,8 @@ static esp_err_t ble_hid_update_battery_level(const char *reason, bool force_not
         ESP_LOGI(
             TAG,
             "battery notify level=%u voltage_mv=%" PRIu32
-            " raw_adc=%d adc_mv=%d usb_power=%u charger_active=%u charge_power=%u"
+            " raw_adc=%d adc_mv=%d adc_raw_mv=%d adc_correction_mv=%d"
+            " usb_power=%u charger_active=%u charge_power=%u"
             " raw_charging=%u raw_full=%u full_latched=%u full_candidate_ms=%u charge_full=%u"
             " usb_det_adc_valid=%u usb_det_adc_mv=%d usb_det_mismatch=%u"
             " reason=%s forced=%u periodic=%u",
@@ -347,6 +348,8 @@ static esp_err_t ble_hid_update_battery_level(const char *reason, bool force_not
             battery.voltage_mv,
             battery.raw_adc,
             battery.adc_mv,
+            battery.adc_raw_mv,
+            battery.adc_correction_mv,
             usb_power_present ? 1u : 0u,
             charger_active ? 1u : 0u,
             charge_power_present ? 1u : 0u,
