@@ -574,7 +574,7 @@ CHECKS = {
         "ble_audio_stream_poll_type_link()",
     ],
     "ports/esp32/ble_audio_stream/ble_audio_stream_esp32.c": [
-        "BLE_AUDIO_STREAM_TYPE_HEARTBEAT_TIMEOUT_MS 12000",
+        "BLE_AUDIO_STREAM_TYPE_HEARTBEAT_TIMEOUT_MS 60000",
         "TYPE:READY",
         "TYPE:HB",
         "TYPE:BYE",

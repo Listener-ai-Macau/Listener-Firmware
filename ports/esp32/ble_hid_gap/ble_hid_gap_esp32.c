@@ -1720,9 +1720,9 @@ esp_err_t ble_hid_gap_request_low_power_connection(void)
 {
     return ble_hid_gap_request_connection_params(
         "low-power idle",
-        36,
-        72,
-        4,
+        80,
+        120,
+        9,
         600,
         BLE_HID_CONN_PARAM_MODE_LOW_POWER);
 }

@@ -92,7 +92,7 @@ Assert-Contains $audioHeader 'void\s+ble_audio_stream_poll_type_link\(void\);' `
     "audio stream header must expose Type heartbeat timeout polling"
 Assert-Contains $audio '#include "status_led\.h"[\s\S]*?static void ble_audio_stream_set_transport_state' `
     "audio stream must include status_led before transport state updates"
-Assert-Contains $audio 'BLE_AUDIO_STREAM_TYPE_HEARTBEAT_TIMEOUT_MS\s+12000' `
+Assert-Contains $audio 'BLE_AUDIO_STREAM_TYPE_HEARTBEAT_TIMEOUT_MS\s+60000' `
     "Type heartbeat timeout must be bounded so closing Listener-Type demotes TYPE_READY"
 Assert-Contains $audio 'static\s+bool\s+ble_audio_stream_transport_state_type_ready\([^)]*\)[\s\S]*?BLE_AUDIO_STREAM_TRANSPORT_STATE_STREAM_READY[\s\S]*?BLE_AUDIO_STREAM_TRANSPORT_STATE_STREAMING[\s\S]*?BLE_AUDIO_STREAM_TRANSPORT_STATE_DRAINING' `
     "Type-link helper must remain true during active streaming/draining"
