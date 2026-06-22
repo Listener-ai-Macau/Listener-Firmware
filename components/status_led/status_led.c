@@ -1014,6 +1014,11 @@ static const char *status_led_ble_name(status_led_ble_state_t state)
     }
 }
 
+static bool status_led_ble_state_ready_locked(status_led_ble_state_t state)
+{
+    return state == STATUS_LED_BLE_CONNECTED;
+}
+
 static const char *status_led_rec_source_name(status_led_rec_source_t source)
 {
     switch (source) {

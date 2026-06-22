@@ -45,6 +45,7 @@ Assert-Contains $powerHeader 'charge_full' 'interpreted charge-full status'
 Assert-Contains $powerHeader 'automatic_shutdown_blocked_by_external_power' 'observable automatic shutdown block status'
 
 Assert-Contains $cmake 'REQUIRES\s+battery_monitor\s+board\s+device_settings\s+diag_log\s+board_pins\s+watchdog_platform' 'board and device settings dependency for power input snapshot and configurable timeout'
+Assert-Contains $cmake 'PRIV_REQUIRES\s+esp_driver_gpio\s+esp_hw_support\s+esp_pm\s+esp_timer' 'ESP PM private dependency for PM diagnostics'
 Assert-Contains $boardCmake 'esp_driver_usb_serial_jtag' 'board dependency on USB Serial/JTAG public driver API'
 Assert-Contains $boardPins 'BOARD_PINS_USB_DET_IO\s+\(GPIO_NUM_NC\)' 'retired USB_DET divider is not configured as a GPIO input'
 Assert-Contains $boardSource '#include "driver/usb_serial_jtag\.h"' 'board public USB Serial/JTAG include'
