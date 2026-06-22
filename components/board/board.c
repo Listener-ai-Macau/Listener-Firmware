@@ -877,7 +877,7 @@ static void board_print_battery_status_from_sample(
         " battery_adc_calibrated=%u battery_samples=%u battery_result=%s"
         " battery_adc_trim_valid=%u battery_adc_trim_result=%s"
         " battery_scaling=\"68K/68K divider, VBAT~=2*(ADC_driver_mv+NVS_DMM_trim_mv)\""
-        " battery_policy=\"product_empty_2800mv_full_4150mv_absolute_min_2700mv_adc_dmm_trim_nvs\"\n",
+        " battery_policy=\"product_empty_2850mv_full_4150mv_absolute_min_2700mv_adc_dmm_trim_nvs\"\n",
         source != NULL ? source : "unknown",
         battery->voltage_mv,
         battery->adc_mv,
@@ -1018,7 +1018,7 @@ static void board_print_status(void)
         " battery_level=%u battery_valid=%u battery_adc_calibrated=%u battery_samples=%u battery_result=%s"
         " battery_adc_trim_valid=%u battery_adc_trim_result=%s"
         " battery_scaling=\"68K/68K divider, VBAT~=2*(ADC_driver_mv+NVS_DMM_trim_mv)\""
-        " battery_policy=\"product_empty_2800mv_full_4150mv_absolute_min_2700mv_adc_dmm_trim_nvs\""
+        " battery_policy=\"product_empty_2850mv_full_4150mv_absolute_min_2700mv_adc_dmm_trim_nvs\""
         " reserved_mspi_gpio=%s\n",
         BOARD_PINS_PROFILE_ID,
         BOARD_PINS_MODULE,
