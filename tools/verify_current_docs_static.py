@@ -63,6 +63,18 @@ STALE_PATTERNS = [
         re.compile(r"connected_ready\s*\?\s*30U"),
         "old battery PWR fallback tied to BLE connected state",
     ),
+    PatternRule(
+        re.compile(r"Continuous rotation is detent-step driven", re.IGNORECASE),
+        "stale EC11 rotation prose: current cue is direction-driven and fixed-step rendered",
+    ),
+    PatternRule(
+        re.compile(r"No time-based auto-spin", re.IGNORECASE),
+        "stale EC11 rotation prose: current cue intentionally advances at STATUS_LED_EC11_ROTATION_STEP_MS",
+    ),
+    PatternRule(
+        re.compile(r"head only advances on completed detents", re.IGNORECASE),
+        "stale EC11 rotation prose: current cue keeps moving during the hold window",
+    ),
 ]
 
 
@@ -71,6 +83,11 @@ REQUIRED_TEXT = [
         "docs/features/status_led.md",
         re.compile(r"keeps PWR visible and leaves connected/TYPE_READY BLE dark", re.IGNORECASE),
         "status LED feature doc must state the current low-power idle PWR-only/BLE-dark behavior",
+    ),
+    RequiredText(
+        "docs/features/status_led.md",
+        re.compile(r"advances the white head at `STATUS_LED_EC11_ROTATION_STEP_MS`", re.IGNORECASE),
+        "status LED feature doc must preserve the current EC11 fixed-step directional rotation cue",
     ),
     RequiredText(
         "docs/features/low_power_wake_policy.md",
