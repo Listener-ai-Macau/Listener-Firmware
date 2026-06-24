@@ -75,8 +75,9 @@ extern void status_led_set_error(int domain, int severity, const char *reason) _
 #define POWER_MANAGER_CHARGE_FULL_DEBOUNCE_MS 10000U
 #define POWER_MANAGER_CHARGE_FULL_MIN_MV 4050U
 #define POWER_MANAGER_CHARGE_FULL_MIN_PERCENT 88U
-#define POWER_MANAGER_CHARGER_STATUS_EXTERNAL_HOLD_MS 8000U
+#define POWER_MANAGER_CHARGER_STATUS_EXTERNAL_HOLD_MS 1000U
 #define POWER_MANAGER_IDLE_BATTERY_REFRESH_MS 600000U
+#define POWER_MANAGER_LOW_POWER_EXTERNAL_EVALUATE_INTERVAL_MS 1000U
 #define POWER_MANAGER_LOW_POWER_EVALUATE_INTERVAL_MS 60000U
 #define POWER_MANAGER_LOW_BATTERY_SHUTDOWN_MAX_MV 2800U
 #define POWER_MANAGER_LOW_BATTERY_CONFIRM_MS 5000U
@@ -548,12 +549,11 @@ static uint32_t power_manager_charge_full_candidate_ms_locked(uint64_t now_ms)
 }
 
 static bool power_manager_charger_status_external_locked(
-    bool usb_power_present,
     bool raw_charging,
     bool raw_full_external,
     uint64_t now_ms)
 {
-    if (usb_power_present || raw_charging || raw_full_external) {
+    if (raw_charging || raw_full_external) {
         s_charger_status_external_until_ms =
             now_ms + POWER_MANAGER_CHARGER_STATUS_EXTERNAL_HOLD_MS;
         return true;
@@ -583,7 +583,6 @@ static void power_manager_apply_charge_state_filter_locked(
         raw_full_status &&
         power_manager_charge_full_battery_allowed(battery_snapshot);
     bool charger_status_external = power_manager_charger_status_external_locked(
-        source->usb_power_present,
         raw_charging,
         raw_full_external,
         now_ms);
@@ -1941,8 +1940,10 @@ static void power_manager_task(void *parameter)
 
     while (1) {
         power_manager_state_t state = POWER_MANAGER_STATE_ACTIVE;
+        bool external_power_present = false;
         if (s_mutex != NULL && xSemaphoreTake(s_mutex, portMAX_DELAY) == pdTRUE) {
             state = s_state;
+            external_power_present = s_external_power_present;
             xSemaphoreGive(s_mutex);
         }
 
@@ -1950,6 +1951,10 @@ static void power_manager_task(void *parameter)
             (void)watchdog_platform_task_notify_take(
                 pdTRUE,
                 CONFIG_POWER_MANAGER_EVALUATE_INTERVAL_MS);
+        } else if (external_power_present) {
+            (void)watchdog_platform_task_notify_take_low_power(
+                pdTRUE,
+                POWER_MANAGER_LOW_POWER_EXTERNAL_EVALUATE_INTERVAL_MS);
         } else {
             (void)watchdog_platform_task_notify_take_low_power(
                 pdTRUE,

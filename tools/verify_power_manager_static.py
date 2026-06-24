@@ -194,7 +194,8 @@ CHECKS = {
     "ports/esp32/voice_key_input/voice_key_input_esp32.c": [
         "VOICE_KEY_INPUT_IDLE_BACKUP_POLL_MS (20)",
         "VOICE_KEY_INPUT_LOW_POWER_IDLE_BACKUP_POLL_MS (20)",
-        "VOICE_KEY_INPUT_DOUBLE_CLICK_WINDOW_MS (650)",
+        "VOICE_KEY_INPUT_DOUBLE_CLICK_WINDOW_MS (200)",
+        "VOICE_KEY_INPUT_RECOVERY_DOUBLE_CLICK_WINDOW_MS (650)",
         "VOICE_KEY_INPUT_LONG_PRESS_IGNORE_MS (800)",
         "VOICE_KEY_INPUT_HOLD_FEEDBACK_REFRESH_MS (300)",
         "voice_key_input_next_wait_ms",
@@ -215,7 +216,7 @@ CHECKS = {
         "KEYBOARD_CUSTOM_IDLE_BACKUP_POLL_MS 20",
         "KEYBOARD_CUSTOM_LOW_POWER_IDLE_BACKUP_POLL_MS 20",
         "KEYBOARD_CUSTOM_DEBOUNCE_MS 20",
-        "KEYBOARD_CUSTOM_DOUBLE_CLICK_WINDOW_MS 650",
+        "KEYBOARD_CUSTOM_DOUBLE_CLICK_WINDOW_MS 200",
         "KEYBOARD_EC11_EVENT_QUEUE_DEPTH 256",
         "KEYBOARD_EC11_LOW_POWER_IDLE_POLL_MS 20",
         "KEYBOARD_EC11_FEEDBACK_EDGE_REFRESH_MS 60",
@@ -483,6 +484,17 @@ def main() -> int:
         )
 
     power_manager = (REPO_ROOT / "components/power_manager/power_manager.c").read_text(encoding="utf-8")
+    if not re.search(r"POWER_MANAGER_CHARGER_STATUS_EXTERNAL_HOLD_MS\s+1000U", power_manager):
+        failures.append(
+            "components/power_manager/power_manager.c: charger-status retention should be short enough for fast unplug feedback"
+        )
+    if re.search(
+        r"power_manager_charger_status_external_locked[\s\S]*usb_power_present\s*\|\|\s*raw_charging",
+        power_manager,
+    ):
+        failures.append(
+            "components/power_manager/power_manager.c: USB SOF must not refresh charger-status retention after unplug"
+        )
     if not re.search(
         r"power_manager_apply_charge_state_filter_locked[\s\S]*"
         r"raw_full_external\s*=[\s\S]*"
@@ -556,10 +568,13 @@ def main() -> int:
             "components/power_manager/power_manager.c: evaluate loop must avoid unconditional 2s battery ADC reads in disconnected idle"
         )
     if not re.search(
+        r"POWER_MANAGER_LOW_POWER_EXTERNAL_EVALUATE_INTERVAL_MS\s+1000U[\s\S]*"
         r"POWER_MANAGER_LOW_POWER_EVALUATE_INTERVAL_MS\s+60000U[\s\S]*"
         r"power_manager_task[\s\S]*"
         r"state\s*==\s*POWER_MANAGER_STATE_ACTIVE[\s\S]*"
         r"watchdog_platform_task_notify_take\([\s\S]*CONFIG_POWER_MANAGER_EVALUATE_INTERVAL_MS[\s\S]*"
+        r"external_power_present[\s\S]*"
+        r"watchdog_platform_task_notify_take_low_power\([\s\S]*POWER_MANAGER_LOW_POWER_EXTERNAL_EVALUATE_INTERVAL_MS[\s\S]*"
         r"watchdog_platform_task_notify_take_low_power\([\s\S]*POWER_MANAGER_LOW_POWER_EVALUATE_INTERVAL_MS",
         power_manager,
     ):
@@ -1214,6 +1229,7 @@ def main() -> int:
         or "ec11_feedback_last_step_ms" not in status_led
         or "ec11_feedback_motion_step" not in status_led
         or "STATUS_LED_EC11_ROTATION_HOLD_MS 2600U" not in status_led
+        or "STATUS_LED_EC11_ROTATION_STEP_MS 360U" not in status_led
         or "status_led_decay_percent(" not in status_led
         or "status_led_refresh_ec11_feedback" not in status_led
         or "status_led_apply_ec11_feedback" not in status_led
@@ -1221,6 +1237,7 @@ def main() -> int:
         or "status_led_ec11_feedback_motion_step_locked" not in status_led
         or "status_led_ec11_feedback_dot_from_step" not in status_led
         or "status_led_ec11_feedback_step_from_dot" not in status_led
+        or "status_led_ec11_feedback_active_locked(now_ms)" not in status_led
         or not re.search(
             r"feedback_ms\s*=\s*rotation_feedback[\s\S]{0,120}"
             r"STATUS_LED_EC11_ROTATION_HOLD_MS[\s\S]{0,120}"
@@ -1228,14 +1245,16 @@ def main() -> int:
             status_led,
         )
         or not re.search(
-            r"status_led_ec11_feedback_motion_step_locked\(void\)[\s\S]*?"
-            r"return\s+s_state\.ec11_feedback_motion_step\s*%\s*STATUS_LED_EC11_COUNT\s*;",
+            r"status_led_ec11_feedback_motion_step_locked\(uint32_t\s+now_ms\)[\s\S]*?"
+            r"now_ms\s*-\s*s_state\.ec11_feedback_started_ms[\s\S]*?"
+            r"STATUS_LED_EC11_ROTATION_STEP_MS[\s\S]*?"
+            r"return\s+step\s*%\s*STATUS_LED_EC11_COUNT\s*;",
             status_led,
         )
         or not re.search(
-            r"next_step\s*=\s*status_led_ec11_feedback_step_from_dot\(feedback,\s*current_dot\)[\s\S]{0,180}"
-            r"if\s*\(\s*advance_motion\s*\)[\s\S]{0,120}"
-            r"next_step\s*=\s*\(next_step\s*\+\s*1U\)\s*%\s*STATUS_LED_EC11_COUNT",
+            r"active_rotation_feedback\s*&&\s*s_state\.ec11_feedback\s*!=\s*feedback[\s\S]{0,520}"
+            r"status_led_ec11_feedback_step_from_dot\(feedback,\s*current_dot\)[\s\S]{0,220}"
+            r"s_state\.ec11_feedback_started_ms\s*=\s*now_ms",
             status_led,
         )
         or not re.search(
@@ -1248,7 +1267,7 @@ def main() -> int:
         )
     ):
         failures.append(
-            "components/status_led/status_led.c: EC11 rotation must be detent-step driven, preserve the current rendered position, refresh brightness without stepping on partial edges, and use the rotation hold fade instead of restarting, auto-spinning, or going black mid-turn"
+            "components/status_led/status_led.c: EC11 rotation must use a continuous time-driven white orbit, preserve the current rendered position when reversing, refresh brightness without restarting on same-direction detents, and keep 50 ms refresh while the cue is active"
         )
     ec11_notify_body = re.search(
         r"static\s+void\s+status_led_apply_ec11_feedback[\s\S]*?"
@@ -1345,11 +1364,11 @@ def main() -> int:
             "components/keyboard/keyboard.c: KEY1-KEY4 debounce must stay 20 ms so short physical taps can reach confirmed gestures"
         )
     if not re.search(
-        r"#define\s+KEYBOARD_CUSTOM_DOUBLE_CLICK_WINDOW_MS\s+650\b",
+        r"#define\s+KEYBOARD_CUSTOM_DOUBLE_CLICK_WINDOW_MS\s+200\b",
         keyboard,
     ):
         failures.append(
-            "components/keyboard/keyboard.c: KEY1-KEY4 double-click window must stay 650 ms so real hand presses get the purple double confirmation"
+            "components/keyboard/keyboard.c: KEY1-KEY4 double-click window must stay 200 ms so single-click feedback feels immediate"
         )
     if not re.search(
         r"#define\s+KEYBOARD_CUSTOM_LOW_POWER_IDLE_BACKUP_POLL_MS\s+20\b",
@@ -1557,11 +1576,18 @@ def main() -> int:
             "ports/esp32/voice_key_input/voice_key_input_esp32.c: EC11 push must use 20 ms active/low-power scan so runtime GPIO interrupts are unnecessary"
         )
     if not re.search(
-        r"#define\s+VOICE_KEY_INPUT_DOUBLE_CLICK_WINDOW_MS\s+\(650\)",
+        r"#define\s+VOICE_KEY_INPUT_DOUBLE_CLICK_WINDOW_MS\s+\(200\)",
         voice_key,
     ):
         failures.append(
-            "ports/esp32/voice_key_input/voice_key_input_esp32.c: EC11 double-click recovery window must stay 650 ms so real hand presses can trigger the BLE pairing cue"
+            "ports/esp32/voice_key_input/voice_key_input_esp32.c: EC11 single-click dispatch window must stay 200 ms so the local cue feels immediate"
+        )
+    if not re.search(
+        r"#define\s+VOICE_KEY_INPUT_RECOVERY_DOUBLE_CLICK_WINDOW_MS\s+\(650\)",
+        voice_key,
+    ):
+        failures.append(
+            "ports/esp32/voice_key_input/voice_key_input_esp32.c: EC11 recovery double-click window must stay 650 ms so real hand presses can trigger the BLE pairing cue"
         )
     if not re.search(
         r"#define\s+VOICE_KEY_INPUT_LONG_PRESS_IGNORE_MS\s+\(800\)",

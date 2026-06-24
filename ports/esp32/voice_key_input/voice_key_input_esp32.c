@@ -75,6 +75,7 @@
 #define VOICE_KEY_INPUT_GENERATED_EVENT_QUEUE_LENGTH (8)
 #define VOICE_KEY_INPUT_CLICK_MAX_MS (700)
 #define VOICE_KEY_INPUT_DOUBLE_CLICK_WINDOW_MS (200)
+#define VOICE_KEY_INPUT_RECOVERY_DOUBLE_CLICK_WINDOW_MS (650)
 #define VOICE_KEY_INPUT_LONG_PRESS_IGNORE_MS (800)
 #define VOICE_KEY_INPUT_HOLD_FEEDBACK_REFRESH_MS (300)
 #define VOICE_KEY_INPUT_RECOVERY_IDLE_GUARD_MS (2000)
@@ -107,6 +108,8 @@ typedef struct {
     bool pending_single_click;
     uint32_t pending_click_ms;
     TickType_t pending_click_started_tick;
+    bool recent_short_click;
+    TickType_t recent_short_click_tick;
     bool long_press_reported;
     bool raw_feedback_pressed;
     TickType_t hold_feedback_tick;
@@ -321,7 +324,14 @@ static void voice_key_input_record_recovery_event(const char *source)
 
     if (xSemaphoreGive(s_recovery_event_sem) == pdTRUE) {
         ESP_LOGW(TAG, "%s double-click recovery detected", source);
-        diag_log(DIAG_SRC_VOICE_KEY, DIAG_VKEY_PRESS, DIAG_SEV_WARN, 2, VOICE_KEY_INPUT_DOUBLE_CLICK_WINDOW_MS, 0, 0);
+        diag_log(
+            DIAG_SRC_VOICE_KEY,
+            DIAG_VKEY_PRESS,
+            DIAG_SEV_WARN,
+            2,
+            VOICE_KEY_INPUT_RECOVERY_DOUBLE_CLICK_WINDOW_MS,
+            0,
+            0);
     } else {
         ESP_LOGW(TAG, "%s double-click recovery dropped: event queue full", source);
         diag_log(DIAG_SRC_VOICE_KEY, DIAG_VKEY_QUEUE_DROP, DIAG_SEV_WARN, 2, 2, 0, 0);
@@ -378,6 +388,24 @@ static bool voice_key_input_recovery_allowed(void)
     return elapsed >= pdMS_TO_TICKS(VOICE_KEY_INPUT_RECOVERY_IDLE_GUARD_MS);
 }
 
+static bool voice_key_input_recent_click_in_recovery_window(
+    voice_key_button_state_t *button,
+    TickType_t now_tick)
+{
+    if (button == NULL || !button->recent_short_click) {
+        return false;
+    }
+
+    uint32_t elapsed_ms =
+        voice_key_input_elapsed_ms(now_tick, button->recent_short_click_tick);
+    if (elapsed_ms > VOICE_KEY_INPUT_RECOVERY_DOUBLE_CLICK_WINDOW_MS) {
+        button->recent_short_click = false;
+        button->recent_short_click_tick = 0;
+        return false;
+    }
+    return true;
+}
+
 static void voice_key_input_handle_short_click_release(
     voice_key_button_state_t *button,
     TickType_t now_tick,
@@ -387,11 +415,16 @@ static void voice_key_input_handle_short_click_release(
         return;
     }
 
-    if (button->pending_single_click) {
+    bool recovery_double_click =
+        button->pending_single_click ||
+        voice_key_input_recent_click_in_recovery_window(button, now_tick);
+    if (recovery_double_click) {
         if (voice_key_input_recovery_allowed()) {
             button->pending_single_click = false;
             button->pending_click_ms = 0;
             button->pending_click_started_tick = 0;
+            button->recent_short_click = false;
+            button->recent_short_click_tick = 0;
             voice_key_input_record_recovery_event(button->label);
         } else {
             ESP_LOGI(
@@ -403,11 +436,15 @@ static void voice_key_input_handle_short_click_release(
             button->pending_single_click = true;
             button->pending_click_ms = 0;
             button->pending_click_started_tick = now_tick;
+            button->recent_short_click = true;
+            button->recent_short_click_tick = now_tick;
         }
     } else {
         button->pending_single_click = true;
         button->pending_click_ms = 0;
         button->pending_click_started_tick = now_tick;
+        button->recent_short_click = true;
+        button->recent_short_click_tick = now_tick;
         ESP_LOGI(
             TAG,
             "%s single click pending for double-click window%s%s",
@@ -458,6 +495,8 @@ static void voice_key_input_handle_button_sample(voice_key_button_state_t *butto
         button->pending_single_click = false;
         button->pending_click_ms = 0;
         button->pending_click_started_tick = 0;
+        button->recent_short_click = false;
+        button->recent_short_click_tick = 0;
         button->long_press_reported = false;
         button->raw_feedback_pressed = false;
         button->hold_feedback_tick = 0;
@@ -555,6 +594,9 @@ static void voice_key_input_handle_button_sample(voice_key_button_state_t *butto
             button->long_press_reported = true;
             button->pending_single_click = false;
             button->pending_click_ms = 0;
+            button->pending_click_started_tick = 0;
+            button->recent_short_click = false;
+            button->recent_short_click_tick = 0;
             ESP_LOGI(TAG, "%s long press reserved for power control: hold_ms=%" PRIu32, button->label, next_pressed_ms);
             status_led_notify_shutdown_confirm(false, "ec11_long_press_shutdown_confirm");
             diag_log(DIAG_SRC_VOICE_KEY, DIAG_VKEY_PRESS, DIAG_SEV_INFO, 3, next_pressed_ms, 0, 0);
@@ -879,8 +921,9 @@ esp_err_t voice_key_input_start(void)
         VOICE_KEY_INPUT_DEBOUNCE_THRESHOLD);
     ESP_LOGI(
         TAG,
-        "EC11 push key ready: single_click_custom=Shift+F13 double_click_recovery=1 double_click_window_ms=%d recovery_idle_guard_ms=%d long_press_reserved_ms=%d",
+        "EC11 push key ready: single_click_custom=Shift+F13 double_click_recovery=1 single_click_window_ms=%d recovery_double_click_window_ms=%d recovery_idle_guard_ms=%d long_press_reserved_ms=%d",
         VOICE_KEY_INPUT_DOUBLE_CLICK_WINDOW_MS,
+        VOICE_KEY_INPUT_RECOVERY_DOUBLE_CLICK_WINDOW_MS,
         VOICE_KEY_INPUT_RECOVERY_IDLE_GUARD_MS,
         VOICE_KEY_INPUT_LONG_PRESS_IGNORE_MS);
     return ESP_OK;

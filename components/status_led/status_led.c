@@ -81,9 +81,10 @@
 #define STATUS_LED_STATUS_HEALTH_RESYNC_MS 500U
 #define STATUS_LED_TX_MUTEX_WAIT_MS 100
 #define STATUS_LED_RMT_IDLE_RELEASE_MS 0U
+#define STATUS_LED_EXTERNAL_POWER_POLL_MS 250U
 #define STATUS_LED_POWER_POLL_MS 5000U
 #define STATUS_LED_LOW_POWER_POLL_MS 60000U
-#define STATUS_LED_CHARGER_STATUS_EXTERNAL_HOLD_MS 8000U
+#define STATUS_LED_CHARGER_STATUS_EXTERNAL_HOLD_MS 1000U
 #define STATUS_LED_LOW_POWER_PWR_PERCENT 12U
 #define STATUS_LED_LOW_POWER_PWR_WHITE_PERCENT 4U
 #define STATUS_LED_LOW_POWER_BLE_ATTENTION_PERCENT 12U
@@ -107,6 +108,7 @@
 #define STATUS_LED_KEY_GESTURE_PERCENT 85U
 #define STATUS_LED_EC11_FEEDBACK_MS 1400U
 #define STATUS_LED_EC11_ROTATION_HOLD_MS 2600U
+#define STATUS_LED_EC11_ROTATION_STEP_MS 360U
 #define STATUS_LED_EC11_FEEDBACK_DIAG_MIN_MS 500U
 #define STATUS_LED_EC11_REPAIR_BLINK_MIN_PERCENT 4U
 #define STATUS_LED_EC11_REPAIR_BLINK_MAX_PERCENT 16U
@@ -540,6 +542,7 @@ static bool s_strip_transport_suspended[STATUS_LED_STRIP_COUNT] = {
 static void status_led_force_all_off(void);
 static status_led_rgb_t status_led_boot_power_color_locked(void);
 static uint8_t status_led_scale_effect_percent_locked(uint8_t percent, uint32_t now_ms);
+static bool status_led_ec11_feedback_active_locked(uint32_t now_ms);
 
 static uint32_t status_led_now_ms(void)
 {
@@ -1123,12 +1126,11 @@ static const char *status_led_external_power_source_name(uint32_t source_flags)
 }
 
 static bool status_led_charger_status_external_locked(
-    bool usb_power_present,
     bool raw_charging,
     bool raw_full_external,
     uint32_t now_ms)
 {
-    if (usb_power_present || raw_charging || raw_full_external) {
+    if (raw_charging || raw_full_external) {
         s_state.charger_status_external_until_ms =
             now_ms + STATUS_LED_CHARGER_STATUS_EXTERNAL_HOLD_MS;
         return true;
@@ -1141,6 +1143,16 @@ static bool status_led_charger_status_external_locked(
 
     s_state.charger_status_external_until_ms = 0U;
     return false;
+}
+
+static uint32_t status_led_power_poll_interval_ms_locked(void)
+{
+    if (s_state.external_power_present || s_state.charging || s_state.full) {
+        return STATUS_LED_EXTERNAL_POWER_POLL_MS;
+    }
+    return s_state.low_power_disabled
+        ? STATUS_LED_LOW_POWER_POLL_MS
+        : STATUS_LED_POWER_POLL_MS;
 }
 
 static uint8_t status_led_profile_cap_percent_for(status_led_profile_t profile, bool safety)
@@ -1792,6 +1804,9 @@ static bool status_led_timed_output_active_locked(uint32_t now_ms)
     if (s_state.key_pressed_mask != 0U) {
         return true;
     }
+    if (status_led_ec11_feedback_active_locked(now_ms)) {
+        return true;
+    }
     for (size_t index = 0; index < STATUS_LED_KEY_COUNT; ++index) {
         if (now_ms < s_state.key_until_ms[index] ||
             now_ms < s_state.key_feedback_until_ms[index]) {
@@ -1817,8 +1832,13 @@ static bool status_led_timed_output_active_locked(uint32_t now_ms)
 
 static uint32_t status_led_refresh_delay_ms_locked(uint32_t now_ms)
 {
-    if (s_state.output_disabled || s_state.low_power_disabled) {
+    if (s_state.output_disabled) {
         return STATUS_LED_LOW_POWER_IDLE_REFRESH_MS;
+    }
+    if (s_state.low_power_disabled) {
+        return s_state.external_power_present
+            ? STATUS_LED_EXTERNAL_POWER_POLL_MS
+            : STATUS_LED_LOW_POWER_IDLE_REFRESH_MS;
     }
     return status_led_timed_output_active_locked(now_ms)
         ? STATUS_LED_REFRESH_MS
@@ -2742,9 +2762,16 @@ static bool status_led_ec11_feedback_active_locked(uint32_t now_ms)
     return s_state.ec11_feedback_started_ms != 0U && now_ms < s_state.ec11_feedback_until_ms;
 }
 
-static uint32_t status_led_ec11_feedback_motion_step_locked(void)
+static uint32_t status_led_ec11_feedback_motion_step_locked(uint32_t now_ms)
 {
-    return s_state.ec11_feedback_motion_step % STATUS_LED_EC11_COUNT;
+    uint32_t step = s_state.ec11_feedback_motion_step;
+    if (s_state.ec11_feedback_started_ms != 0U &&
+        now_ms >= s_state.ec11_feedback_started_ms &&
+        STATUS_LED_EC11_ROTATION_STEP_MS != 0U) {
+        step += (now_ms - s_state.ec11_feedback_started_ms) /
+                STATUS_LED_EC11_ROTATION_STEP_MS;
+    }
+    return step % STATUS_LED_EC11_COUNT;
 }
 
 static uint32_t status_led_ec11_feedback_dot_from_step(
@@ -2796,7 +2823,7 @@ static bool status_led_render_ec11_feedback_locked(status_led_frame_t *frame, ui
     uint32_t motion_elapsed = s_state.ec11_feedback_last_step_ms == 0U
         ? elapsed
         : now_ms - s_state.ec11_feedback_last_step_ms;
-    uint32_t motion_step = status_led_ec11_feedback_motion_step_locked();
+    uint32_t motion_step = status_led_ec11_feedback_motion_step_locked(now_ms);
     uint8_t peak_percent = status_led_decay_percent(
         motion_elapsed,
         STATUS_LED_EC11_ROTATION_HOLD_MS,
@@ -3408,9 +3435,7 @@ static void status_led_poll_power_inputs(void)
     if (xSemaphoreTake(s_mutex, portMAX_DELAY) == pdTRUE) {
         bool preview_window_active = now_ms < s_state.status_window_until_ms &&
                                      strcmp(s_state.last_reason, "preview") == 0;
-        uint32_t poll_ms = s_state.low_power_disabled
-            ? STATUS_LED_LOW_POWER_POLL_MS
-            : STATUS_LED_POWER_POLL_MS;
+        uint32_t poll_ms = status_led_power_poll_interval_ms_locked();
         should_poll = !preview_window_active &&
                       (s_state.last_power_poll_ms == 0 ||
                        now_ms - s_state.last_power_poll_ms >= poll_ms);
@@ -3448,7 +3473,6 @@ static void status_led_poll_power_inputs(void)
     if (xSemaphoreTake(s_mutex, portMAX_DELAY) == pdTRUE) {
         bool charger_status_external =
             status_led_charger_status_external_locked(
-                usb_power_present,
                 raw_charging,
                 raw_full_external,
                 now_ms);
@@ -4209,16 +4233,14 @@ static void status_led_apply_ec11_feedback(status_led_ec11_feedback_t feedback, 
             (s_state.ec11_feedback == STATUS_LED_EC11_FEEDBACK_ROTATE_CW ||
              s_state.ec11_feedback == STATUS_LED_EC11_FEEDBACK_ROTATE_CCW);
         if (rotation_feedback) {
-            if (active_rotation_feedback) {
-                uint32_t current_step = status_led_ec11_feedback_motion_step_locked();
+            if (active_rotation_feedback && s_state.ec11_feedback != feedback) {
+                uint32_t current_step = status_led_ec11_feedback_motion_step_locked(now_ms);
                 uint32_t current_dot =
                     status_led_ec11_feedback_dot_from_step(s_state.ec11_feedback, current_step);
-                uint32_t next_step = status_led_ec11_feedback_step_from_dot(feedback, current_dot);
-                if (advance_motion) {
-                    next_step = (next_step + 1U) % STATUS_LED_EC11_COUNT;
-                }
-                s_state.ec11_feedback_motion_step = next_step;
-            } else {
+                s_state.ec11_feedback_motion_step =
+                    status_led_ec11_feedback_step_from_dot(feedback, current_dot);
+                s_state.ec11_feedback_started_ms = now_ms;
+            } else if (!active_rotation_feedback) {
                 s_state.ec11_feedback_started_ms = now_ms;
                 s_state.ec11_feedback_motion_step = 0U;
             }
