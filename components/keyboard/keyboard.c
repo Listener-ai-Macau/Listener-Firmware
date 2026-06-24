@@ -28,20 +28,22 @@
 #include "watchdog_platform.h"
 
 #define KEYBOARD_CUSTOM_POLL_MS 10
-#define KEYBOARD_CUSTOM_IDLE_BACKUP_POLL_MS 1000
-#define KEYBOARD_CUSTOM_LOW_POWER_IDLE_BACKUP_POLL_MS 5000
-#define KEYBOARD_CUSTOM_DEBOUNCE_MS 30
+#define KEYBOARD_CUSTOM_IDLE_BACKUP_POLL_MS 20
+#define KEYBOARD_CUSTOM_LOW_POWER_IDLE_BACKUP_POLL_MS 20
+#define KEYBOARD_CUSTOM_DEBOUNCE_MS 20
 #define KEYBOARD_CUSTOM_DEBOUNCE_SAMPLES \
     ((KEYBOARD_CUSTOM_DEBOUNCE_MS + KEYBOARD_CUSTOM_POLL_MS - 1) / KEYBOARD_CUSTOM_POLL_MS)
-#define KEYBOARD_CUSTOM_DOUBLE_CLICK_WINDOW_MS 250
+#define KEYBOARD_CUSTOM_DOUBLE_CLICK_WINDOW_MS 650
 #define KEYBOARD_CUSTOM_LONG_PRESS_MS 1000
 #define KEYBOARD_CUSTOM_GENERATED_PRESS_MS 160
 #define KEYBOARD_CUSTOM_GENERATED_RELEASE_SETTLE_MS 80
 #define KEYBOARD_CUSTOM_GENERATED_EVENT_QUEUE_DEPTH 8
 #define KEYBOARD_EC11_IDLE_POLL_MS 20
-#define KEYBOARD_EC11_LOW_POWER_IDLE_POLL_MS 5000
-#define KEYBOARD_EC11_EVENT_QUEUE_DEPTH 64
+#define KEYBOARD_EC11_LOW_POWER_IDLE_POLL_MS 20
+#define KEYBOARD_EC11_EVENT_QUEUE_DEPTH 256
 #define KEYBOARD_EC11_DETENT_STATE 0x03u
+#define KEYBOARD_EC11_FEEDBACK_EDGE_REFRESH_MS 60
+#define KEYBOARD_EC11_DROP_LOG_INTERVAL_MS 1000
 
 #define KEYBOARD_CUSTOM_PHASE_PRESS 1u
 #define KEYBOARD_CUSTOM_PHASE_RELEASE 2u
@@ -86,6 +88,7 @@ typedef struct {
     bool long_sent;
     bool pending_single;
     bool double_candidate;
+    bool raw_feedback_pressed;
     TickType_t press_tick;
     TickType_t pending_single_due_tick;
 } keyboard_custom_key_t;
@@ -100,6 +103,9 @@ typedef struct {
     uint32_t counter_clockwise_count;
     uint32_t invalid_transition_count;
     uint32_t isr_drop_count;
+    TickType_t last_feedback_tick;
+    TickType_t last_drop_log_tick;
+    int8_t last_feedback_delta;
 } keyboard_ec11_state_t;
 
 typedef struct {
@@ -122,6 +128,10 @@ static TaskHandle_t s_custom_task_handle;
 static TaskHandle_t s_ec11_task_handle;
 static QueueHandle_t s_ec11_event_queue;
 static QueueHandle_t s_custom_generated_event_queue;
+static volatile bool s_ec11_isr_last_raw_valid;
+static volatile uint8_t s_ec11_isr_last_raw_state;
+static volatile bool s_ec11_overflow_pending;
+static volatile uint8_t s_ec11_overflow_raw_state;
 static keyboard_custom_key_t s_custom_keys[] = {
     {
         .gpio = BOARD_PINS_KEY1_IO,
@@ -281,6 +291,38 @@ static uint32_t keyboard_ec11_action_code(ec11_rotation_action_t action)
     }
 }
 
+static void keyboard_ec11_refresh_feedback_for_delta(
+    keyboard_ec11_state_t *state,
+    int8_t delta,
+    bool force)
+{
+    if (delta == 0) {
+        return;
+    }
+
+    TickType_t now = xTaskGetTickCount();
+    TickType_t refresh_ticks = pdMS_TO_TICKS(KEYBOARD_EC11_FEEDBACK_EDGE_REFRESH_MS);
+    if (refresh_ticks == 0) {
+        refresh_ticks = 1;
+    }
+
+    bool direction_changed =
+        state->last_feedback_delta != 0 &&
+        ((state->last_feedback_delta > 0) != (delta > 0));
+    if (!force &&
+        state->last_feedback_tick != 0 &&
+        !direction_changed &&
+        (now - state->last_feedback_tick) < refresh_ticks) {
+        return;
+    }
+
+    status_led_refresh_ec11_feedback(delta > 0
+        ? STATUS_LED_EC11_FEEDBACK_ROTATE_CW
+        : STATUS_LED_EC11_FEEDBACK_ROTATE_CCW);
+    state->last_feedback_tick = now;
+    state->last_feedback_delta = delta;
+}
+
 static uint32_t keyboard_custom_elapsed_ms(TickType_t now, TickType_t start)
 {
     uint64_t elapsed_ms = (uint64_t)(now - start) * (uint64_t)portTICK_PERIOD_MS;
@@ -427,7 +469,9 @@ static void keyboard_custom_send_gesture(
                 keyboard_custom_gesture_name(gesture));
         }
     } else {
-        status_led_set_error(STATUS_LED_ERROR_DOMAIN_BLE, STATUS_LED_ERROR_RETRYABLE, "hid_key_send_failed");
+        if (ret != ESP_ERR_INVALID_STATE) {
+            status_led_set_error(STATUS_LED_ERROR_DOMAIN_BLE, STATUS_LED_ERROR_RETRYABLE, "hid_key_send_failed");
+        }
         ESP_LOGW(
             TAG,
             "custom key gesture dropped: logical=%s source=%s usage=0x%02X gesture=%s error=%s",
@@ -568,6 +612,40 @@ static void keyboard_custom_wake_task(void)
     }
 }
 
+static void keyboard_custom_apply_raw_feedback(
+    keyboard_custom_key_t *key,
+    TickType_t now,
+    const char *origin)
+{
+    (void)now;
+    if (key == NULL || key->raw_feedback_pressed) {
+        return;
+    }
+    key->raw_feedback_pressed = true;
+    power_manager_record_activity(key->logical_name);
+    status_led_notify_key_event(key->index, true);
+    ESP_LOGI(
+        TAG,
+        "custom key raw press feedback: logical=%s source=%s origin=%s",
+        key->logical_name,
+        key->label,
+        origin != NULL ? origin : "raw");
+    keyboard_input_debug_log(
+        KEYBOARD_INPUT_DEBUG_KEY_RAW,
+        key->logical_key,
+        0u,
+        0u);
+}
+
+static void keyboard_custom_clear_raw_feedback(keyboard_custom_key_t *key)
+{
+    if (key == NULL || !key->raw_feedback_pressed) {
+        return;
+    }
+    key->raw_feedback_pressed = false;
+    status_led_notify_key_event(key->index, false);
+}
+
 static void keyboard_custom_handle_timers(keyboard_custom_key_t *key, TickType_t now)
 {
     if (!key->initialized) {
@@ -605,6 +683,7 @@ static void keyboard_custom_apply_stable_transition(
     bool pressed = !raw_high;
     power_manager_record_activity(key->logical_name);
     status_led_notify_key_event(key->index, pressed);
+    key->raw_feedback_pressed = pressed;
     ESP_LOGI(
         TAG,
         "custom key stable transition: logical=%s source=%s raw_high=%d pressed=%d origin=%s",
@@ -638,6 +717,7 @@ static void keyboard_custom_apply_stable_transition(
         if (key->long_sent) {
             key->long_sent = false;
             keyboard_custom_cancel_pending_single(key);
+            status_led_notify_key_feedback(key->index, STATUS_LED_KEY_FEEDBACK_LONG);
         } else if (keyboard_custom_elapsed_ms(now, key->press_tick) >= KEYBOARD_CUSTOM_LONG_PRESS_MS) {
             keyboard_custom_cancel_pending_single(key);
             keyboard_custom_send_gesture(key, KEYBOARD_CUSTOM_GESTURE_LONG);
@@ -670,6 +750,7 @@ static void keyboard_custom_handle_sample(keyboard_custom_key_t *key, bool raw_h
         key->long_sent = false;
         key->pending_single = false;
         key->double_candidate = false;
+        key->raw_feedback_pressed = false;
         ESP_LOGI(
             TAG,
             "custom key idle detected: logical=%s source=%s raw_high=%d",
@@ -684,6 +765,11 @@ static void keyboard_custom_handle_sample(keyboard_custom_key_t *key, bool raw_h
             key->stable_count++;
         }
     } else {
+        if (!raw_high) {
+            keyboard_custom_apply_raw_feedback(key, now, "raw_edge");
+        } else {
+            keyboard_custom_clear_raw_feedback(key);
+        }
         ESP_LOGI(
             TAG,
             "custom key raw transition: logical=%s source=%s raw_high=%d stable_high=%d",
@@ -802,7 +888,9 @@ static uint32_t keyboard_custom_next_wait_ms(TickType_t now)
         return KEYBOARD_CUSTOM_POLL_MS;
     }
 
-    uint32_t wait_ms = KEYBOARD_CUSTOM_POLL_MS;
+    uint32_t wait_ms = keyboard_power_state_is_low_power_idle()
+        ? KEYBOARD_CUSTOM_LOW_POWER_IDLE_BACKUP_POLL_MS
+        : KEYBOARD_CUSTOM_IDLE_BACKUP_POLL_MS;
     for (size_t index = 0; index < sizeof(s_custom_keys) / sizeof(s_custom_keys[0]); ++index) {
         keyboard_custom_key_t *key = &s_custom_keys[index];
         if (!key->initialized || keyboard_custom_debounce_active(key)) {
@@ -849,7 +937,11 @@ static void keyboard_custom_task(void *parameter)
             keyboard_custom_handle_timers(&s_custom_keys[index], now);
         }
         uint32_t wait_ms = keyboard_custom_next_wait_ms(xTaskGetTickCount());
-        (void)watchdog_platform_task_notify_take(pdTRUE, wait_ms);
+        if (keyboard_power_state_is_low_power_idle() && wait_ms > KEYBOARD_CUSTOM_POLL_MS) {
+            (void)watchdog_platform_task_notify_take_low_power(pdTRUE, wait_ms);
+        } else {
+            (void)watchdog_platform_task_notify_take(pdTRUE, wait_ms);
+        }
     }
 }
 
@@ -860,12 +952,21 @@ static void keyboard_ec11_queue_edge_from_isr(void *arg)
         return;
     }
 
+    uint8_t raw_state = keyboard_ec11_read_raw_state();
+    if (s_ec11_isr_last_raw_valid && raw_state == s_ec11_isr_last_raw_state) {
+        return;
+    }
+    s_ec11_isr_last_raw_state = raw_state;
+    s_ec11_isr_last_raw_valid = true;
+
     keyboard_ec11_event_t event = {
-        .raw_state = keyboard_ec11_read_raw_state(),
+        .raw_state = raw_state,
     };
     BaseType_t higher_priority_woken = pdFALSE;
     if (xQueueSendFromISR(s_ec11_event_queue, &event, &higher_priority_woken) != pdTRUE) {
         s_ec11_state.isr_drop_count++;
+        s_ec11_overflow_raw_state = raw_state;
+        s_ec11_overflow_pending = true;
     }
     if (higher_priority_woken == pdTRUE) {
         portYIELD_FROM_ISR();
@@ -896,7 +997,7 @@ static void keyboard_ec11_handle_state(keyboard_ec11_state_t *state, uint8_t raw
     if (delta == 0) {
         state->invalid_transition_count++;
         state->detent_accumulator = 0;
-        ESP_LOGI(
+        ESP_LOGD(
             TAG,
             "EC11 ignored invalid transition: previous=0x%02x state=0x%02x invalid_count=%" PRIu32,
             previous_state,
@@ -911,8 +1012,12 @@ static void keyboard_ec11_handle_state(keyboard_ec11_state_t *state, uint8_t raw
     }
 
     state->detent_accumulator += delta;
+    const bool was_low_power_idle = keyboard_power_state_is_low_power_idle();
     power_manager_record_activity("ec11_rotate");
-    ESP_LOGI(
+    if (was_low_power_idle || raw_state != KEYBOARD_EC11_DETENT_STATE) {
+        keyboard_ec11_refresh_feedback_for_delta(state, delta, was_low_power_idle);
+    }
+    ESP_LOGD(
         TAG,
         "EC11 transition: previous=0x%02x state=0x%02x delta=%d accumulator=%" PRId32,
         previous_state,
@@ -945,7 +1050,7 @@ static void keyboard_ec11_handle_state(keyboard_ec11_state_t *state, uint8_t raw
                  2, state->counter_clockwise_count, 0, 0);
         (void)keyboard_ec11_dispatch_rotation(EC11_ROTATION_DIRECTION_CCW, "ec11.detent.ccw");
     } else {
-        ESP_LOGI(
+        ESP_LOGD(
             TAG,
             "EC11 returned to detent without full step: accumulator=%" PRId32,
             state->detent_accumulator);
@@ -1006,14 +1111,27 @@ static esp_err_t keyboard_ec11_dispatch_rotation(
     }
 
     char source_label[48];
+    status_led_notify_ec11_feedback(direction == EC11_ROTATION_DIRECTION_CW
+        ? STATUS_LED_EC11_FEEDBACK_ROTATE_CW
+        : STATUS_LED_EC11_FEEDBACK_ROTATE_CCW);
     esp_err_t ret = ble_hid_send_consumer_usage_async(
         usage,
         keyboard_ec11_source_for_action(direction, action, source_label, sizeof(source_label)));
+    if (ret == ESP_ERR_INVALID_STATE) {
+        ESP_LOGI(
+            TAG,
+            "EC11 rotation local feedback only: action=%s direction=%s usage=0x%04X source=%s error=%s",
+            ec11_rotation_control_action_name(action),
+            ec11_rotation_control_direction_name(direction),
+            usage,
+            source != NULL ? source : "unknown",
+            esp_err_to_name(ret));
+        return ret;
+    }
     if (ret != ESP_OK) {
-        status_led_set_error(STATUS_LED_ERROR_DOMAIN_BLE, STATUS_LED_ERROR_RETRYABLE, "hid_consumer_send_failed");
         ESP_LOGW(
             TAG,
-            "EC11 rotation dispatch failed: action=%s direction=%s usage=0x%04X source=%s error=%s",
+            "EC11 rotation HID dispatch skipped: action=%s direction=%s usage=0x%04X source=%s error=%s local_feedback=kept",
             ec11_rotation_control_action_name(action),
             ec11_rotation_control_direction_name(direction),
             usage,
@@ -1022,9 +1140,6 @@ static esp_err_t keyboard_ec11_dispatch_rotation(
         return ret;
     }
 
-    status_led_notify_ec11_feedback(direction == EC11_ROTATION_DIRECTION_CW
-        ? STATUS_LED_EC11_FEEDBACK_ROTATE_CW
-        : STATUS_LED_EC11_FEEDBACK_ROTATE_CCW);
     keyboard_input_debug_log(
         KEYBOARD_INPUT_DEBUG_EC11_DISPATCH,
         (uint32_t)direction,
@@ -1096,17 +1211,32 @@ static void keyboard_ec11_task(void *parameter)
             while (xQueueReceive(s_ec11_event_queue, &event, 0) == pdTRUE) {
                 keyboard_ec11_handle_state(&s_ec11_state, event.raw_state);
             }
+            if (s_ec11_overflow_pending) {
+                uint8_t overflow_raw_state = s_ec11_overflow_raw_state;
+                s_ec11_overflow_pending = false;
+                keyboard_ec11_handle_state(&s_ec11_state, overflow_raw_state);
+            }
+            keyboard_ec11_handle_state(&s_ec11_state, keyboard_ec11_read_raw_state());
             continue;
         }
 
         /* Poll slowly as a backup in case an edge is missed while interrupts are being reconfigured. */
         keyboard_ec11_handle_state(&s_ec11_state, keyboard_ec11_read_raw_state());
         if (s_ec11_state.isr_drop_count != 0) {
-            ESP_LOGW(
-                TAG,
-                "EC11 ISR event queue dropped edges: drop_count=%" PRIu32,
-                s_ec11_state.isr_drop_count);
-            s_ec11_state.isr_drop_count = 0;
+            TickType_t now = xTaskGetTickCount();
+            TickType_t log_interval_ticks = pdMS_TO_TICKS(KEYBOARD_EC11_DROP_LOG_INTERVAL_MS);
+            if (log_interval_ticks == 0) {
+                log_interval_ticks = 1;
+            }
+            if (s_ec11_state.last_drop_log_tick == 0 ||
+                (now - s_ec11_state.last_drop_log_tick) >= log_interval_ticks) {
+                ESP_LOGW(
+                    TAG,
+                    "EC11 ISR event queue dropped edges: drop_count=%" PRIu32,
+                    s_ec11_state.isr_drop_count);
+                s_ec11_state.isr_drop_count = 0;
+                s_ec11_state.last_drop_log_tick = now;
+            }
         }
     }
 }
@@ -1162,8 +1292,10 @@ static esp_err_t keyboard_custom_start(void)
 
     ESP_LOGI(
         TAG,
-        "custom keys ready: key1=gpio38:f13/f17/f21 key2=gpio39:f14/f18/f22 key3=gpio40:f15/f19/f23 key4=gpio41:f16/f20/f24 active_low=1 wake=poll_10ms low_power_wake=gpio_wakeup_only poll_ms=%d debounce_ms=%d debounce_samples=%d double_ms=%d long_ms=%d",
+        "custom keys ready: key1=gpio38:f13/f17/f21 key2=gpio39:f14/f18/f22 key3=gpio40:f15/f19/f23 key4=gpio41:f16/f20/f24 active_low=1 wake=active_low_gpio_wakeup+20ms_scan low_power_wake=active_low_gpio_wakeup+20ms_scan poll_ms=%d idle_backup_ms=%d low_power_idle_backup_ms=%d debounce_ms=%d debounce_samples=%d double_ms=%d long_ms=%d",
         KEYBOARD_CUSTOM_POLL_MS,
+        KEYBOARD_CUSTOM_IDLE_BACKUP_POLL_MS,
+        KEYBOARD_CUSTOM_LOW_POWER_IDLE_BACKUP_POLL_MS,
         KEYBOARD_CUSTOM_DEBOUNCE_MS,
         KEYBOARD_CUSTOM_DEBOUNCE_SAMPLES,
         KEYBOARD_CUSTOM_DOUBLE_CLICK_WINDOW_MS,
@@ -1202,6 +1334,11 @@ static esp_err_t keyboard_ec11_start(void)
         diag_log(DIAG_SRC_KEYBOARD, DIAG_KBD_GPIO_FAIL, DIAG_SEV_ERROR, 2, ret, 0, 0);
         return ret;
     }
+
+    s_ec11_isr_last_raw_state = keyboard_ec11_read_raw_state();
+    s_ec11_isr_last_raw_valid = true;
+    s_ec11_overflow_pending = false;
+    s_ec11_overflow_raw_state = s_ec11_isr_last_raw_state;
 
     ret = gpio_install_isr_service(0);
     if (ret != ESP_OK && ret != ESP_ERR_INVALID_STATE) {
@@ -1253,12 +1390,6 @@ esp_err_t keyboard_start(void)
     ble_hid_register_usb_command_handler(keyboard_consume_usb_command);
     ec11_rotation_control_register_dispatcher(keyboard_ec11_dispatch_rotation);
 
-    esp_err_t voice_ret = voice_recording_control_start();
-    ble_audio_stream_set_control_write_handler(keyboard_ble_control_write);
-    if (voice_ret != ESP_OK) {
-        ESP_LOGW(TAG, "voice recording control started degraded: %s", esp_err_to_name(voice_ret));
-    }
-
     esp_err_t custom_ret = keyboard_custom_start();
     if (custom_ret != ESP_OK) {
         return custom_ret;
@@ -1267,6 +1398,12 @@ esp_err_t keyboard_start(void)
     esp_err_t ec11_ret = keyboard_ec11_start();
     if (ec11_ret != ESP_OK && ec11_ret != ESP_ERR_NOT_SUPPORTED) {
         return ec11_ret;
+    }
+
+    esp_err_t voice_ret = voice_recording_control_start();
+    ble_audio_stream_set_control_write_handler(keyboard_ble_control_write);
+    if (voice_ret != ESP_OK) {
+        ESP_LOGW(TAG, "voice recording control started degraded: %s", esp_err_to_name(voice_ret));
     }
 
     if (voice_ret != ESP_OK) {

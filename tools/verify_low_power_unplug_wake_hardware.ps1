@@ -26,7 +26,7 @@ $OutputDir = (Resolve-Path -LiteralPath $OutputDir).Path
 $transcriptPath = Join-Path $OutputDir "unplug_wake_transcript.txt"
 $summaryPath = Join-Path $OutputDir "unplug_wake_summary.json"
 
-$AgentName = "oai2"
+$AgentName = "codex"
 $transcript = [System.Collections.Generic.List[string]]::new()
 $errors = [System.Collections.Generic.List[string]]::new()
 Set-Content -LiteralPath $transcriptPath -Value @() -Encoding utf8

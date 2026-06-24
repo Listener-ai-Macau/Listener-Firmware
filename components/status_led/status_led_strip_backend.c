@@ -4,6 +4,7 @@
 #include <string.h>
 #include <sys/cdefs.h>
 
+#include "driver/gpio.h"
 #include "driver/rmt_encoder.h"
 #include "driver/rmt_tx.h"
 #include "esp_log.h"
@@ -12,7 +13,7 @@
 #include "diag_log.h"
 
 #define STATUS_LED_RMT_RESOLUTION_HZ 10000000U
-#define STATUS_LED_RMT_WAIT_MS 20
+#define STATUS_LED_RMT_WAIT_MS 500
 #define STATUS_LED_WS2812_RESET_TICKS 1500U
 #define STATUS_LED_WS2812_T0H_TICKS 3U
 #define STATUS_LED_WS2812_T0L_TICKS 10U
@@ -44,6 +45,7 @@ struct status_led_strip_backend {
     bool dma_fallback;
     bool channel_enabled;
     bool available;
+    bool gpio_idle_driven_low;
 };
 
 static const char *TAG = "status_led_strip_backend";
@@ -225,6 +227,84 @@ static void status_led_strip_backend_release_transport(status_led_strip_backend_
     backend->mem_block_symbols = 0U;
     backend->available = false;
     backend->dma_enabled = false;
+    backend->gpio_idle_driven_low = false;
+}
+
+static esp_err_t status_led_strip_backend_new_channel(status_led_strip_backend_t *backend, bool with_dma);
+
+static esp_err_t status_led_strip_backend_init_transport(
+    status_led_strip_backend_t *backend,
+    bool with_dma)
+{
+    if (backend == NULL) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    if (backend->gpio == GPIO_NUM_NC) {
+        return ESP_OK;
+    }
+
+    bool channel_with_dma = with_dma && STATUS_LED_RMT_WITH_DMA;
+    esp_err_t ret = status_led_strip_backend_new_channel(backend, channel_with_dma);
+    if (ret != ESP_OK && channel_with_dma) {
+        ESP_LOGW(TAG, "strip %s RMT DMA channel init failed gpio=%d: %s; falling back to non-DMA RMT",
+                 backend->name, (int)backend->gpio, esp_err_to_name(ret));
+        status_led_strip_backend_release_transport(backend);
+        backend->dma_fallback = true;
+        channel_with_dma = false;
+        ret = status_led_strip_backend_new_channel(backend, channel_with_dma);
+    }
+    if (ret != ESP_OK) {
+        ESP_LOGW(TAG, "strip %s RMT channel init failed gpio=%d: %s",
+                 backend->name, (int)backend->gpio, esp_err_to_name(ret));
+        status_led_strip_backend_release_transport(backend);
+        return ret;
+    }
+
+    ret = status_led_new_ws2812_encoder(&backend->encoder);
+    if (ret != ESP_OK) {
+        ESP_LOGW(TAG, "strip %s WS2812 encoder init failed: %s", backend->name, esp_err_to_name(ret));
+        status_led_strip_backend_release_transport(backend);
+        return ret;
+    }
+
+    backend->available = true;
+    backend->dma_enabled = channel_with_dma;
+    ESP_LOGI(
+        TAG,
+        "strip %s transport ready: gpio=%d leds=%u tx_leds=%u tail_guard_pixels=%u backend=rmt_ws2812_800khz rmt_dma_requested=%u rmt_dma=%u rmt_dma_fallback=%u mem_block_symbols=%u",
+        backend->name,
+        (int)backend->gpio,
+        (unsigned)backend->led_count,
+        (unsigned)backend->transmit_led_count,
+        (unsigned)backend->tail_guard_pixels,
+        backend->dma_requested ? 1U : 0U,
+        backend->dma_enabled ? 1U : 0U,
+        backend->dma_fallback ? 1U : 0U,
+        (unsigned)backend->mem_block_symbols);
+    return ESP_OK;
+}
+
+static esp_err_t status_led_strip_backend_ensure_transport(
+    status_led_strip_backend_t *backend,
+    bool with_dma)
+{
+    if (backend == NULL) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    if (backend->gpio == GPIO_NUM_NC) {
+        return ESP_OK;
+    }
+
+    bool desired_dma = with_dma && backend->dma_requested && STATUS_LED_RMT_WITH_DMA;
+    if (backend->available &&
+        backend->channel != NULL &&
+        backend->encoder != NULL &&
+        backend->dma_enabled == desired_dma) {
+        return ESP_OK;
+    }
+
+    status_led_strip_backend_release_transport(backend);
+    return status_led_strip_backend_init_transport(backend, desired_dma);
 }
 
 static esp_err_t status_led_strip_backend_new_channel(status_led_strip_backend_t *backend, bool with_dma)
@@ -257,6 +337,13 @@ static esp_err_t status_led_strip_backend_set_channel_enabled(
 
     esp_err_t ret = ESP_OK;
     if (enabled) {
+        if (backend->gpio_idle_driven_low) {
+            ret = rmt_tx_switch_gpio(backend->channel, backend->gpio, false);
+            if (ret != ESP_OK) {
+                return ret;
+            }
+            backend->gpio_idle_driven_low = false;
+        }
         ret = rmt_enable(backend->channel);
     } else {
         ret = rmt_disable(backend->channel);
@@ -265,6 +352,18 @@ static esp_err_t status_led_strip_backend_set_channel_enabled(
         backend->channel_enabled = enabled;
     }
     return ret;
+}
+
+static void status_led_strip_backend_drive_idle_low(status_led_strip_backend_t *backend)
+{
+    if (backend == NULL || !GPIO_IS_VALID_OUTPUT_GPIO(backend->gpio)) {
+        return;
+    }
+    gpio_num_t gpio = backend->gpio;
+    (void)gpio_set_level(gpio, 0);
+    (void)gpio_set_direction(gpio, GPIO_MODE_OUTPUT);
+    (void)gpio_set_level(gpio, 0);
+    backend->gpio_idle_driven_low = true;
 }
 
 esp_err_t status_led_strip_backend_new(
@@ -294,32 +393,10 @@ esp_err_t status_led_strip_backend_new(
         return ESP_OK;
     }
 
-    bool channel_with_dma = backend->dma_requested;
-    esp_err_t ret = status_led_strip_backend_new_channel(backend, channel_with_dma);
-    if (ret != ESP_OK && channel_with_dma) {
-        ESP_LOGW(TAG, "strip %s RMT DMA channel init failed gpio=%d: %s; falling back to non-DMA RMT",
-                 backend->name, (int)backend->gpio, esp_err_to_name(ret));
-        status_led_strip_backend_release_transport(backend);
-        backend->dma_fallback = true;
-        channel_with_dma = false;
-        ret = status_led_strip_backend_new_channel(backend, channel_with_dma);
-    }
+    esp_err_t ret = status_led_strip_backend_init_transport(backend, backend->dma_requested);
     if (ret != ESP_OK) {
-        ESP_LOGW(TAG, "strip %s RMT channel init failed gpio=%d: %s",
-                 backend->name, (int)backend->gpio, esp_err_to_name(ret));
-        status_led_strip_backend_release_transport(backend);
         return ret;
     }
-
-    ret = status_led_new_ws2812_encoder(&backend->encoder);
-    if (ret != ESP_OK) {
-        ESP_LOGW(TAG, "strip %s WS2812 encoder init failed: %s", backend->name, esp_err_to_name(ret));
-        status_led_strip_backend_release_transport(backend);
-        return ret;
-    }
-
-    backend->available = true;
-    backend->dma_enabled = channel_with_dma;
     ESP_LOGI(
         TAG,
         "strip %s ready: gpio=%d leds=%u tx_leds=%u tail_guard_pixels=%u backend=rmt_ws2812_800khz order=%s reset_us=300 timing=ws2812_4020_compatible rmt_dma_requested=%u rmt_dma=%u rmt_dma_fallback=%u mem_block_symbols=%u",
@@ -366,18 +443,28 @@ size_t status_led_strip_backend_mem_block_symbols(const status_led_strip_backend
     return backend != NULL ? backend->mem_block_symbols : 0U;
 }
 
-esp_err_t status_led_strip_backend_transmit(
+static esp_err_t status_led_strip_backend_transmit_mode(
     status_led_strip_backend_t *backend,
     status_led_color_order_t color_order,
-    const status_led_rgb_t *colors)
+    const status_led_rgb_t *colors,
+    bool with_dma)
 {
-    if (backend == NULL || !backend->available || backend->channel == NULL || backend->encoder == NULL) {
+    if (backend == NULL) {
+        return ESP_OK;
+    }
+    esp_err_t ret = status_led_strip_backend_ensure_transport(backend, with_dma);
+    if (ret != ESP_OK) {
+        diag_log(DIAG_SRC_STATUS_LED, DIAG_LED_OUTPUT_FAIL, DIAG_SEV_WARN,
+                 (uint32_t)backend->gpio, (uint32_t)ret, 3, 0);
+        return ret;
+    }
+    if (!backend->available || backend->channel == NULL || backend->encoder == NULL) {
         return ESP_OK;
     }
 
     status_led_strip_backend_fill_pixels(backend, color_order, colors);
     (void)rmt_encoder_reset(backend->encoder);
-    esp_err_t ret = status_led_strip_backend_set_channel_enabled(backend, true);
+    ret = status_led_strip_backend_set_channel_enabled(backend, true);
     if (ret != ESP_OK) {
         diag_log(DIAG_SRC_STATUS_LED, DIAG_LED_OUTPUT_FAIL, DIAG_SEV_WARN,
                  (uint32_t)backend->gpio, (uint32_t)ret, 2, 0);
@@ -406,7 +493,7 @@ esp_err_t status_led_strip_backend_transmit(
     if (ret != ESP_OK) {
         diag_log(DIAG_SRC_STATUS_LED, DIAG_LED_OUTPUT_FAIL, DIAG_SEV_WARN,
                  (uint32_t)backend->gpio, (uint32_t)ret, 0, 0);
-        (void)status_led_strip_backend_set_channel_enabled(backend, false);
+        (void)status_led_strip_backend_suspend(backend);
         return ret;
     }
 
@@ -414,10 +501,26 @@ esp_err_t status_led_strip_backend_transmit(
     if (ret != ESP_OK) {
         diag_log(DIAG_SRC_STATUS_LED, DIAG_LED_OUTPUT_FAIL, DIAG_SEV_WARN,
                  (uint32_t)backend->gpio, (uint32_t)ret, 1, 0);
-        (void)status_led_strip_backend_set_channel_enabled(backend, false);
+        (void)status_led_strip_backend_suspend(backend);
         return ret;
     }
     return ESP_OK;
+}
+
+esp_err_t status_led_strip_backend_transmit(
+    status_led_strip_backend_t *backend,
+    status_led_color_order_t color_order,
+    const status_led_rgb_t *colors)
+{
+    return status_led_strip_backend_transmit_mode(backend, color_order, colors, true);
+}
+
+esp_err_t status_led_strip_backend_transmit_non_dma_once(
+    status_led_strip_backend_t *backend,
+    status_led_color_order_t color_order,
+    const status_led_rgb_t *colors)
+{
+    return status_led_strip_backend_transmit_mode(backend, color_order, colors, false);
 }
 
 esp_err_t status_led_strip_backend_suspend(status_led_strip_backend_t *backend)
@@ -425,5 +528,9 @@ esp_err_t status_led_strip_backend_suspend(status_led_strip_backend_t *backend)
     if (backend == NULL || !backend->available || backend->channel == NULL) {
         return ESP_OK;
     }
-    return status_led_strip_backend_set_channel_enabled(backend, false);
+    esp_err_t ret = status_led_strip_backend_set_channel_enabled(backend, false);
+    if (ret == ESP_OK) {
+        status_led_strip_backend_drive_idle_low(backend);
+    }
+    return ret;
 }

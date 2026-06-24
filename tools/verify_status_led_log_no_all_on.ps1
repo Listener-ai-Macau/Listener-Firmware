@@ -235,10 +235,16 @@ if ($jsonParseErrors -gt 0) {
 }
 
 $result = if ($failures.Count -eq 0) { "PASS" } else { "FAIL" }
+$visualEventArray = @($visualEvents.ToArray())
+$frameEventArray = @($frameEvents.ToArray())
+$warningArray = @($warnings.ToArray())
+$failureArray = @($failures.ToArray())
+$recentVisualEventRaw = @($visualEventArray | Select-Object -Last 12 | ForEach-Object { [string]$_.raw })
+$recentFrameEventRaw = @($frameEventArray | Select-Object -Last 12 | ForEach-Object { [string]$_.raw })
 $summary = [ordered]@{
     schema = "listener.status_led.log_no_all_on.v1"
     generated_at = (Get-Date).ToString("o")
-    agent = "oai2"
+    agent = "codex"
     result = $result
     port = $testPort
     output_dir = $OutputDir
@@ -252,11 +258,11 @@ $summary = [ordered]@{
     current_status_tail_all_on = $statusTailAllOn
     diag_visual_event_count = $visualEvents.Count
     diag_frame_event_count = $frameEvents.Count
-    diag_visual_active_flags = @($visualEvents | ForEach-Object { $_.active_flags } | Sort-Object -Unique)
-    recent_visual_events = @($visualEvents | Select-Object -Last 12)
-    recent_frame_events = @($frameEvents | Select-Object -Last 12)
-    warnings = @($warnings)
-    failures = @($failures)
+    diag_visual_active_flags = @($visualEventArray | ForEach-Object { $_.active_flags } | Sort-Object -Unique)
+    recent_visual_events = $recentVisualEventRaw
+    recent_frame_events = $recentFrameEventRaw
+    warnings = $warningArray
+    failures = $failureArray
 }
 ($summary | ConvertTo-Json -Depth 8) | Set-Content -LiteralPath $summaryPath -Encoding UTF8
 

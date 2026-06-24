@@ -26,7 +26,6 @@ static const char *TAG = "health";
 #define HEALTH_HEAP_WARN_KB     20U
 #define HEALTH_BLE_DISCONNECT_RATE_WINDOW_S 60U
 #define HEALTH_BLE_DISCONNECT_RATE_LIMIT    2U
-#define SYSTEM_HEALTH_STATUS_LED_ERROR_DOMAIN_BLE 1
 #define SYSTEM_HEALTH_STATUS_LED_ERROR_DOMAIN_SYSTEM 6
 #define SYSTEM_HEALTH_STATUS_LED_ERROR_RETRYABLE 0
 
@@ -114,9 +113,7 @@ static void system_health_task(void *parameter)
                          window_disconnects, HEALTH_BLE_DISCONNECT_RATE_WINDOW_S);
                 diag_log(DIAG_SRC_HEALTH, DIAG_HEALTH_ALERT, DIAG_SEV_WARN,
                          2, window_disconnects, HEALTH_BLE_DISCONNECT_RATE_LIMIT, 0);
-                system_health_notify_led_warning(
-                    SYSTEM_HEALTH_STATUS_LED_ERROR_DOMAIN_BLE,
-                    "health_ble_unstable");
+                /* BLE churn is already visible in diagnostics. Do not turn idle into a WARN LED state. */
             }
             last_disconnect_count = disconnects;
             window_start_ms = now_ms;

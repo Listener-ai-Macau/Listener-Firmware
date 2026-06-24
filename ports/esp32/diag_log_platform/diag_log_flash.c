@@ -21,6 +21,7 @@ static const char *TAG = "diag_log";
 #define DIAG_LOG_SECTOR_SIZE 4096U
 #define DIAG_LOG_MAGIC       0xD1A90001U
 #define DIAG_LOG_DUMP_PACE_EVENTS 64U
+#define DIAG_LOG_SNAPSHOT_READ_BATCH_EVENTS 32U
 
 typedef struct {
     uint32_t magic;
@@ -182,6 +183,12 @@ static void pace_dump_output(uint32_t event_counter)
     }
 
     fflush(stdout);
+    watchdog_platform_feed_current_task();
+    vTaskDelay(1);
+}
+
+static void pace_flash_snapshot(void)
+{
     watchdog_platform_feed_current_task();
     vTaskDelay(1);
 }
@@ -475,16 +482,36 @@ static uint16_t snapshot_sector_events(uint16_t sector, diag_event_t *events, ui
         if (count > max_events) {
             count = max_events;
         }
-        for (uint16_t idx = 0; idx < count; idx++) {
-            if (read_event(sector, idx, &events[idx]) != ESP_OK) {
-                count = idx;
-                break;
-            }
-        }
     }
     xSemaphoreGive(s_mutex);
 
-    return count;
+    uint16_t read_count = 0;
+    while (read_count < count) {
+        uint16_t batch_end = (uint16_t)(read_count + DIAG_LOG_SNAPSHOT_READ_BATCH_EVENTS);
+        if (batch_end > count) {
+            batch_end = count;
+        }
+
+        xSemaphoreTake(s_mutex, portMAX_DELAY);
+        esp_err_t ret = ESP_OK;
+        for (uint16_t idx = read_count; idx < batch_end; idx++) {
+            ret = read_event(sector, idx, &events[idx]);
+            if (ret != ESP_OK) {
+                break;
+            }
+        }
+        xSemaphoreGive(s_mutex);
+        if (ret != ESP_OK) {
+            return read_count;
+        }
+
+        read_count = batch_end;
+        if (read_count < count) {
+            pace_flash_snapshot();
+        }
+    }
+
+    return read_count;
 }
 
 static uint32_t capped_last_count(uint32_t count)

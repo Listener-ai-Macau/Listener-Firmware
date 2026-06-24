@@ -116,8 +116,8 @@ CHECKS = {
         "STATUS_LED_STANDARD_PROFILE_BUDGET_MA 760U",
         "STATUS_LED_AMBIENT_PROFILE_BUDGET_MA 620U",
         "STATUS_LED_CHASE_DEFAULT_STEP_MS 250U",
-        "STATUS_LED_KEY_FEEDBACK_MS 240U",
-        "STATUS_LED_EC11_FEEDBACK_MS 900U",
+        "STATUS_LED_KEY_FEEDBACK_MS 700U",
+        "STATUS_LED_EC11_FEEDBACK_MS 1400U",
         "STATUS_LED_BOOT_ACK_MS 2500U",
         "STATUS_LED_OK_TOTAL_MS 2000U",
         "ok_warning",
@@ -139,16 +139,16 @@ CHECKS = {
         "STATUS_LED_PWR_WHITE_VISUAL_BALANCE_PERCENT 10U",
         "STATUS_LED_FULL_STEADY_PERCENT STATUS_LED_PWR_WHITE_VISUAL_BALANCE_PERCENT",
         "STATUS_LED_FULL_STATUS_STEADY_PERCENT STATUS_LED_PWR_WHITE_VISUAL_BALANCE_PERCENT",
-        "STATUS_LED_LOW_POWER_PWR_PERCENT 8U",
-        "STATUS_LED_LOW_POWER_PWR_WHITE_PERCENT 3U",
-        "STATUS_LED_LOW_POWER_BLE_CONNECTED_PERCENT 8U",
+        "STATUS_LED_LOW_POWER_PWR_PERCENT 12U",
+        "STATUS_LED_LOW_POWER_PWR_WHITE_PERCENT 4U",
         "STATUS_LED_LOW_POWER_BLE_ATTENTION_PERCENT 12U",
         "STATUS_LED_BATTERY_IDLE_BLE_HEARTBEAT_ON_MS 120U",
         "STATUS_LED_BATTERY_IDLE_BLE_HEARTBEAT_OFF_MS 7880U",
-        "STATUS_LED_BATTERY_IDLE_BLE_HEARTBEAT_PERCENT 18U",
         "STATUS_LED_OK_SUCCESS_BLUE_BALANCE 0U",
         "STATUS_LED_PREVIEW_BLE_OVERRIDE_MS 15000U",
         "STATUS_LED_BLE_REPAIR_CUE_MS 2700U",
+        "STATUS_LED_EC11_REPAIR_BLINK_MIN_PERCENT 4U",
+        "STATUS_LED_EC11_REPAIR_BLINK_MAX_PERCENT 16U",
         "STATUS_LED_BLE_CONNECTED_CONFIRM_MS 1600U",
         "STATUS_LED_PWR_COLOR_AMBER",
         "STATUS_LED_DIAG_VIS_LOW_POWER_OFF",
@@ -234,8 +234,6 @@ CHECKS = {
         "STATUS_LED_EDGE_RECORDING_SURFACE_BASE_MAX_PERCENT 14U",
         "STATUS_LED_EC11_RECORDING_FLOW_STEP_MS 360U",
         "STATUS_LED_EDGE_RECORDING_FLOW_STEP_MS 720U",
-        "STATUS_LED_EC11_REPAIR_BLINK_MIN_PERCENT 4U",
-        "STATUS_LED_EC11_REPAIR_BLINK_MAX_PERCENT 16U",
         "STATUS_LED_EC11_ORBIT_STEP_MS 240U",
         "STATUS_LED_EDGE_ORBIT_STEP_MS 480U",
         "status_led_render_key_active_work_locked",
@@ -305,12 +303,14 @@ CHECKS = {
         "STATUS_LED_BLE_RECONNECT_MAX_PERCENT STATUS_LED_BLE_ATTENTION_PERCENT",
         "STATUS_LED_BLE_CONNECTED_CONFIRM_MIN_PERCENT 10U",
         "STATUS_LED_BLE_CONNECTED_GENERIC_PERCENT 14U",
-        "STATUS_LED_BLE_CONNECTED_STEADY_PERCENT STATUS_LED_BLE_CONNECTED_GENERIC_PERCENT",
-        "STATUS_LED_BLE_TYPE_READY_STEADY_PERCENT STATUS_LED_BLE_ATTENTION_PERCENT",
+        "STATUS_LED_BLE_CONNECTED_BASE_PERCENT 4U",
+        "STATUS_LED_BLE_CONNECTED_PULSE_PERCENT STATUS_LED_BLE_CONNECTED_GENERIC_PERCENT",
+        "STATUS_LED_BLE_CONNECTED_HEARTBEAT_PERIOD_MS 2600U",
+        "STATUS_LED_BLE_TYPE_READY_STEADY_PERCENT STATUS_LED_BLE_CONNECTED_GENERIC_PERCENT",
         "case STATUS_LED_BLE_TYPE_READY: return \"type_ready\"",
         "status_led_ble_state_ready_locked",
+        "status_led_connected_hid_only_percent_locked",
         "ble_elapsed_ms < STATUS_LED_BLE_CONNECTED_CONFIRM_MS",
-        "const uint8_t steady_percent = type_ready",
         "status_led_preview_clear_activity_locked",
         "status_led_render_edge_clockwise_chase_locked",
         "ble_repair_ms_left=%",
@@ -416,18 +416,22 @@ CHECKS = {
         "status_led_render_edge_recording_flow_locked",
         "status_led_render_ec11_repair_locked",
         "status_led_render_ec11_feedback_locked",
+        "status_led_apply_ec11_feedback",
         "status_led_notify_ec11_feedback",
+        "status_led_refresh_ec11_feedback",
+        "advance_motion",
         "status_led_clear_ec11_feedback_locked",
-        "STATUS_LED_SHUTDOWN_CONFIRM_MS 1800U",
-        "STATUS_LED_SHUTDOWN_FINAL_CONFIRM_MS 700U",
+        "STATUS_LED_SHUTDOWN_CONFIRM_MS 1200U",
+        "STATUS_LED_SHUTDOWN_FINAL_CONFIRM_MS 1400U",
         "status_led_render_shutdown_confirm_locked",
-        "if (!s_state.shutdown_confirm_final) {\n        return true;",
-        "uint8_t accent_percent = final ? 36U : 24U;",
+        "if (final) {\n        memset(frame->status, 0, sizeof(frame->status));\n        memset(frame->ec11, 0, sizeof(frame->ec11));\n        memset(frame->key, 0, sizeof(frame->key));\n        memset(frame->edge, 0, sizeof(frame->edge));",
+        "frame->status[STATUS_LED_SEM_PWR] = status_led_token_locked(amber, pwr_percent, false);",
+        "uint8_t accent_percent = 24U;",
         "clockwise_index = (STATUS_LED_EC11_COUNT - 1U - index) % STATUS_LED_EC11_COUNT",
         "shutdown_confirm_active=%u shutdown_confirm_final=%u shutdown_confirm_latched=%u shutdown_confirm_elapsed_ms=%",
         "shutdown_confirm_active=%u shutdown_confirm_latched=%u",
         "status_led_apply_status_tail_guard_locked",
-        "status_led_transmit_strip(&s_strips[STATUS_LED_STRIP_STATUS], frame->status)",
+        "status_led_transmit_strip(\n                &s_strips[STATUS_LED_STRIP_STATUS],\n                frame->status,\n                status_force_non_dma)",
         "status_led_notify_shutdown_confirm",
         "status_led_cancel_shutdown_confirm",
         "shutdown_confirm_started_ms",
@@ -453,7 +457,7 @@ CHECKS = {
         "status_led_rgb(255, 255, 255), percent, false",
         "active_flags=PWR:%u,BLE:%u,REC:%u,AI:%u,OK:%u,WARN:%u,EC11:%u,KEY:%u,EDGE:%u",
         "status_rgb=PWR:%u,%u,%u;BLE:%u,%u,%u;REC:%u,%u,%u",
-        "if (changed && !effect_only) {\n            s_state.status_window_until_ms = now_ms + STATUS_LED_STATUS_WINDOW_MS;",
+        "if (changed && !effect_only && !routine_low_power_ble) {\n            s_state.status_window_until_ms = now_ms + STATUS_LED_STATUS_WINDOW_MS;",
         "if (changed && state == STATUS_LED_BLE_CONNECTED && confidence_window)",
         "state == STATUS_LED_BLE_PAIRING && status_led_ble_repair_active_locked(now_ms)",
         "status_led_render_processing_locked",
@@ -575,13 +579,18 @@ CHECKS = {
     ],
     "ports/esp32/ble_audio_stream/ble_audio_stream_esp32.c": [
         "BLE_AUDIO_STREAM_TYPE_HEARTBEAT_TIMEOUT_MS 12000",
+        "BLE_AUDIO_STREAM_TYPE_LED_READY_HOLD_MS 30000",
         "TYPE:READY",
         "TYPE:HB",
         "TYPE:BYE",
         "ble_audio_stream_type_heartbeat_recent()",
+        "ble_audio_stream_type_heartbeat_led_recent()",
+        "ble_audio_stream_is_type_led_ready()",
         "ble_audio_stream_sync_status_led_for_type_link(\"type_heartbeat_timeout\")",
+        "type_heartbeat_led_grace_timeout",
     ],
     "ports/esp32/ble_audio_stream/include/ble_audio_stream.h": [
+        "ble_audio_stream_is_type_led_ready",
         "ble_audio_stream_consume_type_control_command",
         "ble_audio_stream_type_link_poll_wait_ms",
         "ble_audio_stream_poll_type_link",
@@ -610,6 +619,7 @@ CHECKS = {
         "PROCESSING_DONE",
         "PROCESSING:WARN",
         "PROCESSING_WARN",
+        "status_led_set_processing(true, \"recording_stop_processing_start\")",
         "voice_recording_control_host_processing_start(source)",
         "voice_recording_control_host_processing_stop(source)",
         "voice_recording_control_host_processing_done(source)",
@@ -634,10 +644,10 @@ CHECKS = {
     ],
     "ports/esp32/system_health_platform/system_health_esp32.c": [
         "status_led_set_error",
-        "SYSTEM_HEALTH_STATUS_LED_ERROR_DOMAIN_BLE 1",
         "SYSTEM_HEALTH_STATUS_LED_ERROR_DOMAIN_SYSTEM 6",
         "system_health_notify_led_warning(\n                SYSTEM_HEALTH_STATUS_LED_ERROR_DOMAIN_SYSTEM,\n                \"health_heap_pressure\")",
-        "system_health_notify_led_warning(\n                    SYSTEM_HEALTH_STATUS_LED_ERROR_DOMAIN_BLE,\n                    \"health_ble_unstable\")",
+        "ble unstable:",
+        "Do not turn idle into a WARN LED state",
     ],
     "components/firmware_ota/firmware_ota.c": [
         "status_led_set_processing(true, \"ota_begin\")",
@@ -653,7 +663,7 @@ CHECKS = {
         "POWER_MANAGER_STATUS_LED_ERROR_HARD 1",
         "power_manager_notify_power_led_error(true, \"hardware_shutdown_failed\")",
         "power_manager_notify_power_led_error(false, \"low_battery_shutdown_rejected\")",
-        "POWER_MANAGER_SHUTDOWN_LED_CONFIRM_MS 700U",
+        "POWER_MANAGER_SHUTDOWN_LED_CONFIRM_MS 1200U",
         "hardware_shutdown_confirmed",
     ],
     "ports/esp32/voice_key_input/voice_key_input_esp32.c": [
@@ -686,12 +696,16 @@ CHECKS = {
         "for 15 seconds",
         "`preview_ble_override_ms_left`",
         "Reconnect keeps a low blue BLE floor",
-        "Pairing and reconnect use only the `BLE` semantic LED",
-        "User-requested re-pair/reset uses `BLE` plus a low blue EC11 confirmation orbit",
+        "pairing, reconnect, and user-requested re-pair can still blink BLE as attention states",
+        "Re-pair uses a BLE plus EC11 confirmation cue",
         "current render-sampled RGB frame",
         "status_query_samples_current_render=1",
-        "On battery before the power manager enters low-power idle, connected BLE falls back to a sparse low-blue heartbeat",
-        "In connected/disconnected low-power idle, the low-power renderer takes over and keeps restrained PWR/BLE status visible",
+        "ordinary HID-only `connected` stays visible as a low-base blue double-flash heartbeat",
+        "`TYPE_READY` is the Listener-Type-ready active BLE state",
+        "it uses steady blue",
+        "30 second Type-ready hold",
+        "quiet-but-not-idle time",
+        "In connected/disconnected low-power idle, the low-power renderer keeps PWR visible and leaves connected/TYPE_READY BLE dark",
         "External power overrides battery-color display on `PWR`",
         "continuous slow white breath",
         "steady white once charge-full has been debounced and latched",
@@ -704,25 +718,24 @@ CHECKS = {
         "smoothed, rate-limited, and quantized",
         "EC11, key, and edge/frame do not follow PCM brightness",
         "`~LED:REC_LEVEL <0-100> [hold_ms]`",
-        "Processing uses status `LED4=AI`",
+        "Processing uses status `LED4=AI` immediately after firmware accepts a recording stop",
         "exact scan parameters live in the code constants and `~LED:STATUS detail=contract`",
-        "Firmware recording transfer does not animate `AI` by itself",
+        "Firmware recording transfer starts `AI` locally as soon as stop is accepted",
         "`VREC:PROCESSING:START`",
         "`VREC:PROCESSING:STOP`",
         "`VREC:PROCESSING:DONE`",
         "`DONE` turns `AI` off and flashes green `OK`",
-        "local recording stop/session completion",
-        "A successful local stop and a completed local recording session each refresh the green `OK` confirmation window",
-        "audio transfer completion alone does not animate `AI`",
-        "`OK` is a visible 2.0 second success confirmation after local recording stop/session completion and after the host reports processing done",
+        "stop key has immediate thinking feedback",
+        "`OK` is a visible 2.0 second success confirmation after the host reports processing done",
         "Key LEDs remain local transient feedback only",
         "Recording and processing no longer light the key strip",
         "EC11 knob and edge/frame LEDs are independent accent surfaces",
         "`rec_level` drives only status `LED3=REC`",
         "EC11, key, and edge/frame do not follow PCM brightness",
         "processing-only uses matched low violet clockwise motion",
-        "EC11 short press and rotation add a brief white confirmation",
-        "adds a low blue EC11 ring orbit as the user-action confirmation",
+        "EC11 short press and rotation add a brief white local confirmation",
+        "accepted user-requested re-pair uses a low blue EC11 full-ring double-pulse synchronized to `LED2=BLE`",
+        "EC11 double-click recovery is not a key-style purple gesture",
         "EC11/edge accent-only motion does not repeatedly refresh the status rail",
         "Status-tail anti-flicker contract",
         "six black guard pixels",
@@ -745,7 +758,12 @@ CHECKS = {
         "Long-press shutdown confirmation",
         "filling the EC11 ring clockwise over 1.8 seconds",
         "pending cue stays latched at full ring",
+        "bright amber `PWR`-only cue",
+        "automatic shutdown cannot look like every LED turned on",
+        "Health-monitor BLE instability alerts are log-only",
+        "must not light `BLE` or `WARN` during idle",
         "wait longer than 1.8 seconds",
+        "confirm `PWR` is the only active LED and the EC11 ring is off",
         "`shutdown_confirm_active`",
         "`shutdown_confirm_latched`",
         "`shutdown_confirm_elapsed_ms`",
@@ -870,6 +888,7 @@ CHECKS = {
         "effect-only preview commands",
     ],
     "components/keyboard/keyboard.c": [
+        "status_led_refresh_ec11_feedback(delta > 0",
         "status_led_notify_ec11_feedback(direction == EC11_ROTATION_DIRECTION_CW",
         "STATUS_LED_EC11_FEEDBACK_ROTATE_CW",
         "STATUS_LED_EC11_FEEDBACK_ROTATE_CCW",
@@ -988,11 +1007,10 @@ def main() -> int:
             if "status_led_render_power_locked" in branch:
                 failures.append("status_led.c: plugged low-power PWR must not reuse charging/full breath rendering")
         if (
-            "STATUS_LED_LOW_POWER_PWR_WHITE_PERCENT 3U" not in status_led or
-            "STATUS_LED_LOW_POWER_BLE_CONNECTED_PERCENT 8U" not in status_led or
+            "STATUS_LED_LOW_POWER_PWR_WHITE_PERCENT 4U" not in status_led or
             "STATUS_LED_LOW_POWER_BLE_ATTENTION_PERCENT 12U" not in status_led
         ):
-            failures.append("status_led.c: idle PWR white and BLE blue must use dim low-power levels")
+            failures.append("status_led.c: idle PWR white and BLE attention cues must use dim low-power levels")
         if "status_led_battery_display_available_locked()" not in body:
             failures.append("status_led.c: battery low-power PWR must use display-valid fallback, not only live battery_valid")
         if "status_led_rgb(255, 140, 0)" not in body:
@@ -1014,14 +1032,12 @@ def main() -> int:
         ):
             failures.append("status_led.c: low-power BLE helper must blink pairing/reconnecting instead of latching solid")
         if not re.search(
-            r"case\s+STATUS_LED_BLE_CONNECTED:[\s\S]*?"
-            r"STATUS_LED_BATTERY_IDLE_BLE_HEARTBEAT_ON_MS[\s\S]*?"
-            r"STATUS_LED_LOW_POWER_BLE_CONNECTED_PERCENT[\s\S]*?"
+            r"case\s+STATUS_LED_BLE_CONNECTED:\s*\n\s*"
             r"case\s+STATUS_LED_BLE_TYPE_READY:[\s\S]*?"
-            r"return\s+STATUS_LED_LOW_POWER_BLE_CONNECTED_PERCENT;",
+            r"return\s+0U;",
             body,
         ):
-            failures.append("status_led.c: low-power BLE helper must blink HID-only connected and latch only TYPE_READY")
+            failures.append("status_led.c: connected/TYPE_READY low-power idle must leave BLE dark")
     low_power_ble = re.search(
         r"static\s+void\s+status_led_render_low_power_ble_locked[^{]*\{(?P<body>[\s\S]*?)\n\}",
         status_led,
@@ -1033,13 +1049,18 @@ def main() -> int:
         if "status_led_low_power_ble_percent_locked(status_led_ble_elapsed_locked(now_ms))" not in body:
             failures.append("status_led.c: low-power BLE renderer must use the shared low-power BLE helper")
     if not re.search(
+        r"status_led_connected_hid_only_percent_locked[^{]*\{[\s\S]*?"
+        r"STATUS_LED_BLE_CONNECTED_HEARTBEAT_PERIOD_MS[\s\S]*?"
+        r"STATUS_LED_BLE_CONNECTED_PULSE_PERCENT[\s\S]*?"
+        r"STATUS_LED_BLE_CONNECTED_BASE_PERCENT[\s\S]*?"
         r"case\s+STATUS_LED_BLE_CONNECTED:\s*\n\s*case\s+STATUS_LED_BLE_TYPE_READY:\s*\{[\s\S]*?"
+        r"STATUS_LED_BLE_CONNECTED_PULSE_PERCENT[\s\S]*?"
         r"STATUS_LED_BLE_TYPE_READY_STEADY_PERCENT[\s\S]*?"
-        r"STATUS_LED_BLE_CONNECTED_STEADY_PERCENT[\s\S]*?"
-        r"steady_percent",
+        r"connected_visible_until_idle[\s\S]*?"
+        r"status_led_connected_hid_only_percent_locked\(ble_elapsed_ms\)",
         status_led,
     ):
-        failures.append("status_led.c: active BLE rendering must keep TYPE_READY visible like CONNECTED")
+        failures.append("status_led.c: active BLE rendering must keep HID-only connected visible as a distinct blue heartbeat and TYPE_READY as steady blue until idle")
     for token in (
         "STATUS_LED_RECORDING_LEVEL_STALE_MS",
         "STATUS_LED_RECORDING_LEVEL_EFFECT_MIN_PERCENT 8U",
@@ -1187,16 +1208,33 @@ def main() -> int:
         failures.append("status_led.c: BLE repair blink envelope must be the two-hit double-pulse cue")
     elif "status_led_blink_on" in repair_envelope.group("body"):
         failures.append("status_led.c: BLE repair blink envelope must not add a third offset blink")
-    if "STATUS_LED_EC11_REPAIR_BLINK_MIN_PERCENT" not in status_led or \
-       "STATUS_LED_EC11_REPAIR_BLINK_MAX_PERCENT" not in status_led:
-        failures.append("status_led.c: BLE re-pair EC11 must use full-ring synced blink levels, not orbit motion")
+    if "STATUS_LED_EC11_REPAIR_BLINK_MIN_PERCENT 4U" not in status_led or \
+       "STATUS_LED_EC11_REPAIR_BLINK_MAX_PERCENT 16U" not in status_led:
+        failures.append("status_led.c: EC11 re-pair ring must use the restored low blue full-ring blink levels")
+    repair_ring = re.search(
+        r"static\s+void\s+status_led_render_ec11_repair_locked[^{]*\{(?P<body>[\s\S]*?)\n\}",
+        status_led,
+    )
+    if not repair_ring:
+        failures.append("status_led.c: BLE re-pair must render the restored EC11 blue full-ring confirmation")
+    else:
+        repair_ring_text = repair_ring.group("body")
+        if "status_led_ble_repair_percent_locked" not in repair_ring_text:
+            failures.append("status_led.c: EC11 re-pair ring must share the BLE double-pulse envelope")
+        if "for (size_t index = 0; index < STATUS_LED_EC11_COUNT; ++index)" not in repair_ring_text:
+            failures.append("status_led.c: EC11 re-pair ring must cover the full knob ring")
+        if "frame->edge" in repair_ring_text:
+            failures.append("status_led.c: EC11 re-pair confirmation must not borrow the edge/frame LEDs")
     if not re.search(
         r"static\s+void\s+status_led_preview_state[^{]*\{[\s\S]*?"
+        r"status_led_schedule_idle_transition_clear_locked\(now_ms\);[\s\S]*?"
         r"status_led_preview_clear_activity_locked\(\);[\s\S]*?"
         r"status_led_set_last_reason_locked\(\"preview\"\);",
         status_led,
     ):
-        failures.append("status_led.c: every preview state must clear stale REC/AI/OK/WARN/BLE cue state first")
+        failures.append("status_led.c: every preview state must clear stale LED frames and REC/AI/OK/WARN/BLE cue state first")
+    if "status_led_idle_transition_target_name" in status_led:
+        failures.append("status_led.c: preview transition clear must not be limited to idle target names")
     if not re.search(
         r"status_led_render_power_locked[^{]*\{[\s\S]*?"
         r"if\s*\(\s*s_state\.preview_effect_only\s*\)\s*\{[\s\S]*?return;",
@@ -1354,7 +1392,10 @@ def main() -> int:
     voice_recording_control = read("components/voice_recording_control/voice_recording_control.c")
     ble_hid_gap = read("ports/esp32/ble_hid_gap/ble_hid_gap_esp32.c")
     if 'status_led_set_processing(true, "audio_session_finishing")' in voice_recording_control:
-        failures.append("voice_recording_control.c: audio transfer must not light AI processing LED")
+        failures.append(
+            "voice_recording_control.c: post-stop AI cue must use recording_stop_processing_start, "
+            "not the audio_session_finishing log detail"
+        )
     if 'status_led_set_error(STATUS_LED_ERROR_DOMAIN_BLE, STATUS_LED_ERROR_RETRYABLE, "voice_recovery_requested")' in voice_recording_control:
         failures.append("voice_recording_control.c: user-requested recovery must use BLE re-pair cue, not WARN/error")
     if 'status_led_set_error(STATUS_LED_ERROR_DOMAIN_BLE, STATUS_LED_ERROR_RETRYABLE, "ble_recovery_clear_bonds")' in ble_hid_gap:
@@ -1399,17 +1440,35 @@ def main() -> int:
         status_led,
     ):
         failures.append("status_led.c: battery PWR must keep the low-power level during unplugged idle wait")
-    if "STATUS_LED_BATTERY_IDLE_BLE_HEARTBEAT_PERCENT" not in status_led:
-        failures.append("status_led.c: battery idle BLE heartbeat constants are missing")
+    for token in (
+        "STATUS_LED_BATTERY_IDLE_BLE_HEARTBEAT_ON_MS",
+        "STATUS_LED_BATTERY_IDLE_BLE_HEARTBEAT_OFF_MS",
+        "STATUS_LED_LOW_POWER_BLE_ATTENTION_PERCENT",
+    ):
+        if token not in status_led:
+            failures.append(f"status_led.c: battery idle BLE attention blink constant missing: {token}")
+    if "battery_quiet" in status_led:
+        failures.append("status_led.c: quiet ACTIVE must not hide connected BLE before power_manager enters idle")
     if not re.search(
-        r"status_led_render_ble_locked[^{]*\{[\s\S]*?"
-        r"battery_quiet[\s\S]*?"
-        r"status_led_low_power_ble_percent_locked\(ble_elapsed_ms\)[\s\S]*?"
-        r"status_led_set_max\(&frame->status\[STATUS_LED_SEM_BLE\], color\);[\s\S]*?"
-        r"return;",
+        r"status_led_render_low_power_ble_locked[^{]*\{[\s\S]*?"
+        r"status_led_low_power_ble_percent_locked\(status_led_ble_elapsed_locked\(now_ms\)\)",
         status_led,
     ):
-        failures.append("status_led.c: unplugged idle wait must use the same low-power BLE indicator instead of going dark or solid-pairing")
+        failures.append("status_led.c: low-power idle must keep using the shared BLE helper so connected/TYPE_READY stay dark while attention states blink")
+    ble_set_state = re.search(
+        r"void\s+status_led_set_ble_state[\s\S]*?"
+        r"\n\}\n\nvoid\s+status_led_notify_ble_repairing",
+        status_led,
+    )
+    if (
+        "status_led_ble_state_attention_locked" not in status_led or
+        ble_set_state is None or
+        "s_state.low_power_disabled && !status_led_ble_state_attention_locked(state)" not in ble_set_state.group(0) or
+        "if (!effect_only && !routine_low_power_ble)" not in ble_set_state.group(0) or
+        "changed && !effect_only && !routine_low_power_ble &&" not in ble_set_state.group(0) or
+        "if (changed && !effect_only && !routine_low_power_ble)" not in ble_set_state.group(0)
+    ):
+        failures.append("status_led.c: routine connected/TYPE_READY/DISCONNECTED BLE changes must not reopen active BLE windows from low-power idle")
     if "(!external_power_present && battery_display_band_changed)" not in status_led:
         failures.append("status_led.c: plugged/raw battery-percent jitter must not extend status windows")
     if "s_state.profile == STATUS_LED_PROFILE_STANDARD && now_ms < s_state.status_window_until_ms" in status_led:
@@ -1541,7 +1600,8 @@ def main() -> int:
         "rmt_tx_dma_actual=status:%u,ec11:%u,key:%u,edge:%u" not in status_led or
         "rmt_tx_dma_fallback=status:%u,ec11:%u,key:%u,edge:%u" not in status_led or
         "rmt_mem_block_symbols=status:%u,ec11:%u,key:%u,edge:%u" not in status_led or
-        "rmt_idle_drive=active_frames_enabled_low_power_quiet_suspend" not in status_led
+        "rmt_idle_drive=active_status_dma_low_power_non_dma_final_frame_then_immediate_all_quiet_suspend" not in status_led
+        or "shutdown_final_status_tx=non_dma_pwr_only_latch" not in status_led
     ):
         failures.append("status_led.c: ~LED:STATUS contract must expose the status-strip RMT TX DMA strategy, per-strip actual state, DMA buffer size, and idle-drive policy")
     if status_led.count(".prefer_dma = true") != 1 or not re.search(
@@ -1561,8 +1621,23 @@ def main() -> int:
         status_led_backend,
     ):
         failures.append("status_led_strip_backend.c: successful dynamic RMT transmit must stay enabled; only idle/sleep paths may suspend")
-    if "rmt_tx_switch_gpio" in status_led_backend or re.search(r"gpio_set_direction\(backend->gpio", status_led_backend):
-        failures.append("status_led_strip_backend.c: normal RMT idle must not switch the status data pin to GPIO between frames")
+    if status_led_backend.count("rmt_tx_switch_gpio") != 1:
+        failures.append("status_led_strip_backend.c: low-power GPIO-low suspend must restore the RMT GPIO binding exactly once on resume")
+    if not re.search(
+        r"if\s*\(\s*backend->gpio_idle_driven_low\s*\)\s*\{[\s\S]*?"
+        r"rmt_tx_switch_gpio\(backend->channel,\s*backend->gpio,\s*false\)[\s\S]*?"
+        r"backend->gpio_idle_driven_low\s*=\s*false;[\s\S]*?"
+        r"\}\s*ret\s*=\s*rmt_enable\(backend->channel\);",
+        status_led_backend,
+    ):
+        failures.append("status_led_strip_backend.c: RMT enable must re-bind the data GPIO after low-power idle drove it low")
+    if not re.search(
+        r"status_led_strip_backend_drive_idle_low[\s\S]*?"
+        r"gpio_set_direction\(gpio,\s*GPIO_MODE_OUTPUT\);[\s\S]*?"
+        r"backend->gpio_idle_driven_low\s*=\s*true;",
+        status_led_backend,
+    ):
+        failures.append("status_led_strip_backend.c: low-power idle GPIO-low drive must mark the strip for RMT GPIO restore")
     if not re.search(
         r"if\s*\(\s*enabled\s*\)\s*\{[\s\S]*?"
         r"ret\s*=\s*rmt_enable\(backend->channel\);[\s\S]*?"
@@ -1570,7 +1645,7 @@ def main() -> int:
         r"ret\s*=\s*rmt_disable\(backend->channel\);",
         status_led_backend,
     ):
-        failures.append("status_led_strip_backend.c: backend must release PM locks with rmt_disable while leaving the RMT GPIO matrix binding intact")
+        failures.append("status_led_strip_backend.c: backend must release PM locks with rmt_disable and re-enable RMT on the next transmit")
     if (
         "STATUS_LED_RMT_IDLE_RELEASE_MS" not in status_led or
         "status_led_suspend_quiet_idle_transports" not in status_led or
@@ -1578,8 +1653,21 @@ def main() -> int:
         "s_strip_transport_suspended" not in status_led or
         "s_strip_last_tx_ms" not in status_led or
         "low_power_active = s_state.output_disabled || s_state.low_power_disabled" not in status_led
+        or "shutdown_final_active = !force_clear_tx" not in status_led
+        or "pwr_only_final_latch = low_power_active || shutdown_final_active" not in status_led
     ):
-        failures.append("status_led.c: low-power idle must be the only PM-lock release path for normal LED frames")
+        failures.append("status_led.c: low-power idle and final shutdown PWR-only confirmation must be the only non-DMA status latch paths for normal LED frames")
+    if "bool status_force_non_dma = force_clear_tx || low_power_active;" in status_led:
+        failures.append("status_led.c: ordinary transition clear frames must not force non-DMA; scope status_force_non_dma to PWR-only latch paths only")
+    if not re.search(r"bool\s+status_force_non_dma\s*=\s*pwr_only_final_latch\s*;", status_led):
+        failures.append("status_led.c: status_force_non_dma must be derived from pwr_only_final_latch so active preview/effect switching stays on DMA")
+    if not re.search(
+        r"status_led_suspend_quiet_idle_transports[\s\S]*?"
+        r"for\s*\(size_t\s+index\s*=\s*0;[\s\S]*?"
+        r"status_led_strip_backend_suspend\(s_strips\[index\]\.backend\)",
+        status_led,
+    ):
+        failures.append("status_led.c: low-power quiet suspend must release every strip only after the final non-DMA idle latch")
     if "status_led_suspend_all_strips" not in status_led or "status_led_strip_backend_suspend(s_strips[index].backend)" not in status_led:
         failures.append("status_led.c: prepare_sleep must explicitly suspend strip backends after the all-off frame")
     if not re.search(
@@ -1642,7 +1730,7 @@ def main() -> int:
     voice_recording_control = read("components/voice_recording_control/voice_recording_control.c")
     forbidden_voice_recording_tokens = {
         'status_led_set_processing(true, "audio_session_finishing")':
-            "audio transfer must not light AI processing LED; wait for host PROCESSING:START",
+            "post-stop AI cue must use recording_stop_processing_start, not the audio_session_finishing log detail",
         'status_led_set_processing(false, "recording_session_cleanup")':
             "host cleanup/STOP must not clear AI processing LED; wait for host PROCESSING:STOP or DONE",
         'status_led_set_processing(false, "recording_session_finished")':
