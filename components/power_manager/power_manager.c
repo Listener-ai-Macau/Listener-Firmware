@@ -894,6 +894,9 @@ static power_manager_state_t power_manager_awake_idle_state_locked(uint32_t radi
     }
 
     uint32_t low_power_idle_ms = power_manager_low_power_idle_ms();
+    if (low_power_idle_ms == 0U) {
+        return POWER_MANAGER_STATE_ACTIVE;
+    }
     if (s_ble_connected) {
         return radio_idle_ms >= low_power_idle_ms
             ? POWER_MANAGER_STATE_CONNECTED_IDLE
@@ -1370,12 +1373,13 @@ void power_manager_get_snapshot(power_manager_snapshot_t *snapshot)
     snapshot->battery_low_power_idle_threshold_ms = device_settings_get_battery_low_power_idle_ms();
     snapshot->connected_idle_threshold_ms = snapshot->low_power_idle_threshold_ms;
     snapshot->disconnected_idle_threshold_ms = snapshot->low_power_idle_threshold_ms;
-        snapshot->plugged_low_power_enabled = power_manager_plugged_low_power_enabled();
-        snapshot->low_power_idle_allowed =
-            !snapshot->external_power_present || snapshot->plugged_low_power_enabled;
-        snapshot->power_input_wake_configured = s_power_input_wake_configured;
-        snapshot->power_input_irq_armed = s_power_input_irq_armed;
-        snapshot->hardware_shutdown_threshold_ms = power_manager_hardware_shutdown_ms();
+    snapshot->plugged_low_power_enabled = power_manager_plugged_low_power_enabled();
+    snapshot->low_power_idle_allowed =
+        snapshot->low_power_idle_threshold_ms > 0U &&
+        (!snapshot->external_power_present || snapshot->plugged_low_power_enabled);
+    snapshot->power_input_wake_configured = s_power_input_wake_configured;
+    snapshot->power_input_irq_armed = s_power_input_irq_armed;
+    snapshot->hardware_shutdown_threshold_ms = power_manager_hardware_shutdown_ms();
     snapshot->plugged_auto_shutdown_threshold_ms = device_settings_get_plugged_auto_shutdown_ms();
     snapshot->battery_auto_shutdown_threshold_ms = device_settings_get_battery_auto_shutdown_ms();
     snapshot->shutdown_failure_retry_ms = POWER_MANAGER_SHUTDOWN_FAILURE_RETRY_MS;

@@ -34,6 +34,7 @@
 #define DEVICE_SETTINGS_NVS_KNOB_ROTATION_KEY "knob_rot"
 #define DEVICE_SETTINGS_USB_PREFIX "DEVICE:"
 #define DEVICE_SETTINGS_COMMAND_BUFFER_BYTES 192
+#define DEVICE_SETTINGS_LOW_POWER_IDLE_DISABLED_MS 0U
 #define DEVICE_SETTINGS_LOW_POWER_IDLE_MIN_MS 60000U
 #define DEVICE_SETTINGS_LOW_POWER_IDLE_MAX_MS 86400000U
 #define DEVICE_SETTINGS_AUTO_SHUTDOWN_MIN_MS 60000U
@@ -133,6 +134,9 @@ static uint32_t device_settings_clamp_auto_shutdown_ms(uint32_t value)
 
 static uint32_t device_settings_clamp_low_power_idle_ms(uint32_t value)
 {
+    if (value == DEVICE_SETTINGS_LOW_POWER_IDLE_DISABLED_MS) {
+        return DEVICE_SETTINGS_LOW_POWER_IDLE_DISABLED_MS;
+    }
     if (value < DEVICE_SETTINGS_LOW_POWER_IDLE_MIN_MS) {
         return DEVICE_SETTINGS_LOW_POWER_IDLE_MIN_MS;
     }
@@ -697,11 +701,11 @@ static void device_settings_print_status(const char *result)
         power.usb_det_adc_valid ? 1u : 0u,
         power.usb_det_adc_mv,
         power.usb_det_mismatch ? 1u : 0u,
-        (unsigned)DEVICE_SETTINGS_LOW_POWER_IDLE_MIN_MS,
+        (unsigned)DEVICE_SETTINGS_LOW_POWER_IDLE_DISABLED_MS,
         (unsigned)DEVICE_SETTINGS_LOW_POWER_IDLE_MAX_MS,
-        (unsigned)DEVICE_SETTINGS_LOW_POWER_IDLE_MIN_MS,
+        (unsigned)DEVICE_SETTINGS_LOW_POWER_IDLE_DISABLED_MS,
         (unsigned)DEVICE_SETTINGS_LOW_POWER_IDLE_MAX_MS,
-        (unsigned)DEVICE_SETTINGS_LOW_POWER_IDLE_MIN_MS,
+        (unsigned)DEVICE_SETTINGS_LOW_POWER_IDLE_DISABLED_MS,
         (unsigned)DEVICE_SETTINGS_LOW_POWER_IDLE_MAX_MS,
         (unsigned)DEVICE_SETTINGS_AUTO_SHUTDOWN_MIN_MS,
         (unsigned)DEVICE_SETTINGS_AUTO_SHUTDOWN_MAX_MS,
@@ -915,7 +919,7 @@ static bool device_settings_apply_key_value(
         strcmp(key, "idle_ms") == 0) {
         uint32_t parsed = 0;
         if (!device_settings_parse_u32(value, &parsed) ||
-            parsed < DEVICE_SETTINGS_LOW_POWER_IDLE_MIN_MS ||
+            (parsed != DEVICE_SETTINGS_LOW_POWER_IDLE_DISABLED_MS && parsed < DEVICE_SETTINGS_LOW_POWER_IDLE_MIN_MS) ||
             parsed > DEVICE_SETTINGS_LOW_POWER_IDLE_MAX_MS) {
             if (out_reason != NULL) {
                 *out_reason = "low_power_idle_ms_out_of_range";
@@ -933,7 +937,7 @@ static bool device_settings_apply_key_value(
         strcmp(key, "usb_low_power_idle_ms") == 0) {
         uint32_t parsed = 0;
         if (!device_settings_parse_u32(value, &parsed) ||
-            parsed < DEVICE_SETTINGS_LOW_POWER_IDLE_MIN_MS ||
+            (parsed != DEVICE_SETTINGS_LOW_POWER_IDLE_DISABLED_MS && parsed < DEVICE_SETTINGS_LOW_POWER_IDLE_MIN_MS) ||
             parsed > DEVICE_SETTINGS_LOW_POWER_IDLE_MAX_MS) {
             if (out_reason != NULL) {
                 *out_reason = "plugged_low_power_idle_ms_out_of_range";
@@ -947,7 +951,7 @@ static bool device_settings_apply_key_value(
     if (strcmp(key, "battery_low_power_idle_ms") == 0) {
         uint32_t parsed = 0;
         if (!device_settings_parse_u32(value, &parsed) ||
-            parsed < DEVICE_SETTINGS_LOW_POWER_IDLE_MIN_MS ||
+            (parsed != DEVICE_SETTINGS_LOW_POWER_IDLE_DISABLED_MS && parsed < DEVICE_SETTINGS_LOW_POWER_IDLE_MIN_MS) ||
             parsed > DEVICE_SETTINGS_LOW_POWER_IDLE_MAX_MS) {
             if (out_reason != NULL) {
                 *out_reason = "battery_low_power_idle_ms_out_of_range";
@@ -986,12 +990,6 @@ static bool device_settings_apply_key_value(
             return false;
         }
         uint32_t ms = parsed * 60000U;
-        if (ms < DEVICE_SETTINGS_LOW_POWER_IDLE_MIN_MS) {
-            if (out_reason != NULL) {
-                *out_reason = "low_power_idle_minutes_out_of_range";
-            }
-            return false;
-        }
         config->low_power_idle_ms = ms;
         config->plugged_low_power_idle_ms = ms;
         config->battery_low_power_idle_ms = ms;
@@ -1010,12 +1008,6 @@ static bool device_settings_apply_key_value(
             return false;
         }
         uint32_t ms = parsed * 60000U;
-        if (ms < DEVICE_SETTINGS_LOW_POWER_IDLE_MIN_MS) {
-            if (out_reason != NULL) {
-                *out_reason = "plugged_low_power_idle_minutes_out_of_range";
-            }
-            return false;
-        }
         config->plugged_low_power_idle_ms = ms;
         return true;
     }
@@ -1030,12 +1022,6 @@ static bool device_settings_apply_key_value(
             return false;
         }
         uint32_t ms = parsed * 60000U;
-        if (ms < DEVICE_SETTINGS_LOW_POWER_IDLE_MIN_MS) {
-            if (out_reason != NULL) {
-                *out_reason = "battery_low_power_idle_minutes_out_of_range";
-            }
-            return false;
-        }
         config->battery_low_power_idle_ms = ms;
         config->low_power_idle_ms = ms;
         return true;

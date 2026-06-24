@@ -122,9 +122,9 @@ Current is still estimated per frame with 20 mA per RGB channel at full scale. `
 - `~DEVICE:SET led_key=<0-100>`
 - `~DEVICE:SET led_ec11=<0-100>`
 - `~DEVICE:SET led_edge=<0-100>`
-- `~DEVICE:SET low_power_idle_minutes=<1-1440>`
-- `~DEVICE:SET plugged_low_power_idle_minutes=<1-1440>`
-- `~DEVICE:SET battery_low_power_idle_minutes=<1-1440>`
+- `~DEVICE:SET low_power_idle_minutes=<0-1440>`
+- `~DEVICE:SET plugged_low_power_idle_minutes=<0-1440>`
+- `~DEVICE:SET battery_low_power_idle_minutes=<0-1440>`
 - `~DEVICE:SET plugged_low_power_enabled=<0|1>`
 - `~DEVICE:SET plugged_auto_shutdown_minutes=<0|1-1440|off>`
 - `~DEVICE:SET battery_auto_shutdown_minutes=<0|1-1440|off>`
