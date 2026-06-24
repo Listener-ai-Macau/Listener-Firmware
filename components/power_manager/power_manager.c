@@ -960,6 +960,20 @@ static void power_manager_apply_ble_connection_change_locked(
         return;
     }
 
+    if (connected) {
+        /*
+         * BT connect (reconnect after a disconnect): pull the device back to
+         * ACTIVE by refreshing the radio clock only. The user clock and
+         * hardware-shutdown timer are intentionally left untouched so this does
+         * not disturb overnight shutdown timing, and subsequent idle behavior
+         * is decided purely by the existing idle logic (subject to the
+         * disable-idle setting from af05627). No extra timeout is armed here.
+         */
+        s_last_radio_activity_ms = now_ms;
+        s_state = POWER_MANAGER_STATE_ACTIVE;
+        return;
+    }
+
     if (power_manager_should_preserve_idle_for_ble_change_locked(now_ms)) {
         s_state = power_manager_target_state_locked(now_ms);
         return;

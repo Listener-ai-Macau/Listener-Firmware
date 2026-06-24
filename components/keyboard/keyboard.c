@@ -44,6 +44,12 @@
 #define KEYBOARD_EC11_DETENT_STATE 0x03u
 #define KEYBOARD_EC11_FEEDBACK_EDGE_REFRESH_MS 60
 #define KEYBOARD_EC11_DROP_LOG_INTERVAL_MS 1000
+/* EC11 whole-detent direction-lock (anti CW/CCW flip). Commit a direction only
+ * after >=2 consistent sub-steps (half a detent), reject any opposite-direction
+ * sub-motion once locked, and release the lock after this many ms of stillness
+ * so the next gesture re-arms. Accepts rotation latency for a monotone cue. */
+#define KEYBOARD_EC11_DIR_LOCK_COMMIT 2
+#define KEYBOARD_EC11_LOCK_RELEASE_MS 20
 
 #define KEYBOARD_CUSTOM_PHASE_PRESS 1u
 #define KEYBOARD_CUSTOM_PHASE_RELEASE 2u
@@ -99,6 +105,12 @@ typedef struct {
     bool initialized;
     uint8_t last_state;
     int32_t detent_accumulator;
+    /* Whole-detent direction lock: +1 once CW committed, -1 once CCW committed,
+     * 0 while idle. While locked, opposite-direction sub-motion is clamped to
+     * zero so a half-detent reverse twitch can never flip the accumulated sign
+     * (and therefore never flip the LED cue). */
+    int8_t locked_dir;
+    TickType_t last_motion_tick;
     uint32_t clockwise_count;
     uint32_t counter_clockwise_count;
     uint32_t invalid_transition_count;
@@ -1005,9 +1017,11 @@ static void keyboard_ec11_handle_state(keyboard_ec11_state_t *state, uint8_t raw
     int8_t delta = keyboard_ec11_quadrature_delta(state->last_state, raw_state);
     uint8_t previous_state = state->last_state;
     state->last_state = raw_state;
+    TickType_t now_tick = xTaskGetTickCount();
     if (delta == 0) {
         state->invalid_transition_count++;
         state->detent_accumulator = 0;
+        state->locked_dir = 0;
         ESP_LOGD(
             TAG,
             "EC11 ignored invalid transition: previous=0x%02x state=0x%02x invalid_count=%" PRIu32,
@@ -1022,7 +1036,36 @@ static void keyboard_ec11_handle_state(keyboard_ec11_state_t *state, uint8_t raw
         return;
     }
 
+    /* Release the direction lock after ~KEYBOARD_EC11_LOCK_RELEASE_MS of no
+     * motion so each physical gesture re-arms cleanly; allows a genuine
+     * reverse to register after the user completes a full detent the other way. */
+    if (state->last_motion_tick != 0 &&
+        (uint32_t)(now_tick - state->last_motion_tick) * portTICK_PERIOD_MS >=
+            KEYBOARD_EC11_LOCK_RELEASE_MS) {
+        state->locked_dir = 0;
+    }
+
+    /* Whole-detent direction lock: once the knob has leaned >=2 sub-steps one
+     * way, commit that direction and thereafter CLAMP opposite-direction
+     * sub-motion to zero. A half-detent reverse twitch mid-turn is absorbed and
+     * can never cross the detent threshold or flip the accumulator sign, so the
+     * LED cue stays monotone for the whole gesture. */
+    if (state->locked_dir == 0) {
+        if (state->detent_accumulator >= KEYBOARD_EC11_DIR_LOCK_COMMIT) {
+            state->locked_dir = 1;
+        } else if (state->detent_accumulator <= -KEYBOARD_EC11_DIR_LOCK_COMMIT) {
+            state->locked_dir = -1;
+        }
+    }
+    if (state->locked_dir != 0 &&
+        ((state->locked_dir > 0 && delta < 0) ||
+         (state->locked_dir < 0 && delta > 0))) {
+        /* Opposite-direction sub-motion while locked: discard, do not accumulate. */
+        delta = 0;
+    }
+
     state->detent_accumulator += delta;
+    state->last_motion_tick = now_tick;
     const bool was_low_power_idle = keyboard_power_state_is_low_power_idle();
     power_manager_record_activity("ec11_rotate");
     int8_t feedback_delta =
@@ -1050,6 +1093,7 @@ static void keyboard_ec11_handle_state(keyboard_ec11_state_t *state, uint8_t raw
 
     if (state->detent_accumulator >= 4) {
         state->detent_accumulator = 0;
+        state->locked_dir = 0;
         state->clockwise_count++;
         ESP_LOGI(TAG, "EC11 detent: direction=clockwise count=%" PRIu32, state->clockwise_count);
         diag_log(DIAG_SRC_KEYBOARD, DIAG_KBD_EC11_DETENT, DIAG_SEV_INFO,
@@ -1057,6 +1101,7 @@ static void keyboard_ec11_handle_state(keyboard_ec11_state_t *state, uint8_t raw
         (void)keyboard_ec11_dispatch_rotation(EC11_ROTATION_DIRECTION_CW, "ec11.detent.cw");
     } else if (state->detent_accumulator <= -4) {
         state->detent_accumulator = 0;
+        state->locked_dir = 0;
         state->counter_clockwise_count++;
         ESP_LOGI(TAG, "EC11 detent: direction=counter_clockwise count=%" PRIu32,
                  state->counter_clockwise_count);

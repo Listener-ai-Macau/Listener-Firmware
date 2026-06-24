@@ -103,16 +103,17 @@
 #define STATUS_LED_KEY_LONG_GESTURE_FEEDBACK_MS 1000U
 #define STATUS_LED_KEY_FLASH_ON_MS 420U
 #define STATUS_LED_KEY_FLASH_GAP_MS 220U
+#define STATUS_LED_KEY_FADE_MS 300U
 #define STATUS_LED_KEY_PRESS_PERCENT 55U
 #define STATUS_LED_KEY_RELEASE_PERCENT 35U
 #define STATUS_LED_KEY_GESTURE_PERCENT 85U
 #define STATUS_LED_EC11_FEEDBACK_MS 1400U
 #define STATUS_LED_EC11_ROTATION_HOLD_MS 2600U
 #define STATUS_LED_EC11_ROTATION_STEP_MS 220U
-#define STATUS_LED_EC11_ROTATION_HEAD_START_PERCENT 58U
-#define STATUS_LED_EC11_ROTATION_HEAD_END_PERCENT 30U
-#define STATUS_LED_EC11_ROTATION_BASE_START_PERCENT 4U
-#define STATUS_LED_EC11_ROTATION_BASE_END_PERCENT 0U
+#define STATUS_LED_EC11_ROTATION_HEAD_START_PERCENT 34U
+#define STATUS_LED_EC11_ROTATION_HEAD_END_PERCENT 28U
+#define STATUS_LED_EC11_ROTATION_BASE_START_PERCENT 16U
+#define STATUS_LED_EC11_ROTATION_BASE_END_PERCENT 12U
 #define STATUS_LED_EC11_FEEDBACK_DIAG_MIN_MS 500U
 #define STATUS_LED_EC11_REPAIR_BLINK_MIN_PERCENT 4U
 #define STATUS_LED_EC11_REPAIR_BLINK_MAX_PERCENT 16U
@@ -1745,7 +1746,17 @@ static bool status_led_render_idle_transition_clear_locked(status_led_frame_t *f
     if (!s_state.idle_transition_clear_pending) {
         return false;
     }
+    /*
+     * Selective clear: flush the transient accent slots (REC/AI/OK/WARN and the
+     * EC11/KEY/EDGE strips) to black, but PRESERVE the persistent base tokens
+     * (power, BLE) carried over from the last transmitted frame. The old blanket
+     * memset wiped SEM_BLE for one clear frame when an accent (e.g. the AI blink)
+     * ended, so the BT light snapped dark even though Bluetooth was still
+     * connected (#7). The status and BLE lights now stay independent of accents.
+     */
     memset(frame, 0, sizeof(*frame));
+    frame->status[STATUS_LED_SEM_PWR] = s_state.last_frame.status[STATUS_LED_SEM_PWR];
+    frame->status[STATUS_LED_SEM_BLE] = s_state.last_frame.status[STATUS_LED_SEM_BLE];
     s_state.idle_transition_clear_pending = false;
     s_state.last_estimated_current_ma = 0;
     s_state.last_current_budget_ma = 0;
@@ -2859,8 +2870,10 @@ static bool status_led_render_ec11_feedback_locked(status_led_frame_t *frame, ui
     }
 
     uint32_t dot = status_led_ec11_feedback_dot_from_step(s_state.ec11_feedback, motion_step);
-    status_led_rgb_t tail = status_led_scale_raw(white, 56U);
-    status_led_rgb_t fade = status_led_scale_raw(white, 24U);
+    /* Golden recording-flow falloff ratios (tail = head x68, fade = head x38) so the
+     * white rotation chase shares the recording ring's soft 3-level profile (#8). */
+    status_led_rgb_t tail = status_led_scale_raw(white, 68U);
+    status_led_rgb_t fade = status_led_scale_raw(white, 38U);
     status_led_set_max(&frame->ec11[dot], white);
     status_led_set_max(
         &frame->ec11[status_led_ec11_feedback_trail_index(s_state.ec11_feedback, dot, 1U)],
@@ -2868,9 +2881,6 @@ static bool status_led_render_ec11_feedback_locked(status_led_frame_t *frame, ui
     status_led_set_max(
         &frame->ec11[status_led_ec11_feedback_trail_index(s_state.ec11_feedback, dot, 2U)],
         fade);
-    status_led_set_max(
-        &frame->ec11[status_led_ec11_feedback_trail_index(s_state.ec11_feedback, dot, 3U)],
-        status_led_scale_raw(white, 12U));
     return true;
 }
 
@@ -2993,8 +3003,22 @@ static bool status_led_render_key_feedback_locked(status_led_frame_t *frame, uin
                 status_led_key_feedback_color_locked(),
                 STATUS_LED_KEY_GESTURE_PERCENT,
                 false);
-        } else if (elapsed >= (STATUS_LED_KEY_FLASH_ON_MS * 2U + STATUS_LED_KEY_FLASH_GAP_MS)) {
-            return false;
+        } else if (elapsed >= (STATUS_LED_KEY_FLASH_ON_MS * 2U + STATUS_LED_KEY_FLASH_GAP_MS) &&
+                   elapsed < (STATUS_LED_KEY_FLASH_ON_MS * 2U + STATUS_LED_KEY_FLASH_GAP_MS +
+                              STATUS_LED_KEY_FADE_MS)) {
+            /* Gradual fade tail after the second flash, mirroring the EC11 press
+             * envelope's falling edge instead of a one-frame snap to black (#4). */
+            uint32_t fade_elapsed =
+                elapsed - (STATUS_LED_KEY_FLASH_ON_MS * 2U + STATUS_LED_KEY_FLASH_GAP_MS);
+            uint8_t fade_percent = status_led_decay_percent(
+                fade_elapsed,
+                STATUS_LED_KEY_FADE_MS,
+                STATUS_LED_KEY_GESTURE_PERCENT,
+                0U);
+            color = status_led_token_locked(
+                status_led_key_feedback_color_locked(),
+                fade_percent,
+                false);
         }
         break;
     case STATUS_LED_KEY_FEEDBACK_LONG:
@@ -3009,6 +3033,19 @@ static bool status_led_render_key_feedback_locked(status_led_frame_t *frame, uin
             color = status_led_token_locked(
                 status_led_key_feedback_color_locked(),
                 STATUS_LED_KEY_GESTURE_PERCENT,
+                false);
+        } else if (elapsed < (STATUS_LED_KEY_FLASH_ON_MS + STATUS_LED_KEY_FADE_MS)) {
+            /* Gradual fade tail, mirroring the EC11 press envelope's falling edge
+             * instead of a one-frame snap to black (#4). */
+            uint32_t fade_elapsed = elapsed - STATUS_LED_KEY_FLASH_ON_MS;
+            uint8_t fade_percent = status_led_decay_percent(
+                fade_elapsed,
+                STATUS_LED_KEY_FADE_MS,
+                STATUS_LED_KEY_GESTURE_PERCENT,
+                0U);
+            color = status_led_token_locked(
+                status_led_key_feedback_color_locked(),
+                fade_percent,
                 false);
         } else {
             return false;

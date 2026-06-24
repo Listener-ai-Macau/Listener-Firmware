@@ -1147,21 +1147,22 @@ def main() -> int:
             "components/status_led: EC11 double-click recovery must use the BLE re-pair renderer, not a key-style EC11 feedback enum"
         )
     if not re.search(
-        r"STATUS_LED_KEY_FEEDBACK_DOUBLE[\s\S]{0,520}"
-        r"elapsed\s*>=\s*\(STATUS_LED_KEY_FLASH_ON_MS\s*\*\s*2U\s*\+\s*STATUS_LED_KEY_FLASH_GAP_MS\)[\s\S]{0,80}"
-        r"return\s+false",
+        r"STATUS_LED_KEY_FEEDBACK_DOUBLE[\s\S]{0,700}"
+        r"STATUS_LED_KEY_FLASH_ON_MS\s*\*\s*2U\s*\+\s*STATUS_LED_KEY_FLASH_GAP_MS\s*\+\s*"
+        r"STATUS_LED_KEY_FADE_MS[\s\S]{0,360}"
+        r"status_led_decay_percent",
         status_led,
     ) or not re.search(
-        r"STATUS_LED_KEY_FEEDBACK_SINGLE[\s\S]{0,360}"
-        r"elapsed\s*<\s*STATUS_LED_KEY_FLASH_ON_MS[\s\S]{0,260}"
-        r"else\s*\{\s*return\s+false\s*;",
+        r"STATUS_LED_KEY_FEEDBACK_SINGLE[\s\S]{0,460}"
+        r"elapsed\s*<\s*\(STATUS_LED_KEY_FLASH_ON_MS\s*\+\s*STATUS_LED_KEY_FADE_MS\)[\s\S]{0,320}"
+        r"status_led_decay_percent",
         status_led,
     ) or not re.search(
         r"if\s*\(\s*color\.r\s*==\s*0U\s*&&\s*color\.g\s*==\s*0U\s*&&\s*color\.b\s*==\s*0U\s*\)\s*\{\s*return\s+true\s*;",
         status_led,
     ):
         failures.append(
-            "components/status_led/status_led.c: key gesture feedback must suppress white only during the double-flash gap, then release the key LED after the visible flash pattern"
+            "components/status_led/status_led.c: key gesture feedback must end with a STATUS_LED_KEY_FADE_MS decay tail mirroring the EC11 press, instead of a hard one-frame cut to black"
         )
     if not re.search(
         r"physical_feedback_active\s*&&\s*!gesture_active[\s\S]{0,260}status_led_rgb\(255,\s*255,\s*255\)",
@@ -1230,8 +1231,10 @@ def main() -> int:
         or "ec11_feedback_motion_step" not in status_led
         or "STATUS_LED_EC11_ROTATION_HOLD_MS 2600U" not in status_led
         or "STATUS_LED_EC11_ROTATION_STEP_MS 220U" not in status_led
-        or "STATUS_LED_EC11_ROTATION_HEAD_START_PERCENT 58U" not in status_led
-        or "STATUS_LED_EC11_ROTATION_BASE_START_PERCENT 4U" not in status_led
+        or "STATUS_LED_EC11_ROTATION_HEAD_START_PERCENT 34U" not in status_led
+        or "STATUS_LED_EC11_ROTATION_HEAD_END_PERCENT 28U" not in status_led
+        or "STATUS_LED_EC11_ROTATION_BASE_START_PERCENT 16U" not in status_led
+        or "STATUS_LED_EC11_ROTATION_BASE_END_PERCENT 12U" not in status_led
         or "status_led_decay_percent(" not in status_led
         or "status_led_refresh_ec11_feedback" not in status_led
         or "status_led_apply_ec11_feedback" not in status_led
@@ -1266,8 +1269,7 @@ def main() -> int:
         )
         or not re.search(
             r"status_led_ec11_feedback_trail_index\(s_state\.ec11_feedback,\s*dot,\s*1U\)[\s\S]{0,320}"
-            r"status_led_ec11_feedback_trail_index\(s_state\.ec11_feedback,\s*dot,\s*2U\)[\s\S]{0,320}"
-            r"status_led_ec11_feedback_trail_index\(s_state\.ec11_feedback,\s*dot,\s*3U\)",
+            r"status_led_ec11_feedback_trail_index\(s_state\.ec11_feedback,\s*dot,\s*2U\)",
             status_led,
         )
     ):
