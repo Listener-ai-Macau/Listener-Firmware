@@ -75,14 +75,15 @@ extern void status_led_set_error(int domain, int severity, const char *reason) _
 #define POWER_MANAGER_CHARGE_FULL_DEBOUNCE_MS 10000U
 #define POWER_MANAGER_CHARGE_FULL_MIN_MV 4050U
 #define POWER_MANAGER_CHARGE_FULL_MIN_PERCENT 88U
-#define POWER_MANAGER_CHARGER_STATUS_EXTERNAL_HOLD_MS 8000U
+#define POWER_MANAGER_CHARGER_STATUS_EXTERNAL_HOLD_MS 1000U
 #define POWER_MANAGER_IDLE_BATTERY_REFRESH_MS 600000U
+#define POWER_MANAGER_LOW_POWER_EXTERNAL_EVALUATE_INTERVAL_MS 1000U
 #define POWER_MANAGER_LOW_POWER_EVALUATE_INTERVAL_MS 60000U
 #define POWER_MANAGER_LOW_BATTERY_SHUTDOWN_MAX_MV 2800U
 #define POWER_MANAGER_LOW_BATTERY_CONFIRM_MS 5000U
 #define POWER_MANAGER_LOW_BATTERY_BOOT_GRACE_MS 15000U
 #define POWER_MANAGER_SHUTDOWN_BATTERY_NOTIFY_WAIT_MS 100U
-#define POWER_MANAGER_SHUTDOWN_LED_CONFIRM_MS 700U
+#define POWER_MANAGER_SHUTDOWN_LED_CONFIRM_MS 1200U
 #define POWER_MANAGER_POWER_REMOVAL_WAIT_MS 10000U
 #define POWER_MANAGER_SHUTDOWN_FAILURE_RETRY_MS 900000U
 #ifndef CONFIG_POWER_MANAGER_BATTERY_CRITICAL_PERCENT
@@ -548,12 +549,11 @@ static uint32_t power_manager_charge_full_candidate_ms_locked(uint64_t now_ms)
 }
 
 static bool power_manager_charger_status_external_locked(
-    bool usb_power_present,
     bool raw_charging,
     bool raw_full_external,
     uint64_t now_ms)
 {
-    if (usb_power_present || raw_charging || raw_full_external) {
+    if (raw_charging || raw_full_external) {
         s_charger_status_external_until_ms =
             now_ms + POWER_MANAGER_CHARGER_STATUS_EXTERNAL_HOLD_MS;
         return true;
@@ -583,7 +583,6 @@ static void power_manager_apply_charge_state_filter_locked(
         raw_full_status &&
         power_manager_charge_full_battery_allowed(battery_snapshot);
     bool charger_status_external = power_manager_charger_status_external_locked(
-        source->usb_power_present,
         raw_charging,
         raw_full_external,
         now_ms);
@@ -894,6 +893,9 @@ static power_manager_state_t power_manager_awake_idle_state_locked(uint32_t radi
     }
 
     uint32_t low_power_idle_ms = power_manager_low_power_idle_ms();
+    if (low_power_idle_ms == 0U) {
+        return POWER_MANAGER_STATE_ACTIVE;
+    }
     if (s_ble_connected) {
         return radio_idle_ms >= low_power_idle_ms
             ? POWER_MANAGER_STATE_CONNECTED_IDLE
@@ -1370,12 +1372,13 @@ void power_manager_get_snapshot(power_manager_snapshot_t *snapshot)
     snapshot->battery_low_power_idle_threshold_ms = device_settings_get_battery_low_power_idle_ms();
     snapshot->connected_idle_threshold_ms = snapshot->low_power_idle_threshold_ms;
     snapshot->disconnected_idle_threshold_ms = snapshot->low_power_idle_threshold_ms;
-        snapshot->plugged_low_power_enabled = power_manager_plugged_low_power_enabled();
-        snapshot->low_power_idle_allowed =
-            !snapshot->external_power_present || snapshot->plugged_low_power_enabled;
-        snapshot->power_input_wake_configured = s_power_input_wake_configured;
-        snapshot->power_input_irq_armed = s_power_input_irq_armed;
-        snapshot->hardware_shutdown_threshold_ms = power_manager_hardware_shutdown_ms();
+    snapshot->plugged_low_power_enabled = power_manager_plugged_low_power_enabled();
+    snapshot->low_power_idle_allowed =
+        snapshot->low_power_idle_threshold_ms > 0U &&
+        (!snapshot->external_power_present || snapshot->plugged_low_power_enabled);
+    snapshot->power_input_wake_configured = s_power_input_wake_configured;
+    snapshot->power_input_irq_armed = s_power_input_irq_armed;
+    snapshot->hardware_shutdown_threshold_ms = power_manager_hardware_shutdown_ms();
     snapshot->plugged_auto_shutdown_threshold_ms = device_settings_get_plugged_auto_shutdown_ms();
     snapshot->battery_auto_shutdown_threshold_ms = device_settings_get_battery_auto_shutdown_ms();
     snapshot->shutdown_failure_retry_ms = POWER_MANAGER_SHUTDOWN_FAILURE_RETRY_MS;
@@ -1937,8 +1940,10 @@ static void power_manager_task(void *parameter)
 
     while (1) {
         power_manager_state_t state = POWER_MANAGER_STATE_ACTIVE;
+        bool external_power_present = false;
         if (s_mutex != NULL && xSemaphoreTake(s_mutex, portMAX_DELAY) == pdTRUE) {
             state = s_state;
+            external_power_present = s_external_power_present;
             xSemaphoreGive(s_mutex);
         }
 
@@ -1946,6 +1951,10 @@ static void power_manager_task(void *parameter)
             (void)watchdog_platform_task_notify_take(
                 pdTRUE,
                 CONFIG_POWER_MANAGER_EVALUATE_INTERVAL_MS);
+        } else if (external_power_present) {
+            (void)watchdog_platform_task_notify_take_low_power(
+                pdTRUE,
+                POWER_MANAGER_LOW_POWER_EXTERNAL_EVALUATE_INTERVAL_MS);
         } else {
             (void)watchdog_platform_task_notify_take_low_power(
                 pdTRUE,

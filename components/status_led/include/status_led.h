@@ -66,6 +66,7 @@ void status_led_notify_warning(const char *reason);
 void status_led_notify_key_event(uint8_t key_index, bool pressed);
 void status_led_notify_key_feedback(uint8_t key_index, status_led_key_feedback_t feedback);
 void status_led_notify_ec11_feedback(status_led_ec11_feedback_t feedback);
+void status_led_refresh_ec11_feedback(status_led_ec11_feedback_t feedback);
 void status_led_notify_shutdown_confirm(bool final, const char *reason);
 void status_led_cancel_shutdown_confirm(const char *reason);
 void status_led_set_error(

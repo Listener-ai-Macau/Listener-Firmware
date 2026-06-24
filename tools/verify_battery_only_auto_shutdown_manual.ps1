@@ -5,6 +5,9 @@ param(
     [int]$Baud = 115200,
     [string]$OutputDir = "",
     [int]$WaitSeconds = 90,
+    [int]$ShutdownMinutes = 1,
+    [int]$RestoreShutdownMinutes = 30,
+    [switch]$PreserveShutdownSetting,
     [int]$ReappearTimeoutSeconds = 90,
     [switch]$NoPrompt
 )
@@ -13,6 +16,12 @@ $ErrorActionPreference = "Stop"
 Set-StrictMode -Version Latest
 
 $repoRoot = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot "..")).Path
+if ($ShutdownMinutes -lt 1 -or $ShutdownMinutes -gt 1440) {
+    throw "-ShutdownMinutes must be in the range 1..1440."
+}
+if ($RestoreShutdownMinutes -lt 1 -or $RestoreShutdownMinutes -gt 1440) {
+    throw "-RestoreShutdownMinutes must be in the range 1..1440."
+}
 if ([string]::IsNullOrWhiteSpace($OutputDir)) {
     $stamp = Get-Date -Format "yyyyMMdd-HHmmss"
     $OutputDir = Join-Path $repoRoot "docs/validation/voice-keyboard-firmware-full-function-test-1.7/battery-only-auto-shutdown-$stamp"
@@ -171,14 +180,14 @@ function Invoke-SerialCommands {
 
 Show-InfoPrompt `
     -Title "准备 battery-only 自动关机验证" `
-    -Message "请确认新板电池已接好，USB-C 当前连接电脑，且没有其它串口工具占用 $Port。脚本会把自动关机临时设置为 1 分钟，并清空本轮 diag_log。"
+    -Message "请确认新板电池已接好，USB-C 当前连接电脑，且没有其它串口工具占用 $Port。脚本会把电池自动关机设置为 $ShutdownMinutes 分钟，并清空本轮 diag_log。"
 
 $initialPorts = @(Get-SerialPorts)
 Add-PollLine ("initial target={0} ports={1}" -f $Port, (Format-Ports -Ports $initialPorts))
 
 Invoke-SerialCommands -Commands @(
     "~DIAGLOG:CLEAR",
-    "~DEVICE:SET auto_shutdown_minutes=1 plugged_low_power_enabled=1",
+    "~DEVICE:SET auto_shutdown_minutes=$ShutdownMinutes plugged_low_power_enabled=1",
     "~DEVICE:SETTINGS",
     "~POWER:STATUS",
     "~BOARD:STATUS"
@@ -208,12 +217,18 @@ $reappear = Wait-PortPresence -TargetPort $Port -ShouldBePresent $true -TimeoutS
 $postReadOk = $false
 if ($reappear.observed) {
     try {
-        Invoke-SerialCommands -Commands @(
+        $postCommands = @(
             "~POWER:STATUS",
             "~BOARD:STATUS",
-            "~DIAGLOG:LAST:160:power",
-            "~DEVICE:SET auto_shutdown_minutes=30"
-        ) -ReadMilliseconds 1800
+            "~DIAGLOG:LAST:160:power"
+        )
+        if ($PreserveShutdownSetting.IsPresent) {
+            $postCommands += "~DEVICE:SET auto_shutdown_minutes=$ShutdownMinutes"
+        } else {
+            $postCommands += "~DEVICE:SET auto_shutdown_minutes=$RestoreShutdownMinutes"
+        }
+        $postCommands += "~DEVICE:SETTINGS"
+        Invoke-SerialCommands -Commands $postCommands -ReadMilliseconds 1800
         $postReadOk = $true
     } catch {
         Add-Transcript ("post_read_error {0}" -f $_.Exception.Message)
@@ -233,6 +248,9 @@ $summary = [ordered]@{
     transcript = $transcriptPath
     port_poll = $pollPath
     wait_seconds = $WaitSeconds
+    shutdown_minutes = $ShutdownMinutes
+    preserve_shutdown_setting = [bool]$PreserveShutdownSetting
+    restore_shutdown_minutes = if ($PreserveShutdownSetting.IsPresent) { $null } else { $RestoreShutdownMinutes }
     initial_ports = @($initialPorts)
     port_disappeared_after_unplug = [bool]$disappear.observed
     human_observed_power_off = [bool]$humanObservedOff
@@ -251,6 +269,8 @@ $summary | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath $summaryPath -Enco
     "- Result: $result",
     "- Port: ``$Port``",
     "- Wait seconds: $WaitSeconds",
+    "- Shutdown minutes: $ShutdownMinutes",
+    "- Preserve shutdown setting: $([bool]$PreserveShutdownSetting)",
     "- Port disappeared after unplug: $($disappear.observed)",
     "- Human observed power off: $humanObservedOff",
     "- Port reappeared after replug: $($reappear.observed)",

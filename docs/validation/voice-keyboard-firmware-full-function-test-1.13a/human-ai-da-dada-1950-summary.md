@@ -30,4 +30,4 @@ Mode: TailOnly, AI-only
 
 Raw popup/session/serial files are preserved outside the firmware repo at:
 
-`C:\Users\Billy\Desktop\Denzic\listener-human-review\voice-keyboard-firmware-full-function-test-1.13b-preaccept-20260620-153321-tail-ai-only-da-dada-balanced-1950-visible\`
+`C:\Users\Billy\Desktop\Denzic\ai-collaboration-workflow\docs\human-review\voice-keyboard-firmware-full-function-test-1.13b-preaccept-20260620-153321-tail-ai-only-da-dada-balanced-1950-visible\`

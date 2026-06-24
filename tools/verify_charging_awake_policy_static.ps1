@@ -24,6 +24,17 @@ function Assert-Contains {
     }
 }
 
+function Assert-NotContains {
+    param(
+        [string]$Text,
+        [string]$Pattern,
+        [string]$Label
+    )
+    if ($Text -match $Pattern) {
+        throw "Unexpected $Label ($Pattern)"
+    }
+}
+
 $powerManager = Read-RepoFile "components/power_manager/power_manager.c"
 $powerHeader = Read-RepoFile "components/power_manager/include/power_manager.h"
 $boardPins = Read-RepoFile "ports/esp32/board_pins/include/board_pins.h"
@@ -82,9 +93,10 @@ Assert-Contains $powerManager '\.charge_full\s*=\s*charge_power_present\s*&&\s*b
 Assert-Contains $powerManager 'POWER_MANAGER_CHARGE_FULL_DEBOUNCE_MS\s+10000U' 'charge-full debounce window'
 Assert-Contains $powerManager 'POWER_MANAGER_CHARGE_FULL_MIN_MV\s+4050U' 'charge-full minimum voltage guard'
 Assert-Contains $powerManager 'POWER_MANAGER_CHARGE_FULL_MIN_PERCENT\s+88U' 'charge-full minimum percent guard'
-Assert-Contains $powerManager 'POWER_MANAGER_CHARGER_STATUS_EXTERNAL_HOLD_MS\s+8000U' 'short charger-status external-power retention window'
+Assert-Contains $powerManager 'POWER_MANAGER_CHARGER_STATUS_EXTERNAL_HOLD_MS\s+1000U' 'short charger-status external-power retention window'
 Assert-Contains $powerManager 'power_manager_apply_charge_state_filter_locked' 'central charge-state filter'
-Assert-Contains $powerManager 'power_manager_charger_status_external_locked[\s\S]*usb_power_present\s*\|\|\s*raw_charging\s*\|\|\s*raw_full_external[\s\S]*s_charger_status_external_until_ms[\s\S]*POWER_MANAGER_CHARGER_STATUS_EXTERNAL_HOLD_MS' 'USB, active charging, or validated full refreshes retained external-power state'
+Assert-Contains $powerManager 'power_manager_charger_status_external_locked[\s\S]*raw_charging\s*\|\|\s*raw_full_external[\s\S]*s_charger_status_external_until_ms[\s\S]*POWER_MANAGER_CHARGER_STATUS_EXTERNAL_HOLD_MS' 'active charging or validated full refreshes retained external-power state'
+Assert-NotContains $powerManager 'power_manager_charger_status_external_locked[\s\S]*usb_power_present\s*\|\|\s*raw_charging' 'USB SOF refreshing charger-status retention'
 Assert-Contains $powerManager 'raw_charging\s*=\s*source->charger_active' 'central filter trusts active-low charger state'
 Assert-Contains $powerManager 'raw_full_status\s*=\s*source->bat_std_level\s*==\s*0' 'central filter reads active-low raw full independently of GPIO7'
 Assert-Contains $powerManager 'source->charge_power_present\s*=\s*source->charge_power_present\s*\|\|\s*charger_status_external' 'charger status retention becomes charge-power evidence'

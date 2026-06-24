@@ -152,6 +152,10 @@ CHECKS = {
         'strcmp(command, "PM")',
         'strcmp(command, "SHUTDOWN")',
     ],
+    "components/status_led/include/status_led.h": [
+        "STATUS_LED_KEY_FEEDBACK_DOUBLE",
+        "status_led_notify_ec11_feedback",
+    ],
     "ports/esp32/audio_capture/audio_capture_esp32.c": [
         "audio_capture_set_idle_power_save",
         "i2s_channel_disable",
@@ -188,32 +192,52 @@ CHECKS = {
         "DEVICE:SETTINGS",
     ],
     "ports/esp32/voice_key_input/voice_key_input_esp32.c": [
-        "VOICE_KEY_INPUT_IDLE_BACKUP_POLL_MS (1000)",
-        "VOICE_KEY_INPUT_LOW_POWER_IDLE_BACKUP_POLL_MS (5000)",
+        "VOICE_KEY_INPUT_IDLE_BACKUP_POLL_MS (20)",
+        "VOICE_KEY_INPUT_LOW_POWER_IDLE_BACKUP_POLL_MS (20)",
+        "VOICE_KEY_INPUT_DOUBLE_CLICK_WINDOW_MS (200)",
+        "VOICE_KEY_INPUT_RECOVERY_DOUBLE_CLICK_WINDOW_MS (650)",
+        "VOICE_KEY_INPUT_LONG_PRESS_IGNORE_MS (800)",
+        "VOICE_KEY_INPUT_HOLD_FEEDBACK_REFRESH_MS (300)",
         "voice_key_input_next_wait_ms",
         "voice_key_input_enable_light_sleep_wake",
-        "GPIO_INTR_ANYEDGE",
+        "GPIO_INTR_DISABLE",
         "GPIO_INTR_LOW_LEVEL",
         "gpio_wakeup_enable",
         "esp_sleep_enable_gpio_wakeup",
-        "gpio_isr_handler_add",
         "watchdog_platform_task_notify_take_low_power",
-        "wake=interrupt_anyedge",
+        "wake=active_low_gpio_wakeup+20ms_scan",
+        "low_power_wake=active_low_gpio_wakeup+20ms_scan",
+        "runtime_irq=disabled",
     ],
     "ports/esp32/voice_key_input/CMakeLists.txt": [
         "esp_hw_support",
     ],
     "components/keyboard/keyboard.c": [
-        "KEYBOARD_CUSTOM_LOW_POWER_IDLE_BACKUP_POLL_MS 5000",
-        "KEYBOARD_EC11_LOW_POWER_IDLE_POLL_MS 5000",
+        "KEYBOARD_CUSTOM_IDLE_BACKUP_POLL_MS 20",
+        "KEYBOARD_CUSTOM_LOW_POWER_IDLE_BACKUP_POLL_MS 20",
+        "KEYBOARD_CUSTOM_DEBOUNCE_MS 20",
+        "KEYBOARD_CUSTOM_DOUBLE_CLICK_WINDOW_MS 200",
+        "KEYBOARD_EC11_EVENT_QUEUE_DEPTH 256",
+        "KEYBOARD_EC11_LOW_POWER_IDLE_POLL_MS 20",
+        "KEYBOARD_EC11_FEEDBACK_EDGE_REFRESH_MS 60",
+        "KEYBOARD_EC11_DROP_LOG_INTERVAL_MS 1000",
+        "s_ec11_isr_last_raw_state",
+        "s_ec11_overflow_pending",
+        "keyboard_ec11_refresh_feedback_for_delta",
+        "direction_changed",
+        "raw_state != KEYBOARD_EC11_DETENT_STATE",
+        "was_low_power_idle",
         "keyboard_enable_active_low_light_sleep_wake",
+        "GPIO_INTR_ANYEDGE",
         "GPIO_INTR_LOW_LEVEL",
+        "GPIO_INTR_DISABLE",
         "gpio_wakeup_enable",
         "esp_sleep_enable_gpio_wakeup",
-        "GPIO_INTR_DISABLE",
+        "gpio_isr_handler_add",
+        "watchdog_platform_task_notify_take_low_power",
         "watchdog_platform_task_notify_take(pdTRUE, wait_ms)",
-        "wake=poll_10ms",
-        "low_power_wake=gpio_wakeup_only",
+        "wake=active_low_gpio_wakeup+20ms_scan",
+        "low_power_wake=active_low_gpio_wakeup+20ms_scan",
     ],
     "components/keyboard/CMakeLists.txt": [
         "esp_hw_support",
@@ -297,6 +321,9 @@ CHECKS = {
         "actively driven LOW during normal boot and runtime",
         "Active charging or charge-full status blocks this automatic low-battery shutdown",
         "BLE link churn is radio activity, not user activity",
+        "button-wakeable and knob-wakeable",
+        "20 ms low-power backup poll",
+        "valid low-power rotation edge records activity",
     ],
 }
 
@@ -457,6 +484,17 @@ def main() -> int:
         )
 
     power_manager = (REPO_ROOT / "components/power_manager/power_manager.c").read_text(encoding="utf-8")
+    if not re.search(r"POWER_MANAGER_CHARGER_STATUS_EXTERNAL_HOLD_MS\s+1000U", power_manager):
+        failures.append(
+            "components/power_manager/power_manager.c: charger-status retention should be short enough for fast unplug feedback"
+        )
+    if re.search(
+        r"power_manager_charger_status_external_locked[\s\S]*usb_power_present\s*\|\|\s*raw_charging",
+        power_manager,
+    ):
+        failures.append(
+            "components/power_manager/power_manager.c: USB SOF must not refresh charger-status retention after unplug"
+        )
     if not re.search(
         r"power_manager_apply_charge_state_filter_locked[\s\S]*"
         r"raw_full_external\s*=[\s\S]*"
@@ -530,10 +568,13 @@ def main() -> int:
             "components/power_manager/power_manager.c: evaluate loop must avoid unconditional 2s battery ADC reads in disconnected idle"
         )
     if not re.search(
+        r"POWER_MANAGER_LOW_POWER_EXTERNAL_EVALUATE_INTERVAL_MS\s+1000U[\s\S]*"
         r"POWER_MANAGER_LOW_POWER_EVALUATE_INTERVAL_MS\s+60000U[\s\S]*"
         r"power_manager_task[\s\S]*"
         r"state\s*==\s*POWER_MANAGER_STATE_ACTIVE[\s\S]*"
         r"watchdog_platform_task_notify_take\([\s\S]*CONFIG_POWER_MANAGER_EVALUATE_INTERVAL_MS[\s\S]*"
+        r"external_power_present[\s\S]*"
+        r"watchdog_platform_task_notify_take_low_power\([\s\S]*POWER_MANAGER_LOW_POWER_EXTERNAL_EVALUATE_INTERVAL_MS[\s\S]*"
         r"watchdog_platform_task_notify_take_low_power\([\s\S]*POWER_MANAGER_LOW_POWER_EVALUATE_INTERVAL_MS",
         power_manager,
     ):
@@ -695,6 +736,10 @@ def main() -> int:
     if "POWER_MANAGER_POWER_REMOVAL_WAIT_MS 10000U" not in power_manager:
         failures.append(
             "components/power_manager/power_manager.c: shutdown power-removal observation window must be explicit and bounded"
+        )
+    if not re.search(r"#define\s+POWER_MANAGER_SHUTDOWN_LED_CONFIRM_MS\s+1200U\b", power_manager):
+        failures.append(
+            "components/power_manager/power_manager.c: hardware shutdown must hold the final PWR-only LED confirmation for 1200 ms"
         )
     if not re.search(
         r"power_manager_restore_after_shutdown_failure[\s\S]*"
@@ -910,6 +955,13 @@ def main() -> int:
             "ports/esp32/ble_hid/ble_hid.c: low-power USB read timeout must stay at 5000 ms to avoid frequent idle wakeups"
         )
     if not re.search(
+        r"#define\s+BLE_HID_USAGE_QUEUE_LENGTH\s+32\b",
+        ble_hid,
+    ):
+        failures.append(
+            "ports/esp32/ble_hid/ble_hid.c: HID usage queue must stay deep enough for fast EC11 rotation bursts without starving local LED feedback"
+        )
+    if not re.search(
         r"if\s*\(!ble_hid_is_connected\(\)\)\s*\{[\s\S]{0,120}"
         r"power_manager_record_activity\(\"hid_(?:key|usage|consumer)_wake\"\)[\s\S]{0,120}"
         r"ble_hid_gap_request_reconnect\(\)",
@@ -977,13 +1029,443 @@ def main() -> int:
                     f"ports/esp32/ble_hid/ble_hid.c: invalid command {token!r} must not be activity-gated"
                 )
 
+    status_led_header = (
+        REPO_ROOT / "components/status_led/include/status_led.h"
+    ).read_text(encoding="utf-8")
+    status_led = (REPO_ROOT / "components/status_led/status_led.c").read_text(
+        encoding="utf-8"
+    )
+    status_led_backend = (
+        REPO_ROOT / "components/status_led/status_led_strip_backend.c"
+    ).read_text(encoding="utf-8")
+    if "STATUS_LED_LOW_POWER_STATUS_RESYNC_MS" in status_led:
+        failures.append(
+            "components/status_led/status_led.c: low-power idle must not keep retransmitting the status rail after the final PWR-only frame"
+        )
+    if "status_led_low_power_status_rewrite_needed" in status_led:
+        failures.append(
+            "components/status_led/status_led.c: low-power status rewrite helper must be removed; idle should settle then suspend all LED transports"
+        )
+    if "if (disabled) {\n            s_state.idle_transition_clear_pending = true;" not in status_led:
+        failures.append(
+            "components/status_led/status_led.c: entering low-power idle must schedule a zero clear frame before the final PWR-only latch"
+        )
+    if not re.search(
+        r"status_led_idle_transport_release_pending[\s\S]{0,260}"
+        r"index\s*=\s*0",
+        status_led,
+    ):
+        failures.append(
+            "components/status_led/status_led.c: low-power transport release pending must include the status rail"
+        )
+    quiet_suspend = re.search(
+        r"static\s+void\s+status_led_suspend_quiet_idle_transports[\s\S]*?"
+        r"static\s+void\s+status_led_transmit_changed_frame",
+        status_led,
+    )
+    if quiet_suspend is None:
+        failures.append(
+            "components/status_led/status_led.c: missing low-power quiet transport suspend helper"
+        )
+    elif "STATUS_LED_STRIP_STATUS" in quiet_suspend.group(0):
+        failures.append(
+            "components/status_led/status_led.c: low-power quiet suspend must not skip the status rail"
+        )
+    if (
+        "rmt_idle_drive=active_status_dma_low_power_non_dma_final_frame_then_immediate_all_quiet_suspend" not in status_led
+        or "low_power_transport_suspend_ms=%u" not in status_led
+        or "low_power_status_tx=non_dma_clear_and_final_frame" not in status_led
+        or "shutdown_final_status_tx=non_dma_pwr_only_latch" not in status_led
+        or "low_power_final_latch_writes=%u" not in status_led
+        or not re.search(r"#define\s+STATUS_LED_RMT_IDLE_RELEASE_MS\s+0U\b", status_led)
+    ):
+        failures.append(
+            "components/status_led/status_led.c: LED contract must report active-DMA plus non-DMA low-power final-frame suspend policy"
+        )
+    if not re.search(r"#define\s+STATUS_LED_LOW_POWER_PWR_PERCENT\s+12U\b", status_led):
+        failures.append(
+            "components/status_led/status_led.c: low-power single-channel PWR brightness must be 12 percent for visible idle indication"
+        )
+    if not re.search(r"#define\s+STATUS_LED_LOW_POWER_PWR_WHITE_PERCENT\s+4U\b", status_led):
+        failures.append(
+            "components/status_led/status_led.c: low-power white PWR brightness must use 4 percent per RGB channel to match the 12 percent total target"
+        )
+    if not re.search(r"#define\s+STATUS_LED_LOW_POWER_FINAL_LATCH_WRITES\s+3U\b", status_led):
+        failures.append(
+            "components/status_led/status_led.c: low-power final PWR-only latch must be repeated three times before transport suspend"
+        )
+    if (
+        not re.search(r"#define\s+STATUS_LED_LOW_POWER_STATUS_RETRY_WRITES\s+3U\b", status_led)
+        or "status_writes < STATUS_LED_LOW_POWER_FINAL_LATCH_WRITES" not in status_led
+        or "status_writes + STATUS_LED_LOW_POWER_STATUS_RETRY_WRITES" not in status_led
+        or "status_led_strip_backend_suspend(s_strips[STATUS_LED_STRIP_STATUS].backend)" not in status_led
+        or "status_led_transmit_changed_frame(&frame, STATUS_LED_STRIP_MASK_ALL, true)" not in status_led
+    ):
+        failures.append(
+            "components/status_led/status_led.c: low-power/prepare-sleep status LED writes must retry non-DMA final frames and suspend/recover after a failed status-strip latch"
+        )
+    if (
+        not re.search(r"#define\s+STATUS_LED_RMT_WAIT_MS\s+[1-9][0-9]{2}\b", status_led_backend)
+        or "status_led_strip_backend_suspend(backend)" not in status_led_backend
+    ):
+        failures.append(
+            "components/status_led/status_led_strip_backend.c: status LED RMT wait must stay long enough for low-power latch writes and recover by suspending/driving the strip idle-low after tx failures"
+        )
+    if not re.search(r"#define\s+STATUS_LED_SHUTDOWN_FINAL_CONFIRM_MS\s+1400U\b", status_led):
+        failures.append(
+            "components/status_led/status_led.c: final shutdown PWR-only confirmation must outlive the 1200 ms power-manager wait so normal BLE/PWR status cannot flash before prepare_sleep"
+        )
+    if not re.search(
+        r"status_led_key_feedback_color_locked[\s\S]{0,120}status_led_rgb\(160,\s*0,\s*255\)",
+        status_led,
+    ):
+        failures.append(
+            "components/status_led/status_led.c: confirmed key gesture feedback must use the shared purple confirmation color"
+        )
+    if not re.search(r"#define\s+STATUS_LED_KEY_GESTURE_FEEDBACK_MS\s+1800U\b", status_led):
+        failures.append(
+            "components/status_led/status_led.c: confirmed purple key gesture window must be 1800 ms so long/double confirmation stays visible"
+        )
+    if not re.search(r"#define\s+STATUS_LED_KEY_FLASH_ON_MS\s+420U\b", status_led):
+        failures.append(
+            "components/status_led/status_led.c: confirmed purple single/double flash on-time must be 420 ms for human-visible confirmation"
+        )
+    if not re.search(r"#define\s+STATUS_LED_KEY_FLASH_GAP_MS\s+220U\b", status_led):
+        failures.append(
+            "components/status_led/status_led.c: confirmed purple double-flash gap must be 220 ms"
+        )
+    if not re.search(r"#define\s+STATUS_LED_KEY_GESTURE_PERCENT\s+85U\b", status_led):
+        failures.append(
+            "components/status_led/status_led.c: confirmed purple key gesture brightness must be 85 percent"
+        )
+    if not re.search(r"#define\s+STATUS_LED_EC11_FEEDBACK_MS\s+1400U\b", status_led):
+        failures.append(
+            "components/status_led/status_led.c: EC11 press/rotation feedback window must remain 1400 ms"
+        )
+    if "STATUS_LED_EC11_FEEDBACK_DOUBLE" in status_led_header or "STATUS_LED_EC11_FEEDBACK_DOUBLE" in status_led:
+        failures.append(
+            "components/status_led: EC11 double-click recovery must use the BLE re-pair renderer, not a key-style EC11 feedback enum"
+        )
+    if not re.search(
+        r"STATUS_LED_KEY_FEEDBACK_DOUBLE[\s\S]{0,520}"
+        r"elapsed\s*>=\s*\(STATUS_LED_KEY_FLASH_ON_MS\s*\*\s*2U\s*\+\s*STATUS_LED_KEY_FLASH_GAP_MS\)[\s\S]{0,80}"
+        r"return\s+false",
+        status_led,
+    ) or not re.search(
+        r"STATUS_LED_KEY_FEEDBACK_SINGLE[\s\S]{0,360}"
+        r"elapsed\s*<\s*STATUS_LED_KEY_FLASH_ON_MS[\s\S]{0,260}"
+        r"else\s*\{\s*return\s+false\s*;",
+        status_led,
+    ) or not re.search(
+        r"if\s*\(\s*color\.r\s*==\s*0U\s*&&\s*color\.g\s*==\s*0U\s*&&\s*color\.b\s*==\s*0U\s*\)\s*\{\s*return\s+true\s*;",
+        status_led,
+    ):
+        failures.append(
+            "components/status_led/status_led.c: key gesture feedback must suppress white only during the double-flash gap, then release the key LED after the visible flash pattern"
+        )
+    if not re.search(
+        r"physical_feedback_active\s*&&\s*!gesture_active[\s\S]{0,260}status_led_rgb\(255,\s*255,\s*255\)",
+        status_led,
+    ):
+        failures.append(
+            "components/status_led/status_led.c: physical key press/release feedback must render white; purple is reserved for confirmed single/double/long gestures"
+        )
+    if not re.search(
+        r"status_led_rgb\(255,\s*255,\s*255\)[\s\S]{0,320}"
+        r"s_state\.ec11_feedback\s*==\s*STATUS_LED_EC11_FEEDBACK_PRESS",
+        status_led,
+    ):
+        failures.append(
+            "components/status_led/status_led.c: EC11 press/rotation feedback must remain white; purple is reserved for confirmed gestures"
+        )
+    if not re.search(
+        r"status_led_ec11_feedback_active_locked\(now_ms\)[\s\S]{0,220}"
+        r"status_led_render_ec11_feedback_locked\(frame,\s*now_ms\)[\s\S]{0,260}"
+        r"status_led_ble_repair_active_locked\(now_ms\)[\s\S]{0,180}"
+        r"status_led_render_ec11_repair_locked\(frame,\s*now_ms\)[\s\S]{0,180}"
+        r"s_state\.processing_active",
+        status_led,
+    ):
+        failures.append(
+            "components/status_led/status_led.c: EC11 press/rotation feedback must render before the BLE re-pair ring and ordinary processing accents so local knob feedback is not swallowed"
+        )
+    key_event_body = re.search(
+        r"void\s+status_led_notify_key_event[\s\S]*?"
+        r"\n\}\n\nvoid\s+status_led_notify_key_feedback",
+        status_led,
+    )
+    key_feedback_body = re.search(
+        r"void\s+status_led_notify_key_feedback[\s\S]*?"
+        r"\n\}\n\nstatic\s+void\s+status_led_apply_ec11_feedback",
+        status_led,
+    )
+    ec11_feedback_body = re.search(
+        r"static\s+void\s+status_led_apply_ec11_feedback[\s\S]*?"
+        r"\n\}\n\nvoid\s+status_led_notify_ec11_feedback",
+        status_led,
+    )
+    interactive_resume_body = re.search(
+        r"static\s+void\s+status_led_resume_interactive_output_locked[\s\S]*?"
+        r"\n\}\n\nstatic\s+void\s+status_led_clear_key_feedback_locked",
+        status_led,
+    )
+    if (
+        interactive_resume_body is None
+        or "s_state.low_power_disabled = false;" not in interactive_resume_body.group(0)
+        or "s_state.output_disabled = false;" not in interactive_resume_body.group(0)
+        or "s_state.idle_transition_clear_pending = false;" not in interactive_resume_body.group(0)
+        or key_event_body is None
+        or "status_led_resume_interactive_output_locked();" not in key_event_body.group(0)
+        or key_feedback_body is None
+        or "status_led_resume_interactive_output_locked();" not in key_feedback_body.group(0)
+        or ec11_feedback_body is None
+        or "status_led_resume_interactive_output_locked();" not in ec11_feedback_body.group(0)
+    ):
+        failures.append(
+            "components/status_led/status_led.c: idle key/EC11 feedback must explicitly resume interactive output from low-power idle without inserting a black transition-clear frame"
+        )
+    if (
+        "STATUS_LED_EC11_ROTATE_STEP_MS" in status_led
+        or "ec11_feedback_last_step_ms" not in status_led
+        or "ec11_feedback_motion_step" not in status_led
+        or "STATUS_LED_EC11_ROTATION_HOLD_MS 2600U" not in status_led
+        or "STATUS_LED_EC11_ROTATION_STEP_MS 220U" not in status_led
+        or "STATUS_LED_EC11_ROTATION_HEAD_START_PERCENT 58U" not in status_led
+        or "STATUS_LED_EC11_ROTATION_BASE_START_PERCENT 4U" not in status_led
+        or "status_led_decay_percent(" not in status_led
+        or "status_led_refresh_ec11_feedback" not in status_led
+        or "status_led_apply_ec11_feedback" not in status_led
+        or "advance_motion" not in status_led
+        or "status_led_ec11_feedback_motion_step_locked" not in status_led
+        or "status_led_ec11_feedback_dot_from_step" not in status_led
+        or "status_led_ec11_feedback_step_from_dot" not in status_led
+        or "status_led_ec11_feedback_trail_index" not in status_led
+        or "status_led_ec11_feedback_active_locked(now_ms)" not in status_led
+        or not re.search(
+            r"feedback_ms\s*=\s*rotation_feedback[\s\S]{0,120}"
+            r"STATUS_LED_EC11_ROTATION_HOLD_MS[\s\S]{0,120}"
+            r"STATUS_LED_EC11_FEEDBACK_MS",
+            status_led,
+        )
+        or not re.search(
+            r"status_led_ec11_feedback_motion_step_locked\(uint32_t\s+now_ms\)[\s\S]*?"
+            r"now_ms\s*-\s*s_state\.ec11_feedback_started_ms[\s\S]*?"
+            r"STATUS_LED_EC11_ROTATION_STEP_MS[\s\S]*?"
+            r"return\s+step\s*%\s*STATUS_LED_EC11_COUNT\s*;",
+            status_led,
+        )
+        or not re.search(
+            r"active_rotation_feedback\s*&&\s*s_state\.ec11_feedback\s*!=\s*feedback[\s\S]{0,520}"
+            r"status_led_ec11_feedback_step_from_dot\(feedback,\s*current_dot\)[\s\S]{0,220}"
+            r"s_state\.ec11_feedback_started_ms\s*=\s*now_ms",
+            status_led,
+        )
+        or not re.search(
+            r"status_led_decay_percent\(\s*motion_elapsed,\s*STATUS_LED_EC11_ROTATION_HOLD_MS,\s*STATUS_LED_EC11_ROTATION_HEAD_START_PERCENT,\s*STATUS_LED_EC11_ROTATION_HEAD_END_PERCENT\s*\)",
+            status_led,
+        )
+        or not re.search(
+            r"status_led_ec11_feedback_trail_index\(s_state\.ec11_feedback,\s*dot,\s*1U\)[\s\S]{0,320}"
+            r"status_led_ec11_feedback_trail_index\(s_state\.ec11_feedback,\s*dot,\s*2U\)[\s\S]{0,320}"
+            r"status_led_ec11_feedback_trail_index\(s_state\.ec11_feedback,\s*dot,\s*3U\)",
+            status_led,
+        )
+    ):
+        failures.append(
+            "components/status_led/status_led.c: EC11 rotation must use a continuous time-driven white orbit, preserve the current rendered position when reversing, refresh brightness without restarting on same-direction detents, and keep 50 ms refresh while the cue is active"
+        )
+    ec11_notify_body = re.search(
+        r"static\s+void\s+status_led_apply_ec11_feedback[\s\S]*?"
+        r"\n\}\n\nvoid\s+status_led_notify_ec11_feedback",
+        status_led,
+    )
+    if (
+        ec11_notify_body is None
+        or "rotation_feedback" not in ec11_notify_body.group(0)
+        or "log_rotation_feedback" not in ec11_notify_body.group(0)
+        or "diag_log(" not in ec11_notify_body.group(0)
+    ):
+        failures.append(
+            "components/status_led/status_led.c: EC11 raw press feedback must not write flash-backed status diag events on every bounce; only throttled rotation feedback may log"
+        )
+    if (
+        "STATUS_LED_EC11_FEEDBACK_DIAG_MIN_MS 500U" not in status_led
+        or "ec11_feedback_last_diag_ms" not in status_led
+        or ec11_notify_body is None
+        or "log_rotation_feedback" not in ec11_notify_body.group(0)
+        or "STATUS_LED_EC11_FEEDBACK_DIAG_MIN_MS" not in ec11_notify_body.group(0)
+    ):
+        failures.append(
+            "components/status_led/status_led.c: fast EC11 rotation feedback diagnostics must be throttled so flash-backed logs cannot make the ring cue go dark"
+        )
+    start_repair_body = re.search(
+        r"static\s+void\s+status_led_start_ble_repair_locked[\s\S]*?"
+        r"static\s+void\s+status_led_preview_clear_activity_locked",
+        status_led,
+    )
+    if (
+        start_repair_body is None
+        or "status_led_clear_ec11_feedback_locked();" not in start_repair_body.group(0)
+        or "s_state.ble_repair_until_ms = now_ms + STATUS_LED_BLE_REPAIR_CUE_MS;" not in start_repair_body.group(0)
+    ):
+        failures.append(
+            "components/status_led/status_led.c: BLE re-pair startup must clear transient EC11 white feedback and start the bounded BLE plus EC11 blue re-pair cue"
+        )
+    elif "preserve_double_feedback" in start_repair_body.group(0):
+        failures.append(
+            "components/status_led/status_led.c: BLE re-pair startup must not preserve EC11 double key feedback over the ordinary pairing cue"
+        )
+    if not re.search(
+        r"uint8_t\s+write_count\s*=\s*force_clear_tx\s*\?\s*STATUS_LED_TRANSITION_CLEAR_WRITES\s*:\s*\(pwr_only_final_latch\s*\?\s*STATUS_LED_LOW_POWER_FINAL_LATCH_WRITES\s*:\s*1U\)",
+        status_led,
+    ):
+        failures.append(
+            "components/status_led/status_led.c: low-power and shutdown-final PWR-only frames must use repeated latch writes while normal active frames stay single-write"
+        )
+    if not re.search(
+        r"if\s*\(!force_clear_tx\)\s*\{[\s\S]{0,360}status_led_suspend_quiet_idle_transports",
+        status_led,
+    ):
+        failures.append(
+            "components/status_led/status_led.c: low-power transition clear must not suspend transports before the final PWR-only latch frame"
+        )
+    if not re.search(
+        r'\.name\s*=\s*"status"[\s\S]{0,620}\.prefer_dma\s*=\s*true',
+        status_led,
+    ):
+        failures.append(
+            "components/status_led/status_led.c: active status rail must keep DMA for advanced no-flicker REC/AI effects"
+        )
+    if (
+        "rmt_tx_dma_strategy=status_strip_dma_full_frame_buffer" not in status_led
+        or "status_tail_overlap_style=dma_audio_rec_ai_da_dada" not in status_led
+        or "status_led_strip_backend_transmit_non_dma_once" not in status_led
+    ):
+        failures.append(
+            "components/status_led/status_led.c: LED contract must preserve active status DMA and expose non-DMA low-power latch frame path"
+        )
+    if "bool status_force_non_dma = force_clear_tx || low_power_active;" in status_led:
+        failures.append(
+            "components/status_led/status_led.c: ordinary transition clear frames must not force non-DMA; scope status_force_non_dma to PWR-only latch paths only"
+        )
+    if not re.search(r"bool\s+status_force_non_dma\s*=\s*pwr_only_final_latch\s*;", status_led):
+        failures.append(
+            "components/status_led/status_led.c: status_force_non_dma must be derived from pwr_only_final_latch so active preview/effect switching stays on DMA"
+        )
+
     keyboard = (REPO_ROOT / "components/keyboard/keyboard.c").read_text(encoding="utf-8")
     if not re.search(
-        r"#define\s+KEYBOARD_EC11_LOW_POWER_IDLE_POLL_MS\s+5000\b",
+        r"#define\s+KEYBOARD_CUSTOM_IDLE_BACKUP_POLL_MS\s+20\b",
         keyboard,
     ):
         failures.append(
-            "components/keyboard/keyboard.c: EC11 low-power backup poll must stay at 5000 ms; 250 ms polling keeps waking idle"
+            "components/keyboard/keyboard.c: KEY1-KEY4 normal idle backup scan must stay 20 ms so short physical taps do not depend on sampling luck"
+        )
+    if not re.search(
+        r"#define\s+KEYBOARD_CUSTOM_DEBOUNCE_MS\s+20\b",
+        keyboard,
+    ):
+        failures.append(
+            "components/keyboard/keyboard.c: KEY1-KEY4 debounce must stay 20 ms so short physical taps can reach confirmed gestures"
+        )
+    if not re.search(
+        r"#define\s+KEYBOARD_CUSTOM_DOUBLE_CLICK_WINDOW_MS\s+200\b",
+        keyboard,
+    ):
+        failures.append(
+            "components/keyboard/keyboard.c: KEY1-KEY4 double-click window must stay 200 ms so single-click feedback feels immediate"
+        )
+    if not re.search(
+        r"#define\s+KEYBOARD_CUSTOM_LOW_POWER_IDLE_BACKUP_POLL_MS\s+20\b",
+        keyboard,
+    ):
+        failures.append(
+            "components/keyboard/keyboard.c: custom key low-power backup poll must be 20 ms so missed edge wake still catches short presses"
+        )
+    custom_start_body = re.search(
+        r"static\s+esp_err_t\s+keyboard_custom_start[\s\S]*?"
+        r"static\s+esp_err_t\s+keyboard_ec11_start",
+        keyboard,
+    )
+    if "keyboard_custom_wake_task_from_isr" in keyboard or (
+        custom_start_body is not None and "gpio_isr_handler_add" in custom_start_body.group(0)
+    ):
+        failures.append(
+            "components/keyboard/keyboard.c: KEY1-KEY4 must not use runtime GPIO ISR; ISR storms can reset the board during press/hold"
+        )
+    if not re.search(
+        r"keyboard_custom_apply_raw_feedback[\s\S]{0,900}"
+        r"status_led_notify_key_event\([^;]*true",
+        keyboard,
+    ) or not re.search(
+        r"keyboard_custom_clear_raw_feedback[\s\S]{0,420}"
+        r"status_led_notify_key_event\([^;]*false",
+        keyboard,
+    ):
+        failures.append(
+            "components/keyboard/keyboard.c: raw low-power key press feedback must use white physical press/release cues; confirmed gestures use purple later"
+        )
+    clear_feedback_body = re.search(
+        r"static\s+void\s+keyboard_custom_clear_raw_feedback[\s\S]*?"
+        r"static\s+void\s+keyboard_custom_handle_timers",
+        keyboard,
+    )
+    if clear_feedback_body is None:
+        failures.append(
+            "components/keyboard/keyboard.c: missing raw key feedback clear helper"
+        )
+    elif "status_led_notify_key_feedback" in clear_feedback_body.group(0):
+        failures.append(
+            "components/keyboard/keyboard.c: raw key feedback clear must not cancel a purple gesture confirmation; it should only end the white physical press cue"
+        )
+    if not re.search(
+        r"long_hold_active[\s\S]{0,320}"
+        r"STATUS_LED_KEY_FEEDBACK_LONG[\s\S]{0,320}"
+        r"key_pressed_mask[\s\S]{0,420}"
+        r"now_ms\s*>=\s*s_state\.key_feedback_until_ms\[index\]\s*&&\s*!long_hold_active",
+        status_led,
+    ):
+        failures.append(
+            "components/status_led/status_led.c: confirmed long key gesture must stay purple while the key remains held"
+        )
+    if not re.search(
+        r"#define\s+KEYBOARD_EC11_LOW_POWER_IDLE_POLL_MS\s+20\b",
+        keyboard,
+    ):
+        failures.append(
+            "components/keyboard/keyboard.c: EC11 low-power backup poll must stay 20 ms so idle rotation cannot be swallowed by a missed edge wake"
+        )
+    if not re.search(
+        r"static\s+int8_t\s+keyboard_ec11_feedback_delta_from_accumulator\(int32_t\s+accumulator\)[\s\S]{0,260}"
+        r"accumulator\s*>\s*0[\s\S]{0,140}"
+        r"accumulator\s*<\s*0[\s\S]{0,140}"
+        r"return\s+0\s*;",
+        keyboard,
+    ):
+        failures.append(
+            "components/keyboard/keyboard.c: EC11 rotation LED feedback direction must come from the accumulated detent direction so contact bounce cannot flip the cue"
+        )
+    if not re.search(
+        r"was_low_power_idle\s*=\s*keyboard_power_state_is_low_power_idle\(\)[\s\S]{0,260}"
+        r"power_manager_record_activity\(\"ec11_rotate\"\)[\s\S]{0,360}"
+        r"feedback_delta\s*=\s*keyboard_ec11_feedback_delta_from_accumulator\(state->detent_accumulator\)[\s\S]{0,260}"
+        r"if\s*\(\s*\(was_low_power_idle\s*\|\|\s*raw_state\s*!=\s*KEYBOARD_EC11_DETENT_STATE\)\s*&&\s*feedback_delta\s*!=\s*0\s*\)[\s\S]{0,220}"
+        r"keyboard_ec11_refresh_feedback_for_delta\(state,\s*feedback_delta,\s*was_low_power_idle\)",
+        keyboard,
+    ):
+        failures.append(
+            "components/keyboard/keyboard.c: low-power and partial EC11 rotation edges must wake power manager and refresh local rotation feedback from accumulated direction before detent/HID dispatch"
+        )
+    if not re.search(
+        r"keyboard_ec11_refresh_feedback_for_delta[\s\S]{0,900}"
+        r"direction_changed[\s\S]{0,500}"
+        r"status_led_refresh_ec11_feedback\(delta\s*>\s*0[\s\S]{0,160}"
+        r"STATUS_LED_EC11_FEEDBACK_ROTATE_CW[\s\S]{0,160}"
+        r"STATUS_LED_EC11_FEEDBACK_ROTATE_CCW",
+        keyboard,
+    ):
+        failures.append(
+            "components/keyboard/keyboard.c: continuous EC11 feedback must refresh from valid edges without stepping the ring and reverse direction immediately when the encoder direction changes"
         )
     if not re.search(
         r"keyboard_enable_active_low_light_sleep_wake[\s\S]{0,900}"
@@ -997,12 +1479,77 @@ def main() -> int:
     if not re.search(
         r"keyboard_custom_start[\s\S]*GPIO_INTR_DISABLE[\s\S]*"
         r"keyboard_enable_active_low_light_sleep_wake\([\s\S]*"
-        r"wake=poll_10ms[\s\S]*"
-        r"low_power_wake=gpio_wakeup_only",
+        r"wake=active_low_gpio_wakeup\+20ms_scan[\s\S]*"
+        r"low_power_wake=active_low_gpio_wakeup\+20ms_scan",
         keyboard,
     ):
         failures.append(
-            "components/keyboard/keyboard.c: custom keys must use polling for mechanical debounce while keeping GPIO wake for light sleep"
+            "components/keyboard/keyboard.c: custom keys must use active-low light-sleep wake plus 20 ms scan, not runtime GPIO interrupts"
+        )
+    keyboard_start_body = re.search(
+        r"esp_err_t\s+keyboard_start\(void\)[\s\S]*?"
+        r"esp_err_t\s+keyboard_start_safe_mode\(void\)",
+        keyboard,
+    )
+    if keyboard_start_body is None:
+        failures.append("components/keyboard/keyboard.c: missing keyboard_start body")
+    else:
+        keyboard_start_text = keyboard_start_body.group(0)
+        custom_index = keyboard_start_text.find("keyboard_custom_start()")
+        ec11_index = keyboard_start_text.find("keyboard_ec11_start()")
+        voice_index = keyboard_start_text.find("voice_recording_control_start()")
+        if custom_index < 0 or ec11_index < 0 or voice_index < 0 or not (custom_index < voice_index and ec11_index < voice_index):
+            failures.append(
+                "components/keyboard/keyboard.c: cold boot input readiness must start KEY1-KEY4 and EC11 A/B before voice recording/audio control"
+            )
+    ec11_rotation_body = re.search(
+        r"static\s+esp_err_t\s+keyboard_ec11_dispatch_rotation\([^)]*\)\s*\{[\s\S]*?"
+        r"static\s+esp_err_t\s+keyboard_ble_control_write",
+        keyboard,
+    )
+    if ec11_rotation_body is None:
+        failures.append(
+            "components/keyboard/keyboard.c: EC11 rotation must show local feedback before HID send, and pairing/not-connected invalid-state must not swallow the rotation light effect"
+        )
+    else:
+        ec11_rotation_text = ec11_rotation_body.group(0)
+        notify_index = ec11_rotation_text.find("status_led_notify_ec11_feedback")
+        send_index = ec11_rotation_text.find("ble_hid_send_consumer_usage_async")
+        invalid_state_index = ec11_rotation_text.find("ret == ESP_ERR_INVALID_STATE")
+        local_feedback_index = ec11_rotation_text.find("local feedback only")
+        kept_feedback_index = ec11_rotation_text.find("local_feedback=kept")
+        if (
+            notify_index < 0
+            or send_index < 0
+            or invalid_state_index < 0
+            or local_feedback_index < 0
+            or kept_feedback_index < 0
+            or notify_index > send_index
+            or "status_led_set_error(STATUS_LED_ERROR_DOMAIN_BLE" in ec11_rotation_text
+        ):
+            failures.append(
+                "components/keyboard/keyboard.c: EC11 rotation must show local feedback before HID send, and HID backpressure must not light BLE/WARN or swallow the rotation light effect"
+            )
+    if not re.search(
+        r"keyboard_ec11_queue_edge_from_isr[\s\S]*?"
+        r"raw_state\s*==\s*s_ec11_isr_last_raw_state[\s\S]*?return;[\s\S]*?"
+        r"s_ec11_overflow_raw_state\s*=\s*raw_state;[\s\S]*?"
+        r"s_ec11_overflow_pending\s*=\s*true;",
+        keyboard,
+    ):
+        failures.append(
+            "components/keyboard/keyboard.c: EC11 ISR must compress duplicate raw states and preserve the latest overflow state"
+        )
+    if not re.search(
+        r"keyboard_ec11_task[\s\S]*?"
+        r"while\s*\(xQueueReceive\(s_ec11_event_queue,\s*&event,\s*0\)[\s\S]*?"
+        r"s_ec11_overflow_pending[\s\S]*?"
+        r"keyboard_ec11_handle_state\(&s_ec11_state,\s*overflow_raw_state\)[\s\S]*?"
+        r"keyboard_ec11_handle_state\(&s_ec11_state,\s*keyboard_ec11_read_raw_state\(\)\)",
+        keyboard,
+    ):
+        failures.append(
+            "components/keyboard/keyboard.c: EC11 task must chase the latest physical A/B state after draining a burst"
         )
     if not re.search(
         r"keyboard_ec11_start[\s\S]*"
@@ -1017,6 +1564,194 @@ def main() -> int:
     voice_key = (
         REPO_ROOT / "ports/esp32/voice_key_input/voice_key_input_esp32.c"
     ).read_text(encoding="utf-8")
+    voice_recording = (
+        REPO_ROOT / "components/voice_recording_control/voice_recording_control.c"
+    ).read_text(encoding="utf-8")
+    voice_start_body = re.search(
+        r"esp_err_t\s+voice_recording_control_start\(void\)[\s\S]*?"
+        r"bool\s+voice_recording_control_consume_usb_control_byte",
+        voice_recording,
+    )
+    if voice_start_body is None:
+        failures.append(
+            "components/voice_recording_control/voice_recording_control.c: missing voice_recording_control_start body"
+        )
+    else:
+        voice_start_text = voice_start_body.group(0)
+        voice_key_index = voice_start_text.find("voice_key_input_start()")
+        audio_index = voice_start_text.find("audio_capture_start()")
+        if voice_key_index < 0 or audio_index < 0 or voice_key_index > audio_index:
+            failures.append(
+                "components/voice_recording_control/voice_recording_control.c: cold boot EC11 push input must start before audio_capture_start so audio init cannot delay wake/button feedback"
+            )
+    if (
+        not re.search(r"#define\s+VOICE_KEY_INPUT_IDLE_BACKUP_POLL_MS\s+\(20\)", voice_key)
+        or not re.search(r"#define\s+VOICE_KEY_INPUT_LOW_POWER_IDLE_BACKUP_POLL_MS\s+\(20\)", voice_key)
+    ):
+        failures.append(
+            "ports/esp32/voice_key_input/voice_key_input_esp32.c: EC11 push must use 20 ms active/low-power scan so runtime GPIO interrupts are unnecessary"
+        )
+    if not re.search(
+        r"#define\s+VOICE_KEY_INPUT_DOUBLE_CLICK_WINDOW_MS\s+\(200\)",
+        voice_key,
+    ):
+        failures.append(
+            "ports/esp32/voice_key_input/voice_key_input_esp32.c: EC11 single-click dispatch window must stay 200 ms so the local cue feels immediate"
+        )
+    if not re.search(
+        r"#define\s+VOICE_KEY_INPUT_RECOVERY_DOUBLE_CLICK_WINDOW_MS\s+\(650\)",
+        voice_key,
+    ):
+        failures.append(
+            "ports/esp32/voice_key_input/voice_key_input_esp32.c: EC11 recovery double-click window must stay 650 ms so real hand presses can trigger the BLE pairing cue"
+        )
+    if not re.search(
+        r"#define\s+VOICE_KEY_INPUT_LONG_PRESS_IGNORE_MS\s+\(800\)",
+        voice_key,
+    ):
+        failures.append(
+            "ports/esp32/voice_key_input/voice_key_input_esp32.c: EC11 long-press shutdown cue must start at 800 ms so the hold does not feel dead"
+        )
+    if not re.search(
+        r"voice_key_input_direct_gpio_init[\s\S]{0,420}"
+        r"\.intr_type\s*=\s*GPIO_INTR_DISABLE[\s\S]{0,240}"
+        r"voice_key_input_enable_light_sleep_wake\(\)",
+        voice_key,
+    ):
+        failures.append(
+            "ports/esp32/voice_key_input/voice_key_input_esp32.c: EC11 push GPIO18 must disable runtime interrupts and rely on active-low light-sleep wake plus 20 ms scan"
+        )
+    forbidden_voice_irq_tokens = [
+        "GPIO_INTR_ANYEDGE",
+        "gpio_isr_handler_add(VOICE_KEY_INPUT_DIRECT_GPIO",
+        "gpio_install_isr_service",
+        "voice_key_input_direct_gpio_wake_from_isr",
+        "isr_pressed_pending",
+        "isr_press_latch_until_tick",
+        "voice_key_input_latch_isr_press",
+        "voice_key_input_apply_isr_latched_sample",
+    ]
+    for token in forbidden_voice_irq_tokens:
+        if token in voice_key:
+            failures.append(
+                f"ports/esp32/voice_key_input/voice_key_input_esp32.c: EC11 push runtime GPIO ISR must stay removed to avoid interrupt-WDT storms while flash/cache is disabled ({token})"
+            )
+    if (
+        "static uint32_t voice_key_input_elapsed_ms" not in voice_key
+        or "portTICK_PERIOD_MS" not in voice_key
+        or "TickType_t sample_started_tick;" not in voice_key
+        or "TickType_t pressed_started_tick;" not in voice_key
+        or "TickType_t pending_click_started_tick;" not in voice_key
+    ):
+        failures.append(
+            "ports/esp32/voice_key_input/voice_key_input_esp32.c: EC11 debounce, hold, and double-click timing must be based on real FreeRTOS ticks"
+        )
+    if (
+        "pending_click_ms += VOICE_KEY_INPUT_POLL_MS" in voice_key
+        or "pressed_ms + VOICE_KEY_INPUT_POLL_MS" in voice_key
+    ):
+        failures.append(
+            "ports/esp32/voice_key_input/voice_key_input_esp32.c: EC11 short-click and long-press timing must not accumulate by poll-loop count"
+        )
+    if not re.search(
+        r"sample_stable_ms\s*=\s*voice_key_input_elapsed_ms\(now_tick,\s*button->sample_started_tick\)[\s\S]{0,180}"
+        r"sample_stable_ms\s*<\s*VOICE_KEY_INPUT_DEBOUNCE_MS",
+        voice_key,
+    ):
+        failures.append(
+            "ports/esp32/voice_key_input/voice_key_input_esp32.c: EC11 debounce must use elapsed time so ISR wake storms cannot fake 30 ms stability"
+        )
+    if not re.search(
+        r"button->pressed_started_tick\s*=\s*now_tick[\s\S]{0,900}"
+        r"voice_key_input_elapsed_ms\(now_tick,\s*button->pressed_started_tick\)",
+        voice_key,
+    ):
+        failures.append(
+            "ports/esp32/voice_key_input/voice_key_input_esp32.c: EC11 long-press shutdown cue must use real hold duration from pressed_started_tick"
+        )
+    if not re.search(
+        r"button->pending_click_started_tick\s*=\s*now_tick[\s\S]{0,900}"
+        r"voice_key_input_elapsed_ms\(now_tick,\s*button->pending_click_started_tick\)",
+        voice_key,
+    ):
+        failures.append(
+            "ports/esp32/voice_key_input/voice_key_input_esp32.c: EC11 double-click window must use real elapsed time, not fast poll iterations"
+        )
+    if (
+        not re.search(r"#define\s+VOICE_KEY_INPUT_HOLD_FEEDBACK_REFRESH_MS\s+\(300\)", voice_key)
+        or "TickType_t hold_feedback_tick;" not in voice_key
+        or not re.search(
+            r"pressed\s*&&\s*!button->long_press_reported[\s\S]{0,900}"
+            r"VOICE_KEY_INPUT_HOLD_FEEDBACK_REFRESH_MS[\s\S]{0,420}"
+            r"status_led_notify_ec11_feedback\(STATUS_LED_EC11_FEEDBACK_PRESS\)",
+            voice_key,
+        )
+    ):
+        failures.append(
+            "ports/esp32/voice_key_input/voice_key_input_esp32.c: EC11 hold must refresh white press feedback every 300 ms until long-press shutdown confirmation starts"
+        )
+    dispatch_body = re.search(
+        r"static\s+void\s+voice_key_input_dispatch_custom_key_event[\s\S]*?"
+        r"static\s+bool\s+voice_key_input_button_raw_pressed",
+        voice_key,
+    )
+    if dispatch_body is None or "status_led_notify_ec11_feedback" in dispatch_body.group(0):
+        failures.append(
+            "ports/esp32/voice_key_input/voice_key_input_esp32.c: EC11 single-click fallback must not restart the white local cue after the double-click window"
+        )
+    recovery_body = re.search(
+        r"static\s+void\s+voice_key_input_record_recovery_event[\s\S]*?"
+        r"static\s+void\s+voice_key_input_drain_generated_events",
+        voice_key,
+    )
+    if recovery_body is None or "status_led_notify_ec11_feedback" in recovery_body.group(0):
+        failures.append(
+            "ports/esp32/voice_key_input/voice_key_input_esp32.c: EC11 double-click recovery must go through BLE re-pair state, not a key-style EC11 feedback enum"
+        )
+    if recovery_body is None or 'status_led_notify_ble_repairing("ec11_double_click_recovery")' not in recovery_body.group(0):
+        failures.append(
+            "ports/esp32/voice_key_input/voice_key_input_esp32.c: EC11 double-click recovery must show the BLE repair cue immediately when the double click is detected"
+        )
+    if not re.search(
+        r"voice_key_input_next_wait_ms[\s\S]{0,700}"
+        r"VOICE_KEY_INPUT_LOW_POWER_IDLE_BACKUP_POLL_MS",
+        voice_key,
+    ) or "watchdog_platform_task_notify_take_low_power" not in voice_key:
+        failures.append(
+            "ports/esp32/voice_key_input/voice_key_input_esp32.c: EC11 push must use bounded 20 ms scan during low-power waits instead of a runtime GPIO ISR"
+        )
+    voice_raw_feedback_body = re.search(
+        r"static\s+void\s+voice_key_input_apply_raw_feedback[\s\S]*?\n\}",
+        voice_key,
+    )
+    if voice_raw_feedback_body is None:
+        failures.append(
+            "ports/esp32/voice_key_input/voice_key_input_esp32.c: missing EC11 raw press feedback helper"
+        )
+    elif not re.search(
+        r"if\s*\(\s*button->raw_feedback_pressed\s*\)\s*\{\s*return\s*;",
+        voice_raw_feedback_body.group(0),
+    ):
+        failures.append(
+            "ports/esp32/voice_key_input/voice_key_input_esp32.c: EC11 raw press feedback must suppress repeated ISR/raw bounce during one physical press"
+        )
+    if (
+        "voice_key_input_handle_short_click_release(button, now_tick, \"raw-only\")" not in voice_key
+        or not re.search(
+            r"else\s+if\s*\(\s*!pressed\s*\)\s*\{[\s\S]{0,360}"
+            r"button->raw_feedback_pressed[\s\S]{0,360}"
+            r"voice_key_input_handle_short_click_release\(button,\s*now_tick,\s*\"raw-only\"\)[\s\S]{0,360}"
+            r"voice_key_input_clear_raw_feedback\(button\);",
+            voice_key,
+        )
+    ):
+        failures.append(
+            "ports/esp32/voice_key_input/voice_key_input_esp32.c: EC11 raw-only short taps must be accepted on stable idle, then clear the raw feedback latch so the next real press still lights"
+        )
+    if "gpio_set_intr_type(VOICE_KEY_INPUT_DIRECT_GPIO" in voice_key:
+        failures.append(
+            "ports/esp32/voice_key_input/voice_key_input_esp32.c: EC11 push must not switch to low-level GPIO IRQ mode in idle"
+        )
     if not re.search(
         r"voice_key_input_enable_light_sleep_wake[\s\S]{0,900}"
         r"gpio_wakeup_enable\([^;]*GPIO_INTR_LOW_LEVEL\)[\s\S]{0,900}"

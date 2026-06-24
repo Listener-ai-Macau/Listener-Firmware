@@ -18,7 +18,7 @@ Add-Type -AssemblyName System.Windows.Forms
 Add-Type -AssemblyName System.Drawing
 [System.Windows.Forms.Application]::EnableVisualStyles()
 
-$AgentName = "oai2"
+$AgentName = "codex"
 $repoRoot = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot "..")).Path
 $aiwPath = "C:\Users\Billy\Desktop\Denzic\ai-collaboration-workflow\scripts\aiw.ps1"
 $serialCaptureScript = Join-Path $PSScriptRoot "send_serial_and_capture.ps1"
@@ -55,6 +55,21 @@ function Add-ErrorLine {
     Add-Transcript "ERROR: $Message"
 }
 
+function Play-PromptSound {
+    try {
+        [System.Media.SystemSounds]::Exclamation.Play()
+        Start-Sleep -Milliseconds 180
+        [System.Media.SystemSounds]::Asterisk.Play()
+    } catch {
+        try {
+            [Console]::Beep(880, 140)
+            [Console]::Beep(1175, 180)
+        } catch {
+            # Sound is best-effort; prompts must still work on muted/headless systems.
+        }
+    }
+}
+
 function Show-TopMostMessageBox {
     param(
         [Parameter(Mandatory = $true)][string]$Title,
@@ -67,6 +82,7 @@ function Show-TopMostMessageBox {
         return [System.Windows.Forms.DialogResult]::OK
     }
 
+    Play-PromptSound
     $owner = [System.Windows.Forms.Form]::new()
     try {
         $owner.StartPosition = [System.Windows.Forms.FormStartPosition]::CenterScreen
@@ -97,6 +113,7 @@ function Show-MeasurementForm {
         }
     }
 
+    Play-PromptSound
     $form = [System.Windows.Forms.Form]::new()
     $form.Text = "[$AgentName] $Title"
     $form.Size = [System.Drawing.Size]::new(640, 420)

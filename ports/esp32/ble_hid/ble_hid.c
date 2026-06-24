@@ -64,7 +64,7 @@ static const char *TAG = "ble_hid";
 #define BLE_HID_USB_READ_ACTIVE_TIMEOUT_MS 20
 #define BLE_HID_USB_READ_LOW_POWER_TIMEOUT_MS 5000
 #define BLE_HID_ASCII_QUEUE_LENGTH 8
-#define BLE_HID_USAGE_QUEUE_LENGTH 8
+#define BLE_HID_USAGE_QUEUE_LENGTH 32
 #define BLE_HID_KEY_SOURCE_BYTES 32
 #define BLE_HID_READINESS_ALL \
     (LISTENER_DEVICE_READY_HID | LISTENER_DEVICE_READY_AUDIO | \
@@ -179,7 +179,7 @@ static bool ble_hid_battery_level_exceeds_notify_threshold(uint8_t level)
 
 static status_led_ble_state_t ble_hid_connected_status_led_state(void)
 {
-    return ble_audio_stream_is_type_link_ready()
+    return ble_audio_stream_is_type_led_ready()
         ? STATUS_LED_BLE_TYPE_READY
         : STATUS_LED_BLE_CONNECTED;
 }

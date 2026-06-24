@@ -25,15 +25,15 @@ class RequiredText:
 STALE_PATTERNS = [
     PatternRule(
         re.compile(r"routine status LEDs are turned off", re.IGNORECASE),
-        "obsolete idle policy: low-power idle now keeps restrained PWR/BLE visible",
+        "obsolete idle policy: low-power idle now keeps restrained PWR visible and connected/TYPE_READY BLE dark",
     ),
     PatternRule(
         re.compile(r"turns routine status LEDs off", re.IGNORECASE),
-        "obsolete idle policy: low-power idle clears active-work LEDs, not PWR/BLE",
+        "obsolete idle policy: low-power idle clears active-work/BLE LEDs, not restrained PWR",
     ),
     PatternRule(
         re.compile(r"disables routine status LED output", re.IGNORECASE),
-        "obsolete idle policy: low-power rendering still owns PWR/BLE",
+        "obsolete idle policy: low-power rendering still owns restrained PWR while connected/TYPE_READY BLE is dark",
     ),
     PatternRule(
         re.compile(r"status LEDs went dark", re.IGNORECASE),
@@ -45,7 +45,7 @@ STALE_PATTERNS = [
     ),
     PatternRule(
         re.compile(r"low-power/LED-off", re.IGNORECASE),
-        "ambiguous stale wording: current low-power idle keeps restrained PWR/BLE visible",
+        "ambiguous stale wording: current low-power idle keeps restrained PWR visible while connected/TYPE_READY BLE is dark",
     ),
     PatternRule(
         re.compile(r"turn off after idle status window", re.IGNORECASE),
@@ -63,24 +63,55 @@ STALE_PATTERNS = [
         re.compile(r"connected_ready\s*\?\s*30U"),
         "old battery PWR fallback tied to BLE connected state",
     ),
+    PatternRule(
+        re.compile(r"Continuous rotation is detent-step driven", re.IGNORECASE),
+        "stale EC11 rotation prose: current cue is direction-driven and fixed-step rendered",
+    ),
+    PatternRule(
+        re.compile(r"No time-based auto-spin", re.IGNORECASE),
+        "stale EC11 rotation prose: current cue intentionally advances at STATUS_LED_EC11_ROTATION_STEP_MS",
+    ),
+    PatternRule(
+        re.compile(r"head only advances on completed detents", re.IGNORECASE),
+        "stale EC11 rotation prose: current cue keeps moving during the hold window",
+    ),
+    PatternRule(
+        re.compile(r"EC11 double-click recovery[\s\S]{0,120}200 ms window", re.IGNORECASE),
+        "stale EC11 recovery prose: recovery double-click uses its dedicated 650 ms window",
+    ),
 ]
 
 
 REQUIRED_TEXT = [
     RequiredText(
         "docs/features/status_led.md",
-        re.compile(r"keeps restrained PWR/BLE status visible", re.IGNORECASE),
-        "status LED feature doc must state the current low-power idle PWR/BLE behavior",
+        re.compile(r"keeps PWR visible and leaves connected/TYPE_READY BLE dark", re.IGNORECASE),
+        "status LED feature doc must state the current low-power idle PWR-only/BLE-dark behavior",
+    ),
+    RequiredText(
+        "docs/features/status_led.md",
+        re.compile(r"advances the white head at `STATUS_LED_EC11_ROTATION_STEP_MS`", re.IGNORECASE),
+        "status LED feature doc must preserve the current EC11 fixed-step directional rotation cue",
+    ),
+    RequiredText(
+        "docs/features/status_led.md",
+        re.compile(r"accumulated detent direction", re.IGNORECASE),
+        "status LED feature doc must preserve the EC11 accumulated-direction bounce filter",
+    ),
+    RequiredText(
+        "docs/features/status_led.md",
+        re.compile(r"650 ms recovery double-click window", re.IGNORECASE),
+        "status LED feature doc must distinguish EC11 recovery double-click timing from the 200 ms single-click response window",
     ),
     RequiredText(
         "docs/features/low_power_wake_policy.md",
-        re.compile(r"keeps restrained PWR/BLE status visible", re.IGNORECASE),
-        "low-power policy doc must state the current low-power idle PWR/BLE behavior",
+        re.compile(r"leaves connected/TYPE_READY BLE dark", re.IGNORECASE),
+        "low-power policy doc must state the current low-power idle PWR-only/BLE-dark behavior",
     ),
     RequiredText(
         "docs/features/firmware-feature-map.md",
-        re.compile(r"clears active-work LEDs and decorative surfaces.*restrained PWR/BLE", re.IGNORECASE),
-        "feature map must summarize current idle LED behavior without implying all-off",
+        re.compile(r"keeps restrained PWR visible and connected/TYPE_READY BLE dark only after idle is entered", re.IGNORECASE),
+        "feature map must summarize current idle LED behavior without implying all-off; keeps restrained PWR/BLE status visible",
     ),
     RequiredText(
         "tools/verify_status_led_static.py",
@@ -159,7 +190,7 @@ def main() -> int:
 
     print(
         "PASS: current docs/tools avoid stale low-power LED rollback cues "
-        "and state the current PWR/BLE idle contract."
+        "and state the current PWR-only/BLE-dark idle contract."
     )
     return 0
 

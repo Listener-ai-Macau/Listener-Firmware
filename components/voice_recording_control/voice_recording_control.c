@@ -1136,6 +1136,7 @@ static esp_err_t voice_recording_control_exit_recording(const char *source)
     s_state = VOICE_RECORDING_STATE_TRANSFERRING;
     (void)voice_key_input_set_recording_output(false);
     status_led_set_recording(false, STATUS_LED_REC_SOURCE_NONE);
+    status_led_set_processing(true, "recording_stop_processing_start");
     ESP_LOGI(TAG, "recording stop source=%s", source);
     voice_recording_control_log_flow(
         VOICE_RECORDING_FLOW_STOP_REQUESTED,
@@ -1482,6 +1483,7 @@ static void voice_recording_control_recovery(const char *source)
         false);
     status_led_set_recording(false, STATUS_LED_REC_SOURCE_NONE);
     status_led_set_processing(false, "recovery_complete");
+    status_led_notify_ble_repairing("recovery_complete_pair_again");
     status_led_set_ble_state(STATUS_LED_BLE_PAIRING, false);
     voice_recording_control_log_device_status("ready", "recovery_complete_pair_again");
 }
@@ -1800,19 +1802,19 @@ esp_err_t voice_recording_control_start(void)
         }
     }
 
+    esp_err_t key_ret = voice_key_input_start();
+    if (key_ret != ESP_OK) {
+        ESP_LOGW(TAG, "voice key input start failed; USB recovery remains available: %s", esp_err_to_name(key_ret));
+        voice_recording_control_log_device_error("error", "voice_key_input_start_failed", key_ret);
+        status_led_set_error(STATUS_LED_ERROR_DOMAIN_REC, STATUS_LED_ERROR_RETRYABLE, "voice_key_input_start_failed");
+    }
+
     esp_err_t audio_ret = audio_capture_start();
     if (audio_ret != ESP_OK) {
         ESP_LOGW(TAG, "audio capture start failed; keeping recovery/status path alive: %s", esp_err_to_name(audio_ret));
         voice_recording_control_log_device_error("error", "audio_capture_start_failed", audio_ret);
         status_led_set_recording(false, STATUS_LED_REC_SOURCE_NOT_AVAILABLE);
         status_led_set_error(STATUS_LED_ERROR_DOMAIN_REC, STATUS_LED_ERROR_RETRYABLE, "audio_capture_start_failed");
-    }
-
-    esp_err_t key_ret = voice_key_input_start();
-    if (key_ret != ESP_OK) {
-        ESP_LOGW(TAG, "voice key input start failed; USB recovery remains available: %s", esp_err_to_name(key_ret));
-        voice_recording_control_log_device_error("error", "voice_key_input_start_failed", key_ret);
-        status_led_set_error(STATUS_LED_ERROR_DOMAIN_REC, STATUS_LED_ERROR_RETRYABLE, "voice_key_input_start_failed");
     }
 
     ble_audio_stream_set_control_write_handler(voice_recording_control_ble_control_write);
