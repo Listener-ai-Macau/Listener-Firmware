@@ -898,6 +898,8 @@ CHECKS = {
         "effect-only preview commands",
     ],
     "components/keyboard/keyboard.c": [
+        "keyboard_ec11_feedback_delta_from_accumulator",
+        "keyboard_ec11_refresh_feedback_for_delta(state, feedback_delta, was_low_power_idle)",
         "status_led_refresh_ec11_feedback(delta > 0",
         "status_led_notify_ec11_feedback(direction == EC11_ROTATION_DIRECTION_CW",
         "STATUS_LED_EC11_FEEDBACK_ROTATE_CW",

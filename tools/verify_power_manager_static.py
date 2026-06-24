@@ -1436,14 +1436,25 @@ def main() -> int:
             "components/keyboard/keyboard.c: EC11 low-power backup poll must stay 20 ms so idle rotation cannot be swallowed by a missed edge wake"
         )
     if not re.search(
-        r"was_low_power_idle\s*=\s*keyboard_power_state_is_low_power_idle\(\)[\s\S]{0,260}"
-        r"power_manager_record_activity\(\"ec11_rotate\"\)[\s\S]{0,360}"
-        r"if\s*\(\s*was_low_power_idle\s*\|\|\s*raw_state\s*!=\s*KEYBOARD_EC11_DETENT_STATE\s*\)[\s\S]{0,220}"
-        r"keyboard_ec11_refresh_feedback_for_delta\(state,\s*delta,\s*was_low_power_idle\)",
+        r"static\s+int8_t\s+keyboard_ec11_feedback_delta_from_accumulator\(int32_t\s+accumulator\)[\s\S]{0,260}"
+        r"accumulator\s*>\s*0[\s\S]{0,140}"
+        r"accumulator\s*<\s*0[\s\S]{0,140}"
+        r"return\s+0\s*;",
         keyboard,
     ):
         failures.append(
-            "components/keyboard/keyboard.c: low-power and partial EC11 rotation edges must wake power manager and refresh local rotation feedback before detent/HID dispatch"
+            "components/keyboard/keyboard.c: EC11 rotation LED feedback direction must come from the accumulated detent direction so contact bounce cannot flip the cue"
+        )
+    if not re.search(
+        r"was_low_power_idle\s*=\s*keyboard_power_state_is_low_power_idle\(\)[\s\S]{0,260}"
+        r"power_manager_record_activity\(\"ec11_rotate\"\)[\s\S]{0,360}"
+        r"feedback_delta\s*=\s*keyboard_ec11_feedback_delta_from_accumulator\(state->detent_accumulator\)[\s\S]{0,260}"
+        r"if\s*\(\s*\(was_low_power_idle\s*\|\|\s*raw_state\s*!=\s*KEYBOARD_EC11_DETENT_STATE\)\s*&&\s*feedback_delta\s*!=\s*0\s*\)[\s\S]{0,220}"
+        r"keyboard_ec11_refresh_feedback_for_delta\(state,\s*feedback_delta,\s*was_low_power_idle\)",
+        keyboard,
+    ):
+        failures.append(
+            "components/keyboard/keyboard.c: low-power and partial EC11 rotation edges must wake power manager and refresh local rotation feedback from accumulated direction before detent/HID dispatch"
         )
     if not re.search(
         r"keyboard_ec11_refresh_feedback_for_delta[\s\S]{0,900}"

@@ -278,6 +278,17 @@ static uint32_t keyboard_ec11_delta_code(int8_t delta)
     return 0;
 }
 
+static int8_t keyboard_ec11_feedback_delta_from_accumulator(int32_t accumulator)
+{
+    if (accumulator > 0) {
+        return 1;
+    }
+    if (accumulator < 0) {
+        return -1;
+    }
+    return 0;
+}
+
 static uint32_t keyboard_ec11_action_code(ec11_rotation_action_t action)
 {
     switch (action) {
@@ -1014,8 +1025,11 @@ static void keyboard_ec11_handle_state(keyboard_ec11_state_t *state, uint8_t raw
     state->detent_accumulator += delta;
     const bool was_low_power_idle = keyboard_power_state_is_low_power_idle();
     power_manager_record_activity("ec11_rotate");
-    if (was_low_power_idle || raw_state != KEYBOARD_EC11_DETENT_STATE) {
-        keyboard_ec11_refresh_feedback_for_delta(state, delta, was_low_power_idle);
+    int8_t feedback_delta =
+        keyboard_ec11_feedback_delta_from_accumulator(state->detent_accumulator);
+    if ((was_low_power_idle || raw_state != KEYBOARD_EC11_DETENT_STATE) &&
+        feedback_delta != 0) {
+        keyboard_ec11_refresh_feedback_for_delta(state, feedback_delta, was_low_power_idle);
     }
     ESP_LOGD(
         TAG,

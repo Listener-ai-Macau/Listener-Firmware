@@ -95,6 +95,11 @@ REQUIRED_TEXT = [
     ),
     RequiredText(
         "docs/features/status_led.md",
+        re.compile(r"accumulated detent direction", re.IGNORECASE),
+        "status LED feature doc must preserve the EC11 accumulated-direction bounce filter",
+    ),
+    RequiredText(
+        "docs/features/status_led.md",
         re.compile(r"650 ms recovery double-click window", re.IGNORECASE),
         "status LED feature doc must distinguish EC11 recovery double-click timing from the 200 ms single-click response window",
     ),
