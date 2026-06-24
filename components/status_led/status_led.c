@@ -108,7 +108,11 @@
 #define STATUS_LED_KEY_GESTURE_PERCENT 85U
 #define STATUS_LED_EC11_FEEDBACK_MS 1400U
 #define STATUS_LED_EC11_ROTATION_HOLD_MS 2600U
-#define STATUS_LED_EC11_ROTATION_STEP_MS 360U
+#define STATUS_LED_EC11_ROTATION_STEP_MS 220U
+#define STATUS_LED_EC11_ROTATION_HEAD_START_PERCENT 58U
+#define STATUS_LED_EC11_ROTATION_HEAD_END_PERCENT 30U
+#define STATUS_LED_EC11_ROTATION_BASE_START_PERCENT 4U
+#define STATUS_LED_EC11_ROTATION_BASE_END_PERCENT 0U
 #define STATUS_LED_EC11_FEEDBACK_DIAG_MIN_MS 500U
 #define STATUS_LED_EC11_REPAIR_BLINK_MIN_PERCENT 4U
 #define STATUS_LED_EC11_REPAIR_BLINK_MAX_PERCENT 16U
@@ -2792,6 +2796,17 @@ static uint32_t status_led_ec11_feedback_step_from_dot(
         : dot % STATUS_LED_EC11_COUNT;
 }
 
+static uint32_t status_led_ec11_feedback_trail_index(
+    status_led_ec11_feedback_t feedback,
+    uint32_t dot,
+    uint32_t offset)
+{
+    offset %= STATUS_LED_EC11_COUNT;
+    return feedback == STATUS_LED_EC11_FEEDBACK_ROTATE_CW
+        ? (dot + offset) % STATUS_LED_EC11_COUNT
+        : (dot + STATUS_LED_EC11_COUNT - offset) % STATUS_LED_EC11_COUNT;
+}
+
 static void status_led_render_ec11_repair_locked(status_led_frame_t *frame, uint32_t now_ms)
 {
     uint8_t percent = status_led_ble_repair_percent_locked(
@@ -2827,13 +2842,13 @@ static bool status_led_render_ec11_feedback_locked(status_led_frame_t *frame, ui
     uint8_t peak_percent = status_led_decay_percent(
         motion_elapsed,
         STATUS_LED_EC11_ROTATION_HOLD_MS,
-        34U,
-        18U);
+        STATUS_LED_EC11_ROTATION_HEAD_START_PERCENT,
+        STATUS_LED_EC11_ROTATION_HEAD_END_PERCENT);
     uint8_t base_percent = status_led_decay_percent(
         motion_elapsed,
         STATUS_LED_EC11_ROTATION_HOLD_MS,
-        12U,
-        8U);
+        STATUS_LED_EC11_ROTATION_BASE_START_PERCENT,
+        STATUS_LED_EC11_ROTATION_BASE_END_PERCENT);
     white = status_led_token_locked(status_led_rgb(255, 255, 255), peak_percent, false);
     status_led_rgb_t base = status_led_token_locked(
         status_led_rgb(255, 255, 255),
@@ -2844,13 +2859,18 @@ static bool status_led_render_ec11_feedback_locked(status_led_frame_t *frame, ui
     }
 
     uint32_t dot = status_led_ec11_feedback_dot_from_step(s_state.ec11_feedback, motion_step);
-    status_led_rgb_t tail = status_led_scale_raw(white, 70U);
-    status_led_rgb_t fade = status_led_scale_raw(white, 45U);
+    status_led_rgb_t tail = status_led_scale_raw(white, 56U);
+    status_led_rgb_t fade = status_led_scale_raw(white, 24U);
     status_led_set_max(&frame->ec11[dot], white);
-    status_led_set_max(&frame->ec11[(dot + STATUS_LED_EC11_COUNT - 1U) % STATUS_LED_EC11_COUNT], tail);
-    status_led_set_max(&frame->ec11[(dot + 1U) % STATUS_LED_EC11_COUNT], tail);
-    status_led_set_max(&frame->ec11[(dot + STATUS_LED_EC11_COUNT - 2U) % STATUS_LED_EC11_COUNT], fade);
-    status_led_set_max(&frame->ec11[(dot + 2U) % STATUS_LED_EC11_COUNT], fade);
+    status_led_set_max(
+        &frame->ec11[status_led_ec11_feedback_trail_index(s_state.ec11_feedback, dot, 1U)],
+        tail);
+    status_led_set_max(
+        &frame->ec11[status_led_ec11_feedback_trail_index(s_state.ec11_feedback, dot, 2U)],
+        fade);
+    status_led_set_max(
+        &frame->ec11[status_led_ec11_feedback_trail_index(s_state.ec11_feedback, dot, 3U)],
+        status_led_scale_raw(white, 12U));
     return true;
 }
 

@@ -324,6 +324,7 @@ static void voice_key_input_record_recovery_event(const char *source)
 
     if (xSemaphoreGive(s_recovery_event_sem) == pdTRUE) {
         ESP_LOGW(TAG, "%s double-click recovery detected", source);
+        status_led_notify_ble_repairing("ec11_double_click_recovery");
         diag_log(
             DIAG_SRC_VOICE_KEY,
             DIAG_VKEY_PRESS,

@@ -1229,7 +1229,9 @@ def main() -> int:
         or "ec11_feedback_last_step_ms" not in status_led
         or "ec11_feedback_motion_step" not in status_led
         or "STATUS_LED_EC11_ROTATION_HOLD_MS 2600U" not in status_led
-        or "STATUS_LED_EC11_ROTATION_STEP_MS 360U" not in status_led
+        or "STATUS_LED_EC11_ROTATION_STEP_MS 220U" not in status_led
+        or "STATUS_LED_EC11_ROTATION_HEAD_START_PERCENT 58U" not in status_led
+        or "STATUS_LED_EC11_ROTATION_BASE_START_PERCENT 4U" not in status_led
         or "status_led_decay_percent(" not in status_led
         or "status_led_refresh_ec11_feedback" not in status_led
         or "status_led_apply_ec11_feedback" not in status_led
@@ -1237,6 +1239,7 @@ def main() -> int:
         or "status_led_ec11_feedback_motion_step_locked" not in status_led
         or "status_led_ec11_feedback_dot_from_step" not in status_led
         or "status_led_ec11_feedback_step_from_dot" not in status_led
+        or "status_led_ec11_feedback_trail_index" not in status_led
         or "status_led_ec11_feedback_active_locked(now_ms)" not in status_led
         or not re.search(
             r"feedback_ms\s*=\s*rotation_feedback[\s\S]{0,120}"
@@ -1258,11 +1261,13 @@ def main() -> int:
             status_led,
         )
         or not re.search(
-            r"status_led_decay_percent\(\s*motion_elapsed,\s*STATUS_LED_EC11_ROTATION_HOLD_MS,\s*34U,\s*18U\s*\)",
+            r"status_led_decay_percent\(\s*motion_elapsed,\s*STATUS_LED_EC11_ROTATION_HOLD_MS,\s*STATUS_LED_EC11_ROTATION_HEAD_START_PERCENT,\s*STATUS_LED_EC11_ROTATION_HEAD_END_PERCENT\s*\)",
             status_led,
         )
         or not re.search(
-            r"status_led_decay_percent\(\s*motion_elapsed,\s*STATUS_LED_EC11_ROTATION_HOLD_MS,\s*12U,\s*8U\s*\)",
+            r"status_led_ec11_feedback_trail_index\(s_state\.ec11_feedback,\s*dot,\s*1U\)[\s\S]{0,320}"
+            r"status_led_ec11_feedback_trail_index\(s_state\.ec11_feedback,\s*dot,\s*2U\)[\s\S]{0,320}"
+            r"status_led_ec11_feedback_trail_index\(s_state\.ec11_feedback,\s*dot,\s*3U\)",
             status_led,
         )
     ):
@@ -1691,6 +1696,10 @@ def main() -> int:
     if recovery_body is None or "status_led_notify_ec11_feedback" in recovery_body.group(0):
         failures.append(
             "ports/esp32/voice_key_input/voice_key_input_esp32.c: EC11 double-click recovery must go through BLE re-pair state, not a key-style EC11 feedback enum"
+        )
+    if recovery_body is None or 'status_led_notify_ble_repairing("ec11_double_click_recovery")' not in recovery_body.group(0):
+        failures.append(
+            "ports/esp32/voice_key_input/voice_key_input_esp32.c: EC11 double-click recovery must show the BLE repair cue immediately when the double click is detected"
         )
     if not re.search(
         r"voice_key_input_next_wait_ms[\s\S]{0,700}"

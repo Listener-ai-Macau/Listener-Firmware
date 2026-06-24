@@ -80,7 +80,7 @@ REQUIRED_TEXT = [
     RequiredText(
         "docs/features/firmware-feature-map.md",
         re.compile(r"keeps restrained PWR visible and connected/TYPE_READY BLE dark only after idle is entered", re.IGNORECASE),
-        "feature map must summarize current idle LED behavior without implying all-off",
+        "feature map must summarize current idle LED behavior without implying all-off; keeps restrained PWR/BLE status visible",
     ),
     RequiredText(
         "tools/verify_status_led_static.py",
