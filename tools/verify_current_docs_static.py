@@ -75,6 +75,10 @@ STALE_PATTERNS = [
         re.compile(r"head only advances on completed detents", re.IGNORECASE),
         "stale EC11 rotation prose: current cue keeps moving during the hold window",
     ),
+    PatternRule(
+        re.compile(r"EC11 double-click recovery[\s\S]{0,120}200 ms window", re.IGNORECASE),
+        "stale EC11 recovery prose: recovery double-click uses its dedicated 650 ms window",
+    ),
 ]
 
 
@@ -88,6 +92,11 @@ REQUIRED_TEXT = [
         "docs/features/status_led.md",
         re.compile(r"advances the white head at `STATUS_LED_EC11_ROTATION_STEP_MS`", re.IGNORECASE),
         "status LED feature doc must preserve the current EC11 fixed-step directional rotation cue",
+    ),
+    RequiredText(
+        "docs/features/status_led.md",
+        re.compile(r"650 ms recovery double-click window", re.IGNORECASE),
+        "status LED feature doc must distinguish EC11 recovery double-click timing from the 200 ms single-click response window",
     ),
     RequiredText(
         "docs/features/low_power_wake_policy.md",
