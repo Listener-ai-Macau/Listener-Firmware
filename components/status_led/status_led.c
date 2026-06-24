@@ -99,6 +99,7 @@
 #define STATUS_LED_OK_PEAK_MS 360U
 #define STATUS_LED_KEY_FEEDBACK_MS 700U
 #define STATUS_LED_KEY_GESTURE_FEEDBACK_MS 1800U
+#define STATUS_LED_KEY_LONG_GESTURE_FEEDBACK_MS 1000U
 #define STATUS_LED_KEY_FLASH_ON_MS 420U
 #define STATUS_LED_KEY_FLASH_GAP_MS 220U
 #define STATUS_LED_KEY_PRESS_PERCENT 55U
@@ -2412,6 +2413,13 @@ static status_led_rgb_t status_led_key_feedback_color_locked(void)
     return status_led_rgb(160, 0, 255);
 }
 
+static uint32_t status_led_key_feedback_duration_ms(status_led_key_feedback_t feedback)
+{
+    return feedback == STATUS_LED_KEY_FEEDBACK_LONG
+        ? STATUS_LED_KEY_LONG_GESTURE_FEEDBACK_MS
+        : STATUS_LED_KEY_GESTURE_FEEDBACK_MS;
+}
+
 static uint8_t status_led_recording_status_percent_locked(uint32_t now_ms)
 {
     uint8_t target_effect = status_led_recording_level_effect_percent_locked(now_ms);
@@ -4153,9 +4161,11 @@ void status_led_notify_key_feedback(uint8_t key_index, status_led_key_feedback_t
             return;
         }
         status_led_resume_interactive_output_locked();
+        uint32_t duration_ms = status_led_key_feedback_duration_ms(feedback);
+        s_state.key_until_ms[key_index] = 0U;
         s_state.key_feedback[key_index] = feedback;
         s_state.key_feedback_started_ms[key_index] = now_ms;
-        s_state.key_feedback_until_ms[key_index] = now_ms + STATUS_LED_KEY_GESTURE_FEEDBACK_MS;
+        s_state.key_feedback_until_ms[key_index] = now_ms + duration_ms;
         s_state.status_window_until_ms = now_ms + STATUS_LED_STATUS_WINDOW_MS;
         s_state.last_transition_ms = now_ms;
         status_led_set_last_reason_locked("key_feedback");
@@ -4166,7 +4176,7 @@ void status_led_notify_key_feedback(uint8_t key_index, status_led_key_feedback_t
             7,
             (uint32_t)(key_index + 1U),
             (uint32_t)feedback,
-            STATUS_LED_KEY_GESTURE_FEEDBACK_MS);
+            duration_ms);
         changed = true;
         xSemaphoreGive(s_mutex);
     }
