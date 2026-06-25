@@ -989,6 +989,57 @@ def main() -> int:
         failures.append(
             "ports/esp32/ble_hid_gap/ble_hid_gap_esp32.c: recovery pairing must be able to reopen advertising from key-wake-only idle"
         )
+    if "s_recovery_identity_rotation" in ble_gap or "identity_rotated_at" in ble_gap:
+        failures.append(
+            "ports/esp32/ble_hid_gap/ble_hid_gap_esp32.c: recovery identity rotation state must stay removed; recovery should keep a stable BLE identity"
+        )
+    if not re.search(
+        r"static\s+void\s+ble_hid_gap_keep_recovery_adv_connectable[\s\S]{0,760}"
+        r"s_low_power_advertising\s*=\s*false[\s\S]{0,180}"
+        r"s_key_wake_only_advertising\s*=\s*false[\s\S]{0,180}"
+        r"s_directed_adv_pending\s*=\s*false",
+        ble_gap,
+    ):
+        failures.append(
+            "ports/esp32/ble_hid_gap/ble_hid_gap_esp32.c: recovery pairing window must force connectable undirected advertising over low-power/key-wake/direct modes"
+        )
+    if not re.search(
+        r"esp_hid_ble_gap_adv_start[\s\S]{0,900}"
+        r"ble_hid_gap_keep_recovery_adv_connectable\(\"advertising start\"\)[\s\S]{0,320}"
+        r"if\s*\(\s*s_key_wake_only_advertising\s*\)",
+        ble_gap,
+    ):
+        failures.append(
+            "ports/esp32/ble_hid_gap/ble_hid_gap_esp32.c: advertising start must honor recovery pairing before key-wake suppression"
+        )
+    if not re.search(
+        r"ble_hid_gap_set_low_power_advertising[\s\S]{0,320}"
+        r"enabled\s*&&\s*ble_hid_gap_recovery_pairing_needs_connectable_adv\(\)[\s\S]{0,260}"
+        r"return\s+ESP_OK",
+        ble_gap,
+    ):
+        failures.append(
+            "ports/esp32/ble_hid_gap/ble_hid_gap_esp32.c: low-power advertising requests must not override an active recovery pairing window"
+        )
+    if not re.search(
+        r"ble_hid_gap_stop_advertising_for_key_wake[\s\S]{0,260}"
+        r"ble_hid_gap_recovery_pairing_needs_connectable_adv\(\)[\s\S]{0,460}"
+        r"ble_hid_gap_start_advertising\(\)",
+        ble_gap,
+    ):
+        failures.append(
+            "ports/esp32/ble_hid_gap/ble_hid_gap_esp32.c: key-wake-only advertising stop must restart connectable advertising during recovery pairing"
+        )
+    if not re.search(
+        r"ble_hid_gap_set_connection_state[\s\S]{0,260}s_last_conn_param_mode\s*=\s*0",
+        ble_gap,
+    ) or not re.search(
+        r"s_last_conn_param_mode\s*==\s*\(uint32_t\)mode",
+        ble_gap,
+    ):
+        failures.append(
+            "ports/esp32/ble_hid_gap/ble_hid_gap_esp32.c: connection parameter mode de-duplication must reset on connection state changes"
+        )
     for label, pattern in (
         (
             "advertising start",
@@ -1499,6 +1550,18 @@ def main() -> int:
     ):
         failures.append(
             "components/status_led/status_led.c: confirmed long key gesture must stay purple while the key remains held"
+        )
+    if not re.search(
+        r"void\s+status_led_notify_key_event[\s\S]*?"
+        r"bool\s+long_release_fade\s*=\s*false[\s\S]*?"
+        r"s_state\.key_feedback\[key_index\]\s*==\s*STATUS_LED_KEY_FEEDBACK_LONG[\s\S]*?"
+        r"long_release_fade\s*=\s*true[\s\S]*?"
+        r"s_state\.key_until_ms\[key_index\]\s*=\s*long_release_fade\s*\?[\s\S]*?"
+        r"0U\s*:[\s\S]*?now_ms\s*\+\s*STATUS_LED_KEY_FEEDBACK_MS",
+        status_led,
+    ):
+        failures.append(
+            "components/status_led/status_led.c: long key release fade must suppress the white physical release tail"
         )
     if not re.search(
         r"#define\s+KEYBOARD_EC11_LOW_POWER_IDLE_POLL_MS\s+20\b",
