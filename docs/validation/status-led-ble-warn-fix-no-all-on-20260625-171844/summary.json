@@ -1,0 +1,26 @@
+{
+  "schema": "listener.status_led.log_no_all_on.v1",
+  "generated_at": "2026-06-25T17:19:20.3152541+08:00",
+  "agent": "codex",
+  "result": "PASS",
+  "port": "COM10",
+  "output_dir": "C:\\Users\\Billy\\Desktop\\Denzic\\Listener\\Listener-Firmware\\docs\\validation\\status-led-ble-warn-fix-no-all-on-20260625-171844",
+  "capture": "C:\\Users\\Billy\\Desktop\\Denzic\\Listener\\Listener-Firmware\\docs\\validation\\status-led-ble-warn-fix-no-all-on-20260625-171844\\serial-status-led.txt",
+  "power_status": "~POWER:STATUS state=ACTIVE blockers=0x00000080 blocker_names=external_power shutdown_blockers=0x00000080 shutdown_blocker_names=external_power idle_ms=558 user_idle_ms=558 radio_idle_ms=558 ble_connected=0 automatic_shutdown_enabled=0 automatic_shutdown_blocked_by_external_power=0 external_power_present=1 usb_power_present=1 usb_serial_jtag_sof_active=1 charger_active=1 charge_power_present=1 charging=1 charge_full=0 charge_full_latched=0 charge_full_candidate_ms=0 charge_full_debounce_ms=10000 charge_full_min_mv=4050 charge_full_min_percent=88 plugged_low_power_enabled=1 low_power_idle_allowed=1 power_input_wake_configured=1 power_input_irq_armed=0 usb_det_level=high usb_det_adc_valid=0 usb_det_adc_mv=0 usb_det_mismatch=0 bat_chg_level=low bat_std_level=high pwr_hold_level=low usb_det_policy=v2_gpio7_usb_det_disabled_highz_usb_sof_and_charger_status charger_polarity=v2_gpio14_chg_gpio21_std_active_low pwr_hold_policy=v2_gpio9_power_latch_runtime_low_drive_high_for_hardware_shutdown battery_mv=4150 battery_level=100 battery_valid=1 last_shutdown_reason=none last_shutdown_idle_ms=0 last_shutdown_blockers=0x00000000 last_shutdown_failure_ret=ESP_OK shutdown_failure_retry_ms_left=0 shutdown_failure_retry_ms=900000 last_shutdown_persisted=0 last_shutdown_battery_mv=0 last_shutdown_battery_level=255 last_shutdown_power_flags=0x00000000 guard=1 audio_idle_ms=5000 audio_idle_power_save=0 audio_idle_blockers=0x00000000 low_power_idle_ms=60000 plugged_low_power_idle_ms=60000 battery_low_power_idle_ms=60000 connected_idle_ms=60000 disconnected_idle_ms=60000 hardware_shutdown_ms=0 plugged_auto_shutdown_ms=0 battery_auto_shutdown_ms=120000 pwr_hold_gpio=9 pwr_hold_level=low pwr_hold_configured=1 pwr_hold_policy=v2_gpio9_power_latch_runtime_low_drive_high_for_hardware_shutdown voice_key_gpio=18 hardware_shutdown_user_action=\"short-press hardware power key for cold boot after PWR_HOLD/GPIO9 drive-high shutdown\"",
+  "led_state": "~LED:STATUS detail=state ble=pairing rec_active=0 rec_source=none rec_level=0 rec_level_visual=0 rec_level_hold_ms_left=0 processing=0 ble_repair_ms_left=0 error_domain=none error_severity=retryable output_disabled=0 low_power_disabled=0 idle_transition_clear_pending=0 preview_suppress_accents=0 preview_effect_only=0 preview_ble_override_ms_left=0 shutdown_confirm_active=0 shutdown_confirm_final=0 shutdown_confirm_latched=0 shutdown_confirm_elapsed_ms=0",
+  "led_rgb": "~LED:STATUS detail=rgb status_rgb=PWR:18,18,18;BLE:0,0,32;REC:0,0,0;AI:0,0,0;OK:0,0,0;WARN:0,0,0",
+  "led_summary": "~LED:STATUS profile=standard detail=summary profile_cap_percent=100 budget_scale_percent=100 budget_limited_by_current=0 ble=pairing rec_active=0 rec_source=none processing=0 ble_repair_ms_left=0 error_domain=none error_severity=retryable battery_level=100 external_power=1 external_power_source=charger_status|usb_serial_jtag charging=1 full=0 active_flags=PWR:1,BLE:1,REC:0,AI:0,OK:0,WARN:0,EC11:0,KEY:0,EDGE:0 key_mask=0x00 test_mode=0 test_strip_mask=0x00 preview_suppress_accents=0 preview_effect_only=0 preview_ble_override_ms_left=0 shutdown_confirm_active=0 shutdown_confirm_latched=0 last_reason=ble_state",
+  "quiet_current_state": true,
+  "current_status_tail_any_on": false,
+  "current_status_tail_all_on": false,
+  "diag_visual_event_count": 0,
+  "diag_frame_event_count": 0,
+  "diag_visual_active_flags": [],
+  "recent_visual_events": [],
+  "recent_frame_events": [],
+  "warnings": [
+    "no status_led DIAG_LED_VISUAL_STATE events were present in the bounded diag tail",
+    "no status_led DIAG_LED_FRAME_RGB events were present in the bounded diag tail"
+  ],
+  "failures": []
+}

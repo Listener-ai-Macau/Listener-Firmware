@@ -1,0 +1,885 @@
+535 counts_subscribe=0 counts_mtu=0 counts_notify_tx=0 counts_diI (147891) ESP_HID_GAP: connection failed; status=19
+I (147901) ESP_HID_GAP: NimBLE bonded peers=0
+I (147901) ESP_HID_GAP: NimBLE undirected advertising started: low_power=0 interval_ms=30-50
+I (147911) ESP_HID_GAP: encryption change event; status=7
+W (147911) ESP_HID_GAP: encryption failed or connection already gone; status=7
+I (147911) ESP_HID_GAP: disconnect; reason=531
+W (147921) ble_audio_stream: audio stale event discarded: type=disconnect conn=1 event_epoch=48 current_epoch=48 current_conn=65535 counts_subscribe=0 counts_mtu=0 counts_notify_tx=0 counts_disconnect=533
+I (147941) ESP_HID_GAP: NimBLE advertising already active
+I (148031) ESP_HID_GAP: connection failed; status=19
+I (148031) ESP_HID_GAP: NimBLE bonded peers=0
+I (148041) ESP_HID_GAP: NimBLE undirected advertising started: low_power=0 interval_ms=30-50
+I (148041) ESP_HID_GAP: encryption change event; status=7
+W (148041) ESP_HID_GAP: encryption failed or connection already gone; status=7
+I (148051) ESP_HID_GAP: disconnect; reason=531
+W (148051) ble_audio_stream: audio stale event discarded: type=disconnect conn=1 event_epoch=48 current_epoch=48 current_conn=65535 counts_subscribe=0 counts_mtu=0 counts_notify_tx=0 counts_disconnect=534
+I (148071) ESP_HID_GAP: NimBLE advertising already active
+I (148161) ESP_HID_GAP: connection failed; status=19
+I (148171) ESP_HID_GAP: NimBLE bonded peers=0
+I (148171) ESP_HID_GAP: NimBLE undirected advertising started: low_power=0 interval_ms=30-50
+I (148171) ESP_HID_GAP: encryption change event; status=7
+W (148181) ESP_HID_GAP: encryption failed or connection already gone; status=7
+I (148181) ESP_HID_GAP: disconnect; reason=531
+W (148201) ble_audio_stream: audio stale event discarded: type=disconnect conn=1 event_epoch=48 current_epoch=48 current_conn=65535 counts_subscribe=0 counts_mtu=0 counts_notify_tx=0 counts_disconnect=535
+I (148201) ESP_HID_GAP: NimBLE advertising already active
+I (148421) ESP_HID_GAP: connection failed; status=19
+I (148431) ESP_HID_GAP: NimBLE bonded peers=0
+I (148431) ESP_HID_GAP: NimBLE undirected advertising started: low_power=0 interval_ms=30-50
+I (148431) ESP_HID_GAP: encryption change event; status=7
+W (148441) ESP_HID_GAP: encryption failed or connection already gone; status=7
+I (148441) ESP_HID_GAP: disconnect; reason=531
+W (148451) ble_audio_stream: audio stale event discarded: type=disconnect conn=1 event_epoch=48 current_epoch=48 current_conn=65535 counts_subscribe=0 counts_mtu=0 counts_notify_tx=0 counts_disconnect=536
+I (148461) ESP_HID_GAP: NimBLE advertising already active
+I (148551) ESP_HID_GAP: connection failed; status=19
+I (148551) ESP_HID_GAP: NimBLE bonded peers=0
+I (148561) ESP_HID_GAP: NimBLE undirected advertising started: low_power=0 interval_ms=30-50
+I (148561) ESP_HID_GAP: encryption change event; status=7
+W (148561) ESP_HID_GAP: encryption failed or connection already gone; status=7
+I (148571) ESP_HID_GAP: disconnect; reason=531
+W (148571) ble_audio_stream: audio stale event discarded: type=disconnect conn=1 event_epoch=48 current_epoch=48 current_conn=65535 counts_subscribe=0 counts_mtu=0 counts_notify_tx=0 counts_disconnect=537
+I (148591) ESP_HID_GAP: NimBLE advertising already active
+I (148741) ESP_HID_GAP: connection failed; status=19
+I (148741) ESP_HID_GAP: NimBLE bonded peers=0
+I (148751) ESP_HID_GAP: NimBLE undirected advertising started: low_power=0 interval_ms=30-50
+I (148751) ESP_HID_GAP: encryption change event; status=7
+W (148751) ESP_HID_GAP: encryption failed or connection already gone; status=7
+I (148761) ESP_HID_GAP: disconnect; reason=531
+W (148761) ble_audio_stream: audio stale event discarded: type=disconnect conn=1 event_epoch=48 current_epoch=48 current_conn=65535 counts_subscribe=0 counts_mtu=0 counts_notify_tx=0 counts_disconnect=538
+I (148781) ESP_HID_GAP: NimBLE advertising already active
+I (148921) ESP_HID_GAP: connection failed; status=19
+I (148921) ESP_HID_GAP: NimBLE bonded peers=0
+I (148931) ESP_HID_GAP: NimBLE undirected advertising started: low_power=0 interval_ms=30-50
+I (148931) ESP_HID_GAP: encryption change event; status=7
+W (148931) ESP_HID_GAP: encryption failed or connection already gone; status=7
+I (148941) ESP_HID_GAP: disconnect; reason=531
+W (148941) ble_audio_stream: audio stale event discarded: type=disconnect conn=1 event_epoch=48 current_epoch=48 current_conn=65535 counts_subscribe=0 counts_mtu=0 counts_notify_tx=0 counts_disconnect=539
+I (148961) ESP_HID_GAP: NimBLE advertising already active
+I (149051) ESP_HID_GAP: connection failed; status=19
+I (149061) ESP_HID_GAP: NimBLE bonded peers=0
+I (149061) ESP_HID_GAP: NimBLE undirected advertising started: low_power=0 interval_ms=30-50
+I (149061) ESP_HID_GAP: encryption change event; status=7
+W (149071) ESP_HID_GAP: encryption failed or connection already gone; status=7
+I (149071) ESP_HID_GAP: disconnect; reason=531
+I (149191) ESP_HID_GAP: connection failed; status=19
+I (149191) ESP_HID_GAP: NimBLE bonded peers=0
+I (149201) ESP_HID_GAP: NimBLE undirected advertising started: low_power=0 interval_ms=30-50
+I (149201) ESP_HID_GAP: encryption change event; status=7
+W (149201) ESP_HID_GAP: encryption failed or connection already gone; status=7
+I (149211) ESP_HID_GAP: disconnect; reason=531
+W (149211) ble_audio_stream: audio stale event discarded: type=disconnect conn=1 event_epoch=48 current_epoch=48 current_conn=65535 counts_subscribe=0 counts_mtu=0 counts_notify_tx=0 counts_disconnect=541
+I (149231) ESP_HID_GAP: NimBLE advertising already active
+I (149321) ESP_HID_GAP: connection failed; status=19
+I (149331) ESP_HID_GAP: NimBLE bonded peers=0
+I (149331) ESP_HID_GAP: NimBLE undirected advertising started: low_power=0 interval_ms=30-50
+I (149331) ESP_HID_GAP: encryption change event; status=7
+W (149331) ESP_HID_GAP: encryption failed or connection already gone; status=7
+I (149341) ESP_HID_GAP: disconnect; reason=531
+W (149351) ble_audio_stream: audio stale event discarded: type=disconnect conn=1 event_epoch=48 current_epoch=48 current_conn=65535 counts_subscribe=0 counts_mtu=0 counts_notify_tx=0 counts_disconnect=542
+I (149361) ESP_HID_GAP: NimBLE advertising already active
+> ~LED:PREVIEW clear
+I (149461) ESP_HID_GAP: connection failed; status=19
+I (149461) ESP_HID_GAP: NimBLE bonded peers=0
+I (149471) ESP_HID_GAP: NimBLE undirected advertising started: low_power=0 interval_ms=30-50
+I (149471) audio_capture: audio idle power save disabled: ESP_OK
+I (149471) ESP_HID_GAP: encryption change event; status=7
+I (149471) status_led: LED preview=clear
+W (149491) ESP_HID_GAP: encryption failed or connection already gone; status=7
+I (149491) ESP_HID_GAP: disconnect; reason=531
+W (149491) ble_audio_stream: audio stale event discarded: type=disconnect conn=1 event_epoch=48 current_epoch=48 current_conn=65535 counts_subscribe=0 counts_mtu=0 counts_notify_tx=0 counts_disconnect=543
+I (149511) ESP_HID_GAP: NimBLE advertising already active
+I (149591) ESP_HID_GAP: connection failed; status=19
+I (149601) ESP_HID_GAP: NimBLE bonded peers=0
+I (149601) ESP_HID_GAP: NimBLE undirected advertising started: low_power=0 interval_ms=30-50
+I (149601) ESP_HID_GAP: encryption change event; status=7
+W (149611) ESP_HID_GAP: encryption failed or connection already gone; status=7
+I (149611) ESP_HID_GAP: disconnect; reason=531
+W (149621) ble_audio_stream: audio stale event discarded: type=disconnect conn=1 event_epoch=48 current_epoch=48 current_conn=65535 counts_subscribe=0 counts_mtu=0 counts_notify_tx=0 counts_disconnect=544
+I (149631) ESP_HID_GAP: NimBLE advertising already active
+I (149731) ESP_HID_GAP: connection failed; status=19
+I (149731) ESP_HID_GAP: NimBLE bonded peers=0
+I (149741) ESP_HID_GAP: NimBLE undirected advertising started: low_power=0 interval_ms=30-50
+I (149771) ESP_HID_GAP: encryption change event; status=7
+W (149771) ESP_HID_GAP: encryption failed or connection already gone; status=7
+I (149771) ESP_HID_GAP: disconnect; reason=531
+W (149771) ble_audio_stream: audio stale event discarded: type=disconnect conn=1 event_epoch=48 current_epoch=48 current_conn=65535 counts_subscribe=0 counts_mtu=0 counts_notify_tx=0 counts_disconnect=545
+I (149791) ESP_HID_GAP: NimBLE advertising already active
+> ~LED:OFF
+I (149921) ESP_HID_GAP: connection failed; status=19
+I (149921) ESP_HID_GAP: NimBLE bonded peers=0
+I (149931) ESP_HID_GAP: NimBLE undirected advertising started: low_power=0 interval_ms=30-50
+I (149931) ESP_HID_GAP: encryption change event; status=7
+W (149931) ESP_HID_GAP: encryption failed or connection already gone; status=7
+I (149941) ESP_HID_GAP: disconnect; reason=531
+W (149941) ble_audio_stream: audio stale event discarded: type=disconnect conn=1 event_epoch=48 current_epoch=48 current_conn=65535 counts_subscribe=0 counts_mtu=0 counts_notify_tx=0 counts_disconnect=546
+I (149951) status_led_strip_backend: strip status transport ready: gpio=1 leds=6 tx_leds=12 tail_guard_pixels=6 backend=rmt_ws2812_800khz rmt_dma_requested=1 rmt_dma=0 rmt_dma_fallback=0 mem_block_symbols=48
+Guru Meditation Error: Core  0 panic'ed (LoadProhibited). Exception was unhandled.
+Core  0 register dump:
+PC      : 0x40376db6  PS      : 0x00060b33  A0      : 0x8200623e  A1      : 0x3fcb0f70  
+A2      : 0x3fceb478  A3      : 0xffffffff  A4      : 0x00060d20  A5      : 0x00060b23  
+A6      : 0xb33fffff  A7      : 0x0000cdcd  A8      : 0x98089d61  A9      : 0x000002cc  
+A10     : 0x00004eb0  A11     : 0x00004eb0  A12     : 0xb33fffff  A13     : 0x00060b23  
+A14     : 0x00000001  A15     : 0x0000cdcd  SAR     : 0x0000001d  EXCCAUSE: 0x0000001c  
+EXCVADDR: 0x000002cc  LBEG    : 0x400570e8  LEND    : 0x400570f3  LCOUNT  : 0x00000000  
+Backtrace: 0x40376db3:0x3fcb0f70 0x4200623b:0x3fcb0f90 0x42006369:0x3fcb0fb0 0x40376446:0x3fcb0fd0 0x40388129:0x3fcb0ff0
+ELF file SHA256: 4f96811b9
+Rebooting...
+ESP-ROM:esp32s3-20210327
+Build:Mar 27 2021
+rst:0xc (RTC_SW_CPU_RST),boot:0x18 (SPI_FAST_FLASH_BOOT)
+Saved PC:0x4038749d
+SPIWP:0xee
+mode:DIO, clock div:1
+load:0x3fce2820,len:0x14f0
+load:0x403c8700,len:0xd24
+load:0x403cb700,len:0x2f48
+entry 0x403c8924
+I (24) boot: ESP-IDF v5.5.4-668-g8e48797f0c 2nd stage bootloader
+I (24) boot: compile time Jun 24 2026 08:20:22
+I (24) boot: Multicore bootloader
+I (26) boot: chip revision: v0.2
+I (28) boot: efuse block revision: v1.4
+I (32) boot.esp32s3: Boot SPI Speed : 80MHz
+I (36) boot.esp32s3: SPI Mode       : DIO
+I (40) boot.esp32s3: SPI Flash Size : 16MB
+I (44) boot: Enabling RNG early entropy source...
+I (48) boot: Partition Table:
+I (51) boot: ## Label            Usage          Type ST Offset   Length
+I (57) boot:  0 nvs              WiFi data        01 02 00009000 00006000
+I (63) boot:  1 otadata          OTA data         01 00 0000f000 00002000
+I (70) boot:  2 phy_init         RF data          01 01 00011000 00001000
+I (76) boot:  3 ota_0            OTA app          00 10 00020000 00600000
+I (83) boot:  4 ota_1            OTA app          00 11 00620000 00600000
+I (89) boot:  5 diag_log         Unknown data     01 81 00c20000 00100000
+I (96) boot: End of partition table
+I (99) esp_image: segment 0: paddr=00020020 vaddr=3c090020 size=30088h (196744) map
+I (141) esp_image: segment 1: paddr=000500b0 vaddr=3fca2700 size=0528ch ( 21132) load
+I (146) esp_image: segment 2: paddr=00055344 vaddr=40374000 size=0acd4h ( 44244) load
+I (156) esp_image: segment 3: paddr=00060020 vaddr=42000020 size=8a144h (565572) map
+I (785) esp_psram: SPI SRAM memory test OK
+> ~LED:PREVIEW ready
+I (23438) ESP_HID_GAP: connection failed; status=19
+I (23438) ESP_HID_GAP: NimBLE bonded peers=0
+I (23448) ESP_HID_GAP: NimBLE undirected advertising started: low_power=0 interval_ms=30-50
+I (23448) ESP_HID_GAP: encryption change event; status=7
+W (23448) ESP_HID_GAP: encryption failed or connection already gone; status=7
+I (23458) ESP_HID_GAP: disconnect; reason=531
+W (23458) ble_audio_stream: audio stale event discarded: type=disconnect conn=1 event_epoch=2 current_epoch=2 current_conn=65535 counts_subscribe=0 counts_mtu=0 counts_notify_tx=0 counts_disconnect=54
+I (23458) audio_capture: audio idle power save disabled: ESP_OK
+I (23478) status_led: LED preview=ready
+I (23488) ESP_HID_GAP: NimBLE advertising already active
+I (23568) ESP_HID_GAP: connection failed; status=19
+I (23578) ESP_HID_GAP: NimBLE bonded peers=0
+I (23578) ESP_HID_GAP: NimBLE undirected advertising started: low_power=0 interval_ms=30-50
+I (23578) ESP_HID_GAP: encryption change event; status=7
+W (23588) ESP_HID_GAP: encryption failed or connection already gone; status=7
+I (23588) ESP_HID_GAP: disconnect; reason=531
+W (23598) ble_audio_stream: audio stale event discarded: type=disconnect conn=1 event_epoch=2 current_epoch=2 current_conn=65535 counts_subscribe=0 counts_mtu=0 counts_notify_tx=0 counts_disconnect=55
+I (23608) ESP_HID_GAP: NimBLE advertising already active
+I (23668) audio_capture: frame captured count=350 bytes=224000
+I (23708) ESP_HID_GAP: connection failed; status=19
+I (23708) ESP_HID_GAP: NimBLE bonded peers=0
+I (23718) ESP_HID_GAP: NimBLE undirected advertising started: low_power=0 interval_ms=30-50
+I (23718) ESP_HID_GAP: encryption change event; status=7
+W (23718) ESP_HID_GAP: encryption failed or connection already gone; status=7
+I (23728) ESP_HID_GAP: disconnect; reason=531
+W (23728) ble_audio_stream: audio stale event discarded: type=disconnect conn=1 event_epoch=2 current_epoch=2 current_conn=65535 counts_subscribe=0 counts_mtu=0 counts_notify_tx=0 counts_disconnect=56
+I (23748) ESP_HID_GAP: NimBLE advertising already active
+I (23838) ESP_HID_GAP: connection failed; status=19
+I (23848) ESP_HID_GAP: NimBLE bonded peers=0
+I (23848) ESP_HID_GAP: NimBLE undirected advertising started: low_power=0 interval_ms=30-50
+I (23848) ESP_HID_GAP: encryption change event; status=7
+W (23848) ESP_HID_GAP: encryption failed or connection already gone; status=7
+I (23858) ESP_HID_GAP: disconnect; reason=531
+W (23868) ble_audio_stream: audio stale event discarded: type=disconnect conn=1 event_epoch=2 current_epoch=2 current_conn=65535 counts_subscribe=0 counts_mtu=0 counts_notify_tx=0 counts_disconnect=57
+I (23878) ESP_HID_GAP: NimBLE advertising already active
+I (23978) ESP_HID_GAP: connection failed; status=19
+I (23978) ESP_HID_GAP: NimBLE bonded peers=0
+I (23988) ESP_HID_GAP: NimBLE undirected advertising started: low_power=0 interval_ms=30-50
+I (23988) ESP_HID_GAP: encryption change event; status=7
+W (23988) ESP_HID_GAP: encryption failed or connection already gone; status=7
+I (23998) ESP_HID_GAP: disconnect; reason=531
+W (23998) ble_audio_stream: audio stale event discarded: type=disconnect conn=1 event_epoch=2 current_epoch=2 current_conn=65535 counts_subscribe=0 counts_mtu=0 counts_notify_tx=0 counts_disconnect=58
+I (24018) ESP_HID_GAP: NimBLE advertising already active
+> WAIT 250
+I (24258) ESP_HID_GAP: connection failed; status=19
+I (24258) ESP_HID_GAP: NimBLE bonded peers=0
+I (24268) ESP_HID_GAP: NimBLE undirected advertising started: low_power=0 interval_ms=30-50
+I (24268) ESP_HID_GAP: encryption change event; status=7
+W (24268) ESP_HID_GAP: encryption failed or connection already gone; status=7
+I (24278) ESP_HID_GAP: disconnect; reason=531
+W (24278) ble_audio_stream: audio stale event discarded: type=disconnect conn=1 event_epoch=2 current_epoch=2 current_conn=65535 counts_subscribe=0 counts_mtu=0 counts_notify_tx=0 counts_disconnect=59
+I (24298) ESP_HID_GAP: NimBLE advertising already active
+I (24488) ESP_HID_GAP: connection failed; status=19
+I (24498) ESP_HID_GAP: NimBLE bonded peers=0
+I (24498) ESP_HID_GAP: NimBLE undirected advertising started: low_power=0 interval_ms=30-50
+I (24508) ESP_HID_GAP: encryption change event; status=7
+W (24508) ESP_HID_GAP: encryption failed or connection already gone; status=7
+I (24508) ESP_HID_GAP: disconnect; reason=531
+W (24518) ble_audio_stream: audio stale event discarded: type=disconnect conn=1 event_epoch=2 current_epoch=2 current_conn=65535 counts_subscribe=0 counts_mtu=0 counts_notify_tx=0 counts_disconnect=60
+I (24538) ESP_HID_GAP: NimBLE advertising already active
+> ~LED:STATUS
+I (24628) ESP_HID_GAP: connection failed; status=19
+I (24638) ESP_HID_GAP: NimBLE bonded peers=0
+I (24638) ESP_HID_GAP: NimBLE undirected advertising started: low_power=0 interval_ms=30-50
+I (24638) ESP_HID_GAP: encryption change event; status=7
+W (24638) ESP_HID_GAP: encryption failed or connection already gone; status=7
+I (24648) ESP_HID_GAP: disconnect; reason=531
+W (24648) ble_audio_stream: audio stale event discarded: type=disconnect conn=1 event_epoch=2 current_epoch=2 current_conn=65535 counts_subscribe=0 counts_mtu=0 counts_notify_tx=0 counts_disconnect=61
+I (24658) audio_capture: frame captured count=400 bytes=256000
+I (24668) ESP_HID_GAP: NimBLE advertising already active
+~LED:STATUS detail=contract backend=mixed_rmt_and_spi_ws2812_800khz refresh_ms=50 reset_us=300 strip_transport_requested=status:rmt,ec11:spi2,key:spi3,edge:rmt strip_transport_actual=status:rmt,ec11:spi2,key:spi3,edge:rmt spi_dma_outputs_requested=ec11:SPI2,key:SPI3 spi_dma_requested=status:0,ec11:1,key:1,edge:0 spi_dma_actual=status:0,ec11:1,key:1,edge:0 spi_dma_fallback=status:0,ec11:0,key:0,edge:0 rmt_tx_dma_supported=1 rmt_tx_dma_strategy=status_strip_dma_full_frame_buffer rmt_strip_all_available=1 rmt_tx_dma_all_strips=0 rmt_tx_dma_requested=status:1,ec11:0,key:0,edge:0 rmt_tx_dma_actual=status:1,ec11:0,key:0,edge:0 rmt_tx_dma_fallback=status:0,ec11:0,key:0,edge:0 rmt_mem_block_symbols=status:1024,ec11:0,key:0,edge:48 idle_refresh_ms=1000 unchanged_tx_suppression=1 timing=ws2812_4020_compatible low_power_transport_suspend_ms=0 low_power_status_tx=non_dma_clear_and_final_frame shutdown_final_status_tx=non_dma_pwr_only_latch low_power_final_latch_writes=3 low_power_status_retry_writes=3 status_tail_guard_pixels=6 status_tail_reinforce=recording_processing status_tail_reinforce_writes=3 status_tail_overlap_reinforce_writes=1 status_tail_legacy_safe_effect_percent=14..20 status_tail_overlap_effect_percent=rec_audio_8..100_2pct_ai_think_0..100_2pct status_tail_overlap_style=dma_audio_rec_ai_da_dada status_tail_overlap_legacy_effect_percent=14..40_1pct_eased_dual_core status_tail_overlap_legacy_period_ms=6800 status_tail_overlap_legacy_rise_ms=2200 status_tail_overlap_legacy_high_hold_ms=500 status_tail_overlap_legacy_fall_ms=2500 status_tail_overlap_legacy_low_hold_ms=1600 status_tail_overlap_legacy_quantum_percent=1 recording_level_reactive=1 recording_level_effect_percent=8..100_smooth_2pct recording_level_smoothing=attack100_release45 processing_thinking_style=single_then_double_beat processing_thinking_color=purple_static processing_thinking_effect_percent=0..100_2pct processing_thinking_scan_profile=da_long_gap_grouped_dada_rest processing_thinking_period_ms=1950 strip_dirty_tx=1 status_tx_last=1 rmt_idle_drive=active_status_dma_low_power_non_dma_final_frame_then_immediate_all_quiet_suspend dynamic_active_accents=1 status_query_samples_current_render=1 effect_only_preview=1 active_work_status_dynamic=1 active_work_status_overlap_dynamic_1pct_eased=0 active_work_status_audio_reactive_rec=1 active_work_status_thinking_ai=1 led_contract_rev=status_key_ec11_edge_true_state_v19 factory_full_brightness=1 safety_full_brightness=1 semantic_order=LED1:PWR,LED2:BLE,LED3:REC,LED4:AI,LED5:OK,LED6:WARN mapping_contract=status=LED1..LED6,key=LED11..LED14 status_physical_map=LED1:PWR,LED2:BLE,LED3:REC,LED4:AI,LED5:OK,LED6:WARN key_physical_map=LED11:KEY1,LED12:KEY2,LED13:KEY3,LED14:KEY4 separate_status_key_color_order=1 status_default_order=GRB key_default_order=GRB
+I (24818) ESP_HID_GAP: connection failed; status=19
+~LED:STATUS detail=brightness profile=standard effect_profile=product_v1 profile_cap_percent=100 brightness_percent=100 effective_cap_percent=100 budget_scale_percent=100 budget_limited_by_current=0 plugged_brightness_percent=100 battery_brightness_percent=100 active_power_brightness_percent=100 status_zone_brightness_percent=70 key_zone_brightness_percent=100 ec11_zone_brightness_percent=100 edge_zone_brightness_percent=100 brightness_duty_255=255 user_brightness_is_hard_cap=1 profile_dimming_disabled=1
+~LED:STATUS detail=strips strips=status:gpio1:count6:orderGRB:transportrmt:avail1:dma_req1:dma1:dma_fb0:rmt_dma_req1:rmt_dma1:rmt_dma_fb0:spi_dma_req0:spi_dma0:spi_dma_fb0:refsLED1..LED6,ec11:gpio5:count12:orderGRB:transportspi2:avail1:dma_req1:dma1:dma_fb0:rmt_dma_req0:rmt_dma0:rmt_dma_fb0:spi_dma_req1:spi_dma1:spi_dma_fb0:refsLED7..LED10+LED15..LED16+LED23..LED28,key:gpio13:count4:orderGRB:transportspi3:avail1:dma_req1:dma1:dma_fb0:rmt_dma_req0:rmt_dma0:rmt_dma_fb0:spi_dma_req1:spi_dma1:spi_dma_fb0:refsLED11..LED14,edge:gpio4:count6:orderGRB:transportrmt:avail1:dma_req0:dma0:dma_fb0:rmt_dma_req0:rmt_dma0:rmt_dma_fb0:spi_dma_req0:spi_dma0:spi_dma_fb0:refsLED17..LED22 status_tail_guard_pixels=6 key_pin_contract=PWM_RGB_KEY_GPIO13 ec11_pin_contract=PWM_RGB_EC11_GPIO5 edge_pin_contract=PWM_RGB_Edge_GPIO4 gpio14_reserved=BAT_CHG_IO vdd_led_enable=always_on_assumed
+~LED:STATUS detail=state ble=connected rec_active=0 rec_source=none rec_level=0 rec_level_visual=0 rec_level_hold_ms_left=0 processing=0 ble_repair_ms_left=0 error_domain=none error_severity=retryable output_disabled=0 low_power_disabled=0 idle_transition_clear_pending=0 preview_suppress_accents=0 preview_effect_only=0 preview_ble_override_ms_left=13774 shutdown_confirm_active=0 shutdown_confirm_final=0 shutdown_confirm_latched=0 shutdown_confirm_elapsed_ms=0
+~LED:STATUS detail=power battery_valid=1 battery_level=80 battery_mv=4000 battery_display_valid=1 battery_display_level=80 battery_display_mv=4000 battery_display_rise_suppressed=0 external_power=0 external_power_source=none source_flags=0x00 charging=0 full=0 raw_charging=0 raw_full=0 full_latched=0 full_candidate_ms=0 full_debounce_ms=10000 full_min_mv=4050 full_min_percent=88 status_window_ms_left=4774 ble_confidence_ms_left=6774 ble_repair_ms_left=0 oobe_confidence_ms_left=0 preview_ble_override_ms_left=13774 ble_transition_ms=22612 last_transition_ms=22612 current_ma=4 current_budget_ma=760
+~LED:STATUS detail=rgb status_rgb=PWR:0,25,0;BLE:0,0,20;REC:0,0,0;AI:0,0,0;OK:0,0,0;WARN:0,0,0
+~LED:STATUS detail=rgb_ec11 ec11_rgb=px1:0,0,0;px2:0,0,0;px3:0,0,0;px4:0,0,0;px5:0,0,0;px6:0,0,0;px7:0,0,0;px8:0,0,0;px9:0,0,0;px10:0,0,0;px11:0,0,0;px12:0,0,0
+~LED:STATUS detail=rgb_key key_rgb=px1:0,0,0;px2:0,0,0;px3:0,0,0;px4:0,0,0
+~LED:STATUS detail=rgb_edge edge_rgb=px1:0,0,0;px2:0,0,0;px3:0,0,0;px4:0,0,0;px5:0,0,0;px6:0,0,0
+~LED:STATUS profile=standard detail=summary profile_cap_percent=100 budget_scale_percent=100 budget_limited_by_current=0 ble=connected rec_active=0 rec_source=none processing=0 ble_repair_ms_left=0 error_domain=none error_severity=retryable battery_level=80 external_power=0 external_power_source=none charging=0 full=0 active_flags=PWR:1,BLE:1,REC:0,AI:0,OK:0,WARN:0,EC11:0,KEY:0,EDGE:0 key_mask=0x00 test_mode=0 test_strip_mask=0x00 preview_suppress_accents=0 preview_effect_only=0 preview_ble_override_ms_left=13774 shutdown_confirm_active=0 shutdown_confirm_latched=0 last_reason=preview
+I (25258) ESP_HID_GAP: NimBLE bonded peers=0
+I (25258) ESP_HID_GAP: NimBLE undirected advertising started: low_power=0 interval_ms=30-50
+I (25258) ESP_HID_GAP: encryption change event; status=7
+W (25268) ESP_HID_GAP: encryption failed or connection already gone; status=7
+I (25268) ESP_HID_GAP: disconnect; reason=531
+W (25278) ble_audio_stream: audio stale event discarded: type=disconnect conn=1 event_epoch=2 current_epoch=2 current_conn=65535 counts_subscribe=0 counts_mtu=0 counts_notify_tx=0 counts_disconnect=62
+I (25298) ESP_HID_GAP: NimBLE advertising already active
+I (25318) NimBLE: ogf=0x08, ocf=0x0016, hci_err=0x202 : BLE_ERR_UNK_CONN_ID (Unknown Connection Identifier)
+I (25318) ESP_HID_GAP: encryption change event; status=7
+W (25318) ESP_HID_GAP: encryption failed or connection already gone; status=7
+I (25328) ESP_HID_GAP: connection failed; status=1
+I (25338) ESP_HID_GAP: NimBLE bonded peers=0
+I (25338) ESP_HID_GAP: NimBLE undirected advertising started: low_power=0 interval_ms=30-50
+I (25458) ESP_HID_GAP: connection failed; status=19
+I (25468) ESP_HID_GAP: NimBLE bonded peers=0
+I (25468) ESP_HID_GAP: NimBLE undirected advertising started: low_power=0 interval_ms=30-50
+I (25468) ESP_HID_GAP: encryption change event; status=7
+W (25468) ESP_HID_GAP: encryption failed or connection already gone; status=7
+I (25478) ESP_HID_GAP: disconnect; reason=531
+W (25488) ble_audio_stream: audio stale event discarded: type=disconnect conn=1 event_epoch=2 current_epoch=2 current_conn=65535 counts_subscribe=0 counts_mtu=0 counts_notify_tx=0 counts_disconnect=63
+I (25498) ESP_HID_GAP: NimBLE advertising already active
+I (25598) ESP_HID_GAP: connection failed; status=19
+I (25598) ESP_HID_GAP: NimBLE bonded peers=0
+I (25608) ESP_HID_GAP: NimBLE undirected advertising started: low_power=0 interval_ms=30-50
+I (25608) ESP_HID_GAP: encryption change event; status=7
+W (25608) ESP_HID_GAP: encryption failed or connection already gone; status=7
+I (25618) ESP_HID_GAP: disconnect; reason=531
+W (25618) ble_audio_stream: audio stale event discarded: type=disconnect conn=1 event_epoch=2 current_epoch=2 current_conn=65535 counts_subscribe=0 counts_mtu=0 counts_notify_tx=0 counts_disconnect=64
+I (25638) ESP_HID_GAP: NimBLE advertising already active
+I (25668) audio_capture: frame captured count=450 bytes=288000
+I (25858) ESP_HID_GAP: connection failed; status=19
+I (25858) ESP_HID_GAP: NimBLE bonded peers=0
+I (25868) ESP_HID_GAP: NimBLE undirected advertising started: low_power=0 interval_ms=30-50
+I (25868) ESP_HID_GAP: encryption change event; status=7
+W (25868) ESP_HID_GAP: encryption failed or connection already gone; status=7
+I (25878) ESP_HID_GAP: disconnect; reason=531
+W (25878) ble_audio_stream: audio stale event discarded: type=disconnect conn=1 event_epoch=2 current_epoch=2 current_conn=65535 counts_subscribe=0 counts_mtu=0 counts_notify_tx=0 counts_disconnect=65
+I (25898) ESP_HID_GAP: NimBLE advertising already active
+I (25988) ESP_HID_GAP: connection failed; status=19
+I (25998) ESP_HID_GAP: NimBLE bonded peers=0
+I (25998) ESP_HID_GAP: NimBLE undirected advertising started: low_power=0 interval_ms=30-50
+I (25998) ESP_HID_GAP: encryption change event; status=7
+W (25998) ESP_HID_GAP: encryption failed or connection already gone; status=7
+I (26008) ESP_HID_GAP: disconnect; reason=531
+W (26008) ble_audio_stream: audio stale event discarded: type=disconnect conn=1 event_epoch=2 current_epoch=2 current_conn=65535 counts_subscribe=0 counts_mtu=0 counts_notify_tx=0 counts_disconnect=66
+I (26028) ESP_HID_GAP: NimBLE advertising already active
+I (26128) ESP_HID_GAP: connection failed; status=19
+I (26128) ESP_HID_GAP: NimBLE bonded peers=0
+I (26138) ESP_HID_GAP: NimBLE undirected advertising started: low_power=0 interval_ms=30-50
+I (26138) ESP_HID_GAP: encryption change event; status=7
+W (26138) ESP_HID_GAP: encryption failed or connection already gone; status=7
+I (26148) ESP_HID_GAP: disconnect; reason=531
+W (26148) ble_audio_stream: audio stale event discarded: type=disconnect conn=1 event_epoch=2 current_epoch=2 current_conn=65535 counts_subscribe=0 counts_mtu=0 counts_notify_tx=0 counts_disconnect=67
+I (26168) ESP_HID_GAP: NimBLE advertising already active
+I (26268) ESP_HID_GAP: connection failed; status=19
+I (26278) ESP_HID_GAP: NimBLE bonded peers=0
+I (26278) ESP_HID_GAP: NimBLE undirected advertising started: low_power=0 interval_ms=30-50
+I (26278) ESP_HID_GAP: encryption change event; status=7
+W (26288) ESP_HID_GAP: encryption failed or connection already gone; status=7
+I (26288) ESP_HID_GAP: disconnect; reason=531
+W (26298) ble_audio_stream: audio stale event discarded: type=disconnect conn=1 event_epoch=2 current_epoch=2 current_conn=65535 counts_subscribe=0 counts_mtu=0 counts_notify_tx=0 counts_disconnect=68
+I (26308) ESP_HID_GAP: NimBLE advertising already active
+I (26408) ESP_HID_GAP: connection failed; status=19
+I (26408) ESP_HID_GAP: NimBLE bonded peers=0
+I (26418) ESP_HID_GAP: NimBLE undirected advertising started: low_power=0 interval_ms=30-50
+I (26418) ESP_HID_GAP: encryption change event; status=7
+W (26418) ESP_HID_GAP: encryption failed or connection already gone; status=7
+I (26428) ESP_HID_GAP: disconnect; reason=531
+W (26428) ble_audio_stream: audio stale event discarded: type=disconnect conn=1 event_epoch=2 current_epoch=2 current_conn=65535 counts_subscribe=0 counts_mtu=0 counts_notify_tx=0 counts_disconnect=69
+I (26448) ESP_HID_GAP: NimBLE advertising already active
+> WAIT 1600
+I (26548) ESP_HID_GAP: connection failed; status=19
+I (26558) ESP_HID_GAP: NimBLE bonded peers=0
+I (26558) ESP_HID_GAP: NimBLE undirected advertising started: low_power=0 interval_ms=30-50
+I (26568) ESP_HID_GAP: encryption change event; status=7
+W (26568) ESP_HID_GAP: encryption failed or connection already gone; status=7
+I (26568) ESP_HID_GAP: disconnect; reason=531
+W (26578) ble_audio_stream: audio stale event discarded: type=disconnect conn=1 event_epoch=2 current_epoch=2 current_conn=65535 counts_subscribe=0 counts_mtu=0 counts_notify_tx=0 counts_disconnect=70
+I (26588) ESP_HID_GAP: NimBLE advertising already active
+I (26668) audio_capture: frame captured count=500 bytes=320000
+I (26688) ESP_HID_GAP: connection failed; status=19
+I (26688) ESP_HID_GAP: NimBLE bonded peers=0
+I (26698) ESP_HID_GAP: NimBLE undirected advertising started: low_power=0 interval_ms=30-50
+I (26698) ESP_HID_GAP: encryption change event; status=7
+W (26698) ESP_HID_GAP: encryption failed or connection already gone; status=7
+I (26708) ESP_HID_GAP: disconnect; reason=531
+W (26708) ble_audio_stream: audio stale event discarded: type=disconnect conn=1 event_epoch=2 current_epoch=2 current_conn=65535 counts_subscribe=0 counts_mtu=0 counts_notify_tx=0 counts_disconnect=71
+I (26728) ESP_HID_GAP: NimBLE advertising already active
+I (26938) ESP_HID_GAP: connection failed; status=19
+I (26938) ESP_HID_GAP: NimBLE bonded peers=0
+I (26948) ESP_HID_GAP: NimBLE undirected advertising started: low_power=0 interval_ms=30-50
+I (26948) ESP_HID_GAP: encryption change event; status=7
+W (26948) ESP_HID_GAP: encryption failed or connection already gone; status=7
+I (26958) ESP_HID_GAP: disconnect; reason=531
+W (26958) ble_audio_stream: audio stale event discarded: type=disconnect conn=1 event_epoch=2 current_epoch=2 current_conn=65535 counts_subscribe=0 counts_mtu=0 counts_notify_tx=0 counts_disconnect=72
+I (26978) ESP_HID_GAP: NimBLE advertising already active
+I (27068) ESP_HID_GAP: connection failed; status=19
+I (27078) ESP_HID_GAP: NimBLE bonded peers=0
+I (27078) ESP_HID_GAP: NimBLE undirected advertising started: low_power=0 interval_ms=30-50
+I (27078) ESP_HID_GAP: encryption change event; status=7
+W (27078) ESP_HID_GAP: encryption failed or connection already gone; status=7
+I (27088) ESP_HID_GAP: disconnect; reason=531
+W (27108) ble_audio_stream: audio stale event discarded: type=disconnect conn=1 event_epoch=2 current_epoch=2 current_conn=65535 counts_subscribe=0 counts_mtu=0 counts_notify_tx=0 counts_disconnect=73
+I (27118) ESP_HID_GAP: NimBLE advertising already active
+I (27208) ESP_HID_GAP: connection failed; status=19
+I (27208) ESP_HID_GAP: NimBLE bonded peers=0
+I (27218) ESP_HID_GAP: NimBLE undirected advertising started: low_power=0 interval_ms=30-50
+I (27218) ESP_HID_GAP: encryption change event; status=7
+W (27218) ESP_HID_GAP: encryption failed or connection already gone; status=7
+I (27228) ESP_HID_GAP: disconnect; reason=531
+W (27228) ble_audio_stream: audio stale event discarded: type=disconnect conn=1 event_epoch=2 current_epoch=2 current_conn=65535 counts_subscribe=0 counts_mtu=0 counts_notify_tx=0 counts_disconnect=74
+I (27248) ESP_HID_GAP: NimBLE advertising already active
+I (27338) ESP_HID_GAP: connection failed; status=19
+I (27348) ESP_HID_GAP: NimBLE bonded peers=0
+I (27348) ESP_HID_GAP: NimBLE undirected advertising started: low_power=0 interval_ms=30-50
+I (27348) ESP_HID_GAP: encryption change event; status=7
+W (27348) ESP_HID_GAP: encryption failed or connection already gone; status=7
+I (27358) ESP_HID_GAP: disconnect; reason=531
+W (27358) ble_audio_stream: audio stale event discarded: type=disconnect conn=1 event_epoch=2 current_epoch=2 current_conn=65535 counts_subscribe=0 counts_mtu=0 counts_notify_tx=0 counts_disconnect=75
+I (27378) ESP_HID_GAP: NimBLE advertising already active
+> ~LED:STATUS
+I (27658) audio_capture: frame captured count=550 bytes=352000
+I (28268) ESP_HID_GAP: connection failed; status=19
+I (28278) ESP_HID_GAP: NimBLE bonded peers=0
+I (28288) ESP_HID_GAP: NimBLE undirected advertising started: low_power=0 interval_ms=30-50
+I (28288) ESP_HID_GAP: encryption change event; status=7
+W (28288) ESP_HID_GAP: encryption failed or connection already gone; status=7
+I (28298) ESP_HID_GAP: disconnect; reason=531
+W (28298) ble_audio_stream: audio stale event discarded: type=disconnect conn=1 event_epoch=2 current_epoch=2 current_conn=65535 counts_subscribe=0 counts_mtu=0 counts_notify_tx=0 counts_disconnect=76
+I (28318) ESP_HID_GAP: NimBLE advertising already active
+I (28408) ESP_HID_GAP: connection failed; status=19
+I (28418) ESP_HID_GAP: NimBLE bonded peers=0
+~LED:STATUS detail=contract backend=mixed_rmt_and_spi_ws2812_800khz refresh_ms=50 reset_us=300 strip_transport_requested=status:rmt,ec11:spi2,key:spi3,edge:rmt strip_transport_actual=status:rmt,ec11:spi2,key:spi3,edge:rmt spi_dma_outputs_requested=ec11:SPI2,key:SPI3 spi_dma_requested=status:0,ec11:1,key:1,edge:0 spi_dma_actual=status:0,ec11:1,key:1,edge:0 spi_dma_fallback=status:0,ec11:0,key:0,edge:0 rmt_tx_dma_supported=1 rmt_tx_dma_strategy=status_strip_dma_full_frame_buffer rmt_strip_all_available=1 rmt_tx_dma_all_strips=0 rmt_tx_dma_requested=status:1,ec11:0,key:0,edge:0 rmt_tx_dma_actual=status:1,ec11:0,key:0,edge:0 rmt_tx_dma_fallback=status:0,ec11:0,key:0,edge:0 rmt_mem_block_symbols=status:1024,ec11:0,key:0,edge:48 idle_refresh_ms=1000 unchanged_tx_suppression=1 timing=ws2812_4020_compatible low_power_transport_suspend_ms=0 low_power_status_tx=non_dma_clear_and_final_frame shutdown_final_status_tx=non_dma_pwr_only_latch low_power_final_latch_writes=3 low_power_status_retry_writes=3 status_tail_guard_pixels=6 status_tail_reinforce=recording_processing status_tail_reinforce_writes=3 status_tail_overlap_reinforce_writes=1 status_tail_legacy_safe_effect_percent=14..20 status_tail_overlap_effect_percent=rec_audio_8..100_2pct_ai_think_0..100_2pct status_tail_overlap_style=dma_audio_rec_ai_da_dada status_tail_overlap_legacy_effect_percent=14..40_1pct_eased_dual_core status_tail_overlap_legacy_period_ms=6800 status_tail_overlap_legacy_rise_ms=2200 status_tail_overlap_legacy_high_hold_ms=500 status_tail_overlap_legacy_fall_ms=2500 status_tail_overlap_legacy_low_hold_ms=1600 status_tail_overlap_legacy_quantum_percent=1 recording_level_reactive=1 recording_level_effect_percent=8..100_smooth_2pct recording_level_smoothing=attack100_release45 processing_thinking_style=single_then_double_beat processing_thinking_color=purple_static processing_thinking_effect_percent=0..100_2pct processing_thinking_scan_profile=da_long_gap_grouped_dada_rest processing_thinking_period_ms=1950 strip_dirty_tx=1 status_tx_last=1 rmt_idle_drive=active_status_dma_low_power_non_dma_final_frame_then_immediate_all_quiet_suspend dynamic_active_accents=1 status_query_samples_current_render=1 effect_only_preview=1 active_work_status_dynamic=1 active_work_status_overlap_dynamic_1pct_eased=0 active_work_status_audio_reactive_rec=1 active_work_status_thinking_ai=1 led_contract_rev=status_key_ec11_edge_true_state_v19 factory_full_brightness=1 safety_full_brightness=1 semantic_order=LED1:PWR,LED2:BLE,LED3:REC,LED4:AI,LED5:OK,LED6:WARN mapping_contract=status=LED1..LED6,key=LED11..LED14 status_physical_map=LED1:PWR,LED2:BLE,LED3:REC,LED4:AI,LED5:OK,LED6:WARN key_physical_map=LED11:KEY1,LED12:KEY2,LED13:KEY3,LED14:KEY4 separate_status_key_color_order=1 status_default_order=GRB key_default_order=GRB
+I (28418) ESP_HID_GAP: NimBLE undirected advertising started: low_power=0 interval_ms=30-50
+~LED:STATUS detail=brightness profile=standard effect_profile=product_v1 profile_cap_percent=100 brightness_percent=100 effective_cap_percent=100 budget_scale_percent=100 budget_limited_by_current=0 plugged_brightness_percent=100 battery_brightness_percent=100 active_power_brightness_percent=100 status_zone_brightness_percent=70 key_zone_brightness_percent=100 ec11_zone_brightness_percent=100 edge_zone_brightness_percent=100 brightness_duty_255=255 user_brightness_is_hard_cap=1 profile_dimming_disabled=1
+~LED:STATUS detail=strips strips=status:gpio1:count6:orderGRB:transportrmt:avail1:dma_req1:dma1:dma_fb0:rmt_dma_req1:rmt_dma1:rmt_dma_fb0:spi_dma_req0:spi_dma0:spi_dma_fb0:refsLED1..LED6,ec11:gpio5:count12:orderGRB:transportspi2:avail1:dma_req1:dma1:dma_fb0:rmt_dma_req0:rmt_dma0:rmt_dma_fb0:spi_dma_req1:spi_dma1:spi_dma_fb0:refsLED7..LED10+LED15..LED16+LED23..LED28,key:gpio13:count4:orderGRB:transportspi3:avail1:dma_req1:dma1:dma_fb0:rmt_dma_req0:rmt_dma0:rmt_dma_fb0:spi_dma_req1:spi_dma1:spi_dma_fb0:refsLED11..LED14,edge:gpio4:count6:orderGRB:transportrmt:avail1:dma_req0:dma0:dma_fb0:rmt_dma_req0:rmt_dma0:rmt_dma_fb0:spi_dma_req0:spi_dma0:spi_dma_fb0:refsLED17..LED22 status_tail_guard_pixels=6 key_pin_contract=PWM_RGB_KEY_GPIO13 ec11_pin_contract=PWM_RGB_EC11_GPIO5 edge_pin_contract=PWM_RGB_Edge_GPIO4 gpio14_reserved=BAT_CHG_IO vdd_led_enable=always_on_assumed
+I (28718) ESP_HID_GAP: encryption change event; status=7
+~LED:STATUS detail=state ble=connected rec_active=0 rec_source=none rec_level=0 rec_level_visual=0 rec_level_hold_ms_left=0 processing=0 ble_repair_ms_left=0 error_domain=none error_severity=retryable output_disabled=0 low_power_disabled=0 idle_transition_clear_pending=0 preview_suppress_accents=0 preview_effect_only=0 preview_ble_override_ms_left=10065 shutdown_confirm_active=0 shutdown_confirm_final=0 shutdown_confirm_latched=0 shutdown_confirm_elapsed_ms=0
+W (28808) ESP_HID_GAP: encryption failed or connection already gone; status=7
+~LED:STATUS detail=power battery_valid=1 battery_level=80 battery_mv=4000 battery_display_valid=1 battery_display_level=80 battery_display_mv=4000 battery_display_rise_suppressed=0 external_power=0 external_power_source=none source_flags=0x00 charging=0 full=0 raw_charging=0 raw_full=0 full_latched=0 full_candidate_ms=0 full_debounce_ms=10000 full_min_mv=4050 full_min_percent=88 status_window_ms_left=1065 ble_confidence_ms_left=3065 ble_repair_ms_left=0 oobe_confidence_ms_left=0 preview_ble_override_ms_left=10065 ble_transition_ms=22612 last_transition_ms=22612 current_ma=3 current_budget_ma=760
+~LED:STATUS detail=rgb status_rgb=PWR:0,25,0;BLE:0,0,7;REC:0,0,0;AI:0,0,0;OK:0,0,0;WARN:0,0,0
+I (28668) audio_capture: frame captured count=600 bytes=384000
+~LED:STATUS detail=rgb_ec11 ec11_rgb=px1:0,0,0;px2:0,0,0;px3:0,0,0;px4:0,0,0;px5:0,0,0;px6:0,0,0;px7:0,0,0;px8:0,0,0;px9:0,0,0;px10:0,0,0;px11:0,0,0;px12:0,0,0
+I (28898) ESP_HID_GAP: disconnect; reason=531
+~LED:STATUS detail=rgb_key key_rgb=px1:0,0,0;px2:0,0,0;px3:0,0,0;px4:0,0,0
+~LED:STATUS detail=rgb_edge edge_rgb=px1:0,0,0;px2:0,0,0;px3:0,0,0;px4:0,0,0;px5:0,0,0;px6:0,0,0
+~LED:STATUS profile=standard detail=summary profile_cap_percent=100 budget_scale_percent=100 budget_limited_by_current=0 ble=connected rec_active=0 rec_source=none processing=0 ble_repair_ms_left=0 error_domain=none error_severity=retryable battery_level=80 external_power=0 external_power_source=none charging=0 full=0 active_flags=PWR:1,BLE:1,REC:0,AI:0,OK:0,WARN:0,EC11:0,KEY:0,EDGE:0 key_mask=0x00 test_mode=0 test_strip_mask=0x00 preview_suppress_accents=0 preview_effect_only=0 preview_ble_override_ms_left=10065 shutdown_confirm_active=0 shutdown_confirm_latched=0 last_reason=preview
+W (28988) ble_audio_stream: audio stale event discarded: type=disconnect conn=1 event_epoch=2 current_epoch=2 current_conn=65535 counts_subscribe=0 counts_mtu=0 counts_notify_tx=0 counts_disconnect=77
+I (28998) ESP_HID_GAP: NimBLE advertising already active
+I (29028) NimBLE: ogf=0x08, ocf=0x0016, hci_err=0x202 : BLE_ERR_UNK_CONN_ID (Unknown Connection Identifier)
+I (29028) ESP_HID_GAP: encryption change event; status=7
+W (29028) ESP_HID_GAP: encryption failed or connection already gone; status=7
+I (29038) ESP_HID_GAP: connection failed; status=1
+I (29048) ESP_HID_GAP: NimBLE bonded peers=0
+I (29048) ESP_HID_GAP: NimBLE undirected advertising started: low_power=0 interval_ms=30-50
+I (29188) ESP_HID_GAP: connection failed; status=19
+I (29188) ESP_HID_GAP: NimBLE bonded peers=0
+I (29198) ESP_HID_GAP: NimBLE undirected advertising started: low_power=0 interval_ms=30-50
+I (29198) ESP_HID_GAP: encryption change event; status=7
+W (29198) ESP_HID_GAP: encryption failed or connection already gone; status=7
+I (29208) ESP_HID_GAP: disconnect; reason=531
+W (29208) ble_audio_stream: audio stale event discarded: type=disconnect conn=1 event_epoch=2 current_epoch=2 current_conn=65535 counts_subscribe=0 counts_mtu=0 counts_notify_tx=0 counts_disconnect=78
+I (29228) ESP_HID_GAP: NimBLE advertising already active
+I (29368) ESP_HID_GAP: connection failed; status=19
+I (29368) ESP_HID_GAP: NimBLE bonded peers=0
+I (29378) ESP_HID_GAP: NimBLE undirected advertising started: low_power=0 interval_ms=30-50
+I (29378) ESP_HID_GAP: encryption change event; status=7
+W (29378) ESP_HID_GAP: encryption failed or connection already gone; status=7
+I (29388) ESP_HID_GAP: disconnect; reason=531
+W (29388) ble_audio_stream: audio stale event discarded: type=disconnect conn=1 event_epoch=2 current_epoch=2 current_conn=65535 counts_subscribe=0 counts_mtu=0 counts_notify_tx=0 counts_disconnect=79
+I (29408) ESP_HID_GAP: NimBLE advertising already active
+I (29508) ESP_HID_GAP: connection failed; status=19
+I (29518) ESP_HID_GAP: NimBLE bonded peers=0
+I (29518) ESP_HID_GAP: NimBLE undirected advertising started: low_power=0 interval_ms=30-50
+I (29518) ESP_HID_GAP: encryption change event; status=7
+W (29518) ESP_HID_GAP: encryption failed or connection already gone; status=7
+I (29528) ESP_HID_GAP: disconnect; reason=531
+W (29538) ble_audio_stream: audio stale event discarded: type=disconnect conn=1 event_epoch=2 current_epoch=2 current_conn=65535 counts_subscribe=0 counts_mtu=0 counts_notify_tx=0 counts_disconnect=80
+I (29538) audio_capture: audio idle power save enabled: ESP_OK
+I (29548) ESP_HID_GAP: NimBLE advertising already active
+I (29648) ESP_HID_GAP: connection failed; status=19
+I (29648) ESP_HID_GAP: NimBLE bonded peers=0
+I (29658) ESP_HID_GAP: NimBLE undirected advertising started: low_power=0 interval_ms=30-50
+I (29658) ESP_HID_GAP: encryption change event; status=7
+W (29658) ESP_HID_GAP: encryption failed or connection already gone; status=7
+I (29668) ESP_HID_GAP: disconnect; reason=531
+W (29668) ble_audio_stream: audio stale event discarded: type=disconnect conn=1 event_epoch=2 current_epoch=2 current_conn=65535 counts_subscribe=0 counts_mtu=0 counts_notify_tx=0 counts_disconnect=81
+I (29688) ESP_HID_GAP: NimBLE advertising already active
+I (29768) ESP_HID_GAP: connection failed; status=19
+I (29778) ESP_HID_GAP: NimBLE bonded peers=0
+I (29778) ESP_HID_GAP: NimBLE undirected advertising started: low_power=0 interval_ms=30-50
+I (29778) ESP_HID_GAP: encryption change event; status=7
+W (29778) ESP_HID_GAP: encryption failed or connection already gone; status=7
+I (29788) ESP_HID_GAP: disconnect; reason=531
+W (29788) ble_audio_stream: audio stale event discarded: type=disconnect conn=1 event_epoch=2 current_epoch=2 current_conn=65535 counts_subscribe=0 counts_mtu=0 counts_notify_tx=0 counts_disconnect=82
+I (29808) ESP_HID_GAP: NimBLE advertising already active
+I (29948) ESP_HID_GAP: connection failed; status=19
+I (29958) ESP_HID_GAP: NimBLE bonded peers=0
+I (29958) ESP_HID_GAP: NimBLE undirected advertising started: low_power=0 interval_ms=30-50
+I (29958) ESP_HID_GAP: encryption change event; status=7
+W (29958) ESP_HID_GAP: encryption failed or connection already gone; status=7
+I (29968) ESP_HID_GAP: disconnect; reason=531
+W (29968) ble_audio_stream: audio stale event discarded: type=disconnect conn=1 event_epoch=2 current_epoch=2 current_conn=65535 counts_subscribe=0 counts_mtu=0 counts_notify_tx=0 counts_disconnect=83
+I (29988) ESP_HID_GAP: NimBLE advertising already active
+I (30188) ESP_HID_GAP: connection failed; status=19
+I (30188) ESP_HID_GAP: NimBLE bonded peers=0
+I (30198) ESP_HID_GAP: NimBLE undirected advertising started: low_power=0 interval_ms=30-50
+I (30198) ESP_HID_GAP: encryption change event; status=7
+W (30198) ESP_HID_GAP: encryption failed or connection already gone; status=7
+I (30208) ESP_HID_GAP: disconnect; reason=531
+I (30458) ESP_HID_GAP: connection failed; status=19
+I (42658) ESP_HID_GAP: connection failed; status=19
+I (42668) ESP_HID_GAP: NimBLE bonded peers=0
+I (42668) ESP_HID_GAP: NimBLE undirected advertising started: low_power=0 interval_ms=30-50
+I (42678) ESP_HID_GAP: encryption change event; status=7
+W (42678) ESP_HID_GAP: encryption failed or connection already gone; status=7
+I (42678) ESP_HID_GAP: disconnect; reason=531
+W (42698) ble_audio_stream: audio stale event discarded: type=disconnect conn=1 event_epoch=8 current_epoch=8 current_conn=65535 counts_subscribe=0 counts_mtu=0 counts_notify_tx=0 counts_disconnect=140
+I (42698) ESP_HID_GAP: NimBLE advertising already active
+> ~LED:PREVIEW clear
+I (42788) audio_capture: audio idle power save disabled: ESP_OK
+I (42798) status_led: LED preview=clear
+I (42908) ESP_HID_GAP: connection failed; status=19
+I (42918) ESP_HID_GAP: NimBLE bonded peers=0
+I (42918) ESP_HID_GAP: NimBLE undirected advertising started: low_power=0 interval_ms=30-50
+I (42918) ESP_HID_GAP: encryption change event; status=7
+W (42928) ESP_HID_GAP: encryption failed or connection already gone; status=7
+I (42928) ESP_HID_GAP: disconnect; reason=531
+W (42938) ble_audio_stream: audio stale event discarded: type=disconnect conn=1 event_epoch=8 current_epoch=8 current_conn=65535 counts_subscribe=0 counts_mtu=0 counts_notify_tx=0 counts_disconnect=141
+I (42948) ESP_HID_GAP: NimBLE advertising already active
+I (43078) audio_capture: frame captured count=650 bytes=416000
+I (43098) ESP_HID_GAP: connection failed; status=19
+I (43108) ESP_HID_GAP: NimBLE bonded peers=0
+I (43108) ESP_HID_GAP: NimBLE undirected advertising started: low_power=0 interval_ms=30-50
+I (43108) ESP_HID_GAP: encryption change event; status=7
+W (43118) ESP_HID_GAP: encryption failed or connection already gone; status=7
+I (43118) ESP_HID_GAP: disconnect; reason=531
+> ~LED:OFF
+W (43128) ble_audio_stream: audio stale event discarded: type=disconnect conn=1 event_epoch=8 current_epoch=8 current_conn=65535 counts_subscribe=0 counts_mtu=0 counts_notify_tx=0 counts_disconnect=142
+I (43138) ESP_HID_GAP: NimBLE advertising already active
+I (43238) ESP_HID_GAP: connection failed; status=19
+I (43238) ESP_HID_GAP: NimBLE bonded peers=0
+I (43248) ESP_HID_GAP: NimBLE undirected advertising started: low_power=0 interval_ms=30-50
+I (43248) ESP_HID_GAP: encryption change event; status=7
+W (43248) ESP_HID_GAP: encryption failed or connection already gone; status=7
+I (43258) ESP_HID_GAP: disconnect; reason=531
+W (43268) ble_audio_stream: audio stale event discarded: type=disconnect conn=1 event_epoch=8 current_epoch=8 current_conn=65535 counts_subscribe=0 counts_mtu=0 counts_notify_tx=0 counts_disconnect=143
+I (43268) status_led_strip_backend: strip status transport ready: gpio=1 leds=6 tx_leds=12 tail_guard_pixels=6 backend=rmt_ws2812_800khz rmt_dma_requested=1 rmt_dma=0 rmt_dma_fallback=0 mem_block_symbols=48
+I (43298) ESP_HID_GAP: NimBLE advertising already active
+I (43308) status_led: LED output manually forced off until the next status/key event
+I (43308) status_led_strip_backend: strip status transport ready: gpio=1 leds=6 tx_leds=12 tail_guard_pixels=6 backend=rmt_ws2812_800khz rmt_dma_requested=1 rmt_dma=1 rmt_dma_fallback=0 mem_block_symbols=1024
+I (43448) ESP_HID_GAP: connection failed; status=19
+I (43458) ESP_HID_GAP: NimBLE bonded peers=0
+I (43458) ESP_HID_GAP: NimBLE undirected advertising started: low_power=0 interval_ms=30-50
+I (43458) ESP_HID_GAP: encryption change event; status=7
+W (43458) ESP_HID_GAP: encryption failed or connection already gone; status=7
+I (43468) ESP_HID_GAP: disconnect; reason=531
+W (43478) ble_audio_stream: audio stale event discarded: type=disconnect conn=1 event_epoch=8 current_epoch=8 current_conn=65535 counts_subscribe=0 counts_mtu=0 counts_notify_tx=0 counts_disconnect=144
+I (43488) ESP_HID_GAP: NimBLE advertising already active
+I (43728) ESP_HID_GAP: NimBLE bonded peers=0
+I (46738) ESP_HID_GAP: disconnect; reason=531
+W (46748) ble_audio_stream: audio stale event discarded: type=disconnect conn=1 event_epoch=8 current_epoch=8 current_conn=65535 counts_subscribe=0 counts_mtu=0 counts_notify_tx=0 counts_disconnect=159
+I (46768) ESP_HID_GAP: NimBLE advertising already active
+I (46858) ESP_HID_GAP: connection failed; status=19
+I (46868) ESP_HID_GAP: NimBLE bonded peers=0
+I (46868) ESP_HID_GAP: NimBLE undirected advertising started: low_power=0 interval_ms=30-50
+I (46868) ESP_HID_GAP: encryption change event; status=7
+W (46868) ESP_HID_GAP: encryption failed or connection already gone; status=7
+I (46878) ESP_HID_GAP: disconnect; reason=531
+W (46888) ble_audio_stream: audio stale event discarded: type=disconnect conn=1 event_epoch=8 current_epoch=8 current_conn=65535 counts_subscribe=0 counts_mtu=0 counts_notify_tx=0 counts_disconnect=160
+I (46898) ESP_HID_GAP: NimBLE advertising already active
+> ~LED:PREVIEW pairing
+I (47008) status_led: LED preview=pairing
+I (47078) audio_capture: frame captured count=850 bytes=544000
+I (47108) ESP_HID_GAP: connection failed; status=19
+I (47108) ESP_HID_GAP: NimBLE bonded peers=0
+I (47118) ESP_HID_GAP: NimBLE undirected advertising started: low_power=0 interval_ms=30-50
+I (47118) ESP_HID_GAP: encryption change event; status=7
+W (47118) ESP_HID_GAP: encryption failed or connection already gone; status=7
+I (47128) ESP_HID_GAP: disconnect; reason=531
+W (47128) ble_audio_stream: audio stale event discarded: type=disconnect conn=1 event_epoch=8 current_epoch=8 current_conn=65535 counts_subscribe=0 counts_mtu=0 counts_notify_tx=0 counts_disconnect=161
+I (47148) ESP_HID_GAP: NimBLE advertising already active
+I (47238) ESP_HID_GAP: connection failed; status=19
+I (47248) ESP_HID_GAP: NimBLE bonded peers=0
+I (47248) ESP_HID_GAP: NimBLE undirected advertising started: low_power=0 interval_ms=30-50
+I (47248) ESP_HID_GAP: encryption change event; status=7
+W (47258) ESP_HID_GAP: encryption failed or connection already gone; status=7
+I (47258) ESP_HID_GAP: disconnect; reason=531
+W (47268) ble_audio_stream: audio stale event discarded: type=disconnect conn=1 event_epoch=8 current_epoch=8 current_conn=65535 counts_subscribe=0 counts_mtu=0 counts_notify_tx=0 counts_disconnect=162
+I (47278) ESP_HID_GAP: NimBLE advertising already active
+I (47308) NimBLE: ogf=0x08, ocf=0x0016, hci_err=0x202 : BLE_ERR_UNK_CONN_ID (Unknown Connection Identifier)
+I (47308) ESP_HID_GAP: encryption change event; status=7
+W (47318) ESP_HID_GAP: encryption failed or connection already gone; status=7
+I (47318) ESP_HID_GAP: connection failed; status=1
+I (47328) ESP_HID_GAP: NimBLE bonded peers=0
+I (47338) ESP_HID_GAP: NimBLE undirected advertising started: low_power=0 interval_ms=30-50
+I (47458) ESP_HID_GAP: connection failed; status=19
+I (47458) ESP_HID_GAP: NimBLE bonded peers=0
+I (47468) ESP_HID_GAP: NimBLE undirected advertising started: low_power=0 interval_ms=30-50
+I (47468) ESP_HID_GAP: encryption change event; status=7
+W (47468) ESP_HID_GAP: encryption failed or connection already gone; status=7
+I (47478) ESP_HID_GAP: disconnect; reason=531
+W (47478) ble_audio_stream: audio stale event discarded: type=disconnect conn=1 event_epoch=8 current_epoch=8 current_conn=65535 counts_subscribe=0 counts_mtu=0 counts_notify_tx=0 counts_disconnect=163
+I (47498) ESP_HID_GAP: NimBLE advertising already active
+I (47588) ESP_HID_GAP: connection failed; status=19
+I (47598) ESP_HID_GAP: NimBLE bonded peers=0
+I (47598) ESP_HID_GAP: NimBLE undirected advertising started: low_power=0 interval_ms=30-50
+I (47598) ESP_HID_GAP: encryption change event; status=7
+W (47598) ESP_HID_GAP: encryption failed or connection already gone; status=7
+I (47608) ESP_HID_GAP: disconnect; reason=531
+W (47618) ble_audio_stream: audio stale event discarded: type=disconnect conn=1 event_epoch=8 current_epoch=8 current_conn=65535 counts_subscribe=0 counts_mtu=0 counts_notify_tx=0 counts_disconnect=164
+I (47628) ESP_HID_GAP: NimBLE advertising already active
+> WAIT 120
+I (47728) ESP_HID_GAP: connection failed; status=19
+I (47728) ESP_HID_GAP: NimBLE bonded peers=0
+I (47738) ESP_HID_GAP: NimBLE undirected advertising started: low_power=0 interval_ms=30-50
+I (47738) ESP_HID_GAP: encryption change event; status=7
+W (47738) ESP_HID_GAP: encryption failed or connection already gone; status=7
+I (47748) ESP_HID_GAP: disconnect; reason=531
+W (47748) ble_audio_stream: audio stale event discarded: type=disconnect conn=1 event_epoch=8 current_epoch=8 current_conn=65535 counts_subscribe=0 counts_mtu=0 counts_notify_tx=0 counts_disconnect=165
+I (47768) ESP_HID_GAP: NimBLE advertising already active
+I (47848) ESP_HID_GAP: connection failed; status=19
+I (47858) ESP_HID_GAP: NimBLE bonded peers=0
+I (47858) ESP_HID_GAP: NimBLE undirected advertising started: low_power=0 interval_ms=30-50
+I (47858) ESP_HID_GAP: encryption change event; status=7
+W (47858) ESP_HID_GAP: encryption failed or connection already gone; status=7
+I (47868) ESP_HID_GAP: disconnect; reason=531
+W (47868) ble_audio_stream: audio stale event discarded: type=disconnect conn=1 event_epoch=8 current_epoch=8 current_conn=65535 counts_subscribe=0 counts_mtu=0 counts_notify_tx=0 counts_disconnect=166
+I (47888) ESP_HID_GAP: NimBLE advertising already active
+> ~LED:STATUS
+I (47978) ESP_HID_GAP: connection failed; status=19
+I (47988) ESP_HID_GAP: NimBLE bonded peers=0
+I (47998) ESP_HID_GAP: NimBLE undirected advertising started: low_power=0 interval_ms=30-50
+I (47998) ESP_HID_GAP: encryption change event; status=7
+W (47998) ESP_HID_GAP: encryption failed or connection already gone; status=7
+I (48008) ESP_HID_GAP: disconnect; reason=531
+W (48038) ble_audio_stream: audio stale event discarded: type=disconnect conn=1 event_epoch=8 current_epoch=8 current_conn=65535 counts_subscribe=0 counts_mtu=0 counts_notify_tx=0 counts_disconnect=167
+I (48038) ESP_HID_GAP: NimBLE advertising already active
+I (48068) audio_capture: frame captured count=900 bytes=576000
+~LED:STATUS detail=contract backend=mixed_rmt_and_spi_ws2812_800khz refresh_ms=50 reset_us=300 strip_transport_requested=status:rmt,ec11:spi2,key:spi3,edge:rmt strip_transport_actual=status:rmt,ec11:spi2,key:spi3,edge:rmt spi_dma_outputs_requested=ec11:SPI2,key:SPI3 spi_dma_requested=status:0,ec11:1,key:1,edge:0 spi_dma_actual=status:0,ec11:1,key:1,edge:0 spi_dma_fallback=status:0,ec11:0,key:0,edge:0 rmt_tx_dma_supported=1 rmt_tx_dma_strategy=status_strip_dma_full_frame_buffer rmt_strip_all_available=1 rmt_tx_dma_all_strips=0 rmt_tx_dma_requested=status:1,ec11:0,key:0,edge:0 rmt_tx_dma_actual=status:1,ec11:0,key:0,edge:0 rmt_tx_dma_fallback=status:0,ec11:0,key:0,edge:0 rmt_mem_block_symbols=status:1024,ec11:0,key:0,edge:48 idle_refresh_ms=1000 unchanged_tx_suppression=1 timing=ws2812_4020_compatible low_power_transport_suspend_ms=0 low_power_status_tx=non_dma_clear_and_final_frame shutdown_final_status_tx=non_dma_pwr_only_latch low_power_final_latch_writes=3 low_power_status_retry_writes=3 status_tail_guard_pixels=6 status_tail_reinforce=recording_processing status_tail_reinforce_writes=3 status_tail_overlap_reinforce_writes=1 status_tail_legacy_safe_effect_percent=14..20 status_tail_overlap_effect_percent=rec_audio_8..100_2pct_ai_think_0..100_2pct status_tail_overlap_style=dma_audio_rec_ai_da_dada status_tail_overlap_legacy_effect_percent=14..40_1pct_eased_dual_core status_tail_overlap_legacy_period_ms=6800 status_tail_overlap_legacy_rise_ms=2200 status_tail_overlap_legacy_high_hold_ms=500 status_tail_overlap_legacy_fall_ms=2500 status_tail_overlap_legacy_low_hold_ms=1600 status_tail_overlap_legacy_quantum_percent=1 recording_level_reactive=1 recording_level_effect_percent=8..100_smooth_2pct recording_level_smoothing=attack100_release45 processing_thinking_style=single_then_double_beat processing_thinking_color=purple_static processing_thinking_effect_percent=0..100_2pct processing_thinking_scan_profile=da_long_gap_grouped_dada_rest processing_thinking_period_ms=1950 strip_dirty_tx=1 status_tx_last=1 rmt_idle_drive=active_status_dma_low_power_non_dma_final_frame_then_immediate_all_quiet_suspend dynamic_active_accents=1 status_query_samples_current_render=1 effect_only_preview=1 active_work_status_dynamic=1 active_work_status_overlap_dynamic_1pct_eased=0 active_work_status_audio_reactive_rec=1 active_work_status_thinking_ai=1 led_contract_rev=status_key_ec11_edge_true_state_v19 factory_full_brightness=1 safety_full_brightness=1 semantic_order=LED1:PWR,LED2:BLE,LED3:REC,LED4:AI,LED5:OK,LED6:WARN mapping_contract=status=LED1..LED6,key=LED11..LED14 status_physical_map=LED1:PWR,LED2:BLE,LED3:REC,LED4:AI,LED5:OK,LED6:WARN key_physical_map=LED11:KEY1,LED12:KEY2,LED13:KEY3,LED14:KEY4 separate_status_key_color_order=1 status_default_order=GRB key_default_order=GRB
+I (48188) ESP_HID_GAP: connection failed; status=19
+~LED:STATUS detail=brightness profile=standard effect_profile=product_v1 profile_cap_percent=100 brightness_percent=100 effective_cap_percent=100 budget_scale_percent=100 budget_limited_by_current=0 plugged_brightness_percent=100 battery_brightness_percent=100 active_power_brightness_percent=100 status_zone_brightness_percent=70 key_zone_brightness_percent=100 ec11_zone_brightness_percent=100 edge_zone_brightness_percent=100 brightness_duty_255=255 user_brightness_is_hard_cap=1 profile_dimming_disabled=1
+~LED:STATUS detail=strips strips=status:gpio1:count6:orderGRB:transportrmt:avail1:dma_req1:dma1:dma_fb0:rmt_dma_req1:rmt_dma1:rmt_dma_fb0:spi_dma_req0:spi_dma0:spi_dma_fb0:refsLED1..LED6,ec11:gpio5:count12:orderGRB:transportspi2:avail1:dma_req1:dma1:dma_fb0:rmt_dma_req0:rmt_dma0:rmt_dma_fb0:spi_dma_req1:spi_dma1:spi_dma_fb0:refsLED7..LED10+LED15..LED16+LED23..LED28,key:gpio13:count4:orderGRB:transportspi3:avail1:dma_req1:dma1:dma_fb0:rmt_dma_req0:rmt_dma0:rmt_dma_fb0:spi_dma_req1:spi_dma1:spi_dma_fb0:refsLED11..LED14,edge:gpio4:count6:orderGRB:transportrmt:avail1:dma_req0:dma0:dma_fb0:rmt_dma_req0:rmt_dma0:rmt_dma_fb0:spi_dma_req0:spi_dma0:spi_dma_fb0:refsLED17..LED22 status_tail_guard_pixels=6 key_pin_contract=PWM_RGB_KEY_GPIO13 ec11_pin_contract=PWM_RGB_EC11_GPIO5 edge_pin_contract=PWM_RGB_Edge_GPIO4 gpio14_reserved=BAT_CHG_IO vdd_led_enable=always_on_assumed
+~LED:STATUS detail=state ble=pairing rec_active=0 rec_source=none rec_level=0 rec_level_visual=0 rec_level_hold_ms_left=0 processing=0 ble_repair_ms_left=0 error_domain=none error_severity=retryable output_disabled=0 low_power_disabled=0 idle_transition_clear_pending=0 preview_suppress_accents=0 preview_effect_only=0 preview_ble_override_ms_left=13909 shutdown_confirm_active=0 shutdown_confirm_final=0 shutdown_confirm_latched=0 shutdown_confirm_elapsed_ms=0
+~LED:STATUS detail=power battery_valid=0 battery_level=0 battery_mv=0 battery_display_valid=0 battery_display_level=0 battery_display_mv=0 battery_display_rise_suppressed=0 external_power=0 external_power_source=none source_flags=0x00 charging=0 full=0 raw_charging=0 raw_full=0 full_latched=0 full_candidate_ms=0 full_debounce_ms=10000 full_min_mv=4050 full_min_percent=88 status_window_ms_left=4909 ble_confidence_ms_left=0 ble_repair_ms_left=0 oobe_confidence_ms_left=0 preview_ble_override_ms_left=13909 ble_transition_ms=46134 last_transition_ms=46134 current_ma=0 current_budget_ma=760
+~LED:STATUS detail=rgb status_rgb=PWR:0,0,0;BLE:0,0,0;REC:0,0,0;AI:0,0,0;OK:0,0,0;WARN:0,0,0
+~LED:STATUS detail=rgb_ec11 ec11_rgb=px1:0,0,0;px2:0,0,0;px3:0,0,0;px4:0,0,0;px5:0,0,0;px6:0,0,0;px7:0,0,0;px8:0,0,0;px9:0,0,0;px10:0,0,0;px11:0,0,0;px12:0,0,0
+~LED:STATUS detail=rgb_key key_rgb=px1:0,0,0;px2:0,0,0;px3:0,0,0;px4:0,0,0
+~LED:STATUS detail=rgb_edge edge_rgb=px1:0,0,0;px2:0,0,0;px3:0,0,0;px4:0,0,0;px5:0,0,0;px6:0,0,0
+~LED:STATUS profile=standard detail=summary profile_cap_percent=100 budget_scale_percent=100 budget_limited_by_current=0 ble=pairing rec_active=0 rec_source=none processing=0 ble_repair_ms_left=0 error_domain=none error_severity=retryable battery_level=0 external_power=0 external_power_source=none charging=0 full=0 active_flags=PWR:0,BLE:0,REC:0,AI:0,OK:0,WARN:0,EC11:0,KEY:0,EDGE:0 key_mask=0x00 test_mode=0 test_strip_mask=0x00 preview_suppress_accents=0 preview_effect_only=0 preview_ble_override_ms_left=13909 shutdown_confirm_active=0 shutdown_confirm_latched=0 last_reason=preview
+I (48638) ESP_HID_GAP: NimBLE bonded peers=0
+I (48638) ESP_HID_GAP: NimBLE undirected advertising started: low_power=0 interval_ms=30-50
+I (48648) ESP_HID_GAP: encryption change event; status=7
+W (48648) ESP_HID_GAP: encryption failed or connection already gone; status=7
+I (48658) ESP_HID_GAP: disconnect; reason=531
+W (48658) ble_audio_stream: audio stale event discarded: type=disconnect conn=1 event_epoch=8 current_epoch=8 current_conn=65535 counts_subscribe=0 counts_mtu=0 counts_notify_tx=0 counts_disconnect=168
+I (48678) ESP_HID_GAP: NimBLE advertising already active
+I (48708) NimBLE: ogf=0x08, ocf=0x0016, hci_err=0x202 : BLE_ERR_UNK_CONN_ID (Unknown Connection Identifier)
+I (48708) ESP_HID_GAP: encryption change event; status=7
+W (48708) ESP_HID_GAP: encryption failed or connection already gone; status=7
+I (48718) ESP_HID_GAP: connection failed; status=1
+I (48728) ESP_HID_GAP: NimBLE bonded peers=0
+I (48728) ESP_HID_GAP: NimBLE undirected advertising started: low_power=0 interval_ms=30-50
+I (48908) ESP_HID_GAP: connection failed; status=19
+I (48908) ESP_HID_GAP: NimBLE bonded peers=0
+I (48918) ESP_HID_GAP: NimBLE undirected advertising started: low_power=0 interval_ms=30-50
+I (48918) ESP_HID_GAP: encryption change event; status=7
+W (48918) ESP_HID_GAP: encryption failed or connection already gone; status=7
+I (48928) ESP_HID_GAP: disconnect; reason=531
+W (48928) ble_audio_stream: audio stale event discarded: type=disconnect conn=1 event_epoch=8 current_epoch=8 current_conn=65535 counts_subscribe=0 counts_mtu=0 counts_notify_tx=0 counts_disconnect=169
+I (48948) ESP_HID_GAP: NimBLE advertising already active
+I (49078) audio_capture: frame captured count=950 bytes=608000
+I (49098) ESP_HID_GAP: connection failed; status=19
+I (49098) ESP_HID_GAP: NimBLE bonded peers=0
+I (49108) ESP_HID_GAP: NimBLE undirected advertising started: low_power=0 interval_ms=30-50
+I (49108) ESP_HID_GAP: encryption change event; status=7
+W (49108) ESP_HID_GAP: encryption failed or connection already gone; status=7
+I (49118) ESP_HID_GAP: disconnect; reason=531
+W (49118) ble_audio_stream: audio stale event discarded: type=disconnect conn=1 event_epoch=8 current_epoch=8 current_conn=65535 counts_subscribe=0 counts_mtu=0 counts_notify_tx=0 counts_disconnect=170
+I (49138) ESP_HID_GAP: NimBLE advertising already active
+I (49328) ESP_HID_GAP: connection failed; status=19
+I (49338) ESP_HID_GAP: NimBLE bonded peers=0
+I (49338) ESP_HID_GAP: NimBLE undirected advertising started: low_power=0 interval_ms=30-50
+I (49348) ESP_HID_GAP: encryption change event; status=7
+W (49348) ESP_HID_GAP: encryption failed or connection already gone; status=7
+I (49348) ESP_HID_GAP: disconnect; reason=531
+W (49358) ble_audio_stream: audio stale event discarded: type=disconnect conn=1 event_epoch=8 current_epoch=8 current_conn=65535 counts_subscribe=0 counts_mtu=0 counts_notify_tx=0 counts_disconnect=171
+I (49378) ESP_HID_GAP: NimBLE advertising already active
+I (49468) ESP_HID_GAP: connection failed; status=19
+I (49478) ESP_HID_GAP: NimBLE bonded peers=0
+I (49478) ESP_HID_GAP: NimBLE undirected advertising started: low_power=0 interval_ms=30-50
+I (49478) ESP_HID_GAP: encryption change event; status=7
+W (49478) ESP_HID_GAP: encryption failed or connection already gone; status=7
+I (49488) ESP_HID_GAP: disconnect; reason=531
+W (49488) ble_audio_stream: audio stale event discarded: type=disconnect conn=1 event_epoch=8 current_epoch=8 current_conn=65535 counts_subscribe=0 counts_mtu=0 counts_notify_tx=0 counts_disconnect=172
+I (49508) ESP_HID_GAP: NimBLE advertising already active
+I (49648) ESP_HID_GAP: connection failed; status=19
+I (49658) ESP_HID_GAP: NimBLE bonded peers=0
+I (49658) ESP_HID_GAP: NimBLE undirected advertising started: low_power=0 interval_ms=30-50
+I (49658) ESP_HID_GAP: encryption change event; status=7
+W (49658) ESP_HID_GAP: encryption failed or connection already gone; status=7
+I (49668) ESP_HID_GAP: disconnect; reason=531
+W (49668) ble_audio_stream: audio stale event discarded: type=disconnect conn=1 event_epoch=8 current_epoch=8 current_conn=65535 counts_subscribe=0 counts_mtu=0 counts_notify_tx=0 counts_disconnect=173
+I (49688) ESP_HID_GAP: NimBLE advertising already active
+I (49778) ESP_HID_GAP: connection failed; status=19
+I (49788) ESP_HID_GAP: NimBLE bonded peers=0
+I (49798) ESP_HID_GAP: NimBLE undirected advertising started: low_power=0 interval_ms=30-50
+I (49798) ESP_HID_GAP: encryption change event; status=7
+W (49798) ESP_HID_GAP: encryption failed or connection already gone; status=7
+I (49798) ESP_HID_GAP: disconnect; reason=531
+W (49808) ble_audio_stream: audio stale event discarded: type=disconnect conn=1 event_epoch=8 current_epoch=8 current_conn=65535 counts_subscribe=0 counts_mtu=0 counts_notify_tx=0 counts_disconnect=174
+I (49828) ESP_HID_GAP: NimBLE advertising already active
+> WAIT 780
+I (49988) ESP_HID_GAP: connection failed; status=19
+I (49988) ESP_HID_GAP: NimBLE bonded peers=0
+I (49998) ESP_HID_GAP: NimBLE undirected advertising started: low_power=0 interval_ms=30-50
+I (49998) ESP_HID_GAP: encryption change event; status=7
+W (49998) ESP_HID_GAP: encryption failed or connection already gone; status=7
+I (50008) ESP_HID_GAP: disconnect; reason=531
+W (50008) ble_audio_stream: audio stale event discarded: type=disconnect conn=1 event_epoch=8 current_epoch=8 current_conn=65535 counts_subscribe=0 counts_mtu=0 counts_notify_tx=0 counts_disconnect=175
+I (50028) ESP_HID_GAP: NimBLE advertising already active
+I (50078) audio_capture: frame captured count=1000 bytes=640000
+I (50118) ESP_HID_GAP: connection failed; status=19
+I (50128) ESP_HID_GAP: NimBLE bonded peers=0
+I (50128) ESP_HID_GAP: NimBLE undirected advertising started: low_power=0 interval_ms=30-50
+I (50128) ESP_HID_GAP: encryption change event; status=7
+W (50138) ESP_HID_GAP: encryption failed or connection already gone; status=7
+I (50138) ESP_HID_GAP: disconnect; reason=531
+W (50148) ble_audio_stream: audio stale event discarded: type=disconnect conn=1 event_epoch=8 current_epoch=8 current_conn=65535 counts_subscribe=0 counts_mtu=0 counts_notify_tx=0 counts_disconnect=176
+I (50158) ESP_HID_GAP: NimBLE advertising already active
+I (50258) ESP_HID_GAP: connection failed; status=19
+I (50258) ESP_HID_GAP: NimBLE bonded peers=0
+I (50268) ESP_HID_GAP: NimBLE undirected advertising started: low_power=0 interval_ms=30-50
+I (50268) ESP_HID_GAP: encryption change event; status=7
+W (50268) ESP_HID_GAP: encryption failed or connection already gone; status=7
+I (50278) ESP_HID_GAP: disconnect; reason=531
+W (50278) ble_audio_stream: audio stale event discarded: type=disconnect conn=1 event_epoch=8 current_epoch=8 current_conn=65535 counts_subscribe=0 counts_mtu=0 counts_notify_tx=0 counts_disconnect=177
+I (50298) ESP_HID_GAP: NimBLE advertising already active
+I (50488) ESP_HID_GAP: connection failed; status=19
+I (50498) ESP_HID_GAP: NimBLE bonded peers=0
+I (50498) ESP_HID_GAP: NimBLE undirected advertising started: low_power=0 interval_ms=30-50
+I (50508) ESP_HID_GAP: encryption change event; status=7
+W (50508) ESP_HID_GAP: encryption failed or connection already gone; status=7
+I (50508) ESP_HID_GAP: disconnect; reason=531
+W (50518) ble_audio_stream: audio stale event discarded: type=disconnect conn=1 event_epoch=8 current_epoch=8 current_conn=65535 counts_subscribe=0 counts_mtu=0 counts_notify_tx=0 counts_disconnect=178
+I (50538) ESP_HID_GAP: NimBLE advertising already active
+I (50638) ESP_HID_GAP: connection failed; status=19
+I (50648) ESP_HID_GAP: NimBLE bonded peers=0
+I (50648) ESP_HID_GAP: NimBLE undirected advertising started: low_power=0 interval_ms=30-50
+I (50648) ESP_HID_GAP: encryption change event; status=7
+W (50648) ESP_HID_GAP: encryption failed or connection already gone; status=7
+I (50658) ESP_HID_GAP: disconnect; reason=531
+W (50658) ble_audio_stream: audio stale event discarded: type=disconnect conn=1 event_epoch=8 current_epoch=8 current_conn=65535 counts_subscribe=0 counts_mtu=0 counts_notify_tx=0 counts_disconnect=179
+I (50678) ESP_HID_GAP: NimBLE advertising already active
+> ~LED:STATUS
+I (50778) ESP_HID_GAP: connection failed; status=19
+I (50778) ESP_HID_GAP: NimBLE bonded peers=0
+I (50788) ESP_HID_GAP: NimBLE undirected advertising started: low_power=0 interval_ms=30-50
+I (50788) ESP_HID_GAP: encryption change event; status=7
+W (50788) ESP_HID_GAP: encryption failed or connection already gone; status=7
+I (50788) ESP_HID_GAP: disconnect; reason=531
+W (50798) ble_audio_stream: audio stale event discarded: type=disconnect conn=1 event_epoch=8 current_epoch=8 current_conn=65535 counts_subscribe=0 counts_mtu=0 counts_notify_tx=0 counts_disconnect=180
+I (50818) ESP_HID_GAP: NimBLE advertising already active
+~LED:STATUS detail=contract backend=mixed_rmt_and_spi_ws2812_800khz refresh_ms=50 reset_us=300 strip_transport_requested=status:rmt,ec11:spi2,key:spi3,edge:rmt strip_transport_actual=status:rmt,ec11:spi2,key:spi3,edge:rmt spi_dma_outputs_requested=ec11:SPI2,key:SPI3 spi_dma_requested=status:0,ec11:1,key:1,edge:0 spi_dma_actual=status:0,ec11:1,key:1,edge:0 spi_dma_fallback=status:0,ec11:0,key:0,edge:0 rmt_tx_dma_supported=1 rmt_tx_dma_strategy=status_strip_dma_full_frame_buffer rmt_strip_all_available=1 rmt_tx_dma_all_strips=0 rmt_tx_dma_requested=status:1,ec11:0,key:0,edge:0 rmt_tx_dma_actual=status:1,ec11:0,key:0,edge:0 rmt_tx_dma_fallback=status:0,ec11:0,key:0,edge:0 rmt_mem_block_symbols=status:1024,ec11:0,key:0,edge:48 idle_refresh_ms=1000 unchanged_tx_suppression=1 timing=ws2812_4020_compatible low_power_transport_suspend_ms=0 low_power_status_tx=non_dma_clear_and_final_frame shutdown_final_status_tx=non_dma_pwr_only_latch low_power_final_latch_writes=3 low_power_status_retry_writes=3 status_tail_guard_pixels=6 status_tail_reinforce=recording_processing status_tail_reinforce_writes=3 status_tail_overlap_reinforce_writes=1 status_tail_legacy_safe_effect_percent=14..20 status_tail_overlap_effect_percent=rec_audio_8..100_2pct_ai_think_0..100_2pct status_tail_overlap_style=dma_audio_rec_ai_da_dada status_tail_overlap_legacy_effect_percent=14..40_1pct_eased_dual_core status_tail_overlap_legacy_period_ms=6800 status_tail_overlap_legacy_rise_ms=2200 status_tail_overlap_legacy_high_hold_ms=500 status_tail_overlap_legacy_fall_ms=2500 status_tail_overlap_legacy_low_hold_ms=1600 status_tail_overlap_legacy_quantum_percent=1 recording_level_reactive=1 recording_level_effect_percent=8..100_smooth_2pct recording_level_smoothing=attack100_release45 processing_thinking_style=single_then_double_beat processing_thinking_color=purple_static processing_thinking_effect_percent=0..100_2pct processing_thinking_scan_profile=da_long_gap_grouped_dada_rest processing_thinking_period_ms=1950 strip_dirty_tx=1 status_tx_last=1 rmt_idle_drive=active_status_dma_low_power_non_dma_final_frame_then_immediate_all_quiet_suspend dynamic_active_accents=1 status_query_samples_current_render=1 effect_only_preview=1 active_work_status_dynamic=1 active_work_status_overlap_dynamic_1pct_eased=0 active_work_status_audio_reactive_rec=1 active_work_status_thinking_ai=1 led_contract_rev=status_key_ec11_edge_true_state_v19 factory_full_brightness=1 safety_full_brightness=1 semantic_order=LED1:PWR,LED2:BLE,LED3:REC,LED4:AI,LED5:OK,LED6:WARN mapping_contract=status=LED1..LED6,key=LED11..LED14 status_physical_map=LED1:PWR,LED2:BLE,LED3:REC,LED4:AI,LED5:OK,LED6:WARN key_physical_map=LED11:KEY1,LED12:KEY2,LED13:KEY3,LED14:KEY4 separate_status_key_color_order=1 status_default_order=GRB key_default_order=GRB
+I (51068) audio_capture: frame captured count=1050 bytes=672000
+~LED:STATUS detail=brightness profile=standard effect_profile=product_v1 profile_cap_percent=100 brightness_percent=100 effective_cap_percent=100 budget_scale_percent=100 budget_limited_by_current=0 plugged_brightness_percent=100 battery_brightness_percent=100 active_power_brightness_percent=100 status_zone_brightness_percent=70 key_zone_brightness_percent=100 ec11_zone_brightness_percent=100 edge_zone_brightness_percent=100 brightness_duty_255=255 user_brightness_is_hard_cap=1 profile_dimming_disabled=1
+~LED:STATUS detail=strips strips=status:gpio1:count6:orderGRB:transportrmt:avail1:dma_req1:dma1:dma_fb0:rmt_dma_req1:rmt_dma1:rmt_dma_fb0:spi_dma_req0:spi_dma0:spi_dma_fb0:refsLED1..LED6,ec11:gpio5:count12:orderGRB:transportspi2:avail1:dma_req1:dma1:dma_fb0:rmt_dma_req0:rmt_dma0:rmt_dma_fb0:spi_dma_req1:spi_dma1:spi_dma_fb0:refsLED7..LED10+LED15..LED16+LED23..LED28,key:gpio13:count4:orderGRB:transportspi3:avail1:dma_req1:dma1:dma_fb0:rmt_dma_req0:rmt_dma0:rmt_dma_fb0:spi_dma_req1:spi_dma1:spi_dma_fb0:refsLED11..LED14,edge:gpio4:count6:orderGRB:transportrmt:avail1:dma_req0:dma0:dma_fb0:rmt_dma_req0:rmt_dma0:rmt_dma_fb0:spi_dma_req0:spi_dma0:spi_dma_fb0:refsLED17..LED22 status_tail_guard_pixels=6 key_pin_contract=PWM_RGB_KEY_GPIO13 ec11_pin_contract=PWM_RGB_EC11_GPIO5 edge_pin_contract=PWM_RGB_Edge_GPIO4 gpio14_reserved=BAT_CHG_IO vdd_led_enable=always_on_assumed
+I (51298) ESP_HID_GAP: connection failed; status=19
+~LED:STATUS detail=state ble=pairing rec_active=0 rec_source=none rec_level=0 rec_level_visual=0 rec_level_hold_ms_left=0 processing=0 ble_repair_ms_left=0 error_domain=none error_severity=retryable output_disabled=0 low_power_disabled=0 idle_transition_clear_pending=0 preview_suppress_accents=0 preview_effect_only=0 preview_ble_override_ms_left=11058 shutdown_confirm_active=0 shutdown_confirm_final=0 shutdown_confirm_latched=0 shutdown_confirm_elapsed_ms=0
+~LED:STATUS detail=power battery_valid=0 battery_level=0 battery_mv=0 battery_display_valid=0 battery_display_level=0 battery_display_mv=0 battery_display_rise_suppressed=0 external_power=0 external_power_source=none source_flags=0x00 charging=0 full=0 raw_charging=0 raw_full=0 full_latched=0 full_candidate_ms=0 full_debounce_ms=10000 full_min_mv=4050 full_min_percent=88 status_window_ms_left=2058 ble_confidence_ms_left=0 ble_repair_ms_left=0 oobe_confidence_ms_left=0 preview_ble_override_ms_left=11058 ble_transition_ms=46134 last_transition_ms=46134 current_ma=0 current_budget_ma=760
+~LED:STATUS detail=rgb status_rgb=PWR:0,0,0;BLE:0,0,0;REC:0,0,0;AI:0,0,0;OK:0,0,0;WARN:0,0,0
+~LED:STATUS detail=rgb_ec11 ec11_rgb=px1:0,0,0;px2:0,0,0;px3:0,0,0;px4:0,0,0;px5:0,0,0;px6:0,0,0;px7:0,0,0;px8:0,0,0;px9:0,0,0;px10:0,0,0;px11:0,0,0;px12:0,0,0
+~LED:STATUS detail=rgb_key key_rgb=px1:0,0,0;px2:0,0,0;px3:0,0,0;px4:0,0,0
+~LED:STATUS detail=rgb_edge edge_rgb=px1:0,0,0;px2:0,0,0;px3:0,0,0;px4:0,0,0;px5:0,0,0;px6:0,0,0
+~LED:STATUS profile=standard detail=summary profile_cap_percent=100 budget_scale_percent=100 budget_limited_by_current=0 ble=pairing rec_active=0 rec_source=none processing=0 ble_repair_ms_left=0 error_domain=none error_severity=retryable battery_level=0 external_power=0 external_power_source=none charging=0 full=0 active_flags=PWR:0,BLE:0,REC:0,AI:0,OK:0,WARN:0,EC11:0,KEY:0,EDGE:0 key_mask=0x00 test_mode=0 test_strip_mask=0x00 preview_suppress_accents=0 preview_effect_only=0 preview_ble_override_ms_left=11058 shutdown_confirm_active=0 shutdown_confirm_latched=0 last_reason=preview
+I (51498) ESP_HID_GAP: NimBLE bonded peers=0
+I (51498) ESP_HID_GAP: NimBLE undirected advertising started: low_power=0 interval_ms=30-50
+I (51508) ESP_HID_GAP: encryption change event; status=7
+W (51508) ESP_HID_GAP: encryption failed or connection already gone; status=7
+I (51518) ESP_HID_GAP: disconnect; reason=531
+W (51518) ble_audio_stream: audio stale event discarded: type=disconnect conn=1 event_epoch=8 current_epoch=8 current_conn=65535 counts_subscribe=0 counts_mtu=0 counts_notify_tx=0 counts_disconnect=181
+I (51538) ESP_HID_GAP: NimBLE advertising already active
+I (51558) NimBLE: ogf=0x08, ocf=0x0016, hci_err=0x202 : BLE_ERR_UNK_CONN_ID (Unknown Connection Identifier)
+I (51568) ESP_HID_GAP: encryption change event; status=7
+W (51568) ESP_HID_GAP: encryption failed or connection already gone; status=7
+I (51578) ESP_HID_GAP: connection failed; status=1
+I (51578) ESP_HID_GAP: NimBLE bonded peers=0
+I (51588) ESP_HID_GAP: NimBLE undirected advertising started: low_power=0 interval_ms=30-50
+I (51708) ESP_HID_GAP: connection failed; status=19
+I (51708) ESP_HID_GAP: NimBLE bonded peers=0
+I (51718) ESP_HID_GAP: NimBLE undirected advertising started: low_power=0 interval_ms=30-50
+I (51718) ESP_HID_GAP: encryption change event; status=7
+W (51718) ESP_HID_GAP: encryption failed or connection already gone; status=7
+I (51728) ESP_HID_GAP: disconnect; reason=531
+W (51728) ble_audio_stream: audio stale event discarded: type=disconnect conn=1 event_epoch=8 current_epoch=8 current_conn=65535 counts_subscribe=0 counts_mtu=0 counts_notify_tx=0 counts_disconnect=182
+I (51748) ESP_HID_GAP: NimBLE advertising already active
+I (51888) ESP_HID_GAP: connection failed; status=19
+I (51888) ESP_HID_GAP: NimBLE bonded peers=0
+I (51898) ESP_HID_GAP: NimBLE undirected advertising started: low_power=0 interval_ms=30-50
+I (51898) ESP_HID_GAP: encryption change event; status=7
+W (51898) ESP_HID_GAP: encryption failed or connection already gone; status=7
+I (51908) ESP_HID_GAP: disconnect; reason=531
+W (51908) ble_audio_stream: audio stale event discarded: type=disconnect conn=1 event_epoch=8 current_epoch=8 current_conn=65535 counts_subscribe=0 counts_mtu=0 counts_notify_tx=0 counts_disconnect=183
+I (51928) ESP_HID_GAP: NimBLE advertising already active
+I (52028) ESP_HID_GAP: connection failed; status=19
+I (52038) ESP_HID_GAP: NimBLE bonded peers=0
+I (52038) ESP_HID_GAP: NimBLE undirected advertising started: low_power=0 interval_ms=30-50
+I (52048) ESP_HID_GAP: encryption change event; status=7
+W (52048) ESP_HID_GAP: encryption failed or connection already gone; status=7
+I (52048) ESP_HID_GAP: disconnect; reason=531
+W (52058) ble_audio_stream: audio stale event discarded: type=disconnect conn=1 event_epoch=8 current_epoch=8 current_conn=65535 counts_subscribe=0 counts_mtu=0 counts_notify_tx=0 counts_disconnect=184
+I (52078) ESP_HID_GAP: NimBLE advertising already active
+I (52108) audio_capture: frame captured count=1100 bytes=704000
+I (52168) ESP_HID_GAP: connection failed; status=19
+I (52178) ESP_HID_GAP: NimBLE bonded peers=0
+I (52178) ESP_HID_GAP: NimBLE undirected advertising started: low_power=0 interval_ms=30-50
+I (52178) ESP_HID_GAP: encryption change event; status=7
+W (52178) ESP_HID_GAP: encryption failed or connection already gone; status=7
+I (52188) ESP_HID_GAP: disconnect; reason=531
+W (52188) ble_audio_stream: audio stale event discarded: type=disconnect conn=1 event_epoch=8 current_epoch=8 current_conn=65535 counts_subscribe=0 counts_mtu=0 counts_notify_tx=0 counts_disconnect=185
+I (52208) ESP_HID_GAP: NimBLE advertising already active
+I (52308) ESP_HID_GAP: connection failed; status=19
+I (52308) ESP_HID_GAP: NimBLE bonded peers=0
+I (52318) ESP_HID_GAP: NimBLE undirected advertising started: low_power=0 interval_ms=30-50
+I (52318) ESP_HID_GAP: encryption change event; status=7
+W (52318) ESP_HID_GAP: encryption failed or connection already gone; status=7
+I (52318) ESP_HID_GAP: disconnect; reason=531
+W (52328) ble_audio_stream: audio stale event discarded: type=disconnect conn=1 event_epoch=8 current_epoch=8 current_conn=65535 counts_subscribe=0 counts_mtu=0 counts_notify_tx=0 counts_disconnect=186
+I (52348) ESP_HID_GAP: NimBLE advertising already active
+> WAIT 900
+I (52878) ESP_HID_GAP: connection failed; status=19
+I (52878) ESP_HID_GAP: NimBLE bonded peers=0
+I (52888) ESP_HID_GAP: NimBLE undirected advertising started: low_power=0 interval_ms=30-50
+I (52888) ESP_HID_GAP: encryption change event; status=7
+W (52888) ESP_HID_GAP: encryption failed or connection already gone; status=7
+I (52898) ESP_HID_GAP: disconnect; reason=531
+W (52898) ble_audio_stream: audio stale event discarded: type=disconnect conn=1 event_epoch=8 current_epoch=8 current_conn=65535 counts_subscribe=0 counts_mtu=0 counts_notify_tx=0 counts_disconnect=187
+I (52918) ESP_HID_GAP: NimBLE advertising already active
+I (53068) audio_capture: audio idle power save enabled: ESP_OK
+I (53238) ESP_HID_GAP: connection failed; status=19
+I (53238) ESP_HID_GAP: NimBLE bonded peers=0
+I (53248) ESP_HID_GAP: NimBLE undirected advertising started: low_power=0 interval_ms=30-50
+I (53248) ESP_HID_GAP: encryption change event; status=7
+W (53248) ESP_HID_GAP: encryption failed or connection already gone; status=7
+I (53258) ESP_HID_GAP: disconnect; reason=531
+W (53258) ble_audio_stream: audio stale event discarded: type=disconnect conn=1 event_epoch=8 current_epoch=8 current_conn=65535 counts_subscribe=0 counts_mtu=0 counts_notify_tx=0 counts_disconnect=188
+I (53278) ESP_HID_GAP: NimBLE advertising already active
+I (53368) ESP_HID_GAP: connection failed; status=19
+I (53378) ESP_HID_GAP: NimBLE bonded peers=0
+I (53378) ESP_HID_GAP: NimBLE undirected advertising started: low_power=0 interval_ms=30-50
+I (53388) ESP_HID_GAP: encryption change event; status=7
+W (53388) ESP_HID_GAP: encryption failed or connection already gone; status=7
+I (53388) ESP_HID_GAP: disconnect; reason=531
+W (53398) ble_audio_stream: audio stale event discarded: type=disconnect conn=1 event_epoch=8 current_epoch=8 current_conn=65535 counts_subscribe=0 counts_mtu=0 counts_notify_tx=0 counts_disconnect=189
+I (53418) ESP_HID_GAP: NimBLE advertising already active
+I (53508) ESP_HID_GAP: connection failed; status=19
+I (53508) ESP_HID_GAP: NimBLE bonded peers=0
+I (53518) ESP_HID_GAP: NimBLE undirected advertising started: low_power=0 interval_ms=30-50
+I (53518) ESP_HID_GAP: encryption change event; status=7
+W (53518) ESP_HID_GAP: encryption failed or connection already gone; status=7
+I (53528) ESP_HID_GAP: disconnect; reason=531
+W (53528) ble_audio_stream: audio stale event discarded: type=disconnect conn=1 event_epoch=8 current_epoch=8 current_conn=65535 counts_subscribe=0 counts_mtu=0 counts_notify_tx=0 counts_disconnect=190
+I (53548) ESP_HID_GAP: NimBLE advertising already active
+I (53638) ESP_HID_GAP: connection failed; status=19
+I (53648) ESP_HID_GAP: NimBLE bonded peers=0
+I (53648) ESP_HID_GAP: NimBLE undirected advertising started: low_power=0 interval_ms=30-50
+I (53658) ESP_HID_GAP: encryption change event; status=7
+W (53658) ESP_HID_GAP: encryption failed or connection already gone; status=7
+I (53658) ESP_HID_GAP: disconnect; reason=531
+W (53668) ble_audio_stream: audio stale event discarded: type=disconnect conn=1 event_epoch=8 current_epoch=8 current_conn=65535 counts_subscribe=0 counts_mtu=0 counts_notify_tx=0 counts_disconnect=191
+I (53688) ESP_HID_GAP: NimBLE advertising already active
+> ~LED:STATUS
+I (53828) ESP_HID_GAP: connection failed; status=19
+I (53838) ESP_HID_GAP: NimBLE bonded peers=0
+I (53838) ESP_HID_GAP: NimBLE undirected advertising started: low_power=0 interval_ms=30-50
+I (53848) ESP_HID_GAP: encryption change event; status=7
+W (53848) ESP_HID_GAP: encryption failed or connection already gone; status=7
+I (53848) ESP_HID_GAP: disconnect; reason=531
+W (53858) ble_audio_stream: audio stale event discarded: type=disconnect conn=1 event_epoch=8 current_epoch=8 current_conn=65535 counts_subscribe=0 counts_mtu=0 counts_notify_tx=0 counts_disconnect=192
+I (53878) ESP_HID_GAP: NimBLE advertising already active
+~LED:STATUS detail=contract backend=mixed_rmt_and_spi_ws2812_800khz refresh_ms=50 reset_us=300 strip_transport_requested=status:rmt,ec11:spi2,key:spi3,edge:rmt strip_transport_actual=status:rmt,ec11:spi2,key:spi3,edge:rmt spi_dma_outputs_requested=ec11:SPI2,key:SPI3 spi_dma_requested=status:0,ec11:1,key:1,edge:0 spi_dma_actual=status:0,ec11:1,key:1,edge:0 spi_dma_fallback=status:0,ec11:0,key:0,edge:0 rmt_tx_dma_supported=1 rmt_tx_dma_strategy=status_strip_dma_full_frame_buffer rmt_strip_all_available=1 rmt_tx_dma_all_strips=0 rmt_tx_dma_requested=status:1,ec11:0,key:0,edge:0 rmt_tx_dma_actual=status:1,ec11:0,key:0,edge:0 rmt_tx_dma_fallback=status:0,ec11:0,key:0,edge:0 rmt_mem_block_symbols=status:1024,ec11:0,key:0,edge:48 idle_refresh_ms=1000 unchanged_tx_suppression=1 timing=ws2812_4020_compatible low_power_transport_suspend_ms=0 low_power_status_tx=non_dma_clear_and_final_frame shutdown_final_status_tx=non_dma_pwr_only_latch low_power_final_latch_writes=3 low_power_status_retry_writes=3 status_tail_guard_pixels=6 status_tail_reinforce=recording_processing status_tail_reinforce_writes=3 status_tail_overlap_reinforce_writes=1 status_tail_legacy_safe_effect_percent=14..20 status_tail_overlap_effect_percent=rec_audio_8..100_2pct_ai_think_0..100_2pct status_tail_overlap_style=dma_audio_rec_ai_da_dada status_tail_overlap_legacy_effect_percent=14..40_1pct_eased_dual_core status_tail_overlap_legacy_period_ms=6800 status_tail_overlap_legacy_rise_ms=2200 status_tail_overlap_legacy_high_hold_ms=500 status_tail_overlap_legacy_fall_ms=2500 status_tail_overlap_legacy_low_hold_ms=1600 status_tail_overlap_legacy_quantum_percent=1 recording_level_reactive=1 recording_level_effect_percent=8..100_smooth_2pct recording_level_smoothing=attack100_release45 processing_thinking_style=single_then_double_beat processing_thinking_color=purple_static processing_thinking_effect_percent=0..100_2pct processing_thinking_scan_profile=da_long_gap_grouped_dada_rest processing_thinking_period_ms=1950 strip_dirty_tx=1 status_tx_last=1 rmt_idle_drive=active_status_dma_low_power_non_dma_final_frame_then_immediate_all_quiet_suspend dynamic_active_accents=1 status_query_samples_current_render=1 effect_only_preview=1 active_work_status_dynamic=1 active_work_status_overlap_dynamic_1pct_eased=0 active_work_status_audio_reactive_rec=1 active_work_status_thinking_ai=1 led_contract_rev=status_key_ec11_edge_true_state_v19 factory_full_brightness=1 safety_full_brightness=1 semantic_order=LED1:PWR,LED2:BLE,LED3:REC,LED4:AI,LED5:OK,LED6:WARN mapping_contract=status=LED1..LED6,key=LED11..LED14 status_physical_map=LED1:PWR,LED2:BLE,LED3:REC,LED4:AI,LED5:OK,LED6:WARN key_physical_map=LED11:KEY1,LED12:KEY2,LED13:KEY3,LED14:KEY4 separate_status_key_color_order=1 status_default_order=GRB key_default_order=GRB
+I (53968) ESP_HID_GAP: connection failed; status=19
+~LED:STATUS detail=brightness profile=standard effect_profile=product_v1 profile_cap_percent=100 brightness_percent=100 effective_cap_percent=100 budget_scale_percent=100 budget_limited_by_current=0 plugged_brightness_percent=100 battery_brightness_percent=100 active_power_brightness_percent=100 status_zone_brightness_percent=70 key_zone_brightness_percent=100 ec11_zone_brightness_percent=100 edge_zone_brightness_percent=100 brightness_duty_255=255 user_brightness_is_hard_cap=1 profile_dimming_disabled=1
+~LED:STATUS detail=strips strips=status:gpio1:count6:orderGRB:transportrmt:avail1:dma_req1:dma1:dma_fb0:rmt_dma_req1:rmt_dma1:rmt_dma_fb0:spi_dma_req0:spi_dma0:spi_dma_fb0:refsLED1..LED6,ec11:gpio5:count12:orderGRB:transportspi2:avail1:dma_req1:dma1:dma_fb0:rmt_dma_req0:rmt_dma0:rmt_dma_fb0:spi_dma_req1:spi_dma1:spi_dma_fb0:refsLED7..LED10+LED15..LED16+LED23..LED28,key:gpio13:count4:orderGRB:transportspi3:avail1:dma_req1:dma1:dma_fb0:rmt_dma_req0:rmt_dma0:rmt_dma_fb0:spi_dma_req1:spi_dma1:spi_dma_fb0:refsLED11..LED14,edge:gpio4:count6:orderGRB:transportrmt:avail1:dma_req0:dma0:dma_fb0:rmt_dma_req0:rmt_dma0:rmt_dma_fb0:spi_dma_req0:spi_dma0:spi_dma_fb0:refsLED17..LED22 status_tail_guard_pixels=6 key_pin_contract=PWM_RGB_KEY_GPIO13 ec11_pin_contract=PWM_RGB_EC11_GPIO5 edge_pin_contract=PWM_RGB_Edge_GPIO4 gpio14_reserved=BAT_CHG_IO vdd_led_enable=always_on_assumed
+~LED:STATUS detail=state ble=pairing rec_active=0 rec_source=none rec_level=0 rec_level_visual=0 rec_level_hold_ms_left=0 processing=0 ble_repair_ms_left=0 error_domain=none error_severity=retryable output_disabled=0 low_power_disabled=0 idle_transition_clear_pending=0 preview_suppress_accents=0 preview_effect_only=0 preview_ble_override_ms_left=8123 shutdown_confirm_active=0 shutdown_confirm_final=0 shutdown_confirm_latched=0 shutdown_confirm_elapsed_ms=0
+~LED:STATUS detail=power battery_valid=1 battery_level=98 battery_mv=4124 battery_display_valid=1 battery_display_level=98 battery_display_mv=4124 battery_display_rise_suppressed=0 external_power=1 external_power_source=charger_status|usb_serial_jtag source_flags=0x06 charging=1 full=0 raw_charging=1 raw_full=0 full_latched=0 full_candidate_ms=0 full_debounce_ms=10000 full_min_mv=4050 full_min_percent=88 status_window_ms_left=5167 ble_confidence_ms_left=0 ble_repair_ms_left=0 oobe_confidence_ms_left=0 preview_ble_override_ms_left=8123 ble_transition_ms=46134 last_transition_ms=52178 current_ma=7 current_budget_ma=760
+~LED:STATUS detail=rgb status_rgb=PWR:18,18,18;BLE:0,0,32;REC:0,0,0;AI:0,0,0;OK:0,0,0;WARN:0,0,0
+~LED:STATUS detail=rgb_ec11 ec11_rgb=px1:0,0,0;px2:0,0,0;px3:0,0,0;px4:0,0,0;px5:0,0,0;px6:0,0,0;px7:0,0,0;px8:0,0,0;px9:0,0,0;px10:0,0,0;px11:0,0,0;px12:0,0,0
+~LED:STATUS detail=rgb_key key_rgb=px1:0,0,0;px2:0,0,0;px3:0,0,0;px4:0,0,0
+~LED:STATUS detail=rgb_edge edge_rgb=px1:0,0,0;px2:0,0,0;px3:0,0,0;px4:0,0,0;px5:0,0,0;px6:0,0,0
+~LED:STATUS profile=standard detail=summary profile_cap_percent=100 budget_scale_percent=100 budget_limited_by_current=0 ble=pairing rec_active=0 rec_source=none processing=0 ble_repair_ms_left=0 error_domain=none error_severity=retryable battery_level=98 external_power=1 external_power_source=charger_status|usb_serial_jtag charging=1 full=0 active_flags=PWR:1,BLE:1,REC:0,AI:0,OK:0,WARN:0,EC11:0,KEY:0,EDGE:0 key_mask=0x00 test_mode=0 test_strip_mask=0x00 preview_suppress_accents=0 preview_effect_only=0 preview_ble_override_ms_left=8123 shutdown_confirm_active=0 shutdown_confirm_latched=0 last_reason=power_change
+I (54438) ESP_HID_GAP: NimBLE bonded peers=0
+I (54438) ESP_HID_GAP: NimBLE undirected advertising started: low_power=0 interval_ms=30-50
+I (54448) ESP_HID_GAP: encryption change event; status=7
+W (54448) ESP_HID_GAP: encryption failed or connection already gone; status=7
+I (54458) ESP_HID_GAP: disconnect; reason=531
+W (54458) ble_audio_stream: audio stale event discarded: type=disconnect conn=1 event_epoch=8 current_epoch=8 current_conn=65535 counts_subscribe=0 counts_mtu=0 counts_notify_tx=0 counts_disconnect=193
+I (54478) ESP_HID_GAP: NimBLE advertising already active
+I (54508) NimBLE: ogf=0x08, ocf=0x0016, hci_err=0x202 : BLE_ERR_UNK_CONN_ID (Unknown Connection Identifier)
+I (54508) ESP_HID_GAP: encryption change event; status=7
+W (54518) ESP_HID_GAP: encryption failed or connection already gone; status=7
+I (54518) ESP_HID_GAP: connection failed; status=1
+I (54528) ESP_HID_GAP: NimBLE bonded peers=0
+I (54538) ESP_HID_GAP: NimBLE undirected advertising started: low_power=0 interval_ms=30-50
+I (54778) ESP_HID_GAP: connection failed; status=19
+I (54788) ESP_HID_GAP: NimBLE bonded peers=0
+I (54788) ESP_HID_GAP: NimBLE undirected advertising started: low_power=0 interval_ms=30-50
+I (54788) ESP_HID_GAP: encryption change event; status=7
+W (54788) ESP_HID_GAP: encryption failed or connection already gone; status=7
+I (54798) ESP_HID_GAP: disconnect; reason=531
+W (54798) ble_audio_stream: audio stale event discarded: type=disconnect conn=1 event_epoch=8 current_epoch=8 current_conn=65535 counts_subscribe=0 counts_mtu=0 counts_notify_tx=0 counts_disconnect=194
+I (54818) ESP_HID_GAP: NimBLE advertising already active
+I (55078) ESP_HID_GAP: connection failed; status=19
+I (55088) ESP_HID_GAP: NimBLE bonded peers=0
+I (55088) ESP_HID_GAP: NimBLE undirected advertising started: low_power=0 interval_ms=30-50
+I (55098) ESP_HID_GAP: encryption change event; status=7
+W (55098) ESP_HID_GAP: encryption failed or connection already gone; status=7
+I (55098) ESP_HID_GAP: disconnect; reason=531
+W (55108) ble_audio_stream: audio stale event discarded: type=disconnect conn=1 event_epoch=8 current_epoch=8 current_conn=65535 counts_subscribe=0 counts_mtu=0 counts_notify_tx=0 counts_disconnect=195
+I (55128) ESP_HID_GAP: NimBLE advertising already active
+I (55258) ESP_HID_GAP: connection failed; status=19
+I (55268) ESP_HID_GAP: NimBLE bonded peers=0
+I (55268) ESP_HID_GAP: NimBLE undirected advertising started: low_power=0 interval_ms=30-50
+I (55278) ESP_HID_GAP: encryption change event; status=7
+W (55278) ESP_HID_GAP: encryption failed or connection already gone; status=7
+I (55278) ESP_HID_GAP: disconnect; reason=531
+W (55288) ble_audio_stream: audio stale event discarded: type=disconnect conn=1 event_epoch=8 current_epoch=8 current_conn=65535 counts_subscribe=0 counts_mtu=0 counts_notify_tx=0 counts_disconnect=196
+I (55298) ESP_HID_GAP: NimBLE advertising already active
+I (55398) ESP_HID_GAP: connection failed; status=19
+I (55398) ESP_HID_GAP: NimBLE bonded peers=0
+I (55408) ESP_HID_GAP: NimBLE undirected advertising started: low_power=0 interval_ms=30-50
+I (55408) ESP_HID_GAP: encryption change event; status=7
+W (55408) ESP_HID_GAP: encryption failed or connection already gone; status=7
+I (55418) ESP_HID_GAP: disconnect; reason=531
+W (55418) ble_audio_stream: audio stale event discarded: type=disconnect conn=1 event_epoch=8 current_epoch=8 current_conn=65535 counts_subscribe=0 counts_mtu=0 counts_notify_tx=0 counts_disconnect=197
+I (55438) ESP_HID_GAP: NimBLE advertising already active
+I (55518) ESP_HID_GAP: connection failed; status=19
+I (55528) ESP_HID_GAP: NimBLE bonded peers=0
+I (55528) ESP_HID_GAP: NimBLE undirected advertising started: low_power=0 interval_ms=30-50
+I (55528) ESP_HID_GAP: encryption change event; status=7
+W (55538) ESP_HID_GAP: encryption failed or connection already gone; status=7
+I (55538) ESP_HID_GAP: disconnect; reason=531
+W (55548) ble_audio_stream: audio stale event discarded: type=disconnect conn=1 event_epoch=8 current_epoch=8 current_conn=65535 counts_subscribe=0 counts_mtu=0 counts_notify_tx=0 counts_disconnect=198
+I (55558) ESP_HID_GAP: NimBLE advertising already active
+I (55658) ESP_HID_GAP: connection failed; status=19

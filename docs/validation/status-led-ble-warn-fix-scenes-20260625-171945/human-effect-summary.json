@@ -1,0 +1,18 @@
+{
+  "schema_version": 1,
+  "generated_at": "2026-06-25T17:21:08.3745729+08:00",
+  "result": "ABORTED_BY_OPERATOR",
+  "mode": "Scenes",
+  "port": "COM10",
+  "step_count": 17,
+  "observed_count": 2,
+  "pass_count": 0,
+  "fail_count": 1,
+  "skip_count": 0,
+  "led56_follow_count": 0,
+  "irregular_flicker_count": 0,
+  "brightness_wrong_count": 0,
+  "plan": "C:\\Users\\Billy\\Desktop\\Denzic\\Listener\\Listener-Firmware\\docs\\validation\\status-led-ble-warn-fix-scenes-20260625-171945\\human-effect-plan.md",
+  "session_jsonl": "C:\\Users\\Billy\\Desktop\\Denzic\\Listener\\Listener-Firmware\\docs\\validation\\status-led-ble-warn-fix-scenes-20260625-171945\\human-effect-session.jsonl",
+  "serial_log": "C:\\Users\\Billy\\Desktop\\Denzic\\Listener\\Listener-Firmware\\docs\\validation\\status-led-ble-warn-fix-scenes-20260625-171945\\human-effect-serial.log"
+}
