@@ -28,8 +28,9 @@ BLE / Wi-Fi / audio interrupt pressure. **That is why only the status strip is o
 3. **DMA can NOT stay enabled through low-power idle / suspend** ("不能一直 DMA").
    The DMA path corrupts the WS2812 tail during low-power reconfiguration and leaves
    physical LED3-LED6 latched on. The accepted pattern is therefore
-   **active = DMA → low-power final latch = non-DMA → suspend + drive data GPIO low**.
-   Only `low_power_active` and shutdown-final frames may force non-DMA.
+   **active effects = DMA → low-power clear/final latch = non-DMA → suspend + drive data GPIO low**.
+   Low-power entry/resume clear frames, low-power active frames, and shutdown-final
+   frames may force the status strip to non-DMA.
 4. **EC11 / key / edge DO flicker on non-DMA RMT — this is documented, not hypothetical.**
    [`led-hardware-next-revision.md`](../validation/voice-keyboard-firmware-full-function-test-1.13a/led-hardware-next-revision.md)
    states the status-strip DMA fix "does not fully remove visible instability on
@@ -92,8 +93,10 @@ but it is the one zero-cost lever and should not be skipped.
 - Do **not** permanently disable status-strip DMA — REC/AI would flicker again.
 - Do **not** widen DMA to more strips without physical idle-latch + flicker evidence;
   the idle-latch bug is exactly the failure mode wider DMA would multiply.
-- Active transition clear frames **must** stay on status DMA; only `low_power_active`
-  and shutdown-final frames may force non-DMA (`status_force_non_dma = pwr_only_final_latch`).
+- Low-power entry/resume clear frames **must** force the status strip off RMT DMA;
+  otherwise heartbeat wakes can reopen the LED3-LED6 idle-latch corruption path.
+  Active REC/AI effect frames still use status DMA, while clear/latch frames use
+  `status_force_non_dma = pwr_only_final_latch || force_clear_tx`.
 - Any DMA / peripheral change must update the `~LED:STATUS detail=contract` fields
   (`strip_transport_requested`, `strip_transport_actual`, `spi_dma_requested`,
   `spi_dma_actual`, `spi_dma_fallback`, `rmt_tx_dma_strategy`,

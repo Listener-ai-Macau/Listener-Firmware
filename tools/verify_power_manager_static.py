@@ -1368,17 +1368,17 @@ def main() -> int:
         or "status_led_ec11_feedback_trail_index" not in status_led
         or "status_led_ec11_feedback_active_locked(now_ms)" not in status_led
         or not re.search(
-            r"status_led_ec11_feedback_dot_from_step[\s\S]{0,220}"
+            r"status_led_ec11_feedback_dot_from_step[\s\S]{0,360}"
             r"STATUS_LED_EC11_FEEDBACK_ROTATE_CW[\s\S]{0,80}"
-            r"\?\s*motion_step\s*%\s*STATUS_LED_EC11_COUNT[\s\S]{0,120}"
-            r"STATUS_LED_EC11_COUNT\s*-\s*1U\s*-\s*motion_step",
+            r"\?\s*\(STATUS_LED_EC11_COUNT\s*-\s*1U\s*-\s*motion_step\)\s*%\s*STATUS_LED_EC11_COUNT[\s\S]{0,120}"
+            r":\s*motion_step\s*%\s*STATUS_LED_EC11_COUNT",
             status_led,
         )
         or not re.search(
             r"status_led_ec11_feedback_trail_index[\s\S]{0,260}"
             r"STATUS_LED_EC11_FEEDBACK_ROTATE_CW[\s\S]{0,120}"
-            r"dot\s*\+\s*STATUS_LED_EC11_COUNT\s*-\s*offset[\s\S]{0,120}"
-            r":\s*\(dot\s*\+\s*offset\)\s*%\s*STATUS_LED_EC11_COUNT",
+            r"\?\s*\(dot\s*\+\s*offset\)\s*%\s*STATUS_LED_EC11_COUNT[\s\S]{0,120}"
+            r":\s*\(dot\s*\+\s*STATUS_LED_EC11_COUNT\s*-\s*offset\)\s*%\s*STATUS_LED_EC11_COUNT",
             status_led,
         )
         or not re.search(
@@ -1487,9 +1487,9 @@ def main() -> int:
         failures.append(
             "components/status_led/status_led.c: ordinary transition clear frames must not force non-DMA; scope status_force_non_dma to PWR-only latch paths only"
         )
-    if not re.search(r"bool\s+status_force_non_dma\s*=\s*pwr_only_final_latch\s*;", status_led):
+    if not re.search(r"bool\s+status_force_non_dma\s*=\s*pwr_only_final_latch\s*\|\|\s*force_clear_tx\s*;", status_led):
         failures.append(
-            "components/status_led/status_led.c: status_force_non_dma must be derived from pwr_only_final_latch so active preview/effect switching stays on DMA"
+            "components/status_led/status_led.c: status clear frames and PWR-only latches must force the status strip off RMT DMA"
         )
 
     keyboard = (REPO_ROOT / "components/keyboard/keyboard.c").read_text(encoding="utf-8")

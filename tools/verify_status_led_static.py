@@ -175,7 +175,7 @@ CHECKS = {
         "DIAG_LED_OUTPUT_STATE",
         "DIAG_LED_FRAME_RGB",
         "STATUS_LED_IDLE_REFRESH_MS 1000U",
-        "STATUS_LED_CONTRACT_REV \"status_key_ec11_edge_true_state_v19\"",
+        "STATUS_LED_CONTRACT_REV \"status_key_ec11_edge_true_state_v22\"",
         "STATUS_LED_EC11_ACCENT_MIN_PERCENT",
         "STATUS_LED_EC11_ACCENT_MAX_PERCENT",
         "STATUS_LED_EC11_OK_ACCENT_MAX_PERCENT",
@@ -732,11 +732,11 @@ CHECKS = {
         "current render-sampled RGB frame",
         "status_query_samples_current_render=1",
         "ordinary HID-only `connected` stays visible as a low-base blue double-flash heartbeat",
-        "`TYPE_READY` is the Listener-Type-ready active BLE state",
+        "`TYPE_READY` is the Listener-Type-ready BLE state",
         "it uses steady blue",
         "30 second Type-ready hold",
         "quiet-but-not-idle time",
-        "In connected/disconnected low-power idle, the low-power renderer keeps PWR visible and leaves connected/TYPE_READY BLE dark",
+        "In connected/disconnected low-power idle, the low-power renderer keeps PWR visible, leaves ordinary connected BLE dark, keeps `TYPE_READY` BLE visible at the low-power steady level",
         "External power overrides battery-color display on `PWR`",
         "continuous slow white breath",
         "steady white once charge-full has been debounced and latched",
@@ -835,7 +835,7 @@ CHECKS = {
         "rgbw-single-led",
         "semantic-preview",
         "STATUS_EFFECT_BASELINE",
-        "status_key_ec11_edge_true_state_v19",
+        "status_key_ec11_edge_true_state_v22",
         "\"expected_leds\": [\"PWR\", \"BLE\", \"REC\", \"AI\", \"EC11\", \"EDGE\"]",
         "\"forbidden_leds\": [\"OK\", \"WARN\"]",
         "make_semantic_sequence",
@@ -1071,12 +1071,13 @@ def main() -> int:
         ):
             failures.append("status_led.c: low-power BLE helper must blink pairing/reconnecting instead of latching solid")
         if not re.search(
-            r"case\s+STATUS_LED_BLE_CONNECTED:\s*\n\s*"
+            r"case\s+STATUS_LED_BLE_CONNECTED:[\s\S]*?"
+            r"return\s+0U;[\s\S]*?"
             r"case\s+STATUS_LED_BLE_TYPE_READY:[\s\S]*?"
-            r"return\s+0U;",
+            r"return\s+STATUS_LED_LOW_POWER_BLE_TYPE_READY_PERCENT;",
             body,
         ):
-            failures.append("status_led.c: connected/TYPE_READY low-power idle must leave BLE dark")
+            failures.append("status_led.c: low-power idle must keep CONNECTED BLE dark and TYPE_READY BLE visible")
     low_power_ble = re.search(
         r"static\s+void\s+status_led_render_low_power_ble_locked[^{]*\{(?P<body>[\s\S]*?)\n\}",
         status_led,
@@ -1515,7 +1516,7 @@ def main() -> int:
         r"status_led_low_power_ble_percent_locked\(status_led_ble_elapsed_locked\(now_ms\)\)",
         status_led,
     ):
-        failures.append("status_led.c: low-power idle must keep using the shared BLE helper so connected/TYPE_READY stay dark while attention states blink")
+        failures.append("status_led.c: low-power idle must keep using the shared BLE helper so connected stays dark, TYPE_READY stays visible, and attention states blink")
     ble_set_state = re.search(
         r"void\s+status_led_set_ble_state[\s\S]*?"
         r"\n\}\n\nvoid\s+status_led_notify_ble_repairing",
@@ -1580,18 +1581,18 @@ def main() -> int:
     ):
         failures.append("status_led.c: prepare_sleep must keep the non-DMA final latch before suspending LED transports")
     if not re.search(
-        r"status_led_ec11_feedback_dot_from_step[\s\S]{0,220}"
+        r"status_led_ec11_feedback_dot_from_step[\s\S]{0,360}"
         r"STATUS_LED_EC11_FEEDBACK_ROTATE_CW[\s\S]{0,80}"
-        r"\?\s*motion_step\s*%\s*STATUS_LED_EC11_COUNT[\s\S]{0,120}"
-        r"STATUS_LED_EC11_COUNT\s*-\s*1U\s*-\s*motion_step",
+        r"\?\s*\(STATUS_LED_EC11_COUNT\s*-\s*1U\s*-\s*motion_step\)\s*%\s*STATUS_LED_EC11_COUNT[\s\S]{0,120}"
+        r":\s*motion_step\s*%\s*STATUS_LED_EC11_COUNT",
         status_led,
     ):
-        failures.append("status_led.c: EC11 clockwise feedback must advance in the physical LED clockwise order")
+        failures.append("status_led.c: EC11 clockwise feedback must compensate for the counterclockwise physical strip order")
     if not re.search(
         r"status_led_ec11_feedback_trail_index[\s\S]{0,260}"
         r"STATUS_LED_EC11_FEEDBACK_ROTATE_CW[\s\S]{0,120}"
-        r"dot\s*\+\s*STATUS_LED_EC11_COUNT\s*-\s*offset[\s\S]{0,120}"
-        r":\s*\(dot\s*\+\s*offset\)\s*%\s*STATUS_LED_EC11_COUNT",
+        r"\?\s*\(dot\s*\+\s*offset\)\s*%\s*STATUS_LED_EC11_COUNT[\s\S]{0,120}"
+        r":\s*\(dot\s*\+\s*STATUS_LED_EC11_COUNT\s*-\s*offset\)\s*%\s*STATUS_LED_EC11_COUNT",
         status_led,
     ):
         failures.append("status_led.c: EC11 clockwise trail must follow the corrected visual direction")
@@ -1802,11 +1803,11 @@ def main() -> int:
         or "shutdown_final_active = !force_clear_tx" not in status_led
         or "pwr_only_final_latch = low_power_active || shutdown_final_active" not in status_led
     ):
-        failures.append("status_led.c: low-power idle and final shutdown PWR-only confirmation must be the only non-DMA status latch paths for normal LED frames")
+        failures.append("status_led.c: low-power idle and final shutdown PWR-only confirmation must stay non-DMA for normal LED frames")
     if "bool status_force_non_dma = force_clear_tx || low_power_active;" in status_led:
         failures.append("status_led.c: ordinary transition clear frames must not force non-DMA; scope status_force_non_dma to PWR-only latch paths only")
-    if not re.search(r"bool\s+status_force_non_dma\s*=\s*pwr_only_final_latch\s*;", status_led):
-        failures.append("status_led.c: status_force_non_dma must be derived from pwr_only_final_latch so active preview/effect switching stays on DMA")
+    if not re.search(r"bool\s+status_force_non_dma\s*=\s*pwr_only_final_latch\s*\|\|\s*force_clear_tx\s*;", status_led):
+        failures.append("status_led.c: status clear frames and PWR-only latches must force the status strip off RMT DMA")
     if not re.search(
         r"status_led_suspend_quiet_idle_transports[\s\S]*?"
         r"for\s*\(size_t\s+index\s*=\s*0;[\s\S]*?"

@@ -161,7 +161,7 @@
 #define STATUS_LED_STANDARD_PROFILE_BUDGET_MA 760U
 #define STATUS_LED_AMBIENT_PROFILE_BUDGET_MA 620U
 #define STATUS_LED_CHASE_DEFAULT_STEP_MS 250U
-#define STATUS_LED_CONTRACT_REV "status_key_ec11_edge_true_state_v20"
+#define STATUS_LED_CONTRACT_REV "status_key_ec11_edge_true_state_v22"
 #define STATUS_LED_NVS_NAMESPACE "status_led"
 #define STATUS_LED_NVS_PROFILE_KEY "profile"
 #define STATUS_LED_NVS_BRIGHTNESS_KEY "brightness"
@@ -2829,9 +2829,11 @@ static uint32_t status_led_ec11_feedback_dot_from_step(
     status_led_ec11_feedback_t feedback,
     uint32_t motion_step)
 {
+    /* The EC11 strip's physical index order is counterclockwise on the assembled
+     * ring, so visual clockwise motion must walk the strip indexes downward. */
     return feedback == STATUS_LED_EC11_FEEDBACK_ROTATE_CW
-        ? motion_step % STATUS_LED_EC11_COUNT
-        : (STATUS_LED_EC11_COUNT - 1U - motion_step) % STATUS_LED_EC11_COUNT;
+        ? (STATUS_LED_EC11_COUNT - 1U - motion_step) % STATUS_LED_EC11_COUNT
+        : motion_step % STATUS_LED_EC11_COUNT;
 }
 
 static uint32_t status_led_ec11_feedback_step_from_dot(
@@ -2839,8 +2841,8 @@ static uint32_t status_led_ec11_feedback_step_from_dot(
     uint32_t dot)
 {
     return feedback == STATUS_LED_EC11_FEEDBACK_ROTATE_CW
-        ? dot % STATUS_LED_EC11_COUNT
-        : (STATUS_LED_EC11_COUNT - 1U - dot) % STATUS_LED_EC11_COUNT;
+        ? (STATUS_LED_EC11_COUNT - 1U - dot) % STATUS_LED_EC11_COUNT
+        : dot % STATUS_LED_EC11_COUNT;
 }
 
 static uint32_t status_led_ec11_feedback_trail_index(
@@ -2850,8 +2852,8 @@ static uint32_t status_led_ec11_feedback_trail_index(
 {
     offset %= STATUS_LED_EC11_COUNT;
     return feedback == STATUS_LED_EC11_FEEDBACK_ROTATE_CW
-        ? (dot + STATUS_LED_EC11_COUNT - offset) % STATUS_LED_EC11_COUNT
-        : (dot + offset) % STATUS_LED_EC11_COUNT;
+        ? (dot + offset) % STATUS_LED_EC11_COUNT
+        : (dot + STATUS_LED_EC11_COUNT - offset) % STATUS_LED_EC11_COUNT;
 }
 
 static void status_led_render_ec11_repair_locked(status_led_frame_t *frame, uint32_t now_ms)
@@ -3293,7 +3295,10 @@ static uint32_t status_led_refresh_once(void)
             ? STATUS_LED_TRANSITION_CLEAR_WRITES
             : (pwr_only_final_latch ? STATUS_LED_LOW_POWER_FINAL_LATCH_WRITES : 1U);
         for (uint8_t write_index = 0U; write_index < write_count; ++write_index) {
-            bool status_force_non_dma = pwr_only_final_latch;
+            /* Low-power resume also uses an idle-transition clear frame. Keep
+             * status-strip clear/latch writes off RMT DMA so the known LED3-6
+             * idle-latch corruption path cannot reopen during heartbeat wakes. */
+            bool status_force_non_dma = pwr_only_final_latch || force_clear_tx;
             status_led_transmit_changed_frame(&frame, tx_strip_mask, status_force_non_dma);
         }
     }
