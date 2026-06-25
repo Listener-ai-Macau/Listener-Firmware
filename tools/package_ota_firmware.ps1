@@ -176,19 +176,28 @@ if ($LASTEXITCODE -ne 0) {
     }
 }
 
-# --- Generate single-file OTA zip for customer-facing/manual update flows ---
+# --- Generate release bundle zip for customer-facing/manual update flows ---
 $zip_path = "$package_dir.zip"
 if (Test-Path -LiteralPath $zip_path) {
     Remove-Item -LiteralPath $zip_path -Force
 }
-Compress-Archive -LiteralPath @(
+
+$zip_inputs = @(
     $manifest_path,
     $ota_bin_dest
-) -DestinationPath $zip_path -Force
+)
+$factory_dir = Join-Path $package_dir "factory"
+if (Test-Path -LiteralPath $factory_dir) {
+    $zip_inputs += $factory_dir
+}
+Compress-Archive -LiteralPath $zip_inputs -DestinationPath $zip_path -Force
 
 # --- Summary ---
 Write-Host "OTA firmware package: $package_dir"
-Write-Host "OTA zip package: $zip_path"
+Write-Host "Firmware release zip package: $zip_path"
 Write-Host "OTA manifest: $manifest_path"
 Write-Host "OTA binary: $ota_bin_name ($ota_size bytes) sha256=$ota_hash"
+if ($factory_package) {
+    Write-Host "Factory package: $($factory_package.FullName)"
+}
 Write-Host "Channel: $Channel  Version: $ota_version  Source version: $project_version  Git dirty: $git_dirty"

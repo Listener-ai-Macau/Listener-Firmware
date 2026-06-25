@@ -152,8 +152,10 @@ function Assert-CompletePackage {
 
     $manifestPath = Join-Path $packageDir.FullName "ota_manifest.json"
     $otaBinPath = Join-Path $packageDir.FullName "firmware_ota.bin"
+    $zipPath = "$($packageDir.FullName).zip"
     if (-not (Test-Path -LiteralPath $manifestPath)) { throw "Missing OTA manifest for '$Name'." }
     if (-not (Test-Path -LiteralPath $otaBinPath)) { throw "Missing OTA binary for '$Name'." }
+    if (-not (Test-Path -LiteralPath $zipPath)) { throw "Missing release zip for '$Name'." }
 
     $checkOutput = @(& pwsh -NoProfile -File $manifestCheckScript -ManifestPath $manifestPath 2>&1)
     if ($LASTEXITCODE -ne 0) {
@@ -170,6 +172,24 @@ function Assert-CompletePackage {
     foreach ($required in @("manifest.json", "FLASHING.md", "bootloader.bin", "partition-table.bin", "voice-keyboard-firmware.bin")) {
         if (-not (Test-Path -LiteralPath (Join-Path $factoryPackage.FullName $required))) {
             throw "Nested factory package for '$Name' is missing $required."
+        }
+    }
+
+    Add-Type -AssemblyName System.IO.Compression.FileSystem
+    $zip = [System.IO.Compression.ZipFile]::OpenRead($zipPath)
+    try {
+        $zipEntries = @($zip.Entries | ForEach-Object { $_.FullName -replace '\\', '/' })
+    } finally {
+        $zip.Dispose()
+    }
+    foreach ($requiredZipEntry in @("ota_manifest.json", "firmware_ota.bin")) {
+        if ($zipEntries -notcontains $requiredZipEntry) {
+            throw "Release zip for '$Name' is missing $requiredZipEntry."
+        }
+    }
+    foreach ($requiredFactoryEntry in @("manifest.json", "FLASHING.md", "bootloader.bin", "partition-table.bin", "voice-keyboard-firmware.bin")) {
+        if (@($zipEntries | Where-Object { $_ -like "factory/*/$requiredFactoryEntry" }).Count -eq 0) {
+            throw "Release zip for '$Name' is missing factory/*/$requiredFactoryEntry."
         }
     }
 
