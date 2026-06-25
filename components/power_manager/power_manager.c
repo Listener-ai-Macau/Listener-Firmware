@@ -16,6 +16,7 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
 #include "freertos/task.h"
+#include "nvs.h"
 #include "sdkconfig.h"
 
 #include "battery_monitor.h"
@@ -97,6 +98,15 @@ extern void status_led_set_error(int domain, int severity, const char *reason) _
 #define POWER_MANAGER_POWER_SOURCE_CHARGE_FULL (1u << 2)
 #define POWER_MANAGER_POWER_SOURCE_EXTERNAL_PRESENT (1u << 3)
 #define POWER_MANAGER_POWER_SOURCE_AUTO_SHUTDOWN_BLOCKED (1u << 4)
+#define POWER_MANAGER_NVS_NAMESPACE "power"
+#define POWER_MANAGER_NVS_SHUTDOWN_MAGIC_KEY "sd_magic"
+#define POWER_MANAGER_NVS_SHUTDOWN_REASON_KEY "sd_reason"
+#define POWER_MANAGER_NVS_SHUTDOWN_IDLE_MS_KEY "sd_idle"
+#define POWER_MANAGER_NVS_SHUTDOWN_BLOCKERS_KEY "sd_blockers"
+#define POWER_MANAGER_NVS_SHUTDOWN_BATTERY_MV_KEY "sd_bat_mv"
+#define POWER_MANAGER_NVS_SHUTDOWN_BATTERY_LEVEL_KEY "sd_bat_pct"
+#define POWER_MANAGER_NVS_SHUTDOWN_POWER_FLAGS_KEY "sd_pflags"
+#define POWER_MANAGER_SHUTDOWN_TRACE_MAGIC 0x5057444EU
 
 #define POWER_MANAGER_POWER_HOLD_ACTION_SOURCE_SNAPSHOT 0u
 #define POWER_MANAGER_POWER_HOLD_ACTION_RUNTIME_GUARD 1u
@@ -167,6 +177,10 @@ static uint32_t s_last_shutdown_idle_ms;
 static uint32_t s_last_shutdown_blockers;
 static uint64_t s_shutdown_failure_retry_after_ms;
 static esp_err_t s_last_shutdown_failure_ret = ESP_OK;
+static bool s_last_shutdown_persisted;
+static uint32_t s_last_shutdown_battery_mv;
+static uint8_t s_last_shutdown_battery_level_percent = 0xFF;
+static uint32_t s_last_shutdown_power_flags;
 static power_manager_state_t s_state = POWER_MANAGER_STATE_ACTIVE;
 
 static bool power_manager_gpio_is_valid(gpio_num_t gpio)
@@ -411,6 +425,29 @@ const char *power_manager_shutdown_reason_name(power_manager_shutdown_reason_t r
     default:
         return "unknown";
     }
+}
+
+static bool power_manager_shutdown_reason_is_valid(uint32_t reason)
+{
+    return reason <= (uint32_t)POWER_MANAGER_SHUTDOWN_REASON_LOW_BATTERY;
+}
+
+static void power_manager_store_shutdown_trace_locked(
+    power_manager_shutdown_reason_t reason,
+    uint32_t idle_ms,
+    uint32_t blockers,
+    bool persisted,
+    uint32_t battery_mv,
+    uint8_t battery_level_percent,
+    uint32_t power_flags)
+{
+    s_last_shutdown_reason = reason;
+    s_last_shutdown_idle_ms = idle_ms;
+    s_last_shutdown_blockers = blockers;
+    s_last_shutdown_persisted = persisted;
+    s_last_shutdown_battery_mv = battery_mv;
+    s_last_shutdown_battery_level_percent = battery_level_percent;
+    s_last_shutdown_power_flags = power_flags;
 }
 
 static void power_manager_blocker_names(uint32_t blockers, char *buffer, size_t buffer_size)
@@ -758,6 +795,128 @@ static void power_manager_log_power_source_diag(
         power_manager_encode_power_source_levels(source),
         idle_ms,
         shutdown_blockers);
+}
+
+static void power_manager_load_persisted_shutdown_trace(void)
+{
+    nvs_handle_t nvs = 0;
+    esp_err_t ret = nvs_open(POWER_MANAGER_NVS_NAMESPACE, NVS_READONLY, &nvs);
+    if (ret == ESP_ERR_NVS_NOT_FOUND) {
+        return;
+    }
+    if (ret != ESP_OK) {
+        ESP_LOGW(TAG, "shutdown trace load skipped: %s", esp_err_to_name(ret));
+        return;
+    }
+
+    uint32_t magic = 0;
+    uint32_t reason_value = 0;
+    uint32_t idle_ms = 0;
+    uint32_t blockers = 0;
+    uint32_t battery_mv = 0;
+    uint8_t battery_level_percent = 0xFF;
+    uint32_t power_flags = 0;
+
+    ret = nvs_get_u32(nvs, POWER_MANAGER_NVS_SHUTDOWN_MAGIC_KEY, &magic);
+    if (ret == ESP_OK) {
+        ret = nvs_get_u32(nvs, POWER_MANAGER_NVS_SHUTDOWN_REASON_KEY, &reason_value);
+    }
+    if (ret == ESP_OK) {
+        ret = nvs_get_u32(nvs, POWER_MANAGER_NVS_SHUTDOWN_IDLE_MS_KEY, &idle_ms);
+    }
+    if (ret == ESP_OK) {
+        ret = nvs_get_u32(nvs, POWER_MANAGER_NVS_SHUTDOWN_BLOCKERS_KEY, &blockers);
+    }
+    if (ret == ESP_OK) {
+        (void)nvs_get_u32(nvs, POWER_MANAGER_NVS_SHUTDOWN_BATTERY_MV_KEY, &battery_mv);
+        (void)nvs_get_u8(
+            nvs,
+            POWER_MANAGER_NVS_SHUTDOWN_BATTERY_LEVEL_KEY,
+            &battery_level_percent);
+        (void)nvs_get_u32(nvs, POWER_MANAGER_NVS_SHUTDOWN_POWER_FLAGS_KEY, &power_flags);
+    }
+    nvs_close(nvs);
+
+    if (ret == ESP_ERR_NVS_NOT_FOUND || magic != POWER_MANAGER_SHUTDOWN_TRACE_MAGIC) {
+        return;
+    }
+    if (ret != ESP_OK) {
+        ESP_LOGW(TAG, "shutdown trace load failed: %s", esp_err_to_name(ret));
+        return;
+    }
+    if (!power_manager_shutdown_reason_is_valid(reason_value)) {
+        ESP_LOGW(TAG, "shutdown trace ignored: invalid reason=%" PRIu32, reason_value);
+        return;
+    }
+
+    if (s_mutex != NULL && xSemaphoreTake(s_mutex, portMAX_DELAY) == pdTRUE) {
+        power_manager_store_shutdown_trace_locked(
+            (power_manager_shutdown_reason_t)reason_value,
+            idle_ms,
+            blockers,
+            true,
+            battery_mv,
+            battery_level_percent,
+            power_flags);
+        xSemaphoreGive(s_mutex);
+    }
+
+    ESP_LOGI(
+        TAG,
+        "shutdown trace loaded: reason=%s idle_ms=%" PRIu32
+        " blockers=0x%08" PRIx32 " battery_mv=%" PRIu32
+        " battery_level=%u power_flags=0x%08" PRIx32,
+        power_manager_shutdown_reason_name((power_manager_shutdown_reason_t)reason_value),
+        idle_ms,
+        blockers,
+        battery_mv,
+        battery_level_percent,
+        power_flags);
+}
+
+static esp_err_t power_manager_persist_shutdown_trace(
+    power_manager_shutdown_reason_t reason,
+    uint32_t idle_ms,
+    uint32_t blockers,
+    uint32_t battery_mv,
+    uint8_t battery_level_percent,
+    uint32_t power_flags)
+{
+    nvs_handle_t nvs = 0;
+    esp_err_t ret = nvs_open(POWER_MANAGER_NVS_NAMESPACE, NVS_READWRITE, &nvs);
+    if (ret != ESP_OK) {
+        return ret;
+    }
+
+    ret = nvs_set_u32(nvs, POWER_MANAGER_NVS_SHUTDOWN_MAGIC_KEY, POWER_MANAGER_SHUTDOWN_TRACE_MAGIC);
+    if (ret == ESP_OK) {
+        ret = nvs_set_u32(nvs, POWER_MANAGER_NVS_SHUTDOWN_REASON_KEY, (uint32_t)reason);
+    }
+    if (ret == ESP_OK) {
+        ret = nvs_set_u32(nvs, POWER_MANAGER_NVS_SHUTDOWN_IDLE_MS_KEY, idle_ms);
+    }
+    if (ret == ESP_OK) {
+        ret = nvs_set_u32(nvs, POWER_MANAGER_NVS_SHUTDOWN_BLOCKERS_KEY, blockers);
+    }
+    if (ret == ESP_OK) {
+        ret = nvs_set_u32(nvs, POWER_MANAGER_NVS_SHUTDOWN_BATTERY_MV_KEY, battery_mv);
+    }
+    if (ret == ESP_OK) {
+        ret = nvs_set_u8(nvs, POWER_MANAGER_NVS_SHUTDOWN_BATTERY_LEVEL_KEY, battery_level_percent);
+    }
+    if (ret == ESP_OK) {
+        ret = nvs_set_u32(nvs, POWER_MANAGER_NVS_SHUTDOWN_POWER_FLAGS_KEY, power_flags);
+    }
+    if (ret == ESP_OK) {
+        ret = nvs_commit(nvs);
+    }
+    nvs_close(nvs);
+
+    if (ret == ESP_OK && s_mutex != NULL && xSemaphoreTake(s_mutex, portMAX_DELAY) == pdTRUE) {
+        s_last_shutdown_persisted = true;
+        xSemaphoreGive(s_mutex);
+    }
+    return ret;
 }
 
 static void power_manager_log_power_transition_diag(
@@ -1353,6 +1512,10 @@ void power_manager_get_snapshot(power_manager_snapshot_t *snapshot)
         snapshot->last_shutdown_failure_ret = s_last_shutdown_failure_ret;
         snapshot->shutdown_failure_retry_ms_left =
             power_manager_shutdown_failure_retry_ms_left_locked(now_ms);
+        snapshot->last_shutdown_persisted = s_last_shutdown_persisted;
+        snapshot->last_shutdown_battery_mv = s_last_shutdown_battery_mv;
+        snapshot->last_shutdown_battery_level_percent = s_last_shutdown_battery_level_percent;
+        snapshot->last_shutdown_power_flags = s_last_shutdown_power_flags;
         xSemaphoreGive(s_mutex);
     } else {
         snapshot->usb_det_level = power_source.usb_det_level;
@@ -1650,11 +1813,35 @@ static esp_err_t power_manager_enter_hardware_shutdown(power_manager_shutdown_re
         return ESP_ERR_INVALID_STATE;
     }
 
-    s_last_shutdown_reason = reason;
-    s_last_shutdown_idle_ms = final_idle_ms;
-    s_last_shutdown_blockers = final_blockers;
+    uint32_t shutdown_power_flags = power_manager_encode_power_source_flags(&final_power_source, false);
+    uint32_t shutdown_battery_mv = final_battery_snapshot.battery_valid
+        ? final_battery_snapshot.battery_mv
+        : 0;
+    uint8_t shutdown_battery_level = final_battery_snapshot.battery_valid
+        ? final_battery_snapshot.battery_level_percent
+        : 0xFF;
+    power_manager_store_shutdown_trace_locked(
+        reason,
+        final_idle_ms,
+        final_blockers,
+        false,
+        shutdown_battery_mv,
+        shutdown_battery_level,
+        shutdown_power_flags);
     s_state = POWER_MANAGER_STATE_HARDWARE_SHUTDOWN;
     xSemaphoreGive(s_mutex);
+
+    esp_err_t trace_ret = power_manager_persist_shutdown_trace(
+        reason,
+        final_idle_ms,
+        final_blockers,
+        shutdown_battery_mv,
+        shutdown_battery_level,
+        shutdown_power_flags);
+    if (trace_ret != ESP_OK) {
+        ESP_LOGW(TAG, "shutdown trace persist failed before PWR_HOLD drive-high: %s",
+                 esp_err_to_name(trace_ret));
+    }
 
     board_v2_power_hold_snapshot_t power_hold = {0};
     board_get_v2_power_hold_snapshot(&power_hold);
@@ -1664,8 +1851,8 @@ static esp_err_t power_manager_enter_hardware_shutdown(power_manager_shutdown_re
         POWER_MANAGER_POWER_HOLD_ACTION_SHUTDOWN_ENTRY);
     diag_log(DIAG_SRC_POWER, DIAG_POWER_SLEEP_ENTRY, DIAG_SEV_INFO,
              final_idle_ms,
-             snapshot.battery_valid ? snapshot.battery_mv : 0,
-             snapshot.battery_valid ? snapshot.battery_level_percent : 0xFF,
+             shutdown_battery_mv,
+             shutdown_battery_level,
              (uint32_t)reason);
     diag_log(DIAG_SRC_POWER, DIAG_POWER_STATUS, DIAG_SEV_INFO,
              (uint32_t)POWER_MANAGER_STATE_HARDWARE_SHUTDOWN,
@@ -1675,12 +1862,15 @@ static esp_err_t power_manager_enter_hardware_shutdown(power_manager_shutdown_re
     ESP_LOGW(
         TAG,
         "entering hardware shutdown reason=%s idle_ms=%" PRIu32 " battery_mv=%" PRIu32
-        " level=%u pwr_hold_gpio=%d pwr_hold_level=%s pwr_hold_configured=%u"
+        " level=%u persisted=%u power_flags=0x%08" PRIx32
+        " pwr_hold_gpio=%d pwr_hold_level=%s pwr_hold_configured=%u"
         " pwr_hold_policy=%s user_action=\"%s\"",
         power_manager_shutdown_reason_name(reason),
         final_idle_ms,
-        snapshot.battery_mv,
-        snapshot.battery_level_percent,
+        shutdown_battery_mv,
+        shutdown_battery_level,
+        trace_ret == ESP_OK ? 1u : 0u,
+        shutdown_power_flags,
         power_hold.gpio,
         power_manager_gpio_level_name(power_hold.level),
         power_hold.configured ? 1u : 0u,
@@ -1994,6 +2184,7 @@ esp_err_t power_manager_init(void)
     s_last_radio_activity_ms = s_last_user_activity_ms;
     esp_err_t hold_ret = board_configure_power_hold_latch();
     s_initialized = true;
+    power_manager_load_persisted_shutdown_trace();
 
     esp_reset_reason_t reset_reason = esp_reset_reason();
     board_v2_power_hold_snapshot_t power_hold = {0};
@@ -2002,6 +2193,8 @@ esp_err_t power_manager_init(void)
         TAG,
         "power manager init: enabled=%u reset_reason=%u last_shutdown=%s"
         " last_shutdown_idle_ms=%" PRIu32 " last_shutdown_blockers=0x%08" PRIx32
+        " last_shutdown_persisted=%u last_shutdown_battery_mv=%" PRIu32
+        " last_shutdown_battery_level=%u last_shutdown_power_flags=0x%08" PRIx32
         " pwr_hold_gpio=%d pwr_hold_level=%s pwr_hold_configured=%u pwr_hold_policy=%s"
         " voice_key_gpio=%u user_action=\"%s\"",
         CONFIG_POWER_MANAGER_ENABLE ? 1u : 0u,
@@ -2009,6 +2202,10 @@ esp_err_t power_manager_init(void)
         power_manager_shutdown_reason_name(s_last_shutdown_reason),
         s_last_shutdown_idle_ms,
         s_last_shutdown_blockers,
+        s_last_shutdown_persisted ? 1u : 0u,
+        s_last_shutdown_battery_mv,
+        s_last_shutdown_battery_level_percent,
+        s_last_shutdown_power_flags,
         power_hold.gpio,
         power_manager_gpio_level_name(power_hold.level),
         power_hold.configured ? 1u : 0u,
@@ -2258,6 +2455,8 @@ static void power_manager_print_status(void)
         " last_shutdown_blockers=0x%08" PRIx32
         " last_shutdown_failure_ret=%s shutdown_failure_retry_ms_left=%" PRIu32
         " shutdown_failure_retry_ms=%" PRIu32
+        " last_shutdown_persisted=%u last_shutdown_battery_mv=%" PRIu32
+        " last_shutdown_battery_level=%u last_shutdown_power_flags=0x%08" PRIx32
         " guard=%u audio_idle_ms=%" PRIu32
         " audio_idle_power_save=%u audio_idle_blockers=0x%08" PRIx32
         " low_power_idle_ms=%" PRIu32
@@ -2313,6 +2512,10 @@ static void power_manager_print_status(void)
         esp_err_to_name(snapshot.last_shutdown_failure_ret),
         snapshot.shutdown_failure_retry_ms_left,
         snapshot.shutdown_failure_retry_ms,
+        snapshot.last_shutdown_persisted ? 1u : 0u,
+        snapshot.last_shutdown_battery_mv,
+        snapshot.last_shutdown_battery_level_percent,
+        snapshot.last_shutdown_power_flags,
         snapshot.hardware_shutdown_guard_enabled ? 1u : 0u,
         snapshot.audio_idle_threshold_ms,
         snapshot.audio_idle_power_save_enabled ? 1u : 0u,

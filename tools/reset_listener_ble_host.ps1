@@ -9,6 +9,8 @@ param(
     [switch]$StopListenerType = $false,
     [switch]$OpenBluetoothSettings = $false,
     [switch]$ProbeOtaGatt = $false,
+    [switch]$SkipMaintainConnection = $false,
+    [switch]$ScanDevicesAfterCacheRemoval = $false,
     [int]$MaintainConnectionDurationSeconds = 12,
     [int]$PollIntervalSeconds = 2
 )
@@ -46,6 +48,66 @@ function Resolve-BluetoothAddress {
         return ""
     }
     return $Matches[1].ToUpperInvariant()
+}
+
+function Get-BluetoothAddressFromInstanceId {
+    param([string]$InstanceId)
+
+    if ([string]::IsNullOrWhiteSpace($InstanceId)) {
+        return ""
+    }
+
+    if ($InstanceId -match "DEV_([0-9A-Fa-f]{12})") {
+        return $Matches[1].ToUpperInvariant()
+    }
+
+    if ($InstanceId -match "_([0-9A-Fa-f]{12})(\\|$)") {
+        return $Matches[1].ToUpperInvariant()
+    }
+
+    return ""
+}
+
+function Add-UniqueBluetoothAddress {
+    param(
+        [System.Collections.Generic.List[string]]$Addresses,
+        [string]$Address
+    )
+
+    $normalized = Normalize-BluetoothAddress -Address $Address
+    if ([string]::IsNullOrWhiteSpace($normalized)) {
+        return
+    }
+    if (-not $Addresses.Contains($normalized)) {
+        $Addresses.Add($normalized)
+    }
+}
+
+function Resolve-BluetoothCacheAddresses {
+    param(
+        [string]$PreferredName,
+        [string]$PreferredAddress
+    )
+
+    $addresses = [System.Collections.Generic.List[string]]::new()
+    Add-UniqueBluetoothAddress -Addresses $addresses -Address $PreferredAddress
+
+    $devices = @(Get-PnpDevice -Class Bluetooth -ErrorAction SilentlyContinue)
+    foreach ($device in $devices) {
+        $instanceAddress = Get-BluetoothAddressFromInstanceId -InstanceId $device.InstanceId
+        $matchesPreferredAddress =
+            -not [string]::IsNullOrWhiteSpace($instanceAddress) -and
+            $addresses.Contains($instanceAddress)
+        $matchesListenerName =
+            -not [string]::IsNullOrWhiteSpace($PreferredName) -and
+            $device.FriendlyName -eq $PreferredName
+
+        if ($matchesPreferredAddress -or $matchesListenerName) {
+            Add-UniqueBluetoothAddress -Addresses $addresses -Address $instanceAddress
+        }
+    }
+
+    return @($addresses.ToArray())
 }
 
 function Stop-ListenerTypeProcesses {
@@ -107,22 +169,34 @@ function Send-FirmwareRecovery {
 function Remove-WindowsBluetoothCache {
     param(
         [string]$PreferredName,
-        [string]$Address
+        [string[]]$Addresses
     )
 
-    $normalized = Normalize-BluetoothAddress -Address $Address
-    if ([string]::IsNullOrWhiteSpace($normalized)) {
+    $normalizedAddresses = [System.Collections.Generic.List[string]]::new()
+    foreach ($address in @($Addresses)) {
+        Add-UniqueBluetoothAddress -Addresses $normalizedAddresses -Address $address
+    }
+
+    if ($normalizedAddresses.Count -eq 0) {
         throw "RemoveWindowsDeviceCache requires BluetoothAddress or an existing PnP DEV_ address."
     }
 
-    $targets = Get-PnpDevice -Class Bluetooth -ErrorAction SilentlyContinue |
-        Where-Object {
-            $_.InstanceId -like "*$normalized*" -or
-            $_.FriendlyName -eq $PreferredName
-        }
+    Write-Host "reset_listener_ble_host: removing Windows BLE cache for addresses=$($normalizedAddresses -join ',')"
 
-    if ($null -eq $targets -or @($targets).Count -eq 0) {
-        Write-Warning "reset_listener_ble_host: no Bluetooth PnP nodes matched $PreferredName/$normalized"
+    $targets = @(Get-PnpDevice -Class Bluetooth -ErrorAction SilentlyContinue |
+        Where-Object {
+            $instanceAddress = Get-BluetoothAddressFromInstanceId -InstanceId $_.InstanceId
+            (
+                -not [string]::IsNullOrWhiteSpace($instanceAddress) -and
+                $normalizedAddresses.Contains($instanceAddress)
+            ) -or (
+                -not [string]::IsNullOrWhiteSpace($PreferredName) -and
+                $_.FriendlyName -eq $PreferredName
+            )
+        })
+
+    if ($targets.Count -eq 0) {
+        Write-Warning "reset_listener_ble_host: no Bluetooth PnP nodes matched $PreferredName/$($normalizedAddresses -join ',')"
         return
     }
 
@@ -131,15 +205,24 @@ function Remove-WindowsBluetoothCache {
         & pnputil.exe /remove-device "$($device.InstanceId)"
     }
 
-    Write-Host "reset_listener_ble_host: scanning devices"
-    & pnputil.exe /scan-devices | Out-Host
+    if ($ScanDevicesAfterCacheRemoval) {
+        Write-Host "reset_listener_ble_host: scanning devices"
+        & pnputil.exe /scan-devices | Out-Host
+    } else {
+        Write-Host "reset_listener_ble_host: device scan skipped to avoid resurrecting stale Bluetooth cache nodes"
+    }
 }
 
 $restartScript = Join-Path $PSScriptRoot "restart_windows_bluetooth.ps1"
 $recoverScript = Join-Path $PSScriptRoot "recover_ble_hid_host.ps1"
 $probeScript = Join-Path $PSScriptRoot "probe_ble_ota_gatt.ps1"
 
-$resolvedAddress = Resolve-BluetoothAddress -PreferredName $DeviceName -PreferredAddress $BluetoothAddress
+$cacheAddresses = Resolve-BluetoothCacheAddresses -PreferredName $DeviceName -PreferredAddress $BluetoothAddress
+$resolvedAddress = if ($cacheAddresses.Count -gt 0) {
+    $cacheAddresses[0]
+} else {
+    Resolve-BluetoothAddress -PreferredName $DeviceName -PreferredAddress $BluetoothAddress
+}
 Write-Host "reset_listener_ble_host: target name=$DeviceName addr=$resolvedAddress"
 
 if ($StopListenerType) {
@@ -157,7 +240,7 @@ Write-Host "reset_listener_ble_host: restarting Windows Bluetooth service"
 & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $restartScript
 
 if ($RemoveWindowsDeviceCache) {
-    Remove-WindowsBluetoothCache -PreferredName $DeviceName -Address $resolvedAddress
+    Remove-WindowsBluetoothCache -PreferredName $DeviceName -Addresses $cacheAddresses
     Start-Sleep -Seconds 3
     Write-Host "reset_listener_ble_host: restarting Windows Bluetooth service after cache removal"
     & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $restartScript
@@ -168,7 +251,9 @@ if ($OpenBluetoothSettings) {
     Start-Process "ms-settings:bluetooth"
 }
 
-if (-not [string]::IsNullOrWhiteSpace($resolvedAddress)) {
+if ($SkipMaintainConnection) {
+    Write-Host "reset_listener_ble_host: maintain-connection skipped"
+} elseif (-not [string]::IsNullOrWhiteSpace($resolvedAddress)) {
     Write-Host "reset_listener_ble_host: requesting maintain-connection"
     & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $recoverScript `
         -DeviceName $DeviceName `

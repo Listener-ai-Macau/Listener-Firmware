@@ -273,7 +273,7 @@ if ($Check) {
     if (@($errors).Count -gt 0) {
         throw ("repo_features check failed:`n - " + ($errors -join "`n - "))
     }
-    Write-Output "PASS: firmware repo feature script is present, concise, and covers ESP32-S3 N16R8 BLE HID/audio diagnostics."
+    Write-Output "PASS: firmware repo feature script covers ESP32-S3 N16R8 BLE HID/audio diagnostics."
     exit 0
 }
 

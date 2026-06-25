@@ -55,6 +55,7 @@ $statusDoc = Read-RepoFile "docs/features/status_led.md"
 $powerDoc = Read-RepoFile "docs/features/low_power_wake_policy.md"
 $featureMap = Read-RepoFile "docs/features/firmware-feature-map.md"
 $repoFeatures = Read-RepoFile "tools/ai/repo_features.ps1"
+$autoShutdownGuard = Read-RepoFile "tools/with_auto_shutdown_guard.ps1"
 
 Assert-Contains $deviceHeader 'device_settings_snapshot_t' 'public snapshot type'
 Assert-Contains $deviceHeader 'DEVICE_SETTINGS_DEFAULT_BLE_NAME\s+"listener"' 'default BLE name is product default listener'
@@ -217,5 +218,10 @@ Assert-Contains $powerDoc '~DEVICE:SET auto_shutdown_ms' 'low-power docs name co
 Assert-Contains $featureMap 'components/device_settings/' 'feature map includes device settings'
 Assert-Contains $featureMap 'plugged low-power disabled' 'feature map documents plugged low-power default off'
 Assert-Contains $repoFeatures 'verify_device_settings_static.ps1' 'repo feature script includes device settings verifier'
+Assert-Contains $autoShutdownGuard '~DEVICE:SETTINGS' 'auto-shutdown guard reads current DEVICE settings'
+Assert-Contains $autoShutdownGuard '~DEVICE:SET auto_shutdown_ms=\{0\}' 'auto-shutdown guard sets battery-only timeout through public DEVICE command'
+Assert-Contains $autoShutdownGuard 'GuardMilliseconds\s*=\s*86400000' 'auto-shutdown guard uses 24 hour firmware maximum by default'
+Assert-Contains $autoShutdownGuard 'finally' 'auto-shutdown guard restores the prior setting after guarded commands'
+Assert-Contains $autoShutdownGuard 'NoRestore' 'auto-shutdown guard supports intentional no-restore preparation'
 
-Write-Host "PASS: device settings static checks cover firmware command contract, persisted settings, status LED brightness profiles, per-zone LED brightness caps, split low-power idle timeouts, split auto-shutdown timeouts, BLE name source, CMake dependencies, and docs."
+Write-Host "PASS: device settings static checks cover firmware command contract, persisted settings, status LED brightness profiles, per-zone LED brightness caps, split low-power idle timeouts, split auto-shutdown timeouts, validation guard tooling, BLE name source, CMake dependencies, and docs."

@@ -91,6 +91,10 @@ typedef struct {
     esp_err_t last_shutdown_failure_ret;
     uint32_t shutdown_failure_retry_ms_left;
     uint32_t shutdown_failure_retry_ms;
+    bool last_shutdown_persisted;
+    uint32_t last_shutdown_battery_mv;
+    uint8_t last_shutdown_battery_level_percent;
+    uint32_t last_shutdown_power_flags;
     int pwr_hold_gpio;
     bool pwr_hold_configured;
     uint32_t voice_key_gpio;

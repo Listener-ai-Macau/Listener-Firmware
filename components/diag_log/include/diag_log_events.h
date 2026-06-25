@@ -69,7 +69,7 @@
 #define DIAG_GAP_CONN_PARAM    7   /* a1=conn_interval, a2=conn_latency, a3=conn_timeout, a4=conn_handle */
 #define DIAG_GAP_CONN_PARAM_REQ 8  /* a1=mode(1=active,2=low_power), a2=result, a3=conn_handle, a4=latency */
 #define DIAG_GAP_SUBSCRIBE     9   /* a1=conn_handle, a2=attr_handle, a3=(reason<<16|prevn<<8|curn), a4=(previ<<8|curi) */
-#define DIAG_GAP_RECOVERY      10  /* a1=action(1=clear_bonds,2=terminate_conn,3=restart_adv,4=complete,5=rotate_identity,6=refresh_pairing_window,7=request_reconnect), a2=result, a3=bond_count_or_state_flags, a4=conn_handle */
+#define DIAG_GAP_RECOVERY      10  /* a1=action(1=clear_bonds,2=terminate_conn,3=restart_adv,4=complete,5=reserved_identity_rotation_removed,6=refresh_pairing_window,7=request_reconnect,8=keep_adv_connectable), a2=result, a3=bond_count_or_state_flags, a4=conn_handle */
 #define DIAG_GAP_ADV_STATE     11  /* a1=action(1=suppress_shutdown,2=suppress_key_wake,3=defer_hid_start,4=defer_stack_sync,5=skip_connected,6=already_active,7=low_power_set,8=key_wake_stop,9=shutdown_prepare,10=reconnect_request,11=connect_fail_suppress,12=disconnect_suppress,13=adv_complete_suppress,14=stop_for_restart,15=stop_for_shutdown,16=stop_for_reconnect,17=start_directed,18=start_undirected), a2=result_or_detail, a3=state_flags(1=adv_active,2=low_power,4=directed_pending,8=key_wake_only,16=shutdown_quiesce,32=nimble_ready,64=hid_started,128=connected), a4=conn_handle */
 #define DIAG_GAP_PHY           12  /* a1=status, a2=tx_phy, a3=rx_phy, a4=conn_handle */
 
