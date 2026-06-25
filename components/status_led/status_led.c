@@ -7,6 +7,7 @@
 #include <strings.h>
 
 #include "driver/gpio.h"
+#include "driver/spi_master.h"
 #include "esp_err.h"
 #include "esp_log.h"
 #include "esp_timer.h"
@@ -348,6 +349,11 @@ typedef struct {
     uint8_t tail_guard_pixels;
     status_led_color_order_t color_order;
     bool prefer_dma;
+    /* SPI+DMA strips (ec11/key) set transport=SPI and spi_host=SPI2/SPI3_HOST;
+     * the data GPIO is reassigned to that host's MOSI via the GPIO matrix.
+     * status/edge stay on RMT. See docs/features/status_led_dma_history.md. */
+    status_led_strip_transport_t transport;
+    int spi_host;
     status_led_strip_backend_t *backend;
 } status_led_strip_t;
 
@@ -522,12 +528,22 @@ static status_led_strip_t s_strips[STATUS_LED_STRIP_COUNT] = {
         .gpio = BOARD_PINS_RGB_EC11_IO,
         .led_count = STATUS_LED_EC11_COUNT,
         .color_order = STATUS_LED_COLOR_ORDER_GRB,
+        // EC11 flickers on non-DMA (interrupt-backed) RMT. Drive it from SPI2
+        // MOSI + GDMA via the SPI clock-hack (3 SPI bits per WS2812 bit); only
+        // MOSI is wired to the LED DIN (SCLK/MISO/CS internal). GPIO5 is
+        // reassigned to SPI2 MOSI by the GPIO matrix - no hardware change.
+        .transport = STATUS_LED_STRIP_TRANSPORT_SPI,
+        .spi_host = SPI2_HOST,
     },
     {
         .name = "key",
         .gpio = BOARD_PINS_RGB_KEY_IO,
         .led_count = STATUS_LED_KEY_COUNT,
         .color_order = STATUS_LED_KEY_DEFAULT_COLOR_ORDER,
+        // Same rationale as ec11: SPI3 MOSI + GDMA removes the non-DMA RMT
+        // flicker. GPIO13 is reassigned to SPI3 MOSI by the GPIO matrix.
+        .transport = STATUS_LED_STRIP_TRANSPORT_SPI,
+        .spi_host = SPI3_HOST,
     },
     {
         .name = "edge",
@@ -1043,6 +1059,20 @@ static const char *status_led_profile_name(status_led_profile_t profile)
     case STATUS_LED_PROFILE_FACTORY: return "factory";
     default: return "unknown";
     }
+}
+
+static const char *status_led_strip_transport_name(status_led_strip_transport_t transport, int spi_host)
+{
+    if (transport == STATUS_LED_STRIP_TRANSPORT_SPI) {
+        if (spi_host == SPI2_HOST) {
+            return "spi2";
+        }
+        if (spi_host == SPI3_HOST) {
+            return "spi3";
+        }
+        return "spi";
+    }
+    return "rmt";
 }
 
 static const char *status_led_ble_name(status_led_ble_state_t state)
@@ -3673,6 +3703,8 @@ static esp_err_t status_led_init_strip_backend(status_led_strip_t *strip)
         .tail_guard_pixels = strip->tail_guard_pixels,
         .color_order = strip->color_order,
         .prefer_dma = strip->prefer_dma,
+        .transport = strip->transport,
+        .spi_host = strip->spi_host,
     };
     return status_led_strip_backend_new(&config, &strip->backend);
 }
@@ -4910,6 +4942,13 @@ static void status_led_print_status(void)
     uint8_t strip_dma_requested[STATUS_LED_STRIP_COUNT];
     uint8_t strip_dma[STATUS_LED_STRIP_COUNT];
     uint8_t strip_dma_fallback[STATUS_LED_STRIP_COUNT];
+    uint8_t strip_rmt_dma_requested[STATUS_LED_STRIP_COUNT];
+    uint8_t strip_rmt_dma[STATUS_LED_STRIP_COUNT];
+    uint8_t strip_rmt_dma_fallback[STATUS_LED_STRIP_COUNT];
+    uint8_t strip_spi_dma_requested[STATUS_LED_STRIP_COUNT];
+    uint8_t strip_spi_dma[STATUS_LED_STRIP_COUNT];
+    uint8_t strip_spi_dma_fallback[STATUS_LED_STRIP_COUNT];
+    status_led_strip_transport_t strip_transport_actual[STATUS_LED_STRIP_COUNT];
     unsigned int strip_mem_block_symbols[STATUS_LED_STRIP_COUNT];
     uint8_t status_tail_guard_pixels = 0U;
     status_led_color_order_t strip_orders[STATUS_LED_STRIP_COUNT];
@@ -4930,6 +4969,20 @@ static void status_led_print_status(void)
             strip_dma[index] = status_led_strip_backend_uses_dma(s_strips[index].backend) ? 1U : 0U;
             strip_dma_fallback[index] =
                 status_led_strip_backend_dma_fallback(s_strips[index].backend) ? 1U : 0U;
+            strip_transport_actual[index] =
+                status_led_strip_backend_transport(s_strips[index].backend);
+            strip_rmt_dma_requested[index] =
+                s_strips[index].transport == STATUS_LED_STRIP_TRANSPORT_RMT ? strip_dma_requested[index] : 0U;
+            strip_rmt_dma[index] =
+                strip_transport_actual[index] == STATUS_LED_STRIP_TRANSPORT_RMT ? strip_dma[index] : 0U;
+            strip_rmt_dma_fallback[index] =
+                s_strips[index].transport == STATUS_LED_STRIP_TRANSPORT_RMT ? strip_dma_fallback[index] : 0U;
+            strip_spi_dma_requested[index] =
+                s_strips[index].transport == STATUS_LED_STRIP_TRANSPORT_SPI ? 1U : 0U;
+            strip_spi_dma[index] =
+                strip_transport_actual[index] == STATUS_LED_STRIP_TRANSPORT_SPI ? strip_dma[index] : 0U;
+            strip_spi_dma_fallback[index] =
+                s_strips[index].transport == STATUS_LED_STRIP_TRANSPORT_SPI ? strip_dma_fallback[index] : 0U;
             strip_mem_block_symbols[index] =
                 (unsigned int)status_led_strip_backend_mem_block_symbols(s_strips[index].backend);
         }
@@ -4995,15 +5048,21 @@ static void status_led_print_status(void)
             ? 1U
             : 0U;
     const uint8_t rmt_tx_dma_all_strips =
-        strip_dma[STATUS_LED_STRIP_STATUS] != 0U &&
-        strip_dma[STATUS_LED_STRIP_EC11] != 0U &&
-        strip_dma[STATUS_LED_STRIP_KEY] != 0U &&
-        strip_dma[STATUS_LED_STRIP_EDGE] != 0U
+        strip_rmt_dma[STATUS_LED_STRIP_STATUS] != 0U &&
+        strip_rmt_dma[STATUS_LED_STRIP_EC11] != 0U &&
+        strip_rmt_dma[STATUS_LED_STRIP_KEY] != 0U &&
+        strip_rmt_dma[STATUS_LED_STRIP_EDGE] != 0U
             ? 1U
             : 0U;
 
     printf(
-        "~LED:STATUS detail=contract backend=rmt_ws2812_800khz refresh_ms=%u reset_us=300"
+        "~LED:STATUS detail=contract backend=mixed_rmt_and_spi_ws2812_800khz refresh_ms=%u reset_us=300"
+        " strip_transport_requested=status:rmt,ec11:spi2,key:spi3,edge:rmt"
+        " strip_transport_actual=status:%s,ec11:%s,key:%s,edge:%s"
+        " spi_dma_outputs_requested=ec11:SPI2,key:SPI3"
+        " spi_dma_requested=status:%u,ec11:%u,key:%u,edge:%u"
+        " spi_dma_actual=status:%u,ec11:%u,key:%u,edge:%u"
+        " spi_dma_fallback=status:%u,ec11:%u,key:%u,edge:%u"
         " rmt_tx_dma_supported=%u rmt_tx_dma_strategy=status_strip_dma_full_frame_buffer"
         " rmt_strip_all_available=%u rmt_tx_dma_all_strips=%u"
         " rmt_tx_dma_requested=status:%u,ec11:%u,key:%u,edge:%u"
@@ -5046,21 +5105,45 @@ static void status_led_print_status(void)
         " key_physical_map=" STATUS_LED_KEY_PHYSICAL_MAP
         " separate_status_key_color_order=1 status_default_order=GRB key_default_order=GRB\n",
         STATUS_LED_REFRESH_MS,
+        status_led_strip_transport_name(
+            strip_transport_actual[STATUS_LED_STRIP_STATUS],
+            s_strips[STATUS_LED_STRIP_STATUS].spi_host),
+        status_led_strip_transport_name(
+            strip_transport_actual[STATUS_LED_STRIP_EC11],
+            s_strips[STATUS_LED_STRIP_EC11].spi_host),
+        status_led_strip_transport_name(
+            strip_transport_actual[STATUS_LED_STRIP_KEY],
+            s_strips[STATUS_LED_STRIP_KEY].spi_host),
+        status_led_strip_transport_name(
+            strip_transport_actual[STATUS_LED_STRIP_EDGE],
+            s_strips[STATUS_LED_STRIP_EDGE].spi_host),
+        strip_spi_dma_requested[STATUS_LED_STRIP_STATUS],
+        strip_spi_dma_requested[STATUS_LED_STRIP_EC11],
+        strip_spi_dma_requested[STATUS_LED_STRIP_KEY],
+        strip_spi_dma_requested[STATUS_LED_STRIP_EDGE],
+        strip_spi_dma[STATUS_LED_STRIP_STATUS],
+        strip_spi_dma[STATUS_LED_STRIP_EC11],
+        strip_spi_dma[STATUS_LED_STRIP_KEY],
+        strip_spi_dma[STATUS_LED_STRIP_EDGE],
+        strip_spi_dma_fallback[STATUS_LED_STRIP_STATUS],
+        strip_spi_dma_fallback[STATUS_LED_STRIP_EC11],
+        strip_spi_dma_fallback[STATUS_LED_STRIP_KEY],
+        strip_spi_dma_fallback[STATUS_LED_STRIP_EDGE],
         rmt_tx_dma_supported,
         rmt_strip_all_available,
         rmt_tx_dma_all_strips,
-        strip_dma_requested[STATUS_LED_STRIP_STATUS],
-        strip_dma_requested[STATUS_LED_STRIP_EC11],
-        strip_dma_requested[STATUS_LED_STRIP_KEY],
-        strip_dma_requested[STATUS_LED_STRIP_EDGE],
-        strip_dma[STATUS_LED_STRIP_STATUS],
-        strip_dma[STATUS_LED_STRIP_EC11],
-        strip_dma[STATUS_LED_STRIP_KEY],
-        strip_dma[STATUS_LED_STRIP_EDGE],
-        strip_dma_fallback[STATUS_LED_STRIP_STATUS],
-        strip_dma_fallback[STATUS_LED_STRIP_EC11],
-        strip_dma_fallback[STATUS_LED_STRIP_KEY],
-        strip_dma_fallback[STATUS_LED_STRIP_EDGE],
+        strip_rmt_dma_requested[STATUS_LED_STRIP_STATUS],
+        strip_rmt_dma_requested[STATUS_LED_STRIP_EC11],
+        strip_rmt_dma_requested[STATUS_LED_STRIP_KEY],
+        strip_rmt_dma_requested[STATUS_LED_STRIP_EDGE],
+        strip_rmt_dma[STATUS_LED_STRIP_STATUS],
+        strip_rmt_dma[STATUS_LED_STRIP_EC11],
+        strip_rmt_dma[STATUS_LED_STRIP_KEY],
+        strip_rmt_dma[STATUS_LED_STRIP_EDGE],
+        strip_rmt_dma_fallback[STATUS_LED_STRIP_STATUS],
+        strip_rmt_dma_fallback[STATUS_LED_STRIP_EC11],
+        strip_rmt_dma_fallback[STATUS_LED_STRIP_KEY],
+        strip_rmt_dma_fallback[STATUS_LED_STRIP_EDGE],
         strip_mem_block_symbols[STATUS_LED_STRIP_STATUS],
         strip_mem_block_symbols[STATUS_LED_STRIP_EC11],
         strip_mem_block_symbols[STATUS_LED_STRIP_KEY],
@@ -5122,38 +5205,74 @@ static void status_led_print_status(void)
         brightness_duty_255);
     printf(
         "~LED:STATUS detail=strips"
-        " strips=status:gpio%d:count%u:order%s:avail%u:dma_req%u:dma%u:dma_fb%u:refsLED1..LED6,ec11:gpio%d:count%u:order%s:avail%u:dma_req%u:dma%u:dma_fb%u:refsLED7..LED10+LED15..LED16+LED23..LED28,key:gpio%d:count%u:order%s:avail%u:dma_req%u:dma%u:dma_fb%u:refsLED11..LED14,edge:gpio%d:count%u:order%s:avail%u:dma_req%u:dma%u:dma_fb%u:refsLED17..LED22"
+        " strips=status:gpio%d:count%u:order%s:transport%s:avail%u:dma_req%u:dma%u:dma_fb%u:rmt_dma_req%u:rmt_dma%u:rmt_dma_fb%u:spi_dma_req%u:spi_dma%u:spi_dma_fb%u:refsLED1..LED6,ec11:gpio%d:count%u:order%s:transport%s:avail%u:dma_req%u:dma%u:dma_fb%u:rmt_dma_req%u:rmt_dma%u:rmt_dma_fb%u:spi_dma_req%u:spi_dma%u:spi_dma_fb%u:refsLED7..LED10+LED15..LED16+LED23..LED28,key:gpio%d:count%u:order%s:transport%s:avail%u:dma_req%u:dma%u:dma_fb%u:rmt_dma_req%u:rmt_dma%u:rmt_dma_fb%u:spi_dma_req%u:spi_dma%u:spi_dma_fb%u:refsLED11..LED14,edge:gpio%d:count%u:order%s:transport%s:avail%u:dma_req%u:dma%u:dma_fb%u:rmt_dma_req%u:rmt_dma%u:rmt_dma_fb%u:spi_dma_req%u:spi_dma%u:spi_dma_fb%u:refsLED17..LED22"
         " status_tail_guard_pixels=%u"
         " key_pin_contract=PWM_RGB_KEY_GPIO13 ec11_pin_contract=PWM_RGB_EC11_GPIO5 edge_pin_contract=PWM_RGB_Edge_GPIO4 gpio14_reserved=BAT_CHG_IO vdd_led_enable=always_on_assumed"
         "\n",
         (int)strip_gpios[STATUS_LED_STRIP_STATUS],
         (unsigned)strip_counts[STATUS_LED_STRIP_STATUS],
         status_led_color_order_name(strip_orders[STATUS_LED_STRIP_STATUS]),
+        status_led_strip_transport_name(
+            strip_transport_actual[STATUS_LED_STRIP_STATUS],
+            s_strips[STATUS_LED_STRIP_STATUS].spi_host),
         (unsigned)strip_available[STATUS_LED_STRIP_STATUS],
         (unsigned)strip_dma_requested[STATUS_LED_STRIP_STATUS],
         (unsigned)strip_dma[STATUS_LED_STRIP_STATUS],
         (unsigned)strip_dma_fallback[STATUS_LED_STRIP_STATUS],
+        (unsigned)strip_rmt_dma_requested[STATUS_LED_STRIP_STATUS],
+        (unsigned)strip_rmt_dma[STATUS_LED_STRIP_STATUS],
+        (unsigned)strip_rmt_dma_fallback[STATUS_LED_STRIP_STATUS],
+        (unsigned)strip_spi_dma_requested[STATUS_LED_STRIP_STATUS],
+        (unsigned)strip_spi_dma[STATUS_LED_STRIP_STATUS],
+        (unsigned)strip_spi_dma_fallback[STATUS_LED_STRIP_STATUS],
         (int)strip_gpios[STATUS_LED_STRIP_EC11],
         (unsigned)strip_counts[STATUS_LED_STRIP_EC11],
         status_led_color_order_name(strip_orders[STATUS_LED_STRIP_EC11]),
+        status_led_strip_transport_name(
+            strip_transport_actual[STATUS_LED_STRIP_EC11],
+            s_strips[STATUS_LED_STRIP_EC11].spi_host),
         (unsigned)strip_available[STATUS_LED_STRIP_EC11],
         (unsigned)strip_dma_requested[STATUS_LED_STRIP_EC11],
         (unsigned)strip_dma[STATUS_LED_STRIP_EC11],
         (unsigned)strip_dma_fallback[STATUS_LED_STRIP_EC11],
+        (unsigned)strip_rmt_dma_requested[STATUS_LED_STRIP_EC11],
+        (unsigned)strip_rmt_dma[STATUS_LED_STRIP_EC11],
+        (unsigned)strip_rmt_dma_fallback[STATUS_LED_STRIP_EC11],
+        (unsigned)strip_spi_dma_requested[STATUS_LED_STRIP_EC11],
+        (unsigned)strip_spi_dma[STATUS_LED_STRIP_EC11],
+        (unsigned)strip_spi_dma_fallback[STATUS_LED_STRIP_EC11],
         (int)strip_gpios[STATUS_LED_STRIP_KEY],
         (unsigned)strip_counts[STATUS_LED_STRIP_KEY],
         status_led_color_order_name(strip_orders[STATUS_LED_STRIP_KEY]),
+        status_led_strip_transport_name(
+            strip_transport_actual[STATUS_LED_STRIP_KEY],
+            s_strips[STATUS_LED_STRIP_KEY].spi_host),
         (unsigned)strip_available[STATUS_LED_STRIP_KEY],
         (unsigned)strip_dma_requested[STATUS_LED_STRIP_KEY],
         (unsigned)strip_dma[STATUS_LED_STRIP_KEY],
         (unsigned)strip_dma_fallback[STATUS_LED_STRIP_KEY],
+        (unsigned)strip_rmt_dma_requested[STATUS_LED_STRIP_KEY],
+        (unsigned)strip_rmt_dma[STATUS_LED_STRIP_KEY],
+        (unsigned)strip_rmt_dma_fallback[STATUS_LED_STRIP_KEY],
+        (unsigned)strip_spi_dma_requested[STATUS_LED_STRIP_KEY],
+        (unsigned)strip_spi_dma[STATUS_LED_STRIP_KEY],
+        (unsigned)strip_spi_dma_fallback[STATUS_LED_STRIP_KEY],
         (int)strip_gpios[STATUS_LED_STRIP_EDGE],
         (unsigned)strip_counts[STATUS_LED_STRIP_EDGE],
         status_led_color_order_name(strip_orders[STATUS_LED_STRIP_EDGE]),
+        status_led_strip_transport_name(
+            strip_transport_actual[STATUS_LED_STRIP_EDGE],
+            s_strips[STATUS_LED_STRIP_EDGE].spi_host),
         (unsigned)strip_available[STATUS_LED_STRIP_EDGE],
         (unsigned)strip_dma_requested[STATUS_LED_STRIP_EDGE],
         (unsigned)strip_dma[STATUS_LED_STRIP_EDGE],
         (unsigned)strip_dma_fallback[STATUS_LED_STRIP_EDGE],
+        (unsigned)strip_rmt_dma_requested[STATUS_LED_STRIP_EDGE],
+        (unsigned)strip_rmt_dma[STATUS_LED_STRIP_EDGE],
+        (unsigned)strip_rmt_dma_fallback[STATUS_LED_STRIP_EDGE],
+        (unsigned)strip_spi_dma_requested[STATUS_LED_STRIP_EDGE],
+        (unsigned)strip_spi_dma[STATUS_LED_STRIP_EDGE],
+        (unsigned)strip_spi_dma_fallback[STATUS_LED_STRIP_EDGE],
         (unsigned)status_tail_guard_pixels);
     printf(
         "~LED:STATUS detail=state ble=%s rec_active=%u rec_source=%s rec_level=%u rec_level_visual=%u rec_level_hold_ms_left=%" PRIu32 " processing=%u"

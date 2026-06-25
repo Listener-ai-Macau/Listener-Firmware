@@ -61,6 +61,11 @@ RMT channel, use the official `espressif/led_strip` **SPI backend**
 DMA+S3 crashes on some boards — carry the existing `dma_fallback` pattern as a
 non-DMA escape hatch.
 
+Current implementation requests that budget as: status strip on RMT DMA, EC11 on
+SPI2 DMA, key strip on SPI3 DMA, and edge/frame left on ordinary RMT. Key gets the
+second SPI channel instead of edge because key feedback is part of the anti-mistouch
+contract; edge is decorative and can tolerate the remaining non-DMA RMT risk.
+
 ## Cheaper alternative that must be tried first
 
 Before any peripheral change: **raise the LED task priority and pin it to a core away
@@ -90,6 +95,7 @@ but it is the one zero-cost lever and should not be skipped.
 - Active transition clear frames **must** stay on status DMA; only `low_power_active`
   and shutdown-final frames may force non-DMA (`status_force_non_dma = pwr_only_final_latch`).
 - Any DMA / peripheral change must update the `~LED:STATUS detail=contract` fields
-  (`rmt_tx_dma_strategy`, `rmt_tx_dma_all_strips`, per-strip `dma_requested` /
-  `dma_actual` / `dma_fallback`, `rmt_mem_block_symbols`) with validation evidence,
-  not silently.
+  (`strip_transport_requested`, `strip_transport_actual`, `spi_dma_requested`,
+  `spi_dma_actual`, `spi_dma_fallback`, `rmt_tx_dma_strategy`,
+  `rmt_tx_dma_all_strips`, per-strip RMT `dma_requested` / `dma_actual` /
+  `dma_fallback`, `rmt_mem_block_symbols`) with validation evidence, not silently.

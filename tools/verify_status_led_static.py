@@ -192,6 +192,11 @@ CHECKS = {
         "STATUS_LED_NVS_BRIGHTNESS_KEY \"brightness\"",
         "led_contract_rev=",
         "rmt_tx_dma_supported=%u",
+        "strip_transport_requested=status:rmt,ec11:spi2,key:spi3,edge:rmt",
+        "strip_transport_actual=status:%s,ec11:%s,key:%s,edge:%s",
+        "spi_dma_requested=status:%u,ec11:%u,key:%u,edge:%u",
+        "spi_dma_actual=status:%u,ec11:%u,key:%u,edge:%u",
+        "spi_dma_fallback=status:%u,ec11:%u,key:%u,edge:%u",
         "rmt_tx_dma_strategy=status_strip_dma_full_frame_buffer",
         "rmt_strip_all_available=%u",
         "rmt_tx_dma_all_strips=%u",
@@ -494,6 +499,7 @@ CHECKS = {
         "status_led_strip_backend_t",
         "status_led_strip_backend_new",
         "status_led_strip_backend_dma_supported",
+        "status_led_strip_backend_transport",
         "status_led_strip_backend_dma_requested",
         "status_led_strip_backend_uses_dma",
         "status_led_strip_backend_dma_fallback",
@@ -504,6 +510,7 @@ CHECKS = {
     "components/status_led/status_led_strip_backend.c": [
         "driver/rmt_encoder.h",
         "driver/rmt_tx.h",
+        "driver/spi_master.h",
         "soc/soc_caps.h",
         "status_led_new_ws2812_encoder",
         "RMT_CLK_SRC_DEFAULT",
@@ -516,6 +523,12 @@ CHECKS = {
         "STATUS_LED_WS2812_T1L_TICKS 6U",
         "STATUS_LED_RMT_WITH_DMA SOC_RMT_SUPPORT_DMA",
         "STATUS_LED_RMT_DMA_MEM_BLOCK_SYMBOLS 1024U",
+        "STATUS_LED_SPI_CLOCK_HZ       2500000",
+        "STATUS_LED_SPI_BITS_PER_BIT   3U",
+        "STATUS_LED_SPI_RESET_BYTES    96U",
+        "spi_bus_initialize",
+        "SPI_DMA_CH_AUTO",
+        "falling back to non-DMA RMT",
         "status_led_strip_backend_new_channel",
         "rmt_dma_requested=%u",
         "rmt_dma_fallback=%u",
@@ -756,10 +769,13 @@ CHECKS = {
         "status_tail_reinforce=recording_processing",
         "status_tail_reinforce_writes=3",
         "status_tail_overlap_reinforce_writes=1",
+        "strip_transport_requested=status:rmt,ec11:spi2,key:spi3,edge:rmt",
+        "spi_dma_requested=status:0,ec11:1,key:1,edge:0",
+        "spi_dma_fallback",
         "rmt_tx_dma_strategy=status_strip_dma_full_frame_buffer",
         "rmt_tx_dma_all_strips=0",
         "rmt_tx_dma_actual=status:1,ec11:0,key:0,edge:0",
-        "rmt_mem_block_symbols=status:1024,ec11:48,key:48,edge:48",
+        "rmt_mem_block_symbols=status:1024,ec11:0,key:0,edge:48",
         "dynamic_active_accents=1",
         "status_tail_overlap_style=dma_audio_rec_ai_da_dada",
         "recording_level_reactive=1",
@@ -1612,6 +1628,11 @@ def main() -> int:
     ):
         failures.append("status_led_strip_backend.c: runtime status must expose whether each available strip uses RMT TX DMA")
     if (
+        "strip_transport_requested=status:rmt,ec11:spi2,key:spi3,edge:rmt" not in status_led or
+        "strip_transport_actual=status:%s,ec11:%s,key:%s,edge:%s" not in status_led or
+        "spi_dma_requested=status:%u,ec11:%u,key:%u,edge:%u" not in status_led or
+        "spi_dma_actual=status:%u,ec11:%u,key:%u,edge:%u" not in status_led or
+        "spi_dma_fallback=status:%u,ec11:%u,key:%u,edge:%u" not in status_led or
         "rmt_tx_dma_strategy=status_strip_dma_full_frame_buffer" not in status_led or
         "rmt_tx_dma_actual=status:%u,ec11:%u,key:%u,edge:%u" not in status_led or
         "rmt_tx_dma_fallback=status:%u,ec11:%u,key:%u,edge:%u" not in status_led or
@@ -1619,12 +1640,27 @@ def main() -> int:
         "rmt_idle_drive=active_status_dma_low_power_non_dma_final_frame_then_immediate_all_quiet_suspend" not in status_led
         or "shutdown_final_status_tx=non_dma_pwr_only_latch" not in status_led
     ):
-        failures.append("status_led.c: ~LED:STATUS contract must expose the status-strip RMT TX DMA strategy, per-strip actual state, DMA buffer size, and idle-drive policy")
+        failures.append("status_led.c: ~LED:STATUS contract must expose RMT/SPI transport, per-strip DMA actual/fallback state, buffer size, and idle-drive policy")
     if status_led.count(".prefer_dma = true") != 1 or not re.search(
         r"\.name\s*=\s*\"status\"[\s\S]*?\.prefer_dma\s*=\s*true",
         status_led,
     ):
         failures.append("status_led.c: current V2 hardware must request RMT TX DMA only for the status strip")
+    if not re.search(
+        r"\.name\s*=\s*\"ec11\"[\s\S]*?\.transport\s*=\s*STATUS_LED_STRIP_TRANSPORT_SPI[\s\S]*?\.spi_host\s*=\s*SPI2_HOST",
+        status_led,
+    ):
+        failures.append("status_led.c: EC11 strip must request SPI2 DMA")
+    if not re.search(
+        r"\.name\s*=\s*\"key\"[\s\S]*?\.transport\s*=\s*STATUS_LED_STRIP_TRANSPORT_SPI[\s\S]*?\.spi_host\s*=\s*SPI3_HOST",
+        status_led,
+    ):
+        failures.append("status_led.c: key strip must request SPI3 DMA")
+    if re.search(
+        r"\.name\s*=\s*\"edge\"[\s\S]*?\.transport\s*=\s*STATUS_LED_STRIP_TRANSPORT_SPI",
+        status_led,
+    ):
+        failures.append("status_led.c: edge strip must stay on ordinary RMT")
     if ".flags.eot_level = 0" not in status_led_backend:
         failures.append("status_led_strip_backend.c: RMT transmit config must explicitly hold the WS2812 line low at EOT")
     if "disable_ret" in status_led_backend or re.search(
