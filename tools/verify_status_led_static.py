@@ -27,6 +27,7 @@ CHECKS = {
         "status_led_set_recording",
         "status_led_set_recording_level",
         "status_led_set_processing",
+        "status_led_set_ota_active",
         "status_led_notify_warning",
         "status_led_notify_shutdown_confirm",
         "status_led_cancel_shutdown_confirm",
@@ -175,7 +176,7 @@ CHECKS = {
         "DIAG_LED_OUTPUT_STATE",
         "DIAG_LED_FRAME_RGB",
         "STATUS_LED_IDLE_REFRESH_MS 1000U",
-        "STATUS_LED_CONTRACT_REV \"status_key_ec11_edge_true_state_v23\"",
+        "STATUS_LED_CONTRACT_REV \"status_key_ec11_edge_true_state_v24\"",
         "STATUS_LED_EC11_ACCENT_MIN_PERCENT",
         "STATUS_LED_EC11_ACCENT_MAX_PERCENT",
         "STATUS_LED_EC11_OK_ACCENT_MAX_PERCENT",
@@ -412,6 +413,18 @@ CHECKS = {
         "STATUS_LED_EDGE_PROCESSING_BASE_PERCENT 10U",
         "STATUS_LED_EC11_PROCESSING_ORBIT_PERCENT 40U",
         "STATUS_LED_EDGE_PROCESSING_ORBIT_PERCENT 36U",
+        "STATUS_LED_OTA_OK_MIN_PERCENT",
+        "STATUS_LED_OTA_OK_MAX_PERCENT",
+        "STATUS_LED_OTA_EC11_FILL_PERCENT",
+        "STATUS_LED_OTA_EDGE_HEAD_PERCENT",
+        "status_led_set_ota_active",
+        "status_led_render_ota_locked",
+        "status_led_render_ec11_ota_locked",
+        "status_led_ota_progress_percent_locked",
+        "ota_active=%u",
+        "ota_progress_percent=%u",
+        "ota_progress_style=LED5_OK_cyan_pulse_EC11_progress_EDGE_chase",
+        "ota_progress_idle_blocker=POWER_MANAGER_BLOCKER_OTA",
         "status_led_effect_elapsed_ms_locked",
         "status_led_set_recording_level",
         "rec_level=%u",
@@ -686,8 +699,10 @@ CHECKS = {
         "Do not turn idle into a WARN LED state",
     ],
     "components/firmware_ota/firmware_ota.c": [
-        "status_led_set_processing(true, \"ota_begin\")",
-        "status_led_set_processing(false, \"ota_finish\")",
+        "firmware_ota_set_runtime_active(true, 0, image_size, \"ota_begin\")",
+        "firmware_ota_set_runtime_active(false, bytes_written, expected_size, \"ota_finish\")",
+        "status_led_set_ota_active(active, bytes_written, expected_size, reason)",
+        "POWER_MANAGER_BLOCKER_OTA",
         "status_led_set_error(STATUS_LED_ERROR_DOMAIN_OTA",
     ],
     "components/power_manager/power_manager.c": [
@@ -806,7 +821,7 @@ CHECKS = {
         "`shutdown_confirm_active`",
         "`shutdown_confirm_latched`",
         "`shutdown_confirm_elapsed_ms`",
-        "`~LED:PREVIEW <ready|pairing|reconnect|repairing|capture|recording_active|capture_active|capture_led_only|desktop_mic|recording_processing|recording_processing_led_only|recording_processing_status_only|recording_processing_status_led_only|recording_processing_status_key_stress|status_key_stress3|status_key_stress4|status_key_stress34|rec_not_available|processing|processing_led_only|processing_status_led_only|ok|low_battery|critical_battery|charging|full|shutdown_confirm|shutdown_final|sleep|clear>`",
+        "`~LED:PREVIEW <ready|pairing|reconnect|repairing|capture|recording_active|capture_active|capture_led_only|desktop_mic|recording_processing|recording_processing_led_only|recording_processing_status_only|recording_processing_status_led_only|recording_processing_status_key_stress|status_key_stress3|status_key_stress4|status_key_stress34|rec_not_available|processing|processing_led_only|processing_status_led_only|ota|ota_led_only|ok|low_battery|critical_battery|charging|full|shutdown_confirm|shutdown_final|sleep|clear>`",
         "`~LED:PREVIEW recording_active` and `~LED:PREVIEW capture_active` are aliases for active device-mic capture",
         "`~LED:PREVIEW pairing`, `~LED:PREVIEW reconnect`, and `~LED:PREVIEW repairing`",
         "`~LED:PREVIEW capture_led_only`",
@@ -815,6 +830,8 @@ CHECKS = {
         "`~LED:PREVIEW recording_processing_status_key_stress`",
         "`~LED:PREVIEW processing_led_only`",
         "`~LED:PREVIEW processing_status_led_only`",
+        "`~LED:PREVIEW ota`",
+        "`~LED:PREVIEW ota_led_only`",
         "`preview_effect_only=1`",
         "keep PWR/BLE and physical key-press feedback out of the rendered frame",
         "the key strip stays off",
@@ -840,7 +857,7 @@ CHECKS = {
         "rgbw-single-led",
         "semantic-preview",
         "STATUS_EFFECT_BASELINE",
-        "status_key_ec11_edge_true_state_v23",
+        "status_key_ec11_edge_true_state_v24",
         "\"expected_leds\": [\"PWR\", \"BLE\", \"REC\", \"AI\", \"EC11\", \"EDGE\"]",
         "\"forbidden_leds\": [\"OK\", \"WARN\"]",
         "make_semantic_sequence",
@@ -863,6 +880,7 @@ CHECKS = {
         "~LED:PREVIEW capture",
         "~LED:PREVIEW rec_not_available",
         "~LED:PREVIEW processing",
+        "~LED:PREVIEW ota",
         "~LED:ERROR ai retryable",
         "~LED:ERROR system hard",
         "LED1",
@@ -909,6 +927,8 @@ CHECKS = {
         "~LED:PREVIEW recording_processing_status_key_stress",
         "~LED:PREVIEW processing_led_only",
         "~LED:PREVIEW processing_status_led_only",
+        "~LED:PREVIEW ota",
+        "~LED:PREVIEW ota_led_only",
         "~LED:PREVIEW repairing",
         "scene-ec11-short-press",
         "scene-ec11-rotate",
@@ -916,6 +936,8 @@ CHECKS = {
         "应用时机",
         "scene-ble-repairing",
         "scene-processing-live",
+        "scene-ota",
+        "complex-ota-led-only",
         "scene-sleep",
         "Get-ReproSteps",
         "Get-RecordingIndependenceSteps",
@@ -982,6 +1004,7 @@ def main() -> int:
     main_c = read("main/main.c")
     human_review = read("tools/status_led_human_effect_review.ps1")
     status_doc = read("docs/features/status_led.md")
+    firmware_ota = read("components/firmware_ota/firmware_ota.c")
     recording_active_preview = re.search(
         r"}\s*else\s+if\s*\(\s*strcasecmp\(state,\s*\"capture\"\)\s*==\s*0\s*\|\|"
         r"[\s\S]*?strcasecmp\(state,\s*\"recording_active\"\)\s*==\s*0"
@@ -1230,6 +1253,39 @@ def main() -> int:
             "status_led.c: processing start must atomically clear stale OK and retryable AI/OTA warning windows"
         )
     if not re.search(
+        r"void\s+status_led_set_ota_active\([^)]*\)[\s\S]*?"
+        r"if\s*\(\s*active\s*\)\s*\{[\s\S]*?"
+        r"s_state\.ota_started_ms\s*=\s*now_ms;[\s\S]*?"
+        r"s_state\.ota_bytes_written\s*=\s*bytes_written;[\s\S]*?"
+        r"s_state\.ota_expected_size\s*=\s*expected_size;",
+        status_led,
+    ):
+        failures.append("status_led.c: OTA LED state must have an independent active/progress API")
+    if not re.search(
+        r"static\s+void\s+status_led_render_ota_locked[\s\S]*?"
+        r"frame->status\[STATUS_LED_SEM_OK\]",
+        status_led,
+    ):
+        failures.append("status_led.c: OTA progress must own LED5=OK, not LED4=AI")
+    if not re.search(
+        r"static\s+void\s+status_led_render_ec11_locked[\s\S]*?"
+        r"if\s*\(\s*s_state\.ota_active\s*\)\s*\{[\s\S]*?"
+        r"status_led_render_ec11_ota_locked\(frame, now_ms\);",
+        status_led,
+    ):
+        failures.append("status_led.c: OTA progress must render on the EC11 ring")
+    if not re.search(
+        r"static\s+void\s+status_led_render_edge_locked[\s\S]*?"
+        r"if\s*\(\s*s_state\.ota_active\s*\)\s*\{[\s\S]*?"
+        r"STATUS_LED_OTA_EDGE_STEP_MS",
+        status_led,
+    ):
+        failures.append("status_led.c: OTA progress must render on the edge/frame strip")
+    if re.search(r"status_led_set_processing\([^;]*ota_", firmware_ota):
+        failures.append("firmware_ota.c: OTA must not borrow AI processing LED state")
+    if "POWER_MANAGER_BLOCKER_OTA" not in firmware_ota:
+        failures.append("firmware_ota.c: OTA must hold a persistent power-manager blocker while active")
+    if not re.search(
         r"recording_processing[\s\S]*?"
         r"capture_processing[\s\S]*?"
         r"rec_ai[\s\S]*?"
@@ -1371,6 +1427,7 @@ def main() -> int:
             "~LED:PREVIEW capture_led_only",
             "~LED:PREVIEW processing_led_only",
             "~LED:PREVIEW processing_status_led_only",
+            "~LED:PREVIEW ota_led_only",
         ):
             if token not in complex_text:
                 failures.append(f"status_led_human_effect_review.ps1: Complex mode must use effect-only command {token}")
@@ -1382,7 +1439,7 @@ def main() -> int:
         failures.append("status_led_human_effect_review.ps1: missing Product review block")
     else:
         product_text = product_block.group(1)
-        for token in ("scene-ec11-short-press", "scene-ec11-rotate", "scene-key-feedback"):
+        for token in ("scene-ec11-short-press", "scene-ec11-rotate", "scene-key-feedback", "scene-ota"):
             if token not in product_text:
                 failures.append(f"status_led_human_effect_review.ps1: Product review must include physical input step {token}")
         for stale_token in (
@@ -1424,6 +1481,7 @@ def main() -> int:
         'Get-FinalZoneBrightnessComboStep',
         'scene-full',
         'scene-ok',
+        'scene-ota',
         'scene-rec-not-available',
         'tail-only-ai-da-dada-grouped',
         'final-zone-100-recording-processing',
@@ -1434,6 +1492,9 @@ def main() -> int:
     ):
         if token not in human_review:
             failures.append(f"status_led_human_effect_review.ps1: FinalVisual review must include {token}")
+    for stale in ("processing/OTA", "host-confirmed processing/OTA", "AI=处理/OTA"):
+        if stale in human_review:
+            failures.append(f"status_led_human_effect_review.ps1: OTA must not be documented as AI processing ({stale})")
     voice_recording_control = read("components/voice_recording_control/voice_recording_control.c")
     ble_hid_gap = read("ports/esp32/ble_hid_gap/ble_hid_gap_esp32.c")
     if 'status_led_set_processing(true, "audio_session_finishing")' in voice_recording_control:

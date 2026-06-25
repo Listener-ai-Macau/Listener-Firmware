@@ -2,6 +2,7 @@
 #define STATUS_LED_H
 
 #include <stdbool.h>
+#include <stddef.h>
 #include <stdint.h>
 
 #include "esp_err.h"
@@ -61,6 +62,7 @@ void status_led_notify_ble_repairing(const char *reason);
 void status_led_set_recording(bool active, status_led_rec_source_t source);
 void status_led_set_recording_level(uint8_t level_percent);
 void status_led_set_processing(bool active, const char *reason);
+void status_led_set_ota_active(bool active, size_t bytes_written, size_t expected_size, const char *reason);
 void status_led_notify_success(const char *reason);
 void status_led_notify_warning(const char *reason);
 void status_led_notify_key_event(uint8_t key_index, bool pressed);

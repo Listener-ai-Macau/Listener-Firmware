@@ -15,6 +15,7 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
 #include "listener_device.h"
+#include "power_manager.h"
 #include "status_led.h"
 
 static const char *TAG = "firmware_ota";
@@ -156,6 +157,12 @@ static void firmware_ota_reset_session_locked(void)
     s_ota.bytes_written = 0;
     s_ota.active = false;
     s_ota.target_version[0] = '\0';
+}
+
+static void firmware_ota_set_runtime_active(bool active, size_t bytes_written, size_t expected_size, const char *reason)
+{
+    power_manager_set_blocker(POWER_MANAGER_BLOCKER_OTA, active);
+    status_led_set_ota_active(active, bytes_written, expected_size, reason);
 }
 
 const char *firmware_ota_blocker_name(firmware_ota_blocker_t blocker)
@@ -352,7 +359,7 @@ esp_err_t firmware_ota_begin(size_t image_size, const char *target_version)
     firmware_ota_log_partition_event(DIAG_OTA_PARTITION_UPDATE, partition);
     firmware_ota_log_event(DIAG_OTA_BEGIN, DIAG_SEV_INFO, partition, (uint32_t)image_size, 0, 0);
     firmware_ota_log_version_event(DIAG_OTA_BEGIN, partition);
-    status_led_set_processing(true, "ota_begin");
+    firmware_ota_set_runtime_active(true, 0, image_size, "ota_begin");
     return ESP_OK;
 }
 
@@ -391,6 +398,7 @@ esp_err_t firmware_ota_write(const void *data, size_t size)
     firmware_ota_lock();
     s_ota.bytes_written = next_size;
     firmware_ota_unlock();
+    firmware_ota_set_runtime_active(true, next_size, expected_size, NULL);
     return ESP_OK;
 }
 
@@ -421,7 +429,7 @@ esp_err_t firmware_ota_finish(bool reboot_after_set_boot)
         ESP_LOGE(TAG, "OTA image verify failed: %s", esp_err_to_name(ret));
         firmware_ota_log_version_event(DIAG_OTA_VERIFY, partition);
         firmware_ota_log_event(DIAG_OTA_VERIFY, DIAG_SEV_ERROR, partition, (uint32_t)bytes_written, (uint32_t)ret, 0);
-        status_led_set_processing(false, "ota_verify_failed");
+        firmware_ota_set_runtime_active(false, bytes_written, expected_size, "ota_verify_failed");
         status_led_set_error(STATUS_LED_ERROR_DOMAIN_OTA, STATUS_LED_ERROR_HARD, "ota_verify_failed");
         firmware_ota_lock();
         firmware_ota_reset_session_locked();
@@ -436,7 +444,7 @@ esp_err_t firmware_ota_finish(bool reboot_after_set_boot)
         ESP_LOGE(TAG, "OTA set boot partition failed: %s", esp_err_to_name(ret));
         firmware_ota_log_version_event(DIAG_OTA_SET_BOOT, partition);
         firmware_ota_log_event(DIAG_OTA_SET_BOOT, DIAG_SEV_ERROR, partition, (uint32_t)bytes_written, (uint32_t)ret, 0);
-        status_led_set_processing(false, "ota_set_boot_failed");
+        firmware_ota_set_runtime_active(false, bytes_written, expected_size, "ota_set_boot_failed");
         status_led_set_error(STATUS_LED_ERROR_DOMAIN_OTA, STATUS_LED_ERROR_HARD, "ota_set_boot_failed");
         firmware_ota_lock();
         firmware_ota_reset_session_locked();
@@ -457,7 +465,7 @@ esp_err_t firmware_ota_finish(bool reboot_after_set_boot)
     s_ota.boot_partition = esp_ota_get_boot_partition();
     firmware_ota_reset_session_locked();
     firmware_ota_unlock();
-    status_led_set_processing(false, "ota_finish");
+    firmware_ota_set_runtime_active(false, bytes_written, expected_size, "ota_finish");
     status_led_notify_success("ota_finish");
 
     if (reboot_after_set_boot) {
@@ -477,6 +485,7 @@ void firmware_ota_abort(uint32_t reason)
     snprintf(target_version, sizeof(target_version), "%s", s_ota.target_version[0] != '\0' ? s_ota.target_version : "unknown");
     firmware_ota_reset_session_locked();
     firmware_ota_unlock();
+    firmware_ota_set_runtime_active(false, bytes_written, 0, "ota_abort");
 
     if (active) {
         esp_err_t ret = esp_ota_abort(handle);
@@ -485,7 +494,6 @@ void firmware_ota_abort(uint32_t reason)
         firmware_ota_log_version_values(DIAG_OTA_ABORT, partition, listener_device_get_fw_version(), target_version);
         firmware_ota_log_event(DIAG_OTA_ABORT, ret == ESP_OK ? DIAG_SEV_WARN : DIAG_SEV_ERROR,
                                partition, (uint32_t)bytes_written, (uint32_t)ret, reason);
-        status_led_set_processing(false, "ota_abort");
         status_led_set_error(STATUS_LED_ERROR_DOMAIN_OTA, STATUS_LED_ERROR_RETRYABLE, "ota_abort");
     }
 }

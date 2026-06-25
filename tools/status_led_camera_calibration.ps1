@@ -118,7 +118,7 @@ STEP_BY_MODE = {
 MODE = payload["mode"].lower()
 STEP = STEP_BY_MODE.get(MODE, "unknown")
 EXPECTED_MODES = set(STEP_BY_MODE)
-STATUS_EFFECT_BASELINE = "status_key_ec11_edge_true_state_v23"
+STATUS_EFFECT_BASELINE = "status_key_ec11_edge_true_state_v24"
 PROFILE_CAPS_PERCENT = {
     "low": 100,
     "standard": 100,
@@ -251,6 +251,7 @@ def write_status_effects_markdown(manifest):
         "- PWR/BLE: standard healthy awake preview keeps the low visual-weight v7 baseline; connected preview is steady blue instead of pairing/reconnect blink.",
         "- REC: capture preview is the strongest routine status. rec_not_available preview records WARN + REC instead of active REC alone.",
         "- AI: processing preview includes an initial breath sample and a settled long-processing sample.",
+        "- OTA: firmware update preview is separate from AI and uses OK cyan-green pulse plus EC11 progress and low edge chase.",
         "- OK: preview captures the visible 2.2 s confirmation window.",
         "- WARN: retryable and hard previews capture amber/red severity plus source pairing.",
         f"- Routine profile percent caps remain explicit and user-capped: low={PROFILE_CAPS_PERCENT['low']}%, standard={PROFILE_CAPS_PERCENT['standard']}%, ambient={PROFILE_CAPS_PERCENT['ambient']}%, factory={PROFILE_CAPS_PERCENT['factory']}%; current-budget dimming is tracked separately.",
@@ -537,6 +538,20 @@ def make_semantic_sequence(zones_text):
             "state_expect": {"processing": 1},
         },
         {
+            "name": "ota_progress",
+            "label": "OTA progress",
+            "profile": "standard",
+            "commands": ["~LED:PROFILE standard", "~LED:PREVIEW clear", "~LED:PREVIEW ota"],
+            "expected_leds": ["OK", "EC11", "EDGE"],
+            "forbidden_leds": ["REC", "AI", "WARN"],
+            "expected": "OTA is a cyan-green progress state using LED5/OK, EC11 progress, and edge chase without borrowing AI",
+            "acceptance_focus": "OTA progress is visually distinct from AI processing and keeps WARN off while active",
+            "sample_delay_ms": 900,
+            "sample_count": 5,
+            "sample_interval_ms": 180,
+            "state_expect": {"processing": 0, "ota_active": 1, "ota_progress_percent": 50},
+        },
+        {
             "name": "ok_success",
             "label": "OK success",
             "profile": "standard",
@@ -710,6 +725,8 @@ def parse_led_status(text):
         "rec_active": None,
         "rec_source": None,
         "processing": None,
+        "ota_active": None,
+        "ota_progress_percent": None,
         "error_domain": None,
         "error_severity": None,
         "battery_level": None,
@@ -723,7 +740,7 @@ def parse_led_status(text):
         match = re.search(rf"(?:^|\s){key}=([^\s]+)", status_line)
         if match:
             result[key] = match.group(1)
-    for key in ["profile_cap_percent", "rec_active", "processing", "battery_level", "charging", "full"]:
+    for key in ["profile_cap_percent", "rec_active", "processing", "ota_active", "ota_progress_percent", "battery_level", "charging", "full"]:
         match = re.search(rf"(?:^|\s){key}=([0-9]+)", status_line)
         if match:
             result[key] = int(match.group(1))

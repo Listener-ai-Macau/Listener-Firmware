@@ -469,6 +469,7 @@ static void power_manager_blocker_names(uint32_t blockers, char *buffer, size_t 
         {POWER_MANAGER_BLOCKER_FLASH_WRITE, "flash_write"},
         {POWER_MANAGER_BLOCKER_USB_COMMAND, "usb_command"},
         {POWER_MANAGER_BLOCKER_EXTERNAL_POWER, "external_power"},
+        {POWER_MANAGER_BLOCKER_OTA, "ota"},
     };
 
     bool first = true;

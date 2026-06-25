@@ -218,9 +218,16 @@ function Get-SceneSteps {
             -Id "scene-processing-live" `
             -Title "产品场景：AI 处理中（未录音）" `
             -Commands @("~LED:PREVIEW processing", "WAIT 900", "~LED:STATUS", "WAIT 900", "~LED:STATUS") `
-            -When "桌面端进入 ASR/AI/OTA 处理阶段但当前没有本地录音；AI 灯只由 host-confirmed processing/OTA 开始触发。" `
+            -When "桌面端进入 ASR/AI 处理阶段但当前没有本地录音；AI 灯只由 host-confirmed processing 开始触发，OTA 不走这一路。" `
             -Expected "PWR/BLE 保持独立可读；LED4/AI 紫色低频活性；旋钮和边框用低亮紫色顺时针转动；REC、OK、WARN 必须灭。" `
             -HumanFocus "确认 AI 灯的出现时机明确，旋钮/边框方向是顺时针；LED5/6 不应跟闪。"
+        New-LedReviewStep `
+            -Id "scene-ota" `
+            -Title "产品场景：OTA 升级中" `
+            -Commands @("~LED:PREVIEW ota", "WAIT 900", "~LED:STATUS", "WAIT 900", "~LED:STATUS", "~POWER:STATUS") `
+            -When "固件 OTA 已开始写入；这是升级进度语义，不是 ASR/AI processing，也不允许进入 idle/关灯。" `
+            -Expected "PWR/BLE 保持独立可读；LED5/OK 青绿色慢脉冲；旋钮显示约 50% 进度并有顺时针移动头；边框低亮青绿色 chase；LED3/REC、LED4/AI、LED6/WARN 必须灭；~LED:STATUS processing=0 ota_active=1 ota_progress_percent=50。真实 OTA 路径由 firmware_ota_begin() 持有 ota blocker；预览路径由 usb_command blocker 防 idle 抢灯。" `
+            -HumanFocus "重点看 OTA 不像 AI 紫灯：LED5 是青绿色活性，旋钮和边框参与进度/存活提示，AI/WARN 不参与；~POWER:STATUS 在预览时可显示 usb_command，真实 OTA 才显示 ota。"
         New-LedReviewStep `
             -Id "scene-ok" `
             -Title "产品场景：OK 确认" `
@@ -301,9 +308,16 @@ function Get-ComplexSteps {
             -Id "complex-processing-only" `
             -Title "复杂灯效：仅处理 紫色环绕" `
             -Commands @("~LED:PREVIEW processing_led_only", "~LED:STATUS", "~LED:STATUS", "~LED:STATUS") `
-            -When "只调 AI/处理中的高级灯效；真实产品中对应 host-confirmed processing/OTA 阶段的 AI 紫色语义和旋钮/板框辅助。" `
+            -When "只调 AI/处理中的高级灯效；真实产品中对应 host-confirmed processing 阶段的 AI 紫色语义和旋钮/板框辅助，OTA 另有专用灯效。" `
             -Expected "专用 effect-only 预览：LED4 紫色处理为哒  哒哒的 AI 思考节奏；按键灯不参与；旋钮底座和边框都应低亮紫色顺时针转动；LED5/6 应保持熄灭，且查询状态不应导致重启。" `
             -HumanFocus "看单独处理是否顺时针、克制、稳定；状态灯不能是死灯，也不能让 LED5/6 跟闪；~LED:STATUS 必须显示 preview_effect_only=1。"
+        New-LedReviewStep `
+            -Id "complex-ota-led-only" `
+            -Title "复杂灯效：OTA 专用 OK+旋钮+板框" `
+            -Commands @("~LED:PREVIEW ota_led_only", "WAIT 900", "~LED:STATUS", "WAIT 900", "~LED:STATUS", "~POWER:STATUS") `
+            -When "专门调 OTA 升级中的高级灯效；只看 LED5、旋钮和板框，不让 PWR/BLE/REC/AI/WARN/按键干扰。" `
+            -Expected "专用 effect-only 预览：只有 LED5/OK 青绿色慢脉冲、EC11 约 50% 进度+顺时针流动头、边框低亮青绿色 chase；PWR/BLE/REC/AI/WARN/按键熄灭；preview_effect_only=1，ota_active=1，processing=0；预览期间 ~POWER:STATUS 可显示 usb_command blocker，真实 OTA 期间显示 ota blocker。" `
+            -HumanFocus "重点确认 OTA 专用灯效干净：不是 AI 紫灯，不让 LED6/WARN 跟闪，旋钮方向仍为顺时针，低功耗不会把预览抢掉。"
         New-LedReviewStep `
             -Id "complex-ai-status-only" `
             -Title "复杂灯效：仅 AI 状态灯哒 哒哒" `
@@ -560,6 +574,7 @@ function Get-FinalVisualSteps {
     return @(
         $Scenes | Where-Object { $_.id -eq "scene-full" }
         $Scenes | Where-Object { $_.id -eq "scene-ok" }
+        $Scenes | Where-Object { $_.id -eq "scene-ota" }
         $Scenes | Where-Object { $_.id -eq "scene-rec-not-available" }
         $TailOnly | Where-Object { $_.id -eq "tail-only-ai-da-dada-grouped" }
         Get-FinalZoneBrightnessComboStep
@@ -581,6 +596,7 @@ function Get-FinalRetestSteps {
     return @(
         $Scenes | Where-Object { $_.id -eq "scene-full" }
         $Scenes | Where-Object { $_.id -eq "scene-ok" }
+        $Scenes | Where-Object { $_.id -eq "scene-ota" }
         Get-FinalZoneBrightnessComboStep
         $Scenes | Where-Object { $_.id -eq "scene-ble-repairing" }
     )
@@ -609,6 +625,7 @@ function Get-ReviewSteps {
             $scenes | Where-Object { $_.id -eq "scene-low-battery" }
             $scenes | Where-Object { $_.id -eq "scene-ble-repairing" }
             $scenes | Where-Object { $_.id -eq "scene-recording-processing-live" }
+            $scenes | Where-Object { $_.id -eq "scene-ota" }
             $scenes | Where-Object { $_.id -eq "scene-ec11-short-press" }
             $scenes | Where-Object { $_.id -eq "scene-ec11-rotate" }
             $scenes | Where-Object { $_.id -eq "scene-key-feedback" }
@@ -678,7 +695,7 @@ function Write-PlanMarkdown {
     $lines.Add("- IdleTransition mode isolates idle-entry validation from the full REC/AI/EC11/edge combo effect: it uses status-only REC/AI setup states, then checks that connected idle keeps only PWR/BLE active and LED3-LED6 stay off after the transition.") | Out-Null
     $lines.Add("- TailOnly mode is a narrow 1.9 confirmation: AI-only and REC+AI status-tail effects remain visibly but gently dynamic while LED5/OK and LED6/WARN stay physically and logically off.") | Out-Null
     $lines.Add("- ComboOnly mode is a narrow 1.9 confirmation for the combined REC+AI, EC11, and edge/frame effect without PWR/BLE/key participation.") | Out-Null
-    $lines.Add("- Product direction for this pass: quiet but alive semantic status rail; blue BLE for connected/pairing/reconnect states, user re-pair uses BLE plus a synced low blue EC11 blink with edge/frame off, recording status reacts smoothly to volume, processing shows a purple da-dada thinking beat, EC11 press/rotate uses short white feedback, green OK only for success, amber/red WARN only for errors, and warm amber PWR+EC11 for shutdown confirmation.") | Out-Null
+    $lines.Add("- Product direction for this pass: quiet but alive semantic status rail; blue BLE for connected/pairing/reconnect states, user re-pair uses BLE plus a synced low blue EC11 blink with edge/frame off, recording status reacts smoothly to volume, processing shows a purple da-dada thinking beat, OTA uses LED5 cyan-green pulse plus EC11 progress and low edge chase, EC11 press/rotate uses short white feedback, green OK only for success, amber/red WARN only for errors, and warm amber PWR+EC11 for shutdown confirmation.") | Out-Null
     $lines.Add("") | Out-Null
     $lines.Add("## Review Steps") | Out-Null
     $lines.Add("") | Out-Null
@@ -930,8 +947,9 @@ function Get-LedSemanticText {
         "scene-full" { return "PWR=插电满电；OK 绿灯不亮，避免把满电误读为会话成功。" }
         "scene-low-battery" { return "PWR=低电量提示；WARN 不亮，除非进入真实错误/安全保护。" }
         "scene-critical-battery" { return "PWR=严重低电提示；其它语义灯保持灭，避免和录音/BLE/错误混在一起。" }
-        "scene-recording-processing-live" { return "PWR/BLE=基础在线状态；REC=正在录音且只做慢呼吸；AI=host-confirmed processing/OTA；OK/WARN 灭。" }
-        "scene-processing-live" { return "AI=host-confirmed processing/OTA；PWR/BLE 保持基线；旋钮/边框做顺时针紫色辅助；REC、OK、WARN 灭。" }
+        "scene-recording-processing-live" { return "PWR/BLE=基础在线状态；REC=正在录音且只做慢呼吸；AI=host-confirmed processing；OK/WARN 灭。" }
+        "scene-processing-live" { return "AI=host-confirmed processing；PWR/BLE 保持基线；旋钮/边框做顺时针紫色辅助；REC、OK、WARN 灭。" }
+        "scene-ota" { return "OTA=LED5 青绿色慢脉冲 + EC11 进度/顺时针移动头 + EDGE 低亮 chase；AI/WARN 不参与；OTA 阻止 idle。" }
         "scene-ok" { return "OK=成功短确认，只在录音/处理完成时出现；PWR/BLE 保持基线；WARN 灭。" }
         "scene-rec-not-available" { return "WARN=录音不可用/被拒绝/权限或传输不满足；REC、AI、OK、旋钮、边框都不参与。" }
         "scene-shutdown-confirm" { return "PWR/旋钮=长按关机确认；板框不参与；BLE、REC、AI、OK、WARN 不抢占。" }
@@ -943,7 +961,8 @@ function Get-LedSemanticText {
         "complex-capture-only" { return "REC=录音高级灯效；旋钮/边框做暖金辅助；PWR/BLE/AI/OK/WARN/按键不参与。" }
         "volume-capture-sweep" { return "REC=真实录音音量响应；麦克风实时音量只驱动状态 LED3 亮度；PWR/BLE 可保持自己的在线状态；AI/OK/WARN 不参与。" }
         "complex-recording-processing-product" { return "REC=录音暖金；AI=处理紫色语义；旋钮/边框保持低亮暖金慢速流动；OK/WARN 必须灭。" }
-        "complex-processing-only" { return "AI=处理/OTA 紫色语义；旋钮/边框做低亮紫色顺时针辅助；REC、OK、WARN、按键不参与。" }
+        "complex-processing-only" { return "AI=处理紫色语义；旋钮/边框做低亮紫色顺时针辅助；REC、OK、WARN、按键不参与。" }
+        "complex-ota-led-only" { return "OTA=LED5 青绿色慢脉冲 + EC11 约 50% 进度/顺时针移动头 + EDGE 低亮 chase；PWR/BLE/REC/AI/WARN/按键不参与。" }
         default {
             if ([string]::IsNullOrWhiteSpace([string]$Step.when)) {
                 return "基础/诊断步骤：按本步骤预期判断，不代表产品常态语义。"
@@ -1020,7 +1039,7 @@ function Show-IntroPrompt {
 5. 睡眠熄灯。
 
 重点看人眼效果：LED5/6 是否乱闪，重配时 BLE 加低亮旋钮确认是否存在，LED3 是否可随真实音量变亮，LED4 是否保持紫色并有哒  哒哒 AI 节奏，录音时旋钮 12 颗和边框 6 颗是否低亮且顺时针固定流动，实际旋钮/按键输入是否有短反馈且旋转反馈不会每格复位。
-每个场景弹窗都会写明应用时机和灯位语义：BLE 蓝灯只用于配对/重连/重配，AI 灯只用于 host-confirmed processing/OTA，OK 绿灯只用于成功确认，WARN 只用于错误/警告。
+每个场景弹窗都会写明应用时机和灯位语义：BLE 蓝灯只用于配对/重连/重配，AI 灯只用于 host-confirmed processing，OTA 用 LED5 青绿色脉冲加旋钮进度和板框 chase，OK 绿灯只用于成功确认，WARN 只用于错误/警告。
 
 共 $StepCount 个整体场景。准备好看板子后点确定；不方便就点取消。
 "@

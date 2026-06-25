@@ -753,6 +753,7 @@ POWER_BLOCKERS = (
     (0x20, "flash_write"),
     (0x40, "usb_command"),
     (0x80, "external_power"),
+    (0x100, "ota"),
 )
 
 POWER_STATES = {
