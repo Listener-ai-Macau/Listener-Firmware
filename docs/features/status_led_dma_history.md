@@ -29,8 +29,10 @@ BLE / Wi-Fi / audio interrupt pressure. **That is why only the status strip is o
    The DMA path corrupts the WS2812 tail during low-power reconfiguration and leaves
    physical LED3-LED6 latched on. The accepted pattern is therefore
    **active effects = DMA → low-power clear/final latch = non-DMA → suspend + drive data GPIO low**.
-   Low-power entry/resume clear frames, low-power active frames, and shutdown-final
-   frames may force the status strip to non-DMA.
+   Low-power entry/resume clear frames, prepare-sleep all-off frames, and shutdown-final
+   frames force every strip off its active DMA transport. SPI-backed EC11/key strips
+   use a one-shot non-DMA RMT latch for those frames, then restore the SPI transport
+   choice for the next active frame.
 4. **EC11 / key / edge DO flicker on non-DMA RMT — this is documented, not hypothetical.**
    [`led-hardware-next-revision.md`](../validation/voice-keyboard-firmware-full-function-test-1.13a/led-hardware-next-revision.md)
    states the status-strip DMA fix "does not fully remove visible instability on
@@ -93,10 +95,12 @@ but it is the one zero-cost lever and should not be skipped.
 - Do **not** permanently disable status-strip DMA — REC/AI would flicker again.
 - Do **not** widen DMA to more strips without physical idle-latch + flicker evidence;
   the idle-latch bug is exactly the failure mode wider DMA would multiply.
-- Low-power entry/resume clear frames **must** force the status strip off RMT DMA;
+- Low-power entry/resume clear frames **must** force every strip off its DMA transport;
   otherwise heartbeat wakes can reopen the LED3-LED6 idle-latch corruption path.
   Active REC/AI effect frames still use status DMA, while clear/latch frames use
-  `status_force_non_dma = pwr_only_final_latch || force_clear_tx`.
+  `force_non_dma = pwr_only_final_latch || force_clear_tx`. Shutdown-final may force
+  all strips only once per final window; later PWR-only changes in that window must
+  not continuously reinitialize EC11/key SPI strips through the non-DMA RMT latch.
 - Any DMA / peripheral change must update the `~LED:STATUS detail=contract` fields
   (`strip_transport_requested`, `strip_transport_actual`, `spi_dma_requested`,
   `spi_dma_actual`, `spi_dma_fallback`, `rmt_tx_dma_strategy`,

@@ -1193,10 +1193,12 @@ def main() -> int:
             "components/status_led/status_led.c: low-power quiet suspend must not skip the status rail"
         )
     if (
-        "rmt_idle_drive=active_status_dma_low_power_non_dma_final_frame_then_immediate_all_quiet_suspend" not in status_led
+        "rmt_idle_drive=active_dma_low_power_all_zone_non_dma_final_frame_then_release_gpio_low" not in status_led
         or "low_power_transport_suspend_ms=%u" not in status_led
         or "low_power_status_tx=non_dma_clear_and_final_frame" not in status_led
+        or "low_power_all_zone_tx=non_dma_clear_and_final_frame" not in status_led
         or "shutdown_final_status_tx=non_dma_pwr_only_latch" not in status_led
+        or "shutdown_final_all_zone_tx=non_dma_pwr_only_latch_or_all_off" not in status_led
         or "low_power_final_latch_writes=%u" not in status_led
         or not re.search(r"#define\s+STATUS_LED_RMT_IDLE_RELEASE_MS\s+0U\b", status_led)
     ):
@@ -1221,11 +1223,11 @@ def main() -> int:
         or "status_writes + STATUS_LED_LOW_POWER_STATUS_RETRY_WRITES" not in status_led
         or "status_led_strip_backend_suspend(s_strips[STATUS_LED_STRIP_STATUS].backend)" not in status_led
         or "status_led_force_all_off(true)" not in status_led
-        or "status_led_transmit_changed_frame(&frame, STATUS_LED_STRIP_MASK_ALL, status_force_non_dma)" not in status_led
+        or "status_led_transmit_changed_frame(&frame, STATUS_LED_STRIP_MASK_ALL, force_non_dma)" not in status_led
         or "status_led_force_all_off();" in status_led
     ):
         failures.append(
-            "components/status_led/status_led.c: low-power/prepare-sleep status LED writes must retry non-DMA final frames and suspend/recover after a failed status-strip latch"
+            "components/status_led/status_led.c: low-power/prepare-sleep LED writes must retry non-DMA final frames and suspend/recover after a failed status-strip latch"
         )
     if (
         not re.search(r"#define\s+STATUS_LED_RMT_WAIT_MS\s+[1-9][0-9]{2}\b", status_led_backend)
@@ -1483,13 +1485,21 @@ def main() -> int:
         failures.append(
             "components/status_led/status_led.c: LED contract must preserve active status DMA and expose non-DMA low-power latch frame path"
         )
-    if "bool status_force_non_dma = force_clear_tx || low_power_active;" in status_led:
+    if "bool force_non_dma = force_clear_tx || low_power_active;" in status_led:
         failures.append(
-            "components/status_led/status_led.c: ordinary transition clear frames must not force non-DMA; scope status_force_non_dma to PWR-only latch paths only"
+            "components/status_led/status_led.c: ordinary transition clear frames must not force non-DMA; scope force_non_dma to clear/latch paths only"
         )
-    if not re.search(r"bool\s+status_force_non_dma\s*=\s*pwr_only_final_latch\s*\|\|\s*force_clear_tx\s*;", status_led):
+    if not re.search(r"bool\s+force_non_dma\s*=\s*pwr_only_final_latch\s*\|\|\s*force_clear_tx\s*;", status_led):
         failures.append(
-            "components/status_led/status_led.c: status clear frames and PWR-only latches must force the status strip off RMT DMA"
+            "components/status_led/status_led.c: clear frames and PWR-only latches must force every strip off its DMA transport"
+        )
+    if (
+        "shutdown_final_all_zone_latched_started_ms" not in status_led
+        or "shutdown_final_all_zone_latch_needed" not in status_led
+        or "if (!force_clear_tx && shutdown_final_all_zone_latch_needed) {\n        tx_strip_mask = STATUS_LED_STRIP_MASK_ALL;" not in status_led
+    ):
+        failures.append(
+            "components/status_led/status_led.c: shutdown-final latch must rewrite all strips once per final window so stale physical LED state is cleared"
         )
 
     keyboard = (REPO_ROOT / "components/keyboard/keyboard.c").read_text(encoding="utf-8")

@@ -161,7 +161,7 @@
 #define STATUS_LED_STANDARD_PROFILE_BUDGET_MA 760U
 #define STATUS_LED_AMBIENT_PROFILE_BUDGET_MA 620U
 #define STATUS_LED_CHASE_DEFAULT_STEP_MS 250U
-#define STATUS_LED_CONTRACT_REV "status_key_ec11_edge_true_state_v22"
+#define STATUS_LED_CONTRACT_REV "status_key_ec11_edge_true_state_v23"
 #define STATUS_LED_NVS_NAMESPACE "status_led"
 #define STATUS_LED_NVS_PROFILE_KEY "profile"
 #define STATUS_LED_NVS_BRIGHTNESS_KEY "brightness"
@@ -404,6 +404,7 @@ typedef struct {
     uint32_t shutdown_confirm_started_ms;
     uint32_t shutdown_confirm_until_ms;
     bool shutdown_confirm_final;
+    uint32_t shutdown_final_all_zone_latched_started_ms;
     uint32_t error_started_ms;
     uint32_t error_until_ms;
     uint32_t recording_level_updated_ms;
@@ -561,7 +562,7 @@ static bool s_strip_transport_suspended[STATUS_LED_STRIP_COUNT] = {
     true,
 };
 
-static void status_led_force_all_off(bool status_force_non_dma);
+static void status_led_force_all_off(bool force_non_dma);
 static status_led_rgb_t status_led_boot_power_color_locked(void);
 static uint8_t status_led_scale_effect_percent_locked(uint8_t percent, uint32_t now_ms);
 static bool status_led_ec11_feedback_active_locked(uint32_t now_ms);
@@ -1555,7 +1556,7 @@ static void status_led_suspend_quiet_idle_transports(bool low_power_active, uint
 static void status_led_transmit_changed_frame(
     const status_led_frame_t *frame,
     uint8_t strip_mask,
-    bool status_force_non_dma)
+    bool force_non_dma)
 {
     if (strip_mask == 0U) {
         return;
@@ -1574,26 +1575,26 @@ static void status_led_transmit_changed_frame(
 
     const uint32_t tx_ms = status_led_now_ms();
     if ((strip_mask & STATUS_LED_STRIP_MASK_EC11) != 0U) {
-        if (status_led_transmit_strip(&s_strips[STATUS_LED_STRIP_EC11], frame->ec11, false) == ESP_OK) {
+        if (status_led_transmit_strip(&s_strips[STATUS_LED_STRIP_EC11], frame->ec11, force_non_dma) == ESP_OK) {
             status_led_note_strip_transmitted(STATUS_LED_STRIP_EC11, tx_ms);
         }
     }
     if ((strip_mask & STATUS_LED_STRIP_MASK_KEY) != 0U) {
-        if (status_led_transmit_strip(&s_strips[STATUS_LED_STRIP_KEY], frame->key, false) == ESP_OK) {
+        if (status_led_transmit_strip(&s_strips[STATUS_LED_STRIP_KEY], frame->key, force_non_dma) == ESP_OK) {
             status_led_note_strip_transmitted(STATUS_LED_STRIP_KEY, tx_ms);
         }
     }
     if ((strip_mask & STATUS_LED_STRIP_MASK_EDGE) != 0U) {
-        if (status_led_transmit_strip(&s_strips[STATUS_LED_STRIP_EDGE], frame->edge, false) == ESP_OK) {
+        if (status_led_transmit_strip(&s_strips[STATUS_LED_STRIP_EDGE], frame->edge, force_non_dma) == ESP_OK) {
             status_led_note_strip_transmitted(STATUS_LED_STRIP_EDGE, tx_ms);
         }
     }
     if ((strip_mask & STATUS_LED_STRIP_MASK_STATUS) != 0U) {
         uint8_t status_writes = status_led_status_tail_reinforce_write_count(frame);
-        if (status_force_non_dma && status_writes < STATUS_LED_LOW_POWER_FINAL_LATCH_WRITES) {
+        if (force_non_dma && status_writes < STATUS_LED_LOW_POWER_FINAL_LATCH_WRITES) {
             status_writes = STATUS_LED_LOW_POWER_FINAL_LATCH_WRITES;
         }
-        const uint8_t status_attempts = status_force_non_dma
+        const uint8_t status_attempts = force_non_dma
             ? (uint8_t)(status_writes + STATUS_LED_LOW_POWER_STATUS_RETRY_WRITES)
             : status_writes;
         bool status_transmitted = false;
@@ -1604,9 +1605,9 @@ static void status_led_transmit_changed_frame(
             esp_err_t status_ret = status_led_transmit_strip(
                 &s_strips[STATUS_LED_STRIP_STATUS],
                 frame->status,
-                status_force_non_dma);
+                force_non_dma);
             if (status_ret != ESP_OK) {
-                if (!status_force_non_dma) {
+                if (!force_non_dma) {
                     break;
                 }
                 (void)status_led_strip_backend_suspend(s_strips[STATUS_LED_STRIP_STATUS].backend);
@@ -3262,6 +3263,7 @@ static uint32_t status_led_refresh_once(void)
     bool force_clear_tx = false;
     bool low_power_active = false;
     bool shutdown_final_active = false;
+    bool shutdown_final_all_zone_latch_needed = false;
     bool pwr_only_final_latch = false;
     uint32_t delay_ms = STATUS_LED_IDLE_REFRESH_MS;
 
@@ -3280,8 +3282,16 @@ static uint32_t status_led_refresh_once(void)
     shutdown_final_active = !force_clear_tx &&
         s_state.shutdown_confirm_final &&
         status_led_shutdown_confirm_active_locked(now_ms);
+    if (shutdown_final_active &&
+        s_state.shutdown_final_all_zone_latched_started_ms != s_state.shutdown_confirm_started_ms) {
+        shutdown_final_all_zone_latch_needed = true;
+        s_state.shutdown_final_all_zone_latched_started_ms = s_state.shutdown_confirm_started_ms;
+    }
     pwr_only_final_latch = low_power_active || shutdown_final_active;
     tx_strip_mask = force_clear_tx ? STATUS_LED_STRIP_MASK_ALL : changed_strip_mask;
+    if (!force_clear_tx && shutdown_final_all_zone_latch_needed) {
+        tx_strip_mask = STATUS_LED_STRIP_MASK_ALL;
+    }
     if (!force_clear_tx &&
         status_led_status_health_rewrite_needed(&frame, changed_strip_mask, low_power_active, now_ms)) {
         tx_strip_mask = (uint8_t)(tx_strip_mask | STATUS_LED_STRIP_MASK_STATUS);
@@ -3296,10 +3306,10 @@ static uint32_t status_led_refresh_once(void)
             : (pwr_only_final_latch ? STATUS_LED_LOW_POWER_FINAL_LATCH_WRITES : 1U);
         for (uint8_t write_index = 0U; write_index < write_count; ++write_index) {
             /* Low-power resume also uses an idle-transition clear frame. Keep
-             * status-strip clear/latch writes off RMT DMA so the known LED3-6
-             * idle-latch corruption path cannot reopen during heartbeat wakes. */
-            bool status_force_non_dma = pwr_only_final_latch || force_clear_tx;
-            status_led_transmit_changed_frame(&frame, tx_strip_mask, status_force_non_dma);
+             * every clear/latch strip off its DMA transport so heartbeat wakes
+             * and shutdown retries cannot relatch stale physical LED state. */
+            bool force_non_dma = pwr_only_final_latch || force_clear_tx;
+            status_led_transmit_changed_frame(&frame, tx_strip_mask, force_non_dma);
         }
     }
     now_ms = status_led_now_ms();
@@ -3428,6 +3438,7 @@ static void status_led_preview_clear_activity_locked(void)
     s_state.shutdown_confirm_started_ms = 0U;
     s_state.shutdown_confirm_until_ms = 0U;
     s_state.shutdown_confirm_final = false;
+    s_state.shutdown_final_all_zone_latched_started_ms = 0U;
 }
 
 static void status_led_preview_ready_baseline_locked(uint32_t now_ms)
@@ -3487,6 +3498,7 @@ static void status_led_preview_effect_only_baseline_locked(void)
     s_state.shutdown_confirm_started_ms = 0;
     s_state.shutdown_confirm_until_ms = 0;
     s_state.shutdown_confirm_final = false;
+    s_state.shutdown_final_all_zone_latched_started_ms = 0U;
     status_led_clear_key_feedback_locked();
 }
 
@@ -3848,7 +3860,7 @@ static void status_led_save_brightness(uint8_t brightness_percent)
     }
 }
 
-static void status_led_force_all_off(bool status_force_non_dma)
+static void status_led_force_all_off(bool force_non_dma)
 {
     status_led_frame_t frame = {0};
     if (s_mutex != NULL && xSemaphoreTake(s_mutex, portMAX_DELAY) == pdTRUE) {
@@ -3858,7 +3870,7 @@ static void status_led_force_all_off(bool status_force_non_dma)
     for (uint8_t write_index = 0U;
          write_index < STATUS_LED_LOW_POWER_FINAL_LATCH_WRITES;
          ++write_index) {
-        status_led_transmit_changed_frame(&frame, STATUS_LED_STRIP_MASK_ALL, status_force_non_dma);
+        status_led_transmit_changed_frame(&frame, STATUS_LED_STRIP_MASK_ALL, force_non_dma);
     }
 }
 
@@ -4474,6 +4486,9 @@ void status_led_notify_shutdown_confirm(bool final, const char *reason)
         s_state.shutdown_confirm_until_ms = now_ms +
             (final ? STATUS_LED_SHUTDOWN_FINAL_CONFIRM_MS : STATUS_LED_SHUTDOWN_CONFIRM_MS);
         s_state.shutdown_confirm_final = final;
+        if (final) {
+            s_state.shutdown_final_all_zone_latched_started_ms = 0U;
+        }
         s_state.status_window_until_ms = now_ms + STATUS_LED_STATUS_WINDOW_MS;
         s_state.last_transition_ms = now_ms;
         status_led_set_last_reason_locked(reason != NULL ? reason : (final ? "shutdown_confirm_final" : "shutdown_confirm"));
@@ -4497,6 +4512,7 @@ void status_led_cancel_shutdown_confirm(const char *reason)
             s_state.shutdown_confirm_started_ms = 0U;
             s_state.shutdown_confirm_until_ms = 0U;
             s_state.shutdown_confirm_final = false;
+            s_state.shutdown_final_all_zone_latched_started_ms = 0U;
             s_state.status_window_until_ms = now_ms + STATUS_LED_STATUS_WINDOW_MS;
             s_state.last_transition_ms = now_ms;
             status_led_set_last_reason_locked(reason != NULL ? reason : "shutdown_confirm_cancel");
@@ -5089,7 +5105,9 @@ static void status_led_print_status(void)
         " rmt_mem_block_symbols=status:%u,ec11:%u,key:%u,edge:%u"
         " idle_refresh_ms=%u unchanged_tx_suppression=1 timing=ws2812_4020_compatible"
         " low_power_transport_suspend_ms=%u low_power_status_tx=non_dma_clear_and_final_frame"
+        " low_power_all_zone_tx=non_dma_clear_and_final_frame"
         " shutdown_final_status_tx=non_dma_pwr_only_latch"
+        " shutdown_final_all_zone_tx=non_dma_pwr_only_latch_or_all_off"
         " low_power_final_latch_writes=%u"
         " low_power_status_retry_writes=%u"
         " status_tail_guard_pixels=%u status_tail_reinforce=recording_processing"
@@ -5109,7 +5127,7 @@ static void status_led_print_status(void)
         " processing_thinking_effect_percent=%u..%u_%upct"
         " processing_thinking_scan_profile=da_long_gap_grouped_dada_rest"
         " processing_thinking_period_ms=%u"
-        " strip_dirty_tx=1 status_tx_last=1 rmt_idle_drive=active_status_dma_low_power_non_dma_final_frame_then_immediate_all_quiet_suspend"
+        " strip_dirty_tx=1 status_tx_last=1 rmt_idle_drive=active_dma_low_power_all_zone_non_dma_final_frame_then_release_gpio_low"
         " dynamic_active_accents=1"
         " status_query_samples_current_render=1"
         " effect_only_preview=1"
@@ -5771,11 +5789,13 @@ static void status_led_preview_state(const char *state)
         s_state.shutdown_confirm_started_ms = now_ms;
         s_state.shutdown_confirm_until_ms = now_ms + STATUS_LED_SHUTDOWN_CONFIRM_MS;
         s_state.shutdown_confirm_final = false;
+        s_state.shutdown_final_all_zone_latched_started_ms = 0U;
     } else if (strcasecmp(state, "shutdown_final") == 0 ||
                strcasecmp(state, "poweroff_final") == 0) {
         s_state.shutdown_confirm_started_ms = now_ms;
         s_state.shutdown_confirm_until_ms = now_ms + STATUS_LED_SHUTDOWN_FINAL_CONFIRM_MS;
         s_state.shutdown_confirm_final = true;
+        s_state.shutdown_final_all_zone_latched_started_ms = 0U;
     } else if (strcasecmp(state, "low_battery") == 0) {
         s_state.battery_valid = true;
         s_state.battery_level_percent = 15;
@@ -5853,6 +5873,7 @@ static void status_led_preview_state(const char *state)
         s_state.shutdown_confirm_started_ms = 0;
         s_state.shutdown_confirm_until_ms = 0;
         s_state.shutdown_confirm_final = false;
+        s_state.shutdown_final_all_zone_latched_started_ms = 0U;
         s_state.preview_suppress_accents = false;
         s_state.preview_effect_only = false;
         status_led_clear_ok_locked();

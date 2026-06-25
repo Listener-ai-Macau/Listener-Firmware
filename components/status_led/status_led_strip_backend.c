@@ -586,6 +586,60 @@ static void status_led_strip_backend_drive_idle_low(status_led_strip_backend_t *
     backend->gpio_idle_driven_low = true;
 }
 
+static esp_err_t status_led_rmt_transmit_available(
+    status_led_strip_backend_t *backend,
+    status_led_color_order_t color_order,
+    const status_led_rgb_t *colors)
+{
+    if (!backend->available || backend->channel == NULL || backend->encoder == NULL) {
+        return ESP_OK;
+    }
+
+    status_led_strip_backend_fill_pixels(backend, color_order, colors);
+    (void)rmt_encoder_reset(backend->encoder);
+    esp_err_t ret = status_led_strip_backend_set_channel_enabled(backend, true);
+    if (ret != ESP_OK) {
+        diag_log(DIAG_SRC_STATUS_LED, DIAG_LED_OUTPUT_FAIL, DIAG_SEV_WARN,
+                 (uint32_t)backend->gpio, (uint32_t)ret, 2, 0);
+        return ret;
+    }
+    rmt_transmit_config_t transmit_config = {
+        .loop_count = 0,
+        .flags.eot_level = 0,
+    };
+    ret = rmt_transmit(
+        backend->channel,
+        backend->encoder,
+        backend->pixels,
+        (size_t)backend->transmit_led_count * 3U,
+        &transmit_config);
+    if (ret == ESP_ERR_INVALID_STATE) {
+        (void)rmt_tx_wait_all_done(backend->channel, STATUS_LED_RMT_WAIT_MS);
+        (void)rmt_encoder_reset(backend->encoder);
+        ret = rmt_transmit(
+            backend->channel,
+            backend->encoder,
+            backend->pixels,
+            (size_t)backend->transmit_led_count * 3U,
+            &transmit_config);
+    }
+    if (ret != ESP_OK) {
+        diag_log(DIAG_SRC_STATUS_LED, DIAG_LED_OUTPUT_FAIL, DIAG_SEV_WARN,
+                 (uint32_t)backend->gpio, (uint32_t)ret, 0, 0);
+        (void)status_led_strip_backend_suspend(backend);
+        return ret;
+    }
+
+    ret = rmt_tx_wait_all_done(backend->channel, STATUS_LED_RMT_WAIT_MS);
+    if (ret != ESP_OK) {
+        diag_log(DIAG_SRC_STATUS_LED, DIAG_LED_OUTPUT_FAIL, DIAG_SEV_WARN,
+                 (uint32_t)backend->gpio, (uint32_t)ret, 1, 0);
+        (void)status_led_strip_backend_suspend(backend);
+        return ret;
+    }
+    return ESP_OK;
+}
+
 esp_err_t status_led_strip_backend_new(
     const status_led_strip_backend_config_t *config,
     status_led_strip_backend_t **ret_backend)
@@ -699,53 +753,43 @@ static esp_err_t status_led_strip_backend_transmit_mode(
         }
         return status_led_spi_transmit(backend, color_order, colors);
     }
-    if (!backend->available || backend->channel == NULL || backend->encoder == NULL) {
-        return ESP_OK;
+    return status_led_rmt_transmit_available(backend, color_order, colors);
+}
+
+static esp_err_t status_led_spi_transmit_non_dma_rmt_once(
+    status_led_strip_backend_t *backend,
+    status_led_color_order_t color_order,
+    const status_led_rgb_t *colors)
+{
+    status_led_strip_transport_t saved_transport = backend->transport;
+    bool saved_dma_requested = backend->dma_requested;
+    bool saved_dma_fallback = backend->dma_fallback;
+
+    status_led_strip_backend_release_transport(backend);
+    backend->transport = STATUS_LED_STRIP_TRANSPORT_RMT;
+    backend->dma_requested = false;
+    backend->dma_enabled = false;
+
+    esp_err_t ret = status_led_strip_backend_init_transport(backend, false);
+    if (ret == ESP_OK) {
+        ESP_LOGI(
+            TAG,
+            "strip %s non-DMA one-shot via RMT for SPI DMA latch: gpio=%d host=%d",
+            backend->name,
+            (int)backend->gpio,
+            backend->spi_host);
+        ret = status_led_rmt_transmit_available(backend, color_order, colors);
     }
 
-    status_led_strip_backend_fill_pixels(backend, color_order, colors);
-    (void)rmt_encoder_reset(backend->encoder);
-    ret = status_led_strip_backend_set_channel_enabled(backend, true);
-    if (ret != ESP_OK) {
-        diag_log(DIAG_SRC_STATUS_LED, DIAG_LED_OUTPUT_FAIL, DIAG_SEV_WARN,
-                 (uint32_t)backend->gpio, (uint32_t)ret, 2, 0);
-        return ret;
-    }
-    rmt_transmit_config_t transmit_config = {
-        .loop_count = 0,
-        .flags.eot_level = 0,
-    };
-    ret = rmt_transmit(
-        backend->channel,
-        backend->encoder,
-        backend->pixels,
-        (size_t)backend->transmit_led_count * 3U,
-        &transmit_config);
-    if (ret == ESP_ERR_INVALID_STATE) {
-        (void)rmt_tx_wait_all_done(backend->channel, STATUS_LED_RMT_WAIT_MS);
-        (void)rmt_encoder_reset(backend->encoder);
-        ret = rmt_transmit(
-            backend->channel,
-            backend->encoder,
-            backend->pixels,
-            (size_t)backend->transmit_led_count * 3U,
-            &transmit_config);
-    }
-    if (ret != ESP_OK) {
-        diag_log(DIAG_SRC_STATUS_LED, DIAG_LED_OUTPUT_FAIL, DIAG_SEV_WARN,
-                 (uint32_t)backend->gpio, (uint32_t)ret, 0, 0);
-        (void)status_led_strip_backend_suspend(backend);
-        return ret;
-    }
-
-    ret = rmt_tx_wait_all_done(backend->channel, STATUS_LED_RMT_WAIT_MS);
-    if (ret != ESP_OK) {
-        diag_log(DIAG_SRC_STATUS_LED, DIAG_LED_OUTPUT_FAIL, DIAG_SEV_WARN,
-                 (uint32_t)backend->gpio, (uint32_t)ret, 1, 0);
-        (void)status_led_strip_backend_suspend(backend);
-        return ret;
-    }
-    return ESP_OK;
+    status_led_strip_backend_release_transport(backend);
+    backend->transport = saved_transport;
+    backend->dma_requested = saved_dma_requested;
+    backend->dma_fallback = saved_dma_fallback;
+    backend->available = false;
+    backend->dma_enabled = false;
+    backend->channel_enabled = false;
+    status_led_strip_backend_drive_idle_low(backend);
+    return ret;
 }
 
 esp_err_t status_led_strip_backend_transmit(
@@ -761,12 +805,17 @@ esp_err_t status_led_strip_backend_transmit_non_dma_once(
     status_led_color_order_t color_order,
     const status_led_rgb_t *colors)
 {
+    if (backend != NULL &&
+        backend->requested_transport == STATUS_LED_STRIP_TRANSPORT_SPI &&
+        backend->transport == STATUS_LED_STRIP_TRANSPORT_SPI) {
+        return status_led_spi_transmit_non_dma_rmt_once(backend, color_order, colors);
+    }
     return status_led_strip_backend_transmit_mode(backend, color_order, colors, false);
 }
 
 esp_err_t status_led_strip_backend_suspend(status_led_strip_backend_t *backend)
 {
-    if (backend == NULL || !backend->available) {
+    if (backend == NULL || backend->gpio == GPIO_NUM_NC) {
         return ESP_OK;
     }
     if (backend->transport == STATUS_LED_STRIP_TRANSPORT_SPI) {
@@ -774,16 +823,13 @@ esp_err_t status_led_strip_backend_suspend(status_led_strip_backend_t *backend)
          * matrix and can be driven low for the low-power idle latch (matches
          * the active-DMA / idle-GPIO-low pattern). The bus is re-acquired on
          * the next ensure_transport(). */
-        status_led_spi_release_transport(backend);
+        if (backend->available) {
+            status_led_spi_release_transport(backend);
+        }
         status_led_strip_backend_drive_idle_low(backend);
         return ESP_OK;
     }
-    if (backend->channel == NULL) {
-        return ESP_OK;
-    }
-    esp_err_t ret = status_led_strip_backend_set_channel_enabled(backend, false);
-    if (ret == ESP_OK) {
-        status_led_strip_backend_drive_idle_low(backend);
-    }
-    return ret;
+    status_led_strip_backend_release_transport(backend);
+    status_led_strip_backend_drive_idle_low(backend);
+    return ESP_OK;
 }

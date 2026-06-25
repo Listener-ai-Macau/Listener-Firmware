@@ -118,7 +118,7 @@ STEP_BY_MODE = {
 MODE = payload["mode"].lower()
 STEP = STEP_BY_MODE.get(MODE, "unknown")
 EXPECTED_MODES = set(STEP_BY_MODE)
-STATUS_EFFECT_BASELINE = "status_key_ec11_edge_true_state_v22"
+STATUS_EFFECT_BASELINE = "status_key_ec11_edge_true_state_v23"
 PROFILE_CAPS_PERCENT = {
     "low": 100,
     "standard": 100,
