@@ -209,6 +209,13 @@ static int64_t ble_hid_gap_now_ms(void)
     return esp_timer_get_time() / 1000LL;
 }
 
+static bool ble_hid_gap_adv_start_deferred_rc(int rc)
+{
+    return rc == BLE_HS_EALREADY ||
+           rc == BLE_HS_EBUSY ||
+           rc == BLE_HS_HCI_ERR(BLE_ERR_CMD_DISALLOWED);
+}
+
 static bool ble_hid_gap_recovery_pairing_window_open(void)
 {
     if (!s_recovery_pairing_window_active ||
@@ -682,7 +689,13 @@ nimble_hid_gap_event(struct ble_gap_event *event, void *arg)
         if (event->connect.status != 0) {
             diag_log(DIAG_SRC_BLE_GAP, DIAG_GAP_BOND, DIAG_SEV_WARN,
                      0, (uint32_t)event->connect.status, event->connect.conn_handle, 0);
-            status_led_set_error(STATUS_LED_ERROR_DOMAIN_BLE, STATUS_LED_ERROR_RETRYABLE, "ble_connect_failed");
+            /*
+             * Connection failures are expected while Windows retries a stale
+             * cache entry, while directed advertising falls back, and during
+             * the user-requested re-pairing window. Keep the visible state in
+             * BLE pairing/reconnecting; reserve WARN for explicit recovery,
+             * advertising, HID-send, or stack failures that require action.
+             */
             if (s_shutdown_quiesce) {
                 ESP_LOGW(TAG, "shutdown quiesce active: suppressing advertising after connect failure");
                 ble_hid_gap_log_adv_state(
@@ -720,6 +733,7 @@ nimble_hid_gap_event(struct ble_gap_event *event, void *arg)
         ble_hid_gap_queue_service_changed("connect");
 
         rc = ble_gap_conn_find(event->connect.conn_handle, &desc);
+        const bool conn_desc_valid = rc == 0;
         if (rc == 0) {
             ESP_LOGI(
                 TAG,
@@ -734,13 +748,17 @@ nimble_hid_gap_event(struct ble_gap_event *event, void *arg)
             ESP_LOGW(TAG, "connection descriptor lookup failed before security initiate: rc=%d", rc);
         }
 
-        rc = ble_gap_security_initiate(event->connect.conn_handle);
-        if (rc == 0) {
-            ESP_LOGI(TAG, "security initiate requested");
-        } else if (rc == BLE_HS_EALREADY) {
-            ESP_LOGI(TAG, "security already in progress");
+        if (conn_desc_valid) {
+            rc = ble_gap_security_initiate(event->connect.conn_handle);
+            if (rc == 0) {
+                ESP_LOGI(TAG, "security initiate requested");
+            } else if (rc == BLE_HS_EALREADY) {
+                ESP_LOGI(TAG, "security already in progress");
+            } else {
+                ESP_LOGW(TAG, "security initiate failed: rc=%d", rc);
+            }
         } else {
-            ESP_LOGW(TAG, "security initiate failed: rc=%d", rc);
+            ESP_LOGW(TAG, "security initiate skipped: missing connection descriptor");
         }
 
         if (s_audio_enabled) {
@@ -1178,6 +1196,13 @@ esp_err_t esp_hid_ble_gap_adv_start(void)
             return ESP_OK;
         }
 
+        if (ble_hid_gap_adv_start_deferred_rc(rc)) {
+            ESP_LOGW(TAG, "directed advertising start deferred while controller is in transition; rc=%d", rc);
+            diag_log(DIAG_SRC_BLE_GAP, DIAG_GAP_ADV_START, DIAG_SEV_WARN,
+                     0, (uint32_t)rc, 5, 0);
+            return ESP_OK;
+        }
+
         ESP_LOGW(TAG, "directed advertising failed, fallback to undirected; rc=%d", rc);
         diag_log(DIAG_SRC_BLE_GAP, DIAG_GAP_ADV_START, DIAG_SEV_WARN,
                  0, (uint32_t)rc, 3, 0);
@@ -1193,6 +1218,12 @@ esp_err_t esp_hid_ble_gap_adv_start(void)
     rc = ble_gap_adv_start(s_own_addr_type, NULL, BLE_HS_FOREVER,
                            &adv_params, nimble_hid_gap_event, NULL);
     if (rc != 0) {
+        if (ble_hid_gap_adv_start_deferred_rc(rc)) {
+            ESP_LOGW(TAG, "undirected advertising start deferred while controller is in transition; rc=%d", rc);
+            diag_log(DIAG_SRC_BLE_GAP, DIAG_GAP_ADV_START, DIAG_SEV_WARN,
+                     0, (uint32_t)rc, 6, 0);
+            return ESP_OK;
+        }
         ESP_LOGE(TAG, "error enabling undirected advertisement; rc=%d", rc);
         diag_log(DIAG_SRC_BLE_GAP, DIAG_GAP_ADV_START, DIAG_SEV_WARN,
                  0, (uint32_t)rc, 4, 0);
@@ -1640,6 +1671,12 @@ esp_err_t ble_hid_gap_request_reconnect(void)
         adv_active,
         s_ble_gap_conn_handle,
         DIAG_SEV_INFO);
+
+    if (adv_active && !s_low_power_advertising && !s_key_wake_only_advertising) {
+        ESP_LOGI(TAG, "BLE reconnect request kept existing active advertising");
+        status_led_set_ble_state(STATUS_LED_BLE_PAIRING, false);
+        return ESP_OK;
+    }
 
     s_shutdown_quiesce = false;
     s_low_power_advertising = false;

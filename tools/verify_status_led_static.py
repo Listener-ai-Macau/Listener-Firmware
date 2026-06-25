@@ -476,8 +476,8 @@ CHECKS = {
         "status_led_rgb(255, 255, 255), percent, false",
         "active_flags=PWR:%u,BLE:%u,REC:%u,AI:%u,OK:%u,WARN:%u,EC11:%u,KEY:%u,EDGE:%u",
         "status_rgb=PWR:%u,%u,%u;BLE:%u,%u,%u;REC:%u,%u,%u",
-        "if (changed && !effect_only && !routine_low_power_ble) {\n            s_state.status_window_until_ms = now_ms + STATUS_LED_STATUS_WINDOW_MS;",
-        "if (changed && state == STATUS_LED_BLE_CONNECTED && confidence_window)",
+        "if (state_changed && !effect_only && !routine_low_power_ble) {\n            s_state.status_window_until_ms = now_ms + STATUS_LED_STATUS_WINDOW_MS;",
+        "if (state_changed && state == STATUS_LED_BLE_CONNECTED && confidence_window)",
         "state == STATUS_LED_BLE_PAIRING || state == STATUS_LED_BLE_RECONNECTING",
         "status_led_render_processing_locked",
         "status_led_render_ec11_locked",
@@ -528,6 +528,10 @@ CHECKS = {
         "STATUS_LED_SPI_RESET_BYTES    96U",
         "spi_bus_initialize",
         "SPI_DMA_CH_AUTO",
+        ".mosi_io_num = backend->gpio",
+        ".miso_io_num = -1",
+        ".sclk_io_num = -1",
+        ".spics_io_num = -1",
         "falling back to non-DMA RMT",
         "status_led_strip_backend_new_channel",
         "rmt_dma_requested=%u",
@@ -916,6 +920,9 @@ CHECKS = {
         'ValidateSet("Foundation", "Scenes", "Complex", "Volume", "Product", "FinalVisual", "FinalRetest", "FinalCombo", "RootCause", "StaticRoot", "Repro", "RecordingIndependence", "IdleTransition", "TailOnly", "ComboOnly", "Full")',
         "preview_effect_only=1",
         "effect-only preview commands",
+        "Invoke-OperatorPromptSound",
+        "[System.Media.SystemSounds]::Exclamation.Play()",
+        "[Console]::Beep(880, 180)",
     ],
     "components/keyboard/keyboard.c": [
         "keyboard_ec11_feedback_delta_from_accumulator",
@@ -1432,6 +1439,28 @@ def main() -> int:
         failures.append("voice_recording_control.c: user-requested recovery must use BLE re-pair cue, not WARN/error")
     if 'status_led_set_error(STATUS_LED_ERROR_DOMAIN_BLE, STATUS_LED_ERROR_RETRYABLE, "ble_recovery_clear_bonds")' in ble_hid_gap:
         failures.append("ble_hid_gap_esp32.c: clearing bonds for user-requested re-pair must use BLE cue, not WARN/error")
+    if 'status_led_set_error(STATUS_LED_ERROR_DOMAIN_BLE, STATUS_LED_ERROR_RETRYABLE, "ble_connect_failed")' in ble_hid_gap:
+        failures.append("ble_hid_gap_esp32.c: normal BLE connect failures must stay pairing/reconnecting cues, not WARN/error")
+    if not re.search(
+        r"ble_hid_gap_adv_start_deferred_rc[\s\S]{0,220}"
+        r"BLE_HS_HCI_ERR\(BLE_ERR_CMD_DISALLOWED\)",
+        ble_hid_gap,
+    ):
+        failures.append("ble_hid_gap_esp32.c: advertising start must treat controller command-disallowed as deferred, not fatal")
+    if not re.search(
+        r"esp_err_t\s+ble_hid_gap_request_reconnect\(void\)[\s\S]{0,1500}"
+        r"if\s*\(\s*adv_active\s*&&\s*!s_low_power_advertising\s*&&\s*!s_key_wake_only_advertising\s*\)[\s\S]{0,260}"
+        r"BLE reconnect request kept existing active advertising[\s\S]{0,260}"
+        r"return\s+ESP_OK;",
+        ble_hid_gap,
+    ):
+        failures.append("ble_hid_gap_esp32.c: HID reconnect requests must not stop/restart an already active normal advertisement")
+    if (
+        "const bool conn_desc_valid = rc == 0;" not in ble_hid_gap
+        or "if (conn_desc_valid) {\n            rc = ble_gap_security_initiate(event->connect.conn_handle);" not in ble_hid_gap
+        or 'ESP_LOGW(TAG, "security initiate skipped: missing connection descriptor");' not in ble_hid_gap
+    ):
+        failures.append("ble_hid_gap_esp32.c: security initiate must be guarded by a valid connection descriptor")
     if 'status_led_notify_success("recording_stop_done")' in voice_recording_control:
         failures.append("voice_recording_control.c: recording STOP must not show OK before Type final success")
     if 'status_led_notify_success("recording_session_done")' in voice_recording_control:
@@ -1497,10 +1526,75 @@ def main() -> int:
         ble_set_state is None or
         "s_state.low_power_disabled && !status_led_ble_state_attention_locked(state)" not in ble_set_state.group(0) or
         "if (!effect_only && !routine_low_power_ble)" not in ble_set_state.group(0) or
-        "changed && !effect_only && !routine_low_power_ble &&" not in ble_set_state.group(0) or
-        "if (changed && !effect_only && !routine_low_power_ble)" not in ble_set_state.group(0)
+        "state_changed && !effect_only && !routine_low_power_ble &&" not in ble_set_state.group(0) or
+        "if (state_changed && !effect_only && !routine_low_power_ble)" not in ble_set_state.group(0)
     ):
         failures.append("status_led.c: routine connected/TYPE_READY/DISCONNECTED BLE changes must not reopen active BLE windows from low-power idle")
+    if "status_led_force_all_off();" in status_led:
+        failures.append("status_led.c: all-off callers must explicitly choose whether the status strip may force non-DMA")
+    all_off_body = re.search(
+        r"static\s+void\s+status_led_force_all_off\(bool\s+status_force_non_dma\)[\s\S]*?"
+        r"static\s+void\s+status_led_suspend_all_strips",
+        status_led,
+    )
+    if (
+        all_off_body is None
+        or "status_led_transmit_changed_frame(&frame, STATUS_LED_STRIP_MASK_ALL, status_force_non_dma)" not in all_off_body.group(0)
+    ):
+        failures.append("status_led.c: all-off helper must pass through the explicit non-DMA policy flag")
+    manual_off_body = re.search(
+        r"static\s+void\s+status_led_force_manual_off\(void\)[\s\S]*?"
+        r"\n\}\n\nstatic\s+bool\s+status_led_apply_device_settings_snapshot_locked",
+        status_led,
+    )
+    if (
+        manual_off_body is None
+        or "s_state.output_disabled = true;" not in manual_off_body.group(0)
+        or "s_state.idle_transition_clear_pending = true;" not in manual_off_body.group(0)
+        or "status_led_request_refresh();" not in manual_off_body.group(0)
+        or "status_led_force_all_off(" in manual_off_body.group(0)
+    ):
+        failures.append("status_led.c: manual/USB LED OFF must be queued to the LED task for non-DMA black latch, not transmitted inline")
+    idle_clear_body = re.search(
+        r"static\s+bool\s+status_led_render_idle_transition_clear_locked\(status_led_frame_t\s+\*frame\)[\s\S]*?"
+        r"\n\}\n\nstatic\s+void\s+status_led_request_refresh",
+        status_led,
+    )
+    if (
+        idle_clear_body is None
+        or "if (!s_state.output_disabled)" not in idle_clear_body.group(0)
+        or "frame->status[STATUS_LED_SEM_PWR] = s_state.last_frame.status[STATUS_LED_SEM_PWR];" not in idle_clear_body.group(0)
+        or "frame->status[STATUS_LED_SEM_BLE] = s_state.last_frame.status[STATUS_LED_SEM_BLE];" not in idle_clear_body.group(0)
+    ):
+        failures.append("status_led.c: idle transition clear must preserve PWR/BLE only outside manual output-off")
+    if not re.search(
+        r"esp_err_t\s+status_led_init\(void\)[\s\S]*?"
+        r"status_led_force_all_off\(false\);[\s\S]*?return\s+final_ret;",
+        status_led,
+    ):
+        failures.append("status_led.c: init all-off clear must not force status-strip non-DMA rebuild")
+    if not re.search(
+        r"void\s+status_led_prepare_sleep\(void\)[\s\S]{0,1200}"
+        r"status_led_force_all_off\(true\);[\s\S]{0,120}status_led_suspend_all_strips\(\);",
+        status_led,
+    ):
+        failures.append("status_led.c: prepare_sleep must keep the non-DMA final latch before suspending LED transports")
+    if not re.search(
+        r"status_led_ec11_feedback_dot_from_step[\s\S]{0,220}"
+        r"STATUS_LED_EC11_FEEDBACK_ROTATE_CW[\s\S]{0,80}"
+        r"\?\s*motion_step\s*%\s*STATUS_LED_EC11_COUNT[\s\S]{0,120}"
+        r"STATUS_LED_EC11_COUNT\s*-\s*1U\s*-\s*motion_step",
+        status_led,
+    ):
+        failures.append("status_led.c: EC11 clockwise feedback must advance in the physical LED clockwise order")
+    if not re.search(
+        r"status_led_ec11_feedback_trail_index[\s\S]{0,260}"
+        r"STATUS_LED_EC11_FEEDBACK_ROTATE_CW[\s\S]{0,120}"
+        r"dot\s*\+\s*STATUS_LED_EC11_COUNT\s*-\s*offset[\s\S]{0,120}"
+        r":\s*\(dot\s*\+\s*offset\)\s*%\s*STATUS_LED_EC11_COUNT",
+        status_led,
+    ):
+        failures.append("status_led.c: EC11 clockwise trail must follow the corrected visual direction")
     if "(!external_power_present && battery_display_band_changed)" not in status_led:
         failures.append("status_led.c: plugged/raw battery-percent jitter must not extend status windows")
     if "s_state.profile == STATUS_LED_PROFILE_STANDARD && now_ms < s_state.status_window_until_ms" in status_led:

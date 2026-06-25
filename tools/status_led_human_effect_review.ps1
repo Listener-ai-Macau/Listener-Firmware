@@ -962,6 +962,21 @@ function Ensure-FormsLoaded {
     [System.Windows.Forms.Application]::EnableVisualStyles()
 }
 
+function Invoke-OperatorPromptSound {
+    if ($NoPrompt.IsPresent) {
+        return
+    }
+    try {
+        [System.Media.SystemSounds]::Exclamation.Play()
+    } catch {
+        try {
+            [Console]::Beep(880, 180)
+        } catch {
+            # Best effort only; the visible prompt remains the source of truth.
+        }
+    }
+}
+
 function Show-TopMostMessageBox {
     param(
         [Parameter(Mandatory = $true)][string]$Message,
@@ -971,6 +986,7 @@ function Show-TopMostMessageBox {
     )
 
     Ensure-FormsLoaded
+    Invoke-OperatorPromptSound
     $owner = [System.Windows.Forms.Form]::new()
     try {
         $owner.StartPosition = "CenterScreen"
@@ -1110,6 +1126,7 @@ function Show-StepPrompt {
     }
 
     Ensure-FormsLoaded
+    Invoke-OperatorPromptSound
     $form = [System.Windows.Forms.Form]::new()
     $form.Text = "灯效确认 $Index/$Total - $($Step.title)"
     $form.StartPosition = "CenterScreen"

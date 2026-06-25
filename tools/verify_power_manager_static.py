@@ -1220,7 +1220,9 @@ def main() -> int:
         or "status_writes < STATUS_LED_LOW_POWER_FINAL_LATCH_WRITES" not in status_led
         or "status_writes + STATUS_LED_LOW_POWER_STATUS_RETRY_WRITES" not in status_led
         or "status_led_strip_backend_suspend(s_strips[STATUS_LED_STRIP_STATUS].backend)" not in status_led
-        or "status_led_transmit_changed_frame(&frame, STATUS_LED_STRIP_MASK_ALL, true)" not in status_led
+        or "status_led_force_all_off(true)" not in status_led
+        or "status_led_transmit_changed_frame(&frame, STATUS_LED_STRIP_MASK_ALL, status_force_non_dma)" not in status_led
+        or "status_led_force_all_off();" in status_led
     ):
         failures.append(
             "components/status_led/status_led.c: low-power/prepare-sleep status LED writes must retry non-DMA final frames and suspend/recover after a failed status-strip latch"
@@ -1365,6 +1367,20 @@ def main() -> int:
         or "status_led_ec11_feedback_step_from_dot" not in status_led
         or "status_led_ec11_feedback_trail_index" not in status_led
         or "status_led_ec11_feedback_active_locked(now_ms)" not in status_led
+        or not re.search(
+            r"status_led_ec11_feedback_dot_from_step[\s\S]{0,220}"
+            r"STATUS_LED_EC11_FEEDBACK_ROTATE_CW[\s\S]{0,80}"
+            r"\?\s*motion_step\s*%\s*STATUS_LED_EC11_COUNT[\s\S]{0,120}"
+            r"STATUS_LED_EC11_COUNT\s*-\s*1U\s*-\s*motion_step",
+            status_led,
+        )
+        or not re.search(
+            r"status_led_ec11_feedback_trail_index[\s\S]{0,260}"
+            r"STATUS_LED_EC11_FEEDBACK_ROTATE_CW[\s\S]{0,120}"
+            r"dot\s*\+\s*STATUS_LED_EC11_COUNT\s*-\s*offset[\s\S]{0,120}"
+            r":\s*\(dot\s*\+\s*offset\)\s*%\s*STATUS_LED_EC11_COUNT",
+            status_led,
+        )
         or not re.search(
             r"feedback_ms\s*=\s*rotation_feedback[\s\S]{0,120}"
             r"STATUS_LED_EC11_ROTATION_HOLD_MS[\s\S]{0,120}"

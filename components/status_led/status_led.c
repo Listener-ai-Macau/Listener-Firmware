@@ -560,7 +560,7 @@ static bool s_strip_transport_suspended[STATUS_LED_STRIP_COUNT] = {
     true,
 };
 
-static void status_led_force_all_off(void);
+static void status_led_force_all_off(bool status_force_non_dma);
 static status_led_rgb_t status_led_boot_power_color_locked(void);
 static uint8_t status_led_scale_effect_percent_locked(uint8_t percent, uint32_t now_ms);
 static bool status_led_ec11_feedback_active_locked(uint32_t now_ms);
@@ -1785,8 +1785,10 @@ static bool status_led_render_idle_transition_clear_locked(status_led_frame_t *f
      * connected (#7). The status and BLE lights now stay independent of accents.
      */
     memset(frame, 0, sizeof(*frame));
-    frame->status[STATUS_LED_SEM_PWR] = s_state.last_frame.status[STATUS_LED_SEM_PWR];
-    frame->status[STATUS_LED_SEM_BLE] = s_state.last_frame.status[STATUS_LED_SEM_BLE];
+    if (!s_state.output_disabled) {
+        frame->status[STATUS_LED_SEM_PWR] = s_state.last_frame.status[STATUS_LED_SEM_PWR];
+        frame->status[STATUS_LED_SEM_BLE] = s_state.last_frame.status[STATUS_LED_SEM_BLE];
+    }
     s_state.idle_transition_clear_pending = false;
     s_state.last_estimated_current_ma = 0;
     s_state.last_current_budget_ma = 0;
@@ -2826,8 +2828,8 @@ static uint32_t status_led_ec11_feedback_dot_from_step(
     uint32_t motion_step)
 {
     return feedback == STATUS_LED_EC11_FEEDBACK_ROTATE_CW
-        ? (STATUS_LED_EC11_COUNT - 1U - motion_step) % STATUS_LED_EC11_COUNT
-        : motion_step % STATUS_LED_EC11_COUNT;
+        ? motion_step % STATUS_LED_EC11_COUNT
+        : (STATUS_LED_EC11_COUNT - 1U - motion_step) % STATUS_LED_EC11_COUNT;
 }
 
 static uint32_t status_led_ec11_feedback_step_from_dot(
@@ -2835,8 +2837,8 @@ static uint32_t status_led_ec11_feedback_step_from_dot(
     uint32_t dot)
 {
     return feedback == STATUS_LED_EC11_FEEDBACK_ROTATE_CW
-        ? (STATUS_LED_EC11_COUNT - 1U - dot) % STATUS_LED_EC11_COUNT
-        : dot % STATUS_LED_EC11_COUNT;
+        ? dot % STATUS_LED_EC11_COUNT
+        : (STATUS_LED_EC11_COUNT - 1U - dot) % STATUS_LED_EC11_COUNT;
 }
 
 static uint32_t status_led_ec11_feedback_trail_index(
@@ -2846,8 +2848,8 @@ static uint32_t status_led_ec11_feedback_trail_index(
 {
     offset %= STATUS_LED_EC11_COUNT;
     return feedback == STATUS_LED_EC11_FEEDBACK_ROTATE_CW
-        ? (dot + offset) % STATUS_LED_EC11_COUNT
-        : (dot + STATUS_LED_EC11_COUNT - offset) % STATUS_LED_EC11_COUNT;
+        ? (dot + STATUS_LED_EC11_COUNT - offset) % STATUS_LED_EC11_COUNT
+        : (dot + offset) % STATUS_LED_EC11_COUNT;
 }
 
 static void status_led_render_ec11_repair_locked(status_led_frame_t *frame, uint32_t now_ms)
@@ -3352,13 +3354,15 @@ static bool status_led_active_work_locked(void)
     return s_state.recording_active || s_state.processing_active;
 }
 
-static void status_led_clear_retryable_error_locked(status_led_error_domain_t domain)
+static bool status_led_clear_retryable_error_locked(status_led_error_domain_t domain)
 {
     if (s_state.error_domain == domain &&
         s_state.error_severity == STATUS_LED_ERROR_RETRYABLE) {
         s_state.error_domain = STATUS_LED_ERROR_DOMAIN_NONE;
         s_state.error_until_ms = 0;
+        return true;
     }
+    return false;
 }
 
 static void status_led_start_ble_repair_locked(uint32_t now_ms)
@@ -3508,10 +3512,11 @@ static void status_led_force_manual_off(void)
         s_state.oobe_confidence_until_ms = 0;
         s_state.last_transition_ms = status_led_now_ms();
         status_led_set_last_reason_locked("manual_off");
+        s_state.idle_transition_clear_pending = true;
         status_led_log_output_state_locked(0);
         xSemaphoreGive(s_mutex);
     }
-    status_led_force_all_off();
+    status_led_request_refresh();
     power_manager_set_blocker(POWER_MANAGER_BLOCKER_USB_COMMAND, false);
 }
 
@@ -3836,7 +3841,7 @@ static void status_led_save_brightness(uint8_t brightness_percent)
     }
 }
 
-static void status_led_force_all_off(void)
+static void status_led_force_all_off(bool status_force_non_dma)
 {
     status_led_frame_t frame = {0};
     if (s_mutex != NULL && xSemaphoreTake(s_mutex, portMAX_DELAY) == pdTRUE) {
@@ -3846,7 +3851,7 @@ static void status_led_force_all_off(void)
     for (uint8_t write_index = 0U;
          write_index < STATUS_LED_LOW_POWER_FINAL_LATCH_WRITES;
          ++write_index) {
-        status_led_transmit_changed_frame(&frame, STATUS_LED_STRIP_MASK_ALL, true);
+        status_led_transmit_changed_frame(&frame, STATUS_LED_STRIP_MASK_ALL, status_force_non_dma);
     }
 }
 
@@ -3948,7 +3953,7 @@ esp_err_t status_led_init(void)
     diag_log(DIAG_SRC_STATUS_LED, DIAG_LED_STATE, DIAG_SEV_INFO,
              (uint32_t)s_state.profile, (uint32_t)BOARD_PINS_RGB_STATUS_IO,
              (uint32_t)BOARD_PINS_RGB_KEY_IO, (uint32_t)BOARD_PINS_RGB_EDGE_IO);
-    status_led_force_all_off();
+    status_led_force_all_off(false);
     return final_ret;
 }
 
@@ -4025,7 +4030,8 @@ void status_led_set_ble_state(status_led_ble_state_t state, bool confidence_wind
             xSemaphoreGive(s_mutex);
             return;
         }
-        changed = s_state.ble_state != state;
+        bool state_changed = s_state.ble_state != state;
+        changed = state_changed;
         /* During an active repair cue the recovery flow deliberately drives BLE
          * state through PAIRING and the disconnect-driven RECONNECTING transient
          * before re-establishing pairing. When the knob double-click recovery
@@ -4041,28 +4047,33 @@ void status_led_set_ble_state(status_led_ble_state_t state, bool confidence_wind
         if (state == STATUS_LED_BLE_REPAIRING) {
             status_led_start_ble_repair_locked(now_ms);
             changed = true;
+            state_changed = true;
         } else if (!keep_repair_cue) {
             s_state.ble_repair_until_ms = 0U;
         }
-        if (changed && state != STATUS_LED_BLE_REPAIRING && !keep_repair_cue) {
+        if (state != STATUS_LED_BLE_DISCONNECTED &&
+            status_led_clear_retryable_error_locked(STATUS_LED_ERROR_DOMAIN_BLE)) {
+            changed = true;
+        }
+        if (state_changed && state != STATUS_LED_BLE_REPAIRING && !keep_repair_cue) {
             s_state.ble_transition_ms = now_ms;
         }
-        if (changed && !effect_only && !routine_low_power_ble &&
+        if (state_changed && !effect_only && !routine_low_power_ble &&
             status_led_ble_state_ready_locked(state)) {
             status_led_schedule_idle_transition_clear_locked(now_ms);
         }
         s_state.ble_state = state;
-        if (changed && !effect_only && !routine_low_power_ble) {
+        if (state_changed && !effect_only && !routine_low_power_ble) {
             s_state.status_window_until_ms = now_ms + STATUS_LED_STATUS_WINDOW_MS;
         }
-        if (changed && state == STATUS_LED_BLE_CONNECTED && confidence_window) {
+        if (state_changed && state == STATUS_LED_BLE_CONNECTED && confidence_window) {
             s_state.ble_confidence_until_ms = now_ms + STATUS_LED_BLE_CONFIDENCE_MS;
             if (!s_state.ever_connected) {
                 s_state.oobe_confidence_until_ms = now_ms + STATUS_LED_OOBE_CONFIDENCE_MS;
             }
             s_state.ever_connected = true;
         }
-        if (changed && !effect_only) {
+        if (state_changed && !effect_only) {
             s_state.last_transition_ms = now_ms;
             status_led_set_last_reason_locked("ble_state");
             diag_log(DIAG_SRC_STATUS_LED, DIAG_LED_STATE, DIAG_SEV_INFO,
@@ -4615,7 +4626,7 @@ void status_led_prepare_sleep(void)
     if (changed) {
         status_led_request_refresh();
     }
-    status_led_force_all_off();
+    status_led_force_all_off(true);
     status_led_suspend_all_strips();
 }
 
