@@ -50,6 +50,7 @@ static const char *TAG = "ble_hid";
 
 #define BLE_HID_BATTERY_FALLBACK_LEVEL 50
 #define BLE_HID_BATTERY_SAMPLE_INTERVAL_MS 5000
+#define BLE_HID_BATTERY_CONNECTED_IDLE_INTERVAL_MS 60000
 #define BLE_HID_BATTERY_DISCONNECTED_IDLE_INTERVAL_MS 600000
 #define BLE_HID_BATTERY_FORCE_REFRESH_INTERVAL_MS 60000
 #define BLE_HID_BATTERY_NOTIFY_THRESHOLD_PERCENT 1
@@ -251,14 +252,20 @@ static bool ble_hid_low_power_idle_active(void)
 
 static uint32_t ble_hid_battery_sample_interval_ms(bool low_power_idle)
 {
-    return (s_ble_connected && !low_power_idle)
-        ? BLE_HID_BATTERY_SAMPLE_INTERVAL_MS
-        : BLE_HID_BATTERY_DISCONNECTED_IDLE_INTERVAL_MS;
+    if (!s_ble_connected) {
+        return BLE_HID_BATTERY_DISCONNECTED_IDLE_INTERVAL_MS;
+    }
+    return low_power_idle
+        ? BLE_HID_BATTERY_CONNECTED_IDLE_INTERVAL_MS
+        : BLE_HID_BATTERY_SAMPLE_INTERVAL_MS;
 }
 
 static const char *ble_hid_battery_sample_reason(bool low_power_idle)
 {
-    return (s_ble_connected && !low_power_idle) ? "threshold_sample" : "idle_sample";
+    if (!s_ble_connected) {
+        return "idle_sample";
+    }
+    return low_power_idle ? "connected_idle_sample" : "threshold_sample";
 }
 
 void ble_hid_battery_task_wake(void)
