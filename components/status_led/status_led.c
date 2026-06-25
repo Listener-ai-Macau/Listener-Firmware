@@ -109,6 +109,7 @@
 #define STATUS_LED_KEY_GESTURE_PERCENT 85U
 #define STATUS_LED_EC11_FEEDBACK_MS 1400U
 #define STATUS_LED_EC11_ROTATION_HOLD_MS 2600U
+#define STATUS_LED_EC11_ROTATION_STEP_MS 150U
 #define STATUS_LED_EC11_ROTATION_HEAD_START_PERCENT 72U
 #define STATUS_LED_EC11_ROTATION_HEAD_END_PERCENT 44U
 #define STATUS_LED_EC11_ROTATION_BASE_START_PERCENT 4U
@@ -2778,13 +2779,16 @@ static bool status_led_ec11_feedback_active_locked(uint32_t now_ms)
 
 static uint32_t status_led_ec11_feedback_motion_step_locked(uint32_t now_ms)
 {
-    /* The chase advances strictly per EC11 detent — apply_ec11_feedback bumps
-     * ec11_feedback_motion_step by one on each same-direction click — so the dot
-     * tracks the hand and parks when the knob stops. Driving the step from a
-     * wall-clock timer made the dot keep marching (and drift to a new spot after
-     * a pause), which read as the rotation "restarting elsewhere" mid-turn. */
-    (void)now_ms;
-    return s_state.ec11_feedback_motion_step % STATUS_LED_EC11_COUNT;
+    /* Continuous time-driven orbit: the dot marches around the ring on a wall-
+     * clock cadence so the ring reads as always-rotating while the cue is live. */
+    uint32_t step = s_state.ec11_feedback_motion_step;
+    if (s_state.ec11_feedback_started_ms != 0U &&
+        now_ms >= s_state.ec11_feedback_started_ms &&
+        STATUS_LED_EC11_ROTATION_STEP_MS != 0U) {
+        step += (now_ms - s_state.ec11_feedback_started_ms) /
+                STATUS_LED_EC11_ROTATION_STEP_MS;
+    }
+    return step % STATUS_LED_EC11_COUNT;
 }
 
 static uint32_t status_led_ec11_feedback_dot_from_step(
@@ -4308,10 +4312,6 @@ static void status_led_apply_ec11_feedback(status_led_ec11_feedback_t feedback, 
             } else if (!active_rotation_feedback) {
                 s_state.ec11_feedback_started_ms = now_ms;
                 s_state.ec11_feedback_motion_step = 0U;
-            } else if (advance_motion) {
-                /* Same-direction detent: nudge the chase one LED forward so the
-                 * dot follows the knob and holds still when the knob stops. */
-                s_state.ec11_feedback_motion_step += 1U;
             }
             s_state.ec11_feedback = feedback;
             s_state.ec11_feedback_last_step_ms = now_ms;

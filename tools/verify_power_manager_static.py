@@ -1230,6 +1230,7 @@ def main() -> int:
         or "ec11_feedback_last_step_ms" not in status_led
         or "ec11_feedback_motion_step" not in status_led
         or "STATUS_LED_EC11_ROTATION_HOLD_MS 2600U" not in status_led
+        or "STATUS_LED_EC11_ROTATION_STEP_MS 150U" not in status_led
         or "STATUS_LED_EC11_ROTATION_HEAD_START_PERCENT 72U" not in status_led
         or "STATUS_LED_EC11_ROTATION_HEAD_END_PERCENT 44U" not in status_led
         or "STATUS_LED_EC11_ROTATION_BASE_START_PERCENT 4U" not in status_led
@@ -1251,13 +1252,9 @@ def main() -> int:
         )
         or not re.search(
             r"status_led_ec11_feedback_motion_step_locked\(uint32_t\s+now_ms\)[\s\S]*?"
-            r"\(void\)now_ms;[\s\S]*?"
-            r"return\s+s_state\.ec11_feedback_motion_step\s*%\s*STATUS_LED_EC11_COUNT\s*;",
-            status_led,
-        )
-        or not re.search(
-            r"else if\s*\(advance_motion\)\s*\{[\s\S]{0,240}"
-            r"ec11_feedback_motion_step\s*\+=\s*1U\s*;",
+            r"now_ms\s*-\s*s_state\.ec11_feedback_started_ms[\s\S]*?"
+            r"STATUS_LED_EC11_ROTATION_STEP_MS[\s\S]*?"
+            r"return\s+step\s*%\s*STATUS_LED_EC11_COUNT\s*;",
             status_led,
         )
         or not re.search(
@@ -1277,7 +1274,7 @@ def main() -> int:
         )
     ):
         failures.append(
-            "components/status_led/status_led.c: EC11 rotation must advance the chase per detent (each same-direction click nudges one LED, no wall-clock drift), preserve the current rendered position when reversing, refresh brightness without restarting on same-direction detents, and keep 50 ms refresh while the cue is active"
+            "components/status_led/status_led.c: EC11 rotation must use a continuous time-driven white orbit, preserve the current rendered position when reversing, refresh brightness without restarting on same-direction detents, and keep 50 ms refresh while the cue is active"
         )
     ec11_notify_body = re.search(
         r"static\s+void\s+status_led_apply_ec11_feedback[\s\S]*?"
