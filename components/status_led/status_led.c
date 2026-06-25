@@ -109,11 +109,10 @@
 #define STATUS_LED_KEY_GESTURE_PERCENT 85U
 #define STATUS_LED_EC11_FEEDBACK_MS 1400U
 #define STATUS_LED_EC11_ROTATION_HOLD_MS 2600U
-#define STATUS_LED_EC11_ROTATION_STEP_MS 220U
-#define STATUS_LED_EC11_ROTATION_HEAD_START_PERCENT 34U
-#define STATUS_LED_EC11_ROTATION_HEAD_END_PERCENT 28U
-#define STATUS_LED_EC11_ROTATION_BASE_START_PERCENT 16U
-#define STATUS_LED_EC11_ROTATION_BASE_END_PERCENT 12U
+#define STATUS_LED_EC11_ROTATION_HEAD_START_PERCENT 72U
+#define STATUS_LED_EC11_ROTATION_HEAD_END_PERCENT 44U
+#define STATUS_LED_EC11_ROTATION_BASE_START_PERCENT 4U
+#define STATUS_LED_EC11_ROTATION_BASE_END_PERCENT 1U
 #define STATUS_LED_EC11_FEEDBACK_DIAG_MIN_MS 500U
 #define STATUS_LED_EC11_REPAIR_BLINK_MIN_PERCENT 4U
 #define STATUS_LED_EC11_REPAIR_BLINK_MAX_PERCENT 16U
@@ -2779,14 +2778,13 @@ static bool status_led_ec11_feedback_active_locked(uint32_t now_ms)
 
 static uint32_t status_led_ec11_feedback_motion_step_locked(uint32_t now_ms)
 {
-    uint32_t step = s_state.ec11_feedback_motion_step;
-    if (s_state.ec11_feedback_started_ms != 0U &&
-        now_ms >= s_state.ec11_feedback_started_ms &&
-        STATUS_LED_EC11_ROTATION_STEP_MS != 0U) {
-        step += (now_ms - s_state.ec11_feedback_started_ms) /
-                STATUS_LED_EC11_ROTATION_STEP_MS;
-    }
-    return step % STATUS_LED_EC11_COUNT;
+    /* The chase advances strictly per EC11 detent — apply_ec11_feedback bumps
+     * ec11_feedback_motion_step by one on each same-direction click — so the dot
+     * tracks the hand and parks when the knob stops. Driving the step from a
+     * wall-clock timer made the dot keep marching (and drift to a new spot after
+     * a pause), which read as the rotation "restarting elsewhere" mid-turn. */
+    (void)now_ms;
+    return s_state.ec11_feedback_motion_step % STATUS_LED_EC11_COUNT;
 }
 
 static uint32_t status_led_ec11_feedback_dot_from_step(
@@ -2870,10 +2868,10 @@ static bool status_led_render_ec11_feedback_locked(status_led_frame_t *frame, ui
     }
 
     uint32_t dot = status_led_ec11_feedback_dot_from_step(s_state.ec11_feedback, motion_step);
-    /* Golden recording-flow falloff ratios (tail = head x68, fade = head x38) so the
-     * white rotation chase shares the recording ring's soft 3-level profile (#8). */
-    status_led_rgb_t tail = status_led_scale_raw(white, 68U);
-    status_led_rgb_t fade = status_led_scale_raw(white, 38U);
+    /* High-contrast directional comet (bright dot over a dim base) so the chase
+     * reads clearly as rotation; trailing tail+fade convey motion direction. */
+    status_led_rgb_t tail = status_led_scale_raw(white, 60U);
+    status_led_rgb_t fade = status_led_scale_raw(white, 32U);
     status_led_set_max(&frame->ec11[dot], white);
     status_led_set_max(
         &frame->ec11[status_led_ec11_feedback_trail_index(s_state.ec11_feedback, dot, 1U)],
@@ -3970,8 +3968,18 @@ void status_led_set_ble_state(status_led_ble_state_t state, bool confidence_wind
             return;
         }
         changed = s_state.ble_state != state;
-        const bool keep_repair_cue =
-            state == STATUS_LED_BLE_PAIRING && status_led_ble_repair_active_locked(now_ms);
+        /* During an active repair cue the recovery flow deliberately drives BLE
+         * state through PAIRING and the disconnect-driven RECONNECTING transient
+         * before re-establishing pairing. When the knob double-click recovery
+         * runs while already connected, ble_gap_terminate() fires an async
+         * DISCONNECT -> set_ble_state(RECONNECTING) that previously zeroed
+         * ble_repair_until_ms here, extinguishing the blue repair blink almost
+         * instantly (#3) before the cue could play. Keep the cue alive across
+         * both PAIRING and RECONNECTING so the blink runs its full window; the
+         * cue only exists after an explicit recovery action, so preserving it
+         * across these expected transitions is safe. */
+        const bool keep_repair_cue = status_led_ble_repair_active_locked(now_ms) &&
+            (state == STATUS_LED_BLE_PAIRING || state == STATUS_LED_BLE_RECONNECTING);
         if (state == STATUS_LED_BLE_REPAIRING) {
             status_led_start_ble_repair_locked(now_ms);
             changed = true;
@@ -4300,6 +4308,10 @@ static void status_led_apply_ec11_feedback(status_led_ec11_feedback_t feedback, 
             } else if (!active_rotation_feedback) {
                 s_state.ec11_feedback_started_ms = now_ms;
                 s_state.ec11_feedback_motion_step = 0U;
+            } else if (advance_motion) {
+                /* Same-direction detent: nudge the chase one LED forward so the
+                 * dot follows the knob and holds still when the knob stops. */
+                s_state.ec11_feedback_motion_step += 1U;
             }
             s_state.ec11_feedback = feedback;
             s_state.ec11_feedback_last_step_ms = now_ms;
