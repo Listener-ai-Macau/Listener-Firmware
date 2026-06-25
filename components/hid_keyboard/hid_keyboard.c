@@ -1,6 +1,7 @@
 #include "hid_keyboard.h"
 
 #include <stdbool.h>
+#include <inttypes.h>
 #include <string.h>
 
 #include "freertos/FreeRTOS.h"
@@ -22,6 +23,9 @@
 #define HID_CONSUMER_REPORT_SIZE 2
 #define HID_KEYBOARD_USAGE_MIN 0x04u
 #define HID_KEYBOARD_USAGE_MAX HID_KEYBOARD_USAGE_F24
+#define HID_INPUT_SET_RETRY_COUNT 2
+#define HID_INPUT_SET_RETRY_DELAY_MS 20
+#define HID_INPUT_PRESS_HOLD_MS 50
 
 #define KEY_CASE(input_value, modifier_value, key_value) \
     case input_value:                                    \
@@ -200,6 +204,49 @@ static uint32_t hid_keyboard_increment_key_press_count(void)
     return count;
 }
 
+static esp_err_t hid_keyboard_input_set_with_retry(
+    esp_hidd_dev_t *hid_device,
+    uint8_t report_id,
+    uint8_t *report_buffer,
+    size_t report_size,
+    const char *phase,
+    uint32_t usage,
+    uint8_t modifier)
+{
+    esp_err_t ret = ESP_FAIL;
+    for (uint32_t attempt = 0; attempt <= HID_INPUT_SET_RETRY_COUNT; ++attempt) {
+        ret = esp_hidd_dev_input_set(hid_device, 0, report_id, report_buffer, report_size);
+        if (ret == ESP_OK) {
+            if (attempt > 0) {
+                ESP_LOGI(
+                    TAG,
+                    "input_set recovered: phase=%s usage=0x%04X modifier=0x%02X attempt=%" PRIu32,
+                    phase,
+                    usage,
+                    modifier,
+                    attempt + 1);
+            }
+            return ESP_OK;
+        }
+
+        if (ret != ESP_FAIL || attempt >= HID_INPUT_SET_RETRY_COUNT) {
+            return ret;
+        }
+
+        ESP_LOGW(
+            TAG,
+            "input_set transient failure: phase=%s usage=0x%04X modifier=0x%02X attempt=%" PRIu32
+            " retry_in_ms=%d",
+            phase,
+            usage,
+            modifier,
+            attempt + 1,
+            HID_INPUT_SET_RETRY_DELAY_MS);
+        vTaskDelay(pdMS_TO_TICKS(HID_INPUT_SET_RETRY_DELAY_MS));
+    }
+    return ret;
+}
+
 esp_err_t hid_keyboard_send_ascii(char input_char, esp_hidd_dev_t *hid_device)
 {
     uint8_t report_buffer[HID_KEYBOARD_REPORT_SIZE] = {0};
@@ -232,7 +279,14 @@ esp_err_t hid_keyboard_send_ascii(char input_char, esp_hidd_dev_t *hid_device)
         report_buffer[2],
         connected ? "yes" : "no");
 
-    ret = esp_hidd_dev_input_set(hid_device, 0, HID_KEYBOARD_REPORT_ID, report_buffer, HID_KEYBOARD_REPORT_SIZE);
+    ret = hid_keyboard_input_set_with_retry(
+        hid_device,
+        HID_KEYBOARD_REPORT_ID,
+        report_buffer,
+        HID_KEYBOARD_REPORT_SIZE,
+        "ascii_press",
+        input_value,
+        report_buffer[0]);
     if (ret != ESP_OK) {
         ESP_LOGE(TAG, "input press failed: %s", esp_err_to_name(ret));
         diag_log(DIAG_SRC_KEYBOARD, DIAG_KBD_KEY_FAIL, DIAG_SEV_WARN,
@@ -240,9 +294,16 @@ esp_err_t hid_keyboard_send_ascii(char input_char, esp_hidd_dev_t *hid_device)
         return ret;
     }
 
-    vTaskDelay(pdMS_TO_TICKS(50));
+    vTaskDelay(pdMS_TO_TICKS(HID_INPUT_PRESS_HOLD_MS));
     memset(report_buffer, 0, sizeof(report_buffer));
-    ret = esp_hidd_dev_input_set(hid_device, 0, HID_KEYBOARD_REPORT_ID, report_buffer, HID_KEYBOARD_REPORT_SIZE);
+    ret = hid_keyboard_input_set_with_retry(
+        hid_device,
+        HID_KEYBOARD_REPORT_ID,
+        report_buffer,
+        HID_KEYBOARD_REPORT_SIZE,
+        "ascii_release",
+        input_value,
+        0);
     if (ret != ESP_OK) {
         ESP_LOGE(TAG, "input release failed: %s", esp_err_to_name(ret));
         diag_log(DIAG_SRC_KEYBOARD, DIAG_KBD_KEY_FAIL, DIAG_SEV_WARN,
@@ -291,7 +352,14 @@ esp_err_t hid_keyboard_send_usage_with_modifier(uint8_t usage, uint8_t modifier,
         modifier,
         connected ? "yes" : "no");
 
-    ret = esp_hidd_dev_input_set(hid_device, 0, HID_KEYBOARD_REPORT_ID, report_buffer, HID_KEYBOARD_REPORT_SIZE);
+    ret = hid_keyboard_input_set_with_retry(
+        hid_device,
+        HID_KEYBOARD_REPORT_ID,
+        report_buffer,
+        HID_KEYBOARD_REPORT_SIZE,
+        "usage_press",
+        usage,
+        modifier);
     if (ret != ESP_OK) {
         ESP_LOGE(TAG, "usage press failed: usage=0x%02X modifier=0x%02X error=%s", usage, modifier, esp_err_to_name(ret));
         diag_log(DIAG_SRC_KEYBOARD, DIAG_KBD_KEY_FAIL, DIAG_SEV_WARN,
@@ -299,9 +367,16 @@ esp_err_t hid_keyboard_send_usage_with_modifier(uint8_t usage, uint8_t modifier,
         return ret;
     }
 
-    vTaskDelay(pdMS_TO_TICKS(50));
+    vTaskDelay(pdMS_TO_TICKS(HID_INPUT_PRESS_HOLD_MS));
     memset(report_buffer, 0, sizeof(report_buffer));
-    ret = esp_hidd_dev_input_set(hid_device, 0, HID_KEYBOARD_REPORT_ID, report_buffer, HID_KEYBOARD_REPORT_SIZE);
+    ret = hid_keyboard_input_set_with_retry(
+        hid_device,
+        HID_KEYBOARD_REPORT_ID,
+        report_buffer,
+        HID_KEYBOARD_REPORT_SIZE,
+        "usage_release",
+        usage,
+        modifier);
     if (ret != ESP_OK) {
         ESP_LOGE(TAG, "usage release failed: usage=0x%02X modifier=0x%02X error=%s", usage, modifier, esp_err_to_name(ret));
         diag_log(DIAG_SRC_KEYBOARD, DIAG_KBD_KEY_FAIL, DIAG_SEV_WARN,
@@ -344,7 +419,14 @@ esp_err_t hid_keyboard_send_consumer_usage(uint16_t usage, esp_hidd_dev_t *hid_d
         usage,
         connected ? "yes" : "no");
 
-    ret = esp_hidd_dev_input_set(hid_device, 0, HID_CONSUMER_REPORT_ID, report_buffer, HID_CONSUMER_REPORT_SIZE);
+    ret = hid_keyboard_input_set_with_retry(
+        hid_device,
+        HID_CONSUMER_REPORT_ID,
+        report_buffer,
+        HID_CONSUMER_REPORT_SIZE,
+        "consumer_press",
+        usage,
+        0);
     if (ret != ESP_OK) {
         ESP_LOGE(TAG, "consumer usage press failed: usage=0x%04X error=%s", usage, esp_err_to_name(ret));
         diag_log(DIAG_SRC_KEYBOARD, DIAG_KBD_KEY_FAIL, DIAG_SEV_WARN,
@@ -352,9 +434,16 @@ esp_err_t hid_keyboard_send_consumer_usage(uint16_t usage, esp_hidd_dev_t *hid_d
         return ret;
     }
 
-    vTaskDelay(pdMS_TO_TICKS(50));
+    vTaskDelay(pdMS_TO_TICKS(HID_INPUT_PRESS_HOLD_MS));
     memset(report_buffer, 0, sizeof(report_buffer));
-    ret = esp_hidd_dev_input_set(hid_device, 0, HID_CONSUMER_REPORT_ID, report_buffer, HID_CONSUMER_REPORT_SIZE);
+    ret = hid_keyboard_input_set_with_retry(
+        hid_device,
+        HID_CONSUMER_REPORT_ID,
+        report_buffer,
+        HID_CONSUMER_REPORT_SIZE,
+        "consumer_release",
+        usage,
+        0);
     if (ret != ESP_OK) {
         ESP_LOGE(TAG, "consumer usage release failed: usage=0x%04X error=%s", usage, esp_err_to_name(ret));
         diag_log(DIAG_SRC_KEYBOARD, DIAG_KBD_KEY_FAIL, DIAG_SEV_WARN,
