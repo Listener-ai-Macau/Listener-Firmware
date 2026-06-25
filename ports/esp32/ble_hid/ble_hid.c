@@ -1548,6 +1548,13 @@ esp_err_t ble_hid_init(void)
         }
     }
 
+    s_ble_hid_config.device_name = s_device_name;
+    int gap_name_rc = ble_svc_gap_device_name_set(s_device_name);
+    if (gap_name_rc != 0) {
+        ESP_LOGW(TAG, "ble_svc_gap_device_name_set failed: %d", gap_name_rc);
+    }
+    ESP_LOGI(TAG, "BLE device name configured: gap/hid/advertising=%s", s_device_name);
+
     ret = ble_hid_gap_configure_advertising(ESP_HID_APPEARANCE_KEYBOARD, s_device_name);
     if (ret != ESP_OK) {
         ESP_LOGE(TAG, "BLE advertising config failed: %s", esp_err_to_name(ret));
@@ -1580,11 +1587,6 @@ esp_err_t ble_hid_init(void)
     }
     ble_firmware_ota_log_gatt_state();
     ble_diag_log_log_gatt_state();
-
-    int gap_name_rc = ble_svc_gap_device_name_set(s_device_name);
-    if (gap_name_rc != 0) {
-        ESP_LOGW(TAG, "ble_svc_gap_device_name_set failed: %d", gap_name_rc);
-    }
 
     ble_hid_update_battery_level("init", true);
     ble_hid_publish_readiness(ready_mask, degraded_mask, "init_complete");

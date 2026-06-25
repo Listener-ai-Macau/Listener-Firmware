@@ -194,6 +194,7 @@ Assert-Contains $bleHid 'BLE_HID_USB_COMMAND_BUFFER_BYTES\s+192' 'USB command bu
 Assert-Contains $bleHid 'device_settings_consume_usb_command\(line\)' 'BLE HID dispatches DEVICE commands'
 Assert-Contains $bleHid 'status_led_apply_device_settings\(\)' 'DEVICE command applies status LED settings'
 Assert-Contains $bleHid 's_device_name\s*=\s*listener_device_get_ble_name\(\)' 'BLE HID uses configured BLE name at init'
+Assert-Contains $bleHid 's_ble_hid_config\.device_name\s*=\s*s_device_name;[\s\S]*ble_svc_gap_device_name_set\(s_device_name\);[\s\S]*ble_hid_gap_configure_advertising\(ESP_HID_APPEARANCE_KEYBOARD,\s*s_device_name\);[\s\S]*esp_hidd_dev_init' 'BLE connected HID/GAP/advertising names all use configured BLE name before HID init'
 Assert-Contains $bleHidCmake 'device_settings' 'BLE HID CMake dependency'
 
 Assert-Contains $keyboard '#include "device_settings\.h"' 'keyboard BLE control includes device settings'
