@@ -3024,10 +3024,27 @@ static bool status_led_render_key_feedback_locked(status_led_frame_t *frame, uin
         }
         break;
     case STATUS_LED_KEY_FEEDBACK_LONG:
-        color = status_led_token_locked(
-            status_led_key_feedback_color_locked(),
-            STATUS_LED_KEY_GESTURE_PERCENT,
-            false);
+        if (long_hold_active) {
+            /* Steady gesture glow while the key is held. */
+            color = status_led_token_locked(
+                status_led_key_feedback_color_locked(),
+                STATUS_LED_KEY_GESTURE_PERCENT,
+                false);
+        } else {
+            /* Gradual fade tail after release, mirroring the single/double-click
+             * envelope's falling edge instead of a one-frame snap to black (#4).
+             * elapsed is measured from the release moment (the release handler
+             * re-anchors started_ms when a long-press ends). */
+            uint8_t fade_percent = status_led_decay_percent(
+                elapsed,
+                STATUS_LED_KEY_FADE_MS,
+                STATUS_LED_KEY_GESTURE_PERCENT,
+                0U);
+            color = status_led_token_locked(
+                status_led_key_feedback_color_locked(),
+                fade_percent,
+                false);
+        }
         break;
     case STATUS_LED_KEY_FEEDBACK_SINGLE:
     default:
@@ -4224,6 +4241,12 @@ void status_led_notify_key_event(uint8_t key_index, bool pressed)
             s_state.key_feedback[key_index] = STATUS_LED_KEY_FEEDBACK_SINGLE;
         } else {
             s_state.key_pressed_mask &= ~(1U << key_index);
+            if (s_state.key_feedback[key_index] == STATUS_LED_KEY_FEEDBACK_LONG) {
+                /* Re-anchor the gesture to the release moment so the long-press
+                 * fades out like single/double-click instead of snapping off. */
+                s_state.key_feedback_started_ms[key_index] = now_ms;
+                s_state.key_feedback_until_ms[key_index] = now_ms + STATUS_LED_KEY_FADE_MS;
+            }
         }
         s_state.key_until_ms[key_index] = now_ms + STATUS_LED_KEY_FEEDBACK_MS;
         s_state.status_window_until_ms = now_ms + STATUS_LED_STATUS_WINDOW_MS;
