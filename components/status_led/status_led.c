@@ -3317,6 +3317,11 @@ static void status_led_clear_key_feedback_locked(void)
     memset(s_state.key_feedback, 0, sizeof(s_state.key_feedback));
 }
 
+static bool status_led_active_work_locked(void)
+{
+    return s_state.recording_active || s_state.processing_active;
+}
+
 static void status_led_clear_retryable_error_locked(status_led_error_domain_t domain)
 {
     if (s_state.error_domain == domain &&
@@ -4080,6 +4085,7 @@ void status_led_set_recording(bool active, status_led_rec_source_t source)
         if (s_state.recording_active) {
             s_state.ble_repair_until_ms = 0U;
             status_led_clear_ok_locked();
+            status_led_clear_key_feedback_locked();
             status_led_clear_retryable_error_locked(STATUS_LED_ERROR_DOMAIN_REC);
         }
         s_state.last_transition_ms = now_ms;
@@ -4162,6 +4168,7 @@ void status_led_set_processing(bool active, const char *reason)
             s_state.ble_repair_until_ms = 0U;
             s_state.processing_started_ms = now_ms;
             status_led_clear_ok_locked();
+            status_led_clear_key_feedback_locked();
             status_led_clear_retryable_error_locked(STATUS_LED_ERROR_DOMAIN_AI);
             status_led_clear_retryable_error_locked(STATUS_LED_ERROR_DOMAIN_OTA);
         }
@@ -4234,6 +4241,13 @@ void status_led_notify_key_event(uint8_t key_index, bool pressed)
             xSemaphoreGive(s_mutex);
             return;
         }
+        if (status_led_active_work_locked()) {
+            status_led_clear_key_feedback_locked();
+            changed = true;
+            xSemaphoreGive(s_mutex);
+            status_led_request_refresh();
+            return;
+        }
         status_led_resume_interactive_output_locked();
         if (pressed) {
             s_state.key_pressed_mask |= 1U << key_index;
@@ -4278,6 +4292,13 @@ void status_led_notify_key_feedback(uint8_t key_index, status_led_key_feedback_t
     if (xSemaphoreTake(s_mutex, portMAX_DELAY) == pdTRUE) {
         if (s_state.preview_effect_only) {
             xSemaphoreGive(s_mutex);
+            return;
+        }
+        if (status_led_active_work_locked()) {
+            status_led_clear_key_feedback_locked();
+            changed = true;
+            xSemaphoreGive(s_mutex);
+            status_led_request_refresh();
             return;
         }
         status_led_resume_interactive_output_locked();

@@ -13,6 +13,7 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/queue.h"
 #include "freertos/task.h"
+#include "hal/gpio_ll.h"
 
 #include "ble_hid.h"
 #include "ble_audio_stream.h"
@@ -140,6 +141,7 @@ static TaskHandle_t s_custom_task_handle;
 static TaskHandle_t s_ec11_task_handle;
 static QueueHandle_t s_ec11_event_queue;
 static QueueHandle_t s_custom_generated_event_queue;
+static bool s_custom_low_power_wake_armed;
 static volatile bool s_ec11_isr_last_raw_valid;
 static volatile uint8_t s_ec11_isr_last_raw_state;
 static volatile bool s_ec11_overflow_pending;
@@ -462,9 +464,10 @@ static void keyboard_custom_make_source_label(
     }
 }
 
-static void keyboard_custom_send_gesture(
+static esp_err_t keyboard_custom_send_gesture_internal(
     keyboard_custom_key_t *key,
-    keyboard_custom_gesture_t gesture)
+    keyboard_custom_gesture_t gesture,
+    bool pending_transport_test)
 {
     uint8_t usage = keyboard_custom_usage_for_gesture(key, gesture);
     unsigned int function_number = keyboard_custom_function_number(usage);
@@ -472,10 +475,20 @@ static void keyboard_custom_send_gesture(
     keyboard_custom_make_source_label(key, usage, source_label, sizeof(source_label));
 
     status_led_notify_key_feedback(key->index, keyboard_custom_led_feedback_for_gesture(gesture));
-    esp_err_t ret = ble_hid_send_keyboard_usage_async(usage, source_label);
+    esp_err_t ret = pending_transport_test
+        ? ble_hid_send_keyboard_usage_pending_test_async(usage, 0, source_label)
+        : ble_hid_send_keyboard_usage_async(usage, source_label);
     keyboard_custom_log_event(key, keyboard_custom_phase_for_gesture(gesture), usage, ret);
     if (ret == ESP_OK) {
-        if (gesture == KEYBOARD_CUSTOM_GESTURE_SINGLE) {
+        if (pending_transport_test) {
+            ESP_LOGI(
+                TAG,
+                "custom key pending transport test queued: logical=%s source=%s usage=F%u gesture=%s",
+                key->logical_name,
+                source_label,
+                function_number,
+                keyboard_custom_gesture_name(gesture));
+        } else if (gesture == KEYBOARD_CUSTOM_GESTURE_SINGLE) {
             ESP_LOGI(
                 TAG,
                 "custom key fallback queued: logical=%s source=%s usage=F%u gesture=single",
@@ -504,6 +517,14 @@ static void keyboard_custom_send_gesture(
             keyboard_custom_gesture_name(gesture),
             esp_err_to_name(ret));
     }
+    return ret;
+}
+
+static void keyboard_custom_send_gesture(
+    keyboard_custom_key_t *key,
+    keyboard_custom_gesture_t gesture)
+{
+    (void)keyboard_custom_send_gesture_internal(key, gesture, false);
 }
 
 static esp_err_t keyboard_custom_enqueue_generated_gesture(
@@ -594,16 +615,33 @@ static bool keyboard_consume_usb_command(const char *line, esp_err_t *out_ret)
     }
 
     power_manager_set_blocker(POWER_MANAGER_BLOCKER_USB_COMMAND, true);
+    bool pending_transport_test = false;
+    if (strncmp(command, "PENDING:", strlen("PENDING:")) == 0) {
+        pending_transport_test = true;
+        command += strlen("PENDING:");
+    }
+
     uint8_t logical_key = 0;
     keyboard_custom_gesture_t gesture = KEYBOARD_CUSTOM_GESTURE_SINGLE;
     if (keyboard_custom_parse_generated_command(command, &logical_key, &gesture)) {
         keyboard_custom_key_t *key = keyboard_custom_find_key(logical_key);
-        *out_ret = keyboard_custom_enqueue_generated_gesture(logical_key, gesture);
-        printf(
-            "~KEY:GENERATED logical=%s gesture=%s result=%s\n",
-            key != NULL ? key->logical_name : "UNKNOWN",
-            keyboard_custom_gesture_name(gesture),
-            esp_err_to_name(*out_ret));
+        if (pending_transport_test) {
+            *out_ret = key != NULL
+                ? keyboard_custom_send_gesture_internal(key, gesture, true)
+                : ESP_ERR_INVALID_ARG;
+            printf(
+                "~KEY:PENDING logical=%s gesture=%s result=%s\n",
+                key != NULL ? key->logical_name : "UNKNOWN",
+                keyboard_custom_gesture_name(gesture),
+                esp_err_to_name(*out_ret));
+        } else {
+            *out_ret = keyboard_custom_enqueue_generated_gesture(logical_key, gesture);
+            printf(
+                "~KEY:GENERATED logical=%s gesture=%s result=%s\n",
+                key != NULL ? key->logical_name : "UNKNOWN",
+                keyboard_custom_gesture_name(gesture),
+                esp_err_to_name(*out_ret));
+        }
         power_manager_set_blocker(POWER_MANAGER_BLOCKER_USB_COMMAND, false);
         return true;
     }
@@ -788,6 +826,10 @@ static void keyboard_custom_handle_sample(keyboard_custom_key_t *key, bool raw_h
             key->stable_count++;
         }
     } else {
+        bool low_power_wake_press =
+            !raw_high &&
+            key->stable_level_high &&
+            keyboard_power_state_is_low_power_idle();
         if (!raw_high) {
             keyboard_custom_apply_raw_feedback(key, now, "raw_edge");
         } else {
@@ -807,6 +849,9 @@ static void keyboard_custom_handle_sample(keyboard_custom_key_t *key, bool raw_h
             key->stable_level_high ? 1u : 0u);
         key->last_sample_high = raw_high;
         key->stable_count = 1;
+        if (low_power_wake_press) {
+            keyboard_custom_apply_stable_transition(key, raw_high, now, "low_power_raw_edge");
+        }
         return;
     }
 
@@ -898,6 +943,162 @@ static bool keyboard_custom_generated_active(void)
     return false;
 }
 
+static uint64_t keyboard_custom_gpio_bit(gpio_num_t gpio)
+{
+    if (gpio == GPIO_NUM_NC || gpio < 0 || gpio >= 64) {
+        return 0;
+    }
+    return 1ULL << (unsigned)gpio;
+}
+
+static uint64_t keyboard_custom_key_pin_mask(void)
+{
+    uint64_t mask = 0;
+    for (size_t index = 0; index < sizeof(s_custom_keys) / sizeof(s_custom_keys[0]); ++index) {
+        mask |= keyboard_custom_gpio_bit(s_custom_keys[index].gpio);
+    }
+    return mask;
+}
+
+static uint64_t keyboard_custom_gpio_intr_status(void)
+{
+    union {
+        struct {
+            uint32_t low;
+            uint32_t high;
+        };
+        uint64_t mask;
+    } status = {0};
+
+    gpio_ll_get_intr_status(&GPIO, 0, &status.low);
+    gpio_ll_get_intr_status_high(&GPIO, 0, &status.high);
+    return status.mask;
+}
+
+static void keyboard_custom_clear_gpio_intr_status(uint64_t mask)
+{
+    uint32_t low = (uint32_t)mask;
+    uint32_t high = (uint32_t)(mask >> 32);
+    if (low != 0) {
+        gpio_ll_clear_intr_status(&GPIO, low);
+    }
+    if (high != 0) {
+        gpio_ll_clear_intr_status_high(&GPIO, high);
+    }
+}
+
+static uint64_t keyboard_custom_sample_pressed_mask(void)
+{
+    uint64_t mask = 0;
+    for (size_t index = 0; index < sizeof(s_custom_keys) / sizeof(s_custom_keys[0]); ++index) {
+        keyboard_custom_key_t *key = &s_custom_keys[index];
+        if (gpio_get_level(key->gpio) == 0) {
+            mask |= keyboard_custom_gpio_bit(key->gpio);
+        }
+    }
+    return mask;
+}
+
+static void keyboard_custom_prepare_low_power_wake_capture(void)
+{
+    if (s_custom_low_power_wake_armed) {
+        return;
+    }
+
+    uint64_t key_mask = keyboard_custom_key_pin_mask();
+    keyboard_custom_clear_gpio_intr_status(key_mask);
+    s_custom_low_power_wake_armed = true;
+}
+
+static void keyboard_custom_reset_to_released(keyboard_custom_key_t *key)
+{
+    keyboard_custom_cancel_pending_single(key);
+    key->last_sample_high = true;
+    key->stable_level_high = true;
+    key->stable_count = KEYBOARD_CUSTOM_DEBOUNCE_SAMPLES;
+    key->pressed = false;
+    key->long_sent = false;
+    keyboard_custom_clear_raw_feedback(key);
+}
+
+static void keyboard_custom_apply_low_power_wake_match(
+    keyboard_custom_key_t *key,
+    TickType_t now,
+    bool latched,
+    bool sampled_pressed)
+{
+    if (!key->initialized) {
+        keyboard_custom_handle_sample(key, true, now);
+    }
+
+    if (sampled_pressed) {
+        keyboard_custom_cancel_pending_single(key);
+        keyboard_custom_apply_raw_feedback(key, now, "low_power_wake");
+        keyboard_custom_apply_stable_transition(key, false, now, "low_power_wake");
+        ESP_LOGI(
+            TAG,
+            "custom key low-power wake press captured: logical=%s source=%s latched=%u sampled_pressed=1",
+            key->logical_name,
+            key->label,
+            latched ? 1u : 0u);
+        return;
+    }
+
+    if (!latched) {
+        return;
+    }
+
+    keyboard_custom_reset_to_released(key);
+    power_manager_record_activity(key->logical_name);
+    keyboard_custom_send_gesture(key, KEYBOARD_CUSTOM_GESTURE_SINGLE);
+    ESP_LOGI(
+        TAG,
+        "custom key low-power wake single synthesized: logical=%s source=%s latched=1 sampled_pressed=0",
+        key->logical_name,
+        key->label);
+}
+
+static void keyboard_custom_consume_low_power_wake(TickType_t now)
+{
+    if (!s_custom_low_power_wake_armed) {
+        return;
+    }
+
+    bool low_power_idle = keyboard_power_state_is_low_power_idle();
+    uint32_t wake_causes = esp_sleep_get_wakeup_causes();
+    bool gpio_wake = (wake_causes & (1UL << ESP_SLEEP_WAKEUP_GPIO)) != 0;
+    uint64_t key_mask = keyboard_custom_key_pin_mask();
+    uint64_t latched_mask = keyboard_custom_gpio_intr_status() & key_mask;
+    uint64_t sampled_mask = (gpio_wake || latched_mask != 0)
+        ? (keyboard_custom_sample_pressed_mask() & key_mask)
+        : 0;
+    uint64_t matched_mask = latched_mask | sampled_mask;
+    if (matched_mask == 0) {
+        if (!low_power_idle) {
+            s_custom_low_power_wake_armed = false;
+        }
+        return;
+    }
+
+    s_custom_low_power_wake_armed = false;
+    if (latched_mask != 0) {
+        keyboard_custom_clear_gpio_intr_status(latched_mask);
+    }
+
+    for (size_t index = 0; index < sizeof(s_custom_keys) / sizeof(s_custom_keys[0]); ++index) {
+        keyboard_custom_key_t *key = &s_custom_keys[index];
+        uint64_t bit = keyboard_custom_gpio_bit(key->gpio);
+        if ((matched_mask & bit) == 0) {
+            continue;
+        }
+        keyboard_custom_apply_low_power_wake_match(
+            key,
+            now,
+            (latched_mask & bit) != 0,
+            (sampled_mask & bit) != 0);
+    }
+}
+
 static bool keyboard_custom_debounce_active(const keyboard_custom_key_t *key)
 {
     return key->initialized &&
@@ -951,6 +1152,7 @@ static void keyboard_custom_task(void *parameter)
     while (1) {
         watchdog_platform_feed_current_task();
         TickType_t now = xTaskGetTickCount();
+        keyboard_custom_consume_low_power_wake(now);
         keyboard_custom_drain_generated_events(now);
         for (size_t index = 0; index < sizeof(s_custom_keys) / sizeof(s_custom_keys[0]); ++index) {
             keyboard_custom_handle_timers(&s_custom_keys[index], now);
@@ -960,9 +1162,12 @@ static void keyboard_custom_task(void *parameter)
             keyboard_custom_handle_timers(&s_custom_keys[index], now);
         }
         uint32_t wait_ms = keyboard_custom_next_wait_ms(xTaskGetTickCount());
-        if (keyboard_power_state_is_low_power_idle() && wait_ms > KEYBOARD_CUSTOM_POLL_MS) {
+        bool low_power_idle = keyboard_power_state_is_low_power_idle();
+        if (low_power_idle && wait_ms > KEYBOARD_CUSTOM_POLL_MS) {
+            keyboard_custom_prepare_low_power_wake_capture();
             (void)watchdog_platform_task_notify_take_low_power(pdTRUE, wait_ms);
         } else {
+            s_custom_low_power_wake_armed = false;
             (void)watchdog_platform_task_notify_take(pdTRUE, wait_ms);
         }
     }

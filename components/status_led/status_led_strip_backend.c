@@ -1,3 +1,16 @@
+/*
+ * Physical WS2812 strip backend (RMT). Before changing the per-strip DMA selection,
+ * adding a new LED peripheral (e.g. an SPI+DMA sibling backend), or widening DMA to
+ * more strips, READ docs/features/status_led_dma_history.md first. It consolidates the
+ * historical tuning experience and the hard constraints:
+ *   - ESP32-S3 can use DMA on only ONE RMT TX channel, so only the status strip is on
+ *     RMT DMA. Forcing all four strips to RMT DMA was tried and left EC11/key/edge
+ *     unavailable (see docs/validation/.../all-strip-dma-status-20260619.log).
+ *   - EC11/key/edge flicker on non-DMA (interrupt-backed) RMT; the historical
+ *     recommendation for them is a different DMA backend (SPI+DMA). DMA can NOT stay
+ *     enabled through low-power idle (LED3-6 idle-latch corruption), so any DMA strip
+ *     must follow the active-DMA / low-power-non-DMA-final-latch pattern.
+ */
 #include "status_led_strip_backend.h"
 
 #include <stdlib.h>
@@ -7,6 +20,8 @@
 #include "driver/gpio.h"
 #include "driver/rmt_encoder.h"
 #include "driver/rmt_tx.h"
+#include "driver/spi_master.h"
+#include "esp_heap_caps.h"
 #include "esp_log.h"
 #include "soc/soc_caps.h"
 
@@ -21,6 +36,19 @@
 #define STATUS_LED_WS2812_T1L_TICKS 6U
 #define STATUS_LED_RMT_WITH_DMA SOC_RMT_SUPPORT_DMA
 #define STATUS_LED_RMT_DMA_MEM_BLOCK_SYMBOLS 1024U
+
+/* ---- SPI transport (WS2812 via SPI MOSI clock-hack) ----------------------
+ * Each WS2812 bit is encoded as 3 SPI bits (0 -> 0b100, 1 -> 0b110) clocked at
+ * STATUS_LED_SPI_CLOCK_HZ. At 2.5 MHz, 1 SPI bit = 400 ns, so one WS2812 bit =
+ * 1.2 us (nominal 1.25 us): T0H=400ns/T0L=800ns, T1H=800ns/T1L=400ns, within
+ * standard WS2812B tolerance. SCLK is internal-only (sclk_io_num = -1); only
+ * MOSI is routed to the LED DIN. The DMA buffer lives in internal DMA-capable RAM
+ * and is fed by SPI GDMA, giving a flicker-free output independent of CPU load.
+ * STATUS_LED_SPI_RESET_BYTES trailing zero bytes keep the line low long enough
+ * for the WS2812/4020 reset latch (~150 us, matching the RMT 1500-tick reset). */
+#define STATUS_LED_SPI_CLOCK_HZ       2500000
+#define STATUS_LED_SPI_BITS_PER_BIT   3U
+#define STATUS_LED_SPI_RESET_BYTES    48U
 
 typedef struct {
     rmt_encoder_t base;

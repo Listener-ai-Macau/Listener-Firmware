@@ -89,10 +89,15 @@ foreach ($key in $expectedKeys) {
 }
 
 Assert-Contains -Text $keyboard -Pattern "ble_hid_send_keyboard_usage_async\(usage,\s*source_label\)" -Description "custom key path sends HID usages instead of text"
+Assert-Contains -Text $keyboard -Pattern "KEY:PENDING|~KEY:PENDING" -Description "custom key pending HID diagnostic command"
+Assert-Contains -Text $keyboard -Pattern "ble_hid_send_keyboard_usage_pending_test_async" -Description "custom key pending diagnostic uses BLE HID pending test path"
 Assert-Contains -Text $keyboard -Pattern "DIAG_KBD_CUSTOM_KEY" -Description "custom key diagnostic event logging"
-Assert-Contains -Text $keyboard -Pattern "KEYBOARD_CUSTOM_DEBOUNCE_MS\s+30" -Description "custom key debounce tuned for physical buttons"
-Assert-Contains -Text $bleHid -Pattern "xQueueSend\(s_usage_queue,\s*&event,\s*0\)" -Description "BLE HID usage queue dispatch"
+Assert-Contains -Text $keyboard -Pattern "KEYBOARD_CUSTOM_DEBOUNCE_MS\s+20" -Description "custom key debounce tuned for physical buttons"
+Assert-Contains -Text $bleHid -Pattern "xQueueSend\(s_usage_queue,\s*&?event,\s*0\)" -Description "BLE HID usage queue dispatch"
+Assert-Contains -Text $bleHid -Pattern "s_usage_transport_test_blocked" -Description "BLE HID pending self-test can force transport-not-ready branch"
+Assert-Contains -Text $bleHid -Pattern "pending HID usage self-test releasing transport block" -Description "BLE HID pending self-test drain log"
 Assert-Contains -Text $featureMap -Pattern "F13-F16" -Description "feature map documents F13-F16 fallback"
+Assert-Contains -Text $featureMap -Pattern "~KEY:PENDING:KEY1:SINGLE" -Description "feature map documents pending HID diagnostic command"
 Assert-Contains -Text $featureMap -Pattern "until Listener-Type consumes custom key actions" -Description "feature map documents desktop custom action contract"
 Assert-Contains -Text $legacyWasdVerifier -Pattern "legacy wrapper" -Description "WASD verifier is marked legacy"
 Assert-NotContains -Text $keyboard -Pattern "WASD key|HID_KEYBOARD_USAGE_(A|D|S|W)\b|ble_hid_send_ascii_async" -Description "active custom-key WASD or text fallback"

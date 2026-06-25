@@ -2,6 +2,8 @@
 
 This firmware pass implements the V2/N16R8 status lighting as a centralized `status_led` component with a separate strip backend. Business code talks to semantic APIs such as `status_led_set_ble_state()` and `status_led_notify_key_event()`; it does not know whether the physical LEDs are WS2812, a future RGB driver, or another strip implementation.
 
+> **Before changing the LED driver, DMA selection, or adding an LED peripheral, read [status_led_dma_history.md](status_led_dma_history.md).** It consolidates the historical tuning experience and explains why only the status strip is on DMA (ESP32-S3 has only one RMT-DMA channel), why DMA can not stay enabled through low-power idle, the flicker-free DMA output budget (1 RMT + 2 SPI = 3, or move the mic to I2S1 for LCD_CAM), and the guardrails any DMA change must respect.
+
 ## Hardware Resources
 
 - `LED1`-`LED6`: semantic status rail on `PWM_RGB_Status`, `BOARD_PINS_RGB_STATUS_IO`, GPIO1.

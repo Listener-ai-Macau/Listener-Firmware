@@ -67,6 +67,8 @@ static const char *TAG = "ble_hid";
 #define BLE_HID_ASCII_QUEUE_LENGTH 8
 #define BLE_HID_USAGE_QUEUE_LENGTH 32
 #define BLE_HID_KEY_SOURCE_BYTES 32
+#define BLE_HID_PENDING_USAGE_TTL_MS 10000U
+#define BLE_HID_PENDING_USAGE_POLL_MS 20U
 #define BLE_HID_READINESS_ALL \
     (LISTENER_DEVICE_READY_HID | LISTENER_DEVICE_READY_AUDIO | \
      LISTENER_DEVICE_READY_OTA | LISTENER_DEVICE_READY_DIAGNOSTIC)
@@ -82,6 +84,7 @@ typedef struct {
     uint16_t usage;
     uint8_t modifier;
     bool consumer;
+    TickType_t queued_tick;
     char source[BLE_HID_KEY_SOURCE_BYTES];
 } ble_hid_usage_event_t;
 
@@ -123,6 +126,7 @@ static uint32_t s_battery_forced_refresh_timestamp_ms;
 static QueueHandle_t s_ascii_queue;
 static QueueHandle_t s_usage_queue;
 static bool s_safe_mode;
+static bool s_usage_transport_test_blocked;
 static bool s_battery_service_valid;
 static uint8_t s_battery_service_level = BLE_HID_BATTERY_LEVEL_INVALID;
 static bool s_battery_charge_full_latched;
@@ -550,15 +554,87 @@ static void ble_hid_drain_ascii_queue(void)
     }
 }
 
+static bool ble_hid_usage_transport_ready(void)
+{
+    return !s_usage_transport_test_blocked &&
+           s_ble_connected &&
+           s_ble_hid_ctx.hid_device != NULL &&
+           esp_hidd_dev_connected(s_ble_hid_ctx.hid_device);
+}
+
+static uint32_t ble_hid_usage_event_age_ms(const ble_hid_usage_event_t *event, TickType_t now)
+{
+    if (event == NULL) {
+        return UINT32_MAX;
+    }
+    uint64_t elapsed_ms = (uint64_t)(now - event->queued_tick) * (uint64_t)portTICK_PERIOD_MS;
+    return elapsed_ms > UINT32_MAX ? UINT32_MAX : (uint32_t)elapsed_ms;
+}
+
+static bool ble_hid_usage_event_expired(const ble_hid_usage_event_t *event, TickType_t now)
+{
+    return ble_hid_usage_event_age_ms(event, now) > BLE_HID_PENDING_USAGE_TTL_MS;
+}
+
+static bool ble_hid_usage_queue_has_pending(void)
+{
+    return s_usage_queue != NULL && uxQueueMessagesWaiting(s_usage_queue) > 0;
+}
+
+static bool ble_hid_usage_dispatch_should_retry(esp_err_t ret)
+{
+    return ret == ESP_ERR_INVALID_STATE || ret == ESP_FAIL || ret == ESP_ERR_TIMEOUT;
+}
+
+static void ble_hid_request_usage_reconnect(const char *reason)
+{
+    power_manager_record_activity(reason != NULL ? reason : "hid_usage_wake");
+    (void)ble_hid_gap_request_reconnect();
+}
+
+static esp_err_t ble_hid_enqueue_usage_event(ble_hid_usage_event_t *event)
+{
+    if (event == NULL || s_usage_queue == NULL) {
+        return ESP_ERR_INVALID_STATE;
+    }
+
+    event->queued_tick = xTaskGetTickCount();
+    if (xQueueSend(s_usage_queue, event, 0) != pdTRUE) {
+        diag_log(DIAG_SRC_KEYBOARD, DIAG_KBD_QUEUE_DROP, DIAG_SEV_WARN,
+                 event->usage, BLE_HID_USAGE_QUEUE_LENGTH, event->modifier, event->consumer ? 1u : 0u);
+        return ESP_ERR_TIMEOUT;
+    }
+    return ESP_OK;
+}
+
 static void ble_hid_drain_usage_queue(void)
 {
     if (s_usage_queue == NULL) {
+        return;
+    }
+    if (!ble_hid_usage_transport_ready()) {
         return;
     }
 
     ble_hid_usage_event_t event;
     while (xQueueReceive(s_usage_queue, &event, 0) == pdTRUE) {
         const char *source = event.source[0] != '\0' ? event.source : "CUSTOM_KEY";
+        TickType_t now = xTaskGetTickCount();
+        if (ble_hid_usage_event_expired(&event, now)) {
+            uint32_t age_ms = ble_hid_usage_event_age_ms(&event, now);
+            ESP_LOGW(
+                TAG,
+                "%s pending HID usage expired: usage=0x%04X modifier=0x%02X consumer=%u age_ms=%" PRIu32,
+                source,
+                event.usage,
+                event.modifier,
+                event.consumer ? 1u : 0u,
+                age_ms);
+            diag_log(DIAG_SRC_KEYBOARD, DIAG_KBD_QUEUE_DROP, DIAG_SEV_WARN,
+                     event.usage, BLE_HID_PENDING_USAGE_TTL_MS, event.modifier, event.consumer ? 1u : 0u);
+            continue;
+        }
+
         esp_err_t ret = event.consumer
             ? ble_hid_dispatch_consumer_usage(event.usage, source)
             : ble_hid_dispatch_usage((uint8_t)event.usage, event.modifier, source);
@@ -571,6 +647,14 @@ static void ble_hid_drain_usage_queue(void)
                 event.modifier,
                 event.consumer ? 1u : 0u,
                 esp_err_to_name(ret));
+            if (ble_hid_usage_dispatch_should_retry(ret)) {
+                if (xQueueSendToFront(s_usage_queue, &event, 0) != pdTRUE) {
+                    diag_log(DIAG_SRC_KEYBOARD, DIAG_KBD_QUEUE_DROP, DIAG_SEV_WARN,
+                             event.usage, BLE_HID_USAGE_QUEUE_LENGTH, event.modifier, event.consumer ? 1u : 0u);
+                }
+                ble_hid_request_usage_reconnect("hid_usage_retry");
+                break;
+            }
         }
     }
 }
@@ -606,10 +690,29 @@ esp_err_t ble_hid_send_keyboard_usage_with_modifier_async(uint8_t usage, uint8_t
         return ESP_ERR_INVALID_STATE;
     }
 
-    if (!ble_hid_is_connected()) {
-        power_manager_record_activity("hid_usage_wake");
-        (void)ble_hid_gap_request_reconnect();
-        return ESP_ERR_INVALID_STATE;
+    const char *event_source = source != NULL ? source : "CUSTOM_KEY";
+    if (ble_hid_usage_transport_ready() && !ble_hid_usage_queue_has_pending()) {
+        power_manager_record_activity("hid_usage_dispatch");
+        esp_err_t dispatch_ret = ble_hid_dispatch_usage(usage, modifier, event_source);
+        if (dispatch_ret == ESP_OK) {
+            ESP_LOGI(
+                TAG,
+                "%s HID usage dispatched immediately: usage=0x%02X modifier=0x%02X",
+                event_source,
+                usage,
+                modifier);
+            return ESP_OK;
+        }
+        ESP_LOGW(
+            TAG,
+            "%s immediate HID usage dispatch failed: usage=0x%02X modifier=0x%02X error=%s",
+            event_source,
+            usage,
+            modifier,
+            esp_err_to_name(dispatch_ret));
+        if (!ble_hid_usage_dispatch_should_retry(dispatch_ret)) {
+            return dispatch_ret;
+        }
     }
 
     ble_hid_usage_event_t event = {
@@ -621,25 +724,52 @@ esp_err_t ble_hid_send_keyboard_usage_with_modifier_async(uint8_t usage, uint8_t
         snprintf(event.source, sizeof(event.source), "%s", source);
     }
 
-    if (xQueueSend(s_usage_queue, &event, 0) != pdTRUE) {
-        diag_log(DIAG_SRC_KEYBOARD, DIAG_KBD_QUEUE_DROP, DIAG_SEV_WARN,
-                 usage, BLE_HID_USAGE_QUEUE_LENGTH, modifier, 0);
-        return ESP_ERR_TIMEOUT;
+    esp_err_t ret = ble_hid_enqueue_usage_event(&event);
+    if (ret != ESP_OK) {
+        return ret;
+    }
+
+    if (!ble_hid_usage_transport_ready()) {
+        ble_hid_request_usage_reconnect("hid_usage_wake");
+        ESP_LOGI(
+            TAG,
+            "%s pending HID usage queued for reconnect: usage=0x%02X modifier=0x%02X depth=%u ttl_ms=%u",
+            event_source,
+            usage,
+            modifier,
+            (unsigned)uxQueueMessagesWaiting(s_usage_queue),
+            (unsigned)BLE_HID_PENDING_USAGE_TTL_MS);
+        return ESP_OK;
     }
 
     power_manager_record_activity("hid_usage_enqueue");
+    ble_hid_drain_usage_queue();
     return ESP_OK;
+}
+
+esp_err_t ble_hid_send_keyboard_usage_pending_test_async(uint8_t usage, uint8_t modifier, const char *source)
+{
+    bool previous_blocked = s_usage_transport_test_blocked;
+    s_usage_transport_test_blocked = true;
+    esp_err_t ret = ble_hid_send_keyboard_usage_with_modifier_async(usage, modifier, source);
+    s_usage_transport_test_blocked = previous_blocked;
+
+    if (ret == ESP_OK) {
+        ESP_LOGI(
+            TAG,
+            "%s pending HID usage self-test releasing transport block: usage=0x%02X modifier=0x%02X depth=%u",
+            source != NULL ? source : "CUSTOM_KEY",
+            usage,
+            modifier,
+            s_usage_queue != NULL ? (unsigned)uxQueueMessagesWaiting(s_usage_queue) : 0u);
+        ble_hid_drain_usage_queue();
+    }
+    return ret;
 }
 
 esp_err_t ble_hid_send_consumer_usage_async(uint16_t usage, const char *source)
 {
     if (s_usage_queue == NULL) {
-        return ESP_ERR_INVALID_STATE;
-    }
-
-    if (!ble_hid_is_connected()) {
-        power_manager_record_activity("hid_consumer_wake");
-        (void)ble_hid_gap_request_reconnect();
         return ESP_ERR_INVALID_STATE;
     }
 
@@ -651,10 +781,21 @@ esp_err_t ble_hid_send_consumer_usage_async(uint16_t usage, const char *source)
         snprintf(event.source, sizeof(event.source), "%s", source);
     }
 
-    if (xQueueSend(s_usage_queue, &event, 0) != pdTRUE) {
-        diag_log(DIAG_SRC_KEYBOARD, DIAG_KBD_QUEUE_DROP, DIAG_SEV_WARN,
-                 usage, BLE_HID_USAGE_QUEUE_LENGTH, 1, 0);
-        return ESP_ERR_TIMEOUT;
+    esp_err_t ret = ble_hid_enqueue_usage_event(&event);
+    if (ret != ESP_OK) {
+        return ret;
+    }
+
+    if (!ble_hid_usage_transport_ready()) {
+        ble_hid_request_usage_reconnect("hid_consumer_wake");
+        ESP_LOGI(
+            TAG,
+            "%s pending consumer usage queued for reconnect: usage=0x%04X depth=%u ttl_ms=%u",
+            source != NULL ? source : "CONSUMER",
+            usage,
+            (unsigned)uxQueueMessagesWaiting(s_usage_queue),
+            (unsigned)BLE_HID_PENDING_USAGE_TTL_MS);
+        return ESP_OK;
     }
 
     power_manager_record_activity("hid_consumer_enqueue");
@@ -778,6 +919,7 @@ static bool ble_hid_usb_command_records_activity(const char *line)
         ble_hid_usb_command_matches(line, "DIAGLOG:INPUTDBG:OFF") ||
         ble_hid_usb_command_starts_with_boundary(line, "DIAGLOG:ENABLE") ||
         ble_hid_usb_command_starts_with_boundary(line, "DIAGLOG:DISABLE") ||
+        ble_hid_usb_command_starts_with_boundary(line, "KEY") ||
         ble_hid_usb_command_matches(line, "KEY:KEY3:SINGLE") ||
         ble_hid_usb_command_matches(line, "KEY:3:SINGLE") ||
         ble_hid_usb_command_matches(line, "KEY:EC11:SINGLE") ||
@@ -1005,6 +1147,10 @@ static void ble_hid_keyboard_task(void *parameter)
         uint32_t usb_read_timeout_ms = ble_hid_low_power_idle_active()
             ? BLE_HID_USB_READ_LOW_POWER_TIMEOUT_MS
             : BLE_HID_USB_READ_ACTIVE_TIMEOUT_MS;
+        if (ble_hid_usage_queue_has_pending() &&
+            usb_read_timeout_ms > BLE_HID_PENDING_USAGE_POLL_MS) {
+            usb_read_timeout_ms = BLE_HID_PENDING_USAGE_POLL_MS;
+        }
         int bytes_read = usb_serial_jtag_read_bytes(
             rx_buffer,
             sizeof(rx_buffer),
@@ -1100,6 +1246,7 @@ static void ble_hid_event_callback(void *handler_args, esp_event_base_t base, in
         uint32_t disconnect_count = ble_hid_disconnect_count_snapshot();
         diag_log(DIAG_SRC_BLE_HID, DIAG_BLE_CONNECT, DIAG_SEV_INFO,
                  1, esp_get_free_heap_size() / 1024, disconnect_count, 0);
+        ble_hid_drain_usage_queue();
         break;
     case ESP_HIDD_PROTOCOL_MODE_EVENT:
         ESP_LOGI(
@@ -1160,9 +1307,6 @@ static void ble_hid_event_callback(void *handler_args, esp_event_base_t base, in
             status_led_set_ble_state(STATUS_LED_BLE_RECONNECTING, false);
             if (s_ascii_queue != NULL) {
                 xQueueReset(s_ascii_queue);
-            }
-            if (s_usage_queue != NULL) {
-                xQueueReset(s_usage_queue);
             }
         }
         break;
