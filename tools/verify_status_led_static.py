@@ -853,7 +853,7 @@ CHECKS = {
         "`~DEVICE:SET led_ec11=<0-100>`",
         "`~DEVICE:SET led_edge=<0-100>`",
         "`~LED:REC_LEVEL <0-100> [hold_ms]`",
-        "It does not add a hidden percent cap above the user plugged/battery brightness setting",
+        "It does not add a hidden percent cap above the Type-controlled user brightness setting",
         "user brightness cap is persisted through `~LED:BRIGHTNESS <0-100>` and applies as the hard routine-product brightness limit",
         "clear semantic colors",
         "RGBW, map, chase, and pixel test commands remain calibration tools",
@@ -1034,6 +1034,7 @@ def main() -> int:
     status_led = read("components/status_led/status_led.c")
     status_led_backend = read("components/status_led/status_led_strip_backend.c")
     ble_gap = read("ports/esp32/ble_hid_gap/ble_hid_gap_esp32.c")
+    ble_firmware_ota = read("ports/esp32/ble_firmware_ota/ble_firmware_ota_esp32.c")
     audio_capture = read("ports/esp32/audio_capture/audio_capture_esp32.c")
     main_c = read("main/main.c")
     human_review = read("tools/status_led_human_effect_review.ps1")
@@ -1242,15 +1243,37 @@ def main() -> int:
         r"status_led_connected_hid_only_percent_locked[^{]*\{[\s\S]*?"
         r"STATUS_LED_BLE_CONNECTED_HEARTBEAT_PERIOD_MS[\s\S]*?"
         r"STATUS_LED_BLE_CONNECTED_PULSE_PERCENT[\s\S]*?"
-        r"STATUS_LED_BLE_CONNECTED_BASE_PERCENT[\s\S]*?"
+        r"STATUS_LED_BLE_CONNECTED_BASE_PERCENT",
+        status_led,
+    ) or not re.search(
         r"case\s+STATUS_LED_BLE_CONNECTED:\s*\n\s*case\s+STATUS_LED_BLE_TYPE_READY:\s*\{[\s\S]*?"
-        r"STATUS_LED_BLE_CONNECTED_PULSE_PERCENT[\s\S]*?"
+        r"const\s+bool\s+type_ready[\s\S]*?"
+        r"const\s+bool\s+ota_ble_steady\s*=\s*status_led_ota_ble_steady_locked\(now_ms\);[\s\S]*?"
+        r"if\s*\(\s*type_ready\s*\|\|\s*ota_ble_steady\s*\)[\s\S]*?"
         r"STATUS_LED_BLE_TYPE_READY_STEADY_PERCENT[\s\S]*?"
+        r"ble_elapsed_ms\s*<\s*STATUS_LED_BLE_CONNECTED_CONFIRM_MS[\s\S]*?"
+        r"STATUS_LED_BLE_CONNECTED_PULSE_PERCENT[\s\S]*?"
         r"connected_visible_until_idle[\s\S]*?"
         r"status_led_connected_hid_only_percent_locked\(ble_elapsed_ms\)",
         status_led,
     ):
-        failures.append("status_led.c: active BLE rendering must keep HID-only connected visible as a distinct blue heartbeat and TYPE_READY as steady blue until idle")
+        failures.append("status_led.c: active BLE rendering must keep HID-only connected as a blue heartbeat; only TYPE_READY or active OTA transfer may be steady blue")
+    if not re.search(
+        r"void\s+status_led_set_ota_active[\s\S]*?else\s*\{[\s\S]*?"
+        r"status_led_clear_ota_locked\(\);[\s\S]*?\}"
+        r"[\s\S]*?if\s*\(\s*changed\s*\)",
+        status_led,
+    ):
+        failures.append("status_led.c: OTA stop must clear the temporary BLE steady hold instead of keeping Type-ready blue after transfer")
+    if not re.search(
+        r"static\s+bool\s+status_led_ota_ble_steady_locked\(uint32_t now_ms\)[\s\S]*?"
+        r"\(void\)now_ms;[\s\S]*?return\s+s_state\.ota_active;",
+        status_led,
+    ):
+        failures.append("status_led.c: OTA may make BLE steady only while the OTA session is active")
+    for stale_token in ("status_led_note_ota_activity", "STATUS_LED_OTA_BLE_STEADY_HOLD_MS"):
+        if stale_token in status_led or stale_token in ble_firmware_ota:
+            failures.append(f"BLE OTA must not use stale activity hold token {stale_token}")
     for token in (
         "STATUS_LED_RECORDING_LEVEL_STALE_MS",
         "STATUS_LED_RECORDING_LEVEL_EFFECT_MIN_PERCENT 8U",

@@ -155,8 +155,8 @@ Assert-Contains $statusLed 'STATUS_LED_BLE_CONNECTED_GENERIC_PERCENT\s+14U[\s\S]
     "HID-only connected BLE must use the distinct low-base blue heartbeat"
 Assert-Contains $statusLed 'STATUS_LED_BLE_TYPE_READY_STEADY_PERCENT\s+STATUS_LED_BLE_CONNECTED_GENERIC_PERCENT' `
     "TYPE_READY must use steady blue"
-Assert-Contains $statusLed 'case STATUS_LED_BLE_CONNECTED:\s*\n\s*case STATUS_LED_BLE_TYPE_READY:\s*\{[\s\S]*?const bool type_ready = s_state\.ble_state == STATUS_LED_BLE_TYPE_READY;[\s\S]*?!type_ready && ble_elapsed_ms < STATUS_LED_BLE_CONNECTED_CONFIRM_MS[\s\S]*?STATUS_LED_BLE_CONNECTED_PULSE_PERCENT[\s\S]*?else if \(type_ready\)[\s\S]*?STATUS_LED_BLE_TYPE_READY_STEADY_PERCENT[\s\S]*?connected_visible_until_idle[\s\S]*?status_led_connected_hid_only_percent_locked\(ble_elapsed_ms\)' `
-    "HID-only connected must heartbeat blue until idle while TYPE_READY stays steady blue"
+Assert-Contains $statusLed 'case STATUS_LED_BLE_CONNECTED:\s*\n\s*case STATUS_LED_BLE_TYPE_READY:\s*\{[\s\S]*?const bool type_ready = s_state\.ble_state == STATUS_LED_BLE_TYPE_READY;[\s\S]*?const bool ota_ble_steady = status_led_ota_ble_steady_locked\(now_ms\);[\s\S]*?if \(type_ready \|\| ota_ble_steady\)[\s\S]*?STATUS_LED_BLE_TYPE_READY_STEADY_PERCENT[\s\S]*?ble_elapsed_ms < STATUS_LED_BLE_CONNECTED_CONFIRM_MS[\s\S]*?STATUS_LED_BLE_CONNECTED_PULSE_PERCENT[\s\S]*?connected_visible_until_idle[\s\S]*?status_led_connected_hid_only_percent_locked\(ble_elapsed_ms\)' `
+    "HID-only connected must heartbeat blue until idle, while TYPE_READY and active OTA transfer stay steady blue"
 Assert-Contains $statusLed 'static\s+uint8_t\s+status_led_low_power_ble_percent_locked\(uint32_t ble_elapsed_ms\)[\s\S]*?case STATUS_LED_BLE_PAIRING:[\s\S]*?STATUS_LED_BATTERY_IDLE_BLE_HEARTBEAT_ON_MS[\s\S]*?STATUS_LED_LOW_POWER_BLE_ATTENTION_PERCENT[\s\S]*?case STATUS_LED_BLE_CONNECTED:\s*\n\s*case STATUS_LED_BLE_TYPE_READY:[\s\S]*?return 0U;' `
     "connected and TYPE_READY BLE must stay dark after idle"
 Assert-Contains $statusLed 'const bool active_work = s_state\.recording_active \|\| s_state\.processing_active \|\| s_state\.ota_active;' `

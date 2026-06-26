@@ -2185,6 +2185,12 @@ static uint8_t status_led_connected_hid_only_percent_locked(uint32_t ble_elapsed
         : STATUS_LED_BLE_CONNECTED_BASE_PERCENT;
 }
 
+static bool status_led_ota_ble_steady_locked(uint32_t now_ms)
+{
+    (void)now_ms;
+    return s_state.ota_active;
+}
+
 static void status_led_render_ble_locked(status_led_frame_t *frame, uint32_t now_ms)
 {
     if (s_state.preview_effect_only) {
@@ -2226,7 +2232,13 @@ static void status_led_render_ble_locked(status_led_frame_t *frame, uint32_t now
     case STATUS_LED_BLE_CONNECTED:
     case STATUS_LED_BLE_TYPE_READY: {
         const bool type_ready = s_state.ble_state == STATUS_LED_BLE_TYPE_READY;
-        if (!type_ready && ble_elapsed_ms < STATUS_LED_BLE_CONNECTED_CONFIRM_MS) {
+        const bool ota_ble_steady = status_led_ota_ble_steady_locked(now_ms);
+        if (type_ready || ota_ble_steady) {
+            color = status_led_token_locked(
+                ble_blue,
+                STATUS_LED_BLE_TYPE_READY_STEADY_PERCENT,
+                false);
+        } else if (ble_elapsed_ms < STATUS_LED_BLE_CONNECTED_CONFIRM_MS) {
             color = status_led_token_locked(
                 ble_blue,
                 status_led_triangle_percent(
@@ -2234,16 +2246,6 @@ static void status_led_render_ble_locked(status_led_frame_t *frame, uint32_t now
                     STATUS_LED_BLE_CONNECTED_CONFIRM_MS,
                     STATUS_LED_BLE_CONNECTED_CONFIRM_MIN_PERCENT,
                     STATUS_LED_BLE_CONNECTED_PULSE_PERCENT),
-                false);
-        } else if (type_ready) {
-            color = status_led_token_locked(
-                ble_blue,
-                STATUS_LED_BLE_TYPE_READY_STEADY_PERCENT,
-                false);
-        } else if (s_state.ota_active) {
-            color = status_led_token_locked(
-                ble_blue,
-                STATUS_LED_BLE_TYPE_READY_STEADY_PERCENT,
                 false);
         } else if (confidence || status_window || active_work || connected_visible_until_idle) {
             color = status_led_token_locked(
@@ -3690,12 +3692,11 @@ static bool status_led_apply_device_settings_snapshot_locked(
     const device_settings_snapshot_t *settings,
     bool external_power_present)
 {
+    (void)external_power_present;
     if (settings == NULL) {
         return false;
     }
-    const uint8_t active_brightness = external_power_present
-        ? settings->plugged_brightness_percent
-        : settings->battery_brightness_percent;
+    const uint8_t active_brightness = settings->plugged_brightness_percent;
     const bool changed =
         s_state.brightness_percent != active_brightness ||
         s_state.status_zone_brightness_percent != settings->status_led_brightness_percent ||

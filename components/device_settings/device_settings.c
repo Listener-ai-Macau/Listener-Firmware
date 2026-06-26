@@ -193,6 +193,7 @@ static esp_err_t device_settings_load_locked(void)
         s_settings.battery_brightness_percent = device_settings_clamp_brightness(battery);
         s_loaded_from_nvs = true;
     }
+    s_settings.battery_brightness_percent = s_settings.plugged_brightness_percent;
 
     uint8_t status_led = s_settings.status_led_brightness_percent;
     if (nvs_get_u8(nvs, DEVICE_SETTINGS_NVS_STATUS_LED_BRIGHTNESS_KEY, &status_led) == ESP_OK) {
@@ -492,11 +493,10 @@ void device_settings_get_snapshot(device_settings_snapshot_t *out_snapshot)
 
 uint8_t device_settings_get_active_brightness_percent(bool external_power_present)
 {
+    (void)external_power_present;
     device_settings_snapshot_t snapshot = {0};
     device_settings_get_snapshot(&snapshot);
-    return external_power_present
-        ? snapshot.plugged_brightness_percent
-        : snapshot.battery_brightness_percent;
+    return snapshot.plugged_brightness_percent;
 }
 
 uint32_t device_settings_get_low_power_idle_ms(void)
@@ -594,7 +594,8 @@ esp_err_t device_settings_set_brightness_profiles(uint8_t plugged_percent, uint8
     if (xSemaphoreTake(s_mutex, portMAX_DELAY) == pdTRUE) {
         (void)device_settings_ensure_loaded_locked();
         s_settings.plugged_brightness_percent = device_settings_clamp_brightness(plugged_percent);
-        s_settings.battery_brightness_percent = device_settings_clamp_brightness(battery_percent);
+        (void)battery_percent;
+        s_settings.battery_brightness_percent = s_settings.plugged_brightness_percent;
         ret = device_settings_persist_locked();
         xSemaphoreGive(s_mutex);
     }
@@ -640,9 +641,7 @@ static void device_settings_print_status(const char *result)
     bool charge_full = raw_full && !charging;
     bool charge_power_present = usb_power_present || charger_active || charge_full;
     bool external_power_present = charge_power_present;
-    uint8_t active_brightness = external_power_present
-        ? snapshot.plugged_brightness_percent
-        : snapshot.battery_brightness_percent;
+    uint8_t active_brightness = snapshot.plugged_brightness_percent;
     uint32_t active_low_power_idle_ms = external_power_present
         ? snapshot.plugged_low_power_idle_ms
         : snapshot.battery_low_power_idle_ms;
@@ -1161,6 +1160,7 @@ static esp_err_t device_settings_apply_set_command(const char *arguments)
 
         if (ok) {
             bool name_changed = strcmp(s_settings.ble_name, next.ble_name) != 0;
+            next.battery_brightness_percent = next.plugged_brightness_percent;
             s_settings = next;
             if (name_changed) {
                 s_ble_name_pending_restart = true;
