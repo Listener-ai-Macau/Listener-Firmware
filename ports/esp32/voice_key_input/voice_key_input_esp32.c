@@ -81,6 +81,7 @@
 #define VOICE_KEY_INPUT_RECOVERY_IDLE_GUARD_MS (2000)
 #define VOICE_KEY_INPUT_GENERATED_PRESS_MS (80)
 #define VOICE_KEY_INPUT_GENERATED_RELEASE_SETTLE_MS (80)
+#define VOICE_KEY_INPUT_GENERATED_INTER_CLICK_RELEASE_MS (220)
 #define VOICE_KEY_INPUT_DEBUG_RAW 1u
 #define VOICE_KEY_INPUT_DEBUG_STABLE 2u
 #define VOICE_KEY_INPUT_DEBUG_SOURCE_DIRECT_GPIO 1u
@@ -137,6 +138,7 @@ static volatile bool s_recording_output_enabled;
 static volatile bool s_recording_output_change_seen;
 static volatile TickType_t s_recording_output_last_change_tick;
 static bool s_direct_generated_active;
+static uint8_t s_direct_generated_click_count;
 static TickType_t s_direct_generated_start_tick;
 #if VOICE_KEY_INPUT_ENABLE_LEGACY_EXPANDER
 static bool s_prev_input_valid;
@@ -293,14 +295,16 @@ static void voice_key_input_clear_raw_feedback(voice_key_button_state_t *button)
     }
 }
 
-esp_err_t voice_key_input_enqueue_generated_single_click(void)
+static esp_err_t voice_key_input_enqueue_generated_clicks(uint8_t click_count)
 {
     if (s_generated_single_click_queue == NULL) {
         return ESP_ERR_INVALID_STATE;
     }
+    if (click_count == 0 || click_count > 2) {
+        return ESP_ERR_INVALID_ARG;
+    }
 
-    uint8_t event = 1;
-    if (xQueueSend(s_generated_single_click_queue, &event, pdMS_TO_TICKS(20)) != pdTRUE) {
+    if (xQueueSend(s_generated_single_click_queue, &click_count, pdMS_TO_TICKS(20)) != pdTRUE) {
         return ESP_ERR_TIMEOUT;
     }
 
@@ -308,11 +312,23 @@ esp_err_t voice_key_input_enqueue_generated_single_click(void)
     power_manager_record_activity("generated_ec11_key");
     ESP_LOGI(
         TAG,
-        "EC11 push generated single-click queued: source=%s press_ms=%d double_ms=%d",
+        "EC11 push generated click queued: source=%s clicks=%u press_ms=%d double_ms=%d recovery_double_ms=%d",
         VOICE_KEY_INPUT_DIRECT_LABEL,
+        (unsigned)click_count,
         VOICE_KEY_INPUT_GENERATED_PRESS_MS,
-        VOICE_KEY_INPUT_DOUBLE_CLICK_WINDOW_MS);
+        VOICE_KEY_INPUT_DOUBLE_CLICK_WINDOW_MS,
+        VOICE_KEY_INPUT_RECOVERY_DOUBLE_CLICK_WINDOW_MS);
     return ESP_OK;
+}
+
+esp_err_t voice_key_input_enqueue_generated_single_click(void)
+{
+    return voice_key_input_enqueue_generated_clicks(1);
+}
+
+esp_err_t voice_key_input_enqueue_generated_double_click(void)
+{
+    return voice_key_input_enqueue_generated_clicks(2);
 }
 
 static void voice_key_input_record_recovery_event(const char *source)
@@ -347,13 +363,21 @@ static void voice_key_input_drain_generated_events(TickType_t now)
 
     uint8_t event = 0;
     while (xQueueReceive(s_generated_single_click_queue, &event, 0) == pdTRUE) {
-        (void)event;
+        uint8_t click_count = event;
+        if (click_count == 0 || click_count > 2) {
+            click_count = 1;
+        }
         if (!s_direct_gpio_state.idle_level_valid) {
             voice_key_input_handle_button_sample(&s_direct_gpio_state, true);
         }
         s_direct_generated_active = true;
+        s_direct_generated_click_count = click_count;
         s_direct_generated_start_tick = now;
-        ESP_LOGI(TAG, "EC11 push generated single-click armed: source=%s", VOICE_KEY_INPUT_DIRECT_LABEL);
+        ESP_LOGI(
+            TAG,
+            "EC11 push generated click armed: source=%s clicks=%u",
+            VOICE_KEY_INPUT_DIRECT_LABEL,
+            (unsigned)click_count);
     }
 }
 
@@ -363,16 +387,36 @@ static bool voice_key_input_generated_raw_high(bool physical_raw_high, TickType_
         return physical_raw_high;
     }
 
-    uint32_t elapsed_ms = (uint32_t)((now - s_direct_generated_start_tick) * portTICK_PERIOD_MS);
-    if (elapsed_ms < VOICE_KEY_INPUT_GENERATED_PRESS_MS) {
-        return false;
+    uint8_t click_count = s_direct_generated_click_count;
+    if (click_count == 0 || click_count > 2) {
+        click_count = 1;
     }
-    if (elapsed_ms < VOICE_KEY_INPUT_GENERATED_PRESS_MS + VOICE_KEY_INPUT_GENERATED_RELEASE_SETTLE_MS) {
-        return true;
+
+    uint32_t elapsed_ms = (uint32_t)((now - s_direct_generated_start_tick) * portTICK_PERIOD_MS);
+    const uint32_t inter_click_cycle_ms =
+        VOICE_KEY_INPUT_GENERATED_PRESS_MS + VOICE_KEY_INPUT_GENERATED_INTER_CLICK_RELEASE_MS;
+    for (uint8_t click_index = 0; click_index < click_count; ++click_index) {
+        uint32_t click_start_ms = (uint32_t)click_index * inter_click_cycle_ms;
+        uint32_t press_end_ms = click_start_ms + VOICE_KEY_INPUT_GENERATED_PRESS_MS;
+        uint32_t release_end_ms = press_end_ms +
+            (click_index + 1u < click_count
+                 ? VOICE_KEY_INPUT_GENERATED_INTER_CLICK_RELEASE_MS
+                 : VOICE_KEY_INPUT_GENERATED_RELEASE_SETTLE_MS);
+        if (elapsed_ms < press_end_ms) {
+            return false;
+        }
+        if (elapsed_ms < release_end_ms) {
+            return true;
+        }
     }
 
     s_direct_generated_active = false;
-    ESP_LOGI(TAG, "EC11 push generated single-click completed: source=%s", VOICE_KEY_INPUT_DIRECT_LABEL);
+    s_direct_generated_click_count = 0;
+    ESP_LOGI(
+        TAG,
+        "EC11 push generated click completed: source=%s clicks=%u",
+        VOICE_KEY_INPUT_DIRECT_LABEL,
+        (unsigned)click_count);
     return physical_raw_high;
 }
 

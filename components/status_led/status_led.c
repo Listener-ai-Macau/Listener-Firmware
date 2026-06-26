@@ -89,7 +89,6 @@
 #define STATUS_LED_LOW_POWER_PWR_PERCENT 12U
 #define STATUS_LED_LOW_POWER_PWR_WHITE_PERCENT 4U
 #define STATUS_LED_LOW_POWER_BLE_ATTENTION_PERCENT 12U
-#define STATUS_LED_LOW_POWER_BLE_TYPE_READY_PERCENT STATUS_LED_BLE_TYPE_READY_STEADY_PERCENT
 #define STATUS_LED_STATUS_WINDOW_MS 6000U
 #define STATUS_LED_PREVIEW_BLE_OVERRIDE_MS 15000U
 #define STATUS_LED_BOOT_ACK_MS 2500U
@@ -161,7 +160,7 @@
 #define STATUS_LED_STANDARD_PROFILE_BUDGET_MA 760U
 #define STATUS_LED_AMBIENT_PROFILE_BUDGET_MA 620U
 #define STATUS_LED_CHASE_DEFAULT_STEP_MS 250U
-#define STATUS_LED_CONTRACT_REV "status_key_ec11_edge_true_state_v24"
+#define STATUS_LED_CONTRACT_REV "status_key_ec11_edge_true_state_v26"
 #define STATUS_LED_NVS_NAMESPACE "status_led"
 #define STATUS_LED_NVS_PROFILE_KEY "profile"
 #define STATUS_LED_NVS_BRIGHTNESS_KEY "brightness"
@@ -2171,9 +2170,8 @@ static uint8_t status_led_low_power_ble_percent_locked(uint32_t ble_elapsed_ms)
             ? STATUS_LED_LOW_POWER_BLE_ATTENTION_PERCENT
             : 0U;
     case STATUS_LED_BLE_CONNECTED:
-        return 0U;
     case STATUS_LED_BLE_TYPE_READY:
-        return STATUS_LED_LOW_POWER_BLE_TYPE_READY_PERCENT;
+        return 0U;
     case STATUS_LED_BLE_DISCONNECTED:
     default:
         return 0U;
@@ -3511,11 +3509,6 @@ static void status_led_clear_key_feedback_locked(void)
     memset(s_state.key_feedback, 0, sizeof(s_state.key_feedback));
 }
 
-static bool status_led_active_work_locked(void)
-{
-    return s_state.recording_active || s_state.processing_active || s_state.ota_active;
-}
-
 static bool status_led_clear_retryable_error_locked(status_led_error_domain_t domain)
 {
     if (s_state.error_domain == domain &&
@@ -4294,9 +4287,9 @@ void status_led_set_recording(bool active, status_led_rec_source_t source)
         s_state.recording_level_hold_until_ms = 0U;
         status_led_reset_recording_level_visual_locked(now_ms);
         if (s_state.recording_active) {
+            s_state.idle_transition_clear_pending = false;
             s_state.ble_repair_until_ms = 0U;
             status_led_clear_ok_locked();
-            status_led_clear_key_feedback_locked();
             status_led_clear_retryable_error_locked(STATUS_LED_ERROR_DOMAIN_REC);
         }
         s_state.last_transition_ms = now_ms;
@@ -4376,10 +4369,10 @@ void status_led_set_processing(bool active, const char *reason)
         }
         s_state.processing_active = active;
         if (active) {
+            s_state.idle_transition_clear_pending = false;
             s_state.ble_repair_until_ms = 0U;
             s_state.processing_started_ms = now_ms;
             status_led_clear_ok_locked();
-            status_led_clear_key_feedback_locked();
             status_led_clear_retryable_error_locked(STATUS_LED_ERROR_DOMAIN_AI);
             status_led_clear_retryable_error_locked(STATUS_LED_ERROR_DOMAIN_OTA);
         }
@@ -4501,13 +4494,8 @@ void status_led_notify_key_event(uint8_t key_index, bool pressed)
             xSemaphoreGive(s_mutex);
             return;
         }
-        if (status_led_active_work_locked()) {
-            status_led_clear_key_feedback_locked();
-            changed = true;
-            xSemaphoreGive(s_mutex);
-            status_led_request_refresh();
-            return;
-        }
+        /* Physical key acknowledgement is independent from whether active
+         * recording/processing/OTA work accepts the resulting action. */
         status_led_resume_interactive_output_locked();
         if (pressed) {
             s_state.key_pressed_mask |= 1U << key_index;
@@ -4554,13 +4542,8 @@ void status_led_notify_key_feedback(uint8_t key_index, status_led_key_feedback_t
             xSemaphoreGive(s_mutex);
             return;
         }
-        if (status_led_active_work_locked()) {
-            status_led_clear_key_feedback_locked();
-            changed = true;
-            xSemaphoreGive(s_mutex);
-            status_led_request_refresh();
-            return;
-        }
+        /* Gesture feedback stays local even when HID/custom actions are
+         * suppressed by active recording or processing work. */
         status_led_resume_interactive_output_locked();
         uint32_t duration_ms = status_led_key_feedback_duration_ms(feedback);
         s_state.key_until_ms[key_index] = 0U;

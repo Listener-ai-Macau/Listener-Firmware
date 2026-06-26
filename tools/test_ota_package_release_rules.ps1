@@ -22,7 +22,7 @@ Copy-Item -LiteralPath $sourceFactoryScript -Destination (Join-Path $fakeTools "
 Set-Content -LiteralPath (Join-Path $fakeRepo ".gitignore") -Value @(".cache/", "build/") -Encoding UTF8
 & git -C $fakeRepo init | Out-Null
 & git -C $fakeRepo add . | Out-Null
-& git -C $fakeRepo -c user.name="ota-test" -c user.email="ota-test@example.invalid" commit -m "init package test repo" | Out-Null
+& git -C $fakeRepo -c user.name="listener-release-test" -c user.email="listener-release-test@example.invalid" commit -m "init package test repo" | Out-Null
 
 $packageScript = Join-Path $fakeTools "package_ota_firmware.ps1"
 $buildRoot = Join-Path $testRoot "builds"
@@ -199,19 +199,19 @@ function Assert-CompletePackage {
 $dirtyVersionBuild = New-FakeBuild -Name "dirty-version" -Version "review-dirty" -CompleteFactoryArtifacts $true
 Assert-PackageFails -Name "stable_dirty_version" -BuildDir $dirtyVersionBuild -Channel "stable" -ExpectedText "requires a clean"
 
-$devVersionBuild = New-FakeBuild -Name "dev-version" -Version "0.1.0-dev" -CompleteFactoryArtifacts $true
-Assert-PackageFails -Name "beta_dev_version" -BuildDir $devVersionBuild -Channel "beta" -ExpectedText "requires a clean"
+$devVersionBuild = New-FakeBuild -Name "dev-version" -Version "1.0.0-dev" -CompleteFactoryArtifacts $true
+Assert-PackageFails -Name "stable_dev_version" -BuildDir $devVersionBuild -Channel "stable" -ExpectedText "requires a clean"
 
 $missingFactoryBuild = New-FakeBuild -Name "missing-factory" -Version "1.2.3" -CompleteFactoryArtifacts $false
 Assert-PackageFails -Name "stable_missing_factory_artifacts" -BuildDir $missingFactoryBuild -Channel "stable" -ExpectedText "Factory package generation failed"
 
-$stableBuild = New-FakeBuild -Name "stable-complete" -Version "1.2.3" -CompleteFactoryArtifacts $true
-Assert-CompletePackage -Name "stable_complete" -BuildDir $stableBuild -Channel "stable" -ExpectedVersion "1.2.3"
+$stableBuild = New-FakeBuild -Name "stable-complete" -Version "1.0.0" -CompleteFactoryArtifacts $true
+Assert-CompletePackage -Name "stable_complete" -BuildDir $stableBuild -Channel "stable" -ExpectedVersion "1.0.0"
 
-$betaBuild = New-FakeBuild -Name "beta-complete" -Version "1.2.4-beta.1" -CompleteFactoryArtifacts $true
-Assert-CompletePackage -Name "beta_complete" -BuildDir $betaBuild -Channel "beta" -ExpectedVersion "1.2.4-beta.1"
+$developmentBuild = New-FakeBuild -Name "development-complete" -Version "1.0.0-local.1" -CompleteFactoryArtifacts $true
+Assert-CompletePackage -Name "development_complete" -BuildDir $developmentBuild -Channel "development" -ExpectedVersion "1.0.0-local.1"
 
-$longInternalBuild = New-FakeBuild -Name "long-internal-version" -Version "v1002.0.0-ota-test-226-g99934ff-dirty" -CompleteFactoryArtifacts $true
-Assert-CompletePackage -Name "internal_long_version_truncated" -BuildDir $longInternalBuild -Channel "internal-test" -ExpectedVersion "v1002.0.0-ota-test-226-g99934ff"
+$longDevelopmentBuild = New-FakeBuild -Name "long-development-version" -Version "1.0.0-local-build-226-g99934ff-dirty" -CompleteFactoryArtifacts $true
+Assert-CompletePackage -Name "development_long_version_truncated" -BuildDir $longDevelopmentBuild -Channel "development" -ExpectedVersion "1.0.0-local-build-226-g99934ff"
 
 Write-Host "PASS: OTA release package rules completed."

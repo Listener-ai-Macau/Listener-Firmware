@@ -97,6 +97,7 @@ typedef struct {
     bool double_candidate;
     bool raw_feedback_pressed;
     TickType_t press_tick;
+    TickType_t raw_feedback_tick;
     TickType_t pending_single_due_tick;
 } keyboard_custom_key_t;
 
@@ -653,6 +654,14 @@ static bool keyboard_consume_usb_command(const char *line, esp_err_t *out_ret)
         power_manager_set_blocker(POWER_MANAGER_BLOCKER_USB_COMMAND, false);
         return true;
     }
+    if (strcmp(command, "EC11:DOUBLE") == 0 || strcmp(command, "VOICE:DOUBLE") == 0) {
+        *out_ret = voice_key_input_enqueue_generated_double_click();
+        printf(
+            "~KEY:GENERATED logical=EC11 gesture=double result=%s\n",
+            esp_err_to_name(*out_ret));
+        power_manager_set_blocker(POWER_MANAGER_BLOCKER_USB_COMMAND, false);
+        return true;
+    }
 
     *out_ret = ESP_ERR_INVALID_ARG;
     printf("~KEY:GENERATED command=%s result=%s\n", command, esp_err_to_name(*out_ret));
@@ -683,6 +692,7 @@ static void keyboard_custom_apply_raw_feedback(
         return;
     }
     key->raw_feedback_pressed = true;
+    key->raw_feedback_tick = now;
     power_manager_record_activity(key->logical_name);
     status_led_notify_key_event(key->index, true);
     ESP_LOGI(
@@ -704,7 +714,41 @@ static void keyboard_custom_clear_raw_feedback(keyboard_custom_key_t *key)
         return;
     }
     key->raw_feedback_pressed = false;
+    key->raw_feedback_tick = 0;
     status_led_notify_key_event(key->index, false);
+}
+
+static void keyboard_custom_handle_raw_short_release(
+    keyboard_custom_key_t *key,
+    TickType_t now,
+    const char *origin)
+{
+    if (key == NULL) {
+        return;
+    }
+
+    uint32_t raw_ms = key->raw_feedback_tick != 0
+        ? keyboard_custom_elapsed_ms(now, key->raw_feedback_tick)
+        : 0U;
+    keyboard_custom_clear_raw_feedback(key);
+
+    if (key->pending_single) {
+        keyboard_custom_cancel_pending_single(key);
+        keyboard_custom_send_gesture(key, KEYBOARD_CUSTOM_GESTURE_DOUBLE);
+    } else {
+        key->pending_single = true;
+        key->double_candidate = false;
+        key->pending_single_due_tick = now + pdMS_TO_TICKS(KEYBOARD_CUSTOM_DOUBLE_CLICK_WINDOW_MS);
+        ESP_LOGI(
+            TAG,
+            "custom key raw-only single pending: logical=%s source=%s usage=F%u raw_ms=%" PRIu32 " window_ms=%d origin=%s",
+            key->logical_name,
+            key->label,
+            keyboard_custom_function_number(key->single_usage),
+            raw_ms,
+            KEYBOARD_CUSTOM_DOUBLE_CLICK_WINDOW_MS,
+            origin != NULL ? origin : "raw-only");
+    }
 }
 
 static void keyboard_custom_handle_timers(keyboard_custom_key_t *key, TickType_t now)
@@ -745,6 +789,11 @@ static void keyboard_custom_apply_stable_transition(
     power_manager_record_activity(key->logical_name);
     status_led_notify_key_event(key->index, pressed);
     key->raw_feedback_pressed = pressed;
+    if (pressed && key->raw_feedback_tick == 0) {
+        key->raw_feedback_tick = now;
+    } else if (!pressed) {
+        key->raw_feedback_tick = 0;
+    }
     ESP_LOGI(
         TAG,
         "custom key stable transition: logical=%s source=%s raw_high=%d pressed=%d origin=%s",
@@ -777,11 +826,11 @@ static void keyboard_custom_apply_stable_transition(
 
         if (key->long_sent) {
             key->long_sent = false;
-            keyboard_custom_cancel_pending_single(key);
-            status_led_notify_key_feedback(key->index, STATUS_LED_KEY_FEEDBACK_LONG);
-        } else if (keyboard_custom_elapsed_ms(now, key->press_tick) >= KEYBOARD_CUSTOM_LONG_PRESS_MS) {
-            keyboard_custom_cancel_pending_single(key);
-            keyboard_custom_send_gesture(key, KEYBOARD_CUSTOM_GESTURE_LONG);
+        keyboard_custom_cancel_pending_single(key);
+        status_led_notify_key_feedback(key->index, STATUS_LED_KEY_FEEDBACK_LONG);
+    } else if (keyboard_custom_elapsed_ms(now, key->press_tick) >= KEYBOARD_CUSTOM_LONG_PRESS_MS) {
+        keyboard_custom_cancel_pending_single(key);
+        keyboard_custom_send_gesture(key, KEYBOARD_CUSTOM_GESTURE_LONG);
         } else if (key->double_candidate && key->pending_single) {
             keyboard_custom_cancel_pending_single(key);
             keyboard_custom_send_gesture(key, KEYBOARD_CUSTOM_GESTURE_DOUBLE);
@@ -812,6 +861,7 @@ static void keyboard_custom_handle_sample(keyboard_custom_key_t *key, bool raw_h
         key->pending_single = false;
         key->double_candidate = false;
         key->raw_feedback_pressed = false;
+        key->raw_feedback_tick = 0;
         ESP_LOGI(
             TAG,
             "custom key idle detected: logical=%s source=%s raw_high=%d",
@@ -833,7 +883,11 @@ static void keyboard_custom_handle_sample(keyboard_custom_key_t *key, bool raw_h
         if (!raw_high) {
             keyboard_custom_apply_raw_feedback(key, now, "raw_edge");
         } else {
-            keyboard_custom_clear_raw_feedback(key);
+            if (!key->pressed && key->stable_level_high) {
+                keyboard_custom_handle_raw_short_release(key, now, "raw_edge_release_before_debounce");
+            } else {
+                keyboard_custom_clear_raw_feedback(key);
+            }
         }
         ESP_LOGI(
             TAG,

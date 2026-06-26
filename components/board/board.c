@@ -1149,7 +1149,7 @@ void board_print_help(void)
         "EC11 push fast double-click clears BLE pairing/session state when no recording is active; long press stays reserved for hardware power control.\n"
         "Logical custom keys: single-click KEY1-KEY4 fallback=F13-F16, double-click=F17-F20, long-press=F21-F24.\n"
         "KEY1/GPIO38, KEY2/GPIO39, KEY3/GPIO40, KEY4/GPIO41 send safe non-text BLE HID usages while Listener-Type custom actions are unavailable; recording is a configurable custom-key action.\n"
-        "Generated button diagnostics: ~KEY:KEY3:SINGLE simulates the recording custom-key path for automated A1/A2 tests; ~KEY:PENDING:KEY1:SINGLE simulates a KEY1 HID usage queued while transport is not ready, then drains it after recovery; ~KEY:EC11:SINGLE simulates the EC11 runtime custom-key press/release path.\n"
+        "Generated button diagnostics: ~KEY:KEY3:SINGLE simulates the recording custom-key path for automated A1/A2 tests; ~KEY:PENDING:KEY1:SINGLE simulates a KEY1 HID usage queued while transport is not ready, then drains it after recovery; ~KEY:EC11:SINGLE simulates the EC11 runtime custom-key press/release path; ~KEY:EC11:DOUBLE simulates EC11 BLE recovery double-click.\n"
         "Send ~VREC:RECOVERY to clear pairing/session state over USB.\n"
         "Board diagnostics: ~BOARD:STATUS reports V2 pin, USB, charger, battery, PWR_HOLD/GPIO9, mic, reserved MSPI, and LED resource status; ~BOARD:POWER reports optional current rails as not_populated on the current board.\n"
         "Battery diagnostics: ~BATTERY:STATUS reports driver ADC pad mV, NVS DMM trim mV, reconstructed VBAT, and level; ~BATTERY:CAL:DMM <mV> stores the measured BAT_V_ADC/GPIO10 divider pad trim; ~BATTERY:CAL:RESET clears it.\n"

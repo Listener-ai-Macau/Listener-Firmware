@@ -24,9 +24,21 @@ if (Test-Path $description_path) {
     if ($description.target) { $target = [string]$description.target }
 }
 
+function Get-SourceVersion {
+    $version_path = Join-Path $project_root "VERSION"
+    if (Test-Path -LiteralPath $version_path) {
+        $version = (Get-Content -LiteralPath $version_path -Raw).Trim()
+        if (-not [string]::IsNullOrWhiteSpace($version)) {
+            return $version
+        }
+    }
+    $version = (& git -C $project_root describe --tags --always --dirty 2>$null)
+    if ($version) { return $version }
+    return "1.0.0"
+}
+
 if (-not $project_version) {
-    $project_version = (& git -C $project_root describe --tags --always --dirty 2>$null)
-    if (-not $project_version) { $project_version = "0.1.0-dev" }
+    $project_version = Get-SourceVersion
 }
 
 function Get-UserProfilePath {

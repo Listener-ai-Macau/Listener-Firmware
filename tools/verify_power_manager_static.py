@@ -1546,15 +1546,33 @@ def main() -> int:
         )
     if not re.search(
         r"keyboard_custom_apply_raw_feedback[\s\S]{0,900}"
+        r"key->raw_feedback_tick\s*=\s*now[\s\S]{0,260}"
         r"status_led_notify_key_event\([^;]*true",
         keyboard,
     ) or not re.search(
         r"keyboard_custom_clear_raw_feedback[\s\S]{0,420}"
+        r"key->raw_feedback_tick\s*=\s*0[\s\S]{0,260}"
         r"status_led_notify_key_event\([^;]*false",
         keyboard,
     ):
         failures.append(
-            "components/keyboard/keyboard.c: raw low-power key press feedback must use white physical press/release cues; confirmed gestures use purple later"
+            "components/keyboard/keyboard.c: raw low-power key press feedback must timestamp and use white physical press/release cues; confirmed gestures use purple later"
+        )
+    if not re.search(
+        r"static\s+void\s+keyboard_custom_handle_raw_short_release[\s\S]*?"
+        r"keyboard_custom_clear_raw_feedback\(key\);[\s\S]*?"
+        r"key->pending_single[\s\S]*?"
+        r"keyboard_custom_send_gesture\(key,\s*KEYBOARD_CUSTOM_GESTURE_DOUBLE\)[\s\S]*?"
+        r"key->pending_single\s*=\s*true;[\s\S]*?"
+        r"raw-only single pending",
+        keyboard,
+    ):
+        failures.append(
+            "components/keyboard/keyboard.c: raw KEY1-KEY4 taps released before debounce must still arm single/double purple gesture feedback"
+        )
+    if "raw_edge_release_before_debounce" not in keyboard:
+        failures.append(
+            "components/keyboard/keyboard.c: raw release before debounce must route through the raw-only short tap path"
         )
     clear_feedback_body = re.search(
         r"static\s+void\s+keyboard_custom_clear_raw_feedback[\s\S]*?"

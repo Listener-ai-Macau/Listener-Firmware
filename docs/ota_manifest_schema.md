@@ -30,7 +30,7 @@ for wired factory flashing or bootloader repair.
 |-------|----------|------|-------------|
 | `schema_version` | yes | int | Always `2` |
 | `created_at_utc` | yes | string | ISO 8601 UTC timestamp |
-| `channel` | yes | string | `stable`, `beta`, or `internal-test` |
+| `channel` | yes | string | `stable` or `development` |
 | `firmware` | yes | object | Firmware binary metadata |
 | `requirements` | yes | object | Target compatibility constraints |
 | `ble_identity` | yes | object | BLE service/characteristic identifiers |
@@ -42,7 +42,7 @@ for wired factory flashing or bootloader repair.
 | Field | Required | Type | Description |
 |-------|----------|------|-------------|
 | `project` | yes | string | Project name (`voice-keyboard-firmware`) |
-| `version` | yes | string | Semver or git describe version string |
+| `version` | yes | string | Plain release semver such as `1.0.0` |
 | `git_commit` | yes | string | Full git commit SHA |
 | `git_dirty` | yes | bool | Whether tree had uncommitted changes |
 | `target` | yes | string | Build target (`esp32s3`) |
@@ -85,14 +85,14 @@ the tables above, including `created_at_utc`, `ble_identity`,
 ## Channel Rules
 
 - **stable**: Requires clean git tree, clean release version string, and a complete nested factory package in the release bundle. For production releases.
-- **beta**: Requires clean git tree, clean release version string, and a complete nested factory package in the release bundle. For pre-release testing.
-- **internal-test**: Allows dirty tree and OTA-only package output when factory artifact generation fails. For development builds.
+- **development**: Allows dirty tree and OTA-only package output when factory artifact generation fails. For local development builds only.
 
 ## Versioning
 
 The `firmware.version` field is resolved in order:
 1. `project_description.json` `project_version` (set by build system)
-2. `git describe --tags --always --dirty`
-3. Fallback: `0.1.0-dev`
+2. repository `VERSION`
+3. `git describe --tags --always --dirty` as a legacy fallback
+4. Fallback: `1.0.0`
 
 The desktop app should compare `requirements.min_desktop_version` against its own version before offering the update, and verify `requirements.hardware_revision` matches the connected device.

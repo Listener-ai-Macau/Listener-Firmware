@@ -176,7 +176,7 @@ CHECKS = {
         "DIAG_LED_OUTPUT_STATE",
         "DIAG_LED_FRAME_RGB",
         "STATUS_LED_IDLE_REFRESH_MS 1000U",
-        "STATUS_LED_CONTRACT_REV \"status_key_ec11_edge_true_state_v24\"",
+        "STATUS_LED_CONTRACT_REV \"status_key_ec11_edge_true_state_v26\"",
         "STATUS_LED_EC11_ACCENT_MIN_PERCENT",
         "STATUS_LED_EC11_ACCENT_MAX_PERCENT",
         "STATUS_LED_EC11_OK_ACCENT_MAX_PERCENT",
@@ -591,6 +591,7 @@ CHECKS = {
         "bits16_23=display_level",
         "bit26=external_from_usb_det",
         "bit27=external_from_charger_status",
+        "5=rotate_identity",
     ],
     "tools/verify_unplugged_flash_diag_bundle.py": [
         "status_led\", \"power_input",
@@ -648,6 +649,15 @@ CHECKS = {
         "status_led_set_ble_state(STATUS_LED_BLE_PAIRING, false)",
         "status_led_notify_ble_repairing(\"ble_recovery_clear_bonds\")",
         "status_led_notify_ble_repairing(\"ble_recovery_refresh_pairing\")",
+        "s_recovery_identity_rotate_pending",
+        "ble_hid_gap_store_static_random_identity",
+        "ble_hid_gap_rotate_static_random_identity",
+        "ble_hs_id_gen_rnd(0, &addr)",
+        "BLE recovery identity rotated after disconnect",
+        "BLE recovery identity rotated for re-pair",
+        "BLE recovery identity rotated during active pairing window",
+        "stale pairing encryption failure",
+        "BLE identity rotated and device is discoverable for first-time pairing",
         "status_led_set_error(STATUS_LED_ERROR_DOMAIN_BLE",
         "status_led_clear_error(STATUS_LED_ERROR_DOMAIN_BLE)",
     ],
@@ -739,6 +749,8 @@ CHECKS = {
         "Repeated same-state BLE callbacks are idempotent",
         "User-requested re-pairing",
         "status_led_notify_ble_repairing()",
+        "rotates the stored BLE static-random identity before advertising again",
+        "The old host must pair again instead of silently reconnecting to the previous device identity",
         "ble_repair_ms_left",
         "short blue connected-success confirmation",
         "BLE animation phase is tracked separately",
@@ -756,7 +768,7 @@ CHECKS = {
         "it uses steady blue",
         "30 second Type-ready hold",
         "quiet-but-not-idle time",
-        "In connected/disconnected low-power idle, the low-power renderer keeps PWR visible, leaves ordinary connected BLE dark, keeps `TYPE_READY` BLE visible at the low-power steady level",
+        "In connected/disconnected low-power idle, the low-power renderer keeps PWR visible and leaves connected/TYPE_READY BLE dark",
         "External power overrides battery-color display on `PWR`",
         "continuous slow white breath",
         "steady white once charge-full has been debounced and latched",
@@ -779,7 +791,8 @@ CHECKS = {
         "stop key has immediate thinking feedback",
         "`OK` is a visible 2.0 second success confirmation after the host reports processing done",
         "Key LEDs remain local transient feedback only",
-        "Recording and processing no longer light the key strip",
+        "Recording and processing do not borrow the key strip for status semantics",
+        "starting recording, stopping recording into processing, or starting processing must not clear or black-frame an in-flight KEY1-KEY4 press/release or purple gesture window",
         "EC11 knob and edge/frame LEDs are independent accent surfaces",
         "`rec_level` drives only status `LED3=REC`",
         "EC11, key, and edge/frame do not follow PCM brightness",
@@ -857,7 +870,7 @@ CHECKS = {
         "rgbw-single-led",
         "semantic-preview",
         "STATUS_EFFECT_BASELINE",
-        "status_key_ec11_edge_true_state_v24",
+        "status_key_ec11_edge_true_state_v26",
         "\"expected_leds\": [\"PWR\", \"BLE\", \"REC\", \"AI\", \"EC11\", \"EDGE\"]",
         "\"forbidden_leds\": [\"OK\", \"WARN\"]",
         "make_semantic_sequence",
@@ -972,6 +985,23 @@ def read(relative: str) -> str:
     return path.read_text(encoding="utf-8")
 
 
+def extract_c_function(source: str, name: str) -> str:
+    match = re.search(r"\b" + re.escape(name) + r"\s*\([^;]*?\)\s*\{", source)
+    if not match:
+        raise ValueError(f"missing function: {name}")
+    brace = source.find("{", match.start())
+    depth = 0
+    for index in range(brace, len(source)):
+        char = source[index]
+        if char == "{":
+            depth += 1
+        elif char == "}":
+            depth -= 1
+            if depth == 0:
+                return source[brace : index + 1]
+    raise ValueError(f"unterminated function: {name}")
+
+
 def main() -> int:
     failures: list[str] = []
     for relative, tokens in CHECKS.items():
@@ -1000,11 +1030,101 @@ def main() -> int:
 
     status_led = read("components/status_led/status_led.c")
     status_led_backend = read("components/status_led/status_led_strip_backend.c")
+    ble_gap = read("ports/esp32/ble_hid_gap/ble_hid_gap_esp32.c")
     audio_capture = read("ports/esp32/audio_capture/audio_capture_esp32.c")
     main_c = read("main/main.c")
     human_review = read("tools/status_led_human_effect_review.ps1")
     status_doc = read("docs/features/status_led.md")
     firmware_ota = read("components/firmware_ota/firmware_ota.c")
+    if "status_led_active_work_locked" in status_led:
+        failures.append("status_led.c: active recording/processing must not suppress physical key LED feedback")
+    for function_name in ("status_led_notify_key_event", "status_led_notify_key_feedback"):
+        try:
+            body = extract_c_function(status_led, function_name)
+        except ValueError as exc:
+            failures.append(f"status_led.c: {exc}")
+            continue
+        if "status_led_clear_key_feedback_locked();" in body and "status_led_resume_interactive_output_locked();" not in body:
+            failures.append(f"status_led.c: {function_name} must preserve local key feedback paths")
+        if "recording_active" in body or "processing_active" in body or "ota_active" in body:
+            failures.append(f"status_led.c: {function_name} must not gate key feedback on active work state")
+    for function_name in ("status_led_set_recording", "status_led_set_processing"):
+        try:
+            body = extract_c_function(status_led, function_name)
+        except ValueError as exc:
+            failures.append(f"status_led.c: {exc}")
+            continue
+        if "status_led_clear_key_feedback_locked();" in body:
+            failures.append(
+                f"status_led.c: {function_name} must not clear in-flight local key feedback"
+            )
+        if "s_state.idle_transition_clear_pending = false;" not in body:
+            failures.append(
+                f"status_led.c: {function_name} must cancel stale transition clear before active work renders key feedback"
+            )
+    if "BLE identity kept stable" in ble_gap or "stable BLE identity" in ble_gap:
+        failures.append("ble_hid_gap_esp32.c: re-pair recovery must rotate BLE identity, not keep it stable")
+    try:
+        recovery_body = extract_c_function(ble_gap, "ble_hid_gap_forget_bonds_and_repair")
+    except ValueError as exc:
+        failures.append(f"ble_hid_gap_esp32.c: {exc}")
+    else:
+        clear_index = recovery_body.find("rc = ble_store_clear();")
+        rotate_index = recovery_body.find(
+            'ble_hid_gap_rotate_static_random_identity("BLE recovery identity rotated for re-pair")',
+            clear_index,
+        )
+        adv_index = recovery_body.find("esp_err_t adv_ret = ble_hid_gap_start_advertising();", rotate_index)
+        if clear_index < 0 or rotate_index < 0 or adv_index < 0 or not (clear_index < rotate_index < adv_index):
+            failures.append(
+                "ble_hid_gap_esp32.c: recovery must clear bonds, rotate BLE identity, then restart advertising"
+            )
+        refresh_index = recovery_body.find("pairing window already active; rotating identity and refreshing advertising")
+        refresh_rotate_index = recovery_body.find(
+            'ble_hid_gap_rotate_static_random_identity("BLE recovery identity rotated during active pairing window")',
+            refresh_index,
+        )
+        refresh_adv_index = recovery_body.find(
+            "esp_err_t adv_ret = ble_hid_gap_start_advertising();",
+            refresh_rotate_index,
+        )
+        if (
+            refresh_index < 0
+            or refresh_rotate_index < 0
+            or refresh_adv_index < 0
+            or not (refresh_index < refresh_rotate_index < refresh_adv_index)
+        ):
+            failures.append(
+                "ble_hid_gap_esp32.c: active recovery window must rotate BLE identity before refreshing advertising"
+            )
+        if "s_recovery_identity_rotate_pending = true;" not in recovery_body:
+            failures.append(
+                "ble_hid_gap_esp32.c: connected recovery must defer identity rotation until after disconnect"
+            )
+    disconnect_index = ble_gap.find("case BLE_GAP_EVENT_DISCONNECT:")
+    pending_index = ble_gap.find("if (s_recovery_identity_rotate_pending)", disconnect_index)
+    disconnect_adv_index = ble_gap.find("ble_hid_gap_start_advertising();", pending_index)
+    if disconnect_index < 0 or pending_index < 0 or disconnect_adv_index < 0 or pending_index > disconnect_adv_index:
+        failures.append(
+            "ble_hid_gap_esp32.c: disconnect recovery must rotate pending identity before advertising restarts"
+        )
+    enc_change_index = ble_gap.find("case BLE_GAP_EVENT_ENC_CHANGE:")
+    enc_failure_index = ble_gap.find("stale pairing encryption failure", enc_change_index)
+    enc_pending_index = ble_gap.find("s_recovery_identity_rotate_pending = true;", enc_change_index)
+    enc_terminate_index = ble_gap.find(
+        "ble_gap_terminate(event->enc_change.conn_handle, BLE_ERR_REM_USER_CONN_TERM)",
+        enc_change_index,
+    )
+    if (
+        enc_change_index < 0
+        or enc_failure_index < 0
+        or enc_pending_index < 0
+        or enc_terminate_index < 0
+        or not (enc_change_index < enc_pending_index < enc_failure_index < enc_terminate_index)
+    ):
+        failures.append(
+            "ble_hid_gap_esp32.c: recovery encryption failures must terminate stale pairing and rotate identity after disconnect"
+        )
     recording_active_preview = re.search(
         r"}\s*else\s+if\s*\(\s*strcasecmp\(state,\s*\"capture\"\)\s*==\s*0\s*\|\|"
         r"[\s\S]*?strcasecmp\(state,\s*\"recording_active\"\)\s*==\s*0"
@@ -1099,13 +1219,12 @@ def main() -> int:
         ):
             failures.append("status_led.c: low-power BLE helper must blink pairing/reconnecting instead of latching solid")
         if not re.search(
-            r"case\s+STATUS_LED_BLE_CONNECTED:[\s\S]*?"
-            r"return\s+0U;[\s\S]*?"
+            r"case\s+STATUS_LED_BLE_CONNECTED:\s*\n\s*"
             r"case\s+STATUS_LED_BLE_TYPE_READY:[\s\S]*?"
-            r"return\s+STATUS_LED_LOW_POWER_BLE_TYPE_READY_PERCENT;",
+            r"return\s+0U;",
             body,
         ):
-            failures.append("status_led.c: low-power idle must keep CONNECTED BLE dark and TYPE_READY BLE visible")
+            failures.append("status_led.c: low-power idle must keep connected/TYPE_READY BLE dark")
     low_power_ble = re.search(
         r"static\s+void\s+status_led_render_low_power_ble_locked[^{]*\{(?P<body>[\s\S]*?)\n\}",
         status_led,
@@ -1582,7 +1701,7 @@ def main() -> int:
         r"status_led_low_power_ble_percent_locked\(status_led_ble_elapsed_locked\(now_ms\)\)",
         status_led,
     ):
-        failures.append("status_led.c: low-power idle must keep using the shared BLE helper so connected stays dark, TYPE_READY stays visible, and attention states blink")
+        failures.append("status_led.c: low-power idle must keep using the shared BLE helper so connected/TYPE_READY stays dark and attention states blink")
     ble_set_state = re.search(
         r"void\s+status_led_set_ble_state[\s\S]*?"
         r"\n\}\n\nvoid\s+status_led_notify_ble_repairing",

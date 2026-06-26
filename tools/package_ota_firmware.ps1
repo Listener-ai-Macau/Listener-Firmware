@@ -1,7 +1,7 @@
 param(
     [string]$BuildDir = (Join-Path $PSScriptRoot "..\build"),
     [string]$OutputRoot = (Join-Path $PSScriptRoot "..\.cache\ota_firmware"),
-    [ValidateSet("stable", "beta", "internal-test")]
+    [ValidateSet("stable", "development")]
     [string]$Channel = "stable",
     [string]$MinDesktopVersion = "1.0.0",
     [ValidateRange(1, 500)]
@@ -29,9 +29,21 @@ if (Test-Path $description_path) {
     if ($description.target) { $target = [string]$description.target }
 }
 
+function Get-SourceVersion {
+    $version_path = Join-Path $project_root "VERSION"
+    if (Test-Path -LiteralPath $version_path) {
+        $version = (Get-Content -LiteralPath $version_path -Raw).Trim()
+        if (-not [string]::IsNullOrWhiteSpace($version)) {
+            return $version
+        }
+    }
+    $version = (& git -C $project_root describe --tags --always --dirty 2>$null)
+    if ($version) { return $version }
+    return "1.0.0"
+}
+
 if (-not $project_version) {
-    $project_version = (& git -C $project_root describe --tags --always --dirty 2>$null)
-    if (-not $project_version) { $project_version = "0.1.0-dev" }
+    $project_version = Get-SourceVersion
 }
 
 function Test-ReleaseVersionString {
@@ -40,12 +52,12 @@ function Test-ReleaseVersionString {
         [Parameter(Mandatory = $true)][string]$ReleaseChannel
     )
 
-    if ($ReleaseChannel -eq "internal-test") {
+    if ($ReleaseChannel -eq "development") {
         return
     }
 
     if ($Version -match '(?i)(^|[._+-])(dirty|dev)([._+-]|$)') {
-        Write-Error "Release channel $ReleaseChannel requires a clean release version; got '$Version'. Use -Channel internal-test for dirty/dev builds."
+        Write-Error "Release channel $ReleaseChannel requires a clean release version; got '$Version'. Use -Channel development for local builds."
         exit 1
     }
 }
@@ -54,7 +66,7 @@ Test-ReleaseVersionString -Version $project_version -ReleaseChannel $Channel
 
 $ota_version = $project_version.Trim()
 if ($ota_version.Length -gt $esp_app_version_max_chars) {
-    $truncated_version = $ota_version.Substring(0, $esp_app_version_max_chars)
+    $truncated_version = $ota_version.Substring(0, $esp_app_version_max_chars) -replace '[._+-]+$', ''
     Write-Warning "Project version '$project_version' exceeds ESP app descriptor / BLE OTA control limit ($esp_app_version_max_chars chars); using '$truncated_version' in ota_manifest.json."
     $ota_version = $truncated_version
 }
@@ -65,8 +77,8 @@ if (-not $git_commit) { $git_commit = "unknown" }
 $git_status = @(& git -C $project_root status --porcelain 2>$null)
 $git_dirty = $git_status.Count -gt 0
 
-if ($git_dirty -and $Channel -ne "internal-test") {
-    Write-Error "Working tree is dirty ($($git_status.Count) changed files). Commit or stash changes, or use -Channel internal-test.`n$($git_status -join "`n")"
+if ($git_dirty -and $Channel -ne "development") {
+    Write-Error "Working tree is dirty ($($git_status.Count) changed files). Commit or stash changes, or use -Channel development.`n$($git_status -join "`n")"
     exit 1
 }
 
@@ -147,7 +159,7 @@ $factory_output = Join-Path $package_dir "factory"
 $factory_result = @(& pwsh -NoProfile -File (Join-Path $PSScriptRoot "package_factory_firmware.ps1") -BuildDir $build_path -OutputRoot $factory_output 2>&1)
 if ($LASTEXITCODE -ne 0) {
     $factory_message = "Factory package generation failed for OTA package channel $Channel.`n$($factory_result -join "`n")"
-    if ($Channel -eq "internal-test") {
+    if ($Channel -eq "development") {
         Write-Warning $factory_message
     } else {
         Write-Error $factory_message

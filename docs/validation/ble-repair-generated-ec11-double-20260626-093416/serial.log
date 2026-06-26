@@ -1,0 +1,61 @@
+2026-06-26T09:34:16.954+08:00 serial_opened port=COM11 baud=115200 dtr=0 rts=0
+2026-06-26T09:34:16.965+08:00 --- read-start label=boot-settle ms=5000 ---
+2026-06-26T09:34:16.971+08:00 I (100) boot: No factory image, trying OTA 0
+2026-06-26T09:34:21.989+08:00 --- read-end label=boot-settle ---
+2026-06-26T09:34:21.994+08:00 > ~DIAGLOG:CLEAR
+2026-06-26T09:34:21.996+08:00 --- read-start label=~DIAGLOG:CLEAR ms=700 ---
+2026-06-26T09:34:21.997+08:00 I (38680) audio_capture: audio idle power save disabled: ESP_OK
+2026-06-26T09:34:22.003+08:00 I (38680) power_manager: blocker set mask=0x00000064 blockers=0x000000e4 (diag_export|flash_write|usb_command|external_power)
+2026-06-26T09:34:22.739+08:00 --- read-end label=~DIAGLOG:CLEAR ---
+2026-06-26T09:34:22.741+08:00 > ~KEY:EC11:DOUBLE
+2026-06-26T09:34:22.742+08:00 --- read-start label=~KEY:EC11:DOUBLE ms=9000 ---
+2026-06-26T09:34:22.764+08:00 I (39450) diag_log: DIAGLOG CLEAR: all logs erased
+2026-06-26T09:34:22.765+08:00 I (39450) power_manager: blocker clear mask=0x00000064 blockers=0x00000080 (external_power)
+2026-06-26T09:34:22.774+08:00 I (39450) power_manager: blocker set mask=0x00000040 blockers=0x000000c0 (usb_command|external_power)
+2026-06-26T09:34:22.786+08:00 I (39460) voice_key_input: EC11 push generated click queued: source=ec11_key.gpio18 clicks=2 press_ms=80 double_ms=200 recovery_double_ms=650
+2026-06-26T09:34:22.791+08:00 ~KEY:GENERATED logical=EC11 gesture=double result=ESP_OK
+2026-06-26T09:34:22.800+08:00 I (39470) voice_key_input: EC11 push generated click armed: source=ec11_key.gpio18 clicks=2
+2026-06-26T09:34:22.808+08:00 I (39480) power_manager: blocker clear mask=0x00000040 blockers=0x00000080 (external_power)
+2026-06-26T09:34:22.816+08:00 I (39490) voice_key_input: EC11 push raw press feedback: source=ec11_key.gpio18 origin=raw_edge
+2026-06-26T09:34:22.830+08:00 I (39520) voice_key_input: EC11 push key level changed: source=ec11_key.gpio18 raw_high=0
+2026-06-26T09:34:22.890+08:00 I (39580) voice_key_input: EC11 push key level changed: source=ec11_key.gpio18 raw_high=1
+2026-06-26T09:34:22.894+08:00 I (39580) voice_key_input: ec11_key.gpio18 single click pending for double-click window
+2026-06-26T09:34:23.080+08:00 I (39770) voice_key_input: EC11 push raw press feedback: source=ec11_key.gpio18 origin=raw_edge
+2026-06-26T09:34:23.110+08:00 I (39800) voice_key_input: EC11 push key level changed: source=ec11_key.gpio18 raw_high=0
+2026-06-26T09:34:23.190+08:00 I (39880) voice_key_input: EC11 push key level changed: source=ec11_key.gpio18 raw_high=1
+2026-06-26T09:34:23.193+08:00 W (39880) voice_key_input: ec11_key.gpio18 double-click recovery detected
+2026-06-26T09:34:23.242+08:00 I (39910) audio_capture: frame captured count=350 bytes=224000
+2026-06-26T09:34:23.244+08:00 I (39930) voice_key_input: EC11 push generated click completed: source=ec11_key.gpio18 clicks=2
+2026-06-26T09:34:23.256+08:00 W (39930) voice_rec_ctrl: voiceflow event=recovery_requested source=ec11_key.gpio18 result=ESP_OK state=idle pending=0 cancel_pending=0 session_count=0 audio_active=0 ble_ready=0
+2026-06-26T09:34:23.265+08:00 I (39940) power_manager: blocker set mask=0x00000018 blockers=0x00000098 (pairing|reconnect|external_power)
+2026-06-26T09:34:23.271+08:00 W (39960) voice_rec_ctrl: recovery requested source=ec11_key.gpio18
+2026-06-26T09:34:23.279+08:00 I (39960) voice_rec_ctrl: device_status state=recovery detail=forget_pairing_and_clear_session
+2026-06-26T09:34:23.284+08:00 W (39970) ESP_HID_GAP: recovery: clearing pairing bonds count=0
+2026-06-26T09:34:23.298+08:00 I (39980) ESP_HID_GAP: BLE recovery identity rotated for re-pair: own_addr_type=1 addr=bd:68:63:a9:46:ca
+2026-06-26T09:34:23.303+08:00 I (39990) ESP_HID_GAP: NimBLE bonded peers=0
+2026-06-26T09:34:23.307+08:00 I (39990) ESP_HID_GAP: NimBLE undirected advertising started: low_power=0 interval_ms=30-50
+2026-06-26T09:34:23.319+08:00 W (40000) ESP_HID_GAP: recovery: pairing reset complete, BLE identity rotated and device is discoverable for first-time pairing
+2026-06-26T09:34:23.327+08:00 I (40010) power_manager: blocker clear mask=0x00000018 blockers=0x00000080 (external_power)
+2026-06-26T09:34:23.334+08:00 I (40010) voice_rec_ctrl: device_status state=ready detail=recovery_complete_pair_again
+2026-06-26T09:34:31.794+08:00 --- read-end label=~KEY:EC11:DOUBLE ---
+2026-06-26T09:34:31.795+08:00 > ~LED:STATUS
+2026-06-26T09:34:31.795+08:00 --- read-start label=~LED:STATUS ms=1000 ---
+2026-06-26T09:34:32.048+08:00 I (40920) audio_capture: frame captured count=400 bytes=256000
+2026-06-26T09:34:32.049+08:00 I (41920) audio_capture: frame captured count=450 bytes=288000
+2026-06-26T09:34:32.049+08:00 I (42910) audio_capture: frame captured count=500 bytes=320000
+2026-06-26T09:34:32.049+08:00 I (43920) audio_capture: frame captured count=550 bytes=352000
+2026-06-26T09:34:32.050+08:00 I (44920) audio_capture: frame captured count=600 bytes=384000
+2026-06-26T09:34:32.050+08:00 I (45910) audio_capture: frame captured count=650 bytes=416000
+2026-06-26T09:34:32.058+08:00 I (46060) audio_capture: audio idle power save enabled: ESP_OK
+2026-06-26T09:34:32.069+08:00 ~LED:STATUS detail=contract backend=mixed_rmt_and_spi_ws2812_800khz refresh_ms=50 reset_us=300 strip_transport_requested=status:rmt,ec11:spi2,key:spi3,edge:rmt strip_transport_actual=status:rmt,ec11:spi2,key:spi3,edge:rmt spi_dma_outputs_requested=ec11:SPI2,key:SPI3 spi_dma_requested=status:0,ec11:1,key:1,edge:0 spi_dma_actual=status:0,ec11:1,key:1,edge:0 spi_dma_fallback=status:0,ec11:0,key:0,edge:0 rmt_tx_dma_supported=1 rmt_tx_dma_strategy=status_strip_dma_full_frame_buffer rmt_strip_all_available=1 rmt_tx_dma_all_strips=0 rmt_tx_dma_requested=status:1,ec11:0,key:0,edge:0 rmt_tx_dma_actual=status:1,ec11:0,key:0,edge:0 rmt_tx_dma_fallback=status:0,ec11:0,key:0,edge:0 rmt_mem_block_symbols=status:1024,ec11:0,key:0,edge:48 idle_refresh_ms=1000 unchanged_tx_suppression=1 timing=ws2812_4020_compatible low_power_transport_suspend_ms=0 low_power_status_tx=non_dma_clear_and_final_frame low_power_all_zone_tx=non_dma_clear_and_final_frame shutdown_final_status_tx=non_dma_pwr_only_latch shutdown_final_all_zone_tx=non_dma_pwr_only_latch_or_all_off low_power_final_latch_writes=3 low_power_status_retry_writes=3 status_tail_guard_pixels=6 status_tail_reinforce=recording_processing status_tail_reinforce_writes=3 status_tail_overlap_reinforce_writes=1 status_tail_legacy_safe_effect_percent=14..20 status_tail_overlap_effect_percent=rec_audio_8..100_2pct_ai_think_0..100_2pct status_tail_overlap_style=dma_audio_rec_ai_da_dada status_tail_overlap_legacy_effect_percent=14..40_1pct_eased_dual_core status_tail_overlap_legacy_period_ms=6800 status_tail_overlap_legacy_rise_ms=2200 status_tail_overlap_legacy_high_hold_ms=500 status_tail_overlap_legacy_fall_ms=2500 status_tail_overlap_legacy_low_hold_ms=1600 status_tail_overlap_legacy_quantum_percent=1 recording_level_reactive=1 recording_level_effect_percent=8..100_smooth_2pct recording_level_smoothing=attack100_release45 processing_thinking_style=single_then_double_beat processing_thinking_color=purple_static processing_thinking_effect_percent=0..100_2pct processing_thinking_scan_profile=da_long_gap_grouped_dada_rest processing_thinking_period_ms=1950 ota_progress_style=LED5_OK_cyan_pulse_EC11_progress_EDGE_chase ota_progress_idle_blocker=POWER_MANAGER_BLOCKER_OTA strip_dirty_tx=1 status_tx_last=1 rmt_idle_drive=active_dma_low_power_all_zone_non_dma_final_frame_then_release_gpio_low dynamic_active_accents=1 status_query_samples_current_render=1 effect_only_preview=1 active_work_status_dynamic=1 active_work_status_overlap_dynamic_1pct_eased=0 active_work_status_audio_reactive_rec=1 active_work_status_thinking_ai=1 led_contract_rev=status_key_ec11_edge_true_state_v26 factory_full_brightness=1 safety_full_brightness=1 semantic_order=LED1:PWR,LED2:BLE,LED3:REC,LED4:AI,LED5:OK,LED6:WARN mapping_contract=status=LED1..LED6,key=LED11..LED14 status_physical_map=LED1:PWR,LED2:BLE,LED3:REC,LED4:AI,LED5:OK,LED6:WARN key_physical_map=LED11:KEY1,LED12:KEY2,LED13:KEY3,LED14:KEY4 separate_status_key_color_order=1 status_default_order=GRB key_default_order=GRB
+2026-06-26T09:34:32.094+08:00 ~LED:STATUS detail=brightness profile=standard effect_profile=product_v1 profile_cap_percent=100 brightness_percent=80 effective_cap_percent=80 budget_scale_percent=100 budget_limited_by_current=0 plugged_brightness_percent=80 battery_brightness_percent=50 active_power_brightness_percent=80 status_zone_brightness_percent=100 key_zone_brightness_percent=100 ec11_zone_brightness_percent=100 edge_zone_brightness_percent=100 brightness_duty_255=204 user_brightness_is_hard_cap=1 profile_dimming_disabled=1
+2026-06-26T09:34:32.171+08:00 ~LED:STATUS detail=strips strips=status:gpio1:count6:orderGRB:transportrmt:avail1:dma_req1:dma1:dma_fb0:rmt_dma_req1:rmt_dma1:rmt_dma_fb0:spi_dma_req0:spi_dma0:spi_dma_fb0:refsLED1..LED6,ec11:gpio5:count12:orderGRB:transportspi2:avail1:dma_req1:dma1:dma_fb0:rmt_dma_req0:rmt_dma0:rmt_dma_fb0:spi_dma_req1:spi_dma1:spi_dma_fb0:refsLED7..LED10+LED15..LED16+LED23..LED28,key:gpio13:count4:orderGRB:transportspi3:avail1:dma_req1:dma1:dma_fb0:rmt_dma_req0:rmt_dma0:rmt_dma_fb0:spi_dma_req1:spi_dma1:spi_dma_fb0:refsLED11..LED14,edge:gpio4:count6:orderGRB:transportrmt:avail1:dma_req0:dma0:dma_fb0:rmt_dma_req0:rmt_dma0:rmt_dma_fb0:spi_dma_req0:spi_dma0:spi_dma_fb0:refsLED17..LED22 status_tail_guard_pixels=6 key_pin_contract=PWM_RGB_KEY_GPIO13 ec11_pin_contract=PWM_RGB_EC11_GPIO5 edge_pin_contract=PWM_RGB_Edge_GPIO4 gpio14_reserved=BAT_CHG_IO vdd_led_enable=always_on_assumed
+2026-06-26T09:34:32.215+08:00 ~LED:STATUS detail=state ble=pairing rec_active=0 rec_source=none rec_level=0 rec_level_visual=0 rec_level_hold_ms_left=0 processing=0 ota_active=0 ota_progress_percent=0 ota_bytes=0 ota_expected=0 ble_repair_ms_left=0 error_domain=none error_severity=retryable output_disabled=0 low_power_disabled=0 idle_transition_clear_pending=0 preview_suppress_accents=0 preview_effect_only=0 preview_ble_override_ms_left=0 shutdown_confirm_active=0 shutdown_confirm_final=0 shutdown_confirm_latched=0 shutdown_confirm_elapsed_ms=0
+2026-06-26T09:34:32.270+08:00 ~LED:STATUS detail=power battery_valid=1 battery_level=93 battery_mv=4060 battery_display_valid=1 battery_display_level=93 battery_display_mv=4060 battery_display_rise_suppressed=0 external_power=1 external_power_source=charger_status|usb_serial_jtag source_flags=0x06 charging=1 full=0 raw_charging=1 raw_full=0 full_latched=0 full_candidate_ms=0 full_debounce_ms=10000 full_min_mv=4050 full_min_percent=88 status_window_ms_left=0 ble_confidence_ms_left=0 ble_repair_ms_left=0 oobe_confidence_ms_left=0 preview_ble_override_ms_left=0 ble_transition_ms=39142 last_transition_ms=39142 current_ma=5 current_budget_ma=760
+2026-06-26T09:34:32.276+08:00 ~LED:STATUS detail=rgb status_rgb=PWR:18,18,18;BLE:0,0,0;REC:0,0,0;AI:0,0,0;OK:0,0,0;WARN:0,0,0
+2026-06-26T09:34:32.290+08:00 ~LED:STATUS detail=rgb_ec11 ec11_rgb=px1:0,0,0;px2:0,0,0;px3:0,0,0;px4:0,0,0;px5:0,0,0;px6:0,0,0;px7:0,0,0;px8:0,0,0;px9:0,0,0;px10:0,0,0;px11:0,0,0;px12:0,0,0
+2026-06-26T09:34:32.296+08:00 ~LED:STATUS detail=rgb_key key_rgb=px1:0,0,0;px2:0,0,0;px3:0,0,0;px4:0,0,0
+2026-06-26T09:34:32.305+08:00 ~LED:STATUS detail=rgb_edge edge_rgb=px1:0,0,0;px2:0,0,0;px3:0,0,0;px4:0,0,0;px5:0,0,0;px6:0,0,0
+2026-06-26T09:34:32.363+08:00 ~LED:STATUS profile=standard detail=summary profile_cap_percent=100 budget_scale_percent=100 budget_limited_by_current=0 ble=pairing rec_active=0 rec_source=none processing=0 ota_active=0 ota_progress_percent=0 ble_repair_ms_left=0 error_domain=none error_severity=retryable battery_level=93 external_power=1 external_power_source=charger_status|usb_serial_jtag charging=1 full=0 active_flags=PWR:1,BLE:0,REC:0,AI:0,OK:0,WARN:0,EC11:0,KEY:0,EDGE:0 key_mask=0x00 test_mode=0 test_strip_mask=0x00 preview_suppress_accents=0 preview_effect_only=0 preview_ble_override_ms_left=0 shutdown_confirm_active=0 shutdown_confirm_latched=0 last_reason=ble_state
+2026-06-26T09:34:32.804+08:00 --- read-end label=~LED:STATUS ---
+2026-06-26T09:34:32.810+08:00 serial_closed port=COM11

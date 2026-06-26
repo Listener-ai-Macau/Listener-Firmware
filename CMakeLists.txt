@@ -4,6 +4,9 @@ cmake_minimum_required(VERSION 3.16)
 
 if(DEFINED ENV{LISTENER_FIRMWARE_VERSION_OVERRIDE} AND NOT "$ENV{LISTENER_FIRMWARE_VERSION_OVERRIDE}" STREQUAL "")
     set(PROJECT_VER "$ENV{LISTENER_FIRMWARE_VERSION_OVERRIDE}")
+elseif(EXISTS "${CMAKE_SOURCE_DIR}/VERSION")
+    file(READ "${CMAKE_SOURCE_DIR}/VERSION" PROJECT_VER)
+    string(STRIP "${PROJECT_VER}" PROJECT_VER)
 else()
     execute_process(
         COMMAND git describe --tags --always --dirty
@@ -14,7 +17,7 @@ else()
         RESULT_VARIABLE GIT_DESCRIBE_RESULT
     )
     if(NOT GIT_DESCRIBE_RESULT EQUAL 0)
-        set(PROJECT_VER "0.1.0-dev")
+        set(PROJECT_VER "1.0.0")
     endif()
 endif()
 

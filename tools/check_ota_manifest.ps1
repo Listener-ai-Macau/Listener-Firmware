@@ -187,7 +187,7 @@ if (Require-Object "requirements") {
 }
 
 # channel
-$valid_channels = @("stable", "beta", "internal-test")
+$valid_channels = @("stable", "development")
 $channel = Require-String "channel"
 if ($channel -and $channel -notin $valid_channels) {
     $errors += "Invalid channel: $channel (expected one of: $($valid_channels -join ', '))"

@@ -21,10 +21,10 @@ function New-BaseManifest {
     return [ordered]@{
         schema_version = 2
         created_at_utc = "2026-05-26T06:00:00Z"
-        channel = "internal-test"
+        channel = "development"
         firmware = [ordered]@{
             project = "voice-keyboard-firmware"
-            version = "test-ota"
+            version = "1.0.0"
             git_commit = "0123456789abcdef0123456789abcdef01234567"
             git_dirty = $false
             target = "esp32s3"
@@ -49,7 +49,7 @@ function New-BaseManifest {
                 manufacturer = "listener"
                 model = "keyboard-v2"
                 hardware_revision = "esp32s3-wroom-1-n16r8"
-                firmware_revision = "test-ota"
+                firmware_revision = "1.0.0"
                 software_revision_protocol = "1"
             }
         }
@@ -158,7 +158,7 @@ $missingRecoverySerial.recovery.PSObject.Properties.Remove("serial_commands")
 Assert-ManifestFails -Name "missing_recovery_serial_commands" -Manifest $missingRecoverySerial -ExpectedText "Missing recovery.serial_commands"
 
 $tooLongVersion = Copy-ManifestObject $base
-$tooLongVersion.firmware.version = "v1002.0.0-ota-test-226-g99934ff-dirty"
+$tooLongVersion.firmware.version = "1.0.0-local-build-226-g99934ff-dirty"
 Assert-ManifestFails -Name "too_long_firmware_version" -Manifest $tooLongVersion -ExpectedText "Invalid firmware.version"
 
 Write-Host "PASS: OTA manifest validation negative coverage completed."
