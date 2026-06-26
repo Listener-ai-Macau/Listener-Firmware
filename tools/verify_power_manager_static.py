@@ -1617,19 +1617,22 @@ def main() -> int:
             "components/keyboard/keyboard.c: EC11 low-power backup poll must stay 20 ms so idle rotation cannot be swallowed by a missed edge wake"
         )
     if not re.search(
-        r"static\s+int8_t\s+keyboard_ec11_feedback_delta_from_accumulator\(int32_t\s+accumulator\)[\s\S]{0,260}"
-        r"accumulator\s*>\s*0[\s\S]{0,140}"
-        r"accumulator\s*<\s*0[\s\S]{0,140}"
-        r"return\s+0\s*;",
+        r"#define\s+KEYBOARD_EC11_FEEDBACK_REVERSE_MIN_ACCUM\s+2\b[\s\S]*?"
+        r"static\s+int8_t\s+keyboard_ec11_feedback_delta_from_accumulator\(\s*"
+        r"const\s+keyboard_ec11_state_t\s+\*state,\s*int32_t\s+accumulator\s*\)[\s\S]{0,520}"
+        r"state->last_feedback_delta[\s\S]{0,260}"
+        r"magnitude\s*<\s*KEYBOARD_EC11_FEEDBACK_REVERSE_MIN_ACCUM[\s\S]{0,120}"
+        r"return\s+0\s*;[\s\S]{0,180}"
+        r"return\s+candidate\s*;",
         keyboard,
     ):
         failures.append(
-            "components/keyboard/keyboard.c: EC11 rotation LED feedback direction must come from the accumulated detent direction so contact bounce cannot flip the cue"
+            "components/keyboard/keyboard.c: EC11 rotation LED feedback direction must come from accumulated detent direction and require two opposite edges before reversing the cue"
         )
     if not re.search(
         r"was_low_power_idle\s*=\s*keyboard_power_state_is_low_power_idle\(\)[\s\S]{0,260}"
         r"power_manager_record_activity\(\"ec11_rotate\"\)[\s\S]{0,360}"
-        r"feedback_delta\s*=\s*keyboard_ec11_feedback_delta_from_accumulator\(state->detent_accumulator\)[\s\S]{0,260}"
+        r"feedback_delta\s*=\s*keyboard_ec11_feedback_delta_from_accumulator\(state,\s*state->detent_accumulator\)[\s\S]{0,260}"
         r"if\s*\(\s*\(was_low_power_idle\s*\|\|\s*raw_state\s*!=\s*KEYBOARD_EC11_DETENT_STATE\)\s*&&\s*feedback_delta\s*!=\s*0\s*\)[\s\S]{0,220}"
         r"keyboard_ec11_refresh_feedback_for_delta\(state,\s*feedback_delta,\s*was_low_power_idle\)",
         keyboard,
@@ -1646,7 +1649,7 @@ def main() -> int:
         keyboard,
     ):
         failures.append(
-            "components/keyboard/keyboard.c: continuous EC11 feedback must refresh from valid edges without stepping the ring and reverse direction immediately when the encoder direction changes"
+            "components/keyboard/keyboard.c: continuous EC11 feedback must refresh from valid edges without stepping the ring and reverse direction after the accumulated direction clears the bounce guard"
         )
     if not re.search(
         r"keyboard_enable_active_low_light_sleep_wake[\s\S]{0,900}"

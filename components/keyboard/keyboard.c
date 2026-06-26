@@ -44,6 +44,7 @@
 #define KEYBOARD_EC11_EVENT_QUEUE_DEPTH 256
 #define KEYBOARD_EC11_DETENT_STATE 0x03u
 #define KEYBOARD_EC11_FEEDBACK_EDGE_REFRESH_MS 60
+#define KEYBOARD_EC11_FEEDBACK_REVERSE_MIN_ACCUM 2
 #define KEYBOARD_EC11_DROP_LOG_INTERVAL_MS 1000
 /* EC11 whole-detent direction-lock (anti CW/CCW flip). Commit a direction only
  * after >=2 consistent sub-steps (half a detent), reject any opposite-direction
@@ -293,15 +294,28 @@ static uint32_t keyboard_ec11_delta_code(int8_t delta)
     return 0;
 }
 
-static int8_t keyboard_ec11_feedback_delta_from_accumulator(int32_t accumulator)
+static int8_t keyboard_ec11_feedback_delta_from_accumulator(
+    const keyboard_ec11_state_t *state,
+    int32_t accumulator)
 {
+    int8_t candidate = 0;
     if (accumulator > 0) {
-        return 1;
+        candidate = 1;
+    } else if (accumulator < 0) {
+        candidate = -1;
+    } else {
+        return 0;
     }
-    if (accumulator < 0) {
-        return -1;
+
+    if (state != NULL &&
+        state->last_feedback_delta != 0 &&
+        ((state->last_feedback_delta > 0) != (candidate > 0))) {
+        int32_t magnitude = accumulator > 0 ? accumulator : -accumulator;
+        if (magnitude < KEYBOARD_EC11_FEEDBACK_REVERSE_MIN_ACCUM) {
+            return 0;
+        }
     }
-    return 0;
+    return candidate;
 }
 
 static uint32_t keyboard_ec11_action_code(ec11_rotation_action_t action)
@@ -1328,7 +1342,7 @@ static void keyboard_ec11_handle_state(keyboard_ec11_state_t *state, uint8_t raw
     const bool was_low_power_idle = keyboard_power_state_is_low_power_idle();
     power_manager_record_activity("ec11_rotate");
     int8_t feedback_delta =
-        keyboard_ec11_feedback_delta_from_accumulator(state->detent_accumulator);
+        keyboard_ec11_feedback_delta_from_accumulator(state, state->detent_accumulator);
     if ((was_low_power_idle || raw_state != KEYBOARD_EC11_DETENT_STATE) &&
         feedback_delta != 0) {
         keyboard_ec11_refresh_feedback_for_delta(state, feedback_delta, was_low_power_idle);

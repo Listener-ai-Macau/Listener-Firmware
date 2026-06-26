@@ -965,7 +965,10 @@ CHECKS = {
         "[Console]::Beep(880, 180)",
     ],
     "components/keyboard/keyboard.c": [
+        "KEYBOARD_EC11_FEEDBACK_REVERSE_MIN_ACCUM 2",
         "keyboard_ec11_feedback_delta_from_accumulator",
+        "keyboard_ec11_feedback_delta_from_accumulator(state, state->detent_accumulator)",
+        "magnitude < KEYBOARD_EC11_FEEDBACK_REVERSE_MIN_ACCUM",
         "keyboard_ec11_refresh_feedback_for_delta(state, feedback_delta, was_low_power_idle)",
         "status_led_refresh_ec11_feedback(delta > 0",
         "status_led_notify_ec11_feedback(direction == EC11_ROTATION_DIRECTION_CW",
