@@ -2240,6 +2240,11 @@ static void status_led_render_ble_locked(status_led_frame_t *frame, uint32_t now
                 ble_blue,
                 STATUS_LED_BLE_TYPE_READY_STEADY_PERCENT,
                 false);
+        } else if (s_state.ota_active) {
+            color = status_led_token_locked(
+                ble_blue,
+                STATUS_LED_BLE_TYPE_READY_STEADY_PERCENT,
+                false);
         } else if (confidence || status_window || active_work || connected_visible_until_idle) {
             color = status_led_token_locked(
                 ble_blue,
