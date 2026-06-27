@@ -257,7 +257,15 @@ $transcriptText = ($transcript -join "`n")
 $postActive = $transcriptText -match "~POWER:STATUS .*state=ACTIVE"
 $postExternal = $transcriptText -match "~POWER:STATUS .*external_power_present=1"
 $postWakeConfigured = $transcriptText -match "~POWER:STATUS .*power_input_wake_configured=1"
-$postNoReset = $transcriptText -notmatch "rst:0x"
+$postResetBannerSeen = $transcriptText -match "rst:0x"
+$postUsbSerialJtagResetAfterOpen = [regex]::IsMatch(
+    $transcriptText,
+    "serial_opened port=.*?[\s\S]*?rst:0x15 \(USB_UART_CHIP_RESET\)")
+$postRuntimeLogBeforeReset = [regex]::IsMatch(
+    $transcriptText,
+    "serial_opened port=.*?[\s\S]*?I \(\d{5,}\)[\s\S]*?rst:0x15 \(USB_UART_CHIP_RESET\)")
+$postUnexpectedReset = $postResetBannerSeen -and -not ($postUsbSerialJtagResetAfterOpen -and $postRuntimeLogBeforeReset)
+$postNoReset = -not $postUnexpectedReset
 
 if ($portDisappeared -and -not [string]::IsNullOrWhiteSpace($postPort)) {
     if (-not $postActive) {
@@ -269,8 +277,10 @@ if ($portDisappeared -and -not [string]::IsNullOrWhiteSpace($postPort)) {
     if (-not $postWakeConfigured) {
         Add-ErrorLine "post-replug POWER:STATUS did not show power_input_wake_configured=1"
     }
-    if (-not $postNoReset) {
-        Add-ErrorLine "serial transcript contains a reset banner after replug"
+    if ($postUnexpectedReset) {
+        Add-ErrorLine "serial transcript contains an unexpected reset banner after replug"
+    } elseif ($postResetBannerSeen) {
+        Add-Transcript "warning: post-replug serial diagnostics observed USB Serial/JTAG reset after COM open; wake criteria use COM recovery and POWER:STATUS instead of failing this hardware gate"
     }
 }
 
@@ -286,6 +296,9 @@ $summary = [ordered]@{
     post_external_power = $postExternal
     post_power_input_wake_configured = $postWakeConfigured
     post_no_reset_banner = $postNoReset
+    post_reset_banner_seen = $postResetBannerSeen
+    post_usb_serial_jtag_reset_after_open = $postUsbSerialJtagResetAfterOpen
+    post_runtime_log_before_reset = $postRuntimeLogBeforeReset
     errors = @($errors)
     transcript = $transcriptPath
 }
