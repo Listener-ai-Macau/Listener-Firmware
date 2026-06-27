@@ -507,9 +507,30 @@ def main() -> int:
         )
 
     power_manager = (REPO_ROOT / "components/power_manager/power_manager.c").read_text(encoding="utf-8")
+    audio_capture = (REPO_ROOT / "ports/esp32/audio_capture/audio_capture_esp32.c").read_text(encoding="utf-8")
     if not re.search(r"POWER_MANAGER_CHARGER_STATUS_EXTERNAL_HOLD_MS\s+1000U", power_manager):
         failures.append(
             "components/power_manager/power_manager.c: charger-status retention should be short enough for fast unplug feedback"
+        )
+    if not re.search(
+        r"i2s_channel_disable\(s_i2s_rx_handle\);[\s\S]{0,240}"
+        r"ret\s*==\s*ESP_ERR_INVALID_STATE[\s\S]{0,120}"
+        r"ret\s*=\s*ESP_OK;[\s\S]{0,180}"
+        r"s_i2s_low_power_disabled\s*=\s*true;",
+        audio_capture,
+    ):
+        failures.append(
+            "ports/esp32/audio_capture/audio_capture_esp32.c: idle power-save enable must treat already-disabled I2S as idempotent success"
+        )
+    if not re.search(
+        r"i2s_channel_enable\(s_i2s_rx_handle\);[\s\S]{0,240}"
+        r"ret\s*==\s*ESP_ERR_INVALID_STATE[\s\S]{0,120}"
+        r"ret\s*=\s*ESP_OK;[\s\S]{0,180}"
+        r"s_i2s_low_power_disabled\s*=\s*false;",
+        audio_capture,
+    ):
+        failures.append(
+            "ports/esp32/audio_capture/audio_capture_esp32.c: idle power-save disable must treat already-enabled I2S as idempotent success"
         )
     if re.search(
         r"power_manager_charger_status_external_locked[\s\S]*usb_power_present\s*\|\|\s*raw_charging",
@@ -1995,8 +2016,8 @@ def main() -> int:
 
     print(
         "PASS: power manager static verification covers hardware shutdown, PWR_HOLD/GPIO9, "
-        "external-power blockers, configurable idle actions, low-power input wake/poll guards, "
-        "PWR_HOLD guard, diagnostics, and Deep Sleep removal."
+        "external-power blockers, configurable idle actions, audio idle power-save idempotence, "
+        "low-power input wake/poll guards, PWR_HOLD guard, diagnostics, and Deep Sleep removal."
     )
     return 0
 

@@ -317,11 +317,19 @@ static esp_err_t audio_capture_apply_idle_power_save(bool enabled)
         }
 #endif
         ret = i2s_channel_disable(s_i2s_rx_handle);
+        /* ESP-IDF returns INVALID_STATE when the channel is already disabled. */
+        if (ret == ESP_ERR_INVALID_STATE) {
+            ret = ESP_OK;
+        }
         if (ret == ESP_OK) {
             s_i2s_low_power_disabled = true;
         }
     } else {
         ret = i2s_channel_enable(s_i2s_rx_handle);
+        /* ESP-IDF returns INVALID_STATE when the channel is already enabled. */
+        if (ret == ESP_ERR_INVALID_STATE) {
+            ret = ESP_OK;
+        }
         if (ret == ESP_OK) {
             s_i2s_low_power_disabled = false;
 #ifdef CONFIG_AUDIO_CAPTURE_MIC_ES8311
