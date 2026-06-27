@@ -3,14 +3,22 @@ param(
     [string]$Port = "",
     [int]$Baud = 115200,
     [string]$OutputDir = "",
-    [int]$DiagCount = 220
+    [int]$DiagCount = 220,
+    [switch]$NoAiwLock
 )
 
 $ErrorActionPreference = "Stop"
 Set-StrictMode -Version Latest
 
 $repoRoot = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot "..")).Path
-$aiwPath = "C:\Users\Billy\Desktop\Denzic\ai-collaboration-workflow\scripts\aiw.ps1"
+$aiwPath = $null
+if ($env:AI_WORKFLOW_REPO) {
+    $candidateAiwPath = Join-Path $env:AI_WORKFLOW_REPO "scripts\aiw.ps1"
+    if (-not (Test-Path -LiteralPath $candidateAiwPath)) {
+        throw "AI_WORKFLOW_REPO is set but scripts\aiw.ps1 was not found: $candidateAiwPath"
+    }
+    $aiwPath = (Resolve-Path -LiteralPath $candidateAiwPath).Path
+}
 $serialCaptureScript = Join-Path $PSScriptRoot "send_serial_and_capture.ps1"
 
 if ([string]::IsNullOrWhiteSpace($OutputDir)) {
@@ -117,10 +125,23 @@ function Add-Failure {
 
 $testPort = Resolve-TestPort
 $commandList = ("~POWER:STATUS;;~LED:STATUS;;~DIAGLOG:LAST:{0}:status_led;;~LED:STATUS" -f $DiagCount)
-$output = & $aiwPath with-lock -Resource $testPort -Wait -WaitTimeoutSeconds 120 -TimeoutMinutes 2 `
-    -Purpose "oai2 status LED log no-all-on verification" `
-    -Run pwsh -NoProfile -File $serialCaptureScript -Port $testPort -Baud $Baud `
-    -InitialReadMs 900 -CommandReadMs 8000 -CommandList $commandList -OutputPath $capturePath 2>&1
+$baseArgs = @(
+    "-NoProfile",
+    "-File", $serialCaptureScript,
+    "-Port", $testPort,
+    "-Baud", [string]$Baud,
+    "-InitialReadMs", "900",
+    "-CommandReadMs", "8000",
+    "-CommandList", $commandList,
+    "-OutputPath", $capturePath
+)
+if ($NoAiwLock.IsPresent -or $null -eq $aiwPath) {
+    $output = & pwsh @baseArgs 2>&1
+} else {
+    $output = & $aiwPath with-lock -Resource $testPort -Wait -WaitTimeoutSeconds 120 -TimeoutMinutes 2 `
+        -Purpose "status LED log no-all-on verification" `
+        -Run pwsh @baseArgs 2>&1
+}
 $captureExit = $LASTEXITCODE
 if ($captureExit -ne 0) {
     $output | Set-Content -LiteralPath (Join-Path $OutputDir "capture-error.txt") -Encoding UTF8

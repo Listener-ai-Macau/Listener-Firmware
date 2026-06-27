@@ -4,8 +4,8 @@
  * more strips, READ docs/features/status_led_dma_history.md first. It consolidates the
  * historical tuning experience and the hard constraints:
  *   - ESP32-S3 can use DMA on only ONE RMT TX channel, so only the status strip is on
- *     RMT DMA. Forcing all four strips to RMT DMA was tried and left EC11/key/edge
- *     unavailable (see docs/validation/.../all-strip-dma-status-20260619.log).
+ *     RMT DMA. Historical hardware validation showed that forcing all four strips
+ *     to RMT DMA left EC11/key/edge unavailable.
  *   - EC11/key/edge flicker on non-DMA (interrupt-backed) RMT; the historical
  *     recommendation for them is a different DMA backend (SPI+DMA). DMA can NOT stay
  *     enabled through low-power idle (LED3-6 idle-latch corruption), so any DMA strip

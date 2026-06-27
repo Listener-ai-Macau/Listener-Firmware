@@ -1,2 +1,0 @@
-I (46635) audio_capture: audio idle power save disabled: ESP_OK
-~BOARD:GPIO active_low=1 mode=read_as_configured reconfigure=0 key1_gpio=38 key1_level=high key1_pressed=0 key2_gpio=39 key2_level=high key2_pressed=0 key3_gpio=40 key3_level=high key3_pressed=0 key4_gpio=41 key4_level=high key4_pressed=0 key_pressed_mask=0x00 ec11_a_gpio=42 ec11_a_level=high ec11_b_gpio=2 ec11_b_level=high ec11_ab_state=0x03 ec11_key_gpio=11 ec11_key_level=high ec11_key_pressed=0 recording_key=EC11_KEY/GPIO11

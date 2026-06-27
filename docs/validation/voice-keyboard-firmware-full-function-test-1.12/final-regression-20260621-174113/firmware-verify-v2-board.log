@@ -1,1 +1,0 @@
-PASS: V2 N16R8 board profile, memory defaults, pin map, four-zone LED resources, GPIO10 battery ADC, GPIO9 PWR_HOLD, absent current telemetry, retired USB_DET high-Z policy, diagnostics, partitions, and package identity checks passed.

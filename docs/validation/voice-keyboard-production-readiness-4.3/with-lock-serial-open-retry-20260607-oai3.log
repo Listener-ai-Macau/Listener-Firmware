@@ -1,4 +1,0 @@
-Locked 'COM6' for 'oai3' (60 min)
-Running locked command: pwsh -NoProfile -Command $p = New-Object System.IO.Ports.SerialPort "COM6",115200; try { $p.Open(); "serial-open=PASS port=COM6" } finally { if ($p.IsOpen) { $p.Close() } }
-MethodInvocationException: Exception calling "Open" with "0" argument(s): "连到系统上的设备没有发挥作用。"
-Released 'COM6' (was locked by 'oai3')

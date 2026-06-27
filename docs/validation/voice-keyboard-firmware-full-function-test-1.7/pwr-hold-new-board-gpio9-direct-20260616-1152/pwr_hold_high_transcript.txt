@@ -1,9 +1,0 @@
-﻿serial_opened port=COM9 baud=115200 dtr=0 rts=0
-I (27684) ble_hid: battery notify level=89 voltage_mv=4048 raw_adc=2401 adc_mv=2024 usb_power=1 raw_charging=1 raw_full=0 full_latched=0 full_candidate_ms=0 charge_full=0 reason=threshold_sample forced=0 periodic=0
-> ~BOARD:PWR-HOLD:HIGH
-E (28754) board: PWR_HOLD/GPIO9 driven high for hardware shutdown did not settle high within 500 ms; check latch wiring or external load
-I (28754) board: PWR_HOLD/GPIO9 runtime low configured readback: gpio=9 requested_level=0 actual_level=0 policy=v2_gpio9_power_latch_runtime_low_drive_high_for_hardware_shutdown
-I (28764) board: PWR_HOLD/GPIO9 runtime low configured readback: gpio=9 requested_level=0 actual_level=0 policy=v2_gpio9_power_latch_runtime_low_drive_high_for_hardware_shutdown
-~BOARD:PWR_HOLD_TEST action=drive_high ret=ESP_ERR_INVALID_STATE pwr_hold_gpio=9 before_level=low after_level=low after_configured=1 restored_low=1 restore_ret=ESP_OK restored_level=low policy=v2_gpio9_power_latch_runtime_low_drive_high_for_hardware_shutdown
-I (32284) boot_safety: normal boot survived 30000ms; crash counter cleared
-serial_closed

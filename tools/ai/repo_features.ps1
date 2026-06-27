@@ -94,7 +94,7 @@ function New-FeatureSnapshot {
         boundaries = @(
             "Desktop ASR, text polish, insertion, and settings UI live in Listener-Type.",
             "Industrial design, enclosure constraints, review renders, and manufacturing package live in voice-keyboard-design.",
-            "Workflow claim, review, and cross-repo status live in ai-collaboration-workflow."
+            "Planning, review state, and cross-repo orchestration are external to this product repository."
         )
         validation_commands = @(
             "pwsh -NoProfile -File .\tools\ai\repo_features.ps1 -Check",
@@ -258,7 +258,7 @@ if ($UpdateFromAccepted) {
         plan = $Plan
         step_id = $StepId
         commit = $Commit
-        repo_root = $resolvedRepoRoot
+        repo = (Split-Path -Leaf $resolvedRepoRoot)
         note = "Keep this entry only if the accepted work changed important firmware capabilities, hardware contracts, diagnostics, or validation."
     }
     $record | ConvertTo-Json -Depth 6 -Compress | Add-Content -Path $acceptedLogPath -Encoding UTF8

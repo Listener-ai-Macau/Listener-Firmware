@@ -5,7 +5,9 @@
 > peripheral **must read this first**. The current "status-only DMA" design is the
 > result of empirical tests on this exact board, not a default to be silently changed.
 
-Related: [status_led.md](status_led.md) (feature contract), [status_led_active_dma_idle_nondma_stability_20260623.md](../validation/status_led_active_dma_idle_nondma_stability_20260623.md) (stability fix).
+Related: [status_led.md](status_led.md) (feature contract). The stability fix
+evidence was captured during private hardware validation and should be preserved
+in release notes or PR evidence rather than committed as raw validation logs.
 
 ## One-sentence root cause
 
@@ -34,17 +36,13 @@ BLE / Wi-Fi / audio interrupt pressure. **That is why only the status strip is o
    use a one-shot non-DMA RMT latch for those frames, then restore the SPI transport
    choice for the next active frame.
 4. **EC11 / key / edge DO flicker on non-DMA RMT — this is documented, not hypothetical.**
-   [`led-hardware-next-revision.md`](../validation/voice-keyboard-firmware-full-function-test-1.13a/led-hardware-next-revision.md)
-   states the status-strip DMA fix "does not fully remove visible instability on
-   EC11/key/edge because those zones still use interrupt-backed RMT, separate data
-   outputs, and their own power/signal paths ... it is still a real hardware-quality
-   issue." The "lower than status tail" qualifier means **only** that it does not
-   corrupt semantic LED5/6 state — it does **not** mean the flicker is absent.
-   The same doc's recommended fix (its "Recommended Hardware Architecture" item 3):
-   for non-status strips, **"use a different LED backend with DMA resources for the
-   required channel count"** (= SPI DMA) — precisely because four ESP32-S3 RMT-DMA
-   outputs are not available. The operator has confirmed this flicker is observed on
-   hardware, and the status strip does not flicker because it is on DMA.
+   Historical hardware review recorded that the status-strip DMA fix does not fully
+   remove visible instability on EC11/key/edge because those zones still use
+   interrupt-backed RMT, separate data outputs, and their own power/signal paths.
+   The recommended fix for non-status strips is a different LED backend with DMA
+   resources for the required channel count (= SPI DMA), precisely because four
+   ESP32-S3 RMT-DMA outputs are not available. The operator confirmed this flicker
+   on hardware; the status strip does not flicker because it is on DMA.
 
 ## Flicker-free DMA output budget on this board (mic stays on I2S0)
 
@@ -78,17 +76,21 @@ quantifies how much of the observed flicker is CPU-starvation vs. DMA-inherent. 
 does **not** fix the documented status-tail corruption (that is a DMA-timing problem),
 but it is the one zero-cost lever and should not be skipped.
 
-## Historical evidence (under `docs/validation/`)
+## Historical Evidence Policy
 
-| Doc | What it proves |
+Raw logs, images, and one-off validation captures are not kept in the public
+repository. Preserve the following evidence names in PRs, release notes, or a
+private validation archive when changing this area.
+
+| Evidence | What it proves |
 |---|---|
-| [ad-hoc-led-stack-disposition.md](../validation/voice-keyboard-firmware-full-function-test-1.13a/ad-hoc-led-stack-disposition.md) | **THE decision doc** — status-only-DMA rationale, the all-strips-DMA failure, and the flicker root-cause analysis. |
-| [all-strip-dma-status-20260619.log](../validation/voice-keyboard-firmware-full-function-test-1.13a/all-strip-dma-status-20260619.log) | Empirical proof: all-strips-DMA → only `status:dma1`, EC11/key/edge unavailable. |
-| [status-only-dma-eased-dual-core-contract-20260619.log](../validation/voice-keyboard-firmware-full-function-test-1.13a/status-only-dma-eased-dual-core-contract-20260619.log) | The accepted status-only-DMA contract. |
-| [led-hardware-next-revision.md](../validation/voice-keyboard-firmware-full-function-test-1.13a/led-hardware-next-revision.md) | EC11/key/edge residual flicker + signal-integrity recommendations for the next board revision. |
-| [human-ai-da-dada-1950-summary.md](../validation/voice-keyboard-firmware-full-function-test-1.13a/human-ai-da-dada-1950-summary.md) | Human acceptance: 0 flicker / 0 follow reports. |
-| [status_led_active_dma_idle_nondma_stability_20260623.md](../validation/status_led_active_dma_idle_nondma_stability_20260623.md) | The active-DMA / idle-non-DMA fix and its guardrails. |
-| [low_power_status_led_final_acceptance_20260624.md](../validation/low_power_status_led_final_acceptance_20260624.md) | Final low-power LED acceptance. |
+| `ad-hoc-led-stack-disposition` | Status-only-DMA rationale, the all-strips-DMA failure, and the flicker root-cause analysis. |
+| `all-strip-dma-status-20260619` | Empirical proof: all-strips-DMA -> only `status:dma1`, EC11/key/edge unavailable. |
+| `status-only-dma-eased-dual-core-contract-20260619` | The accepted status-only-DMA contract. |
+| `led-hardware-next-revision` | EC11/key/edge residual flicker plus signal-integrity recommendations for the next board revision. |
+| `human-ai-da-dada-1950-summary` | Human acceptance: 0 flicker / 0 follow reports. |
+| `status-led-active-dma-idle-nondma-stability-20260623` | The active-DMA / idle-non-DMA fix and its guardrails. |
+| `low-power-status-led-final-acceptance-20260624` | Final low-power LED acceptance. |
 
 ## Guardrails (do not violate without new physical evidence)
 

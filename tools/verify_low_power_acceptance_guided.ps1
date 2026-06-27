@@ -26,7 +26,14 @@ Add-Type -AssemblyName System.Drawing
 
 $AgentName = "codex"
 $repoRoot = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot "..")).Path
-$aiwPath = "C:\Users\Billy\Desktop\Denzic\ai-collaboration-workflow\scripts\aiw.ps1"
+$aiwPath = $null
+if ($env:AI_WORKFLOW_REPO) {
+    $candidateAiwPath = Join-Path $env:AI_WORKFLOW_REPO "scripts\aiw.ps1"
+    if (-not (Test-Path -LiteralPath $candidateAiwPath)) {
+        throw "AI_WORKFLOW_REPO is set but scripts\aiw.ps1 was not found: $candidateAiwPath"
+    }
+    $aiwPath = (Resolve-Path -LiteralPath $candidateAiwPath).Path
+}
 $serialCaptureScript = Join-Path $PSScriptRoot "send_serial_and_capture.ps1"
 
 if ($BatteryShutdownTotalSeconds -lt $BatteryIdleSeconds) {
@@ -726,7 +733,7 @@ function Invoke-SerialCapture {
         $capturePath
     )
 
-    if ($NoAiwLock.IsPresent) {
+    if ($NoAiwLock.IsPresent -or $null -eq $aiwPath) {
         Invoke-LoggedNative -Arguments $baseArgs -Label $Label
     } else {
         $lockedArgs = @(

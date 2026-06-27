@@ -1,1 +1,0 @@
-PASS: status LED static verification covers V2 four-zone WS2812 resources, EC11 GPIO5/count12, key GPIO13/count4, edge GPIO4/count6, diagnostics, USB validation hooks, camera/manual one-pixel status/key/EC11/edge harness, and low-power off path.

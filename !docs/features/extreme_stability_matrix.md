@@ -21,13 +21,15 @@ This contract is the baseline for later firmware and Listener-Type hardening. It
 | `auto`, `smoke`, `daily`, `full` | A1,A2 | Existing low-cost product-chain baseline. |
 | `extreme` | A1,A2,A14,T1,T3,L1,H1,H4,A17,A15,D1 | Full stability contract. A1/A2 are automated; the remaining cases are structured skipped/manual baselines until their real runners or hardware evidence exist. |
 
-Recommended locked release-closure command shape:
+Recommended release-closure command shape:
 
 ```powershell
-pwsh -NoProfile -File ..\ai-collaboration-workflow\scripts\aiw.ps1 with-lock -Resource COMx,BLE-<address> -Run python .\tools\verify_audio_ble_product_matrix.py --port COMx --cases extreme --a1-round-count 20 --inter-session-gap-min-seconds 0 --inter-session-gap-max-seconds 1 --long-capture-seconds 60 --full-chain-audio-profile fast --fail-on-warning --continue-on-failure
+python .\tools\verify_audio_ble_product_matrix.py --port COMx --cases extreme --a1-round-count 20 --inter-session-gap-min-seconds 0 --inter-session-gap-max-seconds 1 --long-capture-seconds 60 --full-chain-audio-profile fast --fail-on-warning --continue-on-failure
 ```
 
-The command above intentionally records skipped cases for manual/external scenarios until dedicated automation exists.
+When using shared hardware, run the command inside your team's normal serial/BLE
+resource lock. The command intentionally records skipped cases for
+manual/external scenarios until dedicated automation exists.
 
 ## Scenarios
 
@@ -66,7 +68,8 @@ Skipped manual/external cases still record the contract, skip reason, failure cl
 - Matrix result JSON: `tests\artifacts\ble_product_matrix\matrix_result.json` unless overridden.
 - Summary log: `tests\artifacts\ble_product_matrix\summary.log` unless overridden.
 - Per-case artifacts: `tests\artifacts\ble_product_matrix\<case-id>\`.
-- Validation summary for workflow review: `docs\validation\voice-keyboard-extreme-stability-hardening-1.1-tai1.md`.
+- Validation summary: attach to the PR or release record rather than committing
+  raw validation output.
 
 ## Invariants
 

@@ -1,1 +1,0 @@
-PASS: BLE status LED connected-sync checks cover GAP/HID connected source of truth, Type audio notify readiness, stale advertising suppression, bounded connected/type-ready brightness, active-work PWR/BLE visibility, battery idle heartbeat, and disconnect/advertising negative transitions.

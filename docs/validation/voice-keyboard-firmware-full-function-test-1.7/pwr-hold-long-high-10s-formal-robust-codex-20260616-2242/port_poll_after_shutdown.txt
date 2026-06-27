@@ -1,4 +1,0 @@
-[2026-06-16T22:27:54.5110802+08:00] initial target=COM10 ports=COM10
-[2026-06-16T22:28:05.5044807+08:00] port_open_probe_failed port=COM10 message=Exception calling "Open" with "0" argument(s): "Could not find file 'COM10'."
-[2026-06-16T22:28:05.5112375+08:00] after_shutdown poll=00 target=COM10 present=False ports=COM10
-[2026-06-16T22:28:14.7944945+08:00] after_power_key poll=00 target=COM10 present=True ports=COM10,COM10

@@ -4,7 +4,8 @@ param(
     [switch]$Flash,
     [switch]$Monitor,
     [switch]$Clean,
-    [string]$Port = "COM5"
+    [string]$Port = "COM5",
+    [string]$IdfPath = $env:ESP_IDF_PATH
 )
 
 $ErrorActionPreference = "Stop"
@@ -20,8 +21,13 @@ $cleanPath = ($env:PATH -split ";" | Where-Object {
     $_ -notmatch "msys|mingw|git\\bin|git\\cmd|git\\usr"
 }) -join ";"
 
-# Build the esp-idf activation command
-$exportPs1 = "C:\Users\Billy\esp\esp-idf\export.ps1"
+if ([string]::IsNullOrWhiteSpace($IdfPath)) {
+    $IdfPath = Join-Path $HOME "esp\esp-idf"
+}
+$exportPs1 = Join-Path $IdfPath "export.ps1"
+if (-not (Test-Path -LiteralPath $exportPs1)) {
+    throw "ESP-IDF export.ps1 not found at $exportPs1. Set ESP_IDF_PATH or pass -IdfPath."
+}
 
 $actions = @()
 if ($Clean) { $actions += "idf.py fullclean" }
@@ -32,11 +38,14 @@ if ($Monitor) { $actions += "idf.py -p $Port monitor" }
 $cmdBlock = $actions -join "; "
 
 # Launch a clean PowerShell child process without MSys contamination
+$escapedFirmwareRoot = $FirmwareRoot.Replace("'", "''")
+$escapedIdfPath = $IdfPath.Replace("'", "''")
+$escapedExportPs1 = $exportPs1.Replace("'", "''")
 $psi = [System.Diagnostics.ProcessStartInfo]::new()
 $psi.FileName = "powershell.exe"
-$psi.Arguments = "-NoProfile -ExecutionPolicy Bypass -Command `"$env:IDF_PATH = 'C:\Users\Billy\esp\esp-idf'; Set-Location '$FirmwareRoot'; . '$exportPs1'; $cmdBlock`""
+$psi.Arguments = "-NoProfile -ExecutionPolicy Bypass -Command `"$env:IDF_PATH = '$escapedIdfPath'; Set-Location '$escapedFirmwareRoot'; . '$escapedExportPs1'; $cmdBlock`""
 $psi.EnvironmentVariables["PATH"] = $cleanPath
-$psi.EnvironmentVariables["IDF_PATH"] = "C:\Users\Billy\esp\esp-idf"
+$psi.EnvironmentVariables["IDF_PATH"] = $IdfPath
 # Remove MSys-related env vars
 $psi.EnvironmentVariables.Remove("MSYSTEM") | Out-Null
 $psi.EnvironmentVariables.Remove("MSYS") | Out-Null

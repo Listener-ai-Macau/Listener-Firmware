@@ -1,8 +1,0 @@
-{
-  "at": "2026-06-22T13:02:47.3077218+08:00",
-  "agent": "oai2",
-  "result": "SKIP",
-  "notes": "",
-  "serial": "C:\\Users\\Billy\\Desktop\\Denzic\\Listener\\Listener-Firmware-wt-adhoc-oai2-low-power-40ma-consolidate-20260622-114937\\docs\\validation\\recording-led-independence-guided-20260622-130136\\serial-guided.txt",
-  "expected": "PWR/BLE remain on while REC is added by recording_active"
-}

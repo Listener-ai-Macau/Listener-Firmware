@@ -1,9 +1,0 @@
-sample,elapsed_s,captured_at_epoch,state,idle_ms,user_idle_ms,radio_idle_ms,ble_connected,external_power_present,usb_power_present,charging,charge_full,charge_full_latched,charge_full_candidate_ms,audio_idle_power_save,low_power_idle_ms,hardware_shutdown_ms,battery_mv,tps_current_ma,tps_power_mw,tps_adc_mv,tps_sample_mode,tps_cache_valid,tps_cache_sequence,sy_current_ma,sy_power_mw,sy_adc_mv,sy_sample_mode,sy_cache_valid,sy_cache_sequence,raw_line_count,has_tps,has_sy,has_power_status
-1,4.166,1781342656.2458844,DISCONNECTED_IDLE,92635,92635,92121,0,1,1,0,0,0,0,1,60000,1800000,3516,10,35,5,force,0,1,0,0,0,force,0,2,7,True,True,True
-2,34.106,1781342686.1856625,DISCONNECTED_IDLE,122610,122610,122096,0,1,1,0,0,0,0,1,60000,1800000,3516,146,510,73,force,0,3,0,0,0,force,0,4,3,True,True,True
-3,64.169,1781342716.2489004,DISCONNECTED_IDLE,152610,152610,152096,0,1,1,0,0,0,0,1,60000,1800000,3516,12,42,6,force,0,5,144,503,72,force,0,6,3,True,True,True
-4,94.108,1781342746.1884892,DISCONNECTED_IDLE,182609,182609,182095,0,1,1,0,0,0,0,1,60000,1800000,3516,0,0,0,force,0,7,0,0,0,force,0,8,3,True,True,True
-5,124.098,1781342776.1778188,DISCONNECTED_IDLE,212609,212609,212095,0,1,1,0,0,0,0,1,60000,1800000,3516,90,316,45,force,0,9,0,0,0,force,0,10,3,True,True,True
-6,154.078,1781342806.158047,DISCONNECTED_IDLE,242611,242611,242097,0,1,1,0,0,0,0,1,60000,1800000,3516,0,0,0,force,0,11,0,0,0,force,0,12,3,True,True,True
-7,184.143,1781342836.2230055,DISCONNECTED_IDLE,272608,272608,272094,0,1,1,0,0,0,0,1,60000,1800000,3516,0,0,0,force,0,13,0,0,0,force,0,14,3,True,True,True
-8,214.111,1781342866.191488,DISCONNECTED_IDLE,302607,302607,302093,0,1,1,0,0,0,0,1,60000,1800000,3516,114,401,57,force,0,15,0,0,0,force,0,16,3,True,True,True

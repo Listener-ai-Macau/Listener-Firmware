@@ -1,9 +1,0 @@
-changed_files=107
-product_changed_files=5
-Product diff files:
-ports/esp32/audio_capture/audio_capture_esp32.c
-tools/capture_audio_ble_wav.py
-tools/verify_audio_capture_session_end_to_end.py
-tools/verify_custom_key_command_hid.ps1
-tools/verify_v2_board_profile_static.ps1
-PASS: no product power_manager/status_led/sdkconfig/TEST:PIXEL/LED-tool/voice_key_input files in branch diff.

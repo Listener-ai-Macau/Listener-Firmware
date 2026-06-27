@@ -12,22 +12,39 @@ $ErrorActionPreference = "Continue"
 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
 
 # ---- 路径配置 ----
-$home_dir = if ($env:USERPROFILE) { $env:USERPROFILE } else { "C:\Users\Billy" }
-$prj = if ($PSScriptRoot) { Split-Path -Parent $PSScriptRoot } else { "$home_dir\Desktop\listener\voice-keyboard-firmware" }
+$home_dir = if ($env:USERPROFILE) {
+    $env:USERPROFILE
+} elseif ($env:HOME) {
+    $env:HOME
+} else {
+    throw "Cannot resolve user home directory from USERPROFILE or HOME."
+}
+$prj = if ($PSScriptRoot) { Split-Path -Parent $PSScriptRoot } else { (Resolve-Path ".").Path }
 $bld = "$prj\build"
 $idf = if ($env:ESP_IDF_PATH) { $env:ESP_IDF_PATH } else { "$home_dir\esp\esp-idf" }
 $tools = "$home_dir\.espressif\tools"
-$python = "$home_dir\.espressif\python_env\idf5.5_py3.11_env\Scripts\python.exe"
-$gcc_dir = "$tools\xtensa-esp-elf\esp-14.2.0_20260121\xtensa-esp-elf\bin"
+$python = Get-ChildItem "$home_dir\.espressif\python_env" -Recurse -Filter "python.exe" -ErrorAction SilentlyContinue |
+    Where-Object { $_.FullName -match "\\Scripts\\python\.exe$" } |
+    Sort-Object FullName -Descending |
+    Select-Object -ExpandProperty FullName -First 1
+if (-not $python) { $python = "python" }
+$gcc = Get-ChildItem "$tools\xtensa-esp-elf" -Recurse -Filter "xtensa-esp32s3-elf-gcc.exe" -ErrorAction SilentlyContinue |
+    Sort-Object FullName -Descending |
+    Select-Object -First 1
+if (-not $gcc) { throw "[ci] xtensa-esp32s3-elf-gcc.exe not found under $tools. Run tools\setup_windows.ps1 first." }
+$gcc_dir = $gcc.DirectoryName
 $esptool = "$idf\components\esptool_py\esptool\esptool.py"
 $monitor = "$idf\tools\idf_monitor.py"
 
-$ninja = (Get-ChildItem "$tools\ninja" -Recurse -Filter "ninja.exe" | Select-Object -First 1).FullName
-$ccache = (Get-ChildItem "$tools\ccache" -Recurse -Filter "ccache.exe" | Select-Object -First 1).DirectoryName
+$ninja = (Get-ChildItem "$tools\ninja" -Recurse -Filter "ninja.exe" -ErrorAction SilentlyContinue | Select-Object -First 1).FullName
+if (-not $ninja) { throw "[ci] ninja.exe not found under $tools. Run tools\setup_windows.ps1 first." }
+$ccache = (Get-ChildItem "$tools\ccache" -Recurse -Filter "ccache.exe" -ErrorAction SilentlyContinue | Select-Object -First 1).DirectoryName
 
 $env:IDF_PATH = $idf
 $env:IDF_TARGET = $Target
-$env:PATH = "$gcc_dir;$ccache;$([System.IO.Path]::GetDirectoryName($ninja));$([System.IO.Path]::GetDirectoryName($python));$env:PATH"
+$pathParts = @($gcc_dir, $ccache, [System.IO.Path]::GetDirectoryName($ninja), [System.IO.Path]::GetDirectoryName($python)) |
+    Where-Object { -not [string]::IsNullOrWhiteSpace($_) }
+$env:PATH = "$($pathParts -join ';');$env:PATH"
 
 function Get-IdfPartitionTable {
     param([Parameter(Mandatory = $true)][string]$PartitionBin)

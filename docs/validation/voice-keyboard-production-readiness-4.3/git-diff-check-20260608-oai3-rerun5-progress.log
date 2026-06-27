@@ -1,2 +1,0 @@
-warning: in the working copy of 'tools/capture_audio_ble_wav.py', LF will be replaced by CRLF the next time Git touches it
-git_diff_check_progress_exit_code=0

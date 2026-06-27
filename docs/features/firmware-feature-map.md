@@ -1,8 +1,8 @@
 # Firmware Feature Map
 
 This document is the human-readable companion to `tools/ai/repo_features.ps1`.
-The script remains the workflow entry point for AI context; this file explains the
-same product capabilities with concrete source locations.
+The script prints a machine-readable product capability snapshot; this file
+explains the same capabilities with concrete source locations.
 
 ## Implemented Product Surface
 
@@ -61,4 +61,5 @@ git diff --check
 
 - Desktop ASR, text polish, insertion, settings, and user-facing BLE status live in `Listener-Type`.
 - Industrial design, CAD, enclosure, renders, and manufacturing mechanical constraints live in `voice-keyboard-design`.
-- Workflow plans, claims, review state, and cross-repo orchestration live in `ai-collaboration-workflow`.
+- Planning, review state, and cross-repo orchestration are external to this
+  product repository.

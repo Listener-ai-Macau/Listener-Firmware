@@ -1,6 +1,0 @@
-PASS: V2 N16R8 board profile, memory defaults, pin map, four-zone LED resources, battery-side current telemetry, USB_Det divider policy, diagnostics, partitions, and package identity checks passed.
-verify_v2_board_profile_static_exit=0
-PASS: diagnostic log coverage checks passed.
-verify_diagnostic_log_coverage_exit=0
-PASS: voice_recording_control FSM artifact covers 13 extreme transition cases and keeps decisions effect-free.
-verify_voice_recording_control_fsm_exit=0

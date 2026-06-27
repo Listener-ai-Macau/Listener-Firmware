@@ -109,4 +109,6 @@ The hardware check confirms BLE name, appearance, DIS firmware/protocol, readine
 - First power-on advertises without a serial command.
 - Factory app image offset is derived from `ota_0`, not hard-coded to `0x10000`.
 - POST critical failures log and continue into observable degraded BLE/HID/serial recovery where possible.
-- Default package output lives under `.cache\factory_firmware`; workflow validation packages may be copied under `docs/validation` as review evidence.
+- Default package output lives under `.cache\factory_firmware`; validation
+  packages should be attached to PRs or release records instead of committed as
+  raw repository artifacts.

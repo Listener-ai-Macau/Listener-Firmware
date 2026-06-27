@@ -1,9 +1,0 @@
-Resolved COMx to 'COM6' (current ESP32 serial/COM device: COM6)
-Locked 'COM6' for 'oai3' (60 min)
-Running locked command: pwsh -NoProfile -File .\docs\validation\voice-keyboard-production-readiness-4.3\led-camera\run_led_camera_probe.ps1 -Port COM6
-serial_log=C:\Users\Billy\Desktop\listener\voice-keyboard-firmware-wt-oai3-voice-keyboard-production-readiness-4.3\docs\validation\voice-keyboard-production-readiness-4.3\led-camera\led-factory-rgbw-serial-20260607-222433.log
-camera_log=C:\Users\Billy\Desktop\listener\voice-keyboard-firmware-wt-oai3-voice-keyboard-production-readiness-4.3\docs\validation\voice-keyboard-production-readiness-4.3\led-camera\led-factory-rgbw-camera-20260607-222433.log
-camera_image=C:\Users\Billy\Desktop\listener\voice-keyboard-firmware-wt-oai3-voice-keyboard-production-readiness-4.3\docs\validation\voice-keyboard-production-readiness-4.3\led-camera\led-factory-rgbw-camera0-20260607-222433.jpg
-camera_capture=PASS index=0 path=C:\Users\Billy\Desktop\listener\voice-keyboard-firmware-wt-oai3-voice-keyboard-production-readiness-4.3\docs\validation\voice-keyboard-production-readiness-4.3\led-camera\led-factory-rgbw-camera0-20260607-222433.jpg
-image_stats width=640 height=480 mean=132.19 p99=255.00 max=255 bright_pixels_ge_220=17570
-Released 'COM6' (was locked by 'oai3')

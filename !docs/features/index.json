@@ -34,7 +34,7 @@
         "POST critical failures log and continue into degraded BLE mode"
       ],
       "known_limits": [
-        "Default generated binary package lives under .cache/factory_firmware; workflow validation packages may be copied under docs/validation as review evidence",
+        "Default generated binary package lives under .cache/factory_firmware; validation packages should be attached to PRs or release records instead of committed as raw repository artifacts",
         "Live BLE scan or first power-on visual observation remains a later hardware or human gate when no current unique resource is available"
       ]
     },

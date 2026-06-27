@@ -1,6 +1,6 @@
 param(
     [string]$OutputDir = "",
-    [string]$TypeRepo = "C:\Users\Billy\Desktop\Denzic\Listener\Listener-Type",
+    [string]$TypeRepo = "",
     [ValidateSet("Full", "NoTranscript", "AiLamp")]
     [string]$Scenario = "Full",
     [switch]$OpenNotepad
@@ -9,10 +9,14 @@ param(
 $ErrorActionPreference = "Stop"
 Set-StrictMode -Version Latest
 
-$repoRoot = Resolve-Path (Join-Path $PSScriptRoot "..")
+$repoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
+if ([string]::IsNullOrWhiteSpace($TypeRepo)) {
+    $TypeRepo = Join-Path $repoRoot "..\Listener-Type"
+}
+$TypeRepo = (Resolve-Path -LiteralPath $TypeRepo).Path
 if ([string]::IsNullOrWhiteSpace($OutputDir)) {
     $stamp = Get-Date -Format "yyyyMMdd-HHmmss"
-    $OutputDir = Join-Path $repoRoot "docs\validation\voice-keyboard-firmware-full-function-test-1.12\human-go-no-go-$stamp"
+    $OutputDir = Join-Path $repoRoot ".cache\validation\voice-keyboard-firmware-full-function-test-1.12\human-go-no-go-$stamp"
 }
 New-Item -ItemType Directory -Force -Path $OutputDir | Out-Null
 

@@ -1,1 +1,0 @@
-PASS: charging-awake policy static checks cover raw/interpreted power inputs, plugged idle behavior, automatic long-idle/low-battery shutdown blocking, manual shutdown override, plug/unplug idle reset, and diagnostics.

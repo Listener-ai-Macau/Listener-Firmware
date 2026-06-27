@@ -1,2 +1,0 @@
-PASS: custom key command/HID contract validates KEY1-KEY4 F13-F16 fallback, F17-F24 gestures, stable diagnostics, and no WASD/text fallback.
-verify_custom_key_command_hid_exit_code=0

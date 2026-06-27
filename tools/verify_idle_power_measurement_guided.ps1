@@ -7,6 +7,7 @@ param(
     [int]$PortReappearTimeoutSeconds = 120,
     [int]$PostReplugSettleSeconds = 8,
     [string]$OutputDir = "",
+    [switch]$NoAiwLock,
     [switch]$NoPrompt,
     [switch]$PlanOnly
 )
@@ -20,7 +21,14 @@ Add-Type -AssemblyName System.Drawing
 
 $AgentName = "codex"
 $repoRoot = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot "..")).Path
-$aiwPath = "C:\Users\Billy\Desktop\Denzic\ai-collaboration-workflow\scripts\aiw.ps1"
+$aiwPath = $null
+if ($env:AI_WORKFLOW_REPO) {
+    $candidateAiwPath = Join-Path $env:AI_WORKFLOW_REPO "scripts\aiw.ps1"
+    if (-not (Test-Path -LiteralPath $candidateAiwPath)) {
+        throw "AI_WORKFLOW_REPO is set but scripts\aiw.ps1 was not found: $candidateAiwPath"
+    }
+    $aiwPath = (Resolve-Path -LiteralPath $candidateAiwPath).Path
+}
 $serialCaptureScript = Join-Path $PSScriptRoot "send_serial_and_capture.ps1"
 
 if ([string]::IsNullOrWhiteSpace($OutputDir)) {
@@ -282,15 +290,7 @@ function Invoke-Capture {
 
     $path = Join-Path $OutputDir ("serial-{0}.txt" -f $Label)
     $commandList = ($Commands -join ";;")
-    $args = @(
-        "with-lock",
-        "-Resource", $SerialPortName,
-        "-Wait",
-        "-WaitTimeoutSeconds", "120",
-        "-TimeoutMinutes", "2",
-        "-Purpose", "oai2 guided idle power measurement $Label",
-        "-Run",
-        "pwsh",
+    $baseArgs = @(
         "-NoProfile",
         "-File", $serialCaptureScript,
         "-Port", $SerialPortName,
@@ -302,7 +302,21 @@ function Invoke-Capture {
     )
 
     Add-Transcript ("capture_start label={0} port={1} path={2}" -f $Label, $SerialPortName, $path)
-    $output = & $aiwPath @args 2>&1
+    if ($NoAiwLock.IsPresent -or $null -eq $aiwPath) {
+        $output = & pwsh @baseArgs 2>&1
+    } else {
+        $args = @(
+            "with-lock",
+            "-Resource", $SerialPortName,
+            "-Wait",
+            "-WaitTimeoutSeconds", "120",
+            "-TimeoutMinutes", "2",
+            "-Purpose", "guided idle power measurement $Label",
+            "-Run",
+            "pwsh"
+        ) + $baseArgs
+        $output = & $aiwPath @args 2>&1
+    }
     $exit = $LASTEXITCODE
     foreach ($line in $output) {
         Add-Transcript ("capture_output label={0} {1}" -f $Label, $line)

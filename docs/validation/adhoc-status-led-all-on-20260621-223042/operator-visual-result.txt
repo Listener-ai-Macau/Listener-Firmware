@@ -1,3 +1,0 @@
-popup_result=-1
-meaning=timeout_no_operator_answer
-timestamp=2026-06-21T22:31:47.1302705+08:00

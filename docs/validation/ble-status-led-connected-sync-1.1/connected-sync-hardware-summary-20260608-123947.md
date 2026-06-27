@@ -1,9 +1,0 @@
-# BLE Status LED Connected Sync Hardware Probe
-
-- Port: COM6
-- BLE address: A4CB8FF459A6
-- Flash log: connected-sync-flash-20260608-123947.log
-- BLE ensure log: connected-sync-ble-20260608-123947.log
-- Serial status log: connected-sync-led-status-20260608-123947.log
-- Final status: ~LED:STATUS profile=standard backend=rmt_ws2812_800khz refresh_ms=50 reset_us=50 semantic_order=LED1:PWR,LED2:BLE,LED3:REC,LED4:AI,LED5:OK,LED6:WARN strips=status:gpio1:count6:orderGRB:refsLED1..LED6,ec11:gpio5:count12:orderGRB:refsLED7..LED10+LED15..LED16+LED23..LED28,key:gpio13:count4:orderGRB:refsLED11..LED14,edge:gpio4:count6:orderGRB:refsLED17..LED22 key_pin_contract=PWM_RGB_KEY_GPIO13 ec11_pin_contract=PWM_RGB_EC11_GPIO5 edge_pin_contract=PWM_RGB_Edge_GPIO4 gpio14_reserved=BAT_CHG_IO vdd_led_enable=always_on_assumed ble=connected rec_active=0 rec_source=none processing=0 error_domain=none error_severity=retryable output_disabled=0 low_power_disabled=0 battery_valid=1 battery_level=90 battery_mv=4056 charging=0 full=1 status_window_ms_left=0 ble_confidence_ms_left=0 oobe_confidence_ms_left=0 last_transition_ms=4352 current_ma=1 current_budget_ma=40 active_flags=PWR:1,BLE:1,REC:0,AI:0,OK:0,WARN:0 key_mask=0x00 test_mode=0 test_strip_mask=0x00 last_reason=ble_state
-- Result: PASS

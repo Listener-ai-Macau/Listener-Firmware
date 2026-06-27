@@ -11,9 +11,6 @@
   - `ble_keyboard_productization_plan.md`
 - 从现在开始，这份文档是 `v1` 产品边界、功能范围和验收口径的单一来源。
 - 当前状态：P13 嵌入式音频软件对接已归档完成；P14 BLE 测试矩阵软件重构已完成，正在做真实设备验证。
-- 相关状态：
-  - P13 嵌入式音频软件对接归档：`C:\Users\Billy\Desktop\listener\Listener-Type\docs\features\p13_embedded_audio_software_integration.md`
-  - P14 BLE 测试矩阵重构计划：`C:\Users\Billy\Desktop\listener\ai-collaboration-workflow\docs\plans\ble_test_matrix_overhaul_plan.md`
 - 已完成能力的技术细节继续以功能沉淀文档为准：
   - [BLE HID 键盘输出链路](../features/ble_hid_keyboard_output.md)
   - [设备端音频采集、录音控制与 BLE 上传链路](../features/audio_capture_ble_upload.md)
