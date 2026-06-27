@@ -136,7 +136,7 @@ Assert-Contains $deviceSettings 'plugged_low_power_enabled_must_be_0_or_1' 'plug
 Assert-Contains $deviceSettings 'auto_shutdown_ms_out_of_range' 'shutdown timeout validation error'
 Assert-Contains $deviceSettings 'plugged_auto_shutdown_disabled' 'plugged shutdown is off-only on external power'
 Assert-Contains $deviceSettings 'plugged_auto_shutdown_ms_off_only' 'plugged shutdown valid range is off-only'
-Assert-Contains $deviceSettings 'ble_name_ascii_1_32' 'BLE name validation error'
+Assert-Contains $deviceSettings 'ble_name_ascii_1_29' 'BLE name validation error'
 Assert-Contains $deviceSettings 'knob_rotation_must_be_system_volume_screen_brightness_disabled' 'knob rotation validation error'
 Assert-Contains $deviceSettings 'command_too_long' 'DEVICE SET rejects commands that would be truncated'
 Assert-Contains $deviceSettings 'return\s+ret\s+!=\s+ESP_OK\s+\?\s+ret\s+:\s+ESP_ERR_INVALID_ARG' 'control command returns real validation failures'

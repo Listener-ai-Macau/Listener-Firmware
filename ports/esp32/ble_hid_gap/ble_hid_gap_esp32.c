@@ -195,9 +195,12 @@ static void ble_hid_gap_log_adv_state(
 /*
  * Legacy advertising has a hard 31-byte payload limit. With flags,
  * appearance and one 16-bit HID UUID, the current 17-byte product name fits
- * exactly under that limit; longer names stay in scan response data.
+ * exactly under that limit. A longer complete local name can only fit in scan
+ * response if it owns that 31-byte legacy payload, so custom long names trade
+ * advertised service UUIDs for an untruncated user-visible name.
  */
 #define BLE_HID_ADV_NAME_MAX_LEN 17
+#define BLE_HID_SCAN_RSP_NAME_MAX_LEN 29
 #define BLE_HID_GAP_SERVICE_CHANGED_NVS_NAMESPACE "ble_gap"
 #define BLE_HID_GAP_SERVICE_CHANGED_STATE_KEY "svcchg_fw"
 #define BLE_HID_GAP_RANDOM_IDENTITY_ADDR_KEY "rnd_id_addr"
@@ -703,20 +706,22 @@ esp_err_t esp_hid_ble_gap_adv_init(uint16_t appearance, const char *device_name)
         s_adv_fields.name = (uint8_t *)device_name;
         s_adv_fields.name_len = device_name_len;
         s_adv_fields.name_is_complete = 1;
+
+        s_scan_rsp_fields.tx_pwr_lvl_is_present = 1;
+        s_scan_rsp_fields.tx_pwr_lvl = BLE_HS_ADV_TX_PWR_LVL_AUTO;
+        s_scan_rsp_fields.uuids128 = &s_audio_stream_service_uuid;
+        s_scan_rsp_fields.num_uuids128 = 1;
+        /* The OTA GATT service is another 128-bit service; the legacy 31-byte scan
+         * response can only afford one UUID, so this advertised list is incomplete.
+         */
+        s_scan_rsp_fields.uuids128_is_complete = 0;
     } else {
         s_scan_rsp_fields.name = (uint8_t *)device_name;
-        s_scan_rsp_fields.name_len = device_name_len;
+        s_scan_rsp_fields.name_len = device_name_len > BLE_HID_SCAN_RSP_NAME_MAX_LEN
+                                         ? BLE_HID_SCAN_RSP_NAME_MAX_LEN
+                                         : device_name_len;
         s_scan_rsp_fields.name_is_complete = 1;
     }
-
-    s_scan_rsp_fields.tx_pwr_lvl_is_present = 1;
-    s_scan_rsp_fields.tx_pwr_lvl = BLE_HS_ADV_TX_PWR_LVL_AUTO;
-    s_scan_rsp_fields.uuids128 = &s_audio_stream_service_uuid;
-    s_scan_rsp_fields.num_uuids128 = 1;
-    /* The OTA GATT service is another 128-bit service; the legacy 31-byte scan
-     * response can only afford one UUID, so this advertised list is incomplete.
-     */
-    s_scan_rsp_fields.uuids128_is_complete = 0;
 
     /* Initialize the security configuration */
     ble_hs_cfg.sm_io_cap = BLE_SM_IO_CAP_NO_IO;

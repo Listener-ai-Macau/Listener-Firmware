@@ -1066,7 +1066,7 @@ static bool device_settings_apply_key_value(
     if (strcmp(key, "ble_name") == 0 || strcmp(key, "name") == 0) {
         if (!device_settings_validate_ble_name(value)) {
             if (out_reason != NULL) {
-                *out_reason = "ble_name_ascii_1_32_no_quotes_semicolon_equals";
+                *out_reason = "ble_name_ascii_1_29_no_quotes_semicolon_equals";
             }
             return false;
         }

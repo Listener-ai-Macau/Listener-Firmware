@@ -131,7 +131,7 @@ Current is still estimated per frame with 20 mA per RGB channel at full scale. `
 - `~DEVICE:SET plugged_low_power_enabled=<0|1>`
 - `~DEVICE:SET plugged_auto_shutdown_minutes=<0|1-1440|off>`
 - `~DEVICE:SET battery_auto_shutdown_minutes=<0|1-1440|off>`
-- `~DEVICE:SET ble_name=<ascii-1-32>`
+- `~DEVICE:SET ble_name=<ascii-1-29>`
 - `~DEVICE:SET knob_rotation=<system_volume|screen_brightness|disabled>`
 - `~LED:TEST:RGBW <status|ec11|knob|ring|key|edge|all>`
 - `~LED:TEST:MAP <status|ec11|knob|ring|key|edge|all>`
