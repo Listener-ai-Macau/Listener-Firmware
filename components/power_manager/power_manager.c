@@ -64,7 +64,7 @@ extern void status_led_set_error(int domain, int severity, const char *reason) _
 #endif
 
 #ifndef CONFIG_POWER_MANAGER_HARDWARE_SHUTDOWN_MS
-#define CONFIG_POWER_MANAGER_HARDWARE_SHUTDOWN_MS 1800000
+#define CONFIG_POWER_MANAGER_HARDWARE_SHUTDOWN_MS 600000
 #endif
 
 #ifndef CONFIG_POWER_MANAGER_EVALUATE_INTERVAL_MS

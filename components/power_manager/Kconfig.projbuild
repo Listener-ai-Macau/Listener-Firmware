@@ -20,7 +20,7 @@ menu "Listener Power Manager"
 
     config POWER_MANAGER_HARDWARE_SHUTDOWN_MS
         int "Hardware shutdown threshold in milliseconds"
-        default 1800000
+        default 600000
         depends on POWER_MANAGER_ENABLE
 
     config POWER_MANAGER_BATTERY_CRITICAL_PERCENT
