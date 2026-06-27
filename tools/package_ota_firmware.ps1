@@ -3,7 +3,7 @@ param(
     [string]$OutputRoot = (Join-Path $PSScriptRoot "..\.cache\ota_firmware"),
     [ValidateSet("stable", "development")]
     [string]$Channel = "stable",
-    [string]$MinDesktopVersion = "1.0.0",
+    [string]$MinDesktopVersion = "1.0.1",
     [ValidateRange(1, 500)]
     [int]$GattChunkBytes = 500
 )
@@ -39,7 +39,7 @@ function Get-SourceVersion {
     }
     $version = (& git -C $project_root describe --tags --always --dirty 2>$null)
     if ($version) { return $version }
-    return "1.0.0"
+    return "1.0.1"
 }
 
 if (-not $project_version) {
