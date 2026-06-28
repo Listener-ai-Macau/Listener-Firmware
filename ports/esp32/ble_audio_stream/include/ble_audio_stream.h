@@ -75,6 +75,7 @@ bool ble_audio_stream_is_ready(void);
 bool ble_audio_stream_is_type_link_ready(void);
 bool ble_audio_stream_is_type_led_ready(void);
 bool ble_audio_stream_consume_type_control_command(const char *command, const char *source);
+void ble_audio_stream_note_type_activity(const char *reason);
 uint32_t ble_audio_stream_type_link_poll_wait_ms(uint32_t fallback_ms);
 void ble_audio_stream_poll_type_link(void);
 bool ble_audio_stream_is_busy(void);

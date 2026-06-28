@@ -71,6 +71,14 @@ static void ble_hid_gap_log_conn_desc(const char *context, uint16_t conn_handle)
 #define GATT_SVR_SVC_HID_UUID 0x1812
 #define BLE_HID_GAP_FAST_ADV_MIN_MS 30U
 #define BLE_HID_GAP_FAST_ADV_MAX_MS 50U
+#define BLE_HID_GAP_ACTIVE_ITVL_MIN 6U
+#define BLE_HID_GAP_ACTIVE_ITVL_MAX 6U
+#define BLE_HID_GAP_ACTIVE_LATENCY 0U
+#define BLE_HID_GAP_ACTIVE_SUPERVISION_TIMEOUT 800U
+#define BLE_HID_GAP_LOW_POWER_ITVL_MIN 80U
+#define BLE_HID_GAP_LOW_POWER_ITVL_MAX 120U
+#define BLE_HID_GAP_LOW_POWER_LATENCY 9U
+#define BLE_HID_GAP_LOW_POWER_SUPERVISION_TIMEOUT 600U
 
 static struct ble_hs_adv_fields s_adv_fields;
 static struct ble_hs_adv_fields s_scan_rsp_fields;
@@ -204,7 +212,7 @@ static void ble_hid_gap_log_adv_state(
 #define BLE_HID_GAP_SERVICE_CHANGED_NVS_NAMESPACE "ble_gap"
 #define BLE_HID_GAP_SERVICE_CHANGED_STATE_KEY "svcchg_fw"
 #define BLE_HID_GAP_RANDOM_IDENTITY_ADDR_KEY "rnd_id_addr"
-#define BLE_HID_GAP_GATT_SCHEMA_REV "diag_export_v2"
+#define BLE_HID_GAP_GATT_SCHEMA_REV "ota_v2"
 #define BLE_HID_GAP_SERVICE_CHANGED_START_HANDLE 0x0001
 #define BLE_HID_GAP_SERVICE_CHANGED_END_HANDLE 0xffff
 #define BLE_HID_GAP_RECOVERY_PAIRING_WINDOW_MS 120000LL
@@ -687,6 +695,47 @@ static esp_err_t ble_hid_gap_request_connection_params(
     return (rc == 0 || rc == BLE_HS_EALREADY) ? ESP_OK : ESP_FAIL;
 }
 
+static esp_err_t ble_hid_gap_request_preferred_2m_phy(const char *policy)
+{
+    ble_hid_gap_connection_snapshot_t conn = ble_hid_gap_connection_snapshot();
+    if (!conn.connected || conn.conn_handle == BLE_HS_CONN_HANDLE_NONE) {
+        return ESP_ERR_INVALID_STATE;
+    }
+
+    const uint8_t tx_phys_mask = BLE_GAP_LE_PHY_2M_MASK;
+    const uint8_t rx_phys_mask = BLE_GAP_LE_PHY_2M_MASK;
+    int rc = ble_gap_set_prefered_le_phy(conn.conn_handle, tx_phys_mask, rx_phys_mask, 0);
+    const bool accepted = rc == 0 || rc == BLE_HS_EALREADY;
+    if (accepted) {
+        ESP_LOGI(
+            TAG,
+            "%s 2M PHY update requested: conn=%u tx_mask=0x%02x rx_mask=0x%02x rc=%d",
+            policy,
+            conn.conn_handle,
+            tx_phys_mask,
+            rx_phys_mask,
+            rc);
+    } else {
+        ESP_LOGW(
+            TAG,
+            "%s 2M PHY update request failed: conn=%u tx_mask=0x%02x rx_mask=0x%02x rc=%d",
+            policy,
+            conn.conn_handle,
+            tx_phys_mask,
+            rx_phys_mask,
+            rc);
+    }
+    diag_log(
+        DIAG_SRC_BLE_GAP,
+        DIAG_GAP_PHY,
+        accepted ? DIAG_SEV_INFO : DIAG_SEV_WARN,
+        (uint32_t)rc,
+        tx_phys_mask,
+        rx_phys_mask,
+        conn.conn_handle);
+    return accepted ? ESP_OK : ESP_FAIL;
+}
+
 esp_err_t esp_hid_ble_gap_adv_init(uint16_t appearance, const char *device_name)
 {
     memset(&s_adv_fields, 0, sizeof(s_adv_fields));
@@ -832,8 +881,7 @@ nimble_hid_gap_event(struct ble_gap_event *event, void *arg)
         }
 
         if (s_audio_enabled) {
-            ESP_LOGI(TAG, "audio connection parameters left to central");
-            ESP_LOGI(TAG, "audio PHY preference left to central");
+            ESP_LOGI(TAG, "audio high-speed link request deferred until active recording");
         }
         return 0;
     case BLE_GAP_EVENT_DISCONNECT:
@@ -1866,20 +1914,22 @@ esp_err_t ble_hid_gap_request_low_power_connection(void)
 {
     return ble_hid_gap_request_connection_params(
         "low-power idle",
-        80,
-        120,
-        9,
-        600,
+        BLE_HID_GAP_LOW_POWER_ITVL_MIN,
+        BLE_HID_GAP_LOW_POWER_ITVL_MAX,
+        BLE_HID_GAP_LOW_POWER_LATENCY,
+        BLE_HID_GAP_LOW_POWER_SUPERVISION_TIMEOUT,
         BLE_HID_CONN_PARAM_MODE_LOW_POWER);
 }
 
 esp_err_t ble_hid_gap_request_active_connection(void)
 {
-    return ble_hid_gap_request_connection_params(
+    esp_err_t params_ret = ble_hid_gap_request_connection_params(
         "active",
-        6,
-        12,
-        0,
-        800,
+        BLE_HID_GAP_ACTIVE_ITVL_MIN,
+        BLE_HID_GAP_ACTIVE_ITVL_MAX,
+        BLE_HID_GAP_ACTIVE_LATENCY,
+        BLE_HID_GAP_ACTIVE_SUPERVISION_TIMEOUT,
         BLE_HID_CONN_PARAM_MODE_ACTIVE);
+    (void)ble_hid_gap_request_preferred_2m_phy("active audio");
+    return params_ret;
 }

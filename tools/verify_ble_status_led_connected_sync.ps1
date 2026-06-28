@@ -111,6 +111,8 @@ Assert-Contains $audioHeader 'bool\s+ble_audio_stream_is_type_led_ready\(void\);
     "audio stream header must expose Type LED readiness separately from strict transport readiness"
 Assert-Contains $audioHeader 'bool\s+ble_audio_stream_consume_type_control_command\(const char \*command, const char \*source\);' `
     "audio stream header must expose the Type heartbeat control command parser"
+Assert-Contains $audioHeader 'void\s+ble_audio_stream_note_type_activity\(const char \*reason\);' `
+    "audio stream header must expose Type activity refresh for BLE-origin host processing controls"
 Assert-Contains $audioHeader 'uint32_t\s+ble_audio_stream_type_link_poll_wait_ms\(uint32_t fallback_ms\);' `
     "audio stream header must expose heartbeat-aware poll wait adjustment"
 Assert-Contains $audioHeader 'void\s+ble_audio_stream_poll_type_link\(void\);' `
@@ -125,12 +127,16 @@ Assert-Contains $audio 'static\s+bool\s+ble_audio_stream_transport_state_type_re
     "Type-link helper must remain true during active streaming/draining"
 Assert-Contains $audio 'bool\s+ble_audio_stream_is_type_link_ready\(void\)[\s\S]*?ble_audio_stream_transport_link_ready\(\)[\s\S]*?ble_audio_stream_transport_state_type_ready\(s_transport_state\)[\s\S]*?ble_audio_stream_type_heartbeat_recent\(\)' `
     "public Type-link readiness must combine notify link, streaming-capable states, and fresh Listener-Type heartbeat"
-Assert-Contains $audio 'bool\s+ble_audio_stream_is_type_led_ready\(void\)[\s\S]*?ble_audio_stream_transport_link_ready\(\)[\s\S]*?ble_audio_stream_transport_state_type_ready\(s_transport_state\)[\s\S]*?ble_audio_stream_type_heartbeat_led_recent\(\)' `
-    "public Type LED readiness must use the heartbeat hold so active BLE does not bounce to HID-only double flash on short misses"
-Assert-Contains $audio 'ble_audio_stream_sync_status_led_for_type_link[\s\S]*?ble_audio_stream_is_type_led_ready\(\)[\s\S]*?STATUS_LED_BLE_TYPE_READY[\s\S]*?STATUS_LED_BLE_CONNECTED' `
-    "Type LED sync must use LED readiness, not strict transport readiness"
-Assert-Contains $audio 'bool\s+ble_audio_stream_consume_type_control_command\([^)]*\)[\s\S]*?TYPE:READY[\s\S]*?TYPE:HB[\s\S]*?ble_audio_stream_set_type_heartbeat_active\(true[\s\S]*?TYPE:BYE[\s\S]*?ble_audio_stream_set_type_heartbeat_active\(false' `
+Assert-Contains $audio 'static\s+bool\s+ble_audio_stream_type_led_link_ready\(void\)[\s\S]*?conn_handle\s*!=\s*BLE_HS_CONN_HANDLE_NONE[\s\S]*?mtu_ready' `
+    "Type LED link readiness must require BLE connection/MTU but not active audio notify"
+Assert-Contains $audio 'bool\s+ble_audio_stream_is_type_led_ready\(void\)[\s\S]*?ble_audio_stream_type_led_link_ready\(\)[\s\S]*?ble_audio_stream_type_heartbeat_led_recent\(\)' `
+    "public Type LED readiness must use the heartbeat hold without requiring the audio notify path"
+Assert-Contains $audio 'ble_audio_stream_sync_status_led_for_type_link[\s\S]*?ble_audio_stream_type_led_link_ready\(\)[\s\S]*?ble_audio_stream_is_type_led_ready\(\)[\s\S]*?STATUS_LED_BLE_TYPE_READY[\s\S]*?STATUS_LED_BLE_CONNECTED' `
+    "Type LED sync must use LED readiness, not strict audio notify readiness"
+Assert-Contains $audio 'bool\s+ble_audio_stream_consume_type_control_command\([^)]*\)[\s\S]*?TYPE:READY[\s\S]*?TYPE:HB[\s\S]*?ble_audio_stream_note_type_activity\(command\)[\s\S]*?TYPE:BYE[\s\S]*?ble_audio_stream_set_type_heartbeat_active\(false' `
     "firmware must consume Type READY/HB/BYE commands on the audio control channel"
+Assert-Contains $audio 'void\s+ble_audio_stream_note_type_activity\([^)]*\)[\s\S]*?ble_audio_stream_set_type_heartbeat_active\(\s*true[\s\S]*?ble_audio_stream_sync_status_led_for_type_link' `
+    "Type activity helper must refresh heartbeat and immediately resync the BLE LED"
 Assert-Contains $audio 'void\s+ble_audio_stream_poll_type_link\(void\)[\s\S]*?ble_audio_stream_set_type_heartbeat_active\(false,\s*"timeout"\);[\s\S]*?ble_audio_stream_sync_status_led_for_type_link\("type_heartbeat_timeout"\)[\s\S]*?type_heartbeat_led_grace_timeout' `
     "firmware must poll strict Type heartbeat timeout first, then demote the BLE status LED only after the LED grace expires"
 Assert-Contains $audio 's_transport_state\s*=\s*next_state;[\s\S]*?ble_audio_stream_transport_link_ready\(\)[\s\S]*?ble_audio_stream_sync_status_led_for_type_link\(reason\)' `
@@ -145,6 +151,8 @@ Assert-Contains $audio 's_conn_handle\s*=\s*BLE_HS_CONN_HANDLE_NONE;[\s\S]*?s_ty
     "BLE disconnect must clear stale Type heartbeat and LED-hold state"
 Assert-Contains (Read-RepoFile "components\voice_recording_control\voice_recording_control.c") 'ble_audio_stream_consume_type_control_command\(command,\s*source\)[\s\S]*?return ESP_OK;[\s\S]*?power_manager_record_activity\("voice_recording_ble_control"\)' `
     "Type heartbeat control writes must be consumed before recording user activity"
+Assert-Contains (Read-RepoFile "components\voice_recording_control\voice_recording_control.c") 'voice_recording_control_source_is_ble_audio_control\([^)]*\)[\s\S]*?strcmp\(source,\s*"ble_audio_control"\)\s*==\s*0[\s\S]*?voice_recording_control_note_ble_type_processing_activity[\s\S]*?ble_audio_stream_note_type_activity\(reason\)[\s\S]*?voice_recording_control_host_processing_start\([^)]*\)[\s\S]*?voice_recording_control_note_ble_type_processing_activity\(source,\s*"host_processing_start"\)' `
+    "BLE-origin processing controls must refresh Type-ready LED state before processing changes"
 Assert-Contains $statusLed 'STATUS_LED_STATUS_WINDOW_MS\s+6000U' `
     "connected status window must remain bounded"
 Assert-Contains $statusLed 'STATUS_LED_BLE_CONFIDENCE_MS\s+8000U' `

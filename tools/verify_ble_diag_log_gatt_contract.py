@@ -43,8 +43,8 @@ def main() -> int:
         "GAP disconnect must abort diagnostic export with the real connection handle",
     )
     require(
-        'BLE_HID_GAP_GATT_SCHEMA_REV "diag_export_v2"' in gap,
-        "adding the diagnostic GATT service must bump the schema rev so bonded Windows hosts refresh cached services",
+        'BLE_HID_GAP_GATT_SCHEMA_REV "ota_v2"' in gap,
+        "adding or reshaping GATT services must bump the schema rev so bonded Windows hosts refresh cached services",
     )
 
     require("ble_att_mtu(conn_handle)" in diag_service, "diagnostic export must query the current ATT MTU")

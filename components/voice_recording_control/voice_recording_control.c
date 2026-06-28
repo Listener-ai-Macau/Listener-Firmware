@@ -372,6 +372,20 @@ static bool voice_recording_control_source_is_host_control(const char *source)
            VOICE_RECORDING_SOURCE_HOST_CONTROL;
 }
 
+static bool voice_recording_control_source_is_ble_audio_control(const char *source)
+{
+    return source != NULL && strcmp(source, "ble_audio_control") == 0;
+}
+
+static void voice_recording_control_note_ble_type_processing_activity(
+    const char *source,
+    const char *reason)
+{
+    if (voice_recording_control_source_is_ble_audio_control(source)) {
+        ble_audio_stream_note_type_activity(reason);
+    }
+}
+
 static uint32_t voice_recording_source_code(const char *source)
 {
     if (source == NULL) {
@@ -1490,6 +1504,7 @@ static void voice_recording_control_recovery(const char *source)
 
 static void voice_recording_control_host_processing_start(const char *source)
 {
+    voice_recording_control_note_ble_type_processing_activity(source, "host_processing_start");
     status_led_set_processing(true, "host_processing_start");
     ESP_LOGI(TAG, "host processing start source=%s", source);
     voice_recording_control_log_device_status(voice_recording_state_name(s_state), "host_processing_start");
@@ -1497,6 +1512,7 @@ static void voice_recording_control_host_processing_start(const char *source)
 
 static void voice_recording_control_host_processing_stop(const char *source)
 {
+    voice_recording_control_note_ble_type_processing_activity(source, "host_processing_stop");
     status_led_set_processing(false, "host_processing_stop");
     ESP_LOGI(TAG, "host processing stop source=%s", source);
     voice_recording_control_log_device_status(voice_recording_state_name(s_state), "host_processing_stop");
@@ -1504,6 +1520,7 @@ static void voice_recording_control_host_processing_stop(const char *source)
 
 static void voice_recording_control_host_processing_done(const char *source)
 {
+    voice_recording_control_note_ble_type_processing_activity(source, "host_processing_done");
     status_led_set_processing(false, "host_processing_done");
     status_led_notify_success("host_processing_done");
     ESP_LOGI(TAG, "host processing done source=%s", source);
@@ -1512,6 +1529,7 @@ static void voice_recording_control_host_processing_done(const char *source)
 
 static void voice_recording_control_host_processing_warning(const char *source)
 {
+    voice_recording_control_note_ble_type_processing_activity(source, "host_processing_warning");
     status_led_set_processing(false, "host_processing_warning");
     status_led_notify_warning("host_processing_warning");
     ESP_LOGI(TAG, "host processing warning source=%s", source);

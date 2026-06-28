@@ -48,7 +48,7 @@
 /* Recording duration is user-controlled (KEY1 toggle); no fixed upper limit.
  * The only hard limit is uint16_t packet_sequence overflow in the BLE protocol,
  * which is handled gracefully by sending session_stop before overflow. */
-#define AUDIO_CAPTURE_STREAM_BATCH_FRAMES 3
+#define AUDIO_CAPTURE_STREAM_BATCH_FRAMES 1
 #define AUDIO_CAPTURE_STREAM_BATCH_BYTES (AUDIO_CAPTURE_STREAM_BATCH_FRAMES * AUDIO_CAPTURE_FRAME_BYTES)
 #define AUDIO_CAPTURE_STREAM_PROGRESS_LOG_PACKET_INTERVAL 64U
 #define AUDIO_CAPTURE_BACKPRESSURE_PAUSE_MS AUDIO_CAPTURE_FRAME_MS

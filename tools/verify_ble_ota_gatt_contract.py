@@ -12,6 +12,10 @@ from pathlib import Path
 SERVICE_UUID = "710af845-6d9f-6583-0c4d-9e5b3bc3092a"
 CONTROL_UUID = "710af845-6d9f-6583-0c4d-9e5b3bc3092b"
 DATA_UUID = "710af845-6d9f-6583-0c4d-9e5b3bc3092c"
+V2_SERVICE_UUID = SERVICE_UUID
+V2_CONTROL_UUID = CONTROL_UUID
+V2_DATA_UUID = DATA_UUID
+V2_STATUS_UUID = CONTROL_UUID
 READINESS_UUID = "710af845-6d9f-6583-0c4d-9e5b3bc3091c"
 CAPABILITIES_UUID = "710af845-6d9f-6583-0c4d-9e5b3bc3091d"
 MAX_CHUNK_BYTES = 512
@@ -23,6 +27,10 @@ UUID_BYTES = {
     "BLE_FIRMWARE_OTA_DATA_UUID": "0x2c, 0x09, 0xc3, 0x3b, 0x5b, 0x9e, 0x4d, 0x0c, 0x83, 0x65, 0x9f, 0x6d, 0x45, 0xf8, 0x0a, 0x71",
     "BLE_FIRMWARE_OTA_READINESS_UUID": "0x1c, 0x09, 0xc3, 0x3b, 0x5b, 0x9e, 0x4d, 0x0c, 0x83, 0x65, 0x9f, 0x6d, 0x45, 0xf8, 0x0a, 0x71",
     "BLE_FIRMWARE_OTA_CAPABILITIES_UUID": "0x1d, 0x09, 0xc3, 0x3b, 0x5b, 0x9e, 0x4d, 0x0c, 0x83, 0x65, 0x9f, 0x6d, 0x45, 0xf8, 0x0a, 0x71",
+    "BLE_FIRMWARE_OTA_V2_SERVICE_UUID": "0x2a, 0x09, 0xc3, 0x3b, 0x5b, 0x9e, 0x4d, 0x0c, 0x83, 0x65, 0x9f, 0x6d, 0x45, 0xf8, 0x0a, 0x71",
+    "BLE_FIRMWARE_OTA_V2_CONTROL_UUID": "0x4b, 0x09, 0xc3, 0x3b, 0x5b, 0x9e, 0x4d, 0x0c, 0x83, 0x65, 0x9f, 0x6d, 0x45, 0xf8, 0x0a, 0x71",
+    "BLE_FIRMWARE_OTA_V2_DATA_UUID": "0x4c, 0x09, 0xc3, 0x3b, 0x5b, 0x9e, 0x4d, 0x0c, 0x83, 0x65, 0x9f, 0x6d, 0x45, 0xf8, 0x0a, 0x71",
+    "BLE_FIRMWARE_OTA_V2_STATUS_UUID": "0x4d, 0x09, 0xc3, 0x3b, 0x5b, 0x9e, 0x4d, 0x0c, 0x83, 0x65, 0x9f, 0x6d, 0x45, 0xf8, 0x0a, 0x71",
 }
 
 
@@ -74,6 +82,18 @@ def check_bridge(repo: Path) -> None:
         "readiness_rc",
         "capabilities_rc",
         "#define BLE_FIRMWARE_OTA_DATA_MAX_BYTES 512",
+        "#define BLE_FIRMWARE_OTA_V2_CONTROL_SIZE 16",
+        "#define BLE_FIRMWARE_OTA_V2_DATA_HEADER_SIZE 4",
+        "#define BLE_FIRMWARE_OTA_V2_DATA_PAYLOAD_MAX 500",
+        "#define BLE_FIRMWARE_OTA_V2_STATUS_SIZE 24",
+        "BLE_FIRMWARE_OTA_COMPACT_CAPABILITIES \"firmware_ota_v1;firmware_ota_v2\"",
+        "BLE_FIRMWARE_OTA_GATT_ATTR_V2_CONTROL",
+        "BLE_FIRMWARE_OTA_GATT_ATTR_V2_DATA",
+        "BLE_FIRMWARE_OTA_GATT_ATTR_V2_STATUS",
+        "BLE_FIRMWARE_OTA_V2_ERROR_OFFSET_MISMATCH",
+        "ble_firmware_ota_v2_append_status",
+        "ble_firmware_ota_v2_handle_control_write",
+        "ble_firmware_ota_v2_handle_data_write",
     ]
     for token in required_tokens:
         require(token in source, f"BLE OTA bridge is missing {token}")
@@ -85,6 +105,43 @@ def check_bridge(repo: Path) -> None:
         "BLE_GATT_CHR_F_READ | BLE_GATT_CHR_F_WRITE" in source
         and "BLE_GATT_CHR_F_READ | BLE_GATT_CHR_F_WRITE | BLE_GATT_CHR_F_WRITE_NO_RSP" in source,
         "OTA control/data characteristics must remain readable so Windows can recover identity even when new GATT characteristics are cached out",
+    )
+    require(
+        "s_v2_service_uuid" not in source
+        and ".uuid = &s_v2_control_uuid.u" in source
+        and ".uuid = &s_v2_data_uuid.u" in source
+        and ".uuid = &s_v2_status_uuid.u" in source,
+        "Listener OTA v2 must expose control/data/status characteristics inside the stable OTA service so Windows can discover them through the old service anchor",
+    )
+    require(
+        "ble_firmware_ota_v2_control_mbuf_has_magic" in source
+        and "begin_v2" in source
+        and "sync_v2" in source
+        and "finish_v2" in source
+        and "ble_firmware_ota_handle_control_json" in source
+        and "strstr((const char *)buffer, \"\\\"op\\\"\")" in source
+        and "case BLE_FIRMWARE_OTA_GATT_ATTR_CONTROL:" in source
+        and "return ble_firmware_ota_v2_handle_control_write(ctxt->om)" in source
+        and "s_v2.state == BLE_FIRMWARE_OTA_V2_STATE_RECEIVING" in source
+        and "return ble_firmware_ota_v2_handle_data_write(ctxt->om)" in source,
+        "Listener OTA v2 must tunnel over the stable v1 control/data characteristics so stale Windows GATT caches do not block high-speed OTA",
+    )
+    require(
+        "if (s_v2.state != BLE_FIRMWARE_OTA_V2_STATE_IDLE)" in source
+        and "return ble_firmware_ota_v2_append_status(ctxt->om)" in source,
+        "Listener OTA v2 status must be readable from the stable control characteristic while a v2 session is active",
+    )
+    require(
+        ".flags = BLE_GATT_CHR_F_WRITE | BLE_GATT_CHR_F_WRITE_NO_RSP" in source
+        and ".flags = BLE_GATT_CHR_F_READ" in source,
+        "Listener OTA v2 data must support WriteWithoutResponse and status must remain readable",
+    )
+    require(
+        "((size_t)offset + payload_len) <= s_v2.bytes_written" in source
+        and "offset != s_v2.bytes_written" in source
+        and "ble_firmware_ota_v2_set_recoverable_error(BLE_FIRMWARE_OTA_V2_ERROR_OFFSET_MISMATCH)" in source
+        and "firmware_ota_write(&buffer[BLE_FIRMWARE_OTA_V2_DATA_HEADER_SIZE], payload_len)" in source,
+        "Listener OTA v2 data path must be offset-gated so WriteWithoutResponse loss cannot corrupt the image",
     )
 
 
@@ -174,6 +231,10 @@ def check_dis_identity(repo: Path) -> None:
         "firmware_ota_v1" in listener_header,
         "Listener device capabilities must advertise firmware_ota_v1 for desktop preflight",
     )
+    require(
+        "firmware_ota_v2" in listener_header and "firmware_ota_v2" in listener_device,
+        "Listener device capabilities must advertise firmware_ota_v2 for the high-speed OTA path",
+    )
     for token in (
         "LISTENER_DEVICE_READY_HID",
         "LISTENER_DEVICE_READY_AUDIO",
@@ -236,7 +297,7 @@ def check_dis_identity(repo: Path) -> None:
         and "ble_hid_gap_service_changed_pending()" in gap
         and "ble_hid_gap_stored_service_changed_schema_matches" in gap
         and "BLE_HID_GAP_GATT_SCHEMA_REV" in gap
-        and "diag_export_v2" in gap
+        and "ota_v2" in gap
         and "nvs_get_str" in gap
         and "nvs_set_str" in gap,
         "BLE connect path must schema-gate Service Changed so Windows refreshes OTA/DIS GATT only after GATT-shape updates",
@@ -261,19 +322,20 @@ def check_dis_identity(repo: Path) -> None:
         "BLE recovery actions must be logged in serial and diag_log",
     )
     require(
-        "ble_gap_set_prefered_le_phy" not in gap
-        and re.search(r'ble_hid_gap_request_connection_params\(\s*"audio"', gap) is None
-        and "audio connection parameters left to central" in gap
+        "ble_gap_set_prefered_le_phy" in gap
+        and "BLE_GAP_LE_PHY_2M_MASK" in gap
+        and "audio high-speed link request deferred until active recording" in gap
         and "ble_gap_update_params(conn.conn_handle, &params)" in gap
         and "connection parameter update requested" in gap
         and "BLE_HID_CONN_PARAM_MODE_ACTIVE" in gap
         and "BLE_HID_CONN_PARAM_MODE_LOW_POWER" in gap
+        and "BLE_HID_GAP_ACTIVE_ITVL_MIN 6U" in gap
+        and "BLE_HID_GAP_ACTIVE_ITVL_MAX 6U" in gap
         and "DIAG_GAP_CONN_PARAM_REQ" in gap
-        and "audio PHY preference left to central" in gap
         and "BLE_GAP_EVENT_PHY_UPDATE_COMPLETE" in gap
         and "DIAG_GAP_PHY" in gap
         and "DIAG_GAP_PHY" in diag,
-        "GAP must keep audio/PHY central-owned while allowing bounded active/low-power idle connection parameter requests with diagnostics",
+        "GAP must request low-latency active audio parameters and 2M PHY with diagnostics while keeping low-power idle parameters bounded",
     )
 
 
@@ -295,12 +357,16 @@ def candidate_desktop_ble_sources(repo: Path) -> list[Path]:
 
 def check_desktop_contract(path: Path) -> str:
     contract = read_text(path)
-    expected_pairs = {
-        SERVICE_UUID: "serviceUuid",
-        CONTROL_UUID: "controlUuid",
-        DATA_UUID: "dataUuid",
-    }
-    for value, field in expected_pairs.items():
+    expected_pairs = [
+        (SERVICE_UUID, "serviceUuid"),
+        (CONTROL_UUID, "controlUuid"),
+        (DATA_UUID, "dataUuid"),
+        (V2_SERVICE_UUID, "listenerOtaV2.serviceUuid"),
+        (V2_CONTROL_UUID, "listenerOtaV2.controlUuid"),
+        (V2_DATA_UUID, "listenerOtaV2.dataUuid"),
+        (V2_STATUS_UUID, "listenerOtaV2.statusUuid"),
+    ]
+    for value, field in expected_pairs:
         require(value in contract, f"desktop contract {path} is missing {field}={value}")
     for field in ("defaultChunkBytes", "maxChunkBytes"):
         match = re.search(rf"{field}\s*:\s*(\d+)", contract)
@@ -315,16 +381,27 @@ def check_desktop_contract(path: Path) -> str:
 
 def check_desktop_ble_source(path: Path) -> str:
     source = read_text(path)
-    expected_tokens = {
-        SERVICE_UUID: "OTA_SERVICE_UUID",
-        CONTROL_UUID: "OTA_CONTROL_UUID",
-        DATA_UUID: "OTA_DATA_UUID",
-        READINESS_UUID: "OTA_READINESS_UUID",
-        CAPABILITIES_UUID: "OTA_CAPABILITIES_UUID",
-    }
-    for uuid, field in expected_tokens.items():
+    expected_tokens = [
+        (SERVICE_UUID, "OTA_SERVICE_UUID"),
+        (CONTROL_UUID, "OTA_CONTROL_UUID"),
+        (DATA_UUID, "OTA_DATA_UUID"),
+        (V2_SERVICE_UUID, "LISTENER_OTA_V2_SERVICE_UUID"),
+        (V2_CONTROL_UUID, "LISTENER_OTA_V2_CONTROL_UUID"),
+        (V2_DATA_UUID, "LISTENER_OTA_V2_DATA_UUID"),
+        (V2_STATUS_UUID, "LISTENER_OTA_V2_STATUS_UUID"),
+        (READINESS_UUID, "OTA_READINESS_UUID"),
+        (CAPABILITIES_UUID, "OTA_CAPABILITIES_UUID"),
+    ]
+    for uuid, field in expected_tokens:
         token = f"0x{uuid.replace('-', '_')}"
         require(token in source, f"desktop BLE source {path} is missing {field}={uuid}")
+    require(
+        "listener_ota_v2_control_command" in source
+        and "transfer_listener_ota_v2_to_target" in source
+        and "read_listener_ota_v2_status" in source
+        and "transport: \"listener_ble_ota_v2\"" in source,
+        f"desktop BLE source {path} must expose the Listener OTA v2 offset/status transfer path",
+    )
     require(
         "OTA_CONTROL_UUID" in source
         and "OTA_DATA_UUID" in source

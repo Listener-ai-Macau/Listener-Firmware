@@ -39,7 +39,7 @@ function Get-SourceVersion {
     }
     $version = (& git -C $project_root describe --tags --always --dirty 2>$null)
     if ($version) { return $version }
-    return "1.0.0"
+    return "1.0.1"
 }
 
 if (-not $project_version) {
@@ -119,9 +119,21 @@ $manifest = [ordered]@{
     }
     requirements = [ordered]@{
         hardware_revision = "keyboard-v2-n16r8"
-        protocol_version = 1
+        protocol_version = 2
         min_desktop_version = $MinDesktopVersion
         gatt_chunk_bytes = $GattChunkBytes
+    }
+    protocol = [ordered]@{
+        name = "listener_ble_ota_v2"
+        version = 2
+        firmware_capability = "firmware_ota_v2"
+        gatt = [ordered]@{
+            service_uuid = "710af845-6d9f-6583-0c4d-9e5b3bc3092a"
+            control_uuid = "710af845-6d9f-6583-0c4d-9e5b3bc3092b"
+            data_uuid = "710af845-6d9f-6583-0c4d-9e5b3bc3092c"
+            status_uuid = "710af845-6d9f-6583-0c4d-9e5b3bc3092b"
+            chunk_bytes = $GattChunkBytes
+        }
     }
     ble_identity = [ordered]@{
         name = "listener"

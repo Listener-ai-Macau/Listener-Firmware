@@ -642,6 +642,7 @@ CHECKS = {
     "ports/esp32/ble_audio_stream/include/ble_audio_stream.h": [
         "ble_audio_stream_is_type_led_ready",
         "ble_audio_stream_consume_type_control_command",
+        "ble_audio_stream_note_type_activity",
         "ble_audio_stream_type_link_poll_wait_ms",
         "ble_audio_stream_poll_type_link",
     ],
@@ -679,7 +680,9 @@ CHECKS = {
         "PROCESSING:WARN",
         "PROCESSING_WARN",
         "status_led_set_processing(true, \"recording_stop_processing_start\")",
+        "voice_recording_control_note_ble_type_processing_activity(source, \"host_processing_start\")",
         "voice_recording_control_host_processing_start(source)",
+        "voice_recording_control_note_ble_type_processing_activity(source, \"host_processing_done\")",
         "voice_recording_control_host_processing_stop(source)",
         "voice_recording_control_host_processing_done(source)",
         "voice_recording_control_host_processing_warning(source)",

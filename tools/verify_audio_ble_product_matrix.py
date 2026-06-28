@@ -137,7 +137,7 @@ CASE_CONTRACTS = {
         "desktop_observables": [
             "capsule visible timestamp/source",
             "history session id",
-            "continuous Type hidden_to_visible_seconds",
+            "continuous Type capsule_visible_latency_seconds",
             "ASR partial/final text",
         ],
         "failure_classification": "button_path, latency, dropped_round, transport, insertion, capsule",
@@ -1915,7 +1915,7 @@ async def run_listener_type_background_rounds(
     spec_path.write_text(json.dumps(round_specs, ensure_ascii=False, indent=2), encoding="utf-8")
 
     command = [
-        "powershell.exe",
+        "pwsh",
         "-NoProfile",
         "-ExecutionPolicy",
         "Bypass",
@@ -2021,6 +2021,13 @@ async def run_listener_type_background_rounds(
         print(f"a1_continuous_round_result={round_no}:{status}:{failure_text}", flush=True)
         if warning_text:
             print(f"a1_continuous_round_warnings={round_no}:{warning_text}", flush=True)
+        visible_latency = item.get("capsule_visible_latency_seconds")
+        if visible_latency is not None:
+            basis = item.get("capsule_visible_latency_basis") or "unknown"
+            print(
+                f"a1_continuous_capsule_visible_latency_seconds=round{round_no}:{visible_latency}:basis={basis}",
+                flush=True,
+            )
         hidden_latency = item.get("hidden_to_visible_seconds")
         if hidden_latency is not None:
             print(f"a1_continuous_hidden_to_visible_seconds=round{round_no}:{hidden_latency}", flush=True)
@@ -2089,6 +2096,30 @@ async def run_a1(args) -> dict[str, object]:
                 sentence_override=sentence,
                 skip_accuracy_gate=True,
             )
+            if should_retry_empty_transcript_product_chain(product_chain):
+                print(
+                    f"a1_retry_empty_transcript={trigger_mode}:restart_round{round_idx + 1}",
+                    flush=True,
+                )
+                retry_product_chain = await run_listener_type_product_chain(
+                    args,
+                    "A1",
+                    trigger_mode=trigger_mode,
+                    artifact_label=f"{trigger_label}_restart_round{round_idx + 1}_retry_empty_transcript",
+                    audio_profile="normal",
+                    sentence_override=PRODUCT_CHAIN_EMPTY_TRANSCRIPT_RETRY_SENTENCE,
+                    skip_accuracy_gate=True,
+                )
+                retry_details = retry_product_chain.get("details")
+                if isinstance(retry_details, dict):
+                    retry_details["retry_reason"] = "empty_transcript_with_complete_ble_audio"
+                    retry_details["initial_attempt"] = compact_product_chain_attempt(product_chain)
+                if str(retry_product_chain.get("result")) == "pass":
+                    product_chain = retry_product_chain
+                else:
+                    details = product_chain.get("details")
+                    if isinstance(details, dict):
+                        details["retry_attempt"] = compact_product_chain_attempt(retry_product_chain)
             restart_results.append(product_chain)
             result_str = str(product_chain.get("result"))
             if result_str == "fail":
@@ -2455,6 +2486,12 @@ async def run_listener_type_product_chain(
         command.extend(["-RandomSentenceCount", str(random_sentence_count)])
     if trigger_mode == "manual-key":
         command.extend(["-PlaybackCount", "2", "-RecordPlaybackIndex", "2"])
+    if trigger_mode == "generated-key3":
+        # The generated-key3 A1/A2 path launches Listener-Type's headless
+        # BLE stream CLI. It validates the native BLE/audio/history route, but
+        # there is no Tauri app handle in that process, so a real capsule
+        # window cannot be shown or probed here.
+        command.append("-SkipCapsuleVisibleGate")
     if expect_no_text:
         command.append("-ExpectNoText")
     if extra_smoke_args:

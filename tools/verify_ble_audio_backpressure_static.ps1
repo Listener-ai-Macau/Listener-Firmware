@@ -98,6 +98,7 @@ Assert-Contains -RelativePath $stream -Pattern "audio transport link suspended: 
 Assert-Contains -RelativePath $stream -Pattern "(?s)esp_err_t\s+ble_audio_stream_send_session_audio.*?s_transport_state\s*!=\s*BLE_AUDIO_STREAM_TRANSPORT_STATE_STREAMING\s*\|\|\s*s_transport_session_id\s*!=\s*session_id" -Description "audio enqueue preserves active recovery window without link-ready precheck"
 Assert-Contains -RelativePath $stream -Pattern "audio session stop queued during link recovery" -Description "stop during link recovery preserves queued audio before control intent"
 Assert-NotContains -RelativePath $stream -Pattern "if\s*\(\s*active_session\s*&&\s*!link_ready\s*\)\s*\{\s*ble_audio_stream_purge_queued_session_jobs\(session_id,\s*true\)" -Description "stop during link recovery must not purge queued tail audio"
+Assert-Contains -RelativePath $stream -Pattern "\.flags\s*=\s*BLE_GATT_CHR_F_WRITE\s*\|\s*BLE_GATT_CHR_F_WRITE_NO_RSP" -Description "audio control supports no-response writes for stop/toggle under notify load"
 Assert-Contains -RelativePath $stream -Pattern "BLE_AUDIO_STREAM_REPLAY_WINDOW_PACKETS\s+48" -Description "active-session BLE audio replay window"
 Assert-Contains -RelativePath $stream -Pattern "audio replay window armed: reason=%s" -Description "link-suspend replay arm logging"
 Assert-Contains -RelativePath $stream -Pattern "audio replay window resend: session=" -Description "link-recovery replay resend logging"
