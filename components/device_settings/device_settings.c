@@ -584,6 +584,17 @@ bool device_settings_ble_name_pending_restart(void)
     return pending;
 }
 
+void device_settings_mark_ble_name_applied(void)
+{
+    if (!device_settings_ensure_mutex()) {
+        return;
+    }
+    if (xSemaphoreTake(s_mutex, portMAX_DELAY) == pdTRUE) {
+        s_ble_name_pending_restart = false;
+        xSemaphoreGive(s_mutex);
+    }
+}
+
 esp_err_t device_settings_set_brightness_profiles(uint8_t plugged_percent, uint8_t battery_percent)
 {
     if (!device_settings_ensure_mutex()) {

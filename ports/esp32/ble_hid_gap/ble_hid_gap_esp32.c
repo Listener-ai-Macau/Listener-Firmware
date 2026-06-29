@@ -17,7 +17,9 @@
 #include "ble_audio_stream.h"
 #include "ble_firmware_ota.h"
 #include "ble_diag_log.h"
+#include "device_settings.h"
 #include "diag_log.h"
+#include "listener_device.h"
 #include "status_led.h"
 
 #include "esp_bt.h"
@@ -32,6 +34,7 @@
 #include "host/ble_hs_adv.h"
 #include "host/ble_hs_id.h"
 #include "services/gatt/ble_svc_gatt.h"
+#include "services/gap/ble_svc_gap.h"
 #include "host/ble_store.h"
 #include "nimble/ble.h"
 #include "host/ble_sm.h"
@@ -830,6 +833,42 @@ static bool ble_hid_gap_configure_normal_adv_fields(void)
     return name_in_adv;
 }
 
+static esp_err_t ble_hid_gap_refresh_configured_device_name(const char *context)
+{
+    const char *device_name = listener_device_get_ble_name();
+    if (device_name == NULL || device_name[0] == '\0') {
+        ESP_LOGW(TAG, "%s: configured BLE name is empty", context);
+        return ESP_ERR_INVALID_STATE;
+    }
+
+    const size_t device_name_len = strlen(device_name);
+    bool changed = s_adv_device_name == NULL ||
+                   s_adv_device_name_len != device_name_len ||
+                   strncmp(s_adv_device_name, device_name, device_name_len) != 0;
+    s_adv_device_name = device_name;
+    s_adv_device_name_len = device_name_len;
+
+    int gap_name_rc = ble_svc_gap_device_name_set(device_name);
+    if (gap_name_rc != 0) {
+        ESP_LOGW(TAG, "%s: ble_svc_gap_device_name_set failed rc=%d name=%s",
+                 context,
+                 gap_name_rc,
+                 device_name);
+        return ESP_FAIL;
+    }
+
+    bool name_in_adv = ble_hid_gap_configure_normal_adv_fields();
+    device_settings_mark_ble_name_applied();
+    ESP_LOGI(TAG,
+             "%s: BLE device name refreshed name=%s len=%u changed=%u name_in_adv=%s",
+             context,
+             s_adv_device_name,
+             (unsigned)s_adv_device_name_len,
+             changed ? 1u : 0u,
+             name_in_adv ? "yes" : "scan_rsp");
+    return ESP_OK;
+}
+
 esp_err_t esp_hid_ble_gap_adv_init(uint16_t appearance, const char *device_name)
 {
     s_adv_device_name = device_name;
@@ -1360,6 +1399,12 @@ esp_err_t esp_hid_ble_gap_adv_start(void)
             s_ble_gap_conn_handle,
             DIAG_SEV_INFO);
         return ESP_OK;
+    }
+
+    esp_err_t name_ret = ble_hid_gap_refresh_configured_device_name("advertising_start");
+    if (name_ret != ESP_OK) {
+        ESP_LOGW(TAG, "advertising start continuing after BLE name refresh failure: %s",
+                 esp_err_to_name(name_ret));
     }
 
     rc = ble_store_util_bonded_peers(
