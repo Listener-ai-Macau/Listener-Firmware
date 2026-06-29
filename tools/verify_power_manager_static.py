@@ -848,7 +848,7 @@ def main() -> int:
         failures.append(
             "components/power_manager/power_manager.c: shutdown failure retry cooldown must be explicit"
         )
-    if "POWER_MANAGER_AUTO_SHUTDOWN_LED_CONFIRM_MS 500U" not in power_manager:
+    if "POWER_MANAGER_AUTO_SHUTDOWN_LED_CONFIRM_MS 1000U" not in power_manager:
         failures.append(
             "components/power_manager/power_manager.c: automatic shutdown PWR-only LED cue must be short and bounded"
         )
