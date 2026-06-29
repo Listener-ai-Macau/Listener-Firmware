@@ -234,6 +234,7 @@
 #define STATUS_LED_OTA_EDGE_STEP_MS 520U
 #define STATUS_LED_SHUTDOWN_CONFIRM_MS 1200U
 #define STATUS_LED_SHUTDOWN_FINAL_CONFIRM_MS 1400U
+#define STATUS_LED_SHUTDOWN_FINAL_HOLD_UNTIL_CANCEL_MS UINT32_MAX
 #define STATUS_LED_POWER_SOURCE_USB_DET (1U << 0)
 #define STATUS_LED_POWER_SOURCE_CHARGER_STATUS (1U << 1)
 #define STATUS_LED_POWER_SOURCE_USB_SERIAL_JTAG (1U << 2)
@@ -4662,16 +4663,22 @@ void status_led_refresh_ec11_feedback(status_led_ec11_feedback_t feedback)
     status_led_apply_ec11_feedback(feedback, false);
 }
 
-void status_led_notify_shutdown_confirm(bool final, const char *reason)
+static bool status_led_notify_shutdown_confirm_with_wait_and_duration(
+    bool final,
+    const char *reason,
+    TickType_t wait_ticks,
+    uint32_t duration_ms)
 {
     uint32_t now_ms = status_led_now_ms();
     bool changed = false;
-    if (xSemaphoreTake(s_mutex, portMAX_DELAY) == pdTRUE) {
+    if (xSemaphoreTake(s_mutex, wait_ticks) == pdTRUE) {
         status_led_resume_interactive_output_locked();
         s_state.preview_effect_only = false;
         s_state.shutdown_confirm_started_ms = now_ms;
-        s_state.shutdown_confirm_until_ms = now_ms +
-            (final ? STATUS_LED_SHUTDOWN_FINAL_CONFIRM_MS : STATUS_LED_SHUTDOWN_CONFIRM_MS);
+        s_state.shutdown_confirm_until_ms =
+            duration_ms == STATUS_LED_SHUTDOWN_FINAL_HOLD_UNTIL_CANCEL_MS
+                ? STATUS_LED_SHUTDOWN_FINAL_HOLD_UNTIL_CANCEL_MS
+                : now_ms + duration_ms;
         s_state.shutdown_confirm_final = final;
         if (final) {
             s_state.shutdown_final_all_zone_latched_started_ms = 0U;
@@ -4687,6 +4694,72 @@ void status_led_notify_shutdown_confirm(bool final, const char *reason)
     if (changed) {
         status_led_request_refresh();
     }
+    return changed;
+}
+
+void status_led_notify_shutdown_confirm(bool final, const char *reason)
+{
+    (void)status_led_notify_shutdown_confirm_with_wait_and_duration(
+        final,
+        reason,
+        portMAX_DELAY,
+        final ? STATUS_LED_SHUTDOWN_FINAL_CONFIRM_MS : STATUS_LED_SHUTDOWN_CONFIRM_MS);
+}
+
+bool status_led_try_notify_shutdown_confirm(bool final, const char *reason, uint32_t wait_ms)
+{
+    return status_led_notify_shutdown_confirm_with_wait_and_duration(
+        final,
+        reason,
+        pdMS_TO_TICKS(wait_ms),
+        final ? STATUS_LED_SHUTDOWN_FINAL_CONFIRM_MS : STATUS_LED_SHUTDOWN_CONFIRM_MS);
+}
+
+bool status_led_try_notify_shutdown_final_hold(const char *reason, uint32_t wait_ms)
+{
+    return status_led_notify_shutdown_confirm_with_wait_and_duration(
+        true,
+        reason,
+        pdMS_TO_TICKS(wait_ms),
+        STATUS_LED_SHUTDOWN_FINAL_HOLD_UNTIL_CANCEL_MS);
+}
+
+bool status_led_try_hold_shutdown_all_off(const char *reason, uint32_t wait_ms)
+{
+    uint32_t now_ms = status_led_now_ms();
+    bool changed = false;
+    if (s_mutex != NULL && xSemaphoreTake(s_mutex, pdMS_TO_TICKS(wait_ms)) == pdTRUE) {
+        s_state.shutdown_confirm_started_ms = 0U;
+        s_state.shutdown_confirm_until_ms = 0U;
+        s_state.shutdown_confirm_final = false;
+        s_state.shutdown_final_all_zone_latched_started_ms = 0U;
+        s_state.preview_suppress_accents = false;
+        s_state.preview_effect_only = false;
+        s_state.preview_ble_override_until_ms = 0U;
+        s_state.ble_repair_until_ms = 0U;
+        s_state.output_disabled = true;
+        s_state.low_power_disabled = true;
+        s_state.test_mode = STATUS_LED_TEST_NONE;
+        s_state.idle_transition_clear_pending = true;
+        status_led_clear_ok_locked();
+        status_led_clear_ec11_feedback_locked();
+        status_led_clear_key_feedback_locked();
+        status_led_clear_ota_locked();
+        s_state.status_window_until_ms = now_ms + STATUS_LED_STATUS_WINDOW_MS;
+        s_state.last_transition_ms = now_ms;
+        status_led_set_last_reason_locked(reason != NULL ? reason : "shutdown_all_off_hold");
+        status_led_log_output_state_locked(0);
+        diag_log(DIAG_SRC_STATUS_LED, DIAG_LED_STATE, DIAG_SEV_INFO,
+                 5, 4, 0, 0);
+        changed = true;
+        xSemaphoreGive(s_mutex);
+    }
+    if (changed) {
+        status_led_request_refresh();
+        status_led_force_all_off(true);
+        status_led_suspend_all_strips();
+    }
+    return changed;
 }
 
 void status_led_cancel_shutdown_confirm(const char *reason)
@@ -4694,8 +4767,7 @@ void status_led_cancel_shutdown_confirm(const char *reason)
     uint32_t now_ms = status_led_now_ms();
     bool changed = false;
     if (xSemaphoreTake(s_mutex, portMAX_DELAY) == pdTRUE) {
-        if (s_state.shutdown_confirm_started_ms != 0U &&
-            !s_state.shutdown_confirm_final) {
+        if (s_state.shutdown_confirm_started_ms != 0U) {
             s_state.shutdown_confirm_started_ms = 0U;
             s_state.shutdown_confirm_until_ms = 0U;
             s_state.shutdown_confirm_final = false;

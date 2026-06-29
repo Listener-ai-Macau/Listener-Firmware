@@ -70,6 +70,9 @@ void status_led_notify_key_feedback(uint8_t key_index, status_led_key_feedback_t
 void status_led_notify_ec11_feedback(status_led_ec11_feedback_t feedback);
 void status_led_refresh_ec11_feedback(status_led_ec11_feedback_t feedback);
 void status_led_notify_shutdown_confirm(bool final, const char *reason);
+bool status_led_try_notify_shutdown_confirm(bool final, const char *reason, uint32_t wait_ms);
+bool status_led_try_notify_shutdown_final_hold(const char *reason, uint32_t wait_ms);
+bool status_led_try_hold_shutdown_all_off(const char *reason, uint32_t wait_ms);
 void status_led_cancel_shutdown_confirm(const char *reason);
 void status_led_set_error(
     status_led_error_domain_t domain,

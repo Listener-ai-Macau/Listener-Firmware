@@ -81,6 +81,9 @@ foreach ($entry in $requiredTaskFiles.GetEnumerator()) {
 $watchdog = Read-RepoFile "ports/esp32/watchdog_platform/watchdog_platform_esp32.c"
 Assert-Contains $watchdog 'esp_task_wdt_add\(NULL\)' 'current task subscription API'
 Assert-Contains $watchdog 'esp_task_wdt_reset\(\)' 'current task feed API'
+Assert-Contains $watchdog 'watchdog_platform_enter_shutdown_critical' 'shutdown critical WDT extension API'
+Assert-Contains $watchdog 'WATCHDOG_PLATFORM_SHUTDOWN_CRITICAL_TIMEOUT_MS 30000U' 'shutdown critical WDT timeout'
+Assert-Contains $watchdog 'esp_task_wdt_reconfigure\(&config\)' 'task watchdog reconfigure API'
 Assert-Contains $watchdog 'watchdog_platform_task_notify_take_low_power' 'low-power task wait API'
 Assert-Contains $watchdog 'esp_task_wdt_delete\(NULL\)' 'low-power wait WDT unsubscribe'
 Assert-Contains $watchdog 'WATCHDOG_PLATFORM_FEED_INTERVAL_MS 1000U' 'bounded long-wait feed interval'
@@ -89,13 +92,18 @@ Assert-Contains $watchdog 'WDT DEADLOCK test command accepted' 'watchdog deadloc
 $watchdogHeader = Read-RepoFile "ports/esp32/watchdog_platform/include/watchdog_platform.h"
 Assert-Contains $watchdogHeader 'watchdog_platform_consume_usb_command' 'watchdog USB command API'
 Assert-Contains $watchdogHeader 'watchdog_platform_task_notify_take_low_power' 'watchdog low-power wait API'
+Assert-Contains $watchdogHeader 'watchdog_platform_enter_shutdown_critical' 'watchdog shutdown critical enter API'
+Assert-Contains $watchdogHeader 'watchdog_platform_exit_shutdown_critical' 'watchdog shutdown critical exit API'
 
 $bleHid = Read-RepoFile "ports/esp32/ble_hid/ble_hid.c"
 Assert-Contains $bleHid 'watchdog_platform_consume_usb_command\(line\)' 'watchdog USB command dispatch'
-Assert-Contains $bleHid 'watchdog_platform_task_notify_take_low_power\([\s\S]*ble_hid_battery_sample_interval_ms\(\)' 'BLE battery low-power wait'
+Assert-Contains $bleHid 'wait_ms\s*=\s*ble_audio_stream_type_link_poll_wait_ms\([\s\S]*ble_hid_battery_sample_interval_ms\(low_power_idle\)[\s\S]*watchdog_platform_task_notify_take_low_power\([\s\S]*wait_ms' 'BLE battery low-power wait'
 
 $powerManager = Read-RepoFile "components/power_manager/power_manager.c"
 Assert-Contains $powerManager 'watchdog_platform_task_notify_take_low_power\([\s\S]*POWER_MANAGER_LOW_POWER_EVALUATE_INTERVAL_MS' 'power manager low-power wait'
+Assert-Contains $powerManager 'watchdog_platform_enter_shutdown_critical\("hardware_shutdown_pwr_hold"\)[\s\S]*board_set_power_hold_enabled\(false\)' 'power manager extends WDT before PWR_HOLD drive-high'
+Assert-Contains $powerManager 'hold_ret\s*!=\s*ESP_OK[\s\S]*watchdog_platform_exit_shutdown_critical\(\)[\s\S]*power_manager_restore_after_shutdown_failure' 'power manager restores WDT after PWR_HOLD drive-high failure'
+Assert-Contains $powerManager 'watchdog_platform_delay_ms\(POWER_MANAGER_POWER_REMOVAL_WAIT_MS\)[\s\S]*watchdog_platform_exit_shutdown_critical\(\)[\s\S]*power_manager_restore_after_shutdown_failure\(reason,\s*final_idle_ms,\s*ESP_FAIL\)' 'power manager restores WDT after powered-after-shutdown fallback'
 
 $health = Read-RepoFile "ports/esp32/system_health_platform/system_health_esp32.c"
 Assert-Contains $health 'watchdog_platform_task_notify_take_low_power\(pdTRUE, interval_s \* 1000U\)' 'health low-power wait'

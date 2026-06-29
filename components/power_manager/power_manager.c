@@ -41,6 +41,9 @@ extern void system_health_set_low_power_mode(bool enabled) __attribute__((weak))
 extern void status_led_set_low_power_disabled(bool disabled) __attribute__((weak));
 extern void status_led_prepare_sleep(void) __attribute__((weak));
 extern void status_led_notify_shutdown_confirm(bool final, const char *reason) __attribute__((weak));
+extern bool status_led_try_notify_shutdown_confirm(bool final, const char *reason, uint32_t wait_ms) __attribute__((weak));
+extern bool status_led_try_hold_shutdown_all_off(const char *reason, uint32_t wait_ms) __attribute__((weak));
+extern void status_led_cancel_shutdown_confirm(const char *reason) __attribute__((weak));
 extern void status_led_set_error(int domain, int severity, const char *reason) __attribute__((weak));
 
 #define POWER_MANAGER_STATUS_LED_ERROR_DOMAIN_POWER 5
@@ -85,6 +88,8 @@ extern void status_led_set_error(int domain, int severity, const char *reason) _
 #define POWER_MANAGER_LOW_BATTERY_BOOT_GRACE_MS 15000U
 #define POWER_MANAGER_SHUTDOWN_BATTERY_NOTIFY_WAIT_MS 100U
 #define POWER_MANAGER_SHUTDOWN_LED_CONFIRM_MS 1200U
+#define POWER_MANAGER_AUTO_SHUTDOWN_LED_CONFIRM_MS 500U
+#define POWER_MANAGER_AUTO_SHUTDOWN_LED_LOCK_WAIT_MS 20U
 #define POWER_MANAGER_POWER_REMOVAL_WAIT_MS 10000U
 #define POWER_MANAGER_SHUTDOWN_FAILURE_RETRY_MS 900000U
 #ifndef CONFIG_POWER_MANAGER_BATTERY_CRITICAL_PERCENT
@@ -430,6 +435,50 @@ const char *power_manager_shutdown_reason_name(power_manager_shutdown_reason_t r
 static bool power_manager_shutdown_reason_is_valid(uint32_t reason)
 {
     return reason <= (uint32_t)POWER_MANAGER_SHUTDOWN_REASON_LOW_BATTERY;
+}
+
+static bool power_manager_shutdown_reason_uses_graceful_prepare(power_manager_shutdown_reason_t reason)
+{
+    return reason == POWER_MANAGER_SHUTDOWN_REASON_MANUAL_COMMAND;
+}
+
+static void power_manager_show_automatic_shutdown_led_cue(
+    power_manager_shutdown_reason_t reason,
+    uint32_t final_idle_ms)
+{
+    bool queued = false;
+
+    if (status_led_try_notify_shutdown_confirm != NULL) {
+        queued = status_led_try_notify_shutdown_confirm(
+            true,
+            "automatic_hardware_shutdown_confirmed",
+            POWER_MANAGER_AUTO_SHUTDOWN_LED_LOCK_WAIT_MS);
+    }
+
+    if (queued) {
+        vTaskDelay(pdMS_TO_TICKS(POWER_MANAGER_AUTO_SHUTDOWN_LED_CONFIRM_MS));
+    } else {
+        ESP_LOGW(
+            TAG,
+            "automatic shutdown LED cue skipped before PWR_HOLD"
+            " reason=%s idle_ms=%" PRIu32 " lock_wait_ms=%u",
+            power_manager_shutdown_reason_name(reason),
+            final_idle_ms,
+            (unsigned)POWER_MANAGER_AUTO_SHUTDOWN_LED_LOCK_WAIT_MS);
+    }
+
+    if (status_led_try_hold_shutdown_all_off != NULL &&
+        !status_led_try_hold_shutdown_all_off(
+            "automatic_hardware_shutdown_led_off_hold",
+            POWER_MANAGER_AUTO_SHUTDOWN_LED_LOCK_WAIT_MS)) {
+        ESP_LOGW(
+            TAG,
+            "automatic shutdown LED all-off hold skipped before PWR_HOLD"
+            " reason=%s idle_ms=%" PRIu32 " lock_wait_ms=%u",
+            power_manager_shutdown_reason_name(reason),
+            final_idle_ms,
+            (unsigned)POWER_MANAGER_AUTO_SHUTDOWN_LED_LOCK_WAIT_MS);
+    }
 }
 
 static void power_manager_store_shutdown_trace_locked(
@@ -1643,6 +1692,12 @@ static void power_manager_restore_after_shutdown_failure(
         restore_ret == ESP_OK ? DIAG_SEV_WARN : DIAG_SEV_ERROR,
         NULL,
         POWER_MANAGER_POWER_HOLD_ACTION_SHUTDOWN_FAILED_RESTORE);
+    if (status_led_cancel_shutdown_confirm != NULL) {
+        status_led_cancel_shutdown_confirm("hardware_shutdown_failed");
+    }
+    if (status_led_set_low_power_disabled != NULL) {
+        status_led_set_low_power_disabled(false);
+    }
     if (reason == POWER_MANAGER_SHUTDOWN_REASON_MANUAL_COMMAND &&
         ble_hid_gap_request_reconnect != NULL) {
         (void)ble_hid_gap_request_reconnect();
@@ -1878,40 +1933,65 @@ static esp_err_t power_manager_enter_hardware_shutdown(power_manager_shutdown_re
         power_hold.policy != NULL ? power_hold.policy : "unknown",
         POWER_MANAGER_SHUTDOWN_USER_ACTION);
 
-    if (status_led_notify_shutdown_confirm != NULL) {
-        status_led_notify_shutdown_confirm(true, "hardware_shutdown_confirmed");
-        vTaskDelay(pdMS_TO_TICKS(POWER_MANAGER_SHUTDOWN_LED_CONFIRM_MS));
-    }
-
-    if (ble_hid_battery_force_refresh != NULL) {
-        esp_err_t battery_notify_ret = ble_hid_battery_force_refresh("pre_shutdown");
-        if (battery_notify_ret == ESP_OK) {
-            vTaskDelay(pdMS_TO_TICKS(POWER_MANAGER_SHUTDOWN_BATTERY_NOTIFY_WAIT_MS));
-        } else if (battery_notify_ret != ESP_ERR_INVALID_STATE) {
-            ESP_LOGW(
-                TAG,
-                "shutdown pre-disconnect battery refresh failed: %s",
-                esp_err_to_name(battery_notify_ret));
+    if (power_manager_shutdown_reason_uses_graceful_prepare(reason)) {
+        if (status_led_notify_shutdown_confirm != NULL) {
+            status_led_notify_shutdown_confirm(true, "hardware_shutdown_confirmed");
+            vTaskDelay(pdMS_TO_TICKS(POWER_MANAGER_SHUTDOWN_LED_CONFIRM_MS));
         }
-    }
 
-    if (status_led_prepare_sleep != NULL) {
-        status_led_prepare_sleep();
-    }
-    power_manager_set_audio_idle_power_save(true);
-    if (system_health_set_low_power_mode != NULL) {
-        system_health_set_low_power_mode(true);
-    }
-    if (ble_hid_gap_prepare_shutdown_disconnect != NULL) {
-        esp_err_t ble_ret = ble_hid_gap_prepare_shutdown_disconnect();
-        if (ble_ret != ESP_OK && ble_ret != ESP_ERR_INVALID_STATE) {
-            ESP_LOGW(TAG, "shutdown BLE disconnect preparation failed: %s", esp_err_to_name(ble_ret));
+        if (ble_hid_battery_force_refresh != NULL) {
+            esp_err_t battery_notify_ret = ble_hid_battery_force_refresh("pre_shutdown");
+            if (battery_notify_ret == ESP_OK) {
+                vTaskDelay(pdMS_TO_TICKS(POWER_MANAGER_SHUTDOWN_BATTERY_NOTIFY_WAIT_MS));
+            } else if (battery_notify_ret != ESP_ERR_INVALID_STATE) {
+                ESP_LOGW(
+                    TAG,
+                    "shutdown pre-disconnect battery refresh failed: %s",
+                    esp_err_to_name(battery_notify_ret));
+            }
         }
-    } else if (ble_hid_gap_set_low_power_advertising != NULL) {
-        (void)ble_hid_gap_set_low_power_advertising(true);
+
+        if (status_led_prepare_sleep != NULL) {
+            status_led_prepare_sleep();
+        }
+        power_manager_set_audio_idle_power_save(true);
+        if (system_health_set_low_power_mode != NULL) {
+            system_health_set_low_power_mode(true);
+        }
+        if (ble_hid_gap_prepare_shutdown_disconnect != NULL) {
+            esp_err_t ble_ret = ble_hid_gap_prepare_shutdown_disconnect();
+            if (ble_ret != ESP_OK && ble_ret != ESP_ERR_INVALID_STATE) {
+                ESP_LOGW(TAG, "shutdown BLE disconnect preparation failed: %s", esp_err_to_name(ble_ret));
+            }
+        } else if (ble_hid_gap_set_low_power_advertising != NULL) {
+            (void)ble_hid_gap_set_low_power_advertising(true);
+        }
+
+        vTaskDelay(pdMS_TO_TICKS(150));
+    } else {
+        ESP_LOGW(
+            TAG,
+            "automatic hardware shutdown bypassing graceful prepare before PWR_HOLD"
+            " reason=%s idle_ms=%" PRIu32,
+            power_manager_shutdown_reason_name(reason),
+            final_idle_ms);
+        power_manager_show_automatic_shutdown_led_cue(reason, final_idle_ms);
     }
 
-    vTaskDelay(pdMS_TO_TICKS(150));
+    esp_err_t watchdog_ret = watchdog_platform_enter_shutdown_critical("hardware_shutdown_pwr_hold");
+    if (watchdog_ret != ESP_OK &&
+        watchdog_ret != ESP_ERR_NOT_SUPPORTED &&
+        watchdog_ret != ESP_ERR_INVALID_STATE) {
+        ESP_LOGW(
+            TAG,
+            "shutdown watchdog critical reconfigure failed before PWR_HOLD drive-high: %s",
+            esp_err_to_name(watchdog_ret));
+    }
+
+    power_manager_log_power_hold_diag(
+        DIAG_SEV_WARN,
+        NULL,
+        POWER_MANAGER_POWER_HOLD_ACTION_SHUTDOWN_DRIVE_HIGH);
     esp_err_t hold_ret = board_set_power_hold_enabled(false);
     if (hold_ret != ESP_OK) {
         diag_log(
@@ -1924,13 +2004,10 @@ static esp_err_t power_manager_enter_hardware_shutdown(power_manager_shutdown_re
             POWER_MANAGER_POWER_HOLD_ACTION_SHUTDOWN_DRIVE_HIGH);
         ESP_LOGE(TAG, "hardware shutdown failed: PWR_HOLD/GPIO9 drive-high ret=%s",
                  esp_err_to_name(hold_ret));
+        (void)watchdog_platform_exit_shutdown_critical();
         power_manager_restore_after_shutdown_failure(reason, final_idle_ms, hold_ret);
         return hold_ret;
     }
-    power_manager_log_power_hold_diag(
-        DIAG_SEV_WARN,
-        NULL,
-        POWER_MANAGER_POWER_HOLD_ACTION_SHUTDOWN_DRIVE_HIGH);
 
     watchdog_platform_delay_ms(POWER_MANAGER_POWER_REMOVAL_WAIT_MS);
 
@@ -1938,6 +2015,7 @@ static esp_err_t power_manager_enter_hardware_shutdown(power_manager_shutdown_re
         TAG,
         "hardware shutdown did not remove power after PWR_HOLD/GPIO9 drive-high within %u ms; restoring runtime low",
         (unsigned)POWER_MANAGER_POWER_REMOVAL_WAIT_MS);
+    (void)watchdog_platform_exit_shutdown_critical();
     power_manager_restore_after_shutdown_failure(reason, final_idle_ms, ESP_FAIL);
     return ESP_FAIL;
 }

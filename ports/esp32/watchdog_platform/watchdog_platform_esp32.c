@@ -21,6 +21,12 @@
 #ifndef CONFIG_ESP_TASK_WDT_TIMEOUT_S
 #define CONFIG_ESP_TASK_WDT_TIMEOUT_S 0
 #endif
+#ifndef CONFIG_ESP_TASK_WDT_CHECK_IDLE_TASK_CPU0
+#define CONFIG_ESP_TASK_WDT_CHECK_IDLE_TASK_CPU0 0
+#endif
+#ifndef CONFIG_ESP_TASK_WDT_CHECK_IDLE_TASK_CPU1
+#define CONFIG_ESP_TASK_WDT_CHECK_IDLE_TASK_CPU1 0
+#endif
 #ifndef CONFIG_ESP_INT_WDT
 #define CONFIG_ESP_INT_WDT 0
 #endif
@@ -29,6 +35,10 @@
 #endif
 
 #define WATCHDOG_PLATFORM_FEED_INTERVAL_MS 1000U
+#define WATCHDOG_PLATFORM_SHUTDOWN_CRITICAL_TIMEOUT_MS 30000U
+#define WATCHDOG_PLATFORM_IDLE_CORE_MASK \
+    ((CONFIG_ESP_TASK_WDT_CHECK_IDLE_TASK_CPU0 ? (1U << 0) : 0U) | \
+     (CONFIG_ESP_TASK_WDT_CHECK_IDLE_TASK_CPU1 ? (1U << 1) : 0U))
 #define WATCHDOG_PLATFORM_USB_PREFIX "WDT:"
 
 static const char *TAG = "watchdog";
@@ -136,6 +146,55 @@ uint32_t watchdog_platform_task_notify_take_low_power(BaseType_t clear_on_exit, 
     }
 #endif
     return notified;
+}
+
+static esp_err_t watchdog_platform_reconfigure(uint32_t timeout_ms, bool trigger_panic, const char *mode)
+{
+#if CONFIG_ESP_TASK_WDT_EN
+    esp_task_wdt_config_t config = {
+        .timeout_ms = timeout_ms,
+        .idle_core_mask = WATCHDOG_PLATFORM_IDLE_CORE_MASK,
+        .trigger_panic = trigger_panic,
+    };
+    esp_err_t ret = esp_task_wdt_reconfigure(&config);
+    if (ret == ESP_OK) {
+        ESP_LOGW(
+            TAG,
+            "task watchdog reconfigured: mode=%s timeout_ms=%" PRIu32 " panic=%u idle_core_mask=0x%08" PRIx32,
+            mode != NULL ? mode : "unknown",
+            timeout_ms,
+            trigger_panic ? 1u : 0u,
+            (uint32_t)WATCHDOG_PLATFORM_IDLE_CORE_MASK);
+    } else {
+        ESP_LOGW(
+            TAG,
+            "task watchdog reconfigure failed: mode=%s ret=%s",
+            mode != NULL ? mode : "unknown",
+            esp_err_to_name(ret));
+    }
+    return ret;
+#else
+    (void)timeout_ms;
+    (void)trigger_panic;
+    (void)mode;
+    return ESP_ERR_NOT_SUPPORTED;
+#endif
+}
+
+esp_err_t watchdog_platform_enter_shutdown_critical(const char *reason)
+{
+    return watchdog_platform_reconfigure(
+        WATCHDOG_PLATFORM_SHUTDOWN_CRITICAL_TIMEOUT_MS,
+        CONFIG_ESP_TASK_WDT_PANIC != 0,
+        reason != NULL ? reason : "shutdown_critical");
+}
+
+esp_err_t watchdog_platform_exit_shutdown_critical(void)
+{
+    return watchdog_platform_reconfigure(
+        CONFIG_ESP_TASK_WDT_TIMEOUT_S * 1000U,
+        CONFIG_ESP_TASK_WDT_PANIC != 0,
+        "normal");
 }
 
 void watchdog_platform_log_config(void)

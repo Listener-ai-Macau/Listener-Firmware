@@ -15,6 +15,8 @@ void watchdog_platform_feed_current_task(void);
 void watchdog_platform_delay_ms(uint32_t delay_ms);
 uint32_t watchdog_platform_task_notify_take(BaseType_t clear_on_exit, uint32_t wait_ms);
 uint32_t watchdog_platform_task_notify_take_low_power(BaseType_t clear_on_exit, uint32_t wait_ms);
+esp_err_t watchdog_platform_enter_shutdown_critical(const char *reason);
+esp_err_t watchdog_platform_exit_shutdown_critical(void);
 void watchdog_platform_log_config(void);
 bool watchdog_platform_consume_usb_command(const char *line);
 

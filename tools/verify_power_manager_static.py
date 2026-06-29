@@ -848,27 +848,92 @@ def main() -> int:
         failures.append(
             "components/power_manager/power_manager.c: shutdown failure retry cooldown must be explicit"
         )
+    if "POWER_MANAGER_AUTO_SHUTDOWN_LED_CONFIRM_MS 500U" not in power_manager:
+        failures.append(
+            "components/power_manager/power_manager.c: automatic shutdown PWR-only LED cue must be short and bounded"
+        )
+    if "POWER_MANAGER_AUTO_SHUTDOWN_LED_LOCK_WAIT_MS 20U" not in power_manager:
+        failures.append(
+            "components/power_manager/power_manager.c: automatic shutdown LED cue must use a bounded LED lock wait"
+        )
     if "power_manager_shutdown_failure_retry_active_locked" not in power_manager:
         failures.append(
             "components/power_manager/power_manager.c: target state must honor shutdown failure retry cooldown"
         )
     if not re.search(
+        r"power_manager_shutdown_reason_uses_graceful_prepare[\s\S]*"
+        r"reason\s*==\s*POWER_MANAGER_SHUTDOWN_REASON_MANUAL_COMMAND",
+        power_manager,
+    ):
+        failures.append(
+            "components/power_manager/power_manager.c: only manual shutdown may use graceful LED/BLE prepare before PWR_HOLD"
+        )
+    if not re.search(
+        r"power_manager_show_automatic_shutdown_led_cue[\s\S]*"
+        r"status_led_try_notify_shutdown_confirm\([\s\S]*"
+        r"true,[\s\S]*"
+        r"automatic_hardware_shutdown_confirmed[\s\S]*"
+        r"POWER_MANAGER_AUTO_SHUTDOWN_LED_LOCK_WAIT_MS[\s\S]*"
+        r"vTaskDelay\(pdMS_TO_TICKS\(POWER_MANAGER_AUTO_SHUTDOWN_LED_CONFIRM_MS\)\)[\s\S]*"
+        r"status_led_try_hold_shutdown_all_off\([\s\S]*"
+        r"automatic_hardware_shutdown_led_off_hold[\s\S]*"
+        r"POWER_MANAGER_AUTO_SHUTDOWN_LED_LOCK_WAIT_MS",
+        power_manager,
+    ):
+        failures.append(
+            "components/power_manager/power_manager.c: automatic shutdown must use a short PWR-only cue, then hold all LEDs off before PWR_HOLD"
+        )
+    if not re.search(
+        r"if\s*\(\s*power_manager_shutdown_reason_uses_graceful_prepare\(reason\)\s*\)[\s\S]*"
+        r"status_led_notify_shutdown_confirm[\s\S]*"
+        r"ble_hid_battery_force_refresh[\s\S]*"
+        r"status_led_prepare_sleep[\s\S]*"
+        r"else\s*\{[\s\S]*"
+        r"automatic hardware shutdown bypassing graceful prepare before PWR_HOLD[\s\S]*"
+        r"power_manager_show_automatic_shutdown_led_cue\(reason,\s*final_idle_ms\)[\s\S]*"
+        r"watchdog_platform_enter_shutdown_critical\(\"hardware_shutdown_pwr_hold\"\)",
+        power_manager,
+    ):
+        failures.append(
+            "components/power_manager/power_manager.c: automatic shutdown must bypass graceful prepare, show only a bounded LED cue, and reach PWR_HOLD setup immediately"
+        )
+    if not re.search(
+        r"power_manager_restore_after_shutdown_failure[\s\S]*"
+        r"status_led_cancel_shutdown_confirm\(\"hardware_shutdown_failed\"\)[\s\S]*"
+        r"status_led_set_low_power_disabled\(false\)",
+        power_manager,
+    ):
+        failures.append(
+            "components/power_manager/power_manager.c: failed automatic shutdown must cancel shutdown LED confirmation and release all-off hold"
+        )
+    if not re.search(
+        r"watchdog_platform_enter_shutdown_critical\(\"hardware_shutdown_pwr_hold\"\)[\s\S]*"
+        r"POWER_MANAGER_POWER_HOLD_ACTION_SHUTDOWN_DRIVE_HIGH[\s\S]*"
+        r"board_set_power_hold_enabled\(false\)",
+        power_manager,
+    ):
+        failures.append(
+            "components/power_manager/power_manager.c: hardware shutdown must extend WDT and log drive-high attempt before waiting on PWR_HOLD"
+        )
+    if not re.search(
         r"board_set_power_hold_enabled\(false\)[\s\S]*"
         r"hold_ret\s*!=\s*ESP_OK[\s\S]*"
+        r"watchdog_platform_exit_shutdown_critical\(\)[\s\S]*"
         r"power_manager_restore_after_shutdown_failure\(reason,\s*final_idle_ms,\s*hold_ret\)",
         power_manager,
     ):
         failures.append(
-            "components/power_manager/power_manager.c: PWR_HOLD drive-high/readback failure must use the shutdown restore path"
+            "components/power_manager/power_manager.c: PWR_HOLD drive-high/readback failure must restore WDT and use the shutdown restore path"
         )
     if not re.search(
         r"watchdog_platform_delay_ms\(POWER_MANAGER_POWER_REMOVAL_WAIT_MS\)[\s\S]*"
         r"hardware shutdown did not remove power[\s\S]*"
+        r"watchdog_platform_exit_shutdown_critical\(\)[\s\S]*"
         r"power_manager_restore_after_shutdown_failure\(reason,\s*final_idle_ms,\s*ESP_FAIL\)",
         power_manager,
     ):
         failures.append(
-            "components/power_manager/power_manager.c: powered-after-shutdown fallback must restore runtime low after the bounded wait"
+            "components/power_manager/power_manager.c: powered-after-shutdown fallback must restore WDT and runtime low after the bounded wait"
         )
     if not re.search(
         r"POWER_MANAGER_SHUTDOWN_REASON_LOW_BATTERY[\s\S]*"

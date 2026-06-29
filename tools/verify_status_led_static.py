@@ -30,6 +30,9 @@ CHECKS = {
         "status_led_set_ota_active",
         "status_led_notify_warning",
         "status_led_notify_shutdown_confirm",
+        "status_led_try_notify_shutdown_confirm",
+        "status_led_try_notify_shutdown_final_hold",
+        "status_led_try_hold_shutdown_all_off",
         "status_led_cancel_shutdown_confirm",
         "STATUS_LED_EC11_FEEDBACK_PRESS",
         "STATUS_LED_EC11_FEEDBACK_ROTATE_CW",
@@ -1904,12 +1907,59 @@ def main() -> int:
     ):
         failures.append("status_led.c: REC+AI overlap must limit status-tail reinforce writes to the overlap write count")
     if not re.search(
-        r"void\s+status_led_notify_shutdown_confirm\([^)]*\)[\s\S]*?"
-        r"s_state\.low_power_disabled\s*=\s*false;[\s\S]*?"
-        r"s_state\.output_disabled\s*=\s*false;",
+        r"static\s+bool\s+status_led_notify_shutdown_confirm_with_wait_and_duration\([^)]*\)[\s\S]*?"
+        r"xSemaphoreTake\(s_mutex,\s*wait_ticks\)[\s\S]*?"
+        r"status_led_resume_interactive_output_locked\(\)",
         status_led,
     ):
-        failures.append("status_led.c: shutdown confirmation must wake LED output even from low-power-off state")
+        failures.append("status_led.c: shutdown confirmation must use a shared wait-bounded helper that wakes LED output")
+    if not re.search(
+        r"void\s+status_led_notify_shutdown_confirm\([^)]*\)[\s\S]*?"
+        r"status_led_notify_shutdown_confirm_with_wait_and_duration\([\s\S]*?"
+        r"portMAX_DELAY[\s\S]*?"
+        r"final\s*\?\s*STATUS_LED_SHUTDOWN_FINAL_CONFIRM_MS\s*:\s*STATUS_LED_SHUTDOWN_CONFIRM_MS",
+        status_led,
+    ):
+        failures.append("status_led.c: legacy shutdown confirmation must preserve the blocking manual API")
+    if not re.search(
+        r"bool\s+status_led_try_notify_shutdown_confirm\([^)]*\)[\s\S]*?"
+        r"status_led_notify_shutdown_confirm_with_wait_and_duration\([\s\S]*?"
+        r"pdMS_TO_TICKS\(wait_ms\)[\s\S]*?"
+        r"final\s*\?\s*STATUS_LED_SHUTDOWN_FINAL_CONFIRM_MS\s*:\s*STATUS_LED_SHUTDOWN_CONFIRM_MS",
+        status_led,
+    ):
+        failures.append("status_led.c: automatic shutdown must have a bounded shutdown confirmation API")
+    if (
+        "STATUS_LED_SHUTDOWN_FINAL_HOLD_UNTIL_CANCEL_MS UINT32_MAX" not in status_led
+        or not re.search(
+            r"bool\s+status_led_try_notify_shutdown_final_hold\([^)]*\)[\s\S]*?"
+            r"status_led_notify_shutdown_confirm_with_wait_and_duration\([\s\S]*?"
+            r"true,[\s\S]*?"
+            r"STATUS_LED_SHUTDOWN_FINAL_HOLD_UNTIL_CANCEL_MS",
+            status_led,
+        )
+        or "duration_ms == STATUS_LED_SHUTDOWN_FINAL_HOLD_UNTIL_CANCEL_MS" not in status_led
+    ):
+        failures.append("status_led.c: status LED must retain the final PWR-only hold helper for bounded shutdown callers")
+    if not re.search(
+        r"bool\s+status_led_try_hold_shutdown_all_off\([^)]*\)[\s\S]*?"
+        r"xSemaphoreTake\(s_mutex,\s*pdMS_TO_TICKS\(wait_ms\)\)[\s\S]*?"
+        r"s_state\.shutdown_confirm_started_ms\s*=\s*0U;[\s\S]*?"
+        r"s_state\.shutdown_confirm_final\s*=\s*false;[\s\S]*?"
+        r"s_state\.output_disabled\s*=\s*true;[\s\S]*?"
+        r"s_state\.low_power_disabled\s*=\s*true;[\s\S]*?"
+        r"status_led_force_all_off\(true\);[\s\S]*?"
+        r"status_led_suspend_all_strips\(\);",
+        status_led,
+    ):
+        failures.append("status_led.c: automatic shutdown must have a bounded all-off hold API that clears shutdown cue state and forces LEDs dark")
+    if not re.search(
+        r"void\s+status_led_cancel_shutdown_confirm\([^)]*\)[\s\S]*?"
+        r"if\s*\(\s*s_state\.shutdown_confirm_started_ms\s*!=\s*0U\s*\)[\s\S]*?"
+        r"s_state\.shutdown_confirm_final\s*=\s*false",
+        status_led,
+    ):
+        failures.append("status_led.c: shutdown confirmation cancel must clear final and non-final cues after failed PWR_HOLD")
     if re.search(r"\.mem_block_symbols\s*=\s*64\b", status_led_backend):
         failures.append(
             "status_led_strip_backend.c: RMT mem_block_symbols=64 consumes two ESP32-S3 RMT blocks per strip and leaves fewer than four TX channels"
