@@ -201,14 +201,18 @@ static void ble_hid_gap_log_adv_state(
 }
 
 /*
- * Legacy advertising has a hard 31-byte payload limit. With flags,
- * appearance and one 16-bit HID UUID, the current 17-byte product name fits
- * exactly under that limit. A longer complete local name can only fit in scan
- * response if it owns that 31-byte legacy payload, so custom long names trade
- * advertised service UUIDs for an untruncated user-visible name.
+ * Legacy advertising has a hard 31-byte payload limit. Normal advertising keeps
+ * flags + appearance + one 16-bit HID UUID + a short local name. During the
+ * first-pairing / recovery window we temporarily trade the primary HID UUID for
+ * the Microsoft Swift Pair manufacturer section so Windows can show its native
+ * "Connect" toast; the GATT database still exposes HID/audio/OTA services after
+ * the central connects.
  */
 #define BLE_HID_ADV_NAME_MAX_LEN 17
 #define BLE_HID_SCAN_RSP_NAME_MAX_LEN 29
+#define BLE_HID_SWIFT_PAIR_MFG_DATA_LEN 5
+#define BLE_HID_SWIFT_PAIR_DISPLAY_NAME_MAX_WITH_APPEARANCE 17
+#define BLE_HID_SWIFT_PAIR_DISPLAY_NAME_MAX_WITHOUT_APPEARANCE 21
 #define BLE_HID_GAP_SERVICE_CHANGED_NVS_NAMESPACE "ble_gap"
 #define BLE_HID_GAP_SERVICE_CHANGED_STATE_KEY "svcchg_fw"
 #define BLE_HID_GAP_RANDOM_IDENTITY_ADDR_KEY "rnd_id_addr"
@@ -216,6 +220,18 @@ static void ble_hid_gap_log_adv_state(
 #define BLE_HID_GAP_SERVICE_CHANGED_START_HANDLE 0x0001
 #define BLE_HID_GAP_SERVICE_CHANGED_END_HANDLE 0xffff
 #define BLE_HID_GAP_RECOVERY_PAIRING_WINDOW_MS 120000LL
+
+static const uint8_t s_swift_pair_mfg_data[BLE_HID_SWIFT_PAIR_MFG_DATA_LEN] = {
+    0x06, 0x00, /* Microsoft Bluetooth SIG company identifier, little-endian. */
+    0x03,       /* Swift Pair beacon ID for BLE peripherals. */
+    0x00,       /* BLE-only pairing scenario. */
+    0x80,       /* Reserved RSSI byte: let Windows use measured RSSI. */
+};
+static uint8_t s_swift_pair_mfg_payload[
+    BLE_HID_SWIFT_PAIR_MFG_DATA_LEN + BLE_HID_SCAN_RSP_NAME_MAX_LEN];
+static const char *s_adv_device_name = NULL;
+static size_t s_adv_device_name_len = 0;
+static uint16_t s_adv_appearance = 0;
 
 static int64_t ble_hid_gap_now_ms(void)
 {
@@ -736,24 +752,66 @@ static esp_err_t ble_hid_gap_request_preferred_2m_phy(const char *policy)
     return accepted ? ESP_OK : ESP_FAIL;
 }
 
-esp_err_t esp_hid_ble_gap_adv_init(uint16_t appearance, const char *device_name)
+static bool ble_hid_gap_configure_swift_pair_fields(void)
 {
+    if (s_adv_device_name == NULL || s_adv_device_name_len == 0) {
+        return false;
+    }
+
+    const bool include_appearance =
+        s_adv_device_name_len <= BLE_HID_SWIFT_PAIR_DISPLAY_NAME_MAX_WITH_APPEARANCE;
+    if (s_adv_device_name_len >
+        BLE_HID_SWIFT_PAIR_DISPLAY_NAME_MAX_WITHOUT_APPEARANCE) {
+        return false;
+    }
+
     memset(&s_adv_fields, 0, sizeof(s_adv_fields));
     memset(&s_scan_rsp_fields, 0, sizeof(s_scan_rsp_fields));
 
     s_adv_fields.flags = BLE_HS_ADV_F_DISC_GEN | BLE_HS_ADV_F_BREDR_UNSUP;
-    s_adv_fields.appearance = appearance;
+    if (include_appearance) {
+        s_adv_fields.appearance = s_adv_appearance;
+        s_adv_fields.appearance_is_present = 1;
+    }
+
+    memcpy(
+        s_swift_pair_mfg_payload,
+        s_swift_pair_mfg_data,
+        BLE_HID_SWIFT_PAIR_MFG_DATA_LEN);
+    memcpy(
+        s_swift_pair_mfg_payload + BLE_HID_SWIFT_PAIR_MFG_DATA_LEN,
+        s_adv_device_name,
+        s_adv_device_name_len);
+    s_adv_fields.mfg_data = s_swift_pair_mfg_payload;
+    s_adv_fields.mfg_data_len =
+        BLE_HID_SWIFT_PAIR_MFG_DATA_LEN + s_adv_device_name_len;
+
+    s_scan_rsp_fields.name = (uint8_t *)s_adv_device_name;
+    s_scan_rsp_fields.name_len = s_adv_device_name_len;
+    s_scan_rsp_fields.name_is_complete = 1;
+    return true;
+}
+
+static bool ble_hid_gap_configure_normal_adv_fields(void)
+{
+    if (s_adv_device_name == NULL || s_adv_device_name_len == 0) {
+        return false;
+    }
+
+    memset(&s_adv_fields, 0, sizeof(s_adv_fields));
+    memset(&s_scan_rsp_fields, 0, sizeof(s_scan_rsp_fields));
+
+    s_adv_fields.flags = BLE_HS_ADV_F_DISC_GEN | BLE_HS_ADV_F_BREDR_UNSUP;
+    s_adv_fields.appearance = s_adv_appearance;
     s_adv_fields.appearance_is_present = 1;
     s_adv_fields.uuids16 = &s_hid_service_uuid;
     s_adv_fields.num_uuids16 = 1;
     s_adv_fields.uuids16_is_complete = 1;
 
-    size_t device_name_len = strlen(device_name);
-    bool name_in_adv = device_name_len <= BLE_HID_ADV_NAME_MAX_LEN;
-
+    bool name_in_adv = s_adv_device_name_len <= BLE_HID_ADV_NAME_MAX_LEN;
     if (name_in_adv) {
-        s_adv_fields.name = (uint8_t *)device_name;
-        s_adv_fields.name_len = device_name_len;
+        s_adv_fields.name = (uint8_t *)s_adv_device_name;
+        s_adv_fields.name_len = s_adv_device_name_len;
         s_adv_fields.name_is_complete = 1;
 
         s_scan_rsp_fields.tx_pwr_lvl_is_present = 1;
@@ -765,12 +823,19 @@ esp_err_t esp_hid_ble_gap_adv_init(uint16_t appearance, const char *device_name)
          */
         s_scan_rsp_fields.uuids128_is_complete = 0;
     } else {
-        s_scan_rsp_fields.name = (uint8_t *)device_name;
-        s_scan_rsp_fields.name_len = device_name_len > BLE_HID_SCAN_RSP_NAME_MAX_LEN
-                                         ? BLE_HID_SCAN_RSP_NAME_MAX_LEN
-                                         : device_name_len;
+        s_scan_rsp_fields.name = (uint8_t *)s_adv_device_name;
+        s_scan_rsp_fields.name_len = s_adv_device_name_len;
         s_scan_rsp_fields.name_is_complete = 1;
     }
+    return name_in_adv;
+}
+
+esp_err_t esp_hid_ble_gap_adv_init(uint16_t appearance, const char *device_name)
+{
+    s_adv_device_name = device_name;
+    s_adv_device_name_len = strlen(device_name);
+    s_adv_appearance = appearance;
+    bool name_in_adv = ble_hid_gap_configure_normal_adv_fields();
 
     /* Initialize the security configuration */
     ble_hs_cfg.sm_io_cap = BLE_SM_IO_CAP_NO_IO;
@@ -783,8 +848,8 @@ esp_err_t esp_hid_ble_gap_adv_init(uint16_t appearance, const char *device_name)
     ESP_LOGI(
         TAG,
         "NimBLE advertising configured: appearance=0x%04x name=%s name_in_adv=%s io_cap=%u bonding=%u mitm=%u sc=%u",
-        appearance,
-        device_name,
+        s_adv_appearance,
+        s_adv_device_name,
         name_in_adv ? "yes" : "scan_rsp",
         ble_hs_cfg.sm_io_cap,
         ble_hs_cfg.sm_bonding,
@@ -1297,11 +1362,42 @@ esp_err_t esp_hid_ble_gap_adv_start(void)
         return ESP_OK;
     }
 
+    rc = ble_store_util_bonded_peers(
+        bonded_peers,
+        &bonded_peer_count,
+        sizeof(bonded_peers) / sizeof(bonded_peers[0]));
+    const bool pairing_window = ble_hid_gap_recovery_pairing_window_open();
+    if (rc == 0) {
+        ESP_LOGI(TAG, "NimBLE bonded peers=%d", bonded_peer_count);
+        if (bonded_peer_count > 0) {
+            direct_peer_addr = bonded_peers[0];
+            start_directed =
+                s_directed_adv_pending && !s_low_power_advertising && !pairing_window;
+        }
+    } else {
+        ESP_LOGW(TAG, "NimBLE bonded peer lookup failed: rc=%d", rc);
+    }
+
+    const bool swift_pair_requested =
+        pairing_window || (bonded_peer_count == 0 && !s_low_power_advertising);
+    const bool swift_pair_enabled =
+        swift_pair_requested && ble_hid_gap_configure_swift_pair_fields();
+    if (!swift_pair_enabled) {
+        (void)ble_hid_gap_configure_normal_adv_fields();
+    }
+    ESP_LOGI(
+        TAG,
+        "NimBLE advertisement payload profile=%s name_len=%u pairing_window=%u bonded_peers=%d",
+        swift_pair_enabled ? "swift_pair" : "normal",
+        (unsigned)s_adv_device_name_len,
+        pairing_window ? 1u : 0u,
+        bonded_peer_count);
+
     rc = ble_gap_adv_set_fields(&s_adv_fields);
     if (rc != 0) {
         ESP_LOGE(TAG, "error setting advertisement data; rc=%d", rc);
         diag_log(DIAG_SRC_BLE_GAP, DIAG_GAP_ADV_START, DIAG_SEV_WARN,
-                 0, (uint32_t)rc, 1, 0);
+                 0, (uint32_t)rc, swift_pair_enabled ? 7 : 1, 0);
         return ESP_FAIL;
     }
 
@@ -1309,22 +1405,8 @@ esp_err_t esp_hid_ble_gap_adv_start(void)
     if (rc != 0) {
         ESP_LOGE(TAG, "error setting scan response data; rc=%d", rc);
         diag_log(DIAG_SRC_BLE_GAP, DIAG_GAP_ADV_START, DIAG_SEV_WARN,
-                 0, (uint32_t)rc, 2, 0);
+                 0, (uint32_t)rc, swift_pair_enabled ? 8 : 2, 0);
         return ESP_FAIL;
-    }
-
-    rc = ble_store_util_bonded_peers(
-        bonded_peers,
-        &bonded_peer_count,
-        sizeof(bonded_peers) / sizeof(bonded_peers[0]));
-    if (rc == 0) {
-        ESP_LOGI(TAG, "NimBLE bonded peers=%d", bonded_peer_count);
-        if (bonded_peer_count > 0) {
-            direct_peer_addr = bonded_peers[0];
-            start_directed = s_directed_adv_pending && !s_low_power_advertising;
-        }
-    } else {
-        ESP_LOGW(TAG, "NimBLE bonded peer lookup failed: rc=%d", rc);
     }
 
     /* Begin advertising. */

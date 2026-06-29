@@ -662,6 +662,10 @@ CHECKS = {
         "BLE recovery identity rotated during active pairing window",
         "stale pairing encryption failure",
         "BLE identity rotated and device is discoverable for first-time pairing",
+        "s_swift_pair_mfg_data",
+        "BLE_HID_SWIFT_PAIR_DISPLAY_NAME_MAX_WITHOUT_APPEARANCE",
+        "ble_hid_gap_configure_swift_pair_fields",
+        'swift_pair_enabled ? "swift_pair" : "normal"',
         "status_led_set_error(STATUS_LED_ERROR_DOMAIN_BLE",
         "status_led_clear_error(STATUS_LED_ERROR_DOMAIN_BLE)",
     ],
@@ -1074,6 +1078,22 @@ def main() -> int:
             )
     if "BLE identity kept stable" in ble_gap or "stable BLE identity" in ble_gap:
         failures.append("ble_hid_gap_esp32.c: re-pair recovery must rotate BLE identity, not keep it stable")
+    if "s_scan_rsp_fields.name_len = device_name_len > BLE_HID_SCAN_RSP_NAME_MAX_LEN" in ble_gap:
+        failures.append("ble_hid_gap_esp32.c: BLE rename advertising must not silently truncate custom names")
+    try:
+        swift_pair_body = extract_c_function(ble_gap, "ble_hid_gap_configure_swift_pair_fields")
+    except ValueError as exc:
+        failures.append(f"ble_hid_gap_esp32.c: {exc}")
+    else:
+        if (
+            "BLE_HID_SWIFT_PAIR_DISPLAY_NAME_MAX_WITHOUT_APPEARANCE" not in swift_pair_body
+            or "return false;" not in swift_pair_body
+            or "s_adv_fields.mfg_data = s_swift_pair_mfg_payload;" not in swift_pair_body
+            or "s_adv_fields.mfg_data_len =" not in swift_pair_body
+        ):
+            failures.append(
+                "ble_hid_gap_esp32.c: Swift Pair must fall back to normal advertising when the full name cannot fit"
+            )
     try:
         recovery_body = extract_c_function(ble_gap, "ble_hid_gap_forget_bonds_and_repair")
     except ValueError as exc:
