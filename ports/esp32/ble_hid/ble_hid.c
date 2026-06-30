@@ -1555,7 +1555,7 @@ esp_err_t ble_hid_init(void)
     }
     ESP_LOGI(TAG, "BLE device name configured: gap/hid/advertising=%s", s_device_name);
 
-    ret = ble_hid_gap_configure_advertising(ESP_HID_APPEARANCE_KEYBOARD, s_device_name);
+    ret = ble_hid_gap_configure_advertising(ESP_HID_APPEARANCE_GENERIC, s_device_name);
     if (ret != ESP_OK) {
         ESP_LOGE(TAG, "BLE advertising config failed: %s", esp_err_to_name(ret));
         ble_hid_publish_readiness(

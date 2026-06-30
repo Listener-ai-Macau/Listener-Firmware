@@ -75,14 +75,18 @@ Assert-Order $advStart 'if (conn.connected)' 'if (ble_gap_adv_active())' `
     "connected guard must run before advertising-active handling"
 Assert-Order $advStart 'if (conn.connected)' 'status_led_set_ble_state(STATUS_LED_BLE_RECONNECTING, false);' `
     "connected guard must run before directed advertising can set reconnecting LED"
-Assert-Order $advStart 'if (conn.connected)' 'bonded_peer_count <= 0' `
+Assert-Order $advStart 'if (conn.connected)' 'pairing_window' `
     "connected guard must run before undirected advertising chooses pairing or reconnecting LED"
-Assert-Contains $advStart 'status_led_set_ble_state\(\s*\(swift_pair_enabled\s*\|\|\s*bonded_peer_count\s*<=\s*0\)\s*\?\s*STATUS_LED_BLE_PAIRING\s*:\s*STATUS_LED_BLE_RECONNECTING,\s*false\);' `
-    "undirected advertising must show pairing only for Swift Pair/first-pair and reconnecting for bonded peers"
+Assert-Contains $advStart 'status_led_set_ble_state\(\s*pairing_window\s*\?\s*STATUS_LED_BLE_PAIRING\s*:\s*STATUS_LED_BLE_RECONNECTING,\s*false\);' `
+    "undirected advertising must show pairing only during explicit recovery pairing windows and reconnecting otherwise"
+Assert-Contains $gap 'BLE reconnect request kept existing active advertising[\s\S]*?ble_hid_gap_recovery_pairing_window_open\(\)\s*\?\s*STATUS_LED_BLE_PAIRING\s*:\s*STATUS_LED_BLE_RECONNECTING' `
+    "reconnect requests must not turn normal active advertising into pairing LED state"
 Assert-Contains $gap 'ble_hid_gap_set_connection_state\(true,\s*event->connect\.conn_handle\);[\s\S]*?status_led_set_ble_state\(STATUS_LED_BLE_CONNECTED,\s*true\);' `
     "GAP connect event must mark connected before refreshing connected LED"
 Assert-Contains $gap 'ble_hid_gap_set_connection_state\(false,\s*BLE_HS_CONN_HANDLE_NONE\);[\s\S]*?status_led_set_ble_state\(STATUS_LED_BLE_RECONNECTING,\s*false\);' `
     "GAP disconnect event must clear connected before reconnecting LED"
+Assert-Contains $gap 'case BLE_GAP_EVENT_DISCONNECT:[\s\S]*?ble_hid_gap_get_bonded_peer_count\(&bonded_peer_count\)[\s\S]*?bonded_peer_count\s*>\s*0[\s\S]*?ble_hid_gap_close_recovery_pairing_window\("bond restored after recovery disconnect"\)[\s\S]*?leaving pairing LED for reconnect/find-Type state[\s\S]*?ble_hid_gap_start_advertising\(\)' `
+    "recovery disconnect must leave pairing LED once Windows has restored a bond, so reconnect/find-Type LED can take over"
 Assert-Contains $gap 'static\s+esp_err_t\s+ble_hid_gap_refresh_configured_device_name\(const char \*context\)[\s\S]*?listener_device_get_ble_name\(\)[\s\S]*?ble_svc_gap_device_name_set\(device_name\)[\s\S]*?ble_hid_gap_configure_normal_adv_fields\(\)[\s\S]*?device_settings_mark_ble_name_applied\(\)' `
     "advertising must refresh the currently configured BLE name and mark it applied"
 Assert-Contains $gap 'esp_err_t\s+esp_hid_ble_gap_adv_start\(void\)[\s\S]*?ble_hid_gap_refresh_configured_device_name\("advertising_start"\)' `
@@ -91,8 +95,16 @@ Assert-Contains $gap 'esp_err_t\s+ble_hid_gap_forget_bonds_and_repair\(void\)[\s
     "forget-bonds recovery must clear bonds, open the pairing window, and advertise the current stable identity"
 Assert-Contains $gap 'refresh_pairing_window[\s\S]*?pairing window already active; refreshing advertising with stable BLE identity[\s\S]*?ble_hid_gap_start_advertising\(\)[\s\S]*?pairing window refreshed with stable BLE identity' `
     "explicit recovery during an already-open pairing window must refresh advertising with the current stable identity"
-Assert-Contains $gap 'case BLE_GAP_EVENT_ENC_CHANGE:[\s\S]*?encryption failed or connection already gone[\s\S]*?ble_hid_gap_recovery_pairing_window_open\(\)[\s\S]*?stale pairing encryption failure[\s\S]*?keeping stable BLE identity[\s\S]*?ble_gap_terminate\(event->enc_change\.conn_handle,\s*BLE_ERR_REM_USER_CONN_TERM\)' `
-    "recovery pairing window must treat encryption failures as stale host pairing and keep the stable identity discoverable"
+Assert-Contains $gap 'case BLE_GAP_EVENT_CONNECT:[\s\S]*?const bool recovery_pairing_window\s*=\s*ble_hid_gap_recovery_pairing_window_open\(\);[\s\S]*?conn_desc_valid\s*&&\s*recovery_pairing_window[\s\S]*?ble_hid_gap_request_recovery_security_once\(event->connect\.conn_handle,\s*"connect"\)[\s\S]*?else\s+if\s*\(conn_desc_valid\)[\s\S]*?ble_gap_security_initiate\(event->connect\.conn_handle\)' `
+    "recovery pairing window must initiate security immediately on the Windows pairing connection"
+Assert-Contains $gap 'case BLE_GAP_EVENT_SUBSCRIBE:[\s\S]*?ble_hid_gap_request_recovery_security_once\(event->subscribe\.conn_handle,\s*"subscribe"\);[\s\S]*?case BLE_GAP_EVENT_MTU:[\s\S]*?ble_hid_gap_request_recovery_security_once\(event->mtu\.conn_handle,\s*"mtu"\);' `
+    "recovery pairing must keep MTU/subscribe security requests as idempotent backstops"
+Assert-Contains $gap 'case BLE_GAP_EVENT_ENC_CHANGE:[\s\S]*?desc\.sec_state\.encrypted\s*\|\|\s*desc\.sec_state\.bonded[\s\S]*?ble_hid_gap_close_recovery_pairing_window\("secure connection established"\)[\s\S]*?status_led_set_ble_state\(STATUS_LED_BLE_CONNECTED,\s*false\);' `
+    "successful recovery pairing must switch from pairing LED to connected find-Type double flash"
+Assert-Contains $gap 'case BLE_GAP_EVENT_ENC_CHANGE:[\s\S]*?encryption failed or connection already gone[\s\S]*?ble_hid_gap_recovery_pairing_window_open\(\)[\s\S]*?pairing encryption failure[\s\S]*?keeping stable BLE identity and waiting for central retry/disconnect' `
+    "recovery pairing window must keep the stable identity discoverable while Windows retries or disconnects after encryption failure"
+Assert-NotContains $gap 'case BLE_GAP_EVENT_ENC_CHANGE:[\s\S]*?ble_gap_terminate\(event->enc_change\.conn_handle,\s*BLE_ERR_REM_USER_CONN_TERM\)' `
+    "recovery encryption failure handling must not terminate the Windows pairing connection from ENC_CHANGE"
 Assert-Contains $hid 'ESP_HIDD_CONNECT_EVENT:[\s\S]*?s_ble_connected\s*=\s*true;[\s\S]*?status_led_set_ble_state\(STATUS_LED_BLE_CONNECTED,\s*true\);' `
     "HID connect event must mark HID-only connected state for Type-ready resync"
 Assert-Contains $hid 'ESP_HIDD_DISCONNECT_EVENT:[\s\S]*?s_ble_connected\s*=\s*false;[\s\S]*?status_led_set_ble_state\(STATUS_LED_BLE_RECONNECTING,\s*false\);' `

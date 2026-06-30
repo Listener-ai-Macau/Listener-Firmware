@@ -642,15 +642,22 @@ CHECKS = {
         "ble_audio_stream_poll_type_link",
     ],
     "ports/esp32/ble_hid_gap/ble_hid_gap_esp32.c": [
-        "? STATUS_LED_BLE_PAIRING",
+        "pairing_window\n                ? STATUS_LED_BLE_PAIRING",
         ": STATUS_LED_BLE_RECONNECTING",
-        "bonded_peer_count <= 0",
+        "BLE reconnect request kept existing active advertising",
+        "ble_hid_gap_recovery_pairing_window_open()\n                ? STATUS_LED_BLE_PAIRING",
+        "ble_hid_gap_get_bonded_peer_count(&bonded_peer_count)",
+        "bond restored after recovery disconnect",
+        "leaving pairing LED for reconnect/find-Type state",
+        "ble_hid_gap_request_recovery_security_once(event->mtu.conn_handle, \"mtu\")",
+        "ble_hid_gap_request_recovery_security_once(event->subscribe.conn_handle, \"subscribe\")",
         "status_led_notify_ble_repairing(\"ble_recovery_clear_bonds\")",
         "status_led_notify_ble_repairing(\"ble_recovery_refresh_pairing\")",
         "stable BLE identity",
-        "stale pairing encryption failure",
+        "pairing encryption failure",
         "BLE identity kept stable and device is discoverable for re-pair",
         "s_swift_pair_mfg_data",
+        "BLE_HID_SWIFT_PAIR_DISPLAY_NAME_MAX_WITH_HID_UUID",
         "BLE_HID_SWIFT_PAIR_DISPLAY_NAME_MAX_WITHOUT_APPEARANCE",
         "ble_hid_gap_configure_swift_pair_fields",
         'swift_pair_enabled ? "swift_pair" : "normal"',
@@ -1081,11 +1088,14 @@ def main() -> int:
         if (
             "BLE_HID_SWIFT_PAIR_DISPLAY_NAME_MAX_WITHOUT_APPEARANCE" not in swift_pair_body
             or "return false;" not in swift_pair_body
+            or "BLE_HID_SWIFT_PAIR_DISPLAY_NAME_MAX_WITH_HID_UUID" not in swift_pair_body
+            or "s_adv_fields.uuids16 = &s_hid_service_uuid;" not in swift_pair_body
+            or "s_adv_fields.uuids16_is_complete = 1;" not in swift_pair_body
             or "s_adv_fields.mfg_data = s_swift_pair_mfg_payload;" not in swift_pair_body
             or "s_adv_fields.mfg_data_len =" not in swift_pair_body
         ):
             failures.append(
-                "ble_hid_gap_esp32.c: Swift Pair must fall back to normal advertising when the full name cannot fit"
+                "ble_hid_gap_esp32.c: Swift Pair must keep HID UUID for short names and fall back to normal advertising when the full name cannot fit"
             )
     try:
         recovery_body = extract_c_function(ble_gap, "ble_hid_gap_forget_bonds_and_repair")
@@ -1118,6 +1128,11 @@ def main() -> int:
     disconnect_index = ble_gap.find("case BLE_GAP_EVENT_DISCONNECT:")
     disconnect_stable_index = ble_gap.find("pairing reset continues after disconnect, BLE identity kept stable", disconnect_index)
     disconnect_adv_index = ble_gap.find("ble_hid_gap_start_advertising();", disconnect_index)
+    disconnect_bond_index = ble_gap.find("bonded_peer_count > 0", disconnect_index)
+    disconnect_close_index = ble_gap.find(
+        'ble_hid_gap_close_recovery_pairing_window("bond restored after recovery disconnect")',
+        disconnect_index,
+    )
     if (
         disconnect_index < 0
         or disconnect_adv_index < 0
@@ -1127,8 +1142,32 @@ def main() -> int:
         failures.append(
             "ble_hid_gap_esp32.c: disconnect recovery must restart advertising with the stable BLE identity"
         )
+    if (
+        disconnect_index < 0
+        or disconnect_bond_index < 0
+        or disconnect_close_index < 0
+        or not (disconnect_index < disconnect_bond_index < disconnect_close_index < disconnect_adv_index)
+    ):
+        failures.append(
+            "ble_hid_gap_esp32.c: recovery disconnect must close pairing window before advertising when a new bond exists"
+        )
     enc_change_index = ble_gap.find("case BLE_GAP_EVENT_ENC_CHANGE:")
-    enc_failure_index = ble_gap.find("stale pairing encryption failure", enc_change_index)
+    enc_success_index = ble_gap.find('ble_hid_gap_close_recovery_pairing_window("secure connection established")', enc_change_index)
+    enc_connected_led_index = ble_gap.find(
+        "status_led_set_ble_state(STATUS_LED_BLE_CONNECTED, false)",
+        enc_success_index,
+    )
+    if (
+        enc_change_index < 0
+        or enc_success_index < 0
+        or enc_connected_led_index < 0
+        or not (enc_change_index < enc_success_index < enc_connected_led_index)
+    ):
+        failures.append(
+            "ble_hid_gap_esp32.c: successful recovery pairing must move LED from pairing to connected find-Type state"
+        )
+    enc_failure_index = ble_gap.find("pairing encryption failure", enc_change_index)
+    enc_wait_index = ble_gap.find("waiting for central retry/disconnect", enc_change_index)
     enc_terminate_index = ble_gap.find(
         "ble_gap_terminate(event->enc_change.conn_handle, BLE_ERR_REM_USER_CONN_TERM)",
         enc_change_index,
@@ -1136,11 +1175,15 @@ def main() -> int:
     if (
         enc_change_index < 0
         or enc_failure_index < 0
-        or enc_terminate_index < 0
-        or not (enc_change_index < enc_failure_index < enc_terminate_index)
+        or enc_wait_index < 0
+        or not (enc_change_index < enc_failure_index < enc_wait_index)
     ):
         failures.append(
-            "ble_hid_gap_esp32.c: recovery encryption failures must terminate stale pairing while keeping stable BLE identity"
+            "ble_hid_gap_esp32.c: recovery encryption failures must keep stable BLE identity while Windows retries or disconnects"
+        )
+    if enc_terminate_index >= 0:
+        failures.append(
+            "ble_hid_gap_esp32.c: recovery ENC_CHANGE failures must not terminate the Windows pairing connection"
         )
     recording_active_preview = re.search(
         r"}\s*else\s+if\s*\(\s*strcasecmp\(state,\s*\"capture\"\)\s*==\s*0\s*\|\|"
@@ -1686,10 +1729,14 @@ def main() -> int:
         failures.append("ble_hid_gap_esp32.c: HID reconnect requests must not stop/restart an already active normal advertisement")
     if (
         "const bool conn_desc_valid = rc == 0;" not in ble_hid_gap
-        or "if (conn_desc_valid) {\n            rc = ble_gap_security_initiate(event->connect.conn_handle);" not in ble_hid_gap
+        or "const bool recovery_pairing_window = ble_hid_gap_recovery_pairing_window_open();" not in ble_hid_gap
+        or "if (conn_desc_valid && recovery_pairing_window) {\n            ble_hid_gap_request_recovery_security_once(event->connect.conn_handle, \"connect\");" not in ble_hid_gap
+        or "} else if (conn_desc_valid) {\n            rc = ble_gap_security_initiate(event->connect.conn_handle);" not in ble_hid_gap
+        or 'ble_hid_gap_request_recovery_security_once(event->mtu.conn_handle, "mtu");' not in ble_hid_gap
+        or 'ble_hid_gap_request_recovery_security_once(event->subscribe.conn_handle, "subscribe");' not in ble_hid_gap
         or 'ESP_LOGW(TAG, "security initiate skipped: missing connection descriptor");' not in ble_hid_gap
     ):
-        failures.append("ble_hid_gap_esp32.c: security initiate must be guarded by a valid connection descriptor")
+        failures.append("ble_hid_gap_esp32.c: security initiate must be guarded by a valid descriptor, immediate during recovery pairing, and idempotent on MTU/subscribe")
     if 'status_led_notify_success("recording_stop_done")' in voice_recording_control:
         failures.append("voice_recording_control.c: recording STOP must not show OK before Type final success")
     if 'status_led_notify_success("recording_session_done")' in voice_recording_control:
