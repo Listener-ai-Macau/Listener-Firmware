@@ -645,15 +645,9 @@ CHECKS = {
         "status_led_set_ble_state(STATUS_LED_BLE_PAIRING, false)",
         "status_led_notify_ble_repairing(\"ble_recovery_clear_bonds\")",
         "status_led_notify_ble_repairing(\"ble_recovery_refresh_pairing\")",
-        "s_recovery_identity_rotate_pending",
-        "ble_hid_gap_store_static_random_identity",
-        "ble_hid_gap_rotate_static_random_identity",
-        "ble_hs_id_gen_rnd(0, &addr)",
-        "BLE recovery identity rotated after disconnect",
-        "BLE recovery identity rotated for re-pair",
-        "BLE recovery identity rotated during active pairing window",
+        "stable BLE identity",
         "stale pairing encryption failure",
-        "BLE identity rotated and device is discoverable for first-time pairing",
+        "BLE identity kept stable and device is discoverable for re-pair",
         "s_swift_pair_mfg_data",
         "BLE_HID_SWIFT_PAIR_DISPLAY_NAME_MAX_WITHOUT_APPEARANCE",
         "ble_hid_gap_configure_swift_pair_fields",
@@ -1069,8 +1063,12 @@ def main() -> int:
             failures.append(
                 f"status_led.c: {function_name} must cancel stale transition clear before active work renders key feedback"
             )
-    if "BLE identity kept stable" in ble_gap or "stable BLE identity" in ble_gap:
-        failures.append("ble_hid_gap_esp32.c: re-pair recovery must rotate BLE identity, not keep it stable")
+    if (
+        "s_recovery_identity_rotate_pending" in ble_gap
+        or "ble_hid_gap_rotate_static_random_identity" in ble_gap
+        or "ble_hs_id_gen_rnd(0, &addr)" in ble_gap
+    ):
+        failures.append("ble_hid_gap_esp32.c: re-pair recovery must keep a stable BLE identity, not rotate it")
     if "s_scan_rsp_fields.name_len = device_name_len > BLE_HID_SCAN_RSP_NAME_MAX_LEN" in ble_gap:
         failures.append("ble_hid_gap_esp32.c: BLE rename advertising must not silently truncate custom names")
     try:
@@ -1093,47 +1091,42 @@ def main() -> int:
         failures.append(f"ble_hid_gap_esp32.c: {exc}")
     else:
         clear_index = recovery_body.find("rc = ble_store_clear();")
-        rotate_index = recovery_body.find(
-            'ble_hid_gap_rotate_static_random_identity("BLE recovery identity rotated for re-pair")',
-            clear_index,
-        )
-        adv_index = recovery_body.find("esp_err_t adv_ret = ble_hid_gap_start_advertising();", rotate_index)
-        if clear_index < 0 or rotate_index < 0 or adv_index < 0 or not (clear_index < rotate_index < adv_index):
+        adv_index = recovery_body.find("esp_err_t adv_ret = ble_hid_gap_start_advertising();", clear_index)
+        if clear_index < 0 or adv_index < 0 or not (clear_index < adv_index):
             failures.append(
-                "ble_hid_gap_esp32.c: recovery must clear bonds, rotate BLE identity, then restart advertising"
+                "ble_hid_gap_esp32.c: recovery must clear bonds, keep stable BLE identity, then restart advertising"
             )
-        refresh_index = recovery_body.find("pairing window already active; rotating identity and refreshing advertising")
-        refresh_rotate_index = recovery_body.find(
-            'ble_hid_gap_rotate_static_random_identity("BLE recovery identity rotated during active pairing window")',
-            refresh_index,
-        )
+        refresh_index = recovery_body.find("pairing window already active; refreshing advertising with stable BLE identity")
         refresh_adv_index = recovery_body.find(
             "esp_err_t adv_ret = ble_hid_gap_start_advertising();",
-            refresh_rotate_index,
+            refresh_index,
         )
         if (
             refresh_index < 0
-            or refresh_rotate_index < 0
             or refresh_adv_index < 0
-            or not (refresh_index < refresh_rotate_index < refresh_adv_index)
+            or not (refresh_index < refresh_adv_index)
         ):
             failures.append(
-                "ble_hid_gap_esp32.c: active recovery window must rotate BLE identity before refreshing advertising"
+                "ble_hid_gap_esp32.c: active recovery window must refresh advertising while keeping stable BLE identity"
             )
-        if "s_recovery_identity_rotate_pending = true;" not in recovery_body:
+        if "stable identity will advertise after disconnect" not in recovery_body:
             failures.append(
-                "ble_hid_gap_esp32.c: connected recovery must defer identity rotation until after disconnect"
+                "ble_hid_gap_esp32.c: connected recovery must terminate first, then advertise the stable BLE identity after disconnect"
             )
     disconnect_index = ble_gap.find("case BLE_GAP_EVENT_DISCONNECT:")
-    pending_index = ble_gap.find("if (s_recovery_identity_rotate_pending)", disconnect_index)
-    disconnect_adv_index = ble_gap.find("ble_hid_gap_start_advertising();", pending_index)
-    if disconnect_index < 0 or pending_index < 0 or disconnect_adv_index < 0 or pending_index > disconnect_adv_index:
+    disconnect_stable_index = ble_gap.find("pairing reset continues after disconnect, BLE identity kept stable", disconnect_index)
+    disconnect_adv_index = ble_gap.find("ble_hid_gap_start_advertising();", disconnect_index)
+    if (
+        disconnect_index < 0
+        or disconnect_adv_index < 0
+        or disconnect_stable_index < 0
+        or disconnect_adv_index > disconnect_stable_index
+    ):
         failures.append(
-            "ble_hid_gap_esp32.c: disconnect recovery must rotate pending identity before advertising restarts"
+            "ble_hid_gap_esp32.c: disconnect recovery must restart advertising with the stable BLE identity"
         )
     enc_change_index = ble_gap.find("case BLE_GAP_EVENT_ENC_CHANGE:")
     enc_failure_index = ble_gap.find("stale pairing encryption failure", enc_change_index)
-    enc_pending_index = ble_gap.find("s_recovery_identity_rotate_pending = true;", enc_change_index)
     enc_terminate_index = ble_gap.find(
         "ble_gap_terminate(event->enc_change.conn_handle, BLE_ERR_REM_USER_CONN_TERM)",
         enc_change_index,
@@ -1141,12 +1134,11 @@ def main() -> int:
     if (
         enc_change_index < 0
         or enc_failure_index < 0
-        or enc_pending_index < 0
         or enc_terminate_index < 0
-        or not (enc_change_index < enc_pending_index < enc_failure_index < enc_terminate_index)
+        or not (enc_change_index < enc_failure_index < enc_terminate_index)
     ):
         failures.append(
-            "ble_hid_gap_esp32.c: recovery encryption failures must terminate stale pairing and rotate identity after disconnect"
+            "ble_hid_gap_esp32.c: recovery encryption failures must terminate stale pairing while keeping stable BLE identity"
         )
     recording_active_preview = re.search(
         r"}\s*else\s+if\s*\(\s*strcasecmp\(state,\s*\"capture\"\)\s*==\s*0\s*\|\|"
