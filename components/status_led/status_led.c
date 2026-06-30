@@ -140,6 +140,8 @@
 #define STATUS_LED_BLE_PAIRING_PULSE_PERCENT STATUS_LED_BLE_ATTENTION_PERCENT
 #define STATUS_LED_BLE_RECONNECT_MIN_PERCENT 10U
 #define STATUS_LED_BLE_RECONNECT_MAX_PERCENT STATUS_LED_BLE_ATTENTION_PERCENT
+#define STATUS_LED_BLE_CONNECTED_FIND_TYPE_PULSE_PERCENT STATUS_LED_BLE_RECONNECT_MAX_PERCENT
+#define STATUS_LED_BLE_CONNECTED_FIND_TYPE_PERIOD_MS 2000U
 #define STATUS_LED_BLE_TYPE_READY_STEADY_PERCENT 14U
 #define STATUS_LED_BATTERY_IDLE_BLE_HEARTBEAT_ON_MS 120U
 #define STATUS_LED_BATTERY_IDLE_BLE_HEARTBEAT_OFF_MS 7880U
@@ -2217,6 +2219,13 @@ static void status_led_render_ble_locked(status_led_frame_t *frame, uint32_t now
             color = status_led_token_locked(
                 ble_blue,
                 STATUS_LED_BLE_TYPE_READY_STEADY_PERCENT,
+                false);
+        } else if (status_led_double_pulse_on(
+                       ble_elapsed_ms,
+                       STATUS_LED_BLE_CONNECTED_FIND_TYPE_PERIOD_MS)) {
+            color = status_led_token_locked(
+                ble_blue,
+                STATUS_LED_BLE_CONNECTED_FIND_TYPE_PULSE_PERCENT,
                 false);
         }
         break;

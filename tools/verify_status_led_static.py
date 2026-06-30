@@ -755,6 +755,7 @@ CHECKS = {
         "The old host must pair again instead of silently reconnecting to the previous device identity",
         "ble_repair_ms_left",
         "A successful Type-ready transition is the steady blue connected indication",
+        "Plain Windows/HID-only connected uses a blue double-flash Type-search cue",
         "BLE animation phase is tracked separately",
         "`ble_transition_ms`",
         "Manual `~LED:PREVIEW` scenes temporarily hold their requested BLE state",
@@ -765,11 +766,11 @@ CHECKS = {
         "Re-pair uses a BLE plus EC11 confirmation cue",
         "current render-sampled RGB frame",
         "status_query_samples_current_render=1",
-        "ordinary HID-only `connected` keeps `LED2=BLE` dark",
+        "ordinary HID-only `connected` uses a blue double-flash Type-search cue",
         "`TYPE_READY` is the Listener-Type-ready BLE state",
         "it uses steady blue",
         "30 second Type-ready hold",
-        "Active connected state is Type-gated",
+        "Steady connected state is Type-gated",
         "In connected/disconnected low-power idle, the low-power renderer keeps PWR visible and leaves connected/TYPE_READY BLE dark",
         "External power overrides battery-color display on `PWR`",
         "continuous slow white breath",
@@ -1263,15 +1264,23 @@ def main() -> int:
         r"STATUS_LED_BLE_CONNECTED_CONFIRM_MS|"
         r"STATUS_LED_BLE_CONNECTED_BASE_PERCENT",
         status_led,
-    ) or not re.search(
+    ):
+        failures.append("status_led.c: active BLE rendering must not use the old low-base HID-only connected heartbeat/confirmation renderer")
+    if "STATUS_LED_BLE_CONNECTED_FIND_TYPE_PERIOD_MS 2000U" not in status_led:
+        failures.append("status_led.c: HID-only connected must keep the bounded find-Type double-flash period")
+    if "STATUS_LED_BLE_CONNECTED_FIND_TYPE_PULSE_PERCENT STATUS_LED_BLE_RECONNECT_MAX_PERCENT" not in status_led:
+        failures.append("status_led.c: HID-only connected find-Type flash must stay near reconnect brightness")
+    if not re.search(
         r"case\s+STATUS_LED_BLE_CONNECTED:[\s\S]*?"
         r"if\s*\(\s*status_led_ota_ble_steady_locked\(now_ms\)\s*\)[\s\S]*?"
         r"STATUS_LED_BLE_TYPE_READY_STEADY_PERCENT[\s\S]*?"
+        r"status_led_double_pulse_on\(\s*ble_elapsed_ms,\s*STATUS_LED_BLE_CONNECTED_FIND_TYPE_PERIOD_MS\s*\)[\s\S]*?"
+        r"STATUS_LED_BLE_CONNECTED_FIND_TYPE_PULSE_PERCENT[\s\S]*?"
         r"break;\s*case\s+STATUS_LED_BLE_TYPE_READY:[\s\S]*?"
         r"STATUS_LED_BLE_TYPE_READY_STEADY_PERCENT",
         status_led,
     ):
-        failures.append("status_led.c: active BLE rendering must keep HID-only connected dark; only TYPE_READY or active OTA transfer may be steady blue")
+        failures.append("status_led.c: active BLE rendering must make HID-only connected a find-Type double flash; only TYPE_READY or active OTA transfer may be steady blue")
     if not re.search(
         r"void\s+status_led_set_ota_active[\s\S]*?else\s*\{[\s\S]*?"
         r"status_led_clear_ota_locked\(\);[\s\S]*?\}"

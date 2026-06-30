@@ -56,8 +56,8 @@ STALE_PATTERNS = [
         "old connected BLE brightness; current generic connected percent is lower",
     ),
     PatternRule(
-        re.compile(r"ordinary HID-only BLE connected stays visible", re.IGNORECASE),
-        "old BLE LED policy: HID-only connected must keep the BLE lamp dark until Listener-Type is ready",
+        re.compile(r"ordinary HID-only BLE connected stays visible as steady blue", re.IGNORECASE),
+        "old BLE LED policy: HID-only connected may only use the find-Type double flash until Listener-Type is ready",
     ),
     PatternRule(
         re.compile(r"low-base blue double-flash heartbeat", re.IGNORECASE),
@@ -98,8 +98,8 @@ REQUIRED_TEXT = [
     ),
     RequiredText(
         "docs/features/status_led.md",
-        re.compile(r"ordinary HID-only `connected` keeps `LED2=BLE` dark", re.IGNORECASE),
-        "status LED feature doc must state that HID-only connected does not light the BLE lamp",
+        re.compile(r"ordinary HID-only `connected` uses a blue double-flash Type-search cue", re.IGNORECASE),
+        "status LED feature doc must state that HID-only connected uses the find-Type cue instead of steady blue",
     ),
     RequiredText(
         "docs/features/status_led.md",
@@ -123,8 +123,8 @@ REQUIRED_TEXT = [
     ),
     RequiredText(
         "docs/features/low_power_wake_policy.md",
-        re.compile(r"ordinary HID-only BLE connected keeps `LED2=BLE` dark", re.IGNORECASE),
-        "low-power policy doc must state that HID-only connected does not light the BLE lamp",
+        re.compile(r"ordinary HID-only BLE connected uses a blue double-flash Type-search cue", re.IGNORECASE),
+        "low-power policy doc must state that HID-only connected uses the find-Type cue while active",
     ),
     RequiredText(
         "docs/features/firmware-feature-map.md",
@@ -133,8 +133,8 @@ REQUIRED_TEXT = [
     ),
     RequiredText(
         "docs/features/firmware-feature-map.md",
-        re.compile(r"keeps quiet ACTIVE HID-only BLE dark", re.IGNORECASE),
-        "feature map must summarize the Type-gated BLE lamp behavior",
+        re.compile(r"keeps quiet ACTIVE HID-only BLE in a blue double-flash Type-search cue", re.IGNORECASE),
+        "feature map must summarize the active HID-only find-Type BLE behavior",
     ),
     RequiredText(
         "tools/verify_status_led_static.py",

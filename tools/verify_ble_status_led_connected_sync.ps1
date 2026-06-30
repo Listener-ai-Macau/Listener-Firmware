@@ -161,10 +161,14 @@ Assert-Contains $statusLed 'STATUS_LED_BATTERY_IDLE_BLE_HEARTBEAT_ON_MS\s+120U' 
     "battery idle BLE heartbeat must be brief"
 Assert-Contains $statusLed 'STATUS_LED_BLE_TYPE_READY_STEADY_PERCENT\s+14U' `
     "TYPE_READY must use steady blue"
-Assert-Contains $statusLed 'case STATUS_LED_BLE_CONNECTED:[\s\S]*?if\s*\(\s*status_led_ota_ble_steady_locked\(now_ms\)\s*\)[\s\S]*?STATUS_LED_BLE_TYPE_READY_STEADY_PERCENT[\s\S]*?break;\s*case STATUS_LED_BLE_TYPE_READY:[\s\S]*?STATUS_LED_BLE_TYPE_READY_STEADY_PERCENT' `
-    "HID-only connected must keep BLE dark unless OTA is active, while TYPE_READY stays steady blue"
+Assert-Contains $statusLed 'STATUS_LED_BLE_CONNECTED_FIND_TYPE_PERIOD_MS\s+2000U' `
+    "HID-only connected must use a bounded find-Type double-flash period"
+Assert-Contains $statusLed 'STATUS_LED_BLE_CONNECTED_FIND_TYPE_PULSE_PERCENT\s+STATUS_LED_BLE_RECONNECT_MAX_PERCENT' `
+    "HID-only connected find-Type flash must stay near reconnect brightness"
+Assert-Contains $statusLed 'case STATUS_LED_BLE_CONNECTED:[\s\S]*?if\s*\(\s*status_led_ota_ble_steady_locked\(now_ms\)\s*\)[\s\S]*?STATUS_LED_BLE_TYPE_READY_STEADY_PERCENT[\s\S]*?status_led_double_pulse_on\(\s*ble_elapsed_ms,\s*STATUS_LED_BLE_CONNECTED_FIND_TYPE_PERIOD_MS\s*\)[\s\S]*?STATUS_LED_BLE_CONNECTED_FIND_TYPE_PULSE_PERCENT[\s\S]*?break;\s*case STATUS_LED_BLE_TYPE_READY:[\s\S]*?STATUS_LED_BLE_TYPE_READY_STEADY_PERCENT' `
+    "HID-only connected must show a blue find-Type double flash, while TYPE_READY stays steady blue"
 Assert-NotContains $statusLed 'status_led_connected_hid_only_percent_locked|STATUS_LED_BLE_CONNECTED_HEARTBEAT_PERIOD_MS|STATUS_LED_BLE_CONNECTED_CONFIRM_MS|STATUS_LED_BLE_CONNECTED_BASE_PERCENT' `
-    "HID-only connected must not keep the old blue heartbeat/confirmation renderer"
+    "HID-only connected must not keep the old low-base heartbeat/confirmation renderer"
 Assert-Contains $statusLed 'static\s+uint8_t\s+status_led_low_power_ble_percent_locked\(uint32_t ble_elapsed_ms\)[\s\S]*?case STATUS_LED_BLE_PAIRING:[\s\S]*?STATUS_LED_BATTERY_IDLE_BLE_HEARTBEAT_ON_MS[\s\S]*?STATUS_LED_LOW_POWER_BLE_ATTENTION_PERCENT[\s\S]*?case STATUS_LED_BLE_CONNECTED:\s*\n\s*case STATUS_LED_BLE_TYPE_READY:[\s\S]*?return 0U;' `
     "connected and TYPE_READY BLE must stay dark after idle"
 Assert-Contains $statusLed 'const bool active_work = s_state\.recording_active \|\| s_state\.processing_active \|\| s_state\.ota_active;' `
@@ -234,4 +238,4 @@ if ($modelState -ne "connected") {
     throw "verify_ble_status_led_connected_sync failed: reconnect-to-connected model regressed to $modelState"
 }
 
-Write-Host "PASS: BLE status LED connected-sync checks cover GAP/HID connected source of truth, recovery identity rotation before re-pair advertising, audio-stream TYPE_READY sync with LED hold, stale advertising suppression, connected battery resync after preview clears, HID-only BLE-dark versus steady TYPE_READY brightness, active-work PWR/OTA visibility, idle connected/TYPE_READY BLE dark, and disconnect/advertising negative transitions."
+Write-Host "PASS: BLE status LED connected-sync checks cover GAP/HID connected source of truth, recovery identity rotation before re-pair advertising, audio-stream TYPE_READY sync with LED hold, stale advertising suppression, connected battery resync after preview clears, HID-only find-Type double flash versus steady TYPE_READY brightness, active-work PWR/OTA visibility, idle connected/TYPE_READY BLE dark, and disconnect/advertising negative transitions."
