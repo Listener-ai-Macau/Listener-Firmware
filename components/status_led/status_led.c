@@ -94,7 +94,6 @@
 #define STATUS_LED_BOOT_ACK_MS 2500U
 #define STATUS_LED_BLE_CONFIDENCE_MS 8000U
 #define STATUS_LED_BLE_REPAIR_CUE_MS 2700U
-#define STATUS_LED_BLE_CONNECTED_CONFIRM_MS 1600U
 #define STATUS_LED_OOBE_CONFIDENCE_MS 25000U
 #define STATUS_LED_ERROR_HOLD_MS 6000U
 #define STATUS_LED_OK_TOTAL_MS 2000U
@@ -141,12 +140,7 @@
 #define STATUS_LED_BLE_PAIRING_PULSE_PERCENT STATUS_LED_BLE_ATTENTION_PERCENT
 #define STATUS_LED_BLE_RECONNECT_MIN_PERCENT 10U
 #define STATUS_LED_BLE_RECONNECT_MAX_PERCENT STATUS_LED_BLE_ATTENTION_PERCENT
-#define STATUS_LED_BLE_CONNECTED_CONFIRM_MIN_PERCENT 10U
-#define STATUS_LED_BLE_CONNECTED_GENERIC_PERCENT 14U
-#define STATUS_LED_BLE_CONNECTED_BASE_PERCENT 4U
-#define STATUS_LED_BLE_CONNECTED_PULSE_PERCENT STATUS_LED_BLE_CONNECTED_GENERIC_PERCENT
-#define STATUS_LED_BLE_CONNECTED_HEARTBEAT_PERIOD_MS 2600U
-#define STATUS_LED_BLE_TYPE_READY_STEADY_PERCENT STATUS_LED_BLE_CONNECTED_GENERIC_PERCENT
+#define STATUS_LED_BLE_TYPE_READY_STEADY_PERCENT 14U
 #define STATUS_LED_BATTERY_IDLE_BLE_HEARTBEAT_ON_MS 120U
 #define STATUS_LED_BATTERY_IDLE_BLE_HEARTBEAT_OFF_MS 7880U
 #define STATUS_LED_RESULT_PEAK_PERCENT 100U
@@ -1113,7 +1107,7 @@ static const char *status_led_ble_name(status_led_ble_state_t state)
 
 static bool status_led_ble_state_ready_locked(status_led_ble_state_t state)
 {
-    return state == STATUS_LED_BLE_CONNECTED || state == STATUS_LED_BLE_TYPE_READY;
+    return state == STATUS_LED_BLE_TYPE_READY;
 }
 
 static bool status_led_ble_state_attention_locked(status_led_ble_state_t state)
@@ -2179,13 +2173,6 @@ static uint8_t status_led_low_power_ble_percent_locked(uint32_t ble_elapsed_ms)
     }
 }
 
-static uint8_t status_led_connected_hid_only_percent_locked(uint32_t ble_elapsed_ms)
-{
-    return status_led_double_pulse_on(ble_elapsed_ms, STATUS_LED_BLE_CONNECTED_HEARTBEAT_PERIOD_MS)
-        ? STATUS_LED_BLE_CONNECTED_PULSE_PERCENT
-        : STATUS_LED_BLE_CONNECTED_BASE_PERCENT;
-}
-
 static bool status_led_ota_ble_steady_locked(uint32_t now_ms)
 {
     (void)now_ms;
@@ -2200,11 +2187,6 @@ static void status_led_render_ble_locked(status_led_frame_t *frame, uint32_t now
 
     status_led_rgb_t ble_blue = status_led_rgb(0, 0, 255);
     status_led_rgb_t color = {0};
-    const bool confidence = now_ms < s_state.ble_confidence_until_ms ||
-                            now_ms < s_state.oobe_confidence_until_ms;
-    const bool status_window = now_ms < s_state.status_window_until_ms;
-    const bool active_work = s_state.recording_active || s_state.processing_active || s_state.ota_active;
-    const bool connected_visible_until_idle = !s_state.low_power_disabled;
     const uint32_t ble_elapsed_ms = status_led_ble_elapsed_locked(now_ms);
     if (status_led_ble_repair_active_locked(now_ms)) {
         uint8_t percent = status_led_ble_repair_percent_locked(
@@ -2231,31 +2213,21 @@ static void status_led_render_ble_locked(status_led_frame_t *frame, uint32_t now
         break;
     }
     case STATUS_LED_BLE_CONNECTED:
-    case STATUS_LED_BLE_TYPE_READY: {
-        const bool type_ready = s_state.ble_state == STATUS_LED_BLE_TYPE_READY;
-        const bool ota_ble_steady = status_led_ota_ble_steady_locked(now_ms);
-        if (type_ready || ota_ble_steady) {
+        if (status_led_ota_ble_steady_locked(now_ms)) {
             color = status_led_token_locked(
                 ble_blue,
                 STATUS_LED_BLE_TYPE_READY_STEADY_PERCENT,
                 false);
-        } else if (ble_elapsed_ms < STATUS_LED_BLE_CONNECTED_CONFIRM_MS) {
-            color = status_led_token_locked(
-                ble_blue,
-                status_led_triangle_percent(
-                    ble_elapsed_ms,
-                    STATUS_LED_BLE_CONNECTED_CONFIRM_MS,
-                    STATUS_LED_BLE_CONNECTED_CONFIRM_MIN_PERCENT,
-                    STATUS_LED_BLE_CONNECTED_PULSE_PERCENT),
-                false);
-        } else if (confidence || status_window || active_work || connected_visible_until_idle) {
-            color = status_led_token_locked(
-                ble_blue,
-                status_led_connected_hid_only_percent_locked(ble_elapsed_ms),
-                false);
         }
         break;
-    }
+    case STATUS_LED_BLE_TYPE_READY:
+        {
+            color = status_led_token_locked(
+                ble_blue,
+                STATUS_LED_BLE_TYPE_READY_STEADY_PERCENT,
+                false);
+            break;
+        }
     case STATUS_LED_BLE_DISCONNECTED:
     default:
         break;
@@ -3129,7 +3101,7 @@ static void status_led_render_ec11_locked(status_led_frame_t *frame, uint32_t no
     }
 
     if (s_state.profile == STATUS_LED_PROFILE_AMBIENT &&
-        s_state.ble_state == STATUS_LED_BLE_CONNECTED) {
+        s_state.ble_state == STATUS_LED_BLE_TYPE_READY) {
         uint8_t percent = status_led_triangle_percent(now_ms, 5200U, 6U, 14U);
         status_led_rgb_t color = status_led_token_locked(status_led_rgb(0, 0, 255), percent, false);
         for (size_t index = 0; index < STATUS_LED_EC11_COUNT; ++index) {
@@ -3591,9 +3563,9 @@ static void status_led_preview_clear_activity_locked(void)
 
 static void status_led_preview_ready_baseline_locked(uint32_t now_ms)
 {
-    s_state.ble_state = STATUS_LED_BLE_CONNECTED;
+    s_state.ble_state = STATUS_LED_BLE_TYPE_READY;
     s_state.ble_transition_ms = now_ms;
-    s_state.ble_confidence_until_ms = now_ms + STATUS_LED_BLE_CONFIDENCE_MS;
+    s_state.ble_confidence_until_ms = 0;
     s_state.ble_repair_until_ms = 0U;
     if (!s_state.external_power_present && !s_state.battery_valid) {
         s_state.battery_valid = true;
@@ -5818,10 +5790,25 @@ static void status_led_preview_state(const char *state)
     s_state.preview_ble_override_until_ms = now_ms + STATUS_LED_PREVIEW_BLE_OVERRIDE_MS;
     status_led_set_last_reason_locked("preview");
 
-    if (strcasecmp(state, "ready") == 0 || strcasecmp(state, "connected") == 0) {
+    if (strcasecmp(state, "ready") == 0 || strcasecmp(state, "type_ready") == 0) {
+        s_state.ble_state = STATUS_LED_BLE_TYPE_READY;
+        s_state.ble_transition_ms = now_ms;
+        s_state.ble_confidence_until_ms = 0;
+        s_state.battery_valid = true;
+        s_state.battery_level_percent = 80;
+        s_state.battery_mv = 4000;
+        s_state.external_power_present = false;
+        s_state.external_power_source_flags = 0;
+        s_state.charging = false;
+        s_state.full = false;
+        s_state.raw_charging = false;
+        s_state.raw_full = false;
+        s_state.charge_full_latched = false;
+        s_state.charge_full_candidate_since_ms = 0;
+    } else if (strcasecmp(state, "connected") == 0) {
         s_state.ble_state = STATUS_LED_BLE_CONNECTED;
         s_state.ble_transition_ms = now_ms;
-        s_state.ble_confidence_until_ms = now_ms + STATUS_LED_BLE_CONFIDENCE_MS;
+        s_state.ble_confidence_until_ms = 0;
         s_state.battery_valid = true;
         s_state.battery_level_percent = 80;
         s_state.battery_mv = 4000;

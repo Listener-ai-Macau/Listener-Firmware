@@ -413,10 +413,10 @@ def make_semantic_sequence(zones_text):
             "profile": "standard",
             "commands": ["~LED:PROFILE standard", "~LED:PREVIEW ready"],
             "expected_leds": ["PWR", "BLE"],
-            "expected": "healthy awake baseline and connected confidence: low green PWR plus steady blue BLE",
-            "acceptance_focus": "PWR/BLE low visual weight in healthy awake state; connected BLE steady blue",
+            "expected": "healthy awake baseline and Type-ready state: low green PWR plus steady blue BLE",
+            "acceptance_focus": "PWR/BLE low visual weight in healthy awake state; Type-ready BLE steady blue",
             "sample_delay_ms": 700,
-            "state_expect": {"ble": "connected", "battery_level": 80},
+            "state_expect": {"ble": "type_ready", "battery_level": 80},
         },
         {
             "name": "low_profile_ready",
@@ -427,7 +427,7 @@ def make_semantic_sequence(zones_text):
             "expected": "darker low-profile ready indication, still bounded by safety/status behavior",
             "acceptance_focus": "low profile is explicitly darker than standard",
             "sample_delay_ms": 700,
-            "state_expect": {"ble": "connected", "battery_level": 80},
+            "state_expect": {"ble": "type_ready", "battery_level": 80},
         },
         {
             "name": "ambient_profile_ready",

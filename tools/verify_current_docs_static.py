@@ -56,6 +56,14 @@ STALE_PATTERNS = [
         "old connected BLE brightness; current generic connected percent is lower",
     ),
     PatternRule(
+        re.compile(r"ordinary HID-only BLE connected stays visible", re.IGNORECASE),
+        "old BLE LED policy: HID-only connected must keep the BLE lamp dark until Listener-Type is ready",
+    ),
+    PatternRule(
+        re.compile(r"low-base blue double-flash heartbeat", re.IGNORECASE),
+        "old BLE LED policy: HID-only connected no longer has a blue heartbeat",
+    ),
+    PatternRule(
         re.compile(r"\?\s*46U\s*:\s*0U"),
         "old battery PWR active-window brightness literal; use the current constant",
     ),
@@ -90,6 +98,11 @@ REQUIRED_TEXT = [
     ),
     RequiredText(
         "docs/features/status_led.md",
+        re.compile(r"ordinary HID-only `connected` keeps `LED2=BLE` dark", re.IGNORECASE),
+        "status LED feature doc must state that HID-only connected does not light the BLE lamp",
+    ),
+    RequiredText(
+        "docs/features/status_led.md",
         re.compile(r"advances the white head at `STATUS_LED_EC11_ROTATION_STEP_MS`", re.IGNORECASE),
         "status LED feature doc must preserve the current EC11 fixed-step directional rotation cue",
     ),
@@ -109,9 +122,19 @@ REQUIRED_TEXT = [
         "low-power policy doc must state the current low-power idle PWR-only/BLE-dark behavior",
     ),
     RequiredText(
+        "docs/features/low_power_wake_policy.md",
+        re.compile(r"ordinary HID-only BLE connected keeps `LED2=BLE` dark", re.IGNORECASE),
+        "low-power policy doc must state that HID-only connected does not light the BLE lamp",
+    ),
+    RequiredText(
         "docs/features/firmware-feature-map.md",
-        re.compile(r"keeps restrained PWR visible and connected/TYPE_READY BLE dark only after idle is entered", re.IGNORECASE),
+        re.compile(r"keeps restrained PWR visible and connected/TYPE_READY BLE dark in idle", re.IGNORECASE),
         "feature map must summarize current idle LED behavior without implying all-off; keeps restrained PWR/BLE status visible",
+    ),
+    RequiredText(
+        "docs/features/firmware-feature-map.md",
+        re.compile(r"keeps quiet ACTIVE HID-only BLE dark", re.IGNORECASE),
+        "feature map must summarize the Type-gated BLE lamp behavior",
     ),
     RequiredText(
         "tools/verify_status_led_static.py",
@@ -120,8 +143,8 @@ REQUIRED_TEXT = [
     ),
     RequiredText(
         "tools/verify_ble_status_led_connected_sync.ps1",
-        re.compile(r"STATUS_LED_BLE_CONNECTED_GENERIC_PERCENT\\s\+14U"),
-        "BLE sync static check must use the current generic connected brightness contract",
+        re.compile(r"STATUS_LED_BLE_TYPE_READY_STEADY_PERCENT\\s\+14U"),
+        "BLE sync static check must use the current Type-ready brightness contract",
     ),
     RequiredText(
         "tools/verify_ble_status_led_connected_sync.ps1",

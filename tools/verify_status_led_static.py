@@ -161,7 +161,6 @@ CHECKS = {
         "STATUS_LED_BLE_REPAIR_CUE_MS 2700U",
         "STATUS_LED_EC11_REPAIR_BLINK_MIN_PERCENT 4U",
         "STATUS_LED_EC11_REPAIR_BLINK_MAX_PERCENT 16U",
-        "STATUS_LED_BLE_CONNECTED_CONFIRM_MS 1600U",
         "STATUS_LED_PWR_COLOR_AMBER",
         "STATUS_LED_DIAG_VIS_LOW_POWER_OFF",
         "battery_display_level_percent",
@@ -318,16 +317,9 @@ CHECKS = {
         "STATUS_LED_BLE_PAIRING_PULSE_PERCENT STATUS_LED_BLE_ATTENTION_PERCENT",
         "STATUS_LED_BLE_RECONNECT_MIN_PERCENT 10U",
         "STATUS_LED_BLE_RECONNECT_MAX_PERCENT STATUS_LED_BLE_ATTENTION_PERCENT",
-        "STATUS_LED_BLE_CONNECTED_CONFIRM_MIN_PERCENT 10U",
-        "STATUS_LED_BLE_CONNECTED_GENERIC_PERCENT 14U",
-        "STATUS_LED_BLE_CONNECTED_BASE_PERCENT 4U",
-        "STATUS_LED_BLE_CONNECTED_PULSE_PERCENT STATUS_LED_BLE_CONNECTED_GENERIC_PERCENT",
-        "STATUS_LED_BLE_CONNECTED_HEARTBEAT_PERIOD_MS 2600U",
-        "STATUS_LED_BLE_TYPE_READY_STEADY_PERCENT STATUS_LED_BLE_CONNECTED_GENERIC_PERCENT",
+        "STATUS_LED_BLE_TYPE_READY_STEADY_PERCENT 14U",
         "case STATUS_LED_BLE_TYPE_READY: return \"type_ready\"",
         "status_led_ble_state_ready_locked",
-        "status_led_connected_hid_only_percent_locked",
-        "ble_elapsed_ms < STATUS_LED_BLE_CONNECTED_CONFIRM_MS",
         "status_led_preview_clear_activity_locked",
         "status_led_render_edge_clockwise_chase_locked",
         "ble_repair_ms_left=%",
@@ -762,7 +754,7 @@ CHECKS = {
         "rotates the stored BLE static-random identity before advertising again",
         "The old host must pair again instead of silently reconnecting to the previous device identity",
         "ble_repair_ms_left",
-        "short blue connected-success confirmation",
+        "A successful Type-ready transition is the steady blue connected indication",
         "BLE animation phase is tracked separately",
         "`ble_transition_ms`",
         "Manual `~LED:PREVIEW` scenes temporarily hold their requested BLE state",
@@ -773,11 +765,11 @@ CHECKS = {
         "Re-pair uses a BLE plus EC11 confirmation cue",
         "current render-sampled RGB frame",
         "status_query_samples_current_render=1",
-        "ordinary HID-only `connected` stays visible as a low-base blue double-flash heartbeat",
+        "ordinary HID-only `connected` keeps `LED2=BLE` dark",
         "`TYPE_READY` is the Listener-Type-ready BLE state",
         "it uses steady blue",
         "30 second Type-ready hold",
-        "quiet-but-not-idle time",
+        "Active connected state is Type-gated",
         "In connected/disconnected low-power idle, the low-power renderer keeps PWR visible and leaves connected/TYPE_READY BLE dark",
         "External power overrides battery-color display on `PWR`",
         "continuous slow white breath",
@@ -1265,25 +1257,21 @@ def main() -> int:
         body = low_power_ble.group("body")
         if "status_led_low_power_ble_percent_locked(status_led_ble_elapsed_locked(now_ms))" not in body:
             failures.append("status_led.c: low-power BLE renderer must use the shared low-power BLE helper")
-    if not re.search(
-        r"status_led_connected_hid_only_percent_locked[^{]*\{[\s\S]*?"
-        r"STATUS_LED_BLE_CONNECTED_HEARTBEAT_PERIOD_MS[\s\S]*?"
-        r"STATUS_LED_BLE_CONNECTED_PULSE_PERCENT[\s\S]*?"
+    if re.search(
+        r"status_led_connected_hid_only_percent_locked|"
+        r"STATUS_LED_BLE_CONNECTED_HEARTBEAT_PERIOD_MS|"
+        r"STATUS_LED_BLE_CONNECTED_CONFIRM_MS|"
         r"STATUS_LED_BLE_CONNECTED_BASE_PERCENT",
         status_led,
     ) or not re.search(
-        r"case\s+STATUS_LED_BLE_CONNECTED:\s*\n\s*case\s+STATUS_LED_BLE_TYPE_READY:\s*\{[\s\S]*?"
-        r"const\s+bool\s+type_ready[\s\S]*?"
-        r"const\s+bool\s+ota_ble_steady\s*=\s*status_led_ota_ble_steady_locked\(now_ms\);[\s\S]*?"
-        r"if\s*\(\s*type_ready\s*\|\|\s*ota_ble_steady\s*\)[\s\S]*?"
+        r"case\s+STATUS_LED_BLE_CONNECTED:[\s\S]*?"
+        r"if\s*\(\s*status_led_ota_ble_steady_locked\(now_ms\)\s*\)[\s\S]*?"
         r"STATUS_LED_BLE_TYPE_READY_STEADY_PERCENT[\s\S]*?"
-        r"ble_elapsed_ms\s*<\s*STATUS_LED_BLE_CONNECTED_CONFIRM_MS[\s\S]*?"
-        r"STATUS_LED_BLE_CONNECTED_PULSE_PERCENT[\s\S]*?"
-        r"connected_visible_until_idle[\s\S]*?"
-        r"status_led_connected_hid_only_percent_locked\(ble_elapsed_ms\)",
+        r"break;\s*case\s+STATUS_LED_BLE_TYPE_READY:[\s\S]*?"
+        r"STATUS_LED_BLE_TYPE_READY_STEADY_PERCENT",
         status_led,
     ):
-        failures.append("status_led.c: active BLE rendering must keep HID-only connected as a blue heartbeat; only TYPE_READY or active OTA transfer may be steady blue")
+        failures.append("status_led.c: active BLE rendering must keep HID-only connected dark; only TYPE_READY or active OTA transfer may be steady blue")
     if not re.search(
         r"void\s+status_led_set_ota_active[\s\S]*?else\s*\{[\s\S]*?"
         r"status_led_clear_ota_locked\(\);[\s\S]*?\}"
