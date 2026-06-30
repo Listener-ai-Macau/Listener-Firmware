@@ -642,7 +642,9 @@ CHECKS = {
         "ble_audio_stream_poll_type_link",
     ],
     "ports/esp32/ble_hid_gap/ble_hid_gap_esp32.c": [
-        "status_led_set_ble_state(STATUS_LED_BLE_PAIRING, false)",
+        "? STATUS_LED_BLE_PAIRING",
+        ": STATUS_LED_BLE_RECONNECTING",
+        "bonded_peer_count <= 0",
         "status_led_notify_ble_repairing(\"ble_recovery_clear_bonds\")",
         "status_led_notify_ble_repairing(\"ble_recovery_refresh_pairing\")",
         "stable BLE identity",

@@ -75,24 +75,24 @@ Assert-Order $advStart 'if (conn.connected)' 'if (ble_gap_adv_active())' `
     "connected guard must run before advertising-active handling"
 Assert-Order $advStart 'if (conn.connected)' 'status_led_set_ble_state(STATUS_LED_BLE_RECONNECTING, false);' `
     "connected guard must run before directed advertising can set reconnecting LED"
-Assert-Order $advStart 'if (conn.connected)' 'status_led_set_ble_state(STATUS_LED_BLE_PAIRING, false);' `
-    "connected guard must run before undirected advertising can set pairing LED"
+Assert-Order $advStart 'if (conn.connected)' 'bonded_peer_count <= 0' `
+    "connected guard must run before undirected advertising chooses pairing or reconnecting LED"
+Assert-Contains $advStart 'status_led_set_ble_state\(\s*\(swift_pair_enabled\s*\|\|\s*bonded_peer_count\s*<=\s*0\)\s*\?\s*STATUS_LED_BLE_PAIRING\s*:\s*STATUS_LED_BLE_RECONNECTING,\s*false\);' `
+    "undirected advertising must show pairing only for Swift Pair/first-pair and reconnecting for bonded peers"
 Assert-Contains $gap 'ble_hid_gap_set_connection_state\(true,\s*event->connect\.conn_handle\);[\s\S]*?status_led_set_ble_state\(STATUS_LED_BLE_CONNECTED,\s*true\);' `
     "GAP connect event must mark connected before refreshing connected LED"
 Assert-Contains $gap 'ble_hid_gap_set_connection_state\(false,\s*BLE_HS_CONN_HANDLE_NONE\);[\s\S]*?status_led_set_ble_state\(STATUS_LED_BLE_RECONNECTING,\s*false\);' `
     "GAP disconnect event must clear connected before reconnecting LED"
-Assert-NotContains $gap 'BLE identity kept stable|stable BLE identity' `
-    "user-requested re-pair recovery must not advertise the old stable identity"
-Assert-Contains $gap 'static\s+esp_err_t\s+ble_hid_gap_rotate_static_random_identity\(const char \*context\)[\s\S]*?ble_hs_id_gen_rnd\(0,\s*&addr\)[\s\S]*?ble_hid_gap_store_static_random_identity\(addr\.val,\s*context\)[\s\S]*?ble_hid_gap_apply_static_random_identity\(addr\.val,\s*context\)' `
-    "re-pair recovery must generate, persist, and apply a new static-random BLE identity"
-Assert-Contains $gap 'esp_err_t\s+ble_hid_gap_forget_bonds_and_repair\(void\)[\s\S]*?rc\s*=\s*ble_store_clear\(\);[\s\S]*?s_recovery_identity_rotate_pending\s*=\s*true;[\s\S]*?identity rotates before advertising restarts[\s\S]*?ble_hid_gap_rotate_static_random_identity\("BLE recovery identity rotated for re-pair"\)[\s\S]*?ble_hid_gap_start_advertising\(\)' `
-    "forget-bonds recovery must rotate identity before non-connected advertising and defer connected rotation until after disconnect"
-Assert-Contains $gap 'refresh_pairing_window[\s\S]*?pairing window already active; rotating identity and refreshing advertising[\s\S]*?ble_hid_gap_rotate_static_random_identity\("BLE recovery identity rotated during active pairing window"\)[\s\S]*?ble_hid_gap_start_advertising\(\)' `
-    "explicit recovery during an already-open pairing window must rotate identity again before advertising"
-Assert-Contains $gap 'case BLE_GAP_EVENT_DISCONNECT:[\s\S]*?if\s*\(s_recovery_identity_rotate_pending\)[\s\S]*?ble_hid_gap_rotate_static_random_identity\("BLE recovery identity rotated after disconnect"\)[\s\S]*?s_recovery_identity_rotate_pending\s*=\s*false;[\s\S]*?ble_hid_gap_start_advertising\(\)' `
-    "disconnect recovery must rotate the pending identity before advertising restarts"
-Assert-Contains $gap 'case BLE_GAP_EVENT_ENC_CHANGE:[\s\S]*?encryption failed or connection already gone[\s\S]*?ble_hid_gap_recovery_pairing_window_open\(\)[\s\S]*?s_recovery_identity_rotate_pending\s*=\s*true;[\s\S]*?stale pairing encryption failure[\s\S]*?ble_gap_terminate\(event->enc_change\.conn_handle,\s*BLE_ERR_REM_USER_CONN_TERM\)' `
-    "recovery pairing window must treat encryption failures as stale host pairing and rotate identity after disconnect"
+Assert-Contains $gap 'static\s+esp_err_t\s+ble_hid_gap_refresh_configured_device_name\(const char \*context\)[\s\S]*?listener_device_get_ble_name\(\)[\s\S]*?ble_svc_gap_device_name_set\(device_name\)[\s\S]*?ble_hid_gap_configure_normal_adv_fields\(\)[\s\S]*?device_settings_mark_ble_name_applied\(\)' `
+    "advertising must refresh the currently configured BLE name and mark it applied"
+Assert-Contains $gap 'esp_err_t\s+esp_hid_ble_gap_adv_start\(void\)[\s\S]*?ble_hid_gap_refresh_configured_device_name\("advertising_start"\)' `
+    "advertising start must use the latest configured BLE name"
+Assert-Contains $gap 'esp_err_t\s+ble_hid_gap_forget_bonds_and_repair\(void\)[\s\S]*?rc\s*=\s*ble_store_clear\(\);[\s\S]*?ble_hid_gap_open_recovery_pairing_window\(\);[\s\S]*?stable identity will advertise after disconnect[\s\S]*?ble_hid_gap_start_advertising\(\)' `
+    "forget-bonds recovery must clear bonds, open the pairing window, and advertise the current stable identity"
+Assert-Contains $gap 'refresh_pairing_window[\s\S]*?pairing window already active; refreshing advertising with stable BLE identity[\s\S]*?ble_hid_gap_start_advertising\(\)[\s\S]*?pairing window refreshed with stable BLE identity' `
+    "explicit recovery during an already-open pairing window must refresh advertising with the current stable identity"
+Assert-Contains $gap 'case BLE_GAP_EVENT_ENC_CHANGE:[\s\S]*?encryption failed or connection already gone[\s\S]*?ble_hid_gap_recovery_pairing_window_open\(\)[\s\S]*?stale pairing encryption failure[\s\S]*?keeping stable BLE identity[\s\S]*?ble_gap_terminate\(event->enc_change\.conn_handle,\s*BLE_ERR_REM_USER_CONN_TERM\)' `
+    "recovery pairing window must treat encryption failures as stale host pairing and keep the stable identity discoverable"
 Assert-Contains $hid 'ESP_HIDD_CONNECT_EVENT:[\s\S]*?s_ble_connected\s*=\s*true;[\s\S]*?status_led_set_ble_state\(STATUS_LED_BLE_CONNECTED,\s*true\);' `
     "HID connect event must mark HID-only connected state for Type-ready resync"
 Assert-Contains $hid 'ESP_HIDD_DISCONNECT_EVENT:[\s\S]*?s_ble_connected\s*=\s*false;[\s\S]*?status_led_set_ble_state\(STATUS_LED_BLE_RECONNECTING,\s*false\);' `
@@ -238,4 +238,4 @@ if ($modelState -ne "connected") {
     throw "verify_ble_status_led_connected_sync failed: reconnect-to-connected model regressed to $modelState"
 }
 
-Write-Host "PASS: BLE status LED connected-sync checks cover GAP/HID connected source of truth, recovery identity rotation before re-pair advertising, audio-stream TYPE_READY sync with LED hold, stale advertising suppression, connected battery resync after preview clears, HID-only find-Type double flash versus steady TYPE_READY brightness, active-work PWR/OTA visibility, idle connected/TYPE_READY BLE dark, and disconnect/advertising negative transitions."
+Write-Host "PASS: BLE status LED connected-sync checks cover GAP/HID connected source of truth, stable-identity re-pair advertising, audio-stream TYPE_READY sync with LED hold, stale advertising suppression, connected battery resync after preview clears, HID-only find-Type double flash versus steady TYPE_READY brightness, active-work PWR/OTA visibility, idle connected/TYPE_READY BLE dark, and disconnect/advertising negative transitions."

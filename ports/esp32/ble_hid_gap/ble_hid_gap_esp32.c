@@ -1458,7 +1458,11 @@ esp_err_t esp_hid_ble_gap_adv_start(void)
         s_ble_gap_conn_handle,
         DIAG_SEV_INFO);
     if (!s_low_power_advertising) {
-        status_led_set_ble_state(STATUS_LED_BLE_PAIRING, false);
+        status_led_set_ble_state(
+            (swift_pair_enabled || bonded_peer_count <= 0)
+                ? STATUS_LED_BLE_PAIRING
+                : STATUS_LED_BLE_RECONNECTING,
+            false);
     }
     return ESP_OK;
 }
