@@ -12,6 +12,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <stdbool.h>
+#include <stdint.h>
 
 #include "ble_hid_gap.h"
 #include "ble_audio_stream.h"
@@ -107,6 +108,7 @@ static char s_service_changed_schema_id[64];
 static bool s_recovery_pairing_window_active = false;
 static bool s_recovery_identity_rotate_pending = false;
 static int64_t s_recovery_pairing_window_opened_at_ms = 0;
+static int64_t s_first_pairing_window_opened_at_ms = 0;
 static uint32_t s_last_conn_param_mode = 0;
 
 typedef enum {
@@ -223,6 +225,8 @@ static void ble_hid_gap_log_adv_state(
 #define BLE_HID_GAP_SERVICE_CHANGED_START_HANDLE 0x0001
 #define BLE_HID_GAP_SERVICE_CHANGED_END_HANDLE 0xffff
 #define BLE_HID_GAP_RECOVERY_PAIRING_WINDOW_MS 120000LL
+#define BLE_HID_GAP_FIRST_PAIRING_WINDOW_MS 60000LL
+#define BLE_HID_GAP_SWIFT_PAIR_ADV_MIN_RESTART_MS 1000LL
 
 static const uint8_t s_swift_pair_mfg_data[BLE_HID_SWIFT_PAIR_MFG_DATA_LEN] = {
     0x06, 0x00, /* Microsoft Bluetooth SIG company identifier, little-endian. */
@@ -248,22 +252,83 @@ static bool ble_hid_gap_adv_start_deferred_rc(int rc)
            rc == BLE_HS_HCI_ERR(BLE_ERR_CMD_DISALLOWED);
 }
 
-static bool ble_hid_gap_recovery_pairing_window_open(void)
+static int64_t ble_hid_gap_window_remaining_ms(
+    int64_t opened_at_ms,
+    int64_t window_ms)
+{
+    if (opened_at_ms <= 0 || window_ms <= 0) {
+        return 0;
+    }
+
+    int64_t elapsed_ms = ble_hid_gap_now_ms() - opened_at_ms;
+    if (elapsed_ms < 0) {
+        return window_ms;
+    }
+    if (elapsed_ms >= window_ms) {
+        return 0;
+    }
+    return window_ms - elapsed_ms;
+}
+
+static int64_t ble_hid_gap_recovery_pairing_window_remaining_ms(void)
 {
     if (!s_recovery_pairing_window_active ||
         s_recovery_pairing_window_opened_at_ms <= 0) {
-        return false;
+        return 0;
     }
 
-    int64_t elapsed_ms =
-        ble_hid_gap_now_ms() - s_recovery_pairing_window_opened_at_ms;
-    if (elapsed_ms < 0 ||
-        elapsed_ms >= BLE_HID_GAP_RECOVERY_PAIRING_WINDOW_MS) {
+    int64_t remaining_ms = ble_hid_gap_window_remaining_ms(
+        s_recovery_pairing_window_opened_at_ms,
+        BLE_HID_GAP_RECOVERY_PAIRING_WINDOW_MS);
+    if (remaining_ms <= 0) {
         s_recovery_pairing_window_active = false;
-        return false;
+        ESP_LOGI(TAG, "recovery: pairing window expired");
+        return 0;
     }
 
-    return true;
+    return remaining_ms;
+}
+
+static bool ble_hid_gap_recovery_pairing_window_open(void)
+{
+    return ble_hid_gap_recovery_pairing_window_remaining_ms() > 0;
+}
+
+static int64_t ble_hid_gap_first_pairing_window_remaining_ms(
+    int bonded_peer_count)
+{
+    if (bonded_peer_count > 0) {
+        s_first_pairing_window_opened_at_ms = 0;
+        return 0;
+    }
+
+    if (s_low_power_advertising || s_ble_gap_connected) {
+        return 0;
+    }
+
+    if (s_first_pairing_window_opened_at_ms <= 0) {
+        s_first_pairing_window_opened_at_ms = ble_hid_gap_now_ms();
+        ESP_LOGI(TAG, "first-pairing Swift Pair window opened");
+    }
+
+    int64_t remaining_ms = ble_hid_gap_window_remaining_ms(
+        s_first_pairing_window_opened_at_ms,
+        BLE_HID_GAP_FIRST_PAIRING_WINDOW_MS);
+    if (remaining_ms <= 0) {
+        ESP_LOGI(TAG, "first-pairing Swift Pair window expired");
+    }
+    return remaining_ms;
+}
+
+static int32_t ble_hid_gap_swift_pair_adv_duration_ms(int64_t remaining_ms)
+{
+    if (remaining_ms < BLE_HID_GAP_SWIFT_PAIR_ADV_MIN_RESTART_MS) {
+        return (int32_t)BLE_HID_GAP_SWIFT_PAIR_ADV_MIN_RESTART_MS;
+    }
+    if (remaining_ms > 0x7fffffffLL) {
+        return 0x7fffffff;
+    }
+    return (int32_t)remaining_ms;
 }
 
 static bool ble_hid_gap_recovery_pairing_needs_connectable_adv(void)
@@ -1411,7 +1476,13 @@ esp_err_t esp_hid_ble_gap_adv_start(void)
         bonded_peers,
         &bonded_peer_count,
         sizeof(bonded_peers) / sizeof(bonded_peers[0]));
-    const bool pairing_window = ble_hid_gap_recovery_pairing_window_open();
+    const int64_t recovery_pairing_remaining_ms =
+        ble_hid_gap_recovery_pairing_window_remaining_ms();
+    const bool pairing_window = recovery_pairing_remaining_ms > 0;
+    const int64_t first_pairing_remaining_ms = rc == 0
+        ? ble_hid_gap_first_pairing_window_remaining_ms(bonded_peer_count)
+        : 0;
+    const bool first_pairing_window = first_pairing_remaining_ms > 0;
     if (rc == 0) {
         ESP_LOGI(TAG, "NimBLE bonded peers=%d", bonded_peer_count);
         if (bonded_peer_count > 0) {
@@ -1423,8 +1494,7 @@ esp_err_t esp_hid_ble_gap_adv_start(void)
         ESP_LOGW(TAG, "NimBLE bonded peer lookup failed: rc=%d", rc);
     }
 
-    const bool swift_pair_requested =
-        pairing_window || (bonded_peer_count == 0 && !s_low_power_advertising);
+    const bool swift_pair_requested = pairing_window || first_pairing_window;
     const bool swift_pair_enabled =
         swift_pair_requested && ble_hid_gap_configure_swift_pair_fields();
     if (!swift_pair_enabled) {
@@ -1432,10 +1502,11 @@ esp_err_t esp_hid_ble_gap_adv_start(void)
     }
     ESP_LOGI(
         TAG,
-        "NimBLE advertisement payload profile=%s name_len=%u pairing_window=%u bonded_peers=%d",
+        "NimBLE advertisement payload profile=%s name_len=%u recovery_window=%u first_pairing_window=%u bonded_peers=%d",
         swift_pair_enabled ? "swift_pair" : "normal",
         (unsigned)s_adv_device_name_len,
         pairing_window ? 1u : 0u,
+        first_pairing_window ? 1u : 0u,
         bonded_peer_count);
 
     rc = ble_gap_adv_set_fields(&s_adv_fields);
@@ -1508,9 +1579,16 @@ esp_err_t esp_hid_ble_gap_adv_start(void)
     adv_params.disc_mode = BLE_GAP_DISC_MODE_GEN;
     const uint32_t adv_min_ms = BLE_HID_GAP_FAST_ADV_MIN_MS;
     const uint32_t adv_max_ms = BLE_HID_GAP_FAST_ADV_MAX_MS;
+    const int64_t swift_pair_remaining_ms =
+        recovery_pairing_remaining_ms > 0
+            ? recovery_pairing_remaining_ms
+            : first_pairing_remaining_ms;
+    const int32_t adv_duration_ms = swift_pair_enabled
+        ? ble_hid_gap_swift_pair_adv_duration_ms(swift_pair_remaining_ms)
+        : BLE_HS_FOREVER;
     adv_params.itvl_min = BLE_GAP_ADV_ITVL_MS(adv_min_ms);
     adv_params.itvl_max = BLE_GAP_ADV_ITVL_MS(adv_max_ms);
-    rc = ble_gap_adv_start(s_own_addr_type, NULL, BLE_HS_FOREVER,
+    rc = ble_gap_adv_start(s_own_addr_type, NULL, adv_duration_ms,
                            &adv_params, nimble_hid_gap_event, NULL);
     if (rc != 0) {
         if (ble_hid_gap_adv_start_deferred_rc(rc)) {
@@ -1528,10 +1606,11 @@ esp_err_t esp_hid_ble_gap_adv_start(void)
     s_last_adv_was_directed = false;
     ESP_LOGI(
         TAG,
-        "NimBLE undirected advertising started: low_power=%u interval_ms=%u-%u",
+        "NimBLE undirected advertising started: low_power=%u interval_ms=%u-%u duration_ms=%ld",
         s_low_power_advertising ? 1u : 0u,
         (unsigned)adv_min_ms,
-        (unsigned)adv_max_ms);
+        (unsigned)adv_max_ms,
+        (long)adv_duration_ms);
     diag_log(DIAG_SRC_BLE_GAP, DIAG_GAP_ADV_START, DIAG_SEV_INFO,
              1, s_low_power_advertising ? 2 : 0, bonded_peer_count, 0);
     ble_hid_gap_log_adv_state(
