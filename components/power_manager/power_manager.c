@@ -29,6 +29,7 @@
 extern esp_err_t audio_capture_set_idle_power_save(bool enabled) __attribute__((weak));
 extern bool audio_capture_session_is_active(void) __attribute__((weak));
 extern bool ble_hid_gap_is_connected(void) __attribute__((weak));
+extern bool ble_audio_stream_is_type_link_ready(void) __attribute__((weak));
 extern esp_err_t ble_hid_gap_set_low_power_advertising(bool enabled) __attribute__((weak));
 extern esp_err_t ble_hid_gap_stop_advertising_for_key_wake(void) __attribute__((weak));
 extern esp_err_t ble_hid_gap_prepare_shutdown_disconnect(void) __attribute__((weak));
@@ -1195,7 +1196,9 @@ static void power_manager_apply_ble_connection_change_locked(
 
 static bool power_manager_refresh_ble_connection_locked(uint64_t now_ms)
 {
-    bool connected = ble_hid_gap_is_connected != NULL && ble_hid_gap_is_connected();
+    bool connected = (ble_hid_gap_is_connected != NULL && ble_hid_gap_is_connected()) ||
+                     (ble_audio_stream_is_type_link_ready != NULL &&
+                      ble_audio_stream_is_type_link_ready());
     if (s_ble_connected == connected) {
         return false;
     }
@@ -2455,17 +2458,21 @@ void power_manager_set_ble_connected(bool connected)
         return;
     }
 
+    bool effective_connected =
+        connected ||
+        (ble_audio_stream_is_type_link_ready != NULL &&
+         ble_audio_stream_is_type_link_ready());
     bool changed = false;
     power_manager_state_t previous = POWER_MANAGER_STATE_ACTIVE;
     power_manager_state_t next = POWER_MANAGER_STATE_ACTIVE;
     uint32_t blockers = 0;
     uint32_t user_idle_ms = 0;
     if (xSemaphoreTake(s_mutex, portMAX_DELAY) == pdTRUE) {
-        changed = s_ble_connected != connected;
+        changed = s_ble_connected != effective_connected;
         previous = s_state;
         uint64_t now_ms = power_manager_now_ms();
         if (changed) {
-            power_manager_apply_ble_connection_change_locked(connected, now_ms);
+            power_manager_apply_ble_connection_change_locked(effective_connected, now_ms);
         }
         user_idle_ms = power_manager_user_idle_ms_locked(now_ms);
         next = s_state;
@@ -2474,7 +2481,7 @@ void power_manager_set_ble_connected(bool connected)
     }
 
     if (changed) {
-        ESP_LOGI(TAG, "BLE connection state changed: connected=%u", connected ? 1u : 0u);
+        ESP_LOGI(TAG, "BLE connection state changed: connected=%u", effective_connected ? 1u : 0u);
     }
     if (previous != next) {
         power_manager_log_transition(previous, next, 0, blockers);

@@ -23,6 +23,7 @@
 #include "driver/i2c_master.h"
 #endif
 #include "esp_check.h"
+#include "esp_attr.h"
 #if VOICE_KEY_INPUT_ENABLE_LEGACY_EXPANDER
 #include "esp_io_expander.h"
 #include "esp_io_expander_tca95xx_16bit.h"
@@ -74,7 +75,7 @@
 #define VOICE_KEY_INPUT_EVENT_QUEUE_LENGTH (8)
 #define VOICE_KEY_INPUT_GENERATED_EVENT_QUEUE_LENGTH (8)
 #define VOICE_KEY_INPUT_CLICK_MAX_MS (700)
-#define VOICE_KEY_INPUT_DOUBLE_CLICK_WINDOW_MS (200)
+#define VOICE_KEY_INPUT_DOUBLE_CLICK_WINDOW_MS (650)
 #define VOICE_KEY_INPUT_RECOVERY_DOUBLE_CLICK_WINDOW_MS (650)
 #define VOICE_KEY_INPUT_LONG_PRESS_IGNORE_MS (800)
 #define VOICE_KEY_INPUT_HOLD_FEEDBACK_REFRESH_MS (300)
@@ -82,6 +83,9 @@
 #define VOICE_KEY_INPUT_GENERATED_PRESS_MS (80)
 #define VOICE_KEY_INPUT_GENERATED_RELEASE_SETTLE_MS (80)
 #define VOICE_KEY_INPUT_GENERATED_INTER_CLICK_RELEASE_MS (220)
+#define VOICE_KEY_INPUT_ISR_PRESS_MIN_GAP_MS (80)
+#define VOICE_KEY_INPUT_RAW_RECOVERY_DOUBLE_CLICK_WINDOW_MS (1800)
+#define VOICE_KEY_INPUT_RAW_RECOVERY_DOUBLE_CLICK_MIN_MS (80)
 #define VOICE_KEY_INPUT_DEBUG_RAW 1u
 #define VOICE_KEY_INPUT_DEBUG_STABLE 2u
 #define VOICE_KEY_INPUT_DEBUG_SOURCE_DIRECT_GPIO 1u
@@ -111,6 +115,9 @@ typedef struct {
     TickType_t pending_click_started_tick;
     bool recent_short_click;
     TickType_t recent_short_click_tick;
+    bool recent_raw_press;
+    TickType_t recent_raw_press_tick;
+    bool raw_recovery_dispatched;
     bool long_press_reported;
     bool raw_feedback_pressed;
     TickType_t hold_feedback_tick;
@@ -140,6 +147,9 @@ static volatile TickType_t s_recording_output_last_change_tick;
 static bool s_direct_generated_active;
 static uint8_t s_direct_generated_click_count;
 static TickType_t s_direct_generated_start_tick;
+static portMUX_TYPE s_direct_gpio_isr_lock = portMUX_INITIALIZER_UNLOCKED;
+static volatile uint32_t s_direct_gpio_isr_press_count;
+static volatile TickType_t s_direct_gpio_isr_last_press_tick;
 #if VOICE_KEY_INPUT_ENABLE_LEGACY_EXPANDER
 static bool s_prev_input_valid;
 static uint32_t s_prev_input_levels;
@@ -165,6 +175,54 @@ static voice_key_button_state_t s_direct_gpio_state = {
 
 static void voice_key_input_handle_button_sample(voice_key_button_state_t *button, bool raw_high);
 static void voice_key_input_wake_task(void);
+static bool voice_key_input_note_raw_press_edge(
+    voice_key_button_state_t *button,
+    TickType_t now_tick,
+    const char *origin);
+
+static void IRAM_ATTR voice_key_input_direct_gpio_wake_from_isr(void *arg)
+{
+    (void)arg;
+    if (gpio_get_level(VOICE_KEY_INPUT_DIRECT_GPIO) == 0) {
+        TickType_t now_tick = xTaskGetTickCountFromISR();
+        portENTER_CRITICAL_ISR(&s_direct_gpio_isr_lock);
+        const bool accept_press =
+            s_direct_gpio_isr_last_press_tick == 0 ||
+            (uint32_t)((now_tick - s_direct_gpio_isr_last_press_tick) * portTICK_PERIOD_MS) >=
+                VOICE_KEY_INPUT_ISR_PRESS_MIN_GAP_MS;
+        if (accept_press) {
+            if (s_direct_gpio_isr_press_count < UINT32_MAX) {
+                ++s_direct_gpio_isr_press_count;
+            }
+            s_direct_gpio_isr_last_press_tick = now_tick;
+        }
+        portEXIT_CRITICAL_ISR(&s_direct_gpio_isr_lock);
+    }
+
+    TaskHandle_t task_handle = s_poll_task_handle;
+    if (task_handle == NULL) {
+        return;
+    }
+
+    BaseType_t higher_priority_woken = pdFALSE;
+    vTaskNotifyGiveFromISR(task_handle, &higher_priority_woken);
+    if (higher_priority_woken == pdTRUE) {
+        portYIELD_FROM_ISR();
+    }
+}
+
+static uint32_t voice_key_input_take_direct_gpio_isr_press_count(TickType_t *last_press_tick)
+{
+    portENTER_CRITICAL(&s_direct_gpio_isr_lock);
+    uint32_t press_count = s_direct_gpio_isr_press_count;
+    TickType_t press_tick = s_direct_gpio_isr_last_press_tick;
+    s_direct_gpio_isr_press_count = 0;
+    if (last_press_tick != NULL) {
+        *last_press_tick = press_tick;
+    }
+    portEXIT_CRITICAL(&s_direct_gpio_isr_lock);
+    return press_count;
+}
 
 static void voice_key_input_debug_log(
     uint32_t kind,
@@ -274,16 +332,16 @@ static void voice_key_input_apply_raw_feedback(voice_key_button_state_t *button,
     if (button == NULL) {
         return;
     }
+    (void)voice_key_input_note_raw_press_edge(button, xTaskGetTickCount(), origin);
     if (button->raw_feedback_pressed) {
         return;
     }
     button->raw_feedback_pressed = true;
     button->hold_feedback_tick = xTaskGetTickCount();
-    status_led_notify_ec11_feedback(STATUS_LED_EC11_FEEDBACK_PRESS);
     power_manager_record_activity("ec11_key_press");
     ESP_LOGI(
         TAG,
-        "EC11 push raw press feedback: source=%s origin=%s",
+        "EC11 push raw press tracked without EC11 LED feedback: source=%s origin=%s",
         button->label,
         origin != NULL ? origin : "raw");
 }
@@ -433,6 +491,70 @@ static bool voice_key_input_recovery_allowed(void)
     return elapsed >= pdMS_TO_TICKS(VOICE_KEY_INPUT_RECOVERY_IDLE_GUARD_MS);
 }
 
+static void voice_key_input_force_raw_recovery(
+    voice_key_button_state_t *button,
+    const char *origin,
+    uint32_t elapsed_ms)
+{
+    if (button == NULL) {
+        return;
+    }
+    button->pending_single_click = false;
+    button->pending_click_ms = 0;
+    button->pending_click_started_tick = 0;
+    button->recent_short_click = false;
+    button->recent_short_click_tick = 0;
+    button->recent_raw_press = false;
+    button->recent_raw_press_tick = 0;
+    button->raw_recovery_dispatched = true;
+    ESP_LOGW(
+        TAG,
+        "%s raw double-click recovery detected: origin=%s elapsed_ms=%" PRIu32 " raw_window_ms=%d",
+        button->label,
+        origin != NULL ? origin : "raw",
+        elapsed_ms,
+        VOICE_KEY_INPUT_RAW_RECOVERY_DOUBLE_CLICK_WINDOW_MS);
+    voice_key_input_record_recovery_event(button->label);
+}
+
+static bool voice_key_input_note_raw_press_edge(
+    voice_key_button_state_t *button,
+    TickType_t now_tick,
+    const char *origin)
+{
+    if (button == NULL || button->raw_recovery_dispatched) {
+        return button != NULL && button->raw_recovery_dispatched;
+    }
+
+    if (button->recent_raw_press) {
+        uint32_t elapsed_ms =
+            voice_key_input_elapsed_ms(now_tick, button->recent_raw_press_tick);
+        if (elapsed_ms < VOICE_KEY_INPUT_RAW_RECOVERY_DOUBLE_CLICK_MIN_MS) {
+            return false;
+        }
+        if (elapsed_ms <= VOICE_KEY_INPUT_RAW_RECOVERY_DOUBLE_CLICK_WINDOW_MS) {
+            if (voice_key_input_recovery_allowed()) {
+                voice_key_input_force_raw_recovery(button, origin, elapsed_ms);
+                return true;
+            }
+            ESP_LOGI(
+                TAG,
+                "%s raw double-click kept as custom-key gesture: origin=%s recovery_idle_guard_ms=%d elapsed_ms=%" PRIu32,
+                button->label,
+                origin != NULL ? origin : "raw",
+                VOICE_KEY_INPUT_RECOVERY_IDLE_GUARD_MS,
+                elapsed_ms);
+        } else {
+            button->recent_raw_press = false;
+            button->recent_raw_press_tick = 0;
+        }
+    }
+
+    button->recent_raw_press = true;
+    button->recent_raw_press_tick = now_tick;
+    return false;
+}
+
 static bool voice_key_input_recent_click_in_recovery_window(
     voice_key_button_state_t *button,
     TickType_t now_tick)
@@ -542,6 +664,9 @@ static void voice_key_input_handle_button_sample(voice_key_button_state_t *butto
         button->pending_click_started_tick = 0;
         button->recent_short_click = false;
         button->recent_short_click_tick = 0;
+        button->recent_raw_press = false;
+        button->recent_raw_press_tick = 0;
+        button->raw_recovery_dispatched = false;
         button->long_press_reported = false;
         button->raw_feedback_pressed = false;
         button->hold_feedback_tick = 0;
@@ -596,7 +721,6 @@ static void voice_key_input_handle_button_sample(voice_key_button_state_t *butto
         button->long_press_reported = false;
         if (!button->raw_feedback_pressed) {
             button->hold_feedback_tick = now_tick;
-            status_led_notify_ec11_feedback(STATUS_LED_EC11_FEEDBACK_PRESS);
             power_manager_record_activity("ec11_key_press");
             button->raw_feedback_pressed = true;
         }
@@ -605,7 +729,9 @@ static void voice_key_input_handle_button_sample(voice_key_button_state_t *butto
             button->pressed_ms = voice_key_input_elapsed_ms(now_tick, button->pressed_started_tick);
         }
         voice_key_input_clear_raw_feedback(button);
-        if (!button->long_press_reported && button->pressed_ms <= VOICE_KEY_INPUT_CLICK_MAX_MS) {
+        if (button->raw_recovery_dispatched) {
+            ESP_LOGI(TAG, "%s release ignored after raw double-click recovery", button->label);
+        } else if (!button->long_press_reported && button->pressed_ms <= VOICE_KEY_INPUT_CLICK_MAX_MS) {
             voice_key_input_handle_short_click_release(button, now_tick, NULL);
         } else if (button->long_press_reported) {
             ESP_LOGI(TAG, "%s long press released without custom-key/recovery gesture", button->label);
@@ -614,9 +740,13 @@ static void voice_key_input_handle_button_sample(voice_key_button_state_t *butto
         button->pressed_ms = 0;
         button->pressed_started_tick = 0;
         button->long_press_reported = false;
+        button->raw_recovery_dispatched = false;
         button->hold_feedback_tick = 0;
     } else if (!pressed) {
-        if (button->raw_feedback_pressed) {
+        if (button->raw_recovery_dispatched) {
+            ESP_LOGI(TAG, "%s raw-only release ignored after raw double-click recovery", button->label);
+            button->raw_recovery_dispatched = false;
+        } else if (button->raw_feedback_pressed) {
             ESP_LOGI(TAG, "%s raw-only short click accepted after stable idle", button->label);
             voice_key_input_handle_short_click_release(button, now_tick, "raw-only");
         }
@@ -631,7 +761,6 @@ static void voice_key_input_handle_button_sample(voice_key_button_state_t *butto
         button->pressed_ms = next_pressed_ms;
         if (button->hold_feedback_tick == 0 ||
             now_tick - button->hold_feedback_tick >= pdMS_TO_TICKS(VOICE_KEY_INPUT_HOLD_FEEDBACK_REFRESH_MS)) {
-            status_led_notify_ec11_feedback(STATUS_LED_EC11_FEEDBACK_PRESS);
             power_manager_record_activity("ec11_key_hold");
             button->hold_feedback_tick = now_tick;
         }
@@ -642,6 +771,9 @@ static void voice_key_input_handle_button_sample(voice_key_button_state_t *butto
             button->pending_click_started_tick = 0;
             button->recent_short_click = false;
             button->recent_short_click_tick = 0;
+            button->recent_raw_press = false;
+            button->recent_raw_press_tick = 0;
+            button->raw_recovery_dispatched = false;
             ESP_LOGI(TAG, "%s long press reserved for power control: hold_ms=%" PRIu32, button->label, next_pressed_ms);
             status_led_notify_shutdown_confirm(false, "ec11_long_press_shutdown_confirm");
             diag_log(DIAG_SRC_VOICE_KEY, DIAG_VKEY_PRESS, DIAG_SEV_INFO, 3, next_pressed_ms, 0, 0);
@@ -849,9 +981,26 @@ static esp_err_t voice_key_input_direct_gpio_init(void)
         .mode = GPIO_MODE_INPUT,
         .pull_up_en = GPIO_PULLUP_ENABLE,
         .pull_down_en = GPIO_PULLDOWN_DISABLE,
-        .intr_type = GPIO_INTR_DISABLE,
+        .intr_type = GPIO_INTR_ANYEDGE,
     };
     ESP_RETURN_ON_ERROR(gpio_config(&direct_cfg), TAG, "direct gpio config failed");
+    esp_err_t ret = gpio_install_isr_service(0);
+    if (ret != ESP_OK && ret != ESP_ERR_INVALID_STATE) {
+        ESP_LOGW(TAG, "direct gpio ISR service install failed: gpio=%d ret=%s",
+                 (int)VOICE_KEY_INPUT_DIRECT_GPIO,
+                 esp_err_to_name(ret));
+        return ret;
+    }
+    ret = gpio_isr_handler_add(
+        VOICE_KEY_INPUT_DIRECT_GPIO,
+        voice_key_input_direct_gpio_wake_from_isr,
+        NULL);
+    if (ret != ESP_OK) {
+        ESP_LOGW(TAG, "direct gpio ISR handler add failed: gpio=%d ret=%s",
+                 (int)VOICE_KEY_INPUT_DIRECT_GPIO,
+                 esp_err_to_name(ret));
+        return ret;
+    }
     voice_key_input_enable_light_sleep_wake();
     return ESP_OK;
 }
@@ -897,8 +1046,34 @@ static void voice_key_input_poll_task(void *parameter)
         }
 #endif
 
+        TickType_t isr_last_press_tick = 0;
+        uint32_t isr_press_count =
+            voice_key_input_take_direct_gpio_isr_press_count(&isr_last_press_tick);
+        if (!s_direct_generated_active && isr_press_count > 0) {
+            TickType_t raw_press_tick = isr_last_press_tick != 0 ? isr_last_press_tick : now;
+            bool raw_recovery = voice_key_input_note_raw_press_edge(
+                &s_direct_gpio_state,
+                raw_press_tick,
+                "isr_edge");
+            if (!raw_recovery && isr_press_count >= 2 && voice_key_input_recovery_allowed()) {
+                voice_key_input_force_raw_recovery(&s_direct_gpio_state, "isr_edge_batch", 0);
+                raw_recovery = true;
+            }
+            if (!raw_recovery && !s_direct_gpio_state.raw_feedback_pressed) {
+                s_direct_gpio_state.raw_feedback_pressed = true;
+                s_direct_gpio_state.hold_feedback_tick = now;
+                power_manager_record_activity("ec11_key_press");
+                ESP_LOGI(
+                    TAG,
+                    "EC11 push raw press tracked from ISR edge: source=%s count=%" PRIu32,
+                    s_direct_gpio_state.label,
+                    isr_press_count);
+            }
+        }
+
+        bool physical_direct_raw_high = gpio_get_level(VOICE_KEY_INPUT_DIRECT_GPIO) != 0;
         bool direct_raw_high =
-            voice_key_input_generated_raw_high(gpio_get_level(VOICE_KEY_INPUT_DIRECT_GPIO) != 0, now);
+            voice_key_input_generated_raw_high(physical_direct_raw_high, now);
         voice_key_input_handle_button_sample(&s_direct_gpio_state, direct_raw_high);
 
         uint32_t wait_ms = voice_key_input_next_wait_ms();
@@ -955,7 +1130,7 @@ esp_err_t voice_key_input_start(void)
     s_started = true;
     ESP_LOGI(
         TAG,
-        "voice key ready: source=%s gpio=%d active_low=1 wake=active_low_gpio_wakeup+20ms_scan low_power_wake=active_low_gpio_wakeup+20ms_scan runtime_irq=disabled legacy_expander=%d poll_ms=%d idle_backup_ms=%d low_power_idle_backup_ms=%d debounce_ms=%d debounce_samples=%d",
+        "voice key ready: source=%s gpio=%d active_low=1 wake=active_low_gpio_wakeup+20ms_scan low_power_wake=active_low_gpio_wakeup+20ms_scan runtime_irq=anyedge_notify_only legacy_expander=%d poll_ms=%d idle_backup_ms=%d low_power_idle_backup_ms=%d debounce_ms=%d debounce_samples=%d",
         VOICE_KEY_INPUT_DIRECT_LABEL,
         VOICE_KEY_INPUT_DIRECT_GPIO,
         VOICE_KEY_INPUT_ENABLE_LEGACY_EXPANDER,

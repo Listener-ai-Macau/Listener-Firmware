@@ -191,7 +191,7 @@ static status_led_ble_state_t ble_hid_connected_status_led_state(void)
 
 static void ble_hid_resync_connected_status_led(void)
 {
-    if (!s_ble_connected) {
+    if (!s_ble_connected || !ble_hid_gap_is_securely_connected()) {
         return;
     }
     status_led_set_ble_state(ble_hid_connected_status_led_state(), false);
@@ -1240,7 +1240,6 @@ static void ble_hid_event_callback(void *handler_args, esp_event_base_t base, in
         s_ble_connected = true;
         ble_hid_battery_task_wake();
         power_manager_set_ble_connected(true);
-        status_led_set_ble_state(STATUS_LED_BLE_CONNECTED, true);
         s_connect_timestamp_ms = (uint32_t)(esp_timer_get_time() / 1000LL);
         ble_hid_update_battery_level("connect_restore", true);
         uint32_t disconnect_count = ble_hid_disconnect_count_snapshot();
@@ -1555,7 +1554,7 @@ esp_err_t ble_hid_init(void)
     }
     ESP_LOGI(TAG, "BLE device name configured: gap/hid/advertising=%s", s_device_name);
 
-    ret = ble_hid_gap_configure_advertising(ESP_HID_APPEARANCE_GENERIC, s_device_name);
+    ret = ble_hid_gap_configure_advertising(ESP_HID_APPEARANCE_KEYBOARD, s_device_name);
     if (ret != ESP_OK) {
         ESP_LOGE(TAG, "BLE advertising config failed: %s", esp_err_to_name(ret));
         ble_hid_publish_readiness(

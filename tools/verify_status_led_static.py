@@ -24,6 +24,7 @@ CHECKS = {
         "status_led_set_ble_state",
         "STATUS_LED_BLE_REPAIRING",
         "status_led_notify_ble_repairing",
+        "status_led_notify_ble_repairing_for_ms",
         "status_led_set_recording",
         "status_led_set_recording_level",
         "status_led_set_processing",
@@ -159,8 +160,10 @@ CHECKS = {
         "STATUS_LED_OK_SUCCESS_BLUE_BALANCE 0U",
         "STATUS_LED_PREVIEW_BLE_OVERRIDE_MS 15000U",
         "STATUS_LED_BLE_REPAIR_CUE_MS 2700U",
-        "STATUS_LED_EC11_REPAIR_BLINK_MIN_PERCENT 4U",
-        "STATUS_LED_EC11_REPAIR_BLINK_MAX_PERCENT 16U",
+        "STATUS_LED_BLE_REPAIR_CUE_LEAD_CLEAR_MS (STATUS_LED_IDLE_TRANSITION_CLEAR_MS + STATUS_LED_REFRESH_MS)",
+        "STATUS_LED_BLE_REPAIR_WINDOW_MAX_MS 120000U",
+        "STATUS_LED_EC11_REPAIR_BLINK_MIN_PERCENT 0U",
+        "STATUS_LED_EC11_REPAIR_BLINK_MAX_PERCENT STATUS_LED_BLE_ATTENTION_PERCENT",
         "STATUS_LED_PWR_COLOR_AMBER",
         "STATUS_LED_DIAG_VIS_LOW_POWER_OFF",
         "battery_display_level_percent",
@@ -192,6 +195,9 @@ CHECKS = {
         "boot_feedback_until_ms",
         "status_led_force_boot_feedback",
         "status_led_boot_power_color_locked",
+        "now_ms < s_state.ble_repair_cue_started_ms",
+        "s_state.ble_repair_cue_started_ms = now_ms + STATUS_LED_BLE_REPAIR_CUE_LEAD_CLEAR_MS",
+        "s_state.ble_repair_cue_until_ms = s_state.ble_repair_cue_started_ms + STATUS_LED_BLE_REPAIR_CUE_MS",
         "STATUS_LED_NVS_BRIGHTNESS_KEY \"brightness\"",
         "led_contract_rev=",
         "rmt_tx_dma_supported=%u",
@@ -309,14 +315,15 @@ CHECKS = {
         "preview_ble_override_until_ms",
         "preview_ble_override_ms_left",
         "state != STATUS_LED_BLE_REPAIRING",
-        "STATUS_LED_BLE_REPAIR_MIN_PERCENT 30U",
-        "STATUS_LED_BLE_REPAIR_MAX_PERCENT 100U",
+        "STATUS_LED_BLE_REPAIR_MIN_PERCENT 0U",
+        "STATUS_LED_BLE_REPAIR_MAX_PERCENT STATUS_LED_BLE_ATTENTION_PERCENT",
         "STATUS_LED_PWR_WHITE_VISUAL_BALANCE_PERCENT 10U",
         "STATUS_LED_CHARGING_ACTIVE_WORK_MIN_PERCENT 12U",
         "STATUS_LED_BLE_ATTENTION_PERCENT 18U",
         "STATUS_LED_BLE_PAIRING_PULSE_PERCENT STATUS_LED_BLE_ATTENTION_PERCENT",
-        "STATUS_LED_BLE_RECONNECT_MIN_PERCENT 10U",
-        "STATUS_LED_BLE_RECONNECT_MAX_PERCENT STATUS_LED_BLE_ATTENTION_PERCENT",
+        "STATUS_LED_BLE_RECONNECT_MIN_PERCENT 0U",
+        "STATUS_LED_BLE_RECONNECT_MAX_PERCENT 0U",
+        "STATUS_LED_BLE_CONNECTED_FIND_TYPE_PULSE_PERCENT STATUS_LED_BLE_ATTENTION_PERCENT",
         "STATUS_LED_BLE_TYPE_READY_STEADY_PERCENT 14U",
         "case STATUS_LED_BLE_TYPE_READY: return \"type_ready\"",
         "status_led_ble_state_ready_locked",
@@ -617,14 +624,15 @@ CHECKS = {
     ],
     "ports/esp32/ble_hid/ble_hid.c": [
         "status_led_consume_usb_command(line)",
-        "status_led_set_ble_state(STATUS_LED_BLE_CONNECTED, true)",
+        "ble_hid_gap_is_securely_connected()",
         "status_led_set_ble_state(STATUS_LED_BLE_RECONNECTING, false)",
         "ble_audio_stream_type_link_poll_wait_ms(",
         "ble_audio_stream_poll_type_link()",
     ],
     "ports/esp32/ble_audio_stream/ble_audio_stream_esp32.c": [
-        "BLE_AUDIO_STREAM_TYPE_HEARTBEAT_TIMEOUT_MS 12000",
-        "BLE_AUDIO_STREAM_TYPE_LED_READY_HOLD_MS 30000",
+        "BLE_AUDIO_STREAM_TYPE_HEARTBEAT_TIMEOUT_MS 45000",
+        "BLE_AUDIO_STREAM_TYPE_LED_READY_HOLD_MS 45000",
+        "ble_audio_stream_sync_power_manager_for_type_link(false, \"gap_connect\")",
         "TYPE:READY",
         "TYPE:HB",
         "TYPE:BYE",
@@ -642,27 +650,37 @@ CHECKS = {
         "ble_audio_stream_poll_type_link",
     ],
     "ports/esp32/ble_hid_gap/ble_hid_gap_esp32.c": [
+        "connection failed while previous GAP link was still marked connected",
+        "ble_audio_stream_on_gap_disconnect(stale_conn.conn_handle)",
         "pairing_window\n                ? STATUS_LED_BLE_PAIRING",
         ": STATUS_LED_BLE_RECONNECTING",
         "BLE reconnect request kept existing active advertising",
         "ble_hid_gap_recovery_pairing_window_open()\n                ? STATUS_LED_BLE_PAIRING",
         "ble_hid_gap_get_bonded_peer_count(&bonded_peer_count)",
-        "bond restored after recovery disconnect",
-        "leaving pairing LED for reconnect/find-Type state",
+        "keeping pairing window visible until secure reconnect",
         "ble_hid_gap_request_recovery_security_once(event->mtu.conn_handle, \"mtu\")",
         "ble_hid_gap_request_recovery_security_once(event->subscribe.conn_handle, \"subscribe\")",
-        "status_led_notify_ble_repairing(\"ble_recovery_clear_bonds\")",
-        "status_led_notify_ble_repairing(\"ble_recovery_refresh_pairing\")",
+        "status_led_notify_ble_repairing_for_ms(\"ble_recovery_clear_bonds\"",
+        "status_led_notify_ble_repairing_for_ms(\"ble_recovery_refresh_pairing\"",
+        "ble_hid_gap_hold_recovery_pairing_led(\"ble_recovery_pairing_window_open\")",
         "stable BLE identity",
         "pairing encryption failure",
+        "keeping pairing advertising available for Windows retry",
+        "waiting for central-led security",
         "BLE identity kept stable and device is discoverable for re-pair",
         "s_swift_pair_mfg_data",
+        "s_recovery_type_controlled_pairing",
         "BLE_HID_SWIFT_PAIR_DISPLAY_NAME_MAX_WITH_HID_UUID",
         "BLE_HID_SWIFT_PAIR_DISPLAY_NAME_MAX_WITHOUT_APPEARANCE",
         "ble_hid_gap_configure_swift_pair_fields",
-        'swift_pair_enabled ? "swift_pair" : "normal"',
+        "ble_hid_gap_configure_type_controlled_recovery_adv_fields",
+        'type_recovery_enabled ? "type_recovery" : "normal"',
         "status_led_set_error(STATUS_LED_ERROR_DOMAIN_BLE",
         "status_led_clear_error(STATUS_LED_ERROR_DOMAIN_BLE)",
+    ],
+    "components/power_manager/power_manager.c": [
+        "ble_audio_stream_is_type_link_ready()",
+        "effective_connected",
     ],
     "components/keyboard/keyboard.c": [
         "status_led_notify_key_event",
@@ -754,8 +772,10 @@ CHECKS = {
         "Repeated same-state BLE callbacks are idempotent",
         "User-requested re-pairing",
         "status_led_notify_ble_repairing()",
-        "rotates the stored BLE static-random identity before advertising again",
-        "The old host must pair again instead of silently reconnecting to the previous device identity",
+        "three-cycle blue double-flash confirmation",
+        "must not keep repeating the confirmation pattern forever",
+        "keeps the stable BLE identity",
+        "The host must create a new bond through the recovery window instead of silently treating the double-click as an ordinary reconnect to the old bond",
         "ble_repair_ms_left",
         "A successful Type-ready transition is the steady blue connected indication",
         "Plain Windows/HID-only connected uses a blue double-flash Type-search cue",
@@ -764,9 +784,9 @@ CHECKS = {
         "Manual `~LED:PREVIEW` scenes temporarily hold their requested BLE state",
         "for 15 seconds",
         "`preview_ble_override_ms_left`",
-        "Reconnect keeps a low blue BLE floor",
-        "pairing, reconnect, and user-requested re-pair can still blink BLE as attention states",
-        "Re-pair uses a BLE plus EC11 confirmation cue",
+        "Ordinary reconnect stays dark",
+        "pairing and user-requested re-pair can still blink BLE as attention states",
+        "Re-pair uses a BLE-plus-EC11 confirmation cue",
         "current render-sampled RGB frame",
         "status_query_samples_current_render=1",
         "ordinary HID-only `connected` uses a blue double-flash Type-search cue",
@@ -774,7 +794,7 @@ CHECKS = {
         "it uses steady blue",
         "30 second Type-ready hold",
         "Steady connected state is Type-gated",
-        "In connected/disconnected low-power idle, the low-power renderer keeps PWR visible and leaves connected/TYPE_READY BLE dark",
+        "In connected/disconnected low-power idle, the low-power renderer keeps PWR visible and leaves reconnecting/connected/TYPE_READY BLE dark",
         "External power overrides battery-color display on `PWR`",
         "continuous slow white breath",
         "steady white once charge-full has been debounced and latched",
@@ -804,7 +824,7 @@ CHECKS = {
         "EC11, key, and edge/frame do not follow PCM brightness",
         "processing-only uses matched low violet clockwise motion",
         "EC11 short press and rotation add a brief white local confirmation",
-        "accepted user-requested re-pair uses a low blue EC11 full-ring double-pulse synchronized to `LED2=BLE`",
+        "accepted user-requested re-pair uses a synchronized BLE and EC11 three-cycle double-flash",
         "EC11 double-click recovery is not a key-style purple gesture",
         "EC11/edge accent-only motion does not repeatedly refresh the status rail",
         "Status-tail anti-flicker contract",
@@ -982,7 +1002,9 @@ CHECKS = {
         "STATUS_LED_EC11_FEEDBACK_ROTATE_CCW",
     ],
     "ports/esp32/voice_key_input/voice_key_input_esp32.c": [
-        "status_led_notify_ec11_feedback(STATUS_LED_EC11_FEEDBACK_PRESS)",
+        "EC11 push raw press tracked without EC11 LED feedback",
+        "power_manager_record_activity(\"ec11_key_press\")",
+        "power_manager_record_activity(\"ec11_key_hold\")",
     ],
 }
 
@@ -1048,6 +1070,11 @@ def main() -> int:
     firmware_ota = read("components/firmware_ota/firmware_ota.c")
     if "status_led_active_work_locked" in status_led:
         failures.append("status_led.c: active recording/processing must not suppress physical key LED feedback")
+    resume_output = extract_c_function(status_led, "status_led_resume_interactive_output_locked")
+    if "s_state.idle_transition_clear_pending = false;" in resume_output:
+        failures.append("status_led.c: interactive low-power resume must preserve the pending clear frame, not cancel it")
+    if "s_state.idle_transition_clear_pending = true;" not in resume_output:
+        failures.append("status_led.c: interactive low-power resume must schedule a clear frame before rendering feedback")
     for function_name in ("status_led_notify_key_event", "status_led_notify_key_feedback"):
         try:
             body = extract_c_function(status_led, function_name)
@@ -1098,61 +1125,115 @@ def main() -> int:
                 "ble_hid_gap_esp32.c: Swift Pair must keep HID UUID for short names and fall back to normal advertising when the full name cannot fit"
             )
     try:
+        type_recovery_body = extract_c_function(
+            ble_gap, "ble_hid_gap_configure_type_controlled_recovery_adv_fields"
+        )
+    except ValueError as exc:
+        failures.append(f"ble_hid_gap_esp32.c: {exc}")
+    else:
+        if (
+            "s_scan_rsp_fields.uuids128 = &s_audio_stream_service_uuid;" not in type_recovery_body
+            or "s_adv_fields.appearance_is_present = 1;" in type_recovery_body
+            or "s_adv_fields.uuids16 = &s_hid_service_uuid;" in type_recovery_body
+            or "s_adv_fields.mfg_data" in type_recovery_body
+        ):
+            failures.append(
+                "ble_hid_gap_esp32.c: Type-controlled recovery advertising must be discoverable by Type without HID/Swift Pair fields that trigger Windows keyboard toasts"
+            )
+    try:
         recovery_body = extract_c_function(ble_gap, "ble_hid_gap_forget_bonds_and_repair")
     except ValueError as exc:
         failures.append(f"ble_hid_gap_esp32.c: {exc}")
     else:
-        clear_index = recovery_body.find("rc = ble_store_clear();")
-        adv_index = recovery_body.find("esp_err_t adv_ret = ble_hid_gap_start_advertising();", clear_index)
-        if clear_index < 0 or adv_index < 0 or not (clear_index < adv_index):
+        async_reset_index = recovery_body.find("bond_delete=async_after_disconnect")
+        reopen_index = recovery_body.find("ble_hid_gap_open_recovery_pairing_window(", async_reset_index)
+        schedule_delete_index = recovery_body.find("ble_hid_gap_schedule_recovery_bond_delete", reopen_index)
+        adv_index = recovery_body.find("esp_err_t adv_ret = ble_hid_gap_start_advertising();", reopen_index)
+        if (
+            async_reset_index < 0
+            or reopen_index < 0
+            or schedule_delete_index < 0
+            or adv_index < 0
+            or not (async_reset_index < reopen_index < schedule_delete_index < adv_index)
+        ):
             failures.append(
-                "ble_hid_gap_esp32.c: recovery must clear bonds, keep stable BLE identity, then restart advertising"
+                "ble_hid_gap_esp32.c: recovery must avoid synchronous ble_store_clear, open the stable-identity pairing window, schedule async local bond delete, then restart advertising"
             )
+        if "ble_store_clear()" in recovery_body or "ble_store_clear_failed" in recovery_body:
+            failures.append("ble_hid_gap_esp32.c: recovery must not synchronously clear the whole NimBLE NVS store in the double-click hot path")
         refresh_index = recovery_body.find("pairing window already active; refreshing advertising with stable BLE identity")
+        refresh_reopen_index = recovery_body.find("ble_hid_gap_open_recovery_pairing_window(", refresh_index)
         refresh_adv_index = recovery_body.find(
             "esp_err_t adv_ret = ble_hid_gap_start_advertising();",
             refresh_index,
         )
         if (
             refresh_index < 0
+            or refresh_reopen_index < 0
             or refresh_adv_index < 0
-            or not (refresh_index < refresh_adv_index)
+            or not (refresh_index < refresh_reopen_index < refresh_adv_index)
         ):
             failures.append(
-                "ble_hid_gap_esp32.c: active recovery window must refresh advertising while keeping stable BLE identity"
+                "ble_hid_gap_esp32.c: active recovery window must renew the full pairing window before refreshing stable-identity advertising"
             )
-        if "stable identity will advertise after disconnect" not in recovery_body:
+        if "stable identity will advertise after async local bond delete following disconnect" not in recovery_body:
             failures.append(
-                "ble_hid_gap_esp32.c: connected recovery must terminate first, then advertise the stable BLE identity after disconnect"
+                "ble_hid_gap_esp32.c: connected recovery must terminate first, delete the local bond asynchronously, then advertise the stable BLE identity"
             )
+    if "NimBLE advertising deferred: recovery async local bond delete pending" not in ble_gap:
+        failures.append(
+            "ble_hid_gap_esp32.c: advertising must be deferred while recovery async local bond delete is pending"
+        )
+    if "recovery: rejecting connection while async local bond delete is pending" not in ble_gap:
+        failures.append(
+            "ble_hid_gap_esp32.c: recovery must reject stale Windows connections while local bond delete is pending"
+        )
     disconnect_index = ble_gap.find("case BLE_GAP_EVENT_DISCONNECT:")
+    disconnect_defer_index = ble_gap.find(
+        "advertising deferred after disconnect until async local bond delete completes",
+        disconnect_index,
+    )
     disconnect_stable_index = ble_gap.find("pairing reset continues after disconnect, BLE identity kept stable", disconnect_index)
     disconnect_adv_index = ble_gap.find("ble_hid_gap_start_advertising();", disconnect_index)
     disconnect_bond_index = ble_gap.find("bonded_peer_count > 0", disconnect_index)
-    disconnect_close_index = ble_gap.find(
+    disconnect_keep_index = ble_gap.find(
+        "keeping pairing window visible until secure reconnect",
+        disconnect_index,
+    )
+    disconnect_notify_index = ble_gap.find(
+        'ble_hid_gap_hold_recovery_pairing_led("ble_recovery_pairing_window_after_disconnect")',
+        disconnect_index,
+    )
+    disconnect_old_close_index = ble_gap.find(
         'ble_hid_gap_close_recovery_pairing_window("bond restored after recovery disconnect")',
         disconnect_index,
     )
     if (
         disconnect_index < 0
         or disconnect_adv_index < 0
+        or disconnect_defer_index < 0
         or disconnect_stable_index < 0
-        or disconnect_adv_index > disconnect_stable_index
+        or not (disconnect_index < disconnect_defer_index < disconnect_adv_index < disconnect_stable_index)
     ):
         failures.append(
-            "ble_hid_gap_esp32.c: disconnect recovery must restart advertising with the stable BLE identity"
+            "ble_hid_gap_esp32.c: disconnect recovery must defer advertising for async local bond delete, then restart advertising with the stable BLE identity"
         )
     if (
         disconnect_index < 0
         or disconnect_bond_index < 0
-        or disconnect_close_index < 0
-        or not (disconnect_index < disconnect_bond_index < disconnect_close_index < disconnect_adv_index)
+        or disconnect_keep_index < 0
+        or disconnect_notify_index < 0
+        or disconnect_old_close_index >= 0
+        or not (disconnect_index < disconnect_bond_index < disconnect_keep_index < disconnect_adv_index < disconnect_notify_index)
     ):
         failures.append(
-            "ble_hid_gap_esp32.c: recovery disconnect must close pairing window before advertising when a new bond exists"
+            "ble_hid_gap_esp32.c: recovery disconnect must keep pairing window visible through bond churn until secure reconnect"
         )
     enc_change_index = ble_gap.find("case BLE_GAP_EVENT_ENC_CHANGE:")
-    enc_success_index = ble_gap.find('ble_hid_gap_close_recovery_pairing_window("secure connection established")', enc_change_index)
+    enc_success_index = ble_gap.find(
+        'ble_hid_gap_note_secure_connection(\n                        event->enc_change.conn_handle,\n                        "secure connection established")',
+        enc_change_index,
+    )
     enc_connected_led_index = ble_gap.find(
         "status_led_set_ble_state(STATUS_LED_BLE_CONNECTED, false)",
         enc_success_index,
@@ -1167,10 +1248,16 @@ def main() -> int:
             "ble_hid_gap_esp32.c: successful recovery pairing must move LED from pairing to connected find-Type state"
         )
     enc_failure_index = ble_gap.find("pairing encryption failure", enc_change_index)
-    enc_wait_index = ble_gap.find("waiting for central retry/disconnect", enc_change_index)
-    enc_terminate_index = ble_gap.find(
-        "ble_gap_terminate(event->enc_change.conn_handle, BLE_ERR_REM_USER_CONN_TERM)",
+    enc_wait_index = ble_gap.find("keeping pairing advertising available for Windows retry", enc_change_index)
+    enc_pending_delete_terminate_index = ble_gap.find(
+        "terminating encrypted connection while async local bond delete is pending",
         enc_change_index,
+    )
+    enc_next_case_index = ble_gap.find("case BLE_GAP_EVENT_NOTIFY_TX:", enc_change_index)
+    enc_failure_terminate_index = ble_gap.find(
+        "ble_gap_terminate(event->enc_change.conn_handle, BLE_ERR_REM_USER_CONN_TERM)",
+        enc_failure_index,
+        enc_next_case_index,
     )
     if (
         enc_change_index < 0
@@ -1181,9 +1268,13 @@ def main() -> int:
         failures.append(
             "ble_hid_gap_esp32.c: recovery encryption failures must keep stable BLE identity while Windows retries or disconnects"
         )
-    if enc_terminate_index >= 0:
+    if enc_pending_delete_terminate_index < 0:
         failures.append(
-            "ble_hid_gap_esp32.c: recovery ENC_CHANGE failures must not terminate the Windows pairing connection"
+            "ble_hid_gap_esp32.c: ENC_CHANGE must reject stale encrypted connections only while async local bond delete is pending"
+        )
+    if enc_failure_terminate_index >= 0:
+        failures.append(
+            "ble_hid_gap_esp32.c: recovery ENC_CHANGE failure branch must not terminate the Windows pairing connection"
         )
     recording_active_preview = re.search(
         r"}\s*else\s+if\s*\(\s*strcasecmp\(state,\s*\"capture\"\)\s*==\s*0\s*\|\|"
@@ -1272,19 +1363,20 @@ def main() -> int:
         body = low_power_ble_helper.group("body")
         if not re.search(
             r"case\s+STATUS_LED_BLE_PAIRING:\s*\n\s*case\s+STATUS_LED_BLE_REPAIRING:\s*\n\s*"
-            r"case\s+STATUS_LED_BLE_RECONNECTING:[\s\S]*?"
+            r"[\s\S]*?"
             r"STATUS_LED_BATTERY_IDLE_BLE_HEARTBEAT_ON_MS[\s\S]*?"
             r"STATUS_LED_LOW_POWER_BLE_ATTENTION_PERCENT",
             body,
         ):
-            failures.append("status_led.c: low-power BLE helper must blink pairing/reconnecting instead of latching solid")
+            failures.append("status_led.c: low-power BLE helper must blink pairing/re-pair instead of latching solid")
         if not re.search(
+            r"case\s+STATUS_LED_BLE_RECONNECTING:\s*\n\s*"
             r"case\s+STATUS_LED_BLE_CONNECTED:\s*\n\s*"
             r"case\s+STATUS_LED_BLE_TYPE_READY:[\s\S]*?"
             r"return\s+0U;",
             body,
         ):
-            failures.append("status_led.c: low-power idle must keep connected/TYPE_READY BLE dark")
+            failures.append("status_led.c: low-power idle must keep reconnecting/connected/TYPE_READY BLE dark")
     low_power_ble = re.search(
         r"static\s+void\s+status_led_render_low_power_ble_locked[^{]*\{(?P<body>[\s\S]*?)\n\}",
         status_led,
@@ -1305,8 +1397,8 @@ def main() -> int:
         failures.append("status_led.c: active BLE rendering must not use the old low-base HID-only connected heartbeat/confirmation renderer")
     if "STATUS_LED_BLE_CONNECTED_FIND_TYPE_PERIOD_MS 2000U" not in status_led:
         failures.append("status_led.c: HID-only connected must keep the bounded find-Type double-flash period")
-    if "STATUS_LED_BLE_CONNECTED_FIND_TYPE_PULSE_PERCENT STATUS_LED_BLE_RECONNECT_MAX_PERCENT" not in status_led:
-        failures.append("status_led.c: HID-only connected find-Type flash must stay near reconnect brightness")
+    if "STATUS_LED_BLE_CONNECTED_FIND_TYPE_PULSE_PERCENT STATUS_LED_BLE_ATTENTION_PERCENT" not in status_led:
+        failures.append("status_led.c: HID-only connected find-Type flash must stay visible while reconnecting stays dark")
     if not re.search(
         r"case\s+STATUS_LED_BLE_CONNECTED:[\s\S]*?"
         r"if\s*\(\s*status_led_ota_ble_steady_locked\(now_ms\)\s*\)[\s\S]*?"
@@ -1318,6 +1410,24 @@ def main() -> int:
         status_led,
     ):
         failures.append("status_led.c: active BLE rendering must make HID-only connected a find-Type double flash; only TYPE_READY or active OTA transfer may be steady blue")
+    reconnect_case = re.search(
+        r"case\s+STATUS_LED_BLE_RECONNECTING:\s*\{(?P<body>[\s\S]*?)\n\s*\}",
+        status_led,
+    )
+    if not reconnect_case:
+        failures.append("status_led.c: missing active reconnecting BLE render case")
+    else:
+        reconnect_body = reconnect_case.group("body")
+        if "status_led_double_pulse_on" in reconnect_body:
+            failures.append("status_led.c: reconnecting must not use the connected/find-Type double-flash pattern")
+        if "status_led_blink_on" in reconnect_body:
+            failures.append("status_led.c: ordinary reconnecting must stay dark, not blink like a connected cue")
+        if not re.search(
+            r"status_led_token_locked\(\s*ble_blue,\s*"
+            r"STATUS_LED_BLE_RECONNECT_MIN_PERCENT,\s*false\s*\)",
+            reconnect_body,
+        ):
+            failures.append("status_led.c: ordinary reconnecting must render the BLE token at the zero/off floor")
     if not re.search(
         r"void\s+status_led_set_ota_active[\s\S]*?else\s*\{[\s\S]*?"
         r"status_led_clear_ota_locked\(\);[\s\S]*?\}"
@@ -1510,25 +1620,37 @@ def main() -> int:
         r"static\s+uint8_t\s+status_led_ble_repair_percent_locked[^{]*\{(?P<body>[\s\S]*?)\n\}",
         status_led,
     )
-    if not repair_envelope or "status_led_double_pulse_on(ble_elapsed_ms, 900U)" not in repair_envelope.group("body"):
-        failures.append("status_led.c: BLE repair blink envelope must be the two-hit double-pulse cue")
+    if (
+        not repair_envelope
+        or "ble_elapsed_ms >= STATUS_LED_BLE_REPAIR_CUE_MS" not in repair_envelope.group("body")
+        or "return 0U;" not in repair_envelope.group("body")
+        or "status_led_double_pulse_on(ble_elapsed_ms, 900U)" not in repair_envelope.group("body")
+    ):
+        failures.append("status_led.c: BLE repair blink envelope must be a bounded three-cycle double-flash cue")
     elif "status_led_blink_on" in repair_envelope.group("body"):
         failures.append("status_led.c: BLE repair blink envelope must not add a third offset blink")
-    if "STATUS_LED_EC11_REPAIR_BLINK_MIN_PERCENT 4U" not in status_led or \
-       "STATUS_LED_EC11_REPAIR_BLINK_MAX_PERCENT 16U" not in status_led:
-        failures.append("status_led.c: EC11 re-pair ring must use the restored low blue full-ring blink levels")
+    if "status_led_ble_repair_cue_active_locked(now_ms)" not in status_led:
+        failures.append("status_led.c: long recovery pairing windows must not render the three-cycle repair confirmation forever")
+    if "STATUS_LED_EC11_REPAIR_BLINK_MIN_PERCENT 0U" not in status_led or \
+       "STATUS_LED_EC11_REPAIR_BLINK_MAX_PERCENT STATUS_LED_BLE_ATTENTION_PERCENT" not in status_led:
+        failures.append("status_led.c: EC11 re-pair ring must share the BLE repair double-flash envelope")
     repair_ring = re.search(
         r"static\s+void\s+status_led_render_ec11_repair_locked[^{]*\{(?P<body>[\s\S]*?)\n\}",
         status_led,
     )
     if not repair_ring:
-        failures.append("status_led.c: BLE re-pair must render the restored EC11 blue full-ring confirmation")
+        failures.append("status_led.c: BLE re-pair must render the synchronized EC11 ring cue")
     else:
         repair_ring_text = repair_ring.group("body")
         if "status_led_ble_repair_percent_locked" not in repair_ring_text:
-            failures.append("status_led.c: EC11 re-pair ring must share the BLE double-pulse envelope")
+            failures.append("status_led.c: EC11 re-pair must render from the same bounded BLE repair envelope")
+        if "STATUS_LED_EC11_REPAIR_BLINK_MIN_PERCENT" not in repair_ring_text or \
+           "STATUS_LED_EC11_REPAIR_BLINK_MAX_PERCENT" not in repair_ring_text:
+            failures.append("status_led.c: EC11 re-pair ring must use the named repair brightness constants")
         if "for (size_t index = 0; index < STATUS_LED_EC11_COUNT; ++index)" not in repair_ring_text:
-            failures.append("status_led.c: EC11 re-pair ring must cover the full knob ring")
+            failures.append("status_led.c: EC11 re-pair must cover the intended full knob ring")
+        if "status_led_set_max(&frame->ec11[index], color);" not in repair_ring_text:
+            failures.append("status_led.c: EC11 re-pair must light only the EC11 ring pixels")
         if "frame->edge" in repair_ring_text:
             failures.append("status_led.c: EC11 re-pair confirmation must not borrow the edge/frame LEDs")
     if not re.search(
@@ -1707,6 +1829,8 @@ def main() -> int:
             "voice_recording_control.c: post-stop AI cue must use recording_stop_processing_start, "
             "not the audio_session_finishing log detail"
         )
+    if 'status_led_notify_ble_repairing("recovery_complete_pair_again")' in voice_recording_control:
+        failures.append("voice_recording_control.c: recovery completion must not shorten the GAP-owned BLE pairing window")
     if 'status_led_set_error(STATUS_LED_ERROR_DOMAIN_BLE, STATUS_LED_ERROR_RETRYABLE, "voice_recovery_requested")' in voice_recording_control:
         failures.append("voice_recording_control.c: user-requested recovery must use BLE re-pair cue, not WARN/error")
     if 'status_led_set_error(STATUS_LED_ERROR_DOMAIN_BLE, STATUS_LED_ERROR_RETRYABLE, "ble_recovery_clear_bonds")' in ble_hid_gap:
@@ -1727,16 +1851,29 @@ def main() -> int:
         ble_hid_gap,
     ):
         failures.append("ble_hid_gap_esp32.c: HID reconnect requests must not stop/restart an already active normal advertisement")
+    recovery_connect_index = ble_hid_gap.find("if (conn_desc_valid && recovery_pairing_window) {")
+    recovery_consume_index = ble_hid_gap.find("s_recovery_swift_pair_consumed = true;", recovery_connect_index)
+    recovery_led_index = ble_hid_gap.find(
+        'ble_hid_gap_hold_recovery_pairing_led("ble_recovery_windows_connecting")',
+        recovery_connect_index,
+    )
+    recovery_wait_index = ble_hid_gap.find("waiting for central-led security", recovery_connect_index)
+    normal_security_index = ble_hid_gap.find("} else if (conn_desc_valid) {\n            rc = ble_gap_security_initiate(event->connect.conn_handle);", recovery_connect_index)
     if (
         "const bool conn_desc_valid = rc == 0;" not in ble_hid_gap
         or "const bool recovery_pairing_window = ble_hid_gap_recovery_pairing_window_open();" not in ble_hid_gap
-        or "if (conn_desc_valid && recovery_pairing_window) {\n            ble_hid_gap_request_recovery_security_once(event->connect.conn_handle, \"connect\");" not in ble_hid_gap
-        or "} else if (conn_desc_valid) {\n            rc = ble_gap_security_initiate(event->connect.conn_handle);" not in ble_hid_gap
+        or recovery_connect_index < 0
+        or recovery_led_index < 0
+        or recovery_wait_index < 0
+        or normal_security_index < 0
+        or not (recovery_connect_index < recovery_led_index < recovery_wait_index < normal_security_index)
+        or (recovery_consume_index >= 0 and recovery_connect_index < recovery_consume_index < normal_security_index)
+        or "ble_hid_gap_request_recovery_security_once(event->connect.conn_handle, \"connect\");" in ble_hid_gap
         or 'ble_hid_gap_request_recovery_security_once(event->mtu.conn_handle, "mtu");' not in ble_hid_gap
         or 'ble_hid_gap_request_recovery_security_once(event->subscribe.conn_handle, "subscribe");' not in ble_hid_gap
         or 'ESP_LOGW(TAG, "security initiate skipped: missing connection descriptor");' not in ble_hid_gap
     ):
-        failures.append("ble_hid_gap_esp32.c: security initiate must be guarded by a valid descriptor, immediate during recovery pairing, and idempotent on MTU/subscribe")
+        failures.append("ble_hid_gap_esp32.c: recovery connect must keep Swift Pair advertising eligible until secure pairing while MTU/subscribe remain idempotent backstops")
     if 'status_led_notify_success("recording_stop_done")' in voice_recording_control:
         failures.append("voice_recording_control.c: recording STOP must not show OK before Type final success")
     if 'status_led_notify_success("recording_session_done")' in voice_recording_control:
@@ -1840,9 +1977,34 @@ def main() -> int:
         idle_clear_body is None
         or "if (!s_state.output_disabled)" not in idle_clear_body.group(0)
         or "frame->status[STATUS_LED_SEM_PWR] = s_state.last_frame.status[STATUS_LED_SEM_PWR];" not in idle_clear_body.group(0)
+        or "if (!repair_transition_clear)" not in idle_clear_body.group(0)
         or "frame->status[STATUS_LED_SEM_BLE] = s_state.last_frame.status[STATUS_LED_SEM_BLE];" not in idle_clear_body.group(0)
     ):
-        failures.append("status_led.c: idle transition clear must preserve PWR/BLE only outside manual output-off")
+        failures.append("status_led.c: idle transition clear must preserve PWR/BLE only outside manual output-off, except repair drops BLE for the first visible pulse edge")
+    if (
+        "status_led_transition_clear_strip_mask_locked(&s_state.last_frame, repair_transition_clear)" not in status_led
+        or "if (!repair_transition_clear || previous == NULL)" not in status_led
+        or "uint8_t mask = STATUS_LED_STRIP_MASK_STATUS;" not in status_led
+        or "repair_transition_clear =\n        s_state.idle_transition_clear_pending &&\n        now_ms < s_state.ble_repair_until_ms;" not in status_led
+    ):
+        failures.append("status_led.c: BLE repair transition clear must key off the whole user-requested repair window and avoid waking EC11/KEY/EDGE unless the previous software frame actually had accent light")
+    low_power_setter = re.search(
+        r"void\s+status_led_set_low_power_disabled[^{]*\{(?P<body>[\s\S]*?)\n\}",
+        status_led,
+    )
+    if not low_power_setter:
+        failures.append("status_led.c: missing low-power disable setter")
+    else:
+        low_power_body = low_power_setter.group("body")
+        if (
+            "const bool preserve_repair_cue =" not in low_power_body
+            or "disabled && status_led_ble_repair_cue_active_locked(now_ms)" not in low_power_body
+            or "const bool next_low_power_disabled = disabled && !preserve_repair_cue;" not in low_power_body
+            or "s_state.low_power_disabled = next_low_power_disabled;" not in low_power_body
+            or "if (next_low_power_disabled)" not in low_power_body
+            or '"repair_low_power_hold"' not in low_power_body
+        ):
+            failures.append("status_led.c: low-power idle must preserve the active BLE+EC11 repair cue instead of truncating the double-flash")
     if not re.search(
         r"esp_err_t\s+status_led_init\(void\)[\s\S]*?"
         r"status_led_force_all_off\(false\);[\s\S]*?return\s+final_ret;",

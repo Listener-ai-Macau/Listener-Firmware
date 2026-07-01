@@ -214,9 +214,12 @@ CHECKS = {
     "ports/esp32/voice_key_input/voice_key_input_esp32.c": [
         "VOICE_KEY_INPUT_IDLE_BACKUP_POLL_MS (20)",
         "VOICE_KEY_INPUT_LOW_POWER_IDLE_BACKUP_POLL_MS (20)",
-        "VOICE_KEY_INPUT_DOUBLE_CLICK_WINDOW_MS (200)",
+        "VOICE_KEY_INPUT_DOUBLE_CLICK_WINDOW_MS (650)",
         "VOICE_KEY_INPUT_RECOVERY_DOUBLE_CLICK_WINDOW_MS (650)",
         "VOICE_KEY_INPUT_LONG_PRESS_IGNORE_MS (800)",
+        "VOICE_KEY_INPUT_ISR_PRESS_MIN_GAP_MS (80)",
+        "VOICE_KEY_INPUT_RAW_RECOVERY_DOUBLE_CLICK_WINDOW_MS (1800)",
+        "VOICE_KEY_INPUT_RAW_RECOVERY_DOUBLE_CLICK_MIN_MS (80)",
         "VOICE_KEY_INPUT_HOLD_FEEDBACK_REFRESH_MS (300)",
         "voice_key_input_next_wait_ms",
         "voice_key_input_enable_light_sleep_wake",
@@ -227,7 +230,7 @@ CHECKS = {
         "watchdog_platform_task_notify_take_low_power",
         "wake=active_low_gpio_wakeup+20ms_scan",
         "low_power_wake=active_low_gpio_wakeup+20ms_scan",
-        "runtime_irq=disabled",
+        "runtime_irq=anyedge_notify_only",
     ],
     "ports/esp32/voice_key_input/CMakeLists.txt": [
         "esp_hw_support",
@@ -742,19 +745,23 @@ def main() -> int:
         )
     if not re.search(
         r"power_manager_refresh_ble_connection_locked[\s\S]*"
+        r"ble_hid_gap_is_connected\(\)[\s\S]*"
+        r"ble_audio_stream_is_type_link_ready\(\)[\s\S]*"
         r"power_manager_apply_ble_connection_change_locked\(connected,\s*now_ms\)",
         power_manager,
     ):
         failures.append(
-            "components/power_manager/power_manager.c: BLE refresh must use the shared idle-preserving connection-change helper"
+            "components/power_manager/power_manager.c: BLE refresh must use HID/GAP or Type-link readiness through the shared idle-preserving connection-change helper"
         )
     if not re.search(
         r"void\s+power_manager_set_ble_connected[\s\S]*"
-        r"power_manager_apply_ble_connection_change_locked\(connected,\s*now_ms\)",
+        r"effective_connected[\s\S]*"
+        r"ble_audio_stream_is_type_link_ready\(\)[\s\S]*"
+        r"power_manager_apply_ble_connection_change_locked\(effective_connected,\s*now_ms\)",
         power_manager,
     ):
         failures.append(
-            "components/power_manager/power_manager.c: BLE callbacks must use the shared idle-preserving connection-change helper"
+            "components/power_manager/power_manager.c: BLE callbacks must use effective HID/GAP or Type-link readiness through the shared idle-preserving connection-change helper"
         )
     if not re.search(
         r"power_manager_should_preserve_idle_for_ble_change_locked[\s\S]*"
@@ -781,7 +788,7 @@ def main() -> int:
     if not re.search(
         r"void\s+power_manager_set_ble_connected[\s\S]*"
         r"if\s*\(changed\)\s*\{[\s\S]*"
-        r"power_manager_apply_ble_connection_change_locked\(connected,\s*now_ms\)[\s\S]*"
+        r"power_manager_apply_ble_connection_change_locked\(effective_connected,\s*now_ms\)[\s\S]*"
         r"power_manager_apply_fast_idle_actions\(next,\s*user_idle_ms,\s*blockers\)",
         power_manager,
     ):
@@ -1255,9 +1262,14 @@ def main() -> int:
         failures.append(
             "components/status_led/status_led.c: low-power status rewrite helper must be removed; idle should settle then suspend all LED transports"
         )
-    if "if (disabled) {\n            s_state.idle_transition_clear_pending = true;" not in status_led:
+    if (
+        "const bool preserve_repair_cue =" not in status_led
+        or "disabled && status_led_ble_repair_cue_active_locked(now_ms)" not in status_led
+        or "const bool next_low_power_disabled = disabled && !preserve_repair_cue;" not in status_led
+        or "if (next_low_power_disabled) {\n            s_state.idle_transition_clear_pending = true;" not in status_led
+    ):
         failures.append(
-            "components/status_led/status_led.c: entering low-power idle must schedule a zero clear frame before the final PWR-only latch"
+            "components/status_led/status_led.c: entering low-power idle must schedule a zero clear frame, while active repair cue must defer the low-power LED cutoff"
         )
     if not re.search(
         r"status_led_idle_transport_release_pending[\s\S]{0,260}"
@@ -1427,7 +1439,7 @@ def main() -> int:
         interactive_resume_body is None
         or "s_state.low_power_disabled = false;" not in interactive_resume_body.group(0)
         or "s_state.output_disabled = false;" not in interactive_resume_body.group(0)
-        or "s_state.idle_transition_clear_pending = false;" not in interactive_resume_body.group(0)
+        or "s_state.idle_transition_clear_pending = true;" not in interactive_resume_body.group(0)
         or key_event_body is None
         or "status_led_resume_interactive_output_locked();" not in key_event_body.group(0)
         or key_feedback_body is None
@@ -1436,7 +1448,7 @@ def main() -> int:
         or "status_led_resume_interactive_output_locked();" not in ec11_feedback_body.group(0)
     ):
         failures.append(
-            "components/status_led/status_led.c: idle key/EC11 feedback must explicitly resume interactive output from low-power idle without inserting a black transition-clear frame"
+            "components/status_led/status_led.c: idle key/EC11 feedback must explicitly resume interactive output from low-power idle and preserve the black transition-clear frame before feedback"
         )
     if (
         "STATUS_LED_EC11_ROTATE_STEP_MS" in status_led
@@ -1515,7 +1527,7 @@ def main() -> int:
         or "diag_log(" not in ec11_notify_body.group(0)
     ):
         failures.append(
-            "components/status_led/status_led.c: EC11 raw press feedback must not write flash-backed status diag events on every bounce; only throttled rotation feedback may log"
+            "components/status_led/status_led.c: EC11 press activity must not write flash-backed status diag events on every bounce; only throttled rotation feedback may log"
         )
     if (
         "STATUS_LED_EC11_FEEDBACK_DIAG_MIN_MS 500U" not in status_led
@@ -1535,10 +1547,11 @@ def main() -> int:
     if (
         start_repair_body is None
         or "status_led_clear_ec11_feedback_locked();" not in start_repair_body.group(0)
-        or "s_state.ble_repair_until_ms = now_ms + STATUS_LED_BLE_REPAIR_CUE_MS;" not in start_repair_body.group(0)
+        or "hold_ms = status_led_repair_hold_ms(hold_ms);" not in start_repair_body.group(0)
+        or "s_state.ble_repair_until_ms = now_ms + hold_ms;" not in start_repair_body.group(0)
     ):
         failures.append(
-            "components/status_led/status_led.c: BLE re-pair startup must clear transient EC11 white feedback and start the bounded BLE plus EC11 blue re-pair cue"
+            "components/status_led/status_led.c: BLE re-pair startup must clear transient EC11 feedback and start the bounded BLE plus EC11 re-pair cue"
         )
     elif "preserve_double_feedback" in start_repair_body.group(0):
         failures.append(
@@ -1859,14 +1872,14 @@ def main() -> int:
         or not re.search(r"#define\s+VOICE_KEY_INPUT_LOW_POWER_IDLE_BACKUP_POLL_MS\s+\(20\)", voice_key)
     ):
         failures.append(
-            "ports/esp32/voice_key_input/voice_key_input_esp32.c: EC11 push must use 20 ms active/low-power scan so runtime GPIO interrupts are unnecessary"
+            "ports/esp32/voice_key_input/voice_key_input_esp32.c: EC11 push must keep 20 ms active/low-power backup scan around the runtime GPIO wake interrupt"
         )
     if not re.search(
-        r"#define\s+VOICE_KEY_INPUT_DOUBLE_CLICK_WINDOW_MS\s+\(200\)",
+        r"#define\s+VOICE_KEY_INPUT_DOUBLE_CLICK_WINDOW_MS\s+\(650\)",
         voice_key,
     ):
         failures.append(
-            "ports/esp32/voice_key_input/voice_key_input_esp32.c: EC11 single-click dispatch window must stay 200 ms so the local cue feels immediate"
+            "ports/esp32/voice_key_input/voice_key_input_esp32.c: EC11 single-click dispatch must wait 650 ms so physical double-click recovery cannot emit the single-click fallback first"
         )
     if not re.search(
         r"#define\s+VOICE_KEY_INPUT_RECOVERY_DOUBLE_CLICK_WINDOW_MS\s+\(650\)",
@@ -1884,27 +1897,50 @@ def main() -> int:
         )
     if not re.search(
         r"voice_key_input_direct_gpio_init[\s\S]{0,420}"
-        r"\.intr_type\s*=\s*GPIO_INTR_DISABLE[\s\S]{0,240}"
+        r"\.intr_type\s*=\s*GPIO_INTR_ANYEDGE[\s\S]{0,420}"
+        r"gpio_isr_handler_add\(\s*VOICE_KEY_INPUT_DIRECT_GPIO\s*,\s*voice_key_input_direct_gpio_wake_from_isr[\s\S]{0,420}"
         r"voice_key_input_enable_light_sleep_wake\(\)",
         voice_key,
     ):
         failures.append(
-            "ports/esp32/voice_key_input/voice_key_input_esp32.c: EC11 push GPIO18 must disable runtime interrupts and rely on active-low light-sleep wake plus 20 ms scan"
+            "ports/esp32/voice_key_input/voice_key_input_esp32.c: EC11 push GPIO18 must use any-edge notify-only runtime wake plus active-low light-sleep wake"
         )
-    forbidden_voice_irq_tokens = [
-        "GPIO_INTR_ANYEDGE",
-        "gpio_isr_handler_add(VOICE_KEY_INPUT_DIRECT_GPIO",
-        "gpio_install_isr_service",
-        "voice_key_input_direct_gpio_wake_from_isr",
-        "isr_pressed_pending",
-        "isr_press_latch_until_tick",
-        "voice_key_input_latch_isr_press",
-        "voice_key_input_apply_isr_latched_sample",
+    required_voice_irq_tokens = [
+        "static void IRAM_ATTR voice_key_input_direct_gpio_wake_from_isr",
+        "s_direct_gpio_isr_press_count",
+        "s_direct_gpio_isr_last_press_tick",
+        "VOICE_KEY_INPUT_ISR_PRESS_MIN_GAP_MS",
+        "vTaskNotifyGiveFromISR(task_handle",
+        "voice_key_input_take_direct_gpio_isr_press_count(&isr_last_press_tick)",
+        "voice_key_input_note_raw_press_edge",
+        "voice_key_input_force_raw_recovery",
+        "raw double-click recovery detected",
+        "runtime_irq=anyedge_notify_only",
     ]
-    for token in forbidden_voice_irq_tokens:
-        if token in voice_key:
+    for token in required_voice_irq_tokens:
+        if token not in voice_key:
             failures.append(
-                f"ports/esp32/voice_key_input/voice_key_input_esp32.c: EC11 push runtime GPIO ISR must stay removed to avoid interrupt-WDT storms while flash/cache is disabled ({token})"
+                f"ports/esp32/voice_key_input/voice_key_input_esp32.c: EC11 push runtime IRQ must stay notify-only and count raw press edges for first double-click recovery ({token})"
+            )
+    forbidden_voice_irq_tokens = [
+        "GPIO_INTR_LOW_LEVEL)",
+        "voice_key_input_record_recovery_event(",
+        "voice_key_input_dispatch_custom_key_event(",
+    ]
+    voice_isr_match = re.search(
+        r"static void IRAM_ATTR voice_key_input_direct_gpio_wake_from_isr[\s\S]*?\n\}",
+        voice_key,
+    )
+    voice_isr_body = voice_isr_match.group(0) if voice_isr_match else ""
+    for token in forbidden_voice_irq_tokens:
+        if token == "GPIO_INTR_LOW_LEVEL)":
+            if "gpio_set_intr_type(VOICE_KEY_INPUT_DIRECT_GPIO, GPIO_INTR_LOW_LEVEL)" in voice_key:
+                failures.append(
+                    "ports/esp32/voice_key_input/voice_key_input_esp32.c: EC11 push must not switch runtime GPIO IRQ to low-level mode"
+                )
+        elif token in voice_isr_body:
+            failures.append(
+                f"ports/esp32/voice_key_input/voice_key_input_esp32.c: EC11 push ISR must not do business logic ({token})"
             )
     if (
         "static uint32_t voice_key_input_elapsed_ms" not in voice_key
@@ -1953,12 +1989,13 @@ def main() -> int:
         or not re.search(
             r"pressed\s*&&\s*!button->long_press_reported[\s\S]{0,900}"
             r"VOICE_KEY_INPUT_HOLD_FEEDBACK_REFRESH_MS[\s\S]{0,420}"
-            r"status_led_notify_ec11_feedback\(STATUS_LED_EC11_FEEDBACK_PRESS\)",
+            r"power_manager_record_activity\(\"ec11_key_hold\"\)",
             voice_key,
         )
+        or "status_led_notify_ec11_feedback(STATUS_LED_EC11_FEEDBACK_PRESS)" in voice_key
     ):
         failures.append(
-            "ports/esp32/voice_key_input/voice_key_input_esp32.c: EC11 hold must refresh white press feedback every 300 ms until long-press shutdown confirmation starts"
+            "ports/esp32/voice_key_input/voice_key_input_esp32.c: EC11 hold must refresh activity without white press feedback until long-press shutdown confirmation starts"
         )
     dispatch_body = re.search(
         r"static\s+void\s+voice_key_input_dispatch_custom_key_event[\s\S]*?"
@@ -1988,7 +2025,7 @@ def main() -> int:
         voice_key,
     ) or "watchdog_platform_task_notify_take_low_power" not in voice_key:
         failures.append(
-            "ports/esp32/voice_key_input/voice_key_input_esp32.c: EC11 push must use bounded 20 ms scan during low-power waits instead of a runtime GPIO ISR"
+            "ports/esp32/voice_key_input/voice_key_input_esp32.c: EC11 push must keep bounded 20 ms scan during low-power waits alongside the notify-only runtime GPIO ISR"
         )
     voice_raw_feedback_body = re.search(
         r"static\s+void\s+voice_key_input_apply_raw_feedback[\s\S]*?\n\}",
@@ -1996,14 +2033,14 @@ def main() -> int:
     )
     if voice_raw_feedback_body is None:
         failures.append(
-            "ports/esp32/voice_key_input/voice_key_input_esp32.c: missing EC11 raw press feedback helper"
+            "ports/esp32/voice_key_input/voice_key_input_esp32.c: missing EC11 raw press tracking helper"
         )
     elif not re.search(
         r"if\s*\(\s*button->raw_feedback_pressed\s*\)\s*\{\s*return\s*;",
         voice_raw_feedback_body.group(0),
     ):
         failures.append(
-            "ports/esp32/voice_key_input/voice_key_input_esp32.c: EC11 raw press feedback must suppress repeated ISR/raw bounce during one physical press"
+            "ports/esp32/voice_key_input/voice_key_input_esp32.c: EC11 raw press tracking must suppress repeated ISR/raw bounce during one physical press"
         )
     if (
         "voice_key_input_handle_short_click_release(button, now_tick, \"raw-only\")" not in voice_key
@@ -2016,7 +2053,7 @@ def main() -> int:
         )
     ):
         failures.append(
-            "ports/esp32/voice_key_input/voice_key_input_esp32.c: EC11 raw-only short taps must be accepted on stable idle, then clear the raw feedback latch so the next real press still lights"
+            "ports/esp32/voice_key_input/voice_key_input_esp32.c: EC11 raw-only short taps must be accepted on stable idle, then clear the raw press latch so the next real press can be tracked"
         )
     if "gpio_set_intr_type(VOICE_KEY_INPUT_DIRECT_GPIO" in voice_key:
         failures.append(
@@ -2032,8 +2069,8 @@ def main() -> int:
             "ports/esp32/voice_key_input/voice_key_input_esp32.c: EC11 push/direct key must configure active-low GPIO wake for light sleep"
         )
     if not re.search(
-        r"voice_key_input_direct_gpio_init[\s\S]{0,420}"
-        r"gpio_config\(&direct_cfg\)[\s\S]{0,240}"
+        r"voice_key_input_direct_gpio_init[\s\S]{0,1100}"
+        r"gpio_config\(&direct_cfg\)[\s\S]{0,900}"
         r"voice_key_input_enable_light_sleep_wake\(\)",
         voice_key,
     ):

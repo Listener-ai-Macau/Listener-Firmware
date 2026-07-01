@@ -317,8 +317,10 @@ def check_dis_identity(repo: Path) -> None:
     require(
         "DIAG_GAP_RECOVERY" in diag
         and "DIAG_GAP_RECOVERY" in gap
-        and "recovery: clearing pairing bonds" in gap
-        and "recovery: pairing reset complete" in gap,
+        and "bond_delete=async_after_disconnect" in gap
+        and "recovery: async local bond delete complete" in gap
+        and "recovery: pairing reset complete after async local bond delete" in gap
+        and "NimBLE advertising deferred: recovery async local bond delete pending" in gap,
         "BLE recovery actions must be logged in serial and diag_log",
     )
     require(

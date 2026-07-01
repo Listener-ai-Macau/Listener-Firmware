@@ -1497,7 +1497,6 @@ static void voice_recording_control_recovery(const char *source)
         false);
     status_led_set_recording(false, STATUS_LED_REC_SOURCE_NONE);
     status_led_set_processing(false, "recovery_complete");
-    status_led_notify_ble_repairing("recovery_complete_pair_again");
     status_led_set_ble_state(STATUS_LED_BLE_PAIRING, false);
     voice_recording_control_log_device_status("ready", "recovery_complete_pair_again");
 }

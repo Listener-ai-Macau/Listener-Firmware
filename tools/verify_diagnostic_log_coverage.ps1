@@ -210,7 +210,8 @@ Assert-Contains -RelativePath "ports/esp32/ble_hid_gap/ble_hid_gap_esp32.c" -Pat
 Assert-Contains -RelativePath "ports/esp32/ble_hid_gap/ble_hid_gap_esp32.c" -Pattern "BLE_HID_GAP_ACTIVE_ITVL_MAX 6U" -Description "BLE active audio fixed 7.5 ms interval request"
 Assert-Contains -RelativePath "ports/esp32/ble_hid_gap/ble_hid_gap_esp32.c" -Pattern "ble_gap_set_prefered_le_phy" -Description "device-initiated 2M PHY request"
 Assert-Contains -RelativePath "ports/esp32/ble_hid_gap/ble_hid_gap_esp32.c" -Pattern "BLE_GAP_LE_PHY_2M_MASK" -Description "BLE active audio 2M PHY mask"
-Assert-Contains -RelativePath "ports/esp32/ble_hid_gap/ble_hid_gap_esp32.c" -Pattern "recovery: clearing pairing bonds" -Description "BLE recovery serial action log"
+Assert-Contains -RelativePath "ports/esp32/ble_hid_gap/ble_hid_gap_esp32.c" -Pattern "bond_delete=async_after_disconnect" -Description "BLE recovery serial action log"
+Assert-Contains -RelativePath "ports/esp32/ble_hid_gap/ble_hid_gap_esp32.c" -Pattern "async local bond delete complete" -Description "BLE recovery async bond delete completion log"
 Assert-Contains -RelativePath "ports/esp32/ble_hid_gap/ble_hid_gap_esp32.c" -Pattern "recovery: pairing reset complete" -Description "BLE recovery completion serial log"
 Assert-Contains -RelativePath "ports/esp32/ble_hid_gap/ble_hid_gap_esp32.c" -Pattern "ble_hid_gap_prepare_shutdown_disconnect" -Description "hardware shutdown BLE disconnect preparation"
 

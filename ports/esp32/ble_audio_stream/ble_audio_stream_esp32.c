@@ -27,6 +27,10 @@
 #include "status_led.h"
 #include "watchdog_platform.h"
 
+extern void power_manager_set_ble_connected(bool connected) __attribute__((weak));
+extern bool ble_hid_gap_is_securely_connected(void) __attribute__((weak));
+extern bool ble_hid_gap_is_recovery_pairing_window_open(void) __attribute__((weak));
+
 #define BLE_AUDIO_STREAM_TASK_STACK_BYTES (5 * 1024)
 #define BLE_AUDIO_STREAM_PACKET_DEFAULT_BYTES 244
 #define BLE_AUDIO_STREAM_PACKET_MAX_BYTES 500
@@ -68,8 +72,8 @@
 #define BLE_AUDIO_STREAM_CONTROL_NOTIFY_REPEAT_DELAY_MS 5
 #define BLE_AUDIO_STREAM_TASK_QUEUE_WAIT_MS 1000
 #define BLE_AUDIO_STREAM_CONTROL_MAX_BYTES 64
-#define BLE_AUDIO_STREAM_TYPE_HEARTBEAT_TIMEOUT_MS 12000
-#define BLE_AUDIO_STREAM_TYPE_LED_READY_HOLD_MS 30000
+#define BLE_AUDIO_STREAM_TYPE_HEARTBEAT_TIMEOUT_MS 45000
+#define BLE_AUDIO_STREAM_TYPE_LED_READY_HOLD_MS 45000
 
 typedef enum {
     BLE_AUDIO_STREAM_JOB_TYPE_SESSION_START = 0,
@@ -356,6 +360,49 @@ static bool ble_audio_stream_type_heartbeat_led_recent(void)
         ble_audio_stream_get_type_heartbeat_snapshot();
     return heartbeat.led_ready_until_tick != 0 &&
            !ble_audio_stream_tick_reached(xTaskGetTickCount(), heartbeat.led_ready_until_tick);
+}
+
+static bool ble_audio_stream_hid_secure_connected(void)
+{
+    return ble_hid_gap_is_securely_connected != NULL &&
+           ble_hid_gap_is_securely_connected();
+}
+
+static void ble_audio_stream_sync_power_manager_for_type_link(bool active, const char *reason)
+{
+    if (power_manager_set_ble_connected == NULL) {
+        return;
+    }
+
+    if (active) {
+        power_manager_set_ble_connected(true);
+        ESP_LOGD(TAG, "type link power sync connected reason=%s", reason != NULL ? reason : "unspecified");
+        return;
+    }
+
+    if (!ble_audio_stream_hid_secure_connected()) {
+        power_manager_set_ble_connected(false);
+        ESP_LOGD(TAG, "type link power sync disconnected reason=%s", reason != NULL ? reason : "unspecified");
+    }
+}
+
+static void ble_audio_stream_note_control_write_connection(uint16_t conn_handle)
+{
+    if (conn_handle == BLE_HS_CONN_HANDLE_NONE) {
+        return;
+    }
+
+    bool changed = false;
+    portENTER_CRITICAL(&s_link_state_lock);
+    if (s_conn_handle != conn_handle) {
+        s_conn_handle = conn_handle;
+        changed = true;
+    }
+    portEXIT_CRITICAL(&s_link_state_lock);
+
+    if (changed) {
+        ESP_LOGI(TAG, "audio control connection adopted: conn=%u", conn_handle);
+    }
 }
 
 static void ble_audio_stream_set_type_heartbeat_active(bool active, const char *reason)
@@ -813,11 +860,16 @@ static bool ble_audio_stream_transport_link_ready(void)
 static bool ble_audio_stream_type_led_link_ready(void)
 {
     ble_audio_stream_link_snapshot_t link = ble_audio_stream_get_link_snapshot();
-    return link.conn_handle != BLE_HS_CONN_HANDLE_NONE && link.mtu_ready;
+    return link.conn_handle != BLE_HS_CONN_HANDLE_NONE;
 }
 
 static void ble_audio_stream_sync_status_led_for_type_link(const char *reason)
 {
+    if (ble_hid_gap_is_recovery_pairing_window_open != NULL &&
+        ble_hid_gap_is_recovery_pairing_window_open()) {
+        ESP_LOGD(TAG, "type link LED sync skipped during recovery pairing window reason=%s", reason != NULL ? reason : "unspecified");
+        return;
+    }
     if (!ble_audio_stream_type_led_link_ready()) {
         return;
     }
@@ -1250,6 +1302,7 @@ static void ble_audio_stream_apply_notify_enabled(bool notify_enabled)
     if (notify_enabled) {
         ble_audio_stream_prime_notify_credit();
     } else {
+        ble_audio_stream_sync_power_manager_for_type_link(false, "notify_disabled");
         ble_audio_stream_reset_notify_credit();
     }
 }
@@ -1342,7 +1395,7 @@ static int ble_audio_stream_copy_control_mbuf(
     return 0;
 }
 
-static int ble_audio_stream_handle_control_write(struct os_mbuf *om)
+static int ble_audio_stream_handle_control_write(uint16_t conn_handle, struct os_mbuf *om)
 {
     uint8_t buffer[BLE_AUDIO_STREAM_CONTROL_MAX_BYTES + 1];
     uint16_t len = 0;
@@ -1356,6 +1409,7 @@ static int ble_audio_stream_handle_control_write(struct os_mbuf *om)
     }
     buffer[len] = '\0';
     buffer[strcspn((const char *)buffer, "\r\n")] = '\0';
+    ble_audio_stream_note_control_write_connection(conn_handle);
 
     if (ble_audio_stream_consume_type_control_command((const char *)buffer, "ble_audio_control")) {
         ESP_LOGI(TAG, "audio control write handled: payload=%s", (const char *)buffer);
@@ -1383,7 +1437,6 @@ static int ble_audio_stream_access(
     struct ble_gatt_access_ctxt *ctxt,
     void *arg)
 {
-    (void)conn_handle;
     (void)attr_handle;
 
     if (ctxt == NULL) {
@@ -1393,7 +1446,7 @@ static int ble_audio_stream_access(
     ble_audio_stream_gatt_attr_t attr = (ble_audio_stream_gatt_attr_t)(uintptr_t)arg;
     if (ctxt->op == BLE_GATT_ACCESS_OP_WRITE_CHR) {
         if (attr == BLE_AUDIO_STREAM_GATT_ATTR_CONTROL) {
-            return ble_audio_stream_handle_control_write(ctxt->om);
+            return ble_audio_stream_handle_control_write(conn_handle, ctxt->om);
         }
         return BLE_ATT_ERR_WRITE_NOT_PERMITTED;
     }
@@ -2384,6 +2437,7 @@ void ble_audio_stream_on_gap_connect(uint16_t conn_handle)
     s_notify_enabled = false;
     s_packet_value_max_bytes = BLE_AUDIO_STREAM_PACKET_DEFAULT_BYTES;
     portEXIT_CRITICAL(&s_link_state_lock);
+    ble_audio_stream_sync_power_manager_for_type_link(false, "gap_connect");
     ble_audio_stream_reset_notify_credit();
     if (ble_audio_stream_transport_session_active()) {
         ESP_LOGI(
@@ -2488,6 +2542,7 @@ void ble_audio_stream_on_gap_disconnect(uint16_t conn_handle)
         s_pending_mtu_value = 0;
     }
 
+    ble_audio_stream_sync_power_manager_for_type_link(false, "gap_disconnect");
     ble_audio_stream_refresh_link_state("gap_disconnect");
 }
 
@@ -2678,6 +2733,9 @@ void ble_audio_stream_note_type_activity(const char *reason)
     ble_audio_stream_set_type_heartbeat_active(
         true,
         reason != NULL ? reason : "type_activity");
+    ble_audio_stream_sync_power_manager_for_type_link(
+        true,
+        reason != NULL ? reason : "type_activity");
     ble_audio_stream_sync_status_led_for_type_link(
         reason != NULL ? reason : "type_activity");
 }
@@ -2711,6 +2769,7 @@ bool ble_audio_stream_consume_type_control_command(const char *command, const ch
 
     if (strcmp(command, "TYPE:BYE") == 0 || strcmp(command, "TYPE:STOP") == 0) {
         ble_audio_stream_set_type_heartbeat_active(false, command);
+        ble_audio_stream_sync_power_manager_for_type_link(false, command);
         ble_audio_stream_sync_status_led_for_type_link(command);
         ESP_LOGI(
             TAG,
@@ -2755,6 +2814,7 @@ void ble_audio_stream_poll_type_link(void)
             return;
         }
         ble_audio_stream_set_type_heartbeat_active(false, "timeout");
+        ble_audio_stream_sync_power_manager_for_type_link(false, "type_heartbeat_timeout");
         ble_audio_stream_sync_status_led_for_type_link("type_heartbeat_timeout");
         return;
     }

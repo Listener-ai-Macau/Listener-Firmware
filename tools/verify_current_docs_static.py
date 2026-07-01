@@ -25,7 +25,7 @@ class RequiredText:
 STALE_PATTERNS = [
     PatternRule(
         re.compile(r"routine status LEDs are turned off", re.IGNORECASE),
-        "obsolete idle policy: low-power idle now keeps restrained PWR visible and connected/TYPE_READY BLE dark",
+        "obsolete idle policy: low-power idle now keeps restrained PWR visible and reconnecting/connected/TYPE_READY BLE dark",
     ),
     PatternRule(
         re.compile(r"turns routine status LEDs off", re.IGNORECASE),
@@ -33,7 +33,7 @@ STALE_PATTERNS = [
     ),
     PatternRule(
         re.compile(r"disables routine status LED output", re.IGNORECASE),
-        "obsolete idle policy: low-power rendering still owns restrained PWR while connected/TYPE_READY BLE is dark",
+        "obsolete idle policy: low-power rendering still owns restrained PWR while reconnecting/connected/TYPE_READY BLE is dark",
     ),
     PatternRule(
         re.compile(r"status LEDs went dark", re.IGNORECASE),
@@ -45,7 +45,7 @@ STALE_PATTERNS = [
     ),
     PatternRule(
         re.compile(r"low-power/LED-off", re.IGNORECASE),
-        "ambiguous stale wording: current low-power idle keeps restrained PWR visible while connected/TYPE_READY BLE is dark",
+        "ambiguous stale wording: current low-power idle keeps restrained PWR visible while reconnecting/connected/TYPE_READY BLE is dark",
     ),
     PatternRule(
         re.compile(r"turn off after idle status window", re.IGNORECASE),
@@ -93,7 +93,7 @@ STALE_PATTERNS = [
 REQUIRED_TEXT = [
     RequiredText(
         "docs/features/status_led.md",
-        re.compile(r"keeps PWR visible and leaves connected/TYPE_READY BLE dark", re.IGNORECASE),
+        re.compile(r"keeps PWR visible and leaves reconnecting/connected/TYPE_READY BLE dark", re.IGNORECASE),
         "status LED feature doc must state the current low-power idle PWR-only/BLE-dark behavior",
     ),
     RequiredText(
@@ -113,12 +113,12 @@ REQUIRED_TEXT = [
     ),
     RequiredText(
         "docs/features/status_led.md",
-        re.compile(r"650 ms recovery double-click window", re.IGNORECASE),
-        "status LED feature doc must distinguish EC11 recovery double-click timing from the 200 ms single-click response window",
+        re.compile(r"650 ms pending single-click/custom-key response and recovery double-click window", re.IGNORECASE),
+        "status LED feature doc must state EC11 single-click fallback waits through the recovery double-click window",
     ),
     RequiredText(
         "docs/features/low_power_wake_policy.md",
-        re.compile(r"leaves connected/TYPE_READY BLE dark", re.IGNORECASE),
+        re.compile(r"leaves reconnecting/connected/TYPE_READY BLE dark", re.IGNORECASE),
         "low-power policy doc must state the current low-power idle PWR-only/BLE-dark behavior",
     ),
     RequiredText(
@@ -128,7 +128,7 @@ REQUIRED_TEXT = [
     ),
     RequiredText(
         "docs/features/firmware-feature-map.md",
-        re.compile(r"keeps restrained PWR visible and connected/TYPE_READY BLE dark in idle", re.IGNORECASE),
+        re.compile(r"keeps restrained PWR visible and reconnecting/connected/TYPE_READY BLE dark in idle", re.IGNORECASE),
         "feature map must summarize current idle LED behavior without implying all-off; keeps restrained PWR/BLE status visible",
     ),
     RequiredText(
