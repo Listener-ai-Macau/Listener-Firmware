@@ -64,6 +64,18 @@ function Test-ReleaseVersionString {
 
 Test-ReleaseVersionString -Version $project_version -ReleaseChannel $Channel
 
+function Write-JsonUtf8NoBom {
+    param(
+        [Parameter(Mandatory = $true)]$Value,
+        [Parameter(Mandatory = $true)][string]$Path,
+        [int]$Depth = 8
+    )
+
+    $json = $Value | ConvertTo-Json -Depth $Depth
+    $encoding = New-Object System.Text.UTF8Encoding -ArgumentList $false
+    [System.IO.File]::WriteAllText($Path, $json, $encoding)
+}
+
 $ota_version = $project_version.Trim()
 if ($ota_version.Length -gt $esp_app_version_max_chars) {
     $truncated_version = $ota_version.Substring(0, $esp_app_version_max_chars) -replace '[._+-]+$', ''
@@ -164,7 +176,7 @@ $manifest = [ordered]@{
 }
 
 $manifest_path = Join-Path $package_dir "ota_manifest.json"
-$manifest | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $manifest_path -Encoding UTF8
+Write-JsonUtf8NoBom -Value $manifest -Path $manifest_path -Depth 8
 
 # --- Also generate factory package ---
 $factory_output = Join-Path $package_dir "factory"

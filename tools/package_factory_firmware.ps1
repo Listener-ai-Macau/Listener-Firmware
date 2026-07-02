@@ -41,6 +41,18 @@ if (-not $project_version) {
     $project_version = Get-SourceVersion
 }
 
+function Write-JsonUtf8NoBom {
+    param(
+        [Parameter(Mandatory = $true)]$Value,
+        [Parameter(Mandatory = $true)][string]$Path,
+        [int]$Depth = 8
+    )
+
+    $json = $Value | ConvertTo-Json -Depth $Depth
+    $encoding = New-Object System.Text.UTF8Encoding -ArgumentList $false
+    [System.IO.File]::WriteAllText($Path, $json, $encoding)
+}
+
 function Get-UserProfilePath {
     if ($env:USERPROFILE) {
         return $env:USERPROFILE
@@ -234,7 +246,7 @@ $manifest = [ordered]@{
 }
 
 $manifest_path = Join-Path $package_dir "manifest.json"
-$manifest | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $manifest_path -Encoding UTF8
+Write-JsonUtf8NoBom -Value $manifest -Path $manifest_path -Depth 8
 
 $flash_doc = @"
 # Listener Factory Firmware Package
