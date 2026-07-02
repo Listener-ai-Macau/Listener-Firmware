@@ -83,7 +83,6 @@
 #define VOICE_KEY_INPUT_GENERATED_PRESS_MS (80)
 #define VOICE_KEY_INPUT_GENERATED_RELEASE_SETTLE_MS (80)
 #define VOICE_KEY_INPUT_GENERATED_INTER_CLICK_RELEASE_MS (220)
-#define VOICE_KEY_INPUT_ISR_PRESS_MIN_GAP_MS (80)
 #define VOICE_KEY_INPUT_RAW_RECOVERY_DOUBLE_CLICK_WINDOW_MS (1800)
 #define VOICE_KEY_INPUT_RAW_RECOVERY_DOUBLE_CLICK_MIN_MS (80)
 #define VOICE_KEY_INPUT_DEBUG_RAW 1u
@@ -147,9 +146,8 @@ static volatile TickType_t s_recording_output_last_change_tick;
 static bool s_direct_generated_active;
 static uint8_t s_direct_generated_click_count;
 static TickType_t s_direct_generated_start_tick;
-static portMUX_TYPE s_direct_gpio_isr_lock = portMUX_INITIALIZER_UNLOCKED;
-static volatile uint32_t s_direct_gpio_isr_press_count;
-static volatile TickType_t s_direct_gpio_isr_last_press_tick;
+static volatile bool s_direct_gpio_isr_press_pending;
+static volatile int s_direct_gpio_isr_last_raw_level = -1;
 #if VOICE_KEY_INPUT_ENABLE_LEGACY_EXPANDER
 static bool s_prev_input_valid;
 static uint32_t s_prev_input_levels;
@@ -183,20 +181,12 @@ static bool voice_key_input_note_raw_press_edge(
 static void IRAM_ATTR voice_key_input_direct_gpio_wake_from_isr(void *arg)
 {
     (void)arg;
-    if (gpio_get_level(VOICE_KEY_INPUT_DIRECT_GPIO) == 0) {
-        TickType_t now_tick = xTaskGetTickCountFromISR();
-        portENTER_CRITICAL_ISR(&s_direct_gpio_isr_lock);
-        const bool accept_press =
-            s_direct_gpio_isr_last_press_tick == 0 ||
-            (uint32_t)((now_tick - s_direct_gpio_isr_last_press_tick) * portTICK_PERIOD_MS) >=
-                VOICE_KEY_INPUT_ISR_PRESS_MIN_GAP_MS;
-        if (accept_press) {
-            if (s_direct_gpio_isr_press_count < UINT32_MAX) {
-                ++s_direct_gpio_isr_press_count;
-            }
-            s_direct_gpio_isr_last_press_tick = now_tick;
+    int raw_level = gpio_get_level(VOICE_KEY_INPUT_DIRECT_GPIO);
+    if (raw_level != s_direct_gpio_isr_last_raw_level) {
+        s_direct_gpio_isr_last_raw_level = raw_level;
+        if (raw_level == 0) {
+            s_direct_gpio_isr_press_pending = true;
         }
-        portEXIT_CRITICAL_ISR(&s_direct_gpio_isr_lock);
     }
 
     TaskHandle_t task_handle = s_poll_task_handle;
@@ -211,17 +201,13 @@ static void IRAM_ATTR voice_key_input_direct_gpio_wake_from_isr(void *arg)
     }
 }
 
-static uint32_t voice_key_input_take_direct_gpio_isr_press_count(TickType_t *last_press_tick)
+static bool voice_key_input_take_direct_gpio_isr_press_pending(void)
 {
-    portENTER_CRITICAL(&s_direct_gpio_isr_lock);
-    uint32_t press_count = s_direct_gpio_isr_press_count;
-    TickType_t press_tick = s_direct_gpio_isr_last_press_tick;
-    s_direct_gpio_isr_press_count = 0;
-    if (last_press_tick != NULL) {
-        *last_press_tick = press_tick;
+    if (!s_direct_gpio_isr_press_pending) {
+        return false;
     }
-    portEXIT_CRITICAL(&s_direct_gpio_isr_lock);
-    return press_count;
+    s_direct_gpio_isr_press_pending = false;
+    return true;
 }
 
 static void voice_key_input_debug_log(
@@ -1046,28 +1032,21 @@ static void voice_key_input_poll_task(void *parameter)
         }
 #endif
 
-        TickType_t isr_last_press_tick = 0;
-        uint32_t isr_press_count =
-            voice_key_input_take_direct_gpio_isr_press_count(&isr_last_press_tick);
-        if (!s_direct_generated_active && isr_press_count > 0) {
-            TickType_t raw_press_tick = isr_last_press_tick != 0 ? isr_last_press_tick : now;
+        bool isr_press_pending =
+            voice_key_input_take_direct_gpio_isr_press_pending();
+        if (!s_direct_generated_active && isr_press_pending) {
             bool raw_recovery = voice_key_input_note_raw_press_edge(
                 &s_direct_gpio_state,
-                raw_press_tick,
+                now,
                 "isr_edge");
-            if (!raw_recovery && isr_press_count >= 2 && voice_key_input_recovery_allowed()) {
-                voice_key_input_force_raw_recovery(&s_direct_gpio_state, "isr_edge_batch", 0);
-                raw_recovery = true;
-            }
             if (!raw_recovery && !s_direct_gpio_state.raw_feedback_pressed) {
                 s_direct_gpio_state.raw_feedback_pressed = true;
                 s_direct_gpio_state.hold_feedback_tick = now;
                 power_manager_record_activity("ec11_key_press");
                 ESP_LOGI(
                     TAG,
-                    "EC11 push raw press tracked from ISR edge: source=%s count=%" PRIu32,
-                    s_direct_gpio_state.label,
-                    isr_press_count);
+                    "EC11 push raw press tracked from ISR edge latch: source=%s",
+                    s_direct_gpio_state.label);
             }
         }
 
@@ -1130,7 +1109,7 @@ esp_err_t voice_key_input_start(void)
     s_started = true;
     ESP_LOGI(
         TAG,
-        "voice key ready: source=%s gpio=%d active_low=1 wake=active_low_gpio_wakeup+20ms_scan low_power_wake=active_low_gpio_wakeup+20ms_scan runtime_irq=anyedge_notify_only legacy_expander=%d poll_ms=%d idle_backup_ms=%d low_power_idle_backup_ms=%d debounce_ms=%d debounce_samples=%d",
+        "voice key ready: source=%s gpio=%d active_low=1 wake=active_low_gpio_wakeup+20ms_scan low_power_wake=active_low_gpio_wakeup+20ms_scan runtime_irq=anyedge_notify_edge_latch legacy_expander=%d poll_ms=%d idle_backup_ms=%d low_power_idle_backup_ms=%d debounce_ms=%d debounce_samples=%d",
         VOICE_KEY_INPUT_DIRECT_LABEL,
         VOICE_KEY_INPUT_DIRECT_GPIO,
         VOICE_KEY_INPUT_ENABLE_LEGACY_EXPANDER,

@@ -162,8 +162,8 @@ CHECKS = {
         "STATUS_LED_BLE_REPAIR_CUE_MS 2700U",
         "STATUS_LED_BLE_REPAIR_CUE_LEAD_CLEAR_MS (STATUS_LED_IDLE_TRANSITION_CLEAR_MS + STATUS_LED_REFRESH_MS)",
         "STATUS_LED_BLE_REPAIR_WINDOW_MAX_MS 120000U",
-        "STATUS_LED_EC11_REPAIR_BLINK_MIN_PERCENT 0U",
-        "STATUS_LED_EC11_REPAIR_BLINK_MAX_PERCENT STATUS_LED_BLE_ATTENTION_PERCENT",
+        "STATUS_LED_EC11_REPAIR_BLINK_MIN_PERCENT 4U",
+        "STATUS_LED_EC11_REPAIR_BLINK_MAX_PERCENT 16U",
         "STATUS_LED_PWR_COLOR_AMBER",
         "STATUS_LED_DIAG_VIS_LOW_POWER_OFF",
         "battery_display_level_percent",
@@ -315,8 +315,8 @@ CHECKS = {
         "preview_ble_override_until_ms",
         "preview_ble_override_ms_left",
         "state != STATUS_LED_BLE_REPAIRING",
-        "STATUS_LED_BLE_REPAIR_MIN_PERCENT 0U",
-        "STATUS_LED_BLE_REPAIR_MAX_PERCENT STATUS_LED_BLE_ATTENTION_PERCENT",
+        "STATUS_LED_BLE_REPAIR_MIN_PERCENT 30U",
+        "STATUS_LED_BLE_REPAIR_MAX_PERCENT 100U",
         "STATUS_LED_PWR_WHITE_VISUAL_BALANCE_PERCENT 10U",
         "STATUS_LED_CHARGING_ACTIVE_WORK_MIN_PERCENT 12U",
         "STATUS_LED_BLE_ATTENTION_PERCENT 18U",
@@ -1071,10 +1071,10 @@ def main() -> int:
     if "status_led_active_work_locked" in status_led:
         failures.append("status_led.c: active recording/processing must not suppress physical key LED feedback")
     resume_output = extract_c_function(status_led, "status_led_resume_interactive_output_locked")
-    if "s_state.idle_transition_clear_pending = false;" in resume_output:
+    if "s_state.transition_clear_mask = 0U;" in resume_output:
         failures.append("status_led.c: interactive low-power resume must preserve the pending clear frame, not cancel it")
-    if "s_state.idle_transition_clear_pending = true;" not in resume_output:
-        failures.append("status_led.c: interactive low-power resume must schedule a clear frame before rendering feedback")
+    if "status_led_force_transition_clear_locked(STATUS_LED_TRANSITION_CLEAR_ACCENTS);" not in resume_output:
+        failures.append("status_led.c: interactive low-power resume must schedule a scoped accent clear frame before rendering feedback")
     for function_name in ("status_led_notify_key_event", "status_led_notify_key_feedback"):
         try:
             body = extract_c_function(status_led, function_name)
@@ -1095,9 +1095,9 @@ def main() -> int:
             failures.append(
                 f"status_led.c: {function_name} must not clear in-flight local key feedback"
             )
-        if "s_state.idle_transition_clear_pending = false;" not in body:
+        if "s_state.transition_clear_mask = 0U;" not in body:
             failures.append(
-                f"status_led.c: {function_name} must cancel stale transition clear before active work renders key feedback"
+                f"status_led.c: {function_name} must cancel stale scoped transition clear before active work renders key feedback"
             )
     if (
         "s_recovery_identity_rotate_pending" in ble_gap
@@ -1124,6 +1124,16 @@ def main() -> int:
             failures.append(
                 "ble_hid_gap_esp32.c: Swift Pair must keep HID UUID for short names and fall back to normal advertising when the full name cannot fit"
             )
+    if "#define BLE_HID_GAP_FIRST_PAIRING_WINDOW_MS 0LL" not in ble_gap or not re.search(
+        r"static\s+int64_t\s+ble_hid_gap_first_pairing_window_remaining_ms[\s\S]{0,260}"
+        r"BLE_HID_GAP_FIRST_PAIRING_WINDOW_MS\s*<=\s*0[\s\S]{0,160}"
+        r"s_first_pairing_window_opened_at_ms\s*=\s*0;[\s\S]{0,80}"
+        r"return\s+0;",
+        ble_gap,
+    ):
+        failures.append(
+            "ble_hid_gap_esp32.c: Listener must keep the first-pairing Swift Pair toast window disabled by default"
+        )
     try:
         type_recovery_body = extract_c_function(
             ble_gap, "ble_hid_gap_configure_type_controlled_recovery_adv_fields"
@@ -1629,11 +1639,26 @@ def main() -> int:
         failures.append("status_led.c: BLE repair blink envelope must be a bounded three-cycle double-flash cue")
     elif "status_led_blink_on" in repair_envelope.group("body"):
         failures.append("status_led.c: BLE repair blink envelope must not add a third offset blink")
+    if "STATUS_LED_BLE_REPAIR_MIN_PERCENT 30U" not in status_led or \
+       "STATUS_LED_BLE_REPAIR_MAX_PERCENT 100U" not in status_led:
+        failures.append("status_led.c: BLE re-pair confirmation must keep the legacy blue base-and-peak double-flash")
+    if "now_ms < s_state.ble_repair_cue_started_ms) {\n        return base_percent;" not in status_led:
+        failures.append("status_led.c: BLE re-pair lead-clear window must show the legacy blue base instead of going dark")
     if "status_led_ble_repair_cue_active_locked(now_ms)" not in status_led:
         failures.append("status_led.c: long recovery pairing windows must not render the three-cycle repair confirmation forever")
-    if "STATUS_LED_EC11_REPAIR_BLINK_MIN_PERCENT 0U" not in status_led or \
-       "STATUS_LED_EC11_REPAIR_BLINK_MAX_PERCENT STATUS_LED_BLE_ATTENTION_PERCENT" not in status_led:
-        failures.append("status_led.c: EC11 re-pair ring must share the BLE repair double-flash envelope")
+    repair_start = re.search(
+        r"static\s+void\s+status_led_start_ble_repair_locked_for_ms[^{]*\{(?P<body>[\s\S]*?)\n\}",
+        status_led,
+    )
+    if (
+        not repair_start
+        or "cue_already_active = status_led_ble_repair_cue_active_locked(now_ms)" not in repair_start.group("body")
+        or "if (!cue_already_active)" not in repair_start.group("body")
+    ):
+        failures.append("status_led.c: repeated BLE repair notifications must not restart the active three-cycle cue")
+    if "STATUS_LED_EC11_REPAIR_BLINK_MIN_PERCENT 4U" not in status_led or \
+       "STATUS_LED_EC11_REPAIR_BLINK_MAX_PERCENT 16U" not in status_led:
+        failures.append("status_led.c: EC11 re-pair ring must keep the legacy blue base-and-peak double-flash")
     repair_ring = re.search(
         r"static\s+void\s+status_led_render_ec11_repair_locked[^{]*\{(?P<body>[\s\S]*?)\n\}",
         status_led,
@@ -1656,6 +1681,7 @@ def main() -> int:
     if not re.search(
         r"static\s+void\s+status_led_preview_state[^{]*\{[\s\S]*?"
         r"status_led_schedule_idle_transition_clear_locked\(now_ms\);[\s\S]*?"
+        r"status_led_force_transition_clear_locked\(STATUS_LED_TRANSITION_CLEAR_ALL_STRIPS\);[\s\S]*?"
         r"status_led_preview_clear_activity_locked\(\);[\s\S]*?"
         r"status_led_set_last_reason_locked\(\"preview\"\);",
         status_led,
@@ -1873,7 +1899,7 @@ def main() -> int:
         or 'ble_hid_gap_request_recovery_security_once(event->subscribe.conn_handle, "subscribe");' not in ble_hid_gap
         or 'ESP_LOGW(TAG, "security initiate skipped: missing connection descriptor");' not in ble_hid_gap
     ):
-        failures.append("ble_hid_gap_esp32.c: recovery connect must keep Swift Pair advertising eligible until secure pairing while MTU/subscribe remain idempotent backstops")
+        failures.append("ble_hid_gap_esp32.c: recovery connect must keep central-led pairing eligible until secure pairing while MTU/subscribe remain idempotent backstops")
     if 'status_led_notify_success("recording_stop_done")' in voice_recording_control:
         failures.append("voice_recording_control.c: recording STOP must not show OK before Type final success")
     if 'status_led_notify_success("recording_session_done")' in voice_recording_control:
@@ -1939,10 +1965,13 @@ def main() -> int:
         ble_set_state is None or
         "s_state.low_power_disabled && !status_led_ble_state_attention_locked(state)" not in ble_set_state.group(0) or
         "if (!effect_only && !routine_low_power_ble)" not in ble_set_state.group(0) or
+        "const bool active_work = s_state.recording_active ||\n            s_state.processing_active ||\n            s_state.ota_active;" not in ble_set_state.group(0) or
         "state_changed && !effect_only && !routine_low_power_ble &&" not in ble_set_state.group(0) or
+        "status_led_ble_state_ready_locked(state) &&\n            !keep_repair_cue" not in ble_set_state.group(0) or
+        "!active_work" not in ble_set_state.group(0) or
         "if (state_changed && !effect_only && !routine_low_power_ble)" not in ble_set_state.group(0)
     ):
-        failures.append("status_led.c: routine connected/TYPE_READY/DISCONNECTED BLE changes must not reopen active BLE windows from low-power idle")
+        failures.append("status_led.c: routine connected/TYPE_READY/DISCONNECTED BLE changes must not reopen active BLE windows from low-power idle or inject transition-clear frames during recording/processing/OTA")
     if "status_led_force_all_off();" in status_led:
         failures.append("status_led.c: all-off callers must explicitly choose whether the status strip may force non-DMA")
     all_off_body = re.search(
@@ -1963,31 +1992,35 @@ def main() -> int:
     if (
         manual_off_body is None
         or "s_state.output_disabled = true;" not in manual_off_body.group(0)
-        or "s_state.idle_transition_clear_pending = true;" not in manual_off_body.group(0)
+        or "status_led_force_transition_clear_locked(STATUS_LED_TRANSITION_CLEAR_ALL_STRIPS);" not in manual_off_body.group(0)
         or "status_led_request_refresh();" not in manual_off_body.group(0)
         or "status_led_force_all_off(" in manual_off_body.group(0)
     ):
         failures.append("status_led.c: manual/USB LED OFF must be queued to the LED task for non-DMA black latch, not transmitted inline")
-    idle_clear_body = re.search(
-        r"static\s+bool\s+status_led_render_idle_transition_clear_locked\(status_led_frame_t\s+\*frame\)[\s\S]*?"
+    transition_clear_body = re.search(
+        r"static\s+bool\s+status_led_render_transition_clear_locked\(status_led_frame_t\s+\*frame,\s*uint8_t\s+\*clear_mask_out\)[\s\S]*?"
         r"\n\}\n\nstatic\s+void\s+status_led_request_refresh",
         status_led,
     )
     if (
-        idle_clear_body is None
-        or "if (!s_state.output_disabled)" not in idle_clear_body.group(0)
-        or "frame->status[STATUS_LED_SEM_PWR] = s_state.last_frame.status[STATUS_LED_SEM_PWR];" not in idle_clear_body.group(0)
-        or "if (!repair_transition_clear)" not in idle_clear_body.group(0)
-        or "frame->status[STATUS_LED_SEM_BLE] = s_state.last_frame.status[STATUS_LED_SEM_BLE];" not in idle_clear_body.group(0)
+        transition_clear_body is None
+        or "*frame = s_state.last_frame;" not in transition_clear_body.group(0)
+        or "STATUS_LED_TRANSITION_CLEAR_STATUS_ACCENTS" not in transition_clear_body.group(0)
+        or "frame->status[STATUS_LED_SEM_REC] = (status_led_rgb_t){0};" not in transition_clear_body.group(0)
+        or "STATUS_LED_TRANSITION_CLEAR_BLE" not in transition_clear_body.group(0)
+        or "frame->status[STATUS_LED_SEM_BLE] = (status_led_rgb_t){0};" not in transition_clear_body.group(0)
+        or "STATUS_LED_TRANSITION_CLEAR_ACCENT_STRIPS" not in transition_clear_body.group(0)
+        or "s_state.transition_clear_mask = 0U;" not in transition_clear_body.group(0)
     ):
-        failures.append("status_led.c: idle transition clear must preserve PWR/BLE only outside manual output-off, except repair drops BLE for the first visible pulse edge")
+        failures.append("status_led.c: transition clear must copy the previous frame and clear only scoped semantic/accent layers")
     if (
-        "status_led_transition_clear_strip_mask_locked(&s_state.last_frame, repair_transition_clear)" not in status_led
-        or "if (!repair_transition_clear || previous == NULL)" not in status_led
-        or "uint8_t mask = STATUS_LED_STRIP_MASK_STATUS;" not in status_led
-        or "repair_transition_clear =\n        s_state.idle_transition_clear_pending &&\n        now_ms < s_state.ble_repair_until_ms;" not in status_led
+        "status_led_transition_clear_strip_mask_locked(&s_state.last_frame, transition_clear_mask)" not in status_led
+        or "STATUS_LED_TRANSITION_CLEAR_ALL_STRIPS" not in status_led
+        or "uint8_t mask = 0U;" not in status_led
+        or "STATUS_LED_TRANSITION_CLEAR_STATUS_ACCENTS" not in status_led
+        or "STATUS_LED_TRANSITION_CLEAR_BLE" not in status_led
     ):
-        failures.append("status_led.c: BLE repair transition clear must key off the whole user-requested repair window and avoid waking EC11/KEY/EDGE unless the previous software frame actually had accent light")
+        failures.append("status_led.c: scoped transition clear must compute strip writes from the requested clear mask and previous lit accent strips")
     low_power_setter = re.search(
         r"void\s+status_led_set_low_power_disabled[^{]*\{(?P<body>[\s\S]*?)\n\}",
         status_led,

@@ -238,14 +238,14 @@ static void ble_hid_gap_log_adv_state(
 
 /*
  * Legacy advertising has a hard 31-byte payload limit. Normal advertising keeps
- * flags + appearance + one 16-bit HID UUID + a short local name. First pairing
- * adds the Microsoft Swift Pair manufacturer section so Windows can show its
- * native "Connect" toast. Recovery pairing that was triggered from an active
- * Type link uses a quieter custom-service advertisement: Type can still scan
- * and PairAsync by address, but Windows is less likely to show a stale keyboard
- * "Connect" toast that races the app-owned pairing flow. Recovery without a
- * recent Type heartbeat keeps normal HID pairable advertising for plain
- * Windows/manual pairing on a new computer.
+ * flags + appearance + one 16-bit HID UUID + a short local name. Swift Pair
+ * support stays compiled in, but the product default keeps the Swift Pair
+ * prompt window disabled so Listener does not raise Windows' native "Connect"
+ * toast during rename/re-pair recovery. Recovery pairing that was triggered
+ * from an active Type link uses a quieter custom-service advertisement: Type
+ * can still scan and PairAsync by address. Recovery without a recent Type
+ * heartbeat keeps normal HID pairable advertising for plain Windows/manual
+ * pairing on a new computer.
  */
 #define BLE_HID_ADV_NAME_MAX_LEN 17
 #define BLE_HID_SCAN_RSP_NAME_MAX_LEN 29
@@ -260,7 +260,7 @@ static void ble_hid_gap_log_adv_state(
 #define BLE_HID_GAP_SERVICE_CHANGED_END_HANDLE 0xffff
 #define BLE_HID_GAP_RECOVERY_PAIRING_WINDOW_MS 120000LL
 #define BLE_HID_GAP_RECOVERY_SWIFT_PAIR_PROMPT_MS 0LL
-#define BLE_HID_GAP_FIRST_PAIRING_WINDOW_MS 60000LL
+#define BLE_HID_GAP_FIRST_PAIRING_WINDOW_MS 0LL
 #define BLE_HID_GAP_SWIFT_PAIR_ADV_MIN_RESTART_MS 1000LL
 #define BLE_HID_GAP_RECOVERY_BOND_DELETE_SETTLE_MS 80U
 #define BLE_HID_GAP_RECOVERY_BOND_DELETE_WAIT_MS 2000U
@@ -363,6 +363,11 @@ static int64_t ble_hid_gap_recovery_swift_pair_prompt_remaining_ms(void)
 static int64_t ble_hid_gap_first_pairing_window_remaining_ms(
     int bonded_peer_count)
 {
+    if (BLE_HID_GAP_FIRST_PAIRING_WINDOW_MS <= 0) {
+        s_first_pairing_window_opened_at_ms = 0;
+        return 0;
+    }
+
     if (bonded_peer_count > 0) {
         s_first_pairing_window_opened_at_ms = 0;
         return 0;

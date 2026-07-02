@@ -107,8 +107,10 @@ Assert-NotContains $typeRecoveryAdv 's_adv_fields\.appearance_is_present\s*=\s*1
     "Type-controlled recovery advertising must not include HID appearance that can trigger a Windows keyboard pairing toast"
 Assert-NotContains $typeRecoveryAdv 's_adv_fields\.uuids16\s*=\s*&s_hid_service_uuid' `
     "Type-controlled recovery advertising must not include the HID UUID that can trigger a Windows keyboard pairing toast"
+Assert-Contains $gap '#define\s+BLE_HID_GAP_FIRST_PAIRING_WINDOW_MS\s+0LL' `
+    "Listener must not advertise a Swift Pair first-pairing window by default because that raises the Windows Connect toast"
 Assert-Contains $gap 'esp_err_t\s+esp_hid_ble_gap_adv_init\(uint16_t appearance, const char \*device_name\)[\s\S]*?ble_svc_gap_device_appearance_set\(s_adv_appearance\)[\s\S]*?ble_hs_cfg\.sm_io_cap\s*=\s*BLE_SM_IO_CAP_NO_IO;[\s\S]*?ble_hs_cfg\.sm_bonding\s*=\s*1;[\s\S]*?ble_hs_cfg\.sm_mitm\s*=\s*0;[\s\S]*?ble_hs_cfg\.sm_sc\s*=\s*0;' `
-    "BLE HID advertising init must publish keyboard GAP appearance and use legacy-compatible no-IO bonding for Windows Swift Pair"
+    "BLE HID advertising init must publish keyboard GAP appearance and use legacy-compatible no-IO bonding for Windows pairing"
 Assert-Contains $gap 'esp_err_t\s+esp_hid_ble_gap_adv_start\(void\)[\s\S]*?ble_hid_gap_refresh_configured_device_name\("advertising_start"\)' `
     "advertising start must use the latest configured BLE name"
 Assert-Contains $gap 'esp_err_t\s+ble_hid_gap_forget_bonds_and_repair\(void\)[\s\S]*?bond_delete=async_after_disconnect[\s\S]*?ble_hid_gap_open_recovery_pairing_window\([^)]*\);[\s\S]*?ble_hid_gap_schedule_recovery_bond_delete[\s\S]*?stable identity will advertise after async local bond delete following disconnect[\s\S]*?ble_hid_gap_start_advertising\(\)' `
@@ -118,11 +120,11 @@ Assert-Contains $gap 'esp_err_t\s+esp_hid_ble_gap_adv_start\(void\)[\s\S]*?ble_h
 Assert-Contains $gap 'case BLE_GAP_EVENT_CONNECT:[\s\S]*?ble_hid_gap_recovery_bond_delete_active\(\)[\s\S]*?recovery: rejecting connection while async local bond delete is pending[\s\S]*?ble_gap_terminate\(event->connect\.conn_handle,\s*BLE_ERR_REM_USER_CONN_TERM\)' `
     "recovery must reject stale Windows connections while async local bond delete is pending"
 Assert-Contains $gap 'refresh_pairing_window[\s\S]*?pairing window already active; refreshing advertising with stable BLE identity[\s\S]*?ble_hid_gap_open_recovery_pairing_window\([^)]*\)[\s\S]*?ble_hid_gap_start_advertising\(\)[\s\S]*?pairing window refreshed with stable BLE identity' `
-    "explicit recovery during an already-open pairing window must renew the 120s Swift Pair window and refresh advertising with the current stable identity"
+    "explicit recovery during an already-open pairing window must renew the 120s pairing window and refresh advertising with the current stable identity"
 Assert-Contains $gap 'case BLE_GAP_EVENT_CONNECT:[\s\S]*?const bool recovery_pairing_window\s*=\s*ble_hid_gap_recovery_pairing_window_open\(\);[\s\S]*?conn_desc_valid\s*&&\s*recovery_pairing_window[\s\S]*?waiting for central-led security[\s\S]*?else\s+if\s*\(conn_desc_valid\)[\s\S]*?ble_gap_security_initiate\(event->connect\.conn_handle\)' `
-    "recovery pairing window must let Windows Swift Pair lead security before the normal non-recovery security request path"
+    "recovery pairing window must let Windows central-led pairing lead security before the normal non-recovery security request path"
 Assert-NotContains $gap 'conn_desc_valid\s*&&\s*recovery_pairing_window[\s\S]*?ble_hid_gap_request_recovery_security_once\(event->connect\.conn_handle,\s*"connect"\)' `
-    "recovery connect must not immediately initiate security before Windows Swift Pair starts pairing"
+    "recovery connect must not immediately initiate security before Windows starts pairing"
 Assert-Contains $gap 'case BLE_GAP_EVENT_SUBSCRIBE:[\s\S]*?ble_hid_gap_request_recovery_security_once\(event->subscribe\.conn_handle,\s*"subscribe"\);[\s\S]*?case BLE_GAP_EVENT_MTU:[\s\S]*?ble_hid_gap_request_recovery_security_once\(event->mtu\.conn_handle,\s*"mtu"\);' `
     "recovery pairing must keep MTU/subscribe security requests as idempotent backstops"
 Assert-Contains $gap 'case BLE_GAP_EVENT_ENC_CHANGE:[\s\S]*?desc\.sec_state\.encrypted\s*\|\|\s*desc\.sec_state\.bonded[\s\S]*?ble_hid_gap_note_secure_connection\([\s\S]*?"secure connection established"\);' `
