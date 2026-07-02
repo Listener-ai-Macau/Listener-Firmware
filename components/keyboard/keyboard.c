@@ -801,7 +801,10 @@ static void keyboard_custom_apply_stable_transition(
     key->stable_count = KEYBOARD_CUSTOM_DEBOUNCE_SAMPLES;
     bool pressed = !raw_high;
     power_manager_record_activity(key->logical_name);
-    status_led_notify_key_event(key->index, pressed);
+    bool led_feedback_already_matches = key->raw_feedback_pressed == pressed;
+    if (!led_feedback_already_matches) {
+        status_led_notify_key_event(key->index, pressed);
+    }
     key->raw_feedback_pressed = pressed;
     if (pressed && key->raw_feedback_tick == 0) {
         key->raw_feedback_tick = now;

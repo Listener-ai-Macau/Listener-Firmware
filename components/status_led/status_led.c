@@ -4645,6 +4645,7 @@ void status_led_notify_key_event(uint8_t key_index, bool pressed)
     bool changed = false;
     if (xSemaphoreTake(s_mutex, portMAX_DELAY) == pdTRUE) {
         bool long_release_fade = false;
+        bool gesture_release_active = false;
         if (s_state.preview_effect_only) {
             xSemaphoreGive(s_mutex);
             return;
@@ -4665,11 +4666,14 @@ void status_led_notify_key_event(uint8_t key_index, bool pressed)
                 s_state.key_feedback_started_ms[key_index] = now_ms;
                 s_state.key_feedback_until_ms[key_index] = now_ms + STATUS_LED_KEY_FADE_MS;
                 long_release_fade = true;
+            } else if (s_state.key_feedback_started_ms[key_index] != 0U &&
+                       now_ms < s_state.key_feedback_until_ms[key_index]) {
+                gesture_release_active = true;
             }
         }
         s_state.key_until_ms[key_index] = long_release_fade
             ? 0U
-            : now_ms + STATUS_LED_KEY_FEEDBACK_MS;
+            : (gesture_release_active ? 0U : now_ms + STATUS_LED_KEY_FEEDBACK_MS);
         s_state.status_window_until_ms = now_ms + STATUS_LED_STATUS_WINDOW_MS;
         s_state.last_transition_ms = now_ms;
         status_led_set_last_reason_locked(pressed ? "key_press" : "key_release");
