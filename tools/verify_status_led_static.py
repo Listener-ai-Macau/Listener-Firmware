@@ -181,6 +181,7 @@ CHECKS = {
         "DIAG_LED_OUTPUT_STATE",
         "DIAG_LED_FRAME_RGB",
         "STATUS_LED_IDLE_REFRESH_MS 1000U",
+        "STATUS_LED_KEY_DARK_RESYNC_MS 500U",
         "STATUS_LED_CONTRACT_REV \"status_key_ec11_edge_true_state_v26\"",
         "STATUS_LED_EC11_ACCENT_MIN_PERCENT",
         "STATUS_LED_EC11_ACCENT_MAX_PERCENT",
@@ -2035,6 +2036,20 @@ def main() -> int:
         failures.append("status_led.c: routine idle transition clear must not include KEY strip feedback")
     if "STATUS_LED_TRANSITION_CLEAR_REPAIR \\\n    (STATUS_LED_TRANSITION_CLEAR_STATUS_ACCENTS | STATUS_LED_TRANSITION_CLEAR_BLE | STATUS_LED_TRANSITION_CLEAR_EC11)" not in status_led:
         failures.append("status_led.c: BLE re-pair clear must be scoped to status/BLE plus EC11, not KEY/EDGE")
+    key_dark_rewrite = extract_c_function(status_led, "status_led_key_dark_rewrite_needed")
+    if (
+        "low_power_active || status_led_strip_has_light(frame->key, STATUS_LED_KEY_COUNT)" not in key_dark_rewrite
+        or "(changed_strip_mask & STATUS_LED_STRIP_MASK_KEY) != 0U" not in key_dark_rewrite
+        or "s_strip_last_tx_ms[STATUS_LED_STRIP_KEY]" not in key_dark_rewrite
+        or "STATUS_LED_KEY_DARK_RESYNC_MS" not in key_dark_rewrite
+    ):
+        failures.append("status_led.c: dark KEY strip must be periodically rewritten so physical WS2812 latch state cannot stay stale")
+    if not re.search(
+        r"status_led_key_dark_rewrite_needed\(&frame,\s*changed_strip_mask,\s*low_power_active,\s*now_ms\)[\s\S]{0,160}"
+        r"tx_strip_mask\s*=\s*\(uint8_t\)\(tx_strip_mask\s*\|\s*STATUS_LED_STRIP_MASK_KEY\);",
+        status_led,
+    ):
+        failures.append("status_led.c: refresh loop must OR the KEY strip into tx_strip_mask for dark-latch health rewrites")
     low_power_setter = re.search(
         r"void\s+status_led_set_low_power_disabled[^{]*\{(?P<body>[\s\S]*?)\n\}",
         status_led,
@@ -2054,10 +2069,10 @@ def main() -> int:
             failures.append("status_led.c: low-power idle must preserve the active BLE+EC11 repair cue instead of truncating the double-flash")
     if not re.search(
         r"esp_err_t\s+status_led_init\(void\)[\s\S]*?"
-        r"status_led_force_all_off\(false\);[\s\S]*?return\s+final_ret;",
+        r"status_led_force_all_off\(true\);[\s\S]*?return\s+final_ret;",
         status_led,
     ):
-        failures.append("status_led.c: init all-off clear must not force status-strip non-DMA rebuild")
+        failures.append("status_led.c: init all-off clear must force a non-DMA black latch before boot feedback")
     if not re.search(
         r"void\s+status_led_prepare_sleep\(void\)[\s\S]{0,1200}"
         r"status_led_force_all_off\(true\);[\s\S]{0,120}status_led_suspend_all_strips\(\);",

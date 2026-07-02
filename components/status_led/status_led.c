@@ -90,6 +90,7 @@
 #define STATUS_LED_LOW_POWER_FINAL_LATCH_WRITES 3U
 #define STATUS_LED_LOW_POWER_STATUS_RETRY_WRITES 3U
 #define STATUS_LED_STATUS_HEALTH_RESYNC_MS 500U
+#define STATUS_LED_KEY_DARK_RESYNC_MS 500U
 #define STATUS_LED_TX_MUTEX_WAIT_MS 100
 #define STATUS_LED_RMT_IDLE_RELEASE_MS 0U
 #define STATUS_LED_EXTERNAL_POWER_POLL_MS 250U
@@ -1536,6 +1537,24 @@ static bool status_led_status_health_rewrite_needed(
     uint32_t last_status_tx_ms = s_strip_last_tx_ms[STATUS_LED_STRIP_STATUS];
     return last_status_tx_ms == 0U ||
            (uint32_t)(now_ms - last_status_tx_ms) >= STATUS_LED_STATUS_HEALTH_RESYNC_MS;
+}
+
+static bool status_led_key_dark_rewrite_needed(
+    const status_led_frame_t *frame,
+    uint8_t changed_strip_mask,
+    bool low_power_active,
+    uint32_t now_ms)
+{
+    if (low_power_active || status_led_strip_has_light(frame->key, STATUS_LED_KEY_COUNT)) {
+        return false;
+    }
+    if ((changed_strip_mask & STATUS_LED_STRIP_MASK_KEY) != 0U) {
+        return false;
+    }
+
+    uint32_t last_key_tx_ms = s_strip_last_tx_ms[STATUS_LED_STRIP_KEY];
+    return last_key_tx_ms == 0U ||
+           (uint32_t)(now_ms - last_key_tx_ms) >= STATUS_LED_KEY_DARK_RESYNC_MS;
 }
 
 static void status_led_note_strip_transmitted(status_led_strip_id_t strip_index, uint32_t now_ms)
@@ -3527,6 +3546,10 @@ static uint32_t status_led_refresh_once(void)
         status_led_status_health_rewrite_needed(&frame, changed_strip_mask, low_power_active, now_ms)) {
         tx_strip_mask = (uint8_t)(tx_strip_mask | STATUS_LED_STRIP_MASK_STATUS);
     }
+    if (!force_clear_tx &&
+        status_led_key_dark_rewrite_needed(&frame, changed_strip_mask, low_power_active, now_ms)) {
+        tx_strip_mask = (uint8_t)(tx_strip_mask | STATUS_LED_STRIP_MASK_KEY);
+    }
     status_led_copy_frame_locked(&frame);
     status_led_log_visual_state_locked(&frame, now_ms);
     xSemaphoreGive(s_mutex);
@@ -4246,7 +4269,7 @@ esp_err_t status_led_init(void)
     diag_log(DIAG_SRC_STATUS_LED, DIAG_LED_STATE, DIAG_SEV_INFO,
              (uint32_t)s_state.profile, (uint32_t)BOARD_PINS_RGB_STATUS_IO,
              (uint32_t)BOARD_PINS_RGB_KEY_IO, (uint32_t)BOARD_PINS_RGB_EDGE_IO);
-    status_led_force_all_off(false);
+    status_led_force_all_off(true);
     return final_ret;
 }
 
