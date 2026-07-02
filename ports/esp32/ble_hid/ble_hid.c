@@ -888,6 +888,12 @@ static bool ble_hid_usb_command_starts_with_boundary(const char *line, const cha
     return next == '\0' || next == ' ' || next == ':' || next == '\r' || next == '\n';
 }
 
+static bool ble_hid_usb_command_is_apply_ble_name(const char *line)
+{
+    return ble_hid_usb_command_matches(line, "DEVICE:APPLY_BLE_NAME") ||
+           ble_hid_usb_command_matches(line, "DEVICE:BLE_NAME:APPLY");
+}
+
 static bool ble_hid_usb_command_records_activity(const char *line)
 {
     if (ble_hid_usb_command_is_passive_query(line)) {
@@ -908,6 +914,7 @@ static bool ble_hid_usb_command_records_activity(const char *line)
         ble_hid_usb_command_starts_with(line, "LED:PREVIEW ") ||
         ble_hid_usb_command_starts_with(line, "LED:ERROR ") ||
         ble_hid_usb_command_starts_with(line, "DEVICE:SET ") ||
+        ble_hid_usb_command_is_apply_ble_name(line) ||
         ble_hid_usb_command_matches(line, "DEVICE:RESET") ||
         ble_hid_usb_command_matches(line, "BOOT:CLEAR") ||
         ble_hid_usb_command_matches(line, "BOOT:CRASH") ||
@@ -984,6 +991,19 @@ static bool ble_hid_dispatch_usb_command_line(const char *line)
     }
 
     if (power_manager_consume_usb_command(line)) {
+        return true;
+    }
+
+    if (ble_hid_usb_command_is_apply_ble_name(line)) {
+        power_manager_set_blocker(POWER_MANAGER_BLOCKER_USB_COMMAND, true);
+        esp_err_t apply_ret = ble_hid_gap_apply_pending_ble_name();
+        power_manager_set_blocker(POWER_MANAGER_BLOCKER_USB_COMMAND, false);
+        if (apply_ret == ESP_OK) {
+            status_led_apply_device_settings();
+            device_settings_consume_usb_command("~DEVICE:SETTINGS");
+        } else {
+            printf("~DEVICE:ERROR key=APPLY_BLE_NAME reason=%s\n", esp_err_to_name(apply_ret));
+        }
         return true;
     }
 

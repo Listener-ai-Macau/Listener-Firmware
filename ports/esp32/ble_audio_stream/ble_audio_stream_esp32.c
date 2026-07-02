@@ -14,6 +14,7 @@
 #include "freertos/task.h"
 
 #include "esp_check.h"
+#include "esp_err.h"
 #include "esp_heap_caps.h"
 #include "esp_log.h"
 #include "host/ble_gatt.h"
@@ -30,6 +31,7 @@
 extern void power_manager_set_ble_connected(bool connected) __attribute__((weak));
 extern bool ble_hid_gap_is_securely_connected(void) __attribute__((weak));
 extern bool ble_hid_gap_is_recovery_pairing_window_open(void) __attribute__((weak));
+extern esp_err_t ble_hid_gap_apply_pending_ble_name(void) __attribute__((weak));
 
 #define BLE_AUDIO_STREAM_TASK_STACK_BYTES (5 * 1024)
 #define BLE_AUDIO_STREAM_PACKET_DEFAULT_BYTES 244
@@ -2776,6 +2778,23 @@ bool ble_audio_stream_consume_type_control_command(const char *command, const ch
             "type heartbeat stopped source=%s command=%s",
             source != NULL ? source : "unknown",
             command);
+        return true;
+    }
+
+    if (strcmp(command, "DEVICE:APPLY_BLE_NAME") == 0 ||
+        strcmp(command, "DEVICE:BLE_NAME:APPLY") == 0) {
+        if (ble_hid_gap_apply_pending_ble_name == NULL) {
+            ESP_LOGW(TAG, "BLE name apply command unavailable source=%s", source != NULL ? source : "unknown");
+            return true;
+        }
+        esp_err_t ret = ble_hid_gap_apply_pending_ble_name();
+        if (ret == ESP_OK) {
+            ESP_LOGI(TAG, "BLE name apply command accepted source=%s", source != NULL ? source : "unknown");
+        } else {
+            ESP_LOGW(TAG, "BLE name apply command failed source=%s ret=%s",
+                     source != NULL ? source : "unknown",
+                     esp_err_to_name(ret));
+        }
         return true;
     }
 

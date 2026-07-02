@@ -2526,3 +2526,87 @@ esp_err_t ble_hid_gap_request_active_connection(void)
     (void)ble_hid_gap_request_preferred_2m_phy("active audio");
     return params_ret;
 }
+
+esp_err_t ble_hid_gap_apply_pending_ble_name(void)
+{
+    portENTER_CRITICAL(&s_ble_gap_state_lock);
+    s_recovery_pairing_window_active = false;
+    s_recovery_type_controlled_pairing = false;
+    s_recovery_waiting_for_disconnect = false;
+    s_recovery_swift_pair_consumed = true;
+    s_recovery_security_request_conn_handle = BLE_HS_CONN_HANDLE_NONE;
+    s_recovery_pairing_window_opened_at_ms = 0;
+    portEXIT_CRITICAL(&s_ble_gap_state_lock);
+
+    esp_err_t name_ret = ble_hid_gap_refresh_configured_device_name("ble_name_apply");
+    if (name_ret != ESP_OK) {
+        ESP_LOGW(TAG, "BLE name apply failed while refreshing configured identity: %s",
+                 esp_err_to_name(name_ret));
+        diag_log(DIAG_SRC_BLE_GAP,
+                 DIAG_GAP_RECOVERY,
+                 DIAG_SEV_WARN,
+                 18,
+                 (uint32_t)name_ret,
+                 ble_hid_gap_adv_state_flags(ble_hid_gap_adv_active_snapshot()),
+                 s_ble_gap_conn_handle);
+        return name_ret;
+    }
+
+    ble_hid_gap_connection_snapshot_t conn = ble_hid_gap_connection_snapshot();
+    const bool adv_active = s_nimble_stack_ready && ble_gap_adv_active();
+    ESP_LOGI(TAG,
+             "BLE name apply requested: connected=%u conn_handle=%u adv_active=%u low_power_adv=%u key_wake_only=%u",
+             conn.connected ? 1U : 0U,
+             conn.conn_handle,
+             adv_active ? 1U : 0U,
+             s_low_power_advertising ? 1U : 0U,
+             s_key_wake_only_advertising ? 1U : 0U);
+    diag_log(DIAG_SRC_BLE_GAP,
+             DIAG_GAP_RECOVERY,
+             DIAG_SEV_INFO,
+             18,
+             conn.connected ? 1U : 0U,
+             ble_hid_gap_adv_state_flags(adv_active),
+             conn.conn_handle);
+
+    s_shutdown_quiesce = false;
+    s_low_power_advertising = false;
+    s_key_wake_only_advertising = false;
+    s_directed_adv_pending = true;
+    s_last_adv_was_directed = false;
+    status_led_set_ble_state(STATUS_LED_BLE_RECONNECTING, false);
+
+    if (conn.connected && conn.conn_handle != BLE_HS_CONN_HANDLE_NONE) {
+        int rc = ble_gap_terminate(conn.conn_handle, BLE_ERR_REM_USER_CONN_TERM);
+        if (rc == 0) {
+            ESP_LOGI(TAG, "BLE name apply terminating active connection so bonded host reconnects with refreshed name");
+            return ESP_OK;
+        }
+        ESP_LOGW(TAG, "BLE name apply terminate failed rc=%d; attempting advertising restart path", rc);
+        return ESP_FAIL;
+    }
+
+    if (!s_nimble_stack_ready || !s_hid_start_event_seen) {
+        ESP_LOGW(TAG,
+                 "BLE name apply cannot restart advertising yet: nimble_ready=%u hid_started=%u",
+                 s_nimble_stack_ready ? 1U : 0U,
+                 s_hid_start_event_seen ? 1U : 0U);
+        return ESP_ERR_INVALID_STATE;
+    }
+
+    if (adv_active) {
+        int stop_rc = ble_gap_adv_stop();
+        if (stop_rc != 0) {
+            ESP_LOGW(TAG, "BLE name apply advertising stop failed rc=%d", stop_rc);
+            return ESP_FAIL;
+        }
+        ble_hid_gap_log_adv_state(
+            BLE_HID_GAP_ADV_STATE_STOP_FOR_RESTART,
+            0,
+            false,
+            conn.conn_handle,
+            DIAG_SEV_INFO);
+    }
+
+    return ble_hid_gap_start_advertising();
+}
