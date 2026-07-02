@@ -151,6 +151,7 @@
 #define STATUS_LED_BLE_PAIRING_PULSE_PERCENT STATUS_LED_BLE_ATTENTION_PERCENT
 #define STATUS_LED_BLE_RECONNECT_MIN_PERCENT 0U
 #define STATUS_LED_BLE_RECONNECT_MAX_PERCENT 0U
+#define STATUS_LED_BLE_CONNECTED_FIND_TYPE_FLOOR_PERCENT 10U
 #define STATUS_LED_BLE_CONNECTED_FIND_TYPE_PULSE_PERCENT STATUS_LED_BLE_ATTENTION_PERCENT
 #define STATUS_LED_BLE_CONNECTED_FIND_TYPE_PERIOD_MS 2000U
 #define STATUS_LED_BLE_TYPE_READY_STEADY_PERCENT 14U
@@ -2341,12 +2342,15 @@ static void status_led_render_ble_locked(status_led_frame_t *frame, uint32_t now
                 ble_blue,
                 STATUS_LED_BLE_TYPE_READY_STEADY_PERCENT,
                 false);
-        } else if (status_led_double_pulse_on(
-                       ble_elapsed_ms,
-                       STATUS_LED_BLE_CONNECTED_FIND_TYPE_PERIOD_MS)) {
+        } else {
+            uint8_t percent = status_led_double_pulse_on(
+                                  ble_elapsed_ms,
+                                  STATUS_LED_BLE_CONNECTED_FIND_TYPE_PERIOD_MS)
+                ? STATUS_LED_BLE_CONNECTED_FIND_TYPE_PULSE_PERCENT
+                : STATUS_LED_BLE_CONNECTED_FIND_TYPE_FLOOR_PERCENT;
             color = status_led_token_locked(
                 ble_blue,
-                STATUS_LED_BLE_CONNECTED_FIND_TYPE_PULSE_PERCENT,
+                percent,
                 false);
         }
         break;

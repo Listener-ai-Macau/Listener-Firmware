@@ -324,6 +324,7 @@ CHECKS = {
         "STATUS_LED_BLE_PAIRING_PULSE_PERCENT STATUS_LED_BLE_ATTENTION_PERCENT",
         "STATUS_LED_BLE_RECONNECT_MIN_PERCENT 0U",
         "STATUS_LED_BLE_RECONNECT_MAX_PERCENT 0U",
+        "STATUS_LED_BLE_CONNECTED_FIND_TYPE_FLOOR_PERCENT 10U",
         "STATUS_LED_BLE_CONNECTED_FIND_TYPE_PULSE_PERCENT STATUS_LED_BLE_ATTENTION_PERCENT",
         "STATUS_LED_BLE_TYPE_READY_STEADY_PERCENT 14U",
         "case STATUS_LED_BLE_TYPE_READY: return \"type_ready\"",
@@ -1412,19 +1413,23 @@ def main() -> int:
         failures.append("status_led.c: active BLE rendering must not use the old low-base HID-only connected heartbeat/confirmation renderer")
     if "STATUS_LED_BLE_CONNECTED_FIND_TYPE_PERIOD_MS 2000U" not in status_led:
         failures.append("status_led.c: HID-only connected must keep the bounded find-Type double-flash period")
+    if "STATUS_LED_BLE_CONNECTED_FIND_TYPE_FLOOR_PERCENT 10U" not in status_led:
+        failures.append("status_led.c: HID-only connected find-Type must keep the restored low blue floor")
     if "STATUS_LED_BLE_CONNECTED_FIND_TYPE_PULSE_PERCENT STATUS_LED_BLE_ATTENTION_PERCENT" not in status_led:
-        failures.append("status_led.c: HID-only connected find-Type flash must stay visible while reconnecting stays dark")
+        failures.append("status_led.c: HID-only connected find-Type flash must stay visible above the restored low blue floor while reconnecting stays dark")
     if not re.search(
         r"case\s+STATUS_LED_BLE_CONNECTED:[\s\S]*?"
         r"if\s*\(\s*status_led_ota_ble_steady_locked\(now_ms\)\s*\)[\s\S]*?"
         r"STATUS_LED_BLE_TYPE_READY_STEADY_PERCENT[\s\S]*?"
         r"status_led_double_pulse_on\(\s*ble_elapsed_ms,\s*STATUS_LED_BLE_CONNECTED_FIND_TYPE_PERIOD_MS\s*\)[\s\S]*?"
         r"STATUS_LED_BLE_CONNECTED_FIND_TYPE_PULSE_PERCENT[\s\S]*?"
+        r"STATUS_LED_BLE_CONNECTED_FIND_TYPE_FLOOR_PERCENT[\s\S]*?"
+        r"status_led_token_locked\(\s*ble_blue,\s*percent,\s*false\s*\)[\s\S]*?"
         r"break;\s*case\s+STATUS_LED_BLE_TYPE_READY:[\s\S]*?"
         r"STATUS_LED_BLE_TYPE_READY_STEADY_PERCENT",
         status_led,
     ):
-        failures.append("status_led.c: active BLE rendering must make HID-only connected a find-Type double flash; only TYPE_READY or active OTA transfer may be steady blue")
+        failures.append("status_led.c: active BLE rendering must make HID-only connected a low-floor find-Type double flash; only TYPE_READY or active OTA transfer may be steady blue")
     reconnect_case = re.search(
         r"case\s+STATUS_LED_BLE_RECONNECTING:\s*\{(?P<body>[\s\S]*?)\n\s*\}",
         status_led,
