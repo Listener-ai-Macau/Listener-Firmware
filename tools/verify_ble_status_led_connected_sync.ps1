@@ -227,24 +227,22 @@ Assert-Contains $statusLed 'STATUS_LED_BATTERY_IDLE_BLE_HEARTBEAT_ON_MS\s+120U' 
     "battery idle BLE heartbeat must be brief"
 Assert-Contains $statusLed 'STATUS_LED_BLE_TYPE_READY_STEADY_PERCENT\s+14U' `
     "TYPE_READY must use steady blue"
-Assert-Contains $statusLed 'STATUS_LED_BLE_RECONNECT_MIN_PERCENT\s+0U' `
-    "ordinary reconnecting must have an off floor so unconnected state cannot look connected"
-Assert-Contains $statusLed 'STATUS_LED_BLE_RECONNECT_MAX_PERCENT\s+0U' `
-    "ordinary reconnecting must stay dark in active rendering"
-Assert-Contains $statusLed 'case STATUS_LED_BLE_RECONNECTING:[\s\S]*?status_led_token_locked\(\s*ble_blue,\s*STATUS_LED_BLE_RECONNECT_MIN_PERCENT,\s*false\s*\)[\s\S]*?break;' `
-    "active reconnecting must render dark, not a connected/find-Type cue"
-Assert-NotContains $statusLed 'case STATUS_LED_BLE_RECONNECTING:\s*\{(?:(?!break;)[\s\S])*?status_led_double_pulse_on' `
-    "reconnecting must not share the connected/find-Type double flash"
+Assert-Contains $statusLed 'STATUS_LED_BLE_RECONNECT_MIN_PERCENT\s+10U' `
+    "ordinary reconnecting must keep the restored low blue floor"
+Assert-Contains $statusLed 'STATUS_LED_BLE_RECONNECT_MAX_PERCENT\s+STATUS_LED_BLE_ATTENTION_PERCENT' `
+    "ordinary reconnecting must pulse above the low blue floor"
+Assert-Contains $statusLed 'case STATUS_LED_BLE_RECONNECTING:[\s\S]*?status_led_double_pulse_on\(\s*ble_elapsed_ms,\s*STATUS_LED_BLE_CONNECTED_FIND_TYPE_PERIOD_MS\s*\)[\s\S]*?STATUS_LED_BLE_RECONNECT_MAX_PERCENT[\s\S]*?STATUS_LED_BLE_RECONNECT_MIN_PERCENT[\s\S]*?status_led_token_locked\(\s*ble_blue,\s*percent,\s*false\s*\)[\s\S]*?break;' `
+    "active reconnecting must render the low-floor blue double flash"
 Assert-NotContains $statusLed 'case STATUS_LED_BLE_RECONNECTING:\s*\{(?:(?!break;)[\s\S])*?status_led_blink_on' `
-    "ordinary reconnecting must not blink like a connected cue"
+    "ordinary reconnecting must use the low-floor double pulse, not pairing-style blink"
 Assert-Contains $statusLed 'STATUS_LED_BLE_CONNECTED_FIND_TYPE_PERIOD_MS\s+2000U' `
     "HID-only connected must use a bounded find-Type double-flash period"
-Assert-Contains $statusLed 'STATUS_LED_BLE_CONNECTED_FIND_TYPE_FLOOR_PERCENT\s+10U' `
-    "HID-only connected find-Type must keep the restored low blue floor"
-Assert-Contains $statusLed 'STATUS_LED_BLE_CONNECTED_FIND_TYPE_PULSE_PERCENT\s+STATUS_LED_BLE_ATTENTION_PERCENT' `
-    "HID-only connected find-Type flash must stay visible above the restored low blue floor while reconnecting stays dark"
-Assert-Contains $statusLed 'case STATUS_LED_BLE_CONNECTED:[\s\S]*?if\s*\(\s*status_led_ota_ble_steady_locked\(now_ms\)\s*\)[\s\S]*?STATUS_LED_BLE_TYPE_READY_STEADY_PERCENT[\s\S]*?status_led_double_pulse_on\(\s*ble_elapsed_ms,\s*STATUS_LED_BLE_CONNECTED_FIND_TYPE_PERIOD_MS\s*\)[\s\S]*?STATUS_LED_BLE_CONNECTED_FIND_TYPE_PULSE_PERCENT[\s\S]*?STATUS_LED_BLE_CONNECTED_FIND_TYPE_FLOOR_PERCENT[\s\S]*?status_led_token_locked\(\s*ble_blue,\s*percent,\s*false\s*\)[\s\S]*?break;\s*case STATUS_LED_BLE_TYPE_READY:[\s\S]*?STATUS_LED_BLE_TYPE_READY_STEADY_PERCENT' `
-    "HID-only connected must show the restored low-floor blue find-Type double flash, while TYPE_READY stays steady blue"
+Assert-Contains $statusLed 'STATUS_LED_BLE_CONNECTED_FIND_TYPE_PULSE_PERCENT\s+STATUS_LED_BLE_RECONNECT_MAX_PERCENT' `
+    "HID-only connected find-Type flash must share reconnect peak brightness without keeping reconnect's floor"
+Assert-Contains $statusLed 'case STATUS_LED_BLE_CONNECTED:[\s\S]*?if\s*\(\s*status_led_ota_ble_steady_locked\(now_ms\)\s*\)[\s\S]*?STATUS_LED_BLE_TYPE_READY_STEADY_PERCENT[\s\S]*?else if\s*\(\s*status_led_double_pulse_on\(\s*ble_elapsed_ms,\s*STATUS_LED_BLE_CONNECTED_FIND_TYPE_PERIOD_MS\s*\)\s*\)[\s\S]*?STATUS_LED_BLE_CONNECTED_FIND_TYPE_PULSE_PERCENT[\s\S]*?break;\s*case STATUS_LED_BLE_TYPE_READY:[\s\S]*?STATUS_LED_BLE_TYPE_READY_STEADY_PERCENT' `
+    "HID-only connected must show a plain blue find-Type double flash, while TYPE_READY stays steady blue"
+Assert-NotContains $statusLed 'STATUS_LED_BLE_CONNECTED_FIND_TYPE_FLOOR_PERCENT' `
+    "HID-only connected find-Type must not keep reconnect's low blue floor"
 Assert-NotContains $statusLed 'status_led_connected_hid_only_percent_locked|STATUS_LED_BLE_CONNECTED_HEARTBEAT_PERIOD_MS|STATUS_LED_BLE_CONNECTED_CONFIRM_MS|STATUS_LED_BLE_CONNECTED_BASE_PERCENT' `
     "HID-only connected must not keep the old low-base heartbeat/confirmation renderer"
 Assert-Contains $statusLed 'static\s+uint8_t\s+status_led_low_power_ble_percent_locked\(uint32_t ble_elapsed_ms\)[\s\S]*?case STATUS_LED_BLE_PAIRING:[\s\S]*?STATUS_LED_BATTERY_IDLE_BLE_HEARTBEAT_ON_MS[\s\S]*?STATUS_LED_LOW_POWER_BLE_ATTENTION_PERCENT[\s\S]*?case STATUS_LED_BLE_RECONNECTING:\s*\n\s*case STATUS_LED_BLE_CONNECTED:\s*\n\s*case STATUS_LED_BLE_TYPE_READY:[\s\S]*?return 0U;' `

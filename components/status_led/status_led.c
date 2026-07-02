@@ -149,10 +149,9 @@
 #define STATUS_LED_BLE_REPAIR_MIN_PERCENT 30U
 #define STATUS_LED_BLE_REPAIR_MAX_PERCENT 100U
 #define STATUS_LED_BLE_PAIRING_PULSE_PERCENT STATUS_LED_BLE_ATTENTION_PERCENT
-#define STATUS_LED_BLE_RECONNECT_MIN_PERCENT 0U
-#define STATUS_LED_BLE_RECONNECT_MAX_PERCENT 0U
-#define STATUS_LED_BLE_CONNECTED_FIND_TYPE_FLOOR_PERCENT 10U
-#define STATUS_LED_BLE_CONNECTED_FIND_TYPE_PULSE_PERCENT STATUS_LED_BLE_ATTENTION_PERCENT
+#define STATUS_LED_BLE_RECONNECT_MIN_PERCENT 10U
+#define STATUS_LED_BLE_RECONNECT_MAX_PERCENT STATUS_LED_BLE_ATTENTION_PERCENT
+#define STATUS_LED_BLE_CONNECTED_FIND_TYPE_PULSE_PERCENT STATUS_LED_BLE_RECONNECT_MAX_PERCENT
 #define STATUS_LED_BLE_CONNECTED_FIND_TYPE_PERIOD_MS 2000U
 #define STATUS_LED_BLE_TYPE_READY_STEADY_PERCENT 14U
 #define STATUS_LED_BATTERY_IDLE_BLE_HEARTBEAT_ON_MS 120U
@@ -2330,10 +2329,12 @@ static void status_led_render_ble_locked(status_led_frame_t *frame, uint32_t now
         }
         break;
     case STATUS_LED_BLE_RECONNECTING: {
-        color = status_led_token_locked(
-            ble_blue,
-            STATUS_LED_BLE_RECONNECT_MIN_PERCENT,
-            false);
+        uint8_t percent = status_led_double_pulse_on(
+                              ble_elapsed_ms,
+                              STATUS_LED_BLE_CONNECTED_FIND_TYPE_PERIOD_MS)
+            ? STATUS_LED_BLE_RECONNECT_MAX_PERCENT
+            : STATUS_LED_BLE_RECONNECT_MIN_PERCENT;
+        color = status_led_token_locked(ble_blue, percent, false);
         break;
     }
     case STATUS_LED_BLE_CONNECTED:
@@ -2342,15 +2343,12 @@ static void status_led_render_ble_locked(status_led_frame_t *frame, uint32_t now
                 ble_blue,
                 STATUS_LED_BLE_TYPE_READY_STEADY_PERCENT,
                 false);
-        } else {
-            uint8_t percent = status_led_double_pulse_on(
-                                  ble_elapsed_ms,
-                                  STATUS_LED_BLE_CONNECTED_FIND_TYPE_PERIOD_MS)
-                ? STATUS_LED_BLE_CONNECTED_FIND_TYPE_PULSE_PERCENT
-                : STATUS_LED_BLE_CONNECTED_FIND_TYPE_FLOOR_PERCENT;
+        } else if (status_led_double_pulse_on(
+                       ble_elapsed_ms,
+                       STATUS_LED_BLE_CONNECTED_FIND_TYPE_PERIOD_MS)) {
             color = status_led_token_locked(
                 ble_blue,
-                percent,
+                STATUS_LED_BLE_CONNECTED_FIND_TYPE_PULSE_PERCENT,
                 false);
         }
         break;
