@@ -1070,11 +1070,15 @@ def main() -> int:
     firmware_ota = read("components/firmware_ota/firmware_ota.c")
     if "status_led_active_work_locked" in status_led:
         failures.append("status_led.c: active recording/processing must not suppress physical key LED feedback")
+    if re.search(r"\bSTATUS_LED_TRANSITION_CLEAR_ACCENTS\b", status_led):
+        failures.append("status_led.c: generic transition clear ACCENTS mask must not exist; use NON_KEY_ACCENTS or an explicit strip mask")
     resume_output = extract_c_function(status_led, "status_led_resume_interactive_output_locked")
     if "s_state.transition_clear_mask = 0U;" in resume_output:
         failures.append("status_led.c: interactive low-power resume must preserve the pending clear frame, not cancel it")
-    if "status_led_force_transition_clear_locked(STATUS_LED_TRANSITION_CLEAR_ACCENTS);" not in resume_output:
-        failures.append("status_led.c: interactive low-power resume must schedule a scoped accent clear frame before rendering feedback")
+    if "status_led_force_transition_clear_locked(STATUS_LED_TRANSITION_CLEAR_NON_KEY_ACCENTS);" not in resume_output:
+        failures.append("status_led.c: interactive low-power resume must schedule a scoped non-KEY accent clear frame before rendering feedback")
+    if "status_led_force_transition_clear_locked(STATUS_LED_TRANSITION_CLEAR_ACCENTS);" in resume_output:
+        failures.append("status_led.c: interactive low-power resume must not black-frame the KEY strip through the generic accent clear")
     for function_name in ("status_led_notify_key_event", "status_led_notify_key_feedback"):
         try:
             body = extract_c_function(status_led, function_name)
@@ -2009,7 +2013,9 @@ def main() -> int:
         or "frame->status[STATUS_LED_SEM_REC] = (status_led_rgb_t){0};" not in transition_clear_body.group(0)
         or "STATUS_LED_TRANSITION_CLEAR_BLE" not in transition_clear_body.group(0)
         or "frame->status[STATUS_LED_SEM_BLE] = (status_led_rgb_t){0};" not in transition_clear_body.group(0)
-        or "STATUS_LED_TRANSITION_CLEAR_ACCENT_STRIPS" not in transition_clear_body.group(0)
+        or "STATUS_LED_TRANSITION_CLEAR_EC11" not in transition_clear_body.group(0)
+        or "STATUS_LED_TRANSITION_CLEAR_KEY" not in transition_clear_body.group(0)
+        or "STATUS_LED_TRANSITION_CLEAR_EDGE" not in transition_clear_body.group(0)
         or "s_state.transition_clear_mask = 0U;" not in transition_clear_body.group(0)
     ):
         failures.append("status_led.c: transition clear must copy the previous frame and clear only scoped semantic/accent layers")
@@ -2019,8 +2025,16 @@ def main() -> int:
         or "uint8_t mask = 0U;" not in status_led
         or "STATUS_LED_TRANSITION_CLEAR_STATUS_ACCENTS" not in status_led
         or "STATUS_LED_TRANSITION_CLEAR_BLE" not in status_led
+        or "STATUS_LED_TRANSITION_CLEAR_EC11" not in status_led
+        or "STATUS_LED_TRANSITION_CLEAR_KEY" not in status_led
+        or "STATUS_LED_TRANSITION_CLEAR_EDGE" not in status_led
     ):
         failures.append("status_led.c: scoped transition clear must compute strip writes from the requested clear mask and previous lit accent strips")
+    idle_clear = extract_c_function(status_led, "status_led_schedule_idle_transition_clear_locked")
+    if "STATUS_LED_TRANSITION_CLEAR_NON_KEY_ACCENTS" not in idle_clear:
+        failures.append("status_led.c: routine idle transition clear must not include KEY strip feedback")
+    if "STATUS_LED_TRANSITION_CLEAR_REPAIR \\\n    (STATUS_LED_TRANSITION_CLEAR_STATUS_ACCENTS | STATUS_LED_TRANSITION_CLEAR_BLE | STATUS_LED_TRANSITION_CLEAR_EC11)" not in status_led:
+        failures.append("status_led.c: BLE re-pair clear must be scoped to status/BLE plus EC11, not KEY/EDGE")
     low_power_setter = re.search(
         r"void\s+status_led_set_low_power_disabled[^{]*\{(?P<body>[\s\S]*?)\n\}",
         status_led,

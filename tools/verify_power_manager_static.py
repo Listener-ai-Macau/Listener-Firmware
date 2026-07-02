@@ -1267,10 +1267,10 @@ def main() -> int:
         "const bool preserve_repair_cue =" not in status_led
         or "disabled && status_led_ble_repair_cue_active_locked(now_ms)" not in status_led
         or "const bool next_low_power_disabled = disabled && !preserve_repair_cue;" not in status_led
-        or "if (next_low_power_disabled) {\n            status_led_force_transition_clear_locked(STATUS_LED_TRANSITION_CLEAR_ACCENTS);" not in status_led
+        or "if (next_low_power_disabled) {\n            status_led_force_transition_clear_locked(STATUS_LED_TRANSITION_CLEAR_NON_KEY_ACCENTS);" not in status_led
     ):
         failures.append(
-            "components/status_led/status_led.c: entering low-power idle must schedule a scoped accent clear frame, while active repair cue must defer the low-power LED cutoff"
+            "components/status_led/status_led.c: entering low-power idle must schedule a scoped non-KEY accent clear frame, while active repair cue must defer the low-power LED cutoff"
         )
     if not re.search(
         r"status_led_idle_transport_release_pending[\s\S]{0,260}"
@@ -1440,7 +1440,7 @@ def main() -> int:
         interactive_resume_body is None
         or "s_state.low_power_disabled = false;" not in interactive_resume_body.group(0)
         or "s_state.output_disabled = false;" not in interactive_resume_body.group(0)
-        or "status_led_force_transition_clear_locked(STATUS_LED_TRANSITION_CLEAR_ACCENTS);" not in interactive_resume_body.group(0)
+        or "status_led_force_transition_clear_locked(STATUS_LED_TRANSITION_CLEAR_NON_KEY_ACCENTS);" not in interactive_resume_body.group(0)
         or key_event_body is None
         or "status_led_resume_interactive_output_locked();" not in key_event_body.group(0)
         or key_feedback_body is None
@@ -1449,7 +1449,7 @@ def main() -> int:
         or "status_led_resume_interactive_output_locked();" not in ec11_feedback_body.group(0)
     ):
         failures.append(
-            "components/status_led/status_led.c: idle key/EC11 feedback must explicitly resume interactive output from low-power idle and preserve the scoped transition-clear frame before feedback"
+            "components/status_led/status_led.c: idle key/EC11 feedback must explicitly resume interactive output from low-power idle and preserve the scoped non-KEY transition-clear frame before feedback"
         )
     if (
         "STATUS_LED_EC11_ROTATE_STEP_MS" in status_led

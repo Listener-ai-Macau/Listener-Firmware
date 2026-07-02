@@ -72,12 +72,14 @@
     (STATUS_LED_STRIP_MASK_STATUS | STATUS_LED_STRIP_MASK_EC11 | STATUS_LED_STRIP_MASK_KEY | STATUS_LED_STRIP_MASK_EDGE)
 #define STATUS_LED_TRANSITION_CLEAR_STATUS_ACCENTS (1U << 0)
 #define STATUS_LED_TRANSITION_CLEAR_BLE (1U << 1)
-#define STATUS_LED_TRANSITION_CLEAR_ACCENT_STRIPS (1U << 2)
-#define STATUS_LED_TRANSITION_CLEAR_ALL_STRIPS (1U << 3)
-#define STATUS_LED_TRANSITION_CLEAR_ACCENTS \
-    (STATUS_LED_TRANSITION_CLEAR_STATUS_ACCENTS | STATUS_LED_TRANSITION_CLEAR_ACCENT_STRIPS)
+#define STATUS_LED_TRANSITION_CLEAR_EC11 (1U << 2)
+#define STATUS_LED_TRANSITION_CLEAR_KEY (1U << 3)
+#define STATUS_LED_TRANSITION_CLEAR_EDGE (1U << 4)
+#define STATUS_LED_TRANSITION_CLEAR_ALL_STRIPS (1U << 5)
+#define STATUS_LED_TRANSITION_CLEAR_NON_KEY_ACCENTS \
+    (STATUS_LED_TRANSITION_CLEAR_STATUS_ACCENTS | STATUS_LED_TRANSITION_CLEAR_EC11 | STATUS_LED_TRANSITION_CLEAR_EDGE)
 #define STATUS_LED_TRANSITION_CLEAR_REPAIR \
-    (STATUS_LED_TRANSITION_CLEAR_STATUS_ACCENTS | STATUS_LED_TRANSITION_CLEAR_BLE | STATUS_LED_TRANSITION_CLEAR_ACCENT_STRIPS)
+    (STATUS_LED_TRANSITION_CLEAR_STATUS_ACCENTS | STATUS_LED_TRANSITION_CLEAR_BLE | STATUS_LED_TRANSITION_CLEAR_EC11)
 
 #define STATUS_LED_TASK_STACK_BYTES (5 * 1024)
 #define STATUS_LED_REFRESH_MS 50U
@@ -1796,7 +1798,7 @@ static bool status_led_should_schedule_idle_transition_clear_locked(uint32_t now
 static void status_led_schedule_idle_transition_clear_locked(uint32_t now_ms)
 {
     if (status_led_should_schedule_idle_transition_clear_locked(now_ms)) {
-        s_state.transition_clear_mask |= STATUS_LED_TRANSITION_CLEAR_ACCENTS;
+        s_state.transition_clear_mask |= STATUS_LED_TRANSITION_CLEAR_NON_KEY_ACCENTS;
     }
 }
 
@@ -1814,8 +1816,9 @@ static bool status_led_render_transition_clear_locked(status_led_frame_t *frame,
     /*
      * Scoped clear: start from the last transmitted frame and clear only the
      * layers named by transition_clear_mask. This keeps PWR/BLE/REC/AI/OK/WARN
-     * independent: a BLE state refresh cannot blank recording, and OK/AI cleanup
-     * cannot downgrade the connected BLE semantic slot.
+     * and EC11/KEY/EDGE independent: a BLE state refresh cannot blank recording,
+     * OK/AI cleanup cannot downgrade the connected BLE semantic slot, and routine
+     * status cleanup cannot black-frame an in-flight physical key cue.
      */
     if (s_state.output_disabled ||
         (clear_mask & STATUS_LED_TRANSITION_CLEAR_ALL_STRIPS) != 0U) {
@@ -1831,9 +1834,13 @@ static bool status_led_render_transition_clear_locked(status_led_frame_t *frame,
         if ((clear_mask & STATUS_LED_TRANSITION_CLEAR_BLE) != 0U) {
             frame->status[STATUS_LED_SEM_BLE] = (status_led_rgb_t){0};
         }
-        if ((clear_mask & STATUS_LED_TRANSITION_CLEAR_ACCENT_STRIPS) != 0U) {
+        if ((clear_mask & STATUS_LED_TRANSITION_CLEAR_EC11) != 0U) {
             memset(frame->ec11, 0, sizeof(frame->ec11));
+        }
+        if ((clear_mask & STATUS_LED_TRANSITION_CLEAR_KEY) != 0U) {
             memset(frame->key, 0, sizeof(frame->key));
+        }
+        if ((clear_mask & STATUS_LED_TRANSITION_CLEAR_EDGE) != 0U) {
             memset(frame->edge, 0, sizeof(frame->edge));
         }
     }
@@ -1862,15 +1869,15 @@ static uint8_t status_led_transition_clear_strip_mask_locked(
                        STATUS_LED_TRANSITION_CLEAR_BLE)) != 0U) {
         mask = (uint8_t)(mask | STATUS_LED_STRIP_MASK_STATUS);
     }
-    if ((clear_mask & STATUS_LED_TRANSITION_CLEAR_ACCENT_STRIPS) != 0U &&
+    if ((clear_mask & STATUS_LED_TRANSITION_CLEAR_EC11) != 0U &&
         status_led_strip_has_light(previous->ec11, STATUS_LED_EC11_COUNT)) {
         mask = (uint8_t)(mask | STATUS_LED_STRIP_MASK_EC11);
     }
-    if ((clear_mask & STATUS_LED_TRANSITION_CLEAR_ACCENT_STRIPS) != 0U &&
+    if ((clear_mask & STATUS_LED_TRANSITION_CLEAR_KEY) != 0U &&
         status_led_strip_has_light(previous->key, STATUS_LED_KEY_COUNT)) {
         mask = (uint8_t)(mask | STATUS_LED_STRIP_MASK_KEY);
     }
-    if ((clear_mask & STATUS_LED_TRANSITION_CLEAR_ACCENT_STRIPS) != 0U &&
+    if ((clear_mask & STATUS_LED_TRANSITION_CLEAR_EDGE) != 0U &&
         status_led_strip_has_light(previous->edge, STATUS_LED_EDGE_COUNT)) {
         mask = (uint8_t)(mask | STATUS_LED_STRIP_MASK_EDGE);
     }
@@ -3585,7 +3592,7 @@ static void status_led_resume_interactive_output_locked(void)
     s_state.low_power_disabled = false;
     if (was_low_power_output || s_state.transition_clear_mask != 0U) {
         s_state.last_power_poll_ms = 0U;
-        status_led_force_transition_clear_locked(STATUS_LED_TRANSITION_CLEAR_ACCENTS);
+        status_led_force_transition_clear_locked(STATUS_LED_TRANSITION_CLEAR_NON_KEY_ACCENTS);
     }
 }
 
@@ -5020,7 +5027,7 @@ void status_led_set_low_power_disabled(bool disabled)
         s_state.preview_effect_only = false;
         s_state.preview_ble_override_until_ms = 0U;
         if (next_low_power_disabled) {
-            status_led_force_transition_clear_locked(STATUS_LED_TRANSITION_CLEAR_ACCENTS);
+            status_led_force_transition_clear_locked(STATUS_LED_TRANSITION_CLEAR_NON_KEY_ACCENTS);
             s_state.ble_repair_until_ms = 0U;
             s_state.ble_repair_cue_started_ms = 0U;
             s_state.ble_repair_cue_until_ms = 0U;
