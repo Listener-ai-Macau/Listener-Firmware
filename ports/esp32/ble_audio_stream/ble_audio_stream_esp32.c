@@ -31,6 +31,7 @@
 extern void power_manager_set_ble_connected(bool connected) __attribute__((weak));
 extern bool ble_hid_gap_is_securely_connected(void) __attribute__((weak));
 extern bool ble_hid_gap_is_recovery_pairing_window_open(void) __attribute__((weak));
+extern bool ble_hid_gap_note_type_audio_ready(const char *reason) __attribute__((weak));
 extern esp_err_t ble_hid_gap_apply_pending_ble_name(void) __attribute__((weak));
 
 #define BLE_AUDIO_STREAM_TASK_STACK_BYTES (5 * 1024)
@@ -377,6 +378,13 @@ static void ble_audio_stream_sync_power_manager_for_type_link(bool active, const
     }
 
     if (active) {
+        if (!ble_audio_stream_is_type_link_ready()) {
+            ESP_LOGD(
+                TAG,
+                "type link power sync skipped until notify link ready reason=%s",
+                reason != NULL ? reason : "unspecified");
+            return;
+        }
         power_manager_set_ble_connected(true);
         ESP_LOGD(TAG, "type link power sync connected reason=%s", reason != NULL ? reason : "unspecified");
         return;
@@ -386,6 +394,28 @@ static void ble_audio_stream_sync_power_manager_for_type_link(bool active, const
         power_manager_set_ble_connected(false);
         ESP_LOGD(TAG, "type link power sync disconnected reason=%s", reason != NULL ? reason : "unspecified");
     }
+}
+
+static bool ble_audio_stream_type_activity_accepts_link(const char *reason)
+{
+    if (ble_hid_gap_note_type_audio_ready != NULL &&
+        !ble_hid_gap_note_type_audio_ready(reason != NULL ? reason : "type_activity")) {
+        ESP_LOGW(
+            TAG,
+            "type heartbeat rejected until secure BLE pairing completes reason=%s",
+            reason != NULL ? reason : "type_activity");
+        return false;
+    }
+    if (ble_hid_gap_is_recovery_pairing_window_open != NULL &&
+        ble_hid_gap_is_recovery_pairing_window_open() &&
+        !ble_audio_stream_hid_secure_connected()) {
+        ESP_LOGI(
+            TAG,
+            "type heartbeat observed before secure recovery pairing; keeping Type link inactive reason=%s",
+            reason != NULL ? reason : "type_activity");
+        return false;
+    }
+    return true;
 }
 
 static void ble_audio_stream_note_control_write_connection(uint16_t conn_handle)
@@ -2726,12 +2756,15 @@ bool ble_audio_stream_is_type_link_ready(void)
 
 bool ble_audio_stream_is_type_led_ready(void)
 {
-    return ble_audio_stream_type_led_link_ready() &&
+    return ble_audio_stream_transport_link_ready() &&
            ble_audio_stream_type_heartbeat_led_recent();
 }
 
 void ble_audio_stream_note_type_activity(const char *reason)
 {
+    if (!ble_audio_stream_type_activity_accepts_link(reason)) {
+        return;
+    }
     ble_audio_stream_set_type_heartbeat_active(
         true,
         reason != NULL ? reason : "type_activity");

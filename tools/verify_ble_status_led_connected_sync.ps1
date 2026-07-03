@@ -75,6 +75,13 @@ if ($typeRecoveryAdvIndex -lt 0 -or $normalAdvIndex -lt 0 -or $normalAdvIndex -l
 }
 $typeRecoveryAdv = $gap.Substring($typeRecoveryAdvIndex, $normalAdvIndex - $typeRecoveryAdvIndex)
 
+$noteTypeAudioIndex = $gap.IndexOf("bool ble_hid_gap_note_type_audio_ready(const char *reason)")
+$holdPairingIndex = $gap.IndexOf("static void ble_hid_gap_hold_recovery_pairing_led", $noteTypeAudioIndex)
+if ($noteTypeAudioIndex -lt 0 -or $holdPairingIndex -lt 0 -or $holdPairingIndex -le $noteTypeAudioIndex) {
+    throw "verify_ble_status_led_connected_sync failed: could not isolate ble_hid_gap_note_type_audio_ready"
+}
+$noteTypeAudio = $gap.Substring($noteTypeAudioIndex, $holdPairingIndex - $noteTypeAudioIndex)
+
 Assert-Contains $gap 'ble_hid_gap_connection_snapshot_t\s+conn\s*=\s*ble_hid_gap_connection_snapshot\(\);' `
     "GAP advertising entry must read the shared connection snapshot"
 Assert-Contains $gap 'if\s*\(\s*conn\.connected\s*\)\s*\{[\s\S]*?NimBLE advertising skipped: GAP already connected[\s\S]*?if\s*\(\s*conn\.secure_connected\s*\)\s*\{[\s\S]*?status_led_set_ble_state\(STATUS_LED_BLE_CONNECTED,\s*false\);[\s\S]*?return ESP_OK;' `
@@ -101,36 +108,50 @@ Assert-NotContains $gap 'ble_hid_gap_close_recovery_pairing_window\("bond restor
     "recovery disconnect must not close the pairing window merely because Windows recreated a bond"
 Assert-Contains $gap 'static\s+esp_err_t\s+ble_hid_gap_refresh_configured_device_name\(const char \*context\)[\s\S]*?listener_device_get_ble_name\(\)[\s\S]*?ble_svc_gap_device_name_set\(device_name\)[\s\S]*?ble_svc_gap_device_appearance_set\(s_adv_appearance\)[\s\S]*?ble_hid_gap_configure_normal_adv_fields\(\)[\s\S]*?device_settings_mark_ble_name_applied\(\)' `
     "advertising must refresh the currently configured BLE name plus GAP appearance and mark it applied"
-Assert-Contains $typeRecoveryAdv 's_adv_fields\.flags\s*=\s*BLE_HS_ADV_F_DISC_GEN\s*\|\s*BLE_HS_ADV_F_BREDR_UNSUP;[\s\S]*?s_scan_rsp_fields\.uuids128\s*=\s*&s_audio_stream_service_uuid;[\s\S]*?return\s+true;' `
-    "Type-controlled recovery advertising must keep the Listener name/audio service discoverable without advertising as a HID keyboard"
-Assert-NotContains $typeRecoveryAdv 's_adv_fields\.appearance_is_present\s*=\s*1' `
-    "Type-controlled recovery advertising must not include HID appearance that can trigger a Windows keyboard pairing toast"
-Assert-NotContains $typeRecoveryAdv 's_adv_fields\.uuids16\s*=\s*&s_hid_service_uuid' `
-    "Type-controlled recovery advertising must not include the HID UUID that can trigger a Windows keyboard pairing toast"
+Assert-Contains $typeRecoveryAdv 's_adv_fields\.flags\s*=\s*BLE_HS_ADV_F_DISC_GEN\s*\|\s*BLE_HS_ADV_F_BREDR_UNSUP;[\s\S]*?s_adv_fields\.appearance_is_present\s*=\s*1;[\s\S]*?s_adv_fields\.uuids16\s*=\s*&s_hid_service_uuid;[\s\S]*?s_scan_rsp_fields\.uuids128\s*=\s*&s_audio_stream_service_uuid;[\s\S]*?return\s+true;' `
+    "Type-controlled recovery advertising must stay HID-pairable for Windows while keeping Type audio discovery in scan response"
+Assert-NotContains $typeRecoveryAdv 's_adv_fields\.mfg_data\s*=' `
+    "Type-controlled fallback advertising must keep the Swift Pair payload out of the quiet Type-only profile"
+Assert-Contains $gap '#define\s+BLE_HID_GAP_RECOVERY_SWIFT_PAIR_PROMPT_MS\s+45000LL' `
+    "Listener recovery must expose one bounded Swift Pair window after cache cleanup so Windows can complete native pairing when PairAsync returns Failed"
 Assert-Contains $gap '#define\s+BLE_HID_GAP_FIRST_PAIRING_WINDOW_MS\s+0LL' `
-    "Listener must not advertise a Swift Pair first-pairing window by default because that raises the Windows Connect toast"
+    "Listener first pairing must avoid unsolicited Swift Pair popups while remaining visible for manual Windows pairing"
 Assert-Contains $gap 'esp_err_t\s+esp_hid_ble_gap_adv_init\(uint16_t appearance, const char \*device_name\)[\s\S]*?ble_svc_gap_device_appearance_set\(s_adv_appearance\)[\s\S]*?ble_hs_cfg\.sm_io_cap\s*=\s*BLE_SM_IO_CAP_NO_IO;[\s\S]*?ble_hs_cfg\.sm_bonding\s*=\s*1;[\s\S]*?ble_hs_cfg\.sm_mitm\s*=\s*0;[\s\S]*?ble_hs_cfg\.sm_sc\s*=\s*0;' `
-    "BLE HID advertising init must publish keyboard GAP appearance and use legacy-compatible no-IO bonding for Windows pairing"
+    "BLE HID advertising init must publish keyboard GAP appearance and keep no-IO legacy Just Works compatible for Windows pairing"
 Assert-Contains $gap 'esp_err_t\s+esp_hid_ble_gap_adv_start\(void\)[\s\S]*?ble_hid_gap_refresh_configured_device_name\("advertising_start"\)' `
     "advertising start must use the latest configured BLE name"
-Assert-Contains $gap 'esp_err_t\s+ble_hid_gap_forget_bonds_and_repair\(void\)[\s\S]*?bond_delete=async_after_disconnect[\s\S]*?ble_hid_gap_open_recovery_pairing_window\([^)]*\);[\s\S]*?ble_hid_gap_schedule_recovery_bond_delete[\s\S]*?stable identity will advertise after async local bond delete following disconnect[\s\S]*?ble_hid_gap_start_advertising\(\)' `
+Assert-Contains $gap 'static\s+esp_err_t\s+ble_hid_gap_forget_bonds_and_repair_inner\(bool type_controlled_request\)[\s\S]*?bond_delete=async_after_disconnect[\s\S]*?ble_hid_gap_open_recovery_pairing_window\([^)]*\);[\s\S]*?ble_hid_gap_schedule_recovery_bond_delete[\s\S]*?stable identity will advertise after async local bond delete following disconnect[\s\S]*?ble_hid_gap_start_advertising\(\)' `
     "forget-bonds recovery must avoid synchronous full-store erase, open the pairing window, delete the local bond asynchronously, and advertise the current stable identity"
+Assert-Contains $noteTypeAudio 'type audio ready rejected before BLE bond; keeping pairing window available without restarting repair[\s\S]*?ble_hid_gap_open_recovery_pairing_window[\s\S]*?return false;' `
+    "unbonded Type heartbeat must keep pairing available without recursively restarting repair"
+Assert-NotContains $noteTypeAudio 'type audio ready rejected before BLE bond; opening pairing reset' `
+    "unbonded Type heartbeat must not restart repair and refresh pairing forever"
+Assert-NotContains $noteTypeAudio 'ble_hid_gap_forget_bonds_and_repair_inner\(true\)' `
+    "Type heartbeat acceptance gate must not recursively call forget-bonds repair"
 Assert-Contains $gap 'esp_err_t\s+esp_hid_ble_gap_adv_start\(void\)[\s\S]*?ble_hid_gap_recovery_bond_delete_active\(\)[\s\S]*?NimBLE advertising deferred: recovery async local bond delete pending[\s\S]*?STATUS_LED_BLE_PAIRING' `
     "advertising must wait while recovery async local bond delete is pending"
 Assert-Contains $gap 'case BLE_GAP_EVENT_CONNECT:[\s\S]*?ble_hid_gap_recovery_bond_delete_active\(\)[\s\S]*?recovery: rejecting connection while async local bond delete is pending[\s\S]*?ble_gap_terminate\(event->connect\.conn_handle,\s*BLE_ERR_REM_USER_CONN_TERM\)' `
     "recovery must reject stale Windows connections while async local bond delete is pending"
 Assert-Contains $gap 'refresh_pairing_window[\s\S]*?pairing window already active; refreshing advertising with stable BLE identity[\s\S]*?ble_hid_gap_open_recovery_pairing_window\([^)]*\)[\s\S]*?ble_hid_gap_start_advertising\(\)[\s\S]*?pairing window refreshed with stable BLE identity' `
     "explicit recovery during an already-open pairing window must renew the 120s pairing window and refresh advertising with the current stable identity"
-Assert-Contains $gap 'case BLE_GAP_EVENT_CONNECT:[\s\S]*?const bool recovery_pairing_window\s*=\s*ble_hid_gap_recovery_pairing_window_open\(\);[\s\S]*?conn_desc_valid\s*&&\s*recovery_pairing_window[\s\S]*?waiting for central-led security[\s\S]*?else\s+if\s*\(conn_desc_valid\)[\s\S]*?ble_gap_security_initiate\(event->connect\.conn_handle\)' `
-    "recovery pairing window must let Windows central-led pairing lead security before the normal non-recovery security request path"
-Assert-NotContains $gap 'conn_desc_valid\s*&&\s*recovery_pairing_window[\s\S]*?ble_hid_gap_request_recovery_security_once\(event->connect\.conn_handle,\s*"connect"\)' `
-    "recovery connect must not immediately initiate security before Windows starts pairing"
-Assert-Contains $gap 'case BLE_GAP_EVENT_SUBSCRIBE:[\s\S]*?ble_hid_gap_request_recovery_security_once\(event->subscribe\.conn_handle,\s*"subscribe"\);[\s\S]*?case BLE_GAP_EVENT_MTU:[\s\S]*?ble_hid_gap_request_recovery_security_once\(event->mtu\.conn_handle,\s*"mtu"\);' `
-    "recovery pairing must keep MTU/subscribe security requests as idempotent backstops"
+Assert-Contains $gap 'case BLE_GAP_EVENT_CONNECT:[\s\S]*?const bool recovery_pairing_window\s*=\s*ble_hid_gap_recovery_pairing_window_open\(\);[\s\S]*?conn_desc_valid\s*&&\s*recovery_pairing_window[\s\S]*?waiting for Windows PairAsync security[\s\S]*?ble_hid_gap_request_recovery_security_once\(event->connect\.conn_handle,\s*"connect"\)' `
+    "recovery connect must let Windows PairAsync drive SMP instead of racing it with a peripheral security initiate"
+Assert-Contains $gap 'else\s+if\s*\(conn_desc_valid\)[\s\S]*?ble_gap_security_initiate\(event->connect\.conn_handle\)[\s\S]*?security initiate requested conn=%u' `
+    "normal Type audio connections must request security instead of accepting an unstable unpaired GATT session"
+Assert-Contains $gap 'case BLE_GAP_EVENT_SUBSCRIBE:[\s\S]*?audio notify subscribed[\s\S]*?ble_hid_gap_close_recovery_for_type_audio\([\s\S]*?ble_hid_gap_request_recovery_security_once\(event->subscribe\.conn_handle,\s*"subscribe"\);[\s\S]*?case BLE_GAP_EVENT_MTU:' `
+    "recovery subscribe must keep an idempotent secure-state check after Windows subscribes"
+Assert-Contains $gap 'case BLE_GAP_EVENT_MTU:[\s\S]*?ble_hid_gap_request_recovery_security_once\(event->mtu\.conn_handle,\s*"mtu"\);[\s\S]*?case BLE_GAP_EVENT_ENC_CHANGE:' `
+    "recovery MTU must keep an idempotent secure-state check for Windows pairing"
+Assert-Contains $gap 'case BLE_GAP_EVENT_PASSKEY_ACTION:[\s\S]*?passkey action event[\s\S]*?BLE_SM_IOACT_NUMCMP[\s\S]*?ble_sm_inject_io' `
+    "GAP must log passkey actions and accept numeric comparison if Windows requests it"
 Assert-Contains $gap 'case BLE_GAP_EVENT_ENC_CHANGE:[\s\S]*?desc\.sec_state\.encrypted\s*\|\|\s*desc\.sec_state\.bonded[\s\S]*?ble_hid_gap_note_secure_connection\([\s\S]*?"secure connection established"\);' `
     "successful recovery pairing must switch from pairing LED to connected find-Type double flash"
 Assert-Contains $gap 'case BLE_GAP_EVENT_ENC_CHANGE:[\s\S]*?encryption failed or connection already gone[\s\S]*?ble_hid_gap_recovery_pairing_window_open\(\)[\s\S]*?pairing encryption failure[\s\S]*?keeping pairing advertising available for Windows retry' `
     "recovery pairing window must keep pairing discoverability available while Windows retries after encryption failure"
+Assert-Contains $gap 'case BLE_GAP_EVENT_ENC_CHANGE:[\s\S]*?pairing encryption failure status=%d; keeping pairing advertising available for Windows retry without restarting repair[\s\S]*?s_recovery_security_request_conn_handle\s*=\s*BLE_HS_CONN_HANDLE_NONE[\s\S]*?!ble_gap_adv_active\(\)[\s\S]*?ble_hid_gap_start_advertising\(\)' `
+    "recovery pairing encryption failure must keep advertising available without recursively restarting repair"
+Assert-NotContains $gap 'pairing encryption failure[\s\S]*?restarting pairing reset' `
+    "recovery pairing encryption failure must not restart pairing reset"
 Assert-Contains $gap 'case BLE_GAP_EVENT_ENC_CHANGE:[\s\S]*?ble_hid_gap_recovery_bond_delete_active\(\)[\s\S]*?ble_gap_terminate\(event->enc_change\.conn_handle,\s*BLE_ERR_REM_USER_CONN_TERM\)' `
     "ENC_CHANGE may terminate only stale encrypted connections that arrive while async local bond delete is pending"
 Assert-NotContains $gap 'encryption failed or connection already gone[\s\S]*?ble_gap_terminate\(event->enc_change\.conn_handle,\s*BLE_ERR_REM_USER_CONN_TERM\)' `
@@ -174,13 +195,13 @@ Assert-Contains $audio 'static\s+bool\s+ble_audio_stream_transport_state_type_re
 Assert-Contains $audio 'bool\s+ble_audio_stream_is_type_link_ready\(void\)[\s\S]*?ble_audio_stream_transport_link_ready\(\)[\s\S]*?ble_audio_stream_transport_state_type_ready\(s_transport_state\)[\s\S]*?ble_audio_stream_type_heartbeat_recent\(\)' `
     "public Type-link readiness must combine notify link, streaming-capable states, and fresh Listener-Type heartbeat"
 Assert-Contains $audio 'static\s+bool\s+ble_audio_stream_type_led_link_ready\(void\)[\s\S]*?conn_handle\s*!=\s*BLE_HS_CONN_HANDLE_NONE' `
-    "Type LED link readiness must require a real BLE connection while accepting heartbeat as the Type-ready proof"
-Assert-NotContains $audio 'static\s+bool\s+ble_audio_stream_type_led_link_ready\(void\)\s*\{[^}]*mtu_ready' `
-    "Type LED link readiness must not wait for MTU after a valid Type heartbeat/control write"
-Assert-Contains $audio 'bool\s+ble_audio_stream_is_type_led_ready\(void\)[\s\S]*?ble_audio_stream_type_led_link_ready\(\)[\s\S]*?ble_audio_stream_type_heartbeat_led_recent\(\)' `
-    "public Type LED readiness must use the heartbeat hold without requiring the audio notify path"
-Assert-Contains $audio 'static\s+void\s+ble_audio_stream_sync_power_manager_for_type_link\(bool active,[\s\S]*?if\s*\(active\)[\s\S]*?power_manager_set_ble_connected\(true\);[\s\S]*?!ble_audio_stream_hid_secure_connected\(\)[\s\S]*?power_manager_set_ble_connected\(false\);' `
-    "Type heartbeat must set power-manager BLE connected true and only clear it when HID secure connection is absent"
+    "Type LED connected cue must require a real BLE connection"
+Assert-Contains $audio 'bool\s+ble_audio_stream_is_type_led_ready\(void\)[\s\S]*?ble_audio_stream_transport_link_ready\(\)[\s\S]*?ble_audio_stream_type_heartbeat_led_recent\(\)' `
+    "public Type-ready LED readiness must require the notify link plus heartbeat hold, so control-only heartbeats cannot look connected to Type"
+Assert-Contains $audio 'static\s+void\s+ble_audio_stream_sync_power_manager_for_type_link\(bool active,[\s\S]*?if\s*\(active\)[\s\S]*?!ble_audio_stream_is_type_link_ready\(\)[\s\S]*?type link power sync skipped until notify link ready[\s\S]*?return;[\s\S]*?power_manager_set_ble_connected\(true\);[\s\S]*?!ble_audio_stream_hid_secure_connected\(\)[\s\S]*?power_manager_set_ble_connected\(false\);' `
+    "accepted Type heartbeat must set power-manager BLE connected true only after notify readiness and only clear it when HID secure connection is absent"
+Assert-Contains $audio 'static\s+bool\s+ble_audio_stream_type_activity_accepts_link\([^)]*\)[\s\S]*?ble_hid_gap_note_type_audio_ready\([^)]*\)[\s\S]*?type heartbeat rejected until secure BLE pairing completes[\s\S]*?return false;[\s\S]*?ble_hid_gap_is_recovery_pairing_window_open\(\)[\s\S]*?!ble_audio_stream_hid_secure_connected\(\)[\s\S]*?keeping Type link inactive' `
+    "Type heartbeats must be rejected until GAP confirms secure pairing, so unbonded transient GATT cannot promote the power manager or BLE LED to connected"
 Assert-Contains $audio 'void\s+ble_audio_stream_on_gap_connect\(uint16_t conn_handle\)[\s\S]*?ble_audio_stream_sync_power_manager_for_type_link\(false,\s*"gap_connect"\)' `
     "audio GAP connect must clear stale Type-link power state with the correct connect reason"
 Assert-Contains $powerManager 'extern\s+bool\s+ble_audio_stream_is_type_link_ready\(void\).*__attribute__\(\(weak\)\)' `
@@ -197,8 +218,8 @@ Assert-Contains $audio 'bool\s+ble_audio_stream_consume_type_control_command\([^
     "firmware must consume Type READY/HB/BYE commands on the audio control channel"
 Assert-Contains $audio 'static\s+int\s+ble_audio_stream_handle_control_write\(uint16_t conn_handle,[\s\S]*?ble_audio_stream_note_control_write_connection\(conn_handle\);[\s\S]*?ble_audio_stream_consume_type_control_command' `
     "audio control write handler must record conn_handle before consuming TYPE heartbeat"
-Assert-Contains $audio 'void\s+ble_audio_stream_note_type_activity\([^)]*\)[\s\S]*?ble_audio_stream_set_type_heartbeat_active\(\s*true[\s\S]*?ble_audio_stream_sync_power_manager_for_type_link\(\s*true[\s\S]*?ble_audio_stream_sync_status_led_for_type_link' `
-    "Type activity helper must refresh heartbeat and immediately resync power manager plus BLE LED"
+Assert-Contains $audio 'void\s+ble_audio_stream_note_type_activity\([^)]*\)[\s\S]*?!ble_audio_stream_type_activity_accepts_link\(reason\)[\s\S]*?return;[\s\S]*?ble_audio_stream_set_type_heartbeat_active\(\s*true[\s\S]*?ble_audio_stream_sync_power_manager_for_type_link\(\s*true[\s\S]*?ble_audio_stream_sync_status_led_for_type_link' `
+    "Type activity helper must wait for secure GAP acceptance before refreshing heartbeat and power manager state"
 Assert-Contains $audio 'void\s+ble_audio_stream_poll_type_link\(void\)[\s\S]*?ble_audio_stream_set_type_heartbeat_active\(false,\s*"timeout"\);[\s\S]*?ble_audio_stream_sync_power_manager_for_type_link\(false,\s*"type_heartbeat_timeout"\);[\s\S]*?ble_audio_stream_sync_status_led_for_type_link\("type_heartbeat_timeout"\)[\s\S]*?type_heartbeat_led_grace_timeout' `
     "firmware must poll strict Type heartbeat timeout first, then demote the BLE status LED only after the LED grace expires"
 Assert-Contains $audio 's_transport_state\s*=\s*next_state;[\s\S]*?ble_audio_stream_transport_link_ready\(\)[\s\S]*?ble_audio_stream_sync_status_led_for_type_link\(reason\)' `

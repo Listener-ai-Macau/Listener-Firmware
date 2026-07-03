@@ -75,14 +75,14 @@
 #define VOICE_KEY_INPUT_EVENT_QUEUE_LENGTH (8)
 #define VOICE_KEY_INPUT_GENERATED_EVENT_QUEUE_LENGTH (8)
 #define VOICE_KEY_INPUT_CLICK_MAX_MS (700)
-#define VOICE_KEY_INPUT_DOUBLE_CLICK_WINDOW_MS (650)
-#define VOICE_KEY_INPUT_RECOVERY_DOUBLE_CLICK_WINDOW_MS (650)
+#define VOICE_KEY_INPUT_DOUBLE_CLICK_MIN_GAP_MS (30)
+#define VOICE_KEY_INPUT_DOUBLE_CLICK_WINDOW_MS (200)
+#define VOICE_KEY_INPUT_RECOVERY_DOUBLE_CLICK_WINDOW_MS (200)
 #define VOICE_KEY_INPUT_LONG_PRESS_IGNORE_MS (800)
 #define VOICE_KEY_INPUT_HOLD_FEEDBACK_REFRESH_MS (300)
-#define VOICE_KEY_INPUT_RECOVERY_IDLE_GUARD_MS (2000)
 #define VOICE_KEY_INPUT_GENERATED_PRESS_MS (80)
 #define VOICE_KEY_INPUT_GENERATED_RELEASE_SETTLE_MS (80)
-#define VOICE_KEY_INPUT_GENERATED_INTER_CLICK_RELEASE_MS (220)
+#define VOICE_KEY_INPUT_GENERATED_INTER_CLICK_RELEASE_MS (100)
 #define VOICE_KEY_INPUT_DEBUG_RAW 1u
 #define VOICE_KEY_INPUT_DEBUG_STABLE 2u
 #define VOICE_KEY_INPUT_DEBUG_SOURCE_DIRECT_GPIO 1u
@@ -112,6 +112,9 @@ typedef struct {
     TickType_t pending_click_started_tick;
     bool recent_short_click;
     TickType_t recent_short_click_tick;
+    bool recovery_double_candidate;
+    bool recovery_second_press_too_soon;
+    bool recovery_candidate_from_raw;
     bool recent_raw_press;
     TickType_t recent_raw_press_tick;
     bool raw_recovery_dispatched;
@@ -138,9 +141,6 @@ static esp_io_expander_handle_t s_io_expander;
 static TaskHandle_t s_poll_task_handle;
 static SemaphoreHandle_t s_recovery_event_sem;
 static QueueHandle_t s_generated_single_click_queue;
-static volatile bool s_recording_output_enabled;
-static volatile bool s_recording_output_change_seen;
-static volatile TickType_t s_recording_output_last_change_tick;
 static bool s_direct_generated_active;
 static uint8_t s_direct_generated_click_count;
 static TickType_t s_direct_generated_start_tick;
@@ -256,6 +256,8 @@ static const voice_key_input_bus_candidate_t s_bus_candidates[] = {
 
 static void voice_key_input_dispatch_custom_key_event(const char *source, uint32_t event_type, const char *edge_label)
 {
+    status_led_notify_ec11_feedback(STATUS_LED_EC11_FEEDBACK_PRESS);
+
     esp_err_t ret = ble_hid_send_keyboard_usage_with_modifier_async(
         VOICE_KEY_INPUT_EC11_FALLBACK_USAGE,
         VOICE_KEY_INPUT_EC11_FALLBACK_MODIFIER,
@@ -354,10 +356,11 @@ static esp_err_t voice_key_input_enqueue_generated_clicks(uint8_t click_count)
     power_manager_record_activity("generated_ec11_key");
     ESP_LOGI(
         TAG,
-        "EC11 push generated click queued: source=%s clicks=%u press_ms=%d double_ms=%d recovery_double_ms=%d",
+        "EC11 push generated click queued: source=%s clicks=%u press_ms=%d double_min_gap_ms=%d double_ms=%d recovery_double_ms=%d",
         VOICE_KEY_INPUT_DIRECT_LABEL,
         (unsigned)click_count,
         VOICE_KEY_INPUT_GENERATED_PRESS_MS,
+        VOICE_KEY_INPUT_DOUBLE_CLICK_MIN_GAP_MS,
         VOICE_KEY_INPUT_DOUBLE_CLICK_WINDOW_MS,
         VOICE_KEY_INPUT_RECOVERY_DOUBLE_CLICK_WINDOW_MS);
     return ESP_OK;
@@ -462,17 +465,70 @@ static bool voice_key_input_generated_raw_high(bool physical_raw_high, TickType_
     return physical_raw_high;
 }
 
-static bool voice_key_input_recovery_allowed(void)
+static bool voice_key_input_recent_click_in_recovery_window(
+    voice_key_button_state_t *button,
+    TickType_t now_tick,
+    bool *too_soon_out)
 {
-    if (s_recording_output_enabled) {
+    if (too_soon_out != NULL) {
+        *too_soon_out = false;
+    }
+    if (button == NULL || !button->recent_short_click) {
         return false;
     }
-    if (!s_recording_output_change_seen) {
-        return true;
+
+    uint32_t elapsed_ms =
+        voice_key_input_elapsed_ms(now_tick, button->recent_short_click_tick);
+    if (elapsed_ms < VOICE_KEY_INPUT_DOUBLE_CLICK_MIN_GAP_MS) {
+        if (too_soon_out != NULL) {
+            *too_soon_out = true;
+        }
+        return false;
+    }
+    if (elapsed_ms > VOICE_KEY_INPUT_RECOVERY_DOUBLE_CLICK_WINDOW_MS) {
+        button->recent_short_click = false;
+        button->recent_short_click_tick = 0;
+        return false;
+    }
+    return true;
+}
+
+static void voice_key_input_arm_recovery_double_candidate(
+    voice_key_button_state_t *button,
+    TickType_t now_tick,
+    const char *origin)
+{
+    if (button == NULL) {
+        return;
+    }
+    if (origin == NULL &&
+        (button->recovery_double_candidate || button->recovery_second_press_too_soon)) {
+        if (button->recovery_double_candidate) {
+            button->recovery_candidate_from_raw = false;
+        }
+        return;
     }
 
-    TickType_t elapsed = xTaskGetTickCount() - s_recording_output_last_change_tick;
-    return elapsed >= pdMS_TO_TICKS(VOICE_KEY_INPUT_RECOVERY_IDLE_GUARD_MS);
+    bool second_press_too_soon = false;
+    button->recovery_double_candidate =
+        voice_key_input_recent_click_in_recovery_window(
+            button,
+            now_tick,
+            &second_press_too_soon);
+    button->recovery_second_press_too_soon = second_press_too_soon;
+    button->recovery_candidate_from_raw =
+        button->recovery_double_candidate && origin != NULL;
+    if (button->recovery_double_candidate || second_press_too_soon) {
+        ESP_LOGI(
+            TAG,
+            "%s recovery second-click candidate: origin=%s candidate=%d too_soon=%d min_gap_ms=%d window_ms=%d",
+            button->label,
+            origin != NULL ? origin : "stable",
+            button->recovery_double_candidate ? 1 : 0,
+            second_press_too_soon ? 1 : 0,
+            VOICE_KEY_INPUT_DOUBLE_CLICK_MIN_GAP_MS,
+            VOICE_KEY_INPUT_RECOVERY_DOUBLE_CLICK_WINDOW_MS);
+    }
 }
 
 static void voice_key_input_note_raw_press_edge(
@@ -484,27 +540,9 @@ static void voice_key_input_note_raw_press_edge(
         return;
     }
 
-    (void)origin;
     button->recent_raw_press = true;
     button->recent_raw_press_tick = now_tick;
-}
-
-static bool voice_key_input_recent_click_in_recovery_window(
-    voice_key_button_state_t *button,
-    TickType_t now_tick)
-{
-    if (button == NULL || !button->recent_short_click) {
-        return false;
-    }
-
-    uint32_t elapsed_ms =
-        voice_key_input_elapsed_ms(now_tick, button->recent_short_click_tick);
-    if (elapsed_ms > VOICE_KEY_INPUT_RECOVERY_DOUBLE_CLICK_WINDOW_MS) {
-        button->recent_short_click = false;
-        button->recent_short_click_tick = 0;
-        return false;
-    }
-    return true;
+    voice_key_input_arm_recovery_double_candidate(button, now_tick, origin);
 }
 
 static void voice_key_input_handle_short_click_release(
@@ -516,31 +554,67 @@ static void voice_key_input_handle_short_click_release(
         return;
     }
 
+    bool stable_release = origin == NULL;
     bool recovery_double_click =
-        button->pending_single_click ||
-        voice_key_input_recent_click_in_recovery_window(button, now_tick);
+        button->pending_single_click &&
+        button->recovery_double_candidate &&
+        !button->recovery_second_press_too_soon;
+    bool second_click_too_soon = button->recovery_second_press_too_soon;
+    button->recovery_double_candidate = false;
+    button->recovery_second_press_too_soon = false;
+    bool recovery_candidate_from_raw = button->recovery_candidate_from_raw;
+    button->recovery_candidate_from_raw = false;
     if (recovery_double_click) {
-        if (voice_key_input_recovery_allowed()) {
-            button->pending_single_click = false;
-            button->pending_click_ms = 0;
-            button->pending_click_started_tick = 0;
-            button->recent_short_click = false;
-            button->recent_short_click_tick = 0;
-            voice_key_input_record_recovery_event(button->label);
-        } else {
+        button->pending_single_click = false;
+        button->pending_click_ms = 0;
+        button->pending_click_started_tick = 0;
+        button->recent_short_click = false;
+        button->recent_short_click_tick = 0;
+        button->recovery_double_candidate = false;
+        button->recovery_second_press_too_soon = false;
+        button->recovery_candidate_from_raw = false;
+        ESP_LOGI(
+            TAG,
+            "%s recovery double-click accepted: origin=%s raw_second=%d",
+            button->label,
+            origin != NULL ? origin : "stable",
+            recovery_candidate_from_raw ? 1 : 0);
+        voice_key_input_record_recovery_event(button->label);
+    } else {
+        if (button->pending_single_click && second_click_too_soon) {
             ESP_LOGI(
                 TAG,
-                "%s consecutive short click kept as custom-key gesture: recovery_idle_guard_ms=%d",
+                "%s short-click edge ignored as bounce: origin=%s elapsed_lt_min_gap_ms=%d",
                 button->label,
-                VOICE_KEY_INPUT_RECOVERY_IDLE_GUARD_MS);
-            voice_key_input_dispatch_custom_key_event(button->label, 1, "single-click");
-            button->pending_single_click = true;
-            button->pending_click_ms = 0;
-            button->pending_click_started_tick = now_tick;
-            button->recent_short_click = true;
-            button->recent_short_click_tick = now_tick;
+                origin != NULL ? origin : "stable",
+                VOICE_KEY_INPUT_DOUBLE_CLICK_MIN_GAP_MS);
+            return;
         }
-    } else {
+        if (button->pending_single_click && button->pending_click_started_tick != 0) {
+            uint32_t pending_elapsed_ms =
+                voice_key_input_elapsed_ms(now_tick, button->pending_click_started_tick);
+            if (pending_elapsed_ms >= VOICE_KEY_INPUT_DOUBLE_CLICK_WINDOW_MS) {
+                ESP_LOGI(
+                    TAG,
+                    "%s expired pending click dispatched before new short click: origin=%s elapsed_ms=%" PRIu32,
+                    button->label,
+                    origin != NULL ? origin : "stable",
+                    pending_elapsed_ms);
+                button->pending_single_click = false;
+                button->pending_click_ms = 0;
+                button->pending_click_started_tick = 0;
+                button->recent_short_click = false;
+                button->recent_short_click_tick = 0;
+                voice_key_input_dispatch_custom_key_event(button->label, 1, "single-click");
+            } else if (!stable_release) {
+                ESP_LOGI(
+                    TAG,
+                    "%s raw-only short click kept from forming recovery without stable first-click candidate: elapsed_ms=%" PRIu32,
+                    button->label,
+                    pending_elapsed_ms);
+                return;
+            }
+        }
         button->pending_single_click = true;
         button->pending_click_ms = 0;
         button->pending_click_started_tick = now_tick;
@@ -569,10 +643,18 @@ static void voice_key_input_poll_pending_single_click(voice_key_button_state_t *
     if (button->pending_click_ms < VOICE_KEY_INPUT_DOUBLE_CLICK_WINDOW_MS) {
         return;
     }
+    if (button->recovery_double_candidate || button->recovery_second_press_too_soon) {
+        return;
+    }
 
     button->pending_single_click = false;
     button->pending_click_ms = 0;
     button->pending_click_started_tick = 0;
+    button->recent_short_click = false;
+    button->recent_short_click_tick = 0;
+    button->recovery_double_candidate = false;
+    button->recovery_second_press_too_soon = false;
+    button->recovery_candidate_from_raw = false;
     voice_key_input_dispatch_custom_key_event(button->label, 1, "single-click");
 }
 
@@ -598,6 +680,9 @@ static void voice_key_input_handle_button_sample(voice_key_button_state_t *butto
         button->pending_click_started_tick = 0;
         button->recent_short_click = false;
         button->recent_short_click_tick = 0;
+        button->recovery_double_candidate = false;
+        button->recovery_second_press_too_soon = false;
+        button->recovery_candidate_from_raw = false;
         button->recent_raw_press = false;
         button->recent_raw_press_tick = 0;
         button->raw_recovery_dispatched = false;
@@ -650,6 +735,8 @@ static void voice_key_input_handle_button_sample(voice_key_button_state_t *butto
 
     bool pressed = raw_high != button->idle_level_high;
     if (pressed && !button->pressed) {
+        voice_key_input_arm_recovery_double_candidate(button, now_tick, NULL);
+        voice_key_input_poll_pending_single_click(button);
         button->pressed_ms = 0;
         button->pressed_started_tick = now_tick;
         button->long_press_reported = false;
@@ -675,6 +762,9 @@ static void voice_key_input_handle_button_sample(voice_key_button_state_t *butto
         button->pressed_started_tick = 0;
         button->long_press_reported = false;
         button->raw_recovery_dispatched = false;
+        button->recovery_double_candidate = false;
+        button->recovery_second_press_too_soon = false;
+        button->recovery_candidate_from_raw = false;
         button->hold_feedback_tick = 0;
     } else if (!pressed) {
         if (button->raw_recovery_dispatched) {
@@ -705,6 +795,9 @@ static void voice_key_input_handle_button_sample(voice_key_button_state_t *butto
             button->pending_click_started_tick = 0;
             button->recent_short_click = false;
             button->recent_short_click_tick = 0;
+            button->recovery_double_candidate = false;
+            button->recovery_second_press_too_soon = false;
+            button->recovery_candidate_from_raw = false;
             button->recent_raw_press = false;
             button->recent_raw_press_tick = 0;
             button->raw_recovery_dispatched = false;
@@ -1068,10 +1161,10 @@ esp_err_t voice_key_input_start(void)
         VOICE_KEY_INPUT_DEBOUNCE_THRESHOLD);
     ESP_LOGI(
         TAG,
-        "EC11 push key ready: single_click_custom=Shift+F13 double_click_recovery=1 single_click_window_ms=%d recovery_double_click_window_ms=%d recovery_idle_guard_ms=%d long_press_reserved_ms=%d",
+        "EC11 push key ready: single_click_custom=Shift+F13 double_click_recovery=1 single_click_window_ms=%d recovery_double_click_min_gap_ms=%d recovery_double_click_window_ms=%d recovery_cancels_active_recording=1 long_press_reserved_ms=%d",
         VOICE_KEY_INPUT_DOUBLE_CLICK_WINDOW_MS,
+        VOICE_KEY_INPUT_DOUBLE_CLICK_MIN_GAP_MS,
         VOICE_KEY_INPUT_RECOVERY_DOUBLE_CLICK_WINDOW_MS,
-        VOICE_KEY_INPUT_RECOVERY_IDLE_GUARD_MS,
         VOICE_KEY_INPUT_LONG_PRESS_IGNORE_MS);
     return ESP_OK;
 }
@@ -1097,10 +1190,6 @@ const char *voice_key_input_get_active_source(void)
 
 esp_err_t voice_key_input_set_recording_output(bool enabled)
 {
-    if (s_recording_output_enabled != enabled || !s_recording_output_change_seen) {
-        s_recording_output_last_change_tick = xTaskGetTickCount();
-        s_recording_output_change_seen = true;
-    }
-    s_recording_output_enabled = enabled;
+    (void)enabled;
     return ESP_OK;
 }

@@ -214,11 +214,10 @@ CHECKS = {
     "ports/esp32/voice_key_input/voice_key_input_esp32.c": [
         "VOICE_KEY_INPUT_IDLE_BACKUP_POLL_MS (20)",
         "VOICE_KEY_INPUT_LOW_POWER_IDLE_BACKUP_POLL_MS (20)",
-        "VOICE_KEY_INPUT_DOUBLE_CLICK_WINDOW_MS (650)",
-        "VOICE_KEY_INPUT_RECOVERY_DOUBLE_CLICK_WINDOW_MS (650)",
+        "VOICE_KEY_INPUT_DOUBLE_CLICK_MIN_GAP_MS (30)",
+        "VOICE_KEY_INPUT_DOUBLE_CLICK_WINDOW_MS (200)",
+        "VOICE_KEY_INPUT_RECOVERY_DOUBLE_CLICK_WINDOW_MS (200)",
         "VOICE_KEY_INPUT_LONG_PRESS_IGNORE_MS (800)",
-        "VOICE_KEY_INPUT_RAW_RECOVERY_DOUBLE_CLICK_WINDOW_MS (1800)",
-        "VOICE_KEY_INPUT_RAW_RECOVERY_DOUBLE_CLICK_MIN_MS (80)",
         "VOICE_KEY_INPUT_HOLD_FEEDBACK_REFRESH_MS (300)",
         "voice_key_input_next_wait_ms",
         "voice_key_input_enable_light_sleep_wake",
@@ -1390,6 +1389,10 @@ def main() -> int:
         failures.append(
             "components/status_led/status_led.c: key gesture feedback must end with a STATUS_LED_KEY_FADE_MS decay tail mirroring the EC11 press, instead of a hard one-frame cut to black"
         )
+    if "pwr_only_final_latch || force_clear_tx" in status_led or "bool force_non_dma = pwr_only_final_latch;" not in status_led:
+        failures.append(
+            "components/status_led/status_led.c: interactive transition clears must keep SPI EC11/KEY strips on DMA; only low-power/final latch may force non-DMA"
+        )
     if not re.search(
         r"physical_feedback_active\s*&&\s*!gesture_active[\s\S]{0,260}status_led_rgb\(255,\s*255,\s*255\)",
         status_led,
@@ -1423,6 +1426,11 @@ def main() -> int:
     )
     key_feedback_body = re.search(
         r"void\s+status_led_notify_key_feedback[\s\S]*?"
+        r"\n\}\n\nstatic\s+bool\s+status_led_ec11_press_feedback_should_yield_locked",
+        status_led,
+    )
+    ec11_press_yield_body = re.search(
+        r"static\s+bool\s+status_led_ec11_press_feedback_should_yield_locked[\s\S]*?"
         r"\n\}\n\nstatic\s+void\s+status_led_apply_ec11_feedback",
         status_led,
     )
@@ -1450,6 +1458,25 @@ def main() -> int:
     ):
         failures.append(
             "components/status_led/status_led.c: idle key/EC11 feedback must explicitly resume interactive output from low-power idle and preserve the scoped non-KEY transition-clear frame before feedback"
+        )
+    if (
+        ec11_press_yield_body is None
+        or "status_led_shutdown_confirm_active_locked(now_ms)" not in ec11_press_yield_body.group(0)
+        or "s_state.ota_active" not in ec11_press_yield_body.group(0)
+        or "status_led_ok_visual_percent_locked(now_ms) > 0U" not in ec11_press_yield_body.group(0)
+        or "status_led_ble_repair_cue_active_locked(now_ms)" not in ec11_press_yield_body.group(0)
+        or "s_state.processing_active" not in ec11_press_yield_body.group(0)
+        or "status_led_recording_visual_percent_locked(now_ms) > 0U" not in ec11_press_yield_body.group(0)
+        or "STATUS_LED_EC11_FEEDBACK_ROTATE_CW" not in ec11_press_yield_body.group(0)
+        or "STATUS_LED_EC11_FEEDBACK_ROTATE_CCW" not in ec11_press_yield_body.group(0)
+        or "STATUS_LED_PROFILE_AMBIENT" not in ec11_press_yield_body.group(0)
+        or "STATUS_LED_BLE_TYPE_READY" not in ec11_press_yield_body.group(0)
+        or ec11_feedback_body is None
+        or "feedback == STATUS_LED_EC11_FEEDBACK_PRESS" not in ec11_feedback_body.group(0)
+        or "status_led_ec11_press_feedback_should_yield_locked(now_ms)" not in ec11_feedback_body.group(0)
+    ):
+        failures.append(
+            "components/status_led/status_led.c: EC11 confirmed single-click press feedback must yield instead of overwriting existing EC11 recording/processing/OTA/re-pair/rotation/ambient/shutdown effects"
         )
     if (
         "STATUS_LED_EC11_ROTATE_STEP_MS" in status_led
@@ -1599,9 +1626,9 @@ def main() -> int:
         failures.append(
             "components/status_led/status_led.c: ordinary transition clear frames must not force non-DMA; scope force_non_dma to clear/latch paths only"
         )
-    if not re.search(r"bool\s+force_non_dma\s*=\s*pwr_only_final_latch\s*\|\|\s*force_clear_tx\s*;", status_led):
+    if not re.search(r"bool\s+force_non_dma\s*=\s*pwr_only_final_latch\s*;", status_led):
         failures.append(
-            "components/status_led/status_led.c: clear frames and PWR-only latches must force every strip off its DMA transport"
+            "components/status_led/status_led.c: only low-power/final latch frames may force every strip off DMA; interactive transition clears must keep EC11/KEY on SPI DMA"
         )
     if (
         "shutdown_final_all_zone_latched_started_ms" not in status_led
@@ -1682,6 +1709,26 @@ def main() -> int:
         failures.append(
             "components/keyboard/keyboard.c: raw release before debounce must route through the raw-only short tap path"
         )
+    if "low_power_raw_edge" in keyboard or "custom key low-power wake single synthesized" in keyboard:
+        failures.append(
+            "components/keyboard/keyboard.c: low-power KEY1-KEY4 wake must not bypass debounce or synthesize clicks from latched-only transients"
+        )
+    for pattern, description in [
+        (
+            "custom key low-power raw transition debounce armed",
+            "low-power raw KEY1-KEY4 edge must be deferred to debounce before lighting",
+        ),
+        (
+            "custom key low-power wake press pending debounce",
+            "sampled low-power KEY1-KEY4 wake must wait for debounce confirmation",
+        ),
+        (
+            "custom key low-power wake transient ignored",
+            "latched-but-released low-power KEY1-KEY4 wake transient must be ignored",
+        ),
+    ]:
+        if pattern not in keyboard:
+            failures.append(f"components/keyboard/keyboard.c: {description}")
     clear_feedback_body = re.search(
         r"static\s+void\s+keyboard_custom_clear_raw_feedback[\s\S]*?"
         r"static\s+void\s+keyboard_custom_handle_timers",
@@ -1884,18 +1931,49 @@ def main() -> int:
             "ports/esp32/voice_key_input/voice_key_input_esp32.c: EC11 push must keep 20 ms active/low-power backup scan around the runtime GPIO wake interrupt"
         )
     if not re.search(
-        r"#define\s+VOICE_KEY_INPUT_DOUBLE_CLICK_WINDOW_MS\s+\(650\)",
+        r"#define\s+VOICE_KEY_INPUT_DOUBLE_CLICK_MIN_GAP_MS\s+\(30\)",
         voice_key,
     ):
         failures.append(
-            "ports/esp32/voice_key_input/voice_key_input_esp32.c: EC11 single-click dispatch must wait 650 ms so physical double-click recovery cannot emit the single-click fallback first"
+            "ports/esp32/voice_key_input/voice_key_input_esp32.c: EC11 recovery double-click must reject too-fast second clicks as contact bounce"
         )
     if not re.search(
-        r"#define\s+VOICE_KEY_INPUT_RECOVERY_DOUBLE_CLICK_WINDOW_MS\s+\(650\)",
+        r"#define\s+VOICE_KEY_INPUT_DOUBLE_CLICK_WINDOW_MS\s+\(200\)",
         voice_key,
     ):
         failures.append(
-            "ports/esp32/voice_key_input/voice_key_input_esp32.c: EC11 recovery double-click window must stay 650 ms so real hand presses can trigger the BLE pairing cue"
+            "ports/esp32/voice_key_input/voice_key_input_esp32.c: EC11 single-click dispatch must match the 200 ms KEY1-KEY4 double-click feel"
+        )
+    if not re.search(
+        r"#define\s+VOICE_KEY_INPUT_RECOVERY_DOUBLE_CLICK_WINDOW_MS\s+\(200\)",
+        voice_key,
+    ):
+        failures.append(
+            "ports/esp32/voice_key_input/voice_key_input_esp32.c: EC11 recovery double-click window must match the 200 ms KEY1-KEY4 double-click feel"
+        )
+    if (
+        "elapsed_lt_min_gap_ms" not in voice_key
+        or "second_click_too_soon" not in voice_key
+        or "stable_release" not in voice_key
+        or "recovery_candidate_from_raw" not in voice_key
+        or "Raw-only EC11 short clicks participate in the same 200 ms double-click candidate window as stable clicks" not in (
+            REPO_ROOT / "docs/features/status_led.md"
+        ).read_text(encoding="utf-8")
+    ):
+        failures.append(
+            "ports/esp32/voice_key_input/voice_key_input_esp32.c: EC11 recovery double-click must allow raw-only clicks to participate while keeping the minimum-gap/window bounce filter"
+        )
+    if (
+        "recovery_idle_guard" in voice_key
+        or "VOICE_KEY_INPUT_RECOVERY_IDLE_GUARD" in voice_key
+        or "s_recording_output_enabled" in voice_key
+        or "recovery_cancels_active_recording=1" not in voice_key
+        or "cannot be downgraded into an ordinary EC11 single click" not in (
+            REPO_ROOT / "docs/features/firmware-feature-map.md"
+        ).read_text(encoding="utf-8")
+    ):
+        failures.append(
+            "ports/esp32/voice_key_input/voice_key_input_esp32.c: EC11 double-click recovery must not be downgraded into a single-click fallback by recording-output or idle-guard state"
         )
     if not re.search(
         r"#define\s+VOICE_KEY_INPUT_LONG_PRESS_IGNORE_MS\s+\(800\)",
@@ -1917,9 +1995,11 @@ def main() -> int:
     required_voice_irq_tokens = [
         "static void IRAM_ATTR voice_key_input_direct_gpio_wake_from_isr",
         "vTaskNotifyGiveFromISR(task_handle",
+        "s_direct_gpio_isr_press_pending",
+        "voice_key_input_take_direct_gpio_isr_press_pending",
         "voice_key_input_note_raw_press_edge",
-        "voice_key_input_force_raw_recovery",
-        "raw double-click recovery detected",
+        "EC11 push raw press tracked from ISR edge latch",
+        "double-click recovery detected",
         "runtime_irq=anyedge_notify_edge_latch",
     ]
     for token in required_voice_irq_tokens:
@@ -1933,7 +2013,6 @@ def main() -> int:
         "portENTER_CRITICAL_ISR",
         "portEXIT_CRITICAL_ISR",
         "voice_key_input_note_raw_press_edge",
-        "voice_key_input_force_raw_recovery",
         "voice_key_input_record_recovery_event(",
         "voice_key_input_dispatch_custom_key_event(",
     ]
@@ -2002,7 +2081,6 @@ def main() -> int:
             r"power_manager_record_activity\(\"ec11_key_hold\"\)",
             voice_key,
         )
-        or "status_led_notify_ec11_feedback(STATUS_LED_EC11_FEEDBACK_PRESS)" in voice_key
     ):
         failures.append(
             "ports/esp32/voice_key_input/voice_key_input_esp32.c: EC11 hold must refresh activity without white press feedback until long-press shutdown confirmation starts"
@@ -2012,9 +2090,9 @@ def main() -> int:
         r"static\s+bool\s+voice_key_input_button_raw_pressed",
         voice_key,
     )
-    if dispatch_body is None or "status_led_notify_ec11_feedback" in dispatch_body.group(0):
+    if dispatch_body is None or "status_led_notify_ec11_feedback(STATUS_LED_EC11_FEEDBACK_PRESS)" not in dispatch_body.group(0):
         failures.append(
-            "ports/esp32/voice_key_input/voice_key_input_esp32.c: EC11 single-click fallback must not restart the white local cue after the double-click window"
+            "ports/esp32/voice_key_input/voice_key_input_esp32.c: EC11 single-click fallback must restore the local white EC11 press cue only after the double-click window resolves"
         )
     recovery_body = re.search(
         r"static\s+void\s+voice_key_input_record_recovery_event[\s\S]*?"
@@ -2051,6 +2129,10 @@ def main() -> int:
     ):
         failures.append(
             "ports/esp32/voice_key_input/voice_key_input_esp32.c: EC11 raw press tracking must suppress repeated ISR/raw bounce during one physical press"
+        )
+    elif "status_led_notify_ec11_feedback" in voice_raw_feedback_body.group(0):
+        failures.append(
+            "ports/esp32/voice_key_input/voice_key_input_esp32.c: EC11 raw press tracking must not light the knob before the single/double-click decision window resolves"
         )
     if (
         "voice_key_input_handle_short_click_release(button, now_tick, \"raw-only\")" not in voice_key

@@ -979,6 +979,8 @@ static bool ble_hid_usb_command_records_activity(const char *line)
         ble_hid_usb_command_matches(line, "VREC:PROCESSING_ERROR") ||
         ble_hid_usb_command_matches(line, "VREC:STOP") ||
         ble_hid_usb_command_matches(line, "VREC:CLEANUP") ||
+        ble_hid_usb_command_matches(line, "VREC:RECOVERY:TYPE") ||
+        ble_hid_usb_command_matches(line, "VREC:RECOVERY_TYPE") ||
         ble_hid_usb_command_matches(line, "VREC:RECOVERY") ||
         ble_hid_usb_command_matches(line, "VREC:RESET") ||
         ble_hid_usb_command_matches(line, "VREC:FORGET");

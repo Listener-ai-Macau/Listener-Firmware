@@ -2,6 +2,7 @@ build/
 build-usb-light-sleep-debug/
 managed_components/
 .cache/
+.artifacts/
 .codex/
 .vscode/
 compile_commands.json

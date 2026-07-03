@@ -32,6 +32,7 @@
 #define STATUS_LED_STRIP_COUNT 4
 #define STATUS_LED_MAX_STRIP_COUNT STATUS_LED_EC11_COUNT
 #define STATUS_LED_STATUS_TAIL_GUARD_PIXELS 6U
+#define STATUS_LED_KEY_TAIL_GUARD_PIXELS 0U
 #define STATUS_LED_STATUS_TAIL_REINFORCE_WRITES 3U
 #define STATUS_LED_STATUS_TAIL_OVERLAP_REINFORCE_WRITES 1U
 #define STATUS_LED_STATUS_TAIL_SAFE_EFFECT_MIN_PERCENT 14U
@@ -90,7 +91,7 @@
 #define STATUS_LED_LOW_POWER_FINAL_LATCH_WRITES 3U
 #define STATUS_LED_LOW_POWER_STATUS_RETRY_WRITES 3U
 #define STATUS_LED_STATUS_HEALTH_RESYNC_MS 500U
-#define STATUS_LED_KEY_DARK_RESYNC_MS 500U
+#define STATUS_LED_KEY_DARK_RESYNC_MS 0U
 #define STATUS_LED_TX_MUTEX_WAIT_MS 100
 #define STATUS_LED_RMT_IDLE_RELEASE_MS 0U
 #define STATUS_LED_EXTERNAL_POWER_POLL_MS 250U
@@ -574,6 +575,7 @@ static status_led_strip_t s_strips[STATUS_LED_STRIP_COUNT] = {
         .name = "key",
         .gpio = BOARD_PINS_RGB_KEY_IO,
         .led_count = STATUS_LED_KEY_COUNT,
+        .tail_guard_pixels = STATUS_LED_KEY_TAIL_GUARD_PIXELS,
         .color_order = STATUS_LED_KEY_DEFAULT_COLOR_ORDER,
         // Same rationale as ec11: SPI3 MOSI + GDMA removes the non-DMA RMT
         // flicker. GPIO13 is reassigned to SPI3 MOSI by the GPIO matrix.
@@ -1553,8 +1555,15 @@ static bool status_led_key_dark_rewrite_needed(
     }
 
     uint32_t last_key_tx_ms = s_strip_last_tx_ms[STATUS_LED_STRIP_KEY];
-    return last_key_tx_ms == 0U ||
-           (uint32_t)(now_ms - last_key_tx_ms) >= STATUS_LED_KEY_DARK_RESYNC_MS;
+    if (last_key_tx_ms == 0U) {
+        return true;
+    }
+#if STATUS_LED_KEY_DARK_RESYNC_MS == 0U
+    (void)now_ms;
+    return false;
+#else
+    return (uint32_t)(now_ms - last_key_tx_ms) >= STATUS_LED_KEY_DARK_RESYNC_MS;
+#endif
 }
 
 static void status_led_note_strip_transmitted(status_led_strip_id_t strip_index, uint32_t now_ms)
@@ -3280,8 +3289,8 @@ static bool status_led_render_key_feedback_locked(status_led_frame_t *frame, uin
         } else if (elapsed >= (STATUS_LED_KEY_FLASH_ON_MS * 2U + STATUS_LED_KEY_FLASH_GAP_MS) &&
                    elapsed < (STATUS_LED_KEY_FLASH_ON_MS * 2U + STATUS_LED_KEY_FLASH_GAP_MS +
                               STATUS_LED_KEY_FADE_MS)) {
-            /* Gradual fade tail after the second flash, mirroring the EC11 press
-             * envelope's falling edge instead of a one-frame snap to black (#4). */
+            /* Gradual fade tail after the second flash, matching the original
+             * KEY feedback feel while the SPI/DMA transport keeps it stable. */
             uint32_t fade_elapsed =
                 elapsed - (STATUS_LED_KEY_FLASH_ON_MS * 2U + STATUS_LED_KEY_FLASH_GAP_MS);
             uint8_t fade_percent = status_led_decay_percent(
@@ -3303,8 +3312,7 @@ static bool status_led_render_key_feedback_locked(status_led_frame_t *frame, uin
                 STATUS_LED_KEY_GESTURE_PERCENT,
                 false);
         } else {
-            /* Gradual fade tail after release, mirroring the single/double-click
-             * envelope's falling edge instead of a one-frame snap to black (#4).
+            /* Gradual fade tail after release, matching single/double-click.
              * elapsed is measured from the release moment (the release handler
              * re-anchors started_ms when a long-press ends). */
             uint8_t fade_percent = status_led_decay_percent(
@@ -3326,8 +3334,8 @@ static bool status_led_render_key_feedback_locked(status_led_frame_t *frame, uin
                 STATUS_LED_KEY_GESTURE_PERCENT,
                 false);
         } else if (elapsed < (STATUS_LED_KEY_FLASH_ON_MS + STATUS_LED_KEY_FADE_MS)) {
-            /* Gradual fade tail, mirroring the EC11 press envelope's falling edge
-             * instead of a one-frame snap to black (#4). */
+            /* Gradual fade tail after the visible flash; stability must come
+             * from the KEY transport, not by removing the product fade. */
             uint32_t fade_elapsed = elapsed - STATUS_LED_KEY_FLASH_ON_MS;
             uint8_t fade_percent = status_led_decay_percent(
                 fade_elapsed,
@@ -3561,10 +3569,11 @@ static uint32_t status_led_refresh_once(void)
             ? STATUS_LED_TRANSITION_CLEAR_WRITES
             : (pwr_only_final_latch ? STATUS_LED_LOW_POWER_FINAL_LATCH_WRITES : 1U);
         for (uint8_t write_index = 0U; write_index < write_count; ++write_index) {
-            /* Low-power resume also uses an idle-transition clear frame. Keep
-             * every clear/latch strip off its DMA transport so heartbeat wakes
-             * and shutdown retries cannot relatch stale physical LED state. */
-            bool force_non_dma = pwr_only_final_latch || force_clear_tx;
+            /* Entering quiet low-power/final latch still uses the non-DMA path.
+             * Interactive resume transition clears must keep EC11/KEY on their
+             * SPI DMA transports so dynamic feedback does not regress into the
+             * old interrupt-backed RMT flicker. */
+            bool force_non_dma = pwr_only_final_latch;
             status_led_transmit_changed_frame(&frame, tx_strip_mask, force_non_dma);
         }
     }
@@ -3615,7 +3624,10 @@ static void status_led_resume_interactive_output_locked(void)
     s_state.preview_suppress_accents = false;
     s_state.output_disabled = false;
     s_state.low_power_disabled = false;
-    if (was_low_power_output || s_state.transition_clear_mask != 0U) {
+    if (was_low_power_output) {
+        s_state.last_power_poll_ms = 0U;
+        status_led_force_transition_clear_locked(STATUS_LED_TRANSITION_CLEAR_ALL_STRIPS);
+    } else if (s_state.transition_clear_mask != 0U) {
         s_state.last_power_poll_ms = 0U;
         status_led_force_transition_clear_locked(STATUS_LED_TRANSITION_CLEAR_NON_KEY_ACCENTS);
     }
@@ -4753,6 +4765,28 @@ void status_led_notify_key_feedback(uint8_t key_index, status_led_key_feedback_t
     }
 }
 
+static bool status_led_ec11_press_feedback_should_yield_locked(uint32_t now_ms)
+{
+    if (status_led_error_active_locked(now_ms) ||
+        status_led_shutdown_confirm_active_locked(now_ms) ||
+        s_state.ota_active ||
+        status_led_ok_visual_percent_locked(now_ms) > 0U ||
+        status_led_ble_repair_cue_active_locked(now_ms) ||
+        s_state.processing_active ||
+        status_led_recording_visual_percent_locked(now_ms) > 0U) {
+        return true;
+    }
+
+    if (status_led_ec11_feedback_active_locked(now_ms) &&
+        (s_state.ec11_feedback == STATUS_LED_EC11_FEEDBACK_ROTATE_CW ||
+         s_state.ec11_feedback == STATUS_LED_EC11_FEEDBACK_ROTATE_CCW)) {
+        return true;
+    }
+
+    return s_state.profile == STATUS_LED_PROFILE_AMBIENT &&
+           s_state.ble_state == STATUS_LED_BLE_TYPE_READY;
+}
+
 static void status_led_apply_ec11_feedback(status_led_ec11_feedback_t feedback, bool advance_motion)
 {
     if (feedback != STATUS_LED_EC11_FEEDBACK_PRESS &&
@@ -4769,7 +4803,7 @@ static void status_led_apply_ec11_feedback(status_led_ec11_feedback_t feedback, 
             return;
         }
         if (feedback == STATUS_LED_EC11_FEEDBACK_PRESS &&
-            status_led_ble_repair_active_locked(now_ms)) {
+            status_led_ec11_press_feedback_should_yield_locked(now_ms)) {
             xSemaphoreGive(s_mutex);
             return;
         }
@@ -5449,6 +5483,7 @@ static void status_led_print_status(void)
     status_led_strip_transport_t strip_transport_actual[STATUS_LED_STRIP_COUNT];
     unsigned int strip_mem_block_symbols[STATUS_LED_STRIP_COUNT];
     uint8_t status_tail_guard_pixels = 0U;
+    uint8_t key_tail_guard_pixels = 0U;
     status_led_color_order_t strip_orders[STATUS_LED_STRIP_COUNT];
     device_settings_snapshot_t device_settings = {0};
     uint32_t now_ms = status_led_now_ms();
@@ -5485,6 +5520,7 @@ static void status_led_print_status(void)
                 (unsigned int)status_led_strip_backend_mem_block_symbols(s_strips[index].backend);
         }
         status_tail_guard_pixels = s_strips[STATUS_LED_STRIP_STATUS].tail_guard_pixels;
+        key_tail_guard_pixels = s_strips[STATUS_LED_STRIP_KEY].tail_guard_pixels;
         xSemaphoreGive(s_mutex);
     } else {
         return;
@@ -5572,6 +5608,8 @@ static void status_led_print_status(void)
         " idle_refresh_ms=%u unchanged_tx_suppression=1 timing=ws2812_4020_compatible"
         " low_power_transport_suspend_ms=%u low_power_status_tx=non_dma_clear_and_final_frame"
         " low_power_all_zone_tx=non_dma_clear_and_final_frame"
+        " key_dark_idle_resync_ms=%u key_tail_guard_pixels=%u"
+        " key_dark_clear_tx=spi_changed_frame_once"
         " shutdown_final_status_tx=non_dma_pwr_only_latch"
         " shutdown_final_all_zone_tx=non_dma_pwr_only_latch_or_all_off"
         " low_power_final_latch_writes=%u"
@@ -5654,6 +5692,8 @@ static void status_led_print_status(void)
         strip_mem_block_symbols[STATUS_LED_STRIP_EDGE],
         STATUS_LED_IDLE_REFRESH_MS,
         STATUS_LED_RMT_IDLE_RELEASE_MS,
+        STATUS_LED_KEY_DARK_RESYNC_MS,
+        key_tail_guard_pixels,
         STATUS_LED_LOW_POWER_FINAL_LATCH_WRITES,
         STATUS_LED_LOW_POWER_STATUS_RETRY_WRITES,
         STATUS_LED_STATUS_TAIL_GUARD_PIXELS,
@@ -5710,7 +5750,7 @@ static void status_led_print_status(void)
     printf(
         "~LED:STATUS detail=strips"
         " strips=status:gpio%d:count%u:order%s:transport%s:avail%u:dma_req%u:dma%u:dma_fb%u:rmt_dma_req%u:rmt_dma%u:rmt_dma_fb%u:spi_dma_req%u:spi_dma%u:spi_dma_fb%u:refsLED1..LED6,ec11:gpio%d:count%u:order%s:transport%s:avail%u:dma_req%u:dma%u:dma_fb%u:rmt_dma_req%u:rmt_dma%u:rmt_dma_fb%u:spi_dma_req%u:spi_dma%u:spi_dma_fb%u:refsLED7..LED10+LED15..LED16+LED23..LED28,key:gpio%d:count%u:order%s:transport%s:avail%u:dma_req%u:dma%u:dma_fb%u:rmt_dma_req%u:rmt_dma%u:rmt_dma_fb%u:spi_dma_req%u:spi_dma%u:spi_dma_fb%u:refsLED11..LED14,edge:gpio%d:count%u:order%s:transport%s:avail%u:dma_req%u:dma%u:dma_fb%u:rmt_dma_req%u:rmt_dma%u:rmt_dma_fb%u:spi_dma_req%u:spi_dma%u:spi_dma_fb%u:refsLED17..LED22"
-        " status_tail_guard_pixels=%u"
+        " status_tail_guard_pixels=%u key_tail_guard_pixels=%u"
         " key_pin_contract=PWM_RGB_KEY_GPIO13 ec11_pin_contract=PWM_RGB_EC11_GPIO5 edge_pin_contract=PWM_RGB_Edge_GPIO4 gpio14_reserved=BAT_CHG_IO vdd_led_enable=always_on_assumed"
         "\n",
         (int)strip_gpios[STATUS_LED_STRIP_STATUS],
@@ -5777,7 +5817,8 @@ static void status_led_print_status(void)
         (unsigned)strip_spi_dma_requested[STATUS_LED_STRIP_EDGE],
         (unsigned)strip_spi_dma[STATUS_LED_STRIP_EDGE],
         (unsigned)strip_spi_dma_fallback[STATUS_LED_STRIP_EDGE],
-        (unsigned)status_tail_guard_pixels);
+        (unsigned)status_tail_guard_pixels,
+        (unsigned)key_tail_guard_pixels);
     printf(
         "~LED:STATUS detail=state ble=%s rec_active=%u rec_source=%s rec_level=%u rec_level_visual=%u rec_level_hold_ms_left=%" PRIu32 " processing=%u"
         " ota_active=%u ota_progress_percent=%u ota_bytes=%u ota_expected=%u"

@@ -1439,7 +1439,7 @@ static void voice_recording_control_cancel(const char *source)
         false);
 }
 
-static void voice_recording_control_recovery(const char *source)
+static void voice_recording_control_recovery(const char *source, bool type_controlled)
 {
     voice_recording_control_snapshot_t snapshot = voice_recording_control_make_snapshot(source);
     voice_recording_control_decision_t decision =
@@ -1462,7 +1462,7 @@ static void voice_recording_control_recovery(const char *source)
     voice_recording_state_t previous_state = s_state;
     s_state = VOICE_RECORDING_STATE_RECOVERY;
     status_led_notify_ble_repairing("voice_recovery_requested");
-    ESP_LOGW(TAG, "recovery requested source=%s", source);
+    ESP_LOGW(TAG, "recovery requested source=%s type_controlled=%u", source, type_controlled ? 1u : 0u);
     voice_recording_control_log_device_status("recovery", "forget_pairing_and_clear_session");
 
     if (audio_capture_session_is_active()) {
@@ -1479,7 +1479,9 @@ static void voice_recording_control_recovery(const char *source)
     s_cancel_pending = false;
     s_cancel_source = NULL;
     s_active_session_source = NULL;
-    esp_err_t ret = ble_hid_gap_forget_bonds_and_repair();
+    esp_err_t ret = type_controlled
+        ? ble_hid_gap_forget_bonds_and_repair_type_controlled()
+        : ble_hid_gap_forget_bonds_and_repair();
     if (ret != ESP_OK) {
         voice_recording_control_log_device_error("error", "recovery_pairing_reset_failed", ret);
         status_led_set_error(STATUS_LED_ERROR_DOMAIN_BLE, STATUS_LED_ERROR_HARD, "recovery_pairing_reset_failed");
@@ -1596,8 +1598,13 @@ esp_err_t voice_recording_control_dispatch_control_command(const char *command, 
         voice_recording_control_unlock();
         return ESP_OK;
     }
+    if (strcmp(action, "RECOVERY:TYPE") == 0 || strcmp(action, "RECOVERY_TYPE") == 0) {
+        voice_recording_control_recovery(source, true);
+        voice_recording_control_unlock();
+        return ESP_OK;
+    }
     if (strcmp(action, "RECOVERY") == 0 || strcmp(action, "RESET") == 0 || strcmp(action, "FORGET") == 0) {
-        voice_recording_control_recovery(source);
+        voice_recording_control_recovery(source, false);
         voice_recording_control_unlock();
         return ESP_OK;
     }
@@ -1781,7 +1788,7 @@ static void voice_recording_control_task(void *parameter)
 
             if (voice_key_input_take_recovery_event()) {
                 const char *source = voice_key_input_get_active_source();
-                voice_recording_control_recovery(source != NULL ? source : "voice_key_hold");
+                voice_recording_control_recovery(source != NULL ? source : "voice_key_hold", false);
             }
 
             if ((s_state == VOICE_RECORDING_STATE_RECORDING || s_state == VOICE_RECORDING_STATE_TRANSFERRING) &&

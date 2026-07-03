@@ -893,14 +893,20 @@ static void keyboard_custom_handle_sample(keyboard_custom_key_t *key, bool raw_h
             key->stable_count++;
         }
     } else {
-        bool low_power_wake_press =
-            !raw_high &&
-            key->stable_level_high &&
-            keyboard_power_state_is_low_power_idle();
+        bool low_power_idle = keyboard_power_state_is_low_power_idle();
         if (!raw_high) {
-            keyboard_custom_apply_raw_feedback(key, now, "raw_edge");
+            if (low_power_idle && key->stable_level_high) {
+                power_manager_record_activity(key->logical_name);
+                ESP_LOGI(
+                    TAG,
+                    "custom key low-power raw transition debounce armed: logical=%s source=%s",
+                    key->logical_name,
+                    key->label);
+            } else {
+                keyboard_custom_apply_raw_feedback(key, now, "raw_edge");
+            }
         } else {
-            if (!key->pressed && key->stable_level_high) {
+            if (!low_power_idle && !key->pressed && key->stable_level_high) {
                 keyboard_custom_handle_raw_short_release(key, now, "raw_edge_release_before_debounce");
             } else {
                 keyboard_custom_clear_raw_feedback(key);
@@ -920,9 +926,6 @@ static void keyboard_custom_handle_sample(keyboard_custom_key_t *key, bool raw_h
             key->stable_level_high ? 1u : 0u);
         key->last_sample_high = raw_high;
         key->stable_count = 1;
-        if (low_power_wake_press) {
-            keyboard_custom_apply_stable_transition(key, raw_high, now, "low_power_raw_edge");
-        }
         return;
     }
 
@@ -1104,11 +1107,10 @@ static void keyboard_custom_apply_low_power_wake_match(
 
     if (sampled_pressed) {
         keyboard_custom_cancel_pending_single(key);
-        keyboard_custom_apply_raw_feedback(key, now, "low_power_wake");
-        keyboard_custom_apply_stable_transition(key, false, now, "low_power_wake");
+        power_manager_record_activity(key->logical_name);
         ESP_LOGI(
             TAG,
-            "custom key low-power wake press captured: logical=%s source=%s latched=%u sampled_pressed=1",
+            "custom key low-power wake press pending debounce: logical=%s source=%s latched=%u sampled_pressed=1",
             key->logical_name,
             key->label,
             latched ? 1u : 0u);
@@ -1121,10 +1123,9 @@ static void keyboard_custom_apply_low_power_wake_match(
 
     keyboard_custom_reset_to_released(key);
     power_manager_record_activity(key->logical_name);
-    keyboard_custom_send_gesture(key, KEYBOARD_CUSTOM_GESTURE_SINGLE);
     ESP_LOGI(
         TAG,
-        "custom key low-power wake single synthesized: logical=%s source=%s latched=1 sampled_pressed=0",
+        "custom key low-power wake transient ignored: logical=%s source=%s latched=1 sampled_pressed=0",
         key->logical_name,
         key->label);
 }

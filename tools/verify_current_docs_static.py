@@ -84,8 +84,12 @@ STALE_PATTERNS = [
         "stale EC11 rotation prose: current cue keeps moving during the hold window",
     ),
     PatternRule(
-        re.compile(r"EC11 double-click recovery[\s\S]{0,120}200 ms window", re.IGNORECASE),
-        "stale EC11 recovery prose: recovery double-click uses its dedicated 650 ms window",
+        re.compile(r"650 ms pending single-click/custom-key response and recovery double-click window", re.IGNORECASE),
+        "stale EC11 recovery prose: EC11 now uses a 200 ms window with a 30 ms minimum gap",
+    ),
+    PatternRule(
+        re.compile(r"450 ms pending single-click/custom-key response and recovery double-click window", re.IGNORECASE),
+        "stale EC11 recovery prose: EC11 now matches the 200 ms key double-click feel",
     ),
 ]
 
@@ -113,8 +117,8 @@ REQUIRED_TEXT = [
     ),
     RequiredText(
         "docs/features/status_led.md",
-        re.compile(r"650 ms pending single-click/custom-key response and recovery double-click window", re.IGNORECASE),
-        "status LED feature doc must state EC11 single-click fallback waits through the recovery double-click window",
+        re.compile(r"200 ms pending single-click/custom-key response and recovery double-click window, with a 30 ms minimum second-click gap", re.IGNORECASE),
+        "status LED feature doc must state EC11 single-click fallback matches the key double-click feel and filters raw-only first clicks/bounce",
     ),
     RequiredText(
         "docs/features/low_power_wake_policy.md",
