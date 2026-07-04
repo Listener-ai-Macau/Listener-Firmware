@@ -556,14 +556,18 @@ static void voice_key_input_handle_short_click_release(
     }
 
     bool stable_release = origin == NULL;
+    bool recovery_candidate_from_raw = button->recovery_candidate_from_raw;
+    /* Raw/ISR edges are only early wake hints; recovery double-click must be
+     * confirmed by the debounced stable path so first-click bounce cannot
+     * rotate pairing identity. */
     bool recovery_double_click =
         button->pending_single_click &&
         button->recovery_double_candidate &&
-        !button->recovery_second_press_too_soon;
+        !button->recovery_second_press_too_soon &&
+        !recovery_candidate_from_raw;
     bool second_click_too_soon = button->recovery_second_press_too_soon;
     button->recovery_double_candidate = false;
     button->recovery_second_press_too_soon = false;
-    bool recovery_candidate_from_raw = button->recovery_candidate_from_raw;
     button->recovery_candidate_from_raw = false;
     if (recovery_double_click) {
         button->pending_single_click = false;

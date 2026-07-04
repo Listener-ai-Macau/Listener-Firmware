@@ -2072,6 +2072,7 @@ def main() -> int:
         or "second_click_too_soon" not in voice_key
         or "stable_release" not in voice_key
         or "recovery_candidate_from_raw" not in voice_key
+        or "!recovery_candidate_from_raw" not in voice_key
         or "Raw-only EC11 short clicks are accepted only as single-click candidates after stable idle" not in (
             REPO_ROOT / "docs/features/status_led.md"
         ).read_text(encoding="utf-8")
