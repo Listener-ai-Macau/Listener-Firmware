@@ -75,6 +75,7 @@ extern esp_err_t ble_hid_gap_apply_pending_ble_name(void) __attribute__((weak));
 #define BLE_AUDIO_STREAM_CONTROL_NOTIFY_REPEAT_DELAY_MS 5
 #define BLE_AUDIO_STREAM_TASK_QUEUE_WAIT_MS 1000
 #define BLE_AUDIO_STREAM_CONTROL_MAX_BYTES 64
+#define BLE_AUDIO_STREAM_BLE_NAME_APPLY_DEFER_MS 250
 #define BLE_AUDIO_STREAM_TYPE_HEARTBEAT_TIMEOUT_MS 45000
 #define BLE_AUDIO_STREAM_TYPE_LED_READY_HOLD_MS 45000
 
@@ -2775,6 +2776,56 @@ void ble_audio_stream_note_type_activity(const char *reason)
         reason != NULL ? reason : "type_activity");
 }
 
+static void ble_audio_stream_deferred_ble_name_apply_task(void *arg)
+{
+    (void)arg;
+    vTaskDelay(pdMS_TO_TICKS(BLE_AUDIO_STREAM_BLE_NAME_APPLY_DEFER_MS));
+    if (ble_hid_gap_apply_pending_ble_name == NULL) {
+        ESP_LOGW(TAG, "deferred BLE name apply unavailable");
+        vTaskDelete(NULL);
+        return;
+    }
+
+    esp_err_t ret = ble_hid_gap_apply_pending_ble_name();
+    if (ret == ESP_OK) {
+        ESP_LOGI(TAG, "deferred BLE name apply accepted");
+    } else {
+        ESP_LOGW(TAG, "deferred BLE name apply failed: %s", esp_err_to_name(ret));
+    }
+    vTaskDelete(NULL);
+}
+
+static void ble_audio_stream_schedule_ble_name_apply(const char *source)
+{
+    BaseType_t ok = xTaskCreate(
+        ble_audio_stream_deferred_ble_name_apply_task,
+        "ble_name_apply",
+        3072,
+        NULL,
+        5,
+        NULL);
+    if (ok == pdPASS) {
+        ESP_LOGI(
+            TAG,
+            "BLE name apply command scheduled source=%s defer_ms=%u",
+            source != NULL ? source : "unknown",
+            (unsigned)BLE_AUDIO_STREAM_BLE_NAME_APPLY_DEFER_MS);
+        return;
+    }
+
+    ESP_LOGW(
+        TAG,
+        "BLE name apply task create failed source=%s; applying synchronously",
+        source != NULL ? source : "unknown");
+    if (ble_hid_gap_apply_pending_ble_name == NULL) {
+        return;
+    }
+    esp_err_t ret = ble_hid_gap_apply_pending_ble_name();
+    if (ret != ESP_OK) {
+        ESP_LOGW(TAG, "synchronous BLE name apply fallback failed: %s", esp_err_to_name(ret));
+    }
+}
+
 bool ble_audio_stream_consume_type_control_command(const char *command, const char *source)
 {
     if (command == NULL) {
@@ -2820,14 +2871,7 @@ bool ble_audio_stream_consume_type_control_command(const char *command, const ch
             ESP_LOGW(TAG, "BLE name apply command unavailable source=%s", source != NULL ? source : "unknown");
             return true;
         }
-        esp_err_t ret = ble_hid_gap_apply_pending_ble_name();
-        if (ret == ESP_OK) {
-            ESP_LOGI(TAG, "BLE name apply command accepted source=%s", source != NULL ? source : "unknown");
-        } else {
-            ESP_LOGW(TAG, "BLE name apply command failed source=%s ret=%s",
-                     source != NULL ? source : "unknown",
-                     esp_err_to_name(ret));
-        }
+        ble_audio_stream_schedule_ble_name_apply(source);
         return true;
     }
 
