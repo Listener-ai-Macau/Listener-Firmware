@@ -274,7 +274,7 @@ CHECKS = {
         "POWER_MANAGER_BLOCKER_RECORDING",
         "POWER_MANAGER_BLOCKER_BLE_AUDIO",
         "POWER_MANAGER_BLOCKER_PAIRING",
-        "recovery keeps pairing/reconnect power blockers while BLE recovery pairing window is open",
+        "recovery reset accepted; waiting for a fresh Windows/Type bond while BLE recovery pairing window is open",
     ],
     "components/diag_log/include/diag_log_events.h": [
         "DIAG_SRC_POWER",
@@ -1090,9 +1090,15 @@ def main() -> int:
         failures.append(
             "ports/esp32/ble_hid_gap/ble_hid_gap_esp32.c: recovery pairing must be able to reopen advertising from key-wake-only idle"
         )
-    if "s_recovery_identity_rotation" in ble_gap or "identity_rotated_at" in ble_gap:
+    if (
+        "BLE_HID_GAP_RANDOM_IDENTITY_KEY" not in ble_gap
+        or "ble_hid_gap_rotate_native_recovery_identity" not in ble_gap
+        or "ble_hid_gap_restore_random_identity_from_nvs" not in ble_gap
+        or "ble_hs_id_gen_rnd(0, &addr)" not in ble_gap
+        or "s_own_addr_type = BLE_OWN_ADDR_RANDOM;" not in ble_gap
+    ):
         failures.append(
-            "ports/esp32/ble_hid_gap/ble_hid_gap_esp32.c: recovery identity rotation state must stay removed; recovery should keep a stable BLE identity"
+            "ports/esp32/ble_hid_gap/ble_hid_gap_esp32.c: non-Type Windows-native recovery must rotate and persist a BLE identity while Type-controlled recovery keeps the current identity"
         )
     if not re.search(
         r"static\s+void\s+ble_hid_gap_open_recovery_pairing_window[\s\S]*"
@@ -1125,15 +1131,21 @@ def main() -> int:
     voice_recovery = (REPO_ROOT / "components/voice_recording_control/voice_recording_control.c").read_text(encoding="utf-8")
     if not re.search(
         r"static\s+void\s+voice_recording_control_recovery[\s\S]*"
-        r"ble_hid_gap_is_recovery_pairing_window_open\(\)[\s\S]*"
-        r"recovery keeps pairing/reconnect power blockers while BLE recovery pairing window is open[\s\S]*"
+        r"bool\s+pairing_window_open\s*=\s*ble_hid_gap_is_recovery_pairing_window_open\(\)[\s\S]*"
+        r"recovery reset accepted; waiting for a fresh Windows/Type bond while BLE recovery pairing window is open[\s\S]*"
         r"else\s*\{[\s\S]*"
         r"POWER_MANAGER_BLOCKER_PAIRING\s*\|\s*POWER_MANAGER_BLOCKER_RECONNECT[\s\S]*"
-        r"false",
+        r"false[\s\S]*"
+        r"voice_recording_control_log_device_status\(\"pairing\",\s*\"recovery_pairing_window_open\"\)[\s\S]*"
+        r"voice_recording_control_log_device_status\(\"ready\",\s*\"recovery_complete_no_pairing_window\"\)",
         voice_recovery,
     ):
         failures.append(
-            "components/voice_recording_control/voice_recording_control.c: recovery completion must not clear pairing/reconnect blockers while the BLE recovery window remains open"
+            "components/voice_recording_control/voice_recording_control.c: recovery completion must keep pairing/reconnect blockers and report pairing, not ready, while the BLE recovery window remains open"
+        )
+    if "recovery_complete_pair_again" in voice_recovery:
+        failures.append(
+            "components/voice_recording_control/voice_recording_control.c: recovery must not report ready/recovery_complete_pair_again before the fresh Windows/Type bond is complete"
         )
     if not re.search(
         r"static\s+void\s+ble_hid_gap_keep_recovery_adv_connectable[\s\S]{0,760}"
@@ -1455,16 +1467,42 @@ def main() -> int:
         failures.append(
             "components/status_led/status_led.c: EC11 press/rotation feedback must remain white; purple is reserved for confirmed gestures"
         )
-    if not re.search(
-        r"status_led_ec11_feedback_active_locked\(now_ms\)[\s\S]{0,220}"
-        r"status_led_render_ec11_feedback_locked\(frame,\s*now_ms\)[\s\S]{0,260}"
-        r"status_led_ble_repair_active_locked\(now_ms\)[\s\S]{0,180}"
-        r"status_led_render_ec11_repair_locked\(frame,\s*now_ms\)[\s\S]{0,180}"
-        r"s_state\.processing_active",
+    ec11_render_body = re.search(
+        r"static\s+void\s+status_led_render_ec11_locked[\s\S]*?"
+        r"\n\}\n\nstatic\s+void\s+status_led_render_key_active_work_locked",
         status_led,
+    )
+    ec11_render_text = ec11_render_body.group(0) if ec11_render_body is not None else ""
+    if (
+        not re.search(
+            r"static\s+bool\s+status_led_ec11_feedback_is_rotation_locked\(void\)[\s\S]{0,260}"
+            r"STATUS_LED_EC11_FEEDBACK_ROTATE_CW[\s\S]{0,160}"
+            r"STATUS_LED_EC11_FEEDBACK_ROTATE_CCW",
+            status_led,
+        )
+        or not re.search(
+            r"static\s+bool\s+status_led_render_ec11_rotation_feedback_locked[\s\S]{0,420}"
+            r"status_led_ec11_feedback_is_rotation_locked\(\)[\s\S]{0,260}"
+            r"status_led_render_ec11_feedback_locked\(frame,\s*now_ms\)",
+            status_led,
+        )
+        or ec11_render_body is None
+        or "if (status_led_render_ec11_rotation_feedback_locked(frame, now_ms))" not in ec11_render_text
+        or ec11_render_text.count("status_led_render_ec11_feedback_locked(frame, now_ms);") != 1
+        or ec11_render_text.find("if (rec_percent > 0U)") > ec11_render_text.find("if (status_led_render_ec11_rotation_feedback_locked(frame, now_ms))")
+        or re.search(
+            r"if\s*\(\s*s_state\.processing_active\s*&&\s*rec_percent\s*>\s*0U\s*\)\s*\{(?:(?!return;)[\s\S]){0,220}"
+            r"status_led_render_ec11_rotation_feedback_locked",
+            ec11_render_text,
+        )
+        or re.search(
+            r"if\s*\(\s*rec_percent\s*>\s*0U\s*\)\s*\{(?:(?!return;)[\s\S]){0,180}"
+            r"status_led_render_ec11_rotation_feedback_locked",
+            ec11_render_text,
+        )
     ):
         failures.append(
-            "components/status_led/status_led.c: EC11 press/rotation feedback must render before the BLE re-pair ring and ordinary processing accents so local knob feedback is not swallowed"
+            "components/status_led/status_led.c: EC11 white feedback must stay idle/non-recording only; recording and re-pair effects must own the EC11 ring before rotation feedback can render"
         )
     key_event_body = re.search(
         r"void\s+status_led_notify_key_event[\s\S]*?"
@@ -1484,6 +1522,16 @@ def main() -> int:
     ec11_feedback_body = re.search(
         r"static\s+void\s+status_led_apply_ec11_feedback[\s\S]*?"
         r"\n\}\n\nvoid\s+status_led_notify_ec11_feedback",
+        status_led,
+    )
+    recording_body = re.search(
+        r"void\s+status_led_set_recording[\s\S]*?"
+        r"\n\}\n\nvoid\s+status_led_set_recording_level",
+        status_led,
+    )
+    processing_body = re.search(
+        r"void\s+status_led_set_processing[\s\S]*?"
+        r"\n\}\n\nvoid\s+status_led_set_ota_active",
         status_led,
     )
     interactive_resume_body = re.search(
@@ -1521,9 +1569,14 @@ def main() -> int:
         or ec11_feedback_body is None
         or "feedback == STATUS_LED_EC11_FEEDBACK_PRESS" not in ec11_feedback_body.group(0)
         or "status_led_ec11_press_feedback_should_yield_locked(now_ms)" not in ec11_feedback_body.group(0)
+        or "status_led_clear_ec11_press_feedback_locked" not in status_led
+        or recording_body is None
+        or "status_led_clear_ec11_feedback_locked();" not in recording_body.group(0)
+        or processing_body is None
+        or "status_led_clear_ec11_press_feedback_locked();" not in processing_body.group(0)
     ):
         failures.append(
-            "components/status_led/status_led.c: EC11 confirmed single-click press feedback must yield instead of overwriting existing EC11 recording/processing/OTA/re-pair/rotation/ambient/shutdown effects"
+            "components/status_led/status_led.c: EC11 confirmed single-click press feedback must yield and clear pending PRESS instead of overwriting existing EC11 recording/processing/OTA/re-pair/rotation/ambient/shutdown effects"
         )
     if (
         "STATUS_LED_EC11_ROTATE_STEP_MS" in status_led
@@ -1997,6 +2050,22 @@ def main() -> int:
     ):
         failures.append(
             "ports/esp32/voice_key_input/voice_key_input_esp32.c: EC11 recovery double-click window must match the 200 ms KEY1-KEY4 double-click feel"
+        )
+    min_gap_match = re.search(
+        r"#define\s+VOICE_KEY_INPUT_DOUBLE_CLICK_MIN_GAP_MS\s+\((\d+)\)",
+        voice_key,
+    )
+    generated_gap_match = re.search(
+        r"#define\s+VOICE_KEY_INPUT_GENERATED_INTER_CLICK_RELEASE_MS\s+\((\d+)\)",
+        voice_key,
+    )
+    if (
+        min_gap_match is None
+        or generated_gap_match is None
+        or int(generated_gap_match.group(1)) < int(min_gap_match.group(1)) + 40
+    ):
+        failures.append(
+            "ports/esp32/voice_key_input/voice_key_input_esp32.c: generated EC11 double-click diagnostics must leave at least 40 ms margin above the physical min-gap so validation cannot collapse into single-click fallback"
         )
     if (
         "elapsed_lt_min_gap_ms" not in voice_key

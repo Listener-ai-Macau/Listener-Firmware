@@ -14,11 +14,14 @@ This repository contains ESP32-S3 firmware for the Listener voice keyboard.
 ## Build
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File .\tools\setup_windows.ps1
-powershell -ExecutionPolicy Bypass -File .\tools\build.ps1
-powershell -ExecutionPolicy Bypass -File .\tools\flash.ps1 -Port COMx
-powershell -ExecutionPolicy Bypass -File .\tools\monitor.ps1 -Port COMx
+pwsh -NoProfile -File .\tools\build.ps1
+pwsh -NoProfile -File .\tools\flash.ps1 -Port COMx
+pwsh -NoProfile -File .\tools\monitor.ps1 -Port COMx
 ```
+
+Do not run bare `idf.py` in this repo. Use `pwsh -NoProfile -File .\tools\idf.ps1 <idf.py args>`
+for ad hoc ESP-IDF commands so `tools\idf_env.ps1` always loads `export.ps1` first and avoids
+`No module named 'esp_idf_monitor'` from a non-IDF shell.
 
 The project uses ESP-IDF component manager dependencies from
 `idf_component.yml` files and `dependencies.lock`. Do not commit
@@ -37,9 +40,9 @@ The project uses ESP-IDF component manager dependencies from
 Prefer the narrowest relevant check:
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File .\tools\build.ps1
+pwsh -NoProfile -File .\tools\build.ps1
 python .\tools\verify_audio_ble_product_matrix.py --list-cases
-powershell -ExecutionPolicy Bypass -File .\tools\capture_serial.ps1 -Port COMx -ResetBeforeRead
+pwsh -NoProfile -File .\tools\capture_serial.ps1 -Port COMx -ResetBeforeRead
 ```
 
 Do not commit generated validation logs, serial captures, diagnostic packages,

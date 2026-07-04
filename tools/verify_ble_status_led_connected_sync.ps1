@@ -157,8 +157,8 @@ Assert-Contains $gap 'static\s+void\s+ble_hid_gap_register_global_event_listener
     "BLE GAP must register a global listener before advertising so CONNECT cannot be missed by the advertising callback"
 Assert-Contains $gap 'esp_err_t\s+esp_hid_ble_gap_adv_start\(void\)[\s\S]*?ble_hid_gap_refresh_configured_device_name\("advertising_start"\)' `
     "advertising start must use the latest configured BLE name"
-Assert-Contains $gap 'static\s+esp_err_t\s+ble_hid_gap_forget_bonds_and_repair_inner\(bool type_controlled_request\)[\s\S]*?bond_delete=async_after_disconnect[\s\S]*?ble_hid_gap_open_recovery_pairing_window\([^)]*\);[\s\S]*?ble_hid_gap_schedule_recovery_bond_delete[\s\S]*?stable identity will advertise after async local bond delete following disconnect[\s\S]*?ble_hid_gap_start_advertising\(\)' `
-    "forget-bonds recovery must avoid synchronous full-store erase, open the pairing window, delete the local bond asynchronously, and advertise the current stable identity"
+Assert-Contains $gap 'static\s+esp_err_t\s+ble_hid_gap_forget_bonds_and_repair_inner\(bool type_controlled_request\)[\s\S]*?bond_delete=async_after_disconnect[\s\S]*?ble_hid_gap_open_recovery_pairing_window\([^)]*\);[\s\S]*?ble_hid_gap_rotate_native_recovery_identity\("recovery_pairing_reset"\)[\s\S]*?ble_hid_gap_schedule_recovery_bond_delete[\s\S]*?stable Type-controlled[\s\S]*?rotated native Windows[\s\S]*?ble_hid_gap_start_advertising\(\)' `
+    "forget-bonds recovery must avoid synchronous full-store erase, open the pairing window, delete the local bond asynchronously, keep Type identity stable, and rotate native Windows identity"
 Assert-Contains $noteTypeAudio 'type audio ready rejected before BLE bond; keeping pairing window available without restarting repair[\s\S]*?ble_hid_gap_open_recovery_pairing_window[\s\S]*?return false;' `
     "unbonded Type heartbeat must keep pairing available without recursively restarting repair"
 Assert-Contains $noteTypeAudio 'ble_gap_conn_find\(s_ble_gap_conn_handle,\s*&desc\)[\s\S]*?desc\.sec_state\.encrypted\s*\|\|\s*desc\.sec_state\.bonded[\s\S]*?type audio ready accepted on existing secure BLE connection[\s\S]*?ble_hid_gap_note_secure_connection\([\s\S]*?"type audio ready existing secure connection"[\s\S]*?return true;' `
@@ -173,6 +173,10 @@ Assert-Contains $gap 'static\s+void\s+ble_hid_gap_handle_connect_established[\s\
     "recovery must reject stale Windows connections while async local bond delete is pending"
 Assert-Contains $gap 'refresh_pairing_window[\s\S]*?pairing window already active; refreshing advertising with stable BLE identity[\s\S]*?ble_hid_gap_open_recovery_pairing_window\([^)]*\)[\s\S]*?ble_hid_gap_start_advertising\(\)[\s\S]*?pairing window refreshed with stable BLE identity' `
     "explicit recovery during an already-open pairing window must renew the 120s pairing window and refresh advertising with the current stable identity"
+Assert-Contains $gap 'BLE_HID_GAP_RANDOM_IDENTITY_KEY[\s\S]*?ble_hid_gap_restore_random_identity_from_nvs[\s\S]*?ble_hid_gap_rotate_native_recovery_identity[\s\S]*?ble_hs_id_gen_rnd\(0,\s*&addr\)' `
+    "non-Type Windows-native recovery must rotate, persist, and restore a static-random BLE identity so stale host bonds cannot loop"
+Assert-Contains $gap 's_own_addr_type\s*=\s*BLE_OWN_ADDR_RANDOM' `
+    "native recovery random identity must advertise with BLE_OWN_ADDR_RANDOM after restore or rotation"
 Assert-Contains $recoverySecurityHelper 's_recovery_security_request_conn_handle\s*=\s*conn_handle;[\s\S]*?recovery: waiting for Windows pairing security[\s\S]*?diag_log\(DIAG_SRC_BLE_GAP,\s*DIAG_GAP_RECOVERY,\s*DIAG_SEV_INFO,\s*10,\s*4,\s*0,\s*conn_handle\)' `
     "recovery security helper must mark the connection and wait for Windows PairAsync/native pairing security"
 Assert-NotContains $recoverySecurityHelper 'ble_gap_security_initiate\(conn_handle\)' `
@@ -331,8 +335,8 @@ Assert-Contains $statusLed 'STATUS_LED_BATTERY_STATUS_WINDOW_PWR_PERCENT\s+14U[\
     "battery PWR active-rendering window must stay readable during active work and then hand off to the low-power level"
 Assert-Contains $statusDoc '30 second Type-ready hold' `
     "status LED documentation must describe the active Type-ready LED hold"
-Assert-Contains $statusDoc 'keeps the stable BLE identity[\s\S]*?deletes the firmware-side old peer asynchronously after disconnect before advertising can restart[\s\S]*?create a new bond through the recovery window' `
-    "status LED documentation must describe stable-identity recovery and async local bond-delete semantics"
+Assert-Contains $statusDoc 'Only explicit Type-controlled recovery keeps the current stable BLE identity[\s\S]*?ordinary EC11/USB recovery rotates and persists a new static-random BLE identity[\s\S]*?create a new bond through the recovery window' `
+    "status LED documentation must describe explicit Type-stable recovery, ordinary EC11/USB identity rotation, and async local bond-delete semantics"
 
 $modelState = "disconnected"
 $connected = $false

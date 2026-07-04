@@ -1462,7 +1462,11 @@ static void voice_recording_control_recovery(const char *source, bool type_contr
     voice_recording_state_t previous_state = s_state;
     s_state = VOICE_RECORDING_STATE_RECOVERY;
     status_led_notify_ble_repairing("voice_recovery_requested");
-    ESP_LOGW(TAG, "recovery requested source=%s type_controlled=%u", source, type_controlled ? 1u : 0u);
+    ESP_LOGW(
+        TAG,
+        "recovery requested source=%s type_controlled=%u: clearing BLE bond and opening re-pair window",
+        source,
+        type_controlled ? 1u : 0u);
     voice_recording_control_log_device_status("recovery", "forget_pairing_and_clear_session");
 
     if (audio_capture_session_is_active()) {
@@ -1494,10 +1498,11 @@ static void voice_recording_control_recovery(const char *source, bool type_contr
 
     s_state = VOICE_RECORDING_STATE_IDLE;
     voice_recording_control_clear_power_blockers();
-    if (ble_hid_gap_is_recovery_pairing_window_open()) {
+    bool pairing_window_open = ble_hid_gap_is_recovery_pairing_window_open();
+    if (pairing_window_open) {
         ESP_LOGI(
             TAG,
-            "recovery keeps pairing/reconnect power blockers while BLE recovery pairing window is open");
+            "recovery reset accepted; waiting for a fresh Windows/Type bond while BLE recovery pairing window is open");
     } else {
         power_manager_set_blocker(
             POWER_MANAGER_BLOCKER_PAIRING | POWER_MANAGER_BLOCKER_RECONNECT,
@@ -1506,7 +1511,11 @@ static void voice_recording_control_recovery(const char *source, bool type_contr
     status_led_set_recording(false, STATUS_LED_REC_SOURCE_NONE);
     status_led_set_processing(false, "recovery_complete");
     status_led_set_ble_state(STATUS_LED_BLE_PAIRING, false);
-    voice_recording_control_log_device_status("ready", "recovery_complete_pair_again");
+    if (pairing_window_open) {
+        voice_recording_control_log_device_status("pairing", "recovery_pairing_window_open");
+    } else {
+        voice_recording_control_log_device_status("ready", "recovery_complete_no_pairing_window");
+    }
 }
 
 static void voice_recording_control_host_processing_start(const char *source)

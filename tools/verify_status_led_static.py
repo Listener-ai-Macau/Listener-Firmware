@@ -676,7 +676,10 @@ CHECKS = {
         "pairing encryption failure",
         "keeping pairing advertising available for Windows retry",
         "security initiate requested conn=%u",
-        "BLE identity kept stable and device is discoverable for re-pair",
+        "BLE identity ready and device is discoverable for re-pair",
+        "BLE_HID_GAP_RANDOM_IDENTITY_KEY",
+        "ble_hid_gap_rotate_native_recovery_identity",
+        "ble_hid_gap_restore_random_identity_from_nvs",
         "s_swift_pair_mfg_data",
         "s_recovery_type_controlled_pairing",
         "BLE_HID_SWIFT_PAIR_DISPLAY_NAME_MAX_WITH_HID_UUID",
@@ -783,7 +786,8 @@ CHECKS = {
         "status_led_notify_ble_repairing()",
         "three-cycle blue double-flash confirmation",
         "must not keep repeating the confirmation pattern forever",
-        "keeps the stable BLE identity",
+        "Only explicit Type-controlled recovery keeps the current stable BLE identity",
+        "ordinary EC11/USB recovery rotates and persists a new static-random BLE identity",
         "The host must create a new bond through the recovery window instead of silently treating the double-click as an ordinary reconnect to the old bond",
         "ble_repair_ms_left",
         "A successful Type-ready transition is the steady blue connected indication",
@@ -1147,11 +1151,15 @@ def main() -> int:
                 f"status_led.c: {function_name} must cancel stale scoped transition clear before active work renders key feedback"
             )
     if (
-        "s_recovery_identity_rotate_pending" in ble_gap
-        or "ble_hid_gap_rotate_static_random_identity" in ble_gap
-        or "ble_hs_id_gen_rnd(0, &addr)" in ble_gap
+        "BLE_HID_GAP_RANDOM_IDENTITY_KEY" not in ble_gap
+        or "ble_hid_gap_rotate_native_recovery_identity" not in ble_gap
+        or "ble_hid_gap_restore_random_identity_from_nvs" not in ble_gap
+        or "ble_hs_id_gen_rnd(0, &addr)" not in ble_gap
+        or "ble_hs_id_set_rnd(addr)" not in ble_gap
+        or "nvs_set_blob(nvs, BLE_HID_GAP_RANDOM_IDENTITY_KEY, addr, 6)" not in ble_gap
+        or "s_own_addr_type = BLE_OWN_ADDR_RANDOM;" not in ble_gap
     ):
-        failures.append("ble_hid_gap_esp32.c: re-pair recovery must keep a stable BLE identity, not rotate it")
+        failures.append("ble_hid_gap_esp32.c: non-Type Windows-native recovery must rotate and persist a new static-random BLE identity so stale Windows bonds cannot loop")
     if "s_scan_rsp_fields.name_len = device_name_len > BLE_HID_SCAN_RSP_NAME_MAX_LEN" in ble_gap:
         failures.append("ble_hid_gap_esp32.c: BLE rename advertising must not silently truncate custom names")
     try:
@@ -1216,6 +1224,18 @@ def main() -> int:
             )
         if "ble_store_clear()" in recovery_body or "ble_store_clear_failed" in recovery_body:
             failures.append("ble_hid_gap_esp32.c: recovery must not synchronously clear the whole NimBLE NVS store in the double-click hot path")
+        if "type_controlled_request || ble_audio_stream_is_type_link_ready()" in recovery_body:
+            failures.append(
+                "ble_hid_gap_esp32.c: ordinary EC11/USB recovery must not become Type-controlled merely because Type was connected before the reset; only explicit RECOVERY:TYPE may keep a stable identity"
+            )
+        if not re.search(
+            r"const\s+bool\s+type_link_ready_before_recovery\s*=\s*ble_audio_stream_is_type_link_ready\(\);\s*"
+            r"const\s+bool\s+type_controlled_recovery\s*=\s*type_controlled_request\s*;",
+            recovery_body,
+        ):
+            failures.append(
+                "ble_hid_gap_esp32.c: recovery must log the previous Type link state separately while deriving type_controlled_recovery only from the explicit request"
+            )
         refresh_index = recovery_body.find("pairing window already active; refreshing advertising with stable BLE identity")
         refresh_reopen_index = recovery_body.find("ble_hid_gap_open_recovery_pairing_window(", refresh_index)
         refresh_adv_index = recovery_body.find(
@@ -1231,9 +1251,13 @@ def main() -> int:
             failures.append(
                 "ble_hid_gap_esp32.c: active recovery window must renew the full pairing window before refreshing stable-identity advertising"
             )
-        if "stable identity will advertise after async local bond delete following disconnect" not in recovery_body:
+        if (
+            "stable Type-controlled" not in recovery_body
+            or "rotated native Windows" not in recovery_body
+            or "ble_hid_gap_rotate_native_recovery_identity(\"recovery_pairing_reset\")" not in recovery_body
+        ):
             failures.append(
-                "ble_hid_gap_esp32.c: connected recovery must terminate first, delete the local bond asynchronously, then advertise the stable BLE identity"
+                "ble_hid_gap_esp32.c: connected recovery must terminate first, delete the local bond asynchronously, keep Type identity stable, and rotate native Windows identity before advertising"
             )
     if "NimBLE advertising deferred: recovery async local bond delete pending" not in ble_gap:
         failures.append(
@@ -1251,7 +1275,7 @@ def main() -> int:
     disconnect_defer_index = disconnect_body.find(
         "advertising deferred after disconnect until async local bond delete completes"
     )
-    disconnect_stable_index = disconnect_body.find("pairing reset continues after disconnect, BLE identity kept stable")
+    disconnect_stable_index = disconnect_body.find("pairing reset continues after disconnect, BLE identity ready")
     disconnect_adv_index = disconnect_body.find("ble_hid_gap_start_advertising();")
     disconnect_bond_index = disconnect_body.find("bonded_peer_count > 0")
     disconnect_keep_index = disconnect_body.find("keeping pairing window visible until secure reconnect")
@@ -1268,7 +1292,7 @@ def main() -> int:
         or not (disconnect_defer_index < disconnect_adv_index < disconnect_stable_index)
     ):
         failures.append(
-            "ble_hid_gap_esp32.c: disconnect recovery must defer advertising for async local bond delete, then restart advertising with the stable BLE identity"
+            "ble_hid_gap_esp32.c: disconnect recovery must defer advertising for async local bond delete, then restart advertising with the ready Type/native BLE identity"
         )
     if (
         disconnect_bond_index < 0
@@ -1325,7 +1349,7 @@ def main() -> int:
         or not (enc_change_index < enc_failure_index < enc_wait_index)
     ):
         failures.append(
-            "ble_hid_gap_esp32.c: recovery encryption failures must keep stable BLE identity while Windows retries or disconnects"
+            "ble_hid_gap_esp32.c: recovery encryption failures must keep the pairing window available while Windows retries or disconnects"
         )
     if enc_pending_delete_terminate_index < 0:
         failures.append(
@@ -1621,6 +1645,21 @@ def main() -> int:
     ):
         failures.append(
             "status_led.c: recording start must atomically clear stale OK and retryable REC warning windows"
+        )
+    recording_set_body = re.search(
+        r"void\s+status_led_set_recording\([^)]*\)[\s\S]*?"
+        r"\n\}\n\nvoid\s+status_led_set_recording_level",
+        status_led,
+    )
+    if (
+        recording_set_body is None
+        or "const bool recording_state_changed" not in recording_set_body.group(0)
+        or "if (recording_state_changed || !next_recording_active)" not in recording_set_body.group(0)
+        or "if (recording_state_changed) {\n            s_state.last_transition_ms = now_ms;" not in recording_set_body.group(0)
+        or "status_led_clear_ec11_feedback_locked();" not in recording_set_body.group(0)
+    ):
+        failures.append(
+            "status_led.c: recording active->active updates must not reset REC level/transition timing, and active recording must clear EC11 white feedback"
         )
     if not re.search(
         r"void\s+status_led_set_processing\([^)]*\)[\s\S]*?"

@@ -3005,6 +3005,12 @@ static bool status_led_ec11_feedback_active_locked(uint32_t now_ms)
     return s_state.ec11_feedback_started_ms != 0U && now_ms < s_state.ec11_feedback_until_ms;
 }
 
+static bool status_led_ec11_feedback_is_rotation_locked(void)
+{
+    return s_state.ec11_feedback == STATUS_LED_EC11_FEEDBACK_ROTATE_CW ||
+           s_state.ec11_feedback == STATUS_LED_EC11_FEEDBACK_ROTATE_CCW;
+}
+
 static uint32_t status_led_ec11_feedback_motion_step_locked(uint32_t now_ms)
 {
     /* Continuous time-driven orbit: the dot marches around the ring on a wall-
@@ -3160,6 +3166,15 @@ static bool status_led_render_ec11_feedback_locked(status_led_frame_t *frame, ui
     return true;
 }
 
+static bool status_led_render_ec11_rotation_feedback_locked(status_led_frame_t *frame, uint32_t now_ms)
+{
+    if (!status_led_ec11_feedback_active_locked(now_ms) ||
+        !status_led_ec11_feedback_is_rotation_locked()) {
+        return false;
+    }
+    return status_led_render_ec11_feedback_locked(frame, now_ms);
+}
+
 static void status_led_render_ec11_locked(status_led_frame_t *frame, uint32_t now_ms)
 {
     if (status_led_error_active_locked(now_ms)) {
@@ -3187,11 +3202,6 @@ static void status_led_render_ec11_locked(status_led_frame_t *frame, uint32_t no
         return;
     }
 
-    if (status_led_ec11_feedback_active_locked(now_ms) &&
-        status_led_render_ec11_feedback_locked(frame, now_ms)) {
-        return;
-    }
-
     if ((status_led_ble_repair_active_locked(now_ms) ||
          status_led_ble_repair_cue_active_locked(now_ms)) &&
         status_led_ble_repair_cue_active_locked(now_ms)) {
@@ -3201,7 +3211,6 @@ static void status_led_render_ec11_locked(status_led_frame_t *frame, uint32_t no
 
     if (s_state.processing_active && rec_percent > 0U) {
         status_led_render_ec11_recording_flow_locked(frame, now_ms);
-        status_led_render_ec11_feedback_locked(frame, now_ms);
         return;
     }
 
@@ -3233,13 +3242,16 @@ static void status_led_render_ec11_locked(status_led_frame_t *frame, uint32_t no
         status_led_set_max(&frame->ec11[(dot + 1U) % STATUS_LED_EC11_COUNT], tail);
         status_led_set_max(&frame->ec11[(dot + STATUS_LED_EC11_COUNT - 1U) % STATUS_LED_EC11_COUNT], tail);
         status_led_set_max(&frame->ec11[(dot + STATUS_LED_EC11_COUNT - 2U) % STATUS_LED_EC11_COUNT], fade);
-        status_led_render_ec11_feedback_locked(frame, now_ms);
+        status_led_render_ec11_rotation_feedback_locked(frame, now_ms);
         return;
     }
 
     if (rec_percent > 0U) {
         status_led_render_ec11_recording_flow_locked(frame, now_ms);
-        status_led_render_ec11_feedback_locked(frame, now_ms);
+        return;
+    }
+
+    if (status_led_render_ec11_rotation_feedback_locked(frame, now_ms)) {
         return;
     }
 
@@ -3616,6 +3628,16 @@ static void status_led_clear_ec11_feedback_locked(void)
     s_state.ec11_feedback_motion_step = 0U;
     s_state.ec11_feedback_last_diag_ms = 0U;
     s_state.ec11_feedback = STATUS_LED_EC11_FEEDBACK_PRESS;
+}
+
+static bool status_led_clear_ec11_press_feedback_locked(void)
+{
+    if (s_state.ec11_feedback == STATUS_LED_EC11_FEEDBACK_PRESS &&
+        s_state.ec11_feedback_started_ms != 0U) {
+        status_led_clear_ec11_feedback_locked();
+        return true;
+    }
+    return false;
 }
 
 static void status_led_resume_interactive_output_locked(void)
@@ -4462,36 +4484,52 @@ void status_led_set_recording(bool active, status_led_rec_source_t source)
     if (xSemaphoreTake(s_mutex, portMAX_DELAY) == pdTRUE) {
         status_led_resume_output_locked();
         s_state.preview_effect_only = false;
+        const bool was_recording_active = s_state.recording_active;
+        const status_led_rec_source_t previous_source = s_state.rec_source;
         const bool next_recording_active = active && source != STATUS_LED_REC_SOURCE_NOT_AVAILABLE;
-        if (s_state.recording_active && !next_recording_active) {
+        const bool recording_state_changed =
+            was_recording_active != next_recording_active ||
+            previous_source != source ||
+            (active && source == STATUS_LED_REC_SOURCE_NOT_AVAILABLE);
+        if (was_recording_active && !next_recording_active) {
             status_led_schedule_idle_transition_clear_locked(now_ms);
         }
         s_state.recording_active = next_recording_active;
         s_state.rec_source = source;
-        s_state.recording_level_percent = 0U;
-        s_state.recording_level_updated_ms = active ? now_ms : 0U;
-        s_state.recording_level_hold_until_ms = 0U;
-        status_led_reset_recording_level_visual_locked(now_ms);
+        if (recording_state_changed || !next_recording_active) {
+            s_state.recording_level_percent = 0U;
+            s_state.recording_level_updated_ms = active ? now_ms : 0U;
+            s_state.recording_level_hold_until_ms = 0U;
+            status_led_reset_recording_level_visual_locked(now_ms);
+        }
         if (s_state.recording_active) {
             s_state.transition_clear_mask = 0U;
             s_state.ble_repair_until_ms = 0U;
             s_state.ble_repair_cue_started_ms = 0U;
             s_state.ble_repair_cue_until_ms = 0U;
+            if (status_led_ec11_feedback_active_locked(now_ms)) {
+                status_led_clear_ec11_feedback_locked();
+                changed = true;
+            }
             status_led_clear_ok_locked();
             status_led_clear_retryable_error_locked(STATUS_LED_ERROR_DOMAIN_REC);
         }
-        s_state.last_transition_ms = now_ms;
-        s_state.status_window_until_ms = now_ms + STATUS_LED_STATUS_WINDOW_MS;
-        status_led_set_last_reason_locked(active ? "recording_start" : "recording_stop");
+        if (recording_state_changed) {
+            s_state.last_transition_ms = now_ms;
+            s_state.status_window_until_ms = now_ms + STATUS_LED_STATUS_WINDOW_MS;
+            status_led_set_last_reason_locked(active ? "recording_start" : "recording_stop");
+        }
         if (active && source == STATUS_LED_REC_SOURCE_NOT_AVAILABLE) {
             s_state.error_domain = STATUS_LED_ERROR_DOMAIN_REC;
             s_state.error_severity = STATUS_LED_ERROR_RETRYABLE;
             s_state.error_started_ms = now_ms;
             s_state.error_until_ms = now_ms + STATUS_LED_ERROR_HOLD_MS;
         }
-        diag_log(DIAG_SRC_STATUS_LED, DIAG_LED_STATE, DIAG_SEV_INFO,
-                 2, active ? 1U : 0U, (uint32_t)source, 0);
-        changed = true;
+        if (recording_state_changed) {
+            diag_log(DIAG_SRC_STATUS_LED, DIAG_LED_STATE, DIAG_SEV_INFO,
+                     2, active ? 1U : 0U, (uint32_t)source, 0);
+            changed = true;
+        }
         xSemaphoreGive(s_mutex);
     }
     if (changed) {
@@ -4562,6 +4600,7 @@ void status_led_set_processing(bool active, const char *reason)
             s_state.ble_repair_cue_started_ms = 0U;
             s_state.ble_repair_cue_until_ms = 0U;
             s_state.processing_started_ms = now_ms;
+            (void)status_led_clear_ec11_press_feedback_locked();
             status_led_clear_ok_locked();
             status_led_clear_retryable_error_locked(STATUS_LED_ERROR_DOMAIN_AI);
             status_led_clear_retryable_error_locked(STATUS_LED_ERROR_DOMAIN_OTA);

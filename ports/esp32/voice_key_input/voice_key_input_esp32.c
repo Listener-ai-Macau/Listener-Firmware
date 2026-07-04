@@ -82,7 +82,7 @@
 #define VOICE_KEY_INPUT_HOLD_FEEDBACK_REFRESH_MS (300)
 #define VOICE_KEY_INPUT_GENERATED_PRESS_MS (80)
 #define VOICE_KEY_INPUT_GENERATED_RELEASE_SETTLE_MS (80)
-#define VOICE_KEY_INPUT_GENERATED_INTER_CLICK_RELEASE_MS (100)
+#define VOICE_KEY_INPUT_GENERATED_INTER_CLICK_RELEASE_MS (140)
 #define VOICE_KEY_INPUT_DEBUG_RAW 1u
 #define VOICE_KEY_INPUT_DEBUG_STABLE 2u
 #define VOICE_KEY_INPUT_DEBUG_SOURCE_DIRECT_GPIO 1u
@@ -356,10 +356,11 @@ static esp_err_t voice_key_input_enqueue_generated_clicks(uint8_t click_count)
     power_manager_record_activity("generated_ec11_key");
     ESP_LOGI(
         TAG,
-        "EC11 push generated click queued: source=%s clicks=%u press_ms=%d double_min_gap_ms=%d double_ms=%d recovery_double_ms=%d",
+        "EC11 push generated click queued: source=%s clicks=%u press_ms=%d inter_release_ms=%d double_min_gap_ms=%d double_ms=%d recovery_double_ms=%d",
         VOICE_KEY_INPUT_DIRECT_LABEL,
         (unsigned)click_count,
         VOICE_KEY_INPUT_GENERATED_PRESS_MS,
+        VOICE_KEY_INPUT_GENERATED_INTER_CLICK_RELEASE_MS,
         VOICE_KEY_INPUT_DOUBLE_CLICK_MIN_GAP_MS,
         VOICE_KEY_INPUT_DOUBLE_CLICK_WINDOW_MS,
         VOICE_KEY_INPUT_RECOVERY_DOUBLE_CLICK_WINDOW_MS);
@@ -379,7 +380,7 @@ static void voice_key_input_record_recovery_event(const char *source)
     }
 
     if (xSemaphoreGive(s_recovery_event_sem) == pdTRUE) {
-        ESP_LOGW(TAG, "%s double-click recovery detected", source);
+        ESP_LOGW(TAG, "%s double-click recovery detected: opening BLE re-pair window", source);
         status_led_notify_ble_repairing("ec11_double_click_recovery");
         diag_log(
             DIAG_SRC_VOICE_KEY,
@@ -397,13 +398,7 @@ static void voice_key_input_record_recovery_event(const char *source)
 
 esp_err_t voice_key_input_enqueue_generated_double_click(void)
 {
-    if (s_recovery_event_sem == NULL) {
-        return ESP_ERR_INVALID_STATE;
-    }
-
-    voice_key_input_record_recovery_event("ec11_key.generated");
-    power_manager_record_activity("generated_ec11_recovery");
-    return ESP_OK;
+    return voice_key_input_enqueue_generated_clicks(2);
 }
 
 static void voice_key_input_drain_generated_events(TickType_t now)
