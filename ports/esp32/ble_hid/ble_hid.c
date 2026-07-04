@@ -119,6 +119,7 @@ static char s_usb_command_buffer[BLE_HID_USB_COMMAND_BUFFER_BYTES];
 static ble_hid_usb_command_handler_t s_usb_command_handler;
 
 static bool s_ble_connected;
+static bool s_hid_control_suspended;
 static uint32_t s_disconnect_count;
 static portMUX_TYPE s_disconnect_count_lock = portMUX_INITIALIZER_UNLOCKED;
 static uint32_t s_connect_timestamp_ms;
@@ -558,6 +559,7 @@ static bool ble_hid_usage_transport_ready(void)
 {
     return !s_usage_transport_test_blocked &&
            s_ble_connected &&
+           !s_hid_control_suspended &&
            s_ble_hid_ctx.hid_device != NULL &&
            esp_hidd_dev_connected(s_ble_hid_ctx.hid_device);
 }
@@ -1223,14 +1225,6 @@ static void ble_hid_task_start(void)
     }
 }
 
-static void ble_hid_task_stop(void)
-{
-    if (s_ble_hid_ctx.task_handle != NULL) {
-        vTaskDelete(s_ble_hid_ctx.task_handle);
-        s_ble_hid_ctx.task_handle = NULL;
-    }
-}
-
 void ble_hid_task_start_up(void)
 {
     ble_hid_task_start();
@@ -1260,6 +1254,7 @@ static void ble_hid_event_callback(void *handler_args, esp_event_base_t base, in
     case ESP_HIDD_CONNECT_EVENT:
         ESP_LOGI(TAG, "CONNECT");
         s_ble_connected = true;
+        s_hid_control_suspended = false;
         ble_hid_battery_task_wake();
         power_manager_set_ble_connected(true);
         s_connect_timestamp_ms = (uint32_t)(esp_timer_get_time() / 1000LL);
@@ -1282,10 +1277,12 @@ static void ble_hid_event_callback(void *handler_args, esp_event_base_t base, in
             "CONTROL[%u]: %sSUSPEND",
             param->control.map_index,
             param->control.control ? "EXIT_" : "");
+        s_hid_control_suspended = !param->control.control;
         if (param->control.control) {
             ble_hid_task_start();
+            ble_hid_drain_usage_queue();
         } else {
-            ble_hid_task_stop();
+            ESP_LOGI(TAG, "HID suspended; keeping USB serial command task active");
         }
         break;
     case ESP_HIDD_OUTPUT_EVENT:
@@ -1311,6 +1308,7 @@ static void ble_hid_event_callback(void *handler_args, esp_event_base_t base, in
     case ESP_HIDD_DISCONNECT_EVENT:
         {
             s_ble_connected = false;
+            s_hid_control_suspended = false;
             ble_hid_battery_task_wake();
             uint32_t disconnect_count = ble_hid_increment_disconnect_count();
             uint32_t conn_duration = (uint32_t)(esp_timer_get_time() / 1000LL) - s_connect_timestamp_ms;

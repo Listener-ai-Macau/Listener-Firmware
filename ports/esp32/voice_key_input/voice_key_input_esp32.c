@@ -75,7 +75,7 @@
 #define VOICE_KEY_INPUT_EVENT_QUEUE_LENGTH (8)
 #define VOICE_KEY_INPUT_GENERATED_EVENT_QUEUE_LENGTH (8)
 #define VOICE_KEY_INPUT_CLICK_MAX_MS (700)
-#define VOICE_KEY_INPUT_DOUBLE_CLICK_MIN_GAP_MS (30)
+#define VOICE_KEY_INPUT_DOUBLE_CLICK_MIN_GAP_MS (80)
 #define VOICE_KEY_INPUT_DOUBLE_CLICK_WINDOW_MS (200)
 #define VOICE_KEY_INPUT_RECOVERY_DOUBLE_CLICK_WINDOW_MS (200)
 #define VOICE_KEY_INPUT_LONG_PRESS_IGNORE_MS (800)
@@ -371,11 +371,6 @@ esp_err_t voice_key_input_enqueue_generated_single_click(void)
     return voice_key_input_enqueue_generated_clicks(1);
 }
 
-esp_err_t voice_key_input_enqueue_generated_double_click(void)
-{
-    return voice_key_input_enqueue_generated_clicks(2);
-}
-
 static void voice_key_input_record_recovery_event(const char *source)
 {
     if (s_recovery_event_sem == NULL) {
@@ -398,6 +393,17 @@ static void voice_key_input_record_recovery_event(const char *source)
         ESP_LOGW(TAG, "%s double-click recovery dropped: event queue full", source);
         diag_log(DIAG_SRC_VOICE_KEY, DIAG_VKEY_QUEUE_DROP, DIAG_SEV_WARN, 2, 2, 0, 0);
     }
+}
+
+esp_err_t voice_key_input_enqueue_generated_double_click(void)
+{
+    if (s_recovery_event_sem == NULL) {
+        return ESP_ERR_INVALID_STATE;
+    }
+
+    voice_key_input_record_recovery_event("ec11_key.generated");
+    power_manager_record_activity("generated_ec11_recovery");
+    return ESP_OK;
 }
 
 static void voice_key_input_drain_generated_events(TickType_t now)

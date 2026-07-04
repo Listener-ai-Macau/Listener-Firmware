@@ -192,6 +192,11 @@ CHECKS = {
         "NimBLE advertising suppressed: key-wake-only idle",
         "BLE_GAP_ADV_ITVL_MS(adv_min_ms)",
         "DIAG_GAP_RECOVERY",
+        "s_recovery_power_blocker_active",
+        "ble_hid_gap_set_recovery_power_blocker",
+        "recovery: pairing power blocker",
+        "s_recovery_pairing_window_timer",
+        "esp_timer_start_once",
     ],
     "ports/esp32/ble_hid/ble_hid.c": [
         "power_manager_consume_usb_command",
@@ -214,7 +219,7 @@ CHECKS = {
     "ports/esp32/voice_key_input/voice_key_input_esp32.c": [
         "VOICE_KEY_INPUT_IDLE_BACKUP_POLL_MS (20)",
         "VOICE_KEY_INPUT_LOW_POWER_IDLE_BACKUP_POLL_MS (20)",
-        "VOICE_KEY_INPUT_DOUBLE_CLICK_MIN_GAP_MS (30)",
+        "VOICE_KEY_INPUT_DOUBLE_CLICK_MIN_GAP_MS (80)",
         "VOICE_KEY_INPUT_DOUBLE_CLICK_WINDOW_MS (200)",
         "VOICE_KEY_INPUT_RECOVERY_DOUBLE_CLICK_WINDOW_MS (200)",
         "VOICE_KEY_INPUT_LONG_PRESS_IGNORE_MS (800)",
@@ -269,6 +274,7 @@ CHECKS = {
         "POWER_MANAGER_BLOCKER_RECORDING",
         "POWER_MANAGER_BLOCKER_BLE_AUDIO",
         "POWER_MANAGER_BLOCKER_PAIRING",
+        "recovery keeps pairing/reconnect power blockers while BLE recovery pairing window is open",
     ],
     "components/diag_log/include/diag_log_events.h": [
         "DIAG_SRC_POWER",
@@ -303,7 +309,7 @@ CHECKS = {
         "CONFIG_PM_ENABLE=y",
         "CONFIG_PM_SLEEP_FUNC_IN_IRAM=y",
         "CONFIG_FREERTOS_USE_TICKLESS_IDLE=y",
-        "CONFIG_BT_CTRL_MODEM_SLEEP=y",
+        "# CONFIG_BT_CTRL_MODEM_SLEEP is not set",
         "CONFIG_BT_CTRL_MAIN_XTAL_PU_DURING_LIGHT_SLEEP=y",
         "CONFIG_USJ_NO_AUTO_LS_ON_CONNECTION=y",
         "CONFIG_ESPTOOLPY_FLASHSIZE_16MB=y",
@@ -1089,6 +1095,47 @@ def main() -> int:
             "ports/esp32/ble_hid_gap/ble_hid_gap_esp32.c: recovery identity rotation state must stay removed; recovery should keep a stable BLE identity"
         )
     if not re.search(
+        r"static\s+void\s+ble_hid_gap_open_recovery_pairing_window[\s\S]*"
+        r"s_recovery_pairing_window_active\s*=\s*true[\s\S]*"
+        r"ble_hid_gap_set_recovery_power_blocker\(true,\s*\"pairing_window_open\"\)[\s\S]*"
+        r"ble_hid_gap_arm_recovery_pairing_window_timer\(\)",
+        ble_gap,
+    ):
+        failures.append(
+            "ports/esp32/ble_hid_gap/ble_hid_gap_esp32.c: recovery pairing window must hold pairing/reconnect blockers and arm expiry before returning to idle logic"
+        )
+    if not re.search(
+        r"static\s+void\s+ble_hid_gap_close_recovery_pairing_window[\s\S]*"
+        r"s_recovery_pairing_window_active\s*=\s*false[\s\S]*"
+        r"esp_timer_stop\(s_recovery_pairing_window_timer\)[\s\S]*"
+        r"ble_hid_gap_set_recovery_power_blocker\(false,\s*reason\)",
+        ble_gap,
+    ):
+        failures.append(
+            "ports/esp32/ble_hid_gap/ble_hid_gap_esp32.c: recovery pairing window close must release pairing/reconnect blockers and stop the expiry timer"
+        )
+    if not re.search(
+        r"static\s+void\s+ble_hid_gap_recovery_pairing_window_timer_cb[\s\S]*"
+        r"ble_hid_gap_close_recovery_pairing_window\(\"pairing_window_expired\"\)",
+        ble_gap,
+    ):
+        failures.append(
+            "ports/esp32/ble_hid_gap/ble_hid_gap_esp32.c: recovery pairing window must have a timer-backed expiry path so pairing blockers cannot stick forever"
+        )
+    voice_recovery = (REPO_ROOT / "components/voice_recording_control/voice_recording_control.c").read_text(encoding="utf-8")
+    if not re.search(
+        r"static\s+void\s+voice_recording_control_recovery[\s\S]*"
+        r"ble_hid_gap_is_recovery_pairing_window_open\(\)[\s\S]*"
+        r"recovery keeps pairing/reconnect power blockers while BLE recovery pairing window is open[\s\S]*"
+        r"else\s*\{[\s\S]*"
+        r"POWER_MANAGER_BLOCKER_PAIRING\s*\|\s*POWER_MANAGER_BLOCKER_RECONNECT[\s\S]*"
+        r"false",
+        voice_recovery,
+    ):
+        failures.append(
+            "components/voice_recording_control/voice_recording_control.c: recovery completion must not clear pairing/reconnect blockers while the BLE recovery window remains open"
+        )
+    if not re.search(
         r"static\s+void\s+ble_hid_gap_keep_recovery_adv_connectable[\s\S]{0,760}"
         r"s_low_power_advertising\s*=\s*false[\s\S]{0,180}"
         r"s_key_wake_only_advertising\s*=\s*false[\s\S]{0,180}"
@@ -1142,7 +1189,7 @@ def main() -> int:
         ),
         (
             "disconnect callback",
-            r"BLE_GAP_EVENT_DISCONNECT[\s\S]*s_shutdown_quiesce[\s\S]*suppressing advertising restart after disconnect[\s\S]*return\s+0",
+            r"ble_hid_gap_handle_disconnect[\s\S]*s_shutdown_quiesce[\s\S]*suppressing advertising restart after disconnect[\s\S]*return",
         ),
         (
             "advertise-complete callback",
@@ -1931,11 +1978,11 @@ def main() -> int:
             "ports/esp32/voice_key_input/voice_key_input_esp32.c: EC11 push must keep 20 ms active/low-power backup scan around the runtime GPIO wake interrupt"
         )
     if not re.search(
-        r"#define\s+VOICE_KEY_INPUT_DOUBLE_CLICK_MIN_GAP_MS\s+\(30\)",
+        r"#define\s+VOICE_KEY_INPUT_DOUBLE_CLICK_MIN_GAP_MS\s+\(80\)",
         voice_key,
     ):
         failures.append(
-            "ports/esp32/voice_key_input/voice_key_input_esp32.c: EC11 recovery double-click must reject too-fast second clicks as contact bounce"
+            "ports/esp32/voice_key_input/voice_key_input_esp32.c: EC11 recovery double-click must keep the 80 ms minimum gap so contact bounce cannot trigger recovery"
         )
     if not re.search(
         r"#define\s+VOICE_KEY_INPUT_DOUBLE_CLICK_WINDOW_MS\s+\(200\)",
@@ -1956,12 +2003,21 @@ def main() -> int:
         or "second_click_too_soon" not in voice_key
         or "stable_release" not in voice_key
         or "recovery_candidate_from_raw" not in voice_key
-        or "Raw-only EC11 short clicks participate in the same 200 ms double-click candidate window as stable clicks" not in (
+        or "Raw-only EC11 short clicks are accepted only as single-click candidates after stable idle" not in (
             REPO_ROOT / "docs/features/status_led.md"
         ).read_text(encoding="utf-8")
     ):
         failures.append(
-            "ports/esp32/voice_key_input/voice_key_input_esp32.c: EC11 recovery double-click must allow raw-only clicks to participate while keeping the minimum-gap/window bounce filter"
+            "ports/esp32/voice_key_input/voice_key_input_esp32.c: EC11 recovery double-click must require the stable/debounced path and keep raw-only edges from triggering recovery"
+        )
+    raw_note_match = re.search(
+        r"static void voice_key_input_note_raw_press_edge[\s\S]*?\n\}",
+        voice_key,
+    )
+    raw_note_body = raw_note_match.group(0) if raw_note_match else ""
+    if "voice_key_input_record_recovery_event(" in raw_note_body:
+        failures.append(
+            "ports/esp32/voice_key_input/voice_key_input_esp32.c: raw EC11 press edges must not directly dispatch BLE recovery"
         )
     if (
         "recovery_idle_guard" in voice_key
@@ -2005,7 +2061,7 @@ def main() -> int:
     for token in required_voice_irq_tokens:
         if token not in voice_key:
             failures.append(
-                f"ports/esp32/voice_key_input/voice_key_input_esp32.c: EC11 push runtime IRQ must keep a lightweight edge latch and let task-context sampling own raw double-click recovery ({token})"
+                f"ports/esp32/voice_key_input/voice_key_input_esp32.c: EC11 push runtime IRQ must keep a lightweight edge latch while debounced task-context sampling owns click/recovery decisions ({token})"
             )
     forbidden_voice_irq_tokens = [
         "GPIO_INTR_LOW_LEVEL)",

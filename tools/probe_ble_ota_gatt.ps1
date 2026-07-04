@@ -16,6 +16,98 @@ param(
 
 $ErrorActionPreference = "Stop"
 
+function Resolve-ListenerTypeCargoManifest {
+    $candidates = @(
+        (Join-Path $PSScriptRoot "..\..\Listener-Type\src-tauri\Cargo.toml"),
+        (Join-Path $PSScriptRoot "..\..\..\Listener\Listener-Type\src-tauri\Cargo.toml")
+    )
+    foreach ($candidate in $candidates) {
+        try {
+            return (Resolve-Path -LiteralPath $candidate -ErrorAction Stop).Path
+        } catch {
+        }
+    }
+    return $null
+}
+
+function Invoke-ListenerTypeRustOtaProbe {
+    param(
+        [Parameter(Mandatory = $true)][string]$ManifestPath,
+        [Parameter(Mandatory = $true)][int]$TimeoutSeconds
+    )
+
+    $timeoutMs = [Math]::Max(1000, [Math]::Min(30000, $TimeoutSeconds * 1000))
+    $repoRoot = Split-Path -Parent $ManifestPath
+    $output = & cargo run --quiet --manifest-path $ManifestPath -- --probe-listener-ota-v2-gatt $timeoutMs 2>&1
+    $exitCode = $LASTEXITCODE
+    $outputLines = @($output | ForEach-Object { $_.ToString() })
+    $prefix = "listener_ota_v2_gatt_probe_json="
+    $jsonLine = $outputLines | Where-Object { $_.StartsWith($prefix) } | Select-Object -Last 1
+    if ([string]::IsNullOrWhiteSpace($jsonLine)) {
+        return [pscustomobject][ordered]@{
+            status = "FAIL"
+            device_name = $DeviceName
+            bluetooth_address = $BluetoothAddress
+            selected_service_source = "listener-type-rust-winrt"
+            type_repo_root = $repoRoot
+            type_exit_code = $exitCode
+            error = "Listener Type OTA v2 probe did not emit $prefix."
+            type_output = $outputLines
+        }
+    }
+
+    $payloadJson = $jsonLine.Substring($prefix.Length)
+    $payload = $null
+    try {
+        $payload = $payloadJson | ConvertFrom-Json
+    } catch {
+        return [pscustomobject][ordered]@{
+            status = "FAIL"
+            device_name = $DeviceName
+            bluetooth_address = $BluetoothAddress
+            selected_service_source = "listener-type-rust-winrt"
+            type_repo_root = $repoRoot
+            type_exit_code = $exitCode
+            error = "Listener Type OTA v2 probe emitted invalid JSON: $($_.Exception.Message)"
+            type_output = $outputLines
+        }
+    }
+
+    $status = if ($exitCode -eq 0 -and $payload.status -eq "PASS") { "PASS" } else { "FAIL" }
+    $connectionStatus = if ($payload.snapshot.connected) { "Connected" } else { "Disconnected" }
+    $result = [ordered]@{
+        status = $status
+        device_name = $DeviceName
+        bluetooth_address = $BluetoothAddress
+        selected_service_source = "listener-type-rust-winrt"
+        device_connection_status = $connectionStatus
+        type_repo_root = $repoRoot
+        type_exit_code = $exitCode
+        type_probe = $payload
+    }
+    if ($status -ne "PASS") {
+        $result.type_output = $outputLines
+    }
+    return [pscustomobject]$result
+}
+
+$listenerTypeManifest = Resolve-ListenerTypeCargoManifest
+if ($null -eq $listenerTypeManifest) {
+    [pscustomobject][ordered]@{
+        status = "FAIL"
+        device_name = $DeviceName
+        bluetooth_address = $BluetoothAddress
+        selected_service_source = "listener-type-rust-winrt"
+        error = "Listener Type Cargo.toml was not found next to Listener-Firmware."
+    } | ConvertTo-Json -Depth 8
+    exit 1
+}
+
+$rustProbe = Invoke-ListenerTypeRustOtaProbe -ManifestPath $listenerTypeManifest -TimeoutSeconds $TimeoutSeconds
+$rustProbe | ConvertTo-Json -Depth 10
+if ($rustProbe.status -eq "PASS") { exit 0 }
+exit 1
+
 Add-Type -AssemblyName System.Runtime.WindowsRuntime
 $null = [Windows.Devices.Bluetooth.BluetoothLEDevice, Windows.Devices.Bluetooth, ContentType = WindowsRuntime]
 $null = [Windows.Devices.Bluetooth.BluetoothCacheMode, Windows.Devices.Bluetooth, ContentType = WindowsRuntime]

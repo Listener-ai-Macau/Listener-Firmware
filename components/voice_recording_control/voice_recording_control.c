@@ -1494,9 +1494,15 @@ static void voice_recording_control_recovery(const char *source, bool type_contr
 
     s_state = VOICE_RECORDING_STATE_IDLE;
     voice_recording_control_clear_power_blockers();
-    power_manager_set_blocker(
-        POWER_MANAGER_BLOCKER_PAIRING | POWER_MANAGER_BLOCKER_RECONNECT,
-        false);
+    if (ble_hid_gap_is_recovery_pairing_window_open()) {
+        ESP_LOGI(
+            TAG,
+            "recovery keeps pairing/reconnect power blockers while BLE recovery pairing window is open");
+    } else {
+        power_manager_set_blocker(
+            POWER_MANAGER_BLOCKER_PAIRING | POWER_MANAGER_BLOCKER_RECONNECT,
+            false);
+    }
     status_led_set_recording(false, STATUS_LED_REC_SOURCE_NONE);
     status_led_set_processing(false, "recovery_complete");
     status_led_set_ble_state(STATUS_LED_BLE_PAIRING, false);

@@ -46,6 +46,42 @@ function Invoke-CheckedCommand {
     }
 }
 
+function Invoke-IdfSerialActionWithBaudRetry {
+    param(
+        [Parameter(Mandatory = $true)][string]$Action,
+        [Parameter(Mandatory = $true)][string]$BuildDirectory,
+        [Parameter(Mandatory = $true)][string]$SerialPortName,
+        [int[]]$Bauds = @(460800, 230400, 115200)
+    )
+
+    $lastError = $null
+    for ($attempt = 0; $attempt -lt $Bauds.Count; $attempt++) {
+        $baud = $Bauds[$attempt]
+        try {
+            if ($attempt -gt 0) {
+                Repair-Esp32UsbPnpDevices
+                Start-Sleep -Milliseconds 800
+            }
+            Write-Host ("idf.py {0}: attempt {1}/{2} baud={3}" -f $Action, ($attempt + 1), $Bauds.Count, $baud)
+            Invoke-CheckedCommand -File "idf.py" -Arguments @(
+                "-B", $BuildDirectory,
+                "-p", $SerialPortName,
+                "-b", [string]$baud,
+                $Action
+            )
+            return
+        } catch {
+            $lastError = $_.Exception.Message
+            if ($attempt -lt ($Bauds.Count - 1)) {
+                Write-Warning ("idf.py {0} failed at baud={1}: {2}; retrying lower baud" -f $Action, $baud, $lastError)
+                continue
+            }
+        }
+    }
+
+    throw "idf.py $Action failed after baud retries $($Bauds -join ', '): $lastError"
+}
+
 function Get-Esp32UsbPnpDevices {
     if ($env:OS -ne "Windows_NT") {
         return @()
@@ -153,7 +189,8 @@ $buildDirResolved = Get-ShortBuildDir -ProjectRoot $projectRoot
 $resolvedPort = Resolve-FlashPort -RequestedPort $Port
 
 if (-not $NoBuild) {
-    Invoke-CheckedCommand -File "powershell" -Arguments @(
+    Invoke-CheckedCommand -File "pwsh" -Arguments @(
+        "-NoProfile",
         "-ExecutionPolicy",
         "Bypass",
         "-File",
@@ -166,7 +203,7 @@ if (-not $NoBuild) {
 }
 
 if (-not $PreserveOtaData.IsPresent) {
-    Invoke-CheckedCommand -File "idf.py" -Arguments @("-B", $buildDirResolved, "-p", $resolvedPort, "erase-otadata")
+    Invoke-IdfSerialActionWithBaudRetry -Action "erase-otadata" -BuildDirectory $buildDirResolved -SerialPortName $resolvedPort
 }
 
-Invoke-CheckedCommand -File "idf.py" -Arguments @("-B", $buildDirResolved, "-p", $resolvedPort, "flash")
+Invoke-IdfSerialActionWithBaudRetry -Action "flash" -BuildDirectory $buildDirResolved -SerialPortName $resolvedPort

@@ -21,6 +21,7 @@
 #include "device_settings.h"
 #include "diag_log.h"
 #include "listener_device.h"
+#include "power_manager.h"
 #include "status_led.h"
 
 #include "esp_bt.h"
@@ -50,6 +51,9 @@ extern void ble_hid_task_start_up(void);
 
 static int ble_hid_gap_get_bonded_peer_count(int *out_count);
 static esp_err_t ble_hid_gap_forget_bonds_and_repair_inner(bool type_controlled_request);
+static void ble_hid_gap_close_recovery_pairing_window(const char *reason);
+static void ble_hid_gap_note_secure_connection(uint16_t conn_handle, const char *reason);
+static bool ble_hid_gap_recovery_pairing_window_open(void);
 
 static void ble_hid_gap_log_conn_desc(const char *context, uint16_t conn_handle)
 {
@@ -87,6 +91,7 @@ static void ble_hid_gap_log_conn_desc(const char *context, uint16_t conn_handle)
 #define BLE_HID_GAP_LOW_POWER_ITVL_MAX 120U
 #define BLE_HID_GAP_LOW_POWER_LATENCY 9U
 #define BLE_HID_GAP_LOW_POWER_SUPERVISION_TIMEOUT 600U
+#define BLE_HID_GAP_PAIRING_PASSKEY 123456U
 
 static struct ble_hs_adv_fields s_adv_fields;
 static struct ble_hs_adv_fields s_scan_rsp_fields;
@@ -114,13 +119,21 @@ static bool s_recovery_pairing_window_active = false;
 static bool s_recovery_swift_pair_consumed = false;
 static bool s_recovery_type_controlled_pairing = false;
 static bool s_recovery_waiting_for_disconnect = false;
+static bool s_recovery_power_blocker_active = false;
 static bool s_recovery_bond_delete_pending = false;
 static bool s_recovery_bond_delete_in_progress = false;
 static TaskHandle_t s_recovery_bond_delete_task_handle = NULL;
+static esp_timer_handle_t s_recovery_pairing_window_timer = NULL;
 static int64_t s_recovery_pairing_window_opened_at_ms = 0;
 static uint16_t s_recovery_security_request_conn_handle = BLE_HS_CONN_HANDLE_NONE;
+static uint16_t s_recovery_security_failed_conn_handle = BLE_HS_CONN_HANDLE_NONE;
 static int64_t s_first_pairing_window_opened_at_ms = 0;
 static uint32_t s_last_conn_param_mode = 0;
+static struct ble_gap_event_listener s_ble_hid_gap_event_listener;
+static bool s_ble_hid_gap_event_listener_registered = false;
+static uint16_t s_last_disconnect_event_conn_handle = BLE_HS_CONN_HANDLE_NONE;
+static int s_last_disconnect_event_reason = 0;
+static int64_t s_last_disconnect_event_at_ms = 0;
 
 typedef enum {
     BLE_HID_CONN_PARAM_MODE_ACTIVE = 1,
@@ -162,6 +175,51 @@ static void ble_hid_gap_set_secure_connection_state(bool secure_connected)
     portENTER_CRITICAL(&s_ble_gap_state_lock);
     s_ble_gap_secure_connected = secure_connected && s_ble_gap_connected;
     portEXIT_CRITICAL(&s_ble_gap_state_lock);
+}
+
+static ble_hid_gap_connection_snapshot_t ble_hid_gap_reconcile_connection_snapshot(const char *reason)
+{
+    ble_hid_gap_connection_snapshot_t snapshot = ble_hid_gap_connection_snapshot();
+    if (!snapshot.connected) {
+        return snapshot;
+    }
+
+    int rc = BLE_HS_ENOTCONN;
+    if (snapshot.conn_handle != BLE_HS_CONN_HANDLE_NONE) {
+        struct ble_gap_conn_desc desc;
+        rc = ble_gap_conn_find(snapshot.conn_handle, &desc);
+        if (rc == 0) {
+            return snapshot;
+        }
+    }
+
+    ESP_LOGW(
+        TAG,
+        "clearing stale BLE GAP connection state: reason=%s conn=%u secure=%u rc=%d",
+        reason != NULL ? reason : "unknown",
+        snapshot.conn_handle,
+        snapshot.secure_connected ? 1U : 0U,
+        rc);
+    diag_log(DIAG_SRC_BLE_GAP, DIAG_GAP_RECOVERY, DIAG_SEV_WARN,
+             21, (uint32_t)rc, snapshot.secure_connected ? 1U : 0U, snapshot.conn_handle);
+
+    ble_hid_gap_set_connection_state(false, BLE_HS_CONN_HANDLE_NONE);
+    s_service_changed_queued_for_conn = false;
+    if (s_audio_enabled && snapshot.conn_handle != BLE_HS_CONN_HANDLE_NONE) {
+        ble_audio_stream_on_gap_disconnect(snapshot.conn_handle);
+    }
+    if (snapshot.conn_handle != BLE_HS_CONN_HANDLE_NONE) {
+        ble_diag_log_on_gap_disconnect(snapshot.conn_handle);
+        ble_firmware_ota_on_gap_disconnect(snapshot.conn_handle);
+    }
+    power_manager_set_ble_connected(false);
+    status_led_set_ble_state(
+        ble_hid_gap_recovery_pairing_window_open()
+            ? STATUS_LED_BLE_PAIRING
+            : STATUS_LED_BLE_RECONNECTING,
+        false);
+
+    return ble_hid_gap_connection_snapshot();
 }
 
 static bool ble_hid_gap_recovery_bond_delete_active(void)
@@ -312,6 +370,77 @@ static int64_t ble_hid_gap_window_remaining_ms(
     return window_ms - elapsed_ms;
 }
 
+static void ble_hid_gap_set_recovery_power_blocker(bool enabled, const char *reason)
+{
+    if (s_recovery_power_blocker_active == enabled) {
+        return;
+    }
+
+    s_recovery_power_blocker_active = enabled;
+    ESP_LOGI(TAG,
+             "recovery: pairing power blocker %s reason=%s",
+             enabled ? "held" : "released",
+             reason != NULL ? reason : "unknown");
+    power_manager_set_blocker(
+        POWER_MANAGER_BLOCKER_PAIRING | POWER_MANAGER_BLOCKER_RECONNECT,
+        enabled);
+}
+
+static void ble_hid_gap_recovery_pairing_window_timer_cb(void *arg)
+{
+    (void)arg;
+    if (!s_recovery_pairing_window_active) {
+        ble_hid_gap_set_recovery_power_blocker(false, "pairing_window_timer_inactive");
+        return;
+    }
+
+    int64_t remaining_ms = ble_hid_gap_window_remaining_ms(
+        s_recovery_pairing_window_opened_at_ms,
+        BLE_HID_GAP_RECOVERY_PAIRING_WINDOW_MS);
+    if (remaining_ms <= 0) {
+        ble_hid_gap_close_recovery_pairing_window("pairing_window_expired");
+        return;
+    }
+
+    esp_err_t ret = esp_timer_start_once(
+        s_recovery_pairing_window_timer,
+        (uint64_t)remaining_ms * 1000ULL);
+    if (ret != ESP_OK) {
+        ESP_LOGW(TAG,
+                 "recovery: pairing window timer rearm failed ret=%s remaining_ms=%lld",
+                 esp_err_to_name(ret),
+                 (long long)remaining_ms);
+    }
+}
+
+static void ble_hid_gap_arm_recovery_pairing_window_timer(void)
+{
+    if (s_recovery_pairing_window_timer == NULL) {
+        const esp_timer_create_args_t timer_args = {
+            .callback = ble_hid_gap_recovery_pairing_window_timer_cb,
+            .name = "ble_recovery_pairing_window",
+        };
+        esp_err_t create_ret = esp_timer_create(&timer_args, &s_recovery_pairing_window_timer);
+        if (create_ret != ESP_OK) {
+            ESP_LOGW(TAG,
+                     "recovery: pairing window timer create failed ret=%s",
+                     esp_err_to_name(create_ret));
+            return;
+        }
+    } else {
+        (void)esp_timer_stop(s_recovery_pairing_window_timer);
+    }
+
+    esp_err_t start_ret = esp_timer_start_once(
+        s_recovery_pairing_window_timer,
+        (uint64_t)BLE_HID_GAP_RECOVERY_PAIRING_WINDOW_MS * 1000ULL);
+    if (start_ret != ESP_OK) {
+        ESP_LOGW(TAG,
+                 "recovery: pairing window timer start failed ret=%s",
+                 esp_err_to_name(start_ret));
+    }
+}
+
 static int64_t ble_hid_gap_recovery_pairing_window_remaining_ms(void)
 {
     if (!s_recovery_pairing_window_active ||
@@ -323,9 +452,7 @@ static int64_t ble_hid_gap_recovery_pairing_window_remaining_ms(void)
         s_recovery_pairing_window_opened_at_ms,
         BLE_HID_GAP_RECOVERY_PAIRING_WINDOW_MS);
     if (remaining_ms <= 0) {
-        s_recovery_pairing_window_active = false;
-        s_recovery_type_controlled_pairing = false;
-        ESP_LOGI(TAG, "recovery: pairing window expired");
+        ble_hid_gap_close_recovery_pairing_window("pairing_window_expired");
         return 0;
     }
 
@@ -440,7 +567,10 @@ static void ble_hid_gap_open_recovery_pairing_window(bool type_controlled)
     s_recovery_pairing_window_active = true;
     s_recovery_swift_pair_consumed = false;
     s_recovery_type_controlled_pairing = type_controlled;
+    s_recovery_security_failed_conn_handle = BLE_HS_CONN_HANDLE_NONE;
     s_recovery_pairing_window_opened_at_ms = ble_hid_gap_now_ms();
+    ble_hid_gap_set_recovery_power_blocker(true, "pairing_window_open");
+    ble_hid_gap_arm_recovery_pairing_window_timer();
     ESP_LOGI(TAG,
              "recovery: pairing window opened type_controlled=%u",
              type_controlled ? 1u : 0u);
@@ -456,6 +586,13 @@ static void ble_hid_gap_close_recovery_pairing_window(const char *reason)
     s_recovery_swift_pair_consumed = false;
     s_recovery_type_controlled_pairing = false;
     s_recovery_waiting_for_disconnect = false;
+    s_recovery_security_request_conn_handle = BLE_HS_CONN_HANDLE_NONE;
+    s_recovery_security_failed_conn_handle = BLE_HS_CONN_HANDLE_NONE;
+    s_recovery_pairing_window_opened_at_ms = 0;
+    if (s_recovery_pairing_window_timer != NULL) {
+        (void)esp_timer_stop(s_recovery_pairing_window_timer);
+    }
+    ble_hid_gap_set_recovery_power_blocker(false, reason);
     ESP_LOGI(TAG, "recovery: pairing window closed: %s", reason);
 }
 
@@ -495,6 +632,32 @@ bool ble_hid_gap_note_type_audio_ready(const char *reason)
     const char *ready_reason = reason != NULL ? reason : "type_audio_ready";
     if (ble_hid_gap_close_recovery_for_type_audio(ready_reason, s_ble_gap_conn_handle)) {
         return true;
+    }
+
+    if (s_ble_gap_conn_handle != BLE_HS_CONN_HANDLE_NONE) {
+        struct ble_gap_conn_desc desc;
+        int desc_rc = ble_gap_conn_find(s_ble_gap_conn_handle, &desc);
+        if (desc_rc == 0 && (desc.sec_state.encrypted || desc.sec_state.bonded)) {
+            ESP_LOGI(
+                TAG,
+                "type audio ready accepted on existing secure BLE connection reason=%s conn=%u encrypted=%u bonded=%u",
+                ready_reason,
+                s_ble_gap_conn_handle,
+                desc.sec_state.encrypted,
+                desc.sec_state.bonded);
+            ble_hid_gap_note_secure_connection(
+                s_ble_gap_conn_handle,
+                "type audio ready existing secure connection");
+            return true;
+        }
+        if (desc_rc != 0) {
+            ESP_LOGW(
+                TAG,
+                "type audio ready connection descriptor lookup failed reason=%s conn=%u desc_rc=%d",
+                ready_reason,
+                s_ble_gap_conn_handle,
+                desc_rc);
+        }
     }
 
     int bonded_peer_count = 0;
@@ -588,6 +751,14 @@ static void ble_hid_gap_request_recovery_security_once(uint16_t conn_handle, con
     if (s_recovery_security_request_conn_handle == conn_handle) {
         return;
     }
+    if (s_recovery_security_failed_conn_handle == conn_handle) {
+        ESP_LOGW(TAG, "recovery: security skipped reason=%s conn=%u after prior encryption failure; waiting for disconnect before retry",
+                 reason != NULL ? reason : "unknown",
+                 conn_handle);
+        diag_log(DIAG_SRC_BLE_GAP, DIAG_GAP_RECOVERY, DIAG_SEV_WARN,
+                 20, 0, 0, conn_handle);
+        return;
+    }
 
     struct ble_gap_conn_desc desc;
     int rc = ble_gap_conn_find(conn_handle, &desc);
@@ -627,13 +798,13 @@ static void ble_hid_gap_request_recovery_security_once(uint16_t conn_handle, con
 
     s_recovery_security_request_conn_handle = conn_handle;
     ESP_LOGI(TAG,
-             "recovery: waiting for Windows PairAsync security reason=%s conn=%u encrypted=%u bonded=%u",
+             "recovery: waiting for Windows pairing security reason=%s conn=%u encrypted=%u bonded=%u",
              reason != NULL ? reason : "unknown",
              conn_handle,
              desc.sec_state.encrypted,
              desc.sec_state.bonded);
     diag_log(DIAG_SRC_BLE_GAP, DIAG_GAP_RECOVERY, DIAG_SEV_INFO,
-             10, 2, 0, conn_handle);
+             10, 4, 0, conn_handle);
 }
 
 static uint16_t ble_hid_gap_get_service_changed_val_handle(void)
@@ -838,7 +1009,8 @@ static esp_err_t ble_hid_gap_request_connection_params(
     uint16_t supervision_timeout,
     ble_hid_conn_param_mode_t mode)
 {
-    ble_hid_gap_connection_snapshot_t conn = ble_hid_gap_connection_snapshot();
+    ble_hid_gap_connection_snapshot_t conn =
+        ble_hid_gap_reconcile_connection_snapshot(policy != NULL ? policy : "connection_params");
     if (!conn.connected || conn.conn_handle == BLE_HS_CONN_HANDLE_NONE) {
         return ESP_ERR_INVALID_STATE;
     }
@@ -899,7 +1071,8 @@ static esp_err_t ble_hid_gap_request_connection_params(
 
 static esp_err_t ble_hid_gap_request_preferred_2m_phy(const char *policy)
 {
-    ble_hid_gap_connection_snapshot_t conn = ble_hid_gap_connection_snapshot();
+    ble_hid_gap_connection_snapshot_t conn =
+        ble_hid_gap_reconcile_connection_snapshot(policy != NULL ? policy : "preferred_2m_phy");
     if (!conn.connected || conn.conn_handle == BLE_HS_CONN_HANDLE_NONE) {
         return ESP_ERR_INVALID_STATE;
     }
@@ -1144,6 +1317,287 @@ esp_err_t esp_hid_ble_gap_adv_init(uint16_t appearance, const char *device_name)
     return ESP_OK;
 }
 
+static void ble_hid_gap_handle_connect_established(uint16_t conn_handle, const char *source)
+{
+    struct ble_gap_conn_desc desc;
+    int rc;
+
+    if (ble_hid_gap_recovery_bond_delete_active()) {
+        ESP_LOGW(TAG,
+                 "recovery: rejecting connection while async local bond delete is pending conn=%u source=%s",
+                 conn_handle,
+                 source != NULL ? source : "unknown");
+        diag_log(DIAG_SRC_BLE_GAP, DIAG_GAP_RECOVERY, DIAG_SEV_WARN,
+                 17, 0, 0, conn_handle);
+        (void)ble_gap_terminate(conn_handle, BLE_ERR_REM_USER_CONN_TERM);
+        status_led_set_ble_state(STATUS_LED_BLE_PAIRING, false);
+        return;
+    }
+
+    ble_hid_gap_connection_snapshot_t snapshot = ble_hid_gap_connection_snapshot();
+    const bool duplicate_connect = snapshot.connected && snapshot.conn_handle == conn_handle;
+    if (duplicate_connect) {
+        ESP_LOGI(TAG,
+                 "connection already tracked; source=%s conn=%u secure=%u",
+                 source != NULL ? source : "unknown",
+                 conn_handle,
+                 snapshot.secure_connected ? 1U : 0U);
+    } else {
+        if (snapshot.connected && snapshot.conn_handle != BLE_HS_CONN_HANDLE_NONE) {
+            ESP_LOGW(TAG,
+                     "connection replaced stale GAP state; source=%s old_conn=%u new_conn=%u old_secure=%u",
+                     source != NULL ? source : "unknown",
+                     snapshot.conn_handle,
+                     conn_handle,
+                     snapshot.secure_connected ? 1U : 0U);
+        }
+        ble_hid_gap_set_connection_state(true, conn_handle);
+        ble_diag_log_on_gap_connect(conn_handle);
+        if (s_audio_enabled) {
+            ble_audio_stream_on_gap_connect(conn_handle);
+        }
+        s_last_adv_was_directed = false;
+        s_service_changed_queued_for_conn = false;
+        ble_hid_gap_queue_service_changed(source != NULL ? source : "connect");
+    }
+
+    rc = ble_gap_conn_find(conn_handle, &desc);
+    const bool conn_desc_valid = rc == 0;
+    if (rc == 0) {
+        ESP_LOGI(
+            TAG,
+            "security state before initiate: source=%s encrypted=%u authenticated=%u bonded=%u key_size=%u",
+            source != NULL ? source : "unknown",
+            desc.sec_state.encrypted,
+            desc.sec_state.authenticated,
+            desc.sec_state.bonded,
+            desc.sec_state.key_size);
+        if (!duplicate_connect) {
+            diag_log(DIAG_SRC_BLE_GAP, DIAG_GAP_CONN_PARAM, DIAG_SEV_INFO,
+                     desc.conn_itvl, desc.conn_latency, desc.supervision_timeout, conn_handle);
+        }
+    } else {
+        ESP_LOGW(TAG,
+                 "connection descriptor lookup failed before security initiate: source=%s conn=%u rc=%d",
+                 source != NULL ? source : "unknown",
+                 conn_handle,
+                 rc);
+    }
+
+    const bool recovery_pairing_window = ble_hid_gap_recovery_pairing_window_open();
+    if (conn_desc_valid && recovery_pairing_window) {
+        ble_hid_gap_hold_recovery_pairing_led("ble_recovery_windows_connecting");
+        ESP_LOGI(
+            TAG,
+            "recovery: Windows connection during pairing window; Listener waiting for Windows pairing security while keeping pairing window visible until secure pairing conn=%u source=%s",
+            conn_handle,
+            source != NULL ? source : "unknown");
+        if (!duplicate_connect) {
+            diag_log(DIAG_SRC_BLE_GAP, DIAG_GAP_RECOVERY, DIAG_SEV_INFO,
+                     12, 0, 0, conn_handle);
+        }
+        ble_hid_gap_request_recovery_security_once(conn_handle, source != NULL ? source : "connect");
+    } else if (conn_desc_valid && desc.sec_state.encrypted) {
+        ble_hid_gap_note_secure_connection(conn_handle, "connect already encrypted");
+    } else if (conn_desc_valid) {
+        rc = ble_gap_security_initiate(conn_handle);
+        if (rc == 0) {
+            ESP_LOGI(TAG,
+                     "security initiate requested conn=%u source=%s",
+                     conn_handle,
+                     source != NULL ? source : "unknown");
+        } else if (rc == BLE_HS_EALREADY) {
+            ESP_LOGI(TAG,
+                     "security already in progress conn=%u source=%s",
+                     conn_handle,
+                     source != NULL ? source : "unknown");
+        } else {
+            ESP_LOGW(TAG,
+                     "security initiate failed conn=%u rc=%d source=%s",
+                     conn_handle,
+                     rc,
+                     source != NULL ? source : "unknown");
+        }
+    } else {
+        ESP_LOGW(TAG,
+                 "security initiate skipped: missing connection descriptor conn=%u source=%s",
+                 conn_handle,
+                 source != NULL ? source : "unknown");
+    }
+
+    if (s_audio_enabled && !duplicate_connect) {
+        ESP_LOGI(TAG, "audio high-speed link request deferred until active recording");
+    }
+}
+
+static void ble_hid_gap_handle_disconnect(uint16_t conn_handle, int reason, const char *source)
+{
+    int rc;
+    const int64_t now_ms = ble_hid_gap_now_ms();
+    const bool duplicate_disconnect =
+        s_last_disconnect_event_conn_handle == conn_handle &&
+        s_last_disconnect_event_reason == reason &&
+        now_ms - s_last_disconnect_event_at_ms >= 0 &&
+        now_ms - s_last_disconnect_event_at_ms < 750;
+    if (duplicate_disconnect) {
+        ble_hid_gap_connection_snapshot_t active_snapshot = ble_hid_gap_connection_snapshot();
+        if (!active_snapshot.connected || active_snapshot.conn_handle != conn_handle) {
+            ESP_LOGI(TAG,
+                     "duplicate disconnect event ignored; source=%s conn=%u reason=%d",
+                     source != NULL ? source : "unknown",
+                     conn_handle,
+                     reason);
+            return;
+        }
+        ESP_LOGW(TAG,
+                 "duplicate disconnect event matches active tracked connection; processing to clear state source=%s conn=%u reason=%d secure=%u",
+                 source != NULL ? source : "unknown",
+                 conn_handle,
+                 reason,
+                 active_snapshot.secure_connected ? 1U : 0U);
+    }
+    s_last_disconnect_event_conn_handle = conn_handle;
+    s_last_disconnect_event_reason = reason;
+    s_last_disconnect_event_at_ms = now_ms;
+
+    ESP_LOGI(TAG, "disconnect; source=%s reason=%d", source != NULL ? source : "unknown", reason);
+    diag_log(DIAG_SRC_BLE_GAP, DIAG_GAP_BOND, DIAG_SEV_WARN,
+             0, (uint32_t)reason, conn_handle, 0);
+    ble_hid_gap_set_connection_state(false, BLE_HS_CONN_HANDLE_NONE);
+    if (s_recovery_security_request_conn_handle == conn_handle) {
+        s_recovery_security_request_conn_handle = BLE_HS_CONN_HANDLE_NONE;
+    }
+    if (s_recovery_security_failed_conn_handle == conn_handle) {
+        s_recovery_security_failed_conn_handle = BLE_HS_CONN_HANDLE_NONE;
+    }
+    status_led_set_ble_state(STATUS_LED_BLE_RECONNECTING, false);
+    s_service_changed_queued_for_conn = false;
+    if (s_audio_enabled) {
+        ble_audio_stream_on_gap_disconnect(conn_handle);
+    }
+    ble_diag_log_on_gap_disconnect(conn_handle);
+    ble_firmware_ota_on_gap_disconnect(conn_handle);
+    s_directed_adv_pending = true;
+    s_last_adv_was_directed = false;
+    if (s_recovery_waiting_for_disconnect) {
+        ESP_LOGI(TAG,
+                 "recovery: pre-reset connection disconnected; pairing window remains open for the new bond");
+        diag_log(DIAG_SRC_BLE_GAP, DIAG_GAP_RECOVERY, DIAG_SEV_INFO,
+                 14, 0, 0, conn_handle);
+        s_recovery_waiting_for_disconnect = false;
+    }
+    if (s_shutdown_quiesce) {
+        s_directed_adv_pending = false;
+        ESP_LOGW(TAG, "shutdown quiesce active: suppressing advertising restart after disconnect");
+        ble_hid_gap_log_adv_state(
+            BLE_HID_GAP_ADV_STATE_DISCONNECT_SUPPRESS,
+            (uint32_t)reason,
+            ble_hid_gap_adv_active_snapshot(),
+            conn_handle,
+            DIAG_SEV_WARN);
+        return;
+    }
+    ble_hid_gap_keep_recovery_adv_connectable("disconnect");
+    if (s_key_wake_only_advertising) {
+        s_directed_adv_pending = false;
+        ESP_LOGI(TAG, "key-wake-only idle: suppressing advertising restart after disconnect");
+        ble_hid_gap_log_adv_state(
+            BLE_HID_GAP_ADV_STATE_DISCONNECT_SUPPRESS,
+            (uint32_t)reason,
+            ble_hid_gap_adv_active_snapshot(),
+            conn_handle,
+            DIAG_SEV_INFO);
+        return;
+    }
+    if (ble_hid_gap_recovery_bond_delete_active()) {
+        ESP_LOGW(TAG, "recovery: advertising deferred after disconnect until async local bond delete completes");
+        diag_log(DIAG_SRC_BLE_GAP, DIAG_GAP_RECOVERY, DIAG_SEV_WARN,
+                 16, 0, 0, conn_handle);
+        status_led_set_ble_state(STATUS_LED_BLE_PAIRING, false);
+        return;
+    }
+    bool disconnect_recovery_pairing_window = ble_hid_gap_recovery_pairing_window_open();
+    if (disconnect_recovery_pairing_window) {
+        int bonded_peer_count = 0;
+        rc = ble_hid_gap_get_bonded_peer_count(&bonded_peer_count);
+        if (rc == 0 && bonded_peer_count > 0) {
+            ESP_LOGI(TAG, "recovery: bonded peer present after disconnect; keeping pairing window visible until secure reconnect");
+            diag_log(DIAG_SRC_BLE_GAP, DIAG_GAP_RECOVERY, DIAG_SEV_INFO,
+                     9, (uint32_t)bonded_peer_count, 0, conn_handle);
+        } else if (rc != 0) {
+            ESP_LOGW(TAG, "recovery: bonded peer lookup after disconnect failed rc=%d; keeping pairing window", rc);
+            diag_log(DIAG_SRC_BLE_GAP, DIAG_GAP_RECOVERY, DIAG_SEV_WARN,
+                     9, (uint32_t)rc, 0, conn_handle);
+        }
+    }
+    esp_err_t adv_ret = ble_hid_gap_start_advertising();
+    if (disconnect_recovery_pairing_window) {
+        if (adv_ret != ESP_OK) {
+            ESP_LOGE(TAG, "recovery: advertising restart failed after disconnect: %s",
+                     esp_err_to_name(adv_ret));
+            status_led_set_error(STATUS_LED_ERROR_DOMAIN_BLE, STATUS_LED_ERROR_HARD, "ble_recovery_adv_restart_failed");
+            return;
+        }
+        ESP_LOGW(TAG, "recovery: pairing reset continues after disconnect, BLE identity kept stable and device is discoverable for re-pair");
+        status_led_clear_error(STATUS_LED_ERROR_DOMAIN_BLE);
+        ble_hid_gap_hold_recovery_pairing_led("ble_recovery_pairing_window_after_disconnect");
+        diag_log(DIAG_SRC_BLE_GAP, DIAG_GAP_RECOVERY, DIAG_SEV_INFO,
+                 4, 0, 0, s_ble_gap_conn_handle);
+    }
+}
+
+static int ble_hid_gap_global_event_listener(struct ble_gap_event *event, void *arg)
+{
+    (void)arg;
+
+    switch (event->type) {
+    case BLE_GAP_EVENT_CONNECT:
+        if (event->connect.status == 0) {
+            ESP_LOGI(TAG,
+                     "global GAP listener connection established; conn=%u",
+                     event->connect.conn_handle);
+            ble_hid_gap_handle_connect_established(
+                event->connect.conn_handle,
+                "global_gap_connect");
+        }
+        return 0;
+    case BLE_GAP_EVENT_DISCONNECT:
+        ble_hid_gap_handle_disconnect(
+            event->disconnect.conn.conn_handle,
+            event->disconnect.reason,
+            "global_gap_disconnect");
+        return 0;
+    default:
+        return 0;
+    }
+}
+
+static void ble_hid_gap_register_global_event_listener_once(const char *reason)
+{
+    if (s_ble_hid_gap_event_listener_registered) {
+        return;
+    }
+
+    int rc = ble_gap_event_listener_register(
+        &s_ble_hid_gap_event_listener,
+        ble_hid_gap_global_event_listener,
+        NULL);
+    if (rc == 0 || rc == BLE_HS_EALREADY) {
+        s_ble_hid_gap_event_listener_registered = true;
+        ESP_LOGI(TAG,
+                 "global GAP event listener registered: reason=%s rc=%d",
+                 reason != NULL ? reason : "unknown",
+                 rc);
+    } else {
+        ESP_LOGW(TAG,
+                 "global GAP event listener registration failed: reason=%s rc=%d",
+                 reason != NULL ? reason : "unknown",
+                 rc);
+        diag_log(DIAG_SRC_BLE_GAP, DIAG_GAP_CTRL_INIT, DIAG_SEV_WARN,
+                 7, (uint32_t)rc, 0, 0);
+    }
+}
+
 static int
 nimble_hid_gap_event(struct ble_gap_event *event, void *arg)
 {
@@ -1177,6 +1631,7 @@ nimble_hid_gap_event(struct ble_gap_event *event, void *arg)
             diag_log(DIAG_SRC_BLE_GAP, DIAG_GAP_BOND, DIAG_SEV_WARN,
                      0, (uint32_t)event->connect.status, event->connect.conn_handle, 0);
             s_recovery_security_request_conn_handle = BLE_HS_CONN_HANDLE_NONE;
+            s_recovery_security_failed_conn_handle = BLE_HS_CONN_HANDLE_NONE;
             /*
              * Connection failures are expected while Windows retries a stale
              * cache entry, while directed advertising falls back, and during
@@ -1210,156 +1665,13 @@ nimble_hid_gap_event(struct ble_gap_event *event, void *arg)
             return 0;
         }
 
-        if (ble_hid_gap_recovery_bond_delete_active()) {
-            ESP_LOGW(TAG,
-                     "recovery: rejecting connection while async local bond delete is pending conn=%u",
-                     event->connect.conn_handle);
-            diag_log(DIAG_SRC_BLE_GAP, DIAG_GAP_RECOVERY, DIAG_SEV_WARN,
-                     17, 0, 0, event->connect.conn_handle);
-            (void)ble_gap_terminate(event->connect.conn_handle, BLE_ERR_REM_USER_CONN_TERM);
-            status_led_set_ble_state(STATUS_LED_BLE_PAIRING, false);
-            return 0;
-        }
-
-        ble_hid_gap_set_connection_state(true, event->connect.conn_handle);
-        ble_diag_log_on_gap_connect(event->connect.conn_handle);
-        if (s_audio_enabled) {
-            ble_audio_stream_on_gap_connect(event->connect.conn_handle);
-        }
-        s_last_adv_was_directed = false;
-        s_service_changed_queued_for_conn = false;
-        ble_hid_gap_queue_service_changed("connect");
-
-        rc = ble_gap_conn_find(event->connect.conn_handle, &desc);
-        const bool conn_desc_valid = rc == 0;
-        if (rc == 0) {
-            ESP_LOGI(
-                TAG,
-                "security state before initiate: encrypted=%u authenticated=%u bonded=%u key_size=%u",
-                desc.sec_state.encrypted,
-                desc.sec_state.authenticated,
-                desc.sec_state.bonded,
-                desc.sec_state.key_size);
-            diag_log(DIAG_SRC_BLE_GAP, DIAG_GAP_CONN_PARAM, DIAG_SEV_INFO,
-                     desc.conn_itvl, desc.conn_latency, desc.supervision_timeout, event->connect.conn_handle);
-        } else {
-            ESP_LOGW(TAG, "connection descriptor lookup failed before security initiate: rc=%d", rc);
-        }
-
-        const bool recovery_pairing_window = ble_hid_gap_recovery_pairing_window_open();
-        if (conn_desc_valid && recovery_pairing_window) {
-            ble_hid_gap_hold_recovery_pairing_led("ble_recovery_windows_connecting");
-            ESP_LOGI(
-                TAG,
-                "recovery: Windows connection during pairing window; waiting for Windows PairAsync security while keeping pairing advertising available until secure pairing conn=%u",
-                event->connect.conn_handle);
-            diag_log(DIAG_SRC_BLE_GAP, DIAG_GAP_RECOVERY, DIAG_SEV_INFO,
-                     12, 0, 0, event->connect.conn_handle);
-            ble_hid_gap_request_recovery_security_once(event->connect.conn_handle, "connect");
-        } else if (conn_desc_valid && desc.sec_state.encrypted) {
-            ble_hid_gap_note_secure_connection(event->connect.conn_handle, "connect already encrypted");
-        } else if (conn_desc_valid) {
-            rc = ble_gap_security_initiate(event->connect.conn_handle);
-            if (rc == 0) {
-                ESP_LOGI(TAG, "security initiate requested conn=%u", event->connect.conn_handle);
-            } else if (rc == BLE_HS_EALREADY) {
-                ESP_LOGI(TAG, "security already in progress conn=%u", event->connect.conn_handle);
-            } else {
-                ESP_LOGW(TAG,
-                         "security initiate failed conn=%u rc=%d",
-                         event->connect.conn_handle,
-                         rc);
-            }
-        } else {
-            ESP_LOGW(TAG, "security initiate skipped: missing connection descriptor");
-        }
-
-        if (s_audio_enabled) {
-            ESP_LOGI(TAG, "audio high-speed link request deferred until active recording");
-        }
+        ble_hid_gap_handle_connect_established(event->connect.conn_handle, "adv_gap_connect");
         return 0;
     case BLE_GAP_EVENT_DISCONNECT:
-        ESP_LOGI(TAG, "disconnect; reason=%d", event->disconnect.reason);
-        diag_log(DIAG_SRC_BLE_GAP, DIAG_GAP_BOND, DIAG_SEV_WARN,
-                 0, (uint32_t)event->disconnect.reason, event->disconnect.conn.conn_handle, 0);
-        ble_hid_gap_set_connection_state(false, BLE_HS_CONN_HANDLE_NONE);
-        if (s_recovery_security_request_conn_handle == event->disconnect.conn.conn_handle) {
-            s_recovery_security_request_conn_handle = BLE_HS_CONN_HANDLE_NONE;
-        }
-        status_led_set_ble_state(STATUS_LED_BLE_RECONNECTING, false);
-        s_service_changed_queued_for_conn = false;
-        if (s_audio_enabled) {
-            ble_audio_stream_on_gap_disconnect(event->disconnect.conn.conn_handle);
-        }
-        ble_diag_log_on_gap_disconnect(event->disconnect.conn.conn_handle);
-        ble_firmware_ota_on_gap_disconnect(event->disconnect.conn.conn_handle);
-        s_directed_adv_pending = true;
-        s_last_adv_was_directed = false;
-        if (s_recovery_waiting_for_disconnect) {
-            ESP_LOGI(TAG,
-                     "recovery: pre-reset connection disconnected; pairing window remains open for the new bond");
-            diag_log(DIAG_SRC_BLE_GAP, DIAG_GAP_RECOVERY, DIAG_SEV_INFO,
-                     14, 0, 0, event->disconnect.conn.conn_handle);
-            s_recovery_waiting_for_disconnect = false;
-        }
-        if (s_shutdown_quiesce) {
-            s_directed_adv_pending = false;
-            ESP_LOGW(TAG, "shutdown quiesce active: suppressing advertising restart after disconnect");
-            ble_hid_gap_log_adv_state(
-                BLE_HID_GAP_ADV_STATE_DISCONNECT_SUPPRESS,
-                (uint32_t)event->disconnect.reason,
-                ble_hid_gap_adv_active_snapshot(),
-                event->disconnect.conn.conn_handle,
-                DIAG_SEV_WARN);
-            return 0;
-        }
-        ble_hid_gap_keep_recovery_adv_connectable("disconnect");
-        if (s_key_wake_only_advertising) {
-            s_directed_adv_pending = false;
-            ESP_LOGI(TAG, "key-wake-only idle: suppressing advertising restart after disconnect");
-            ble_hid_gap_log_adv_state(
-                BLE_HID_GAP_ADV_STATE_DISCONNECT_SUPPRESS,
-                (uint32_t)event->disconnect.reason,
-                ble_hid_gap_adv_active_snapshot(),
-                event->disconnect.conn.conn_handle,
-                DIAG_SEV_INFO);
-            return 0;
-        }
-        if (ble_hid_gap_recovery_bond_delete_active()) {
-            ESP_LOGW(TAG, "recovery: advertising deferred after disconnect until async local bond delete completes");
-            diag_log(DIAG_SRC_BLE_GAP, DIAG_GAP_RECOVERY, DIAG_SEV_WARN,
-                     16, 0, 0, event->disconnect.conn.conn_handle);
-            status_led_set_ble_state(STATUS_LED_BLE_PAIRING, false);
-            return 0;
-        }
-        bool disconnect_recovery_pairing_window = ble_hid_gap_recovery_pairing_window_open();
-        if (disconnect_recovery_pairing_window) {
-            int bonded_peer_count = 0;
-            rc = ble_hid_gap_get_bonded_peer_count(&bonded_peer_count);
-            if (rc == 0 && bonded_peer_count > 0) {
-                ESP_LOGI(TAG, "recovery: bonded peer present after disconnect; keeping pairing window visible until secure reconnect");
-                diag_log(DIAG_SRC_BLE_GAP, DIAG_GAP_RECOVERY, DIAG_SEV_INFO,
-                         9, (uint32_t)bonded_peer_count, 0, event->disconnect.conn.conn_handle);
-            } else if (rc != 0) {
-                ESP_LOGW(TAG, "recovery: bonded peer lookup after disconnect failed rc=%d; keeping pairing window", rc);
-                diag_log(DIAG_SRC_BLE_GAP, DIAG_GAP_RECOVERY, DIAG_SEV_WARN,
-                         9, (uint32_t)rc, 0, event->disconnect.conn.conn_handle);
-            }
-        }
-        esp_err_t adv_ret = ble_hid_gap_start_advertising();
-        if (disconnect_recovery_pairing_window) {
-            if (adv_ret != ESP_OK) {
-                ESP_LOGE(TAG, "recovery: advertising restart failed after disconnect: %s",
-                         esp_err_to_name(adv_ret));
-                status_led_set_error(STATUS_LED_ERROR_DOMAIN_BLE, STATUS_LED_ERROR_HARD, "ble_recovery_adv_restart_failed");
-                return 0;
-            }
-            ESP_LOGW(TAG, "recovery: pairing reset continues after disconnect, BLE identity kept stable and device is discoverable for re-pair");
-            status_led_clear_error(STATUS_LED_ERROR_DOMAIN_BLE);
-            ble_hid_gap_hold_recovery_pairing_led("ble_recovery_pairing_window_after_disconnect");
-            diag_log(DIAG_SRC_BLE_GAP, DIAG_GAP_RECOVERY, DIAG_SEV_INFO,
-                     4, 0, 0, s_ble_gap_conn_handle);
-        }
+        ble_hid_gap_handle_disconnect(
+            event->disconnect.conn.conn_handle,
+            event->disconnect.reason,
+            "adv_gap_disconnect");
         return 0;
     case BLE_GAP_EVENT_CONN_UPDATE:
         /* The central has updated the connection parameters. */
@@ -1528,6 +1840,16 @@ nimble_hid_gap_event(struct ble_gap_event *event, void *arg)
                          7, (uint32_t)event->enc_change.status, 0, event->enc_change.conn_handle);
                 ble_hid_gap_hold_recovery_pairing_led("ble_recovery_pairing_retry_after_encrypt_fail");
                 s_recovery_security_request_conn_handle = BLE_HS_CONN_HANDLE_NONE;
+                s_recovery_security_failed_conn_handle = event->enc_change.conn_handle;
+                int term_rc = ble_gap_terminate(event->enc_change.conn_handle, BLE_ERR_REM_USER_CONN_TERM);
+                if (term_rc != 0 && term_rc != BLE_HS_ENOTCONN) {
+                    ESP_LOGW(TAG,
+                             "recovery: terminate failed pairing connection after encryption failure conn=%u rc=%d",
+                             event->enc_change.conn_handle,
+                             term_rc);
+                    diag_log(DIAG_SRC_BLE_GAP, DIAG_GAP_RECOVERY, DIAG_SEV_WARN,
+                             20, (uint32_t)term_rc, 1, event->enc_change.conn_handle);
+                }
                 if (!ble_gap_adv_active()) {
                     esp_err_t adv_ret = ble_hid_gap_start_advertising();
                     if (adv_ret != ESP_OK) {
@@ -1600,12 +1922,30 @@ nimble_hid_gap_event(struct ble_gap_event *event, void *arg)
             pkey.numcmp_accept = 1;
             rc = ble_sm_inject_io(event->passkey.conn_handle, &pkey);
             ESP_LOGI(TAG, "passkey numeric comparison auto-accepted rc=%d", rc);
+        } else if (action == BLE_SM_IOACT_DISP ||
+                   action == BLE_SM_IOACT_INPUT ||
+                   action == BLE_SM_IOACT_STATIC) {
+            struct ble_sm_io pkey = {0};
+            pkey.action = action;
+            pkey.passkey = BLE_HID_GAP_PAIRING_PASSKEY;
+            rc = ble_sm_inject_io(event->passkey.conn_handle, &pkey);
+            ESP_LOGI(TAG,
+                     "passkey action satisfied with static passkey action=%u passkey=%06lu rc=%d",
+                     action,
+                     (unsigned long)BLE_HID_GAP_PAIRING_PASSKEY,
+                     rc);
         } else if (action == BLE_SM_IOACT_NONE) {
             ESP_LOGI(TAG, "passkey action none; no app input required");
+        } else if (action == BLE_SM_IOACT_OOB) {
+            struct ble_sm_io pkey = {0};
+            pkey.action = action;
+            memset(pkey.oob, 0, sizeof(pkey.oob));
+            rc = ble_sm_inject_io(event->passkey.conn_handle, &pkey);
+            ESP_LOGI(TAG, "passkey OOB action satisfied with zero OOB rc=%d", rc);
         } else {
             ESP_LOGW(
                 TAG,
-                "unsupported passkey action for no-IO Listener pairing action=%u conn=%u",
+                "unsupported passkey action for Listener pairing action=%u conn=%u",
                 action,
                 event->passkey.conn_handle);
         }
@@ -1677,6 +2017,7 @@ static void nimble_hid_on_sync(void)
     s_last_adv_was_directed = false;
 
     if (s_hid_start_event_seen) {
+        ble_hid_gap_register_global_event_listener_once("nimble_sync_before_advertising");
         ble_hid_gap_start_advertising();
     } else {
         ESP_LOGI(TAG, "NimBLE host synced before HID START; advertising deferred");
@@ -1737,7 +2078,8 @@ esp_err_t esp_hid_ble_gap_adv_start(void)
         return ESP_OK;
     }
 
-    ble_hid_gap_connection_snapshot_t conn = ble_hid_gap_connection_snapshot();
+    ble_hid_gap_connection_snapshot_t conn =
+        ble_hid_gap_reconcile_connection_snapshot("advertising_start");
     if (conn.connected) {
         ESP_LOGI(TAG, "NimBLE advertising skipped: GAP already connected conn_handle=%u secure=%u",
                  conn.conn_handle,
@@ -1999,6 +2341,9 @@ static esp_err_t init_low_level(uint8_t mode)
         ESP_LOGI(TAG, "Bluetooth controller modem sleep enabled");
         diag_log(DIAG_SRC_BLE_GAP, DIAG_GAP_CTRL_INIT, DIAG_SEV_INFO, 6, 0, mode, 0);
     }
+#else
+    ESP_LOGI(TAG, "Bluetooth controller modem sleep disabled for Windows HID pairing stability");
+    diag_log(DIAG_SRC_BLE_GAP, DIAG_GAP_CTRL_INIT, DIAG_SEV_INFO, 6, 2, mode, 0);
 #endif
 
     ret = esp_nimble_init();
@@ -2230,6 +2575,7 @@ esp_err_t ble_hid_gap_mark_stack_ready(void)
         ESP_LOGI(TAG, "HID START received; waiting for NimBLE host sync before advertising");
         return ESP_OK;
     }
+    ble_hid_gap_register_global_event_listener_once("hid_start_before_advertising");
     return ble_hid_gap_start_advertising();
 }
 
@@ -2328,7 +2674,8 @@ static esp_err_t ble_hid_gap_forget_bonds_and_repair_inner(bool type_controlled_
         }
     }
 
-    ble_hid_gap_connection_snapshot_t conn = ble_hid_gap_connection_snapshot();
+    ble_hid_gap_connection_snapshot_t conn =
+        ble_hid_gap_reconcile_connection_snapshot("recovery_pairing_reset");
     if (conn.connected && conn.conn_handle != BLE_HS_CONN_HANDLE_NONE) {
         s_recovery_waiting_for_disconnect = true;
         rc = ble_gap_terminate(conn.conn_handle, BLE_ERR_REM_USER_CONN_TERM);
@@ -2337,14 +2684,20 @@ static esp_err_t ble_hid_gap_forget_bonds_and_repair_inner(bool type_controlled_
             diag_log(DIAG_SRC_BLE_GAP, DIAG_GAP_RECOVERY, DIAG_SEV_WARN,
                      2, 0, (uint32_t)bonded_peer_count, conn.conn_handle);
             return ESP_OK;
-        } else {
-            s_recovery_waiting_for_disconnect = false;
-            ESP_LOGW(TAG, "recovery: BLE terminate failed rc=%d", rc);
-            diag_log(DIAG_SRC_BLE_GAP, DIAG_GAP_RECOVERY, DIAG_SEV_WARN,
-                     2, (uint32_t)rc, (uint32_t)bonded_peer_count, conn.conn_handle);
+        }
+        s_recovery_waiting_for_disconnect = false;
+        ESP_LOGW(TAG, "recovery: BLE terminate failed rc=%d", rc);
+        diag_log(DIAG_SRC_BLE_GAP, DIAG_GAP_RECOVERY, DIAG_SEV_WARN,
+                 2, (uint32_t)rc, (uint32_t)bonded_peer_count, conn.conn_handle);
+        if (rc != BLE_HS_ENOTCONN && rc != BLE_HS_EINVAL) {
             return ESP_FAIL;
         }
-    } else if (ble_gap_adv_active()) {
+        ESP_LOGW(TAG, "recovery: terminate reported no active connection; clearing stale GAP state and continuing to pairable advertising");
+        ble_hid_gap_set_connection_state(false, BLE_HS_CONN_HANDLE_NONE);
+        power_manager_set_ble_connected(false);
+    }
+
+    if (ble_gap_adv_active()) {
         rc = ble_gap_adv_stop();
         if (rc != 0) {
             ESP_LOGW(TAG, "recovery: advertising stop failed rc=%d; restart will continue", rc);
@@ -2390,12 +2743,12 @@ esp_err_t ble_hid_gap_forget_bonds_and_repair_type_controlled(void)
 
 bool ble_hid_gap_is_connected(void)
 {
-    return ble_hid_gap_connection_snapshot().connected;
+    return ble_hid_gap_reconcile_connection_snapshot("is_connected").connected;
 }
 
 bool ble_hid_gap_is_securely_connected(void)
 {
-    return ble_hid_gap_connection_snapshot().secure_connected;
+    return ble_hid_gap_reconcile_connection_snapshot("is_securely_connected").secure_connected;
 }
 
 bool ble_hid_gap_is_recovery_pairing_window_open(void)
@@ -2572,7 +2925,9 @@ esp_err_t ble_hid_gap_prepare_shutdown_disconnect(void)
 
 esp_err_t ble_hid_gap_request_reconnect(void)
 {
-    if (s_ble_gap_connected) {
+    ble_hid_gap_connection_snapshot_t conn =
+        ble_hid_gap_reconcile_connection_snapshot("reconnect_request");
+    if (conn.connected) {
         return ble_hid_gap_request_active_connection();
     }
 
@@ -2688,6 +3043,7 @@ esp_err_t ble_hid_gap_apply_pending_ble_name(void)
     s_recovery_waiting_for_disconnect = false;
     s_recovery_swift_pair_consumed = true;
     s_recovery_security_request_conn_handle = BLE_HS_CONN_HANDLE_NONE;
+    s_recovery_security_failed_conn_handle = BLE_HS_CONN_HANDLE_NONE;
     s_recovery_pairing_window_opened_at_ms = 0;
     portEXIT_CRITICAL(&s_ble_gap_state_lock);
 
@@ -2705,7 +3061,8 @@ esp_err_t ble_hid_gap_apply_pending_ble_name(void)
         return name_ret;
     }
 
-    ble_hid_gap_connection_snapshot_t conn = ble_hid_gap_connection_snapshot();
+    ble_hid_gap_connection_snapshot_t conn =
+        ble_hid_gap_reconcile_connection_snapshot("ble_name_apply");
     const bool adv_active = s_nimble_stack_ready && ble_gap_adv_active();
     ESP_LOGI(TAG,
              "BLE name apply requested: connected=%u conn_handle=%u adv_active=%u low_power_adv=%u key_wake_only=%u",
@@ -2736,7 +3093,12 @@ esp_err_t ble_hid_gap_apply_pending_ble_name(void)
             return ESP_OK;
         }
         ESP_LOGW(TAG, "BLE name apply terminate failed rc=%d; attempting advertising restart path", rc);
-        return ESP_FAIL;
+        if (rc != BLE_HS_ENOTCONN && rc != BLE_HS_EINVAL) {
+            return ESP_FAIL;
+        }
+        ble_hid_gap_set_connection_state(false, BLE_HS_CONN_HANDLE_NONE);
+        power_manager_set_ble_connected(false);
+        conn = ble_hid_gap_connection_snapshot();
     }
 
     if (!s_nimble_stack_ready || !s_hid_start_event_seen) {

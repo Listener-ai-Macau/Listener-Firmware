@@ -662,7 +662,9 @@ CHECKS = {
         "ble_hid_gap_recovery_pairing_window_open()\n                ? STATUS_LED_BLE_PAIRING",
         "ble_hid_gap_get_bonded_peer_count(&bonded_peer_count)",
         "keeping pairing window visible until secure reconnect",
-        "recovery: Windows connection during pairing window; waiting for Windows PairAsync security",
+        "recovery: Windows connection during pairing window; Listener waiting for Windows pairing security",
+        "recovery: waiting for Windows pairing security",
+        "global GAP event listener registered",
         "ble_hid_gap_request_recovery_security_once(event->mtu.conn_handle, \"mtu\")",
         "ble_hid_gap_request_recovery_security_once(event->subscribe.conn_handle, \"subscribe\")",
         "case BLE_GAP_EVENT_PASSKEY_ACTION:",
@@ -673,7 +675,7 @@ CHECKS = {
         "stable BLE identity",
         "pairing encryption failure",
         "keeping pairing advertising available for Windows retry",
-        "waiting for Windows PairAsync security",
+        "security initiate requested conn=%u",
         "BLE identity kept stable and device is discoverable for re-pair",
         "s_swift_pair_mfg_data",
         "s_recovery_type_controlled_pairing",
@@ -1171,7 +1173,7 @@ def main() -> int:
             )
     if "#define BLE_HID_GAP_RECOVERY_SWIFT_PAIR_PROMPT_MS 45000LL" not in ble_gap:
         failures.append(
-            "ble_hid_gap_esp32.c: recovery must expose one bounded Swift Pair window after cache cleanup so Windows can finish native pairing when PairAsync fails"
+            "ble_hid_gap_esp32.c: non-Type recovery must expose one bounded Swift Pair window for Windows native keyboard pairing"
         )
     if "#define BLE_HID_GAP_FIRST_PAIRING_WINDOW_MS 0LL" not in ble_gap:
         failures.append(
@@ -1241,43 +1243,39 @@ def main() -> int:
         failures.append(
             "ble_hid_gap_esp32.c: recovery must reject stale Windows connections while local bond delete is pending"
         )
-    disconnect_index = ble_gap.find("case BLE_GAP_EVENT_DISCONNECT:")
-    disconnect_defer_index = ble_gap.find(
-        "advertising deferred after disconnect until async local bond delete completes",
-        disconnect_index,
+    try:
+        disconnect_body = extract_c_function(ble_gap, "ble_hid_gap_handle_disconnect")
+    except ValueError as exc:
+        failures.append(f"ble_hid_gap_esp32.c: {exc}")
+        disconnect_body = ""
+    disconnect_defer_index = disconnect_body.find(
+        "advertising deferred after disconnect until async local bond delete completes"
     )
-    disconnect_stable_index = ble_gap.find("pairing reset continues after disconnect, BLE identity kept stable", disconnect_index)
-    disconnect_adv_index = ble_gap.find("ble_hid_gap_start_advertising();", disconnect_index)
-    disconnect_bond_index = ble_gap.find("bonded_peer_count > 0", disconnect_index)
-    disconnect_keep_index = ble_gap.find(
-        "keeping pairing window visible until secure reconnect",
-        disconnect_index,
+    disconnect_stable_index = disconnect_body.find("pairing reset continues after disconnect, BLE identity kept stable")
+    disconnect_adv_index = disconnect_body.find("ble_hid_gap_start_advertising();")
+    disconnect_bond_index = disconnect_body.find("bonded_peer_count > 0")
+    disconnect_keep_index = disconnect_body.find("keeping pairing window visible until secure reconnect")
+    disconnect_notify_index = disconnect_body.find(
+        'ble_hid_gap_hold_recovery_pairing_led("ble_recovery_pairing_window_after_disconnect")'
     )
-    disconnect_notify_index = ble_gap.find(
-        'ble_hid_gap_hold_recovery_pairing_led("ble_recovery_pairing_window_after_disconnect")',
-        disconnect_index,
-    )
-    disconnect_old_close_index = ble_gap.find(
-        'ble_hid_gap_close_recovery_pairing_window("bond restored after recovery disconnect")',
-        disconnect_index,
+    disconnect_old_close_index = disconnect_body.find(
+        'ble_hid_gap_close_recovery_pairing_window("bond restored after recovery disconnect")'
     )
     if (
-        disconnect_index < 0
-        or disconnect_adv_index < 0
+        disconnect_adv_index < 0
         or disconnect_defer_index < 0
         or disconnect_stable_index < 0
-        or not (disconnect_index < disconnect_defer_index < disconnect_adv_index < disconnect_stable_index)
+        or not (disconnect_defer_index < disconnect_adv_index < disconnect_stable_index)
     ):
         failures.append(
             "ble_hid_gap_esp32.c: disconnect recovery must defer advertising for async local bond delete, then restart advertising with the stable BLE identity"
         )
     if (
-        disconnect_index < 0
-        or disconnect_bond_index < 0
+        disconnect_bond_index < 0
         or disconnect_keep_index < 0
         or disconnect_notify_index < 0
         or disconnect_old_close_index >= 0
-        or not (disconnect_index < disconnect_bond_index < disconnect_keep_index < disconnect_adv_index < disconnect_notify_index)
+        or not (disconnect_bond_index < disconnect_keep_index < disconnect_adv_index < disconnect_notify_index)
     ):
         failures.append(
             "ble_hid_gap_esp32.c: recovery disconnect must keep pairing window visible through bond churn until secure reconnect"
@@ -1312,6 +1310,14 @@ def main() -> int:
         enc_failure_index,
         enc_next_case_index,
     )
+    enc_failed_handle_index = ble_gap.find(
+        "s_recovery_security_failed_conn_handle = event->enc_change.conn_handle",
+        enc_failure_index,
+        enc_next_case_index,
+    )
+    enc_failed_skip_index = ble_gap.find(
+        "after prior encryption failure; waiting for disconnect before retry",
+    )
     if (
         enc_change_index < 0
         or enc_failure_index < 0
@@ -1325,9 +1331,13 @@ def main() -> int:
         failures.append(
             "ble_hid_gap_esp32.c: ENC_CHANGE must reject stale encrypted connections only while async local bond delete is pending"
         )
-    if enc_failure_terminate_index >= 0:
+    if enc_failed_handle_index < 0 or enc_failure_terminate_index < 0:
         failures.append(
-            "ble_hid_gap_esp32.c: recovery ENC_CHANGE failure branch must not terminate the Windows pairing connection"
+            "ble_hid_gap_esp32.c: recovery ENC_CHANGE failure must quarantine and terminate the failed pairing connection before retry"
+        )
+    if enc_failed_skip_index < 0:
+        failures.append(
+            "ble_hid_gap_esp32.c: recovery security helper must not restart SMP on a connection that already failed encryption"
         )
     recording_active_preview = re.search(
         r"}\s*else\s+if\s*\(\s*strcasecmp\(state,\s*\"capture\"\)\s*==\s*0\s*\|\|"
@@ -1896,6 +1906,8 @@ def main() -> int:
             failures.append(f"status_led_human_effect_review.ps1: OTA must not be documented as AI processing ({stale})")
     voice_recording_control = read("components/voice_recording_control/voice_recording_control.c")
     ble_hid_gap = read("ports/esp32/ble_hid_gap/ble_hid_gap_esp32.c")
+    sdkconfig_defaults = read("sdkconfig.defaults")
+    sdkconfig_defaults_esp32s3 = read("sdkconfig.defaults.esp32s3")
     if 'status_led_set_processing(true, "audio_session_finishing")' in voice_recording_control:
         failures.append(
             "voice_recording_control.c: post-stop AI cue must use recording_stop_processing_start, "
@@ -1923,36 +1935,80 @@ def main() -> int:
         ble_hid_gap,
     ):
         failures.append("ble_hid_gap_esp32.c: HID reconnect requests must not stop/restart an already active normal advertisement")
+    if not re.search(
+        r"esp_err_t\s+esp_hid_ble_gap_adv_init\(uint16_t appearance, const char \*device_name\)[\s\S]*?"
+        r"ble_hs_cfg\.sm_io_cap\s*=\s*BLE_SM_IO_CAP_NO_IO;[\s\S]*?"
+        r"ble_hs_cfg\.sm_bonding\s*=\s*1;[\s\S]*?"
+        r"ble_hs_cfg\.sm_mitm\s*=\s*0;[\s\S]*?"
+        r"legacy-compatible[\s\S]*?"
+        r"ble_hs_cfg\.sm_sc\s*=\s*0;",
+        ble_hid_gap,
+    ):
+        failures.append("ble_hid_gap_esp32.c: HID pairing must use no-IO legacy-compatible SMP for Windows HID pairing")
+    for name, text in (
+        ("sdkconfig.defaults", sdkconfig_defaults),
+        ("sdkconfig.defaults.esp32s3", sdkconfig_defaults_esp32s3),
+    ):
+        if "# CONFIG_BT_CTRL_MODEM_SLEEP is not set" not in text or "CONFIG_BT_CTRL_MODEM_SLEEP=y" in text:
+            failures.append(f"{name}: BLE controller modem sleep must stay disabled for Windows HID pairing stability")
     recovery_connect_index = ble_hid_gap.find("if (conn_desc_valid && recovery_pairing_window) {")
     recovery_consume_index = ble_hid_gap.find("s_recovery_swift_pair_consumed = true;", recovery_connect_index)
     recovery_led_index = ble_hid_gap.find(
         'ble_hid_gap_hold_recovery_pairing_led("ble_recovery_windows_connecting")',
         recovery_connect_index,
     )
-    recovery_wait_index = ble_hid_gap.find("waiting for Windows PairAsync security", recovery_connect_index)
-    recovery_request_index = ble_hid_gap.find(
-        'ble_hid_gap_request_recovery_security_once(event->connect.conn_handle, "connect");',
+    recovery_request_log_index = ble_hid_gap.find(
+        "recovery: Windows connection during pairing window",
         recovery_connect_index,
     )
-    normal_security_index = ble_hid_gap.find("ble_gap_security_initiate(event->connect.conn_handle)", recovery_connect_index)
+    recovery_request_index = ble_hid_gap.find(
+        'ble_hid_gap_request_recovery_security_once(conn_handle, source != NULL ? source : "connect");',
+        recovery_connect_index,
+    )
+    recovery_helper_index = ble_hid_gap.find("static void ble_hid_gap_request_recovery_security_once")
+    recovery_helper_security_index = ble_hid_gap.find(
+        "ble_gap_security_initiate(conn_handle)",
+        recovery_helper_index,
+        recovery_connect_index,
+    )
+    recovery_helper_log_index = ble_hid_gap.find(
+        "recovery: waiting for Windows pairing security",
+        recovery_helper_index,
+        recovery_connect_index,
+    )
+    normal_security_index = ble_hid_gap.find("ble_gap_security_initiate(conn_handle)", recovery_connect_index)
+    adv_connect_helper_index = ble_hid_gap.find('ble_hid_gap_handle_connect_established(event->connect.conn_handle, "adv_gap_connect")')
+    global_listener_index = ble_hid_gap.find("static int ble_hid_gap_global_event_listener")
+    global_connect_helper_index = ble_hid_gap.find('"global_gap_connect"', global_listener_index)
     if (
         "const bool conn_desc_valid = rc == 0;" not in ble_hid_gap
         or "const bool recovery_pairing_window = ble_hid_gap_recovery_pairing_window_open();" not in ble_hid_gap
         or recovery_connect_index < 0
         or recovery_led_index < 0
-        or recovery_wait_index < 0
-        or not (recovery_connect_index < recovery_request_index < normal_security_index)
+        or recovery_request_log_index < 0
+        or recovery_request_index < 0
         or normal_security_index < 0
-        or not (recovery_connect_index < recovery_led_index < recovery_wait_index < recovery_request_index)
+        or recovery_helper_index < 0
+        or not (recovery_helper_index < recovery_helper_log_index < recovery_connect_index)
+        or recovery_helper_security_index >= 0
+        or "recovery: waiting for Windows pairing security" not in ble_hid_gap
+        or "recovery: security initiate requested" in ble_hid_gap
+        or not (recovery_connect_index < recovery_led_index < recovery_request_log_index < recovery_request_index < normal_security_index)
         or (recovery_consume_index >= 0 and recovery_connect_index < recovery_consume_index < normal_security_index)
+        or adv_connect_helper_index < 0
+        or global_listener_index < 0
+        or global_connect_helper_index < 0
         or 'ble_hid_gap_close_recovery_for_type_audio(' not in ble_hid_gap
         or 'case BLE_GAP_EVENT_PASSKEY_ACTION:' not in ble_hid_gap
         or 'passkey numeric comparison auto-accepted' not in ble_hid_gap
+        or 'BLE_SM_IOACT_DISP' not in ble_hid_gap
+        or 'BLE_SM_IOACT_INPUT' not in ble_hid_gap
+        or 'BLE_HID_GAP_PAIRING_PASSKEY' not in ble_hid_gap
         or 'ble_hid_gap_request_recovery_security_once(event->mtu.conn_handle, "mtu");' not in ble_hid_gap
         or 'ble_hid_gap_request_recovery_security_once(event->subscribe.conn_handle, "subscribe");' not in ble_hid_gap
-        or 'ESP_LOGW(TAG, "security initiate skipped: missing connection descriptor");' not in ble_hid_gap
+        or "security initiate skipped: missing connection descriptor" not in ble_hid_gap
     ):
-        failures.append("ble_hid_gap_esp32.c: recovery connect must wait for Windows PairAsync security, keep MTU/subscribe secure-state checks, log passkey actions, and allow Type audio to close only after secure pairing")
+        failures.append("ble_hid_gap_esp32.c: recovery connect must use the shared GAP CONNECT helper, let Windows own pairing SMP during the pairing window, keep MTU/subscribe idempotent checks, log passkey actions, and allow Type audio to close only after secure pairing")
     if 'status_led_notify_success("recording_stop_done")' in voice_recording_control:
         failures.append("voice_recording_control.c: recording STOP must not show OK before Type final success")
     if 'status_led_notify_success("recording_session_done")' in voice_recording_control:
