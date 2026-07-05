@@ -7,6 +7,10 @@ param(
     [int]$Baud = 115200,
     [int]$InitialReadMs = 800,
     [int]$CommandReadMs = 1200,
+    [int]$WriteTimeoutMs = 5000,
+    [int]$WriteRetries = 3,
+    [int]$WriteRetryDelayMs = 250,
+    [int]$CommandDelayMs = 250,
     [string]$OutputPath = ""
 )
 
@@ -52,11 +56,41 @@ function Read-SerialFor {
     }
 }
 
+function Write-SerialCommand {
+    param(
+        [Parameter(Mandatory = $true)][System.IO.Ports.SerialPort]$Serial,
+        [Parameter(Mandatory = $true)][string]$CommandText
+    )
+
+    $payload = "{0}`n" -f $CommandText
+    for ($attempt = 1; $attempt -le $WriteRetries; $attempt++) {
+        try {
+            $Serial.Write($payload)
+            return
+        } catch {
+            $message = $_.Exception.Message
+            if ($attempt -ge $WriteRetries) {
+                Add-Line ("WRITE_ERROR command={0} attempt={1}/{2} error={3}" -f $CommandText, $attempt, $WriteRetries, $message)
+                throw
+            }
+
+            Add-Line ("WRITE_RETRY command={0} attempt={1}/{2} error={3}" -f $CommandText, $attempt, $WriteRetries, $message)
+            try {
+                $Serial.DiscardOutBuffer()
+            } catch {
+                Add-Line ("WRITE_RETRY_DISCARD_OUT_ERROR {0}" -f $_.Exception.Message)
+            }
+            Start-Sleep -Milliseconds $WriteRetryDelayMs
+        }
+    }
+}
+
 $serial = [System.IO.Ports.SerialPort]::new($Port, $Baud)
 $serial.ReadTimeout = 200
-$serial.WriteTimeout = 1000
+$serial.WriteTimeout = $WriteTimeoutMs
 $serial.DtrEnable = $false
 $serial.RtsEnable = $false
+$failure = $null
 
 try {
     $serial.Open()
@@ -64,9 +98,20 @@ try {
     Read-SerialFor -Serial $serial -Milliseconds $InitialReadMs
     foreach ($cmd in $commandsToRun) {
         Add-Line ("> {0}" -f $cmd)
-        $serial.Write(("{0}`n" -f $cmd))
+        try {
+            $serial.DiscardInBuffer()
+        } catch {
+            Add-Line ("DISCARD_IN_ERROR {0}" -f $_.Exception.Message)
+        }
+        Write-SerialCommand -Serial $serial -CommandText $cmd
         Read-SerialFor -Serial $serial -Milliseconds $CommandReadMs
+        if ($CommandDelayMs -gt 0) {
+            Start-Sleep -Milliseconds $CommandDelayMs
+        }
     }
+} catch {
+    $failure = $_
+    Add-Line ("ERROR {0}" -f $_.Exception.Message)
 } finally {
     if ($serial.IsOpen) {
         $serial.Close()
@@ -81,4 +126,8 @@ if (-not [string]::IsNullOrWhiteSpace($OutputPath)) {
     }
     $lines | Set-Content -LiteralPath $OutputPath -Encoding utf8
     Write-Host ("transcript={0}" -f (Resolve-Path -LiteralPath $OutputPath).Path)
+}
+
+if ($null -ne $failure) {
+    throw $failure
 }
