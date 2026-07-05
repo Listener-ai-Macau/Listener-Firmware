@@ -77,7 +77,8 @@ extern esp_err_t ble_hid_gap_apply_pending_ble_name(void) __attribute__((weak));
 #define BLE_AUDIO_STREAM_CONTROL_MAX_BYTES 64
 #define BLE_AUDIO_STREAM_BLE_NAME_APPLY_DEFER_MS 250
 #define BLE_AUDIO_STREAM_TYPE_HEARTBEAT_TIMEOUT_MS 45000
-#define BLE_AUDIO_STREAM_TYPE_LED_READY_HOLD_MS 45000
+#define BLE_AUDIO_STREAM_TYPE_LED_READY_HOLD_MS 12000
+#define BLE_AUDIO_STREAM_TYPE_HOST_SEEN_HOLD_MS 180000
 
 typedef enum {
     BLE_AUDIO_STREAM_JOB_TYPE_SESSION_START = 0,
@@ -235,6 +236,7 @@ static bool s_backpressure_active;
 static bool s_type_heartbeat_active;
 static TickType_t s_type_heartbeat_deadline_tick;
 static TickType_t s_type_heartbeat_led_ready_until_tick;
+static TickType_t s_type_host_seen_until_tick;
 static uint32_t s_type_heartbeat_count;
 static ble_audio_stream_replay_packet_t s_replay_window[BLE_AUDIO_STREAM_REPLAY_WINDOW_PACKETS];
 static uint32_t s_replay_next_index;
@@ -364,6 +366,20 @@ static bool ble_audio_stream_type_heartbeat_led_recent(void)
         ble_audio_stream_get_type_heartbeat_snapshot();
     return heartbeat.led_ready_until_tick != 0 &&
            !ble_audio_stream_tick_reached(xTaskGetTickCount(), heartbeat.led_ready_until_tick);
+}
+
+static void ble_audio_stream_note_type_host_seen(const char *reason)
+{
+    TickType_t until_tick =
+        xTaskGetTickCount() + pdMS_TO_TICKS(BLE_AUDIO_STREAM_TYPE_HOST_SEEN_HOLD_MS);
+    portENTER_CRITICAL(&s_link_state_lock);
+    s_type_host_seen_until_tick = until_tick;
+    portEXIT_CRITICAL(&s_link_state_lock);
+    ESP_LOGD(
+        TAG,
+        "type host presence refreshed reason=%s hold_ms=%u",
+        reason != NULL ? reason : "type_activity",
+        (unsigned)BLE_AUDIO_STREAM_TYPE_HOST_SEEN_HOLD_MS);
 }
 
 static bool ble_audio_stream_hid_secure_connected(void)
@@ -2761,8 +2777,19 @@ bool ble_audio_stream_is_type_led_ready(void)
            ble_audio_stream_type_heartbeat_led_recent();
 }
 
+bool ble_audio_stream_was_type_host_recently_seen(void)
+{
+    TickType_t until_tick = 0;
+    portENTER_CRITICAL(&s_link_state_lock);
+    until_tick = s_type_host_seen_until_tick;
+    portEXIT_CRITICAL(&s_link_state_lock);
+    return until_tick != 0 &&
+           !ble_audio_stream_tick_reached(xTaskGetTickCount(), until_tick);
+}
+
 void ble_audio_stream_note_type_activity(const char *reason)
 {
+    ble_audio_stream_note_type_host_seen(reason);
     if (!ble_audio_stream_type_activity_accepts_link(reason)) {
         return;
     }
@@ -2855,6 +2882,9 @@ bool ble_audio_stream_consume_type_control_command(const char *command, const ch
 
     if (strcmp(command, "TYPE:BYE") == 0 || strcmp(command, "TYPE:STOP") == 0) {
         ble_audio_stream_set_type_heartbeat_active(false, command);
+        portENTER_CRITICAL(&s_link_state_lock);
+        s_type_host_seen_until_tick = 0;
+        portEXIT_CRITICAL(&s_link_state_lock);
         ble_audio_stream_sync_power_manager_for_type_link(false, command);
         ble_audio_stream_sync_status_led_for_type_link(command);
         ESP_LOGI(

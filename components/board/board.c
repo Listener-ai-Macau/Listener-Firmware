@@ -1145,7 +1145,7 @@ void board_print_help(void)
         "Inject test bytes with tools/send_serial.ps1 or type in monitor.\n"
         "Capture 3s audio WAV with tools/capture_audio_wav.ps1 -Port COM3.\n"
         "Capture toggle session WAV with tools/capture_audio_session_wav.ps1 -Port COM3.\n"
-        "EC11 push/GPIO18 is the physical power-on key; after boot, single click sends the EC11 custom-key fallback Shift+F13 after the 200 ms recovery decision window with an 80 ms minimum second-click gap.\n"
+        "EC11 push/GPIO18 is the physical power-on key; after boot, single click sends the EC11 custom-key fallback Shift+F13 after the shared 500 ms physical double-click decision window, while BLE recovery uses the same 500 ms second-click guard with a 60 ms minimum gap.\n"
         "EC11 push fast double-click requests BLE recovery, cancels any active recording session, and clears pairing/session state; long press stays reserved for hardware power control.\n"
         "Logical custom keys: single-click KEY1-KEY4 fallback=F13-F16, double-click=F17-F20, long-press=F21-F24.\n"
         "KEY1/GPIO38, KEY2/GPIO39, KEY3/GPIO40, KEY4/GPIO41 send safe non-text BLE HID usages while Listener-Type custom actions are unavailable; recording is a configurable custom-key action.\n"

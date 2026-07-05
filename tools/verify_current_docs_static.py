@@ -57,7 +57,7 @@ STALE_PATTERNS = [
     ),
     PatternRule(
         re.compile(r"ordinary HID-only BLE connected stays visible as steady blue", re.IGNORECASE),
-        "old BLE LED policy: HID-only connected may only use the find-Type double flash until Listener-Type is ready",
+        "old BLE LED policy: HID-only connected may only use the bounded find-Type double flash until Listener-Type is ready",
     ),
     PatternRule(
         re.compile(r"low-base blue double-flash heartbeat", re.IGNORECASE),
@@ -84,12 +84,20 @@ STALE_PATTERNS = [
         "stale EC11 rotation prose: current cue keeps moving during the hold window",
     ),
     PatternRule(
-        re.compile(r"650 ms pending single-click/custom-key response and recovery double-click window", re.IGNORECASE),
-        "stale EC11 recovery prose: EC11 now uses a 200 ms window with an 80 ms minimum gap",
+        re.compile(r"200 ms pending single-click/custom-key response and recovery double-click window", re.IGNORECASE),
+        "stale EC11 recovery prose: EC11 physical double-click recovery must keep the validated 500 ms shared window",
     ),
     PatternRule(
         re.compile(r"450 ms pending single-click/custom-key response and recovery double-click window", re.IGNORECASE),
-        "stale EC11 recovery prose: EC11 now matches the 200 ms key double-click feel",
+        "stale EC11 recovery prose: EC11 physical double-click recovery must keep the validated 500 ms shared window",
+    ),
+    PatternRule(
+        re.compile(r"650 ms (?:physical )?double-click decision window", re.IGNORECASE),
+        "stale EC11 recovery prose: EC11 and KEY1-KEY4 now share a 500 ms double-click decision window",
+    ),
+    PatternRule(
+        re.compile(r"30 ms stable-press threshold", re.IGNORECASE),
+        "stale EC11 push prose: EC11 debounce must match the validated 20 ms KEY1-KEY4 debounce feel",
     ),
 ]
 
@@ -102,8 +110,8 @@ REQUIRED_TEXT = [
     ),
     RequiredText(
         "docs/features/status_led.md",
-        re.compile(r"ordinary HID-only `connected` uses a blue double-flash Type-search cue", re.IGNORECASE),
-        "status LED feature doc must state that HID-only connected uses the find-Type cue instead of steady blue",
+        re.compile(r"ordinary HID-only `connected` uses a low-floor bounded blue double-flash Type-search cue", re.IGNORECASE),
+        "status LED feature doc must state that HID-only connected uses the swapped low-floor bounded find-Type cue instead of steady blue",
     ),
     RequiredText(
         "docs/features/status_led.md",
@@ -117,8 +125,8 @@ REQUIRED_TEXT = [
     ),
     RequiredText(
         "docs/features/status_led.md",
-        re.compile(r"200 ms pending single-click/custom-key response and recovery double-click window, with an 80 ms minimum second-click gap", re.IGNORECASE),
-        "status LED feature doc must state EC11 single-click fallback matches the key double-click feel and filters raw-only first clicks/bounce",
+        re.compile(r"EC11 push keeps the same 20 ms debounce model and 500 ms double-click decision window as KEY1-KEY4", re.IGNORECASE),
+        "status LED feature doc must state EC11 keeps the validated shared double-click recovery window",
     ),
     RequiredText(
         "docs/features/low_power_wake_policy.md",
@@ -127,8 +135,8 @@ REQUIRED_TEXT = [
     ),
     RequiredText(
         "docs/features/low_power_wake_policy.md",
-        re.compile(r"ordinary HID-only BLE connected uses a blue double-flash Type-search cue", re.IGNORECASE),
-        "low-power policy doc must state that HID-only connected uses the find-Type cue while active",
+        re.compile(r"ordinary HID-only BLE connected uses a low-floor bounded blue double-flash Type-search cue", re.IGNORECASE),
+        "low-power policy doc must state that HID-only connected uses the swapped low-floor bounded find-Type cue while active",
     ),
     RequiredText(
         "docs/features/firmware-feature-map.md",
@@ -137,8 +145,8 @@ REQUIRED_TEXT = [
     ),
     RequiredText(
         "docs/features/firmware-feature-map.md",
-        re.compile(r"keeps quiet ACTIVE HID-only BLE in a blue double-flash Type-search cue", re.IGNORECASE),
-        "feature map must summarize the active HID-only find-Type BLE behavior",
+        re.compile(r"keeps quiet ACTIVE HID-only BLE in a low-floor bounded blue double-flash Type-search cue", re.IGNORECASE),
+        "feature map must summarize the swapped low-floor active HID-only find-Type BLE behavior",
     ),
     RequiredText(
         "tools/verify_status_led_static.py",

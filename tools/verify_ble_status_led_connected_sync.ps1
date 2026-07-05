@@ -133,6 +133,8 @@ Assert-Contains $gap 'static\s+void\s+ble_hid_gap_handle_disconnect[\s\S]*?ble_h
     "recovery disconnect must keep pairing LED visible through bond churn until secure reconnect"
 Assert-NotContains $gap 'ble_hid_gap_close_recovery_pairing_window\("bond restored after recovery disconnect"\)' `
     "recovery disconnect must not close the pairing window merely because Windows recreated a bond"
+Assert-Contains $gap 'static\s+void\s+ble_hid_gap_close_recovery_pairing_window\(const char \*reason\)[\s\S]*?strcmp\(reason,\s*"pairing_window_expired"\)\s*==\s*0[\s\S]*?status_led_set_ble_state\(STATUS_LED_BLE_RECONNECTING,\s*false\)' `
+    "expired recovery pairing windows must not leave the BLE LED state stuck on pairing after the pairable window has ended"
 Assert-Contains $gap 'static\s+esp_err_t\s+ble_hid_gap_refresh_configured_device_name\(const char \*context\)[\s\S]*?listener_device_get_ble_name\(\)[\s\S]*?ble_svc_gap_device_name_set\(device_name\)[\s\S]*?ble_svc_gap_device_appearance_set\(s_adv_appearance\)[\s\S]*?ble_hid_gap_configure_normal_adv_fields\(\)[\s\S]*?device_settings_mark_ble_name_applied\(\)' `
     "advertising must refresh the currently configured BLE name plus GAP appearance and mark it applied"
 Assert-Contains $typeRecoveryAdv 's_adv_fields\.flags\s*=\s*BLE_HS_ADV_F_DISC_GEN\s*\|\s*BLE_HS_ADV_F_BREDR_UNSUP;[\s\S]*?s_adv_fields\.appearance_is_present\s*=\s*1;[\s\S]*?s_adv_fields\.uuids16\s*=\s*&s_hid_service_uuid;[\s\S]*?s_scan_rsp_fields\.uuids128\s*=\s*&s_audio_stream_service_uuid;[\s\S]*?return\s+true;' `
@@ -249,8 +251,8 @@ Assert-Contains $audio 'extern\s+bool\s+ble_hid_gap_is_securely_connected\(void\
     "audio stream must weak-link HID secure state before clearing Type-link power state"
 Assert-Contains $audio 'BLE_AUDIO_STREAM_TYPE_HEARTBEAT_TIMEOUT_MS\s+45000' `
     "Type heartbeat timeout must bridge WinRT/Windows reconnect jitter while BYE still clears immediately"
-Assert-Contains $audio 'BLE_AUDIO_STREAM_TYPE_LED_READY_HOLD_MS\s+45000' `
-    "Type LED readiness must match the heartbeat window through short host heartbeat misses"
+Assert-Contains $audio 'BLE_AUDIO_STREAM_TYPE_LED_READY_HOLD_MS\s+12000' `
+    "Type LED readiness must clear stale Type-exit cues quickly while still covering one missed 8s heartbeat"
 Assert-Contains $audio 'static\s+bool\s+ble_audio_stream_transport_state_type_ready\([^)]*\)[\s\S]*?BLE_AUDIO_STREAM_TRANSPORT_STATE_STREAM_READY[\s\S]*?BLE_AUDIO_STREAM_TRANSPORT_STATE_STREAMING[\s\S]*?BLE_AUDIO_STREAM_TRANSPORT_STATE_DRAINING' `
     "Type-link helper must remain true during active streaming/draining"
 Assert-Contains $audio 'bool\s+ble_audio_stream_is_type_link_ready\(void\)[\s\S]*?ble_audio_stream_transport_link_ready\(\)[\s\S]*?ble_audio_stream_transport_state_type_ready\(s_transport_state\)[\s\S]*?ble_audio_stream_type_heartbeat_recent\(\)' `
@@ -309,34 +311,40 @@ Assert-Contains $statusLed 'STATUS_LED_BATTERY_IDLE_BLE_HEARTBEAT_ON_MS\s+120U' 
     "battery idle BLE heartbeat must be brief"
 Assert-Contains $statusLed 'STATUS_LED_BLE_TYPE_READY_STEADY_PERCENT\s+14U' `
     "TYPE_READY must use steady blue"
-Assert-Contains $statusLed 'STATUS_LED_BLE_RECONNECT_MIN_PERCENT\s+10U' `
-    "ordinary reconnecting must keep the restored low blue floor"
-Assert-Contains $statusLed 'STATUS_LED_BLE_RECONNECT_MAX_PERCENT\s+STATUS_LED_BLE_ATTENTION_PERCENT' `
-    "ordinary reconnecting must pulse above the low blue floor"
-Assert-Contains $statusLed 'case STATUS_LED_BLE_RECONNECTING:[\s\S]*?status_led_double_pulse_on\(\s*ble_elapsed_ms,\s*STATUS_LED_BLE_CONNECTED_FIND_TYPE_PERIOD_MS\s*\)[\s\S]*?STATUS_LED_BLE_RECONNECT_MAX_PERCENT[\s\S]*?STATUS_LED_BLE_RECONNECT_MIN_PERCENT[\s\S]*?status_led_token_locked\(\s*ble_blue,\s*percent,\s*false\s*\)[\s\S]*?break;' `
-    "active reconnecting must render the low-floor blue double flash"
+Assert-Contains $statusLed 'STATUS_LED_BLE_RECONNECT_PULSE_PERCENT\s+STATUS_LED_BLE_ATTENTION_PERCENT' `
+    "ordinary reconnecting must keep the swapped off-floor blue pulse peak"
+Assert-Contains $statusLed 'case STATUS_LED_BLE_RECONNECTING:[\s\S]*?status_led_double_pulse_on\(\s*ble_elapsed_ms,\s*STATUS_LED_BLE_CONNECTED_FIND_TYPE_PERIOD_MS\s*\)[\s\S]*?STATUS_LED_BLE_RECONNECT_PULSE_PERCENT[\s\S]*?:\s*0U[\s\S]*?percent\s*>\s*0U[\s\S]*?status_led_token_locked\(\s*ble_blue,\s*percent,\s*false\s*\)[\s\S]*?break;' `
+    "active reconnecting must render the swapped off-floor blue double flash"
 Assert-NotContains $statusLed 'case STATUS_LED_BLE_RECONNECTING:\s*\{(?:(?!break;)[\s\S])*?status_led_blink_on' `
-    "ordinary reconnecting must use the low-floor double pulse, not pairing-style blink"
+    "ordinary reconnecting must use the off-floor double pulse, not pairing-style blink"
 Assert-Contains $statusLed 'STATUS_LED_BLE_CONNECTED_FIND_TYPE_PERIOD_MS\s+2000U' `
     "HID-only connected must use a bounded find-Type double-flash period"
-Assert-Contains $statusLed 'STATUS_LED_BLE_CONNECTED_FIND_TYPE_PULSE_PERCENT\s+STATUS_LED_BLE_RECONNECT_MAX_PERCENT' `
-    "HID-only connected find-Type flash must share reconnect peak brightness without keeping reconnect's floor"
-Assert-Contains $statusLed 'case STATUS_LED_BLE_CONNECTED:[\s\S]*?if\s*\(\s*status_led_ota_ble_steady_locked\(now_ms\)\s*\)[\s\S]*?STATUS_LED_BLE_TYPE_READY_STEADY_PERCENT[\s\S]*?else if\s*\(\s*status_led_double_pulse_on\(\s*ble_elapsed_ms,\s*STATUS_LED_BLE_CONNECTED_FIND_TYPE_PERIOD_MS\s*\)\s*\)[\s\S]*?STATUS_LED_BLE_CONNECTED_FIND_TYPE_PULSE_PERCENT[\s\S]*?break;\s*case STATUS_LED_BLE_TYPE_READY:[\s\S]*?STATUS_LED_BLE_TYPE_READY_STEADY_PERCENT' `
-    "HID-only connected must show a plain blue find-Type double flash, while TYPE_READY stays steady blue"
-Assert-NotContains $statusLed 'STATUS_LED_BLE_CONNECTED_FIND_TYPE_FLOOR_PERCENT' `
-    "HID-only connected find-Type must not keep reconnect's low blue floor"
+Assert-Contains $statusLed 'STATUS_LED_BLE_CONNECTED_FIND_TYPE_WINDOW_MS\s+STATUS_LED_STATUS_WINDOW_MS' `
+    "HID-only connected find-Type cue must be bounded by the status/connection window"
+Assert-Contains $statusLed 'STATUS_LED_BLE_CONNECTED_FIND_TYPE_MIN_PERCENT\s+10U' `
+    "HID-only connected find-Type cue must keep the swapped-in low blue floor"
+Assert-Contains $statusLed 'STATUS_LED_BLE_CONNECTED_FIND_TYPE_MAX_PERCENT\s+STATUS_LED_BLE_ATTENTION_PERCENT' `
+    "HID-only connected find-Type pulse must share the attention peak"
+Assert-Contains $statusLed 'static\s+bool\s+status_led_connected_find_type_window_active_locked\(uint32_t now_ms\)[\s\S]*?status_window_until_ms[\s\S]*?ble_confidence_until_ms[\s\S]*?oobe_confidence_until_ms' `
+    "HID-only connected find-Type cue must have an explicit finite window"
+Assert-Contains $statusLed 'case STATUS_LED_BLE_CONNECTED:[\s\S]*?if\s*\(\s*status_led_ota_ble_steady_locked\(now_ms\)\s*\)[\s\S]*?STATUS_LED_BLE_TYPE_READY_STEADY_PERCENT[\s\S]*?else if\s*\(\s*status_led_connected_find_type_window_active_locked\(now_ms\)\s*\)[\s\S]*?status_led_double_pulse_on\(\s*ble_elapsed_ms,\s*STATUS_LED_BLE_CONNECTED_FIND_TYPE_PERIOD_MS\s*\)[\s\S]*?STATUS_LED_BLE_CONNECTED_FIND_TYPE_MAX_PERCENT[\s\S]*?STATUS_LED_BLE_CONNECTED_FIND_TYPE_MIN_PERCENT[\s\S]*?status_led_token_locked\(\s*ble_blue,\s*percent,\s*false\s*\)[\s\S]*?break;\s*case STATUS_LED_BLE_TYPE_READY:[\s\S]*?STATUS_LED_BLE_TYPE_READY_STEADY_PERCENT' `
+    "HID-only connected must show a low-floor bounded blue find-Type double flash, while TYPE_READY stays steady blue"
 Assert-NotContains $statusLed 'status_led_connected_hid_only_percent_locked|STATUS_LED_BLE_CONNECTED_HEARTBEAT_PERIOD_MS|STATUS_LED_BLE_CONNECTED_CONFIRM_MS|STATUS_LED_BLE_CONNECTED_BASE_PERCENT' `
     "HID-only connected must not keep the old low-base heartbeat/confirmation renderer"
-Assert-Contains $statusLed 'static\s+uint8_t\s+status_led_low_power_ble_percent_locked\(uint32_t ble_elapsed_ms\)[\s\S]*?case STATUS_LED_BLE_PAIRING:[\s\S]*?STATUS_LED_BATTERY_IDLE_BLE_HEARTBEAT_ON_MS[\s\S]*?STATUS_LED_LOW_POWER_BLE_ATTENTION_PERCENT[\s\S]*?case STATUS_LED_BLE_RECONNECTING:\s*\n\s*case STATUS_LED_BLE_CONNECTED:\s*\n\s*case STATUS_LED_BLE_TYPE_READY:[\s\S]*?return 0U;' `
-    "reconnecting, connected, and TYPE_READY BLE must stay dark after idle"
+Assert-Contains $statusLed 'static\s+bool\s+status_led_low_power_ble_ready_window_active_locked\(uint32_t now_ms\)[\s\S]*?STATUS_LED_BLE_CONNECTED[\s\S]*?STATUS_LED_BLE_TYPE_READY[\s\S]*?status_window_until_ms[\s\S]*?ble_confidence_until_ms[\s\S]*?oobe_confidence_until_ms' `
+    "low-power connected/TYPE_READY visibility must be gated by an explicit finite ready window"
+Assert-Contains $statusLed 'static\s+uint8_t\s+status_led_low_power_ble_percent_locked\(uint32_t now_ms,\s*uint32_t ble_elapsed_ms\)[\s\S]*?case STATUS_LED_BLE_PAIRING:[\s\S]*?STATUS_LED_BATTERY_IDLE_BLE_HEARTBEAT_ON_MS[\s\S]*?STATUS_LED_LOW_POWER_BLE_ATTENTION_PERCENT[\s\S]*?case STATUS_LED_BLE_RECONNECTING:\s*\n\s*return 0U;[\s\S]*?case STATUS_LED_BLE_CONNECTED:[\s\S]*?!status_led_low_power_ble_ready_window_active_locked\(now_ms\)[\s\S]*?return 0U;[\s\S]*?status_led_double_pulse_on\([\s\S]*?STATUS_LED_BLE_CONNECTED_FIND_TYPE_PERIOD_MS[\s\S]*?STATUS_LED_BLE_CONNECTED_FIND_TYPE_MAX_PERCENT[\s\S]*?STATUS_LED_BLE_CONNECTED_FIND_TYPE_MIN_PERCENT[\s\S]*?case STATUS_LED_BLE_TYPE_READY:[\s\S]*?status_led_low_power_ble_ready_window_active_locked\(now_ms\)[\s\S]*?STATUS_LED_BLE_TYPE_READY_STEADY_PERCENT[\s\S]*?:\s*0U;' `
+    "low-power BLE must keep reconnecting dark, show fresh connected as low-floor bounded find-Type, show fresh TYPE_READY as steady blue, and then go dark after idle"
+Assert-Contains $statusLed 'if\s*\(\s*s_state\.low_power_disabled\s*\)\s*\{[\s\S]*?status_led_low_power_ble_ready_window_active_locked\(now_ms\)[\s\S]*?return STATUS_LED_REFRESH_MS;' `
+    "low-power BLE ready window must refresh at the normal LED rate until the visible connection window expires"
 Assert-Contains $statusLed 'const bool active_work = s_state\.recording_active \|\| s_state\.processing_active \|\| s_state\.ota_active;' `
     "status LED renderer must define active work for recording/processing/OTA visibility"
 Assert-Contains $statusLed 'STATUS_LED_BATTERY_STATUS_WINDOW_PWR_PERCENT\s+14U[\s\S]*?percent = \(status_window \|\| active_work\)[\s\S]*?\? STATUS_LED_BATTERY_STATUS_WINDOW_PWR_PERCENT[\s\S]*?: STATUS_LED_LOW_POWER_PWR_PERCENT;' `
     "battery PWR active-rendering window must stay readable during active work and then hand off to the low-power level"
 Assert-Contains $statusDoc '30 second Type-ready hold' `
     "status LED documentation must describe the active Type-ready LED hold"
-Assert-Contains $statusDoc 'Only explicit Type-controlled recovery keeps the current stable BLE identity[\s\S]*?ordinary EC11/USB recovery rotates and persists a new static-random BLE identity[\s\S]*?create a new bond through the recovery window' `
-    "status LED documentation must describe explicit Type-stable recovery, ordinary EC11/USB identity rotation, and async local bond-delete semantics"
+Assert-Contains $statusDoc 'If a recent Type heartbeat or Type-host presence window proves Listener-Type was active on this computer[\s\S]*?If Type is absent and no recent Type-host presence exists, native recovery rotates and persists a new static-random BLE identity[\s\S]*?create a new bond through the recovery window' `
+    "status LED documentation must describe Type-present stable recovery, no-Type native identity rotation, and async local bond-delete semantics"
 
 $modelState = "disconnected"
 $connected = $false
@@ -396,4 +404,4 @@ if ($modelState -ne "connected") {
     throw "verify_ble_status_led_connected_sync failed: reconnect-to-connected model regressed to $modelState"
 }
 
-Write-Host "PASS: BLE status LED connected-sync checks cover GAP/HID connected source of truth, stable-identity re-pair advertising, audio-stream TYPE_READY sync with LED hold, stale advertising suppression, connected battery resync after preview clears, HID-only find-Type double flash versus steady TYPE_READY brightness, active-work PWR/OTA visibility, idle connected/TYPE_READY BLE dark, and disconnect/advertising negative transitions."
+Write-Host "PASS: BLE status LED connected-sync checks cover GAP/HID connected source of truth, stable-identity re-pair advertising, audio-stream TYPE_READY sync with LED hold, stale advertising suppression, connected battery resync after preview clears, swapped low-floor HID-only find-Type cue versus off-floor reconnect and steady TYPE_READY brightness, fresh low-power connected/TYPE_READY visibility window, idle BLE dark after the window, active-work PWR/OTA visibility, and disconnect/advertising negative transitions."

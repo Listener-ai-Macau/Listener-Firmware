@@ -325,9 +325,9 @@ CHECKS = {
         "STATUS_LED_CHARGING_ACTIVE_WORK_MIN_PERCENT 12U",
         "STATUS_LED_BLE_ATTENTION_PERCENT 18U",
         "STATUS_LED_BLE_PAIRING_PULSE_PERCENT STATUS_LED_BLE_ATTENTION_PERCENT",
-        "STATUS_LED_BLE_RECONNECT_MIN_PERCENT 10U",
-        "STATUS_LED_BLE_RECONNECT_MAX_PERCENT STATUS_LED_BLE_ATTENTION_PERCENT",
-        "STATUS_LED_BLE_CONNECTED_FIND_TYPE_PULSE_PERCENT STATUS_LED_BLE_RECONNECT_MAX_PERCENT",
+        "STATUS_LED_BLE_RECONNECT_PULSE_PERCENT STATUS_LED_BLE_ATTENTION_PERCENT",
+        "STATUS_LED_BLE_CONNECTED_FIND_TYPE_MIN_PERCENT 10U",
+        "STATUS_LED_BLE_CONNECTED_FIND_TYPE_MAX_PERCENT STATUS_LED_BLE_ATTENTION_PERCENT",
         "STATUS_LED_BLE_TYPE_READY_STEADY_PERCENT 14U",
         "case STATUS_LED_BLE_TYPE_READY: return \"type_ready\"",
         "status_led_ble_state_ready_locked",
@@ -635,7 +635,7 @@ CHECKS = {
     ],
     "ports/esp32/ble_audio_stream/ble_audio_stream_esp32.c": [
         "BLE_AUDIO_STREAM_TYPE_HEARTBEAT_TIMEOUT_MS 45000",
-        "BLE_AUDIO_STREAM_TYPE_LED_READY_HOLD_MS 45000",
+        "BLE_AUDIO_STREAM_TYPE_LED_READY_HOLD_MS 12000",
         "ble_audio_stream_sync_power_manager_for_type_link(false, \"gap_connect\")",
         "TYPE:READY",
         "TYPE:HB",
@@ -764,6 +764,11 @@ CHECKS = {
     ],
     "ports/esp32/voice_key_input/voice_key_input_esp32.c": [
         "#include \"status_led.h\"",
+        "#define VOICE_KEY_INPUT_DOUBLE_CLICK_MIN_GAP_MS (60)",
+        "voice_key_input_mark_recovery_double_candidate(button, now_tick, \"raw_edge\")",
+        "voice_key_input_mark_recovery_double_candidate(\n                    &s_direct_gpio_state,\n                    now,\n                    \"isr_edge\")",
+        "button->recovery_double_candidate =\n        voice_key_input_recovery_double_gap_ready(button, now_tick)",
+        "voice_key_input_clear_raw_feedback(button);\n            ESP_LOGI(TAG, \"%s long press reserved for power control",
         "status_led_notify_shutdown_confirm(false, \"ec11_long_press_shutdown_confirm\")",
         "status_led_cancel_shutdown_confirm(\"ec11_long_press_released\")",
     ],
@@ -786,28 +791,29 @@ CHECKS = {
         "status_led_notify_ble_repairing()",
         "three-cycle blue double-flash confirmation",
         "must not keep repeating the confirmation pattern forever",
-        "Only explicit Type-controlled recovery keeps the current stable BLE identity",
-        "ordinary EC11/USB recovery rotates and persists a new static-random BLE identity",
+        "If a recent Type heartbeat or Type-host presence window proves Listener-Type was active on this computer",
+        "If Type is absent and no recent Type-host presence exists, native recovery rotates and persists a new static-random BLE identity",
         "The host must create a new bond through the recovery window instead of silently treating the double-click as an ordinary reconnect to the old bond",
         "ble_repair_ms_left",
         "A successful Type-ready transition is the steady blue connected indication",
-        "Plain Windows/HID-only connected uses a blue double-flash Type-search cue",
+        "Plain Windows/HID-only connected uses a low-floor bounded blue double-flash Type-search cue",
         "BLE animation phase is tracked separately",
         "`ble_transition_ms`",
         "Manual `~LED:PREVIEW` scenes temporarily hold their requested BLE state",
         "for 15 seconds",
         "`preview_ble_override_ms_left`",
-        "Active ordinary reconnect keeps a low blue floor",
+        "Active ordinary reconnect uses an off-floor blue double-flash",
         "pairing and user-requested re-pair can still blink BLE as attention states",
         "Re-pair uses a BLE-plus-EC11 confirmation cue",
         "current render-sampled RGB frame",
         "status_query_samples_current_render=1",
-        "ordinary HID-only `connected` uses a blue double-flash Type-search cue",
+        "ordinary HID-only `connected` uses a low-floor bounded blue double-flash Type-search cue",
         "`TYPE_READY` is the Listener-Type-ready BLE state",
         "it uses steady blue",
         "30 second Type-ready hold",
         "Steady connected state is Type-gated",
-        "In connected/disconnected low-power idle, the low-power renderer keeps PWR visible and leaves reconnecting/connected/TYPE_READY BLE dark",
+        "If power management enters connected idle immediately after a fresh secure connection or Type-ready promotion, the low-power renderer still honors that finite connection/status window",
+        "After that window, connected/disconnected low-power idle keeps PWR visible and leaves reconnecting/connected/TYPE_READY BLE dark",
         "External power overrides battery-color display on `PWR`",
         "continuous slow white breath",
         "steady white once charge-full has been debounced and latched",
@@ -993,10 +999,11 @@ CHECKS = {
         "scene-sleep",
         "Get-ReproSteps",
         "Get-RecordingIndependenceSteps",
+        "Get-BluetoothSteps",
         "~LED:PREVIEW recording_active",
         "Get-TailOnlySteps",
         "Get-ComboOnlySteps",
-        'ValidateSet("Foundation", "Scenes", "Complex", "Volume", "Product", "FinalVisual", "FinalRetest", "FinalCombo", "RootCause", "StaticRoot", "Repro", "RecordingIndependence", "IdleTransition", "TailOnly", "ComboOnly", "Full")',
+        'ValidateSet("Foundation", "Scenes", "Complex", "Volume", "Product", "Bluetooth", "FinalVisual", "FinalRetest", "FinalCombo", "RootCause", "StaticRoot", "Repro", "RecordingIndependence", "IdleTransition", "TailOnly", "ComboOnly", "Full")',
         "preview_effect_only=1",
         "effect-only preview commands",
         "Invoke-OperatorPromptSound",
@@ -1015,7 +1022,7 @@ CHECKS = {
         "STATUS_LED_EC11_FEEDBACK_ROTATE_CCW",
     ],
     "ports/esp32/voice_key_input/voice_key_input_esp32.c": [
-        "EC11 push raw press tracked without EC11 LED feedback",
+        "EC11 push raw press feedback",
         "power_manager_record_activity(\"ec11_key_press\")",
         "power_manager_record_activity(\"ec11_key_hold\")",
     ],
@@ -1081,8 +1088,35 @@ def main() -> int:
     human_review = read("tools/status_led_human_effect_review.ps1")
     status_doc = read("docs/features/status_led.md")
     firmware_ota = read("components/firmware_ota/firmware_ota.c")
+    voice_key = read("ports/esp32/voice_key_input/voice_key_input_esp32.c")
     if "status_led_active_work_locked" in status_led:
         failures.append("status_led.c: active recording/processing must not suppress physical key LED feedback")
+    if (
+        "#define VOICE_KEY_INPUT_SINGLE_CLICK_DISPATCH_MS (500)" not in voice_key
+        or "#define VOICE_KEY_INPUT_RECOVERY_DOUBLE_CLICK_WINDOW_MS (500)" not in voice_key
+        or "#define VOICE_KEY_INPUT_DOUBLE_CLICK_MIN_GAP_MS (60)" not in voice_key
+    ):
+        failures.append("voice_key_input_esp32.c: EC11 must keep the validated 500 ms physical double-click window synchronized with KEY1-KEY4 and a small raw-bounce min-gap guard")
+    if (
+        "voice_key_input_cancel_pending_single_click" not in voice_key
+        or "voice_key_input_arm_pending_single_click" not in voice_key
+        or "voice_key_input_accept_recovery_double_click" not in voice_key
+        or "voice_key_input_mark_recovery_double_candidate" not in voice_key
+        or "voice_key_input_prune_recovery_guard" not in voice_key
+        or "button->recovery_double_candidate =\n        voice_key_input_recovery_double_gap_ready(button, now_tick)" not in voice_key
+        or "bool recovery_double_click = button->recovery_double_candidate" not in voice_key
+    ):
+        failures.append("voice_key_input_esp32.c: EC11 push must require a second press candidate before accepting recovery double-click while single dispatch consumes the recovery guard")
+    if re.search(
+        r"button->pending_single_click\s*&&\s*\(\s*origin\s*!=\s*NULL\s*\|\|\s*button->recovery_double_candidate\s*\)",
+        voice_key,
+    ):
+        failures.append("voice_key_input_esp32.c: EC11 raw-only release must not be enough to accept recovery double-click")
+    if re.search(
+        r"second_click_too_soon|recovery_candidate_from_raw|voice_key_input_note_raw_press_edge|recent_short_click|recent_raw_press|raw_recovery_dispatched",
+        voice_key,
+    ):
+        failures.append("voice_key_input_esp32.c: EC11 push must not restore the old special raw-recovery click path")
     if re.search(r"\bSTATUS_LED_TRANSITION_CLEAR_ACCENTS\b", status_led):
         failures.append("status_led.c: generic transition clear ACCENTS mask must not exist; use NON_KEY_ACCENTS or an explicit strip mask")
     resume_output = extract_c_function(status_led, "status_led_resume_interactive_output_locked")
@@ -1224,17 +1258,14 @@ def main() -> int:
             )
         if "ble_store_clear()" in recovery_body or "ble_store_clear_failed" in recovery_body:
             failures.append("ble_hid_gap_esp32.c: recovery must not synchronously clear the whole NimBLE NVS store in the double-click hot path")
-        if "type_controlled_request || ble_audio_stream_is_type_link_ready()" in recovery_body:
-            failures.append(
-                "ble_hid_gap_esp32.c: ordinary EC11/USB recovery must not become Type-controlled merely because Type was connected before the reset; only explicit RECOVERY:TYPE may keep a stable identity"
-            )
         if not re.search(
             r"const\s+bool\s+type_link_ready_before_recovery\s*=\s*ble_audio_stream_is_type_link_ready\(\);\s*"
-            r"const\s+bool\s+type_controlled_recovery\s*=\s*type_controlled_request\s*;",
+            r"const\s+bool\s+type_host_recent_before_recovery\s*=[\s\S]*?ble_audio_stream_was_type_host_recently_seen\(\);\s*"
+            r"const\s+bool\s+type_controlled_recovery\s*=[\s\S]*?type_controlled_request[\s\S]*?type_link_ready_before_recovery[\s\S]*?type_host_recent_before_recovery\s*;",
             recovery_body,
         ):
             failures.append(
-                "ble_hid_gap_esp32.c: recovery must log the previous Type link state separately while deriving type_controlled_recovery only from the explicit request"
+                "ble_hid_gap_esp32.c: recovery must let recent Type heartbeat or Type-host presence suppress Swift Pair and use the Type-controlled recovery profile"
             )
         refresh_index = recovery_body.find("pairing window already active; refreshing advertising with stable BLE identity")
         refresh_reopen_index = recovery_body.find("ble_hid_gap_open_recovery_pairing_window(", refresh_index)
@@ -1441,11 +1472,11 @@ def main() -> int:
         if "status_led_rgb(255, 140, 0)" not in body:
             failures.append("status_led.c: battery low-power PWR must keep an amber idle fallback when battery sampling is unavailable")
     low_power_ble_helper = re.search(
-        r"static\s+uint8_t\s+status_led_low_power_ble_percent_locked[^{]*\{(?P<body>[\s\S]*?)\n\}",
+        r"static\s+uint8_t\s+status_led_low_power_ble_percent_locked\(uint32_t now_ms, uint32_t ble_elapsed_ms\)[^{]*\{(?P<body>[\s\S]*?)\n\}",
         status_led,
     )
     if not low_power_ble_helper:
-        failures.append("status_led.c: missing shared low-power BLE percent helper")
+        failures.append("status_led.c: missing shared low-power BLE percent helper with now_ms timing context")
     else:
         body = low_power_ble_helper.group("body")
         if not re.search(
@@ -1458,12 +1489,32 @@ def main() -> int:
             failures.append("status_led.c: low-power BLE helper must blink pairing/re-pair instead of latching solid")
         if not re.search(
             r"case\s+STATUS_LED_BLE_RECONNECTING:\s*\n\s*"
-            r"case\s+STATUS_LED_BLE_CONNECTED:\s*\n\s*"
-            r"case\s+STATUS_LED_BLE_TYPE_READY:[\s\S]*?"
             r"return\s+0U;",
             body,
         ):
-            failures.append("status_led.c: low-power idle must keep reconnecting/connected/TYPE_READY BLE dark")
+            failures.append("status_led.c: low-power idle must keep ordinary reconnecting BLE dark")
+        if not re.search(
+            r"case\s+STATUS_LED_BLE_CONNECTED:[\s\S]*?"
+            r"!\s*status_led_low_power_ble_ready_window_active_locked\(now_ms\)[\s\S]*?"
+            r"return\s+0U;[\s\S]*?"
+            r"status_led_double_pulse_on\(\s*ble_elapsed_ms,\s*STATUS_LED_BLE_CONNECTED_FIND_TYPE_PERIOD_MS\s*\)[\s\S]*?"
+            r"STATUS_LED_BLE_CONNECTED_FIND_TYPE_MAX_PERCENT[\s\S]*?"
+            r"STATUS_LED_BLE_CONNECTED_FIND_TYPE_MIN_PERCENT",
+            body,
+        ):
+            failures.append("status_led.c: low-power connected must show the low-floor bounded find-Type cue only during the fresh connection window")
+        if not re.search(
+            r"case\s+STATUS_LED_BLE_TYPE_READY:[\s\S]*?"
+            r"status_led_low_power_ble_ready_window_active_locked\(now_ms\)[\s\S]*?"
+            r"STATUS_LED_BLE_TYPE_READY_STEADY_PERCENT[\s\S]*?"
+            r":\s*0U;",
+            body,
+        ):
+            failures.append("status_led.c: low-power TYPE_READY must stay visible only during the fresh Type-ready window")
+    if "static bool status_led_low_power_ble_ready_window_active_locked(uint32_t now_ms)" not in status_led:
+        failures.append("status_led.c: low-power BLE timing must have an explicit ready-window helper")
+    if "if (status_led_low_power_ble_ready_window_active_locked(now_ms)) {\n            return STATUS_LED_REFRESH_MS;\n        }" not in status_led:
+        failures.append("status_led.c: low-power BLE ready window must use normal refresh until the short visible window expires")
     low_power_ble = re.search(
         r"static\s+void\s+status_led_render_low_power_ble_locked[^{]*\{(?P<body>[\s\S]*?)\n\}",
         status_led,
@@ -1472,7 +1523,7 @@ def main() -> int:
         failures.append("status_led.c: missing low-power BLE renderer")
     else:
         body = low_power_ble.group("body")
-        if "status_led_low_power_ble_percent_locked(status_led_ble_elapsed_locked(now_ms))" not in body:
+        if "status_led_low_power_ble_percent_locked(\n        now_ms,\n        status_led_ble_elapsed_locked(now_ms))" not in body:
             failures.append("status_led.c: low-power BLE renderer must use the shared low-power BLE helper")
     if re.search(
         r"status_led_connected_hid_only_percent_locked|"
@@ -1484,21 +1535,34 @@ def main() -> int:
         failures.append("status_led.c: active BLE rendering must not use the old low-base HID-only connected heartbeat/confirmation renderer")
     if "STATUS_LED_BLE_CONNECTED_FIND_TYPE_PERIOD_MS 2000U" not in status_led:
         failures.append("status_led.c: HID-only connected must keep the bounded find-Type double-flash period")
-    if "STATUS_LED_BLE_CONNECTED_FIND_TYPE_FLOOR_PERCENT" in status_led:
-        failures.append("status_led.c: HID-only connected find-Type must not keep reconnect's low blue floor")
-    if "STATUS_LED_BLE_CONNECTED_FIND_TYPE_PULSE_PERCENT STATUS_LED_BLE_RECONNECT_MAX_PERCENT" not in status_led:
-        failures.append("status_led.c: HID-only connected find-Type flash must share reconnect peak brightness without keeping reconnect's floor")
+    if "STATUS_LED_BLE_CONNECTED_FIND_TYPE_WINDOW_MS STATUS_LED_STATUS_WINDOW_MS" not in status_led:
+        failures.append("status_led.c: HID-only connected find-Type cue must be bounded by the status/connection window")
+    if "STATUS_LED_BLE_CONNECTED_FIND_TYPE_MIN_PERCENT 10U" not in status_led:
+        failures.append("status_led.c: HID-only connected find-Type must keep the swapped-in low blue floor")
+    if "STATUS_LED_BLE_CONNECTED_FIND_TYPE_MAX_PERCENT STATUS_LED_BLE_ATTENTION_PERCENT" not in status_led:
+        failures.append("status_led.c: HID-only connected find-Type pulse must keep the shared attention peak")
     if not re.search(
         r"case\s+STATUS_LED_BLE_CONNECTED:[\s\S]*?"
         r"if\s*\(\s*status_led_ota_ble_steady_locked\(now_ms\)\s*\)[\s\S]*?"
         r"STATUS_LED_BLE_TYPE_READY_STEADY_PERCENT[\s\S]*?"
-        r"else\s+if\s*\(\s*status_led_double_pulse_on\(\s*ble_elapsed_ms,\s*STATUS_LED_BLE_CONNECTED_FIND_TYPE_PERIOD_MS\s*\)\s*\)[\s\S]*?"
-        r"STATUS_LED_BLE_CONNECTED_FIND_TYPE_PULSE_PERCENT[\s\S]*?"
+        r"else\s+if\s*\(\s*status_led_connected_find_type_window_active_locked\(now_ms\)\s*\)[\s\S]*?"
+        r"status_led_double_pulse_on\(\s*ble_elapsed_ms,\s*STATUS_LED_BLE_CONNECTED_FIND_TYPE_PERIOD_MS\s*\)[\s\S]*?"
+        r"STATUS_LED_BLE_CONNECTED_FIND_TYPE_MAX_PERCENT[\s\S]*?"
+        r"STATUS_LED_BLE_CONNECTED_FIND_TYPE_MIN_PERCENT[\s\S]*?"
+        r"status_led_token_locked\(\s*ble_blue,\s*percent,\s*false\s*\)[\s\S]*?"
         r"break;\s*case\s+STATUS_LED_BLE_TYPE_READY:[\s\S]*?"
         r"STATUS_LED_BLE_TYPE_READY_STEADY_PERCENT",
         status_led,
     ):
-        failures.append("status_led.c: active BLE rendering must make HID-only connected a plain find-Type double flash; only TYPE_READY or active OTA transfer may be steady blue")
+        failures.append("status_led.c: active BLE rendering must make HID-only connected a low-floor bounded find-Type double flash; only TYPE_READY or active OTA transfer may be steady blue")
+    if not re.search(
+        r"static\s+bool\s+status_led_connected_find_type_window_active_locked\(uint32_t now_ms\)[\s\S]*?"
+        r"status_window_until_ms[\s\S]*?"
+        r"ble_confidence_until_ms[\s\S]*?"
+        r"oobe_confidence_until_ms",
+        status_led,
+    ):
+        failures.append("status_led.c: HID-only connected find-Type cue must have an explicit finite window")
     reconnect_case = re.search(
         r"case\s+STATUS_LED_BLE_RECONNECTING:\s*\{(?P<body>[\s\S]*?)\n\s*\}",
         status_led,
@@ -1508,16 +1572,17 @@ def main() -> int:
     else:
         reconnect_body = reconnect_case.group("body")
         if "status_led_blink_on" in reconnect_body:
-            failures.append("status_led.c: ordinary reconnecting must use the low-floor double pulse, not pairing-style blink")
+            failures.append("status_led.c: ordinary reconnecting must use the off-floor double pulse, not pairing-style blink")
         if not re.search(
             r"status_led_double_pulse_on\(\s*ble_elapsed_ms,\s*"
             r"STATUS_LED_BLE_CONNECTED_FIND_TYPE_PERIOD_MS\s*\)[\s\S]*?"
-            r"STATUS_LED_BLE_RECONNECT_MAX_PERCENT[\s\S]*?"
-            r"STATUS_LED_BLE_RECONNECT_MIN_PERCENT[\s\S]*?"
+            r"STATUS_LED_BLE_RECONNECT_PULSE_PERCENT[\s\S]*?"
+            r":\s*0U[\s\S]*?"
+            r"percent\s*>\s*0U[\s\S]*?"
             r"status_led_token_locked\(\s*ble_blue,\s*percent,\s*false\s*\)",
             reconnect_body,
         ):
-            failures.append("status_led.c: ordinary reconnecting must render the restored low-floor blue double flash")
+            failures.append("status_led.c: ordinary reconnecting must render the swapped off-floor blue double flash")
     if not re.search(
         r"void\s+status_led_set_ota_active[\s\S]*?else\s*\{[\s\S]*?"
         r"status_led_clear_ota_locked\(\);[\s\S]*?\}"
@@ -1897,6 +1962,37 @@ def main() -> int:
         ):
             if stale_token in product_text:
                 failures.append(f"status_led_human_effect_review.ps1: Product review must not include repeated tuning step {stale_token}")
+    bluetooth_block = re.search(
+        r"function\s+Get-BluetoothSteps\s*\{([\s\S]*?)\nfunction\s+Get-ReviewSteps",
+        human_review,
+    )
+    if not bluetooth_block:
+        failures.append("status_led_human_effect_review.ps1: missing Bluetooth review block")
+    else:
+        bluetooth_text = bluetooth_block.group(1)
+        for token in (
+            'ValidateSet("Foundation", "Scenes", "Complex", "Volume", "Product", "Bluetooth", "FinalVisual", "FinalRetest", "FinalCombo", "RootCause", "StaticRoot", "Repro", "RecordingIndependence", "IdleTransition", "TailOnly", "ComboOnly", "Full")',
+            'if ($Mode -eq "Bluetooth")',
+            'bluetooth-type-ready',
+            'bluetooth-hid-only-find-type',
+            'bluetooth-pairing-native',
+            'bluetooth-reconnecting',
+            'bluetooth-double-repair',
+            'bluetooth-ota-active',
+            '~LED:PREVIEW type_ready',
+            '~LED:PREVIEW connected',
+            '~LED:PREVIEW pairing',
+            '~LED:PREVIEW reconnecting',
+            '~LED:PREVIEW repairing',
+            '~LED:PREVIEW ota',
+            '三次同步蓝色双闪',
+            '不能稳蓝，也不能一直闪',
+            'AI/WARN 不参与；OTA 阻止 idle',
+        ):
+            if token not in human_review:
+                failures.append(f"status_led_human_effect_review.ps1: Bluetooth review must include {token}")
+        if 'scene-recording-processing-live' in bluetooth_text or 'volume-capture-sweep' in bluetooth_text:
+            failures.append("status_led_human_effect_review.ps1: Bluetooth review must stay focused on BLE scenarios, not full recording/volume tuning")
     idle_transition_block = re.search(
         r"function\s+Get-IdleTransitionSteps\s*\{([\s\S]*?)\nfunction\s+Get-TailOnlySteps",
         human_review,
@@ -1906,7 +2002,7 @@ def main() -> int:
     else:
         idle_transition_text = idle_transition_block.group(1)
         for token in (
-            'ValidateSet("Foundation", "Scenes", "Complex", "Volume", "Product", "FinalVisual", "FinalRetest", "FinalCombo", "RootCause", "StaticRoot", "Repro", "RecordingIndependence", "IdleTransition", "TailOnly", "ComboOnly", "Full")',
+            'ValidateSet("Foundation", "Scenes", "Complex", "Volume", "Product", "Bluetooth", "FinalVisual", "FinalRetest", "FinalCombo", "RootCause", "StaticRoot", "Repro", "RecordingIndependence", "IdleTransition", "TailOnly", "ComboOnly", "Full")',
             'if ($Mode -eq "IdleTransition")',
             "~LED:PREVIEW recording_processing_status_led_only",
             "~LED:REC_LEVEL 100 60000",
@@ -2099,10 +2195,10 @@ def main() -> int:
         failures.append("status_led.c: quiet ACTIVE must not hide connected BLE before power_manager enters idle")
     if not re.search(
         r"status_led_render_low_power_ble_locked[^{]*\{[\s\S]*?"
-        r"status_led_low_power_ble_percent_locked\(status_led_ble_elapsed_locked\(now_ms\)\)",
+        r"status_led_low_power_ble_percent_locked\(\s*now_ms,\s*status_led_ble_elapsed_locked\(now_ms\)\s*\)",
         status_led,
     ):
-        failures.append("status_led.c: low-power idle must keep using the shared BLE helper so connected/TYPE_READY stays dark and attention states blink")
+        failures.append("status_led.c: low-power idle must keep using the shared BLE helper with timing context so fresh connected/TYPE_READY windows render and then go dark")
     ble_set_state = re.search(
         r"void\s+status_led_set_ble_state[\s\S]*?"
         r"\n\}\n\nvoid\s+status_led_notify_ble_repairing",
@@ -2117,9 +2213,11 @@ def main() -> int:
         "state_changed && !effect_only && !routine_low_power_ble &&" not in ble_set_state.group(0) or
         "status_led_ble_state_ready_locked(state) &&\n            !keep_repair_cue" not in ble_set_state.group(0) or
         "!active_work" not in ble_set_state.group(0) or
-        "if (state_changed && !effect_only && !routine_low_power_ble)" not in ble_set_state.group(0)
+        "if (state_changed && !effect_only && !routine_low_power_ble)" not in ble_set_state.group(0) or
+        "const bool ble_visual_transition =\n            state_changed && !effect_only && !active_work;" not in ble_set_state.group(0) or
+        "if (ble_visual_transition) {\n                s_state.last_transition_ms = now_ms;" not in ble_set_state.group(0)
     ):
-        failures.append("status_led.c: routine connected/TYPE_READY/DISCONNECTED BLE changes must not reopen active BLE windows from low-power idle or inject transition-clear frames during recording/processing/OTA")
+        failures.append("status_led.c: routine connected/TYPE_READY/DISCONNECTED BLE changes must not reopen active BLE windows or reset active-work effect timing during recording/processing/OTA")
     if "status_led_force_all_off();" in status_led:
         failures.append("status_led.c: all-off callers must explicitly choose whether the status strip may force non-DMA")
     all_off_body = re.search(

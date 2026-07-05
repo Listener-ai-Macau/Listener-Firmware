@@ -219,9 +219,9 @@ CHECKS = {
     "ports/esp32/voice_key_input/voice_key_input_esp32.c": [
         "VOICE_KEY_INPUT_IDLE_BACKUP_POLL_MS (20)",
         "VOICE_KEY_INPUT_LOW_POWER_IDLE_BACKUP_POLL_MS (20)",
-        "VOICE_KEY_INPUT_DOUBLE_CLICK_MIN_GAP_MS (80)",
-        "VOICE_KEY_INPUT_DOUBLE_CLICK_WINDOW_MS (200)",
-        "VOICE_KEY_INPUT_RECOVERY_DOUBLE_CLICK_WINDOW_MS (200)",
+        "VOICE_KEY_INPUT_DEBOUNCE_MS    (20)",
+        "VOICE_KEY_INPUT_SINGLE_CLICK_DISPATCH_MS (500)",
+        "VOICE_KEY_INPUT_RECOVERY_DOUBLE_CLICK_WINDOW_MS (500)",
         "VOICE_KEY_INPUT_LONG_PRESS_IGNORE_MS (800)",
         "VOICE_KEY_INPUT_HOLD_FEEDBACK_REFRESH_MS (300)",
         "voice_key_input_next_wait_ms",
@@ -244,7 +244,7 @@ CHECKS = {
         "KEYBOARD_CUSTOM_IDLE_BACKUP_POLL_MS 20",
         "KEYBOARD_CUSTOM_LOW_POWER_IDLE_BACKUP_POLL_MS 20",
         "KEYBOARD_CUSTOM_DEBOUNCE_MS 20",
-        "KEYBOARD_CUSTOM_DOUBLE_CLICK_WINDOW_MS 200",
+        "KEYBOARD_CUSTOM_DOUBLE_CLICK_WINDOW_MS 500",
         "KEYBOARD_EC11_EVENT_QUEUE_DEPTH 256",
         "KEYBOARD_EC11_LOW_POWER_IDLE_POLL_MS 20",
         "KEYBOARD_EC11_FEEDBACK_EDGE_REFRESH_MS 60",
@@ -1755,11 +1755,11 @@ def main() -> int:
             "components/keyboard/keyboard.c: KEY1-KEY4 debounce must stay 20 ms so short physical taps can reach confirmed gestures"
         )
     if not re.search(
-        r"#define\s+KEYBOARD_CUSTOM_DOUBLE_CLICK_WINDOW_MS\s+200\b",
+        r"#define\s+KEYBOARD_CUSTOM_DOUBLE_CLICK_WINDOW_MS\s+500\b",
         keyboard,
     ):
         failures.append(
-            "components/keyboard/keyboard.c: KEY1-KEY4 double-click window must stay 200 ms so single-click feedback feels immediate"
+            "components/keyboard/keyboard.c: KEY1-KEY4 double-click window must stay synchronized with EC11 at 500 ms"
         )
     if not re.search(
         r"#define\s+KEYBOARD_CUSTOM_LOW_POWER_IDLE_BACKUP_POLL_MS\s+20\b",
@@ -2031,67 +2031,77 @@ def main() -> int:
             "ports/esp32/voice_key_input/voice_key_input_esp32.c: EC11 push must keep 20 ms active/low-power backup scan around the runtime GPIO wake interrupt"
         )
     if not re.search(
-        r"#define\s+VOICE_KEY_INPUT_DOUBLE_CLICK_MIN_GAP_MS\s+\(80\)",
+        r"#define\s+VOICE_KEY_INPUT_DEBOUNCE_MS\s+\(20\)",
         voice_key,
     ):
         failures.append(
-            "ports/esp32/voice_key_input/voice_key_input_esp32.c: EC11 recovery double-click must keep the 80 ms minimum gap so contact bounce cannot trigger recovery"
+            "ports/esp32/voice_key_input/voice_key_input_esp32.c: EC11 push debounce must match the validated 20 ms KEY1-KEY4 debounce"
         )
     if not re.search(
-        r"#define\s+VOICE_KEY_INPUT_DOUBLE_CLICK_WINDOW_MS\s+\(200\)",
+        r"#define\s+VOICE_KEY_INPUT_DOUBLE_CLICK_MIN_GAP_MS\s+\(60\)",
         voice_key,
     ):
         failures.append(
-            "ports/esp32/voice_key_input/voice_key_input_esp32.c: EC11 single-click dispatch must match the 200 ms KEY1-KEY4 double-click feel"
+            "ports/esp32/voice_key_input/voice_key_input_esp32.c: EC11 push must keep the 60 ms raw-bounce guard so a single press cannot become recovery double-click"
         )
     if not re.search(
-        r"#define\s+VOICE_KEY_INPUT_RECOVERY_DOUBLE_CLICK_WINDOW_MS\s+\(200\)",
+        r"#define\s+VOICE_KEY_INPUT_SINGLE_CLICK_DISPATCH_MS\s+\(500\)",
         voice_key,
     ):
         failures.append(
-            "ports/esp32/voice_key_input/voice_key_input_esp32.c: EC11 recovery double-click window must match the 200 ms KEY1-KEY4 double-click feel"
+            "ports/esp32/voice_key_input/voice_key_input_esp32.c: EC11 single-click dispatch must stay synchronized with KEY1-KEY4 at the validated 500 ms physical double-click window"
         )
-    min_gap_match = re.search(
-        r"#define\s+VOICE_KEY_INPUT_DOUBLE_CLICK_MIN_GAP_MS\s+\((\d+)\)",
+    if not re.search(
+        r"#define\s+VOICE_KEY_INPUT_RECOVERY_DOUBLE_CLICK_WINDOW_MS\s+\(500\)",
         voice_key,
-    )
+    ):
+        failures.append(
+            "ports/esp32/voice_key_input/voice_key_input_esp32.c: EC11 recovery double-click guard must stay synchronized with KEY1-KEY4 at 500 ms so physical EC11 double-click does not fall through to single recording"
+        )
     generated_gap_match = re.search(
         r"#define\s+VOICE_KEY_INPUT_GENERATED_INTER_CLICK_RELEASE_MS\s+\((\d+)\)",
         voice_key,
     )
-    if (
-        min_gap_match is None
-        or generated_gap_match is None
-        or int(generated_gap_match.group(1)) < int(min_gap_match.group(1)) + 40
-    ):
+    if generated_gap_match is None or int(generated_gap_match.group(1)) < 120:
         failures.append(
-            "ports/esp32/voice_key_input/voice_key_input_esp32.c: generated EC11 double-click diagnostics must leave at least 40 ms margin above the physical min-gap so validation cannot collapse into single-click fallback"
+            "ports/esp32/voice_key_input/voice_key_input_esp32.c: generated EC11 double-click diagnostics must leave a clear release gap for the validated KEY1-KEY4-style double-click window"
         )
+    forbidden_ec11_special_click_tokens = [
+        "elapsed_lt_min_gap_ms",
+        "second_click_too_soon",
+        "recovery_candidate_from_raw",
+        "!recovery_candidate_from_raw",
+        "voice_key_input_note_raw_press_edge",
+        "recent_short_click",
+        "recent_raw_press",
+        "raw_recovery_dispatched",
+    ]
+    for token in forbidden_ec11_special_click_tokens:
+        if token in voice_key:
+            failures.append(
+                f"ports/esp32/voice_key_input/voice_key_input_esp32.c: EC11 push must stay on the KEY1-KEY4-style click state machine, not the old special recovery path ({token})"
+            )
     if (
-        "elapsed_lt_min_gap_ms" not in voice_key
-        or "second_click_too_soon" not in voice_key
-        or "stable_release" not in voice_key
-        or "recovery_candidate_from_raw" not in voice_key
-        or "!recovery_candidate_from_raw" not in voice_key
-        or "Raw-only EC11 short clicks are accepted only as single-click candidates after stable idle" not in (
+        "voice_key_input_cancel_pending_single_click" not in voice_key
+        or "voice_key_input_arm_pending_single_click" not in voice_key
+        or "voice_key_input_accept_recovery_double_click" not in voice_key
+        or "voice_key_input_mark_recovery_double_candidate" not in voice_key
+        or "button->recovery_double_candidate =\n        voice_key_input_recovery_double_gap_ready(button, now_tick)" not in voice_key
+        or "bool recovery_double_click = button->recovery_double_candidate" not in voice_key
+        or "recovery_guard_active" not in voice_key
+        or "EC11 push keeps the same 20 ms debounce model and 500 ms double-click decision window as KEY1-KEY4" not in (
             REPO_ROOT / "docs/features/status_led.md"
         ).read_text(encoding="utf-8")
     ):
         failures.append(
-            "ports/esp32/voice_key_input/voice_key_input_esp32.c: EC11 recovery double-click must require the stable/debounced path and keep raw-only edges from triggering recovery"
+            "ports/esp32/voice_key_input/voice_key_input_esp32.c: EC11 push must keep delayed single-click dispatch while a second real press is the only recovery double-click candidate"
         )
-    raw_note_match = re.search(
-        r"static void voice_key_input_note_raw_press_edge[\s\S]*?\n\}",
-        voice_key,
-    )
-    raw_note_body = raw_note_match.group(0) if raw_note_match else ""
-    if "voice_key_input_record_recovery_event(" in raw_note_body:
+    if "button->pending_single_click &&\n        (origin != NULL || button->recovery_double_candidate)" in voice_key:
         failures.append(
-            "ports/esp32/voice_key_input/voice_key_input_esp32.c: raw EC11 press edges must not directly dispatch BLE recovery"
+            "ports/esp32/voice_key_input/voice_key_input_esp32.c: EC11 raw-only release must not accept recovery double-click without a second press candidate"
         )
     if (
-        "recovery_idle_guard" in voice_key
-        or "VOICE_KEY_INPUT_RECOVERY_IDLE_GUARD" in voice_key
+        "VOICE_KEY_INPUT_RECOVERY_IDLE_GUARD" in voice_key
         or "s_recording_output_enabled" in voice_key
         or "recovery_cancels_active_recording=1" not in voice_key
         or "cannot be downgraded into an ordinary EC11 single click" not in (
@@ -2123,8 +2133,8 @@ def main() -> int:
         "vTaskNotifyGiveFromISR(task_handle",
         "s_direct_gpio_isr_press_pending",
         "voice_key_input_take_direct_gpio_isr_press_pending",
-        "voice_key_input_note_raw_press_edge",
-        "EC11 push raw press tracked from ISR edge latch",
+        'voice_key_input_apply_raw_feedback(&s_direct_gpio_state, "isr_edge")',
+        "EC11 push low-power ISR edge latched for debounce",
         "double-click recovery detected",
         "runtime_irq=anyedge_notify_edge_latch",
     ]
@@ -2138,7 +2148,6 @@ def main() -> int:
         "xTaskGetTickCountFromISR",
         "portENTER_CRITICAL_ISR",
         "portEXIT_CRITICAL_ISR",
-        "voice_key_input_note_raw_press_edge",
         "voice_key_input_record_recovery_event(",
         "voice_key_input_dispatch_custom_key_event(",
     ]
@@ -2180,7 +2189,7 @@ def main() -> int:
         voice_key,
     ):
         failures.append(
-            "ports/esp32/voice_key_input/voice_key_input_esp32.c: EC11 debounce must use elapsed time so ISR wake storms cannot fake 30 ms stability"
+            "ports/esp32/voice_key_input/voice_key_input_esp32.c: EC11 debounce must use elapsed time so ISR wake storms cannot fake 20 ms stability"
         )
     if not re.search(
         r"button->pressed_started_tick\s*=\s*now_tick[\s\S]{0,900}"
@@ -2198,6 +2207,18 @@ def main() -> int:
         failures.append(
             "ports/esp32/voice_key_input/voice_key_input_esp32.c: EC11 double-click window must use real elapsed time, not fast poll iterations"
         )
+    if not re.search(
+        r"pressed\s*&&\s*!button->pressed[\s\S]{0,260}"
+        r"voice_key_input_mark_recovery_double_candidate\(button,\s*now_tick,\s*\"stable\"\)",
+        voice_key,
+    ) or not re.search(
+        r"!pressed\s*&&\s*button->pressed[\s\S]{0,520}"
+        r"voice_key_input_handle_short_click_release\(button,\s*now_tick,\s*NULL\)",
+        voice_key,
+    ):
+        failures.append(
+            "ports/esp32/voice_key_input/voice_key_input_esp32.c: EC11 stable press/release must use the KEY1-KEY4 pending-single/double-candidate transition"
+        )
     if (
         not re.search(r"#define\s+VOICE_KEY_INPUT_HOLD_FEEDBACK_REFRESH_MS\s+\(300\)", voice_key)
         or "TickType_t hold_feedback_tick;" not in voice_key
@@ -2209,7 +2230,7 @@ def main() -> int:
         )
     ):
         failures.append(
-            "ports/esp32/voice_key_input/voice_key_input_esp32.c: EC11 hold must refresh activity without white press feedback until long-press shutdown confirmation starts"
+            "ports/esp32/voice_key_input/voice_key_input_esp32.c: EC11 hold must refresh activity without changing the accepted key-style press feedback until long-press shutdown confirmation starts"
         )
     dispatch_body = re.search(
         r"static\s+void\s+voice_key_input_dispatch_custom_key_event[\s\S]*?"
@@ -2218,7 +2239,7 @@ def main() -> int:
     )
     if dispatch_body is None or "status_led_notify_ec11_feedback(STATUS_LED_EC11_FEEDBACK_PRESS)" not in dispatch_body.group(0):
         failures.append(
-            "ports/esp32/voice_key_input/voice_key_input_esp32.c: EC11 single-click fallback must restore the local white EC11 press cue only after the double-click window resolves"
+            "ports/esp32/voice_key_input/voice_key_input_esp32.c: EC11 single-click fallback must keep the local EC11 confirmation cue"
         )
     recovery_body = re.search(
         r"static\s+void\s+voice_key_input_record_recovery_event[\s\S]*?"
@@ -2256,9 +2277,9 @@ def main() -> int:
         failures.append(
             "ports/esp32/voice_key_input/voice_key_input_esp32.c: EC11 raw press tracking must suppress repeated ISR/raw bounce during one physical press"
         )
-    elif "status_led_notify_ec11_feedback" in voice_raw_feedback_body.group(0):
+    elif "status_led_notify_ec11_feedback(STATUS_LED_EC11_FEEDBACK_PRESS)" not in voice_raw_feedback_body.group(0):
         failures.append(
-            "ports/esp32/voice_key_input/voice_key_input_esp32.c: EC11 raw press tracking must not light the knob before the single/double-click decision window resolves"
+            "ports/esp32/voice_key_input/voice_key_input_esp32.c: EC11 raw press tracking must match KEY1-KEY4 by giving immediate local press feedback"
         )
     if (
         "voice_key_input_handle_short_click_release(button, now_tick, \"raw-only\")" not in voice_key

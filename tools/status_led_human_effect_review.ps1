@@ -3,17 +3,28 @@ param(
     [string]$Port = "COMx",
     [int]$Baud = 115200,
     [string]$OutputDir = "",
-    [ValidateSet("Foundation", "Scenes", "Complex", "Volume", "Product", "FinalVisual", "FinalRetest", "FinalCombo", "RootCause", "StaticRoot", "Repro", "RecordingIndependence", "IdleTransition", "TailOnly", "ComboOnly", "Full")]
+    [ValidateSet("Foundation", "Scenes", "Complex", "Volume", "Product", "Bluetooth", "FinalVisual", "FinalRetest", "FinalCombo", "RootCause", "StaticRoot", "Repro", "RecordingIndependence", "IdleTransition", "TailOnly", "ComboOnly", "Full")]
     [string]$Mode = "Foundation",
     [int]$CommandReadMs = 700,
     [int]$InitialReadMs = 1200,
     [int]$PreclearReadMs = 350,
     [switch]$PlanOnly,
-    [switch]$NoPrompt
+    [switch]$NoPrompt,
+    [switch]$ShowStartPrompt
 )
 
 $ErrorActionPreference = "Stop"
 Set-StrictMode -Version Latest
+
+$singleInstanceCreated = $false
+$singleInstanceMutex = [System.Threading.Mutex]::new(
+    $true,
+    "Global\Denzic.Listener.StatusLedHumanEffectReview",
+    [ref]$singleInstanceCreated)
+if (-not $singleInstanceCreated) {
+    Write-Warning "Another status LED human review window is already running; not opening duplicate prompts."
+    exit 3
+}
 
 $repoRoot = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot "..")).Path
 if ([string]::IsNullOrWhiteSpace($OutputDir)) {
@@ -602,6 +613,53 @@ function Get-FinalRetestSteps {
     )
 }
 
+function Get-BluetoothSteps {
+    return @(
+        New-LedReviewStep `
+            -Id "bluetooth-type-ready" `
+            -Title "蓝牙场景：Type 已接管" `
+            -Commands @("~LED:PREVIEW type_ready", "WAIT 180", "~LED:STATUS", "WAIT 1400", "~LED:STATUS") `
+            -When "Listener 已和 Windows 建立安全 HID 连接，并且 Listener Type 的 BLE 音频 notify/heartbeat 已 ready；这是唯一允许稳定蓝色已连接语义的场景。" `
+            -Expected "LED2/BLE 是稳定低亮蓝色；PWR 独立表达电源；EC11、KEY、EDGE、REC、AI、OK、WARN 都不参与。不能闪成配对/重连，也不能像 HID-only 找 Type。" `
+            -HumanFocus "确认 Type-ready 是稳蓝，不是双闪；旋钮和按键不能被蓝牙状态带亮。"
+        New-LedReviewStep `
+            -Id "bluetooth-hid-only-find-type" `
+            -Title "蓝牙场景：Windows 已连键盘但还在找 Type" `
+            -Commands @("~LED:PREVIEW connected", "WAIT 120", "~LED:STATUS", "WAIT 2100", "~LED:STATUS", "WAIT 4700", "~LED:STATUS") `
+            -When "没有 Type 或 Type 尚未接管时，Windows/HID 可以显示已连接，但产品不能把它表现成 Type-ready。" `
+            -Expected "LED2/BLE 在连接/status 窗口内做低蓝底加有边界双闪找 Type；超过窗口后安静下来；不应稳蓝，不应持续一直闪。EC11、KEY、EDGE 不参与。" `
+            -HumanFocus "重点看最后一次状态附近：没有 Type-ready 稳蓝，也没有无休止双闪；窗口内允许低蓝底。"
+        New-LedReviewStep `
+            -Id "bluetooth-pairing-native" `
+            -Title "蓝牙场景：等待 Windows 原生配对" `
+            -Commands @("~LED:PREVIEW pairing", "WAIT 120", "~LED:STATUS", "WAIT 780", "~LED:STATUS", "WAIT 900", "~LED:STATUS") `
+            -When "首次配对、无 Type 电脑、或 Type 不接管的 Windows 原生键盘配对流程；这是可发现/可配对，不是错误。" `
+            -Expected "只有 LED2/BLE 做低频蓝色配对脉冲；EC11、KEY、EDGE 不参与；WARN 不亮。" `
+            -HumanFocus "确认看起来像等待连接，不像失败，也不会带动旋钮或边框。"
+        New-LedReviewStep `
+            -Id "bluetooth-reconnecting" `
+            -Title "蓝牙场景：找回旧主机/重连" `
+            -Commands @("~LED:PREVIEW reconnecting", "WAIT 80", "~LED:STATUS", "WAIT 240", "~LED:STATUS", "WAIT 700", "~LED:STATUS") `
+            -When "设备睡眠恢复、Windows 短暂断链、或已有 bond 下找回旧主机；这是暂态重连，不是错误。" `
+            -Expected "LED2/BLE 是无低蓝底的短蓝双闪；WARN 不亮；EC11、KEY、EDGE 不参与。" `
+            -HumanFocus "确认和 pairing、HID-only 找 Type 能区分，但不会变成错误红灯或重配对旋钮灯。"
+        New-LedReviewStep `
+            -Id "bluetooth-double-repair" `
+            -Title "蓝牙场景：双击旋钮重新配对" `
+            -Commands @("~LED:PREVIEW repairing", "WAIT 80", "~LED:STATUS", "WAIT 570", "~LED:STATUS", "WAIT 850", "~LED:STATUS", "WAIT 2400", "~LED:STATUS") `
+            -When "用户双击 EC11 或 Type 发起恢复，明确要求删除旧 bond 并重新配对；这是用户主动确认，不是自动重连。" `
+            -Expected "LED2/BLE 和 EC11 旋钮是同步三次蓝色双闪确认；KEY 和 EDGE 不参与；REC、AI、OK、WARN 灭。确认结束后不能继续重复这个三次双闪。" `
+            -HumanFocus "重点看三次双闪是否稳定完整，结束后是否停止；不能出现全亮、红绿错色、KEY 跟闪。"
+        New-LedReviewStep `
+            -Id "bluetooth-ota-active" `
+            -Title "蓝牙场景：OTA 升级中" `
+            -Commands @("~LED:PREVIEW ota", "WAIT 900", "~LED:STATUS", "WAIT 900", "~LED:STATUS", "~POWER:STATUS") `
+            -When "固件 OTA 正在传输/写入；这是升级状态，不是 AI processing，也不能被 idle 或蓝牙重连灯抢走。" `
+            -Expected "LED5/OK 青绿色慢脉冲；EC11 进度填充和顺时针移动头；EDGE 低亮 chase；LED2/BLE 只保持基础在线语义；AI/WARN 不参与；ota_active=1 且 processing=0。" `
+            -HumanFocus "确认 OTA 看起来是升级，不是蓝牙错误、AI 紫灯或普通 OK 成功。"
+    )
+}
+
 function Get-ReviewSteps {
     $foundation = @(Get-FoundationSteps)
     if ($Mode -eq "Foundation") {
@@ -631,6 +689,9 @@ function Get-ReviewSteps {
             $scenes | Where-Object { $_.id -eq "scene-key-feedback" }
             $scenes | Where-Object { $_.id -eq "scene-sleep" }
         )
+    }
+    if ($Mode -eq "Bluetooth") {
+        return @(Get-BluetoothSteps)
     }
     $tailOnly = @(Get-TailOnlySteps)
     $comboOnly = @(Get-ComboOnlySteps)
@@ -939,6 +1000,12 @@ function Get-LedSemanticText {
     param([Parameter(Mandatory = $true)][object]$Step)
 
     switch ([string]$Step.id) {
+        "bluetooth-type-ready" { return "BLE=Listener Type 已接管，唯一稳定蓝色已连接状态；PWR 独立，EC11/KEY/EDGE/REC/AI/OK/WARN 不参与。" }
+        "bluetooth-hid-only-find-type" { return "BLE=Windows/HID 已连接但 Type 未接管，低蓝底加短暂双闪找 Type；不能稳蓝，也不能一直闪。" }
+        "bluetooth-pairing-native" { return "BLE=Windows 原生键盘配对/可发现；EC11/KEY/EDGE 不参与；WARN 不代表配对。" }
+        "bluetooth-reconnecting" { return "BLE=找回旧主机/短暂重连；无低蓝底短蓝双闪；WARN 不亮，EC11/KEY/EDGE 不参与。" }
+        "bluetooth-double-repair" { return "BLE+EC11=用户主动重新配对确认；三次同步蓝色双闪；KEY/EDGE/AI/OK/WARN 必须不参与。" }
+        "bluetooth-ota-active" { return "OTA=LED5 青绿色慢脉冲 + EC11 进度/顺时针移动头 + EDGE 低亮 chase；AI/WARN 不参与；OTA 阻止 idle。" }
         "scene-ready" { return "PWR=电源在线；BLE=已连接/就绪；REC、AI、OK、WARN 都应灭。" }
         "scene-pairing" { return "BLE=等待配对；旋钮/板框不参与；PWR 可独立表达插电/电源；REC、AI、OK、WARN 都不参与，WARN 不代表配对。" }
         "scene-reconnecting" { return "BLE=找回已绑定主机；旋钮/板框不参与；PWR 可独立表达插电/电源；WARN/错误灯不亮，因为重连不是错误。" }
@@ -996,6 +1063,14 @@ function Invoke-OperatorPromptSound {
     }
 }
 
+function Convert-PromptText {
+    param([AllowNull()][string]$Text)
+    if ($null -eq $Text) {
+        return ""
+    }
+    return (($Text -replace "\\r\\n", "`r`n") -replace "/r/n", "`r`n") -replace "\\n", "`r`n"
+}
+
 function Show-TopMostMessageBox {
     param(
         [Parameter(Mandatory = $true)][string]$Message,
@@ -1006,18 +1081,65 @@ function Show-TopMostMessageBox {
 
     Ensure-FormsLoaded
     Invoke-OperatorPromptSound
-    $owner = [System.Windows.Forms.Form]::new()
+    $form = [System.Windows.Forms.Form]::new()
     try {
-        $owner.StartPosition = "CenterScreen"
-        $owner.ShowInTaskbar = $false
-        $owner.TopMost = $true
-        $owner.WindowState = [System.Windows.Forms.FormWindowState]::Minimized
-        $owner.Show()
-        $owner.Activate()
-        return [System.Windows.Forms.MessageBox]::Show($owner, $Message, $Title, $Buttons, $Icon)
+        $form.Text = $Title
+        $form.StartPosition = "CenterScreen"
+        $form.TopMost = $true
+        $form.ShowInTaskbar = $true
+        $form.AutoScaleMode = [System.Windows.Forms.AutoScaleMode]::Dpi
+        $form.Font = [System.Drawing.Font]::new("Microsoft YaHei UI", 9)
+        $form.ClientSize = [System.Drawing.Size]::new(640, 360)
+        $form.MinimumSize = [System.Drawing.Size]::new(560, 300)
+
+        $messageBox = [System.Windows.Forms.TextBox]::new()
+        $messageBox.Left = 16
+        $messageBox.Top = 16
+        $messageBox.Width = $form.ClientSize.Width - 32
+        $messageBox.Height = $form.ClientSize.Height - 82
+        $messageBox.Multiline = $true
+        $messageBox.ReadOnly = $true
+        $messageBox.BorderStyle = [System.Windows.Forms.BorderStyle]::None
+        $messageBox.BackColor = $form.BackColor
+        $messageBox.ScrollBars = [System.Windows.Forms.ScrollBars]::Vertical
+        $messageBox.Text = Convert-PromptText $Message
+        $messageBox.Anchor = "Top,Bottom,Left,Right"
+        $form.Controls.Add($messageBox)
+
+        $okButton = [System.Windows.Forms.Button]::new()
+        $okButton.Text = "确定"
+        $okButton.Width = 96
+        $okButton.Height = 32
+        $okButton.Left = $form.ClientSize.Width - 216
+        $okButton.Top = $form.ClientSize.Height - 48
+        $okButton.Anchor = "Right,Bottom"
+        $okButton.DialogResult = [System.Windows.Forms.DialogResult]::OK
+        $form.Controls.Add($okButton)
+        $form.AcceptButton = $okButton
+
+        if ($Buttons -ne [System.Windows.Forms.MessageBoxButtons]::OK) {
+            $cancelButton = [System.Windows.Forms.Button]::new()
+            $cancelButton.Text = "取消"
+            $cancelButton.Width = 96
+            $cancelButton.Height = 32
+            $cancelButton.Left = $form.ClientSize.Width - 112
+            $cancelButton.Top = $form.ClientSize.Height - 48
+            $cancelButton.Anchor = "Right,Bottom"
+            $cancelButton.DialogResult = [System.Windows.Forms.DialogResult]::Cancel
+            $form.Controls.Add($cancelButton)
+            $form.CancelButton = $cancelButton
+        } else {
+            $okButton.Left = $form.ClientSize.Width - 112
+        }
+
+        $form.Add_Shown({
+            $form.WindowState = [System.Windows.Forms.FormWindowState]::Normal
+            $form.Activate()
+            $form.BringToFront()
+        })
+        return $form.ShowDialog()
     } finally {
-        $owner.Close()
-        $owner.Dispose()
+        $form.Dispose()
     }
 }
 
@@ -1129,7 +1251,8 @@ function Show-StepPrompt {
         [Parameter(Mandatory = $true)][object]$Step,
         [Parameter(Mandatory = $true)][int]$Index,
         [Parameter(Mandatory = $true)][int]$Total,
-        [Parameter(Mandatory = $true)][object]$StatusLines
+        [Parameter(Mandatory = $true)][object]$StatusLines,
+        [string]$PortName = ""
     )
     if ($NoPrompt.IsPresent) {
         return [PSCustomObject]@{
@@ -1150,26 +1273,30 @@ function Show-StepPrompt {
     $form.Text = "灯效确认 $Index/$Total - $($Step.title)"
     $form.StartPosition = "CenterScreen"
     $form.TopMost = $true
-    $form.Width = 850
-    $form.Height = 775
+    $form.ShowInTaskbar = $true
+    $form.AutoScaleMode = [System.Windows.Forms.AutoScaleMode]::Dpi
+    $form.ClientSize = [System.Drawing.Size]::new(760, 610)
+    $form.MinimumSize = [System.Drawing.Size]::new(700, 560)
     $form.Font = [System.Drawing.Font]::new("Microsoft YaHei UI", 9)
 
     $y = 12
+    $contentWidth = $form.ClientSize.Width - 24
     $title = [System.Windows.Forms.Label]::new()
     $title.Text = "$Index/$Total  $($Step.title)"
     $title.Left = 12
     $title.Top = $y
-    $title.Width = 800
+    $title.Width = $contentWidth
     $title.Height = 28
     $title.Font = [System.Drawing.Font]::new("Microsoft YaHei UI", 11, [System.Drawing.FontStyle]::Bold)
+    $title.Anchor = "Top,Left,Right"
     $form.Controls.Add($title)
     $y += 36
 
     $expected = [System.Windows.Forms.TextBox]::new()
     $expected.Left = 12
     $expected.Top = $y
-    $expected.Width = 805
-    $expected.Height = 165
+    $expected.Width = $contentWidth
+    $expected.Height = 120
     $expected.Multiline = $true
     $expected.ReadOnly = $true
     $expected.ScrollBars = "Vertical"
@@ -1179,15 +1306,16 @@ function Show-StepPrompt {
         "应用时机：$($Step.when)"
     }
     $semanticText = "灯位语义：$(Get-LedSemanticText -Step $Step)"
-    $expected.Text = "$whenText`r`n$semanticText`r`n预期：$($Step.expected)`r`n观察重点：$($Step.human_focus)`r`n通过规则：$($Step.pass_rule)"
+    $expected.Text = Convert-PromptText "$whenText`r`n$semanticText`r`n预期：$($Step.expected)`r`n观察重点：$($Step.human_focus)`r`n通过规则：$($Step.pass_rule)"
+    $expected.Anchor = "Top,Left,Right"
     $form.Controls.Add($expected)
-    $y += 175
+    $y += 130
 
     $cmdBox = [System.Windows.Forms.TextBox]::new()
     $cmdBox.Left = 12
     $cmdBox.Top = $y
-    $cmdBox.Width = 805
-    $cmdBox.Height = 72
+    $cmdBox.Width = $contentWidth
+    $cmdBox.Height = 54
     $cmdBox.Multiline = $true
     $cmdBox.ReadOnly = $true
     $cmdBox.ScrollBars = "Vertical"
@@ -1195,25 +1323,27 @@ function Show-StepPrompt {
     if (@($Step.post_commands).Count -gt 0) {
         $commandText += "`r`n观察后证据命令：`r`n" + (($Step.post_commands | ForEach-Object { "  $_" }) -join "`r`n")
     }
-    $cmdBox.Text = $commandText
+    $cmdBox.Text = Convert-PromptText $commandText
+    $cmdBox.Anchor = "Top,Left,Right"
     $form.Controls.Add($cmdBox)
-    $y += 82
+    $y += 64
 
     $statusBox = [System.Windows.Forms.TextBox]::new()
     $statusBox.Left = 12
     $statusBox.Top = $y
-    $statusBox.Width = 805
-    $statusBox.Height = 85
+    $statusBox.Width = $contentWidth
+    $statusBox.Height = 58
     $statusBox.Multiline = $true
     $statusBox.ReadOnly = $true
     $statusBox.ScrollBars = "Vertical"
     if ($StatusLines.selection_score -le 0) {
-        $statusBox.Text = "串口状态：`r`n观察期间不查询 STATUS；你点通过/失败后再采集状态，避免串口查询影响肉眼观察。"
+        $statusBox.Text = Convert-PromptText "串口状态：`r`n观察期间不查询 STATUS；你点通过/失败后再采集状态，避免串口查询影响肉眼观察。"
     } else {
-        $statusBox.Text = "串口状态（选中 $($StatusLines.selection)）：`r`n$($StatusLines.status_rgb)`r`n$($StatusLines.ec11_rgb)`r`n$($StatusLines.key_rgb)`r`n$($StatusLines.edge_rgb)`r`n$($StatusLines.summary)"
+        $statusBox.Text = Convert-PromptText "串口状态（选中 $($StatusLines.selection)）：`r`n$($StatusLines.status_rgb)`r`n$($StatusLines.ec11_rgb)`r`n$($StatusLines.key_rgb)`r`n$($StatusLines.edge_rgb)`r`n$($StatusLines.summary)"
     }
+    $statusBox.Anchor = "Top,Left,Right"
     $form.Controls.Add($statusBox)
-    $y += 96
+    $y += 68
 
     $observedLabel = [System.Windows.Forms.Label]::new()
     $observedLabel.Text = "你人眼看到的效果（颜色、位置、是否像预期）："
@@ -1227,12 +1357,13 @@ function Show-StepPrompt {
     $observed = [System.Windows.Forms.TextBox]::new()
     $observed.Left = 12
     $observed.Top = $y
-    $observed.Width = 805
-    $observed.Height = 68
+    $observed.Width = $contentWidth
+    $observed.Height = 56
     $observed.Multiline = $true
     $observed.ScrollBars = "Vertical"
+    $observed.Anchor = "Top,Left,Right"
     $form.Controls.Add($observed)
-    $y += 78
+    $y += 66
 
     $brightnessLabel = [System.Windows.Forms.Label]::new()
     $brightnessLabel.Text = "主观亮度："
@@ -1260,7 +1391,8 @@ function Show-StepPrompt {
     $unexpected = [System.Windows.Forms.TextBox]::new()
     $unexpected.Left = 425
     $unexpected.Top = $y
-    $unexpected.Width = 392
+    $unexpected.Width = $form.ClientSize.Width - 437
+    $unexpected.Anchor = "Top,Left,Right"
     $form.Controls.Add($unexpected)
     $y += 38
 
@@ -1297,37 +1429,78 @@ function Show-StepPrompt {
     $notes = [System.Windows.Forms.TextBox]::new()
     $notes.Left = 12
     $notes.Top = $y
-    $notes.Width = 805
-    $notes.Height = 55
+    $notes.Width = $contentWidth
+    $notes.Height = 44
     $notes.Multiline = $true
     $notes.ScrollBars = "Vertical"
+    $notes.Anchor = "Top,Left,Right"
     $form.Controls.Add($notes)
-    $y += 68
+    $y += 56
 
     $holder = @{ result = "ABORT" }
+    $replayButton = [System.Windows.Forms.Button]::new()
+    $replayButton.Text = "重播当前灯效"
+    $replayButton.Left = 12
+    $replayButton.Top = $y
+    $replayButton.Width = 130
+    $replayButton.Height = 32
+    $replayButton.Enabled = -not [string]::IsNullOrWhiteSpace($PortName)
+    $replayButton.Add_Click({
+        $replayButton.Enabled = $false
+        try {
+            Invoke-OperatorPromptSound
+            $replaySerial = Open-SerialNoReset -PortName $PortName
+            try {
+                [void](Read-SerialFor -Serial $replaySerial -Milliseconds 120)
+                [void](Invoke-LedReviewCommands -Serial $replaySerial -Commands @($Step.commands))
+            } finally {
+                Close-SerialQuiet -Serial $replaySerial
+            }
+            $form.Activate()
+            $form.BringToFront()
+        } catch {
+            $notes.Text = (Convert-PromptText ("重播失败：{0}`r`n{1}" -f $_.Exception.Message, $notes.Text))
+        } finally {
+            $replayButton.Enabled = -not [string]::IsNullOrWhiteSpace($PortName)
+        }
+    })
+    $form.Controls.Add($replayButton)
+
     $passButton = [System.Windows.Forms.Button]::new()
     $passButton.Text = "通过"
-    $passButton.Left = 496
+    $passButton.Left = $form.ClientSize.Width - 320
     $passButton.Top = $y
     $passButton.Width = 100
+    $passButton.Height = 32
+    $passButton.Anchor = "Right,Bottom"
     $passButton.Add_Click({ $holder.result = "PASS"; $form.Close() })
     $form.Controls.Add($passButton)
 
     $failButton = [System.Windows.Forms.Button]::new()
     $failButton.Text = "失败"
-    $failButton.Left = 606
+    $failButton.Left = $form.ClientSize.Width - 210
     $failButton.Top = $y
     $failButton.Width = 100
+    $failButton.Height = 32
+    $failButton.Anchor = "Right,Bottom"
     $failButton.Add_Click({ $holder.result = "FAIL"; $form.Close() })
     $form.Controls.Add($failButton)
 
     $skipButton = [System.Windows.Forms.Button]::new()
     $skipButton.Text = "跳过/不确定"
-    $skipButton.Left = 716
+    $skipButton.Left = $form.ClientSize.Width - 100
     $skipButton.Top = $y
     $skipButton.Width = 100
+    $skipButton.Height = 32
+    $skipButton.Anchor = "Right,Bottom"
     $skipButton.Add_Click({ $holder.result = "SKIP"; $form.Close() })
     $form.Controls.Add($skipButton)
+    $form.CancelButton = $skipButton
+    $form.Add_Shown({
+        $form.WindowState = [System.Windows.Forms.FormWindowState]::Normal
+        $form.Activate()
+        $form.BringToFront()
+    })
 
     [void]$form.ShowDialog()
     return [PSCustomObject]@{
@@ -1493,7 +1666,7 @@ try {
             Close-SerialQuiet -Serial $serial
             $serial = $null
         }
-        if (-not (Show-StepStartPrompt -Step $step -Index ($index + 1) -Total $steps.Count)) {
+        if ($ShowStartPrompt.IsPresent -and -not (Show-StepStartPrompt -Step $step -Index ($index + 1) -Total $steps.Count)) {
             Write-Outputs -Steps $steps -Result "ABORTED_BY_OPERATOR" -PortName $portName
             exit 2
         }
@@ -1503,7 +1676,7 @@ try {
         Close-SerialQuiet -Serial $serial
         $serial = $null
         $promptStatusLines = Get-StatusLines -Responses $responses
-        $human = Show-StepPrompt -Step $step -Index ($index + 1) -Total $steps.Count -StatusLines $promptStatusLines
+        $human = Show-StepPrompt -Step $step -Index ($index + 1) -Total $steps.Count -StatusLines $promptStatusLines -PortName $portName
         $postResponses = @()
         if (@($step.post_commands).Count -gt 0 -and $human.result -ne "ABORT") {
             $serial = Open-SerialNoReset -PortName $portName

@@ -759,6 +759,11 @@ static void ble_hid_gap_close_recovery_pairing_window(const char *reason)
     }
     ble_hid_gap_set_recovery_power_blocker(false, reason);
     ESP_LOGI(TAG, "recovery: pairing window closed: %s", reason);
+    if (!s_ble_gap_connected &&
+        reason != NULL &&
+        strcmp(reason, "pairing_window_expired") == 0) {
+        status_led_set_ble_state(STATUS_LED_BLE_RECONNECTING, false);
+    }
 }
 
 static bool ble_hid_gap_close_recovery_for_type_audio(const char *reason, uint16_t conn_handle)
@@ -2854,13 +2859,20 @@ static esp_err_t ble_hid_gap_forget_bonds_and_repair_inner(bool type_controlled_
     }
 
     const bool type_link_ready_before_recovery = ble_audio_stream_is_type_link_ready();
-    const bool type_controlled_recovery = type_controlled_request;
+    const bool type_host_recent_before_recovery =
+        ble_audio_stream_was_type_host_recently_seen();
+    const bool type_controlled_recovery =
+        type_controlled_request ||
+        type_link_ready_before_recovery ||
+        type_host_recent_before_recovery;
     ESP_LOGW(
         TAG,
-        "recovery: opening pairing reset window bonded_peers=%d bond_delete=async_after_disconnect type_controlled=%u type_link_ready_before_recovery=%u",
+        "recovery: opening pairing reset window bonded_peers=%d bond_delete=async_after_disconnect type_controlled=%u type_link_ready_before_recovery=%u type_host_recent=%u type_request=%u",
         bonded_peer_count,
         type_controlled_recovery ? 1u : 0u,
-        type_link_ready_before_recovery ? 1u : 0u);
+        type_link_ready_before_recovery ? 1u : 0u,
+        type_host_recent_before_recovery ? 1u : 0u,
+        type_controlled_request ? 1u : 0u);
     status_led_notify_ble_repairing_for_ms("ble_recovery_clear_bonds", (uint32_t)BLE_HID_GAP_RECOVERY_PAIRING_WINDOW_MS);
     diag_log(DIAG_SRC_BLE_GAP, DIAG_GAP_RECOVERY, DIAG_SEV_WARN,
              1, 0, (uint32_t)bonded_peer_count, s_ble_gap_conn_handle);

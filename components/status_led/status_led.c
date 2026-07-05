@@ -150,10 +150,11 @@
 #define STATUS_LED_BLE_REPAIR_MIN_PERCENT 30U
 #define STATUS_LED_BLE_REPAIR_MAX_PERCENT 100U
 #define STATUS_LED_BLE_PAIRING_PULSE_PERCENT STATUS_LED_BLE_ATTENTION_PERCENT
-#define STATUS_LED_BLE_RECONNECT_MIN_PERCENT 10U
-#define STATUS_LED_BLE_RECONNECT_MAX_PERCENT STATUS_LED_BLE_ATTENTION_PERCENT
-#define STATUS_LED_BLE_CONNECTED_FIND_TYPE_PULSE_PERCENT STATUS_LED_BLE_RECONNECT_MAX_PERCENT
+#define STATUS_LED_BLE_RECONNECT_PULSE_PERCENT STATUS_LED_BLE_ATTENTION_PERCENT
+#define STATUS_LED_BLE_CONNECTED_FIND_TYPE_MIN_PERCENT 10U
+#define STATUS_LED_BLE_CONNECTED_FIND_TYPE_MAX_PERCENT STATUS_LED_BLE_ATTENTION_PERCENT
 #define STATUS_LED_BLE_CONNECTED_FIND_TYPE_PERIOD_MS 2000U
+#define STATUS_LED_BLE_CONNECTED_FIND_TYPE_WINDOW_MS STATUS_LED_STATUS_WINDOW_MS
 #define STATUS_LED_BLE_TYPE_READY_STEADY_PERCENT 14U
 #define STATUS_LED_BATTERY_IDLE_BLE_HEARTBEAT_ON_MS 120U
 #define STATUS_LED_BATTERY_IDLE_BLE_HEARTBEAT_OFF_MS 7880U
@@ -2028,12 +2029,17 @@ static bool status_led_timed_output_active_locked(uint32_t now_ms)
     return s_state.profile == STATUS_LED_PROFILE_AMBIENT;
 }
 
+static bool status_led_low_power_ble_ready_window_active_locked(uint32_t now_ms);
+
 static uint32_t status_led_refresh_delay_ms_locked(uint32_t now_ms)
 {
     if (s_state.output_disabled) {
         return STATUS_LED_LOW_POWER_IDLE_REFRESH_MS;
     }
     if (s_state.low_power_disabled) {
+        if (status_led_low_power_ble_ready_window_active_locked(now_ms)) {
+            return STATUS_LED_REFRESH_MS;
+        }
         return s_state.external_power_present
             ? STATUS_LED_EXTERNAL_POWER_POLL_MS
             : STATUS_LED_LOW_POWER_IDLE_REFRESH_MS;
@@ -2284,7 +2290,18 @@ static void status_led_render_power_locked(status_led_frame_t *frame, uint32_t n
     *ret_safety = *ret_safety || safety;
 }
 
-static uint8_t status_led_low_power_ble_percent_locked(uint32_t ble_elapsed_ms)
+static bool status_led_low_power_ble_ready_window_active_locked(uint32_t now_ms)
+{
+    if (s_state.ble_state != STATUS_LED_BLE_CONNECTED &&
+        s_state.ble_state != STATUS_LED_BLE_TYPE_READY) {
+        return false;
+    }
+    return now_ms < s_state.status_window_until_ms ||
+           now_ms < s_state.ble_confidence_until_ms ||
+           now_ms < s_state.oobe_confidence_until_ms;
+}
+
+static uint8_t status_led_low_power_ble_percent_locked(uint32_t now_ms, uint32_t ble_elapsed_ms)
 {
     switch (s_state.ble_state) {
     case STATUS_LED_BLE_PAIRING:
@@ -2296,9 +2313,20 @@ static uint8_t status_led_low_power_ble_percent_locked(uint32_t ble_elapsed_ms)
             ? STATUS_LED_LOW_POWER_BLE_ATTENTION_PERCENT
             : 0U;
     case STATUS_LED_BLE_RECONNECTING:
-    case STATUS_LED_BLE_CONNECTED:
-    case STATUS_LED_BLE_TYPE_READY:
         return 0U;
+    case STATUS_LED_BLE_CONNECTED:
+        if (!status_led_low_power_ble_ready_window_active_locked(now_ms)) {
+            return 0U;
+        }
+        return status_led_double_pulse_on(
+                   ble_elapsed_ms,
+                   STATUS_LED_BLE_CONNECTED_FIND_TYPE_PERIOD_MS)
+            ? STATUS_LED_BLE_CONNECTED_FIND_TYPE_MAX_PERCENT
+            : STATUS_LED_BLE_CONNECTED_FIND_TYPE_MIN_PERCENT;
+    case STATUS_LED_BLE_TYPE_READY:
+        return status_led_low_power_ble_ready_window_active_locked(now_ms)
+            ? STATUS_LED_BLE_TYPE_READY_STEADY_PERCENT
+            : 0U;
     case STATUS_LED_BLE_DISCONNECTED:
     default:
         return 0U;
@@ -2309,6 +2337,13 @@ static bool status_led_ota_ble_steady_locked(uint32_t now_ms)
 {
     (void)now_ms;
     return s_state.ota_active;
+}
+
+static bool status_led_connected_find_type_window_active_locked(uint32_t now_ms)
+{
+    return now_ms < s_state.status_window_until_ms ||
+           now_ms < s_state.ble_confidence_until_ms ||
+           now_ms < s_state.oobe_confidence_until_ms;
 }
 
 static void status_led_render_ble_locked(status_led_frame_t *frame, uint32_t now_ms)
@@ -2341,9 +2376,11 @@ static void status_led_render_ble_locked(status_led_frame_t *frame, uint32_t now
         uint8_t percent = status_led_double_pulse_on(
                               ble_elapsed_ms,
                               STATUS_LED_BLE_CONNECTED_FIND_TYPE_PERIOD_MS)
-            ? STATUS_LED_BLE_RECONNECT_MAX_PERCENT
-            : STATUS_LED_BLE_RECONNECT_MIN_PERCENT;
-        color = status_led_token_locked(ble_blue, percent, false);
+            ? STATUS_LED_BLE_RECONNECT_PULSE_PERCENT
+            : 0U;
+        if (percent > 0U) {
+            color = status_led_token_locked(ble_blue, percent, false);
+        }
         break;
     }
     case STATUS_LED_BLE_CONNECTED:
@@ -2352,12 +2389,15 @@ static void status_led_render_ble_locked(status_led_frame_t *frame, uint32_t now
                 ble_blue,
                 STATUS_LED_BLE_TYPE_READY_STEADY_PERCENT,
                 false);
-        } else if (status_led_double_pulse_on(
-                       ble_elapsed_ms,
-                       STATUS_LED_BLE_CONNECTED_FIND_TYPE_PERIOD_MS)) {
+        } else if (status_led_connected_find_type_window_active_locked(now_ms)) {
+            uint8_t percent = status_led_double_pulse_on(
+                                  ble_elapsed_ms,
+                                  STATUS_LED_BLE_CONNECTED_FIND_TYPE_PERIOD_MS)
+                ? STATUS_LED_BLE_CONNECTED_FIND_TYPE_MAX_PERCENT
+                : STATUS_LED_BLE_CONNECTED_FIND_TYPE_MIN_PERCENT;
             color = status_led_token_locked(
                 ble_blue,
-                STATUS_LED_BLE_CONNECTED_FIND_TYPE_PULSE_PERCENT,
+                percent,
                 false);
         }
         break;
@@ -2414,7 +2454,9 @@ static void status_led_render_low_power_power_locked(status_led_frame_t *frame, 
 
 static void status_led_render_low_power_ble_locked(status_led_frame_t *frame, uint32_t now_ms)
 {
-    uint8_t percent = status_led_low_power_ble_percent_locked(status_led_ble_elapsed_locked(now_ms));
+    uint8_t percent = status_led_low_power_ble_percent_locked(
+        now_ms,
+        status_led_ble_elapsed_locked(now_ms));
     if (percent == 0U) {
         return;
     }
@@ -4437,9 +4479,13 @@ void status_led_set_ble_state(status_led_ble_state_t state, bool confidence_wind
             }
             s_state.ever_connected = true;
         }
+        const bool ble_visual_transition =
+            state_changed && !effect_only && !active_work;
         if (state_changed && !effect_only) {
-            s_state.last_transition_ms = now_ms;
-            status_led_set_last_reason_locked("ble_state");
+            if (ble_visual_transition) {
+                s_state.last_transition_ms = now_ms;
+                status_led_set_last_reason_locked("ble_state");
+            }
             diag_log(DIAG_SRC_STATUS_LED, DIAG_LED_STATE, DIAG_SEV_INFO,
                      1, (uint32_t)state, confidence_window ? 1U : 0U, 0);
         }
