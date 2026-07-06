@@ -6,7 +6,8 @@ and verified by `tools/verify_factory_firmware_package.ps1`.
 
 ## Required Package Contents
 
-- Firmware binaries and partition metadata from the current `idf.py build`.
+- Firmware binaries and partition metadata from the current `tools\build.ps1`
+  build.
 - A manifest with firmware version, git commit, board profile, SHA256 values, flash
   offsets, readiness UUID, capabilities, rollback notes, and package timestamp.
 - Flashing instructions for normal factory flashing and recovery reflash.
@@ -18,15 +19,17 @@ and verified by `tools/verify_factory_firmware_package.ps1`.
   explicitly supersedes it.
 - Battery percentage uses `2850mV=0%` and `4150mV=100%`; `2700mV` is an absolute
   danger marker and must not be treated as usable empty capacity.
-- `PWR_HOLD/GPIO11` stays actively driven LOW during boot/runtime and is
+- `PWR_HOLD/GPIO9` stays actively driven LOW during boot/runtime and is
   driven HIGH only by the hardware-shutdown path.
 - USB/VBUS, charging, or charge-full-on-external-power blocks automatic
   battery-idle and critical-low-battery hardware shutdown. Manual/debug
   shutdown commands must log a distinct reason from automatic battery-idle
   shutdown.
-- Current V2 N16R8 boards populate TPS63020/SY7088 battery-side current sense
-  on GPIO10/GPIO9. Future revised board profiles without those chips must use
-  `GPIO_NUM_NC` and must not make power-control decisions from absent telemetry.
+- Current V2 N16R8 boards use `BAT_V_ADC/GPIO10` for battery voltage and
+  `PWR_HOLD/GPIO9` for the hardware power latch. TPS63020/SY7088 battery-side
+  current sense is not populated on this board profile, so those current-sense
+  GPIOs must stay `GPIO_NUM_NC` and power-control decisions must not use absent
+  current telemetry.
 - Readiness/capability strings expose BLE HID, BLE audio, OTA, diagnostics, board,
   battery, power, and degraded-boot status clearly enough for desktop OOBE and
   production diagnostics.
@@ -50,7 +53,7 @@ which older factory package it supersedes.
 ## Validation Entrypoints
 
 ```powershell
-idf.py build
+pwsh -NoProfile -File .\tools\build.ps1
 pwsh -NoProfile -File .\tools\package_factory_firmware.ps1
 pwsh -NoProfile -File .\tools\verify_factory_firmware_package.ps1
 pwsh -NoProfile -File .\tools\ai\repo_features.ps1 -Check

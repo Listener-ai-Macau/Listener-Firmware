@@ -81,6 +81,7 @@ $statusLed = Read-RepoFile "components\status_led\status_led.c"
 $audioCapture = Read-RepoFile "ports\esp32\audio_capture\audio_capture_esp32.c"
 $statusLedDoc = Read-RepoFile "docs\features\status_led.md"
 $lowPowerDoc = Read-RepoFile "docs\features\low_power_wake_policy.md"
+$factoryReadinessDoc = Read-RepoFile "docs\features\factory_firmware_readiness.md"
 $currentTelemetryTool = Read-RepoFile "tools\collect_v2_current_telemetry.ps1"
 $otaPackage = Read-RepoFile "tools\package_ota_firmware.ps1"
 $factoryPackage = Read-RepoFile "tools\package_factory_firmware.ps1"
@@ -205,10 +206,16 @@ foreach ($item in @(
     @($factoryPackage, "flash_16mb", "factory package flash capability"),
     @($factoryPackage, "psram_8mb_octal", "factory package PSRAM capability"),
     @($factoryPackage, "post_failure_behavior", "factory package POST failure diagnostic contract"),
-    @($factoryPackage, "~OTA:STATUS", "factory package serial OTA status diagnostic command")
+    @($factoryPackage, "~OTA:STATUS", "factory package serial OTA status diagnostic command"),
+    @($factoryReadinessDoc, "PWR_HOLD/GPIO9", "factory readiness PWR_HOLD GPIO9 doc"),
+    @($factoryReadinessDoc, "BAT_V_ADC/GPIO10", "factory readiness battery ADC GPIO10 doc"),
+    @($factoryReadinessDoc, "GPIO_NUM_NC", "factory readiness absent current-sense GPIO doc"),
+    @($factoryReadinessDoc, "tools\\build\.ps1", "factory readiness ESP-IDF wrapper build command")
 )) {
     Assert-Contains -Text $item[0] -Pattern $item[1] -Description $item[2]
 }
+
+Assert-NotContains -Text $factoryReadinessDoc -Pattern "PWR_HOLD/GPIO(11|46)|current sense\s+on GPIO10/GPIO9|idf\.py build" -Description "factory readiness stale V2 GPIO/build guidance"
 
 if ($board -match "(?s)static void board_print_gpio_status\(void\)\s*\{(?<body>.*?)\n\}") {
     $gpioStatusBody = $Matches["body"]

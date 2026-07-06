@@ -99,6 +99,14 @@ STALE_PATTERNS = [
         re.compile(r"30 ms stable-press threshold", re.IGNORECASE),
         "stale EC11 push prose: EC11 debounce must match the validated 20 ms KEY1-KEY4 debounce feel",
     ),
+    PatternRule(
+        re.compile(r"current sense\s+on GPIO10/GPIO9", re.IGNORECASE),
+        "stale V2 current-telemetry prose: GPIO10 is BAT_V_ADC and GPIO9 is PWR_HOLD; current sense is not populated",
+    ),
+    PatternRule(
+        re.compile(r"(?m)^idf\.py build\s*$", re.IGNORECASE),
+        "stale ESP-IDF shell guidance: firmware builds must use tools/build.ps1",
+    ),
 ]
 
 
@@ -162,6 +170,31 @@ REQUIRED_TEXT = [
         "tools/verify_ble_status_led_connected_sync.ps1",
         re.compile(r"STATUS_LED_BATTERY_STATUS_WINDOW_PWR_PERCENT\\s\+14U"),
         "BLE sync static check must use the current battery PWR active-window contract",
+    ),
+    RequiredText(
+        "docs/features/factory_firmware_readiness.md",
+        re.compile(r"PWR_HOLD/GPIO9"),
+        "factory readiness doc must state the current PWR_HOLD/GPIO9 power latch",
+    ),
+    RequiredText(
+        "docs/features/factory_firmware_readiness.md",
+        re.compile(r"BAT_V_ADC/GPIO10"),
+        "factory readiness doc must state the current battery ADC GPIO10 mapping",
+    ),
+    RequiredText(
+        "docs/features/factory_firmware_readiness.md",
+        re.compile(r"tools\\build\.ps1"),
+        "factory readiness doc must use the ESP-IDF wrapper build command",
+    ),
+    RequiredText(
+        "docs/features/coredump_debug_profile.md",
+        re.compile(r"tools\\collect_coredump_debug\.ps1"),
+        "coredump debug profile must document the Codex crash-triage entrypoint",
+    ),
+    RequiredText(
+        "tools/collect_coredump_debug.ps1",
+        re.compile(r"tools\\idf\.ps1"),
+        "coredump debug tool must use the repository ESP-IDF wrapper",
     ),
 ]
 
