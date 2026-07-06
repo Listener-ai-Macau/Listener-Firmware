@@ -308,10 +308,9 @@ static void voice_key_input_apply_raw_feedback(voice_key_button_state_t *button,
     button->raw_feedback_pressed = true;
     button->hold_feedback_tick = xTaskGetTickCount();
     power_manager_record_activity("ec11_key_press");
-    status_led_notify_ec11_feedback(STATUS_LED_EC11_FEEDBACK_PRESS);
     ESP_LOGI(
         TAG,
-        "EC11 push raw press feedback: source=%s origin=%s",
+        "EC11 push raw press latched for gesture: source=%s origin=%s",
         button->label,
         origin != NULL ? origin : "raw");
 }
@@ -461,6 +460,12 @@ static void voice_key_input_dispatch_pending_single_click(
     button->recovery_guard_active = false;
     button->recovery_guard_started_tick = 0;
     button->recovery_double_candidate = false;
+    status_led_notify_ec11_feedback(STATUS_LED_EC11_FEEDBACK_PRESS);
+    ESP_LOGI(
+        TAG,
+        "%s confirmed single-click feedback: origin=%s",
+        button->label,
+        origin != NULL ? origin : "single-click");
     voice_key_input_dispatch_custom_key_event(button->label, 1, origin);
 }
 

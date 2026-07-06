@@ -74,8 +74,18 @@ def main() -> int:
         fail("EC11 confirmed single dispatch must not replay the raw press LED cue")
 
     raw_feedback_body = extract_function(voice_key_input, "voice_key_input_apply_raw_feedback")
-    if "status_led_notify_ec11_feedback(STATUS_LED_EC11_FEEDBACK_PRESS)" not in raw_feedback_body:
-        fail("EC11 raw press feedback must remain the only single-click LED cue")
+    if "status_led_notify_ec11_feedback(STATUS_LED_EC11_FEEDBACK_PRESS)" in raw_feedback_body:
+        fail("EC11 raw press latch must not show the single-click LED cue before double-click can be ruled out")
+
+    pending_single_body = extract_function(voice_key_input, "voice_key_input_dispatch_pending_single_click")
+    if "status_led_notify_ec11_feedback(STATUS_LED_EC11_FEEDBACK_PRESS)" not in pending_single_body:
+        fail("EC11 confirmed single-click dispatch must show the single-click LED cue after the double-click window expires")
+    feedback_index = pending_single_body.find(
+        "status_led_notify_ec11_feedback(STATUS_LED_EC11_FEEDBACK_PRESS)"
+    )
+    dispatch_index = pending_single_body.find("voice_key_input_dispatch_custom_key_event")
+    if dispatch_index != -1 and feedback_index > dispatch_index:
+        fail("EC11 confirmed single-click feedback must be emitted before forwarding the custom key event")
 
     recovery_body = extract_function(voice_key_input, "voice_key_input_record_recovery_event")
     if 'status_led_notify_ble_repairing("ec11_double_click_recovery")' not in recovery_body:
@@ -83,7 +93,8 @@ def main() -> int:
 
     print(
         "PASS: EC11 input contract keeps 500 ms timing parity with key1-key4, "
-        "single press LED feedback only at raw press, and double-click BLE repair cue intact."
+        "raw press only latches the gesture, confirmed single-click LED feedback is delayed, "
+        "and double-click BLE repair cue intact."
     )
     return 0
 

@@ -1022,7 +1022,7 @@ CHECKS = {
         "STATUS_LED_EC11_FEEDBACK_ROTATE_CCW",
     ],
     "ports/esp32/voice_key_input/voice_key_input_esp32.c": [
-        "EC11 push raw press feedback",
+        "EC11 push raw press latched for gesture",
         "power_manager_record_activity(\"ec11_key_press\")",
         "power_manager_record_activity(\"ec11_key_hold\")",
     ],

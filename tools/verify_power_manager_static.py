@@ -2279,9 +2279,29 @@ def main() -> int:
         failures.append(
             "ports/esp32/voice_key_input/voice_key_input_esp32.c: EC11 single-click fallback must not replay the raw EC11 press cue"
         )
+    pending_single_body = re.search(
+        r"static\s+void\s+voice_key_input_dispatch_pending_single_click[\s\S]*?"
+        r"esp_err_t\s+voice_key_input_enqueue_generated_double_click",
+        voice_key,
+    )
+    if pending_single_body is None:
+        failures.append(
+            "ports/esp32/voice_key_input/voice_key_input_esp32.c: missing EC11 confirmed single-click dispatch helper"
+        )
+    elif "status_led_notify_ec11_feedback(STATUS_LED_EC11_FEEDBACK_PRESS)" not in pending_single_body.group(0):
+        failures.append(
+            "ports/esp32/voice_key_input/voice_key_input_esp32.c: EC11 confirmed single-click must show the key-style cue only after the double-click window expires"
+        )
+    elif (
+        pending_single_body.group(0).find("status_led_notify_ec11_feedback(STATUS_LED_EC11_FEEDBACK_PRESS)")
+        > pending_single_body.group(0).find("voice_key_input_dispatch_custom_key_event")
+    ):
+        failures.append(
+            "ports/esp32/voice_key_input/voice_key_input_esp32.c: EC11 confirmed single-click cue must be emitted before forwarding the custom key event"
+        )
     recovery_body = re.search(
         r"static\s+void\s+voice_key_input_record_recovery_event[\s\S]*?"
-        r"static\s+void\s+voice_key_input_drain_generated_events",
+        r"static\s+void\s+voice_key_input_cancel_pending_single_click",
         voice_key,
     )
     if recovery_body is None or "status_led_notify_ec11_feedback" in recovery_body.group(0):
@@ -2316,8 +2336,10 @@ def main() -> int:
             "ports/esp32/voice_key_input/voice_key_input_esp32.c: EC11 raw press tracking must suppress repeated ISR/raw bounce during one physical press"
         )
     elif "status_led_notify_ec11_feedback(STATUS_LED_EC11_FEEDBACK_PRESS)" not in voice_raw_feedback_body.group(0):
+        pass
+    else:
         failures.append(
-            "ports/esp32/voice_key_input/voice_key_input_esp32.c: EC11 raw press tracking must match KEY1-KEY4 by giving immediate local press feedback"
+            "ports/esp32/voice_key_input/voice_key_input_esp32.c: EC11 raw press tracking must not emit the single-click LED cue before the 500 ms double-click window has expired"
         )
     if (
         "voice_key_input_handle_short_click_release(button, now_tick, \"raw-only\")" not in voice_key
