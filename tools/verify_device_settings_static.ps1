@@ -143,7 +143,8 @@ Assert-Contains $deviceSettings 'return\s+ret\s+!=\s+ESP_OK\s+\?\s+ret\s+:\s+ESP
 Assert-Contains $deviceCmake 'REQUIRES\s+board\s+ec11_rotation_control\s+nvs_flash' 'device settings CMake dependencies'
 
 Assert-Contains $statusLed '#include "device_settings\.h"' 'status LED includes device settings'
-Assert-Contains $statusLed 'const uint8_t active_brightness = settings->plugged_brightness_percent' 'status LED active brightness follows the Type-controlled plugged brightness'
+Assert-Contains $deviceSettings 'return\s+external_power_present\s*\?\s*snapshot\.plugged_brightness_percent\s*:\s*snapshot\.battery_brightness_percent' 'active brightness getter uses the current power source'
+Assert-Contains $statusLed 'const uint8_t active_brightness = external_power_present\s*\?\s*settings->plugged_brightness_percent\s*:\s*settings->battery_brightness_percent' 'status LED active brightness follows the current power source'
 Assert-Contains $statusLed 'status_led_apply_device_settings_snapshot_locked' 'status LED applies the full device settings snapshot'
 Assert-Contains $statusLed 'status_led_apply_zone_brightness_caps_locked' 'status LED applies per-zone brightness caps'
 Assert-Contains $statusLed 'plugged_brightness_percent=%u battery_brightness_percent=%u active_power_brightness_percent=%u' 'LED status reports two brightness profiles'

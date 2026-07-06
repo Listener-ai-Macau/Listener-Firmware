@@ -3919,11 +3919,12 @@ static bool status_led_apply_device_settings_snapshot_locked(
     const device_settings_snapshot_t *settings,
     bool external_power_present)
 {
-    (void)external_power_present;
     if (settings == NULL) {
         return false;
     }
-    const uint8_t active_brightness = settings->plugged_brightness_percent;
+    const uint8_t active_brightness = external_power_present
+        ? settings->plugged_brightness_percent
+        : settings->battery_brightness_percent;
     const bool changed =
         s_state.brightness_percent != active_brightness ||
         s_state.status_zone_brightness_percent != settings->status_led_brightness_percent ||
