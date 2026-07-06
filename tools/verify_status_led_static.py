@@ -1215,7 +1215,7 @@ def main() -> int:
             )
     if "#define BLE_HID_GAP_RECOVERY_SWIFT_PAIR_PROMPT_MS 45000LL" not in ble_gap:
         failures.append(
-            "ble_hid_gap_esp32.c: non-Type recovery must expose one bounded Swift Pair window for Windows native keyboard pairing"
+            "ble_hid_gap_esp32.c: recovery must expose one bounded Swift Pair window for Windows native keyboard pairing"
         )
     if "#define BLE_HID_GAP_FIRST_PAIRING_WINDOW_MS 0LL" not in ble_gap:
         failures.append(
@@ -1235,8 +1235,15 @@ def main() -> int:
             or "s_adv_fields.mfg_data" in type_recovery_body
         ):
             failures.append(
-                "ble_hid_gap_esp32.c: Type-controlled recovery advertising must be HID-pairable for Windows, Type-discoverable, and free of Swift Pair toast payloads"
+                "ble_hid_gap_esp32.c: Type-controlled recovery fallback advertising must stay HID-pairable for Windows and Type-discoverable after the bounded Swift Pair window"
             )
+    if (
+        "pairing_window\n            ? ble_hid_gap_recovery_swift_pair_prompt_remaining_ms()" not in ble_gap
+        or "if (type_recovery_requested && !swift_pair_requested)" not in ble_gap
+    ):
+        failures.append(
+            "ble_hid_gap_esp32.c: Type-controlled recovery must allow the same bounded Windows Swift Pair prompt before falling back to the Type-discoverable profile"
+        )
     try:
         recovery_body = extract_c_function(ble_gap, "ble_hid_gap_forget_bonds_and_repair_inner")
     except ValueError as exc:
@@ -1265,7 +1272,7 @@ def main() -> int:
             recovery_body,
         ):
             failures.append(
-                "ble_hid_gap_esp32.c: recovery must let recent Type heartbeat or Type-host presence suppress Swift Pair and use the Type-controlled recovery profile"
+                "ble_hid_gap_esp32.c: recovery must use recent Type heartbeat or Type-host presence to preserve stable identity, while the advertising path still exposes the bounded Windows pairing prompt"
             )
         refresh_index = recovery_body.find("pairing window already active; refreshing advertising with stable BLE identity")
         refresh_reopen_index = recovery_body.find("ble_hid_gap_open_recovery_pairing_window(", refresh_index)

@@ -638,7 +638,7 @@ static int64_t ble_hid_gap_recovery_swift_pair_prompt_remaining_ms(void)
     }
     if (BLE_HID_GAP_RECOVERY_SWIFT_PAIR_PROMPT_MS <= 0) {
         s_recovery_swift_pair_consumed = true;
-        ESP_LOGI(TAG, "recovery: Swift Pair prompt disabled; current Type host will drive local PairAsync");
+        ESP_LOGI(TAG, "recovery: Swift Pair prompt disabled by build config; continuing normal pairable advertising");
         return 0;
     }
 
@@ -2347,13 +2347,13 @@ esp_err_t esp_hid_ble_gap_adv_start(void)
     const bool type_recovery_requested =
         pairing_window && s_recovery_type_controlled_pairing;
     const int64_t recovery_swift_pair_remaining_ms =
-        pairing_window && !type_recovery_requested
+        pairing_window
             ? ble_hid_gap_recovery_swift_pair_prompt_remaining_ms()
             : 0;
     const bool recovery_swift_pair_allowed = recovery_swift_pair_remaining_ms > 0;
     const bool swift_pair_requested = recovery_swift_pair_allowed || first_pairing_window;
     bool type_recovery_enabled = false;
-    if (type_recovery_requested) {
+    if (type_recovery_requested && !swift_pair_requested) {
         type_recovery_enabled = ble_hid_gap_configure_type_controlled_recovery_adv_fields();
     }
     const bool swift_pair_enabled =
