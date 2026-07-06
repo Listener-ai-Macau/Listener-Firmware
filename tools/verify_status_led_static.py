@@ -253,6 +253,7 @@ CHECKS = {
         "ec11_zone_brightness_percent=%u",
         "edge_zone_brightness_percent=%u",
         "status_led_apply_zone_brightness_caps_locked",
+        "status_led_normalize_strip_peak_to_type_max",
         "status_led_apply_device_settings_snapshot_locked",
         "STATUS_LED_ACCENT_ENTRY_RAMP_MS 900U",
         "STATUS_LED_EC11_RECORDING_BASE_MAX_PERCENT 16U",
@@ -265,6 +266,7 @@ CHECKS = {
         "status_led_render_key_active_work_locked",
         "effective_cap_percent=%u",
         "zone_brightness_is_hard_cap=1",
+        "zone_brightness_peak_normalized=1",
         "legacy_brightness_neutral=1",
         "profile_dimming_disabled=1",
         "factory_full_brightness=1",
@@ -816,8 +818,8 @@ CHECKS = {
         "External power overrides battery-color display on `PWR`",
         "continuous slow white breath",
         "steady white once charge-full has been debounced and latched",
-        "Zone brightness caps scale the whole routine effect envelope after the animation curve is rendered",
-        "50% Type zone cap scales that zone's low and high points together",
+        "each rendered zone is peak-normalized",
+        "A 50% Type zone setting means the active effect's high point is 50%",
         "charging breath is intentionally shallow and slow",
         "Source Of Truth",
         "Code constants and `~LED:STATUS detail=contract` are the source of truth",
@@ -1431,6 +1433,16 @@ def main() -> int:
     if re.search(r"if\s*\(!safety\)\s*\{\s*status_led_apply_zone_brightness_caps_locked\(frame\);", status_led):
         failures.append(
             "status_led.c: safety warning states must still respect Type four-zone brightness caps"
+        )
+    if not re.search(
+        r"status_led_normalize_strip_peak_to_type_max\(frame->status, STATUS_LED_STATUS_COUNT\);[\s\S]*?"
+        r"status_led_normalize_strip_peak_to_type_max\(frame->ec11, STATUS_LED_EC11_COUNT\);[\s\S]*?"
+        r"status_led_scale_strip_percent\(\s*frame->status[\s\S]*?"
+        r"status_led_scale_strip_percent\(\s*frame->ec11",
+        status_led,
+    ):
+        failures.append(
+            "status_led.c: Type zone brightness must normalize each active effect peak before scaling by the Type setting"
         )
     for token in (
         "STATUS_LED_CHARGING_BREATH_UNKNOWN_FLOOR_PERCENT 8U",

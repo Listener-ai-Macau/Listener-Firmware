@@ -1736,8 +1736,44 @@ static void status_led_scale_strip_percent(status_led_rgb_t *colors, size_t coun
     }
 }
 
+static uint8_t status_led_strip_peak_channel(const status_led_rgb_t *colors, size_t count)
+{
+    uint8_t peak = 0U;
+    for (size_t index = 0; index < count; ++index) {
+        if (colors[index].r > peak) {
+            peak = colors[index].r;
+        }
+        if (colors[index].g > peak) {
+            peak = colors[index].g;
+        }
+        if (colors[index].b > peak) {
+            peak = colors[index].b;
+        }
+    }
+    return peak;
+}
+
+static void status_led_normalize_strip_peak_to_type_max(status_led_rgb_t *colors, size_t count)
+{
+    uint8_t peak = status_led_strip_peak_channel(colors, count);
+    if (peak == 0U || peak >= 255U) {
+        return;
+    }
+
+    for (size_t index = 0; index < count; ++index) {
+        colors[index].r = status_led_clamp_u32_to_u8(((uint32_t)colors[index].r * 255U + (peak / 2U)) / peak);
+        colors[index].g = status_led_clamp_u32_to_u8(((uint32_t)colors[index].g * 255U + (peak / 2U)) / peak);
+        colors[index].b = status_led_clamp_u32_to_u8(((uint32_t)colors[index].b * 255U + (peak / 2U)) / peak);
+    }
+}
+
 static void status_led_apply_zone_brightness_caps_locked(status_led_frame_t *frame)
 {
+    status_led_normalize_strip_peak_to_type_max(frame->status, STATUS_LED_STATUS_COUNT);
+    status_led_normalize_strip_peak_to_type_max(frame->key, STATUS_LED_KEY_COUNT);
+    status_led_normalize_strip_peak_to_type_max(frame->ec11, STATUS_LED_EC11_COUNT);
+    status_led_normalize_strip_peak_to_type_max(frame->edge, STATUS_LED_EDGE_COUNT);
+
     status_led_scale_strip_percent(
         frame->status,
         STATUS_LED_STATUS_COUNT,
@@ -5796,7 +5832,8 @@ static void status_led_print_status(void)
         " status_zone_brightness_percent=%u key_zone_brightness_percent=%u"
         " ec11_zone_brightness_percent=%u edge_zone_brightness_percent=%u"
         " brightness_duty_255=%u"
-        " zone_brightness_is_hard_cap=1 legacy_brightness_neutral=1 profile_dimming_disabled=1\n",
+        " zone_brightness_is_hard_cap=1 zone_brightness_peak_normalized=1"
+        " legacy_brightness_neutral=1 profile_dimming_disabled=1\n",
         status_led_profile_name(snapshot.profile),
         profile_cap_percent,
         snapshot.brightness_percent,
@@ -6063,7 +6100,8 @@ static void status_led_print_budget(void)
         " legacy_brightness_duty_255=%u"
         " budget_scale_percent=%u budget_limited_by_current=%u"
         " configured_profile_budget_ma=%" PRIu32 " factory_budget_ma=%u"
-        " product_effect_profile=1 zone_brightness_is_hard_cap=1 legacy_brightness_neutral=1 profile_dimming_disabled=1 off_zero_brightness=1 safety_full_brightness=1"
+        " product_effect_profile=1 zone_brightness_is_hard_cap=1 zone_brightness_peak_normalized=1"
+        " legacy_brightness_neutral=1 profile_dimming_disabled=1 off_zero_brightness=1 safety_full_brightness=1"
         " per_led_full_white_ma=60 vdd_led_enable=always_on_assumed\n",
         status_led_profile_name(snapshot.profile),
         snapshot.last_current_budget_ma,
