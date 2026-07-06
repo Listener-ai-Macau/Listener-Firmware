@@ -2984,7 +2984,10 @@ static bool status_led_render_shutdown_confirm_locked(status_led_frame_t *frame,
     frame->status[STATUS_LED_SEM_PWR] = status_led_token_locked(amber, pwr_percent, false);
 
     uint8_t accent_percent = 24U;
-    uint32_t lit = 1U + ((elapsed * STATUS_LED_EC11_COUNT) / STATUS_LED_SHUTDOWN_CONFIRM_MS);
+    uint32_t lit = (elapsed * STATUS_LED_EC11_COUNT) / STATUS_LED_SHUTDOWN_CONFIRM_MS;
+    if (elapsed > 0U && lit == 0U) {
+        lit = 1U;
+    }
     if (lit > STATUS_LED_EC11_COUNT) {
         lit = STATUS_LED_EC11_COUNT;
     }

@@ -2387,6 +2387,8 @@ def main() -> int:
         failures.append("status_led.md: docs must not claim EC11/edge accent-only motion retransmits the status rail")
     if "EC11/edge accent-only motion does not repeatedly refresh the status rail" not in status_doc:
         failures.append("status_led.md: docs must state accent-only motion leaves an unchanged status rail alone")
+    if "EC11 shutdown ring fills from zero over the full confirmation window" not in status_doc:
+        failures.append("status_led.md: docs must record that shutdown confirmation does not pre-light the first EC11 pixel")
     if not re.search(
         r"status_led_render_recording_locked[\s\S]*?"
         r"status_led_recording_status_percent_locked\(now_ms\)",
@@ -2473,6 +2475,10 @@ def main() -> int:
         status_led,
     ):
         failures.append("status_led.c: shutdown confirmation must use a shared wait-bounded helper that wakes LED output")
+    if "1U + ((elapsed * STATUS_LED_EC11_COUNT)" in status_led:
+        failures.append("status_led.c: shutdown confirmation ring must not pre-light the first EC11 pixel and finish early")
+    if "uint32_t lit = (elapsed * STATUS_LED_EC11_COUNT) / STATUS_LED_SHUTDOWN_CONFIRM_MS;" not in status_led:
+        failures.append("status_led.c: shutdown confirmation ring must fill over the full confirmation window")
     if not re.search(
         r"void\s+status_led_notify_shutdown_confirm\([^)]*\)[\s\S]*?"
         r"status_led_notify_shutdown_confirm_with_wait_and_duration\([\s\S]*?"
