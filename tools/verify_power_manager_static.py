@@ -234,8 +234,8 @@ CHECKS = {
         "wake=active_low_gpio_wakeup+20ms_scan",
         "low_power_wake=active_low_gpio_wakeup+20ms_scan",
         "runtime_irq=anyedge_notify_edge_latch",
-        "s_direct_gpio_isr_press_pending",
-        "voice_key_input_take_direct_gpio_isr_press_pending",
+        "s_direct_gpio_isr_edge_pending",
+        "voice_key_input_take_direct_gpio_isr_edge_pending",
     ],
     "ports/esp32/voice_key_input/CMakeLists.txt": [
         "esp_hw_support",
@@ -1999,6 +1999,20 @@ def main() -> int:
         failures.append(
             "components/keyboard/keyboard.c: EC11 A/B pins must both be light-sleep wake sources"
         )
+    if not re.search(
+        r"keyboard_ec11_start[\s\S]{0,1200}"
+        r"\.intr_type\s*=\s*GPIO_INTR_DISABLE[\s\S]{0,1200}"
+        r"gpio_isr_handler_add\(\s*BOARD_PINS_EC11_A_IO\s*,\s*keyboard_ec11_queue_edge_from_isr[\s\S]{0,600}"
+        r"gpio_isr_handler_add\(\s*BOARD_PINS_EC11_B_IO\s*,\s*keyboard_ec11_queue_edge_from_isr[\s\S]{0,900}"
+        r"gpio_set_intr_type\(\s*BOARD_PINS_EC11_A_IO\s*,\s*GPIO_INTR_ANYEDGE\s*\)[\s\S]{0,500}"
+        r"gpio_set_intr_type\(\s*BOARD_PINS_EC11_B_IO\s*,\s*GPIO_INTR_ANYEDGE\s*\)[\s\S]{0,500}"
+        r"gpio_intr_enable\(\s*BOARD_PINS_EC11_A_IO\s*\)[\s\S]{0,500}"
+        r"gpio_intr_enable\(\s*BOARD_PINS_EC11_B_IO\s*\)",
+        keyboard,
+    ):
+        failures.append(
+            "components/keyboard/keyboard.c: EC11 A/B any-edge interrupts must be armed only after both GPIO ISR handlers are installed so rotation feedback cannot be lost to startup ISR races"
+        )
 
     voice_key = (
         REPO_ROOT / "ports/esp32/voice_key_input/voice_key_input_esp32.c"
@@ -2111,6 +2125,12 @@ def main() -> int:
         failures.append(
             "ports/esp32/voice_key_input/voice_key_input_esp32.c: EC11 double-click recovery must not be downgraded into a single-click fallback by recording-output or idle-guard state"
         )
+    if "startup hold is suppressed until a stable release" not in (
+        REPO_ROOT / "docs/features/firmware-feature-map.md"
+    ).read_text(encoding="utf-8"):
+        failures.append(
+            "docs/features/firmware-feature-map.md: EC11 power-on/startup hold suppression must be documented as a product contract"
+        )
     if not re.search(
         r"#define\s+VOICE_KEY_INPUT_LONG_PRESS_IGNORE_MS\s+\(800\)",
         voice_key,
@@ -2119,20 +2139,33 @@ def main() -> int:
             "ports/esp32/voice_key_input/voice_key_input_esp32.c: EC11 long-press shutdown cue must start at 800 ms so the hold does not feel dead"
         )
     if not re.search(
-        r"voice_key_input_direct_gpio_init[\s\S]{0,420}"
-        r"\.intr_type\s*=\s*GPIO_INTR_ANYEDGE[\s\S]{0,420}"
-        r"gpio_isr_handler_add\(\s*VOICE_KEY_INPUT_DIRECT_GPIO\s*,\s*voice_key_input_direct_gpio_wake_from_isr[\s\S]{0,420}"
-        r"voice_key_input_enable_light_sleep_wake\(\)",
+        r"next_pressed_ms\s*>=\s*VOICE_KEY_INPUT_LONG_PRESS_IGNORE_MS[\s\S]{0,420}"
+        r"status_led_notify_shutdown_confirm\(false,\s*\"ec11_long_press_shutdown_confirm\"\)",
         voice_key,
     ):
         failures.append(
-            "ports/esp32/voice_key_input/voice_key_input_esp32.c: EC11 push GPIO18 must use any-edge runtime wake with a lightweight edge latch plus active-low light-sleep wake"
+            "ports/esp32/voice_key_input/voice_key_input_esp32.c: EC11 long press must restore the accepted shutdown-confirm LED cue; shutdown itself is the hardware power-key behavior"
+        )
+    if not re.search(
+        r"voice_key_input_direct_gpio_init[\s\S]{0,1100}"
+        r"\.intr_type\s*=\s*GPIO_INTR_DISABLE[\s\S]{0,1100}"
+        r"gpio_isr_handler_add\(\s*VOICE_KEY_INPUT_DIRECT_GPIO\s*,\s*voice_key_input_direct_gpio_wake_from_isr[\s\S]{0,900}"
+        r"voice_key_input_enable_light_sleep_wake\(\)[\s\S]{0,360}"
+        r"gpio_set_intr_type\(\s*VOICE_KEY_INPUT_DIRECT_GPIO\s*,\s*GPIO_INTR_ANYEDGE\s*\)[\s\S]{0,360}"
+        r"gpio_intr_enable\(\s*VOICE_KEY_INPUT_DIRECT_GPIO\s*\)",
+        voice_key,
+    ):
+        failures.append(
+            "ports/esp32/voice_key_input/voice_key_input_esp32.c: EC11 push GPIO18 must install the ISR handler, configure active-low light-sleep wake, then restore any-edge runtime interrupts"
         )
     required_voice_irq_tokens = [
         "static void IRAM_ATTR voice_key_input_direct_gpio_wake_from_isr",
         "vTaskNotifyGiveFromISR(task_handle",
-        "s_direct_gpio_isr_press_pending",
-        "voice_key_input_take_direct_gpio_isr_press_pending",
+        "s_direct_gpio_isr_edge_pending",
+        "voice_key_input_take_direct_gpio_isr_edge_pending",
+        "suppress_until_released",
+        "startup press suppressed until stable release",
+        "startup press suppression released after stable idle",
         'voice_key_input_apply_raw_feedback(&s_direct_gpio_state, "isr_edge")',
         "EC11 push low-power ISR edge latched for debounce",
         "double-click recovery detected",
@@ -2146,6 +2179,7 @@ def main() -> int:
     forbidden_voice_irq_tokens = [
         "GPIO_INTR_LOW_LEVEL)",
         "xTaskGetTickCountFromISR",
+        "gpio_get_level(",
         "portENTER_CRITICAL_ISR",
         "portEXIT_CRITICAL_ISR",
         "voice_key_input_record_recovery_event(",
@@ -2298,9 +2332,36 @@ def main() -> int:
         failures.append(
             "ports/esp32/voice_key_input/voice_key_input_esp32.c: EC11 raw-only short taps must be accepted on stable idle, then clear the raw press latch so the next real press can be tracked"
         )
-    if "gpio_set_intr_type(VOICE_KEY_INPUT_DIRECT_GPIO" in voice_key:
+    if not re.search(
+        r"button->suppress_until_released\s*=\s*"
+        r"voice_key_input_button_raw_pressed\(button,\s*raw_high\)[\s\S]{0,520}"
+        r"startup press suppressed until stable release",
+        voice_key,
+    ):
         failures.append(
-            "ports/esp32/voice_key_input/voice_key_input_esp32.c: EC11 push must not switch to low-level GPIO IRQ mode in idle"
+            "ports/esp32/voice_key_input/voice_key_input_esp32.c: a cold-boot EC11/power-key hold must be suppressed until release so the boot press cannot become recording, single-click, or recovery input"
+        )
+    if not re.search(
+        r"if\s*\(\s*button->suppress_until_released\s*\)[\s\S]{0,420}"
+        r"button->pressed\s*=\s*false[\s\S]{0,420}"
+        r"if\s*\(\s*!pressed\s*\)[\s\S]{0,260}"
+        r"button->suppress_until_released\s*=\s*false",
+        voice_key,
+    ):
+        failures.append(
+            "ports/esp32/voice_key_input/voice_key_input_esp32.c: startup EC11/power-key suppression must ignore the held press and clear only after stable released idle"
+        )
+    if not re.search(
+        r"if\s*\(\s*!s_direct_generated_active\s*&&\s*isr_edge_pending\s*&&\s*"
+        r"!s_direct_gpio_state\.suppress_until_released\s*&&",
+        voice_key,
+    ):
+        failures.append(
+            "ports/esp32/voice_key_input/voice_key_input_esp32.c: ISR edge feedback must be blocked while a cold-boot EC11/power-key press is being suppressed"
+        )
+    if "gpio_set_intr_type(VOICE_KEY_INPUT_DIRECT_GPIO, GPIO_INTR_LOW_LEVEL)" in voice_key:
+        failures.append(
+            "ports/esp32/voice_key_input/voice_key_input_esp32.c: EC11 push must not switch to low-level runtime GPIO IRQ mode in idle"
         )
     if not re.search(
         r"voice_key_input_enable_light_sleep_wake[\s\S]{0,900}"
@@ -2312,13 +2373,14 @@ def main() -> int:
             "ports/esp32/voice_key_input/voice_key_input_esp32.c: EC11 push/direct key must configure active-low GPIO wake for light sleep"
         )
     if not re.search(
-        r"voice_key_input_direct_gpio_init[\s\S]{0,1100}"
-        r"gpio_config\(&direct_cfg\)[\s\S]{0,900}"
-        r"voice_key_input_enable_light_sleep_wake\(\)",
+        r"voice_key_input_direct_gpio_init[\s\S]{0,1800}"
+        r"gpio_config\(&direct_cfg\)[\s\S]{0,1400}"
+        r"voice_key_input_enable_light_sleep_wake\(\)[\s\S]{0,900}"
+        r"gpio_intr_enable\(\s*VOICE_KEY_INPUT_DIRECT_GPIO\s*\)",
         voice_key,
     ):
         failures.append(
-            "ports/esp32/voice_key_input/voice_key_input_esp32.c: direct key wake must be armed during GPIO init"
+            "ports/esp32/voice_key_input/voice_key_input_esp32.c: direct key any-edge runtime wake and active-low light-sleep wake must both be armed during GPIO init"
         )
     if not re.search(
         r"strcmp\(command,\s*\"STATUS\"\)[\s\S]*"

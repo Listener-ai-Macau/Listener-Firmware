@@ -1662,7 +1662,7 @@ static esp_err_t keyboard_ec11_start(void)
         .mode = GPIO_MODE_INPUT,
         .pull_up_en = GPIO_PULLUP_ENABLE,
         .pull_down_en = GPIO_PULLDOWN_DISABLE,
-        .intr_type = GPIO_INTR_ANYEDGE,
+        .intr_type = GPIO_INTR_DISABLE,
     };
     esp_err_t ret = gpio_config(&io_conf);
     if (ret != ESP_OK) {
@@ -1694,6 +1694,38 @@ static esp_err_t keyboard_ec11_start(void)
     if (ret != ESP_OK) {
         (void)gpio_isr_handler_remove(BOARD_PINS_EC11_A_IO);
         ESP_LOGE(TAG, "EC11 B ISR handler add failed: %s", esp_err_to_name(ret));
+        diag_log(DIAG_SRC_KEYBOARD, DIAG_KBD_GPIO_FAIL, DIAG_SEV_ERROR, 2, ret, 0, 0);
+        return ret;
+    }
+    ret = gpio_set_intr_type(BOARD_PINS_EC11_A_IO, GPIO_INTR_ANYEDGE);
+    if (ret != ESP_OK) {
+        (void)gpio_isr_handler_remove(BOARD_PINS_EC11_A_IO);
+        (void)gpio_isr_handler_remove(BOARD_PINS_EC11_B_IO);
+        ESP_LOGE(TAG, "EC11 A ISR type enable failed: %s", esp_err_to_name(ret));
+        diag_log(DIAG_SRC_KEYBOARD, DIAG_KBD_GPIO_FAIL, DIAG_SEV_ERROR, 2, ret, 0, 0);
+        return ret;
+    }
+    ret = gpio_set_intr_type(BOARD_PINS_EC11_B_IO, GPIO_INTR_ANYEDGE);
+    if (ret != ESP_OK) {
+        (void)gpio_isr_handler_remove(BOARD_PINS_EC11_A_IO);
+        (void)gpio_isr_handler_remove(BOARD_PINS_EC11_B_IO);
+        ESP_LOGE(TAG, "EC11 B ISR type enable failed: %s", esp_err_to_name(ret));
+        diag_log(DIAG_SRC_KEYBOARD, DIAG_KBD_GPIO_FAIL, DIAG_SEV_ERROR, 2, ret, 0, 0);
+        return ret;
+    }
+    ret = gpio_intr_enable(BOARD_PINS_EC11_A_IO);
+    if (ret != ESP_OK) {
+        (void)gpio_isr_handler_remove(BOARD_PINS_EC11_A_IO);
+        (void)gpio_isr_handler_remove(BOARD_PINS_EC11_B_IO);
+        ESP_LOGE(TAG, "EC11 A ISR enable failed: %s", esp_err_to_name(ret));
+        diag_log(DIAG_SRC_KEYBOARD, DIAG_KBD_GPIO_FAIL, DIAG_SEV_ERROR, 2, ret, 0, 0);
+        return ret;
+    }
+    ret = gpio_intr_enable(BOARD_PINS_EC11_B_IO);
+    if (ret != ESP_OK) {
+        (void)gpio_isr_handler_remove(BOARD_PINS_EC11_A_IO);
+        (void)gpio_isr_handler_remove(BOARD_PINS_EC11_B_IO);
+        ESP_LOGE(TAG, "EC11 B ISR enable failed: %s", esp_err_to_name(ret));
         diag_log(DIAG_SRC_KEYBOARD, DIAG_KBD_GPIO_FAIL, DIAG_SEV_ERROR, 2, ret, 0, 0);
         return ret;
     }

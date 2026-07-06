@@ -115,6 +115,7 @@ typedef struct {
     bool recovery_double_candidate;
     bool long_press_reported;
     bool raw_feedback_pressed;
+    bool suppress_until_released;
     TickType_t hold_feedback_tick;
 } voice_key_button_state_t;
 
@@ -139,8 +140,7 @@ static QueueHandle_t s_generated_single_click_queue;
 static bool s_direct_generated_active;
 static uint8_t s_direct_generated_click_count;
 static TickType_t s_direct_generated_start_tick;
-static volatile bool s_direct_gpio_isr_press_pending;
-static volatile int s_direct_gpio_isr_last_raw_level = -1;
+static volatile bool s_direct_gpio_isr_edge_pending;
 #if VOICE_KEY_INPUT_ENABLE_LEGACY_EXPANDER
 static bool s_prev_input_valid;
 static uint32_t s_prev_input_levels;
@@ -171,13 +171,7 @@ static bool voice_key_input_power_state_is_low_power_idle(void);
 static void IRAM_ATTR voice_key_input_direct_gpio_wake_from_isr(void *arg)
 {
     (void)arg;
-    int raw_level = gpio_get_level(VOICE_KEY_INPUT_DIRECT_GPIO);
-    if (raw_level != s_direct_gpio_isr_last_raw_level) {
-        s_direct_gpio_isr_last_raw_level = raw_level;
-        if (raw_level == 0) {
-            s_direct_gpio_isr_press_pending = true;
-        }
-    }
+    s_direct_gpio_isr_edge_pending = true;
 
     TaskHandle_t task_handle = s_poll_task_handle;
     if (task_handle == NULL) {
@@ -191,12 +185,12 @@ static void IRAM_ATTR voice_key_input_direct_gpio_wake_from_isr(void *arg)
     }
 }
 
-static bool voice_key_input_take_direct_gpio_isr_press_pending(void)
+static bool voice_key_input_take_direct_gpio_isr_edge_pending(void)
 {
-    if (!s_direct_gpio_isr_press_pending) {
+    if (!s_direct_gpio_isr_edge_pending) {
         return false;
     }
-    s_direct_gpio_isr_press_pending = false;
+    s_direct_gpio_isr_edge_pending = false;
     return true;
 }
 
@@ -646,6 +640,8 @@ static void voice_key_input_handle_button_sample(voice_key_button_state_t *butto
         button->recovery_double_candidate = false;
         button->long_press_reported = false;
         button->raw_feedback_pressed = false;
+        button->suppress_until_released =
+            voice_key_input_button_raw_pressed(button, raw_high);
         button->hold_feedback_tick = 0;
         ESP_LOGI(
             TAG,
@@ -653,6 +649,12 @@ static void voice_key_input_handle_button_sample(voice_key_button_state_t *butto
             button->label,
             raw_high ? 1 : 0,
             button->idle_level_high ? "low" : "high");
+        if (button->suppress_until_released) {
+            ESP_LOGW(
+                TAG,
+                "%s startup press suppressed until stable release",
+                button->label);
+        }
         return;
     }
 
@@ -664,7 +666,9 @@ static void voice_key_input_handle_button_sample(voice_key_button_state_t *butto
         bool low_power_idle = voice_key_input_power_state_is_low_power_idle();
         bool raw_pressed = voice_key_input_button_raw_pressed(button, raw_high);
         bool stable_released = button->stable_level_high == button->idle_level_high;
-        if (raw_pressed) {
+        if (button->suppress_until_released) {
+            voice_key_input_clear_raw_feedback(button);
+        } else if (raw_pressed) {
             if (!button->pressed && stable_released) {
                 voice_key_input_mark_recovery_double_candidate(button, now_tick, "raw_edge");
             }
@@ -712,6 +716,23 @@ static void voice_key_input_handle_button_sample(voice_key_button_state_t *butto
     }
 
     bool pressed = raw_high != button->idle_level_high;
+    if (button->suppress_until_released) {
+        voice_key_input_clear_raw_feedback(button);
+        button->pressed = false;
+        button->pressed_ms = 0;
+        button->pressed_started_tick = 0;
+        button->long_press_reported = false;
+        button->recovery_double_candidate = false;
+        if (!pressed) {
+            button->suppress_until_released = false;
+            ESP_LOGI(
+                TAG,
+                "%s startup press suppression released after stable idle",
+                button->label);
+        }
+        voice_key_input_prune_recovery_guard(button, xTaskGetTickCount());
+        return;
+    }
     if (pressed && !button->pressed) {
         voice_key_input_mark_recovery_double_candidate(button, now_tick, "stable");
         button->pressed_ms = 0;
@@ -967,7 +988,7 @@ static esp_err_t voice_key_input_direct_gpio_init(void)
         .mode = GPIO_MODE_INPUT,
         .pull_up_en = GPIO_PULLUP_ENABLE,
         .pull_down_en = GPIO_PULLDOWN_DISABLE,
-        .intr_type = GPIO_INTR_ANYEDGE,
+        .intr_type = GPIO_INTR_DISABLE,
     };
     ESP_RETURN_ON_ERROR(gpio_config(&direct_cfg), TAG, "direct gpio config failed");
     esp_err_t ret = gpio_install_isr_service(0);
@@ -988,6 +1009,22 @@ static esp_err_t voice_key_input_direct_gpio_init(void)
         return ret;
     }
     voice_key_input_enable_light_sleep_wake();
+    ret = gpio_set_intr_type(VOICE_KEY_INPUT_DIRECT_GPIO, GPIO_INTR_ANYEDGE);
+    if (ret != ESP_OK) {
+        (void)gpio_isr_handler_remove(VOICE_KEY_INPUT_DIRECT_GPIO);
+        ESP_LOGW(TAG, "direct gpio ISR type enable failed: gpio=%d ret=%s",
+                 (int)VOICE_KEY_INPUT_DIRECT_GPIO,
+                 esp_err_to_name(ret));
+        return ret;
+    }
+    ret = gpio_intr_enable(VOICE_KEY_INPUT_DIRECT_GPIO);
+    if (ret != ESP_OK) {
+        (void)gpio_isr_handler_remove(VOICE_KEY_INPUT_DIRECT_GPIO);
+        ESP_LOGW(TAG, "direct gpio ISR enable failed: gpio=%d ret=%s",
+                 (int)VOICE_KEY_INPUT_DIRECT_GPIO,
+                 esp_err_to_name(ret));
+        return ret;
+    }
     return ESP_OK;
 }
 
@@ -1032,9 +1069,14 @@ static void voice_key_input_poll_task(void *parameter)
         }
 #endif
 
-        bool isr_press_pending =
-            voice_key_input_take_direct_gpio_isr_press_pending();
-        if (!s_direct_generated_active && isr_press_pending) {
+        bool isr_edge_pending =
+            voice_key_input_take_direct_gpio_isr_edge_pending();
+        bool physical_direct_raw_high = gpio_get_level(VOICE_KEY_INPUT_DIRECT_GPIO) != 0;
+        bool direct_raw_high =
+            voice_key_input_generated_raw_high(physical_direct_raw_high, now);
+        if (!s_direct_generated_active && isr_edge_pending &&
+            !s_direct_gpio_state.suppress_until_released &&
+            voice_key_input_button_raw_pressed(&s_direct_gpio_state, direct_raw_high)) {
             bool low_power_idle = voice_key_input_power_state_is_low_power_idle();
             bool stable_released =
                 s_direct_gpio_state.idle_level_valid &&
@@ -1056,9 +1098,6 @@ static void voice_key_input_poll_task(void *parameter)
             }
         }
 
-        bool physical_direct_raw_high = gpio_get_level(VOICE_KEY_INPUT_DIRECT_GPIO) != 0;
-        bool direct_raw_high =
-            voice_key_input_generated_raw_high(physical_direct_raw_high, now);
         voice_key_input_handle_button_sample(&s_direct_gpio_state, direct_raw_high);
 
         uint32_t wait_ms = voice_key_input_next_wait_ms();
