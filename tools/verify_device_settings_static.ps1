@@ -160,6 +160,7 @@ Assert-Contains $statusLed 'ec11_zone_brightness_percent=%u edge_zone_brightness
 Assert-Contains $statusLed 'zone_brightness_is_hard_cap=1' 'routine product LEDs expose four-zone brightness as hard cap'
 Assert-Contains $statusLed 'legacy_brightness_neutral=1' 'routine product LEDs keep legacy brightness neutral'
 Assert-Contains $statusLed 'status_led_render_edge_locked\(frame, now_ms\);[\s\S]*status_led_apply_zone_brightness_caps_locked\(frame\);[\s\S]*status_led_clamp_current_locked\(frame, safety\);' 'normal render path applies effect curves before four-zone brightness caps and current clamp'
+Assert-NotContains $statusLed 'if\s*\(!safety\)\s*\{\s*status_led_apply_zone_brightness_caps_locked\(frame\);' 'safety warning states must still respect Type four-zone brightness caps'
 Assert-NotContains $statusLed 'uint8_t user_brightness = s_state\.brightness_percent' 'status LED must not reintroduce global brightness scaling'
 Assert-NotContains $statusLed 'scaled = \(\(uint32_t\)desired_percent \* user_brightness \+ 50U\) / 100U' 'status LED effects must not be scaled by a global brightness cap'
 Assert-Contains $statusLed 'STATUS_LED_STANDARD_PROFILE_CAP_PERCENT 100U' 'standard profile has no hidden percent cap above user brightness'

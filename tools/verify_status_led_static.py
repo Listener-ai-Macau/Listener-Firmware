@@ -1428,6 +1428,10 @@ def main() -> int:
             failures.append(
                 f"status_led.c: {profile_name.lower()} profile must not add a hidden percent cap over user brightness"
             )
+    if re.search(r"if\s*\(!safety\)\s*\{\s*status_led_apply_zone_brightness_caps_locked\(frame\);", status_led):
+        failures.append(
+            "status_led.c: safety warning states must still respect Type four-zone brightness caps"
+        )
     for token in (
         "STATUS_LED_CHARGING_BREATH_UNKNOWN_FLOOR_PERCENT 8U",
         "STATUS_LED_CHARGING_BREATH_LOW_HOLD_MS 450U",

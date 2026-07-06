@@ -3542,9 +3542,7 @@ static void status_led_render_frame_locked(status_led_frame_t *frame, uint32_t n
     status_led_render_ble_locked(frame, now_ms);
     if (status_led_render_shutdown_confirm_locked(frame, now_ms)) {
         status_led_apply_status_tail_guard_locked(frame, now_ms);
-        if (!safety) {
-            status_led_apply_zone_brightness_caps_locked(frame);
-        }
+        status_led_apply_zone_brightness_caps_locked(frame);
         status_led_clamp_current_locked(frame, safety);
         return;
     }
@@ -3558,9 +3556,7 @@ static void status_led_render_frame_locked(status_led_frame_t *frame, uint32_t n
     status_led_render_error_locked(frame, now_ms, &safety);
     status_led_apply_status_tail_guard_locked(frame, now_ms);
 
-    if (!safety) {
-        status_led_apply_zone_brightness_caps_locked(frame);
-    }
+    status_led_apply_zone_brightness_caps_locked(frame);
     status_led_clamp_current_locked(frame, safety);
 }
 
