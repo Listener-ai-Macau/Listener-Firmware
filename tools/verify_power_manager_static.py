@@ -2237,9 +2237,13 @@ def main() -> int:
         r"static\s+bool\s+voice_key_input_button_raw_pressed",
         voice_key,
     )
-    if dispatch_body is None or "status_led_notify_ec11_feedback(STATUS_LED_EC11_FEEDBACK_PRESS)" not in dispatch_body.group(0):
+    if dispatch_body is None:
         failures.append(
-            "ports/esp32/voice_key_input/voice_key_input_esp32.c: EC11 single-click fallback must keep the local EC11 confirmation cue"
+            "ports/esp32/voice_key_input/voice_key_input_esp32.c: missing EC11 single-click fallback dispatch helper"
+        )
+    elif "status_led_notify_ec11_feedback(STATUS_LED_EC11_FEEDBACK_PRESS)" in dispatch_body.group(0):
+        failures.append(
+            "ports/esp32/voice_key_input/voice_key_input_esp32.c: EC11 single-click fallback must not replay the raw EC11 press cue"
         )
     recovery_body = re.search(
         r"static\s+void\s+voice_key_input_record_recovery_event[\s\S]*?"

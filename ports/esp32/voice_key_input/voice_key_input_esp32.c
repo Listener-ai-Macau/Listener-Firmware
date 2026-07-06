@@ -248,8 +248,6 @@ static const voice_key_input_bus_candidate_t s_bus_candidates[] = {
 
 static void voice_key_input_dispatch_custom_key_event(const char *source, uint32_t event_type, const char *edge_label)
 {
-    status_led_notify_ec11_feedback(STATUS_LED_EC11_FEEDBACK_PRESS);
-
     esp_err_t ret = ble_hid_send_keyboard_usage_with_modifier_async(
         VOICE_KEY_INPUT_EC11_FALLBACK_USAGE,
         VOICE_KEY_INPUT_EC11_FALLBACK_MODIFIER,

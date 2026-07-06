@@ -95,6 +95,7 @@ try {
     Invoke-Gate "static release contracts" {
         Invoke-External "pwsh" @("-NoProfile", "-File", (Join-Path $PSScriptRoot "release_check.ps1")) $repoRoot
         Invoke-External "python" @((Join-Path $PSScriptRoot "verify_voice_recording_control_fsm.py")) $repoRoot
+        Invoke-External "python" @((Join-Path $PSScriptRoot "verify_ec11_input_contract.py")) $repoRoot
         Invoke-External "python" @((Join-Path $PSScriptRoot "verify_ble_audio_transport_model.py")) $repoRoot
         Invoke-External "pwsh" @("-NoProfile", "-File", (Join-Path $PSScriptRoot "verify_ble_audio_backpressure_static.ps1")) $repoRoot
     }
