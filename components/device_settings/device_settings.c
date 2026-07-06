@@ -194,6 +194,14 @@ static esp_err_t device_settings_load_locked(void)
         s_loaded_from_nvs = true;
     }
     s_settings.battery_brightness_percent = s_settings.plugged_brightness_percent;
+    if (s_settings.plugged_brightness_percent != DEVICE_SETTINGS_DEFAULT_PLUGGED_BRIGHTNESS_PERCENT ||
+        s_settings.battery_brightness_percent != DEVICE_SETTINGS_DEFAULT_BATTERY_BRIGHTNESS_PERCENT) {
+        ESP_LOGW(TAG, "ignoring legacy global brightness cap plugged=%u battery=%u; per-zone brightness is authoritative",
+                 s_settings.plugged_brightness_percent,
+                 s_settings.battery_brightness_percent);
+        s_settings.plugged_brightness_percent = DEVICE_SETTINGS_DEFAULT_PLUGGED_BRIGHTNESS_PERCENT;
+        s_settings.battery_brightness_percent = DEVICE_SETTINGS_DEFAULT_BATTERY_BRIGHTNESS_PERCENT;
+    }
 
     uint8_t status_led = s_settings.status_led_brightness_percent;
     if (nvs_get_u8(nvs, DEVICE_SETTINGS_NVS_STATUS_LED_BRIGHTNESS_KEY, &status_led) == ESP_OK) {
@@ -420,7 +428,7 @@ esp_err_t device_settings_init(void)
         (void)ec11_rotation_control_set_action(knob_rotation_action, "device_settings_init");
         ESP_LOGI(
             TAG,
-            "device settings: plugged_brightness=%u battery_brightness=%u plugged_low_power_idle_ms=%" PRIu32
+            "device settings: legacy_plugged_brightness=%u legacy_battery_brightness=%u plugged_low_power_idle_ms=%" PRIu32
             " battery_low_power_idle_ms=%" PRIu32 " plugged_low_power_enabled=%u"
             " led_status=%u led_key=%u led_ec11=%u led_edge=%u"
             " plugged_auto_shutdown_ms=%" PRIu32 " battery_auto_shutdown_ms=%" PRIu32
@@ -493,11 +501,8 @@ void device_settings_get_snapshot(device_settings_snapshot_t *out_snapshot)
 
 uint8_t device_settings_get_active_brightness_percent(bool external_power_present)
 {
-    device_settings_snapshot_t snapshot = {0};
-    device_settings_get_snapshot(&snapshot);
-    return external_power_present
-        ? snapshot.plugged_brightness_percent
-        : snapshot.battery_brightness_percent;
+    (void)external_power_present;
+    return DEVICE_SETTINGS_DEFAULT_LED_ZONE_BRIGHTNESS_PERCENT;
 }
 
 uint32_t device_settings_get_low_power_idle_ms(void)
@@ -605,14 +610,19 @@ esp_err_t device_settings_set_brightness_profiles(uint8_t plugged_percent, uint8
     esp_err_t ret = ESP_OK;
     if (xSemaphoreTake(s_mutex, portMAX_DELAY) == pdTRUE) {
         (void)device_settings_ensure_loaded_locked();
-        s_settings.plugged_brightness_percent = device_settings_clamp_brightness(plugged_percent);
         (void)battery_percent;
-        s_settings.battery_brightness_percent = s_settings.plugged_brightness_percent;
+        uint8_t zone_brightness = device_settings_clamp_brightness(plugged_percent);
+        s_settings.plugged_brightness_percent = DEVICE_SETTINGS_DEFAULT_PLUGGED_BRIGHTNESS_PERCENT;
+        s_settings.battery_brightness_percent = DEVICE_SETTINGS_DEFAULT_BATTERY_BRIGHTNESS_PERCENT;
+        s_settings.status_led_brightness_percent = zone_brightness;
+        s_settings.key_led_brightness_percent = zone_brightness;
+        s_settings.ec11_led_brightness_percent = zone_brightness;
+        s_settings.edge_led_brightness_percent = zone_brightness;
         ret = device_settings_persist_locked();
         xSemaphoreGive(s_mutex);
     }
     if (ret != ESP_OK) {
-        ESP_LOGW(TAG, "brightness profile persist failed: %s", esp_err_to_name(ret));
+        ESP_LOGW(TAG, "legacy all-zone brightness persist failed: %s", esp_err_to_name(ret));
     }
     return ret;
 }
@@ -653,9 +663,7 @@ static void device_settings_print_status(const char *result)
     bool charge_full = raw_full && !charging;
     bool charge_power_present = usb_power_present || charger_active || charge_full;
     bool external_power_present = charge_power_present;
-    uint8_t active_brightness = external_power_present
-        ? snapshot.plugged_brightness_percent
-        : snapshot.battery_brightness_percent;
+    uint8_t neutral_legacy_brightness = DEVICE_SETTINGS_DEFAULT_LED_ZONE_BRIGHTNESS_PERCENT;
     uint32_t active_low_power_idle_ms = external_power_present
         ? snapshot.plugged_low_power_idle_ms
         : snapshot.battery_low_power_idle_ms;
@@ -665,7 +673,7 @@ static void device_settings_print_status(const char *result)
 
     printf(
         "~DEVICE:SETTINGS schema=listener.device_settings.v1 result=%s"
-        " plugged_brightness=%u battery_brightness=%u active_power=%s active_brightness=%u"
+        " legacy_plugged_brightness=%u legacy_battery_brightness=%u active_power=%s neutral_legacy_brightness=%u"
         " led_status=%u led_key=%u led_ec11=%u led_edge=%u"
         " low_power_idle_ms=%" PRIu32
         " plugged_low_power_idle_ms=%" PRIu32 " battery_low_power_idle_ms=%" PRIu32
@@ -678,12 +686,12 @@ static void device_settings_print_status(const char *result)
         " loaded_from_nvs=%u external_power_present=%u usb_power_present=%u usb_serial_jtag_sof_active=%u"
         " charger_active=%u charge_power_present=%u charging=%u charge_full=%u"
         " usb_det_adc_valid=%u usb_det_adc_mv=%d usb_det_mismatch=%u"
-        " valid_ranges=brightness_0_100,led_zone_brightness_0_100,low_power_idle_ms_%u_%u,plugged_low_power_idle_ms_%u_%u,battery_low_power_idle_ms_%u_%u,plugged_low_power_enabled_0_1,auto_shutdown_ms_0_off_or_%u_%u,plugged_auto_shutdown_ms_off_only,battery_auto_shutdown_ms_0_off_or_%u_%u,ble_name_ascii_1_%u,knob_rotation_system_volume_screen_brightness_disabled\n",
+        " valid_ranges=legacy_brightness_0_100_maps_to_led_zones,led_zone_brightness_0_100,low_power_idle_ms_%u_%u,plugged_low_power_idle_ms_%u_%u,battery_low_power_idle_ms_%u_%u,plugged_low_power_enabled_0_1,auto_shutdown_ms_0_off_or_%u_%u,plugged_auto_shutdown_ms_off_only,battery_auto_shutdown_ms_0_off_or_%u_%u,ble_name_ascii_1_%u,knob_rotation_system_volume_screen_brightness_disabled\n",
         result != NULL ? result : "OK",
         snapshot.plugged_brightness_percent,
         snapshot.battery_brightness_percent,
         external_power_present ? "external" : "battery",
-        active_brightness,
+        neutral_legacy_brightness,
         snapshot.status_led_brightness_percent,
         snapshot.key_led_brightness_percent,
         snapshot.ec11_led_brightness_percent,
@@ -853,14 +861,34 @@ static bool device_settings_apply_key_value(
     if (strcmp(key, "plugged_brightness") == 0 ||
         strcmp(key, "plugged_brightness_percent") == 0 ||
         strcmp(key, "external_brightness") == 0) {
-        return device_settings_parse_percent_value(
-            value, &config->plugged_brightness_percent, "brightness_must_be_0_100", out_reason);
+        uint8_t legacy_brightness = DEVICE_SETTINGS_DEFAULT_LED_ZONE_BRIGHTNESS_PERCENT;
+        if (!device_settings_parse_percent_value(
+                value, &legacy_brightness, "brightness_must_be_0_100", out_reason)) {
+            return false;
+        }
+        config->status_led_brightness_percent = legacy_brightness;
+        config->key_led_brightness_percent = legacy_brightness;
+        config->ec11_led_brightness_percent = legacy_brightness;
+        config->edge_led_brightness_percent = legacy_brightness;
+        config->plugged_brightness_percent = DEVICE_SETTINGS_DEFAULT_PLUGGED_BRIGHTNESS_PERCENT;
+        config->battery_brightness_percent = DEVICE_SETTINGS_DEFAULT_BATTERY_BRIGHTNESS_PERCENT;
+        return true;
     }
 
     if (strcmp(key, "battery_brightness") == 0 ||
         strcmp(key, "battery_brightness_percent") == 0) {
-        return device_settings_parse_percent_value(
-            value, &config->battery_brightness_percent, "brightness_must_be_0_100", out_reason);
+        uint8_t legacy_brightness = DEVICE_SETTINGS_DEFAULT_LED_ZONE_BRIGHTNESS_PERCENT;
+        if (!device_settings_parse_percent_value(
+                value, &legacy_brightness, "brightness_must_be_0_100", out_reason)) {
+            return false;
+        }
+        config->status_led_brightness_percent = legacy_brightness;
+        config->key_led_brightness_percent = legacy_brightness;
+        config->ec11_led_brightness_percent = legacy_brightness;
+        config->edge_led_brightness_percent = legacy_brightness;
+        config->plugged_brightness_percent = DEVICE_SETTINGS_DEFAULT_PLUGGED_BRIGHTNESS_PERCENT;
+        config->battery_brightness_percent = DEVICE_SETTINGS_DEFAULT_BATTERY_BRIGHTNESS_PERCENT;
+        return true;
     }
 
     if (strcmp(key, "led_status") == 0 ||
@@ -1174,7 +1202,8 @@ static esp_err_t device_settings_apply_set_command(const char *arguments)
 
         if (ok) {
             bool name_changed = strcmp(s_settings.ble_name, next.ble_name) != 0;
-            next.battery_brightness_percent = next.plugged_brightness_percent;
+            next.plugged_brightness_percent = DEVICE_SETTINGS_DEFAULT_PLUGGED_BRIGHTNESS_PERCENT;
+            next.battery_brightness_percent = DEVICE_SETTINGS_DEFAULT_BATTERY_BRIGHTNESS_PERCENT;
             s_settings = next;
             if (name_changed) {
                 s_ble_name_pending_restart = true;
@@ -1251,7 +1280,7 @@ esp_err_t device_settings_consume_control_command(const char *line)
     }
 
     if (strcmp(command, "HELP") == 0 || strcmp(command, "?") == 0) {
-        printf("~DEVICE:HELP commands=SETTINGS,STATUS,SET,RESET keys=plugged_brightness,battery_brightness,led_status,led_key,led_ec11,led_edge,low_power_idle_ms,low_power_idle_minutes,plugged_low_power_idle_ms,plugged_low_power_idle_minutes,battery_low_power_idle_ms,battery_low_power_idle_minutes,plugged_low_power_enabled,auto_shutdown_ms,auto_shutdown_minutes,battery_auto_shutdown_ms,battery_auto_shutdown_minutes,ble_name,knob_rotation\n");
+        printf("~DEVICE:HELP commands=SETTINGS,STATUS,SET,RESET keys=led_status,led_key,led_ec11,led_edge,low_power_idle_ms,low_power_idle_minutes,plugged_low_power_idle_ms,plugged_low_power_idle_minutes,battery_low_power_idle_ms,battery_low_power_idle_minutes,plugged_low_power_enabled,auto_shutdown_ms,auto_shutdown_minutes,battery_auto_shutdown_ms,battery_auto_shutdown_minutes,ble_name,knob_rotation legacy_keys=plugged_brightness,battery_brightness\n");
         fflush(stdout);
         return ESP_OK;
     }

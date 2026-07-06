@@ -1278,8 +1278,7 @@ static uint8_t status_led_effect_percent_locked(uint8_t desired_percent, bool sa
     }
     uint32_t scaled = desired_percent;
     if (!safety) {
-        uint8_t user_brightness = s_state.brightness_percent;
-        scaled = ((uint32_t)desired_percent * user_brightness + 50U) / 100U;
+        scaled = desired_percent;
     }
     uint8_t cap = status_led_profile_cap_percent_for(s_state.profile, safety);
     if (scaled > cap) {
@@ -3922,16 +3921,15 @@ static bool status_led_apply_device_settings_snapshot_locked(
     if (settings == NULL) {
         return false;
     }
-    const uint8_t active_brightness = external_power_present
-        ? settings->plugged_brightness_percent
-        : settings->battery_brightness_percent;
+    (void)external_power_present;
+    const uint8_t neutral_brightness = STATUS_LED_FULL_BRIGHTNESS_PERCENT;
     const bool changed =
-        s_state.brightness_percent != active_brightness ||
+        s_state.brightness_percent != neutral_brightness ||
         s_state.status_zone_brightness_percent != settings->status_led_brightness_percent ||
         s_state.key_zone_brightness_percent != settings->key_led_brightness_percent ||
         s_state.ec11_zone_brightness_percent != settings->ec11_led_brightness_percent ||
         s_state.edge_zone_brightness_percent != settings->edge_led_brightness_percent;
-    s_state.brightness_percent = active_brightness;
+    s_state.brightness_percent = neutral_brightness;
     s_state.status_zone_brightness_percent = settings->status_led_brightness_percent;
     s_state.key_zone_brightness_percent = settings->key_led_brightness_percent;
     s_state.ec11_zone_brightness_percent = settings->ec11_led_brightness_percent;
@@ -4174,7 +4172,9 @@ static void status_led_load_persistent_config(void)
     }
     uint8_t brightness = 100U;
     if (nvs_get_u8(nvs, STATUS_LED_NVS_BRIGHTNESS_KEY, &brightness) == ESP_OK) {
-        s_state.brightness_percent = status_led_brightness_from_u8(brightness);
+        ESP_LOGW(TAG, "ignoring legacy global LED brightness=%u; per-zone brightness is authoritative",
+                 (unsigned)status_led_brightness_from_u8(brightness));
+        s_state.brightness_percent = STATUS_LED_FULL_BRIGHTNESS_PERCENT;
     }
     uint8_t order = 0;
     if (nvs_get_u8(nvs, STATUS_LED_NVS_STATUS_ORDER_KEY, &order) == ESP_OK) {
@@ -4215,24 +4215,6 @@ static void status_led_save_profile(status_led_profile_t profile)
     nvs_close(nvs);
     if (ret != ESP_OK) {
         ESP_LOGW(TAG, "profile persist failed: %s", esp_err_to_name(ret));
-    }
-}
-
-static void status_led_save_brightness(uint8_t brightness_percent)
-{
-    nvs_handle_t nvs = 0;
-    esp_err_t ret = nvs_open(STATUS_LED_NVS_NAMESPACE, NVS_READWRITE, &nvs);
-    if (ret != ESP_OK) {
-        ESP_LOGW(TAG, "brightness persist skipped: %s", esp_err_to_name(ret));
-        return;
-    }
-    ret = nvs_set_u8(nvs, STATUS_LED_NVS_BRIGHTNESS_KEY, brightness_percent);
-    if (ret == ESP_OK) {
-        ret = nvs_commit(nvs);
-    }
-    nvs_close(nvs);
-    if (ret != ESP_OK) {
-        ESP_LOGW(TAG, "brightness persist failed: %s", esp_err_to_name(ret));
     }
 }
 
@@ -5812,13 +5794,13 @@ static void status_led_print_status(void)
         STATUS_LED_PROCESSING_THINK_PERIOD_MS);
     printf(
         "~LED:STATUS detail=brightness profile=%s effect_profile=product_v1"
-        " profile_cap_percent=%u brightness_percent=%u effective_cap_percent=%u"
+        " profile_cap_percent=%u neutral_legacy_brightness_percent=%u effective_cap_percent=%u"
         " budget_scale_percent=%u budget_limited_by_current=%u"
-        " plugged_brightness_percent=%u battery_brightness_percent=%u active_power_brightness_percent=%u"
+        " legacy_plugged_brightness_percent=%u legacy_battery_brightness_percent=%u neutral_legacy_brightness_percent=%u"
         " status_zone_brightness_percent=%u key_zone_brightness_percent=%u"
         " ec11_zone_brightness_percent=%u edge_zone_brightness_percent=%u"
         " brightness_duty_255=%u"
-        " user_brightness_is_hard_cap=1 profile_dimming_disabled=1\n",
+        " zone_brightness_is_hard_cap=1 legacy_brightness_neutral=1 profile_dimming_disabled=1\n",
         status_led_profile_name(snapshot.profile),
         profile_cap_percent,
         snapshot.brightness_percent,
@@ -6079,13 +6061,13 @@ static void status_led_print_budget(void)
     }
     printf(
         "~LED:BUDGET profile=%s cap_current_ma=%" PRIu32 " estimated_current_ma=%" PRIu32
-        " profile_cap_percent=%u user_brightness_percent=%u effective_cap_percent=%u factory_brightness_percent=%u"
+        " profile_cap_percent=%u neutral_legacy_brightness_percent=%u effective_cap_percent=%u factory_brightness_percent=%u"
         " status_zone_brightness_percent=%u key_zone_brightness_percent=%u"
         " ec11_zone_brightness_percent=%u edge_zone_brightness_percent=%u"
-        " user_brightness_duty_255=%u"
+        " legacy_brightness_duty_255=%u"
         " budget_scale_percent=%u budget_limited_by_current=%u"
         " configured_profile_budget_ma=%" PRIu32 " factory_budget_ma=%u"
-        " product_effect_profile=1 user_brightness_is_hard_cap=1 profile_dimming_disabled=1 off_zero_brightness=1 safety_full_brightness=1"
+        " product_effect_profile=1 zone_brightness_is_hard_cap=1 legacy_brightness_neutral=1 profile_dimming_disabled=1 off_zero_brightness=1 safety_full_brightness=1"
         " per_led_full_white_ma=60 vdd_led_enable=always_on_assumed\n",
         status_led_profile_name(snapshot.profile),
         snapshot.last_current_budget_ma,
@@ -6586,7 +6568,11 @@ bool status_led_consume_usb_command(const char *line)
         uint8_t brightness = (uint8_t)value;
         status_led_profile_t profile = STATUS_LED_PROFILE_STANDARD;
         if (xSemaphoreTake(s_mutex, portMAX_DELAY) == pdTRUE) {
-            s_state.brightness_percent = brightness;
+            s_state.brightness_percent = STATUS_LED_FULL_BRIGHTNESS_PERCENT;
+            s_state.status_zone_brightness_percent = brightness;
+            s_state.key_zone_brightness_percent = brightness;
+            s_state.ec11_zone_brightness_percent = brightness;
+            s_state.edge_zone_brightness_percent = brightness;
             profile = s_state.profile;
             s_state.output_disabled = false;
             s_state.low_power_disabled = false;
@@ -6595,11 +6581,10 @@ bool status_led_consume_usb_command(const char *line)
             xSemaphoreGive(s_mutex);
         }
         (void)device_settings_set_brightness_profiles(brightness, brightness);
-        status_led_save_brightness(brightness);
         status_led_request_refresh();
         diag_log(DIAG_SRC_STATUS_LED, DIAG_LED_PROFILE, DIAG_SEV_INFO,
                  (uint32_t)profile, brightness, 1, 0);
-        ESP_LOGI(TAG, "LED brightness=%u", (unsigned)brightness);
+        ESP_LOGI(TAG, "legacy LED brightness mapped to all zone brightness=%u", (unsigned)brightness);
         return true;
     }
 
