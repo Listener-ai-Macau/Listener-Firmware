@@ -157,6 +157,11 @@ CHECKS = {
         "STATUS_LED_LOW_POWER_BLE_ATTENTION_PERCENT 12U",
         "STATUS_LED_BATTERY_IDLE_BLE_HEARTBEAT_ON_MS 120U",
         "STATUS_LED_BATTERY_IDLE_BLE_HEARTBEAT_OFF_MS 7880U",
+        "STATUS_LED_STATUS_RGB_ENERGY_BALANCE_CONTRACT \"status_rgb_channel_sum_matches_single_channel_peak\"",
+        "status_led_rgb_channel_sum",
+        "status_led_scale_rgb_to_channel_sum",
+        "status_led_balance_status_rgb_energy_to_peak",
+        "status_led_balance_status_rgb_energy_to_peak_strip",
         "STATUS_LED_OK_SUCCESS_BLUE_BALANCE 0U",
         "STATUS_LED_PREVIEW_BLE_OVERRIDE_MS 15000U",
         "STATUS_LED_BLE_REPAIR_CUE_MS 2700U",
@@ -252,6 +257,7 @@ CHECKS = {
         "key_zone_brightness_percent=%u",
         "ec11_zone_brightness_percent=%u",
         "edge_zone_brightness_percent=%u",
+        "s_state.status_zone_brightness_percent = DEVICE_SETTINGS_DEFAULT_STATUS_LED_BRIGHTNESS_PERCENT",
         "status_led_apply_zone_brightness_caps_locked",
         "status_led_normalize_strip_peak_to_type_max",
         "status_led_apply_device_settings_snapshot_locked",
@@ -267,6 +273,7 @@ CHECKS = {
         "effective_cap_percent=%u",
         "zone_brightness_is_hard_cap=1",
         "zone_brightness_peak_normalized=1",
+        "status_rgb_energy_balance=",
         "legacy_brightness_neutral=1",
         "profile_dimming_disabled=1",
         "factory_full_brightness=1",
@@ -820,6 +827,7 @@ CHECKS = {
         "steady white once charge-full has been debounced and latched",
         "each rendered zone is peak-normalized",
         "A 50% Type zone setting means the active effect's high point is 50%",
+        "Status-strip mixed RGB colors are then balanced so their channel sum matches the single-channel peak",
         "charging breath is intentionally shallow and slow",
         "Source Of Truth",
         "Code constants and `~LED:STATUS detail=contract` are the source of truth",
@@ -1443,6 +1451,28 @@ def main() -> int:
     ):
         failures.append(
             "status_led.c: Type zone brightness must normalize each active effect peak before scaling by the Type setting"
+        )
+    if not re.search(
+        r"status_led_scale_strip_percent\(\s*frame->status[\s\S]*?"
+        r"s_state\.status_zone_brightness_percent\);[\s\S]*?"
+        r"status_led_balance_status_rgb_energy_to_peak_strip\(frame->status, STATUS_LED_STATUS_COUNT\);[\s\S]*?"
+        r"status_led_scale_strip_percent\(\s*frame->key",
+        status_led,
+    ):
+        failures.append(
+            "status_led.c: status mixed RGB energy must be balanced after status-zone brightness scaling and before other strips"
+        )
+    if re.search(r"status_led_balance_status_rgb_energy_to_peak_strip\(frame->(key|ec11|edge)", status_led):
+        failures.append(
+            "status_led.c: mixed-RGB energy balancing is a status-strip correction only; do not change accepted key/EC11/edge effects"
+        )
+    if not re.search(
+        r"status_led_balance_status_rgb_energy_to_peak[\s\S]*?"
+        r"return\s+status_led_scale_rgb_to_channel_sum\(color, peak\);",
+        status_led,
+    ):
+        failures.append(
+            "status_led.c: status mixed RGB balance must scale channel sum to the current single-channel peak"
         )
     for token in (
         "STATUS_LED_CHARGING_BREATH_UNKNOWN_FLOOR_PERCENT 8U",

@@ -60,6 +60,20 @@ def main() -> int:
             "tools/verify_status_led_hardware.ps1: DTR must not be asserted during ordinary status LED validation"
         )
 
+    send_capture = REPO_ROOT / "tools" / "send_serial_and_capture.ps1"
+    text = send_capture.read_text(encoding="utf-8", errors="replace")
+    if "serial_no_reset_capture.py" not in text:
+        failures.append(
+            "tools/send_serial_and_capture.ps1: shared serial capture must delegate to the Python no-reset helper"
+        )
+
+    no_reset_capture = REPO_ROOT / "tools" / "serial_no_reset_capture.py"
+    text = no_reset_capture.read_text(encoding="utf-8", errors="replace")
+    if "def open_serial_no_reset(" not in text or "ser.dtr = False" not in text or "ser.rts = False" not in text:
+        failures.append(
+            "tools/serial_no_reset_capture.py: helper must force DTR/RTS low before and after open"
+        )
+
     camera_cal = REPO_ROOT / "tools" / "status_led_camera_calibration.ps1"
     text = camera_cal.read_text(encoding="utf-8", errors="replace")
     if "def open_serial_no_reset(" not in text or "with open_serial_no_reset(" not in text:

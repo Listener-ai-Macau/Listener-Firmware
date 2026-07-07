@@ -158,6 +158,7 @@
 #define STATUS_LED_BLE_TYPE_READY_STEADY_PERCENT 14U
 #define STATUS_LED_BATTERY_IDLE_BLE_HEARTBEAT_ON_MS 120U
 #define STATUS_LED_BATTERY_IDLE_BLE_HEARTBEAT_OFF_MS 7880U
+#define STATUS_LED_STATUS_RGB_ENERGY_BALANCE_CONTRACT "status_rgb_channel_sum_matches_single_channel_peak"
 #define STATUS_LED_EC11_REPAIR_BLINK_MIN_PERCENT 4U
 #define STATUS_LED_EC11_REPAIR_BLINK_MAX_PERCENT 16U
 #define STATUS_LED_RESULT_PEAK_PERCENT 100U
@@ -1736,6 +1737,74 @@ static void status_led_scale_strip_percent(status_led_rgb_t *colors, size_t coun
     }
 }
 
+static uint16_t status_led_rgb_channel_sum(status_led_rgb_t color)
+{
+    return (uint16_t)color.r + (uint16_t)color.g + (uint16_t)color.b;
+}
+
+static void status_led_distribute_channel_remainder(
+    status_led_rgb_t source,
+    status_led_rgb_t *scaled,
+    uint32_t *rem_r,
+    uint32_t *rem_g,
+    uint32_t *rem_b)
+{
+    if (source.r > 0U && *rem_r >= *rem_g && *rem_r >= *rem_b) {
+        scaled->r = status_led_clamp_u32_to_u8((uint32_t)scaled->r + 1U);
+        *rem_r = 0U;
+    } else if (source.g > 0U && *rem_g >= *rem_r && *rem_g >= *rem_b) {
+        scaled->g = status_led_clamp_u32_to_u8((uint32_t)scaled->g + 1U);
+        *rem_g = 0U;
+    } else if (source.b > 0U) {
+        scaled->b = status_led_clamp_u32_to_u8((uint32_t)scaled->b + 1U);
+        *rem_b = 0U;
+    }
+}
+
+static status_led_rgb_t status_led_scale_rgb_to_channel_sum(status_led_rgb_t color, uint8_t target_sum)
+{
+    uint16_t sum = status_led_rgb_channel_sum(color);
+    if (target_sum == 0U || sum == 0U) {
+        return status_led_rgb(0, 0, 0);
+    }
+    if (sum <= target_sum) {
+        return color;
+    }
+
+    uint32_t r_num = (uint32_t)color.r * target_sum;
+    uint32_t g_num = (uint32_t)color.g * target_sum;
+    uint32_t b_num = (uint32_t)color.b * target_sum;
+    status_led_rgb_t scaled = status_led_rgb(
+        (uint8_t)(r_num / sum),
+        (uint8_t)(g_num / sum),
+        (uint8_t)(b_num / sum));
+    uint32_t rem_r = r_num % sum;
+    uint32_t rem_g = g_num % sum;
+    uint32_t rem_b = b_num % sum;
+
+    while (status_led_rgb_channel_sum(scaled) < target_sum) {
+        status_led_distribute_channel_remainder(color, &scaled, &rem_r, &rem_g, &rem_b);
+    }
+    return scaled;
+}
+
+static status_led_rgb_t status_led_balance_status_rgb_energy_to_peak(status_led_rgb_t color)
+{
+    const uint16_t sum = status_led_rgb_channel_sum(color);
+    const uint8_t peak = status_led_rgb_max_channel(color);
+    if (sum <= peak) {
+        return color;
+    }
+    return status_led_scale_rgb_to_channel_sum(color, peak);
+}
+
+static void status_led_balance_status_rgb_energy_to_peak_strip(status_led_rgb_t *colors, size_t count)
+{
+    for (size_t index = 0; index < count; ++index) {
+        colors[index] = status_led_balance_status_rgb_energy_to_peak(colors[index]);
+    }
+}
+
 static uint8_t status_led_strip_peak_channel(const status_led_rgb_t *colors, size_t count)
 {
     uint8_t peak = 0U;
@@ -1778,6 +1847,7 @@ static void status_led_apply_zone_brightness_caps_locked(status_led_frame_t *fra
         frame->status,
         STATUS_LED_STATUS_COUNT,
         s_state.status_zone_brightness_percent);
+    status_led_balance_status_rgb_energy_to_peak_strip(frame->status, STATUS_LED_STATUS_COUNT);
     status_led_scale_strip_percent(
         frame->key,
         STATUS_LED_KEY_COUNT,
@@ -4329,7 +4399,7 @@ esp_err_t status_led_init(void)
     memset(&s_state, 0, sizeof(s_state));
     s_state.profile = STATUS_LED_PROFILE_STANDARD;
     s_state.brightness_percent = 100U;
-    s_state.status_zone_brightness_percent = DEVICE_SETTINGS_DEFAULT_LED_ZONE_BRIGHTNESS_PERCENT;
+    s_state.status_zone_brightness_percent = DEVICE_SETTINGS_DEFAULT_STATUS_LED_BRIGHTNESS_PERCENT;
     s_state.key_zone_brightness_percent = DEVICE_SETTINGS_DEFAULT_LED_ZONE_BRIGHTNESS_PERCENT;
     s_state.ec11_zone_brightness_percent = DEVICE_SETTINGS_DEFAULT_LED_ZONE_BRIGHTNESS_PERCENT;
     s_state.edge_zone_brightness_percent = DEVICE_SETTINGS_DEFAULT_LED_ZONE_BRIGHTNESS_PERCENT;
@@ -5836,6 +5906,7 @@ static void status_led_print_status(void)
         " ec11_zone_brightness_percent=%u edge_zone_brightness_percent=%u"
         " brightness_duty_255=%u"
         " zone_brightness_is_hard_cap=1 zone_brightness_peak_normalized=1"
+        " status_rgb_energy_balance=" STATUS_LED_STATUS_RGB_ENERGY_BALANCE_CONTRACT
         " legacy_brightness_neutral=1 profile_dimming_disabled=1\n",
         status_led_profile_name(snapshot.profile),
         profile_cap_percent,
@@ -6104,6 +6175,7 @@ static void status_led_print_budget(void)
         " budget_scale_percent=%u budget_limited_by_current=%u"
         " configured_profile_budget_ma=%" PRIu32 " factory_budget_ma=%u"
         " product_effect_profile=1 zone_brightness_is_hard_cap=1 zone_brightness_peak_normalized=1"
+        " status_rgb_energy_balance=" STATUS_LED_STATUS_RGB_ENERGY_BALANCE_CONTRACT
         " legacy_brightness_neutral=1 profile_dimming_disabled=1 off_zero_brightness=1 safety_full_brightness=1"
         " per_led_full_white_ma=60 vdd_led_enable=always_on_assumed\n",
         status_led_profile_name(snapshot.profile),

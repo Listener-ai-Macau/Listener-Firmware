@@ -17,117 +17,36 @@ param(
 $ErrorActionPreference = "Stop"
 Set-StrictMode -Version Latest
 
-$lines = [System.Collections.Generic.List[string]]::new()
-$commandsToRun = @($Command | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
+$helper = Join-Path $PSScriptRoot "serial_no_reset_capture.py"
+if (-not (Test-Path -LiteralPath $helper)) {
+    throw "Missing no-reset serial helper: $helper"
+}
+
+$args = @(
+    $helper,
+    "--port", $Port,
+    "--baud", ([string]$Baud),
+    "--initial-read-ms", ([string]$InitialReadMs),
+    "--command-read-ms", ([string]$CommandReadMs),
+    "--write-timeout-ms", ([string]$WriteTimeoutMs),
+    "--write-retries", ([string]$WriteRetries),
+    "--write-retry-delay-ms", ([string]$WriteRetryDelayMs),
+    "--command-delay-ms", ([string]$CommandDelayMs)
+)
+
+foreach ($cmd in @($Command | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })) {
+    $args += @("--command", $cmd)
+}
+
 if (-not [string]::IsNullOrWhiteSpace($CommandList)) {
-    $commandsToRun += @($CommandList -split ";;" | ForEach-Object { $_.Trim() } | Where-Object { $_ })
-}
-if ($commandsToRun.Count -eq 0) {
-    throw "At least one -Command or -CommandList entry is required."
-}
-
-function Add-Line {
-    param([Parameter(Mandatory = $true)][string]$Text)
-    Write-Host $Text
-    $lines.Add($Text) | Out-Null
-}
-
-function Read-SerialFor {
-    param(
-        [Parameter(Mandatory = $true)][System.IO.Ports.SerialPort]$Serial,
-        [Parameter(Mandatory = $true)][int]$Milliseconds
-    )
-    $deadline = (Get-Date).AddMilliseconds($Milliseconds)
-    while ((Get-Date) -lt $deadline) {
-        try {
-            $text = $Serial.ReadExisting()
-            if (-not [string]::IsNullOrEmpty($text)) {
-                foreach ($line in ($text -split "`r?`n")) {
-                    if (-not [string]::IsNullOrWhiteSpace($line)) {
-                        Add-Line $line
-                    }
-                }
-            }
-        } catch {
-            Add-Line ("READ_ERROR {0}" -f $_.Exception.Message)
-            break
-        }
-        Start-Sleep -Milliseconds 100
-    }
-}
-
-function Write-SerialCommand {
-    param(
-        [Parameter(Mandatory = $true)][System.IO.Ports.SerialPort]$Serial,
-        [Parameter(Mandatory = $true)][string]$CommandText
-    )
-
-    $payload = "{0}`n" -f $CommandText
-    for ($attempt = 1; $attempt -le $WriteRetries; $attempt++) {
-        try {
-            $Serial.Write($payload)
-            return
-        } catch {
-            $message = $_.Exception.Message
-            if ($attempt -ge $WriteRetries) {
-                Add-Line ("WRITE_ERROR command={0} attempt={1}/{2} error={3}" -f $CommandText, $attempt, $WriteRetries, $message)
-                throw
-            }
-
-            Add-Line ("WRITE_RETRY command={0} attempt={1}/{2} error={3}" -f $CommandText, $attempt, $WriteRetries, $message)
-            try {
-                $Serial.DiscardOutBuffer()
-            } catch {
-                Add-Line ("WRITE_RETRY_DISCARD_OUT_ERROR {0}" -f $_.Exception.Message)
-            }
-            Start-Sleep -Milliseconds $WriteRetryDelayMs
-        }
-    }
-}
-
-$serial = [System.IO.Ports.SerialPort]::new($Port, $Baud)
-$serial.ReadTimeout = 200
-$serial.WriteTimeout = $WriteTimeoutMs
-$serial.DtrEnable = $false
-$serial.RtsEnable = $false
-$failure = $null
-
-try {
-    $serial.Open()
-    Add-Line ("serial_opened port={0} baud={1} dtr=0 rts=0" -f $Port, $Baud)
-    Read-SerialFor -Serial $serial -Milliseconds $InitialReadMs
-    foreach ($cmd in $commandsToRun) {
-        Add-Line ("> {0}" -f $cmd)
-        try {
-            $serial.DiscardInBuffer()
-        } catch {
-            Add-Line ("DISCARD_IN_ERROR {0}" -f $_.Exception.Message)
-        }
-        Write-SerialCommand -Serial $serial -CommandText $cmd
-        Read-SerialFor -Serial $serial -Milliseconds $CommandReadMs
-        if ($CommandDelayMs -gt 0) {
-            Start-Sleep -Milliseconds $CommandDelayMs
-        }
-    }
-} catch {
-    $failure = $_
-    Add-Line ("ERROR {0}" -f $_.Exception.Message)
-} finally {
-    if ($serial.IsOpen) {
-        $serial.Close()
-    }
-    Add-Line "serial_closed"
+    $args += @("--command-list", $CommandList)
 }
 
 if (-not [string]::IsNullOrWhiteSpace($OutputPath)) {
-    $parent = Split-Path -Parent $OutputPath
-    if (-not [string]::IsNullOrWhiteSpace($parent)) {
-        New-Item -ItemType Directory -Force -Path $parent | Out-Null
-    }
-    $lines | Set-Content -LiteralPath $OutputPath -Encoding utf8
-    Write-Host ("transcript={0}" -f (Resolve-Path -LiteralPath $OutputPath).Path)
+    $args += @("--output-path", $OutputPath)
 }
 
-if ($null -ne $failure) {
-    throw $failure
+& python @args
+if ($LASTEXITCODE -ne 0) {
+    throw "serial no-reset capture failed with exit code $LASTEXITCODE"
 }

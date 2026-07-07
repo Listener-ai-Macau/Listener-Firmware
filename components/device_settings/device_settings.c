@@ -70,7 +70,7 @@ static void device_settings_set_defaults_locked(void)
 {
     s_settings.plugged_brightness_percent = DEVICE_SETTINGS_DEFAULT_PLUGGED_BRIGHTNESS_PERCENT;
     s_settings.battery_brightness_percent = DEVICE_SETTINGS_DEFAULT_BATTERY_BRIGHTNESS_PERCENT;
-    s_settings.status_led_brightness_percent = DEVICE_SETTINGS_DEFAULT_LED_ZONE_BRIGHTNESS_PERCENT;
+    s_settings.status_led_brightness_percent = DEVICE_SETTINGS_DEFAULT_STATUS_LED_BRIGHTNESS_PERCENT;
     s_settings.key_led_brightness_percent = DEVICE_SETTINGS_DEFAULT_LED_ZONE_BRIGHTNESS_PERCENT;
     s_settings.ec11_led_brightness_percent = DEVICE_SETTINGS_DEFAULT_LED_ZONE_BRIGHTNESS_PERCENT;
     s_settings.edge_led_brightness_percent = DEVICE_SETTINGS_DEFAULT_LED_ZONE_BRIGHTNESS_PERCENT;
@@ -389,7 +389,7 @@ esp_err_t device_settings_init(void)
     esp_err_t ret = ESP_OK;
     uint8_t plugged_brightness = 100U;
     uint8_t battery_brightness = 100U;
-    uint8_t status_led_brightness = DEVICE_SETTINGS_DEFAULT_LED_ZONE_BRIGHTNESS_PERCENT;
+    uint8_t status_led_brightness = DEVICE_SETTINGS_DEFAULT_STATUS_LED_BRIGHTNESS_PERCENT;
     uint8_t key_led_brightness = DEVICE_SETTINGS_DEFAULT_LED_ZONE_BRIGHTNESS_PERCENT;
     uint8_t ec11_led_brightness = DEVICE_SETTINGS_DEFAULT_LED_ZONE_BRIGHTNESS_PERCENT;
     uint8_t edge_led_brightness = DEVICE_SETTINGS_DEFAULT_LED_ZONE_BRIGHTNESS_PERCENT;
@@ -461,7 +461,7 @@ void device_settings_get_snapshot(device_settings_snapshot_t *out_snapshot)
     memset(out_snapshot, 0, sizeof(*out_snapshot));
     out_snapshot->plugged_brightness_percent = DEVICE_SETTINGS_DEFAULT_PLUGGED_BRIGHTNESS_PERCENT;
     out_snapshot->battery_brightness_percent = DEVICE_SETTINGS_DEFAULT_BATTERY_BRIGHTNESS_PERCENT;
-    out_snapshot->status_led_brightness_percent = DEVICE_SETTINGS_DEFAULT_LED_ZONE_BRIGHTNESS_PERCENT;
+    out_snapshot->status_led_brightness_percent = DEVICE_SETTINGS_DEFAULT_STATUS_LED_BRIGHTNESS_PERCENT;
     out_snapshot->key_led_brightness_percent = DEVICE_SETTINGS_DEFAULT_LED_ZONE_BRIGHTNESS_PERCENT;
     out_snapshot->ec11_led_brightness_percent = DEVICE_SETTINGS_DEFAULT_LED_ZONE_BRIGHTNESS_PERCENT;
     out_snapshot->edge_led_brightness_percent = DEVICE_SETTINGS_DEFAULT_LED_ZONE_BRIGHTNESS_PERCENT;
