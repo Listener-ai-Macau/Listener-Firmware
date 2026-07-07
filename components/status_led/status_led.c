@@ -2347,7 +2347,11 @@ static void status_led_render_power_locked(status_led_frame_t *frame, uint32_t n
         } else {
             percent = status_led_charging_breath_percent_locked(now_ms);
         }
-        color = status_led_token_locked(status_led_rgb(255, 255, 255), percent, false);
+        color = status_led_token_relative_to_peak_locked(
+            status_led_rgb(255, 255, 255),
+            percent,
+            STATUS_LED_PWR_WHITE_VISUAL_BALANCE_PERCENT,
+            false);
     } else if (s_state.battery_valid) {
         const uint8_t battery_level = status_led_battery_display_level_locked();
         if (battery_level < 10U) {
@@ -2369,9 +2373,17 @@ static void status_led_render_power_locked(status_led_frame_t *frame, uint32_t n
                 percent = STATUS_LED_BATTERY_STATUS_WINDOW_LOW_PROFILE_PWR_PERCENT;
             }
             if (battery_level >= STATUS_LED_BATTERY_DISPLAY_GREEN_PERCENT) {
-                color = status_led_token_locked(status_led_rgb(0, 255, 0), percent, false);
+                color = status_led_token_relative_to_peak_locked(
+                    status_led_rgb(0, 255, 0),
+                    percent,
+                    STATUS_LED_BATTERY_STATUS_WINDOW_PWR_PERCENT,
+                    false);
             } else {
-                color = status_led_token_locked(status_led_rgb(255, 140, 0), percent, false);
+                color = status_led_token_relative_to_peak_locked(
+                    status_led_rgb(255, 140, 0),
+                    percent,
+                    STATUS_LED_BATTERY_STATUS_WINDOW_PWR_PERCENT,
+                    false);
             }
         }
     }
@@ -2465,7 +2477,11 @@ static void status_led_render_ble_locked(status_led_frame_t *frame, uint32_t now
     case STATUS_LED_BLE_PAIRING:
     case STATUS_LED_BLE_REPAIRING:
         if (status_led_blink_on(ble_elapsed_ms, 420U, 680U)) {
-            color = status_led_token_locked(ble_blue, STATUS_LED_BLE_PAIRING_PULSE_PERCENT, false);
+            color = status_led_token_relative_to_peak_locked(
+                ble_blue,
+                STATUS_LED_BLE_PAIRING_PULSE_PERCENT,
+                STATUS_LED_BLE_PAIRING_PULSE_PERCENT,
+                false);
         }
         break;
     case STATUS_LED_BLE_RECONNECTING: {
@@ -2475,14 +2491,19 @@ static void status_led_render_ble_locked(status_led_frame_t *frame, uint32_t now
             ? STATUS_LED_BLE_RECONNECT_PULSE_PERCENT
             : 0U;
         if (percent > 0U) {
-            color = status_led_token_locked(ble_blue, percent, false);
+            color = status_led_token_relative_to_peak_locked(
+                ble_blue,
+                percent,
+                STATUS_LED_BLE_RECONNECT_PULSE_PERCENT,
+                false);
         }
         break;
     }
     case STATUS_LED_BLE_CONNECTED:
         if (status_led_ota_ble_steady_locked(now_ms)) {
-            color = status_led_token_locked(
+            color = status_led_token_relative_to_peak_locked(
                 ble_blue,
+                STATUS_LED_BLE_TYPE_READY_STEADY_PERCENT,
                 STATUS_LED_BLE_TYPE_READY_STEADY_PERCENT,
                 false);
         } else if (status_led_connected_find_type_window_active_locked(now_ms)) {
@@ -2491,16 +2512,18 @@ static void status_led_render_ble_locked(status_led_frame_t *frame, uint32_t now
                                   STATUS_LED_BLE_CONNECTED_FIND_TYPE_PERIOD_MS)
                 ? STATUS_LED_BLE_CONNECTED_FIND_TYPE_MAX_PERCENT
                 : STATUS_LED_BLE_CONNECTED_FIND_TYPE_MIN_PERCENT;
-            color = status_led_token_locked(
+            color = status_led_token_relative_to_peak_locked(
                 ble_blue,
                 percent,
+                STATUS_LED_BLE_CONNECTED_FIND_TYPE_MAX_PERCENT,
                 false);
         }
         break;
     case STATUS_LED_BLE_TYPE_READY:
         {
-            color = status_led_token_locked(
+            color = status_led_token_relative_to_peak_locked(
                 ble_blue,
+                STATUS_LED_BLE_TYPE_READY_STEADY_PERCENT,
                 STATUS_LED_BLE_TYPE_READY_STEADY_PERCENT,
                 false);
             break;
@@ -3026,7 +3049,9 @@ static void status_led_render_ota_locked(status_led_frame_t *frame, uint32_t now
     }
     status_led_rgb_t ok = status_led_token_locked(
         status_led_ota_color(),
-        status_led_ota_ok_percent_locked(now_ms),
+        status_led_effect_percent_relative_to_peak(
+            status_led_ota_ok_percent_locked(now_ms),
+            STATUS_LED_OTA_OK_MAX_PERCENT),
         false);
     status_led_set_max(&frame->status[STATUS_LED_SEM_OK], ok);
 }

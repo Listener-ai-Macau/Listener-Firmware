@@ -85,6 +85,8 @@ Profiles are persisted in NVS through `~LED:PROFILE <off|low|standard|ambient|fa
 
 Type zone brightness maps each named effect's design peak to the Type zone cap, then preserves the effect's own percent curve below that peak. A 50% Type zone setting means the active effect's high point is 50%, while low points, tails, and intermediate samples scale proportionally below it. This must not be implemented by normalizing every rendered frame to its current peak, because that erases fade tails and makes gradual key feedback disappear abruptly. Status-strip mixed RGB colors are then balanced so their channel sum matches the single-channel peak instead of letting white, purple, orange, or other multi-channel colors emit more total LED energy than blue/red/green at the same Type setting. The charging breath is intentionally shallow and slow in shape, but its high point still comes from the matching Type zone setting unless the current budget clamp has to reduce the frame for safety.
 
+Active-mode PWR, BLE, KEY, and OTA status cues all use that design-peak mapping. For example, Type-ready blue keeps the same steady timing, but its configured high point follows `led_status`; KEY press/gesture feedback keeps the original fade shape, but its high point follows `led_key`. Low-power idle keeps its own restrained visibility constants and is not promoted to the active-mode cap.
+
 In firmware, legacy `plugged_brightness` and `battery_brightness` commands are compatibility aliases that map to the four zone caps and keep the old plugged/battery fields neutral at 100.
 
 - `standard` is the product default. It does not add a hidden percent cap above the Type-controlled zone caps.

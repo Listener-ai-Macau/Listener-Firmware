@@ -163,6 +163,8 @@ Assert-Contains $statusLed 'zone_brightness_is_hard_cap=1' 'routine product LEDs
 Assert-Contains $statusLed 'zone_brightness_effect_peak_cap=1' 'routine product LEDs map named effect peaks to the Type zone cap'
 Assert-Contains $statusLed 'zone_brightness_preserves_effect_percent=1' 'routine product LEDs preserve fade/breath percentages under Type brightness'
 Assert-Contains $statusLed 'status_led_token_relative_to_peak_locked' 'routine product LEDs provide design-peak-to-Type-cap scaling'
+Assert-Contains $statusLed 'STATUS_LED_PWR_WHITE_VISUAL_BALANCE_PERCENT[\s\S]*status_led_token_relative_to_peak_locked' 'active PWR status brightness maps design peak to Type cap'
+Assert-Contains $statusLed 'STATUS_LED_BLE_TYPE_READY_STEADY_PERCENT[\s\S]*status_led_token_relative_to_peak_locked' 'active BLE Type-ready brightness maps design peak to Type cap'
 Assert-Contains $statusLed 'status_led_key_feedback_token_locked' 'KEY gesture feedback uses design-peak-to-Type-cap scaling'
 Assert-Contains $statusLed 'status_led_key_physical_token_locked' 'KEY physical feedback uses design-peak-to-Type-cap scaling'
 Assert-NotContains $statusLed 'status_led_normalize_strip_peak_to_type_max' 'routine product LEDs must not peak-normalize each rendered frame and erase fade tails'

@@ -506,7 +506,7 @@ CHECKS = {
         "raw_charging=%u raw_full=%u",
         "full_latched=%u full_candidate_ms=%",
         "external_power=%u external_power_source=%s",
-        "status_led_rgb(255, 255, 255), percent, false",
+        "STATUS_LED_PWR_WHITE_VISUAL_BALANCE_PERCENT,\n            false)",
         "active_flags=PWR:%u,BLE:%u,REC:%u,AI:%u,OK:%u,WARN:%u,EC11:%u,KEY:%u,EDGE:%u",
         "status_rgb=PWR:%u,%u,%u;BLE:%u,%u,%u;REC:%u,%u,%u",
         "if (state_changed && !effect_only && !routine_low_power_ble) {\n            s_state.status_window_until_ms = now_ms + STATUS_LED_STATUS_WINDOW_MS;",
@@ -828,6 +828,7 @@ CHECKS = {
         "steady white once charge-full has been debounced and latched",
         "design peak to the Type zone cap",
         "A 50% Type zone setting means the active effect's high point is 50%",
+        "Active-mode PWR, BLE, KEY, and OTA status cues all use that design-peak mapping",
         "Status-strip mixed RGB colors are then balanced so their channel sum matches the single-channel peak",
         "charging breath is intentionally shallow and slow",
         "Source Of Truth",
@@ -1483,6 +1484,29 @@ def main() -> int:
         failures.append(
             "status_led.c: status mixed RGB balance must scale channel sum to the current single-channel peak"
         )
+    try:
+        render_power = extract_c_function(status_led, "status_led_render_power_locked")
+        render_ble = extract_c_function(status_led, "status_led_render_ble_locked")
+        render_ota = extract_c_function(status_led, "status_led_render_ota_locked")
+    except ValueError as exc:
+        failures.append(f"status_led.c: {exc}")
+    else:
+        if (
+            "STATUS_LED_PWR_WHITE_VISUAL_BALANCE_PERCENT" not in render_power
+            or "status_led_token_relative_to_peak_locked" not in render_power
+        ):
+            failures.append("status_led.c: active PWR status brightness must map its design peak to the Type status-zone cap")
+        if (
+            "STATUS_LED_BLE_TYPE_READY_STEADY_PERCENT" not in render_ble
+            or "STATUS_LED_BLE_CONNECTED_FIND_TYPE_MAX_PERCENT" not in render_ble
+            or "status_led_token_relative_to_peak_locked" not in render_ble
+        ):
+            failures.append("status_led.c: active BLE status brightness must map Type-ready/find-Type design peaks to the Type status-zone cap")
+        if (
+            "STATUS_LED_OTA_OK_MAX_PERCENT" not in render_ota
+            or "status_led_effect_percent_relative_to_peak" not in render_ota
+        ):
+            failures.append("status_led.c: OTA status brightness must map its OK pulse peak to the Type status-zone cap")
     for token in (
         "STATUS_LED_CHARGING_BREATH_UNKNOWN_FLOOR_PERCENT 8U",
         "STATUS_LED_CHARGING_BREATH_LOW_HOLD_MS 450U",
@@ -1610,7 +1634,8 @@ def main() -> int:
         r"status_led_double_pulse_on\(\s*ble_elapsed_ms,\s*STATUS_LED_BLE_CONNECTED_FIND_TYPE_PERIOD_MS\s*\)[\s\S]*?"
         r"STATUS_LED_BLE_CONNECTED_FIND_TYPE_MAX_PERCENT[\s\S]*?"
         r"STATUS_LED_BLE_CONNECTED_FIND_TYPE_MIN_PERCENT[\s\S]*?"
-        r"status_led_token_locked\(\s*ble_blue,\s*percent,\s*false\s*\)[\s\S]*?"
+        r"status_led_token_relative_to_peak_locked\(\s*"
+        r"ble_blue,\s*percent,\s*STATUS_LED_BLE_CONNECTED_FIND_TYPE_MAX_PERCENT,\s*false\s*\)[\s\S]*?"
         r"break;\s*case\s+STATUS_LED_BLE_TYPE_READY:[\s\S]*?"
         r"STATUS_LED_BLE_TYPE_READY_STEADY_PERCENT",
         status_led,
@@ -1640,7 +1665,8 @@ def main() -> int:
             r"STATUS_LED_BLE_RECONNECT_PULSE_PERCENT[\s\S]*?"
             r":\s*0U[\s\S]*?"
             r"percent\s*>\s*0U[\s\S]*?"
-            r"status_led_token_locked\(\s*ble_blue,\s*percent,\s*false\s*\)",
+            r"status_led_token_relative_to_peak_locked\(\s*"
+            r"ble_blue,\s*percent,\s*STATUS_LED_BLE_RECONNECT_PULSE_PERCENT,\s*false\s*\)",
             reconnect_body,
         ):
             failures.append("status_led.c: ordinary reconnecting must render the swapped off-floor blue double flash")
