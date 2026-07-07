@@ -258,8 +258,8 @@ CHECKS = {
         "ec11_zone_brightness_percent=%u",
         "edge_zone_brightness_percent=%u",
         "s_state.status_zone_brightness_percent = DEVICE_SETTINGS_DEFAULT_STATUS_LED_BRIGHTNESS_PERCENT",
+        "s_state.key_zone_brightness_percent = DEVICE_SETTINGS_DEFAULT_KEY_LED_BRIGHTNESS_PERCENT",
         "status_led_apply_zone_brightness_caps_locked",
-        "status_led_normalize_strip_peak_to_type_max",
         "status_led_apply_device_settings_snapshot_locked",
         "STATUS_LED_ACCENT_ENTRY_RAMP_MS 900U",
         "STATUS_LED_EC11_RECORDING_BASE_MAX_PERCENT 16U",
@@ -272,7 +272,7 @@ CHECKS = {
         "status_led_render_key_active_work_locked",
         "effective_cap_percent=%u",
         "zone_brightness_is_hard_cap=1",
-        "zone_brightness_peak_normalized=1",
+        "zone_brightness_preserves_effect_percent=1",
         "status_rgb_energy_balance=",
         "legacy_brightness_neutral=1",
         "profile_dimming_disabled=1",
@@ -825,7 +825,7 @@ CHECKS = {
         "External power overrides battery-color display on `PWR`",
         "continuous slow white breath",
         "steady white once charge-full has been debounced and latched",
-        "each rendered zone is peak-normalized",
+        "preserving the effect's own percent curve",
         "A 50% Type zone setting means the active effect's high point is 50%",
         "Status-strip mixed RGB colors are then balanced so their channel sum matches the single-channel peak",
         "charging breath is intentionally shallow and slow",
@@ -1162,6 +1162,8 @@ def main() -> int:
             failures.append("status_led.c: KEY gesture feedback must keep the product fade timing constants")
         if "status_led_decay_percent" not in key_feedback_render or "fade_elapsed" not in key_feedback_render:
             failures.append("status_led.c: KEY feedback renderer must preserve the product fade effect")
+        if "status_led_normalize_strip_peak_to_type_max" in status_led:
+            failures.append("status_led.c: zone brightness caps must preserve KEY fade percentages; do not peak-normalize each rendered frame")
         if (
             "STATUS_LED_KEY_FEEDBACK_LONG" not in key_feedback_duration
             or "STATUS_LED_KEY_LONG_GESTURE_FEEDBACK_MS" not in key_feedback_duration
@@ -1442,15 +1444,9 @@ def main() -> int:
         failures.append(
             "status_led.c: safety warning states must still respect Type four-zone brightness caps"
         )
-    if not re.search(
-        r"status_led_normalize_strip_peak_to_type_max\(frame->status, STATUS_LED_STATUS_COUNT\);[\s\S]*?"
-        r"status_led_normalize_strip_peak_to_type_max\(frame->ec11, STATUS_LED_EC11_COUNT\);[\s\S]*?"
-        r"status_led_scale_strip_percent\(\s*frame->status[\s\S]*?"
-        r"status_led_scale_strip_percent\(\s*frame->ec11",
-        status_led,
-    ):
+    if "status_led_normalize_strip_peak_to_type_max" in status_led:
         failures.append(
-            "status_led.c: Type zone brightness must normalize each active effect peak before scaling by the Type setting"
+            "status_led.c: Type zone brightness must preserve effect percentages; frame peak normalization erases fade tails"
         )
     if not re.search(
         r"status_led_scale_strip_percent\(\s*frame->status[\s\S]*?"
