@@ -98,9 +98,6 @@
 #define STATUS_LED_POWER_POLL_MS 5000U
 #define STATUS_LED_LOW_POWER_POLL_MS 60000U
 #define STATUS_LED_CHARGER_STATUS_EXTERNAL_HOLD_MS 1000U
-#define STATUS_LED_LOW_POWER_PWR_PERCENT 12U
-#define STATUS_LED_LOW_POWER_PWR_WHITE_PERCENT 4U
-#define STATUS_LED_LOW_POWER_BLE_ATTENTION_PERCENT 12U
 #define STATUS_LED_STATUS_WINDOW_MS 6000U
 #define STATUS_LED_PREVIEW_BLE_OVERRIDE_MS 15000U
 #define STATUS_LED_BOOT_ACK_MS 2500U
@@ -141,7 +138,7 @@
 #define STATUS_LED_CHARGE_FULL_MIN_PERCENT 88U
 #define STATUS_LED_BATTERY_DISPLAY_GREEN_PERCENT 60U
 #define STATUS_LED_BATTERY_STATUS_WINDOW_PWR_PERCENT 14U
-#define STATUS_LED_BATTERY_STATUS_WINDOW_LOW_PROFILE_PWR_PERCENT STATUS_LED_LOW_POWER_PWR_PERCENT
+#define STATUS_LED_BATTERY_STATUS_WINDOW_LOW_PROFILE_PWR_PERCENT STATUS_LED_BATTERY_STATUS_WINDOW_PWR_PERCENT
 #define STATUS_LED_LOW_BATTERY_STEADY_PERCENT 24U
 #define STATUS_LED_PWR_WHITE_VISUAL_BALANCE_PERCENT 10U
 #define STATUS_LED_FULL_STEADY_PERCENT STATUS_LED_PWR_WHITE_VISUAL_BALANCE_PERCENT
@@ -2368,7 +2365,7 @@ static void status_led_render_power_locked(status_led_frame_t *frame, uint32_t n
         } else {
             percent = (status_window || active_work)
                 ? STATUS_LED_BATTERY_STATUS_WINDOW_PWR_PERCENT
-                : STATUS_LED_LOW_POWER_PWR_PERCENT;
+                : STATUS_LED_BATTERY_STATUS_WINDOW_PWR_PERCENT;
             if (s_state.profile == STATUS_LED_PROFILE_LOW || s_state.profile == STATUS_LED_PROFILE_OFF) {
                 percent = STATUS_LED_BATTERY_STATUS_WINDOW_LOW_PROFILE_PWR_PERCENT;
             }
@@ -2418,7 +2415,7 @@ static uint8_t status_led_low_power_ble_percent_locked(uint32_t now_ms, uint32_t
             ble_elapsed_ms,
             STATUS_LED_BATTERY_IDLE_BLE_HEARTBEAT_ON_MS,
             STATUS_LED_BATTERY_IDLE_BLE_HEARTBEAT_OFF_MS)
-            ? STATUS_LED_LOW_POWER_BLE_ATTENTION_PERCENT
+            ? STATUS_LED_BLE_ATTENTION_PERCENT
             : 0U;
     case STATUS_LED_BLE_RECONNECTING:
         return 0U;
@@ -2438,6 +2435,23 @@ static uint8_t status_led_low_power_ble_percent_locked(uint32_t now_ms, uint32_t
     case STATUS_LED_BLE_DISCONNECTED:
     default:
         return 0U;
+    }
+}
+
+static uint8_t status_led_low_power_ble_peak_percent_locked(void)
+{
+    switch (s_state.ble_state) {
+    case STATUS_LED_BLE_PAIRING:
+    case STATUS_LED_BLE_REPAIRING:
+        return STATUS_LED_BLE_PAIRING_PULSE_PERCENT;
+    case STATUS_LED_BLE_CONNECTED:
+        return STATUS_LED_BLE_CONNECTED_FIND_TYPE_MAX_PERCENT;
+    case STATUS_LED_BLE_TYPE_READY:
+        return STATUS_LED_BLE_TYPE_READY_STEADY_PERCENT;
+    case STATUS_LED_BLE_RECONNECTING:
+    case STATUS_LED_BLE_DISCONNECTED:
+    default:
+        return STATUS_LED_BLE_ATTENTION_PERCENT;
     }
 }
 
@@ -2541,9 +2555,10 @@ static void status_led_render_low_power_power_locked(status_led_frame_t *frame, 
     if (s_state.external_power_present) {
         status_led_set_max(
             &frame->status[STATUS_LED_SEM_PWR],
-            status_led_token_locked(
+            status_led_token_relative_to_peak_locked(
                 status_led_rgb(255, 255, 255),
-                STATUS_LED_LOW_POWER_PWR_WHITE_PERCENT,
+                STATUS_LED_FULL_STATUS_STEADY_PERCENT,
+                STATUS_LED_PWR_WHITE_VISUAL_BALANCE_PERCENT,
                 false));
         return;
     }
@@ -2556,16 +2571,18 @@ static void status_led_render_low_power_power_locked(status_led_frame_t *frame, 
     status_led_rgb_t color = {0};
     if (status_led_battery_display_available_locked()) {
         const uint8_t battery_level = status_led_battery_display_level_locked();
-        color = status_led_token_locked(
+        color = status_led_token_relative_to_peak_locked(
             battery_level >= STATUS_LED_BATTERY_DISPLAY_GREEN_PERCENT
                 ? status_led_rgb(0, 255, 0)
                 : status_led_rgb(255, 140, 0),
-            STATUS_LED_LOW_POWER_PWR_PERCENT,
+            STATUS_LED_BATTERY_STATUS_WINDOW_PWR_PERCENT,
+            STATUS_LED_BATTERY_STATUS_WINDOW_PWR_PERCENT,
             false);
     } else {
-        color = status_led_token_locked(
+        color = status_led_token_relative_to_peak_locked(
             status_led_rgb(255, 140, 0),
-            STATUS_LED_LOW_POWER_PWR_PERCENT,
+            STATUS_LED_BATTERY_STATUS_WINDOW_PWR_PERCENT,
+            STATUS_LED_BATTERY_STATUS_WINDOW_PWR_PERCENT,
             false);
     }
     status_led_set_max(&frame->status[STATUS_LED_SEM_PWR], color);
@@ -2579,9 +2596,10 @@ static void status_led_render_low_power_ble_locked(status_led_frame_t *frame, ui
     if (percent == 0U) {
         return;
     }
+    uint8_t peak = status_led_low_power_ble_peak_percent_locked();
     status_led_set_max(
         &frame->status[STATUS_LED_SEM_BLE],
-        status_led_token_locked(status_led_rgb(0, 0, 255), percent, false));
+        status_led_token_relative_to_peak_locked(status_led_rgb(0, 0, 255), percent, peak, false));
 }
 
 static uint8_t status_led_step_percent_towards(uint8_t current, uint8_t target, uint8_t max_step)

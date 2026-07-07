@@ -147,14 +147,11 @@ CHECKS = {
         "STATUS_LED_CHARGE_FULL_MIN_PERCENT 88U",
         "STATUS_LED_BATTERY_DISPLAY_GREEN_PERCENT 60U",
         "STATUS_LED_BATTERY_STATUS_WINDOW_PWR_PERCENT 14U",
-        "STATUS_LED_BATTERY_STATUS_WINDOW_LOW_PROFILE_PWR_PERCENT STATUS_LED_LOW_POWER_PWR_PERCENT",
+        "STATUS_LED_BATTERY_STATUS_WINDOW_LOW_PROFILE_PWR_PERCENT STATUS_LED_BATTERY_STATUS_WINDOW_PWR_PERCENT",
         "STATUS_LED_LOW_BATTERY_STEADY_PERCENT 24U",
         "STATUS_LED_PWR_WHITE_VISUAL_BALANCE_PERCENT 10U",
         "STATUS_LED_FULL_STEADY_PERCENT STATUS_LED_PWR_WHITE_VISUAL_BALANCE_PERCENT",
         "STATUS_LED_FULL_STATUS_STEADY_PERCENT STATUS_LED_PWR_WHITE_VISUAL_BALANCE_PERCENT",
-        "STATUS_LED_LOW_POWER_PWR_PERCENT 12U",
-        "STATUS_LED_LOW_POWER_PWR_WHITE_PERCENT 4U",
-        "STATUS_LED_LOW_POWER_BLE_ATTENTION_PERCENT 12U",
         "STATUS_LED_BATTERY_IDLE_BLE_HEARTBEAT_ON_MS 120U",
         "STATUS_LED_BATTERY_IDLE_BLE_HEARTBEAT_OFF_MS 7880U",
         "STATUS_LED_STATUS_RGB_ENERGY_BALANCE_CONTRACT \"status_rgb_channel_sum_matches_single_channel_peak\"",
@@ -828,7 +825,9 @@ CHECKS = {
         "steady white once charge-full has been debounced and latched",
         "design peak to the Type zone cap",
         "A 50% Type zone setting means the active effect's high point is 50%",
-        "Active-mode PWR, BLE, KEY, and OTA status cues all use that design-peak mapping",
+        "PWR, BLE, KEY, and OTA status cues all use that design-peak mapping in active and low-power states",
+        "Low-power may decide which semantic LEDs stay visible, but it must not own brightness or apply a hidden dimming layer",
+        "Low-power does not have separate brightness constants",
         "Status-strip mixed RGB colors are then balanced so their channel sum matches the single-channel peak",
         "charging breath is intentionally shallow and slow",
         "Source Of Truth",
@@ -1515,7 +1514,7 @@ def main() -> int:
         "STATUS_LED_CHARGING_BREATH_MAX_PERCENT STATUS_LED_PWR_WHITE_VISUAL_BALANCE_PERCENT",
         "STATUS_LED_CHARGING_ACTIVE_WORK_MIN_PERCENT 12U",
         "STATUS_LED_BATTERY_STATUS_WINDOW_PWR_PERCENT 14U",
-        "STATUS_LED_BATTERY_STATUS_WINDOW_LOW_PROFILE_PWR_PERCENT STATUS_LED_LOW_POWER_PWR_PERCENT",
+        "STATUS_LED_BATTERY_STATUS_WINDOW_LOW_PROFILE_PWR_PERCENT STATUS_LED_BATTERY_STATUS_WINDOW_PWR_PERCENT",
         "STATUS_LED_LOW_BATTERY_STEADY_PERCENT 24U",
         "STATUS_LED_PWR_WHITE_VISUAL_BALANCE_PERCENT 10U",
         "STATUS_LED_FULL_STEADY_PERCENT STATUS_LED_PWR_WHITE_VISUAL_BALANCE_PERCENT",
@@ -1543,15 +1542,23 @@ def main() -> int:
             failures.append("status_led.c: plugged low-power PWR must have a direct white branch")
         else:
             branch = plugged_branch.group("branch")
-            if "STATUS_LED_LOW_POWER_PWR_WHITE_PERCENT" not in branch:
-                failures.append("status_led.c: plugged low-power PWR must use the low-power white percent")
+            if "STATUS_LED_LOW_POWER_PWR_WHITE_PERCENT" in branch:
+                failures.append("status_led.c: plugged low-power PWR must not use a low-power brightness alias")
+            if (
+                "status_led_token_relative_to_peak_locked" not in branch or
+                "STATUS_LED_PWR_WHITE_VISUAL_BALANCE_PERCENT" not in branch
+            ):
+                failures.append("status_led.c: plugged low-power PWR must map to the same Type-capped peak as active PWR")
+            if "status_led_token_locked" in branch:
+                failures.append("status_led.c: plugged low-power PWR must not apply a hidden low-power dimming percent")
             if "status_led_render_power_locked" in branch:
                 failures.append("status_led.c: plugged low-power PWR must not reuse charging/full breath rendering")
         if (
-            "STATUS_LED_LOW_POWER_PWR_WHITE_PERCENT 4U" not in status_led or
-            "STATUS_LED_LOW_POWER_BLE_ATTENTION_PERCENT 12U" not in status_led
+            "STATUS_LED_LOW_POWER_PWR_PERCENT" in status_led or
+            "STATUS_LED_LOW_POWER_PWR_WHITE_PERCENT" in status_led or
+            "STATUS_LED_LOW_POWER_BLE_ATTENTION_PERCENT" in status_led
         ):
-            failures.append("status_led.c: idle PWR white and BLE attention cues must use dim low-power levels")
+            failures.append("status_led.c: low-power must not define separate brightness constants; Type brightness owns brightness")
         if "status_led_battery_display_available_locked()" not in body:
             failures.append("status_led.c: battery low-power PWR must use display-valid fallback, not only live battery_valid")
         if "status_led_rgb(255, 140, 0)" not in body:
@@ -1568,7 +1575,7 @@ def main() -> int:
             r"case\s+STATUS_LED_BLE_PAIRING:\s*\n\s*case\s+STATUS_LED_BLE_REPAIRING:\s*\n\s*"
             r"[\s\S]*?"
             r"STATUS_LED_BATTERY_IDLE_BLE_HEARTBEAT_ON_MS[\s\S]*?"
-            r"STATUS_LED_LOW_POWER_BLE_ATTENTION_PERCENT",
+            r"STATUS_LED_BLE_ATTENTION_PERCENT",
             body,
         ):
             failures.append("status_led.c: low-power BLE helper must blink pairing/re-pair instead of latching solid")
@@ -1610,6 +1617,11 @@ def main() -> int:
         body = low_power_ble.group("body")
         if "status_led_low_power_ble_percent_locked(\n        now_ms,\n        status_led_ble_elapsed_locked(now_ms))" not in body:
             failures.append("status_led.c: low-power BLE renderer must use the shared low-power BLE helper")
+        if (
+            "status_led_low_power_ble_peak_percent_locked()" not in body or
+            "status_led_token_relative_to_peak_locked" not in body
+        ):
+            failures.append("status_led.c: low-power BLE renderer must not dim visible cues below their active Type-capped peaks")
     if re.search(
         r"status_led_connected_hid_only_percent_locked|"
         r"STATUS_LED_BLE_CONNECTED_HEARTBEAT_PERIOD_MS|"
@@ -2267,14 +2279,14 @@ def main() -> int:
     if not re.search(
         r"status_led_render_power_locked[^{]*\{[\s\S]*?"
         r"STATUS_LED_BATTERY_STATUS_WINDOW_PWR_PERCENT[\s\S]*?"
-        r"STATUS_LED_LOW_POWER_PWR_PERCENT",
+        r"STATUS_LED_BATTERY_STATUS_WINDOW_PWR_PERCENT",
         status_led,
     ):
-        failures.append("status_led.c: battery PWR must keep the low-power level during unplugged idle wait")
+        failures.append("status_led.c: battery PWR idle must reuse the normal Type-capped status-window brightness")
     for token in (
         "STATUS_LED_BATTERY_IDLE_BLE_HEARTBEAT_ON_MS",
         "STATUS_LED_BATTERY_IDLE_BLE_HEARTBEAT_OFF_MS",
-        "STATUS_LED_LOW_POWER_BLE_ATTENTION_PERCENT",
+        "STATUS_LED_BLE_ATTENTION_PERCENT",
     ):
         if token not in status_led:
             failures.append(f"status_led.c: battery idle BLE attention blink constant missing: {token}")
@@ -2454,6 +2466,15 @@ def main() -> int:
         failures.append("status_led.md: docs must state accent-only motion leaves an unchanged status rail alone")
     if "EC11 shutdown ring fills from zero over the full confirmation window" not in status_doc:
         failures.append("status_led.md: docs must record that shutdown confirmation does not pre-light the first EC11 pixel")
+    for stale in (
+        "Low-power idle uses 12% for single-channel PWR colors",
+        "4% per RGB channel for white PWR",
+        "restrained PWR indicator",
+        "restrained PWR-only status latch",
+        "low-power level during unplugged idle wait",
+    ):
+        if stale in status_doc:
+            failures.append(f"status_led.md: stale low-power brightness wording must not return: {stale}")
     if not re.search(
         r"status_led_render_recording_locked[\s\S]*?"
         r"status_led_recording_status_percent_locked\(now_ms\)",

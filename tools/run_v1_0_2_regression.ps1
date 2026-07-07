@@ -8,6 +8,7 @@ param(
     [switch]$SkipFlash,
     [switch]$SkipHardware,
     [switch]$SkipOtaProbe,
+    [switch]$SkipLowPowerBrightnessProbe,
     [switch]$RunAudioBleProductMatrix,
     [switch]$PackageOtaDevelopment
 )
@@ -161,6 +162,17 @@ try {
                 $keyLogText -notmatch "key:gpio13:count4:orderGRB:transportspi3:avail1:dma_req1:dma1"
             ) {
                 throw "KEY strip did not report active SPI3 DMA after KEY3 gradient"
+            }
+        }
+
+        if (-not $SkipLowPowerBrightnessProbe.IsPresent) {
+            Invoke-Gate "low-power Type brightness stays Type-capped" {
+                Invoke-External "pwsh" @(
+                    "-NoProfile",
+                    "-File", (Join-Path $PSScriptRoot "verify_status_led_low_power_brightness.ps1"),
+                    "-Port", $Port,
+                    "-OutputDir", (Join-Path $OutputDir "low-power-type-brightness")
+                ) $repoRoot
             }
         }
 

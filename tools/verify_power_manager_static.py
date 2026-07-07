@@ -1364,13 +1364,28 @@ def main() -> int:
         failures.append(
             "components/status_led/status_led.c: LED contract must report active-DMA plus non-DMA low-power final-frame suspend policy"
         )
-    if not re.search(r"#define\s+STATUS_LED_LOW_POWER_PWR_PERCENT\s+12U\b", status_led):
+    if (
+        "STATUS_LED_LOW_POWER_PWR_PERCENT" in status_led
+        or "STATUS_LED_LOW_POWER_PWR_WHITE_PERCENT" in status_led
+        or "STATUS_LED_LOW_POWER_BLE_ATTENTION_PERCENT" in status_led
+    ):
         failures.append(
-            "components/status_led/status_led.c: low-power single-channel PWR brightness must be 12 percent for visible idle indication"
+            "components/status_led/status_led.c: low-power must not own brightness constants; Type zone caps own visible PWR/BLE brightness"
         )
-    if not re.search(r"#define\s+STATUS_LED_LOW_POWER_PWR_WHITE_PERCENT\s+4U\b", status_led):
+    if "STATUS_LED_BATTERY_STATUS_WINDOW_LOW_PROFILE_PWR_PERCENT STATUS_LED_BATTERY_STATUS_WINDOW_PWR_PERCENT" not in status_led:
         failures.append(
-            "components/status_led/status_led.c: low-power white PWR brightness must use 4 percent per RGB channel to match the 12 percent total target"
+            "components/status_led/status_led.c: low-power battery PWR must reuse the Type-capped status-window brightness"
+        )
+    if (
+        "status_led_low_power_ble_peak_percent_locked" not in status_led
+        or not re.search(
+            r"status_led_render_low_power_ble_locked[\s\S]{0,420}"
+            r"status_led_token_relative_to_peak_locked",
+            status_led,
+        )
+    ):
+        failures.append(
+            "components/status_led/status_led.c: low-power BLE cues must scale against their normal Type-capped design peak"
         )
     if not re.search(r"#define\s+STATUS_LED_LOW_POWER_FINAL_LATCH_WRITES\s+3U\b", status_led):
         failures.append(
@@ -1430,20 +1445,21 @@ def main() -> int:
         failures.append(
             "components/status_led: EC11 double-click recovery must use the BLE re-pair renderer, not a key-style EC11 feedback enum"
         )
-    if not re.search(
-        r"STATUS_LED_KEY_FEEDBACK_DOUBLE[\s\S]{0,700}"
-        r"STATUS_LED_KEY_FLASH_ON_MS\s*\*\s*2U\s*\+\s*STATUS_LED_KEY_FLASH_GAP_MS\s*\+\s*"
-        r"STATUS_LED_KEY_FADE_MS[\s\S]{0,360}"
-        r"status_led_decay_percent",
+    key_feedback_render = re.search(
+        r"static\s+bool\s+status_led_render_key_feedback_locked[\s\S]*?"
+        r"\n\}\n\nstatic\s+void\s+status_led_render_keys_locked",
         status_led,
-    ) or not re.search(
-        r"STATUS_LED_KEY_FEEDBACK_SINGLE[\s\S]{0,460}"
-        r"elapsed\s*<\s*\(STATUS_LED_KEY_FLASH_ON_MS\s*\+\s*STATUS_LED_KEY_FADE_MS\)[\s\S]{0,320}"
-        r"status_led_decay_percent",
-        status_led,
-    ) or not re.search(
-        r"if\s*\(\s*color\.r\s*==\s*0U\s*&&\s*color\.g\s*==\s*0U\s*&&\s*color\.b\s*==\s*0U\s*\)\s*\{\s*return\s+true\s*;",
-        status_led,
+    )
+    key_feedback_text = key_feedback_render.group(0) if key_feedback_render is not None else ""
+    if (
+        "STATUS_LED_KEY_FEEDBACK_DOUBLE" not in key_feedback_text
+        or "STATUS_LED_KEY_FLASH_ON_MS * 2U + STATUS_LED_KEY_FLASH_GAP_MS +" not in key_feedback_text
+        or "STATUS_LED_KEY_FADE_MS" not in key_feedback_text
+        or "STATUS_LED_KEY_FEEDBACK_SINGLE" not in key_feedback_text
+        or "elapsed < (STATUS_LED_KEY_FLASH_ON_MS + STATUS_LED_KEY_FADE_MS)" not in key_feedback_text
+        or key_feedback_text.count("status_led_decay_percent") < 3
+        or "status_led_key_feedback_token_locked(fade_percent)" not in key_feedback_text
+        or "return true;" not in key_feedback_text
     ):
         failures.append(
             "components/status_led/status_led.c: key gesture feedback must end with a STATUS_LED_KEY_FADE_MS decay tail mirroring the EC11 press, instead of a hard one-frame cut to black"
@@ -1452,9 +1468,22 @@ def main() -> int:
         failures.append(
             "components/status_led/status_led.c: interactive transition clears must keep SPI EC11/KEY strips on DMA; only low-power/final latch may force non-DMA"
         )
-    if not re.search(
-        r"physical_feedback_active\s*&&\s*!gesture_active[\s\S]{0,260}status_led_rgb\(255,\s*255,\s*255\)",
+    key_physical_token = re.search(
+        r"static\s+status_led_rgb_t\s+status_led_key_physical_token_locked[\s\S]*?"
+        r"\n\}\n\nstatic\s+uint8_t\s+status_led_recording_status_percent_locked",
         status_led,
+    )
+    key_physical_text = key_physical_token.group(0) if key_physical_token is not None else ""
+    key_render_text = re.search(
+        r"static\s+void\s+status_led_render_keys_locked[\s\S]*?"
+        r"\n\}\n\nstatic\s+void\s+status_led_render_edge_locked",
+        status_led,
+    )
+    key_render_body = key_render_text.group(0) if key_render_text is not None else ""
+    if (
+        "status_led_rgb(255, 255, 255)" not in key_physical_text
+        or "physical_feedback_active && !gesture_active" not in key_render_body
+        or "status_led_key_physical_token_locked(pressed)" not in key_render_body
     ):
         failures.append(
             "components/status_led/status_led.c: physical key press/release feedback must render white; purple is reserved for confirmed single/double/long gestures"
