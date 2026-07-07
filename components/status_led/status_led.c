@@ -1293,6 +1293,33 @@ static status_led_rgb_t status_led_token_locked(status_led_rgb_t color, uint8_t 
     return status_led_scale_gamma(color, status_led_effect_percent_locked(desired_percent, safety));
 }
 
+static uint8_t status_led_effect_percent_relative_to_peak(uint8_t desired_percent, uint8_t peak_percent)
+{
+    if (desired_percent == 0U || peak_percent == 0U) {
+        return 0U;
+    }
+    uint32_t scaled =
+        ((uint32_t)desired_percent * STATUS_LED_FULL_BRIGHTNESS_PERCENT +
+         ((uint32_t)peak_percent / 2U)) /
+        (uint32_t)peak_percent;
+    if (scaled > STATUS_LED_FULL_BRIGHTNESS_PERCENT) {
+        scaled = STATUS_LED_FULL_BRIGHTNESS_PERCENT;
+    }
+    return (uint8_t)scaled;
+}
+
+static status_led_rgb_t status_led_token_relative_to_peak_locked(
+    status_led_rgb_t color,
+    uint8_t desired_percent,
+    uint8_t peak_percent,
+    bool safety)
+{
+    return status_led_token_locked(
+        color,
+        status_led_effect_percent_relative_to_peak(desired_percent, peak_percent),
+        safety);
+}
+
 static uint8_t status_led_triangle_percent(uint32_t now_ms, uint32_t period_ms, uint8_t min_percent, uint8_t max_percent)
 {
     if (period_ms == 0 || max_percent <= min_percent) {
@@ -2743,6 +2770,27 @@ static uint32_t status_led_key_feedback_duration_ms(status_led_key_feedback_t fe
         : STATUS_LED_KEY_GESTURE_FEEDBACK_MS;
 }
 
+static status_led_rgb_t status_led_key_feedback_token_locked(uint8_t percent)
+{
+    return status_led_token_relative_to_peak_locked(
+        status_led_key_feedback_color_locked(),
+        percent,
+        STATUS_LED_KEY_GESTURE_PERCENT,
+        false);
+}
+
+static status_led_rgb_t status_led_key_physical_token_locked(bool pressed)
+{
+    const uint8_t percent = pressed
+        ? STATUS_LED_KEY_PRESS_PERCENT
+        : STATUS_LED_KEY_RELEASE_PERCENT;
+    return status_led_token_relative_to_peak_locked(
+        status_led_rgb(255, 255, 255),
+        percent,
+        STATUS_LED_KEY_PRESS_PERCENT,
+        false);
+}
+
 static uint8_t status_led_recording_status_percent_locked(uint32_t now_ms)
 {
     uint8_t target_effect = status_led_recording_level_effect_percent_locked(now_ms);
@@ -3408,15 +3456,14 @@ static bool status_led_render_key_feedback_locked(status_led_frame_t *frame, uin
         if (elapsed < STATUS_LED_KEY_FLASH_ON_MS ||
             (elapsed >= (STATUS_LED_KEY_FLASH_ON_MS + STATUS_LED_KEY_FLASH_GAP_MS) &&
              elapsed < (STATUS_LED_KEY_FLASH_ON_MS * 2U + STATUS_LED_KEY_FLASH_GAP_MS))) {
-            color = status_led_token_locked(
-                status_led_key_feedback_color_locked(),
-                STATUS_LED_KEY_GESTURE_PERCENT,
-                false);
+            color = status_led_key_feedback_token_locked(STATUS_LED_KEY_GESTURE_PERCENT);
         } else if (elapsed >= (STATUS_LED_KEY_FLASH_ON_MS * 2U + STATUS_LED_KEY_FLASH_GAP_MS) &&
                    elapsed < (STATUS_LED_KEY_FLASH_ON_MS * 2U + STATUS_LED_KEY_FLASH_GAP_MS +
                               STATUS_LED_KEY_FADE_MS)) {
             /* Gradual fade tail after the second flash, matching the original
-             * KEY feedback feel while the SPI/DMA transport keeps it stable. */
+             * KEY feedback feel while the SPI/DMA transport keeps it stable.
+             * The design peak maps to the Type zone cap; the tail stays a
+             * true proportion of that peak instead of being frame-normalized. */
             uint32_t fade_elapsed =
                 elapsed - (STATUS_LED_KEY_FLASH_ON_MS * 2U + STATUS_LED_KEY_FLASH_GAP_MS);
             uint8_t fade_percent = status_led_decay_percent(
@@ -3424,19 +3471,13 @@ static bool status_led_render_key_feedback_locked(status_led_frame_t *frame, uin
                 STATUS_LED_KEY_FADE_MS,
                 STATUS_LED_KEY_GESTURE_PERCENT,
                 0U);
-            color = status_led_token_locked(
-                status_led_key_feedback_color_locked(),
-                fade_percent,
-                false);
+            color = status_led_key_feedback_token_locked(fade_percent);
         }
         break;
     case STATUS_LED_KEY_FEEDBACK_LONG:
         if (long_hold_active) {
             /* Steady gesture glow while the key is held. */
-            color = status_led_token_locked(
-                status_led_key_feedback_color_locked(),
-                STATUS_LED_KEY_GESTURE_PERCENT,
-                false);
+            color = status_led_key_feedback_token_locked(STATUS_LED_KEY_GESTURE_PERCENT);
         } else {
             /* Gradual fade tail after release, matching single/double-click.
              * elapsed is measured from the release moment (the release handler
@@ -3446,19 +3487,13 @@ static bool status_led_render_key_feedback_locked(status_led_frame_t *frame, uin
                 STATUS_LED_KEY_FADE_MS,
                 STATUS_LED_KEY_GESTURE_PERCENT,
                 0U);
-            color = status_led_token_locked(
-                status_led_key_feedback_color_locked(),
-                fade_percent,
-                false);
+            color = status_led_key_feedback_token_locked(fade_percent);
         }
         break;
     case STATUS_LED_KEY_FEEDBACK_SINGLE:
     default:
         if (elapsed < STATUS_LED_KEY_FLASH_ON_MS) {
-            color = status_led_token_locked(
-                status_led_key_feedback_color_locked(),
-                STATUS_LED_KEY_GESTURE_PERCENT,
-                false);
+            color = status_led_key_feedback_token_locked(STATUS_LED_KEY_GESTURE_PERCENT);
         } else if (elapsed < (STATUS_LED_KEY_FLASH_ON_MS + STATUS_LED_KEY_FADE_MS)) {
             /* Gradual fade tail after the visible flash; stability must come
              * from the KEY transport, not by removing the product fade. */
@@ -3468,10 +3503,7 @@ static bool status_led_render_key_feedback_locked(status_led_frame_t *frame, uin
                 STATUS_LED_KEY_FADE_MS,
                 STATUS_LED_KEY_GESTURE_PERCENT,
                 0U);
-            color = status_led_token_locked(
-                status_led_key_feedback_color_locked(),
-                fade_percent,
-                false);
+            color = status_led_key_feedback_token_locked(fade_percent);
         } else {
             return false;
         }
@@ -3496,10 +3528,7 @@ static void status_led_render_keys_locked(status_led_frame_t *frame, uint32_t no
                 continue;
             }
             if (physical_feedback_active && !gesture_active) {
-                status_led_rgb_t color = status_led_token_locked(
-                    status_led_rgb(255, 255, 255),
-                    pressed ? STATUS_LED_KEY_PRESS_PERCENT : STATUS_LED_KEY_RELEASE_PERCENT,
-                    false);
+                status_led_rgb_t color = status_led_key_physical_token_locked(pressed);
                 status_led_set_max(&frame->key[index], color);
             }
         }
@@ -5869,7 +5898,7 @@ static void status_led_print_status(void)
         " status_zone_brightness_percent=%u key_zone_brightness_percent=%u"
         " ec11_zone_brightness_percent=%u edge_zone_brightness_percent=%u"
         " brightness_duty_255=%u"
-        " zone_brightness_is_hard_cap=1 zone_brightness_preserves_effect_percent=1"
+        " zone_brightness_is_hard_cap=1 zone_brightness_effect_peak_cap=1 zone_brightness_preserves_effect_percent=1"
         " status_rgb_energy_balance=" STATUS_LED_STATUS_RGB_ENERGY_BALANCE_CONTRACT
         " legacy_brightness_neutral=1 profile_dimming_disabled=1\n",
         status_led_profile_name(snapshot.profile),
@@ -6138,7 +6167,7 @@ static void status_led_print_budget(void)
         " legacy_brightness_duty_255=%u"
         " budget_scale_percent=%u budget_limited_by_current=%u"
         " configured_profile_budget_ma=%" PRIu32 " factory_budget_ma=%u"
-        " product_effect_profile=1 zone_brightness_is_hard_cap=1 zone_brightness_preserves_effect_percent=1"
+        " product_effect_profile=1 zone_brightness_is_hard_cap=1 zone_brightness_effect_peak_cap=1 zone_brightness_preserves_effect_percent=1"
         " status_rgb_energy_balance=" STATUS_LED_STATUS_RGB_ENERGY_BALANCE_CONTRACT
         " legacy_brightness_neutral=1 profile_dimming_disabled=1 off_zero_brightness=1 safety_full_brightness=1"
         " per_led_full_white_ma=60 vdd_led_enable=always_on_assumed\n",

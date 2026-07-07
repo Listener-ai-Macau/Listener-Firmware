@@ -272,6 +272,7 @@ CHECKS = {
         "status_led_render_key_active_work_locked",
         "effective_cap_percent=%u",
         "zone_brightness_is_hard_cap=1",
+        "zone_brightness_effect_peak_cap=1",
         "zone_brightness_preserves_effect_percent=1",
         "status_rgb_energy_balance=",
         "legacy_brightness_neutral=1",
@@ -825,7 +826,7 @@ CHECKS = {
         "External power overrides battery-color display on `PWR`",
         "continuous slow white breath",
         "steady white once charge-full has been debounced and latched",
-        "preserving the effect's own percent curve",
+        "design peak to the Type zone cap",
         "A 50% Type zone setting means the active effect's high point is 50%",
         "Status-strip mixed RGB colors are then balanced so their channel sum matches the single-channel peak",
         "charging breath is intentionally shallow and slow",
@@ -1162,6 +1163,18 @@ def main() -> int:
             failures.append("status_led.c: KEY gesture feedback must keep the product fade timing constants")
         if "status_led_decay_percent" not in key_feedback_render or "fade_elapsed" not in key_feedback_render:
             failures.append("status_led.c: KEY feedback renderer must preserve the product fade effect")
+        if "status_led_key_feedback_token_locked" not in status_led or "status_led_key_physical_token_locked" not in status_led:
+            failures.append("status_led.c: KEY LEDs must map gesture and physical-feedback design peaks to the Type key-zone cap")
+        if "status_led_key_feedback_token_locked" not in key_feedback_render:
+            failures.append("status_led.c: KEY gesture feedback must normalize against the design peak, not the current rendered frame")
+        if not re.search(
+            r"status_led_key_physical_token_locked[\s\S]*?"
+            r"STATUS_LED_KEY_PRESS_PERCENT[\s\S]*?"
+            r"status_led_token_relative_to_peak_locked[\s\S]*?"
+            r"STATUS_LED_KEY_PRESS_PERCENT",
+            status_led,
+        ):
+            failures.append("status_led.c: KEY physical press/release brightness must stay relative to the press design peak")
         if "status_led_normalize_strip_peak_to_type_max" in status_led:
             failures.append("status_led.c: zone brightness caps must preserve KEY fade percentages; do not peak-normalize each rendered frame")
         if (
