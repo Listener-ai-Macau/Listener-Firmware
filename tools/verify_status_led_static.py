@@ -141,7 +141,7 @@ CHECKS = {
         "STATUS_LED_EC11_ROTATION_BASE_END_PERCENT 1U",
         "status_led_scale_raw(white, 60U)",
         "status_led_scale_raw(white, 32U)",
-        "STATUS_LED_BOOT_ACK_MS 2500U",
+        "STATUS_LED_BOOT_BLE_READY_WAIT_MS STATUS_LED_STATUS_WINDOW_MS",
         "STATUS_LED_OK_TOTAL_MS 2000U",
         "ok_warning",
         "status_led_notify_warning",
@@ -1150,13 +1150,18 @@ def main() -> int:
         )
     try:
         boot_power = extract_c_function(status_led, "status_led_boot_power_color_locked")
+        boot_mark = extract_c_function(status_led, "status_led_mark_boot_feedback_locked")
         boot_feedback = extract_c_function(status_led, "status_led_force_boot_feedback")
+        boot_ble_complete = extract_c_function(status_led, "status_led_ble_state_completes_boot_feedback")
+        boot_ble_release = extract_c_function(status_led, "status_led_release_boot_feedback_for_ble_locked")
         render_power = extract_c_function(status_led, "status_led_render_power_locked")
         render_frame = extract_c_function(status_led, "status_led_render_frame_locked")
         shutdown_confirm = extract_c_function(status_led, "status_led_render_shutdown_confirm_locked")
+        shutdown_notify = extract_c_function(status_led, "status_led_notify_shutdown_confirm_with_wait_and_duration")
         status_init = extract_c_function(status_led, "status_led_init")
         status_start = extract_c_function(status_led, "status_led_start")
         status_task = extract_c_function(status_led, "status_led_task")
+        set_ble_state = extract_c_function(status_led, "status_led_set_ble_state")
     except ValueError as exc:
         failures.append(f"status_led.c: {exc}")
     else:
@@ -1196,11 +1201,46 @@ def main() -> int:
             failures.append("status_led.c: boot PWR first frame must reuse the accepted shutdown amber color and brightness")
         if "STATUS_LED_BOOT_PWR_WHITE_PERCENT" in status_led or "status_led_rgb(255, 255, 255)" in boot_power:
             failures.append("status_led.c: boot PWR first frame must not regress to full-white or bypass the shutdown amber helper")
+        if "STATUS_LED_BOOT_ACK_MS" in status_led:
+            failures.append("status_led.c: boot PWR feedback must not keep a stale fixed ACK timer; BLE visible state releases the amber startup cue")
+        if "s_state.boot_feedback_until_ms = now_ms + STATUS_LED_BOOT_BLE_READY_WAIT_MS;" not in status_init:
+            failures.append("status_led.c: initial boot PWR amber cue must stay active until a truthful BLE-visible state releases it")
+        if "uint32_t until_ms = now_ms + STATUS_LED_BOOT_BLE_READY_WAIT_MS;" not in boot_mark:
+            failures.append("status_led.c: forced boot feedback must extend the BLE-ready startup window, not a fixed ACK window")
+        for required_state in (
+            "STATUS_LED_BLE_PAIRING",
+            "STATUS_LED_BLE_REPAIRING",
+            "STATUS_LED_BLE_RECONNECTING",
+            "STATUS_LED_BLE_CONNECTED",
+            "STATUS_LED_BLE_TYPE_READY",
+        ):
+            if required_state not in boot_ble_complete:
+                failures.append(f"status_led.c: boot PWR amber release must treat {required_state} as a BLE-visible startup-complete state")
+        if "STATUS_LED_BLE_DISCONNECTED" in boot_ble_complete:
+            failures.append("status_led.c: disconnected BLE must not release boot PWR amber into normal PWR state")
+        if (
+            "status_led_ble_state_completes_boot_feedback(state)" not in boot_ble_release
+            or "now_ms < s_state.boot_feedback_until_ms" not in boot_ble_release
+            or "s_state.boot_feedback_until_ms = now_ms;" not in boot_ble_release
+        ):
+            failures.append("status_led.c: BLE-visible startup release must close the boot amber window at the actual BLE transition")
+        if not re.search(
+            r"if\s*\(\s*state_changed\s*&&\s*!effect_only\s*\)\s*\{[\s\S]*?"
+            r"status_led_release_boot_feedback_for_ble_locked\(now_ms,\s*state\);",
+            set_ble_state,
+        ):
+            failures.append("status_led.c: normal BLE state changes must release boot PWR amber, while preview/effect-only states must not fake startup completion")
         if (
             "status_led_power_confirm_amber()" not in shutdown_confirm
             or "final ? STATUS_LED_PWR_CONFIRM_AMBER_PERCENT : STATUS_LED_PWR_CONFIRM_CUE_PERCENT" not in shutdown_confirm
         ):
             failures.append("status_led.c: shutdown confirmation must keep the accepted amber helper and final/cue constants")
+        if not re.search(
+            r"status_led_resume_interactive_output_locked\(\);\s*"
+            r"s_state\.transition_clear_mask\s*=\s*0U;",
+            shutdown_notify,
+        ):
+            failures.append("status_led.c: shutdown confirmation must suppress any queued transition-clear black frame after waking LED output")
 
         boot_feedback_order = [
             boot_feedback.find("frame.status[STATUS_LED_SEM_PWR] = status_led_boot_power_color_locked();"),

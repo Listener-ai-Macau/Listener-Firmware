@@ -105,7 +105,7 @@
 #define STATUS_LED_CHARGER_STATUS_EXTERNAL_HOLD_MS 1000U
 #define STATUS_LED_STATUS_WINDOW_MS 6000U
 #define STATUS_LED_PREVIEW_BLE_OVERRIDE_MS 15000U
-#define STATUS_LED_BOOT_ACK_MS 2500U
+#define STATUS_LED_BOOT_BLE_READY_WAIT_MS STATUS_LED_STATUS_WINDOW_MS
 #define STATUS_LED_BLE_CONFIDENCE_MS 8000U
 #define STATUS_LED_BLE_REPAIR_CUE_MS 2700U
 #define STATUS_LED_BLE_REPAIR_CUE_LEAD_CLEAR_MS (STATUS_LED_IDLE_TRANSITION_CLEAR_MS + STATUS_LED_REFRESH_MS)
@@ -4657,9 +4657,26 @@ static bool status_led_reason_is_boot_feedback(const char *reason)
 
 static void status_led_mark_boot_feedback_locked(uint32_t now_ms)
 {
-    uint32_t until_ms = now_ms + STATUS_LED_BOOT_ACK_MS;
+    uint32_t until_ms = now_ms + STATUS_LED_BOOT_BLE_READY_WAIT_MS;
     if (s_state.boot_feedback_until_ms < until_ms) {
         s_state.boot_feedback_until_ms = until_ms;
+    }
+}
+
+static bool status_led_ble_state_completes_boot_feedback(status_led_ble_state_t state)
+{
+    return state == STATUS_LED_BLE_PAIRING ||
+           state == STATUS_LED_BLE_REPAIRING ||
+           state == STATUS_LED_BLE_RECONNECTING ||
+           state == STATUS_LED_BLE_CONNECTED ||
+           state == STATUS_LED_BLE_TYPE_READY;
+}
+
+static void status_led_release_boot_feedback_for_ble_locked(uint32_t now_ms, status_led_ble_state_t state)
+{
+    if (status_led_ble_state_completes_boot_feedback(state) &&
+        now_ms < s_state.boot_feedback_until_ms) {
+        s_state.boot_feedback_until_ms = now_ms;
     }
 }
 
@@ -4709,7 +4726,7 @@ esp_err_t status_led_init(void)
     s_state.vdd_led_enable_assumed = true;
     uint32_t now_ms = status_led_now_ms();
     s_state.status_window_until_ms = now_ms + STATUS_LED_STATUS_WINDOW_MS;
-    s_state.boot_feedback_until_ms = now_ms + STATUS_LED_BOOT_ACK_MS;
+    s_state.boot_feedback_until_ms = now_ms + STATUS_LED_BOOT_BLE_READY_WAIT_MS;
     status_led_set_last_reason_locked("boot");
 
     status_led_load_persistent_config();
@@ -4849,6 +4866,9 @@ void status_led_set_ble_state(status_led_ble_state_t state, bool confidence_wind
         }
         if (state_changed && state != STATUS_LED_BLE_REPAIRING) {
             s_state.ble_transition_ms = now_ms;
+        }
+        if (state_changed && !effect_only) {
+            status_led_release_boot_feedback_for_ble_locked(now_ms, state);
         }
         const bool active_work = s_state.recording_active ||
             s_state.processing_active ||
@@ -5404,6 +5424,7 @@ static bool status_led_notify_shutdown_confirm_with_wait_and_duration(
     bool changed = false;
     if (xSemaphoreTake(s_mutex, wait_ticks) == pdTRUE) {
         status_led_resume_interactive_output_locked();
+        s_state.transition_clear_mask = 0U;
         s_state.preview_effect_only = false;
         s_state.shutdown_confirm_started_ms = now_ms;
         s_state.shutdown_confirm_until_ms =
