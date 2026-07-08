@@ -36,11 +36,16 @@ def main() -> int:
     require('strcmp(line, "~DIAG:GATT")' in hid, "serial ~DIAG:GATT must log diagnostic GATT handles")
 
     require("void ble_diag_log_on_gap_connect" in diag_header, "diagnostic GAP connect hook is not public")
-    require("ble_diag_log_on_gap_connect(event->connect.conn_handle)" in gap, "GAP connect must notify diagnostic export")
+    require(
+        "ble_hid_gap_handle_connect_established(event->connect.conn_handle" in gap
+        and "ble_diag_log_on_gap_connect(conn_handle)" in gap,
+        "GAP connect must notify diagnostic export through the shared connect-established helper",
+    )
     require("ble_diag_log_on_gap_mtu(event->mtu.conn_handle, event->mtu.value)" in gap, "GAP MTU must notify diagnostic export")
     require(
-        "ble_diag_log_on_gap_disconnect(event->disconnect.conn.conn_handle)" in gap,
-        "GAP disconnect must abort diagnostic export with the real connection handle",
+        "ble_hid_gap_handle_disconnect(\n            event->disconnect.conn.conn_handle" in gap
+        and "ble_diag_log_on_gap_disconnect(conn_handle)" in gap,
+        "GAP disconnect must abort diagnostic export with the real connection handle through the shared disconnect helper",
     )
     require(
         'BLE_HID_GAP_GATT_SCHEMA_REV "ota_v2"' in gap,
