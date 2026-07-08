@@ -66,6 +66,17 @@ static bool s_loaded;
 static bool s_loaded_from_nvs;
 static bool s_ble_name_pending_restart;
 
+static esp_err_t device_settings_persist_locked(bool loaded_from_nvs_after_persist);
+
+static void device_settings_note_nvs_read_locked(esp_err_t ret, bool *missing_saved_key)
+{
+    if (ret == ESP_OK) {
+        s_loaded_from_nvs = true;
+    } else if (ret == ESP_ERR_NVS_NOT_FOUND && missing_saved_key != NULL) {
+        *missing_saved_key = true;
+    }
+}
+
 static void device_settings_set_defaults_locked(void)
 {
     s_settings.plugged_brightness_percent = DEVICE_SETTINGS_DEFAULT_PLUGGED_BRIGHTNESS_PERCENT;
@@ -175,6 +186,11 @@ static esp_err_t device_settings_load_locked(void)
     nvs_handle_t nvs = 0;
     esp_err_t ret = nvs_open(DEVICE_SETTINGS_NVS_NAMESPACE, NVS_READONLY, &nvs);
     if (ret == ESP_ERR_NVS_NOT_FOUND) {
+        ret = device_settings_persist_locked(false);
+        if (ret != ESP_OK) {
+            return ret;
+        }
+        ESP_LOGI(TAG, "device settings NVS namespace missing; persisted product defaults");
         s_loaded = true;
         return ESP_OK;
     }
@@ -182,17 +198,21 @@ static esp_err_t device_settings_load_locked(void)
         return ret;
     }
 
+    bool missing_saved_key = false;
+
     uint8_t plugged = s_settings.plugged_brightness_percent;
-    if (nvs_get_u8(nvs, DEVICE_SETTINGS_NVS_PLUGGED_BRIGHTNESS_KEY, &plugged) == ESP_OK) {
+    esp_err_t get_ret = nvs_get_u8(nvs, DEVICE_SETTINGS_NVS_PLUGGED_BRIGHTNESS_KEY, &plugged);
+    if (get_ret == ESP_OK) {
         s_settings.plugged_brightness_percent = device_settings_clamp_brightness(plugged);
-        s_loaded_from_nvs = true;
     }
+    device_settings_note_nvs_read_locked(get_ret, &missing_saved_key);
 
     uint8_t battery = s_settings.battery_brightness_percent;
-    if (nvs_get_u8(nvs, DEVICE_SETTINGS_NVS_BATTERY_BRIGHTNESS_KEY, &battery) == ESP_OK) {
+    get_ret = nvs_get_u8(nvs, DEVICE_SETTINGS_NVS_BATTERY_BRIGHTNESS_KEY, &battery);
+    if (get_ret == ESP_OK) {
         s_settings.battery_brightness_percent = device_settings_clamp_brightness(battery);
-        s_loaded_from_nvs = true;
     }
+    device_settings_note_nvs_read_locked(get_ret, &missing_saved_key);
     s_settings.battery_brightness_percent = s_settings.plugged_brightness_percent;
     if (s_settings.plugged_brightness_percent != DEVICE_SETTINGS_DEFAULT_PLUGGED_BRIGHTNESS_PERCENT ||
         s_settings.battery_brightness_percent != DEVICE_SETTINGS_DEFAULT_BATTERY_BRIGHTNESS_PERCENT) {
@@ -204,88 +224,113 @@ static esp_err_t device_settings_load_locked(void)
     }
 
     uint8_t status_led = s_settings.status_led_brightness_percent;
-    if (nvs_get_u8(nvs, DEVICE_SETTINGS_NVS_STATUS_LED_BRIGHTNESS_KEY, &status_led) == ESP_OK) {
+    get_ret = nvs_get_u8(nvs, DEVICE_SETTINGS_NVS_STATUS_LED_BRIGHTNESS_KEY, &status_led);
+    if (get_ret == ESP_OK) {
         s_settings.status_led_brightness_percent = device_settings_clamp_brightness(status_led);
-        s_loaded_from_nvs = true;
     }
+    device_settings_note_nvs_read_locked(get_ret, &missing_saved_key);
 
     uint8_t key_led = s_settings.key_led_brightness_percent;
-    if (nvs_get_u8(nvs, DEVICE_SETTINGS_NVS_KEY_LED_BRIGHTNESS_KEY, &key_led) == ESP_OK) {
+    get_ret = nvs_get_u8(nvs, DEVICE_SETTINGS_NVS_KEY_LED_BRIGHTNESS_KEY, &key_led);
+    if (get_ret == ESP_OK) {
         s_settings.key_led_brightness_percent = device_settings_clamp_brightness(key_led);
-        s_loaded_from_nvs = true;
     }
+    device_settings_note_nvs_read_locked(get_ret, &missing_saved_key);
 
     uint8_t ec11_led = s_settings.ec11_led_brightness_percent;
-    if (nvs_get_u8(nvs, DEVICE_SETTINGS_NVS_EC11_LED_BRIGHTNESS_KEY, &ec11_led) == ESP_OK) {
+    get_ret = nvs_get_u8(nvs, DEVICE_SETTINGS_NVS_EC11_LED_BRIGHTNESS_KEY, &ec11_led);
+    if (get_ret == ESP_OK) {
         s_settings.ec11_led_brightness_percent = device_settings_clamp_brightness(ec11_led);
-        s_loaded_from_nvs = true;
     }
+    device_settings_note_nvs_read_locked(get_ret, &missing_saved_key);
 
     uint8_t edge_led = s_settings.edge_led_brightness_percent;
-    if (nvs_get_u8(nvs, DEVICE_SETTINGS_NVS_EDGE_LED_BRIGHTNESS_KEY, &edge_led) == ESP_OK) {
+    get_ret = nvs_get_u8(nvs, DEVICE_SETTINGS_NVS_EDGE_LED_BRIGHTNESS_KEY, &edge_led);
+    if (get_ret == ESP_OK) {
         s_settings.edge_led_brightness_percent = device_settings_clamp_brightness(edge_led);
-        s_loaded_from_nvs = true;
     }
+    device_settings_note_nvs_read_locked(get_ret, &missing_saved_key);
 
     uint32_t low_power_idle_ms = s_settings.low_power_idle_ms;
-    if (nvs_get_u32(nvs, DEVICE_SETTINGS_NVS_LOW_POWER_IDLE_MS_KEY, &low_power_idle_ms) == ESP_OK) {
+    get_ret = nvs_get_u32(nvs, DEVICE_SETTINGS_NVS_LOW_POWER_IDLE_MS_KEY, &low_power_idle_ms);
+    if (get_ret == ESP_OK) {
         s_settings.low_power_idle_ms = device_settings_clamp_low_power_idle_ms(low_power_idle_ms);
         s_settings.plugged_low_power_idle_ms = s_settings.low_power_idle_ms;
         s_settings.battery_low_power_idle_ms = s_settings.low_power_idle_ms;
-        s_loaded_from_nvs = true;
     }
+    device_settings_note_nvs_read_locked(get_ret, &missing_saved_key);
 
     uint32_t plugged_low_power_idle_ms = s_settings.plugged_low_power_idle_ms;
-    if (nvs_get_u32(nvs, DEVICE_SETTINGS_NVS_PLUGGED_LOW_POWER_IDLE_MS_KEY, &plugged_low_power_idle_ms) == ESP_OK) {
+    get_ret = nvs_get_u32(nvs, DEVICE_SETTINGS_NVS_PLUGGED_LOW_POWER_IDLE_MS_KEY, &plugged_low_power_idle_ms);
+    if (get_ret == ESP_OK) {
         s_settings.plugged_low_power_idle_ms = device_settings_clamp_low_power_idle_ms(plugged_low_power_idle_ms);
-        s_loaded_from_nvs = true;
     }
+    device_settings_note_nvs_read_locked(get_ret, &missing_saved_key);
 
     uint32_t battery_low_power_idle_ms = s_settings.battery_low_power_idle_ms;
-    if (nvs_get_u32(nvs, DEVICE_SETTINGS_NVS_BATTERY_LOW_POWER_IDLE_MS_KEY, &battery_low_power_idle_ms) == ESP_OK) {
+    get_ret = nvs_get_u32(nvs, DEVICE_SETTINGS_NVS_BATTERY_LOW_POWER_IDLE_MS_KEY, &battery_low_power_idle_ms);
+    if (get_ret == ESP_OK) {
         s_settings.battery_low_power_idle_ms = device_settings_clamp_low_power_idle_ms(battery_low_power_idle_ms);
-        s_loaded_from_nvs = true;
     }
+    device_settings_note_nvs_read_locked(get_ret, &missing_saved_key);
 
     s_settings.low_power_idle_ms = s_settings.battery_low_power_idle_ms;
 
     uint8_t plugged_low_power = s_settings.plugged_low_power_enabled ? 1U : 0U;
-    if (nvs_get_u8(nvs, DEVICE_SETTINGS_NVS_PLUGGED_LOW_POWER_KEY, &plugged_low_power) == ESP_OK) {
+    get_ret = nvs_get_u8(nvs, DEVICE_SETTINGS_NVS_PLUGGED_LOW_POWER_KEY, &plugged_low_power);
+    if (get_ret == ESP_OK) {
         s_settings.plugged_low_power_enabled = plugged_low_power != 0U;
-        s_loaded_from_nvs = true;
     }
+    device_settings_note_nvs_read_locked(get_ret, &missing_saved_key);
 
     uint32_t plugged_shutdown_ms = DEVICE_SETTINGS_DEFAULT_PLUGGED_AUTO_SHUTDOWN_MS;
-    if (nvs_get_u32(nvs, DEVICE_SETTINGS_NVS_PLUGGED_AUTO_SHUTDOWN_MS_KEY, &plugged_shutdown_ms) == ESP_OK) {
+    get_ret = nvs_get_u32(nvs, DEVICE_SETTINGS_NVS_PLUGGED_AUTO_SHUTDOWN_MS_KEY, &plugged_shutdown_ms);
+    if (get_ret == ESP_OK) {
         if (plugged_shutdown_ms != DEVICE_SETTINGS_DEFAULT_PLUGGED_AUTO_SHUTDOWN_MS) {
             ESP_LOGW(TAG, "ignoring legacy plugged_auto_shutdown_ms=%" PRIu32 "; external power auto-shutdown is disabled", plugged_shutdown_ms);
         }
         s_settings.plugged_auto_shutdown_ms = DEVICE_SETTINGS_DEFAULT_PLUGGED_AUTO_SHUTDOWN_MS;
-        s_loaded_from_nvs = true;
     }
+    device_settings_note_nvs_read_locked(get_ret, &missing_saved_key);
 
     uint32_t shutdown_ms = s_settings.battery_auto_shutdown_ms;
-    if (nvs_get_u32(nvs, DEVICE_SETTINGS_NVS_AUTO_SHUTDOWN_MS_KEY, &shutdown_ms) == ESP_OK) {
+    get_ret = nvs_get_u32(nvs, DEVICE_SETTINGS_NVS_AUTO_SHUTDOWN_MS_KEY, &shutdown_ms);
+    if (get_ret == ESP_OK) {
         s_settings.battery_auto_shutdown_ms = device_settings_clamp_auto_shutdown_ms(shutdown_ms);
-        s_loaded_from_nvs = true;
     }
+    device_settings_note_nvs_read_locked(get_ret, &missing_saved_key);
 
     uint8_t knob_rotation = s_settings.knob_rotation_action;
-    if (nvs_get_u8(nvs, DEVICE_SETTINGS_NVS_KNOB_ROTATION_KEY, &knob_rotation) == ESP_OK &&
-        knob_rotation <= (uint8_t)EC11_ROTATION_ACTION_DISABLED) {
-        s_settings.knob_rotation_action = knob_rotation;
-        s_loaded_from_nvs = true;
+    get_ret = nvs_get_u8(nvs, DEVICE_SETTINGS_NVS_KNOB_ROTATION_KEY, &knob_rotation);
+    if (get_ret == ESP_OK) {
+        if (knob_rotation <= (uint8_t)EC11_ROTATION_ACTION_DISABLED) {
+            s_settings.knob_rotation_action = knob_rotation;
+        }
     }
+    device_settings_note_nvs_read_locked(get_ret, &missing_saved_key);
 
     char name[DEVICE_SETTINGS_BLE_NAME_MAX_LEN + 1] = {0};
     size_t name_len = sizeof(name);
-    if (nvs_get_str(nvs, DEVICE_SETTINGS_NVS_BLE_NAME_KEY, name, &name_len) == ESP_OK &&
-        device_settings_validate_ble_name(name)) {
-        snprintf(s_settings.ble_name, sizeof(s_settings.ble_name), "%s", name);
-        s_loaded_from_nvs = true;
+    get_ret = nvs_get_str(nvs, DEVICE_SETTINGS_NVS_BLE_NAME_KEY, name, &name_len);
+    if (get_ret == ESP_OK) {
+        if (device_settings_validate_ble_name(name)) {
+            snprintf(s_settings.ble_name, sizeof(s_settings.ble_name), "%s", name);
+        }
     }
+    device_settings_note_nvs_read_locked(get_ret, &missing_saved_key);
 
+    bool loaded_from_nvs_after_read = s_loaded_from_nvs;
     nvs_close(nvs);
+    if (missing_saved_key || !loaded_from_nvs_after_read) {
+        ret = device_settings_persist_locked(loaded_from_nvs_after_read);
+        if (ret != ESP_OK) {
+            return ret;
+        }
+        ESP_LOGI(
+            TAG,
+            "device settings filled missing NVS keys with product defaults loaded_from_nvs=%u",
+            loaded_from_nvs_after_read ? 1u : 0u);
+    }
     s_loaded = true;
     return ESP_OK;
 }
@@ -298,7 +343,7 @@ static esp_err_t device_settings_ensure_loaded_locked(void)
     return device_settings_load_locked();
 }
 
-static esp_err_t device_settings_persist_locked(void)
+static esp_err_t device_settings_persist_locked(bool loaded_from_nvs_after_persist)
 {
     nvs_handle_t nvs = 0;
     esp_err_t ret = nvs_open(DEVICE_SETTINGS_NVS_NAMESPACE, NVS_READWRITE, &nvs);
@@ -375,7 +420,7 @@ static esp_err_t device_settings_persist_locked(void)
     }
     nvs_close(nvs);
     if (ret == ESP_OK) {
-        s_loaded_from_nvs = true;
+        s_loaded_from_nvs = loaded_from_nvs_after_persist;
     }
     return ret;
 }
@@ -618,7 +663,7 @@ esp_err_t device_settings_set_brightness_profiles(uint8_t plugged_percent, uint8
         s_settings.key_led_brightness_percent = zone_brightness;
         s_settings.ec11_led_brightness_percent = zone_brightness;
         s_settings.edge_led_brightness_percent = zone_brightness;
-        ret = device_settings_persist_locked();
+        ret = device_settings_persist_locked(true);
         xSemaphoreGive(s_mutex);
     }
     if (ret != ESP_OK) {
@@ -1208,7 +1253,7 @@ static esp_err_t device_settings_apply_set_command(const char *arguments)
             if (name_changed) {
                 s_ble_name_pending_restart = true;
             }
-            ret = device_settings_persist_locked();
+            ret = device_settings_persist_locked(true);
             if (ret != ESP_OK) {
                 ok = false;
                 snprintf(error_key, sizeof(error_key), "persist");
@@ -1263,7 +1308,7 @@ esp_err_t device_settings_consume_control_command(const char *line)
             if (strcmp(old_name, s_settings.ble_name) != 0) {
                 s_ble_name_pending_restart = true;
             }
-            ret = device_settings_persist_locked();
+            ret = device_settings_persist_locked(true);
             if (ret == ESP_OK) {
                 device_settings_apply_runtime_locked("device_settings_reset");
             }

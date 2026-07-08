@@ -72,6 +72,7 @@ CHECKS = {
         "STATUS_LED_RECORDING_LEVEL_ATTACK_PERCENT_PER_SEC 100U",
         "STATUS_LED_RECORDING_LEVEL_RELEASE_PERCENT_PER_SEC 45U",
         "STATUS_LED_RECORDING_LEVEL_QUANTUM_PERCENT 2U",
+        "STATUS_LED_RECORDING_LEVEL_LOCK_WAIT_MS 0U",
         "STATUS_LED_PROCESSING_THINK_EFFECT_MIN_PERCENT 0U",
         "STATUS_LED_PROCESSING_THINK_EFFECT_MAX_PERCENT 100U",
         "STATUS_LED_PROCESSING_THINK_QUANTUM_PERCENT 2U",
@@ -99,6 +100,8 @@ CHECKS = {
         "STATUS_LED_STATUS_PHYSICAL_MAP",
         "STATUS_LED_KEY_PHYSICAL_MAP",
         "STATUS_LED_STATUS_KEY_MAPPING_CONTRACT",
+        "STATUS_LED_TASK_PRIORITY 6U",
+        "STATUS_LED_TASK_CORE_ID 1",
         "STATUS_LED_STRIP_STATUS",
         "STATUS_LED_STRIP_EC11",
         "STATUS_LED_STRIP_KEY",
@@ -112,6 +115,11 @@ CHECKS = {
         "STATUS_LED_COLOR_ORDER_RGB",
         "STATUS_LED_STATUS_DEFAULT_COLOR_ORDER STATUS_LED_COLOR_ORDER_GRB",
         "STATUS_LED_KEY_DEFAULT_COLOR_ORDER STATUS_LED_COLOR_ORDER_GRB",
+        "STATUS_LED_PWR_CONFIRM_AMBER_PERCENT 72U",
+        "STATUS_LED_PWR_CONFIRM_CUE_PERCENT 46U",
+        "STATUS_LED_BOOT_PWR_AMBER_PERCENT STATUS_LED_PWR_CONFIRM_AMBER_PERCENT",
+        "status_led_power_confirm_amber",
+        "status_led_boot_power_color_locked",
         "STATUS_LED_FULL_BRIGHTNESS_PERCENT 100U",
         "STATUS_LED_FULL_BRIGHTNESS_BUDGET_MA 2000U",
         "STATUS_LED_LOW_PROFILE_CAP_PERCENT 100U",
@@ -122,6 +130,8 @@ CHECKS = {
         "STATUS_LED_AMBIENT_PROFILE_BUDGET_MA 620U",
         "STATUS_LED_CHASE_DEFAULT_STEP_MS 250U",
         "STATUS_LED_KEY_FEEDBACK_MS 700U",
+        "STATUS_LED_KEY_SINGLE_WHITE_HOLD_MS 160U",
+        "STATUS_LED_KEY_MULTI_KEY_INDEPENDENT_FADE 1U",
         "STATUS_LED_EC11_FEEDBACK_MS 1400U",
         "STATUS_LED_EC11_ROTATION_HOLD_MS 2600U",
         "STATUS_LED_EC11_ROTATION_STEP_MS 150U",
@@ -185,6 +195,7 @@ CHECKS = {
         "STATUS_LED_IDLE_REFRESH_MS 1000U",
         "STATUS_LED_KEY_DARK_RESYNC_MS 0U",
         "STATUS_LED_KEY_TAIL_GUARD_PIXELS 0U",
+        "STATUS_LED_KEY_DARK_LATCH_RMT_WRITES 2U",
         "STATUS_LED_CONTRACT_REV \"status_key_ec11_edge_true_state_v26\"",
         "STATUS_LED_EC11_ACCENT_MIN_PERCENT",
         "STATUS_LED_EC11_ACCENT_MAX_PERCENT",
@@ -219,9 +230,20 @@ CHECKS = {
         "rmt_mem_block_symbols=status:%u,ec11:%u,key:%u,edge:%u",
         "unchanged_tx_suppression=1",
         "timing=ws2812_4020_compatible",
+        "spi_ws2812_waveform=4bit_3m2_0x8_0xE",
         "status_tail_guard_pixels=%u",
         "key_tail_guard_pixels=%u",
-        "key_dark_clear_tx=spi_changed_frame_once",
+        "key_dark_clear_tx=spi_dma_prelatch_then_one_shot_rmt_gpio_low",
+        "key_lit_edge_tx=spi_dma_only",
+        "key_feedback_dynamic_tx=spi_dma_until_dark_latch",
+        "key_release_fade_ms=%u",
+        "key_single_white_hold_ms=%u",
+        "key_multi_key_independent_fade=%u",
+        "strip_tx_failure_retry_dirty=1",
+        "suspended_strip_resume_dirty=1",
+        "task_priority=%u task_core=%d task_affinity=cpu1",
+        "preview_effect_zone_brightness=1",
+        "test_calibration_full_brightness=1",
         "status_tail_reinforce=recording_processing",
         "status_tail_overlap_reinforce_writes=%u",
         "status_tail_legacy_safe_effect_percent=%u..%u",
@@ -235,6 +257,7 @@ CHECKS = {
         "status_tail_overlap_legacy_low_hold_ms=%u",
         "status_tail_overlap_legacy_quantum_percent=%u",
         "recording_level_reactive=1",
+        "recording_level_lock_wait_ms=%u",
         "recording_level_effect_percent=%u..%u_smooth_%upct",
         "recording_level_smoothing=attack%u_release%u",
         "processing_thinking_style=single_then_double_beat",
@@ -332,7 +355,7 @@ CHECKS = {
         "STATUS_LED_BLE_ATTENTION_PERCENT 18U",
         "STATUS_LED_BLE_PAIRING_PULSE_PERCENT STATUS_LED_BLE_ATTENTION_PERCENT",
         "STATUS_LED_BLE_RECONNECT_PULSE_PERCENT STATUS_LED_BLE_ATTENTION_PERCENT",
-        "STATUS_LED_BLE_CONNECTED_FIND_TYPE_MIN_PERCENT 10U",
+        "STATUS_LED_BLE_CONNECTED_FIND_TYPE_MIN_PERCENT 5U",
         "STATUS_LED_BLE_CONNECTED_FIND_TYPE_MAX_PERCENT STATUS_LED_BLE_ATTENTION_PERCENT",
         "STATUS_LED_BLE_TYPE_READY_STEADY_PERCENT 14U",
         "case STATUS_LED_BLE_TYPE_READY: return \"type_ready\"",
@@ -474,7 +497,8 @@ CHECKS = {
         "status_led_apply_status_tail_guard_locked",
         "status_led_transmit_strip(\n                &s_strips[STATUS_LED_STRIP_STATUS],\n                frame->status,\n                force_non_dma)",
         "status_led_transmit_strip(&s_strips[STATUS_LED_STRIP_EC11], frame->ec11, force_non_dma)",
-        "status_led_transmit_strip(&s_strips[STATUS_LED_STRIP_KEY], frame->key, force_non_dma)",
+        "bool key_force_non_dma =",
+        "status_led_transmit_strip(&s_strips[STATUS_LED_STRIP_KEY], frame->key, key_force_non_dma)",
         "status_led_transmit_strip(&s_strips[STATUS_LED_STRIP_EDGE], frame->edge, force_non_dma)",
         "low_power_all_zone_tx=non_dma_clear_and_final_frame",
         "shutdown_final_all_zone_tx=non_dma_pwr_only_latch_or_all_off",
@@ -524,6 +548,7 @@ CHECKS = {
         "STATUS_LED_COLOR_ORDER_GRB",
         "STATUS_LED_COLOR_ORDER_RGB",
         "tail_guard_pixels",
+        "dark_latch_rmt_writes",
         "prefer_dma",
         "status_led_rgb_t",
         "status_led_strip_backend_t",
@@ -553,9 +578,14 @@ CHECKS = {
         "STATUS_LED_WS2812_T1L_TICKS 6U",
         "STATUS_LED_RMT_WITH_DMA SOC_RMT_SUPPORT_DMA",
         "STATUS_LED_RMT_DMA_MEM_BLOCK_SYMBOLS 1024U",
-        "STATUS_LED_SPI_CLOCK_HZ       2500000",
-        "STATUS_LED_SPI_BITS_PER_BIT   3U",
-        "STATUS_LED_SPI_RESET_BYTES    96U",
+        "STATUS_LED_SPI_CLOCK_HZ       3200000",
+        "STATUS_LED_SPI_BITS_PER_BIT   4U",
+        "STATUS_LED_SPI_RESET_BYTES    240U",
+        "0b1000",
+        "0b1110",
+        "0xEu",
+        "0x8u",
+        "spi_waveform=4bit_3m2_0x8_0xE",
         "spi_bus_initialize",
         "SPI_DMA_CH_AUTO",
         ".mosi_io_num = backend->gpio",
@@ -584,6 +614,7 @@ CHECKS = {
         "rmt_encoder_reset(backend->encoder)",
         "status_led_color_order_name",
         "reset_us=300",
+        "spi_reset_us=600",
         "diag_log(DIAG_SRC_STATUS_LED, DIAG_LED_OUTPUT_FAIL",
     ],
     "components/status_led/CMakeLists.txt": [
@@ -774,6 +805,7 @@ CHECKS = {
         "voice_key_input_mark_recovery_double_candidate(button, now_tick, \"raw_edge\")",
         "voice_key_input_mark_recovery_double_candidate(\n                    &s_direct_gpio_state,\n                    now,\n                    \"isr_edge\")",
         "button->recovery_double_candidate =\n        voice_key_input_recovery_double_gap_ready(button, now_tick)",
+        "voice_key_input_recovery_double_click_ready(button, now_tick)",
         "voice_key_input_clear_raw_feedback(button);\n            ESP_LOGI(TAG, \"%s long press reserved for power control",
         "status_led_notify_shutdown_confirm(false, \"ec11_long_press_shutdown_confirm\")",
         "status_led_cancel_shutdown_confirm(\"ec11_long_press_released\")",
@@ -802,24 +834,24 @@ CHECKS = {
         "The host must create a new bond through the recovery window instead of silently treating the double-click as an ordinary reconnect to the old bond",
         "ble_repair_ms_left",
         "A successful Type-ready transition is the steady blue connected indication",
-        "Plain Windows/HID-only connected uses a low-floor bounded blue double-flash Type-search cue",
+        "Only ordinary HID-only `connected` keeps the low-floor blue double-flash Type-search cue while active",
         "BLE animation phase is tracked separately",
         "`ble_transition_ms`",
         "Manual `~LED:PREVIEW` scenes temporarily hold their requested BLE state",
         "for 15 seconds",
         "`preview_ble_override_ms_left`",
-        "Active ordinary reconnect uses an off-floor blue double-flash",
+        "Disconnected/no-host stays dark",
         "pairing and user-requested re-pair can still blink BLE as attention states",
         "Re-pair uses a BLE-plus-EC11 confirmation cue",
         "current render-sampled RGB frame",
         "status_query_samples_current_render=1",
-        "ordinary HID-only `connected` uses a low-floor bounded blue double-flash Type-search cue",
+        "ordinary HID-only `connected` uses a continuous low-floor blue double-flash Type-search cue while active",
         "`TYPE_READY` is the Listener-Type-ready BLE state",
         "it uses steady blue",
         "30 second Type-ready hold",
         "Steady connected state is Type-gated",
-        "If power management enters connected idle immediately after a fresh secure connection or Type-ready promotion, the low-power renderer still honors that finite connection/status window",
-        "After that window, connected/disconnected low-power idle keeps PWR visible and leaves reconnecting/connected/TYPE_READY BLE dark",
+        "so the low valley means a real BLE connection exists but Listener-Type is not ready yet",
+        "Connected/disconnected low-power idle keeps PWR visible and leaves reconnecting/connected/TYPE_READY BLE dark",
         "External power overrides battery-color display on `PWR`",
         "continuous slow white breath",
         "steady white once charge-full has been debounced and latched",
@@ -889,7 +921,7 @@ CHECKS = {
         "`shutdown_confirm_active`",
         "`shutdown_confirm_latched`",
         "`shutdown_confirm_elapsed_ms`",
-        "`~LED:PREVIEW <ready|pairing|reconnect|repairing|capture|recording_active|capture_active|capture_led_only|desktop_mic|recording_processing|recording_processing_led_only|recording_processing_status_only|recording_processing_status_led_only|recording_processing_status_key_stress|status_key_stress3|status_key_stress4|status_key_stress34|rec_not_available|processing|processing_led_only|processing_status_led_only|ota|ota_led_only|ok|low_battery|critical_battery|charging|full|shutdown_confirm|shutdown_final|sleep|clear>`",
+        "`~LED:PREVIEW <ready|disconnected|pairing|reconnect|repairing|capture|recording_active|capture_active|capture_led_only|desktop_mic|recording_processing|recording_processing_led_only|recording_processing_status_only|recording_processing_status_led_only|recording_processing_status_key_stress|status_key_stress3|status_key_stress4|status_key_stress34|rec_not_available|processing|processing_led_only|processing_status_led_only|ota|ota_led_only|ok|low_battery|critical_battery|charging|full|shutdown_confirm|shutdown_final|sleep|clear>`",
         "`~LED:PREVIEW recording_active` and `~LED:PREVIEW capture_active` are aliases for active device-mic capture",
         "`~LED:PREVIEW pairing`, `~LED:PREVIEW reconnect`, and `~LED:PREVIEW repairing`",
         "`~LED:PREVIEW capture_led_only`",
@@ -1036,6 +1068,16 @@ CHECKS = {
         "power_manager_record_activity(\"ec11_key_press\")",
         "power_manager_record_activity(\"ec11_key_hold\")",
     ],
+    "docs/features/status_led_dma_history.md": [
+        "current mixed transport design",
+        "status RMT DMA + EC11 SPI2 DMA + key SPI3 DMA + edge RMT",
+        "only the status strip is on RMT",
+        "EC11/key stability path uses SPI DMA, not additional RMT DMA",
+        "| SPI2 (GPSPI2) | 1 | used by EC11 |",
+        "| SPI3 (GPSPI3) | 1 | used by key |",
+        "SPI-backed final latch must be DMA pre-latch plus one-shot RMT",
+        "low-power clear/final latch = non-DMA",
+    ],
 }
 
 
@@ -1091,14 +1133,142 @@ def main() -> int:
 
     status_led = read("components/status_led/status_led.c")
     status_led_backend = read("components/status_led/status_led_strip_backend.c")
+    status_led_backend_header = read("components/status_led/status_led_strip_backend.h")
     ble_gap = read("ports/esp32/ble_hid_gap/ble_hid_gap_esp32.c")
     ble_firmware_ota = read("ports/esp32/ble_firmware_ota/ble_firmware_ota_esp32.c")
     audio_capture = read("ports/esp32/audio_capture/audio_capture_esp32.c")
     main_c = read("main/main.c")
     human_review = read("tools/status_led_human_effect_review.ps1")
     status_doc = read("docs/features/status_led.md")
+    dma_history_doc = read("docs/features/status_led_dma_history.md")
     firmware_ota = read("components/firmware_ota/firmware_ota.c")
+    keyboard = read("components/keyboard/keyboard.c")
     voice_key = read("ports/esp32/voice_key_input/voice_key_input_esp32.c")
+    if 'current "status-only DMA" design' in dma_history_doc:
+        failures.append(
+            "status_led_dma_history.md: current contract must describe the mixed RMT/SPI DMA design, not the old status-only DMA wording"
+        )
+    try:
+        boot_power = extract_c_function(status_led, "status_led_boot_power_color_locked")
+        boot_feedback = extract_c_function(status_led, "status_led_force_boot_feedback")
+        render_power = extract_c_function(status_led, "status_led_render_power_locked")
+        render_frame = extract_c_function(status_led, "status_led_render_frame_locked")
+        shutdown_confirm = extract_c_function(status_led, "status_led_render_shutdown_confirm_locked")
+        status_init = extract_c_function(status_led, "status_led_init")
+        status_start = extract_c_function(status_led, "status_led_start")
+        status_task = extract_c_function(status_led, "status_led_task")
+    except ValueError as exc:
+        failures.append(f"status_led.c: {exc}")
+    else:
+        if "xTaskCreate(" in status_start:
+            failures.append("status_led.c: status LED task must not regress to unpinned xTaskCreate")
+        if not re.search(
+            r"xTaskCreatePinnedToCore\(\s*"
+            r"status_led_task,\s*"
+            r"\"status_led_task\",\s*"
+            r"STATUS_LED_TASK_STACK_BYTES,\s*"
+            r"NULL,\s*"
+            r"STATUS_LED_TASK_PRIORITY,\s*"
+            r"&s_task_handle,\s*"
+            r"STATUS_LED_TASK_CORE_ID\s*\)",
+            status_start,
+        ):
+            failures.append("status_led.c: status LED task must stay priority-raised and pinned to CPU1 to avoid KEY DMA flicker regression")
+        if (
+            "xPortGetCoreID()" not in status_task
+            or "uxTaskPriorityGet(NULL)" not in status_task
+            or "configured_core=%d" not in status_task
+        ):
+            failures.append("status_led.c: status LED task must log its actual priority/core at runtime")
+        if (
+            "task_priority=%u task_core=%d task_affinity=cpu1" not in status_led
+            or "STATUS_LED_TASK_PRIORITY" not in status_led
+            or "STATUS_LED_TASK_CORE_ID" not in status_led
+        ):
+            failures.append("status_led.c: ~LED:STATUS detail=contract must report LED task priority/core")
+        if not re.search(
+            r"return\s+status_led_token_locked\(\s*"
+            r"status_led_power_confirm_amber\(\),\s*"
+            r"STATUS_LED_BOOT_PWR_AMBER_PERCENT,\s*"
+            r"false\s*\);",
+            boot_power,
+        ):
+            failures.append("status_led.c: boot PWR first frame must reuse the accepted shutdown amber color and brightness")
+        if "STATUS_LED_BOOT_PWR_WHITE_PERCENT" in status_led or "status_led_rgb(255, 255, 255)" in boot_power:
+            failures.append("status_led.c: boot PWR first frame must not regress to full-white or bypass the shutdown amber helper")
+        if (
+            "status_led_power_confirm_amber()" not in shutdown_confirm
+            or "final ? STATUS_LED_PWR_CONFIRM_AMBER_PERCENT : STATUS_LED_PWR_CONFIRM_CUE_PERCENT" not in shutdown_confirm
+        ):
+            failures.append("status_led.c: shutdown confirmation must keep the accepted amber helper and final/cue constants")
+
+        boot_feedback_order = [
+            boot_feedback.find("frame.status[STATUS_LED_SEM_PWR] = status_led_boot_power_color_locked();"),
+            boot_feedback.find("status_led_apply_zone_brightness_caps_locked(&frame);"),
+            boot_feedback.find("status_led_copy_frame_locked(&frame);"),
+            boot_feedback.find("status_led_transmit_frame(&frame);"),
+        ]
+        if not all(index >= 0 for index in boot_feedback_order) or boot_feedback_order != sorted(boot_feedback_order):
+            failures.append("status_led.c: boot PWR first frame must apply Type four-zone brightness caps before copy/transmit")
+
+        boot_render_match = re.search(
+            r"if\s*\(\s*now_ms\s*<\s*s_state\.boot_feedback_until_ms\s*\)\s*{(?P<body>[\s\S]*?)}",
+            render_power,
+        )
+        if boot_render_match is None:
+            failures.append("status_led.c: boot PWR feedback must have an explicit render-time override window")
+        else:
+            boot_render_body = boot_render_match.group("body")
+            if "frame->status[STATUS_LED_SEM_PWR] = status_led_boot_power_color_locked();" not in boot_render_body:
+                failures.append("status_led.c: boot PWR feedback must override charging/full PWR color instead of blending with it")
+            if "status_led_set_max" in boot_render_body:
+                failures.append("status_led.c: boot PWR feedback must not use max-merge because charging white can hide the amber cue")
+
+        shutdown_branch_index = render_frame.find("if (status_led_render_shutdown_confirm_locked(frame, now_ms))")
+        shutdown_tail_index = render_frame.find("status_led_apply_status_tail_guard_locked(frame, now_ms);", shutdown_branch_index)
+        shutdown_cap_index = render_frame.find("status_led_apply_zone_brightness_caps_locked(frame);", shutdown_branch_index)
+        shutdown_clamp_index = render_frame.find("status_led_clamp_current_locked(frame, safety);", shutdown_branch_index)
+        shutdown_return_index = render_frame.find("return;", shutdown_branch_index)
+        if not (
+            shutdown_branch_index >= 0
+            and shutdown_tail_index >= 0
+            and shutdown_cap_index >= 0
+            and shutdown_clamp_index >= 0
+            and shutdown_return_index >= 0
+            and shutdown_branch_index < shutdown_tail_index < shutdown_cap_index < shutdown_clamp_index < shutdown_return_index
+        ):
+            failures.append("status_led.c: shutdown confirmation branch must apply Type four-zone brightness caps before returning")
+        try:
+            test_mode_caps = extract_c_function(status_led, "status_led_test_mode_uses_zone_brightness_caps")
+        except ValueError as exc:
+            failures.append(f"status_led.c: {exc}")
+        else:
+            if (
+                "STATUS_LED_TEST_STATIC_STATUS" not in test_mode_caps
+                or "STATUS_LED_TEST_STATUS_KEY_STRESS" not in test_mode_caps
+                or "STATUS_LED_TEST_PIXEL" in test_mode_caps
+            ):
+                failures.append("status_led.c: effect preview test modes must use Type zone caps, while pixel calibration stays full-brightness")
+            if not re.search(
+                r"if\s*\(\s*s_state\.test_mode\s*!=\s*STATUS_LED_TEST_NONE\s*\)\s*\{[\s\S]*?"
+                r"status_led_test_mode_uses_zone_brightness_caps\(s_state\.test_mode\)[\s\S]*?"
+                r"status_led_render_test_locked\(frame,\s*now_ms\);[\s\S]*?"
+                r"if\s*\(\s*test_uses_zone_caps\s*\)\s*\{[\s\S]*?"
+                r"status_led_apply_zone_brightness_caps_locked\(frame\);[\s\S]*?"
+                r"status_led_clamp_current_locked\(frame,\s*false\);[\s\S]*?"
+                r"\}\s*else\s*\{[\s\S]*?"
+                r"status_led_clamp_current_locked\(frame,\s*true\);",
+                render_frame,
+            ):
+                failures.append("status_led.c: status/key effect previews must apply Type zone caps before logging RGB evidence, while calibration tests stay full-brightness")
+
+        init_boot_index = status_init.find("status_led_force_boot_feedback();")
+        init_return_index = status_init.find("return final_ret;")
+        init_initialized_index = status_init.find("s_state.initialized = true;")
+        if "status_led_force_all_off(true);" in status_init:
+            failures.append("status_led.c: status_led_init must not black out PWR before the cold-boot amber cue")
+        if not (0 <= init_initialized_index < init_boot_index < init_return_index):
+            failures.append("status_led.c: status_led_init must latch the amber boot PWR frame immediately after strip init")
     if "status_led_active_work_locked" in status_led:
         failures.append("status_led.c: active recording/processing must not suppress physical key LED feedback")
     if (
@@ -1114,14 +1284,136 @@ def main() -> int:
         or "voice_key_input_mark_recovery_double_candidate" not in voice_key
         or "voice_key_input_prune_recovery_guard" not in voice_key
         or "button->recovery_double_candidate =\n        voice_key_input_recovery_double_gap_ready(button, now_tick)" not in voice_key
-        or "bool recovery_double_click = button->recovery_double_candidate" not in voice_key
+        or "voice_key_input_recovery_double_click_ready" not in voice_key
+        or "button->recovery_double_candidate ||\n           voice_key_input_recovery_double_gap_ready(button, now_tick)" not in voice_key
+        or "bool recovery_double_click =\n        voice_key_input_recovery_double_click_ready(button, now_tick)" not in voice_key
     ):
-        failures.append("voice_key_input_esp32.c: EC11 push must require a second press candidate before accepting recovery double-click while single dispatch consumes the recovery guard")
+        failures.append("voice_key_input_esp32.c: EC11 push must require a second press candidate and re-check the 60 ms guard on release before accepting recovery double-click while single dispatch consumes the recovery guard")
     if re.search(
         r"button->pending_single_click\s*&&\s*\(\s*origin\s*!=\s*NULL\s*\|\|\s*button->recovery_double_candidate\s*\)",
         voice_key,
     ):
         failures.append("voice_key_input_esp32.c: EC11 raw-only release must not be enough to accept recovery double-click")
+    try:
+        raw_feedback = extract_c_function(keyboard, "keyboard_custom_apply_raw_feedback")
+        raw_short_release = extract_c_function(keyboard, "keyboard_custom_handle_raw_short_release")
+        send_gesture = extract_c_function(keyboard, "keyboard_custom_send_gesture_internal")
+        generated_enqueue = extract_c_function(keyboard, "keyboard_custom_enqueue_generated_gesture")
+        timers = extract_c_function(keyboard, "keyboard_custom_handle_timers")
+        stable_transition = extract_c_function(keyboard, "keyboard_custom_apply_stable_transition")
+    except ValueError as exc:
+        failures.append(f"keyboard.c: {exc}")
+    else:
+        if not re.search(
+            r"#define\s+KEYBOARD_CUSTOM_DEBOUNCE_SAMPLES\s+\\\s*\n\s*"
+            r"\(\(\(KEYBOARD_CUSTOM_DEBOUNCE_MS\s*\+\s*KEYBOARD_CUSTOM_POLL_MS\s*-\s*1\)\s*/\s*"
+            r"KEYBOARD_CUSTOM_POLL_MS\)\s*\+\s*1\)",
+            keyboard,
+        ):
+            failures.append("keyboard.c: KEY1-KEY4 debounce sample count must require the full 20 ms before stable LED/HID feedback")
+        if (
+            "#define KEYBOARD_CUSTOM_TASK_PRIORITY 7U" not in keyboard
+            or "KEYBOARD_CUSTOM_TASK_PRIORITY,\n        &s_custom_task_handle" not in keyboard
+            or "task_priority=%u audio_preempt_safe=1" not in keyboard
+            or "~KEY:STATUS custom_keys=KEY1:F13/F17/F21" not in keyboard
+        ):
+            failures.append("keyboard.c: KEY1-KEY4 scan task must stay above the audio task so recording cannot expire the double-click window into a single click")
+        if (
+            "status_led_notify_key_event(key->index, true);" not in raw_feedback
+            or "keyboard_custom_send_gesture" in raw_feedback
+        ):
+            failures.append("keyboard.c: KEY1-KEY4 raw edges must only light local white preview before debounce, never dispatch gestures")
+        if (
+            "custom key raw debounce candidate" not in raw_feedback
+            or "key->raw_feedback_tick = now;" not in raw_feedback
+            or "key->raw_feedback_pressed = true;" not in raw_feedback
+            or "preview=1" not in raw_feedback
+            or "power_manager_record_activity" in raw_feedback
+        ):
+            failures.append("keyboard.c: KEY1-KEY4 raw edges must timestamp a debounce candidate and mark the preview latch without recording activity")
+        clear_raw_feedback = extract_c_function(keyboard, "keyboard_custom_clear_raw_feedback")
+        if "status_led_cancel_key_preview(key->index);" not in clear_raw_feedback:
+            failures.append("keyboard.c: KEY1-KEY4 raw-only preview cancel must clear white immediately without a release-tail")
+        if (
+            "keyboard_custom_send_gesture" in raw_short_release
+            or "pending_single = true" in raw_short_release
+            or "pending_single_due_tick" in raw_short_release
+            or "STATUS_LED_KEY_FEEDBACK" in raw_short_release
+        ):
+            failures.append("keyboard.c: KEY1-KEY4 raw release handling must not bypass the stable gesture path with direct click or purple feedback")
+        if (
+            "raw_ms >= KEYBOARD_CUSTOM_DEBOUNCE_MS" not in raw_short_release
+            or "custom key raw-duration tap accepted" not in raw_short_release
+            or "keyboard_custom_apply_stable_transition(key, false, press_tick, \"raw_duration_press\");"
+            not in raw_short_release
+            or "keyboard_custom_apply_stable_transition(key, true, now, \"raw_duration_release\");"
+            not in raw_short_release
+        ):
+            failures.append("keyboard.c: KEY1-KEY4 release-before-sample taps that already met the 20 ms debounce threshold must be promoted through normal stable press/release")
+        if "custom key raw-only short transition ignored" not in raw_short_release:
+            failures.append("keyboard.c: KEY1-KEY4 sub-20 ms raw-only release before debounce must be logged as ignored evidence")
+        if (
+            "pending_single_visual_started" not in keyboard
+            or "custom key single visual already active" not in send_gesture
+            or "status_led_notify_key_feedback(key->index, keyboard_custom_led_feedback_for_gesture(gesture));"
+            not in send_gesture
+        ):
+            failures.append("keyboard.c: KEY1-KEY4 must allow immediate single-click purple visual feedback without restarting it when the delayed HID single fires")
+        if (
+            "keyboard_custom_cancel_other_pending_single_visuals" in keyboard
+            or "custom key cross-key pending single visual canceled" in keyboard
+            or "preserve_hid=%u" in keyboard
+            or "key->pending_single ? 1U : 0U" in keyboard
+        ):
+            failures.append("keyboard.c: KEY1-KEY4 must not hide follow-light by clearing another key's accepted fade; each key effect must fade independently")
+        if 'keyboard_custom_cancel_other_pending_single_visuals(key, "generated_enqueue");' in generated_enqueue:
+            failures.append("keyboard.c: generated KEY stress must not clear another key's visual fade")
+        if "keyboard_custom_cancel_other_pending_single_visuals(key, origin);" in raw_feedback:
+            failures.append("keyboard.c: physical raw key feedback must not run a separate stale-visual cancel before lighting the current key")
+        if "status_led_notify_key_event(key->index, true);" not in stable_transition:
+            failures.append("keyboard.c: KEY1-KEY4 debounced press must still light the local white preview")
+        if "status_led_notify_key_event(key->index, pressed);" in stable_transition:
+            failures.append("keyboard.c: KEY1-KEY4 debounced single/double release must not first enqueue the white release tail before purple feedback")
+        if "status_led_notify_key_event(key->index, false);" not in stable_transition:
+            failures.append("keyboard.c: KEY1-KEY4 long release must still clear the physical press mask before the long fade")
+        stable_press_tokens = (
+            "if (pressed && !key->pressed)",
+            "key->pressed = true;",
+            "key->press_tick = now;",
+            "key->long_sent = false;",
+            "key->double_candidate = key->pending_single;",
+        )
+        if any(token not in stable_transition for token in stable_press_tokens):
+            failures.append("keyboard.c: KEY1-KEY4 debounced press must still arm the validated single/double/long state machine")
+        stable_release_tokens = (
+            "else if (!pressed && key->pressed)",
+            "key->pressed = false;",
+            "status_led_notify_key_feedback(key->index, STATUS_LED_KEY_FEEDBACK_LONG);",
+            "keyboard_custom_send_gesture(key, KEYBOARD_CUSTOM_GESTURE_LONG);",
+            "key->double_candidate && key->pending_single",
+            "keyboard_custom_send_gesture(key, KEYBOARD_CUSTOM_GESTURE_DOUBLE);",
+            "key->pending_single = true;",
+            "key->pending_single_visual_started = true;",
+            "key->pending_single_due_tick = now + pdMS_TO_TICKS(KEYBOARD_CUSTOM_DOUBLE_CLICK_WINDOW_MS);",
+            "status_led_notify_key_feedback(key->index, STATUS_LED_KEY_FEEDBACK_SINGLE);",
+            "custom key single pending",
+            "visual=immediate",
+        )
+        if any(token not in stable_transition for token in stable_release_tokens):
+            failures.append("keyboard.c: KEY1-KEY4 debounced release must preserve long/double dispatch and start single-click purple visual feedback immediately while the HID single waits for the double-click window")
+        timer_tokens = (
+            "key->pressed && !key->long_sent",
+            "KEYBOARD_CUSTOM_LONG_PRESS_MS",
+            "key->long_sent = true;",
+            "keyboard_custom_send_gesture(key, KEYBOARD_CUSTOM_GESTURE_LONG);",
+            "!key->pressed && key->pending_single",
+            "keyboard_custom_tick_reached(now, key->pending_single_due_tick)",
+            "single_visual_started",
+            "key->pending_single_visual_started = single_visual_started;",
+            "keyboard_custom_send_gesture(key, KEYBOARD_CUSTOM_GESTURE_SINGLE);",
+        )
+        if any(token not in timers for token in timer_tokens):
+            failures.append("keyboard.c: KEY1-KEY4 timers must keep stable long-hold and delayed-single dispatch without restarting already-visible single feedback")
     if re.search(
         r"second_click_too_soon|recovery_candidate_from_raw|voice_key_input_note_raw_press_edge|recent_short_click|recent_raw_press|raw_recovery_dispatched",
         voice_key,
@@ -1142,7 +1434,7 @@ def main() -> int:
         failures.append("status_led.c: interactive resume from manual-off/low-power must all-zone clear, while active scoped clears stay non-KEY")
     if "status_led_force_transition_clear_locked(STATUS_LED_TRANSITION_CLEAR_ACCENTS);" in resume_output:
         failures.append("status_led.c: interactive low-power resume must not black-frame the KEY strip through the generic accent clear")
-    for function_name in ("status_led_notify_key_event", "status_led_notify_key_feedback"):
+    for function_name in ("status_led_notify_key_event", "status_led_cancel_key_preview", "status_led_notify_key_feedback"):
         try:
             body = extract_c_function(status_led, function_name)
         except ValueError as exc:
@@ -1152,10 +1444,19 @@ def main() -> int:
             failures.append(f"status_led.c: {function_name} must preserve local key feedback paths")
         if "recording_active" in body or "processing_active" in body or "ota_active" in body:
             failures.append(f"status_led.c: {function_name} must not gate key feedback on active work state")
+        if function_name == "status_led_cancel_key_preview" and (
+            "s_state.key_feedback_started_ms[key_index] = 0U;" not in body
+            or "s_state.key_feedback_until_ms[key_index] = 0U;" not in body
+        ):
+            failures.append("status_led.c: key preview cancel must also clear pending gesture feedback timers so stale purple single-click visuals cannot bleed into the next key")
     try:
         key_feedback_duration = extract_c_function(status_led, "status_led_key_feedback_duration_ms")
         key_feedback_render = extract_c_function(status_led, "status_led_render_key_feedback_locked")
+        key_physical_percent = extract_c_function(status_led, "status_led_key_physical_percent_locked")
+        key_physical_token = extract_c_function(status_led, "status_led_key_physical_token_locked")
+        key_render = extract_c_function(status_led, "status_led_render_keys_locked")
         key_event = extract_c_function(status_led, "status_led_notify_key_event")
+        key_feedback = extract_c_function(status_led, "status_led_notify_key_feedback")
     except ValueError as exc:
         failures.append(f"status_led.c: {exc}")
     else:
@@ -1167,14 +1468,33 @@ def main() -> int:
             failures.append("status_led.c: KEY LEDs must map gesture and physical-feedback design peaks to the Type key-zone cap")
         if "status_led_key_feedback_token_locked" not in key_feedback_render:
             failures.append("status_led.c: KEY gesture feedback must normalize against the design peak, not the current rendered frame")
-        if not re.search(
-            r"status_led_key_physical_token_locked[\s\S]*?"
-            r"STATUS_LED_KEY_PRESS_PERCENT[\s\S]*?"
-            r"status_led_token_relative_to_peak_locked[\s\S]*?"
-            r"STATUS_LED_KEY_PRESS_PERCENT",
-            status_led,
+        if (
+            "return STATUS_LED_KEY_PRESS_PERCENT;" not in key_physical_percent
+            or "STATUS_LED_KEY_FEEDBACK_MS" not in key_physical_percent
+            or "STATUS_LED_KEY_RELEASE_PERCENT" not in key_physical_percent
+            or "status_led_decay_percent(" not in key_physical_percent
         ):
-            failures.append("status_led.c: KEY physical press/release brightness must stay relative to the press design peak")
+            failures.append("status_led.c: KEY physical release tail must fade continuously from release brightness to 0")
+        if not re.search(
+            r"status_led_decay_percent\(\s*"
+            r"elapsed_ms,\s*"
+            r"STATUS_LED_KEY_FEEDBACK_MS,\s*"
+            r"STATUS_LED_KEY_RELEASE_PERCENT,\s*"
+            r"0U\s*\)",
+            key_physical_percent,
+        ):
+            failures.append("status_led.c: KEY physical release tail must use the whole feedback window for a continuous fade, not hold a low level before cutting/fading")
+        if (
+            "status_led_token_relative_to_peak_locked" not in key_physical_token
+            or "STATUS_LED_KEY_PRESS_PERCENT" not in key_physical_token
+        ):
+            failures.append("status_led.c: KEY physical press/release brightness must stay relative to the press design peak before Type key cap")
+        if (
+            "status_led_key_physical_percent_locked(index, pressed, now_ms)" not in key_render
+            or "status_led_key_physical_token_locked(physical_percent)" not in key_render
+            or "status_led_key_physical_token_locked(pressed)" in key_render
+        ):
+            failures.append("status_led.c: KEY renderer must use the time-varying physical release fade percent")
         if "status_led_normalize_strip_peak_to_type_max" in status_led:
             failures.append("status_led.c: zone brightness caps must preserve KEY fade percentages; do not peak-normalize each rendered frame")
         if (
@@ -1184,14 +1504,163 @@ def main() -> int:
         ):
             failures.append("status_led.c: KEY single/double/long feedback durations must keep the gradient gesture window")
         if (
+            "feedback != STATUS_LED_KEY_FEEDBACK_LONG" not in key_feedback
+            or "s_state.key_pressed_mask &= ~(1U << key_index);" not in key_feedback
+            or "s_state.key_until_ms[key_index] = 0U;" not in key_feedback
+        ):
+            failures.append("status_led.c: KEY single/double feedback must atomically clear physical white and enter purple without a release-tail refresh")
+        if (
             "STATUS_LED_KEY_FLASH_ON_MS * 2U + STATUS_LED_KEY_FLASH_GAP_MS +" not in key_feedback_render
             or "STATUS_LED_KEY_FADE_MS" not in key_feedback_render
             or "status_led_decay_percent" not in key_feedback_render
         ):
             failures.append("status_led.c: KEY double feedback must keep the second-flash fade tail")
+        single_tail = re.search(
+            r"case\s+STATUS_LED_KEY_FEEDBACK_SINGLE:[\s\S]*?"
+            r"STATUS_LED_KEY_SINGLE_WHITE_HOLD_MS[\s\S]*?"
+            r"status_led_key_physical_token_locked\(STATUS_LED_KEY_PRESS_PERCENT\)[\s\S]*?"
+            r"fade_elapsed\s*=\s*elapsed\s*-\s*STATUS_LED_KEY_SINGLE_WHITE_HOLD_MS\s*-\s*STATUS_LED_KEY_FLASH_ON_MS;[\s\S]*?"
+            r"status_led_decay_percent\(\s*"
+            r"fade_elapsed,\s*"
+            r"STATUS_LED_KEY_FADE_MS,\s*"
+            r"STATUS_LED_KEY_GESTURE_PERCENT,\s*"
+            r"0U\s*\)",
+            key_feedback_render,
+        )
+        if not single_tail:
+            failures.append("status_led.c: KEY single feedback must fade from the purple release brightness continuously to 0")
+        double_tail = re.search(
+            r"case\s+STATUS_LED_KEY_FEEDBACK_DOUBLE:[\s\S]*?"
+            r"fade_elapsed\s*=[\s\S]*?"
+            r"STATUS_LED_KEY_FLASH_ON_MS\s*\*\s*2U\s*\+\s*STATUS_LED_KEY_FLASH_GAP_MS[\s\S]*?"
+            r"status_led_decay_percent\(\s*"
+            r"fade_elapsed,\s*"
+            r"STATUS_LED_KEY_FADE_MS,\s*"
+            r"STATUS_LED_KEY_GESTURE_PERCENT,\s*"
+            r"0U\s*\)",
+            key_feedback_render,
+        )
+        if not double_tail:
+            failures.append("status_led.c: KEY double feedback must fade from the second purple flash continuously to 0")
+        long_tail = re.search(
+            r"case\s+STATUS_LED_KEY_FEEDBACK_LONG:[\s\S]*?"
+            r"status_led_decay_percent\(\s*"
+            r"elapsed,\s*"
+            r"STATUS_LED_KEY_FADE_MS,\s*"
+            r"STATUS_LED_KEY_GESTURE_PERCENT,\s*"
+            r"0U\s*\)",
+            key_feedback_render,
+        )
+        if not long_tail:
+            failures.append("status_led.c: KEY long feedback release must fade from purple continuously to 0")
         if "now_ms + STATUS_LED_KEY_FADE_MS" not in key_event or "long_release_fade" not in key_event:
             failures.append("status_led.c: KEY long release must fade out and suppress the white physical release tail")
+        if (
+            "status_led_clear_other_key_visuals_locked" in status_led
+            or "key_cross_key_visual_cancel" in status_led
+            or "STATUS_LED_KEY_CROSS_KEY_VISUAL_CANCEL" in status_led
+        ):
+            failures.append("status_led.c: KEY fix must not clear other keys' accepted fades to hide follow-light")
+        if (
+            "key_multi_key_independent_fade=%u" not in status_led
+            or "STATUS_LED_KEY_MULTI_KEY_INDEPENDENT_FADE" not in status_led
+            or "key_single_white_hold_ms=%u" not in status_led
+            or "STATUS_LED_KEY_SINGLE_WHITE_HOLD_MS" not in status_led
+        ):
+            failures.append("status_led.c: KEY status contract must expose accepted independent-fade and white-hold behavior")
+        key_active_work = extract_c_function(status_led, "status_led_render_key_active_work_locked")
+        if "frame->key" in key_active_work or "status_led_set_max" in key_active_work:
+            failures.append("status_led.c: recording/processing/BLE/OTA active work must not borrow the KEY strip for status semantics")
+        if "(void)frame;" not in key_active_work or "(void)now_ms;" not in key_active_work or "return;" not in key_active_work:
+            failures.append("status_led.c: KEY active-work renderer must remain an explicit no-op; KEY LEDs are local feedback only")
     refresh_once = extract_c_function(status_led, "status_led_refresh_once")
+    try:
+        transmit_changed_frame = extract_c_function(status_led, "status_led_transmit_changed_frame")
+        retry_update = extract_c_function(status_led, "status_led_update_retry_strip_mask")
+        suspended_mask = extract_c_function(status_led, "status_led_suspended_strip_mask")
+        note_transmitted = extract_c_function(status_led, "status_led_note_strip_transmitted")
+        tx_result = extract_c_function(status_led, "status_led_note_strip_transmit_result")
+        transmit_frame = extract_c_function(status_led, "status_led_transmit_frame")
+        force_all_off = extract_c_function(status_led, "status_led_force_all_off")
+    except ValueError as exc:
+        failures.append(f"status_led.c: {exc}")
+    else:
+        if "uint8_t retry_strip_mask;" not in status_led:
+            failures.append("status_led.c: status state must remember failed strip transmissions as a retry dirty mask")
+        if "static uint8_t status_led_transmit_changed_frame" not in status_led:
+            failures.append("status_led.c: changed-frame transmit must return a failed-strip mask")
+        if (
+            "uint8_t failed_strip_mask = 0U;" not in transmit_changed_frame
+            or "return strip_mask;" not in transmit_changed_frame
+            or "return failed_strip_mask;" not in transmit_changed_frame
+        ):
+            failures.append("status_led.c: tx mutex timeout and strip transmit errors must report failed strip masks")
+        for strip in ("STATUS_LED_STRIP_EC11", "STATUS_LED_STRIP_KEY", "STATUS_LED_STRIP_EDGE", "STATUS_LED_STRIP_STATUS"):
+            if not re.search(rf"status_led_note_strip_transmit_result\(\s*{strip}", transmit_changed_frame):
+                failures.append(f"status_led.c: {strip} transmit failures must flow into the failed-strip mask")
+        if (
+            "LED strip tx failed strip=%s" not in tx_result
+            or "status_led_strip_mask_for_index(strip_index)" not in tx_result
+            or "DIAG_LED_OUTPUT_FAIL" not in tx_result
+        ):
+            failures.append("status_led.c: strip transmit failures must be logged and converted to retry dirty bits")
+        if (
+            "failed_strip_mask = (uint8_t)(failed_strip_mask & attempted_strip_mask);" not in retry_update
+            or "attempted_strip_mask & (uint8_t)(~failed_strip_mask)" not in retry_update
+            or "s_state.retry_strip_mask = (uint8_t)(retry_strip_mask & STATUS_LED_STRIP_MASK_ALL);" not in retry_update
+        ):
+            failures.append("status_led.c: retry dirty mask must clear succeeded strips and retain failed strips")
+        if (
+            "tx_strip_mask = (uint8_t)(tx_strip_mask | s_state.retry_strip_mask);" not in refresh_once
+            or "status_led_update_retry_strip_mask(tx_strip_mask, failed_strip_mask);" not in refresh_once
+        ):
+            failures.append("status_led.c: refresh loop must retry failed EC11/KEY/EDGE/STATUS strip transmissions before last_frame suppression can hide them")
+        if (
+            "uint8_t key_lit_latch_pending_mask;" in status_led
+            or "key_lit_latch_pending_tx" in status_led
+            or "s_state.key_lit_latch_pending_mask" in status_led
+            or "key_lit_edge_tx=spi_dma_prelatch_then_one_shot_rmt_gpio_low" in status_led
+            or "key_feedback_dynamic_tx=spi_dma_between_latches" in status_led
+        ):
+            failures.append("status_led.c: KEY lit frames must not use one-shot RMT or a lit-latch pending path; active white/purple/fade frames stay on SPI DMA")
+        if (
+            "bool key_dark_latch_pending_tx = false;" not in refresh_once
+            or "key_dark_latch_pending_tx = !force_clear_tx &&" not in refresh_once
+            or "s_state.key_dark_latch_pending_mask != 0U" not in refresh_once
+            or "tx_strip_mask = (uint8_t)(tx_strip_mask | STATUS_LED_STRIP_MASK_KEY);" not in refresh_once
+            or "key_dark_latch_pending_tx)" not in refresh_once
+            or "key_dark_latch_pending_tx" not in transmit_changed_frame
+            or "bool key_has_light = status_led_strip_has_light(frame->key, STATUS_LED_KEY_COUNT);" not in transmit_changed_frame
+            or "bool key_force_non_dma = force_non_dma || !key_has_light;" not in transmit_changed_frame
+            or "!key_dark_latch_pending_tx &&" not in transmit_changed_frame
+            or "key_lit_edge_tx=spi_dma_only" not in status_led
+            or "key_feedback_dynamic_tx=spi_dma_until_dark_latch" not in status_led
+            or "key_dark_latch_expiry_dirty=1" not in status_led
+        ):
+            failures.append("status_led.c: KEY feedback must keep lit white/purple/fade frames on SPI DMA and leave a pending all-dark latch dirty until it is physically transmitted")
+        if "status_led_key_feedback_latch_active_locked" in status_led or "key_feedback_latch_tx" in status_led:
+            failures.append("status_led.c: KEY feedback latch must not stay active for the whole fade window; that reintroduces SPI/RMT transport churn flicker")
+        if (
+            "s_strip_transport_suspended[index]" not in suspended_mask
+            or "status_led_strip_mask_for_index((status_led_strip_id_t)index)" not in suspended_mask
+            or "tx_strip_mask = (uint8_t)(tx_strip_mask | status_led_suspended_strip_mask());" not in refresh_once
+            or "if (!pwr_only_final_latch)" not in refresh_once
+        ):
+            failures.append("status_led.c: suspended EC11/KEY SPI transports must become dirty on resume so unchanged-frame suppression cannot leave them unavailable")
+        if (
+            "status_led_strip_backend_available(s_strips[strip_index].backend)" not in note_transmitted
+            or "s_strip_transport_suspended[strip_index] =" not in note_transmitted
+        ):
+            failures.append("status_led.c: successful non-DMA one-shot transmits that leave a backend unavailable must still mark the strip suspended for active resume")
+        if (
+            "status_led_update_retry_strip_mask(STATUS_LED_STRIP_MASK_ALL, failed_strip_mask);" not in transmit_frame
+            or "status_led_update_retry_strip_mask(STATUS_LED_STRIP_MASK_ALL, failed_strip_mask);" not in force_all_off
+        ):
+            failures.append("status_led.c: direct boot/all-off transmits must also preserve failed strips for retry")
+        if "strip_tx_failure_retry_dirty=1" not in status_led:
+            failures.append("status_led.c: ~LED:STATUS contract must expose failed-strip retry-dirty protection")
+        if "suspended_strip_resume_dirty=1" not in status_led:
+            failures.append("status_led.c: ~LED:STATUS contract must expose suspended-strip resume dirty protection")
     if "bool force_non_dma = pwr_only_final_latch;" not in refresh_once or "pwr_only_final_latch || force_clear_tx" in refresh_once:
         failures.append("status_led.c: interactive transition clears must keep SPI EC11/KEY strips on DMA; only low-power/final latch may force non-DMA")
     for function_name in ("status_led_set_recording", "status_led_set_processing"):
@@ -1261,6 +1730,17 @@ def main() -> int:
             failures.append(
                 "ble_hid_gap_esp32.c: Type-controlled recovery fallback advertising must stay HID-pairable for Windows and Type-discoverable after the bounded Swift Pair window"
             )
+    if (
+        "s_recovery_suppress_swift_pair_prompt" not in ble_gap
+        or "recovery: Swift Pair prompt suppressed for Type-controlled silent recovery" not in ble_gap
+        or "ble_hid_gap_forget_bonds_and_repair_type_controlled_silent" not in ble_gap
+        or "ble_hid_gap_forget_bonds_and_repair_inner(true, true)" not in ble_gap
+        or "ble_hid_gap_forget_bonds_and_repair_inner(true, false)" not in ble_gap
+        or "suppress_swift_pair=%u" not in ble_gap
+    ):
+        failures.append(
+            "ble_hid_gap_esp32.c: BLE rename must have a Type-controlled silent recovery path while explicit Type recovery keeps Swift Pair available"
+        )
     if (
         "pairing_window\n            ? ble_hid_gap_recovery_swift_pair_prompt_remaining_ms()" not in ble_gap
         or "if (type_recovery_requested && !swift_pair_requested)" not in ble_gap
@@ -1621,7 +2101,14 @@ def main() -> int:
             "status_led_low_power_ble_peak_percent_locked()" not in body or
             "status_led_token_relative_to_peak_locked" not in body
         ):
-            failures.append("status_led.c: low-power BLE renderer must not dim visible cues below their active Type-capped peaks")
+            failures.append("status_led.c: low-power BLE renderer must share the state-specific BLE peak mapper")
+    if not re.search(
+        r"static\s+uint8_t\s+status_led_low_power_ble_peak_percent_locked[\s\S]*?"
+        r"case\s+STATUS_LED_BLE_CONNECTED:\s*\n\s*"
+        r"return\s+STATUS_LED_BLE_CONNECTED_FIND_TYPE_MAX_PERCENT;",
+        status_led,
+    ):
+        failures.append("status_led.c: low-power connected find-Type must preserve the same Type-capped peak mapping as active connected")
     if re.search(
         r"status_led_connected_hid_only_percent_locked|"
         r"STATUS_LED_BLE_CONNECTED_HEARTBEAT_PERIOD_MS|"
@@ -1632,10 +2119,10 @@ def main() -> int:
         failures.append("status_led.c: active BLE rendering must not use the old low-base HID-only connected heartbeat/confirmation renderer")
     if "STATUS_LED_BLE_CONNECTED_FIND_TYPE_PERIOD_MS 2000U" not in status_led:
         failures.append("status_led.c: HID-only connected must keep the bounded find-Type double-flash period")
-    if "STATUS_LED_BLE_CONNECTED_FIND_TYPE_WINDOW_MS STATUS_LED_STATUS_WINDOW_MS" not in status_led:
-        failures.append("status_led.c: HID-only connected find-Type cue must be bounded by the status/connection window")
-    if "STATUS_LED_BLE_CONNECTED_FIND_TYPE_MIN_PERCENT 10U" not in status_led:
-        failures.append("status_led.c: HID-only connected find-Type must keep the swapped-in low blue floor")
+    if "STATUS_LED_BLE_CONNECTED_FIND_TYPE_WINDOW_MS" in status_led:
+        failures.append("status_led.c: active HID-only connected find-Type must not expire to dark from a short status window; only idle may turn BLE dark")
+    if "STATUS_LED_BLE_CONNECTED_FIND_TYPE_MIN_PERCENT 5U" not in status_led:
+        failures.append("status_led.c: HID-only connected find-Type must keep the operator-tuned low blue floor between the old too-bright floor and full dark")
     if "STATUS_LED_BLE_CONNECTED_FIND_TYPE_MAX_PERCENT STATUS_LED_BLE_ATTENTION_PERCENT" not in status_led:
         failures.append("status_led.c: HID-only connected find-Type pulse must keep the shared attention peak")
     if not re.search(
@@ -1652,19 +2139,70 @@ def main() -> int:
         r"STATUS_LED_BLE_TYPE_READY_STEADY_PERCENT",
         status_led,
     ):
-        failures.append("status_led.c: active BLE rendering must make HID-only connected a low-floor bounded find-Type double flash; only TYPE_READY or active OTA transfer may be steady blue")
+        failures.append("status_led.c: active BLE rendering must make HID-only connected a continuous low-floor find-Type double flash with its peak mapped to the Type cap; only TYPE_READY or active OTA transfer may be steady blue")
     if not re.search(
         r"static\s+bool\s+status_led_connected_find_type_window_active_locked\(uint32_t now_ms\)[\s\S]*?"
-        r"status_window_until_ms[\s\S]*?"
-        r"ble_confidence_until_ms[\s\S]*?"
-        r"oobe_confidence_until_ms",
+        r"\(void\)now_ms;[\s\S]*?"
+        r"return\s+true;",
         status_led,
     ):
-        failures.append("status_led.c: HID-only connected find-Type cue must have an explicit finite window")
+        failures.append("status_led.c: active HID-only connected find-Type cue must stay visible until Type-ready, disconnect, or idle takes over")
+    if not re.search(
+        r"else\s+if\s*\(\s*strcasecmp\(state,\s*\"disconnected\"\)\s*==\s*0[\s\S]*?"
+        r"strcasecmp\(state,\s*\"no_host\"\)\s*==\s*0[\s\S]*?"
+        r"s_state\.ble_state\s*=\s*STATUS_LED_BLE_DISCONNECTED;[\s\S]*?"
+        r"s_state\.ble_transition_ms\s*=\s*now_ms;",
+        status_led,
+    ):
+        failures.append("status_led.c: preview disconnected/no_host must hold active disconnected BLE long enough for no-idle-dark validation")
+    disconnected_case = re.search(
+        r"case\s+STATUS_LED_BLE_DISCONNECTED:\s*\{(?P<body>[\s\S]*?)\n\s*\}",
+        status_led,
+    )
+    if not disconnected_case:
+        failures.append("status_led.c: missing active disconnected/no-host BLE render case")
+    else:
+        disconnected_body = disconnected_case.group("body")
+        if (
+            "(status_led_rgb_t){0}" not in disconnected_body
+            or "status_led_token_relative_to_peak_locked" in disconnected_body
+            or "STATUS_LED_BLE_DISCONNECTED_ACTIVE_PERCENT" in disconnected_body
+        ):
+            failures.append("status_led.c: disconnected/no-host BLE must not show the connected blue floor; low blue floor belongs only to connected BLE states")
+    timed_output_active = extract_c_function(status_led, "status_led_timed_output_active_locked")
+    if not timed_output_active:
+        failures.append("status_led.c: missing timed-output active helper for active BLE refresh")
+    else:
+        for token, description in (
+            ("s_state.ble_state == STATUS_LED_BLE_PAIRING", "pairing"),
+            ("s_state.ble_state == STATUS_LED_BLE_REPAIRING", "repairing"),
+            ("s_state.ble_state == STATUS_LED_BLE_RECONNECTING", "reconnecting"),
+            ("s_state.ble_state == STATUS_LED_BLE_CONNECTED", "HID-only connected"),
+            ("s_state.ble_state == STATUS_LED_BLE_TYPE_READY", "TYPE_READY"),
+            ("s_state.ble_state == STATUS_LED_BLE_DISCONNECTED", "disconnected/no-host"),
+        ):
+            if token not in timed_output_active:
+                failures.append(f"status_led.c: active {description} BLE must keep normal refresh until idle, independent of external power")
+        if "!s_state.external_power_present" in timed_output_active and "s_state.ble_state != STATUS_LED_BLE_DISCONNECTED" in timed_output_active:
+            failures.append("status_led.c: active BLE refresh must not be limited to unplugged power; BLE may go dark only after idle takes over")
     reconnect_case = re.search(
         r"case\s+STATUS_LED_BLE_RECONNECTING:\s*\{(?P<body>[\s\S]*?)\n\s*\}",
         status_led,
     )
+    pairing_case = re.search(
+        r"case\s+STATUS_LED_BLE_PAIRING:\s*\n\s*case\s+STATUS_LED_BLE_REPAIRING:\s*\{(?P<body>[\s\S]*?)\n\s*\}",
+        status_led,
+    )
+    if not pairing_case:
+        failures.append("status_led.c: missing active pairing/repairing BLE render case")
+    else:
+        pairing_body = pairing_case.group("body")
+        if (
+            ": 0U" not in pairing_body
+            or "status_led_token_relative_to_peak_locked" not in pairing_body
+            or "STATUS_LED_BLE_PAIRING_PULSE_PERCENT" not in pairing_body
+        ):
+            failures.append("status_led.c: pairing/repairing BLE must pulse with a dark off phase; low blue floor belongs only to connected BLE states")
     if not reconnect_case:
         failures.append("status_led.c: missing active reconnecting BLE render case")
     else:
@@ -1676,12 +2214,11 @@ def main() -> int:
             r"STATUS_LED_BLE_CONNECTED_FIND_TYPE_PERIOD_MS\s*\)[\s\S]*?"
             r"STATUS_LED_BLE_RECONNECT_PULSE_PERCENT[\s\S]*?"
             r":\s*0U[\s\S]*?"
-            r"percent\s*>\s*0U[\s\S]*?"
             r"status_led_token_relative_to_peak_locked\(\s*"
             r"ble_blue,\s*percent,\s*STATUS_LED_BLE_RECONNECT_PULSE_PERCENT,\s*false\s*\)",
             reconnect_body,
         ):
-            failures.append("status_led.c: ordinary reconnecting must render the swapped off-floor blue double flash")
+            failures.append("status_led.c: reconnecting BLE must double-pulse with a dark off phase; low blue floor belongs only to connected BLE states")
     if not re.search(
         r"void\s+status_led_set_ota_active[\s\S]*?else\s*\{[\s\S]*?"
         r"status_led_clear_ota_locked\(\);[\s\S]*?\}"
@@ -1763,6 +2300,11 @@ def main() -> int:
     ):
         if stale_token in status_led:
             failures.append(f"status_led.c: {reason}")
+    if (
+        "STATUS_LED_STATUS_TAIL_SAFE_EFFECT_MAX_PERCENT,\n        STATUS_LED_RECORDING_LEVEL_EFFECT_MIN_PERCENT" not in status_led
+        or "STATUS_LED_STATUS_TAIL_OVERLAP_QUANTUM_PERCENT,\n        STATUS_LED_RECORDING_LEVEL_LOCK_WAIT_MS,\n        STATUS_LED_RECORDING_LEVEL_EFFECT_MIN_PERCENT" not in status_led
+    ):
+        failures.append("status_led.c: ~LED:STATUS contract printf arguments must keep recording_level_lock_wait_ms in its own field without shifting status-tail effect readback")
     recording_level_block = re.search(
         r"void\s+status_led_set_recording_level[\s\S]*?\nstatic\s+void\s+status_led_force_recording_level_for_review",
         status_led,
@@ -1775,6 +2317,10 @@ def main() -> int:
         failures.append("status_led.c: live rec_level diagnostics must guard early calls before the LED mutex exists")
     elif "now_ms >= s_state.recording_level_hold_until_ms" not in recording_level_block.group(0):
         failures.append("status_led.c: live REC level must not override a manual review hold")
+    elif "pdMS_TO_TICKS(STATUS_LED_RECORDING_LEVEL_LOCK_WAIT_MS)" not in recording_level_block.group(0):
+        failures.append("status_led.c: live REC level must use a bounded nonblocking mutex wait")
+    elif "portMAX_DELAY" in recording_level_block.group(0):
+        failures.append("status_led.c: live REC level must not block the audio path on the LED state mutex")
     if "should_update_recording_level" in audio_capture:
         failures.append("audio_capture_esp32.c: live REC level must be sampled every mic frame, not only inside an active BLE session")
     forced_level_block = re.search(
@@ -1915,6 +2461,45 @@ def main() -> int:
         or "if (!cue_already_active)" not in repair_start.group("body")
     ):
         failures.append("status_led.c: repeated BLE repair notifications must not restart the active three-cycle cue")
+    elif "status_led_force_transition_clear_locked(STATUS_LED_TRANSITION_CLEAR_REPAIR)" in repair_start.group("body"):
+        failures.append("status_led.c: BLE repair must not insert a transition clear before the accepted double-flash cue")
+    recovery_window = extract_c_function(status_led, "status_led_ble_recovery_window_active_locked")
+    if (
+        "status_led_ble_repair_active_locked(now_ms)" not in recovery_window
+        or "s_state.ble_state == STATUS_LED_BLE_PAIRING" not in recovery_window
+        or "s_state.ble_state == STATUS_LED_BLE_REPAIRING" not in recovery_window
+        or "s_state.ble_state == STATUS_LED_BLE_RECONNECTING" not in recovery_window
+    ):
+        failures.append("status_led.c: BLE recovery window must cover pairing/repairing/reconnecting states while repair is active")
+    recovery_elapsed = extract_c_function(status_led, "status_led_ble_recovery_window_elapsed_locked")
+    if (
+        "s_state.ble_repair_cue_until_ms != 0U" not in recovery_elapsed
+        or "return now_ms - s_state.ble_repair_cue_until_ms;" not in recovery_elapsed
+        or "return status_led_ble_elapsed_locked(now_ms);" not in recovery_elapsed
+    ):
+        failures.append("status_led.c: BLE recovery window double-flash phase must be anchored after the accepted repair cue, not reset by BLE state transitions")
+    render_ble = extract_c_function(status_led, "status_led_render_ble_locked")
+    cue_idx = render_ble.find("status_led_ble_repair_cue_active_locked(now_ms)")
+    window_idx = render_ble.find("status_led_ble_recovery_window_active_locked(now_ms)")
+    switch_idx = render_ble.find("switch (s_state.ble_state)")
+    recovery_block = render_ble[window_idx:switch_idx] if window_idx >= 0 and switch_idx > window_idx else ""
+    if (
+        cue_idx < 0
+        or window_idx <= cue_idx
+        or switch_idx <= window_idx
+        or "status_led_double_pulse_on" not in recovery_block
+        or "STATUS_LED_BLE_RECONNECT_PULSE_PERCENT" not in recovery_block
+        or "status_led_token_relative_to_peak_locked" not in recovery_block
+        or "? STATUS_LED_BLE_RECONNECT_PULSE_PERCENT\n            : 0U;" not in recovery_block
+    ):
+        failures.append("status_led.c: BLE recovery window must render the accepted reconnect double-flash instead of pairing blink")
+    if (
+        "status_led_ble_recovery_window_elapsed_locked(now_ms)" not in recovery_block
+        or "recovery_elapsed_ms" not in recovery_block
+        or "status_led_double_pulse_on(\n                              recovery_elapsed_ms,\n                              STATUS_LED_BLE_CONNECTED_FIND_TYPE_PERIOD_MS)" not in recovery_block
+        or "status_led_double_pulse_on(ble_elapsed_ms" in recovery_block
+    ):
+        failures.append("status_led.c: BLE recovery window double-flash must use the recovery-window phase anchor, not ble_transition_ms")
     if "STATUS_LED_EC11_REPAIR_BLINK_MIN_PERCENT 4U" not in status_led or \
        "STATUS_LED_EC11_REPAIR_BLINK_MAX_PERCENT 16U" not in status_led:
         failures.append("status_led.c: EC11 re-pair ring must keep the legacy blue base-and-peak double-flash")
@@ -2149,6 +2734,12 @@ def main() -> int:
         )
     if 'status_led_notify_ble_repairing("recovery_complete_pair_again")' in voice_recording_control:
         failures.append("voice_recording_control.c: recovery completion must not shorten the GAP-owned BLE pairing window")
+    if (
+        "RECOVERY:TYPE:SILENT" not in voice_recording_control
+        or "ble_hid_gap_forget_bonds_and_repair_type_controlled_silent" not in voice_recording_control
+        or "suppress_swift_pair_prompt ? 1u : 0u" not in voice_recording_control
+    ):
+        failures.append("voice_recording_control.c: Type silent recovery command must route BLE rename through no-Swift-Pair recovery without changing double-click recovery")
     if 'status_led_set_error(STATUS_LED_ERROR_DOMAIN_BLE, STATUS_LED_ERROR_RETRYABLE, "voice_recovery_requested")' in voice_recording_control:
         failures.append("voice_recording_control.c: user-requested recovery must use BLE re-pair cue, not WARN/error")
     if 'status_led_set_error(STATUS_LED_ERROR_DOMAIN_BLE, STATUS_LED_ERROR_RETRYABLE, "ble_recovery_clear_bonds")' in ble_hid_gap:
@@ -2311,6 +2902,7 @@ def main() -> int:
         "const bool active_work = s_state.recording_active ||\n            s_state.processing_active ||\n            s_state.ota_active;" not in ble_set_state.group(0) or
         "state_changed && !effect_only && !routine_low_power_ble &&" not in ble_set_state.group(0) or
         "status_led_ble_state_ready_locked(state) &&\n            !keep_repair_cue" not in ble_set_state.group(0) or
+        "if (!keep_repair_cue && !keep_repair_window) {\n                s_state.ble_repair_cue_started_ms = 0U;\n                s_state.ble_repair_cue_until_ms = 0U;\n            }" not in ble_set_state.group(0) or
         "!active_work" not in ble_set_state.group(0) or
         "if (state_changed && !effect_only && !routine_low_power_ble)" not in ble_set_state.group(0) or
         "const bool ble_visual_transition =\n            state_changed && !effect_only && !active_work;" not in ble_set_state.group(0) or
@@ -2326,7 +2918,7 @@ def main() -> int:
     )
     if (
         all_off_body is None
-        or "status_led_transmit_changed_frame(&frame, STATUS_LED_STRIP_MASK_ALL, force_non_dma)" not in all_off_body.group(0)
+        or "status_led_transmit_changed_frame(&frame, STATUS_LED_STRIP_MASK_ALL, force_non_dma, false)" not in all_off_body.group(0)
     ):
         failures.append("status_led.c: all-off helper must pass through the explicit non-DMA policy flag")
     manual_off_body = re.search(
@@ -2388,11 +2980,19 @@ def main() -> int:
     if (
         "status_led_key_dark_latch_needed" in status_led
         or "STATUS_LED_KEY_DARK_CLEAR_WRITES" in status_led
-        or "key_dark_clear_tx=non_dma_bounded_on_dark_transition" in status_led
-        or "key_dark_clear_tx=spi_changed_frame_once" not in status_led
-        or "key_tail_guard_pixels=%u" not in status_led
-    ):
-        failures.append("status_led.c: ordinary KEY dark transitions must stay on one SPI changed frame with key tail guard, not the non-DMA one-shot latch path")
+        or "key_dark_clear_writes=%u" in status_led
+            or "key_dark_clear_tx=spi_dma_prelatch_then_one_shot_rmt_gpio_low" not in status_led
+            or "key_tail_guard_pixels=%u" not in status_led
+            or "key_dark_latch_rmt_writes=%u" not in status_led
+            or "key_dark_latch_expiry_dirty=1" not in status_led
+            or "uint8_t key_dark_latch_pending_mask;" not in status_led
+            or "s_state.key_dark_latch_pending_mask =" not in status_led
+            or ".dark_latch_rmt_writes = STATUS_LED_KEY_DARK_LATCH_RMT_WRITES" not in status_led
+            or ".dark_latch_rmt_writes = strip->dark_latch_rmt_writes" not in status_led
+            or "bool key_has_light = status_led_strip_has_light(frame->key, STATUS_LED_KEY_COUNT);" not in status_led
+            or "bool key_force_non_dma = force_non_dma || !key_has_light;" not in status_led
+        ):
+        failures.append("status_led.c: KEY dark transitions must stay bounded: no periodic dark rewrites and no normal tail guard, but the all-dark latch must expose the fixed RMT black-latch write count")
     if not re.search(
         r"status_led_key_dark_rewrite_needed\(&frame,\s*changed_strip_mask,\s*low_power_active,\s*now_ms\)[\s\S]{0,160}"
         r"tx_strip_mask\s*=\s*\(uint8_t\)\(tx_strip_mask\s*\|\s*STATUS_LED_STRIP_MASK_KEY\);",
@@ -2400,11 +3000,12 @@ def main() -> int:
     ):
         failures.append("status_led.c: refresh loop must OR the KEY strip into tx_strip_mask for its initial dark-latch rewrite")
     refresh_once = extract_c_function(status_led, "status_led_refresh_once")
-    if re.search(
-        r"STATUS_LED_STRIP_MASK_KEY[\s\S]{0,200}true\)",
-        refresh_once,
+    if (
+        "status_led_key_dark_transition_reinforce_needed(" in refresh_once
+        or "write_count < STATUS_LED_KEY_DARK_CLEAR_WRITES" in refresh_once
+        or "write_count = STATUS_LED_KEY_DARK_CLEAR_WRITES;" in refresh_once
     ):
-        failures.append("status_led.c: ordinary KEY dark refresh must not force the KEY strip through non-DMA")
+        failures.append("status_led.c: KEY lit-to-dark frames must not add state-machine repeated dark writes; the bounded dark repeat belongs inside the backend one-shot latch")
     low_power_setter = re.search(
         r"void\s+status_led_set_low_power_disabled[^{]*\{(?P<body>[\s\S]*?)\n\}",
         status_led,
@@ -2422,12 +3023,6 @@ def main() -> int:
             or '"repair_low_power_hold"' not in low_power_body
         ):
             failures.append("status_led.c: low-power idle must preserve the active BLE+EC11 repair cue instead of truncating the double-flash")
-    if not re.search(
-        r"esp_err_t\s+status_led_init\(void\)[\s\S]*?"
-        r"status_led_force_all_off\(true\);[\s\S]*?return\s+final_ret;",
-        status_led,
-    ):
-        failures.append("status_led.c: init all-off clear must force a non-DMA black latch before boot feedback")
     if not re.search(
         r"void\s+status_led_prepare_sleep\(void\)[\s\S]{0,1200}"
         r"status_led_force_all_off\(true\);[\s\S]{0,120}status_led_suspend_all_strips\(\);",
@@ -2641,6 +3236,7 @@ def main() -> int:
     if (
         "strip_transport_requested=status:rmt,ec11:spi2,key:spi3,edge:rmt" not in status_led or
         "strip_transport_actual=status:%s,ec11:%s,key:%s,edge:%s" not in status_led or
+        "reset_us=300 rmt_reset_us=300 spi_reset_us=600 spi_ws2812_waveform=4bit_3m2_0x8_0xE" not in status_led or
         "spi_dma_requested=status:%u,ec11:%u,key:%u,edge:%u" not in status_led or
         "spi_dma_actual=status:%u,ec11:%u,key:%u,edge:%u" not in status_led or
         "spi_dma_fallback=status:%u,ec11:%u,key:%u,edge:%u" not in status_led or
@@ -2651,9 +3247,26 @@ def main() -> int:
         "rmt_idle_drive=active_dma_low_power_all_zone_non_dma_final_frame_then_release_gpio_low" not in status_led
         or "shutdown_final_status_tx=non_dma_pwr_only_latch" not in status_led
         or "low_power_all_zone_tx=non_dma_clear_and_final_frame" not in status_led
+        or "low_power_spi_latch=spi_dma_prelatch_then_one_shot_rmt_gpio_low" not in status_led
         or "shutdown_final_all_zone_tx=non_dma_pwr_only_latch_or_all_off" not in status_led
     ):
-        failures.append("status_led.c: ~LED:STATUS contract must expose RMT/SPI transport, per-strip DMA actual/fallback state, buffer size, and idle-drive policy")
+        failures.append("status_led.c: ~LED:STATUS contract must expose RMT/SPI transport, per-strip DMA actual/fallback state, reset-tail timing, buffer size, and idle-drive policy")
+    if (
+        "STATUS_LED_SPI_CLOCK_HZ       3200000" not in status_led_backend
+        or "STATUS_LED_SPI_BITS_PER_BIT   4U" not in status_led_backend
+        or "STATUS_LED_SPI_RESET_BYTES    240U" not in status_led_backend
+        or "0xEu" not in status_led_backend
+        or "0x8u" not in status_led_backend
+        or "for (int p = 3; p >= 0; --p)" not in status_led_backend
+        or "spi_waveform=4bit_3m2_0x8_0xE" not in status_led_backend
+        or "STATUS_LED_SPI_CLOCK_HZ       2500000" in status_led_backend
+        or "STATUS_LED_SPI_BITS_PER_BIT   3U" in status_led_backend
+        or "0x6u" in status_led_backend
+        or "0x4u" in status_led_backend
+    ):
+        failures.append(
+            "status_led_strip_backend.c: SPI WS2812 output must use the conservative 4-bit 3.2 MHz waveform (0=0x8, 1=0xE) so KEY active frames do not bring up downstream pixels"
+        )
     low_power_resume = re.search(
         r"void\s+status_led_set_low_power_disabled[^{]*\{(?P<body>[\s\S]*?)\n\}",
         status_led,
@@ -2737,6 +3350,21 @@ def main() -> int:
         failures.append("status_led.c: ordinary transition clear frames must not force non-DMA; scope force_non_dma to clear/latch paths only")
     if not re.search(r"bool\s+force_non_dma\s*=\s*pwr_only_final_latch\s*;", status_led):
         failures.append("status_led.c: only low-power/final latch frames may force every strip off DMA; interactive transition clears must keep EC11/KEY on SPI DMA")
+    spi_final_skip = extract_c_function(status_led, "status_led_skip_suspended_spi_final_latch")
+    if (
+        "s_strips[strip_index].transport != STATUS_LED_STRIP_TRANSPORT_SPI" not in spi_final_skip
+        or "!s_strip_transport_suspended[strip_index]" not in spi_final_skip
+        or "return !status_led_strip_has_light(colors, count);" not in spi_final_skip
+        or "status_led_skip_suspended_spi_final_latch(\n            STATUS_LED_STRIP_EC11" not in status_led
+        or not re.search(
+            r"!key_dark_latch_pending_tx\s*&&\s*"
+            r"status_led_skip_suspended_spi_final_latch\(\s*STATUS_LED_STRIP_KEY",
+            transmit_changed_frame,
+        )
+    ):
+        failures.append(
+            "status_led.c: SPI EC11/KEY suspended dark frames must normally skip re-entry; KEY feedback expiry may bypass that skip only while a pending dark latch is dirty"
+        )
     if (
         "shutdown_final_all_zone_latched_started_ms" not in status_led
         or "shutdown_final_all_zone_latch_needed" not in status_led
@@ -2750,6 +3378,35 @@ def main() -> int:
         or "backend->transport = saved_transport" not in status_led_backend
     ):
         failures.append("status_led_strip_backend.c: SPI strips must use a one-shot non-DMA RMT latch path when clear/final frames force non-DMA")
+    spi_one_shot = extract_c_function(status_led_backend, "status_led_spi_transmit_non_dma_rmt_once")
+    spi_acquire_index = spi_one_shot.find("status_led_strip_backend_ensure_transport(backend, true)")
+    spi_prelatch_index = spi_one_shot.find("status_led_spi_transmit(backend, color_order, colors)")
+    release_index = spi_one_shot.find("status_led_strip_backend_release_transport(backend)")
+    rmt_latch_index = spi_one_shot.find("status_led_rmt_transmit_available(backend, color_order, colors)")
+    if (
+        spi_acquire_index < 0
+        or spi_prelatch_index < 0
+        or release_index < 0
+        or rmt_latch_index < 0
+        or not (spi_acquire_index < spi_prelatch_index < release_index < rmt_latch_index)
+        or "SPI DMA pre-latch before non-DMA RMT latch" not in spi_one_shot
+        or "SPI DMA pre-latch acquire failed before non-DMA RMT latch" not in spi_one_shot
+        or "backend->available && backend->spi_device != NULL" not in spi_one_shot
+        or "status_led_strip_backend_colors_all_dark(backend, colors)" not in spi_one_shot
+        or "backend->dark_latch_rmt_writes" not in spi_one_shot
+        or "rmt_writes=%u dark=%u" not in spi_one_shot
+        or "for (uint8_t write_index = 0U; write_index < rmt_latch_writes; ++write_index)" not in spi_one_shot
+    ):
+        failures.append(
+            "status_led_strip_backend.c: SPI EC11/KEY final latch must reacquire SPI DMA, send the requested frame on SPI DMA, then perform the bounded one-shot non-DMA RMT latch before GPIO-low suspend"
+        )
+    if (
+        "uint8_t dark_latch_rmt_writes;" not in status_led_backend_header
+        or "uint8_t dark_latch_rmt_writes;" not in status_led_backend
+        or "status_led_strip_backend_colors_all_dark" not in status_led_backend
+        or "config->dark_latch_rmt_writes > 0U ? config->dark_latch_rmt_writes : 1U" not in status_led_backend
+    ):
+        failures.append("status_led_strip_backend.c/.h: backend must expose configurable all-dark one-shot RMT latch writes with default 1")
     if not re.search(
         r"status_led_suspend_quiet_idle_transports[\s\S]*?"
         r"for\s*\(size_t\s+index\s*=\s*0;[\s\S]*?"

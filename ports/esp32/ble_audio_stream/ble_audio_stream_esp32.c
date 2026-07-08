@@ -908,8 +908,7 @@ static bool ble_audio_stream_transport_link_ready(void)
 
 static bool ble_audio_stream_type_led_link_ready(void)
 {
-    ble_audio_stream_link_snapshot_t link = ble_audio_stream_get_link_snapshot();
-    return link.conn_handle != BLE_HS_CONN_HANDLE_NONE;
+    return ble_audio_stream_transport_link_ready();
 }
 
 static void ble_audio_stream_sync_status_led_for_type_link(const char *reason)

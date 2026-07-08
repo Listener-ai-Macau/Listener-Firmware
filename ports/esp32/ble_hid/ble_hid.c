@@ -6,6 +6,7 @@
 
 #include "freertos/FreeRTOS.h"
 #include "freertos/queue.h"
+#include "freertos/semphr.h"
 #include "freertos/task.h"
 
 #include "esp_err.h"
@@ -69,6 +70,8 @@ static const char *TAG = "ble_hid";
 #define BLE_HID_KEY_SOURCE_BYTES 32
 #define BLE_HID_PENDING_USAGE_TTL_MS 10000U
 #define BLE_HID_PENDING_USAGE_POLL_MS 20U
+#define BLE_HID_USAGE_TASK_STACK_BYTES (4 * 1024)
+#define BLE_HID_USAGE_TASK_IDLE_POLL_MS 1000U
 #define BLE_HID_READINESS_ALL \
     (LISTENER_DEVICE_READY_HID | LISTENER_DEVICE_READY_AUDIO | \
      LISTENER_DEVICE_READY_OTA | LISTENER_DEVICE_READY_DIAGNOSTIC)
@@ -76,6 +79,7 @@ static const char *TAG = "ble_hid";
 typedef struct
 {
     TaskHandle_t task_handle;
+    TaskHandle_t usage_task_handle;
     TaskHandle_t battery_task_handle;
     esp_hidd_dev_t *hid_device;
 } ble_hid_ctx_t;
@@ -126,6 +130,7 @@ static uint32_t s_connect_timestamp_ms;
 static uint32_t s_battery_forced_refresh_timestamp_ms;
 static QueueHandle_t s_ascii_queue;
 static QueueHandle_t s_usage_queue;
+static SemaphoreHandle_t s_usage_drain_mutex;
 static bool s_safe_mode;
 static bool s_usage_transport_test_blocked;
 static bool s_battery_service_valid;
@@ -134,6 +139,7 @@ static bool s_battery_charge_full_latched;
 static uint32_t s_battery_charge_full_candidate_since_ms;
 
 static void ble_hid_log_dis_gatt_state(void);
+static void ble_hid_usage_task_start(void);
 
 static uint32_t ble_hid_disconnect_count_snapshot(void)
 {
@@ -193,6 +199,9 @@ static status_led_ble_state_t ble_hid_connected_status_led_state(void)
 static void ble_hid_resync_connected_status_led(void)
 {
     if (!s_ble_connected || !ble_hid_gap_is_securely_connected()) {
+        return;
+    }
+    if (ble_hid_gap_is_recovery_pairing_window_open()) {
         return;
     }
     status_led_set_ble_state(ble_hid_connected_status_led_state(), false);
@@ -594,6 +603,13 @@ static void ble_hid_request_usage_reconnect(const char *reason)
     (void)ble_hid_gap_request_reconnect();
 }
 
+static void ble_hid_signal_usage_task(void)
+{
+    if (s_ble_hid_ctx.usage_task_handle != NULL) {
+        xTaskNotifyGive(s_ble_hid_ctx.usage_task_handle);
+    }
+}
+
 static esp_err_t ble_hid_enqueue_usage_event(ble_hid_usage_event_t *event)
 {
     if (event == NULL || s_usage_queue == NULL) {
@@ -616,6 +632,14 @@ static void ble_hid_drain_usage_queue(void)
     }
     if (!ble_hid_usage_transport_ready()) {
         return;
+    }
+
+    bool lock_taken = false;
+    if (s_usage_drain_mutex != NULL) {
+        if (xSemaphoreTake(s_usage_drain_mutex, 0) != pdTRUE) {
+            return;
+        }
+        lock_taken = true;
     }
 
     ble_hid_usage_event_t event;
@@ -659,6 +683,42 @@ static void ble_hid_drain_usage_queue(void)
             }
         }
     }
+
+    if (lock_taken) {
+        xSemaphoreGive(s_usage_drain_mutex);
+    }
+}
+
+static void ble_hid_usage_task(void *parameter)
+{
+    (void)parameter;
+
+    while (1) {
+        ble_hid_drain_usage_queue();
+        TickType_t wait_ticks = ble_hid_usage_queue_has_pending()
+            ? pdMS_TO_TICKS(BLE_HID_PENDING_USAGE_POLL_MS)
+            : pdMS_TO_TICKS(BLE_HID_USAGE_TASK_IDLE_POLL_MS);
+        (void)ulTaskNotifyTake(pdTRUE, wait_ticks);
+    }
+}
+
+static void ble_hid_usage_task_start(void)
+{
+    if (s_ble_hid_ctx.usage_task_handle != NULL) {
+        return;
+    }
+
+    BaseType_t task_ok = xTaskCreate(
+        ble_hid_usage_task,
+        "ble_hid_usage_task",
+        BLE_HID_USAGE_TASK_STACK_BYTES,
+        NULL,
+        configMAX_PRIORITIES - 3,
+        &s_ble_hid_ctx.usage_task_handle);
+    if (task_ok != pdPASS) {
+        s_ble_hid_ctx.usage_task_handle = NULL;
+        ESP_LOGE(TAG, "failed to start BLE HID usage task");
+    }
 }
 
 esp_err_t ble_hid_send_ascii_async(char input_char)
@@ -693,30 +753,6 @@ esp_err_t ble_hid_send_keyboard_usage_with_modifier_async(uint8_t usage, uint8_t
     }
 
     const char *event_source = source != NULL ? source : "CUSTOM_KEY";
-    if (ble_hid_usage_transport_ready() && !ble_hid_usage_queue_has_pending()) {
-        power_manager_record_activity("hid_usage_dispatch");
-        esp_err_t dispatch_ret = ble_hid_dispatch_usage(usage, modifier, event_source);
-        if (dispatch_ret == ESP_OK) {
-            ESP_LOGI(
-                TAG,
-                "%s HID usage dispatched immediately: usage=0x%02X modifier=0x%02X",
-                event_source,
-                usage,
-                modifier);
-            return ESP_OK;
-        }
-        ESP_LOGW(
-            TAG,
-            "%s immediate HID usage dispatch failed: usage=0x%02X modifier=0x%02X error=%s",
-            event_source,
-            usage,
-            modifier,
-            esp_err_to_name(dispatch_ret));
-        if (!ble_hid_usage_dispatch_should_retry(dispatch_ret)) {
-            return dispatch_ret;
-        }
-    }
-
     ble_hid_usage_event_t event = {
         .usage = usage,
         .modifier = modifier,
@@ -745,7 +781,14 @@ esp_err_t ble_hid_send_keyboard_usage_with_modifier_async(uint8_t usage, uint8_t
     }
 
     power_manager_record_activity("hid_usage_enqueue");
-    ble_hid_drain_usage_queue();
+    ESP_LOGI(
+        TAG,
+        "%s HID usage queued: usage=0x%02X modifier=0x%02X depth=%u",
+        event_source,
+        usage,
+        modifier,
+        (unsigned)uxQueueMessagesWaiting(s_usage_queue));
+    ble_hid_signal_usage_task();
     return ESP_OK;
 }
 
@@ -801,6 +844,7 @@ esp_err_t ble_hid_send_consumer_usage_async(uint16_t usage, const char *source)
     }
 
     power_manager_record_activity("hid_consumer_enqueue");
+    ble_hid_signal_usage_task();
     return ESP_OK;
 }
 
@@ -1228,6 +1272,7 @@ static void ble_hid_task_start(void)
 void ble_hid_task_start_up(void)
 {
     ble_hid_task_start();
+    ble_hid_usage_task_start();
 }
 
 static void ble_hid_event_callback(void *handler_args, esp_event_base_t base, int32_t id, void *event_data)
@@ -1250,6 +1295,8 @@ static void ble_hid_event_callback(void *handler_args, esp_event_base_t base, in
         ble_hid_update_battery_level("hid_start", true);
         ble_hid_battery_task_start();
         ble_hid_task_start();
+        ble_hid_usage_task_start();
+        ble_hid_signal_usage_task();
         break;
     case ESP_HIDD_CONNECT_EVENT:
         ESP_LOGI(TAG, "CONNECT");
@@ -1262,7 +1309,7 @@ static void ble_hid_event_callback(void *handler_args, esp_event_base_t base, in
         uint32_t disconnect_count = ble_hid_disconnect_count_snapshot();
         diag_log(DIAG_SRC_BLE_HID, DIAG_BLE_CONNECT, DIAG_SEV_INFO,
                  1, esp_get_free_heap_size() / 1024, disconnect_count, 0);
-        ble_hid_drain_usage_queue();
+        ble_hid_signal_usage_task();
         break;
     case ESP_HIDD_PROTOCOL_MODE_EVENT:
         ESP_LOGI(
@@ -1280,7 +1327,8 @@ static void ble_hid_event_callback(void *handler_args, esp_event_base_t base, in
         s_hid_control_suspended = !param->control.control;
         if (param->control.control) {
             ble_hid_task_start();
-            ble_hid_drain_usage_queue();
+            ble_hid_usage_task_start();
+            ble_hid_signal_usage_task();
         } else {
             ESP_LOGI(TAG, "HID suspended; keeping USB serial command task active");
         }
@@ -1514,6 +1562,19 @@ esp_err_t ble_hid_init(void)
             return ESP_ERR_NO_MEM;
         }
     }
+
+    if (s_usage_drain_mutex == NULL) {
+        s_usage_drain_mutex = xSemaphoreCreateMutex();
+        if (s_usage_drain_mutex == NULL) {
+            ESP_LOGE(TAG, "usage drain mutex create failed");
+            ble_hid_publish_readiness(
+                ready_mask,
+                BLE_HID_READINESS_ALL & ~ready_mask,
+                "usage_drain_mutex_failed");
+            return ESP_ERR_NO_MEM;
+        }
+    }
+    ble_hid_usage_task_start();
 
     ble_hid_gap_set_audio_enabled(!s_safe_mode);
     ret = ble_hid_gap_init();

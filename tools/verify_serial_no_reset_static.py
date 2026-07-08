@@ -73,6 +73,14 @@ def main() -> int:
         failures.append(
             "tools/serial_no_reset_capture.py: helper must force DTR/RTS low before and after open"
         )
+    if (
+        "def parse_read_ms_command(" not in text
+        or "current_command_read_ms = args.command_read_ms" not in text
+        or "command_read_ms=" not in text
+    ):
+        failures.append(
+            "tools/serial_no_reset_capture.py: helper must support READMS:<ms> command-list entries for timing-sensitive no-reset captures"
+        )
 
     camera_cal = REPO_ROOT / "tools" / "status_led_camera_calibration.ps1"
     text = camera_cal.read_text(encoding="utf-8", errors="replace")

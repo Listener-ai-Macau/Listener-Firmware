@@ -241,7 +241,7 @@ CHECKS = {
         "esp_hw_support",
     ],
     "components/keyboard/keyboard.c": [
-        "KEYBOARD_CUSTOM_IDLE_BACKUP_POLL_MS 20",
+        "KEYBOARD_CUSTOM_IDLE_BACKUP_POLL_MS 10",
         "KEYBOARD_CUSTOM_LOW_POWER_IDLE_BACKUP_POLL_MS 20",
         "KEYBOARD_CUSTOM_DEBOUNCE_MS 20",
         "KEYBOARD_CUSTOM_DOUBLE_CLICK_WINDOW_MS 500",
@@ -264,7 +264,7 @@ CHECKS = {
         "gpio_isr_handler_add",
         "watchdog_platform_task_notify_take_low_power",
         "watchdog_platform_task_notify_take(pdTRUE, wait_ms)",
-        "wake=active_low_gpio_wakeup+20ms_scan",
+        "wake=active_low_gpio_wakeup+10ms_scan",
         "low_power_wake=active_low_gpio_wakeup+20ms_scan",
     ],
     "components/keyboard/CMakeLists.txt": [
@@ -1313,6 +1313,9 @@ def main() -> int:
     status_led_backend = (
         REPO_ROOT / "components/status_led/status_led_strip_backend.c"
     ).read_text(encoding="utf-8")
+    status_led_backend_header = (
+        REPO_ROOT / "components/status_led/status_led_strip_backend.h"
+    ).read_text(encoding="utf-8")
     if "STATUS_LED_LOW_POWER_STATUS_RESYNC_MS" in status_led:
         failures.append(
             "components/status_led/status_led.c: low-power idle must not keep retransmitting the status rail after the final PWR-only frame"
@@ -1340,7 +1343,7 @@ def main() -> int:
         )
     quiet_suspend = re.search(
         r"static\s+void\s+status_led_suspend_quiet_idle_transports[\s\S]*?"
-        r"static\s+void\s+status_led_transmit_changed_frame",
+        r"static\s+uint8_t\s+status_led_transmit_changed_frame",
         status_led,
     )
     if quiet_suspend is None:
@@ -1397,7 +1400,7 @@ def main() -> int:
         or "status_writes + STATUS_LED_LOW_POWER_STATUS_RETRY_WRITES" not in status_led
         or "status_led_strip_backend_suspend(s_strips[STATUS_LED_STRIP_STATUS].backend)" not in status_led
         or "status_led_force_all_off(true)" not in status_led
-        or "status_led_transmit_changed_frame(&frame, STATUS_LED_STRIP_MASK_ALL, force_non_dma)" not in status_led
+        or "status_led_transmit_changed_frame(&frame, STATUS_LED_STRIP_MASK_ALL, force_non_dma, false)" not in status_led
         or "status_led_force_all_off();" in status_led
     ):
         failures.append(
@@ -1456,13 +1459,52 @@ def main() -> int:
         or "STATUS_LED_KEY_FLASH_ON_MS * 2U + STATUS_LED_KEY_FLASH_GAP_MS +" not in key_feedback_text
         or "STATUS_LED_KEY_FADE_MS" not in key_feedback_text
         or "STATUS_LED_KEY_FEEDBACK_SINGLE" not in key_feedback_text
-        or "elapsed < (STATUS_LED_KEY_FLASH_ON_MS + STATUS_LED_KEY_FADE_MS)" not in key_feedback_text
+        or "STATUS_LED_KEY_SINGLE_WHITE_HOLD_MS + STATUS_LED_KEY_FLASH_ON_MS + STATUS_LED_KEY_FADE_MS" not in key_feedback_text
+        or "status_led_key_physical_token_locked(STATUS_LED_KEY_PRESS_PERCENT)" not in key_feedback_text
         or key_feedback_text.count("status_led_decay_percent") < 3
         or "status_led_key_feedback_token_locked(fade_percent)" not in key_feedback_text
         or "return true;" not in key_feedback_text
     ):
         failures.append(
             "components/status_led/status_led.c: key gesture feedback must end with a STATUS_LED_KEY_FADE_MS decay tail mirroring the EC11 press, instead of a hard one-frame cut to black"
+        )
+    if (
+        "#define STATUS_LED_KEY_MULTI_KEY_INDEPENDENT_FADE 1U" not in status_led
+        or "key_multi_key_independent_fade=%u" not in status_led
+        or "#define STATUS_LED_KEY_SINGLE_WHITE_HOLD_MS 160U" not in status_led
+        or "key_single_white_hold_ms=%u" not in status_led
+        or "key_lit_edge_tx=spi_dma_only" not in status_led
+        or "key_feedback_dynamic_tx=spi_dma_until_dark_latch" not in status_led
+        or "spi_ws2812_waveform=4bit_3m2_0x8_0xE" not in status_led
+        or "#define STATUS_LED_KEY_DARK_LATCH_RMT_WRITES 2U" not in status_led
+        or "key_dark_latch_rmt_writes=%u" not in status_led
+        or "key_dark_latch_expiry_dirty=1" not in status_led
+        or "uint8_t key_dark_latch_pending_mask;" not in status_led
+        or "s_state.key_dark_latch_pending_mask != 0U" not in status_led
+        or "uint8_t dark_latch_rmt_writes;" not in status_led_backend_header
+        or "status_led_strip_backend_colors_all_dark(backend, colors)" not in status_led_backend
+        or "rmt_writes=%u dark=%u" not in status_led_backend
+        or "STATUS_LED_SPI_CLOCK_HZ       3200000" not in status_led_backend
+        or "STATUS_LED_SPI_BITS_PER_BIT   4U" not in status_led_backend
+        or "STATUS_LED_SPI_RESET_BYTES    240U" not in status_led_backend
+        or "spi_waveform=4bit_3m2_0x8_0xE" not in status_led_backend
+        or "bool key_force_non_dma = force_non_dma || !key_has_light;" not in status_led
+        or "status_led_clear_other_key_visuals_locked" in status_led
+        or "key_cross_key_visual_cancel" in status_led
+        or "s_state.key_feedback_started_ms[key_index] = 0U;" not in status_led
+        or "s_state.key_feedback_until_ms[key_index] = 0U;" not in status_led
+        or "status_led_key_feedback_latch_active_locked" in status_led
+        or "key_feedback_latch_tx" in status_led
+        or "uint8_t key_lit_latch_pending_mask;" in status_led
+        or "key_lit_latch_pending_tx" in status_led
+        or "s_state.key_lit_latch_pending_mask" in status_led
+        or "key_lit_edge_tx=spi_dma_prelatch_then_one_shot_rmt_gpio_low" in status_led
+        or "key_feedback_dynamic_tx=spi_dma_between_latches" in status_led
+        or "STATUS_LED_SPI_CLOCK_HZ       2500000" in status_led_backend
+        or "STATUS_LED_SPI_BITS_PER_BIT   3U" in status_led_backend
+    ):
+        failures.append(
+            "components/status_led/status_led.c: KEY must keep independent per-key fades, keep lit frames on SPI DMA, use the accepted white hold, and reserve RMT for the final all-dark latch so pressing one key cannot make another key flash"
         )
     if "pwr_only_final_latch || force_clear_tx" in status_led or "bool force_non_dma = pwr_only_final_latch;" not in status_led:
         failures.append(
@@ -1473,7 +1515,13 @@ def main() -> int:
         r"\n\}\n\nstatic\s+uint8_t\s+status_led_recording_status_percent_locked",
         status_led,
     )
+    key_physical_percent = re.search(
+        r"static\s+uint8_t\s+status_led_key_physical_percent_locked[\s\S]*?"
+        r"\n\}\n\nstatic\s+status_led_rgb_t\s+status_led_key_physical_token_locked",
+        status_led,
+    )
     key_physical_text = key_physical_token.group(0) if key_physical_token is not None else ""
+    key_physical_percent_text = key_physical_percent.group(0) if key_physical_percent is not None else ""
     key_render_text = re.search(
         r"static\s+void\s+status_led_render_keys_locked[\s\S]*?"
         r"\n\}\n\nstatic\s+void\s+status_led_render_edge_locked",
@@ -1482,11 +1530,16 @@ def main() -> int:
     key_render_body = key_render_text.group(0) if key_render_text is not None else ""
     if (
         "status_led_rgb(255, 255, 255)" not in key_physical_text
+        or "STATUS_LED_KEY_PRESS_PERCENT" not in key_physical_text
+        or "STATUS_LED_KEY_RELEASE_PERCENT" not in key_physical_percent_text
+        or "status_led_decay_percent(" not in key_physical_percent_text
+        or "STATUS_LED_KEY_FEEDBACK_MS" not in key_physical_percent_text
         or "physical_feedback_active && !gesture_active" not in key_render_body
-        or "status_led_key_physical_token_locked(pressed)" not in key_render_body
+        or "status_led_key_physical_percent_locked(index, pressed, now_ms)" not in key_render_body
+        or "status_led_key_physical_token_locked(physical_percent)" not in key_render_body
     ):
         failures.append(
-            "components/status_led/status_led.c: physical key press/release feedback must render white; purple is reserved for confirmed single/double/long gestures"
+            "components/status_led/status_led.c: physical key press/release feedback must render white and release must fade continuously across STATUS_LED_KEY_FEEDBACK_MS; stable single release may immediately start the purple local cue while HID dispatch still waits for the double-click window"
         )
     if not re.search(
         r"status_led_rgb\(255,\s*255,\s*255\)[\s\S]{0,320}"
@@ -1535,6 +1588,11 @@ def main() -> int:
         )
     key_event_body = re.search(
         r"void\s+status_led_notify_key_event[\s\S]*?"
+        r"\n\}\n\nvoid\s+status_led_cancel_key_preview",
+        status_led,
+    )
+    key_cancel_preview_body = re.search(
+        r"void\s+status_led_cancel_key_preview[\s\S]*?"
         r"\n\}\n\nvoid\s+status_led_notify_key_feedback",
         status_led,
     )
@@ -1713,7 +1771,8 @@ def main() -> int:
     elif (
         "cue_already_active = status_led_ble_repair_cue_active_locked(now_ms)" not in start_repair_body.group(0)
         or "if (!cue_already_active)" not in start_repair_body.group(0)
-        or "status_led_force_transition_clear_locked(STATUS_LED_TRANSITION_CLEAR_REPAIR);" not in start_repair_body.group(0)
+        or "s_state.ble_repair_cue_started_ms = now_ms + STATUS_LED_BLE_REPAIR_CUE_LEAD_CLEAR_MS;" not in start_repair_body.group(0)
+        or "s_state.ble_repair_cue_until_ms = s_state.ble_repair_cue_started_ms + STATUS_LED_BLE_REPAIR_CUE_MS;" not in start_repair_body.group(0)
     ):
         failures.append(
             "components/status_led/status_led.c: repeated BLE re-pair notifications must not restart or clear the active three-cycle cue"
@@ -1770,11 +1829,11 @@ def main() -> int:
 
     keyboard = (REPO_ROOT / "components/keyboard/keyboard.c").read_text(encoding="utf-8")
     if not re.search(
-        r"#define\s+KEYBOARD_CUSTOM_IDLE_BACKUP_POLL_MS\s+20\b",
+        r"#define\s+KEYBOARD_CUSTOM_IDLE_BACKUP_POLL_MS\s+10\b",
         keyboard,
     ):
         failures.append(
-            "components/keyboard/keyboard.c: KEY1-KEY4 normal idle backup scan must stay 20 ms so short physical taps do not depend on sampling luck"
+            "components/keyboard/keyboard.c: KEY1-KEY4 normal idle backup scan must stay 10 ms so four-key cycling does not depend on sampling luck"
         )
     if not re.search(
         r"#define\s+KEYBOARD_CUSTOM_DEBOUNCE_MS\s+20\b",
@@ -1782,6 +1841,15 @@ def main() -> int:
     ):
         failures.append(
             "components/keyboard/keyboard.c: KEY1-KEY4 debounce must stay 20 ms so short physical taps can reach confirmed gestures"
+        )
+    if not re.search(
+        r"#define\s+KEYBOARD_CUSTOM_DEBOUNCE_SAMPLES\s+\\\s*\n\s*"
+        r"\(\(\(KEYBOARD_CUSTOM_DEBOUNCE_MS\s*\+\s*KEYBOARD_CUSTOM_POLL_MS\s*-\s*1\)\s*/\s*"
+        r"KEYBOARD_CUSTOM_POLL_MS\)\s*\+\s*1\)",
+        keyboard,
+    ):
+        failures.append(
+            "components/keyboard/keyboard.c: KEY1-KEY4 stable debounce must require the full 20 ms before LEDs, HID clicks, or low-power wake confirmation"
         )
     if not re.search(
         r"#define\s+KEYBOARD_CUSTOM_DOUBLE_CLICK_WINDOW_MS\s+500\b",
@@ -1797,6 +1865,15 @@ def main() -> int:
         failures.append(
             "components/keyboard/keyboard.c: custom key low-power backup poll must be 20 ms so missed edge wake still catches short presses"
         )
+    if (
+        "#define KEYBOARD_CUSTOM_TASK_PRIORITY 7U" not in keyboard
+        or "KEYBOARD_CUSTOM_TASK_PRIORITY,\n        &s_custom_task_handle" not in keyboard
+        or "task_priority=%u audio_preempt_safe=1" not in keyboard
+        or "~KEY:STATUS custom_keys=KEY1:F13/F17/F21" not in keyboard
+    ):
+        failures.append(
+            "components/keyboard/keyboard.c: KEY1-KEY4 scan task must stay above audio priority so recording load cannot expire the double-click window into single-click dispatch"
+        )
     custom_start_body = re.search(
         r"static\s+esp_err_t\s+keyboard_custom_start[\s\S]*?"
         r"static\s+esp_err_t\s+keyboard_ec11_start",
@@ -1808,39 +1885,178 @@ def main() -> int:
         failures.append(
             "components/keyboard/keyboard.c: KEY1-KEY4 must not use runtime GPIO ISR; ISR storms can reset the board during press/hold"
         )
-    if not re.search(
-        r"keyboard_custom_apply_raw_feedback[\s\S]{0,900}"
-        r"key->raw_feedback_tick\s*=\s*now[\s\S]{0,260}"
-        r"status_led_notify_key_event\([^;]*true",
+    raw_feedback_body = re.search(
+        r"static\s+void\s+keyboard_custom_apply_raw_feedback[\s\S]*?"
+        r"static\s+void\s+keyboard_custom_clear_raw_feedback",
         keyboard,
-    ) or not re.search(
-        r"keyboard_custom_clear_raw_feedback[\s\S]{0,420}"
-        r"key->raw_feedback_tick\s*=\s*0[\s\S]{0,260}"
-        r"status_led_notify_key_event\([^;]*false",
-        keyboard,
+    )
+    if (
+        raw_feedback_body is None
+        or "key->raw_feedback_tick = now;" not in raw_feedback_body.group(0)
+        or "custom key raw debounce candidate" not in raw_feedback_body.group(0)
+        or "preview=1" not in raw_feedback_body.group(0)
+        or "status_led_notify_key_event(key->index, true);" not in raw_feedback_body.group(0)
+        or "keyboard_custom_send_gesture" in raw_feedback_body.group(0)
+        or "power_manager_record_activity" in raw_feedback_body.group(0)
     ):
         failures.append(
-            "components/keyboard/keyboard.c: raw low-power key press feedback must timestamp and use white physical press/release cues; confirmed gestures use purple later"
+            "components/keyboard/keyboard.c: KEY1-KEY4 active raw edges must only light local white preview before stable debounce, not record activity or dispatch gestures"
         )
     if not re.search(
-        r"static\s+void\s+keyboard_custom_handle_raw_short_release[\s\S]*?"
-        r"keyboard_custom_clear_raw_feedback\(key\);[\s\S]*?"
-        r"key->pending_single[\s\S]*?"
-        r"keyboard_custom_send_gesture\(key,\s*KEYBOARD_CUSTOM_GESTURE_DOUBLE\)[\s\S]*?"
-        r"key->pending_single\s*=\s*true;[\s\S]*?"
-        r"raw-only single pending",
+        r"keyboard_custom_clear_raw_feedback[\s\S]{0,420}"
+        r"key->raw_feedback_tick\s*=\s*0[\s\S]{0,260}"
+        r"status_led_cancel_key_preview\(key->index\)",
         keyboard,
     ):
         failures.append(
-            "components/keyboard/keyboard.c: raw KEY1-KEY4 taps released before debounce must still arm single/double purple gesture feedback"
+            "components/keyboard/keyboard.c: raw-only KEY1-KEY4 preview cancel must clear white physical key feedback without adding a release tail"
+        )
+    generated_enqueue_body = re.search(
+        r"static\s+esp_err_t\s+keyboard_custom_enqueue_generated_gesture[\s\S]*?"
+        r"static\s+bool\s+keyboard_custom_parse_generated_command",
+        keyboard,
+    )
+    if (
+        key_cancel_preview_body is None
+        or "s_state.key_feedback_started_ms[key_index] = 0U;" not in key_cancel_preview_body.group(0)
+        or "s_state.key_feedback_until_ms[key_index] = 0U;" not in key_cancel_preview_body.group(0)
+        or "keyboard_custom_cancel_other_pending_single_visuals" in keyboard
+        or "custom key cross-key pending single visual canceled" in keyboard
+        or raw_feedback_body is None
+        or "keyboard_custom_cancel_other_pending_single_visuals(key, origin);" in raw_feedback_body.group(0)
+        or generated_enqueue_body is None
+        or 'keyboard_custom_cancel_other_pending_single_visuals(key, "generated_enqueue");'
+        in generated_enqueue_body.group(0)
+    ):
+        failures.append(
+            "components/keyboard + status_led: KEY1-KEY4 must keep accepted per-key independent fades; do not clear another key's visual fade to hide follow-light"
+        )
+    raw_short_body = re.search(
+        r"static\s+void\s+keyboard_custom_handle_raw_short_release[\s\S]*?"
+        r"static\s+void\s+keyboard_custom_handle_timers",
+        keyboard,
+    )
+    if (
+        raw_short_body is None
+        or "custom key raw-only short transition ignored" not in raw_short_body.group(0)
+        or "raw_ms >= KEYBOARD_CUSTOM_DEBOUNCE_MS" not in raw_short_body.group(0)
+        or "custom key raw-duration tap accepted" not in raw_short_body.group(0)
+        or "synthetic_press_ms=%d" not in raw_short_body.group(0)
+        or "synthetic_press_ticks = pdMS_TO_TICKS(KEYBOARD_CUSTOM_DEBOUNCE_MS)" not in raw_short_body.group(0)
+        or "press_tick = now > synthetic_press_ticks ? now - synthetic_press_ticks : 0" not in raw_short_body.group(0)
+        or "keyboard_custom_apply_stable_transition(key, false, press_tick, \"raw_duration_press\");"
+        not in raw_short_body.group(0)
+        or "keyboard_custom_apply_stable_transition(key, true, now, \"raw_duration_release\");"
+        not in raw_short_body.group(0)
+        or "keyboard_custom_send_gesture" in raw_short_body.group(0)
+        or "pending_single = true" in raw_short_body.group(0)
+        or "pending_single_due_tick" in raw_short_body.group(0)
+        or "STATUS_LED_KEY_FEEDBACK" in raw_short_body.group(0)
+    ):
+        failures.append(
+            "components/keyboard/keyboard.c: raw KEY1-KEY4 taps released before a sampling-phase stable transition must accept elapsed >=20 ms taps through the stable path as a fixed 20 ms short tap so scheduler delays cannot synthesize long/double gestures"
         )
     if "raw_edge_release_before_debounce" not in keyboard:
         failures.append(
-            "components/keyboard/keyboard.c: raw release before debounce must route through the raw-only short tap path"
+            "components/keyboard/keyboard.c: raw release before debounce must route through the raw-only ignored-transient path"
+        )
+    if not re.search(
+        r"if\s*\(\s*!key->pressed\s*&&\s*key->stable_level_high\s*\)\s*\{[\s\S]{0,220}"
+        r"keyboard_custom_handle_raw_short_release\(key,\s*now,\s*\"raw_edge_release_before_debounce\"\)[\s\S]{0,220}"
+        r"keyboard_custom_clear_raw_feedback\(key\);[\s\S]{0,80}"
+        r"\}\s*\n\s*\}",
+        keyboard,
+    ):
+        failures.append(
+            "components/keyboard/keyboard.c: raw-only preview cancel must be limited to not-yet-stable releases so stable press releases can switch through the normal visual/gesture path"
         )
     if "low_power_raw_edge" in keyboard or "custom key low-power wake single synthesized" in keyboard:
         failures.append(
             "components/keyboard/keyboard.c: low-power KEY1-KEY4 wake must not bypass debounce or synthesize clicks from latched-only transients"
+        )
+    generated_drain_body = re.search(
+        r"static\s+void\s+keyboard_custom_drain_generated_events[\s\S]*?"
+        r"static\s+bool\s+keyboard_custom_generated_active",
+        keyboard,
+    )
+    if (
+        generated_drain_body is None
+        or "if (state->active)" not in generated_drain_body.group(0)
+        or "xQueueSendToFront(s_custom_generated_event_queue, &event, 0)" not in generated_drain_body.group(0)
+        or "reason=requeue_failed" not in generated_drain_body.group(0)
+        or generated_drain_body.group(0).find("if (state->active)")
+        > generated_drain_body.group(0).find("state->active = true")
+    ):
+        failures.append(
+            "components/keyboard/keyboard.c: generated KEY1-KEY4 diagnostics must requeue rather than overwrite an active generated gesture under scheduler pressure"
+        )
+    stable_transition_body = re.search(
+        r"static\s+void\s+keyboard_custom_apply_stable_transition[\s\S]*?"
+        r"static\s+void\s+keyboard_custom_handle_sample",
+        keyboard,
+    )
+    stable_timers_body = re.search(
+        r"static\s+void\s+keyboard_custom_handle_timers[\s\S]*?"
+        r"static\s+void\s+keyboard_custom_apply_stable_transition",
+        keyboard,
+    )
+    send_gesture_body = re.search(
+        r"static\s+esp_err_t\s+keyboard_custom_send_gesture_internal[\s\S]*?"
+        r"static\s+void\s+keyboard_custom_send_gesture",
+        keyboard,
+    )
+    stable_press_tokens = (
+        "if (pressed && !key->pressed)",
+        "key->pressed = true;",
+        "key->press_tick = now;",
+        "key->long_sent = false;",
+        "key->double_candidate = key->pending_single;",
+    )
+    stable_release_tokens = (
+        "else if (!pressed && key->pressed)",
+        "key->pressed = false;",
+        "status_led_notify_key_feedback(key->index, STATUS_LED_KEY_FEEDBACK_LONG);",
+        "keyboard_custom_send_gesture(key, KEYBOARD_CUSTOM_GESTURE_LONG);",
+        "key->double_candidate && key->pending_single",
+        "keyboard_custom_send_gesture(key, KEYBOARD_CUSTOM_GESTURE_DOUBLE);",
+        "key->pending_single = true;",
+        "key->pending_single_visual_started = true;",
+        "key->pending_single_due_tick = now + pdMS_TO_TICKS(KEYBOARD_CUSTOM_DOUBLE_CLICK_WINDOW_MS);",
+        "status_led_notify_key_feedback(key->index, STATUS_LED_KEY_FEEDBACK_SINGLE);",
+        "custom key single pending",
+        "visual=immediate",
+    )
+    timer_tokens = (
+        "key->pressed && !key->long_sent",
+        "KEYBOARD_CUSTOM_LONG_PRESS_MS",
+        "key->long_sent = true;",
+        "keyboard_custom_send_gesture(key, KEYBOARD_CUSTOM_GESTURE_LONG);",
+        "!key->pressed && key->pending_single",
+        "keyboard_custom_tick_reached(now, key->pending_single_due_tick)",
+        "single_visual_started",
+        "key->pending_single_visual_started = single_visual_started;",
+        "keyboard_custom_send_gesture(key, KEYBOARD_CUSTOM_GESTURE_SINGLE);",
+    )
+    if (
+        stable_transition_body is None
+        or any(token not in stable_transition_body.group(0) for token in stable_press_tokens)
+        or any(token not in stable_transition_body.group(0) for token in stable_release_tokens)
+    ):
+        failures.append(
+            "components/keyboard/keyboard.c: debounced KEY1-KEY4 stable path must preserve single visual cue plus delayed single, double, and long-click dispatch"
+        )
+    if stable_timers_body is None or any(token not in stable_timers_body.group(0) for token in timer_tokens):
+        failures.append(
+            "components/keyboard/keyboard.c: KEY1-KEY4 timers must keep stable long-hold and delayed-single dispatch without restarting already-visible single feedback"
+        )
+    if (
+        send_gesture_body is None
+        or "custom key single visual already active" not in send_gesture_body.group(0)
+        or "status_led_notify_key_feedback(key->index, keyboard_custom_led_feedback_for_gesture(gesture));"
+        not in send_gesture_body.group(0)
+    ):
+        failures.append(
+            "components/keyboard/keyboard.c: KEY1-KEY4 delayed single HID dispatch must not restart purple feedback that already began on stable release"
         )
     for pattern, description in [
         (
@@ -1858,6 +2074,62 @@ def main() -> int:
     ]:
         if pattern not in keyboard:
             failures.append(f"components/keyboard/keyboard.c: {description}")
+    low_power_wake_match_body = re.search(
+        r"static\s+void\s+keyboard_custom_apply_low_power_wake_match[\s\S]*?"
+        r"static\s+void\s+keyboard_custom_consume_low_power_wake",
+        keyboard,
+    )
+    low_power_consume_body = re.search(
+        r"static\s+void\s+keyboard_custom_consume_low_power_wake[\s\S]*?"
+        r"static\s+bool\s+keyboard_custom_debounce_active",
+        keyboard,
+    )
+    custom_task_body = re.search(
+        r"static\s+void\s+keyboard_custom_task[\s\S]*?"
+        r"static\s+void\s+keyboard_ec11_queue_edge_from_isr",
+        keyboard,
+    )
+    sampled_pressed_block = (
+        re.search(
+            r"if\s*\(\s*sampled_pressed\s*\)\s*\{[\s\S]*?return;\s*\}",
+            low_power_wake_match_body.group(0),
+        )
+        if low_power_wake_match_body is not None
+        else None
+    )
+    sampled_pressed_text = sampled_pressed_block.group(0) if sampled_pressed_block is not None else ""
+    if (
+        low_power_wake_match_body is None
+        or sampled_pressed_block is None
+        or "if (sampled_pressed)" not in low_power_wake_match_body.group(0)
+        or "keyboard_custom_cancel_pending_single(key);" not in sampled_pressed_text
+        or "power_manager_record_activity(key->logical_name);" not in sampled_pressed_text
+        or "custom key low-power wake press pending debounce" not in sampled_pressed_text
+        or "keyboard_custom_reset_to_released" in sampled_pressed_text
+        or "keyboard_custom_send_gesture" in sampled_pressed_text
+        or "pending_single = true" in sampled_pressed_text
+    ):
+        failures.append(
+            "components/keyboard/keyboard.c: sampled low-power KEY wake must resume activity but keep the held key in the ordinary debounce path, so an idle recording key press is not swallowed or synthesized"
+        )
+    if (
+        low_power_consume_body is None
+        or "sampled_mask = (gpio_wake || latched_mask != 0)" not in low_power_consume_body.group(0)
+        or "keyboard_custom_sample_pressed_mask() & key_mask" not in low_power_consume_body.group(0)
+        or "matched_mask = latched_mask | sampled_mask" not in low_power_consume_body.group(0)
+        or "keyboard_custom_apply_low_power_wake_match(" not in low_power_consume_body.group(0)
+    ):
+        failures.append(
+            "components/keyboard/keyboard.c: low-power wake must combine latched GPIO wake with the live sampled pressed mask before returning to debounce"
+        )
+    if (
+        custom_task_body is None
+        or custom_task_body.group(0).find("keyboard_custom_consume_low_power_wake(now);")
+        > custom_task_body.group(0).find("keyboard_custom_handle_sample(&s_custom_keys[index], raw_high, now);")
+    ):
+        failures.append(
+            "components/keyboard/keyboard.c: custom key task must consume the low-power wake latch before sampling keys so the first held idle-wake press can continue into debounce/HID"
+        )
     clear_feedback_body = re.search(
         r"static\s+void\s+keyboard_custom_clear_raw_feedback[\s\S]*?"
         r"static\s+void\s+keyboard_custom_handle_timers",
@@ -1947,12 +2219,12 @@ def main() -> int:
     if not re.search(
         r"keyboard_custom_start[\s\S]*GPIO_INTR_DISABLE[\s\S]*"
         r"keyboard_enable_active_low_light_sleep_wake\([\s\S]*"
-        r"wake=active_low_gpio_wakeup\+20ms_scan[\s\S]*"
+        r"wake=active_low_gpio_wakeup\+10ms_scan[\s\S]*"
         r"low_power_wake=active_low_gpio_wakeup\+20ms_scan",
         keyboard,
     ):
         failures.append(
-            "components/keyboard/keyboard.c: custom keys must use active-low light-sleep wake plus 20 ms scan, not runtime GPIO interrupts"
+            "components/keyboard/keyboard.c: custom keys must use active-low light-sleep wake plus 10 ms active scan / 20 ms low-power scan, not runtime GPIO interrupts"
         )
     keyboard_start_body = re.search(
         r"esp_err_t\s+keyboard_start\(void\)[\s\S]*?"
@@ -2130,14 +2402,16 @@ def main() -> int:
         or "voice_key_input_accept_recovery_double_click" not in voice_key
         or "voice_key_input_mark_recovery_double_candidate" not in voice_key
         or "button->recovery_double_candidate =\n        voice_key_input_recovery_double_gap_ready(button, now_tick)" not in voice_key
-        or "bool recovery_double_click = button->recovery_double_candidate" not in voice_key
+        or "voice_key_input_recovery_double_click_ready" not in voice_key
+        or "button->recovery_double_candidate ||\n           voice_key_input_recovery_double_gap_ready(button, now_tick)" not in voice_key
+        or "bool recovery_double_click =\n        voice_key_input_recovery_double_click_ready(button, now_tick)" not in voice_key
         or "recovery_guard_active" not in voice_key
         or "EC11 push keeps the same 20 ms debounce model and 500 ms double-click decision window as KEY1-KEY4" not in (
             REPO_ROOT / "docs/features/status_led.md"
         ).read_text(encoding="utf-8")
     ):
         failures.append(
-            "ports/esp32/voice_key_input/voice_key_input_esp32.c: EC11 push must keep delayed single-click dispatch while a second real press is the only recovery double-click candidate"
+            "ports/esp32/voice_key_input/voice_key_input_esp32.c: EC11 push must keep delayed single-click dispatch while a second real press/release is the only recovery double-click candidate"
         )
     if "button->pending_single_click &&\n        (origin != NULL || button->recovery_double_candidate)" in voice_key:
         failures.append(

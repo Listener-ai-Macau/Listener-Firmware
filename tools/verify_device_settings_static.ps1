@@ -51,6 +51,9 @@ $keyboard = Read-RepoFile "components/keyboard/keyboard.c"
 $keyboardCmake = Read-RepoFile "components/keyboard/CMakeLists.txt"
 $main = Read-RepoFile "main/main.c"
 $mainCmake = Read-RepoFile "main/CMakeLists.txt"
+$flashScript = Read-RepoFile "tools/flash.ps1"
+$firmwareOta = Read-RepoFile "components/firmware_ota/firmware_ota.c"
+$bleFirmwareOta = Read-RepoFile "ports/esp32/ble_firmware_ota/ble_firmware_ota_esp32.c"
 $statusDoc = Read-RepoFile "docs/features/status_led.md"
 $powerDoc = Read-RepoFile "docs/features/low_power_wake_policy.md"
 $featureMap = Read-RepoFile "docs/features/firmware-feature-map.md"
@@ -101,6 +104,15 @@ Assert-Contains $deviceSettings 'DEVICE_SETTINGS_NVS_AUTO_SHUTDOWN_MS_KEY' 'auto
 Assert-Contains $deviceSettings 'DEVICE_SETTINGS_NVS_PLUGGED_AUTO_SHUTDOWN_MS_KEY' 'plugged auto-shutdown NVS key'
 Assert-Contains $deviceSettings 'DEVICE_SETTINGS_NVS_BLE_NAME_KEY' 'BLE name NVS key'
 Assert-Contains $deviceSettings 'DEVICE_SETTINGS_NVS_KNOB_ROTATION_KEY' 'knob rotation NVS key'
+Assert-Contains $deviceSettings 'static\s+esp_err_t\s+device_settings_persist_locked\(bool\s+loaded_from_nvs_after_persist\)' 'settings persistence can preserve whether values came from previous NVS or fresh defaults'
+Assert-Contains $deviceSettings 'device_settings_set_defaults_locked\(\);[\s\S]*s_loaded_from_nvs\s*=\s*false;[\s\S]*nvs_open\(DEVICE_SETTINGS_NVS_NAMESPACE,\s*NVS_READONLY' 'missing NVS starts from product defaults and reports loaded_from_nvs=0'
+Assert-Contains $deviceSettings 'if\s*\(ret\s*==\s*ESP_ERR_NVS_NOT_FOUND\)\s*\{[\s\S]*device_settings_persist_locked\(false\)[\s\S]*s_loaded\s*=\s*true;[\s\S]*return ESP_OK;' 'missing NVS namespace writes shared product defaults into NVS'
+Assert-Contains $deviceSettings 'device_settings_note_nvs_read_locked\(esp_err_t\s+ret,\s*bool\s+\*missing_saved_key\)[\s\S]*ESP_ERR_NVS_NOT_FOUND[\s\S]*\*missing_saved_key\s*=\s*true' 'missing individual settings keys are tracked during load'
+Assert-Contains $deviceSettings 'bool\s+loaded_from_nvs_after_read\s*=\s*s_loaded_from_nvs;[\s\S]*if\s*\(missing_saved_key\s*\|\|\s*!\s*loaded_from_nvs_after_read\)\s*\{[\s\S]*device_settings_persist_locked\(loaded_from_nvs_after_read\)' 'empty or partial settings NVS is filled with shared product defaults'
+Assert-Contains $deviceSettings 's_loaded_from_nvs\s*=\s*loaded_from_nvs_after_persist' 'default snapshot writes do not falsely report previous user/NVS settings on first boot'
+Assert-Contains $deviceSettings 'device_settings_persist_locked\(true\)' 'user SET/RESET paths mark settings as persisted in NVS'
+Assert-Contains $deviceSettings 'if\s*\(ret\s*!=\s*ESP_OK\)\s*\{[\s\S]*return ret;' 'real NVS errors are reported instead of silently resetting settings'
+Assert-Contains $deviceSettings 'snprintf\(s_settings\.ble_name,\s*sizeof\(s_settings\.ble_name\),\s*"%s",\s*DEVICE_SETTINGS_DEFAULT_BLE_NAME\)' 'missing NVS default BLE name is listener'
 Assert-Contains $deviceSettings 'plugged_brightness_percent\s*=\s*DEVICE_SETTINGS_DEFAULT_PLUGGED_BRIGHTNESS_PERCENT' 'plugged brightness defaults through shared macro'
 Assert-Contains $deviceSettings 'battery_brightness_percent\s*=\s*DEVICE_SETTINGS_DEFAULT_BATTERY_BRIGHTNESS_PERCENT' 'battery brightness defaults through shared macro'
 Assert-Contains $deviceSettings 'config->status_led_brightness_percent\s*=\s*legacy_brightness' 'legacy brightness command maps to status zone brightness'
@@ -231,6 +243,19 @@ Assert-Contains $main 'device_settings_init\(\)' 'main initializes device settin
 Assert-Contains $main 'status_led_apply_device_settings\(\)' 'main reapplies LED brightness after loading settings'
 Assert-Contains $mainCmake 'device_settings' 'main CMake dependency'
 
+Assert-Contains $flashScript 'Invoke-IdfSerialActionWithBaudRetry -Action "erase-otadata"' 'normal flash may clear OTA selection metadata only'
+Assert-Contains $flashScript 'Invoke-IdfSerialActionWithBaudRetry -Action "flash"' 'normal flash writes firmware image through IDF flash action'
+Assert-NotContains $flashScript '(?i)\berase_flash\b|\berase-flash\b|nvs_flash_erase|nvs_erase_|DEVICE:RESET|device_settings' 'normal flash must not erase device-settings NVS'
+Assert-Contains $firmwareOta 'esp_ota_begin\(partition' 'firmware OTA writes only the selected OTA app partition'
+Assert-Contains $firmwareOta 'esp_ota_write\(handle, data, size\)' 'firmware OTA data path writes the OTA handle'
+Assert-Contains $firmwareOta 'esp_ota_end\(handle\)' 'firmware OTA finish validates the OTA image'
+Assert-Contains $firmwareOta 'esp_ota_set_boot_partition\(partition\)' 'firmware OTA finish only switches boot partition'
+Assert-NotContains $firmwareOta '#include "device_settings\.h"|device_settings_|nvs_flash_erase|nvs_erase_|esp_partition_erase_range|DEVICE:RESET' 'firmware OTA must not reset Type/device settings'
+Assert-Contains $bleFirmwareOta 'firmware_ota_begin\(' 'BLE OTA delegates begin to firmware OTA manager'
+Assert-Contains $bleFirmwareOta 'firmware_ota_write\(' 'BLE OTA delegates data writes to firmware OTA manager'
+Assert-Contains $bleFirmwareOta 'firmware_ota_finish\(false\)' 'BLE OTA delegates finish to firmware OTA manager'
+Assert-NotContains $bleFirmwareOta '#include "device_settings\.h"|device_settings_|nvs_flash_erase|nvs_erase_|esp_partition_erase_range|DEVICE:RESET' 'BLE OTA GATT path must not reset Type/device settings'
+
 Assert-Contains $statusDoc '~DEVICE:SETTINGS' 'status LED docs name DEVICE settings'
 Assert-Contains $statusDoc '~DEVICE:SET led_status=<0-100>' 'status LED docs name status zone brightness setting'
 Assert-Contains $statusDoc '~DEVICE:SET led_key=<0-100>' 'status LED docs name key zone brightness setting'
@@ -242,6 +267,8 @@ Assert-Contains $powerDoc '~DEVICE:SET plugged_low_power_enabled' 'low-power doc
 Assert-Contains $powerDoc '~DEVICE:SET auto_shutdown_ms' 'low-power docs name configurable timeout'
 Assert-Contains $featureMap 'components/device_settings/' 'feature map includes device settings'
 Assert-Contains $featureMap 'plugged low-power disabled' 'feature map documents plugged low-power default off'
+Assert-Contains $featureMap 'writes the same default snapshot into NVS' 'feature map documents fresh-device defaults are written to NVS'
+Assert-Contains $featureMap 'Normal OTA and tools/flash.ps1 preserve the device-settings NVS namespace' 'feature map documents that OTA/normal flash preserve Type/device settings'
 Assert-Contains $repoFeatures 'verify_device_settings_static.ps1' 'repo feature script includes device settings verifier'
 Assert-Contains $autoShutdownGuard '~DEVICE:SETTINGS' 'auto-shutdown guard reads current DEVICE settings'
 Assert-Contains $autoShutdownGuard '~DEVICE:SET auto_shutdown_ms=\{0\}' 'auto-shutdown guard sets battery-only timeout through public DEVICE command'
@@ -249,4 +276,4 @@ Assert-Contains $autoShutdownGuard 'GuardMilliseconds\s*=\s*86400000' 'auto-shut
 Assert-Contains $autoShutdownGuard 'finally' 'auto-shutdown guard restores the prior setting after guarded commands'
 Assert-Contains $autoShutdownGuard 'NoRestore' 'auto-shutdown guard supports intentional no-restore preparation'
 
-Write-Host "PASS: device settings static checks cover firmware command contract, persisted settings, status LED brightness profiles, per-zone LED brightness caps, split low-power idle timeouts, split auto-shutdown timeouts, validation guard tooling, BLE name source, CMake dependencies, and docs."
+Write-Host "PASS: device settings static checks cover firmware command contract, persisted settings, status LED brightness profiles, per-zone LED brightness caps, split low-power idle timeouts, split auto-shutdown timeouts, OTA/normal-flash settings preservation, validation guard tooling, BLE name source, CMake dependencies, and docs."

@@ -19,6 +19,7 @@ esp_err_t ble_hid_gap_start_advertising(void);
 esp_err_t ble_hid_gap_mark_stack_ready(void);
 esp_err_t ble_hid_gap_forget_bonds_and_repair(void);
 esp_err_t ble_hid_gap_forget_bonds_and_repair_type_controlled(void);
+esp_err_t ble_hid_gap_forget_bonds_and_repair_type_controlled_silent(void);
 bool ble_hid_gap_is_connected(void);
 bool ble_hid_gap_is_securely_connected(void);
 bool ble_hid_gap_is_recovery_pairing_window_open(void);

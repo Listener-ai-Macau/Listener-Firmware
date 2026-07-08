@@ -38,20 +38,19 @@
 #define STATUS_LED_RMT_DMA_MEM_BLOCK_SYMBOLS 1024U
 
 /* ---- SPI transport (WS2812 via SPI MOSI clock-hack) ----------------------
- * Each WS2812 bit is encoded as 3 SPI bits (0 -> 0b100, 1 -> 0b110) clocked at
- * STATUS_LED_SPI_CLOCK_HZ. At 2.5 MHz, 1 SPI bit = 400 ns, so one WS2812 bit =
- * 1.2 us (nominal 1.25 us): T0H=400ns/T0L=800ns, T1H=800ns/T1L=400ns, within
- * standard WS2812B tolerance. SCLK is not routed to a GPIO; only MOSI is routed
- * to the LED DIN. The DMA buffer lives in internal DMA-capable RAM and is fed by
- * SPI GDMA, giving a flicker-free output independent of CPU load.
+ * Each WS2812 bit is encoded as 4 SPI bits (0 -> 0b1000, 1 -> 0b1110) clocked
+ * at STATUS_LED_SPI_CLOCK_HZ. At 3.2 MHz, 1 SPI bit = 312.5 ns, so one WS2812
+ * bit = 1.25 us: T0H=312.5ns/T0L=937.5ns, T1H=937.5ns/T1L=312.5ns. This gives
+ * the 3.3 V key chain a longer zero-low window than the older 3-bit 0b100 code,
+ * which human review showed could still let KEY1 bring up downstream pixels.
+ * SCLK is not routed to a GPIO; only MOSI is routed to the LED DIN. The DMA
+ * buffer lives in internal DMA-capable RAM and is fed by SPI GDMA.
  * STATUS_LED_SPI_RESET_BYTES trailing zero bytes keep MOSI low long enough for
- * the WS2812/4020 reset latch. At 2.5 MHz, 96 bytes = 768 bits = 307 us, which
- * matches the RMT transport's validated 3000-tick @ 10 MHz = 300 us reset
- * (contract: reset_us=300, timing=ws2812_4020_compatible). 4020 parts need
- * >=280 us, so this stays safely above the threshold. */
-#define STATUS_LED_SPI_CLOCK_HZ       2500000
-#define STATUS_LED_SPI_BITS_PER_BIT   3U
-#define STATUS_LED_SPI_RESET_BYTES    96U
+ * the WS2812/4020 reset latch while preserving the active SPI DMA path
+ * (contract: rmt_reset_us=300 spi_reset_us=600, timing=ws2812_4020_compatible). */
+#define STATUS_LED_SPI_CLOCK_HZ       3200000
+#define STATUS_LED_SPI_BITS_PER_BIT   4U
+#define STATUS_LED_SPI_RESET_BYTES    240U
 
 typedef struct {
     rmt_encoder_t base;
@@ -66,6 +65,7 @@ struct status_led_strip_backend {
     gpio_num_t gpio;
     uint8_t led_count;
     uint8_t tail_guard_pixels;
+    uint8_t dark_latch_rmt_writes;
     uint8_t transmit_led_count;
     status_led_strip_transport_t requested_transport;
     status_led_strip_transport_t transport;
@@ -252,18 +252,33 @@ static void status_led_strip_backend_fill_pixels(
     }
 }
 
+static bool status_led_strip_backend_colors_all_dark(
+    const status_led_strip_backend_t *backend,
+    const status_led_rgb_t *colors)
+{
+    if (backend == NULL || colors == NULL) {
+        return false;
+    }
+    for (uint8_t index = 0; index < backend->led_count; ++index) {
+        if (colors[index].r != 0U || colors[index].g != 0U || colors[index].b != 0U) {
+            return false;
+        }
+    }
+    return true;
+}
+
 /* ---- SPI transport implementation ---------------------------------------- */
 
 static size_t status_led_spi_data_bytes(const status_led_strip_backend_t *backend)
 {
-    /* 3 SPI bits per WS2812 bit, 8 bits per channel, 3 channels per LED
-     * -> 9 SPI bytes per LED. */
+    /* 4 SPI bits per WS2812 bit, 8 bits per channel, 3 channels per LED
+     * -> 12 SPI bytes per LED. */
     return (size_t)backend->transmit_led_count * 3U * 8U * STATUS_LED_SPI_BITS_PER_BIT / 8U;
 }
 
 /* Encode backend->pixels (transmit_led_count * 3 channel bytes, already GRB/RGB
  * packed) into backend->spi_buf via the SPI clock-hack: each WS2812 bit expands
- * to 3 SPI bits (0 -> 0b100, 1 -> 0b110), MSB-first. Trailing bytes (the
+ * to 4 SPI bits (0 -> 0b1000, 1 -> 0b1110), MSB-first. Trailing bytes (the
  * reset-low latch) are left zero. */
 static void status_led_spi_encode_frame(status_led_strip_backend_t *backend)
 {
@@ -273,8 +288,8 @@ static void status_led_spi_encode_frame(status_led_strip_backend_t *backend)
     for (size_t i = 0; i < channel_bytes; ++i) {
         uint8_t byte = backend->pixels[i];
         for (int bit = 7; bit >= 0; --bit) {
-            uint8_t pattern = (byte & (1u << bit)) ? 0x6u : 0x4u;  /* 0b110 / 0b100 */
-            for (int p = 2; p >= 0; --p) {
+            uint8_t pattern = (byte & (1u << bit)) ? 0xEu : 0x8u;  /* 0b1110 / 0b1000 */
+            for (int p = 3; p >= 0; --p) {
                 if ((pattern >> p) & 1u) {
                     size_t byte_idx = bit_pos / 8U;
                     uint8_t bit_idx = (uint8_t)(7U - (bit_pos % 8U));  /* MSB-first */
@@ -342,7 +357,7 @@ static esp_err_t status_led_spi_init_transport(status_led_strip_backend_t *backe
     backend->gpio_idle_driven_low = false;
     ESP_LOGI(
         TAG,
-        "strip %s transport ready: gpio=%d leds=%u tx_leds=%u tail_guard_pixels=%u backend=spi_ws2812_800khz spi_host=%d spi_clk_hz=%d spi_dma=1 spi_buf_bytes=%u",
+        "strip %s transport ready: gpio=%d leds=%u tx_leds=%u tail_guard_pixels=%u backend=spi_ws2812_800khz spi_host=%d spi_clk_hz=%d spi_reset_us=600 spi_waveform=4bit_3m2_0x8_0xE spi_dma=1 spi_buf_bytes=%u",
         backend->name,
         (int)backend->gpio,
         (unsigned)backend->led_count,
@@ -658,6 +673,8 @@ esp_err_t status_led_strip_backend_new(
     backend->gpio = config->gpio;
     backend->led_count = config->led_count;
     backend->tail_guard_pixels = config->tail_guard_pixels;
+    backend->dark_latch_rmt_writes =
+        config->dark_latch_rmt_writes > 0U ? config->dark_latch_rmt_writes : 1U;
     backend->transmit_led_count = config->led_count + config->tail_guard_pixels;
     backend->requested_transport = config->transport;
     backend->transport = config->transport;
@@ -764,6 +781,41 @@ static esp_err_t status_led_spi_transmit_non_dma_rmt_once(
     status_led_strip_transport_t saved_transport = backend->transport;
     bool saved_dma_requested = backend->dma_requested;
     bool saved_dma_fallback = backend->dma_fallback;
+    bool dark_latch = status_led_strip_backend_colors_all_dark(backend, colors);
+    uint8_t rmt_latch_writes =
+        (dark_latch && backend->dark_latch_rmt_writes > 0U)
+            ? backend->dark_latch_rmt_writes
+            : 1U;
+
+    esp_err_t acquire_ret = status_led_strip_backend_ensure_transport(backend, true);
+    if (acquire_ret != ESP_OK) {
+        ESP_LOGW(
+            TAG,
+            "strip %s SPI DMA pre-latch acquire failed before non-DMA RMT latch: gpio=%d host=%d ret=%s",
+            backend->name,
+            (int)backend->gpio,
+            backend->spi_host,
+            esp_err_to_name(acquire_ret));
+    }
+    if (backend->available && backend->spi_device != NULL) {
+        esp_err_t pre_ret = status_led_spi_transmit(backend, color_order, colors);
+        if (pre_ret == ESP_OK) {
+            ESP_LOGI(
+                TAG,
+                "strip %s SPI DMA pre-latch before non-DMA RMT latch: gpio=%d host=%d",
+                backend->name,
+                (int)backend->gpio,
+                backend->spi_host);
+        } else {
+            ESP_LOGW(
+                TAG,
+                "strip %s SPI DMA pre-latch failed before non-DMA RMT latch: gpio=%d host=%d ret=%s",
+                backend->name,
+                (int)backend->gpio,
+                backend->spi_host,
+                esp_err_to_name(pre_ret));
+        }
+    }
 
     status_led_strip_backend_release_transport(backend);
     backend->transport = STATUS_LED_STRIP_TRANSPORT_RMT;
@@ -774,11 +826,18 @@ static esp_err_t status_led_spi_transmit_non_dma_rmt_once(
     if (ret == ESP_OK) {
         ESP_LOGI(
             TAG,
-            "strip %s non-DMA one-shot via RMT for SPI DMA latch: gpio=%d host=%d",
+            "strip %s non-DMA one-shot via RMT for SPI DMA latch: gpio=%d host=%d rmt_writes=%u dark=%u",
             backend->name,
             (int)backend->gpio,
-            backend->spi_host);
-        ret = status_led_rmt_transmit_available(backend, color_order, colors);
+            backend->spi_host,
+            (unsigned)rmt_latch_writes,
+            dark_latch ? 1U : 0U);
+        for (uint8_t write_index = 0U; write_index < rmt_latch_writes; ++write_index) {
+            ret = status_led_rmt_transmit_available(backend, color_order, colors);
+            if (ret != ESP_OK) {
+                break;
+            }
+        }
     }
 
     status_led_strip_backend_release_transport(backend);

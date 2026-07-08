@@ -539,6 +539,10 @@ static bool voice_key_input_generated_raw_high(bool physical_raw_high, TickType_
     return physical_raw_high;
 }
 
+static bool voice_key_input_recovery_double_click_ready(
+    voice_key_button_state_t *button,
+    TickType_t now_tick);
+
 static void voice_key_input_handle_short_click_release(
     voice_key_button_state_t *button,
     TickType_t now_tick,
@@ -548,7 +552,8 @@ static void voice_key_input_handle_short_click_release(
         return;
     }
 
-    bool recovery_double_click = button->recovery_double_candidate;
+    bool recovery_double_click =
+        voice_key_input_recovery_double_click_ready(button, now_tick);
     if (recovery_double_click) {
         voice_key_input_accept_recovery_double_click(button, origin);
     } else {
@@ -618,6 +623,22 @@ static void voice_key_input_mark_recovery_double_candidate(
             button->label,
             origin != NULL ? origin : "stable");
     }
+}
+
+static bool voice_key_input_recovery_double_click_ready(
+    voice_key_button_state_t *button,
+    TickType_t now_tick)
+{
+    if (button == NULL) {
+        return false;
+    }
+    /*
+     * A very quick second click can arrive before the 60 ms raw-bounce guard
+     * but release after it. Re-check on release so real fast double-clicks do
+     * not fall through to the delayed single-click path.
+     */
+    return button->recovery_double_candidate ||
+           voice_key_input_recovery_double_gap_ready(button, now_tick);
 }
 
 static void voice_key_input_handle_button_sample(voice_key_button_state_t *button, bool raw_high)

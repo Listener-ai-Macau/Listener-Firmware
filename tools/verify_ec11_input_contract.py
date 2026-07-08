@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import argparse
 import re
 import sys
 from pathlib import Path
@@ -44,7 +45,52 @@ def require_regex(source: str, pattern: str, message: str) -> None:
         fail(message)
 
 
+def require_in_order(source: str, tokens: list[str], message: str) -> None:
+    cursor = -1
+    for token in tokens:
+        index = source.find(token, cursor + 1)
+        if index == -1:
+            fail(f"{message}: missing {token!r}")
+        cursor = index
+
+
+def verify_single_no_repair_log(path: Path) -> None:
+    log = read(path)
+    require_in_order(
+        log,
+        [
+            "~KEY:GENERATED logical=EC11 gesture=single result=ESP_OK",
+            "single click pending for double-click window",
+            "confirmed single-click feedback",
+            "single-click custom fallback queued",
+        ],
+        "EC11 generated single-click log must stay pending until confirmed single dispatch",
+    )
+
+    forbidden = [
+        "~KEY:GENERATED logical=EC11 gesture=double",
+        "recovery double-click accepted",
+        "double-click recovery detected",
+        "opening BLE re-pair window",
+        "recovery_pairing_window_open",
+        "forget_pairing_and_clear_session",
+        "PairAsync",
+    ]
+    for token in forbidden:
+        if token in log:
+            fail(f"EC11 generated single-click log unexpectedly entered recovery/pairing path: {token}")
+
+    for field in ["ble_repair_ms_left", "ble_repair_cue_ms_left"]:
+        for match in re.finditer(rf"\b{field}=(\d+)\b", log):
+            if int(match.group(1)) != 0:
+                fail(f"EC11 generated single-click log reported {field}={match.group(1)}")
+
+
 def main() -> int:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--single-no-repair-log", type=Path)
+    args = parser.parse_args()
+
     keyboard = read(KEYBOARD_C)
     voice_key_input = read(VOICE_KEY_INPUT_C)
 
@@ -91,11 +137,33 @@ def main() -> int:
     if 'status_led_notify_ble_repairing("ec11_double_click_recovery")' not in recovery_body:
         fail("EC11 double-click recovery must keep the accepted BLE repairing light cue")
 
-    print(
+    release_ready_body = extract_function(
+        voice_key_input,
+        "voice_key_input_recovery_double_click_ready",
+    )
+    if (
+        "button->recovery_double_candidate ||" not in release_ready_body
+        or "voice_key_input_recovery_double_gap_ready(button, now_tick)" not in release_ready_body
+    ):
+        fail("EC11 double-click release must re-check the 60 ms guard so fast real double-clicks do not fall through to single-click")
+
+    short_release_body = extract_function(voice_key_input, "voice_key_input_handle_short_click_release")
+    if "voice_key_input_recovery_double_click_ready(button, now_tick)" not in short_release_body:
+        fail("EC11 short-click release must use the double-click release-ready helper")
+
+    checked_log = args.single_no_repair_log is not None
+    if checked_log:
+        verify_single_no_repair_log(args.single_no_repair_log)
+
+    message = (
         "PASS: EC11 input contract keeps 500 ms timing parity with key1-key4, "
         "raw press only latches the gesture, confirmed single-click LED feedback is delayed, "
-        "and double-click BLE repair cue intact."
+        "fast real double-clicks re-check the 60 ms guard on release, "
+        "and double-click BLE repair cue intact"
     )
+    if checked_log:
+        message += "; generated single-click log stayed out of BLE repair/pairing"
+    print(message + ".")
     return 0
 
 

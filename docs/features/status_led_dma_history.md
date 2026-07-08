@@ -2,8 +2,9 @@
 
 > This is the consolidated index of the historical LED DMA / flicker tuning experience.
 > Anyone touching the LED driver, the per-strip DMA selection, or adding a new LED
-> peripheral **must read this first**. The current "status-only DMA" design is the
-> result of empirical tests on this exact board, not a default to be silently changed.
+> peripheral **must read this first**. The current mixed transport design
+> (status RMT DMA + EC11 SPI2 DMA + key SPI3 DMA + edge RMT) is the result of
+> empirical tests on this exact board, not a default to be silently changed.
 
 Related: [status_led.md](status_led.md) (feature contract). The stability fix
 evidence was captured during private hardware validation and should be preserved
@@ -13,7 +14,8 @@ in release notes or PR evidence rather than committed as raw validation logs.
 
 ESP32-S3 has **only ONE RMT TX channel that can use DMA** (a silicon / ESP-IDF driver
 limit). The other 3 RMT TX channels are RAM-backed (48 symbols each) and glitch under
-BLE / Wi-Fi / audio interrupt pressure. **That is why only the status strip is on DMA.**
+BLE / Wi-Fi / audio interrupt pressure. **That is why only the status strip is on RMT
+DMA; the current EC11/key stability path uses SPI DMA, not additional RMT DMA.**
 
 ## Key facts (all empirically verified on V2 N16R8)
 
@@ -43,21 +45,70 @@ BLE / Wi-Fi / audio interrupt pressure. **That is why only the status strip is o
    resources for the required channel count (= SPI DMA), precisely because four
    ESP32-S3 RMT-DMA outputs are not available. The operator confirmed this flicker
    on hardware; the status strip does not flicker because it is on DMA.
+5. **Key tail follow with SPI3 DMA is a latch-margin issue, not a reason to go back
+   to repeated dark frames or non-DMA RMT.** 2026-07-07 product-state logs showed
+   `rgb_key px3/px4` rendered black while physical key3/key4 could still visibly
+   follow dynamic frames. The accepted repair keeps key on SPI3 DMA and widens the
+   SPI reset-low tail to about 600 us. 2026-07-08 follow-up evidence then showed
+   `rgb_key px4=0` while physical KEY4 could remain visibly latched, so the
+   all-dark KEY frame uses the same SPI DMA pre-latch plus one-shot RMT GPIO-low
+   final-latch pattern as SPI-backed off transitions. A later 2026-07-08 live
+   status check again showed firmware `key_rgb px4:0` / `key_mask=0x00` while the
+   physical last key could remain lit, so the all-dark KEY one-shot keeps the
+   normal `key_tail_guard_pixels=0` contract but writes the black RMT latch exactly
+   twice before releasing GPIO. The KEY state machine also keeps a pending dark
+   latch dirty after any key visual until the all-black strip frame is physically
+   transmitted; a `~LED:STATUS` all-zero sample alone is not evidence that the
+   physical strip latched black. Later 2026-07-08 review proved the first
+   candidate overused that remedy: forcing every lit purple feedback/fade frame
+   through SPI-pre-latch plus one-shot RMT made the visible flicker worse. A later
+   KEY1 human review also showed the single lit-edge RMT latch could still make
+   later physical key pixels flash. A follow-up review still saw KEY1 bring up
+   later physical key LEDs after lit RMT was removed, so the active SPI waveform
+   was tightened from the older 3-bit 2.5 MHz `0=100`/`1=110` code to the current
+   4-bit 3.2 MHz `0=1000`/`1=1110` code. The accepted transport rule is therefore
+   **lit white/purple feedback and fade frames = SPI3 DMA with the conservative
+   4-bit waveform; final all-dark edge = SPI3 DMA pre-latch plus the bounded
+   two-write black RMT latch**. Do not "fix" this by adding normal key tail guard
+   pixels, periodic dark retransmits, ordinary non-DMA-only key refreshes,
+   lit-edge RMT one-shots, whole-feedback RMT one-shots, or changing the key
+   feedback visual effect.
+   Separate this physical latch issue from the KEY1-KEY4 visual-effect contract:
+   after the 4-bit waveform fix was physically accepted, a follow-up review rejected
+   the intermediate "only one key may stay lit" behavior. A fast next-key press must
+   not clear another key's accepted fade just to hide follow-light; independent key
+   fades are allowed, and the single-click cue keeps a short white confirmation
+   before purple. Do not solve physical follow-light by inserting cross-key visual
+   blackouts, weakening debounce, dropping pending singles, shortening the accepted
+   white-to-purple/fade timing, or changing HID mappings.
+6. **SPI-backed final latch must be DMA pre-latch plus one-shot RMT, not one or the
+   other.** 2026-07-07 off-transition review reproduced key/EC11 visible flicker
+   when `~LED:OFF` jumped straight from SPI DMA active output to the one-shot RMT
+   latch. The safe pattern is: send the requested final frame once on the active
+   SPI DMA transport first, then perform the historical non-DMA RMT latch and drive
+   the GPIO low. Once that one-shot latch has suspended the SPI strip, do not
+   repeat additional state-machine RMT latches for the same dark frame; the KEY
+   exception is the bounded in-backend two-write black latch described above, which
+   still happens inside a single acquire/pre-latch/release cycle. Later low-power
+   retries belong to the status/RMT rail. Do not "fix" this by making SPI strips
+   stay DMA-only through low-power/suspend; that reopens the all-on idle-latch
+   failure above.
 
 ## Flicker-free DMA output budget on this board (mic stays on I2S0)
 
 | Peripheral | DMA LED outputs | Status on this board |
 |---|---|---|
 | RMT | **1** of 4 TX channels | used by status |
-| SPI2 (GPSPI2) | 1 | **FREE** |
-| SPI3 (GPSPI3) | 1 | **FREE** |
+| SPI2 (GPSPI2) | 1 | used by EC11 |
+| SPI3 (GPSPI3) | 1 | used by key |
 | LCD_CAM (parallel) | up to 16 | blocked — shares I2S0 with the PDM mic (move mic → I2S1 to free) |
 
 → Maximum **3 flicker-free DMA chains** without touching the mic. A 4th DMA chain
 needs LCD_CAM (move mic to I2S1) or stays non-DMA. To add DMA chains beyond the one
-RMT channel, use the official `espressif/led_strip` **SPI backend**
-(`led_strip_spi_dev.c` — 3 SPI bits per WS2812 bit @ 2.5 MHz, `flags.with_dma` +
-`SPI_DMA_CH_AUTO`), integrated as a sibling to `status_led_strip_backend.c`.
+RMT channel, use a SPI-DMA backend with the same measured timing discipline as
+the current local backend (now 4 SPI bits per WS2812 bit @ 3.2 MHz for the
+2020/3535 key chain, `flags.with_dma`/`SPI_DMA_CH_AUTO` style ownership), integrated
+as a sibling to `status_led_strip_backend.c`.
 **Validate on this exact board first**: idf-extra-components Issue #466 reports
 DMA+S3 crashes on some boards — carry the existing `dma_fallback` pattern as a
 non-DMA escape hatch.
@@ -67,14 +118,13 @@ SPI2 DMA, key strip on SPI3 DMA, and edge/frame left on ordinary RMT. Key gets t
 second SPI channel instead of edge because key feedback is part of the anti-mistouch
 contract; edge is decorative and can tolerate the remaining non-DMA RMT risk.
 
-## Cheaper alternative that must be tried first
+## Scheduler baseline that must not regress
 
-Before any peripheral change: **raise the LED task priority and pin it to a core away
-from audio** (today it is `xTaskCreate(..., priority 3, ...)` unpinned). This is free,
-fast, and diagnostic — it reduces non-DMA refill starvation on EC11/key/edge and
-quantifies how much of the observed flicker is CPU-starvation vs. DMA-inherent. It
-does **not** fix the documented status-tail corruption (that is a DMA-timing problem),
-but it is the one zero-cost lever and should not be skipped.
+The LED task is priority 6 pinned to CPU1. This was applied before changing any
+peripheral allocation because key/EC11 feedback had regressed into the old
+CPU-starvation-looking flicker despite the key strip reporting SPI3 DMA. Keep this
+baseline when touching LED transport, fade cadence, or low-power latch behavior; a
+return to `xTaskCreate(..., priority 3, ...)` unpinned is a regression.
 
 ## Historical Evidence Policy
 
@@ -109,5 +159,5 @@ private validation archive when changing this area.
 - Any DMA / peripheral change must update the `~LED:STATUS detail=contract` fields
   (`strip_transport_requested`, `strip_transport_actual`, `spi_dma_requested`,
   `spi_dma_actual`, `spi_dma_fallback`, `rmt_tx_dma_strategy`,
-  `rmt_tx_dma_all_strips`, per-strip RMT `dma_requested` / `dma_actual` /
+  `spi_reset_us`, `rmt_tx_dma_all_strips`, per-strip RMT `dma_requested` / `dma_actual` /
   `dma_fallback`, `rmt_mem_block_symbols`) with validation evidence, not silently.

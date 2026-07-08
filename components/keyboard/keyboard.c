@@ -29,16 +29,19 @@
 #include "watchdog_platform.h"
 
 #define KEYBOARD_CUSTOM_POLL_MS 10
-#define KEYBOARD_CUSTOM_IDLE_BACKUP_POLL_MS 20
+#define KEYBOARD_CUSTOM_IDLE_BACKUP_POLL_MS 10
 #define KEYBOARD_CUSTOM_LOW_POWER_IDLE_BACKUP_POLL_MS 20
 #define KEYBOARD_CUSTOM_DEBOUNCE_MS 20
+/* stable_count starts at 1 on the first changed sample, so require one extra
+ * same-level sample to make the elapsed low/high time reach DEBOUNCE_MS. */
 #define KEYBOARD_CUSTOM_DEBOUNCE_SAMPLES \
-    ((KEYBOARD_CUSTOM_DEBOUNCE_MS + KEYBOARD_CUSTOM_POLL_MS - 1) / KEYBOARD_CUSTOM_POLL_MS)
+    (((KEYBOARD_CUSTOM_DEBOUNCE_MS + KEYBOARD_CUSTOM_POLL_MS - 1) / KEYBOARD_CUSTOM_POLL_MS) + 1)
 #define KEYBOARD_CUSTOM_DOUBLE_CLICK_WINDOW_MS 500
 #define KEYBOARD_CUSTOM_LONG_PRESS_MS 1000
 #define KEYBOARD_CUSTOM_GENERATED_PRESS_MS 160
 #define KEYBOARD_CUSTOM_GENERATED_RELEASE_SETTLE_MS 80
 #define KEYBOARD_CUSTOM_GENERATED_EVENT_QUEUE_DEPTH 8
+#define KEYBOARD_CUSTOM_TASK_PRIORITY 7U
 #define KEYBOARD_EC11_IDLE_POLL_MS 20
 #define KEYBOARD_EC11_LOW_POWER_IDLE_POLL_MS 20
 #define KEYBOARD_EC11_EVENT_QUEUE_DEPTH 256
@@ -95,6 +98,7 @@ typedef struct {
     bool pressed;
     bool long_sent;
     bool pending_single;
+    bool pending_single_visual_started;
     bool double_candidate;
     bool raw_feedback_pressed;
     TickType_t press_tick;
@@ -489,7 +493,17 @@ static esp_err_t keyboard_custom_send_gesture_internal(
     char source_label[32];
     keyboard_custom_make_source_label(key, usage, source_label, sizeof(source_label));
 
-    status_led_notify_key_feedback(key->index, keyboard_custom_led_feedback_for_gesture(gesture));
+    if (gesture == KEYBOARD_CUSTOM_GESTURE_SINGLE && key->pending_single_visual_started) {
+        key->pending_single_visual_started = false;
+        ESP_LOGI(
+            TAG,
+            "custom key single visual already active: logical=%s source=%s",
+            key->logical_name,
+            key->label);
+    } else {
+        key->pending_single_visual_started = false;
+        status_led_notify_key_feedback(key->index, keyboard_custom_led_feedback_for_gesture(gesture));
+    }
     esp_err_t ret = pending_transport_test
         ? ble_hid_send_keyboard_usage_pending_test_async(usage, 0, source_label)
         : ble_hid_send_keyboard_usage_async(usage, source_label);
@@ -636,6 +650,25 @@ static bool keyboard_consume_usb_command(const char *line, esp_err_t *out_ret)
         command += strlen("PENDING:");
     }
 
+    if (strcmp(command, "STATUS") == 0) {
+        printf(
+            "~KEY:STATUS custom_keys=KEY1:F13/F17/F21,KEY2:F14/F18/F22,KEY3:F15/F19/F23,KEY4:F16/F20/F24"
+            " poll_ms=%d idle_backup_ms=%d low_power_idle_backup_ms=%d debounce_ms=%d debounce_samples=%d"
+            " double_ms=%d long_ms=%d task_priority=%u audio_preempt_safe=1 generated_queue_depth=%d\n",
+            KEYBOARD_CUSTOM_POLL_MS,
+            KEYBOARD_CUSTOM_IDLE_BACKUP_POLL_MS,
+            KEYBOARD_CUSTOM_LOW_POWER_IDLE_BACKUP_POLL_MS,
+            KEYBOARD_CUSTOM_DEBOUNCE_MS,
+            KEYBOARD_CUSTOM_DEBOUNCE_SAMPLES,
+            KEYBOARD_CUSTOM_DOUBLE_CLICK_WINDOW_MS,
+            KEYBOARD_CUSTOM_LONG_PRESS_MS,
+            KEYBOARD_CUSTOM_TASK_PRIORITY,
+            KEYBOARD_CUSTOM_GENERATED_EVENT_QUEUE_DEPTH);
+        *out_ret = ESP_OK;
+        power_manager_set_blocker(POWER_MANAGER_BLOCKER_USB_COMMAND, false);
+        return true;
+    }
+
     uint8_t logical_key = 0;
     keyboard_custom_gesture_t gesture = KEYBOARD_CUSTOM_GESTURE_SINGLE;
     if (keyboard_custom_parse_generated_command(command, &logical_key, &gesture)) {
@@ -686,6 +719,7 @@ static bool keyboard_consume_usb_command(const char *line, esp_err_t *out_ret)
 static void keyboard_custom_cancel_pending_single(keyboard_custom_key_t *key)
 {
     key->pending_single = false;
+    key->pending_single_visual_started = false;
     key->double_candidate = false;
 }
 
@@ -701,17 +735,17 @@ static void keyboard_custom_apply_raw_feedback(
     TickType_t now,
     const char *origin)
 {
-    (void)now;
     if (key == NULL || key->raw_feedback_pressed) {
         return;
     }
+    if (key->raw_feedback_tick == 0) {
+        key->raw_feedback_tick = now;
+    }
     key->raw_feedback_pressed = true;
-    key->raw_feedback_tick = now;
-    power_manager_record_activity(key->logical_name);
     status_led_notify_key_event(key->index, true);
     ESP_LOGI(
         TAG,
-        "custom key raw press feedback: logical=%s source=%s origin=%s",
+        "custom key raw debounce candidate: logical=%s source=%s preview=1 origin=%s",
         key->logical_name,
         key->label,
         origin != NULL ? origin : "raw");
@@ -729,8 +763,14 @@ static void keyboard_custom_clear_raw_feedback(keyboard_custom_key_t *key)
     }
     key->raw_feedback_pressed = false;
     key->raw_feedback_tick = 0;
-    status_led_notify_key_event(key->index, false);
+    status_led_cancel_key_preview(key->index);
 }
+
+static void keyboard_custom_apply_stable_transition(
+    keyboard_custom_key_t *key,
+    bool raw_high,
+    TickType_t now,
+    const char *origin);
 
 static void keyboard_custom_handle_raw_short_release(
     keyboard_custom_key_t *key,
@@ -744,25 +784,33 @@ static void keyboard_custom_handle_raw_short_release(
     uint32_t raw_ms = key->raw_feedback_tick != 0
         ? keyboard_custom_elapsed_ms(now, key->raw_feedback_tick)
         : 0U;
-    keyboard_custom_clear_raw_feedback(key);
-
-    if (key->pending_single) {
-        keyboard_custom_cancel_pending_single(key);
-        keyboard_custom_send_gesture(key, KEYBOARD_CUSTOM_GESTURE_DOUBLE);
-    } else {
-        key->pending_single = true;
-        key->double_candidate = false;
-        key->pending_single_due_tick = now + pdMS_TO_TICKS(KEYBOARD_CUSTOM_DOUBLE_CLICK_WINDOW_MS);
+    if (raw_ms >= KEYBOARD_CUSTOM_DEBOUNCE_MS) {
+        TickType_t synthetic_press_ticks = pdMS_TO_TICKS(KEYBOARD_CUSTOM_DEBOUNCE_MS);
+        if (synthetic_press_ticks == 0) {
+            synthetic_press_ticks = 1;
+        }
+        TickType_t press_tick = now > synthetic_press_ticks ? now - synthetic_press_ticks : 0;
         ESP_LOGI(
             TAG,
-            "custom key raw-only single pending: logical=%s source=%s usage=F%u raw_ms=%" PRIu32 " window_ms=%d origin=%s",
+            "custom key raw-duration tap accepted: logical=%s source=%s raw_ms=%" PRIu32 " synthetic_press_ms=%d origin=%s",
             key->logical_name,
             key->label,
-            keyboard_custom_function_number(key->single_usage),
             raw_ms,
-            KEYBOARD_CUSTOM_DOUBLE_CLICK_WINDOW_MS,
-            origin != NULL ? origin : "raw-only");
+            KEYBOARD_CUSTOM_DEBOUNCE_MS,
+            origin != NULL ? origin : "raw-duration");
+        keyboard_custom_apply_stable_transition(key, false, press_tick, "raw_duration_press");
+        keyboard_custom_apply_stable_transition(key, true, now, "raw_duration_release");
+        return;
     }
+    keyboard_custom_clear_raw_feedback(key);
+    key->raw_feedback_tick = 0;
+    ESP_LOGI(
+        TAG,
+        "custom key raw-only short transition ignored: logical=%s source=%s raw_ms=%" PRIu32 " origin=%s",
+        key->logical_name,
+        key->label,
+        raw_ms,
+        origin != NULL ? origin : "raw-only");
 }
 
 static void keyboard_custom_handle_timers(keyboard_custom_key_t *key, TickType_t now)
@@ -781,7 +829,9 @@ static void keyboard_custom_handle_timers(keyboard_custom_key_t *key, TickType_t
 
     if (!key->pressed && key->pending_single &&
         keyboard_custom_tick_reached(now, key->pending_single_due_tick)) {
+        bool single_visual_started = key->pending_single_visual_started;
         keyboard_custom_cancel_pending_single(key);
+        key->pending_single_visual_started = single_visual_started;
         keyboard_custom_send_gesture(key, KEYBOARD_CUSTOM_GESTURE_SINGLE);
     }
 }
@@ -801,16 +851,63 @@ static void keyboard_custom_apply_stable_transition(
     key->stable_count = KEYBOARD_CUSTOM_DEBOUNCE_SAMPLES;
     bool pressed = !raw_high;
     power_manager_record_activity(key->logical_name);
-    bool led_feedback_already_matches = key->raw_feedback_pressed == pressed;
-    if (!led_feedback_already_matches) {
-        status_led_notify_key_event(key->index, pressed);
-    }
-    key->raw_feedback_pressed = pressed;
-    if (pressed && key->raw_feedback_tick == 0) {
-        key->raw_feedback_tick = now;
-    } else if (!pressed) {
+    if (pressed) {
+        bool led_feedback_already_matches = key->raw_feedback_pressed;
+        if (!led_feedback_already_matches) {
+            status_led_notify_key_event(key->index, true);
+        }
+        key->raw_feedback_pressed = true;
+        if (key->raw_feedback_tick == 0) {
+            key->raw_feedback_tick = now;
+        }
+    } else {
+        key->raw_feedback_pressed = false;
         key->raw_feedback_tick = 0;
     }
+    if (pressed && !key->pressed) {
+        key->pressed = true;
+        key->press_tick = now;
+        key->long_sent = false;
+        key->double_candidate = key->pending_single;
+        keyboard_custom_log_event(key, KEYBOARD_CUSTOM_PHASE_PRESS, key->single_usage, ESP_OK);
+    } else if (!pressed && key->pressed) {
+        key->pressed = false;
+        keyboard_custom_log_event(key, KEYBOARD_CUSTOM_PHASE_RELEASE, key->single_usage, ESP_OK);
+
+        if (key->long_sent) {
+            key->long_sent = false;
+            keyboard_custom_cancel_pending_single(key);
+            status_led_notify_key_event(key->index, false);
+            status_led_notify_key_feedback(key->index, STATUS_LED_KEY_FEEDBACK_LONG);
+        } else if (keyboard_custom_elapsed_ms(now, key->press_tick) >= KEYBOARD_CUSTOM_LONG_PRESS_MS) {
+            keyboard_custom_cancel_pending_single(key);
+            status_led_notify_key_event(key->index, false);
+            keyboard_custom_send_gesture(key, KEYBOARD_CUSTOM_GESTURE_LONG);
+        } else if (key->double_candidate && key->pending_single) {
+            keyboard_custom_cancel_pending_single(key);
+            keyboard_custom_send_gesture(key, KEYBOARD_CUSTOM_GESTURE_DOUBLE);
+        } else {
+            key->pending_single = true;
+            key->pending_single_visual_started = true;
+            key->double_candidate = false;
+            key->pending_single_due_tick = now + pdMS_TO_TICKS(KEYBOARD_CUSTOM_DOUBLE_CLICK_WINDOW_MS);
+            status_led_notify_key_feedback(key->index, STATUS_LED_KEY_FEEDBACK_SINGLE);
+            ESP_LOGI(
+                TAG,
+                "custom key single pending: logical=%s source=%s usage=F%u window_ms=%d visual=immediate",
+                key->logical_name,
+                key->label,
+                keyboard_custom_function_number(key->single_usage),
+                KEYBOARD_CUSTOM_DOUBLE_CLICK_WINDOW_MS);
+        }
+        ESP_LOGI(
+            TAG,
+            "custom key release: logical=%s source=%s usage=F%u",
+            key->logical_name,
+            key->label,
+            keyboard_custom_function_number(key->single_usage));
+    }
+
     ESP_LOGI(
         TAG,
         "custom key stable transition: logical=%s source=%s raw_high=%d pressed=%d origin=%s",
@@ -824,46 +921,6 @@ static void keyboard_custom_apply_stable_transition(
         key->logical_key,
         raw_high ? 1u : 0u,
         pressed ? 1u : 0u);
-
-    if (pressed && !key->pressed) {
-        key->pressed = true;
-        key->press_tick = now;
-        key->long_sent = false;
-        key->double_candidate = key->pending_single;
-        keyboard_custom_log_event(key, KEYBOARD_CUSTOM_PHASE_PRESS, key->single_usage, ESP_OK);
-    } else if (!pressed && key->pressed) {
-        key->pressed = false;
-        keyboard_custom_log_event(key, KEYBOARD_CUSTOM_PHASE_RELEASE, key->single_usage, ESP_OK);
-        ESP_LOGI(
-            TAG,
-            "custom key release: logical=%s source=%s usage=F%u",
-            key->logical_name,
-            key->label,
-            keyboard_custom_function_number(key->single_usage));
-
-        if (key->long_sent) {
-            key->long_sent = false;
-        keyboard_custom_cancel_pending_single(key);
-        status_led_notify_key_feedback(key->index, STATUS_LED_KEY_FEEDBACK_LONG);
-    } else if (keyboard_custom_elapsed_ms(now, key->press_tick) >= KEYBOARD_CUSTOM_LONG_PRESS_MS) {
-        keyboard_custom_cancel_pending_single(key);
-        keyboard_custom_send_gesture(key, KEYBOARD_CUSTOM_GESTURE_LONG);
-        } else if (key->double_candidate && key->pending_single) {
-            keyboard_custom_cancel_pending_single(key);
-            keyboard_custom_send_gesture(key, KEYBOARD_CUSTOM_GESTURE_DOUBLE);
-        } else {
-            key->pending_single = true;
-            key->double_candidate = false;
-            key->pending_single_due_tick = now + pdMS_TO_TICKS(KEYBOARD_CUSTOM_DOUBLE_CLICK_WINDOW_MS);
-            ESP_LOGI(
-                TAG,
-                "custom key single pending: logical=%s source=%s usage=F%u window_ms=%d",
-                key->logical_name,
-                key->label,
-                keyboard_custom_function_number(key->single_usage),
-                KEYBOARD_CUSTOM_DOUBLE_CLICK_WINDOW_MS);
-        }
-    }
 }
 
 static void keyboard_custom_handle_sample(keyboard_custom_key_t *key, bool raw_high, TickType_t now)
@@ -876,6 +933,7 @@ static void keyboard_custom_handle_sample(keyboard_custom_key_t *key, bool raw_h
         key->pressed = false;
         key->long_sent = false;
         key->pending_single = false;
+        key->pending_single_visual_started = false;
         key->double_candidate = false;
         key->raw_feedback_pressed = false;
         key->raw_feedback_tick = 0;
@@ -906,10 +964,12 @@ static void keyboard_custom_handle_sample(keyboard_custom_key_t *key, bool raw_h
                 keyboard_custom_apply_raw_feedback(key, now, "raw_edge");
             }
         } else {
-            if (!low_power_idle && !key->pressed && key->stable_level_high) {
-                keyboard_custom_handle_raw_short_release(key, now, "raw_edge_release_before_debounce");
-            } else {
-                keyboard_custom_clear_raw_feedback(key);
+            if (!key->pressed && key->stable_level_high) {
+                if (!low_power_idle) {
+                    keyboard_custom_handle_raw_short_release(key, now, "raw_edge_release_before_debounce");
+                } else {
+                    keyboard_custom_clear_raw_feedback(key);
+                }
             }
         }
         ESP_LOGI(
@@ -995,6 +1055,12 @@ static void keyboard_custom_drain_generated_events(TickType_t now)
             keyboard_custom_handle_sample(key, true, now);
         }
         keyboard_custom_generated_state_t *state = &s_custom_generated_states[key->index];
+        if (state->active) {
+            if (xQueueSendToFront(s_custom_generated_event_queue, &event, 0) != pdTRUE) {
+                ESP_LOGW(TAG, "drop generated custom key event: logical=%u reason=requeue_failed", event.logical_key);
+            }
+            break;
+        }
         state->active = true;
         state->gesture = event.gesture;
         state->started_tick = now;
@@ -1092,6 +1158,7 @@ static void keyboard_custom_reset_to_released(keyboard_custom_key_t *key)
     key->stable_count = KEYBOARD_CUSTOM_DEBOUNCE_SAMPLES;
     key->pressed = false;
     key->long_sent = false;
+    key->pending_single_visual_started = false;
     keyboard_custom_clear_raw_feedback(key);
 }
 
@@ -1619,7 +1686,7 @@ static esp_err_t keyboard_custom_start(void)
         "keyboard_custom_task",
         3072,
         NULL,
-        4,
+        KEYBOARD_CUSTOM_TASK_PRIORITY,
         &s_custom_task_handle);
     if (task_ok != pdPASS) {
         ESP_LOGE(TAG, "custom key task create failed");
@@ -1628,14 +1695,16 @@ static esp_err_t keyboard_custom_start(void)
 
     ESP_LOGI(
         TAG,
-        "custom keys ready: key1=gpio38:f13/f17/f21 key2=gpio39:f14/f18/f22 key3=gpio40:f15/f19/f23 key4=gpio41:f16/f20/f24 active_low=1 wake=active_low_gpio_wakeup+20ms_scan low_power_wake=active_low_gpio_wakeup+20ms_scan poll_ms=%d idle_backup_ms=%d low_power_idle_backup_ms=%d debounce_ms=%d debounce_samples=%d double_ms=%d long_ms=%d",
+        "custom keys ready: key1=gpio38:f13/f17/f21 key2=gpio39:f14/f18/f22 key3=gpio40:f15/f19/f23 key4=gpio41:f16/f20/f24 active_low=1 wake=active_low_gpio_wakeup+10ms_scan low_power_wake=active_low_gpio_wakeup+20ms_scan poll_ms=%d idle_backup_ms=%d low_power_idle_backup_ms=%d debounce_ms=%d debounce_samples=%d double_ms=%d long_ms=%d"
+        " task_priority=%u audio_preempt_safe=1",
         KEYBOARD_CUSTOM_POLL_MS,
         KEYBOARD_CUSTOM_IDLE_BACKUP_POLL_MS,
         KEYBOARD_CUSTOM_LOW_POWER_IDLE_BACKUP_POLL_MS,
         KEYBOARD_CUSTOM_DEBOUNCE_MS,
         KEYBOARD_CUSTOM_DEBOUNCE_SAMPLES,
         KEYBOARD_CUSTOM_DOUBLE_CLICK_WINDOW_MS,
-        KEYBOARD_CUSTOM_LONG_PRESS_MS);
+        KEYBOARD_CUSTOM_LONG_PRESS_MS,
+        KEYBOARD_CUSTOM_TASK_PRIORITY);
     return ESP_OK;
 }
 

@@ -67,6 +67,7 @@ void status_led_set_ota_active(bool active, size_t bytes_written, size_t expecte
 void status_led_notify_success(const char *reason);
 void status_led_notify_warning(const char *reason);
 void status_led_notify_key_event(uint8_t key_index, bool pressed);
+void status_led_cancel_key_preview(uint8_t key_index);
 void status_led_notify_key_feedback(uint8_t key_index, status_led_key_feedback_t feedback);
 void status_led_notify_ec11_feedback(status_led_ec11_feedback_t feedback);
 void status_led_refresh_ec11_feedback(status_led_ec11_feedback_t feedback);

@@ -18,6 +18,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--write-retries", type=int, default=3)
     parser.add_argument("--write-retry-delay-ms", type=int, default=250)
     parser.add_argument("--command-delay-ms", type=int, default=250)
+    parser.add_argument("--keep-input-between-commands", action="store_true")
     parser.add_argument("--output-path", default="")
     return parser.parse_args()
 
@@ -111,6 +112,26 @@ def command_list(args: argparse.Namespace) -> list[str]:
     return commands
 
 
+def parse_wait_command(command: str) -> int | None:
+    upper = command.upper()
+    for prefix in ("WAIT:", "__WAIT_MS:"):
+        if upper.startswith(prefix):
+            value = command[len(prefix):].strip()
+            if value.isdecimal():
+                return int(value)
+    return None
+
+
+def parse_read_ms_command(command: str) -> int | None:
+    upper = command.upper()
+    for prefix in ("READMS:", "__READ_MS:"):
+        if upper.startswith(prefix):
+            value = command[len(prefix):].strip()
+            if value.isdecimal():
+                return int(value)
+    return None
+
+
 def main() -> int:
     args = parse_args()
     commands = command_list(args)
@@ -132,14 +153,25 @@ def main() -> int:
         ser = open_serial_no_reset(serial, args.port, args.baud, args.write_timeout_ms)
         transcript.add(f"serial_opened port={args.port} baud={args.baud} dtr=0 rts=0 no_reset=1")
         read_serial_for(ser, transcript, args.initial_read_ms)
+        current_command_read_ms = args.command_read_ms
         for command in commands:
             transcript.add(f"> {command}")
-            try:
-                ser.reset_input_buffer()
-            except Exception as exc:
-                transcript.add(f"DISCARD_IN_ERROR {exc}")
+            read_ms = parse_read_ms_command(command)
+            if read_ms is not None:
+                current_command_read_ms = read_ms
+                transcript.add(f"command_read_ms={current_command_read_ms}")
+                continue
+            wait_ms = parse_wait_command(command)
+            if wait_ms is not None:
+                read_serial_for(ser, transcript, wait_ms)
+                continue
+            if not args.keep_input_between_commands:
+                try:
+                    ser.reset_input_buffer()
+                except Exception as exc:
+                    transcript.add(f"DISCARD_IN_ERROR {exc}")
             write_serial_command(ser, command, args, transcript)
-            read_serial_for(ser, transcript, args.command_read_ms)
+            read_serial_for(ser, transcript, current_command_read_ms)
             if args.command_delay_ms > 0:
                 time.sleep(args.command_delay_ms / 1000.0)
         return_code = 0

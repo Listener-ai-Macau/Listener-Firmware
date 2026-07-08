@@ -118,8 +118,13 @@ REQUIRED_TEXT = [
     ),
     RequiredText(
         "docs/features/status_led.md",
-        re.compile(r"ordinary HID-only `connected` uses a low-floor bounded blue double-flash Type-search cue", re.IGNORECASE),
-        "status LED feature doc must state that HID-only connected uses the swapped low-floor bounded find-Type cue instead of steady blue",
+        re.compile(r"ordinary HID-only `connected` uses a continuous low-floor blue double-flash Type-search cue while active", re.IGNORECASE),
+        "status LED feature doc must state that HID-only connected stays visible while active instead of going dark before idle",
+    ),
+    RequiredText(
+        "docs/features/status_led.md",
+        re.compile(r"Active disconnected/no-host stays dark", re.IGNORECASE),
+        "status LED feature doc must state that active disconnected/no-host stays dark and does not borrow the connected low-floor cue",
     ),
     RequiredText(
         "docs/features/status_led.md",
@@ -143,8 +148,8 @@ REQUIRED_TEXT = [
     ),
     RequiredText(
         "docs/features/low_power_wake_policy.md",
-        re.compile(r"ordinary HID-only BLE connected uses a low-floor bounded blue double-flash Type-search cue", re.IGNORECASE),
-        "low-power policy doc must state that HID-only connected uses the swapped low-floor bounded find-Type cue while active",
+        re.compile(r"Active disconnected/no-host stays dark", re.IGNORECASE),
+        "low-power policy doc must state that disconnected/no-host does not use the connected low-floor cue",
     ),
     RequiredText(
         "docs/features/firmware-feature-map.md",
@@ -153,8 +158,13 @@ REQUIRED_TEXT = [
     ),
     RequiredText(
         "docs/features/firmware-feature-map.md",
-        re.compile(r"keeps quiet ACTIVE HID-only BLE in a low-floor bounded blue double-flash Type-search cue", re.IGNORECASE),
-        "feature map must summarize the swapped low-floor active HID-only find-Type BLE behavior",
+        re.compile(r"keeps HID-only connected visible with a low-floor blue pulse", re.IGNORECASE),
+        "feature map must summarize that the low-floor blue pulse belongs to HID-only connected find-Type",
+    ),
+    RequiredText(
+        "docs/features/firmware-feature-map.md",
+        re.compile(r"keeps active disconnected/no-host dark", re.IGNORECASE),
+        "feature map must summarize that disconnected/no-host stays dark",
     ),
     RequiredText(
         "tools/verify_status_led_static.py",

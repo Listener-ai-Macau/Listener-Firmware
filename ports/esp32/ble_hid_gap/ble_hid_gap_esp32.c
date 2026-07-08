@@ -50,7 +50,9 @@ static const char *TAG = "ESP_HID_GAP";
 extern void ble_hid_task_start_up(void);
 
 static int ble_hid_gap_get_bonded_peer_count(int *out_count);
-static esp_err_t ble_hid_gap_forget_bonds_and_repair_inner(bool type_controlled_request);
+static esp_err_t ble_hid_gap_forget_bonds_and_repair_inner(
+    bool type_controlled_request,
+    bool suppress_swift_pair_prompt);
 static void ble_hid_gap_close_recovery_pairing_window(const char *reason);
 static void ble_hid_gap_note_secure_connection(uint16_t conn_handle, const char *reason);
 static bool ble_hid_gap_recovery_pairing_window_open(void);
@@ -118,6 +120,7 @@ static char s_service_changed_schema_id[64];
 static bool s_recovery_pairing_window_active = false;
 static bool s_recovery_swift_pair_consumed = false;
 static bool s_recovery_type_controlled_pairing = false;
+static bool s_recovery_suppress_swift_pair_prompt = false;
 static bool s_recovery_waiting_for_disconnect = false;
 static bool s_recovery_power_blocker_active = false;
 static bool s_recovery_bond_delete_pending = false;
@@ -632,8 +635,17 @@ static bool ble_hid_gap_recovery_pairing_window_open(void)
 static int64_t ble_hid_gap_recovery_swift_pair_prompt_remaining_ms(void)
 {
     if (!ble_hid_gap_recovery_pairing_window_open() ||
-        s_recovery_swift_pair_consumed ||
         s_recovery_pairing_window_opened_at_ms <= 0) {
+        return 0;
+    }
+    if (s_recovery_suppress_swift_pair_prompt) {
+        if (!s_recovery_swift_pair_consumed) {
+            ESP_LOGI(TAG, "recovery: Swift Pair prompt suppressed for Type-controlled silent recovery");
+        }
+        s_recovery_swift_pair_consumed = true;
+        return 0;
+    }
+    if (s_recovery_swift_pair_consumed) {
         return 0;
     }
     if (BLE_HID_GAP_RECOVERY_SWIFT_PAIR_PROMPT_MS <= 0) {
@@ -727,18 +739,22 @@ static void ble_hid_gap_keep_recovery_adv_connectable(const char *reason)
     s_last_adv_was_directed = false;
 }
 
-static void ble_hid_gap_open_recovery_pairing_window(bool type_controlled)
+static void ble_hid_gap_open_recovery_pairing_window(
+    bool type_controlled,
+    bool suppress_swift_pair_prompt)
 {
     s_recovery_pairing_window_active = true;
     s_recovery_swift_pair_consumed = false;
     s_recovery_type_controlled_pairing = type_controlled;
+    s_recovery_suppress_swift_pair_prompt = suppress_swift_pair_prompt;
     s_recovery_security_failed_conn_handle = BLE_HS_CONN_HANDLE_NONE;
     s_recovery_pairing_window_opened_at_ms = ble_hid_gap_now_ms();
     ble_hid_gap_set_recovery_power_blocker(true, "pairing_window_open");
     ble_hid_gap_arm_recovery_pairing_window_timer();
     ESP_LOGI(TAG,
-             "recovery: pairing window opened type_controlled=%u",
-             type_controlled ? 1u : 0u);
+             "recovery: pairing window opened type_controlled=%u suppress_swift_pair=%u",
+             type_controlled ? 1u : 0u,
+             suppress_swift_pair_prompt ? 1u : 0u);
 }
 
 static void ble_hid_gap_close_recovery_pairing_window(const char *reason)
@@ -750,6 +766,7 @@ static void ble_hid_gap_close_recovery_pairing_window(const char *reason)
     s_recovery_pairing_window_active = false;
     s_recovery_swift_pair_consumed = false;
     s_recovery_type_controlled_pairing = false;
+    s_recovery_suppress_swift_pair_prompt = false;
     s_recovery_waiting_for_disconnect = false;
     s_recovery_security_request_conn_handle = BLE_HS_CONN_HANDLE_NONE;
     s_recovery_security_failed_conn_handle = BLE_HS_CONN_HANDLE_NONE;
@@ -841,7 +858,7 @@ bool ble_hid_gap_note_type_audio_ready(const char *reason)
         diag_log(DIAG_SRC_BLE_GAP, DIAG_GAP_RECOVERY, DIAG_SEV_WARN,
                  19, 0, 0, s_ble_gap_conn_handle);
         if (!ble_hid_gap_recovery_pairing_window_open()) {
-            ble_hid_gap_open_recovery_pairing_window(true);
+            ble_hid_gap_open_recovery_pairing_window(true, false);
             if (!ble_gap_adv_active()) {
                 esp_err_t adv_ret = ble_hid_gap_start_advertising();
                 if (adv_ret != ESP_OK) {
@@ -884,9 +901,18 @@ static void ble_hid_gap_hold_recovery_pairing_led(const char *reason)
 
 static void ble_hid_gap_note_secure_connection(uint16_t conn_handle, const char *reason)
 {
-    ble_hid_gap_close_recovery_pairing_window(reason != NULL ? reason : "secure connection established");
     s_recovery_security_request_conn_handle = BLE_HS_CONN_HANDLE_NONE;
     ble_hid_gap_set_secure_connection_state(true);
+    if (s_recovery_type_controlled_pairing &&
+        ble_hid_gap_recovery_pairing_window_open()) {
+        ble_hid_gap_hold_recovery_pairing_led("type_controlled_secure_waiting_for_audio_notify");
+        ESP_LOGI(TAG,
+                 "recovery: secure BLE connection accepted, waiting for Type audio notify before closing pairing window: conn=%u reason=%s",
+                 conn_handle,
+                 reason != NULL ? reason : "unknown");
+        return;
+    }
+    ble_hid_gap_close_recovery_pairing_window(reason != NULL ? reason : "secure connection established");
     status_led_set_ble_state(STATUS_LED_BLE_CONNECTED, false);
     ESP_LOGI(TAG,
              "secure BLE connection accepted for LED/link state: conn=%u reason=%s",
@@ -1528,7 +1554,7 @@ static void ble_hid_gap_handle_connect_established(uint16_t conn_handle, const c
         }
         s_last_adv_was_directed = false;
         s_service_changed_queued_for_conn = false;
-        ble_hid_gap_queue_service_changed(source != NULL ? source : "connect");
+        ble_hid_gap_queue_service_changed("connect");
     }
 
     rc = ble_gap_conn_find(conn_handle, &desc);
@@ -2053,7 +2079,9 @@ nimble_hid_gap_event(struct ble_gap_event *event, void *arg)
                     "security failure outside pairing window status=%d; opening pairing reset and terminating insecure connection",
                     event->enc_change.status);
                 esp_err_t repair_ret =
-                    ble_hid_gap_forget_bonds_and_repair_inner(s_recovery_type_controlled_pairing);
+                    ble_hid_gap_forget_bonds_and_repair_inner(
+                        s_recovery_type_controlled_pairing,
+                        s_recovery_suppress_swift_pair_prompt);
                 if (repair_ret != ESP_OK) {
                     ESP_LOGW(TAG,
                              "security failure repair path failed ret=%s; falling back to reconnecting LED",
@@ -2365,11 +2393,12 @@ esp_err_t esp_hid_ble_gap_adv_start(void)
     }
     ESP_LOGI(
         TAG,
-        "NimBLE advertisement payload profile=%s name_len=%u recovery_window=%u type_controlled=%u recovery_swift_pair_consumed=%u first_pairing_window=%u bonded_peers=%d",
+        "NimBLE advertisement payload profile=%s name_len=%u recovery_window=%u type_controlled=%u suppress_swift_pair=%u recovery_swift_pair_consumed=%u first_pairing_window=%u bonded_peers=%d",
         swift_pair_enabled ? "swift_pair" : (type_recovery_enabled ? "type_recovery" : "normal"),
         (unsigned)s_adv_device_name_len,
         pairing_window ? 1u : 0u,
         s_recovery_type_controlled_pairing ? 1u : 0u,
+        s_recovery_suppress_swift_pair_prompt ? 1u : 0u,
         s_recovery_swift_pair_consumed ? 1u : 0u,
         first_pairing_window ? 1u : 0u,
         bonded_peer_count);
@@ -2789,7 +2818,9 @@ esp_err_t ble_hid_gap_mark_stack_ready(void)
     return ble_hid_gap_start_advertising();
 }
 
-static esp_err_t ble_hid_gap_forget_bonds_and_repair_inner(bool type_controlled_request)
+static esp_err_t ble_hid_gap_forget_bonds_and_repair_inner(
+    bool type_controlled_request,
+    bool suppress_swift_pair_prompt)
 {
     s_shutdown_quiesce = false;
     s_low_power_advertising = false;
@@ -2817,7 +2848,9 @@ static esp_err_t ble_hid_gap_forget_bonds_and_repair_inner(bool type_controlled_
         ESP_LOGW(TAG, "recovery: pairing window already active; refreshing advertising with stable BLE identity");
         diag_log(DIAG_SRC_BLE_GAP, DIAG_GAP_RECOVERY, DIAG_SEV_INFO,
                  6, 0, 0, s_ble_gap_conn_handle);
-        ble_hid_gap_open_recovery_pairing_window(type_controlled_request);
+        ble_hid_gap_open_recovery_pairing_window(
+            type_controlled_request || s_recovery_type_controlled_pairing,
+            suppress_swift_pair_prompt || s_recovery_suppress_swift_pair_prompt);
         s_directed_adv_pending = false;
         s_last_adv_was_directed = false;
 
@@ -2867,9 +2900,10 @@ static esp_err_t ble_hid_gap_forget_bonds_and_repair_inner(bool type_controlled_
         type_host_recent_before_recovery;
     ESP_LOGW(
         TAG,
-        "recovery: opening pairing reset window bonded_peers=%d bond_delete=async_after_disconnect type_controlled=%u type_link_ready_before_recovery=%u type_host_recent=%u type_request=%u",
+        "recovery: opening pairing reset window bonded_peers=%d bond_delete=async_after_disconnect type_controlled=%u suppress_swift_pair=%u type_link_ready_before_recovery=%u type_host_recent=%u type_request=%u",
         bonded_peer_count,
         type_controlled_recovery ? 1u : 0u,
+        suppress_swift_pair_prompt ? 1u : 0u,
         type_link_ready_before_recovery ? 1u : 0u,
         type_host_recent_before_recovery ? 1u : 0u,
         type_controlled_request ? 1u : 0u);
@@ -2877,7 +2911,9 @@ static esp_err_t ble_hid_gap_forget_bonds_and_repair_inner(bool type_controlled_
     diag_log(DIAG_SRC_BLE_GAP, DIAG_GAP_RECOVERY, DIAG_SEV_WARN,
              1, 0, (uint32_t)bonded_peer_count, s_ble_gap_conn_handle);
 
-    ble_hid_gap_open_recovery_pairing_window(type_controlled_recovery);
+    ble_hid_gap_open_recovery_pairing_window(
+        type_controlled_recovery,
+        suppress_swift_pair_prompt);
     ble_hid_gap_hold_recovery_pairing_led("ble_recovery_pairing_window_open");
     s_directed_adv_pending = false;
     s_last_adv_was_directed = false;
@@ -2979,12 +3015,17 @@ static esp_err_t ble_hid_gap_forget_bonds_and_repair_inner(bool type_controlled_
 
 esp_err_t ble_hid_gap_forget_bonds_and_repair(void)
 {
-    return ble_hid_gap_forget_bonds_and_repair_inner(false);
+    return ble_hid_gap_forget_bonds_and_repair_inner(false, false);
 }
 
 esp_err_t ble_hid_gap_forget_bonds_and_repair_type_controlled(void)
 {
-    return ble_hid_gap_forget_bonds_and_repair_inner(true);
+    return ble_hid_gap_forget_bonds_and_repair_inner(true, false);
+}
+
+esp_err_t ble_hid_gap_forget_bonds_and_repair_type_controlled_silent(void)
+{
+    return ble_hid_gap_forget_bonds_and_repair_inner(true, true);
 }
 
 bool ble_hid_gap_is_connected(void)
@@ -3286,6 +3327,7 @@ esp_err_t ble_hid_gap_apply_pending_ble_name(void)
     portENTER_CRITICAL(&s_ble_gap_state_lock);
     s_recovery_pairing_window_active = false;
     s_recovery_type_controlled_pairing = false;
+    s_recovery_suppress_swift_pair_prompt = false;
     s_recovery_waiting_for_disconnect = false;
     s_recovery_swift_pair_consumed = true;
     s_recovery_security_request_conn_handle = BLE_HS_CONN_HANDLE_NONE;
