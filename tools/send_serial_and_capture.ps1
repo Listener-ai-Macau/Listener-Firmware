@@ -7,6 +7,7 @@ param(
     [int]$Baud = 115200,
     [int]$InitialReadMs = 800,
     [int]$CommandReadMs = 1200,
+    [int]$CaptureSeconds = 0,
     [int]$WriteTimeoutMs = 5000,
     [int]$WriteRetries = 3,
     [int]$WriteRetryDelayMs = 250,
@@ -16,6 +17,17 @@ param(
 
 $ErrorActionPreference = "Stop"
 Set-StrictMode -Version Latest
+
+if ($PSBoundParameters.ContainsKey("CaptureSeconds")) {
+    if ($CaptureSeconds -lt 0) {
+        throw "-CaptureSeconds must be >= 0. Use -CommandReadMs for exact millisecond control."
+    }
+    if (-not $PSBoundParameters.ContainsKey("CommandReadMs")) {
+        $CommandReadMs = $CaptureSeconds * 1000
+    } else {
+        Write-Warning "-CaptureSeconds ignored because -CommandReadMs was also provided."
+    }
+}
 
 $helper = Join-Path $PSScriptRoot "serial_no_reset_capture.py"
 if (-not (Test-Path -LiteralPath $helper)) {
