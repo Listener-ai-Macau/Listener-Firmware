@@ -384,8 +384,7 @@ typedef struct {
     status_led_color_order_t color_order;
     bool prefer_dma;
     /* SPI+DMA strips (ec11/key) set transport=SPI and spi_host=SPI2/SPI3_HOST;
-     * the data GPIO is reassigned to that host's MOSI via the GPIO matrix.
-     * status/edge stay on RMT. See docs/features/status_led_dma_history.md. */
+     * status stays on RMT DMA; edge stays on RMT. */
     status_led_strip_transport_t transport;
     int spi_host;
     status_led_strip_backend_t *backend;

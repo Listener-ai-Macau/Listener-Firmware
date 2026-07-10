@@ -1079,16 +1079,6 @@ CHECKS = {
         "power_manager_record_activity(\"ec11_key_press\")",
         "power_manager_record_activity(\"ec11_key_hold\")",
     ],
-    "docs/features/status_led_dma_history.md": [
-        "current mixed transport design",
-        "status RMT DMA + EC11 SPI2 DMA + key SPI3 DMA + edge RMT",
-        "only the status strip is on RMT",
-        "EC11/key stability path uses SPI DMA, not additional RMT DMA",
-        "| SPI2 (GPSPI2) | 1 | used by EC11 |",
-        "| SPI3 (GPSPI3) | 1 | used by key |",
-        "SPI-backed final latch must be DMA pre-latch plus one-shot RMT",
-        "low-power clear/final latch = non-DMA",
-    ],
 }
 
 
@@ -1151,14 +1141,9 @@ def main() -> int:
     main_c = read("main/main.c")
     human_review = read("tools/status_led_human_effect_review.ps1")
     status_doc = read("docs/features/status_led.md")
-    dma_history_doc = read("docs/features/status_led_dma_history.md")
     firmware_ota = read("components/firmware_ota/firmware_ota.c")
     keyboard = read("components/keyboard/keyboard.c")
     voice_key = read("ports/esp32/voice_key_input/voice_key_input_esp32.c")
-    if 'current "status-only DMA" design' in dma_history_doc:
-        failures.append(
-            "status_led_dma_history.md: current contract must describe the mixed RMT/SPI DMA design, not the old status-only DMA wording"
-        )
     try:
         boot_power = extract_c_function(status_led, "status_led_boot_power_color_locked")
         boot_mark = extract_c_function(status_led, "status_led_mark_boot_feedback_locked")

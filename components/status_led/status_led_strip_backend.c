@@ -1,15 +1,8 @@
 /*
- * Physical WS2812 strip backend (RMT). Before changing the per-strip DMA selection,
- * adding a new LED peripheral (e.g. an SPI+DMA sibling backend), or widening DMA to
- * more strips, READ docs/features/status_led_dma_history.md first. It consolidates the
- * historical tuning experience and the hard constraints:
- *   - ESP32-S3 can use DMA on only ONE RMT TX channel, so only the status strip is on
- *     RMT DMA. Historical hardware validation showed that forcing all four strips
- *     to RMT DMA left EC11/key/edge unavailable.
- *   - EC11/key/edge flicker on non-DMA (interrupt-backed) RMT; the historical
- *     recommendation for them is a different DMA backend (SPI+DMA). DMA can NOT stay
- *     enabled through low-power idle (LED3-6 idle-latch corruption), so any DMA strip
- *     must follow the active-DMA / low-power-non-DMA-final-latch pattern.
+ * Physical WS2812 strip backend. The current V2 transport contract is:
+ * status=RMT DMA, EC11=SPI2 DMA, key=SPI3 DMA, edge=RMT. Low-power/final latch
+ * frames force non-DMA before GPIO-low release; active EC11/key feedback returns
+ * to SPI DMA on the next non-final frame.
  */
 #include "status_led_strip_backend.h"
 
@@ -41,8 +34,7 @@
  * Each WS2812 bit is encoded as 4 SPI bits (0 -> 0b1000, 1 -> 0b1110) clocked
  * at STATUS_LED_SPI_CLOCK_HZ. At 3.2 MHz, 1 SPI bit = 312.5 ns, so one WS2812
  * bit = 1.25 us: T0H=312.5ns/T0L=937.5ns, T1H=937.5ns/T1L=312.5ns. This gives
- * the 3.3 V key chain a longer zero-low window than the older 3-bit 0b100 code,
- * which human review showed could still let KEY1 bring up downstream pixels.
+ * the 3.3 V key chain a longer zero-low window than the older 3-bit 0b100 code.
  * SCLK is not routed to a GPIO; only MOSI is routed to the LED DIN. The DMA
  * buffer lives in internal DMA-capable RAM and is fed by SPI GDMA.
  * STATUS_LED_SPI_RESET_BYTES trailing zero bytes keep MOSI low long enough for

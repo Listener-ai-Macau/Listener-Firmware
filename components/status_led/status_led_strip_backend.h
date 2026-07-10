@@ -22,8 +22,7 @@ typedef enum {
 /* Physical transport used to clock WS2812 data out of the strip data GPIO.
  * RMT is the default (historical) transport. SPI drives WS2812 from the SPI MOSI
  * line via the SPI-clock-hack (4 SPI bits per WS2812 bit) and is used to get a
- * DMA-backed, flicker-free output on strips that cannot share the single RMT DMA
- * channel. See docs/features/status_led_dma_history.md. */
+ * DMA-backed output on strips that cannot share the single RMT DMA channel. */
 typedef enum {
     STATUS_LED_STRIP_TRANSPORT_RMT = 0,
     STATUS_LED_STRIP_TRANSPORT_SPI,
