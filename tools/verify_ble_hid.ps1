@@ -29,7 +29,7 @@ if ([string]::IsNullOrWhiteSpace($Port)) {
         @($bleHid, 'BLE_HID_BATTERY_NOTIFY_THRESHOLD_PERCENT 1', "BLE HID uses a 1 percent battery notify threshold"),
         @($bleHid, 'BLE_HID_BATTERY_DISCONNECTED_IDLE_INTERVAL_MS 600000', "BLE HID backs off disconnected idle battery sampling"),
         @($bleHid, 'ble_hid_low_power_idle_active[\s\S]*POWER_MANAGER_STATE_CONNECTED_IDLE[\s\S]*POWER_MANAGER_STATE_DISCONNECTED_IDLE', "BLE HID detects connected and disconnected low-power idle"),
-        @($bleHid, 's_ble_connected\s*&&\s*!low_power_idle[\s\S]*BLE_HID_BATTERY_SAMPLE_INTERVAL_MS[\s\S]*BLE_HID_BATTERY_DISCONNECTED_IDLE_INTERVAL_MS', "BLE HID selects active vs low-power battery sample interval"),
+        @($bleHid, '!s_ble_connected[\s\S]*BLE_HID_BATTERY_DISCONNECTED_IDLE_INTERVAL_MS[\s\S]*low_power_idle[\s\S]*BLE_HID_BATTERY_CONNECTED_IDLE_INTERVAL_MS[\s\S]*BLE_HID_BATTERY_SAMPLE_INTERVAL_MS', "BLE HID selects connected active, connected idle, and disconnected battery sample intervals"),
         @($bleHid, '!s_ble_connected\s*&&\s*!force_notify', "BLE HID skips routine HID battery updates while disconnected"),
         @($bleHid, 'watchdog_platform_task_notify_take_low_power\([\s\S]*wait_ms', "BLE HID battery task uses low-power long wait while disconnected or connected-idle"),
         @($bleHid, 'notified\s*!=\s*0\s*&&\s*low_power_idle[\s\S]*continue;', "BLE HID avoids immediate ADC sampling when low-power idle notification wakes the task"),

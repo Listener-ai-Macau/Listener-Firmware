@@ -13,7 +13,7 @@ $restart_script = Join-Path $PSScriptRoot "restart_windows_bluetooth.ps1"
 $ensure_script = Join-Path $PSScriptRoot "ensure_ble_hid_connection.ps1"
 
 Write-Host "recover_ble_hid_host: restarting Windows Bluetooth stack"
-& powershell.exe -NoProfile -ExecutionPolicy Bypass -File $restart_script @(
+& pwsh -NoProfile -File $restart_script @(
     if ($RestartPanAdapter) { "-RestartPanAdapter" }
 )
 if ($LASTEXITCODE -ne 0) {
@@ -21,7 +21,7 @@ if ($LASTEXITCODE -ne 0) {
 }
 
 Write-Host "recover_ble_hid_host: requesting GATT maintain-connection"
-& powershell.exe -NoProfile -ExecutionPolicy Bypass -File $ensure_script `
+& pwsh -NoProfile -File $ensure_script `
     -DeviceName $DeviceName `
     -BluetoothAddress $BluetoothAddress `
     -DurationSeconds $MaintainConnectionDurationSeconds `

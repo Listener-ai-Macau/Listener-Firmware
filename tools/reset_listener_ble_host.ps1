@@ -237,13 +237,13 @@ if ($FirmwareRecovery) {
 }
 
 Write-Host "reset_listener_ble_host: restarting Windows Bluetooth service"
-& powershell.exe -NoProfile -ExecutionPolicy Bypass -File $restartScript
+& pwsh -NoProfile -File $restartScript
 
 if ($RemoveWindowsDeviceCache) {
     Remove-WindowsBluetoothCache -PreferredName $DeviceName -Addresses $cacheAddresses
     Start-Sleep -Seconds 3
     Write-Host "reset_listener_ble_host: restarting Windows Bluetooth service after cache removal"
-    & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $restartScript
+    & pwsh -NoProfile -File $restartScript
 }
 
 if ($OpenBluetoothSettings) {
@@ -255,7 +255,7 @@ if ($SkipMaintainConnection) {
     Write-Host "reset_listener_ble_host: maintain-connection skipped"
 } elseif (-not [string]::IsNullOrWhiteSpace($resolvedAddress)) {
     Write-Host "reset_listener_ble_host: requesting maintain-connection"
-    & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $recoverScript `
+    & pwsh -NoProfile -File $recoverScript `
         -DeviceName $DeviceName `
         -BluetoothAddress $resolvedAddress `
         -MaintainConnectionDurationSeconds $MaintainConnectionDurationSeconds `
@@ -267,8 +267,8 @@ if ($SkipMaintainConnection) {
 if ($ProbeOtaGatt) {
     if ([string]::IsNullOrWhiteSpace($resolvedAddress)) {
         Write-Warning "reset_listener_ble_host: address unresolved; probing by device name only"
-        & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $probeScript -DeviceName $DeviceName
+        & pwsh -NoProfile -File $probeScript -DeviceName $DeviceName
     } else {
-        & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $probeScript -DeviceName $DeviceName -BluetoothAddress $resolvedAddress
+        & pwsh -NoProfile -File $probeScript -DeviceName $DeviceName -BluetoothAddress $resolvedAddress
     }
 }

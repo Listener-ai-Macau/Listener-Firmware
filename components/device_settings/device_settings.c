@@ -720,6 +720,7 @@ static void device_settings_print_status(const char *result)
         "~DEVICE:SETTINGS schema=listener.device_settings.v1 result=%s"
         " legacy_plugged_brightness=%u legacy_battery_brightness=%u active_power=%s neutral_legacy_brightness=%u"
         " led_status=%u led_key=%u led_ec11=%u led_edge=%u"
+        " compact_set=1"
         " low_power_idle_ms=%" PRIu32
         " plugged_low_power_idle_ms=%" PRIu32 " battery_low_power_idle_ms=%" PRIu32
         " low_power_idle_mode=power_mode"
@@ -937,6 +938,7 @@ static bool device_settings_apply_key_value(
     }
 
     if (strcmp(key, "led_status") == 0 ||
+        strcmp(key, "ls") == 0 ||
         strcmp(key, "status_led") == 0 ||
         strcmp(key, "status_brightness") == 0 ||
         strcmp(key, "status_led_brightness") == 0) {
@@ -945,6 +947,7 @@ static bool device_settings_apply_key_value(
     }
 
     if (strcmp(key, "led_key") == 0 ||
+        strcmp(key, "lk") == 0 ||
         strcmp(key, "key_led") == 0 ||
         strcmp(key, "key_brightness") == 0 ||
         strcmp(key, "key_led_brightness") == 0) {
@@ -953,6 +956,7 @@ static bool device_settings_apply_key_value(
     }
 
     if (strcmp(key, "led_ec11") == 0 ||
+        strcmp(key, "l11") == 0 ||
         strcmp(key, "ec11_led") == 0 ||
         strcmp(key, "knob_led") == 0 ||
         strcmp(key, "knob_brightness") == 0 ||
@@ -963,6 +967,7 @@ static bool device_settings_apply_key_value(
     }
 
     if (strcmp(key, "led_edge") == 0 ||
+        strcmp(key, "le") == 0 ||
         strcmp(key, "edge_led") == 0 ||
         strcmp(key, "frame_led") == 0 ||
         strcmp(key, "edge_brightness") == 0 ||
@@ -1050,6 +1055,7 @@ static bool device_settings_apply_key_value(
     }
 
     if (strcmp(key, "plugged_low_power_enabled") == 0 ||
+        strcmp(key, "ple") == 0 ||
         strcmp(key, "plugged_low_power") == 0 ||
         strcmp(key, "external_low_power") == 0 ||
         strcmp(key, "usb_low_power_enabled") == 0) {
@@ -1083,6 +1089,7 @@ static bool device_settings_apply_key_value(
     }
 
     if (strcmp(key, "plugged_low_power_idle_minutes") == 0 ||
+        strcmp(key, "plm") == 0 ||
         strcmp(key, "external_low_power_idle_minutes") == 0 ||
         strcmp(key, "usb_low_power_idle_minutes") == 0) {
         uint32_t parsed = 0;
@@ -1098,7 +1105,8 @@ static bool device_settings_apply_key_value(
         return true;
     }
 
-    if (strcmp(key, "battery_low_power_idle_minutes") == 0) {
+    if (strcmp(key, "battery_low_power_idle_minutes") == 0 ||
+        strcmp(key, "blm") == 0) {
         uint32_t parsed = 0;
         if (!device_settings_parse_u32(value, &parsed) ||
             parsed > (DEVICE_SETTINGS_LOW_POWER_IDLE_MAX_MS / 60000U)) {
@@ -1114,7 +1122,8 @@ static bool device_settings_apply_key_value(
     }
 
     if (strcmp(key, "auto_shutdown_minutes") == 0 ||
-        strcmp(key, "battery_auto_shutdown_minutes") == 0) {
+        strcmp(key, "battery_auto_shutdown_minutes") == 0 ||
+        strcmp(key, "bam") == 0) {
         if (device_settings_auto_shutdown_disabled_value(value)) {
             config->battery_auto_shutdown_ms = DEVICE_SETTINGS_AUTO_SHUTDOWN_DISABLED_MS;
             return true;
@@ -1138,6 +1147,7 @@ static bool device_settings_apply_key_value(
     }
 
     if (strcmp(key, "plugged_auto_shutdown_minutes") == 0 ||
+        strcmp(key, "pam") == 0 ||
         strcmp(key, "external_auto_shutdown_minutes") == 0 ||
         strcmp(key, "usb_auto_shutdown_minutes") == 0) {
         if (!device_settings_auto_shutdown_disabled_value(value)) {
@@ -1325,7 +1335,7 @@ esp_err_t device_settings_consume_control_command(const char *line)
     }
 
     if (strcmp(command, "HELP") == 0 || strcmp(command, "?") == 0) {
-        printf("~DEVICE:HELP commands=SETTINGS,STATUS,SET,RESET keys=led_status,led_key,led_ec11,led_edge,low_power_idle_ms,low_power_idle_minutes,plugged_low_power_idle_ms,plugged_low_power_idle_minutes,battery_low_power_idle_ms,battery_low_power_idle_minutes,plugged_low_power_enabled,auto_shutdown_ms,auto_shutdown_minutes,battery_auto_shutdown_ms,battery_auto_shutdown_minutes,ble_name,knob_rotation legacy_keys=plugged_brightness,battery_brightness\n");
+        printf("~DEVICE:HELP commands=SETTINGS,STATUS,SET,RESET keys=led_status,led_key,led_ec11,led_edge,low_power_idle_ms,low_power_idle_minutes,plugged_low_power_idle_ms,plugged_low_power_idle_minutes,battery_low_power_idle_ms,battery_low_power_idle_minutes,plugged_low_power_enabled,auto_shutdown_ms,auto_shutdown_minutes,battery_auto_shutdown_ms,battery_auto_shutdown_minutes,ble_name,knob_rotation compact_set=1 compact_keys=ls,lk,l11,le,plm,blm,ple,bam legacy_keys=plugged_brightness,battery_brightness\n");
         fflush(stdout);
         return ESP_OK;
     }

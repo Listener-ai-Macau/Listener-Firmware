@@ -914,6 +914,7 @@ static void ble_hid_gap_note_secure_connection(uint16_t conn_handle, const char 
     }
     ble_hid_gap_close_recovery_pairing_window(reason != NULL ? reason : "secure connection established");
     status_led_set_ble_state(STATUS_LED_BLE_CONNECTED, false);
+    status_led_note_ble_boot_ready("secure_connection");
     ESP_LOGI(TAG,
              "secure BLE connection accepted for LED/link state: conn=%u reason=%s",
              conn_handle,
@@ -2315,6 +2316,7 @@ esp_err_t esp_hid_ble_gap_adv_start(void)
                  2, 0, 1, conn.conn_handle);
         if (conn.secure_connected) {
             status_led_set_ble_state(STATUS_LED_BLE_CONNECTED, false);
+            status_led_note_ble_boot_ready("advertising_skip_connected");
         }
         return ESP_OK;
     }
@@ -2453,6 +2455,7 @@ esp_err_t esp_hid_ble_gap_adv_start(void)
                 s_ble_gap_conn_handle,
                 DIAG_SEV_INFO);
             status_led_set_ble_state(STATUS_LED_BLE_RECONNECTING, false);
+            status_led_note_ble_boot_ready("directed_advertising_started");
             return ESP_OK;
         }
 
@@ -2519,6 +2522,7 @@ esp_err_t esp_hid_ble_gap_adv_start(void)
                 ? STATUS_LED_BLE_PAIRING
                 : STATUS_LED_BLE_RECONNECTING,
             false);
+        status_led_note_ble_boot_ready("undirected_advertising_started");
     }
     return ESP_OK;
 }

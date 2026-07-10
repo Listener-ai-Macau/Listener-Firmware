@@ -9,11 +9,56 @@ param(
 
 $ErrorActionPreference = "Stop"
 
-Add-Type -AssemblyName System.Runtime.WindowsRuntime
-$null = [Windows.Devices.Bluetooth.BluetoothLEDevice, Windows.Devices.Bluetooth, ContentType = WindowsRuntime]
-$null = [Windows.Devices.Bluetooth.GenericAttributeProfile.GattSession, Windows.Devices.Bluetooth, ContentType = WindowsRuntime]
-$null = [Windows.Devices.Bluetooth.BluetoothCacheMode, Windows.Devices.Bluetooth, ContentType = WindowsRuntime]
-$null = [Windows.Devices.Bluetooth.GenericAttributeProfile.GattDeviceServicesResult, Windows.Devices.Bluetooth, ContentType = WindowsRuntime]
+function Test-WinRtBleProjection {
+    try {
+        $null = [Windows.Devices.Bluetooth.BluetoothLEDevice]
+        $null = [Windows.Devices.Bluetooth.GenericAttributeProfile.GattSession]
+        $null = [Windows.Devices.Bluetooth.BluetoothCacheMode]
+        $null = [Windows.Devices.Bluetooth.GenericAttributeProfile.GattDeviceServicesResult]
+        return $true
+    } catch {
+        return $false
+    }
+}
+
+function Initialize-WinRtBleProjection {
+    if (Test-WinRtBleProjection) {
+        return
+    }
+
+    $packageRoot = Join-Path $env:USERPROFILE ".nuget\packages\microsoft.windows.sdk.net.ref"
+    if (Test-Path -LiteralPath $packageRoot) {
+        $candidate = Get-ChildItem -LiteralPath $packageRoot -Directory |
+            Sort-Object Name -Descending |
+            ForEach-Object {
+                Get-ChildItem -LiteralPath $_.FullName -Recurse -Filter "Microsoft.Windows.SDK.NET.dll" -ErrorAction SilentlyContinue |
+                    Where-Object { $_.FullName -match "\\lib\\net[0-9.]+" } |
+                    Select-Object -First 1
+            } |
+            Where-Object { $null -ne $_ } |
+            Select-Object -First 1
+        if ($null -ne $candidate) {
+            $winRtRuntime = Join-Path (Split-Path -Parent $candidate.FullName) "WinRT.Runtime.dll"
+            if (Test-Path -LiteralPath $winRtRuntime) {
+                Add-Type -Path $winRtRuntime
+                Add-Type -Path $candidate.FullName
+            }
+        }
+    }
+
+    if (-not (Test-WinRtBleProjection)) {
+        try {
+            Add-Type -AssemblyName System.Runtime.WindowsRuntime -ErrorAction SilentlyContinue
+        } catch {
+        }
+    }
+
+    if (-not (Test-WinRtBleProjection)) {
+        throw "Unable to load WinRT BLE projection in pwsh. Install/restore Microsoft.Windows.SDK.NET.Ref or run setup so Microsoft.Windows.SDK.NET.dll and WinRT.Runtime.dll are available under `$env:USERPROFILE\.nuget\packages."
+    }
+}
+
+Initialize-WinRtBleProjection
 
 function Invoke-WinRtAsync {
     param(
@@ -23,21 +68,40 @@ function Invoke-WinRtAsync {
         [Type]$ResultType
     )
 
-    $method = [System.WindowsRuntimeSystemExtensions].GetMethods() |
-        Where-Object {
-            $_.Name -eq "AsTask" -and
-            $_.IsGenericMethodDefinition -and
-            $_.GetGenericArguments().Count -eq 1 -and
-            $_.GetParameters().Count -eq 1
-        } |
-        Select-Object -First 1
+    $methods = @()
+    foreach ($candidate in [System.WindowsRuntimeSystemExtensions].GetMethods()) {
+        if ($candidate.Name -ne "AsTask" -or -not $candidate.IsGenericMethodDefinition) {
+            continue
+        }
+        if ($candidate.GetGenericArguments().Count -ne 1) {
+            continue
+        }
+        try {
+            $parameters = $candidate.GetParameters()
+        } catch {
+            continue
+        }
+        if ($parameters.Count -ne 1) {
+            continue
+        }
+        $methods += $candidate
+    }
 
-    if ($null -eq $method) {
+    if ($methods.Count -eq 0) {
         throw "System.WindowsRuntimeSystemExtensions.AsTask<T>(IAsyncOperation<T>) not found."
     }
 
-    $task = $method.MakeGenericMethod($ResultType).Invoke($null, @($AsyncOp))
-    return $task.GetAwaiter().GetResult()
+    $last_error = $null
+    foreach ($method in $methods) {
+        try {
+            $task = $method.MakeGenericMethod($ResultType).Invoke($null, @($AsyncOp))
+            return $task.GetAwaiter().GetResult()
+        } catch {
+            $last_error = $_.Exception.Message
+        }
+    }
+
+    throw "System.WindowsRuntimeSystemExtensions.AsTask<T> could not consume async operation: $last_error"
 }
 
 function Convert-HexAddressToUInt64 {

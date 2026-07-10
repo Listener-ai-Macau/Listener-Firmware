@@ -64,7 +64,7 @@ static const char *TAG = "ble_hid";
 #define BLE_HID_USB_COMMAND_PREFIX '~'
 #define BLE_HID_USB_COMMAND_BUFFER_BYTES 192
 #define BLE_HID_USB_READ_ACTIVE_TIMEOUT_MS 20
-#define BLE_HID_USB_READ_LOW_POWER_TIMEOUT_MS 5000
+#define BLE_HID_USB_READ_LOW_POWER_TIMEOUT_MS 500
 #define BLE_HID_ASCII_QUEUE_LENGTH 8
 #define BLE_HID_USAGE_QUEUE_LENGTH 32
 #define BLE_HID_KEY_SOURCE_BYTES 32
@@ -1223,6 +1223,7 @@ static void ble_hid_keyboard_task(void *parameter)
             rx_buffer,
             sizeof(rx_buffer),
             pdMS_TO_TICKS(usb_read_timeout_ms));
+        watchdog_platform_feed_current_task();
         if (bytes_read > 0) {
             for (int index = 0; index < bytes_read; ++index) {
                 int input_char = (unsigned char)rx_buffer[index];
