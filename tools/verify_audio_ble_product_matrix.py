@@ -1917,8 +1917,6 @@ async def run_listener_type_background_rounds(
     command = [
         "pwsh",
         "-NoProfile",
-        "-ExecutionPolicy",
-        "Bypass",
         "-File",
         str(script_path),
         "-Port",
@@ -2009,6 +2007,7 @@ async def run_listener_type_background_rounds(
     if not isinstance(rounds, list):
         rounds = []
     failures: list[str] = []
+    warnings: list[str] = []
     for item in rounds:
         if not isinstance(item, dict):
             continue
@@ -2021,6 +2020,7 @@ async def run_listener_type_background_rounds(
         print(f"a1_continuous_round_result={round_no}:{status}:{failure_text}", flush=True)
         if warning_text:
             print(f"a1_continuous_round_warnings={round_no}:{warning_text}", flush=True)
+            warnings.append(f"continuous_round{round_no}:{warning_text}")
         visible_latency = item.get("capsule_visible_latency_seconds")
         if visible_latency is not None:
             basis = item.get("capsule_visible_latency_basis") or "unknown"
@@ -2035,8 +2035,15 @@ async def run_listener_type_background_rounds(
             failures.append(f"continuous_round{round_no}")
 
     report_status = str(report.get("status") or "FAIL").upper()
-    result = "pass" if completed.returncode == 0 and report_status == "PASS" and not failures else "fail"
-    reason = "" if result == "pass" else "continuous_background_rounds_failed"
+    if completed.returncode != 0 or report_status != "PASS" or failures:
+        result = "fail"
+        reason = "continuous_background_rounds_failed"
+    elif warnings:
+        result = "warning"
+        reason = "continuous_background_rounds_warning"
+    else:
+        result = "pass"
+        reason = ""
     details = {
         "continuous_type": True,
         "trigger_mode": trigger_mode,
@@ -2047,6 +2054,7 @@ async def run_listener_type_background_rounds(
         "listener_type_report_path": latest_matching_file(output_dir, "background-rounds-*.json"),
         "round_spec_path": str(spec_path),
         "rounds": rounds,
+        "round_warnings": warnings,
         "listener_type_report": report,
         "max_hidden_to_visible_seconds": float(args.a1_continuous_max_hidden_to_visible_seconds),
     }
@@ -2443,10 +2451,8 @@ async def run_listener_type_product_chain(
         )
 
     command = [
-        "powershell.exe",
+        "pwsh",
         "-NoProfile",
-        "-ExecutionPolicy",
-        "Bypass",
         "-File",
         str(script_path),
         "-TriggerMode",

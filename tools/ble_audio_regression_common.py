@@ -251,10 +251,8 @@ def _invoke_audio_endpoint_volume(mode: str, *, volume: float, muted: bool | Non
     try:
         completed = subprocess.run(
             [
-                "powershell.exe",
+                "pwsh",
                 "-NoProfile",
-                "-ExecutionPolicy",
-                "Bypass",
                 "-Command",
                 _AUDIO_ENDPOINT_VOLUME_PS,
             ],
@@ -520,7 +518,7 @@ try {{
 """
     completed = subprocess.run(
         [
-            "powershell", "-NoProfile", "-ExecutionPolicy", "Bypass",
+            "pwsh", "-NoProfile",
             "-EncodedCommand",
             base64.b64encode(script.encode("utf-16le")).decode("ascii"),
         ],
@@ -1409,14 +1407,14 @@ async def play_and_capture_serial_toggle_multi_session(
     return enriched
 
 
-def run_powershell_script(
+def run_pwsh_script(
     script_path: pathlib.Path,
     arguments: list[str],
     *,
     timeout_seconds: int = 60,
 ) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
-        ["powershell", "-ExecutionPolicy", "Bypass", "-File", str(script_path), *arguments],
+        ["pwsh", "-NoProfile", "-File", str(script_path), *arguments],
         capture_output=True,
         text=True,
         check=True,
@@ -1428,7 +1426,7 @@ def restart_windows_bluetooth(*, restart_pan_adapter: bool = False) -> subproces
     arguments: list[str] = []
     if restart_pan_adapter:
         arguments.append("-RestartPanAdapter")
-    return run_powershell_script(RESTART_WINDOWS_BLUETOOTH_SCRIPT, arguments)
+    return run_pwsh_script(RESTART_WINDOWS_BLUETOOTH_SCRIPT, arguments)
 
 
 def recover_ble_hid_host(device_name: str, bluetooth_address: str | None = None) -> subprocess.CompletedProcess[str]:
@@ -1439,7 +1437,7 @@ def recover_ble_hid_host(device_name: str, bluetooth_address: str | None = None)
         address_hex = get_paired_device_address_hex(device_name)
     if address_hex is None:
         raise RuntimeError(f"unable to resolve paired BLE device address for '{device_name}'")
-    return run_powershell_script(
+    return run_pwsh_script(
         RECOVER_BLE_HID_HOST_SCRIPT,
         ["-DeviceName", device_name, "-BluetoothAddress", address_hex],
     )

@@ -262,7 +262,7 @@ def get_paired_device_address(device_name: str) -> str | None:
     )
     try:
         result = subprocess.run(
-            ["powershell", "-NoProfile", "-Command", ps],
+            ["pwsh", "-NoProfile", "-Command", ps],
             capture_output=True,
             text=True,
             check=True,
@@ -293,9 +293,8 @@ def recover_host_ble(device_name: str, address_hex: str) -> None:
         return
     subprocess.run(
         [
-            "powershell",
-            "-ExecutionPolicy",
-            "Bypass",
+            "pwsh",
+            "-NoProfile",
             "-File",
             str(RECOVER_BLE_SCRIPT),
             "-DeviceName",
@@ -319,9 +318,8 @@ def ensure_host_ble_connection(
         return
     subprocess.run(
         [
-            "powershell",
-            "-ExecutionPolicy",
-            "Bypass",
+            "pwsh",
+            "-NoProfile",
             "-File",
             str(ENSURE_BLE_SCRIPT),
             "-DeviceName",

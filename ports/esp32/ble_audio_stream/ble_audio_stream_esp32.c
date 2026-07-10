@@ -29,6 +29,7 @@
 #include "watchdog_platform.h"
 
 extern void power_manager_set_ble_connected(bool connected) __attribute__((weak));
+extern void power_manager_record_activity(const char *reason) __attribute__((weak));
 extern bool ble_hid_gap_is_securely_connected(void) __attribute__((weak));
 extern bool ble_hid_gap_is_recovery_pairing_window_open(void) __attribute__((weak));
 extern bool ble_hid_gap_note_type_audio_ready(const char *reason) __attribute__((weak));
@@ -69,6 +70,10 @@ extern esp_err_t ble_hid_gap_apply_pending_ble_name(void) __attribute__((weak));
 #define BLE_AUDIO_STREAM_AUDIO_POOL_PRESSURE_WARN_PERCENT 80U
 #define BLE_AUDIO_STREAM_AUDIO_POOL_PRESSURE_WARN_LEVEL \
     ((BLE_AUDIO_STREAM_AUDIO_POOL_LENGTH * BLE_AUDIO_STREAM_AUDIO_POOL_PRESSURE_WARN_PERCENT + 99U) / 100U)
+#define BLE_AUDIO_STREAM_BACKPRESSURE_PAUSE_QUEUE_DEPTH 16U
+#define BLE_AUDIO_STREAM_BACKPRESSURE_RESUME_QUEUE_DEPTH 6U
+#define BLE_AUDIO_STREAM_BACKPRESSURE_PAUSE_POOL_IN_USE 16U
+#define BLE_AUDIO_STREAM_BACKPRESSURE_RESUME_POOL_IN_USE 6U
 #define BLE_AUDIO_STREAM_BACKPRESSURE_PAUSE_PERCENT 95U
 #define BLE_AUDIO_STREAM_BACKPRESSURE_RESUME_PERCENT 70U
 #define BLE_AUDIO_STREAM_CONTROL_NOTIFY_REPETITIONS 3
@@ -366,6 +371,11 @@ static bool ble_audio_stream_type_heartbeat_led_recent(void)
         ble_audio_stream_get_type_heartbeat_snapshot();
     return heartbeat.led_ready_until_tick != 0 &&
            !ble_audio_stream_tick_reached(xTaskGetTickCount(), heartbeat.led_ready_until_tick);
+}
+
+static bool ble_audio_stream_type_ready_visible_event(const char *reason)
+{
+    return reason != NULL && strcmp(reason, "TYPE:READY") == 0;
 }
 
 static void ble_audio_stream_note_type_host_seen(const char *reason)
@@ -926,7 +936,8 @@ static void ble_audio_stream_sync_status_led_for_type_link(const char *reason)
         ble_audio_stream_is_type_led_ready()
             ? STATUS_LED_BLE_TYPE_READY
             : STATUS_LED_BLE_CONNECTED,
-        false);
+        ble_audio_stream_type_ready_visible_event(reason));
+    status_led_note_ble_boot_ready(reason);
     ESP_LOGD(TAG, "type link LED sync reason=%s", reason != NULL ? reason : "unspecified");
 }
 
@@ -2795,6 +2806,10 @@ void ble_audio_stream_note_type_activity(const char *reason)
     ble_audio_stream_set_type_heartbeat_active(
         true,
         reason != NULL ? reason : "type_activity");
+    if (ble_audio_stream_type_ready_visible_event(reason) &&
+        power_manager_record_activity != NULL) {
+        power_manager_record_activity("type_ready");
+    }
     ble_audio_stream_sync_power_manager_for_type_link(
         true,
         reason != NULL ? reason : "type_activity");
@@ -2996,11 +3011,20 @@ void ble_audio_stream_get_backpressure(ble_audio_stream_backpressure_t *snapshot
         snapshot->audio_pool_in_use);
 
     bool next_backpressure_active = ble_audio_stream_get_backpressure_active();
+    bool queue_or_pool_above_latency_window =
+        snapshot->queue_depth >= BLE_AUDIO_STREAM_BACKPRESSURE_PAUSE_QUEUE_DEPTH ||
+        snapshot->audio_pool_in_use >= BLE_AUDIO_STREAM_BACKPRESSURE_PAUSE_POOL_IN_USE;
+    bool queue_and_pool_below_latency_window =
+        snapshot->queue_depth <= BLE_AUDIO_STREAM_BACKPRESSURE_RESUME_QUEUE_DEPTH &&
+        snapshot->audio_pool_in_use <= BLE_AUDIO_STREAM_BACKPRESSURE_RESUME_POOL_IN_USE;
+
     if (!snapshot->transport_session_active) {
         next_backpressure_active = false;
-    } else if (snapshot->pressure_percent >= BLE_AUDIO_STREAM_BACKPRESSURE_PAUSE_PERCENT) {
+    } else if (queue_or_pool_above_latency_window ||
+               snapshot->pressure_percent >= BLE_AUDIO_STREAM_BACKPRESSURE_PAUSE_PERCENT) {
         next_backpressure_active = true;
-    } else if (snapshot->pressure_percent <= BLE_AUDIO_STREAM_BACKPRESSURE_RESUME_PERCENT) {
+    } else if (queue_and_pool_below_latency_window &&
+               snapshot->pressure_percent <= BLE_AUDIO_STREAM_BACKPRESSURE_RESUME_PERCENT) {
         next_backpressure_active = false;
     }
 

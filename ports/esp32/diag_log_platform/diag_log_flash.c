@@ -150,15 +150,30 @@ static uint16_t retained_count_from_sector(uint16_t sector, const diag_sector_he
         return 0;
     }
 
-    uint16_t count = 0;
-    for (uint16_t index = 0; index < DIAG_EVENTS_PER_SECTOR; index++) {
-        diag_event_t evt;
-        if (read_event(sector, index, &evt) != ESP_OK || event_is_erased(&evt)) {
-            break;
-        }
-        count++;
+    diag_event_t evt;
+    const uint16_t last_index = (uint16_t)(DIAG_EVENTS_PER_SECTOR - 1U);
+    if (read_event(sector, last_index, &evt) != ESP_OK) {
+        return 0;
     }
-    return count;
+    if (!event_is_erased(&evt)) {
+        return (uint16_t)DIAG_EVENTS_PER_SECTOR;
+    }
+
+    if (read_event(sector, 0, &evt) != ESP_OK || event_is_erased(&evt)) {
+        return 0;
+    }
+
+    uint16_t low = 1U;
+    uint16_t high = last_index;
+    while (low < high) {
+        uint16_t mid = (uint16_t)(low + ((high - low) / 2U));
+        if (read_event(sector, mid, &evt) != ESP_OK || event_is_erased(&evt)) {
+            high = mid;
+        } else {
+            low = (uint16_t)(mid + 1U);
+        }
+    }
+    return low;
 }
 
 static uint16_t cached_retained_count_from_sector(uint16_t sector, const diag_sector_header_t *header)
