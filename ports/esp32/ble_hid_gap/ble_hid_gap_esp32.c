@@ -143,6 +143,43 @@ typedef enum {
     BLE_HID_CONN_PARAM_MODE_LOW_POWER = 2,
 } ble_hid_conn_param_mode_t;
 
+static bool ble_hid_gap_conn_desc_matches_params(
+    uint16_t conn_handle,
+    uint16_t itvl_min,
+    uint16_t itvl_max,
+    uint16_t latency)
+{
+    struct ble_gap_conn_desc desc;
+    int rc = ble_gap_conn_find(conn_handle, &desc);
+    if (rc != 0) {
+        return false;
+    }
+
+    return desc.conn_itvl >= itvl_min &&
+           desc.conn_itvl <= itvl_max &&
+           desc.conn_latency == latency;
+}
+
+static uint32_t ble_hid_gap_last_conn_param_mode(void)
+{
+    portENTER_CRITICAL(&s_ble_gap_state_lock);
+    uint32_t mode = s_last_conn_param_mode;
+    portEXIT_CRITICAL(&s_ble_gap_state_lock);
+    return mode;
+}
+
+static void ble_hid_gap_clear_conn_param_mode(const char *reason)
+{
+    portENTER_CRITICAL(&s_ble_gap_state_lock);
+    uint32_t previous = s_last_conn_param_mode;
+    s_last_conn_param_mode = 0;
+    portEXIT_CRITICAL(&s_ble_gap_state_lock);
+    if (previous != 0) {
+        ESP_LOGW(TAG, "connection parameter mode cache cleared after %s: previous_mode=%u",
+                 reason != NULL ? reason : "unknown", (unsigned)previous);
+    }
+}
+
 typedef struct {
     bool connected;
     bool secure_connected;
@@ -1212,10 +1249,16 @@ static esp_err_t ble_hid_gap_request_connection_params(
         return ESP_ERR_INVALID_STATE;
     }
 
-    if (s_last_conn_param_mode == (uint32_t)mode) {
+    const uint32_t last_mode = ble_hid_gap_last_conn_param_mode();
+    const bool actual_params_match = ble_hid_gap_conn_desc_matches_params(
+        conn.conn_handle,
+        itvl_min,
+        itvl_max,
+        latency);
+    if (last_mode == (uint32_t)mode && actual_params_match) {
         ESP_LOGI(
             TAG,
-            "%s connection parameters already requested: conn=%u preferred_itvl=%u-%u latency=%u timeout=%u mode=%u",
+            "%s connection parameters already active: conn=%u preferred_itvl=%u-%u latency=%u timeout=%u mode=%u",
             policy,
             conn.conn_handle,
             itvl_min,
@@ -1224,6 +1267,18 @@ static esp_err_t ble_hid_gap_request_connection_params(
             supervision_timeout,
             (unsigned)mode);
         return ESP_OK;
+    }
+    if (last_mode == (uint32_t)mode && !actual_params_match) {
+        ESP_LOGW(
+            TAG,
+            "%s connection parameter request cache did not match current link; re-requesting: conn=%u preferred_itvl=%u-%u latency=%u timeout=%u mode=%u",
+            policy,
+            conn.conn_handle,
+            itvl_min,
+            itvl_max,
+            latency,
+            supervision_timeout,
+            (unsigned)mode);
     }
 
     struct ble_gap_upd_params params = {
@@ -1889,6 +1944,9 @@ nimble_hid_gap_event(struct ble_gap_event *event, void *arg)
         /* The central has updated the connection parameters. */
         ESP_LOGI(TAG, "connection updated; status=%d",
                 event->conn_update.status);
+        if (event->conn_update.status != 0) {
+            ble_hid_gap_clear_conn_param_mode("connection update failed");
+        }
         ble_hid_gap_log_conn_desc("connection updated", event->conn_update.conn_handle);
         rc = ble_gap_conn_find(event->conn_update.conn_handle, &desc);
         if (rc == 0) {

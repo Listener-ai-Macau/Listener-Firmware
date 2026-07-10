@@ -18,6 +18,8 @@
 #include "power_manager.h"
 #include "status_led.h"
 
+extern esp_err_t ble_hid_gap_request_active_connection(void) __attribute__((weak));
+
 static const char *TAG = "firmware_ota";
 
 #define FIRMWARE_OTA_USB_PREFIX "OTA:"
@@ -159,9 +161,28 @@ static void firmware_ota_reset_session_locked(void)
     s_ota.target_version[0] = '\0';
 }
 
+static void firmware_ota_request_active_ble_connection(const char *reason)
+{
+    if (ble_hid_gap_request_active_connection == NULL) {
+        return;
+    }
+
+    esp_err_t ret = ble_hid_gap_request_active_connection();
+    if (ret != ESP_OK) {
+        ESP_LOGW(TAG, "OTA active BLE connection request failed reason=%s ret=%s",
+                 reason != NULL ? reason : "ota", esp_err_to_name(ret));
+    } else {
+        ESP_LOGI(TAG, "OTA requested active BLE connection parameters reason=%s",
+                 reason != NULL ? reason : "ota");
+    }
+}
+
 static void firmware_ota_set_runtime_active(bool active, size_t bytes_written, size_t expected_size, const char *reason)
 {
     power_manager_set_blocker(POWER_MANAGER_BLOCKER_OTA, active);
+    if (active && reason != NULL) {
+        firmware_ota_request_active_ble_connection(reason);
+    }
     status_led_set_ota_active(active, bytes_written, expected_size, reason);
 }
 

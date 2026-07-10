@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import re
 import sys
 import time
 from pathlib import Path
@@ -106,7 +107,7 @@ def command_list(args: argparse.Namespace) -> list[str]:
     if args.command_list.strip():
         commands.extend(
             command.strip()
-            for command in args.command_list.split(";;")
+            for command in re.split(r";;|[;\r\n]+", args.command_list)
             if command and command.strip()
         )
     return commands

@@ -34,6 +34,7 @@ extern bool ble_hid_gap_is_securely_connected(void) __attribute__((weak));
 extern bool ble_hid_gap_is_recovery_pairing_window_open(void) __attribute__((weak));
 extern bool ble_hid_gap_note_type_audio_ready(const char *reason) __attribute__((weak));
 extern esp_err_t ble_hid_gap_apply_pending_ble_name(void) __attribute__((weak));
+extern esp_err_t ble_hid_gap_request_active_connection(void) __attribute__((weak));
 
 #define BLE_AUDIO_STREAM_TASK_STACK_BYTES (5 * 1024)
 #define BLE_AUDIO_STREAM_PACKET_DEFAULT_BYTES 244
@@ -2890,6 +2891,24 @@ bool ble_audio_stream_consume_type_control_command(const char *command, const ch
                 "type heartbeat received source=%s command=%s",
                 source != NULL ? source : "unknown",
                 command);
+        }
+        return true;
+    }
+
+    if (strcmp(command, "TYPE:OTA") == 0) {
+        ble_audio_stream_note_type_activity(command);
+        if (ble_hid_gap_request_active_connection != NULL) {
+            esp_err_t ret = ble_hid_gap_request_active_connection();
+            ESP_LOGI(
+                TAG,
+                "type OTA active connection request source=%s ret=%s",
+                source != NULL ? source : "unknown",
+                esp_err_to_name(ret));
+        } else {
+            ESP_LOGW(TAG, "type OTA active connection request unavailable");
+        }
+        if (power_manager_record_activity != NULL) {
+            power_manager_record_activity("type_ota");
         }
         return true;
     }

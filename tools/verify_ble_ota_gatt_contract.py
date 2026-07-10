@@ -148,6 +148,8 @@ def check_bridge(repo: Path) -> None:
 def check_integration(repo: Path) -> None:
     hid = read_text(repo / "ports/esp32/ble_hid/ble_hid.c")
     gap = read_text(repo / "ports/esp32/ble_hid_gap/ble_hid_gap_esp32.c")
+    audio = read_text(repo / "ports/esp32/ble_audio_stream/ble_audio_stream_esp32.c")
+    firmware_ota = read_text(repo / "components/firmware_ota/firmware_ota.c")
     hid_cmake = read_text(repo / "ports/esp32/ble_hid/CMakeLists.txt")
     gap_cmake = read_text(repo / "ports/esp32/ble_hid_gap/CMakeLists.txt")
     diag = read_text(repo / "components/diag_log/include/diag_log_events.h")
@@ -161,6 +163,29 @@ def check_integration(repo: Path) -> None:
     )
     require("ble_firmware_ota" in hid_cmake, "ble_hid component does not require ble_firmware_ota")
     require("ble_firmware_ota" in gap_cmake, "ble_hid_gap component does not require ble_firmware_ota")
+    require(
+        "ble_hid_gap_conn_desc_matches_params" in gap
+        and "connection parameters already active" in gap
+        and "connection parameter request cache did not match current link; re-requesting" in gap
+        and 'ble_hid_gap_clear_conn_param_mode("connection update failed")' in gap,
+        "GAP active/idle connection parameter de-duplication must verify the actual link and clear the cache when Windows rejects an update",
+    )
+    require(
+        "ble_hid_gap_request_active_connection" in firmware_ota
+        and "firmware_ota_request_active_ble_connection" in firmware_ota
+        and "power_manager_set_blocker(POWER_MANAGER_BLOCKER_OTA, active)" in firmware_ota
+        and "if (active && reason != NULL)" in firmware_ota
+        and 'firmware_ota_set_runtime_active(true, 0, image_size, "ota_begin")' in firmware_ota
+        and "firmware_ota_set_runtime_active(true, next_size, expected_size, NULL)" in firmware_ota,
+        "firmware OTA begin must force active BLE connection parameters once, while per-chunk progress must not spam connection updates",
+    )
+    require(
+        'strcmp(command, "TYPE:OTA") == 0' in audio
+        and "ble_hid_gap_request_active_connection" in audio
+        and "type OTA active connection request" in audio
+        and 'power_manager_record_activity("type_ota")' in audio,
+        "BLE audio control must keep TYPE:OTA as the desktop pre-transfer active-link hint for low-power OTA speed",
+    )
     for token in (
         "DIAG_OTA_ABORT_BLE_CONTROL",
         "DIAG_OTA_ABORT_BLE_WRITE_FAIL",
@@ -403,6 +428,12 @@ def check_desktop_ble_source(path: Path) -> str:
         and "read_listener_ota_v2_status" in source
         and "transport: \"listener_ble_ota_v2\"" in source,
         f"desktop BLE source {path} must expose the Listener OTA v2 offset/status transfer path",
+    )
+    require(
+        "TYPE:OTA" in source
+        and "Listener OTA v2 active-link hint" in source
+        and "acquire_ble_ota_process_mutex(\"listener_ota_v2\")" in source,
+        f"desktop BLE source {path} must send the pre-transfer TYPE:OTA active-link hint under the OTA mutex",
     )
     require(
         "OTA_CONTROL_UUID" in source

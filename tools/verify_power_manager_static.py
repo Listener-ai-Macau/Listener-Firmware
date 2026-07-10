@@ -1249,14 +1249,15 @@ def main() -> int:
             "ports/esp32/ble_hid_gap/ble_hid_gap_esp32.c: key-wake-only advertising stop must restart connectable advertising during recovery pairing"
         )
     if not re.search(
-        r"ble_hid_gap_set_connection_state[\s\S]{0,260}s_last_conn_param_mode\s*=\s*0",
+        r"ble_hid_gap_set_connection_state[\s\S]{0,360}s_last_conn_param_mode\s*=\s*0",
         ble_gap,
-    ) or not re.search(
-        r"s_last_conn_param_mode\s*==\s*\(uint32_t\)mode",
-        ble_gap,
+    ) or not (
+        "ble_hid_gap_conn_desc_matches_params" in ble_gap
+        and "last_mode == (uint32_t)mode && actual_params_match" in ble_gap
+        and 'ble_hid_gap_clear_conn_param_mode("connection update failed")' in ble_gap
     ):
         failures.append(
-            "ports/esp32/ble_hid_gap/ble_hid_gap_esp32.c: connection parameter mode de-duplication must reset on connection state changes"
+            "ports/esp32/ble_hid_gap/ble_hid_gap_esp32.c: connection parameter de-duplication must reset on connection changes, verify actual link params, and clear rejected updates"
         )
     for label, pattern in (
         (
