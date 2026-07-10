@@ -1,5 +1,5 @@
 # build_firmware.ps1 - Build firmware from any shell (including Claude Code's MSys bash)
-# Usage: powershell -File tools/build_firmware.ps1 [-Flash] [-Monitor] [-Clean]
+# Usage: pwsh -NoProfile -File tools/build_firmware.ps1 [-Flash] [-Monitor] [-Clean]
 param(
     [switch]$Flash,
     [switch]$Monitor,
@@ -29,21 +29,31 @@ if (-not (Test-Path -LiteralPath $exportPs1)) {
     throw "ESP-IDF export.ps1 not found at $exportPs1. Set ESP_IDF_PATH or pass -IdfPath."
 }
 
+# Launch every IDF action through the repo wrapper so this helper follows the
+# same shell contract as the rest of the repo.
+$idfWrapper = Join-Path $PSScriptRoot "idf.ps1"
+if (-not (Test-Path -LiteralPath $idfWrapper -PathType Leaf)) {
+    throw "Missing IDF wrapper at $idfWrapper."
+}
+$escapedIdfWrapper = $idfWrapper.Replace("'", "''")
 $actions = @()
-if ($Clean) { $actions += "idf.py fullclean" }
-$actions += "idf.py build"
-if ($Flash) { $actions += "idf.py -p $Port flash" }
-if ($Monitor) { $actions += "idf.py -p $Port monitor" }
+if ($Clean) { $actions += "& '$escapedIdfWrapper' fullclean" }
+$actions += "& '$escapedIdfWrapper' build"
+if ($Flash) { $actions += "& '$escapedIdfWrapper' -p $Port flash" }
+if ($Monitor) { $actions += "& '$escapedIdfWrapper' -p $Port monitor" }
 
 $cmdBlock = $actions -join "; "
 
-# Launch a clean PowerShell child process without MSys contamination
+# Launch a clean pwsh child process without MSys contamination
 $escapedFirmwareRoot = $FirmwareRoot.Replace("'", "''")
 $escapedIdfPath = $IdfPath.Replace("'", "''")
 $escapedExportPs1 = $exportPs1.Replace("'", "''")
+$childScript = "`$env:IDF_PATH = '$escapedIdfPath'; Set-Location -LiteralPath '$escapedFirmwareRoot'; . '$escapedExportPs1'; $cmdBlock"
 $psi = [System.Diagnostics.ProcessStartInfo]::new()
-$psi.FileName = "powershell.exe"
-$psi.Arguments = "-NoProfile -ExecutionPolicy Bypass -Command `"$env:IDF_PATH = '$escapedIdfPath'; Set-Location '$escapedFirmwareRoot'; . '$escapedExportPs1'; $cmdBlock`""
+$psi.FileName = "pwsh.exe"
+[void]$psi.ArgumentList.Add("-NoProfile")
+[void]$psi.ArgumentList.Add("-Command")
+[void]$psi.ArgumentList.Add($childScript)
 $psi.EnvironmentVariables["PATH"] = $cleanPath
 $psi.EnvironmentVariables["IDF_PATH"] = $IdfPath
 # Remove MSys-related env vars

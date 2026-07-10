@@ -17,7 +17,7 @@ Set-StrictMode -Version Latest
 $repoRoot = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot "..")).Path
 if ([string]::IsNullOrWhiteSpace($OutputDir)) {
     $stamp = Get-Date -Format "yyyyMMdd-HHmmss"
-    $OutputDir = Join-Path $repoRoot "docs/validation/voice-keyboard-firmware-full-function-test-1.7/pwr-hold-new-board-$stamp"
+    $OutputDir = Join-Path $repoRoot ".cache/validation/voice-keyboard-firmware-full-function-test-1.7/pwr-hold-new-board-$stamp"
 } elseif (-not [System.IO.Path]::IsPathRooted($OutputDir)) {
     $OutputDir = Join-Path $repoRoot $OutputDir
 }

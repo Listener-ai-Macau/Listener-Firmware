@@ -43,7 +43,7 @@ if ($PSVersionTable.PSEdition -eq 'Desktop') {
     throw 'claude_execute.ps1 requires pwsh.exe for reliable UTF-8 prompt handling.'
   }
 
-  $forwardArgs = @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $PSCommandPath)
+  $forwardArgs = @('-NoProfile', '-File', $PSCommandPath)
   foreach ($entry in $PSBoundParameters.GetEnumerator()) {
     $nameArg = '-' + $entry.Key
     $value = $entry.Value
@@ -85,7 +85,7 @@ function Get-RepoRoot {
 function Resolve-PowerShellHost {
   $pwsh = Get-Command pwsh.exe -ErrorAction SilentlyContinue
   if ($null -ne $pwsh) { return $pwsh.Source }
-  return (Get-Command powershell.exe -ErrorAction Stop).Source
+  throw 'pwsh.exe is required for reliable UTF-8 and validation behavior.'
 }
 
 function Resolve-ClaudePs1 {
@@ -1010,7 +1010,7 @@ function Invoke-NativePipeline([array]$Steps, [string]$WorkDir, [string]$Artifac
     if ($stepArgs.Count -gt 0) {
       $result = Invoke-ProcessCommand ([string]$step.command) @($stepArgs | ForEach-Object { [string]$_ }) $WorkDir ([int]$step.timeout_seconds)
     } else {
-      $result = Invoke-ProcessCommand (Resolve-PowerShellHost) @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-Command', [string]$step.command) $WorkDir ([int]$step.timeout_seconds)
+      $result = Invoke-ProcessCommand (Resolve-PowerShellHost) @('-NoProfile', '-Command', [string]$step.command) $WorkDir ([int]$step.timeout_seconds)
     }
     $afterConsistency = Get-ConsistencySnapshot $WorkDir $artifactSpecs
     $workspaceDelta = Get-WorkspaceDelta $beforeConsistency.source $afterConsistency.source
@@ -1228,7 +1228,7 @@ exit $LASTEXITCODE
     $attempt++
     $process = [System.Diagnostics.Process]::new()
     $process.StartInfo.FileName = (Resolve-PowerShellHost)
-    $process.StartInfo.Arguments = Join-Arguments @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $runnerPath)
+    $process.StartInfo.Arguments = Join-Arguments @('-NoProfile', '-File', $runnerPath)
     $process.StartInfo.WorkingDirectory = $ProjectRoot
     $process.StartInfo.UseShellExecute = $false
     $process.StartInfo.RedirectStandardInput = $false
@@ -1445,7 +1445,7 @@ function Write-FinalStatus {
 }
 
 function Invoke-BackgroundDispatch([array]$NativePipelineSteps) {
-  $childArgs = @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $PSCommandPath)
+  $childArgs = @('-NoProfile', '-File', $PSCommandPath)
   if ($NativePipelineSteps.Count -gt 0) {
     $childArgs += @('-PipelineFile', $script:PipelineStepsPath)
   } else {

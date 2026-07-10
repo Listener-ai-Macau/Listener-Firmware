@@ -75,9 +75,10 @@ function Test-IdfReady {
         return $false
     }
 
-    $verifyScript = "& '$exportScript' | Out-Null; idf.py --version"
-    $verify = Start-Process -FilePath "powershell" `
-        -ArgumentList @("-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", $verifyScript) `
+    $idfWrapper = Join-Path $PSScriptRoot "idf.ps1"
+    $verifyScript = "& '$idfWrapper' --version"
+    $verify = Start-Process -FilePath "pwsh" `
+        -ArgumentList @("-NoProfile", "-Command", $verifyScript) `
         -NoNewWindow -Wait -PassThru
 
     return $verify.ExitCode -eq 0
@@ -143,6 +144,6 @@ if (-not (Test-IdfReady -Path $IdfPath)) {
 Write-Host ""
 Write-Host "Setup complete."
 Write-Host "Next steps:"
-Write-Host "  powershell -ExecutionPolicy Bypass -File .\tools\build.ps1"
-Write-Host "  powershell -ExecutionPolicy Bypass -File .\tools\flash.ps1 -Port COM5"
-Write-Host "  powershell -ExecutionPolicy Bypass -File .\tools\monitor.ps1 -Port COM5"
+Write-Host "  pwsh -NoProfile -File .\tools\build.ps1"
+Write-Host "  pwsh -NoProfile -File .\tools\flash.ps1 -Port COM5"
+Write-Host "  pwsh -NoProfile -File .\tools\monitor.ps1 -Port COM5"

@@ -14,7 +14,7 @@ Set-StrictMode -Version Latest
 $repoRoot = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot "..")).Path
 if ([string]::IsNullOrWhiteSpace($OutputPath)) {
     $stamp = Get-Date -Format "yyyyMMdd-HHmmss"
-    $OutputPath = Join-Path $repoRoot "docs\validation\physical_ble_repair_guided_$stamp.log"
+    $OutputPath = Join-Path $repoRoot ".cache\validation\physical_ble_repair_guided_$stamp.log"
 } elseif (-not [System.IO.Path]::IsPathRooted($OutputPath)) {
     $OutputPath = Join-Path $repoRoot $OutputPath
 }

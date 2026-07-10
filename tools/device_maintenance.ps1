@@ -32,15 +32,15 @@ function Show-Usage {
     Write-Host "Listener device maintenance"
     Write-Host ""
     Write-Host "Read-only:"
-    Write-Host "  powershell -ExecutionPolicy Bypass -File .\tools\device_maintenance.ps1 -Action ports"
-    Write-Host "  powershell -ExecutionPolicy Bypass -File .\tools\device_maintenance.ps1 -Action probe -Port COMx"
-    Write-Host "  powershell -ExecutionPolicy Bypass -File .\tools\device_maintenance.ps1 -Action check-flash -Port COMx"
+    Write-Host "  pwsh -NoProfile -File .\tools\device_maintenance.ps1 -Action ports"
+    Write-Host "  pwsh -NoProfile -File .\tools\device_maintenance.ps1 -Action probe -Port COMx"
+    Write-Host "  pwsh -NoProfile -File .\tools\device_maintenance.ps1 -Action check-flash -Port COMx"
     Write-Host ""
     Write-Host "Recovery / write:"
-    Write-Host "  powershell -ExecutionPolicy Bypass -File .\tools\device_maintenance.ps1 -Action flash -Port COMx"
-    Write-Host "  powershell -ExecutionPolicy Bypass -File .\tools\device_maintenance.ps1 -Action restore-bootloader -Port COMx"
-    Write-Host "  powershell -ExecutionPolicy Bypass -File .\tools\device_maintenance.ps1 -Action erase-otadata -Port COMx"
-    Write-Host "  powershell -ExecutionPolicy Bypass -File .\tools\device_maintenance.ps1 -Action erase-flash -Port COMx -ConfirmEraseFlash"
+    Write-Host "  pwsh -NoProfile -File .\tools\device_maintenance.ps1 -Action flash -Port COMx"
+    Write-Host "  pwsh -NoProfile -File .\tools\device_maintenance.ps1 -Action restore-bootloader -Port COMx"
+    Write-Host "  pwsh -NoProfile -File .\tools\device_maintenance.ps1 -Action erase-otadata -Port COMx"
+    Write-Host "  pwsh -NoProfile -File .\tools\device_maintenance.ps1 -Action erase-flash -Port COMx -ConfirmEraseFlash"
     Write-Host ""
     Write-Host "COMx resolves to the only present ESP32-S3 USB serial port."
 }
@@ -343,7 +343,7 @@ function Invoke-CheckFlash {
 
 function Invoke-FlashFirmware {
     $commandArgs = @(
-        "-ExecutionPolicy", "Bypass",
+        "-NoProfile",
         "-File", (Join-Path $PSScriptRoot "flash.ps1"),
         "-Port", $Port,
         "-Target", $Target
@@ -357,12 +357,12 @@ function Invoke-FlashFirmware {
     if ($PreserveOtaData) {
         $commandArgs += "-PreserveOtaData"
     }
-    Invoke-CheckedCommand -File "powershell" -Arguments $commandArgs
+    Invoke-CheckedCommand -File "pwsh" -Arguments $commandArgs
 }
 
 function Invoke-RestoreBootloader {
     $commandArgs = @(
-        "-ExecutionPolicy", "Bypass",
+        "-NoProfile",
         "-File", (Join-Path $PSScriptRoot "flash_bootloader.ps1"),
         "-Port", $Port,
         "-Target", $Target
@@ -370,22 +370,33 @@ function Invoke-RestoreBootloader {
     if (-not [string]::IsNullOrWhiteSpace($BuildDir)) {
         $commandArgs += @("-BuildDir", $BuildDir)
     }
-    Invoke-CheckedCommand -File "powershell" -Arguments $commandArgs
+    Invoke-CheckedCommand -File "pwsh" -Arguments $commandArgs
 }
 
 function Invoke-EraseOtaData {
     $resolvedPort = Resolve-MaintenancePort
     $buildDirResolved = Get-ShortBuildDir
     if (-not $NoBuild) {
-        Invoke-CheckedCommand -File "powershell" -Arguments @(
-            "-ExecutionPolicy", "Bypass",
+        Invoke-CheckedCommand -File "pwsh" -Arguments @(
+            "-NoProfile",
             "-File", (Join-Path $PSScriptRoot "build.ps1"),
             "-Target", $Target,
             "-BuildDir", $buildDirResolved
         )
     }
-    Enter-IdfEnvironment
-    Invoke-CheckedCommand -File "idf.py" -Arguments @("-B", $buildDirResolved, "-p", $resolvedPort, "erase-otadata")
+    $previousIdfTarget = $env:IDF_TARGET
+    try {
+        $env:IDF_TARGET = $Target
+        Invoke-CheckedCommand -File "pwsh" -Arguments @(
+            "-NoProfile",
+            "-File", (Join-Path $PSScriptRoot "idf.ps1"),
+            "-B", $buildDirResolved,
+            "-p", $resolvedPort,
+            "erase-otadata"
+        )
+    } finally {
+        $env:IDF_TARGET = $previousIdfTarget
+    }
 }
 
 function Invoke-EraseFlash {

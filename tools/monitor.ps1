@@ -6,5 +6,10 @@ param(
 
 $ErrorActionPreference = "Stop"
 
-. (Join-Path $PSScriptRoot "idf_env.ps1") -Target $Target
-idf.py -p $Port monitor
+$previousIdfTarget = $env:IDF_TARGET
+try {
+    $env:IDF_TARGET = $Target
+    pwsh -NoProfile -File (Join-Path $PSScriptRoot "idf.ps1") -p $Port monitor
+} finally {
+    $env:IDF_TARGET = $previousIdfTarget
+}

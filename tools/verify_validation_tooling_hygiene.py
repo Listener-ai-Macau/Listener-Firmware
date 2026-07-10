@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import re
+import subprocess
 import sys
 from pathlib import Path
 
@@ -26,9 +27,50 @@ VALIDATION_CHAIN_FILES = [
     TYPE_ROOT / "tools" / "embedded_audio_replay" / "run_ble_stream_smoke.ps1",
 ]
 
+PUBLIC_ENTRY_FILES = [
+    FIRMWARE_ROOT / "README.md",
+    FIRMWARE_ROOT / "CONTRIBUTING.md",
+    FIRMWARE_ROOT / "AGENTS.md",
+    FIRMWARE_ROOT / "CLAUDE.md",
+    FIRMWARE_ROOT / "docs" / "tools" / "device_maintenance.md",
+]
+
+FIRMWARE_COMMAND_ENTRY_FILES = [
+    FIRMWARE_ROOT / "tools" / "build_firmware.ps1",
+    FIRMWARE_ROOT / "tools" / "build.ps1",
+    FIRMWARE_ROOT / "tools" / "flash.ps1",
+    FIRMWARE_ROOT / "tools" / "flash_usb_light_sleep_debug.ps1",
+    FIRMWARE_ROOT / "tools" / "flash_bootloader_double_click.ps1",
+    FIRMWARE_ROOT / "tools" / "flash_bootloader_double_click.cmd",
+    FIRMWARE_ROOT / "tools" / "device_maintenance.ps1",
+    FIRMWARE_ROOT / "tools" / "setup_windows.ps1",
+    FIRMWARE_ROOT / "tools" / "test.ps1",
+    FIRMWARE_ROOT / "tools" / "verify_ble_tts_asr_smoke.py",
+    FIRMWARE_ROOT / "tools" / "inject_text.py",
+]
+
+HARDWARE_OUTPUT_ENTRY_FILES = [
+    FIRMWARE_ROOT / "tools" / "status_led_human_effect_review.ps1",
+    FIRMWARE_ROOT / "tools" / "status_led_camera_calibration.ps1",
+    FIRMWARE_ROOT / "tools" / "status_led_manual_calibration.ps1",
+    FIRMWARE_ROOT / "tools" / "verify_battery_only_auto_shutdown_manual.ps1",
+    FIRMWARE_ROOT / "tools" / "verify_ble_repair_physical_guided.ps1",
+    FIRMWARE_ROOT / "tools" / "verify_low_power_unplug_wake_hardware.ps1",
+    FIRMWARE_ROOT / "tools" / "verify_pwr_hold_shutdown_hardware.ps1",
+    FIRMWARE_ROOT / "tools" / "verify_status_led_hardware.ps1",
+]
+
+ALLOWED_IDF_TEXT_FILES = {
+    "tools/idf.ps1",
+    "tools/idf_env.ps1",
+    "tools/verify_idf_env_static.ps1",
+    "tools/verify_validation_tooling_hygiene.py",
+}
+
 FORBIDDEN_SHELL_PATTERNS = [
     (re.compile(r'["\']powershell(?:\.exe)?["\']', re.IGNORECASE), "invoke pwsh instead of Windows PowerShell"),
     (re.compile(r"&\s*powershell(?:\.exe)?\b", re.IGNORECASE), "invoke pwsh instead of Windows PowerShell"),
+    (re.compile(r"(?im)(^|\s)powershell(?:\.exe)?\s+-(NoProfile|ExecutionPolicy|File|Command)\b"), "document or invoke pwsh instead of Windows PowerShell"),
     (re.compile(r"\bStart-Process\s+-FilePath\s+['\"]powershell(?:\.exe)?['\"]", re.IGNORECASE), "Start-Process must use pwsh"),
     (re.compile(r'["\']-ExecutionPolicy["\']|\s-ExecutionPolicy\s', re.IGNORECASE), "do not carry Windows PowerShell execution-policy shims into pwsh validation"),
 ]
@@ -40,15 +82,53 @@ def read(path: Path) -> str:
     return path.read_text(encoding="utf-8", errors="replace")
 
 
+def git_ls_files() -> list[str]:
+    result = subprocess.run(
+        ["git", "-C", str(FIRMWARE_ROOT), "ls-files"],
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=True,
+    )
+    return [line.strip().replace("\\", "/") for line in result.stdout.splitlines() if line.strip()]
+
+
 def main() -> int:
     failures: list[str] = []
 
-    for path in VALIDATION_CHAIN_FILES:
+    tracked = git_ls_files()
+    for prefix in ("!docs/", "docs/validation/"):
+        offenders = [path for path in tracked if path.startswith(prefix)]
+        if offenders:
+            preview = ", ".join(offenders[:8])
+            suffix = f", ... +{len(offenders) - 8}" if len(offenders) > 8 else ""
+            failures.append(f"tracked generated/legacy docs are not allowed under {prefix}: {preview}{suffix}")
+
+    for path in PUBLIC_ENTRY_FILES:
+        text = read(path)
+        if "!docs" in text:
+            failures.append(f"{path.relative_to(DENZIC_ROOT)}: public entry docs must point to docs/, not !docs/")
+
+    for path in [*VALIDATION_CHAIN_FILES, *PUBLIC_ENTRY_FILES, *FIRMWARE_COMMAND_ENTRY_FILES]:
         text = read(path)
         for pattern, message in FORBIDDEN_SHELL_PATTERNS:
             match = pattern.search(text)
             if match:
                 failures.append(f"{path.relative_to(DENZIC_ROOT)}: {message}: {match.group(0)!r}")
+
+    for path in HARDWARE_OUTPUT_ENTRY_FILES:
+        text = read(path)
+        if "docs/validation" in text or "docs\\validation" in text:
+            failures.append(f"{path.relative_to(DENZIC_ROOT)}: default generated validation output must stay under .cache/validation")
+
+    for rel in tracked:
+        if not rel.startswith("tools/") or rel in ALLOWED_IDF_TEXT_FILES:
+            continue
+        if not rel.lower().endswith((".ps1", ".py", ".cmd")):
+            continue
+        text = read(FIRMWARE_ROOT / rel)
+        if "idf.py" in text:
+            failures.append(f"{rel}: use tools/idf.ps1 or tools/build.ps1 instead of mentioning or invoking raw idf.py")
 
     serial_capture = read(FIRMWARE_ROOT / "tools" / "send_serial_and_capture.ps1")
     if "[int]$CaptureSeconds" not in serial_capture:
@@ -83,7 +163,7 @@ def main() -> int:
             print(f"  - {failure}", file=sys.stderr)
         return 1
 
-    print("PASS: validation tooling hygiene keeps BLE/recording scripts on pwsh and preserves serial capture shorthands.")
+    print("PASS: validation tooling hygiene keeps BLE/recording scripts on pwsh, keeps IDF access behind tools/idf.ps1, keeps generated evidence out of docs, and preserves serial capture shorthands.")
     return 0
 
 

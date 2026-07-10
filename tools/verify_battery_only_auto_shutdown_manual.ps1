@@ -24,7 +24,7 @@ if ($RestoreShutdownMinutes -lt 1 -or $RestoreShutdownMinutes -gt 1440) {
 }
 if ([string]::IsNullOrWhiteSpace($OutputDir)) {
     $stamp = Get-Date -Format "yyyyMMdd-HHmmss"
-    $OutputDir = Join-Path $repoRoot "docs/validation/voice-keyboard-firmware-full-function-test-1.7/battery-only-auto-shutdown-$stamp"
+    $OutputDir = Join-Path $repoRoot ".cache/validation/voice-keyboard-firmware-full-function-test-1.7/battery-only-auto-shutdown-$stamp"
 } elseif (-not [System.IO.Path]::IsPathRooted($OutputDir)) {
     $OutputDir = Join-Path $repoRoot $OutputDir
 }

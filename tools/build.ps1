@@ -133,6 +133,17 @@ function Invoke-CheckedCommand {
     }
 }
 
+function Invoke-IdfCommand {
+    param([string[]]$Arguments)
+
+    $wrappedArgs = @(
+        "-NoProfile",
+        "-File",
+        (Join-Path $PSScriptRoot "idf.ps1")
+    ) + $Arguments
+    Invoke-CheckedCommand -File "pwsh" -Arguments $wrappedArgs
+}
+
 function Invoke-IdfBuild {
     param(
         [string]$BuildTarget
@@ -143,13 +154,13 @@ function Invoke-IdfBuild {
     $configuredTarget = Get-ConfiguredTarget
     if ($configuredTarget -ne $BuildTarget) {
         Write-Host "Configured target is '$configuredTarget'; switching to '$BuildTarget'."
-        Invoke-CheckedCommand -File "idf.py" -Arguments @("-B", $build_dir, "set-target", $BuildTarget)
+        Invoke-IdfCommand -Arguments @("-B", $build_dir, "set-target", $BuildTarget)
     } else {
         Write-Host "Configured target already '$BuildTarget'; skipping set-target."
     }
 
     Write-Host "Using ESP-IDF build directory: $build_dir"
-    Invoke-CheckedCommand -File "idf.py" -Arguments @("-B", $build_dir, "build")
+    Invoke-IdfCommand -Arguments @("-B", $build_dir, "build")
 }
 
 try {
@@ -162,9 +173,8 @@ try {
     Invoke-IdfBuild -BuildTarget $Target
 }
 
-Invoke-CheckedCommand -File "powershell" -Arguments @(
-    "-ExecutionPolicy",
-    "Bypass",
+Invoke-CheckedCommand -File "pwsh" -Arguments @(
+    "-NoProfile",
     "-File",
     (Join-Path $PSScriptRoot "sync_clangd_db.ps1"),
     "-BuildDir",

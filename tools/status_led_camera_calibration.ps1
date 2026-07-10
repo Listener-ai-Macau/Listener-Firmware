@@ -3,7 +3,7 @@ param(
     [string]$Camera = "auto",
     [string]$Zones = "status,key",
     [string]$Mode = "rgbw-single-led",
-    [string]$OutputDir = "docs\validation\voice-keyboard-camera-status-key-led-tuning-1.2",
+    [string]$OutputDir = ".cache\validation\voice-keyboard-camera-status-key-led-tuning-1.2",
     [int]$Baud = 115200,
     [int]$SettleMs = 250,
     [int]$ReadbackMs = 350,
@@ -15,9 +15,9 @@ param(
 
 $ErrorActionPreference = "Stop"
 
-$defaultOutputDir = "docs\validation\voice-keyboard-camera-status-key-led-tuning-1.2"
+$defaultOutputDir = ".cache\validation\voice-keyboard-camera-status-key-led-tuning-1.2"
 if ($Mode.ToLowerInvariant() -eq "semantic-preview" -and $OutputDir -eq $defaultOutputDir) {
-    $OutputDir = "docs\validation\voice-keyboard-camera-status-key-led-tuning-1.3"
+    $OutputDir = ".cache\validation\voice-keyboard-camera-status-key-led-tuning-1.3"
 }
 
 if (-not $ManifestOnly.IsPresent -and $Camera.ToLowerInvariant() -ne "dry-run") {

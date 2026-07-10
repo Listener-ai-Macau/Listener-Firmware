@@ -1,5 +1,5 @@
 # esp_idf_ci.ps1 — 从 Git Bash 调用 ESP-IDF 全流程
-# 绕过 idf.py 的 MSys 检测，直接调底层工具
+# 构建/配置入口统一走仓库 wrapper；flash/monitor 只直接调用底层 esptool/monitor 工具。
 param(
     [Parameter(Position = 0)]
     [string]$Command = "build",
@@ -116,10 +116,7 @@ switch ($Command) {
                 exit $LASTEXITCODE
             }
 
-            Write-Host "[ci] build.ninja missing; running full ESP-IDF configure/build via idf.py ..."
-            Set-Location $prj
-            & $python "$idf\tools\idf.py" build 2>&1 | ForEach-Object { Write-Host $_ }
-            exit $LASTEXITCODE
+            throw "[ci] Missing tools\build.ps1; cannot run repo-approved build wrapper."
         }
 
         Set-Location $bld
@@ -187,7 +184,7 @@ switch ($Command) {
         Write-Host "[ci] Setting target to $Target ..."
         Set-Location $prj
         $env:IDF_TARGET = $Target
-        & $python "$idf\tools\idf.py" set-target $Target 2>&1 | ForEach-Object { Write-Host $_ }
+        & pwsh -NoProfile -File (Join-Path $prj "tools\idf.ps1") set-target $Target 2>&1 | ForEach-Object { Write-Host $_ }
         exit $LASTEXITCODE
     }
 
@@ -209,13 +206,13 @@ switch ($Command) {
             Remove-Item "$bld\build.ninja" -ErrorAction SilentlyContinue
         }
         Set-Location $prj
-        & $python "$idf\tools\idf.py" build 2>&1 | ForEach-Object { Write-Host $_ }
+        & pwsh -NoProfile -File (Join-Path $prj "tools\idf.ps1") build 2>&1 | ForEach-Object { Write-Host $_ }
         exit $LASTEXITCODE
     }
 
     default {
         Write-Error "Unknown command: $Command"
-        Write-Host "Usage: pwsh -File tools/esp_idf_ci.ps1 <command> [-Port COM3] [-Target esp32s3]"
+        Write-Host "Usage: pwsh -NoProfile -File tools/esp_idf_ci.ps1 <command> [-Port COM3] [-Target esp32s3]"
         Write-Host ""
         Write-Host "Commands:"
         Write-Host "  build         Incremental build (ninja)"

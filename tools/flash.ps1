@@ -62,8 +62,11 @@ function Invoke-IdfSerialActionWithBaudRetry {
                 Repair-Esp32UsbPnpDevices
                 Start-Sleep -Milliseconds 800
             }
-            Write-Host ("idf.py {0}: attempt {1}/{2} baud={3}" -f $Action, ($attempt + 1), $Bauds.Count, $baud)
-            Invoke-CheckedCommand -File "idf.py" -Arguments @(
+            Write-Host ("tools\idf.ps1 {0}: attempt {1}/{2} baud={3}" -f $Action, ($attempt + 1), $Bauds.Count, $baud)
+            Invoke-CheckedCommand -File "pwsh" -Arguments @(
+                "-NoProfile",
+                "-File",
+                (Join-Path $PSScriptRoot "idf.ps1"),
                 "-B", $BuildDirectory,
                 "-p", $SerialPortName,
                 "-b", [string]$baud,
@@ -73,13 +76,13 @@ function Invoke-IdfSerialActionWithBaudRetry {
         } catch {
             $lastError = $_.Exception.Message
             if ($attempt -lt ($Bauds.Count - 1)) {
-                Write-Warning ("idf.py {0} failed at baud={1}: {2}; retrying lower baud" -f $Action, $baud, $lastError)
+                Write-Warning ("tools\idf.ps1 {0} failed at baud={1}: {2}; retrying lower baud" -f $Action, $baud, $lastError)
                 continue
             }
         }
     }
 
-    throw "idf.py $Action failed after baud retries $($Bauds -join ', '): $lastError"
+    throw "tools\idf.ps1 $Action failed after baud retries $($Bauds -join ', '): $lastError"
 }
 
 function Get-Esp32UsbPnpDevices {
@@ -191,8 +194,6 @@ $resolvedPort = Resolve-FlashPort -RequestedPort $Port
 if (-not $NoBuild) {
     Invoke-CheckedCommand -File "pwsh" -Arguments @(
         "-NoProfile",
-        "-ExecutionPolicy",
-        "Bypass",
         "-File",
         (Join-Path $PSScriptRoot "build.ps1"),
         "-Target",

@@ -53,8 +53,7 @@ $buildDirResolved = Resolve-DebugBuildDir -RepoRoot $projectRoot
 
 if (-not $NoBuild.IsPresent) {
     $buildArgs = @(
-        "-ExecutionPolicy",
-        "Bypass",
+        "-NoProfile",
         "-File",
         (Join-Path $PSScriptRoot "build_usb_light_sleep_debug.ps1"),
         "-Target",
@@ -69,12 +68,11 @@ if (-not $NoBuild.IsPresent) {
         $buildArgs += "-Clean"
     }
 
-    Invoke-CheckedCommand -File "powershell" -Arguments $buildArgs
+    Invoke-CheckedCommand -File "pwsh" -Arguments $buildArgs
 }
 
 $flashArgs = @(
-    "-ExecutionPolicy",
-    "Bypass",
+    "-NoProfile",
     "-File",
     (Join-Path $PSScriptRoot "flash.ps1"),
     "-Port",
@@ -89,4 +87,4 @@ if ($PreserveOtaData.IsPresent) {
     $flashArgs += "-PreserveOtaData"
 }
 
-Invoke-CheckedCommand -File "powershell" -Arguments $flashArgs
+Invoke-CheckedCommand -File "pwsh" -Arguments $flashArgs

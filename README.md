@@ -5,21 +5,21 @@ ESP-IDF seed firmware for the voice keyboard product.
 ## Quick Start
 
 - New Windows machine bootstrap:
-  `powershell -ExecutionPolicy Bypass -File .\tools\setup_windows.ps1`
+  `pwsh -NoProfile -File .\tools\setup_windows.ps1`
 - Build:
-  `powershell -ExecutionPolicy Bypass -File .\tools\build.ps1`
+  `pwsh -NoProfile -File .\tools\build.ps1`
 - Flash:
-  `powershell -ExecutionPolicy Bypass -File .\tools\flash.ps1 -Port COM5`
+  `pwsh -NoProfile -File .\tools\flash.ps1 -Port COM5`
 - Flash bootloader only:
-  `powershell -ExecutionPolicy Bypass -File .\tools\flash_bootloader.ps1 -Port COMx`
+  `pwsh -NoProfile -File .\tools\flash_bootloader.ps1 -Port COMx`
 - Monitor in an interactive terminal:
-  `powershell -ExecutionPolicy Bypass -File .\tools\monitor.ps1 -Port COM5`
+  `pwsh -NoProfile -File .\tools\monitor.ps1 -Port COM5`
 - Capture boot logs in a non-interactive Codex session:
-  `powershell -ExecutionPolicy Bypass -File .\tools\capture_serial.ps1 -Port COM5 -ResetBeforeRead`
+  `pwsh -NoProfile -File .\tools\capture_serial.ps1 -Port COM5 -ResetBeforeRead`
 - Send test input to firmware over serial without interactive monitor:
-  `powershell -ExecutionPolicy Bypass -File .\tools\send_serial.ps1 -Port COM5 -Text "abc123"`
+  `pwsh -NoProfile -File .\tools\send_serial.ps1 -Port COM5 -Text "abc123"`
 - Run a single non-interactive BLE HID runtime verification:
-  `powershell -ExecutionPolicy Bypass -File .\tools\verify_ble_hid.ps1 -Port COM5 -Text "abc123"`
+  `pwsh -NoProfile -File .\tools\verify_ble_hid.ps1 -Port COM5 -Text "abc123"`
 - Serial diagnostics must avoid reset-prone DTR/RTS opens; see
   `docs\features\serial_no_reset_diagnostics.md`.
 
@@ -32,9 +32,10 @@ ESP-IDF seed firmware for the voice keyboard product.
 - `ports/`: platform-specific SDK bindings
 - `tools/`: build, flash, monitor, and helper scripts
 - `tests/`: smoke checks
-- `!docs/`: human-facing product documents
+- `docs/`: product, feature, maintenance, and release documents
 
 ## Key Docs
 
-- `!docs/development_setup.md`
-- `!docs/product_solutions.md`
+- `docs/features/firmware-feature-map.md`
+- `docs/tools/device_maintenance.md`
+- `docs/ota_manifest_schema.md`

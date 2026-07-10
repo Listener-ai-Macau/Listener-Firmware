@@ -16,7 +16,7 @@ Add-Type -AssemblyName System.Windows.Forms
 $repoRoot = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot "..")).Path
 if ([string]::IsNullOrWhiteSpace($OutputDir)) {
     $stamp = Get-Date -Format "yyyyMMdd-HHmmss"
-    $OutputDir = Join-Path $repoRoot "docs/validation/adhoc-low-power-unplug-wake-$stamp"
+    $OutputDir = Join-Path $repoRoot ".cache/validation/adhoc-low-power-unplug-wake-$stamp"
 } elseif (-not [System.IO.Path]::IsPathRooted($OutputDir)) {
     $OutputDir = Join-Path $repoRoot $OutputDir
 }

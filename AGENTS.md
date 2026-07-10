@@ -9,7 +9,7 @@ This repository contains ESP32-S3 firmware for the Listener voice keyboard.
 - `protocols/` contains protocol definitions, codecs, and error models.
 - `ports/esp32/` contains ESP-IDF bindings.
 - `tools/` contains build, flash, monitor, diagnostic, and validation helpers.
-- `!docs/` contains stable product and feature documentation.
+- `docs/` contains stable product, feature, maintenance, and release documentation.
 
 ## Build
 

@@ -79,18 +79,13 @@ function Get-PresentSerialPortSummary {
     })
 }
 
-function Resolve-PowerShellExecutable {
+function Resolve-PwshExecutable {
     $pwsh = Get-Command pwsh.exe -ErrorAction SilentlyContinue
     if ($pwsh) {
         return $pwsh.Source
     }
 
-    $windowsPowerShell = Get-Command powershell.exe -ErrorAction SilentlyContinue
-    if ($windowsPowerShell) {
-        return $windowsPowerShell.Source
-    }
-
-    throw "Neither pwsh.exe nor powershell.exe is available on PATH."
+    throw "pwsh.exe is required on PATH."
 }
 
 function Show-SafetyPrompt {
@@ -154,8 +149,6 @@ Show-SafetyPrompt
 
 $baseFlashArgs = @(
     "-NoProfile",
-    "-ExecutionPolicy",
-    "Bypass",
     "-File",
     $flashScript,
     "-Port",
@@ -181,15 +174,15 @@ if (-not $UseStub) {
     }
 }
 
-$powerShellExe = Resolve-PowerShellExecutable
+$pwshExe = Resolve-PwshExecutable
 
 $failures = @()
 foreach ($baudValue in @($Baud)) {
     $flashArgs = @($baseFlashArgs + @("-Baud", ([string]$baudValue)))
 
     Write-Section "Running baud $baudValue"
-    Write-Host "$powerShellExe $($flashArgs -join ' ')"
-    & $powerShellExe @flashArgs
+    Write-Host "$pwshExe $($flashArgs -join ' ')"
+    & $pwshExe @flashArgs
     $exitCode = $LASTEXITCODE
     if ($exitCode -eq 0) {
         Write-Section "Done"

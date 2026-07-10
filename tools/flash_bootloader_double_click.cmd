@@ -10,9 +10,12 @@ for %%A in (%*) do (
 cd /d "%~dp0.."
 set "PS_EXE=pwsh.exe"
 where pwsh.exe >nul 2>nul
-if errorlevel 1 set "PS_EXE=powershell.exe"
+if errorlevel 1 (
+    echo pwsh.exe is required on PATH.
+    exit /b 127
+)
 
-"%PS_EXE%" -NoProfile -ExecutionPolicy Bypass -File "%~dp0flash_bootloader_double_click.ps1" %*
+"%PS_EXE%" -NoProfile -File "%~dp0flash_bootloader_double_click.ps1" %*
 set "EXITCODE=%ERRORLEVEL%"
 
 echo.

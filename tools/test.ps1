@@ -31,7 +31,7 @@ function Get-ShortBuildDir {
 $build_dir = Get-ShortBuildDir -ProjectRoot $project_root
 
 Write-Host "[1/2] build smoke test"
-powershell -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot "build.ps1") -Target $Target -BuildDir $build_dir
+pwsh -NoProfile -File (Join-Path $PSScriptRoot "build.ps1") -Target $Target -BuildDir $build_dir
 
 Write-Host "[2/2] artifact check"
 $required_files = @(

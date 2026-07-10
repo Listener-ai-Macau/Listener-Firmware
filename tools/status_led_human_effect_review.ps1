@@ -29,7 +29,7 @@ if (-not $singleInstanceCreated) {
 $repoRoot = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot "..")).Path
 if ([string]::IsNullOrWhiteSpace($OutputDir)) {
     $stamp = Get-Date -Format "yyyyMMdd-HHmmss"
-    $OutputDir = Join-Path $repoRoot "docs/validation/status-led-human-effect-review-$stamp"
+    $OutputDir = Join-Path $repoRoot ".cache/validation/status-led-human-effect-review-$stamp"
 } elseif (-not [System.IO.Path]::IsPathRooted($OutputDir)) {
     $OutputDir = Join-Path $repoRoot $OutputDir
 }

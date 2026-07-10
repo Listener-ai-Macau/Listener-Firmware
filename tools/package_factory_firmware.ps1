@@ -156,7 +156,7 @@ $inputs = @(
 $artifacts = @()
 foreach ($input_item in $inputs) {
     if (-not (Test-Path $input_item.source)) {
-        throw "Missing firmware artifact: $($input_item.source). Run idf.py build first."
+        throw "Missing firmware artifact: $($input_item.source). Run pwsh -NoProfile -File .\tools\build.ps1 first."
     }
 
     $destination = Join-Path $package_dir $input_item.file

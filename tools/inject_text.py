@@ -41,9 +41,8 @@ def inject_paste(text):
 
 def copy_to_clipboard(text):
     import subprocess
-    encoded = text.replace("'", "''")
     subprocess.run(
-        ["powershell", "-Command", f"Set-Clipboard -Value '{encoded}'"],
+        ["pwsh", "-NoProfile", "-Command", "Set-Clipboard -Value $args[0]", text],
         check=True, capture_output=True, timeout=5,
     )
 

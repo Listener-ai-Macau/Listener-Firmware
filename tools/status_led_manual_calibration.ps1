@@ -4,7 +4,7 @@ param(
     [string]$Led = "",
     [string]$Color = "",
     [string]$Zones = "status,key",
-    [string]$OutputDir = "docs\validation\voice-keyboard-camera-status-key-led-tuning-1.2",
+    [string]$OutputDir = ".cache\validation\voice-keyboard-camera-status-key-led-tuning-1.2",
     [int]$Percent = 100,
     [int]$Baud = 115200,
     [int]$ReadbackMs = 500,

@@ -110,7 +110,10 @@ Write-Host "Using USB light-sleep debug build directory: $buildDirResolved"
 Write-Host "Using USB light-sleep debug sdkconfig: $sdkconfigResolved"
 Write-Host "Using SDKCONFIG_DEFAULTS: $defaultsArg"
 
-Invoke-CheckedCommand -File "idf.py" -Arguments @(
+Invoke-CheckedCommand -File "pwsh" -Arguments @(
+    "-NoProfile",
+    "-File",
+    (Join-Path $PSScriptRoot "idf.ps1"),
     "-B",
     $buildDirResolved,
     "-D",
@@ -122,4 +125,10 @@ Invoke-CheckedCommand -File "idf.py" -Arguments @(
     "reconfigure"
 )
 
-Invoke-CheckedCommand -File "idf.py" -Arguments @("-B", $buildDirResolved, "build")
+Invoke-CheckedCommand -File "pwsh" -Arguments @(
+    "-NoProfile",
+    "-File",
+    (Join-Path $PSScriptRoot "idf.ps1"),
+    "-B", $buildDirResolved,
+    "build"
+)

@@ -44,7 +44,7 @@ def parse_args():
     return parser.parse_args()
 
 
-def powershell_json_literal(value: str) -> str:
+def pwsh_json_literal(value: str) -> str:
     return json.dumps(value, ensure_ascii=False)
 
 
@@ -53,8 +53,8 @@ def generate_tts_wav(path: pathlib.Path, text: str) -> str:
     script = f"""
 $ErrorActionPreference = "Stop"
 Add-Type -AssemblyName System.Speech
-$path = {powershell_json_literal(str(path))}
-$text = {powershell_json_literal(text)}
+$path = {pwsh_json_literal(str(path))}
+$text = {pwsh_json_literal(text)}
 $synth = [System.Speech.Synthesis.SpeechSynthesizer]::new()
 try {{
     $zhVoice = $synth.GetInstalledVoices() |
@@ -77,10 +77,8 @@ try {{
 """
     completed = subprocess.run(
         [
-            "powershell",
+            "pwsh",
             "-NoProfile",
-            "-ExecutionPolicy",
-            "Bypass",
             "-EncodedCommand",
             base64.b64encode(script.encode("utf-16le")).decode("ascii"),
         ],

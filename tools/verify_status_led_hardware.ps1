@@ -3,7 +3,7 @@ param(
     [Parameter(Mandatory = $true)]
     [string]$Port,
     [string]$BluetoothAddress = "",
-    [string]$OutputDir = "docs\validation\voice-keyboard-status-led-1.2",
+    [string]$OutputDir = ".cache\validation\voice-keyboard-status-led-1.2",
     [string]$Target = "esp32s3",
     [int]$Baud = 115200,
     [int]$CameraIndex = 0,

@@ -218,11 +218,11 @@ if ($NoStub) {
 Write-Host "  Reset: before=$Before after=$After"
 Write-Host "  Build dir: $buildDirResolved"
 if ($NoStub) {
-    Write-Host "  Build command: idf.py -B `"$buildDirResolved`" bootloader"
+    Write-Host "  Build command: pwsh -NoProfile -File .\tools\idf.ps1 -B `"$buildDirResolved`" bootloader"
     $compressDisplay = if ($NoCompress) { " --no-compress" } else { "" }
     Write-Host "  Flash command: python `"$esptoolPathForDisplay`" --chip $Target -p $resolvedPort -b $Baud --before=$Before --after=$After --no-stub write_flash --flash_mode dio --flash_freq 80m --flash_size 16MB$compressDisplay 0x0 `"$bootloaderPath`""
 } else {
-    Write-Host "  Command: idf.py -B `"$buildDirResolved`" -p $resolvedPort -b $Baud bootloader-flash"
+    Write-Host "  Command: pwsh -NoProfile -File .\tools\idf.ps1 -B `"$buildDirResolved`" -p $resolvedPort -b $Baud bootloader-flash"
 }
 
 if (Test-Path -LiteralPath $bootloaderPath -PathType Leaf) {
@@ -257,7 +257,13 @@ if ($NoStub) {
         }
     }
 
-    Invoke-CheckedCommand -File "idf.py" -Arguments @("-B", $buildDirResolved, "bootloader")
+    Invoke-CheckedCommand -File "pwsh" -Arguments @(
+        "-NoProfile",
+        "-File",
+        (Join-Path $PSScriptRoot "idf.ps1"),
+        "-B", $buildDirResolved,
+        "bootloader"
+    )
     $writeFlashArgs = @(
         $esptoolPath,
         "--chip", $Target,
@@ -277,7 +283,15 @@ if ($NoStub) {
     $writeFlashArgs += @("0x0", $bootloaderPath)
     Invoke-CheckedCommand -File "python" -Arguments $writeFlashArgs
 } else {
-    Invoke-CheckedCommand -File "idf.py" -Arguments @("-B", $buildDirResolved, "-p", $resolvedPort, "-b", ([string]$Baud), "bootloader-flash")
+    Invoke-CheckedCommand -File "pwsh" -Arguments @(
+        "-NoProfile",
+        "-File",
+        (Join-Path $PSScriptRoot "idf.ps1"),
+        "-B", $buildDirResolved,
+        "-p", $resolvedPort,
+        "-b", ([string]$Baud),
+        "bootloader-flash"
+    )
 }
 
 if (Test-Path -LiteralPath $bootloaderPath -PathType Leaf) {

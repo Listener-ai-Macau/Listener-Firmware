@@ -5,10 +5,14 @@ param(
 
 $ErrorActionPreference = "Stop"
 
-. (Join-Path $PSScriptRoot "idf_env.ps1") -Target $Target
-
-if ([string]::IsNullOrWhiteSpace($Port)) {
-    idf.py openocd
-} else {
-    idf.py -p $Port gdb
+$previousIdfTarget = $env:IDF_TARGET
+try {
+    $env:IDF_TARGET = $Target
+    if ([string]::IsNullOrWhiteSpace($Port)) {
+        pwsh -NoProfile -File (Join-Path $PSScriptRoot "idf.ps1") openocd
+    } else {
+        pwsh -NoProfile -File (Join-Path $PSScriptRoot "idf.ps1") -p $Port gdb
+    }
+} finally {
+    $env:IDF_TARGET = $previousIdfTarget
 }

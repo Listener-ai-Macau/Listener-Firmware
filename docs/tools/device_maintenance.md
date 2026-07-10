@@ -5,7 +5,7 @@
 在仓库根目录运行：
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File .\tools\device_maintenance.ps1 -Action help
+pwsh -NoProfile -File .\tools\device_maintenance.ps1 -Action help
 ```
 
 ## 常用只读检查
@@ -13,19 +13,19 @@ powershell -ExecutionPolicy Bypass -File .\tools\device_maintenance.ps1 -Action 
 列出当前串口：
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File .\tools\device_maintenance.ps1 -Action ports
+pwsh -NoProfile -File .\tools\device_maintenance.ps1 -Action ports
 ```
 
 探测芯片、flash ID、MAC：
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File .\tools\device_maintenance.ps1 -Action probe -Port COMx
+pwsh -NoProfile -File .\tools\device_maintenance.ps1 -Action probe -Port COMx
 ```
 
 读取 flash 关键头部并保存证据，不写 flash：
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File .\tools\device_maintenance.ps1 -Action check-flash -Port COMx
+pwsh -NoProfile -File .\tools\device_maintenance.ps1 -Action check-flash -Port COMx
 ```
 
 `COMx` 会自动解析为当前唯一的 ESP32-S3 串口；如果机器上有多个串口，改成明确端口，例如 `-Port COM9`。
@@ -35,19 +35,19 @@ powershell -ExecutionPolicy Bypass -File .\tools\device_maintenance.ps1 -Action 
 构建并刷入当前源码的正常固件。默认会先擦 `otadata`，避免启动到旧 OTA 分区：
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File .\tools\device_maintenance.ps1 -Action flash -Port COMx
+pwsh -NoProfile -File .\tools\device_maintenance.ps1 -Action flash -Port COMx
 ```
 
 如果已经构建好，只想快速重刷：
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File .\tools\device_maintenance.ps1 -Action flash -Port COMx -NoBuild
+pwsh -NoProfile -File .\tools\device_maintenance.ps1 -Action flash -Port COMx -NoBuild
 ```
 
 如果特意保留 OTA 选择区：
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File .\tools\device_maintenance.ps1 -Action flash -Port COMx -PreserveOtaData
+pwsh -NoProfile -File .\tools\device_maintenance.ps1 -Action flash -Port COMx -PreserveOtaData
 ```
 
 ## 关闭自动关机并手动测试
@@ -69,13 +69,13 @@ powershell -ExecutionPolicy Bypass -File .\tools\device_maintenance.ps1 -Action 
 只恢复 bootloader：
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File .\tools\device_maintenance.ps1 -Action restore-bootloader -Port COMx
+pwsh -NoProfile -File .\tools\device_maintenance.ps1 -Action restore-bootloader -Port COMx
 ```
 
 只擦 OTA 选择区，让下次启动回到新刷的 `ota_0`：
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File .\tools\device_maintenance.ps1 -Action erase-otadata -Port COMx
+pwsh -NoProfile -File .\tools\device_maintenance.ps1 -Action erase-otadata -Port COMx
 ```
 
 ## 救砖顺序
@@ -94,11 +94,11 @@ powershell -ExecutionPolicy Bypass -File .\tools\device_maintenance.ps1 -Action 
 整片擦除会删除 NVS、配对、OTA、诊断日志和应用分区，只在救砖时使用：
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File .\tools\device_maintenance.ps1 -Action erase-flash -Port COMx -ConfirmEraseFlash
+pwsh -NoProfile -File .\tools\device_maintenance.ps1 -Action erase-flash -Port COMx -ConfirmEraseFlash
 ```
 
 擦完整片 flash 后，需要再运行：
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File .\tools\device_maintenance.ps1 -Action flash -Port COMx
+pwsh -NoProfile -File .\tools\device_maintenance.ps1 -Action flash -Port COMx
 ```
