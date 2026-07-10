@@ -84,6 +84,7 @@ CHECKS = {
         "STATUS_LED_PROCESSING_THINK_BEAT_GAP_MS 50U",
         "STATUS_LED_PROCESSING_THINK_EFFECT_BEAT2_PERCENT 78U",
         "STATUS_LED_PROCESSING_THINK_EFFECT_BEAT3_PERCENT 100U",
+        "STATUS_LED_PROCESSING_STALE_TIMEOUT_MS 10000U",
         "recording_level_visual_percent",
         '"recording_active"',
         '"capture_active"',
@@ -241,6 +242,7 @@ CHECKS = {
         "key_multi_key_independent_fade=%u",
         "strip_tx_failure_retry_dirty=1",
         "suspended_strip_resume_dirty=1",
+        "startup_complete_gate=ble_visible_ready_frame_no_early_pwr_normal",
         "task_priority=%u task_core=%d task_affinity=cpu1",
         "preview_effect_zone_brightness=1",
         "test_calibration_full_brightness=1",
@@ -501,6 +503,7 @@ CHECKS = {
         "status_led_transmit_strip(&s_strips[STATUS_LED_STRIP_KEY], frame->key, key_force_non_dma)",
         "status_led_transmit_strip(&s_strips[STATUS_LED_STRIP_EDGE], frame->edge, force_non_dma)",
         "low_power_all_zone_tx=non_dma_clear_and_final_frame",
+        "shutdown_final_status_tx=dma_visible_pwr_no_black_latch",
         "shutdown_final_all_zone_tx=non_dma_pwr_only_latch_or_all_off",
         "status_led_notify_shutdown_confirm",
         "status_led_cancel_shutdown_confirm",
@@ -530,7 +533,10 @@ CHECKS = {
         "STATUS_LED_PWR_WHITE_VISUAL_BALANCE_PERCENT,\n            false)",
         "active_flags=PWR:%u,BLE:%u,REC:%u,AI:%u,OK:%u,WARN:%u,EC11:%u,KEY:%u,EDGE:%u",
         "status_rgb=PWR:%u,%u,%u;BLE:%u,%u,%u;REC:%u,%u,%u",
+        "explicit_ready_window",
+        "confidence_window && status_led_ble_state_ready_locked(state)",
         "if (state_changed && !effect_only && !routine_low_power_ble) {\n            s_state.status_window_until_ms = now_ms + STATUS_LED_STATUS_WINDOW_MS;",
+        "if (explicit_ready_window) {\n            s_state.ble_confidence_until_ms = now_ms + STATUS_LED_BLE_CONFIDENCE_MS;",
         "if (state_changed && state == STATUS_LED_BLE_CONNECTED && confidence_window)",
         "state == STATUS_LED_BLE_PAIRING || state == STATUS_LED_BLE_RECONNECTING",
         "status_led_render_processing_locked",
@@ -673,10 +679,14 @@ CHECKS = {
     "ports/esp32/ble_audio_stream/ble_audio_stream_esp32.c": [
         "BLE_AUDIO_STREAM_TYPE_HEARTBEAT_TIMEOUT_MS 45000",
         "BLE_AUDIO_STREAM_TYPE_LED_READY_HOLD_MS 12000",
+        "power_manager_record_activity",
         "ble_audio_stream_sync_power_manager_for_type_link(false, \"gap_connect\")",
         "TYPE:READY",
         "TYPE:HB",
         "TYPE:BYE",
+        "ble_audio_stream_type_ready_visible_event",
+        "power_manager_record_activity(\"type_ready\")",
+        "ble_audio_stream_type_ready_visible_event(reason))",
         "ble_audio_stream_type_heartbeat_recent()",
         "ble_audio_stream_type_heartbeat_led_recent()",
         "ble_audio_stream_is_type_led_ready()",
@@ -901,6 +911,7 @@ CHECKS = {
         "rmt_tx_dma_actual=status:1,ec11:0,key:0,edge:0",
         "rmt_mem_block_symbols=status:1024,ec11:0,key:0,edge:48",
         "dynamic_active_accents=1",
+        "startup_complete_gate=ble_visible_ready_frame_no_early_pwr_normal",
         "status_tail_overlap_style=dma_audio_rec_ai_da_dada",
         "recording_level_reactive=1",
         "processing_thinking_style=single_then_double_beat",
@@ -1153,11 +1164,18 @@ def main() -> int:
         boot_mark = extract_c_function(status_led, "status_led_mark_boot_feedback_locked")
         boot_feedback = extract_c_function(status_led, "status_led_force_boot_feedback")
         boot_ble_complete = extract_c_function(status_led, "status_led_ble_state_completes_boot_feedback")
+        boot_feedback_active = extract_c_function(status_led, "status_led_boot_feedback_active_locked")
         boot_ble_release = extract_c_function(status_led, "status_led_release_boot_feedback_for_ble_locked")
+        boot_apply = extract_c_function(status_led, "status_led_apply_boot_feedback_locked")
+        boot_ble_ready_reason = extract_c_function(status_led, "status_led_boot_ready_reason_releases_feedback")
+        boot_ble_ready_note = extract_c_function(status_led, "status_led_note_ble_boot_ready")
         render_power = extract_c_function(status_led, "status_led_render_power_locked")
         render_frame = extract_c_function(status_led, "status_led_render_frame_locked")
         shutdown_confirm = extract_c_function(status_led, "status_led_render_shutdown_confirm_locked")
         shutdown_notify = extract_c_function(status_led, "status_led_notify_shutdown_confirm_with_wait_and_duration")
+        shutdown_resume = extract_c_function(status_led, "status_led_resume_shutdown_confirm_output_locked")
+        shutdown_prepare = extract_c_function(status_led, "status_led_prepare_shutdown_confirm_frame_locked")
+        shutdown_tx = extract_c_function(status_led, "status_led_transmit_shutdown_confirm_frame")
         status_init = extract_c_function(status_led, "status_led_init")
         status_start = extract_c_function(status_led, "status_led_start")
         status_task = extract_c_function(status_led, "status_led_task")
@@ -1219,28 +1237,72 @@ def main() -> int:
         if "STATUS_LED_BLE_DISCONNECTED" in boot_ble_complete:
             failures.append("status_led.c: disconnected BLE must not release boot PWR amber into normal PWR state")
         if (
-            "status_led_ble_state_completes_boot_feedback(state)" not in boot_ble_release
-            or "now_ms < s_state.boot_feedback_until_ms" not in boot_ble_release
-            or "s_state.boot_feedback_until_ms = now_ms;" not in boot_ble_release
+            "s_state.boot_ble_ready_seen" not in boot_ble_release
+            or "status_led_ble_state_completes_boot_feedback(s_state.ble_state)" not in boot_ble_release
+            or "status_led_boot_feedback_active_locked(now_ms)" not in boot_ble_release
+            or "status_led_rgb_is_on(frame->status[STATUS_LED_SEM_BLE])" not in boot_ble_release
+            or "s_state.boot_ble_ready_notified = true;" not in boot_ble_release
+            or "s_state.boot_feedback_until_ms = now_ms;" in boot_ble_release
         ):
-            failures.append("status_led.c: BLE-visible startup release must close the boot amber window at the actual BLE transition")
+            failures.append("status_led.c: BLE-visible startup release must wait for an actual lit BLE frame before flipping the boot-ready flag")
         if not re.search(
-            r"if\s*\(\s*state_changed\s*&&\s*!effect_only\s*\)\s*\{[\s\S]*?"
-            r"status_led_release_boot_feedback_for_ble_locked\(now_ms,\s*state\);",
-            set_ble_state,
+            r"status_led_boot_feedback_active_locked\([^)]*\)\s*\{[\s\S]*?"
+            r"return\s+!\s*s_state\.boot_ble_ready_notified\s*&&\s*"
+            r"now_ms\s*<\s*s_state\.boot_feedback_until_ms\s*;",
+            status_led,
         ):
-            failures.append("status_led.c: normal BLE state changes must release boot PWR amber, while preview/effect-only states must not fake startup completion")
+            failures.append("status_led.c: boot PWR amber render must require both not-yet-BLE-ready and inside the startup timeout")
+        if "status_led_release_boot_feedback_for_ble_locked" in set_ble_state:
+            failures.append("status_led.c: BLE state changes alone must not release boot PWR amber before advertising is truly started")
+        for required_reason in (
+            '"advertising_skip_connected"',
+            '"directed_advertising_started"',
+            '"undirected_advertising_started"',
+        ):
+            if required_reason not in boot_ble_ready_reason:
+                failures.append(f"status_led.c: boot PWR amber release must allow {required_reason} as a truthful BLE-ready reason")
+        for forbidden_reason in ('"secure_connection"', '"TYPE:READY"', '"TYPE:HB"'):
+            if forbidden_reason in boot_ble_ready_reason:
+                failures.append(f"status_led.c: boot PWR amber release must not treat early {forbidden_reason} as BLE advertising readiness")
+        if (
+            "status_led_boot_ready_reason_releases_feedback(reason)" not in boot_ble_ready_note
+            or "s_state.boot_ble_ready_seen = true;" not in boot_ble_ready_note
+            or "status_led_release_boot_feedback_for_ble_locked" in boot_ble_ready_note
+        ):
+            failures.append("status_led.c: BLE boot-ready notes may only arm visible-frame release, not release PWR amber before BLE lights")
         if (
             "status_led_power_confirm_amber()" not in shutdown_confirm
             or "final ? STATUS_LED_PWR_CONFIRM_AMBER_PERCENT : STATUS_LED_PWR_CONFIRM_CUE_PERCENT" not in shutdown_confirm
         ):
             failures.append("status_led.c: shutdown confirmation must keep the accepted amber helper and final/cue constants")
-        if not re.search(
-            r"status_led_resume_interactive_output_locked\(\);\s*"
-            r"s_state\.transition_clear_mask\s*=\s*0U;",
-            shutdown_notify,
+        if "status_led_resume_shutdown_confirm_output_locked();" not in shutdown_notify:
+            failures.append("status_led.c: shutdown confirmation must use its no-black-frame output resume helper")
+        if "status_led_resume_interactive_output_locked" in shutdown_notify:
+            failures.append("status_led.c: shutdown confirmation must not reuse the interactive resume path that can queue a transition-clear black frame")
+        if (
+            "s_state.transition_clear_mask = 0U;" not in shutdown_resume
+            or "status_led_force_transition_clear_locked" in shutdown_resume
+            or "s_state.output_disabled = false;" not in shutdown_resume
+            or "s_state.low_power_disabled = false;" not in shutdown_resume
         ):
-            failures.append("status_led.c: shutdown confirmation must suppress any queued transition-clear black frame after waking LED output")
+            failures.append("status_led.c: shutdown confirmation resume must restore output and clear pending transition clears without scheduling an all-black clear frame")
+        if (
+            "const uint8_t pending_strip_mask =" not in shutdown_tx
+            or "!status_led_strip_has_light(frame->ec11, STATUS_LED_EC11_COUNT)" not in shutdown_tx
+            or "~STATUS_LED_STRIP_MASK_EC11" not in shutdown_tx
+            or "status_led_transmit_changed_frame(frame, pending_strip_mask, false, false)" not in shutdown_tx
+            or "final ? STATUS_LED_STRIP_MASK_ALL : pending_strip_mask" not in shutdown_tx
+        ):
+            failures.append("status_led.c: non-final shutdown-confirm zero-elapsed immediate TX must not send an all-black EC11 frame before the fill effect advances")
+        if (
+            "status_led_rgb_t previous_ec11[STATUS_LED_EC11_COUNT];" not in shutdown_prepare
+            or "memcpy(previous_ec11, s_state.last_frame.ec11, sizeof(previous_ec11));" not in shutdown_prepare
+            or "!s_state.shutdown_confirm_final" not in shutdown_prepare
+            or "!status_led_strip_has_light(frame->ec11, STATUS_LED_EC11_COUNT)" not in shutdown_prepare
+            or "status_led_strip_has_light(previous_ec11, STATUS_LED_EC11_COUNT)" not in shutdown_prepare
+            or "memcpy(frame->ec11, previous_ec11, sizeof(frame->ec11));" not in shutdown_prepare
+        ):
+            failures.append("status_led.c: shutdown-confirm immediate frame must preserve the previous physical EC11 strip if any future zero-lit frame would otherwise blank EC11")
 
         boot_feedback_order = [
             boot_feedback.find("frame.status[STATUS_LED_SEM_PWR] = status_led_boot_power_color_locked();"),
@@ -1251,18 +1313,22 @@ def main() -> int:
         if not all(index >= 0 for index in boot_feedback_order) or boot_feedback_order != sorted(boot_feedback_order):
             failures.append("status_led.c: boot PWR first frame must apply Type four-zone brightness caps before copy/transmit")
 
-        boot_render_match = re.search(
-            r"if\s*\(\s*now_ms\s*<\s*s_state\.boot_feedback_until_ms\s*\)\s*{(?P<body>[\s\S]*?)}",
-            render_power,
-        )
-        if boot_render_match is None:
-            failures.append("status_led.c: boot PWR feedback must have an explicit render-time override window")
-        else:
-            boot_render_body = boot_render_match.group("body")
-            if "frame->status[STATUS_LED_SEM_PWR] = status_led_boot_power_color_locked();" not in boot_render_body:
-                failures.append("status_led.c: boot PWR feedback must override charging/full PWR color instead of blending with it")
-            if "status_led_set_max" in boot_render_body:
-                failures.append("status_led.c: boot PWR feedback must not use max-merge because charging white can hide the amber cue")
+        if (
+            "status_led_apply_boot_feedback_locked(frame, now_ms, &safety);" not in render_frame
+            or render_frame.find("status_led_render_power_locked(frame, now_ms, &safety);")
+               > render_frame.find("status_led_render_ble_locked(frame, now_ms);")
+            or render_frame.find("status_led_render_ble_locked(frame, now_ms);")
+               > render_frame.find("status_led_apply_boot_feedback_locked(frame, now_ms, &safety);")
+        ):
+            failures.append("status_led.c: boot PWR completion handoff must render PWR and BLE before applying the visible-BLE release")
+        if (
+            "status_led_release_boot_feedback_for_ble_locked(now_ms, frame)" not in boot_apply
+            or "frame->status[STATUS_LED_SEM_PWR] = status_led_boot_power_color_locked();" not in boot_apply
+            or "status_led_set_max" in boot_apply
+        ):
+            failures.append("status_led.c: boot PWR feedback must override charging/full PWR until the same frame has visible BLE")
+        if "status_led_boot_feedback_active_locked(now_ms)" in render_power:
+            failures.append("status_led.c: boot PWR amber override must stay after BLE render so the completion frame can show BLE plus normal PWR")
 
         shutdown_branch_index = render_frame.find("if (status_led_render_shutdown_confirm_locked(frame, now_ms))")
         shutdown_tail_index = render_frame.find("status_led_apply_status_tail_guard_locked(frame, now_ms);", shutdown_branch_index)
@@ -1702,7 +1768,7 @@ def main() -> int:
         if "suspended_strip_resume_dirty=1" not in status_led:
             failures.append("status_led.c: ~LED:STATUS contract must expose suspended-strip resume dirty protection")
     if "bool force_non_dma = pwr_only_final_latch;" not in refresh_once or "pwr_only_final_latch || force_clear_tx" in refresh_once:
-        failures.append("status_led.c: interactive transition clears must keep SPI EC11/KEY strips on DMA; only low-power/final latch may force non-DMA")
+        failures.append("status_led.c: interactive transition clears must keep SPI EC11/KEY strips on DMA; non-DMA latch use must stay scoped to low-power and non-status shutdown-final clearing")
     for function_name in ("status_led_set_recording", "status_led_set_processing"):
         try:
             body = extract_c_function(status_led, function_name)
@@ -2937,7 +3003,8 @@ def main() -> int:
     if (
         "status_led_ble_state_attention_locked" not in status_led or
         ble_set_state is None or
-        "s_state.low_power_disabled && !status_led_ble_state_attention_locked(state)" not in ble_set_state.group(0) or
+        "const bool explicit_ready_window =\n            confidence_window && status_led_ble_state_ready_locked(state);" not in ble_set_state.group(0) or
+        "s_state.low_power_disabled &&\n            !explicit_ready_window &&\n            !status_led_ble_state_attention_locked(state)" not in ble_set_state.group(0) or
         "if (!effect_only && !routine_low_power_ble)" not in ble_set_state.group(0) or
         "const bool active_work = s_state.recording_active ||\n            s_state.processing_active ||\n            s_state.ota_active;" not in ble_set_state.group(0) or
         "state_changed && !effect_only && !routine_low_power_ble &&" not in ble_set_state.group(0) or
@@ -2945,10 +3012,11 @@ def main() -> int:
         "if (!keep_repair_cue && !keep_repair_window) {\n                s_state.ble_repair_cue_started_ms = 0U;\n                s_state.ble_repair_cue_until_ms = 0U;\n            }" not in ble_set_state.group(0) or
         "!active_work" not in ble_set_state.group(0) or
         "if (state_changed && !effect_only && !routine_low_power_ble)" not in ble_set_state.group(0) or
+        "if (explicit_ready_window) {\n            s_state.ble_confidence_until_ms = now_ms + STATUS_LED_BLE_CONFIDENCE_MS;\n            changed = true;\n        }" not in ble_set_state.group(0) or
         "const bool ble_visual_transition =\n            state_changed && !effect_only && !active_work;" not in ble_set_state.group(0) or
         "if (ble_visual_transition) {\n                s_state.last_transition_ms = now_ms;" not in ble_set_state.group(0)
     ):
-        failures.append("status_led.c: routine connected/TYPE_READY/DISCONNECTED BLE changes must not reopen active BLE windows or reset active-work effect timing during recording/processing/OTA")
+        failures.append("status_led.c: routine connected/TYPE_READY/DISCONNECTED BLE changes must stay quiet in low power, while explicit Type-ready confirmation may open the bounded BLE visible window")
     if "status_led_force_all_off();" in status_led:
         failures.append("status_led.c: all-off callers must explicitly choose whether the status strip may force non-DMA")
     all_off_body = re.search(
@@ -3192,14 +3260,16 @@ def main() -> int:
     if not re.search(
         r"static\s+bool\s+status_led_notify_shutdown_confirm_with_wait_and_duration\([^)]*\)[\s\S]*?"
         r"xSemaphoreTake\(s_mutex,\s*wait_ticks\)[\s\S]*?"
-        r"status_led_resume_interactive_output_locked\(\)",
+        r"status_led_resume_shutdown_confirm_output_locked\(\)",
         status_led,
     ):
-        failures.append("status_led.c: shutdown confirmation must use a shared wait-bounded helper that wakes LED output")
+        failures.append("status_led.c: shutdown confirmation must use a shared wait-bounded helper that wakes LED output without queuing a black clear frame")
     if "1U + ((elapsed * STATUS_LED_EC11_COUNT)" in status_led:
-        failures.append("status_led.c: shutdown confirmation ring must not pre-light the first EC11 pixel and finish early")
+        failures.append("status_led.c: shutdown confirmation ring must not use a 1U+ shortcut that finishes the accepted fill effect early")
     if "uint32_t lit = (elapsed * STATUS_LED_EC11_COUNT) / STATUS_LED_SHUTDOWN_CONFIRM_MS;" not in status_led:
         failures.append("status_led.c: shutdown confirmation ring must fill over the full confirmation window")
+    if "if (elapsed > 0U && lit == 0U)" in status_led or "if (lit == 0U)" not in shutdown_confirm:
+        failures.append("status_led.c: accepted shutdown confirmation must clamp lit==0 to one EC11 amber pixel so the first frame cannot be all-black")
     if not re.search(
         r"void\s+status_led_notify_shutdown_confirm\([^)]*\)[\s\S]*?"
         r"status_led_notify_shutdown_confirm_with_wait_and_duration\([\s\S]*?"
@@ -3229,6 +3299,12 @@ def main() -> int:
     ):
         failures.append("status_led.c: status LED must retain the final PWR-only hold helper for bounded shutdown callers")
     if not re.search(
+        r'else\s+if\s*\(\s*strcasecmp\(state,\s*"shutdown_final"\)\s*==\s*0[\s\S]*?'
+        r"s_state\.shutdown_confirm_until_ms\s*=\s*STATUS_LED_SHUTDOWN_FINAL_HOLD_UNTIL_CANCEL_MS;",
+        status_led,
+    ):
+        failures.append("status_led.c: shutdown_final preview must hold the final PWR-only amber state until clear/next preview instead of expiring to black")
+    if not re.search(
         r"bool\s+status_led_try_hold_shutdown_all_off\([^)]*\)[\s\S]*?"
         r"xSemaphoreTake\(s_mutex,\s*pdMS_TO_TICKS\(wait_ms\)\)[\s\S]*?"
         r"s_state\.shutdown_confirm_started_ms\s*=\s*0U;[\s\S]*?"
@@ -3239,7 +3315,7 @@ def main() -> int:
         r"status_led_suspend_all_strips\(\);",
         status_led,
     ):
-        failures.append("status_led.c: automatic shutdown must have a bounded all-off hold API that clears shutdown cue state and forces LEDs dark")
+        failures.append("status_led.c: explicit sleep/all-off callers must have a bounded API that clears shutdown cue state and forces LEDs dark")
     if not re.search(
         r"void\s+status_led_cancel_shutdown_confirm\([^)]*\)[\s\S]*?"
         r"if\s*\(\s*s_state\.shutdown_confirm_started_ms\s*!=\s*0U\s*\)[\s\S]*?"
@@ -3285,7 +3361,7 @@ def main() -> int:
         "rmt_tx_dma_fallback=status:%u,ec11:%u,key:%u,edge:%u" not in status_led or
         "rmt_mem_block_symbols=status:%u,ec11:%u,key:%u,edge:%u" not in status_led or
         "rmt_idle_drive=active_dma_low_power_all_zone_non_dma_final_frame_then_release_gpio_low" not in status_led
-        or "shutdown_final_status_tx=non_dma_pwr_only_latch" not in status_led
+        or "shutdown_final_status_tx=dma_visible_pwr_no_black_latch" not in status_led
         or "low_power_all_zone_tx=non_dma_clear_and_final_frame" not in status_led
         or "low_power_spi_latch=spi_dma_prelatch_then_one_shot_rmt_gpio_low" not in status_led
         or "shutdown_final_all_zone_tx=non_dma_pwr_only_latch_or_all_off" not in status_led
@@ -3385,11 +3461,25 @@ def main() -> int:
         or "shutdown_final_active = !force_clear_tx" not in status_led
         or "pwr_only_final_latch = low_power_active || shutdown_final_active" not in status_led
     ):
-        failures.append("status_led.c: low-power idle and final shutdown PWR-only confirmation must stay non-DMA for normal LED frames")
+        failures.append("status_led.c: low-power idle and final shutdown PWR-only confirmation must keep bounded final-latch state")
     if "bool force_non_dma = force_clear_tx || low_power_active;" in status_led:
         failures.append("status_led.c: ordinary transition clear frames must not force non-DMA; scope force_non_dma to clear/latch paths only")
     if not re.search(r"bool\s+force_non_dma\s*=\s*pwr_only_final_latch\s*;", status_led):
-        failures.append("status_led.c: only low-power/final latch frames may force every strip off DMA; interactive transition clears must keep EC11/KEY on SPI DMA")
+        failures.append("status_led.c: low-power/final latch state must stay scoped; interactive transition clears keep EC11/KEY on SPI DMA and shutdown-final PWR/status stays on DMA")
+    shutdown_final_latch = extract_c_function(status_led, "status_led_transmit_shutdown_final_latch_frame")
+    status_dma_index = shutdown_final_latch.find(
+        "status_led_transmit_changed_frame(frame, STATUS_LED_STRIP_MASK_STATUS, false, false)"
+    )
+    non_status_index = shutdown_final_latch.find(
+        "status_led_transmit_changed_frame(frame, non_status_mask, true, key_dark_latch_pending_tx)"
+    )
+    if (
+        status_dma_index < 0
+        or non_status_index < 0
+        or status_dma_index > non_status_index
+        or "status_led_transmit_changed_frame(frame, STATUS_LED_STRIP_MASK_STATUS, true, false)" in shutdown_final_latch
+    ):
+        failures.append("status_led.c: shutdown-final PWR/status visible frame must stay on the normal DMA path before non-status strips use the dark latch")
     spi_final_skip = extract_c_function(status_led, "status_led_skip_suspended_spi_final_latch")
     if (
         "s_strips[strip_index].transport != STATUS_LED_STRIP_TRANSPORT_SPI" not in spi_final_skip

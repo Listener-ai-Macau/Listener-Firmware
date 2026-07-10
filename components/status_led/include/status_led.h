@@ -57,7 +57,9 @@ typedef enum {
 esp_err_t status_led_init(void);
 esp_err_t status_led_start(void);
 void status_led_show_status_window(const char *reason);
+void status_led_log_boot_feedback_after_diag_init(void);
 void status_led_set_ble_state(status_led_ble_state_t state, bool confidence_window);
+void status_led_note_ble_boot_ready(const char *reason);
 void status_led_notify_ble_repairing(const char *reason);
 void status_led_notify_ble_repairing_for_ms(const char *reason, uint32_t hold_ms);
 void status_led_set_recording(bool active, status_led_rec_source_t source);

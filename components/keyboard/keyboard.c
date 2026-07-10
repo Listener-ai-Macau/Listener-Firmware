@@ -1354,6 +1354,29 @@ static void keyboard_ec11_handle_state(keyboard_ec11_state_t *state, uint8_t raw
         return;
     }
 
+    if (voice_key_input_ec11_press_suppresses_rotation()) {
+        if (raw_state != state->last_state ||
+            state->detent_accumulator != 0 ||
+            state->locked_dir != 0) {
+            ESP_LOGD(
+                TAG,
+                "EC11 rotation ignored during push press: previous=0x%02x state=0x%02x accumulator=%" PRId32,
+                state->last_state,
+                raw_state,
+                state->detent_accumulator);
+            keyboard_input_debug_log(
+                KEYBOARD_INPUT_DEBUG_EC11_INVALID,
+                ((uint32_t)state->last_state << 8) | raw_state,
+                0,
+                (uint32_t)state->detent_accumulator);
+        }
+        state->last_state = raw_state;
+        state->detent_accumulator = 0;
+        state->locked_dir = 0;
+        state->last_feedback_delta = 0;
+        return;
+    }
+
     if (raw_state == state->last_state) {
         return;
     }
@@ -1813,7 +1836,7 @@ static esp_err_t keyboard_ec11_start(void)
 
     ESP_LOGI(
         TAG,
-        "EC11 ready: a=gpio42 b=gpio2 key=gpio18 key_policy=gpio18_power_on_runtime_custom_single_click_double_click_recovery_pwr_hold_gpio9_shutdown_separate decoder=interrupt_quadrature direction_policy=clockwise_increases_volume_brightness detent_state=0x%02x idle_poll_ms=%d low_power_idle_poll_ms=%d queue_depth=%d",
+        "EC11 ready: a=gpio42 b=gpio2 key=gpio18 key_policy=gpio18_power_on_runtime_custom_single_click_double_click_recovery_pwr_hold_gpio9_shutdown_separate decoder=interrupt_quadrature direction_policy=clockwise_increases_volume_brightness press_suppresses_rotation=1 press_rotation_suppress_ms=140 detent_state=0x%02x idle_poll_ms=%d low_power_idle_poll_ms=%d queue_depth=%d",
         KEYBOARD_EC11_DETENT_STATE,
         KEYBOARD_EC11_IDLE_POLL_MS,
         KEYBOARD_EC11_LOW_POWER_IDLE_POLL_MS,

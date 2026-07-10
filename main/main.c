@@ -99,6 +99,9 @@ void app_main(void)
     }
 
     diag_log_init();
+    if (status_led_ready) {
+        status_led_log_boot_feedback_after_diag_init();
+    }
     firmware_ota_init();
     configure_power_management();
     watchdog_platform_log_config();

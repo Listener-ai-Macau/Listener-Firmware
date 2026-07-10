@@ -83,6 +83,7 @@
 #define VOICE_KEY_INPUT_GENERATED_PRESS_MS (80)
 #define VOICE_KEY_INPUT_GENERATED_RELEASE_SETTLE_MS (80)
 #define VOICE_KEY_INPUT_GENERATED_INTER_CLICK_RELEASE_MS (140)
+#define VOICE_KEY_INPUT_EC11_ROTATION_SUPPRESS_MS (140)
 #define VOICE_KEY_INPUT_DEBUG_RAW 1u
 #define VOICE_KEY_INPUT_DEBUG_STABLE 2u
 #define VOICE_KEY_INPUT_DEBUG_SOURCE_DIRECT_GPIO 1u
@@ -140,6 +141,7 @@ static QueueHandle_t s_generated_single_click_queue;
 static bool s_direct_generated_active;
 static uint8_t s_direct_generated_click_count;
 static TickType_t s_direct_generated_start_tick;
+static volatile TickType_t s_direct_gpio_press_activity_tick;
 static volatile bool s_direct_gpio_isr_edge_pending;
 #if VOICE_KEY_INPUT_ENABLE_LEGACY_EXPANDER
 static bool s_prev_input_valid;
@@ -302,6 +304,7 @@ static void voice_key_input_apply_raw_feedback(voice_key_button_state_t *button,
     if (button == NULL) {
         return;
     }
+    s_direct_gpio_press_activity_tick = xTaskGetTickCount();
     if (button->raw_feedback_pressed) {
         return;
     }
@@ -318,6 +321,9 @@ static void voice_key_input_apply_raw_feedback(voice_key_button_state_t *button,
 static void voice_key_input_clear_raw_feedback(voice_key_button_state_t *button)
 {
     if (button != NULL) {
+        if (button->raw_feedback_pressed || button->pressed) {
+            s_direct_gpio_press_activity_tick = xTaskGetTickCount();
+        }
         button->raw_feedback_pressed = false;
     }
 }
@@ -1215,6 +1221,31 @@ bool voice_key_input_take_recovery_event(void)
 const char *voice_key_input_get_active_source(void)
 {
     return VOICE_KEY_INPUT_DIRECT_LABEL;
+}
+
+bool voice_key_input_ec11_press_suppresses_rotation(void)
+{
+    if (!s_direct_gpio_state.idle_level_valid) {
+        return gpio_get_level(VOICE_KEY_INPUT_DIRECT_GPIO) == 0;
+    }
+
+    bool raw_pressed = voice_key_input_button_raw_pressed(
+        &s_direct_gpio_state,
+        gpio_get_level(VOICE_KEY_INPUT_DIRECT_GPIO) != 0);
+    if (s_direct_gpio_state.suppress_until_released ||
+        s_direct_gpio_state.pressed ||
+        s_direct_gpio_state.raw_feedback_pressed ||
+        raw_pressed) {
+        return true;
+    }
+
+    TickType_t last_press_tick = s_direct_gpio_press_activity_tick;
+    if (last_press_tick == 0) {
+        return false;
+    }
+
+    uint32_t elapsed_ms = voice_key_input_elapsed_ms(xTaskGetTickCount(), last_press_tick);
+    return elapsed_ms < VOICE_KEY_INPUT_EC11_ROTATION_SUPPRESS_MS;
 }
 
 esp_err_t voice_key_input_set_recording_output(bool enabled)

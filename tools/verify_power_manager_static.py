@@ -202,7 +202,7 @@ CHECKS = {
         "power_manager_consume_usb_command",
         "POWER_MANAGER_BLOCKER_DIAG_EXPORT",
         "power_manager_set_ble_connected",
-        "BLE_HID_USB_READ_LOW_POWER_TIMEOUT_MS 5000",
+        "BLE_HID_USB_READ_LOW_POWER_TIMEOUT_MS 500",
         "ble_hid_usb_command_is_passive_query",
         "ble_hid_usb_command_records_activity",
         "POWER:STATUS",
@@ -811,14 +811,13 @@ def main() -> int:
             "components/power_manager/power_manager.c: connected idle must enter status LED low-power rendering before sleeping audio"
         )
     if not re.search(
-        r"case\s+POWER_MANAGER_STATE_DISCONNECTED_IDLE:[\s\S]{0,80}"
-        r"case\s+POWER_MANAGER_STATE_HARDWARE_SHUTDOWN:[\s\S]{0,220}"
+        r"case\s+POWER_MANAGER_STATE_DISCONNECTED_IDLE:[\s\S]{0,220}"
         r"status_led_set_low_power_disabled\(true\)[\s\S]{0,240}"
         r"power_manager_set_audio_idle_power_save\(true\)",
         power_manager,
     ):
         failures.append(
-            "components/power_manager/power_manager.c: disconnected idle and hardware shutdown must enter status LED low-power rendering"
+            "components/power_manager/power_manager.c: disconnected idle must enter status LED low-power rendering before sleeping audio"
         )
     if re.search(
         r"if\s*\(connected\)\s*\{[\s\S]{0,120}s_last_user_activity_ms\s*=",
@@ -865,9 +864,13 @@ def main() -> int:
         failures.append(
             "components/power_manager/power_manager.c: automatic shutdown PWR-only LED cue must be short and bounded"
         )
-    if "POWER_MANAGER_AUTO_SHUTDOWN_LED_LOCK_WAIT_MS 20U" not in power_manager:
+    if "POWER_MANAGER_AUTO_SHUTDOWN_LED_LOCK_WAIT_MS 250U" not in power_manager:
         failures.append(
-            "components/power_manager/power_manager.c: automatic shutdown LED cue must use a bounded LED lock wait"
+            "components/power_manager/power_manager.c: automatic shutdown LED cue must use a bounded 250 ms LED lock wait so the final PWR amber frame is not intermittently skipped"
+        )
+    if "POWER_MANAGER_AUTO_SHUTDOWN_LED_LOCK_FALLBACK_WAIT_MS POWER_MANAGER_SHUTDOWN_LED_CONFIRM_MS" not in power_manager:
+        failures.append(
+            "components/power_manager/power_manager.c: automatic shutdown LED cue must have a bounded fallback wait instead of skipping the final PWR amber frame under mutex contention"
         )
     if "power_manager_shutdown_failure_retry_active_locked" not in power_manager:
         failures.append(
@@ -881,21 +884,82 @@ def main() -> int:
         failures.append(
             "components/power_manager/power_manager.c: only manual shutdown may use graceful LED/BLE prepare before PWR_HOLD"
         )
+    apply_state = re.search(
+        r"static\s+void\s+power_manager_apply_state\([^)]*\)[\s\S]*?"
+        r"\n}\n\nstatic\s+void\s+power_manager_apply_fast_idle_actions",
+        power_manager,
+    )
+    if apply_state is None:
+        failures.append(
+            "components/power_manager/power_manager.c: power_manager_apply_state must remain visible to static verification"
+        )
+    else:
+        apply_body = apply_state.group(0)
+        if not re.search(
+            r"case\s+POWER_MANAGER_STATE_DISCONNECTED_IDLE:[\s\S]*?"
+            r"status_led_set_low_power_disabled\(true\)[\s\S]*?"
+            r"case\s+POWER_MANAGER_STATE_HARDWARE_SHUTDOWN:",
+            apply_body,
+        ):
+            failures.append(
+                "components/power_manager/power_manager.c: disconnected idle must retain the normal low-power LED path before the separate hardware-shutdown branch"
+            )
+        hardware_case = re.search(
+            r"case\s+POWER_MANAGER_STATE_HARDWARE_SHUTDOWN:\s*(?P<body>[\s\S]*?)\s*break;",
+            apply_body,
+        )
+        if hardware_case is None:
+            failures.append(
+                "components/power_manager/power_manager.c: hardware shutdown state must have a separate apply_state branch"
+            )
+        else:
+            hardware_body = hardware_case.group("body")
+            if "status_led_set_low_power_disabled" in hardware_body:
+                failures.append(
+                    "components/power_manager/power_manager.c: hardware shutdown state must not enqueue the ordinary low-power LED clear before the final PWR amber cue"
+                )
+            if (
+                "ble_hid_gap_set_low_power_advertising" in hardware_body
+                or "ble_hid_gap_stop_advertising_for_key_wake" in hardware_body
+            ):
+                failures.append(
+                    "components/power_manager/power_manager.c: hardware shutdown state must not restart/stop BLE advertising before the final PWR amber cue"
+                )
     if not re.search(
         r"power_manager_show_automatic_shutdown_led_cue[\s\S]*"
+        r"status_led_try_notify_shutdown_final_hold\([\s\S]*"
+        r"automatic_hardware_shutdown_confirmed[\s\S]*"
+        r"POWER_MANAGER_AUTO_SHUTDOWN_LED_LOCK_WAIT_MS[\s\S]*"
+        r"if\s*\(\s*!queued\s*&&\s*status_led_try_notify_shutdown_confirm\s*!=\s*NULL\s*\)[\s\S]*"
+        r"automatic shutdown final PWR cue retrying after LED lock contention[\s\S]*"
         r"status_led_try_notify_shutdown_confirm\([\s\S]*"
         r"true,[\s\S]*"
         r"automatic_hardware_shutdown_confirmed[\s\S]*"
-        r"POWER_MANAGER_AUTO_SHUTDOWN_LED_LOCK_WAIT_MS[\s\S]*"
-        r"vTaskDelay\(pdMS_TO_TICKS\(POWER_MANAGER_AUTO_SHUTDOWN_LED_CONFIRM_MS\)\)[\s\S]*"
-        r"status_led_try_hold_shutdown_all_off\([\s\S]*"
-        r"automatic_hardware_shutdown_led_off_hold[\s\S]*"
-        r"POWER_MANAGER_AUTO_SHUTDOWN_LED_LOCK_WAIT_MS",
+        r"POWER_MANAGER_AUTO_SHUTDOWN_LED_LOCK_FALLBACK_WAIT_MS[\s\S]*"
+        r"vTaskDelay\(pdMS_TO_TICKS\(POWER_MANAGER_AUTO_SHUTDOWN_LED_CONFIRM_MS\)\)",
         power_manager,
     ):
         failures.append(
-            "components/power_manager/power_manager.c: automatic shutdown must use a short PWR-only cue, then hold all LEDs off before PWR_HOLD"
+            "components/power_manager/power_manager.c: automatic shutdown must hold the final PWR amber cue through PWR_HOLD, with bounded fallback queuing"
         )
+    automatic_cue = re.search(
+        r"static\s+void\s+power_manager_show_automatic_shutdown_led_cue[\s\S]*?"
+        r"\n}\n\nstatic\s+void\s+power_manager_store_shutdown_trace_locked",
+        power_manager,
+    )
+    if automatic_cue is None:
+        failures.append(
+            "components/power_manager/power_manager.c: automatic shutdown LED cue helper must remain visible to static verification"
+        )
+    else:
+        cue_body = automatic_cue.group(0)
+        if (
+            "status_led_try_hold_shutdown_all_off" in cue_body
+            or "automatic_hardware_shutdown_led_off_hold" in cue_body
+        ):
+            failures.append(
+                "components/power_manager/power_manager.c: automatic shutdown must not insert an all-off black window before PWR_HOLD"
+            )
     if not re.search(
         r"if\s*\(\s*power_manager_shutdown_reason_uses_graceful_prepare\(reason\)\s*\)[\s\S]*"
         r"status_led_notify_shutdown_confirm[\s\S]*"
@@ -917,7 +981,7 @@ def main() -> int:
         power_manager,
     ):
         failures.append(
-            "components/power_manager/power_manager.c: failed automatic shutdown must cancel shutdown LED confirmation and release all-off hold"
+            "components/power_manager/power_manager.c: failed automatic shutdown must cancel shutdown LED confirmation and restore normal low-power output"
         )
     if not re.search(
         r"watchdog_platform_enter_shutdown_critical\(\"hardware_shutdown_pwr_hold\"\)[\s\S]*"
@@ -1223,11 +1287,11 @@ def main() -> int:
 
     ble_hid = (REPO_ROOT / "ports/esp32/ble_hid/ble_hid.c").read_text(encoding="utf-8")
     if not re.search(
-        r"#define\s+BLE_HID_USB_READ_LOW_POWER_TIMEOUT_MS\s+5000\b",
+        r"#define\s+BLE_HID_USB_READ_LOW_POWER_TIMEOUT_MS\s+500\b",
         ble_hid,
     ):
         failures.append(
-            "ports/esp32/ble_hid/ble_hid.c: low-power USB read timeout must stay at 5000 ms to avoid frequent idle wakeups"
+            "ports/esp32/ble_hid/ble_hid.c: low-power USB read timeout must stay below the 5s task WDT edge"
         )
     if not re.search(
         r"#define\s+BLE_HID_USAGE_QUEUE_LENGTH\s+32\b",
@@ -1359,13 +1423,13 @@ def main() -> int:
         or "low_power_transport_suspend_ms=%u" not in status_led
         or "low_power_status_tx=non_dma_clear_and_final_frame" not in status_led
         or "low_power_all_zone_tx=non_dma_clear_and_final_frame" not in status_led
-        or "shutdown_final_status_tx=non_dma_pwr_only_latch" not in status_led
+        or "shutdown_final_status_tx=dma_visible_pwr_no_black_latch" not in status_led
         or "shutdown_final_all_zone_tx=non_dma_pwr_only_latch_or_all_off" not in status_led
         or "low_power_final_latch_writes=%u" not in status_led
         or not re.search(r"#define\s+STATUS_LED_RMT_IDLE_RELEASE_MS\s+0U\b", status_led)
     ):
         failures.append(
-            "components/status_led/status_led.c: LED contract must report active-DMA plus non-DMA low-power final-frame suspend policy"
+            "components/status_led/status_led.c: LED contract must report active-DMA PWR shutdown-final plus non-DMA low-power final-frame suspend policy"
         )
     if (
         "STATUS_LED_LOW_POWER_PWR_PERCENT" in status_led
@@ -1508,7 +1572,7 @@ def main() -> int:
         )
     if "pwr_only_final_latch || force_clear_tx" in status_led or "bool force_non_dma = pwr_only_final_latch;" not in status_led:
         failures.append(
-            "components/status_led/status_led.c: interactive transition clears must keep SPI EC11/KEY strips on DMA; only low-power/final latch may force non-DMA"
+            "components/status_led/status_led.c: interactive transition clears must keep SPI EC11/KEY strips on DMA; non-DMA latch use must stay scoped to low-power and non-status shutdown-final clearing"
         )
     key_physical_token = re.search(
         r"static\s+status_led_rgb_t\s+status_led_key_physical_token_locked[\s\S]*?"
@@ -1816,7 +1880,7 @@ def main() -> int:
         )
     if not re.search(r"bool\s+force_non_dma\s*=\s*pwr_only_final_latch\s*;", status_led):
         failures.append(
-            "components/status_led/status_led.c: only low-power/final latch frames may force every strip off DMA; interactive transition clears must keep EC11/KEY on SPI DMA"
+            "components/status_led/status_led.c: low-power/final latch state must be scoped so interactive transition clears keep EC11/KEY on SPI DMA"
         )
     if (
         "shutdown_final_all_zone_latched_started_ms" not in status_led

@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import sys
 from pathlib import Path
+import re
 
 
 def require(condition: bool, failures: list[str], message: str) -> None:
@@ -20,8 +21,13 @@ def main() -> int:
     text = args.log.read_text(encoding="utf-8", errors="replace")
     failures: list[str] = []
 
+    require(
+        re.search(r"serial_opened port=COM\d+\b", text) is not None,
+        failures,
+        "missing serial open evidence for a Windows COM port",
+    )
+
     for token in (
-        "serial_opened port=COM3",
         "power_manager: activity reason=usb_control_line resumed from CONNECTED_IDLE",
         "power_manager: state CONNECTED_IDLE -> ACTIVE",
         "~KEY:STATUS custom_keys=KEY1:F13/F17/F21,KEY2:F14/F18/F22,KEY3:F15/F19/F23,KEY4:F16/F20/F24",

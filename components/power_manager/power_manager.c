@@ -43,7 +43,7 @@ extern void status_led_set_low_power_disabled(bool disabled) __attribute__((weak
 extern void status_led_prepare_sleep(void) __attribute__((weak));
 extern void status_led_notify_shutdown_confirm(bool final, const char *reason) __attribute__((weak));
 extern bool status_led_try_notify_shutdown_confirm(bool final, const char *reason, uint32_t wait_ms) __attribute__((weak));
-extern bool status_led_try_hold_shutdown_all_off(const char *reason, uint32_t wait_ms) __attribute__((weak));
+extern bool status_led_try_notify_shutdown_final_hold(const char *reason, uint32_t wait_ms) __attribute__((weak));
 extern void status_led_cancel_shutdown_confirm(const char *reason) __attribute__((weak));
 extern void status_led_set_error(int domain, int severity, const char *reason) __attribute__((weak));
 
@@ -90,7 +90,8 @@ extern void status_led_set_error(int domain, int severity, const char *reason) _
 #define POWER_MANAGER_SHUTDOWN_BATTERY_NOTIFY_WAIT_MS 100U
 #define POWER_MANAGER_SHUTDOWN_LED_CONFIRM_MS 1200U
 #define POWER_MANAGER_AUTO_SHUTDOWN_LED_CONFIRM_MS 1000U
-#define POWER_MANAGER_AUTO_SHUTDOWN_LED_LOCK_WAIT_MS 20U
+#define POWER_MANAGER_AUTO_SHUTDOWN_LED_LOCK_WAIT_MS 250U
+#define POWER_MANAGER_AUTO_SHUTDOWN_LED_LOCK_FALLBACK_WAIT_MS POWER_MANAGER_SHUTDOWN_LED_CONFIRM_MS
 #define POWER_MANAGER_POWER_REMOVAL_WAIT_MS 10000U
 #define POWER_MANAGER_SHUTDOWN_FAILURE_RETRY_MS 900000U
 #ifndef CONFIG_POWER_MANAGER_BATTERY_CRITICAL_PERCENT
@@ -449,11 +450,24 @@ static void power_manager_show_automatic_shutdown_led_cue(
 {
     bool queued = false;
 
-    if (status_led_try_notify_shutdown_confirm != NULL) {
+    if (status_led_try_notify_shutdown_final_hold != NULL) {
+        queued = status_led_try_notify_shutdown_final_hold(
+            "automatic_hardware_shutdown_confirmed",
+            POWER_MANAGER_AUTO_SHUTDOWN_LED_LOCK_WAIT_MS);
+    }
+    if (!queued && status_led_try_notify_shutdown_confirm != NULL) {
+        ESP_LOGW(
+            TAG,
+            "automatic shutdown final PWR cue retrying after LED lock contention"
+            " reason=%s idle_ms=%" PRIu32 " first_wait_ms=%u fallback_wait_ms=%u",
+            power_manager_shutdown_reason_name(reason),
+            final_idle_ms,
+            (unsigned)POWER_MANAGER_AUTO_SHUTDOWN_LED_LOCK_WAIT_MS,
+            (unsigned)POWER_MANAGER_AUTO_SHUTDOWN_LED_LOCK_FALLBACK_WAIT_MS);
         queued = status_led_try_notify_shutdown_confirm(
             true,
             "automatic_hardware_shutdown_confirmed",
-            POWER_MANAGER_AUTO_SHUTDOWN_LED_LOCK_WAIT_MS);
+            POWER_MANAGER_AUTO_SHUTDOWN_LED_LOCK_FALLBACK_WAIT_MS);
     }
 
     if (queued) {
@@ -465,20 +479,7 @@ static void power_manager_show_automatic_shutdown_led_cue(
             " reason=%s idle_ms=%" PRIu32 " lock_wait_ms=%u",
             power_manager_shutdown_reason_name(reason),
             final_idle_ms,
-            (unsigned)POWER_MANAGER_AUTO_SHUTDOWN_LED_LOCK_WAIT_MS);
-    }
-
-    if (status_led_try_hold_shutdown_all_off != NULL &&
-        !status_led_try_hold_shutdown_all_off(
-            "automatic_hardware_shutdown_led_off_hold",
-            POWER_MANAGER_AUTO_SHUTDOWN_LED_LOCK_WAIT_MS)) {
-        ESP_LOGW(
-            TAG,
-            "automatic shutdown LED all-off hold skipped before PWR_HOLD"
-            " reason=%s idle_ms=%" PRIu32 " lock_wait_ms=%u",
-            power_manager_shutdown_reason_name(reason),
-            final_idle_ms,
-            (unsigned)POWER_MANAGER_AUTO_SHUTDOWN_LED_LOCK_WAIT_MS);
+            (unsigned)POWER_MANAGER_AUTO_SHUTDOWN_LED_LOCK_FALLBACK_WAIT_MS);
     }
 }
 
@@ -1318,7 +1319,6 @@ static void power_manager_apply_state(power_manager_state_t previous, power_mana
         }
         break;
     case POWER_MANAGER_STATE_DISCONNECTED_IDLE:
-    case POWER_MANAGER_STATE_HARDWARE_SHUTDOWN:
         if (status_led_set_low_power_disabled != NULL) {
             status_led_set_low_power_disabled(true);
         }
@@ -1326,8 +1326,7 @@ static void power_manager_apply_state(power_manager_state_t previous, power_mana
         if (system_health_set_low_power_mode != NULL) {
             system_health_set_low_power_mode(true);
         }
-        if (next == POWER_MANAGER_STATE_DISCONNECTED_IDLE &&
-            s_external_power_present &&
+        if (s_external_power_present &&
             ble_hid_gap_set_low_power_advertising != NULL) {
             /*
              * USB/external power can still use idle audio/LED savings, but
@@ -1335,11 +1334,21 @@ static void power_manager_apply_state(power_manager_state_t previous, power_mana
              * with only cached GATT services after a host Bluetooth restart.
              */
             (void)ble_hid_gap_set_low_power_advertising(false);
-        } else if (next == POWER_MANAGER_STATE_DISCONNECTED_IDLE &&
-            ble_hid_gap_stop_advertising_for_key_wake != NULL) {
+        } else if (ble_hid_gap_stop_advertising_for_key_wake != NULL) {
             (void)ble_hid_gap_stop_advertising_for_key_wake();
         } else if (ble_hid_gap_set_low_power_advertising != NULL) {
             (void)ble_hid_gap_set_low_power_advertising(true);
+        }
+        break;
+    case POWER_MANAGER_STATE_HARDWARE_SHUTDOWN:
+        /*
+         * The final shutdown LED cue is owned by power_manager_enter_hardware_shutdown().
+         * Do not enqueue the ordinary idle low-power LED clear here; depending on
+         * task scheduling it can render a brief black frame before final PWR amber.
+         */
+        power_manager_set_audio_idle_power_save(true);
+        if (system_health_set_low_power_mode != NULL) {
+            system_health_set_low_power_mode(true);
         }
         break;
     default:
@@ -1937,8 +1946,24 @@ static esp_err_t power_manager_enter_hardware_shutdown(power_manager_shutdown_re
         POWER_MANAGER_SHUTDOWN_USER_ACTION);
 
     if (power_manager_shutdown_reason_uses_graceful_prepare(reason)) {
+        bool led_confirmed = false;
+        if (status_led_try_notify_shutdown_final_hold != NULL) {
+            led_confirmed = status_led_try_notify_shutdown_final_hold(
+                "hardware_shutdown_confirmed",
+                POWER_MANAGER_AUTO_SHUTDOWN_LED_LOCK_WAIT_MS);
+            if (!led_confirmed) {
+                led_confirmed = status_led_try_notify_shutdown_final_hold(
+                    "hardware_shutdown_confirmed",
+                    POWER_MANAGER_SHUTDOWN_LED_CONFIRM_MS);
+            }
+        }
         if (status_led_notify_shutdown_confirm != NULL) {
-            status_led_notify_shutdown_confirm(true, "hardware_shutdown_confirmed");
+            if (!led_confirmed) {
+                status_led_notify_shutdown_confirm(true, "hardware_shutdown_confirmed");
+                led_confirmed = true;
+            }
+        }
+        if (led_confirmed) {
             vTaskDelay(pdMS_TO_TICKS(POWER_MANAGER_SHUTDOWN_LED_CONFIRM_MS));
         }
 
