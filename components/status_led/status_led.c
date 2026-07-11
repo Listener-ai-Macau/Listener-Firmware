@@ -410,6 +410,7 @@ typedef struct {
     bool recording_active;
     bool processing_active;
     bool ota_active;
+    bool ota_type_link_active;
     uint8_t recording_level_percent;
     uint8_t recording_level_visual_percent;
     bool battery_valid;
@@ -2679,12 +2680,6 @@ static uint8_t status_led_low_power_ble_peak_percent_locked(void)
     }
 }
 
-static bool status_led_ota_ble_steady_locked(uint32_t now_ms)
-{
-    (void)now_ms;
-    return s_state.ota_active;
-}
-
 static bool status_led_connected_find_type_window_active_locked(uint32_t now_ms)
 {
     (void)now_ms;
@@ -2753,13 +2748,7 @@ static void status_led_render_ble_locked(status_led_frame_t *frame, uint32_t now
         break;
     }
     case STATUS_LED_BLE_CONNECTED:
-        if (status_led_ota_ble_steady_locked(now_ms)) {
-            color = status_led_token_relative_to_peak_locked(
-                ble_blue,
-                STATUS_LED_BLE_TYPE_READY_STEADY_PERCENT,
-                STATUS_LED_BLE_TYPE_READY_STEADY_PERCENT,
-                false);
-        } else if (status_led_connected_find_type_window_active_locked(now_ms)) {
+        if (status_led_connected_find_type_window_active_locked(now_ms)) {
             uint8_t percent = status_led_double_pulse_on(
                                   ble_elapsed_ms,
                                   STATUS_LED_BLE_CONNECTED_FIND_TYPE_PERIOD_MS)
@@ -4985,6 +4974,14 @@ void status_led_set_ble_state(status_led_ble_state_t state, bool confidence_wind
     uint32_t now_ms = status_led_now_ms();
     bool changed = false;
     if (xSemaphoreTake(s_mutex, portMAX_DELAY) == pdTRUE) {
+        /* TYPE:OTA proves the host is Type even while OTA temporarily owns the
+         * GATT link and the audio notify subscription is unavailable. */
+        if (s_state.ota_active && s_state.ota_type_link_active &&
+            state == STATUS_LED_BLE_CONNECTED) {
+            state = STATUS_LED_BLE_TYPE_READY;
+            confidence_window = false;
+            ESP_LOGI(TAG, "OTA Type link preserved BLE Type-ready across connected update");
+        }
         const bool effect_only = s_state.preview_effect_only;
         const bool explicit_ready_window =
             confidence_window && status_led_ble_state_ready_locked(state);
@@ -5067,6 +5064,38 @@ void status_led_set_ble_state(status_led_ble_state_t state, bool confidence_wind
             }
             diag_log(DIAG_SRC_STATUS_LED, DIAG_LED_STATE, DIAG_SEV_INFO,
                      1, (uint32_t)state, confidence_window ? 1U : 0U, 0);
+        }
+        xSemaphoreGive(s_mutex);
+    }
+    if (changed) {
+        status_led_request_refresh();
+    }
+}
+
+void status_led_set_type_ota_link_active(bool active, const char *reason)
+{
+    uint32_t now_ms = status_led_now_ms();
+    bool changed = false;
+    if (xSemaphoreTake(s_mutex, portMAX_DELAY) == pdTRUE) {
+        if (s_state.ota_type_link_active != active) {
+            s_state.ota_type_link_active = active;
+            ESP_LOGI(
+                TAG,
+                "OTA Type link evidence active=%u reason=%s ota_active=%u ble_state=%u",
+                active ? 1U : 0U,
+                reason != NULL ? reason : "null",
+                s_state.ota_active ? 1U : 0U,
+                (unsigned)s_state.ble_state);
+            if (active && s_state.ota_active &&
+                s_state.ble_state == STATUS_LED_BLE_CONNECTED) {
+                s_state.ble_state = STATUS_LED_BLE_TYPE_READY;
+                s_state.ble_transition_ms = now_ms;
+                s_state.last_transition_ms = now_ms;
+                status_led_set_last_reason_locked(
+                    reason != NULL ? reason : "type_ota_link_ready");
+                ESP_LOGI(TAG, "OTA Type link promoted BLE state to Type-ready");
+                changed = true;
+            }
         }
         xSemaphoreGive(s_mutex);
     }
@@ -5288,16 +5317,19 @@ void status_led_set_ota_active(bool active, size_t bytes_written, size_t expecte
             if (!was_active) {
                 s_state.ota_started_ms = now_ms;
                 s_state.last_transition_ms = now_ms;
-                s_state.ble_repair_until_ms = 0U;
-                s_state.ble_repair_cue_started_ms = 0U;
-                s_state.ble_repair_cue_until_ms = 0U;
                 status_led_clear_ok_locked();
-                status_led_clear_key_feedback_locked();
                 status_led_clear_retryable_error_locked(STATUS_LED_ERROR_DOMAIN_OTA);
             }
             s_state.ota_active = true;
             s_state.ota_bytes_written = bytes_written;
             s_state.ota_expected_size = expected_size;
+            if (s_state.ota_type_link_active &&
+                s_state.ble_state == STATUS_LED_BLE_CONNECTED) {
+                s_state.ble_state = STATUS_LED_BLE_TYPE_READY;
+                s_state.ble_transition_ms = now_ms;
+                ESP_LOGI(TAG, "OTA start promoted BLE state to Type-ready from Type link evidence");
+                changed = true;
+            }
             uint8_t new_progress = status_led_ota_progress_percent_locked();
             if (!was_active || new_progress != old_progress || reason != NULL) {
                 status_led_set_last_reason_locked(reason != NULL ? reason : "ota_progress");
@@ -5311,6 +5343,15 @@ void status_led_set_ota_active(bool active, size_t bytes_written, size_t expecte
                 changed = true;
             }
             status_led_clear_ota_locked();
+            if (s_state.ota_type_link_active) {
+                s_state.ota_type_link_active = false;
+                if (s_state.ble_state == STATUS_LED_BLE_TYPE_READY) {
+                    s_state.ble_state = STATUS_LED_BLE_CONNECTED;
+                    s_state.ble_transition_ms = now_ms;
+                    changed = true;
+                }
+                ESP_LOGI(TAG, "OTA exit cleared Type link evidence");
+            }
         }
 
         if (changed) {

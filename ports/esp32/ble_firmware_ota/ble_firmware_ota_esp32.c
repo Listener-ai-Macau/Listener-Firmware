@@ -22,7 +22,7 @@
 #define BLE_FIRMWARE_OTA_DEFAULT_WINDOW_CHUNKS 8
 #define BLE_FIRMWARE_OTA_ACTIVE_LINK_RETRY_MS 250
 #define BLE_FIRMWARE_OTA_REBOOT_DELAY_MS 500
-#define BLE_FIRMWARE_OTA_REBOOT_TASK_STACK_BYTES 2048
+#define BLE_FIRMWARE_OTA_REBOOT_TASK_STACK_BYTES 4096
 #define BLE_FIRMWARE_OTA_COMPACT_CAPABILITIES DENZIC_OTA_V1_PROTOCOL_NAME
 
 typedef enum {
@@ -48,6 +48,7 @@ static bool s_registered;
 extern esp_err_t ble_hid_gap_request_active_connection(void) __attribute__((weak));
 extern esp_err_t ble_hid_gap_schedule_active_connection(void) __attribute__((weak));
 extern bool ble_hid_gap_active_connection_applied(void) __attribute__((weak));
+extern bool ble_hid_gap_ota_connection_ready(void) __attribute__((weak));
 
 static int ble_firmware_ota_att_error_from_core(void)
 {
@@ -182,19 +183,28 @@ static void ble_firmware_ota_update_active_link(void)
         return;
     }
 
-    if (ble_hid_gap_active_connection_applied == NULL ||
-        ble_hid_gap_active_connection_applied()) {
+    const bool active_link_applied = ble_hid_gap_active_connection_applied == NULL ||
+                                     ble_hid_gap_active_connection_applied();
+    const bool transfer_link_ready = ble_hid_gap_ota_connection_ready == NULL
+        ? active_link_applied
+        : ble_hid_gap_ota_connection_ready();
+    if (transfer_link_ready) {
         if (!s_active_link_confirmed) {
-            ESP_LOGI(TAG, "Denzic OTA v1 active BLE link confirmed");
+            ESP_LOGI(TAG, "Denzic OTA v1 transfer-ready BLE link confirmed");
         }
         s_active_link_confirmed = true;
         denzic_ota_v1_set_status_flags(
             &s_ota,
             DENZIC_OTA_V1_STATUS_FLAG_ACTIVE_LINK_CONFIRMED);
+    } else {
+        s_active_link_confirmed = false;
+        denzic_ota_v1_set_status_flags(&s_ota, 0);
+    }
+
+    if (active_link_applied) {
         return;
     }
 
-    denzic_ota_v1_set_status_flags(&s_ota, 0);
     TickType_t now = xTaskGetTickCount();
     if (s_active_link_retry_tick != 0 &&
         !ble_firmware_ota_tick_reached(now, s_active_link_retry_tick)) {

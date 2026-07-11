@@ -75,11 +75,12 @@ def main() -> int:
         )
     if (
         "def parse_read_ms_command(" not in text
+        or '"READ_MS:"' not in text
         or "current_command_read_ms = args.command_read_ms" not in text
         or "command_read_ms=" not in text
     ):
         failures.append(
-            "tools/serial_no_reset_capture.py: helper must support READMS:<ms> command-list entries for timing-sensitive no-reset captures"
+            "tools/serial_no_reset_capture.py: helper must support READMS:<ms> and READ_MS:<ms> command-list entries for timing-sensitive no-reset captures"
         )
 
     camera_cal = REPO_ROOT / "tools" / "status_led_camera_calibration.ps1"

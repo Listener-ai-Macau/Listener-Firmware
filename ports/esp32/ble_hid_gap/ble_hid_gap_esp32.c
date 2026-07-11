@@ -98,6 +98,8 @@ static void ble_hid_gap_log_conn_desc(const char *context, uint16_t conn_handle)
 #define BLE_HID_GAP_CONN_PARAM_CONFIRM_TIMEOUT_MS 1500U
 #define BLE_HID_GAP_ACTIVE_REQUEST_DEFER_MS 750U
 #define BLE_HID_GAP_ACTIVE_REQUEST_TASK_STACK_BYTES 3072U
+#define BLE_HID_GAP_OTA_RECONNECT_DEFER_MS 750U
+#define BLE_HID_GAP_OTA_RECONNECT_TASK_STACK_BYTES 3072U
 
 static struct ble_hs_adv_fields s_adv_fields;
 static struct ble_hs_adv_fields s_scan_rsp_fields;
@@ -139,6 +141,7 @@ static uint32_t s_last_conn_param_mode = 0;
 static TickType_t s_conn_param_retry_not_before_tick = 0;
 static TickType_t s_conn_param_request_pending_until_tick = 0;
 static bool s_active_connection_request_pending = false;
+static bool s_ota_reconnect_request_pending = false;
 static struct ble_gap_event_listener s_ble_hid_gap_event_listener;
 static bool s_ble_hid_gap_event_listener_registered = false;
 static uint16_t s_last_disconnect_event_conn_handle = BLE_HS_CONN_HANDLE_NONE;
@@ -3528,6 +3531,82 @@ bool ble_hid_gap_active_connection_applied(void)
                BLE_HID_GAP_ACTIVE_ITVL_MIN,
                BLE_HID_GAP_ACTIVE_ITVL_MAX,
                BLE_HID_GAP_ACTIVE_LATENCY);
+}
+
+bool ble_hid_gap_ota_connection_ready(void)
+{
+    ble_hid_gap_connection_snapshot_t conn =
+        ble_hid_gap_reconcile_connection_snapshot("ota_connection_is_fast");
+    if (!conn.connected || conn.conn_handle == BLE_HS_CONN_HANDLE_NONE) {
+        return false;
+    }
+
+    struct ble_gap_conn_desc desc;
+    return ble_gap_conn_find(conn.conn_handle, &desc) == 0 &&
+           desc.conn_latency == 0 && desc.conn_itvl <= 12U;
+}
+
+static void ble_hid_gap_ota_reconnect_task(void *arg)
+{
+    uint16_t requested_conn_handle = (uint16_t)(uintptr_t)arg;
+    vTaskDelay(pdMS_TO_TICKS(BLE_HID_GAP_OTA_RECONNECT_DEFER_MS));
+
+    ble_hid_gap_connection_snapshot_t conn =
+        ble_hid_gap_reconcile_connection_snapshot("ota_reconnect_handoff");
+    int rc = 0;
+    if (!conn.connected || conn.conn_handle != requested_conn_handle) {
+        ESP_LOGI(TAG, "OTA reconnect handoff already completed: requested_conn=%u current_conn=%u connected=%u",
+                 requested_conn_handle, conn.conn_handle, conn.connected ? 1U : 0U);
+    } else if (ble_hid_gap_ota_connection_ready()) {
+        ESP_LOGI(TAG, "OTA reconnect handoff kept existing fast connection: conn=%u",
+                 conn.conn_handle);
+    } else {
+        rc = ble_gap_terminate(conn.conn_handle, BLE_ERR_REM_USER_CONN_TERM);
+        ESP_LOGI(TAG, "OTA reconnect handoff terminated low-power connection: conn=%u rc=%d",
+                 conn.conn_handle, rc);
+    }
+
+    portENTER_CRITICAL(&s_ble_gap_state_lock);
+    s_ota_reconnect_request_pending = false;
+    portEXIT_CRITICAL(&s_ble_gap_state_lock);
+    vTaskDelete(NULL);
+}
+
+esp_err_t ble_hid_gap_schedule_ota_reconnect(void)
+{
+    ble_hid_gap_connection_snapshot_t conn =
+        ble_hid_gap_reconcile_connection_snapshot("ota_reconnect_schedule");
+    if (!conn.connected || conn.conn_handle == BLE_HS_CONN_HANDLE_NONE) {
+        return ESP_ERR_INVALID_STATE;
+    }
+
+    portENTER_CRITICAL(&s_ble_gap_state_lock);
+    bool already_pending = s_ota_reconnect_request_pending;
+    if (!already_pending) {
+        s_ota_reconnect_request_pending = true;
+    }
+    portEXIT_CRITICAL(&s_ble_gap_state_lock);
+    if (already_pending) {
+        return ESP_OK;
+    }
+
+    BaseType_t started = xTaskCreate(
+        ble_hid_gap_ota_reconnect_task,
+        "ble_ota_relink",
+        BLE_HID_GAP_OTA_RECONNECT_TASK_STACK_BYTES,
+        (void *)(uintptr_t)conn.conn_handle,
+        tskIDLE_PRIORITY + 2,
+        NULL);
+    if (started != pdPASS) {
+        portENTER_CRITICAL(&s_ble_gap_state_lock);
+        s_ota_reconnect_request_pending = false;
+        portEXIT_CRITICAL(&s_ble_gap_state_lock);
+        return ESP_ERR_NO_MEM;
+    }
+
+    ESP_LOGI(TAG, "OTA reconnect handoff scheduled: conn=%u delay_ms=%u",
+             conn.conn_handle, (unsigned)BLE_HID_GAP_OTA_RECONNECT_DEFER_MS);
+    return ESP_OK;
 }
 
 esp_err_t ble_hid_gap_apply_pending_ble_name(void)

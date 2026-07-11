@@ -25,12 +25,19 @@ def parse_args() -> argparse.Namespace:
 
 
 class Transcript:
-    def __init__(self) -> None:
+    def __init__(self, output_path: str = "") -> None:
         self.lines: list[str] = []
+        self.output_path = Path(output_path) if output_path else None
+        if self.output_path is not None:
+            self.output_path.parent.mkdir(parents=True, exist_ok=True)
+            self.output_path.write_text("", encoding="utf-8")
 
     def add(self, text: str) -> None:
         print(text, flush=True)
         self.lines.append(text)
+        if self.output_path is not None:
+            with self.output_path.open("a", encoding="utf-8") as output:
+                output.write(text + "\n")
 
     def add_text(self, text: str) -> None:
         for line in text.replace("\r", "\n").split("\n"):
@@ -125,7 +132,7 @@ def parse_wait_command(command: str) -> int | None:
 
 def parse_read_ms_command(command: str) -> int | None:
     upper = command.upper()
-    for prefix in ("READMS:", "__READ_MS:"):
+    for prefix in ("READMS:", "READ_MS:", "__READ_MS:"):
         if upper.startswith(prefix):
             value = command[len(prefix):].strip()
             if value.isdecimal():
@@ -136,7 +143,7 @@ def parse_read_ms_command(command: str) -> int | None:
 def main() -> int:
     args = parse_args()
     commands = command_list(args)
-    transcript = Transcript()
+    transcript = Transcript(args.output_path)
     if not commands:
         transcript.add("ERROR At least one --command or --command-list entry is required.")
         transcript.write(args.output_path)

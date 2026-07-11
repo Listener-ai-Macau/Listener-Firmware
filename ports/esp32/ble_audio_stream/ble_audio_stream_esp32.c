@@ -34,7 +34,7 @@ extern bool ble_hid_gap_is_securely_connected(void) __attribute__((weak));
 extern bool ble_hid_gap_is_recovery_pairing_window_open(void) __attribute__((weak));
 extern bool ble_hid_gap_note_type_audio_ready(const char *reason) __attribute__((weak));
 extern esp_err_t ble_hid_gap_apply_pending_ble_name(void) __attribute__((weak));
-extern esp_err_t ble_hid_gap_request_active_connection(void) __attribute__((weak));
+extern esp_err_t ble_hid_gap_schedule_ota_reconnect(void) __attribute__((weak));
 
 #define BLE_AUDIO_STREAM_TASK_STACK_BYTES (5 * 1024)
 #define BLE_AUDIO_STREAM_PACKET_DEFAULT_BYTES 244
@@ -2825,6 +2825,9 @@ void ble_audio_stream_note_type_activity(const char *reason)
     ble_audio_stream_set_type_heartbeat_active(
         true,
         reason != NULL ? reason : "type_activity");
+    if (ota_activity) {
+        status_led_set_type_ota_link_active(true, reason);
+    }
     if (ble_audio_stream_type_ready_visible_event(reason) &&
         power_manager_record_activity != NULL) {
         power_manager_record_activity("type_ready");
@@ -2834,7 +2837,7 @@ void ble_audio_stream_note_type_activity(const char *reason)
             true,
             reason != NULL ? reason : "type_activity");
     } else {
-        ESP_LOGI(TAG, "type OTA heartbeat accepted; OTA begin owns the deferred active-link request");
+        ESP_LOGI(TAG, "type OTA heartbeat accepted; control handler owns the deferred active-link request");
     }
     ble_audio_stream_sync_status_led_for_type_link(
         reason != NULL ? reason : "type_activity");
@@ -2919,9 +2922,19 @@ bool ble_audio_stream_consume_type_control_command(const char *command, const ch
 
     if (strcmp(command, "TYPE:OTA") == 0) {
         ble_audio_stream_note_type_activity(command);
-        ESP_LOGI(TAG,
-                 "type OTA control accepted source=%s; waiting for OTA begin to schedule active link",
-                 source != NULL ? source : "unknown");
+        if (ble_hid_gap_schedule_ota_reconnect != NULL) {
+            esp_err_t ret = ble_hid_gap_schedule_ota_reconnect();
+            if (ret != ESP_OK) {
+                status_led_set_type_ota_link_active(false, "type_ota_handoff_failed");
+            }
+            ESP_LOGI(
+                TAG,
+                "type OTA reconnect handoff source=%s ret=%s",
+                source != NULL ? source : "unknown",
+                esp_err_to_name(ret));
+        } else {
+            ESP_LOGW(TAG, "type OTA reconnect handoff unavailable");
+        }
         return true;
     }
 
@@ -2935,6 +2948,7 @@ bool ble_audio_stream_consume_type_control_command(const char *command, const ch
             return true;
         }
         ble_audio_stream_set_type_heartbeat_active(false, command);
+        status_led_set_type_ota_link_active(false, command);
         portENTER_CRITICAL(&s_link_state_lock);
         s_type_host_seen_until_tick = 0;
         portEXIT_CRITICAL(&s_link_state_lock);
@@ -2993,6 +3007,7 @@ void ble_audio_stream_poll_type_link(void)
             return;
         }
         ble_audio_stream_set_type_heartbeat_active(false, "timeout");
+        status_led_set_type_ota_link_active(false, "type_heartbeat_timeout");
         ble_audio_stream_sync_power_manager_for_type_link(false, "type_heartbeat_timeout");
         ble_audio_stream_sync_status_led_for_type_link("type_heartbeat_timeout");
         return;

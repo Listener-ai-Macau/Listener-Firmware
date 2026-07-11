@@ -197,8 +197,23 @@ def check_runtime_integration(repo: Path) -> None:
     )
     require(
         'strcmp(command, "TYPE:OTA") == 0' in audio
-        and "OTA begin owns the deferred active-link request" in audio,
-        "desktop pre-transfer hint must not update GAP inside the GATT callback",
+        and "ble_hid_gap_schedule_ota_reconnect()" in audio
+        and "type OTA reconnect handoff" in audio
+        and "ble_hid_gap_request_active_connection()" not in audio,
+        "desktop pre-transfer hint must schedule the dedicated OTA reconnect handoff",
+    )
+    require(
+        "BLE_HID_GAP_OTA_RECONNECT_DEFER_MS 750U" in gap
+        and "ble_hid_gap_ota_connection_ready" in gap
+        and "OTA reconnect handoff terminated low-power connection" in gap
+        and "ble_gap_terminate(conn.conn_handle, BLE_ERR_REM_USER_CONN_TERM)" in gap,
+        "OTA handoff must keep fast links and replace only an existing low-power connection",
+    )
+    require(
+        "ble_hid_gap_ota_connection_ready" in adapter
+        and "transfer_link_ready" in adapter
+        and "if (active_link_applied)" in adapter,
+        "OTA must start on a fresh 15 ms link while still converging to the preferred 7.5 ms interval",
     )
     require(
         "FIRMWARE_OTA_INACTIVITY_TIMEOUT_MS (3U * 60U * 1000U)" in ota

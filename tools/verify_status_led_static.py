@@ -22,6 +22,7 @@ CHECKS = {
         "status_led_start",
         "status_led_consume_usb_command",
         "status_led_set_ble_state",
+        "status_led_set_type_ota_link_active",
         "STATUS_LED_BLE_REPAIRING",
         "status_led_notify_ble_repairing",
         "status_led_notify_ble_repairing_for_ms",
@@ -683,6 +684,8 @@ CHECKS = {
         "ble_audio_stream_sync_power_manager_for_type_link(false, \"gap_connect\")",
         "TYPE:READY",
         "TYPE:HB",
+        "status_led_set_type_ota_link_active(true, reason)",
+        "status_led_set_type_ota_link_active(false, \"type_ota_handoff_failed\")",
         "TYPE:BYE",
         "ble_audio_stream_type_ready_visible_event",
         "power_manager_record_activity(\"type_ready\")",
@@ -1137,6 +1140,7 @@ def main() -> int:
     status_led_backend_header = read("components/status_led/status_led_strip_backend.h")
     ble_gap = read("ports/esp32/ble_hid_gap/ble_hid_gap_esp32.c")
     ble_firmware_ota = read("ports/esp32/ble_firmware_ota/ble_firmware_ota_esp32.c")
+    ble_audio_stream = read("ports/esp32/ble_audio_stream/ble_audio_stream_esp32.c")
     audio_capture = read("ports/esp32/audio_capture/audio_capture_esp32.c")
     main_c = read("main/main.c")
     human_review = read("tools/status_led_human_effect_review.ps1")
@@ -2218,9 +2222,7 @@ def main() -> int:
         failures.append("status_led.c: HID-only connected find-Type pulse must keep the shared attention peak")
     if not re.search(
         r"case\s+STATUS_LED_BLE_CONNECTED:[\s\S]*?"
-        r"if\s*\(\s*status_led_ota_ble_steady_locked\(now_ms\)\s*\)[\s\S]*?"
-        r"STATUS_LED_BLE_TYPE_READY_STEADY_PERCENT[\s\S]*?"
-        r"else\s+if\s*\(\s*status_led_connected_find_type_window_active_locked\(now_ms\)\s*\)[\s\S]*?"
+        r"if\s*\(\s*status_led_connected_find_type_window_active_locked\(now_ms\)\s*\)[\s\S]*?"
         r"status_led_double_pulse_on\(\s*ble_elapsed_ms,\s*STATUS_LED_BLE_CONNECTED_FIND_TYPE_PERIOD_MS\s*\)[\s\S]*?"
         r"STATUS_LED_BLE_CONNECTED_FIND_TYPE_MAX_PERCENT[\s\S]*?"
         r"STATUS_LED_BLE_CONNECTED_FIND_TYPE_MIN_PERCENT[\s\S]*?"
@@ -2230,7 +2232,7 @@ def main() -> int:
         r"STATUS_LED_BLE_TYPE_READY_STEADY_PERCENT",
         status_led,
     ):
-        failures.append("status_led.c: active BLE rendering must make HID-only connected a continuous low-floor find-Type double flash with its peak mapped to the Type cap; only TYPE_READY or active OTA transfer may be steady blue")
+        failures.append("status_led.c: active BLE rendering must make HID-only connected a continuous low-floor find-Type double flash with its peak mapped to the Type cap; only TYPE_READY may be steady blue")
     if not re.search(
         r"static\s+bool\s+status_led_connected_find_type_window_active_locked\(uint32_t now_ms\)[\s\S]*?"
         r"\(void\)now_ms;[\s\S]*?"
@@ -2310,19 +2312,74 @@ def main() -> int:
             reconnect_body,
         ):
             failures.append("status_led.c: reconnecting BLE must double-pulse with a dark off phase; low blue floor belongs only to connected BLE states")
+    ota_setter = extract_c_function(status_led, "status_led_set_ota_active")
+    if not ota_setter:
+        failures.append("status_led.c: missing status_led_set_ota_active")
+    else:
+        for forbidden in (
+            "status_led_clear_key_feedback_locked()",
+            "s_state.ble_repair_until_ms = 0U",
+            "s_state.ble_repair_cue_started_ms = 0U",
+            "s_state.ble_repair_cue_until_ms = 0U",
+        ):
+            if forbidden in ota_setter:
+                failures.append(
+                    f"status_led.c: OTA must not take over independent key/BLE state via {forbidden}"
+                )
+        if not re.search(
+            r"s_state\.ota_type_link_active\s*&&\s*"
+            r"s_state\.ble_state\s*==\s*STATUS_LED_BLE_CONNECTED[\s\S]*?"
+            r"s_state\.ble_state\s*=\s*STATUS_LED_BLE_TYPE_READY",
+            ota_setter,
+        ):
+            failures.append(
+                "status_led.c: a Type-proven OTA must promote connected BLE to TYPE_READY"
+            )
+        if "s_state.ota_type_link_active = false;" not in ota_setter:
+            failures.append(
+                "status_led.c: OTA exit must clear the Type-OTA LED evidence"
+            )
+    ota_type_link_setter = extract_c_function(status_led, "status_led_set_type_ota_link_active")
+    if "s_state.ota_type_link_active = active;" not in ota_type_link_setter:
+        failures.append("status_led.c: missing explicit Type-OTA link evidence setter")
     if not re.search(
-        r"void\s+status_led_set_ota_active[\s\S]*?else\s*\{[\s\S]*?"
-        r"status_led_clear_ota_locked\(\);[\s\S]*?\}"
-        r"[\s\S]*?if\s*\(\s*changed\s*\)",
+        r"s_state\.ota_active\s*&&\s*"
+        r"s_state\.ota_type_link_active\s*&&\s*"
+        r"state\s*==\s*STATUS_LED_BLE_CONNECTED[\s\S]*?"
+        r"state\s*=\s*STATUS_LED_BLE_TYPE_READY",
         status_led,
     ):
-        failures.append("status_led.c: OTA stop must clear the temporary BLE steady hold instead of keeping Type-ready blue after transfer")
-    if not re.search(
-        r"static\s+bool\s+status_led_ota_ble_steady_locked\(uint32_t now_ms\)[\s\S]*?"
-        r"\(void\)now_ms;[\s\S]*?return\s+s_state\.ota_active;",
-        status_led,
+        failures.append(
+            "status_led.c: active Type OTA must not be demoted to connected-only BLE"
+        )
+    type_activity = extract_c_function(
+        ble_audio_stream, "ble_audio_stream_note_type_activity"
+    )
+    ota_control_start = ble_audio_stream.find(
+        'if (strcmp(command, "TYPE:OTA") == 0)'
+    )
+    ota_control_end = ble_audio_stream.find(
+        'if (strcmp(command, "TYPE:BYE") == 0', ota_control_start
+    )
+    ota_control = ble_audio_stream[ota_control_start:ota_control_end]
+    if (
+        not re.search(
+            r"if\s*\(\s*ota_activity\s*\)\s*\{\s*"
+            r"status_led_set_type_ota_link_active\(true, reason\);",
+            type_activity,
+        )
+        or ota_control_start < 0
+        or ota_control_end < 0
+        or "ble_audio_stream_note_type_activity(command);" not in ota_control
     ):
-        failures.append("status_led.c: OTA may make BLE steady only while the OTA session is active")
+        failures.append(
+            "ble_audio_stream: TYPE:OTA must establish Type evidence through the shared activity path"
+        )
+    ota_ble_helper = "status_led_ota_ble_steady_locked"
+    if ota_ble_helper in status_led:
+        failures.append(
+            "status_led.c: OTA must not force the independent BLE indicator steady"
+        )
     for stale_token in ("status_led_note_ota_activity", "STATUS_LED_OTA_BLE_STEADY_HOLD_MS"):
         if stale_token in status_led or stale_token in ble_firmware_ota:
             failures.append(f"BLE OTA must not use stale activity hold token {stale_token}")

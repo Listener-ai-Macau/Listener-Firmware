@@ -31,6 +31,8 @@ esp_err_t ble_hid_gap_request_low_power_connection(void);
 esp_err_t ble_hid_gap_request_active_connection(void);
 esp_err_t ble_hid_gap_schedule_active_connection(void);
 bool ble_hid_gap_active_connection_applied(void);
+bool ble_hid_gap_ota_connection_ready(void);
+esp_err_t ble_hid_gap_schedule_ota_reconnect(void);
 esp_err_t ble_hid_gap_request_reconnect(void);
 esp_err_t ble_hid_gap_apply_pending_ble_name(void);
 
