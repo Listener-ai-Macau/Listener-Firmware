@@ -85,6 +85,7 @@ extern esp_err_t ble_hid_gap_request_active_connection(void) __attribute__((weak
 #define BLE_AUDIO_STREAM_TYPE_HEARTBEAT_TIMEOUT_MS 45000
 #define BLE_AUDIO_STREAM_TYPE_LED_READY_HOLD_MS 12000
 #define BLE_AUDIO_STREAM_TYPE_HOST_SEEN_HOLD_MS 180000
+#define BLE_AUDIO_STREAM_TYPE_OTA_HEARTBEAT_TIMEOUT_MS 180000
 
 typedef enum {
     BLE_AUDIO_STREAM_JOB_TYPE_SESSION_START = 0,
@@ -243,6 +244,7 @@ static bool s_type_heartbeat_active;
 static TickType_t s_type_heartbeat_deadline_tick;
 static TickType_t s_type_heartbeat_led_ready_until_tick;
 static TickType_t s_type_host_seen_until_tick;
+static TickType_t s_type_ota_hold_until_tick;
 static uint32_t s_type_heartbeat_count;
 static ble_audio_stream_replay_packet_t s_replay_window[BLE_AUDIO_STREAM_REPLAY_WINDOW_PACKETS];
 static uint32_t s_replay_next_index;
@@ -358,6 +360,15 @@ static bool ble_audio_stream_tick_reached(TickType_t now, TickType_t target)
     return (int32_t)(now - target) >= 0;
 }
 
+static bool ble_audio_stream_type_ota_hold_active(void)
+{
+    TickType_t until_tick = 0;
+    portENTER_CRITICAL(&s_link_state_lock);
+    until_tick = s_type_ota_hold_until_tick;
+    portEXIT_CRITICAL(&s_link_state_lock);
+    return until_tick != 0 && !ble_audio_stream_tick_reached(xTaskGetTickCount(), until_tick);
+}
+
 static bool ble_audio_stream_type_heartbeat_recent(void)
 {
     ble_audio_stream_type_heartbeat_snapshot_t heartbeat =
@@ -470,6 +481,10 @@ static void ble_audio_stream_set_type_heartbeat_active(bool active, const char *
     bool changed = false;
     uint32_t count = 0;
     bool timeout = reason != NULL && strcmp(reason, "timeout") == 0;
+    bool ota_hold = active && reason != NULL && strcmp(reason, "TYPE:OTA") == 0;
+    uint32_t timeout_ms = ota_hold
+        ? BLE_AUDIO_STREAM_TYPE_OTA_HEARTBEAT_TIMEOUT_MS
+        : BLE_AUDIO_STREAM_TYPE_HEARTBEAT_TIMEOUT_MS;
     TickType_t now = xTaskGetTickCount();
 
     portENTER_CRITICAL(&s_link_state_lock);
@@ -477,12 +492,14 @@ static void ble_audio_stream_set_type_heartbeat_active(bool active, const char *
     s_type_heartbeat_active = active;
     if (active) {
         s_type_heartbeat_deadline_tick =
-            now + pdMS_TO_TICKS(BLE_AUDIO_STREAM_TYPE_HEARTBEAT_TIMEOUT_MS);
+            now + pdMS_TO_TICKS(timeout_ms);
         s_type_heartbeat_led_ready_until_tick =
             now + pdMS_TO_TICKS(BLE_AUDIO_STREAM_TYPE_LED_READY_HOLD_MS);
+        s_type_ota_hold_until_tick = ota_hold ? s_type_heartbeat_deadline_tick : 0;
         s_type_heartbeat_count++;
     } else {
         s_type_heartbeat_deadline_tick = 0;
+        s_type_ota_hold_until_tick = 0;
         if (!timeout) {
             s_type_heartbeat_led_ready_until_tick = 0;
         }
@@ -499,7 +516,7 @@ static void ble_audio_stream_set_type_heartbeat_active(bool active, const char *
             "type heartbeat %s reason=%s timeout_ms=%u count=%" PRIu32,
             active ? "active" : "inactive",
             reason != NULL ? reason : "unspecified",
-            (unsigned)BLE_AUDIO_STREAM_TYPE_HEARTBEAT_TIMEOUT_MS,
+            (unsigned)timeout_ms,
             count);
     }
 }
@@ -2914,6 +2931,14 @@ bool ble_audio_stream_consume_type_control_command(const char *command, const ch
     }
 
     if (strcmp(command, "TYPE:BYE") == 0 || strcmp(command, "TYPE:STOP") == 0) {
+        if (ble_audio_stream_type_ota_hold_active()) {
+            ESP_LOGI(
+                TAG,
+                "type heartbeat stop ignored while OTA activity lease is active source=%s command=%s",
+                source != NULL ? source : "unknown",
+                command);
+            return true;
+        }
         ble_audio_stream_set_type_heartbeat_active(false, command);
         portENTER_CRITICAL(&s_link_state_lock);
         s_type_host_seen_until_tick = 0;
