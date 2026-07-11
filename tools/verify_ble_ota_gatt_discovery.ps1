@@ -2,14 +2,19 @@
 param(
     [string]$DeviceName = "listener",
     [string]$BluetoothAddress = "",
-    [Guid]$ServiceUuid = "710af845-6d9f-6583-0c4d-9e5b3bc3092a",
-    [Guid]$ControlUuid = "710af845-6d9f-6583-0c4d-9e5b3bc3092b",
-    [Guid]$DataUuid = "710af845-6d9f-6583-0c4d-9e5b3bc3092c",
+    [Guid]$ServiceUuid = [Guid]::Empty,
+    [Guid]$ControlUuid = [Guid]::Empty,
+    [Guid]$DataUuid = [Guid]::Empty,
     [int]$TimeoutSeconds = 20,
     [switch]$SkipCachedSessionPrime = $false
 )
 
 $ErrorActionPreference = "Stop"
+
+$otaProtocol = Get-Content -LiteralPath (Join-Path $PSScriptRoot "..\third_party\denzic-platform\ota\protocol\ota_v1.json") -Raw | ConvertFrom-Json
+if ($ServiceUuid -eq [Guid]::Empty) { $ServiceUuid = [Guid]$otaProtocol.gatt.service_uuid }
+if ($ControlUuid -eq [Guid]::Empty) { $ControlUuid = [Guid]$otaProtocol.gatt.control_uuid }
+if ($DataUuid -eq [Guid]::Empty) { $DataUuid = [Guid]$otaProtocol.gatt.data_uuid }
 
 Add-Type -AssemblyName System.Runtime.WindowsRuntime
 $null = [Windows.Devices.Bluetooth.BluetoothLEDevice, Windows.Devices.Bluetooth, ContentType = WindowsRuntime]

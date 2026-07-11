@@ -14,6 +14,8 @@ $ErrorActionPreference = "Stop"
 $project_root = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
 $build_path = (Resolve-Path $BuildDir).Path
 $output_root_path = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($OutputRoot)
+$ota_protocol_path = Join-Path $project_root "third_party\denzic-platform\ota\protocol\ota_v1.json"
+$ota_protocol = Get-Content -LiteralPath $ota_protocol_path -Raw | ConvertFrom-Json
 
 # --- Resolve project metadata ---
 $description_path = Join-Path $build_path "project_description.json"
@@ -131,19 +133,19 @@ $manifest = [ordered]@{
     }
     requirements = [ordered]@{
         hardware_revision = "keyboard-v2-n16r8"
-        protocol_version = 1
+        protocol_version = [int]$ota_protocol.version
         min_desktop_version = $MinDesktopVersion
         gatt_chunk_bytes = $GattChunkBytes
     }
     protocol = [ordered]@{
-        name = "denzic_ota_v1"
-        version = 1
-        firmware_capability = "denzic_ota_v1"
+        name = [string]$ota_protocol.name
+        version = [int]$ota_protocol.version
+        firmware_capability = [string]$ota_protocol.name
         gatt = [ordered]@{
-            service_uuid = "710af845-6d9f-6583-0c4d-9e5b3bc3092a"
-            control_uuid = "710af845-6d9f-6583-0c4d-9e5b3bc3094b"
-            data_uuid = "710af845-6d9f-6583-0c4d-9e5b3bc3094c"
-            status_uuid = "710af845-6d9f-6583-0c4d-9e5b3bc3094d"
+            service_uuid = [string]$ota_protocol.gatt.service_uuid
+            control_uuid = [string]$ota_protocol.gatt.control_uuid
+            data_uuid = [string]$ota_protocol.gatt.data_uuid
+            status_uuid = [string]$ota_protocol.gatt.status_uuid
             chunk_bytes = $GattChunkBytes
         }
     }

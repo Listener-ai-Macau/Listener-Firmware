@@ -2,9 +2,9 @@
 param(
     [string]$DeviceName = "listener",
     [string]$BluetoothAddress = "",
-    [Guid]$ServiceUuid = "710af845-6d9f-6583-0c4d-9e5b3bc3092a",
-    [Guid]$ControlUuid = "710af845-6d9f-6583-0c4d-9e5b3bc3092b",
-    [Guid]$DataUuid = "710af845-6d9f-6583-0c4d-9e5b3bc3092c",
+    [Guid]$ServiceUuid = [Guid]::Empty,
+    [Guid]$ControlUuid = [Guid]::Empty,
+    [Guid]$DataUuid = [Guid]::Empty,
     [Guid]$ReadinessUuid = "710af845-6d9f-6583-0c4d-9e5b3bc3091c",
     [Guid]$CapabilitiesUuid = "710af845-6d9f-6583-0c4d-9e5b3bc3091d",
     [Guid]$DeviceInformationUuid = "0000180a-0000-1000-8000-00805f9b34fb",
@@ -15,6 +15,11 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
+
+$otaProtocol = Get-Content -LiteralPath (Join-Path $PSScriptRoot "..\third_party\denzic-platform\ota\protocol\ota_v1.json") -Raw | ConvertFrom-Json
+if ($ServiceUuid -eq [Guid]::Empty) { $ServiceUuid = [Guid]$otaProtocol.gatt.service_uuid }
+if ($ControlUuid -eq [Guid]::Empty) { $ControlUuid = [Guid]$otaProtocol.gatt.control_uuid }
+if ($DataUuid -eq [Guid]::Empty) { $DataUuid = [Guid]$otaProtocol.gatt.data_uuid }
 
 function Resolve-ListenerTypeCargoManifest {
     $candidates = @(

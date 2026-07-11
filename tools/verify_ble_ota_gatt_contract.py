@@ -4,26 +4,26 @@
 from __future__ import annotations
 
 import argparse
+import json
 import re
 import sys
 from pathlib import Path
 
 
-SERVICE_UUID = "710af845-6d9f-6583-0c4d-9e5b3bc3092a"
-CONTROL_UUID = "710af845-6d9f-6583-0c4d-9e5b3bc3094b"
-DATA_UUID = "710af845-6d9f-6583-0c4d-9e5b3bc3094c"
-STATUS_UUID = "710af845-6d9f-6583-0c4d-9e5b3bc3094d"
 READINESS_UUID = "710af845-6d9f-6583-0c4d-9e5b3bc3091c"
 CAPABILITIES_UUID = "710af845-6d9f-6583-0c4d-9e5b3bc3091d"
 CHUNK_BYTES = 500
 
 UUID_BYTES = {
-    "BLE_FIRMWARE_OTA_SERVICE_UUID": "0x2a, 0x09, 0xc3, 0x3b, 0x5b, 0x9e, 0x4d, 0x0c, 0x83, 0x65, 0x9f, 0x6d, 0x45, 0xf8, 0x0a, 0x71",
     "BLE_FIRMWARE_OTA_READINESS_UUID": "0x1c, 0x09, 0xc3, 0x3b, 0x5b, 0x9e, 0x4d, 0x0c, 0x83, 0x65, 0x9f, 0x6d, 0x45, 0xf8, 0x0a, 0x71",
     "BLE_FIRMWARE_OTA_CAPABILITIES_UUID": "0x1d, 0x09, 0xc3, 0x3b, 0x5b, 0x9e, 0x4d, 0x0c, 0x83, 0x65, 0x9f, 0x6d, 0x45, 0xf8, 0x0a, 0x71",
-    "BLE_FIRMWARE_OTA_V1_CONTROL_UUID": "0x4b, 0x09, 0xc3, 0x3b, 0x5b, 0x9e, 0x4d, 0x0c, 0x83, 0x65, 0x9f, 0x6d, 0x45, 0xf8, 0x0a, 0x71",
-    "BLE_FIRMWARE_OTA_V1_DATA_UUID": "0x4c, 0x09, 0xc3, 0x3b, 0x5b, 0x9e, 0x4d, 0x0c, 0x83, 0x65, 0x9f, 0x6d, 0x45, 0xf8, 0x0a, 0x71",
-    "BLE_FIRMWARE_OTA_V1_STATUS_UUID": "0x4d, 0x09, 0xc3, 0x3b, 0x5b, 0x9e, 0x4d, 0x0c, 0x83, 0x65, 0x9f, 0x6d, 0x45, 0xf8, 0x0a, 0x71",
+}
+
+SHARED_UUID_MACROS = {
+    "BLE_FIRMWARE_OTA_SERVICE_UUID": "DENZIC_OTA_V1_GATT_SERVICE_UUID_BYTES",
+    "BLE_FIRMWARE_OTA_V1_CONTROL_UUID": "DENZIC_OTA_V1_GATT_CONTROL_UUID_BYTES",
+    "BLE_FIRMWARE_OTA_V1_DATA_UUID": "DENZIC_OTA_V1_GATT_DATA_UUID_BYTES",
+    "BLE_FIRMWARE_OTA_V1_STATUS_UUID": "DENZIC_OTA_V1_GATT_STATUS_UUID_BYTES",
 }
 
 
@@ -49,6 +49,7 @@ def check_shared_core(repo: Path) -> None:
     generated = read_text(
         repo / "third_party/denzic-platform/ota/embedded/c/include/denzic_ota_v1_generated.h"
     )
+    spec = json.loads(read_text(repo / "third_party/denzic-platform/ota/protocol/ota_v1.json"))
     core = read_text(
         repo / "third_party/denzic-platform/ota/embedded/c/src/denzic_ota_v1.c"
     )
@@ -68,6 +69,12 @@ def check_shared_core(repo: Path) -> None:
         "#define DENZIC_OTA_V1_PROTOCOL_VERSION (1u)",
     ):
         require(token in generated, f"shared generated contract is missing {token}")
+    for name, value in spec["gatt"].items():
+        macro = name.removesuffix("_uuid").upper()
+        require(
+            f'#define DENZIC_OTA_V1_GATT_{macro}_UUID_TEXT "{value}"' in generated,
+            f"shared generated GATT contract is missing {name}",
+        )
     for token in (
         "denzic_ota_v1_handle_control",
         "denzic_ota_v1_handle_data",
@@ -79,6 +86,17 @@ def check_shared_core(repo: Path) -> None:
 
 def check_header(repo: Path) -> None:
     header = read_text(repo / "ports/esp32/ble_firmware_ota/include/ble_firmware_ota.h")
+    require('#include "denzic_ota_v1_generated.h"' in header,
+            "product GATT adapter must include the shared generated UUID contract")
+    for macro, shared_macro in SHARED_UUID_MACROS.items():
+        require(
+            re.search(
+                rf"#define\s+{macro}\s+\\?\s*BLE_UUID128_INIT\({shared_macro}\)",
+                header,
+                re.MULTILINE,
+            ) is not None,
+            f"{macro} must reference {shared_macro}",
+        )
     for macro, byte_list in UUID_BYTES.items():
         match = re.search(
             rf"#define\s+{macro}\s+\\?\s*BLE_UUID128_INIT\(([^)]*)\)",
@@ -140,13 +158,14 @@ def check_product_identity(repo: Path) -> None:
     require("denzic_ota_v1" in listener_header and "denzic_ota_v1" in listener_source,
             "device capabilities must advertise denzic_ota_v1")
     for token in (
-        'protocol_version = 1',
-        'name = "denzic_ota_v1"',
-        'version = 1',
-        'firmware_capability = "denzic_ota_v1"',
-        CONTROL_UUID,
-        DATA_UUID,
-        STATUS_UUID,
+        'third_party\\denzic-platform\\ota\\protocol\\ota_v1.json',
+        'name = [string]$ota_protocol.name',
+        'version = [int]$ota_protocol.version',
+        'firmware_capability = [string]$ota_protocol.name',
+        'service_uuid = [string]$ota_protocol.gatt.service_uuid',
+        'control_uuid = [string]$ota_protocol.gatt.control_uuid',
+        'data_uuid = [string]$ota_protocol.gatt.data_uuid',
+        'status_uuid = [string]$ota_protocol.gatt.status_uuid',
     ):
         require(token in package, f"OTA manifest generator is missing {token}")
     require("firmware_ota_v1" not in combined and "listener_ble_ota_v1" not in combined,
@@ -185,7 +204,13 @@ def check_desktop(repo: Path, explicit: Path | None) -> str:
     contract = read_text(contract_path)
     rust = read_text(rust_path)
     cargo = read_text(cargo_path)
-    for token in ("DENZIC_OTA_V1_PROTOCOL_NAME", SERVICE_UUID, CONTROL_UUID, DATA_UUID, STATUS_UUID):
+    for token in (
+        "DENZIC_OTA_V1_PROTOCOL_NAME",
+        "DENZIC_OTA_V1_GATT_SERVICE_UUID",
+        "DENZIC_OTA_V1_GATT_CONTROL_UUID",
+        "DENZIC_OTA_V1_GATT_DATA_UUID",
+        "DENZIC_OTA_V1_GATT_STATUS_UUID",
+    ):
         require(token in contract, f"desktop OTA contract is missing {token}")
     for token in (
         "impl denzic_ota_core::OtaV1Transport",
@@ -193,6 +218,8 @@ def check_desktop(repo: Path, explicit: Path | None) -> str:
         "LISTENER_OTA_V1_INACTIVE_LINK_WINDOW_CHUNKS",
         "LISTENER_OTA_V1_DEFAULT_WINDOW_CHUNKS",
         "TYPE:OTA",
+        "denzic_ota_core::GATT_SERVICE_UUID_U128",
+        "denzic_ota_core::GATT_CONTROL_UUID_U128",
     ):
         require(token in rust, f"desktop Listener driver is missing {token}")
     require("third_party/denzic-platform/ota/host/rust" in cargo,
