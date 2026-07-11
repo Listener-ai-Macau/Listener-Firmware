@@ -3384,6 +3384,18 @@ esp_err_t ble_hid_gap_request_active_connection(void)
     return params_ret;
 }
 
+bool ble_hid_gap_active_connection_applied(void)
+{
+    ble_hid_gap_connection_snapshot_t conn =
+        ble_hid_gap_reconcile_connection_snapshot("active_connection_applied");
+    return conn.connected && conn.conn_handle != BLE_HS_CONN_HANDLE_NONE &&
+           ble_hid_gap_conn_desc_matches_params(
+               conn.conn_handle,
+               BLE_HID_GAP_ACTIVE_ITVL_MIN,
+               BLE_HID_GAP_ACTIVE_ITVL_MAX,
+               BLE_HID_GAP_ACTIVE_LATENCY);
+}
+
 esp_err_t ble_hid_gap_apply_pending_ble_name(void)
 {
     portENTER_CRITICAL(&s_ble_gap_state_lock);

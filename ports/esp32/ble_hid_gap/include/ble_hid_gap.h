@@ -29,6 +29,7 @@ esp_err_t ble_hid_gap_stop_advertising_for_key_wake(void);
 esp_err_t ble_hid_gap_prepare_shutdown_disconnect(void);
 esp_err_t ble_hid_gap_request_low_power_connection(void);
 esp_err_t ble_hid_gap_request_active_connection(void);
+bool ble_hid_gap_active_connection_applied(void);
 esp_err_t ble_hid_gap_request_reconnect(void);
 esp_err_t ble_hid_gap_apply_pending_ble_name(void);
 

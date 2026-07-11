@@ -30,6 +30,7 @@
 #define BLE_FIRMWARE_OTA_V2_DATA_PAYLOAD_MAX 500
 #define BLE_FIRMWARE_OTA_V2_STATUS_SIZE 24
 #define BLE_FIRMWARE_OTA_V2_DEFAULT_WINDOW_CHUNKS 8
+#define BLE_FIRMWARE_OTA_V2_ACTIVE_LINK_RETRY_MS 250
 #define BLE_FIRMWARE_OTA_V2_MAGIC0 ('L')
 #define BLE_FIRMWARE_OTA_V2_MAGIC1 ('O')
 #define BLE_FIRMWARE_OTA_V2_MAGIC2 ('V')
@@ -52,6 +53,7 @@ typedef enum {
 
 typedef enum {
     BLE_FIRMWARE_OTA_V2_STATE_IDLE = 0,
+    BLE_FIRMWARE_OTA_V2_STATE_LINKING = 1,
     BLE_FIRMWARE_OTA_V2_STATE_RECEIVING = 2,
     BLE_FIRMWARE_OTA_V2_STATE_COMPLETE = 3,
     BLE_FIRMWARE_OTA_V2_STATE_ERROR = 4,
@@ -76,6 +78,7 @@ typedef struct {
     uint32_t data_write_count;
     uint16_t chunk_payload_bytes;
     uint16_t window_chunks;
+    TickType_t active_link_retry_tick;
 } ble_firmware_ota_v2_context_t;
 
 static const char *TAG = "ble_firmware_ota";
@@ -89,6 +92,9 @@ static const ble_uuid128_t s_v2_data_uuid = BLE_FIRMWARE_OTA_V2_DATA_UUID;
 static const ble_uuid128_t s_v2_status_uuid = BLE_FIRMWARE_OTA_V2_STATUS_UUID;
 static ble_firmware_ota_v2_context_t s_v2;
 static bool s_registered;
+
+extern esp_err_t ble_hid_gap_request_active_connection(void) __attribute__((weak));
+extern bool ble_hid_gap_active_connection_applied(void) __attribute__((weak));
 
 static void ble_firmware_ota_v2_sync_status(void);
 static int ble_firmware_ota_v2_handle_begin(const uint8_t *bytes, uint16_t length);
@@ -191,8 +197,41 @@ static void ble_firmware_ota_v2_set_recoverable_error(ble_firmware_ota_v2_error_
     s_v2.last_error = error;
 }
 
+static bool ble_firmware_ota_v2_tick_reached(TickType_t now, TickType_t target)
+{
+    return (int32_t)(now - target) >= 0;
+}
+
+static void ble_firmware_ota_v2_await_active_link(void)
+{
+    if (s_v2.state != BLE_FIRMWARE_OTA_V2_STATE_LINKING) {
+        return;
+    }
+
+    if (ble_hid_gap_active_connection_applied == NULL ||
+        ble_hid_gap_active_connection_applied()) {
+        s_v2.state = BLE_FIRMWARE_OTA_V2_STATE_RECEIVING;
+        s_v2.last_error = BLE_FIRMWARE_OTA_V2_ERROR_NONE;
+        ESP_LOGI(TAG, "OTA v2 active BLE link confirmed; accepting data writes");
+        return;
+    }
+
+    TickType_t now = xTaskGetTickCount();
+    if (s_v2.active_link_retry_tick != 0 &&
+        !ble_firmware_ota_v2_tick_reached(now, s_v2.active_link_retry_tick)) {
+        return;
+    }
+
+    s_v2.active_link_retry_tick = now + pdMS_TO_TICKS(BLE_FIRMWARE_OTA_V2_ACTIVE_LINK_RETRY_MS);
+    if (ble_hid_gap_request_active_connection != NULL) {
+        esp_err_t ret = ble_hid_gap_request_active_connection();
+        ESP_LOGI(TAG, "OTA v2 active BLE link pending; retry requested ret=%s", esp_err_to_name(ret));
+    }
+}
+
 static void ble_firmware_ota_v2_sync_status(void)
 {
+    ble_firmware_ota_v2_await_active_link();
     firmware_ota_status_t status = firmware_ota_get_status();
     if (s_v2.state == BLE_FIRMWARE_OTA_V2_STATE_RECEIVING && status.active) {
         s_v2.bytes_written = status.bytes_written;
@@ -558,8 +597,10 @@ static int ble_firmware_ota_v2_handle_begin(const uint8_t *bytes, uint16_t lengt
         return ble_firmware_ota_att_error_from_esp(ret);
     }
 
-    s_v2.state = BLE_FIRMWARE_OTA_V2_STATE_RECEIVING;
+    s_v2.state = BLE_FIRMWARE_OTA_V2_STATE_LINKING;
     s_v2.last_error = BLE_FIRMWARE_OTA_V2_ERROR_NONE;
+    s_v2.active_link_retry_tick = 0;
+    ble_firmware_ota_v2_sync_status();
     return 0;
 }
 
