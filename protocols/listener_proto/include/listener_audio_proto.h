@@ -1,91 +1,36 @@
 #ifndef LISTENER_AUDIO_PROTO_H
 #define LISTENER_AUDIO_PROTO_H
 
-#include <stddef.h>
-#include <stdint.h>
+/* Listener keeps these compatibility names while Denzic Platform owns the
+ * VKA1 packet layout, constants, and header constructor. */
+#include "denzic_audio_v1_generated.h"
 
-#ifdef __cplusplus
-extern "C" {
-#endif
+#define LISTENER_AUDIO_PROTO_MAGIC DENZIC_AUDIO_V1_MAGIC
+#define LISTENER_AUDIO_PROTO_MAGIC_U32 DENZIC_AUDIO_V1_MAGIC_U32
+#define LISTENER_AUDIO_PROTO_HEADER_BYTES DENZIC_AUDIO_V1_HEADER_BYTES
+#define LISTENER_AUDIO_PROTO_VERSION DENZIC_AUDIO_V1_PROTOCOL_VERSION
 
-#define LISTENER_AUDIO_PROTO_MAGIC "VKA1"
-#define LISTENER_AUDIO_PROTO_MAGIC_U32 0x31414B56u
-#define LISTENER_AUDIO_PROTO_HEADER_BYTES 20u
-#define LISTENER_AUDIO_PROTO_VERSION 1u
+#define LISTENER_AUDIO_PACKET_TYPE_SESSION_START DENZIC_AUDIO_V1_PACKET_TYPE_SESSION_START
+#define LISTENER_AUDIO_PACKET_TYPE_AUDIO_DATA DENZIC_AUDIO_V1_PACKET_TYPE_AUDIO_DATA
+#define LISTENER_AUDIO_PACKET_TYPE_AUDIO_CHUNK DENZIC_AUDIO_V1_PACKET_TYPE_AUDIO_CHUNK
+#define LISTENER_AUDIO_PACKET_TYPE_SESSION_STOP DENZIC_AUDIO_V1_PACKET_TYPE_SESSION_STOP
+#define LISTENER_AUDIO_PACKET_TYPE_SESSION_CANCEL DENZIC_AUDIO_V1_PACKET_TYPE_SESSION_CANCEL
+#define LISTENER_AUDIO_PACKET_TYPE_SESSION_ERROR DENZIC_AUDIO_V1_PACKET_TYPE_SESSION_ERROR
 
-typedef enum {
-    LISTENER_AUDIO_PACKET_TYPE_SESSION_START = 1,
-    LISTENER_AUDIO_PACKET_TYPE_AUDIO_DATA = 2,
-    LISTENER_AUDIO_PACKET_TYPE_AUDIO_CHUNK = LISTENER_AUDIO_PACKET_TYPE_AUDIO_DATA,
-    LISTENER_AUDIO_PACKET_TYPE_SESSION_STOP = 3,
-    LISTENER_AUDIO_PACKET_TYPE_SESSION_CANCEL = 4,
-    LISTENER_AUDIO_PACKET_TYPE_SESSION_ERROR = 5,
-} listener_audio_packet_type_t;
+#define LISTENER_AUDIO_SESSION_ERROR_NONE DENZIC_AUDIO_V1_SESSION_ERROR_NONE
+#define LISTENER_AUDIO_SESSION_ERROR_QUEUE_FULL DENZIC_AUDIO_V1_SESSION_ERROR_QUEUE_FULL
+#define LISTENER_AUDIO_SESSION_ERROR_NOTIFY_TIMEOUT DENZIC_AUDIO_V1_SESSION_ERROR_NOTIFY_TIMEOUT
+#define LISTENER_AUDIO_SESSION_ERROR_LINK_LOST DENZIC_AUDIO_V1_SESSION_ERROR_LINK_LOST
+#define LISTENER_AUDIO_SESSION_ERROR_SEQUENCE_OVERFLOW DENZIC_AUDIO_V1_SESSION_ERROR_SEQUENCE_OVERFLOW
+#define LISTENER_AUDIO_SESSION_ERROR_INVALID_STATE DENZIC_AUDIO_V1_SESSION_ERROR_INVALID_STATE
+#define LISTENER_AUDIO_SESSION_ERROR_NO_MEMORY DENZIC_AUDIO_V1_SESSION_ERROR_NO_MEMORY
+#define LISTENER_AUDIO_SESSION_ERROR_PACKET_TOO_LARGE DENZIC_AUDIO_V1_SESSION_ERROR_PACKET_TOO_LARGE
+#define LISTENER_AUDIO_SESSION_ERROR_TRANSPORT DENZIC_AUDIO_V1_SESSION_ERROR_TRANSPORT
 
-typedef enum {
-    LISTENER_AUDIO_SESSION_ERROR_NONE = 0,
-    LISTENER_AUDIO_SESSION_ERROR_QUEUE_FULL = 1,
-    LISTENER_AUDIO_SESSION_ERROR_NOTIFY_TIMEOUT = 2,
-    LISTENER_AUDIO_SESSION_ERROR_LINK_LOST = 3,
-    LISTENER_AUDIO_SESSION_ERROR_SEQUENCE_OVERFLOW = 4,
-    LISTENER_AUDIO_SESSION_ERROR_INVALID_STATE = 5,
-    LISTENER_AUDIO_SESSION_ERROR_NO_MEMORY = 6,
-    LISTENER_AUDIO_SESSION_ERROR_PACKET_TOO_LARGE = 7,
-    LISTENER_AUDIO_SESSION_ERROR_TRANSPORT = 8,
-} listener_audio_session_error_t;
+typedef denzic_audio_v1_packet_type_t listener_audio_packet_type_t;
+typedef denzic_audio_v1_session_error_t listener_audio_session_error_t;
+typedef denzic_audio_v1_packet_header_t listener_audio_packet_header_t;
 
-/*
- * Phase-1 continuous notify streaming keeps the legacy wire layout stable while
- * reinterpreting the old chunk fields as packet-sequence metadata.
- */
-typedef struct __attribute__((packed)) {
-    uint8_t magic[4];
-    uint8_t packet_type;
-    uint8_t flags;
-    uint16_t header_len_le;
-    uint32_t session_id_le;
-    uint16_t chunk_index_le;      /* audio_data: packet_sequence; stop/cancel: expected_packet_count */
-    uint8_t fragment_index;       /* continuous stream phase: always 0 */
-    uint8_t fragment_count;       /* continuous stream phase: always 1 */
-    uint16_t payload_len_le;
-    uint16_t chunk_pcm_bytes_le;  /* audio_data: this packet's PCM bytes */
-    uint32_t reserved_le;
-} listener_audio_packet_header_t;
-
-static inline void listener_audio_proto_header_init(
-    listener_audio_packet_header_t *header,
-    listener_audio_packet_type_t packet_type,
-    uint32_t session_id,
-    uint16_t chunk_index,
-    uint8_t fragment_index,
-    uint8_t fragment_count,
-    uint16_t payload_len,
-    uint16_t chunk_pcm_bytes)
-{
-    if (header == NULL) {
-        return;
-    }
-
-    header->magic[0] = 'V';
-    header->magic[1] = 'K';
-    header->magic[2] = 'A';
-    header->magic[3] = '1';
-    header->packet_type = (uint8_t)packet_type;
-    header->flags = 0;
-    header->header_len_le = LISTENER_AUDIO_PROTO_HEADER_BYTES;
-    header->session_id_le = session_id;
-    header->chunk_index_le = chunk_index;
-    header->fragment_index = fragment_index;
-    header->fragment_count = fragment_count;
-    header->payload_len_le = payload_len;
-    header->chunk_pcm_bytes_le = chunk_pcm_bytes;
-    header->reserved_le = (packet_type == LISTENER_AUDIO_PACKET_TYPE_SESSION_START)
-                              ? LISTENER_AUDIO_PROTO_VERSION
-                              : 0;
-}
-
-#ifdef __cplusplus
-}
-#endif
+#define listener_audio_proto_header_init denzic_audio_v1_packet_header_init
 
 #endif
