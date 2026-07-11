@@ -85,7 +85,7 @@ CHECKS = {
         "STATUS_LED_PROCESSING_THINK_BEAT_GAP_MS 50U",
         "STATUS_LED_PROCESSING_THINK_EFFECT_BEAT2_PERCENT 78U",
         "STATUS_LED_PROCESSING_THINK_EFFECT_BEAT3_PERCENT 100U",
-        "STATUS_LED_PROCESSING_STALE_TIMEOUT_MS 10000U",
+        "STATUS_LED_PROCESSING_STALE_TIMEOUT_MS 5000U",
         "recording_level_visual_percent",
         '"recording_active"',
         '"capture_active"',
