@@ -1248,16 +1248,31 @@ def main() -> int:
         failures.append(
             "ports/esp32/ble_hid_gap/ble_hid_gap_esp32.c: key-wake-only advertising stop must restart connectable advertising during recovery pairing"
         )
-    if not re.search(
-        r"ble_hid_gap_set_connection_state[\s\S]{0,360}s_last_conn_param_mode\s*=\s*0",
-        ble_gap,
-    ) or not (
-        "ble_hid_gap_conn_desc_matches_params" in ble_gap
-        and "last_mode == (uint32_t)mode && actual_params_match" in ble_gap
+    connection_param_state_is_guarded = (
+        re.search(
+            r"ble_hid_gap_set_connection_state[\s\S]{0,420}"
+            r"s_last_conn_param_mode\s*=\s*0[\s\S]{0,160}"
+            r"s_conn_param_retry_not_before_tick\s*=\s*0[\s\S]{0,160}"
+            r"s_conn_param_request_pending_until_tick\s*=\s*0",
+            ble_gap,
+        )
+        and "ble_hid_gap_conn_desc_matches_params" in ble_gap
+        and re.search(
+            r"if\s*\(actual_params_match\)[\s\S]{0,420}"
+            r"s_last_conn_param_mode\s*=\s*\(uint32_t\)mode[\s\S]{0,160}"
+            r"s_conn_param_request_pending_until_tick\s*=\s*0",
+            ble_gap,
+        )
+        and "ble_hid_gap_conn_param_retry_is_deferred()" in ble_gap
+        and "ble_hid_gap_conn_param_request_is_pending()" in ble_gap
+        and 'ble_hid_gap_clear_conn_param_mode("connection parameter confirmation timeout")' in ble_gap
+        and "BLE_HS_HCI_ERR(BLE_ERR_DIFF_TRANS_COLL)" in ble_gap
+        and "ble_hid_gap_defer_conn_param_retry_after_collision" in ble_gap
         and 'ble_hid_gap_clear_conn_param_mode("connection update failed")' in ble_gap
-    ):
+    )
+    if not connection_param_state_is_guarded:
         failures.append(
-            "ports/esp32/ble_hid_gap/ble_hid_gap_esp32.c: connection parameter de-duplication must reset on connection changes, verify actual link params, and clear rejected updates"
+            "ports/esp32/ble_hid_gap/ble_hid_gap_esp32.c: connection parameter state must reset on connection changes, confirm actual link params, bound pending requests, and back off central transaction collisions"
         )
     for label, pattern in (
         (
