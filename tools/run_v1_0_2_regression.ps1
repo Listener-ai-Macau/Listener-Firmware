@@ -154,14 +154,29 @@ try {
             if ($keyLogText -notmatch "~KEY:GENERATED logical=KEY3 gesture=single result=ESP_OK") {
                 throw "KEY3 generated single gesture did not complete"
             }
-            if ($keyLogText -match "strip key non-DMA one-shot") {
-                throw "KEY3 gradient regressed through key non-DMA one-shot transport"
+            $keyRmtLatchLines = @(
+                $keyLogText -split "`r?`n" | Where-Object {
+                    $_ -match "strip key non-DMA one-shot via RMT for SPI DMA latch"
+                }
+            )
+            $keySpiPreLatchLines = @(
+                $keyLogText -split "`r?`n" | Where-Object {
+                    $_ -match "strip key SPI DMA pre-latch before non-DMA RMT latch"
+                }
+            )
+            foreach ($line in $keyRmtLatchLines) {
+                if ($line -notmatch "rmt_writes=2 dark=1") {
+                    throw "KEY3 lit feedback regressed through RMT; only the two-write dark latch may use RMT"
+                }
+            }
+            if ($keyRmtLatchLines.Count -gt 0 -and $keySpiPreLatchLines.Count -lt $keyRmtLatchLines.Count) {
+                throw "KEY3 dark RMT latch was not preceded by its SPI DMA pre-latch"
             }
             if (
-                $keyLogText -notmatch "spi_dma_actual=status:0,ec11:1,key:1,edge:0" -and
-                $keyLogText -notmatch "key:gpio13:count4:orderGRB:transportspi3:avail1:dma_req1:dma1"
+                $keyLogText -notmatch "strip key transport ready:.*backend=spi_ws2812_800khz.*spi_dma=1" -and
+                $keySpiPreLatchLines.Count -eq 0
             ) {
-                throw "KEY strip did not report active SPI3 DMA after KEY3 gradient"
+                throw "KEY strip did not prove a SPI3 DMA feedback frame after KEY3 gradient"
             }
         }
 
