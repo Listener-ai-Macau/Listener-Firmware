@@ -398,8 +398,17 @@ esp_err_t ble_firmware_ota_register_gatt(void)
 void ble_firmware_ota_on_gap_disconnect(uint16_t conn_handle)
 {
     (void)conn_handle;
-    firmware_ota_abort(DIAG_OTA_ABORT_BLE_DISCONNECT);
-    ble_firmware_ota_core_init();
+    if (s_ota.state != DENZIC_OTA_V1_STATE_RECEIVING) {
+        return;
+    }
+    s_active_link_retry_tick = 0;
+    s_active_link_confirmed = false;
+    denzic_ota_v1_set_status_flags(&s_ota, 0);
+    ESP_LOGW(
+        TAG,
+        "Denzic OTA v1 link disconnected; preserving same-image session bytes=%u expected=%u until inactivity timeout",
+        (unsigned)s_ota.bytes_written,
+        (unsigned)s_ota.expected_size);
 }
 
 void ble_firmware_ota_on_firmware_abort(uint32_t reason)

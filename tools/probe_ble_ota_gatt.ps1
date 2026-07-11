@@ -43,7 +43,7 @@ function Invoke-ListenerTypeRustOtaProbe {
 
     $timeoutMs = [Math]::Max(1000, [Math]::Min(30000, $TimeoutSeconds * 1000))
     $repoRoot = Split-Path -Parent $ManifestPath
-    $output = & cargo run --quiet --manifest-path $ManifestPath -- --probe-listener-ota-v2-gatt $timeoutMs 2>&1
+    $output = & cargo run --quiet --manifest-path $ManifestPath -- --probe-listener-ota-v1-gatt $timeoutMs 2>&1
     $exitCode = $LASTEXITCODE
     $outputLines = @($output | ForEach-Object { $_.ToString() })
     $prefix = "listener_ota_v1_gatt_probe_json="

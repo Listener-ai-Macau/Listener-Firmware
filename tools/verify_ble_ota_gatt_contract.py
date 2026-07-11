@@ -132,14 +132,8 @@ def check_bridge(repo: Path) -> None:
     for token in required:
         require(token in source, f"Listener OTA product adapter is missing {token}")
     for token in (
-        "begin_v2",
-        "sync_v2",
-        "finish_v2",
-        "abort_v2",
         "handle_control_json",
         "LOV1",
-        "OTA v2",
-        "GATT_ATTR_V2",
     ):
         require(token not in source, f"obsolete OTA path remains in product adapter: {token}")
     require(
@@ -176,9 +170,26 @@ def check_runtime_integration(repo: Path) -> None:
     hid = read_text(repo / "ports/esp32/ble_hid/ble_hid.c")
     gap = read_text(repo / "ports/esp32/ble_hid_gap/ble_hid_gap_esp32.c")
     audio = read_text(repo / "ports/esp32/ble_audio_stream/ble_audio_stream_esp32.c")
+    adapter = read_text(repo / "ports/esp32/ble_firmware_ota/ble_firmware_ota_esp32.c")
     ota = read_text(repo / "components/firmware_ota/firmware_ota.c")
     require("ble_firmware_ota_register_gatt()" in hid, "BLE init must register OTA GATT")
-    require("ble_firmware_ota_on_gap_disconnect(" in gap, "disconnect must terminate OTA")
+    require("ble_firmware_ota_on_gap_disconnect(" in gap, "disconnect must reach the OTA adapter")
+    require(
+        "preserving same-image session" in adapter
+        and "denzic_ota_v1_set_status_flags(&s_ota, 0)" in adapter,
+        "disconnect must preserve an interrupted same-image OTA session while clearing link confirmation",
+    )
+    disconnect = re.search(
+        r"void\s+ble_firmware_ota_on_gap_disconnect\s*\([^)]*\)\s*\{(?P<body>[\s\S]*?)\n\}",
+        adapter,
+    )
+    require(disconnect is not None, "OTA disconnect adapter body is missing")
+    disconnect_body = disconnect.group("body")
+    require(
+        "firmware_ota_abort" not in disconnect_body
+        and "ble_firmware_ota_core_init" not in disconnect_body,
+        "BLE disconnect must pause OTA until the bounded inactivity timeout, not erase resume state",
+    )
     require(
         "ble_hid_gap_schedule_active_connection" in gap
         and "ble_hid_gap_active_connection_applied" in gap,
