@@ -12,6 +12,7 @@ param(
     [int]$WriteRetries = 3,
     [int]$WriteRetryDelayMs = 250,
     [int]$CommandDelayMs = 250,
+    [switch]$KeepInputBetweenCommands,
     [string]$OutputPath = ""
 )
 
@@ -45,6 +46,10 @@ $args = @(
     "--write-retry-delay-ms", ([string]$WriteRetryDelayMs),
     "--command-delay-ms", ([string]$CommandDelayMs)
 )
+
+if ($KeepInputBetweenCommands.IsPresent) {
+    $args += "--keep-input-between-commands"
+}
 
 foreach ($cmd in @($Command | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })) {
     $args += @("--command", $cmd)

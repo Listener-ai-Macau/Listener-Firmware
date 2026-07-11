@@ -2062,13 +2062,17 @@ def main() -> int:
     if (
         generated_drain_body is None
         or "if (state->active)" not in generated_drain_body.group(0)
-        or "xQueueSendToFront(s_custom_generated_event_queue, &event, 0)" not in generated_drain_body.group(0)
+        or "#define KEYBOARD_CUSTOM_GENERATED_EVENT_QUEUE_DEPTH 32" not in keyboard
+        or "UBaseType_t events_this_turn = uxQueueMessagesWaiting(s_custom_generated_event_queue);" not in generated_drain_body.group(0)
+        or "event_index < events_this_turn" not in generated_drain_body.group(0)
+        or "xQueueSendToBack(s_custom_generated_event_queue, &event, 0)" not in generated_drain_body.group(0)
+        or "xQueueSendToFront(s_custom_generated_event_queue, &event, 0)" in generated_drain_body.group(0)
         or "reason=requeue_failed" not in generated_drain_body.group(0)
         or generated_drain_body.group(0).find("if (state->active)")
         > generated_drain_body.group(0).find("state->active = true")
     ):
         failures.append(
-            "components/keyboard/keyboard.c: generated KEY1-KEY4 diagnostics must requeue rather than overwrite an active generated gesture under scheduler pressure"
+            "components/keyboard/keyboard.c: generated KEY1-KEY4 diagnostics must scan one queue turn and requeue an active key at the tail so it cannot head-of-line block ready independent keys under scheduler pressure"
         )
     stable_transition_body = re.search(
         r"static\s+void\s+keyboard_custom_apply_stable_transition[\s\S]*?"

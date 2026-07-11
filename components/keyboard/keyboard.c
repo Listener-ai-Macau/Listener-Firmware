@@ -40,7 +40,10 @@
 #define KEYBOARD_CUSTOM_LONG_PRESS_MS 1000
 #define KEYBOARD_CUSTOM_GENERATED_PRESS_MS 160
 #define KEYBOARD_CUSTOM_GENERATED_RELEASE_SETTLE_MS 80
-#define KEYBOARD_CUSTOM_GENERATED_EVENT_QUEUE_DEPTH 8
+/* Six interleaved KEY1..KEY4 cycles fit while an active logical key is
+ * rotated to the FIFO tail.  Keep diagnostic pressure from turning queue
+ * capacity into a false input-loss result. */
+#define KEYBOARD_CUSTOM_GENERATED_EVENT_QUEUE_DEPTH 32
 #define KEYBOARD_CUSTOM_TASK_PRIORITY 7U
 #define KEYBOARD_EC11_IDLE_POLL_MS 20
 #define KEYBOARD_EC11_LOW_POWER_IDLE_POLL_MS 20
@@ -1045,7 +1048,17 @@ static void keyboard_custom_drain_generated_events(TickType_t now)
     }
 
     keyboard_custom_generated_event_t event = {0};
-    while (xQueueReceive(s_custom_generated_event_queue, &event, 0) == pdTRUE) {
+    /*
+     * Snapshot this turn's queue length.  A generated press for one logical
+     * key can still be active while the other three are ready.  Requeueing an
+     * active key at the front and stopping here made that one key head-of-line
+     * block every other key under a rapid KEY1..KEY4 cycle.
+     */
+    UBaseType_t events_this_turn = uxQueueMessagesWaiting(s_custom_generated_event_queue);
+    for (UBaseType_t event_index = 0;
+         event_index < events_this_turn &&
+         xQueueReceive(s_custom_generated_event_queue, &event, 0) == pdTRUE;
+         ++event_index) {
         keyboard_custom_key_t *key = keyboard_custom_find_key(event.logical_key);
         if (key == NULL) {
             ESP_LOGW(TAG, "drop generated custom key event: logical=%u", event.logical_key);
@@ -1056,10 +1069,10 @@ static void keyboard_custom_drain_generated_events(TickType_t now)
         }
         keyboard_custom_generated_state_t *state = &s_custom_generated_states[key->index];
         if (state->active) {
-            if (xQueueSendToFront(s_custom_generated_event_queue, &event, 0) != pdTRUE) {
+            if (xQueueSendToBack(s_custom_generated_event_queue, &event, 0) != pdTRUE) {
                 ESP_LOGW(TAG, "drop generated custom key event: logical=%u reason=requeue_failed", event.logical_key);
             }
-            break;
+            continue;
         }
         state->active = true;
         state->gesture = event.gesture;
