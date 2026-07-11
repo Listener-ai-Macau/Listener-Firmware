@@ -48,9 +48,15 @@ void firmware_ota_init(void);
 void firmware_ota_record_self_check(bool post_ok, bool ble_ready, bool keyboard_ready);
 esp_err_t firmware_ota_confirm_pending_verify_if_ready(void);
 esp_err_t firmware_ota_begin(size_t image_size, const char *target_version);
+esp_err_t firmware_ota_begin_or_resume(
+    size_t image_size,
+    const char *target_version,
+    const uint8_t sha256[32],
+    bool *out_resumed);
 esp_err_t firmware_ota_write(const void *data, size_t size);
 esp_err_t firmware_ota_finish(bool reboot_after_set_boot);
 void firmware_ota_abort(uint32_t reason);
+bool firmware_ota_suspend_for_resume(uint32_t reason);
 void firmware_ota_reboot_to_pending_image(void);
 bool firmware_ota_consume_usb_command(const char *line);
 firmware_ota_status_t firmware_ota_get_status(void);

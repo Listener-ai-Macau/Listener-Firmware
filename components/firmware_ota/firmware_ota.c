@@ -15,6 +15,7 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
 #include "listener_device.h"
+#include "nvs.h"
 #include "power_manager.h"
 #include "status_led.h"
 
@@ -25,6 +26,11 @@ static const char *TAG = "firmware_ota";
 #define FIRMWARE_OTA_USB_PREFIX "OTA:"
 #define FIRMWARE_OTA_VERSION_BYTES 32
 #define FIRMWARE_OTA_MIN_BATTERY_PERCENT 20
+#define FIRMWARE_OTA_RESUME_NVS_NAMESPACE "ota_resume"
+#define FIRMWARE_OTA_RESUME_NVS_KEY "session_v1"
+#define FIRMWARE_OTA_RESUME_SCHEMA 1U
+#define FIRMWARE_OTA_RESUME_SHA256_BYTES 32U
+#define FIRMWARE_OTA_RESUME_CHECKPOINT_BYTES (64U * 1024U)
 
 typedef struct {
     SemaphoreHandle_t mutex;
@@ -42,7 +48,18 @@ typedef struct {
     uint8_t battery_percent;
     uint32_t battery_mv;
     char target_version[FIRMWARE_OTA_VERSION_BYTES];
+    uint8_t resume_sha256[FIRMWARE_OTA_RESUME_SHA256_BYTES];
+    bool resume_identity_valid;
+    size_t resume_checkpoint_bytes;
 } firmware_ota_ctx_t;
+
+typedef struct {
+    uint32_t schema;
+    uint32_t expected_size;
+    uint32_t bytes_written;
+    uint32_t partition_offset;
+    uint8_t sha256[FIRMWARE_OTA_RESUME_SHA256_BYTES];
+} firmware_ota_resume_record_t;
 
 static firmware_ota_ctx_t s_ota;
 
@@ -159,6 +176,109 @@ static void firmware_ota_reset_session_locked(void)
     s_ota.bytes_written = 0;
     s_ota.active = false;
     s_ota.target_version[0] = '\0';
+    memset(s_ota.resume_sha256, 0, sizeof(s_ota.resume_sha256));
+    s_ota.resume_identity_valid = false;
+    s_ota.resume_checkpoint_bytes = 0;
+}
+
+static void firmware_ota_resume_clear_journal(void)
+{
+    nvs_handle_t nvs = 0;
+    esp_err_t ret = nvs_open(
+        FIRMWARE_OTA_RESUME_NVS_NAMESPACE,
+        NVS_READWRITE,
+        &nvs);
+    if (ret == ESP_ERR_NVS_NOT_FOUND) {
+        return;
+    }
+    if (ret != ESP_OK) {
+        ESP_LOGW(TAG, "OTA resume journal open for clear failed: %s", esp_err_to_name(ret));
+        return;
+    }
+
+    ret = nvs_erase_key(nvs, FIRMWARE_OTA_RESUME_NVS_KEY);
+    if (ret == ESP_ERR_NVS_NOT_FOUND) {
+        ret = ESP_OK;
+    }
+    if (ret == ESP_OK) {
+        ret = nvs_commit(nvs);
+    }
+    nvs_close(nvs);
+    if (ret != ESP_OK) {
+        ESP_LOGW(TAG, "OTA resume journal clear failed: %s", esp_err_to_name(ret));
+    }
+}
+
+static esp_err_t firmware_ota_resume_store_journal(
+    const esp_partition_t *partition,
+    size_t expected_size,
+    size_t bytes_written,
+    const uint8_t sha256[FIRMWARE_OTA_RESUME_SHA256_BYTES])
+{
+    if (partition == NULL || sha256 == NULL || expected_size == 0 ||
+        expected_size > UINT32_MAX || bytes_written > expected_size) {
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    firmware_ota_resume_record_t record = {
+        .schema = FIRMWARE_OTA_RESUME_SCHEMA,
+        .expected_size = (uint32_t)expected_size,
+        .bytes_written = (uint32_t)bytes_written,
+        .partition_offset = partition->address,
+    };
+    memcpy(record.sha256, sha256, sizeof(record.sha256));
+
+    nvs_handle_t nvs = 0;
+    esp_err_t ret = nvs_open(
+        FIRMWARE_OTA_RESUME_NVS_NAMESPACE,
+        NVS_READWRITE,
+        &nvs);
+    if (ret != ESP_OK) {
+        return ret;
+    }
+    ret = nvs_set_blob(nvs, FIRMWARE_OTA_RESUME_NVS_KEY, &record, sizeof(record));
+    if (ret == ESP_OK) {
+        ret = nvs_commit(nvs);
+    }
+    nvs_close(nvs);
+    return ret;
+}
+
+static esp_err_t firmware_ota_resume_load_journal(firmware_ota_resume_record_t *out_record)
+{
+    if (out_record == NULL) {
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    nvs_handle_t nvs = 0;
+    esp_err_t ret = nvs_open(
+        FIRMWARE_OTA_RESUME_NVS_NAMESPACE,
+        NVS_READONLY,
+        &nvs);
+    if (ret != ESP_OK) {
+        return ret;
+    }
+    size_t length = sizeof(*out_record);
+    ret = nvs_get_blob(nvs, FIRMWARE_OTA_RESUME_NVS_KEY, out_record, &length);
+    nvs_close(nvs);
+    if (ret != ESP_OK) {
+        return ret;
+    }
+    return length == sizeof(*out_record) ? ESP_OK : ESP_ERR_INVALID_SIZE;
+}
+
+static bool firmware_ota_resume_record_matches(
+    const firmware_ota_resume_record_t *record,
+    const esp_partition_t *partition,
+    size_t image_size,
+    const uint8_t sha256[FIRMWARE_OTA_RESUME_SHA256_BYTES])
+{
+    return record != NULL && partition != NULL && sha256 != NULL &&
+           record->schema == FIRMWARE_OTA_RESUME_SCHEMA &&
+           record->expected_size == image_size &&
+           record->bytes_written <= record->expected_size &&
+           record->partition_offset == partition->address &&
+           memcmp(record->sha256, sha256, sizeof(record->sha256)) == 0;
 }
 
 static void firmware_ota_request_active_ble_connection(const char *reason)
@@ -359,6 +479,7 @@ esp_err_t firmware_ota_begin(size_t image_size, const char *target_version)
         return ret;
     }
 
+    firmware_ota_resume_clear_journal();
     firmware_ota_lock();
     s_ota.handle = handle;
     s_ota.update_partition = partition;
@@ -381,6 +502,122 @@ esp_err_t firmware_ota_begin(size_t image_size, const char *target_version)
     firmware_ota_log_event(DIAG_OTA_BEGIN, DIAG_SEV_INFO, partition, (uint32_t)image_size, 0, 0);
     firmware_ota_log_version_event(DIAG_OTA_BEGIN, partition);
     firmware_ota_set_runtime_active(true, 0, image_size, "ota_begin");
+    return ESP_OK;
+}
+
+esp_err_t firmware_ota_begin_or_resume(
+    size_t image_size,
+    const char *target_version,
+    const uint8_t sha256[FIRMWARE_OTA_RESUME_SHA256_BYTES],
+    bool *out_resumed)
+{
+    if (sha256 == NULL || image_size == 0 || image_size > UINT32_MAX) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    if (out_resumed != NULL) {
+        *out_resumed = false;
+    }
+
+    firmware_ota_lock();
+    bool active_match = s_ota.active &&
+                        s_ota.resume_identity_valid &&
+                        s_ota.expected_size == image_size &&
+                        memcmp(s_ota.resume_sha256, sha256, FIRMWARE_OTA_RESUME_SHA256_BYTES) == 0;
+    bool active = s_ota.active;
+    size_t active_bytes = s_ota.bytes_written;
+    const esp_partition_t *active_partition = s_ota.update_partition;
+    firmware_ota_unlock();
+
+    if (active_match) {
+        if (out_resumed != NULL) {
+            *out_resumed = true;
+        }
+        ESP_LOGI(
+            TAG,
+            "OTA resume reused active session partition=%s bytes=%u/%u",
+            partition_label_or_none(active_partition),
+            (unsigned)active_bytes,
+            (unsigned)image_size);
+        firmware_ota_set_runtime_active(true, active_bytes, image_size, "ota_resume_active");
+        return ESP_OK;
+    }
+
+    if (active) {
+        ESP_LOGW(TAG, "OTA resume identity changed; discarding the previous partial image");
+        firmware_ota_abort(DIAG_OTA_ABORT_BLE_CONTROL);
+    }
+
+    firmware_ota_blocker_t blocker = firmware_ota_get_blocker();
+    if (blocker != FIRMWARE_OTA_BLOCKER_NONE) {
+        ESP_LOGW(TAG, "OTA resume rejected: blocker=%s", firmware_ota_blocker_name(blocker));
+        firmware_ota_log_event(DIAG_OTA_REJECTED, DIAG_SEV_WARN, NULL, 0, 0, (uint32_t)blocker);
+        status_led_set_error(STATUS_LED_ERROR_DOMAIN_OTA, STATUS_LED_ERROR_RETRYABLE, "ota_resume_rejected");
+        return ESP_ERR_INVALID_STATE;
+    }
+
+    const esp_partition_t *partition = esp_ota_get_next_update_partition(NULL);
+    if (partition == NULL) {
+        return ESP_ERR_NOT_FOUND;
+    }
+
+    firmware_ota_resume_record_t record = {0};
+    esp_err_t journal_ret = firmware_ota_resume_load_journal(&record);
+    if (journal_ret == ESP_OK &&
+        firmware_ota_resume_record_matches(&record, partition, image_size, sha256)) {
+        esp_ota_handle_t handle = 0;
+        esp_err_t ret = esp_ota_resume(
+            partition,
+            OTA_WITH_SEQUENTIAL_WRITES,
+            record.bytes_written,
+            &handle);
+        if (ret == ESP_OK) {
+            firmware_ota_lock();
+            s_ota.handle = handle;
+            s_ota.update_partition = partition;
+            s_ota.expected_size = image_size;
+            s_ota.bytes_written = record.bytes_written;
+            s_ota.active = true;
+            s_ota.resume_identity_valid = true;
+            s_ota.resume_checkpoint_bytes = record.bytes_written;
+            memcpy(s_ota.resume_sha256, sha256, sizeof(s_ota.resume_sha256));
+            snprintf(s_ota.target_version, sizeof(s_ota.target_version), "%s", target_version != NULL ? target_version : "unknown");
+            firmware_ota_unlock();
+
+            if (out_resumed != NULL) {
+                *out_resumed = true;
+            }
+            ESP_LOGI(
+                TAG,
+                "OTA resume restored partition=%s bytes=%u/%u",
+                partition_label_or_none(partition),
+                (unsigned)record.bytes_written,
+                (unsigned)image_size);
+            firmware_ota_log_partition_event(DIAG_OTA_PARTITION_UPDATE, partition);
+            firmware_ota_log_event(DIAG_OTA_BEGIN, DIAG_SEV_INFO, partition, record.bytes_written, 0, 1);
+            firmware_ota_set_runtime_active(true, record.bytes_written, image_size, "ota_resume");
+            return ESP_OK;
+        }
+
+        ESP_LOGW(TAG, "OTA resume failed partition=%s: %s; starting fresh", partition_label_or_none(partition), esp_err_to_name(ret));
+    }
+
+    firmware_ota_resume_clear_journal();
+    esp_err_t ret = firmware_ota_begin(image_size, target_version);
+    if (ret != ESP_OK) {
+        return ret;
+    }
+
+    firmware_ota_lock();
+    const esp_partition_t *started_partition = s_ota.update_partition;
+    s_ota.resume_identity_valid = true;
+    s_ota.resume_checkpoint_bytes = 0;
+    memcpy(s_ota.resume_sha256, sha256, sizeof(s_ota.resume_sha256));
+    firmware_ota_unlock();
+
+    ret = firmware_ota_resume_store_journal(started_partition, image_size, 0, sha256);
+    if (ret != ESP_OK) {
+        ESP_LOGW(TAG, "OTA resume journal initial checkpoint failed: %s", esp_err_to_name(ret));
+    }
     return ESP_OK;
 }
 
@@ -416,9 +653,29 @@ esp_err_t firmware_ota_write(const void *data, size_t size)
         return ret;
     }
 
+    uint8_t resume_sha256[FIRMWARE_OTA_RESUME_SHA256_BYTES] = {0};
+    bool checkpoint_due = false;
     firmware_ota_lock();
     s_ota.bytes_written = next_size;
+    if (s_ota.resume_identity_valid &&
+        next_size - s_ota.resume_checkpoint_bytes >= FIRMWARE_OTA_RESUME_CHECKPOINT_BYTES) {
+        memcpy(resume_sha256, s_ota.resume_sha256, sizeof(resume_sha256));
+        checkpoint_due = true;
+    }
     firmware_ota_unlock();
+
+    if (checkpoint_due) {
+        ret = firmware_ota_resume_store_journal(partition, expected_size, next_size, resume_sha256);
+        if (ret == ESP_OK) {
+            firmware_ota_lock();
+            if (s_ota.active && s_ota.bytes_written >= next_size) {
+                s_ota.resume_checkpoint_bytes = next_size;
+            }
+            firmware_ota_unlock();
+        } else {
+            ESP_LOGW(TAG, "OTA resume checkpoint failed at bytes=%u: %s", (unsigned)next_size, esp_err_to_name(ret));
+        }
+    }
     firmware_ota_set_runtime_active(true, next_size, expected_size, NULL);
     return ESP_OK;
 }
@@ -452,6 +709,7 @@ esp_err_t firmware_ota_finish(bool reboot_after_set_boot)
         firmware_ota_log_event(DIAG_OTA_VERIFY, DIAG_SEV_ERROR, partition, (uint32_t)bytes_written, (uint32_t)ret, 0);
         firmware_ota_set_runtime_active(false, bytes_written, expected_size, "ota_verify_failed");
         status_led_set_error(STATUS_LED_ERROR_DOMAIN_OTA, STATUS_LED_ERROR_HARD, "ota_verify_failed");
+        firmware_ota_resume_clear_journal();
         firmware_ota_lock();
         firmware_ota_reset_session_locked();
         firmware_ota_unlock();
@@ -467,6 +725,7 @@ esp_err_t firmware_ota_finish(bool reboot_after_set_boot)
         firmware_ota_log_event(DIAG_OTA_SET_BOOT, DIAG_SEV_ERROR, partition, (uint32_t)bytes_written, (uint32_t)ret, 0);
         firmware_ota_set_runtime_active(false, bytes_written, expected_size, "ota_set_boot_failed");
         status_led_set_error(STATUS_LED_ERROR_DOMAIN_OTA, STATUS_LED_ERROR_HARD, "ota_set_boot_failed");
+        firmware_ota_resume_clear_journal();
         firmware_ota_lock();
         firmware_ota_reset_session_locked();
         firmware_ota_unlock();
@@ -482,6 +741,7 @@ esp_err_t firmware_ota_finish(bool reboot_after_set_boot)
     firmware_ota_log_partition_event(DIAG_OTA_PARTITION_BOOT, partition);
     firmware_ota_log_version_event(DIAG_OTA_SET_BOOT, partition);
 
+    firmware_ota_resume_clear_journal();
     firmware_ota_lock();
     s_ota.boot_partition = esp_ota_get_boot_partition();
     firmware_ota_reset_session_locked();
@@ -509,6 +769,7 @@ void firmware_ota_abort(uint32_t reason)
     firmware_ota_set_runtime_active(false, bytes_written, 0, "ota_abort");
 
     if (active) {
+        firmware_ota_resume_clear_journal();
         esp_err_t ret = esp_ota_abort(handle);
         ESP_LOGW(TAG, "OTA aborted partition=%s bytes=%u reason=%" PRIu32 " abort_ret=%s",
                  partition_label_or_none(partition), (unsigned)bytes_written, reason, esp_err_to_name(ret));
@@ -517,6 +778,58 @@ void firmware_ota_abort(uint32_t reason)
                                partition, (uint32_t)bytes_written, (uint32_t)ret, reason);
         status_led_set_error(STATUS_LED_ERROR_DOMAIN_OTA, STATUS_LED_ERROR_RETRYABLE, "ota_abort");
     }
+}
+
+bool firmware_ota_suspend_for_resume(uint32_t reason)
+{
+    firmware_ota_lock();
+    bool active = s_ota.active;
+    bool resumable = s_ota.resume_identity_valid;
+    esp_ota_handle_t handle = s_ota.handle;
+    const esp_partition_t *partition = s_ota.update_partition;
+    size_t bytes_written = s_ota.bytes_written;
+    size_t expected_size = s_ota.expected_size;
+    uint8_t sha256[FIRMWARE_OTA_RESUME_SHA256_BYTES] = {0};
+    if (resumable) {
+        memcpy(sha256, s_ota.resume_sha256, sizeof(sha256));
+    }
+    firmware_ota_unlock();
+
+    if (!active || !resumable) {
+        return false;
+    }
+
+    esp_err_t ret = firmware_ota_resume_store_journal(
+        partition,
+        expected_size,
+        bytes_written,
+        sha256);
+    if (ret != ESP_OK) {
+        ESP_LOGW(TAG, "OTA suspend could not persist bytes=%u: %s", (unsigned)bytes_written, esp_err_to_name(ret));
+        return false;
+    }
+
+    ret = esp_ota_abort(handle);
+    if (ret != ESP_OK) {
+        ESP_LOGW(TAG, "OTA suspend could not release handle: %s", esp_err_to_name(ret));
+        return false;
+    }
+
+    firmware_ota_lock();
+    if (s_ota.active && s_ota.handle == handle) {
+        firmware_ota_reset_session_locked();
+    }
+    firmware_ota_unlock();
+    firmware_ota_set_runtime_active(false, bytes_written, expected_size, "ota_suspend");
+    firmware_ota_log_event(DIAG_OTA_ABORT, DIAG_SEV_INFO, partition, (uint32_t)bytes_written, 0, reason);
+    ESP_LOGI(
+        TAG,
+        "OTA suspended for resume partition=%s bytes=%u/%u reason=%" PRIu32,
+        partition_label_or_none(partition),
+        (unsigned)bytes_written,
+        (unsigned)expected_size,
+        reason);
+    return true;
 }
 
 void firmware_ota_reboot_to_pending_image(void)

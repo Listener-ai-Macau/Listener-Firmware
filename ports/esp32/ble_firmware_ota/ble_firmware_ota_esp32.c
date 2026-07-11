@@ -28,6 +28,8 @@
 #define BLE_FIRMWARE_OTA_V2_CONTROL_SIZE 16
 #define BLE_FIRMWARE_OTA_V2_DATA_HEADER_SIZE 4
 #define BLE_FIRMWARE_OTA_V2_DATA_PAYLOAD_MAX 500
+#define BLE_FIRMWARE_OTA_V2_SHA256_HEX_BYTES 64
+#define BLE_FIRMWARE_OTA_V2_SHA256_BYTES 32
 #define BLE_FIRMWARE_OTA_V2_STATUS_SIZE 24
 #define BLE_FIRMWARE_OTA_V2_DEFAULT_WINDOW_CHUNKS 8
 #define BLE_FIRMWARE_OTA_V2_ACTIVE_LINK_RETRY_MS 250
@@ -365,6 +367,29 @@ static bool ble_firmware_ota_json_size(const char *json, const char *key, size_t
     return true;
 }
 
+static bool ble_firmware_ota_parse_sha256_hex(
+    const char *text,
+    uint8_t out[BLE_FIRMWARE_OTA_V2_SHA256_BYTES])
+{
+    if (text == NULL || out == NULL || strlen(text) != BLE_FIRMWARE_OTA_V2_SHA256_HEX_BYTES) {
+        return false;
+    }
+
+    for (size_t index = 0; index < BLE_FIRMWARE_OTA_V2_SHA256_BYTES; ++index) {
+        int high = isdigit((unsigned char)text[index * 2]) ?
+            text[index * 2] - '0' :
+            (isxdigit((unsigned char)text[index * 2]) ? tolower((unsigned char)text[index * 2]) - 'a' + 10 : -1);
+        int low = isdigit((unsigned char)text[index * 2 + 1]) ?
+            text[index * 2 + 1] - '0' :
+            (isxdigit((unsigned char)text[index * 2 + 1]) ? tolower((unsigned char)text[index * 2 + 1]) - 'a' + 10 : -1);
+        if (high < 0 || low < 0) {
+            return false;
+        }
+        out[index] = (uint8_t)((high << 4) | low);
+    }
+    return true;
+}
+
 static void ble_firmware_ota_reboot_task(void *arg)
 {
     (void)arg;
@@ -467,6 +492,63 @@ static int ble_firmware_ota_v2_handle_begin_json(const char *json)
     return ble_firmware_ota_v2_handle_begin(raw, sizeof(raw));
 }
 
+static int ble_firmware_ota_v2_handle_resume_json(const char *json)
+{
+    size_t expected_size = 0;
+    size_t chunk_payload_bytes = 0;
+    size_t window_chunks = 0;
+    char sha256_hex[BLE_FIRMWARE_OTA_V2_SHA256_HEX_BYTES + 1] = {0};
+    uint8_t sha256[BLE_FIRMWARE_OTA_V2_SHA256_BYTES] = {0};
+    if (!ble_firmware_ota_json_size(json, "size", &expected_size) ||
+        !ble_firmware_ota_json_size(json, "chunk", &chunk_payload_bytes) ||
+        !ble_firmware_ota_json_string(json, "sha256", sha256_hex, sizeof(sha256_hex)) ||
+        !ble_firmware_ota_parse_sha256_hex(sha256_hex, sha256)) {
+        ESP_LOGW(TAG, "OTA v2 resume missing or invalid package identity");
+        return BLE_ATT_ERR_INVALID_ATTR_VALUE_LEN;
+    }
+    if (!ble_firmware_ota_json_size(json, "window", &window_chunks)) {
+        window_chunks = BLE_FIRMWARE_OTA_V2_DEFAULT_WINDOW_CHUNKS;
+    }
+    if (expected_size == 0 || chunk_payload_bytes == 0 ||
+        chunk_payload_bytes > BLE_FIRMWARE_OTA_V2_DATA_PAYLOAD_MAX ||
+        chunk_payload_bytes > UINT16_MAX || window_chunks > UINT16_MAX) {
+        ESP_LOGW(TAG, "OTA v2 resume size/chunk/window is invalid");
+        return BLE_ATT_ERR_INVALID_ATTR_VALUE_LEN;
+    }
+    if (window_chunks == 0) {
+        window_chunks = BLE_FIRMWARE_OTA_V2_DEFAULT_WINDOW_CHUNKS;
+    }
+
+    ble_firmware_ota_v2_reset();
+    bool resumed = false;
+    esp_err_t ret = firmware_ota_begin_or_resume(
+        expected_size,
+        "ble_ota_v2",
+        sha256,
+        &resumed);
+    ESP_LOGI(
+        TAG,
+        "OTA v2 resume size=%u chunk=%u window=%u resumed=%u ret=%s",
+        (unsigned)expected_size,
+        (unsigned)chunk_payload_bytes,
+        (unsigned)window_chunks,
+        resumed ? 1U : 0U,
+        esp_err_to_name(ret));
+    if (ret != ESP_OK) {
+        ble_firmware_ota_v2_set_error(BLE_FIRMWARE_OTA_V2_ERROR_BEGIN_FAILED);
+        return ble_firmware_ota_att_error_from_esp(ret);
+    }
+
+    s_v2.expected_size = expected_size;
+    s_v2.chunk_payload_bytes = (uint16_t)chunk_payload_bytes;
+    s_v2.window_chunks = (uint16_t)window_chunks;
+    s_v2.state = BLE_FIRMWARE_OTA_V2_STATE_LINKING;
+    s_v2.last_error = BLE_FIRMWARE_OTA_V2_ERROR_NONE;
+    s_v2.active_link_retry_tick = 0;
+    ble_firmware_ota_v2_sync_status();
+    return 0;
+}
+
 static int ble_firmware_ota_handle_control_json(const char *json)
 {
     char op[16];
@@ -488,6 +570,9 @@ static int ble_firmware_ota_handle_control_json(const char *json)
     }
     if (strcmp(op, "begin_v2") == 0) {
         return ble_firmware_ota_v2_handle_begin_json(json);
+    }
+    if (strcmp(op, "resume_v2") == 0) {
+        return ble_firmware_ota_v2_handle_resume_json(json);
     }
     if (strcmp(op, "sync_v2") == 0) {
         ble_firmware_ota_v2_sync_status();
@@ -882,7 +967,9 @@ esp_err_t ble_firmware_ota_register_gatt(void)
 void ble_firmware_ota_on_gap_disconnect(uint16_t conn_handle)
 {
     (void)conn_handle;
-    firmware_ota_abort(DIAG_OTA_ABORT_BLE_DISCONNECT);
+    if (!firmware_ota_suspend_for_resume(DIAG_OTA_ABORT_BLE_DISCONNECT)) {
+        firmware_ota_abort(DIAG_OTA_ABORT_BLE_DISCONNECT);
+    }
     ble_firmware_ota_v2_reset();
 }
 
