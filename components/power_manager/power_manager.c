@@ -35,6 +35,7 @@ extern esp_err_t ble_hid_gap_stop_advertising_for_key_wake(void) __attribute__((
 extern esp_err_t ble_hid_gap_prepare_shutdown_disconnect(void) __attribute__((weak));
 extern esp_err_t ble_hid_gap_request_low_power_connection(void) __attribute__((weak));
 extern esp_err_t ble_hid_gap_request_active_connection(void) __attribute__((weak));
+extern esp_err_t ble_hid_gap_schedule_active_connection(void) __attribute__((weak));
 extern esp_err_t ble_hid_gap_request_reconnect(void) __attribute__((weak));
 extern esp_err_t ble_hid_battery_force_refresh(const char *reason) __attribute__((weak));
 extern void ble_hid_battery_task_wake(void) __attribute__((weak));
@@ -1277,7 +1278,10 @@ static void power_manager_set_audio_idle_power_save(bool enabled)
     }
 }
 
-static void power_manager_apply_state(power_manager_state_t previous, power_manager_state_t next)
+static void power_manager_apply_state(
+    power_manager_state_t previous,
+    power_manager_state_t next,
+    uint32_t blockers)
 {
     if (previous == next) {
         return;
@@ -1299,7 +1303,11 @@ static void power_manager_apply_state(power_manager_state_t previous, power_mana
         if (ble_hid_gap_set_low_power_advertising != NULL) {
             (void)ble_hid_gap_set_low_power_advertising(false);
         }
-        if (s_ble_connected && ble_hid_gap_request_active_connection != NULL) {
+        if (s_ble_connected &&
+            (blockers & POWER_MANAGER_BLOCKER_OTA) != 0 &&
+            ble_hid_gap_schedule_active_connection != NULL) {
+            (void)ble_hid_gap_schedule_active_connection();
+        } else if (s_ble_connected && ble_hid_gap_request_active_connection != NULL) {
             (void)ble_hid_gap_request_active_connection();
         }
         break;
@@ -2193,7 +2201,7 @@ static void power_manager_evaluate(void)
     ESP_LOGD(TAG, "idle clocks: user_idle_ms=%" PRIu32 " radio_idle_ms=%" PRIu32,
              user_idle_ms, radio_idle_ms);
     power_manager_log_transition(previous, next, user_idle_ms, blockers);
-    power_manager_apply_state(previous, next);
+    power_manager_apply_state(previous, next, blockers);
     power_manager_apply_fast_idle_actions(next, user_idle_ms, blockers);
     power_manager_guard_runtime_power_hold_low(next);
     power_manager_update_power_input_irq_arm(next, &power_source);
@@ -2412,7 +2420,7 @@ void power_manager_record_activity(const char *reason)
             reason != NULL ? reason : "unspecified",
             power_manager_state_name(previous));
         power_manager_log_transition(previous, next, 0, blockers);
-        power_manager_apply_state(previous, next);
+        power_manager_apply_state(previous, next, blockers);
     } else {
         power_manager_set_audio_idle_power_save(false);
     }
@@ -2468,7 +2476,7 @@ void power_manager_set_blocker(uint32_t blocker_mask, bool enabled)
 
     if (previous != next) {
         power_manager_log_transition(previous, next, 0, new_blockers);
-        power_manager_apply_state(previous, next);
+        power_manager_apply_state(previous, next, new_blockers);
     } else if (new_blockers != 0) {
         power_manager_set_audio_idle_power_save(false);
     }
@@ -2510,7 +2518,7 @@ void power_manager_set_ble_connected(bool connected)
     }
     if (previous != next) {
         power_manager_log_transition(previous, next, 0, blockers);
-        power_manager_apply_state(previous, next);
+        power_manager_apply_state(previous, next, blockers);
     }
     power_manager_apply_fast_idle_actions(next, user_idle_ms, blockers);
     if (s_task_handle != NULL) {

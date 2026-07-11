@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Static contract check for the Listener BLE firmware OTA GATT bridge."""
+"""Static contract check for the Listener Denzic OTA v1 product adapter."""
 
 from __future__ import annotations
 
@@ -10,27 +10,20 @@ from pathlib import Path
 
 
 SERVICE_UUID = "710af845-6d9f-6583-0c4d-9e5b3bc3092a"
-CONTROL_UUID = "710af845-6d9f-6583-0c4d-9e5b3bc3092b"
-DATA_UUID = "710af845-6d9f-6583-0c4d-9e5b3bc3092c"
-V2_SERVICE_UUID = SERVICE_UUID
-V2_CONTROL_UUID = CONTROL_UUID
-V2_DATA_UUID = DATA_UUID
-V2_STATUS_UUID = CONTROL_UUID
+CONTROL_UUID = "710af845-6d9f-6583-0c4d-9e5b3bc3094b"
+DATA_UUID = "710af845-6d9f-6583-0c4d-9e5b3bc3094c"
+STATUS_UUID = "710af845-6d9f-6583-0c4d-9e5b3bc3094d"
 READINESS_UUID = "710af845-6d9f-6583-0c4d-9e5b3bc3091c"
 CAPABILITIES_UUID = "710af845-6d9f-6583-0c4d-9e5b3bc3091d"
-MAX_CHUNK_BYTES = 512
 CHUNK_BYTES = 500
 
 UUID_BYTES = {
     "BLE_FIRMWARE_OTA_SERVICE_UUID": "0x2a, 0x09, 0xc3, 0x3b, 0x5b, 0x9e, 0x4d, 0x0c, 0x83, 0x65, 0x9f, 0x6d, 0x45, 0xf8, 0x0a, 0x71",
-    "BLE_FIRMWARE_OTA_CONTROL_UUID": "0x2b, 0x09, 0xc3, 0x3b, 0x5b, 0x9e, 0x4d, 0x0c, 0x83, 0x65, 0x9f, 0x6d, 0x45, 0xf8, 0x0a, 0x71",
-    "BLE_FIRMWARE_OTA_DATA_UUID": "0x2c, 0x09, 0xc3, 0x3b, 0x5b, 0x9e, 0x4d, 0x0c, 0x83, 0x65, 0x9f, 0x6d, 0x45, 0xf8, 0x0a, 0x71",
     "BLE_FIRMWARE_OTA_READINESS_UUID": "0x1c, 0x09, 0xc3, 0x3b, 0x5b, 0x9e, 0x4d, 0x0c, 0x83, 0x65, 0x9f, 0x6d, 0x45, 0xf8, 0x0a, 0x71",
     "BLE_FIRMWARE_OTA_CAPABILITIES_UUID": "0x1d, 0x09, 0xc3, 0x3b, 0x5b, 0x9e, 0x4d, 0x0c, 0x83, 0x65, 0x9f, 0x6d, 0x45, 0xf8, 0x0a, 0x71",
-    "BLE_FIRMWARE_OTA_V2_SERVICE_UUID": "0x2a, 0x09, 0xc3, 0x3b, 0x5b, 0x9e, 0x4d, 0x0c, 0x83, 0x65, 0x9f, 0x6d, 0x45, 0xf8, 0x0a, 0x71",
-    "BLE_FIRMWARE_OTA_V2_CONTROL_UUID": "0x4b, 0x09, 0xc3, 0x3b, 0x5b, 0x9e, 0x4d, 0x0c, 0x83, 0x65, 0x9f, 0x6d, 0x45, 0xf8, 0x0a, 0x71",
-    "BLE_FIRMWARE_OTA_V2_DATA_UUID": "0x4c, 0x09, 0xc3, 0x3b, 0x5b, 0x9e, 0x4d, 0x0c, 0x83, 0x65, 0x9f, 0x6d, 0x45, 0xf8, 0x0a, 0x71",
-    "BLE_FIRMWARE_OTA_V2_STATUS_UUID": "0x4d, 0x09, 0xc3, 0x3b, 0x5b, 0x9e, 0x4d, 0x0c, 0x83, 0x65, 0x9f, 0x6d, 0x45, 0xf8, 0x0a, 0x71",
+    "BLE_FIRMWARE_OTA_V1_CONTROL_UUID": "0x4b, 0x09, 0xc3, 0x3b, 0x5b, 0x9e, 0x4d, 0x0c, 0x83, 0x65, 0x9f, 0x6d, 0x45, 0xf8, 0x0a, 0x71",
+    "BLE_FIRMWARE_OTA_V1_DATA_UUID": "0x4c, 0x09, 0xc3, 0x3b, 0x5b, 0x9e, 0x4d, 0x0c, 0x83, 0x65, 0x9f, 0x6d, 0x45, 0xf8, 0x0a, 0x71",
+    "BLE_FIRMWARE_OTA_V1_STATUS_UUID": "0x4d, 0x09, 0xc3, 0x3b, 0x5b, 0x9e, 0x4d, 0x0c, 0x83, 0x65, 0x9f, 0x6d, 0x45, 0xf8, 0x0a, 0x71",
 }
 
 
@@ -50,436 +43,177 @@ def compact(text: str) -> str:
     return re.sub(r"\s+", " ", text)
 
 
+def check_shared_core(repo: Path) -> None:
+    gitmodules = read_text(repo / ".gitmodules")
+    cmake = read_text(repo / "ports/esp32/ble_firmware_ota/CMakeLists.txt")
+    generated = read_text(
+        repo / "third_party/denzic-platform/ota/embedded/c/include/denzic_ota_v1_generated.h"
+    )
+    core = read_text(
+        repo / "third_party/denzic-platform/ota/embedded/c/src/denzic_ota_v1.c"
+    )
+    require(
+        "third_party/denzic-platform" in gitmodules
+        and "Listener-ai-Macau/Denzic-Platform.git" in gitmodules,
+        "firmware must pin the shared Denzic-Platform repository as a submodule",
+    )
+    require(
+        "third_party/denzic-platform/ota/embedded/c/src/denzic_ota_v1.c" in cmake
+        and "third_party/denzic-platform/ota/embedded/c/include" in cmake,
+        "BLE OTA component must compile the shared embedded C core",
+    )
+    for token in (
+        '#define DENZIC_OTA_V1_PROTOCOL_NAME "denzic_ota_v1"',
+        '#define DENZIC_OTA_V1_MAGIC "DOV1"',
+        "#define DENZIC_OTA_V1_PROTOCOL_VERSION (1u)",
+    ):
+        require(token in generated, f"shared generated contract is missing {token}")
+    for token in (
+        "denzic_ota_v1_handle_control",
+        "denzic_ota_v1_handle_data",
+        "denzic_ota_v1_encode_status",
+        "DENZIC_OTA_V1_ERROR_OFFSET_MISMATCH",
+    ):
+        require(token in core, f"shared embedded core is missing {token}")
+
+
 def check_header(repo: Path) -> None:
     header = read_text(repo / "ports/esp32/ble_firmware_ota/include/ble_firmware_ota.h")
     for macro, byte_list in UUID_BYTES.items():
-        match = re.search(rf"#define\s+{macro}\s+\\?\s*BLE_UUID128_INIT\(([^)]*)\)", header, re.MULTILINE)
+        match = re.search(
+            rf"#define\s+{macro}\s+\\?\s*BLE_UUID128_INIT\(([^)]*)\)",
+            header,
+            re.MULTILINE,
+        )
         require(match is not None, f"{macro} is not defined")
         require(
             compact(match.group(1)) == compact(byte_list),
-            f"{macro} does not match the canonical Listener OTA UUID bytes",
+            f"{macro} does not match the canonical Listener product UUID",
         )
+    require("0x2b, 0x09" not in header and "0x2c, 0x09" not in header,
+            "old JSON control/data characteristics must not remain")
 
 
 def check_bridge(repo: Path) -> None:
     source = read_text(repo / "ports/esp32/ble_firmware_ota/ble_firmware_ota_esp32.c")
-    required_tokens = [
-        "firmware_ota_begin(",
-        "firmware_ota_write(",
+    required = (
+        '#include "denzic_ota_v1.h"',
+        "denzic_ota_v1_init(",
+        "denzic_ota_v1_handle_control(",
+        "denzic_ota_v1_handle_data(",
+        "denzic_ota_v1_encode_status(",
+        "firmware_ota_begin(image_size, DENZIC_OTA_V1_PROTOCOL_NAME)",
+        "firmware_ota_write(data, length)",
         "firmware_ota_finish(false)",
-        "firmware_ota_abort(",
-        "BLE_GATT_CHR_F_WRITE",
-        "BLE_GATT_CHR_F_WRITE_NO_RSP",
-        "BLE_GATT_CHR_F_READ",
-        "ble_gatts_add_svcs",
-        "DIAG_OTA_ABORT_BLE_CONTROL",
-        "DIAG_OTA_ABORT_BLE_WRITE_FAIL",
-        "DIAG_OTA_ABORT_BLE_DISCONNECT",
+        "BLE_GATT_CHR_F_WRITE | BLE_GATT_CHR_F_WRITE_NO_RSP",
+        "DENZIC_OTA_V1_STATUS_FLAG_ACTIVE_LINK_CONFIRMED",
+        "ble_hid_gap_schedule_active_connection",
         "listener_device_get_factory_readiness()",
         "listener_device_get_capabilities()",
-        "BLE_FIRMWARE_OTA_GATT_ATTR_READINESS",
-        "BLE_FIRMWARE_OTA_GATT_ATTR_CAPABILITIES",
-        "readiness_rc",
-        "capabilities_rc",
-        "#define BLE_FIRMWARE_OTA_DATA_MAX_BYTES 512",
-        "#define BLE_FIRMWARE_OTA_V2_CONTROL_SIZE 16",
-        "#define BLE_FIRMWARE_OTA_V2_DATA_HEADER_SIZE 4",
-        "#define BLE_FIRMWARE_OTA_V2_DATA_PAYLOAD_MAX 500",
-        "#define BLE_FIRMWARE_OTA_V2_STATUS_SIZE 24",
-        "BLE_FIRMWARE_OTA_COMPACT_CAPABILITIES \"firmware_ota_v1;firmware_ota_v2\"",
-        "BLE_FIRMWARE_OTA_GATT_ATTR_V2_CONTROL",
-        "BLE_FIRMWARE_OTA_GATT_ATTR_V2_DATA",
-        "BLE_FIRMWARE_OTA_GATT_ATTR_V2_STATUS",
-        "BLE_FIRMWARE_OTA_V2_ERROR_OFFSET_MISMATCH",
-        "ble_firmware_ota_v2_append_status",
-        "ble_firmware_ota_v2_handle_control_write",
-        "ble_firmware_ota_v2_handle_data_write",
-    ]
-    for token in required_tokens:
-        require(token in source, f"BLE OTA bridge is missing {token}")
-    require(
-        "status.expected_size != expected_size" in source and "firmware_ota_abort(DIAG_OTA_ABORT_BLE_CONTROL)" in source,
-        "finish size mismatch must abort the OTA session",
     )
+    for token in required:
+        require(token in source, f"Listener OTA product adapter is missing {token}")
+    for token in (
+        "begin_v2",
+        "sync_v2",
+        "finish_v2",
+        "abort_v2",
+        "handle_control_json",
+        "LOV1",
+        "OTA v2",
+        "GATT_ATTR_V2",
+    ):
+        require(token not in source, f"obsolete OTA path remains in product adapter: {token}")
     require(
-        "BLE_GATT_CHR_F_READ | BLE_GATT_CHR_F_WRITE" in source
-        and "BLE_GATT_CHR_F_READ | BLE_GATT_CHR_F_WRITE | BLE_GATT_CHR_F_WRITE_NO_RSP" in source,
-        "OTA control/data characteristics must remain readable so Windows can recover identity even when new GATT characteristics are cached out",
-    )
-    require(
-        "s_v2_service_uuid" not in source
-        and ".uuid = &s_v2_control_uuid.u" in source
-        and ".uuid = &s_v2_data_uuid.u" in source
-        and ".uuid = &s_v2_status_uuid.u" in source,
-        "Listener OTA v2 must expose control/data/status characteristics inside the stable OTA service so Windows can discover them through the old service anchor",
-    )
-    require(
-        "ble_firmware_ota_v2_control_mbuf_has_magic" in source
-        and "begin_v2" in source
-        and "sync_v2" in source
-        and "finish_v2" in source
-        and "ble_firmware_ota_handle_control_json" in source
-        and "strstr((const char *)buffer, \"\\\"op\\\"\")" in source
-        and "case BLE_FIRMWARE_OTA_GATT_ATTR_CONTROL:" in source
-        and "return ble_firmware_ota_v2_handle_control_write(ctxt->om)" in source
-        and "s_v2.state == BLE_FIRMWARE_OTA_V2_STATE_RECEIVING" in source
-        and "return ble_firmware_ota_v2_handle_data_write(ctxt->om)" in source,
-        "Listener OTA v2 must tunnel over the stable v1 control/data characteristics so stale Windows GATT caches do not block high-speed OTA",
-    )
-    require(
-        "if (s_v2.state != BLE_FIRMWARE_OTA_V2_STATE_IDLE)" in source
-        and "return ble_firmware_ota_v2_append_status(ctxt->om)" in source,
-        "Listener OTA v2 status must be readable from the stable control characteristic while a v2 session is active",
-    )
-    require(
-        ".flags = BLE_GATT_CHR_F_WRITE | BLE_GATT_CHR_F_WRITE_NO_RSP" in source
-        and ".flags = BLE_GATT_CHR_F_READ" in source,
-        "Listener OTA v2 data must support WriteWithoutResponse and status must remain readable",
-    )
-    require(
-        "((size_t)offset + payload_len) <= s_v2.bytes_written" in source
-        and "offset != s_v2.bytes_written" in source
-        and "ble_firmware_ota_v2_set_recoverable_error(BLE_FIRMWARE_OTA_V2_ERROR_OFFSET_MISMATCH)" in source
-        and "firmware_ota_write(&buffer[BLE_FIRMWARE_OTA_V2_DATA_HEADER_SIZE], payload_len)" in source,
-        "Listener OTA v2 data path must be offset-gated so WriteWithoutResponse loss cannot corrupt the image",
+        source.count(".uuid = &s_control_uuid.u") == 1
+        and source.count(".uuid = &s_data_uuid.u") == 1
+        and source.count(".uuid = &s_status_uuid.u") == 1,
+        "product adapter must register exactly one control/data/status data plane",
     )
 
 
-def check_integration(repo: Path) -> None:
+def check_product_identity(repo: Path) -> None:
+    listener_header = read_text(repo / "protocols/listener_device/include/listener_device.h")
+    listener_source = read_text(repo / "protocols/listener_device/listener_device.c")
+    package = read_text(repo / "tools/package_ota_firmware.ps1")
+    combined = listener_header + listener_source + package
+    require("denzic_ota_v1" in listener_header and "denzic_ota_v1" in listener_source,
+            "device capabilities must advertise denzic_ota_v1")
+    for token in (
+        'protocol_version = 1',
+        'name = "denzic_ota_v1"',
+        'version = 1',
+        'firmware_capability = "denzic_ota_v1"',
+        CONTROL_UUID,
+        DATA_UUID,
+        STATUS_UUID,
+    ):
+        require(token in package, f"OTA manifest generator is missing {token}")
+    require("firmware_ota_v1" not in combined and "listener_ble_ota_v1" not in combined,
+            "old OTA identity must not remain in firmware capability or package metadata")
+
+
+def check_runtime_integration(repo: Path) -> None:
     hid = read_text(repo / "ports/esp32/ble_hid/ble_hid.c")
     gap = read_text(repo / "ports/esp32/ble_hid_gap/ble_hid_gap_esp32.c")
     audio = read_text(repo / "ports/esp32/ble_audio_stream/ble_audio_stream_esp32.c")
-    firmware_ota = read_text(repo / "components/firmware_ota/firmware_ota.c")
-    hid_cmake = read_text(repo / "ports/esp32/ble_hid/CMakeLists.txt")
-    gap_cmake = read_text(repo / "ports/esp32/ble_hid_gap/CMakeLists.txt")
-    diag = read_text(repo / "components/diag_log/include/diag_log_events.h")
-
-    require("ble_firmware_ota_register_gatt()" in hid, "BLE HID init does not register firmware OTA GATT")
-    require("ble_firmware_ota_log_gatt_state()" in hid, "BLE HID init does not log firmware OTA GATT state")
-    require("ble_firmware_ota_on_gap_disconnect(" in gap, "GAP disconnect does not abort firmware OTA")
+    ota = read_text(repo / "components/firmware_ota/firmware_ota.c")
+    require("ble_firmware_ota_register_gatt()" in hid, "BLE init must register OTA GATT")
+    require("ble_firmware_ota_on_gap_disconnect(" in gap, "disconnect must terminate OTA")
     require(
-        "s_scan_rsp_fields.uuids128_is_complete = 0" in gap,
-        "BLE advertising must not mark the single advertised 128-bit service UUID as complete while OTA is also present",
-    )
-    require("ble_firmware_ota" in hid_cmake, "ble_hid component does not require ble_firmware_ota")
-    require("ble_firmware_ota" in gap_cmake, "ble_hid_gap component does not require ble_firmware_ota")
-    require(
-        "ble_hid_gap_conn_desc_matches_params" in gap
-        and "connection parameters already active" in gap
-        and "connection parameter request cache did not match current link; re-requesting" in gap
-        and 'ble_hid_gap_clear_conn_param_mode("connection update failed")' in gap,
-        "GAP active/idle connection parameter de-duplication must verify the actual link and clear the cache when Windows rejects an update",
-    )
-    require(
-        "ble_hid_gap_request_active_connection" in firmware_ota
-        and "firmware_ota_request_active_ble_connection" in firmware_ota
-        and "power_manager_set_blocker(POWER_MANAGER_BLOCKER_OTA, active)" in firmware_ota
-        and "if (active && reason != NULL)" in firmware_ota
-        and 'firmware_ota_set_runtime_active(true, 0, image_size, "ota_begin")' in firmware_ota
-        and "firmware_ota_set_runtime_active(true, next_size, expected_size, NULL)" in firmware_ota,
-        "firmware OTA begin must force active BLE connection parameters once, while per-chunk progress must not spam connection updates",
+        "ble_hid_gap_schedule_active_connection" in gap
+        and "ble_hid_gap_active_connection_applied" in gap,
+        "Listener driver must expose deferred active-link control and confirmation",
     )
     require(
         'strcmp(command, "TYPE:OTA") == 0' in audio
-        and "ble_hid_gap_request_active_connection" in audio
-        and "type OTA active connection request" in audio
-        and 'power_manager_record_activity("type_ota")' in audio,
-        "BLE audio control must keep TYPE:OTA as the desktop pre-transfer active-link hint for low-power OTA speed",
+        and "OTA begin owns the deferred active-link request" in audio,
+        "desktop pre-transfer hint must not update GAP inside the GATT callback",
     )
+    require(
+        "FIRMWARE_OTA_INACTIVITY_TIMEOUT_MS (3U * 60U * 1000U)" in ota
+        and "firmware_ota_inactivity_timer_callback" in ota,
+        "stale OTA sessions must exit after three minutes",
+    )
+
+
+def check_desktop(repo: Path, explicit: Path | None) -> str:
+    type_repo = repo.parent / "Listener-Type"
+    contract_path = explicit or type_repo / "src/lib/firmwareOta.ts"
+    rust_path = type_repo / "src-tauri/src/embedded_ble.rs"
+    cargo_path = type_repo / "src-tauri/Cargo.toml"
+    contract = read_text(contract_path)
+    rust = read_text(rust_path)
+    cargo = read_text(cargo_path)
+    for token in ("DENZIC_OTA_V1_PROTOCOL_NAME", SERVICE_UUID, CONTROL_UUID, DATA_UUID, STATUS_UUID):
+        require(token in contract, f"desktop OTA contract is missing {token}")
     for token in (
-        "DIAG_OTA_ABORT_BLE_CONTROL",
-        "DIAG_OTA_ABORT_BLE_WRITE_FAIL",
-        "DIAG_OTA_ABORT_BLE_DISCONNECT",
+        "impl denzic_ota_core::OtaV1Transport",
+        "denzic_ota_core::transfer",
+        "LISTENER_OTA_V1_INACTIVE_LINK_WINDOW_CHUNKS",
+        "LISTENER_OTA_V1_DEFAULT_WINDOW_CHUNKS",
+        "TYPE:OTA",
     ):
-        require(token in diag, f"diag_log_events.h is missing {token}")
-
-
-def check_dis_identity(repo: Path) -> None:
-    hid = read_text(repo / "ports/esp32/ble_hid/ble_hid.c")
-    gap = read_text(repo / "ports/esp32/ble_hid_gap/ble_hid_gap_esp32.c")
-    listener_device = read_text(repo / "protocols/listener_device/listener_device.c")
-    listener_header = read_text(repo / "protocols/listener_device/include/listener_device.h")
-    firmware_ota = read_text(repo / "components/firmware_ota/firmware_ota.c")
-    firmware_ota_header = read_text(repo / "components/firmware_ota/include/firmware_ota.h")
-    diag = read_text(repo / "components/diag_log/include/diag_log_events.h")
-    default_configs = [
-        repo / "sdkconfig.defaults",
-        repo / "sdkconfig.defaults.esp32s3",
-    ]
-
-    for path in default_configs:
-        config = read_text(path)
-        for token in (
-            "CONFIG_BT_NIMBLE_DIS_SERVICE=y",
-            "CONFIG_BT_NIMBLE_SVC_DIS_MANUFACTURER_NAME=y",
-            "CONFIG_BT_NIMBLE_SVC_DIS_SERIAL_NUMBER=y",
-            "CONFIG_BT_NIMBLE_SVC_DIS_HARDWARE_REVISION=y",
-            "CONFIG_BT_NIMBLE_SVC_DIS_FIRMWARE_REVISION=y",
-            "CONFIG_BT_NIMBLE_SVC_DIS_SOFTWARE_REVISION=y",
-            "CONFIG_BT_NIMBLE_SVC_DIS_PNP_ID=y",
-        ):
-            require(token in config, f"{path.name} is missing {token}")
-
-    require(
-        "ble_svc_dis_firmware_revision_set(listener_device_get_fw_version())" in hid,
-        "DIS firmware revision must be set from listener_device_get_fw_version()",
-    )
-    require(
-        "ble_svc_dis_manufacturer_name_set(LISTENER_DEVICE_MANUFACTURER)" in hid,
-        "DIS manufacturer must be set from LISTENER_DEVICE_MANUFACTURER",
-    )
-    require(
-        "ble_svc_dis_serial_number_set(listener_device_get_serial())" in hid,
-        "DIS serial number must be set from listener_device_get_serial()",
-    )
-    require(
-        "ble_svc_dis_hardware_revision_set(LISTENER_DEVICE_HW_REV)" in hid,
-        "DIS hardware revision must be set from LISTENER_DEVICE_HW_REV",
-    )
-    require(
-        ".vendor_id = LISTENER_VENDOR_ID" in hid
-        and ".product_id = LISTENER_PRODUCT_ID" in hid
-        and ".version = LISTENER_PROTOCOL_VERSION" in hid
-        and "vid=0x%04x pid=0x%04x product_version=%u" in hid,
-        "DIS PnP ID must be sourced from the HID Listener VID/PID/protocol identity",
-    )
-    require(
-        "ble_svc_dis_software_revision_set(listener_device_get_protocol_version())" in hid,
-        "DIS software revision must be set from listener_device_get_protocol_version()",
-    )
-    require(
-        "esp_app_get_description()" in listener_device
-        and "return app_desc->version;" in listener_device,
-        "listener_device_get_fw_version() must return the ESP app description version",
-    )
-    require(
-        "firmware_ota_v1" in listener_header,
-        "Listener device capabilities must advertise firmware_ota_v1 for desktop preflight",
-    )
-    require(
-        "firmware_ota_v2" in listener_header and "firmware_ota_v2" in listener_device,
-        "Listener device capabilities must advertise firmware_ota_v2 for the high-speed OTA path",
-    )
-    for token in (
-        "LISTENER_DEVICE_READY_HID",
-        "LISTENER_DEVICE_READY_AUDIO",
-        "LISTENER_DEVICE_READY_OTA",
-        "LISTENER_DEVICE_READY_DIAGNOSTIC",
-        "listener_device_set_readiness",
-        "listener_device_get_ready_mask",
-        "listener_device_get_degraded_mask",
-    ):
-        require(token in listener_header, f"Listener device readiness contract is missing {token}")
-    require(
-        '"hid"' in listener_device
-        and '"audio"' in listener_device
-        and '"ota"' in listener_device
-        and '"diagnostic"' in listener_device
-        and '"%s_%s"' in listener_device
-        and '"ready"' in listener_device
-        and '"degraded"' in listener_device,
-        "Listener readiness/capabilities must expose per-subsystem ready/degraded tokens",
-    )
-    require(
-        "ble_hid_publish_readiness(" in hid
-        and "LISTENER_DEVICE_READY_HID" in hid
-        and "LISTENER_DEVICE_READY_AUDIO" in hid
-        and "LISTENER_DEVICE_READY_OTA" in hid
-        and "LISTENER_DEVICE_READY_DIAGNOSTIC" in hid,
-        "BLE HID init must publish separate HID/audio/OTA/diagnostic readiness",
-    )
-    require(
-        "ready_mask" in firmware_ota_header
-        and "degraded_mask" in firmware_ota_header
-        and "readiness" in firmware_ota_header
-        and "capabilities" in firmware_ota_header
-        and "listener_device_get_ready_mask()" in firmware_ota
-        and "listener_device_get_degraded_mask()" in firmware_ota
-        and "listener_device_get_factory_readiness()" in firmware_ota
-        and "listener_device_get_capabilities()" in firmware_ota
-        and "OTA STATUS" in firmware_ota
-        and "ready_mask=0x%08" in firmware_ota
-        and "capabilities=%s" in firmware_ota,
-        "~OTA:STATUS must expose per-subsystem readiness and capabilities for hardware validation",
-    )
-    require(
-        'strcmp(line, "~DIS:GATT")' in hid and "ble_hid_log_dis_gatt_state()" in hid,
-        "serial ~DIS:GATT must log DIS service/characteristic handles for hardware validation",
-    )
-    require(
-        "BLE_SVC_DIS_CHR_UUID16_FIRMWARE_REVISION" in hid
-        and "ble_gatts_find_chr(" in hid,
-        "DIS GATT state logging must verify Firmware Revision 2A26 is registered",
-    )
-    for token in (
-        "BLE_SVC_DIS_CHR_UUID16_SERIAL_NUMBER",
-        "BLE_SVC_DIS_CHR_UUID16_MANUFACTURER_NAME",
-        "BLE_SVC_DIS_CHR_UUID16_PNP_ID",
-    ):
-        require(token in hid, f"DIS GATT state logging must include {token}")
-    require(
-        "ble_hid_gap_queue_service_changed(\"connect\")" in gap
-        and "ble_hid_gap_service_changed_pending()" in gap
-        and "ble_hid_gap_stored_service_changed_schema_matches" in gap
-        and "BLE_HID_GAP_GATT_SCHEMA_REV" in gap
-        and "ota_v2" in gap
-        and "nvs_get_str" in gap
-        and "nvs_set_str" in gap,
-        "BLE connect path must schema-gate Service Changed so Windows refreshes OTA/DIS GATT only after GATT-shape updates",
-    )
-    require(
-        "BLE_SVC_GATT_CHR_SERVICE_CHANGED_UUID16" in gap
-        and "event->subscribe.reason == BLE_GAP_SUBSCRIBE_REASON_WRITE" in gap
-        and "ble_hid_gap_indicate_service_changed(event->subscribe.conn_handle, \"central subscribe\")" in gap
-        and "ble_hid_gap_indicate_service_changed(event->enc_change.conn_handle, \"encryption change\")" in gap
-        and "ble_gatts_indicate_custom(conn_handle, service_changed_val_handle, om)" in gap
-        and "service changed marked for %s" in gap
-        and "schema already confirmed" in gap
-        and "service changed indication skipped" in gap
-        and "service changed indication tx complete" in gap,
-        "BLE subscribe path must mark GATT changed on connect, then send or skip Service Changed according to the schema-gated pending state",
-    )
-    require(
-        "DIAG_GAP_RECOVERY" in diag
-        and "DIAG_GAP_RECOVERY" in gap
-        and "bond_delete=async_after_disconnect" in gap
-        and "recovery: async local bond delete complete" in gap
-        and "recovery: pairing reset complete after async local bond delete" in gap
-        and "NimBLE advertising deferred: recovery async local bond delete pending" in gap,
-        "BLE recovery actions must be logged in serial and diag_log",
-    )
-    require(
-        "ble_gap_set_prefered_le_phy" in gap
-        and "BLE_GAP_LE_PHY_2M_MASK" in gap
-        and "audio high-speed link request deferred until active recording" in gap
-        and "ble_gap_update_params(conn.conn_handle, &params)" in gap
-        and "connection parameter update requested" in gap
-        and "BLE_HID_CONN_PARAM_MODE_ACTIVE" in gap
-        and "BLE_HID_CONN_PARAM_MODE_LOW_POWER" in gap
-        and "BLE_HID_GAP_ACTIVE_ITVL_MIN 6U" in gap
-        and "BLE_HID_GAP_ACTIVE_ITVL_MAX 6U" in gap
-        and "DIAG_GAP_CONN_PARAM_REQ" in gap
-        and "BLE_GAP_EVENT_PHY_UPDATE_COMPLETE" in gap
-        and "DIAG_GAP_PHY" in gap
-        and "DIAG_GAP_PHY" in diag,
-        "GAP must request low-latency active audio parameters and 2M PHY with diagnostics while keeping low-power idle parameters bounded",
-    )
-
-
-def candidate_desktop_contracts(repo: Path) -> list[Path]:
-    listener_root = repo.parent
-    return [
-        listener_root / "Listener-Type-wt-tai-voice-keyboard-ota-update-1.2/src/lib/firmwareOta.ts",
-        listener_root / "Listener-Type/src/lib/firmwareOta.ts",
-    ]
-
-
-def candidate_desktop_ble_sources(repo: Path) -> list[Path]:
-    listener_root = repo.parent
-    return [
-        listener_root / "Listener-Type-wt-tai-voice-keyboard-ota-update-1.2/src-tauri/src/embedded_ble.rs",
-        listener_root / "Listener-Type/src-tauri/src/embedded_ble.rs",
-    ]
-
-
-def check_desktop_contract(path: Path) -> str:
-    contract = read_text(path)
-    expected_pairs = [
-        (SERVICE_UUID, "serviceUuid"),
-        (CONTROL_UUID, "controlUuid"),
-        (DATA_UUID, "dataUuid"),
-        (V2_SERVICE_UUID, "listenerOtaV2.serviceUuid"),
-        (V2_CONTROL_UUID, "listenerOtaV2.controlUuid"),
-        (V2_DATA_UUID, "listenerOtaV2.dataUuid"),
-        (V2_STATUS_UUID, "listenerOtaV2.statusUuid"),
-    ]
-    for value, field in expected_pairs:
-        require(value in contract, f"desktop contract {path} is missing {field}={value}")
-    for field in ("defaultChunkBytes", "maxChunkBytes"):
-        match = re.search(rf"{field}\s*:\s*(\d+)", contract)
-        require(match is not None, f"desktop contract {path} is missing {field}")
-        chunk_bytes = int(match.group(1))
-        require(
-            chunk_bytes == CHUNK_BYTES,
-            f"desktop contract {path} has {field}={chunk_bytes}, expected {CHUNK_BYTES}",
-        )
-    return str(path)
-
-
-def check_desktop_ble_source(path: Path) -> str:
-    source = read_text(path)
-    expected_tokens = [
-        (SERVICE_UUID, "OTA_SERVICE_UUID"),
-        (CONTROL_UUID, "OTA_CONTROL_UUID"),
-        (DATA_UUID, "OTA_DATA_UUID"),
-        (V2_SERVICE_UUID, "LISTENER_OTA_V2_SERVICE_UUID"),
-        (V2_CONTROL_UUID, "LISTENER_OTA_V2_CONTROL_UUID"),
-        (V2_DATA_UUID, "LISTENER_OTA_V2_DATA_UUID"),
-        (V2_STATUS_UUID, "LISTENER_OTA_V2_STATUS_UUID"),
-        (READINESS_UUID, "OTA_READINESS_UUID"),
-        (CAPABILITIES_UUID, "OTA_CAPABILITIES_UUID"),
-    ]
-    for uuid, field in expected_tokens:
-        token = f"0x{uuid.replace('-', '_')}"
-        require(token in source, f"desktop BLE source {path} is missing {field}={uuid}")
-    require(
-        "listener_ota_v2_control_command" in source
-        and "transfer_listener_ota_v2_to_target" in source
-        and "read_listener_ota_v2_status" in source
-        and "transport: \"listener_ble_ota_v2\"" in source,
-        f"desktop BLE source {path} must expose the Listener OTA v2 offset/status transfer path",
-    )
-    require(
-        "TYPE:OTA" in source
-        and "Listener OTA v2 active-link hint" in source
-        and "acquire_ble_ota_process_mutex(\"listener_ota_v2\")" in source,
-        f"desktop BLE source {path} must send the pre-transfer TYPE:OTA active-link hint under the OTA mutex",
-    )
-    require(
-        "OTA_CONTROL_UUID" in source
-        and "OTA_DATA_UUID" in source
-        and "readiness_field(&readiness, \"fw_version\")" in source
-        and "split_capability_tokens(&capabilities)" in source,
-        f"desktop BLE source {path} must read OTA identity/capabilities from the stable control/data UUIDs when Windows hides newer GATT characteristics",
-    )
-    return str(path)
+        require(token in rust, f"desktop Listener driver is missing {token}")
+    require("third_party/denzic-platform/ota/host/rust" in cargo,
+            "desktop must compile the shared host OTA core")
+    return str(contract_path.resolve())
 
 
 def main() -> int:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--repo", type=Path, default=Path.cwd(), help="firmware repository root")
-    parser.add_argument("--desktop-contract", type=Path, help="optional Listener-Type src/lib/firmwareOta.ts")
+    parser.add_argument("--repo", type=Path, default=Path.cwd())
+    parser.add_argument("--desktop-contract", type=Path)
     args = parser.parse_args()
-
     repo = args.repo.resolve()
     try:
+        check_shared_core(repo)
         check_header(repo)
         check_bridge(repo)
-        check_integration(repo)
-        check_dis_identity(repo)
-
-        desktop_checked = None
-        if args.desktop_contract:
-            desktop_checked = check_desktop_contract(args.desktop_contract.resolve())
-        else:
-            for candidate in candidate_desktop_contracts(repo):
-                if candidate.exists():
-                    desktop_checked = check_desktop_contract(candidate.resolve())
-                    break
-        desktop_ble_checked = None
-        for candidate in candidate_desktop_ble_sources(repo):
-            if candidate.exists():
-                desktop_ble_checked = check_desktop_ble_source(candidate.resolve())
-                break
-
-        if desktop_checked:
-            suffix = f" and desktop BLE source at {desktop_ble_checked}" if desktop_ble_checked else ""
-            print(f"PASS: BLE OTA GATT contract matches desktop contract at {desktop_checked}{suffix}")
-        else:
-            print(
-                "PASS: BLE OTA GATT contract matches canonical Listener OTA UUIDs "
-                f"({SERVICE_UUID}, {CONTROL_UUID}, {DATA_UUID}) and {CHUNK_BYTES}-byte desktop chunks"
-            )
+        check_product_identity(repo)
+        check_runtime_integration(repo)
+        desktop = check_desktop(repo, args.desktop_contract.resolve() if args.desktop_contract else None)
+        print(f"PASS: Denzic OTA v1 host/embedded contract matches Listener driver and {desktop}")
         return 0
     except AssertionError as exc:
         print(f"FAIL: {exc}", file=sys.stderr)

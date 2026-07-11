@@ -131,19 +131,19 @@ $manifest = [ordered]@{
     }
     requirements = [ordered]@{
         hardware_revision = "keyboard-v2-n16r8"
-        protocol_version = 2
+        protocol_version = 1
         min_desktop_version = $MinDesktopVersion
         gatt_chunk_bytes = $GattChunkBytes
     }
     protocol = [ordered]@{
-        name = "listener_ble_ota_v2"
-        version = 2
-        firmware_capability = "firmware_ota_v2"
+        name = "denzic_ota_v1"
+        version = 1
+        firmware_capability = "denzic_ota_v1"
         gatt = [ordered]@{
             service_uuid = "710af845-6d9f-6583-0c4d-9e5b3bc3092a"
-            control_uuid = "710af845-6d9f-6583-0c4d-9e5b3bc3092b"
-            data_uuid = "710af845-6d9f-6583-0c4d-9e5b3bc3092c"
-            status_uuid = "710af845-6d9f-6583-0c4d-9e5b3bc3092b"
+            control_uuid = "710af845-6d9f-6583-0c4d-9e5b3bc3094b"
+            data_uuid = "710af845-6d9f-6583-0c4d-9e5b3bc3094c"
+            status_uuid = "710af845-6d9f-6583-0c4d-9e5b3bc3094d"
             chunk_bytes = $GattChunkBytes
         }
     }

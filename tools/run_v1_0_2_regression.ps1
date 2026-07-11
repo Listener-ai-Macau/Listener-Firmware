@@ -177,7 +177,7 @@ try {
         }
 
         if (-not $SkipOtaProbe.IsPresent) {
-            Invoke-Gate "OTA v2 GATT probe" {
+            Invoke-Gate "Denzic OTA v1 GATT probe" {
                 $args = @(
                     "-NoProfile",
                     "-File", (Join-Path $PSScriptRoot "probe_ble_ota_gatt.ps1"),

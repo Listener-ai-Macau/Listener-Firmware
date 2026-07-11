@@ -1,14 +1,11 @@
 #include "ble_firmware_ota.h"
 
-#include <ctype.h>
-#include <inttypes.h>
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
-#include <stdio.h>
-#include <stdlib.h>
 #include <string.h>
 
+#include "denzic_ota_v1.h"
 #include "diag_log.h"
 #include "esp_log.h"
 #include "firmware_ota.h"
@@ -20,100 +17,46 @@
 #include "listener_device.h"
 #include "os/os_mbuf.h"
 
-#define BLE_FIRMWARE_OTA_CONTROL_MAX_BYTES 384
 #define BLE_FIRMWARE_OTA_DATA_MAX_BYTES 512
+#define BLE_FIRMWARE_OTA_DATA_PAYLOAD_MAX 500
+#define BLE_FIRMWARE_OTA_DEFAULT_WINDOW_CHUNKS 8
+#define BLE_FIRMWARE_OTA_ACTIVE_LINK_RETRY_MS 250
 #define BLE_FIRMWARE_OTA_REBOOT_DELAY_MS 500
 #define BLE_FIRMWARE_OTA_REBOOT_TASK_STACK_BYTES 2048
-#define BLE_FIRMWARE_OTA_COMPACT_CAPABILITIES "firmware_ota_v1;firmware_ota_v2"
-#define BLE_FIRMWARE_OTA_V2_CONTROL_SIZE 16
-#define BLE_FIRMWARE_OTA_V2_DATA_HEADER_SIZE 4
-#define BLE_FIRMWARE_OTA_V2_DATA_PAYLOAD_MAX 500
-#define BLE_FIRMWARE_OTA_V2_SHA256_HEX_BYTES 64
-#define BLE_FIRMWARE_OTA_V2_SHA256_BYTES 32
-#define BLE_FIRMWARE_OTA_V2_STATUS_SIZE 24
-#define BLE_FIRMWARE_OTA_V2_DEFAULT_WINDOW_CHUNKS 8
-#define BLE_FIRMWARE_OTA_V2_ACTIVE_LINK_RETRY_MS 250
-#define BLE_FIRMWARE_OTA_V2_MAGIC0 ('L')
-#define BLE_FIRMWARE_OTA_V2_MAGIC1 ('O')
-#define BLE_FIRMWARE_OTA_V2_MAGIC2 ('V')
-#define BLE_FIRMWARE_OTA_V2_MAGIC3 ('2')
-#define BLE_FIRMWARE_OTA_V2_PROTOCOL_VERSION 1
-#define BLE_FIRMWARE_OTA_V2_OP_BEGIN 1
-#define BLE_FIRMWARE_OTA_V2_OP_SYNC 2
-#define BLE_FIRMWARE_OTA_V2_OP_FINISH 3
-#define BLE_FIRMWARE_OTA_V2_OP_ABORT 4
+#define BLE_FIRMWARE_OTA_COMPACT_CAPABILITIES DENZIC_OTA_V1_PROTOCOL_NAME
 
 typedef enum {
-    BLE_FIRMWARE_OTA_GATT_ATTR_CONTROL = 1,
-    BLE_FIRMWARE_OTA_GATT_ATTR_DATA = 2,
-    BLE_FIRMWARE_OTA_GATT_ATTR_READINESS = 3,
-    BLE_FIRMWARE_OTA_GATT_ATTR_CAPABILITIES = 4,
-    BLE_FIRMWARE_OTA_GATT_ATTR_V2_CONTROL = 5,
-    BLE_FIRMWARE_OTA_GATT_ATTR_V2_DATA = 6,
-    BLE_FIRMWARE_OTA_GATT_ATTR_V2_STATUS = 7,
+    BLE_FIRMWARE_OTA_GATT_ATTR_READINESS = 1,
+    BLE_FIRMWARE_OTA_GATT_ATTR_CAPABILITIES = 2,
+    BLE_FIRMWARE_OTA_GATT_ATTR_CONTROL = 3,
+    BLE_FIRMWARE_OTA_GATT_ATTR_DATA = 4,
+    BLE_FIRMWARE_OTA_GATT_ATTR_STATUS = 5,
 } ble_firmware_ota_gatt_attr_t;
-
-typedef enum {
-    BLE_FIRMWARE_OTA_V2_STATE_IDLE = 0,
-    BLE_FIRMWARE_OTA_V2_STATE_LINKING = 1,
-    BLE_FIRMWARE_OTA_V2_STATE_RECEIVING = 2,
-    BLE_FIRMWARE_OTA_V2_STATE_COMPLETE = 3,
-    BLE_FIRMWARE_OTA_V2_STATE_ERROR = 4,
-} ble_firmware_ota_v2_state_t;
-
-typedef enum {
-    BLE_FIRMWARE_OTA_V2_ERROR_NONE = 0,
-    BLE_FIRMWARE_OTA_V2_ERROR_BAD_MAGIC = 1,
-    BLE_FIRMWARE_OTA_V2_ERROR_BAD_STATE = 2,
-    BLE_FIRMWARE_OTA_V2_ERROR_BAD_SIZE = 3,
-    BLE_FIRMWARE_OTA_V2_ERROR_OFFSET_MISMATCH = 4,
-    BLE_FIRMWARE_OTA_V2_ERROR_FLASH_WRITE = 5,
-    BLE_FIRMWARE_OTA_V2_ERROR_BEGIN_FAILED = 6,
-    BLE_FIRMWARE_OTA_V2_ERROR_FINISH_FAILED = 7,
-} ble_firmware_ota_v2_error_t;
-
-typedef struct {
-    ble_firmware_ota_v2_state_t state;
-    ble_firmware_ota_v2_error_t last_error;
-    size_t expected_size;
-    size_t bytes_written;
-    uint32_t data_write_count;
-    uint16_t chunk_payload_bytes;
-    uint16_t window_chunks;
-    TickType_t active_link_retry_tick;
-} ble_firmware_ota_v2_context_t;
 
 static const char *TAG = "ble_firmware_ota";
 static const ble_uuid128_t s_service_uuid = BLE_FIRMWARE_OTA_SERVICE_UUID;
-static const ble_uuid128_t s_control_uuid = BLE_FIRMWARE_OTA_CONTROL_UUID;
-static const ble_uuid128_t s_data_uuid = BLE_FIRMWARE_OTA_DATA_UUID;
 static const ble_uuid128_t s_readiness_uuid = BLE_FIRMWARE_OTA_READINESS_UUID;
 static const ble_uuid128_t s_capabilities_uuid = BLE_FIRMWARE_OTA_CAPABILITIES_UUID;
-static const ble_uuid128_t s_v2_control_uuid = BLE_FIRMWARE_OTA_V2_CONTROL_UUID;
-static const ble_uuid128_t s_v2_data_uuid = BLE_FIRMWARE_OTA_V2_DATA_UUID;
-static const ble_uuid128_t s_v2_status_uuid = BLE_FIRMWARE_OTA_V2_STATUS_UUID;
-static ble_firmware_ota_v2_context_t s_v2;
+static const ble_uuid128_t s_control_uuid = BLE_FIRMWARE_OTA_V1_CONTROL_UUID;
+static const ble_uuid128_t s_data_uuid = BLE_FIRMWARE_OTA_V1_DATA_UUID;
+static const ble_uuid128_t s_status_uuid = BLE_FIRMWARE_OTA_V1_STATUS_UUID;
+static denzic_ota_v1_context_t s_ota;
+static TickType_t s_active_link_retry_tick;
+static bool s_active_link_confirmed;
 static bool s_registered;
 
 extern esp_err_t ble_hid_gap_request_active_connection(void) __attribute__((weak));
+extern esp_err_t ble_hid_gap_schedule_active_connection(void) __attribute__((weak));
 extern bool ble_hid_gap_active_connection_applied(void) __attribute__((weak));
 
-static void ble_firmware_ota_v2_sync_status(void);
-static int ble_firmware_ota_v2_handle_begin(const uint8_t *bytes, uint16_t length);
-static int ble_firmware_ota_v2_handle_finish(void);
-static int ble_firmware_ota_v2_handle_control_write(struct os_mbuf *om);
-static int ble_firmware_ota_v2_handle_data_write(struct os_mbuf *om);
-
-static int ble_firmware_ota_att_error_from_esp(esp_err_t ret)
+static int ble_firmware_ota_att_error_from_core(void)
 {
-    switch (ret) {
-    case ESP_OK:
-        return 0;
-    case ESP_ERR_NO_MEM:
-        return BLE_ATT_ERR_INSUFFICIENT_RES;
-    case ESP_ERR_INVALID_ARG:
-    case ESP_ERR_INVALID_SIZE:
+    switch (s_ota.last_error) {
+    case DENZIC_OTA_V1_ERROR_BAD_MAGIC:
+    case DENZIC_OTA_V1_ERROR_BAD_SIZE:
         return BLE_ATT_ERR_INVALID_ATTR_VALUE_LEN;
+    case DENZIC_OTA_V1_ERROR_OFFSET_MISMATCH:
+        return 0;
     default:
         return BLE_ATT_ERR_UNLIKELY;
     }
@@ -142,259 +85,6 @@ static int ble_firmware_ota_copy_mbuf(
     return 0;
 }
 
-static uint32_t ble_firmware_ota_v2_read_u32_le(const uint8_t *bytes)
-{
-    return ((uint32_t)bytes[0]) |
-           (((uint32_t)bytes[1]) << 8) |
-           (((uint32_t)bytes[2]) << 16) |
-           (((uint32_t)bytes[3]) << 24);
-}
-
-static uint16_t ble_firmware_ota_v2_read_u16_le(const uint8_t *bytes)
-{
-    return (uint16_t)(((uint16_t)bytes[0]) | (((uint16_t)bytes[1]) << 8));
-}
-
-static void ble_firmware_ota_v2_write_u32_le(uint8_t *bytes, uint32_t value)
-{
-    bytes[0] = (uint8_t)(value & 0xffU);
-    bytes[1] = (uint8_t)((value >> 8) & 0xffU);
-    bytes[2] = (uint8_t)((value >> 16) & 0xffU);
-    bytes[3] = (uint8_t)((value >> 24) & 0xffU);
-}
-
-static void ble_firmware_ota_v2_write_u16_le(uint8_t *bytes, uint16_t value)
-{
-    bytes[0] = (uint8_t)(value & 0xffU);
-    bytes[1] = (uint8_t)((value >> 8) & 0xffU);
-}
-
-static bool ble_firmware_ota_v2_has_magic(const uint8_t *bytes, uint16_t length)
-{
-    return length >= 6 &&
-           bytes[0] == BLE_FIRMWARE_OTA_V2_MAGIC0 &&
-           bytes[1] == BLE_FIRMWARE_OTA_V2_MAGIC1 &&
-           bytes[2] == BLE_FIRMWARE_OTA_V2_MAGIC2 &&
-           bytes[3] == BLE_FIRMWARE_OTA_V2_MAGIC3 &&
-           bytes[5] == BLE_FIRMWARE_OTA_V2_PROTOCOL_VERSION;
-}
-
-static void ble_firmware_ota_v2_reset(void)
-{
-    memset(&s_v2, 0, sizeof(s_v2));
-    s_v2.state = BLE_FIRMWARE_OTA_V2_STATE_IDLE;
-    s_v2.last_error = BLE_FIRMWARE_OTA_V2_ERROR_NONE;
-    s_v2.chunk_payload_bytes = BLE_FIRMWARE_OTA_V2_DATA_PAYLOAD_MAX;
-    s_v2.window_chunks = BLE_FIRMWARE_OTA_V2_DEFAULT_WINDOW_CHUNKS;
-}
-
-static void ble_firmware_ota_v2_set_error(ble_firmware_ota_v2_error_t error)
-{
-    s_v2.state = BLE_FIRMWARE_OTA_V2_STATE_ERROR;
-    s_v2.last_error = error;
-}
-
-static void ble_firmware_ota_v2_set_recoverable_error(ble_firmware_ota_v2_error_t error)
-{
-    s_v2.last_error = error;
-}
-
-static bool ble_firmware_ota_v2_tick_reached(TickType_t now, TickType_t target)
-{
-    return (int32_t)(now - target) >= 0;
-}
-
-static void ble_firmware_ota_v2_await_active_link(void)
-{
-    if (s_v2.state != BLE_FIRMWARE_OTA_V2_STATE_LINKING) {
-        return;
-    }
-
-    if (ble_hid_gap_active_connection_applied == NULL ||
-        ble_hid_gap_active_connection_applied()) {
-        s_v2.state = BLE_FIRMWARE_OTA_V2_STATE_RECEIVING;
-        s_v2.last_error = BLE_FIRMWARE_OTA_V2_ERROR_NONE;
-        ESP_LOGI(TAG, "OTA v2 active BLE link confirmed; accepting data writes");
-        return;
-    }
-
-    TickType_t now = xTaskGetTickCount();
-    if (s_v2.active_link_retry_tick != 0 &&
-        !ble_firmware_ota_v2_tick_reached(now, s_v2.active_link_retry_tick)) {
-        return;
-    }
-
-    s_v2.active_link_retry_tick = now + pdMS_TO_TICKS(BLE_FIRMWARE_OTA_V2_ACTIVE_LINK_RETRY_MS);
-    if (ble_hid_gap_request_active_connection != NULL) {
-        esp_err_t ret = ble_hid_gap_request_active_connection();
-        ESP_LOGI(TAG, "OTA v2 active BLE link pending; retry requested ret=%s", esp_err_to_name(ret));
-    }
-}
-
-static void ble_firmware_ota_v2_sync_status(void)
-{
-    ble_firmware_ota_v2_await_active_link();
-    firmware_ota_status_t status = firmware_ota_get_status();
-    if (s_v2.state == BLE_FIRMWARE_OTA_V2_STATE_RECEIVING) {
-        if (!status.active) {
-            ESP_LOGI(TAG, "OTA v2 transport session is idle; waiting for resume request");
-            ble_firmware_ota_v2_reset();
-        } else {
-            s_v2.bytes_written = status.bytes_written;
-            s_v2.expected_size = status.expected_size;
-        }
-    }
-}
-
-static int ble_firmware_ota_v2_append_status(struct os_mbuf *om)
-{
-    uint8_t status[BLE_FIRMWARE_OTA_V2_STATUS_SIZE] = {0};
-    ble_firmware_ota_v2_sync_status();
-    status[0] = BLE_FIRMWARE_OTA_V2_MAGIC0;
-    status[1] = BLE_FIRMWARE_OTA_V2_MAGIC1;
-    status[2] = BLE_FIRMWARE_OTA_V2_MAGIC2;
-    status[3] = BLE_FIRMWARE_OTA_V2_MAGIC3;
-    status[4] = BLE_FIRMWARE_OTA_V2_PROTOCOL_VERSION;
-    status[5] = (uint8_t)s_v2.state;
-    status[6] = (uint8_t)s_v2.last_error;
-    ble_firmware_ota_v2_write_u32_le(&status[8], (uint32_t)s_v2.bytes_written);
-    ble_firmware_ota_v2_write_u32_le(&status[12], (uint32_t)s_v2.expected_size);
-    ble_firmware_ota_v2_write_u16_le(&status[16], s_v2.chunk_payload_bytes);
-    ble_firmware_ota_v2_write_u16_le(&status[18], s_v2.window_chunks);
-    ble_firmware_ota_v2_write_u32_le(&status[20], s_v2.data_write_count);
-    return os_mbuf_append(om, status, sizeof(status)) == 0 ? 0 : BLE_ATT_ERR_INSUFFICIENT_RES;
-}
-
-static const char *ble_firmware_ota_compact_read_value_if_needed(
-    uint16_t conn_handle,
-    ble_firmware_ota_gatt_attr_t attr,
-    const char *value)
-{
-    if (value == NULL) {
-        return "";
-    }
-    if (attr != BLE_FIRMWARE_OTA_GATT_ATTR_DATA &&
-        attr != BLE_FIRMWARE_OTA_GATT_ATTR_CAPABILITIES) {
-        return value;
-    }
-
-    uint16_t mtu = ble_att_mtu(conn_handle);
-    uint16_t value_max = mtu > 1 ? (uint16_t)(mtu - 1U) : 0U;
-    if (mtu <= BLE_ATT_MTU_DFLT && strlen(value) > value_max) {
-        ESP_LOGI(
-            TAG,
-            "OTA identity compact read attr=%u mtu=%u full_len=%u value=%s",
-            (unsigned)attr,
-            mtu,
-            (unsigned)strlen(value),
-            BLE_FIRMWARE_OTA_COMPACT_CAPABILITIES);
-        return BLE_FIRMWARE_OTA_COMPACT_CAPABILITIES;
-    }
-    return value;
-}
-
-static const char *ble_firmware_ota_find_json_value(const char *json, const char *key)
-{
-    char pattern[32];
-    int written = snprintf(pattern, sizeof(pattern), "\"%s\"", key);
-    if (written <= 0 || written >= (int)sizeof(pattern)) {
-        return NULL;
-    }
-
-    const char *found = strstr(json, pattern);
-    if (found == NULL) {
-        return NULL;
-    }
-    const char *colon = strchr(found + written, ':');
-    if (colon == NULL) {
-        return NULL;
-    }
-    const char *value = colon + 1;
-    while (*value != '\0' && isspace((unsigned char)*value)) {
-        value++;
-    }
-    return value;
-}
-
-static bool ble_firmware_ota_json_string(
-    const char *json,
-    const char *key,
-    char *out,
-    size_t out_size)
-{
-    if (out == NULL || out_size == 0) {
-        return false;
-    }
-    out[0] = '\0';
-
-    const char *value = ble_firmware_ota_find_json_value(json, key);
-    if (value == NULL || *value != '"') {
-        return false;
-    }
-
-    value++;
-    size_t used = 0;
-    while (*value != '\0' && *value != '"') {
-        char ch = *value++;
-        if (ch == '\\' && *value != '\0') {
-            ch = *value++;
-        }
-        if (used + 1 >= out_size) {
-            return false;
-        }
-        out[used++] = ch;
-    }
-    if (*value != '"') {
-        return false;
-    }
-    out[used] = '\0';
-    return true;
-}
-
-static bool ble_firmware_ota_json_size(const char *json, const char *key, size_t *out)
-{
-    if (out == NULL) {
-        return false;
-    }
-
-    const char *value = ble_firmware_ota_find_json_value(json, key);
-    if (value == NULL || !isdigit((unsigned char)*value)) {
-        return false;
-    }
-
-    char *end = NULL;
-    unsigned long long parsed = strtoull(value, &end, 10);
-    if (end == value || parsed > SIZE_MAX) {
-        return false;
-    }
-
-    *out = (size_t)parsed;
-    return true;
-}
-
-static bool ble_firmware_ota_parse_sha256_hex(
-    const char *text,
-    uint8_t out[BLE_FIRMWARE_OTA_V2_SHA256_BYTES])
-{
-    if (text == NULL || out == NULL || strlen(text) != BLE_FIRMWARE_OTA_V2_SHA256_HEX_BYTES) {
-        return false;
-    }
-
-    for (size_t index = 0; index < BLE_FIRMWARE_OTA_V2_SHA256_BYTES; ++index) {
-        int high = isdigit((unsigned char)text[index * 2]) ?
-            text[index * 2] - '0' :
-            (isxdigit((unsigned char)text[index * 2]) ? tolower((unsigned char)text[index * 2]) - 'a' + 10 : -1);
-        int low = isdigit((unsigned char)text[index * 2 + 1]) ?
-            text[index * 2 + 1] - '0' :
-            (isxdigit((unsigned char)text[index * 2 + 1]) ? tolower((unsigned char)text[index * 2 + 1]) - 'a' + 10 : -1);
-        if (high < 0 || low < 0) {
-            return false;
-        }
-        out[index] = (uint8_t)((high << 4) | low);
-    }
-    return true;
-}
-
 static void ble_firmware_ota_reboot_task(void *arg)
 {
     (void)arg;
@@ -403,7 +93,7 @@ static void ble_firmware_ota_reboot_task(void *arg)
     vTaskDelete(NULL);
 }
 
-static esp_err_t ble_firmware_ota_schedule_reboot(void)
+static bool ble_firmware_ota_schedule_reboot(void)
 {
     BaseType_t started = xTaskCreate(
         ble_firmware_ota_reboot_task,
@@ -412,414 +102,189 @@ static esp_err_t ble_firmware_ota_schedule_reboot(void)
         NULL,
         tskIDLE_PRIORITY + 1,
         NULL);
-    return started == pdPASS ? ESP_OK : ESP_ERR_NO_MEM;
+    return started == pdPASS;
 }
 
-static int ble_firmware_ota_handle_begin(const char *json)
+static bool ble_firmware_ota_storage_begin(void *driver_context, uint32_t image_size)
 {
-    char version[32];
-    size_t image_size = 0;
-    if (!ble_firmware_ota_json_string(json, "version", version, sizeof(version)) ||
-        !ble_firmware_ota_json_size(json, "size", &image_size)) {
-        ESP_LOGW(TAG, "OTA begin control missing version or size");
-        return BLE_ATT_ERR_INVALID_ATTR_VALUE_LEN;
-    }
-
-    esp_err_t ret = firmware_ota_begin(image_size, version);
-    ESP_LOGI(TAG, "OTA control begin size=%u version=%s ret=%s",
-             (unsigned)image_size, version, esp_err_to_name(ret));
-    return ble_firmware_ota_att_error_from_esp(ret);
+    (void)driver_context;
+    s_active_link_retry_tick = 0;
+    s_active_link_confirmed = false;
+    esp_err_t ret = firmware_ota_begin(image_size, DENZIC_OTA_V1_PROTOCOL_NAME);
+    ESP_LOGI(TAG, "Denzic OTA v1 begin size=%u ret=%s", (unsigned)image_size, esp_err_to_name(ret));
+    return ret == ESP_OK;
 }
 
-static int ble_firmware_ota_handle_finish(const char *json)
+static bool ble_firmware_ota_storage_write(
+    void *driver_context,
+    const uint8_t *data,
+    size_t length)
 {
-    size_t expected_size = 0;
-    if (!ble_firmware_ota_json_size(json, "size", &expected_size)) {
-        ESP_LOGW(TAG, "OTA finish control missing size");
-        return BLE_ATT_ERR_INVALID_ATTR_VALUE_LEN;
+    (void)driver_context;
+    esp_err_t ret = firmware_ota_write(data, length);
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Denzic OTA v1 data write failed len=%u ret=%s", (unsigned)length, esp_err_to_name(ret));
+        firmware_ota_abort(DIAG_OTA_ABORT_BLE_WRITE_FAIL);
     }
+    return ret == ESP_OK;
+}
 
-    firmware_ota_status_t status = firmware_ota_get_status();
-    if (status.active && status.expected_size > 0 && status.expected_size != expected_size) {
-        ESP_LOGW(
-            TAG,
-            "OTA finish size mismatch before verify: control=%u expected=%u",
-            (unsigned)expected_size,
-            (unsigned)status.expected_size);
-        firmware_ota_abort(DIAG_OTA_ABORT_BLE_CONTROL);
-        return BLE_ATT_ERR_INVALID_ATTR_VALUE_LEN;
-    }
-
+static bool ble_firmware_ota_storage_finish(void *driver_context)
+{
+    (void)driver_context;
     esp_err_t ret = firmware_ota_finish(false);
-    ESP_LOGI(TAG, "OTA control finish size=%u ret=%s", (unsigned)expected_size, esp_err_to_name(ret));
+    ESP_LOGI(TAG, "Denzic OTA v1 finish size=%u ret=%s", (unsigned)s_ota.expected_size, esp_err_to_name(ret));
     if (ret != ESP_OK) {
-        return ble_firmware_ota_att_error_from_esp(ret);
+        return false;
     }
-
-    ret = ble_firmware_ota_schedule_reboot();
-    if (ret != ESP_OK) {
-        ESP_LOGE(TAG, "OTA reboot scheduling failed: %s", esp_err_to_name(ret));
+    if (!ble_firmware_ota_schedule_reboot()) {
+        ESP_LOGE(TAG, "Denzic OTA v1 reboot scheduling failed");
         firmware_ota_abort(DIAG_OTA_ABORT_BLE_CONTROL);
-        return ble_firmware_ota_att_error_from_esp(ret);
+        return false;
     }
-    return 0;
+    return true;
 }
 
-static int ble_firmware_ota_v2_handle_begin_json(const char *json)
+static void ble_firmware_ota_storage_abort(void *driver_context)
 {
-    size_t expected_size = 0;
-    size_t chunk_payload_bytes = 0;
-    size_t window_chunks = 0;
-    if (!ble_firmware_ota_json_size(json, "size", &expected_size) ||
-        !ble_firmware_ota_json_size(json, "chunk", &chunk_payload_bytes)) {
-        ESP_LOGW(TAG, "OTA v2 JSON begin missing size or chunk");
-        return BLE_ATT_ERR_INVALID_ATTR_VALUE_LEN;
-    }
-    if (!ble_firmware_ota_json_size(json, "window", &window_chunks)) {
-        window_chunks = BLE_FIRMWARE_OTA_V2_DEFAULT_WINDOW_CHUNKS;
-    }
-    if (chunk_payload_bytes > UINT16_MAX || window_chunks > UINT16_MAX) {
-        ESP_LOGW(TAG, "OTA v2 JSON begin chunk/window too large");
-        return BLE_ATT_ERR_INVALID_ATTR_VALUE_LEN;
-    }
+    (void)driver_context;
+    firmware_ota_abort(DIAG_OTA_ABORT_BLE_CONTROL);
+}
 
-    uint8_t raw[BLE_FIRMWARE_OTA_V2_CONTROL_SIZE] = {
-        BLE_FIRMWARE_OTA_V2_MAGIC0,
-        BLE_FIRMWARE_OTA_V2_MAGIC1,
-        BLE_FIRMWARE_OTA_V2_MAGIC2,
-        BLE_FIRMWARE_OTA_V2_MAGIC3,
-        BLE_FIRMWARE_OTA_V2_OP_BEGIN,
-        BLE_FIRMWARE_OTA_V2_PROTOCOL_VERSION,
+static void ble_firmware_ota_core_init(void)
+{
+    const denzic_ota_v1_storage_driver_t storage = {
+        .begin = ble_firmware_ota_storage_begin,
+        .write = ble_firmware_ota_storage_write,
+        .finish = ble_firmware_ota_storage_finish,
+        .abort = ble_firmware_ota_storage_abort,
     };
-    ble_firmware_ota_v2_write_u32_le(&raw[8], (uint32_t)expected_size);
-    ble_firmware_ota_v2_write_u16_le(&raw[12], (uint16_t)chunk_payload_bytes);
-    ble_firmware_ota_v2_write_u16_le(&raw[14], (uint16_t)window_chunks);
-    return ble_firmware_ota_v2_handle_begin(raw, sizeof(raw));
+    denzic_ota_v1_init(
+        &s_ota,
+        storage,
+        NULL,
+        BLE_FIRMWARE_OTA_DATA_PAYLOAD_MAX,
+        BLE_FIRMWARE_OTA_DEFAULT_WINDOW_CHUNKS);
+    s_active_link_retry_tick = 0;
+    s_active_link_confirmed = false;
 }
 
-static int ble_firmware_ota_v2_handle_resume_json(const char *json)
+static bool ble_firmware_ota_tick_reached(TickType_t now, TickType_t target)
 {
-    size_t expected_size = 0;
-    size_t chunk_payload_bytes = 0;
-    size_t window_chunks = 0;
-    char sha256_hex[BLE_FIRMWARE_OTA_V2_SHA256_HEX_BYTES + 1] = {0};
-    uint8_t sha256[BLE_FIRMWARE_OTA_V2_SHA256_BYTES] = {0};
-    if (!ble_firmware_ota_json_size(json, "size", &expected_size) ||
-        !ble_firmware_ota_json_size(json, "chunk", &chunk_payload_bytes) ||
-        !ble_firmware_ota_json_string(json, "sha256", sha256_hex, sizeof(sha256_hex)) ||
-        !ble_firmware_ota_parse_sha256_hex(sha256_hex, sha256)) {
-        ESP_LOGW(TAG, "OTA v2 resume missing or invalid package identity");
-        return BLE_ATT_ERR_INVALID_ATTR_VALUE_LEN;
-    }
-    if (!ble_firmware_ota_json_size(json, "window", &window_chunks)) {
-        window_chunks = BLE_FIRMWARE_OTA_V2_DEFAULT_WINDOW_CHUNKS;
-    }
-    if (expected_size == 0 || chunk_payload_bytes == 0 ||
-        chunk_payload_bytes > BLE_FIRMWARE_OTA_V2_DATA_PAYLOAD_MAX ||
-        chunk_payload_bytes > UINT16_MAX || window_chunks > UINT16_MAX) {
-        ESP_LOGW(TAG, "OTA v2 resume size/chunk/window is invalid");
-        return BLE_ATT_ERR_INVALID_ATTR_VALUE_LEN;
-    }
-    if (window_chunks == 0) {
-        window_chunks = BLE_FIRMWARE_OTA_V2_DEFAULT_WINDOW_CHUNKS;
-    }
-
-    ble_firmware_ota_v2_reset();
-    bool resumed = false;
-    esp_err_t ret = firmware_ota_begin_or_resume(
-        expected_size,
-        "ble_ota_v2",
-        sha256,
-        &resumed);
-    ESP_LOGI(
-        TAG,
-        "OTA v2 resume size=%u chunk=%u window=%u resumed=%u ret=%s",
-        (unsigned)expected_size,
-        (unsigned)chunk_payload_bytes,
-        (unsigned)window_chunks,
-        resumed ? 1U : 0U,
-        esp_err_to_name(ret));
-    if (ret != ESP_OK) {
-        ble_firmware_ota_v2_set_error(BLE_FIRMWARE_OTA_V2_ERROR_BEGIN_FAILED);
-        return ble_firmware_ota_att_error_from_esp(ret);
-    }
-
-    s_v2.expected_size = expected_size;
-    s_v2.chunk_payload_bytes = (uint16_t)chunk_payload_bytes;
-    s_v2.window_chunks = (uint16_t)window_chunks;
-    s_v2.state = BLE_FIRMWARE_OTA_V2_STATE_LINKING;
-    s_v2.last_error = BLE_FIRMWARE_OTA_V2_ERROR_NONE;
-    s_v2.active_link_retry_tick = 0;
-    ble_firmware_ota_v2_sync_status();
-    return 0;
+    return (int32_t)(now - target) >= 0;
 }
 
-static int ble_firmware_ota_handle_control_json(const char *json)
+static void ble_firmware_ota_update_active_link(void)
 {
-    char op[16];
-    if (!ble_firmware_ota_json_string(json, "op", op, sizeof(op))) {
-        ESP_LOGW(TAG, "OTA control missing op");
-        return BLE_ATT_ERR_INVALID_ATTR_VALUE_LEN;
+    if (s_ota.state != DENZIC_OTA_V1_STATE_RECEIVING) {
+        s_active_link_confirmed = false;
+        denzic_ota_v1_set_status_flags(&s_ota, 0);
+        return;
     }
 
-    if (strcmp(op, "begin") == 0) {
-        return ble_firmware_ota_handle_begin(json);
-    }
-    if (strcmp(op, "finish") == 0) {
-        return ble_firmware_ota_handle_finish(json);
-    }
-    if (strcmp(op, "abort") == 0) {
-        firmware_ota_abort(DIAG_OTA_ABORT_BLE_CONTROL);
-        ESP_LOGW(TAG, "OTA control abort requested");
-        return 0;
-    }
-    if (strcmp(op, "begin_v2") == 0) {
-        return ble_firmware_ota_v2_handle_begin_json(json);
-    }
-    if (strcmp(op, "resume_v2") == 0) {
-        return ble_firmware_ota_v2_handle_resume_json(json);
-    }
-    if (strcmp(op, "sync_v2") == 0) {
-        ble_firmware_ota_v2_sync_status();
-        return 0;
-    }
-    if (strcmp(op, "finish_v2") == 0) {
-        return ble_firmware_ota_v2_handle_finish();
-    }
-    if (strcmp(op, "abort_v2") == 0) {
-        firmware_ota_abort(DIAG_OTA_ABORT_BLE_CONTROL);
-        ble_firmware_ota_v2_reset();
-        ESP_LOGW(TAG, "OTA v2 JSON control abort requested");
-        return 0;
+    if (ble_hid_gap_active_connection_applied == NULL ||
+        ble_hid_gap_active_connection_applied()) {
+        if (!s_active_link_confirmed) {
+            ESP_LOGI(TAG, "Denzic OTA v1 active BLE link confirmed");
+        }
+        s_active_link_confirmed = true;
+        denzic_ota_v1_set_status_flags(
+            &s_ota,
+            DENZIC_OTA_V1_STATUS_FLAG_ACTIVE_LINK_CONFIRMED);
+        return;
     }
 
-    ESP_LOGW(TAG, "OTA control unknown op=%s", op);
-    return BLE_ATT_ERR_UNLIKELY;
+    denzic_ota_v1_set_status_flags(&s_ota, 0);
+    TickType_t now = xTaskGetTickCount();
+    if (s_active_link_retry_tick != 0 &&
+        !ble_firmware_ota_tick_reached(now, s_active_link_retry_tick)) {
+        return;
+    }
+
+    s_active_link_retry_tick = now + pdMS_TO_TICKS(BLE_FIRMWARE_OTA_ACTIVE_LINK_RETRY_MS);
+    if (ble_hid_gap_schedule_active_connection != NULL ||
+        ble_hid_gap_request_active_connection != NULL) {
+        esp_err_t ret = ble_hid_gap_schedule_active_connection != NULL
+            ? ble_hid_gap_schedule_active_connection()
+            : ble_hid_gap_request_active_connection();
+        ESP_LOGI(TAG, "Denzic OTA v1 active BLE link pending ret=%s", esp_err_to_name(ret));
+    }
+}
+
+static void ble_firmware_ota_sync_status(void)
+{
+    ble_firmware_ota_update_active_link();
+    firmware_ota_status_t status = firmware_ota_get_status();
+    if (s_ota.state == DENZIC_OTA_V1_STATE_RECEIVING && status.active) {
+        s_ota.bytes_written = (uint32_t)status.bytes_written;
+        s_ota.expected_size = (uint32_t)status.expected_size;
+    }
+}
+
+static int ble_firmware_ota_append_status(struct os_mbuf *om)
+{
+    uint8_t status[DENZIC_OTA_V1_STATUS_BYTES];
+    ble_firmware_ota_sync_status();
+    size_t length = denzic_ota_v1_encode_status(&s_ota, status, sizeof(status));
+    if (length == 0) {
+        return BLE_ATT_ERR_UNLIKELY;
+    }
+    return os_mbuf_append(om, status, length) == 0 ? 0 : BLE_ATT_ERR_INSUFFICIENT_RES;
 }
 
 static int ble_firmware_ota_handle_control_write(struct os_mbuf *om)
 {
-    uint8_t raw[BLE_FIRMWARE_OTA_CONTROL_MAX_BYTES + 1];
-    uint16_t len = 0;
-    int att_err = ble_firmware_ota_copy_mbuf(om, raw, BLE_FIRMWARE_OTA_CONTROL_MAX_BYTES, &len);
-    if (att_err != 0) {
-        return att_err;
+    uint8_t control[DENZIC_OTA_V1_CONTROL_BYTES];
+    uint16_t length = 0;
+    int att_error = ble_firmware_ota_copy_mbuf(om, control, sizeof(control), &length);
+    if (att_error != 0) {
+        return att_error;
     }
-    raw[len] = '\0';
-    return ble_firmware_ota_handle_control_json((const char *)raw);
-}
 
-static bool ble_firmware_ota_v2_control_mbuf_has_magic(struct os_mbuf *om)
-{
-    uint8_t raw[BLE_FIRMWARE_OTA_V2_CONTROL_SIZE];
-    uint16_t len = 0;
-    return ble_firmware_ota_copy_mbuf(om, raw, sizeof(raw), &len) == 0 &&
-           ble_firmware_ota_v2_has_magic(raw, len);
+    bool accepted = denzic_ota_v1_handle_control(&s_ota, control, length);
+    ble_firmware_ota_update_active_link();
+    if (!accepted) {
+        ESP_LOGW(
+            TAG,
+            "Denzic OTA v1 control rejected op=%u error=%u len=%u",
+            length > 4 ? control[4] : 0,
+            s_ota.last_error,
+            length);
+        return ble_firmware_ota_att_error_from_core();
+    }
+    return 0;
 }
 
 static int ble_firmware_ota_handle_data_write(struct os_mbuf *om)
 {
-    uint16_t len = OS_MBUF_PKTLEN(om);
-    if (len == 0) {
-        return BLE_ATT_ERR_INVALID_ATTR_VALUE_LEN;
-    }
-
-    uint8_t buffer[BLE_FIRMWARE_OTA_DATA_MAX_BYTES + 1];
-    int att_err = ble_firmware_ota_copy_mbuf(om, buffer, sizeof(buffer) - 1, &len);
-    if (att_err != 0) {
+    uint8_t data[BLE_FIRMWARE_OTA_DATA_MAX_BYTES];
+    uint16_t length = 0;
+    int att_error = ble_firmware_ota_copy_mbuf(om, data, sizeof(data), &length);
+    if (att_error != 0) {
         firmware_ota_abort(DIAG_OTA_ABORT_BLE_WRITE_FAIL);
-        return att_err;
-    }
-    buffer[len] = '\0';
-
-    if (len <= BLE_FIRMWARE_OTA_CONTROL_MAX_BYTES &&
-        buffer[0] == '{' &&
-        strstr((const char *)buffer, "\"op\"") != NULL) {
-        return ble_firmware_ota_handle_control_json((const char *)buffer);
-    }
-    if (s_v2.state == BLE_FIRMWARE_OTA_V2_STATE_RECEIVING) {
-        return ble_firmware_ota_v2_handle_data_write(om);
+        return att_error;
     }
 
-    esp_err_t ret = firmware_ota_write(buffer, len);
-    if (ret != ESP_OK) {
-        ESP_LOGE(TAG, "OTA data write failed len=%u ret=%s", len, esp_err_to_name(ret));
-        firmware_ota_abort(DIAG_OTA_ABORT_BLE_WRITE_FAIL);
-        return ble_firmware_ota_att_error_from_esp(ret);
+    ble_firmware_ota_sync_status();
+    if (!denzic_ota_v1_handle_data(&s_ota, data, length)) {
+        return ble_firmware_ota_att_error_from_core();
     }
     return 0;
 }
 
-static int ble_firmware_ota_v2_handle_begin(const uint8_t *bytes, uint16_t length)
+static const char *ble_firmware_ota_compact_capabilities_if_needed(
+    uint16_t conn_handle,
+    const char *value)
 {
-    if (length < BLE_FIRMWARE_OTA_V2_CONTROL_SIZE) {
-        ble_firmware_ota_v2_set_error(BLE_FIRMWARE_OTA_V2_ERROR_BAD_SIZE);
-        return BLE_ATT_ERR_INVALID_ATTR_VALUE_LEN;
+    if (value == NULL) {
+        return "";
     }
-
-    size_t expected_size = ble_firmware_ota_v2_read_u32_le(&bytes[8]);
-    uint16_t chunk_payload_bytes = ble_firmware_ota_v2_read_u16_le(&bytes[12]);
-    uint16_t window_chunks = ble_firmware_ota_v2_read_u16_le(&bytes[14]);
-    if (expected_size == 0 ||
-        chunk_payload_bytes == 0 ||
-        chunk_payload_bytes > BLE_FIRMWARE_OTA_V2_DATA_PAYLOAD_MAX) {
-        ble_firmware_ota_v2_set_error(BLE_FIRMWARE_OTA_V2_ERROR_BAD_SIZE);
-        return BLE_ATT_ERR_INVALID_ATTR_VALUE_LEN;
+    uint16_t mtu = ble_att_mtu(conn_handle);
+    uint16_t value_max = mtu > 1 ? (uint16_t)(mtu - 1U) : 0U;
+    if (mtu <= BLE_ATT_MTU_DFLT && strlen(value) > value_max) {
+        return BLE_FIRMWARE_OTA_COMPACT_CAPABILITIES;
     }
-    if (window_chunks == 0) {
-        window_chunks = BLE_FIRMWARE_OTA_V2_DEFAULT_WINDOW_CHUNKS;
-    }
-
-    ble_firmware_ota_v2_reset();
-    s_v2.expected_size = expected_size;
-    s_v2.chunk_payload_bytes = chunk_payload_bytes;
-    s_v2.window_chunks = window_chunks;
-
-    esp_err_t ret = firmware_ota_begin(expected_size, "ble_ota_v2");
-    ESP_LOGI(TAG,
-             "OTA v2 control begin size=%u chunk=%u window=%u ret=%s",
-             (unsigned)expected_size,
-             (unsigned)chunk_payload_bytes,
-             (unsigned)window_chunks,
-             esp_err_to_name(ret));
-    if (ret != ESP_OK) {
-        ble_firmware_ota_v2_set_error(BLE_FIRMWARE_OTA_V2_ERROR_BEGIN_FAILED);
-        return ble_firmware_ota_att_error_from_esp(ret);
-    }
-
-    s_v2.state = BLE_FIRMWARE_OTA_V2_STATE_LINKING;
-    s_v2.last_error = BLE_FIRMWARE_OTA_V2_ERROR_NONE;
-    s_v2.active_link_retry_tick = 0;
-    ble_firmware_ota_v2_sync_status();
-    return 0;
-}
-
-static int ble_firmware_ota_v2_handle_finish(void)
-{
-    ble_firmware_ota_v2_sync_status();
-    if (s_v2.state != BLE_FIRMWARE_OTA_V2_STATE_RECEIVING) {
-        ble_firmware_ota_v2_set_error(BLE_FIRMWARE_OTA_V2_ERROR_BAD_STATE);
-        return BLE_ATT_ERR_UNLIKELY;
-    }
-    if (s_v2.expected_size == 0 || s_v2.bytes_written != s_v2.expected_size) {
-        ble_firmware_ota_v2_set_error(BLE_FIRMWARE_OTA_V2_ERROR_BAD_SIZE);
-        return BLE_ATT_ERR_INVALID_ATTR_VALUE_LEN;
-    }
-
-    esp_err_t ret = firmware_ota_finish(false);
-    ESP_LOGI(TAG, "OTA v2 control finish size=%u ret=%s", (unsigned)s_v2.expected_size, esp_err_to_name(ret));
-    if (ret != ESP_OK) {
-        ble_firmware_ota_v2_set_error(BLE_FIRMWARE_OTA_V2_ERROR_FINISH_FAILED);
-        return ble_firmware_ota_att_error_from_esp(ret);
-    }
-
-    s_v2.state = BLE_FIRMWARE_OTA_V2_STATE_COMPLETE;
-    s_v2.last_error = BLE_FIRMWARE_OTA_V2_ERROR_NONE;
-    ret = ble_firmware_ota_schedule_reboot();
-    if (ret != ESP_OK) {
-        ESP_LOGE(TAG, "OTA v2 reboot scheduling failed: %s", esp_err_to_name(ret));
-        ble_firmware_ota_v2_set_error(BLE_FIRMWARE_OTA_V2_ERROR_FINISH_FAILED);
-        firmware_ota_abort(DIAG_OTA_ABORT_BLE_CONTROL);
-        return ble_firmware_ota_att_error_from_esp(ret);
-    }
-    return 0;
-}
-
-static int ble_firmware_ota_v2_handle_control_write(struct os_mbuf *om)
-{
-    uint8_t raw[BLE_FIRMWARE_OTA_V2_CONTROL_SIZE];
-    uint16_t len = 0;
-    int att_err = ble_firmware_ota_copy_mbuf(om, raw, sizeof(raw), &len);
-    if (att_err != 0) {
-        return att_err;
-    }
-    if (!ble_firmware_ota_v2_has_magic(raw, len)) {
-        ble_firmware_ota_v2_set_error(BLE_FIRMWARE_OTA_V2_ERROR_BAD_MAGIC);
-        ESP_LOGW(TAG, "OTA v2 control bad magic/version len=%u", len);
-        return BLE_ATT_ERR_INVALID_ATTR_VALUE_LEN;
-    }
-
-    switch (raw[4]) {
-    case BLE_FIRMWARE_OTA_V2_OP_BEGIN:
-        return ble_firmware_ota_v2_handle_begin(raw, len);
-    case BLE_FIRMWARE_OTA_V2_OP_SYNC:
-        ble_firmware_ota_v2_sync_status();
-        return 0;
-    case BLE_FIRMWARE_OTA_V2_OP_FINISH:
-        return ble_firmware_ota_v2_handle_finish();
-    case BLE_FIRMWARE_OTA_V2_OP_ABORT:
-        firmware_ota_abort(DIAG_OTA_ABORT_BLE_CONTROL);
-        ble_firmware_ota_v2_reset();
-        ESP_LOGW(TAG, "OTA v2 control abort requested");
-        return 0;
-    default:
-        ble_firmware_ota_v2_set_error(BLE_FIRMWARE_OTA_V2_ERROR_BAD_MAGIC);
-        return BLE_ATT_ERR_UNLIKELY;
-    }
-}
-
-static int ble_firmware_ota_v2_handle_data_write(struct os_mbuf *om)
-{
-    uint16_t len = OS_MBUF_PKTLEN(om);
-    if (len <= BLE_FIRMWARE_OTA_V2_DATA_HEADER_SIZE) {
-        ble_firmware_ota_v2_set_error(BLE_FIRMWARE_OTA_V2_ERROR_BAD_SIZE);
-        return BLE_ATT_ERR_INVALID_ATTR_VALUE_LEN;
-    }
-    if (len > BLE_FIRMWARE_OTA_DATA_MAX_BYTES) {
-        ble_firmware_ota_v2_set_error(BLE_FIRMWARE_OTA_V2_ERROR_BAD_SIZE);
-        return BLE_ATT_ERR_INVALID_ATTR_VALUE_LEN;
-    }
-
-    uint8_t buffer[BLE_FIRMWARE_OTA_DATA_MAX_BYTES];
-    int att_err = ble_firmware_ota_copy_mbuf(om, buffer, sizeof(buffer), &len);
-    if (att_err != 0) {
-        firmware_ota_abort(DIAG_OTA_ABORT_BLE_WRITE_FAIL);
-        ble_firmware_ota_v2_set_error(BLE_FIRMWARE_OTA_V2_ERROR_FLASH_WRITE);
-        return att_err;
-    }
-    if (s_v2.state != BLE_FIRMWARE_OTA_V2_STATE_RECEIVING) {
-        ble_firmware_ota_v2_set_error(BLE_FIRMWARE_OTA_V2_ERROR_BAD_STATE);
-        return BLE_ATT_ERR_UNLIKELY;
-    }
-
-    uint32_t offset = ble_firmware_ota_v2_read_u32_le(buffer);
-    uint16_t payload_len = (uint16_t)(len - BLE_FIRMWARE_OTA_V2_DATA_HEADER_SIZE);
-    if (payload_len == 0 ||
-        payload_len > s_v2.chunk_payload_bytes ||
-        ((size_t)offset + payload_len) > s_v2.expected_size) {
-        ble_firmware_ota_v2_set_error(BLE_FIRMWARE_OTA_V2_ERROR_BAD_SIZE);
-        return BLE_ATT_ERR_INVALID_ATTR_VALUE_LEN;
-    }
-
-    ble_firmware_ota_v2_sync_status();
-    if (offset < s_v2.bytes_written) {
-        if (((size_t)offset + payload_len) <= s_v2.bytes_written) {
-            s_v2.data_write_count++;
-            return 0;
-        }
-        ble_firmware_ota_v2_set_recoverable_error(BLE_FIRMWARE_OTA_V2_ERROR_OFFSET_MISMATCH);
-        return 0;
-    }
-    if (offset != s_v2.bytes_written) {
-        ble_firmware_ota_v2_set_recoverable_error(BLE_FIRMWARE_OTA_V2_ERROR_OFFSET_MISMATCH);
-        return 0;
-    }
-
-    esp_err_t ret = firmware_ota_write(&buffer[BLE_FIRMWARE_OTA_V2_DATA_HEADER_SIZE], payload_len);
-    if (ret != ESP_OK) {
-        ESP_LOGE(TAG, "OTA v2 data write failed offset=%u len=%u ret=%s",
-                 (unsigned)offset,
-                 (unsigned)payload_len,
-                 esp_err_to_name(ret));
-        firmware_ota_abort(DIAG_OTA_ABORT_BLE_WRITE_FAIL);
-        ble_firmware_ota_v2_set_error(BLE_FIRMWARE_OTA_V2_ERROR_FLASH_WRITE);
-        return ble_firmware_ota_att_error_from_esp(ret);
-    }
-
-    s_v2.bytes_written += payload_len;
-    s_v2.data_write_count++;
-    s_v2.last_error = BLE_FIRMWARE_OTA_V2_ERROR_NONE;
-    return 0;
+    return value;
 }
 
 static int ble_firmware_ota_access(
@@ -829,66 +294,41 @@ static int ble_firmware_ota_access(
     void *arg)
 {
     (void)attr_handle;
-
     if (ctxt == NULL) {
         return BLE_ATT_ERR_UNLIKELY;
     }
 
     ble_firmware_ota_gatt_attr_t attr = (ble_firmware_ota_gatt_attr_t)(uintptr_t)arg;
     if (ctxt->op == BLE_GATT_ACCESS_OP_READ_CHR) {
-        const char *value = NULL;
-        switch (attr) {
-        case BLE_FIRMWARE_OTA_GATT_ATTR_CONTROL:
-            if (s_v2.state != BLE_FIRMWARE_OTA_V2_STATE_IDLE) {
-                return ble_firmware_ota_v2_append_status(ctxt->om);
-            }
-            value = listener_device_get_factory_readiness();
-            break;
-        case BLE_FIRMWARE_OTA_GATT_ATTR_READINESS:
-            value = listener_device_get_factory_readiness();
-            break;
-        case BLE_FIRMWARE_OTA_GATT_ATTR_DATA:
-        case BLE_FIRMWARE_OTA_GATT_ATTR_CAPABILITIES:
-            value = listener_device_get_capabilities();
-            break;
-        case BLE_FIRMWARE_OTA_GATT_ATTR_V2_STATUS:
-            return ble_firmware_ota_v2_append_status(ctxt->om);
-        default:
-            return BLE_ATT_ERR_READ_NOT_PERMITTED;
+        if (attr == BLE_FIRMWARE_OTA_GATT_ATTR_STATUS) {
+            return ble_firmware_ota_append_status(ctxt->om);
         }
 
-        value = ble_firmware_ota_compact_read_value_if_needed(conn_handle, attr, value);
-        int rc = os_mbuf_append(ctxt->om, value, strlen(value));
-        if (rc != 0) {
-            return BLE_ATT_ERR_INSUFFICIENT_RES;
+        const char *value = NULL;
+        if (attr == BLE_FIRMWARE_OTA_GATT_ATTR_READINESS) {
+            value = listener_device_get_factory_readiness();
+        } else if (attr == BLE_FIRMWARE_OTA_GATT_ATTR_CAPABILITIES) {
+            value = ble_firmware_ota_compact_capabilities_if_needed(
+                conn_handle,
+                listener_device_get_capabilities());
+        } else {
+            return BLE_ATT_ERR_READ_NOT_PERMITTED;
         }
-        ESP_LOGI(TAG, "OTA identity read attr=%u value=%s", (unsigned)attr, value);
-        return 0;
+        return os_mbuf_append(ctxt->om, value, strlen(value)) == 0
+            ? 0
+            : BLE_ATT_ERR_INSUFFICIENT_RES;
     }
 
     if (ctxt->op != BLE_GATT_ACCESS_OP_WRITE_CHR) {
         return BLE_ATT_ERR_WRITE_NOT_PERMITTED;
     }
-
-    switch (attr) {
-    case BLE_FIRMWARE_OTA_GATT_ATTR_CONTROL:
-        if (ble_firmware_ota_v2_control_mbuf_has_magic(ctxt->om)) {
-            return ble_firmware_ota_v2_handle_control_write(ctxt->om);
-        }
+    if (attr == BLE_FIRMWARE_OTA_GATT_ATTR_CONTROL) {
         return ble_firmware_ota_handle_control_write(ctxt->om);
-    case BLE_FIRMWARE_OTA_GATT_ATTR_DATA:
-        return ble_firmware_ota_handle_data_write(ctxt->om);
-    case BLE_FIRMWARE_OTA_GATT_ATTR_V2_CONTROL:
-        return ble_firmware_ota_v2_handle_control_write(ctxt->om);
-    case BLE_FIRMWARE_OTA_GATT_ATTR_V2_DATA:
-        return ble_firmware_ota_v2_handle_data_write(ctxt->om);
-    case BLE_FIRMWARE_OTA_GATT_ATTR_READINESS:
-    case BLE_FIRMWARE_OTA_GATT_ATTR_CAPABILITIES:
-    case BLE_FIRMWARE_OTA_GATT_ATTR_V2_STATUS:
-        return BLE_ATT_ERR_WRITE_NOT_PERMITTED;
-    default:
-        return BLE_ATT_ERR_UNLIKELY;
     }
+    if (attr == BLE_FIRMWARE_OTA_GATT_ATTR_DATA) {
+        return ble_firmware_ota_handle_data_write(ctxt->om);
+    }
+    return BLE_ATT_ERR_WRITE_NOT_PERMITTED;
 }
 
 static const struct ble_gatt_svc_def s_ota_svcs[] = {
@@ -896,18 +336,6 @@ static const struct ble_gatt_svc_def s_ota_svcs[] = {
         .type = BLE_GATT_SVC_TYPE_PRIMARY,
         .uuid = &s_service_uuid.u,
         .characteristics = (struct ble_gatt_chr_def[]) {
-            {
-                .uuid = &s_control_uuid.u,
-                .access_cb = ble_firmware_ota_access,
-                .flags = BLE_GATT_CHR_F_READ | BLE_GATT_CHR_F_WRITE,
-                .arg = (void *)(uintptr_t)BLE_FIRMWARE_OTA_GATT_ATTR_CONTROL,
-            },
-            {
-                .uuid = &s_data_uuid.u,
-                .access_cb = ble_firmware_ota_access,
-                .flags = BLE_GATT_CHR_F_READ | BLE_GATT_CHR_F_WRITE | BLE_GATT_CHR_F_WRITE_NO_RSP,
-                .arg = (void *)(uintptr_t)BLE_FIRMWARE_OTA_GATT_ATTR_DATA,
-            },
             {
                 .uuid = &s_readiness_uuid.u,
                 .access_cb = ble_firmware_ota_access,
@@ -921,22 +349,22 @@ static const struct ble_gatt_svc_def s_ota_svcs[] = {
                 .arg = (void *)(uintptr_t)BLE_FIRMWARE_OTA_GATT_ATTR_CAPABILITIES,
             },
             {
-                .uuid = &s_v2_control_uuid.u,
+                .uuid = &s_control_uuid.u,
                 .access_cb = ble_firmware_ota_access,
                 .flags = BLE_GATT_CHR_F_WRITE,
-                .arg = (void *)(uintptr_t)BLE_FIRMWARE_OTA_GATT_ATTR_V2_CONTROL,
+                .arg = (void *)(uintptr_t)BLE_FIRMWARE_OTA_GATT_ATTR_CONTROL,
             },
             {
-                .uuid = &s_v2_data_uuid.u,
+                .uuid = &s_data_uuid.u,
                 .access_cb = ble_firmware_ota_access,
                 .flags = BLE_GATT_CHR_F_WRITE | BLE_GATT_CHR_F_WRITE_NO_RSP,
-                .arg = (void *)(uintptr_t)BLE_FIRMWARE_OTA_GATT_ATTR_V2_DATA,
+                .arg = (void *)(uintptr_t)BLE_FIRMWARE_OTA_GATT_ATTR_DATA,
             },
             {
-                .uuid = &s_v2_status_uuid.u,
+                .uuid = &s_status_uuid.u,
                 .access_cb = ble_firmware_ota_access,
                 .flags = BLE_GATT_CHR_F_READ,
-                .arg = (void *)(uintptr_t)BLE_FIRMWARE_OTA_GATT_ATTR_V2_STATUS,
+                .arg = (void *)(uintptr_t)BLE_FIRMWARE_OTA_GATT_ATTR_STATUS,
             },
             {0},
         },
@@ -950,14 +378,12 @@ esp_err_t ble_firmware_ota_register_gatt(void)
         return ESP_OK;
     }
 
-    ble_firmware_ota_v2_reset();
-
+    ble_firmware_ota_core_init();
     int rc = ble_gatts_count_cfg(s_ota_svcs);
     if (rc != 0) {
         ESP_LOGE(TAG, "ble_gatts_count_cfg failed: rc=%d", rc);
         return ESP_FAIL;
     }
-
     rc = ble_gatts_add_svcs(s_ota_svcs);
     if (rc != 0) {
         ESP_LOGE(TAG, "ble_gatts_add_svcs failed: rc=%d", rc);
@@ -965,17 +391,23 @@ esp_err_t ble_firmware_ota_register_gatt(void)
     }
 
     s_registered = true;
-    ESP_LOGI(TAG, "firmware OTA GATT service registered");
+    ESP_LOGI(TAG, "Denzic OTA v1 GATT driver registered");
     return ESP_OK;
 }
 
 void ble_firmware_ota_on_gap_disconnect(uint16_t conn_handle)
 {
     (void)conn_handle;
-    if (!firmware_ota_suspend_for_resume(DIAG_OTA_ABORT_BLE_DISCONNECT)) {
-        firmware_ota_abort(DIAG_OTA_ABORT_BLE_DISCONNECT);
+    firmware_ota_abort(DIAG_OTA_ABORT_BLE_DISCONNECT);
+    ble_firmware_ota_core_init();
+}
+
+void ble_firmware_ota_on_firmware_abort(uint32_t reason)
+{
+    if (s_ota.state != DENZIC_OTA_V1_STATE_IDLE) {
+        ESP_LOGW(TAG, "Denzic OTA v1 session reset after firmware abort reason=%u", (unsigned)reason);
     }
-    ble_firmware_ota_v2_reset();
+    ble_firmware_ota_core_init();
 }
 
 void ble_firmware_ota_log_gatt_state(void)
@@ -985,18 +417,9 @@ void ble_firmware_ota_log_gatt_state(void)
     uint16_t control_val_handle = 0;
     uint16_t data_def_handle = 0;
     uint16_t data_val_handle = 0;
-    uint16_t readiness_def_handle = 0;
-    uint16_t readiness_val_handle = 0;
-    uint16_t capabilities_def_handle = 0;
-    uint16_t capabilities_val_handle = 0;
-    uint16_t v2_service_handle = 0;
-    uint16_t v2_control_def_handle = 0;
-    uint16_t v2_control_val_handle = 0;
-    uint16_t v2_data_def_handle = 0;
-    uint16_t v2_data_val_handle = 0;
-    uint16_t v2_status_def_handle = 0;
-    uint16_t v2_status_val_handle = 0;
-    int svc_rc = ble_gatts_find_svc(&s_service_uuid.u, &service_handle);
+    uint16_t status_def_handle = 0;
+    uint16_t status_val_handle = 0;
+    int service_rc = ble_gatts_find_svc(&s_service_uuid.u, &service_handle);
     int control_rc = ble_gatts_find_chr(
         &s_service_uuid.u,
         &s_control_uuid.u,
@@ -1007,38 +430,17 @@ void ble_firmware_ota_log_gatt_state(void)
         &s_data_uuid.u,
         &data_def_handle,
         &data_val_handle);
-    int readiness_rc = ble_gatts_find_chr(
+    int status_rc = ble_gatts_find_chr(
         &s_service_uuid.u,
-        &s_readiness_uuid.u,
-        &readiness_def_handle,
-        &readiness_val_handle);
-    int capabilities_rc = ble_gatts_find_chr(
-        &s_service_uuid.u,
-        &s_capabilities_uuid.u,
-        &capabilities_def_handle,
-        &capabilities_val_handle);
-    int v2_svc_rc = ble_gatts_find_svc(&s_service_uuid.u, &v2_service_handle);
-    int v2_control_rc = ble_gatts_find_chr(
-        &s_service_uuid.u,
-        &s_v2_control_uuid.u,
-        &v2_control_def_handle,
-        &v2_control_val_handle);
-    int v2_data_rc = ble_gatts_find_chr(
-        &s_service_uuid.u,
-        &s_v2_data_uuid.u,
-        &v2_data_def_handle,
-        &v2_data_val_handle);
-    int v2_status_rc = ble_gatts_find_chr(
-        &s_service_uuid.u,
-        &s_v2_status_uuid.u,
-        &v2_status_def_handle,
-        &v2_status_val_handle);
+        &s_status_uuid.u,
+        &status_def_handle,
+        &status_val_handle);
 
     ESP_LOGI(
         TAG,
-        "firmware OTA GATT state: registered=%u svc_rc=%d svc_handle=%u control_rc=%d control_def=%u control_val=%u data_rc=%d data_def=%u data_val=%u readiness_rc=%d readiness_def=%u readiness_val=%u capabilities_rc=%d capabilities_def=%u capabilities_val=%u v2_svc_rc=%d v2_svc_handle=%u v2_control_rc=%d v2_control_def=%u v2_control_val=%u v2_data_rc=%d v2_data_def=%u v2_data_val=%u v2_status_rc=%d v2_status_def=%u v2_status_val=%u",
+        "Denzic OTA v1 GATT state: registered=%u service_rc=%d service=%u control_rc=%d control_def=%u control_val=%u data_rc=%d data_def=%u data_val=%u status_rc=%d status_def=%u status_val=%u",
         s_registered,
-        svc_rc,
+        service_rc,
         service_handle,
         control_rc,
         control_def_handle,
@@ -1046,21 +448,7 @@ void ble_firmware_ota_log_gatt_state(void)
         data_rc,
         data_def_handle,
         data_val_handle,
-        readiness_rc,
-        readiness_def_handle,
-        readiness_val_handle,
-        capabilities_rc,
-        capabilities_def_handle,
-        capabilities_val_handle,
-        v2_svc_rc,
-        v2_service_handle,
-        v2_control_rc,
-        v2_control_def_handle,
-        v2_control_val_handle,
-        v2_data_rc,
-        v2_data_def_handle,
-        v2_data_val_handle,
-        v2_status_rc,
-        v2_status_def_handle,
-        v2_status_val_handle);
+        status_rc,
+        status_def_handle,
+        status_val_handle);
 }

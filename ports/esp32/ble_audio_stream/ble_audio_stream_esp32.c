@@ -2817,6 +2817,7 @@ bool ble_audio_stream_was_type_host_recently_seen(void)
 
 void ble_audio_stream_note_type_activity(const char *reason)
 {
+    bool ota_activity = reason != NULL && strcmp(reason, "TYPE:OTA") == 0;
     ble_audio_stream_note_type_host_seen(reason);
     if (!ble_audio_stream_type_activity_accepts_link(reason)) {
         return;
@@ -2828,9 +2829,13 @@ void ble_audio_stream_note_type_activity(const char *reason)
         power_manager_record_activity != NULL) {
         power_manager_record_activity("type_ready");
     }
-    ble_audio_stream_sync_power_manager_for_type_link(
-        true,
-        reason != NULL ? reason : "type_activity");
+    if (!ota_activity) {
+        ble_audio_stream_sync_power_manager_for_type_link(
+            true,
+            reason != NULL ? reason : "type_activity");
+    } else {
+        ESP_LOGI(TAG, "type OTA heartbeat accepted; OTA begin owns the deferred active-link request");
+    }
     ble_audio_stream_sync_status_led_for_type_link(
         reason != NULL ? reason : "type_activity");
 }
@@ -2914,19 +2919,9 @@ bool ble_audio_stream_consume_type_control_command(const char *command, const ch
 
     if (strcmp(command, "TYPE:OTA") == 0) {
         ble_audio_stream_note_type_activity(command);
-        if (ble_hid_gap_request_active_connection != NULL) {
-            esp_err_t ret = ble_hid_gap_request_active_connection();
-            ESP_LOGI(
-                TAG,
-                "type OTA active connection request source=%s ret=%s",
-                source != NULL ? source : "unknown",
-                esp_err_to_name(ret));
-        } else {
-            ESP_LOGW(TAG, "type OTA active connection request unavailable");
-        }
-        if (power_manager_record_activity != NULL) {
-            power_manager_record_activity("type_ota");
-        }
+        ESP_LOGI(TAG,
+                 "type OTA control accepted source=%s; waiting for OTA begin to schedule active link",
+                 source != NULL ? source : "unknown");
         return true;
     }
 

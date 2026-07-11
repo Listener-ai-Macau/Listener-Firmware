@@ -205,7 +205,7 @@ const char *listener_device_get_capabilities(void)
         listener_device_append_token(
             s_capabilities_str,
             sizeof(s_capabilities_str),
-            "ble_hid_keyboard;usb_serial_text;post_status;firmware_ota_v1;firmware_ota_v2;boot_safety_safe_mode;audio_disabled");
+            "ble_hid_keyboard;usb_serial_text;post_status;denzic_ota_v1;boot_safety_safe_mode;audio_disabled");
     } else {
         listener_device_append_token(
             s_capabilities_str,

@@ -136,7 +136,7 @@ foreach ($capability in @(
     "custom_keys_f13_f16",
     "custom_key_gestures_f13_f24",
     "post_status",
-    "firmware_ota_v1",
+    "denzic_ota_v1",
     "flash_16mb",
     "psram_8mb_octal"
 )) {

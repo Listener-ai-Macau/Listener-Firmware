@@ -94,6 +94,10 @@ static void ble_hid_gap_log_conn_desc(const char *context, uint16_t conn_handle)
 #define BLE_HID_GAP_LOW_POWER_LATENCY 9U
 #define BLE_HID_GAP_LOW_POWER_SUPERVISION_TIMEOUT 600U
 #define BLE_HID_GAP_PAIRING_PASSKEY 123456U
+#define BLE_HID_GAP_CONN_PARAM_COLLISION_BACKOFF_MS 4200U
+#define BLE_HID_GAP_CONN_PARAM_CONFIRM_TIMEOUT_MS 1500U
+#define BLE_HID_GAP_ACTIVE_REQUEST_DEFER_MS 750U
+#define BLE_HID_GAP_ACTIVE_REQUEST_TASK_STACK_BYTES 3072U
 
 static struct ble_hs_adv_fields s_adv_fields;
 static struct ble_hs_adv_fields s_scan_rsp_fields;
@@ -132,6 +136,9 @@ static uint16_t s_recovery_security_request_conn_handle = BLE_HS_CONN_HANDLE_NON
 static uint16_t s_recovery_security_failed_conn_handle = BLE_HS_CONN_HANDLE_NONE;
 static int64_t s_first_pairing_window_opened_at_ms = 0;
 static uint32_t s_last_conn_param_mode = 0;
+static TickType_t s_conn_param_retry_not_before_tick = 0;
+static TickType_t s_conn_param_request_pending_until_tick = 0;
+static bool s_active_connection_request_pending = false;
 static struct ble_gap_event_listener s_ble_hid_gap_event_listener;
 static bool s_ble_hid_gap_event_listener_registered = false;
 static uint16_t s_last_disconnect_event_conn_handle = BLE_HS_CONN_HANDLE_NONE;
@@ -168,11 +175,59 @@ static uint32_t ble_hid_gap_last_conn_param_mode(void)
     return mode;
 }
 
+static bool ble_hid_gap_tick_reached(TickType_t now, TickType_t target)
+{
+    return (int32_t)(now - target) >= 0;
+}
+
+static bool ble_hid_gap_conn_param_retry_is_deferred(void)
+{
+    TickType_t retry_not_before_tick = 0;
+    portENTER_CRITICAL(&s_ble_gap_state_lock);
+    retry_not_before_tick = s_conn_param_retry_not_before_tick;
+    portEXIT_CRITICAL(&s_ble_gap_state_lock);
+
+    return retry_not_before_tick != 0 &&
+           !ble_hid_gap_tick_reached(xTaskGetTickCount(), retry_not_before_tick);
+}
+
+static bool ble_hid_gap_conn_param_request_is_pending(void)
+{
+    uint32_t requested_mode = 0;
+    TickType_t pending_until_tick = 0;
+    portENTER_CRITICAL(&s_ble_gap_state_lock);
+    requested_mode = s_last_conn_param_mode;
+    pending_until_tick = s_conn_param_request_pending_until_tick;
+    portEXIT_CRITICAL(&s_ble_gap_state_lock);
+
+    return requested_mode != 0 && pending_until_tick != 0 &&
+           !ble_hid_gap_tick_reached(xTaskGetTickCount(), pending_until_tick);
+}
+
+static void ble_hid_gap_defer_conn_param_retry_after_collision(uint16_t conn_handle)
+{
+    TickType_t retry_not_before_tick =
+        xTaskGetTickCount() + pdMS_TO_TICKS(BLE_HID_GAP_CONN_PARAM_COLLISION_BACKOFF_MS);
+    portENTER_CRITICAL(&s_ble_gap_state_lock);
+    s_last_conn_param_mode = 0;
+    s_conn_param_retry_not_before_tick = retry_not_before_tick;
+    s_conn_param_request_pending_until_tick = 0;
+    portEXIT_CRITICAL(&s_ble_gap_state_lock);
+
+    ESP_LOGW(
+        TAG,
+        "connection parameter update collided with central procedure; deferring shared retry for %u ms conn=%u",
+        (unsigned)BLE_HID_GAP_CONN_PARAM_COLLISION_BACKOFF_MS,
+        conn_handle);
+}
+
 static void ble_hid_gap_clear_conn_param_mode(const char *reason)
 {
     portENTER_CRITICAL(&s_ble_gap_state_lock);
     uint32_t previous = s_last_conn_param_mode;
     s_last_conn_param_mode = 0;
+    s_conn_param_retry_not_before_tick = 0;
+    s_conn_param_request_pending_until_tick = 0;
     portEXIT_CRITICAL(&s_ble_gap_state_lock);
     if (previous != 0) {
         ESP_LOGW(TAG, "connection parameter mode cache cleared after %s: previous_mode=%u",
@@ -207,6 +262,8 @@ static void ble_hid_gap_set_connection_state(bool connected, uint16_t conn_handl
     }
     s_ble_gap_conn_handle = conn_handle;
     s_last_conn_param_mode = 0;
+    s_conn_param_retry_not_before_tick = 0;
+    s_conn_param_request_pending_until_tick = 0;
     portEXIT_CRITICAL(&s_ble_gap_state_lock);
 }
 
@@ -356,7 +413,7 @@ static void ble_hid_gap_log_adv_state(
 #define BLE_HID_GAP_SERVICE_CHANGED_NVS_NAMESPACE "ble_gap"
 #define BLE_HID_GAP_SERVICE_CHANGED_STATE_KEY "svcchg_fw"
 #define BLE_HID_GAP_RANDOM_IDENTITY_KEY "rnd_id"
-#define BLE_HID_GAP_GATT_SCHEMA_REV "ota_v2"
+#define BLE_HID_GAP_GATT_SCHEMA_REV "ota_v1"
 #define BLE_HID_GAP_SERVICE_CHANGED_START_HANDLE 0x0001
 #define BLE_HID_GAP_SERVICE_CHANGED_END_HANDLE 0xffff
 #define BLE_HID_GAP_RECOVERY_PAIRING_WINDOW_MS 120000LL
@@ -1255,7 +1312,13 @@ static esp_err_t ble_hid_gap_request_connection_params(
         itvl_min,
         itvl_max,
         latency);
-    if (last_mode == (uint32_t)mode && actual_params_match) {
+    if (actual_params_match) {
+        portENTER_CRITICAL(&s_ble_gap_state_lock);
+        if (s_ble_gap_connected && s_ble_gap_conn_handle == conn.conn_handle) {
+            s_last_conn_param_mode = (uint32_t)mode;
+            s_conn_param_request_pending_until_tick = 0;
+        }
+        portEXIT_CRITICAL(&s_ble_gap_state_lock);
         ESP_LOGI(
             TAG,
             "%s connection parameters already active: conn=%u preferred_itvl=%u-%u latency=%u timeout=%u mode=%u",
@@ -1268,17 +1331,27 @@ static esp_err_t ble_hid_gap_request_connection_params(
             (unsigned)mode);
         return ESP_OK;
     }
-    if (last_mode == (uint32_t)mode && !actual_params_match) {
-        ESP_LOGW(
+    if (ble_hid_gap_conn_param_retry_is_deferred()) {
+        ESP_LOGI(
             TAG,
-            "%s connection parameter request cache did not match current link; re-requesting: conn=%u preferred_itvl=%u-%u latency=%u timeout=%u mode=%u",
+            "%s connection parameter retry deferred after central transaction collision: conn=%u mode=%u",
             policy,
             conn.conn_handle,
-            itvl_min,
-            itvl_max,
-            latency,
-            supervision_timeout,
             (unsigned)mode);
+        return ESP_OK;
+    }
+    if (last_mode != 0 && ble_hid_gap_conn_param_request_is_pending()) {
+        ESP_LOGW(
+            TAG,
+            "%s connection parameter update pending confirmation: conn=%u requested_mode=%u desired_mode=%u",
+            policy,
+            conn.conn_handle,
+            (unsigned)last_mode,
+            (unsigned)mode);
+        return ESP_OK;
+    }
+    if (last_mode != 0) {
+        ble_hid_gap_clear_conn_param_mode("connection parameter confirmation timeout");
     }
 
     struct ble_gap_upd_params params = {
@@ -1294,6 +1367,9 @@ static esp_err_t ble_hid_gap_request_connection_params(
         portENTER_CRITICAL(&s_ble_gap_state_lock);
         if (s_ble_gap_connected && s_ble_gap_conn_handle == conn.conn_handle) {
             s_last_conn_param_mode = (uint32_t)mode;
+            s_conn_param_retry_not_before_tick = 0;
+            s_conn_param_request_pending_until_tick =
+                xTaskGetTickCount() + pdMS_TO_TICKS(BLE_HID_GAP_CONN_PARAM_CONFIRM_TIMEOUT_MS);
         }
         portEXIT_CRITICAL(&s_ble_gap_state_lock);
     }
@@ -1944,7 +2020,9 @@ nimble_hid_gap_event(struct ble_gap_event *event, void *arg)
         /* The central has updated the connection parameters. */
         ESP_LOGI(TAG, "connection updated; status=%d",
                 event->conn_update.status);
-        if (event->conn_update.status != 0) {
+        if (event->conn_update.status == BLE_HS_HCI_ERR(BLE_ERR_DIFF_TRANS_COLL)) {
+            ble_hid_gap_defer_conn_param_retry_after_collision(event->conn_update.conn_handle);
+        } else if (event->conn_update.status != 0) {
             ble_hid_gap_clear_conn_param_mode("connection update failed");
         }
         ble_hid_gap_log_conn_desc("connection updated", event->conn_update.conn_handle);
@@ -3380,8 +3458,64 @@ esp_err_t ble_hid_gap_request_active_connection(void)
         BLE_HID_GAP_ACTIVE_LATENCY,
         BLE_HID_GAP_ACTIVE_SUPERVISION_TIMEOUT,
         BLE_HID_CONN_PARAM_MODE_ACTIVE);
-    (void)ble_hid_gap_request_preferred_2m_phy("active audio");
+    if (params_ret == ESP_OK && ble_hid_gap_active_connection_applied()) {
+        (void)ble_hid_gap_request_preferred_2m_phy("active audio");
+    }
     return params_ret;
+}
+
+static void ble_hid_gap_active_connection_request_task(void *arg)
+{
+    (void)arg;
+    vTaskDelay(pdMS_TO_TICKS(BLE_HID_GAP_ACTIVE_REQUEST_DEFER_MS));
+
+    esp_err_t ret = ble_hid_gap_request_active_connection();
+    portENTER_CRITICAL(&s_ble_gap_state_lock);
+    s_active_connection_request_pending = false;
+    portEXIT_CRITICAL(&s_ble_gap_state_lock);
+
+    ESP_LOGI(TAG, "deferred active connection request completed ret=%s", esp_err_to_name(ret));
+    vTaskDelete(NULL);
+}
+
+esp_err_t ble_hid_gap_schedule_active_connection(void)
+{
+    ble_hid_gap_connection_snapshot_t conn =
+        ble_hid_gap_reconcile_connection_snapshot("deferred_active_request");
+    if (!conn.connected || conn.conn_handle == BLE_HS_CONN_HANDLE_NONE) {
+        return ESP_ERR_INVALID_STATE;
+    }
+
+    portENTER_CRITICAL(&s_ble_gap_state_lock);
+    bool already_pending = s_active_connection_request_pending;
+    if (!already_pending) {
+        s_active_connection_request_pending = true;
+    }
+    portEXIT_CRITICAL(&s_ble_gap_state_lock);
+    if (already_pending) {
+        return ESP_OK;
+    }
+
+    BaseType_t started = xTaskCreate(
+        ble_hid_gap_active_connection_request_task,
+        "ble_active_link",
+        BLE_HID_GAP_ACTIVE_REQUEST_TASK_STACK_BYTES,
+        NULL,
+        tskIDLE_PRIORITY + 2,
+        NULL);
+    if (started != pdPASS) {
+        portENTER_CRITICAL(&s_ble_gap_state_lock);
+        s_active_connection_request_pending = false;
+        portEXIT_CRITICAL(&s_ble_gap_state_lock);
+        ESP_LOGW(TAG, "deferred active connection request task could not start");
+        return ESP_ERR_NO_MEM;
+    }
+
+    ESP_LOGI(TAG,
+             "deferred active connection request scheduled: conn=%u delay_ms=%u",
+             conn.conn_handle,
+             (unsigned)BLE_HID_GAP_ACTIVE_REQUEST_DEFER_MS);
+    return ESP_OK;
 }
 
 bool ble_hid_gap_active_connection_applied(void)

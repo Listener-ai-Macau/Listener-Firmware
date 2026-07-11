@@ -41,7 +41,7 @@ function Invoke-ListenerTypeRustOtaProbe {
     $output = & cargo run --quiet --manifest-path $ManifestPath -- --probe-listener-ota-v2-gatt $timeoutMs 2>&1
     $exitCode = $LASTEXITCODE
     $outputLines = @($output | ForEach-Object { $_.ToString() })
-    $prefix = "listener_ota_v2_gatt_probe_json="
+    $prefix = "listener_ota_v1_gatt_probe_json="
     $jsonLine = $outputLines | Where-Object { $_.StartsWith($prefix) } | Select-Object -Last 1
     if ([string]::IsNullOrWhiteSpace($jsonLine)) {
         return [pscustomobject][ordered]@{
@@ -51,7 +51,7 @@ function Invoke-ListenerTypeRustOtaProbe {
             selected_service_source = "listener-type-rust-winrt"
             type_repo_root = $repoRoot
             type_exit_code = $exitCode
-            error = "Listener Type OTA v2 probe did not emit $prefix."
+            error = "Listener Type Denzic OTA v1 probe did not emit $prefix."
             type_output = $outputLines
         }
     }
@@ -68,7 +68,7 @@ function Invoke-ListenerTypeRustOtaProbe {
             selected_service_source = "listener-type-rust-winrt"
             type_repo_root = $repoRoot
             type_exit_code = $exitCode
-            error = "Listener Type OTA v2 probe emitted invalid JSON: $($_.Exception.Message)"
+            error = "Listener Type Denzic OTA v1 probe emitted invalid JSON: $($_.Exception.Message)"
             type_output = $outputLines
         }
     }
@@ -670,7 +670,7 @@ $probe.dis = @(
 
 $hasIdentity = @($probe.characteristics | Where-Object {
     $_.read_status -eq "Success" -and
-    ($_.value_utf8 -like "*fw_version=*" -or $_.value_utf8 -like "*firmware_ota_v1*")
+    ($_.value_utf8 -like "*fw_version=*" -or $_.value_utf8 -like "*denzic_ota_v1*")
 }).Count -gt 0
 $hasDisIdentity = @($probe.dis | Where-Object {
     $_.read_status -eq "Success" -and

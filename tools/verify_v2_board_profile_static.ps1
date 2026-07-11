@@ -202,7 +202,7 @@ foreach ($item in @(
     @($factoryPackage, "audio_control_uuid", "factory package audio control UUID"),
     @($factoryPackage, "ble_audio_control_v1", "factory package audio control capability"),
     @($factoryPackage, "board=voice-keyboard-v2-n16r8", "factory package V2 readiness token"),
-    @($factoryPackage, "firmware_ota_v1", "factory package OTA capability"),
+    @($factoryPackage, "denzic_ota_v1", "factory package OTA capability"),
     @($factoryPackage, "flash_16mb", "factory package flash capability"),
     @($factoryPackage, "psram_8mb_octal", "factory package PSRAM capability"),
     @($factoryPackage, "post_failure_behavior", "factory package POST failure diagnostic contract"),

@@ -897,7 +897,9 @@ static bool ble_hid_usb_command_is_passive_query(const char *line)
            strcmp(line, "LED:BUDGET") == 0 ||
            strcmp(line, "LED:PRIVACY") == 0 ||
            strcmp(line, "DEVICE:SETTINGS") == 0 ||
-           strcmp(line, "DEVICE:STATUS") == 0;
+           strcmp(line, "DEVICE:STATUS") == 0 ||
+           strcmp(line, "OTA:STATUS") == 0 ||
+           strcmp(line, "OTA:BLOCKER") == 0;
 }
 
 static bool ble_hid_usb_command_matches(const char *line, const char *command)
@@ -1092,6 +1094,9 @@ static bool ble_hid_dispatch_usb_command_line(const char *line)
     }
 
     if (strncmp(line, "~OTA:", strlen("~OTA:")) == 0) {
+        if (ble_hid_usb_command_is_passive_query(line)) {
+            return firmware_ota_consume_usb_command(line);
+        }
         power_manager_set_blocker(
             POWER_MANAGER_BLOCKER_FLASH_WRITE |
             POWER_MANAGER_BLOCKER_USB_COMMAND,
