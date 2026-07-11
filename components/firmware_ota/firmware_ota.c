@@ -14,6 +14,8 @@
 #include "esp_system.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
+#include "freertos/task.h"
+#include "freertos/timers.h"
 #include "listener_device.h"
 #include "nvs.h"
 #include "power_manager.h"
@@ -31,6 +33,8 @@ static const char *TAG = "firmware_ota";
 #define FIRMWARE_OTA_RESUME_SCHEMA 1U
 #define FIRMWARE_OTA_RESUME_SHA256_BYTES 32U
 #define FIRMWARE_OTA_RESUME_CHECKPOINT_BYTES (64U * 1024U)
+#define FIRMWARE_OTA_RESUME_IDLE_TIMEOUT_MS 5000U
+#define FIRMWARE_OTA_RESUME_IDLE_TASK_STACK_BYTES 2048U
 
 typedef struct {
     SemaphoreHandle_t mutex;
@@ -51,6 +55,9 @@ typedef struct {
     uint8_t resume_sha256[FIRMWARE_OTA_RESUME_SHA256_BYTES];
     bool resume_identity_valid;
     size_t resume_checkpoint_bytes;
+    TaskHandle_t resume_idle_task;
+    TimerHandle_t resume_idle_timer;
+    TickType_t last_transport_activity_tick;
 } firmware_ota_ctx_t;
 
 typedef struct {
@@ -62,6 +69,53 @@ typedef struct {
 } firmware_ota_resume_record_t;
 
 static firmware_ota_ctx_t s_ota;
+
+static void firmware_ota_lock(void);
+static void firmware_ota_unlock(void);
+static void firmware_ota_note_transport_activity(void);
+
+static void firmware_ota_resume_idle_timer_callback(TimerHandle_t timer)
+{
+    TaskHandle_t task = (TaskHandle_t)pvTimerGetTimerID(timer);
+    if (task != NULL) {
+        xTaskNotifyGive(task);
+    }
+}
+
+static void firmware_ota_resume_idle_task(void *arg)
+{
+    (void)arg;
+    const TickType_t timeout_ticks = pdMS_TO_TICKS(FIRMWARE_OTA_RESUME_IDLE_TIMEOUT_MS);
+
+    for (;;) {
+        (void)ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
+
+        firmware_ota_lock();
+        bool active = s_ota.active;
+        TickType_t last_activity = s_ota.last_transport_activity_tick;
+        firmware_ota_unlock();
+        if (!active || last_activity == 0) {
+            continue;
+        }
+
+        TickType_t elapsed = xTaskGetTickCount() - last_activity;
+        if (elapsed < timeout_ticks) {
+            TickType_t remaining = timeout_ticks - elapsed;
+            if (s_ota.resume_idle_timer != NULL) {
+                (void)xTimerChangePeriod(s_ota.resume_idle_timer, remaining, 0);
+            }
+            continue;
+        }
+
+        ESP_LOGW(
+            TAG,
+            "OTA transport idle for %u ms; preserving session for resume",
+            (unsigned)pdTICKS_TO_MS(elapsed));
+        if (!firmware_ota_suspend_for_resume(DIAG_OTA_ABORT_BLE_IDLE_TIMEOUT)) {
+            firmware_ota_abort(DIAG_OTA_ABORT_BLE_IDLE_TIMEOUT);
+        }
+    }
+}
 
 static void firmware_ota_lock(void)
 {
@@ -179,6 +233,22 @@ static void firmware_ota_reset_session_locked(void)
     memset(s_ota.resume_sha256, 0, sizeof(s_ota.resume_sha256));
     s_ota.resume_identity_valid = false;
     s_ota.resume_checkpoint_bytes = 0;
+    s_ota.last_transport_activity_tick = 0;
+}
+
+static void firmware_ota_note_transport_activity(void)
+{
+    TimerHandle_t timer = NULL;
+    firmware_ota_lock();
+    if (s_ota.active) {
+        s_ota.last_transport_activity_tick = xTaskGetTickCount();
+        timer = s_ota.resume_idle_timer;
+    }
+    firmware_ota_unlock();
+
+    if (timer != NULL && xTimerReset(timer, 0) != pdPASS) {
+        ESP_LOGW(TAG, "OTA resume idle timer arm failed");
+    }
 }
 
 static void firmware_ota_resume_clear_journal(void)
@@ -352,6 +422,31 @@ void firmware_ota_init(void)
         s_ota.mutex = xSemaphoreCreateMutex();
     }
 
+    if (s_ota.resume_idle_task == NULL) {
+        BaseType_t task_ok = xTaskCreate(
+            firmware_ota_resume_idle_task,
+            "ota_resume_idle",
+            FIRMWARE_OTA_RESUME_IDLE_TASK_STACK_BYTES,
+            NULL,
+            tskIDLE_PRIORITY + 1U,
+            &s_ota.resume_idle_task);
+        if (task_ok != pdPASS) {
+            s_ota.resume_idle_task = NULL;
+            ESP_LOGE(TAG, "OTA resume idle task creation failed");
+        }
+    }
+    if (s_ota.resume_idle_timer == NULL && s_ota.resume_idle_task != NULL) {
+        s_ota.resume_idle_timer = xTimerCreate(
+            "ota_resume_idle",
+            pdMS_TO_TICKS(FIRMWARE_OTA_RESUME_IDLE_TIMEOUT_MS),
+            pdFALSE,
+            s_ota.resume_idle_task,
+            firmware_ota_resume_idle_timer_callback);
+        if (s_ota.resume_idle_timer == NULL) {
+            ESP_LOGE(TAG, "OTA resume idle timer creation failed");
+        }
+    }
+
     firmware_ota_lock();
     s_ota.running_partition = esp_ota_get_running_partition();
     s_ota.boot_partition = esp_ota_get_boot_partition();
@@ -502,6 +597,7 @@ esp_err_t firmware_ota_begin(size_t image_size, const char *target_version)
     firmware_ota_log_event(DIAG_OTA_BEGIN, DIAG_SEV_INFO, partition, (uint32_t)image_size, 0, 0);
     firmware_ota_log_version_event(DIAG_OTA_BEGIN, partition);
     firmware_ota_set_runtime_active(true, 0, image_size, "ota_begin");
+    firmware_ota_note_transport_activity();
     return ESP_OK;
 }
 
@@ -595,6 +691,7 @@ esp_err_t firmware_ota_begin_or_resume(
             firmware_ota_log_partition_event(DIAG_OTA_PARTITION_UPDATE, partition);
             firmware_ota_log_event(DIAG_OTA_BEGIN, DIAG_SEV_INFO, partition, record.bytes_written, 0, 1);
             firmware_ota_set_runtime_active(true, record.bytes_written, image_size, "ota_resume");
+            firmware_ota_note_transport_activity();
             return ESP_OK;
         }
 
@@ -664,6 +761,8 @@ esp_err_t firmware_ota_write(const void *data, size_t size)
     }
     firmware_ota_unlock();
 
+    firmware_ota_note_transport_activity();
+
     if (checkpoint_due) {
         ret = firmware_ota_resume_store_journal(partition, expected_size, next_size, resume_sha256);
         if (ret == ESP_OK) {
@@ -682,6 +781,7 @@ esp_err_t firmware_ota_write(const void *data, size_t size)
 
 esp_err_t firmware_ota_finish(bool reboot_after_set_boot)
 {
+    firmware_ota_note_transport_activity();
     firmware_ota_lock();
     bool active = s_ota.active;
     esp_ota_handle_t handle = s_ota.handle;

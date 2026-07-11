@@ -235,9 +235,14 @@ static void ble_firmware_ota_v2_sync_status(void)
 {
     ble_firmware_ota_v2_await_active_link();
     firmware_ota_status_t status = firmware_ota_get_status();
-    if (s_v2.state == BLE_FIRMWARE_OTA_V2_STATE_RECEIVING && status.active) {
-        s_v2.bytes_written = status.bytes_written;
-        s_v2.expected_size = status.expected_size;
+    if (s_v2.state == BLE_FIRMWARE_OTA_V2_STATE_RECEIVING) {
+        if (!status.active) {
+            ESP_LOGI(TAG, "OTA v2 transport session is idle; waiting for resume request");
+            ble_firmware_ota_v2_reset();
+        } else {
+            s_v2.bytes_written = status.bytes_written;
+            s_v2.expected_size = status.expected_size;
+        }
     }
 }
 
