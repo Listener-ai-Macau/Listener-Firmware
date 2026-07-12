@@ -2644,10 +2644,13 @@ def main() -> int:
     if (
         "status_led_ble_recovery_window_elapsed_locked(now_ms)" not in recovery_block
         or "recovery_elapsed_ms" not in recovery_block
-        or "status_led_double_pulse_on(\n                              recovery_elapsed_ms,\n                              STATUS_LED_BLE_CONNECTED_FIND_TYPE_PERIOD_MS)" not in recovery_block
+        or "STATUS_LED_BLE_REPAIR_TO_RECOVERY_GAP_MS STATUS_LED_BLE_CONNECTED_FIND_TYPE_PERIOD_MS" not in status_led
+        or "recovery_elapsed_ms >= STATUS_LED_BLE_REPAIR_TO_RECOVERY_GAP_MS" not in recovery_block
+        or "recovery_elapsed_ms - STATUS_LED_BLE_REPAIR_TO_RECOVERY_GAP_MS" not in recovery_block
+        or "status_led_double_pulse_on(\n                    recovery_elapsed_ms - STATUS_LED_BLE_REPAIR_TO_RECOVERY_GAP_MS,\n                    STATUS_LED_BLE_CONNECTED_FIND_TYPE_PERIOD_MS)" not in recovery_block
         or "status_led_double_pulse_on(ble_elapsed_ms" in recovery_block
     ):
-        failures.append("status_led.c: BLE recovery window double-flash must use the recovery-window phase anchor, not ble_transition_ms")
+        failures.append("status_led.c: BLE recovery window must wait through a full dark rearm gap before its phase-anchored reconnect double-flash")
     if "STATUS_LED_EC11_REPAIR_BLINK_MIN_PERCENT 4U" not in status_led or \
        "STATUS_LED_EC11_REPAIR_BLINK_MAX_PERCENT 16U" not in status_led:
         failures.append("status_led.c: EC11 re-pair ring must keep the legacy blue base-and-peak double-flash")

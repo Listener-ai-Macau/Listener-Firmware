@@ -345,8 +345,8 @@ Assert-Contains $statusLed 'static\s+bool\s+status_led_timed_output_active_locke
     "active BLE states must keep normal refresh until idle, independent of external power"
 Assert-Contains $statusLed 'static\s+uint32_t\s+status_led_ble_recovery_window_elapsed_locked\(uint32_t now_ms\)[\s\S]*?s_state\.ble_repair_cue_until_ms != 0U[\s\S]*?return now_ms - s_state\.ble_repair_cue_until_ms;[\s\S]*?return status_led_ble_elapsed_locked\(now_ms\);' `
     "recovery-window double flash must be phase-anchored after the repair cue, not reset by BLE state transitions"
-Assert-Contains $statusLed 'status_led_ble_recovery_window_active_locked\(now_ms\)[\s\S]*?const uint32_t recovery_elapsed_ms =[\s\S]*?status_led_ble_recovery_window_elapsed_locked\(now_ms\);[\s\S]*?status_led_double_pulse_on\(\s*recovery_elapsed_ms,\s*STATUS_LED_BLE_CONNECTED_FIND_TYPE_PERIOD_MS\s*\)[\s\S]*?STATUS_LED_BLE_RECONNECT_PULSE_PERCENT[\s\S]*?:\s*0U' `
-    "recovery-window reconnect cue must use the anchored recovery phase"
+Assert-Contains $statusLed 'status_led_ble_recovery_window_active_locked\(now_ms\)[\s\S]*?const uint32_t recovery_elapsed_ms =[\s\S]*?status_led_ble_recovery_window_elapsed_locked\(now_ms\);[\s\S]*?recovery_elapsed_ms >= STATUS_LED_BLE_REPAIR_TO_RECOVERY_GAP_MS[\s\S]*?status_led_double_pulse_on\(\s*recovery_elapsed_ms - STATUS_LED_BLE_REPAIR_TO_RECOVERY_GAP_MS,\s*STATUS_LED_BLE_CONNECTED_FIND_TYPE_PERIOD_MS\s*\)[\s\S]*?STATUS_LED_BLE_RECONNECT_PULSE_PERCENT[\s\S]*?:\s*0U' `
+    "recovery-window reconnect cue must wait through the post-cue dark gap before using the anchored recovery phase"
 Assert-Contains $statusLed 'const bool keep_repair_window = status_led_ble_repair_active_locked\(now_ms\)[\s\S]*?state == STATUS_LED_BLE_PAIRING \|\| state == STATUS_LED_BLE_RECONNECTING[\s\S]*?if \(!keep_repair_cue && !keep_repair_window\) \{[\s\S]*?s_state\.ble_repair_cue_started_ms = 0U;[\s\S]*?s_state\.ble_repair_cue_until_ms = 0U;' `
     "BLE state transitions during recovery must not clear the active repair cue/window timing anchor"
 Assert-NotContains $statusLed '!s_state\.external_power_present\s*&&\s*s_state\.ble_state != STATUS_LED_BLE_DISCONNECTED' `

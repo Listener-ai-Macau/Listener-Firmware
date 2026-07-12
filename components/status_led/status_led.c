@@ -110,6 +110,7 @@
 #define STATUS_LED_BLE_CONFIDENCE_MS 8000U
 #define STATUS_LED_BLE_REPAIR_CUE_MS 2700U
 #define STATUS_LED_BLE_REPAIR_CUE_LEAD_CLEAR_MS (STATUS_LED_IDLE_TRANSITION_CLEAR_MS + STATUS_LED_REFRESH_MS)
+#define STATUS_LED_BLE_REPAIR_TO_RECOVERY_GAP_MS STATUS_LED_BLE_CONNECTED_FIND_TYPE_PERIOD_MS
 #define STATUS_LED_BLE_REPAIR_WINDOW_MAX_MS 120000U
 #define STATUS_LED_OOBE_CONFIDENCE_MS 25000U
 #define STATUS_LED_ERROR_HOLD_MS 6000U
@@ -2707,9 +2708,12 @@ static void status_led_render_ble_locked(status_led_frame_t *frame, uint32_t now
     if (status_led_ble_recovery_window_active_locked(now_ms)) {
         const uint32_t recovery_elapsed_ms =
             status_led_ble_recovery_window_elapsed_locked(now_ms);
-        uint8_t percent = status_led_double_pulse_on(
-                              recovery_elapsed_ms,
-                              STATUS_LED_BLE_CONNECTED_FIND_TYPE_PERIOD_MS)
+        /* Do not let the long recovery renderer append a fourth double flash
+         * directly after the accepted three-cycle repair cue. */
+        uint8_t percent = recovery_elapsed_ms >= STATUS_LED_BLE_REPAIR_TO_RECOVERY_GAP_MS &&
+                status_led_double_pulse_on(
+                    recovery_elapsed_ms - STATUS_LED_BLE_REPAIR_TO_RECOVERY_GAP_MS,
+                    STATUS_LED_BLE_CONNECTED_FIND_TYPE_PERIOD_MS)
             ? STATUS_LED_BLE_RECONNECT_PULSE_PERCENT
             : 0U;
         color = status_led_token_relative_to_peak_locked(
