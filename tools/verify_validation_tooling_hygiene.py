@@ -137,6 +137,10 @@ def main() -> int:
         failures.append("tools/send_serial_and_capture.ps1: -CaptureSeconds must be explicitly mapped to CommandReadMs")
     if "--command-read-ms" not in serial_capture:
         failures.append("tools/send_serial_and_capture.ps1: must still delegate exact command read timing to serial_no_reset_capture.py")
+    if "Unfiltered DIAGLOG:LAST:" not in serial_capture or "DIAGLOG:LAST:N:source" not in serial_capture:
+        failures.append("tools/send_serial_and_capture.ps1: must reject watchdog-risky unfiltered diagnostic dumps and direct callers to bounded source tails")
+    if "^~?DIAGLOG:DUMP$" not in serial_capture or "-gt 128" not in serial_capture:
+        failures.append("tools/send_serial_and_capture.ps1: diagnostic safety gate must reject unbounded DUMP and unfiltered LAST tails above 128 events")
 
     ensure_ble = read(FIRMWARE_ROOT / "tools" / "ensure_ble_hid_connection.ps1")
     if "Microsoft.Windows.SDK.NET.dll" not in ensure_ble or "WinRT.Runtime.dll" not in ensure_ble:

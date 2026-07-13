@@ -30,6 +30,20 @@ if ($PSBoundParameters.ContainsKey("CaptureSeconds")) {
     }
 }
 
+$allCommands = @($Command | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
+if (-not [string]::IsNullOrWhiteSpace($CommandList)) {
+    $allCommands += @($CommandList -split ";;" | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
+}
+foreach ($serialCommand in $allCommands) {
+    $trimmed = $serialCommand.Trim()
+    if ($trimmed -match '^~?DIAGLOG:DUMP$') {
+        throw "Unbounded DIAGLOG:DUMP is unsafe during live validation. Use tools/dump_diag_log.ps1 explicitly, or request a bounded DIAGLOG:LAST:N:source tail."
+    }
+    if ($trimmed -match '^~?DIAGLOG:LAST:(\d+)$' -and [int]$Matches[1] -gt 128) {
+        throw "Unfiltered DIAGLOG:LAST:$($Matches[1]) can block firmware logging long enough to trigger the 5 s task watchdog. Use DIAGLOG:LAST:N:source (for example LAST:96:ble_gap) or N <= 128."
+    }
+}
+
 $helper = Join-Path $PSScriptRoot "serial_no_reset_capture.py"
 if (-not (Test-Path -LiteralPath $helper)) {
     throw "Missing no-reset serial helper: $helper"
