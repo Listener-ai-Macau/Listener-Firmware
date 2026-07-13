@@ -5004,13 +5004,12 @@ void status_led_set_ble_state(status_led_ble_state_t state, bool confidence_wind
         bool state_changed = s_state.ble_state != state;
         changed = state_changed;
         /* During recovery the BLE pairing window may live much longer than the
-         * user confirmation cue. Keep the 2.7s BLE+EC11 cue alive across the
-         * expected PAIRING/RECONNECTING/CONNECTED/TYPE_READY transitions, but
-         * allow a secure connection to close the long recovery window. */
+         * user confirmation cue. The bond reset intentionally disconnects the
+         * old link, so keep the fixed BLE+EC11 cue across every expected state
+         * transition until its bounded duration elapses. */
         const bool keep_repair_window = status_led_ble_repair_active_locked(now_ms) &&
             (state == STATUS_LED_BLE_PAIRING || state == STATUS_LED_BLE_RECONNECTING);
-        const bool keep_repair_cue = status_led_ble_repair_cue_active_locked(now_ms) &&
-            state != STATUS_LED_BLE_DISCONNECTED;
+        const bool keep_repair_cue = status_led_ble_repair_cue_active_locked(now_ms);
         if (state == STATUS_LED_BLE_REPAIRING) {
             status_led_start_ble_repair_locked(now_ms);
             changed = true;
@@ -5024,7 +5023,7 @@ void status_led_set_ble_state(status_led_ble_state_t state, bool confidence_wind
                 s_state.ble_repair_cue_until_ms = 0U;
             }
         }
-        if (state == STATUS_LED_BLE_DISCONNECTED) {
+        if (state == STATUS_LED_BLE_DISCONNECTED && !keep_repair_cue) {
             s_state.ble_repair_until_ms = 0U;
             s_state.ble_repair_cue_started_ms = 0U;
             s_state.ble_repair_cue_until_ms = 0U;
