@@ -885,6 +885,15 @@ static bool ble_hid_gap_close_recovery_for_type_audio(const char *reason, uint16
     if (!ble_hid_gap_recovery_pairing_window_open()) {
         return false;
     }
+    if (s_recovery_waiting_for_disconnect) {
+        ESP_LOGI(TAG,
+                 "recovery: ignoring Type audio ready on pre-reset connection reason=%s conn=%u; waiting for disconnect before pairing window can close",
+                 reason != NULL ? reason : "type_audio_ready",
+                 conn_handle);
+        diag_log(DIAG_SRC_BLE_GAP, DIAG_GAP_RECOVERY, DIAG_SEV_INFO,
+                 13, 1, 0, conn_handle);
+        return false;
+    }
 
     struct ble_gap_conn_desc desc;
     int rc = ble_gap_conn_find(conn_handle, &desc);
@@ -900,9 +909,11 @@ static bool ble_hid_gap_close_recovery_for_type_audio(const char *reason, uint16
     }
 
     ESP_LOGI(TAG,
-             "recovery: Type audio link ready; closing pairing window reason=%s conn=%u",
+             "recovery: Type audio link ready on secure connection; closing pairing window reason=%s conn=%u encrypted=%u bonded=%u",
              reason != NULL ? reason : "type_audio_ready",
-             conn_handle);
+             conn_handle,
+             desc.sec_state.encrypted,
+             desc.sec_state.bonded);
     diag_log(DIAG_SRC_BLE_GAP, DIAG_GAP_RECOVERY, DIAG_SEV_INFO,
              11, 0, 0, conn_handle);
     ble_hid_gap_close_recovery_pairing_window(
@@ -921,7 +932,11 @@ bool ble_hid_gap_note_type_audio_ready(const char *reason)
     if (s_ble_gap_conn_handle != BLE_HS_CONN_HANDLE_NONE) {
         struct ble_gap_conn_desc desc;
         int desc_rc = ble_gap_conn_find(s_ble_gap_conn_handle, &desc);
-        if (desc_rc == 0 && (desc.sec_state.encrypted || desc.sec_state.bonded)) {
+        const bool pairing_window_open = ble_hid_gap_recovery_pairing_window_open();
+        if (desc_rc == 0 &&
+            !s_recovery_waiting_for_disconnect &&
+            (desc.sec_state.encrypted || desc.sec_state.bonded) &&
+            (!pairing_window_open || desc.sec_state.bonded)) {
             ESP_LOGI(
                 TAG,
                 "type audio ready accepted on existing secure BLE connection reason=%s conn=%u encrypted=%u bonded=%u",
@@ -955,7 +970,7 @@ bool ble_hid_gap_note_type_audio_ready(const char *reason)
         diag_log(DIAG_SRC_BLE_GAP, DIAG_GAP_RECOVERY, DIAG_SEV_WARN,
                  19, 0, 0, s_ble_gap_conn_handle);
         if (!ble_hid_gap_recovery_pairing_window_open()) {
-            ble_hid_gap_open_recovery_pairing_window(true, false);
+            ble_hid_gap_open_recovery_pairing_window(true, true);
             if (!ble_gap_adv_active()) {
                 esp_err_t adv_ret = ble_hid_gap_start_advertising();
                 if (adv_ret != ESP_OK) {
@@ -3095,13 +3110,14 @@ static esp_err_t ble_hid_gap_forget_bonds_and_repair_inner(
     if (conn.connected && conn.conn_handle != BLE_HS_CONN_HANDLE_NONE) {
         s_recovery_waiting_for_disconnect = true;
         rc = ble_gap_terminate(conn.conn_handle, BLE_ERR_REM_USER_CONN_TERM);
-        if (rc == 0) {
+        if (rc == 0 || rc == BLE_HS_EALREADY) {
             ESP_LOGW(
                 TAG,
-                "recovery: active BLE connection terminating for re-pair; %s identity will advertise after disconnect and async local bond delete",
+                "recovery: active BLE connection %s for re-pair; %s identity will advertise after disconnect and async local bond delete",
+                rc == 0 ? "terminating" : "termination already in progress",
                 type_controlled_recovery ? "stable Type-controlled" : "rotated native Windows");
             diag_log(DIAG_SRC_BLE_GAP, DIAG_GAP_RECOVERY, DIAG_SEV_WARN,
-                     2, 0, (uint32_t)bonded_peer_count, conn.conn_handle);
+                     2, (uint32_t)rc, (uint32_t)bonded_peer_count, conn.conn_handle);
             return ESP_OK;
         }
         s_recovery_waiting_for_disconnect = false;

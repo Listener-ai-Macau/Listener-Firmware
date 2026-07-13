@@ -2942,6 +2942,23 @@ def main() -> int:
         recovery_connect_index,
     )
     recovery_helper_index = ble_hid_gap.find("static void ble_hid_gap_request_recovery_security_once")
+    recovery_audio_close_index = ble_hid_gap.find("static bool ble_hid_gap_close_recovery_for_type_audio")
+    recovery_audio_note_index = ble_hid_gap.find("bool ble_hid_gap_note_type_audio_ready", recovery_audio_close_index)
+    recovery_audio_pre_reset_guard_index = ble_hid_gap.find(
+        "if (s_recovery_waiting_for_disconnect)",
+        recovery_audio_close_index,
+        recovery_audio_note_index,
+    )
+    recovery_audio_pre_reset_log_index = ble_hid_gap.find(
+        "ignoring Type audio ready on pre-reset connection",
+        recovery_audio_close_index,
+        recovery_audio_note_index,
+    )
+    recovery_audio_silent_window_index = ble_hid_gap.find(
+        "ble_hid_gap_open_recovery_pairing_window(true, true);",
+        recovery_audio_note_index,
+        recovery_helper_index,
+    )
     recovery_helper_security_index = ble_hid_gap.find(
         "ble_gap_security_initiate(conn_handle)",
         recovery_helper_index,
@@ -2967,14 +2984,22 @@ def main() -> int:
         or recovery_helper_index < 0
         or not (recovery_helper_index < recovery_helper_log_index < recovery_connect_index)
         or recovery_helper_security_index >= 0
-        or "recovery: waiting for Windows pairing security" not in ble_hid_gap
-        or "recovery: security initiate requested" in ble_hid_gap
         or not (recovery_connect_index < recovery_led_index < recovery_request_log_index < recovery_request_index < normal_security_index)
         or (recovery_consume_index >= 0 and recovery_connect_index < recovery_consume_index < normal_security_index)
         or adv_connect_helper_index < 0
         or global_listener_index < 0
         or global_connect_helper_index < 0
         or 'ble_hid_gap_close_recovery_for_type_audio(' not in ble_hid_gap
+        or recovery_audio_close_index < 0
+        or recovery_audio_note_index < 0
+        or not (
+            recovery_audio_close_index
+            < recovery_audio_pre_reset_guard_index
+            < recovery_audio_pre_reset_log_index
+            < recovery_audio_note_index
+        )
+        or '!s_recovery_waiting_for_disconnect &&' not in ble_hid_gap[recovery_audio_note_index:recovery_helper_index]
+        or recovery_audio_silent_window_index < 0
         or 'case BLE_GAP_EVENT_PASSKEY_ACTION:' not in ble_hid_gap
         or 'passkey numeric comparison auto-accepted' not in ble_hid_gap
         or 'BLE_SM_IOACT_DISP' not in ble_hid_gap
@@ -2984,7 +3009,7 @@ def main() -> int:
         or 'ble_hid_gap_request_recovery_security_once(event->subscribe.conn_handle, "subscribe");' not in ble_hid_gap
         or "security initiate skipped: missing connection descriptor" not in ble_hid_gap
     ):
-        failures.append("ble_hid_gap_esp32.c: recovery connect must use the shared GAP CONNECT helper, let Windows own pairing SMP during the pairing window, keep MTU/subscribe idempotent checks, log passkey actions, and allow Type audio to close only after secure pairing")
+        failures.append("ble_hid_gap_esp32.c: recovery connect must let Windows PairAsync own SMP, keep MTU/subscribe idempotent checks, reject pre-reset Type audio, keep unbonded Type-ready recovery silent, log passkey actions, and close only after the new secure pairing")
     if 'status_led_notify_success("recording_stop_done")' in voice_recording_control:
         failures.append("voice_recording_control.c: recording STOP must not show OK before Type final success")
     if 'status_led_notify_success("recording_session_done")' in voice_recording_control:
