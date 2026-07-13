@@ -1524,6 +1524,29 @@ static void voice_recording_control_recovery(
     }
 }
 
+static void voice_recording_control_handle_fast_idle_ec11_start(uint32_t press_to_control_ms)
+{
+    voice_recording_state_t state_before = s_state;
+    bool pending_start_before = s_pending_start;
+
+    voice_recording_control_toggle("ec11.fast_idle");
+
+    bool suppress_fallback_hid =
+        s_state != state_before ||
+        s_pending_start != pending_start_before ||
+        s_state == VOICE_RECORDING_STATE_RECORDING;
+    voice_key_input_complete_fast_idle_recording_event(suppress_fallback_hid);
+    ESP_LOGI(
+        TAG,
+        "EC11 fast Idle recording dispatch: press_to_control_ms=%" PRIu32
+        " target_ms=50 fallback_hid_suppressed=%u state_before=%s state_after=%s pending=%u",
+        press_to_control_ms,
+        suppress_fallback_hid ? 1u : 0u,
+        voice_recording_state_name(state_before),
+        voice_recording_state_name(s_state),
+        s_pending_start ? 1u : 0u);
+}
+
 static void voice_recording_control_host_processing_start(const char *source)
 {
     voice_recording_control_note_ble_type_processing_activity(source, "host_processing_start");
@@ -1811,6 +1834,15 @@ static void voice_recording_control_task(void *parameter)
     while (1) {
         watchdog_platform_feed_current_task();
         if (voice_recording_control_lock()) {
+            uint32_t press_to_control_ms = 0;
+            if (voice_key_input_take_fast_idle_recording_event(&press_to_control_ms)) {
+                voice_recording_control_handle_fast_idle_ec11_start(press_to_control_ms);
+            }
+
+            if (voice_key_input_take_fast_idle_recording_cancel_event()) {
+                voice_recording_control_cancel("ec11.fast_idle_long_press");
+            }
+
             if (voice_key_input_take_toggle_event()) {
                 voice_recording_control_toggle(voice_key_input_get_active_source());
             }
@@ -1829,7 +1861,9 @@ static void voice_recording_control_task(void *parameter)
             voice_recording_control_unlock();
         }
 
-        vTaskDelay(pdMS_TO_TICKS(VOICE_RECORDING_CONTROL_SESSION_CHECK_MS));
+        (void)watchdog_platform_task_notify_take(
+            pdTRUE,
+            VOICE_RECORDING_CONTROL_SESSION_CHECK_MS);
     }
 }
 
@@ -1882,6 +1916,7 @@ esp_err_t voice_recording_control_start(void)
     if (task_ok != pdPASS) {
         return ESP_ERR_NO_MEM;
     }
+    voice_key_input_set_recording_control_task(s_task_handle);
 
     s_started = true;
     ESP_LOGI(

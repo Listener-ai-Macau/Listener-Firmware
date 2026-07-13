@@ -32,6 +32,7 @@
 #define DEVICE_SETTINGS_NVS_PLUGGED_AUTO_SHUTDOWN_MS_KEY "plug_shut"
 #define DEVICE_SETTINGS_NVS_BLE_NAME_KEY "ble_name"
 #define DEVICE_SETTINGS_NVS_KNOB_ROTATION_KEY "knob_rot"
+#define DEVICE_SETTINGS_NVS_EC11_FAST_RECORDING_KEY "ec11_rec"
 #define DEVICE_SETTINGS_USB_PREFIX "DEVICE:"
 #define DEVICE_SETTINGS_COMMAND_BUFFER_BYTES 192
 #define DEVICE_SETTINGS_LOW_POWER_IDLE_DISABLED_MS 0U
@@ -57,6 +58,7 @@ typedef struct {
     uint32_t plugged_auto_shutdown_ms;
     uint32_t battery_auto_shutdown_ms;
     uint8_t knob_rotation_action;
+    bool ec11_fast_recording_enabled;
     char ble_name[DEVICE_SETTINGS_BLE_NAME_MAX_LEN + 1];
 } device_settings_config_t;
 
@@ -92,6 +94,7 @@ static void device_settings_set_defaults_locked(void)
     s_settings.plugged_auto_shutdown_ms = DEVICE_SETTINGS_DEFAULT_PLUGGED_AUTO_SHUTDOWN_MS;
     s_settings.battery_auto_shutdown_ms = (uint32_t)CONFIG_POWER_MANAGER_HARDWARE_SHUTDOWN_MS;
     s_settings.knob_rotation_action = (uint8_t)EC11_ROTATION_ACTION_SYSTEM_VOLUME;
+    s_settings.ec11_fast_recording_enabled = DEVICE_SETTINGS_DEFAULT_EC11_FAST_RECORDING_ENABLED != 0;
     snprintf(s_settings.ble_name, sizeof(s_settings.ble_name), "%s", DEVICE_SETTINGS_DEFAULT_BLE_NAME);
 }
 
@@ -309,6 +312,13 @@ static esp_err_t device_settings_load_locked(void)
     }
     device_settings_note_nvs_read_locked(get_ret, &missing_saved_key);
 
+    uint8_t ec11_fast_recording = s_settings.ec11_fast_recording_enabled ? 1U : 0U;
+    get_ret = nvs_get_u8(nvs, DEVICE_SETTINGS_NVS_EC11_FAST_RECORDING_KEY, &ec11_fast_recording);
+    if (get_ret == ESP_OK) {
+        s_settings.ec11_fast_recording_enabled = ec11_fast_recording != 0U;
+    }
+    device_settings_note_nvs_read_locked(get_ret, &missing_saved_key);
+
     char name[DEVICE_SETTINGS_BLE_NAME_MAX_LEN + 1] = {0};
     size_t name_len = sizeof(name);
     get_ret = nvs_get_str(nvs, DEVICE_SETTINGS_NVS_BLE_NAME_KEY, name, &name_len);
@@ -416,6 +426,12 @@ static esp_err_t device_settings_persist_locked(bool loaded_from_nvs_after_persi
         ret = nvs_set_u8(nvs, DEVICE_SETTINGS_NVS_KNOB_ROTATION_KEY, s_settings.knob_rotation_action);
     }
     if (ret == ESP_OK) {
+        ret = nvs_set_u8(
+            nvs,
+            DEVICE_SETTINGS_NVS_EC11_FAST_RECORDING_KEY,
+            s_settings.ec11_fast_recording_enabled ? 1U : 0U);
+    }
+    if (ret == ESP_OK) {
         ret = nvs_commit(nvs);
     }
     nvs_close(nvs);
@@ -444,6 +460,7 @@ esp_err_t device_settings_init(void)
     uint32_t plugged_auto_shutdown_ms = DEVICE_SETTINGS_DEFAULT_PLUGGED_AUTO_SHUTDOWN_MS;
     uint32_t battery_auto_shutdown_ms = (uint32_t)CONFIG_POWER_MANAGER_HARDWARE_SHUTDOWN_MS;
     ec11_rotation_action_t knob_rotation_action = EC11_ROTATION_ACTION_SYSTEM_VOLUME;
+    bool ec11_fast_recording_enabled = DEVICE_SETTINGS_DEFAULT_EC11_FAST_RECORDING_ENABLED != 0;
     char ble_name[DEVICE_SETTINGS_BLE_NAME_MAX_LEN + 1];
     snprintf(ble_name, sizeof(ble_name), "%s", DEVICE_SETTINGS_DEFAULT_BLE_NAME);
     bool loaded_from_nvs = false;
@@ -463,6 +480,7 @@ esp_err_t device_settings_init(void)
             plugged_auto_shutdown_ms = s_settings.plugged_auto_shutdown_ms;
             battery_auto_shutdown_ms = s_settings.battery_auto_shutdown_ms;
             knob_rotation_action = device_settings_knob_rotation_action_locked();
+            ec11_fast_recording_enabled = s_settings.ec11_fast_recording_enabled;
             snprintf(ble_name, sizeof(ble_name), "%s", s_settings.ble_name);
             loaded_from_nvs = s_loaded_from_nvs;
         }
@@ -477,7 +495,7 @@ esp_err_t device_settings_init(void)
             " battery_low_power_idle_ms=%" PRIu32 " plugged_low_power_enabled=%u"
             " led_status=%u led_key=%u led_ec11=%u led_edge=%u"
             " plugged_auto_shutdown_ms=%" PRIu32 " battery_auto_shutdown_ms=%" PRIu32
-            " knob_rotation=%s ble_name=%s loaded_from_nvs=%u",
+            " knob_rotation=%s ec11_fast_recording=%u ble_name=%s loaded_from_nvs=%u",
             plugged_brightness,
             battery_brightness,
             plugged_low_power_idle_ms,
@@ -490,6 +508,7 @@ esp_err_t device_settings_init(void)
             plugged_auto_shutdown_ms,
             battery_auto_shutdown_ms,
             ec11_rotation_control_action_name(knob_rotation_action),
+            ec11_fast_recording_enabled ? 1u : 0u,
             ble_name,
             loaded_from_nvs ? 1u : 0u);
     } else {
@@ -516,6 +535,7 @@ void device_settings_get_snapshot(device_settings_snapshot_t *out_snapshot)
     out_snapshot->plugged_low_power_enabled = DEVICE_SETTINGS_DEFAULT_PLUGGED_LOW_POWER_ENABLED != 0;
     out_snapshot->plugged_auto_shutdown_ms = DEVICE_SETTINGS_DEFAULT_PLUGGED_AUTO_SHUTDOWN_MS;
     out_snapshot->battery_auto_shutdown_ms = (uint32_t)CONFIG_POWER_MANAGER_HARDWARE_SHUTDOWN_MS;
+    out_snapshot->ec11_fast_recording_enabled = DEVICE_SETTINGS_DEFAULT_EC11_FAST_RECORDING_ENABLED != 0;
     snprintf(out_snapshot->ble_name, sizeof(out_snapshot->ble_name), "%s", DEVICE_SETTINGS_DEFAULT_BLE_NAME);
 
     if (!device_settings_ensure_mutex()) {
@@ -536,6 +556,7 @@ void device_settings_get_snapshot(device_settings_snapshot_t *out_snapshot)
             out_snapshot->plugged_low_power_enabled = s_settings.plugged_low_power_enabled;
             out_snapshot->plugged_auto_shutdown_ms = s_settings.plugged_auto_shutdown_ms;
             out_snapshot->battery_auto_shutdown_ms = s_settings.battery_auto_shutdown_ms;
+            out_snapshot->ec11_fast_recording_enabled = s_settings.ec11_fast_recording_enabled;
             snprintf(out_snapshot->ble_name, sizeof(out_snapshot->ble_name), "%s", s_settings.ble_name);
             out_snapshot->ble_name_pending_restart = s_ble_name_pending_restart;
             out_snapshot->loaded_from_nvs = s_loaded_from_nvs;
@@ -635,6 +656,13 @@ bool device_settings_ble_name_pending_restart(void)
     return pending;
 }
 
+bool device_settings_get_ec11_fast_recording_enabled(void)
+{
+    device_settings_snapshot_t snapshot = {0};
+    device_settings_get_snapshot(&snapshot);
+    return snapshot.ec11_fast_recording_enabled;
+}
+
 void device_settings_mark_ble_name_applied(void)
 {
     if (!device_settings_ensure_mutex()) {
@@ -727,7 +755,7 @@ static void device_settings_print_status(const char *result)
         " plugged_low_power_enabled=%u"
          " auto_shutdown_ms=%" PRIu32
          " plugged_auto_shutdown_ms=%" PRIu32 " battery_auto_shutdown_ms=%" PRIu32
-         " auto_shutdown_enabled=%u auto_shutdown_mode=%s knob_rotation=%s"
+         " auto_shutdown_enabled=%u auto_shutdown_mode=%s knob_rotation=%s ec11_fast_recording=%u"
          " ble_name=\"%s\" ble_name_pending=%u ble_name_apply=%s"
         " loaded_from_nvs=%u external_power_present=%u usb_power_present=%u usb_serial_jtag_sof_active=%u"
         " charger_active=%u charge_power_present=%u charging=%u charge_full=%u"
@@ -754,6 +782,7 @@ static void device_settings_print_status(const char *result)
             ? (external_power_present ? "plugged" : "battery")
             : "disabled",
         ec11_rotation_control_action_name(ec11_rotation_control_get_action()),
+        snapshot.ec11_fast_recording_enabled ? 1u : 0u,
         snapshot.ble_name,
         snapshot.ble_name_pending_restart ? 1u : 0u,
         snapshot.ble_name_pending_restart ? "restart_ble_or_reboot" : "active_or_next_advertising",
@@ -1185,6 +1214,20 @@ static bool device_settings_apply_key_value(
         return true;
     }
 
+    if (strcmp(key, "ec11_fast_recording") == 0 ||
+        strcmp(key, "ec11_recording") == 0 ||
+        strcmp(key, "e11r") == 0) {
+        bool enabled = false;
+        if (!device_settings_parse_bool(value, &enabled)) {
+            if (out_reason != NULL) {
+                *out_reason = "ec11_fast_recording_must_be_0_or_1";
+            }
+            return false;
+        }
+        config->ec11_fast_recording_enabled = enabled;
+        return true;
+    }
+
     if (out_reason != NULL) {
         *out_reason = "unknown_key";
     }
@@ -1335,7 +1378,7 @@ esp_err_t device_settings_consume_control_command(const char *line)
     }
 
     if (strcmp(command, "HELP") == 0 || strcmp(command, "?") == 0) {
-        printf("~DEVICE:HELP commands=SETTINGS,STATUS,SET,RESET keys=led_status,led_key,led_ec11,led_edge,low_power_idle_ms,low_power_idle_minutes,plugged_low_power_idle_ms,plugged_low_power_idle_minutes,battery_low_power_idle_ms,battery_low_power_idle_minutes,plugged_low_power_enabled,auto_shutdown_ms,auto_shutdown_minutes,battery_auto_shutdown_ms,battery_auto_shutdown_minutes,ble_name,knob_rotation compact_set=1 compact_keys=ls,lk,l11,le,plm,blm,ple,bam legacy_keys=plugged_brightness,battery_brightness\n");
+        printf("~DEVICE:HELP commands=SETTINGS,STATUS,SET,RESET keys=led_status,led_key,led_ec11,led_edge,low_power_idle_ms,low_power_idle_minutes,plugged_low_power_idle_ms,plugged_low_power_idle_minutes,battery_low_power_idle_ms,battery_low_power_idle_minutes,plugged_low_power_enabled,auto_shutdown_ms,auto_shutdown_minutes,battery_auto_shutdown_ms,battery_auto_shutdown_minutes,ble_name,knob_rotation,ec11_fast_recording compact_set=1 compact_keys=ls,lk,l11,le,plm,blm,ple,bam,e11r legacy_keys=plugged_brightness,battery_brightness\n");
         fflush(stdout);
         return ESP_OK;
     }
