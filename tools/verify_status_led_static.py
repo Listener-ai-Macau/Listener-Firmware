@@ -3226,6 +3226,25 @@ def main() -> int:
         status_led,
     ):
         failures.append("status_led.c: EC11 clockwise trail must follow the corrected visual direction")
+    transition_clear_preserve_ec11 = extract_c_function(
+        status_led,
+        "status_led_transition_clear_mask_preserving_active_ec11_locked",
+    )
+    if (
+        "status_led_shutdown_confirm_active_locked(now_ms)" not in transition_clear_preserve_ec11
+        or "status_led_ec11_feedback_active_locked(now_ms)" not in transition_clear_preserve_ec11
+        or "STATUS_LED_TRANSITION_CLEAR_ALL_STRIPS" not in transition_clear_preserve_ec11
+        or "STATUS_LED_TRANSITION_CLEAR_EC11" not in transition_clear_preserve_ec11
+        or "STATUS_LED_TRANSITION_CLEAR_STATUS_ACCENTS" not in transition_clear_preserve_ec11
+    ):
+        failures.append(
+            "status_led.c: pending transition clears must preserve a live EC11 rotation or shutdown-confirm frame instead of transmitting an EC11 black frame"
+        )
+    transition_clear_render = extract_c_function(status_led, "status_led_render_transition_clear_locked")
+    if "status_led_transition_clear_mask_preserving_active_ec11_locked(" not in transition_clear_render:
+        failures.append(
+            "status_led.c: transition-clear rendering must apply the active-EC11 preservation mask before selecting strip writes"
+        )
     if "(!external_power_present && battery_display_band_changed)" not in status_led:
         failures.append("status_led.c: plugged/raw battery-percent jitter must not extend status windows")
     if "s_state.profile == STATUS_LED_PROFILE_STANDARD && now_ms < s_state.status_window_until_ms" in status_led:

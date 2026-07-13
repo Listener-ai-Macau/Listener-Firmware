@@ -2116,9 +2116,32 @@ static void status_led_force_transition_clear_locked(uint8_t mask)
     s_state.transition_clear_mask |= mask;
 }
 
+static uint8_t status_led_transition_clear_mask_preserving_active_ec11_locked(
+    uint8_t clear_mask,
+    uint32_t now_ms)
+{
+    if (!status_led_shutdown_confirm_active_locked(now_ms) &&
+        !status_led_ec11_feedback_active_locked(now_ms)) {
+        return clear_mask;
+    }
+
+    /* A queued idle clear must not put a live EC11 animation through an
+     * all-dark frame before its next render refresh. */
+    if ((clear_mask & STATUS_LED_TRANSITION_CLEAR_ALL_STRIPS) != 0U) {
+        clear_mask &= (uint8_t)~STATUS_LED_TRANSITION_CLEAR_ALL_STRIPS;
+        clear_mask |= STATUS_LED_TRANSITION_CLEAR_STATUS_ACCENTS |
+                      STATUS_LED_TRANSITION_CLEAR_BLE |
+                      STATUS_LED_TRANSITION_CLEAR_KEY |
+                      STATUS_LED_TRANSITION_CLEAR_EDGE;
+    }
+    return (uint8_t)(clear_mask & (uint8_t)~STATUS_LED_TRANSITION_CLEAR_EC11);
+}
+
 static bool status_led_render_transition_clear_locked(status_led_frame_t *frame, uint8_t *clear_mask_out)
 {
-    uint8_t clear_mask = s_state.transition_clear_mask;
+    uint8_t clear_mask = status_led_transition_clear_mask_preserving_active_ec11_locked(
+        s_state.transition_clear_mask,
+        status_led_now_ms());
     if (clear_mask == 0U) {
         return false;
     }
