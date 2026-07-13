@@ -220,12 +220,33 @@ static void voice_key_input_request_fast_idle_recording(
     const voice_key_button_state_t *button,
     const char *origin)
 {
-    if (button == NULL ||
-        !device_settings_get_ec11_fast_recording_enabled() ||
-        !voice_key_input_power_state_is_low_power_idle() ||
-        !ble_audio_stream_is_type_link_ready() ||
-        s_fast_idle_recording_event_sem == NULL ||
-        s_fast_idle_recording_hid_suppression_pending) {
+    if (button == NULL) {
+        return;
+    }
+
+    bool ec11_fast_recording_enabled =
+        device_settings_get_ec11_fast_recording_enabled();
+    bool low_power_idle = voice_key_input_power_state_is_low_power_idle();
+    bool type_link_ready = ble_audio_stream_is_type_link_ready();
+    bool event_queue_ready = s_fast_idle_recording_event_sem != NULL;
+    bool suppression_pending = s_fast_idle_recording_hid_suppression_pending;
+
+    if (!ec11_fast_recording_enabled ||
+        !low_power_idle ||
+        !type_link_ready ||
+        !event_queue_ready ||
+        suppression_pending) {
+        ESP_LOGI(
+            TAG,
+            "%s fast Idle recording skipped: origin=%s ec11_fast_recording=%u low_power_idle=%u type_link_ready=%u event_queue=%u suppression_pending=%u target_ms=%d",
+            button->label,
+            origin != NULL ? origin : "raw",
+            ec11_fast_recording_enabled ? 1u : 0u,
+            low_power_idle ? 1u : 0u,
+            type_link_ready ? 1u : 0u,
+            event_queue_ready ? 1u : 0u,
+            suppression_pending ? 1u : 0u,
+            VOICE_KEY_INPUT_FAST_IDLE_RECORDING_TARGET_MS);
         return;
     }
 
