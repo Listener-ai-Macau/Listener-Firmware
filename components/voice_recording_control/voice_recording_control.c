@@ -1473,6 +1473,18 @@ static void voice_recording_control_recovery(
         suppress_swift_pair_prompt ? 1u : 0u);
     voice_recording_control_log_device_status("recovery", "forget_pairing_and_clear_session");
 
+    if (source != NULL && strncmp(source, "ec11_", strlen("ec11_")) == 0 &&
+        ble_audio_stream_is_type_link_ready() &&
+        ble_audio_stream_was_type_host_recently_seen()) {
+        esp_err_t notice_ret = ble_audio_stream_send_type_recovery_notice();
+        if (notice_ret != ESP_OK) {
+            ESP_LOGW(
+                TAG,
+                "EC11 recovery notice could not reach Type before pairing reset: %s",
+                esp_err_to_name(notice_ret));
+        }
+    }
+
     if (audio_capture_session_is_active()) {
         esp_err_t cancel_ret = audio_capture_session_cancel();
         if (cancel_ret == ESP_OK) {

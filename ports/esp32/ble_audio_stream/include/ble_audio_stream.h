@@ -71,6 +71,7 @@ esp_err_t ble_audio_stream_send_session_error(
     uint32_t session_id,
     uint16_t expected_packet_count,
     uint16_t error_code);
+esp_err_t ble_audio_stream_send_type_recovery_notice(void);
 bool ble_audio_stream_is_ready(void);
 bool ble_audio_stream_is_type_link_ready(void);
 bool ble_audio_stream_is_type_led_ready(void);

@@ -86,6 +86,7 @@ extern esp_err_t ble_hid_gap_schedule_ota_reconnect(void) __attribute__((weak));
 #define BLE_AUDIO_STREAM_TYPE_LED_READY_HOLD_MS 12000
 #define BLE_AUDIO_STREAM_TYPE_HOST_SEEN_HOLD_MS 180000
 #define BLE_AUDIO_STREAM_TYPE_OTA_HEARTBEAT_TIMEOUT_MS 180000
+#define BLE_AUDIO_STREAM_TYPE_RECOVERY_NOTICE_TEXT "listener-ec11-recovery-v1"
 
 typedef enum {
     BLE_AUDIO_STREAM_JOB_TYPE_SESSION_START = 0,
@@ -3298,6 +3299,36 @@ esp_err_t ble_audio_stream_send_session_error(
             "session_error_enqueue_failed");
         return ESP_ERR_TIMEOUT;
     }
+    return ESP_OK;
+}
+
+esp_err_t ble_audio_stream_send_type_recovery_notice(void)
+{
+    static const uint8_t notice[] = BLE_AUDIO_STREAM_TYPE_RECOVERY_NOTICE_TEXT;
+    if (!s_started || !ble_audio_stream_transport_link_ready() || s_notify_attr_handle == 0) {
+        ESP_LOGW(TAG, "type recovery notice skipped: audio notify link is not ready");
+        return ESP_ERR_INVALID_STATE;
+    }
+
+    ble_audio_stream_link_snapshot_t link = ble_audio_stream_get_link_snapshot();
+    struct os_mbuf *om = ble_hs_mbuf_from_flat(notice, sizeof(notice) - 1U);
+    if (om == NULL) {
+        ESP_LOGW(TAG, "type recovery notice skipped: notify mbuf allocation failed");
+        return ESP_ERR_NO_MEM;
+    }
+
+    int rc = ble_gatts_notify_custom(link.conn_handle, s_notify_attr_handle, om);
+    if (rc != 0) {
+        os_mbuf_free_chain(om);
+        ESP_LOGW(TAG, "type recovery notice send failed: rc=%d", rc);
+        return ESP_FAIL;
+    }
+
+    ESP_LOGI(
+        TAG,
+        "type recovery notice sent before EC11 pairing reset: conn=%u epoch=%" PRIu32,
+        link.conn_handle,
+        link.connection_epoch);
     return ESP_OK;
 }
 
