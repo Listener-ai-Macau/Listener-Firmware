@@ -2565,18 +2565,39 @@ def main() -> int:
             )
     forbidden_voice_irq_tokens = [
         "GPIO_INTR_LOW_LEVEL)",
-        "xTaskGetTickCountFromISR",
         "gpio_get_level(",
         "portENTER_CRITICAL_ISR",
         "portEXIT_CRITICAL_ISR",
         "voice_key_input_record_recovery_event(",
         "voice_key_input_dispatch_custom_key_event(",
     ]
-    voice_isr_match = re.search(
-        r"static void IRAM_ATTR voice_key_input_direct_gpio_wake_from_isr[\s\S]*?\n\}",
-        voice_key,
+    voice_isr_signature = "static void IRAM_ATTR voice_key_input_direct_gpio_wake_from_isr"
+    voice_isr_start = voice_key.find(voice_isr_signature)
+    voice_isr_open_brace = voice_key.find("{", voice_isr_start) if voice_isr_start >= 0 else -1
+    voice_isr_end_brace = -1
+    if voice_isr_open_brace >= 0:
+        brace_depth = 0
+        for voice_isr_index in range(voice_isr_open_brace, len(voice_key)):
+            if voice_key[voice_isr_index] == "{":
+                brace_depth += 1
+            elif voice_key[voice_isr_index] == "}":
+                brace_depth -= 1
+                if brace_depth == 0:
+                    voice_isr_end_brace = voice_isr_index
+                    break
+    voice_isr_body = (
+        voice_key[voice_isr_start : voice_isr_end_brace + 1]
+        if voice_isr_start >= 0 and voice_isr_end_brace >= voice_isr_open_brace
+        else ""
     )
-    voice_isr_body = voice_isr_match.group(0) if voice_isr_match else ""
+    if not re.search(
+        r"s_direct_gpio_isr_tick\s*=\s*xTaskGetTickCountFromISR\(\);\s*"
+        r"s_direct_gpio_isr_edge_pending\s*=\s*true;",
+        voice_isr_body,
+    ) or voice_isr_body.count("xTaskGetTickCountFromISR") != 1:
+        failures.append(
+            "ports/esp32/voice_key_input/voice_key_input_esp32.c: EC11 ISR must capture exactly one edge timestamp before latching the task-context work"
+        )
     for token in forbidden_voice_irq_tokens:
         if token == "GPIO_INTR_LOW_LEVEL)":
             if "gpio_set_intr_type(VOICE_KEY_INPUT_DIRECT_GPIO, GPIO_INTR_LOW_LEVEL)" in voice_key:
@@ -2585,7 +2606,7 @@ def main() -> int:
                 )
         elif token in voice_isr_body:
             failures.append(
-                f"ports/esp32/voice_key_input/voice_key_input_esp32.c: EC11 push ISR must not do business logic ({token})"
+                f"ports/esp32/voice_key_input/voice_key_input_esp32.c: EC11 push ISR must remain a timestamped edge latch and task wake only ({token})"
             )
     if (
         "static uint32_t voice_key_input_elapsed_ms" not in voice_key
