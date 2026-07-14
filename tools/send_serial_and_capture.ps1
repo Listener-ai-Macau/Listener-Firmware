@@ -34,6 +34,12 @@ $allCommands = @($Command | Where-Object { -not [string]::IsNullOrWhiteSpace($_)
 if (-not [string]::IsNullOrWhiteSpace($CommandList)) {
     $allCommands += @($CommandList -split ";;" | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
 }
+$captureOnly = $allCommands.Count -eq 0 -and
+    $PSBoundParameters.ContainsKey("CaptureSeconds") -and
+    $CaptureSeconds -gt 0
+if ($allCommands.Count -eq 0 -and -not $captureOnly) {
+    throw "Provide -Command/-CommandList, or use -CaptureSeconds by itself for a bounded command-free capture."
+}
 foreach ($serialCommand in $allCommands) {
     $trimmed = $serialCommand.Trim()
     if ($trimmed -match '^~?DIAGLOG:DUMP$') {
@@ -68,6 +74,10 @@ $args = @(
 
 if ($KeepInputBetweenCommands.IsPresent) {
     $args += "--keep-input-between-commands"
+}
+
+if ($captureOnly) {
+    $args += @("--capture-only-ms", ([string]$CommandReadMs))
 }
 
 foreach ($cmd in @($Command | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })) {
