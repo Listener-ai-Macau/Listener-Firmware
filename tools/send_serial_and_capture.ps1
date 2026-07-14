@@ -36,16 +36,16 @@ if (-not [string]::IsNullOrWhiteSpace($CommandList)) {
 }
 foreach ($serialCommand in $allCommands) {
     $trimmed = $serialCommand.Trim()
+    if ($trimmed -match '^~?DIAGLOG:DUMP$') {
+        throw "Unbounded DIAGLOG:DUMP is unsafe during live validation. Use tools/dump_diag_log.ps1 explicitly, or request a bounded DIAGLOG:LAST:N:source tail."
+    }
+    if ($trimmed -match '^~?DIAGLOG:LAST:(\d+)$' -and [int]$Matches[1] -gt 128) {
+        throw "Unfiltered DIAGLOG:LAST:$($Matches[1]) can block firmware logging long enough to trigger the 5 s task watchdog. Use DIAGLOG:LAST:N:source (for example LAST:96:ble_gap) or N <= 128."
+    }
     # Control commands must never fall through to the HID text path.
     if ($trimmed -match '^(?i:(DIAGLOG|LED|POWER|DEVICE|OTA|BOARD|WDT|BOOT|VREC|EC11|KEY)(?::|$))' -and
         -not $trimmed.StartsWith('~')) {
         throw "Firmware control command '$trimmed' must start with '~'. Plain text is forwarded as HID input; use '~$trimmed' for the control plane."
-    }
-    if ($trimmed -match '^~DIAGLOG:DUMP$') {
-        throw "Unbounded DIAGLOG:DUMP is unsafe during live validation. Use tools/dump_diag_log.ps1 explicitly, or request a bounded DIAGLOG:LAST:N:source tail."
-    }
-    if ($trimmed -match '^~DIAGLOG:LAST:(\d+)$' -and [int]$Matches[1] -gt 128) {
-        throw "Unfiltered DIAGLOG:LAST:$($Matches[1]) can block firmware logging long enough to trigger the 5 s task watchdog. Use DIAGLOG:LAST:N:source (for example LAST:96:ble_gap) or N <= 128."
     }
 }
 
