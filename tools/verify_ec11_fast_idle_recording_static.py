@@ -38,6 +38,14 @@ CHECKS = {
         "nvs_set_u8(\n            nvs,\n            DEVICE_SETTINGS_NVS_EC11_FAST_RECORDING_KEY",
         'strcmp(key, "e11r") == 0',
         "ec11_fast_recording=",
+        "ble_hid_gap_set_ec11_fast_recording_enabled",
+        "s_settings.ec11_fast_recording_enabled",
+    ),
+    "ports/esp32/ble_hid_gap/ble_hid_gap_esp32.c": (
+        "s_ec11_fast_recording_armed",
+        "low-power idle connection retained active: e11r fast recording is armed",
+        "ble_hid_gap_set_ec11_fast_recording_enabled",
+        "power_manager_get_state() == POWER_MANAGER_STATE_CONNECTED_IDLE",
     ),
     "components/device_settings/include/device_settings.h": (
         "DEVICE_SETTINGS_DEFAULT_EC11_FAST_RECORDING_ENABLED 1",

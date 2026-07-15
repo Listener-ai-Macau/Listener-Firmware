@@ -13,6 +13,10 @@
 #include "nvs.h"
 #include "sdkconfig.h"
 
+extern void ble_hid_gap_set_ec11_fast_recording_enabled(
+    bool enabled,
+    const char *reason) __attribute__((weak));
+
 #ifndef CONFIG_POWER_MANAGER_HARDWARE_SHUTDOWN_MS
 #define CONFIG_POWER_MANAGER_HARDWARE_SHUTDOWN_MS 600000
 #endif
@@ -116,6 +120,11 @@ static void device_settings_apply_runtime_locked(const char *source)
     (void)ec11_rotation_control_set_action(
         device_settings_knob_rotation_action_locked(),
         source != NULL ? source : "device_settings");
+    if (ble_hid_gap_set_ec11_fast_recording_enabled != NULL) {
+        ble_hid_gap_set_ec11_fast_recording_enabled(
+            s_settings.ec11_fast_recording_enabled,
+            source != NULL ? source : "device_settings");
+    }
 }
 
 static bool device_settings_ensure_mutex(void)
@@ -489,6 +498,11 @@ esp_err_t device_settings_init(void)
 
     if (ret == ESP_OK) {
         (void)ec11_rotation_control_set_action(knob_rotation_action, "device_settings_init");
+        if (ble_hid_gap_set_ec11_fast_recording_enabled != NULL) {
+            ble_hid_gap_set_ec11_fast_recording_enabled(
+                ec11_fast_recording_enabled,
+                "device_settings_init");
+        }
         ESP_LOGI(
             TAG,
             "device settings: legacy_plugged_brightness=%u legacy_battery_brightness=%u plugged_low_power_idle_ms=%" PRIu32

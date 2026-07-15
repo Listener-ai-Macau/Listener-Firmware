@@ -95,11 +95,10 @@ static void ble_hid_gap_log_conn_desc(const char *context, uint16_t conn_handle)
 #define BLE_HID_GAP_LOW_POWER_SUPERVISION_TIMEOUT 600U
 #define BLE_HID_GAP_PAIRING_PASSKEY 123456U
 #define BLE_HID_GAP_CONN_PARAM_COLLISION_BACKOFF_MS 4200U
-#define BLE_HID_GAP_CONN_PARAM_CONFIRM_TIMEOUT_MS 1500U
 #define BLE_HID_GAP_ACTIVE_REQUEST_DEFER_MS 750U
 #define BLE_HID_GAP_ACTIVE_PROMOTION_RETRY_MS 50U
 #define BLE_HID_GAP_ACTIVE_PROMOTION_TIMEOUT_MS \
-    (BLE_HID_GAP_CONN_PARAM_COLLISION_BACKOFF_MS + BLE_HID_GAP_CONN_PARAM_CONFIRM_TIMEOUT_MS + 500U)
+    (BLE_HID_GAP_CONN_PARAM_COLLISION_BACKOFF_MS + 2000U)
 #define BLE_HID_GAP_ACTIVE_REQUEST_TASK_STACK_BYTES 3072U
 #define BLE_HID_GAP_OTA_RECONNECT_DEFER_MS 750U
 #define BLE_HID_GAP_OTA_RECONNECT_TASK_STACK_BYTES 3072U
@@ -145,6 +144,7 @@ static TickType_t s_conn_param_retry_not_before_tick = 0;
 static TickType_t s_conn_param_request_pending_until_tick = 0;
 static bool s_active_connection_request_pending = false;
 static bool s_active_connection_required = false;
+static bool s_ec11_fast_recording_armed = false;
 static bool s_ota_reconnect_request_pending = false;
 static struct ble_gap_event_listener s_ble_hid_gap_event_listener;
 static bool s_ble_hid_gap_event_listener_registered = false;
@@ -201,6 +201,14 @@ static bool ble_hid_gap_active_connection_required(void)
     return required;
 }
 
+static bool ble_hid_gap_ec11_fast_recording_armed(void)
+{
+    portENTER_CRITICAL(&s_ble_gap_state_lock);
+    bool armed = s_ec11_fast_recording_armed;
+    portEXIT_CRITICAL(&s_ble_gap_state_lock);
+    return armed;
+}
+
 static void ble_hid_gap_confirm_conn_param_update(uint16_t conn_handle)
 {
     portENTER_CRITICAL(&s_ble_gap_state_lock);
@@ -241,8 +249,7 @@ static bool ble_hid_gap_conn_param_request_is_pending(void)
     pending_until_tick = s_conn_param_request_pending_until_tick;
     portEXIT_CRITICAL(&s_ble_gap_state_lock);
 
-    return requested_mode != 0 && pending_until_tick != 0 &&
-           !ble_hid_gap_tick_reached(xTaskGetTickCount(), pending_until_tick);
+    return requested_mode != 0 && pending_until_tick != 0;
 }
 
 static void ble_hid_gap_defer_conn_param_retry_after_collision(uint16_t conn_handle)
@@ -1410,7 +1417,7 @@ static esp_err_t ble_hid_gap_request_connection_params(
         return ESP_OK;
     }
     if (last_mode != 0) {
-        ble_hid_gap_clear_conn_param_mode("connection parameter confirmation timeout");
+        ble_hid_gap_clear_conn_param_mode("connection parameters superseded by link state");
     }
 
     struct ble_gap_upd_params params = {
@@ -1427,8 +1434,10 @@ static esp_err_t ble_hid_gap_request_connection_params(
         if (s_ble_gap_connected && s_ble_gap_conn_handle == conn.conn_handle) {
             s_last_conn_param_mode = (uint32_t)mode;
             s_conn_param_retry_not_before_tick = 0;
-            s_conn_param_request_pending_until_tick =
-                xTaskGetTickCount() + pdMS_TO_TICKS(BLE_HID_GAP_CONN_PARAM_CONFIRM_TIMEOUT_MS);
+            /* NimBLE owns the actual transaction lifetime.  BLE_HS_EALREADY
+             * means its connection-update entry remains active, so wait for
+             * BLE_GAP_EVENT_CONN_UPDATE instead of racing a local timeout. */
+            s_conn_param_request_pending_until_tick = portMAX_DELAY;
         }
         portEXIT_CRITICAL(&s_ble_gap_state_lock);
     }
@@ -3517,6 +3526,13 @@ esp_err_t ble_hid_gap_request_reconnect(void)
 
 esp_err_t ble_hid_gap_request_low_power_connection(void)
 {
+    if (ble_hid_gap_ec11_fast_recording_armed()) {
+        ESP_LOGI(
+            TAG,
+            "low-power idle connection retained active: e11r fast recording is armed");
+        return ble_hid_gap_request_active_connection();
+    }
+
     ble_hid_gap_set_active_connection_required(false);
     return ble_hid_gap_request_connection_params(
         "low-power idle",
@@ -3568,10 +3584,15 @@ static void ble_hid_gap_active_connection_request_task(void *arg)
         pdMS_TO_TICKS(BLE_HID_GAP_ACTIVE_PROMOTION_TIMEOUT_MS);
     esp_err_t ret = ESP_OK;
     bool confirmed = false;
+    bool awaiting_gap_completion = false;
     while (ble_hid_gap_active_connection_required()) {
         ret = ble_hid_gap_request_active_connection_once();
         if (ret == ESP_OK && ble_hid_gap_active_connection_applied()) {
             confirmed = true;
+            break;
+        }
+        if (ble_hid_gap_conn_param_request_is_pending()) {
+            awaiting_gap_completion = true;
             break;
         }
         TickType_t now = xTaskGetTickCount();
@@ -3599,6 +3620,9 @@ static void ble_hid_gap_active_connection_request_task(void *arg)
                  BLE_HID_GAP_ACTIVE_ITVL_MIN,
                  BLE_HID_GAP_ACTIVE_ITVL_MAX,
                  BLE_HID_GAP_ACTIVE_LATENCY);
+    } else if (awaiting_gap_completion) {
+        ESP_LOGI(TAG,
+                 "active connection promotion awaiting GAP completion event");
     } else if (ble_hid_gap_active_connection_required()) {
         ESP_LOGW(TAG,
                  "active connection promotion timed out: ret=%s timeout_ms=%u",
@@ -3661,6 +3685,39 @@ esp_err_t ble_hid_gap_request_active_connection(void)
             "active request completed before parameters were applied");
     }
     return params_ret;
+}
+
+void ble_hid_gap_set_ec11_fast_recording_enabled(bool enabled, const char *reason)
+{
+    bool changed = false;
+    portENTER_CRITICAL(&s_ble_gap_state_lock);
+    changed = s_ec11_fast_recording_armed != enabled;
+    s_ec11_fast_recording_armed = enabled;
+    portEXIT_CRITICAL(&s_ble_gap_state_lock);
+
+    if (!changed) {
+        return;
+    }
+
+    ESP_LOGI(
+        TAG,
+        "e11r fast recording %s reason=%s",
+        enabled ? "armed" : "disarmed",
+        reason != NULL ? reason : "unspecified");
+
+    if (enabled) {
+        esp_err_t ret = ble_hid_gap_request_active_connection();
+        if (ret != ESP_OK && ret != ESP_ERR_INVALID_STATE) {
+            ESP_LOGW(TAG,
+                     "e11r fast recording arm could not request active connection: %s",
+                     esp_err_to_name(ret));
+        }
+        return;
+    }
+
+    if (power_manager_get_state() == POWER_MANAGER_STATE_CONNECTED_IDLE) {
+        (void)ble_hid_gap_request_low_power_connection();
+    }
 }
 
 esp_err_t ble_hid_gap_schedule_active_connection(void)

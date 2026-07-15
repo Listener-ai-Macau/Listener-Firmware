@@ -54,8 +54,13 @@ SOURCE_TOKENS = [
 
 GAP_SOURCE_TOKENS = [
     "s_active_connection_required",
+    "s_ec11_fast_recording_armed",
+    "ble_hid_gap_set_ec11_fast_recording_enabled",
+    "low-power idle connection retained active: e11r fast recording is armed",
     "BLE_HID_GAP_ACTIVE_PROMOTION_RETRY_MS 50U",
     "BLE_HID_GAP_ACTIVE_PROMOTION_TIMEOUT_MS",
+    "BLE_HS_EALREADY",
+    "active connection promotion awaiting GAP completion event",
     "ble_hid_gap_conn_param_retry_delay_ticks",
     "ble_hid_gap_set_active_connection_required(false)",
     "ble_hid_gap_confirm_conn_param_update",
@@ -109,17 +114,39 @@ def static_source_checks() -> None:
     require_regex(
         gap,
         r"ble_hid_gap_active_connection_request_task\(.*?while \(ble_hid_gap_active_connection_required\(\)\).*?"
+        r"ble_hid_gap_conn_param_request_is_pending\(\).*?"
+        r"awaiting_gap_completion\s*=\s*true.*?"
         r"ble_hid_gap_conn_param_retry_delay_ticks.*?"
         r"BLE_HID_GAP_ACTIVE_PROMOTION_RETRY_MS.*?"
         r"active connection promotion timed out",
-        "bounded active connection promotion retry",
+        "event-owned active connection promotion retry",
+        GAP,
+    )
+    require_regex(
+        gap,
+        r"rc == 0 \|\| rc == BLE_HS_EALREADY.*?"
+        r"s_conn_param_request_pending_until_tick\s*=\s*portMAX_DELAY.*?"
+        r"BLE_GAP_EVENT_CONN_UPDATE:.*?ble_hid_gap_confirm_conn_param_update",
+        "NimBLE-owned pending update waits for the GAP completion event",
         GAP,
     )
     require_regex(
         gap,
         r"ble_hid_gap_request_low_power_connection\(.*?"
+        r"ble_hid_gap_ec11_fast_recording_armed\(\).*?"
+        r"ble_hid_gap_request_active_connection\(\).*?"
         r"ble_hid_gap_set_active_connection_required\(false\)",
-        "low-power transition releases the active connection requirement",
+        "armed e11r retains the active connection before low-power can apply",
+        GAP,
+    )
+    require_regex(
+        gap,
+        r"ble_hid_gap_set_ec11_fast_recording_enabled\(.*?"
+        r"s_ec11_fast_recording_armed\s*=\s*enabled.*?"
+        r"if \(enabled\).*?ble_hid_gap_request_active_connection\(.*?"
+        r"power_manager_get_state\(\)\s*==\s*POWER_MANAGER_STATE_CONNECTED_IDLE.*?"
+        r"ble_hid_gap_request_low_power_connection",
+        "e11r setting arms the active link and only disarms to low power from idle",
         GAP,
     )
     require_regex(
@@ -328,16 +355,32 @@ class ConnectionParameterModel:
     mode: str = "active"
     pending_mode: str | None = None
     active_required: bool = False
+    fast_recording_armed: bool = False
+    host_update_in_progress: bool = False
     promotion_retries: int = 0
 
     def request_low_power(self) -> None:
+        if self.fast_recording_armed:
+            self.request_active()
+            return
         self.active_required = False
         self.pending_mode = "low_power"
 
+    def set_fast_recording_armed(self, enabled: bool) -> None:
+        self.fast_recording_armed = enabled
+        if enabled:
+            self.request_active()
+
     def request_active(self) -> None:
         self.active_required = True
+        if self.host_update_in_progress:
+            return
         if self.pending_mode is None:
             self.pending_mode = "active"
+
+    def complete_host_update(self) -> None:
+        self.host_update_in_progress = False
+        self.complete_pending_update()
 
     def complete_pending_update(self) -> None:
         if self.pending_mode is None:
@@ -495,6 +538,35 @@ def case_recording_promotion_wins_over_pending_low_power() -> None:
     assert model.pending_mode is None
 
 
+def case_e11r_armed_before_connected_idle_prevents_slow_link() -> None:
+    model = ConnectionParameterModel(mode="active")
+    model.set_fast_recording_armed(True)
+    assert model.active_required
+    assert model.pending_mode == "active"
+    model.complete_pending_update()
+    assert model.mode == "active"
+    model.request_low_power()
+    assert model.mode == "active"
+    assert model.pending_mode == "active"
+    model.set_fast_recording_armed(False)
+    model.request_low_power()
+    assert not model.active_required
+    assert model.pending_mode == "low_power"
+
+
+def case_active_request_waits_for_existing_host_transaction() -> None:
+    model = ConnectionParameterModel(mode="low_power", pending_mode="low_power")
+    model.host_update_in_progress = True
+    model.request_active()
+    assert model.active_required
+    assert model.pending_mode == "low_power"
+    model.complete_host_update()
+    assert model.mode == "low_power"
+    assert model.pending_mode == "active"
+    model.complete_pending_update()
+    assert model.mode == "active"
+
+
 CASES = [
     case_disconnect_during_streaming,
     case_notify_disabled_during_streaming,
@@ -507,6 +579,8 @@ CASES = [
     case_stale_gatt_event_after_epoch_advance,
     case_bounded_retry_timeout,
     case_recording_promotion_wins_over_pending_low_power,
+    case_e11r_armed_before_connected_idle_prevents_slow_link,
+    case_active_request_waits_for_existing_host_transaction,
 ]
 
 
@@ -517,7 +591,7 @@ def main() -> int:
     print(
         "PASS: BLE audio transport model covers connection epoch, notify readiness, "
         "session ownership, replay, backpressure, stale GATT events, retry timeout, and "
-        "recording-active connection promotion "
+        "event-owned recording connection promotion and pre-armed e11r low-power exclusion "
         f"across {len(CASES)} extreme cases."
     )
     return 0

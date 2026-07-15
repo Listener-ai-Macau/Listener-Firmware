@@ -27,6 +27,7 @@ bool ble_hid_gap_note_type_audio_ready(const char *reason);
 esp_err_t ble_hid_gap_set_low_power_advertising(bool enabled);
 esp_err_t ble_hid_gap_stop_advertising_for_key_wake(void);
 esp_err_t ble_hid_gap_prepare_shutdown_disconnect(void);
+void ble_hid_gap_set_ec11_fast_recording_enabled(bool enabled, const char *reason);
 esp_err_t ble_hid_gap_request_low_power_connection(void);
 esp_err_t ble_hid_gap_request_active_connection(void);
 esp_err_t ble_hid_gap_schedule_active_connection(void);
