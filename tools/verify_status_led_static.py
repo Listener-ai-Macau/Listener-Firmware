@@ -2295,7 +2295,9 @@ def main() -> int:
             or "status_led_token_relative_to_peak_locked" not in pairing_body
             or "STATUS_LED_BLE_PAIRING_PULSE_PERCENT" not in pairing_body
         ):
-            failures.append("status_led.c: pairing/repairing BLE must pulse with a dark off phase; low blue floor belongs only to connected BLE states")
+            failures.append("status_led.c: pairing/repairing BLE must pulse with a dark off phase")
+        if "ble_blue" not in pairing_body:
+            failures.append("status_led.c: pairing/repairing BLE must retain the owner-approved legacy blue cue")
     if not reconnect_case:
         failures.append("status_led.c: missing active reconnecting BLE render case")
     else:
@@ -2308,10 +2310,10 @@ def main() -> int:
             r"STATUS_LED_BLE_RECONNECT_PULSE_PERCENT[\s\S]*?"
             r":\s*0U[\s\S]*?"
             r"status_led_token_relative_to_peak_locked\(\s*"
-            r"ble_waiting,\s*percent,\s*STATUS_LED_BLE_RECONNECT_PULSE_PERCENT,\s*false\s*\)",
+            r"ble_blue,\s*percent,\s*STATUS_LED_BLE_RECONNECT_PULSE_PERCENT,\s*false\s*\)",
             reconnect_body,
         ):
-            failures.append("status_led.c: reconnecting BLE must double-pulse with a dark off phase using the non-connected waiting color")
+            failures.append("status_led.c: reconnecting BLE must retain the legacy blue double-pulse with a dark off phase")
     ota_setter = extract_c_function(status_led, "status_led_set_ota_active")
     if not ota_setter:
         failures.append("status_led.c: missing status_led_set_ota_active")
@@ -2639,8 +2641,9 @@ def main() -> int:
         or "STATUS_LED_BLE_RECONNECT_PULSE_PERCENT" not in recovery_block
         or "status_led_token_relative_to_peak_locked" not in recovery_block
         or "? STATUS_LED_BLE_RECONNECT_PULSE_PERCENT\n            : 0U;" not in recovery_block
+        or "status_led_token_relative_to_peak_locked(\n            ble_blue,\n            percent," not in recovery_block
     ):
-        failures.append("status_led.c: BLE recovery window must render the accepted reconnect double-flash instead of pairing blink")
+        failures.append("status_led.c: BLE recovery window must render the owner-approved legacy blue reconnect double-flash")
     if (
         "status_led_ble_recovery_window_elapsed_locked(now_ms)" not in recovery_block
         or "recovery_elapsed_ms" not in recovery_block
@@ -2671,8 +2674,13 @@ def main() -> int:
             failures.append("status_led.c: EC11 re-pair must cover the intended full knob ring")
         if "status_led_set_max(&frame->ec11[index], color);" not in repair_ring_text:
             failures.append("status_led.c: EC11 re-pair must light only the EC11 ring pixels")
+        if "status_led_rgb(0, 0, 255)" not in repair_ring_text:
+            failures.append("status_led.c: EC11 re-pair ring must retain the owner-approved legacy blue cue")
         if "frame->edge" in repair_ring_text:
             failures.append("status_led.c: EC11 re-pair confirmation must not borrow the edge/frame LEDs")
+    low_power_ble = extract_c_function(status_led, "status_led_render_low_power_ble_locked")
+    if "status_led_token_relative_to_peak_locked(status_led_rgb(0, 0, 255), percent, peak, false)" not in low_power_ble:
+        failures.append("status_led.c: low-power BLE attention must retain the owner-approved legacy blue cue")
     if not re.search(
         r"static\s+void\s+status_led_preview_state[^{]*\{[\s\S]*?"
         r"status_led_schedule_idle_transition_clear_locked\(now_ms\);[\s\S]*?"
