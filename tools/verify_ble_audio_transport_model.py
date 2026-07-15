@@ -554,6 +554,28 @@ def case_e11r_armed_before_connected_idle_prevents_slow_link() -> None:
     assert model.pending_mode == "low_power"
 
 
+def case_e11r_repromotes_after_host_downgrade_completion() -> None:
+    model = ConnectionParameterModel(mode="active")
+    model.set_fast_recording_armed(True)
+    model.complete_pending_update()
+    assert model.mode == "active"
+    assert model.active_required
+
+    # Windows owns the next update and completes it at low power. The firmware
+    # must wait for that real completion, then serialize a promotion back to active.
+    model.host_update_in_progress = True
+    model.pending_mode = "low_power"
+    model.complete_host_update()
+    assert model.mode == "low_power"
+    assert model.active_required
+    assert model.promotion_retries == 1
+    assert model.pending_mode == "active"
+
+    model.complete_pending_update()
+    assert model.mode == "active"
+    assert model.pending_mode is None
+
+
 def case_active_request_waits_for_existing_host_transaction() -> None:
     model = ConnectionParameterModel(mode="low_power", pending_mode="low_power")
     model.host_update_in_progress = True
@@ -580,6 +602,7 @@ CASES = [
     case_bounded_retry_timeout,
     case_recording_promotion_wins_over_pending_low_power,
     case_e11r_armed_before_connected_idle_prevents_slow_link,
+    case_e11r_repromotes_after_host_downgrade_completion,
     case_active_request_waits_for_existing_host_transaction,
 ]
 
