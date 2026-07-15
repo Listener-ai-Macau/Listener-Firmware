@@ -8,6 +8,7 @@ from dataclasses import dataclass, field
 REPO_ROOT = pathlib.Path(__file__).resolve().parents[1]
 STREAM = REPO_ROOT / "ports" / "esp32" / "ble_audio_stream" / "ble_audio_stream_esp32.c"
 EVENTS = REPO_ROOT / "components" / "diag_log" / "include" / "diag_log_events.h"
+GAP = REPO_ROOT / "ports" / "esp32" / "ble_hid_gap" / "ble_hid_gap_esp32.c"
 
 
 STATE_TOKENS = [
@@ -51,6 +52,18 @@ SOURCE_TOKENS = [
     "audio session stop queued during link recovery",
 ]
 
+GAP_SOURCE_TOKENS = [
+    "s_active_connection_required",
+    "BLE_HID_GAP_ACTIVE_PROMOTION_RETRY_MS 50U",
+    "BLE_HID_GAP_ACTIVE_PROMOTION_TIMEOUT_MS",
+    "ble_hid_gap_conn_param_retry_delay_ticks",
+    "ble_hid_gap_set_active_connection_required(false)",
+    "ble_hid_gap_confirm_conn_param_update",
+    "active connection promotion scheduled",
+    "active connection promotion confirmed",
+    "active connection promotion timed out",
+]
+
 
 def fail(message: str) -> None:
     raise SystemExit(f"FAIL: {message}")
@@ -69,11 +82,14 @@ def require_regex(source: str, pattern: str, description: str, path: pathlib.Pat
 def static_source_checks() -> None:
     stream = STREAM.read_text(encoding="utf-8")
     events = EVENTS.read_text(encoding="utf-8")
+    gap = GAP.read_text(encoding="utf-8")
 
     for token in STATE_TOKENS:
         require(stream, token, STREAM)
     for token in SOURCE_TOKENS:
         require(stream, token, STREAM)
+    for token in GAP_SOURCE_TOKENS:
+        require(gap, token, GAP)
     require(events, "DIAG_BAUD_REPLAY", EVENTS)
 
     require_regex(
@@ -81,6 +97,40 @@ def static_source_checks() -> None:
         r"ble_audio_stream_on_gap_disconnect\(.*?ble_audio_stream_replay_mark_link_suspended",
         "disconnect replay suspension",
         STREAM,
+    )
+    require_regex(
+        gap,
+        r"BLE_GAP_EVENT_CONN_UPDATE:.*?ble_hid_gap_confirm_conn_param_update.*?"
+        r"ble_hid_gap_active_connection_required\(\).*?"
+        r"ble_hid_gap_schedule_active_connection_with_delay",
+        "completed low-power update re-promotes an active recording link",
+        GAP,
+    )
+    require_regex(
+        gap,
+        r"ble_hid_gap_active_connection_request_task\(.*?while \(ble_hid_gap_active_connection_required\(\)\).*?"
+        r"ble_hid_gap_conn_param_retry_delay_ticks.*?"
+        r"BLE_HID_GAP_ACTIVE_PROMOTION_RETRY_MS.*?"
+        r"active connection promotion timed out",
+        "bounded active connection promotion retry",
+        GAP,
+    )
+    require_regex(
+        gap,
+        r"ble_hid_gap_request_low_power_connection\(.*?"
+        r"ble_hid_gap_set_active_connection_required\(false\)",
+        "low-power transition releases the active connection requirement",
+        GAP,
+    )
+    require_regex(
+        gap,
+        r"ble_hid_gap_request_active_connection\(.*?"
+        r"ble_hid_gap_set_active_connection_required\(true\).*?"
+        r"ble_hid_gap_request_active_connection_once\(\).*?"
+        r"!ble_hid_gap_active_connection_applied\(\).*?"
+        r"ble_hid_gap_schedule_active_connection_with_delay",
+        "recording active request retains intent and schedules promotion",
+        GAP,
     )
     require_regex(
         stream,
@@ -273,6 +323,32 @@ class TransportModel:
         self.state = "error"
 
 
+@dataclass
+class ConnectionParameterModel:
+    mode: str = "active"
+    pending_mode: str | None = None
+    active_required: bool = False
+    promotion_retries: int = 0
+
+    def request_low_power(self) -> None:
+        self.active_required = False
+        self.pending_mode = "low_power"
+
+    def request_active(self) -> None:
+        self.active_required = True
+        if self.pending_mode is None:
+            self.pending_mode = "active"
+
+    def complete_pending_update(self) -> None:
+        if self.pending_mode is None:
+            raise AssertionError("completion requires a pending parameter update")
+        self.mode = self.pending_mode
+        self.pending_mode = None
+        if self.active_required and self.mode != "active":
+            self.promotion_retries += 1
+            self.pending_mode = "active"
+
+
 def ready_model() -> TransportModel:
     model = TransportModel()
     model.connect(1)
@@ -404,6 +480,21 @@ def case_bounded_retry_timeout() -> None:
     assert model.last_error == "notify_timeout"
 
 
+def case_recording_promotion_wins_over_pending_low_power() -> None:
+    model = ConnectionParameterModel()
+    model.request_low_power()
+    model.request_active()
+    model.complete_pending_update()
+    assert model.mode == "low_power"
+    assert model.active_required
+    assert model.promotion_retries == 1
+    assert model.pending_mode == "active"
+    model.complete_pending_update()
+    assert model.mode == "active"
+    assert model.active_required
+    assert model.pending_mode is None
+
+
 CASES = [
     case_disconnect_during_streaming,
     case_notify_disabled_during_streaming,
@@ -415,6 +506,7 @@ CASES = [
     case_pool_exhaustion,
     case_stale_gatt_event_after_epoch_advance,
     case_bounded_retry_timeout,
+    case_recording_promotion_wins_over_pending_low_power,
 ]
 
 
@@ -424,7 +516,8 @@ def main() -> int:
         case()
     print(
         "PASS: BLE audio transport model covers connection epoch, notify readiness, "
-        "session ownership, replay, backpressure, stale GATT events, and retry timeout "
+        "session ownership, replay, backpressure, stale GATT events, retry timeout, and "
+        "recording-active connection promotion "
         f"across {len(CASES)} extreme cases."
     )
     return 0
