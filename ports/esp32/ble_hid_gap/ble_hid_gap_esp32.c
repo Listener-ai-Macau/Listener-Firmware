@@ -85,6 +85,7 @@ static void ble_hid_gap_log_conn_desc(const char *context, uint16_t conn_handle)
 #define GATT_SVR_SVC_HID_UUID 0x1812
 #define BLE_HID_GAP_FAST_ADV_MIN_MS 30U
 #define BLE_HID_GAP_FAST_ADV_MAX_MS 50U
+#define BLE_HID_GAP_SWIFT_PAIR_ADV_INTERVAL_MS 30U
 #define BLE_HID_GAP_ACTIVE_ITVL_MIN 6U
 #define BLE_HID_GAP_ACTIVE_ITVL_MAX 6U
 #define BLE_HID_GAP_ACTIVE_LATENCY 0U
@@ -2695,8 +2696,12 @@ esp_err_t esp_hid_ble_gap_adv_start(void)
     memset(&adv_params, 0, sizeof adv_params);
     adv_params.conn_mode = BLE_GAP_CONN_MODE_UND;
     adv_params.disc_mode = BLE_GAP_DISC_MODE_GEN;
-    const uint32_t adv_min_ms = BLE_HID_GAP_FAST_ADV_MIN_MS;
-    const uint32_t adv_max_ms = BLE_HID_GAP_FAST_ADV_MAX_MS;
+    const uint32_t adv_min_ms = swift_pair_enabled
+        ? BLE_HID_GAP_SWIFT_PAIR_ADV_INTERVAL_MS
+        : BLE_HID_GAP_FAST_ADV_MIN_MS;
+    const uint32_t adv_max_ms = swift_pair_enabled
+        ? BLE_HID_GAP_SWIFT_PAIR_ADV_INTERVAL_MS
+        : BLE_HID_GAP_FAST_ADV_MAX_MS;
     const int64_t swift_pair_remaining_ms =
         recovery_swift_pair_remaining_ms > 0
             ? recovery_swift_pair_remaining_ms

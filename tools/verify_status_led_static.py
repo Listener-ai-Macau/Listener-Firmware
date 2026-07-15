@@ -1801,6 +1801,20 @@ def main() -> int:
             failures.append(
                 "ble_hid_gap_esp32.c: Swift Pair must keep HID UUID for short names and fall back to normal advertising when the full name cannot fit"
             )
+    if (
+        "#define BLE_HID_GAP_SWIFT_PAIR_ADV_INTERVAL_MS 30U" not in ble_gap
+        or not re.search(
+            r"const\s+uint32_t\s+adv_min_ms\s*=\s*swift_pair_enabled\s*\?\s*BLE_HID_GAP_SWIFT_PAIR_ADV_INTERVAL_MS\s*:\s*BLE_HID_GAP_FAST_ADV_MIN_MS\s*;",
+            ble_gap,
+        )
+        or not re.search(
+            r"const\s+uint32_t\s+adv_max_ms\s*=\s*swift_pair_enabled\s*\?\s*BLE_HID_GAP_SWIFT_PAIR_ADV_INTERVAL_MS\s*:\s*BLE_HID_GAP_FAST_ADV_MAX_MS\s*;",
+            ble_gap,
+        )
+    ):
+        failures.append(
+            "ble_hid_gap_esp32.c: Swift Pair discovery must use the exact 30ms cadence while normal advertising retains its 30-50ms range"
+        )
     if "#define BLE_HID_GAP_RECOVERY_SWIFT_PAIR_PROMPT_MS 45000LL" not in ble_gap:
         failures.append(
             "ble_hid_gap_esp32.c: recovery must expose one bounded Swift Pair window for Windows native keyboard pairing"
@@ -1895,6 +1909,25 @@ def main() -> int:
         ):
             failures.append(
                 "ble_hid_gap_esp32.c: connected recovery must terminate first, delete the local bond asynchronously, keep Type identity stable, and rotate native Windows identity before advertising"
+            )
+        active_swift_pair_index = recovery_body.find(
+            "Swift Pair window already active; retaining session and BLE identity"
+        )
+        active_swift_pair_end = recovery_body.find(
+            "const bool type_link_ready_before_recovery",
+            active_swift_pair_index,
+        )
+        active_swift_pair_body = recovery_body[active_swift_pair_index:active_swift_pair_end]
+        if (
+            active_swift_pair_index < 0
+            or active_swift_pair_end < 0
+            or "ble_hid_gap_start_advertising();" not in active_swift_pair_body
+            or "active Swift Pair session retained; device remains discoverable for re-pair" not in active_swift_pair_body
+            or "ble_hid_gap_close_recovery_pairing_window" in active_swift_pair_body
+            or "ble_hid_gap_rotate_native_recovery_identity" in active_swift_pair_body
+        ):
+            failures.append(
+                "ble_hid_gap_esp32.c: a repeated physical EC11 recovery must retain the active Swift Pair session and identity instead of restarting or rotating it"
             )
     if "NimBLE advertising deferred: recovery async local bond delete pending" not in ble_gap:
         failures.append(
