@@ -3102,18 +3102,20 @@ static esp_err_t ble_hid_gap_forget_bonds_and_repair_inner(
         return ESP_OK;
     }
     if (refresh_pairing_window) {
-        ESP_LOGW(TAG, "recovery: Swift Pair window already active; restarting session so Windows may show a fresh pairing notification");
+        ESP_LOGW(TAG, "recovery: Swift Pair window already active; retaining session and BLE identity");
         diag_log(DIAG_SRC_BLE_GAP, DIAG_GAP_RECOVERY, DIAG_SEV_INFO,
                  16, 0, 0, s_ble_gap_conn_handle);
-        ble_hid_gap_close_recovery_pairing_window("restart_swift_pair_session");
-        if (ble_gap_adv_active()) {
-            rc = ble_gap_adv_stop();
-            if (rc != 0) {
-                ESP_LOGW(TAG, "recovery: Swift Pair session restart stop failed rc=%d; restart will continue", rc);
-                diag_log(DIAG_SRC_BLE_GAP, DIAG_GAP_RECOVERY, DIAG_SEV_WARN,
-                         16, (uint32_t)rc, 0, s_ble_gap_conn_handle);
-            }
+        esp_err_t adv_ret = ble_hid_gap_start_advertising();
+        if (adv_ret != ESP_OK) {
+            ESP_LOGE(TAG, "recovery: retaining active Swift Pair session failed: %s",
+                     esp_err_to_name(adv_ret));
+            diag_log(DIAG_SRC_BLE_GAP, DIAG_GAP_RECOVERY, DIAG_SEV_ERROR,
+                     16, (uint32_t)adv_ret, 0, s_ble_gap_conn_handle);
+            return adv_ret;
         }
+
+        ESP_LOGW(TAG, "recovery: active Swift Pair session retained; device remains discoverable for re-pair");
+        return ESP_OK;
     }
 
     const bool type_link_ready_before_recovery = ble_audio_stream_is_type_link_ready();
