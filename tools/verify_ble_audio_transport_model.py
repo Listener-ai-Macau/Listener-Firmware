@@ -31,10 +31,6 @@ SOURCE_TOKENS = [
     "s_stale_event_counts",
     "BLE_AUDIO_STREAM_LINK_RECOVERY_WAIT_MS 20000",
     "BLE_AUDIO_STREAM_REPLAY_WINDOW_PACKETS 48",
-    "BLE_AUDIO_STREAM_BACKPRESSURE_PAUSE_QUEUE_DEPTH 16U",
-    "BLE_AUDIO_STREAM_BACKPRESSURE_RESUME_QUEUE_DEPTH 6U",
-    "BLE_AUDIO_STREAM_BACKPRESSURE_PAUSE_POOL_IN_USE 16U",
-    "BLE_AUDIO_STREAM_BACKPRESSURE_RESUME_POOL_IN_USE 6U",
     "BLE_AUDIO_STREAM_BACKPRESSURE_PAUSE_PERCENT 95U",
     "BLE_AUDIO_STREAM_BACKPRESSURE_RESUME_PERCENT 70U",
     "ble_audio_stream_replay_store_packet",
@@ -105,11 +101,10 @@ def static_source_checks() -> None:
     )
     require_regex(
         stream,
-        r"ble_audio_stream_get_backpressure\(.*?queue_or_pool_above_latency_window.*?"
-        r"queue_and_pool_below_latency_window.*?pressure_percent\s*>=\s*"
+        r"ble_audio_stream_get_backpressure\(.*?pressure_percent\s*>=\s*"
         r"BLE_AUDIO_STREAM_BACKPRESSURE_PAUSE_PERCENT.*?pressure_percent\s*<=\s*"
         r"BLE_AUDIO_STREAM_BACKPRESSURE_RESUME_PERCENT",
-        "low-latency queue/pool hysteresis",
+        "true-capacity backpressure hysteresis",
         STREAM,
     )
 
@@ -257,13 +252,11 @@ class TransportModel:
         self.pool_in_use = pool_in_use
         self.pool_high_water = max(self.pool_high_water, pool_in_use)
         pressure = max(queue_depth * 100 // 48, pool_in_use * 100 // 52)
-        above_latency_window = queue_depth >= 16 or pool_in_use >= 16
-        below_latency_window = queue_depth <= 6 and pool_in_use <= 6
         if self.active_session is None:
             self.backpressure_active = False
-        elif above_latency_window or pressure >= 95:
+        elif pressure >= 95:
             self.backpressure_active = True
-        elif below_latency_window and pressure <= 70:
+        elif pressure <= 70:
             self.backpressure_active = False
 
     def exhaust_pool(self) -> None:
@@ -369,14 +362,14 @@ def case_duplicate_replay_prevention() -> None:
     assert model.replay_resent == [6]
 
 
-def case_queue_pressure_pause_resume_hysteresis() -> None:
+def case_capacity_pressure_pause_resume_hysteresis() -> None:
     model = ready_model()
     model.start(106)
     model.pressure_update(queue_depth=16, pool_in_use=4)
+    assert not model.backpressure_active
+    model.pressure_update(queue_depth=46, pool_in_use=4)
     assert model.backpressure_active
-    model.pressure_update(queue_depth=10, pool_in_use=4)
-    assert model.backpressure_active
-    model.pressure_update(queue_depth=6, pool_in_use=4)
+    model.pressure_update(queue_depth=30, pool_in_use=4)
     assert not model.backpressure_active
 
 
@@ -415,7 +408,7 @@ CASES = [
     case_stop_during_recovery,
     case_cancel_while_tail_packets_drain,
     case_duplicate_replay_prevention,
-    case_queue_pressure_pause_resume_hysteresis,
+    case_capacity_pressure_pause_resume_hysteresis,
     case_pool_exhaustion,
     case_stale_gatt_event_after_epoch_advance,
     case_bounded_retry_timeout,

@@ -137,6 +137,11 @@ static uint32_t s_session_id_counter;
 static bool s_capture_backpressure_paused;
 static uint32_t s_capture_backpressure_frames;
 
+static uint32_t audio_capture_backpressure_gap_ms(void)
+{
+    return s_capture_backpressure_frames * AUDIO_CAPTURE_BACKPRESSURE_PAUSE_MS;
+}
+
 static void audio_capture_wake_task(void)
 {
     if (s_capture_task_handle != NULL) {
@@ -772,12 +777,23 @@ static void audio_capture_process_frame(const int16_t *frame_buffer)
         if (!stream_failed && should_emit) {
             uint32_t stop_duration = 0;
             uint32_t stop_frames = 0;
+            uint32_t stop_backpressure_gap_ms = 0;
+            uint32_t stop_backpressure_pause_frames = 0;
             if (xSemaphoreTake(s_state_mutex, portMAX_DELAY) == pdTRUE) {
                 stop_duration = s_export_state.duration_seconds;
                 stop_frames = s_export_state.captured_frames;
+                stop_backpressure_gap_ms = audio_capture_backpressure_gap_ms();
+                stop_backpressure_pause_frames = s_capture_backpressure_frames;
                 audio_capture_export_cleanup();
                 xSemaphoreGive(s_state_mutex);
             }
+            ESP_LOGI(
+                TAG,
+                "record session capture integrity: session_id=%" PRIu32 " pcm_ms=%" PRIu32 " capture_backpressure_gap_ms=%" PRIu32 " capture_backpressure_pause_frames=%" PRIu32,
+                session_id,
+                stop_frames * AUDIO_CAPTURE_FRAME_MS,
+                stop_backpressure_gap_ms,
+                stop_backpressure_pause_frames);
             diag_log(DIAG_SRC_AUDIO, DIAG_AUDIO_SESSION, DIAG_SEV_INFO,
                      2, session_id, stop_duration, stop_frames);
         }

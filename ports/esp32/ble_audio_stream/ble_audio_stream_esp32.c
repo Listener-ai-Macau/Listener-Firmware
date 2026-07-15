@@ -71,10 +71,6 @@ extern esp_err_t ble_hid_gap_schedule_ota_reconnect(void) __attribute__((weak));
 #define BLE_AUDIO_STREAM_AUDIO_POOL_PRESSURE_WARN_PERCENT 80U
 #define BLE_AUDIO_STREAM_AUDIO_POOL_PRESSURE_WARN_LEVEL \
     ((BLE_AUDIO_STREAM_AUDIO_POOL_LENGTH * BLE_AUDIO_STREAM_AUDIO_POOL_PRESSURE_WARN_PERCENT + 99U) / 100U)
-#define BLE_AUDIO_STREAM_BACKPRESSURE_PAUSE_QUEUE_DEPTH 16U
-#define BLE_AUDIO_STREAM_BACKPRESSURE_RESUME_QUEUE_DEPTH 6U
-#define BLE_AUDIO_STREAM_BACKPRESSURE_PAUSE_POOL_IN_USE 16U
-#define BLE_AUDIO_STREAM_BACKPRESSURE_RESUME_POOL_IN_USE 6U
 #define BLE_AUDIO_STREAM_BACKPRESSURE_PAUSE_PERCENT 95U
 #define BLE_AUDIO_STREAM_BACKPRESSURE_RESUME_PERCENT 70U
 #define BLE_AUDIO_STREAM_CONTROL_NOTIFY_REPETITIONS 3
@@ -123,8 +119,9 @@ typedef enum {
  *   subscribe/MTU snapshots, notify_tx completion, and stale-event counters.
  * - The export task owns session packets, queue order, replay drain, and
  *   terminal stop/cancel/error delivery.
- * - audio_capture owns PCM production and can pause on queue/pool pressure,
- *   but it must not advance packet_sequence while backpressure is active.
+ * - audio_capture owns PCM production and can pause only when the queue or
+ *   pool reaches true capacity pressure; it must not advance packet_sequence
+ *   while that safety backpressure is active.
  * - Replay packets are retained until notify success removes them; reconnect
  *   drains retained audio before SESSION_STOP so stale tail audio cannot land
  *   after the terminal boundary.
@@ -3066,20 +3063,11 @@ void ble_audio_stream_get_backpressure(ble_audio_stream_backpressure_t *snapshot
         snapshot->audio_pool_in_use);
 
     bool next_backpressure_active = ble_audio_stream_get_backpressure_active();
-    bool queue_or_pool_above_latency_window =
-        snapshot->queue_depth >= BLE_AUDIO_STREAM_BACKPRESSURE_PAUSE_QUEUE_DEPTH ||
-        snapshot->audio_pool_in_use >= BLE_AUDIO_STREAM_BACKPRESSURE_PAUSE_POOL_IN_USE;
-    bool queue_and_pool_below_latency_window =
-        snapshot->queue_depth <= BLE_AUDIO_STREAM_BACKPRESSURE_RESUME_QUEUE_DEPTH &&
-        snapshot->audio_pool_in_use <= BLE_AUDIO_STREAM_BACKPRESSURE_RESUME_POOL_IN_USE;
-
     if (!snapshot->transport_session_active) {
         next_backpressure_active = false;
-    } else if (queue_or_pool_above_latency_window ||
-               snapshot->pressure_percent >= BLE_AUDIO_STREAM_BACKPRESSURE_PAUSE_PERCENT) {
+    } else if (snapshot->pressure_percent >= BLE_AUDIO_STREAM_BACKPRESSURE_PAUSE_PERCENT) {
         next_backpressure_active = true;
-    } else if (queue_and_pool_below_latency_window &&
-               snapshot->pressure_percent <= BLE_AUDIO_STREAM_BACKPRESSURE_RESUME_PERCENT) {
+    } else if (snapshot->pressure_percent <= BLE_AUDIO_STREAM_BACKPRESSURE_RESUME_PERCENT) {
         next_backpressure_active = false;
     }
 
