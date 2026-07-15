@@ -18,8 +18,11 @@ esp_err_t ble_hid_gap_configure_advertising(uint16_t appearance, const char *dev
 esp_err_t ble_hid_gap_start_advertising(void);
 esp_err_t ble_hid_gap_mark_stack_ready(void);
 esp_err_t ble_hid_gap_forget_bonds_and_repair(void);
+/* EC11 idle recovery issues the GAP terminate before non-critical diagnostics. */
+esp_err_t ble_hid_gap_forget_bonds_and_repair_ec11_fast(void);
 esp_err_t ble_hid_gap_forget_bonds_and_repair_type_controlled(void);
 esp_err_t ble_hid_gap_forget_bonds_and_repair_type_controlled_silent(void);
+void ble_hid_gap_note_ec11_recovery_accepted(uint64_t accepted_at_us, bool generated);
 bool ble_hid_gap_is_connected(void);
 bool ble_hid_gap_is_securely_connected(void);
 bool ble_hid_gap_is_recovery_pairing_window_open(void);

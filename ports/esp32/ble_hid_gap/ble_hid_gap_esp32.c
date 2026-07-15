@@ -52,10 +52,12 @@ extern void ble_hid_task_start_up(void);
 static int ble_hid_gap_get_bonded_peer_count(int *out_count);
 static esp_err_t ble_hid_gap_forget_bonds_and_repair_inner(
     bool type_controlled_request,
-    bool suppress_swift_pair_prompt);
+    bool suppress_swift_pair_prompt,
+    bool ec11_fast_path);
 static void ble_hid_gap_close_recovery_pairing_window(const char *reason);
 static void ble_hid_gap_note_secure_connection(uint16_t conn_handle, const char *reason);
 static bool ble_hid_gap_recovery_pairing_window_open(void);
+static void ble_hid_gap_notify_recovery_bond_delete_disconnect(void);
 
 static void ble_hid_gap_log_conn_desc(const char *context, uint16_t conn_handle)
 {
@@ -472,9 +474,7 @@ static void ble_hid_gap_log_adv_state(
 #define BLE_HID_GAP_RECOVERY_SWIFT_PAIR_PROMPT_MS 45000LL
 #define BLE_HID_GAP_FIRST_PAIRING_WINDOW_MS 0LL
 #define BLE_HID_GAP_SWIFT_PAIR_ADV_MIN_RESTART_MS 1000LL
-#define BLE_HID_GAP_RECOVERY_BOND_DELETE_SETTLE_MS 80U
 #define BLE_HID_GAP_RECOVERY_BOND_DELETE_WAIT_MS 2000U
-#define BLE_HID_GAP_RECOVERY_BOND_DELETE_POLL_MS 50U
 #define BLE_HID_GAP_RECOVERY_BOND_DELETE_TASK_STACK 4096U
 #define BLE_HID_GAP_RECOVERY_BOND_DELETE_TASK_PRIO 4U
 
@@ -491,10 +491,89 @@ static size_t s_adv_device_name_len = 0;
 static uint16_t s_adv_appearance = 0;
 static bool s_native_recovery_identity_rotate_pending = false;
 static bool s_native_recovery_random_identity_active = false;
+static int64_t s_ec11_recovery_accepted_at_us;
+static bool s_ec11_recovery_generated;
+static int64_t s_ec11_recovery_control_dispatch_ms;
+static int64_t s_ec11_recovery_terminate_requested_ms;
+static int64_t s_ec11_recovery_disconnect_confirmed_ms;
 
 static int64_t ble_hid_gap_now_ms(void)
 {
     return esp_timer_get_time() / 1000LL;
+}
+
+static void ble_hid_gap_log_ec11_recovery_timing(const char *phase, bool complete)
+{
+    int64_t accepted_at_us = 0;
+    bool generated = false;
+    int64_t control_dispatch_ms = -1;
+    int64_t terminate_requested_ms = -1;
+    int64_t disconnect_confirmed_ms = -1;
+    portENTER_CRITICAL(&s_ble_gap_state_lock);
+    accepted_at_us = s_ec11_recovery_accepted_at_us;
+    generated = s_ec11_recovery_generated;
+    portEXIT_CRITICAL(&s_ble_gap_state_lock);
+
+    if (accepted_at_us <= 0) {
+        return;
+    }
+
+    int64_t elapsed_us = esp_timer_get_time() - accepted_at_us;
+    if (elapsed_us < 0) {
+        return;
+    }
+
+    const int64_t elapsed_ms = elapsed_us / 1000LL;
+    portENTER_CRITICAL(&s_ble_gap_state_lock);
+    if (phase != NULL && strcmp(phase, "control_dispatch") == 0) {
+        s_ec11_recovery_control_dispatch_ms = elapsed_ms;
+    } else if (phase != NULL && strcmp(phase, "terminate_requested") == 0) {
+        s_ec11_recovery_terminate_requested_ms = elapsed_ms;
+    } else if (phase != NULL && strcmp(phase, "disconnect_confirmed") == 0) {
+        s_ec11_recovery_disconnect_confirmed_ms = elapsed_ms;
+    }
+    if (complete) {
+        control_dispatch_ms = s_ec11_recovery_control_dispatch_ms;
+        terminate_requested_ms = s_ec11_recovery_terminate_requested_ms;
+        disconnect_confirmed_ms = s_ec11_recovery_disconnect_confirmed_ms;
+        s_ec11_recovery_accepted_at_us = 0;
+        s_ec11_recovery_generated = false;
+        s_ec11_recovery_control_dispatch_ms = -1;
+        s_ec11_recovery_terminate_requested_ms = -1;
+        s_ec11_recovery_disconnect_confirmed_ms = -1;
+    }
+    portEXIT_CRITICAL(&s_ble_gap_state_lock);
+
+    if (!complete) {
+        return;
+    }
+
+    ESP_LOGW(
+        TAG,
+        "EC11 recovery timing: input=%s control_dispatch_ms=%lld terminate_requested_ms=%lld disconnect_confirmed_ms=%lld advertising_started_ms=%lld target_ms=250 result=%s",
+        generated ? "generated" : "physical",
+        (long long)control_dispatch_ms,
+        (long long)terminate_requested_ms,
+        (long long)disconnect_confirmed_ms,
+        (long long)elapsed_ms,
+        elapsed_ms <= 250 ? "PASS" : "FAIL");
+}
+
+void ble_hid_gap_note_ec11_recovery_accepted(uint64_t accepted_at_us, bool generated)
+{
+    if (accepted_at_us == 0) {
+        return;
+    }
+
+    portENTER_CRITICAL(&s_ble_gap_state_lock);
+    s_ec11_recovery_accepted_at_us = (int64_t)accepted_at_us;
+    s_ec11_recovery_generated = generated;
+    s_ec11_recovery_control_dispatch_ms = -1;
+    s_ec11_recovery_terminate_requested_ms = -1;
+    s_ec11_recovery_disconnect_confirmed_ms = -1;
+    portEXIT_CRITICAL(&s_ble_gap_state_lock);
+
+    ble_hid_gap_log_ec11_recovery_timing("control_dispatch", false);
 }
 
 static void ble_hid_gap_log_random_identity(
@@ -885,7 +964,7 @@ static void ble_hid_gap_keep_recovery_adv_connectable(const char *reason)
     s_last_adv_was_directed = false;
 }
 
-static void ble_hid_gap_open_recovery_pairing_window(
+static void ble_hid_gap_begin_recovery_pairing_window(
     bool type_controlled,
     bool suppress_swift_pair_prompt)
 {
@@ -895,12 +974,30 @@ static void ble_hid_gap_open_recovery_pairing_window(
     s_recovery_suppress_swift_pair_prompt = suppress_swift_pair_prompt;
     s_recovery_security_failed_conn_handle = BLE_HS_CONN_HANDLE_NONE;
     s_recovery_pairing_window_opened_at_ms = ble_hid_gap_now_ms();
+}
+
+static void ble_hid_gap_activate_recovery_pairing_window(
+    bool type_controlled,
+    bool suppress_swift_pair_prompt)
+{
     ble_hid_gap_set_recovery_power_blocker(true, "pairing_window_open");
     ble_hid_gap_arm_recovery_pairing_window_timer();
     ESP_LOGI(TAG,
              "recovery: pairing window opened type_controlled=%u suppress_swift_pair=%u",
              type_controlled ? 1u : 0u,
              suppress_swift_pair_prompt ? 1u : 0u);
+}
+
+static void ble_hid_gap_open_recovery_pairing_window(
+    bool type_controlled,
+    bool suppress_swift_pair_prompt)
+{
+    ble_hid_gap_begin_recovery_pairing_window(
+        type_controlled,
+        suppress_swift_pair_prompt);
+    ble_hid_gap_activate_recovery_pairing_window(
+        type_controlled,
+        suppress_swift_pair_prompt);
 }
 
 static void ble_hid_gap_close_recovery_pairing_window(const char *reason)
@@ -1857,32 +1954,46 @@ static void ble_hid_gap_handle_disconnect(uint16_t conn_handle, int reason, cons
     s_last_disconnect_event_reason = reason;
     s_last_disconnect_event_at_ms = now_ms;
 
+    /* Wake the bond-delete worker before any diagnostic or peripheral teardown. */
+    ble_hid_gap_set_connection_state(false, BLE_HS_CONN_HANDLE_NONE);
+    ble_hid_gap_notify_recovery_bond_delete_disconnect();
     ESP_LOGI(TAG, "disconnect; source=%s reason=%d", source != NULL ? source : "unknown", reason);
     diag_log(DIAG_SRC_BLE_GAP, DIAG_GAP_BOND, DIAG_SEV_WARN,
              0, (uint32_t)reason, conn_handle, 0);
-    ble_hid_gap_set_connection_state(false, BLE_HS_CONN_HANDLE_NONE);
     if (s_recovery_security_request_conn_handle == conn_handle) {
         s_recovery_security_request_conn_handle = BLE_HS_CONN_HANDLE_NONE;
     }
     if (s_recovery_security_failed_conn_handle == conn_handle) {
         s_recovery_security_failed_conn_handle = BLE_HS_CONN_HANDLE_NONE;
     }
-    status_led_set_ble_state(STATUS_LED_BLE_RECONNECTING, false);
     s_service_changed_queued_for_conn = false;
     if (s_audio_enabled) {
         ble_audio_stream_on_gap_disconnect(conn_handle);
     }
     ble_diag_log_on_gap_disconnect(conn_handle);
     ble_firmware_ota_on_gap_disconnect(conn_handle);
-    s_directed_adv_pending = true;
-    s_last_adv_was_directed = false;
+
+    const bool recovery_bond_delete_active =
+        ble_hid_gap_recovery_bond_delete_active();
     if (s_recovery_waiting_for_disconnect) {
-        ESP_LOGI(TAG,
-                 "recovery: pre-reset connection disconnected; pairing window remains open for the new bond");
-        diag_log(DIAG_SRC_BLE_GAP, DIAG_GAP_RECOVERY, DIAG_SEV_INFO,
-                 14, 0, 0, conn_handle);
+        if (!recovery_bond_delete_active) {
+            ESP_LOGI(TAG,
+                     "recovery: pre-reset connection disconnected; pairing window remains open for the new bond");
+            diag_log(DIAG_SRC_BLE_GAP, DIAG_GAP_RECOVERY, DIAG_SEV_INFO,
+                     14, 0, 0, conn_handle);
+        }
         s_recovery_waiting_for_disconnect = false;
     }
+    if (recovery_bond_delete_active) {
+        /* The worker owns bond deletion and the single recovery advertising start. */
+        s_directed_adv_pending = false;
+        s_last_adv_was_directed = false;
+        return;
+    }
+
+    status_led_set_ble_state(STATUS_LED_BLE_RECONNECTING, false);
+    s_directed_adv_pending = true;
+    s_last_adv_was_directed = false;
     if (s_shutdown_quiesce) {
         s_directed_adv_pending = false;
         ESP_LOGW(TAG, "shutdown quiesce active: suppressing advertising restart after disconnect");
@@ -2168,6 +2279,11 @@ nimble_hid_gap_event(struct ble_gap_event *event, void *arg)
         return 0;
 
     case BLE_GAP_EVENT_SUBSCRIBE:
+        if (s_recovery_waiting_for_disconnect &&
+            event->subscribe.conn_handle == s_ble_gap_conn_handle) {
+            /* The planned terminate owns old-session teardown; disconnect resets audio atomically. */
+            return 0;
+        }
         ESP_LOGI(TAG, "subscribe event; conn_handle=%d attr_handle=%d "
                 "reason=%d prevn=%d curn=%d previ=%d curi=%d",
                 event->subscribe.conn_handle,
@@ -2304,7 +2420,8 @@ nimble_hid_gap_event(struct ble_gap_event *event, void *arg)
                 esp_err_t repair_ret =
                     ble_hid_gap_forget_bonds_and_repair_inner(
                         s_recovery_type_controlled_pairing,
-                        s_recovery_suppress_swift_pair_prompt);
+                        s_recovery_suppress_swift_pair_prompt,
+                        false);
                 if (repair_ret != ESP_OK) {
                     ESP_LOGW(TAG,
                              "security failure repair path failed ret=%s; falling back to reconnecting LED",
@@ -2861,19 +2978,30 @@ static void ble_hid_gap_recovery_bond_delete_set_state(
     portEXIT_CRITICAL(&s_ble_gap_state_lock);
 }
 
+static void ble_hid_gap_notify_recovery_bond_delete_disconnect(void)
+{
+    TaskHandle_t task_handle = NULL;
+    portENTER_CRITICAL(&s_ble_gap_state_lock);
+    if (s_recovery_bond_delete_pending || s_recovery_bond_delete_in_progress) {
+        task_handle = s_recovery_bond_delete_task_handle;
+    }
+    portEXIT_CRITICAL(&s_ble_gap_state_lock);
+
+    if (task_handle != NULL) {
+        xTaskNotifyGive(task_handle);
+    }
+}
+
 static void ble_hid_gap_recovery_bond_delete_task(void *arg)
 {
     const uint32_t initial_bond_count = (uint32_t)(uintptr_t)arg;
-    uint32_t waited_ms = 0;
-
-    vTaskDelay(pdMS_TO_TICKS(BLE_HID_GAP_RECOVERY_BOND_DELETE_SETTLE_MS));
-    while (waited_ms < BLE_HID_GAP_RECOVERY_BOND_DELETE_WAIT_MS) {
-        if (!ble_hid_gap_connection_snapshot().connected) {
-            break;
-        }
-        vTaskDelay(pdMS_TO_TICKS(BLE_HID_GAP_RECOVERY_BOND_DELETE_POLL_MS));
-        waited_ms += BLE_HID_GAP_RECOVERY_BOND_DELETE_POLL_MS;
+    const TickType_t wait_started = xTaskGetTickCount();
+    if (ble_hid_gap_connection_snapshot().connected) {
+        (void)ulTaskNotifyTake(
+            pdTRUE,
+            pdMS_TO_TICKS(BLE_HID_GAP_RECOVERY_BOND_DELETE_WAIT_MS));
     }
+    const uint32_t waited_ms = (uint32_t)pdTICKS_TO_MS(xTaskGetTickCount() - wait_started);
 
     if (ble_hid_gap_connection_snapshot().connected) {
         ESP_LOGW(TAG,
@@ -2887,6 +3015,8 @@ static void ble_hid_gap_recovery_bond_delete_task(void *arg)
         vTaskDelete(NULL);
         return;
     }
+
+    ble_hid_gap_log_ec11_recovery_timing("disconnect_confirmed", false);
 
     portENTER_CRITICAL(&s_ble_gap_state_lock);
     s_recovery_bond_delete_pending = false;
@@ -2929,25 +3059,25 @@ static void ble_hid_gap_recovery_bond_delete_task(void *arg)
     }
 
     const bool delete_ok = lookup_rc == 0 && first_delete_rc == 0;
-    ESP_LOGW(
-        TAG,
-        "recovery: async local bond delete complete lookup_rc=%d bonded_peers=%d deleted=%d initial_bonds=%lu",
-        lookup_rc,
-        bonded_peer_count,
-        deleted_count,
-        (unsigned long)initial_bond_count);
-    diag_log(
-        DIAG_SRC_BLE_GAP,
-        DIAG_GAP_RECOVERY,
-        delete_ok ? DIAG_SEV_INFO : DIAG_SEV_WARN,
-        15,
-        (uint32_t)(lookup_rc != 0 ? lookup_rc : first_delete_rc),
-        (uint32_t)deleted_count,
-        s_ble_gap_conn_handle);
 
     ble_hid_gap_recovery_bond_delete_set_state(false, false, NULL);
 
     if (!delete_ok) {
+        ESP_LOGW(
+            TAG,
+            "recovery: async local bond delete complete lookup_rc=%d bonded_peers=%d deleted=%d initial_bonds=%lu",
+            lookup_rc,
+            bonded_peer_count,
+            deleted_count,
+            (unsigned long)initial_bond_count);
+        diag_log(
+            DIAG_SRC_BLE_GAP,
+            DIAG_GAP_RECOVERY,
+            DIAG_SEV_WARN,
+            15,
+            (uint32_t)(lookup_rc != 0 ? lookup_rc : first_delete_rc),
+            (uint32_t)deleted_count,
+            s_ble_gap_conn_handle);
         status_led_set_error(STATUS_LED_ERROR_DOMAIN_BLE, STATUS_LED_ERROR_HARD, "ble_recovery_bond_delete_failed");
         vTaskDelete(NULL);
         return;
@@ -2986,6 +3116,32 @@ static void ble_hid_gap_recovery_bond_delete_task(void *arg)
         return;
     }
 
+    ble_hid_gap_log_ec11_recovery_timing("advertising_started", true);
+
+    if (!s_recovery_power_blocker_active &&
+        s_recovery_pairing_window_active) {
+        ble_hid_gap_activate_recovery_pairing_window(
+            s_recovery_type_controlled_pairing,
+            s_recovery_suppress_swift_pair_prompt);
+    }
+
+    ESP_LOGW(
+        TAG,
+        "recovery: async local bond delete complete lookup_rc=%d bonded_peers=%d deleted=%d initial_bonds=%lu waited_ms=%lu",
+        lookup_rc,
+        bonded_peer_count,
+        deleted_count,
+        (unsigned long)initial_bond_count,
+        (unsigned long)waited_ms);
+    diag_log(
+        DIAG_SRC_BLE_GAP,
+        DIAG_GAP_RECOVERY,
+        DIAG_SEV_INFO,
+        15,
+        0,
+        (uint32_t)deleted_count,
+        s_ble_gap_conn_handle);
+
     ESP_LOGW(
         TAG,
         "recovery: pairing reset complete after async local bond delete, BLE identity ready for re-pair native_rotated=%u",
@@ -2997,7 +3153,9 @@ static void ble_hid_gap_recovery_bond_delete_task(void *arg)
     vTaskDelete(NULL);
 }
 
-static esp_err_t ble_hid_gap_schedule_recovery_bond_delete(uint32_t bonded_peer_count)
+static esp_err_t ble_hid_gap_schedule_recovery_bond_delete(
+    uint32_t bonded_peer_count,
+    bool defer_diagnostics)
 {
     portENTER_CRITICAL(&s_ble_gap_state_lock);
     if (s_recovery_bond_delete_pending || s_recovery_bond_delete_in_progress) {
@@ -3029,11 +3187,13 @@ static esp_err_t ble_hid_gap_schedule_recovery_bond_delete(uint32_t bonded_peer_
     portENTER_CRITICAL(&s_ble_gap_state_lock);
     s_recovery_bond_delete_task_handle = task_handle;
     portEXIT_CRITICAL(&s_ble_gap_state_lock);
-    ESP_LOGW(TAG,
-             "recovery: async local bond delete scheduled bonded_peers=%lu; advertising will wait until delete completes",
-             (unsigned long)bonded_peer_count);
-    diag_log(DIAG_SRC_BLE_GAP, DIAG_GAP_RECOVERY, DIAG_SEV_WARN,
-             15, 0, bonded_peer_count, s_ble_gap_conn_handle);
+    if (!defer_diagnostics) {
+        ESP_LOGW(TAG,
+                 "recovery: async local bond delete scheduled bonded_peers=%lu; advertising will wait until delete completes",
+                 (unsigned long)bonded_peer_count);
+        diag_log(DIAG_SRC_BLE_GAP, DIAG_GAP_RECOVERY, DIAG_SEV_WARN,
+                 15, 0, bonded_peer_count, s_ble_gap_conn_handle);
+    }
     return ESP_OK;
 }
 
@@ -3050,7 +3210,8 @@ esp_err_t ble_hid_gap_mark_stack_ready(void)
 
 static esp_err_t ble_hid_gap_forget_bonds_and_repair_inner(
     bool type_controlled_request,
-    bool suppress_swift_pair_prompt)
+    bool suppress_swift_pair_prompt,
+    bool ec11_fast_path)
 {
     s_shutdown_quiesce = false;
     s_low_power_advertising = false;
@@ -3130,6 +3291,60 @@ static esp_err_t ble_hid_gap_forget_bonds_and_repair_inner(
         type_controlled_request ||
         type_link_ready_before_recovery ||
         type_host_recent_before_recovery;
+    ble_hid_gap_connection_snapshot_t conn =
+        ble_hid_gap_reconcile_connection_snapshot("recovery_pairing_reset");
+
+    /*
+     * A connected, Type-controlled EC11 recovery must get the terminate request
+     * into NimBLE before presentation/logging work. The pairing-window state is
+     * still established first, so disconnect handling and bond deletion retain
+     * their normal safety invariants.
+     */
+    if (ec11_fast_path && type_controlled_recovery &&
+        conn.connected && conn.conn_handle != BLE_HS_CONN_HANDLE_NONE) {
+        ble_hid_gap_begin_recovery_pairing_window(
+            type_controlled_recovery,
+            suppress_swift_pair_prompt);
+        s_directed_adv_pending = false;
+        s_last_adv_was_directed = false;
+        s_native_recovery_identity_rotate_pending = false;
+
+        if (bonded_peer_count > 0) {
+            esp_err_t delete_ret = ble_hid_gap_schedule_recovery_bond_delete(
+                (uint32_t)bonded_peer_count,
+                true);
+            if (delete_ret != ESP_OK) {
+                ESP_LOGE(TAG, "recovery: async local bond delete scheduling failed: %s", esp_err_to_name(delete_ret));
+                diag_log(DIAG_SRC_BLE_GAP, DIAG_GAP_RECOVERY, DIAG_SEV_ERROR,
+                         15, (uint32_t)delete_ret, (uint32_t)bonded_peer_count, s_ble_gap_conn_handle);
+                return delete_ret;
+            }
+        }
+
+        s_recovery_waiting_for_disconnect = true;
+        ble_hid_gap_log_ec11_recovery_timing("terminate_requested", false);
+        rc = ble_gap_terminate(conn.conn_handle, BLE_ERR_REM_USER_CONN_TERM);
+        if (rc == 0 || rc == BLE_HS_EALREADY) {
+            diag_log(DIAG_SRC_BLE_GAP, DIAG_GAP_RECOVERY, DIAG_SEV_WARN,
+                     2, (uint32_t)rc, (uint32_t)bonded_peer_count, conn.conn_handle);
+            return ESP_OK;
+        }
+
+        s_recovery_waiting_for_disconnect = false;
+        ble_hid_gap_activate_recovery_pairing_window(
+            type_controlled_recovery,
+            suppress_swift_pair_prompt);
+        ESP_LOGW(TAG, "recovery: fast EC11 BLE terminate failed rc=%d", rc);
+        diag_log(DIAG_SRC_BLE_GAP, DIAG_GAP_RECOVERY, DIAG_SEV_WARN,
+                 2, (uint32_t)rc, (uint32_t)bonded_peer_count, conn.conn_handle);
+        if (rc != BLE_HS_ENOTCONN && rc != BLE_HS_EINVAL) {
+            return ESP_FAIL;
+        }
+        ble_hid_gap_set_connection_state(false, BLE_HS_CONN_HANDLE_NONE);
+        ble_hid_gap_notify_recovery_bond_delete_disconnect();
+        power_manager_set_ble_connected(false);
+    }
+
     ESP_LOGW(
         TAG,
         "recovery: opening pairing reset window bonded_peers=%d bond_delete=async_after_disconnect type_controlled=%u suppress_swift_pair=%u type_link_ready_before_recovery=%u type_host_recent=%u type_request=%u",
@@ -3150,8 +3365,6 @@ static esp_err_t ble_hid_gap_forget_bonds_and_repair_inner(
     s_directed_adv_pending = false;
     s_last_adv_was_directed = false;
 
-    ble_hid_gap_connection_snapshot_t conn =
-        ble_hid_gap_reconcile_connection_snapshot("recovery_pairing_reset");
     if (!type_controlled_recovery) {
         if (conn.connected && conn.conn_handle != BLE_HS_CONN_HANDLE_NONE) {
             ble_hid_gap_defer_native_recovery_identity_rotation("recovery_pairing_reset_connected");
@@ -3172,7 +3385,9 @@ static esp_err_t ble_hid_gap_forget_bonds_and_repair_inner(
     }
 
     if (bonded_peer_count > 0) {
-        esp_err_t delete_ret = ble_hid_gap_schedule_recovery_bond_delete((uint32_t)bonded_peer_count);
+        esp_err_t delete_ret = ble_hid_gap_schedule_recovery_bond_delete(
+            (uint32_t)bonded_peer_count,
+            false);
         if (delete_ret != ESP_OK) {
             ESP_LOGE(TAG, "recovery: async local bond delete scheduling failed: %s", esp_err_to_name(delete_ret));
             diag_log(DIAG_SRC_BLE_GAP, DIAG_GAP_RECOVERY, DIAG_SEV_ERROR,
@@ -3183,6 +3398,7 @@ static esp_err_t ble_hid_gap_forget_bonds_and_repair_inner(
 
     if (conn.connected && conn.conn_handle != BLE_HS_CONN_HANDLE_NONE) {
         s_recovery_waiting_for_disconnect = true;
+        ble_hid_gap_log_ec11_recovery_timing("terminate_requested", false);
         rc = ble_gap_terminate(conn.conn_handle, BLE_ERR_REM_USER_CONN_TERM);
         if (rc == 0 || rc == BLE_HS_EALREADY) {
             ESP_LOGW(
@@ -3203,6 +3419,7 @@ static esp_err_t ble_hid_gap_forget_bonds_and_repair_inner(
         }
         ESP_LOGW(TAG, "recovery: terminate reported no active connection; clearing stale GAP state and continuing to pairable advertising");
         ble_hid_gap_set_connection_state(false, BLE_HS_CONN_HANDLE_NONE);
+        ble_hid_gap_notify_recovery_bond_delete_disconnect();
         power_manager_set_ble_connected(false);
     }
 
@@ -3248,17 +3465,22 @@ static esp_err_t ble_hid_gap_forget_bonds_and_repair_inner(
 
 esp_err_t ble_hid_gap_forget_bonds_and_repair(void)
 {
-    return ble_hid_gap_forget_bonds_and_repair_inner(false, false);
+    return ble_hid_gap_forget_bonds_and_repair_inner(false, false, false);
+}
+
+esp_err_t ble_hid_gap_forget_bonds_and_repair_ec11_fast(void)
+{
+    return ble_hid_gap_forget_bonds_and_repair_inner(false, false, true);
 }
 
 esp_err_t ble_hid_gap_forget_bonds_and_repair_type_controlled(void)
 {
-    return ble_hid_gap_forget_bonds_and_repair_inner(true, false);
+    return ble_hid_gap_forget_bonds_and_repair_inner(true, false, false);
 }
 
 esp_err_t ble_hid_gap_forget_bonds_and_repair_type_controlled_silent(void)
 {
-    return ble_hid_gap_forget_bonds_and_repair_inner(true, true);
+    return ble_hid_gap_forget_bonds_and_repair_inner(true, true, false);
 }
 
 bool ble_hid_gap_is_connected(void)

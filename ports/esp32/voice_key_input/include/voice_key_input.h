@@ -14,7 +14,7 @@ extern "C" {
 
 esp_err_t voice_key_input_start(void);
 bool voice_key_input_take_toggle_event(void);
-bool voice_key_input_take_recovery_event(void);
+bool voice_key_input_take_recovery_event(uint64_t *out_accepted_at_us, bool *out_generated);
 void voice_key_input_set_recording_control_task(TaskHandle_t task_handle);
 bool voice_key_input_take_fast_idle_recording_event(uint32_t *out_press_to_dispatch_ms);
 bool voice_key_input_take_fast_idle_recording_cancel_event(void);

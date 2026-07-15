@@ -30,6 +30,7 @@
 #endif
 #include "esp_log.h"
 #include "esp_sleep.h"
+#include "esp_timer.h"
 
 #include "diag_log.h"
 #include "watchdog_platform.h"
@@ -141,6 +142,8 @@ static esp_io_expander_handle_t s_io_expander;
 static TaskHandle_t s_poll_task_handle;
 static TaskHandle_t s_recording_control_task_handle;
 static SemaphoreHandle_t s_recovery_event_sem;
+static int64_t s_recovery_event_accepted_at_us;
+static bool s_recovery_event_generated;
 static SemaphoreHandle_t s_fast_idle_recording_event_sem;
 static SemaphoreHandle_t s_fast_idle_recording_cancel_sem;
 static QueueHandle_t s_generated_single_click_queue;
@@ -456,6 +459,8 @@ static void voice_key_input_record_recovery_event(const char *source)
     }
 
     if (xSemaphoreGive(s_recovery_event_sem) == pdTRUE) {
+        s_recovery_event_accepted_at_us = esp_timer_get_time();
+        s_recovery_event_generated = s_direct_generated_active;
         s_fast_idle_recording_cancelled = true;
         s_fast_idle_recording_hid_suppression_pending = false;
         s_fast_idle_recording_press_tick = 0;
@@ -1373,13 +1378,23 @@ void voice_key_input_complete_fast_idle_recording_event(bool suppress_fallback_h
     }
 }
 
-bool voice_key_input_take_recovery_event(void)
+bool voice_key_input_take_recovery_event(uint64_t *out_accepted_at_us, bool *out_generated)
 {
     if (s_recovery_event_sem == NULL) {
         return false;
     }
 
-    return xSemaphoreTake(s_recovery_event_sem, 0) == pdTRUE;
+    if (xSemaphoreTake(s_recovery_event_sem, 0) != pdTRUE) {
+        return false;
+    }
+
+    if (out_accepted_at_us != NULL) {
+        *out_accepted_at_us = (uint64_t)s_recovery_event_accepted_at_us;
+    }
+    if (out_generated != NULL) {
+        *out_generated = s_recovery_event_generated;
+    }
+    return true;
 }
 
 const char *voice_key_input_get_active_source(void)

@@ -13,6 +13,7 @@
 #include "watchdog_platform.h"
 
 #include "freertos/FreeRTOS.h"
+#include "freertos/queue.h"
 #include "freertos/semphr.h"
 #include "freertos/task.h"
 
@@ -22,6 +23,9 @@ static const char *TAG = "diag_log";
 #define DIAG_LOG_MAGIC       0xD1A90001U
 #define DIAG_LOG_DUMP_PACE_EVENTS 64U
 #define DIAG_LOG_SNAPSHOT_READ_BATCH_EVENTS 32U
+#define DIAG_LOG_WRITE_QUEUE_DEPTH 64U
+#define DIAG_LOG_WRITER_STACK_SIZE 3072U
+#define DIAG_LOG_WRITER_PRIORITY (tskIDLE_PRIORITY + 1U)
 
 typedef struct {
     uint32_t magic;
@@ -57,6 +61,7 @@ _Static_assert(DIAG_EVENT_SIZE == DIAG_LOG_EVENT_WIRE_BYTES,
 
 static const esp_partition_t *s_partition;
 static SemaphoreHandle_t s_mutex;
+static QueueHandle_t s_write_queue;
 static uint16_t *s_sector_counts;
 static uint16_t *s_sector_sequences;
 static uint32_t s_total_sectors;
@@ -70,6 +75,8 @@ static bool s_dumping;
 static portMUX_TYPE s_dumping_lock = portMUX_INITIALIZER_UNLOCKED;
 static bool s_input_debug_enabled;
 static portMUX_TYPE s_input_debug_lock = portMUX_INITIALIZER_UNLOCKED;
+
+static void diag_log_platform_writer_task(void *arg);
 
 static void diag_log_platform_set_dumping(bool dumping)
 {
@@ -336,34 +343,35 @@ void diag_log_platform_init(void)
     }
 
     find_write_position();
+
+    s_write_queue = xQueueCreate(DIAG_LOG_WRITE_QUEUE_DEPTH, sizeof(diag_event_t));
+    if (s_write_queue == NULL) {
+        ESP_LOGE(TAG, "persistent writer queue create failed");
+        return;
+    }
+    if (xTaskCreate(
+            diag_log_platform_writer_task,
+            "diag_log_writer",
+            DIAG_LOG_WRITER_STACK_SIZE,
+            NULL,
+            DIAG_LOG_WRITER_PRIORITY,
+            NULL) != pdPASS) {
+        ESP_LOGE(TAG, "persistent writer task create failed");
+        vQueueDelete(s_write_queue);
+        s_write_queue = NULL;
+        return;
+    }
+
     s_initialized = true;
     ESP_LOGI(TAG, "diag_log ready: write_sector=%u write_offset=%u retained=%" PRIu32,
              (unsigned)s_write_sector, (unsigned)s_write_offset, s_retained_events);
 }
 
-void diag_log_platform_write(
-    uint16_t source,
-    uint8_t event,
-    uint8_t severity,
-    uint32_t arg1,
-    uint32_t arg2,
-    uint32_t arg3,
-    uint32_t arg4)
+static void diag_log_platform_write_now(const diag_event_t *evt)
 {
-    if (!s_initialized || s_partition == NULL) {
+    if (evt == NULL || !s_initialized || s_partition == NULL) {
         return;
     }
-
-    diag_event_t evt = {
-        .timestamp_ms = timestamp_ms(),
-        .source = source,
-        .event = event,
-        .severity = severity,
-        .arg1 = arg1,
-        .arg2 = arg2,
-        .arg3 = arg3,
-        .arg4 = arg4,
-    };
 
     xSemaphoreTake(s_mutex, portMAX_DELAY);
 
@@ -394,7 +402,7 @@ void diag_log_platform_write(
             .magic = DIAG_LOG_MAGIC,
             .sequence = s_sector_sequence++,
             .count = 0,
-            .first_timestamp = evt.timestamp_ms,
+            .first_timestamp = evt->timestamp_ms,
             .reserved = 0,
         };
         ret = write_sector_header(s_write_sector, &header);
@@ -411,7 +419,7 @@ void diag_log_platform_write(
     size_t offset = (size_t)s_write_sector * DIAG_LOG_SECTOR_SIZE
                   + DIAG_SECTOR_HEADER_SIZE
                   + (size_t)s_write_offset * DIAG_EVENT_SIZE;
-    esp_err_t ret = esp_partition_write(s_partition, offset, &evt, DIAG_EVENT_SIZE);
+    esp_err_t ret = esp_partition_write(s_partition, offset, evt, DIAG_EVENT_SIZE);
     if (ret != ESP_OK) {
         ESP_LOGW(TAG, "write event failed: %s", esp_err_to_name(ret));
         xSemaphoreGive(s_mutex);
@@ -432,6 +440,53 @@ void diag_log_platform_write(
     }
 
     xSemaphoreGive(s_mutex);
+}
+
+static void diag_log_platform_writer_task(void *arg)
+{
+    (void)arg;
+
+    diag_event_t evt;
+    for (;;) {
+        if (xQueueReceive(s_write_queue, &evt, portMAX_DELAY) == pdTRUE) {
+            diag_log_platform_write_now(&evt);
+        }
+    }
+}
+
+void diag_log_platform_write(
+    uint16_t source,
+    uint8_t event,
+    uint8_t severity,
+    uint32_t arg1,
+    uint32_t arg2,
+    uint32_t arg3,
+    uint32_t arg4)
+{
+    if (!s_initialized || s_partition == NULL) {
+        return;
+    }
+
+    const diag_event_t evt = {
+        .timestamp_ms = timestamp_ms(),
+        .source = source,
+        .event = event,
+        .severity = severity,
+        .arg1 = arg1,
+        .arg2 = arg2,
+        .arg3 = arg3,
+        .arg4 = arg4,
+    };
+
+    if (s_write_queue != NULL &&
+        xQueueSend(s_write_queue, &evt, 0) == pdTRUE) {
+        return;
+    }
+
+    /* Preserve diagnostics if initialization failed; normal recovery never blocks on flash. */
+    if (s_write_queue == NULL) {
+        diag_log_platform_write_now(&evt);
+    }
 }
 
 uint32_t diag_log_platform_count(void)

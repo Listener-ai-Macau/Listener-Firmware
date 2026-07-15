@@ -1447,6 +1447,30 @@ static void voice_recording_control_recovery(
     voice_recording_control_snapshot_t snapshot = voice_recording_control_make_snapshot(source);
     voice_recording_control_decision_t decision =
         voice_recording_control_decide_transition(VOICE_RECORDING_EVENT_RECOVERY, &snapshot);
+    const bool ec11_fast_idle_recovery =
+        source != NULL &&
+        strncmp(source, "ec11_", strlen("ec11_")) == 0 &&
+        !audio_capture_session_is_active() &&
+        !s_pending_start;
+    esp_err_t fast_recovery_ret = ESP_OK;
+
+    /*
+     * The notice must reach Type while the old GATT session is valid, then the
+     * EC11 idle path submits GAP termination before local presentation/logging.
+     */
+    if (ec11_fast_idle_recovery) {
+        if (ble_audio_stream_is_type_link_ready() &&
+            ble_audio_stream_was_type_host_recently_seen()) {
+            esp_err_t notice_ret = ble_audio_stream_send_type_recovery_notice();
+            if (notice_ret != ESP_OK) {
+                ESP_LOGW(
+                    TAG,
+                    "EC11 recovery notice could not reach Type before pairing reset: %s",
+                    esp_err_to_name(notice_ret));
+            }
+        }
+        fast_recovery_ret = ble_hid_gap_forget_bonds_and_repair_ec11_fast();
+    }
 
     if (decision.activity != NULL) {
         power_manager_record_activity(decision.activity);
@@ -1473,7 +1497,8 @@ static void voice_recording_control_recovery(
         suppress_swift_pair_prompt ? 1u : 0u);
     voice_recording_control_log_device_status("recovery", "forget_pairing_and_clear_session");
 
-    if (source != NULL && strncmp(source, "ec11_", strlen("ec11_")) == 0 &&
+    if (!ec11_fast_idle_recovery &&
+        source != NULL && strncmp(source, "ec11_", strlen("ec11_")) == 0 &&
         ble_audio_stream_is_type_link_ready() &&
         ble_audio_stream_was_type_host_recently_seen()) {
         esp_err_t notice_ret = ble_audio_stream_send_type_recovery_notice();
@@ -1499,11 +1524,13 @@ static void voice_recording_control_recovery(
     s_cancel_pending = false;
     s_cancel_source = NULL;
     s_active_session_source = NULL;
-    esp_err_t ret = suppress_swift_pair_prompt
-        ? ble_hid_gap_forget_bonds_and_repair_type_controlled_silent()
-        : (type_controlled
-            ? ble_hid_gap_forget_bonds_and_repair_type_controlled()
-            : ble_hid_gap_forget_bonds_and_repair());
+    esp_err_t ret = ec11_fast_idle_recovery
+        ? fast_recovery_ret
+        : (suppress_swift_pair_prompt
+            ? ble_hid_gap_forget_bonds_and_repair_type_controlled_silent()
+            : (type_controlled
+                ? ble_hid_gap_forget_bonds_and_repair_type_controlled()
+                : ble_hid_gap_forget_bonds_and_repair()));
     if (ret != ESP_OK) {
         voice_recording_control_log_device_error("error", "recovery_pairing_reset_failed", ret);
         status_led_set_error(STATUS_LED_ERROR_DOMAIN_BLE, STATUS_LED_ERROR_HARD, "recovery_pairing_reset_failed");
@@ -1859,8 +1886,15 @@ static void voice_recording_control_task(void *parameter)
                 voice_recording_control_toggle(voice_key_input_get_active_source());
             }
 
-            if (voice_key_input_take_recovery_event()) {
+            uint64_t recovery_accepted_at_us = 0;
+            bool recovery_generated = false;
+            if (voice_key_input_take_recovery_event(
+                    &recovery_accepted_at_us,
+                    &recovery_generated)) {
                 const char *source = voice_key_input_get_active_source();
+                ble_hid_gap_note_ec11_recovery_accepted(
+                    recovery_accepted_at_us,
+                    recovery_generated);
                 voice_recording_control_recovery(source != NULL ? source : "voice_key_hold", false, false);
             }
 
