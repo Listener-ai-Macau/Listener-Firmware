@@ -48,11 +48,9 @@
 /* Recording duration is user-controlled (KEY1 toggle); no fixed upper limit.
  * The only hard limit is uint16_t packet_sequence overflow in the BLE protocol,
  * which is handled gracefully by sending session_stop before overflow. */
-#define AUDIO_CAPTURE_STREAM_BATCH_FRAMES 1
+#define AUDIO_CAPTURE_STREAM_BATCH_FRAMES 3
 #define AUDIO_CAPTURE_STREAM_BATCH_BYTES (AUDIO_CAPTURE_STREAM_BATCH_FRAMES * AUDIO_CAPTURE_FRAME_BYTES)
 #define AUDIO_CAPTURE_STREAM_PROGRESS_LOG_PACKET_INTERVAL 64U
-#define AUDIO_CAPTURE_BACKPRESSURE_PAUSE_MS AUDIO_CAPTURE_FRAME_MS
-#define AUDIO_CAPTURE_BACKPRESSURE_LOG_INTERVAL_FRAMES 50U
 #define AUDIO_CAPTURE_IDLE_POWER_SAVE_WAIT_MS 5000U
 #define AUDIO_CAPTURE_PDM_HW_AMPLIFY_NUM 8U
 #define AUDIO_CAPTURE_PDM_SOFTWARE_GAIN_NUM 8
@@ -134,13 +132,8 @@ static audio_capture_export_state_t s_export_state;
 static SemaphoreHandle_t s_state_mutex;
 static uint32_t s_session_id_counter;
 
-static bool s_capture_backpressure_paused;
-static uint32_t s_capture_backpressure_frames;
-
-static uint32_t audio_capture_backpressure_gap_ms(void)
-{
-    return s_capture_backpressure_frames * AUDIO_CAPTURE_BACKPRESSURE_PAUSE_MS;
-}
+static bool s_capture_transport_backpressure_active;
+static uint32_t s_capture_transport_backpressure_events;
 
 static void audio_capture_wake_task(void)
 {
@@ -165,8 +158,8 @@ static const char *audio_capture_static_unavailable_reason(void)
 static void audio_capture_export_cleanup(void)
 {
     memset(&s_export_state, 0, sizeof(s_export_state));
-    s_capture_backpressure_paused = false;
-    s_capture_backpressure_frames = 0;
+    s_capture_transport_backpressure_active = false;
+    s_capture_transport_backpressure_events = 0;
 }
 
 static uint8_t audio_capture_frame_level_percent(const int16_t *frame_buffer)
@@ -198,69 +191,42 @@ static uint8_t audio_capture_frame_level_percent(const int16_t *frame_buffer)
                      (AUDIO_CAPTURE_LEVEL_FULL_SCALE - AUDIO_CAPTURE_LEVEL_NOISE_FLOOR));
 }
 
-static bool audio_capture_backpressure_should_pause(void)
+static void audio_capture_note_transport_backpressure(void)
 {
     ble_audio_stream_backpressure_t pressure = {0};
     ble_audio_stream_get_backpressure(&pressure);
 
-    bool stop_or_cancel_requested = false;
-    if (s_state_mutex != NULL &&
-        xSemaphoreTake(s_state_mutex, pdMS_TO_TICKS(2)) == pdTRUE) {
-        stop_or_cancel_requested = s_export_state.stop_requested || s_export_state.cancel_requested;
-        xSemaphoreGive(s_state_mutex);
-    }
-
-    if (!pressure.transport_session_active) {
-        if (s_capture_backpressure_paused) {
-            s_capture_backpressure_paused = false;
-        }
-        return false;
-    }
-
-    bool should_pause = pressure.pause_recommended && !stop_or_cancel_requested;
-    if (should_pause) {
-        s_capture_backpressure_frames++;
-    }
-
-    if (should_pause != s_capture_backpressure_paused) {
-        s_capture_backpressure_paused = should_pause;
+    bool transport_backpressured =
+        pressure.transport_session_active && pressure.pause_recommended;
+    if (transport_backpressured != s_capture_transport_backpressure_active) {
+        s_capture_transport_backpressure_active = transport_backpressured;
         uint32_t session_id = 0;
         if (s_state_mutex != NULL &&
             xSemaphoreTake(s_state_mutex, pdMS_TO_TICKS(2)) == pdTRUE) {
             session_id = s_export_state.session_id;
             xSemaphoreGive(s_state_mutex);
         }
-        ESP_LOGI(
+        if (transport_backpressured) {
+            s_capture_transport_backpressure_events++;
+        }
+        ESP_LOGW(
             TAG,
-            "record capture backpressure %s: session=%" PRIu32 " queued=%" PRIu32 "/%" PRIu32 " pool=%" PRIu32 "/%" PRIu32 " pressure=%" PRIu32 "%% paused_frames=%" PRIu32,
-            should_pause ? "pause" : "resume",
+            "record transport backpressure %s: session=%" PRIu32 " queued=%" PRIu32 "/%" PRIu32 " pool=%" PRIu32 "/%" PRIu32 " pressure=%" PRIu32 "%% capture_continues=1 events=%" PRIu32,
+            transport_backpressured ? "observed" : "cleared",
             session_id,
             pressure.queue_depth,
             pressure.queue_capacity,
             pressure.audio_pool_in_use,
             pressure.audio_pool_capacity,
             pressure.pressure_percent,
-            s_capture_backpressure_frames);
+            s_capture_transport_backpressure_events);
         diag_log(DIAG_SRC_AUDIO, DIAG_AUDIO_BACKPRESSURE,
-                 should_pause ? DIAG_SEV_WARN : DIAG_SEV_INFO,
+                 transport_backpressured ? DIAG_SEV_WARN : DIAG_SEV_INFO,
                  session_id,
-                 should_pause ? 1U : 2U,
+                 transport_backpressured ? 1U : 2U,
                  pressure.queue_depth,
                  pressure.audio_pool_in_use);
-    } else if (should_pause &&
-               (s_capture_backpressure_frames % AUDIO_CAPTURE_BACKPRESSURE_LOG_INTERVAL_FRAMES) == 0) {
-        ESP_LOGW(
-            TAG,
-            "record capture still paused by BLE backpressure: queued=%" PRIu32 "/%" PRIu32 " pool=%" PRIu32 "/%" PRIu32 " pressure=%" PRIu32 "%% paused_frames=%" PRIu32,
-            pressure.queue_depth,
-            pressure.queue_capacity,
-            pressure.audio_pool_in_use,
-            pressure.audio_pool_capacity,
-            pressure.pressure_percent,
-            s_capture_backpressure_frames);
     }
-
-    return should_pause;
 }
 
 static uint32_t audio_capture_packet_safe_total_frames(uint16_t payload_bytes)
@@ -777,23 +743,20 @@ static void audio_capture_process_frame(const int16_t *frame_buffer)
         if (!stream_failed && should_emit) {
             uint32_t stop_duration = 0;
             uint32_t stop_frames = 0;
-            uint32_t stop_backpressure_gap_ms = 0;
-            uint32_t stop_backpressure_pause_frames = 0;
+            uint32_t stop_transport_backpressure_events = 0;
             if (xSemaphoreTake(s_state_mutex, portMAX_DELAY) == pdTRUE) {
                 stop_duration = s_export_state.duration_seconds;
                 stop_frames = s_export_state.captured_frames;
-                stop_backpressure_gap_ms = audio_capture_backpressure_gap_ms();
-                stop_backpressure_pause_frames = s_capture_backpressure_frames;
+                stop_transport_backpressure_events = s_capture_transport_backpressure_events;
                 audio_capture_export_cleanup();
                 xSemaphoreGive(s_state_mutex);
             }
             ESP_LOGI(
                 TAG,
-                "record session capture integrity: session_id=%" PRIu32 " pcm_ms=%" PRIu32 " capture_backpressure_gap_ms=%" PRIu32 " capture_backpressure_pause_frames=%" PRIu32,
+                "record session capture integrity: session_id=%" PRIu32 " pcm_ms=%" PRIu32 " capture_backpressure_gap_ms=0 capture_backpressure_pause_frames=0 transport_backpressure_events=%" PRIu32,
                 session_id,
                 stop_frames * AUDIO_CAPTURE_FRAME_MS,
-                stop_backpressure_gap_ms,
-                stop_backpressure_pause_frames);
+                stop_transport_backpressure_events);
             diag_log(DIAG_SRC_AUDIO, DIAG_AUDIO_SESSION, DIAG_SEV_INFO,
                      2, session_id, stop_duration, stop_frames);
         }
@@ -832,17 +795,10 @@ static void audio_capture_task(void *arg)
         }
         (void)audio_capture_apply_idle_power_save(false);
 
-        if (audio_capture_backpressure_should_pause()) {
-            vTaskDelay(pdMS_TO_TICKS(AUDIO_CAPTURE_BACKPRESSURE_PAUSE_MS));
-            continue;
-        }
-
+        audio_capture_note_transport_backpressure();
         int ret = esp_codec_dev_read(s_codec_handle, frame_buffer, sizeof(frame_buffer));
         if (ret == ESP_CODEC_DEV_OK) {
-            if (audio_capture_backpressure_should_pause()) {
-                vTaskDelay(pdMS_TO_TICKS(AUDIO_CAPTURE_BACKPRESSURE_PAUSE_MS));
-                continue;
-            }
+            audio_capture_note_transport_backpressure();
             audio_capture_process_frame(frame_buffer);
             continue;
         }
@@ -1032,20 +988,13 @@ static void audio_capture_task(void *arg)
         }
         (void)audio_capture_apply_idle_power_save(false);
 
-        if (audio_capture_backpressure_should_pause()) {
-            vTaskDelay(pdMS_TO_TICKS(AUDIO_CAPTURE_BACKPRESSURE_PAUSE_MS));
-            continue;
-        }
-
+        audio_capture_note_transport_backpressure();
         size_t bytes_read = 0;
         esp_err_t ret = i2s_channel_read(
             s_i2s_rx_handle, frame_buffer, sizeof(frame_buffer),
             &bytes_read, portMAX_DELAY);
         if (ret == ESP_OK && bytes_read == sizeof(frame_buffer)) {
-            if (audio_capture_backpressure_should_pause()) {
-                vTaskDelay(pdMS_TO_TICKS(AUDIO_CAPTURE_BACKPRESSURE_PAUSE_MS));
-                continue;
-            }
+            audio_capture_note_transport_backpressure();
             audio_capture_apply_pdm_software_gain(frame_buffer);
             audio_capture_process_frame(frame_buffer);
             continue;

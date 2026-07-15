@@ -27,7 +27,10 @@ SOURCE_TOKENS = [
     "s_connection_epoch",
     "s_pending_subscribe_epoch",
     "s_pending_mtu_epoch",
-    "s_notify_tx_wait_epoch",
+    "s_notify_tx_inflight_epoch",
+    "s_notify_tx_inflight",
+    "ble_audio_stream_note_notify_tx_queued",
+    "ble_audio_stream_complete_notify_tx",
     "s_stale_event_counts",
     "BLE_AUDIO_STREAM_LINK_RECOVERY_WAIT_MS 20000",
     "BLE_AUDIO_STREAM_REPLAY_WINDOW_PACKETS 48",
@@ -88,8 +91,8 @@ def static_source_checks() -> None:
     )
     require_regex(
         stream,
-        r"ble_audio_stream_on_gap_notify_tx\(.*?s_notify_tx_wait_epoch",
-        "notify_tx epoch guard",
+        r"ble_audio_stream_on_gap_notify_tx\(.*?ble_audio_stream_complete_notify_tx\(link\.connection_epoch\)",
+        "notify_tx in-flight epoch guard",
         STREAM,
     )
     require_regex(
