@@ -3079,8 +3079,8 @@ def main() -> int:
         "const bool active_work = s_state.recording_active ||\n            s_state.processing_active ||\n            s_state.ota_active;" not in ble_set_state.group(0) or
         "state_changed && !effect_only && !routine_low_power_ble &&" not in ble_set_state.group(0) or
         "status_led_ble_state_ready_locked(state) &&\n            !keep_repair_cue" not in ble_set_state.group(0) or
-        "const bool keep_repair_cue = status_led_ble_repair_cue_active_locked(now_ms);" not in ble_set_state.group(0) or
-        "const bool keep_repair_cue = status_led_ble_repair_cue_active_locked(now_ms) &&\n            state != STATUS_LED_BLE_DISCONNECTED;" in ble_set_state.group(0) or
+        "const bool keep_repair_cue = status_led_ble_repair_cue_active_locked(now_ms) &&\n            state != STATUS_LED_BLE_CONNECTED &&\n            state != STATUS_LED_BLE_TYPE_READY;" not in ble_set_state.group(0) or
+        "state != STATUS_LED_BLE_DISCONNECTED;" in ble_set_state.group(0) or
         "if (state == STATUS_LED_BLE_DISCONNECTED && !keep_repair_cue) {\n            s_state.ble_repair_until_ms = 0U;\n            s_state.ble_repair_cue_started_ms = 0U;\n            s_state.ble_repair_cue_until_ms = 0U;\n        }" not in ble_set_state.group(0) or
         "if (!keep_repair_cue && !keep_repair_window) {\n                s_state.ble_repair_cue_started_ms = 0U;\n                s_state.ble_repair_cue_until_ms = 0U;\n            }" not in ble_set_state.group(0) or
         "!active_work" not in ble_set_state.group(0) or
@@ -3089,7 +3089,7 @@ def main() -> int:
         "const bool ble_visual_transition =\n            state_changed && !effect_only && !active_work;" not in ble_set_state.group(0) or
         "if (ble_visual_transition) {\n                s_state.last_transition_ms = now_ms;" not in ble_set_state.group(0)
     ):
-        failures.append("status_led.c: routine connected/TYPE_READY/DISCONNECTED BLE changes must stay quiet in low power, while an active rename repair cue survives the expected disconnect until its fixed duration ends")
+        failures.append("status_led.c: repair cue must survive the expected reset disconnect but immediately yield to connected/TYPE_READY blue state rendering")
     if "status_led_force_all_off();" in status_led:
         failures.append("status_led.c: all-off callers must explicitly choose whether the status strip may force non-DMA")
     all_off_body = re.search(

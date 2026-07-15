@@ -5032,7 +5032,11 @@ void status_led_set_ble_state(status_led_ble_state_t state, bool confidence_wind
          * transition until its bounded duration elapses. */
         const bool keep_repair_window = status_led_ble_repair_active_locked(now_ms) &&
             (state == STATUS_LED_BLE_PAIRING || state == STATUS_LED_BLE_RECONNECTING);
-        const bool keep_repair_cue = status_led_ble_repair_cue_active_locked(now_ms);
+        /* The repair cue bridges the expected reset disconnect, but a restored
+         * BLE link must immediately show its own low-brightness state. */
+        const bool keep_repair_cue = status_led_ble_repair_cue_active_locked(now_ms) &&
+            state != STATUS_LED_BLE_CONNECTED &&
+            state != STATUS_LED_BLE_TYPE_READY;
         if (state == STATUS_LED_BLE_REPAIRING) {
             status_led_start_ble_repair_locked(now_ms);
             changed = true;
