@@ -2717,6 +2717,9 @@ static void status_led_render_ble_locked(status_led_frame_t *frame, uint32_t now
     }
 
     status_led_rgb_t ble_blue = status_led_rgb(0, 0, 255);
+    /* Blue is reserved for a confirmed secure BLE link. Pairing and recovery
+     * need a distinct cue so they cannot be mistaken for a connected state. */
+    status_led_rgb_t ble_waiting = status_led_rgb(255, 140, 0);
     status_led_rgb_t color = {0};
     const uint32_t ble_elapsed_ms = status_led_ble_elapsed_locked(now_ms);
     if (status_led_ble_repair_cue_active_locked(now_ms)) {
@@ -2724,7 +2727,7 @@ static void status_led_render_ble_locked(status_led_frame_t *frame, uint32_t now
             now_ms,
             STATUS_LED_BLE_REPAIR_MIN_PERCENT,
             STATUS_LED_BLE_REPAIR_MAX_PERCENT);
-        color = status_led_token_locked(ble_blue, percent, false);
+        color = status_led_token_locked(ble_waiting, percent, false);
         status_led_set_max(&frame->status[STATUS_LED_SEM_BLE], color);
         return;
     }
@@ -2740,7 +2743,7 @@ static void status_led_render_ble_locked(status_led_frame_t *frame, uint32_t now
             ? STATUS_LED_BLE_RECONNECT_PULSE_PERCENT
             : 0U;
         color = status_led_token_relative_to_peak_locked(
-            ble_blue,
+            ble_waiting,
             percent,
             STATUS_LED_BLE_RECONNECT_PULSE_PERCENT,
             false);
@@ -2755,7 +2758,7 @@ static void status_led_render_ble_locked(status_led_frame_t *frame, uint32_t now
             ? STATUS_LED_BLE_PAIRING_PULSE_PERCENT
             : 0U;
         color = status_led_token_relative_to_peak_locked(
-            ble_blue,
+            ble_waiting,
             percent,
             STATUS_LED_BLE_PAIRING_PULSE_PERCENT,
             false);
@@ -2768,7 +2771,7 @@ static void status_led_render_ble_locked(status_led_frame_t *frame, uint32_t now
             ? STATUS_LED_BLE_RECONNECT_PULSE_PERCENT
             : 0U;
         color = status_led_token_relative_to_peak_locked(
-            ble_blue,
+            ble_waiting,
             percent,
             STATUS_LED_BLE_RECONNECT_PULSE_PERCENT,
             false);
@@ -2855,9 +2858,12 @@ static void status_led_render_low_power_ble_locked(status_led_frame_t *frame, ui
         return;
     }
     uint8_t peak = status_led_low_power_ble_peak_percent_locked();
+    status_led_rgb_t color = status_led_ble_state_attention_locked(s_state.ble_state)
+        ? status_led_rgb(255, 140, 0)
+        : status_led_rgb(0, 0, 255);
     status_led_set_max(
         &frame->status[STATUS_LED_SEM_BLE],
-        status_led_token_relative_to_peak_locked(status_led_rgb(0, 0, 255), percent, peak, false));
+        status_led_token_relative_to_peak_locked(color, percent, peak, false));
 }
 
 static uint8_t status_led_step_percent_towards(uint8_t current, uint8_t target, uint8_t max_step)
@@ -3546,7 +3552,7 @@ static void status_led_render_ec11_repair_locked(status_led_frame_t *frame, uint
         now_ms,
         STATUS_LED_EC11_REPAIR_BLINK_MIN_PERCENT,
         STATUS_LED_EC11_REPAIR_BLINK_MAX_PERCENT);
-    status_led_rgb_t color = status_led_token_locked(status_led_rgb(0, 0, 255), percent, false);
+    status_led_rgb_t color = status_led_token_locked(status_led_rgb(255, 140, 0), percent, false);
     for (size_t index = 0; index < STATUS_LED_EC11_COUNT; ++index) {
         status_led_set_max(&frame->ec11[index], color);
     }

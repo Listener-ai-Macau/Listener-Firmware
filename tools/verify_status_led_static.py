@@ -2308,10 +2308,10 @@ def main() -> int:
             r"STATUS_LED_BLE_RECONNECT_PULSE_PERCENT[\s\S]*?"
             r":\s*0U[\s\S]*?"
             r"status_led_token_relative_to_peak_locked\(\s*"
-            r"ble_blue,\s*percent,\s*STATUS_LED_BLE_RECONNECT_PULSE_PERCENT,\s*false\s*\)",
+            r"ble_waiting,\s*percent,\s*STATUS_LED_BLE_RECONNECT_PULSE_PERCENT,\s*false\s*\)",
             reconnect_body,
         ):
-            failures.append("status_led.c: reconnecting BLE must double-pulse with a dark off phase; low blue floor belongs only to connected BLE states")
+            failures.append("status_led.c: reconnecting BLE must double-pulse with a dark off phase using the non-connected waiting color")
     ota_setter = extract_c_function(status_led, "status_led_set_ota_active")
     if not ota_setter:
         failures.append("status_led.c: missing status_led_set_ota_active")
@@ -2594,9 +2594,9 @@ def main() -> int:
         failures.append("status_led.c: BLE repair blink envelope must not add a third offset blink")
     if "STATUS_LED_BLE_REPAIR_MIN_PERCENT 30U" not in status_led or \
        "STATUS_LED_BLE_REPAIR_MAX_PERCENT 100U" not in status_led:
-        failures.append("status_led.c: BLE re-pair confirmation must keep the legacy blue base-and-peak double-flash")
+        failures.append("status_led.c: BLE re-pair confirmation must keep its bounded base-and-peak double-flash")
     if "now_ms < s_state.ble_repair_cue_started_ms) {\n        return base_percent;" not in status_led:
-        failures.append("status_led.c: BLE re-pair lead-clear window must show the legacy blue base instead of going dark")
+        failures.append("status_led.c: BLE re-pair lead-clear window must show its base cue instead of going dark")
     if "status_led_ble_repair_cue_active_locked(now_ms)" not in status_led:
         failures.append("status_led.c: long recovery pairing windows must not render the three-cycle repair confirmation forever")
     repair_start = re.search(
@@ -2653,7 +2653,7 @@ def main() -> int:
         failures.append("status_led.c: BLE recovery window must wait through a full dark rearm gap before its phase-anchored reconnect double-flash")
     if "STATUS_LED_EC11_REPAIR_BLINK_MIN_PERCENT 4U" not in status_led or \
        "STATUS_LED_EC11_REPAIR_BLINK_MAX_PERCENT 16U" not in status_led:
-        failures.append("status_led.c: EC11 re-pair ring must keep the legacy blue base-and-peak double-flash")
+        failures.append("status_led.c: EC11 re-pair ring must keep the synchronized base-and-peak double-flash")
     repair_ring = re.search(
         r"static\s+void\s+status_led_render_ec11_repair_locked[^{]*\{(?P<body>[\s\S]*?)\n\}",
         status_led,
