@@ -167,6 +167,10 @@ static denzic_device_control_v1_context_t s_platform_device_control;
 static uint64_t s_platform_device_control_next_operation_id = 1u;
 static uint64_t s_platform_device_control_active_recovery_operation_id = 0u;
 
+static void ble_hid_gap_platform_device_control_complete_recovery(
+    denzic_device_control_v1_operation_result_t result,
+    denzic_device_control_v1_error_category_t error);
+
 static void ble_hid_gap_platform_device_control_set_lifecycle(
     denzic_device_control_v1_lifecycle_state_t lifecycle)
 {
@@ -177,6 +181,9 @@ static void ble_hid_gap_platform_device_control_set_lifecycle(
 
 static void ble_hid_gap_platform_device_control_mark_type_ready(void)
 {
+    ble_hid_gap_platform_device_control_complete_recovery(
+        DENZIC_DEVICE_CONTROL_V1_OPERATION_RESULT_SUCCEEDED,
+        DENZIC_DEVICE_CONTROL_V1_ERROR_CATEGORY_NONE);
     portENTER_CRITICAL(&s_ble_gap_state_lock);
     denzic_device_control_v1_set_ownership(
         &s_platform_device_control,
@@ -209,7 +216,7 @@ static void ble_hid_gap_platform_device_control_begin_recovery(bool type_control
     request.operation_id = operation_id;
     request.idempotency_key = operation_id;
     request.target_id = 1u; /* Listener recovery advertising endpoint. */
-    request.timeout_ms = 4000u;
+    request.timeout_ms = 120000u;
     request.kind = DENZIC_DEVICE_CONTROL_V1_OPERATION_KIND_CONNECT;
     /* A firmware recovery is caused by a physical/user command, not an automatic host reclaim. */
     request.automatic = false;
@@ -260,6 +267,28 @@ static void ble_hid_gap_platform_device_control_complete_recovery(
         (unsigned)decision.result,
         (unsigned)decision.error,
         decision.replayed ? 1u : 0u);
+}
+
+static void ble_hid_gap_platform_device_control_note_retryable_security_failure(int status)
+{
+    uint64_t operation_id;
+    denzic_device_control_v1_error_category_t error =
+        status == BLE_ERR_MEM_CAPACITY
+            ? DENZIC_DEVICE_CONTROL_V1_ERROR_CATEGORY_RESOURCE
+            : DENZIC_DEVICE_CONTROL_V1_ERROR_CATEGORY_DEVICE;
+
+    portENTER_CRITICAL(&s_ble_gap_state_lock);
+    operation_id = s_platform_device_control_active_recovery_operation_id;
+    portEXIT_CRITICAL(&s_ble_gap_state_lock);
+    if (operation_id == 0u) {
+        return;
+    }
+    ESP_LOGW(
+        TAG,
+        "device-control recovery security attempt retryable operation_id=%llu error=%u hci_status=%d",
+        (unsigned long long)operation_id,
+        (unsigned)error,
+        status);
 }
 
 typedef enum {
@@ -1204,6 +1233,9 @@ static void ble_hid_gap_close_recovery_pairing_window(const char *reason)
     if (!s_ble_gap_connected &&
         reason != NULL &&
         strcmp(reason, "pairing_window_expired") == 0) {
+        ble_hid_gap_platform_device_control_complete_recovery(
+            DENZIC_DEVICE_CONTROL_V1_OPERATION_RESULT_TIMED_OUT,
+            DENZIC_DEVICE_CONTROL_V1_ERROR_CATEGORY_TIMEOUT);
         status_led_set_ble_state(STATUS_LED_BLE_RECONNECTING, false);
     }
 }
@@ -2584,6 +2616,8 @@ nimble_hid_gap_event(struct ble_gap_event *event, void *arg)
         } else {
             ESP_LOGW(TAG, "encryption failed or connection already gone; status=%d", event->enc_change.status);
             if (ble_hid_gap_recovery_pairing_window_open()) {
+                ble_hid_gap_platform_device_control_note_retryable_security_failure(
+                    event->enc_change.status);
                 ESP_LOGW(
                     TAG,
                     "recovery: pairing encryption failure status=%d; keeping pairing advertising available for Windows retry without restarting repair",
@@ -3057,9 +3091,6 @@ esp_err_t esp_hid_ble_gap_adv_start(void)
      * before optional diagnostics so the recovery gate measures controller work,
      * while the later completion timestamp still exposes log-path overhead. */
     ble_hid_gap_log_ec11_recovery_timing("advertising_command_accepted", false);
-    ble_hid_gap_platform_device_control_complete_recovery(
-        DENZIC_DEVICE_CONTROL_V1_OPERATION_RESULT_SUCCEEDED,
-        DENZIC_DEVICE_CONTROL_V1_ERROR_CATEGORY_NONE);
 
     s_last_adv_was_directed = false;
     if (pairing_window) {
