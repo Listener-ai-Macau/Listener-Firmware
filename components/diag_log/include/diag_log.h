@@ -2,12 +2,28 @@
 #define DIAG_LOG_H
 
 #include <stdbool.h>
+#include <stddef.h>
 #include <stdint.h>
 #include "diag_log_events.h"
 
 #ifndef DIAG_LOG_EVENT_WIRE_BYTES
 #define DIAG_LOG_EVENT_WIRE_BYTES 24U
 #endif
+
+/* This layout is the stable retained-log and BLE-export wire contract. */
+typedef struct {
+    uint32_t timestamp_ms;
+    uint16_t source;
+    uint8_t event;
+    uint8_t severity;
+    uint32_t arg1;
+    uint32_t arg2;
+    uint32_t arg3;
+    uint32_t arg4;
+} diag_log_event_wire_t;
+
+_Static_assert(sizeof(diag_log_event_wire_t) == DIAG_LOG_EVENT_WIRE_BYTES,
+               "diag_log retained event wire size must stay stable");
 
 void diag_log_init(void);
 void diag_log_write(uint16_t source, uint8_t event, uint8_t severity,
@@ -23,6 +39,7 @@ uint32_t diag_log_count(void);
 void diag_log_dump(void);
 void diag_log_dump_last(uint32_t count);
 void diag_log_dump_last_by_source(uint32_t count, uint16_t source);
+void diag_log_dump_platform_last(uint32_t count);
 void diag_log_clear(void);
 bool diag_log_is_dumping(void);
 bool diag_log_input_debug_enabled(void);

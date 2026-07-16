@@ -1584,6 +1584,18 @@ static void voice_recording_control_handle_fast_idle_ec11_start(uint32_t press_t
         voice_recording_state_name(state_before),
         voice_recording_state_name(s_state),
         s_pending_start ? 1u : 0u);
+
+    /* A pending press must not inherit the previous recording session's ID. */
+    uint32_t recording_session_id =
+        s_state == VOICE_RECORDING_STATE_RECORDING && !s_pending_start ? s_session_count : 0U;
+    diag_log(
+        DIAG_SRC_VOICE_REC,
+        DIAG_VREC_TIMING,
+        DIAG_SEV_INFO,
+        press_to_control_ms,
+        voice_recording_source_code("ec11.fast_idle"),
+        recording_session_id,
+        (uint32_t)s_state);
 }
 
 static void voice_recording_control_host_processing_start(const char *source)
