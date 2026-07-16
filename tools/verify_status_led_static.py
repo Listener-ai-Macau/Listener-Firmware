@@ -1843,8 +1843,8 @@ def main() -> int:
         "s_recovery_suppress_swift_pair_prompt" not in ble_gap
         or "recovery: Swift Pair prompt suppressed for Type-controlled silent recovery" not in ble_gap
         or "ble_hid_gap_forget_bonds_and_repair_type_controlled_silent" not in ble_gap
-        or "ble_hid_gap_forget_bonds_and_repair_inner(true, true)" not in ble_gap
-        or "ble_hid_gap_forget_bonds_and_repair_inner(true, false)" not in ble_gap
+        or "ble_hid_gap_forget_bonds_and_repair_inner(true, true, false)" not in ble_gap
+        or "ble_hid_gap_forget_bonds_and_repair_inner(true, false, false)" not in ble_gap
         or "suppress_swift_pair=%u" not in ble_gap
     ):
         failures.append(
