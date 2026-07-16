@@ -9,6 +9,10 @@ CONFIG_BT_NIMBLE_SVC_DIS_FIRMWARE_REVISION=y
 CONFIG_BT_NIMBLE_SVC_DIS_SOFTWARE_REVISION=y
 CONFIG_BT_NIMBLE_SVC_DIS_PNP_ID=y
 CONFIG_BT_NIMBLE_NVS_PERSIST=y
+# A recovery deletes every bond before advertising a new Windows pairing
+# identity. Rotate the local IRK with that deletion so Windows never sees a
+# new address distributing an IRK already assigned to the removed device.
+CONFIG_BT_NIMBLE_SMP_ID_RESET=y
 CONFIG_BT_NIMBLE_SM_LVL=2
 CONFIG_BT_NIMBLE_ATT_PREFERRED_MTU=517
 CONFIG_BT_NIMBLE_MSYS_1_BLOCK_COUNT=50

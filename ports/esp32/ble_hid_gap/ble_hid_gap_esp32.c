@@ -45,6 +45,13 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 
+#if defined(CONFIG_BT_NIMBLE_SMP_ID_RESET) && defined(CONFIG_BT_NIMBLE_HS_PVCY)
+/* NimBLE exposes the active local-IRK update behind its GAP reset path. */
+extern void ble_hs_pvcy_set_default_irk(void);
+extern int ble_hs_pvcy_set_our_irk(const uint8_t *irk);
+extern int ble_hs_pvcy_remove_entry(uint8_t addr_type, const uint8_t *addr);
+#endif
+
 static const char *TAG = "ESP_HID_GAP";
 
 extern void ble_hid_task_start_up(void);
@@ -58,6 +65,7 @@ static void ble_hid_gap_close_recovery_pairing_window(const char *reason);
 static void ble_hid_gap_note_secure_connection(uint16_t conn_handle, const char *reason);
 static bool ble_hid_gap_recovery_pairing_window_open(void);
 static void ble_hid_gap_notify_recovery_bond_delete_disconnect(void);
+static esp_err_t ble_hid_gap_reset_local_irk_without_bonds(void);
 
 static void ble_hid_gap_log_conn_desc(const char *context, uint16_t conn_handle)
 {
@@ -736,6 +744,71 @@ static esp_err_t ble_hid_gap_rotate_native_recovery_identity(const char *reason)
         addr.val,
         reason != NULL ? reason : "native_recovery_pairing",
         true);
+}
+
+static esp_err_t ble_hid_gap_reset_local_irk_without_bonds(void)
+{
+#if defined(CONFIG_BT_NIMBLE_SMP_ID_RESET) && defined(CONFIG_BT_NIMBLE_HS_PVCY)
+    struct ble_store_key_local_irk key = {0};
+    uint8_t local_id[BLE_DEV_ADDR_LEN] = {0};
+    uint8_t prior_irk[16] = {0};
+    uint8_t refreshed_irk[16] = {0};
+    uint8_t zero_addr[BLE_DEV_ADDR_LEN] = {0};
+
+    if (ble_gap_adv_active()) {
+        int stop_rc = ble_gap_adv_stop();
+        if (stop_rc != 0) {
+            ESP_LOGE(TAG,
+                     "recovery: advertising stop before no-bond local IRK reset failed rc=%d",
+                     stop_rc);
+            return ESP_FAIL;
+        }
+    }
+
+    int copy_rc = ble_hs_id_copy_addr(BLE_ADDR_PUBLIC, local_id, NULL);
+    if (copy_rc == 0) {
+        memcpy(key.addr.val, local_id, BLE_DEV_ADDR_LEN);
+    }
+    key.addr.type = BLE_ADDR_PUBLIC;
+
+    int prior_rc = ble_gap_read_local_irk(prior_irk);
+    int delete_rc = ble_store_delete_local_irk(&key);
+    if (delete_rc != 0 && delete_rc != BLE_HS_ENOENT) {
+        ESP_LOGE(TAG,
+                 "recovery: local IRK store delete failed without bonds rc=%d",
+                 delete_rc);
+        return ESP_FAIL;
+    }
+
+    ble_hs_pvcy_set_default_irk();
+    int remove_rc = ble_hs_pvcy_remove_entry(BLE_ADDR_PUBLIC, zero_addr);
+    if (remove_rc != 0) {
+        ESP_LOGE(TAG,
+                 "recovery: local IRK resolver removal failed without bonds rc=%d",
+                 remove_rc);
+        return ESP_FAIL;
+    }
+
+    int apply_rc = ble_hs_pvcy_set_our_irk(NULL);
+    int refreshed_rc = ble_gap_read_local_irk(refreshed_irk);
+    if (apply_rc != 0 || refreshed_rc != 0 ||
+        (prior_rc == 0 && memcmp(prior_irk, refreshed_irk, sizeof(prior_irk)) == 0)) {
+        ESP_LOGE(TAG,
+                 "recovery: local IRK reset failed without bonds apply_rc=%d prior_rc=%d refreshed_rc=%d",
+                 apply_rc,
+                 prior_rc,
+                 refreshed_rc);
+        return ESP_FAIL;
+    }
+
+    ESP_LOGW(TAG, "recovery: local IRK reset before native re-pair without local bonds");
+    diag_log(DIAG_SRC_BLE_GAP, DIAG_GAP_RECOVERY, DIAG_SEV_INFO,
+             17, 0, 0, s_ble_gap_conn_handle);
+    return ESP_OK;
+#else
+    ESP_LOGE(TAG, "recovery: native no-bond IRK reset requires NimBLE SMP identity reset support");
+    return ESP_ERR_NOT_SUPPORTED;
+#endif
 }
 
 static bool ble_hid_gap_adv_start_deferred_rc(int rc)
@@ -2025,17 +2098,29 @@ static void ble_hid_gap_handle_disconnect(uint16_t conn_handle, int reason, cons
         return;
     }
     bool disconnect_recovery_pairing_window = ble_hid_gap_recovery_pairing_window_open();
+    int recovery_bonded_peer_count = -1;
     if (disconnect_recovery_pairing_window) {
-        int bonded_peer_count = 0;
-        rc = ble_hid_gap_get_bonded_peer_count(&bonded_peer_count);
-        if (rc == 0 && bonded_peer_count > 0) {
+        rc = ble_hid_gap_get_bonded_peer_count(&recovery_bonded_peer_count);
+        if (rc == 0 && recovery_bonded_peer_count > 0) {
             ESP_LOGI(TAG, "recovery: bonded peer present after disconnect; keeping pairing window visible until secure reconnect");
             diag_log(DIAG_SRC_BLE_GAP, DIAG_GAP_RECOVERY, DIAG_SEV_INFO,
-                     9, (uint32_t)bonded_peer_count, 0, conn_handle);
+                     9, (uint32_t)recovery_bonded_peer_count, 0, conn_handle);
         } else if (rc != 0) {
             ESP_LOGW(TAG, "recovery: bonded peer lookup after disconnect failed rc=%d; keeping pairing window", rc);
             diag_log(DIAG_SRC_BLE_GAP, DIAG_GAP_RECOVERY, DIAG_SEV_WARN,
                       9, (uint32_t)rc, 0, conn_handle);
+        }
+    }
+    if (disconnect_recovery_pairing_window && s_native_recovery_identity_rotate_pending &&
+        rc == 0 && recovery_bonded_peer_count == 0) {
+        esp_err_t irk_ret = ble_hid_gap_reset_local_irk_without_bonds();
+        if (irk_ret != ESP_OK) {
+            ESP_LOGE(
+                TAG,
+                "recovery: local IRK reset after disconnect failed: %s",
+                esp_err_to_name(irk_ret));
+            status_led_set_error(STATUS_LED_ERROR_DOMAIN_BLE, STATUS_LED_ERROR_HARD, "ble_recovery_irk_reset_failed");
+            return;
         }
     }
     if (disconnect_recovery_pairing_window && s_native_recovery_identity_rotate_pending) {
@@ -3042,7 +3127,13 @@ static void ble_hid_gap_recovery_bond_delete_task(void *arg)
     int deleted_count = 0;
     if (lookup_rc == 0) {
         for (int index = 0; index < bonded_peer_count; ++index) {
-            int delete_rc = ble_store_util_delete_peer(&bonded_peers[index]);
+            /*
+             * Use the GAP API rather than deleting only persistent records.
+             * With BLE_SMP_ID_RESET enabled, NimBLE rotates the local IRK
+             * after the final bond disappears.  Windows otherwise rejects a
+             * new recovery address that distributes the prior device IRK.
+             */
+            int delete_rc = ble_gap_unpair(&bonded_peers[index]);
             if (delete_rc == 0) {
                 ++deleted_count;
             } else {
@@ -3369,6 +3460,17 @@ static esp_err_t ble_hid_gap_forget_bonds_and_repair_inner(
         if (conn.connected && conn.conn_handle != BLE_HS_CONN_HANDLE_NONE) {
             ble_hid_gap_defer_native_recovery_identity_rotation("recovery_pairing_reset_connected");
         } else {
+            if (bonded_peer_count == 0) {
+                esp_err_t irk_ret = ble_hid_gap_reset_local_irk_without_bonds();
+                if (irk_ret != ESP_OK) {
+                    ESP_LOGE(
+                        TAG,
+                        "recovery: local IRK reset before native identity rotation failed: %s",
+                        esp_err_to_name(irk_ret));
+                    status_led_set_error(STATUS_LED_ERROR_DOMAIN_BLE, STATUS_LED_ERROR_HARD, "ble_recovery_irk_reset_failed");
+                    return irk_ret;
+                }
+            }
             esp_err_t identity_ret =
                 ble_hid_gap_rotate_native_recovery_identity("recovery_pairing_reset");
             if (identity_ret != ESP_OK) {

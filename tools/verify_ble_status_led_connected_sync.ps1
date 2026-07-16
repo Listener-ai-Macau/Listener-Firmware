@@ -141,7 +141,7 @@ Assert-Contains $gap 'static\s+esp_err_t\s+ble_hid_gap_forget_bonds_and_repair_i
     "recovery pairing reset must recover from stale connected state and continue to pairable advertising"
 Assert-Contains $gap 'esp_err_t\s+ble_hid_gap_apply_pending_ble_name\(void\)[\s\S]*?ble_hid_gap_reconcile_connection_snapshot\("ble_name_apply"\)[\s\S]*?BLE name apply terminate failed rc=%d; attempting advertising restart path[\s\S]*?rc != BLE_HS_ENOTCONN && rc != BLE_HS_EINVAL[\s\S]*?ble_hid_gap_start_advertising\(\)' `
     "BLE name apply must recover from stale ghost-connected state instead of failing before advertising the new name"
-Assert-Contains $gap 'static\s+void\s+ble_hid_gap_handle_disconnect[\s\S]*?ble_hid_gap_get_bonded_peer_count\(&bonded_peer_count\)[\s\S]*?bonded_peer_count\s*>\s*0[\s\S]*?keeping pairing window visible until secure reconnect[\s\S]*?ble_hid_gap_start_advertising\(\)[\s\S]*?ble_hid_gap_hold_recovery_pairing_led\("ble_recovery_pairing_window_after_disconnect"\)' `
+Assert-Contains $gap 'static\s+void\s+ble_hid_gap_handle_disconnect[\s\S]*?ble_hid_gap_get_bonded_peer_count\(&recovery_bonded_peer_count\)[\s\S]*?recovery_bonded_peer_count\s*>\s*0[\s\S]*?keeping pairing window visible until secure reconnect[\s\S]*?ble_hid_gap_start_advertising\(\)[\s\S]*?ble_hid_gap_hold_recovery_pairing_led\("ble_recovery_pairing_window_after_disconnect"\)' `
     "recovery disconnect must keep pairing LED visible through bond churn until secure reconnect"
 Assert-NotContains $gap 'ble_hid_gap_close_recovery_pairing_window\("bond restored after recovery disconnect"\)' `
     "recovery disconnect must not close the pairing window merely because Windows recreated a bond"
@@ -167,12 +167,24 @@ Assert-NotContains $sdkDefaults 'CONFIG_BT_CTRL_MODEM_SLEEP=y' `
     "sdkconfig.defaults must not re-enable BLE controller modem sleep"
 Assert-NotContains $sdkDefaultsEsp32s3 'CONFIG_BT_CTRL_MODEM_SLEEP=y' `
     "sdkconfig.defaults.esp32s3 must not re-enable BLE controller modem sleep"
+Assert-Contains $sdkDefaults 'CONFIG_BT_NIMBLE_SMP_ID_RESET=y' `
+    "sdkconfig.defaults must rotate the local IRK after recovery removes every bond"
+Assert-Contains $sdkDefaultsEsp32s3 'CONFIG_BT_NIMBLE_SMP_ID_RESET=y' `
+    "sdkconfig.defaults.esp32s3 must rotate the local IRK after recovery removes every bond"
 Assert-Contains $gap 'static\s+void\s+ble_hid_gap_register_global_event_listener_once[\s\S]*?ble_gap_event_listener_register\([\s\S]*?ble_hid_gap_global_event_listener[\s\S]*?global GAP event listener registered' `
     "BLE GAP must register a global listener before advertising so CONNECT cannot be missed by the advertising callback"
 Assert-Contains $gap 'esp_err_t\s+esp_hid_ble_gap_adv_start\(void\)[\s\S]*?ble_hid_gap_refresh_configured_device_name\("advertising_start"\)' `
     "advertising start must use the latest configured BLE name"
-Assert-Contains $gap 'static\s+esp_err_t\s+ble_hid_gap_forget_bonds_and_repair_inner\(\s*bool type_controlled_request,\s*bool suppress_swift_pair_prompt\)[\s\S]*?bond_delete=async_after_disconnect[\s\S]*?ble_hid_gap_open_recovery_pairing_window\([^)]*\);[\s\S]*?ble_hid_gap_rotate_native_recovery_identity\("recovery_pairing_reset"\)[\s\S]*?ble_hid_gap_schedule_recovery_bond_delete[\s\S]*?stable Type-controlled[\s\S]*?rotated native Windows[\s\S]*?ble_hid_gap_start_advertising\(\)' `
+Assert-Contains $gap 'static\s+esp_err_t\s+ble_hid_gap_forget_bonds_and_repair_inner\(\s*bool type_controlled_request,\s*bool suppress_swift_pair_prompt,\s*bool ec11_fast_path\)[\s\S]*?bond_delete=async_after_disconnect[\s\S]*?ble_hid_gap_open_recovery_pairing_window\([^)]*\);[\s\S]*?ble_hid_gap_rotate_native_recovery_identity\("recovery_pairing_reset"\)[\s\S]*?ble_hid_gap_schedule_recovery_bond_delete[\s\S]*?stable Type-controlled[\s\S]*?rotated native Windows[\s\S]*?ble_hid_gap_start_advertising\(\)' `
     "forget-bonds recovery must avoid synchronous full-store erase, open the pairing window, delete the local bond asynchronously, keep Type identity stable, and rotate native Windows identity"
+Assert-Contains $gap 'static\s+void\s+ble_hid_gap_recovery_bond_delete_task\([\s\S]*?ble_gap_adv_stop\(\)[\s\S]*?for\s*\(int index = 0; index < bonded_peer_count; \+\+index\)[\s\S]*?ble_gap_unpair\(&bonded_peers\[index\]\)' `
+    "recovery bond deletion must use NimBLE unpair after advertising stops so the final deleted bond rotates the local IRK"
+Assert-Contains $gap 'static\s+esp_err_t\s+ble_hid_gap_reset_local_irk_without_bonds\(void\)[\s\S]*?ble_gap_adv_active\(\)[\s\S]*?ble_gap_adv_stop\(\)[\s\S]*?ble_store_delete_local_irk\(&key\)[\s\S]*?ble_hs_pvcy_set_default_irk\(\)[\s\S]*?ble_hs_pvcy_remove_entry\(BLE_ADDR_PUBLIC, zero_addr\)[\s\S]*?ble_hs_pvcy_set_our_irk\(NULL\)[\s\S]*?ble_gap_read_local_irk\(refreshed_irk\)' `
+    "native recovery with no local bonds must refresh the stored and active local IRK before pairing"
+Assert-Contains $gap 'recovery_pairing_reset[\s\S]*?if \(bonded_peer_count == 0\)[\s\S]*?ble_hid_gap_reset_local_irk_without_bonds\(\)[\s\S]*?ble_hid_gap_rotate_native_recovery_identity\("recovery_pairing_reset"\)' `
+    "disconnected native recovery must reset a no-bond IRK before rotating its advertised identity"
+Assert-Contains $gap 'disconnect_recovery_pairing_window[\s\S]*?s_native_recovery_identity_rotate_pending[\s\S]*?recovery_bonded_peer_count == 0[\s\S]*?ble_hid_gap_reset_local_irk_without_bonds\(\)[\s\S]*?ble_hid_gap_rotate_native_recovery_identity\("recovery_disconnect"\)' `
+    "connected native recovery must reset a no-bond IRK after disconnect before advertising a new identity"
 Assert-Contains $noteTypeAudio 'type audio ready rejected before BLE bond; keeping pairing window available without restarting repair[\s\S]*?ble_hid_gap_open_recovery_pairing_window[\s\S]*?return false;' `
     "unbonded Type heartbeat must keep pairing available without recursively restarting repair"
 Assert-Contains $noteTypeAudio 'ble_gap_conn_find\(s_ble_gap_conn_handle,\s*&desc\)[\s\S]*?desc\.sec_state\.encrypted\s*\|\|\s*desc\.sec_state\.bonded[\s\S]*?type audio ready accepted on existing secure BLE connection[\s\S]*?ble_hid_gap_note_secure_connection\([\s\S]*?"type audio ready existing secure connection"[\s\S]*?return true;' `
