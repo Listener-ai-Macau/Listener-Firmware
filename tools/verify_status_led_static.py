@@ -2194,27 +2194,14 @@ def main() -> int:
         ):
             failures.append("status_led.c: low-power idle must keep ordinary reconnecting BLE dark")
         if not re.search(
-            r"case\s+STATUS_LED_BLE_CONNECTED:[\s\S]*?"
-            r"!\s*status_led_low_power_ble_ready_window_active_locked\(now_ms\)[\s\S]*?"
-            r"return\s+0U;[\s\S]*?"
-            r"status_led_double_pulse_on\(\s*ble_elapsed_ms,\s*STATUS_LED_BLE_CONNECTED_FIND_TYPE_PERIOD_MS\s*\)[\s\S]*?"
-            r"STATUS_LED_BLE_CONNECTED_FIND_TYPE_MAX_PERCENT[\s\S]*?"
-            r"STATUS_LED_BLE_CONNECTED_FIND_TYPE_MIN_PERCENT",
+            r"case\s+STATUS_LED_BLE_CONNECTED:\s*\n\s*"
+            r"case\s+STATUS_LED_BLE_TYPE_READY:\s*\n\s*"
+            r"return\s+0U;",
             body,
         ):
-            failures.append("status_led.c: low-power connected must show the low-floor bounded find-Type cue only during the fresh connection window")
-        if not re.search(
-            r"case\s+STATUS_LED_BLE_TYPE_READY:[\s\S]*?"
-            r"status_led_low_power_ble_ready_window_active_locked\(now_ms\)[\s\S]*?"
-            r"STATUS_LED_BLE_TYPE_READY_STEADY_PERCENT[\s\S]*?"
-            r":\s*0U;",
-            body,
-        ):
-            failures.append("status_led.c: low-power TYPE_READY must stay visible only during the fresh Type-ready window")
-    if "static bool status_led_low_power_ble_ready_window_active_locked(uint32_t now_ms)" not in status_led:
-        failures.append("status_led.c: low-power BLE timing must have an explicit ready-window helper")
-    if "if (status_led_low_power_ble_ready_window_active_locked(now_ms)) {\n            return STATUS_LED_REFRESH_MS;\n        }" not in status_led:
-        failures.append("status_led.c: low-power BLE ready window must use normal refresh until the short visible window expires")
+            failures.append("status_led.c: Listener low-power idle must keep connected and Type-ready BLE dark")
+    if "status_led_low_power_ble_ready_window_active_locked" in status_led:
+        failures.append("status_led.c: low-power steady BLE must not retain a visible ready-window helper")
     low_power_ble = re.search(
         r"static\s+void\s+status_led_render_low_power_ble_locked[^{]*\{(?P<body>[\s\S]*?)\n\}",
         status_led,
@@ -2230,13 +2217,6 @@ def main() -> int:
             "status_led_token_relative_to_peak_locked" not in body
         ):
             failures.append("status_led.c: low-power BLE renderer must share the state-specific BLE peak mapper")
-    if not re.search(
-        r"static\s+uint8_t\s+status_led_low_power_ble_peak_percent_locked[\s\S]*?"
-        r"case\s+STATUS_LED_BLE_CONNECTED:\s*\n\s*"
-        r"return\s+STATUS_LED_BLE_CONNECTED_FIND_TYPE_MAX_PERCENT;",
-        status_led,
-    ):
-        failures.append("status_led.c: low-power connected find-Type must preserve the same Type-capped peak mapping as active connected")
     if re.search(
         r"status_led_connected_hid_only_percent_locked|"
         r"STATUS_LED_BLE_CONNECTED_HEARTBEAT_PERIOD_MS|"

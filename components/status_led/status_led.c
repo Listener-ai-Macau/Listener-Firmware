@@ -2364,17 +2364,12 @@ static bool status_led_timed_output_active_locked(uint32_t now_ms)
     return s_state.profile == STATUS_LED_PROFILE_AMBIENT;
 }
 
-static bool status_led_low_power_ble_ready_window_active_locked(uint32_t now_ms);
-
 static uint32_t status_led_refresh_delay_ms_locked(uint32_t now_ms)
 {
     if (s_state.output_disabled) {
         return STATUS_LED_LOW_POWER_IDLE_REFRESH_MS;
     }
     if (s_state.low_power_disabled) {
-        if (status_led_low_power_ble_ready_window_active_locked(now_ms)) {
-            return STATUS_LED_REFRESH_MS;
-        }
         return s_state.external_power_present
             ? STATUS_LED_EXTERNAL_POWER_POLL_MS
             : STATUS_LED_LOW_POWER_IDLE_REFRESH_MS;
@@ -2637,17 +2632,6 @@ static void status_led_render_power_locked(status_led_frame_t *frame, uint32_t n
     *ret_safety = *ret_safety || safety;
 }
 
-static bool status_led_low_power_ble_ready_window_active_locked(uint32_t now_ms)
-{
-    if (s_state.ble_state != STATUS_LED_BLE_CONNECTED &&
-        s_state.ble_state != STATUS_LED_BLE_TYPE_READY) {
-        return false;
-    }
-    return now_ms < s_state.status_window_until_ms ||
-           now_ms < s_state.ble_confidence_until_ms ||
-           now_ms < s_state.oobe_confidence_until_ms;
-}
-
 static uint8_t status_led_low_power_ble_percent_locked(uint32_t now_ms, uint32_t ble_elapsed_ms)
 {
     if (status_led_ble_recovery_window_active_locked(now_ms)) {
@@ -2668,19 +2652,13 @@ static uint8_t status_led_low_power_ble_percent_locked(uint32_t now_ms, uint32_t
             : 0U;
     case STATUS_LED_BLE_RECONNECTING:
         return 0U;
+    /* Listener's product adapter keeps steady BLE links observable in the
+     * platform lifecycle, but deliberately renders them black in low-power
+     * idle. Other products must select their own visual policy above that
+     * shared lifecycle state. */
     case STATUS_LED_BLE_CONNECTED:
-        if (!status_led_low_power_ble_ready_window_active_locked(now_ms)) {
-            return 0U;
-        }
-        return status_led_double_pulse_on(
-                   ble_elapsed_ms,
-                   STATUS_LED_BLE_CONNECTED_FIND_TYPE_PERIOD_MS)
-            ? STATUS_LED_BLE_CONNECTED_FIND_TYPE_MAX_PERCENT
-            : STATUS_LED_BLE_CONNECTED_FIND_TYPE_MIN_PERCENT;
     case STATUS_LED_BLE_TYPE_READY:
-        return status_led_low_power_ble_ready_window_active_locked(now_ms)
-            ? STATUS_LED_BLE_TYPE_READY_STEADY_PERCENT
-            : 0U;
+        return 0U;
     case STATUS_LED_BLE_DISCONNECTED:
     default:
         return 0U;
@@ -2693,10 +2671,6 @@ static uint8_t status_led_low_power_ble_peak_percent_locked(void)
     case STATUS_LED_BLE_PAIRING:
     case STATUS_LED_BLE_REPAIRING:
         return STATUS_LED_BLE_PAIRING_PULSE_PERCENT;
-    case STATUS_LED_BLE_CONNECTED:
-        return STATUS_LED_BLE_CONNECTED_FIND_TYPE_MAX_PERCENT;
-    case STATUS_LED_BLE_TYPE_READY:
-        return STATUS_LED_BLE_TYPE_READY_STEADY_PERCENT;
     case STATUS_LED_BLE_RECONNECTING:
     case STATUS_LED_BLE_DISCONNECTED:
     default:
