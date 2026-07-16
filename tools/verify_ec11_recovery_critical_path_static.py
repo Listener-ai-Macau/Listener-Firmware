@@ -14,7 +14,14 @@ def require_fragment(path: Path, fragment: str, failures: list[str]) -> None:
 
 def require_ordered(path: Path, earlier: str, later: str, failures: list[str]) -> None:
     source = path.read_text(encoding="utf-8")
-    if source.find(earlier) >= source.find(later):
+    earlier_index = source.find(earlier)
+    later_index = source.find(later)
+    if earlier_index < 0 or later_index < 0:
+        failures.append(
+            f"{path.relative_to(REPO_ROOT)}: missing ordered fragments "
+            f"{earlier!r} or {later!r}"
+        )
+    elif earlier_index >= later_index:
         failures.append(
             f"{path.relative_to(REPO_ROOT)}: expected {earlier!r} before {later!r}"
         )
@@ -28,7 +35,11 @@ def main() -> int:
 
     for fragment in (
         "ble_hid_gap_forget_bonds_and_repair_ec11_fast",
-        "ec11_fast_path && type_controlled_recovery",
+        "if (ec11_fast_path &&\n        conn.connected && conn.conn_handle != BLE_HS_CONN_HANDLE_NONE)",
+        "ble_hid_gap_defer_native_recovery_identity_rotation(\n                \"recovery_pairing_reset_connected_fast\")",
+        "int delete_rc = type_controlled_recovery\n                ? ble_store_util_delete_peer(&bonded_peers[index])\n                : ble_gap_unpair(&bonded_peers[index]);",
+        "recovery: Type-controlled bond records cleared without rotating the local IRK",
+        "advertising_command_accepted_ms=%lld target_ms=250",
         "ble_hid_gap_begin_recovery_pairing_window(",
         "ble_gap_terminate(conn.conn_handle, BLE_ERR_REM_USER_CONN_TERM)",
         "The worker owns bond deletion and the single recovery advertising start.",
@@ -36,6 +47,18 @@ def main() -> int:
         "ble_hid_gap_notify_recovery_bond_delete_disconnect();\n    ESP_LOGI(TAG, \"disconnect;",
     ):
         require_fragment(gap, fragment, failures)
+    require_ordered(
+        gap,
+        "rc = ble_gap_adv_start(s_own_addr_type, NULL, adv_duration_ms,\n                           &adv_params, nimble_hid_gap_event, NULL);",
+        "ble_hid_gap_log_ec11_recovery_timing(\"advertising_command_accepted\", false);",
+        failures,
+    )
+    require_ordered(
+        gap,
+        "ble_hid_gap_log_ec11_recovery_timing(\"advertising_command_accepted\", false);",
+        "// Keep recovery diagnostics, but never put synchronous serial output before the",
+        failures,
+    )
 
     require_ordered(
         voice,

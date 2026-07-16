@@ -504,6 +504,7 @@ static bool s_ec11_recovery_generated;
 static int64_t s_ec11_recovery_control_dispatch_ms;
 static int64_t s_ec11_recovery_terminate_requested_ms;
 static int64_t s_ec11_recovery_disconnect_confirmed_ms;
+static int64_t s_ec11_recovery_advertising_command_accepted_ms;
 
 static int64_t ble_hid_gap_now_ms(void)
 {
@@ -517,6 +518,7 @@ static void ble_hid_gap_log_ec11_recovery_timing(const char *phase, bool complet
     int64_t control_dispatch_ms = -1;
     int64_t terminate_requested_ms = -1;
     int64_t disconnect_confirmed_ms = -1;
+    int64_t advertising_command_accepted_ms = -1;
     portENTER_CRITICAL(&s_ble_gap_state_lock);
     accepted_at_us = s_ec11_recovery_accepted_at_us;
     generated = s_ec11_recovery_generated;
@@ -539,16 +541,20 @@ static void ble_hid_gap_log_ec11_recovery_timing(const char *phase, bool complet
         s_ec11_recovery_terminate_requested_ms = elapsed_ms;
     } else if (phase != NULL && strcmp(phase, "disconnect_confirmed") == 0) {
         s_ec11_recovery_disconnect_confirmed_ms = elapsed_ms;
+    } else if (phase != NULL && strcmp(phase, "advertising_command_accepted") == 0) {
+        s_ec11_recovery_advertising_command_accepted_ms = elapsed_ms;
     }
     if (complete) {
         control_dispatch_ms = s_ec11_recovery_control_dispatch_ms;
         terminate_requested_ms = s_ec11_recovery_terminate_requested_ms;
         disconnect_confirmed_ms = s_ec11_recovery_disconnect_confirmed_ms;
+        advertising_command_accepted_ms = s_ec11_recovery_advertising_command_accepted_ms;
         s_ec11_recovery_accepted_at_us = 0;
         s_ec11_recovery_generated = false;
         s_ec11_recovery_control_dispatch_ms = -1;
         s_ec11_recovery_terminate_requested_ms = -1;
         s_ec11_recovery_disconnect_confirmed_ms = -1;
+        s_ec11_recovery_advertising_command_accepted_ms = -1;
     }
     portEXIT_CRITICAL(&s_ble_gap_state_lock);
 
@@ -558,13 +564,16 @@ static void ble_hid_gap_log_ec11_recovery_timing(const char *phase, bool complet
 
     ESP_LOGW(
         TAG,
-        "EC11 recovery timing: input=%s control_dispatch_ms=%lld terminate_requested_ms=%lld disconnect_confirmed_ms=%lld advertising_started_ms=%lld target_ms=250 result=%s",
+        "EC11 recovery timing: input=%s control_dispatch_ms=%lld terminate_requested_ms=%lld disconnect_confirmed_ms=%lld advertising_command_accepted_ms=%lld target_ms=250 result=%s advertising_started_log_complete_ms=%lld",
         generated ? "generated" : "physical",
         (long long)control_dispatch_ms,
         (long long)terminate_requested_ms,
         (long long)disconnect_confirmed_ms,
-        (long long)elapsed_ms,
-        elapsed_ms <= 250 ? "PASS" : "FAIL");
+        (long long)advertising_command_accepted_ms,
+        advertising_command_accepted_ms >= 0 && advertising_command_accepted_ms <= 250
+            ? "PASS"
+            : "FAIL",
+        (long long)elapsed_ms);
 }
 
 void ble_hid_gap_note_ec11_recovery_accepted(uint64_t accepted_at_us, bool generated)
@@ -579,6 +588,7 @@ void ble_hid_gap_note_ec11_recovery_accepted(uint64_t accepted_at_us, bool gener
     s_ec11_recovery_control_dispatch_ms = -1;
     s_ec11_recovery_terminate_requested_ms = -1;
     s_ec11_recovery_disconnect_confirmed_ms = -1;
+    s_ec11_recovery_advertising_command_accepted_ms = -1;
     portEXIT_CRITICAL(&s_ble_gap_state_lock);
 
     ble_hid_gap_log_ec11_recovery_timing("control_dispatch", false);
@@ -2776,19 +2786,22 @@ esp_err_t esp_hid_ble_gap_adv_start(void)
                  esp_err_to_name(name_ret));
     }
 
+    const int64_t recovery_pairing_remaining_ms =
+        ble_hid_gap_recovery_pairing_window_remaining_ms();
+    const bool pairing_window = recovery_pairing_remaining_ms > 0;
+
     rc = ble_store_util_bonded_peers(
         bonded_peers,
         &bonded_peer_count,
         sizeof(bonded_peers) / sizeof(bonded_peers[0]));
-    const int64_t recovery_pairing_remaining_ms =
-        ble_hid_gap_recovery_pairing_window_remaining_ms();
-    const bool pairing_window = recovery_pairing_remaining_ms > 0;
     const int64_t first_pairing_remaining_ms = rc == 0 && !pairing_window
         ? ble_hid_gap_first_pairing_window_remaining_ms(bonded_peer_count)
         : 0;
     const bool first_pairing_window = first_pairing_remaining_ms > 0;
     if (rc == 0) {
-        ESP_LOGI(TAG, "NimBLE bonded peers=%d", bonded_peer_count);
+        if (!pairing_window) {
+            ESP_LOGI(TAG, "NimBLE bonded peers=%d", bonded_peer_count);
+        }
         if (bonded_peer_count > 0) {
             direct_peer_addr = bonded_peers[0];
             start_directed =
@@ -2817,17 +2830,19 @@ esp_err_t esp_hid_ble_gap_adv_start(void)
     if (!swift_pair_enabled && !type_recovery_enabled) {
         (void)ble_hid_gap_configure_normal_adv_fields();
     }
-    ESP_LOGI(
-        TAG,
-        "NimBLE advertisement payload profile=%s name_len=%u recovery_window=%u type_controlled=%u suppress_swift_pair=%u recovery_swift_pair_consumed=%u first_pairing_window=%u bonded_peers=%d",
-        swift_pair_enabled ? "swift_pair" : (type_recovery_enabled ? "type_recovery" : "normal"),
-        (unsigned)s_adv_device_name_len,
-        pairing_window ? 1u : 0u,
-        s_recovery_type_controlled_pairing ? 1u : 0u,
-        s_recovery_suppress_swift_pair_prompt ? 1u : 0u,
-        s_recovery_swift_pair_consumed ? 1u : 0u,
-        first_pairing_window ? 1u : 0u,
-        bonded_peer_count);
+    if (!pairing_window) {
+        ESP_LOGI(
+            TAG,
+            "NimBLE advertisement payload profile=%s name_len=%u recovery_window=%u type_controlled=%u suppress_swift_pair=%u recovery_swift_pair_consumed=%u first_pairing_window=%u bonded_peers=%d",
+            swift_pair_enabled ? "swift_pair" : (type_recovery_enabled ? "type_recovery" : "normal"),
+            (unsigned)s_adv_device_name_len,
+            pairing_window ? 1u : 0u,
+            s_recovery_type_controlled_pairing ? 1u : 0u,
+            s_recovery_suppress_swift_pair_prompt ? 1u : 0u,
+            s_recovery_swift_pair_consumed ? 1u : 0u,
+            first_pairing_window ? 1u : 0u,
+            bonded_peer_count);
+    }
 
     rc = ble_gap_adv_set_fields(&s_adv_fields);
     if (rc != 0) {
@@ -2928,7 +2943,28 @@ esp_err_t esp_hid_ble_gap_adv_start(void)
         return ESP_FAIL;
     }
 
+    /* A zero return is NimBLE's successful advertising-start acceptance. Record it
+     * before optional diagnostics so the recovery gate measures controller work,
+     * while the later completion timestamp still exposes log-path overhead. */
+    ble_hid_gap_log_ec11_recovery_timing("advertising_command_accepted", false);
+
     s_last_adv_was_directed = false;
+    if (pairing_window) {
+        // Keep recovery diagnostics, but never put synchronous serial output before the
+        // controller receives the time-critical recovery advertising command.
+        ESP_LOGI(
+            TAG,
+            "NimBLE advertisement payload profile=%s name_len=%u recovery_window=%u type_controlled=%u suppress_swift_pair=%u recovery_swift_pair_consumed=%u first_pairing_window=%u bonded_peers=%d",
+            swift_pair_enabled ? "swift_pair" : (type_recovery_enabled ? "type_recovery" : "normal"),
+            (unsigned)s_adv_device_name_len,
+            pairing_window ? 1u : 0u,
+            s_recovery_type_controlled_pairing ? 1u : 0u,
+            s_recovery_suppress_swift_pair_prompt ? 1u : 0u,
+            s_recovery_swift_pair_consumed ? 1u : 0u,
+            first_pairing_window ? 1u : 0u,
+            bonded_peer_count);
+        ESP_LOGI(TAG, "NimBLE bonded peers=%d", bonded_peer_count);
+    }
     ESP_LOGI(
         TAG,
         "NimBLE undirected advertising started: low_power=%u interval_ms=%u-%u duration_ms=%ld",
@@ -3080,6 +3116,7 @@ static void ble_hid_gap_notify_recovery_bond_delete_disconnect(void)
 static void ble_hid_gap_recovery_bond_delete_task(void *arg)
 {
     const uint32_t initial_bond_count = (uint32_t)(uintptr_t)arg;
+    const bool type_controlled_recovery = s_recovery_type_controlled_pairing;
     const TickType_t wait_started = xTaskGetTickCount();
     if (ble_hid_gap_connection_snapshot().connected) {
         (void)ulTaskNotifyTake(
@@ -3128,12 +3165,14 @@ static void ble_hid_gap_recovery_bond_delete_task(void *arg)
     if (lookup_rc == 0) {
         for (int index = 0; index < bonded_peer_count; ++index) {
             /*
-             * Use the GAP API rather than deleting only persistent records.
-             * With BLE_SMP_ID_RESET enabled, NimBLE rotates the local IRK
-             * after the final bond disappears.  Windows otherwise rejects a
-             * new recovery address that distributes the prior device IRK.
+             * Native recovery needs the GAP API to rotate the local IRK after
+             * the final bond disappears. Type-controlled recovery has already
+             * proved local ownership, so remove the peer's security, CCCD, and
+             * resolver records while retaining that local identity for PairAsync.
              */
-            int delete_rc = ble_gap_unpair(&bonded_peers[index]);
+            int delete_rc = type_controlled_recovery
+                ? ble_store_util_delete_peer(&bonded_peers[index])
+                : ble_gap_unpair(&bonded_peers[index]);
             if (delete_rc == 0) {
                 ++deleted_count;
             } else {
@@ -3172,6 +3211,12 @@ static void ble_hid_gap_recovery_bond_delete_task(void *arg)
         status_led_set_error(STATUS_LED_ERROR_DOMAIN_BLE, STATUS_LED_ERROR_HARD, "ble_recovery_bond_delete_failed");
         vTaskDelete(NULL);
         return;
+    }
+
+    if (type_controlled_recovery) {
+        ESP_LOGI(
+            TAG,
+            "recovery: Type-controlled bond records cleared without rotating the local IRK");
     }
 
     if (!ble_hid_gap_recovery_pairing_window_open()) {
@@ -3386,19 +3431,24 @@ static esp_err_t ble_hid_gap_forget_bonds_and_repair_inner(
         ble_hid_gap_reconcile_connection_snapshot("recovery_pairing_reset");
 
     /*
-     * A connected, Type-controlled EC11 recovery must get the terminate request
-     * into NimBLE before presentation/logging work. The pairing-window state is
-     * still established first, so disconnect handling and bond deletion retain
-     * their normal safety invariants.
+     * A connected EC11 recovery must get the terminate request into NimBLE
+     * before presentation/logging work. This applies even when Type's current
+     * GATT link is stale: the native recovery identity still rotates only after
+     * disconnect and asynchronous bond deletion complete.
      */
-    if (ec11_fast_path && type_controlled_recovery &&
+    if (ec11_fast_path &&
         conn.connected && conn.conn_handle != BLE_HS_CONN_HANDLE_NONE) {
         ble_hid_gap_open_recovery_pairing_window(
             type_controlled_recovery,
             suppress_swift_pair_prompt);
         s_directed_adv_pending = false;
         s_last_adv_was_directed = false;
-        s_native_recovery_identity_rotate_pending = false;
+        if (type_controlled_recovery) {
+            s_native_recovery_identity_rotate_pending = false;
+        } else {
+            ble_hid_gap_defer_native_recovery_identity_rotation(
+                "recovery_pairing_reset_connected_fast");
+        }
 
         if (bonded_peer_count > 0) {
             esp_err_t delete_ret = ble_hid_gap_schedule_recovery_bond_delete(
