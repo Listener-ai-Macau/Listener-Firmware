@@ -129,12 +129,46 @@ function Get-TargetBluetoothAddress {
         return (Convert-HexAddressToUInt64 -HexAddress $PreferredAddress)
     }
 
-    $device = Get-PnpDevice -Class Bluetooth |
-        Where-Object { $_.FriendlyName -eq $PreferredName } |
-        Select-Object -First 1
+    $candidates = @(Get-PnpDevice -Class Bluetooth |
+        Where-Object {
+            $_.FriendlyName -eq $PreferredName -and
+            $_.Status -eq "OK" -and
+            $_.Present -eq $true
+        })
 
+    if ($candidates.Count -eq 0) {
+        $observed = @(Get-PnpDevice -Class Bluetooth |
+            Where-Object { $_.FriendlyName -eq $PreferredName } |
+            ForEach-Object { "$($_.Status):$($_.InstanceId)" }) -join ", "
+        throw "Unable to find a healthy Bluetooth device named '$PreferredName' from Get-PnpDevice. Observed: $observed"
+    }
+
+    # Random-identity recovery leaves transient entries with the same name. Prefer
+    # the candidate Windows reports as actively connected before any healthy fallback.
+    $device = $null
+    foreach ($candidate in $candidates) {
+        if ($candidate.InstanceId -notmatch "DEV_([0-9A-Fa-f]{12})") {
+            continue
+        }
+        $probe = $null
+        try {
+            $address = Convert-HexAddressToUInt64 -HexAddress $Matches[1]
+            $probe = Invoke-WinRtAsync `
+                -AsyncOp ([Windows.Devices.Bluetooth.BluetoothLEDevice]::FromBluetoothAddressAsync($address)) `
+                -ResultType ([Windows.Devices.Bluetooth.BluetoothLEDevice])
+            if ($null -ne $probe -and [string]$probe.ConnectionStatus -eq "Connected") {
+                $device = $candidate
+                break
+            }
+        } catch {
+        } finally {
+            if ($null -ne $probe) {
+                try { $probe.Dispose() } catch {}
+            }
+        }
+    }
     if ($null -eq $device) {
-        throw "Unable to find Bluetooth device named '$PreferredName' from Get-PnpDevice."
+        $device = $candidates | Sort-Object InstanceId | Select-Object -First 1
     }
 
     if ($device.InstanceId -notmatch "DEV_([0-9A-Fa-f]{12})") {
