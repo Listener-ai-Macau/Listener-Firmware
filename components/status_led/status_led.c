@@ -2639,8 +2639,9 @@ static void status_led_render_power_locked(status_led_frame_t *frame, uint32_t n
 
 static bool status_led_low_power_ble_ready_window_active_locked(uint32_t now_ms)
 {
-    if (s_state.ble_state != STATUS_LED_BLE_CONNECTED &&
-        s_state.ble_state != STATUS_LED_BLE_TYPE_READY) {
+    /* Only HID-only links need a bounded find-Type cue. A verified Type link
+     * remains a persistent dim-blue connection indicator in low-power idle. */
+    if (s_state.ble_state != STATUS_LED_BLE_CONNECTED) {
         return false;
     }
     return now_ms < s_state.status_window_until_ms ||
@@ -2678,9 +2679,7 @@ static uint8_t status_led_low_power_ble_percent_locked(uint32_t now_ms, uint32_t
             ? STATUS_LED_BLE_CONNECTED_FIND_TYPE_MAX_PERCENT
             : STATUS_LED_BLE_CONNECTED_FIND_TYPE_MIN_PERCENT;
     case STATUS_LED_BLE_TYPE_READY:
-        return status_led_low_power_ble_ready_window_active_locked(now_ms)
-            ? STATUS_LED_BLE_TYPE_READY_STEADY_PERCENT
-            : 0U;
+        return STATUS_LED_BLE_TYPE_READY_STEADY_PERCENT;
     case STATUS_LED_BLE_DISCONNECTED:
     default:
         return 0U;

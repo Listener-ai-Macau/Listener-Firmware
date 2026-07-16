@@ -2205,14 +2205,19 @@ def main() -> int:
             failures.append("status_led.c: low-power connected must show the low-floor bounded find-Type cue only during the fresh connection window")
         if not re.search(
             r"case\s+STATUS_LED_BLE_TYPE_READY:[\s\S]*?"
-            r"status_led_low_power_ble_ready_window_active_locked\(now_ms\)[\s\S]*?"
-            r"STATUS_LED_BLE_TYPE_READY_STEADY_PERCENT[\s\S]*?"
-            r":\s*0U;",
+            r"return\s+STATUS_LED_BLE_TYPE_READY_STEADY_PERCENT;",
             body,
         ):
-            failures.append("status_led.c: low-power TYPE_READY must stay visible only during the fresh Type-ready window")
+            failures.append("status_led.c: low-power TYPE_READY must retain the accepted persistent dim-blue connection indicator")
     if "static bool status_led_low_power_ble_ready_window_active_locked(uint32_t now_ms)" not in status_led:
         failures.append("status_led.c: low-power BLE timing must have an explicit ready-window helper")
+    if not re.search(
+        r"static\s+bool\s+status_led_low_power_ble_ready_window_active_locked\(uint32_t now_ms\)[\s\S]*?"
+        r"s_state\.ble_state\s*!=\s*STATUS_LED_BLE_CONNECTED[\s\S]*?"
+        r"return\s+false;",
+        status_led,
+    ):
+        failures.append("status_led.c: only HID-only connected may use the bounded low-power find-Type window; TYPE_READY must remain persistent")
     if "if (status_led_low_power_ble_ready_window_active_locked(now_ms)) {\n            return STATUS_LED_REFRESH_MS;\n        }" not in status_led:
         failures.append("status_led.c: low-power BLE ready window must use normal refresh until the short visible window expires")
     low_power_ble = re.search(

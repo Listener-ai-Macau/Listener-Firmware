@@ -150,15 +150,23 @@ def main(argv: list[str]) -> int:
 
     ble_rgb = rgb.get("BLE")
     ble_state = state.get("ble")
-    if ble_rgb is not None and channel_sum(ble_rgb) > 0 and ble_state == "type_ready":
-        ble_sum = channel_sum(ble_rgb)
-        details["ble_channel_sum"] = ble_sum
-        if abs(ble_sum - expected_peak) > args.tolerance or ble_rgb[2] < expected_peak - args.tolerance:
-            return fail("low-power TYPE_READY BLE brightness is not Type-capped", details)
+    if ble_state != "type_ready":
+        return fail("low-power capture did not retain a Type-ready BLE connection", details)
+    if ble_rgb is None or channel_sum(ble_rgb) == 0 or not flags.get("BLE", 0):
+        return fail("low-power TYPE_READY BLE indicator is not visibly active", details)
+    ble_sum = channel_sum(ble_rgb)
+    details["ble_channel_sum"] = ble_sum
+    if (
+        abs(ble_sum - expected_peak) > args.tolerance
+        or ble_rgb[0] > args.tolerance
+        or ble_rgb[1] > args.tolerance
+        or ble_rgb[2] < expected_peak - args.tolerance
+    ):
+        return fail("low-power TYPE_READY BLE indicator is not Type-capped dim blue", details)
 
     print(
-        "PASS: low-power visible status LEDs use Type status-zone brightness "
-        f"(status={status_percent}%, expected_peak={expected_peak}, PWR={pwr_rgb})"
+        "PASS: low-power Type-ready status LEDs retain Type-capped PWR and dim-blue BLE "
+        f"(status={status_percent}%, expected_peak={expected_peak}, PWR={pwr_rgb}, BLE={ble_rgb})"
     )
     return 0
 
