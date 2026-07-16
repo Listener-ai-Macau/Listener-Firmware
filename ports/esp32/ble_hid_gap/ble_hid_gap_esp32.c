@@ -3393,7 +3393,7 @@ static esp_err_t ble_hid_gap_forget_bonds_and_repair_inner(
      */
     if (ec11_fast_path && type_controlled_recovery &&
         conn.connected && conn.conn_handle != BLE_HS_CONN_HANDLE_NONE) {
-        ble_hid_gap_begin_recovery_pairing_window(
+        ble_hid_gap_open_recovery_pairing_window(
             type_controlled_recovery,
             suppress_swift_pair_prompt);
         s_directed_adv_pending = false;
@@ -3422,9 +3422,6 @@ static esp_err_t ble_hid_gap_forget_bonds_and_repair_inner(
         }
 
         s_recovery_waiting_for_disconnect = false;
-        ble_hid_gap_activate_recovery_pairing_window(
-            type_controlled_recovery,
-            suppress_swift_pair_prompt);
         ESP_LOGW(TAG, "recovery: fast EC11 BLE terminate failed rc=%d", rc);
         diag_log(DIAG_SRC_BLE_GAP, DIAG_GAP_RECOVERY, DIAG_SEV_WARN,
                  2, (uint32_t)rc, (uint32_t)bonded_peer_count, conn.conn_handle);
