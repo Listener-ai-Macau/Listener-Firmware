@@ -1164,15 +1164,37 @@ def main() -> int:
         failures.append(
             "ports/esp32/ble_hid_gap/ble_hid_gap_esp32.c: non-Type Windows-native recovery must rotate and persist a BLE identity while Type-controlled recovery keeps the current identity"
         )
+    recovery_window_is_composed = (
+        re.search(
+            r"static\s+void\s+ble_hid_gap_begin_recovery_pairing_window[\s\S]{0,720}"
+            r"s_recovery_pairing_window_active\s*=\s*true",
+            ble_gap,
+        )
+        and re.search(
+            r"static\s+void\s+ble_hid_gap_activate_recovery_pairing_window[\s\S]{0,720}"
+            r"ble_hid_gap_set_recovery_power_blocker\(true,\s*\"pairing_window_open\"\)[\s\S]{0,280}"
+            r"ble_hid_gap_arm_recovery_pairing_window_timer\(\)",
+            ble_gap,
+        )
+        and re.search(
+            r"static\s+void\s+ble_hid_gap_open_recovery_pairing_window[\s\S]{0,520}"
+            r"ble_hid_gap_begin_recovery_pairing_window\([\s\S]{0,260}"
+            r"ble_hid_gap_activate_recovery_pairing_window\(",
+            ble_gap,
+        )
+    )
+    if not recovery_window_is_composed:
+        failures.append(
+            "ports/esp32/ble_hid_gap/ble_hid_gap_esp32.c: recovery pairing window must hold pairing/reconnect blockers and arm expiry before returning to idle logic"
+        )
     if not re.search(
-        r"static\s+void\s+ble_hid_gap_open_recovery_pairing_window[\s\S]*"
-        r"s_recovery_pairing_window_active\s*=\s*true[\s\S]*"
-        r"ble_hid_gap_set_recovery_power_blocker\(true,\s*\"pairing_window_open\"\)[\s\S]*"
-        r"ble_hid_gap_arm_recovery_pairing_window_timer\(\)",
+        r"if\s*\(ec11_fast_path\s*&&\s*type_controlled_recovery[\s\S]{0,360}"
+        r"ble_hid_gap_open_recovery_pairing_window\([\s\S]{0,1500}"
+        r"ble_gap_terminate\(conn\.conn_handle,\s*BLE_ERR_REM_USER_CONN_TERM\)",
         ble_gap,
     ):
         failures.append(
-            "ports/esp32/ble_hid_gap/ble_hid_gap_esp32.c: recovery pairing window must hold pairing/reconnect blockers and arm expiry before returning to idle logic"
+            "ports/esp32/ble_hid_gap/ble_hid_gap_esp32.c: fast EC11 recovery must fully open the pairing power guard before requesting disconnect"
         )
     if not re.search(
         r"static\s+void\s+ble_hid_gap_close_recovery_pairing_window[\s\S]*"
@@ -1248,7 +1270,7 @@ def main() -> int:
         failures.append(
             "ports/esp32/ble_hid_gap/ble_hid_gap_esp32.c: key-wake-only advertising stop must restart connectable advertising during recovery pairing"
         )
-    connection_param_state_is_guarded = (
+    connection_param_state_is_event_owned = (
         re.search(
             r"ble_hid_gap_set_connection_state[\s\S]{0,420}"
             r"s_last_conn_param_mode\s*=\s*0[\s\S]{0,160}"
@@ -1265,14 +1287,32 @@ def main() -> int:
         )
         and "ble_hid_gap_conn_param_retry_is_deferred()" in ble_gap
         and "ble_hid_gap_conn_param_request_is_pending()" in ble_gap
-        and 'ble_hid_gap_clear_conn_param_mode("connection parameter confirmation timeout")' in ble_gap
-        and "BLE_HS_HCI_ERR(BLE_ERR_DIFF_TRANS_COLL)" in ble_gap
-        and "ble_hid_gap_defer_conn_param_retry_after_collision" in ble_gap
-        and 'ble_hid_gap_clear_conn_param_mode("connection update failed")' in ble_gap
+        and re.search(
+            r"if\s*\(rc\s*==\s*0\s*\|\|\s*rc\s*==\s*BLE_HS_EALREADY\)[\s\S]{0,760}"
+            r"s_conn_param_request_pending_until_tick\s*=\s*portMAX_DELAY",
+            ble_gap,
+        )
+        and re.search(
+            r"case\s+BLE_GAP_EVENT_CONN_UPDATE:[\s\S]{0,960}"
+            r"BLE_HS_HCI_ERR\(BLE_ERR_DIFF_TRANS_COLL\)[\s\S]{0,260}"
+            r"ble_hid_gap_defer_conn_param_retry_after_collision[\s\S]{0,360}"
+            r"ble_hid_gap_clear_conn_param_mode\(\"connection update failed\"\)[\s\S]{0,260}"
+            r"ble_hid_gap_confirm_conn_param_update",
+            ble_gap,
+        )
+        and "connection parameter confirmation timeout" not in ble_gap
     )
-    if not connection_param_state_is_guarded:
+    if not connection_param_state_is_event_owned:
         failures.append(
-            "ports/esp32/ble_hid_gap/ble_hid_gap_esp32.c: connection parameter state must reset on connection changes, confirm actual link params, bound pending requests, and back off central transaction collisions"
+            "ports/esp32/ble_hid_gap/ble_hid_gap_esp32.c: connection parameter state must reset on connection changes, let BLE_GAP_EVENT_CONN_UPDATE resolve EALREADY, and back off central transaction collisions without a local timeout"
+        )
+    power_manager_wrapper = (REPO_ROOT / "tools/verify_power_manager_static.ps1").read_text(encoding="utf-8")
+    if not re.search(
+        r"python\s+\$pythonScript[\s\S]*if\s*\(\$LASTEXITCODE\s+-ne\s+0\)\s*\{\s*exit\s+\$LASTEXITCODE\s*\}",
+        power_manager_wrapper,
+    ):
+        failures.append(
+            "tools/verify_power_manager_static.ps1: must propagate a failed Python static verifier exit code"
         )
     for label, pattern in (
         (
