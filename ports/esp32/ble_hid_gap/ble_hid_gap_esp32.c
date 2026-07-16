@@ -23,6 +23,7 @@
 #include "listener_device.h"
 #include "power_manager.h"
 #include "status_led.h"
+#include "denzic_device_control_v1.h"
 
 #include "esp_bt.h"
 #include "esp_err.h"
@@ -162,6 +163,104 @@ static bool s_ble_hid_gap_event_listener_registered = false;
 static uint16_t s_last_disconnect_event_conn_handle = BLE_HS_CONN_HANDLE_NONE;
 static int s_last_disconnect_event_reason = 0;
 static int64_t s_last_disconnect_event_at_ms = 0;
+static denzic_device_control_v1_context_t s_platform_device_control;
+static uint64_t s_platform_device_control_next_operation_id = 1u;
+static uint64_t s_platform_device_control_active_recovery_operation_id = 0u;
+
+static void ble_hid_gap_platform_device_control_set_lifecycle(
+    denzic_device_control_v1_lifecycle_state_t lifecycle)
+{
+    portENTER_CRITICAL(&s_ble_gap_state_lock);
+    denzic_device_control_v1_set_lifecycle(&s_platform_device_control, lifecycle);
+    portEXIT_CRITICAL(&s_ble_gap_state_lock);
+}
+
+static void ble_hid_gap_platform_device_control_mark_type_ready(void)
+{
+    portENTER_CRITICAL(&s_ble_gap_state_lock);
+    denzic_device_control_v1_set_ownership(
+        &s_platform_device_control,
+        DENZIC_DEVICE_CONTROL_V1_OWNERSHIP_STATE_LOCAL);
+    denzic_device_control_v1_set_lifecycle(
+        &s_platform_device_control,
+        DENZIC_DEVICE_CONTROL_V1_LIFECYCLE_STATE_READY);
+    portEXIT_CRITICAL(&s_ble_gap_state_lock);
+}
+
+static void ble_hid_gap_platform_device_control_begin_recovery(bool type_controlled)
+{
+    denzic_device_control_v1_request_t request = {0};
+    denzic_device_control_v1_decision_t decision;
+    uint64_t operation_id;
+
+    portENTER_CRITICAL(&s_ble_gap_state_lock);
+    denzic_device_control_v1_set_lifecycle(
+        &s_platform_device_control,
+        DENZIC_DEVICE_CONTROL_V1_LIFECYCLE_STATE_RECOVERING);
+    denzic_device_control_v1_set_ownership(
+        &s_platform_device_control,
+        type_controlled
+            ? DENZIC_DEVICE_CONTROL_V1_OWNERSHIP_STATE_LOCAL
+            : DENZIC_DEVICE_CONTROL_V1_OWNERSHIP_STATE_UNKNOWN);
+    operation_id = s_platform_device_control_next_operation_id++;
+    if (operation_id == 0u) {
+        operation_id = s_platform_device_control_next_operation_id++;
+    }
+    request.operation_id = operation_id;
+    request.idempotency_key = operation_id;
+    request.target_id = 1u; /* Listener recovery advertising endpoint. */
+    request.timeout_ms = 4000u;
+    request.kind = DENZIC_DEVICE_CONTROL_V1_OPERATION_KIND_CONNECT;
+    /* A firmware recovery is caused by a physical/user command, not an automatic host reclaim. */
+    request.automatic = false;
+    request.recovery_authorized = type_controlled;
+    decision = denzic_device_control_v1_begin(
+        &s_platform_device_control,
+        &request,
+        (uint32_t)(esp_timer_get_time() / 1000));
+    s_platform_device_control_active_recovery_operation_id =
+        decision.execute ? operation_id : 0u;
+    portEXIT_CRITICAL(&s_ble_gap_state_lock);
+
+    ESP_LOGI(
+        TAG,
+        "device-control recovery transaction execute=%u replayed=%u result=%u error=%u type_controlled=%u",
+        decision.execute ? 1u : 0u,
+        decision.replayed ? 1u : 0u,
+        (unsigned)decision.result,
+        (unsigned)decision.error,
+        type_controlled ? 1u : 0u);
+}
+
+static void ble_hid_gap_platform_device_control_complete_recovery(
+    denzic_device_control_v1_operation_result_t result,
+    denzic_device_control_v1_error_category_t error)
+{
+    denzic_device_control_v1_decision_t decision;
+    uint64_t operation_id;
+
+    portENTER_CRITICAL(&s_ble_gap_state_lock);
+    operation_id = s_platform_device_control_active_recovery_operation_id;
+    if (operation_id == 0u) {
+        portEXIT_CRITICAL(&s_ble_gap_state_lock);
+        return;
+    }
+    decision = denzic_device_control_v1_complete(
+        &s_platform_device_control,
+        operation_id,
+        operation_id,
+        result,
+        error);
+    s_platform_device_control_active_recovery_operation_id = 0u;
+    portEXIT_CRITICAL(&s_ble_gap_state_lock);
+
+    ESP_LOGI(
+        TAG,
+        "device-control recovery terminal result=%u error=%u replayed=%u",
+        (unsigned)decision.result,
+        (unsigned)decision.error,
+        decision.replayed ? 1u : 0u);
+}
 
 typedef enum {
     BLE_HID_CONN_PARAM_MODE_ACTIVE = 1,
@@ -1155,6 +1254,7 @@ bool ble_hid_gap_note_type_audio_ready(const char *reason)
 {
     const char *ready_reason = reason != NULL ? reason : "type_audio_ready";
     if (ble_hid_gap_close_recovery_for_type_audio(ready_reason, s_ble_gap_conn_handle)) {
+        ble_hid_gap_platform_device_control_mark_type_ready();
         return true;
     }
 
@@ -1176,6 +1276,7 @@ bool ble_hid_gap_note_type_audio_ready(const char *reason)
             ble_hid_gap_note_secure_connection(
                 s_ble_gap_conn_handle,
                 "type audio ready existing secure connection");
+            ble_hid_gap_platform_device_control_mark_type_ready();
             return true;
         }
         if (desc_rc != 0) {
@@ -1244,6 +1345,8 @@ static void ble_hid_gap_note_secure_connection(uint16_t conn_handle, const char 
 {
     s_recovery_security_request_conn_handle = BLE_HS_CONN_HANDLE_NONE;
     ble_hid_gap_set_secure_connection_state(true);
+    ble_hid_gap_platform_device_control_set_lifecycle(
+        DENZIC_DEVICE_CONTROL_V1_LIFECYCLE_STATE_SECURING);
     if (s_recovery_type_controlled_pairing &&
         ble_hid_gap_recovery_pairing_window_open()) {
         ble_hid_gap_hold_recovery_pairing_led("type_controlled_secure_waiting_for_audio_notify");
@@ -1929,6 +2032,8 @@ static void ble_hid_gap_handle_connect_established(uint16_t conn_handle, const c
                      snapshot.secure_connected ? 1U : 0U);
         }
         ble_hid_gap_set_connection_state(true, conn_handle);
+        ble_hid_gap_platform_device_control_set_lifecycle(
+            DENZIC_DEVICE_CONTROL_V1_LIFECYCLE_STATE_CONNECTING);
         ble_diag_log_on_gap_connect(conn_handle);
         if (s_audio_enabled) {
             ble_audio_stream_on_gap_connect(conn_handle);
@@ -2039,6 +2144,8 @@ static void ble_hid_gap_handle_disconnect(uint16_t conn_handle, int reason, cons
 
     /* Wake the bond-delete worker before any diagnostic or peripheral teardown. */
     ble_hid_gap_set_connection_state(false, BLE_HS_CONN_HANDLE_NONE);
+    ble_hid_gap_platform_device_control_set_lifecycle(
+        DENZIC_DEVICE_CONTROL_V1_LIFECYCLE_STATE_DISCONNECTED);
     ble_hid_gap_notify_recovery_bond_delete_disconnect();
     ESP_LOGI(TAG, "disconnect; source=%s reason=%d", source != NULL ? source : "unknown", reason);
     diag_log(DIAG_SRC_BLE_GAP, DIAG_GAP_BOND, DIAG_SEV_WARN,
@@ -2938,6 +3045,9 @@ esp_err_t esp_hid_ble_gap_adv_start(void)
             return ESP_OK;
         }
         ESP_LOGE(TAG, "error enabling undirected advertisement; rc=%d", rc);
+        ble_hid_gap_platform_device_control_complete_recovery(
+            DENZIC_DEVICE_CONTROL_V1_OPERATION_RESULT_FAILED,
+            DENZIC_DEVICE_CONTROL_V1_ERROR_CATEGORY_TRANSPORT);
         diag_log(DIAG_SRC_BLE_GAP, DIAG_GAP_ADV_START, DIAG_SEV_WARN,
                  0, (uint32_t)rc, 4, 0);
         return ESP_FAIL;
@@ -2947,6 +3057,9 @@ esp_err_t esp_hid_ble_gap_adv_start(void)
      * before optional diagnostics so the recovery gate measures controller work,
      * while the later completion timestamp still exposes log-path overhead. */
     ble_hid_gap_log_ec11_recovery_timing("advertising_command_accepted", false);
+    ble_hid_gap_platform_device_control_complete_recovery(
+        DENZIC_DEVICE_CONTROL_V1_OPERATION_RESULT_SUCCEEDED,
+        DENZIC_DEVICE_CONTROL_V1_ERROR_CATEGORY_NONE);
 
     s_last_adv_was_directed = false;
     if (pairing_window) {
@@ -3068,6 +3181,13 @@ esp_err_t esp_hid_gap_init(uint8_t mode)
 
 esp_err_t ble_hid_gap_init(void)
 {
+    portENTER_CRITICAL(&s_ble_gap_state_lock);
+    denzic_device_control_v1_init(
+        &s_platform_device_control,
+        DENZIC_DEVICE_CONTROL_V1_TRANSPORT_BLE);
+    s_platform_device_control_next_operation_id = 1u;
+    s_platform_device_control_active_recovery_operation_id = 0u;
+    portEXIT_CRITICAL(&s_ble_gap_state_lock);
     return esp_hid_gap_init(HIDD_BLE_MODE);
 }
 
@@ -3427,6 +3547,7 @@ static esp_err_t ble_hid_gap_forget_bonds_and_repair_inner(
         type_controlled_request ||
         type_link_ready_before_recovery ||
         type_host_recent_before_recovery;
+    ble_hid_gap_platform_device_control_begin_recovery(type_controlled_recovery);
     ble_hid_gap_connection_snapshot_t conn =
         ble_hid_gap_reconcile_connection_snapshot("recovery_pairing_reset");
 
