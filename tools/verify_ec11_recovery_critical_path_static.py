@@ -59,6 +59,26 @@ def require_fast_recovery_worker_boundary(path: Path, failures: list[str]) -> No
         )
 
 
+def require_retryable_security_error_classification(path: Path, failures: list[str]) -> None:
+    source = path.read_text(encoding="utf-8")
+    start = source.find(
+        "static void ble_hid_gap_platform_device_control_note_retryable_security_failure(int status)"
+    )
+    end = source.find("\nstatic ", start + 1)
+    if start < 0 or end < 0:
+        failures.append(f"{path.relative_to(REPO_ROOT)}: missing retryable security classification boundary")
+        return
+    body = source[start:end]
+    for fragment in (
+        "status == BLE_ERR_UNK_CONN_ID ||\n               status == BLE_HS_HCI_ERR(BLE_ERR_UNK_CONN_ID)",
+        "DENZIC_DEVICE_CONTROL_V1_ERROR_CATEGORY_TRANSPORT",
+    ):
+        if fragment not in body:
+            failures.append(
+                f"{path.relative_to(REPO_ROOT)}: missing transport classification for stale controller connection"
+            )
+
+
 def main() -> int:
     failures: list[str] = []
     gap = REPO_ROOT / "ports/esp32/ble_hid_gap/ble_hid_gap_esp32.c"
@@ -84,6 +104,7 @@ def main() -> int:
     ):
         require_fragment(gap, fragment, failures)
     require_fast_recovery_worker_boundary(gap, failures)
+    require_retryable_security_error_classification(gap, failures)
     require_fragment(diag_events, "22=transaction_begin", failures)
     require_ordered(
         gap,

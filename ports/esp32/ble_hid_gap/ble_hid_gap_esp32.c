@@ -289,7 +289,10 @@ static void ble_hid_gap_platform_device_control_note_retryable_security_failure(
     denzic_device_control_v1_error_category_t error =
         status == BLE_ERR_MEM_CAPACITY
             ? DENZIC_DEVICE_CONTROL_V1_ERROR_CATEGORY_RESOURCE
-            : DENZIC_DEVICE_CONTROL_V1_ERROR_CATEGORY_DEVICE;
+            : (status == BLE_ERR_UNK_CONN_ID ||
+               status == BLE_HS_HCI_ERR(BLE_ERR_UNK_CONN_ID))
+                ? DENZIC_DEVICE_CONTROL_V1_ERROR_CATEGORY_TRANSPORT
+                : DENZIC_DEVICE_CONTROL_V1_ERROR_CATEGORY_DEVICE;
 
     portENTER_CRITICAL(&s_ble_gap_state_lock);
     operation_id = s_platform_device_control_active_recovery_operation_id;
