@@ -13,6 +13,7 @@
 #include <string.h>
 #include <stdbool.h>
 #include <stdint.h>
+#include <stdio.h>
 
 #include "ble_hid_gap.h"
 #include "ble_audio_stream.h"
@@ -459,6 +460,41 @@ static ble_hid_gap_connection_snapshot_t ble_hid_gap_connection_snapshot(void)
     };
     portEXIT_CRITICAL(&s_ble_gap_state_lock);
     return snapshot;
+}
+
+void ble_hid_gap_print_status(void)
+{
+    ble_hid_gap_connection_snapshot_t conn = ble_hid_gap_connection_snapshot();
+    struct ble_gap_conn_desc desc = {0};
+    int desc_rc = -1;
+    bool descriptor_valid = false;
+    bool active_applied = false;
+
+    if (conn.connected && conn.conn_handle != BLE_HS_CONN_HANDLE_NONE) {
+        desc_rc = ble_gap_conn_find(conn.conn_handle, &desc);
+        descriptor_valid = desc_rc == 0;
+        active_applied = descriptor_valid &&
+                         desc.conn_itvl >= BLE_HID_GAP_ACTIVE_ITVL_MIN &&
+                         desc.conn_itvl <= BLE_HID_GAP_ACTIVE_ITVL_MAX &&
+                         desc.conn_latency == BLE_HID_GAP_ACTIVE_LATENCY;
+    }
+
+    printf(
+        "~BLE:STATUS connected=%u secure=%u conn_handle=%u descriptor_valid=%u descriptor_rc=%d interval_units=%u interval_ms_x100=%u latency=%u supervision_timeout_units=%u supervision_timeout_ms=%u active_required=%u active_applied=%u e11r=%u last_conn_param_mode=%u\n",
+        conn.connected ? 1U : 0U,
+        conn.secure_connected ? 1U : 0U,
+        (unsigned)conn.conn_handle,
+        descriptor_valid ? 1U : 0U,
+        desc_rc,
+        descriptor_valid ? (unsigned)desc.conn_itvl : 0U,
+        descriptor_valid ? (unsigned)(desc.conn_itvl * 125U) : 0U,
+        descriptor_valid ? (unsigned)desc.conn_latency : 0U,
+        descriptor_valid ? (unsigned)desc.supervision_timeout : 0U,
+        descriptor_valid ? (unsigned)(desc.supervision_timeout * 10U) : 0U,
+        ble_hid_gap_active_connection_required() ? 1U : 0U,
+        active_applied ? 1U : 0U,
+        ble_hid_gap_ec11_fast_recording_armed() ? 1U : 0U,
+        (unsigned)ble_hid_gap_last_conn_param_mode());
 }
 
 static void ble_hid_gap_set_connection_state(bool connected, uint16_t conn_handle)

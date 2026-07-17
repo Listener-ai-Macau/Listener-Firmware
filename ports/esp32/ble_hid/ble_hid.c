@@ -896,6 +896,7 @@ static bool ble_hid_usb_command_is_passive_query(const char *line)
            strcmp(line, "LED:STATUS") == 0 ||
            strcmp(line, "LED:BUDGET") == 0 ||
            strcmp(line, "LED:PRIVACY") == 0 ||
+           strcmp(line, "BLE:STATUS") == 0 ||
            strcmp(line, "DEVICE:SETTINGS") == 0 ||
            strcmp(line, "DEVICE:STATUS") == 0 ||
            strcmp(line, "OTA:STATUS") == 0 ||
@@ -1090,6 +1091,11 @@ static bool ble_hid_dispatch_usb_command_line(const char *line)
 
     if (strcmp(line, "~DIAG:GATT") == 0 || strcmp(line, "DIAG:GATT") == 0) {
         ble_diag_log_log_gatt_state();
+        return true;
+    }
+
+    if (strcmp(line, "~BLE:STATUS") == 0 || strcmp(line, "BLE:STATUS") == 0) {
+        ble_hid_gap_print_status();
         return true;
     }
 
