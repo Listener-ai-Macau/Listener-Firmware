@@ -32,6 +32,8 @@ def main() -> int:
     diag_events = read("components/diag_log/include/diag_log_events.h")
     diag = read("components/diag_log/diag_log.c")
     recording = read("components/voice_recording_control/voice_recording_control.c")
+    ota = read("components/firmware_ota/firmware_ota.c")
+    ble_audio = read("ports/esp32/ble_audio_stream/ble_audio_stream_esp32.c")
 
     for token in (
         'DENZIC_OBSERVABILITY_V1_CONTRACT_NAME "denzic_observability_v1"',
@@ -49,6 +51,7 @@ def main() -> int:
     require(diag_header, "diag_log_event_wire_t", "diag_log wire definition", failures)
     require(diag_header, "sizeof(diag_log_event_wire_t) == DIAG_LOG_EVENT_WIRE_BYTES", "diag_log wire definition", failures)
     require(diag_events, "DIAG_VREC_TIMING", "recording timing event", failures)
+    require(diag_events, "DIAG_OTA_CORRELATION", "OTA correlation event", failures)
     require(
         component_cmake,
         "third_party/denzic-platform/observability/embedded/c/include",
@@ -100,6 +103,29 @@ def main() -> int:
         "recording_session_id",
         "DIAG_VREC_TIMING",
         "EC11 timing correlation",
+        failures,
+    )
+
+    for token in (
+        'BLE_AUDIO_STREAM_TYPE_OBSERVABILITY_OTA_PREFIX "TYPE:OBS:OTA:"',
+        "BLE_AUDIO_STREAM_TYPE_OBSERVABILITY_CORRELATION_HEX_BYTES 16U",
+        "ble_audio_stream_consume_ota_observability_context",
+        "firmware_ota_set_observability_correlation(correlation_id)",
+    ):
+        require(ble_audio, token, "OTA context adapter", failures)
+
+    for token in (
+        "firmware_ota_set_observability_correlation",
+        "pending_observability_correlation_id",
+        "firmware_ota_log_observability_correlation",
+        "DIAG_OTA_CORRELATION",
+    ):
+        require(ota, token, "OTA correlation persistence", failures)
+    require_ordered(
+        ota,
+        "firmware_ota_log_observability_correlation(correlation_id)",
+        "firmware_ota_blocker_t blocker = firmware_ota_get_blocker();",
+        "OTA correlation persistence ordering",
         failures,
     )
 
