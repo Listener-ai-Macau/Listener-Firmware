@@ -27,16 +27,52 @@ def require_ordered(path: Path, earlier: str, later: str, failures: list[str]) -
         )
 
 
+def require_fast_recovery_worker_boundary(path: Path, failures: list[str]) -> None:
+    source = path.read_text(encoding="utf-8")
+    start = source.find("static esp_err_t ble_hid_gap_forget_bonds_and_repair_ec11_fast_inner(void)\n{")
+    end = source.find("static esp_err_t ble_hid_gap_forget_bonds_and_repair_inner(", start)
+    if start < 0 or end < 0:
+        failures.append(f"{path.relative_to(REPO_ROOT)}: missing EC11 fast recovery boundary")
+        return
+    body = source[start:end]
+    if "ble_store_util_bonded_peers(" in body:
+        failures.append(
+            f"{path.relative_to(REPO_ROOT)}: EC11 fast recovery must defer NVS bond enumeration to the cleanup worker"
+        )
+    for fragment in (
+        "BLE_HID_GAP_RECOVERY_BOND_COUNT_UNKNOWN",
+        "ble_hid_gap_begin_recovery_pairing_window(type_controlled_recovery, false);",
+        "ble_hid_gap_schedule_recovery_bond_delete(",
+        "ble_gap_terminate(conn.conn_handle, BLE_ERR_REM_USER_CONN_TERM)",
+    ):
+        if fragment not in body:
+            failures.append(f"{path.relative_to(REPO_ROOT)}: fast recovery missing {fragment!r}")
+    if body.find("ble_hid_gap_schedule_recovery_bond_delete(") >= body.find(
+        "ble_gap_terminate(conn.conn_handle, BLE_ERR_REM_USER_CONN_TERM)"
+    ):
+        failures.append(
+            f"{path.relative_to(REPO_ROOT)}: EC11 cleanup worker must be armed before GAP termination"
+        )
+    if "ble_hid_gap_open_recovery_pairing_window(" in body:
+        failures.append(
+            f"{path.relative_to(REPO_ROOT)}: EC11 fast recovery must defer recovery UI/blocker activation until advertising is accepted"
+        )
+
+
 def main() -> int:
     failures: list[str] = []
     gap = REPO_ROOT / "ports/esp32/ble_hid_gap/ble_hid_gap_esp32.c"
     voice = REPO_ROOT / "components/voice_recording_control/voice_recording_control.c"
     diag = REPO_ROOT / "ports/esp32/diag_log_platform/diag_log_flash.c"
+    diag_events = REPO_ROOT / "components/diag_log/include/diag_log_events.h"
 
     for fragment in (
         "ble_hid_gap_forget_bonds_and_repair_ec11_fast",
-        "if (ec11_fast_path &&\n        conn.connected && conn.conn_handle != BLE_HS_CONN_HANDLE_NONE)",
-        "ble_hid_gap_defer_native_recovery_identity_rotation(\n                \"recovery_pairing_reset_connected_fast\")",
+        "ble_hid_gap_forget_bonds_and_repair_ec11_fast_inner",
+        "BLE_HID_GAP_RECOVERY_BOND_COUNT_UNKNOWN",
+        "#define BLE_HID_GAP_RECOVERY_BOND_DELETE_TASK_PRIO 5U",
+        "DIAG_GAP_RECOVERY,\n        DIAG_SEV_INFO,\n        22,",
+        "ble_hid_gap_defer_native_recovery_identity_rotation(\n            \"recovery_pairing_reset_connected_fast\")",
         "int delete_rc = type_controlled_recovery\n                ? ble_store_util_delete_peer(&bonded_peers[index])\n                : ble_gap_unpair(&bonded_peers[index]);",
         "recovery: Type-controlled bond records cleared without rotating the local IRK",
         "advertising_command_accepted_ms=%lld target_ms=250",
@@ -47,6 +83,8 @@ def main() -> int:
         "ble_hid_gap_notify_recovery_bond_delete_disconnect();\n    ESP_LOGI(TAG, \"disconnect;",
     ):
         require_fragment(gap, fragment, failures)
+    require_fast_recovery_worker_boundary(gap, failures)
+    require_fragment(diag_events, "22=transaction_begin", failures)
     require_ordered(
         gap,
         "rc = ble_gap_adv_start(s_own_addr_type, NULL, adv_duration_ms,\n                           &adv_params, nimble_hid_gap_event, NULL);",
