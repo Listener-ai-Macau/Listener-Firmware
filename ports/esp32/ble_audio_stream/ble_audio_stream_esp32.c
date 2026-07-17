@@ -28,6 +28,10 @@
 #include "status_led.h"
 #include "watchdog_platform.h"
 
+#if !MYNEWT_VAL(BLE_GATT_NOTIFY)
+#error "Listener BLE audio requires NimBLE notify support for enabled-path mbuf ownership and notify_tx attempt pacing."
+#endif
+
 extern void power_manager_set_ble_connected(bool connected) __attribute__((weak));
 extern void power_manager_record_activity(const char *reason) __attribute__((weak));
 extern bool ble_hid_gap_is_securely_connected(void) __attribute__((weak));
@@ -52,9 +56,13 @@ extern void firmware_ota_set_observability_correlation(uint64_t correlation_id) 
 #define BLE_AUDIO_STREAM_NOTIFY_SUCCESS_DELAY_MS 1
 #define BLE_AUDIO_STREAM_NOTIFY_BACKLOG_SUCCESS_DELAY_MS 2
 #define BLE_AUDIO_STREAM_NOTIFY_BACKLOG_QUEUE_THRESHOLD (BLE_AUDIO_STREAM_NOTIFY_QUEUE_LENGTH / 2)
-#define BLE_AUDIO_STREAM_NOTIFY_RETRY_DELAY_MS 20
+#define BLE_AUDIO_STREAM_NOTIFY_RETRY_DELAY_MS 2
 #define BLE_AUDIO_STREAM_NOTIFY_RETRY_LIMIT 80
 #define BLE_AUDIO_STREAM_NOTIFY_RETRY_LOG_INTERVAL 40
+#define BLE_AUDIO_STREAM_NOTIFY_MIN_FREE_MSYS_BLOCKS 4
+#define BLE_AUDIO_STREAM_NOTIFY_MSYS_WAIT_MS 1
+#define BLE_AUDIO_STREAM_NOTIFY_MSYS_WAIT_LIMIT 80
+#define BLE_AUDIO_STREAM_NOTIFY_MSYS_WAIT_LOG_INTERVAL 40
 #define BLE_AUDIO_NOTIFY_STATE_DISABLED 0U
 #define BLE_AUDIO_NOTIFY_STATE_ENABLED 1U
 #define BLE_AUDIO_NOTIFY_STATE_DISABLED_ABORT 2U
@@ -152,6 +160,7 @@ typedef struct {
     uint32_t notify_sent;
     uint32_t notify_failed;
     uint32_t notify_retries;
+    uint32_t notify_msys_waits;
     uint32_t notify_mbuf_alloc_retries;
     uint32_t notify_enomem_retries;
     uint32_t notify_tx_timeout_retries;
@@ -853,6 +862,15 @@ static void ble_audio_stream_stats_retry(
     }
 }
 
+static void ble_audio_stream_stats_msys_wait(uint32_t session_id)
+{
+    if (!s_session_stats.active || s_session_stats.session_id != session_id) {
+        return;
+    }
+
+    s_session_stats.notify_msys_waits++;
+}
+
 static void ble_audio_stream_stats_packet_result(
     uint32_t session_id,
     listener_audio_packet_type_t packet_type,
@@ -972,7 +990,7 @@ static void ble_audio_stream_stats_log_and_end(
         (s_session_stats.audio_packets_sent * 1000U) / elapsed_ms_for_rate;
     ESP_LOGI(
         TAG,
-        "audio session transport summary: session=%" PRIu32 " reason=%s elapsed_ms=%" PRIu32 " expected_packet_count=%u notify_sent=%" PRIu32 " notify_failed=%" PRIu32 " notify_retries=%" PRIu32 " retry_mbuf=%" PRIu32 " retry_enomem=%" PRIu32 " retry_tx_timeout=%" PRIu32 " retry_tx_status=%" PRIu32 " retry_other=%" PRIu32 " audio_sent=%" PRIu32 " audio_pcm_bytes=%" PRIu32 " audio_bytes_per_s=%" PRIu32 " audio_packets_per_s=%" PRIu32 " audio_failed=%" PRIu32 " queue_jobs_purged=%" PRIu32 " pool_high_water=%" PRIu32 " pool_capacity=%u pool_high_water_pct=%" PRIu32 " pool_alloc_failed=%" PRIu32 " queue_full=%" PRIu32 " replay_retained_high_water=%" PRIu32 " replay_stored=%" PRIu32 " replay_replaced=%" PRIu32 " replay_removed=%" PRIu32 " replay_resent=%" PRIu32 " replay_resend_failed=%" PRIu32 " replay_skip_current=%" PRIu32 " replay_pending=%" PRIu32 " last_drop_reason=%s last_error=%d",
+        "audio session transport summary: session=%" PRIu32 " reason=%s elapsed_ms=%" PRIu32 " expected_packet_count=%u notify_sent=%" PRIu32 " notify_failed=%" PRIu32 " notify_retries=%" PRIu32 " msys_waits=%" PRIu32 " retry_mbuf=%" PRIu32 " retry_enomem=%" PRIu32 " retry_tx_timeout=%" PRIu32 " retry_tx_status=%" PRIu32 " retry_other=%" PRIu32 " audio_sent=%" PRIu32 " audio_pcm_bytes=%" PRIu32 " audio_bytes_per_s=%" PRIu32 " audio_packets_per_s=%" PRIu32 " audio_failed=%" PRIu32 " queue_jobs_purged=%" PRIu32 " pool_high_water=%" PRIu32 " pool_capacity=%u pool_high_water_pct=%" PRIu32 " pool_alloc_failed=%" PRIu32 " queue_full=%" PRIu32 " replay_retained_high_water=%" PRIu32 " replay_stored=%" PRIu32 " replay_replaced=%" PRIu32 " replay_removed=%" PRIu32 " replay_resent=%" PRIu32 " replay_resend_failed=%" PRIu32 " replay_skip_current=%" PRIu32 " replay_pending=%" PRIu32 " last_drop_reason=%s last_error=%d",
         session_id,
         reason,
         elapsed_ms,
@@ -980,6 +998,7 @@ static void ble_audio_stream_stats_log_and_end(
         s_session_stats.notify_sent,
         s_session_stats.notify_failed,
         s_session_stats.notify_retries,
+        s_session_stats.notify_msys_waits,
         s_session_stats.notify_mbuf_alloc_retries,
         s_session_stats.notify_enomem_retries,
         s_session_stats.notify_tx_timeout_retries,
@@ -1578,18 +1597,6 @@ static void ble_audio_stream_note_notify_tx_queued(uint32_t connection_epoch)
     portEXIT_CRITICAL(&s_link_state_lock);
 }
 
-static void ble_audio_stream_cancel_notify_tx_queued(uint32_t connection_epoch)
-{
-    portENTER_CRITICAL(&s_link_state_lock);
-    if (s_notify_tx_inflight > 0 && s_notify_tx_inflight_epoch == connection_epoch) {
-        s_notify_tx_inflight--;
-        if (s_notify_tx_inflight == 0) {
-            s_notify_tx_inflight_epoch = 0;
-        }
-    }
-    portEXIT_CRITICAL(&s_link_state_lock);
-}
-
 static bool ble_audio_stream_complete_notify_tx(uint32_t connection_epoch)
 {
     bool matched = false;
@@ -1680,6 +1687,49 @@ static esp_err_t ble_audio_stream_wait_notify_credit(
         fragment_count,
         s_notify_window_depth);
     return ESP_ERR_TIMEOUT;
+}
+
+static bool ble_audio_stream_wait_msys_blocks(
+    listener_audio_packet_type_t packet_type,
+    uint32_t session_id,
+    uint16_t sequence_or_count,
+    uint8_t fragment_index,
+    uint8_t fragment_count)
+{
+    for (uint32_t wait_count = 0; wait_count < BLE_AUDIO_STREAM_NOTIFY_MSYS_WAIT_LIMIT; ++wait_count) {
+        int free_blocks = os_msys_num_free();
+        if (free_blocks >= BLE_AUDIO_STREAM_NOTIFY_MIN_FREE_MSYS_BLOCKS) {
+            return true;
+        }
+
+        ble_audio_stream_stats_msys_wait(session_id);
+        if ((wait_count + 1U) % BLE_AUDIO_STREAM_NOTIFY_MSYS_WAIT_LOG_INTERVAL == 0U) {
+            ESP_LOGW(
+                TAG,
+                "notify msys pressure continuing: type=%u session=%" PRIu32 " seq_or_count=%u frag=%u/%u waits=%" PRIu32 " free=%d min=%u",
+                (unsigned)packet_type,
+                session_id,
+                sequence_or_count,
+                fragment_index,
+                fragment_count,
+                wait_count + 1U,
+                free_blocks,
+                (unsigned)BLE_AUDIO_STREAM_NOTIFY_MIN_FREE_MSYS_BLOCKS);
+        }
+        ble_audio_stream_delay_ms(BLE_AUDIO_STREAM_NOTIFY_MSYS_WAIT_MS);
+    }
+
+    ESP_LOGW(
+        TAG,
+        "notify msys wait timeout: type=%u session=%" PRIu32 " seq_or_count=%u frag=%u/%u waits=%u min_free=%u",
+        (unsigned)packet_type,
+        session_id,
+        sequence_or_count,
+        fragment_index,
+        fragment_count,
+        (unsigned)BLE_AUDIO_STREAM_NOTIFY_MSYS_WAIT_LIMIT,
+        (unsigned)BLE_AUDIO_STREAM_NOTIFY_MIN_FREE_MSYS_BLOCKS);
+    return false;
 }
 
 void ble_audio_stream_set_control_write_handler(ble_audio_stream_control_write_handler_t handler)
@@ -1949,6 +1999,21 @@ static esp_err_t ble_audio_stream_send_packet(
             continue;
         }
 
+        if (!ble_audio_stream_wait_msys_blocks(
+                packet_type,
+                session_id,
+                sequence_or_count,
+                fragment_index,
+                fragment_count)) {
+            ble_audio_stream_stats_retry(
+                session_id,
+                ESP_ERR_NO_MEM,
+                BLE_AUDIO_STREAM_RETRY_CAUSE_MBUF_ALLOC);
+            xSemaphoreGive(s_notify_credit_sem);
+            ble_audio_stream_notify_retry_delay();
+            continue;
+        }
+
         struct os_mbuf *om = ble_hs_mbuf_from_flat(packet, packet_len);
         if (om == NULL) {
             ble_audio_stream_stats_retry(
@@ -1979,8 +2044,12 @@ static esp_err_t ble_audio_stream_send_packet(
             return ESP_OK;
         }
 
-        ble_audio_stream_cancel_notify_tx_queued(link.connection_epoch);
-        os_mbuf_free_chain(om);
+        /* BLE_GATT_NOTIFY is a build requirement above. NimBLE's enabled
+         * notify path consumes om regardless of the outcome and emits a
+         * BLE_GAP_EVENT_NOTIFY_TX attempt event before returning. That GAP
+         * event owns the credit return; returning it again here widens the
+         * pacing window and drives msys/controller ENOMEM during sustained
+         * audio. */
         if (rc == BLE_HS_ENOMEM) {
             ble_audio_stream_stats_retry(
                 session_id,
@@ -1999,14 +2068,10 @@ static esp_err_t ble_audio_stream_send_packet(
                     s_export_queue != NULL ? (uint32_t)uxQueueMessagesWaiting(s_export_queue) : 0,
                     (uint32_t)BLE_AUDIO_STREAM_NOTIFY_QUEUE_LENGTH);
             }
-            xSemaphoreGive(s_notify_credit_sem);
             ble_audio_stream_notify_retry_delay();
             continue;
         }
 
-        if (s_notify_credit_sem != NULL) {
-            xSemaphoreGive(s_notify_credit_sem);
-        }
         if (packet_type == LISTENER_AUDIO_PACKET_TYPE_AUDIO_DATA) {
             ble_audio_stream_replay_remove_packet(session_id, sequence_or_count);
         }
@@ -3565,7 +3630,6 @@ esp_err_t ble_audio_stream_prepare_type_recovery_ack(void)
 
     int rc = ble_gatts_notify_custom(link.conn_handle, s_notify_attr_handle, om);
     if (rc != 0) {
-        os_mbuf_free_chain(om);
         ble_audio_stream_clear_type_recovery_prepare();
         ble_audio_stream_clear_type_recovery_notice_tx();
         return ESP_FAIL;
@@ -3611,7 +3675,6 @@ esp_err_t ble_audio_stream_send_type_recovery_notice(void)
 
     int rc = ble_gatts_notify_custom(link.conn_handle, s_notify_attr_handle, om);
     if (rc != 0) {
-        os_mbuf_free_chain(om);
         ble_audio_stream_clear_type_recovery_ack();
         ble_audio_stream_clear_type_recovery_notice_tx();
         ESP_LOGW(TAG, "type recovery notice send failed: rc=%d", rc);

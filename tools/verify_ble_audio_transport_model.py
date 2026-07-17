@@ -32,6 +32,13 @@ SOURCE_TOKENS = [
     "s_notify_tx_inflight",
     "ble_audio_stream_note_notify_tx_queued",
     "ble_audio_stream_complete_notify_tx",
+    "#if !MYNEWT_VAL(BLE_GATT_NOTIFY)",
+    "BLE_AUDIO_STREAM_NOTIFY_RETRY_DELAY_MS 2",
+    "BLE_AUDIO_STREAM_NOTIFY_MIN_FREE_MSYS_BLOCKS 4",
+    "BLE_AUDIO_STREAM_NOTIFY_MSYS_WAIT_MS 1",
+    "ble_audio_stream_wait_msys_blocks",
+    "os_msys_num_free()",
+    "msys_waits=",
     "s_stale_event_counts",
     "BLE_AUDIO_STREAM_LINK_RECOVERY_WAIT_MS 20000",
     "BLE_AUDIO_STREAM_REPLAY_WINDOW_PACKETS 48",
@@ -172,6 +179,29 @@ def static_source_checks() -> None:
         "notify_tx in-flight epoch guard",
         STREAM,
     )
+    if "ble_audio_stream_cancel_notify_tx_queued" in stream:
+        fail("notify failure path must not manually cancel GAP notify_tx credit ownership")
+    require_regex(
+        stream,
+        r"#if !MYNEWT_VAL\(BLE_GATT_NOTIFY\).*?"
+        r"requires NimBLE notify support for enabled-path mbuf ownership and notify_tx attempt pacing",
+        "notify-disabled build guard for enabled-path mbuf ownership",
+        STREAM,
+    )
+    require_regex(
+        stream,
+        r"ble_gatts_notify_custom\(link\.conn_handle, s_notify_attr_handle, om\).*?"
+        r"BLE_GATT_NOTIFY is a build requirement above.*?"
+        r"NimBLE's enabled.*?notify path consumes om regardless of the outcome.*?"
+        r"BLE_GAP_EVENT_NOTIFY_TX attempt event.*?"
+        r"if \(rc == BLE_HS_ENOMEM\).*?ble_audio_stream_notify_retry_delay\(\).*?continue;",
+        "NimBLE notify failure ownership comment and ENOMEM retry path",
+        STREAM,
+    )
+    if re.search(r"if \(rc == BLE_HS_ENOMEM\)[\s\S]{0,900}xSemaphoreGive\(s_notify_credit_sem\)", stream):
+        fail("ENOMEM notify failure must not return notify credit outside BLE_GAP_EVENT_NOTIFY_TX")
+    if re.search(r"ESP_LOGW\(\s*TAG,\s*\"notify failed:[\s\S]{0,700}xSemaphoreGive\(s_notify_credit_sem\)", stream):
+        fail("generic notify failure must not return notify credit outside BLE_GAP_EVENT_NOTIFY_TX")
     require_regex(
         stream,
         r"ble_audio_stream_send_packet\(.*?LISTENER_AUDIO_PACKET_TYPE_SESSION_STOP.*?"
@@ -211,6 +241,10 @@ class TransportModel:
     retries: int = 0
     last_error: str | None = None
     queue_jobs_purged: int = 0
+    notify_window_depth: int = 3
+    notify_credits: int = 3
+    notify_inflight: int = 0
+    manual_failure_credit_returns: int = 0
 
     def link_ready(self) -> bool:
         return self.conn_handle is not None and self.mtu_ready and self.notify_enabled
@@ -265,6 +299,28 @@ class TransportModel:
     def notify_tx(self, conn_handle: int, epoch: int, waiting: bool = True) -> None:
         if conn_handle != self.conn_handle or epoch != self.epoch or not waiting or not self.link_ready():
             self.stale["notify_tx"] += 1
+            return
+        if self.notify_inflight <= 0:
+            self.stale["notify_tx"] += 1
+            return
+        self.notify_inflight -= 1
+        self.notify_credits = min(self.notify_credits + 1, self.notify_window_depth)
+
+    def take_notify_credit(self) -> None:
+        if self.notify_credits <= 0:
+            raise AssertionError("notify credit unavailable")
+        self.notify_credits -= 1
+        self.notify_inflight += 1
+
+    def immediate_notify_failure(self) -> None:
+        if self.conn_handle is None:
+            raise AssertionError("notify failure requires a connection")
+        self.take_notify_credit()
+        self.notify_tx(self.conn_handle, self.epoch)
+        # The enabled ble_gatts_notify_custom path emits a notify_tx attempt
+        # event on failure, so the firmware branch must not return a second
+        # credit.
+        assert self.manual_failure_credit_returns == 0
 
     def start(self, session_id: int) -> None:
         if self.state != "stream_ready" or not self.link_ready():
@@ -523,6 +579,15 @@ def case_bounded_retry_timeout() -> None:
     assert model.last_error == "notify_timeout"
 
 
+def case_notify_failure_event_owns_credit() -> None:
+    model = ready_model()
+    model.start(109)
+    model.immediate_notify_failure()
+    assert model.notify_credits == model.notify_window_depth
+    assert model.notify_inflight == 0
+    assert model.manual_failure_credit_returns == 0
+
+
 def case_recording_promotion_wins_over_pending_low_power() -> None:
     model = ConnectionParameterModel()
     model.request_low_power()
@@ -600,6 +665,7 @@ CASES = [
     case_pool_exhaustion,
     case_stale_gatt_event_after_epoch_advance,
     case_bounded_retry_timeout,
+    case_notify_failure_event_owns_credit,
     case_recording_promotion_wins_over_pending_low_power,
     case_e11r_armed_before_connected_idle_prevents_slow_link,
     case_e11r_repromotes_after_host_downgrade_completion,
@@ -613,7 +679,8 @@ def main() -> int:
         case()
     print(
         "PASS: BLE audio transport model covers connection epoch, notify readiness, "
-        "session ownership, replay, backpressure, stale GATT events, retry timeout, and "
+        "session ownership, replay, backpressure, stale GATT events, retry timeout, "
+        "notify-failure credit ownership, and "
         "event-owned recording connection promotion and pre-armed e11r low-power exclusion "
         f"across {len(CASES)} extreme cases."
     )
