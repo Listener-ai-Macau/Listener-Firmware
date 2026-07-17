@@ -42,6 +42,7 @@ def require_fast_recovery_worker_boundary(path: Path, failures: list[str]) -> No
     for fragment in (
         "BLE_HID_GAP_RECOVERY_BOND_COUNT_UNKNOWN",
         "ble_hid_gap_begin_recovery_pairing_window(type_controlled_recovery, false);",
+        "known_type_peer ? &type_peer : NULL",
         "ble_hid_gap_schedule_recovery_bond_delete(",
         "ble_gap_terminate(conn.conn_handle, BLE_ERR_REM_USER_CONN_TERM)",
     ):
@@ -79,10 +80,80 @@ def require_retryable_security_error_classification(path: Path, failures: list[s
             )
 
 
+def require_type_recovery_ack_boundary(path: Path, failures: list[str]) -> None:
+    source = path.read_text(encoding="utf-8")
+    start = source.find("esp_err_t ble_audio_stream_send_type_recovery_notice(void)\n{")
+    end = source.find("esp_err_t ble_audio_stream_send_session_cancel(", start)
+    if start < 0 or end < 0:
+        failures.append(f"{path.relative_to(REPO_ROOT)}: missing Type recovery acknowledgement boundary")
+        return
+    body = source[start:end]
+    for fragment in (
+        "ble_audio_stream_arm_type_recovery_ack(&link);",
+        "ble_gatts_notify_custom(link.conn_handle, s_notify_attr_handle, om);",
+        "esp_err_t ble_audio_stream_wait_for_type_recovery_ack(uint32_t timeout_ms)",
+        "type recovery acknowledgement timed out",
+    ):
+        if fragment not in body:
+            failures.append(
+                f"{path.relative_to(REPO_ROOT)}: Type recovery acknowledgement boundary missing {fragment!r}"
+            )
+    if body.find("ble_audio_stream_arm_type_recovery_ack(&link);") >= body.find(
+        "ble_gatts_notify_custom(link.conn_handle, s_notify_attr_handle, om);"
+    ):
+        failures.append(
+            f"{path.relative_to(REPO_ROOT)}: recovery acknowledgement must be armed before its notice is sent"
+        )
+
+
+def require_precleanup_advertising_boundary(path: Path, failures: list[str]) -> None:
+    source = path.read_text(encoding="utf-8")
+    start = source.find("static void ble_hid_gap_recovery_bond_delete_task(void *arg)\n{")
+    end = source.find("static esp_err_t ble_hid_gap_schedule_recovery_bond_delete(", start)
+    if start < 0 or end < 0:
+        failures.append(f"{path.relative_to(REPO_ROOT)}: missing recovery cleanup worker boundary")
+        return
+    body = source[start:end]
+    for fragment in (
+        "bool advertising_started_before_bond_delete = false;",
+        "ble_hid_gap_set_recovery_advertising_while_bond_delete(true);",
+        "ble_hid_gap_start_type_recovery_warmup_advertising();",
+        "ble_hid_gap_set_recovery_advertising_while_bond_delete(false);",
+        "ble_store_util_delete_peer(&type_peer)",
+        "if (advertising_started_before_bond_delete && ble_gap_adv_active())",
+        "Type-controlled connectable advertising started after local bond cleanup",
+    ):
+        if fragment not in body:
+            failures.append(
+                f"{path.relative_to(REPO_ROOT)}: pre-cleanup advertising boundary missing {fragment!r}"
+            )
+    if body.find("ble_hid_gap_start_type_recovery_warmup_advertising();") >= body.find(
+        "ble_store_util_delete_peer(&type_peer)"
+    ):
+        failures.append(
+            f"{path.relative_to(REPO_ROOT)}: controller warm-up advertising must start before the synchronous peer cleanup"
+        )
+    for fragment in (
+        "recovery: rejecting connection while async local bond delete is pending",
+        "recovery: terminating encrypted connection while async local bond delete is pending",
+        "Type-controlled recovery advertising starts while old peer cleanup quarantines connections",
+        "Type-controlled recovery advertising reuses applied BLE identity",
+        "type_recovery_requested && s_adv_device_name != NULL",
+        "BLE_GAP_CONN_MODE_NON",
+        "Type-controlled warm-up advertising started non-connectable until local bond cleanup completes",
+    ):
+        if fragment not in source:
+            failures.append(
+                f"{path.relative_to(REPO_ROOT)}: pre-cleanup advertising must retain peer quarantine {fragment!r}"
+            )
+
+
 def main() -> int:
     failures: list[str] = []
     gap = REPO_ROOT / "ports/esp32/ble_hid_gap/ble_hid_gap_esp32.c"
     voice = REPO_ROOT / "components/voice_recording_control/voice_recording_control.c"
+    audio = REPO_ROOT / "ports/esp32/ble_audio_stream/ble_audio_stream_esp32.c"
+    key_input = REPO_ROOT / "ports/esp32/voice_key_input/voice_key_input_esp32.c"
     diag = REPO_ROOT / "ports/esp32/diag_log_platform/diag_log_flash.c"
     diag_events = REPO_ROOT / "components/diag_log/include/diag_log_events.h"
 
@@ -105,11 +176,13 @@ def main() -> int:
         require_fragment(gap, fragment, failures)
     require_fast_recovery_worker_boundary(gap, failures)
     require_retryable_security_error_classification(gap, failures)
+    require_type_recovery_ack_boundary(audio, failures)
+    require_precleanup_advertising_boundary(gap, failures)
     require_fragment(diag_events, "22=transaction_begin", failures)
     require_ordered(
         gap,
-        "rc = ble_gap_adv_start(s_own_addr_type, NULL, adv_duration_ms,\n                           &adv_params, nimble_hid_gap_event, NULL);",
-        "ble_hid_gap_log_ec11_recovery_timing(\"advertising_command_accepted\", false);",
+        "ble_hid_gap_start_type_recovery_warmup_advertising();",
+        "ble_store_util_delete_peer(&type_peer)",
         failures,
     )
     require_ordered(
@@ -128,9 +201,41 @@ def main() -> int:
     require_ordered(
         voice,
         "ble_audio_stream_send_type_recovery_notice();",
+        "ble_audio_stream_wait_for_type_recovery_ack(",
+        failures,
+    )
+    require_ordered(
+        voice,
+        "ble_audio_stream_wait_for_type_recovery_ack(",
         "fast_recovery_ret = ble_hid_gap_forget_bonds_and_repair_ec11_fast();",
         failures,
     )
+    for fragment in (
+        "#define BLE_AUDIO_STREAM_TYPE_RECOVERY_ACK_TEXT \"TYPE:EC11:RECOVERY:ACK\"",
+        "static SemaphoreHandle_t s_type_recovery_ack_sem;",
+        "ble_audio_stream_arm_type_recovery_ack(&link);",
+        "ble_audio_stream_arm_type_recovery_notice_tx(&link);",
+        "bool ble_audio_stream_consume_type_control_command(const char *command, const char *source)",
+        "if (strcmp(command, BLE_AUDIO_STREAM_TYPE_RECOVERY_ACK_TEXT) == 0)",
+        "ble_audio_stream_note_type_recovery_ack(source)",
+        "esp_err_t ble_audio_stream_wait_for_type_recovery_ack(uint32_t timeout_ms)",
+        "type recovery acknowledgement timed out",
+        "ble_audio_stream_prepare_type_recovery_ack(void)",
+        "TYPE:EC11:RECOVERY:PREPARE:ACK",
+        "type recovery pre-authorization consumed before EC11 pairing reset",
+    ):
+        require_fragment(audio, fragment, failures)
+    for fragment in (
+        "if (button == &s_direct_gpio_state)",
+        "ble_audio_stream_prepare_type_recovery_ack();",
+        "a single click or long press never resets BLE",
+    ):
+        require_fragment(key_input, fragment, failures)
+    for fragment in (
+        "Type-controlled current peer records deleted directly without peer enumeration",
+        "Type-controlled recovery advertising skips post-cleanup peer enumeration",
+    ):
+        require_fragment(gap, fragment, failures)
 
     for fragment in (
         "DIAG_LOG_WRITE_QUEUE_DEPTH",

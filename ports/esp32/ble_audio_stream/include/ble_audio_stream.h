@@ -22,6 +22,7 @@ extern "C" {
     BLE_UUID128_INIT(0x1c, 0x09, 0xc3, 0x3b, 0x5b, 0x9e, 0x4d, 0x0c, 0x83, 0x65, 0x9f, 0x6d, 0x45, 0xf8, 0x0a, 0x71)
 #define BLE_AUDIO_STREAM_CAPABILITIES_UUID \
     BLE_UUID128_INIT(0x1d, 0x09, 0xc3, 0x3b, 0x5b, 0x9e, 0x4d, 0x0c, 0x83, 0x65, 0x9f, 0x6d, 0x45, 0xf8, 0x0a, 0x71)
+#define BLE_AUDIO_STREAM_TYPE_RECOVERY_ACK_TIMEOUT_MS 80U
 
 typedef struct {
     uint32_t queue_depth;
@@ -71,7 +72,9 @@ esp_err_t ble_audio_stream_send_session_error(
     uint32_t session_id,
     uint16_t expected_packet_count,
     uint16_t error_code);
+esp_err_t ble_audio_stream_prepare_type_recovery_ack(void);
 esp_err_t ble_audio_stream_send_type_recovery_notice(void);
+esp_err_t ble_audio_stream_wait_for_type_recovery_ack(uint32_t timeout_ms);
 bool ble_audio_stream_is_ready(void);
 bool ble_audio_stream_is_type_link_ready(void);
 bool ble_audio_stream_is_type_led_ready(void);

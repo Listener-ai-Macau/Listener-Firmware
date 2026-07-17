@@ -508,6 +508,10 @@ static void voice_key_input_arm_pending_single_click(
     button->recovery_guard_active = true;
     button->recovery_guard_started_tick = now_tick;
     button->recovery_double_candidate = false;
+    if (button == &s_direct_gpio_state) {
+        /* This is only a reversible pre-authorization; a single click or long press never resets BLE. */
+        (void)ble_audio_stream_prepare_type_recovery_ack();
+    }
     ESP_LOGI(
         TAG,
         "%s single click pending for double-click window%s%s",

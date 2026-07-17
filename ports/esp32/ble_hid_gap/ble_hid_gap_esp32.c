@@ -146,6 +146,10 @@ static bool s_recovery_power_blocker_active = false;
 static bool s_recovery_bond_delete_pending = false;
 static bool s_recovery_bond_delete_in_progress = false;
 static TaskHandle_t s_recovery_bond_delete_task_handle = NULL;
+static bool s_recovery_bond_delete_peer_known = false;
+static ble_addr_t s_recovery_bond_delete_peer;
+/* Only the Type-confirmed EC11 worker may advertise while its old peer is quarantined. */
+static bool s_recovery_advertising_while_bond_delete = false;
 static esp_timer_handle_t s_recovery_pairing_window_timer = NULL;
 static int64_t s_recovery_pairing_window_opened_at_ms = 0;
 static uint16_t s_recovery_security_request_conn_handle = BLE_HS_CONN_HANDLE_NONE;
@@ -532,6 +536,23 @@ static bool ble_hid_gap_recovery_bond_delete_active(void)
     bool active = s_recovery_bond_delete_pending || s_recovery_bond_delete_in_progress;
     portEXIT_CRITICAL(&s_ble_gap_state_lock);
     return active;
+}
+
+static void ble_hid_gap_set_recovery_advertising_while_bond_delete(bool enabled)
+{
+    portENTER_CRITICAL(&s_ble_gap_state_lock);
+    s_recovery_advertising_while_bond_delete = enabled;
+    portEXIT_CRITICAL(&s_ble_gap_state_lock);
+}
+
+static bool ble_hid_gap_recovery_allows_advertising_while_bond_delete(void)
+{
+    portENTER_CRITICAL(&s_ble_gap_state_lock);
+    const bool allowed = s_recovery_bond_delete_pending || s_recovery_bond_delete_in_progress
+        ? s_recovery_advertising_while_bond_delete
+        : false;
+    portEXIT_CRITICAL(&s_ble_gap_state_lock);
+    return allowed;
 }
 
 typedef enum {
@@ -2838,6 +2859,55 @@ static void nimble_hid_on_sync(void)
     }
 }
 
+/*
+ * The old Windows bond can immediately reconnect as soon as a connectable
+ * recovery advertisement appears.  Give the controller a fast, deliberately
+ * anonymous non-connectable start while the old peer record is deleted; only
+ * the subsequent normal advertisement may accept a new connection.
+ */
+static esp_err_t ble_hid_gap_start_type_recovery_warmup_advertising(void)
+{
+    struct ble_hs_adv_fields warmup_fields;
+    struct ble_hs_adv_fields empty_scan_rsp_fields;
+    struct ble_gap_adv_params adv_params;
+
+    if (ble_gap_adv_active()) {
+        return ESP_OK;
+    }
+
+    memset(&warmup_fields, 0, sizeof(warmup_fields));
+    memset(&empty_scan_rsp_fields, 0, sizeof(empty_scan_rsp_fields));
+    warmup_fields.flags = BLE_HS_ADV_F_DISC_GEN | BLE_HS_ADV_F_BREDR_UNSUP;
+    int rc = ble_gap_adv_set_fields(&warmup_fields);
+    if (rc != 0) {
+        ESP_LOGW(TAG, "recovery: warm-up advertising data setup failed rc=%d", rc);
+        return ESP_FAIL;
+    }
+    rc = ble_gap_adv_rsp_set_fields(&empty_scan_rsp_fields);
+    if (rc != 0) {
+        ESP_LOGW(TAG, "recovery: warm-up scan response setup failed rc=%d", rc);
+        return ESP_FAIL;
+    }
+
+    memset(&adv_params, 0, sizeof(adv_params));
+    adv_params.conn_mode = BLE_GAP_CONN_MODE_NON;
+    adv_params.disc_mode = BLE_GAP_DISC_MODE_GEN;
+    adv_params.itvl_min = BLE_GAP_ADV_ITVL_MS(BLE_HID_GAP_FAST_ADV_MIN_MS);
+    adv_params.itvl_max = BLE_GAP_ADV_ITVL_MS(BLE_HID_GAP_FAST_ADV_MAX_MS);
+    rc = ble_gap_adv_start(
+        s_own_addr_type, NULL, BLE_HS_FOREVER, &adv_params, nimble_hid_gap_event, NULL);
+    if (rc != 0) {
+        ESP_LOGW(TAG, "recovery: non-connectable warm-up advertising start failed rc=%d", rc);
+        return ESP_FAIL;
+    }
+
+    ble_hid_gap_log_ec11_recovery_timing("advertising_command_accepted", false);
+    ESP_LOGI(
+        TAG,
+        "recovery: Type-controlled warm-up advertising started non-connectable until local bond cleanup completes");
+    return ESP_OK;
+}
+
 esp_err_t esp_hid_ble_gap_adv_start(void)
 {
     int rc;
@@ -2913,7 +2983,10 @@ esp_err_t esp_hid_ble_gap_adv_start(void)
         return ESP_OK;
     }
 
-    if (ble_hid_gap_recovery_bond_delete_active()) {
+    const bool recovery_advertising_while_bond_delete =
+        ble_hid_gap_recovery_allows_advertising_while_bond_delete();
+    if (ble_hid_gap_recovery_bond_delete_active() &&
+        !recovery_advertising_while_bond_delete) {
         ESP_LOGI(TAG, "NimBLE advertising deferred: recovery async local bond delete pending");
         ble_hid_gap_log_adv_state(
             BLE_HID_GAP_ADV_STATE_DEFER_BOND_DELETE,
@@ -2925,6 +2998,11 @@ esp_err_t esp_hid_ble_gap_adv_start(void)
                  16, 0, 0, s_ble_gap_conn_handle);
         status_led_set_ble_state(STATUS_LED_BLE_PAIRING, false);
         return ESP_OK;
+    }
+    if (recovery_advertising_while_bond_delete) {
+        ESP_LOGI(
+            TAG,
+            "Type-controlled recovery advertising starts while old peer cleanup quarantines connections");
     }
 
     if (ble_gap_adv_active()) {
@@ -2938,20 +3016,44 @@ esp_err_t esp_hid_ble_gap_adv_start(void)
         return ESP_OK;
     }
 
-    esp_err_t name_ret = ble_hid_gap_refresh_configured_device_name("advertising_start");
-    if (name_ret != ESP_OK) {
-        ESP_LOGW(TAG, "advertising start continuing after BLE name refresh failure: %s",
-                 esp_err_to_name(name_ret));
-    }
-
     const int64_t recovery_pairing_remaining_ms =
         ble_hid_gap_recovery_pairing_window_remaining_ms();
     const bool pairing_window = recovery_pairing_remaining_ms > 0;
+    const bool type_recovery_requested =
+        pairing_window && s_recovery_type_controlled_pairing;
 
-    rc = ble_store_util_bonded_peers(
-        bonded_peers,
-        &bonded_peer_count,
-        sizeof(bonded_peers) / sizeof(bonded_peers[0]));
+    /*
+     * Type-controlled recovery follows a live, acknowledged connection. Its
+     * name and appearance were already applied when that connection started;
+     * reapplying the same GAP identity here serializes the controller start
+     * for no behavioral gain. A missing cache still falls back to the normal
+     * settings read so boot and settings-apply paths retain their guarantee.
+     */
+    if (type_recovery_requested && s_adv_device_name != NULL &&
+        s_adv_device_name_len > 0) {
+        ESP_LOGI(TAG, "Type-controlled recovery advertising reuses applied BLE identity");
+    } else {
+        esp_err_t name_ret = ble_hid_gap_refresh_configured_device_name("advertising_start");
+        if (name_ret != ESP_OK) {
+            ESP_LOGW(TAG, "advertising start continuing after BLE name refresh failure: %s",
+                     esp_err_to_name(name_ret));
+        }
+    }
+
+    if (type_recovery_requested) {
+        /*
+         * This recovery advertisement is never directed and new connections
+         * remain quarantined until cleanup completes, so a second NVS peer
+         * enumeration cannot affect its controller payload.
+         */
+        rc = 0;
+        ESP_LOGI(TAG, "Type-controlled recovery advertising skips post-cleanup peer enumeration");
+    } else {
+        rc = ble_store_util_bonded_peers(
+            bonded_peers,
+            &bonded_peer_count,
+            sizeof(bonded_peers) / sizeof(bonded_peers[0]));
+    }
     const int64_t first_pairing_remaining_ms = rc == 0 && !pairing_window
         ? ble_hid_gap_first_pairing_window_remaining_ms(bonded_peer_count)
         : 0;
@@ -2969,8 +3071,6 @@ esp_err_t esp_hid_ble_gap_adv_start(void)
         ESP_LOGW(TAG, "NimBLE bonded peer lookup failed: rc=%d", rc);
     }
 
-    const bool type_recovery_requested =
-        pairing_window && s_recovery_type_controlled_pairing;
     const int64_t recovery_swift_pair_remaining_ms =
         pairing_window
             ? ble_hid_gap_recovery_swift_pair_prompt_remaining_ms()
@@ -3264,6 +3364,10 @@ static void ble_hid_gap_recovery_bond_delete_set_state(
     s_recovery_bond_delete_pending = pending;
     s_recovery_bond_delete_in_progress = in_progress;
     s_recovery_bond_delete_task_handle = task_handle;
+    if (!pending && !in_progress) {
+        s_recovery_bond_delete_peer_known = false;
+        memset(&s_recovery_bond_delete_peer, 0, sizeof(s_recovery_bond_delete_peer));
+    }
     portEXIT_CRITICAL(&s_ble_gap_state_lock);
 }
 
@@ -3287,6 +3391,14 @@ static void ble_hid_gap_recovery_bond_delete_task(void *arg)
     const bool scheduled_bond_count_known =
         scheduled_bond_count != BLE_HID_GAP_RECOVERY_BOND_COUNT_UNKNOWN;
     const bool type_controlled_recovery = s_recovery_type_controlled_pairing;
+    bool known_type_peer = false;
+    ble_addr_t type_peer = {0};
+    portENTER_CRITICAL(&s_ble_gap_state_lock);
+    known_type_peer = s_recovery_bond_delete_peer_known;
+    if (known_type_peer) {
+        type_peer = s_recovery_bond_delete_peer;
+    }
+    portEXIT_CRITICAL(&s_ble_gap_state_lock);
     const TickType_t wait_started = xTaskGetTickCount();
     if (ble_hid_gap_connection_snapshot().connected) {
         (void)ulTaskNotifyTake(
@@ -3326,15 +3438,54 @@ static void ble_hid_gap_recovery_bond_delete_task(void *arg)
         }
     }
 
+    /*
+     * The Type has already acknowledged this recovery on the live GATT
+     * session. Start an anonymous, non-connectable controller warm-up before
+     * synchronous NVS cleanup so the established 250 ms command contract
+     * remains true without allowing the stale Windows bond to race cleanup.
+     */
+    bool advertising_started_before_bond_delete = false;
+    if (type_controlled_recovery && known_type_peer) {
+        ble_hid_gap_set_recovery_advertising_while_bond_delete(true);
+        esp_err_t early_adv_ret = ble_hid_gap_start_type_recovery_warmup_advertising();
+        ble_hid_gap_set_recovery_advertising_while_bond_delete(false);
+        if (early_adv_ret == ESP_OK) {
+            advertising_started_before_bond_delete = true;
+            ble_hid_gap_log_ec11_recovery_timing("advertising_started", true);
+        } else {
+            ESP_LOGW(
+                TAG,
+                "recovery: Type-controlled warm-up advertising before peer cleanup failed: %s",
+                esp_err_to_name(early_adv_ret));
+        }
+    }
+
     ble_addr_t bonded_peers[8];
     int bonded_peer_count = 0;
-    int lookup_rc = ble_store_util_bonded_peers(
-        bonded_peers,
-        &bonded_peer_count,
-        sizeof(bonded_peers) / sizeof(bonded_peers[0]));
+    int lookup_rc = 0;
     int first_delete_rc = 0;
     int deleted_count = 0;
-    if (lookup_rc == 0) {
+    bool fallback_to_peer_enumeration = !type_controlled_recovery || !known_type_peer;
+    if (type_controlled_recovery && known_type_peer) {
+        int direct_delete_rc = ble_store_util_delete_peer(&type_peer);
+        if (direct_delete_rc == 0) {
+            deleted_count = 1;
+            ESP_LOGI(TAG, "recovery: Type-controlled current peer records deleted directly without peer enumeration");
+        } else {
+            fallback_to_peer_enumeration = true;
+            ESP_LOGW(
+                TAG,
+                "recovery: Type-controlled direct current peer delete failed rc=%d; falling back to peer enumeration",
+                direct_delete_rc);
+        }
+    }
+    if (fallback_to_peer_enumeration) {
+        lookup_rc = ble_store_util_bonded_peers(
+            bonded_peers,
+            &bonded_peer_count,
+            sizeof(bonded_peers) / sizeof(bonded_peers[0]));
+    }
+    if (fallback_to_peer_enumeration && lookup_rc == 0) {
         for (int index = 0; index < bonded_peer_count; ++index) {
             /*
              * Native recovery needs the GAP API to rotate the local IRK after
@@ -3360,11 +3511,15 @@ static void ble_hid_gap_recovery_bond_delete_task(void *arg)
         }
     }
 
-    const bool delete_ok = lookup_rc == 0 && first_delete_rc == 0;
+    const bool delete_ok = (!fallback_to_peer_enumeration || lookup_rc == 0) &&
+                           first_delete_rc == 0;
 
     ble_hid_gap_recovery_bond_delete_set_state(false, false, NULL);
 
     if (!delete_ok) {
+        if (advertising_started_before_bond_delete && ble_gap_adv_active()) {
+            (void)ble_gap_adv_stop();
+        }
         ESP_LOGW(
             TAG,
             "recovery: async local bond delete complete lookup_rc=%d bonded_peers=%d deleted=%d scheduled_bonds=%s",
@@ -3413,9 +3568,19 @@ static void ble_hid_gap_recovery_bond_delete_task(void *arg)
 
     s_directed_adv_pending = false;
     s_last_adv_was_directed = false;
+    if (advertising_started_before_bond_delete && ble_gap_adv_active()) {
+        int stop_rc = ble_gap_adv_stop();
+        if (stop_rc != 0) {
+            ESP_LOGE(TAG, "recovery: warm-up advertising stop after local bond cleanup failed rc=%d", stop_rc);
+            status_led_set_error(STATUS_LED_ERROR_DOMAIN_BLE, STATUS_LED_ERROR_HARD, "ble_recovery_warmup_stop_failed");
+            vTaskDelete(NULL);
+            return;
+        }
+    }
+
     esp_err_t adv_ret = ble_hid_gap_start_advertising();
     if (adv_ret != ESP_OK) {
-        ESP_LOGE(TAG, "recovery: advertising restart after async bond delete failed: %s",
+        ESP_LOGE(TAG, "recovery: connectable advertising restart after async bond delete failed: %s",
                  esp_err_to_name(adv_ret));
         diag_log(DIAG_SRC_BLE_GAP, DIAG_GAP_RECOVERY, DIAG_SEV_ERROR,
                  3, (uint32_t)adv_ret, (uint32_t)deleted_count, s_ble_gap_conn_handle);
@@ -3423,7 +3588,7 @@ static void ble_hid_gap_recovery_bond_delete_task(void *arg)
         vTaskDelete(NULL);
         return;
     }
-
+    ESP_LOGI(TAG, "recovery: Type-controlled connectable advertising started after local bond cleanup");
     ble_hid_gap_log_ec11_recovery_timing("advertising_started", true);
 
     if (!s_recovery_power_blocker_active &&
@@ -3463,7 +3628,8 @@ static void ble_hid_gap_recovery_bond_delete_task(void *arg)
 
 static esp_err_t ble_hid_gap_schedule_recovery_bond_delete(
     uint32_t bonded_peer_count,
-    bool defer_diagnostics)
+    bool defer_diagnostics,
+    const ble_addr_t *known_type_peer)
 {
     portENTER_CRITICAL(&s_ble_gap_state_lock);
     if (s_recovery_bond_delete_pending || s_recovery_bond_delete_in_progress) {
@@ -3473,6 +3639,12 @@ static esp_err_t ble_hid_gap_schedule_recovery_bond_delete(
     }
     s_recovery_bond_delete_pending = true;
     s_recovery_bond_delete_in_progress = false;
+    s_recovery_bond_delete_peer_known = known_type_peer != NULL;
+    if (known_type_peer != NULL) {
+        s_recovery_bond_delete_peer = *known_type_peer;
+    } else {
+        memset(&s_recovery_bond_delete_peer, 0, sizeof(s_recovery_bond_delete_peer));
+    }
     portEXIT_CRITICAL(&s_ble_gap_state_lock);
 
     TaskHandle_t task_handle = NULL;
@@ -3556,9 +3728,27 @@ static esp_err_t ble_hid_gap_forget_bonds_and_repair_ec11_fast_inner(void)
             "recovery_pairing_reset_connected_fast");
     }
 
+    ble_addr_t type_peer = {0};
+    bool known_type_peer = false;
+    if (type_controlled_recovery) {
+        struct ble_gap_conn_desc desc;
+        int desc_rc = ble_gap_conn_find(conn.conn_handle, &desc);
+        if (desc_rc == 0 && desc.sec_state.bonded) {
+            type_peer = desc.peer_id_addr;
+            known_type_peer = true;
+        } else {
+            ESP_LOGW(
+                TAG,
+                "recovery: Type-controlled direct peer delete unavailable desc_rc=%d bonded=%u; retaining enumeration fallback",
+                desc_rc,
+                desc_rc == 0 && desc.sec_state.bonded ? 1U : 0U);
+        }
+    }
+
     esp_err_t delete_ret = ble_hid_gap_schedule_recovery_bond_delete(
         BLE_HID_GAP_RECOVERY_BOND_COUNT_UNKNOWN,
-        true);
+        true,
+        known_type_peer ? &type_peer : NULL);
     if (delete_ret != ESP_OK) {
         ESP_LOGE(TAG, "recovery: async local bond delete scheduling failed: %s", esp_err_to_name(delete_ret));
         diag_log(DIAG_SRC_BLE_GAP, DIAG_GAP_RECOVERY, DIAG_SEV_ERROR,
@@ -3725,7 +3915,8 @@ static esp_err_t ble_hid_gap_forget_bonds_and_repair_inner(
     if (bonded_peer_count > 0) {
         esp_err_t delete_ret = ble_hid_gap_schedule_recovery_bond_delete(
             (uint32_t)bonded_peer_count,
-            false);
+            false,
+            NULL);
         if (delete_ret != ESP_OK) {
             ESP_LOGE(TAG, "recovery: async local bond delete scheduling failed: %s", esp_err_to_name(delete_ret));
             diag_log(DIAG_SRC_BLE_GAP, DIAG_GAP_RECOVERY, DIAG_SEV_ERROR,

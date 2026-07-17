@@ -82,6 +82,10 @@ extern esp_err_t ble_hid_gap_schedule_ota_reconnect(void) __attribute__((weak));
 #define BLE_AUDIO_STREAM_TYPE_HOST_SEEN_HOLD_MS 180000
 #define BLE_AUDIO_STREAM_TYPE_OTA_HEARTBEAT_TIMEOUT_MS 180000
 #define BLE_AUDIO_STREAM_TYPE_RECOVERY_NOTICE_TEXT "listener-ec11-recovery-v1"
+#define BLE_AUDIO_STREAM_TYPE_RECOVERY_ACK_TEXT "TYPE:EC11:RECOVERY:ACK"
+#define BLE_AUDIO_STREAM_TYPE_RECOVERY_PREPARE_NOTICE_TEXT "listener-ec11-recovery-prepare-v1"
+#define BLE_AUDIO_STREAM_TYPE_RECOVERY_PREPARE_ACK_TEXT "TYPE:EC11:RECOVERY:PREPARE:ACK"
+#define BLE_AUDIO_STREAM_TYPE_RECOVERY_PREPARE_VALID_MS 1500U
 
 typedef enum {
     BLE_AUDIO_STREAM_JOB_TYPE_SESSION_START = 0,
@@ -218,11 +222,24 @@ static uint16_t s_packet_value_max_bytes = BLE_AUDIO_STREAM_PACKET_DEFAULT_BYTES
 static QueueHandle_t s_export_queue;
 static TaskHandle_t s_export_task_handle;
 static SemaphoreHandle_t s_notify_credit_sem;
+static SemaphoreHandle_t s_type_recovery_ack_sem;
 static SemaphoreHandle_t s_audio_pool_mutex;
 static uint8_t s_notify_window_depth = BLE_AUDIO_STREAM_NOTIFY_WINDOW_DEPTH;
 static uint32_t s_connection_epoch;
 static uint32_t s_notify_tx_inflight_epoch;
 static uint8_t s_notify_tx_inflight;
+static bool s_type_recovery_ack_pending;
+static uint16_t s_type_recovery_ack_conn_handle = BLE_HS_CONN_HANDLE_NONE;
+static uint32_t s_type_recovery_ack_epoch;
+static TickType_t s_type_recovery_ack_started_tick;
+static bool s_type_recovery_prepare_pending;
+static bool s_type_recovery_prepare_ready;
+static uint16_t s_type_recovery_prepare_conn_handle = BLE_HS_CONN_HANDLE_NONE;
+static uint32_t s_type_recovery_prepare_epoch;
+static TickType_t s_type_recovery_prepare_started_tick;
+static bool s_type_recovery_notice_tx_pending;
+static uint16_t s_type_recovery_notice_tx_conn_handle = BLE_HS_CONN_HANDLE_NONE;
+static uint32_t s_type_recovery_notice_tx_epoch;
 static ble_audio_stream_stale_event_counts_t s_stale_event_counts;
 static ble_audio_stream_session_stats_t s_session_stats;
 static ble_audio_stream_transport_state_t s_transport_state =
@@ -335,6 +352,191 @@ static ble_audio_stream_link_snapshot_t ble_audio_stream_get_link_snapshot(void)
     };
     portEXIT_CRITICAL(&s_link_state_lock);
     return snapshot;
+}
+
+static void ble_audio_stream_clear_type_recovery_ack(void)
+{
+    if (s_type_recovery_ack_sem != NULL) {
+        xQueueReset(s_type_recovery_ack_sem);
+    }
+    portENTER_CRITICAL(&s_link_state_lock);
+    s_type_recovery_ack_pending = false;
+    s_type_recovery_ack_conn_handle = BLE_HS_CONN_HANDLE_NONE;
+    s_type_recovery_ack_epoch = 0;
+    s_type_recovery_ack_started_tick = 0;
+    portEXIT_CRITICAL(&s_link_state_lock);
+}
+
+static void ble_audio_stream_arm_type_recovery_ack(const ble_audio_stream_link_snapshot_t *link)
+{
+    if (link == NULL) {
+        return;
+    }
+    ble_audio_stream_clear_type_recovery_ack();
+    portENTER_CRITICAL(&s_link_state_lock);
+    s_type_recovery_ack_pending = true;
+    s_type_recovery_ack_conn_handle = link->conn_handle;
+    s_type_recovery_ack_epoch = link->connection_epoch;
+    s_type_recovery_ack_started_tick = xTaskGetTickCount();
+    portEXIT_CRITICAL(&s_link_state_lock);
+}
+
+static void ble_audio_stream_clear_type_recovery_prepare(void)
+{
+    portENTER_CRITICAL(&s_link_state_lock);
+    s_type_recovery_prepare_pending = false;
+    s_type_recovery_prepare_ready = false;
+    s_type_recovery_prepare_conn_handle = BLE_HS_CONN_HANDLE_NONE;
+    s_type_recovery_prepare_epoch = 0;
+    s_type_recovery_prepare_started_tick = 0;
+    portEXIT_CRITICAL(&s_link_state_lock);
+}
+
+static void ble_audio_stream_arm_type_recovery_prepare(const ble_audio_stream_link_snapshot_t *link)
+{
+    if (link == NULL) {
+        return;
+    }
+    ble_audio_stream_clear_type_recovery_prepare();
+    portENTER_CRITICAL(&s_link_state_lock);
+    s_type_recovery_prepare_pending = true;
+    s_type_recovery_prepare_conn_handle = link->conn_handle;
+    s_type_recovery_prepare_epoch = link->connection_epoch;
+    s_type_recovery_prepare_started_tick = xTaskGetTickCount();
+    portEXIT_CRITICAL(&s_link_state_lock);
+}
+
+static void ble_audio_stream_clear_type_recovery_notice_tx(void)
+{
+    portENTER_CRITICAL(&s_link_state_lock);
+    s_type_recovery_notice_tx_pending = false;
+    s_type_recovery_notice_tx_conn_handle = BLE_HS_CONN_HANDLE_NONE;
+    s_type_recovery_notice_tx_epoch = 0;
+    portEXIT_CRITICAL(&s_link_state_lock);
+}
+
+static void ble_audio_stream_arm_type_recovery_notice_tx(const ble_audio_stream_link_snapshot_t *link)
+{
+    if (link == NULL) {
+        return;
+    }
+    portENTER_CRITICAL(&s_link_state_lock);
+    s_type_recovery_notice_tx_pending = true;
+    s_type_recovery_notice_tx_conn_handle = link->conn_handle;
+    s_type_recovery_notice_tx_epoch = link->connection_epoch;
+    portEXIT_CRITICAL(&s_link_state_lock);
+}
+
+static bool ble_audio_stream_complete_type_recovery_notice_tx(
+    const ble_audio_stream_link_snapshot_t *link)
+{
+    if (link == NULL) {
+        return false;
+    }
+    bool matched = false;
+    portENTER_CRITICAL(&s_link_state_lock);
+    if (s_type_recovery_notice_tx_pending &&
+        s_type_recovery_notice_tx_conn_handle == link->conn_handle &&
+        s_type_recovery_notice_tx_epoch == link->connection_epoch) {
+        matched = true;
+        s_type_recovery_notice_tx_pending = false;
+        s_type_recovery_notice_tx_conn_handle = BLE_HS_CONN_HANDLE_NONE;
+        s_type_recovery_notice_tx_epoch = 0;
+    }
+    portEXIT_CRITICAL(&s_link_state_lock);
+    return matched;
+}
+
+static bool ble_audio_stream_note_type_recovery_ack(const char *source)
+{
+    if (source == NULL || strcmp(source, "ble_audio_control") != 0) {
+        return false;
+    }
+
+    bool matched = false;
+    uint16_t conn_handle = BLE_HS_CONN_HANDLE_NONE;
+    uint32_t connection_epoch = 0;
+    TickType_t started_tick = 0;
+    portENTER_CRITICAL(&s_link_state_lock);
+    if (s_type_recovery_ack_pending &&
+        s_conn_handle == s_type_recovery_ack_conn_handle &&
+        s_connection_epoch == s_type_recovery_ack_epoch) {
+        matched = true;
+        conn_handle = s_conn_handle;
+        connection_epoch = s_connection_epoch;
+        started_tick = s_type_recovery_ack_started_tick;
+        s_type_recovery_ack_pending = false;
+        s_type_recovery_ack_conn_handle = BLE_HS_CONN_HANDLE_NONE;
+        s_type_recovery_ack_epoch = 0;
+        s_type_recovery_ack_started_tick = 0;
+    }
+    portEXIT_CRITICAL(&s_link_state_lock);
+
+    if (matched && s_type_recovery_ack_sem != NULL) {
+        xSemaphoreGive(s_type_recovery_ack_sem);
+        ESP_LOGI(
+            TAG,
+            "type recovery acknowledgement received: conn=%u epoch=%" PRIu32 " notice_to_ack_ms=%lu",
+            conn_handle,
+            connection_epoch,
+            (unsigned long)pdTICKS_TO_MS(xTaskGetTickCount() - started_tick));
+    }
+    return matched;
+}
+
+static bool ble_audio_stream_note_type_recovery_prepare_ack(const char *source)
+{
+    if (source == NULL || strcmp(source, "ble_audio_control") != 0) {
+        return false;
+    }
+
+    bool matched = false;
+    uint16_t conn_handle = BLE_HS_CONN_HANDLE_NONE;
+    uint32_t connection_epoch = 0;
+    portENTER_CRITICAL(&s_link_state_lock);
+    if (s_type_recovery_prepare_pending &&
+        s_conn_handle == s_type_recovery_prepare_conn_handle &&
+        s_connection_epoch == s_type_recovery_prepare_epoch) {
+        s_type_recovery_prepare_ready = true;
+        matched = true;
+        conn_handle = s_conn_handle;
+        connection_epoch = s_connection_epoch;
+    }
+    portEXIT_CRITICAL(&s_link_state_lock);
+
+    if (matched) {
+        ESP_LOGI(
+            TAG,
+            "type recovery pre-authorization received: conn=%u epoch=%" PRIu32,
+            conn_handle,
+            connection_epoch);
+    }
+    return matched;
+}
+
+static bool ble_audio_stream_consume_type_recovery_prepare(
+    const ble_audio_stream_link_snapshot_t *link)
+{
+    if (link == NULL) {
+        return false;
+    }
+
+    bool ready = false;
+    portENTER_CRITICAL(&s_link_state_lock);
+    const TickType_t elapsed_ticks = xTaskGetTickCount() - s_type_recovery_prepare_started_tick;
+    const bool valid = pdTICKS_TO_MS(elapsed_ticks) <= BLE_AUDIO_STREAM_TYPE_RECOVERY_PREPARE_VALID_MS;
+    if (s_type_recovery_prepare_pending && s_type_recovery_prepare_ready && valid &&
+        s_type_recovery_prepare_conn_handle == link->conn_handle &&
+        s_type_recovery_prepare_epoch == link->connection_epoch) {
+        ready = true;
+    }
+    s_type_recovery_prepare_pending = false;
+    s_type_recovery_prepare_ready = false;
+    s_type_recovery_prepare_conn_handle = BLE_HS_CONN_HANDLE_NONE;
+    s_type_recovery_prepare_epoch = 0;
+    s_type_recovery_prepare_started_tick = 0;
+    portEXIT_CRITICAL(&s_link_state_lock);
+    return ready;
 }
 
 static ble_audio_stream_type_heartbeat_snapshot_t ble_audio_stream_get_type_heartbeat_snapshot(void)
@@ -2439,9 +2641,20 @@ esp_err_t ble_audio_stream_init(void)
         return ESP_ERR_NO_MEM;
     }
 
+    s_type_recovery_ack_sem = xSemaphoreCreateBinary();
+    if (s_type_recovery_ack_sem == NULL) {
+        vSemaphoreDelete(s_notify_credit_sem);
+        s_notify_credit_sem = NULL;
+        vQueueDelete(s_export_queue);
+        s_export_queue = NULL;
+        return ESP_ERR_NO_MEM;
+    }
+
     esp_err_t pool_ret = ble_audio_stream_audio_pool_init();
     if (pool_ret != ESP_OK) {
         ble_audio_stream_audio_pool_deinit();
+        vSemaphoreDelete(s_type_recovery_ack_sem);
+        s_type_recovery_ack_sem = NULL;
         vSemaphoreDelete(s_notify_credit_sem);
         s_notify_credit_sem = NULL;
         vQueueDelete(s_export_queue);
@@ -2458,6 +2671,8 @@ esp_err_t ble_audio_stream_init(void)
         &s_export_task_handle);
     if (task_ok != pdPASS) {
         ble_audio_stream_audio_pool_deinit();
+        vSemaphoreDelete(s_type_recovery_ack_sem);
+        s_type_recovery_ack_sem = NULL;
         vSemaphoreDelete(s_notify_credit_sem);
         s_notify_credit_sem = NULL;
         vQueueDelete(s_export_queue);
@@ -2472,6 +2687,9 @@ esp_err_t ble_audio_stream_init(void)
 void ble_audio_stream_on_gap_connect(uint16_t conn_handle)
 {
     uint32_t epoch = ble_audio_stream_advance_connection_epoch("gap_connect");
+    ble_audio_stream_clear_type_recovery_ack();
+    ble_audio_stream_clear_type_recovery_prepare();
+    ble_audio_stream_clear_type_recovery_notice_tx();
     portENTER_CRITICAL(&s_link_state_lock);
     s_conn_handle = conn_handle;
     s_mtu_ready = false;
@@ -2548,6 +2766,9 @@ void ble_audio_stream_on_gap_disconnect(uint16_t conn_handle)
     }
 
     uint32_t epoch = ble_audio_stream_advance_connection_epoch("gap_disconnect");
+    ble_audio_stream_clear_type_recovery_ack();
+    ble_audio_stream_clear_type_recovery_prepare();
+    ble_audio_stream_clear_type_recovery_notice_tx();
     if (ble_audio_stream_transport_session_active()) {
         ESP_LOGW(
             TAG,
@@ -2718,6 +2939,17 @@ void ble_audio_stream_on_gap_notify_tx(
     }
 
     if (!ble_audio_stream_complete_notify_tx(link.connection_epoch)) {
+        if (ble_audio_stream_complete_type_recovery_notice_tx(&link)) {
+            if (status != 0 && status != BLE_HS_EDONE && status != BLE_HS_ENOMEM) {
+                ESP_LOGW(
+                    TAG,
+                    "type recovery notice controller completion error: conn=%u attr=%u status=%d",
+                    conn_handle,
+                    attr_handle,
+                    status);
+            }
+            return;
+        }
         ble_audio_stream_note_stale_event("notify_tx", conn_handle, link.connection_epoch);
         return;
     }
@@ -2849,6 +3081,26 @@ bool ble_audio_stream_consume_type_control_command(const char *command, const ch
     }
     if (command[0] == '~') {
         command++;
+    }
+
+    if (strcmp(command, BLE_AUDIO_STREAM_TYPE_RECOVERY_ACK_TEXT) == 0) {
+        if (!ble_audio_stream_note_type_recovery_ack(source)) {
+            ESP_LOGW(
+                TAG,
+                "type recovery acknowledgement ignored: source=%s no matching active recovery notice",
+                source != NULL ? source : "unknown");
+        }
+        return true;
+    }
+
+    if (strcmp(command, BLE_AUDIO_STREAM_TYPE_RECOVERY_PREPARE_ACK_TEXT) == 0) {
+        if (!ble_audio_stream_note_type_recovery_prepare_ack(source)) {
+            ESP_LOGW(
+                TAG,
+                "type recovery pre-authorization ignored: source=%s no matching active prepare notice",
+                source != NULL ? source : "unknown");
+        }
+        return true;
     }
 
     if (strcmp(command, "TYPE:READY") == 0 || strcmp(command, "TYPE:HB") == 0) {
@@ -3241,6 +3493,39 @@ esp_err_t ble_audio_stream_send_session_error(
     return ESP_OK;
 }
 
+esp_err_t ble_audio_stream_prepare_type_recovery_ack(void)
+{
+    static const uint8_t prepare_notice[] = BLE_AUDIO_STREAM_TYPE_RECOVERY_PREPARE_NOTICE_TEXT;
+    if (!s_started || !ble_audio_stream_transport_link_ready() || s_notify_attr_handle == 0) {
+        return ESP_ERR_INVALID_STATE;
+    }
+
+    ble_audio_stream_link_snapshot_t link = ble_audio_stream_get_link_snapshot();
+    ble_audio_stream_arm_type_recovery_prepare(&link);
+    ble_audio_stream_arm_type_recovery_notice_tx(&link);
+    struct os_mbuf *om = ble_hs_mbuf_from_flat(prepare_notice, sizeof(prepare_notice) - 1U);
+    if (om == NULL) {
+        ble_audio_stream_clear_type_recovery_prepare();
+        ble_audio_stream_clear_type_recovery_notice_tx();
+        return ESP_ERR_NO_MEM;
+    }
+
+    int rc = ble_gatts_notify_custom(link.conn_handle, s_notify_attr_handle, om);
+    if (rc != 0) {
+        os_mbuf_free_chain(om);
+        ble_audio_stream_clear_type_recovery_prepare();
+        ble_audio_stream_clear_type_recovery_notice_tx();
+        return ESP_FAIL;
+    }
+
+    ESP_LOGI(
+        TAG,
+        "type recovery pre-authorization requested during EC11 double-click window: conn=%u epoch=%" PRIu32,
+        link.conn_handle,
+        link.connection_epoch);
+    return ESP_OK;
+}
+
 esp_err_t ble_audio_stream_send_type_recovery_notice(void)
 {
     static const uint8_t notice[] = BLE_AUDIO_STREAM_TYPE_RECOVERY_NOTICE_TEXT;
@@ -3250,8 +3535,23 @@ esp_err_t ble_audio_stream_send_type_recovery_notice(void)
     }
 
     ble_audio_stream_link_snapshot_t link = ble_audio_stream_get_link_snapshot();
+    if (ble_audio_stream_consume_type_recovery_prepare(&link)) {
+        if (s_type_recovery_ack_sem != NULL) {
+            xSemaphoreGive(s_type_recovery_ack_sem);
+        }
+        ESP_LOGI(
+            TAG,
+            "type recovery pre-authorization consumed before EC11 pairing reset: conn=%u epoch=%" PRIu32,
+            link.conn_handle,
+            link.connection_epoch);
+        return ESP_OK;
+    }
+    ble_audio_stream_arm_type_recovery_ack(&link);
+    ble_audio_stream_arm_type_recovery_notice_tx(&link);
     struct os_mbuf *om = ble_hs_mbuf_from_flat(notice, sizeof(notice) - 1U);
     if (om == NULL) {
+        ble_audio_stream_clear_type_recovery_ack();
+        ble_audio_stream_clear_type_recovery_notice_tx();
         ESP_LOGW(TAG, "type recovery notice skipped: notify mbuf allocation failed");
         return ESP_ERR_NO_MEM;
     }
@@ -3259,6 +3559,8 @@ esp_err_t ble_audio_stream_send_type_recovery_notice(void)
     int rc = ble_gatts_notify_custom(link.conn_handle, s_notify_attr_handle, om);
     if (rc != 0) {
         os_mbuf_free_chain(om);
+        ble_audio_stream_clear_type_recovery_ack();
+        ble_audio_stream_clear_type_recovery_notice_tx();
         ESP_LOGW(TAG, "type recovery notice send failed: rc=%d", rc);
         return ESP_FAIL;
     }
@@ -3269,6 +3571,31 @@ esp_err_t ble_audio_stream_send_type_recovery_notice(void)
         link.conn_handle,
         link.connection_epoch);
     return ESP_OK;
+}
+
+esp_err_t ble_audio_stream_wait_for_type_recovery_ack(uint32_t timeout_ms)
+{
+    if (s_type_recovery_ack_sem == NULL || timeout_ms == 0) {
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    TickType_t timeout_ticks = pdMS_TO_TICKS(timeout_ms);
+    if (timeout_ticks == 0) {
+        timeout_ticks = 1;
+    }
+    if (xSemaphoreTake(s_type_recovery_ack_sem, timeout_ticks) == pdTRUE) {
+        return ESP_OK;
+    }
+
+    ble_audio_stream_link_snapshot_t link = ble_audio_stream_get_link_snapshot();
+    ESP_LOGW(
+        TAG,
+        "type recovery acknowledgement timed out: timeout_ms=%" PRIu32 " conn=%u epoch=%" PRIu32,
+        timeout_ms,
+        link.conn_handle,
+        link.connection_epoch);
+    ble_audio_stream_clear_type_recovery_ack();
+    return ESP_ERR_TIMEOUT;
 }
 
 esp_err_t ble_audio_stream_send_session_cancel(uint32_t session_id, uint16_t expected_packet_count)
