@@ -47,6 +47,7 @@ typedef struct {
 void firmware_ota_init(void);
 void firmware_ota_record_self_check(bool post_ok, bool ble_ready, bool keyboard_ready);
 esp_err_t firmware_ota_confirm_pending_verify_if_ready(void);
+void firmware_ota_set_observability_correlation(uint64_t correlation_id);
 esp_err_t firmware_ota_begin(size_t image_size, const char *target_version);
 esp_err_t firmware_ota_write(const void *data, size_t size);
 esp_err_t firmware_ota_finish(bool reboot_after_set_boot);

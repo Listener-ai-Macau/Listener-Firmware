@@ -35,6 +35,7 @@ extern bool ble_hid_gap_is_recovery_pairing_window_open(void) __attribute__((wea
 extern bool ble_hid_gap_note_type_audio_ready(const char *reason) __attribute__((weak));
 extern esp_err_t ble_hid_gap_apply_pending_ble_name(void) __attribute__((weak));
 extern esp_err_t ble_hid_gap_schedule_ota_reconnect(void) __attribute__((weak));
+extern void firmware_ota_set_observability_correlation(uint64_t correlation_id) __attribute__((weak));
 
 #define BLE_AUDIO_STREAM_TASK_STACK_BYTES (5 * 1024)
 #define BLE_AUDIO_STREAM_PACKET_DEFAULT_BYTES 244
@@ -81,6 +82,8 @@ extern esp_err_t ble_hid_gap_schedule_ota_reconnect(void) __attribute__((weak));
 #define BLE_AUDIO_STREAM_TYPE_LED_READY_HOLD_MS 12000
 #define BLE_AUDIO_STREAM_TYPE_HOST_SEEN_HOLD_MS 180000
 #define BLE_AUDIO_STREAM_TYPE_OTA_HEARTBEAT_TIMEOUT_MS 180000
+#define BLE_AUDIO_STREAM_TYPE_OBSERVABILITY_OTA_PREFIX "TYPE:OBS:OTA:"
+#define BLE_AUDIO_STREAM_TYPE_OBSERVABILITY_CORRELATION_HEX_BYTES 16U
 #define BLE_AUDIO_STREAM_TYPE_RECOVERY_NOTICE_TEXT "listener-ec11-recovery-v1"
 #define BLE_AUDIO_STREAM_TYPE_RECOVERY_ACK_TEXT "TYPE:EC11:RECOVERY:ACK"
 #define BLE_AUDIO_STREAM_TYPE_RECOVERY_PREPARE_NOTICE_TEXT "listener-ec11-recovery-prepare-v1"
@@ -3074,6 +3077,52 @@ static void ble_audio_stream_schedule_ble_name_apply(const char *source)
     }
 }
 
+static bool ble_audio_stream_consume_ota_observability_context(const char *command, const char *source)
+{
+    size_t prefix_len = strlen(BLE_AUDIO_STREAM_TYPE_OBSERVABILITY_OTA_PREFIX);
+    if (strncmp(command, BLE_AUDIO_STREAM_TYPE_OBSERVABILITY_OTA_PREFIX, prefix_len) != 0) {
+        return false;
+    }
+
+    const char *encoded = command + prefix_len;
+    if (strlen(encoded) != BLE_AUDIO_STREAM_TYPE_OBSERVABILITY_CORRELATION_HEX_BYTES) {
+        ESP_LOGW(TAG, "type OTA observability context rejected: invalid length source=%s",
+                 source != NULL ? source : "unknown");
+        return true;
+    }
+
+    uint64_t correlation_id = 0;
+    for (size_t index = 0; index < BLE_AUDIO_STREAM_TYPE_OBSERVABILITY_CORRELATION_HEX_BYTES; ++index) {
+        char value = encoded[index];
+        uint8_t nibble = 0;
+        if (value >= '0' && value <= '9') {
+            nibble = (uint8_t)(value - '0');
+        } else if (value >= 'A' && value <= 'F') {
+            nibble = (uint8_t)(value - 'A' + 10);
+        } else if (value >= 'a' && value <= 'f') {
+            nibble = (uint8_t)(value - 'a' + 10);
+        } else {
+            ESP_LOGW(TAG, "type OTA observability context rejected: invalid hex source=%s",
+                     source != NULL ? source : "unknown");
+            return true;
+        }
+        correlation_id = (correlation_id << 4) | nibble;
+    }
+
+    if (correlation_id == 0) {
+        ESP_LOGW(TAG, "type OTA observability context rejected: zero id source=%s",
+                 source != NULL ? source : "unknown");
+        return true;
+    }
+    if (firmware_ota_set_observability_correlation != NULL) {
+        firmware_ota_set_observability_correlation(correlation_id);
+        ESP_LOGI(TAG, "type OTA observability context accepted source=%s", source != NULL ? source : "unknown");
+    } else {
+        ESP_LOGW(TAG, "type OTA observability context unavailable source=%s", source != NULL ? source : "unknown");
+    }
+    return true;
+}
+
 bool ble_audio_stream_consume_type_control_command(const char *command, const char *source)
 {
     if (command == NULL) {
@@ -3081,6 +3130,10 @@ bool ble_audio_stream_consume_type_control_command(const char *command, const ch
     }
     if (command[0] == '~') {
         command++;
+    }
+
+    if (ble_audio_stream_consume_ota_observability_context(command, source)) {
+        return true;
     }
 
     if (strcmp(command, BLE_AUDIO_STREAM_TYPE_RECOVERY_ACK_TEXT) == 0) {

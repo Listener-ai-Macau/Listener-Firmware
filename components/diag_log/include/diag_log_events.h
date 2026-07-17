@@ -158,6 +158,7 @@
 #define DIAG_OTA_REJECTED       11  /* a1=partition_subtype, a2=detail, a3=esp_err, a4=blocker */
 #define DIAG_OTA_VERSION        12  /* a1=from_version_hash, a2=to_version_hash, a3=partition_subtype, a4=event */
 #define DIAG_OTA_PARTITION      13  /* a1=role, a2=partition_subtype, a3=offset, a4=size_bytes */
+#define DIAG_OTA_CORRELATION    14  /* a1=opaque_correlation_id_hi, a2=opaque_correlation_id_lo, a3=0, a4=0 */
 
 #define DIAG_OTA_ABORT_USB                  1
 #define DIAG_OTA_ROLLBACK_USB               1

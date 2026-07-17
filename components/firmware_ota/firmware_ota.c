@@ -44,6 +44,7 @@ typedef struct {
     bool battery_valid;
     uint8_t battery_percent;
     uint32_t battery_mv;
+    uint64_t pending_observability_correlation_id;
     int64_t inactivity_deadline_us;
     char target_version[FIRMWARE_OTA_VERSION_BYTES];
 } firmware_ota_ctx_t;
@@ -156,6 +157,30 @@ static void firmware_ota_log_version_event(uint8_t event, const esp_partition_t 
 {
     const char *target = s_ota.target_version[0] != '\0' ? s_ota.target_version : "unknown";
     firmware_ota_log_version_values(event, partition, listener_device_get_fw_version(), target);
+}
+
+static uint64_t firmware_ota_take_observability_correlation(void)
+{
+    firmware_ota_lock();
+    uint64_t correlation_id = s_ota.pending_observability_correlation_id;
+    s_ota.pending_observability_correlation_id = 0;
+    firmware_ota_unlock();
+    return correlation_id;
+}
+
+static void firmware_ota_log_observability_correlation(uint64_t correlation_id)
+{
+    if (correlation_id == 0) {
+        return;
+    }
+    diag_log(
+        DIAG_SRC_OTA,
+        DIAG_OTA_CORRELATION,
+        DIAG_SEV_INFO,
+        (uint32_t)(correlation_id >> 32),
+        (uint32_t)correlation_id,
+        0,
+        0);
 }
 
 static void firmware_ota_reset_session_locked(void)
@@ -361,6 +386,18 @@ void firmware_ota_record_self_check(bool post_ok, bool ble_ready, bool keyboard_
     firmware_ota_unlock();
 }
 
+void firmware_ota_set_observability_correlation(uint64_t correlation_id)
+{
+    if (correlation_id == 0) {
+        return;
+    }
+    firmware_ota_lock();
+    if (!s_ota.active) {
+        s_ota.pending_observability_correlation_id = correlation_id;
+    }
+    firmware_ota_unlock();
+}
+
 esp_err_t firmware_ota_confirm_pending_verify_if_ready(void)
 {
     if (!firmware_ota_running_pending_verify()) {
@@ -406,6 +443,8 @@ esp_err_t firmware_ota_confirm_pending_verify_if_ready(void)
 
 esp_err_t firmware_ota_begin(size_t image_size, const char *target_version)
 {
+    uint64_t correlation_id = firmware_ota_take_observability_correlation();
+    firmware_ota_log_observability_correlation(correlation_id);
     firmware_ota_blocker_t blocker = firmware_ota_get_blocker();
     if (blocker != FIRMWARE_OTA_BLOCKER_NONE) {
         ESP_LOGW(TAG, "OTA begin rejected: blocker=%s", firmware_ota_blocker_name(blocker));

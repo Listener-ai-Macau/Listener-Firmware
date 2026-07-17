@@ -104,6 +104,7 @@ typedef struct {
     uint32_t ble_recovery_started_at_ms;
     uint64_t ota_correlation_id;
     uint32_t ota_started_at_ms;
+    bool ota_external_context_pending;
 } diag_platform_export_context_t;
 
 static const char *diag_platform_ble_state_name(denzic_observability_v1_ble_lifecycle_state_t value)
@@ -304,8 +305,20 @@ static uint64_t diag_platform_assign_correlation(
         return context->ble_correlation_id;
     }
 
-    if (raw->event == DIAG_OTA_BEGIN && raw->arg3 == 0) {
-        context->ota_correlation_id = diag_platform_correlation_id(capability, raw->timestamp_ms);
+    if (raw->event == DIAG_OTA_CORRELATION) {
+        uint64_t correlation_id = ((uint64_t)raw->arg1 << 32) | raw->arg2;
+        if (correlation_id != 0) {
+            context->ota_correlation_id = correlation_id;
+            context->ota_external_context_pending = true;
+        }
+        return context->ota_correlation_id;
+    }
+
+    if (raw->event == DIAG_OTA_BEGIN) {
+        if (!context->ota_external_context_pending) {
+            context->ota_correlation_id = diag_platform_correlation_id(capability, raw->timestamp_ms);
+        }
+        context->ota_external_context_pending = false;
         context->ota_started_at_ms = raw->timestamp_ms;
     }
     if (context->ota_correlation_id == 0) {
@@ -409,10 +422,17 @@ static void diag_platform_apply_result_and_state(
         return;
     }
 
-    if (raw->event == DIAG_OTA_BEGIN) {
+    if (raw->event == DIAG_OTA_CORRELATION) {
+        event->command_result = DENZIC_OBSERVABILITY_V1_COMMAND_RESULT_STARTED;
+        event->error_category = DENZIC_OBSERVABILITY_V1_ERROR_CATEGORY_NONE;
+    } else if (raw->event == DIAG_OTA_BEGIN) {
         event->command_result = raw->arg3 == 0
             ? DENZIC_OBSERVABILITY_V1_COMMAND_RESULT_STARTED
             : DENZIC_OBSERVABILITY_V1_COMMAND_RESULT_FAILED;
+        if (raw->arg3 != 0) {
+            context->ota_correlation_id = 0;
+            context->ota_started_at_ms = 0;
+        }
     } else if (raw->event == DIAG_OTA_ABORT) {
         event->command_result = raw->arg3 == 0
             ? DENZIC_OBSERVABILITY_V1_COMMAND_RESULT_CANCELLED
@@ -426,9 +446,14 @@ static void diag_platform_apply_result_and_state(
         if (raw->event == DIAG_OTA_SET_BOOT && raw->arg3 == 0 && context->ota_started_at_ms != 0) {
             event->timing_metric = DENZIC_OBSERVABILITY_V1_TIMING_METRIC_OTA_TRANSFER_MS;
             event->timing_value_ms = raw->timestamp_ms - context->ota_started_at_ms;
-            context->ota_correlation_id = 0;
-            context->ota_started_at_ms = 0;
         }
+    } else if (raw->event == DIAG_OTA_REBOOT || raw->event == DIAG_OTA_REJECTED) {
+        event->command_result = raw->event == DIAG_OTA_REBOOT
+            ? DENZIC_OBSERVABILITY_V1_COMMAND_RESULT_SUCCEEDED
+            : DENZIC_OBSERVABILITY_V1_COMMAND_RESULT_FAILED;
+        context->ota_correlation_id = 0;
+        context->ota_started_at_ms = 0;
+        context->ota_external_context_pending = false;
     }
 }
 
