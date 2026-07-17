@@ -203,6 +203,14 @@ if (-not $NoBuild) {
     )
 }
 
+if ($PreserveOtaData.IsPresent) {
+    Write-Host "PreserveOtaData: flashing bootloader, partition table, and app without writing otadata."
+    foreach ($action in @("bootloader-flash", "partition-table-flash", "app-flash")) {
+        Invoke-IdfSerialActionWithBaudRetry -Action $action -BuildDirectory $buildDirResolved -SerialPortName $resolvedPort
+    }
+    return
+}
+
 if (-not $PreserveOtaData.IsPresent) {
     Invoke-IdfSerialActionWithBaudRetry -Action "erase-otadata" -BuildDirectory $buildDirResolved -SerialPortName $resolvedPort
 }
