@@ -150,6 +150,13 @@ def main() -> int:
     short_release_body = extract_function(voice_key_input, "voice_key_input_handle_short_click_release")
     if "voice_key_input_recovery_double_click_ready(button, now_tick)" not in short_release_body:
         fail("EC11 short-click release must use the double-click release-ready helper")
+    if (
+        "!s_fast_idle_recording_hid_suppression_pending &&" not in short_release_body
+        or "recovery double-click skipped" not in short_release_body
+    ):
+        fail(
+            "EC11 fast idle recording must own its double-click window so a second press cannot cancel recording or open pairing"
+        )
 
     checked_log = args.single_no_repair_log is not None
     if checked_log:
@@ -158,8 +165,8 @@ def main() -> int:
     message = (
         "PASS: EC11 input contract keeps 500 ms timing parity with key1-key4, "
         "raw press only latches the gesture, confirmed single-click LED feedback is delayed, "
-        "fast real double-clicks re-check the 60 ms guard on release, "
-        "and double-click BLE repair cue intact"
+        "fast non-idle double-clicks re-check the 60 ms guard on release, "
+        "fast idle recording owns its second press, and double-click BLE repair cue intact"
     )
     if checked_log:
         message += "; generated single-click log stayed out of BLE repair/pairing"

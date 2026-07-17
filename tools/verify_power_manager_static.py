@@ -2528,14 +2528,14 @@ def main() -> int:
         or "button->recovery_double_candidate =\n        voice_key_input_recovery_double_gap_ready(button, now_tick)" not in voice_key
         or "voice_key_input_recovery_double_click_ready" not in voice_key
         or "button->recovery_double_candidate ||\n           voice_key_input_recovery_double_gap_ready(button, now_tick)" not in voice_key
-        or "bool recovery_double_click =\n        voice_key_input_recovery_double_click_ready(button, now_tick)" not in voice_key
+        or "bool recovery_double_click =\n        !s_fast_idle_recording_hid_suppression_pending &&\n        voice_key_input_recovery_double_click_ready(button, now_tick)" not in voice_key
         or "recovery_guard_active" not in voice_key
         or "EC11 push keeps the same 20 ms debounce model and 500 ms double-click decision window as KEY1-KEY4" not in (
             REPO_ROOT / "docs/features/status_led.md"
         ).read_text(encoding="utf-8")
     ):
         failures.append(
-            "ports/esp32/voice_key_input/voice_key_input_esp32.c: EC11 push must keep delayed single-click dispatch while a second real press/release is the only recovery double-click candidate"
+            "ports/esp32/voice_key_input/voice_key_input_esp32.c: EC11 push must keep the non-idle 500 ms recovery decision while fast idle recording owns and consumes its own second press"
         )
     if "button->pending_single_click &&\n        (origin != NULL || button->recovery_double_candidate)" in voice_key:
         failures.append(
@@ -2545,12 +2545,12 @@ def main() -> int:
         "VOICE_KEY_INPUT_RECOVERY_IDLE_GUARD" in voice_key
         or "s_recording_output_enabled" in voice_key
         or "recovery_cancels_active_recording=1" not in voice_key
-        or "cannot be downgraded into an ordinary EC11 single click" not in (
+        or "Outside the fast-idle recording gesture" not in (
             REPO_ROOT / "docs/features/firmware-feature-map.md"
         ).read_text(encoding="utf-8")
     ):
         failures.append(
-            "ports/esp32/voice_key_input/voice_key_input_esp32.c: EC11 double-click recovery must not be downgraded into a single-click fallback by recording-output or idle-guard state"
+            "ports/esp32/voice_key_input/voice_key_input_esp32.c: EC11 double-click recovery must remain available outside the fast-idle recording gesture"
         )
     if "startup hold is suppressed until a stable release" not in (
         REPO_ROOT / "docs/features/firmware-feature-map.md"

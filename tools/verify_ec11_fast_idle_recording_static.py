@@ -19,6 +19,8 @@ CHECKS = {
         "voice_key_input_notify_recording_control_task();",
         "s_fast_idle_recording_hid_suppression_pending",
         "confirmed single-click handled by fast Idle recording",
+        "fast Idle recording active: recovery double-click skipped",
+        "!s_fast_idle_recording_hid_suppression_pending &&\n        voice_key_input_recovery_double_click_ready(button, now_tick);",
         "s_fast_idle_recording_cancelled = true;",
         "voice_key_input_cancel_fast_idle_recording_for_long_press();",
         "voice_key_input_take_fast_idle_recording_cancel_event",
@@ -64,6 +66,7 @@ ORDERED_PATHS = {
     "ports/esp32/voice_key_input/voice_key_input_esp32.c": (
         "voice_key_input_request_fast_idle_recording(button, \"raw_edge\");\n                }\n                power_manager_record_activity(\"ec11_key_press\");",
         "voice_key_input_request_fast_idle_recording(&s_direct_gpio_state, \"isr_edge\");\n                power_manager_record_activity(\"ec11_key_press\");",
+        "bool recovery_double_click =\n        !s_fast_idle_recording_hid_suppression_pending &&\n        voice_key_input_recovery_double_click_ready(button, now_tick);",
     ),
 }
 

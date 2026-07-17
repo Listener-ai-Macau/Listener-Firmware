@@ -226,7 +226,7 @@ def main() -> int:
     ):
         require_fragment(audio, fragment, failures)
     for fragment in (
-        "if (button == &s_direct_gpio_state)",
+        "if (button == &s_direct_gpio_state &&\n        !s_fast_idle_recording_hid_suppression_pending)",
         "ble_audio_stream_prepare_type_recovery_ack();",
         "a single click or long press never resets BLE",
     ):

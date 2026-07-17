@@ -508,7 +508,8 @@ static void voice_key_input_arm_pending_single_click(
     button->recovery_guard_active = true;
     button->recovery_guard_started_tick = now_tick;
     button->recovery_double_candidate = false;
-    if (button == &s_direct_gpio_state) {
+    if (button == &s_direct_gpio_state &&
+        !s_fast_idle_recording_hid_suppression_pending) {
         /* This is only a reversible pre-authorization; a single click or long press never resets BLE. */
         (void)ble_audio_stream_prepare_type_recovery_ack();
     }
@@ -670,11 +671,24 @@ static void voice_key_input_handle_short_click_release(
         return;
     }
 
+    /*
+     * CONNECTED_IDLE records from the first physical edge. A second press
+     * during its fallback-suppression window belongs to that recording
+     * gesture, not to pairing recovery; otherwise a fast start visibly turns
+     * into a cancel/reset after the double-click classifier catches up.
+     */
     bool recovery_double_click =
+        !s_fast_idle_recording_hid_suppression_pending &&
         voice_key_input_recovery_double_click_ready(button, now_tick);
     if (recovery_double_click) {
         voice_key_input_accept_recovery_double_click(button, origin);
     } else {
+        if (s_fast_idle_recording_hid_suppression_pending) {
+            ESP_LOGI(
+                TAG,
+                "%s fast Idle recording active: recovery double-click skipped",
+                button->label);
+        }
         if (button->pending_single_click && button->pending_click_started_tick != 0) {
             uint32_t pending_elapsed_ms =
                 voice_key_input_elapsed_ms(now_tick, button->pending_click_started_tick);
