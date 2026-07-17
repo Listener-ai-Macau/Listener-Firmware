@@ -82,6 +82,7 @@
 #define VOICE_KEY_INPUT_DOUBLE_CLICK_MIN_GAP_MS (60)
 #define VOICE_KEY_INPUT_RECOVERY_DOUBLE_CLICK_WINDOW_MS (500)
 #define VOICE_KEY_INPUT_FAST_IDLE_RECORDING_TARGET_MS (50)
+#define VOICE_KEY_INPUT_FAST_ACTIVE_RECORDING_STOP_TARGET_MS (50)
 #define VOICE_KEY_INPUT_LONG_PRESS_IGNORE_MS (800)
 #define VOICE_KEY_INPUT_HOLD_FEEDBACK_REFRESH_MS (300)
 #define VOICE_KEY_INPUT_GENERATED_PRESS_MS (80)
@@ -146,6 +147,7 @@ static int64_t s_recovery_event_accepted_at_us;
 static bool s_recovery_event_generated;
 static SemaphoreHandle_t s_fast_idle_recording_event_sem;
 static SemaphoreHandle_t s_fast_idle_recording_cancel_sem;
+static SemaphoreHandle_t s_fast_active_recording_stop_event_sem;
 static QueueHandle_t s_generated_single_click_queue;
 static bool s_direct_generated_active;
 static uint8_t s_direct_generated_click_count;
@@ -156,6 +158,9 @@ static volatile bool s_direct_gpio_isr_edge_pending;
 static bool s_fast_idle_recording_cancelled;
 static bool s_fast_idle_recording_hid_suppression_pending;
 static TickType_t s_fast_idle_recording_press_tick;
+static bool s_fast_active_recording_stop_hid_suppression_pending;
+static TickType_t s_fast_active_recording_stop_press_tick;
+static volatile bool s_recording_output_active;
 #if VOICE_KEY_INPUT_ENABLE_LEGACY_EXPANDER
 static bool s_prev_input_valid;
 static uint32_t s_prev_input_levels;
@@ -272,6 +277,63 @@ static void voice_key_input_request_fast_idle_recording(
         button->label,
         origin != NULL ? origin : "raw",
         VOICE_KEY_INPUT_FAST_IDLE_RECORDING_TARGET_MS);
+}
+
+static void voice_key_input_request_fast_active_recording_stop(
+    const voice_key_button_state_t *button,
+    const char *origin)
+{
+    if (button == NULL || button != &s_direct_gpio_state) {
+        return;
+    }
+
+    bool ec11_fast_recording_enabled =
+        device_settings_get_ec11_fast_recording_enabled();
+    bool type_link_ready = ble_audio_stream_is_type_link_ready();
+    bool event_queue_ready = s_fast_active_recording_stop_event_sem != NULL;
+    bool suppression_pending = s_fast_active_recording_stop_hid_suppression_pending;
+    /* The raw edge that woke CONNECTED_IDLE already owns the first press. */
+    bool fast_idle_gesture_owns_press = s_fast_idle_recording_hid_suppression_pending;
+
+    if (!ec11_fast_recording_enabled ||
+        !s_recording_output_active ||
+        !type_link_ready ||
+        !event_queue_ready ||
+        suppression_pending ||
+        fast_idle_gesture_owns_press) {
+        ESP_LOGI(
+            TAG,
+            "%s fast active recording stop skipped: origin=%s ec11_fast_recording=%u recording_output=%u type_link_ready=%u event_queue=%u suppression_pending=%u fast_idle_gesture_owns_press=%u target_ms=%d",
+            button->label,
+            origin != NULL ? origin : "raw",
+            ec11_fast_recording_enabled ? 1u : 0u,
+            s_recording_output_active ? 1u : 0u,
+            type_link_ready ? 1u : 0u,
+            event_queue_ready ? 1u : 0u,
+            suppression_pending ? 1u : 0u,
+            fast_idle_gesture_owns_press ? 1u : 0u,
+            VOICE_KEY_INPUT_FAST_ACTIVE_RECORDING_STOP_TARGET_MS);
+        return;
+    }
+
+    TickType_t press_tick = s_direct_gpio_isr_tick;
+    if (press_tick == 0) {
+        press_tick = xTaskGetTickCount();
+    }
+    if (xSemaphoreGive(s_fast_active_recording_stop_event_sem) != pdTRUE) {
+        ESP_LOGW(TAG, "%s fast active recording stop event dropped: queue full", button->label);
+        return;
+    }
+
+    s_fast_active_recording_stop_press_tick = press_tick;
+    s_fast_active_recording_stop_hid_suppression_pending = true;
+    voice_key_input_notify_recording_control_task();
+    ESP_LOGI(
+        TAG,
+        "%s fast active recording stop queued: origin=%s target_ms=%d type_link_ready=1",
+        button->label,
+        origin != NULL ? origin : "raw",
+        VOICE_KEY_INPUT_FAST_ACTIVE_RECORDING_STOP_TARGET_MS);
 }
 
 static void voice_key_input_cancel_fast_idle_recording_for_long_press(void)
@@ -464,6 +526,8 @@ static void voice_key_input_record_recovery_event(const char *source)
         s_fast_idle_recording_cancelled = true;
         s_fast_idle_recording_hid_suppression_pending = false;
         s_fast_idle_recording_press_tick = 0;
+        s_fast_active_recording_stop_hid_suppression_pending = false;
+        s_fast_active_recording_stop_press_tick = 0;
         voice_key_input_notify_recording_control_task();
         ESP_LOGW(TAG, "%s double-click recovery detected: opening BLE re-pair window", source);
         status_led_notify_ble_repairing("ec11_double_click_recovery");
@@ -575,6 +639,17 @@ static void voice_key_input_dispatch_pending_single_click(
         ESP_LOGI(
             TAG,
             "%s confirmed single-click handled by fast Idle recording: origin=%s fallback_hid=suppressed",
+            button->label,
+            origin != NULL ? origin : "single-click");
+        return;
+    }
+    if (s_fast_active_recording_stop_hid_suppression_pending) {
+        s_fast_active_recording_stop_hid_suppression_pending = false;
+        s_fast_active_recording_stop_press_tick = 0;
+        status_led_notify_ec11_feedback(STATUS_LED_EC11_FEEDBACK_PRESS);
+        ESP_LOGI(
+            TAG,
+            "%s confirmed single-click handled by fast active recording stop: origin=%s fallback_hid=suppressed",
             button->label,
             origin != NULL ? origin : "single-click");
         return;
@@ -840,6 +915,9 @@ static void voice_key_input_handle_button_sample(voice_key_button_state_t *butto
                     "EC11 push low-power raw transition debounce armed: source=%s",
                     button->label);
             } else {
+                if (stable_released && !s_direct_generated_active) {
+                    voice_key_input_request_fast_active_recording_stop(button, "raw_edge");
+                }
                 voice_key_input_apply_raw_feedback(button, "raw_edge");
             }
         } else if (!low_power_idle && !button->pressed && stable_released && button->raw_feedback_pressed) {
@@ -941,6 +1019,8 @@ static void voice_key_input_handle_button_sample(voice_key_button_state_t *butto
             button->long_press_reported = true;
             voice_key_input_cancel_pending_single_click(button);
             voice_key_input_cancel_fast_idle_recording_for_long_press();
+            s_fast_active_recording_stop_hid_suppression_pending = false;
+            s_fast_active_recording_stop_press_tick = 0;
             voice_key_input_clear_raw_feedback(button);
             ESP_LOGI(TAG, "%s long press reserved for power control: hold_ms=%" PRIu32, button->label, next_pressed_ms);
             status_led_notify_shutdown_confirm(false, "ec11_long_press_shutdown_confirm");
@@ -1295,6 +1375,12 @@ esp_err_t voice_key_input_start(void)
         ESP_ERR_NO_MEM,
         TAG,
         "voice key fast Idle recording cancel queue create failed");
+    s_fast_active_recording_stop_event_sem = xSemaphoreCreateBinary();
+    ESP_RETURN_ON_FALSE(
+        s_fast_active_recording_stop_event_sem != NULL,
+        ESP_ERR_NO_MEM,
+        TAG,
+        "voice key fast active recording stop event queue create failed");
     s_generated_single_click_queue = xQueueCreate(VOICE_KEY_INPUT_GENERATED_EVENT_QUEUE_LENGTH, sizeof(uint8_t));
     ESP_RETURN_ON_FALSE(s_generated_single_click_queue != NULL, ESP_ERR_NO_MEM, TAG, "voice key generated event queue create failed");
 
@@ -1396,6 +1482,30 @@ void voice_key_input_complete_fast_idle_recording_event(bool suppress_fallback_h
     }
 }
 
+bool voice_key_input_take_fast_active_recording_stop_event(uint32_t *out_press_to_dispatch_ms)
+{
+    if (s_fast_active_recording_stop_event_sem == NULL ||
+        xSemaphoreTake(s_fast_active_recording_stop_event_sem, 0) != pdTRUE) {
+        return false;
+    }
+
+    if (out_press_to_dispatch_ms != NULL) {
+        TickType_t press_tick = s_fast_active_recording_stop_press_tick;
+        *out_press_to_dispatch_ms = press_tick == 0
+            ? 0U
+            : voice_key_input_elapsed_ms(xTaskGetTickCount(), press_tick);
+    }
+    return true;
+}
+
+void voice_key_input_complete_fast_active_recording_stop_event(bool suppress_fallback_hid)
+{
+    s_fast_active_recording_stop_hid_suppression_pending = suppress_fallback_hid;
+    if (!suppress_fallback_hid) {
+        s_fast_active_recording_stop_press_tick = 0;
+    }
+}
+
 bool voice_key_input_take_recovery_event(uint64_t *out_accepted_at_us, bool *out_generated)
 {
     if (s_recovery_event_sem == NULL) {
@@ -1447,6 +1557,6 @@ bool voice_key_input_ec11_press_suppresses_rotation(void)
 
 esp_err_t voice_key_input_set_recording_output(bool enabled)
 {
-    (void)enabled;
+    s_recording_output_active = enabled;
     return ESP_OK;
 }

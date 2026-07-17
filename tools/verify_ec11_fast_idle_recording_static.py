@@ -20,6 +20,9 @@ CHECKS = {
         "s_fast_idle_recording_hid_suppression_pending",
         "confirmed single-click handled by fast Idle recording",
         "fast Idle recording active: recovery double-click skipped",
+        "bool fast_idle_gesture_owns_press = s_fast_idle_recording_hid_suppression_pending;",
+        "fast_idle_gesture_owns_press)",
+        "fast_idle_gesture_owns_press=%u",
         "!s_fast_idle_recording_hid_suppression_pending &&\n        voice_key_input_recovery_double_click_ready(button, now_tick);",
         "s_fast_idle_recording_cancelled = true;",
         "voice_key_input_cancel_fast_idle_recording_for_long_press();",
@@ -67,6 +70,7 @@ ORDERED_PATHS = {
         "voice_key_input_request_fast_idle_recording(button, \"raw_edge\");\n                }\n                power_manager_record_activity(\"ec11_key_press\");",
         "voice_key_input_request_fast_idle_recording(&s_direct_gpio_state, \"isr_edge\");\n                power_manager_record_activity(\"ec11_key_press\");",
         "bool recovery_double_click =\n        !s_fast_idle_recording_hid_suppression_pending &&\n        voice_key_input_recovery_double_click_ready(button, now_tick);",
+        "bool fast_idle_gesture_owns_press = s_fast_idle_recording_hid_suppression_pending;\n\n    if (!ec11_fast_recording_enabled ||\n        !s_recording_output_active ||\n        !type_link_ready ||\n        !event_queue_ready ||\n        suppression_pending ||\n        fast_idle_gesture_owns_press)",
     ),
 }
 

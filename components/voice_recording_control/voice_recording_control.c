@@ -1613,6 +1613,34 @@ static void voice_recording_control_handle_fast_idle_ec11_start(uint32_t press_t
         (uint32_t)s_state);
 }
 
+static void voice_recording_control_handle_fast_active_ec11_stop(uint32_t press_to_control_ms)
+{
+    voice_recording_state_t state_before = s_state;
+
+    voice_recording_control_toggle("ec11.fast_active_stop");
+
+    bool suppress_fallback_hid =
+        state_before == VOICE_RECORDING_STATE_RECORDING &&
+        s_state == VOICE_RECORDING_STATE_TRANSFERRING;
+    voice_key_input_complete_fast_active_recording_stop_event(suppress_fallback_hid);
+    ESP_LOGI(
+        TAG,
+        "EC11 fast active recording stop dispatch: press_to_control_ms=%" PRIu32
+        " target_ms=50 fallback_hid_suppressed=%u state_before=%s state_after=%s",
+        press_to_control_ms,
+        suppress_fallback_hid ? 1u : 0u,
+        voice_recording_state_name(state_before),
+        voice_recording_state_name(s_state));
+    diag_log(
+        DIAG_SRC_VOICE_REC,
+        DIAG_VREC_TIMING,
+        DIAG_SEV_INFO,
+        press_to_control_ms,
+        voice_recording_source_code("ec11.fast_active_stop"),
+        s_session_count,
+        50U);
+}
+
 static void voice_recording_control_host_processing_start(const char *source)
 {
     voice_recording_control_note_ble_type_processing_activity(source, "host_processing_start");
@@ -1907,6 +1935,10 @@ static void voice_recording_control_task(void *parameter)
 
             if (voice_key_input_take_fast_idle_recording_cancel_event()) {
                 voice_recording_control_cancel("ec11.fast_idle_long_press");
+            }
+
+            if (voice_key_input_take_fast_active_recording_stop_event(&press_to_control_ms)) {
+                voice_recording_control_handle_fast_active_ec11_stop(press_to_control_ms);
             }
 
             if (voice_key_input_take_toggle_event()) {
