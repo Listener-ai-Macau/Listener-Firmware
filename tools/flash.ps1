@@ -234,7 +234,9 @@ function Get-OtaBootPartition {
     for ($attempt = 1; $attempt -le 4; $attempt++) {
         try {
             $output = Invoke-OtaSerialCommand -SerialPortName $SerialPortName -Command "~OTA:STATUS"
-            $matches = [regex]::Matches($output, '(?im)\bOTA STATUS\b.*?\bboot=(ota_[01])\b')
+            # ESP-IDF tags such as "firmware_ota:" place an underscore directly
+            # before the status text, so a leading \b would miss a valid reply.
+            $matches = [regex]::Matches($output, '(?im)(?<![A-Za-z0-9_])OTA STATUS\b.*?\bboot=(ota_[01])\b')
             if ($matches.Count -eq 0) {
                 throw "OTA status did not report a boot OTA slot"
             }
