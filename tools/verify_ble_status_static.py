@@ -66,6 +66,14 @@ def main() -> int:
             "~BLE:STATUS",
             "active_required",
             "e11r",
+            "lossless_rice",
+            "lossless_rice_version",
+            "ble_audio_stream_is_type_lossless_rice_enabled",
+            "ble_audio_stream_get_type_lossless_rice_version",
+            "dle_pending",
+            "dle_ready",
+            "dle_tx_octets",
+            "dle_rx_octets",
             "last_conn_param_mode",
         ]
         for token in required_tokens:
@@ -73,6 +81,33 @@ def main() -> int:
                 failures.append(f"ble_hid_gap_esp32.c: BLE status printer missing {token}")
         if "ble_hid_gap_reconcile_connection_snapshot" in status_fn:
             failures.append("ble_hid_gap_esp32.c: BLE status printer must not reconcile or mutate connection state")
+
+    active_request = extract_function(ble_gap, "ble_hid_gap_request_active_connection_once")
+    if "ble_hid_gap_request_audio_data_length(\"active audio\")" not in active_request:
+        failures.append(
+            "ble_hid_gap_esp32.c: active link promotion must request DLE without waiting for PHY completion"
+        )
+
+    type_ready = extract_function(ble_gap, "ble_hid_gap_note_type_audio_ready")
+    if "ble_hid_gap_request_audio_data_length(\"type audio ready\")" not in type_ready:
+        failures.append(
+            "ble_hid_gap_esp32.c: Type ready/heartbeat must retry DLE after a reconnect"
+        )
+
+    data_length_event = extract_function(ble_gap, "nimble_hid_gap_event")
+    if not all(
+        token in data_length_event
+        for token in [
+            "case BLE_GAP_EVENT_DATA_LEN_CHG",
+            "reported_conn_handle == 0",
+            "s_audio_data_length_max_tx_octets",
+            "s_audio_data_length_max_rx_octets",
+            "data length event missing connection handle",
+        ]
+    ):
+        failures.append(
+            "ble_hid_gap_esp32.c: DLE completion must attribute IDF's missing handle and expose negotiated octets"
+        )
 
     if failures:
         print("FAIL: BLE status static verification failed")

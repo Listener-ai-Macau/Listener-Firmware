@@ -44,6 +44,10 @@ $statusLedCmake = Read-RepoFile "components/status_led/CMakeLists.txt"
 $powerManager = Read-RepoFile "components/power_manager/power_manager.c"
 $powerCmake = Read-RepoFile "components/power_manager/CMakeLists.txt"
 $listenerDevice = Read-RepoFile "protocols/listener_device/listener_device.c"
+$listenerDeviceHeader = Read-RepoFile "protocols/listener_device/include/listener_device.h"
+$bleAudio = Read-RepoFile "ports/esp32/ble_audio_stream/ble_audio_stream_esp32.c"
+$bleAudioHeader = Read-RepoFile "ports/esp32/ble_audio_stream/include/ble_audio_stream.h"
+$bleHidGap = Read-RepoFile "ports/esp32/ble_hid_gap/ble_hid_gap_esp32.c"
 $listenerDeviceCmake = Read-RepoFile "protocols/listener_device/CMakeLists.txt"
 $bleHid = Read-RepoFile "ports/esp32/ble_hid/ble_hid.c"
 $bleHidCmake = Read-RepoFile "ports/esp32/ble_hid/CMakeLists.txt"
@@ -82,11 +86,13 @@ Assert-Contains $deviceHeader 'battery_low_power_idle_ms' 'battery low-power idl
 Assert-Contains $deviceHeader 'plugged_low_power_enabled' 'plugged low-power enable field'
 Assert-Contains $deviceHeader 'plugged_auto_shutdown_ms' 'plugged shutdown timeout field'
 Assert-Contains $deviceHeader 'battery_auto_shutdown_ms' 'battery-only shutdown timeout field'
+Assert-Contains $deviceHeader 'settings_revision' 'persisted device settings revision field'
 Assert-Contains $deviceHeader 'device_settings_get_low_power_idle_ms' 'low-power idle getter'
 Assert-Contains $deviceHeader 'device_settings_get_active_low_power_idle_ms' 'active low-power idle getter'
 Assert-Contains $deviceHeader 'device_settings_get_plugged_low_power_enabled' 'plugged low-power getter'
 Assert-Contains $deviceHeader 'device_settings_get_active_auto_shutdown_ms' 'active shutdown timeout getter'
 Assert-Contains $deviceHeader 'device_settings_get_ble_name' 'BLE name getter'
+Assert-Contains $deviceHeader 'device_settings_get_revision' 'settings revision getter'
 Assert-Contains $deviceHeader 'device_settings_consume_control_command' 'return-code control command consumer'
 Assert-Contains $deviceHeader 'device_settings_consume_usb_command' 'USB command consumer'
 
@@ -105,6 +111,11 @@ Assert-Contains $deviceSettings 'DEVICE_SETTINGS_NVS_AUTO_SHUTDOWN_MS_KEY' 'auto
 Assert-Contains $deviceSettings 'DEVICE_SETTINGS_NVS_PLUGGED_AUTO_SHUTDOWN_MS_KEY' 'plugged auto-shutdown NVS key'
 Assert-Contains $deviceSettings 'DEVICE_SETTINGS_NVS_BLE_NAME_KEY' 'BLE name NVS key'
 Assert-Contains $deviceSettings 'DEVICE_SETTINGS_NVS_KNOB_ROTATION_KEY' 'knob rotation NVS key'
+Assert-Contains $deviceSettings 'DEVICE_SETTINGS_NVS_REVISION_KEY' 'settings revision NVS key'
+Assert-Contains $deviceSettings 'settings_revision=%" PRIu32' 'serial settings status reports device revision'
+Assert-Contains $deviceSettings 'strcmp\(key, "rev"\)' 'settings writes accept guarded expected revision'
+Assert-Contains $deviceSettings 'expected_revision != s_settings\.settings_revision' 'settings writes reject stale revisions'
+Assert-Contains $deviceSettings 's_settings\.settings_revision = s_settings\.settings_revision == UINT32_MAX' 'successful settings writes advance device revision'
 Assert-Contains $deviceSettings 'static\s+esp_err_t\s+device_settings_persist_locked\(bool\s+loaded_from_nvs_after_persist\)' 'settings persistence can preserve whether values came from previous NVS or fresh defaults'
 Assert-Contains $deviceSettings 'device_settings_set_defaults_locked\(\);[\s\S]*s_loaded_from_nvs\s*=\s*false;[\s\S]*nvs_open\(DEVICE_SETTINGS_NVS_NAMESPACE,\s*NVS_READONLY' 'missing NVS starts from product defaults and reports loaded_from_nvs=0'
 Assert-Contains $deviceSettings 'if\s*\(ret\s*==\s*ESP_ERR_NVS_NOT_FOUND\)\s*\{[\s\S]*device_settings_persist_locked\(false\)[\s\S]*s_loaded\s*=\s*true;[\s\S]*return ESP_OK;' 'missing NVS namespace writes shared product defaults into NVS'
@@ -238,6 +249,14 @@ Assert-Contains $keyboard '#include "device_settings\.h"' 'keyboard BLE control 
 Assert-Contains $keyboard 'device_settings_consume_control_command\(command\)' 'keyboard BLE control dispatches DEVICE commands with return code'
 Assert-Contains $keyboard 'status_led_apply_device_settings\(\)' 'keyboard BLE control applies DEVICE brightness updates'
 Assert-Contains $keyboardCmake 'device_settings' 'keyboard CMake dependency for DEVICE BLE commands'
+
+Assert-Contains $listenerDeviceHeader 'device_control_v1' 'firmware capability advertises shared device control'
+Assert-Contains $bleAudioHeader 'BLE_AUDIO_STREAM_DEVICE_SETTINGS_REVISION_UUID' 'BLE settings revision UUID contract'
+Assert-Contains $bleAudio 'BLE_AUDIO_STREAM_GATT_ATTR_DEVICE_SETTINGS_REVISION' 'BLE settings revision read attribute'
+Assert-Contains $bleAudio 'device_settings_get_revision\(\)' 'BLE settings revision comes from persisted device state'
+Assert-Contains $bleHidGap 'BLE_HID_GAP_GATT_SCHEMA_REV\s+"denzic_ota_v5_ota_legacy_handle_compat"' 'GATT schema is bumped for legacy OTA control-handle compatibility'
+Assert-Contains $bleHidGap 'ble_svc_gatt_changed\(' 'GATT schema changes invalidate bonded central service caches'
+Assert-Contains $bleHidGap 'ble_hid_gap_reconnect_after_service_changed\(event->notify_tx\.conn_handle\)' 'GATT service-change confirmation reconnects the bonded host before fresh discovery'
 
 Assert-Contains $main '#include "device_settings\.h"' 'main includes device settings'
 Assert-Contains $main 'device_settings_init\(\)' 'main initializes device settings after NVS POST'

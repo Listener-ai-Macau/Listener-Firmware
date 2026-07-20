@@ -48,8 +48,12 @@ def main() -> int:
         "GAP disconnect must abort diagnostic export with the real connection handle through the shared disconnect helper",
     )
     require(
-        'BLE_HID_GAP_GATT_SCHEMA_REV "denzic_ota_v1_uuid1"' in gap,
+        'BLE_HID_GAP_GATT_SCHEMA_REV "denzic_ota_v5_ota_legacy_handle_compat"' in gap,
         "adding or reshaping GATT services must bump the schema rev so bonded Windows hosts refresh cached services",
+    )
+    require(
+        "ble_hid_gap_reconnect_after_service_changed(event->notify_tx.conn_handle)" in gap,
+        "confirmed GATT service changes must reconnect the bonded host before it reopens services",
     )
 
     require("ble_att_mtu(conn_handle)" in diag_service, "diagnostic export must query the current ATT MTU")
