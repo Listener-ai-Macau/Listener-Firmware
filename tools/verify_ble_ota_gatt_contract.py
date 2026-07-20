@@ -208,11 +208,16 @@ def check_runtime_integration(repo: Path) -> None:
         and "ble_hid_gap_active_connection_applied" in gap,
         "Listener driver must expose deferred active-link control and confirmation",
     )
+    ota_handler = re.search(
+        r'if\s*\(strcmp\(command, "TYPE:OTA"\)\s*==\s*0\)\s*\{(?P<body>[\s\S]*?)\n\s{4}\}',
+        audio,
+    )
+    require(ota_handler is not None, "TYPE:OTA control handler is missing")
+    ota_handler_body = ota_handler.group("body")
     require(
-        'strcmp(command, "TYPE:OTA") == 0' in audio
-        and "ble_hid_gap_schedule_ota_reconnect()" in audio
-        and "type OTA reconnect handoff" in audio
-        and "ble_hid_gap_request_active_connection()" not in audio,
+        "ble_hid_gap_schedule_ota_reconnect()" in ota_handler_body
+        and "type OTA reconnect handoff" in ota_handler_body
+        and "ble_hid_gap_request_active_connection()" not in ota_handler_body,
         "desktop pre-transfer hint must schedule the dedicated OTA reconnect handoff",
     )
     require(

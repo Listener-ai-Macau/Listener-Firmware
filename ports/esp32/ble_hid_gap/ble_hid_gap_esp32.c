@@ -733,7 +733,7 @@ static void ble_hid_gap_log_adv_state(
 #define BLE_HID_GAP_SERVICE_CHANGED_NVS_NAMESPACE "ble_gap"
 #define BLE_HID_GAP_SERVICE_CHANGED_STATE_KEY "svcchg_fw"
 #define BLE_HID_GAP_RANDOM_IDENTITY_KEY "rnd_id"
-#define BLE_HID_GAP_GATT_SCHEMA_REV "denzic_ota_v5_ota_legacy_handle_compat"
+#define BLE_HID_GAP_GATT_SCHEMA_REV "denzic_ota_v6_ota_control_cache_refresh"
 #define BLE_HID_GAP_SERVICE_CHANGED_START_HANDLE 0x0001
 #define BLE_HID_GAP_SERVICE_CHANGED_END_HANDLE 0xffff
 #define BLE_HID_GAP_RECOVERY_PAIRING_WINDOW_MS 120000LL

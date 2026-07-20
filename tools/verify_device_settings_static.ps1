@@ -254,7 +254,7 @@ Assert-Contains $listenerDeviceHeader 'device_control_v1' 'firmware capability a
 Assert-Contains $bleAudioHeader 'BLE_AUDIO_STREAM_DEVICE_SETTINGS_REVISION_UUID' 'BLE settings revision UUID contract'
 Assert-Contains $bleAudio 'BLE_AUDIO_STREAM_GATT_ATTR_DEVICE_SETTINGS_REVISION' 'BLE settings revision read attribute'
 Assert-Contains $bleAudio 'device_settings_get_revision\(\)' 'BLE settings revision comes from persisted device state'
-Assert-Contains $bleHidGap 'BLE_HID_GAP_GATT_SCHEMA_REV\s+"denzic_ota_v5_ota_legacy_handle_compat"' 'GATT schema is bumped for legacy OTA control-handle compatibility'
+Assert-Contains $bleHidGap 'BLE_HID_GAP_GATT_SCHEMA_REV\s+"denzic_ota_v6_ota_control_cache_refresh"' 'GATT schema refreshes stale Windows OTA control handles'
 Assert-Contains $bleHidGap 'ble_svc_gatt_changed\(' 'GATT schema changes invalidate bonded central service caches'
 Assert-Contains $bleHidGap 'ble_hid_gap_reconnect_after_service_changed\(event->notify_tx\.conn_handle\)' 'GATT service-change confirmation reconnects the bonded host before fresh discovery'
 

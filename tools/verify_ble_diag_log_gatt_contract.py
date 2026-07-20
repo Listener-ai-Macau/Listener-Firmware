@@ -48,7 +48,7 @@ def main() -> int:
         "GAP disconnect must abort diagnostic export with the real connection handle through the shared disconnect helper",
     )
     require(
-        'BLE_HID_GAP_GATT_SCHEMA_REV "denzic_ota_v5_ota_legacy_handle_compat"' in gap,
+        'BLE_HID_GAP_GATT_SCHEMA_REV "denzic_ota_v6_ota_control_cache_refresh"' in gap,
         "adding or reshaping GATT services must bump the schema rev so bonded Windows hosts refresh cached services",
     )
     require(
