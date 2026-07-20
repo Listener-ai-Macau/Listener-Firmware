@@ -41,7 +41,7 @@ def require_fast_recovery_worker_boundary(path: Path, failures: list[str]) -> No
         )
     for fragment in (
         "BLE_HID_GAP_RECOVERY_BOND_COUNT_UNKNOWN",
-        "ble_hid_gap_begin_recovery_pairing_window(type_controlled_recovery, false);",
+        "ble_hid_gap_open_recovery_pairing_window(type_controlled_recovery, false);",
         "known_type_peer ? &type_peer : NULL",
         "ble_hid_gap_schedule_recovery_bond_delete(",
         "ble_gap_terminate(conn.conn_handle, BLE_ERR_REM_USER_CONN_TERM)",
@@ -54,9 +54,21 @@ def require_fast_recovery_worker_boundary(path: Path, failures: list[str]) -> No
         failures.append(
             f"{path.relative_to(REPO_ROOT)}: EC11 cleanup worker must be armed before GAP termination"
         )
-    if "ble_hid_gap_open_recovery_pairing_window(" in body:
+    recovery_window_index = body.find(
+        "ble_hid_gap_open_recovery_pairing_window(type_controlled_recovery, false);"
+    )
+    cleanup_worker_index = body.find("ble_hid_gap_schedule_recovery_bond_delete(")
+    terminate_index = body.find(
+        "ble_gap_terminate(conn.conn_handle, BLE_ERR_REM_USER_CONN_TERM)"
+    )
+    if not (
+        recovery_window_index >= 0
+        and cleanup_worker_index >= 0
+        and terminate_index >= 0
+        and recovery_window_index < cleanup_worker_index < terminate_index
+    ):
         failures.append(
-            f"{path.relative_to(REPO_ROOT)}: EC11 fast recovery must defer recovery UI/blocker activation until advertising is accepted"
+            f"{path.relative_to(REPO_ROOT)}: EC11 fast recovery must hold its window before cleanup and GAP termination"
         )
 
 
