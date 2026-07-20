@@ -190,6 +190,9 @@ static uint32_t s_last_shutdown_battery_mv;
 static uint8_t s_last_shutdown_battery_level_percent = 0xFF;
 static uint32_t s_last_shutdown_power_flags;
 static power_manager_state_t s_state = POWER_MANAGER_STATE_ACTIVE;
+/* Test-only and RAM-only. It expires on real activity, loss of the BLE link,
+ * or any awake blocker; production inactivity timers remain unchanged. */
+static bool s_test_idle_override_active;
 
 static bool power_manager_gpio_is_valid(gpio_num_t gpio)
 {
@@ -1137,7 +1140,16 @@ static power_manager_state_t power_manager_target_state_locked(uint64_t now_ms)
     uint32_t radio_idle_ms = power_manager_radio_idle_ms_locked(now_ms);
     uint32_t hardware_shutdown_ms = power_manager_hardware_shutdown_ms();
     if (power_manager_awake_blockers(s_blockers) != 0) {
+        s_test_idle_override_active = false;
         return POWER_MANAGER_STATE_ACTIVE;
+    }
+
+    if (s_test_idle_override_active) {
+        if (s_ble_connected && s_external_power_present &&
+            power_manager_plugged_low_power_enabled()) {
+            return POWER_MANAGER_STATE_CONNECTED_IDLE;
+        }
+        s_test_idle_override_active = false;
     }
 
     if (CONFIG_POWER_MANAGER_ENABLE &&
@@ -1168,6 +1180,9 @@ static void power_manager_apply_ble_connection_change_locked(
     uint64_t now_ms)
 {
     s_ble_connected = connected;
+    if (!connected) {
+        s_test_idle_override_active = false;
+    }
     if (s_state == POWER_MANAGER_STATE_HARDWARE_SHUTDOWN) {
         return;
     }
@@ -2403,6 +2418,7 @@ void power_manager_record_activity(const char *reason)
         uint64_t now_ms = power_manager_now_ms();
         s_last_user_activity_ms = now_ms;
         s_last_radio_activity_ms = now_ms;
+        s_test_idle_override_active = false;
         s_auto_shutdown_block_logged = false;
         power_manager_clear_shutdown_failure_retry_locked();
         if (s_state != POWER_MANAGER_STATE_ACTIVE) {
@@ -2773,6 +2789,84 @@ static void power_manager_print_pm_locks(void)
     fflush(stdout);
 }
 
+static void power_manager_request_test_idle(void)
+{
+    power_manager_power_source_snapshot_t power_source = {0};
+    power_manager_state_t previous = POWER_MANAGER_STATE_ACTIVE;
+    power_manager_state_t next = POWER_MANAGER_STATE_ACTIVE;
+    uint32_t blockers = 0;
+    uint32_t forced_idle_ms = 0;
+    const char *reason = "not_initialized";
+    bool accepted = false;
+
+    if (!s_initialized || s_mutex == NULL) {
+        printf("~POWER:TEST:IDLE result=rejected reason=%s\n", reason);
+        fflush(stdout);
+        return;
+    }
+
+    power_manager_read_power_source(&power_source);
+    uint64_t now_ms = power_manager_now_ms();
+    if (xSemaphoreTake(s_mutex, portMAX_DELAY) != pdTRUE) {
+        printf("~POWER:TEST:IDLE result=rejected reason=lock_timeout\n");
+        fflush(stdout);
+        return;
+    }
+
+    (void)power_manager_sync_power_source_locked(&power_source, now_ms);
+    (void)power_manager_refresh_ble_connection_locked(now_ms);
+    previous = s_state;
+    blockers = s_blockers;
+    if (!power_source.external_power_present) {
+        reason = "external_power_required";
+    } else if (!s_ble_connected) {
+        reason = "ble_connection_required";
+    } else if (power_manager_awake_blockers(blockers) != 0) {
+        reason = "awake_blocker";
+    } else {
+        forced_idle_ms = power_manager_low_power_idle_ms();
+        if (forced_idle_ms == 0U || !power_manager_plugged_low_power_enabled()) {
+            reason = "idle_disabled";
+        } else {
+            /* Keep a RAM-only override until ordinary activity, disconnect, or
+             * a real awake blocker ends the fixture. This avoids waiting for a
+             * production timeout after boot while retaining the normal idle
+             * state-entry actions below. */
+            s_test_idle_override_active = true;
+            s_auto_shutdown_block_logged = false;
+            next = POWER_MANAGER_STATE_CONNECTED_IDLE;
+            s_state = next;
+            accepted = true;
+            reason = "accepted";
+        }
+    }
+    xSemaphoreGive(s_mutex);
+
+    if (accepted) {
+        power_manager_log_transition(previous, next, forced_idle_ms, blockers);
+        power_manager_apply_state(previous, next, blockers);
+        power_manager_apply_fast_idle_actions(next, forced_idle_ms, blockers);
+        power_manager_guard_runtime_power_hold_low(next);
+        power_manager_update_power_input_irq_arm(next, &power_source);
+        if (s_task_handle != NULL) {
+            xTaskNotifyGive(s_task_handle);
+        }
+    }
+
+    printf(
+        "~POWER:TEST:IDLE result=%s reason=%s previous=%s state=%s forced_idle_ms=%" PRIu32
+        " blockers=0x%08" PRIx32 " ble_connected=%u external_power_present=%u\n",
+        accepted ? "accepted" : "rejected",
+        reason,
+        power_manager_state_name(previous),
+        power_manager_state_name(accepted ? next : previous),
+        forced_idle_ms,
+        blockers,
+        s_ble_connected ? 1u : 0u,
+        power_source.external_power_present ? 1u : 0u);
+    fflush(stdout);
+}
+
 bool power_manager_consume_usb_command(const char *line)
 {
     const char *command = power_manager_strip_prefix(line);
@@ -2794,6 +2888,11 @@ bool power_manager_consume_usb_command(const char *line)
 
     if (strcmp(command, "PM") == 0 || strcmp(command, "PM:LOCKS") == 0) {
         power_manager_print_pm_locks();
+        return true;
+    }
+
+    if (strcmp(command, "TEST:IDLE") == 0) {
+        power_manager_request_test_idle();
         return true;
     }
 

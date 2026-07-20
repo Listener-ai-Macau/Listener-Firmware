@@ -495,7 +495,16 @@ static esp_err_t voice_key_input_enqueue_generated_clicks(uint8_t click_count)
     }
 
     voice_key_input_wake_task();
-    power_manager_record_activity("generated_ec11_key");
+    /*
+     * A generated single click is the diagnostic equivalent of the first
+     * physical EC11 edge. Do not wake CONNECTED_IDLE before the input state
+     * machine sees that edge, or the diagnostic can only exercise the delayed
+     * HID fallback instead of fast Idle recording. Generated double-click
+     * recovery still records activity immediately.
+     */
+    if (click_count != 1u) {
+        power_manager_record_activity("generated_ec11_key");
+    }
     ESP_LOGI(
         TAG,
         "EC11 push generated click queued: source=%s clicks=%u press_ms=%d inter_release_ms=%d double_ms=%d recovery_double_ms=%d",
@@ -733,6 +742,11 @@ static bool voice_key_input_generated_raw_high(bool physical_raw_high, TickType_
     return physical_raw_high;
 }
 
+static bool voice_key_input_generated_single_click_active(void)
+{
+    return s_direct_generated_active && s_direct_generated_click_count == 1;
+}
+
 static bool voice_key_input_recovery_double_click_ready(
     voice_key_button_state_t *button,
     TickType_t now_tick);
@@ -899,6 +913,7 @@ static void voice_key_input_handle_button_sample(voice_key_button_state_t *butto
         bool low_power_idle = voice_key_input_power_state_is_low_power_idle();
         bool raw_pressed = voice_key_input_button_raw_pressed(button, raw_high);
         bool stable_released = button->stable_level_high == button->idle_level_high;
+        bool generated_single_click = voice_key_input_generated_single_click_active();
         if (button->suppress_until_released) {
             voice_key_input_clear_raw_feedback(button);
         } else if (raw_pressed) {
@@ -906,7 +921,7 @@ static void voice_key_input_handle_button_sample(voice_key_button_state_t *butto
                 voice_key_input_mark_recovery_double_candidate(button, now_tick, "raw_edge");
             }
             if (low_power_idle && stable_released) {
-                if (!s_direct_generated_active) {
+                if (!s_direct_generated_active || generated_single_click) {
                     voice_key_input_request_fast_idle_recording(button, "raw_edge");
                 }
                 power_manager_record_activity("ec11_key_press");
@@ -915,7 +930,7 @@ static void voice_key_input_handle_button_sample(voice_key_button_state_t *butto
                     "EC11 push low-power raw transition debounce armed: source=%s",
                     button->label);
             } else {
-                if (stable_released && !s_direct_generated_active) {
+                if (stable_released && (!s_direct_generated_active || generated_single_click)) {
                     voice_key_input_request_fast_active_recording_stop(button, "raw_edge");
                 }
                 voice_key_input_apply_raw_feedback(button, "raw_edge");

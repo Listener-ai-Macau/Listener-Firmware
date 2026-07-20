@@ -943,9 +943,21 @@ static bool ble_hid_usb_command_is_apply_ble_name(const char *line)
            ble_hid_usb_command_matches(line, "DEVICE:BLE_NAME:APPLY");
 }
 
+static bool ble_hid_usb_command_is_fast_idle_diagnostic_key(const char *line)
+{
+    return ble_hid_usb_command_starts_with_boundary(line, "KEY:EC11:SINGLE");
+}
+
 static bool ble_hid_usb_command_records_activity(const char *line)
 {
-    if (ble_hid_usb_command_is_passive_query(line)) {
+    /*
+     * The generated EC11 single click is a diagnostic stand-in for the first
+     * physical edge. Waking the power manager before it reaches the input
+     * state machine would make CONNECTED_IDLE unavailable and turn the test
+     * into the delayed HID fallback instead of exercising fast recording.
+     */
+    if (ble_hid_usb_command_is_passive_query(line) ||
+        ble_hid_usb_command_is_fast_idle_diagnostic_key(line)) {
         return false;
     }
 
@@ -1039,6 +1051,8 @@ static bool ble_hid_dispatch_usb_command_line(const char *line)
 {
     if (ble_hid_usb_command_records_activity(line)) {
         power_manager_record_activity("usb_control_line");
+    } else if (ble_hid_usb_command_is_fast_idle_diagnostic_key(line)) {
+        ESP_LOGI(TAG, "EC11 generated single preserves CONNECTED_IDLE before raw edge");
     }
 
     if (power_manager_consume_usb_command(line)) {
