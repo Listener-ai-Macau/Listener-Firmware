@@ -31,6 +31,7 @@ def main() -> int:
     diag_header = read("components/diag_log/include/diag_log.h")
     diag_events = read("components/diag_log/include/diag_log_events.h")
     diag = read("components/diag_log/diag_log.c")
+    diag_flash = read("ports/esp32/diag_log_platform/diag_log_flash.c")
     recording = read("components/voice_recording_control/voice_recording_control.c")
     ota = read("components/firmware_ota/firmware_ota.c")
     ble_audio = read("ports/esp32/ble_audio_stream/ble_audio_stream_esp32.c")
@@ -74,6 +75,19 @@ def main() -> int:
         "DIAG_VREC_TIMING",
     ):
         require(diag, token, "Firmware Platform export", failures)
+
+    for token in (
+        "DIAG_LOG_SOURCE_LAST_MAX_SCANNED_EVENTS 512U",
+        "scan_limit = use_source_filter ? DIAG_LOG_SOURCE_LAST_MAX_SCANNED_EVENTS : limit;",
+        "scanned < scan_limit && kept < limit",
+        "after bounded scan=",
+    ):
+        require(diag_flash, token, "bounded diagnostic source export", failures)
+    bounded_dump_start = diag_flash.find("static void diag_log_platform_dump_last_filtered")
+    bounded_dump_end = diag_flash.find("void diag_log_platform_dump_last(", bounded_dump_start)
+    bounded_dump = diag_flash[bounded_dump_start:bounded_dump_end] if bounded_dump_start >= 0 and bounded_dump_end >= 0 else ""
+    if "find_oldest_sector" in bounded_dump:
+        failures.append("bounded diagnostic source export: LAST must not rescan every flash sector")
 
     fast_start = recording.find("static void voice_recording_control_handle_fast_idle_ec11_start")
     fast_end = recording.find("static void voice_recording_control_host_processing_start", fast_start)

@@ -23,6 +23,7 @@ static const char *TAG = "diag_log";
 #define DIAG_LOG_MAGIC       0xD1A90001U
 #define DIAG_LOG_DUMP_PACE_EVENTS 64U
 #define DIAG_LOG_SNAPSHOT_READ_BATCH_EVENTS 32U
+#define DIAG_LOG_SOURCE_LAST_MAX_SCANNED_EVENTS 512U
 #define DIAG_LOG_WRITE_QUEUE_DEPTH 64U
 #define DIAG_LOG_WRITER_STACK_SIZE 3072U
 #define DIAG_LOG_WRITER_PRIORITY (tskIDLE_PRIORITY + 1U)
@@ -649,8 +650,17 @@ static void diag_log_platform_dump_last_filtered(uint32_t count, uint16_t source
     }
 
     diag_log_platform_set_dumping(true);
-    uint16_t start_sec = 0;
-    if (!find_oldest_sector(&start_sec)) {
+    uint16_t newest_sector = 0;
+    uint32_t retained = 0;
+    xSemaphoreTake(s_mutex, portMAX_DELAY);
+    retained = s_retained_events;
+    if (retained > 0U) {
+        newest_sector = s_write_offset > 0U
+            ? s_write_sector
+            : (uint16_t)((s_write_sector + s_total_sectors - 1U) % s_total_sectors);
+    }
+    xSemaphoreGive(s_mutex);
+    if (retained == 0U) {
         diag_log_platform_set_dumping(false);
         ESP_LOGI(TAG, "DIAGLOG LAST %" PRIu32 ": dumped 0 events", count);
         return;
@@ -673,24 +683,26 @@ static void diag_log_platform_dump_last_filtered(uint32_t count, uint16_t source
         return;
     }
 
-    uint32_t matched = 0;
     uint32_t kept = 0;
     uint32_t scanned = 0;
-    for (uint32_t offset = s_total_sectors; offset > 0; offset--) {
-        uint16_t sec = (start_sec + (uint16_t)(offset - 1)) % (uint16_t)s_total_sectors;
+    uint32_t scan_limit = use_source_filter ? DIAG_LOG_SOURCE_LAST_MAX_SCANNED_EVENTS : limit;
+    if (scan_limit < limit) {
+        scan_limit = limit;
+    }
+    scan_limit = scan_limit > retained ? retained : scan_limit;
+    for (uint32_t offset = 0; offset < s_total_sectors && scanned < scan_limit && kept < limit; offset++) {
+        uint16_t sec = (uint16_t)((newest_sector + s_total_sectors - offset) % s_total_sectors);
         uint16_t sector_count = snapshot_sector_events(sec, sector_events, DIAG_EVENTS_PER_SECTOR);
         if (sector_count == 0) {
             continue;
         }
 
-        for (uint16_t idx = sector_count; idx > 0; idx--) {
+        for (uint16_t idx = sector_count; idx > 0 && scanned < scan_limit && kept < limit; idx--) {
             diag_event_t *evt = &sector_events[idx - 1];
             scanned++;
-            pace_dump_output(scanned);
             if (use_source_filter && evt->source != source) {
                 continue;
             }
-            matched++;
             if (kept < limit) {
                 matches[kept++] = *evt;
             }
@@ -710,10 +722,23 @@ static void diag_log_platform_dump_last_filtered(uint32_t count, uint16_t source
     watchdog_platform_feed_current_task();
     diag_log_platform_set_dumping(false);
     if (use_source_filter) {
-        ESP_LOGI(TAG, "DIAGLOG LAST %" PRIu32 " source=%s: dumped %" PRIu32 " of %" PRIu32 " matching events",
-                 count, source_name(source), dumped, matched);
+        ESP_LOGI(
+            TAG,
+            "DIAGLOG LAST %" PRIu32 " source=%s: dumped %" PRIu32
+            " matching events after bounded scan=%" PRIu32 " limit=%" PRIu32,
+            count,
+            source_name(source),
+            dumped,
+            scanned,
+            scan_limit);
     } else {
-        ESP_LOGI(TAG, "DIAGLOG LAST %" PRIu32 ": dumped %" PRIu32 " events", count, dumped);
+        ESP_LOGI(
+            TAG,
+            "DIAGLOG LAST %" PRIu32 ": dumped %" PRIu32
+            " events after scan=%" PRIu32,
+            count,
+            dumped,
+            scanned);
     }
 }
 void diag_log_platform_dump_last(uint32_t count)
