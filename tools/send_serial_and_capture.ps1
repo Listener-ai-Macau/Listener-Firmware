@@ -13,6 +13,11 @@ param(
     [int]$WriteRetryDelayMs = 250,
     [int]$CommandDelayMs = 250,
     [switch]$KeepInputBetweenCommands,
+    [string]$SignalEventName = "",
+    [string]$SignalEventOnOutput = "",
+    [int]$ScheduledCommandAfterEventMs = -1,
+    [string]$ScheduledCommand = "",
+    [int]$ScheduledCommandReadMs = 0,
     [string]$OutputPath = ""
 )
 
@@ -74,6 +79,26 @@ $args = @(
 
 if ($KeepInputBetweenCommands.IsPresent) {
     $args += "--keep-input-between-commands"
+}
+
+if (-not [string]::IsNullOrWhiteSpace($SignalEventName)) {
+    $args += @("--signal-event-name", $SignalEventName)
+}
+
+if (-not [string]::IsNullOrWhiteSpace($SignalEventOnOutput)) {
+    $args += @("--signal-event-on-output", $SignalEventOnOutput)
+}
+
+if ($ScheduledCommandAfterEventMs -ge 0) {
+    $args += @("--scheduled-command-after-event-ms", ([string]$ScheduledCommandAfterEventMs))
+}
+
+if (-not [string]::IsNullOrWhiteSpace($ScheduledCommand)) {
+    $args += @("--scheduled-command", $ScheduledCommand)
+}
+
+if ($ScheduledCommandReadMs -gt 0) {
+    $args += @("--scheduled-command-read-ms", ([string]$ScheduledCommandReadMs))
 }
 
 if ($captureOnly) {

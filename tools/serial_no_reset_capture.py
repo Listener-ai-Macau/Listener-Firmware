@@ -21,6 +21,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--command-delay-ms", type=int, default=250)
     parser.add_argument("--keep-input-between-commands", action="store_true")
     parser.add_argument("--capture-only-ms", type=int, default=0)
+    parser.add_argument("--signal-event-name", default="")
+    parser.add_argument("--signal-event-on-output", default="")
+    parser.add_argument("--scheduled-command-after-event-ms", type=int, default=-1)
+    parser.add_argument("--scheduled-command", default="")
+    parser.add_argument("--scheduled-command-read-ms", type=int, default=0)
     parser.add_argument("--output-path", default="")
     return parser.parse_args()
 
@@ -70,7 +75,53 @@ def open_serial_no_reset(serial_module, port: str, baud: int, write_timeout_ms: 
     return ser
 
 
-def read_serial_for(ser, transcript: Transcript, milliseconds: int) -> None:
+class OutputSignal:
+    def __init__(self, event_name: str, output_pattern: str, transcript: Transcript) -> None:
+        self.event_name = event_name
+        self.output_pattern = output_pattern.lower()
+        self.transcript = transcript
+        self.triggered_at: float | None = None
+        self._tail = ""
+        self._handle = None
+
+        if sys.platform != "win32":
+            raise RuntimeError("named output signals are only supported on Windows")
+
+        import ctypes
+
+        self._kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+        self._kernel32.CreateEventW.restype = ctypes.c_void_p
+        self._handle = self._kernel32.CreateEventW(None, False, False, event_name)
+        if not self._handle:
+            raise OSError(ctypes.get_last_error(), f"CreateEventW failed for {event_name}")
+
+    def observe(self, data: bytes) -> None:
+        if self.triggered_at is not None:
+            return
+        self._tail = (self._tail + data.decode("utf-8", errors="replace"))[-4096:]
+        if self.output_pattern not in self._tail.lower():
+            return
+        if not self._kernel32.SetEvent(self._handle):
+            import ctypes
+
+            raise OSError(ctypes.get_last_error(), f"SetEvent failed for {self.event_name}")
+        self.triggered_at = time.monotonic()
+        self.transcript.add(
+            f"output_signal event={self.event_name} pattern={self.output_pattern}"
+        )
+
+    def close(self) -> None:
+        if self._handle:
+            self._kernel32.CloseHandle(self._handle)
+            self._handle = None
+
+
+def read_serial_for(
+    ser,
+    transcript: Transcript,
+    milliseconds: int,
+    output_signal: OutputSignal | None = None,
+) -> None:
     deadline = time.monotonic() + max(milliseconds, 0) / 1000.0
     chunks: list[bytes] = []
     while time.monotonic() < deadline:
@@ -81,6 +132,8 @@ def read_serial_for(ser, transcript: Transcript, milliseconds: int) -> None:
             break
         if data:
             chunks.append(data)
+            if output_signal is not None:
+                output_signal.observe(data)
         else:
             time.sleep(0.02)
     if chunks:
@@ -155,6 +208,22 @@ def main() -> int:
         )
         transcript.write(args.output_path)
         return 2
+    signal_requested = bool(args.signal_event_name or args.signal_event_on_output)
+    if signal_requested != bool(args.signal_event_name and args.signal_event_on_output):
+        transcript.add("ERROR --signal-event-name and --signal-event-on-output must be supplied together.")
+        transcript.write(args.output_path)
+        return 2
+    schedule_requested = args.scheduled_command_after_event_ms >= 0 or bool(args.scheduled_command)
+    if schedule_requested and (
+        not signal_requested
+        or args.scheduled_command_after_event_ms < 0
+        or not args.scheduled_command.strip()
+    ):
+        transcript.add(
+            "ERROR scheduled commands require an output signal, a non-negative delay, and a command."
+        )
+        transcript.write(args.output_path)
+        return 2
 
     try:
         import serial
@@ -164,10 +233,17 @@ def main() -> int:
         return 2
 
     ser = None
+    output_signal = None
     try:
+        if signal_requested:
+            output_signal = OutputSignal(
+                args.signal_event_name,
+                args.signal_event_on_output,
+                transcript,
+            )
         ser = open_serial_no_reset(serial, args.port, args.baud, args.write_timeout_ms)
         transcript.add(f"serial_opened port={args.port} baud={args.baud} dtr=0 rts=0 no_reset=1")
-        read_serial_for(ser, transcript, args.initial_read_ms)
+        read_serial_for(ser, transcript, args.initial_read_ms, output_signal)
         current_command_read_ms = args.command_read_ms
         if commands:
             for command in commands:
@@ -179,7 +255,7 @@ def main() -> int:
                     continue
                 wait_ms = parse_wait_command(command)
                 if wait_ms is not None:
-                    read_serial_for(ser, transcript, wait_ms)
+                    read_serial_for(ser, transcript, wait_ms, output_signal)
                     continue
                 if not args.keep_input_between_commands:
                     try:
@@ -187,12 +263,28 @@ def main() -> int:
                     except Exception as exc:
                         transcript.add(f"DISCARD_IN_ERROR {exc}")
                 write_serial_command(ser, command, args, transcript)
-                read_serial_for(ser, transcript, current_command_read_ms)
+                read_serial_for(ser, transcript, current_command_read_ms, output_signal)
                 if args.command_delay_ms > 0:
                     time.sleep(args.command_delay_ms / 1000.0)
+
+            if schedule_requested:
+                if output_signal is None or output_signal.triggered_at is None:
+                    raise RuntimeError("scheduled command trigger output was not observed")
+                deadline = output_signal.triggered_at + args.scheduled_command_after_event_ms / 1000.0
+                remaining_ms = max(0, round((deadline - time.monotonic()) * 1000))
+                transcript.add(f"scheduled_command_wait_ms={remaining_ms}")
+                read_serial_for(ser, transcript, remaining_ms, output_signal)
+                transcript.add(f"> {args.scheduled_command}")
+                write_serial_command(ser, args.scheduled_command, args, transcript)
+                scheduled_read_ms = (
+                    args.scheduled_command_read_ms
+                    if args.scheduled_command_read_ms > 0
+                    else current_command_read_ms
+                )
+                read_serial_for(ser, transcript, scheduled_read_ms, output_signal)
         else:
             transcript.add(f"capture_only_ms={args.capture_only_ms}")
-            read_serial_for(ser, transcript, args.capture_only_ms)
+            read_serial_for(ser, transcript, args.capture_only_ms, output_signal)
         return_code = 0
     except Exception as exc:
         transcript.add(f"ERROR {exc}")
@@ -204,6 +296,8 @@ def main() -> int:
                     ser.close()
             except Exception as exc:
                 transcript.add(f"CLOSE_ERROR {exc}")
+        if output_signal is not None:
+            output_signal.close()
         transcript.add("serial_closed")
         transcript.write(args.output_path)
 
