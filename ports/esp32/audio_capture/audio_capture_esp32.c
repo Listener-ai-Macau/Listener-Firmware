@@ -78,9 +78,11 @@
 #else
 #define AUDIO_CAPTURE_SPH0655_CLK_INVERT_ENABLED 0
 #endif
-// Status LED level is a visual envelope, so keep it more sensitive than stream clipping.
-#define AUDIO_CAPTURE_LEVEL_NOISE_FLOOR 160U
-#define AUDIO_CAPTURE_LEVEL_FULL_SCALE 5000U
+// Status LED level is a visual envelope. Firmware capture now preserves 4x more
+// microphone headroom than the former clipped path, so its display calibration
+// must retain the corresponding raw-signal sensitivity without changing PCM.
+#define AUDIO_CAPTURE_LEVEL_NOISE_FLOOR 40U
+#define AUDIO_CAPTURE_LEVEL_FULL_SCALE 1250U
 
 /* ---------- ES8311-specific defines ---------- */
 

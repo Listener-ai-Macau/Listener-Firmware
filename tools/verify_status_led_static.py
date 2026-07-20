@@ -777,9 +777,9 @@ CHECKS = {
     "ports/esp32/audio_capture/audio_capture_esp32.c": [
         "#include \"status_led.h\"",
         "AUDIO_CAPTURE_LEVEL_NOISE_FLOOR",
-        "AUDIO_CAPTURE_LEVEL_NOISE_FLOOR 160U",
+        "AUDIO_CAPTURE_LEVEL_NOISE_FLOOR 40U",
         "AUDIO_CAPTURE_LEVEL_FULL_SCALE",
-        "AUDIO_CAPTURE_LEVEL_FULL_SCALE 5000U",
+        "AUDIO_CAPTURE_LEVEL_FULL_SCALE 1250U",
         "audio_capture_frame_level_percent",
         "status_led_set_recording_level(audio_capture_frame_level_percent(frame_buffer))",
     ],
