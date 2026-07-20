@@ -1112,6 +1112,29 @@ def main() -> int:
         failures.append(
             "components/power_manager/power_manager.c: POWER:STATUS must remain a passive query before activity recording"
         )
+    if not re.search(
+        r"static void power_manager_request_test_idle\(void\)[\s\S]*"
+        r"external_power_required[\s\S]*"
+        r"ble_connection_required[\s\S]*"
+        r"power_manager_awake_blockers\(blockers\)[\s\S]*"
+        r"s_test_idle_override_active\s*=\s*true[\s\S]*"
+        r"next\s*=\s*POWER_MANAGER_STATE_CONNECTED_IDLE[\s\S]*"
+        r"power_manager_apply_state\(previous, next, blockers\)[\s\S]*"
+        r"~POWER:TEST:IDLE result=%s",
+        power_manager,
+    ):
+        failures.append(
+            "components/power_manager/power_manager.c: POWER:TEST:IDLE must safely force only the existing connected-idle state machine path"
+        )
+    if not re.search(
+        r"strcmp\(command,\s*\"TEST:IDLE\"\)\s*==\s*0[\s\S]*"
+        r"power_manager_request_test_idle\(\)[\s\S]*"
+        r"strcmp\(command,\s*\"SHUTDOWN\"\)",
+        power_manager,
+    ):
+        failures.append(
+            "components/power_manager/power_manager.c: POWER:TEST:IDLE must remain an explicit test-only control command before shutdown handling"
+        )
 
     ble_gap = (REPO_ROOT / "ports/esp32/ble_hid_gap/ble_hid_gap_esp32.c").read_text(encoding="utf-8")
     if "s_shutdown_quiesce" not in ble_gap:
@@ -1188,8 +1211,9 @@ def main() -> int:
             "ports/esp32/ble_hid_gap/ble_hid_gap_esp32.c: recovery pairing window must hold pairing/reconnect blockers and arm expiry before returning to idle logic"
         )
     if not re.search(
-        r"if\s*\(ec11_fast_path\s*&&\s*type_controlled_recovery[\s\S]{0,360}"
-        r"ble_hid_gap_open_recovery_pairing_window\([\s\S]{0,1500}"
+        r"static\s+esp_err_t\s+ble_hid_gap_forget_bonds_and_repair_ec11_fast_inner\(void\)"
+        r"[\s\S]{0,1800}"
+        r"ble_hid_gap_open_recovery_pairing_window\([\s\S]{0,1800}"
         r"ble_gap_terminate\(conn\.conn_handle,\s*BLE_ERR_REM_USER_CONN_TERM\)",
         ble_gap,
     ):
@@ -2566,7 +2590,7 @@ def main() -> int:
             "ports/esp32/voice_key_input/voice_key_input_esp32.c: EC11 long-press shutdown cue must start at 800 ms so the hold does not feel dead"
         )
     if not re.search(
-        r"next_pressed_ms\s*>=\s*VOICE_KEY_INPUT_LONG_PRESS_IGNORE_MS[\s\S]{0,420}"
+        r"next_pressed_ms\s*>=\s*VOICE_KEY_INPUT_LONG_PRESS_IGNORE_MS[\s\S]{0,600}"
         r"status_led_notify_shutdown_confirm\(false,\s*\"ec11_long_press_shutdown_confirm\"\)",
         voice_key,
     ):

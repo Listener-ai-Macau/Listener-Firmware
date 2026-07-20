@@ -3964,12 +3964,12 @@ static esp_err_t ble_hid_gap_forget_bonds_and_repair_ec11_fast_inner(void)
      * removes the records after disconnect and before it starts advertising.
      */
     /*
-     * Record the recovery window now so disconnect handling and bond cleanup
-     * retain their established ownership semantics. Its LED/blocker/timer
-     * presentation is activated by the cleanup worker after the controller
-     * has accepted recovery advertising.
+     * Open the existing recovery window before disconnecting. It only holds
+     * the pairing/reconnect power guard and arms its expiry timer; advertising
+     * remains owned by the asynchronous bond-delete worker. This leaves no
+     * active-to-disconnect gap in which idle policy could sleep the device.
      */
-    ble_hid_gap_begin_recovery_pairing_window(type_controlled_recovery, false);
+    ble_hid_gap_open_recovery_pairing_window(type_controlled_recovery, false);
     s_directed_adv_pending = false;
     s_last_adv_was_directed = false;
     if (type_controlled_recovery) {
