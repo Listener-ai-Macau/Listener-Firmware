@@ -779,7 +779,7 @@ CHECKS = {
         "AUDIO_CAPTURE_LEVEL_NOISE_FLOOR",
         "AUDIO_CAPTURE_LEVEL_NOISE_FLOOR 40U",
         "AUDIO_CAPTURE_LEVEL_FULL_SCALE",
-        "AUDIO_CAPTURE_LEVEL_FULL_SCALE 1250U",
+        "AUDIO_CAPTURE_LEVEL_FULL_SCALE 847U",
         "audio_capture_frame_level_percent",
         "status_led_set_recording_level(audio_capture_frame_level_percent(frame_buffer))",
     ],

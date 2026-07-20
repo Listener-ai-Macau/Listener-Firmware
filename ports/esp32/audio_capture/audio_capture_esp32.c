@@ -81,8 +81,10 @@
 // Status LED level is a visual envelope. Firmware capture now preserves 4x more
 // microphone headroom than the former clipped path, so its display calibration
 // must retain the corresponding raw-signal sensitivity without changing PCM.
+// Keep the 40-unit silence floor; a 847-unit full scale is a 1.5x steeper
+// visual-only response than the preceding 40-to-1250 calibration.
 #define AUDIO_CAPTURE_LEVEL_NOISE_FLOOR 40U
-#define AUDIO_CAPTURE_LEVEL_FULL_SCALE 1250U
+#define AUDIO_CAPTURE_LEVEL_FULL_SCALE 847U
 
 /* ---------- ES8311-specific defines ---------- */
 
