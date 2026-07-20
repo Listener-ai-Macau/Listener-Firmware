@@ -1381,7 +1381,7 @@ def main() -> int:
         or "button->recovery_double_candidate =\n        voice_key_input_recovery_double_gap_ready(button, now_tick)" not in voice_key
         or "voice_key_input_recovery_double_click_ready" not in voice_key
         or "button->recovery_double_candidate ||\n           voice_key_input_recovery_double_gap_ready(button, now_tick)" not in voice_key
-        or "bool recovery_double_click =\n        voice_key_input_recovery_double_click_ready(button, now_tick)" not in voice_key
+        or "bool recovery_double_click =\n        !s_fast_idle_recording_hid_suppression_pending &&\n        voice_key_input_recovery_double_click_ready(button, now_tick)" not in voice_key
     ):
         failures.append("voice_key_input_esp32.c: EC11 push must require a second press candidate and re-check the 60 ms guard on release before accepting recovery double-click while single dispatch consumes the recovery guard")
     if re.search(
@@ -1843,8 +1843,8 @@ def main() -> int:
         "s_recovery_suppress_swift_pair_prompt" not in ble_gap
         or "recovery: Swift Pair prompt suppressed for Type-controlled silent recovery" not in ble_gap
         or "ble_hid_gap_forget_bonds_and_repair_type_controlled_silent" not in ble_gap
-        or "ble_hid_gap_forget_bonds_and_repair_inner(true, true, false)" not in ble_gap
-        or "ble_hid_gap_forget_bonds_and_repair_inner(true, false, false)" not in ble_gap
+        or "ble_hid_gap_forget_bonds_and_repair_inner(true, true)" not in ble_gap
+        or "ble_hid_gap_forget_bonds_and_repair_inner(true, false)" not in ble_gap
         or "suppress_swift_pair=%u" not in ble_gap
     ):
         failures.append(
