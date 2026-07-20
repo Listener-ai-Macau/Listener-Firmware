@@ -112,7 +112,7 @@ foreach ($item in @(
     @($audioCapture, "AUDIO_CAPTURE_PDM_SOFTWARE_GAIN_NUM\s+8", "V2 PDM software gain multiplier"),
     @($audioCapture, "audio_capture_apply_pdm_software_gain\(frame_buffer\)", "V2 PDM software gain application"),
     @($audioCapture, "pdm_cfg\.slot_cfg\.amplify_num\s*=\s*AUDIO_CAPTURE_PDM_HW_AMPLIFY_NUM", "V2 PDM hardware gain application"),
-    @($audioCapture, "SPH0655 PDM mic init", "SPH0655 PDM mic init log"),
+    @($audioCapture, "SPH0655 V2\.2 PDM contract", "SPH0655 PDM hardware contract log"),
     @($audioCapture, "sw_gain=%u", "SPH0655 PDM gain init log"),
     @($boardPins, "BOARD_PINS_BAT_CHG_IO\s+\(GPIO_NUM_14\)", "charger CHG GPIO14"),
     @($boardPins, "BOARD_PINS_BAT_STD_IO\s+\(GPIO_NUM_21\)", "charger STD GPIO21"),
@@ -242,7 +242,8 @@ foreach ($token in @(
     "CONFIG_SPIRAM=y",
     "CONFIG_SPIRAM_MODE_OCT=y",
     "CONFIG_AUDIO_CAPTURE_MIC_SPH0655_PDM=y",
-    "CONFIG_AUDIO_CAPTURE_V2_MIC_INTERFACE_VALIDATED=y"
+    "CONFIG_AUDIO_CAPTURE_V2_MIC_INTERFACE_VALIDATED=y",
+    "# CONFIG_AUDIO_CAPTURE_SPH0655_SLOT_RIGHT is not set"
 )) {
     Assert-Contains -Text $sdkconfig -Pattern ([regex]::Escape($token)) -Description "sdkconfig token $token"
 }

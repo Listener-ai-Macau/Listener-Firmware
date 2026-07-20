@@ -86,6 +86,7 @@ function Reset-StaleGeneratedSdkconfig {
         "CONFIG_AUDIO_CAPTURE_SPH0645_GAIN=4",
         "# CONFIG_AUDIO_CAPTURE_MIC_SPH0655_PDM is not set",
         "# CONFIG_AUDIO_CAPTURE_V2_MIC_INTERFACE_VALIDATED is not set",
+        "CONFIG_AUDIO_CAPTURE_SPH0655_SLOT_RIGHT=y",
         "# CONFIG_USJ_NO_AUTO_LS_ON_CONNECTION is not set"
     )
     $staleMatches = @($staleSignals | Where-Object { $sdkconfigText.Contains($_) })
