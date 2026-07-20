@@ -353,12 +353,6 @@ static const struct ble_gatt_svc_def s_ota_svcs[] = {
                 .arg = (void *)(uintptr_t)BLE_FIRMWARE_OTA_GATT_ATTR_READINESS,
             },
             {
-                .uuid = &s_capabilities_uuid.u,
-                .access_cb = ble_firmware_ota_access,
-                .flags = BLE_GATT_CHR_F_READ,
-                .arg = (void *)(uintptr_t)BLE_FIRMWARE_OTA_GATT_ATTR_CAPABILITIES,
-            },
-            {
                 .uuid = &s_control_uuid.u,
                 .access_cb = ble_firmware_ota_access,
                 .flags = BLE_GATT_CHR_F_WRITE,
@@ -375,6 +369,12 @@ static const struct ble_gatt_svc_def s_ota_svcs[] = {
                 .access_cb = ble_firmware_ota_access,
                 .flags = BLE_GATT_CHR_F_READ,
                 .arg = (void *)(uintptr_t)BLE_FIRMWARE_OTA_GATT_ATTR_STATUS,
+            },
+            {
+                .uuid = &s_capabilities_uuid.u,
+                .access_cb = ble_firmware_ota_access,
+                .flags = BLE_GATT_CHR_F_READ,
+                .arg = (void *)(uintptr_t)BLE_FIRMWARE_OTA_GATT_ATTR_CAPABILITIES,
             },
             {0},
         },

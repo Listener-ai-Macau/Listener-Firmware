@@ -57,10 +57,14 @@ function Invoke-IdfSerialActionWithBaudRetry {
     $lastError = $null
     for ($attempt = 0; $attempt -lt $Bauds.Count; $attempt++) {
         $baud = $Bauds[$attempt]
+        $mutex = [Threading.Mutex]::new($false, "Global\Listener_$SerialPortName")
         try {
             if ($attempt -gt 0) {
                 Repair-Esp32UsbPnpDevices
                 Start-Sleep -Milliseconds 800
+            }
+            if (-not $mutex.WaitOne(10000)) {
+                throw "Timed out waiting for Global\Listener_$SerialPortName"
             }
             Write-Host ("tools\idf.ps1 {0}: attempt {1}/{2} baud={3}" -f $Action, ($attempt + 1), $Bauds.Count, $baud)
             Invoke-CheckedCommand -File "pwsh" -Arguments @(
@@ -78,6 +82,14 @@ function Invoke-IdfSerialActionWithBaudRetry {
             if ($attempt -lt ($Bauds.Count - 1)) {
                 Write-Warning ("tools\idf.ps1 {0} failed at baud={1}: {2}; retrying lower baud" -f $Action, $baud, $lastError)
                 continue
+            }
+        } finally {
+            if ($null -ne $mutex) {
+                try {
+                    $mutex.ReleaseMutex()
+                } catch {
+                }
+                $mutex.Dispose()
             }
         }
     }
@@ -187,6 +199,66 @@ function Resolve-FlashPort {
     throw "COMx requires exactly one ESP32-S3 serial device. ESP32-like ports: $($esp32Ports -join ', '); serial ports: $($serialPorts -join ', ')"
 }
 
+function Invoke-OtaSerialCommand {
+    param(
+        [Parameter(Mandatory = $true)][string]$SerialPortName,
+        [Parameter(Mandatory = $true)][string]$Command
+    )
+
+    $mutex = [Threading.Mutex]::new($false, "Global\Listener_$SerialPortName")
+    try {
+        if (-not $mutex.WaitOne(10000)) {
+            throw "Timed out waiting for Global\Listener_$SerialPortName"
+        }
+        $captureScript = Join-Path $PSScriptRoot "send_serial_and_capture.ps1"
+        $output = & pwsh -NoProfile -File $captureScript -Port $SerialPortName -Command $Command 2>&1
+        if ($LASTEXITCODE -ne 0) {
+            throw "OTA serial command failed: $Command"
+        }
+        return ($output | Out-String)
+    } finally {
+        if ($null -ne $mutex) {
+            try {
+                $mutex.ReleaseMutex()
+            } catch {
+            }
+            $mutex.Dispose()
+        }
+    }
+}
+
+function Get-OtaBootPartition {
+    param([Parameter(Mandatory = $true)][string]$SerialPortName)
+
+    $lastFailure = $null
+    for ($attempt = 1; $attempt -le 4; $attempt++) {
+        try {
+            $output = Invoke-OtaSerialCommand -SerialPortName $SerialPortName -Command "~OTA:STATUS"
+            $matches = [regex]::Matches($output, '(?im)\bOTA STATUS\b.*?\bboot=(ota_[01])\b')
+            if ($matches.Count -eq 0) {
+                throw "OTA status did not report a boot OTA slot"
+            }
+            return $matches[$matches.Count - 1].Groups[1].Value.ToLowerInvariant()
+        } catch {
+            $lastFailure = $_.Exception.Message
+            if ($attempt -lt 4) {
+                Start-Sleep -Seconds 1
+            }
+        }
+    }
+
+    throw "Could not verify the OTA boot slot before/after preserved flash: $lastFailure"
+}
+
+function Invoke-OtaBootInactiveForPreservedFlash {
+    param([Parameter(Mandatory = $true)][string]$SerialPortName)
+
+    $output = Invoke-OtaSerialCommand -SerialPortName $SerialPortName -Command "~OTA:TEST_BOOT_INACTIVE"
+    if ($output -notmatch '(?i)OTA test boot inactive partition=ota_0; rebooting') {
+        throw "Preserved flash wrote ota_0, but firmware did not confirm the ota_0 boot handoff."
+    }
+}
+
 $projectRoot = Split-Path -Parent $PSScriptRoot
 $buildDirResolved = Get-ShortBuildDir -ProjectRoot $projectRoot
 $resolvedPort = Resolve-FlashPort -RequestedPort $Port
@@ -204,10 +276,23 @@ if (-not $NoBuild) {
 }
 
 if ($PreserveOtaData.IsPresent) {
-    Write-Host "PreserveOtaData: flashing bootloader, partition table, and app without writing otadata."
+    $bootPartitionBeforeFlash = Get-OtaBootPartition -SerialPortName $resolvedPort
+    Write-Host "PreserveOtaData: flashing bootloader, partition table, and app without writing otadata; current boot=$bootPartitionBeforeFlash."
     foreach ($action in @("bootloader-flash", "partition-table-flash", "app-flash")) {
         Invoke-IdfSerialActionWithBaudRetry -Action $action -BuildDirectory $buildDirResolved -SerialPortName $resolvedPort
     }
+
+    # app-flash writes ota_0. When otadata still selects ota_1, explicitly hand off to the freshly written slot.
+    if ($bootPartitionBeforeFlash -eq "ota_1") {
+        Invoke-OtaBootInactiveForPreservedFlash -SerialPortName $resolvedPort
+        Start-Sleep -Seconds 3
+    }
+
+    $bootPartitionAfterFlash = Get-OtaBootPartition -SerialPortName $resolvedPort
+    if ($bootPartitionAfterFlash -ne "ota_0") {
+        throw "Preserved flash requires boot=ota_0 after app-flash, observed $bootPartitionAfterFlash."
+    }
+    Write-Host "PreserveOtaData: verified boot=ota_0 without erasing otadata or device settings."
     return
 }
 

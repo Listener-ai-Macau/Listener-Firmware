@@ -142,6 +142,19 @@ def check_bridge(repo: Path) -> None:
         and source.count(".uuid = &s_status_uuid.u") == 1,
         "product adapter must register exactly one control/data/status data plane",
     )
+    service_start = source.find("static const struct ble_gatt_svc_def s_ota_svcs[]")
+    service_end = source.find("esp_err_t ble_firmware_ota_register_gatt", service_start)
+    require(service_start >= 0 and service_end >= 0, "OTA GATT service definition is missing")
+    service = source[service_start:service_end]
+    readiness_index = service.find(".uuid = &s_readiness_uuid.u")
+    control_index = service.find(".uuid = &s_control_uuid.u")
+    data_index = service.find(".uuid = &s_data_uuid.u")
+    status_index = service.find(".uuid = &s_status_uuid.u")
+    capabilities_index = service.find(".uuid = &s_capabilities_uuid.u")
+    require(
+        0 <= readiness_index < control_index < data_index < status_index < capabilities_index,
+        "new OTA capabilities must append after the legacy readiness/control/data/status handles",
+    )
 
 
 def check_product_identity(repo: Path) -> None:
