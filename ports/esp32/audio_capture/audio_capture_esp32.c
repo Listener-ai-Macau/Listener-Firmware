@@ -44,6 +44,17 @@
 #define AUDIO_CAPTURE_FRAME_BYTES       (AUDIO_CAPTURE_FRAME_SAMPLES * sizeof(int16_t))
 #define AUDIO_CAPTURE_LOG_INTERVAL_FRAMES (500)
 #define AUDIO_CAPTURE_TASK_STACK_BYTES  (6 * 1024)
+#if CONFIG_FREERTOS_UNICORE
+#define AUDIO_CAPTURE_TASK_CORE 0
+#define AUDIO_CAPTURE_AFE_FETCH_TASK_CORE 0
+#else
+#define AUDIO_CAPTURE_TASK_CORE 1
+/* ESP-SR requires feed and fetch to run concurrently. Keep them at equal
+ * priority on the audio core: CPU0 carries NimBLE and serial work, and a
+ * delayed fetch there lets the AFE overwrite its feed ring. */
+#define AUDIO_CAPTURE_AFE_FETCH_TASK_CORE 1
+#endif
+#define AUDIO_CAPTURE_AFE_FETCH_TASK_PRIORITY 5
 #define AUDIO_CAPTURE_V2_MIC_BLOCKER "V2 CLK/GPIO48 DOUT/GPIO47 microphone interface not validated"
 /* Recording duration is user-controlled (KEY1 toggle); no fixed upper limit.
  * The only hard limit is uint16_t packet_sequence overflow in the BLE protocol,
@@ -54,6 +65,17 @@
 #define AUDIO_CAPTURE_IDLE_POWER_SAVE_WAIT_MS 5000U
 #define AUDIO_CAPTURE_PDM_HW_AMPLIFY_NUM 8U
 #define AUDIO_CAPTURE_PDM_SOFTWARE_GAIN_NUM 8
+/* WebRTC AFE accepts 160-sample feed blocks but emits 512-sample output
+ * blocks. Four feeds are therefore the minimum to form one fetch result;
+ * six frames leave two feed blocks of scheduler headroom without introducing
+ * buffered latency in the steady state. */
+#define AUDIO_CAPTURE_PDM_AFE_RINGBUF_FRAMES 6
+#define AUDIO_CAPTURE_PDM_AFE_FETCH_WAIT_MS 100U
+#if defined(CONFIG_AUDIO_CAPTURE_SPH0655_CLK_INVERT) && CONFIG_AUDIO_CAPTURE_SPH0655_CLK_INVERT
+#define AUDIO_CAPTURE_SPH0655_CLK_INVERT_ENABLED 1
+#else
+#define AUDIO_CAPTURE_SPH0655_CLK_INVERT_ENABLED 0
+#endif
 // Status LED level is a visual envelope, so keep it more sensitive than stream clipping.
 #define AUDIO_CAPTURE_LEVEL_NOISE_FLOOR 160U
 #define AUDIO_CAPTURE_LEVEL_FULL_SCALE 5000U
@@ -78,6 +100,11 @@
 
 #ifdef CONFIG_AUDIO_CAPTURE_MIC_SPH0655_PDM
 #include "driver/i2s_pdm.h"
+#if CONFIG_AUDIO_CAPTURE_PDM_AFE_WEBRTC
+#include "esp_afe_config.h"
+#include "esp_afe_sr_iface.h"
+#include "esp_afe_sr_models.h"
+#endif
 #endif
 
 static const char *TAG = "audio_capture";
@@ -131,6 +158,39 @@ static uint32_t s_dropped_frame_count;
 static audio_capture_export_state_t s_export_state;
 static SemaphoreHandle_t s_state_mutex;
 static uint32_t s_session_id_counter;
+#ifdef CONFIG_AUDIO_CAPTURE_MIC_SPH0655_PDM
+#if CONFIG_AUDIO_CAPTURE_PDM_STEREO_SLOT_CAPTURE
+#if CONFIG_AUDIO_CAPTURE_SPH0655_SLOT_RIGHT
+static const int s_pdm_active_slot = 1;
+#else
+static const int s_pdm_active_slot = 0;
+#endif
+#endif
+#if CONFIG_AUDIO_CAPTURE_PDM_AFE_WEBRTC
+static const esp_afe_sr_iface_t *s_pdm_afe_handle;
+static esp_afe_sr_data_t *s_pdm_afe_data;
+static int16_t *s_pdm_afe_feed_buffer;
+static int16_t *s_pdm_afe_fetch_buffer;
+static size_t s_pdm_afe_feed_samples;
+static size_t s_pdm_afe_fetch_samples;
+static size_t s_pdm_afe_feed_filled;
+static int16_t s_pdm_afe_emit_buffer[AUDIO_CAPTURE_FRAME_SAMPLES];
+static size_t s_pdm_afe_emit_filled;
+static volatile bool s_pdm_afe_session_boundary_requested;
+static volatile bool s_pdm_afe_stop_drain_requested;
+static volatile bool s_pdm_afe_stop_drain_feed_cutoff_ack;
+static volatile bool s_pdm_afe_stop_drain_complete;
+static uint32_t s_pdm_afe_input_frames;
+static uint32_t s_pdm_afe_output_frames;
+static uint32_t s_pdm_afe_session_output_peak;
+static uint64_t s_pdm_afe_session_output_abs_sum;
+static uint64_t s_pdm_afe_session_output_samples;
+static uint32_t s_pdm_afe_stop_drain_output_frames;
+static size_t s_pdm_afe_stop_drain_padding_samples;
+static TaskHandle_t s_pdm_afe_fetch_task_handle;
+static void audio_capture_log_pdm_afe_session_signal(uint32_t session_id);
+#endif
+#endif
 
 static bool s_capture_transport_backpressure_active;
 static uint32_t s_capture_transport_backpressure_events;
@@ -140,6 +200,13 @@ static void audio_capture_wake_task(void)
     if (s_capture_task_handle != NULL) {
         xTaskNotifyGive(s_capture_task_handle);
     }
+#ifdef CONFIG_AUDIO_CAPTURE_MIC_SPH0655_PDM
+#if CONFIG_AUDIO_CAPTURE_PDM_AFE_WEBRTC
+    if (s_pdm_afe_fetch_task_handle != NULL) {
+        xTaskNotifyGive(s_pdm_afe_fetch_task_handle);
+    }
+#endif
+#endif
 }
 
 static const char *audio_capture_static_unavailable_reason(void)
@@ -160,6 +227,13 @@ static void audio_capture_export_cleanup(void)
     memset(&s_export_state, 0, sizeof(s_export_state));
     s_capture_transport_backpressure_active = false;
     s_capture_transport_backpressure_events = 0;
+#ifdef CONFIG_AUDIO_CAPTURE_MIC_SPH0655_PDM
+#if CONFIG_AUDIO_CAPTURE_PDM_AFE_WEBRTC
+    s_pdm_afe_stop_drain_requested = false;
+    s_pdm_afe_stop_drain_feed_cutoff_ack = false;
+    s_pdm_afe_stop_drain_complete = false;
+#endif
+#endif
 }
 
 static uint8_t audio_capture_frame_level_percent(const int16_t *frame_buffer)
@@ -387,6 +461,30 @@ esp_err_t audio_capture_session_begin(void)
     uint32_t session_id = s_export_state.session_id;
     uint32_t session_max_seconds = (s_export_state.total_frames * AUDIO_CAPTURE_FRAME_MS) / 1000U;
 
+#ifdef CONFIG_AUDIO_CAPTURE_MIC_SPH0655_PDM
+#if CONFIG_AUDIO_CAPTURE_PDM_AFE_WEBRTC
+    /* Apply the session boundary only in the capture task. It clears partial
+     * PCM without discarding the already trained NS/AGC state, so first words
+     * after an idle wake are processed with the same acoustic calibration as
+     * later words. */
+    s_pdm_afe_session_boundary_requested = true;
+    s_pdm_afe_stop_drain_requested = false;
+    s_pdm_afe_stop_drain_feed_cutoff_ack = false;
+    s_pdm_afe_stop_drain_complete = false;
+    s_pdm_afe_stop_drain_output_frames = 0;
+    s_pdm_afe_stop_drain_padding_samples = 0;
+#endif
+#if CONFIG_AUDIO_CAPTURE_PDM_STEREO_SLOT_CAPTURE
+    ESP_LOGI(
+        TAG,
+        "SPH0655 PDM session slot: session_id=%" PRIu32 " selected=%s",
+        session_id,
+        s_pdm_active_slot == 0 ? "left" : "right");
+#else
+    ESP_LOGI(TAG, "SPH0655 PDM session: session_id=%" PRIu32 " mode=standard-mono", session_id);
+#endif
+#endif
+
     s_export_state.requested = true;
     xSemaphoreGive(s_state_mutex);
     audio_capture_wake_task();
@@ -415,6 +513,13 @@ esp_err_t audio_capture_session_stop(void)
     }
 
     s_export_state.stop_requested = true;
+#ifdef CONFIG_AUDIO_CAPTURE_MIC_SPH0655_PDM
+#if CONFIG_AUDIO_CAPTURE_PDM_AFE_WEBRTC
+    s_pdm_afe_stop_drain_requested = true;
+    s_pdm_afe_stop_drain_feed_cutoff_ack = false;
+    s_pdm_afe_stop_drain_complete = false;
+#endif
+#endif
     xSemaphoreGive(s_state_mutex);
     ESP_LOGI(TAG, "record session stop requested");
     return ESP_OK;
@@ -440,6 +545,13 @@ esp_err_t audio_capture_session_cancel(void)
     }
 
     s_export_state.cancel_requested = true;
+#ifdef CONFIG_AUDIO_CAPTURE_MIC_SPH0655_PDM
+#if CONFIG_AUDIO_CAPTURE_PDM_AFE_WEBRTC
+    s_pdm_afe_stop_drain_requested = false;
+    s_pdm_afe_stop_drain_feed_cutoff_ack = false;
+    s_pdm_afe_stop_drain_complete = false;
+#endif
+#endif
     xSemaphoreGive(s_state_mutex);
     ESP_LOGI(TAG, "record session cancel requested");
     return ESP_OK;
@@ -509,6 +621,14 @@ static void audio_capture_process_frame(const int16_t *frame_buffer)
             bool stop_boundary_requested =
                 s_export_state.mode == AUDIO_CAPTURE_EXPORT_MODE_SESSION &&
                 s_export_state.stop_requested;
+#ifdef CONFIG_AUDIO_CAPTURE_MIC_SPH0655_PDM
+#if CONFIG_AUDIO_CAPTURE_PDM_AFE_WEBRTC
+            if (stop_boundary_requested && s_pdm_afe_stop_drain_requested &&
+                !s_pdm_afe_stop_drain_complete) {
+                stop_boundary_requested = false;
+            }
+#endif
+#endif
             bool hit_safety_max_duration = false;
             if (s_export_state.mode == AUDIO_CAPTURE_EXPORT_MODE_SESSION) {
                 if (!s_export_state.ble_session_started) {
@@ -532,7 +652,7 @@ static void audio_capture_process_frame(const int16_t *frame_buffer)
                         batch_pcm_bytes = AUDIO_CAPTURE_STREAM_BATCH_BYTES;
                         memcpy(s_export_state.stream_emit_buffer, s_export_state.stream_batch_buffer, batch_pcm_bytes);
                         audio_batch_copy = s_export_state.stream_emit_buffer;
-                        packet_count = ble_audio_stream_count_audio_packets(batch_pcm_bytes);
+                        packet_count = ble_audio_stream_count_audio_packets(audio_batch_copy, batch_pcm_bytes);
                         if (!audio_capture_packet_sequence_can_advance(
                                 s_export_state.stream_next_packet_sequence,
                                 packet_count)) {
@@ -584,7 +704,7 @@ static void audio_capture_process_frame(const int16_t *frame_buffer)
                         s_export_state.stream_batch_frame_count * AUDIO_CAPTURE_FRAME_BYTES;
                     memcpy(s_export_state.stream_emit_buffer, s_export_state.stream_batch_buffer, batch_pcm_bytes);
                     audio_batch_copy = s_export_state.stream_emit_buffer;
-                    packet_count = ble_audio_stream_count_audio_packets(batch_pcm_bytes);
+                    packet_count = ble_audio_stream_count_audio_packets(audio_batch_copy, batch_pcm_bytes);
                     if (!audio_capture_packet_sequence_can_advance(
                             s_export_state.stream_next_packet_sequence,
                             packet_count)) {
@@ -674,7 +794,12 @@ static void audio_capture_process_frame(const int16_t *frame_buffer)
 
         if (!stream_failed && should_session_audio) {
             esp_err_t audio_ret =
-                ble_audio_stream_send_session_audio(session_id, packet_sequence_start, audio_batch_copy, batch_pcm_bytes);
+                ble_audio_stream_send_session_audio(
+                    session_id,
+                    packet_sequence_start,
+                    audio_batch_copy,
+                    batch_pcm_bytes,
+                    packet_count);
             if (audio_ret != ESP_OK) {
                 stream_failed = true;
                 should_transport_error = true;
@@ -757,6 +882,11 @@ static void audio_capture_process_frame(const int16_t *frame_buffer)
                 session_id,
                 stop_frames * AUDIO_CAPTURE_FRAME_MS,
                 stop_transport_backpressure_events);
+#ifdef CONFIG_AUDIO_CAPTURE_MIC_SPH0655_PDM
+#if CONFIG_AUDIO_CAPTURE_PDM_AFE_WEBRTC
+            audio_capture_log_pdm_afe_session_signal(session_id);
+#endif
+#endif
             diag_log(DIAG_SRC_AUDIO, DIAG_AUDIO_SESSION, DIAG_SEV_INFO,
                      2, session_id, stop_duration, stop_frames);
         }
@@ -950,6 +1080,10 @@ static esp_err_t audio_capture_codec_init(void)
 
 #ifdef CONFIG_AUDIO_CAPTURE_MIC_SPH0655_PDM
 
+/* A SPH0655 drives one slot according to its soldered SELECT strap. Keep the
+ * board configuration deterministic: boot-time ambient noise cannot identify
+ * a hardware strap reliably and must never change a device's recording route. */
+
 static int16_t audio_capture_scale_sample(int16_t sample)
 {
     int32_t scaled = (int32_t)sample * AUDIO_CAPTURE_PDM_SOFTWARE_GAIN_NUM;
@@ -972,8 +1106,366 @@ static void audio_capture_apply_pdm_software_gain(int16_t *frame_buffer)
     }
 }
 
+#if CONFIG_AUDIO_CAPTURE_PDM_STEREO_SLOT_CAPTURE
+static void audio_capture_select_pdm_slot(const int16_t *interleaved, int16_t *mono)
+{
+    for (size_t i = 0; i < AUDIO_CAPTURE_FRAME_SAMPLES; i++) {
+        mono[i] = interleaved[(i * 2U) + (size_t)s_pdm_active_slot];
+    }
+}
+#endif
+
+#if CONFIG_AUDIO_CAPTURE_PDM_AFE_WEBRTC
+static void audio_capture_log_pdm_afe_level(
+    const char *stage,
+    uint32_t block_index,
+    const int16_t *samples,
+    size_t sample_count)
+{
+    if (block_index == 0U || block_index > 100U || (block_index % 5U) != 0U) {
+        return;
+    }
+
+    uint32_t peak = 0U;
+    uint64_t magnitude_sum = 0U;
+    for (size_t index = 0; index < sample_count; index++) {
+        int32_t value = samples[index];
+        uint32_t magnitude = (uint32_t)(value < 0 ? -value : value);
+        if (magnitude > peak) {
+            peak = magnitude;
+        }
+        magnitude_sum += magnitude;
+    }
+
+    ESP_LOGI(
+        TAG,
+        "PDM AFE level: stage=%s block=%" PRIu32 " peak=%" PRIu32 " mean_abs=%" PRIu32,
+        stage,
+        block_index,
+        peak,
+        sample_count == 0U ? 0U : (uint32_t)(magnitude_sum / sample_count));
+}
+
+static void audio_capture_note_pdm_afe_session_output(
+    const int16_t *samples,
+    size_t sample_count)
+{
+    uint32_t peak = 0U;
+    uint64_t magnitude_sum = 0U;
+    for (size_t index = 0; index < sample_count; index++) {
+        int32_t value = samples[index];
+        uint32_t magnitude = (uint32_t)(value < 0 ? -value : value);
+        if (magnitude > peak) {
+            peak = magnitude;
+        }
+        magnitude_sum += magnitude;
+    }
+    if (peak > s_pdm_afe_session_output_peak) {
+        s_pdm_afe_session_output_peak = peak;
+    }
+    s_pdm_afe_session_output_abs_sum += magnitude_sum;
+    s_pdm_afe_session_output_samples += sample_count;
+}
+
+static void audio_capture_log_pdm_afe_session_signal(uint32_t session_id)
+{
+    uint32_t mean_abs = s_pdm_afe_session_output_samples == 0U
+        ? 0U
+        : (uint32_t)(s_pdm_afe_session_output_abs_sum / s_pdm_afe_session_output_samples);
+    ESP_LOGI(
+        TAG,
+        "PDM AFE session signal: session_id=%" PRIu32 " output_frames=%" PRIu32
+        " peak=%" PRIu32 " mean_abs=%" PRIu32 " stop_drain_frames=%" PRIu32
+        " stop_drain_padding_samples=%u",
+        session_id,
+        s_pdm_afe_output_frames,
+        s_pdm_afe_session_output_peak,
+        mean_abs,
+        s_pdm_afe_stop_drain_output_frames,
+        (unsigned)s_pdm_afe_stop_drain_padding_samples);
+}
+
+static void audio_capture_pdm_afe_emit(const int16_t *samples, size_t sample_count)
+{
+    while (sample_count > 0) {
+        size_t remaining = AUDIO_CAPTURE_FRAME_SAMPLES - s_pdm_afe_emit_filled;
+        size_t copied = sample_count < remaining ? sample_count : remaining;
+        memcpy(
+            s_pdm_afe_emit_buffer + s_pdm_afe_emit_filled,
+            samples,
+            copied * sizeof(*samples));
+        s_pdm_afe_emit_filled += copied;
+        samples += copied;
+        sample_count -= copied;
+
+        if (s_pdm_afe_emit_filled == AUDIO_CAPTURE_FRAME_SAMPLES) {
+            if (s_pdm_afe_output_frames == 0U) {
+                ESP_LOGI(
+                    TAG,
+                    "PDM AFE first enhanced frame: feed_blocks=%" PRIu32,
+                    s_pdm_afe_input_frames);
+            }
+            audio_capture_log_pdm_afe_level(
+                "output",
+                s_pdm_afe_output_frames + 1U,
+                s_pdm_afe_emit_buffer,
+                AUDIO_CAPTURE_FRAME_SAMPLES);
+            audio_capture_note_pdm_afe_session_output(
+                s_pdm_afe_emit_buffer,
+                AUDIO_CAPTURE_FRAME_SAMPLES);
+            audio_capture_process_frame(s_pdm_afe_emit_buffer);
+            if (s_pdm_afe_stop_drain_requested && !s_pdm_afe_stop_drain_complete) {
+                s_pdm_afe_stop_drain_output_frames++;
+            }
+            s_pdm_afe_emit_filled = 0;
+            s_pdm_afe_output_frames++;
+        }
+    }
+}
+
+static void audio_capture_pdm_afe_complete_stop_drain(void)
+{
+    if (!s_pdm_afe_stop_drain_requested || !s_pdm_afe_stop_drain_feed_cutoff_ack ||
+        s_pdm_afe_stop_drain_complete) {
+        return;
+    }
+
+    if (s_pdm_afe_emit_filled > 0U) {
+        int16_t silence[AUDIO_CAPTURE_FRAME_SAMPLES] = {0};
+        size_t padding_samples = AUDIO_CAPTURE_FRAME_SAMPLES - s_pdm_afe_emit_filled;
+        s_pdm_afe_stop_drain_padding_samples = padding_samples;
+        audio_capture_pdm_afe_emit(silence, padding_samples);
+    }
+
+    s_pdm_afe_stop_drain_complete = true;
+    int16_t boundary_frame[AUDIO_CAPTURE_FRAME_SAMPLES] = {0};
+    audio_capture_process_frame(boundary_frame);
+}
+
+/* ESP-SR requires its feed and fetch calls to run concurrently. Keep this
+ * task separate from I2S capture; serializing them stalls feed and leaves the
+ * user with a recording state that never emits PCM. */
+static void audio_capture_pdm_afe_fetch_task(void *arg)
+{
+    (void)arg;
+    (void)watchdog_platform_subscribe_current_task("audio_afe_fetch_task");
+
+    while (true) {
+        watchdog_platform_feed_current_task();
+        /* I2S is deliberately stopped in idle power save. Do not poll the AFE
+         * without an input producer: its empty-ring-buffer warning is both
+         * misleading and unnecessary work. audio_capture_wake_task() wakes
+         * this fetch task together with capture when a session starts. */
+        if (s_idle_power_save_requested && !audio_capture_session_is_active()) {
+            (void)watchdog_platform_task_notify_take_low_power(
+                pdTRUE,
+                AUDIO_CAPTURE_IDLE_POWER_SAVE_WAIT_MS);
+            continue;
+        }
+        size_t sample_count = 0;
+        afe_fetch_result_t *result =
+            s_pdm_afe_handle->fetch_with_delay(
+                s_pdm_afe_data,
+                pdMS_TO_TICKS(AUDIO_CAPTURE_PDM_AFE_FETCH_WAIT_MS));
+        if (result == NULL || result->ret_value != ESP_OK) {
+            audio_capture_pdm_afe_complete_stop_drain();
+            continue;
+        }
+        if (!s_pdm_afe_session_boundary_requested && result->data != NULL && result->data_size > 0) {
+            sample_count = (size_t)result->data_size / sizeof(*result->data);
+            if (sample_count <= s_pdm_afe_fetch_samples) {
+                memcpy(
+                    s_pdm_afe_fetch_buffer,
+                    result->data,
+                    sample_count * sizeof(*result->data));
+            } else {
+                ESP_LOGW(
+                    TAG,
+                    "PDM AFE fetch frame too large: samples=%u capacity=%u",
+                    (unsigned)sample_count,
+                    (unsigned)s_pdm_afe_fetch_samples);
+                sample_count = 0;
+            }
+        }
+        if (sample_count > 0) {
+            audio_capture_pdm_afe_emit(s_pdm_afe_fetch_buffer, sample_count);
+        }
+    }
+}
+
+static esp_err_t audio_capture_pdm_afe_init(void)
+{
+    afe_config_t *config = afe_config_init("M", NULL, AFE_TYPE_VC, AFE_MODE_HIGH_PERF);
+    if (config == NULL) {
+        ESP_LOGE(TAG, "PDM AFE config allocation failed");
+        return ESP_ERR_NO_MEM;
+    }
+
+    /* The PDM board has one microphone and no playback reference. Keep this
+     * pipeline continuous: NS operates on every captured frame, while
+     * VAD and wake-word paths remain disabled so they cannot suppress speech
+     * at the start of a user-controlled recording. */
+    config->aec_init = false;
+    config->se_init = false;
+    config->ns_init = true;
+    config->ns_model_name = NULL;
+    config->afe_ns_mode = AFE_NS_MODE_WEBRTC;
+    config->vad_init = false;
+    config->wakenet_init = false;
+    /* Keep hardware WebRTC noise suppression, but leave streaming gain control
+     * to Type so the microphone path is not compressed twice. */
+    config->agc_init = false;
+    config->agc_mode = AFE_AGC_MODE_WEBRTC;
+    config->agc_compression_gain_db = 9;
+    config->agc_target_level_dbfs = 3;
+    config->afe_ringbuf_size = AUDIO_CAPTURE_PDM_AFE_RINGBUF_FRAMES;
+    config->memory_alloc_mode = AFE_MEMORY_ALLOC_MORE_PSRAM;
+    /* The verified PDM path remains about 12 dB below the known-good source
+     * after NS. Restore that headroom before Type owns the streaming AGC. */
+    config->afe_linear_gain = 4.0f;
+    config->fixed_first_channel = true;
+    config->fixed_output_channel = true;
+    config = afe_config_check(config);
+    if (config == NULL) {
+        ESP_LOGE(TAG, "PDM AFE config rejected");
+        return ESP_FAIL;
+    }
+
+    const float linear_gain = config->afe_linear_gain;
+    s_pdm_afe_handle = esp_afe_handle_from_config(config);
+    if (s_pdm_afe_handle == NULL) {
+        ESP_LOGE(TAG, "PDM AFE handle unavailable");
+        afe_config_free(config);
+        return ESP_FAIL;
+    }
+
+    s_pdm_afe_data = s_pdm_afe_handle->create_from_config(config);
+    afe_config_free(config);
+    if (s_pdm_afe_data == NULL) {
+        ESP_LOGE(TAG, "PDM AFE instance creation failed");
+        s_pdm_afe_handle = NULL;
+        return ESP_FAIL;
+    }
+
+    int feed_samples = s_pdm_afe_handle->get_feed_chunksize(s_pdm_afe_data);
+    int fetch_samples = s_pdm_afe_handle->get_fetch_chunksize(s_pdm_afe_data);
+    if (feed_samples <= 0 || fetch_samples <= 0) {
+        ESP_LOGE(TAG, "PDM AFE invalid frame geometry: feed=%d fetch=%d", feed_samples, fetch_samples);
+        s_pdm_afe_handle->destroy(s_pdm_afe_data);
+        s_pdm_afe_data = NULL;
+        s_pdm_afe_handle = NULL;
+        return ESP_FAIL;
+    }
+
+    s_pdm_afe_feed_buffer = calloc((size_t)feed_samples, sizeof(*s_pdm_afe_feed_buffer));
+    s_pdm_afe_fetch_buffer = calloc((size_t)fetch_samples, sizeof(*s_pdm_afe_fetch_buffer));
+    if (s_pdm_afe_feed_buffer == NULL || s_pdm_afe_fetch_buffer == NULL) {
+        ESP_LOGE(TAG, "PDM AFE buffer allocation failed: feed=%d fetch=%d", feed_samples, fetch_samples);
+        free(s_pdm_afe_feed_buffer);
+        free(s_pdm_afe_fetch_buffer);
+        s_pdm_afe_feed_buffer = NULL;
+        s_pdm_afe_fetch_buffer = NULL;
+        s_pdm_afe_handle->destroy(s_pdm_afe_data);
+        s_pdm_afe_data = NULL;
+        s_pdm_afe_handle = NULL;
+        return ESP_ERR_NO_MEM;
+    }
+
+    s_pdm_afe_feed_samples = (size_t)feed_samples;
+    s_pdm_afe_fetch_samples = (size_t)fetch_samples;
+    BaseType_t task_ok = xTaskCreatePinnedToCore(
+        audio_capture_pdm_afe_fetch_task,
+        "audio_afe_fetch",
+        AUDIO_CAPTURE_TASK_STACK_BYTES,
+        NULL,
+        /* Match I2S capture priority on the other core so every feed block is
+         * consumed before the AFE ring can overwrite audio. */
+        AUDIO_CAPTURE_AFE_FETCH_TASK_PRIORITY,
+        &s_pdm_afe_fetch_task_handle,
+        AUDIO_CAPTURE_AFE_FETCH_TASK_CORE);
+    if (task_ok != pdPASS) {
+        ESP_LOGE(TAG, "PDM AFE fetch task creation failed");
+        return ESP_ERR_NO_MEM;
+    }
+
+    s_pdm_afe_handle->print_pipeline(s_pdm_afe_data);
+    ESP_LOGI(
+        TAG,
+        "PDM AFE ready: pipeline=continuous-webrtc-ns linear_gain=%.1f feed_samples=%d fetch_samples=%d ringbuf_frames=%u fetch_wait_ms=%u feed_core=%d feed_prio=5 fetch_core=%d fetch_prio=%u",
+        (double)linear_gain,
+        feed_samples,
+        fetch_samples,
+        (unsigned)AUDIO_CAPTURE_PDM_AFE_RINGBUF_FRAMES,
+        (unsigned)AUDIO_CAPTURE_PDM_AFE_FETCH_WAIT_MS,
+        AUDIO_CAPTURE_TASK_CORE,
+        AUDIO_CAPTURE_AFE_FETCH_TASK_CORE,
+        (unsigned)AUDIO_CAPTURE_AFE_FETCH_TASK_PRIORITY);
+    return ESP_OK;
+}
+
+static void audio_capture_pdm_afe_apply_session_boundary_if_requested(void)
+{
+    if (!s_pdm_afe_session_boundary_requested) {
+        return;
+    }
+
+    s_pdm_afe_feed_filled = 0;
+    s_pdm_afe_emit_filled = 0;
+    s_pdm_afe_input_frames = 0;
+    s_pdm_afe_output_frames = 0;
+    s_pdm_afe_session_output_peak = 0;
+    s_pdm_afe_session_output_abs_sum = 0;
+    s_pdm_afe_session_output_samples = 0;
+    s_pdm_afe_session_boundary_requested = false;
+    ESP_LOGI(TAG, "PDM AFE session boundary: preserving trained NS/AGC state");
+}
+
+static void audio_capture_pdm_afe_process(const int16_t *frame_buffer)
+{
+    audio_capture_pdm_afe_apply_session_boundary_if_requested();
+
+    if (s_pdm_afe_stop_drain_requested) {
+        /* The capture task has observed the stop edge. It must not feed post-stop
+         * input, while the fetch task drains enhanced output already in the AFE. */
+        s_pdm_afe_stop_drain_feed_cutoff_ack = true;
+        return;
+    }
+
+    size_t remaining = AUDIO_CAPTURE_FRAME_SAMPLES;
+    const int16_t *cursor = frame_buffer;
+    while (remaining > 0) {
+        size_t capacity = s_pdm_afe_feed_samples - s_pdm_afe_feed_filled;
+        size_t copied = remaining < capacity ? remaining : capacity;
+        memcpy(
+            s_pdm_afe_feed_buffer + s_pdm_afe_feed_filled,
+            cursor,
+            copied * sizeof(*cursor));
+        s_pdm_afe_feed_filled += copied;
+        cursor += copied;
+        remaining -= copied;
+
+        if (s_pdm_afe_feed_filled == s_pdm_afe_feed_samples) {
+            int ret = s_pdm_afe_handle->feed(s_pdm_afe_data, s_pdm_afe_feed_buffer);
+            if (ret < 0) {
+                ESP_LOGW(TAG, "PDM AFE feed failed: ret=%d", ret);
+            }
+            s_pdm_afe_feed_filled = 0;
+            s_pdm_afe_input_frames++;
+            audio_capture_log_pdm_afe_level(
+                "input",
+                s_pdm_afe_input_frames,
+                s_pdm_afe_feed_buffer,
+                s_pdm_afe_feed_samples);
+        }
+    }
+}
+#endif
+
 static void audio_capture_task(void *arg)
 {
+#if CONFIG_AUDIO_CAPTURE_PDM_STEREO_SLOT_CAPTURE
+    int16_t interleaved_frame_buffer[AUDIO_CAPTURE_FRAME_SAMPLES * 2U];
+#endif
     int16_t frame_buffer[AUDIO_CAPTURE_FRAME_SAMPLES];
     (void)watchdog_platform_subscribe_current_task("audio_capture_task");
 
@@ -990,13 +1482,32 @@ static void audio_capture_task(void *arg)
 
         audio_capture_note_transport_backpressure();
         size_t bytes_read = 0;
+#if CONFIG_AUDIO_CAPTURE_PDM_STEREO_SLOT_CAPTURE
+        esp_err_t ret = i2s_channel_read(
+            s_i2s_rx_handle, interleaved_frame_buffer, sizeof(interleaved_frame_buffer),
+            &bytes_read, portMAX_DELAY);
+#else
         esp_err_t ret = i2s_channel_read(
             s_i2s_rx_handle, frame_buffer, sizeof(frame_buffer),
             &bytes_read, portMAX_DELAY);
-        if (ret == ESP_OK && bytes_read == sizeof(frame_buffer)) {
+#endif
+        if (ret == ESP_OK && bytes_read == sizeof(
+#if CONFIG_AUDIO_CAPTURE_PDM_STEREO_SLOT_CAPTURE
+                interleaved_frame_buffer
+#else
+                frame_buffer
+#endif
+            )) {
             audio_capture_note_transport_backpressure();
+#if CONFIG_AUDIO_CAPTURE_PDM_STEREO_SLOT_CAPTURE
+            audio_capture_select_pdm_slot(interleaved_frame_buffer, frame_buffer);
+#endif
             audio_capture_apply_pdm_software_gain(frame_buffer);
+#if CONFIG_AUDIO_CAPTURE_PDM_AFE_WEBRTC
+            audio_capture_pdm_afe_process(frame_buffer);
+#else
             audio_capture_process_frame(frame_buffer);
+#endif
             continue;
         }
 
@@ -1022,15 +1533,26 @@ static esp_err_t audio_capture_i2s_init(void)
 
     i2s_pdm_rx_config_t pdm_cfg = {
         .clk_cfg = I2S_PDM_RX_CLK_DEFAULT_CONFIG(AUDIO_CAPTURE_SAMPLE_RATE_HZ),
+#if CONFIG_AUDIO_CAPTURE_PDM_STEREO_SLOT_CAPTURE
+        .slot_cfg = I2S_PDM_RX_SLOT_PCM_FMT_DEFAULT_CONFIG(I2S_DATA_BIT_WIDTH_16BIT, I2S_SLOT_MODE_STEREO),
+#else
         .slot_cfg = I2S_PDM_RX_SLOT_PCM_FMT_DEFAULT_CONFIG(I2S_DATA_BIT_WIDTH_16BIT, I2S_SLOT_MODE_MONO),
+#endif
         .gpio_cfg = {
             .clk = BOARD_PINS_MIC_CLK_IO,
             .din = BOARD_PINS_MIC_DOUT_IO,
             .invert_flags = {
-                .clk_inv = false,
+                .clk_inv = AUDIO_CAPTURE_SPH0655_CLK_INVERT_ENABLED,
             },
         },
     };
+    /* SPH0655 requires a PDM clock of at least 1.1 MHz. The IDF default 8S
+     * setting would generate 1.024 MHz at 16 kHz PCM, below that range.
+     * 16S keeps the 16 kHz output contract while driving the mic at 2.048 MHz. */
+    pdm_cfg.clk_cfg.dn_sample_mode = I2S_PDM_DSR_16S;
+#if CONFIG_AUDIO_CAPTURE_PDM_STEREO_SLOT_CAPTURE
+    pdm_cfg.slot_cfg.slot_mask = I2S_PDM_SLOT_BOTH;
+#endif
 #if defined(SOC_I2S_SUPPORTS_PDM_RX_HP_FILTER) && SOC_I2S_SUPPORTS_PDM_RX_HP_FILTER
     pdm_cfg.slot_cfg.hp_en = true;
     pdm_cfg.slot_cfg.hp_cut_off_freq_hz = 35.5f;
@@ -1041,8 +1563,15 @@ static esp_err_t audio_capture_i2s_init(void)
     ESP_RETURN_ON_ERROR(i2s_channel_enable(s_i2s_rx_handle), TAG, "enable pdm rx failed");
     ESP_LOGI(
         TAG,
-        "SPH0655 PDM mic init: %uHz 16-bit mono clk=%d din=%d hp_filter=%u hw_amplify=%u sw_gain=%u",
+        "SPH0655 V2.2 PDM contract: select=GND data_edge=falling active_slot=%s clk_invert=%u pcm=%uHz pdm_clk=%uHz dsr=16S clk=%d din=%d hp_filter=%u hw_amplify=%u sw_gain=%u",
+ #if CONFIG_AUDIO_CAPTURE_PDM_STEREO_SLOT_CAPTURE
+        s_pdm_active_slot == 0 ? "left" : "right",
+ #else
+        "standard-mono",
+ #endif
+        (unsigned)AUDIO_CAPTURE_SPH0655_CLK_INVERT_ENABLED,
         AUDIO_CAPTURE_SAMPLE_RATE_HZ,
+        AUDIO_CAPTURE_SAMPLE_RATE_HZ * 128U,
         (int)BOARD_PINS_MIC_CLK_IO,
         (int)BOARD_PINS_MIC_DOUT_IO,
 #if defined(SOC_I2S_SUPPORTS_PDM_RX_HP_FILTER) && SOC_I2S_SUPPORTS_PDM_RX_HP_FILTER
@@ -1113,13 +1642,28 @@ esp_err_t audio_capture_start(void)
     }
 
     s_started = true;
-    BaseType_t task_ok = xTaskCreate(
+
+#if defined(CONFIG_AUDIO_CAPTURE_MIC_SPH0655_PDM) && CONFIG_AUDIO_CAPTURE_PDM_AFE_WEBRTC
+    err = audio_capture_pdm_afe_init();
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "PDM AFE init fail: %s", esp_err_to_name(err));
+        diag_log(DIAG_SRC_AUDIO, DIAG_AUDIO_INIT_FAIL, DIAG_SEV_ERROR, 9, err, 0, 0);
+        i2s_channel_disable(s_i2s_rx_handle);
+        vSemaphoreDelete(s_state_mutex);
+        s_state_mutex = NULL;
+        s_started = false;
+        return err;
+    }
+#endif
+
+    BaseType_t task_ok = xTaskCreatePinnedToCore(
         audio_capture_task,
         "audio_capture_task",
         AUDIO_CAPTURE_TASK_STACK_BYTES,
         NULL,
         5,
-        &s_capture_task_handle);
+        &s_capture_task_handle,
+        AUDIO_CAPTURE_TASK_CORE);
     if (task_ok != pdPASS) {
         ESP_LOGE(TAG, "task create fail");
         i2s_channel_disable(s_i2s_rx_handle);

@@ -37,6 +37,7 @@ typedef struct {
     bool plugged_low_power_enabled;
     uint32_t plugged_auto_shutdown_ms;
     uint32_t battery_auto_shutdown_ms;
+    uint32_t settings_revision;
     bool ec11_fast_recording_enabled;
     char ble_name[DEVICE_SETTINGS_BLE_NAME_MAX_LEN + 1];
     bool ble_name_pending_restart;
@@ -54,6 +55,7 @@ bool device_settings_get_plugged_low_power_enabled(void);
 uint32_t device_settings_get_active_auto_shutdown_ms(bool external_power_present);
 uint32_t device_settings_get_plugged_auto_shutdown_ms(void);
 uint32_t device_settings_get_battery_auto_shutdown_ms(void);
+uint32_t device_settings_get_revision(void);
 bool device_settings_get_ec11_fast_recording_enabled(void);
 const char *device_settings_get_ble_name(void);
 bool device_settings_ble_name_pending_restart(void);

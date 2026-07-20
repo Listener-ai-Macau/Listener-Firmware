@@ -102,6 +102,14 @@ static void ble_hid_gap_log_conn_desc(const char *context, uint16_t conn_handle)
 #define BLE_HID_GAP_ACTIVE_ITVL_MAX 6U
 #define BLE_HID_GAP_ACTIVE_LATENCY 0U
 #define BLE_HID_GAP_ACTIVE_SUPERVISION_TIMEOUT 800U
+/* LE connection-event lengths use 0.625 ms units. A 7.5 ms active interval
+ * must leave one full event for consecutive 2M audio PDUs; zero lets the
+ * central choose a short event and turns 500-byte ATT notifications into a
+ * sustained producer-over-consumer backlog. */
+#define BLE_HID_GAP_ACTIVE_MIN_CE_LEN 8U
+#define BLE_HID_GAP_ACTIVE_MAX_CE_LEN 12U
+#define BLE_HID_GAP_AUDIO_DATA_LEN_OCTETS 251U
+#define BLE_HID_GAP_AUDIO_DATA_LEN_TIME_US 2120U
 #define BLE_HID_GAP_LOW_POWER_ITVL_MIN 80U
 #define BLE_HID_GAP_LOW_POWER_ITVL_MAX 120U
 #define BLE_HID_GAP_LOW_POWER_LATENCY 9U
@@ -161,6 +169,12 @@ static TickType_t s_conn_param_retry_not_before_tick = 0;
 static TickType_t s_conn_param_request_pending_until_tick = 0;
 static bool s_active_connection_request_pending = false;
 static bool s_active_connection_required = false;
+static bool s_audio_data_length_request_pending = false;
+static bool s_audio_data_length_ready = false;
+static uint16_t s_audio_data_length_max_tx_octets = 0;
+static uint16_t s_audio_data_length_max_rx_octets = 0;
+static uint8_t s_audio_tx_phy = 0;
+static uint8_t s_audio_rx_phy = 0;
 static bool s_ec11_fast_recording_armed = false;
 static bool s_ota_reconnect_request_pending = false;
 static struct ble_gap_event_listener s_ble_hid_gap_event_listener;
@@ -321,6 +335,7 @@ typedef enum {
 static esp_err_t ble_hid_gap_schedule_active_connection_with_delay(
     uint32_t delay_ms,
     const char *reason);
+static esp_err_t ble_hid_gap_request_audio_data_length(const char *policy);
 
 static bool ble_hid_gap_conn_desc_matches_params(
     uint16_t conn_handle,
@@ -447,6 +462,12 @@ static void ble_hid_gap_clear_conn_param_mode(const char *reason)
 typedef struct {
     bool connected;
     bool secure_connected;
+    bool audio_data_length_request_pending;
+    bool audio_data_length_ready;
+    uint16_t audio_data_length_max_tx_octets;
+    uint16_t audio_data_length_max_rx_octets;
+    uint8_t audio_tx_phy;
+    uint8_t audio_rx_phy;
     uint16_t conn_handle;
 } ble_hid_gap_connection_snapshot_t;
 
@@ -456,6 +477,12 @@ static ble_hid_gap_connection_snapshot_t ble_hid_gap_connection_snapshot(void)
     ble_hid_gap_connection_snapshot_t snapshot = {
         .connected = s_ble_gap_connected,
         .secure_connected = s_ble_gap_secure_connected,
+        .audio_data_length_request_pending = s_audio_data_length_request_pending,
+        .audio_data_length_ready = s_audio_data_length_ready,
+        .audio_data_length_max_tx_octets = s_audio_data_length_max_tx_octets,
+        .audio_data_length_max_rx_octets = s_audio_data_length_max_rx_octets,
+        .audio_tx_phy = s_audio_tx_phy,
+        .audio_rx_phy = s_audio_rx_phy,
         .conn_handle = s_ble_gap_conn_handle,
     };
     portEXIT_CRITICAL(&s_ble_gap_state_lock);
@@ -480,7 +507,7 @@ void ble_hid_gap_print_status(void)
     }
 
     printf(
-        "~BLE:STATUS connected=%u secure=%u conn_handle=%u descriptor_valid=%u descriptor_rc=%d interval_units=%u interval_ms_x100=%u latency=%u supervision_timeout_units=%u supervision_timeout_ms=%u active_required=%u active_applied=%u e11r=%u last_conn_param_mode=%u\n",
+        "~BLE:STATUS connected=%u secure=%u conn_handle=%u descriptor_valid=%u descriptor_rc=%d interval_units=%u interval_ms_x100=%u latency=%u supervision_timeout_units=%u supervision_timeout_ms=%u active_required=%u active_applied=%u e11r=%u lossless_rice=%u lossless_rice_version=%u dle_pending=%u dle_ready=%u dle_tx_octets=%u dle_rx_octets=%u phy_tx=%u phy_rx=%u active_ce_min=%u active_ce_max=%u last_conn_param_mode=%u\n",
         conn.connected ? 1U : 0U,
         conn.secure_connected ? 1U : 0U,
         (unsigned)conn.conn_handle,
@@ -494,7 +521,30 @@ void ble_hid_gap_print_status(void)
         ble_hid_gap_active_connection_required() ? 1U : 0U,
         active_applied ? 1U : 0U,
         ble_hid_gap_ec11_fast_recording_armed() ? 1U : 0U,
+        ble_audio_stream_is_type_lossless_rice_enabled() ? 1U : 0U,
+        (unsigned)ble_audio_stream_get_type_lossless_rice_version(),
+        conn.audio_data_length_request_pending ? 1U : 0U,
+        conn.audio_data_length_ready ? 1U : 0U,
+        (unsigned)conn.audio_data_length_max_tx_octets,
+        (unsigned)conn.audio_data_length_max_rx_octets,
+        (unsigned)conn.audio_tx_phy,
+        (unsigned)conn.audio_rx_phy,
+        (unsigned)BLE_HID_GAP_ACTIVE_MIN_CE_LEN,
+        (unsigned)BLE_HID_GAP_ACTIVE_MAX_CE_LEN,
         (unsigned)ble_hid_gap_last_conn_param_mode());
+}
+
+uint16_t ble_hid_gap_get_audio_notification_value_max_bytes(void)
+{
+    const ble_hid_gap_connection_snapshot_t conn = ble_hid_gap_connection_snapshot();
+    /* A link-layer data PDU contains its four-byte L2CAP header plus the
+     * three-byte ATT notification opcode/attribute header before the value. */
+    const uint16_t att_value_overhead = 7U;
+    if (!conn.audio_data_length_ready ||
+        conn.audio_data_length_max_tx_octets <= att_value_overhead) {
+        return 0;
+    }
+    return (uint16_t)(conn.audio_data_length_max_tx_octets - att_value_overhead);
 }
 
 static void ble_hid_gap_set_connection_state(bool connected, uint16_t conn_handle)
@@ -508,6 +558,12 @@ static void ble_hid_gap_set_connection_state(bool connected, uint16_t conn_handl
     s_last_conn_param_mode = 0;
     s_conn_param_retry_not_before_tick = 0;
     s_conn_param_request_pending_until_tick = 0;
+    s_audio_data_length_request_pending = false;
+    s_audio_data_length_ready = false;
+    s_audio_data_length_max_tx_octets = 0;
+    s_audio_data_length_max_rx_octets = 0;
+    s_audio_tx_phy = 0;
+    s_audio_rx_phy = 0;
     if (!connected) {
         s_active_connection_required = false;
     }
@@ -677,7 +733,7 @@ static void ble_hid_gap_log_adv_state(
 #define BLE_HID_GAP_SERVICE_CHANGED_NVS_NAMESPACE "ble_gap"
 #define BLE_HID_GAP_SERVICE_CHANGED_STATE_KEY "svcchg_fw"
 #define BLE_HID_GAP_RANDOM_IDENTITY_KEY "rnd_id"
-#define BLE_HID_GAP_GATT_SCHEMA_REV "denzic_ota_v1_uuid1"
+#define BLE_HID_GAP_GATT_SCHEMA_REV "denzic_ota_v5_ota_legacy_handle_compat"
 #define BLE_HID_GAP_SERVICE_CHANGED_START_HANDLE 0x0001
 #define BLE_HID_GAP_SERVICE_CHANGED_END_HANDLE 0xffff
 #define BLE_HID_GAP_RECOVERY_PAIRING_WINDOW_MS 120000LL
@@ -1383,6 +1439,22 @@ bool ble_hid_gap_note_type_audio_ready(const char *reason)
             ble_hid_gap_note_secure_connection(
                 s_ble_gap_conn_handle,
                 "type audio ready existing secure connection");
+            if (strcmp(ready_reason, "TYPE:READY") == 0) {
+                esp_err_t active_ret = ble_hid_gap_request_active_connection();
+                if (active_ret != ESP_OK) {
+                    ESP_LOGW(
+                        TAG,
+                             "type audio ready could not restore active audio link: %s",
+                             esp_err_to_name(active_ret));
+                }
+            }
+            if (ble_hid_gap_active_connection_applied()) {
+                ble_hid_gap_connection_snapshot_t current =
+                    ble_hid_gap_connection_snapshot();
+                if (!current.audio_data_length_ready) {
+                    (void)ble_hid_gap_request_audio_data_length("type audio ready");
+                }
+            }
             ble_hid_gap_platform_device_control_mark_type_ready();
             return true;
         }
@@ -1811,13 +1883,14 @@ static esp_err_t ble_hid_gap_request_connection_params(
         ble_hid_gap_clear_conn_param_mode("connection parameters superseded by link state");
     }
 
+    const bool active_audio = mode == BLE_HID_CONN_PARAM_MODE_ACTIVE;
     struct ble_gap_upd_params params = {
         .itvl_min = itvl_min,
         .itvl_max = itvl_max,
         .latency = latency,
         .supervision_timeout = supervision_timeout,
-        .min_ce_len = 0,
-        .max_ce_len = 0,
+        .min_ce_len = active_audio ? BLE_HID_GAP_ACTIVE_MIN_CE_LEN : 0,
+        .max_ce_len = active_audio ? BLE_HID_GAP_ACTIVE_MAX_CE_LEN : 0,
     };
     int rc = ble_gap_update_params(conn.conn_handle, &params);
     if (rc == 0 || rc == BLE_HS_EALREADY) {
@@ -1835,13 +1908,15 @@ static esp_err_t ble_hid_gap_request_connection_params(
 
     ESP_LOGI(
         TAG,
-        "%s connection parameter update requested: conn=%u preferred_itvl=%u-%u latency=%u timeout=%u mode=%u rc=%d",
+        "%s connection parameter update requested: conn=%u preferred_itvl=%u-%u latency=%u timeout=%u ce_len=%u-%u mode=%u rc=%d",
         policy,
         conn.conn_handle,
         itvl_min,
         itvl_max,
         latency,
         supervision_timeout,
+        params.min_ce_len,
+        params.max_ce_len,
         (unsigned)mode,
         rc);
     diag_log(
@@ -1895,6 +1970,94 @@ static esp_err_t ble_hid_gap_request_preferred_2m_phy(const char *policy)
         tx_phys_mask,
         rx_phys_mask,
         conn.conn_handle);
+    return accepted ? ESP_OK : ESP_FAIL;
+}
+
+static void ble_hid_gap_reconnect_after_service_changed(uint16_t conn_handle)
+{
+    if (conn_handle == BLE_HS_CONN_HANDLE_NONE) {
+        return;
+    }
+
+    const int rc = ble_gap_terminate(conn_handle, BLE_ERR_REM_USER_CONN_TERM);
+    if (rc == 0 || rc == BLE_HS_EALREADY || rc == BLE_HS_ENOTCONN) {
+        ESP_LOGI(
+            TAG,
+            "service changed confirmed; terminating conn=%u so the bonded host reconnects with a fresh GATT database rc=%d",
+            conn_handle,
+            rc);
+        return;
+    }
+
+    ESP_LOGW(
+        TAG,
+        "service changed confirmed but reconnect termination failed: conn=%u rc=%d",
+        conn_handle,
+        rc);
+}
+
+static esp_err_t ble_hid_gap_request_audio_data_length(const char *policy)
+{
+    ble_hid_gap_connection_snapshot_t conn =
+        ble_hid_gap_reconcile_connection_snapshot(policy != NULL ? policy : "audio_data_length");
+    if (!conn.connected || conn.conn_handle == BLE_HS_CONN_HANDLE_NONE) {
+        return ESP_ERR_INVALID_STATE;
+    }
+
+    portENTER_CRITICAL(&s_ble_gap_state_lock);
+    bool ready = s_audio_data_length_ready;
+    bool pending = s_audio_data_length_request_pending;
+    if (!ready) {
+        s_audio_data_length_request_pending = true;
+    }
+    portEXIT_CRITICAL(&s_ble_gap_state_lock);
+    if (ready) {
+        ESP_LOGD(
+            TAG,
+            "%s data length already ready: conn=%u",
+            policy,
+            conn.conn_handle);
+        return ESP_OK;
+    }
+    if (pending) {
+        ESP_LOGW(
+            TAG,
+            "%s retrying data length update that has not completed: conn=%u",
+            policy,
+            conn.conn_handle);
+    }
+
+    int rc = ble_gap_set_data_len(
+        conn.conn_handle,
+        BLE_HID_GAP_AUDIO_DATA_LEN_OCTETS,
+        BLE_HID_GAP_AUDIO_DATA_LEN_TIME_US);
+    const bool accepted = rc == 0 || rc == BLE_HS_EALREADY;
+    if (!accepted) {
+        portENTER_CRITICAL(&s_ble_gap_state_lock);
+        if (s_ble_gap_connected && s_ble_gap_conn_handle == conn.conn_handle) {
+            s_audio_data_length_request_pending = false;
+        }
+        portEXIT_CRITICAL(&s_ble_gap_state_lock);
+    }
+    if (accepted) {
+        ESP_LOGI(
+            TAG,
+            "%s data length update requested: conn=%u tx_octets=%u tx_time_us=%u rc=%d",
+            policy,
+            conn.conn_handle,
+            BLE_HID_GAP_AUDIO_DATA_LEN_OCTETS,
+            BLE_HID_GAP_AUDIO_DATA_LEN_TIME_US,
+            rc);
+    } else {
+        ESP_LOGW(
+            TAG,
+            "%s data length update request failed: conn=%u tx_octets=%u tx_time_us=%u rc=%d",
+            policy,
+            conn.conn_handle,
+            BLE_HID_GAP_AUDIO_DATA_LEN_OCTETS,
+            BLE_HID_GAP_AUDIO_DATA_LEN_TIME_US,
+            rc);
+    }
     return accepted ? ESP_OK : ESP_FAIL;
 }
 
@@ -2554,6 +2717,16 @@ nimble_hid_gap_event(struct ble_gap_event *event, void *arg)
                  event->phy_updated.tx_phy,
                  event->phy_updated.rx_phy,
                  event->phy_updated.conn_handle);
+        if (event->phy_updated.status == 0) {
+            portENTER_CRITICAL(&s_ble_gap_state_lock);
+            if (s_ble_gap_connected &&
+                s_ble_gap_conn_handle == event->phy_updated.conn_handle) {
+                s_audio_tx_phy = event->phy_updated.tx_phy;
+                s_audio_rx_phy = event->phy_updated.rx_phy;
+            }
+            portEXIT_CRITICAL(&s_ble_gap_state_lock);
+            (void)ble_hid_gap_request_audio_data_length("after 2M PHY");
+        }
         return 0;
 
     case BLE_GAP_EVENT_ADV_COMPLETE:
@@ -2648,6 +2821,47 @@ nimble_hid_gap_event(struct ble_gap_event *event, void *arg)
         ble_diag_log_on_gap_mtu(event->mtu.conn_handle, event->mtu.value);
         ble_hid_gap_request_recovery_security_once(event->mtu.conn_handle, "mtu");
         return 0;
+
+    case BLE_GAP_EVENT_DATA_LEN_CHG:
+    {
+        const uint16_t reported_conn_handle = event->data_len_chg.conn_handle;
+        uint16_t applied_conn_handle = reported_conn_handle;
+        bool attributed_missing_handle = false;
+
+        portENTER_CRITICAL(&s_ble_gap_state_lock);
+        if (s_ble_gap_connected &&
+            (s_ble_gap_conn_handle == reported_conn_handle ||
+             (reported_conn_handle == 0 && s_ble_gap_conn_handle != 0))) {
+            /* ESP-IDF's NimBLE data-length event currently omits its source
+             * handle. Listener has one peripheral link, so attribute zero to
+             * the sole active nonzero handle instead of leaving DLE pending. */
+            applied_conn_handle = s_ble_gap_conn_handle;
+            attributed_missing_handle =
+                reported_conn_handle != applied_conn_handle;
+            s_audio_data_length_request_pending = false;
+            s_audio_data_length_ready =
+                event->data_len_chg.max_tx_octets >= BLE_HID_GAP_AUDIO_DATA_LEN_OCTETS;
+            s_audio_data_length_max_tx_octets = event->data_len_chg.max_tx_octets;
+            s_audio_data_length_max_rx_octets = event->data_len_chg.max_rx_octets;
+        }
+        portEXIT_CRITICAL(&s_ble_gap_state_lock);
+        if (attributed_missing_handle) {
+            ESP_LOGW(
+                TAG,
+                "data length event missing connection handle; attributed to sole active conn=%u",
+                applied_conn_handle);
+        }
+        ESP_LOGI(
+            TAG,
+            "data length update complete: reported_conn=%u applied_conn=%u tx_octets=%u tx_time_us=%u rx_octets=%u rx_time_us=%u",
+            reported_conn_handle,
+            applied_conn_handle,
+            event->data_len_chg.max_tx_octets,
+            event->data_len_chg.max_tx_time,
+            event->data_len_chg.max_rx_octets,
+            event->data_len_chg.max_rx_time);
+        return 0;
+    }
 
     case BLE_GAP_EVENT_ENC_CHANGE:
         /* Encryption has been enabled or disabled for this connection. */
@@ -2758,6 +2972,7 @@ nimble_hid_gap_event(struct ble_gap_event *event, void *arg)
                      event->notify_tx.status);
             if (event->notify_tx.status == 0) {
                 ble_hid_gap_mark_service_changed_confirmed();
+                ble_hid_gap_reconnect_after_service_changed(event->notify_tx.conn_handle);
             } else {
                 s_service_changed_queued_for_conn = false;
             }
@@ -4348,6 +4563,9 @@ static esp_err_t ble_hid_gap_request_active_connection_once(void)
         BLE_HID_CONN_PARAM_MODE_ACTIVE);
     if (params_ret == ESP_OK && ble_hid_gap_active_connection_applied()) {
         (void)ble_hid_gap_request_preferred_2m_phy("active audio");
+        /* DLE is independent of PHY completion; do not leave it pending when
+         * a post-OTA reconnect omits a redundant PHY-complete event. */
+        (void)ble_hid_gap_request_audio_data_length("active audio");
     }
     return params_ret;
 }

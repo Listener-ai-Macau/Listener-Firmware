@@ -37,6 +37,7 @@ extern void ble_hid_gap_set_ec11_fast_recording_enabled(
 #define DEVICE_SETTINGS_NVS_BLE_NAME_KEY "ble_name"
 #define DEVICE_SETTINGS_NVS_KNOB_ROTATION_KEY "knob_rot"
 #define DEVICE_SETTINGS_NVS_EC11_FAST_RECORDING_KEY "ec11_rec"
+#define DEVICE_SETTINGS_NVS_REVISION_KEY "revision"
 #define DEVICE_SETTINGS_USB_PREFIX "DEVICE:"
 #define DEVICE_SETTINGS_COMMAND_BUFFER_BYTES 192
 #define DEVICE_SETTINGS_LOW_POWER_IDLE_DISABLED_MS 0U
@@ -45,6 +46,7 @@ extern void ble_hid_gap_set_ec11_fast_recording_enabled(
 #define DEVICE_SETTINGS_AUTO_SHUTDOWN_MIN_MS 60000U
 #define DEVICE_SETTINGS_AUTO_SHUTDOWN_MAX_MS 86400000U
 #define DEVICE_SETTINGS_AUTO_SHUTDOWN_DISABLED_MS 0U
+#define DEVICE_SETTINGS_INITIAL_REVISION 1U
 
 static const char *TAG = "device_settings";
 
@@ -61,6 +63,7 @@ typedef struct {
     bool plugged_low_power_enabled;
     uint32_t plugged_auto_shutdown_ms;
     uint32_t battery_auto_shutdown_ms;
+    uint32_t settings_revision;
     uint8_t knob_rotation_action;
     bool ec11_fast_recording_enabled;
     char ble_name[DEVICE_SETTINGS_BLE_NAME_MAX_LEN + 1];
@@ -97,6 +100,7 @@ static void device_settings_set_defaults_locked(void)
     s_settings.plugged_low_power_enabled = DEVICE_SETTINGS_DEFAULT_PLUGGED_LOW_POWER_ENABLED != 0;
     s_settings.plugged_auto_shutdown_ms = DEVICE_SETTINGS_DEFAULT_PLUGGED_AUTO_SHUTDOWN_MS;
     s_settings.battery_auto_shutdown_ms = (uint32_t)CONFIG_POWER_MANAGER_HARDWARE_SHUTDOWN_MS;
+    s_settings.settings_revision = DEVICE_SETTINGS_INITIAL_REVISION;
     s_settings.knob_rotation_action = (uint8_t)EC11_ROTATION_ACTION_SYSTEM_VOLUME;
     s_settings.ec11_fast_recording_enabled = DEVICE_SETTINGS_DEFAULT_EC11_FAST_RECORDING_ENABLED != 0;
     snprintf(s_settings.ble_name, sizeof(s_settings.ble_name), "%s", DEVICE_SETTINGS_DEFAULT_BLE_NAME);
@@ -328,6 +332,15 @@ static esp_err_t device_settings_load_locked(void)
     }
     device_settings_note_nvs_read_locked(get_ret, &missing_saved_key);
 
+    uint32_t settings_revision = s_settings.settings_revision;
+    get_ret = nvs_get_u32(nvs, DEVICE_SETTINGS_NVS_REVISION_KEY, &settings_revision);
+    if (get_ret == ESP_OK && settings_revision != 0U) {
+        s_settings.settings_revision = settings_revision;
+    } else if (get_ret == ESP_OK) {
+        missing_saved_key = true;
+    }
+    device_settings_note_nvs_read_locked(get_ret, &missing_saved_key);
+
     char name[DEVICE_SETTINGS_BLE_NAME_MAX_LEN + 1] = {0};
     size_t name_len = sizeof(name);
     get_ret = nvs_get_str(nvs, DEVICE_SETTINGS_NVS_BLE_NAME_KEY, name, &name_len);
@@ -441,6 +454,9 @@ static esp_err_t device_settings_persist_locked(bool loaded_from_nvs_after_persi
             s_settings.ec11_fast_recording_enabled ? 1U : 0U);
     }
     if (ret == ESP_OK) {
+        ret = nvs_set_u32(nvs, DEVICE_SETTINGS_NVS_REVISION_KEY, s_settings.settings_revision);
+    }
+    if (ret == ESP_OK) {
         ret = nvs_commit(nvs);
     }
     nvs_close(nvs);
@@ -549,6 +565,7 @@ void device_settings_get_snapshot(device_settings_snapshot_t *out_snapshot)
     out_snapshot->plugged_low_power_enabled = DEVICE_SETTINGS_DEFAULT_PLUGGED_LOW_POWER_ENABLED != 0;
     out_snapshot->plugged_auto_shutdown_ms = DEVICE_SETTINGS_DEFAULT_PLUGGED_AUTO_SHUTDOWN_MS;
     out_snapshot->battery_auto_shutdown_ms = (uint32_t)CONFIG_POWER_MANAGER_HARDWARE_SHUTDOWN_MS;
+    out_snapshot->settings_revision = DEVICE_SETTINGS_INITIAL_REVISION;
     out_snapshot->ec11_fast_recording_enabled = DEVICE_SETTINGS_DEFAULT_EC11_FAST_RECORDING_ENABLED != 0;
     snprintf(out_snapshot->ble_name, sizeof(out_snapshot->ble_name), "%s", DEVICE_SETTINGS_DEFAULT_BLE_NAME);
 
@@ -570,6 +587,7 @@ void device_settings_get_snapshot(device_settings_snapshot_t *out_snapshot)
             out_snapshot->plugged_low_power_enabled = s_settings.plugged_low_power_enabled;
             out_snapshot->plugged_auto_shutdown_ms = s_settings.plugged_auto_shutdown_ms;
             out_snapshot->battery_auto_shutdown_ms = s_settings.battery_auto_shutdown_ms;
+            out_snapshot->settings_revision = s_settings.settings_revision;
             out_snapshot->ec11_fast_recording_enabled = s_settings.ec11_fast_recording_enabled;
             snprintf(out_snapshot->ble_name, sizeof(out_snapshot->ble_name), "%s", s_settings.ble_name);
             out_snapshot->ble_name_pending_restart = s_ble_name_pending_restart;
@@ -645,6 +663,13 @@ uint32_t device_settings_get_battery_auto_shutdown_ms(void)
     return snapshot.battery_auto_shutdown_ms;
 }
 
+uint32_t device_settings_get_revision(void)
+{
+    device_settings_snapshot_t snapshot = {0};
+    device_settings_get_snapshot(&snapshot);
+    return snapshot.settings_revision;
+}
+
 const char *device_settings_get_ble_name(void)
 {
     if (!device_settings_ensure_mutex()) {
@@ -705,6 +730,9 @@ esp_err_t device_settings_set_brightness_profiles(uint8_t plugged_percent, uint8
         s_settings.key_led_brightness_percent = zone_brightness;
         s_settings.ec11_led_brightness_percent = zone_brightness;
         s_settings.edge_led_brightness_percent = zone_brightness;
+        s_settings.settings_revision = s_settings.settings_revision == UINT32_MAX
+            ? DEVICE_SETTINGS_INITIAL_REVISION
+            : s_settings.settings_revision + 1U;
         ret = device_settings_persist_locked(true);
         xSemaphoreGive(s_mutex);
     }
@@ -759,7 +787,7 @@ static void device_settings_print_status(const char *result)
         : snapshot.battery_auto_shutdown_ms;
 
     printf(
-        "~DEVICE:SETTINGS schema=listener.device_settings.v1 result=%s"
+        "~DEVICE:SETTINGS schema=listener.device_settings.v1 result=%s settings_revision=%" PRIu32
         " legacy_plugged_brightness=%u legacy_battery_brightness=%u active_power=%s neutral_legacy_brightness=%u"
         " led_status=%u led_key=%u led_ec11=%u led_edge=%u"
         " compact_set=1"
@@ -776,6 +804,7 @@ static void device_settings_print_status(const char *result)
         " usb_det_adc_valid=%u usb_det_adc_mv=%d usb_det_mismatch=%u"
         " valid_ranges=legacy_brightness_0_100_maps_to_led_zones,led_zone_brightness_0_100,low_power_idle_ms_%u_%u,plugged_low_power_idle_ms_%u_%u,battery_low_power_idle_ms_%u_%u,plugged_low_power_enabled_0_1,auto_shutdown_ms_0_off_or_%u_%u,plugged_auto_shutdown_ms_off_only,battery_auto_shutdown_ms_0_off_or_%u_%u,ble_name_ascii_1_%u,knob_rotation_system_volume_screen_brightness_disabled\n",
         result != NULL ? result : "OK",
+        snapshot.settings_revision,
         snapshot.plugged_brightness_percent,
         snapshot.battery_brightness_percent,
         external_power_present ? "external" : "battery",
@@ -1269,6 +1298,8 @@ static esp_err_t device_settings_apply_set_command(const char *arguments)
     esp_err_t ret = ESP_OK;
     bool ok = true;
     bool saw_token = false;
+    bool saw_setting = false;
+    bool expected_revision_seen = false;
     char error_key[48] = "SET";
     const char *error_reason = "invalid";
 
@@ -1294,6 +1325,20 @@ static esp_err_t device_settings_apply_set_command(const char *arguments)
             *equals = '\0';
             const char *key = token;
             const char *value = equals + 1;
+            if (strcmp(key, "rev") == 0) {
+                uint32_t expected_revision = 0;
+                if (expected_revision_seen ||
+                    !device_settings_parse_u32(value, &expected_revision) ||
+                    expected_revision != s_settings.settings_revision) {
+                    snprintf(error_key, sizeof(error_key), "rev");
+                    error_reason = "revision_mismatch";
+                    ok = false;
+                    break;
+                }
+                expected_revision_seen = true;
+                continue;
+            }
+            saw_setting = true;
             if (!device_settings_apply_key_value(
                     &next,
                     key,
@@ -1306,10 +1351,10 @@ static esp_err_t device_settings_apply_set_command(const char *arguments)
             }
         }
 
-        if (!saw_token) {
+        if (!saw_token || !saw_setting) {
             ok = false;
             snprintf(error_key, sizeof(error_key), "SET");
-            error_reason = "missing_arguments";
+            error_reason = saw_token ? "missing_setting" : "missing_arguments";
         }
 
         if (ok) {
@@ -1317,6 +1362,9 @@ static esp_err_t device_settings_apply_set_command(const char *arguments)
             next.plugged_brightness_percent = DEVICE_SETTINGS_DEFAULT_PLUGGED_BRIGHTNESS_PERCENT;
             next.battery_brightness_percent = DEVICE_SETTINGS_DEFAULT_BATTERY_BRIGHTNESS_PERCENT;
             s_settings = next;
+            s_settings.settings_revision = s_settings.settings_revision == UINT32_MAX
+                ? DEVICE_SETTINGS_INITIAL_REVISION
+                : s_settings.settings_revision + 1U;
             if (name_changed) {
                 s_ble_name_pending_restart = true;
             }
@@ -1370,8 +1418,12 @@ esp_err_t device_settings_consume_control_command(const char *line)
         esp_err_t ret = ESP_OK;
         if (xSemaphoreTake(s_mutex, portMAX_DELAY) == pdTRUE) {
             char old_name[DEVICE_SETTINGS_BLE_NAME_MAX_LEN + 1];
+            uint32_t previous_revision = s_settings.settings_revision;
             snprintf(old_name, sizeof(old_name), "%s", s_settings.ble_name);
             device_settings_set_defaults_locked();
+            s_settings.settings_revision = previous_revision == UINT32_MAX
+                ? DEVICE_SETTINGS_INITIAL_REVISION
+                : previous_revision + 1U;
             if (strcmp(old_name, s_settings.ble_name) != 0) {
                 s_ble_name_pending_restart = true;
             }
@@ -1392,7 +1444,7 @@ esp_err_t device_settings_consume_control_command(const char *line)
     }
 
     if (strcmp(command, "HELP") == 0 || strcmp(command, "?") == 0) {
-        printf("~DEVICE:HELP commands=SETTINGS,STATUS,SET,RESET keys=led_status,led_key,led_ec11,led_edge,low_power_idle_ms,low_power_idle_minutes,plugged_low_power_idle_ms,plugged_low_power_idle_minutes,battery_low_power_idle_ms,battery_low_power_idle_minutes,plugged_low_power_enabled,auto_shutdown_ms,auto_shutdown_minutes,battery_auto_shutdown_ms,battery_auto_shutdown_minutes,ble_name,knob_rotation,ec11_fast_recording compact_set=1 compact_keys=ls,lk,l11,le,plm,blm,ple,bam,e11r legacy_keys=plugged_brightness,battery_brightness\n");
+        printf("~DEVICE:HELP commands=SETTINGS,STATUS,SET,RESET keys=led_status,led_key,led_ec11,led_edge,low_power_idle_ms,low_power_idle_minutes,plugged_low_power_idle_ms,plugged_low_power_idle_minutes,battery_low_power_idle_ms,battery_low_power_idle_minutes,plugged_low_power_enabled,auto_shutdown_ms,auto_shutdown_minutes,battery_auto_shutdown_ms,battery_auto_shutdown_minutes,ble_name,knob_rotation,ec11_fast_recording rev=expected_settings_revision compact_set=1 compact_keys=ls,lk,l11,le,plm,blm,ple,bam,e11r legacy_keys=plugged_brightness,battery_brightness\n");
         fflush(stdout);
         return ESP_OK;
     }

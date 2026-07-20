@@ -22,3 +22,44 @@ config AUDIO_CAPTURE_V2_MIC_INTERFACE_VALIDATED
         Enable only for V2 hardware validation builds that must exercise the
         CLK/GPIO48 and DOUT/GPIO47 microphone path. When disabled, firmware
         reports a degraded audio path instead of pretending capture is ready.
+
+config AUDIO_CAPTURE_PDM_AFE_WEBRTC
+    bool "Use continuous WebRTC AFE for the V2 PDM microphone"
+    default y
+    depends on AUDIO_CAPTURE_MIC_SPH0655_PDM
+    help
+        Process the selected PDM microphone channel through ESP-SR's
+        continuous WebRTC noise suppression and automatic gain control before
+        BLE transmission. This has no voice-gated startup path: every captured
+        frame is processed so the preview and final transcript receive the
+        same audio stream.
+
+config AUDIO_CAPTURE_PDM_STEREO_SLOT_CAPTURE
+    bool "Read the SPH0655 PDM multiplexed slot"
+    default y
+    depends on AUDIO_CAPTURE_MIC_SPH0655_PDM
+    help
+        Listener V2.2 hardwires SPH0655 SELECT to VSS. Per the Knowles timing
+        contract, that microphone drives the falling-edge PDM slot. The
+        Listener V2.2 hardware capture validation maps that signal to the
+        ESP32-S3 driver's left PCM slot with clk_inv disabled. Mono mode does
+        not preserve an explicit channel selection, so keep this enabled.
+
+config AUDIO_CAPTURE_SPH0655_SLOT_RIGHT
+    bool "Use the right PDM slot for the SPH0655"
+    default n
+    depends on AUDIO_CAPTURE_PDM_STEREO_SLOT_CAPTURE
+    help
+        The SPH0655 SELECT strap is a board property, not a signal that may be
+        inferred from boot-time ambient noise. Listener V2.2 ties SELECT to
+        VSS and its physical capture validation selects the left PCM channel;
+        leave this disabled for that board. Enable only for a board whose
+        measured I2S mapping selects the right PCM channel.
+
+config AUDIO_CAPTURE_SPH0655_CLK_INVERT
+    bool "Invert the PDM clock for the SPH0655 timing strap"
+    default n
+    depends on AUDIO_CAPTURE_PDM_STEREO_SLOT_CAPTURE
+    help
+        Select the clock polarity validated against the SPH0655's SELECT strap.
+        This is a board-timing property and is never inferred from ambient audio.
