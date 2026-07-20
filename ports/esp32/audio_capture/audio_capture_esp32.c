@@ -64,7 +64,9 @@
 #define AUDIO_CAPTURE_STREAM_PROGRESS_LOG_PACKET_INTERVAL 64U
 #define AUDIO_CAPTURE_IDLE_POWER_SAVE_WAIT_MS 5000U
 #define AUDIO_CAPTURE_PDM_HW_AMPLIFY_NUM 8U
-#define AUDIO_CAPTURE_PDM_SOFTWARE_GAIN_NUM 8
+/* Keep the PDM waveform intact for Type's session AGC. A fixed pre-AFE boost
+ * clips ordinary physical-microphone peaks before the adaptive path can act. */
+#define AUDIO_CAPTURE_PDM_SOFTWARE_GAIN_NUM 1
 /* WebRTC AFE accepts 160-sample feed blocks but emits 512-sample output
  * blocks. Four feeds are therefore the minimum to form one fetch result;
  * six frames leave two feed blocks of scheduler headroom without introducing
@@ -160,11 +162,21 @@ static SemaphoreHandle_t s_state_mutex;
 static uint32_t s_session_id_counter;
 #ifdef CONFIG_AUDIO_CAPTURE_MIC_SPH0655_PDM
 #if CONFIG_AUDIO_CAPTURE_PDM_STEREO_SLOT_CAPTURE
+/* ESP-IDF returns the right PDM slot first in a stereo PCM buffer. Keep the
+ * physical SELECT strap separate from that buffer layout so SELECT=GND still
+ * means the left microphone slot rather than buffer element zero. */
 #if CONFIG_AUDIO_CAPTURE_SPH0655_SLOT_RIGHT
-static const int s_pdm_active_slot = 1;
+static const int s_pdm_selected_slot = 1;
+static const int s_pdm_active_buffer_index = 0;
 #else
-static const int s_pdm_active_slot = 0;
+static const int s_pdm_selected_slot = 0;
+static const int s_pdm_active_buffer_index = 1;
 #endif
+static uint32_t s_pdm_session_raw_slot_peak[2];
+static uint64_t s_pdm_session_raw_slot_abs_sum[2];
+static uint64_t s_pdm_session_raw_slot_samples;
+static uint64_t s_pdm_session_raw_slot_equal_samples;
+static uint64_t s_pdm_session_raw_slot_delta_abs_sum;
 #endif
 #if CONFIG_AUDIO_CAPTURE_PDM_AFE_WEBRTC
 static const esp_afe_sr_iface_t *s_pdm_afe_handle;
@@ -182,6 +194,9 @@ static volatile bool s_pdm_afe_stop_drain_feed_cutoff_ack;
 static volatile bool s_pdm_afe_stop_drain_complete;
 static uint32_t s_pdm_afe_input_frames;
 static uint32_t s_pdm_afe_output_frames;
+static uint32_t s_pdm_afe_session_input_peak;
+static uint64_t s_pdm_afe_session_input_abs_sum;
+static uint64_t s_pdm_afe_session_input_samples;
 static uint32_t s_pdm_afe_session_output_peak;
 static uint64_t s_pdm_afe_session_output_abs_sum;
 static uint64_t s_pdm_afe_session_output_samples;
@@ -473,13 +488,23 @@ esp_err_t audio_capture_session_begin(void)
     s_pdm_afe_stop_drain_complete = false;
     s_pdm_afe_stop_drain_output_frames = 0;
     s_pdm_afe_stop_drain_padding_samples = 0;
+    s_pdm_afe_session_input_peak = 0;
+    s_pdm_afe_session_input_abs_sum = 0;
+    s_pdm_afe_session_input_samples = 0;
+#if CONFIG_AUDIO_CAPTURE_PDM_STEREO_SLOT_CAPTURE
+    memset(s_pdm_session_raw_slot_peak, 0, sizeof(s_pdm_session_raw_slot_peak));
+    memset(s_pdm_session_raw_slot_abs_sum, 0, sizeof(s_pdm_session_raw_slot_abs_sum));
+    s_pdm_session_raw_slot_samples = 0;
+    s_pdm_session_raw_slot_equal_samples = 0;
+    s_pdm_session_raw_slot_delta_abs_sum = 0;
+#endif
 #endif
 #if CONFIG_AUDIO_CAPTURE_PDM_STEREO_SLOT_CAPTURE
     ESP_LOGI(
-        TAG,
-        "SPH0655 PDM session slot: session_id=%" PRIu32 " selected=%s",
-        session_id,
-        s_pdm_active_slot == 0 ? "left" : "right");
+            TAG,
+            "SPH0655 PDM session slot: session_id=%" PRIu32 " selected=%s",
+            session_id,
+            s_pdm_selected_slot == 0 ? "left" : "right");
 #else
     ESP_LOGI(TAG, "SPH0655 PDM session: session_id=%" PRIu32 " mode=standard-mono", session_id);
 #endif
@@ -1110,9 +1135,39 @@ static void audio_capture_apply_pdm_software_gain(int16_t *frame_buffer)
 static void audio_capture_select_pdm_slot(const int16_t *interleaved, int16_t *mono)
 {
     for (size_t i = 0; i < AUDIO_CAPTURE_FRAME_SAMPLES; i++) {
-        mono[i] = interleaved[(i * 2U) + (size_t)s_pdm_active_slot];
+        mono[i] = interleaved[(i * 2U) + (size_t)s_pdm_active_buffer_index];
     }
 }
+
+#if CONFIG_AUDIO_CAPTURE_PDM_AFE_WEBRTC
+static void audio_capture_note_pdm_session_raw_slots(
+    const int16_t *interleaved,
+    size_t samples_per_slot)
+{
+    if ((!s_export_state.requested && !s_export_state.active) || interleaved == NULL) {
+        return;
+    }
+
+    for (size_t index = 0; index < samples_per_slot; index++) {
+        int32_t left = interleaved[index * 2U];
+        int32_t right = interleaved[(index * 2U) + 1U];
+        int32_t delta = left - right;
+        if (delta == 0) {
+            s_pdm_session_raw_slot_equal_samples++;
+        }
+        s_pdm_session_raw_slot_delta_abs_sum += (uint32_t)(delta < 0 ? -delta : delta);
+        for (size_t slot = 0; slot < 2U; slot++) {
+            int32_t value = interleaved[(index * 2U) + slot];
+            uint32_t magnitude = (uint32_t)(value < 0 ? -value : value);
+            if (magnitude > s_pdm_session_raw_slot_peak[slot]) {
+                s_pdm_session_raw_slot_peak[slot] = magnitude;
+            }
+            s_pdm_session_raw_slot_abs_sum[slot] += magnitude;
+        }
+    }
+    s_pdm_session_raw_slot_samples += samples_per_slot;
+}
+#endif
 #endif
 
 #if CONFIG_AUDIO_CAPTURE_PDM_AFE_WEBRTC
@@ -1167,20 +1222,83 @@ static void audio_capture_note_pdm_afe_session_output(
     s_pdm_afe_session_output_samples += sample_count;
 }
 
+static void audio_capture_note_pdm_afe_session_input(
+    const int16_t *samples,
+    size_t sample_count)
+{
+    if ((!s_export_state.requested && !s_export_state.active) || samples == NULL) {
+        return;
+    }
+
+    uint32_t peak = 0U;
+    uint64_t magnitude_sum = 0U;
+    for (size_t index = 0; index < sample_count; index++) {
+        int32_t value = samples[index];
+        uint32_t magnitude = (uint32_t)(value < 0 ? -value : value);
+        if (magnitude > peak) {
+            peak = magnitude;
+        }
+        magnitude_sum += magnitude;
+    }
+    if (peak > s_pdm_afe_session_input_peak) {
+        s_pdm_afe_session_input_peak = peak;
+    }
+    s_pdm_afe_session_input_abs_sum += magnitude_sum;
+    s_pdm_afe_session_input_samples += sample_count;
+}
+
 static void audio_capture_log_pdm_afe_session_signal(uint32_t session_id)
 {
+    uint32_t input_mean_abs = s_pdm_afe_session_input_samples == 0U
+        ? 0U
+        : (uint32_t)(s_pdm_afe_session_input_abs_sum / s_pdm_afe_session_input_samples);
     uint32_t mean_abs = s_pdm_afe_session_output_samples == 0U
         ? 0U
         : (uint32_t)(s_pdm_afe_session_output_abs_sum / s_pdm_afe_session_output_samples);
+#if CONFIG_AUDIO_CAPTURE_PDM_STEREO_SLOT_CAPTURE
+    uint32_t selected_raw_mean_abs = s_pdm_session_raw_slot_samples == 0U
+        ? 0U
+        : (uint32_t)(s_pdm_session_raw_slot_abs_sum[s_pdm_active_buffer_index] /
+                     s_pdm_session_raw_slot_samples);
+    uint32_t alternate_raw_mean_abs = s_pdm_session_raw_slot_samples == 0U
+        ? 0U
+        : (uint32_t)(s_pdm_session_raw_slot_abs_sum[1 - s_pdm_active_buffer_index] /
+                     s_pdm_session_raw_slot_samples);
+    uint32_t raw_slot_equal_permille = s_pdm_session_raw_slot_samples == 0U
+        ? 0U
+        : (uint32_t)((s_pdm_session_raw_slot_equal_samples * 1000U) /
+                     s_pdm_session_raw_slot_samples);
+    uint32_t raw_slot_delta_mean_abs = s_pdm_session_raw_slot_samples == 0U
+        ? 0U
+        : (uint32_t)(s_pdm_session_raw_slot_delta_abs_sum /
+                     s_pdm_session_raw_slot_samples);
+#endif
     ESP_LOGI(
         TAG,
-        "PDM AFE session signal: session_id=%" PRIu32 " output_frames=%" PRIu32
-        " peak=%" PRIu32 " mean_abs=%" PRIu32 " stop_drain_frames=%" PRIu32
+        "PDM AFE session signal: session_id=%" PRIu32 " input_peak=%" PRIu32
+        " input_mean_abs=%" PRIu32 " output_frames=%" PRIu32 " output_peak=%" PRIu32
+        " output_mean_abs=%" PRIu32
+#if CONFIG_AUDIO_CAPTURE_PDM_STEREO_SLOT_CAPTURE
+        " raw_selected_peak=%" PRIu32 " raw_selected_mean_abs=%" PRIu32
+        " raw_alternate_peak=%" PRIu32 " raw_alternate_mean_abs=%" PRIu32
+        " raw_slot_equal_permille=%" PRIu32 " raw_slot_delta_mean_abs=%" PRIu32
+#endif
+        " stop_drain_frames=%" PRIu32
         " stop_drain_padding_samples=%u",
         session_id,
+        s_pdm_afe_session_input_peak,
+        input_mean_abs,
         s_pdm_afe_output_frames,
         s_pdm_afe_session_output_peak,
         mean_abs,
+#if CONFIG_AUDIO_CAPTURE_PDM_STEREO_SLOT_CAPTURE
+        s_pdm_session_raw_slot_peak[s_pdm_active_buffer_index],
+        selected_raw_mean_abs,
+        s_pdm_session_raw_slot_peak[1 - s_pdm_active_buffer_index],
+        alternate_raw_mean_abs,
+        raw_slot_equal_permille,
+        raw_slot_delta_mean_abs,
+#endif
         s_pdm_afe_stop_drain_output_frames,
         (unsigned)s_pdm_afe_stop_drain_padding_samples);
 }
@@ -1320,9 +1438,9 @@ static esp_err_t audio_capture_pdm_afe_init(void)
     config->agc_target_level_dbfs = 3;
     config->afe_ringbuf_size = AUDIO_CAPTURE_PDM_AFE_RINGBUF_FRAMES;
     config->memory_alloc_mode = AFE_MEMORY_ALLOC_MORE_PSRAM;
-    /* The verified PDM path remains about 12 dB below the known-good source
-     * after NS. Restore that headroom before Type owns the streaming AGC. */
-    config->afe_linear_gain = 4.0f;
+    /* Preserve the post-NS waveform. A fixed 12 dB lift can clip ordinary
+     * microphone peaks before Type has a chance to calibrate the session. */
+    config->afe_linear_gain = 1.0f;
     config->fixed_first_channel = true;
     config->fixed_output_channel = true;
     config = afe_config_check(config);
@@ -1431,6 +1549,8 @@ static void audio_capture_pdm_afe_process(const int16_t *frame_buffer)
         return;
     }
 
+    audio_capture_note_pdm_afe_session_input(frame_buffer, AUDIO_CAPTURE_FRAME_SAMPLES);
+
     size_t remaining = AUDIO_CAPTURE_FRAME_SAMPLES;
     const int16_t *cursor = frame_buffer;
     while (remaining > 0) {
@@ -1500,6 +1620,11 @@ static void audio_capture_task(void *arg)
             )) {
             audio_capture_note_transport_backpressure();
 #if CONFIG_AUDIO_CAPTURE_PDM_STEREO_SLOT_CAPTURE
+ #if CONFIG_AUDIO_CAPTURE_PDM_AFE_WEBRTC
+            audio_capture_note_pdm_session_raw_slots(
+                interleaved_frame_buffer,
+                AUDIO_CAPTURE_FRAME_SAMPLES);
+ #endif
             audio_capture_select_pdm_slot(interleaved_frame_buffer, frame_buffer);
 #endif
             audio_capture_apply_pdm_software_gain(frame_buffer);
@@ -1565,7 +1690,7 @@ static esp_err_t audio_capture_i2s_init(void)
         TAG,
         "SPH0655 V2.2 PDM contract: select=GND data_edge=falling active_slot=%s clk_invert=%u pcm=%uHz pdm_clk=%uHz dsr=16S clk=%d din=%d hp_filter=%u hw_amplify=%u sw_gain=%u",
  #if CONFIG_AUDIO_CAPTURE_PDM_STEREO_SLOT_CAPTURE
-        s_pdm_active_slot == 0 ? "left" : "right",
+        s_pdm_selected_slot == 0 ? "left" : "right",
  #else
         "standard-mono",
  #endif
