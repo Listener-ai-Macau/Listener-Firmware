@@ -64,9 +64,10 @@
 #define AUDIO_CAPTURE_STREAM_PROGRESS_LOG_PACKET_INTERVAL 64U
 #define AUDIO_CAPTURE_IDLE_POWER_SAVE_WAIT_MS 5000U
 #define AUDIO_CAPTURE_PDM_HW_AMPLIFY_NUM 8U
-/* Keep the PDM waveform intact for Type's session AGC. A fixed pre-AFE boost
- * clips ordinary physical-microphone peaks before the adaptive path can act. */
-#define AUDIO_CAPTURE_PDM_SOFTWARE_GAIN_NUM 1
+/* A modest pre-AFE lift keeps weak physical speech above the WebRTC NS/VAD
+ * floor. Fourfold gain clipped real microphone peaks; twofold remains a
+ * bounded candidate while Type retains its per-session peak guard. */
+#define AUDIO_CAPTURE_PDM_SOFTWARE_GAIN_NUM 2
 /* WebRTC AFE accepts 160-sample feed blocks but emits 512-sample output
  * blocks. Four feeds are therefore the minimum to form one fetch result;
  * six frames leave two feed blocks of scheduler headroom without introducing

@@ -19,6 +19,8 @@ REQUIRED_FRAGMENTS = (
     "config->agc_init = false;",
     "config->afe_ringbuf_size = AUDIO_CAPTURE_PDM_AFE_RINGBUF_FRAMES;",
     "#define AUDIO_CAPTURE_PDM_AFE_RINGBUF_FRAMES 6",
+    "#define AUDIO_CAPTURE_PDM_SOFTWARE_GAIN_NUM 2",
+    "config->afe_linear_gain = 1.0f;",
 )
 
 
