@@ -40,6 +40,8 @@ extern bool ble_hid_gap_is_recovery_pairing_window_open(void) __attribute__((wea
 extern uint16_t ble_hid_gap_get_audio_notification_value_max_bytes(void) __attribute__((weak));
 extern bool ble_hid_gap_note_type_audio_ready(const char *reason) __attribute__((weak));
 extern esp_err_t ble_hid_gap_apply_pending_ble_name(void) __attribute__((weak));
+extern esp_err_t ble_hid_gap_request_active_connection(void) __attribute__((weak));
+extern esp_err_t ble_hid_gap_request_low_power_connection(void) __attribute__((weak));
 extern esp_err_t ble_hid_gap_schedule_ota_reconnect(void) __attribute__((weak));
 extern void firmware_ota_set_observability_correlation(uint64_t correlation_id) __attribute__((weak));
 
@@ -111,6 +113,7 @@ extern void firmware_ota_set_observability_correlation(uint64_t correlation_id) 
 #define BLE_AUDIO_STREAM_TYPE_LED_READY_HOLD_MS 12000
 #define BLE_AUDIO_STREAM_TYPE_HOST_SEEN_HOLD_MS 180000
 #define BLE_AUDIO_STREAM_TYPE_OTA_HEARTBEAT_TIMEOUT_MS 180000
+#define BLE_AUDIO_STREAM_TYPE_RESTART_GRACE_MS 5000U
 #define BLE_AUDIO_STREAM_TYPE_OBSERVABILITY_OTA_PREFIX "TYPE:OBS:OTA:"
 #define BLE_AUDIO_STREAM_TYPE_OBSERVABILITY_CORRELATION_HEX_BYTES 16U
 #define BLE_AUDIO_STREAM_TYPE_RECOVERY_NOTICE_TEXT "listener-ec11-recovery-v1"
@@ -3543,6 +3546,60 @@ static void ble_audio_stream_schedule_ble_name_apply(const char *source)
     }
 }
 
+static void ble_audio_stream_type_restart_grace_task(void *arg)
+{
+    (void)arg;
+    vTaskDelay(pdMS_TO_TICKS(BLE_AUDIO_STREAM_TYPE_RESTART_GRACE_MS));
+
+    if (ble_audio_stream_is_type_link_ready()) {
+        ESP_LOGI(TAG, "type restart grace retained active connection: Type link restored");
+    } else if (ble_hid_gap_request_low_power_connection != NULL) {
+        esp_err_t ret = ble_hid_gap_request_low_power_connection();
+        ESP_LOGI(
+            TAG,
+            "type restart grace expired; restored low-power connection ret=%s",
+            esp_err_to_name(ret));
+    }
+    vTaskDelete(NULL);
+}
+
+static void ble_audio_stream_begin_type_restart_grace(void)
+{
+    if (ble_hid_gap_request_active_connection == NULL) {
+        ESP_LOGW(TAG, "type restart grace unavailable: active connection request is missing");
+        return;
+    }
+
+    esp_err_t active_ret = ble_hid_gap_request_active_connection();
+    if (active_ret != ESP_OK) {
+        ESP_LOGW(
+            TAG,
+            "type restart grace could not request active connection: %s",
+            esp_err_to_name(active_ret));
+        return;
+    }
+
+    BaseType_t task_ok = xTaskCreate(
+        ble_audio_stream_type_restart_grace_task,
+        "type_restart_grace",
+        3072,
+        NULL,
+        5,
+        NULL);
+    if (task_ok != pdPASS) {
+        ESP_LOGW(TAG, "type restart grace task could not start; restoring low-power connection");
+        if (ble_hid_gap_request_low_power_connection != NULL) {
+            (void)ble_hid_gap_request_low_power_connection();
+        }
+        return;
+    }
+
+    ESP_LOGI(
+        TAG,
+        "type restart grace opened active connection window_ms=%u",
+        (unsigned)BLE_AUDIO_STREAM_TYPE_RESTART_GRACE_MS);
+}
+
 static bool ble_audio_stream_consume_ota_observability_context(const char *command, const char *source)
 {
     size_t prefix_len = strlen(BLE_AUDIO_STREAM_TYPE_OBSERVABILITY_OTA_PREFIX);
@@ -3701,6 +3758,9 @@ bool ble_audio_stream_consume_type_control_command(const char *command, const ch
         portEXIT_CRITICAL(&s_link_state_lock);
         ble_audio_stream_sync_power_manager_for_type_link(false, command);
         ble_audio_stream_sync_status_led_for_type_link(command);
+        if (strcmp(command, "TYPE:BYE") == 0) {
+            ble_audio_stream_begin_type_restart_grace();
+        }
         ESP_LOGI(
             TAG,
             "type heartbeat stopped source=%s command=%s",

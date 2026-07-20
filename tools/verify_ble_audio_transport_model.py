@@ -62,6 +62,9 @@ SOURCE_TOKENS = [
     "TYPE:AUDIO:LOSSLESS_RICE:1",
     "TYPE:AUDIO:LOSSLESS_RICE:2",
     "TYPE:AUDIO:LOSSLESS_RICE:3",
+    "BLE_AUDIO_STREAM_TYPE_RESTART_GRACE_MS 5000U",
+    "type restart grace opened active connection",
+    "type restart grace expired; restored low-power connection",
     "audio_wire_bytes=",
     "audio_wire_pct=",
     "((uint64_t)s_session_stats.audio_pcm_bytes_sent * 1000U)",
@@ -151,6 +154,33 @@ def static_source_checks() -> None:
         require(gap, token, GAP)
     require(events, "DIAG_BAUD_REPLAY", EVENTS)
 
+    require_regex(
+        stream,
+        r"ble_audio_stream_begin_type_restart_grace\(.*?"
+        r"ble_hid_gap_request_active_connection\(.*?"
+        r"xTaskCreate\(.*?"
+        r"ble_audio_stream_type_restart_grace_task",
+        "Type restart grace requests an active link before scheduling its bounded rollback",
+        STREAM,
+    )
+    require_regex(
+        stream,
+        r"ble_audio_stream_type_restart_grace_task\(.*?"
+        r"BLE_AUDIO_STREAM_TYPE_RESTART_GRACE_MS.*?"
+        r"ble_audio_stream_is_type_link_ready\(.*?"
+        r"ble_hid_gap_request_low_power_connection",
+        "Type restart grace retains a restored Type link or returns to low power",
+        STREAM,
+    )
+    require_regex(
+        stream,
+        r"strcmp\(command, \"TYPE:BYE\"\) == 0.*?"
+        r"ble_audio_stream_sync_power_manager_for_type_link\(false, command\).*?"
+        r"strcmp\(command, \"TYPE:BYE\"\) == 0.*?"
+        r"ble_audio_stream_begin_type_restart_grace\(\)",
+        "only Type shutdown opens the bounded restart grace after normal link cleanup",
+        STREAM,
+    )
     require_regex(
         stream,
         r"ble_audio_stream_on_gap_disconnect\(.*?ble_audio_stream_replay_mark_link_suspended",
