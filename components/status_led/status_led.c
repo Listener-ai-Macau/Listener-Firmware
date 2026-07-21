@@ -160,6 +160,10 @@
 #define STATUS_LED_BLE_CONNECTED_FIND_TYPE_MIN_PERCENT 5U
 #define STATUS_LED_BLE_CONNECTED_FIND_TYPE_MAX_PERCENT STATUS_LED_BLE_ATTENTION_PERCENT
 #define STATUS_LED_BLE_CONNECTED_FIND_TYPE_PERIOD_MS 2000U
+/* Bounded seek indication after link loss: only an established BLE link may
+ * hold the low blue background; an unpaired device must fall dark instead of
+ * pulsing the RECONNECTING double-blink forever. */
+#define STATUS_LED_BLE_RECONNECT_INDICATION_MS 30000U
 #define STATUS_LED_BLE_TYPE_READY_STEADY_PERCENT 14U
 #define STATUS_LED_BATTERY_IDLE_BLE_HEARTBEAT_ON_MS 120U
 #define STATUS_LED_BATTERY_IDLE_BLE_HEARTBEAT_OFF_MS 7880U
@@ -4043,6 +4047,16 @@ static uint32_t status_led_refresh_once(void)
         return STATUS_LED_REFRESH_MS;
     }
     status_led_clear_stale_processing_locked(now_ms);
+    if (s_state.ble_state == STATUS_LED_BLE_RECONNECTING &&
+        s_state.ble_transition_ms != 0U &&
+        now_ms - s_state.ble_transition_ms > STATUS_LED_BLE_RECONNECT_INDICATION_MS) {
+        s_state.ble_state = STATUS_LED_BLE_DISCONNECTED;
+        s_state.ble_transition_ms = now_ms;
+        status_led_set_last_reason_locked("reconnect_indication_elapsed");
+        ESP_LOGI(TAG,
+                 "BLE reconnect seek indication elapsed after %u ms; status LED dark until a link returns",
+                 (unsigned)STATUS_LED_BLE_RECONNECT_INDICATION_MS);
+    }
     if (status_led_render_transition_clear_locked(&frame, &transition_clear_mask)) {
         force_clear_tx = true;
         delay_ms = STATUS_LED_IDLE_TRANSITION_CLEAR_MS;
