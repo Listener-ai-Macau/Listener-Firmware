@@ -1156,6 +1156,7 @@ static const char *status_led_ble_name(status_led_ble_state_t state)
     case STATUS_LED_BLE_CONNECTED: return "connected";
     case STATUS_LED_BLE_TYPE_READY: return "type_ready";
     case STATUS_LED_BLE_REPAIRING: return "repairing";
+    case STATUS_LED_BLE_MANUAL_PAIRING: return "manual_pairing";
     default: return "unknown";
     }
 }
@@ -1167,9 +1168,9 @@ static bool status_led_ble_state_ready_locked(status_led_ble_state_t state)
 
 static bool status_led_ble_state_attention_locked(status_led_ble_state_t state)
 {
-    return state == STATUS_LED_BLE_PAIRING ||
-           state == STATUS_LED_BLE_RECONNECTING ||
-           state == STATUS_LED_BLE_REPAIRING;
+    return state == STATUS_LED_BLE_PAIRING || state == STATUS_LED_BLE_RECONNECTING ||
+           state == STATUS_LED_BLE_REPAIRING ||
+           state == STATUS_LED_BLE_MANUAL_PAIRING;
 }
 
 static const char *status_led_rec_source_name(status_led_rec_source_t source)
@@ -2095,7 +2096,8 @@ static bool status_led_should_schedule_idle_transition_clear_locked(uint32_t now
     }
     if (s_state.ble_state == STATUS_LED_BLE_PAIRING ||
         s_state.ble_state == STATUS_LED_BLE_RECONNECTING ||
-        s_state.ble_state == STATUS_LED_BLE_REPAIRING) {
+        s_state.ble_state == STATUS_LED_BLE_REPAIRING ||
+        s_state.ble_state == STATUS_LED_BLE_MANUAL_PAIRING) {
         return true;
     }
     return now_ms < s_state.ok_until_ms ||
@@ -2248,6 +2250,12 @@ static bool status_led_ble_recovery_window_active_locked(uint32_t now_ms)
             s_state.ble_state == STATUS_LED_BLE_RECONNECTING);
 }
 
+static bool status_led_ble_manual_pairing_active_locked(uint32_t now_ms)
+{
+    return s_state.ble_state == STATUS_LED_BLE_MANUAL_PAIRING &&
+           status_led_ble_repair_active_locked(now_ms);
+}
+
 static uint32_t status_led_ble_elapsed_locked(uint32_t now_ms)
 {
     uint32_t start_ms = s_state.ble_transition_ms != 0U
@@ -2356,6 +2364,7 @@ static bool status_led_timed_output_active_locked(uint32_t now_ms)
     if (s_state.ble_state == STATUS_LED_BLE_PAIRING ||
         s_state.ble_state == STATUS_LED_BLE_REPAIRING ||
         s_state.ble_state == STATUS_LED_BLE_RECONNECTING ||
+        s_state.ble_state == STATUS_LED_BLE_MANUAL_PAIRING ||
         s_state.ble_state == STATUS_LED_BLE_CONNECTED ||
         s_state.ble_state == STATUS_LED_BLE_TYPE_READY ||
         s_state.ble_state == STATUS_LED_BLE_DISCONNECTED) {
@@ -2634,6 +2643,13 @@ static void status_led_render_power_locked(status_led_frame_t *frame, uint32_t n
 
 static uint8_t status_led_low_power_ble_percent_locked(uint32_t now_ms, uint32_t ble_elapsed_ms)
 {
+    if (status_led_ble_manual_pairing_active_locked(now_ms)) {
+        return status_led_double_pulse_on(
+                   ble_elapsed_ms,
+                   STATUS_LED_BLE_CONNECTED_FIND_TYPE_PERIOD_MS)
+            ? STATUS_LED_BLE_ATTENTION_PERCENT
+            : 0U;
+    }
     if (status_led_ble_recovery_window_active_locked(now_ms)) {
         return status_led_double_pulse_on(
                    ble_elapsed_ms,
@@ -2671,6 +2687,8 @@ static uint8_t status_led_low_power_ble_peak_percent_locked(void)
     case STATUS_LED_BLE_PAIRING:
     case STATUS_LED_BLE_REPAIRING:
         return STATUS_LED_BLE_PAIRING_PULSE_PERCENT;
+    case STATUS_LED_BLE_MANUAL_PAIRING:
+        return STATUS_LED_BLE_ATTENTION_PERCENT;
     case STATUS_LED_BLE_RECONNECTING:
     case STATUS_LED_BLE_DISCONNECTED:
     default:
@@ -2691,8 +2709,23 @@ static void status_led_render_ble_locked(status_led_frame_t *frame, uint32_t now
     }
 
     status_led_rgb_t ble_blue = status_led_rgb(0, 0, 255);
+    status_led_rgb_t ble_manual_amber = status_led_rgb(255, 140, 0);
     status_led_rgb_t color = {0};
     const uint32_t ble_elapsed_ms = status_led_ble_elapsed_locked(now_ms);
+    if (status_led_ble_manual_pairing_active_locked(now_ms)) {
+        uint8_t percent = status_led_double_pulse_on(
+                              ble_elapsed_ms,
+                              STATUS_LED_BLE_CONNECTED_FIND_TYPE_PERIOD_MS)
+            ? STATUS_LED_BLE_ATTENTION_PERCENT
+            : 0U;
+        color = status_led_token_relative_to_peak_locked(
+            ble_manual_amber,
+            percent,
+            STATUS_LED_BLE_ATTENTION_PERCENT,
+            false);
+        status_led_set_max(&frame->status[STATUS_LED_SEM_BLE], color);
+        return;
+    }
     if (status_led_ble_repair_cue_active_locked(now_ms)) {
         uint8_t percent = status_led_ble_repair_percent_locked(
             now_ms,
@@ -4247,6 +4280,14 @@ static void status_led_start_ble_repair_locked(uint32_t now_ms)
     status_led_start_ble_repair_locked_for_ms(now_ms, STATUS_LED_BLE_REPAIR_CUE_MS);
 }
 
+static void status_led_start_manual_pairing_locked_for_ms(uint32_t now_ms, uint32_t hold_ms)
+{
+    status_led_start_ble_repair_locked_for_ms(now_ms, hold_ms);
+    s_state.ble_state = STATUS_LED_BLE_MANUAL_PAIRING;
+    s_state.ble_repair_cue_started_ms = 0U;
+    s_state.ble_repair_cue_until_ms = 0U;
+}
+
 static void status_led_preview_clear_activity_locked(void)
 {
     s_state.ble_state = STATUS_LED_BLE_DISCONNECTED;
@@ -4762,6 +4803,7 @@ static bool status_led_ble_state_completes_boot_feedback(status_led_ble_state_t 
 {
     return state == STATUS_LED_BLE_PAIRING ||
            state == STATUS_LED_BLE_REPAIRING ||
+           state == STATUS_LED_BLE_MANUAL_PAIRING ||
            state == STATUS_LED_BLE_RECONNECTING ||
            state == STATUS_LED_BLE_CONNECTED ||
            state == STATUS_LED_BLE_TYPE_READY;
@@ -4983,6 +5025,12 @@ void status_led_set_ble_state(status_led_ble_state_t state, bool confidence_wind
             confidence_window = false;
             ESP_LOGI(TAG, "OTA Type link preserved BLE Type-ready across connected update");
         }
+        if (s_state.ble_state == STATUS_LED_BLE_MANUAL_PAIRING &&
+            state != STATUS_LED_BLE_CONNECTED &&
+            state != STATUS_LED_BLE_TYPE_READY &&
+            status_led_ble_repair_active_locked(now_ms)) {
+            state = STATUS_LED_BLE_MANUAL_PAIRING;
+        }
         const bool effect_only = s_state.preview_effect_only;
         const bool explicit_ready_window =
             confidence_window && status_led_ble_state_ready_locked(state);
@@ -5005,7 +5053,9 @@ void status_led_set_ble_state(status_led_ble_state_t state, bool confidence_wind
          * old link, so keep the fixed BLE+EC11 cue across every expected state
          * transition until its bounded duration elapses. */
         const bool keep_repair_window = status_led_ble_repair_active_locked(now_ms) &&
-            (state == STATUS_LED_BLE_PAIRING || state == STATUS_LED_BLE_RECONNECTING);
+            (state == STATUS_LED_BLE_PAIRING ||
+             state == STATUS_LED_BLE_RECONNECTING ||
+             state == STATUS_LED_BLE_MANUAL_PAIRING);
         /* The repair cue bridges the expected reset disconnect, but a restored
          * BLE link must immediately show its own low-brightness state. */
         const bool keep_repair_cue = status_led_ble_repair_cue_active_locked(now_ms) &&
@@ -5158,6 +5208,28 @@ void status_led_notify_ble_repairing_for_ms(const char *reason, uint32_t hold_ms
         status_led_set_last_reason_locked(reason != NULL ? reason : "ble_repairing");
         diag_log(DIAG_SRC_STATUS_LED, DIAG_LED_STATE, DIAG_SEV_INFO,
                  1, (uint32_t)STATUS_LED_BLE_REPAIRING, 0, 0);
+        changed = true;
+        xSemaphoreGive(s_mutex);
+    }
+    if (changed) {
+        status_led_request_refresh();
+    }
+}
+
+void status_led_notify_ble_manual_pairing_for_ms(const char *reason, uint32_t hold_ms)
+{
+    uint32_t now_ms = status_led_now_ms();
+    bool changed = false;
+    if (xSemaphoreTake(s_mutex, portMAX_DELAY) == pdTRUE) {
+        status_led_resume_output_locked();
+        s_state.preview_suppress_accents = false;
+        s_state.preview_effect_only = false;
+        s_state.preview_ble_override_until_ms = 0U;
+        status_led_start_manual_pairing_locked_for_ms(now_ms, hold_ms);
+        s_state.last_transition_ms = now_ms;
+        status_led_set_last_reason_locked(reason != NULL ? reason : "manual_pairing");
+        diag_log(DIAG_SRC_STATUS_LED, DIAG_LED_STATE, DIAG_SEV_INFO,
+                 1, (uint32_t)STATUS_LED_BLE_MANUAL_PAIRING, 0, 0);
         changed = true;
         xSemaphoreGive(s_mutex);
     }
@@ -5821,7 +5893,8 @@ static bool status_led_prepare_sleep_locked(bool *preserve_shutdown_final_hold)
     s_state.ble_repair_cue_started_ms = 0U;
     s_state.ble_repair_cue_until_ms = 0U;
     status_led_clear_ec11_feedback_locked();
-    if (s_state.ble_state == STATUS_LED_BLE_REPAIRING) {
+    if (s_state.ble_state == STATUS_LED_BLE_REPAIRING ||
+        s_state.ble_state == STATUS_LED_BLE_MANUAL_PAIRING) {
         s_state.ble_state = STATUS_LED_BLE_DISCONNECTED;
         s_state.ble_transition_ms = now_ms;
     }
@@ -5875,7 +5948,8 @@ void status_led_set_error(
         s_state.ble_repair_until_ms = 0U;
         s_state.ble_repair_cue_started_ms = 0U;
         s_state.ble_repair_cue_until_ms = 0U;
-        if (s_state.ble_state == STATUS_LED_BLE_REPAIRING) {
+        if (s_state.ble_state == STATUS_LED_BLE_REPAIRING ||
+            s_state.ble_state == STATUS_LED_BLE_MANUAL_PAIRING) {
             s_state.ble_state = STATUS_LED_BLE_DISCONNECTED;
             s_state.ble_transition_ms = now_ms;
         }
@@ -5949,7 +6023,8 @@ void status_led_set_low_power_disabled(bool disabled)
             s_state.ble_repair_cue_started_ms = 0U;
             s_state.ble_repair_cue_until_ms = 0U;
             status_led_clear_ec11_feedback_locked();
-            if (s_state.ble_state == STATUS_LED_BLE_REPAIRING) {
+            if (s_state.ble_state == STATUS_LED_BLE_REPAIRING ||
+                s_state.ble_state == STATUS_LED_BLE_MANUAL_PAIRING) {
                 s_state.ble_state = STATUS_LED_BLE_DISCONNECTED;
                 s_state.ble_transition_ms = now_ms;
             }

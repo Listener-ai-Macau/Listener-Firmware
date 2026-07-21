@@ -1843,8 +1843,8 @@ def main() -> int:
         "s_recovery_suppress_swift_pair_prompt" not in ble_gap
         or "recovery: Swift Pair prompt suppressed for Type-controlled silent recovery" not in ble_gap
         or "ble_hid_gap_forget_bonds_and_repair_type_controlled_silent" not in ble_gap
-        or "ble_hid_gap_forget_bonds_and_repair_inner(true, true)" not in ble_gap
-        or "ble_hid_gap_forget_bonds_and_repair_inner(true, false)" not in ble_gap
+        or "ble_hid_gap_forget_bonds_and_repair_inner(true, true, false)" not in ble_gap
+        or "ble_hid_gap_forget_bonds_and_repair_inner(true, false, false)" not in ble_gap
         or "suppress_swift_pair=%u" not in ble_gap
     ):
         failures.append(
@@ -1878,14 +1878,23 @@ def main() -> int:
             )
         if "ble_store_clear()" in recovery_body or "ble_store_clear_failed" in recovery_body:
             failures.append("ble_hid_gap_esp32.c: recovery must not synchronously clear the whole NimBLE NVS store in the double-click hot path")
+        if (
+            "force_fresh_native_identity" not in recovery_body
+            or "!force_fresh_native_identity" not in recovery_body
+            or "ble_hid_gap_forget_bonds_and_repair_inner(false, false, true)" not in ble_gap
+        ):
+            failures.append(
+                "ble_hid_gap_esp32.c: physical EC11 fresh recovery must bypass an already-open stale pairing window"
+            )
         if not re.search(
             r"const\s+bool\s+type_link_ready_before_recovery\s*=\s*ble_audio_stream_is_type_link_ready\(\);\s*"
             r"const\s+bool\s+type_host_recent_before_recovery\s*=[\s\S]*?ble_audio_stream_was_type_host_recently_seen\(\);\s*"
-            r"const\s+bool\s+type_controlled_recovery\s*=[\s\S]*?type_controlled_request[\s\S]*?type_link_ready_before_recovery[\s\S]*?type_host_recent_before_recovery\s*;",
+            r"ble_hid_gap_connection_snapshot_t\s+conn\s*=[\s\S]*?ble_hid_gap_reconcile_connection_snapshot\([\s\S]*?\);[\s\S]*?"
+            r"const\s+bool\s+type_controlled_recovery\s*=[\s\S]*?type_controlled_request[\s\S]*?type_link_ready_before_recovery[\s\S]*?\(type_host_recent_before_recovery\s*&&\s*conn\.connected\)\s*;",
             recovery_body,
         ):
             failures.append(
-                "ble_hid_gap_esp32.c: recovery must use recent Type heartbeat or Type-host presence to preserve stable identity, while the advertising path still exposes the bounded Windows pairing prompt"
+                "ble_hid_gap_esp32.c: recovery must preserve stable identity only for an explicit/active Type link; a disconnected recent host must rotate for fresh Windows pairing"
             )
         refresh_index = recovery_body.find("pairing window already active; refreshing advertising with stable BLE identity")
         refresh_reopen_index = recovery_body.find("ble_hid_gap_open_recovery_pairing_window(", refresh_index)

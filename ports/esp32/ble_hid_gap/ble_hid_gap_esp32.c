@@ -61,7 +61,8 @@ extern void ble_hid_task_start_up(void);
 static int ble_hid_gap_get_bonded_peer_count(int *out_count);
 static esp_err_t ble_hid_gap_forget_bonds_and_repair_inner(
     bool type_controlled_request,
-    bool suppress_swift_pair_prompt);
+    bool suppress_swift_pair_prompt,
+    bool force_fresh_native_identity);
 static esp_err_t ble_hid_gap_forget_bonds_and_repair_ec11_fast_inner(void);
 static void ble_hid_gap_close_recovery_pairing_window(const char *reason);
 static void ble_hid_gap_note_secure_connection(uint16_t conn_handle, const char *reason);
@@ -2945,7 +2946,8 @@ nimble_hid_gap_event(struct ble_gap_event *event, void *arg)
                 esp_err_t repair_ret =
                     ble_hid_gap_forget_bonds_and_repair_inner(
                         s_recovery_type_controlled_pairing,
-                        s_recovery_suppress_swift_pair_prompt);
+                        s_recovery_suppress_swift_pair_prompt,
+                        false);
                 if (repair_ret != ESP_OK) {
                     ESP_LOGW(TAG,
                              "security failure repair path failed ret=%s; falling back to reconnecting LED",
@@ -3948,14 +3950,17 @@ static esp_err_t ble_hid_gap_forget_bonds_and_repair_ec11_fast_inner(void)
     const bool type_link_ready_before_recovery = ble_audio_stream_is_type_link_ready();
     const bool type_host_recent_before_recovery =
         ble_audio_stream_was_type_host_recently_seen();
-    const bool type_controlled_recovery =
-        type_link_ready_before_recovery || type_host_recent_before_recovery;
-    ble_hid_gap_platform_device_control_begin_recovery(type_controlled_recovery);
     ble_hid_gap_connection_snapshot_t conn =
         ble_hid_gap_reconcile_connection_snapshot("ec11_fast_recovery_pairing_reset");
+    /* A disconnected recent Type host is stale after manual Windows delete. */
+    const bool type_controlled_recovery =
+        type_link_ready_before_recovery ||
+        (type_host_recent_before_recovery && conn.connected);
+    ble_hid_gap_platform_device_control_begin_recovery(type_controlled_recovery);
 
     if (!conn.connected || conn.conn_handle == BLE_HS_CONN_HANDLE_NONE) {
-        return ble_hid_gap_forget_bonds_and_repair_inner(false, false);
+        /* A physical EC11 handoff must not reuse an already-open stale window. */
+        return ble_hid_gap_forget_bonds_and_repair_inner(false, false, true);
     }
 
     /*
@@ -4029,7 +4034,8 @@ static esp_err_t ble_hid_gap_forget_bonds_and_repair_ec11_fast_inner(void)
 
 static esp_err_t ble_hid_gap_forget_bonds_and_repair_inner(
     bool type_controlled_request,
-    bool suppress_swift_pair_prompt)
+    bool suppress_swift_pair_prompt,
+    bool force_fresh_native_identity)
 {
     s_shutdown_quiesce = false;
     s_low_power_advertising = false;
@@ -4052,7 +4058,8 @@ static esp_err_t ble_hid_gap_forget_bonds_and_repair_inner(
     bool refresh_pairing_window =
         ble_hid_gap_recovery_pairing_window_open() &&
         bonded_peer_count == 0 &&
-        !s_ble_gap_connected;
+        !s_ble_gap_connected &&
+        !force_fresh_native_identity;
     if (refresh_pairing_window && (type_controlled_request || s_recovery_type_controlled_pairing)) {
         ESP_LOGW(TAG, "recovery: pairing window already active; refreshing advertising with stable BLE identity");
         diag_log(DIAG_SRC_BLE_GAP, DIAG_GAP_RECOVERY, DIAG_SEV_INFO,
@@ -4105,22 +4112,30 @@ static esp_err_t ble_hid_gap_forget_bonds_and_repair_inner(
     const bool type_link_ready_before_recovery = ble_audio_stream_is_type_link_ready();
     const bool type_host_recent_before_recovery =
         ble_audio_stream_was_type_host_recently_seen();
+    ble_hid_gap_connection_snapshot_t conn =
+        ble_hid_gap_reconcile_connection_snapshot("recovery_pairing_reset");
+    /*
+     * A recent host marker alone is not ownership evidence after that host's
+     * Windows pairing has been deleted. Keep the stable Type identity only
+     * for an active link or an explicit Type-controlled recovery request;
+     * an idle physical/manual handoff must rotate to a fresh Windows identity.
+     */
     const bool type_controlled_recovery =
         type_controlled_request ||
         type_link_ready_before_recovery ||
-        type_host_recent_before_recovery;
+        (type_host_recent_before_recovery && conn.connected);
     ble_hid_gap_platform_device_control_begin_recovery(type_controlled_recovery);
-    ble_hid_gap_connection_snapshot_t conn =
-        ble_hid_gap_reconcile_connection_snapshot("recovery_pairing_reset");
 
     ESP_LOGW(
         TAG,
-        "recovery: opening pairing reset window bonded_peers=%d bond_delete=async_after_disconnect type_controlled=%u suppress_swift_pair=%u type_link_ready_before_recovery=%u type_host_recent=%u type_request=%u",
+        "recovery: opening pairing reset window bonded_peers=%d bond_delete=async_after_disconnect type_controlled=%u force_fresh_identity=%u suppress_swift_pair=%u type_link_ready_before_recovery=%u type_host_recent=%u conn_connected=%u type_request=%u",
         bonded_peer_count,
         type_controlled_recovery ? 1u : 0u,
+        force_fresh_native_identity ? 1u : 0u,
         suppress_swift_pair_prompt ? 1u : 0u,
         type_link_ready_before_recovery ? 1u : 0u,
         type_host_recent_before_recovery ? 1u : 0u,
+        conn.connected ? 1u : 0u,
         type_controlled_request ? 1u : 0u);
     status_led_notify_ble_repairing_for_ms("ble_recovery_clear_bonds", (uint32_t)BLE_HID_GAP_RECOVERY_PAIRING_WINDOW_MS);
     diag_log(DIAG_SRC_BLE_GAP, DIAG_GAP_RECOVERY, DIAG_SEV_WARN,
@@ -4245,7 +4260,7 @@ static esp_err_t ble_hid_gap_forget_bonds_and_repair_inner(
 
 esp_err_t ble_hid_gap_forget_bonds_and_repair(void)
 {
-    return ble_hid_gap_forget_bonds_and_repair_inner(false, false);
+    return ble_hid_gap_forget_bonds_and_repair_inner(false, false, false);
 }
 
 esp_err_t ble_hid_gap_forget_bonds_and_repair_ec11_fast(void)
@@ -4255,12 +4270,12 @@ esp_err_t ble_hid_gap_forget_bonds_and_repair_ec11_fast(void)
 
 esp_err_t ble_hid_gap_forget_bonds_and_repair_type_controlled(void)
 {
-    return ble_hid_gap_forget_bonds_and_repair_inner(true, false);
+    return ble_hid_gap_forget_bonds_and_repair_inner(true, false, false);
 }
 
 esp_err_t ble_hid_gap_forget_bonds_and_repair_type_controlled_silent(void)
 {
-    return ble_hid_gap_forget_bonds_and_repair_inner(true, true);
+    return ble_hid_gap_forget_bonds_and_repair_inner(true, true, false);
 }
 
 bool ble_hid_gap_is_connected(void)

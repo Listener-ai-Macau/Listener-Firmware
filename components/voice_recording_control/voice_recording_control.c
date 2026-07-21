@@ -1442,8 +1442,36 @@ static void voice_recording_control_cancel(const char *source)
 static void voice_recording_control_recovery(
     const char *source,
     bool type_controlled,
-    bool suppress_swift_pair_prompt)
+    bool suppress_swift_pair_prompt,
+    bool manual_pairing_visual)
 {
+    /*
+     * Windows manual deletion is only a user-pairing handoff cue. Do not
+     * start a Type-controlled recovery window here: that path deliberately
+     * keeps the old identity, which makes the later Swift Pair click target
+     * Windows' stale device cache. The physical EC11 double-click owns the
+     * actual bond reset and fresh-identity advertisement.
+     */
+    if (manual_pairing_visual) {
+        voice_recording_control_cancel_pending_start("manual_pairing_wait");
+        (void)voice_key_input_set_recording_output(false);
+        status_led_set_recording(false, STATUS_LED_REC_SOURCE_NONE);
+        status_led_set_processing(false, "manual_pairing_wait");
+        status_led_notify_ble_manual_pairing_for_ms("manual_windows_unpair", 120000U);
+        voice_recording_control_log_flow(
+            VOICE_RECORDING_FLOW_RECOVERY,
+            "manual_pairing_wait",
+            source,
+            ESP_OK,
+            false);
+        voice_recording_control_log_device_status("pairing", "manual_windows_unpair_wait");
+        ESP_LOGI(
+            TAG,
+            "manual Windows pairing cue armed source=%s; waiting for physical EC11 recovery reset",
+            source != NULL ? source : "unknown");
+        return;
+    }
+
     voice_recording_control_snapshot_t snapshot = voice_recording_control_make_snapshot(source);
     voice_recording_control_decision_t decision =
         voice_recording_control_decide_transition(VOICE_RECORDING_EVENT_RECOVERY, &snapshot);
@@ -1736,21 +1764,26 @@ esp_err_t voice_recording_control_dispatch_control_command(const char *command, 
         voice_recording_control_unlock();
         return ESP_OK;
     }
+    if (strcmp(action, "RECOVERY:TYPE:MANUAL") == 0) {
+        voice_recording_control_recovery(source, true, false, true);
+        voice_recording_control_unlock();
+        return ESP_OK;
+    }
     if (strcmp(action, "RECOVERY:TYPE:SILENT") == 0 ||
         strcmp(action, "RECOVERY_TYPE_SILENT") == 0 ||
         strcmp(action, "RECOVERY:TYPE_NO_PROMPT") == 0 ||
         strcmp(action, "RECOVERY_TYPE_NO_PROMPT") == 0) {
-        voice_recording_control_recovery(source, true, true);
+        voice_recording_control_recovery(source, true, true, false);
         voice_recording_control_unlock();
         return ESP_OK;
     }
     if (strcmp(action, "RECOVERY:TYPE") == 0 || strcmp(action, "RECOVERY_TYPE") == 0) {
-        voice_recording_control_recovery(source, true, false);
+        voice_recording_control_recovery(source, true, false, false);
         voice_recording_control_unlock();
         return ESP_OK;
     }
     if (strcmp(action, "RECOVERY") == 0 || strcmp(action, "RESET") == 0 || strcmp(action, "FORGET") == 0) {
-        voice_recording_control_recovery(source, false, false);
+        voice_recording_control_recovery(source, false, false, false);
         voice_recording_control_unlock();
         return ESP_OK;
     }
@@ -1954,7 +1987,7 @@ static void voice_recording_control_task(void *parameter)
                 ble_hid_gap_note_ec11_recovery_accepted(
                     recovery_accepted_at_us,
                     recovery_generated);
-                voice_recording_control_recovery(source != NULL ? source : "voice_key_hold", false, false);
+                voice_recording_control_recovery(source != NULL ? source : "voice_key_hold", false, false, false);
             }
 
             if ((s_state == VOICE_RECORDING_STATE_RECORDING || s_state == VOICE_RECORDING_STATE_TRANSFERRING) &&

@@ -144,6 +144,55 @@ def require_contains(source: str, token: str, message: str) -> None:
         fail(message)
 
 
+def extract_void_function(source: str, name: str) -> str:
+    marker = f"static void {name}("
+    start = source.find(marker)
+    if start < 0:
+        fail(f"missing {name}()")
+    brace = source.find("{", start)
+    if brace < 0:
+        fail(f"missing body for {name}()")
+    depth = 0
+    for index in range(brace, len(source)):
+        char = source[index]
+        if char == "{":
+            depth += 1
+        elif char == "}":
+            depth -= 1
+            if depth == 0:
+                return source[brace : index + 1]
+    fail(f"unterminated {name}()")
+    return ""
+
+
+def verify_manual_pairing_handoff(source: str) -> None:
+    recovery_body = extract_void_function(source, "voice_recording_control_recovery")
+    manual_start = recovery_body.find("if (manual_pairing_visual)")
+    if manual_start < 0:
+        fail("manual pairing recovery branch is missing")
+    return_start = recovery_body.find("return;", manual_start)
+    if return_start < 0:
+        fail("manual pairing recovery branch has no early return")
+    snapshot_start = recovery_body.find("voice_recording_control_make_snapshot", manual_start)
+    if snapshot_start >= 0 and snapshot_start < return_start:
+        fail("manual pairing cue must return before the normal recovery snapshot")
+    manual_branch = recovery_body[manual_start : return_start + len("return;")]
+    for token in [
+        "status_led_notify_ble_manual_pairing_for_ms",
+        '"manual_windows_unpair_wait"',
+        "waiting for physical EC11 recovery reset",
+    ]:
+        if token not in manual_branch:
+            fail(f"manual pairing branch is missing {token}")
+    if "ble_hid_gap_forget_bonds_and_repair" in manual_branch:
+        fail("manual pairing cue must not reset bonds before physical EC11 recovery")
+    require_contains(
+        source,
+        'voice_recording_control_recovery(source, true, false, true);',
+        "manual RECOVERY:TYPE:MANUAL command is not routed to the handoff cue",
+    )
+
+
 def main() -> int:
     source = VOICE_CONTROL.read_text(encoding="utf-8")
     cases = extract_transition_artifact(source)
@@ -210,6 +259,8 @@ def main() -> int:
         "voice_recording_control_handle_session_inactive",
     ]:
         require_contains(source, boundary, f"missing effect boundary {boundary}")
+
+    verify_manual_pairing_handoff(source)
 
     print(
         "PASS: voice_recording_control FSM artifact covers "

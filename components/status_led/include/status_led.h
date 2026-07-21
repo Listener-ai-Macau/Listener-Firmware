@@ -18,6 +18,7 @@ typedef enum {
     STATUS_LED_BLE_CONNECTED,
     STATUS_LED_BLE_TYPE_READY,
     STATUS_LED_BLE_REPAIRING,
+    STATUS_LED_BLE_MANUAL_PAIRING,
 } status_led_ble_state_t;
 
 typedef enum {
@@ -63,6 +64,7 @@ void status_led_set_type_ota_link_active(bool active, const char *reason);
 void status_led_note_ble_boot_ready(const char *reason);
 void status_led_notify_ble_repairing(const char *reason);
 void status_led_notify_ble_repairing_for_ms(const char *reason, uint32_t hold_ms);
+void status_led_notify_ble_manual_pairing_for_ms(const char *reason, uint32_t hold_ms);
 void status_led_set_recording(bool active, status_led_rec_source_t source);
 void status_led_set_recording_level(uint8_t level_percent);
 void status_led_set_processing(bool active, const char *reason);
