@@ -2709,7 +2709,7 @@ static void status_led_render_ble_locked(status_led_frame_t *frame, uint32_t now
     }
 
     status_led_rgb_t ble_blue = status_led_rgb(0, 0, 255);
-    status_led_rgb_t ble_manual_amber = status_led_rgb(255, 140, 0);
+    status_led_rgb_t ble_manual_blue = status_led_rgb(0, 0, 255);
     status_led_rgb_t color = {0};
     const uint32_t ble_elapsed_ms = status_led_ble_elapsed_locked(now_ms);
     if (status_led_ble_manual_pairing_active_locked(now_ms)) {
@@ -2719,7 +2719,7 @@ static void status_led_render_ble_locked(status_led_frame_t *frame, uint32_t now
             ? STATUS_LED_BLE_ATTENTION_PERCENT
             : 0U;
         color = status_led_token_relative_to_peak_locked(
-            ble_manual_amber,
+            ble_manual_blue,
             percent,
             STATUS_LED_BLE_ATTENTION_PERCENT,
             false);
