@@ -1457,7 +1457,13 @@ static void voice_recording_control_recovery(
         (void)voice_key_input_set_recording_output(false);
         status_led_set_recording(false, STATUS_LED_REC_SOURCE_NONE);
         status_led_set_processing(false, "manual_pairing_wait");
-        status_led_notify_ble_manual_pairing_for_ms("manual_windows_unpair", 120000U);
+        /*
+         * Owner direction 2026-07-21: no extended low-brightness wait cue here.
+         * Low-brightness blue is reserved for an established BLE link; the
+         * seek-pairing double-blink belongs to the ordinary recovery window
+         * (the physical EC11 double-click), so the manual Windows delete path
+         * falls back to the pre-existing LED behavior without a 120 s hold.
+         */
         voice_recording_control_log_flow(
             VOICE_RECORDING_FLOW_RECOVERY,
             "manual_pairing_wait",

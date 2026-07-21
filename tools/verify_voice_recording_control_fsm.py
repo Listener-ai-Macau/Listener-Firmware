@@ -178,12 +178,16 @@ def verify_manual_pairing_handoff(source: str) -> None:
         fail("manual pairing cue must return before the normal recovery snapshot")
     manual_branch = recovery_body[manual_start : return_start + len("return;")]
     for token in [
-        "status_led_notify_ble_manual_pairing_for_ms",
         '"manual_windows_unpair_wait"',
         "waiting for physical EC11 recovery reset",
     ]:
         if token not in manual_branch:
             fail(f"manual pairing branch is missing {token}")
+    if "status_led_notify_ble_manual_pairing_for_ms" in manual_branch:
+        fail(
+            "manual pairing branch must not arm an extended low-brightness wait cue; "
+            "owner direction 2026-07-21 reserves low-brightness blue for an established link"
+        )
     if "ble_hid_gap_forget_bonds_and_repair" in manual_branch:
         fail("manual pairing cue must not reset bonds before physical EC11 recovery")
     require_contains(
