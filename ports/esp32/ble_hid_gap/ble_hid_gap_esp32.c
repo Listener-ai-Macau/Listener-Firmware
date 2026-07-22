@@ -164,6 +164,7 @@ static esp_timer_handle_t s_recovery_pairing_window_timer = NULL;
 static int64_t s_recovery_pairing_window_opened_at_ms = 0;
 static uint16_t s_recovery_security_request_conn_handle = BLE_HS_CONN_HANDLE_NONE;
 static uint16_t s_recovery_security_failed_conn_handle = BLE_HS_CONN_HANDLE_NONE;
+static bool s_last_disconnect_host_deliberate = false;
 static int64_t s_first_pairing_window_opened_at_ms = 0;
 static uint32_t s_last_conn_param_mode = 0;
 static TickType_t s_conn_param_retry_not_before_tick = 0;
@@ -1523,6 +1524,7 @@ static void ble_hid_gap_hold_recovery_pairing_led(const char *reason)
 
 static void ble_hid_gap_note_secure_connection(uint16_t conn_handle, const char *reason)
 {
+    s_last_disconnect_host_deliberate = false;
     s_recovery_security_request_conn_handle = BLE_HS_CONN_HANDLE_NONE;
     ble_hid_gap_set_secure_connection_state(true);
     ble_hid_gap_platform_device_control_set_lifecycle(
@@ -2353,6 +2355,12 @@ static void ble_hid_gap_handle_connect_established(uint16_t conn_handle, const c
     } else if (conn_desc_valid && desc.sec_state.encrypted) {
         ble_hid_gap_note_secure_connection(conn_handle, "connect already encrypted");
     } else if (conn_desc_valid) {
+        if (s_last_disconnect_host_deliberate && !desc.sec_state.encrypted) {
+            /* A host that deliberately unpaired must not look "connected" while
+             * the fresh link is still insecure; show the seek pulse until the
+             * connection secures instead of the connected find-Type background. */
+            status_led_set_ble_state(STATUS_LED_BLE_RECONNECTING, false);
+        }
         rc = ble_gap_security_initiate(conn_handle);
         if (rc == 0) {
             ESP_LOGI(TAG,
@@ -2462,6 +2470,7 @@ static void ble_hid_gap_handle_disconnect(uint16_t conn_handle, int reason, cons
      */
     const bool host_deliberate_disconnect =
         reason == BLE_HS_HCI_ERR(BLE_ERR_REM_USER_CONN_TERM);
+    s_last_disconnect_host_deliberate = host_deliberate_disconnect;
     if (host_deliberate_disconnect) {
         ESP_LOGI(TAG,
                  "host deliberately terminated the connection; suppressing directed reconnect advertising");
