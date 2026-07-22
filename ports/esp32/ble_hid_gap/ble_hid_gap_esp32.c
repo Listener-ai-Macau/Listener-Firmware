@@ -164,9 +164,6 @@ static esp_timer_handle_t s_recovery_pairing_window_timer = NULL;
 static int64_t s_recovery_pairing_window_opened_at_ms = 0;
 static uint16_t s_recovery_security_request_conn_handle = BLE_HS_CONN_HANDLE_NONE;
 static uint16_t s_recovery_security_failed_conn_handle = BLE_HS_CONN_HANDLE_NONE;
-static bool s_last_disconnect_host_deliberate = false;
-static esp_timer_handle_t s_insecure_conn_watchdog_timer = NULL;
-static uint16_t s_insecure_conn_watchdog_conn_handle = BLE_HS_CONN_HANDLE_NONE;
 static int64_t s_first_pairing_window_opened_at_ms = 0;
 static uint32_t s_last_conn_param_mode = 0;
 static TickType_t s_conn_param_retry_not_before_tick = 0;
@@ -1524,68 +1521,8 @@ static void ble_hid_gap_hold_recovery_pairing_led(const char *reason)
     status_led_set_ble_state(STATUS_LED_BLE_PAIRING, false);
 }
 
-#define BLE_HID_GAP_INSECURE_CONN_WATCHDOG_MS 5000U
-
-static void ble_hid_gap_disarm_insecure_conn_watchdog(void)
-{
-    s_insecure_conn_watchdog_conn_handle = BLE_HS_CONN_HANDLE_NONE;
-    s_last_disconnect_host_deliberate = false;
-    if (s_insecure_conn_watchdog_timer != NULL) {
-        (void)esp_timer_stop(s_insecure_conn_watchdog_timer);
-    }
-}
-
-static void ble_hid_gap_insecure_conn_watchdog_cb(void *arg)
-{
-    (void)arg;
-    const uint16_t conn_handle = s_insecure_conn_watchdog_conn_handle;
-    s_insecure_conn_watchdog_conn_handle = BLE_HS_CONN_HANDLE_NONE;
-    if (conn_handle == BLE_HS_CONN_HANDLE_NONE) {
-        return;
-    }
-    struct ble_gap_conn_desc desc;
-    if (ble_gap_conn_find(conn_handle, &desc) != 0) {
-        return;
-    }
-    if (desc.sec_state.encrypted || desc.sec_state.bonded) {
-        return;
-    }
-    ESP_LOGW(TAG,
-             "post-unpair follow-up connection stayed insecure for %u ms; terminating conn=%u",
-             (unsigned)BLE_HID_GAP_INSECURE_CONN_WATCHDOG_MS,
-             conn_handle);
-    diag_log(DIAG_SRC_BLE_GAP, DIAG_GAP_RECOVERY, DIAG_SEV_WARN,
-             21, 0, 0, conn_handle);
-    status_led_set_ble_state(STATUS_LED_BLE_RECONNECTING, false);
-    (void)ble_gap_terminate(conn_handle, BLE_ERR_REM_USER_CONN_TERM);
-}
-
-static void ble_hid_gap_arm_insecure_conn_watchdog(uint16_t conn_handle)
-{
-    if (!s_last_disconnect_host_deliberate || ble_hid_gap_recovery_pairing_window_open()) {
-        return;
-    }
-    if (s_insecure_conn_watchdog_timer == NULL) {
-        const esp_timer_create_args_t timer_args = {
-            .callback = ble_hid_gap_insecure_conn_watchdog_cb,
-            .arg = NULL,
-            .dispatch_method = ESP_TIMER_TASK,
-            .name = "ble_insecure_wd",
-            .skip_unhandled_events = true,
-        };
-        if (esp_timer_create(&timer_args, &s_insecure_conn_watchdog_timer) != ESP_OK) {
-            return;
-        }
-    }
-    (void)esp_timer_stop(s_insecure_conn_watchdog_timer);
-    s_insecure_conn_watchdog_conn_handle = conn_handle;
-    (void)esp_timer_start_once(s_insecure_conn_watchdog_timer,
-                               (uint64_t)BLE_HID_GAP_INSECURE_CONN_WATCHDOG_MS * 1000ULL);
-}
-
 static void ble_hid_gap_note_secure_connection(uint16_t conn_handle, const char *reason)
 {
-    ble_hid_gap_disarm_insecure_conn_watchdog();
     s_recovery_security_request_conn_handle = BLE_HS_CONN_HANDLE_NONE;
     ble_hid_gap_set_secure_connection_state(true);
     ble_hid_gap_platform_device_control_set_lifecycle(
@@ -2417,7 +2354,6 @@ static void ble_hid_gap_handle_connect_established(uint16_t conn_handle, const c
         ble_hid_gap_note_secure_connection(conn_handle, "connect already encrypted");
     } else if (conn_desc_valid) {
         rc = ble_gap_security_initiate(conn_handle);
-        ble_hid_gap_arm_insecure_conn_watchdog(conn_handle);
         if (rc == 0) {
             ESP_LOGI(TAG,
                      "security initiate requested conn=%u source=%s",
@@ -2526,7 +2462,6 @@ static void ble_hid_gap_handle_disconnect(uint16_t conn_handle, int reason, cons
      */
     const bool host_deliberate_disconnect =
         reason == BLE_HS_HCI_ERR(BLE_ERR_REM_USER_CONN_TERM);
-    s_last_disconnect_host_deliberate = host_deliberate_disconnect;
     if (host_deliberate_disconnect) {
         ESP_LOGI(TAG,
                  "host deliberately terminated the connection; suppressing directed reconnect advertising");
