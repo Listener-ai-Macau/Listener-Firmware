@@ -10,6 +10,16 @@ REPO_ROOT = pathlib.Path(__file__).resolve().parents[1]
 STREAM = REPO_ROOT / "ports" / "esp32" / "ble_audio_stream" / "ble_audio_stream_esp32.c"
 EVENTS = REPO_ROOT / "components" / "diag_log" / "include" / "diag_log_events.h"
 GAP = REPO_ROOT / "ports" / "esp32" / "ble_hid_gap" / "ble_hid_gap_esp32.c"
+PLATFORM_LOSSLESS_CODEC = (
+    REPO_ROOT
+    / "third_party"
+    / "denzic-platform"
+    / "audio"
+    / "embedded"
+    / "c"
+    / "src"
+    / "denzic_audio_lossless_v1.c"
+)
 
 
 STATE_TOKENS = [
@@ -42,12 +52,6 @@ SOURCE_TOKENS = [
     "BLE_AUDIO_STREAM_LOSSLESS_RICE_VERSION_V1 1u",
     "BLE_AUDIO_STREAM_LOSSLESS_RICE_VERSION_V2 2u",
     "BLE_AUDIO_STREAM_LOSSLESS_RICE_VERSION_V3 3u",
-    "BLE_AUDIO_STREAM_LOSSLESS_RICE_PREDICTOR_FIRST_ORDER 1u",
-    "BLE_AUDIO_STREAM_LOSSLESS_RICE_PREDICTOR_SECOND_ORDER 2u",
-    "BLE_AUDIO_STREAM_LOSSLESS_RICE_PREDICTOR_THIRD_ORDER 3u",
-    "BLE_AUDIO_STREAM_LOSSLESS_RICE_PREDICTOR_FOURTH_ORDER 4u",
-    "BLE_AUDIO_STREAM_LOSSLESS_RICE_V2_PARAMETER_K_SPAN 1u",
-    "BLE_AUDIO_STREAM_LOSSLESS_RICE_V3_PREDICTOR_SAMPLE_STRIDE 16U",
     "BLE_AUDIO_STREAM_LOSSLESS_RICE_HEADER_BYTES 6u",
     "BLE_AUDIO_STREAM_LOSSLESS_RICE_PREFERRED_PCM_BYTES 480U",
     "BLE_AUDIO_STREAM_LOSSLESS_RICE_FALLBACK_STEP_BYTES 32U",
@@ -102,6 +106,20 @@ SOURCE_TOKENS = [
     "audio session stop queued during link recovery",
 ]
 
+PLATFORM_LOSSLESS_CODEC_TOKENS = [
+    "denzic_audio_lossless_v1_encode",
+    "denzic_audio_lossless_v1_decode",
+    "DENZIC_AUDIO_LOSSLESS_V1_PREDICTOR_FIRST_ORDER",
+    "DENZIC_AUDIO_LOSSLESS_V1_PREDICTOR_SECOND_ORDER",
+    "DENZIC_AUDIO_LOSSLESS_V1_PREDICTOR_THIRD_ORDER",
+    "DENZIC_AUDIO_LOSSLESS_V1_PREDICTOR_FOURTH_ORDER",
+    "DENZIC_AUDIO_LOSSLESS_V1_MAX_K",
+    "DENZIC_AUDIO_V1_LOSSLESS_RICE_V2_PARAMETER_K_SPAN",
+    "DENZIC_AUDIO_V1_LOSSLESS_RICE_V3_PREDICTOR_SAMPLE_STRIDE",
+    "DENZIC_AUDIO_V1_LOSSLESS_RICE_V3_MAX_PREDICTOR",
+    "best_predictor << 4U",
+]
+
 GAP_SOURCE_TOKENS = [
     "s_active_connection_required",
     "s_ec11_fast_recording_armed",
@@ -145,6 +163,7 @@ def static_source_checks() -> None:
     stream = STREAM.read_text(encoding="utf-8")
     events = EVENTS.read_text(encoding="utf-8")
     gap = GAP.read_text(encoding="utf-8")
+    platform_codec = PLATFORM_LOSSLESS_CODEC.read_text(encoding="utf-8")
 
     for token in STATE_TOKENS:
         require(stream, token, STREAM)
@@ -152,6 +171,8 @@ def static_source_checks() -> None:
         require(stream, token, STREAM)
     for token in GAP_SOURCE_TOKENS:
         require(gap, token, GAP)
+    for token in PLATFORM_LOSSLESS_CODEC_TOKENS:
+        require(platform_codec, token, PLATFORM_LOSSLESS_CODEC)
     require(events, "DIAG_BAUD_REPLAY", EVENTS)
 
     require_regex(
@@ -374,18 +395,25 @@ def static_source_checks() -> None:
         STREAM,
     )
     require_regex(
+        platform_codec,
+        r"denzic_audio_lossless_v1_encode\(.*?"
+        r"version == DENZIC_AUDIO_LOSSLESS_V1_VERSION_V3.*?"
+        r"DENZIC_AUDIO_V1_LOSSLESS_RICE_V3_MAX_PREDICTOR.*?"
+        r"best_predictor << 4U",
+        "platform codec selects a predictor within the negotiated version",
+        PLATFORM_LOSSLESS_CODEC,
+    )
+    require_regex(
         stream,
         r"ble_audio_stream_encode_lossless_rice\(.*?"
-        r"rice_version == BLE_AUDIO_STREAM_LOSSLESS_RICE_VERSION_V3.*?"
-        r"BLE_AUDIO_STREAM_LOSSLESS_RICE_V3_MAX_PREDICTOR.*?"
-        r"best_predictor << 4U.*?"
+        r"denzic_audio_lossless_v1_encode\(.*?"
         r"ble_audio_stream_plan_session_audio_packet\(.*?"
         r"ble_audio_stream_session_lossless_rice_enabled\(\).*?"
         r"BLE_AUDIO_STREAM_LOSSLESS_RICE_PREFERRED_PCM_BYTES.*?"
         r"ble_audio_stream_encode_lossless_rice\(.*?"
         r"s_transport_lossless_rice_version.*?"
         r"BLE_AUDIO_STREAM_LOSSLESS_RICE_FLAG",
-        "versioned lossless packet plan selects a predictor within the single-PDU budget",
+        "versioned lossless packet plan delegates encoding to the platform codec",
         STREAM,
     )
     require_regex(

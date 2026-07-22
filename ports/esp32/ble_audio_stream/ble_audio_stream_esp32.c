@@ -26,6 +26,7 @@
 #include "device_settings.h"
 #include "listener_device.h"
 #include "listener_audio_proto.h"
+#include "denzic_audio_lossless_v1.h"
 #include "status_led.h"
 #include "watchdog_platform.h"
 
@@ -72,19 +73,24 @@ extern void firmware_ota_set_observability_correlation(uint64_t correlation_id) 
 #define BLE_AUDIO_STREAM_LOSSLESS_RICE_VERSION_V2 2u
 #define BLE_AUDIO_STREAM_LOSSLESS_RICE_VERSION_V3 3u
 #define BLE_AUDIO_STREAM_LOSSLESS_RICE_HEADER_BYTES 6u
-#define BLE_AUDIO_STREAM_LOSSLESS_RICE_MAX_K 15u
-#define BLE_AUDIO_STREAM_LOSSLESS_RICE_PREDICTOR_FIRST_ORDER 1u
-#define BLE_AUDIO_STREAM_LOSSLESS_RICE_PREDICTOR_SECOND_ORDER 2u
-#define BLE_AUDIO_STREAM_LOSSLESS_RICE_PREDICTOR_THIRD_ORDER 3u
-#define BLE_AUDIO_STREAM_LOSSLESS_RICE_PREDICTOR_FOURTH_ORDER 4u
-#define BLE_AUDIO_STREAM_LOSSLESS_RICE_V3_MAX_PREDICTOR \
-    BLE_AUDIO_STREAM_LOSSLESS_RICE_PREDICTOR_FOURTH_ORDER
-#define BLE_AUDIO_STREAM_LOSSLESS_RICE_V2_PARAMETER_K_SPAN 1u
-#define BLE_AUDIO_STREAM_LOSSLESS_RICE_V3_PREDICTOR_SAMPLE_STRIDE 16U
 #define BLE_AUDIO_STREAM_LOSSLESS_RICE_PREFERRED_PCM_BYTES 480U
 #define BLE_AUDIO_STREAM_LOSSLESS_RICE_FALLBACK_STEP_BYTES 32U
 #define BLE_AUDIO_STREAM_LOSSLESS_RICE_FINE_FALLBACK_STEP_BYTES 16U
 #define BLE_AUDIO_STREAM_LOSSLESS_RICE_FINE_FALLBACK_FLOOR_BYTES 400U
+
+/* The lossless Rice codec itself lives in the shared platform core
+ * (denzic_audio_lossless_v1); the transport keeps only its packet-planning
+ * and negotiation constants, pinned to the platform contract. */
+_Static_assert(BLE_AUDIO_STREAM_LOSSLESS_RICE_FLAG == DENZIC_AUDIO_LOSSLESS_V1_FLAG,
+    "lossless Rice flag must match the platform contract");
+_Static_assert(BLE_AUDIO_STREAM_LOSSLESS_RICE_VERSION_V1 == DENZIC_AUDIO_LOSSLESS_V1_VERSION_V1,
+    "lossless Rice V1 must match the platform contract");
+_Static_assert(BLE_AUDIO_STREAM_LOSSLESS_RICE_VERSION_V2 == DENZIC_AUDIO_LOSSLESS_V1_VERSION_V2,
+    "lossless Rice V2 must match the platform contract");
+_Static_assert(BLE_AUDIO_STREAM_LOSSLESS_RICE_VERSION_V3 == DENZIC_AUDIO_LOSSLESS_V1_VERSION_V3,
+    "lossless Rice V3 must match the platform contract");
+_Static_assert(BLE_AUDIO_STREAM_LOSSLESS_RICE_HEADER_BYTES == DENZIC_AUDIO_LOSSLESS_V1_HEADER_BYTES,
+    "lossless Rice seed header must match the platform contract");
 #define BLE_AUDIO_STREAM_AUDIO_JOB_COOPERATIVE_YIELD_BATCHES 5U
 #define BLE_AUDIO_NOTIFY_STATE_DISABLED 0U
 #define BLE_AUDIO_NOTIFY_STATE_ENABLED 1U
@@ -394,49 +400,6 @@ static bool ble_audio_stream_session_lossless_rice_enabled(void)
     return s_transport_lossless_rice_enabled;
 }
 
-static uint32_t ble_audio_stream_lossless_rice_zigzag(int32_t residual)
-{
-    if (residual >= 0) {
-        return (uint32_t)residual * 2U;
-    }
-    return (uint32_t)(-residual) * 2U - 1U;
-}
-
-static int16_t ble_audio_stream_read_pcm_i16_le(const uint8_t *pcm)
-{
-    uint16_t raw = (uint16_t)pcm[0] | ((uint16_t)pcm[1] << 8);
-    return (int16_t)raw;
-}
-
-static int32_t ble_audio_stream_lossless_rice_residual(
-    const uint8_t *pcm,
-    uint16_t sample_offset,
-    uint8_t predictor)
-{
-    int32_t current = ble_audio_stream_read_pcm_i16_le(pcm + sample_offset * 2U);
-    int32_t previous = ble_audio_stream_read_pcm_i16_le(pcm + (sample_offset - 1U) * 2U);
-    if (predictor == BLE_AUDIO_STREAM_LOSSLESS_RICE_PREDICTOR_FIRST_ORDER) {
-        return current - previous;
-    }
-
-    int32_t previous_previous =
-        ble_audio_stream_read_pcm_i16_le(pcm + (sample_offset - 2U) * 2U);
-    if (predictor == BLE_AUDIO_STREAM_LOSSLESS_RICE_PREDICTOR_SECOND_ORDER) {
-        return current - (2 * previous) + previous_previous;
-    }
-
-    int32_t previous_third =
-        ble_audio_stream_read_pcm_i16_le(pcm + (sample_offset - 3U) * 2U);
-    if (predictor == BLE_AUDIO_STREAM_LOSSLESS_RICE_PREDICTOR_THIRD_ORDER) {
-        return current - (3 * previous) + (3 * previous_previous) - previous_third;
-    }
-
-    int32_t previous_fourth =
-        ble_audio_stream_read_pcm_i16_le(pcm + (sample_offset - 4U) * 2U);
-    return current - (4 * previous) + (6 * previous_previous) -
-           (4 * previous_third) + previous_fourth;
-}
-
 static bool ble_audio_stream_encode_lossless_rice(
     const uint8_t *pcm,
     uint16_t pcm_bytes,
@@ -445,152 +408,16 @@ static bool ble_audio_stream_encode_lossless_rice(
     uint16_t encoded_capacity,
     uint16_t *encoded_bytes)
 {
-    if (pcm == NULL || encoded == NULL || encoded_bytes == NULL ||
-        pcm_bytes < 6 || (pcm_bytes & 1U) != 0 ||
-        (rice_version != BLE_AUDIO_STREAM_LOSSLESS_RICE_VERSION_V1 &&
-         rice_version != BLE_AUDIO_STREAM_LOSSLESS_RICE_VERSION_V2 &&
-         rice_version != BLE_AUDIO_STREAM_LOSSLESS_RICE_VERSION_V3)) {
-        return false;
-    }
-
-    uint8_t best_k = 0;
-    uint8_t best_predictor = BLE_AUDIO_STREAM_LOSSLESS_RICE_PREDICTOR_SECOND_ORDER;
-    uint32_t best_bits = UINT32_MAX;
-    uint8_t first_predictor = rice_version == BLE_AUDIO_STREAM_LOSSLESS_RICE_VERSION_V1
-        ? BLE_AUDIO_STREAM_LOSSLESS_RICE_PREDICTOR_SECOND_ORDER
-        : BLE_AUDIO_STREAM_LOSSLESS_RICE_PREDICTOR_FIRST_ORDER;
-    uint8_t last_predictor = rice_version == BLE_AUDIO_STREAM_LOSSLESS_RICE_VERSION_V3
-        ? BLE_AUDIO_STREAM_LOSSLESS_RICE_V3_MAX_PREDICTOR
-        : BLE_AUDIO_STREAM_LOSSLESS_RICE_PREDICTOR_SECOND_ORDER;
-    uint16_t sample_count = pcm_bytes / 2U;
-    uint32_t selected_total_zigzag = 0;
-    uint32_t best_predictor_score = UINT32_MAX;
-
-    for (uint8_t predictor = first_predictor; predictor <= last_predictor; ++predictor) {
-        uint16_t first_residual_sample = rice_version == BLE_AUDIO_STREAM_LOSSLESS_RICE_VERSION_V3
-            ? predictor
-            : BLE_AUDIO_STREAM_LOSSLESS_RICE_PREDICTOR_SECOND_ORDER;
-        if (sample_count <= first_residual_sample) {
-            continue;
-        }
-
-        uint32_t total_zigzag = 0;
-        uint16_t sample_stride = rice_version == BLE_AUDIO_STREAM_LOSSLESS_RICE_VERSION_V3
-            ? BLE_AUDIO_STREAM_LOSSLESS_RICE_V3_PREDICTOR_SAMPLE_STRIDE
-            : 1U;
-        for (uint16_t sample_offset = first_residual_sample;
-             sample_offset < sample_count;
-             sample_offset = (uint16_t)(sample_offset + sample_stride)) {
-            total_zigzag += ble_audio_stream_lossless_rice_zigzag(
-                ble_audio_stream_lossless_rice_residual(pcm, sample_offset, predictor));
-        }
-        uint32_t header_bits = (rice_version == BLE_AUDIO_STREAM_LOSSLESS_RICE_VERSION_V3
-                ? (2U + (uint32_t)predictor * 2U)
-                : BLE_AUDIO_STREAM_LOSSLESS_RICE_HEADER_BYTES) * 8U;
-        uint32_t predictor_score = total_zigzag + header_bits;
-        if (predictor_score < best_predictor_score) {
-            best_predictor_score = predictor_score;
-            best_predictor = predictor;
-            selected_total_zigzag = total_zigzag;
-        }
-    }
-
-    if (best_predictor_score == UINT32_MAX) {
-        return false;
-    }
-
-    uint16_t first_residual_sample = rice_version == BLE_AUDIO_STREAM_LOSSLESS_RICE_VERSION_V3
-        ? best_predictor
-        : BLE_AUDIO_STREAM_LOSSLESS_RICE_PREDICTOR_SECOND_ORDER;
-    uint16_t residual_count = sample_count - first_residual_sample;
-    if (rice_version == BLE_AUDIO_STREAM_LOSSLESS_RICE_VERSION_V3) {
-        selected_total_zigzag = 0;
-        for (uint16_t sample_offset = first_residual_sample;
-             sample_offset < sample_count;
-             ++sample_offset) {
-            selected_total_zigzag += ble_audio_stream_lossless_rice_zigzag(
-                ble_audio_stream_lossless_rice_residual(pcm, sample_offset, best_predictor));
-        }
-    }
-    uint8_t first_k = 0;
-    uint8_t last_k = BLE_AUDIO_STREAM_LOSSLESS_RICE_MAX_K;
-    if (rice_version != BLE_AUDIO_STREAM_LOSSLESS_RICE_VERSION_V1) {
-        uint32_t average_zigzag =
-            (selected_total_zigzag + residual_count - 1U) / residual_count;
-        uint8_t estimated_k = 0;
-        while (average_zigzag > 1U && estimated_k < BLE_AUDIO_STREAM_LOSSLESS_RICE_MAX_K) {
-            average_zigzag >>= 1U;
-            estimated_k++;
-        }
-        if (rice_version == BLE_AUDIO_STREAM_LOSSLESS_RICE_VERSION_V3) {
-            first_k = estimated_k;
-            last_k = estimated_k;
-        } else {
-            first_k = estimated_k > BLE_AUDIO_STREAM_LOSSLESS_RICE_V2_PARAMETER_K_SPAN
-                ? (uint8_t)(estimated_k - BLE_AUDIO_STREAM_LOSSLESS_RICE_V2_PARAMETER_K_SPAN)
-                : 0;
-            last_k = estimated_k + BLE_AUDIO_STREAM_LOSSLESS_RICE_V2_PARAMETER_K_SPAN;
-            if (last_k > BLE_AUDIO_STREAM_LOSSLESS_RICE_MAX_K) {
-                last_k = BLE_AUDIO_STREAM_LOSSLESS_RICE_MAX_K;
-            }
-        }
-    }
-
-    uint32_t header_bits = (rice_version == BLE_AUDIO_STREAM_LOSSLESS_RICE_VERSION_V3
-            ? (2U + (uint32_t)best_predictor * 2U)
-            : BLE_AUDIO_STREAM_LOSSLESS_RICE_HEADER_BYTES) * 8U;
-    for (uint8_t rice_k = first_k; rice_k <= last_k; ++rice_k) {
-        uint32_t bits = header_bits;
-        for (uint16_t sample_offset = first_residual_sample;
-             sample_offset < sample_count;
-             ++sample_offset) {
-            uint32_t zigzag = ble_audio_stream_lossless_rice_zigzag(
-                ble_audio_stream_lossless_rice_residual(pcm, sample_offset, best_predictor));
-            bits += (zigzag >> rice_k) + 1U + rice_k;
-        }
-        if (bits < best_bits) {
-            best_bits = bits;
-            best_k = rice_k;
-        }
-    }
-
-    uint32_t required_bytes = (best_bits + 7U) / 8U;
-    if (required_bytes >= pcm_bytes || required_bytes > encoded_capacity) {
-        return false;
-    }
-
-    memset(encoded, 0, required_bytes);
-    encoded[0] = rice_version;
-    encoded[1] = rice_version != BLE_AUDIO_STREAM_LOSSLESS_RICE_VERSION_V1
-        ? (uint8_t)((best_predictor << 4U) | best_k)
-        : best_k;
-    uint16_t header_bytes = rice_version == BLE_AUDIO_STREAM_LOSSLESS_RICE_VERSION_V3
-        ? (uint16_t)(2U + best_predictor * 2U)
-        : BLE_AUDIO_STREAM_LOSSLESS_RICE_HEADER_BYTES;
-    uint8_t seed_count = rice_version == BLE_AUDIO_STREAM_LOSSLESS_RICE_VERSION_V3
-        ? best_predictor
-        : BLE_AUDIO_STREAM_LOSSLESS_RICE_PREDICTOR_SECOND_ORDER;
-    memcpy(encoded + 2U, pcm, seed_count * 2U);
-
-    uint32_t bit_offset = (uint32_t)header_bytes * 8U;
-    for (uint16_t sample_offset = first_residual_sample;
-         sample_offset < sample_count;
-         ++sample_offset) {
-        uint32_t zigzag = ble_audio_stream_lossless_rice_zigzag(
-            ble_audio_stream_lossless_rice_residual(pcm, sample_offset, best_predictor));
-        bit_offset += zigzag >> best_k;
-        encoded[bit_offset / 8U] |= (uint8_t)(1U << (bit_offset % 8U));
-        bit_offset++;
-        for (uint8_t bit_index = 0; bit_index < best_k; ++bit_index) {
-            if ((zigzag & (1U << bit_index)) != 0) {
-                encoded[bit_offset / 8U] |= (uint8_t)(1U << (bit_offset % 8U));
-            }
-            bit_offset++;
-        }
-    }
-
-    *encoded_bytes = (uint16_t)required_bytes;
-    return true;
+    /* The shared platform codec owns zigzag mapping, predictor selection, and
+     * bit packing; the transport keeps only packet planning and the negotiated
+     * version state. */
+    return denzic_audio_lossless_v1_encode(
+        pcm,
+        pcm_bytes,
+        rice_version,
+        encoded,
+        encoded_capacity,
+        encoded_bytes);
 }
 
 /* The Windows link is notification-rate bound. When negotiated lossless
