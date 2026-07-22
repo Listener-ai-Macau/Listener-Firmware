@@ -25,7 +25,9 @@ def main() -> int:
     gap = read_text("ports/esp32/ble_hid_gap/ble_hid_gap_esp32.c")
     hid = read_text("ports/esp32/ble_hid/ble_hid.c")
     diag_log_header = read_text("components/diag_log/include/diag_log.h")
-    diag_platform = read_text("ports/esp32/diag_log_platform/diag_log_flash.c")
+    diag_platform = read_text(
+        "third_party/denzic-platform/observability/embedded/c/include/denzic_diag_log_store.h"
+    )
 
     require("BLE_DIAG_LOG_SERVICE_UUID" in diag_header, "diagnostic service UUID is missing")
     require("BLE_DIAG_LOG_CONTROL_UUID" in diag_header, "diagnostic control UUID is missing")
@@ -76,8 +78,8 @@ def main() -> int:
 
     require("DIAG_LOG_EVENT_WIRE_BYTES 24U" in diag_log_header, "diag_log wire event size must be explicit")
     require(
-        "_Static_assert(DIAG_EVENT_SIZE == DIAG_LOG_EVENT_WIRE_BYTES" in diag_platform,
-        "diag_log platform must assert the BLE wire event size",
+        "sizeof(denzic_diag_log_event_t) == DENZIC_DIAG_LOG_EVENT_WIRE_BYTES" in diag_platform,
+        "diag log store must assert the BLE wire event size",
     )
     require(
         "power_manager_set_blocker(POWER_MANAGER_BLOCKER_DIAG_EXPORT, true)" in diag_service
