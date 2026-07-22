@@ -256,9 +256,11 @@ function Invoke-OtaBootInactiveForPreservedFlash {
     param([Parameter(Mandatory = $true)][string]$SerialPortName)
 
     $output = Invoke-OtaSerialCommand -SerialPortName $SerialPortName -Command "~OTA:TEST_BOOT_INACTIVE"
-    if ($output -notmatch '(?i)OTA test boot inactive partition=ota_0; rebooting') {
-        throw "Preserved flash wrote ota_0, but firmware did not confirm the ota_0 boot handoff."
+    $matches = [regex]::Matches($output, '(?im)OTA test boot inactive partition=(ota_[01]); rebooting')
+    if ($matches.Count -eq 0) {
+        throw "Firmware did not confirm an inactive OTA boot handoff."
     }
+    return $matches[$matches.Count - 1].Groups[1].Value.ToLowerInvariant()
 }
 
 $projectRoot = Split-Path -Parent $PSScriptRoot
@@ -284,13 +286,18 @@ if ($PreserveOtaData.IsPresent) {
         Invoke-IdfSerialActionWithBaudRetry -Action $action -BuildDirectory $buildDirResolved -SerialPortName $resolvedPort
     }
 
-    # app-flash writes ota_0. When otadata still selects ota_1, explicitly hand off to the freshly written slot.
-    if ($bootPartitionBeforeFlash -eq "ota_1") {
-        Invoke-OtaBootInactiveForPreservedFlash -SerialPortName $resolvedPort
+    # app-flash writes ota_0. A reset can briefly keep the just-flashed ota_0
+    # running while otadata still names ota_1, so one inactive-slot request may
+    # first reboot into ota_1. Re-read the boot slot after each bounded handoff
+    # instead of assuming that "inactive" is always ota_0.
+    $bootPartitionAfterFlash = Get-OtaBootPartition -SerialPortName $resolvedPort
+    for ($handoffAttempt = 1; $bootPartitionAfterFlash -ne "ota_0" -and $handoffAttempt -le 2; $handoffAttempt++) {
+        $handoffTarget = Invoke-OtaBootInactiveForPreservedFlash -SerialPortName $resolvedPort
+        Write-Host "PreserveOtaData: inactive-slot handoff attempt $handoffAttempt selected $handoffTarget."
         Start-Sleep -Seconds 3
+        $bootPartitionAfterFlash = Get-OtaBootPartition -SerialPortName $resolvedPort
     }
 
-    $bootPartitionAfterFlash = Get-OtaBootPartition -SerialPortName $resolvedPort
     if ($bootPartitionAfterFlash -ne "ota_0") {
         throw "Preserved flash requires boot=ota_0 after app-flash, observed $bootPartitionAfterFlash."
     }
