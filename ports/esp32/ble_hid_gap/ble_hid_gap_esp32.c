@@ -2453,7 +2453,22 @@ static void ble_hid_gap_handle_disconnect(uint16_t conn_handle, int reason, cons
     }
 
     status_led_set_ble_state(STATUS_LED_BLE_RECONNECTING, false);
-    s_directed_adv_pending = true;
+    /*
+     * A remote-user-terminated disconnect means the host deliberately removed
+     * the pairing (Windows manual delete). Do not chase that host with
+     * directed advertising: the device stays passively discoverable instead
+     * of trying to reclaim a host that explicitly removed it. Transient link
+     * loss keeps the ordinary directed reconnect path.
+     */
+    const bool host_deliberate_disconnect =
+        reason == BLE_HS_HCI_ERR(BLE_ERR_REM_USER_CONN_TERM);
+    if (host_deliberate_disconnect) {
+        ESP_LOGI(TAG,
+                 "host deliberately terminated the connection; suppressing directed reconnect advertising");
+        diag_log(DIAG_SRC_BLE_GAP, DIAG_GAP_BOND, DIAG_SEV_INFO,
+                 2, (uint32_t)reason, conn_handle, 0);
+    }
+    s_directed_adv_pending = !host_deliberate_disconnect;
     s_last_adv_was_directed = false;
     if (s_shutdown_quiesce) {
         s_directed_adv_pending = false;
