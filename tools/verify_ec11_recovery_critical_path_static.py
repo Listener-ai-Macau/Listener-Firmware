@@ -251,15 +251,15 @@ def main() -> int:
 
     for fragment in (
         "DIAG_LOG_WRITE_QUEUE_DEPTH",
-        "xQueueCreate(DIAG_LOG_WRITE_QUEUE_DEPTH, sizeof(diag_event_t))",
+        "xQueueCreate(DIAG_LOG_WRITE_QUEUE_DEPTH, sizeof(denzic_diag_log_event_t))",
         "diag_log_platform_writer_task",
         "xQueueSend(s_write_queue, &evt, 0)",
-        "static void diag_log_platform_write_now(const diag_event_t *evt)",
+        "denzic_diag_log_event_t evt",
     ):
         require_fragment(diag, fragment, failures)
     require_ordered(
         diag,
-        "static void diag_log_platform_write_now(const diag_event_t *evt)",
+        "denzic_diag_log_event_t evt",
         "void diag_log_platform_write(\n",
         failures,
     )
