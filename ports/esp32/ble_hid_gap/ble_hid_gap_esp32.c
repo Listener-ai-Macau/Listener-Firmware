@@ -26,6 +26,7 @@
 #include "status_led.h"
 #include "denzic_device_control_v1.h"
 #include "denzic_ble_pairing_v1.h"
+#include "denzic_ble_pairing_v1_orchestration.h"
 
 #include "esp_bt.h"
 #include "esp_err.h"
@@ -2396,13 +2397,14 @@ static void ble_hid_gap_handle_connect_established(uint16_t conn_handle, const c
 
 static void ble_hid_gap_handle_disconnect(uint16_t conn_handle, int reason, const char *source)
 {
-    int rc;
+    int rc = -1;
     const int64_t now_ms = ble_hid_gap_now_ms();
     const bool duplicate_disconnect =
         s_last_disconnect_event_conn_handle == conn_handle &&
         s_last_disconnect_event_reason == reason &&
-        now_ms - s_last_disconnect_event_at_ms >= 0 &&
-        now_ms - s_last_disconnect_event_at_ms < 750;
+        denzic_ble_pairing_v1_orch_disconnect_within_duplicate_filter(
+            s_last_disconnect_event_at_ms,
+            now_ms);
     if (duplicate_disconnect) {
         ble_hid_gap_connection_snapshot_t active_snapshot = ble_hid_gap_connection_snapshot();
         if (!active_snapshot.connected || active_snapshot.conn_handle != conn_handle) {
@@ -2489,7 +2491,22 @@ static void ble_hid_gap_handle_disconnect(uint16_t conn_handle, int reason, cons
             false) ==
         DENZIC_BLE_PAIRING_V1_ADVERTISING_AFTER_DISCONNECT_DIRECTED_RECONNECT;
     s_last_adv_was_directed = false;
-    if (s_shutdown_quiesce) {
+    /*
+     * Restart routing is decided by the platform orchestration layer. The
+     * shutdown flag is sampled before the keep-connectable hook runs and the
+     * key-wake / bond-delete flags after it, matching the event-path order.
+     */
+    const bool shutdown_quiesce_at_disconnect = s_shutdown_quiesce;
+    if (!shutdown_quiesce_at_disconnect) {
+        ble_hid_gap_keep_recovery_adv_connectable("disconnect");
+    }
+    const uint8_t disconnect_adv_action =
+        denzic_ble_pairing_v1_orch_adv_restart_after_disconnect(
+            shutdown_quiesce_at_disconnect,
+            s_key_wake_only_advertising,
+            !shutdown_quiesce_at_disconnect &&
+                ble_hid_gap_recovery_bond_delete_active());
+    if (disconnect_adv_action == DENZIC_BLE_PAIRING_V1_ADV_RESTART_SUPPRESS_SHUTDOWN) {
         s_directed_adv_pending = false;
         ESP_LOGW(TAG, "shutdown quiesce active: suppressing advertising restart after disconnect");
         ble_hid_gap_log_adv_state(
@@ -2500,8 +2517,7 @@ static void ble_hid_gap_handle_disconnect(uint16_t conn_handle, int reason, cons
             DIAG_SEV_WARN);
         return;
     }
-    ble_hid_gap_keep_recovery_adv_connectable("disconnect");
-    if (s_key_wake_only_advertising) {
+    if (disconnect_adv_action == DENZIC_BLE_PAIRING_V1_ADV_RESTART_SUPPRESS_KEY_WAKE) {
         s_directed_adv_pending = false;
         ESP_LOGI(TAG, "key-wake-only idle: suppressing advertising restart after disconnect");
         ble_hid_gap_log_adv_state(
@@ -2512,7 +2528,7 @@ static void ble_hid_gap_handle_disconnect(uint16_t conn_handle, int reason, cons
             DIAG_SEV_INFO);
         return;
     }
-    if (ble_hid_gap_recovery_bond_delete_active()) {
+    if (disconnect_adv_action == DENZIC_BLE_PAIRING_V1_ADV_RESTART_DEFER_BOND_DELETE) {
         ESP_LOGW(TAG, "recovery: advertising deferred after disconnect until async local bond delete completes");
         diag_log(DIAG_SRC_BLE_GAP, DIAG_GAP_RECOVERY, DIAG_SEV_WARN,
                  16, 0, 0, conn_handle);
@@ -2533,8 +2549,13 @@ static void ble_hid_gap_handle_disconnect(uint16_t conn_handle, int reason, cons
                       9, (uint32_t)rc, 0, conn_handle);
         }
     }
-    if (disconnect_recovery_pairing_window && s_native_recovery_identity_rotate_pending &&
-        rc == 0 && recovery_bonded_peer_count == 0) {
+    const bool disconnect_bond_lookup_ok =
+        disconnect_recovery_pairing_window && rc == 0;
+    if (denzic_ble_pairing_v1_orch_irk_reset_after_disconnect(
+            disconnect_recovery_pairing_window,
+            s_native_recovery_identity_rotate_pending,
+            disconnect_bond_lookup_ok,
+            recovery_bonded_peer_count)) {
         esp_err_t irk_ret = ble_hid_gap_reset_local_irk_without_bonds();
         if (irk_ret != ESP_OK) {
             ESP_LOGE(
@@ -2772,7 +2793,15 @@ nimble_hid_gap_event(struct ble_gap_event *event, void *arg)
             ESP_LOGI(TAG, "directed advertising completed; falling back to undirected advertising");
             s_last_adv_was_directed = false;
         }
-        if (s_shutdown_quiesce) {
+        const bool shutdown_quiesce_at_adv_complete = s_shutdown_quiesce;
+        if (!shutdown_quiesce_at_adv_complete) {
+            ble_hid_gap_keep_recovery_adv_connectable("adv complete");
+        }
+        const uint8_t adv_complete_action =
+            denzic_ble_pairing_v1_orch_adv_restart_after_adv_complete(
+                shutdown_quiesce_at_adv_complete,
+                s_key_wake_only_advertising);
+        if (adv_complete_action == DENZIC_BLE_PAIRING_V1_ADV_RESTART_SUPPRESS_SHUTDOWN) {
             ESP_LOGW(TAG, "shutdown quiesce active: suppressing advertising restart after adv complete");
             ble_hid_gap_log_adv_state(
                 BLE_HID_GAP_ADV_STATE_ADV_COMPLETE_SUPPRESS,
@@ -2782,8 +2811,7 @@ nimble_hid_gap_event(struct ble_gap_event *event, void *arg)
                 DIAG_SEV_WARN);
             return 0;
         }
-        ble_hid_gap_keep_recovery_adv_connectable("adv complete");
-        if (s_key_wake_only_advertising) {
+        if (adv_complete_action == DENZIC_BLE_PAIRING_V1_ADV_RESTART_SUPPRESS_KEY_WAKE) {
             ESP_LOGI(TAG, "key-wake-only idle: suppressing advertising restart after adv complete");
             ble_hid_gap_log_adv_state(
                 BLE_HID_GAP_ADV_STATE_ADV_COMPLETE_SUPPRESS,
@@ -3370,14 +3398,17 @@ esp_err_t esp_hid_ble_gap_adv_start(void)
     const bool recovery_swift_pair_allowed = recovery_swift_pair_remaining_ms > 0;
     const bool swift_pair_requested = recovery_swift_pair_allowed || first_pairing_window;
     bool type_recovery_enabled = false;
-    if (type_recovery_requested && !swift_pair_requested) {
+    if (denzic_ble_pairing_v1_orch_adv_profile_try_type_recovery(
+            type_recovery_requested, swift_pair_requested)) {
         type_recovery_enabled = ble_hid_gap_configure_type_controlled_recovery_adv_fields();
     }
     const bool swift_pair_enabled =
-        !type_recovery_enabled &&
-        swift_pair_requested &&
+        denzic_ble_pairing_v1_orch_adv_profile_try_swift_pair(
+            type_recovery_enabled, swift_pair_requested) &&
         ble_hid_gap_configure_swift_pair_fields();
-    if (!swift_pair_enabled && !type_recovery_enabled) {
+    if (denzic_ble_pairing_v1_orch_adv_profile_select(
+            type_recovery_enabled, swift_pair_enabled) ==
+        DENZIC_BLE_PAIRING_V1_ADV_PROFILE_NORMAL) {
         (void)ble_hid_gap_configure_normal_adv_fields();
     }
     if (!pairing_window) {
@@ -3737,7 +3768,8 @@ static void ble_hid_gap_recovery_bond_delete_task(void *arg)
      * remains true without allowing the stale Windows bond to race cleanup.
      */
     bool advertising_started_before_bond_delete = false;
-    if (type_controlled_recovery && known_type_peer) {
+    if (denzic_ble_pairing_v1_orch_bond_delete_warmup_before_delete(
+            type_controlled_recovery, known_type_peer)) {
         ble_hid_gap_set_recovery_advertising_while_bond_delete(true);
         esp_err_t early_adv_ret = ble_hid_gap_start_type_recovery_warmup_advertising();
         ble_hid_gap_set_recovery_advertising_while_bond_delete(false);
@@ -3757,8 +3789,11 @@ static void ble_hid_gap_recovery_bond_delete_task(void *arg)
     int lookup_rc = 0;
     int first_delete_rc = 0;
     int deleted_count = 0;
-    bool fallback_to_peer_enumeration = !type_controlled_recovery || !known_type_peer;
-    if (type_controlled_recovery && known_type_peer) {
+    bool fallback_to_peer_enumeration =
+        !denzic_ble_pairing_v1_orch_bond_delete_direct_peer_delete(
+            type_controlled_recovery, known_type_peer);
+    if (denzic_ble_pairing_v1_orch_bond_delete_direct_peer_delete(
+            type_controlled_recovery, known_type_peer)) {
         int direct_delete_rc = ble_store_util_delete_peer(&type_peer);
         if (direct_delete_rc == 0) {
             deleted_count = 1;
@@ -3785,9 +3820,10 @@ static void ble_hid_gap_recovery_bond_delete_task(void *arg)
              * proved local ownership, so remove the peer's security, CCCD, and
              * resolver records while retaining that local identity for PairAsync.
              */
-            int delete_rc = type_controlled_recovery
-                ? ble_store_util_delete_peer(&bonded_peers[index])
-                : ble_gap_unpair(&bonded_peers[index]);
+            int delete_rc = denzic_ble_pairing_v1_orch_bond_delete_use_unpair_api(
+                                type_controlled_recovery)
+                ? ble_gap_unpair(&bonded_peers[index])
+                : ble_store_util_delete_peer(&bonded_peers[index]);
             if (delete_rc == 0) {
                 ++deleted_count;
             } else {
@@ -3803,8 +3839,8 @@ static void ble_hid_gap_recovery_bond_delete_task(void *arg)
         }
     }
 
-    const bool delete_ok = (!fallback_to_peer_enumeration || lookup_rc == 0) &&
-                           first_delete_rc == 0;
+    const bool delete_ok = denzic_ble_pairing_v1_orch_bond_delete_cleanup_succeeded(
+        fallback_to_peer_enumeration, lookup_rc, first_delete_rc);
 
     ble_hid_gap_recovery_bond_delete_set_state(false, false, NULL);
 
@@ -3883,8 +3919,9 @@ static void ble_hid_gap_recovery_bond_delete_task(void *arg)
     ESP_LOGI(TAG, "recovery: Type-controlled connectable advertising started after local bond cleanup");
     ble_hid_gap_log_ec11_recovery_timing("advertising_started", true);
 
-    if (!s_recovery_power_blocker_active &&
-        s_recovery_pairing_window_active) {
+    if (denzic_ble_pairing_v1_orch_bond_delete_reactivate_window(
+            s_recovery_power_blocker_active,
+            s_recovery_pairing_window_active)) {
         ble_hid_gap_activate_recovery_pairing_window(
             s_recovery_type_controlled_pairing,
             s_recovery_suppress_swift_pair_prompt);

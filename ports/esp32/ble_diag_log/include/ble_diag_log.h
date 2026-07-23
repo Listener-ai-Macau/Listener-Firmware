@@ -5,32 +5,29 @@
 
 #include "nimble/ble.h"
 
+#include "denzic_observability_v1_generated.h"
+
 #ifdef __cplusplus
 extern "C" {
 #endif
 
 /*
- * BLE Diagnostic Log Service — UUID allocation.
- * Base: 09c3 3b5b-9e4d-0c83-659f-6d45-f80a-71XX
- * Audio stream uses 0x1a..0x1d, OTA uses 0x2a..0x2c + shared 0x1c/0x1d.
- * Diagnostic log uses 0x3a..0x3d.
+ * BLE Diagnostic Log Service — UUIDs come from the shared platform contract
+ * (ble_diag_log_gatt in observability/protocol/observability_v1.json).
+ * Base: 09c3 3b5b-9e4d-0c83-659f-6d45-f80a-71XX; diagnostic log uses 0x3a..0x3d.
  */
 
 #define BLE_DIAG_LOG_SERVICE_UUID \
-    BLE_UUID128_INIT(0x3a, 0x09, 0xc3, 0x3b, 0x5b, 0x9e, 0x4d, 0x0c, \
-                     0x83, 0x65, 0x9f, 0x6d, 0x45, 0xf8, 0x0a, 0x71)
+    BLE_UUID128_INIT(DENZIC_OBSERVABILITY_V1_DIAG_LOG_GATT_SERVICE_UUID_BYTES)
 
 #define BLE_DIAG_LOG_CONTROL_UUID \
-    BLE_UUID128_INIT(0x3b, 0x09, 0xc3, 0x3b, 0x5b, 0x9e, 0x4d, 0x0c, \
-                     0x83, 0x65, 0x9f, 0x6d, 0x45, 0xf8, 0x0a, 0x71)
+    BLE_UUID128_INIT(DENZIC_OBSERVABILITY_V1_DIAG_LOG_GATT_CONTROL_UUID_BYTES)
 
 #define BLE_DIAG_LOG_DATA_UUID \
-    BLE_UUID128_INIT(0x3c, 0x09, 0xc3, 0x3b, 0x5b, 0x9e, 0x4d, 0x0c, \
-                     0x83, 0x65, 0x9f, 0x6d, 0x45, 0xf8, 0x0a, 0x71)
+    BLE_UUID128_INIT(DENZIC_OBSERVABILITY_V1_DIAG_LOG_GATT_DATA_UUID_BYTES)
 
 #define BLE_DIAG_LOG_COUNT_UUID \
-    BLE_UUID128_INIT(0x3d, 0x09, 0xc3, 0x3b, 0x5b, 0x9e, 0x4d, 0x0c, \
-                     0x83, 0x65, 0x9f, 0x6d, 0x45, 0xf8, 0x0a, 0x71)
+    BLE_UUID128_INIT(DENZIC_OBSERVABILITY_V1_DIAG_LOG_GATT_COUNT_UUID_BYTES)
 
 /*
  * Register the BLE Diagnostic Log GATT service.

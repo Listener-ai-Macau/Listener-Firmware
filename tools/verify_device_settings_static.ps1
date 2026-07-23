@@ -47,6 +47,8 @@ $listenerDevice = Read-RepoFile "protocols/listener_device/listener_device.c"
 $listenerDeviceHeader = Read-RepoFile "protocols/listener_device/include/listener_device.h"
 $bleAudio = Read-RepoFile "ports/esp32/ble_audio_stream/ble_audio_stream_esp32.c"
 $bleAudioHeader = Read-RepoFile "ports/esp32/ble_audio_stream/include/ble_audio_stream.h"
+$bleAudioCmake = Read-RepoFile "ports/esp32/ble_audio_stream/CMakeLists.txt"
+$platformDeviceControlContract = Read-RepoFile "third_party/denzic-platform/device_control/protocol/device_control_v1.json"
 $bleHidGap = Read-RepoFile "ports/esp32/ble_hid_gap/ble_hid_gap_esp32.c"
 $listenerDeviceCmake = Read-RepoFile "protocols/listener_device/CMakeLists.txt"
 $bleHid = Read-RepoFile "ports/esp32/ble_hid/ble_hid.c"
@@ -252,7 +254,11 @@ Assert-Contains $keyboardCmake 'device_settings' 'keyboard CMake dependency for 
 
 Assert-Contains $listenerDeviceHeader 'device_control_v1' 'firmware capability advertises shared device control'
 Assert-Contains $bleAudioHeader 'BLE_AUDIO_STREAM_DEVICE_SETTINGS_REVISION_UUID' 'BLE settings revision UUID contract'
+Assert-Contains $bleAudioHeader 'DENZIC_DEVICE_CONTROL_V1_SETTINGS_REVISION_UUID_BYTES' 'BLE settings revision UUID comes from the platform contract'
 Assert-Contains $bleAudio 'BLE_AUDIO_STREAM_GATT_ATTR_DEVICE_SETTINGS_REVISION' 'BLE settings revision read attribute'
+Assert-Contains $bleAudio 'denzic_device_control_v1_format_settings_revision' 'BLE settings revision value uses the platform formatter'
+Assert-Contains $bleAudioCmake 'device_control/embedded/c/src/denzic_device_control_v1\.c' 'BLE audio component builds the platform device-control core'
+Assert-Contains $platformDeviceControlContract '710af845-6d9f-6583-0c4d-9e5b3bc3091f' 'platform contract pins the settings revision characteristic UUID'
 Assert-Contains $bleAudio 'device_settings_get_revision\(\)' 'BLE settings revision comes from persisted device state'
 Assert-Contains $bleHidGap 'BLE_HID_GAP_GATT_SCHEMA_REV\s+"denzic_ota_v6_ota_control_cache_refresh"' 'GATT schema refreshes stale Windows OTA control handles'
 Assert-Contains $bleHidGap 'ble_svc_gatt_changed\(' 'GATT schema changes invalidate bonded central service caches'

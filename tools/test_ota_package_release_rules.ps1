@@ -9,6 +9,7 @@ $sourcePackageScript = Join-Path $PSScriptRoot "package_ota_firmware.ps1"
 $sourceFactoryScript = Join-Path $PSScriptRoot "package_factory_firmware.ps1"
 $manifestCheckScript = Join-Path $PSScriptRoot "check_ota_manifest.ps1"
 $sourceOtaProtocol = Join-Path $projectRoot "third_party\denzic-platform\ota\protocol\ota_v1.json"
+$sourceOtaManifestSchema = Join-Path $projectRoot "third_party\denzic-platform\ota\protocol\ota_manifest_v2.json"
 
 if (Test-Path -LiteralPath $testRoot) {
     Remove-Item -LiteralPath $testRoot -Recurse -Force
@@ -18,11 +19,13 @@ New-Item -ItemType Directory -Force -Path $testRoot | Out-Null
 $fakeRepo = Join-Path $testRoot "fake_repo"
 $fakeTools = Join-Path $fakeRepo "tools"
 $fakeOtaProtocol = Join-Path $fakeRepo "third_party\denzic-platform\ota\protocol\ota_v1.json"
+$fakeOtaManifestSchema = Join-Path $fakeRepo "third_party\denzic-platform\ota\protocol\ota_manifest_v2.json"
 New-Item -ItemType Directory -Force -Path $fakeTools | Out-Null
 Copy-Item -LiteralPath $sourcePackageScript -Destination (Join-Path $fakeTools "package_ota_firmware.ps1") -Force
 Copy-Item -LiteralPath $sourceFactoryScript -Destination (Join-Path $fakeTools "package_factory_firmware.ps1") -Force
 New-Item -ItemType Directory -Force -Path (Split-Path -Parent $fakeOtaProtocol) | Out-Null
 Copy-Item -LiteralPath $sourceOtaProtocol -Destination $fakeOtaProtocol -Force
+Copy-Item -LiteralPath $sourceOtaManifestSchema -Destination $fakeOtaManifestSchema -Force
 Set-Content -LiteralPath (Join-Path $fakeRepo ".gitignore") -Value @(".cache/", "build/") -Encoding UTF8
 & git -C $fakeRepo init | Out-Null
 & git -C $fakeRepo add . | Out-Null

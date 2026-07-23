@@ -1,10 +1,8 @@
 param(
     [string]$BuildDir = (Join-Path $PSScriptRoot "..\build"),
     [string]$OutputRoot = (Join-Path $PSScriptRoot "..\.cache\ota_firmware"),
-    [ValidateSet("stable", "development")]
     [string]$Channel = "stable",
     [string]$MinDesktopVersion = "1.0.0",
-    [ValidateRange(1, 500)]
     [int]$GattChunkBytes = 500
 )
 
@@ -16,13 +14,27 @@ $build_path = (Resolve-Path $BuildDir).Path
 $output_root_path = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($OutputRoot)
 $ota_protocol_path = Join-Path $project_root "third_party\denzic-platform\ota\protocol\ota_v1.json"
 $ota_protocol = Get-Content -LiteralPath $ota_protocol_path -Raw | ConvertFrom-Json
+$ota_manifest_schema_path = Join-Path $project_root "third_party\denzic-platform\ota\protocol\ota_manifest_v2.json"
+$ota_manifest_schema = Get-Content -LiteralPath $ota_manifest_schema_path -Raw | ConvertFrom-Json
+
+# --- Validate arguments against the platform manifest schema ---
+$valid_channels = @($ota_manifest_schema.channels)
+if ($Channel -notin $valid_channels) {
+    Write-Error "Invalid channel: $Channel (expected one of: $($valid_channels -join ', '))"
+    exit 1
+}
+$max_gatt_chunk_bytes = [int]$ota_manifest_schema.default_gatt_chunk_bytes
+if ($GattChunkBytes -lt 1 -or $GattChunkBytes -gt $max_gatt_chunk_bytes) {
+    Write-Error "Invalid GattChunkBytes: $GattChunkBytes (expected 1..$max_gatt_chunk_bytes)"
+    exit 1
+}
 
 # --- Resolve project metadata ---
 $description_path = Join-Path $build_path "project_description.json"
 $project_name = "voice-keyboard-firmware"
 $project_version = $null
 $target = "esp32s3"
-$esp_app_version_max_chars = 31
+$esp_app_version_max_chars = [int]$ota_manifest_schema.firmware_version_max_chars
 
 if (Test-Path $description_path) {
     $description = Get-Content -Raw $description_path | ConvertFrom-Json
@@ -110,7 +122,7 @@ $package_dir = Join-Path $output_root_path $package_name
 New-Item -ItemType Directory -Force $package_dir | Out-Null
 
 # --- Copy and hash app binary ---
-$ota_bin_name = "firmware_ota.bin"
+$ota_bin_name = [string]$ota_manifest_schema.package_file_name
 $ota_bin_dest = Join-Path $package_dir $ota_bin_name
 Copy-Item -LiteralPath $app_bin_source -Destination $ota_bin_dest -Force
 $ota_hash = (Get-FileHash -LiteralPath $ota_bin_dest -Algorithm SHA256).Hash.ToLowerInvariant()
@@ -118,7 +130,7 @@ $ota_size = (Get-Item -LiteralPath $ota_bin_dest).Length
 
 # --- Generate OTA manifest ---
 $manifest = [ordered]@{
-    schema_version = 2
+    schema_version = [int]$ota_manifest_schema.schema_version
     created_at_utc = (Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ")
     channel = $Channel
     firmware = [ordered]@{
@@ -168,7 +180,7 @@ $manifest = [ordered]@{
     }
     rollback = [ordered]@{
         supported = $true
-        method = "esp_idf_bootloader_rollback"
+        method = [string]$ota_manifest_schema.rollback_methods[0]
         instructions = "If the new firmware fails pending-verify self-check (POST, BLE readiness, keyboard), the bootloader automatically rolls back to the previous partition on next reboot."
     }
     recovery = [ordered]@{

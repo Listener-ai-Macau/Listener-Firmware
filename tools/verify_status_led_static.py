@@ -1852,7 +1852,7 @@ def main() -> int:
         )
     if (
         "pairing_window\n            ? ble_hid_gap_recovery_swift_pair_prompt_remaining_ms()" not in ble_gap
-        or "if (type_recovery_requested && !swift_pair_requested)" not in ble_gap
+        or "denzic_ble_pairing_v1_orch_adv_profile_try_type_recovery(\n            type_recovery_requested, swift_pair_requested)" not in ble_gap
     ):
         failures.append(
             "ble_hid_gap_esp32.c: Type-controlled recovery must allow the same bounded Windows Swift Pair prompt before falling back to the Type-discoverable profile"

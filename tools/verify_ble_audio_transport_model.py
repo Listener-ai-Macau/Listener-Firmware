@@ -20,6 +20,16 @@ PLATFORM_LOSSLESS_CODEC = (
     / "src"
     / "denzic_audio_lossless_v1.c"
 )
+PLATFORM_TRANSPORT_HEADER = (
+    REPO_ROOT
+    / "third_party"
+    / "denzic-platform"
+    / "audio"
+    / "embedded"
+    / "c"
+    / "include"
+    / "denzic_audio_transport_v1.h"
+)
 
 
 STATE_TOKENS = [
@@ -47,7 +57,12 @@ SOURCE_TOKENS = [
     "BLE_AUDIO_STREAM_AUDIO_TARGET_BYTES_PER_SECOND 38400U",
     "BLE_AUDIO_STREAM_AUDIO_PACE_TICK_MS 10U",
     "BLE_AUDIO_STREAM_AUDIO_PACE_BYTES_PER_TICK",
-    "s_audio_pace_debt_bytes",
+    "denzic_audio_transport_v1_pacing_note_pcm_sent",
+    "denzic_audio_transport_v1_replay_window_t s_replay_window",
+    "denzic_audio_transport_v1_replay_store(",
+    "denzic_audio_transport_v1_replay_collect_pending",
+    "denzic_audio_transport_v1_replay_mark_suspended",
+    "denzic_audio_transport_v1_backpressure_decide",
     "BLE_AUDIO_STREAM_LOSSLESS_RICE_FLAG 0x01u",
     "BLE_AUDIO_STREAM_LOSSLESS_RICE_VERSION_V1 1u",
     "BLE_AUDIO_STREAM_LOSSLESS_RICE_VERSION_V2 2u",
@@ -164,6 +179,7 @@ def static_source_checks() -> None:
     events = EVENTS.read_text(encoding="utf-8")
     gap = GAP.read_text(encoding="utf-8")
     platform_codec = PLATFORM_LOSSLESS_CODEC.read_text(encoding="utf-8")
+    platform_transport_header = PLATFORM_TRANSPORT_HEADER.read_text(encoding="utf-8")
 
     for token in STATE_TOKENS:
         require(stream, token, STREAM)
@@ -331,10 +347,16 @@ def static_source_checks() -> None:
     require_regex(
         stream,
         r"ble_audio_stream_notify_success_delay\(.*?"
-        r"s_audio_pace_debt_bytes \+= packet_pcm_bytes.*?"
-        r"BLE_AUDIO_STREAM_AUDIO_PACE_BYTES_PER_TICK.*?"
+        r"denzic_audio_transport_v1_pacing_note_pcm_sent\(\s*&s_audio_pacing,\s*packet_pcm_bytes\).*?"
         r"vTaskDelay",
         "PCM media-clock pacing",
+        STREAM,
+    )
+    require_regex(
+        stream,
+        r"_Static_assert\(BLE_AUDIO_STREAM_AUDIO_PACE_BYTES_PER_TICK\s*==\s*"
+        r"DENZIC_AUDIO_TRANSPORT_V1_PACING_BYTES_PER_TICK",
+        "media-clock pacing quantum pinned to the platform contract",
         STREAM,
     )
     require_regex(
@@ -432,9 +454,16 @@ def static_source_checks() -> None:
         STREAM,
     )
     require_regex(
-        stream,
+        platform_transport_header,
         r"typedef struct \{.*?packet_pcm_bytes;\s*uint8_t flags;.*?"
+        r"payload\[DENZIC_AUDIO_TRANSPORT_V1_REPLAY_PAYLOAD_BYTES\]",
+        "platform replay packet preserves PCM byte count and flags",
+        PLATFORM_TRANSPORT_HEADER,
+    )
+    require_regex(
+        stream,
         r"ble_audio_stream_replay_store_packet\(.*?uint8_t flags\).*?"
+        r"denzic_audio_transport_v1_replay_store\(.*?"
         r"packets\[i\]->flags",
         "replay preserves the negotiated lossless frame flag",
         STREAM,
@@ -459,10 +488,20 @@ def static_source_checks() -> None:
     )
     require_regex(
         stream,
-        r"ble_audio_stream_get_backpressure\(.*?pressure_percent\s*>=\s*"
-        r"BLE_AUDIO_STREAM_BACKPRESSURE_PAUSE_PERCENT.*?pressure_percent\s*<=\s*"
-        r"BLE_AUDIO_STREAM_BACKPRESSURE_RESUME_PERCENT",
-        "true-capacity backpressure hysteresis",
+        r"ble_audio_stream_get_backpressure\(.*?"
+        r"denzic_audio_transport_v1_backpressure_decide\(\s*"
+        r"ble_audio_stream_get_backpressure_active\(\),\s*"
+        r"snapshot->transport_session_active,\s*snapshot->pressure_percent\s*\)",
+        "true-capacity backpressure hysteresis delegates to the shared platform core",
+        STREAM,
+    )
+    require_regex(
+        stream,
+        r"_Static_assert\(BLE_AUDIO_STREAM_BACKPRESSURE_PAUSE_PERCENT\s*==\s*"
+        r"DENZIC_AUDIO_TRANSPORT_V1_BACKPRESSURE_PAUSE_PERCENT.*?"
+        r"_Static_assert\(BLE_AUDIO_STREAM_BACKPRESSURE_RESUME_PERCENT\s*==\s*"
+        r"DENZIC_AUDIO_TRANSPORT_V1_BACKPRESSURE_RESUME_PERCENT",
+        "backpressure thresholds pinned to the platform contract",
         STREAM,
     )
 

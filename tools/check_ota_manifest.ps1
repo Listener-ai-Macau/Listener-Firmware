@@ -19,7 +19,18 @@ if ($convertFromJsonCommand.Parameters.ContainsKey("DateKind")) {
     $manifest = $manifest_json | ConvertFrom-Json
 }
 $manifest_dir = Split-Path -Parent (Resolve-Path $ManifestPath)
-$esp_app_version_max_chars = 31
+$project_root = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
+$manifest_schema_path = Join-Path $project_root "third_party\denzic-platform\ota\protocol\ota_manifest_v2.json"
+if (-not (Test-Path -LiteralPath $manifest_schema_path)) {
+    Write-Error "Platform OTA manifest schema not found: $manifest_schema_path"
+    exit 1
+}
+$manifest_schema = Get-Content -LiteralPath $manifest_schema_path -Raw | ConvertFrom-Json
+$expected_schema_version = [int]$manifest_schema.schema_version
+$esp_app_version_max_chars = [int]$manifest_schema.firmware_version_max_chars
+$sha256_hex_chars = [int]$manifest_schema.sha256_hex_chars
+$valid_channels = @($manifest_schema.channels)
+$valid_rollback_methods = @($manifest_schema.rollback_methods)
 
 function Test-JsonProperty {
     param(
@@ -113,11 +124,71 @@ function Require-PositiveInteger {
     return $parsed
 }
 
+# Value getters mirror the Require-* validators without reporting errors; the
+# schema-driven Test-RequiredFields pass has already recorded any failure.
+function Get-StringOrNull {
+    param([Parameter(Mandatory = $true)][string]$Path)
+
+    $result = Get-JsonValue -Object $manifest -Path $Path
+    if (-not $result.Exists -or [string]::IsNullOrWhiteSpace([string]$result.Value)) {
+        return $null
+    }
+    return [string]$result.Value
+}
+
+function Get-BoolOrNull {
+    param([Parameter(Mandatory = $true)][string]$Path)
+
+    $result = Get-JsonValue -Object $manifest -Path $Path
+    if (-not $result.Exists -or $result.Value -isnot [bool]) {
+        return $null
+    }
+    return [bool]$result.Value
+}
+
+function Get-PositiveIntegerOrNull {
+    param([Parameter(Mandatory = $true)][string]$Path)
+
+    $result = Get-JsonValue -Object $manifest -Path $Path
+    $parsed = 0L
+    if (-not $result.Exists -or -not [Int64]::TryParse([string]$result.Value, [ref]$parsed) -or $parsed -le 0) {
+        return $null
+    }
+    return $parsed
+}
+
+# Required-field lists come from the platform manifest schema; section keys may
+# contain dots (e.g. ble_identity.dis), so look them up as literal property names.
+function Test-RequiredFields {
+    param([Parameter(Mandatory = $true)][string]$Section)
+
+    $property = $manifest_schema.required_fields.PSObject.Properties[$Section]
+    if ($null -eq $property) {
+        return
+    }
+    $spec = $property.Value
+    if ($null -ne $spec.string) {
+        foreach ($name in @($spec.string)) {
+            Require-String "$Section.$name" | Out-Null
+        }
+    }
+    if ($null -ne $spec.bool) {
+        foreach ($name in @($spec.bool)) {
+            Require-Bool "$Section.$name" | Out-Null
+        }
+    }
+    if ($null -ne $spec.positive_integer) {
+        foreach ($name in @($spec.positive_integer)) {
+            Require-PositiveInteger "$Section.$name" | Out-Null
+        }
+    }
+}
+
 # schema_version
 if (-not (Test-JsonProperty -Object $manifest -Name "schema_version")) {
     $errors += "Missing schema_version"
-} elseif ($manifest.schema_version -ne 2) {
-    $errors += "Unexpected schema_version: $($manifest.schema_version) (expected 2)"
+} elseif ($manifest.schema_version -ne $expected_schema_version) {
+    $errors += "Unexpected schema_version: $($manifest.schema_version) (expected $expected_schema_version)"
 }
 
 if (-not (Test-JsonProperty -Object $manifest -Name "created_at_utc") -or $null -eq $manifest.created_at_utc) {
@@ -141,17 +212,14 @@ if (-not (Test-JsonProperty -Object $manifest -Name "created_at_utc") -or $null 
 
 # firmware
 if (Require-Object "firmware") {
-    Require-String "firmware.project" | Out-Null
-    $firmware_version = Require-String "firmware.version"
-    Require-String "firmware.git_commit" | Out-Null
-    Require-Bool "firmware.git_dirty" | Out-Null
-    Require-String "firmware.target" | Out-Null
-    $firmware_file = Require-String "firmware.file"
-    $firmware_sha256 = Require-String "firmware.sha256"
-    $firmware_size = Require-PositiveInteger "firmware.size_bytes"
+    Test-RequiredFields "firmware"
+    $firmware_version = Get-StringOrNull "firmware.version"
+    $firmware_file = Get-StringOrNull "firmware.file"
+    $firmware_sha256 = Get-StringOrNull "firmware.sha256"
+    $firmware_size = Get-PositiveIntegerOrNull "firmware.size_bytes"
 
-    if ($firmware_sha256 -and $firmware_sha256 -cnotmatch '^[0-9a-f]{64}$') {
-        $errors += "Invalid firmware.sha256: expected lowercase 64-character hex digest"
+    if ($firmware_sha256 -and $firmware_sha256 -cnotmatch "^[0-9a-f]{$sha256_hex_chars}$") {
+        $errors += "Invalid firmware.sha256: expected lowercase $sha256_hex_chars-character hex digest"
     }
     if ($firmware_version -and $firmware_version.Length -gt $esp_app_version_max_chars) {
         $errors += "Invalid firmware.version: expected <= $esp_app_version_max_chars characters for ESP app descriptor / BLE OTA control"
@@ -181,13 +249,10 @@ if (Require-Object "firmware") {
 
 # requirements
 if (Require-Object "requirements") {
-    Require-String "requirements.hardware_revision" | Out-Null
-    Require-PositiveInteger "requirements.protocol_version" | Out-Null
-    Require-String "requirements.min_desktop_version" | Out-Null
+    Test-RequiredFields "requirements"
 }
 
 # channel
-$valid_channels = @("stable", "development")
 $channel = Require-String "channel"
 if ($channel -and $channel -notin $valid_channels) {
     $errors += "Invalid channel: $channel (expected one of: $($valid_channels -join ', '))"
@@ -195,39 +260,28 @@ if ($channel -and $channel -notin $valid_channels) {
 
 # ble_identity
 if (Require-Object "ble_identity") {
-    Require-String "ble_identity.name" | Out-Null
-    Require-String "ble_identity.appearance" | Out-Null
-    Require-String "ble_identity.hid_service_uuid" | Out-Null
-    Require-String "ble_identity.audio_service_uuid" | Out-Null
-    Require-String "ble_identity.audio_notify_uuid" | Out-Null
-    Require-String "ble_identity.readiness_uuid" | Out-Null
-    Require-String "ble_identity.capabilities_uuid" | Out-Null
+    Test-RequiredFields "ble_identity"
     if (Require-Object "ble_identity.dis") {
-        Require-String "ble_identity.dis.manufacturer" | Out-Null
-        Require-String "ble_identity.dis.model" | Out-Null
-        Require-String "ble_identity.dis.hardware_revision" | Out-Null
-        Require-String "ble_identity.dis.firmware_revision" | Out-Null
-        Require-String "ble_identity.dis.software_revision_protocol" | Out-Null
+        Test-RequiredFields "ble_identity.dis"
     }
 }
 
 # rollback
 if (Require-Object "rollback") {
-    $rollback_supported = Require-Bool "rollback.supported"
+    Test-RequiredFields "rollback"
+    $rollback_supported = Get-BoolOrNull "rollback.supported"
     if ($null -ne $rollback_supported -and $rollback_supported -ne $true) {
         $errors += "Unsupported rollback section: rollback.supported must be true"
     }
-    $rollback_method = Require-String "rollback.method"
-    if ($rollback_method -and $rollback_method -ne "esp_idf_bootloader_rollback") {
+    $rollback_method = Get-StringOrNull "rollback.method"
+    if ($rollback_method -and $rollback_method -notin $valid_rollback_methods) {
         $errors += "Invalid rollback.method: $rollback_method"
     }
-    Require-String "rollback.instructions" | Out-Null
 }
 
 # recovery
 if (Require-Object "recovery") {
-    Require-String "recovery.factory_reflash" | Out-Null
-    Require-String "recovery.serial_commands" | Out-Null
+    Test-RequiredFields "recovery"
 }
 
 # Result

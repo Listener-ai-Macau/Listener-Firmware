@@ -22,6 +22,13 @@ def require(condition: bool, message: str) -> None:
 def main() -> int:
     diag_header = read_text("ports/esp32/ble_diag_log/include/ble_diag_log.h")
     diag_service = read_text("ports/esp32/ble_diag_log/ble_diag_log_esp32.c")
+    diag_cmake = read_text("ports/esp32/ble_diag_log/CMakeLists.txt")
+    platform_generated = read_text(
+        "third_party/denzic-platform/observability/embedded/c/include/denzic_observability_v1_generated.h"
+    )
+    platform_codec = read_text(
+        "third_party/denzic-platform/observability/embedded/c/include/denzic_diag_log_gatt_v1.h"
+    )
     gap = read_text("ports/esp32/ble_hid_gap/ble_hid_gap_esp32.c")
     hid = read_text("ports/esp32/ble_hid/ble_hid.c")
     diag_log_header = read_text("components/diag_log/include/diag_log.h")
@@ -33,6 +40,38 @@ def main() -> int:
     require("BLE_DIAG_LOG_CONTROL_UUID" in diag_header, "diagnostic control UUID is missing")
     require("BLE_DIAG_LOG_DATA_UUID" in diag_header, "diagnostic data UUID is missing")
     require("BLE_DIAG_LOG_COUNT_UUID" in diag_header, "diagnostic count UUID is missing")
+    require(
+        '#include "denzic_observability_v1_generated.h"' in diag_header,
+        "diagnostic GATT adapter must include the shared generated UUID contract",
+    )
+    for local_macro, shared_macro in (
+        ("BLE_DIAG_LOG_SERVICE_UUID", "DENZIC_OBSERVABILITY_V1_DIAG_LOG_GATT_SERVICE_UUID_BYTES"),
+        ("BLE_DIAG_LOG_CONTROL_UUID", "DENZIC_OBSERVABILITY_V1_DIAG_LOG_GATT_CONTROL_UUID_BYTES"),
+        ("BLE_DIAG_LOG_DATA_UUID", "DENZIC_OBSERVABILITY_V1_DIAG_LOG_GATT_DATA_UUID_BYTES"),
+        ("BLE_DIAG_LOG_COUNT_UUID", "DENZIC_OBSERVABILITY_V1_DIAG_LOG_GATT_COUNT_UUID_BYTES"),
+    ):
+        require(
+            f"BLE_UUID128_INIT({shared_macro})" in diag_header,
+            f"{local_macro} must reference {shared_macro}",
+        )
+    for token in (
+        '#define DENZIC_OBSERVABILITY_V1_DIAG_LOG_GATT_SERVICE_UUID_TEXT "710af845-6d9f-6583-0c4d-9e5b3bc3093a"',
+        '#define DENZIC_OBSERVABILITY_V1_DIAG_LOG_GATT_CONTROL_UUID_TEXT "710af845-6d9f-6583-0c4d-9e5b3bc3093b"',
+        '#define DENZIC_OBSERVABILITY_V1_DIAG_LOG_GATT_DATA_UUID_TEXT "710af845-6d9f-6583-0c4d-9e5b3bc3093c"',
+        '#define DENZIC_OBSERVABILITY_V1_DIAG_LOG_GATT_COUNT_UUID_TEXT "710af845-6d9f-6583-0c4d-9e5b3bc3093d"',
+        "#define DENZIC_OBSERVABILITY_V1_DIAG_LOG_EVENT_WIRE_BYTES (24u)",
+        "#define DENZIC_OBSERVABILITY_V1_DIAG_LOG_CHUNK_HEADER_BYTES (10u)",
+    ):
+        require(token in platform_generated, f"shared generated diagnostic GATT contract is missing {token}")
+    require(
+        "uint32_t global_offset" in platform_codec,
+        "platform diagnostic chunk codec must keep a 32-bit export offset",
+    )
+    require(
+        "third_party/denzic-platform/observability/embedded/c/src/denzic_diag_log_gatt_v1.c" in diag_cmake
+        and "third_party/denzic-platform/observability/embedded/c/include" in diag_cmake,
+        "BLE diagnostic component must compile the shared platform chunk codec",
+    )
     require("ble_diag_log_register_gatt()" in hid, "BLE HID init must register diagnostic GATT")
     require("ble_diag_log_log_gatt_state()" in hid, "BLE HID init must log diagnostic GATT handles")
     require('strcmp(line, "~DIAG:GATT")' in hid, "serial ~DIAG:GATT must log diagnostic GATT handles")
@@ -60,8 +99,18 @@ def main() -> int:
 
     require("ble_att_mtu(conn_handle)" in diag_service, "diagnostic export must query the current ATT MTU")
     require("BLE_DIAG_LOG_ATT_HEADER_BYTES 3U" in diag_service, "diagnostic export must account for ATT opcode+handle bytes")
-    require("BLE_DIAG_LOG_CHUNK_HEADER_BYTES 10U" in diag_service, "diagnostic chunk header must carry a 32-bit export offset")
-    require("uint32_t global_offset" in diag_service, "diagnostic chunk offset must not truncate after 65535 events")
+    require(
+        "BLE_DIAG_LOG_CHUNK_HEADER_BYTES DENZIC_OBSERVABILITY_V1_DIAG_LOG_CHUNK_HEADER_BYTES" in diag_service,
+        "diagnostic chunk header size must come from the platform contract",
+    )
+    require(
+        "BLE_DIAG_LOG_EVENT_BYTES DENZIC_OBSERVABILITY_V1_DIAG_LOG_EVENT_WIRE_BYTES" in diag_service,
+        "diagnostic event wire size must come from the platform contract",
+    )
+    require(
+        "denzic_diag_log_gatt_v1_encode_chunk_header(" in diag_service,
+        "diagnostic export must encode chunk headers with the platform codec (32-bit export offset)",
+    )
     require("s_att_value_max_bytes" in diag_service, "diagnostic export must track ATT value payload bytes")
     require(
         "data_len > s_att_value_max_bytes" in diag_service,
