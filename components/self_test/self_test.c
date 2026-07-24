@@ -1,6 +1,7 @@
 #include "self_test.h"
 #include "self_test_platform.h"
 #include "listener_device.h"
+#include "denzic_device_health_v1.h"
 
 #include "esp_log.h"
 #include "esp_err.h"
@@ -89,10 +90,26 @@ bool self_test_critical_ok(const self_test_result_t *result)
     if (result == NULL) {
         return false;
     }
-
-    if (!result->nvs_ok) {
-        return false;
-    }
-
-    return !result->spiram_required || result->spiram_ok;
+    const denzic_device_health_v1_check_t checks[] = {
+        {
+            .state = result->nvs_ok
+                ? (result->nvs_recovered
+                    ? DENZIC_DEVICE_HEALTH_V1_CHECK_STATE_RECOVERED
+                    : DENZIC_DEVICE_HEALTH_V1_CHECK_STATE_PASSED)
+                : DENZIC_DEVICE_HEALTH_V1_CHECK_STATE_FAILED,
+            .critical = true,
+        },
+        {
+            .state = !result->spiram_required
+                ? DENZIC_DEVICE_HEALTH_V1_CHECK_STATE_NOT_REQUIRED
+                : (result->spiram_ok
+                    ? DENZIC_DEVICE_HEALTH_V1_CHECK_STATE_PASSED
+                    : DENZIC_DEVICE_HEALTH_V1_CHECK_STATE_FAILED),
+            .critical = true,
+        },
+    };
+    denzic_device_health_v1_self_test_summary_t summary =
+        denzic_device_health_v1_summarize_checks(
+            checks, sizeof(checks) / sizeof(checks[0]));
+    return summary.ready;
 }

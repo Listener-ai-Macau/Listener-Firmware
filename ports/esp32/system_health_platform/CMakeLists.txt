@@ -1,5 +1,5 @@
 idf_component_register(
     SRCS system_health_esp32.c
     INCLUDE_DIRS include
-    REQUIRES diag_log ble_hid board audio_capture keyboard voice_recording_control watchdog_platform
+    REQUIRES device_health_platform diag_log ble_hid board audio_capture keyboard voice_recording_control watchdog_platform
 )

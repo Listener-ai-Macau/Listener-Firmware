@@ -1,4 +1,5 @@
 #include "battery_monitor.h"
+#include "denzic_battery_v1.h"
 
 #include <stdbool.h>
 #include <stdint.h>
@@ -380,18 +381,10 @@ static void battery_monitor_fill_status(
 
 uint8_t battery_monitor_percent_from_mv(uint32_t battery_mv)
 {
-    if (battery_mv <= BATTERY_MONITOR_EMPTY_MV) {
-        return 0;
-    }
-    if (battery_mv >= BATTERY_MONITOR_FULL_MV) {
-        return 100;
-    }
-
-    uint32_t range_mv = BATTERY_MONITOR_FULL_MV - BATTERY_MONITOR_EMPTY_MV;
-    uint32_t level =
-        ((battery_mv - BATTERY_MONITOR_EMPTY_MV) * 100U + (range_mv / 2U)) /
-        range_mv;
-    return (uint8_t)level;
+    return denzic_battery_v1_percent_from_mv(
+        battery_mv,
+        BATTERY_MONITOR_EMPTY_MV,
+        BATTERY_MONITOR_FULL_MV);
 }
 
 static esp_err_t battery_monitor_ensure_mutex(void)

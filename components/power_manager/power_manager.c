@@ -20,6 +20,7 @@
 #include "sdkconfig.h"
 
 #include "battery_monitor.h"
+#include "denzic_power_policy_v1.h"
 #include "board.h"
 #include "board_pins.h"
 #include "device_settings.h"
@@ -125,6 +126,43 @@ extern void status_led_set_error(int domain, int severity, const char *reason) _
 #define POWER_MANAGER_POWER_HOLD_ACTION_SHUTDOWN_FAILURE_BACKOFF 6u
 
 static const char *TAG = "power_manager";
+
+_Static_assert(
+    POWER_MANAGER_BLOCKER_RECORDING ==
+        (1u << DENZIC_POWER_POLICY_V1_BLOCKER_RECORDING),
+    "recording blocker must match platform");
+_Static_assert(
+    POWER_MANAGER_BLOCKER_BLE_AUDIO ==
+        (1u << DENZIC_POWER_POLICY_V1_BLOCKER_AUDIO_TRANSPORT),
+    "audio blocker must match platform");
+_Static_assert(
+    POWER_MANAGER_BLOCKER_DIAG_EXPORT ==
+        (1u << DENZIC_POWER_POLICY_V1_BLOCKER_DIAGNOSTIC),
+    "diagnostic blocker must match platform");
+_Static_assert(
+    POWER_MANAGER_BLOCKER_PAIRING ==
+        (1u << DENZIC_POWER_POLICY_V1_BLOCKER_PAIRING),
+    "pairing blocker must match platform");
+_Static_assert(
+    POWER_MANAGER_BLOCKER_RECONNECT ==
+        (1u << DENZIC_POWER_POLICY_V1_BLOCKER_RECONNECT),
+    "reconnect blocker must match platform");
+_Static_assert(
+    POWER_MANAGER_BLOCKER_FLASH_WRITE ==
+        (1u << DENZIC_POWER_POLICY_V1_BLOCKER_STORAGE),
+    "storage blocker must match platform");
+_Static_assert(
+    POWER_MANAGER_BLOCKER_USB_COMMAND ==
+        (1u << DENZIC_POWER_POLICY_V1_BLOCKER_COMMAND),
+    "command blocker must match platform");
+_Static_assert(
+    POWER_MANAGER_BLOCKER_EXTERNAL_POWER ==
+        (1u << DENZIC_POWER_POLICY_V1_BLOCKER_EXTERNAL_POWER),
+    "external-power blocker must match platform");
+_Static_assert(
+    POWER_MANAGER_BLOCKER_OTA ==
+        (1u << DENZIC_POWER_POLICY_V1_BLOCKER_OTA),
+    "OTA blocker must match platform");
 
 typedef struct {
     int usb_det_level;
@@ -1101,27 +1139,6 @@ static bool power_manager_sync_power_source_locked(
     return state_changed;
 }
 
-static power_manager_state_t power_manager_awake_idle_state_locked(uint32_t radio_idle_ms)
-{
-    if (s_external_power_present && !power_manager_plugged_low_power_enabled()) {
-        return POWER_MANAGER_STATE_ACTIVE;
-    }
-
-    uint32_t low_power_idle_ms = power_manager_low_power_idle_ms();
-    if (low_power_idle_ms == 0U) {
-        return POWER_MANAGER_STATE_ACTIVE;
-    }
-    if (s_ble_connected) {
-        return radio_idle_ms >= low_power_idle_ms
-            ? POWER_MANAGER_STATE_CONNECTED_IDLE
-            : POWER_MANAGER_STATE_ACTIVE;
-    }
-
-    return radio_idle_ms >= low_power_idle_ms
-        ? POWER_MANAGER_STATE_DISCONNECTED_IDLE
-        : POWER_MANAGER_STATE_ACTIVE;
-}
-
 static bool power_manager_automatic_shutdown_blocked_by_external_power_locked(uint64_t now_ms)
 {
     uint32_t hardware_shutdown_ms = power_manager_hardware_shutdown_ms();
@@ -1139,9 +1156,9 @@ static power_manager_state_t power_manager_target_state_locked(uint64_t now_ms)
     uint32_t user_idle_ms = power_manager_user_idle_ms_locked(now_ms);
     uint32_t radio_idle_ms = power_manager_radio_idle_ms_locked(now_ms);
     uint32_t hardware_shutdown_ms = power_manager_hardware_shutdown_ms();
-    if (power_manager_awake_blockers(s_blockers) != 0) {
+    uint32_t awake_blockers = power_manager_awake_blockers(s_blockers);
+    if (awake_blockers != 0u) {
         s_test_idle_override_active = false;
-        return POWER_MANAGER_STATE_ACTIVE;
     }
 
     if (s_test_idle_override_active) {
@@ -1152,20 +1169,42 @@ static power_manager_state_t power_manager_target_state_locked(uint64_t now_ms)
         s_test_idle_override_active = false;
     }
 
-    if (CONFIG_POWER_MANAGER_ENABLE &&
-        hardware_shutdown_ms > 0U &&
-        user_idle_ms >= hardware_shutdown_ms) {
-        power_manager_power_source_snapshot_t source = power_manager_cached_power_source_locked();
-        uint32_t shutdown_blockers =
-            power_manager_automatic_shutdown_blockers_for_source(s_blockers, &source);
-        if (shutdown_blockers != 0 ||
-            power_manager_shutdown_failure_retry_active_locked(now_ms)) {
-            return power_manager_awake_idle_state_locked(radio_idle_ms);
-        }
+    power_manager_power_source_snapshot_t source =
+        power_manager_cached_power_source_locked();
+    uint32_t shutdown_blockers =
+        power_manager_automatic_shutdown_blockers_for_source(s_blockers, &source);
+    uint32_t low_power_idle_ms = power_manager_low_power_idle_ms();
+    denzic_power_policy_v1_config_t config = {
+        .connected_idle_ms = low_power_idle_ms,
+        .disconnected_idle_ms = low_power_idle_ms,
+        .shutdown_idle_ms = hardware_shutdown_ms,
+        .sleep_enabled =
+            low_power_idle_ms > 0u &&
+            (!s_external_power_present || power_manager_plugged_low_power_enabled()),
+        .shutdown_enabled = CONFIG_POWER_MANAGER_ENABLE && hardware_shutdown_ms > 0u,
+    };
+    denzic_power_policy_v1_input_t input = {
+        .sleep_blockers = awake_blockers,
+        .shutdown_blockers = shutdown_blockers,
+        .user_idle_ms = user_idle_ms,
+        .radio_idle_ms = radio_idle_ms,
+        .connected = s_ble_connected,
+        .shutdown_retry_active =
+            power_manager_shutdown_failure_retry_active_locked(now_ms),
+    };
+    denzic_power_policy_v1_decision_t decision =
+        denzic_power_policy_v1_evaluate(&config, &input);
+    switch (decision.state) {
+    case DENZIC_POWER_POLICY_V1_STATE_CONNECTED_IDLE:
+        return POWER_MANAGER_STATE_CONNECTED_IDLE;
+    case DENZIC_POWER_POLICY_V1_STATE_DISCONNECTED_IDLE:
+        return POWER_MANAGER_STATE_DISCONNECTED_IDLE;
+    case DENZIC_POWER_POLICY_V1_STATE_SHUTDOWN_REQUESTED:
         return POWER_MANAGER_STATE_HARDWARE_SHUTDOWN;
+    case DENZIC_POWER_POLICY_V1_STATE_ACTIVE:
+    default:
+        return POWER_MANAGER_STATE_ACTIVE;
     }
-
-    return power_manager_awake_idle_state_locked(radio_idle_ms);
 }
 
 static bool power_manager_should_preserve_idle_for_ble_change_locked(uint64_t now_ms)

@@ -5,13 +5,14 @@
 #include <string.h>
 
 #include "diag_log.h"
+#include "denzic_device_health_v1.h"
 #include "esp_attr.h"
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 
 #define BOOT_SAFETY_RTC_MAGIC 0x42534631u
-#define BOOT_SAFETY_SAFE_MODE_THRESHOLD 3u
+#define BOOT_SAFETY_SAFE_MODE_THRESHOLD DENZIC_DEVICE_HEALTH_V1_SAFE_MODE_THRESHOLD
 #define BOOT_SAFETY_NORMAL_CLEAR_DELAY_MS 30000u
 #define BOOT_SAFETY_USB_PREFIX "BOOT:"
 
@@ -38,17 +39,24 @@ static boot_safety_status_t boot_safety_status_snapshot(void)
     return status;
 }
 
-static bool boot_safety_reason_counts_as_crash(esp_reset_reason_t reason)
+static denzic_device_health_v1_reset_reason_t boot_safety_platform_reset_reason(
+    esp_reset_reason_t reason)
 {
     switch (reason) {
-    case ESP_RST_POWERON:
-    case ESP_RST_DEEPSLEEP:
-    case ESP_RST_USB:
-    case ESP_RST_EXT:
-    case ESP_RST_JTAG:
-        return false;
-    default:
-        return true;
+    case ESP_RST_POWERON: return DENZIC_DEVICE_HEALTH_V1_RESET_REASON_POWER_ON;
+    case ESP_RST_EXT: return DENZIC_DEVICE_HEALTH_V1_RESET_REASON_EXTERNAL;
+    case ESP_RST_SW: return DENZIC_DEVICE_HEALTH_V1_RESET_REASON_SOFTWARE;
+    case ESP_RST_PANIC: return DENZIC_DEVICE_HEALTH_V1_RESET_REASON_PANIC;
+    case ESP_RST_INT_WDT:
+    case ESP_RST_TASK_WDT:
+    case ESP_RST_WDT: return DENZIC_DEVICE_HEALTH_V1_RESET_REASON_WATCHDOG;
+    case ESP_RST_DEEPSLEEP: return DENZIC_DEVICE_HEALTH_V1_RESET_REASON_DEEP_SLEEP;
+    case ESP_RST_BROWNOUT: return DENZIC_DEVICE_HEALTH_V1_RESET_REASON_BROWNOUT;
+    case ESP_RST_USB: return DENZIC_DEVICE_HEALTH_V1_RESET_REASON_USB;
+    case ESP_RST_JTAG: return DENZIC_DEVICE_HEALTH_V1_RESET_REASON_JTAG;
+    case ESP_RST_PWR_GLITCH: return DENZIC_DEVICE_HEALTH_V1_RESET_REASON_POWER_GLITCH;
+    case ESP_RST_CPU_LOCKUP: return DENZIC_DEVICE_HEALTH_V1_RESET_REASON_CPU_LOCKUP;
+    default: return DENZIC_DEVICE_HEALTH_V1_RESET_REASON_UNKNOWN;
     }
 }
 
@@ -77,10 +85,15 @@ const char *boot_safety_reset_reason_name(esp_reset_reason_t reason)
 
 static void boot_safety_reset_rtc_state(void)
 {
+    denzic_device_health_v1_boot_state_t state = {
+        .crash_count = s_rtc_state.crash_count,
+        .safe_mode_latched = s_rtc_state.safe_mode_latched != 0u,
+    };
+    denzic_device_health_v1_boot_clear(&state);
     s_rtc_state.magic = BOOT_SAFETY_RTC_MAGIC;
-    s_rtc_state.crash_count = 0;
+    s_rtc_state.crash_count = state.crash_count;
     s_rtc_state.last_reset_reason = 0;
-    s_rtc_state.safe_mode_latched = 0;
+    s_rtc_state.safe_mode_latched = state.safe_mode_latched ? 1u : 0u;
 }
 
 void boot_safety_init(void)
@@ -90,19 +103,18 @@ void boot_safety_init(void)
     }
 
     esp_reset_reason_t reason = esp_reset_reason();
-    if (boot_safety_reason_counts_as_crash(reason)) {
-        if (s_rtc_state.crash_count < UINT32_MAX) {
-            s_rtc_state.crash_count++;
-        }
-    } else {
-        s_rtc_state.crash_count = 0;
-        s_rtc_state.safe_mode_latched = 0;
-    }
+    denzic_device_health_v1_boot_state_t platform_state = {
+        .crash_count = s_rtc_state.crash_count,
+        .safe_mode_latched = s_rtc_state.safe_mode_latched != 0u,
+    };
+    denzic_device_health_v1_boot_observe(
+        &platform_state,
+        boot_safety_platform_reset_reason(reason),
+        BOOT_SAFETY_SAFE_MODE_THRESHOLD);
+    s_rtc_state.crash_count = platform_state.crash_count;
+    s_rtc_state.safe_mode_latched = platform_state.safe_mode_latched ? 1u : 0u;
 
     s_rtc_state.last_reset_reason = (uint32_t)reason;
-    if (s_rtc_state.crash_count >= BOOT_SAFETY_SAFE_MODE_THRESHOLD) {
-        s_rtc_state.safe_mode_latched = 1;
-    }
 
     portENTER_CRITICAL(&s_status_lock);
     s_status.reset_reason = reason;
@@ -151,8 +163,13 @@ static void boot_safety_clear_task(void *parameter)
     esp_reset_reason_t reset_reason = ESP_RST_UNKNOWN;
     portENTER_CRITICAL(&s_status_lock);
     if (!s_status.safe_mode) {
-        s_rtc_state.crash_count = 0;
-        s_rtc_state.safe_mode_latched = 0;
+        denzic_device_health_v1_boot_state_t platform_state = {
+            .crash_count = s_rtc_state.crash_count,
+            .safe_mode_latched = s_rtc_state.safe_mode_latched != 0u,
+        };
+        denzic_device_health_v1_boot_clear(&platform_state);
+        s_rtc_state.crash_count = platform_state.crash_count;
+        s_rtc_state.safe_mode_latched = platform_state.safe_mode_latched ? 1u : 0u;
         reset_reason = s_status.reset_reason;
         s_status.crash_count = 0;
         s_status.clear_scheduled = false;

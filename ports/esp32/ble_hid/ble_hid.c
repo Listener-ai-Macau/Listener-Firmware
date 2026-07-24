@@ -30,6 +30,7 @@ void ble_store_config_init(void);
 #include "hid_keyboard.h"
 #include "audio_capture.h"
 #include "battery_monitor.h"
+#include "denzic_battery_v1.h"
 #include "board.h"
 #include "boot_safety.h"
 #include "device_settings.h"
@@ -53,14 +54,11 @@ static const char *TAG = "ble_hid";
 #define BLE_HID_BATTERY_SAMPLE_INTERVAL_MS 5000
 #define BLE_HID_BATTERY_CONNECTED_IDLE_INTERVAL_MS 60000
 #define BLE_HID_BATTERY_DISCONNECTED_IDLE_INTERVAL_MS 600000
-#define BLE_HID_BATTERY_FORCE_REFRESH_INTERVAL_MS 60000
-#define BLE_HID_BATTERY_NOTIFY_THRESHOLD_PERCENT 1
-#define BLE_HID_BATTERY_LEVEL_INVALID UINT8_MAX
+#define BLE_HID_BATTERY_FORCE_REFRESH_INTERVAL_MS DENZIC_BATTERY_V1_FORCE_REFRESH_INTERVAL_MS
+#define BLE_HID_BATTERY_NOTIFY_THRESHOLD_PERCENT DENZIC_BATTERY_V1_NOTIFY_THRESHOLD_PERCENT
+#define BLE_HID_BATTERY_LEVEL_INVALID DENZIC_BATTERY_V1_INVALID_LEVEL
 #define BLE_HID_BATTERY_TASK_STACK_BYTES (4 * 1024)
 #define BLE_HID_KEYBOARD_TASK_STACK_BYTES (5 * 1024)
-#define BLE_HID_BATTERY_CHARGE_FULL_MIN_MV 4050U
-#define BLE_HID_BATTERY_CHARGE_FULL_MIN_PERCENT 88U
-#define BLE_HID_BATTERY_CHARGE_FULL_DEBOUNCE_MS 10000U
 #define BLE_HID_USB_COMMAND_PREFIX '~'
 #define BLE_HID_USB_COMMAND_BUFFER_BYTES 192
 #define BLE_HID_USB_READ_ACTIVE_TIMEOUT_MS 20
@@ -135,8 +133,7 @@ static bool s_safe_mode;
 static bool s_usage_transport_test_blocked;
 static bool s_battery_service_valid;
 static uint8_t s_battery_service_level = BLE_HID_BATTERY_LEVEL_INVALID;
-static bool s_battery_charge_full_latched;
-static uint32_t s_battery_charge_full_candidate_since_ms;
+static denzic_battery_v1_charge_tracker_t s_battery_charge_tracker;
 
 static void ble_hid_log_dis_gatt_state(void);
 static void ble_hid_usage_task_start(void);
@@ -177,18 +174,6 @@ static void ble_hid_publish_readiness(
         listener_device_get_capabilities());
 }
 
-static bool ble_hid_battery_level_exceeds_notify_threshold(uint8_t level)
-{
-    if (!s_battery_service_valid || s_battery_service_level == BLE_HID_BATTERY_LEVEL_INVALID) {
-        return true;
-    }
-
-    uint8_t delta = level > s_battery_service_level
-        ? (uint8_t)(level - s_battery_service_level)
-        : (uint8_t)(s_battery_service_level - level);
-    return delta >= BLE_HID_BATTERY_NOTIFY_THRESHOLD_PERCENT;
-}
-
 static status_led_ble_state_t ble_hid_connected_status_led_state(void)
 {
     return ble_audio_stream_is_type_led_ready()
@@ -207,53 +192,9 @@ static void ble_hid_resync_connected_status_led(void)
     status_led_set_ble_state(ble_hid_connected_status_led_state(), false);
 }
 
-static bool ble_hid_battery_estimate_charge_full(
-    bool charge_power_present,
-    bool battery_valid,
-    uint8_t battery_level_percent,
-    uint32_t battery_mv,
-    bool raw_charging,
-    bool raw_full,
-    uint32_t now_ms)
-{
-    bool charge_status_present = charge_power_present || raw_full;
-    if (!charge_status_present) {
-        s_battery_charge_full_latched = false;
-        s_battery_charge_full_candidate_since_ms = 0U;
-        return false;
-    }
-
-    if (!s_battery_charge_full_latched) {
-        bool battery_allows_full =
-            !battery_valid || battery_mv >= BLE_HID_BATTERY_CHARGE_FULL_MIN_MV ||
-            battery_level_percent >= BLE_HID_BATTERY_CHARGE_FULL_MIN_PERCENT;
-        bool full_candidate = raw_full && !raw_charging && battery_allows_full;
-
-        if (full_candidate) {
-            if (s_battery_charge_full_candidate_since_ms == 0U) {
-                s_battery_charge_full_candidate_since_ms = now_ms;
-            } else if (
-                now_ms - s_battery_charge_full_candidate_since_ms >=
-                BLE_HID_BATTERY_CHARGE_FULL_DEBOUNCE_MS) {
-                s_battery_charge_full_latched = true;
-            }
-        } else {
-            s_battery_charge_full_candidate_since_ms = 0U;
-        }
-    }
-
-    return charge_status_present && s_battery_charge_full_latched;
-}
-
 static uint32_t ble_hid_now_ms(void)
 {
     return (uint32_t)(esp_timer_get_time() / 1000LL);
-}
-
-static bool ble_hid_battery_force_refresh_due(uint32_t now_ms)
-{
-    uint32_t elapsed_ms = now_ms - s_battery_forced_refresh_timestamp_ms;
-    return elapsed_ms >= BLE_HID_BATTERY_FORCE_REFRESH_INTERVAL_MS;
 }
 
 static bool ble_hid_low_power_idle_active(void)
@@ -314,30 +255,37 @@ static esp_err_t ble_hid_update_battery_level(const char *reason, bool force_not
     bool raw_charging = charger_active;
     bool raw_full = power.bat_std_level == 0;
     uint32_t now_ms = ble_hid_now_ms();
-    bool charge_full = ble_hid_battery_estimate_charge_full(
-        charge_power_present,
-        battery_valid,
-        level,
-        battery_mv,
-        raw_charging,
-        raw_full,
-        now_ms);
-    charge_power_present = charge_power_present || charge_full;
-    uint32_t full_candidate_ms =
-        (s_battery_charge_full_candidate_since_ms != 0U &&
-         now_ms >= s_battery_charge_full_candidate_since_ms)
-            ? (now_ms - s_battery_charge_full_candidate_since_ms)
-            : 0U;
-    if (charge_full) {
-        level = 100;
-    } else if (raw_charging && level >= 100U) {
-        level = 99;
-    }
-    bool periodic_refresh = ble_hid_battery_force_refresh_due(now_ms);
-    bool should_notify = force_notify ||
-        (read_ret == ESP_OK && battery.valid &&
-         ble_hid_battery_level_exceeds_notify_threshold(level)) ||
-        periodic_refresh;
+    denzic_battery_v1_charge_input_t charge_input = {
+        .charge_power_present = charge_power_present,
+        .battery_valid = battery_valid,
+        .level_percent = level,
+        .battery_mv = battery_mv,
+        .raw_charging = raw_charging,
+        .raw_full = raw_full,
+        .now_ms = now_ms,
+    };
+    denzic_battery_v1_charge_decision_t charge =
+        denzic_battery_v1_update_charge(&s_battery_charge_tracker, &charge_input);
+    bool charge_full = charge.state == DENZIC_BATTERY_V1_CHARGE_STATE_FULL;
+    charge_power_present = charge.charge_power_present;
+    level = charge.published_level;
+    uint32_t full_candidate_ms = charge.full_candidate_ms;
+    bool periodic_refresh =
+        now_ms - s_battery_forced_refresh_timestamp_ms >=
+        BLE_HID_BATTERY_FORCE_REFRESH_INTERVAL_MS;
+    denzic_battery_v1_notify_input_t notify_input = {
+        .previous_valid = battery_valid ? s_battery_service_valid : true,
+        .previous_level = battery_valid ? s_battery_service_level : level,
+        .level = level,
+        .force = force_notify,
+        .now_ms = now_ms,
+        .last_notify_ms = s_battery_forced_refresh_timestamp_ms,
+        .periodic_interval_ms = BLE_HID_BATTERY_FORCE_REFRESH_INTERVAL_MS,
+        .threshold_percent = BLE_HID_BATTERY_NOTIFY_THRESHOLD_PERCENT,
+    };
+    denzic_battery_v1_notify_decision_t notify =
+        denzic_battery_v1_decide_notify(&notify_input);
+    bool should_notify = notify.notify;
 
     firmware_ota_note_battery(
         level,
@@ -381,7 +329,7 @@ static esp_err_t ble_hid_update_battery_level(const char *reason, bool force_not
             charge_power_present ? 1u : 0u,
             raw_charging ? 1u : 0u,
             raw_full ? 1u : 0u,
-            s_battery_charge_full_latched ? 1u : 0u,
+            charge.full_latched ? 1u : 0u,
             (unsigned)full_candidate_ms,
             charge_full ? 1u : 0u,
             power.usb_det_adc_valid ? 1u : 0u,
@@ -403,7 +351,7 @@ static esp_err_t ble_hid_update_battery_level(const char *reason, bool force_not
             charge_power_present ? 1u : 0u,
             raw_charging ? 1u : 0u,
             raw_full ? 1u : 0u,
-            s_battery_charge_full_latched ? 1u : 0u,
+            charge.full_latched ? 1u : 0u,
             (unsigned)full_candidate_ms,
             charge_full ? 1u : 0u,
             power.usb_det_adc_valid ? 1u : 0u,

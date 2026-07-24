@@ -9,6 +9,7 @@
 #include "sdkconfig.h"
 
 #include "diag_log.h"
+#include "denzic_device_health_v1.h"
 #include "ble_hid.h"
 #include "board.h"
 #include "audio_capture.h"
@@ -93,8 +94,18 @@ static void system_health_task(void *parameter)
         diag_log(DIAG_SRC_HEALTH, DIAG_HEALTH_HEARTBEAT, DIAG_SEV_INFO,
                  heap_free / 1024, heap_min / 1024, ble_connected ? 1 : 0, uptime_s / 60);
 
+        denzic_device_health_v1_runtime_input_t health_input = {
+            .free_heap_kb = heap_free / 1024,
+            .heap_warn_kb = HEALTH_HEAP_WARN_KB,
+            .disconnect_count = disconnects,
+            .previous_disconnect_count = disconnects,
+            .disconnect_rate_limit = HEALTH_BLE_DISCONNECT_RATE_LIMIT,
+        };
+        denzic_device_health_v1_runtime_decision_t health_decision =
+            denzic_device_health_v1_evaluate_runtime(&health_input);
+
         /* Heap alert */
-        if (heap_free / 1024 < HEALTH_HEAP_WARN_KB) {
+        if (health_decision.alert == DENZIC_DEVICE_HEALTH_V1_RUNTIME_ALERT_HEAP_PRESSURE) {
             ESP_LOGW(TAG, "heap pressure: free=%" PRIu32 " below %" PRIu32 "KB threshold",
                      heap_free / 1024, HEALTH_HEAP_WARN_KB);
             diag_log(DIAG_SRC_HEALTH, DIAG_HEALTH_ALERT, DIAG_SEV_WARN,
@@ -106,13 +117,16 @@ static void system_health_task(void *parameter)
 
         /* BLE disconnect rate alert */
         uint32_t now_ms = (uint32_t)(xTaskGetTickCount() * portTICK_PERIOD_MS);
-        uint32_t window_disconnects = disconnects - last_disconnect_count;
         if (now_ms - window_start_ms >= HEALTH_BLE_DISCONNECT_RATE_WINDOW_S * 1000) {
-            if (window_disconnects > HEALTH_BLE_DISCONNECT_RATE_LIMIT) {
+            health_input.free_heap_kb = 0u;
+            health_input.heap_warn_kb = 0u;
+            health_input.previous_disconnect_count = last_disconnect_count;
+            health_decision = denzic_device_health_v1_evaluate_runtime(&health_input);
+            if (health_decision.alert == DENZIC_DEVICE_HEALTH_V1_RUNTIME_ALERT_LINK_CHURN) {
                 ESP_LOGW(TAG, "ble unstable: %" PRIu32 " disconnects in %" PRIu32 "s (>2/min)",
-                         window_disconnects, HEALTH_BLE_DISCONNECT_RATE_WINDOW_S);
+                         health_decision.observed, HEALTH_BLE_DISCONNECT_RATE_WINDOW_S);
                 diag_log(DIAG_SRC_HEALTH, DIAG_HEALTH_ALERT, DIAG_SEV_WARN,
-                         2, window_disconnects, HEALTH_BLE_DISCONNECT_RATE_LIMIT, 0);
+                         2, health_decision.observed, health_decision.threshold, 0);
                 /* BLE churn is already visible in diagnostics. Do not turn idle into a WARN LED state. */
             }
             last_disconnect_count = disconnects;
