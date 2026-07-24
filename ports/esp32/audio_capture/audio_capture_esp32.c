@@ -1756,7 +1756,12 @@ static esp_err_t audio_capture_pdm_afe_init(void)
 
     s_pdm_afe_feed_samples = (size_t)feed_samples;
     s_pdm_afe_fetch_samples = (size_t)fetch_samples;
-    s_pdm_vad_handle = vad_create(VAD_MODE_3);
+    /*
+     * Prefer candidate recall here. Enrolled-speaker verification on Type is
+     * the identity gate, while this WebRTC VAD remains the noise/speech gate.
+     * Mode 3 rejected ordinary owner speech during physical acceptance.
+     */
+    s_pdm_vad_handle = vad_create(VAD_MODE_1);
     if (s_pdm_vad_handle == NULL) {
         ESP_LOGE(TAG, "PDM WebRTC VAD allocation failed");
         free(s_pdm_afe_feed_buffer);
