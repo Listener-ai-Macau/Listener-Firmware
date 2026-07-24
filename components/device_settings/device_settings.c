@@ -37,6 +37,8 @@ extern void ble_hid_gap_set_ec11_fast_recording_enabled(
 #define DEVICE_SETTINGS_NVS_BLE_NAME_KEY "ble_name"
 #define DEVICE_SETTINGS_NVS_KNOB_ROTATION_KEY "knob_rot"
 #define DEVICE_SETTINGS_NVS_EC11_FAST_RECORDING_KEY "ec11_rec"
+#define DEVICE_SETTINGS_NVS_VOICE_AUTO_START_KEY "vad_start"
+#define DEVICE_SETTINGS_NVS_VOICE_AUTO_STOP_KEY "vad_stop"
 #define DEVICE_SETTINGS_NVS_REVISION_KEY "revision"
 #define DEVICE_SETTINGS_USB_PREFIX "DEVICE:"
 #define DEVICE_SETTINGS_COMMAND_BUFFER_BYTES 192
@@ -66,6 +68,8 @@ typedef struct {
     uint32_t settings_revision;
     uint8_t knob_rotation_action;
     bool ec11_fast_recording_enabled;
+    bool voice_auto_start_enabled;
+    bool voice_auto_stop_enabled;
     char ble_name[DEVICE_SETTINGS_BLE_NAME_MAX_LEN + 1];
 } device_settings_config_t;
 
@@ -103,6 +107,8 @@ static void device_settings_set_defaults_locked(void)
     s_settings.settings_revision = DEVICE_SETTINGS_INITIAL_REVISION;
     s_settings.knob_rotation_action = (uint8_t)EC11_ROTATION_ACTION_SYSTEM_VOLUME;
     s_settings.ec11_fast_recording_enabled = DEVICE_SETTINGS_DEFAULT_EC11_FAST_RECORDING_ENABLED != 0;
+    s_settings.voice_auto_start_enabled = DEVICE_SETTINGS_DEFAULT_VOICE_AUTO_START_ENABLED != 0;
+    s_settings.voice_auto_stop_enabled = DEVICE_SETTINGS_DEFAULT_VOICE_AUTO_STOP_ENABLED != 0;
     snprintf(s_settings.ble_name, sizeof(s_settings.ble_name), "%s", DEVICE_SETTINGS_DEFAULT_BLE_NAME);
 }
 
@@ -332,6 +338,20 @@ static esp_err_t device_settings_load_locked(void)
     }
     device_settings_note_nvs_read_locked(get_ret, &missing_saved_key);
 
+    uint8_t voice_auto_start = s_settings.voice_auto_start_enabled ? 1U : 0U;
+    get_ret = nvs_get_u8(nvs, DEVICE_SETTINGS_NVS_VOICE_AUTO_START_KEY, &voice_auto_start);
+    if (get_ret == ESP_OK) {
+        s_settings.voice_auto_start_enabled = voice_auto_start != 0U;
+    }
+    device_settings_note_nvs_read_locked(get_ret, &missing_saved_key);
+
+    uint8_t voice_auto_stop = s_settings.voice_auto_stop_enabled ? 1U : 0U;
+    get_ret = nvs_get_u8(nvs, DEVICE_SETTINGS_NVS_VOICE_AUTO_STOP_KEY, &voice_auto_stop);
+    if (get_ret == ESP_OK) {
+        s_settings.voice_auto_stop_enabled = voice_auto_stop != 0U;
+    }
+    device_settings_note_nvs_read_locked(get_ret, &missing_saved_key);
+
     uint32_t settings_revision = s_settings.settings_revision;
     get_ret = nvs_get_u32(nvs, DEVICE_SETTINGS_NVS_REVISION_KEY, &settings_revision);
     if (get_ret == ESP_OK && settings_revision != 0U) {
@@ -454,6 +474,18 @@ static esp_err_t device_settings_persist_locked(bool loaded_from_nvs_after_persi
             s_settings.ec11_fast_recording_enabled ? 1U : 0U);
     }
     if (ret == ESP_OK) {
+        ret = nvs_set_u8(
+            nvs,
+            DEVICE_SETTINGS_NVS_VOICE_AUTO_START_KEY,
+            s_settings.voice_auto_start_enabled ? 1U : 0U);
+    }
+    if (ret == ESP_OK) {
+        ret = nvs_set_u8(
+            nvs,
+            DEVICE_SETTINGS_NVS_VOICE_AUTO_STOP_KEY,
+            s_settings.voice_auto_stop_enabled ? 1U : 0U);
+    }
+    if (ret == ESP_OK) {
         ret = nvs_set_u32(nvs, DEVICE_SETTINGS_NVS_REVISION_KEY, s_settings.settings_revision);
     }
     if (ret == ESP_OK) {
@@ -567,6 +599,8 @@ void device_settings_get_snapshot(device_settings_snapshot_t *out_snapshot)
     out_snapshot->battery_auto_shutdown_ms = (uint32_t)CONFIG_POWER_MANAGER_HARDWARE_SHUTDOWN_MS;
     out_snapshot->settings_revision = DEVICE_SETTINGS_INITIAL_REVISION;
     out_snapshot->ec11_fast_recording_enabled = DEVICE_SETTINGS_DEFAULT_EC11_FAST_RECORDING_ENABLED != 0;
+    out_snapshot->voice_auto_start_enabled = DEVICE_SETTINGS_DEFAULT_VOICE_AUTO_START_ENABLED != 0;
+    out_snapshot->voice_auto_stop_enabled = DEVICE_SETTINGS_DEFAULT_VOICE_AUTO_STOP_ENABLED != 0;
     snprintf(out_snapshot->ble_name, sizeof(out_snapshot->ble_name), "%s", DEVICE_SETTINGS_DEFAULT_BLE_NAME);
 
     if (!device_settings_ensure_mutex()) {
@@ -589,6 +623,8 @@ void device_settings_get_snapshot(device_settings_snapshot_t *out_snapshot)
             out_snapshot->battery_auto_shutdown_ms = s_settings.battery_auto_shutdown_ms;
             out_snapshot->settings_revision = s_settings.settings_revision;
             out_snapshot->ec11_fast_recording_enabled = s_settings.ec11_fast_recording_enabled;
+            out_snapshot->voice_auto_start_enabled = s_settings.voice_auto_start_enabled;
+            out_snapshot->voice_auto_stop_enabled = s_settings.voice_auto_stop_enabled;
             snprintf(out_snapshot->ble_name, sizeof(out_snapshot->ble_name), "%s", s_settings.ble_name);
             out_snapshot->ble_name_pending_restart = s_ble_name_pending_restart;
             out_snapshot->loaded_from_nvs = s_loaded_from_nvs;
@@ -702,6 +738,20 @@ bool device_settings_get_ec11_fast_recording_enabled(void)
     return snapshot.ec11_fast_recording_enabled;
 }
 
+bool device_settings_get_voice_auto_start_enabled(void)
+{
+    device_settings_snapshot_t snapshot = {0};
+    device_settings_get_snapshot(&snapshot);
+    return snapshot.voice_auto_start_enabled;
+}
+
+bool device_settings_get_voice_auto_stop_enabled(void)
+{
+    device_settings_snapshot_t snapshot = {0};
+    device_settings_get_snapshot(&snapshot);
+    return snapshot.voice_auto_stop_enabled;
+}
+
 void device_settings_mark_ble_name_applied(void)
 {
     if (!device_settings_ensure_mutex()) {
@@ -798,6 +848,7 @@ static void device_settings_print_status(const char *result)
          " auto_shutdown_ms=%" PRIu32
          " plugged_auto_shutdown_ms=%" PRIu32 " battery_auto_shutdown_ms=%" PRIu32
          " auto_shutdown_enabled=%u auto_shutdown_mode=%s knob_rotation=%s ec11_fast_recording=%u"
+         " voice_auto_start=%u voice_auto_stop=%u"
          " ble_name=\"%s\" ble_name_pending=%u ble_name_apply=%s"
         " loaded_from_nvs=%u external_power_present=%u usb_power_present=%u usb_serial_jtag_sof_active=%u"
         " charger_active=%u charge_power_present=%u charging=%u charge_full=%u"
@@ -826,6 +877,8 @@ static void device_settings_print_status(const char *result)
             : "disabled",
         ec11_rotation_control_action_name(ec11_rotation_control_get_action()),
         snapshot.ec11_fast_recording_enabled ? 1u : 0u,
+        snapshot.voice_auto_start_enabled ? 1u : 0u,
+        snapshot.voice_auto_stop_enabled ? 1u : 0u,
         snapshot.ble_name,
         snapshot.ble_name_pending_restart ? 1u : 0u,
         snapshot.ble_name_pending_restart ? "restart_ble_or_reboot" : "active_or_next_advertising",
@@ -1268,6 +1321,34 @@ static bool device_settings_apply_key_value(
             return false;
         }
         config->ec11_fast_recording_enabled = enabled;
+        return true;
+    }
+
+    if (strcmp(key, "voice_auto_start") == 0 ||
+        strcmp(key, "automatic_recording_start") == 0 ||
+        strcmp(key, "vad_start") == 0) {
+        bool enabled = false;
+        if (!device_settings_parse_bool(value, &enabled)) {
+            if (out_reason != NULL) {
+                *out_reason = "voice_auto_start_must_be_0_or_1";
+            }
+            return false;
+        }
+        config->voice_auto_start_enabled = enabled;
+        return true;
+    }
+
+    if (strcmp(key, "voice_auto_stop") == 0 ||
+        strcmp(key, "automatic_recording_stop") == 0 ||
+        strcmp(key, "vad_stop") == 0) {
+        bool enabled = false;
+        if (!device_settings_parse_bool(value, &enabled)) {
+            if (out_reason != NULL) {
+                *out_reason = "voice_auto_stop_must_be_0_or_1";
+            }
+            return false;
+        }
+        config->voice_auto_stop_enabled = enabled;
         return true;
     }
 

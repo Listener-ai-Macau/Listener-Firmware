@@ -22,6 +22,8 @@ extern "C" {
 #define DEVICE_SETTINGS_DEFAULT_PLUGGED_LOW_POWER_ENABLED 1
 #define DEVICE_SETTINGS_DEFAULT_PLUGGED_AUTO_SHUTDOWN_MS 0U /* External power never auto-shuts down. */
 #define DEVICE_SETTINGS_DEFAULT_EC11_FAST_RECORDING_ENABLED 1
+#define DEVICE_SETTINGS_DEFAULT_VOICE_AUTO_START_ENABLED 0
+#define DEVICE_SETTINGS_DEFAULT_VOICE_AUTO_STOP_ENABLED 0
 #define DEVICE_SETTINGS_BLE_NAME_MAX_LEN 29
 
 typedef struct {
@@ -39,6 +41,8 @@ typedef struct {
     uint32_t battery_auto_shutdown_ms;
     uint32_t settings_revision;
     bool ec11_fast_recording_enabled;
+    bool voice_auto_start_enabled;
+    bool voice_auto_stop_enabled;
     char ble_name[DEVICE_SETTINGS_BLE_NAME_MAX_LEN + 1];
     bool ble_name_pending_restart;
     bool loaded_from_nvs;
@@ -57,6 +61,8 @@ uint32_t device_settings_get_plugged_auto_shutdown_ms(void);
 uint32_t device_settings_get_battery_auto_shutdown_ms(void);
 uint32_t device_settings_get_revision(void);
 bool device_settings_get_ec11_fast_recording_enabled(void);
+bool device_settings_get_voice_auto_start_enabled(void);
+bool device_settings_get_voice_auto_stop_enabled(void);
 const char *device_settings_get_ble_name(void);
 bool device_settings_ble_name_pending_restart(void);
 void device_settings_mark_ble_name_applied(void);

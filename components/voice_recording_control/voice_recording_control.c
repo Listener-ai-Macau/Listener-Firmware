@@ -8,6 +8,7 @@
 #include <string.h>
 
 #include "freertos/FreeRTOS.h"
+#include "freertos/queue.h"
 #include "freertos/semphr.h"
 #include "freertos/task.h"
 #include "esp_log.h"
@@ -16,6 +17,8 @@
 #include "audio_capture.h"
 #include "ble_audio_stream.h"
 #include "ble_hid_gap.h"
+#include "denzic_voice_activation_v1.h"
+#include "device_settings.h"
 #include "power_manager.h"
 #include "status_led.h"
 #include "voice_key_input.h"
@@ -29,6 +32,7 @@
 #define VOICE_RECORDING_CONTROL_PENDING_START_RETRY_MS 250
 #define VOICE_RECORDING_CONTROL_HOST_CLEANUP_TOGGLE_GUARD_MS 1500
 #define VOICE_RECORDING_CONTROL_ARRAY_SIZE(array) (sizeof(array) / sizeof((array)[0]))
+#define VOICE_RECORDING_CONTROL_VAD_QUEUE_LENGTH 24
 
 typedef enum {
     VOICE_RECORDING_STATE_IDLE = 0,
@@ -126,6 +130,11 @@ typedef struct {
     const char *detail;
 } voice_recording_control_transition_case_t;
 
+typedef struct {
+    bool speech_detected;
+    uint32_t elapsed_ms;
+} voice_recording_control_vad_event_t;
+
 static const char *TAG = "voice_rec_ctrl";
 
 static bool s_started;
@@ -146,6 +155,12 @@ static TickType_t s_pending_start_next_retry_tick;
 static const char *s_active_session_source;
 static TickType_t s_host_cleanup_toggle_guard_until_tick;
 static uint32_t s_session_count;
+static QueueHandle_t s_vad_queue;
+static bool s_voice_monitoring;
+static bool s_voice_auto_start_enabled;
+static bool s_voice_auto_stop_enabled;
+static denzic_voice_activation_v1_machine_t s_voice_activation_machine;
+static denzic_voice_activation_v1_config_t s_voice_activation_config;
 
 static const voice_recording_control_transition_case_t VOICE_RECORDING_CONTROL_FSM_ARTIFACT[] = {
     {
@@ -1050,7 +1065,11 @@ static void voice_recording_control_timeout_pending_start(esp_err_t reason)
              voice_recording_source_code(source), (uint32_t)reason, (uint32_t)s_state, 1);
 }
 
-static esp_err_t voice_recording_control_enter_recording(const char *source, bool log_rejection, bool request_reconnect)
+static esp_err_t voice_recording_control_enter_recording(
+    const char *source,
+    bool log_rejection,
+    bool request_reconnect,
+    uint32_t pre_roll_ms)
 {
     power_manager_record_activity("voice_recording_start");
     (void)ble_hid_gap_request_active_connection();
@@ -1058,7 +1077,9 @@ static esp_err_t voice_recording_control_enter_recording(const char *source, boo
         POWER_MANAGER_BLOCKER_RECORDING | POWER_MANAGER_BLOCKER_BLE_AUDIO,
         true);
 
-    esp_err_t ret = audio_capture_session_begin();
+    esp_err_t ret = pre_roll_ms > 0u
+        ? audio_capture_session_begin_with_preroll(pre_roll_ms)
+        : audio_capture_session_begin();
     if (ret != ESP_OK) {
         const bool audio_unavailable =
             ret == ESP_ERR_NOT_SUPPORTED && !audio_capture_is_available();
@@ -1294,7 +1315,7 @@ static void voice_recording_control_toggle(const char *source)
             source,
             decision.result,
             decision.warn);
-        esp_err_t ret = voice_recording_control_enter_recording(source, true, true);
+        esp_err_t ret = voice_recording_control_enter_recording(source, true, true, 0u);
         if (ret == ESP_ERR_INVALID_STATE && !audio_capture_session_is_active()) {
             voice_recording_control_snapshot_t rejected_snapshot =
                 voice_recording_control_make_snapshot(source);
@@ -1872,7 +1893,7 @@ static void voice_recording_control_poll_pending_start(void)
         source,
         pending_decision.result,
         pending_decision.warn);
-    esp_err_t ret = voice_recording_control_enter_recording(source, false, false);
+    esp_err_t ret = voice_recording_control_enter_recording(source, false, false, 0u);
     if (ret == ESP_OK) {
         return;
     }
@@ -1959,6 +1980,109 @@ static void voice_recording_control_handle_session_inactive(void)
     }
 }
 
+static void voice_recording_control_on_voice_activity(
+    bool speech_detected,
+    uint32_t elapsed_ms)
+{
+    if (s_vad_queue == NULL) {
+        return;
+    }
+    voice_recording_control_vad_event_t event = {
+        .speech_detected = speech_detected,
+        .elapsed_ms = elapsed_ms,
+    };
+    (void)xQueueSend(s_vad_queue, &event, 0);
+    if (s_task_handle != NULL) {
+        xTaskNotifyGive(s_task_handle);
+    }
+}
+
+static void voice_recording_control_refresh_voice_monitoring(void)
+{
+    device_settings_snapshot_t settings = {0};
+    power_manager_snapshot_t power = {0};
+    device_settings_get_snapshot(&settings);
+    power_manager_get_snapshot(&power);
+    s_voice_auto_start_enabled = settings.voice_auto_start_enabled;
+    s_voice_auto_stop_enabled = settings.voice_auto_stop_enabled;
+    bool monitoring =
+        power.state == POWER_MANAGER_STATE_ACTIVE &&
+        ble_audio_stream_is_ready() &&
+        (s_voice_auto_start_enabled || s_voice_auto_stop_enabled);
+    if (monitoring == s_voice_monitoring) {
+        return;
+    }
+    esp_err_t ret =
+        audio_capture_set_voice_activation_monitoring(monitoring);
+    if (ret == ESP_OK) {
+        s_voice_monitoring = monitoring;
+    } else {
+        monitoring = false;
+        s_voice_monitoring = false;
+    }
+    if (!monitoring) {
+        denzic_voice_activation_v1_reset(
+            &s_voice_activation_machine);
+        if (s_vad_queue != NULL) {
+            xQueueReset(s_vad_queue);
+        }
+    }
+    ESP_LOGI(
+        TAG,
+        "voice activation monitoring=%u auto_start=%u auto_stop=%u power=%s ble_ready=%u ret=%s",
+        monitoring ? 1u : 0u,
+        s_voice_auto_start_enabled ? 1u : 0u,
+        s_voice_auto_stop_enabled ? 1u : 0u,
+        power_manager_state_name(power.state),
+        ble_audio_stream_is_ready() ? 1u : 0u,
+        esp_err_to_name(ret));
+}
+
+static void voice_recording_control_process_voice_activity(void)
+{
+    voice_recording_control_vad_event_t event = {0};
+    while (s_vad_queue != NULL &&
+           xQueueReceive(s_vad_queue, &event, 0) == pdTRUE) {
+        denzic_voice_activation_v1_input_t input = {
+            .elapsed_ms = event.elapsed_ms,
+            .enabled = s_voice_monitoring,
+            .auto_start_enabled = s_voice_auto_start_enabled,
+            .auto_stop_enabled = s_voice_auto_stop_enabled,
+            .recording_active =
+                s_state == VOICE_RECORDING_STATE_RECORDING,
+            .speech_detected = event.speech_detected,
+            .start_blocked =
+                s_state != VOICE_RECORDING_STATE_IDLE ||
+                s_pending_start ||
+                s_cancel_pending,
+        };
+        denzic_voice_activation_v1_decision_t decision =
+            denzic_voice_activation_v1_step(
+                &s_voice_activation_machine,
+                &s_voice_activation_config,
+                &input);
+        if (decision.action ==
+                DENZIC_VOICE_ACTIVATION_V1_ACTION_START &&
+            s_state == VOICE_RECORDING_STATE_IDLE &&
+            !s_pending_start) {
+            (void)voice_recording_control_enter_recording(
+                "voice_activation.auto_start",
+                true,
+                false,
+                decision.pre_roll_ms);
+        } else if (
+            decision.action ==
+                DENZIC_VOICE_ACTIVATION_V1_ACTION_STOP &&
+            s_state == VOICE_RECORDING_STATE_RECORDING) {
+            (void)voice_recording_control_exit_recording(
+                decision.stop_reason ==
+                        DENZIC_VOICE_ACTIVATION_V1_STOP_REASON_MAX_DURATION
+                    ? "voice_activation.auto_stop_max_duration"
+                    : "voice_activation.auto_stop_silence");
+        }
+    }
+}
+
 static void voice_recording_control_task(void *parameter)
 {
     (void)parameter;
@@ -1967,20 +2091,30 @@ static void voice_recording_control_task(void *parameter)
     while (1) {
         watchdog_platform_feed_current_task();
         if (voice_recording_control_lock()) {
+            voice_recording_control_refresh_voice_monitoring();
+            voice_recording_control_process_voice_activity();
             uint32_t press_to_control_ms = 0;
             if (voice_key_input_take_fast_idle_recording_event(&press_to_control_ms)) {
+                denzic_voice_activation_v1_reset(
+                    &s_voice_activation_machine);
                 voice_recording_control_handle_fast_idle_ec11_start(press_to_control_ms);
             }
 
             if (voice_key_input_take_fast_idle_recording_cancel_event()) {
+                denzic_voice_activation_v1_reset(
+                    &s_voice_activation_machine);
                 voice_recording_control_cancel("ec11.fast_idle_long_press");
             }
 
             if (voice_key_input_take_fast_active_recording_stop_event(&press_to_control_ms)) {
+                denzic_voice_activation_v1_reset(
+                    &s_voice_activation_machine);
                 voice_recording_control_handle_fast_active_ec11_stop(press_to_control_ms);
             }
 
             if (voice_key_input_take_toggle_event()) {
+                denzic_voice_activation_v1_reset(
+                    &s_voice_activation_machine);
                 voice_recording_control_toggle(voice_key_input_get_active_source());
             }
 
@@ -1989,6 +2123,8 @@ static void voice_recording_control_task(void *parameter)
             if (voice_key_input_take_recovery_event(
                     &recovery_accepted_at_us,
                     &recovery_generated)) {
+                denzic_voice_activation_v1_reset(
+                    &s_voice_activation_machine);
                 const char *source = voice_key_input_get_active_source();
                 ble_hid_gap_note_ec11_recovery_accepted(
                     recovery_accepted_at_us,
@@ -2032,6 +2168,20 @@ esp_err_t voice_recording_control_start(void)
             return ESP_ERR_NO_MEM;
         }
     }
+    if (s_vad_queue == NULL) {
+        s_vad_queue = xQueueCreate(
+            VOICE_RECORDING_CONTROL_VAD_QUEUE_LENGTH,
+            sizeof(voice_recording_control_vad_event_t));
+        if (s_vad_queue == NULL) {
+            return ESP_ERR_NO_MEM;
+        }
+    }
+    s_voice_activation_config =
+        denzic_voice_activation_v1_default_config();
+    denzic_voice_activation_v1_reset(
+        &s_voice_activation_machine);
+    audio_capture_set_voice_activity_handler(
+        voice_recording_control_on_voice_activity);
 
     esp_err_t key_ret = voice_key_input_start();
     if (key_ret != ESP_OK) {
