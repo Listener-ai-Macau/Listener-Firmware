@@ -29,6 +29,7 @@
 
 extern esp_err_t audio_capture_set_idle_power_save(bool enabled) __attribute__((weak));
 extern bool audio_capture_session_is_active(void) __attribute__((weak));
+extern bool audio_capture_voice_activation_monitoring_is_enabled(void) __attribute__((weak));
 extern bool ble_hid_gap_is_connected(void) __attribute__((weak));
 extern bool ble_audio_stream_is_type_link_ready(void) __attribute__((weak));
 extern esp_err_t ble_hid_gap_set_low_power_advertising(bool enabled) __attribute__((weak));
@@ -563,6 +564,7 @@ static void power_manager_blocker_names(uint32_t blockers, char *buffer, size_t 
         {POWER_MANAGER_BLOCKER_USB_COMMAND, "usb_command"},
         {POWER_MANAGER_BLOCKER_EXTERNAL_POWER, "external_power"},
         {POWER_MANAGER_BLOCKER_OTA, "ota"},
+        {POWER_MANAGER_BLOCKER_VOICE_ACTIVATION, "voice_activation"},
     };
 
     bool first = true;
@@ -851,7 +853,12 @@ static uint32_t power_manager_awake_blockers(uint32_t blockers)
 
 static uint32_t power_manager_audio_idle_blockers(uint32_t blockers)
 {
-    return power_manager_awake_blockers(blockers);
+    uint32_t audio_blockers = power_manager_awake_blockers(blockers);
+    if (audio_capture_voice_activation_monitoring_is_enabled != NULL &&
+        audio_capture_voice_activation_monitoring_is_enabled()) {
+        audio_blockers |= POWER_MANAGER_BLOCKER_VOICE_ACTIVATION;
+    }
+    return audio_blockers;
 }
 
 static power_manager_power_source_snapshot_t power_manager_cached_power_source_locked(void)

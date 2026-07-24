@@ -27,6 +27,7 @@ typedef enum {
     POWER_MANAGER_BLOCKER_USB_COMMAND = 1u << 6,
     POWER_MANAGER_BLOCKER_EXTERNAL_POWER = 1u << 7,
     POWER_MANAGER_BLOCKER_OTA = 1u << 8,
+    POWER_MANAGER_BLOCKER_VOICE_ACTIVATION = 1u << 9,
 } power_manager_blocker_t;
 
 typedef enum {

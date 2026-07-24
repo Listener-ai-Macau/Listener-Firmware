@@ -35,6 +35,7 @@ uint32_t audio_capture_get_dropped_frame_count(void);
 void audio_capture_set_voice_activity_handler(
     audio_capture_voice_activity_handler_t handler);
 esp_err_t audio_capture_set_voice_activation_monitoring(bool enabled);
+bool audio_capture_voice_activation_monitoring_is_enabled(void);
 
 #ifdef __cplusplus
 }

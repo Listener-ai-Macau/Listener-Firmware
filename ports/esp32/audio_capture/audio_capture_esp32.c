@@ -74,6 +74,9 @@
  * buffered latency in the steady state. */
 #define AUDIO_CAPTURE_PDM_AFE_RINGBUF_FRAMES 6
 #define AUDIO_CAPTURE_PDM_AFE_FETCH_WAIT_MS 100U
+#define AUDIO_CAPTURE_PDM_VAD_FRAME_MS 30U
+#define AUDIO_CAPTURE_PDM_VAD_FRAME_SAMPLES \
+    ((AUDIO_CAPTURE_SAMPLE_RATE_HZ * AUDIO_CAPTURE_PDM_VAD_FRAME_MS) / 1000U)
 #define AUDIO_CAPTURE_VOICE_PREROLL_MAX_MS 600U
 #define AUDIO_CAPTURE_VOICE_PREROLL_FRAMES \
     (AUDIO_CAPTURE_VOICE_PREROLL_MAX_MS / AUDIO_CAPTURE_FRAME_MS)
@@ -114,6 +117,7 @@
 #include "esp_afe_config.h"
 #include "esp_afe_sr_iface.h"
 #include "esp_afe_sr_models.h"
+#include "esp_vad.h"
 #endif
 #endif
 
@@ -203,6 +207,9 @@ static int16_t *s_pdm_afe_fetch_buffer;
 static size_t s_pdm_afe_feed_samples;
 static size_t s_pdm_afe_fetch_samples;
 static size_t s_pdm_afe_feed_filled;
+static vad_handle_t s_pdm_vad_handle;
+static int16_t s_pdm_vad_buffer[AUDIO_CAPTURE_PDM_VAD_FRAME_SAMPLES];
+static size_t s_pdm_vad_filled;
 static int16_t s_pdm_afe_emit_buffer[AUDIO_CAPTURE_FRAME_SAMPLES];
 static size_t s_pdm_afe_emit_filled;
 static volatile bool s_pdm_afe_session_boundary_requested;
@@ -684,6 +691,11 @@ esp_err_t audio_capture_set_voice_activation_monitoring(bool enabled)
         xSemaphoreGive(s_state_mutex);
     }
     return ESP_OK;
+}
+
+bool audio_capture_voice_activation_monitoring_is_enabled(void)
+{
+    return s_voice_activation_monitoring;
 }
 
 /* ---------- Shared frame processing ---------- */
@@ -1571,6 +1583,47 @@ static void audio_capture_pdm_afe_complete_stop_drain(void)
     audio_capture_process_frame(boundary_frame);
 }
 
+static void audio_capture_pdm_vad_process(
+    const int16_t *samples,
+    size_t sample_count)
+{
+    if ((!s_voice_activation_monitoring &&
+         !audio_capture_session_is_active()) ||
+        s_pdm_vad_handle == NULL) {
+        s_pdm_vad_filled = 0u;
+        return;
+    }
+
+    while (sample_count > 0u) {
+        size_t remaining =
+            AUDIO_CAPTURE_PDM_VAD_FRAME_SAMPLES - s_pdm_vad_filled;
+        size_t copied = sample_count < remaining ? sample_count : remaining;
+        memcpy(
+            s_pdm_vad_buffer + s_pdm_vad_filled,
+            samples,
+            copied * sizeof(*samples));
+        s_pdm_vad_filled += copied;
+        samples += copied;
+        sample_count -= copied;
+
+        if (s_pdm_vad_filled == AUDIO_CAPTURE_PDM_VAD_FRAME_SAMPLES) {
+            vad_state_t state = vad_process(
+                s_pdm_vad_handle,
+                s_pdm_vad_buffer,
+                AUDIO_CAPTURE_SAMPLE_RATE_HZ,
+                AUDIO_CAPTURE_PDM_VAD_FRAME_MS);
+            audio_capture_voice_activity_handler_t handler =
+                s_voice_activity_handler;
+            if (handler != NULL) {
+                handler(
+                    state == VAD_SPEECH,
+                    AUDIO_CAPTURE_PDM_VAD_FRAME_MS);
+            }
+            s_pdm_vad_filled = 0u;
+        }
+    }
+}
+
 /* ESP-SR requires its feed and fetch calls to run concurrently. Keep this
  * task separate from I2S capture; serializing them stalls feed and leaves the
  * user with a recording state that never emits PCM. */
@@ -1617,18 +1670,9 @@ static void audio_capture_pdm_afe_fetch_task(void *arg)
             }
         }
         if (sample_count > 0) {
-            audio_capture_voice_activity_handler_t handler =
-                s_voice_activity_handler;
-            if (handler != NULL &&
-                (s_voice_activation_monitoring ||
-                 audio_capture_session_is_active())) {
-                uint32_t elapsed_ms = (uint32_t)(
-                    (sample_count * 1000u) /
-                    AUDIO_CAPTURE_SAMPLE_RATE_HZ);
-                handler(
-                    result->vad_state == VAD_SPEECH,
-                    elapsed_ms > 0u ? elapsed_ms : 1u);
-            }
+            audio_capture_pdm_vad_process(
+                s_pdm_afe_fetch_buffer,
+                sample_count);
             audio_capture_pdm_afe_emit(s_pdm_afe_fetch_buffer, sample_count);
         }
     }
@@ -1642,19 +1686,14 @@ static esp_err_t audio_capture_pdm_afe_init(void)
         return ESP_ERR_NO_MEM;
     }
 
-    /* The PDM board has one microphone and no playback reference. VAD only
-     * classifies AFE output; it never gates or suppresses PCM. */
+    /* The PDM board has one microphone and no playback reference. Keep VAD
+     * outside AFE so classification cannot stall its feed/fetch pipeline. */
     config->aec_init = false;
     config->se_init = false;
     config->ns_init = true;
     config->ns_model_name = NULL;
     config->afe_ns_mode = AFE_NS_MODE_WEBRTC;
-    config->vad_init = true;
-    config->vad_mode = VAD_MODE_3;
-    config->vad_model_name = NULL;
-    config->vad_min_speech_ms = 64;
-    config->vad_min_noise_ms = 64;
-    config->vad_delay_ms = 128;
+    config->vad_init = false;
     config->wakenet_init = false;
     /* Keep hardware WebRTC noise suppression, but leave streaming gain control
      * to Type so the microphone path is not compressed twice. */
@@ -1717,6 +1756,18 @@ static esp_err_t audio_capture_pdm_afe_init(void)
 
     s_pdm_afe_feed_samples = (size_t)feed_samples;
     s_pdm_afe_fetch_samples = (size_t)fetch_samples;
+    s_pdm_vad_handle = vad_create(VAD_MODE_3);
+    if (s_pdm_vad_handle == NULL) {
+        ESP_LOGE(TAG, "PDM WebRTC VAD allocation failed");
+        free(s_pdm_afe_feed_buffer);
+        free(s_pdm_afe_fetch_buffer);
+        s_pdm_afe_feed_buffer = NULL;
+        s_pdm_afe_fetch_buffer = NULL;
+        s_pdm_afe_handle->destroy(s_pdm_afe_data);
+        s_pdm_afe_data = NULL;
+        s_pdm_afe_handle = NULL;
+        return ESP_ERR_NO_MEM;
+    }
     BaseType_t task_ok = xTaskCreatePinnedToCore(
         audio_capture_pdm_afe_fetch_task,
         "audio_afe_fetch",
@@ -1729,13 +1780,16 @@ static esp_err_t audio_capture_pdm_afe_init(void)
         AUDIO_CAPTURE_AFE_FETCH_TASK_CORE);
     if (task_ok != pdPASS) {
         ESP_LOGE(TAG, "PDM AFE fetch task creation failed");
+        vad_destroy(s_pdm_vad_handle);
+        s_pdm_vad_handle = NULL;
         return ESP_ERR_NO_MEM;
     }
 
     s_pdm_afe_handle->print_pipeline(s_pdm_afe_data);
     ESP_LOGI(
         TAG,
-        "PDM AFE ready: pipeline=continuous-webrtc-ns linear_gain=%.1f feed_samples=%d fetch_samples=%d ringbuf_frames=%u fetch_wait_ms=%u feed_core=%d feed_prio=5 fetch_core=%d fetch_prio=%u",
+        "PDM AFE ready: pipeline=continuous-webrtc-ns standalone_vad=webrtc-mode3 vad_frame_ms=%u linear_gain=%.1f feed_samples=%d fetch_samples=%d ringbuf_frames=%u fetch_wait_ms=%u feed_core=%d feed_prio=5 fetch_core=%d fetch_prio=%u",
+        (unsigned)AUDIO_CAPTURE_PDM_VAD_FRAME_MS,
         (double)linear_gain,
         feed_samples,
         fetch_samples,
