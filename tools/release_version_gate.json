@@ -1,0 +1,13 @@
+{
+  "schema": "denzic.platform.release-version-gate.v1",
+  "product": "Listener Firmware",
+  "root": "..",
+  "canonical": { "path": "VERSION", "kind": "text" },
+  "semver_error": "Release VERSION must be plain semver like 1.0.0; got '{version}'.",
+  "must_contain": [
+    { "path": "CMakeLists.txt", "reference": "VERSION" },
+    { "path": "tools\\package_ota_firmware.ps1", "reference": "VERSION" },
+    { "path": "tools\\package_factory_firmware.ps1", "reference": "VERSION" }
+  ],
+  "tag_mode": "exists"
+}
