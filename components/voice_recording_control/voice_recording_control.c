@@ -1141,10 +1141,12 @@ static esp_err_t voice_recording_control_enter_recording(
     return ESP_OK;
 }
 
-static esp_err_t voice_recording_control_exit_recording(const char *source)
+static esp_err_t voice_recording_control_exit_recording_with_origin(
+    const char *source,
+    audio_capture_stop_origin_t origin)
 {
     power_manager_record_activity("voice_recording_stop");
-    esp_err_t ret = audio_capture_session_stop();
+    esp_err_t ret = audio_capture_session_stop_with_origin(origin);
     if (ret != ESP_OK) {
         if (!audio_capture_session_is_active()) {
             s_state = VOICE_RECORDING_STATE_IDLE;
@@ -1183,6 +1185,13 @@ static esp_err_t voice_recording_control_exit_recording(const char *source)
     diag_log(DIAG_SRC_VOICE_REC, DIAG_VREC_SESSION, DIAG_SEV_INFO,
              2, voice_recording_source_code(source), s_session_count, 0);
     return ESP_OK;
+}
+
+static esp_err_t voice_recording_control_exit_recording(const char *source)
+{
+    return voice_recording_control_exit_recording_with_origin(
+        source,
+        AUDIO_CAPTURE_STOP_ORIGIN_USER);
 }
 
 static void voice_recording_control_complete_transfer_cleanup(
@@ -2074,11 +2083,12 @@ static void voice_recording_control_process_voice_activity(void)
             decision.action ==
                 DENZIC_VOICE_ACTIVATION_V1_ACTION_STOP &&
             s_state == VOICE_RECORDING_STATE_RECORDING) {
-            (void)voice_recording_control_exit_recording(
+            (void)voice_recording_control_exit_recording_with_origin(
                 decision.stop_reason ==
                         DENZIC_VOICE_ACTIVATION_V1_STOP_REASON_MAX_DURATION
                     ? "voice_activation.auto_stop_max_duration"
-                    : "voice_activation.auto_stop_silence");
+                    : "voice_activation.auto_stop_silence",
+                AUDIO_CAPTURE_STOP_ORIGIN_VOICE_ACTIVATION);
         }
     }
 }

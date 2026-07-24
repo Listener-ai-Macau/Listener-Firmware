@@ -220,6 +220,7 @@ typedef struct {
     uint16_t packet_sequence;
     uint16_t pcm_bytes;
     uint16_t expected_packet_count;
+    uint16_t stop_origin;
     uint16_t error_code;
     uint8_t *owned_pcm;
 } ble_audio_stream_job_t;
@@ -2669,13 +2670,17 @@ static esp_err_t ble_audio_stream_send_session_audio_internal(
     return ESP_OK;
 }
 
-static esp_err_t ble_audio_stream_send_session_stop_internal(uint32_t session_id, uint16_t expected_packet_count)
+static esp_err_t ble_audio_stream_send_session_stop_internal(
+    uint32_t session_id,
+    uint16_t expected_packet_count,
+    uint16_t stop_origin)
 {
     ESP_LOGI(
         TAG,
-        "audio session stop: session=%" PRIu32 " expected_packet_count=%u",
+        "audio session stop: session=%" PRIu32 " expected_packet_count=%u origin=%u",
         session_id,
-        expected_packet_count);
+        expected_packet_count,
+        stop_origin);
     esp_err_t ret = ble_audio_stream_send_packet(
         LISTENER_AUDIO_PACKET_TYPE_SESSION_STOP,
         session_id,
@@ -2683,7 +2688,7 @@ static esp_err_t ble_audio_stream_send_session_stop_internal(uint32_t session_id
         0,
         1,
         NULL,
-        0,
+        stop_origin,
         0,
         0);
     return ret;
@@ -2818,7 +2823,8 @@ static void ble_audio_stream_task(void *parameter)
             {
                 esp_err_t stop_ret = ble_audio_stream_send_session_stop_internal(
                     job.session_id,
-                    job.expected_packet_count);
+                    job.expected_packet_count,
+                    job.stop_origin);
                 if (stop_ret != ESP_OK) {
                     ble_audio_stream_abort_active_session("session_stop_failed");
                 }
@@ -3783,6 +3789,17 @@ esp_err_t ble_audio_stream_send_session_audio(
 
 esp_err_t ble_audio_stream_send_session_stop(uint32_t session_id, uint16_t expected_packet_count)
 {
+    return ble_audio_stream_send_session_stop_with_origin(
+        session_id,
+        expected_packet_count,
+        LISTENER_AUDIO_SESSION_STOP_ORIGIN_USER);
+}
+
+esp_err_t ble_audio_stream_send_session_stop_with_origin(
+    uint32_t session_id,
+    uint16_t expected_packet_count,
+    uint16_t stop_origin)
+{
     if (!s_started || s_export_queue == NULL) {
         return ESP_ERR_INVALID_STATE;
     }
@@ -3811,6 +3828,7 @@ esp_err_t ble_audio_stream_send_session_stop(uint32_t session_id, uint16_t expec
         .type = BLE_AUDIO_STREAM_JOB_TYPE_SESSION_STOP,
         .session_id = session_id,
         .expected_packet_count = expected_packet_count,
+        .stop_origin = stop_origin,
     };
     ble_audio_stream_job_t finalize_job = {
         .type = BLE_AUDIO_STREAM_JOB_TYPE_SESSION_FINALIZE_STOP,

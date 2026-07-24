@@ -73,6 +73,10 @@ esp_err_t ble_audio_stream_send_session_audio(
     uint16_t pcm_bytes,
     uint16_t packet_count);
 esp_err_t ble_audio_stream_send_session_stop(uint32_t session_id, uint16_t expected_packet_count);
+esp_err_t ble_audio_stream_send_session_stop_with_origin(
+    uint32_t session_id,
+    uint16_t expected_packet_count,
+    uint16_t stop_origin);
 esp_err_t ble_audio_stream_send_session_cancel(uint32_t session_id, uint16_t expected_packet_count);
 esp_err_t ble_audio_stream_send_session_error(
     uint32_t session_id,

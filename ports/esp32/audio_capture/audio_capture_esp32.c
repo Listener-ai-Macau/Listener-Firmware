@@ -132,6 +132,7 @@ typedef struct {
     bool active;
     bool ble_session_started;
     bool stop_requested;
+    uint16_t stop_origin;
     bool cancel_requested;
     uint32_t duration_seconds;
     uint32_t total_frames;
@@ -563,6 +564,13 @@ esp_err_t audio_capture_session_begin(void)
 
 esp_err_t audio_capture_session_stop(void)
 {
+    return audio_capture_session_stop_with_origin(
+        AUDIO_CAPTURE_STOP_ORIGIN_USER);
+}
+
+esp_err_t audio_capture_session_stop_with_origin(
+    audio_capture_stop_origin_t origin)
+{
     if (s_state_mutex == NULL || xSemaphoreTake(s_state_mutex, portMAX_DELAY) != pdTRUE) {
         return ESP_ERR_INVALID_STATE;
     }
@@ -574,6 +582,7 @@ esp_err_t audio_capture_session_stop(void)
     }
 
     s_export_state.stop_requested = true;
+    s_export_state.stop_origin = (uint16_t)origin;
 #ifdef CONFIG_AUDIO_CAPTURE_MIC_SPH0655_PDM
 #if CONFIG_AUDIO_CAPTURE_PDM_AFE_WEBRTC
     s_pdm_afe_stop_drain_requested = true;
@@ -582,7 +591,7 @@ esp_err_t audio_capture_session_stop(void)
 #endif
 #endif
     xSemaphoreGive(s_state_mutex);
-    ESP_LOGI(TAG, "record session stop requested");
+    ESP_LOGI(TAG, "record session stop requested origin=%u", (unsigned)origin);
     return ESP_OK;
 }
 
@@ -638,6 +647,7 @@ esp_err_t audio_capture_set_idle_power_save(bool enabled)
             s_voice_preroll_write_index = 0u;
             s_voice_preroll_count = 0u;
             s_session_preroll_count = 0u;
+            memset(s_voice_preroll, 0, sizeof(s_voice_preroll));
             xSemaphoreGive(s_state_mutex);
         }
     }
@@ -670,6 +680,7 @@ esp_err_t audio_capture_set_voice_activation_monitoring(bool enabled)
         s_voice_preroll_write_index = 0u;
         s_voice_preroll_count = 0u;
         s_session_preroll_count = 0u;
+        memset(s_voice_preroll, 0, sizeof(s_voice_preroll));
         xSemaphoreGive(s_state_mutex);
     }
     return ESP_OK;
@@ -737,6 +748,7 @@ static void audio_capture_process_frame(const int16_t *frame_buffer)
     uint16_t packet_sequence_start = 0;
     uint16_t batch_pcm_bytes = 0;
     uint16_t expected_packet_count_at_end = 0;
+    uint16_t session_stop_origin = LISTENER_AUDIO_SESSION_STOP_ORIGIN_USER;
     uint16_t session_error_code = LISTENER_AUDIO_SESSION_ERROR_NONE;
     uint16_t packet_count = 0;
     const uint8_t *audio_batch_copy = NULL;
@@ -914,6 +926,7 @@ static void audio_capture_process_frame(const int16_t *frame_buffer)
                     should_session_stop = true;
                     session_id = s_export_state.session_id;
                     expected_packet_count_at_end = s_export_state.stream_next_packet_sequence;
+                    session_stop_origin = s_export_state.stop_origin;
                     should_emit = true;
                 }
             }
@@ -1004,6 +1017,9 @@ static void audio_capture_process_frame(const int16_t *frame_buffer)
                             s_session_preroll_count *
                                 AUDIO_CAPTURE_FRAME_MS);
                     }
+                    memset(s_voice_preroll, 0, sizeof(s_voice_preroll));
+                    s_voice_preroll_write_index = 0u;
+                    s_voice_preroll_count = 0u;
                     s_session_preroll_count = 0u;
                 }
             }
@@ -1064,7 +1080,10 @@ static void audio_capture_process_frame(const int16_t *frame_buffer)
             }
             ESP_LOGW(TAG, "record session aborted after BLE transport failure: session_id=%" PRIu32, session_id);
         } else if (should_session_stop) {
-            esp_err_t stop_ret = ble_audio_stream_send_session_stop(session_id, expected_packet_count_at_end);
+            esp_err_t stop_ret = ble_audio_stream_send_session_stop_with_origin(
+                session_id,
+                expected_packet_count_at_end,
+                session_stop_origin);
             if (stop_ret != ESP_OK) {
                 ESP_LOGW(
                     TAG,
