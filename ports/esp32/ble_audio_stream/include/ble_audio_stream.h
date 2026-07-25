@@ -66,6 +66,9 @@ esp_err_t ble_audio_stream_register_gatt(void);
 uint16_t ble_audio_stream_get_audio_payload_bytes(void);
 uint16_t ble_audio_stream_count_audio_packets(const uint8_t *pcm_buffer, uint16_t pcm_bytes);
 esp_err_t ble_audio_stream_send_session_start(uint32_t session_id);
+esp_err_t ble_audio_stream_send_session_start_with_origin(
+    uint32_t session_id,
+    uint16_t start_origin);
 esp_err_t ble_audio_stream_send_session_audio(
     uint32_t session_id,
     uint16_t packet_sequence,

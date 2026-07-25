@@ -1047,11 +1047,14 @@ def main() -> int:
             "components/power_manager/power_manager.c: external power must not block connected/disconnected awake idle"
         )
     if not re.search(
-        r"power_manager_awake_idle_state_locked[\s\S]*"
-        r"s_external_power_present\s*&&\s*!power_manager_plugged_low_power_enabled\(\)[\s\S]*"
-        r"POWER_MANAGER_STATE_ACTIVE[\s\S]*"
+        r"power_manager_target_state_locked[\s\S]*"
         r"uint32_t low_power_idle_ms\s*=\s*power_manager_low_power_idle_ms\(\)[\s\S]*"
-        r"radio_idle_ms\s*>=\s*low_power_idle_ms",
+        r"denzic_power_policy_v1_config_t config\s*=\s*\{[\s\S]*"
+        r"\.connected_idle_ms\s*=\s*low_power_idle_ms[\s\S]*"
+        r"\.disconnected_idle_ms\s*=\s*low_power_idle_ms[\s\S]*"
+        r"\.sleep_enabled\s*=[\s\S]*"
+        r"!s_external_power_present\s*\|\|\s*power_manager_plugged_low_power_enabled\(\)[\s\S]*"
+        r"denzic_power_policy_v1_evaluate\(&config,\s*&input\)",
         power_manager,
     ):
         failures.append(

@@ -970,6 +970,7 @@ static bool ble_hid_usb_command_records_activity(const char *line)
         ble_hid_usb_command_matches(line, "EC11:ROTATE:LEFT") ||
         ble_hid_usb_command_matches(line, "VREC:TOGGLE") ||
         ble_hid_usb_command_matches(line, "VREC:CANCEL") ||
+        ble_hid_usb_command_matches(line, "VREC:ACTIVATE") ||
         ble_hid_usb_command_matches(line, "VREC:PROCESSING:START") ||
         ble_hid_usb_command_matches(line, "VREC:PROCESSING_START") ||
         ble_hid_usb_command_matches(line, "VREC:PROCESSING:STOP") ||

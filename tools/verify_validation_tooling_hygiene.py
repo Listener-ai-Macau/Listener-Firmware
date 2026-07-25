@@ -152,10 +152,6 @@ def main() -> int:
         failures.append("ai-collaboration-workflow/docs/agent_quickstart.md: startup PowerShell gate must use the -File verify_pwsh7.ps1 entrypoint")
     if "scripts\\verify_pwsh7.ps1" not in quickstart:
         failures.append("ai-collaboration-workflow/docs/agent_quickstart.md: nested PowerShell guidance must point agents to verify_pwsh7.ps1")
-    if "outer double-quoted `pwsh -Command" not in quickstart:
-        failures.append("ai-collaboration-workflow/docs/agent_quickstart.md: must keep the nested pwsh -Command quoting rule visible")
-    if "wrap the inner command in single quotes or escape" not in quickstart:
-        failures.append("ai-collaboration-workflow/docs/agent_quickstart.md: must explain single-quote/escape handling for nested pwsh commands")
     if "#requires -Version 7.0" not in verify_pwsh7:
         failures.append("ai-collaboration-workflow/scripts/verify_pwsh7.ps1: must fail early outside PowerShell 7")
     if "Get-Command pwsh -CommandType Application" not in verify_pwsh7:

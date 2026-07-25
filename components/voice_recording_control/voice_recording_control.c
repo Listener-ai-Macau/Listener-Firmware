@@ -153,6 +153,8 @@ static const char *s_pending_start_detail;
 static TickType_t s_pending_start_deadline_tick;
 static TickType_t s_pending_start_next_retry_tick;
 static const char *s_active_session_source;
+static bool s_active_session_automatic;
+static bool s_active_session_visible;
 static TickType_t s_host_cleanup_toggle_guard_until_tick;
 static uint32_t s_session_count;
 static QueueHandle_t s_vad_queue;
@@ -1123,10 +1125,16 @@ static esp_err_t voice_recording_control_enter_recording(
     s_cancel_pending = false;
     s_cancel_source = NULL;
     s_active_session_source = source;
+    s_active_session_automatic = pre_roll_ms > 0u;
+    s_active_session_visible = !s_active_session_automatic;
     s_state = VOICE_RECORDING_STATE_RECORDING;
-    (void)voice_key_input_set_recording_output(true);
+    (void)voice_key_input_set_recording_output(s_active_session_visible);
     s_session_count++;
-    status_led_set_recording(true, STATUS_LED_REC_SOURCE_DEVICE_MIC);
+    status_led_set_recording(
+        s_active_session_visible,
+        s_active_session_visible
+            ? STATUS_LED_REC_SOURCE_DEVICE_MIC
+            : STATUS_LED_REC_SOURCE_NONE);
     status_led_clear_error(STATUS_LED_ERROR_DOMAIN_REC);
     ESP_LOGI(TAG, "recording start source=%s", source);
     voice_recording_control_log_flow(
@@ -1146,11 +1154,15 @@ static esp_err_t voice_recording_control_exit_recording_with_origin(
     audio_capture_stop_origin_t origin)
 {
     power_manager_record_activity("voice_recording_stop");
+    bool processing_feedback_allowed =
+        !s_active_session_automatic || s_active_session_visible;
     esp_err_t ret = audio_capture_session_stop_with_origin(origin);
     if (ret != ESP_OK) {
         if (!audio_capture_session_is_active()) {
             s_state = VOICE_RECORDING_STATE_IDLE;
             s_active_session_source = NULL;
+            s_active_session_automatic = false;
+            s_active_session_visible = false;
             voice_recording_control_clear_power_blockers();
             (void)voice_key_input_set_recording_output(false);
         }
@@ -1171,9 +1183,17 @@ static esp_err_t voice_recording_control_exit_recording_with_origin(
     s_cancel_pending = false;
     s_cancel_source = NULL;
     s_state = VOICE_RECORDING_STATE_TRANSFERRING;
+    s_active_session_visible = false;
     (void)voice_key_input_set_recording_output(false);
     status_led_set_recording(false, STATUS_LED_REC_SOURCE_NONE);
-    status_led_set_processing(true, "recording_stop_processing_start");
+    if (processing_feedback_allowed) {
+        status_led_set_processing(true, "recording_stop_processing_start");
+    } else {
+        ESP_LOGI(
+            TAG,
+            "hidden automatic candidate stopped without processing feedback source=%s",
+            source);
+    }
     ESP_LOGI(TAG, "recording stop source=%s", source);
     voice_recording_control_log_flow(
         VOICE_RECORDING_FLOW_STOP_REQUESTED,
@@ -1201,6 +1221,8 @@ static void voice_recording_control_complete_transfer_cleanup(
     power_manager_record_activity("voice_recording_stop_cleanup");
     s_state = VOICE_RECORDING_STATE_IDLE;
     s_active_session_source = NULL;
+    s_active_session_automatic = false;
+    s_active_session_visible = false;
     voice_recording_control_clear_power_blockers();
     (void)voice_key_input_set_recording_output(false);
     status_led_set_recording(false, STATUS_LED_REC_SOURCE_NONE);
@@ -1420,6 +1442,8 @@ static void voice_recording_control_cancel(const char *source)
         if (!audio_capture_session_is_active()) {
             s_state = VOICE_RECORDING_STATE_IDLE;
             s_active_session_source = NULL;
+            s_active_session_automatic = false;
+            s_active_session_visible = false;
             voice_recording_control_clear_power_blockers();
         }
         status_led_set_error(STATUS_LED_ERROR_DOMAIN_REC, STATUS_LED_ERROR_RETRYABLE, "recording_cancel_rejected");
@@ -1443,6 +1467,8 @@ static void voice_recording_control_cancel(const char *source)
         s_cancel_source = NULL;
         s_state = VOICE_RECORDING_STATE_IDLE;
         s_active_session_source = NULL;
+        s_active_session_automatic = false;
+        s_active_session_visible = false;
         voice_recording_control_clear_power_blockers();
         (void)voice_key_input_set_recording_output(false);
         status_led_set_recording(false, STATUS_LED_REC_SOURCE_NONE);
@@ -1603,6 +1629,8 @@ static void voice_recording_control_recovery(
     s_cancel_pending = false;
     s_cancel_source = NULL;
     s_active_session_source = NULL;
+    s_active_session_automatic = false;
+    s_active_session_visible = false;
     esp_err_t ret = ec11_fast_idle_recovery
         ? fast_recovery_ret
         : (suppress_swift_pair_prompt
@@ -1739,6 +1767,43 @@ static void voice_recording_control_host_processing_warning(const char *source)
     voice_recording_control_log_device_status(voice_recording_state_name(s_state), "host_processing_warning");
 }
 
+static esp_err_t voice_recording_control_activate_automatic_session(
+    const char *source)
+{
+    if (s_state != VOICE_RECORDING_STATE_RECORDING ||
+        !s_active_session_automatic) {
+        ESP_LOGW(
+            TAG,
+            "automatic recording activation rejected source=%s state=%s automatic=%u",
+            source,
+            voice_recording_state_name(s_state),
+            s_active_session_automatic ? 1u : 0u);
+        return ESP_ERR_INVALID_STATE;
+    }
+    if (s_active_session_visible) {
+        return ESP_OK;
+    }
+
+    /*
+     * The hidden VAD candidate can spend several seconds in the recording
+     * state while Type verifies the wake phrase and speaker. Endpointing for
+     * the visible dictation must start at acceptance, not at candidate start.
+     */
+    denzic_voice_activation_v1_reset(
+        &s_voice_activation_machine);
+    s_active_session_visible = true;
+    (void)voice_key_input_set_recording_output(true);
+    status_led_set_recording(true, STATUS_LED_REC_SOURCE_DEVICE_MIC);
+    ESP_LOGI(
+        TAG,
+        "automatic recording activated with fresh endpoint window source=%s",
+        source);
+    voice_recording_control_log_device_status(
+        "recording",
+        "automatic_candidate_accepted");
+    return ESP_OK;
+}
+
 esp_err_t voice_recording_control_dispatch_control_command(const char *command, const char *source)
 {
     if (command == NULL || source == NULL) {
@@ -1765,6 +1830,12 @@ esp_err_t voice_recording_control_dispatch_control_command(const char *command, 
         voice_recording_control_cancel(source);
         voice_recording_control_unlock();
         return ESP_OK;
+    }
+    if (strcmp(action, "ACTIVATE") == 0) {
+        esp_err_t ret =
+            voice_recording_control_activate_automatic_session(source);
+        voice_recording_control_unlock();
+        return ret;
     }
     if (strcmp(action, "PROCESSING:START") == 0 || strcmp(action, "PROCESSING_START") == 0) {
         voice_recording_control_host_processing_start(source);
@@ -1938,6 +2009,8 @@ static void voice_recording_control_handle_session_inactive(void)
         s_cancel_source = NULL;
         s_state = decision.next_state;
         s_active_session_source = NULL;
+        s_active_session_automatic = false;
+        s_active_session_visible = false;
         voice_recording_control_clear_power_blockers();
         (void)voice_key_input_set_recording_output(false);
         status_led_set_recording(false, STATUS_LED_REC_SOURCE_NONE);
@@ -1958,6 +2031,8 @@ static void voice_recording_control_handle_session_inactive(void)
     const char *source = s_active_session_source != NULL ? s_active_session_source : "session";
     s_state = decision.next_state;
     s_active_session_source = NULL;
+    s_active_session_automatic = false;
+    s_active_session_visible = false;
     voice_recording_control_clear_power_blockers();
     (void)voice_key_input_set_recording_output(false);
     status_led_set_recording(false, STATUS_LED_REC_SOURCE_NONE);
@@ -2014,10 +2089,26 @@ static void voice_recording_control_refresh_voice_monitoring(void)
     power_manager_get_snapshot(&power);
     s_voice_auto_start_enabled = settings.voice_auto_start_enabled;
     s_voice_auto_stop_enabled = settings.voice_auto_stop_enabled;
+    if (!s_voice_auto_start_enabled &&
+        s_active_session_automatic &&
+        s_state == VOICE_RECORDING_STATE_RECORDING &&
+        !s_cancel_pending) {
+        denzic_voice_activation_v1_reset(
+            &s_voice_activation_machine);
+        voice_recording_control_cancel(
+            "voice_activation.auto_start_disabled");
+    }
+    bool idle_start_monitoring =
+        s_state == VOICE_RECORDING_STATE_IDLE &&
+        ble_audio_stream_is_ready() &&
+        s_voice_auto_start_enabled;
+    bool active_stop_monitoring =
+        s_state == VOICE_RECORDING_STATE_RECORDING &&
+        !s_cancel_pending &&
+        (s_active_session_automatic || s_voice_auto_stop_enabled);
     bool monitoring =
         power.state == POWER_MANAGER_STATE_ACTIVE &&
-        ble_audio_stream_is_ready() &&
-        (s_voice_auto_start_enabled || s_voice_auto_stop_enabled);
+        (idle_start_monitoring || active_stop_monitoring);
     if (monitoring == s_voice_monitoring) {
         return;
     }
@@ -2188,6 +2279,8 @@ esp_err_t voice_recording_control_start(void)
     }
     s_voice_activation_config =
         denzic_voice_activation_v1_default_config();
+    s_voice_activation_config.silence_stop_ms = 1800u;
+    s_voice_activation_config.tail_ms = 350u;
     denzic_voice_activation_v1_reset(
         &s_voice_activation_machine);
     audio_capture_set_voice_activity_handler(

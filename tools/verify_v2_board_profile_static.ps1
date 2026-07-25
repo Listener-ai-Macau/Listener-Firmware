@@ -109,7 +109,7 @@ foreach ($item in @(
     @($audioCapture, "i2s_channel_init_pdm_rx_mode", "V2 PDM RX initialization"),
     @($audioCapture, "I2S_PDM_RX_SLOT_PCM_FMT_DEFAULT_CONFIG", "V2 PDM2PCM slot configuration"),
     @($audioCapture, "AUDIO_CAPTURE_PDM_HW_AMPLIFY_NUM\s+8U", "V2 PDM hardware gain multiplier"),
-    @($audioCapture, "AUDIO_CAPTURE_PDM_SOFTWARE_GAIN_NUM\s+8", "V2 PDM software gain multiplier"),
+    @($audioCapture, "AUDIO_CAPTURE_PDM_SOFTWARE_GAIN_NUM\s+2", "V2 PDM software gain multiplier"),
     @($audioCapture, "audio_capture_apply_pdm_software_gain\(frame_buffer\)", "V2 PDM software gain application"),
     @($audioCapture, "pdm_cfg\.slot_cfg\.amplify_num\s*=\s*AUDIO_CAPTURE_PDM_HW_AMPLIFY_NUM", "V2 PDM hardware gain application"),
     @($audioCapture, "SPH0655 V2\.2 PDM contract", "SPH0655 PDM hardware contract log"),

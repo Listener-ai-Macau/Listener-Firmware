@@ -135,6 +135,7 @@ typedef struct {
     bool requested;
     bool active;
     bool ble_session_started;
+    uint16_t start_origin;
     bool stop_requested;
     uint16_t stop_origin;
     bool cancel_requested;
@@ -497,6 +498,9 @@ esp_err_t audio_capture_session_begin_with_preroll(uint32_t pre_roll_ms)
     s_export_state.total_frames = total_frames;
     s_export_state.pcm_bytes_total = 0;
     s_export_state.session_id = ++s_session_id_counter;
+    s_export_state.start_origin = pre_roll_ms > 0u
+        ? LISTENER_AUDIO_SESSION_START_ORIGIN_VOICE_ACTIVATION
+        : LISTENER_AUDIO_SESSION_START_ORIGIN_USER;
     uint32_t requested_pre_roll_frames =
         (pre_roll_ms + AUDIO_CAPTURE_FRAME_MS - 1u) /
         AUDIO_CAPTURE_FRAME_MS;
@@ -702,8 +706,13 @@ bool audio_capture_voice_activation_monitoring_is_enabled(void)
 
 static esp_err_t audio_capture_send_session_preroll(
     uint32_t session_id,
-    uint16_t frame_count)
+    uint16_t frame_count,
+    uint16_t *next_packet_sequence)
 {
+    if (next_packet_sequence == NULL) {
+        return ESP_ERR_INVALID_ARG;
+    }
+
     uint16_t packet_sequence = 0u;
     uint16_t emitted_frames = 0u;
     uint8_t batch[AUDIO_CAPTURE_STREAM_BATCH_BYTES];
@@ -738,6 +747,7 @@ static esp_err_t audio_capture_send_session_preroll(
         packet_sequence = (uint16_t)(packet_sequence + packet_count);
         emitted_frames = (uint16_t)(emitted_frames + batch_frames);
     }
+    *next_packet_sequence = packet_sequence;
     return ESP_OK;
 }
 
@@ -760,6 +770,7 @@ static void audio_capture_process_frame(const int16_t *frame_buffer)
     uint16_t packet_sequence_start = 0;
     uint16_t batch_pcm_bytes = 0;
     uint16_t expected_packet_count_at_end = 0;
+    uint16_t session_start_origin = LISTENER_AUDIO_SESSION_START_ORIGIN_USER;
     uint16_t session_stop_origin = LISTENER_AUDIO_SESSION_STOP_ORIGIN_USER;
     uint16_t session_error_code = LISTENER_AUDIO_SESSION_ERROR_NONE;
     uint16_t packet_count = 0;
@@ -789,37 +800,6 @@ static void audio_capture_process_frame(const int16_t *frame_buffer)
             s_export_state.stream_batch_frame_count = 0;
             s_export_state.ble_session_started = false;
             if (s_session_preroll_count > 0u) {
-                uint16_t pre_roll_packet_count = 0u;
-                uint16_t counted_frames = 0u;
-                while (counted_frames < s_session_preroll_count) {
-                    uint16_t batch_frames =
-                        (uint16_t)(s_session_preroll_count - counted_frames);
-                    if (batch_frames > AUDIO_CAPTURE_STREAM_BATCH_FRAMES) {
-                        batch_frames = AUDIO_CAPTURE_STREAM_BATCH_FRAMES;
-                    }
-                    uint8_t batch[AUDIO_CAPTURE_STREAM_BATCH_BYTES];
-                    for (uint16_t i = 0u; i < batch_frames; ++i) {
-                        uint16_t ring_index = (uint16_t)(
-                            (s_session_preroll_start_index +
-                             counted_frames + i) %
-                            AUDIO_CAPTURE_VOICE_PREROLL_FRAMES);
-                        memcpy(
-                            batch + ((size_t)i * AUDIO_CAPTURE_FRAME_BYTES),
-                            s_voice_preroll[ring_index],
-                            AUDIO_CAPTURE_FRAME_BYTES);
-                    }
-                    uint16_t pcm_bytes =
-                        (uint16_t)(batch_frames * AUDIO_CAPTURE_FRAME_BYTES);
-                    pre_roll_packet_count = (uint16_t)(
-                        pre_roll_packet_count +
-                        ble_audio_stream_count_audio_packets(
-                            batch,
-                            pcm_bytes));
-                    counted_frames =
-                        (uint16_t)(counted_frames + batch_frames);
-                }
-                s_export_state.stream_next_packet_sequence =
-                    pre_roll_packet_count;
                 s_export_state.captured_frames =
                     s_session_preroll_count;
                 s_export_state.pcm_bytes_written =
@@ -845,6 +825,7 @@ static void audio_capture_process_frame(const int16_t *frame_buffer)
                 if (!s_export_state.ble_session_started) {
                     should_session_start = true;
                     session_id = s_export_state.session_id;
+                    session_start_origin = s_export_state.start_origin;
                     s_export_state.ble_session_started = true;
                 }
 
@@ -993,7 +974,9 @@ static void audio_capture_process_frame(const int16_t *frame_buffer)
         ESP_LOGI(TAG, "record session canceled");
     } else {
         if (should_session_start) {
-            esp_err_t start_ret = ble_audio_stream_send_session_start(session_id);
+            esp_err_t start_ret = ble_audio_stream_send_session_start_with_origin(
+                session_id,
+                session_start_origin);
             if (start_ret != ESP_OK) {
                 stream_failed = true;
                 should_transport_error = true;
@@ -1002,10 +985,12 @@ static void audio_capture_process_frame(const int16_t *frame_buffer)
             } else {
                 ESP_LOGI(TAG, "stream session start queued: session_id=%" PRIu32, session_id);
                 if (s_session_preroll_count > 0u) {
+                    uint16_t pre_roll_packet_count = 0u;
                     esp_err_t pre_roll_ret =
                         audio_capture_send_session_preroll(
                             session_id,
-                            s_session_preroll_count);
+                            s_session_preroll_count,
+                            &pre_roll_packet_count);
                     if (pre_roll_ret != ESP_OK) {
                         stream_failed = true;
                         should_transport_error = true;
@@ -1020,12 +1005,22 @@ static void audio_capture_process_frame(const int16_t *frame_buffer)
                             s_session_preroll_count,
                             esp_err_to_name(pre_roll_ret));
                     } else {
+                        if (xSemaphoreTake(s_state_mutex, portMAX_DELAY) ==
+                            pdTRUE) {
+                            if (s_export_state.active &&
+                                s_export_state.session_id == session_id) {
+                                s_export_state.stream_next_packet_sequence =
+                                    pre_roll_packet_count;
+                            }
+                            xSemaphoreGive(s_state_mutex);
+                        }
                         ESP_LOGI(
                             TAG,
                             "stream session preroll queued: session_id=%" PRIu32
-                            " frames=%u ms=%u",
+                            " frames=%u packets=%u ms=%u",
                             session_id,
                             s_session_preroll_count,
+                            pre_roll_packet_count,
                             s_session_preroll_count *
                                 AUDIO_CAPTURE_FRAME_MS);
                     }

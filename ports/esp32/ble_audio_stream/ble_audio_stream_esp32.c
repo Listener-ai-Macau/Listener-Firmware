@@ -220,6 +220,7 @@ typedef struct {
     uint16_t packet_sequence;
     uint16_t pcm_bytes;
     uint16_t expected_packet_count;
+    uint16_t start_origin;
     uint16_t stop_origin;
     uint16_t error_code;
     uint8_t *owned_pcm;
@@ -2552,14 +2553,16 @@ static void ble_audio_stream_abort_active_session(const char *reason)
     ble_audio_stream_reset_transport_session();
 }
 
-static esp_err_t ble_audio_stream_send_session_start_internal(uint32_t session_id)
+static esp_err_t ble_audio_stream_send_session_start_internal(
+    uint32_t session_id,
+    uint16_t start_origin)
 {
     ble_audio_stream_set_backpressure_active(false);
     return ble_audio_stream_send_control_packet_repeated(
         LISTENER_AUDIO_PACKET_TYPE_SESSION_START,
         session_id,
         0,
-        0);
+        start_origin);
 }
 
 static esp_err_t ble_audio_stream_send_session_audio_internal(
@@ -2688,8 +2691,8 @@ static esp_err_t ble_audio_stream_send_session_stop_internal(
         0,
         1,
         NULL,
-        stop_origin,
         0,
+        stop_origin,
         0);
     return ret;
 }
@@ -2789,7 +2792,9 @@ static void ble_audio_stream_task(void *parameter)
         switch (job.type) {
             case BLE_AUDIO_STREAM_JOB_TYPE_SESSION_START:
             {
-                esp_err_t start_ret = ble_audio_stream_send_session_start_internal(job.session_id);
+                esp_err_t start_ret = ble_audio_stream_send_session_start_internal(
+                    job.session_id,
+                    job.start_origin);
                 if (start_ret != ESP_OK) {
                     ble_audio_stream_abort_active_session("session_start_failed");
                 }
@@ -3695,6 +3700,15 @@ uint16_t ble_audio_stream_get_notify_attr_handle(void)
 
 esp_err_t ble_audio_stream_send_session_start(uint32_t session_id)
 {
+    return ble_audio_stream_send_session_start_with_origin(
+        session_id,
+        LISTENER_AUDIO_SESSION_START_ORIGIN_USER);
+}
+
+esp_err_t ble_audio_stream_send_session_start_with_origin(
+    uint32_t session_id,
+    uint16_t start_origin)
+{
     if (!s_started || s_export_queue == NULL) {
         return ESP_ERR_INVALID_STATE;
     }
@@ -3710,6 +3724,7 @@ esp_err_t ble_audio_stream_send_session_start(uint32_t session_id)
     ble_audio_stream_job_t job = {
         .type = BLE_AUDIO_STREAM_JOB_TYPE_SESSION_START,
         .session_id = session_id,
+        .start_origin = start_origin,
     };
 
     s_transport_session_id = session_id;
