@@ -8,14 +8,18 @@
 #include "denzic_ota_v1.h"
 #include "diag_log.h"
 #include "esp_log.h"
+#include "esp_system.h"
 #include "firmware_ota.h"
 #include "freertos/FreeRTOS.h"
+#include "freertos/queue.h"
+#include "freertos/semphr.h"
 #include "freertos/task.h"
 #include "host/ble_att.h"
 #include "host/ble_gatt.h"
 #include "host/ble_hs_mbuf.h"
 #include "listener_device.h"
 #include "os/os_mbuf.h"
+#include "watchdog_platform.h"
 
 #define BLE_FIRMWARE_OTA_DATA_MAX_BYTES 512
 #define BLE_FIRMWARE_OTA_DATA_PAYLOAD_MAX 500
@@ -23,6 +27,10 @@
 #define BLE_FIRMWARE_OTA_ACTIVE_LINK_RETRY_MS 250
 #define BLE_FIRMWARE_OTA_REBOOT_DELAY_MS 500
 #define BLE_FIRMWARE_OTA_REBOOT_TASK_STACK_BYTES 4096
+#define BLE_FIRMWARE_OTA_WORKER_TASK_STACK_BYTES 4096
+#define BLE_FIRMWARE_OTA_WORKER_QUEUE_DEPTH 8
+#define BLE_FIRMWARE_OTA_DATA_ENQUEUE_TIMEOUT_MS 2000
+#define BLE_FIRMWARE_OTA_WORKER_POLL_TIMEOUT_MS 100
 #define BLE_FIRMWARE_OTA_COMPACT_CAPABILITIES DENZIC_OTA_V1_PROTOCOL_NAME
 
 typedef enum {
@@ -32,6 +40,16 @@ typedef enum {
     BLE_FIRMWARE_OTA_GATT_ATTR_DATA = 4,
     BLE_FIRMWARE_OTA_GATT_ATTR_STATUS = 5,
 } ble_firmware_ota_gatt_attr_t;
+
+/* 修复4 + 修复1：OTA 数据写入（含 flash）落到独立 worker 任务，不再阻塞 NimBLE host 任务。
+ * s_ota 由 s_ota_lock 保护：worker 做 data/reset，NimBLE 做 control/status，二者互斥。
+ * 来自任意任务（inactivity timer / USB / NimBLE / worker 自身处理 data 时）的 abort 不在
+ * 回调里 memset s_ota，只置位 s_core_reset_pending；worker 下一次循环持锁执行 core_init，
+ * 故 reset 绝不与并发的 data/control 写入交错——消除数据竞争（修复1）。 */
+typedef struct {
+    uint16_t length;
+    uint8_t data[BLE_FIRMWARE_OTA_DATA_MAX_BYTES];
+} ble_firmware_ota_data_job_t;
 
 static const char *TAG = "ble_firmware_ota";
 static const ble_uuid128_t s_service_uuid = BLE_FIRMWARE_OTA_SERVICE_UUID;
@@ -44,11 +62,31 @@ static denzic_ota_v1_context_t s_ota;
 static TickType_t s_active_link_retry_tick;
 static bool s_active_link_confirmed;
 static bool s_registered;
+static SemaphoreHandle_t s_ota_lock;
+static QueueHandle_t s_ota_worker_queue;
+static TaskHandle_t s_ota_worker_task;
+/* 由 on_firmware_abort 置位（任意任务，含 worker 持锁处理 data 时的回调路径）；worker 下次
+ * 循环持锁清零并执行 core_init。volatile bool 单写多读在本平台原子，无需锁。 */
+static volatile bool s_core_reset_pending;
 
 extern esp_err_t ble_hid_gap_request_active_connection(void) __attribute__((weak));
 extern esp_err_t ble_hid_gap_schedule_active_connection(void) __attribute__((weak));
 extern bool ble_hid_gap_active_connection_applied(void) __attribute__((weak));
 extern bool ble_hid_gap_ota_connection_ready(void) __attribute__((weak));
+
+static void ble_firmware_ota_lock(void)
+{
+    if (s_ota_lock != NULL) {
+        xSemaphoreTake(s_ota_lock, portMAX_DELAY);
+    }
+}
+
+static void ble_firmware_ota_unlock(void)
+{
+    if (s_ota_lock != NULL) {
+        xSemaphoreGive(s_ota_lock);
+    }
+}
 
 static int ble_firmware_ota_att_error_from_core(void)
 {
@@ -139,9 +177,13 @@ static bool ble_firmware_ota_storage_finish(void *driver_context)
         return false;
     }
     if (!ble_firmware_ota_schedule_reboot()) {
-        ESP_LOGE(TAG, "Denzic OTA v1 reboot scheduling failed");
-        firmware_ota_abort(DIAG_OTA_ABORT_BLE_CONTROL);
-        return false;
+        /* 修复5：firmware_ota_finish 已成功切好 boot 分区，此时唯一缺的是重启。原来调
+         * firmware_ota_abort 是 no-op（finish 后 active=false），会导致 boot 分区已指向新
+         * 镜像却不重启，停留在旧镜像直到下次手动重启。schedule_reboot 失败（xTaskCreate 失败，
+         * 通常堆耗尽）属紧急路径——直接 esp_restart() 兜底；桌面端 finish 走 WriteWithResponse，
+         * 其 reboot-handoff 容忍会吃掉这次 ATT 响应。 */
+        ESP_LOGE(TAG, "Denzic OTA v1 reboot task scheduling failed; restarting now to boot pending image");
+        esp_restart();
     }
     return true;
 }
@@ -231,11 +273,48 @@ static void ble_firmware_ota_sync_status(void)
     }
 }
 
+/* 修复4 + 修复1：OTA worker 任务。data 写入（含 flash）在此任务上执行，不阻塞 NimBLE host
+ * 任务；reset（core_init）也在此任务上串行执行。100ms 轮询超时既能在 idle 时及时服务 abort
+ * 请求，又能定期喂看门狗（若用 portMAX_DELAY 则无数据时永不喂狗→触发 WDT）。 */
+static void ble_firmware_ota_worker_task(void *arg)
+{
+    (void)arg;
+    (void)watchdog_platform_subscribe_current_task("ble_firmware_ota_worker");
+
+    ble_firmware_ota_data_job_t job;
+    while (1) {
+        watchdog_platform_feed_current_task();
+        bool have_job = xQueueReceive(
+                            s_ota_worker_queue,
+                            &job,
+                            pdMS_TO_TICKS(BLE_FIRMWARE_OTA_WORKER_POLL_TIMEOUT_MS)) == pdTRUE;
+
+        ble_firmware_ota_lock();
+        if (s_core_reset_pending) {
+            /* reset 优先于 data：串行 core_init，绝不与并发的 control/status 处理交错。 */
+            s_core_reset_pending = false;
+            /* 修复4：drain 队列里 abort 前残留的 stale data。否则若 host 紧接着发新 BEGIN，
+             * 旧 session 的 data（offset≠0）会在新 session 的 RECEIVING 态下触发
+             * OFFSET_MISMATCH，污染新一轮 OTA。drain 在 worker 持锁上下文，无并发。 */
+            ble_firmware_ota_data_job_t stale;
+            while (xQueueReceive(s_ota_worker_queue, &stale, 0) == pdTRUE) {
+                /* 丢弃 stale data */
+            }
+            ble_firmware_ota_core_init();
+        } else if (have_job) {
+            (void)denzic_ota_v1_handle_data(&s_ota, job.data, job.length);
+        }
+        ble_firmware_ota_unlock();
+    }
+}
+
 static int ble_firmware_ota_append_status(struct os_mbuf *om)
 {
     uint8_t status[DENZIC_OTA_V1_STATUS_BYTES];
+    ble_firmware_ota_lock();
     ble_firmware_ota_sync_status();
     size_t length = denzic_ota_v1_encode_status(&s_ota, status, sizeof(status));
+    ble_firmware_ota_unlock();
     if (length == 0) {
         return BLE_ATT_ERR_UNLIKELY;
     }
@@ -251,8 +330,16 @@ static int ble_firmware_ota_handle_control_write(struct os_mbuf *om)
         return att_error;
     }
 
-    bool accepted = denzic_ota_v1_handle_control(&s_ota, control, length);
+    int result = 0;
+    bool accepted = false;
+    ble_firmware_ota_lock();
+    accepted = denzic_ota_v1_handle_control(&s_ota, control, length);
     ble_firmware_ota_update_active_link();
+    if (!accepted) {
+        result = ble_firmware_ota_att_error_from_core();
+    }
+    ble_firmware_ota_unlock();
+
     if (!accepted) {
         ESP_LOGW(
             TAG,
@@ -260,24 +347,34 @@ static int ble_firmware_ota_handle_control_write(struct os_mbuf *om)
             length > 4 ? control[4] : 0,
             s_ota.last_error,
             length);
-        return ble_firmware_ota_att_error_from_core();
     }
-    return 0;
+    return result;
 }
 
 static int ble_firmware_ota_handle_data_write(struct os_mbuf *om)
 {
-    uint8_t data[BLE_FIRMWARE_OTA_DATA_MAX_BYTES];
+    ble_firmware_ota_data_job_t job;
     uint16_t length = 0;
-    int att_error = ble_firmware_ota_copy_mbuf(om, data, sizeof(data), &length);
+    int att_error = ble_firmware_ota_copy_mbuf(om, job.data, sizeof(job.data), &length);
     if (att_error != 0) {
+        /* copy 失败（过大的 GATT 写）。data 特征值同时声明 WRITE_NO_RSP，但超长写通常仍以
+         * WriteWithResponse 走 ATT 错误回传；按原契约 abort 会话并回错误让 host 看到。 */
         firmware_ota_abort(DIAG_OTA_ABORT_BLE_WRITE_FAIL);
         return att_error;
     }
+    job.length = length;
 
-    ble_firmware_ota_sync_status();
-    if (!denzic_ota_v1_handle_data(&s_ota, data, length)) {
-        return ble_firmware_ota_att_error_from_core();
+    /* 修复4：data 不在 NimBLE 任务上同步落 flash，而是入队由 worker 处理。队列满时阻塞——
+     * 这是安全的背压：NimBLE 停止接收新数据 → 控制器/链路层 LE Flow Control 让 host 减速，
+     * 无丢包、镜像不损坏（砖机安全的根本）。2s 超时仅在 worker 卡死（不应发生）时触发，
+     * 此时 abort 会话——安全降级而非砖机。data 是 WRITE_NO_RSP，host 不靠 per-write ATT
+     * error 判成败（靠 status 特征值），故异步入队不破坏桌面端契约。 */
+    if (xQueueSend(
+            s_ota_worker_queue,
+            &job,
+            pdMS_TO_TICKS(BLE_FIRMWARE_OTA_DATA_ENQUEUE_TIMEOUT_MS)) != pdTRUE) {
+        ESP_LOGE(TAG, "Denzic OTA v1 data enqueue timed out; aborting session");
+        firmware_ota_abort(DIAG_OTA_ABORT_BLE_WRITE_FAIL);
     }
     return 0;
 }
@@ -387,8 +484,39 @@ esp_err_t ble_firmware_ota_register_gatt(void)
     if (s_registered) {
         return ESP_OK;
     }
+    /* 修复1：firmware_ota 初始化失败（mutex 未建）则不注册 OTA GATT——OTA 不可达，
+     * 从根上避免无锁裸奔。BLE 侧原语也不再创建。 */
+    if (!firmware_ota_is_ready()) {
+        ESP_LOGE(TAG, "Denzic OTA v1 GATT not registered: firmware_ota not ready");
+        return ESP_ERR_INVALID_STATE;
+    }
+
+    s_ota_lock = xSemaphoreCreateMutex();
+    s_ota_worker_queue = xQueueCreate(
+        BLE_FIRMWARE_OTA_WORKER_QUEUE_DEPTH,
+        sizeof(ble_firmware_ota_data_job_t));
+    if (s_ota_lock == NULL || s_ota_worker_queue == NULL) {
+        ESP_LOGE(TAG, "Denzic OTA v1 worker primitives create failed");
+        return ESP_ERR_NO_MEM;
+    }
 
     ble_firmware_ota_core_init();
+
+    /* ble_ota_worker 经 denzic_ota_v1_handle_data → firmware_ota_write → esp_ota_write
+     * 写 flash，栈必须留片内：flash 操作期间 cache 关闭，PSRAM 栈访问会触发
+     * esp_task_stack_is_sane_cache_disabled assert。不能用 PSRAM 栈 helper。 */
+    BaseType_t task_created = xTaskCreate(
+        ble_firmware_ota_worker_task,
+        "ble_ota_worker",
+        BLE_FIRMWARE_OTA_WORKER_TASK_STACK_BYTES,
+        NULL,
+        tskIDLE_PRIORITY + 1,
+        &s_ota_worker_task);
+    if (task_created != pdPASS) {
+        ESP_LOGE(TAG, "Denzic OTA v1 worker task create failed");
+        return ESP_FAIL;
+    }
+
     int rc = ble_gatts_count_cfg(s_ota_svcs);
     if (rc != 0) {
         ESP_LOGE(TAG, "ble_gatts_count_cfg failed: rc=%d", rc);
@@ -408,25 +536,37 @@ esp_err_t ble_firmware_ota_register_gatt(void)
 void ble_firmware_ota_on_gap_disconnect(uint16_t conn_handle)
 {
     (void)conn_handle;
-    if (s_ota.state != DENZIC_OTA_V1_STATE_RECEIVING) {
-        return;
+    ble_firmware_ota_lock();
+    bool receiving = (s_ota.state == DENZIC_OTA_V1_STATE_RECEIVING);
+    uint32_t bytes_written = (uint32_t)s_ota.bytes_written;
+    uint32_t expected_size = (uint32_t)s_ota.expected_size;
+    if (receiving) {
+        s_active_link_retry_tick = 0;
+        s_active_link_confirmed = false;
+        denzic_ota_v1_set_status_flags(&s_ota, 0);
     }
-    s_active_link_retry_tick = 0;
-    s_active_link_confirmed = false;
-    denzic_ota_v1_set_status_flags(&s_ota, 0);
-    ESP_LOGW(
-        TAG,
-        "Denzic OTA v1 link disconnected; preserving same-image session bytes=%u expected=%u until inactivity timeout",
-        (unsigned)s_ota.bytes_written,
-        (unsigned)s_ota.expected_size);
+    ble_firmware_ota_unlock();
+
+    if (receiving) {
+        ESP_LOGW(
+            TAG,
+            "Denzic OTA v1 link disconnected; preserving same-image session bytes=%u expected=%u until inactivity timeout",
+            (unsigned)bytes_written,
+            (unsigned)expected_size);
+    }
 }
 
 void ble_firmware_ota_on_firmware_abort(uint32_t reason)
 {
+    /* 可能在任意任务（inactivity timer / USB / NimBLE control / worker data 处理）上被调用。
+     * 不在此处直接 memset s_ota——那会与持锁的 data/control 处理竞争。只置位
+     * s_core_reset_pending，worker 下一次循环（持锁）串行执行 core_init。可能在 worker 持锁
+     * 处理 data 时被回调（storage_write 失败路径）——仅置位 volatile bool，不取锁，无死锁。
+     * s_ota.state 读取仅为日志，容忍瞬时 staleness。 */
     if (s_ota.state != DENZIC_OTA_V1_STATE_IDLE) {
-        ESP_LOGW(TAG, "Denzic OTA v1 session reset after firmware abort reason=%u", (unsigned)reason);
+        ESP_LOGW(TAG, "Denzic OTA v1 session reset requested after firmware abort reason=%u", (unsigned)reason);
     }
-    ble_firmware_ota_core_init();
+    s_core_reset_pending = true;
 }
 
 void ble_firmware_ota_log_gatt_state(void)

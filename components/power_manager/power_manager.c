@@ -2419,6 +2419,9 @@ esp_err_t power_manager_start(void)
         return ESP_OK;
     }
 
+    /* power_manager_task 关机时 nvs_commit 持久化 shutdown trace，栈必须留片内：
+     * flash/NVS 操作期间 cache 关闭，PSRAM 栈访问会触发
+     * esp_task_stack_is_sane_cache_disabled assert。不能用 PSRAM 栈 helper。 */
     BaseType_t task_ok = xTaskCreate(
         power_manager_task,
         "power_manager_task",

@@ -1415,13 +1415,16 @@ esp_err_t voice_key_input_start(void)
 #endif
     ESP_RETURN_ON_ERROR(voice_key_input_direct_gpio_init(), TAG, "direct voice key init failed");
 
-    BaseType_t task_ok = xTaskCreate(
+    static StaticTask_t s_voice_key_input_task_control;
+    static StackType_t *s_voice_key_input_task_stack;
+    BaseType_t task_ok = watchdog_platform_start_task_on_spiram(
         voice_key_input_poll_task,
         "voice_key_input_task",
         4096,
-        NULL,
         5,
-        &s_poll_task_handle);
+        &s_poll_task_handle,
+        &s_voice_key_input_task_control,
+        &s_voice_key_input_task_stack);
     if (task_ok != pdPASS) {
         ESP_LOGE(TAG, "voice key task create failed");
         return ESP_ERR_NO_MEM;

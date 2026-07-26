@@ -32,6 +32,7 @@
 #include "esp_err.h"
 #include "esp_log.h"
 #include "esp_timer.h"
+#include "esp_system.h"
 #include "host/ble_hs.h"
 #include "host/util/util.h"
 #include "nimble/nimble_port.h"
@@ -59,6 +60,11 @@ extern int ble_hs_pvcy_remove_entry(uint8_t addr_type, const uint8_t *addr);
 static const char *TAG = "ESP_HID_GAP";
 
 extern void ble_hid_task_start_up(void);
+
+/* 弱符号向上通知 firmware_ota：首次建立真实安全 BLE 链路。ble_hid_gap 不直接依赖
+ * firmware_ota 组件，故用弱引用；未链接时为 NULL。触发 OTA pending-verify 的事件驱动确认
+ * （比 init 返回值更深的"链路可用"证据）。 */
+extern void firmware_ota_note_runtime_ble_readiness_and_confirm(void) __attribute__((weak));
 
 static int ble_hid_gap_get_bonded_peer_count(int *out_count);
 static esp_err_t ble_hid_gap_forget_bonds_and_repair_inner(
@@ -2961,6 +2967,12 @@ nimble_hid_gap_event(struct ble_gap_event *event, void *arg)
                     ble_hid_gap_note_secure_connection(
                         event->enc_change.conn_handle,
                         "secure connection established");
+                    /* 真实安全链路已建立（配对 + 加密成功）：触发 OTA pending-verify 的事件驱动
+                     * 确认。比开机时依据 BLE init 返回值确认更可靠——证明 GAP/广播/连接/SMP
+                     * 全链路可用。confirm 内部幂等。 */
+                    if (firmware_ota_note_runtime_ble_readiness_and_confirm != NULL) {
+                        firmware_ota_note_runtime_ble_readiness_and_confirm();
+                    }
                 }
             } else {
                 ESP_LOGW(TAG, "connection descriptor lookup failed after encryption: rc=%d", rc);
@@ -3955,6 +3967,20 @@ static void ble_hid_gap_recovery_bond_delete_task(void *arg)
     vTaskDelete(NULL);
 }
 
+/*
+ * Recovery bond-delete task stack is statically allocated so the task never
+ * competes for internal DRAM heap at runtime. On ESP32-S3 + PSRAM the dynamic
+ * allocator runs under heavy internal-DRAM pressure (NimBLE/lwIP/small buffers
+ * are all forced internal by CONFIG_SPIRAM_MALLOC_ALWAYSINTERNAL=16384); after
+ * enough uptime the heap fragments and xTaskCreate fails to carve a 4 KB task
+ * stack, which aborted re-pair mid-flow and left a hard red LED. Static
+ * allocation removes that failure mode entirely. Reuse is safe: the task
+ * always reaches vTaskDelete(NULL) before the next schedule call (guarded by
+ * the pending/in_progress flags) reuses this buffer.
+ */
+static StaticTask_t s_recovery_bond_delete_task_tcb;
+static StackType_t s_recovery_bond_delete_task_stack[BLE_HID_GAP_RECOVERY_BOND_DELETE_TASK_STACK];
+
 static esp_err_t ble_hid_gap_schedule_recovery_bond_delete(
     uint32_t bonded_peer_count,
     bool defer_diagnostics,
@@ -3976,16 +4002,20 @@ static esp_err_t ble_hid_gap_schedule_recovery_bond_delete(
     }
     portEXIT_CRITICAL(&s_ble_gap_state_lock);
 
-    TaskHandle_t task_handle = NULL;
-    BaseType_t task_ok = xTaskCreate(
+    TaskHandle_t task_handle = xTaskCreateStatic(
         ble_hid_gap_recovery_bond_delete_task,
         "ble_bond_del",
         BLE_HID_GAP_RECOVERY_BOND_DELETE_TASK_STACK,
         (void *)(uintptr_t)bonded_peer_count,
         BLE_HID_GAP_RECOVERY_BOND_DELETE_TASK_PRIO,
-        &task_handle);
-    if (task_ok != pdPASS) {
-        ESP_LOGE(TAG, "recovery: async local bond delete task create failed");
+        s_recovery_bond_delete_task_stack,
+        &s_recovery_bond_delete_task_tcb);
+    if (task_handle == NULL) {
+        ESP_LOGE(TAG,
+                 "recovery: async local bond delete static task create failed "
+                 "internal_free=%u heap_min=%u",
+                 (unsigned)esp_get_free_internal_heap_size(),
+                 (unsigned)esp_get_minimum_free_heap_size());
         ble_hid_gap_recovery_bond_delete_set_state(false, false, NULL);
         diag_log(DIAG_SRC_BLE_GAP, DIAG_GAP_RECOVERY, DIAG_SEV_ERROR,
                  15, 2, bonded_peer_count, s_ble_gap_conn_handle);

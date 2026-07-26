@@ -2,7 +2,7 @@ param(
     [string]$BuildDir = (Join-Path $PSScriptRoot "..\build"),
     [string]$OutputRoot = (Join-Path $PSScriptRoot "..\.cache\ota_firmware"),
     [string]$Channel = "stable",
-    [string]$MinDesktopVersion = "1.0.0",
+    [string]$MinDesktopVersion = "",
     [int]$GattChunkBytes = 500
 )
 
@@ -95,6 +95,13 @@ if ($ota_version.Length -gt $esp_app_version_max_chars) {
     $truncated_version = $ota_version.Substring(0, $esp_app_version_max_chars) -replace '[._+-]+$', ''
     Write-Warning "Project version '$project_version' exceeds ESP app descriptor / BLE OTA control limit ($esp_app_version_max_chars chars); using '$truncated_version' in ota_manifest.json."
     $ota_version = $truncated_version
+}
+
+# 默认让 min_desktop_version 跟随固件版本：约束字段必须反映真实最小可用桌面版本，
+# 否则旧桌面会被放行但 OTA 实际失败（如 1.0.3 的硬件别名修复）。调用方仍可用
+# -MinDesktopVersion 显式覆盖。
+if ([string]::IsNullOrWhiteSpace($MinDesktopVersion)) {
+    $MinDesktopVersion = $ota_version
 }
 
 # --- Dirty tree check ---

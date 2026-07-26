@@ -6,5 +6,5 @@ idf_component_register(
         "include"
         "../../../third_party/denzic-platform/ota/embedded/c/include"
     REQUIRES bt firmware_ota
-    PRIV_REQUIRES diag_log
+    PRIV_REQUIRES diag_log watchdog_platform
 )

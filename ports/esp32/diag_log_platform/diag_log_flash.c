@@ -188,6 +188,9 @@ void diag_log_platform_init(void)
         ESP_LOGE(TAG, "persistent writer queue create failed");
         return;
     }
+    /* diag_log_writer 直接写/擦 flash（esp_partition_write/erase_range），
+     * 栈必须留片内：flash 操作期间 cache 被关闭，PSRAM 栈访问会触发
+     * esp_task_stack_is_sane_cache_disabled assert。不能用 PSRAM 栈 helper。 */
     if (xTaskCreate(
             diag_log_platform_writer_task,
             "diag_log_writer",

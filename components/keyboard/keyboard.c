@@ -1717,13 +1717,16 @@ static esp_err_t keyboard_custom_start(void)
             s_custom_keys[index].logical_name);
     }
 
-    BaseType_t task_ok = xTaskCreate(
+    static StaticTask_t s_keyboard_custom_task_control;
+    static StackType_t *s_keyboard_custom_task_stack;
+    BaseType_t task_ok = watchdog_platform_start_task_on_spiram(
         keyboard_custom_task,
         "keyboard_custom_task",
         3072,
-        NULL,
         KEYBOARD_CUSTOM_TASK_PRIORITY,
-        &s_custom_task_handle);
+        &s_custom_task_handle,
+        &s_keyboard_custom_task_control,
+        &s_keyboard_custom_task_stack);
     if (task_ok != pdPASS) {
         ESP_LOGE(TAG, "custom key task create failed");
         return ESP_ERR_NO_MEM;
@@ -1835,13 +1838,16 @@ static esp_err_t keyboard_ec11_start(void)
         return ret;
     }
 
-    BaseType_t task_ok = xTaskCreate(
+    static StaticTask_t s_keyboard_ec11_task_control;
+    static StackType_t *s_keyboard_ec11_task_stack;
+    BaseType_t task_ok = watchdog_platform_start_task_on_spiram(
         keyboard_ec11_task,
         "keyboard_ec11_task",
         3072,
-        NULL,
         4,
-        &s_ec11_task_handle);
+        &s_ec11_task_handle,
+        &s_keyboard_ec11_task_control,
+        &s_keyboard_ec11_task_stack);
     if (task_ok != pdPASS) {
         ESP_LOGE(TAG, "EC11 task create failed");
         return ESP_ERR_NO_MEM;

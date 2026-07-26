@@ -3,6 +3,7 @@
 #include <inttypes.h>
 #include <stdio.h>
 
+#include "esp_heap_caps.h"
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -47,6 +48,16 @@ static void system_health_task(void *parameter)
     (void)parameter;
     (void)watchdog_platform_subscribe_current_task("health_task");
 
+    /* boot 期片内 DRAM 余量快照。health_task 在多数 task 起来后才启动，此刻的
+     * internal_free 接近 boot 峰值压力点（此前键盘任务就是在这段窗口分不到栈而红灯）。
+     * 用于判断 HID 栈外移到 PSRAM 后 internal headroom 是否足够，以及是否还需要
+     * 继续把别的低频 task 栈外移。 */
+    ESP_LOGI(TAG,
+             "boot heap snapshot: internal_free=%uKB spiram_free=%uKB total_free=%uKB",
+             (unsigned)(heap_caps_get_free_size(MALLOC_CAP_INTERNAL) / 1024),
+             (unsigned)(heap_caps_get_free_size(MALLOC_CAP_SPIRAM) / 1024),
+             (unsigned)(esp_get_free_heap_size() / 1024));
+
     uint32_t last_disconnect_count = 0;
     uint32_t window_start_ms = 0;
 
@@ -63,6 +74,8 @@ static void system_health_task(void *parameter)
 
         uint32_t heap_free = esp_get_free_heap_size();
         uint32_t heap_min = esp_get_minimum_free_heap_size();
+        uint32_t internal_free = heap_caps_get_free_size(MALLOC_CAP_INTERNAL);
+        uint32_t spiram_free = heap_caps_get_free_size(MALLOC_CAP_SPIRAM);
         bool ble_connected = ble_hid_is_connected();
         uint32_t disconnects = ble_hid_get_disconnect_count();
         uint32_t audio_frames = audio_capture_get_frame_count();
@@ -75,12 +88,14 @@ static void system_health_task(void *parameter)
 
         ESP_LOGI(TAG,
                  "heartbeat: uptime=%" PRIu32 "s heap_free=%" PRIu32 "KB heap_min=%" PRIu32 "KB "
+                 "internal_free=%" PRIu32 "KB spiram_free=%" PRIu32 "KB "
                  "ble=%s disconnects=%" PRIu32 " audio_frames=%" PRIu32 " audio_drops=%" PRIu32 " "
                  "keys=%" PRIu32 " sessions=%" PRIu32
                  " usb_det_raw=%d bat_chg_raw=%d bat_std_raw=%d"
                  " usb_det_policy=%s charger_policy=%s",
                  uptime_s,
                  heap_free / 1024, heap_min / 1024,
+                 internal_free / 1024, spiram_free / 1024,
                  ble_connected ? "OK" : "OFF",
                  disconnects,
                  audio_frames, audio_drops,
@@ -163,13 +178,16 @@ esp_err_t system_health_platform_start(void)
         return ESP_OK;
     }
 
-    BaseType_t ret = xTaskCreate(
+    static StaticTask_t s_health_task_control;
+    static StackType_t *s_health_task_stack;
+    BaseType_t ret = watchdog_platform_start_task_on_spiram(
         system_health_task,
         "health_task",
         HEALTH_TASK_STACK_BYTES,
-        NULL,
         configMAX_PRIORITIES - 5,
-        &s_health_task);
+        &s_health_task,
+        &s_health_task_control,
+        &s_health_task_stack);
 
     if (ret != pdPASS) {
         ESP_LOGE(TAG, "health task create failed");

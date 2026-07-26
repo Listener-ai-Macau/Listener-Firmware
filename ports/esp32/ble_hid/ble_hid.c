@@ -434,21 +434,36 @@ static void ble_hid_battery_task(void *parameter)
     }
 }
 
+/* HID 任务族(键盘/电池/用量)栈放 PSRAM，缓解 boot 期 internal DRAM 极度紧张
+ * （实测只剩 ~5-8KB）。实现在公共平台 helper watchdog_platform_start_task_on_spiram
+ * （heap_caps_malloc(MALLOC_CAP_SPIRAM) + xTaskCreateStatic）。每个任务各持一份
+ * StaticTask_t 控制块 + StackType_t* 栈指针，互不共享。任务均低频，无 DMA 栈依赖。 */
+static StaticTask_t s_ble_hid_keyboard_task_control;
+static StackType_t *s_ble_hid_keyboard_task_stack;
+static StaticTask_t s_ble_hid_battery_task_control;
+static StackType_t *s_ble_hid_battery_task_stack;
+static StaticTask_t s_ble_hid_usage_task_control;
+static StackType_t *s_ble_hid_usage_task_stack;
+
 static void ble_hid_battery_task_start(void)
 {
     if (s_ble_hid_ctx.battery_task_handle != NULL) {
         return;
     }
 
-    BaseType_t task_ok = xTaskCreate(
+    BaseType_t task_ok = watchdog_platform_start_task_on_spiram(
         ble_hid_battery_task,
         "ble_hid_battery_task",
         BLE_HID_BATTERY_TASK_STACK_BYTES,
-        NULL,
         configMAX_PRIORITIES - 5,
-        &s_ble_hid_ctx.battery_task_handle);
+        &s_ble_hid_ctx.battery_task_handle,
+        &s_ble_hid_battery_task_control,
+        &s_ble_hid_battery_task_stack);
     if (task_ok != pdPASS) {
-        ESP_LOGW(TAG, "battery update task create failed");
+        s_ble_hid_ctx.battery_task_handle = NULL;
+        ESP_LOGW(TAG,
+                 "battery update task create failed spiram_heap_min=%u",
+                 (unsigned)esp_get_minimum_free_heap_size());
     }
 }
 
@@ -656,16 +671,19 @@ static void ble_hid_usage_task_start(void)
         return;
     }
 
-    BaseType_t task_ok = xTaskCreate(
+    BaseType_t task_ok = watchdog_platform_start_task_on_spiram(
         ble_hid_usage_task,
         "ble_hid_usage_task",
         BLE_HID_USAGE_TASK_STACK_BYTES,
-        NULL,
         configMAX_PRIORITIES - 3,
-        &s_ble_hid_ctx.usage_task_handle);
+        &s_ble_hid_ctx.usage_task_handle,
+        &s_ble_hid_usage_task_control,
+        &s_ble_hid_usage_task_stack);
     if (task_ok != pdPASS) {
         s_ble_hid_ctx.usage_task_handle = NULL;
-        ESP_LOGE(TAG, "failed to start BLE HID usage task");
+        ESP_LOGE(TAG,
+                 "failed to start BLE HID usage task spiram_heap_min=%u",
+                 (unsigned)esp_get_minimum_free_heap_size());
     }
 }
 
@@ -1232,17 +1250,24 @@ static void ble_hid_task_start(void)
         return;
     }
 
-    BaseType_t task_ok = xTaskCreate(
+    BaseType_t task_ok = watchdog_platform_start_task_on_spiram(
         ble_hid_keyboard_task,
         "ble_hid_keyboard_task",
         BLE_HID_KEYBOARD_TASK_STACK_BYTES,
-        NULL,
         configMAX_PRIORITIES - 3,
-        &s_ble_hid_ctx.task_handle);
+        &s_ble_hid_ctx.task_handle,
+        &s_ble_hid_keyboard_task_control,
+        &s_ble_hid_keyboard_task_stack);
     if (task_ok != pdPASS) {
         s_ble_hid_ctx.task_handle = NULL;
-        ESP_LOGE(TAG, "failed to start BLE HID keyboard task");
+        ESP_LOGE(TAG,
+                 "failed to start BLE HID keyboard task spiram_heap_min=%u",
+                 (unsigned)esp_get_minimum_free_heap_size());
+        return;
     }
+    ESP_LOGI(TAG,
+             "keyboard task started stack_heap=spiram words=%u",
+             (unsigned)BLE_HID_KEYBOARD_TASK_STACK_BYTES);
 }
 
 void ble_hid_task_start_up(void)

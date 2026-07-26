@@ -102,7 +102,10 @@ void app_main(void)
     if (status_led_ready) {
         status_led_log_boot_feedback_after_diag_init();
     }
-    firmware_ota_init();
+    esp_err_t ota_init_ret = firmware_ota_init();
+    if (ota_init_ret != ESP_OK) {
+        ESP_LOGE(TAG, "firmware_ota_init failed: %s; OTA disabled", esp_err_to_name(ota_init_ret));
+    }
     configure_power_management();
     watchdog_platform_log_config();
     boot_safety_init();
@@ -184,6 +187,11 @@ void app_main(void)
     ota_post_ok = false;
 #endif
     firmware_ota_record_self_check(ota_post_ok, ota_ble_ready, ota_keyboard_ready);
-    firmware_ota_confirm_pending_verify_if_ready();
+    /* 修复2：不再开机即用浅层 init 返回值确认 pending-verify（init OK 不等于链路真的可用）。
+     * POST 失败 → 立即回滚（坏固件不应留存）；其余情况改由运行期事件驱动确认（首次观测到
+     * 真实 BLE 安全连接）+ 60s 干净运行兜底确认，避免好固件因从未连接而长期卡 pending。 */
+    if (!ota_post_ok) {
+        firmware_ota_confirm_pending_verify_if_ready();
+    }
     boot_safety_start_normal_boot_clear_timer();
 }

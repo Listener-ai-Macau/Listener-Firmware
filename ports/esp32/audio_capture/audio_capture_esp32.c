@@ -685,15 +685,13 @@ esp_err_t audio_capture_set_voice_activation_monitoring(bool enabled)
         return ESP_ERR_INVALID_STATE;
     }
     s_voice_activation_monitoring = enabled;
-    if (!enabled &&
-        s_state_mutex != NULL &&
-        xSemaphoreTake(s_state_mutex, portMAX_DELAY) == pdTRUE) {
-        s_voice_preroll_write_index = 0u;
-        s_voice_preroll_count = 0u;
-        s_session_preroll_count = 0u;
-        memset(s_voice_preroll, 0, sizeof(s_voice_preroll));
-        xSemaphoreGive(s_state_mutex);
-    }
+    /* 不清空 preroll：保留跨录音会话的前缀缓冲。
+     * 此前 enabled=false（录音开始）时 memset 清零，导致录音结束、重新开启监测时
+     * 环形缓冲从空开始重新累积；若用户随即再次说出唤醒词，前缀"开始"尚未攒够，
+     * 桌面 KWS 只能从后半段凑齐，造成延迟命中（实测 wake_to_capsule 5s+）或漏检。
+     * 现仅切换监测标志，缓冲连续累积，下次唤醒能立即带上完整前缀。
+     * power-save（audio_capture_set_idle_power_save）仍保留清零：深度休眠唤醒后
+     * 缓冲内容已过期，不应作为前缀使用。 */
     return ESP_OK;
 }
 

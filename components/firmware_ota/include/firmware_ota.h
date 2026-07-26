@@ -44,9 +44,17 @@ typedef struct {
     firmware_ota_blocker_t blocker;
 } firmware_ota_status_t;
 
-void firmware_ota_init(void);
+esp_err_t firmware_ota_init(void);
+bool firmware_ota_is_ready(void);
 void firmware_ota_record_self_check(bool post_ok, bool ble_ready, bool keyboard_ready);
 esp_err_t firmware_ota_confirm_pending_verify_if_ready(void);
+/*
+ * Event-driven pending-verify confirm: upgrades the BLE readiness signal from
+ * the shallow "init returned OK" hint to "a secure link was actually observed",
+ * then runs the platform decision. Idempotent — once confirmed/rolled back the
+ * partition is no longer pending-verify, so subsequent calls are no-ops.
+ */
+void firmware_ota_note_runtime_ble_readiness_and_confirm(void);
 void firmware_ota_set_observability_correlation(uint64_t correlation_id);
 esp_err_t firmware_ota_begin(size_t image_size, const char *target_version);
 esp_err_t firmware_ota_write(const void *data, size_t size);

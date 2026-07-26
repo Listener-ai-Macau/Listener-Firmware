@@ -2303,13 +2303,16 @@ esp_err_t voice_recording_control_start(void)
 
     ble_audio_stream_set_control_write_handler(voice_recording_control_ble_control_write);
 
-    BaseType_t task_ok = xTaskCreate(
+    static StaticTask_t s_voice_recording_control_task_control;
+    static StackType_t *s_voice_recording_control_task_stack;
+    BaseType_t task_ok = watchdog_platform_start_task_on_spiram(
         voice_recording_control_task,
         "voice_recording_control_task",
         4096,
-        NULL,
         5,
-        &s_task_handle);
+        &s_task_handle,
+        &s_voice_recording_control_task_control,
+        &s_voice_recording_control_task_stack);
     if (task_ok != pdPASS) {
         return ESP_ERR_NO_MEM;
     }

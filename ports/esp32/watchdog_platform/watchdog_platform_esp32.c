@@ -4,6 +4,7 @@
 #include <stdbool.h>
 #include <string.h>
 
+#include "esp_heap_caps.h"
 #include "esp_log.h"
 #include "esp_task_wdt.h"
 #include "freertos/task.h"
@@ -249,4 +250,37 @@ bool watchdog_platform_consume_usb_command(const char *line)
 
     ESP_LOGW(TAG, "WDT unknown command: %s", command);
     return true;
+}
+
+BaseType_t watchdog_platform_start_task_on_spiram(
+    TaskFunction_t task_func,
+    const char *name,
+    uint32_t stack_words,
+    UBaseType_t priority,
+    TaskHandle_t *handle_out,
+    StaticTask_t *task_control,
+    StackType_t **task_stack)
+{
+    if (*task_stack == NULL) {
+        *task_stack = (StackType_t *)heap_caps_malloc(
+            (size_t)stack_words * sizeof(StackType_t),
+            MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    }
+    if (*task_stack == NULL) {
+        return pdFAIL;
+    }
+    *handle_out = xTaskCreateStatic(
+        task_func,
+        name,
+        stack_words,
+        NULL,
+        priority,
+        *task_stack,
+        task_control);
+    if (*handle_out == NULL) {
+        heap_caps_free(*task_stack);
+        *task_stack = NULL;
+        return pdFAIL;
+    }
+    return pdPASS;
 }
