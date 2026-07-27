@@ -11,6 +11,7 @@
 
 #include "esp_err.h"
 #include "esp_event.h"
+#include "esp_heap_caps.h"
 #include "esp_hidd.h"
 #include "esp_hid_common.h"
 #include "esp_log.h"
@@ -434,12 +435,16 @@ static void ble_hid_battery_task(void *parameter)
     }
 }
 
-/* HID 任务族(键盘/电池/用量)栈放 PSRAM，缓解 boot 期 internal DRAM 极度紧张
- * （实测只剩 ~5-8KB）。实现在公共平台 helper watchdog_platform_start_task_on_spiram
- * （heap_caps_malloc(MALLOC_CAP_SPIRAM) + xTaskCreateStatic）。每个任务各持一份
- * StaticTask_t 控制块 + StackType_t* 栈指针，互不共享。任务均低频，无 DMA 栈依赖。 */
+/*
+ * HID 任务栈策略（PSRAM 迁移后的铁律）：
+ * - battery / usage：低频，不碰 flash/NVS/OTA → 可放 PSRAM 省片内 DRAM
+ * - keyboard：处理 USB 串口命令（含 ~OTA:STATUS / DEVICE:SET），会调用
+ *   esp_ota_get_state_partition / nvs_* 等关 cache 的 API。栈必须在片内 BSS。
+ *   实测：PSRAM 栈上跑 OTA 防回退查询 →
+ *   s_task_stack_is_sane_when_cache_frozen assert → 重启灯循环。
+ */
 static StaticTask_t s_ble_hid_keyboard_task_control;
-static StackType_t *s_ble_hid_keyboard_task_stack;
+static StackType_t s_ble_hid_keyboard_task_stack[BLE_HID_KEYBOARD_TASK_STACK_BYTES];
 static StaticTask_t s_ble_hid_battery_task_control;
 static StackType_t *s_ble_hid_battery_task_stack;
 static StaticTask_t s_ble_hid_usage_task_control;
@@ -1250,23 +1255,25 @@ static void ble_hid_task_start(void)
         return;
     }
 
-    BaseType_t task_ok = watchdog_platform_start_task_on_spiram(
+    /* 片内静态栈：USB/OTA 防回退查询与 DEVICE 设置路径会写/读 flash。 */
+    s_ble_hid_ctx.task_handle = xTaskCreateStatic(
         ble_hid_keyboard_task,
         "ble_hid_keyboard_task",
         BLE_HID_KEYBOARD_TASK_STACK_BYTES,
+        NULL,
         configMAX_PRIORITIES - 3,
-        &s_ble_hid_ctx.task_handle,
-        &s_ble_hid_keyboard_task_control,
-        &s_ble_hid_keyboard_task_stack);
-    if (task_ok != pdPASS) {
-        s_ble_hid_ctx.task_handle = NULL;
+        s_ble_hid_keyboard_task_stack,
+        &s_ble_hid_keyboard_task_control);
+    if (s_ble_hid_ctx.task_handle == NULL) {
         ESP_LOGE(TAG,
-                 "failed to start BLE HID keyboard task spiram_heap_min=%u",
+                 "failed to start BLE HID keyboard task on internal static stack "
+                 "internal_free=%u heap_min=%u",
+                 (unsigned)esp_get_free_internal_heap_size(),
                  (unsigned)esp_get_minimum_free_heap_size());
         return;
     }
     ESP_LOGI(TAG,
-             "keyboard task started stack_heap=spiram words=%u",
+             "keyboard task started stack_heap=internal_static words=%u",
              (unsigned)BLE_HID_KEYBOARD_TASK_STACK_BYTES);
 }
 

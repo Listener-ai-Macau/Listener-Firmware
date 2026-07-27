@@ -31,6 +31,10 @@ static denzic_diag_log_store_t s_store;
 static bool s_store_ready;
 static bool s_input_debug_enabled;
 static portMUX_TYPE s_input_debug_lock = portMUX_INITIALIZER_UNLOCKED;
+/* Writer touches flash; stack must stay internal DRAM (static BSS), never xTaskCreate
+ * under SPIRAM_USE_MALLOC (large/fragmented heaps fall into PSRAM). */
+static StaticTask_t s_diag_log_writer_tcb;
+static StackType_t s_diag_log_writer_stack[DIAG_LOG_WRITER_STACK_SIZE];
 
 static void diag_log_platform_writer_task(void *arg);
 
@@ -190,15 +194,16 @@ void diag_log_platform_init(void)
     }
     /* diag_log_writer 直接写/擦 flash（esp_partition_write/erase_range），
      * 栈必须留片内：flash 操作期间 cache 被关闭，PSRAM 栈访问会触发
-     * esp_task_stack_is_sane_cache_disabled assert。不能用 PSRAM 栈 helper。 */
-    if (xTaskCreate(
+     * esp_task_stack_is_sane_cache_disabled assert。静态 BSS 栈，不用 xTaskCreate。 */
+    if (xTaskCreateStatic(
             diag_log_platform_writer_task,
             "diag_log_writer",
             DIAG_LOG_WRITER_STACK_SIZE,
             NULL,
             DIAG_LOG_WRITER_PRIORITY,
-            NULL) != pdPASS) {
-        ESP_LOGE(TAG, "persistent writer task create failed");
+            s_diag_log_writer_stack,
+            &s_diag_log_writer_tcb) == NULL) {
+        ESP_LOGE(TAG, "persistent writer static task create failed");
         vQueueDelete(s_write_queue);
         s_write_queue = NULL;
         return;

@@ -102,6 +102,9 @@ extern void status_led_set_error(int domain, int severity, const char *reason) _
 #endif
 #define POWER_MANAGER_BATTERY_CRITICAL_PERCENT ((uint8_t)CONFIG_POWER_MANAGER_BATTERY_CRITICAL_PERCENT)
 #define POWER_MANAGER_TASK_STACK_BYTES (4 * 1024)
+/* Static BSS stack: shutdown path nvs_commit must never run on a PSRAM stack. */
+static StaticTask_t s_power_manager_task_tcb;
+static StackType_t s_power_manager_task_stack[POWER_MANAGER_TASK_STACK_BYTES];
 #define POWER_MANAGER_SHUTDOWN_USER_ACTION "short-press hardware power key for cold boot after PWR_HOLD/GPIO9 drive-high shutdown"
 #define POWER_MANAGER_POWER_SOURCE_USB_PRESENT (1u << 0)
 #define POWER_MANAGER_POWER_SOURCE_CHARGING (1u << 1)
@@ -2421,15 +2424,16 @@ esp_err_t power_manager_start(void)
 
     /* power_manager_task 关机时 nvs_commit 持久化 shutdown trace，栈必须留片内：
      * flash/NVS 操作期间 cache 关闭，PSRAM 栈访问会触发
-     * esp_task_stack_is_sane_cache_disabled assert。不能用 PSRAM 栈 helper。 */
-    BaseType_t task_ok = xTaskCreate(
+     * esp_task_stack_is_sane_cache_disabled assert。静态 BSS 栈，不用 xTaskCreate。 */
+    s_task_handle = xTaskCreateStatic(
         power_manager_task,
         "power_manager_task",
         POWER_MANAGER_TASK_STACK_BYTES,
         NULL,
         configMAX_PRIORITIES - 6,
-        &s_task_handle);
-    if (task_ok != pdPASS) {
+        s_power_manager_task_stack,
+        &s_power_manager_task_tcb);
+    if (s_task_handle == NULL) {
         return ESP_ERR_NO_MEM;
     }
 

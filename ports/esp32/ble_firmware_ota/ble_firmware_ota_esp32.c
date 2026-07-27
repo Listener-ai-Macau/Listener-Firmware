@@ -65,6 +65,9 @@ static bool s_registered;
 static SemaphoreHandle_t s_ota_lock;
 static QueueHandle_t s_ota_worker_queue;
 static TaskHandle_t s_ota_worker_task;
+/* Permanent worker touches flash; stack stays internal BSS (not xTaskCreate/PSRAM). */
+static StaticTask_t s_ota_worker_tcb;
+static StackType_t s_ota_worker_stack[BLE_FIRMWARE_OTA_WORKER_TASK_STACK_BYTES];
 /* 由 on_firmware_abort 置位（任意任务，含 worker 持锁处理 data 时的回调路径）；worker 下次
  * 循环持锁清零并执行 core_init。volatile bool 单写多读在本平台原子，无需锁。 */
 static volatile bool s_core_reset_pending;
@@ -134,6 +137,8 @@ static void ble_firmware_ota_reboot_task(void *arg)
 
 static bool ble_firmware_ota_schedule_reboot(void)
 {
+    /* One-shot task: keep xTaskCreate (stack <= ALWAYSINTERNAL prefers internal).
+     * Do not use a reusable static stack — vTaskDelete leaves static TCB unusable. */
     BaseType_t started = xTaskCreate(
         ble_firmware_ota_reboot_task,
         "ble_ota_reboot",
@@ -504,16 +509,17 @@ esp_err_t ble_firmware_ota_register_gatt(void)
 
     /* ble_ota_worker 经 denzic_ota_v1_handle_data → firmware_ota_write → esp_ota_write
      * 写 flash，栈必须留片内：flash 操作期间 cache 关闭，PSRAM 栈访问会触发
-     * esp_task_stack_is_sane_cache_disabled assert。不能用 PSRAM 栈 helper。 */
-    BaseType_t task_created = xTaskCreate(
+     * esp_task_stack_is_sane_cache_disabled assert。静态 BSS 栈，不用 xTaskCreate。 */
+    s_ota_worker_task = xTaskCreateStatic(
         ble_firmware_ota_worker_task,
         "ble_ota_worker",
         BLE_FIRMWARE_OTA_WORKER_TASK_STACK_BYTES,
         NULL,
         tskIDLE_PRIORITY + 1,
-        &s_ota_worker_task);
-    if (task_created != pdPASS) {
-        ESP_LOGE(TAG, "Denzic OTA v1 worker task create failed");
+        s_ota_worker_stack,
+        &s_ota_worker_tcb);
+    if (s_ota_worker_task == NULL) {
+        ESP_LOGE(TAG, "Denzic OTA v1 worker static task create failed");
         return ESP_FAIL;
     }
 

@@ -8,8 +8,10 @@
 #include "board.h"
 #include "ec11_rotation_control.h"
 #include "esp_log.h"
+#include "esp_memory_utils.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
+#include "freertos/task.h"
 #include "nvs.h"
 #include "sdkconfig.h"
 
@@ -49,6 +51,16 @@ extern void ble_hid_gap_set_ec11_fast_recording_enabled(
 #define DEVICE_SETTINGS_AUTO_SHUTDOWN_MAX_MS 86400000U
 #define DEVICE_SETTINGS_AUTO_SHUTDOWN_DISABLED_MS 0U
 #define DEVICE_SETTINGS_INITIAL_REVISION 1U
+/*
+ * NVS persist worker stack is static BSS (internal DRAM). BLE control writes
+ * (DEVICE:SET ble_name=...) run on nimble_host, whose xTaskCreate stack is
+ * larger than CONFIG_SPIRAM_MALLOC_ALWAYSINTERNAL and therefore lands in PSRAM
+ * once CONFIG_SPIRAM_ALLOW_STACK_EXTERNAL_MEMORY=y. Flash/NVS disables cache;
+ * executing nvs_commit on a PSRAM stack trips
+ * esp_task_stack_is_sane_cache_disabled → panic reboot on rename.
+ */
+#define DEVICE_SETTINGS_NVS_WORKER_STACK_WORDS 3072U
+#define DEVICE_SETTINGS_NVS_WORKER_PRIORITY 5U
 
 static const char *TAG = "device_settings";
 
@@ -79,7 +91,16 @@ static bool s_loaded;
 static bool s_loaded_from_nvs;
 static bool s_ble_name_pending_restart;
 
+static StaticTask_t s_nvs_worker_tcb;
+static StackType_t s_nvs_worker_stack[DEVICE_SETTINGS_NVS_WORKER_STACK_WORDS];
+static TaskHandle_t s_nvs_worker_handle;
+static TaskHandle_t s_nvs_client_handle;
+static bool s_nvs_worker_loaded_from_nvs_after_persist;
+static esp_err_t s_nvs_worker_result;
+
 static esp_err_t device_settings_persist_locked(bool loaded_from_nvs_after_persist);
+static esp_err_t device_settings_persist_nvs_body(bool loaded_from_nvs_after_persist);
+static bool device_settings_ensure_nvs_worker(void);
 
 static void device_settings_note_nvs_read_locked(esp_err_t ret, bool *missing_saved_key)
 {
@@ -395,7 +416,14 @@ static esp_err_t device_settings_ensure_loaded_locked(void)
     return device_settings_load_locked();
 }
 
-static esp_err_t device_settings_persist_locked(bool loaded_from_nvs_after_persist)
+static bool device_settings_current_stack_allows_flash(void)
+{
+    /* Local lives on the calling task stack; external/PSRAM stacks cannot host flash ops. */
+    int stack_probe = 0;
+    return esp_ptr_internal(&stack_probe);
+}
+
+static esp_err_t device_settings_persist_nvs_body(bool loaded_from_nvs_after_persist)
 {
     nvs_handle_t nvs = 0;
     esp_err_t ret = nvs_open(DEVICE_SETTINGS_NVS_NAMESPACE, NVS_READWRITE, &nvs);
@@ -498,9 +526,75 @@ static esp_err_t device_settings_persist_locked(bool loaded_from_nvs_after_persi
     return ret;
 }
 
+static void device_settings_nvs_worker_task(void *arg)
+{
+    (void)arg;
+    for (;;) {
+        (void)ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
+        s_nvs_worker_result = device_settings_persist_nvs_body(s_nvs_worker_loaded_from_nvs_after_persist);
+        TaskHandle_t client = s_nvs_client_handle;
+        s_nvs_client_handle = NULL;
+        if (client != NULL) {
+            xTaskNotifyGive(client);
+        }
+    }
+}
+
+static bool device_settings_ensure_nvs_worker(void)
+{
+    if (s_nvs_worker_handle != NULL) {
+        return true;
+    }
+
+    TaskHandle_t handle = xTaskCreateStatic(
+        device_settings_nvs_worker_task,
+        "dev_set_nvs",
+        DEVICE_SETTINGS_NVS_WORKER_STACK_WORDS,
+        NULL,
+        DEVICE_SETTINGS_NVS_WORKER_PRIORITY,
+        s_nvs_worker_stack,
+        &s_nvs_worker_tcb);
+    if (handle == NULL) {
+        ESP_LOGE(TAG, "device settings NVS worker static create failed");
+        return false;
+    }
+    s_nvs_worker_handle = handle;
+    ESP_LOGI(TAG, "device settings NVS worker ready stack=internal_static words=%u",
+             (unsigned)DEVICE_SETTINGS_NVS_WORKER_STACK_WORDS);
+    return true;
+}
+
+static esp_err_t device_settings_persist_locked(bool loaded_from_nvs_after_persist)
+{
+    /*
+     * Must be called while s_mutex is held. On internal-stack tasks, persist
+     * inline. On PSRAM stacks (nimble_host after SPIRAM stack migration), hop
+     * to the static internal worker. Caller keeps s_mutex across the wait so
+     * s_settings is stable; the worker only reads s_settings and does not take
+     * the mutex (avoids deadlock).
+     */
+    if (device_settings_current_stack_allows_flash()) {
+        return device_settings_persist_nvs_body(loaded_from_nvs_after_persist);
+    }
+
+    if (!device_settings_ensure_nvs_worker()) {
+        return ESP_ERR_NO_MEM;
+    }
+
+    s_nvs_worker_loaded_from_nvs_after_persist = loaded_from_nvs_after_persist;
+    s_nvs_worker_result = ESP_FAIL;
+    s_nvs_client_handle = xTaskGetCurrentTaskHandle();
+    xTaskNotifyGive(s_nvs_worker_handle);
+    (void)ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
+    return s_nvs_worker_result;
+}
+
 esp_err_t device_settings_init(void)
 {
     if (!device_settings_ensure_mutex()) {
+        return ESP_ERR_NO_MEM;
+    }
+    if (!device_settings_ensure_nvs_worker()) {
         return ESP_ERR_NO_MEM;
     }
 
