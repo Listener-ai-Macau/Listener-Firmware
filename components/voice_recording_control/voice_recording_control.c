@@ -2281,6 +2281,12 @@ esp_err_t voice_recording_control_start(void)
         denzic_voice_activation_v1_default_config();
     s_voice_activation_config.silence_stop_ms = 1800u;
     s_voice_activation_config.tail_ms = 350u;
+    // 引擎是纯 VAD(无关键词识别),默认 speech_confirm=300ms 太敏感:任何短促噪声/语音
+    // 都触发 voice_auto_start 自动录音,导致录音胶囊莫名反复弹出。提到 1000ms,要求持续
+    // 1s 语音才触发,过滤短促噪声/磕碰声。cooldown 默认 1500ms 太短,录完立刻又能触发,
+    // 连续重录(session6→7 接力);提到 4000ms。
+    s_voice_activation_config.speech_confirm_ms = 1000u;
+    s_voice_activation_config.cooldown_ms = 4000u;
     denzic_voice_activation_v1_reset(
         &s_voice_activation_machine);
     audio_capture_set_voice_activity_handler(
