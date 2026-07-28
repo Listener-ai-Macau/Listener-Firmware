@@ -1567,38 +1567,43 @@ static void voice_recording_control_recovery(
         strncmp(source, "ec11_", strlen("ec11_")) == 0 &&
         !audio_capture_session_is_active() &&
         !s_pending_start;
-    bool type_recovery_ack_required = false;
     esp_err_t fast_recovery_ret = ESP_OK;
 
     /*
-     * The old GATT session must carry an acknowledged recovery notice before
-     * EC11 clears its bond. Otherwise Type cannot distinguish this reset from
-     * a foreign host taking ownership and must correctly refuse PairAsync.
+     * Owner contract (1.0.2 behavior): EC11 double-click always re-pairs.
+     * When Type is live, best-effort recovery notice + ACK help Type accept
+     * PairAsync cleanly — but a missed notice/ACK must NEVER block bond reset
+     * or light a hard red error (zombie Type / post-flash half-link was doing that).
      */
     if (ec11_fast_idle_recovery) {
         if (ble_audio_stream_is_type_link_ready() &&
             ble_audio_stream_was_type_host_recently_seen()) {
-            type_recovery_ack_required = true;
             esp_err_t notice_ret = ble_audio_stream_send_type_recovery_notice();
             if (notice_ret != ESP_OK) {
                 ESP_LOGW(
                     TAG,
-                    "EC11 recovery notice could not reach Type before pairing reset: %s",
+                    "EC11 recovery notice could not reach Type before pairing reset: %s; continuing re-pair",
                     esp_err_to_name(notice_ret));
-                fast_recovery_ret = notice_ret;
             } else {
-                fast_recovery_ret = ble_audio_stream_wait_for_type_recovery_ack(
+                esp_err_t ack_ret = ble_audio_stream_wait_for_type_recovery_ack(
                     BLE_AUDIO_STREAM_TYPE_RECOVERY_ACK_TIMEOUT_MS);
-                if (fast_recovery_ret != ESP_OK) {
+                if (ack_ret != ESP_OK) {
                     ESP_LOGW(
                         TAG,
-                        "EC11 recovery pairing reset blocked: Type did not acknowledge the current GATT notice within %u ms",
+                        "EC11 recovery Type ACK timed out after %u ms; continuing re-pair (never block double-click)",
                         BLE_AUDIO_STREAM_TYPE_RECOVERY_ACK_TIMEOUT_MS);
                 }
             }
         }
-        if (!type_recovery_ack_required || fast_recovery_ret == ESP_OK) {
-            fast_recovery_ret = ble_hid_gap_forget_bonds_and_repair_ec11_fast();
+        fast_recovery_ret = ble_hid_gap_forget_bonds_and_repair_ec11_fast();
+        /* If the connected/async-fast path fails, still force a full native reset
+         * so the user is never stuck with a hard ERROR after double-click. */
+        if (fast_recovery_ret != ESP_OK) {
+            ESP_LOGW(
+                TAG,
+                "EC11 fast recovery failed (%s); falling back to full forget-and-repair",
+                esp_err_to_name(fast_recovery_ret));
+            fast_recovery_ret = ble_hid_gap_forget_bonds_and_repair();
         }
     }
 

@@ -226,6 +226,24 @@ def main() -> int:
         "fast_recovery_ret = ble_hid_gap_forget_bonds_and_repair_ec11_fast();",
         failures,
     )
+    # Owner contract: double-click must always re-pair (1.0.2). ACK is best-effort only.
+    require_fragment(
+        voice,
+        "continuing re-pair (never block double-click)",
+        failures,
+    )
+    require_ordered(
+        voice,
+        "fast_recovery_ret = ble_hid_gap_forget_bonds_and_repair_ec11_fast();",
+        "falling back to full forget-and-repair",
+        failures,
+    )
+    require_ordered(
+        voice,
+        "falling back to full forget-and-repair",
+        "fast_recovery_ret = ble_hid_gap_forget_bonds_and_repair();",
+        failures,
+    )
     for fragment in (
         "#define BLE_AUDIO_STREAM_TYPE_RECOVERY_ACK_TEXT DENZIC_DEVICE_CONTROL_V1_EC11_RECOVERY_ACK",
         "static SemaphoreHandle_t s_type_recovery_ack_sem;",
