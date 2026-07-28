@@ -6,6 +6,7 @@
 #include <string.h>
 
 #include "denzic_ota_v1.h"
+#include "denzic_ota_v1_reorder.h"
 #include "diag_log.h"
 #include "esp_log.h"
 #include "esp_system.h"
@@ -36,10 +37,8 @@
  * Depth 48 (~24 KB BSS) starved audio_capture task create (ESP_ERR_NO_MEM);
  * keep 32 (~16 KB) which matched the previously stable heap-backed size. */
 #define BLE_FIRMWARE_OTA_WORKER_QUEUE_DEPTH 32
-/* Dual-lane DATA/DATA_B WWR can arrive reordered. Hold future chunks until the
- * contiguous offset catches up so core does not emit OFFSET_MISMATCH recoveries.
- * 16 slots × 512 B ≈ 8 KB BSS — sized for host dual pipeline (~16/lane). */
-#define BLE_FIRMWARE_OTA_REORDER_SLOTS 16
+/* Platform dual-lane reorder (denzic_ota_v1_reorder); 16 slots × 512 B BSS. */
+#define BLE_FIRMWARE_OTA_REORDER_SLOTS DENZIC_OTA_V1_REORDER_DEFAULT_SLOTS
 #define BLE_FIRMWARE_OTA_DATA_ENQUEUE_TIMEOUT_MS 2000
 #define BLE_FIRMWARE_OTA_WORKER_POLL_TIMEOUT_MS 10
 #define BLE_FIRMWARE_OTA_WORKER_TASK_PRIORITY (tskIDLE_PRIORITY + 6)
@@ -64,12 +63,6 @@ typedef struct {
     uint8_t data[BLE_FIRMWARE_OTA_DATA_MAX_BYTES];
 } ble_firmware_ota_data_job_t;
 
-typedef struct {
-    bool valid;
-    uint16_t length;
-    uint8_t data[BLE_FIRMWARE_OTA_DATA_MAX_BYTES];
-} ble_firmware_ota_reorder_slot_t;
-
 static const char *TAG = "ble_firmware_ota";
 static const ble_uuid128_t s_service_uuid = BLE_FIRMWARE_OTA_SERVICE_UUID;
 static const ble_uuid128_t s_readiness_uuid = BLE_FIRMWARE_OTA_READINESS_UUID;
@@ -92,9 +85,9 @@ static StackType_t s_ota_worker_stack[BLE_FIRMWARE_OTA_WORKER_TASK_STACK_BYTES];
 static uint8_t s_ota_worker_queue_storage[BLE_FIRMWARE_OTA_WORKER_QUEUE_DEPTH
                                          * sizeof(ble_firmware_ota_data_job_t)];
 static StaticQueue_t s_ota_worker_queue_control;
-/* Dual-lane future chunks (offset > bytes_written); drained when contiguous. */
-static ble_firmware_ota_reorder_slot_t s_ota_reorder[BLE_FIRMWARE_OTA_REORDER_SLOTS];
-static uint8_t s_ota_reorder_used;
+/* Platform dual-lane reorder buffer (shared with Companion). */
+static denzic_ota_v1_reorder_slot_t s_ota_reorder_slots[BLE_FIRMWARE_OTA_REORDER_SLOTS];
+static denzic_ota_v1_reorder_t s_ota_reorder;
 /* 由 on_firmware_abort 置位（任意任务，含 worker 持锁处理 data 时的回调路径）；worker 下次
  * 循环持锁清零并执行 core_init。volatile bool 单写多读在本平台原子，无需锁。 */
 static volatile bool s_core_reset_pending;
@@ -103,10 +96,6 @@ extern esp_err_t ble_hid_gap_request_active_connection(void) __attribute__((weak
 extern esp_err_t ble_hid_gap_schedule_active_connection(void) __attribute__((weak));
 extern bool ble_hid_gap_active_connection_applied(void) __attribute__((weak));
 extern bool ble_hid_gap_ota_connection_ready(void) __attribute__((weak));
-
-static void ble_firmware_ota_reorder_clear(void);
-static void ble_firmware_ota_handle_data_ordered(const uint8_t *data, uint16_t length);
-static void ble_firmware_ota_reorder_drain(void);
 
 static void ble_firmware_ota_lock(void)
 {
@@ -186,7 +175,7 @@ static bool ble_firmware_ota_storage_begin(void *driver_context, uint32_t image_
     s_active_link_retry_tick = 0;
     s_active_link_confirmed = false;
     /* New image session: drop any dual-lane futures from a prior attempt. */
-    ble_firmware_ota_reorder_clear();
+    denzic_ota_v1_reorder_clear(&s_ota_reorder);
     esp_err_t ret = firmware_ota_begin(image_size, DENZIC_OTA_V1_PROTOCOL_NAME);
     ESP_LOGI(TAG, "Denzic OTA v1 begin size=%u ret=%s", (unsigned)image_size, esp_err_to_name(ret));
     return ret == ESP_OK;
@@ -232,133 +221,6 @@ static void ble_firmware_ota_storage_abort(void *driver_context)
     firmware_ota_abort(DIAG_OTA_ABORT_BLE_CONTROL);
 }
 
-static uint32_t ble_firmware_ota_read_u32_le(const uint8_t *bytes)
-{
-    return (uint32_t)bytes[0]
-        | ((uint32_t)bytes[1] << 8)
-        | ((uint32_t)bytes[2] << 16)
-        | ((uint32_t)bytes[3] << 24);
-}
-
-static void ble_firmware_ota_reorder_clear(void)
-{
-    for (size_t i = 0; i < BLE_FIRMWARE_OTA_REORDER_SLOTS; i++) {
-        s_ota_reorder[i].valid = false;
-        s_ota_reorder[i].length = 0;
-    }
-    s_ota_reorder_used = 0;
-}
-
-static int ble_firmware_ota_reorder_find_offset(uint32_t offset)
-{
-    for (size_t i = 0; i < BLE_FIRMWARE_OTA_REORDER_SLOTS; i++) {
-        if (!s_ota_reorder[i].valid) {
-            continue;
-        }
-        if (s_ota_reorder[i].length <= DENZIC_OTA_V1_DATA_HEADER_BYTES) {
-            continue;
-        }
-        if (ble_firmware_ota_read_u32_le(s_ota_reorder[i].data) == offset) {
-            return (int)i;
-        }
-    }
-    return -1;
-}
-
-static int ble_firmware_ota_reorder_find_free(void)
-{
-    for (size_t i = 0; i < BLE_FIRMWARE_OTA_REORDER_SLOTS; i++) {
-        if (!s_ota_reorder[i].valid) {
-            return (int)i;
-        }
-    }
-    return -1;
-}
-
-static void ble_firmware_ota_reorder_drain(void)
-{
-    while (s_ota_reorder_used > 0) {
-        int slot = ble_firmware_ota_reorder_find_offset(s_ota.bytes_written);
-        if (slot < 0) {
-            break;
-        }
-        (void)denzic_ota_v1_handle_data(
-            &s_ota,
-            s_ota_reorder[slot].data,
-            s_ota_reorder[slot].length);
-        s_ota_reorder[slot].valid = false;
-        s_ota_reorder[slot].length = 0;
-        if (s_ota_reorder_used > 0) {
-            s_ota_reorder_used--;
-        }
-    }
-}
-
-/* Apply a data job in offset order. Future dual-lane packets are buffered so
- * denzic_ota_v1 does not report OFFSET_MISMATCH for benign reordering. */
-static void ble_firmware_ota_handle_data_ordered(
-    const uint8_t *data,
-    uint16_t length)
-{
-    if (data == NULL || length <= DENZIC_OTA_V1_DATA_HEADER_BYTES) {
-        (void)denzic_ota_v1_handle_data(&s_ota, data, length);
-        return;
-    }
-    if (s_ota.state != DENZIC_OTA_V1_STATE_RECEIVING) {
-        (void)denzic_ota_v1_handle_data(&s_ota, data, length);
-        return;
-    }
-
-    const uint32_t offset = ble_firmware_ota_read_u32_le(data);
-    const uint32_t payload_length =
-        (uint32_t)length - (uint32_t)DENZIC_OTA_V1_DATA_HEADER_BYTES;
-    const uint32_t expected = s_ota.bytes_written;
-
-    if (offset < expected) {
-        /* Fully covered duplicate or partial overlap: let core decide. */
-        (void)denzic_ota_v1_handle_data(&s_ota, data, length);
-        ble_firmware_ota_reorder_drain();
-        return;
-    }
-    if (offset == expected) {
-        (void)denzic_ota_v1_handle_data(&s_ota, data, length);
-        ble_firmware_ota_reorder_drain();
-        return;
-    }
-
-    /* Future offset: buffer if within a bounded span; else surface mismatch. */
-    const uint32_t max_ahead =
-        (uint32_t)BLE_FIRMWARE_OTA_REORDER_SLOTS
-        * (uint32_t)BLE_FIRMWARE_OTA_DATA_PAYLOAD_MAX;
-    if (offset - expected > max_ahead) {
-        (void)denzic_ota_v1_handle_data(&s_ota, data, length);
-        return;
-    }
-    if (ble_firmware_ota_reorder_find_offset(offset) >= 0) {
-        /* Duplicate of an already-buffered future chunk. */
-        return;
-    }
-
-    int free_slot = ble_firmware_ota_reorder_find_free();
-    if (free_slot < 0) {
-        /* Buffer full: fall through to core OFFSET_MISMATCH so host recovers. */
-        (void)denzic_ota_v1_handle_data(&s_ota, data, length);
-        return;
-    }
-
-    if (length > BLE_FIRMWARE_OTA_DATA_MAX_BYTES) {
-        (void)denzic_ota_v1_handle_data(&s_ota, data, length);
-        return;
-    }
-    memcpy(s_ota_reorder[free_slot].data, data, length);
-    s_ota_reorder[free_slot].length = length;
-    s_ota_reorder[free_slot].valid = true;
-    if (s_ota_reorder_used < BLE_FIRMWARE_OTA_REORDER_SLOTS) {
-        s_ota_reorder_used++;
-    }
-    (void)payload_length;
-}
-
 static void ble_firmware_ota_core_init(void)
 {
     const denzic_ota_v1_storage_driver_t storage = {
@@ -373,7 +235,11 @@ static void ble_firmware_ota_core_init(void)
         NULL,
         BLE_FIRMWARE_OTA_DATA_PAYLOAD_MAX,
         BLE_FIRMWARE_OTA_DEFAULT_WINDOW_CHUNKS);
-    ble_firmware_ota_reorder_clear();
+    denzic_ota_v1_reorder_init(
+        &s_ota_reorder,
+        s_ota_reorder_slots,
+        BLE_FIRMWARE_OTA_REORDER_SLOTS,
+        BLE_FIRMWARE_OTA_DATA_PAYLOAD_MAX);
     s_active_link_retry_tick = 0;
     s_active_link_confirmed = false;
 }
@@ -471,7 +337,11 @@ static void ble_firmware_ota_worker_task(void *arg)
             /* Batch-drain while holding the lock so flash stays busy and host
              * SYNC/status sees a fresher offset (fewer recoveries / resends). */
             do {
-                ble_firmware_ota_handle_data_ordered(job.data, job.length);
+                (void)denzic_ota_v1_handle_data_ordered(
+                    &s_ota,
+                    &s_ota_reorder,
+                    job.data,
+                    job.length);
                 watchdog_platform_feed_current_task();
             } while (xQueueReceive(s_ota_worker_queue, &job, 0) == pdTRUE);
         }
@@ -485,10 +355,13 @@ static void ble_firmware_ota_drain_queued_data_locked(void)
      * jobs still waiting behind flash so host does not false-recover and resend. */
     ble_firmware_ota_data_job_t job;
     while (xQueueReceive(s_ota_worker_queue, &job, 0) == pdTRUE) {
-        ble_firmware_ota_handle_data_ordered(job.data, job.length);
+        (void)denzic_ota_v1_handle_data_ordered(
+            &s_ota,
+            &s_ota_reorder,
+            job.data,
+            job.length);
     }
-    /* Flush any dual-lane futures that became contiguous during drain. */
-    ble_firmware_ota_reorder_drain();
+    denzic_ota_v1_reorder_drain(&s_ota, &s_ota_reorder);
 }
 
 static int ble_firmware_ota_append_status(struct os_mbuf *om)

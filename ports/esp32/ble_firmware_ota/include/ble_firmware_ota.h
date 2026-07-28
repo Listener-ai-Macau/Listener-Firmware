@@ -21,10 +21,9 @@ extern "C" {
     BLE_UUID128_INIT(DENZIC_OTA_V1_GATT_CONTROL_UUID_BYTES)
 #define BLE_FIRMWARE_OTA_V1_DATA_UUID \
     BLE_UUID128_INIT(DENZIC_OTA_V1_GATT_DATA_UUID_BYTES)
-/* Optional second data lane (same access handler) so the host can keep two
- * WWR pipelines filled on Windows — companion dual-lane pattern for OTA. */
+/* Optional second data lane (platform dual-lane contract / DATA_B UUID). */
 #define BLE_FIRMWARE_OTA_V1_DATA_B_UUID \
-    BLE_UUID128_INIT(0x13, 0x7e, 0x9a, 0x0a, 0xe9, 0xe5, 0xe4, 0xab, 0xd1, 0x4b, 0x02, 0x61, 0xfb, 0xb0, 0xc4, 0xfb)
+    BLE_UUID128_INIT(DENZIC_OTA_V1_GATT_DATA_B_UUID_BYTES)
 #define BLE_FIRMWARE_OTA_V1_STATUS_UUID \
     BLE_UUID128_INIT(DENZIC_OTA_V1_GATT_STATUS_UUID_BYTES)
 
