@@ -937,8 +937,12 @@ static void ble_audio_stream_set_type_heartbeat_active(bool active, const char *
     if (active) {
         s_type_heartbeat_deadline_tick =
             now + pdMS_TO_TICKS(timeout_ms);
+        /* OTA lease must keep Type-ready LED for the whole prep/transfer
+         * window (normal ready hold is only 12s and would fall back to find-Type). */
         s_type_heartbeat_led_ready_until_tick =
-            now + pdMS_TO_TICKS(BLE_AUDIO_STREAM_TYPE_LED_READY_HOLD_MS);
+            now + pdMS_TO_TICKS(
+                      ota_hold ? BLE_AUDIO_STREAM_TYPE_OTA_HEARTBEAT_TIMEOUT_MS
+                               : BLE_AUDIO_STREAM_TYPE_LED_READY_HOLD_MS);
         s_type_ota_hold_until_tick = ota_hold ? s_type_heartbeat_deadline_tick : 0;
         s_type_heartbeat_count++;
     } else {
@@ -1445,6 +1449,18 @@ static void ble_audio_stream_sync_status_led_for_type_link(const char *reason)
     if (ble_hid_gap_is_recovery_pairing_window_open != NULL &&
         ble_hid_gap_is_recovery_pairing_window_open()) {
         ESP_LOGD(TAG, "type link LED sync skipped during recovery pairing window reason=%s", reason != NULL ? reason : "unspecified");
+        return;
+    }
+    /* TYPE:OTA lease keeps Type-ready even when audio notify is cancelled for
+     * exclusive OTA GATT (transport_link_ready becomes false). */
+    if (ble_audio_stream_type_ota_hold_active()) {
+        status_led_set_ble_state(STATUS_LED_BLE_TYPE_READY, false);
+        status_led_set_type_ota_link_active(true, reason != NULL ? reason : "TYPE:OTA");
+        status_led_note_ble_boot_ready(reason);
+        ESP_LOGD(
+            TAG,
+            "type link LED sync OTA lease Type-ready reason=%s",
+            reason != NULL ? reason : "unspecified");
         return;
     }
     if (!ble_audio_stream_type_led_link_ready()) {
@@ -3242,6 +3258,11 @@ bool ble_audio_stream_is_type_link_ready(void)
 
 bool ble_audio_stream_is_type_led_ready(void)
 {
+    /* Exclusive OTA drops audio notify; keep Type-ready while the OTA lease is live. */
+    if (ble_audio_stream_type_ota_hold_active() &&
+        ble_audio_stream_type_heartbeat_led_recent()) {
+        return true;
+    }
     return ble_audio_stream_transport_link_ready() &&
            ble_audio_stream_type_heartbeat_led_recent();
 }
