@@ -4893,8 +4893,11 @@ bool ble_hid_gap_ota_connection_ready(void)
     }
 
     struct ble_gap_conn_desc desc;
+    /* Active audio target is itvl=6 (7.5 ms). WinRT ThroughputOptimized often
+     * lands near 15 ms (itvl=12). Accept up to 30 ms (itvl=24) so OTA host can
+     * unlock its full window while 7.5 ms promotion is still in flight. */
     return ble_gap_conn_find(conn.conn_handle, &desc) == 0 &&
-           desc.conn_latency == 0 && desc.conn_itvl <= 12U;
+           desc.conn_latency == 0 && desc.conn_itvl <= 24U;
 }
 
 static void ble_hid_gap_ota_reconnect_task(void *arg)

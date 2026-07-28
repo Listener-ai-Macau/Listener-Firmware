@@ -23,14 +23,18 @@
 
 #define BLE_FIRMWARE_OTA_DATA_MAX_BYTES 512
 #define BLE_FIRMWARE_OTA_DATA_PAYLOAD_MAX 500
-#define BLE_FIRMWARE_OTA_DEFAULT_WINDOW_CHUNKS 8
-#define BLE_FIRMWARE_OTA_ACTIVE_LINK_RETRY_MS 250
+/* Host negotiates window via BEGIN; default only applies when host sends 0.
+ * Keep aligned with Type's preferred window (100) so status echoes a useful size. */
+#define BLE_FIRMWARE_OTA_DEFAULT_WINDOW_CHUNKS 100
+#define BLE_FIRMWARE_OTA_ACTIVE_LINK_RETRY_MS 100
 #define BLE_FIRMWARE_OTA_REBOOT_DELAY_MS 500
 #define BLE_FIRMWARE_OTA_REBOOT_TASK_STACK_BYTES 4096
 #define BLE_FIRMWARE_OTA_WORKER_TASK_STACK_BYTES 4096
-#define BLE_FIRMWARE_OTA_WORKER_QUEUE_DEPTH 8
+/* Deeper pipeline so host WriteWithoutResponse bursts (window 48–100) do not
+ * stall on a tiny queue while flash catches up. 32 * 512 ≈ 16 KB BSS. */
+#define BLE_FIRMWARE_OTA_WORKER_QUEUE_DEPTH 32
 #define BLE_FIRMWARE_OTA_DATA_ENQUEUE_TIMEOUT_MS 2000
-#define BLE_FIRMWARE_OTA_WORKER_POLL_TIMEOUT_MS 100
+#define BLE_FIRMWARE_OTA_WORKER_POLL_TIMEOUT_MS 50
 #define BLE_FIRMWARE_OTA_COMPACT_CAPABILITIES DENZIC_OTA_V1_PROTOCOL_NAME
 
 typedef enum {
@@ -352,6 +356,17 @@ static int ble_firmware_ota_handle_control_write(struct os_mbuf *om)
             length > 4 ? control[4] : 0,
             s_ota.last_error,
             length);
+    } else if (length > 4 && control[4] == DENZIC_OTA_V1_OP_BEGIN) {
+        /* BEGIN starts bulk WWR: re-assert active CI/2M PHY without waiting for
+         * the slower OTA reconnect terminate path. */
+        if (ble_hid_gap_schedule_active_connection != NULL ||
+            ble_hid_gap_request_active_connection != NULL) {
+            esp_err_t ret = ble_hid_gap_schedule_active_connection != NULL
+                ? ble_hid_gap_schedule_active_connection()
+                : ble_hid_gap_request_active_connection();
+            ESP_LOGI(TAG, "Denzic OTA v1 BEGIN requested active BLE link ret=%s",
+                     esp_err_to_name(ret));
+        }
     }
     return result;
 }
