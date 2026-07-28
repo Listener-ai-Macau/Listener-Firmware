@@ -1401,6 +1401,22 @@ static void ble_hid_host_task(void *parameter)
     nimble_port_freertos_deinit();
 }
 
+/*
+ * esp_nimble_enable() uses xTaskCreatePinnedToCore and:
+ *  1) ignores create failure (still returns ESP_OK)
+ *  2) with CONFIG_SPIRAM_ALLOW_STACK_EXTERNAL_MEMORY may put the host stack
+ *     in PSRAM. NimBLE host on PSRAM stack never reaches sync → no advertising
+ *     → ble=OFF → EC11 re-pair / Type pairing fail.
+ * Pin a static INTERNAL DRAM stack instead (same depth as Kconfig words).
+ */
+#ifndef CONFIG_BT_NIMBLE_HOST_TASK_STACK_SIZE
+#define CONFIG_BT_NIMBLE_HOST_TASK_STACK_SIZE 8192
+#endif
+#define BLE_HID_NIMBLE_HOST_STACK_WORDS ((uint32_t)CONFIG_BT_NIMBLE_HOST_TASK_STACK_SIZE)
+static StaticTask_t s_nimble_host_tcb;
+static StackType_t s_nimble_host_stack[BLE_HID_NIMBLE_HOST_STACK_WORDS];
+static TaskHandle_t s_nimble_host_task_handle = NULL;
+
 static void ble_hid_log_dis_result(const char *field, int rc)
 {
     if (rc != 0) {
@@ -1691,11 +1707,37 @@ esp_err_t ble_hid_start(void)
     ble_store_config_init();
     ble_hs_cfg.store_status_cb = ble_store_util_status_rr;
 
-    esp_err_t ret = esp_nimble_enable(ble_hid_host_task);
-    if (ret != ESP_OK) {
-        ESP_LOGE(TAG, "esp_nimble_enable failed: %d", ret);
+    if (s_nimble_host_task_handle != NULL) {
+        ESP_LOGW(TAG, "ble_hid_start: NimBLE host already running");
+        return ESP_OK;
     }
-    return ret;
+
+    const size_t free_internal =
+        heap_caps_get_free_size(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
+    ESP_LOGI(
+        TAG,
+        "ble_hid_start: NimBLE host internal static stack words=%u (~%u KB) internal_free=%u",
+        (unsigned)BLE_HID_NIMBLE_HOST_STACK_WORDS,
+        (unsigned)((BLE_HID_NIMBLE_HOST_STACK_WORDS * sizeof(StackType_t)) / 1024U),
+        (unsigned)free_internal);
+
+    /* Priority matches esp_nimble_enable (configMAX_PRIORITIES - 4); core 0 is
+     * the IDF default NIMBLE_CORE when not pinned elsewhere. */
+    s_nimble_host_task_handle = xTaskCreateStaticPinnedToCore(
+        ble_hid_host_task,
+        "nimble_host",
+        BLE_HID_NIMBLE_HOST_STACK_WORDS,
+        NULL,
+        (configMAX_PRIORITIES - 4),
+        s_nimble_host_stack,
+        &s_nimble_host_tcb,
+        0);
+    if (s_nimble_host_task_handle == NULL) {
+        ESP_LOGE(TAG, "NimBLE host static task create failed (internal stack)");
+        return ESP_ERR_NO_MEM;
+    }
+    ESP_LOGI(TAG, "NimBLE host task created on internal DRAM static stack");
+    return ESP_OK;
 }
 
 bool ble_hid_is_connected(void)
