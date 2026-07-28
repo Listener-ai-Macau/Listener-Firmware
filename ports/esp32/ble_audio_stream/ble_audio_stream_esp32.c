@@ -3326,6 +3326,10 @@ static void ble_audio_stream_deferred_ble_name_apply_task(void *arg)
 
 static void ble_audio_stream_schedule_ble_name_apply(const char *source)
 {
+    /* Owner: rename must light low dual-flash + EC11 three-cycle immediately on
+     * write, not after deferred apply / PairAsync delay (messy "BLE first"). */
+    status_led_notify_ble_repairing(
+        source != NULL ? source : "ble_name_write");
     BaseType_t ok = xTaskCreate(
         ble_audio_stream_deferred_ble_name_apply_task,
         "ble_name_apply",

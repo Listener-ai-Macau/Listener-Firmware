@@ -736,10 +736,12 @@ esp_err_t firmware_ota_finish(bool reboot_after_set_boot)
     firmware_ota_log_version_event(DIAG_OTA_SET_BOOT, partition);
     firmware_ota_set_runtime_active(false, bytes_written, expected_size, "ota_finish");
     firmware_ota_stop_inactivity_timer();
-    status_led_notify_success("ota_finish");
-
+    /* Owner 2026-07-28: OK peak + immediate reboot boot-feedback reads as two
+     * power-on lights. When we reboot into the new image, boot LED alone is enough. */
     if (reboot_after_set_boot) {
         firmware_ota_reboot_to_pending_image();
+    } else {
+        status_led_notify_success("ota_finish");
     }
     return ESP_OK;
 }

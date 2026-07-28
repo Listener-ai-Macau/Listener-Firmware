@@ -2726,6 +2726,18 @@ static void status_led_render_ble_locked(status_led_frame_t *frame, uint32_t now
     status_led_rgb_t ble_manual_blue = status_led_rgb(0, 0, 255);
     status_led_rgb_t color = {0};
     const uint32_t ble_elapsed_ms = status_led_ble_elapsed_locked(now_ms);
+    /* Owner 2026-07-28: during bulk OTA, BLE status must not show find-Type
+     * dual-flash (CONNECTED always-find-type window). Progress is LED5 write-tick
+     * + EC11 fill; BLE stays Type-ready steady while OTA owns the link. */
+    if (s_state.ota_active) {
+        color = status_led_token_relative_to_peak_locked(
+            ble_blue,
+            STATUS_LED_BLE_TYPE_READY_STEADY_PERCENT,
+            STATUS_LED_BLE_TYPE_READY_STEADY_PERCENT,
+            false);
+        status_led_set_max(&frame->status[STATUS_LED_SEM_BLE], color);
+        return;
+    }
     if (status_led_ble_manual_pairing_active_locked(now_ms)) {
         uint8_t percent = status_led_double_pulse_on(
                               ble_elapsed_ms,
@@ -5441,12 +5453,16 @@ void status_led_set_ota_active(bool active, size_t bytes_written, size_t expecte
             s_state.ota_active = true;
             s_state.ota_bytes_written = bytes_written;
             s_state.ota_expected_size = expected_size;
-            if (s_state.ota_type_link_active &&
-                s_state.ble_state == STATUS_LED_BLE_CONNECTED) {
+            /* Any active OTA bulk is Type-driven on Listener; force Type-ready so
+             * CONNECTED find-Type dual-flash cannot win mid-transfer. */
+            if (s_state.ble_state != STATUS_LED_BLE_TYPE_READY) {
                 s_state.ble_state = STATUS_LED_BLE_TYPE_READY;
                 s_state.ble_transition_ms = now_ms;
-                ESP_LOGI(TAG, "OTA start promoted BLE state to Type-ready from Type link evidence");
+                s_state.ota_type_link_active = true;
+                ESP_LOGI(TAG, "OTA start forced BLE Type-ready (suppress find-Type dual-flash)");
                 changed = true;
+            } else {
+                s_state.ota_type_link_active = true;
             }
             uint8_t new_progress = status_led_ota_progress_percent_locked();
             if (!was_active || new_progress != old_progress || reason != NULL) {

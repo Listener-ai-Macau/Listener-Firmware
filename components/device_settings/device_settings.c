@@ -18,6 +18,8 @@
 extern void ble_hid_gap_set_ec11_fast_recording_enabled(
     bool enabled,
     const char *reason) __attribute__((weak));
+/* Weak: avoid REQUIRES status_led (graph cycles). Rename LED fires on write. */
+extern void status_led_notify_ble_repairing(const char *reason) __attribute__((weak));
 
 #ifndef CONFIG_POWER_MANAGER_HARDWARE_SHUTDOWN_MS
 #define CONFIG_POWER_MANAGER_HARDWARE_SHUTDOWN_MS 600000
@@ -1532,6 +1534,7 @@ static esp_err_t device_settings_apply_set_command(const char *arguments)
             error_reason = saw_token ? "missing_setting" : "missing_arguments";
         }
 
+        bool name_changed_for_led = false;
         if (ok) {
             bool name_changed = strcmp(s_settings.ble_name, next.ble_name) != 0;
             next.plugged_brightness_percent = DEVICE_SETTINGS_DEFAULT_PLUGGED_BRIGHTNESS_PERCENT;
@@ -1542,10 +1545,12 @@ static esp_err_t device_settings_apply_set_command(const char *arguments)
                 : s_settings.settings_revision + 1U;
             if (name_changed) {
                 s_ble_name_pending_restart = true;
+                name_changed_for_led = true;
             }
             ret = device_settings_persist_locked(true);
             if (ret != ESP_OK) {
                 ok = false;
+                name_changed_for_led = false;
                 snprintf(error_key, sizeof(error_key), "persist");
                 error_reason = esp_err_to_name(ret);
             } else {
@@ -1553,6 +1558,11 @@ static esp_err_t device_settings_apply_set_command(const char *arguments)
             }
         }
         xSemaphoreGive(s_mutex);
+        /* Owner: rename lights low dual-flash + EC11 three-cycle as soon as the
+         * name is written, not only after deferred APPLY / PairAsync. */
+        if (name_changed_for_led && status_led_notify_ble_repairing != NULL) {
+            status_led_notify_ble_repairing("ble_name_write");
+        }
     } else {
         ok = false;
         snprintf(error_key, sizeof(error_key), "SET");
