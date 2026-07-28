@@ -109,7 +109,9 @@
 #define STATUS_LED_BOOT_BLE_READY_WAIT_MS STATUS_LED_STATUS_WINDOW_MS
 #define STATUS_LED_BLE_CONFIDENCE_MS 8000U
 #define STATUS_LED_BLE_REPAIR_CUE_MS 2700U
-#define STATUS_LED_BLE_REPAIR_CUE_LEAD_CLEAR_MS (STATUS_LED_IDLE_TRANSITION_CLEAR_MS + STATUS_LED_REFRESH_MS)
+/* Owner: re-pair must light BLE low double-flash + EC11 three-cycle immediately
+ * on write — a lead clear made BLE sit steady while the knob looked unlit/messy. */
+#define STATUS_LED_BLE_REPAIR_CUE_LEAD_CLEAR_MS 0U
 #define STATUS_LED_BLE_REPAIR_TO_RECOVERY_GAP_MS STATUS_LED_BLE_CONNECTED_FIND_TYPE_PERIOD_MS
 #define STATUS_LED_BLE_REPAIR_WINDOW_MAX_MS 120000U
 #define STATUS_LED_OOBE_CONFIDENCE_MS 25000U
@@ -239,9 +241,12 @@
 #define STATUS_LED_EDGE_PROCESSING_BASE_PERCENT 10U
 #define STATUS_LED_EC11_PROCESSING_ORBIT_PERCENT 40U
 #define STATUS_LED_EDGE_PROCESSING_ORBIT_PERCENT 36U
-#define STATUS_LED_OTA_OK_MIN_PERCENT 18U
-#define STATUS_LED_OTA_OK_MAX_PERCENT 52U
-#define STATUS_LED_OTA_OK_PULSE_MS 1300U
+/* OTA is "writing firmware", not charging/idle breath: LED5 tracks write progress
+ * as a steady cyan bar plus a short square write-tick (not triangle breathe). */
+#define STATUS_LED_OTA_OK_MIN_PERCENT 22U
+#define STATUS_LED_OTA_OK_MAX_PERCENT 58U
+#define STATUS_LED_OTA_OK_WRITE_TICK_PERIOD_MS 700U
+#define STATUS_LED_OTA_OK_WRITE_TICK_ON_MS 90U
 #define STATUS_LED_OTA_EC11_BASE_PERCENT 5U
 #define STATUS_LED_OTA_EC11_FILL_PERCENT 18U
 #define STATUS_LED_OTA_EC11_HEAD_PERCENT 42U
@@ -2122,13 +2127,17 @@ static uint8_t status_led_transition_clear_mask_preserving_active_ec11_locked(
     uint8_t clear_mask,
     uint32_t now_ms)
 {
+    const bool repair_cue_live =
+        s_state.ble_repair_cue_started_ms != 0U &&
+        now_ms < s_state.ble_repair_cue_until_ms;
     if (!status_led_shutdown_confirm_active_locked(now_ms) &&
-        !status_led_ec11_feedback_active_locked(now_ms)) {
+        !status_led_ec11_feedback_active_locked(now_ms) &&
+        !repair_cue_live) {
         return clear_mask;
     }
 
-    /* A queued idle clear must not put a live EC11 animation through an
-     * all-dark frame before its next render refresh. */
+    /* A queued idle clear must not put a live EC11 animation or the re-pair
+     * confirmation ring through an all-dark frame before its next render. */
     if ((clear_mask & STATUS_LED_TRANSITION_CLEAR_ALL_STRIPS) != 0U) {
         clear_mask &= (uint8_t)~STATUS_LED_TRANSITION_CLEAR_ALL_STRIPS;
         clear_mask |= STATUS_LED_TRANSITION_CLEAR_STATUS_ACCENTS |
@@ -2136,7 +2145,12 @@ static uint8_t status_led_transition_clear_mask_preserving_active_ec11_locked(
                       STATUS_LED_TRANSITION_CLEAR_KEY |
                       STATUS_LED_TRANSITION_CLEAR_EDGE;
     }
-    return (uint8_t)(clear_mask & (uint8_t)~STATUS_LED_TRANSITION_CLEAR_EC11);
+    clear_mask = (uint8_t)(clear_mask & (uint8_t)~STATUS_LED_TRANSITION_CLEAR_EC11);
+    if (repair_cue_live) {
+        /* Re-pair confirmation is BLE + EC11 together; keep both surfaces. */
+        clear_mask = (uint8_t)(clear_mask & (uint8_t)~STATUS_LED_TRANSITION_CLEAR_BLE);
+    }
+    return clear_mask;
 }
 
 static bool status_led_render_transition_clear_locked(status_led_frame_t *frame, uint8_t *clear_mask_out)
@@ -3195,11 +3209,24 @@ static uint8_t status_led_ota_ok_percent_locked(uint32_t now_ms)
     if (!s_state.ota_active) {
         return 0U;
     }
-    return status_led_triangle_percent(
-        status_led_ota_elapsed_ms_locked(now_ms),
-        STATUS_LED_OTA_OK_PULSE_MS,
-        STATUS_LED_OTA_OK_MIN_PERCENT,
-        STATUS_LED_OTA_OK_MAX_PERCENT);
+
+    /* Progress bar: known size maps bytes → brightness. Unknown size stays at mid
+     * floor so the write-tick still reads as active install work. */
+    uint8_t progress = status_led_ota_progress_percent_locked();
+    uint8_t base_percent = STATUS_LED_OTA_OK_MIN_PERCENT;
+    if (s_state.ota_expected_size > 0U) {
+        uint32_t span = (uint32_t)STATUS_LED_OTA_OK_MAX_PERCENT - STATUS_LED_OTA_OK_MIN_PERCENT;
+        base_percent = (uint8_t)(STATUS_LED_OTA_OK_MIN_PERCENT + ((span * progress) / 100U));
+    } else {
+        base_percent = (uint8_t)((STATUS_LED_OTA_OK_MIN_PERCENT + STATUS_LED_OTA_OK_MAX_PERCENT) / 2U);
+    }
+
+    uint32_t elapsed = status_led_ota_elapsed_ms_locked(now_ms);
+    uint32_t phase = elapsed % STATUS_LED_OTA_OK_WRITE_TICK_PERIOD_MS;
+    if (phase < STATUS_LED_OTA_OK_WRITE_TICK_ON_MS) {
+        return STATUS_LED_OTA_OK_MAX_PERCENT;
+    }
+    return base_percent;
 }
 
 static bool status_led_shutdown_confirm_active_locked(uint32_t now_ms)
@@ -4257,6 +4284,8 @@ static void status_led_start_ble_repair_locked_for_ms(uint32_t now_ms, uint32_t 
     s_state.ble_confidence_until_ms = repair_until_ms;
     s_state.ble_repair_until_ms = repair_until_ms;
     if (!cue_already_active) {
+        /* BLE status rail + EC11 ring share this clock for the three double-flash
+         * cycles. Start at now so both surfaces light together on the first frame. */
         s_state.ble_repair_cue_started_ms = now_ms + STATUS_LED_BLE_REPAIR_CUE_LEAD_CLEAR_MS;
         s_state.ble_repair_cue_until_ms = s_state.ble_repair_cue_started_ms + STATUS_LED_BLE_REPAIR_CUE_MS;
     }
@@ -4272,6 +4301,9 @@ static void status_led_start_ble_repair_locked_for_ms(uint32_t now_ms, uint32_t 
     status_led_clear_ota_locked();
     status_led_clear_ok_locked();
     status_led_clear_ec11_feedback_locked();
+    /* Do not queue an idle transition clear that would black EC11 for a frame
+     * before the synchronized repair cue can paint. */
+    s_state.transition_clear_mask = 0U;
     status_led_clear_retryable_error_locked(STATUS_LED_ERROR_DOMAIN_BLE);
 }
 
@@ -5199,10 +5231,20 @@ void status_led_notify_ble_repairing_for_ms(const char *reason, uint32_t hold_ms
     uint32_t now_ms = status_led_now_ms();
     bool changed = false;
     if (xSemaphoreTake(s_mutex, portMAX_DELAY) == pdTRUE) {
-        status_led_resume_output_locked();
+        /* Owner contract: on write, immediately show low-brightness BLE double-flash
+         * synchronized with the EC11 three-cycle ring. Low-power render only paints
+         * PWR/BLE (no EC11). Interactive resume would force an all-strip black frame
+         * first — both look like "BLE first, knob late/messy". Wake fully without that
+         * black clear so the first refresh paints BLE+knob together. */
         s_state.preview_suppress_accents = false;
         s_state.preview_effect_only = false;
         s_state.preview_ble_override_until_ms = 0U;
+        if (s_state.output_disabled || s_state.low_power_disabled) {
+            s_state.last_power_poll_ms = 0U;
+        }
+        s_state.output_disabled = false;
+        s_state.low_power_disabled = false;
+        s_state.transition_clear_mask = 0U;
         status_led_start_ble_repair_locked_for_ms(now_ms, hold_ms);
         s_state.last_transition_ms = now_ms;
         status_led_set_last_reason_locked(reason != NULL ? reason : "ble_repairing");
@@ -6589,7 +6631,7 @@ static void status_led_print_status(void)
         " processing_thinking_scan_profile=da_long_gap_grouped_dada_rest"
         " processing_thinking_period_ms=%u"
         " processing_stale_timeout_ms=%u"
-        " ota_progress_style=LED5_OK_cyan_pulse_EC11_progress_EDGE_chase"
+        " ota_progress_style=LED5_OK_cyan_progress_write_tick_EC11_progress_EDGE_chase"
         " ota_progress_idle_blocker=POWER_MANAGER_BLOCKER_OTA"
         " strip_dirty_tx=1 strip_tx_failure_retry_dirty=1 suspended_strip_resume_dirty=1"
         " status_tx_last=1 rmt_idle_drive=active_dma_low_power_all_zone_non_dma_final_frame_then_release_gpio_low"

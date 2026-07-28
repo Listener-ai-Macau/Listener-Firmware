@@ -174,7 +174,7 @@ CHECKS = {
         "STATUS_LED_OK_SUCCESS_BLUE_BALANCE 0U",
         "STATUS_LED_PREVIEW_BLE_OVERRIDE_MS 15000U",
         "STATUS_LED_BLE_REPAIR_CUE_MS 2700U",
-        "STATUS_LED_BLE_REPAIR_CUE_LEAD_CLEAR_MS (STATUS_LED_IDLE_TRANSITION_CLEAR_MS + STATUS_LED_REFRESH_MS)",
+        "STATUS_LED_BLE_REPAIR_CUE_LEAD_CLEAR_MS 0U",
         "STATUS_LED_BLE_REPAIR_WINDOW_MAX_MS 120000U",
         "STATUS_LED_EC11_REPAIR_BLINK_MIN_PERCENT 4U",
         "STATUS_LED_EC11_REPAIR_BLINK_MAX_PERCENT 16U",
@@ -461,7 +461,9 @@ CHECKS = {
         "status_led_ota_progress_percent_locked",
         "ota_active=%u",
         "ota_progress_percent=%u",
-        "ota_progress_style=LED5_OK_cyan_pulse_EC11_progress_EDGE_chase",
+        "ota_progress_style=LED5_OK_cyan_progress_write_tick_EC11_progress_EDGE_chase",
+        "STATUS_LED_OTA_OK_WRITE_TICK_PERIOD_MS 700U",
+        "STATUS_LED_OTA_OK_WRITE_TICK_ON_MS 90U",
         "ota_progress_idle_blocker=POWER_MANAGER_BLOCKER_OTA",
         "status_led_effect_elapsed_ms_locked",
         "status_led_set_recording_level",
@@ -2679,6 +2681,17 @@ def main() -> int:
         failures.append("status_led.c: repeated BLE repair notifications must not restart the active three-cycle cue")
     elif "status_led_force_transition_clear_locked(STATUS_LED_TRANSITION_CLEAR_REPAIR)" in repair_start.group("body"):
         failures.append("status_led.c: BLE repair must not insert a transition clear before the accepted double-flash cue")
+    repair_notify = extract_c_function(status_led, "status_led_notify_ble_repairing_for_ms")
+    if (
+        "s_state.output_disabled = false;" not in repair_notify
+        or "s_state.low_power_disabled = false;" not in repair_notify
+        or "s_state.transition_clear_mask = 0U;" not in repair_notify
+        or "status_led_start_ble_repair_locked_for_ms(now_ms, hold_ms);" not in repair_notify
+        or "status_led_resume_interactive_output_locked();" in repair_notify
+    ):
+        failures.append(
+            "status_led.c: re-pair notify must wake fully and paint BLE+EC11 immediately without an interactive all-strip black clear"
+        )
     recovery_window = extract_c_function(status_led, "status_led_ble_recovery_window_active_locked")
     if (
         "status_led_ble_repair_active_locked(now_ms)" not in recovery_window
@@ -3307,12 +3320,14 @@ def main() -> int:
     if (
         "status_led_shutdown_confirm_active_locked(now_ms)" not in transition_clear_preserve_ec11
         or "status_led_ec11_feedback_active_locked(now_ms)" not in transition_clear_preserve_ec11
+        or "ble_repair_cue_started_ms" not in transition_clear_preserve_ec11
+        or "ble_repair_cue_until_ms" not in transition_clear_preserve_ec11
         or "STATUS_LED_TRANSITION_CLEAR_ALL_STRIPS" not in transition_clear_preserve_ec11
         or "STATUS_LED_TRANSITION_CLEAR_EC11" not in transition_clear_preserve_ec11
         or "STATUS_LED_TRANSITION_CLEAR_STATUS_ACCENTS" not in transition_clear_preserve_ec11
     ):
         failures.append(
-            "status_led.c: pending transition clears must preserve a live EC11 rotation or shutdown-confirm frame instead of transmitting an EC11 black frame"
+            "status_led.c: pending transition clears must preserve a live EC11 rotation, shutdown-confirm, or re-pair ring instead of transmitting an EC11 black frame"
         )
     transition_clear_render = extract_c_function(status_led, "status_led_render_transition_clear_locked")
     if "status_led_transition_clear_mask_preserving_active_ec11_locked(" not in transition_clear_render:
