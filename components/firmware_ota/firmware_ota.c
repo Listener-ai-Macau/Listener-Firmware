@@ -548,7 +548,12 @@ esp_err_t firmware_ota_begin(size_t image_size, const char *target_version)
     firmware_ota_log_observability_correlation(correlation_id);
     firmware_ota_blocker_t blocker = firmware_ota_get_blocker();
     if (blocker != FIRMWARE_OTA_BLOCKER_NONE) {
-        ESP_LOGW(TAG, "OTA begin rejected: blocker=%s", firmware_ota_blocker_name(blocker));
+        ESP_LOGW(
+            TAG,
+            "OTA begin REJECTED by device policy blocker=%s image_size=%u running=%s",
+            firmware_ota_blocker_name(blocker),
+            (unsigned)image_size,
+            listener_device_get_fw_version());
         firmware_ota_log_event(DIAG_OTA_REJECTED, DIAG_SEV_WARN, NULL, 0, 0, (uint32_t)blocker);
         status_led_set_error(STATUS_LED_ERROR_DOMAIN_OTA, STATUS_LED_ERROR_RETRYABLE, "ota_begin_rejected");
         return ESP_ERR_INVALID_STATE;
@@ -556,6 +561,7 @@ esp_err_t firmware_ota_begin(size_t image_size, const char *target_version)
 
     const esp_partition_t *partition = esp_ota_get_next_update_partition(NULL);
     if (partition == NULL) {
+        ESP_LOGE(TAG, "OTA begin REJECTED: no update partition image_size=%u", (unsigned)image_size);
         firmware_ota_log_event(DIAG_OTA_REJECTED, DIAG_SEV_ERROR, NULL, 0, 0, FIRMWARE_OTA_BLOCKER_NO_PARTITION);
         status_led_set_error(STATUS_LED_ERROR_DOMAIN_OTA, STATUS_LED_ERROR_HARD, "ota_no_update_partition");
         return ESP_ERR_NOT_FOUND;

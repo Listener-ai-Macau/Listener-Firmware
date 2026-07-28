@@ -169,6 +169,46 @@ static bool ble_firmware_ota_schedule_reboot(void)
     return started == pdPASS;
 }
 
+static const char *ble_firmware_ota_error_name(uint8_t error)
+{
+    switch (error) {
+    case DENZIC_OTA_V1_ERROR_NONE:
+        return "none";
+    case DENZIC_OTA_V1_ERROR_BAD_MAGIC:
+        return "bad_magic";
+    case DENZIC_OTA_V1_ERROR_BAD_STATE:
+        return "bad_state";
+    case DENZIC_OTA_V1_ERROR_BAD_SIZE:
+        return "bad_size";
+    case DENZIC_OTA_V1_ERROR_OFFSET_MISMATCH:
+        return "offset_mismatch";
+    case DENZIC_OTA_V1_ERROR_STORAGE_WRITE:
+        return "storage_write";
+    case DENZIC_OTA_V1_ERROR_STORAGE_BEGIN:
+        return "storage_begin";
+    case DENZIC_OTA_V1_ERROR_STORAGE_FINISH:
+        return "storage_finish";
+    default:
+        return "unknown";
+    }
+}
+
+static const char *ble_firmware_ota_op_name(uint8_t op)
+{
+    switch (op) {
+    case DENZIC_OTA_V1_OP_BEGIN:
+        return "BEGIN";
+    case DENZIC_OTA_V1_OP_SYNC:
+        return "SYNC";
+    case DENZIC_OTA_V1_OP_FINISH:
+        return "FINISH";
+    case DENZIC_OTA_V1_OP_ABORT:
+        return "ABORT";
+    default:
+        return "OTHER";
+    }
+}
+
 static bool ble_firmware_ota_storage_begin(void *driver_context, uint32_t image_size)
 {
     (void)driver_context;
@@ -176,8 +216,24 @@ static bool ble_firmware_ota_storage_begin(void *driver_context, uint32_t image_
     s_active_link_confirmed = false;
     /* New image session: drop any dual-lane futures from a prior attempt. */
     denzic_ota_v1_reorder_clear(&s_ota_reorder);
+    const firmware_ota_blocker_t blocker_before = firmware_ota_get_blocker();
     esp_err_t ret = firmware_ota_begin(image_size, DENZIC_OTA_V1_PROTOCOL_NAME);
-    ESP_LOGI(TAG, "Denzic OTA v1 begin size=%u ret=%s", (unsigned)image_size, esp_err_to_name(ret));
+    if (ret == ESP_OK) {
+        ESP_LOGI(
+            TAG,
+            "Denzic OTA v1 storage begin accepted size=%u blocker_before=%s",
+            (unsigned)image_size,
+            firmware_ota_blocker_name(blocker_before));
+    } else {
+        /* Host UI often maps transport failure to "设备拒绝升级"; this line is the
+         * device-side root cause when BEGIN reaches GATT (blocker / partition / erase). */
+        ESP_LOGW(
+            TAG,
+            "Denzic OTA v1 storage begin REJECTED size=%u ret=%s blocker=%s",
+            (unsigned)image_size,
+            esp_err_to_name(ret),
+            firmware_ota_blocker_name(firmware_ota_get_blocker()));
+    }
     return ret == ESP_OK;
 }
 
@@ -384,12 +440,42 @@ static int ble_firmware_ota_handle_control_write(struct os_mbuf *om)
     uint16_t length = 0;
     int att_error = ble_firmware_ota_copy_mbuf(om, control, sizeof(control), &length);
     if (att_error != 0) {
+        ESP_LOGW(TAG, "Denzic OTA v1 control copy failed att_error=%d", att_error);
         return att_error;
     }
 
     int result = 0;
     bool accepted = false;
     const uint8_t op = length > 4 ? control[4] : 0;
+    uint32_t begin_size = 0;
+    uint16_t begin_chunk = 0;
+    uint16_t begin_window = 0;
+    if (op == DENZIC_OTA_V1_OP_BEGIN && length >= DENZIC_OTA_V1_CONTROL_BYTES) {
+        begin_size = (uint32_t)control[8]
+            | ((uint32_t)control[9] << 8)
+            | ((uint32_t)control[10] << 16)
+            | ((uint32_t)control[11] << 24);
+        begin_chunk = (uint16_t)control[12] | ((uint16_t)control[13] << 8);
+        begin_window = (uint16_t)control[14] | ((uint16_t)control[15] << 8);
+        ESP_LOGI(
+            TAG,
+            "Denzic OTA v1 control RX op=%s(%u) size=%u chunk=%u window=%u state=%u",
+            ble_firmware_ota_op_name(op),
+            op,
+            (unsigned)begin_size,
+            (unsigned)begin_chunk,
+            (unsigned)begin_window,
+            (unsigned)s_ota.state);
+    } else if (op == DENZIC_OTA_V1_OP_BEGIN || op == DENZIC_OTA_V1_OP_FINISH ||
+               op == DENZIC_OTA_V1_OP_ABORT) {
+        ESP_LOGI(
+            TAG,
+            "Denzic OTA v1 control RX op=%s(%u) len=%u state=%u",
+            ble_firmware_ota_op_name(op),
+            op,
+            length,
+            (unsigned)s_ota.state);
+    }
     ble_firmware_ota_lock();
     accepted = denzic_ota_v1_handle_control(&s_ota, control, length);
     if (accepted && op == DENZIC_OTA_V1_OP_SYNC) {
@@ -399,16 +485,30 @@ static int ble_firmware_ota_handle_control_write(struct os_mbuf *om)
     if (!accepted) {
         result = ble_firmware_ota_att_error_from_core();
     }
+    const uint8_t last_error = s_ota.last_error;
+    const uint8_t state_after = s_ota.state;
     ble_firmware_ota_unlock();
 
     if (!accepted) {
         ESP_LOGW(
             TAG,
-            "Denzic OTA v1 control rejected op=%u error=%u len=%u",
+            "Denzic OTA v1 control REJECTED op=%s(%u) error=%u(%s) att=%d len=%u state=%u size=%u",
+            ble_firmware_ota_op_name(op),
             op,
-            s_ota.last_error,
-            length);
+            last_error,
+            ble_firmware_ota_error_name(last_error),
+            result,
+            length,
+            (unsigned)state_after,
+            (unsigned)begin_size);
     } else if (op == DENZIC_OTA_V1_OP_BEGIN) {
+        ESP_LOGI(
+            TAG,
+            "Denzic OTA v1 BEGIN accepted size=%u chunk=%u window=%u state=%u",
+            (unsigned)begin_size,
+            (unsigned)begin_chunk,
+            (unsigned)begin_window,
+            (unsigned)state_after);
         /* BEGIN starts bulk WWR: re-assert active CI/2M PHY without waiting for
          * the slower OTA reconnect terminate path. */
         if (ble_hid_gap_schedule_active_connection != NULL ||
@@ -419,6 +519,13 @@ static int ble_firmware_ota_handle_control_write(struct os_mbuf *om)
             ESP_LOGI(TAG, "Denzic OTA v1 BEGIN requested active BLE link ret=%s",
                      esp_err_to_name(ret));
         }
+    } else if (op == DENZIC_OTA_V1_OP_FINISH || op == DENZIC_OTA_V1_OP_ABORT) {
+        ESP_LOGI(
+            TAG,
+            "Denzic OTA v1 control accepted op=%s(%u) state=%u",
+            ble_firmware_ota_op_name(op),
+            op,
+            (unsigned)state_after);
     }
     return result;
 }
