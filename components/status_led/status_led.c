@@ -5015,28 +5015,34 @@ void status_led_show_status_window(const char *reason)
 
 void status_led_log_boot_feedback_after_diag_init(void)
 {
+    /* Owner 2026-07-28: single boot PWR cue only. status_led_start already
+     * force-transmits boot feedback; re-marking/re-transmitting here looked like
+     * two power-on lights (especially after OTA reboot). Log-only, no second cue. */
     status_led_frame_t frame = {0};
     uint32_t now_ms = status_led_now_ms();
-    bool changed = false;
     if (xSemaphoreTake(s_mutex, portMAX_DELAY) == pdTRUE) {
         s_state.status_window_until_ms = now_ms + STATUS_LED_STATUS_WINDOW_MS;
-        s_state.last_transition_ms = now_ms;
         s_state.output_disabled = false;
         s_state.low_power_disabled = false;
         s_state.preview_suppress_accents = false;
         s_state.preview_effect_only = false;
-        status_led_mark_boot_feedback_locked(now_ms);
-        status_led_set_last_reason_locked("booting");
-        frame.status[STATUS_LED_SEM_PWR] = status_led_boot_power_color_locked();
+        /* Keep existing boot_feedback_until_ms / boot_ble_ready_notified —
+         * do not status_led_mark_boot_feedback_locked (would reset the cue). */
+        if (s_state.last_reason[0] == '\0' ||
+            !status_led_reason_is_boot_feedback(s_state.last_reason)) {
+            status_led_set_last_reason_locked("booting");
+        }
+        /* Snapshot last transmitted frame for diag logs only — no extra transmit. */
+        memcpy(&frame, &s_state.last_frame, sizeof(frame));
+        if (!status_led_rgb_is_on(frame.status[STATUS_LED_SEM_PWR]) &&
+            status_led_boot_feedback_active_locked(now_ms)) {
+            frame.status[STATUS_LED_SEM_PWR] = status_led_boot_power_color_locked();
+        }
         status_led_apply_zone_brightness_caps_locked(&frame);
         for (uint8_t index = 0U; index < 3U; ++index) {
             status_led_log_visual_state_event_locked(&frame, now_ms, true);
         }
-        changed = true;
         xSemaphoreGive(s_mutex);
-    }
-    if (changed) {
-        status_led_request_refresh();
     }
 }
 

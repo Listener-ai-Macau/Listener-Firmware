@@ -95,9 +95,10 @@ void app_main(void)
     bool status_led_ready = led_ret == ESP_OK;
     if (led_ret != ESP_OK) {
         ESP_LOGW(TAG, "status LED start degraded: %s", esp_err_to_name(led_ret));
-    } else {
-        status_led_show_status_window("booting");
     }
+    /* Do not call status_led_show_status_window("booting") here: start() already
+     * arms a single boot PWR cue. Re-arming + log_boot_feedback retransmit read
+     * as two power-on lights after OTA (owner 2026-07-28). */
 
     diag_log_init();
     if (status_led_ready) {
