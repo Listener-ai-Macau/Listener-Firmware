@@ -241,21 +241,21 @@
 #define STATUS_LED_EDGE_PROCESSING_BASE_PERCENT 10U
 #define STATUS_LED_EC11_PROCESSING_ORBIT_PERCENT 40U
 #define STATUS_LED_EDGE_PROCESSING_ORBIT_PERCENT 36U
-/* OTA is "writing firmware", not charging/idle breath: LED5 tracks write progress
- * as a steady cyan bar plus a short square write-tick (not triangle breathe). */
-#define STATUS_LED_OTA_OK_MIN_PERCENT 22U
-#define STATUS_LED_OTA_OK_MAX_PERCENT 58U
+/* OTA owner 2026-07-28: status LED only — steady cyan that ramps with write
+ * progress. No write-tick blink, no EC11/edge chase during OTA. */
+#define STATUS_LED_OTA_OK_MIN_PERCENT 18U
+#define STATUS_LED_OTA_OK_MAX_PERCENT 72U
 #define STATUS_LED_OTA_OK_WRITE_TICK_PERIOD_MS 700U
-#define STATUS_LED_OTA_OK_WRITE_TICK_ON_MS 90U
-#define STATUS_LED_OTA_EC11_BASE_PERCENT 5U
-#define STATUS_LED_OTA_EC11_FILL_PERCENT 18U
-#define STATUS_LED_OTA_EC11_HEAD_PERCENT 42U
-#define STATUS_LED_OTA_EC11_TAIL_PERCENT 22U
+#define STATUS_LED_OTA_OK_WRITE_TICK_ON_MS 0U
+#define STATUS_LED_OTA_EC11_BASE_PERCENT 0U
+#define STATUS_LED_OTA_EC11_FILL_PERCENT 0U
+#define STATUS_LED_OTA_EC11_HEAD_PERCENT 0U
+#define STATUS_LED_OTA_EC11_TAIL_PERCENT 0U
 #define STATUS_LED_OTA_EC11_STEP_MS STATUS_LED_EC11_RECORDING_FLOW_STEP_MS
-#define STATUS_LED_OTA_EDGE_BASE_PERCENT 4U
-#define STATUS_LED_OTA_EDGE_HEAD_PERCENT 24U
-#define STATUS_LED_OTA_EDGE_TAIL_PERCENT 14U
-#define STATUS_LED_OTA_EDGE_FADE_PERCENT 8U
+#define STATUS_LED_OTA_EDGE_BASE_PERCENT 0U
+#define STATUS_LED_OTA_EDGE_HEAD_PERCENT 0U
+#define STATUS_LED_OTA_EDGE_TAIL_PERCENT 0U
+#define STATUS_LED_OTA_EDGE_FADE_PERCENT 0U
 #define STATUS_LED_OTA_EDGE_STEP_MS 520U
 #define STATUS_LED_SHUTDOWN_CONFIRM_MS 1200U
 #define STATUS_LED_SHUTDOWN_FINAL_CONFIRM_MS 1400U
@@ -3222,23 +3222,14 @@ static uint8_t status_led_ota_ok_percent_locked(uint32_t now_ms)
         return 0U;
     }
 
-    /* Progress bar: known size maps bytes → brightness. Unknown size stays at mid
-     * floor so the write-tick still reads as active install work. */
+    /* Steady progress brightness only — no write-tick flash (owner: 慢慢全亮). */
+    (void)now_ms;
     uint8_t progress = status_led_ota_progress_percent_locked();
-    uint8_t base_percent = STATUS_LED_OTA_OK_MIN_PERCENT;
     if (s_state.ota_expected_size > 0U) {
         uint32_t span = (uint32_t)STATUS_LED_OTA_OK_MAX_PERCENT - STATUS_LED_OTA_OK_MIN_PERCENT;
-        base_percent = (uint8_t)(STATUS_LED_OTA_OK_MIN_PERCENT + ((span * progress) / 100U));
-    } else {
-        base_percent = (uint8_t)((STATUS_LED_OTA_OK_MIN_PERCENT + STATUS_LED_OTA_OK_MAX_PERCENT) / 2U);
+        return (uint8_t)(STATUS_LED_OTA_OK_MIN_PERCENT + ((span * progress) / 100U));
     }
-
-    uint32_t elapsed = status_led_ota_elapsed_ms_locked(now_ms);
-    uint32_t phase = elapsed % STATUS_LED_OTA_OK_WRITE_TICK_PERIOD_MS;
-    if (phase < STATUS_LED_OTA_OK_WRITE_TICK_ON_MS) {
-        return STATUS_LED_OTA_OK_MAX_PERCENT;
-    }
-    return base_percent;
+    return (uint8_t)((STATUS_LED_OTA_OK_MIN_PERCENT + STATUS_LED_OTA_OK_MAX_PERCENT) / 2U);
 }
 
 static bool status_led_shutdown_confirm_active_locked(uint32_t now_ms)
@@ -3715,7 +3706,7 @@ static void status_led_render_ec11_locked(status_led_frame_t *frame, uint32_t no
     }
 
     if (s_state.ota_active) {
-        status_led_render_ec11_ota_locked(frame, now_ms);
+        /* Owner: OTA uses status LED progress only — leave EC11 dark (no chase). */
         return;
     }
 
@@ -3924,15 +3915,7 @@ static void status_led_render_edge_locked(status_led_frame_t *frame, uint32_t no
     }
 
     if (s_state.ota_active) {
-        status_led_render_edge_clockwise_chase_locked(
-            frame,
-            status_led_ota_elapsed_ms_locked(now_ms),
-            status_led_ota_color(),
-            STATUS_LED_OTA_EDGE_BASE_PERCENT,
-            STATUS_LED_OTA_EDGE_HEAD_PERCENT,
-            STATUS_LED_OTA_EDGE_TAIL_PERCENT,
-            STATUS_LED_OTA_EDGE_FADE_PERCENT,
-            STATUS_LED_OTA_EDGE_STEP_MS);
+        /* Owner: no edge chase during OTA — status LED progress only. */
         return;
     }
 
@@ -4965,7 +4948,8 @@ esp_err_t status_led_init(void)
     diag_log(DIAG_SRC_STATUS_LED, DIAG_LED_STATE, DIAG_SEV_INFO,
              (uint32_t)s_state.profile, (uint32_t)BOARD_PINS_RGB_STATUS_IO,
              (uint32_t)BOARD_PINS_RGB_KEY_IO, (uint32_t)BOARD_PINS_RGB_EDGE_IO);
-    status_led_force_boot_feedback();
+    /* Boot cue is armed once in status_led_start only — init+start both used to
+     * call force_boot_feedback which owners read as two power-on lights after OTA. */
     return final_ret;
 }
 
