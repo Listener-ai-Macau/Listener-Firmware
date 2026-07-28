@@ -349,6 +349,8 @@ static const voice_recording_control_transition_case_t VOICE_RECORDING_CONTROL_F
     },
 };
 
+static esp_err_t voice_recording_control_activate_automatic_session(const char *source);
+
 static bool voice_recording_control_lock(void)
 {
     return s_state_mutex == NULL || xSemaphoreTake(s_state_mutex, portMAX_DELAY) == pdTRUE;
