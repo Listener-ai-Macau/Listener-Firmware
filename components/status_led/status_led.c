@@ -5448,15 +5448,34 @@ void status_led_notify_success(const char *reason)
     if (xSemaphoreTake(s_mutex, portMAX_DELAY) == pdTRUE) {
         status_led_resume_output_locked();
         s_state.preview_effect_only = false;
-        s_state.ok_started_ms = now_ms;
-        s_state.ok_until_ms = now_ms + STATUS_LED_OK_TOTAL_MS;
-        s_state.ok_warning = false;
-        s_state.status_window_until_ms = now_ms + STATUS_LED_STATUS_WINDOW_MS;
-        s_state.last_transition_ms = now_ms;
-        status_led_set_last_reason_locked(reason != NULL ? reason : "success");
-        diag_log(DIAG_SRC_STATUS_LED, DIAG_LED_STATE, DIAG_SEV_INFO, 4, 1, 0, 0);
-        changed = true;
-        xSemaphoreGive(s_mutex);
+        /* End AI without an idle black frame, then show one OK peak on LED5.
+         * set_processing(false) alone schedules transition clear → black → green
+         * which owners read as "green flashed twice". */
+        s_state.processing_active = false;
+        s_state.processing_started_ms = 0U;
+        s_state.transition_clear_mask = 0U;
+        /* Coalesce duplicate success within the same OK window so a second
+         * VREC:PROCESSING:DONE does not re-peak green. */
+        if (!s_state.ok_warning &&
+            s_state.ok_started_ms != 0U &&
+            now_ms < s_state.ok_until_ms) {
+            s_state.ok_until_ms = now_ms + STATUS_LED_OK_TOTAL_MS;
+            s_state.status_window_until_ms = now_ms + STATUS_LED_STATUS_WINDOW_MS;
+            s_state.last_transition_ms = now_ms;
+            status_led_set_last_reason_locked(reason != NULL ? reason : "success");
+            changed = true;
+            xSemaphoreGive(s_mutex);
+        } else {
+            s_state.ok_started_ms = now_ms;
+            s_state.ok_until_ms = now_ms + STATUS_LED_OK_TOTAL_MS;
+            s_state.ok_warning = false;
+            s_state.status_window_until_ms = now_ms + STATUS_LED_STATUS_WINDOW_MS;
+            s_state.last_transition_ms = now_ms;
+            status_led_set_last_reason_locked(reason != NULL ? reason : "success");
+            diag_log(DIAG_SRC_STATUS_LED, DIAG_LED_STATE, DIAG_SEV_INFO, 4, 1, 0, 0);
+            changed = true;
+            xSemaphoreGive(s_mutex);
+        }
     }
     if (changed) {
         status_led_request_refresh();
@@ -5470,6 +5489,9 @@ void status_led_notify_warning(const char *reason)
     if (xSemaphoreTake(s_mutex, portMAX_DELAY) == pdTRUE) {
         status_led_resume_output_locked();
         s_state.preview_effect_only = false;
+        s_state.processing_active = false;
+        s_state.processing_started_ms = 0U;
+        s_state.transition_clear_mask = 0U;
         s_state.ok_started_ms = now_ms;
         s_state.ok_until_ms = now_ms + STATUS_LED_OK_TOTAL_MS;
         s_state.ok_warning = true;

@@ -1897,13 +1897,33 @@ esp_err_t keyboard_start_safe_mode(void)
     ble_hid_register_usb_command_handler(keyboard_consume_usb_command);
     ec11_rotation_control_register_dispatcher(keyboard_ec11_dispatch_rotation);
     ble_audio_stream_set_control_write_handler(keyboard_ble_control_write);
-    ESP_LOGW(TAG, "safe mode: voice recording control and audio capture are disabled");
+    /*
+     * Owner contract: EC11 double-click always re-pairs. Boot-safety safe mode
+     * must disable mic/audio capture to avoid re-triggering crashy paths, but
+     * must NOT leave physical double-click and ~KEY:EC11:DOUBLE dead.
+     */
+    ESP_LOGW(
+        TAG,
+        "safe mode: audio capture disabled; EC11 double-click re-pair recovery remains available");
     esp_err_t custom_ret = keyboard_custom_start();
     if (custom_ret != ESP_OK) {
         return custom_ret;
     }
     esp_err_t ec11_ret = keyboard_ec11_start();
-    return ec11_ret == ESP_ERR_NOT_SUPPORTED ? ESP_OK : ec11_ret;
+    if (ec11_ret != ESP_OK && ec11_ret != ESP_ERR_NOT_SUPPORTED) {
+        return ec11_ret;
+    }
+
+    esp_err_t voice_ret = voice_recording_control_start_recovery_only();
+    if (voice_ret != ESP_OK) {
+        ESP_LOGW(
+            TAG,
+            "safe mode: EC11 recovery path started degraded: %s",
+            esp_err_to_name(voice_ret));
+    }
+    return voice_ret == ESP_OK
+        ? (ec11_ret == ESP_ERR_NOT_SUPPORTED ? ESP_OK : ec11_ret)
+        : voice_ret;
 }
 
 uint32_t keyboard_get_key_press_count(void)

@@ -31,10 +31,12 @@
 #include "esp_codec_dev_defaults.h"
 #endif
 
+#include "esp_heap_caps.h"
 #include "esp_log.h"
 #include "diag_log.h"
 #include "diag_log_events.h"
 #include "watchdog_platform.h"
+#include "freertos/idf_additions.h"
 
 /* ---------- Shared defines ---------- */
 
@@ -1766,7 +1768,13 @@ static esp_err_t audio_capture_pdm_afe_init(void)
         s_pdm_afe_handle = NULL;
         return ESP_ERR_NO_MEM;
     }
-    BaseType_t task_ok = xTaskCreatePinnedToCore(
+    /*
+     * Prefer SPIRAM task stacks for AFE fetch: two internal 6 KB audio stacks
+     * plus I2S DMA no longer fit after 1.0.3 internal-static NimBLE/keyboard/
+     * OTA stacks (owner boot: internal_free~4KB → pdm rx NO_MEM → NimBLE assert).
+     * Fetch is less I2S-latency critical than the capture feed task.
+     */
+    BaseType_t task_ok = xTaskCreatePinnedToCoreWithCaps(
         audio_capture_pdm_afe_fetch_task,
         "audio_afe_fetch",
         AUDIO_CAPTURE_TASK_STACK_BYTES,
@@ -1775,11 +1783,30 @@ static esp_err_t audio_capture_pdm_afe_init(void)
          * consumed before the AFE ring can overwrite audio. */
         AUDIO_CAPTURE_AFE_FETCH_TASK_PRIORITY,
         &s_pdm_afe_fetch_task_handle,
-        AUDIO_CAPTURE_AFE_FETCH_TASK_CORE);
+        AUDIO_CAPTURE_AFE_FETCH_TASK_CORE,
+        MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    if (task_ok != pdPASS) {
+        /* Fallback: internal heap if SPIRAM stack create is unavailable. */
+        task_ok = xTaskCreatePinnedToCore(
+            audio_capture_pdm_afe_fetch_task,
+            "audio_afe_fetch",
+            AUDIO_CAPTURE_TASK_STACK_BYTES,
+            NULL,
+            AUDIO_CAPTURE_AFE_FETCH_TASK_PRIORITY,
+            &s_pdm_afe_fetch_task_handle,
+            AUDIO_CAPTURE_AFE_FETCH_TASK_CORE);
+    }
     if (task_ok != pdPASS) {
         ESP_LOGE(TAG, "PDM AFE fetch task creation failed");
         vad_destroy(s_pdm_vad_handle);
         s_pdm_vad_handle = NULL;
+        free(s_pdm_afe_feed_buffer);
+        free(s_pdm_afe_fetch_buffer);
+        s_pdm_afe_feed_buffer = NULL;
+        s_pdm_afe_fetch_buffer = NULL;
+        s_pdm_afe_handle->destroy(s_pdm_afe_data);
+        s_pdm_afe_data = NULL;
+        s_pdm_afe_handle = NULL;
         return ESP_ERR_NO_MEM;
     }
 
@@ -2059,7 +2086,12 @@ esp_err_t audio_capture_start(void)
     }
 #endif
 
-    BaseType_t task_ok = xTaskCreatePinnedToCore(
+    /*
+     * Capture feed stays on internal DRAM when possible (I2S hot path). If
+     * internal is exhausted, fall back to SPIRAM rather than failing the whole
+     * mic path and panicking NimBLE via residual AFE state.
+     */
+    BaseType_t capture_task_ok = xTaskCreatePinnedToCore(
         audio_capture_task,
         "audio_capture_task",
         AUDIO_CAPTURE_TASK_STACK_BYTES,
@@ -2067,8 +2099,46 @@ esp_err_t audio_capture_start(void)
         5,
         &s_capture_task_handle,
         AUDIO_CAPTURE_TASK_CORE);
-    if (task_ok != pdPASS) {
-        ESP_LOGE(TAG, "task create fail");
+    if (capture_task_ok != pdPASS) {
+        ESP_LOGW(
+            TAG,
+            "audio capture internal stack create failed free=%u; retry SPIRAM stack",
+            (unsigned)esp_get_free_internal_heap_size());
+        capture_task_ok = xTaskCreatePinnedToCoreWithCaps(
+            audio_capture_task,
+            "audio_capture_task",
+            AUDIO_CAPTURE_TASK_STACK_BYTES,
+            NULL,
+            5,
+            &s_capture_task_handle,
+            AUDIO_CAPTURE_TASK_CORE,
+            MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    }
+    if (capture_task_ok != pdPASS) {
+        ESP_LOGE(
+            TAG,
+            "task create fail internal_free=%u",
+            (unsigned)esp_get_free_internal_heap_size());
+#if defined(CONFIG_AUDIO_CAPTURE_MIC_SPH0655_PDM) && CONFIG_AUDIO_CAPTURE_PDM_AFE_WEBRTC
+        /* Do not leave AFE/fetch half-initialized: that OOM cascade panics NimBLE. */
+        if (s_pdm_afe_fetch_task_handle != NULL) {
+            vTaskDelete(s_pdm_afe_fetch_task_handle);
+            s_pdm_afe_fetch_task_handle = NULL;
+        }
+        if (s_pdm_vad_handle != NULL) {
+            vad_destroy(s_pdm_vad_handle);
+            s_pdm_vad_handle = NULL;
+        }
+        free(s_pdm_afe_feed_buffer);
+        free(s_pdm_afe_fetch_buffer);
+        s_pdm_afe_feed_buffer = NULL;
+        s_pdm_afe_fetch_buffer = NULL;
+        if (s_pdm_afe_handle != NULL && s_pdm_afe_data != NULL) {
+            s_pdm_afe_handle->destroy(s_pdm_afe_data);
+        }
+        s_pdm_afe_data = NULL;
+        s_pdm_afe_handle = NULL;
+#endif
         i2s_channel_disable(s_i2s_rx_handle);
         vSemaphoreDelete(s_state_mutex);
         s_state_mutex = NULL;

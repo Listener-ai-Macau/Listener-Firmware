@@ -2473,13 +2473,14 @@ def main() -> int:
         REPO_ROOT / "components/voice_recording_control/voice_recording_control.c"
     ).read_text(encoding="utf-8")
     voice_start_body = re.search(
-        r"esp_err_t\s+voice_recording_control_start\(void\)[\s\S]*?"
-        r"bool\s+voice_recording_control_consume_usb_control_byte",
+        r"static\s+esp_err_t\s+voice_recording_control_start_internal\(bool\s+enable_audio_capture\)[\s\S]*?"
+        r"esp_err_t\s+voice_recording_control_start_recovery_only\(void\)\s*\{[\s\S]*?"
+        r"voice_recording_control_start_internal\(false\)",
         voice_recording,
     )
     if voice_start_body is None:
         failures.append(
-            "components/voice_recording_control/voice_recording_control.c: missing voice_recording_control_start body"
+            "components/voice_recording_control/voice_recording_control.c: missing voice_recording_control_start_internal body (full + recovery-only entrypoints)"
         )
     else:
         voice_start_text = voice_start_body.group(0)
@@ -2489,6 +2490,25 @@ def main() -> int:
             failures.append(
                 "components/voice_recording_control/voice_recording_control.c: cold boot EC11 push input must start before audio_capture_start so audio init cannot delay wake/button feedback"
             )
+        if "voice_recording_control_start_internal(true)" not in voice_start_text:
+            failures.append(
+                "components/voice_recording_control/voice_recording_control.c: voice_recording_control_start must enable audio capture"
+            )
+        if "voice_recording_control_start_internal(false)" not in voice_start_text:
+            failures.append(
+                "components/voice_recording_control/voice_recording_control.c: recovery-only start must skip audio capture for safe-mode EC11 re-pair"
+            )
+    keyboard_safe = re.search(
+        r"esp_err_t\s+keyboard_start_safe_mode\(void\)[\s\S]*?"
+        r"uint32_t\s+keyboard_get_key_press_count",
+        keyboard,
+    )
+    if keyboard_safe is None:
+        failures.append("components/keyboard/keyboard.c: missing keyboard_start_safe_mode body")
+    elif "voice_recording_control_start_recovery_only()" not in keyboard_safe.group(0):
+        failures.append(
+            "components/keyboard/keyboard.c: safe mode must keep EC11 double-click re-pair via voice_recording_control_start_recovery_only"
+        )
     if (
         not re.search(r"#define\s+VOICE_KEY_INPUT_IDLE_BACKUP_POLL_MS\s+\(20\)", voice_key)
         or not re.search(r"#define\s+VOICE_KEY_INPUT_LOW_POWER_IDLE_BACKUP_POLL_MS\s+\(20\)", voice_key)

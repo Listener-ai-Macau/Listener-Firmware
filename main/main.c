@@ -9,6 +9,7 @@
 #include "firmware_ota.h"
 #include "power_manager.h"
 #include "status_led.h"
+#include "voice_recording_control.h"
 #include "watchdog_platform.h"
 
 #include "esp_err.h"
@@ -171,6 +172,17 @@ void app_main(void)
     }
     system_health_init();
     esp_err_t ble_start_ret = ble_ret == ESP_OK ? ble_hid_start() : ble_ret;
+    /*
+     * Mic/AFE must start only after NimBLE host is running. Starting audio first
+     * exhausted internal DRAM (~3KB free) and paniced ble_hs_event_start_stage2,
+     * which then latched boot_safety safe_mode (red error LED).
+     */
+    if (!safe_mode) {
+        esp_err_t audio_ret = voice_recording_control_enable_audio();
+        if (audio_ret != ESP_OK) {
+            ESP_LOGW(TAG, "deferred audio enable degraded: %s", esp_err_to_name(audio_ret));
+        }
+    }
     system_health_start();
     power_ret = power_manager_start();
     if (power_ret != ESP_OK) {

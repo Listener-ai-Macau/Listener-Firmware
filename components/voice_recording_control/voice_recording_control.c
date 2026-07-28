@@ -1782,7 +1782,8 @@ static void voice_recording_control_host_processing_stop(const char *source)
 static void voice_recording_control_host_processing_done(const char *source)
 {
     voice_recording_control_note_ble_type_processing_activity(source, "host_processing_done");
-    status_led_set_processing(false, "host_processing_done");
+    /* notify_success clears AI + shows one OK peak. Do not set_processing(false)
+     * first — that schedules an idle black frame and makes OK look like two greens. */
     status_led_notify_success("host_processing_done");
     ESP_LOGI(TAG, "host processing done source=%s", source);
     voice_recording_control_log_device_status(voice_recording_state_name(s_state), "host_processing_done");
@@ -1791,7 +1792,7 @@ static void voice_recording_control_host_processing_done(const char *source)
 static void voice_recording_control_host_processing_warning(const char *source)
 {
     voice_recording_control_note_ble_type_processing_activity(source, "host_processing_warning");
-    status_led_set_processing(false, "host_processing_warning");
+    /* Same handoff as DONE: warning owns the result window without a clear flash. */
     status_led_notify_warning("host_processing_warning");
     ESP_LOGI(TAG, "host processing warning source=%s", source);
     voice_recording_control_log_device_status(voice_recording_state_name(s_state), "host_processing_warning");
@@ -2288,7 +2289,7 @@ uint32_t voice_recording_control_get_session_count(void)
     return session_count;
 }
 
-esp_err_t voice_recording_control_start(void)
+static esp_err_t voice_recording_control_start_internal(bool enable_audio_capture)
 {
     if (s_started) {
         return ESP_OK;
@@ -2313,8 +2314,10 @@ esp_err_t voice_recording_control_start(void)
     s_voice_activation_config.tail_ms = 350u;
     denzic_voice_activation_v1_reset(
         &s_voice_activation_machine);
-    audio_capture_set_voice_activity_handler(
-        voice_recording_control_on_voice_activity);
+    if (enable_audio_capture) {
+        audio_capture_set_voice_activity_handler(
+            voice_recording_control_on_voice_activity);
+    }
 
     esp_err_t key_ret = voice_key_input_start();
     if (key_ret != ESP_OK) {
@@ -2323,12 +2326,21 @@ esp_err_t voice_recording_control_start(void)
         status_led_set_error(STATUS_LED_ERROR_DOMAIN_REC, STATUS_LED_ERROR_RETRYABLE, "voice_key_input_start_failed");
     }
 
-    esp_err_t audio_ret = audio_capture_start();
-    if (audio_ret != ESP_OK) {
-        ESP_LOGW(TAG, "audio capture start failed; keeping recovery/status path alive: %s", esp_err_to_name(audio_ret));
-        voice_recording_control_log_device_error("error", "audio_capture_start_failed", audio_ret);
+    esp_err_t audio_ret = ESP_OK;
+    if (enable_audio_capture) {
+        audio_ret = audio_capture_start();
+        if (audio_ret != ESP_OK) {
+            ESP_LOGW(TAG, "audio capture start failed; keeping recovery/status path alive: %s", esp_err_to_name(audio_ret));
+            voice_recording_control_log_device_error("error", "audio_capture_start_failed", audio_ret);
+            status_led_set_recording(false, STATUS_LED_REC_SOURCE_NOT_AVAILABLE);
+            status_led_set_error(STATUS_LED_ERROR_DOMAIN_REC, STATUS_LED_ERROR_RETRYABLE, "audio_capture_start_failed");
+        }
+    } else {
+        ESP_LOGW(
+            TAG,
+            "recovery-only start: audio capture left disabled (EC11 double-click re-pair still active)");
         status_led_set_recording(false, STATUS_LED_REC_SOURCE_NOT_AVAILABLE);
-        status_led_set_error(STATUS_LED_ERROR_DOMAIN_REC, STATUS_LED_ERROR_RETRYABLE, "audio_capture_start_failed");
+        audio_ret = ESP_ERR_NOT_SUPPORTED;
     }
 
     ble_audio_stream_set_control_write_handler(voice_recording_control_ble_control_write);
@@ -2351,8 +2363,9 @@ esp_err_t voice_recording_control_start(void)
     s_started = true;
     ESP_LOGI(
         TAG,
-        "voice recording control ready: source=%s toggle start/stop fsm_artifact_cases=%u",
+        "voice recording control ready: source=%s audio=%u toggle start/stop fsm_artifact_cases=%u",
         voice_key_input_get_active_source(),
+        enable_audio_capture ? 1u : 0u,
         (unsigned)VOICE_RECORDING_CONTROL_ARRAY_SIZE(VOICE_RECORDING_CONTROL_FSM_ARTIFACT));
     if (audio_ret == ESP_OK && key_ret == ESP_OK) {
         voice_recording_control_log_device_status("ready", "voice_recording_control_started");
@@ -2365,7 +2378,55 @@ esp_err_t voice_recording_control_start(void)
         return key_ret;
     }
 
-    voice_recording_control_log_device_error("degraded", "voice_recording_control_audio_degraded", audio_ret);
+    voice_recording_control_log_device_error(
+        "degraded",
+        enable_audio_capture ? "voice_recording_control_audio_degraded" : "voice_recording_control_recovery_only",
+        audio_ret);
+    return ESP_OK;
+}
+
+esp_err_t voice_recording_control_start(void)
+{
+    /*
+     * Defer mic/AFE until voice_recording_control_enable_audio() after BLE host
+     * start. Control + EC11 recovery still come up immediately.
+     */
+    return voice_recording_control_start_internal(false);
+}
+
+esp_err_t voice_recording_control_start_recovery_only(void)
+{
+    return voice_recording_control_start_internal(false);
+}
+
+esp_err_t voice_recording_control_enable_audio(void)
+{
+    if (!s_started) {
+        esp_err_t start_ret = voice_recording_control_start_internal(true);
+        return start_ret;
+    }
+
+    audio_capture_set_voice_activity_handler(
+        voice_recording_control_on_voice_activity);
+    esp_err_t audio_ret = audio_capture_start();
+    if (audio_ret != ESP_OK) {
+        ESP_LOGW(
+            TAG,
+            "deferred audio capture start failed; recovery path stays alive: %s",
+            esp_err_to_name(audio_ret));
+        voice_recording_control_log_device_error("error", "audio_capture_start_failed", audio_ret);
+        status_led_set_recording(false, STATUS_LED_REC_SOURCE_NOT_AVAILABLE);
+        status_led_set_error(STATUS_LED_ERROR_DOMAIN_REC, STATUS_LED_ERROR_RETRYABLE, "audio_capture_start_failed");
+        voice_recording_control_log_device_error(
+            "degraded",
+            "voice_recording_control_audio_degraded",
+            audio_ret);
+        return ESP_OK;
+    }
+
+    ESP_LOGI(TAG, "deferred audio capture started after BLE host");
+    voice_recording_control_log_device_status("ready", "voice_recording_control_audio_enabled");
+    status_led_show_status_window("voice_recording_control_audio_enabled");
     return ESP_OK;
 }
 

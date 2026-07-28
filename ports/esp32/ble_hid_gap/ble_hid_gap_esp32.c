@@ -171,6 +171,8 @@ static bool s_recovery_bond_delete_in_progress = false;
 static TaskHandle_t s_recovery_bond_delete_task_handle = NULL;
 static bool s_recovery_bond_delete_peer_known = false;
 static ble_addr_t s_recovery_bond_delete_peer;
+/* IRK NVS delete must run on the internal-DRAM bond-delete worker only. */
+static bool s_recovery_need_local_irk_reset = false;
 /* Only the Type-confirmed EC11 worker may advertise while its old peer is quarantined. */
 static bool s_recovery_advertising_while_bond_delete = false;
 static esp_timer_handle_t s_recovery_pairing_window_timer = NULL;
@@ -3717,6 +3719,7 @@ static void ble_hid_gap_recovery_bond_delete_set_state(
     if (!pending && !in_progress) {
         s_recovery_bond_delete_peer_known = false;
         memset(&s_recovery_bond_delete_peer, 0, sizeof(s_recovery_bond_delete_peer));
+        s_recovery_need_local_irk_reset = false;
     }
     portEXIT_CRITICAL(&s_ble_gap_state_lock);
 }
@@ -3905,6 +3908,29 @@ static void ble_hid_gap_recovery_bond_delete_task(void *arg)
         ESP_LOGI(TAG, "recovery: pairing window closed before async bond delete finished");
         vTaskDelete(NULL);
         return;
+    }
+
+    /*
+     * Zero-bond native re-pair still needs a local IRK NVS rewrite. That must
+     * stay on this internal-DRAM worker: callers such as voice_recording_control
+     * run on PSRAM stacks and panic on cache-disabled flash ops.
+     */
+    bool need_local_irk_reset = false;
+    portENTER_CRITICAL(&s_ble_gap_state_lock);
+    need_local_irk_reset = s_recovery_need_local_irk_reset;
+    s_recovery_need_local_irk_reset = false;
+    portEXIT_CRITICAL(&s_ble_gap_state_lock);
+    if (need_local_irk_reset && !type_controlled_recovery) {
+        esp_err_t irk_ret = ble_hid_gap_reset_local_irk_without_bonds();
+        if (irk_ret != ESP_OK) {
+            ESP_LOGE(
+                TAG,
+                "recovery: local IRK reset on internal worker failed: %s",
+                esp_err_to_name(irk_ret));
+            status_led_set_error(STATUS_LED_ERROR_DOMAIN_BLE, STATUS_LED_ERROR_HARD, "ble_recovery_irk_reset_failed");
+            vTaskDelete(NULL);
+            return;
+        }
     }
 
     if (denzic_ble_pairing_v1_rotate_before_advertising(s_native_recovery_identity_rotate_pending)) {
@@ -4281,38 +4307,36 @@ static esp_err_t ble_hid_gap_forget_bonds_and_repair_inner(
         conn.connected && conn.conn_handle != BLE_HS_CONN_HANDLE_NONE)) {
     case DENZIC_BLE_PAIRING_V1_IDENTITY_KEEP_STABLE:
         s_native_recovery_identity_rotate_pending = false;
+        s_recovery_need_local_irk_reset = false;
         break;
     case DENZIC_BLE_PAIRING_V1_IDENTITY_DEFER_ROTATE_UNTIL_DISCONNECT:
         ble_hid_gap_defer_native_recovery_identity_rotation("recovery_pairing_reset_connected");
         break;
     default:
+        /*
+         * IRK NVS + identity persist must not run on the caller stack.
+         * voice_recording_control_task is PSRAM-backed; nvs/ble_store flash
+         * ops there assert esp_task_stack_is_sane_cache_disabled and reboot
+         * (owner: double-click re-pair → red error / safe_mode loop).
+         * Hop all flash work to the internal-DRAM bond-delete worker, even
+         * when bonded_peer_count is already 0.
+         */
         if (bonded_peer_count == 0) {
-            esp_err_t irk_ret = ble_hid_gap_reset_local_irk_without_bonds();
-            if (irk_ret != ESP_OK) {
-                ESP_LOGE(
-                    TAG,
-                    "recovery: local IRK reset before native identity rotation failed: %s",
-                    esp_err_to_name(irk_ret));
-                status_led_set_error(STATUS_LED_ERROR_DOMAIN_BLE, STATUS_LED_ERROR_HARD, "ble_recovery_irk_reset_failed");
-                return irk_ret;
-            }
+            s_recovery_need_local_irk_reset = true;
         }
-        esp_err_t identity_ret =
-            ble_hid_gap_rotate_native_recovery_identity("recovery_pairing_reset");
-        if (identity_ret != ESP_OK) {
-            ESP_LOGE(
-                TAG,
-                "recovery: native Windows pairing identity rotation failed: %s",
-                esp_err_to_name(identity_ret));
-            status_led_set_error(STATUS_LED_ERROR_DOMAIN_BLE, STATUS_LED_ERROR_HARD, "ble_recovery_identity_rotate_failed");
-            return identity_ret;
-        }
+        ble_hid_gap_defer_native_recovery_identity_rotation("recovery_pairing_reset");
         break;
     }
 
-    if (bonded_peer_count > 0) {
+    const bool need_recovery_flash_worker =
+        bonded_peer_count > 0 ||
+        s_recovery_need_local_irk_reset ||
+        s_native_recovery_identity_rotate_pending;
+    if (need_recovery_flash_worker) {
         esp_err_t delete_ret = ble_hid_gap_schedule_recovery_bond_delete(
-            (uint32_t)bonded_peer_count,
+            bonded_peer_count > 0
+                ? (uint32_t)bonded_peer_count
+                : 0U,
             false,
             NULL);
         if (delete_ret != ESP_OK) {
