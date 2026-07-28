@@ -1369,6 +1369,29 @@ static void voice_recording_control_toggle(const char *source)
             }
         }
     } else if (s_state == VOICE_RECORDING_STATE_RECORDING) {
+        /*
+         * Hidden automatic (voice-activation) candidate is already RECORDING but not
+         * visible. A dictation key / host VREC:TOGGLE must take over that stream —
+         * not stop it. Stopping here made the first EC11 press a no-op (owner saw a
+         * brief Recording capsule, then nothing) while the second press started clean.
+         */
+        if (s_active_session_automatic && !s_active_session_visible) {
+            ESP_LOGI(
+                TAG,
+                "recording toggle promotes hidden automatic candidate source=%s",
+                source);
+            voice_recording_control_log_flow(
+                VOICE_RECORDING_FLOW_TOGGLE_START,
+                "toggle_promotes_hidden_automatic",
+                source,
+                ESP_OK,
+                false);
+            if (decision.activity != NULL) {
+                power_manager_record_activity(decision.activity);
+            }
+            (void)voice_recording_control_activate_automatic_session(source);
+            return;
+        }
         voice_recording_control_log_flow(
             decision.flow_stage,
             decision.detail,
@@ -2281,12 +2304,6 @@ esp_err_t voice_recording_control_start(void)
         denzic_voice_activation_v1_default_config();
     s_voice_activation_config.silence_stop_ms = 1800u;
     s_voice_activation_config.tail_ms = 350u;
-    // 引擎是纯 VAD(无关键词识别),默认 speech_confirm=300ms 太敏感:任何短促噪声/语音
-    // 都触发 voice_auto_start 自动录音,导致录音胶囊莫名反复弹出。提到 1000ms,要求持续
-    // 1s 语音才触发,过滤短促噪声/磕碰声。cooldown 默认 1500ms 太短,录完立刻又能触发,
-    // 连续重录(session6→7 接力);提到 4000ms。
-    s_voice_activation_config.speech_confirm_ms = 1000u;
-    s_voice_activation_config.cooldown_ms = 4000u;
     denzic_voice_activation_v1_reset(
         &s_voice_activation_machine);
     audio_capture_set_voice_activity_handler(
