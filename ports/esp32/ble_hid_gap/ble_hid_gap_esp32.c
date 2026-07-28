@@ -34,6 +34,7 @@
 #include "esp_timer.h"
 #include "esp_system.h"
 #include "host/ble_hs.h"
+#include "host/ble_att.h"
 #include "host/util/util.h"
 #include "nimble/nimble_port.h"
 #include "host/ble_gap.h"
@@ -115,8 +116,12 @@ static void ble_hid_gap_log_conn_desc(const char *context, uint16_t conn_handle)
  * must leave one full event for consecutive 2M audio PDUs; zero lets the
  * central choose a short event and turns 500-byte ATT notifications into a
  * sustained producer-over-consumer backlog. */
-#define BLE_HID_GAP_ACTIVE_MIN_CE_LEN 8U
-#define BLE_HID_GAP_ACTIVE_MAX_CE_LEN 12U
+/* CE units are 0.625 ms. Old 8–12 only filled ~5–7.5 ms and under-packed ATT
+ * when Windows lands ThroughputOptimized (~15 ms CI). Prefer a long CE so OTA
+ * WWR can put multiple 500 B PDUs per event; controller clamps to the actual
+ * interval if the link is already at 7.5 ms. */
+#define BLE_HID_GAP_ACTIVE_MIN_CE_LEN 12U
+#define BLE_HID_GAP_ACTIVE_MAX_CE_LEN 24U
 #define BLE_HID_GAP_AUDIO_DATA_LEN_OCTETS 251U
 #define BLE_HID_GAP_AUDIO_DATA_LEN_TIME_US 2120U
 #define BLE_HID_GAP_LOW_POWER_ITVL_MIN 80U
@@ -3153,6 +3158,16 @@ static void nimble_hid_on_sync(void)
             TAG,
             "BLE random identity restore failed during host sync: %s",
             esp_err_to_name(identity_ret));
+    }
+
+    /* Prefer a large ATT MTU so OTA WWR 500B chunks fit in a single PDU.
+     * Without this Windows may keep MaxPduSize≈23 and reject large writes
+     * with protocol_error=3 (write not permitted). */
+    rc = ble_att_set_preferred_mtu(517);
+    if (rc != 0) {
+        ESP_LOGW(TAG, "ble_att_set_preferred_mtu(517) failed: rc=%d", rc);
+    } else {
+        ESP_LOGI(TAG, "preferred ATT MTU set to 517 for OTA/audio bulk");
     }
 
     rc = ble_hs_id_infer_auto(0, &s_own_addr_type);

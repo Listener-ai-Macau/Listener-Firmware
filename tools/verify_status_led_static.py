@@ -2363,6 +2363,15 @@ def main() -> int:
             failures.append(
                 "status_led.c: OTA exit must clear the Type-OTA LED evidence"
             )
+        # v1.0.2 owner-accepted: OTA is additive; must not wipe independent activity state.
+        if "s_state.recording_active = false;" in ota_setter:
+            failures.append(
+                "status_led.c: OTA must not wipe recording state (v1.0.2 additive status rail)"
+            )
+        if "s_state.processing_active = false;" in ota_setter:
+            failures.append(
+                "status_led.c: OTA must not wipe processing state in set_ota_active (v1.0.2 contract)"
+            )
     ota_type_link_setter = extract_c_function(status_led, "status_led_set_type_ota_link_active")
     if "s_state.ota_type_link_active = active;" not in ota_type_link_setter:
         failures.append("status_led.c: missing explicit Type-OTA link evidence setter")
@@ -2563,12 +2572,47 @@ def main() -> int:
         status_led,
     ):
         failures.append("status_led.c: OTA LED state must have an independent active/progress API")
-    if not re.search(
-        r"static\s+void\s+status_led_render_ota_locked[\s\S]*?"
-        r"frame->status\[STATUS_LED_SEM_OK\]",
-        status_led,
+    # v1.0.2 owner-accepted OTA visual: additive LED5 + PWR/BLE independent.
+    # Scope checks to the function body — file-wide [\s\S]*? false-positives on pure v1.0.2.
+    try:
+        tail_guard_fn = extract_c_function(
+            status_led, "status_led_apply_status_tail_guard_locked"
+        )
+        processing_render_fn = extract_c_function(
+            status_led, "status_led_render_processing_locked"
+        )
+        power_render_fn = extract_c_function(
+            status_led, "status_led_render_power_locked"
+        )
+        ota_render_fn = extract_c_function(status_led, "status_led_render_ota_locked")
+        ble_render_fn = extract_c_function(status_led, "status_led_render_ble_locked")
+    except ValueError as exc:
+        failures.append(f"status_led.c: missing OTA visual helper for v1.0.2 contract ({exc})")
+        tail_guard_fn = processing_render_fn = power_render_fn = ota_render_fn = ble_render_fn = ""
+    if re.search(
+        r"frame->status\[STATUS_LED_SEM_(AI|REC)\]\s*=\s*\(status_led_rgb_t\)\{0\}",
+        tail_guard_fn,
     ):
+        failures.append(
+            "status_led.c: OTA must not special-case wipe AI/REC in tail guard beyond v1.0.2 contract"
+        )
+    if "ota_active" in processing_render_fn:
+        failures.append(
+            "status_led.c: processing render must match v1.0.2 (no OTA-exclusive suppress branch)"
+        )
+    if "ota_active" not in power_render_fn:
+        failures.append(
+            "status_led.c: PWR must remain active-work aware during OTA (v1.0.2 additive)"
+        )
+    if "frame->status[STATUS_LED_SEM_OK]" not in ota_render_fn:
         failures.append("status_led.c: OTA progress must own LED5=OK, not LED4=AI")
+    if re.search(
+        r"if\s*\(\s*s_state\.ota_active\s*\|\|\s*s_state\.ota_type_link_active\s*\)",
+        ble_render_fn,
+    ):
+        failures.append(
+            "status_led.c: BLE render must not OTA-force Type-ready outside v1.0.2 state machine"
+        )
     if not re.search(
         r"static\s+void\s+status_led_render_ec11_locked[\s\S]*?"
         r"if\s*\(\s*s_state\.ota_active\s*\)\s*\{[\s\S]*?"

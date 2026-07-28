@@ -2712,17 +2712,6 @@ static void status_led_render_ble_locked(status_led_frame_t *frame, uint32_t now
     status_led_rgb_t ble_manual_blue = status_led_rgb(0, 0, 255);
     status_led_rgb_t color = {0};
     const uint32_t ble_elapsed_ms = status_led_ble_elapsed_locked(now_ms);
-    /* Render-time shield: even if ble_state briefly races to CONNECTED during
-     * exclusive OTA handoff, never paint find-Type while OTA lease/active. */
-    if (s_state.ota_active || s_state.ota_type_link_active) {
-        color = status_led_token_relative_to_peak_locked(
-            ble_blue,
-            STATUS_LED_BLE_TYPE_READY_STEADY_PERCENT,
-            STATUS_LED_BLE_TYPE_READY_STEADY_PERCENT,
-            false);
-        status_led_set_max(&frame->status[STATUS_LED_SEM_BLE], color);
-        return;
-    }
     if (status_led_ble_manual_pairing_active_locked(now_ms)) {
         uint8_t percent = status_led_double_pulse_on(
                               ble_elapsed_ms,
@@ -5028,15 +5017,13 @@ void status_led_set_ble_state(status_led_ble_state_t state, bool confidence_wind
     uint32_t now_ms = status_led_now_ms();
     bool changed = false;
     if (xSemaphoreTake(s_mutex, portMAX_DELAY) == pdTRUE) {
-        /* From TYPE:OTA lease through flash write, host is Type. Never show
-         * CONNECTED "find Type" breathing — including the prep gap before
-         * ota_active becomes true (notify often drops during exclusive handoff). */
-        if ((s_state.ota_active || s_state.ota_type_link_active) &&
-            (state == STATUS_LED_BLE_CONNECTED ||
-             state == STATUS_LED_BLE_RECONNECTING)) {
+        /* TYPE:OTA proves the host is Type even while OTA temporarily owns the
+         * GATT link and the audio notify subscription is unavailable. */
+        if (s_state.ota_active && s_state.ota_type_link_active &&
+            state == STATUS_LED_BLE_CONNECTED) {
             state = STATUS_LED_BLE_TYPE_READY;
             confidence_window = false;
-            ESP_LOGI(TAG, "OTA Type lease preserves BLE Type-ready (block find-Type cue)");
+            ESP_LOGI(TAG, "OTA Type link preserved BLE Type-ready across connected update");
         }
         if (s_state.ble_state == STATUS_LED_BLE_MANUAL_PAIRING &&
             state != STATUS_LED_BLE_CONNECTED &&
@@ -5144,8 +5131,7 @@ void status_led_set_type_ota_link_active(bool active, const char *reason)
     uint32_t now_ms = status_led_now_ms();
     bool changed = false;
     if (xSemaphoreTake(s_mutex, portMAX_DELAY) == pdTRUE) {
-        bool link_changed = s_state.ota_type_link_active != active;
-        if (link_changed) {
+        if (s_state.ota_type_link_active != active) {
             s_state.ota_type_link_active = active;
             ESP_LOGI(
                 TAG,
@@ -5154,26 +5140,16 @@ void status_led_set_type_ota_link_active(bool active, const char *reason)
                 reason != NULL ? reason : "null",
                 s_state.ota_active ? 1U : 0U,
                 (unsigned)s_state.ble_state);
-        }
-        /* TYPE:OTA itself is proof of Type ownership — promote immediately even
-         * before firmware_ota sets ota_active (prep/open can take several seconds). */
-        if (active &&
-            (s_state.ble_state == STATUS_LED_BLE_CONNECTED ||
-             s_state.ble_state == STATUS_LED_BLE_RECONNECTING ||
-             s_state.ble_state == STATUS_LED_BLE_TYPE_READY)) {
-            if (s_state.ble_state != STATUS_LED_BLE_TYPE_READY) {
+            if (active && s_state.ota_active &&
+                s_state.ble_state == STATUS_LED_BLE_CONNECTED) {
                 s_state.ble_state = STATUS_LED_BLE_TYPE_READY;
                 s_state.ble_transition_ms = now_ms;
                 s_state.last_transition_ms = now_ms;
                 status_led_set_last_reason_locked(
                     reason != NULL ? reason : "type_ota_link_ready");
-                ESP_LOGI(TAG, "OTA Type link forced BLE state to Type-ready");
-                changed = true;
-            } else if (link_changed) {
+                ESP_LOGI(TAG, "OTA Type link promoted BLE state to Type-ready");
                 changed = true;
             }
-        } else if (link_changed) {
-            changed = true;
         }
         xSemaphoreGive(s_mutex);
     }
@@ -5423,20 +5399,13 @@ void status_led_set_ota_active(bool active, size_t bytes_written, size_t expecte
             s_state.ota_active = true;
             s_state.ota_bytes_written = bytes_written;
             s_state.ota_expected_size = expected_size;
-            /* Host is Type for the whole OTA transfer. Never show CONNECTED
-             * "find Type" breathing while OTA owns the link — even if TYPE:BYE
-             * cleared heartbeat before TYPE:OTA leased the link. */
-            if (s_state.ble_state == STATUS_LED_BLE_CONNECTED ||
-                s_state.ble_state == STATUS_LED_BLE_TYPE_READY ||
-                s_state.ble_state == STATUS_LED_BLE_RECONNECTING) {
-                if (s_state.ble_state != STATUS_LED_BLE_TYPE_READY) {
-                    s_state.ble_state = STATUS_LED_BLE_TYPE_READY;
-                    s_state.ble_transition_ms = now_ms;
-                    changed = true;
-                    ESP_LOGI(TAG, "OTA start forces BLE Type-ready (suppress find-Type cue)");
-                }
+            if (s_state.ota_type_link_active &&
+                s_state.ble_state == STATUS_LED_BLE_CONNECTED) {
+                s_state.ble_state = STATUS_LED_BLE_TYPE_READY;
+                s_state.ble_transition_ms = now_ms;
+                ESP_LOGI(TAG, "OTA start promoted BLE state to Type-ready from Type link evidence");
+                changed = true;
             }
-            s_state.ota_type_link_active = true;
             uint8_t new_progress = status_led_ota_progress_percent_locked();
             if (!was_active || new_progress != old_progress || reason != NULL) {
                 status_led_set_last_reason_locked(reason != NULL ? reason : "ota_progress");
