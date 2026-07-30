@@ -53,6 +53,9 @@ def check_shared_core(repo: Path) -> None:
     core = read_text(
         repo / "third_party/denzic-platform/ota/embedded/c/src/denzic_ota_v1.c"
     )
+    reorder_core = read_text(
+        repo / "third_party/denzic-platform/ota/embedded/c/src/denzic_ota_v1_reorder.c"
+    )
     require(
         "third_party/denzic-platform" in gitmodules
         and "Listener-ai-Macau/Denzic-Platform.git" in gitmodules,
@@ -82,6 +85,11 @@ def check_shared_core(repo: Path) -> None:
         "DENZIC_OTA_V1_ERROR_OFFSET_MISMATCH",
     ):
         require(token in core, f"shared embedded core is missing {token}")
+    require(
+        "denzic_ota_v1_handle_data_ordered" in reorder_core
+        and "third_party/denzic-platform/ota/embedded/c/src/denzic_ota_v1_reorder.c" in cmake,
+        "shared ordered dual-lane OTA core must be compiled into the product adapter",
+    )
 
 
 def check_header(repo: Path) -> None:
@@ -118,10 +126,10 @@ def check_bridge(repo: Path) -> None:
         '#include "denzic_ota_v1.h"',
         "denzic_ota_v1_init(",
         "denzic_ota_v1_handle_control(",
-        "denzic_ota_v1_handle_data(",
+        "denzic_ota_v1_handle_data_ordered(",
         "denzic_ota_v1_encode_status(",
         "firmware_ota_begin(image_size, DENZIC_OTA_V1_PROTOCOL_NAME)",
-        "firmware_ota_write(data, length)",
+        "firmware_ota_write(s_ota_storage_batch, length)",
         "firmware_ota_finish(false)",
         "BLE_GATT_CHR_F_WRITE | BLE_GATT_CHR_F_WRITE_NO_RSP",
         "DENZIC_OTA_V1_STATUS_FLAG_ACTIVE_LINK_CONFIRMED",
@@ -185,6 +193,7 @@ def check_runtime_integration(repo: Path) -> None:
     audio = read_text(repo / "ports/esp32/ble_audio_stream/ble_audio_stream_esp32.c")
     adapter = read_text(repo / "ports/esp32/ble_firmware_ota/ble_firmware_ota_esp32.c")
     ota = read_text(repo / "components/firmware_ota/firmware_ota.c")
+    main = read_text(repo / "main/main.c")
     require("ble_firmware_ota_register_gatt()" in hid, "BLE init must register OTA GATT")
     require("ble_firmware_ota_on_gap_disconnect(" in gap, "disconnect must reach the OTA adapter")
     require(
@@ -207,6 +216,17 @@ def check_runtime_integration(repo: Path) -> None:
         "ble_hid_gap_schedule_active_connection" in gap
         and "ble_hid_gap_active_connection_applied" in gap,
         "Listener driver must expose deferred active-link control and confirmation",
+    )
+    begin_active_request = re.search(
+        r"BEGIN starts bulk WWR immediately[\s\S]{0,800}"
+        r"ble_hid_gap_request_active_connection\s*!=\s*NULL[\s\S]{0,240}"
+        r"\?\s*ble_hid_gap_request_active_connection\(\)[\s\S]{0,120}"
+        r":\s*ble_hid_gap_schedule_active_connection\(\)",
+        adapter,
+    )
+    require(
+        begin_active_request is not None,
+        "accepted OTA BEGIN must request the bounded active link immediately and keep deferred scheduling only as fallback",
     )
     ota_handler = re.search(
         r'if\s*\(strcmp\(command, "TYPE:OTA"\)\s*==\s*0\)\s*\{(?P<body>[\s\S]*?)\n\s{4}\}',
@@ -238,15 +258,44 @@ def check_runtime_integration(repo: Path) -> None:
         and "firmware_ota_inactivity_timer_callback" in ota,
         "stale OTA sessions must exit after three minutes",
     )
+    require(
+        "bool self_check_recorded;" in ota
+        and "bool boot_ble_ready;" in ota
+        and "if (!self_check_recorded)" in ota,
+        "pending-verify must defer decisions until startup self-check evidence is recorded",
+    )
+    require(
+        "s_ota.boot_ble_ready = ble_ready;" in ota
+        and "s_ota.self_check_recorded = true;" in ota
+        and "s_ota.ble_ready = ble_ready;" not in ota,
+        "startup BLE readiness must not overwrite an early encrypted-link readiness event",
+    )
+    require(
+        "firmware_ota_record_self_check(ota_post_ok, ota_ble_ready, ota_keyboard_ready);" in main
+        and re.search(
+            r"firmware_ota_record_self_check\([^;]+;[\s\S]{0,240}"
+            r"firmware_ota_confirm_pending_verify_if_ready\(\);",
+            main,
+        ),
+        "app_main must re-evaluate pending-verify after recording all startup evidence",
+    )
+    require(
+        "if (s_ota.self_check_recorded && s_ota.boot_ble_ready)" in ota,
+        "clean-uptime fallback must promote successful BLE initialization only after self-check",
+    )
 
 
 def check_desktop(repo: Path, explicit: Path | None) -> str:
     type_repo = repo.parent / "Listener-Type"
     contract_path = explicit or type_repo / "src/lib/firmwareOta.ts"
-    rust_path = type_repo / "src-tauri/src/embedded_ble.rs"
+    rust_paths = (
+        type_repo / "src-tauri/src/embedded_ble/mod.rs",
+        type_repo / "src-tauri/src/embedded_ble/windows_ble/mod.rs",
+        type_repo / "src-tauri/src/embedded_ble/windows_ble/ota_transfer.rs",
+    )
     cargo_path = type_repo / "src-tauri/Cargo.toml"
     contract = read_text(contract_path)
-    rust = read_text(rust_path)
+    rust = "\n".join(read_text(path) for path in rust_paths)
     cargo = read_text(cargo_path)
     for token in (
         "DENZIC_OTA_V1_PROTOCOL_NAME",

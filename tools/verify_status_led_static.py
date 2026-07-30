@@ -453,6 +453,7 @@ CHECKS = {
         "STATUS_LED_EDGE_PROCESSING_ORBIT_PERCENT 36U",
         "STATUS_LED_OTA_OK_MIN_PERCENT",
         "STATUS_LED_OTA_OK_MAX_PERCENT",
+        "STATUS_LED_OTA_PROGRESS_STEPS",
         "STATUS_LED_OTA_EC11_FILL_PERCENT",
         "STATUS_LED_OTA_EDGE_HEAD_PERCENT",
         "status_led_set_ota_active",
@@ -461,9 +462,7 @@ CHECKS = {
         "status_led_ota_progress_percent_locked",
         "ota_active=%u",
         "ota_progress_percent=%u",
-        "ota_progress_style=LED5_OK_cyan_progress_write_tick_EC11_progress_EDGE_chase",
-        "STATUS_LED_OTA_OK_WRITE_TICK_PERIOD_MS 700U",
-        "STATUS_LED_OTA_OK_WRITE_TICK_ON_MS 90U",
+        "ota_progress_style=LED5_OK_cyan_write_progress_EC11_v1.0.2_progress_EDGE_v1.0.2_chase",
         "ota_progress_idle_blocker=POWER_MANAGER_BLOCKER_OTA",
         "status_led_effect_elapsed_ms_locked",
         "status_led_set_recording_level",
@@ -1359,13 +1358,20 @@ def main() -> int:
             ):
                 failures.append("status_led.c: status/key effect previews must apply Type zone caps before logging RGB evidence, while calibration tests stay full-brightness")
 
-        init_boot_index = status_init.find("status_led_force_boot_feedback();")
         init_return_index = status_init.find("return final_ret;")
         init_initialized_index = status_init.find("s_state.initialized = true;")
+        start_init_index = status_start.find("status_led_init();")
+        start_boot_index = status_start.find("status_led_force_boot_feedback();")
+        start_task_index = status_start.find("xTaskCreatePinnedToCore(")
         if "status_led_force_all_off(true);" in status_init:
             failures.append("status_led.c: status_led_init must not black out PWR before the cold-boot amber cue")
-        if not (0 <= init_initialized_index < init_boot_index < init_return_index):
-            failures.append("status_led.c: status_led_init must latch the amber boot PWR frame immediately after strip init")
+        if (
+            "status_led_force_boot_feedback();" in status_init
+            or status_start.count("status_led_force_boot_feedback();") != 1
+            or not (0 <= init_initialized_index < init_return_index)
+            or not (0 <= start_init_index < start_boot_index < start_task_index)
+        ):
+            failures.append("status_led.c: boot PWR feedback must be forced exactly once in status_led_start after init and before the render task")
     if "status_led_active_work_locked" in status_led:
         failures.append("status_led.c: active recording/processing must not suppress physical key LED feedback")
     if (
@@ -1817,11 +1823,19 @@ def main() -> int:
         failures.append(
             "ble_hid_gap_esp32.c: Swift Pair discovery must use the exact 30ms cadence while normal advertising retains its 30-50ms range"
         )
-    if "#define BLE_HID_GAP_RECOVERY_SWIFT_PAIR_PROMPT_MS 45000LL" not in ble_gap:
+    if (
+        "#define BLE_HID_GAP_RECOVERY_SWIFT_PAIR_PROMPT_MS "
+        "((int64_t)DENZIC_BLE_PAIRING_V1_RECOVERY_SWIFT_PAIR_PROMPT_WINDOW_MS)"
+        not in ble_gap
+    ):
         failures.append(
             "ble_hid_gap_esp32.c: recovery must expose one bounded Swift Pair window for Windows native keyboard pairing"
         )
-    if "#define BLE_HID_GAP_FIRST_PAIRING_WINDOW_MS 0LL" not in ble_gap:
+    if (
+        "#define BLE_HID_GAP_FIRST_PAIRING_WINDOW_MS "
+        "((int64_t)DENZIC_BLE_PAIRING_V1_FIRST_PAIRING_WINDOW_MS)"
+        not in ble_gap
+    ):
         failures.append(
             "ble_hid_gap_esp32.c: first pairing must not emit unsolicited Swift Pair popups"
         )
@@ -1882,7 +1896,14 @@ def main() -> int:
             failures.append("ble_hid_gap_esp32.c: recovery must not synchronously clear the whole NimBLE NVS store in the double-click hot path")
         if (
             "force_fresh_native_identity" not in recovery_body
-            or "!force_fresh_native_identity" not in recovery_body
+            or not re.search(
+                r"denzic_ble_pairing_v1_refresh_existing_pairing_window\(\s*"
+                r"ble_hid_gap_recovery_pairing_window_open\(\),\s*"
+                r"bonded_peer_count,\s*"
+                r"s_ble_gap_connected,\s*"
+                r"force_fresh_native_identity\)",
+                recovery_body,
+            )
             or "ble_hid_gap_forget_bonds_and_repair_inner(false, false, true)" not in ble_gap
         ):
             failures.append(
@@ -1892,7 +1913,12 @@ def main() -> int:
             r"const\s+bool\s+type_link_ready_before_recovery\s*=\s*ble_audio_stream_is_type_link_ready\(\);\s*"
             r"const\s+bool\s+type_host_recent_before_recovery\s*=[\s\S]*?ble_audio_stream_was_type_host_recently_seen\(\);\s*"
             r"ble_hid_gap_connection_snapshot_t\s+conn\s*=[\s\S]*?ble_hid_gap_reconcile_connection_snapshot\([\s\S]*?\);[\s\S]*?"
-            r"const\s+bool\s+type_controlled_recovery\s*=[\s\S]*?type_controlled_request[\s\S]*?type_link_ready_before_recovery[\s\S]*?\(type_host_recent_before_recovery\s*&&\s*conn\.connected\)\s*;",
+            r"const\s+bool\s+type_controlled_recovery\s*=\s*"
+            r"denzic_ble_pairing_v1_type_controlled_recovery\(\s*"
+            r"type_controlled_request,\s*"
+            r"type_link_ready_before_recovery,\s*"
+            r"type_host_recent_before_recovery,\s*"
+            r"conn\.connected\)\s*;",
             recovery_body,
         ):
             failures.append(
@@ -1916,7 +1942,13 @@ def main() -> int:
         if (
             "stable Type-controlled" not in recovery_body
             or "rotated native Windows" not in recovery_body
-            or "ble_hid_gap_rotate_native_recovery_identity(\"recovery_pairing_reset\")" not in recovery_body
+            or "switch (denzic_ble_pairing_v1_identity_for_recovery(" not in recovery_body
+            or "DENZIC_BLE_PAIRING_V1_IDENTITY_KEEP_STABLE" not in recovery_body
+            or "DENZIC_BLE_PAIRING_V1_IDENTITY_DEFER_ROTATE_UNTIL_DISCONNECT" not in recovery_body
+            or 'ble_hid_gap_defer_native_recovery_identity_rotation("recovery_pairing_reset_connected")' not in recovery_body
+            or 'ble_hid_gap_defer_native_recovery_identity_rotation("recovery_pairing_reset")' not in recovery_body
+            or "ble_hid_gap_schedule_recovery_bond_delete(" not in recovery_body
+            or "ble_gap_terminate(conn.conn_handle, BLE_ERR_REM_USER_CONN_TERM)" not in recovery_body
         ):
             failures.append(
                 "ble_hid_gap_esp32.c: connected recovery must terminate first, delete the local bond asynchronously, keep Type identity stable, and rotate native Windows identity before advertising"
@@ -2352,11 +2384,14 @@ def main() -> int:
                 failures.append(
                     f"status_led.c: OTA must not take over independent key/BLE state via {forbidden}"
                 )
-        if not re.search(
-            r"s_state\.ota_type_link_active\s*&&\s*"
-            r"s_state\.ble_state\s*==\s*STATUS_LED_BLE_CONNECTED[\s\S]*?"
-            r"s_state\.ble_state\s*=\s*STATUS_LED_BLE_TYPE_READY",
-            ota_setter,
+        if (
+            not re.search(
+                r"if\s*\(\s*s_state\.ble_state\s*!=\s*STATUS_LED_BLE_TYPE_READY\s*\)\s*\{[\s\S]*?"
+                r"s_state\.ble_state\s*=\s*STATUS_LED_BLE_TYPE_READY;[\s\S]*?"
+                r"s_state\.ota_type_link_active\s*=\s*true;",
+                ota_setter,
+            )
+            or ota_setter.count("s_state.ota_type_link_active = true;") < 2
         ):
             failures.append(
                 "status_led.c: a Type-proven OTA must promote connected BLE to TYPE_READY"
@@ -3032,7 +3067,7 @@ def main() -> int:
     recovery_audio_close_index = ble_hid_gap.find("static bool ble_hid_gap_close_recovery_for_type_audio")
     recovery_audio_note_index = ble_hid_gap.find("bool ble_hid_gap_note_type_audio_ready", recovery_audio_close_index)
     recovery_audio_pre_reset_guard_index = ble_hid_gap.find(
-        "if (s_recovery_waiting_for_disconnect)",
+        "if (waiting_for_disconnect)",
         recovery_audio_close_index,
         recovery_audio_note_index,
     )
@@ -3085,6 +3120,9 @@ def main() -> int:
             < recovery_audio_pre_reset_log_index
             < recovery_audio_note_index
         )
+        or "denzic_ble_pairing_v1_window_close_on_type_audio_ready(" not in ble_hid_gap[
+            recovery_audio_close_index:recovery_audio_note_index
+        ]
         or '!s_recovery_waiting_for_disconnect &&' not in ble_hid_gap[recovery_audio_note_index:recovery_helper_index]
         or recovery_audio_silent_window_index < 0
         or 'case BLE_GAP_EVENT_PASSKEY_ACTION:' not in ble_hid_gap

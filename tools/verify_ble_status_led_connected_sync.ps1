@@ -60,6 +60,7 @@ $statusLed = Read-RepoFile "components\status_led\status_led.c"
 $statusDoc = Read-RepoFile "docs\features\status_led.md"
 $sdkDefaults = Read-RepoFile "sdkconfig.defaults"
 $sdkDefaultsEsp32s3 = Read-RepoFile "sdkconfig.defaults.esp32s3"
+$pairingContract = Read-RepoFile "third_party\denzic-platform\ble_pairing\embedded\c\include\denzic_ble_pairing_v1_generated.h"
 
 $advStartIndex = $gap.IndexOf("esp_err_t esp_hid_ble_gap_adv_start(void)")
 $advEndIndex = $gap.IndexOf("/*`n * CONTROLLER INIT", $advStartIndex)
@@ -153,9 +154,13 @@ Assert-Contains $typeRecoveryAdv 's_adv_fields\.flags\s*=\s*BLE_HS_ADV_F_DISC_GE
     "Type-controlled recovery advertising must stay HID-pairable for Windows while keeping Type audio discovery in scan response"
 Assert-NotContains $typeRecoveryAdv 's_adv_fields\.mfg_data\s*=' `
     "Type-controlled fallback advertising must keep the Swift Pair payload out of the quiet Type-only profile"
-Assert-Contains $gap '#define\s+BLE_HID_GAP_RECOVERY_SWIFT_PAIR_PROMPT_MS\s+45000LL' `
+Assert-Contains $pairingContract '#define\s+DENZIC_BLE_PAIRING_V1_RECOVERY_SWIFT_PAIR_PROMPT_WINDOW_MS\s+\(45000u\)' `
+    "shared pairing contract must keep the bounded 45s Swift Pair recovery window"
+Assert-Contains $gap '#define\s+BLE_HID_GAP_RECOVERY_SWIFT_PAIR_PROMPT_MS\s+\(\(int64_t\)DENZIC_BLE_PAIRING_V1_RECOVERY_SWIFT_PAIR_PROMPT_WINDOW_MS\)' `
     "non-Type recovery must expose one bounded Swift Pair window so Windows native keyboard pairing can recover without Listener-Type"
-Assert-Contains $gap '#define\s+BLE_HID_GAP_FIRST_PAIRING_WINDOW_MS\s+0LL' `
+Assert-Contains $pairingContract '#define\s+DENZIC_BLE_PAIRING_V1_FIRST_PAIRING_WINDOW_MS\s+\(0u\)' `
+    "shared pairing contract must keep first-pair Swift Pair prompting disabled"
+Assert-Contains $gap '#define\s+BLE_HID_GAP_FIRST_PAIRING_WINDOW_MS\s+\(\(int64_t\)DENZIC_BLE_PAIRING_V1_FIRST_PAIRING_WINDOW_MS\)' `
     "Listener first pairing must avoid unsolicited Swift Pair popups while remaining visible for manual Windows pairing"
 Assert-Contains $gap 'esp_err_t\s+esp_hid_ble_gap_adv_init\(uint16_t appearance, const char \*device_name\)[\s\S]*?ble_svc_gap_device_appearance_set\(s_adv_appearance\)[\s\S]*?ble_hs_cfg\.sm_io_cap\s*=\s*BLE_SM_IO_CAP_NO_IO;[\s\S]*?ble_hs_cfg\.sm_bonding\s*=\s*1;[\s\S]*?ble_hs_cfg\.sm_mitm\s*=\s*0;[\s\S]*?legacy-compatible[\s\S]*?ble_hs_cfg\.sm_sc\s*=\s*0;' `
     "BLE HID advertising init must publish keyboard GAP appearance and use no-IO legacy-compatible SMP for Windows HID pairing"
@@ -175,15 +180,23 @@ Assert-Contains $gap 'static\s+void\s+ble_hid_gap_register_global_event_listener
     "BLE GAP must register a global listener before advertising so CONNECT cannot be missed by the advertising callback"
 Assert-Contains $gap 'esp_err_t\s+esp_hid_ble_gap_adv_start\(void\)[\s\S]*?ble_hid_gap_refresh_configured_device_name\("advertising_start"\)' `
     "advertising start must use the latest configured BLE name"
-Assert-Contains $gap 'static\s+esp_err_t\s+ble_hid_gap_forget_bonds_and_repair_inner\(\s*bool type_controlled_request,\s*bool suppress_swift_pair_prompt,\s*bool ec11_fast_path\)[\s\S]*?bond_delete=async_after_disconnect[\s\S]*?ble_hid_gap_open_recovery_pairing_window\([^)]*\);[\s\S]*?ble_hid_gap_rotate_native_recovery_identity\("recovery_pairing_reset"\)[\s\S]*?ble_hid_gap_schedule_recovery_bond_delete[\s\S]*?stable Type-controlled[\s\S]*?rotated native Windows[\s\S]*?ble_hid_gap_start_advertising\(\)' `
+Assert-Contains $gap 'static\s+esp_err_t\s+ble_hid_gap_forget_bonds_and_repair_inner\(\s*bool type_controlled_request,\s*bool suppress_swift_pair_prompt,\s*bool force_fresh_native_identity\)' `
+    "forget-bonds recovery must keep explicit Type, prompt, and fresh-native-identity inputs"
+Assert-Contains $gap 'denzic_ble_pairing_v1_refresh_existing_pairing_window\([\s\S]*?force_fresh_native_identity\)[\s\S]*?bond_delete=async_after_disconnect[\s\S]*?ble_hid_gap_open_recovery_pairing_window\(' `
+    "forget-bonds recovery must bypass stale windows when fresh native identity is requested and open the reset window"
+Assert-Contains $gap 'denzic_ble_pairing_v1_identity_for_recovery\([\s\S]*?DENZIC_BLE_PAIRING_V1_IDENTITY_KEEP_STABLE[\s\S]*?DENZIC_BLE_PAIRING_V1_IDENTITY_DEFER_ROTATE_UNTIL_DISCONNECT[\s\S]*?ble_hid_gap_defer_native_recovery_identity_rotation\("recovery_pairing_reset"\)' `
+    "forget-bonds recovery must keep Type identity stable and defer native Windows identity rotation"
+Assert-Contains $gap 'ble_hid_gap_schedule_recovery_bond_delete\([\s\S]*?stable Type-controlled[\s\S]*?rotated native Windows[\s\S]*?ble_hid_gap_start_advertising\(\)' `
     "forget-bonds recovery must avoid synchronous full-store erase, open the pairing window, delete the local bond asynchronously, keep Type identity stable, and rotate native Windows identity"
 Assert-Contains $gap 'static\s+void\s+ble_hid_gap_recovery_bond_delete_task\([\s\S]*?ble_gap_adv_stop\(\)[\s\S]*?for\s*\(int index = 0; index < bonded_peer_count; \+\+index\)[\s\S]*?ble_gap_unpair\(&bonded_peers\[index\]\)' `
     "recovery bond deletion must use NimBLE unpair after advertising stops so the final deleted bond rotates the local IRK"
 Assert-Contains $gap 'static\s+esp_err_t\s+ble_hid_gap_reset_local_irk_without_bonds\(void\)[\s\S]*?ble_gap_adv_active\(\)[\s\S]*?ble_gap_adv_stop\(\)[\s\S]*?ble_store_delete_local_irk\(&key\)[\s\S]*?ble_hs_pvcy_set_default_irk\(\)[\s\S]*?ble_hs_pvcy_remove_entry\(BLE_ADDR_PUBLIC, zero_addr\)[\s\S]*?ble_hs_pvcy_set_our_irk\(NULL\)[\s\S]*?ble_gap_read_local_irk\(refreshed_irk\)' `
     "native recovery with no local bonds must refresh the stored and active local IRK before pairing"
-Assert-Contains $gap 'recovery_pairing_reset[\s\S]*?if \(bonded_peer_count == 0\)[\s\S]*?ble_hid_gap_reset_local_irk_without_bonds\(\)[\s\S]*?ble_hid_gap_rotate_native_recovery_identity\("recovery_pairing_reset"\)' `
-    "disconnected native recovery must reset a no-bond IRK before rotating its advertised identity"
-Assert-Contains $gap 'disconnect_recovery_pairing_window[\s\S]*?s_native_recovery_identity_rotate_pending[\s\S]*?recovery_bonded_peer_count == 0[\s\S]*?ble_hid_gap_reset_local_irk_without_bonds\(\)[\s\S]*?ble_hid_gap_rotate_native_recovery_identity\("recovery_disconnect"\)' `
+Assert-Contains $gap 'if\s*\(\s*bonded_peer_count\s*==\s*0\s*\)\s*\{\s*s_recovery_need_local_irk_reset\s*=\s*true;[\s\S]*?ble_hid_gap_defer_native_recovery_identity_rotation\("recovery_pairing_reset"\)[\s\S]*?need_recovery_flash_worker[\s\S]*?ble_hid_gap_schedule_recovery_bond_delete' `
+    "disconnected native recovery must defer zero-bond IRK reset and identity rotation to the internal-DRAM worker"
+Assert-Contains $gap 'static\s+void\s+ble_hid_gap_recovery_bond_delete_task\([^)]*\)[\s\S]*?need_local_irk_reset\s*=\s*s_recovery_need_local_irk_reset[\s\S]*?ble_hid_gap_reset_local_irk_without_bonds\(\)[\s\S]*?ble_hid_gap_rotate_native_recovery_identity\("async_bond_delete_complete"\)[\s\S]*?ble_hid_gap_start_advertising\(\)' `
+    "native recovery flash work must reset the local IRK and rotate identity on the internal-DRAM bond worker before advertising"
+Assert-Contains $gap 'disconnect_recovery_pairing_window[\s\S]*?denzic_ble_pairing_v1_orch_irk_reset_after_disconnect\([\s\S]*?ble_hid_gap_reset_local_irk_without_bonds\(\)[\s\S]*?denzic_ble_pairing_v1_rotate_before_advertising\([^)]*\)[\s\S]*?ble_hid_gap_rotate_native_recovery_identity\("recovery_disconnect"\)' `
     "connected native recovery must reset a no-bond IRK after disconnect before advertising a new identity"
 Assert-Contains $noteTypeAudio 'type audio ready rejected before BLE bond; keeping pairing window available without restarting repair[\s\S]*?ble_hid_gap_open_recovery_pairing_window[\s\S]*?return false;' `
     "unbonded Type heartbeat must keep pairing available without recursively restarting repair"
@@ -359,7 +372,7 @@ Assert-Contains $statusLed 'static\s+uint32_t\s+status_led_ble_recovery_window_e
     "recovery-window double flash must be phase-anchored after the repair cue, not reset by BLE state transitions"
 Assert-Contains $statusLed 'status_led_ble_recovery_window_active_locked\(now_ms\)[\s\S]*?const uint32_t recovery_elapsed_ms =[\s\S]*?status_led_ble_recovery_window_elapsed_locked\(now_ms\);[\s\S]*?recovery_elapsed_ms >= STATUS_LED_BLE_REPAIR_TO_RECOVERY_GAP_MS[\s\S]*?status_led_double_pulse_on\(\s*recovery_elapsed_ms - STATUS_LED_BLE_REPAIR_TO_RECOVERY_GAP_MS,\s*STATUS_LED_BLE_CONNECTED_FIND_TYPE_PERIOD_MS\s*\)[\s\S]*?STATUS_LED_BLE_RECONNECT_PULSE_PERCENT[\s\S]*?:\s*0U' `
     "recovery-window reconnect cue must wait through the post-cue dark gap before using the anchored recovery phase"
-Assert-Contains $statusLed 'const bool keep_repair_window = status_led_ble_repair_active_locked\(now_ms\)[\s\S]*?state == STATUS_LED_BLE_PAIRING \|\| state == STATUS_LED_BLE_RECONNECTING[\s\S]*?if \(!keep_repair_cue && !keep_repair_window\) \{[\s\S]*?s_state\.ble_repair_cue_started_ms = 0U;[\s\S]*?s_state\.ble_repair_cue_until_ms = 0U;' `
+Assert-Contains $statusLed 'const bool keep_repair_window = status_led_ble_repair_active_locked\(now_ms\)[\s\S]*?state == STATUS_LED_BLE_PAIRING[\s\S]*?state == STATUS_LED_BLE_RECONNECTING[\s\S]*?state == STATUS_LED_BLE_MANUAL_PAIRING[\s\S]*?if \(!keep_repair_cue && !keep_repair_window\) \{[\s\S]*?s_state\.ble_repair_cue_started_ms = 0U;[\s\S]*?s_state\.ble_repair_cue_until_ms = 0U;' `
     "BLE state transitions during recovery must not clear the active repair cue/window timing anchor"
 Assert-NotContains $statusLed '!s_state\.external_power_present\s*&&\s*s_state\.ble_state != STATUS_LED_BLE_DISCONNECTED' `
     "active BLE refresh must not be limited to unplugged power; BLE may go dark only after idle"
@@ -369,14 +382,14 @@ Assert-Contains $statusLed 'case STATUS_LED_BLE_DISCONNECTED:\s*\{[\s\S]*?\(stat
     "active disconnected/no-host must stay dark; low blue floor belongs only to connected BLE states"
 Assert-NotContains $statusLed 'status_led_connected_hid_only_percent_locked|STATUS_LED_BLE_CONNECTED_HEARTBEAT_PERIOD_MS|STATUS_LED_BLE_CONNECTED_CONFIRM_MS|STATUS_LED_BLE_CONNECTED_BASE_PERCENT' `
     "HID-only connected must not keep the old low-base heartbeat/confirmation renderer"
-Assert-Contains $statusLed 'static\s+bool\s+status_led_low_power_ble_ready_window_active_locked\(uint32_t now_ms\)[\s\S]*?STATUS_LED_BLE_CONNECTED[\s\S]*?STATUS_LED_BLE_TYPE_READY[\s\S]*?status_window_until_ms[\s\S]*?ble_confidence_until_ms[\s\S]*?oobe_confidence_until_ms' `
-    "low-power connected/TYPE_READY visibility must be gated by an explicit finite ready window"
-Assert-Contains $statusLed 'static\s+uint8_t\s+status_led_low_power_ble_percent_locked\(uint32_t now_ms,\s*uint32_t ble_elapsed_ms\)[\s\S]*?case STATUS_LED_BLE_PAIRING:[\s\S]*?STATUS_LED_BATTERY_IDLE_BLE_HEARTBEAT_ON_MS[\s\S]*?STATUS_LED_BLE_ATTENTION_PERCENT[\s\S]*?case STATUS_LED_BLE_RECONNECTING:\s*\n\s*return 0U;[\s\S]*?case STATUS_LED_BLE_CONNECTED:[\s\S]*?!status_led_low_power_ble_ready_window_active_locked\(now_ms\)[\s\S]*?return 0U;[\s\S]*?status_led_double_pulse_on\([\s\S]*?STATUS_LED_BLE_CONNECTED_FIND_TYPE_PERIOD_MS[\s\S]*?STATUS_LED_BLE_CONNECTED_FIND_TYPE_MAX_PERCENT[\s\S]*?STATUS_LED_BLE_CONNECTED_FIND_TYPE_MIN_PERCENT[\s\S]*?case STATUS_LED_BLE_TYPE_READY:[\s\S]*?status_led_low_power_ble_ready_window_active_locked\(now_ms\)[\s\S]*?STATUS_LED_BLE_TYPE_READY_STEADY_PERCENT[\s\S]*?:\s*0U;' `
-    "low-power BLE must keep reconnecting dark, show fresh connected as low-floor bounded find-Type, show fresh TYPE_READY as steady blue, and then go dark after idle"
-Assert-Contains $statusLed 'static\s+uint8_t\s+status_led_low_power_ble_peak_percent_locked\(void\)[\s\S]*?STATUS_LED_BLE_CONNECTED_FIND_TYPE_MAX_PERCENT[\s\S]*?STATUS_LED_BLE_TYPE_READY_STEADY_PERCENT[\s\S]*?status_led_render_low_power_ble_locked[\s\S]*?status_led_token_relative_to_peak_locked\(\s*status_led_rgb\(0,\s*0,\s*255\),\s*percent,\s*peak,\s*false\s*\)' `
-    "low-power BLE visible cues must use the same Type-capped design peaks as active BLE"
-Assert-Contains $statusLed 'if\s*\(\s*s_state\.low_power_disabled\s*\)\s*\{[\s\S]*?status_led_low_power_ble_ready_window_active_locked\(now_ms\)[\s\S]*?return STATUS_LED_REFRESH_MS;' `
-    "low-power BLE ready window must refresh at the normal LED rate until the visible connection window expires"
+Assert-NotContains $statusLed 'status_led_low_power_ble_ready_window_active_locked' `
+    "low-power idle must not retain the obsolete connected/TYPE_READY visibility window"
+Assert-Contains $statusLed 'static\s+uint8_t\s+status_led_low_power_ble_percent_locked\(uint32_t now_ms,\s*uint32_t ble_elapsed_ms\)[\s\S]*?case STATUS_LED_BLE_PAIRING:[\s\S]*?STATUS_LED_BATTERY_IDLE_BLE_HEARTBEAT_ON_MS[\s\S]*?STATUS_LED_BLE_ATTENTION_PERCENT[\s\S]*?case STATUS_LED_BLE_RECONNECTING:\s*\n\s*return 0U;[\s\S]*?case STATUS_LED_BLE_CONNECTED:\s*case STATUS_LED_BLE_TYPE_READY:\s*return 0U;' `
+    "low-power BLE must keep recovery pairing visible but render reconnecting, connected, and TYPE_READY dark"
+Assert-Contains $statusLed 'static\s+uint8_t\s+status_led_low_power_ble_peak_percent_locked\(void\)[\s\S]*?STATUS_LED_BLE_PAIRING_PULSE_PERCENT[\s\S]*?STATUS_LED_BLE_ATTENTION_PERCENT[\s\S]*?status_led_render_low_power_ble_locked[\s\S]*?status_led_token_relative_to_peak_locked\(\s*status_led_rgb\(0,\s*0,\s*255\),\s*percent,\s*peak,\s*false\s*\)' `
+    "low-power recovery BLE cues must use the same Type-capped design peaks as active BLE"
+Assert-Contains $statusLed 'static\s+uint32_t\s+status_led_refresh_delay_ms_locked\(uint32_t now_ms\)[\s\S]*?if\s*\(\s*s_state\.low_power_disabled\s*\)\s*\{[\s\S]*?STATUS_LED_EXTERNAL_POWER_POLL_MS[\s\S]*?STATUS_LED_LOW_POWER_IDLE_REFRESH_MS;' `
+    "low-power idle must use bounded external-power or battery refresh cadence"
 Assert-Contains $statusLed 'const bool active_work = s_state\.recording_active \|\| s_state\.processing_active \|\| s_state\.ota_active;' `
     "status LED renderer must define active work for recording/processing/OTA visibility"
 Assert-Contains $statusLed 'STATUS_LED_BATTERY_STATUS_WINDOW_PWR_PERCENT\s+14U[\s\S]*?percent = \(status_window \|\| active_work\)[\s\S]*?\? STATUS_LED_BATTERY_STATUS_WINDOW_PWR_PERCENT[\s\S]*?: STATUS_LED_BATTERY_STATUS_WINDOW_PWR_PERCENT;' `

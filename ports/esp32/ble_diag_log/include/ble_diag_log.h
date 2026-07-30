@@ -1,6 +1,7 @@
 #ifndef BLE_DIAG_LOG_H
 #define BLE_DIAG_LOG_H
 
+#include <stdbool.h>
 #include <stdint.h>
 
 #include "nimble/ble.h"
@@ -46,6 +47,15 @@ void ble_diag_log_on_gap_connect(uint16_t conn_handle);
  * Reset any in-progress paginated read state on BLE disconnect.
  */
 void ble_diag_log_on_gap_disconnect(uint16_t conn_handle);
+
+/*
+ * Track the existing diagnostic data CCCD. OTA reuses this stable notify
+ * surface for a generation-ready marker without changing the GATT schema.
+ */
+void ble_diag_log_on_gap_subscribe(
+    uint16_t conn_handle,
+    uint16_t attr_handle,
+    bool notify_enabled);
 
 /*
  * Track MTU changes for chunk sizing.

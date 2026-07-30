@@ -91,6 +91,7 @@ esp_err_t ble_audio_stream_wait_for_type_recovery_ack(uint32_t timeout_ms);
 bool ble_audio_stream_is_ready(void);
 bool ble_audio_stream_is_type_link_ready(void);
 bool ble_audio_stream_is_type_led_ready(void);
+bool ble_audio_stream_type_ota_hold_is_active(void);
 bool ble_audio_stream_was_type_host_recently_seen(void);
 bool ble_audio_stream_is_type_lossless_rice_enabled(void);
 uint8_t ble_audio_stream_get_type_lossless_rice_version(void);

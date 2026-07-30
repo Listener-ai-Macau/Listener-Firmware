@@ -24,6 +24,8 @@ esp_err_t audio_capture_start(void);
 bool audio_capture_is_available(void);
 const char *audio_capture_get_unavailable_reason(void);
 esp_err_t audio_capture_set_idle_power_save(bool enabled);
+bool audio_capture_idle_power_save_is_applied(void);
+esp_err_t audio_capture_set_ota_suspended(bool suspended);
 esp_err_t audio_capture_session_begin(void);
 esp_err_t audio_capture_session_begin_with_preroll(uint32_t pre_roll_ms);
 esp_err_t audio_capture_session_stop(void);

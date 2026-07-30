@@ -804,7 +804,7 @@ static bool ble_audio_stream_tick_reached(TickType_t now, TickType_t target)
     return (int32_t)(now - target) >= 0;
 }
 
-static bool ble_audio_stream_type_ota_hold_active(void)
+bool ble_audio_stream_type_ota_hold_is_active(void)
 {
     TickType_t until_tick = 0;
     portENTER_CRITICAL(&s_link_state_lock);
@@ -926,6 +926,9 @@ static void ble_audio_stream_set_type_heartbeat_active(bool active, const char *
     uint32_t count = 0;
     bool timeout = reason != NULL && strcmp(reason, "timeout") == 0;
     bool ota_hold = active && reason != NULL && strcmp(reason, "TYPE:OTA") == 0;
+    bool ota_recovery =
+        active && reason != NULL &&
+        (strcmp(reason, "TYPE:READY") == 0 || strcmp(reason, "TYPE:HB") == 0);
     uint32_t timeout_ms = ota_hold
         ? BLE_AUDIO_STREAM_TYPE_OTA_HEARTBEAT_TIMEOUT_MS
         : BLE_AUDIO_STREAM_TYPE_HEARTBEAT_TIMEOUT_MS;
@@ -943,7 +946,11 @@ static void ble_audio_stream_set_type_heartbeat_active(bool active, const char *
             now + pdMS_TO_TICKS(
                       ota_hold ? BLE_AUDIO_STREAM_TYPE_OTA_HEARTBEAT_TIMEOUT_MS
                                : BLE_AUDIO_STREAM_TYPE_LED_READY_HOLD_MS);
-        s_type_ota_hold_until_tick = ota_hold ? s_type_heartbeat_deadline_tick : 0;
+        if (ota_hold) {
+            s_type_ota_hold_until_tick = s_type_heartbeat_deadline_tick;
+        } else if (ota_recovery) {
+            s_type_ota_hold_until_tick = 0;
+        }
         s_type_heartbeat_count++;
     } else {
         s_type_heartbeat_deadline_tick = 0;
@@ -1453,7 +1460,7 @@ static void ble_audio_stream_sync_status_led_for_type_link(const char *reason)
     }
     /* TYPE:OTA lease keeps Type-ready even when audio notify is cancelled for
      * exclusive OTA GATT (transport_link_ready becomes false). */
-    if (ble_audio_stream_type_ota_hold_active()) {
+    if (ble_audio_stream_type_ota_hold_is_active()) {
         status_led_set_ble_state(STATUS_LED_BLE_TYPE_READY, false);
         status_led_set_type_ota_link_active(true, reason != NULL ? reason : "TYPE:OTA");
         status_led_note_ble_boot_ready(reason);
@@ -3259,7 +3266,7 @@ bool ble_audio_stream_is_type_link_ready(void)
 bool ble_audio_stream_is_type_led_ready(void)
 {
     /* Exclusive OTA drops audio notify; keep Type-ready while the OTA lease is live. */
-    if (ble_audio_stream_type_ota_hold_active() &&
+    if (ble_audio_stream_type_ota_hold_is_active() &&
         ble_audio_stream_type_heartbeat_led_recent()) {
         return true;
     }
@@ -3539,6 +3546,17 @@ bool ble_audio_stream_consume_type_control_command(const char *command, const ch
 
     if (strcmp(command, "TYPE:OTA") == 0) {
         ble_audio_stream_note_type_activity(command);
+        if (ble_audio_stream_is_busy() && s_control_write_handler != NULL) {
+            static const uint8_t cancel_command[] = "VREC:CANCEL";
+            esp_err_t cancel_ret = s_control_write_handler(
+                cancel_command,
+                sizeof(cancel_command) - 1u,
+                "type_ota_handoff");
+            ESP_LOGI(
+                TAG,
+                "type OTA handoff canceled active audio candidate ret=%s",
+                esp_err_to_name(cancel_ret));
+        }
         if (ble_hid_gap_schedule_ota_reconnect != NULL) {
             esp_err_t ret = ble_hid_gap_schedule_ota_reconnect();
             if (ret != ESP_OK) {
@@ -3556,7 +3574,7 @@ bool ble_audio_stream_consume_type_control_command(const char *command, const ch
     }
 
     if (strcmp(command, "TYPE:BYE") == 0 || strcmp(command, "TYPE:STOP") == 0) {
-        if (ble_audio_stream_type_ota_hold_active()) {
+        if (ble_audio_stream_type_ota_hold_is_active()) {
             ESP_LOGI(
                 TAG,
                 "type heartbeat stop ignored while OTA activity lease is active source=%s command=%s",

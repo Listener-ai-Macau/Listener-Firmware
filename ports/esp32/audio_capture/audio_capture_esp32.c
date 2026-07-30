@@ -65,6 +65,7 @@
 #define AUDIO_CAPTURE_STREAM_BATCH_BYTES (AUDIO_CAPTURE_STREAM_BATCH_FRAMES * AUDIO_CAPTURE_FRAME_BYTES)
 #define AUDIO_CAPTURE_STREAM_PROGRESS_LOG_PACKET_INTERVAL 64U
 #define AUDIO_CAPTURE_IDLE_POWER_SAVE_WAIT_MS 5000U
+#define AUDIO_CAPTURE_OTA_SUSPEND_TIMEOUT_MS 250U
 #define AUDIO_CAPTURE_PDM_HW_AMPLIFY_NUM 8U
 /* A modest pre-AFE lift keeps weak physical speech above the WebRTC NS/VAD
  * floor. Fourfold gain clipped real microphone peaks; twofold remains a
@@ -82,6 +83,8 @@
 #define AUDIO_CAPTURE_VOICE_PREROLL_MAX_MS 600U
 #define AUDIO_CAPTURE_VOICE_PREROLL_FRAMES \
     (AUDIO_CAPTURE_VOICE_PREROLL_MAX_MS / AUDIO_CAPTURE_FRAME_MS)
+#define AUDIO_CAPTURE_VOICE_PREROLL_BYTES \
+    ((size_t)AUDIO_CAPTURE_VOICE_PREROLL_FRAMES * AUDIO_CAPTURE_FRAME_BYTES)
 #if defined(CONFIG_AUDIO_CAPTURE_SPH0655_CLK_INVERT) && CONFIG_AUDIO_CAPTURE_SPH0655_CLK_INVERT
 #define AUDIO_CAPTURE_SPH0655_CLK_INVERT_ENABLED 1
 #else
@@ -166,6 +169,7 @@ static esp_codec_dev_handle_t s_codec_handle;
 static TaskHandle_t s_capture_task_handle;
 static volatile bool s_idle_power_save_requested;
 static bool s_i2s_low_power_disabled;
+static volatile bool s_ota_suspended;
 static uint32_t s_frame_count;
 static uint32_t s_frame_captured_count;
 #ifdef CONFIG_AUDIO_CAPTURE_MIC_ES8311
@@ -178,12 +182,14 @@ static SemaphoreHandle_t s_state_mutex;
 static uint32_t s_session_id_counter;
 static audio_capture_voice_activity_handler_t s_voice_activity_handler;
 static volatile bool s_voice_activation_monitoring;
-static int16_t
-    s_voice_preroll[AUDIO_CAPTURE_VOICE_PREROLL_FRAMES][AUDIO_CAPTURE_FRAME_SAMPLES];
+/* Ordinary task-owned PCM history: never a DMA target or Flash API input. */
+static int16_t (*s_voice_preroll)[AUDIO_CAPTURE_FRAME_SAMPLES];
 static uint16_t s_voice_preroll_write_index;
 static uint16_t s_voice_preroll_count;
 static uint16_t s_session_preroll_start_index;
 static uint16_t s_session_preroll_count;
+
+static esp_err_t audio_capture_i2s_init(void);
 #ifdef CONFIG_AUDIO_CAPTURE_MIC_SPH0655_PDM
 #if CONFIG_AUDIO_CAPTURE_PDM_STEREO_SLOT_CAPTURE
 /* ESP-IDF returns the right PDM slot first in a stereo PCM buffer. Keep the
@@ -249,6 +255,30 @@ static void audio_capture_wake_task(void)
     }
 #endif
 #endif
+}
+
+static esp_err_t audio_capture_voice_preroll_init(void)
+{
+    if (s_voice_preroll != NULL) {
+        return ESP_OK;
+    }
+
+    s_voice_preroll = heap_caps_calloc(
+        1u,
+        AUDIO_CAPTURE_VOICE_PREROLL_BYTES,
+        MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    if (s_voice_preroll == NULL) {
+        ESP_LOGE(
+            TAG,
+            "voice preroll PSRAM allocation failed bytes=%u",
+            (unsigned)AUDIO_CAPTURE_VOICE_PREROLL_BYTES);
+        return ESP_ERR_NO_MEM;
+    }
+    ESP_LOGI(
+        TAG,
+        "voice preroll allocated in PSRAM bytes=%u",
+        (unsigned)AUDIO_CAPTURE_VOICE_PREROLL_BYTES);
+    return ESP_OK;
 }
 
 static const char *audio_capture_static_unavailable_reason(void)
@@ -459,6 +489,10 @@ esp_err_t audio_capture_session_begin_with_preroll(uint32_t pre_roll_ms)
                  4, ESP_ERR_INVALID_STATE, 0, 0);
         return ESP_ERR_INVALID_STATE;
     }
+    if (s_ota_suspended) {
+        ESP_LOGW(TAG, "record session start rejected: OTA audio suspension active");
+        return ESP_ERR_INVALID_STATE;
+    }
 
     s_idle_power_save_requested = false;
     (void)audio_capture_apply_idle_power_save(false);
@@ -653,6 +687,9 @@ bool audio_capture_session_is_active(void)
 
 esp_err_t audio_capture_set_idle_power_save(bool enabled)
 {
+    if (!enabled && s_ota_suspended) {
+        enabled = true;
+    }
     if (enabled) {
         s_voice_activation_monitoring = false;
         if (s_state_mutex != NULL &&
@@ -660,7 +697,12 @@ esp_err_t audio_capture_set_idle_power_save(bool enabled)
             s_voice_preroll_write_index = 0u;
             s_voice_preroll_count = 0u;
             s_session_preroll_count = 0u;
-            memset(s_voice_preroll, 0, sizeof(s_voice_preroll));
+            if (s_voice_preroll != NULL) {
+                memset(
+                    s_voice_preroll,
+                    0,
+                    AUDIO_CAPTURE_VOICE_PREROLL_BYTES);
+            }
             xSemaphoreGive(s_state_mutex);
         }
     }
@@ -673,6 +715,62 @@ esp_err_t audio_capture_set_idle_power_save(bool enabled)
         return ESP_ERR_INVALID_STATE;
     }
     return ESP_OK;
+}
+
+bool audio_capture_idle_power_save_is_applied(void)
+{
+    return s_i2s_low_power_disabled;
+}
+
+esp_err_t audio_capture_set_ota_suspended(bool suspended)
+{
+    if (!suspended) {
+        if (s_i2s_rx_handle == NULL) {
+            esp_err_t init_ret = audio_capture_i2s_init();
+            if (init_ret != ESP_OK) {
+                ESP_LOGE(
+                    TAG,
+                    "audio OTA I2S restore failed: %s",
+                    esp_err_to_name(init_ret));
+                return init_ret;
+            }
+            s_i2s_low_power_disabled = false;
+        }
+        s_ota_suspended = false;
+        esp_err_t ret = audio_capture_set_idle_power_save(false);
+        ESP_LOGI(
+            TAG,
+            "audio OTA suspension=0 applied=%u ret=%s",
+            s_i2s_low_power_disabled ? 1U : 0U,
+            esp_err_to_name(ret));
+        return ret;
+    }
+
+    s_ota_suspended = true;
+    esp_err_t ret = audio_capture_set_idle_power_save(true);
+    const TickType_t suspend_started = xTaskGetTickCount();
+    while (ret == ESP_OK &&
+           !s_i2s_low_power_disabled &&
+           (xTaskGetTickCount() - suspend_started) <
+               pdMS_TO_TICKS(AUDIO_CAPTURE_OTA_SUSPEND_TIMEOUT_MS)) {
+        vTaskDelay(1);
+    }
+    if (ret == ESP_OK && !s_i2s_low_power_disabled) {
+        ret = ESP_ERR_TIMEOUT;
+    }
+    if (ret == ESP_OK && s_i2s_rx_handle != NULL) {
+        ret = i2s_del_channel(s_i2s_rx_handle);
+        if (ret == ESP_OK) {
+            s_i2s_rx_handle = NULL;
+        }
+    }
+    ESP_LOGI(
+        TAG,
+        "audio OTA suspension=1 applied=%u i2s_released=%u ret=%s",
+        s_i2s_low_power_disabled ? 1U : 0U,
+        s_i2s_rx_handle == NULL ? 1U : 0U,
+        esp_err_to_name(ret));
+    return ret;
 }
 
 void audio_capture_set_voice_activity_handler(
@@ -1024,7 +1122,7 @@ static void audio_capture_process_frame(const int16_t *frame_buffer)
                             s_session_preroll_count *
                                 AUDIO_CAPTURE_FRAME_MS);
                     }
-                    memset(s_voice_preroll, 0, sizeof(s_voice_preroll));
+                    memset(s_voice_preroll, 0, AUDIO_CAPTURE_VOICE_PREROLL_BYTES);
                     s_voice_preroll_write_index = 0u;
                     s_voice_preroll_count = 0u;
                     s_session_preroll_count = 0u;
@@ -1768,13 +1866,10 @@ static esp_err_t audio_capture_pdm_afe_init(void)
         s_pdm_afe_handle = NULL;
         return ESP_ERR_NO_MEM;
     }
-    /*
-     * Prefer SPIRAM task stacks for AFE fetch: two internal 6 KB audio stacks
-     * plus I2S DMA no longer fit after 1.0.3 internal-static NimBLE/keyboard/
-     * OTA stacks (owner boot: internal_free~4KB → pdm rx NO_MEM → NimBLE assert).
-     * Fetch is less I2S-latency critical than the capture feed task.
-     */
-    BaseType_t task_ok = xTaskCreatePinnedToCoreWithCaps(
+    /* Audio task stacks stay internal: they are hot paths and must remain valid
+     * while the Flash cache is disabled. The task-owned pre-roll history uses
+     * PSRAM instead. */
+    BaseType_t task_ok = xTaskCreatePinnedToCore(
         audio_capture_pdm_afe_fetch_task,
         "audio_afe_fetch",
         AUDIO_CAPTURE_TASK_STACK_BYTES,
@@ -1783,19 +1878,7 @@ static esp_err_t audio_capture_pdm_afe_init(void)
          * consumed before the AFE ring can overwrite audio. */
         AUDIO_CAPTURE_AFE_FETCH_TASK_PRIORITY,
         &s_pdm_afe_fetch_task_handle,
-        AUDIO_CAPTURE_AFE_FETCH_TASK_CORE,
-        MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
-    if (task_ok != pdPASS) {
-        /* Fallback: internal heap if SPIRAM stack create is unavailable. */
-        task_ok = xTaskCreatePinnedToCore(
-            audio_capture_pdm_afe_fetch_task,
-            "audio_afe_fetch",
-            AUDIO_CAPTURE_TASK_STACK_BYTES,
-            NULL,
-            AUDIO_CAPTURE_AFE_FETCH_TASK_PRIORITY,
-            &s_pdm_afe_fetch_task_handle,
-            AUDIO_CAPTURE_AFE_FETCH_TASK_CORE);
-    }
+        AUDIO_CAPTURE_AFE_FETCH_TASK_CORE);
     if (task_ok != pdPASS) {
         ESP_LOGE(TAG, "PDM AFE fetch task creation failed");
         vad_destroy(s_pdm_vad_handle);
@@ -2037,7 +2120,20 @@ esp_err_t audio_capture_start(void)
         return ESP_ERR_NOT_SUPPORTED;
     }
 
-    esp_err_t err = audio_capture_i2s_init();
+    esp_err_t err = audio_capture_voice_preroll_init();
+    if (err != ESP_OK) {
+        diag_log(
+            DIAG_SRC_AUDIO,
+            DIAG_AUDIO_INIT_FAIL,
+            DIAG_SEV_ERROR,
+            10,
+            err,
+            AUDIO_CAPTURE_VOICE_PREROLL_BYTES,
+            0);
+        return err;
+    }
+
+    err = audio_capture_i2s_init();
     if (err != ESP_OK) {
         ESP_LOGE(TAG, "i2s start fail");
         diag_log(DIAG_SRC_AUDIO, DIAG_AUDIO_INIT_FAIL, DIAG_SEV_ERROR, 1, err, 0, 0);
@@ -2086,11 +2182,7 @@ esp_err_t audio_capture_start(void)
     }
 #endif
 
-    /*
-     * Capture feed stays on internal DRAM when possible (I2S hot path). If
-     * internal is exhausted, fall back to SPIRAM rather than failing the whole
-     * mic path and panicking NimBLE via residual AFE state.
-     */
+    /* Capture is an I2S hot path and its task stack must stay internal. */
     BaseType_t capture_task_ok = xTaskCreatePinnedToCore(
         audio_capture_task,
         "audio_capture_task",
@@ -2099,21 +2191,6 @@ esp_err_t audio_capture_start(void)
         5,
         &s_capture_task_handle,
         AUDIO_CAPTURE_TASK_CORE);
-    if (capture_task_ok != pdPASS) {
-        ESP_LOGW(
-            TAG,
-            "audio capture internal stack create failed free=%u; retry SPIRAM stack",
-            (unsigned)esp_get_free_internal_heap_size());
-        capture_task_ok = xTaskCreatePinnedToCoreWithCaps(
-            audio_capture_task,
-            "audio_capture_task",
-            AUDIO_CAPTURE_TASK_STACK_BYTES,
-            NULL,
-            5,
-            &s_capture_task_handle,
-            AUDIO_CAPTURE_TASK_CORE,
-            MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
-    }
     if (capture_task_ok != pdPASS) {
         ESP_LOGE(
             TAG,

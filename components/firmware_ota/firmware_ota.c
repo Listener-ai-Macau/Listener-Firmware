@@ -43,7 +43,9 @@ typedef struct {
     size_t expected_size;
     size_t bytes_written;
     bool active;
+    bool self_check_recorded;
     bool post_ok;
+    bool boot_ble_ready;
     bool ble_ready;
     bool keyboard_ready;
     bool battery_valid;
@@ -241,11 +243,17 @@ static void firmware_ota_refresh_inactivity_timeout(void)
     }
     firmware_ota_unlock();
 
-    (void)esp_timer_stop(s_inactivity_timer);
+    /* DATA writes only move the absolute deadline forward. Keep the existing
+     * one-shot armed: its callback already re-arms for the remaining time when
+     * it observes a newer deadline. Reprogramming this timer for every 500-byte
+     * OTA packet adds thousands of stop/start operations to the flash hot path. */
+    if (esp_timer_is_active(s_inactivity_timer)) {
+        return;
+    }
     esp_err_t ret = esp_timer_start_once(
         s_inactivity_timer,
         (uint64_t)FIRMWARE_OTA_INACTIVITY_TIMEOUT_MS * 1000ULL);
-    if (ret != ESP_OK) {
+    if (ret != ESP_OK && ret != ESP_ERR_INVALID_STATE) {
         ESP_LOGW(TAG, "OTA inactivity timer start failed: %s", esp_err_to_name(ret));
     }
 }
@@ -286,10 +294,17 @@ static void firmware_ota_inactivity_timer_callback(void *arg)
 static void firmware_ota_pending_verify_fallback_callback(void *arg)
 {
     (void)arg;
-    /* 仅在仍处于 pending-verify 时确认；事件驱动路径先到则此处为 no-op。 */
+    /* A clean minute without a host connection promotes the successful BLE
+     * stack start to fallback evidence. A real encrypted link remains the
+     * preferred evidence and normally confirms earlier. */
     if (!firmware_ota_running_pending_verify()) {
         return;
     }
+    firmware_ota_lock();
+    if (s_ota.self_check_recorded && s_ota.boot_ble_ready) {
+        s_ota.ble_ready = true;
+    }
+    firmware_ota_unlock();
     ESP_LOGI(TAG,
              "OTA pending-verify fallback: confirming after %us of clean uptime using current readiness signals",
              (unsigned)(FIRMWARE_OTA_PENDING_VERIFY_FALLBACK_MS / 1000U));
@@ -468,8 +483,9 @@ void firmware_ota_record_self_check(bool post_ok, bool ble_ready, bool keyboard_
 {
     firmware_ota_lock();
     s_ota.post_ok = post_ok;
-    s_ota.ble_ready = ble_ready;
+    s_ota.boot_ble_ready = ble_ready;
     s_ota.keyboard_ready = keyboard_ready;
+    s_ota.self_check_recorded = true;
     firmware_ota_unlock();
 }
 
@@ -487,26 +503,50 @@ void firmware_ota_set_observability_correlation(uint64_t correlation_id)
 
 esp_err_t firmware_ota_confirm_pending_verify_if_ready(void)
 {
-    /* 决策走平台层纯函数 denzic_ota_orchestration_v1_decide_pending_verify；产品层只负责
-     * 采样就绪信号并执行 mark-valid / mark-invalid-rollback。平台 rollback_reason_mask 位
-     * 定义（POST=0x01 / BLE=0x02 / KEYBOARD=0x04）与产品 DIAG_OTA_ROLLBACK_* 完全一致，
-     * 直接透传给 diag_log。调用方负责保证只在确有证据时调用（POST 失败 / 真实链路 / 兜底）。 */
+    /* The encrypted-link callback can run before app_main records POST and
+     * keyboard results. Never interpret zero-initialized, not-yet-recorded
+     * fields as failures: latch the link evidence and defer the decision. */
     if (!firmware_ota_running_pending_verify()) {
         return ESP_OK;
     }
 
     firmware_ota_lock();
+    const bool self_check_recorded = s_ota.self_check_recorded;
     const bool post_ok = s_ota.post_ok;
+    const bool boot_ble_ready = s_ota.boot_ble_ready;
     const bool ble_ready = s_ota.ble_ready;
     const bool keyboard_ready = s_ota.keyboard_ready;
     const esp_partition_t *running = s_ota.running_partition;
     firmware_ota_unlock();
+    if (!self_check_recorded) {
+        ESP_LOGI(TAG, "OTA pending verify decision deferred until startup self-check is recorded");
+        return ESP_OK;
+    }
     if (running == NULL) {
         running = esp_ota_get_running_partition();
     }
 
+    /*
+     * A healthy BLE stack can need a few hundred milliseconds after app_main
+     * finishes before the bonded link is encrypted. That is pending evidence,
+     * not a failed self-check. The secure-link callback confirms immediately;
+     * the clean-uptime timer supplies the existing no-host fallback.
+     */
+    if (post_ok && boot_ble_ready && keyboard_ready && !ble_ready) {
+        ESP_LOGI(
+            TAG,
+            "OTA pending verify deferred awaiting encrypted BLE link or %us clean-uptime fallback",
+            (unsigned)(FIRMWARE_OTA_PENDING_VERIFY_FALLBACK_MS / 1000U));
+        return ESP_OK;
+    }
+
+    const bool decision_ble_ready = boot_ble_ready && ble_ready;
     denzic_ota_orchestration_v1_pending_decision_t decision =
-        denzic_ota_orchestration_v1_decide_pending_verify(true, post_ok, ble_ready, keyboard_ready);
+        denzic_ota_orchestration_v1_decide_pending_verify(
+            true,
+            post_ok,
+            decision_ble_ready,
+            keyboard_ready);
 
     if (decision.action == DENZIC_OTA_ORCHESTRATION_V1_PENDING_ROLLBACK) {
         ESP_LOGE(TAG,

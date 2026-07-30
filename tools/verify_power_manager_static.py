@@ -1320,18 +1320,19 @@ def main() -> int:
             ble_gap,
         )
         and re.search(
-            r"case\s+BLE_GAP_EVENT_CONN_UPDATE:[\s\S]{0,960}"
-            r"BLE_HS_HCI_ERR\(BLE_ERR_DIFF_TRANS_COLL\)[\s\S]{0,260}"
-            r"ble_hid_gap_defer_conn_param_retry_after_collision[\s\S]{0,360}"
-            r"ble_hid_gap_clear_conn_param_mode\(\"connection update failed\"\)[\s\S]{0,260}"
-            r"ble_hid_gap_confirm_conn_param_update",
-            ble_gap,
-        )
+             r"case\s+BLE_GAP_EVENT_CONN_UPDATE:[\s\S]{0,960}"
+             r"BLE_HS_HCI_ERR\(BLE_ERR_DIFF_TRANS_COLL\)[\s\S]{0,260}"
+             r"ble_hid_gap_defer_conn_param_retry_after_collision[\s\S]{0,360}"
+             r"ble_hid_gap_defer_conn_param_retry_after_rejection[\s\S]{0,300}"
+             r"ble_hid_gap_confirm_conn_param_update",
+             ble_gap,
+         )
+        and "BLE_HID_GAP_CONN_PARAM_REJECT_BACKOFF_MS 750U" in ble_gap
         and "connection parameter confirmation timeout" not in ble_gap
     )
     if not connection_param_state_is_event_owned:
         failures.append(
-            "ports/esp32/ble_hid_gap/ble_hid_gap_esp32.c: connection parameter state must reset on connection changes, let BLE_GAP_EVENT_CONN_UPDATE resolve EALREADY, and back off central transaction collisions without a local timeout"
+            "ports/esp32/ble_hid_gap/ble_hid_gap_esp32.c: connection parameter state must reset on connection changes, let BLE_GAP_EVENT_CONN_UPDATE resolve EALREADY, and back off central collisions/rejections without a local timeout"
         )
     power_manager_wrapper = (REPO_ROOT / "tools/verify_power_manager_static.ps1").read_text(encoding="utf-8")
     if not re.search(
@@ -2474,8 +2475,7 @@ def main() -> int:
     ).read_text(encoding="utf-8")
     voice_start_body = re.search(
         r"static\s+esp_err_t\s+voice_recording_control_start_internal\(bool\s+enable_audio_capture\)[\s\S]*?"
-        r"esp_err_t\s+voice_recording_control_start_recovery_only\(void\)\s*\{[\s\S]*?"
-        r"voice_recording_control_start_internal\(false\)",
+        r"esp_err_t\s+voice_recording_control_start\(void\)",
         voice_recording,
     )
     if voice_start_body is None:
@@ -2490,14 +2490,43 @@ def main() -> int:
             failures.append(
                 "components/voice_recording_control/voice_recording_control.c: cold boot EC11 push input must start before audio_capture_start so audio init cannot delay wake/button feedback"
             )
-        if "voice_recording_control_start_internal(true)" not in voice_start_text:
-            failures.append(
-                "components/voice_recording_control/voice_recording_control.c: voice_recording_control_start must enable audio capture"
-            )
-        if "voice_recording_control_start_internal(false)" not in voice_start_text:
-            failures.append(
-                "components/voice_recording_control/voice_recording_control.c: recovery-only start must skip audio capture for safe-mode EC11 re-pair"
-            )
+    normal_start = re.search(
+        r"esp_err_t\s+voice_recording_control_start\(void\)\s*\{[\s\S]*?"
+        r"voice_recording_control_start_internal\(false\)",
+        voice_recording,
+    )
+    recovery_start = re.search(
+        r"esp_err_t\s+voice_recording_control_start_recovery_only\(void\)\s*\{[\s\S]*?"
+        r"voice_recording_control_start_internal\(false\)",
+        voice_recording,
+    )
+    deferred_audio_start = re.search(
+        r"esp_err_t\s+voice_recording_control_enable_audio\(void\)\s*\{[\s\S]*?"
+        r"audio_capture_start\(\)",
+        voice_recording,
+    )
+    if normal_start is None:
+        failures.append(
+            "components/voice_recording_control/voice_recording_control.c: normal control start must defer audio capture until BLE startup"
+        )
+    if recovery_start is None:
+        failures.append(
+            "components/voice_recording_control/voice_recording_control.c: recovery-only start must skip audio capture for safe-mode EC11 re-pair"
+        )
+    if deferred_audio_start is None:
+        failures.append(
+            "components/voice_recording_control/voice_recording_control.c: deferred audio entrypoint must start audio capture"
+        )
+    ble_start_index = main_source.find("ble_hid_start()")
+    deferred_audio_index = main_source.find("voice_recording_control_enable_audio()")
+    if (
+        ble_start_index < 0
+        or deferred_audio_index < 0
+        or ble_start_index > deferred_audio_index
+    ):
+        failures.append(
+            "main/main.c: BLE host must start before deferred voice audio capture"
+        )
     keyboard_safe = re.search(
         r"esp_err_t\s+keyboard_start_safe_mode\(void\)[\s\S]*?"
         r"uint32_t\s+keyboard_get_key_press_count",

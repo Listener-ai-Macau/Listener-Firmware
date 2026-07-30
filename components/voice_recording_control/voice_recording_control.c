@@ -1075,6 +1075,18 @@ static esp_err_t voice_recording_control_enter_recording(
     bool request_reconnect,
     uint32_t pre_roll_ms)
 {
+    power_manager_snapshot_t power = {0};
+    power_manager_get_snapshot(&power);
+    if ((power.blockers & POWER_MANAGER_BLOCKER_OTA) != 0u ||
+        ble_audio_stream_type_ota_hold_is_active()) {
+        denzic_voice_activation_v1_reset(&s_voice_activation_machine);
+        ESP_LOGI(
+            TAG,
+            "recording start ignored during OTA source=%s",
+            source != NULL ? source : "unknown");
+        return ESP_ERR_NOT_ALLOWED;
+    }
+
     power_manager_record_activity("voice_recording_start");
     (void)ble_hid_gap_request_active_connection();
     power_manager_set_blocker(
@@ -2137,8 +2149,12 @@ static void voice_recording_control_refresh_voice_monitoring(void)
         s_state == VOICE_RECORDING_STATE_RECORDING &&
         !s_cancel_pending &&
         (s_active_session_automatic || s_voice_auto_stop_enabled);
+    bool ota_active =
+        (power.blockers & POWER_MANAGER_BLOCKER_OTA) != 0u ||
+        ble_audio_stream_type_ota_hold_is_active();
     bool monitoring =
         power.state == POWER_MANAGER_STATE_ACTIVE &&
+        !ota_active &&
         (idle_start_monitoring || active_stop_monitoring);
     if (monitoring == s_voice_monitoring) {
         return;

@@ -241,21 +241,20 @@
 #define STATUS_LED_EDGE_PROCESSING_BASE_PERCENT 10U
 #define STATUS_LED_EC11_PROCESSING_ORBIT_PERCENT 40U
 #define STATUS_LED_EDGE_PROCESSING_ORBIT_PERCENT 36U
-/* OTA owner 2026-07-28: status LED only — steady cyan that ramps with write
- * progress. No write-tick blink, no EC11/edge chase during OTA. */
-#define STATUS_LED_OTA_OK_MIN_PERCENT 18U
-#define STATUS_LED_OTA_OK_MAX_PERCENT 72U
-#define STATUS_LED_OTA_OK_WRITE_TICK_PERIOD_MS 700U
-#define STATUS_LED_OTA_OK_WRITE_TICK_ON_MS 0U
-#define STATUS_LED_OTA_EC11_BASE_PERCENT 0U
-#define STATUS_LED_OTA_EC11_FILL_PERCENT 0U
-#define STATUS_LED_OTA_EC11_HEAD_PERCENT 0U
-#define STATUS_LED_OTA_EC11_TAIL_PERCENT 0U
+/* OTA owner 2026-07-29: keep status steady and monotonic within the v1.0.2
+ * brightness range; restore the EC11 and edge animations exactly. */
+#define STATUS_LED_OTA_OK_MIN_PERCENT 1U
+#define STATUS_LED_OTA_OK_MAX_PERCENT 90U
+#define STATUS_LED_OTA_PROGRESS_STEPS 10U
+#define STATUS_LED_OTA_EC11_BASE_PERCENT 5U
+#define STATUS_LED_OTA_EC11_FILL_PERCENT 18U
+#define STATUS_LED_OTA_EC11_HEAD_PERCENT 42U
+#define STATUS_LED_OTA_EC11_TAIL_PERCENT 22U
 #define STATUS_LED_OTA_EC11_STEP_MS STATUS_LED_EC11_RECORDING_FLOW_STEP_MS
-#define STATUS_LED_OTA_EDGE_BASE_PERCENT 0U
-#define STATUS_LED_OTA_EDGE_HEAD_PERCENT 0U
-#define STATUS_LED_OTA_EDGE_TAIL_PERCENT 0U
-#define STATUS_LED_OTA_EDGE_FADE_PERCENT 0U
+#define STATUS_LED_OTA_EDGE_BASE_PERCENT 4U
+#define STATUS_LED_OTA_EDGE_HEAD_PERCENT 24U
+#define STATUS_LED_OTA_EDGE_TAIL_PERCENT 14U
+#define STATUS_LED_OTA_EDGE_FADE_PERCENT 8U
 #define STATUS_LED_OTA_EDGE_STEP_MS 520U
 #define STATUS_LED_SHUTDOWN_CONFIRM_MS 1200U
 #define STATUS_LED_SHUTDOWN_FINAL_CONFIRM_MS 1400U
@@ -3218,18 +3217,18 @@ static uint8_t status_led_ota_progress_percent_locked(void)
 
 static uint8_t status_led_ota_ok_percent_locked(uint32_t now_ms)
 {
+    (void)now_ms;
     if (!s_state.ota_active) {
         return 0U;
     }
-
-    /* Steady progress brightness only — no write-tick flash (owner: 慢慢全亮). */
-    (void)now_ms;
     uint8_t progress = status_led_ota_progress_percent_locked();
-    if (s_state.ota_expected_size > 0U) {
-        uint32_t span = (uint32_t)STATUS_LED_OTA_OK_MAX_PERCENT - STATUS_LED_OTA_OK_MIN_PERCENT;
-        return (uint8_t)(STATUS_LED_OTA_OK_MIN_PERCENT + ((span * progress) / 100U));
+    if (s_state.ota_expected_size == 0U) {
+        return STATUS_LED_OTA_OK_MIN_PERCENT;
     }
-    return (uint8_t)((STATUS_LED_OTA_OK_MIN_PERCENT + STATUS_LED_OTA_OK_MAX_PERCENT) / 2U);
+    uint32_t span = (uint32_t)STATUS_LED_OTA_OK_MAX_PERCENT - STATUS_LED_OTA_OK_MIN_PERCENT;
+    uint32_t step = ((uint32_t)progress * STATUS_LED_OTA_PROGRESS_STEPS) / 100U;
+    return (uint8_t)(STATUS_LED_OTA_OK_MIN_PERCENT +
+                     ((span * step) / STATUS_LED_OTA_PROGRESS_STEPS));
 }
 
 static bool status_led_shutdown_confirm_active_locked(uint32_t now_ms)
@@ -3698,15 +3697,14 @@ static bool status_led_render_ec11_rotation_feedback_locked(status_led_frame_t *
 
 static void status_led_render_ec11_locked(status_led_frame_t *frame, uint32_t now_ms)
 {
+    if (s_state.ota_active) {
+        status_led_render_ec11_ota_locked(frame, now_ms);
+        return;
+    }
     if (status_led_error_active_locked(now_ms)) {
         return;
     }
     if (s_state.preview_suppress_accents) {
-        return;
-    }
-
-    if (s_state.ota_active) {
-        /* Owner: OTA uses status LED progress only — leave EC11 dark (no chase). */
         return;
     }
 
@@ -3903,6 +3901,18 @@ static void status_led_render_keys_locked(status_led_frame_t *frame, uint32_t no
 
 static void status_led_render_edge_locked(status_led_frame_t *frame, uint32_t now_ms)
 {
+    if (s_state.ota_active) {
+        status_led_render_edge_clockwise_chase_locked(
+            frame,
+            status_led_ota_elapsed_ms_locked(now_ms),
+            status_led_ota_color(),
+            STATUS_LED_OTA_EDGE_BASE_PERCENT,
+            STATUS_LED_OTA_EDGE_HEAD_PERCENT,
+            STATUS_LED_OTA_EDGE_TAIL_PERCENT,
+            STATUS_LED_OTA_EDGE_FADE_PERCENT,
+            STATUS_LED_OTA_EDGE_STEP_MS);
+        return;
+    }
     if (status_led_error_active_locked(now_ms)) {
         return;
     }
@@ -3911,11 +3921,6 @@ static void status_led_render_edge_locked(status_led_frame_t *frame, uint32_t no
     }
     if (!s_state.preview_effect_only &&
         s_state.battery_valid && status_led_battery_display_level_locked() < 20U) {
-        return;
-    }
-
-    if (s_state.ota_active) {
-        /* Owner: no edge chase during OTA — status LED progress only. */
         return;
     }
 
@@ -5431,6 +5436,7 @@ void status_led_set_ota_active(bool active, size_t bytes_written, size_t expecte
         uint8_t old_progress = status_led_ota_progress_percent_locked();
         status_led_resume_output_locked();
         s_state.preview_effect_only = false;
+        s_state.preview_suppress_accents = false;
         s_state.preview_ble_override_until_ms = 0U;
 
         if (active) {
@@ -6637,7 +6643,7 @@ static void status_led_print_status(void)
         " processing_thinking_scan_profile=da_long_gap_grouped_dada_rest"
         " processing_thinking_period_ms=%u"
         " processing_stale_timeout_ms=%u"
-        " ota_progress_style=LED5_OK_cyan_progress_write_tick_EC11_progress_EDGE_chase"
+        " ota_progress_style=LED5_OK_cyan_write_progress_EC11_v1.0.2_progress_EDGE_v1.0.2_chase"
         " ota_progress_idle_blocker=POWER_MANAGER_BLOCKER_OTA"
         " strip_dirty_tx=1 strip_tx_failure_retry_dirty=1 suspended_strip_resume_dirty=1"
         " status_tx_last=1 rmt_idle_drive=active_dma_low_power_all_zone_non_dma_final_frame_then_release_gpio_low"

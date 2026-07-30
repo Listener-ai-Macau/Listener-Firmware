@@ -37,12 +37,14 @@ typedef enum {
 /* Notification chunk header layout comes from the platform GATT chunk codec. */
 
 static const char *TAG = "ble_diag_log";
+static const uint8_t s_ota_ready_marker[] = "DOTA_READY_V1";
 static const ble_uuid128_t s_service_uuid = BLE_DIAG_LOG_SERVICE_UUID;
 static const ble_uuid128_t s_control_uuid = BLE_DIAG_LOG_CONTROL_UUID;
 static const ble_uuid128_t s_data_uuid = BLE_DIAG_LOG_DATA_UUID;
 static const ble_uuid128_t s_count_uuid = BLE_DIAG_LOG_COUNT_UUID;
 static bool s_registered;
 static uint16_t s_data_val_handle;
+static bool s_notify_enabled;
 
 /* Export session state */
 static bool s_exporting;
@@ -168,6 +170,30 @@ static uint16_t ble_diag_log_max_event_per_chunk(void)
         return BLE_DIAG_LOG_MAX_EVENTS_PER_CHUNK;
     }
     return mtu_events;
+}
+
+static void ble_diag_log_notify_ota_ready(uint16_t conn_handle, const char *reason)
+{
+    if (!s_notify_enabled ||
+        s_data_val_handle == 0 ||
+        s_conn_handle != conn_handle) {
+        return;
+    }
+    struct os_mbuf *om =
+        ble_hs_mbuf_from_flat(s_ota_ready_marker, sizeof(s_ota_ready_marker) - 1U);
+    if (om == NULL) {
+        ESP_LOGW(TAG, "OTA ready marker allocation failed reason=%s", reason);
+        return;
+    }
+    int rc = ble_gatts_notify_custom(conn_handle, s_data_val_handle, om);
+    ESP_LOGI(
+        TAG,
+        "OTA ready marker notify reason=%s conn=%u attr=%u bytes=%u rc=%d",
+        reason,
+        conn_handle,
+        s_data_val_handle,
+        (unsigned)(sizeof(s_ota_ready_marker) - 1U),
+        rc);
 }
 
 static void ble_diag_log_apply_mtu(uint16_t conn_handle, uint16_t mtu, const char *reason)
@@ -375,6 +401,15 @@ static int ble_diag_log_handle_control_write(uint16_t conn_handle, struct os_mbu
         return 0;
     }
 
+    if (strcmp(op, "ota_ready") == 0) {
+        if (!s_notify_enabled) {
+            ESP_LOGW(TAG, "OTA ready challenge rejected: diagnostic notify disabled conn=%u", conn_handle);
+            return BLE_ATT_ERR_UNLIKELY;
+        }
+        ble_diag_log_notify_ota_ready(conn_handle, "ota_ready_challenge");
+        return 0;
+    }
+
     ESP_LOGW(TAG, "unknown op=%s", op);
     return BLE_ATT_ERR_UNLIKELY;
 }
@@ -496,8 +531,24 @@ void ble_diag_log_on_gap_disconnect(uint16_t conn_handle)
         ble_diag_log_stop_export();
     }
     s_conn_handle = BLE_HS_CONN_HANDLE_NONE;
+    s_notify_enabled = false;
     s_att_mtu = BLE_ATT_MTU_DFLT;
     s_att_value_max_bytes = BLE_ATT_MTU_DFLT - BLE_DIAG_LOG_ATT_HEADER_BYTES;
+}
+
+void ble_diag_log_on_gap_subscribe(
+    uint16_t conn_handle,
+    uint16_t attr_handle,
+    bool notify_enabled)
+{
+    if (attr_handle != s_data_val_handle || s_data_val_handle == 0) {
+        return;
+    }
+    s_conn_handle = conn_handle;
+    s_notify_enabled = notify_enabled;
+    if (notify_enabled) {
+        ble_diag_log_notify_ota_ready(conn_handle, "diagnostic_subscribe");
+    }
 }
 
 void ble_diag_log_on_gap_mtu(uint16_t conn_handle, uint16_t mtu)
@@ -512,6 +563,7 @@ void ble_diag_log_on_gap_mtu(uint16_t conn_handle, uint16_t mtu)
     }
 
     ble_diag_log_apply_mtu(conn_handle, mtu, "gap_mtu");
+    ble_diag_log_notify_ota_ready(conn_handle, "mtu_ready");
 }
 
 void ble_diag_log_log_gatt_state(void)

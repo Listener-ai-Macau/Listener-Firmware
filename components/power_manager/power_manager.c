@@ -2529,7 +2529,13 @@ void power_manager_set_blocker(uint32_t blocker_mask, bool enabled)
         xSemaphoreGive(s_mutex);
     }
 
-    if (old_blockers != new_blockers) {
+    const bool blocker_changed = old_blockers != new_blockers;
+    const bool state_changed = previous != next;
+    if (!blocker_changed && !state_changed) {
+        return;
+    }
+
+    if (blocker_changed) {
         char blocker_text[96];
         power_manager_blocker_names(new_blockers, blocker_text, sizeof(blocker_text));
         ESP_LOGI(
@@ -2543,7 +2549,7 @@ void power_manager_set_blocker(uint32_t blocker_mask, bool enabled)
                  old_blockers, new_blockers, blocker_mask, enabled ? 1 : 0);
     }
 
-    if (previous != next) {
+    if (state_changed) {
         power_manager_log_transition(previous, next, 0, new_blockers);
         power_manager_apply_state(previous, next, new_blockers);
     } else if (new_blockers != 0) {

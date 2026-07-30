@@ -5,11 +5,14 @@
 #include <stdint.h>
 #include <string.h>
 
+#include "audio_capture.h"
 #include "denzic_ota_v1.h"
 #include "denzic_ota_v1_reorder.h"
 #include "diag_log.h"
+#include "esp_heap_caps.h"
 #include "esp_log.h"
 #include "esp_system.h"
+#include "esp_timer.h"
 #include "firmware_ota.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/queue.h"
@@ -29,6 +32,9 @@
 #define BLE_FIRMWARE_OTA_DEFAULT_WINDOW_CHUNKS 200
 #define BLE_FIRMWARE_OTA_ACTIVE_LINK_RETRY_MS 100
 #define BLE_FIRMWARE_OTA_REBOOT_DELAY_MS 500
+#define BLE_FIRMWARE_OTA_REBOOT_DISCONNECT_TIMEOUT_MS 1000
+#define BLE_FIRMWARE_OTA_REBOOT_DISCONNECT_POLL_MS 20
+/* ESP-IDF Xtensa StackType_t is byte-addressed. Keep the proven 4 KB worker. */
 #define BLE_FIRMWARE_OTA_REBOOT_TASK_STACK_BYTES 4096
 #define BLE_FIRMWARE_OTA_WORKER_TASK_STACK_BYTES 4096
 /* Host pipelines ~24 WWR + window up to 128. Queue storage is static BSS so
@@ -42,6 +48,10 @@
 #define BLE_FIRMWARE_OTA_DATA_ENQUEUE_TIMEOUT_MS 2000
 #define BLE_FIRMWARE_OTA_WORKER_POLL_TIMEOUT_MS 10
 #define BLE_FIRMWARE_OTA_WORKER_TASK_PRIORITY (tskIDLE_PRIORITY + 6)
+#define BLE_FIRMWARE_OTA_AUDIO_SUSPEND_TIMEOUT_MS 250
+#define BLE_FIRMWARE_OTA_STORAGE_BATCH_CHUNKS 8
+#define BLE_FIRMWARE_OTA_STORAGE_BATCH_BYTES \
+    (BLE_FIRMWARE_OTA_DATA_PAYLOAD_MAX * BLE_FIRMWARE_OTA_STORAGE_BATCH_CHUNKS)
 #define BLE_FIRMWARE_OTA_COMPACT_CAPABILITIES DENZIC_OTA_V1_PROTOCOL_NAME
 
 typedef enum {
@@ -80,6 +90,7 @@ static QueueHandle_t s_ota_worker_queue;
 static TaskHandle_t s_ota_worker_task;
 /* Permanent worker touches flash; stack stays internal BSS (not xTaskCreate/PSRAM). */
 static StaticTask_t s_ota_worker_tcb;
+_Static_assert(sizeof(StackType_t) == 1, "ESP-IDF Xtensa task stacks must be byte addressed");
 static StackType_t s_ota_worker_stack[BLE_FIRMWARE_OTA_WORKER_TASK_STACK_BYTES];
 /* Queue item storage in BSS (not heap) so OTA service still registers under low heap. */
 static uint8_t s_ota_worker_queue_storage[BLE_FIRMWARE_OTA_WORKER_QUEUE_DEPTH
@@ -88,6 +99,13 @@ static StaticQueue_t s_ota_worker_queue_control;
 /* Platform dual-lane reorder buffer (shared with Companion). */
 static denzic_ota_v1_reorder_slot_t s_ota_reorder_slots[BLE_FIRMWARE_OTA_REORDER_SLOTS];
 static denzic_ota_v1_reorder_t s_ota_reorder;
+/* Allocate only for an active OTA, after boot-time audio DMA owns its memory.
+ * Flash cache-disabled writes still require this payload to stay internal. */
+static uint8_t *s_ota_storage_batch;
+static size_t s_ota_storage_batch_length;
+static uint32_t s_ota_storage_write_calls;
+static uint64_t s_ota_storage_write_total_us;
+static uint32_t s_ota_storage_write_max_us;
 /* 由 on_firmware_abort 置位（任意任务，含 worker 持锁处理 data 时的回调路径）；worker 下次
  * 循环持锁清零并执行 core_init。volatile bool 单写多读在本平台原子，无需锁。 */
 static volatile bool s_core_reset_pending;
@@ -96,6 +114,8 @@ extern esp_err_t ble_hid_gap_request_active_connection(void) __attribute__((weak
 extern esp_err_t ble_hid_gap_schedule_active_connection(void) __attribute__((weak));
 extern bool ble_hid_gap_active_connection_applied(void) __attribute__((weak));
 extern bool ble_hid_gap_ota_connection_ready(void) __attribute__((weak));
+extern esp_err_t ble_hid_gap_prepare_shutdown_disconnect(void) __attribute__((weak));
+extern bool ble_hid_gap_is_connected(void) __attribute__((weak));
 
 static void ble_firmware_ota_lock(void)
 {
@@ -151,6 +171,29 @@ static void ble_firmware_ota_reboot_task(void *arg)
 {
     (void)arg;
     vTaskDelay(pdMS_TO_TICKS(BLE_FIRMWARE_OTA_REBOOT_DELAY_MS));
+
+    esp_err_t disconnect_ret = ESP_ERR_NOT_SUPPORTED;
+    if (ble_hid_gap_prepare_shutdown_disconnect != NULL) {
+        disconnect_ret = ble_hid_gap_prepare_shutdown_disconnect();
+    }
+    const TickType_t disconnect_started = xTaskGetTickCount();
+    if (disconnect_ret == ESP_OK && ble_hid_gap_is_connected != NULL) {
+        const TickType_t disconnect_timeout =
+            pdMS_TO_TICKS(BLE_FIRMWARE_OTA_REBOOT_DISCONNECT_TIMEOUT_MS);
+        while (ble_hid_gap_is_connected() &&
+               (xTaskGetTickCount() - disconnect_started) < disconnect_timeout) {
+            vTaskDelay(pdMS_TO_TICKS(BLE_FIRMWARE_OTA_REBOOT_DISCONNECT_POLL_MS));
+        }
+    }
+    const bool still_connected =
+        ble_hid_gap_is_connected != NULL && ble_hid_gap_is_connected();
+    ESP_LOGI(
+        TAG,
+        "Denzic OTA v1 reboot boundary disconnect_ret=%s disconnected=%u elapsed_ms=%u",
+        esp_err_to_name(disconnect_ret),
+        still_connected ? 0U : 1U,
+        (unsigned)((xTaskGetTickCount() - disconnect_started) * portTICK_PERIOD_MS));
+
     firmware_ota_reboot_to_pending_image();
     vTaskDelete(NULL);
 }
@@ -214,6 +257,57 @@ static bool ble_firmware_ota_storage_begin(void *driver_context, uint32_t image_
     (void)driver_context;
     s_active_link_retry_tick = 0;
     s_active_link_confirmed = false;
+    s_ota_storage_batch_length = 0;
+    if (s_ota_storage_batch != NULL) {
+        heap_caps_free(s_ota_storage_batch);
+        s_ota_storage_batch = NULL;
+    }
+    s_ota_storage_write_calls = 0;
+    s_ota_storage_write_total_us = 0;
+    s_ota_storage_write_max_us = 0;
+    esp_err_t audio_suspend_ret = audio_capture_set_ota_suspended(true);
+    const TickType_t audio_suspend_started = xTaskGetTickCount();
+    while (audio_suspend_ret == ESP_OK &&
+           !audio_capture_idle_power_save_is_applied() &&
+           (xTaskGetTickCount() - audio_suspend_started) <
+               pdMS_TO_TICKS(BLE_FIRMWARE_OTA_AUDIO_SUSPEND_TIMEOUT_MS)) {
+        vTaskDelay(1);
+    }
+    if (audio_suspend_ret != ESP_OK ||
+        !audio_capture_idle_power_save_is_applied()) {
+        (void)audio_capture_set_ota_suspended(false);
+        ESP_LOGE(
+            TAG,
+            "Denzic OTA v1 audio suspend failed ret=%s applied=%u",
+            esp_err_to_name(audio_suspend_ret),
+            audio_capture_idle_power_save_is_applied());
+        return false;
+    }
+    const size_t internal_free_before =
+        heap_caps_get_free_size(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
+    const size_t internal_largest_before =
+        heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
+    s_ota_storage_batch = heap_caps_malloc(
+        BLE_FIRMWARE_OTA_STORAGE_BATCH_BYTES,
+        MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
+    if (s_ota_storage_batch == NULL) {
+        (void)audio_capture_set_ota_suspended(false);
+        ESP_LOGE(
+            TAG,
+            "Denzic OTA v1 internal batch allocation failed bytes=%u free=%u largest=%u",
+            (unsigned)BLE_FIRMWARE_OTA_STORAGE_BATCH_BYTES,
+            (unsigned)internal_free_before,
+            (unsigned)internal_largest_before);
+        return false;
+    }
+    ESP_LOGI(
+        TAG,
+        "Denzic OTA v1 audio suspended and batch allocated bytes=%u internal_free=%u->%u largest=%u->%u",
+        (unsigned)BLE_FIRMWARE_OTA_STORAGE_BATCH_BYTES,
+        (unsigned)internal_free_before,
+        (unsigned)heap_caps_get_free_size(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT),
+        (unsigned)internal_largest_before,
+        (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT));
     /* New image session: drop any dual-lane futures from a prior attempt. */
     denzic_ota_v1_reorder_clear(&s_ota_reorder);
     const firmware_ota_blocker_t blocker_before = firmware_ota_get_blocker();
@@ -225,6 +319,9 @@ static bool ble_firmware_ota_storage_begin(void *driver_context, uint32_t image_
             (unsigned)image_size,
             firmware_ota_blocker_name(blocker_before));
     } else {
+        heap_caps_free(s_ota_storage_batch);
+        s_ota_storage_batch = NULL;
+        (void)audio_capture_set_ota_suspended(false);
         /* Host UI often maps transport failure to "设备拒绝升级"; this line is the
          * device-side root cause when BEGIN reaches GATT (blocker / partition / erase). */
         ESP_LOGW(
@@ -237,26 +334,81 @@ static bool ble_firmware_ota_storage_begin(void *driver_context, uint32_t image_
     return ret == ESP_OK;
 }
 
+static bool ble_firmware_ota_storage_flush(void)
+{
+    if (s_ota_storage_batch_length == 0) {
+        return true;
+    }
+
+    const size_t length = s_ota_storage_batch_length;
+    s_ota_storage_batch_length = 0;
+    const int64_t write_started_us = esp_timer_get_time();
+    esp_err_t ret = firmware_ota_write(s_ota_storage_batch, length);
+    uint32_t write_elapsed_us =
+        (uint32_t)(esp_timer_get_time() - write_started_us);
+    s_ota_storage_write_calls++;
+    s_ota_storage_write_total_us += write_elapsed_us;
+    if (write_elapsed_us > s_ota_storage_write_max_us) {
+        s_ota_storage_write_max_us = write_elapsed_us;
+    }
+    if (ret != ESP_OK) {
+        ESP_LOGE(
+            TAG,
+            "Denzic OTA v1 batched data write failed len=%u ret=%s",
+            (unsigned)length,
+            esp_err_to_name(ret));
+        firmware_ota_abort(DIAG_OTA_ABORT_BLE_WRITE_FAIL);
+        return false;
+    }
+    return true;
+}
+
 static bool ble_firmware_ota_storage_write(
     void *driver_context,
     const uint8_t *data,
     size_t length)
 {
     (void)driver_context;
-    esp_err_t ret = firmware_ota_write(data, length);
-    if (ret != ESP_OK) {
-        ESP_LOGE(TAG, "Denzic OTA v1 data write failed len=%u ret=%s", (unsigned)length, esp_err_to_name(ret));
-        firmware_ota_abort(DIAG_OTA_ABORT_BLE_WRITE_FAIL);
+    if (s_ota_storage_batch == NULL ||
+        data == NULL ||
+        length == 0 ||
+        length > BLE_FIRMWARE_OTA_STORAGE_BATCH_BYTES) {
+        return false;
     }
-    return ret == ESP_OK;
+    if (s_ota_storage_batch_length + length > BLE_FIRMWARE_OTA_STORAGE_BATCH_BYTES &&
+        !ble_firmware_ota_storage_flush()) {
+        return false;
+    }
+
+    memcpy(s_ota_storage_batch + s_ota_storage_batch_length, data, length);
+    s_ota_storage_batch_length += length;
+    if (s_ota_storage_batch_length == BLE_FIRMWARE_OTA_STORAGE_BATCH_BYTES) {
+        return ble_firmware_ota_storage_flush();
+    }
+    return true;
 }
 
 static bool ble_firmware_ota_storage_finish(void *driver_context)
 {
     (void)driver_context;
+    if (!ble_firmware_ota_storage_flush()) {
+        heap_caps_free(s_ota_storage_batch);
+        s_ota_storage_batch = NULL;
+        return false;
+    }
     esp_err_t ret = firmware_ota_finish(false);
-    ESP_LOGI(TAG, "Denzic OTA v1 finish size=%u ret=%s", (unsigned)s_ota.expected_size, esp_err_to_name(ret));
+    heap_caps_free(s_ota_storage_batch);
+    s_ota_storage_batch = NULL;
+    ESP_LOGI(
+        TAG,
+        "Denzic OTA v1 finish size=%u ret=%s flash_calls=%u flash_total_ms=%u flash_max_us=%u",
+        (unsigned)s_ota.expected_size,
+        esp_err_to_name(ret),
+        (unsigned)s_ota_storage_write_calls,
+        (unsigned)(s_ota_storage_write_total_us / 1000U),
+        (unsigned)s_ota_storage_write_max_us);
     if (ret != ESP_OK) {
+        (void)audio_capture_set_ota_suspended(false);
         return false;
     }
     if (!ble_firmware_ota_schedule_reboot()) {
@@ -274,11 +426,18 @@ static bool ble_firmware_ota_storage_finish(void *driver_context)
 static void ble_firmware_ota_storage_abort(void *driver_context)
 {
     (void)driver_context;
+    s_ota_storage_batch_length = 0;
+    heap_caps_free(s_ota_storage_batch);
+    s_ota_storage_batch = NULL;
     firmware_ota_abort(DIAG_OTA_ABORT_BLE_CONTROL);
+    (void)audio_capture_set_ota_suspended(false);
 }
 
 static void ble_firmware_ota_core_init(void)
 {
+    s_ota_storage_batch_length = 0;
+    heap_caps_free(s_ota_storage_batch);
+    s_ota_storage_batch = NULL;
     const denzic_ota_v1_storage_driver_t storage = {
         .begin = ble_firmware_ota_storage_begin,
         .write = ble_firmware_ota_storage_write,
@@ -389,6 +548,7 @@ static void ble_firmware_ota_worker_task(void *arg)
                 /* 丢弃 stale data */
             }
             ble_firmware_ota_core_init();
+            (void)audio_capture_set_ota_suspended(false);
         } else if (have_job) {
             /* Batch-drain while holding the lock so flash stays busy and host
              * SYNC/status sees a fresher offset (fewer recoveries / resends). */
@@ -407,8 +567,10 @@ static void ble_firmware_ota_worker_task(void *arg)
 
 static void ble_firmware_ota_drain_queued_data_locked(void)
 {
-    /* Status/SYNC must observe the same offset the host just WWR'd. Drain any
-     * jobs still waiting behind flash so host does not false-recover and resend. */
+    /* NimBLE serializes callbacks, so SYNC/status can drain at most the fixed
+     * 32-entry tail while holding the OTA lock. This preserves the 1.0.3
+     * confirmed-offset fast path without making ordinary DATA writes run on
+     * the callback task. */
     ble_firmware_ota_data_job_t job;
     while (xQueueReceive(s_ota_worker_queue, &job, 0) == pdTRUE) {
         (void)denzic_ota_v1_handle_data_ordered(
@@ -416,8 +578,10 @@ static void ble_firmware_ota_drain_queued_data_locked(void)
             &s_ota_reorder,
             job.data,
             job.length);
+        watchdog_platform_feed_current_task();
     }
     denzic_ota_v1_reorder_drain(&s_ota, &s_ota_reorder);
+    (void)ble_firmware_ota_storage_flush();
 }
 
 static int ble_firmware_ota_append_status(struct os_mbuf *om)
@@ -509,13 +673,14 @@ static int ble_firmware_ota_handle_control_write(struct os_mbuf *om)
             (unsigned)begin_chunk,
             (unsigned)begin_window,
             (unsigned)state_after);
-        /* BEGIN starts bulk WWR: re-assert active CI/2M PHY without waiting for
-         * the slower OTA reconnect terminate path. */
+        /* BEGIN starts bulk WWR immediately. Request active CI/2M PHY now;
+         * ble_hid_gap_request_active_connection() retains the bounded async
+         * completion fallback and per-connection rejection backoff. */
         if (ble_hid_gap_schedule_active_connection != NULL ||
             ble_hid_gap_request_active_connection != NULL) {
-            esp_err_t ret = ble_hid_gap_schedule_active_connection != NULL
-                ? ble_hid_gap_schedule_active_connection()
-                : ble_hid_gap_request_active_connection();
+            esp_err_t ret = ble_hid_gap_request_active_connection != NULL
+                ? ble_hid_gap_request_active_connection()
+                : ble_hid_gap_schedule_active_connection();
             ESP_LOGI(TAG, "Denzic OTA v1 BEGIN requested active BLE link ret=%s",
                      esp_err_to_name(ret));
         }
@@ -526,6 +691,13 @@ static int ble_firmware_ota_handle_control_write(struct os_mbuf *om)
             ble_firmware_ota_op_name(op),
             op,
             (unsigned)state_after);
+        if (op == DENZIC_OTA_V1_OP_FINISH && s_ota_worker_task != NULL) {
+            ESP_LOGI(
+                TAG,
+                "Denzic OTA v1 worker stack high-water bytes=%u configured_bytes=%u",
+                (unsigned)uxTaskGetStackHighWaterMark(s_ota_worker_task),
+                (unsigned)BLE_FIRMWARE_OTA_WORKER_TASK_STACK_BYTES);
+        }
     }
     return result;
 }
