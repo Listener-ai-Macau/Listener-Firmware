@@ -4,12 +4,12 @@
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
 #include "freertos/FreeRTOS.h"
 #include "freertos/queue.h"
-#include "freertos/semphr.h"
 #include "freertos/task.h"
 #include "esp_log.h"
 #include "diag_log.h"
@@ -33,6 +33,10 @@
 #define VOICE_RECORDING_CONTROL_HOST_CLEANUP_TOGGLE_GUARD_MS 1500
 #define VOICE_RECORDING_CONTROL_ARRAY_SIZE(array) (sizeof(array) / sizeof((array)[0]))
 #define VOICE_RECORDING_CONTROL_VAD_QUEUE_LENGTH 24
+#define VOICE_RECORDING_CONTROL_COMMAND_QUEUE_LENGTH 24
+#define VOICE_RECORDING_CONTROL_SOURCE_BYTES 32
+#define VOICE_RECORDING_CONTROL_STORED_SOURCE_BYTES 64
+#define VOICE_RECORDING_CONTROL_COMMANDS_PER_TICK 2
 
 typedef enum {
     VOICE_RECORDING_STATE_IDLE = 0,
@@ -135,29 +139,38 @@ typedef struct {
     uint32_t elapsed_ms;
 } voice_recording_control_vad_event_t;
 
+typedef struct {
+    char command[VOICE_RECORDING_CONTROL_COMMAND_BUFFER_BYTES];
+    char source[VOICE_RECORDING_CONTROL_SOURCE_BYTES];
+} voice_recording_control_command_t;
+
 static const char *TAG = "voice_rec_ctrl";
 
 static bool s_started;
 static TaskHandle_t s_task_handle;
-static SemaphoreHandle_t s_state_mutex;
 static bool s_usb_command_active;
 static size_t s_usb_command_length;
 static char s_usb_command_buffer[VOICE_RECORDING_CONTROL_COMMAND_BUFFER_BYTES];
 static voice_recording_state_t s_state = VOICE_RECORDING_STATE_IDLE;
 static bool s_cancel_pending;
 static const char *s_cancel_source;
+static char s_cancel_source_storage[VOICE_RECORDING_CONTROL_STORED_SOURCE_BYTES];
 static bool s_pending_start;
 static const char *s_pending_start_source;
+static char s_pending_start_source_storage[VOICE_RECORDING_CONTROL_STORED_SOURCE_BYTES];
 static const char *s_pending_start_reason;
 static const char *s_pending_start_detail;
 static TickType_t s_pending_start_deadline_tick;
 static TickType_t s_pending_start_next_retry_tick;
 static const char *s_active_session_source;
+static char s_active_session_source_storage[VOICE_RECORDING_CONTROL_STORED_SOURCE_BYTES];
 static bool s_active_session_automatic;
 static bool s_active_session_visible;
 static TickType_t s_host_cleanup_toggle_guard_until_tick;
 static uint32_t s_session_count;
 static QueueHandle_t s_vad_queue;
+static QueueHandle_t s_command_queue;
+static bool s_power_state_refresh_pending;
 static bool s_voice_monitoring;
 static bool s_voice_auto_start_enabled;
 static bool s_voice_auto_stop_enabled;
@@ -351,16 +364,20 @@ static const voice_recording_control_transition_case_t VOICE_RECORDING_CONTROL_F
 
 static esp_err_t voice_recording_control_activate_automatic_session(const char *source);
 
-static bool voice_recording_control_lock(void)
+static const char *voice_recording_control_store_source(
+    char *storage,
+    size_t storage_bytes,
+    const char *source)
 {
-    return s_state_mutex == NULL || xSemaphoreTake(s_state_mutex, portMAX_DELAY) == pdTRUE;
-}
-
-static void voice_recording_control_unlock(void)
-{
-    if (s_state_mutex != NULL) {
-        xSemaphoreGive(s_state_mutex);
+    if (storage == NULL || storage_bytes == 0) {
+        return "unknown";
     }
+    snprintf(
+        storage,
+        storage_bytes,
+        "%s",
+        source != NULL ? source : "unknown");
+    return storage;
 }
 
 static voice_recording_control_source_class_t voice_recording_control_classify_source(const char *source)
@@ -1020,7 +1037,10 @@ static void voice_recording_control_schedule_pending_start(
 {
     TickType_t now = xTaskGetTickCount();
     s_pending_start = true;
-    s_pending_start_source = source;
+    s_pending_start_source = voice_recording_control_store_source(
+        s_pending_start_source_storage,
+        sizeof(s_pending_start_source_storage),
+        source);
     s_pending_start_reason = reason != NULL ? reason : "audio_transport_not_ready";
     s_pending_start_detail = detail != NULL ? detail : "recording_waiting_for_ble_audio";
     s_pending_start_deadline_tick = now + pdMS_TO_TICKS(VOICE_RECORDING_CONTROL_PENDING_START_TIMEOUT_MS);
@@ -1166,7 +1186,10 @@ static esp_err_t voice_recording_control_enter_recording(
     voice_recording_control_reset_pending_start();
     s_cancel_pending = false;
     s_cancel_source = NULL;
-    s_active_session_source = source;
+    s_active_session_source = voice_recording_control_store_source(
+        s_active_session_source_storage,
+        sizeof(s_active_session_source_storage),
+        source);
     s_active_session_automatic = pre_roll_ms > 0u;
     s_active_session_visible = !s_active_session_automatic;
     s_state = VOICE_RECORDING_STATE_RECORDING;
@@ -1206,6 +1229,8 @@ static esp_err_t voice_recording_control_exit_recording_with_origin(
     if (ret != ESP_OK) {
         if (!audio_capture_session_is_active()) {
             s_state = VOICE_RECORDING_STATE_IDLE;
+            s_cancel_pending = false;
+            s_cancel_source = NULL;
             s_active_session_source = NULL;
             s_active_session_automatic = false;
             s_active_session_visible = false;
@@ -1278,6 +1303,8 @@ static void voice_recording_control_complete_transfer_cleanup(
         denzic_voice_activation_v1_reset(&s_voice_activation_machine);
     }
     s_state = VOICE_RECORDING_STATE_IDLE;
+    s_cancel_pending = false;
+    s_cancel_source = NULL;
     s_active_session_source = NULL;
     s_active_session_automatic = false;
     s_active_session_visible = false;
@@ -1546,7 +1573,10 @@ static void voice_recording_control_cancel(const char *source)
     }
 
     s_cancel_pending = true;
-    s_cancel_source = source;
+    s_cancel_source = voice_recording_control_store_source(
+        s_cancel_source_storage,
+        sizeof(s_cancel_source_storage),
+        source);
     if (!audio_capture_session_is_active()) {
         s_cancel_pending = false;
         s_cancel_source = NULL;
@@ -1897,15 +1927,10 @@ static esp_err_t voice_recording_control_activate_automatic_session(
     return ESP_OK;
 }
 
-esp_err_t voice_recording_control_dispatch_control_command(const char *command, const char *source)
+static esp_err_t voice_recording_control_handle_control_command(
+    const char *command,
+    const char *source)
 {
-    if (command == NULL || source == NULL) {
-        return ESP_ERR_INVALID_ARG;
-    }
-    if (!voice_recording_control_lock()) {
-        return ESP_ERR_TIMEOUT;
-    }
-
     const char *action = command;
     if (strncmp(
             command,
@@ -1916,33 +1941,25 @@ esp_err_t voice_recording_control_dispatch_control_command(const char *command, 
 
     if (strcmp(action, "TOGGLE") == 0) {
         voice_recording_control_toggle(source);
-        voice_recording_control_unlock();
         return ESP_OK;
     }
     if (strcmp(action, "CANCEL") == 0) {
         voice_recording_control_cancel(source);
-        voice_recording_control_unlock();
         return ESP_OK;
     }
     if (strcmp(action, "ACTIVATE") == 0) {
-        esp_err_t ret =
-            voice_recording_control_activate_automatic_session(source);
-        voice_recording_control_unlock();
-        return ret;
+        return voice_recording_control_activate_automatic_session(source);
     }
     if (strcmp(action, "PROCESSING:START") == 0 || strcmp(action, "PROCESSING_START") == 0) {
         voice_recording_control_host_processing_start(source);
-        voice_recording_control_unlock();
         return ESP_OK;
     }
     if (strcmp(action, "PROCESSING:STOP") == 0 || strcmp(action, "PROCESSING_STOP") == 0) {
         voice_recording_control_host_processing_stop(source);
-        voice_recording_control_unlock();
         return ESP_OK;
     }
     if (strcmp(action, "PROCESSING:DONE") == 0 || strcmp(action, "PROCESSING_DONE") == 0) {
         voice_recording_control_host_processing_done(source);
-        voice_recording_control_unlock();
         return ESP_OK;
     }
     if (strcmp(action, "PROCESSING:WARN") == 0 ||
@@ -1956,17 +1973,14 @@ esp_err_t voice_recording_control_dispatch_control_command(const char *command, 
         strcmp(action, "PROCESSING:ERROR") == 0 ||
         strcmp(action, "PROCESSING_ERROR") == 0) {
         voice_recording_control_host_processing_warning(source);
-        voice_recording_control_unlock();
         return ESP_OK;
     }
     if (strcmp(action, "STOP") == 0 || strcmp(action, "CLEANUP") == 0) {
         voice_recording_control_stop(source);
-        voice_recording_control_unlock();
         return ESP_OK;
     }
     if (strcmp(action, "RECOVERY:TYPE:MANUAL") == 0) {
         voice_recording_control_recovery(source, true, false, true);
-        voice_recording_control_unlock();
         return ESP_OK;
     }
     if (strcmp(action, "RECOVERY:TYPE:SILENT") == 0 ||
@@ -1974,24 +1988,61 @@ esp_err_t voice_recording_control_dispatch_control_command(const char *command, 
         strcmp(action, "RECOVERY:TYPE_NO_PROMPT") == 0 ||
         strcmp(action, "RECOVERY_TYPE_NO_PROMPT") == 0) {
         voice_recording_control_recovery(source, true, true, false);
-        voice_recording_control_unlock();
         return ESP_OK;
     }
     if (strcmp(action, "RECOVERY:TYPE") == 0 || strcmp(action, "RECOVERY_TYPE") == 0) {
         voice_recording_control_recovery(source, true, false, false);
-        voice_recording_control_unlock();
         return ESP_OK;
     }
     if (strcmp(action, "RECOVERY") == 0 || strcmp(action, "RESET") == 0 || strcmp(action, "FORGET") == 0) {
         voice_recording_control_recovery(source, false, false, false);
-        voice_recording_control_unlock();
         return ESP_OK;
     }
 
     ESP_LOGW(TAG, "drop control command source=%s command=%s", source, command);
     voice_recording_control_log_device_error("error", "unknown_control_command", ESP_ERR_INVALID_ARG);
-    voice_recording_control_unlock();
     return ESP_ERR_INVALID_ARG;
+}
+
+esp_err_t voice_recording_control_dispatch_control_command(const char *command, const char *source)
+{
+    if (command == NULL || source == NULL) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    if (s_command_queue == NULL || s_task_handle == NULL) {
+        return ESP_ERR_INVALID_STATE;
+    }
+
+    voice_recording_control_command_t queued = {0};
+    size_t command_length = strnlen(
+        command,
+        VOICE_RECORDING_CONTROL_COMMAND_BUFFER_BYTES);
+    size_t source_length = strnlen(
+        source,
+        VOICE_RECORDING_CONTROL_SOURCE_BYTES);
+    if (command_length == 0 ||
+        command_length >= VOICE_RECORDING_CONTROL_COMMAND_BUFFER_BYTES ||
+        source_length == 0 ||
+        source_length >= VOICE_RECORDING_CONTROL_SOURCE_BYTES) {
+        return ESP_ERR_INVALID_SIZE;
+    }
+    memcpy(queued.command, command, command_length);
+    memcpy(queued.source, source, source_length);
+
+    if (xQueueSend(s_command_queue, &queued, 0) != pdTRUE) {
+        ESP_LOGE(
+            TAG,
+            "control queue full source=%s command=%s",
+            source,
+            command);
+        voice_recording_control_log_device_error(
+            "error",
+            "control_queue_full",
+            ESP_ERR_TIMEOUT);
+        return ESP_ERR_TIMEOUT;
+    }
+    xTaskNotifyGive(s_task_handle);
+    return ESP_OK;
 }
 
 static esp_err_t voice_recording_control_ble_control_write(
@@ -2335,14 +2386,8 @@ static void voice_recording_control_refresh_voice_monitoring(void)
         esp_err_to_name(ret));
 }
 
-void voice_recording_control_on_power_state_changed(void)
+static void voice_recording_control_apply_power_state_change(void)
 {
-    if (!s_started || s_state_mutex == NULL) {
-        return;
-    }
-    if (!voice_recording_control_lock()) {
-        return;
-    }
     power_manager_snapshot_t power = {0};
     power_manager_get_snapshot(&power);
     /* A hidden VAD candidate is not user-visible work. If it races the
@@ -2361,7 +2406,18 @@ void voice_recording_control_on_power_state_changed(void)
      * layer independently of this component's software mirror. */
     s_voice_monitoring = !s_voice_monitoring;
     voice_recording_control_refresh_voice_monitoring();
-    voice_recording_control_unlock();
+}
+
+void voice_recording_control_on_power_state_changed(void)
+{
+    if (!s_started || s_task_handle == NULL) {
+        return;
+    }
+    __atomic_store_n(
+        &s_power_state_refresh_pending,
+        true,
+        __ATOMIC_RELEASE);
+    xTaskNotifyGive(s_task_handle);
 }
 
 static void voice_recording_control_process_voice_activity(void)
@@ -2443,57 +2499,73 @@ static void voice_recording_control_task(void *parameter)
 
     while (1) {
         watchdog_platform_feed_current_task();
-        if (voice_recording_control_lock()) {
-            voice_recording_control_refresh_voice_monitoring();
-            voice_recording_control_process_voice_activity();
-            uint32_t press_to_control_ms = 0;
-            if (voice_key_input_take_fast_idle_recording_event(&press_to_control_ms)) {
-                denzic_voice_activation_v1_reset(
-                    &s_voice_activation_machine);
-                voice_recording_control_handle_fast_idle_ec11_start(press_to_control_ms);
-            }
-
-            if (voice_key_input_take_fast_idle_recording_cancel_event()) {
-                denzic_voice_activation_v1_reset(
-                    &s_voice_activation_machine);
-                voice_recording_control_cancel("ec11.fast_idle_long_press");
-            }
-
-            if (voice_key_input_take_fast_active_recording_stop_event(&press_to_control_ms)) {
-                denzic_voice_activation_v1_reset(
-                    &s_voice_activation_machine);
-                voice_recording_control_handle_fast_active_ec11_stop(press_to_control_ms);
-            }
-
-            if (voice_key_input_take_toggle_event()) {
-                denzic_voice_activation_v1_reset(
-                    &s_voice_activation_machine);
-                voice_recording_control_toggle(voice_key_input_get_active_source());
-            }
-
-            uint64_t recovery_accepted_at_us = 0;
-            bool recovery_generated = false;
-            if (voice_key_input_take_recovery_event(
-                    &recovery_accepted_at_us,
-                    &recovery_generated)) {
-                denzic_voice_activation_v1_reset(
-                    &s_voice_activation_machine);
-                const char *source = voice_key_input_get_active_source();
-                ble_hid_gap_note_ec11_recovery_accepted(
-                    recovery_accepted_at_us,
-                    recovery_generated);
-                voice_recording_control_recovery(source != NULL ? source : "voice_key_hold", false, false, false);
-            }
-
-            if ((s_state == VOICE_RECORDING_STATE_RECORDING || s_state == VOICE_RECORDING_STATE_TRANSFERRING) &&
-                !audio_capture_session_is_active()) {
-                voice_recording_control_handle_session_inactive();
-            }
-
-            voice_recording_control_poll_pending_start();
-            voice_recording_control_unlock();
+        if (__atomic_exchange_n(
+                &s_power_state_refresh_pending,
+                false,
+                __ATOMIC_ACQ_REL)) {
+            voice_recording_control_apply_power_state_change();
+            watchdog_platform_feed_current_task();
         }
 
+        voice_recording_control_command_t queued = {0};
+        for (uint32_t command_index = 0;
+             command_index < VOICE_RECORDING_CONTROL_COMMANDS_PER_TICK &&
+             s_command_queue != NULL &&
+             xQueueReceive(s_command_queue, &queued, 0) == pdTRUE;
+             ++command_index) {
+            (void)voice_recording_control_handle_control_command(
+                queued.command,
+                queued.source);
+            watchdog_platform_feed_current_task();
+        }
+
+        voice_recording_control_refresh_voice_monitoring();
+        voice_recording_control_process_voice_activity();
+        uint32_t press_to_control_ms = 0;
+        if (voice_key_input_take_fast_idle_recording_event(&press_to_control_ms)) {
+            denzic_voice_activation_v1_reset(
+                &s_voice_activation_machine);
+            voice_recording_control_handle_fast_idle_ec11_start(press_to_control_ms);
+        }
+
+        if (voice_key_input_take_fast_idle_recording_cancel_event()) {
+            denzic_voice_activation_v1_reset(
+                &s_voice_activation_machine);
+            voice_recording_control_cancel("ec11.fast_idle_long_press");
+        }
+
+        if (voice_key_input_take_fast_active_recording_stop_event(&press_to_control_ms)) {
+            denzic_voice_activation_v1_reset(
+                &s_voice_activation_machine);
+            voice_recording_control_handle_fast_active_ec11_stop(press_to_control_ms);
+        }
+
+        if (voice_key_input_take_toggle_event()) {
+            denzic_voice_activation_v1_reset(
+                &s_voice_activation_machine);
+            voice_recording_control_toggle(voice_key_input_get_active_source());
+        }
+
+        uint64_t recovery_accepted_at_us = 0;
+        bool recovery_generated = false;
+        if (voice_key_input_take_recovery_event(
+                &recovery_accepted_at_us,
+                &recovery_generated)) {
+            denzic_voice_activation_v1_reset(
+                &s_voice_activation_machine);
+            const char *source = voice_key_input_get_active_source();
+            ble_hid_gap_note_ec11_recovery_accepted(
+                recovery_accepted_at_us,
+                recovery_generated);
+            voice_recording_control_recovery(source != NULL ? source : "voice_key_hold", false, false, false);
+        }
+
+        if ((s_state == VOICE_RECORDING_STATE_RECORDING || s_state == VOICE_RECORDING_STATE_TRANSFERRING) &&
+            !audio_capture_session_is_active()) {
+            voice_recording_control_handle_session_inactive();
+        }
+
+        voice_recording_control_poll_pending_start();
         (void)watchdog_platform_task_notify_take(
             pdTRUE,
             VOICE_RECORDING_CONTROL_SESSION_CHECK_MS);
@@ -2502,12 +2574,7 @@ static void voice_recording_control_task(void *parameter)
 
 uint32_t voice_recording_control_get_session_count(void)
 {
-    uint32_t session_count = 0;
-    if (voice_recording_control_lock()) {
-        session_count = s_session_count;
-        voice_recording_control_unlock();
-    }
-    return session_count;
+    return __atomic_load_n(&s_session_count, __ATOMIC_RELAXED);
 }
 
 static esp_err_t voice_recording_control_start_internal(bool enable_audio_capture)
@@ -2515,17 +2582,19 @@ static esp_err_t voice_recording_control_start_internal(bool enable_audio_captur
     if (s_started) {
         return ESP_OK;
     }
-    if (s_state_mutex == NULL) {
-        s_state_mutex = xSemaphoreCreateMutex();
-        if (s_state_mutex == NULL) {
-            return ESP_ERR_NO_MEM;
-        }
-    }
     if (s_vad_queue == NULL) {
         s_vad_queue = xQueueCreate(
             VOICE_RECORDING_CONTROL_VAD_QUEUE_LENGTH,
             sizeof(voice_recording_control_vad_event_t));
         if (s_vad_queue == NULL) {
+            return ESP_ERR_NO_MEM;
+        }
+    }
+    if (s_command_queue == NULL) {
+        s_command_queue = xQueueCreate(
+            VOICE_RECORDING_CONTROL_COMMAND_QUEUE_LENGTH,
+            sizeof(voice_recording_control_command_t));
+        if (s_command_queue == NULL) {
             return ESP_ERR_NO_MEM;
         }
     }
@@ -2574,8 +2643,6 @@ static esp_err_t voice_recording_control_start_internal(bool enable_audio_captur
         audio_ret = ESP_ERR_NOT_SUPPORTED;
     }
 
-    ble_audio_stream_set_control_write_handler(voice_recording_control_ble_control_write);
-
     static StaticTask_t s_voice_recording_control_task_control;
     static StackType_t *s_voice_recording_control_task_stack;
     BaseType_t task_ok = watchdog_platform_start_task_on_spiram(
@@ -2589,6 +2656,8 @@ static esp_err_t voice_recording_control_start_internal(bool enable_audio_captur
     if (task_ok != pdPASS) {
         return ESP_ERR_NO_MEM;
     }
+    ble_audio_stream_set_control_write_handler(
+        voice_recording_control_ble_control_write);
     voice_key_input_set_recording_control_task(s_task_handle);
 
     s_started = true;

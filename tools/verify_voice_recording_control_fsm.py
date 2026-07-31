@@ -351,6 +351,9 @@ def main() -> int:
         "const bool hidden_va =",
         "} else {\n        /* The audio drain is now complete",
         "denzic_voice_activation_v1_reset(&s_voice_activation_machine);",
+        "s_state = VOICE_RECORDING_STATE_IDLE;",
+        "s_cancel_pending = false;",
+        "s_cancel_source = NULL;",
     ]:
         require_contains(
             cleanup_body,
@@ -403,10 +406,10 @@ def main() -> int:
         fail("idle-racing hidden candidate cancellation must not record activity")
 
     power_change_start = source.find(
-        "void voice_recording_control_on_power_state_changed("
+        "static void voice_recording_control_apply_power_state_change("
     )
     power_change_end = source.find(
-        "static void voice_recording_control_process_voice_activity(",
+        "void voice_recording_control_on_power_state_changed(",
         power_change_start,
     )
     if power_change_start < 0 or power_change_end < 0:
@@ -417,6 +420,38 @@ def main() -> int:
         "voice_recording_control_cancel_hidden_candidate_for_idle(&power);",
         "power-state boundary must cancel an idle-racing hidden candidate",
     )
+
+    for forbidden in [
+        "s_state_mutex",
+        "voice_recording_control_lock()",
+        "xSemaphoreTake(",
+        "portMAX_DELAY",
+    ]:
+        if forbidden in source:
+            fail(
+                "recording controller must remain a single-writer actor "
+                f"without shared unbounded state locking: {forbidden}"
+            )
+    for token in [
+        "VOICE_RECORDING_CONTROL_COMMAND_QUEUE_LENGTH",
+        "voice_recording_control_command_t",
+        "xQueueSend(s_command_queue, &queued, 0)",
+        "xQueueReceive(s_command_queue, &queued, 0)",
+        "VOICE_RECORDING_CONTROL_COMMANDS_PER_TICK",
+        "__atomic_store_n(",
+        "&s_power_state_refresh_pending",
+        "__atomic_load_n(&s_session_count, __ATOMIC_RELAXED)",
+        "voice_recording_control_handle_control_command(",
+        "voice_recording_control_store_source(",
+        "s_pending_start_source_storage",
+        "s_active_session_source_storage",
+        "s_cancel_source_storage",
+    ]:
+        require_contains(
+            source,
+            token,
+            f"single-writer recording event contract is missing {token}",
+        )
 
     fast_idle_start = power_source.find(
         "static void power_manager_apply_fast_idle_actions("
