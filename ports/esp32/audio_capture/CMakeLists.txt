@@ -17,7 +17,7 @@ endif()
 idf_component_register(
     SRCS "audio_capture_esp32.c"
     INCLUDE_DIRS "include"
-    REQUIRES esp_codec_dev ble_audio_stream board_pins espressif__esp-sr
+    REQUIRES esp_codec_dev ble_audio_stream board_pins espressif__esp-sr audio_leveling_platform
     PRIV_REQUIRES esp_driver_i2c esp_driver_i2s esp_driver_usb_serial_jtag mbedtls diag_log status_led watchdog_platform
     EMBED_FILES "${listener_vadnet_model_bin}"
 )

@@ -2,6 +2,7 @@
 #include "audio_capture_platform.h"
 #include "ble_audio_stream.h"
 #include "board_pins.h"
+#include "denzic_audio_leveling_v1.h"
 #include "listener_audio_proto.h"
 #include "status_led.h"
 
@@ -275,6 +276,13 @@ static uint64_t s_pdm_afe_session_output_clipped_samples;
 static uint32_t s_pdm_afe_session_limiter_input_peak;
 static uint32_t s_pdm_afe_session_limited_frames;
 static uint32_t s_pdm_afe_session_limiter_max_reduction_permille;
+static denzic_audio_leveling_v1_config_t s_pdm_leveling_config;
+static denzic_audio_leveling_v1_state_t s_pdm_leveling_state;
+static denzic_audio_leveling_v1_stats_t s_pdm_leveling_session_stats;
+static uint32_t s_pdm_leveling_stats_session_id;
+static bool s_pdm_leveling_speech_detected;
+static uint32_t s_pdm_leveling_last_noise_floor_mean_abs;
+static uint32_t s_pdm_leveling_last_allowed_gain_permille;
 static uint32_t s_pdm_vad_noise_floor_q8 =
     AUDIO_CAPTURE_PDM_VAD_NOISE_INITIAL_MEAN_ABS << 8U;
 static uint32_t s_pdm_vad_last_diagnostic_threshold;
@@ -1720,6 +1728,9 @@ static void audio_capture_note_pdm_afe_session_pre_vad(
 
 static void audio_capture_log_pdm_afe_session_signal(uint32_t session_id)
 {
+    denzic_audio_leveling_v1_stats_summary_t leveling =
+        denzic_audio_leveling_v1_stats_summarize(
+            &s_pdm_leveling_session_stats);
     uint32_t input_mean_abs = s_pdm_afe_session_input_samples == 0U
         ? 0U
         : (uint32_t)(s_pdm_afe_session_input_abs_sum / s_pdm_afe_session_input_samples);
@@ -1824,6 +1835,48 @@ static void audio_capture_log_pdm_afe_session_signal(uint32_t session_id)
 #endif
         s_pdm_afe_stop_drain_output_frames,
         (unsigned)s_pdm_afe_stop_drain_padding_samples);
+    ESP_LOGI(
+        TAG,
+        "PDM audio leveling paired stats: session_id=%" PRIu32
+        " frames=%" PRIu32 " voiced_frames=%" PRIu32
+        " raw_p10_p50_p90=%" PRIu32 "/%" PRIu32 "/%" PRIu32
+        " post_agc_p10_p50_p90=%" PRIu32 "/%" PRIu32 "/%" PRIu32
+        " gain_permille_p10_p50_p90=%" PRIu32 "/%" PRIu32 "/%" PRIu32
+        " voiced_raw_p10_p50_p90=%" PRIu32 "/%" PRIu32 "/%" PRIu32
+        " voiced_post_agc_p10_p50_p90=%" PRIu32 "/%" PRIu32 "/%" PRIu32
+        " voiced_gain_permille_p10_p50_p90=%" PRIu32 "/%" PRIu32 "/%" PRIu32
+        " noise_floor_mean_abs=%" PRIu32
+        " allowed_gain_permille=%" PRIu32
+        " gain_limited_frames=%" PRIu32
+        " gain_ceiling_frames=%" PRIu32
+        " limiter_frames=%" PRIu32 " clipped_samples=%" PRIu64,
+        session_id,
+        leveling.frames,
+        leveling.voiced_frames,
+        leveling.raw_mean_abs_p10,
+        leveling.raw_mean_abs_p50,
+        leveling.raw_mean_abs_p90,
+        leveling.post_agc_mean_abs_p10,
+        leveling.post_agc_mean_abs_p50,
+        leveling.post_agc_mean_abs_p90,
+        leveling.effective_gain_permille_p10,
+        leveling.effective_gain_permille_p50,
+        leveling.effective_gain_permille_p90,
+        leveling.voiced_raw_mean_abs_p10,
+        leveling.voiced_raw_mean_abs_p50,
+        leveling.voiced_raw_mean_abs_p90,
+        leveling.voiced_post_agc_mean_abs_p10,
+        leveling.voiced_post_agc_mean_abs_p50,
+        leveling.voiced_post_agc_mean_abs_p90,
+        leveling.voiced_effective_gain_permille_p10,
+        leveling.voiced_effective_gain_permille_p50,
+        leveling.voiced_effective_gain_permille_p90,
+        s_pdm_leveling_last_noise_floor_mean_abs,
+        s_pdm_leveling_last_allowed_gain_permille,
+        leveling.gain_limited_frames,
+        leveling.gain_ceiling_frames,
+        leveling.limiter_frames,
+        leveling.clipped_samples);
 }
 
 static void audio_capture_pdm_afe_emit(const int16_t *samples, size_t sample_count)
@@ -1864,9 +1917,24 @@ static void audio_capture_pdm_afe_emit(const int16_t *samples, size_t sample_cou
     }
 }
 
-static void audio_capture_pdm_apply_final_limiter(
+static bool audio_capture_pdm_apply_final_limiter(
     int16_t *samples,
     size_t sample_count);
+
+static uint32_t audio_capture_pdm_mean_abs(
+    const int16_t *samples,
+    size_t sample_count)
+{
+    if (samples == NULL || sample_count == 0U) {
+        return 0U;
+    }
+    uint64_t sum = 0U;
+    for (size_t index = 0; index < sample_count; index++) {
+        int32_t value = samples[index];
+        sum += (uint32_t)(value < 0 ? -value : value);
+    }
+    return (uint32_t)(sum / sample_count);
+}
 
 static void audio_capture_pdm_agc_emit_frame(void)
 {
@@ -1883,7 +1951,16 @@ static void audio_capture_pdm_agc_emit_frame(void)
             s_pdm_agc_input_buffer,
             sizeof(s_pdm_agc_output_buffer));
     }
-    if (s_export_state.requested || s_export_state.active) {
+    bool session_observed =
+        s_export_state.requested || s_export_state.active;
+    uint32_t session_id = s_export_state.session_id;
+    if (session_observed &&
+        s_pdm_leveling_stats_session_id != session_id) {
+        denzic_audio_leveling_v1_stats_reset(
+            &s_pdm_leveling_session_stats);
+        s_pdm_leveling_stats_session_id = session_id;
+    }
+    if (session_observed) {
         for (size_t index = 0;
              index < AUDIO_CAPTURE_PDM_AGC_FRAME_SAMPLES;
              index++) {
@@ -1897,9 +1974,57 @@ static void audio_capture_pdm_agc_emit_frame(void)
         s_pdm_afe_session_agc_samples +=
             AUDIO_CAPTURE_PDM_AGC_FRAME_SAMPLES;
     }
-    audio_capture_pdm_apply_final_limiter(
+    denzic_audio_leveling_v1_input_t leveling_input = {
+        .raw_mean_abs = audio_capture_pdm_mean_abs(
+            s_pdm_agc_input_buffer,
+            AUDIO_CAPTURE_PDM_AGC_FRAME_SAMPLES),
+        .post_agc_mean_abs = audio_capture_pdm_mean_abs(
+            s_pdm_agc_output_buffer,
+            AUDIO_CAPTURE_PDM_AGC_FRAME_SAMPLES),
+        .elapsed_ms = AUDIO_CAPTURE_PDM_AGC_FRAME_MS,
+        .speech_detected = s_pdm_leveling_speech_detected,
+    };
+    denzic_audio_leveling_v1_output_t leveling_output =
+        denzic_audio_leveling_v1_step(
+            &s_pdm_leveling_state,
+            &s_pdm_leveling_config,
+            leveling_input);
+    s_pdm_leveling_last_noise_floor_mean_abs =
+        leveling_output.noise_floor_mean_abs;
+    s_pdm_leveling_last_allowed_gain_permille =
+        leveling_output.allowed_gain_permille;
+    if (leveling_output.scale_permille <
+        DENZIC_AUDIO_V1_LEVELING_SCALE_ONE_PERMILLE) {
+        for (size_t index = 0;
+             index < AUDIO_CAPTURE_PDM_AGC_FRAME_SAMPLES;
+             index++) {
+            int32_t scaled =
+                ((int32_t)s_pdm_agc_output_buffer[index] *
+                 (int32_t)leveling_output.scale_permille) /
+                (int32_t)DENZIC_AUDIO_V1_LEVELING_SCALE_ONE_PERMILLE;
+            s_pdm_agc_output_buffer[index] = (int16_t)scaled;
+        }
+    }
+    uint32_t clipped_samples = 0U;
+    for (size_t index = 0;
+         index < AUDIO_CAPTURE_PDM_AGC_FRAME_SAMPLES;
+         index++) {
+        if (s_pdm_agc_output_buffer[index] == INT16_MIN ||
+            s_pdm_agc_output_buffer[index] == INT16_MAX) {
+            clipped_samples++;
+        }
+    }
+    bool limiter_applied = audio_capture_pdm_apply_final_limiter(
         s_pdm_agc_output_buffer,
         AUDIO_CAPTURE_PDM_AGC_FRAME_SAMPLES);
+    if (session_observed) {
+        denzic_audio_leveling_v1_stats_observe(
+            &s_pdm_leveling_session_stats,
+            leveling_input,
+            leveling_output,
+            limiter_applied,
+            clipped_samples);
+    }
     audio_capture_pdm_afe_emit(
         s_pdm_agc_output_buffer,
         AUDIO_CAPTURE_PDM_AGC_FRAME_SAMPLES);
@@ -1946,7 +2071,7 @@ static size_t audio_capture_pdm_agc_flush_partial(void)
     return padding_samples;
 }
 
-static void audio_capture_pdm_apply_final_limiter(
+static bool audio_capture_pdm_apply_final_limiter(
     int16_t *samples,
     size_t sample_count)
 {
@@ -1962,7 +2087,7 @@ static void audio_capture_pdm_apply_final_limiter(
         s_pdm_afe_session_limiter_input_peak = peak;
     }
     if (peak <= AUDIO_CAPTURE_PDM_LIMITER_CEILING) {
-        return;
+        return false;
     }
 
     uint32_t scale_q15 =
@@ -1980,6 +2105,7 @@ static void audio_capture_pdm_apply_final_limiter(
             (int32_t)AUDIO_CAPTURE_PDM_LIMITER_Q15_ONE;
         samples[index] = (int16_t)scaled;
     }
+    return true;
 }
 
 static void audio_capture_pdm_afe_complete_stop_drain(void)
@@ -2008,6 +2134,7 @@ static void audio_capture_pdm_vad_process(
     const int16_t *samples,
     size_t sample_count)
 {
+    s_pdm_leveling_speech_detected = state == VAD_SPEECH;
     if ((!s_voice_activation_monitoring &&
          !audio_capture_session_is_active()) ||
         samples == NULL ||
@@ -2277,6 +2404,15 @@ static esp_err_t audio_capture_pdm_afe_init(void)
         AUDIO_CAPTURE_PDM_AGC_COMPRESSION_DB,
         1,
         AUDIO_CAPTURE_PDM_AGC_TARGET_DBFS);
+    s_pdm_leveling_config = denzic_audio_leveling_v1_default_config();
+    denzic_audio_leveling_v1_reset(
+        &s_pdm_leveling_state,
+        &s_pdm_leveling_config);
+    denzic_audio_leveling_v1_stats_reset(&s_pdm_leveling_session_stats);
+    s_pdm_leveling_last_noise_floor_mean_abs =
+        s_pdm_leveling_config.initial_noise_floor_mean_abs;
+    s_pdm_leveling_last_allowed_gain_permille =
+        s_pdm_leveling_config.maximum_effective_gain_permille;
     /* Audio task stacks stay internal: they are hot paths and must remain valid
      * while the Flash cache is disabled. The task-owned pre-roll history uses
      * PSRAM instead. */
@@ -2307,11 +2443,16 @@ static esp_err_t audio_capture_pdm_afe_init(void)
     s_pdm_afe_handle->print_pipeline(s_pdm_afe_data);
     ESP_LOGI(
         TAG,
-        "PDM AFE ready: pipeline=continuous-webrtc-ns-vadnet-agc-limiter"
+        "PDM AFE ready: pipeline=continuous-webrtc-ns-vadnet-agc-gain-governor-limiter"
         " vad=vadnet1-medium mode=1 vad_min_speech_ms=%u"
         " vad_min_noise_ms=%u vad_delay_ms=%u model_bytes=%u"
         " post_vad_agc_mode=digital agc_frame_ms=%u"
         " agc_compression_db=%d agc_target_dbfs=-%d limiter=1"
+        " leveling_max_gain_permille=%" PRIu32
+        " leveling_noise_output_mean_abs=%" PRIu32
+        " leveling_hold_ms=%" PRIu32
+        " leveling_attack_ms=%" PRIu32
+        " leveling_release_ms=%" PRIu32
         " final_limiter_ceiling=%d"
         " linear_gain=%.1f feed_samples=%d fetch_samples=%d"
         " ringbuf_frames=%u fetch_wait_ms=%u"
@@ -2323,6 +2464,11 @@ static esp_err_t audio_capture_pdm_afe_init(void)
         (unsigned)AUDIO_CAPTURE_PDM_AGC_FRAME_MS,
         AUDIO_CAPTURE_PDM_AGC_COMPRESSION_DB,
         AUDIO_CAPTURE_PDM_AGC_TARGET_DBFS,
+        s_pdm_leveling_config.maximum_effective_gain_permille,
+        s_pdm_leveling_config.maximum_noise_output_mean_abs,
+        s_pdm_leveling_config.speech_hold_ms,
+        s_pdm_leveling_config.attenuation_attack_ms,
+        s_pdm_leveling_config.attenuation_release_ms,
         AUDIO_CAPTURE_PDM_LIMITER_CEILING,
         (double)linear_gain,
         feed_samples,
