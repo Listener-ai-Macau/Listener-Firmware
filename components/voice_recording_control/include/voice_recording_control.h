@@ -13,6 +13,9 @@ extern "C" {
 esp_err_t voice_recording_control_start(void);
 /* Safe-mode / degraded boot: EC11 double-click re-pair + USB recovery without mic capture. */
 esp_err_t voice_recording_control_start_recovery_only(void);
+/* Re-evaluate VA monitoring and clear stale cooldown after a power transition.
+ * Bluetooth-light-off idle intentionally leaves voice monitoring disabled. */
+void voice_recording_control_on_power_state_changed(void);
 /*
  * Start mic capture after NimBLE host is up. Boot must not start AFE/I2S before
  * ble_hid_start — that left internal_free~3KB and panicked NimBLE

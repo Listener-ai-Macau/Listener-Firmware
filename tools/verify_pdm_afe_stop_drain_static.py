@@ -12,7 +12,7 @@ REQUIRED_FRAGMENTS = (
     "s_pdm_afe_stop_drain_requested = true;",
     "s_pdm_afe_stop_drain_feed_cutoff_ack = true;",
     "audio_capture_pdm_afe_complete_stop_drain();",
-    "s_pdm_afe_stop_drain_padding_samples = padding_samples;",
+    "s_pdm_afe_stop_drain_padding_samples += padding_samples;",
     "audio_capture_pdm_afe_emit(silence, padding_samples);",
     "s_pdm_afe_stop_drain_complete = true;",
     "audio_capture_process_frame(boundary_frame);",
@@ -22,12 +22,6 @@ REQUIRED_FRAGMENTS = (
 
 
 ORDERED_SEQUENCES = (
-    (
-        "s_export_state.stop_requested = true;\n#ifdef CONFIG_AUDIO_CAPTURE_MIC_SPH0655_PDM\n"
-        "#if CONFIG_AUDIO_CAPTURE_PDM_AFE_WEBRTC\n"
-        "    s_pdm_afe_stop_drain_requested = true;",
-        "session stop must request AFE drain before releasing the state lock",
-    ),
     (
         "s_pdm_afe_stop_drain_feed_cutoff_ack = true;\n        return;",
         "capture must acknowledge the feed cutoff before accepting post-stop input",
@@ -54,6 +48,16 @@ def main() -> int:
     for sequence, message in ORDERED_SEQUENCES:
         if sequence not in source:
             failures.append(message)
+
+    stop_start = source.find("esp_err_t audio_capture_session_stop_with_origin(")
+    stop_end = source.find("esp_err_t audio_capture_session_cancel(", stop_start)
+    stop_body = source[stop_start:stop_end]
+    request_index = stop_body.find("s_pdm_afe_stop_drain_requested = true;")
+    unlock_index = stop_body.find("xSemaphoreGive(s_state_mutex);", request_index)
+    if not 0 <= request_index < unlock_index:
+        failures.append(
+            "session stop must request AFE drain before releasing the state lock"
+        )
 
     if failures:
         print("FAIL: PDM AFE stop-drain static contract")

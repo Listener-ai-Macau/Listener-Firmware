@@ -35,6 +35,13 @@ The project uses ESP-IDF component manager dependencies from
 - Keep subscribe-before-connect compatibility.
 - Use `snake_case` for files, functions, and variables.
 
+## Shared product engineering
+
+Follow `C:\Users\Billy\Desktop\Denzic\ai-collaboration-workflow\docs\shared_product_engineering_rules.md`
+(§1.1 install/flash, §1.4 **always-latest Type install + matching firmware** on device).
+After firmware changes: build → flash or deliver matching OTA zip → verify serial
+`Compile time` / version before asking owner to use the device.
+
 ## Validation
 
 Prefer the narrowest relevant check:

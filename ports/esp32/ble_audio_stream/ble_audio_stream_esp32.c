@@ -223,6 +223,7 @@ typedef struct {
     uint16_t start_origin;
     uint16_t stop_origin;
     uint16_t error_code;
+    uint8_t raw_input_level_percent;
     uint8_t *owned_pcm;
 } ble_audio_stream_job_t;
 
@@ -341,7 +342,10 @@ static TickType_t s_type_heartbeat_led_ready_until_tick;
 static TickType_t s_type_host_seen_until_tick;
 static TickType_t s_type_ota_hold_until_tick;
 static uint32_t s_type_heartbeat_count;
-static denzic_audio_transport_v1_replay_window_t s_replay_window;
+/* The replay payload is bulk PCM history, not a real-time task stack. Keeping
+ * its 23.8 KB static object in internal DRAM starves the PDM AFE of the two
+ * contiguous 6 KB task stacks it needs once VADNet is loaded. */
+static denzic_audio_transport_v1_replay_window_t *s_replay_window;
 static portMUX_TYPE s_backpressure_lock = portMUX_INITIALIZER_UNLOCKED;
 static portMUX_TYPE s_link_state_lock = portMUX_INITIALIZER_UNLOCKED;
 static ble_audio_stream_control_write_handler_t s_control_write_handler;
@@ -1026,12 +1030,12 @@ uint16_t ble_audio_stream_count_audio_packets(const uint8_t *pcm_buffer, uint16_
 
 static void ble_audio_stream_replay_clear_session(uint32_t session_id)
 {
-    denzic_audio_transport_v1_replay_clear_session(&s_replay_window, session_id);
+    denzic_audio_transport_v1_replay_clear_session(s_replay_window, session_id);
 }
 
 static uint32_t ble_audio_stream_replay_count_retained(uint32_t session_id)
 {
-    return denzic_audio_transport_v1_replay_count_retained(&s_replay_window, session_id);
+    return denzic_audio_transport_v1_replay_count_retained(s_replay_window, session_id);
 }
 
 static void ble_audio_stream_stats_begin(uint32_t session_id)
@@ -1667,7 +1671,7 @@ static void ble_audio_stream_replay_store_packet(
 {
     denzic_audio_transport_v1_replay_store_result_t store_result =
         denzic_audio_transport_v1_replay_store(
-            &s_replay_window,
+            s_replay_window,
             session_id,
             sequence,
             payload,
@@ -1688,7 +1692,7 @@ static void ble_audio_stream_replay_store_packet(
 
 static void ble_audio_stream_replay_remove_packet(uint32_t session_id, uint16_t sequence)
 {
-    if (denzic_audio_transport_v1_replay_remove(&s_replay_window, session_id, sequence)) {
+    if (denzic_audio_transport_v1_replay_remove(s_replay_window, session_id, sequence)) {
         ble_audio_stream_stats_replay_removed(session_id);
     }
 }
@@ -1700,7 +1704,7 @@ static void ble_audio_stream_replay_mark_link_suspended(const char *reason)
     }
 
     uint32_t session_id = s_transport_session_id;
-    if (!denzic_audio_transport_v1_replay_mark_suspended(&s_replay_window, session_id)) {
+    if (!denzic_audio_transport_v1_replay_mark_suspended(s_replay_window, session_id)) {
         return;
     }
 
@@ -1722,8 +1726,8 @@ static esp_err_t ble_audio_stream_replay_pending_packets(
     bool skip_current_sequence,
     uint16_t current_sequence)
 {
-    if (s_replay_window.in_progress || !s_replay_window.pending ||
-        s_replay_window.pending_session_id != session_id) {
+    if (s_replay_window->in_progress || !s_replay_window->pending ||
+        s_replay_window->pending_session_id != session_id) {
         return ESP_OK;
     }
 
@@ -1731,7 +1735,7 @@ static esp_err_t ble_audio_stream_replay_pending_packets(
         BLE_AUDIO_STREAM_REPLAY_WINDOW_PACKETS];
     bool skipped_current = false;
     uint32_t count = denzic_audio_transport_v1_replay_collect_pending(
-        &s_replay_window,
+        s_replay_window,
         session_id,
         skip_current_sequence,
         current_sequence,
@@ -1740,7 +1744,7 @@ static esp_err_t ble_audio_stream_replay_pending_packets(
         &skipped_current);
 
     if (count == 0) {
-        denzic_audio_transport_v1_replay_dismiss_pending(&s_replay_window);
+        denzic_audio_transport_v1_replay_dismiss_pending(s_replay_window);
         if (skipped_current) {
             ble_audio_stream_stats_replay_skip_current(session_id);
             ESP_LOGW(
@@ -1774,7 +1778,7 @@ static esp_err_t ble_audio_stream_replay_pending_packets(
                  session_id, 3U, current_sequence, 0);
     }
 
-    denzic_audio_transport_v1_replay_begin_drain(&s_replay_window);
+    denzic_audio_transport_v1_replay_begin_drain(s_replay_window);
     for (uint32_t i = 0; i < count; ++i) {
         uint16_t sequence = packets[i]->sequence;
         esp_err_t ret = ble_audio_stream_send_packet(
@@ -1791,12 +1795,12 @@ static esp_err_t ble_audio_stream_replay_pending_packets(
             ble_audio_stream_stats_replay_resend_failed(session_id);
             diag_log(DIAG_SRC_BLE_AUDIO, DIAG_BAUD_REPLAY, DIAG_SEV_WARN,
                      session_id, 5U, sequence, (uint32_t)ret);
-            denzic_audio_transport_v1_replay_abort_drain(&s_replay_window);
+            denzic_audio_transport_v1_replay_abort_drain(s_replay_window);
             return ret;
         }
         ble_audio_stream_stats_replay_resent(session_id);
     }
-    denzic_audio_transport_v1_replay_complete_drain(&s_replay_window);
+    denzic_audio_transport_v1_replay_complete_drain(s_replay_window);
     return ESP_OK;
 }
 
@@ -2137,10 +2141,10 @@ static esp_err_t ble_audio_stream_send_packet(
     }
 
     bool skip_replay_current_packet = false;
-    if (!s_replay_window.in_progress &&
+    if (!s_replay_window->in_progress &&
         packet_type == LISTENER_AUDIO_PACKET_TYPE_AUDIO_DATA &&
-        s_replay_window.pending &&
-        s_replay_window.pending_session_id == session_id) {
+        s_replay_window->pending &&
+        s_replay_window->pending_session_id == session_id) {
         ble_audio_stream_replay_store_packet(
             session_id,
             sequence_or_count,
@@ -2151,7 +2155,7 @@ static esp_err_t ble_audio_stream_send_packet(
         skip_replay_current_packet = true;
     }
 
-    if (!s_replay_window.in_progress &&
+    if (!s_replay_window->in_progress &&
         (packet_type == LISTENER_AUDIO_PACKET_TYPE_AUDIO_DATA ||
          packet_type == LISTENER_AUDIO_PACKET_TYPE_SESSION_STOP)) {
         esp_err_t replay_ret = ble_audio_stream_replay_pending_packets(
@@ -2593,7 +2597,8 @@ static esp_err_t ble_audio_stream_send_session_audio_internal(
     uint16_t packet_sequence,
     const uint8_t *pcm_buffer,
     uint16_t pcm_bytes,
-    uint16_t expected_packet_count)
+    uint16_t expected_packet_count,
+    uint8_t raw_input_level_percent)
 {
     if (pcm_buffer == NULL || pcm_bytes == 0) {
         return ESP_ERR_INVALID_ARG;
@@ -2638,6 +2643,9 @@ static esp_err_t ble_audio_stream_send_session_audio_internal(
             packet_count >= expected_packet_count) {
             return ESP_ERR_INVALID_SIZE;
         }
+        transport_flags = listener_audio_proto_flags_with_raw_input_level(
+            transport_flags,
+            raw_input_level_percent);
 
         esp_err_t err = ble_audio_stream_send_packet(
             LISTENER_AUDIO_PACKET_TYPE_AUDIO_DATA,
@@ -2830,7 +2838,8 @@ static void ble_audio_stream_task(void *parameter)
                     job.packet_sequence,
                     job.owned_pcm,
                     job.pcm_bytes,
-                    job.expected_packet_count);
+                    job.expected_packet_count,
+                    job.raw_input_level_percent);
                 if (audio_ret != ESP_OK) {
                     uint16_t expected_packet_count = job.packet_sequence;
                     if ((uint32_t)expected_packet_count + job.expected_packet_count <= UINT16_MAX) {
@@ -2940,7 +2949,17 @@ esp_err_t ble_audio_stream_init(void)
         return ESP_OK;
     }
 
-    denzic_audio_transport_v1_replay_window_init(&s_replay_window);
+    if (s_replay_window == NULL) {
+        s_replay_window = heap_caps_calloc(
+            1,
+            sizeof(*s_replay_window),
+            MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+        if (s_replay_window == NULL) {
+            ESP_LOGE(TAG, "audio replay window PSRAM allocation failed");
+            return ESP_ERR_NO_MEM;
+        }
+    }
+    denzic_audio_transport_v1_replay_window_init(s_replay_window);
 
     s_export_queue = xQueueCreate(BLE_AUDIO_STREAM_NOTIFY_QUEUE_LENGTH, sizeof(ble_audio_stream_job_t));
     if (s_export_queue == NULL) {
@@ -3794,7 +3813,8 @@ esp_err_t ble_audio_stream_send_session_audio(
     uint16_t packet_sequence,
     const uint8_t *pcm_buffer,
     uint16_t pcm_bytes,
-    uint16_t packet_count)
+    uint16_t packet_count,
+    uint8_t raw_input_level_percent)
 {
     if (!s_started || s_export_queue == NULL || pcm_buffer == NULL || pcm_bytes == 0) {
         return ESP_ERR_INVALID_ARG;
@@ -3814,6 +3834,7 @@ esp_err_t ble_audio_stream_send_session_audio(
         .packet_sequence = packet_sequence,
         .pcm_bytes = pcm_bytes,
         .expected_packet_count = packet_count,
+        .raw_input_level_percent = raw_input_level_percent,
     };
     esp_err_t pool_ret = ble_audio_stream_audio_pool_acquire(
         session_id,

@@ -782,7 +782,9 @@ CHECKS = {
         "AUDIO_CAPTURE_LEVEL_FULL_SCALE",
         "AUDIO_CAPTURE_LEVEL_FULL_SCALE 847U",
         "audio_capture_frame_level_percent",
-        "status_led_set_recording_level(audio_capture_frame_level_percent(frame_buffer))",
+        "audio_capture_update_recording_level_from_raw_input",
+        "audio_capture_frame_level_percent(raw_frame_buffer)",
+        "audio_capture_update_recording_level_from_raw_input(frame_buffer)",
     ],
     "ports/esp32/audio_capture/CMakeLists.txt": [
         "status_led",

@@ -30,6 +30,7 @@
 extern esp_err_t audio_capture_set_idle_power_save(bool enabled) __attribute__((weak));
 extern bool audio_capture_session_is_active(void) __attribute__((weak));
 extern bool audio_capture_voice_activation_monitoring_is_enabled(void) __attribute__((weak));
+extern void voice_recording_control_on_power_state_changed(void) __attribute__((weak));
 extern bool ble_hid_gap_is_connected(void) __attribute__((weak));
 extern bool ble_audio_stream_is_type_link_ready(void) __attribute__((weak));
 extern esp_err_t ble_hid_gap_set_low_power_advertising(bool enabled) __attribute__((weak));
@@ -851,7 +852,11 @@ static uint32_t power_manager_without_external_power_blocker(uint32_t blockers)
 
 static uint32_t power_manager_awake_blockers(uint32_t blockers)
 {
-    return power_manager_without_external_power_blocker(blockers);
+    /* VOICE_ACTIVATION marks hidden VA streaming only. It must not block the
+     * 5-minute CONNECTED_IDLE transition — ambient candidates would otherwise
+     * keep the product permanently ACTIVE (owner: 又进不了低功耗). */
+    return power_manager_without_external_power_blocker(blockers) &
+           ~(uint32_t)POWER_MANAGER_BLOCKER_VOICE_ACTIVATION;
 }
 
 static uint32_t power_manager_audio_idle_blockers(uint32_t blockers)
@@ -861,6 +866,9 @@ static uint32_t power_manager_audio_idle_blockers(uint32_t blockers)
         audio_capture_voice_activation_monitoring_is_enabled()) {
         audio_blockers |= POWER_MANAGER_BLOCKER_VOICE_ACTIVATION;
     }
+    /* The setting alone is not an audio blocker. LST-WAKE-012 disables actual
+     * monitoring in Bluetooth-light-off idle, where mic/VAD/KWS must stop;
+     * ACTIVE monitoring above remains the sole voice-activation audio owner. */
     return audio_blockers;
 }
 
@@ -1379,7 +1387,11 @@ static void power_manager_apply_state(
         if (status_led_set_low_power_disabled != NULL) {
             status_led_set_low_power_disabled(true);
         }
-        power_manager_set_audio_idle_power_save(true);
+        /* Voice wake is intentionally unavailable after the Bluetooth light
+         * turns off. ACTIVE re-enables audio and refreshes voice monitoring. */
+        if (power_manager_audio_idle_blockers(blockers) == 0) {
+            power_manager_set_audio_idle_power_save(true);
+        }
         if (system_health_set_low_power_mode != NULL) {
             system_health_set_low_power_mode(true);
         }
@@ -1394,7 +1406,9 @@ static void power_manager_apply_state(
         if (status_led_set_low_power_disabled != NULL) {
             status_led_set_low_power_disabled(true);
         }
-        power_manager_set_audio_idle_power_save(true);
+        if (power_manager_audio_idle_blockers(blockers) == 0) {
+            power_manager_set_audio_idle_power_save(true);
+        }
         if (system_health_set_low_power_mode != NULL) {
             system_health_set_low_power_mode(true);
         }
@@ -1430,11 +1444,23 @@ static void power_manager_apply_state(
     if (ble_hid_battery_task_wake != NULL) {
         ble_hid_battery_task_wake();
     }
+
+    /* Re-evaluate VA after every power transition. LST-WAKE-012 keeps it off
+     * in Bluetooth-light-off idle and re-arms only after normal recovery. */
+    if (voice_recording_control_on_power_state_changed != NULL) {
+        voice_recording_control_on_power_state_changed();
+    }
 }
 
 static void power_manager_apply_fast_idle_actions(power_manager_state_t state, uint32_t user_idle_ms, uint32_t blockers)
 {
     if (state != POWER_MANAGER_STATE_ACTIVE) {
+        /* Hidden voice candidates are canceled asynchronously at the idle
+         * boundary. Retry the mic power-save transition after their audio
+         * drain clears the VOICE_ACTIVATION blocker. */
+        if (power_manager_audio_idle_blockers(blockers) == 0) {
+            power_manager_set_audio_idle_power_save(true);
+        }
         return;
     }
 
@@ -2516,9 +2542,11 @@ void power_manager_set_blocker(uint32_t blocker_mask, bool enabled)
             s_blockers &= ~blocker_mask;
         }
         new_blockers = s_blockers;
-        uint64_t now_ms = power_manager_now_ms();
-        s_last_user_activity_ms = now_ms;
-        s_last_radio_activity_ms = now_ms;
+        /* Do NOT refresh user/radio idle clocks here. Every VoiceActivation
+         * start/stop previously called set_blocker and zeroed the 5-minute
+         * low-power timer, so ambient VAD made low-power unreachable while
+         * voice_auto_start was on. Blockers only force ACTIVE while held;
+         * idle resumes from the last real user/radio activity after clear. */
         s_auto_shutdown_block_logged = false;
         previous = s_state;
         if (power_manager_awake_blockers(s_blockers) != 0 &&

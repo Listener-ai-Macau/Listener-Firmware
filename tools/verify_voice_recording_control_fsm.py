@@ -17,6 +17,7 @@ BLE_AUDIO_STREAM = (
     / "ble_audio_stream"
     / "ble_audio_stream_esp32.c"
 )
+POWER_MANAGER = REPO_ROOT / "components" / "power_manager" / "power_manager.c"
 
 
 EXPECTED_CASES = {
@@ -211,6 +212,7 @@ def main() -> int:
     source = VOICE_CONTROL.read_text(encoding="utf-8")
     capture_source = CAPTURE_ADAPTER.read_text(encoding="utf-8")
     ble_audio_source = BLE_AUDIO_STREAM.read_text(encoding="utf-8")
+    power_source = POWER_MANAGER.read_text(encoding="utf-8")
     cases = extract_transition_artifact(source)
 
     missing = sorted(set(EXPECTED_CASES) - set(cases))
@@ -335,6 +337,181 @@ def main() -> int:
             token,
             f"automatic session disable edge is missing {token}",
         )
+
+    cleanup_start = source.find(
+        "static void voice_recording_control_complete_transfer_cleanup("
+    )
+    cleanup_end = source.find(
+        "static void voice_recording_control_stop(", cleanup_start
+    )
+    if cleanup_start < 0 or cleanup_end < 0:
+        fail("transfer cleanup boundary is missing")
+    cleanup_body = source[cleanup_start:cleanup_end]
+    for token in [
+        "const bool hidden_va =",
+        "} else {\n        /* The audio drain is now complete",
+        "denzic_voice_activation_v1_reset(&s_voice_activation_machine);",
+    ]:
+        require_contains(
+            cleanup_body,
+            token,
+            f"hidden candidate immediate re-arm contract is missing {token}",
+        )
+
+    refresh_start = source.find(
+        "static void voice_recording_control_refresh_voice_monitoring("
+    )
+    refresh_end = source.find(
+        "void voice_recording_control_on_power_state_changed(", refresh_start
+    )
+    if refresh_start < 0 or refresh_end < 0:
+        fail("voice monitoring refresh boundary is missing")
+    refresh_body = source[refresh_start:refresh_end]
+    for token in [
+        "ble_audio_stream_is_ready() &&",
+        "power.state == POWER_MANAGER_STATE_ACTIVE &&",
+        "(idle_start_monitoring || active_stop_monitoring);",
+    ]:
+        require_contains(
+            refresh_body,
+            token,
+            f"non-idle voice monitoring contract is missing {token}",
+        )
+    if (
+        "POWER_MANAGER_STATE_CONNECTED_IDLE" in refresh_body
+        or "POWER_MANAGER_STATE_DISCONNECTED_IDLE" in refresh_body
+    ):
+        fail("Bluetooth-light-off idle must not keep voice monitoring enabled")
+
+    idle_cancel_body = extract_void_function(
+        source, "voice_recording_control_cancel_hidden_candidate_for_idle"
+    )
+    for token in [
+        "power->state == POWER_MANAGER_STATE_ACTIVE",
+        "s_active_session_automatic",
+        "!s_active_session_visible",
+        "audio_capture_session_cancel()",
+        '"voice_activation.idle_suspend"',
+        "voice_recording_control_handle_session_inactive()",
+    ]:
+        require_contains(
+            idle_cancel_body,
+            token,
+            f"idle-racing hidden candidate cancellation is missing {token}",
+        )
+    if "power_manager_record_activity(" in idle_cancel_body:
+        fail("idle-racing hidden candidate cancellation must not record activity")
+
+    power_change_start = source.find(
+        "void voice_recording_control_on_power_state_changed("
+    )
+    power_change_end = source.find(
+        "static void voice_recording_control_process_voice_activity(",
+        power_change_start,
+    )
+    if power_change_start < 0 or power_change_end < 0:
+        fail("power-state voice recording boundary is missing")
+    power_change_body = source[power_change_start:power_change_end]
+    require_contains(
+        power_change_body,
+        "voice_recording_control_cancel_hidden_candidate_for_idle(&power);",
+        "power-state boundary must cancel an idle-racing hidden candidate",
+    )
+
+    fast_idle_start = power_source.find(
+        "static void power_manager_apply_fast_idle_actions("
+    )
+    fast_idle_end = power_source.find(
+        "static void power_manager_guard_runtime_power_hold_low(", fast_idle_start
+    )
+    if fast_idle_start < 0 or fast_idle_end < 0:
+        fail("power-manager fast idle boundary is missing")
+    fast_idle_body = power_source[fast_idle_start:fast_idle_end]
+    for token in [
+        "if (state != POWER_MANAGER_STATE_ACTIVE)",
+        "power_manager_audio_idle_blockers(blockers) == 0",
+        "power_manager_set_audio_idle_power_save(true);",
+    ]:
+        require_contains(
+            fast_idle_body,
+            token,
+            f"idle audio power-save retry is missing {token}",
+        )
+
+    for token in [
+        "#define AUDIO_CAPTURE_PDM_SOFTWARE_GAIN_NUM 1",
+        "#define AUDIO_CAPTURE_VOICE_PREROLL_MAX_MS 1000U",
+        "config->vad_init = true;",
+        'config->vad_model_name = vad_model_name;',
+        'esp_srmodel_filter(s_pdm_srmodels, "vadnet1_medium", NULL);',
+        "srmodel_load(",
+        "config->agc_init = false;",
+        "s_pdm_agc_handle = esp_agc_open(AGC_MODE_2, AUDIO_CAPTURE_SAMPLE_RATE_HZ);",
+        "#define AUDIO_CAPTURE_PDM_AGC_COMPRESSION_DB 48",
+        "#define AUDIO_CAPTURE_PDM_AGC_TARGET_DBFS 6",
+        "#define AUDIO_CAPTURE_PDM_LIMITER_CEILING 23170",
+        "#define AUDIO_CAPTURE_PDM_VAD_LOW_SNR_NUMERATOR 3U",
+        "#define AUDIO_CAPTURE_PDM_VAD_LOW_SNR_DENOMINATOR 2U",
+        "#define AUDIO_CAPTURE_PDM_VAD_LOW_SNR_MIN_MARGIN 3U",
+        "AUDIO_CAPTURE_PDM_AGC_COMPRESSION_DB,\n        1,\n        AUDIO_CAPTURE_PDM_AGC_TARGET_DBFS);",
+        '" requested_preroll_ms=%" PRIu32 " actual_preroll_ms=%u"',
+        '" input_clipped_samples=%" PRIu64',
+        '" pre_vad_peak=%" PRIu32 " pre_vad_mean_abs=%" PRIu32',
+        '" agc_input_mean_abs=%" PRIu32 " agc_output_mean_abs=%" PRIu32',
+        '" effective_gain_permille=%" PRIu32',
+        '" output_clipped_samples=%" PRIu64',
+        '" limiter_max_reduction_permille=%" PRIu32',
+        '" vad_noise_floor_mean_abs=%" PRIu32',
+        '" vad_low_snr_speech_frames=%" PRIu32',
+        "if (!session_active && state != VAD_SPEECH)",
+        "PDM VAD low-SNR speech preserved:",
+        "handler(speech_detected, elapsed_ms);",
+    ]:
+        require_contains(
+            capture_source,
+            token,
+            f"1.0.4 root audio-level contract is missing {token}",
+        )
+    if "AUDIO_CAPTURE_VAD_SPEECH_MIN_PEAK" in capture_source:
+        fail("fixed raw-volume VAD gate is forbidden by the 1.0.4 wake contract")
+    for forbidden in ("vad_create(", "s_pdm_vad_handle"):
+        if forbidden in capture_source:
+            fail(f"legacy standalone WebRTC VAD must be absent: {forbidden}")
+    if re.search(r"(?<!pdm_)vad_process\(", capture_source):
+        fail("legacy standalone WebRTC VAD must be absent: vad_process(")
+    process_start = capture_source.find(
+        "static void audio_capture_pdm_afe_process("
+    )
+    process_end = capture_source.find("#endif", process_start)
+    process_body = capture_source[process_start:process_end]
+    raw_index = process_body.find("audio_capture_note_pdm_afe_session_input(")
+    pre_vad_index = process_body.find("audio_capture_note_pdm_afe_session_pre_vad(")
+    feed_index = process_body.find("s_pdm_afe_handle->feed(")
+    if not 0 <= raw_index < pre_vad_index < feed_index:
+        fail("raw and unboosted pre-VAD telemetry must precede AFE feed")
+
+    fetch_start = capture_source.find(
+        "static void audio_capture_pdm_afe_fetch_task("
+    )
+    fetch_end = capture_source.find(
+        "static esp_err_t audio_capture_pdm_afe_init(", fetch_start
+    )
+    fetch_body = capture_source[fetch_start:fetch_end]
+    vad_index = fetch_body.find("audio_capture_pdm_vad_process(")
+    agc_index = fetch_body.find("audio_capture_pdm_agc_process(")
+    if not 0 <= vad_index < agc_index:
+        fail("post-NS VAD must classify before the one adaptive AGC")
+    agc_emit_start = capture_source.find(
+        "static void audio_capture_pdm_agc_emit_frame("
+    )
+    agc_emit_end = capture_source.find(
+        "static void audio_capture_pdm_agc_process(", agc_emit_start
+    )
+    agc_emit_body = capture_source[agc_emit_start:agc_emit_end]
+    limiter_index = agc_emit_body.find("audio_capture_pdm_apply_final_limiter(")
+    emit_index = agc_emit_body.find("audio_capture_pdm_afe_emit(")
+    if not 0 <= limiter_index < emit_index:
+        fail("final limiter must run after AGC and before PCM emit")
 
     stop_start = source.find(
         "static esp_err_t voice_recording_control_exit_recording_with_origin"

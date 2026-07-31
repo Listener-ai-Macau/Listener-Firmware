@@ -802,8 +802,8 @@ def main() -> int:
             "components/power_manager/power_manager.c: BLE callback must ignore duplicate same-state callbacks and immediately re-apply fast idle actions"
         )
     if not re.search(
-        r"case\s+POWER_MANAGER_STATE_CONNECTED_IDLE:[\s\S]{0,220}"
-        r"status_led_set_low_power_disabled\(true\)[\s\S]{0,240}"
+        r"case\s+POWER_MANAGER_STATE_CONNECTED_IDLE:[\s\S]{0,260}"
+        r"status_led_set_low_power_disabled\(true\)[\s\S]{0,420}"
         r"power_manager_set_audio_idle_power_save\(true\)",
         power_manager,
     ):
@@ -811,13 +811,23 @@ def main() -> int:
             "components/power_manager/power_manager.c: connected idle must enter status LED low-power rendering before sleeping audio"
         )
     if not re.search(
-        r"case\s+POWER_MANAGER_STATE_DISCONNECTED_IDLE:[\s\S]{0,220}"
-        r"status_led_set_low_power_disabled\(true\)[\s\S]{0,240}"
+        r"case\s+POWER_MANAGER_STATE_DISCONNECTED_IDLE:[\s\S]{0,260}"
+        r"status_led_set_low_power_disabled\(true\)[\s\S]{0,420}"
         r"power_manager_set_audio_idle_power_save\(true\)",
         power_manager,
     ):
         failures.append(
             "components/power_manager/power_manager.c: disconnected idle must enter status LED low-power rendering before sleeping audio"
+        )
+    if not re.search(
+        r"static\s+void\s+power_manager_apply_fast_idle_actions[\s\S]{0,500}"
+        r"if\s*\(state\s*!=\s*POWER_MANAGER_STATE_ACTIVE\)[\s\S]{0,260}"
+        r"power_manager_audio_idle_blockers\(blockers\)\s*==\s*0[\s\S]{0,180}"
+        r"power_manager_set_audio_idle_power_save\(true\)",
+        power_manager,
+    ):
+        failures.append(
+            "components/power_manager/power_manager.c: non-active states must retry audio power save after an asynchronous hidden-candidate drain"
         )
     if re.search(
         r"if\s*\(connected\)\s*\{[\s\S]{0,120}s_last_user_activity_ms\s*=",

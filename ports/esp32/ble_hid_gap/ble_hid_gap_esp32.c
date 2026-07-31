@@ -4794,6 +4794,10 @@ esp_err_t ble_hid_gap_request_low_power_connection(void)
             "low-power idle connection retained active: e11r fast recording is armed");
         return ble_hid_gap_request_active_connection();
     }
+    /* voice_auto_start no longer forces active connection here. Keeping active
+     * forever made low-power idle feel unreachable while auto-start was on.
+     * Hidden VA start path requests active connection only when a candidate
+     * actually begins streaming (enter_recording). */
 
     ble_hid_gap_set_active_connection_required(false);
     return ble_hid_gap_request_connection_params(

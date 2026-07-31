@@ -6,7 +6,7 @@ param(
     [string]$DeviceName = "listener",
     [string]$OutputDir = "",
     [string]$SerialLogPath = "",
-    [ValidateSet("serial-toggle", "physical-key")]
+    [ValidateSet("serial-toggle", "physical-key", "voice-activation")]
     [string]$TriggerMode = "serial-toggle",
     [int]$MaxSessions = 1,
     [string]$BluetoothAddress = ""

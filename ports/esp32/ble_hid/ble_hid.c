@@ -994,24 +994,9 @@ static bool ble_hid_usb_command_records_activity(const char *line)
         ble_hid_usb_command_matches(line, "VREC:TOGGLE") ||
         ble_hid_usb_command_matches(line, "VREC:CANCEL") ||
         ble_hid_usb_command_matches(line, "VREC:ACTIVATE") ||
-        ble_hid_usb_command_matches(line, "VREC:PROCESSING:START") ||
-        ble_hid_usb_command_matches(line, "VREC:PROCESSING_START") ||
-        ble_hid_usb_command_matches(line, "VREC:PROCESSING:STOP") ||
-        ble_hid_usb_command_matches(line, "VREC:PROCESSING_STOP") ||
-        ble_hid_usb_command_matches(line, "VREC:PROCESSING:DONE") ||
-        ble_hid_usb_command_matches(line, "VREC:PROCESSING_DONE") ||
-        ble_hid_usb_command_matches(line, "VREC:PROCESSING:WARN") ||
-        ble_hid_usb_command_matches(line, "VREC:PROCESSING_WARN") ||
-        ble_hid_usb_command_matches(line, "VREC:PROCESSING:WARNING") ||
-        ble_hid_usb_command_matches(line, "VREC:PROCESSING_WARNING") ||
-        ble_hid_usb_command_matches(line, "VREC:PROCESSING:FAIL") ||
-        ble_hid_usb_command_matches(line, "VREC:PROCESSING_FAIL") ||
-        ble_hid_usb_command_matches(line, "VREC:PROCESSING:FAILED") ||
-        ble_hid_usb_command_matches(line, "VREC:PROCESSING_FAILED") ||
-        ble_hid_usb_command_matches(line, "VREC:PROCESSING:ERROR") ||
-        ble_hid_usb_command_matches(line, "VREC:PROCESSING_ERROR") ||
-        ble_hid_usb_command_matches(line, "VREC:STOP") ||
-        ble_hid_usb_command_matches(line, "VREC:CLEANUP") ||
+        /* VREC:STOP/CLEANUP/PROCESSING* must NOT record activity: Type sends
+         * STOP after ambient wake rejects and would reset the 5-minute
+         * low-power idle clock (owner: 两次都只能进一次). */
         ble_hid_usb_command_matches(line, "VREC:RECOVERY:TYPE:MANUAL") ||
         ble_hid_usb_command_matches(line, "VREC:RECOVERY:TYPE") ||
         ble_hid_usb_command_matches(line, "VREC:RECOVERY_TYPE") ||

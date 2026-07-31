@@ -58,7 +58,9 @@ SOURCE_TOKENS = [
     "BLE_AUDIO_STREAM_AUDIO_PACE_TICK_MS 10U",
     "BLE_AUDIO_STREAM_AUDIO_PACE_BYTES_PER_TICK",
     "denzic_audio_transport_v1_pacing_note_pcm_sent",
-    "denzic_audio_transport_v1_replay_window_t s_replay_window",
+    "denzic_audio_transport_v1_replay_window_t *s_replay_window",
+    "MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT",
+    "audio replay window PSRAM allocation failed",
     "denzic_audio_transport_v1_replay_store(",
     "denzic_audio_transport_v1_replay_collect_pending",
     "denzic_audio_transport_v1_replay_mark_suspended",
@@ -143,7 +145,7 @@ GAP_SOURCE_TOKENS = [
     "BLE_HID_GAP_ACTIVE_PROMOTION_RETRY_MS 50U",
     "BLE_HID_GAP_ACTIVE_PROMOTION_TIMEOUT_MS",
     "BLE_HID_GAP_AUDIO_DATA_LEN_OCTETS 251U",
-    "BLE_HID_GAP_AUDIO_DATA_LEN_TIME_US 2120U",
+    "BLE_HID_GAP_AUDIO_DATA_LEN_TIME_US 1590U",
     "BLE_HID_GAP_ACTIVE_ITVL_MAX 6U",
     "BLE_HID_GAP_ACTIVE_FALLBACK_ITVL_MAX 12U",
     "BLE_HID_GAP_ACTIVE_MIN_CE_LEN 12U",
@@ -882,7 +884,7 @@ def case_single_pdu_budget_beats_pcm_production() -> None:
     active_interval_seconds = 6 * 1.25 / 1000
     active_min_ce_len_us = 8 * 625
     active_max_ce_len_us = 12 * 625
-    max_pdu_airtime_us = 2120
+    max_pdu_airtime_us = 1590
 
     single_pdu_value = dle_tx_octets - l2cap_and_att_headers
     pcm_payload = single_pdu_value - protocol_header

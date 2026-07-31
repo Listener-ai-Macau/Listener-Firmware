@@ -17,12 +17,21 @@ from winrt.windows.devices.bluetooth.genericattributeprofile import (
     GattClientCharacteristicConfigurationDescriptorValue as GattCccdValue,
     GattCharacteristicProperties,
     GattCommunicationStatus,
+    GattWriteOption,
 )
 from winrt.windows.devices.enumeration import DeviceAccessStatus
-from winrt.windows.storage.streams import DataReader
+from winrt.windows.storage.streams import DataReader, DataWriter
+
+from verify_ble_audio_transport_model import (
+    RICE_VERSION_V1,
+    RICE_VERSION_V2,
+    RICE_VERSION_V3,
+    rice_decode,
+)
 
 SERVICE_UUID = "710af845-6d9f-6583-0c4d-9e5b3bc3091a"
 NOTIFY_UUID = "710af845-6d9f-6583-0c4d-9e5b3bc3091b"
+CONTROL_UUID = "710af845-6d9f-6583-0c4d-9e5b3bc3091e"
 HEADER_LEN = 20
 MAGIC = b"VKA1"
 PACKET_TYPE_SESSION_START = 1
@@ -234,7 +243,11 @@ def parse_args():
     parser.add_argument("--boot-timeout-seconds", type=int, default=15)
     parser.add_argument("--ble-connect-timeout-seconds", type=int, default=12)
     parser.add_argument("--notify-ready-timeout-seconds", type=int, default=45)
-    parser.add_argument("--trigger-mode", choices=["serial-toggle", "physical-key"], default="serial-toggle")
+    parser.add_argument(
+        "--trigger-mode",
+        choices=["serial-toggle", "physical-key", "voice-activation"],
+        default="serial-toggle",
+    )
     parser.add_argument("--max-sessions", type=int, default=1)
     parser.add_argument("--bluetooth-address", default=None)
     parser.add_argument("--no-reset-before-capture", action="store_false", dest="reset_before_capture")
@@ -454,6 +467,46 @@ async def resolve_notify_characteristic(
         )
 
     return service, characteristic, gatt_session, None
+
+
+def bytes_to_buffer(payload: bytes):
+    writer = DataWriter()
+    writer.write_bytes(payload)
+    return writer.detach_buffer()
+
+
+async def write_type_ready(service) -> None:
+    result = await service.get_characteristics_for_uuid_with_cache_mode_async(
+        uuid.UUID(CONTROL_UUID),
+        BluetoothCacheMode.UNCACHED,
+    )
+    if (
+        result.status != GattCommunicationStatus.SUCCESS
+        or not result.characteristics
+    ):
+        result = await service.get_characteristics_for_uuid_with_cache_mode_async(
+            uuid.UUID(CONTROL_UUID),
+            BluetoothCacheMode.CACHED,
+        )
+    if (
+        result.status != GattCommunicationStatus.SUCCESS
+        or not result.characteristics
+    ):
+        raise RuntimeError(
+            "capture_audio_ble_wav: audio control characteristic unavailable "
+            f"status={result.status} count={len(result.characteristics)}"
+        )
+    write_result = await result.characteristics[0].write_value_with_result_and_option_async(
+        bytes_to_buffer(b"TYPE:READY"),
+        GattWriteOption.WRITE_WITH_RESPONSE,
+    )
+    if write_result.status != GattCommunicationStatus.SUCCESS:
+        raise RuntimeError(
+            "capture_audio_ble_wav: TYPE:READY write failed "
+            f"status={write_result.status} "
+            f"protocol_error={getattr(write_result, 'protocol_error', None)}"
+        )
+    print("type_ready_write_status=success", flush=True)
 
 
 async def open_ble_device(address_hex: str):
@@ -802,6 +855,34 @@ def write_wav(output_path: pathlib.Path, pcm_bytes: bytes) -> None:
         wav_file.writeframes(pcm_bytes)
 
 
+def decode_audio_payload(payload: bytes, expected_pcm_bytes: int) -> bytes:
+    if expected_pcm_bytes <= 0 or len(payload) == expected_pcm_bytes:
+        return payload
+    if (
+        len(payload) < expected_pcm_bytes
+        and payload
+        and payload[0] in (RICE_VERSION_V1, RICE_VERSION_V2, RICE_VERSION_V3)
+    ):
+        try:
+            decoded = rice_decode(payload, expected_pcm_bytes)
+        except AssertionError as error:
+            raise RuntimeError(
+                "capture_audio_ble_wav: invalid lossless Rice payload "
+                f"wire_bytes={len(payload)} expected_pcm_bytes={expected_pcm_bytes}"
+            ) from error
+        if len(decoded) != expected_pcm_bytes:
+            raise RuntimeError(
+                "capture_audio_ble_wav: lossless Rice decode length mismatch "
+                f"decoded={len(decoded)} expected={expected_pcm_bytes}"
+            )
+        return decoded
+    raise RuntimeError(
+        "capture_audio_ble_wav: audio payload length mismatch without a "
+        f"supported lossless codec wire_bytes={len(payload)} "
+        f"expected_pcm_bytes={expected_pcm_bytes}"
+    )
+
+
 def pcm_duration_seconds(pcm_bytes_len: int) -> float:
     bytes_per_second = PCM_SAMPLE_RATE * PCM_CHANNELS * PCM_WIDTH_BYTES
     if bytes_per_second <= 0:
@@ -827,6 +908,7 @@ class SessionCollector:
         self.last_packet_time = 0.0
         self.explicit_start_received = False
         self.start_inferred_from_audio = False
+        self.session_start_origin = None
 
     def reset(self) -> None:
         with self._lock:
@@ -845,6 +927,7 @@ class SessionCollector:
             self.last_packet_time = 0.0
             self.explicit_start_received = False
             self.start_inferred_from_audio = False
+            self.session_start_origin = None
 
     def handle_notification(self, packet: bytes) -> None:
         header = parse_header(packet)
@@ -868,6 +951,7 @@ class SessionCollector:
                     self.session_id = header["session_id"]
                     self.start_inferred_from_audio = False
                 self.explicit_start_received = True
+                self.session_start_origin = header["packet_pcm_bytes"]
                 return
             if self.session_id is None:
                 if packet_type != PACKET_TYPE_AUDIO_DATA:
@@ -881,7 +965,10 @@ class SessionCollector:
                 packet_pcm_bytes = header["packet_pcm_bytes"] or header["payload_len"]
                 if packet_pcm_bytes <= 0:
                     packet_pcm_bytes = len(header["payload"])
-                payload = header["payload"][:packet_pcm_bytes]
+                payload = decode_audio_payload(
+                    header["payload"],
+                    packet_pcm_bytes,
+                )
                 if not payload:
                     return
 
@@ -1221,6 +1308,8 @@ async def run_ble_capture(args, ser: Serial, serial_monitor: SerialLogMonitor):
     )
 
     try:
+        if args.trigger_mode == "voice-activation":
+            await write_type_ready(service)
         try:
             await serial_monitor.wait_for_predicate(
                 line_indicates_notify_ready,
@@ -1404,6 +1493,35 @@ async def run_ble_capture(args, ser: Serial, serial_monitor: SerialLogMonitor):
                     fail_if_unexpected_reset("during_capture_window")
                     await asyncio.sleep(0.05)
                 send_toggle(ser)
+            elif args.trigger_mode == "voice-activation":
+                if (
+                    session_start_callbacks is not None
+                    and completed_sessions < len(session_start_callbacks)
+                    and session_start_callbacks[completed_sessions] is not None
+                ):
+                    print(
+                        f"voice_activation_callback=session_index={completed_sessions + 1}",
+                        flush=True,
+                    )
+                    session_start_callbacks[completed_sessions]()
+                print("trigger_mode=voice-activation", flush=True)
+                start_deadline = time.time() + min(
+                    float(args.timeout_seconds),
+                    float(PHYSICAL_KEY_START_TIMEOUT_SECONDS),
+                )
+                while time.time() < start_deadline:
+                    serial_monitor.poll_lines()
+                    fail_if_unexpected_reset("during_voice_activation_start_wait")
+                    if collector.has_started_session():
+                        break
+                    await asyncio.sleep(0.05)
+
+                if not collector.has_started_session():
+                    raise RuntimeError(
+                        "capture_audio_ble_wav: timed out waiting for voice-activation "
+                        f"session start; recent serial logs:\n{serial_monitor.recent_text()}"
+                    )
+                print("voice_activation_session_started=1", flush=True)
             else:
                 start_deadline = time.time() + PHYSICAL_KEY_START_TIMEOUT_SECONDS
                 start_wait_started_at = time.time()
@@ -1556,6 +1674,7 @@ async def run_ble_capture(args, ser: Serial, serial_monitor: SerialLogMonitor):
                 "serial_upload_skipped_count": len(serial_monitor.find_lines(AUDIO_UPLOAD_SKIPPED_MARKER)),
                 "explicit_start_received": collector.explicit_start_received,
                 "start_inferred_from_audio": collector.start_inferred_from_audio,
+                "session_start_origin": collector.session_start_origin,
                 "completed_session_count": completed_sessions,
                 "chunk_count": collector.received_packet_count(),
                 "expected_chunk_count": collector.expected_packet_count,
@@ -1619,6 +1738,7 @@ async def run_ble_capture(args, ser: Serial, serial_monitor: SerialLogMonitor):
                 print(f"serial_transport_summary_last={serial_transport_summary_lines[-1]}", flush=True)
             print(f"explicit_start_received={1 if collector.explicit_start_received else 0}", flush=True)
             print(f"start_inferred_from_audio={1 if collector.start_inferred_from_audio else 0}", flush=True)
+            print(f"session_start_origin={collector.session_start_origin}", flush=True)
             print(
                 f"serial_upload_begin_count={len(serial_monitor.find_lines(AUDIO_UPLOAD_BEGIN_MARKER))}",
                 flush=True,

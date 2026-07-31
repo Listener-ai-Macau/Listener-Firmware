@@ -233,7 +233,7 @@ Assert-Contains $powerManager 'device_settings_get_active_auto_shutdown_ms\(s_ex
 Assert-Contains $powerManager 'hardware_shutdown_ms > 0U' 'automatic shutdown ignores disabled zero timeout'
 Assert-Contains $powerManager 'TEST:SHUTDOWN' 'manual serial shutdown test alias'
 Assert-Contains $powerManager 'low_power_idle_threshold_ms\s*=\s*power_manager_low_power_idle_ms\(\)' 'POWER:STATUS reports effective low-power timeout'
-Assert-Contains $powerManager 's_external_power_present\s*&&\s*!power_manager_plugged_low_power_enabled\(\)[\s\S]*POWER_MANAGER_STATE_ACTIVE' 'plugged low-power switch blocks runtime idle while externally powered'
+Assert-Contains $powerManager '\.sleep_enabled\s*=\s*[\s\S]*low_power_idle_ms\s*>\s*0u\s*&&\s*[\s\S]*\(!s_external_power_present\s*\|\|\s*power_manager_plugged_low_power_enabled\(\)\)' 'plugged low-power switch blocks shared-policy runtime idle while externally powered'
 Assert-Contains $powerManager 'low_power_idle_allowed' 'POWER:STATUS reports effective low-power idle allowance'
 Assert-Contains $powerManager 'power_input_wake_configured' 'POWER:STATUS reports power-input wake configuration'
 Assert-Contains $powerManager 'power_input_irq_armed' 'POWER:STATUS reports battery-idle plug-in wake IRQ arm state'

@@ -4,6 +4,7 @@
 #include <stdbool.h>
 #include <string.h>
 
+#include "esp_attr.h"
 #include "esp_heap_caps.h"
 #include "esp_log.h"
 #include "esp_task_wdt.h"
@@ -41,8 +42,131 @@
     ((CONFIG_ESP_TASK_WDT_CHECK_IDLE_TASK_CPU0 ? (1U << 0) : 0U) | \
      (CONFIG_ESP_TASK_WDT_CHECK_IDLE_TASK_CPU1 ? (1U << 1) : 0U))
 #define WATCHDOG_PLATFORM_USB_PREFIX "WDT:"
+#define WATCHDOG_PLATFORM_RTC_MAGIC 0x57445452U
+#define WATCHDOG_PLATFORM_TASK_NAME_BYTES 24U
+#define WATCHDOG_PLATFORM_TRIGGERED_BYTES 96U
 
 static const char *TAG = "watchdog";
+
+typedef struct {
+    uint32_t magic;
+    uint32_t timeout_count;
+    uint32_t failed_core_mask;
+    uint32_t triggered_length;
+    char triggered[WATCHDOG_PLATFORM_TRIGGERED_BYTES];
+    char running_cpu0[WATCHDOG_PLATFORM_TASK_NAME_BYTES];
+    char running_cpu1[WATCHDOG_PLATFORM_TASK_NAME_BYTES];
+    uint32_t checksum;
+} watchdog_platform_rtc_timeout_t;
+
+static RTC_NOINIT_ATTR watchdog_platform_rtc_timeout_t s_rtc_timeout;
+
+static IRAM_ATTR uint32_t watchdog_platform_rtc_checksum(
+    const watchdog_platform_rtc_timeout_t *record)
+{
+    const uint8_t *cursor = (const uint8_t *)&record->timeout_count;
+    const uint8_t *end = (const uint8_t *)&record->checksum;
+    uint32_t checksum = 2166136261U;
+    while (cursor < end) {
+        checksum ^= *cursor++;
+        checksum *= 16777619U;
+    }
+    return checksum;
+}
+
+static IRAM_ATTR void watchdog_platform_copy_task_name(
+    char *destination,
+    size_t destination_bytes,
+    TaskHandle_t task)
+{
+    if (destination == NULL || destination_bytes == 0U) {
+        return;
+    }
+    const char *name = task != NULL ? pcTaskGetName(task) : "none";
+    size_t index = 0U;
+    while (index + 1U < destination_bytes && name[index] != '\0') {
+        destination[index] = name[index];
+        index++;
+    }
+    destination[index] = '\0';
+}
+
+typedef struct {
+    bool skip_caption;
+} watchdog_platform_wdt_capture_t;
+
+static IRAM_ATTR void watchdog_platform_capture_wdt_message(
+    void *opaque,
+    const char *message)
+{
+    watchdog_platform_wdt_capture_t *capture =
+        (watchdog_platform_wdt_capture_t *)opaque;
+    if (capture == NULL || message == NULL) {
+        return;
+    }
+    if (capture->skip_caption) {
+        capture->skip_caption = false;
+        return;
+    }
+    uint32_t index = s_rtc_timeout.triggered_length;
+    while (index + 1U < WATCHDOG_PLATFORM_TRIGGERED_BYTES &&
+           *message != '\0') {
+        s_rtc_timeout.triggered[index++] = *message++;
+    }
+    s_rtc_timeout.triggered[index] = '\0';
+    s_rtc_timeout.triggered_length = index;
+}
+
+/*
+ * ESP-IDF invokes this weak user hook from the Task WDT ISR immediately before
+ * panic reset. Keep the writes in RTC no-init memory and avoid normal logging:
+ * the next boot can then name the missed subscribers and running tasks even
+ * when no serial monitor was attached at the failure.
+ */
+void IRAM_ATTR esp_task_wdt_isr_user_handler(void)
+{
+    uint32_t previous_count =
+        s_rtc_timeout.magic == WATCHDOG_PLATFORM_RTC_MAGIC
+            ? s_rtc_timeout.timeout_count
+            : 0U;
+    s_rtc_timeout.magic = 0U;
+    s_rtc_timeout.timeout_count = previous_count + 1U;
+    s_rtc_timeout.failed_core_mask = 0U;
+    s_rtc_timeout.triggered_length = 0U;
+    s_rtc_timeout.triggered[0] = '\0';
+    s_rtc_timeout.running_cpu0[0] = '\0';
+    s_rtc_timeout.running_cpu1[0] = '\0';
+
+    watchdog_platform_wdt_capture_t capture = {
+        .skip_caption = true,
+    };
+    int failed_cores = 0;
+    (void)esp_task_wdt_print_triggered_tasks(
+        watchdog_platform_capture_wdt_message,
+        &capture,
+        &failed_cores);
+    s_rtc_timeout.failed_core_mask = (uint32_t)failed_cores;
+    watchdog_platform_copy_task_name(
+        s_rtc_timeout.running_cpu0,
+        sizeof(s_rtc_timeout.running_cpu0),
+        xTaskGetCurrentTaskHandleForCore(0));
+#if !CONFIG_FREERTOS_UNICORE
+    watchdog_platform_copy_task_name(
+        s_rtc_timeout.running_cpu1,
+        sizeof(s_rtc_timeout.running_cpu1),
+        xTaskGetCurrentTaskHandleForCore(1));
+#endif
+    s_rtc_timeout.checksum =
+        watchdog_platform_rtc_checksum(&s_rtc_timeout);
+    s_rtc_timeout.magic = WATCHDOG_PLATFORM_RTC_MAGIC;
+}
+
+static bool watchdog_platform_rtc_timeout_valid(void)
+{
+    return s_rtc_timeout.magic == WATCHDOG_PLATFORM_RTC_MAGIC &&
+           s_rtc_timeout.checksum ==
+               watchdog_platform_rtc_checksum(&s_rtc_timeout);
+}
 
 esp_err_t watchdog_platform_subscribe_current_task(const char *task_name)
 {
@@ -209,6 +333,20 @@ void watchdog_platform_log_config(void)
         (unsigned)CONFIG_ESP_TASK_WDT_TIMEOUT_S,
         (unsigned)CONFIG_ESP_INT_WDT,
         (unsigned)CONFIG_ESP_INT_WDT_TIMEOUT_MS);
+    if (watchdog_platform_rtc_timeout_valid()) {
+        ESP_LOGE(
+            TAG,
+            "retained timeout: count=%" PRIu32
+            " failed_core_mask=0x%08" PRIx32
+            " missed=\"%s\" running_cpu0=\"%s\" running_cpu1=\"%s\"",
+            s_rtc_timeout.timeout_count,
+            s_rtc_timeout.failed_core_mask,
+            s_rtc_timeout.triggered,
+            s_rtc_timeout.running_cpu0,
+            s_rtc_timeout.running_cpu1);
+    } else {
+        ESP_LOGI(TAG, "retained timeout: none");
+    }
 }
 
 static void watchdog_platform_deadlock_for_test(void)

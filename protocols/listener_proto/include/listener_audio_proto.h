@@ -40,4 +40,18 @@ typedef denzic_audio_v1_packet_header_t listener_audio_packet_header_t;
 
 #define listener_audio_proto_header_init denzic_audio_v1_packet_header_init
 
+static inline uint8_t listener_audio_proto_flags_with_raw_input_level(
+    uint8_t flags,
+    uint8_t level_percent)
+{
+    if (level_percent > DENZIC_AUDIO_V1_RAW_INPUT_LEVEL_MAX_PERCENT) {
+        level_percent = DENZIC_AUDIO_V1_RAW_INPUT_LEVEL_MAX_PERCENT;
+    }
+    uint8_t encoded = (uint8_t)(
+        level_percent + DENZIC_AUDIO_V1_RAW_INPUT_LEVEL_ENCODED_OFFSET);
+    return (uint8_t)(
+        (flags & (uint8_t)~DENZIC_AUDIO_V1_RAW_INPUT_LEVEL_FLAG_MASK) |
+        (uint8_t)(encoded << DENZIC_AUDIO_V1_RAW_INPUT_LEVEL_FLAG_SHIFT));
+}
+
 #endif

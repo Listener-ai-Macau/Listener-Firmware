@@ -50,10 +50,16 @@
 #define AUDIO_CAPTURE_TASK_CORE 0
 #define AUDIO_CAPTURE_AFE_FETCH_TASK_CORE 0
 #else
-#define AUDIO_CAPTURE_TASK_CORE 1
-/* ESP-SR requires feed and fetch to run concurrently. Keep them at equal
- * priority on the audio core: CPU0 carries NimBLE and serial work, and a
- * delayed fetch there lets the AFE overwrite its feed ring. */
+/*
+ * ESP-SR's feed and fetch paths must run concurrently. VADNet makes the
+ * fetch/DSP side substantially heavier than the old WebRTC-only pipeline, so
+ * keeping both priority-5 tasks on CPU1 can fill the internal AFE ring and
+ * strand feed inside the binary AFE call long enough to trip the Task WDT.
+ * Keep the I2S/feed producer on CPU0 and fetch/DSP on CPU1, matching
+ * Espressif's dual-core AFE task model. I2S blocks between 20 ms frames, so
+ * NimBLE remains able to preempt the producer on CPU0.
+ */
+#define AUDIO_CAPTURE_TASK_CORE 0
 #define AUDIO_CAPTURE_AFE_FETCH_TASK_CORE 1
 #endif
 #define AUDIO_CAPTURE_AFE_FETCH_TASK_PRIORITY 5
@@ -66,21 +72,36 @@
 #define AUDIO_CAPTURE_STREAM_PROGRESS_LOG_PACKET_INTERVAL 64U
 #define AUDIO_CAPTURE_IDLE_POWER_SAVE_WAIT_MS 5000U
 #define AUDIO_CAPTURE_OTA_SUSPEND_TIMEOUT_MS 250U
+#define AUDIO_CAPTURE_I2S_READ_TIMEOUT_MS 250U
 #define AUDIO_CAPTURE_PDM_HW_AMPLIFY_NUM 8U
-/* A modest pre-AFE lift keeps weak physical speech above the WebRTC NS/VAD
- * floor. Fourfold gain clipped real microphone peaks; twofold remains a
- * bounded candidate while Type retains its per-session peak guard. */
-#define AUDIO_CAPTURE_PDM_SOFTWARE_GAIN_NUM 2
-/* WebRTC AFE accepts 160-sample feed blocks but emits 512-sample output
- * blocks. Four feeds are therefore the minimum to form one fetch result;
- * six frames leave two feed blocks of scheduler headroom without introducing
- * buffered latency in the steady state. */
-#define AUDIO_CAPTURE_PDM_AFE_RINGBUF_FRAMES 6
+/* Keep fixed integer gain at unity. VADNet owns weak-speech classification on
+ * the unboosted post-NS signal; the one adaptive AGC runs only after that
+ * decision so stationary room noise cannot open automatic sessions. */
+#define AUDIO_CAPTURE_PDM_SOFTWARE_GAIN_NUM 1
+/* WebRTC AFE accepts 10 ms feed blocks. Starting a session queues the complete
+ * 1 s pre-roll and creates a measured ~100 ms bounded fetch-task burst. Keep
+ * 240 ms of producer/consumer headroom so that burst cannot overwrite the
+ * phrase tail; fetch still drains continuously, so this adds no steady delay. */
+#define AUDIO_CAPTURE_PDM_AFE_RINGBUF_FRAMES 24
 #define AUDIO_CAPTURE_PDM_AFE_FETCH_WAIT_MS 100U
-#define AUDIO_CAPTURE_PDM_VAD_FRAME_MS 30U
-#define AUDIO_CAPTURE_PDM_VAD_FRAME_SAMPLES \
-    ((AUDIO_CAPTURE_SAMPLE_RATE_HZ * AUDIO_CAPTURE_PDM_VAD_FRAME_MS) / 1000U)
-#define AUDIO_CAPTURE_VOICE_PREROLL_MAX_MS 600U
+#define AUDIO_CAPTURE_PDM_AFE_IDLE_BUDGET_FETCHES 64U
+#define AUDIO_CAPTURE_PDM_VAD_MIN_SPEECH_MS 128
+#define AUDIO_CAPTURE_PDM_VAD_MIN_NOISE_MS 128
+#define AUDIO_CAPTURE_PDM_VAD_DELAY_MS 128
+#define AUDIO_CAPTURE_PDM_AGC_FRAME_MS 10U
+#define AUDIO_CAPTURE_PDM_AGC_FRAME_SAMPLES \
+    ((AUDIO_CAPTURE_SAMPLE_RATE_HZ * AUDIO_CAPTURE_PDM_AGC_FRAME_MS) / 1000U)
+#define AUDIO_CAPTURE_PDM_AGC_COMPRESSION_DB 48
+#define AUDIO_CAPTURE_PDM_AGC_TARGET_DBFS 6
+#define AUDIO_CAPTURE_PDM_LIMITER_CEILING 23170
+#define AUDIO_CAPTURE_PDM_LIMITER_Q15_ONE 32768U
+#define AUDIO_CAPTURE_PDM_VAD_NOISE_INITIAL_MEAN_ABS 4U
+#define AUDIO_CAPTURE_PDM_VAD_NOISE_MIN_MEAN_ABS 1U
+#define AUDIO_CAPTURE_PDM_VAD_NOISE_EWMA_SHIFT 5U
+#define AUDIO_CAPTURE_PDM_VAD_LOW_SNR_NUMERATOR 3U
+#define AUDIO_CAPTURE_PDM_VAD_LOW_SNR_DENOMINATOR 2U
+#define AUDIO_CAPTURE_PDM_VAD_LOW_SNR_MIN_MARGIN 3U
+#define AUDIO_CAPTURE_VOICE_PREROLL_MAX_MS 1000U
 #define AUDIO_CAPTURE_VOICE_PREROLL_FRAMES \
     (AUDIO_CAPTURE_VOICE_PREROLL_MAX_MS / AUDIO_CAPTURE_FRAME_MS)
 #define AUDIO_CAPTURE_VOICE_PREROLL_BYTES \
@@ -90,9 +111,11 @@
 #else
 #define AUDIO_CAPTURE_SPH0655_CLK_INVERT_ENABLED 0
 #endif
-// Status LED level is a visual envelope. Firmware capture now preserves 4x more
-// microphone headroom than the former clipped path, so its display calibration
-// must retain the corresponding raw-signal sensitivity without changing PCM.
+// Status LED level is a raw-microphone visual envelope. Firmware capture now
+// preserves 4x more microphone headroom than the former clipped path, so its
+// display calibration must retain the corresponding raw-signal sensitivity
+// without changing PCM. Never feed the post-AGC/limiter output back into this
+// meter: levelled recording audio must not make every real input look full-scale.
 // Keep the 40-unit silence floor; a 847-unit full scale is a 1.5x steeper
 // visual-only response than the preceding 40-to-1250 calibration.
 #define AUDIO_CAPTURE_LEVEL_NOISE_FLOOR 40U
@@ -122,7 +145,8 @@
 #include "esp_afe_config.h"
 #include "esp_afe_sr_iface.h"
 #include "esp_afe_sr_models.h"
-#include "esp_vad.h"
+#include "esp_agc.h"
+#include "model_path.h"
 #endif
 #endif
 
@@ -152,6 +176,7 @@ typedef struct {
     uint32_t session_id;
     uint16_t stream_next_packet_sequence;
     uint16_t stream_batch_frame_count;
+    uint8_t stream_batch_raw_input_level_percent;
     uint8_t stream_batch_buffer[AUDIO_CAPTURE_STREAM_BATCH_BYTES];
     uint8_t stream_emit_buffer[AUDIO_CAPTURE_STREAM_BATCH_BYTES];
 } audio_capture_export_state_t;
@@ -177,13 +202,16 @@ static uint32_t s_overflow_count;
 static uint32_t s_underrun_count;
 #endif
 static uint32_t s_dropped_frame_count;
+static uint32_t s_i2s_stall_recovery_count;
 static audio_capture_export_state_t s_export_state;
 static SemaphoreHandle_t s_state_mutex;
 static uint32_t s_session_id_counter;
 static audio_capture_voice_activity_handler_t s_voice_activity_handler;
 static volatile bool s_voice_activation_monitoring;
+static volatile uint8_t s_raw_input_level_percent;
 /* Ordinary task-owned PCM history: never a DMA target or Flash API input. */
 static int16_t (*s_voice_preroll)[AUDIO_CAPTURE_FRAME_SAMPLES];
+static uint8_t s_voice_preroll_levels[AUDIO_CAPTURE_VOICE_PREROLL_FRAMES];
 static uint16_t s_voice_preroll_write_index;
 static uint16_t s_voice_preroll_count;
 static uint16_t s_session_preroll_start_index;
@@ -216,9 +244,11 @@ static int16_t *s_pdm_afe_fetch_buffer;
 static size_t s_pdm_afe_feed_samples;
 static size_t s_pdm_afe_fetch_samples;
 static size_t s_pdm_afe_feed_filled;
-static vad_handle_t s_pdm_vad_handle;
-static int16_t s_pdm_vad_buffer[AUDIO_CAPTURE_PDM_VAD_FRAME_SAMPLES];
-static size_t s_pdm_vad_filled;
+static srmodel_list_t *s_pdm_srmodels;
+static void *s_pdm_agc_handle;
+static int16_t s_pdm_agc_input_buffer[AUDIO_CAPTURE_PDM_AGC_FRAME_SAMPLES];
+static int16_t s_pdm_agc_output_buffer[AUDIO_CAPTURE_PDM_AGC_FRAME_SAMPLES];
+static size_t s_pdm_agc_filled;
 static int16_t s_pdm_afe_emit_buffer[AUDIO_CAPTURE_FRAME_SAMPLES];
 static size_t s_pdm_afe_emit_filled;
 static volatile bool s_pdm_afe_session_boundary_requested;
@@ -230,9 +260,26 @@ static uint32_t s_pdm_afe_output_frames;
 static uint32_t s_pdm_afe_session_input_peak;
 static uint64_t s_pdm_afe_session_input_abs_sum;
 static uint64_t s_pdm_afe_session_input_samples;
+static uint64_t s_pdm_afe_session_input_clipped_samples;
+static uint32_t s_pdm_afe_session_pre_vad_peak;
+static uint64_t s_pdm_afe_session_pre_vad_abs_sum;
+static uint64_t s_pdm_afe_session_pre_vad_samples;
+static uint64_t s_pdm_afe_session_pre_vad_clipped_samples;
+static uint64_t s_pdm_afe_session_agc_input_abs_sum;
+static uint64_t s_pdm_afe_session_agc_output_abs_sum;
+static uint64_t s_pdm_afe_session_agc_samples;
 static uint32_t s_pdm_afe_session_output_peak;
 static uint64_t s_pdm_afe_session_output_abs_sum;
 static uint64_t s_pdm_afe_session_output_samples;
+static uint64_t s_pdm_afe_session_output_clipped_samples;
+static uint32_t s_pdm_afe_session_limiter_input_peak;
+static uint32_t s_pdm_afe_session_limited_frames;
+static uint32_t s_pdm_afe_session_limiter_max_reduction_permille;
+static uint32_t s_pdm_vad_noise_floor_q8 =
+    AUDIO_CAPTURE_PDM_VAD_NOISE_INITIAL_MEAN_ABS << 8U;
+static uint32_t s_pdm_vad_last_diagnostic_threshold;
+static uint32_t s_pdm_vad_last_speech_mean_abs;
+static uint32_t s_pdm_vad_low_snr_speech_frames;
 static uint32_t s_pdm_afe_stop_drain_output_frames;
 static size_t s_pdm_afe_stop_drain_padding_samples;
 static TaskHandle_t s_pdm_afe_fetch_task_handle;
@@ -335,6 +382,15 @@ static uint8_t audio_capture_frame_level_percent(const int16_t *frame_buffer)
     }
     return (uint8_t)(((weighted_level - AUDIO_CAPTURE_LEVEL_NOISE_FLOOR) * 100U) /
                      (AUDIO_CAPTURE_LEVEL_FULL_SCALE - AUDIO_CAPTURE_LEVEL_NOISE_FLOOR));
+}
+
+static void audio_capture_update_recording_level_from_raw_input(
+    const int16_t *raw_frame_buffer)
+{
+    uint8_t level_percent =
+        audio_capture_frame_level_percent(raw_frame_buffer);
+    s_raw_input_level_percent = level_percent;
+    status_led_set_recording_level(level_percent);
 }
 
 static void audio_capture_note_transport_backpressure(void)
@@ -455,6 +511,17 @@ static esp_err_t audio_capture_apply_idle_power_save(bool enabled)
                 if (mute_ret != ESP_CODEC_DEV_OK) {
                     ESP_LOGW(TAG, "codec input unmute failed after idle power save: %d", mute_ret);
                 }
+                /* Re-assert gain after mute/I2S cycle — some boards leave the
+                 * ADC soft after idle and owner sees only ambient-level PCM. */
+                int gain_ret = esp_codec_dev_set_in_gain(
+                    s_codec_handle,
+                    AUDIO_CAPTURE_INPUT_GAIN_DB);
+                if (gain_ret != ESP_CODEC_DEV_OK) {
+                    ESP_LOGW(
+                        TAG,
+                        "codec input gain restore failed after idle power save: %d",
+                        gain_ret);
+                }
             }
 #endif
         }
@@ -570,6 +637,17 @@ esp_err_t audio_capture_session_begin_with_preroll(uint32_t pre_roll_ms)
     s_pdm_afe_session_input_peak = 0;
     s_pdm_afe_session_input_abs_sum = 0;
     s_pdm_afe_session_input_samples = 0;
+    s_pdm_afe_session_input_clipped_samples = 0;
+    s_pdm_afe_session_pre_vad_peak = 0;
+    s_pdm_afe_session_pre_vad_abs_sum = 0;
+    s_pdm_afe_session_pre_vad_samples = 0;
+    s_pdm_afe_session_pre_vad_clipped_samples = 0;
+    s_pdm_afe_session_agc_input_abs_sum = 0;
+    s_pdm_afe_session_agc_output_abs_sum = 0;
+    s_pdm_afe_session_agc_samples = 0;
+    s_pdm_afe_session_limiter_input_peak = 0;
+    s_pdm_afe_session_limited_frames = 0;
+    s_pdm_afe_session_limiter_max_reduction_permille = 0;
 #if CONFIG_AUDIO_CAPTURE_PDM_STEREO_SLOT_CAPTURE
     memset(s_pdm_session_raw_slot_peak, 0, sizeof(s_pdm_session_raw_slot_peak));
     memset(s_pdm_session_raw_slot_abs_sum, 0, sizeof(s_pdm_session_raw_slot_abs_sum));
@@ -594,8 +672,12 @@ esp_err_t audio_capture_session_begin_with_preroll(uint32_t pre_roll_ms)
     audio_capture_wake_task();
     ESP_LOGI(
         TAG,
-        "record session begin requested: session_id=%" PRIu32 " buffer_ms=%u buffer_bytes=%u packet_payload_bytes=%u packet_safe_max_s=%" PRIu32,
+        "record session begin requested: session_id=%" PRIu32
+        " requested_preroll_ms=%" PRIu32 " actual_preroll_ms=%u"
+        " buffer_ms=%u buffer_bytes=%u packet_payload_bytes=%u packet_safe_max_s=%" PRIu32,
         session_id,
+        pre_roll_ms,
+        s_session_preroll_count * AUDIO_CAPTURE_FRAME_MS,
         AUDIO_CAPTURE_STREAM_BATCH_FRAMES * AUDIO_CAPTURE_FRAME_MS,
         (unsigned)AUDIO_CAPTURE_STREAM_BATCH_BYTES,
         payload_bytes,
@@ -703,6 +785,8 @@ esp_err_t audio_capture_set_idle_power_save(bool enabled)
                     0,
                     AUDIO_CAPTURE_VOICE_PREROLL_BYTES);
             }
+            memset(s_voice_preroll_levels, 0, sizeof(s_voice_preroll_levels));
+            s_raw_input_level_percent = 0u;
             xSemaphoreGive(s_state_mutex);
         }
     }
@@ -782,7 +866,16 @@ void audio_capture_set_voice_activity_handler(
 esp_err_t audio_capture_set_voice_activation_monitoring(bool enabled)
 {
     if (enabled && s_idle_power_save_requested) {
-        return ESP_ERR_INVALID_STATE;
+        /* Prefer wake-listen over audio idle power-save. Leaving this as a hard
+         * failure made voice_auto_start permanently stuck after the first
+         * 5 s audio-idle window (monitoring=0 ret=ESP_ERR_INVALID_STATE spam). */
+        esp_err_t wake_ret = audio_capture_set_idle_power_save(false);
+        if (wake_ret != ESP_OK && wake_ret != ESP_ERR_INVALID_STATE) {
+            return wake_ret;
+        }
+        if (s_idle_power_save_requested) {
+            return ESP_ERR_INVALID_STATE;
+        }
     }
     s_voice_activation_monitoring = enabled;
     /* 不清空 preroll：保留跨录音会话的前缀缓冲。
@@ -831,6 +924,17 @@ static esp_err_t audio_capture_send_session_preroll(
         }
         uint16_t pcm_bytes =
             (uint16_t)(batch_frames * AUDIO_CAPTURE_FRAME_BYTES);
+        uint8_t raw_input_level_percent = 0u;
+        for (uint16_t i = 0u; i < batch_frames; ++i) {
+            uint16_t ring_index = (uint16_t)(
+                (s_session_preroll_start_index + emitted_frames + i) %
+                AUDIO_CAPTURE_VOICE_PREROLL_FRAMES);
+            if (s_voice_preroll_levels[ring_index] >
+                raw_input_level_percent) {
+                raw_input_level_percent =
+                    s_voice_preroll_levels[ring_index];
+            }
+        }
         uint16_t packet_count =
             ble_audio_stream_count_audio_packets(batch, pcm_bytes);
         esp_err_t ret = ble_audio_stream_send_session_audio(
@@ -838,7 +942,8 @@ static esp_err_t audio_capture_send_session_preroll(
             packet_sequence,
             batch,
             pcm_bytes,
-            packet_count);
+            packet_count,
+            raw_input_level_percent);
         if (ret != ESP_OK) {
             return ret;
         }
@@ -872,6 +977,7 @@ static void audio_capture_process_frame(const int16_t *frame_buffer)
     uint16_t session_stop_origin = LISTENER_AUDIO_SESSION_STOP_ORIGIN_USER;
     uint16_t session_error_code = LISTENER_AUDIO_SESSION_ERROR_NONE;
     uint16_t packet_count = 0;
+    uint8_t batch_raw_input_level_percent = 0u;
     const uint8_t *audio_batch_copy = NULL;
 
     if (xSemaphoreTake(s_state_mutex, portMAX_DELAY) == pdTRUE) {
@@ -882,6 +988,8 @@ static void audio_capture_process_frame(const int16_t *frame_buffer)
                 s_voice_preroll[s_voice_preroll_write_index],
                 frame_buffer,
                 AUDIO_CAPTURE_FRAME_BYTES);
+            s_voice_preroll_levels[s_voice_preroll_write_index] =
+                s_raw_input_level_percent;
             s_voice_preroll_write_index = (uint16_t)(
                 (s_voice_preroll_write_index + 1u) %
                 AUDIO_CAPTURE_VOICE_PREROLL_FRAMES);
@@ -896,6 +1004,7 @@ static void audio_capture_process_frame(const int16_t *frame_buffer)
             s_export_state.pcm_bytes_written = 0;
             s_export_state.stream_next_packet_sequence = 0;
             s_export_state.stream_batch_frame_count = 0;
+            s_export_state.stream_batch_raw_input_level_percent = 0u;
             s_export_state.ble_session_started = false;
             if (s_session_preroll_count > 0u) {
                 s_export_state.captured_frames =
@@ -934,6 +1043,11 @@ static void audio_capture_process_frame(const int16_t *frame_buffer)
                         (size_t)s_export_state.stream_batch_frame_count * AUDIO_CAPTURE_FRAME_BYTES;
                     memcpy(s_export_state.stream_batch_buffer + batch_offset, frame_buffer, AUDIO_CAPTURE_FRAME_BYTES);
                     s_export_state.stream_batch_frame_count++;
+                    if (s_raw_input_level_percent >
+                        s_export_state.stream_batch_raw_input_level_percent) {
+                        s_export_state.stream_batch_raw_input_level_percent =
+                            s_raw_input_level_percent;
+                    }
                     s_export_state.pcm_bytes_written += AUDIO_CAPTURE_FRAME_BYTES;
 
                     if (s_export_state.stream_batch_frame_count >= AUDIO_CAPTURE_STREAM_BATCH_FRAMES) {
@@ -942,6 +1056,8 @@ static void audio_capture_process_frame(const int16_t *frame_buffer)
                         batch_pcm_bytes = AUDIO_CAPTURE_STREAM_BATCH_BYTES;
                         memcpy(s_export_state.stream_emit_buffer, s_export_state.stream_batch_buffer, batch_pcm_bytes);
                         audio_batch_copy = s_export_state.stream_emit_buffer;
+                        batch_raw_input_level_percent =
+                            s_export_state.stream_batch_raw_input_level_percent;
                         packet_count = ble_audio_stream_count_audio_packets(audio_batch_copy, batch_pcm_bytes);
                         if (!audio_capture_packet_sequence_can_advance(
                                 s_export_state.stream_next_packet_sequence,
@@ -964,6 +1080,7 @@ static void audio_capture_process_frame(const int16_t *frame_buffer)
                             s_export_state.stream_next_packet_sequence =
                                 (uint16_t)(s_export_state.stream_next_packet_sequence + packet_count);
                             s_export_state.stream_batch_frame_count = 0;
+                            s_export_state.stream_batch_raw_input_level_percent = 0u;
                         }
                     }
                 }
@@ -994,6 +1111,8 @@ static void audio_capture_process_frame(const int16_t *frame_buffer)
                         s_export_state.stream_batch_frame_count * AUDIO_CAPTURE_FRAME_BYTES;
                     memcpy(s_export_state.stream_emit_buffer, s_export_state.stream_batch_buffer, batch_pcm_bytes);
                     audio_batch_copy = s_export_state.stream_emit_buffer;
+                    batch_raw_input_level_percent =
+                        s_export_state.stream_batch_raw_input_level_percent;
                     packet_count = ble_audio_stream_count_audio_packets(audio_batch_copy, batch_pcm_bytes);
                     if (!audio_capture_packet_sequence_can_advance(
                             s_export_state.stream_next_packet_sequence,
@@ -1011,6 +1130,7 @@ static void audio_capture_process_frame(const int16_t *frame_buffer)
                         s_export_state.stream_next_packet_sequence =
                             (uint16_t)(s_export_state.stream_next_packet_sequence + packet_count);
                         s_export_state.stream_batch_frame_count = 0;
+                        s_export_state.stream_batch_raw_input_level_percent = 0u;
                     }
                 }
                 if (!should_cancel) {
@@ -1035,8 +1155,6 @@ static void audio_capture_process_frame(const int16_t *frame_buffer)
         idle_for_logging = !s_export_state.active && !s_export_state.requested;
         xSemaphoreGive(s_state_mutex);
     }
-
-    status_led_set_recording_level(audio_capture_frame_level_percent(frame_buffer));
 
     if (should_cancel) {
         if (should_session_error) {
@@ -1123,6 +1241,7 @@ static void audio_capture_process_frame(const int16_t *frame_buffer)
                                 AUDIO_CAPTURE_FRAME_MS);
                     }
                     memset(s_voice_preroll, 0, AUDIO_CAPTURE_VOICE_PREROLL_BYTES);
+                    memset(s_voice_preroll_levels, 0, sizeof(s_voice_preroll_levels));
                     s_voice_preroll_write_index = 0u;
                     s_voice_preroll_count = 0u;
                     s_session_preroll_count = 0u;
@@ -1137,7 +1256,8 @@ static void audio_capture_process_frame(const int16_t *frame_buffer)
                     packet_sequence_start,
                     audio_batch_copy,
                     batch_pcm_bytes,
-                    packet_count);
+                    packet_count,
+                    batch_raw_input_level_percent);
             if (audio_ret != ESP_OK) {
                 stream_failed = true;
                 should_transport_error = true;
@@ -1270,6 +1390,7 @@ static void audio_capture_task(void *arg)
         int ret = esp_codec_dev_read(s_codec_handle, frame_buffer, sizeof(frame_buffer));
         if (ret == ESP_CODEC_DEV_OK) {
             audio_capture_note_transport_backpressure();
+            audio_capture_update_recording_level_from_raw_input(frame_buffer);
             audio_capture_process_frame(frame_buffer);
             continue;
         }
@@ -1529,6 +1650,9 @@ static void audio_capture_note_pdm_afe_session_output(
         if (magnitude > peak) {
             peak = magnitude;
         }
+        if (value == INT16_MIN || value == INT16_MAX) {
+            s_pdm_afe_session_output_clipped_samples++;
+        }
         magnitude_sum += magnitude;
     }
     if (peak > s_pdm_afe_session_output_peak) {
@@ -1554,6 +1678,9 @@ static void audio_capture_note_pdm_afe_session_input(
         if (magnitude > peak) {
             peak = magnitude;
         }
+        if (value == INT16_MIN || value == INT16_MAX) {
+            s_pdm_afe_session_input_clipped_samples++;
+        }
         magnitude_sum += magnitude;
     }
     if (peak > s_pdm_afe_session_input_peak) {
@@ -1563,11 +1690,55 @@ static void audio_capture_note_pdm_afe_session_input(
     s_pdm_afe_session_input_samples += sample_count;
 }
 
+static void audio_capture_note_pdm_afe_session_pre_vad(
+    const int16_t *samples,
+    size_t sample_count)
+{
+    if ((!s_export_state.requested && !s_export_state.active) || samples == NULL) {
+        return;
+    }
+
+    uint32_t peak = 0U;
+    uint64_t magnitude_sum = 0U;
+    for (size_t index = 0; index < sample_count; index++) {
+        int32_t value = samples[index];
+        uint32_t magnitude = (uint32_t)(value < 0 ? -value : value);
+        if (magnitude > peak) {
+            peak = magnitude;
+        }
+        if (value == INT16_MIN || value == INT16_MAX) {
+            s_pdm_afe_session_pre_vad_clipped_samples++;
+        }
+        magnitude_sum += magnitude;
+    }
+    if (peak > s_pdm_afe_session_pre_vad_peak) {
+        s_pdm_afe_session_pre_vad_peak = peak;
+    }
+    s_pdm_afe_session_pre_vad_abs_sum += magnitude_sum;
+    s_pdm_afe_session_pre_vad_samples += sample_count;
+}
+
 static void audio_capture_log_pdm_afe_session_signal(uint32_t session_id)
 {
     uint32_t input_mean_abs = s_pdm_afe_session_input_samples == 0U
         ? 0U
         : (uint32_t)(s_pdm_afe_session_input_abs_sum / s_pdm_afe_session_input_samples);
+    uint32_t pre_vad_mean_abs = s_pdm_afe_session_pre_vad_samples == 0U
+        ? 0U
+        : (uint32_t)(s_pdm_afe_session_pre_vad_abs_sum /
+                     s_pdm_afe_session_pre_vad_samples);
+    uint32_t agc_input_mean_abs = s_pdm_afe_session_agc_samples == 0U
+        ? 0U
+        : (uint32_t)(s_pdm_afe_session_agc_input_abs_sum /
+                     s_pdm_afe_session_agc_samples);
+    uint32_t agc_output_mean_abs = s_pdm_afe_session_agc_samples == 0U
+        ? 0U
+        : (uint32_t)(s_pdm_afe_session_agc_output_abs_sum /
+                     s_pdm_afe_session_agc_samples);
+    uint32_t effective_gain_permille = agc_input_mean_abs == 0U
+        ? 0U
+        : (uint32_t)(((uint64_t)agc_output_mean_abs * 1000U) /
+                     agc_input_mean_abs);
     uint32_t mean_abs = s_pdm_afe_session_output_samples == 0U
         ? 0U
         : (uint32_t)(s_pdm_afe_session_output_abs_sum / s_pdm_afe_session_output_samples);
@@ -1592,8 +1763,21 @@ static void audio_capture_log_pdm_afe_session_signal(uint32_t session_id)
     ESP_LOGI(
         TAG,
         "PDM AFE session signal: session_id=%" PRIu32 " input_peak=%" PRIu32
-        " input_mean_abs=%" PRIu32 " output_frames=%" PRIu32 " output_peak=%" PRIu32
-        " output_mean_abs=%" PRIu32
+        " input_mean_abs=%" PRIu32 " input_clipped_samples=%" PRIu64
+        " input_clip_ratio_ppm=%" PRIu64
+        " pre_vad_peak=%" PRIu32 " pre_vad_mean_abs=%" PRIu32
+        " pre_vad_clipped_samples=%" PRIu64
+        " agc_input_mean_abs=%" PRIu32 " agc_output_mean_abs=%" PRIu32
+        " effective_gain_permille=%" PRIu32
+        " output_frames=%" PRIu32 " output_peak=%" PRIu32
+        " output_mean_abs=%" PRIu32 " output_clipped_samples=%" PRIu64
+        " output_clip_ratio_ppm=%" PRIu64
+        " limiter_input_peak=%" PRIu32 " limited_frames=%" PRIu32
+        " limiter_max_reduction_permille=%" PRIu32
+        " vad_noise_floor_mean_abs=%" PRIu32
+        " vad_low_snr_threshold_mean_abs=%" PRIu32
+        " vad_speech_mean_abs=%" PRIu32
+        " vad_low_snr_speech_frames=%" PRIu32
 #if CONFIG_AUDIO_CAPTURE_PDM_STEREO_SLOT_CAPTURE
         " raw_selected_peak=%" PRIu32 " raw_selected_mean_abs=%" PRIu32
         " raw_alternate_peak=%" PRIu32 " raw_alternate_mean_abs=%" PRIu32
@@ -1604,9 +1788,32 @@ static void audio_capture_log_pdm_afe_session_signal(uint32_t session_id)
         session_id,
         s_pdm_afe_session_input_peak,
         input_mean_abs,
+        s_pdm_afe_session_input_clipped_samples,
+        s_pdm_afe_session_input_samples == 0U
+            ? 0U
+            : (s_pdm_afe_session_input_clipped_samples * 1000000U) /
+                s_pdm_afe_session_input_samples,
+        s_pdm_afe_session_pre_vad_peak,
+        pre_vad_mean_abs,
+        s_pdm_afe_session_pre_vad_clipped_samples,
+        agc_input_mean_abs,
+        agc_output_mean_abs,
+        effective_gain_permille,
         s_pdm_afe_output_frames,
         s_pdm_afe_session_output_peak,
         mean_abs,
+        s_pdm_afe_session_output_clipped_samples,
+        s_pdm_afe_session_output_samples == 0U
+            ? 0U
+            : (s_pdm_afe_session_output_clipped_samples * 1000000U) /
+                s_pdm_afe_session_output_samples,
+        s_pdm_afe_session_limiter_input_peak,
+        s_pdm_afe_session_limited_frames,
+        s_pdm_afe_session_limiter_max_reduction_permille,
+        s_pdm_vad_noise_floor_q8 >> 8U,
+        s_pdm_vad_last_diagnostic_threshold,
+        s_pdm_vad_last_speech_mean_abs,
+        s_pdm_vad_low_snr_speech_frames,
 #if CONFIG_AUDIO_CAPTURE_PDM_STEREO_SLOT_CAPTURE
         s_pdm_session_raw_slot_peak[s_pdm_active_buffer_index],
         selected_raw_mean_abs,
@@ -1657,6 +1864,124 @@ static void audio_capture_pdm_afe_emit(const int16_t *samples, size_t sample_cou
     }
 }
 
+static void audio_capture_pdm_apply_final_limiter(
+    int16_t *samples,
+    size_t sample_count);
+
+static void audio_capture_pdm_agc_emit_frame(void)
+{
+    int ret = esp_agc_process(
+        s_pdm_agc_handle,
+        s_pdm_agc_input_buffer,
+        s_pdm_agc_output_buffer,
+        AUDIO_CAPTURE_PDM_AGC_FRAME_SAMPLES,
+        AUDIO_CAPTURE_SAMPLE_RATE_HZ);
+    if (ret != ESP_AGC_SUCCESS) {
+        ESP_LOGW(TAG, "PDM post-VAD AGC process failed: ret=%d", ret);
+        memcpy(
+            s_pdm_agc_output_buffer,
+            s_pdm_agc_input_buffer,
+            sizeof(s_pdm_agc_output_buffer));
+    }
+    if (s_export_state.requested || s_export_state.active) {
+        for (size_t index = 0;
+             index < AUDIO_CAPTURE_PDM_AGC_FRAME_SAMPLES;
+             index++) {
+            int32_t input = s_pdm_agc_input_buffer[index];
+            int32_t output = s_pdm_agc_output_buffer[index];
+            s_pdm_afe_session_agc_input_abs_sum +=
+                (uint32_t)(input < 0 ? -input : input);
+            s_pdm_afe_session_agc_output_abs_sum +=
+                (uint32_t)(output < 0 ? -output : output);
+        }
+        s_pdm_afe_session_agc_samples +=
+            AUDIO_CAPTURE_PDM_AGC_FRAME_SAMPLES;
+    }
+    audio_capture_pdm_apply_final_limiter(
+        s_pdm_agc_output_buffer,
+        AUDIO_CAPTURE_PDM_AGC_FRAME_SAMPLES);
+    audio_capture_pdm_afe_emit(
+        s_pdm_agc_output_buffer,
+        AUDIO_CAPTURE_PDM_AGC_FRAME_SAMPLES);
+}
+
+static void audio_capture_pdm_agc_process(
+    const int16_t *samples,
+    size_t sample_count)
+{
+    while (sample_count > 0U) {
+        size_t remaining =
+            AUDIO_CAPTURE_PDM_AGC_FRAME_SAMPLES - s_pdm_agc_filled;
+        size_t copied = sample_count < remaining ? sample_count : remaining;
+        memcpy(
+            s_pdm_agc_input_buffer + s_pdm_agc_filled,
+            samples,
+            copied * sizeof(*samples));
+        s_pdm_agc_filled += copied;
+        samples += copied;
+        sample_count -= copied;
+
+        if (s_pdm_agc_filled == AUDIO_CAPTURE_PDM_AGC_FRAME_SAMPLES) {
+            audio_capture_pdm_agc_emit_frame();
+            s_pdm_agc_filled = 0U;
+        }
+    }
+}
+
+static size_t audio_capture_pdm_agc_flush_partial(void)
+{
+    if (s_pdm_agc_filled == 0U) {
+        return 0U;
+    }
+
+    size_t padding_samples =
+        AUDIO_CAPTURE_PDM_AGC_FRAME_SAMPLES - s_pdm_agc_filled;
+    memset(
+        s_pdm_agc_input_buffer + s_pdm_agc_filled,
+        0,
+        padding_samples * sizeof(*s_pdm_agc_input_buffer));
+    s_pdm_agc_filled = AUDIO_CAPTURE_PDM_AGC_FRAME_SAMPLES;
+    audio_capture_pdm_agc_emit_frame();
+    s_pdm_agc_filled = 0U;
+    return padding_samples;
+}
+
+static void audio_capture_pdm_apply_final_limiter(
+    int16_t *samples,
+    size_t sample_count)
+{
+    uint32_t peak = 0U;
+    for (size_t index = 0; index < sample_count; index++) {
+        int32_t value = samples[index];
+        uint32_t magnitude = (uint32_t)(value < 0 ? -value : value);
+        if (magnitude > peak) {
+            peak = magnitude;
+        }
+    }
+    if (peak > s_pdm_afe_session_limiter_input_peak) {
+        s_pdm_afe_session_limiter_input_peak = peak;
+    }
+    if (peak <= AUDIO_CAPTURE_PDM_LIMITER_CEILING) {
+        return;
+    }
+
+    uint32_t scale_q15 =
+        ((uint32_t)AUDIO_CAPTURE_PDM_LIMITER_CEILING << 15U) / peak;
+    uint32_t reduction_permille =
+        1000U - ((scale_q15 * 1000U) / AUDIO_CAPTURE_PDM_LIMITER_Q15_ONE);
+    if (reduction_permille >
+        s_pdm_afe_session_limiter_max_reduction_permille) {
+        s_pdm_afe_session_limiter_max_reduction_permille =
+            reduction_permille;
+    }
+    s_pdm_afe_session_limited_frames++;
+    for (size_t index = 0; index < sample_count; index++) {
+        int32_t scaled = ((int32_t)samples[index] * (int32_t)scale_q15) /
+            (int32_t)AUDIO_CAPTURE_PDM_LIMITER_Q15_ONE;
+        samples[index] = (int16_t)scaled;
+    }
+}
+
 static void audio_capture_pdm_afe_complete_stop_drain(void)
 {
     if (!s_pdm_afe_stop_drain_requested || !s_pdm_afe_stop_drain_feed_cutoff_ack ||
@@ -1664,10 +1989,12 @@ static void audio_capture_pdm_afe_complete_stop_drain(void)
         return;
     }
 
+    s_pdm_afe_stop_drain_padding_samples +=
+        audio_capture_pdm_agc_flush_partial();
     if (s_pdm_afe_emit_filled > 0U) {
         int16_t silence[AUDIO_CAPTURE_FRAME_SAMPLES] = {0};
         size_t padding_samples = AUDIO_CAPTURE_FRAME_SAMPLES - s_pdm_afe_emit_filled;
-        s_pdm_afe_stop_drain_padding_samples = padding_samples;
+        s_pdm_afe_stop_drain_padding_samples += padding_samples;
         audio_capture_pdm_afe_emit(silence, padding_samples);
     }
 
@@ -1677,43 +2004,87 @@ static void audio_capture_pdm_afe_complete_stop_drain(void)
 }
 
 static void audio_capture_pdm_vad_process(
+    vad_state_t state,
     const int16_t *samples,
     size_t sample_count)
 {
     if ((!s_voice_activation_monitoring &&
          !audio_capture_session_is_active()) ||
-        s_pdm_vad_handle == NULL) {
-        s_pdm_vad_filled = 0u;
+        samples == NULL ||
+        sample_count == 0u) {
         return;
     }
 
-    while (sample_count > 0u) {
-        size_t remaining =
-            AUDIO_CAPTURE_PDM_VAD_FRAME_SAMPLES - s_pdm_vad_filled;
-        size_t copied = sample_count < remaining ? sample_count : remaining;
-        memcpy(
-            s_pdm_vad_buffer + s_pdm_vad_filled,
-            samples,
-            copied * sizeof(*samples));
-        s_pdm_vad_filled += copied;
-        samples += copied;
-        sample_count -= copied;
+    uint64_t magnitude_sum = 0U;
+    for (size_t index = 0; index < sample_count; index++) {
+        int32_t value = samples[index];
+        magnitude_sum += (uint32_t)(value < 0 ? -value : value);
+    }
+    uint32_t mean_abs = (uint32_t)(magnitude_sum / sample_count);
+    uint32_t noise_floor =
+        s_pdm_vad_noise_floor_q8 >> 8U;
+    if (noise_floor < AUDIO_CAPTURE_PDM_VAD_NOISE_MIN_MEAN_ABS) {
+        noise_floor = AUDIO_CAPTURE_PDM_VAD_NOISE_MIN_MEAN_ABS;
+    }
+    uint32_t ratio_threshold =
+        (noise_floor * AUDIO_CAPTURE_PDM_VAD_LOW_SNR_NUMERATOR +
+         AUDIO_CAPTURE_PDM_VAD_LOW_SNR_DENOMINATOR - 1U) /
+        AUDIO_CAPTURE_PDM_VAD_LOW_SNR_DENOMINATOR;
+    uint32_t margin_threshold =
+        noise_floor + AUDIO_CAPTURE_PDM_VAD_LOW_SNR_MIN_MARGIN;
+    uint32_t diagnostic_threshold =
+        ratio_threshold > margin_threshold
+            ? ratio_threshold
+            : margin_threshold;
+    s_pdm_vad_last_diagnostic_threshold = diagnostic_threshold;
 
-        if (s_pdm_vad_filled == AUDIO_CAPTURE_PDM_VAD_FRAME_SAMPLES) {
-            vad_state_t state = vad_process(
-                s_pdm_vad_handle,
-                s_pdm_vad_buffer,
-                AUDIO_CAPTURE_SAMPLE_RATE_HZ,
-                AUDIO_CAPTURE_PDM_VAD_FRAME_MS);
-            audio_capture_voice_activity_handler_t handler =
-                s_voice_activity_handler;
-            if (handler != NULL) {
-                handler(
-                    state == VAD_SPEECH,
-                    AUDIO_CAPTURE_PDM_VAD_FRAME_MS);
+    bool session_active = audio_capture_session_is_active();
+    bool speech_detected = state == VAD_SPEECH;
+    if (!session_active && speech_detected) {
+        s_pdm_vad_last_speech_mean_abs = mean_abs;
+        if (mean_abs < diagnostic_threshold) {
+            s_pdm_vad_low_snr_speech_frames++;
+            if (s_pdm_vad_low_snr_speech_frames <= 4U ||
+                (s_pdm_vad_low_snr_speech_frames % 32U) == 0U) {
+                ESP_LOGI(
+                    TAG,
+                    "PDM VAD low-SNR speech preserved:"
+                    " mean_abs=%" PRIu32 " noise_floor=%" PRIu32
+                    " diagnostic_threshold=%" PRIu32
+                    " low_snr_speech_frames=%" PRIu32,
+                    mean_abs,
+                    noise_floor,
+                    diagnostic_threshold,
+                    s_pdm_vad_low_snr_speech_frames);
             }
-            s_pdm_vad_filled = 0u;
         }
+    }
+
+    /* VADNet is the candidate authority. Level/SNR is diagnostic only: an
+     * extra amplitude veto loses quiet speech when construction noise raises
+     * the baseline. Learn the baseline exclusively from VADNet non-speech so
+     * a low-SNR speech frame can never self-strengthen a future veto. */
+    if (!session_active && state != VAD_SPEECH) {
+        uint32_t target_q8 = mean_abs << 8U;
+        int32_t delta =
+            (int32_t)target_q8 - (int32_t)s_pdm_vad_noise_floor_q8;
+        int32_t step = delta / (int32_t)(1U << AUDIO_CAPTURE_PDM_VAD_NOISE_EWMA_SHIFT);
+        if (step == 0 && delta != 0) {
+            step = delta > 0 ? 1 : -1;
+        }
+        int32_t updated = (int32_t)s_pdm_vad_noise_floor_q8 + step;
+        int32_t minimum =
+            (int32_t)(AUDIO_CAPTURE_PDM_VAD_NOISE_MIN_MEAN_ABS << 8U);
+        s_pdm_vad_noise_floor_q8 =
+            (uint32_t)(updated > minimum ? updated : minimum);
+    }
+
+    audio_capture_voice_activity_handler_t handler =
+        s_voice_activity_handler;
+    if (handler != NULL) {
+        uint32_t elapsed_ms =
+            (uint32_t)((sample_count * 1000u) / AUDIO_CAPTURE_SAMPLE_RATE_HZ);
+        handler(speech_detected, elapsed_ms);
     }
 }
 
@@ -1724,6 +2095,7 @@ static void audio_capture_pdm_afe_fetch_task(void *arg)
 {
     (void)arg;
     (void)watchdog_platform_subscribe_current_task("audio_afe_fetch_task");
+    uint32_t fetches_since_idle_budget = 0u;
 
     while (true) {
         watchdog_platform_feed_current_task();
@@ -1763,37 +2135,76 @@ static void audio_capture_pdm_afe_fetch_task(void *arg)
             }
         }
         if (sample_count > 0) {
+            /* VADNet classifies unboosted post-NS audio. Only accepted AFE
+             * output then reaches the one adaptive AGC and final limiter. */
             audio_capture_pdm_vad_process(
+                result->vad_state,
                 s_pdm_afe_fetch_buffer,
                 sample_count);
-            audio_capture_pdm_afe_emit(s_pdm_afe_fetch_buffer, sample_count);
+            audio_capture_pdm_agc_process(
+                s_pdm_afe_fetch_buffer,
+                sample_count);
+            fetches_since_idle_budget++;
+            if (fetches_since_idle_budget >=
+                AUDIO_CAPTURE_PDM_AFE_IDLE_BUDGET_FETCHES) {
+                fetches_since_idle_budget = 0u;
+                /*
+                 * VADNet can keep the fetch queue continuously runnable under
+                 * sustained noise. Give the watched CPU1 idle task one tick
+                 * at a bounded cadence; the 240 ms AFE ring absorbs this
+                 * 10 ms scheduler budget without dropping PCM.
+                 */
+                vTaskDelay(1);
+                watchdog_platform_feed_current_task();
+            }
         }
     }
 }
 
 static esp_err_t audio_capture_pdm_afe_init(void)
 {
-    afe_config_t *config = afe_config_init("M", NULL, AFE_TYPE_VC, AFE_MODE_HIGH_PERF);
+    extern const uint8_t _binary_listener_vadnet1_medium_bin_start[];
+    extern const uint8_t _binary_listener_vadnet1_medium_bin_end[];
+    const size_t embedded_model_bytes =
+        (size_t)(_binary_listener_vadnet1_medium_bin_end -
+                 _binary_listener_vadnet1_medium_bin_start);
+    s_pdm_srmodels = srmodel_load(
+        _binary_listener_vadnet1_medium_bin_start);
+    char *vad_model_name =
+        esp_srmodel_filter(s_pdm_srmodels, "vadnet1_medium", NULL);
+    if (vad_model_name == NULL) {
+        ESP_LOGE(
+            TAG,
+            "PDM embedded VADNet model unavailable: bytes=%u",
+            (unsigned)embedded_model_bytes);
+        return ESP_ERR_NOT_FOUND;
+    }
+
+    afe_config_t *config =
+        afe_config_init("M", s_pdm_srmodels, AFE_TYPE_VC, AFE_MODE_HIGH_PERF);
     if (config == NULL) {
         ESP_LOGE(TAG, "PDM AFE config allocation failed");
         return ESP_ERR_NO_MEM;
     }
 
-    /* The PDM board has one microphone and no playback reference. Keep VAD
-     * outside AFE so classification cannot stall its feed/fetch pipeline. */
+    /* The PDM board has one microphone and no playback reference. Use the
+     * official neural VAD in the same post-NS AFE pipeline so weak speech does
+     * not depend on the old absolute-level-biased WebRTC classifier. */
     config->aec_init = false;
     config->se_init = false;
     config->ns_init = true;
     config->ns_model_name = NULL;
     config->afe_ns_mode = AFE_NS_MODE_WEBRTC;
-    config->vad_init = false;
+    config->vad_init = true;
+    config->vad_model_name = vad_model_name;
+    config->vad_mode = VAD_MODE_1;
+    config->vad_min_speech_ms = AUDIO_CAPTURE_PDM_VAD_MIN_SPEECH_MS;
+    config->vad_min_noise_ms = AUDIO_CAPTURE_PDM_VAD_MIN_NOISE_MS;
+    config->vad_delay_ms = AUDIO_CAPTURE_PDM_VAD_DELAY_MS;
     config->wakenet_init = false;
-    /* Keep hardware WebRTC noise suppression, but leave streaming gain control
-     * to Type so the microphone path is not compressed twice. */
+    /* The one firmware AGC runs after VADNet. Do not stack AFE's independent
+     * AGC on top or promote stationary room noise into automatic sessions. */
     config->agc_init = false;
-    config->agc_mode = AFE_AGC_MODE_WEBRTC;
-    config->agc_compression_gain_db = 9;
-    config->agc_target_level_dbfs = 3;
     config->afe_ringbuf_size = AUDIO_CAPTURE_PDM_AFE_RINGBUF_FRAMES;
     config->memory_alloc_mode = AFE_MEMORY_ALLOC_MORE_PSRAM;
     /* Preserve the post-NS waveform. A fixed 12 dB lift can clip ordinary
@@ -1849,14 +2260,9 @@ static esp_err_t audio_capture_pdm_afe_init(void)
 
     s_pdm_afe_feed_samples = (size_t)feed_samples;
     s_pdm_afe_fetch_samples = (size_t)fetch_samples;
-    /*
-     * Prefer candidate recall here. Enrolled-speaker verification on Type is
-     * the identity gate, while this WebRTC VAD remains the noise/speech gate.
-     * Mode 3 rejected ordinary owner speech during physical acceptance.
-     */
-    s_pdm_vad_handle = vad_create(VAD_MODE_1);
-    if (s_pdm_vad_handle == NULL) {
-        ESP_LOGE(TAG, "PDM WebRTC VAD allocation failed");
+    s_pdm_agc_handle = esp_agc_open(AGC_MODE_2, AUDIO_CAPTURE_SAMPLE_RATE_HZ);
+    if (s_pdm_agc_handle == NULL) {
+        ESP_LOGE(TAG, "PDM standalone AGC allocation failed");
         free(s_pdm_afe_feed_buffer);
         free(s_pdm_afe_fetch_buffer);
         s_pdm_afe_feed_buffer = NULL;
@@ -1866,6 +2272,11 @@ static esp_err_t audio_capture_pdm_afe_init(void)
         s_pdm_afe_handle = NULL;
         return ESP_ERR_NO_MEM;
     }
+    set_agc_config(
+        s_pdm_agc_handle,
+        AUDIO_CAPTURE_PDM_AGC_COMPRESSION_DB,
+        1,
+        AUDIO_CAPTURE_PDM_AGC_TARGET_DBFS);
     /* Audio task stacks stay internal: they are hot paths and must remain valid
      * while the Flash cache is disabled. The task-owned pre-roll history uses
      * PSRAM instead. */
@@ -1881,8 +2292,8 @@ static esp_err_t audio_capture_pdm_afe_init(void)
         AUDIO_CAPTURE_AFE_FETCH_TASK_CORE);
     if (task_ok != pdPASS) {
         ESP_LOGE(TAG, "PDM AFE fetch task creation failed");
-        vad_destroy(s_pdm_vad_handle);
-        s_pdm_vad_handle = NULL;
+        esp_agc_close(s_pdm_agc_handle);
+        s_pdm_agc_handle = NULL;
         free(s_pdm_afe_feed_buffer);
         free(s_pdm_afe_fetch_buffer);
         s_pdm_afe_feed_buffer = NULL;
@@ -1896,8 +2307,23 @@ static esp_err_t audio_capture_pdm_afe_init(void)
     s_pdm_afe_handle->print_pipeline(s_pdm_afe_data);
     ESP_LOGI(
         TAG,
-        "PDM AFE ready: pipeline=continuous-webrtc-ns standalone_vad=webrtc-mode3 vad_frame_ms=%u linear_gain=%.1f feed_samples=%d fetch_samples=%d ringbuf_frames=%u fetch_wait_ms=%u feed_core=%d feed_prio=5 fetch_core=%d fetch_prio=%u",
-        (unsigned)AUDIO_CAPTURE_PDM_VAD_FRAME_MS,
+        "PDM AFE ready: pipeline=continuous-webrtc-ns-vadnet-agc-limiter"
+        " vad=vadnet1-medium mode=1 vad_min_speech_ms=%u"
+        " vad_min_noise_ms=%u vad_delay_ms=%u model_bytes=%u"
+        " post_vad_agc_mode=digital agc_frame_ms=%u"
+        " agc_compression_db=%d agc_target_dbfs=-%d limiter=1"
+        " final_limiter_ceiling=%d"
+        " linear_gain=%.1f feed_samples=%d fetch_samples=%d"
+        " ringbuf_frames=%u fetch_wait_ms=%u"
+        " feed_core=%d feed_prio=5 fetch_core=%d fetch_prio=%u",
+        (unsigned)AUDIO_CAPTURE_PDM_VAD_MIN_SPEECH_MS,
+        (unsigned)AUDIO_CAPTURE_PDM_VAD_MIN_NOISE_MS,
+        (unsigned)AUDIO_CAPTURE_PDM_VAD_DELAY_MS,
+        (unsigned)embedded_model_bytes,
+        (unsigned)AUDIO_CAPTURE_PDM_AGC_FRAME_MS,
+        AUDIO_CAPTURE_PDM_AGC_COMPRESSION_DB,
+        AUDIO_CAPTURE_PDM_AGC_TARGET_DBFS,
+        AUDIO_CAPTURE_PDM_LIMITER_CEILING,
         (double)linear_gain,
         feed_samples,
         fetch_samples,
@@ -1916,17 +2342,21 @@ static void audio_capture_pdm_afe_apply_session_boundary_if_requested(void)
     }
 
     s_pdm_afe_feed_filled = 0;
+    s_pdm_agc_filled = 0;
     s_pdm_afe_emit_filled = 0;
     s_pdm_afe_input_frames = 0;
     s_pdm_afe_output_frames = 0;
     s_pdm_afe_session_output_peak = 0;
     s_pdm_afe_session_output_abs_sum = 0;
     s_pdm_afe_session_output_samples = 0;
+    s_pdm_afe_session_output_clipped_samples = 0;
     s_pdm_afe_session_boundary_requested = false;
-    ESP_LOGI(TAG, "PDM AFE session boundary: preserving trained NS/AGC state");
+    ESP_LOGI(
+        TAG,
+        "PDM AFE session boundary: cleared partial PCM, preserving trained NS/AGC state");
 }
 
-static void audio_capture_pdm_afe_process(const int16_t *frame_buffer)
+static void audio_capture_pdm_afe_process(int16_t *frame_buffer)
 {
     audio_capture_pdm_afe_apply_session_boundary_if_requested();
 
@@ -1938,6 +2368,9 @@ static void audio_capture_pdm_afe_process(const int16_t *frame_buffer)
     }
 
     audio_capture_note_pdm_afe_session_input(frame_buffer, AUDIO_CAPTURE_FRAME_SAMPLES);
+    audio_capture_note_pdm_afe_session_pre_vad(
+        frame_buffer,
+        AUDIO_CAPTURE_FRAME_SAMPLES);
 
     size_t remaining = AUDIO_CAPTURE_FRAME_SAMPLES;
     const int16_t *cursor = frame_buffer;
@@ -1960,7 +2393,7 @@ static void audio_capture_pdm_afe_process(const int16_t *frame_buffer)
             s_pdm_afe_feed_filled = 0;
             s_pdm_afe_input_frames++;
             audio_capture_log_pdm_afe_level(
-                "input",
+                "pre-vad",
                 s_pdm_afe_input_frames,
                 s_pdm_afe_feed_buffer,
                 s_pdm_afe_feed_samples);
@@ -1993,11 +2426,11 @@ static void audio_capture_task(void *arg)
 #if CONFIG_AUDIO_CAPTURE_PDM_STEREO_SLOT_CAPTURE
         esp_err_t ret = i2s_channel_read(
             s_i2s_rx_handle, interleaved_frame_buffer, sizeof(interleaved_frame_buffer),
-            &bytes_read, portMAX_DELAY);
+            &bytes_read, AUDIO_CAPTURE_I2S_READ_TIMEOUT_MS);
 #else
         esp_err_t ret = i2s_channel_read(
             s_i2s_rx_handle, frame_buffer, sizeof(frame_buffer),
-            &bytes_read, portMAX_DELAY);
+            &bytes_read, AUDIO_CAPTURE_I2S_READ_TIMEOUT_MS);
 #endif
         if (ret == ESP_OK && bytes_read == sizeof(
 #if CONFIG_AUDIO_CAPTURE_PDM_STEREO_SLOT_CAPTURE
@@ -2015,6 +2448,7 @@ static void audio_capture_task(void *arg)
  #endif
             audio_capture_select_pdm_slot(interleaved_frame_buffer, frame_buffer);
 #endif
+            audio_capture_update_recording_level_from_raw_input(frame_buffer);
             audio_capture_apply_pdm_software_gain(frame_buffer);
 #if CONFIG_AUDIO_CAPTURE_PDM_AFE_WEBRTC
             audio_capture_pdm_afe_process(frame_buffer);
@@ -2024,6 +2458,39 @@ static void audio_capture_task(void *arg)
             continue;
         }
 
+        if (ret == ESP_ERR_TIMEOUT) {
+            /*
+             * A missing DMA event must not strand this watchdog-subscribed
+             * task in an infinite wait. Restart the already-configured RX
+             * channel in place so an active recording resumes after a bounded
+             * gap instead of rebooting the entire device.
+             */
+            s_dropped_frame_count++;
+            s_i2s_stall_recovery_count++;
+            esp_err_t disable_ret = i2s_channel_disable(s_i2s_rx_handle);
+            esp_err_t enable_ret = disable_ret == ESP_OK
+                ? i2s_channel_enable(s_i2s_rx_handle)
+                : disable_ret;
+            ESP_LOGW(
+                TAG,
+                "PDM I2S stall recovery: count=%" PRIu32
+                " dropped=%" PRIu32 " disable=%s enable=%s",
+                s_i2s_stall_recovery_count,
+                s_dropped_frame_count,
+                esp_err_to_name(disable_ret),
+                esp_err_to_name(enable_ret));
+            diag_log(
+                DIAG_SRC_AUDIO,
+                DIAG_AUDIO_I2S_FAIL,
+                enable_ret == ESP_OK ? DIAG_SEV_WARN : DIAG_SEV_ERROR,
+                s_dropped_frame_count,
+                ESP_ERR_TIMEOUT,
+                s_i2s_stall_recovery_count,
+                (uint32_t)enable_ret);
+            watchdog_platform_feed_current_task();
+            vTaskDelay(1);
+            continue;
+        }
         if (ret != ESP_OK) {
             s_dropped_frame_count++;
             ESP_LOGW(TAG, "pdm read failed: dropped=%" PRIu32 " ret=%s",
@@ -2202,9 +2669,9 @@ esp_err_t audio_capture_start(void)
             vTaskDelete(s_pdm_afe_fetch_task_handle);
             s_pdm_afe_fetch_task_handle = NULL;
         }
-        if (s_pdm_vad_handle != NULL) {
-            vad_destroy(s_pdm_vad_handle);
-            s_pdm_vad_handle = NULL;
+        if (s_pdm_agc_handle != NULL) {
+            esp_agc_close(s_pdm_agc_handle);
+            s_pdm_agc_handle = NULL;
         }
         free(s_pdm_afe_feed_buffer);
         free(s_pdm_afe_fetch_buffer);
