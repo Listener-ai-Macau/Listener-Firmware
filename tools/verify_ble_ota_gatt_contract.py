@@ -217,16 +217,15 @@ def check_runtime_integration(repo: Path) -> None:
         and "ble_hid_gap_active_connection_applied" in gap,
         "Listener driver must expose deferred active-link control and confirmation",
     )
-    begin_active_request = re.search(
-        r"BEGIN starts bulk WWR immediately[\s\S]{0,800}"
-        r"ble_hid_gap_request_active_connection\s*!=\s*NULL[\s\S]{0,240}"
-        r"\?\s*ble_hid_gap_request_active_connection\(\)[\s\S]{0,120}"
-        r":\s*ble_hid_gap_schedule_active_connection\(\)",
-        adapter,
-    )
     require(
-        begin_active_request is not None,
-        "accepted OTA BEGIN must request the bounded active link immediately and keep deferred scheduling only as fallback",
+        "Denzic OTA v1 BEGIN preserved confirmed active BLE link" in adapter
+        and re.search(
+            r"Denzic OTA v1 BEGIN accepted[\s\S]{0,800}"
+            r"ble_hid_gap_request_active_connection\(\)",
+            adapter,
+        )
+        is None,
+        "accepted OTA BEGIN must preserve the hard-gated full-speed link without launching a redundant LL procedure",
     )
     ota_handler = re.search(
         r'if\s*\(strcmp\(command, "TYPE:OTA"\)\s*==\s*0\)\s*\{(?P<body>[\s\S]*?)\n\s{4}\}',
