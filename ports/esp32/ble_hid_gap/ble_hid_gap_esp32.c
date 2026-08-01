@@ -124,9 +124,11 @@ static void ble_hid_gap_log_conn_desc(const char *context, uint16_t conn_handle)
 #define BLE_HID_GAP_ACTIVE_MIN_CE_LEN 12U
 #define BLE_HID_GAP_ACTIVE_MAX_CE_LEN 24U
 #define BLE_HID_GAP_AUDIO_DATA_LEN_OCTETS 251U
-/* A 251-octet packet needs 1064 us on LE 2M. Windows' 1590-us target keeps
- * full packets while avoiding a repeated 1M-oriented 2120-us negotiation. */
+/* Windows ThroughputOptimized primes 251 octets / 965 us. Type aligns OTA data
+ * to two link packets at that measured envelope before releasing its 15-ms lease. */
 #define BLE_HID_GAP_AUDIO_DATA_LEN_TIME_US 1590U
+#define BLE_HID_GAP_AUDIO_DATA_LEN_2M_PACKET_TIME_US 965U
+#define BLE_HID_GAP_AUDIO_DATA_LEN_REQUEST_TIMEOUT_MS 750U
 #define BLE_HID_GAP_LOW_POWER_ITVL_MIN 80U
 #define BLE_HID_GAP_LOW_POWER_ITVL_MAX 120U
 #define BLE_HID_GAP_LOW_POWER_LATENCY 9U
@@ -140,6 +142,7 @@ static void ble_hid_gap_log_conn_desc(const char *context, uint16_t conn_handle)
     (BLE_HID_GAP_CONN_PARAM_COLLISION_BACKOFF_MS + 2000U)
 #define BLE_HID_GAP_ACTIVE_REQUEST_TASK_STACK_BYTES 3072U
 #define BLE_HID_GAP_OTA_RECONNECT_DEFER_MS 750U
+#define BLE_HID_GAP_OTA_RECONNECT_RADIO_QUIET_MS 1200U
 #define BLE_HID_GAP_OTA_RECONNECT_TASK_STACK_BYTES 3072U
 
 static struct ble_hs_adv_fields s_adv_fields;
@@ -192,6 +195,7 @@ static bool s_active_preferred_interval_rejected = false;
 static bool s_active_connection_request_pending = false;
 static bool s_active_connection_required = false;
 static bool s_audio_data_length_request_pending = false;
+static TickType_t s_audio_data_length_request_started_tick = 0;
 static bool s_audio_data_length_ready = false;
 static uint16_t s_audio_data_length_max_tx_octets = 0;
 static uint16_t s_audio_data_length_max_rx_octets = 0;
@@ -201,6 +205,9 @@ static uint8_t s_audio_tx_phy = 0;
 static uint8_t s_audio_rx_phy = 0;
 static bool s_ec11_fast_recording_armed = false;
 static bool s_ota_reconnect_request_pending = false;
+static TickType_t s_ota_fast_link_expected_until_tick = 0;
+static bool s_ota_reconnect_radio_quiet_pending = false;
+static uint16_t s_ota_reconnect_radio_quiet_conn_handle = BLE_HS_CONN_HANDLE_NONE;
 static struct ble_gap_event_listener s_ble_hid_gap_event_listener;
 static bool s_ble_hid_gap_event_listener_registered = false;
 static uint16_t s_last_disconnect_event_conn_handle = BLE_HS_CONN_HANDLE_NONE;
@@ -209,6 +216,21 @@ static int64_t s_last_disconnect_event_at_ms = 0;
 static denzic_device_control_v1_context_t s_platform_device_control;
 static uint64_t s_platform_device_control_next_operation_id = 1u;
 static uint64_t s_platform_device_control_active_recovery_operation_id = 0u;
+
+static bool ble_hid_gap_data_length_ready_for_phy(
+    uint16_t max_tx_octets,
+    uint16_t max_tx_time_us,
+    uint8_t tx_phy,
+    uint8_t rx_phy)
+{
+    const bool full_2m_link =
+        tx_phy == BLE_HCI_LE_PHY_2M && rx_phy == BLE_HCI_LE_PHY_2M;
+    const uint16_t minimum_packet_time_us = full_2m_link
+        ? BLE_HID_GAP_AUDIO_DATA_LEN_2M_PACKET_TIME_US
+        : BLE_HID_GAP_AUDIO_DATA_LEN_TIME_US;
+    return max_tx_octets >= BLE_HID_GAP_AUDIO_DATA_LEN_OCTETS &&
+           max_tx_time_us >= minimum_packet_time_us;
+}
 
 static void ble_hid_gap_platform_device_control_complete_recovery(
     denzic_device_control_v1_operation_result_t result,
@@ -570,7 +592,7 @@ void ble_hid_gap_print_status(void)
     }
 
     printf(
-        "~BLE:STATUS connected=%u secure=%u conn_handle=%u descriptor_valid=%u descriptor_rc=%d interval_units=%u interval_ms_x100=%u latency=%u supervision_timeout_units=%u supervision_timeout_ms=%u active_required=%u active_applied=%u e11r=%u lossless_rice=%u lossless_rice_version=%u dle_pending=%u dle_ready=%u dle_tx_octets=%u dle_rx_octets=%u phy_tx=%u phy_rx=%u active_ce_min=%u active_ce_max=%u last_conn_param_mode=%u\n",
+        "~BLE:STATUS connected=%u secure=%u conn_handle=%u descriptor_valid=%u descriptor_rc=%d interval_units=%u interval_ms_x100=%u latency=%u supervision_timeout_units=%u supervision_timeout_ms=%u active_required=%u active_applied=%u e11r=%u lossless_rice=%u lossless_rice_version=%u dle_pending=%u dle_ready=%u dle_tx_octets=%u dle_rx_octets=%u dle_tx_time_us=%u dle_rx_time_us=%u phy_tx=%u phy_rx=%u active_ce_min=%u active_ce_max=%u last_conn_param_mode=%u\n",
         conn.connected ? 1U : 0U,
         conn.secure_connected ? 1U : 0U,
         (unsigned)conn.conn_handle,
@@ -590,6 +612,8 @@ void ble_hid_gap_print_status(void)
         conn.audio_data_length_ready ? 1U : 0U,
         (unsigned)conn.audio_data_length_max_tx_octets,
         (unsigned)conn.audio_data_length_max_rx_octets,
+        (unsigned)conn.audio_data_length_max_tx_time_us,
+        (unsigned)conn.audio_data_length_max_rx_time_us,
         (unsigned)conn.audio_tx_phy,
         (unsigned)conn.audio_rx_phy,
         (unsigned)BLE_HID_GAP_ACTIVE_MIN_CE_LEN,
@@ -623,6 +647,7 @@ static void ble_hid_gap_set_connection_state(bool connected, uint16_t conn_handl
     s_conn_param_request_pending_until_tick = 0;
     s_active_preferred_interval_rejected = false;
     s_audio_data_length_request_pending = false;
+    s_audio_data_length_request_started_tick = 0;
     s_audio_data_length_ready = false;
     s_audio_data_length_max_tx_octets = 0;
     s_audio_data_length_max_rx_octets = 0;
@@ -1611,6 +1636,23 @@ static void ble_hid_gap_note_secure_connection(uint16_t conn_handle, const char 
              "secure BLE connection accepted for LED/link state: conn=%u reason=%s",
              conn_handle,
              reason != NULL ? reason : "unknown");
+    TickType_t now = xTaskGetTickCount();
+    portENTER_CRITICAL(&s_ble_gap_state_lock);
+    TickType_t ota_fast_until = s_ota_fast_link_expected_until_tick;
+    bool ota_fast_expected = ota_fast_until != 0 &&
+        !ble_hid_gap_tick_reached(now, ota_fast_until);
+    if (ota_fast_until != 0 && !ota_fast_expected) {
+        s_ota_fast_link_expected_until_tick = 0;
+    }
+    portEXIT_CRITICAL(&s_ble_gap_state_lock);
+    if (ota_fast_expected) {
+        esp_err_t ret = ble_hid_gap_request_active_connection();
+        ESP_LOGI(
+            TAG,
+            "OTA reconnect requested full-speed link immediately after security: conn=%u ret=%s",
+            conn_handle,
+            esp_err_to_name(ret));
+    }
 }
 
 static int ble_hid_gap_get_bonded_peer_count(int *out_count)
@@ -2084,8 +2126,19 @@ static esp_err_t ble_hid_gap_request_audio_data_length(const char *policy)
     portENTER_CRITICAL(&s_ble_gap_state_lock);
     bool ready = s_audio_data_length_ready;
     bool pending = s_audio_data_length_request_pending;
-    if (!ready) {
+    TickType_t pending_started_tick = s_audio_data_length_request_started_tick;
+    TickType_t now = xTaskGetTickCount();
+    bool pending_expired = pending && pending_started_tick != 0 &&
+        (TickType_t)(now - pending_started_tick) >=
+            pdMS_TO_TICKS(BLE_HID_GAP_AUDIO_DATA_LEN_REQUEST_TIMEOUT_MS);
+    if (pending_expired) {
+        s_audio_data_length_request_pending = false;
+        s_audio_data_length_request_started_tick = 0;
+        pending = false;
+    }
+    if (!ready && !pending) {
         s_audio_data_length_request_pending = true;
+        s_audio_data_length_request_started_tick = now;
     }
     portEXIT_CRITICAL(&s_ble_gap_state_lock);
     if (ready) {
@@ -2104,6 +2157,14 @@ static esp_err_t ble_hid_gap_request_audio_data_length(const char *policy)
             conn.conn_handle);
         return ESP_OK;
     }
+    if (pending_expired) {
+        ESP_LOGW(
+            TAG,
+            "%s data length completion timed out after %u ms; retrying conn=%u",
+            policy,
+            (unsigned)BLE_HID_GAP_AUDIO_DATA_LEN_REQUEST_TIMEOUT_MS,
+            conn.conn_handle);
+    }
 
     int rc = ble_gap_set_data_len(
         conn.conn_handle,
@@ -2114,6 +2175,7 @@ static esp_err_t ble_hid_gap_request_audio_data_length(const char *policy)
         portENTER_CRITICAL(&s_ble_gap_state_lock);
         if (s_ble_gap_connected && s_ble_gap_conn_handle == conn.conn_handle) {
             s_audio_data_length_request_pending = false;
+            s_audio_data_length_request_started_tick = 0;
         }
         portEXIT_CRITICAL(&s_ble_gap_state_lock);
     }
@@ -2466,6 +2528,49 @@ static void ble_hid_gap_handle_connect_established(uint16_t conn_handle, const c
     }
 }
 
+static void ble_hid_gap_ota_delayed_advertising_task(void *arg)
+{
+    (void)arg;
+    vTaskDelay(pdMS_TO_TICKS(BLE_HID_GAP_OTA_RECONNECT_RADIO_QUIET_MS));
+    esp_err_t ret = ble_hid_gap_start_advertising();
+    if (ret == ESP_OK) {
+        ESP_LOGI(
+            TAG,
+            "OTA reconnect radio quiet completed; advertising restarted after %u ms",
+            (unsigned)BLE_HID_GAP_OTA_RECONNECT_RADIO_QUIET_MS);
+    } else {
+        ESP_LOGE(
+            TAG,
+            "OTA reconnect advertising restart failed after radio quiet: %s",
+            esp_err_to_name(ret));
+        status_led_set_error(
+            STATUS_LED_ERROR_DOMAIN_BLE,
+            STATUS_LED_ERROR_HARD,
+            "ble_ota_reconnect_adv_restart_failed");
+    }
+    vTaskDelete(NULL);
+}
+
+static bool ble_hid_gap_schedule_ota_delayed_advertising(void)
+{
+    BaseType_t started = xTaskCreate(
+        ble_hid_gap_ota_delayed_advertising_task,
+        "ble_ota_adv_wait",
+        BLE_HID_GAP_OTA_RECONNECT_TASK_STACK_BYTES,
+        NULL,
+        tskIDLE_PRIORITY + 2,
+        NULL);
+    if (started != pdPASS) {
+        ESP_LOGE(TAG, "OTA reconnect radio-quiet task allocation failed");
+        return false;
+    }
+    ESP_LOGI(
+        TAG,
+        "OTA reconnect holding radio quiet for %u ms before advertising",
+        (unsigned)BLE_HID_GAP_OTA_RECONNECT_RADIO_QUIET_MS);
+    return true;
+}
+
 static void ble_hid_gap_handle_disconnect(uint16_t conn_handle, int reason, const char *source)
 {
     int rc = -1;
@@ -2650,6 +2755,18 @@ static void ble_hid_gap_handle_disconnect(uint16_t conn_handle, int reason, cons
             return;
         }
     }
+    portENTER_CRITICAL(&s_ble_gap_state_lock);
+    bool ota_radio_quiet = s_ota_reconnect_radio_quiet_pending &&
+        s_ota_reconnect_radio_quiet_conn_handle == conn_handle;
+    if (ota_radio_quiet) {
+        s_ota_reconnect_radio_quiet_pending = false;
+        s_ota_reconnect_radio_quiet_conn_handle = BLE_HS_CONN_HANDLE_NONE;
+    }
+    portEXIT_CRITICAL(&s_ble_gap_state_lock);
+    if (ota_radio_quiet && ble_hid_gap_schedule_ota_delayed_advertising()) {
+        return;
+    }
+
     esp_err_t adv_ret = ble_hid_gap_start_advertising();
     if (disconnect_recovery_pairing_window) {
         if (adv_ret != ESP_OK) {
@@ -2853,6 +2970,18 @@ nimble_hid_gap_event(struct ble_gap_event *event, void *arg)
                 s_ble_gap_conn_handle == event->phy_updated.conn_handle) {
                 s_audio_tx_phy = event->phy_updated.tx_phy;
                 s_audio_rx_phy = event->phy_updated.rx_phy;
+                s_audio_data_length_ready = ble_hid_gap_data_length_ready_for_phy(
+                    s_audio_data_length_max_tx_octets,
+                    s_audio_data_length_max_tx_time_us,
+                    s_audio_tx_phy,
+                    s_audio_rx_phy);
+                if (s_audio_data_length_ready) {
+                    /* DATA_LEN_CHG can arrive before PHY_UPDATE_COMPLETE. Once
+                     * the PHY-specific full-packet time is satisfied, a repeated
+                     * HCI request may return EALREADY without another event. */
+                    s_audio_data_length_request_pending = false;
+                    s_audio_data_length_request_started_tick = 0;
+                }
             }
             portEXIT_CRITICAL(&s_ble_gap_state_lock);
             (void)ble_hid_gap_request_audio_data_length("after 2M PHY");
@@ -2981,13 +3110,16 @@ nimble_hid_gap_event(struct ble_gap_event *event, void *arg)
             attributed_missing_handle =
                 reported_conn_handle != applied_conn_handle;
             s_audio_data_length_request_pending = false;
-            s_audio_data_length_ready =
-                event->data_len_chg.max_tx_octets >= BLE_HID_GAP_AUDIO_DATA_LEN_OCTETS &&
-                event->data_len_chg.max_tx_time >= BLE_HID_GAP_AUDIO_DATA_LEN_TIME_US;
+            s_audio_data_length_request_started_tick = 0;
             s_audio_data_length_max_tx_octets = event->data_len_chg.max_tx_octets;
             s_audio_data_length_max_rx_octets = event->data_len_chg.max_rx_octets;
             s_audio_data_length_max_tx_time_us = event->data_len_chg.max_tx_time;
             s_audio_data_length_max_rx_time_us = event->data_len_chg.max_rx_time;
+            s_audio_data_length_ready = ble_hid_gap_data_length_ready_for_phy(
+                s_audio_data_length_max_tx_octets,
+                s_audio_data_length_max_tx_time_us,
+                s_audio_tx_phy,
+                s_audio_rx_phy);
             restore_full_data_length =
                 s_ble_gap_secure_connected && !s_audio_data_length_ready;
         }
@@ -5037,10 +5169,11 @@ bool ble_hid_gap_ota_connection_ready(void)
            conn.audio_tx_phy == BLE_HCI_LE_PHY_2M &&
            conn.audio_rx_phy == BLE_HCI_LE_PHY_2M &&
            conn.audio_data_length_ready &&
-           conn.audio_data_length_max_tx_octets >=
-               BLE_HID_GAP_AUDIO_DATA_LEN_OCTETS &&
-           conn.audio_data_length_max_tx_time_us >=
-               BLE_HID_GAP_AUDIO_DATA_LEN_TIME_US;
+           ble_hid_gap_data_length_ready_for_phy(
+               conn.audio_data_length_max_tx_octets,
+               conn.audio_data_length_max_tx_time_us,
+               conn.audio_tx_phy,
+               conn.audio_rx_phy);
 }
 
 static void ble_hid_gap_ota_reconnect_task(void *arg)
@@ -5058,7 +5191,17 @@ static void ble_hid_gap_ota_reconnect_task(void *arg)
         ESP_LOGI(TAG, "OTA reconnect handoff kept existing fast connection: conn=%u",
                  conn.conn_handle);
     } else {
+        portENTER_CRITICAL(&s_ble_gap_state_lock);
+        s_ota_reconnect_radio_quiet_pending = true;
+        s_ota_reconnect_radio_quiet_conn_handle = conn.conn_handle;
+        portEXIT_CRITICAL(&s_ble_gap_state_lock);
         rc = ble_gap_terminate(conn.conn_handle, BLE_ERR_REM_USER_CONN_TERM);
+        if (rc != 0) {
+            portENTER_CRITICAL(&s_ble_gap_state_lock);
+            s_ota_reconnect_radio_quiet_pending = false;
+            s_ota_reconnect_radio_quiet_conn_handle = BLE_HS_CONN_HANDLE_NONE;
+            portEXIT_CRITICAL(&s_ble_gap_state_lock);
+        }
         ESP_LOGI(TAG, "OTA reconnect handoff terminated low-power connection: conn=%u rc=%d",
                  conn.conn_handle, rc);
     }
@@ -5081,6 +5224,8 @@ esp_err_t ble_hid_gap_schedule_ota_reconnect(void)
     bool already_pending = s_ota_reconnect_request_pending;
     if (!already_pending) {
         s_ota_reconnect_request_pending = true;
+        s_ota_fast_link_expected_until_tick =
+            xTaskGetTickCount() + pdMS_TO_TICKS(30000U);
     }
     portEXIT_CRITICAL(&s_ble_gap_state_lock);
     if (already_pending) {
@@ -5097,6 +5242,7 @@ esp_err_t ble_hid_gap_schedule_ota_reconnect(void)
     if (started != pdPASS) {
         portENTER_CRITICAL(&s_ble_gap_state_lock);
         s_ota_reconnect_request_pending = false;
+        s_ota_fast_link_expected_until_tick = 0;
         portEXIT_CRITICAL(&s_ble_gap_state_lock);
         return ESP_ERR_NO_MEM;
     }

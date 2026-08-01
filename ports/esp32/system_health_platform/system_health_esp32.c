@@ -53,8 +53,11 @@ static void system_health_task(void *parameter)
      * 用于判断 HID 栈外移到 PSRAM 后 internal headroom 是否足够，以及是否还需要
      * 继续把别的低频 task 栈外移。 */
     ESP_LOGI(TAG,
-             "boot heap snapshot: internal_free=%uKB spiram_free=%uKB total_free=%uKB",
+             "boot heap snapshot: internal_free=%uKB internal_largest=%uKB dma_free=%uKB dma_largest=%uKB spiram_free=%uKB total_free=%uKB",
              (unsigned)(heap_caps_get_free_size(MALLOC_CAP_INTERNAL) / 1024),
+             (unsigned)(heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL) / 1024),
+             (unsigned)(heap_caps_get_free_size(MALLOC_CAP_INTERNAL | MALLOC_CAP_DMA) / 1024),
+             (unsigned)(heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL | MALLOC_CAP_DMA) / 1024),
              (unsigned)(heap_caps_get_free_size(MALLOC_CAP_SPIRAM) / 1024),
              (unsigned)(esp_get_free_heap_size() / 1024));
 
@@ -75,6 +78,9 @@ static void system_health_task(void *parameter)
         uint32_t heap_free = esp_get_free_heap_size();
         uint32_t heap_min = esp_get_minimum_free_heap_size();
         uint32_t internal_free = heap_caps_get_free_size(MALLOC_CAP_INTERNAL);
+        uint32_t internal_largest = heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL);
+        uint32_t dma_free = heap_caps_get_free_size(MALLOC_CAP_INTERNAL | MALLOC_CAP_DMA);
+        uint32_t dma_largest = heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL | MALLOC_CAP_DMA);
         uint32_t spiram_free = heap_caps_get_free_size(MALLOC_CAP_SPIRAM);
         bool ble_connected = ble_hid_is_connected();
         uint32_t disconnects = ble_hid_get_disconnect_count();
@@ -88,14 +94,16 @@ static void system_health_task(void *parameter)
 
         ESP_LOGI(TAG,
                  "heartbeat: uptime=%" PRIu32 "s heap_free=%" PRIu32 "KB heap_min=%" PRIu32 "KB "
-                 "internal_free=%" PRIu32 "KB spiram_free=%" PRIu32 "KB "
+                 "internal_free=%" PRIu32 "KB internal_largest=%" PRIu32 "KB "
+                 "dma_free=%" PRIu32 "KB dma_largest=%" PRIu32 "KB spiram_free=%" PRIu32 "KB "
                  "ble=%s disconnects=%" PRIu32 " audio_frames=%" PRIu32 " audio_drops=%" PRIu32 " "
                  "keys=%" PRIu32 " sessions=%" PRIu32
                  " usb_det_raw=%d bat_chg_raw=%d bat_std_raw=%d"
                  " usb_det_policy=%s charger_policy=%s",
                  uptime_s,
                  heap_free / 1024, heap_min / 1024,
-                 internal_free / 1024, spiram_free / 1024,
+                 internal_free / 1024, internal_largest / 1024,
+                 dma_free / 1024, dma_largest / 1024, spiram_free / 1024,
                  ble_connected ? "OK" : "OFF",
                  disconnects,
                  audio_frames, audio_drops,

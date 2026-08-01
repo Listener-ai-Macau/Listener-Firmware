@@ -490,7 +490,7 @@ static void ble_firmware_ota_update_active_link(void)
         denzic_ota_v1_set_status_flags(&s_ota, 0);
     }
 
-    if (active_link_applied) {
+    if (transfer_link_ready) {
         return;
     }
 
@@ -639,6 +639,20 @@ static int ble_firmware_ota_handle_control_write(struct os_mbuf *om)
             op,
             length,
             (unsigned)s_ota.state);
+    }
+    if (op == DENZIC_OTA_V1_OP_BEGIN &&
+        ble_hid_gap_ota_connection_ready != NULL &&
+        !ble_hid_gap_ota_connection_ready()) {
+        esp_err_t ret = ble_hid_gap_request_active_connection != NULL
+            ? ble_hid_gap_request_active_connection()
+            : (ble_hid_gap_schedule_active_connection != NULL
+                ? ble_hid_gap_schedule_active_connection()
+                : ESP_ERR_NOT_SUPPORTED);
+        ESP_LOGW(
+            TAG,
+            "Denzic OTA v1 BEGIN deferred until full-speed BLE link ret=%s",
+            esp_err_to_name(ret));
+        return BLE_ATT_ERR_INSUFFICIENT_RES;
     }
     ble_firmware_ota_lock();
     accepted = denzic_ota_v1_handle_control(&s_ota, control, length);

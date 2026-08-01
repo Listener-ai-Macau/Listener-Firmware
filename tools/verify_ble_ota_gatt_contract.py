@@ -250,8 +250,8 @@ def check_runtime_integration(repo: Path) -> None:
     require(
         "ble_hid_gap_ota_connection_ready" in adapter
         and "transfer_link_ready" in adapter
-        and "if (active_link_applied)" in adapter,
-        "OTA must start on a fresh 15 ms link while still converging to the preferred 7.5 ms interval",
+        and "if (transfer_link_ready)" in adapter,
+        "OTA must keep converging PHY/DLE after connection parameters are active",
     )
     require(
         "FIRMWARE_OTA_INACTIVITY_TIMEOUT_MS (3U * 60U * 1000U)" in ota

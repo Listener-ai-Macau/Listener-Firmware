@@ -22,6 +22,7 @@ def require(condition: bool, message: str) -> None:
 
 
 def main() -> int:
+    sdkconfig_defaults = read(ROOT / "sdkconfig.defaults")
     ota = read(ROOT / "components/firmware_ota/firmware_ota.c")
     main_source = read(ROOT / "main/main.c")
     gap = read(ROOT / "ports/esp32/ble_hid_gap/ble_hid_gap_esp32.c")
@@ -160,6 +161,20 @@ def main() -> int:
         is not None,
         "concurrent DLE callers must coalesce behind one in-flight HCI request",
     )
+    require(
+        "BLE_HID_GAP_AUDIO_DATA_LEN_REQUEST_TIMEOUT_MS 750U" in gap
+        and "pending_expired" in dle_request
+        and "data length completion timed out" in dle_request,
+        "a lost DLE completion event must expire the single-flight owner and permit a bounded retry",
+    )
+    require(
+        "if (transfer_link_ready) {" in ota_adapter
+        and "if (active_link_applied) {" not in ota_adapter[
+            ota_adapter.index("static void ble_firmware_ota_update_active_link(void)"):
+            ota_adapter.index("static void ble_firmware_ota_sync_status(void)")
+        ],
+        "OTA link convergence must continue until PHY/DLE readiness, not stop at connection parameters alone",
+    )
     ota_ready_start = gap.index("bool ble_hid_gap_ota_connection_ready(void)")
     ota_ready_end = gap.index(
         "static void ble_hid_gap_ota_reconnect_task",
@@ -176,18 +191,26 @@ def main() -> int:
                 "conn.audio_tx_phy == BLE_HCI_LE_PHY_2M",
                 "conn.audio_rx_phy == BLE_HCI_LE_PHY_2M",
                 "conn.audio_data_length_ready",
-                "conn.audio_data_length_max_tx_octets >=",
-                "BLE_HID_GAP_AUDIO_DATA_LEN_OCTETS",
-                "conn.audio_data_length_max_tx_time_us >=",
-                "BLE_HID_GAP_AUDIO_DATA_LEN_TIME_US",
+                "ble_hid_gap_data_length_ready_for_phy(",
             )
         )
         and "desc.conn_itvl <= 24U" not in ota_ready,
-        "OTA full-window readiness must require secure 7.5-15 ms, 2M/2M and 251-byte/1590-us DLE",
+        "OTA full-window readiness must require secure 7.5-15 ms, 2M/2M and PHY-aware full-packet DLE",
     )
     require(
         "#define BLE_HID_GAP_AUDIO_DATA_LEN_TIME_US 1590U" in gap,
-        "the LE 2M full-packet DLE target must remain 1590 us",
+        "the Windows DLE request target must remain 1590 us",
+    )
+    phy_update = gap[
+        gap.index("case BLE_GAP_EVENT_PHY_UPDATE_COMPLETE:"):
+        gap.index("case BLE_GAP_EVENT_ADV_COMPLETE:")
+    ]
+    require(
+        "#define BLE_HID_GAP_AUDIO_DATA_LEN_2M_PACKET_TIME_US 965U" in gap
+        and "max_tx_time_us >= minimum_packet_time_us" in gap
+        and "s_audio_data_length_ready = ble_hid_gap_data_length_ready_for_phy(" in phy_update
+        and "s_audio_data_length_request_pending = false;" in phy_update,
+        "a 251-octet result must also carry the measured Windows bulk-ready airtime at the negotiated PHY without leaving EALREADY pending",
     )
     require(
         "restore_full_data_length" in gap
@@ -259,10 +282,15 @@ def main() -> int:
 
     for token in (
         "LISTENER_OTA_V1_DEFAULT_WINDOW_CHUNKS: usize = 400",
-        "LISTENER_OTA_V1_WWR_PIPELINE_DEPTH: usize = 32",
+        "LISTENER_OTA_V1_WWR_PIPELINE_DEPTH: usize = 40",
         "LISTENER_OTA_V1_INACTIVE_LINK_WINDOW_CHUNKS: usize = 64",
     ):
         require(token in type_ble, f"1.0.3 OTA speed contract regressed: {token}")
+    require(
+        "CONFIG_BT_NIMBLE_MEM_ALLOC_MODE_EXTERNAL=y" in sdkconfig_defaults
+        and "CONFIG_BT_NIMBLE_TRANSPORT_ACL_FROM_LL_COUNT=128" in sdkconfig_defaults,
+        "the bounded host OTA pipeline requires the PSRAM-backed 128-buffer NimBLE ACL pool",
+    )
     require(
         "MIN_PROTOCOL_TRANSFER_BYTES_PER_SECOND = 60 * 1024"
         in type_ota_harness
@@ -303,10 +331,23 @@ def main() -> int:
         "a successful audio-control ATT probe must proceed directly to notify takeover without a redundant fixed settle",
     )
     require(
-        "BluetoothLEPreferredConnectionParameters" not in type_ble
-        and "RequestPreferredConnectionParameters" not in type_ble
-        and "ThroughputOptimized" not in type_ble,
-        "Type must leave OTA connection-parameter ownership to firmware's bounded 7.5 ms request",
+        "BluetoothLEPreferredConnectionParametersRequest" in type_ble
+        and "throughput_request" in type_ble
+        and "BluetoothLEPreferredConnectionParameters::ThroughputOptimized()"
+        in type_ota_open
+        and "device.RequestPreferredConnectionParameters(&params)" in type_ota_open
+        and "Some(OtaThroughputPrime" in type_ota_open,
+        "Type must retain Windows' accepted OTA throughput request instead of relying on connection interval alone",
+    )
+    require(
+        "LISTENER_OTA_WINRT_DLE_PRIME_MIN_HOLD" in type_ble
+        and "release_throughput_prime_for_bulk" in type_ota_transfer
+        and "prime.close(\"before_bulk_firmware_interval_handoff\")"
+        in type_ota_transfer
+        and "device.GetConnectionParameters()" in type_ota_transfer
+        and "interval <= LISTENER_OTA_FIRMWARE_INTERVAL_UNITS"
+        in type_ota_transfer,
+        "Type must release the 15 ms WinRT preset after DLE priming and confirm firmware-owned 7.5 ms before bulk",
     )
     require(
         "BLE_FIRMWARE_OTA_WORKER_QUEUE_DEPTH 32" in ota_adapter

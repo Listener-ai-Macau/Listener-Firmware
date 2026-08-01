@@ -3576,6 +3576,20 @@ bool ble_audio_stream_consume_type_control_command(const char *command, const ch
                 "type OTA handoff canceled active audio candidate ret=%s",
                 esp_err_to_name(cancel_ret));
         }
+        if (ble_audio_stream_transport_session_active()) {
+            uint32_t session_id = s_transport_session_id;
+            uint16_t expected_packet_count = s_transport_expected_packet_count;
+            esp_err_t transport_cancel_ret = ble_audio_stream_send_session_cancel(
+                session_id,
+                expected_packet_count);
+            ESP_LOGI(
+                TAG,
+                "type OTA handoff canceled audio transport tail: session=%" PRIu32
+                " expected_packet_count=%u ret=%s",
+                session_id,
+                expected_packet_count,
+                esp_err_to_name(transport_cancel_ret));
+        }
         if (ble_hid_gap_schedule_ota_reconnect != NULL) {
             esp_err_t ret = ble_hid_gap_schedule_ota_reconnect();
             if (ret != ESP_OK) {
