@@ -2,7 +2,7 @@ param(
     [string]$BuildDir = (Join-Path $PSScriptRoot "..\build"),
     [string]$OutputRoot = (Join-Path $PSScriptRoot "..\.cache\factory_firmware"),
     [string]$Port = "COM3",
-    [string]$Baud = "460800"
+    [string]$Baud = "921600"
 )
 
 $ErrorActionPreference = "Stop"
