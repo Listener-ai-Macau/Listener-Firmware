@@ -161,6 +161,7 @@ static bool s_low_power_advertising = false;
 static bool s_key_wake_only_advertising = false;
 static bool s_shutdown_quiesce = false;
 static uint16_t s_ble_gap_conn_handle = BLE_HS_CONN_HANDLE_NONE;
+static bool s_ota_tx_power_low_requested;
 static portMUX_TYPE s_ble_gap_state_lock = portMUX_INITIALIZER_UNLOCKED;
 static uint16_t s_service_changed_val_handle = BLE_HS_CONN_HANDLE_NONE;
 static bool s_service_changed_state_loaded = false;
@@ -632,6 +633,29 @@ uint16_t ble_hid_gap_get_audio_notification_value_max_bytes(void)
         return 0;
     }
     return (uint16_t)(conn.audio_data_length_max_tx_octets - att_value_overhead);
+}
+
+esp_err_t ble_hid_gap_set_ota_tx_power(bool enabled)
+{
+    const ble_hid_gap_connection_snapshot_t conn = ble_hid_gap_connection_snapshot();
+    portENTER_CRITICAL(&s_ble_gap_state_lock);
+    s_ota_tx_power_low_requested = enabled;
+    portEXIT_CRITICAL(&s_ble_gap_state_lock);
+    if (!conn.connected || conn.conn_handle == BLE_HS_CONN_HANDLE_NONE) {
+        return ESP_OK;
+    }
+    return esp_ble_tx_power_set_enhanced(
+        ESP_BLE_ENHANCED_PWR_TYPE_CONN,
+        conn.conn_handle,
+        enabled ? ESP_PWR_LVL_N0 : ESP_PWR_LVL_P9);
+}
+
+static bool ble_hid_gap_ota_tx_power_requested(void)
+{
+    portENTER_CRITICAL(&s_ble_gap_state_lock);
+    const bool requested = s_ota_tx_power_low_requested;
+    portEXIT_CRITICAL(&s_ble_gap_state_lock);
+    return requested;
 }
 
 static void ble_hid_gap_set_connection_state(bool connected, uint16_t conn_handle)
@@ -2442,6 +2466,9 @@ static void ble_hid_gap_handle_connect_established(uint16_t conn_handle, const c
                      snapshot.secure_connected ? 1U : 0U);
         }
         ble_hid_gap_set_connection_state(true, conn_handle);
+        if (ble_hid_gap_ota_tx_power_requested()) {
+            (void)ble_hid_gap_set_ota_tx_power(true);
+        }
         ble_hid_gap_platform_device_control_set_lifecycle(
             DENZIC_DEVICE_CONTROL_V1_LIFECYCLE_STATE_CONNECTING);
         ble_diag_log_on_gap_connect(conn_handle);

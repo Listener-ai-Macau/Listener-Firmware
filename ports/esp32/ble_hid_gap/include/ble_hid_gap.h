@@ -40,6 +40,9 @@ bool ble_hid_gap_active_connection_applied(void);
 uint16_t ble_hid_gap_get_audio_notification_value_max_bytes(void);
 void ble_hid_gap_print_status(void);
 bool ble_hid_gap_ota_connection_ready(void);
+/* Reduce connection TX power while OTA receives and restore the configured
+ * normal level on finish or abort. */
+esp_err_t ble_hid_gap_set_ota_tx_power(bool enabled);
 esp_err_t ble_hid_gap_schedule_ota_reconnect(void);
 esp_err_t ble_hid_gap_request_reconnect(void);
 esp_err_t ble_hid_gap_apply_pending_ble_name(void);

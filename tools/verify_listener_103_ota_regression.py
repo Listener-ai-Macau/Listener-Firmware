@@ -341,13 +341,13 @@ def main() -> int:
     )
     require(
         "LISTENER_OTA_WINRT_DLE_PRIME_MIN_HOLD" in type_ble
-        and "release_throughput_prime_for_bulk" in type_ota_transfer
-        and "prime.close(\"before_bulk_firmware_interval_handoff\")"
+        and "converge_active_link_before_begin" in type_ota_transfer
+        and "prime.close(\"before_begin_device_link_convergence\")"
         in type_ota_transfer
-        and "device.GetConnectionParameters()" in type_ota_transfer
-        and "interval <= LISTENER_OTA_FIRMWARE_INTERVAL_UNITS"
-        in type_ota_transfer,
-        "Type must release the 15 ms WinRT preset after DLE priming and confirm firmware-owned 7.5 ms before bulk",
+        and "status.active_link_confirmed()" in type_ota_transfer
+        and "s_ota.state != DENZIC_OTA_V1_STATE_RECEIVING && !s_prepare_link_active"
+        in ota_adapter,
+        "Type must release the 15 ms WinRT preset and await firmware-confirmed 7.5 ms/2M/DLE before BEGIN",
     )
     require(
         "BLE_FIRMWARE_OTA_WORKER_QUEUE_DEPTH 32" in ota_adapter

@@ -12,7 +12,6 @@
 #include "esp_heap_caps.h"
 #include "esp_log.h"
 #include "esp_system.h"
-#include "esp_timer.h"
 #include "firmware_ota.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/queue.h"
@@ -88,6 +87,7 @@ static bool s_registered;
 static SemaphoreHandle_t s_ota_lock;
 static QueueHandle_t s_ota_worker_queue;
 static TaskHandle_t s_ota_worker_task;
+static volatile bool s_prepare_link_active;
 /* Permanent worker touches flash; stack stays internal BSS (not xTaskCreate/PSRAM). */
 static StaticTask_t s_ota_worker_tcb;
 _Static_assert(sizeof(StackType_t) == 1, "ESP-IDF Xtensa task stacks must be byte addressed");
@@ -116,6 +116,25 @@ extern bool ble_hid_gap_active_connection_applied(void) __attribute__((weak));
 extern bool ble_hid_gap_ota_connection_ready(void) __attribute__((weak));
 extern esp_err_t ble_hid_gap_prepare_shutdown_disconnect(void) __attribute__((weak));
 extern bool ble_hid_gap_is_connected(void) __attribute__((weak));
+extern esp_err_t ble_hid_gap_set_ota_tx_power(bool enabled) __attribute__((weak));
+
+static void ble_firmware_ota_set_transfer_tx_power(bool active)
+{
+    if (ble_hid_gap_set_ota_tx_power != NULL) {
+        (void)ble_hid_gap_set_ota_tx_power(active);
+    }
+}
+
+static void ble_firmware_ota_prepare_link(void)
+{
+    s_prepare_link_active = true;
+    if (ble_hid_gap_schedule_active_connection != NULL ||
+        ble_hid_gap_request_active_connection != NULL) {
+        (void)(ble_hid_gap_schedule_active_connection != NULL
+            ? ble_hid_gap_schedule_active_connection()
+            : ble_hid_gap_request_active_connection());
+    }
+}
 
 static void ble_firmware_ota_lock(void)
 {
@@ -310,14 +329,10 @@ static bool ble_firmware_ota_storage_begin(void *driver_context, uint32_t image_
         (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT));
     /* New image session: drop any dual-lane futures from a prior attempt. */
     denzic_ota_v1_reorder_clear(&s_ota_reorder);
-    const firmware_ota_blocker_t blocker_before = firmware_ota_get_blocker();
     esp_err_t ret = firmware_ota_begin(image_size, DENZIC_OTA_V1_PROTOCOL_NAME);
     if (ret == ESP_OK) {
-        ESP_LOGI(
-            TAG,
-            "Denzic OTA v1 storage begin accepted size=%u blocker_before=%s",
-            (unsigned)image_size,
-            firmware_ota_blocker_name(blocker_before));
+        s_prepare_link_active = false;
+        ble_firmware_ota_set_transfer_tx_power(true);
     } else {
         heap_caps_free(s_ota_storage_batch);
         s_ota_storage_batch = NULL;
@@ -397,6 +412,8 @@ static bool ble_firmware_ota_storage_finish(void *driver_context)
         return false;
     }
     esp_err_t ret = firmware_ota_finish(false);
+    s_prepare_link_active = false;
+    ble_firmware_ota_set_transfer_tx_power(false);
     heap_caps_free(s_ota_storage_batch);
     s_ota_storage_batch = NULL;
     ESP_LOGI(
@@ -430,6 +447,8 @@ static void ble_firmware_ota_storage_abort(void *driver_context)
     heap_caps_free(s_ota_storage_batch);
     s_ota_storage_batch = NULL;
     firmware_ota_abort(DIAG_OTA_ABORT_BLE_CONTROL);
+    s_prepare_link_active = false;
+    ble_firmware_ota_set_transfer_tx_power(false);
     (void)audio_capture_set_ota_suspended(false);
 }
 
@@ -466,7 +485,7 @@ static bool ble_firmware_ota_tick_reached(TickType_t now, TickType_t target)
 
 static void ble_firmware_ota_update_active_link(void)
 {
-    if (s_ota.state != DENZIC_OTA_V1_STATE_RECEIVING) {
+    if (s_ota.state != DENZIC_OTA_V1_STATE_RECEIVING && !s_prepare_link_active) {
         s_active_link_confirmed = false;
         denzic_ota_v1_set_status_flags(&s_ota, 0);
         return;
@@ -478,9 +497,6 @@ static void ble_firmware_ota_update_active_link(void)
         ? active_link_applied
         : ble_hid_gap_ota_connection_ready();
     if (transfer_link_ready) {
-        if (!s_active_link_confirmed) {
-            ESP_LOGI(TAG, "Denzic OTA v1 transfer-ready BLE link confirmed");
-        }
         s_active_link_confirmed = true;
         denzic_ota_v1_set_status_flags(
             &s_ota,
@@ -503,10 +519,9 @@ static void ble_firmware_ota_update_active_link(void)
     s_active_link_retry_tick = now + pdMS_TO_TICKS(BLE_FIRMWARE_OTA_ACTIVE_LINK_RETRY_MS);
     if (ble_hid_gap_schedule_active_connection != NULL ||
         ble_hid_gap_request_active_connection != NULL) {
-        esp_err_t ret = ble_hid_gap_schedule_active_connection != NULL
+        (void)(ble_hid_gap_schedule_active_connection != NULL
             ? ble_hid_gap_schedule_active_connection()
-            : ble_hid_gap_request_active_connection();
-        ESP_LOGI(TAG, "Denzic OTA v1 active BLE link pending ret=%s", esp_err_to_name(ret));
+            : ble_hid_gap_request_active_connection());
     }
 }
 
@@ -621,24 +636,6 @@ static int ble_firmware_ota_handle_control_write(struct os_mbuf *om)
             | ((uint32_t)control[11] << 24);
         begin_chunk = (uint16_t)control[12] | ((uint16_t)control[13] << 8);
         begin_window = (uint16_t)control[14] | ((uint16_t)control[15] << 8);
-        ESP_LOGI(
-            TAG,
-            "Denzic OTA v1 control RX op=%s(%u) size=%u chunk=%u window=%u state=%u",
-            ble_firmware_ota_op_name(op),
-            op,
-            (unsigned)begin_size,
-            (unsigned)begin_chunk,
-            (unsigned)begin_window,
-            (unsigned)s_ota.state);
-    } else if (op == DENZIC_OTA_V1_OP_BEGIN || op == DENZIC_OTA_V1_OP_FINISH ||
-               op == DENZIC_OTA_V1_OP_ABORT) {
-        ESP_LOGI(
-            TAG,
-            "Denzic OTA v1 control RX op=%s(%u) len=%u state=%u",
-            ble_firmware_ota_op_name(op),
-            op,
-            length,
-            (unsigned)s_ota.state);
     }
     if (op == DENZIC_OTA_V1_OP_BEGIN &&
         ble_hid_gap_ota_connection_ready != NULL &&
@@ -691,11 +688,9 @@ static int ble_firmware_ota_handle_control_write(struct os_mbuf *om)
          * the host retains its firmware-update throughput request. */
         if (ble_hid_gap_schedule_active_connection != NULL ||
             ble_hid_gap_request_active_connection != NULL) {
-            esp_err_t ret = ble_hid_gap_request_active_connection != NULL
+            (void)(ble_hid_gap_request_active_connection != NULL
                 ? ble_hid_gap_request_active_connection()
-                : ble_hid_gap_schedule_active_connection();
-            ESP_LOGI(TAG, "Denzic OTA v1 BEGIN requested active BLE link ret=%s",
-                     esp_err_to_name(ret));
+                : ble_hid_gap_schedule_active_connection());
         }
     } else if (op == DENZIC_OTA_V1_OP_FINISH || op == DENZIC_OTA_V1_OP_ABORT) {
         ESP_LOGI(
@@ -777,8 +772,10 @@ static int ble_firmware_ota_access(
 
         const char *value = NULL;
         if (attr == BLE_FIRMWARE_OTA_GATT_ATTR_READINESS) {
+            ble_firmware_ota_prepare_link();
             value = listener_device_get_factory_readiness();
         } else if (attr == BLE_FIRMWARE_OTA_GATT_ATTR_CAPABILITIES) {
+            ble_firmware_ota_prepare_link();
             value = ble_firmware_ota_compact_capabilities_if_needed(
                 conn_handle,
                 listener_device_get_capabilities());
@@ -939,6 +936,8 @@ void ble_firmware_ota_on_gap_disconnect(uint16_t conn_handle)
 
 void ble_firmware_ota_on_firmware_abort(uint32_t reason)
 {
+    s_prepare_link_active = false;
+    ble_firmware_ota_set_transfer_tx_power(false);
     /* 可能在任意任务（inactivity timer / USB / NimBLE control / worker data 处理）上被调用。
      * 不在此处直接 memset s_ota——那会与持锁的 data/control 处理竞争。只置位
      * s_core_reset_pending，worker 下一次循环（持锁）串行执行 core_init。可能在 worker 持锁

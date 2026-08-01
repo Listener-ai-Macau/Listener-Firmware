@@ -254,6 +254,33 @@ def check_runtime_integration(repo: Path) -> None:
         "OTA must keep converging PHY/DLE after connection parameters are active",
     )
     require(
+        adapter.count("ble_firmware_ota_set_transfer_tx_power(true);") >= 1
+        and adapter.count("ble_firmware_ota_set_transfer_tx_power(false);") >= 3,
+        "BLE OTA must lower connection TX power only for the receiving lifecycle and restore it on every exit",
+    )
+    require(
+        adapter.count("ble_firmware_ota_prepare_link();") == 2
+        and "s_prepare_link_active = true;" in adapter
+        and "ble_hid_gap_schedule_active_connection()" in adapter
+        and "s_ota.state != DENZIC_OTA_V1_STATE_RECEIVING && !s_prepare_link_active" in adapter
+        and adapter.count("s_prepare_link_active = false;") >= 4,
+        "readiness/capability preflight must converge and report the active BLE link until BEGIN or an exit owns it",
+    )
+    require(
+        "enabled ? ESP_PWR_LVL_N0 : ESP_PWR_LVL_P9" in gap
+        and "if (ble_hid_gap_ota_tx_power_requested())" in gap,
+        "GAP must apply 0 dBm during OTA, restore the configured normal 9 dBm level, and reapply only to OTA reconnects",
+    )
+    connect_handler = re.search(
+        r"static void ble_hid_gap_handle_connect_established\s*\([^)]*\)\s*\{(?P<body>[\s\S]*?)\n\}",
+        gap,
+    )
+    require(connect_handler is not None, "GAP connect handler is missing")
+    require(
+        "ESP_PWR_LVL_N0" not in connect_handler.group("body"),
+        "ordinary BLE connection establishment must not unconditionally lower TX power",
+    )
+    require(
         "FIRMWARE_OTA_INACTIVITY_TIMEOUT_MS (3U * 60U * 1000U)" in ota
         and "firmware_ota_inactivity_timer_callback" in ota,
         "stale OTA sessions must exit after three minutes",
