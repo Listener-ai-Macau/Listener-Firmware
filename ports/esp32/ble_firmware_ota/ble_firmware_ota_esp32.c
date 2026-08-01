@@ -687,9 +687,16 @@ static int ble_firmware_ota_handle_control_write(struct os_mbuf *om)
             (unsigned)begin_chunk,
             (unsigned)begin_window,
             (unsigned)state_after);
-        /* The pre-BEGIN hard gate already proved the full-speed link. Preserve
-         * it so a redundant LL procedure cannot race the first bulk window. */
-        ESP_LOGI(TAG, "Denzic OTA v1 BEGIN preserved confirmed active BLE link");
+        /* BEGIN starts bulk WWR immediately. Refresh the active profile while
+         * the host retains its firmware-update throughput request. */
+        if (ble_hid_gap_schedule_active_connection != NULL ||
+            ble_hid_gap_request_active_connection != NULL) {
+            esp_err_t ret = ble_hid_gap_request_active_connection != NULL
+                ? ble_hid_gap_request_active_connection()
+                : ble_hid_gap_schedule_active_connection();
+            ESP_LOGI(TAG, "Denzic OTA v1 BEGIN requested active BLE link ret=%s",
+                     esp_err_to_name(ret));
+        }
     } else if (op == DENZIC_OTA_V1_OP_FINISH || op == DENZIC_OTA_V1_OP_ABORT) {
         ESP_LOGI(
             TAG,
