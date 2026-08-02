@@ -187,6 +187,7 @@ static esp_timer_handle_t s_recovery_pairing_window_timer = NULL;
 static int64_t s_recovery_pairing_window_opened_at_ms = 0;
 static uint16_t s_recovery_security_request_conn_handle = BLE_HS_CONN_HANDLE_NONE;
 static uint16_t s_recovery_security_failed_conn_handle = BLE_HS_CONN_HANDLE_NONE;
+static bool s_explicit_recovery_required_after_security_failure = false;
 static bool s_last_disconnect_host_deliberate = false;
 static int64_t s_first_pairing_window_opened_at_ms = 0;
 static uint32_t s_last_conn_param_mode = 0;
@@ -208,6 +209,30 @@ static bool s_ec11_fast_recording_armed = false;
 static bool s_ota_reconnect_request_pending = false;
 static TickType_t s_ota_fast_link_expected_until_tick = 0;
 static bool s_ota_reconnect_radio_quiet_pending = false;
+
+static bool ble_hid_gap_explicit_recovery_required_after_security_failure(void)
+{
+    bool required = false;
+    portENTER_CRITICAL(&s_ble_gap_state_lock);
+    required = s_explicit_recovery_required_after_security_failure;
+    portEXIT_CRITICAL(&s_ble_gap_state_lock);
+    return required;
+}
+
+static void ble_hid_gap_set_explicit_recovery_required_after_security_failure(
+    bool required)
+{
+    portENTER_CRITICAL(&s_ble_gap_state_lock);
+    s_explicit_recovery_required_after_security_failure = required;
+    portEXIT_CRITICAL(&s_ble_gap_state_lock);
+}
+
+static status_led_ble_state_t ble_hid_gap_explicit_recovery_led_state(void)
+{
+    return s_last_disconnect_host_deliberate
+        ? STATUS_LED_BLE_RECONNECTING
+        : STATUS_LED_BLE_DISCONNECTED;
+}
 static uint16_t s_ota_reconnect_radio_quiet_conn_handle = BLE_HS_CONN_HANDLE_NONE;
 static struct ble_gap_event_listener s_ble_hid_gap_event_listener;
 static bool s_ble_hid_gap_event_listener_registered = false;
@@ -1586,26 +1611,41 @@ bool ble_hid_gap_note_type_audio_ready(const char *reason)
     int bonded_peer_count = 0;
     int rc = ble_hid_gap_get_bonded_peer_count(&bonded_peer_count);
     if (rc == 0 && bonded_peer_count == 0) {
+        const bool pairing_window_open =
+            ble_hid_gap_recovery_pairing_window_open();
+        if (!pairing_window_open) {
+            ESP_LOGW(
+                TAG,
+                "type audio ready rejected on unbonded link outside explicit recovery; terminating and waiting for EC11 reason=%s conn=%u",
+                ready_reason,
+                s_ble_gap_conn_handle);
+            diag_log(DIAG_SRC_BLE_GAP, DIAG_GAP_RECOVERY, DIAG_SEV_WARN,
+                     22, 0, 1, s_ble_gap_conn_handle);
+            s_last_disconnect_host_deliberate = true;
+            ble_hid_gap_set_explicit_recovery_required_after_security_failure(true);
+            status_led_set_ble_state(ble_hid_gap_explicit_recovery_led_state(), false);
+            if (s_ble_gap_conn_handle != BLE_HS_CONN_HANDLE_NONE) {
+                int term_rc = ble_gap_terminate(
+                    s_ble_gap_conn_handle,
+                    BLE_ERR_REM_USER_CONN_TERM);
+                if (term_rc != 0 && term_rc != BLE_HS_ENOTCONN &&
+                    term_rc != BLE_HS_EALREADY) {
+                    ESP_LOGW(
+                        TAG,
+                        "unbonded Type-ready quarantine terminate failed conn=%u rc=%d",
+                        s_ble_gap_conn_handle,
+                        term_rc);
+                }
+            }
+            return false;
+        }
         ESP_LOGW(
             TAG,
-            "type audio ready rejected before BLE bond; keeping pairing window available without restarting repair reason=%s conn=%u",
+            "type audio ready rejected before BLE bond inside explicit recovery; keeping pairing window available reason=%s conn=%u",
             ready_reason,
             s_ble_gap_conn_handle);
         diag_log(DIAG_SRC_BLE_GAP, DIAG_GAP_RECOVERY, DIAG_SEV_WARN,
                  19, 0, 0, s_ble_gap_conn_handle);
-        if (!ble_hid_gap_recovery_pairing_window_open()) {
-            ble_hid_gap_open_recovery_pairing_window(true, true);
-            if (!ble_gap_adv_active()) {
-                esp_err_t adv_ret = ble_hid_gap_start_advertising();
-                if (adv_ret != ESP_OK) {
-                    ESP_LOGW(
-                        TAG,
-                        "type audio ready unbonded advertising refresh failed ret=%s",
-                        esp_err_to_name(adv_ret));
-                    status_led_set_ble_state(STATUS_LED_BLE_RECONNECTING, false);
-                }
-            }
-        }
         return false;
     }
 
@@ -1639,6 +1679,7 @@ static void ble_hid_gap_note_secure_connection(uint16_t conn_handle, const char 
 {
     s_last_disconnect_host_deliberate = false;
     s_recovery_security_request_conn_handle = BLE_HS_CONN_HANDLE_NONE;
+    ble_hid_gap_set_explicit_recovery_required_after_security_failure(false);
     ble_hid_gap_set_secure_connection_state(true);
     ble_hid_gap_platform_device_control_set_lifecycle(
         DENZIC_DEVICE_CONTROL_V1_LIFECYCLE_STATE_SECURING);
@@ -2650,6 +2691,18 @@ static void ble_hid_gap_handle_disconnect(uint16_t conn_handle, int reason, cons
     ble_diag_log_on_gap_disconnect(conn_handle);
     ble_firmware_ota_on_gap_disconnect(conn_handle);
 
+    if (ble_hid_gap_explicit_recovery_required_after_security_failure()) {
+        s_directed_adv_pending = false;
+        s_last_adv_was_directed = false;
+        status_led_set_ble_state(ble_hid_gap_explicit_recovery_led_state(), false);
+        ESP_LOGW(
+            TAG,
+            "security-failed bond retained; advertising remains off until explicit EC11/Type recovery");
+        diag_log(DIAG_SRC_BLE_GAP, DIAG_GAP_RECOVERY, DIAG_SEV_INFO,
+                 22, 0, 0, conn_handle);
+        return;
+    }
+
     const bool recovery_bond_delete_active =
         ble_hid_gap_recovery_bond_delete_active();
     if (s_recovery_waiting_for_disconnect) {
@@ -2683,10 +2736,15 @@ static void ble_hid_gap_handle_disconnect(uint16_t conn_handle, int reason, cons
         DENZIC_BLE_PAIRING_V1_DISCONNECT_HOST_DELIBERATE_UNPAIR;
     s_last_disconnect_host_deliberate = host_deliberate_disconnect;
     if (host_deliberate_disconnect) {
+        ble_hid_gap_set_explicit_recovery_required_after_security_failure(true);
+        s_directed_adv_pending = false;
+        s_last_adv_was_directed = false;
+        status_led_set_ble_state(STATUS_LED_BLE_RECONNECTING, false);
         ESP_LOGI(TAG,
-                 "host deliberately terminated the connection; suppressing directed reconnect advertising");
+                 "host deliberately terminated the connection; pairing-search LED remains visible while all advertising is suppressed until explicit EC11 recovery");
         diag_log(DIAG_SRC_BLE_GAP, DIAG_GAP_BOND, DIAG_SEV_INFO,
                  2, (uint32_t)reason, conn_handle, 0);
+        return;
     }
     s_directed_adv_pending =
         denzic_ble_pairing_v1_advertising_after_disconnect(
@@ -3266,18 +3324,27 @@ nimble_hid_gap_event(struct ble_gap_event *event, void *arg)
             } else {
                 ESP_LOGW(
                     TAG,
-                    "security failure outside pairing window status=%d; opening pairing reset and terminating insecure connection",
+                    "security failure outside pairing window status=%d; retaining bond and waiting for explicit recovery",
                     event->enc_change.status);
-                esp_err_t repair_ret =
-                    ble_hid_gap_forget_bonds_and_repair_inner(
-                        s_recovery_type_controlled_pairing,
-                        s_recovery_suppress_swift_pair_prompt,
-                        false);
-                if (repair_ret != ESP_OK) {
-                    ESP_LOGW(TAG,
-                             "security failure repair path failed ret=%s; falling back to reconnecting LED",
-                             esp_err_to_name(repair_ret));
-                    status_led_set_ble_state(STATUS_LED_BLE_RECONNECTING, false);
+                ble_hid_gap_platform_device_control_note_retryable_security_failure(
+                    event->enc_change.status);
+                s_last_disconnect_host_deliberate = true;
+                ble_hid_gap_set_explicit_recovery_required_after_security_failure(true);
+                s_recovery_security_request_conn_handle = BLE_HS_CONN_HANDLE_NONE;
+                s_recovery_security_failed_conn_handle = event->enc_change.conn_handle;
+                status_led_set_ble_state(ble_hid_gap_explicit_recovery_led_state(), false);
+                diag_log(DIAG_SRC_BLE_GAP, DIAG_GAP_RECOVERY, DIAG_SEV_WARN,
+                         22, (uint32_t)event->enc_change.status, 0,
+                         event->enc_change.conn_handle);
+                int term_rc = ble_gap_terminate(
+                    event->enc_change.conn_handle,
+                    BLE_ERR_REM_USER_CONN_TERM);
+                if (term_rc != 0 && term_rc != BLE_HS_ENOTCONN) {
+                    ESP_LOGW(
+                        TAG,
+                        "security failure explicit-recovery hold terminate failed conn=%u rc=%d",
+                        event->enc_change.conn_handle,
+                        term_rc);
                 }
             }
         }
@@ -3945,6 +4012,14 @@ esp_err_t ble_hid_gap_configure_advertising(uint16_t appearance, const char *dev
 
 esp_err_t ble_hid_gap_start_advertising(void)
 {
+    if (ble_hid_gap_explicit_recovery_required_after_security_failure() &&
+        !ble_hid_gap_recovery_pairing_window_open()) {
+        status_led_set_ble_state(ble_hid_gap_explicit_recovery_led_state(), false);
+        ESP_LOGI(
+            TAG,
+            "advertising suppressed while security-failed bond waits for explicit recovery");
+        return ESP_OK;
+    }
     return esp_hid_ble_gap_adv_start();
 }
 
@@ -4356,6 +4431,12 @@ esp_err_t ble_hid_gap_mark_stack_ready(void)
 
 static esp_err_t ble_hid_gap_forget_bonds_and_repair_ec11_fast_inner(void)
 {
+    /* EC11 is the explicit local handoff to Type (or the Windows Settings UI).
+     * Keep it name-bearing/connectable, but never race Type's PairAsync with a
+     * Microsoft Swift Pair prompt. First-boot advertising still retains the
+     * native Swift Pair onboarding window. */
+    const bool silent_explicit_recovery = true;
+    ble_hid_gap_set_explicit_recovery_required_after_security_failure(false);
     s_shutdown_quiesce = false;
     s_low_power_advertising = false;
     s_key_wake_only_advertising = false;
@@ -4371,12 +4452,15 @@ static esp_err_t ble_hid_gap_forget_bonds_and_repair_ec11_fast_inner(void)
             false,
             type_link_ready_before_recovery,
             type_host_recent_before_recovery,
-            conn.connected);
+            conn.secure_connected);
     ble_hid_gap_platform_device_control_begin_recovery(type_controlled_recovery);
 
     if (!conn.connected || conn.conn_handle == BLE_HS_CONN_HANDLE_NONE) {
         /* A physical EC11 handoff must not reuse an already-open stale window. */
-        return ble_hid_gap_forget_bonds_and_repair_inner(false, false, true);
+        return ble_hid_gap_forget_bonds_and_repair_inner(
+            false,
+            silent_explicit_recovery,
+            true);
     }
 
     /*
@@ -4390,7 +4474,9 @@ static esp_err_t ble_hid_gap_forget_bonds_and_repair_ec11_fast_inner(void)
      * remains owned by the asynchronous bond-delete worker. This leaves no
      * active-to-disconnect gap in which idle policy could sleep the device.
      */
-    ble_hid_gap_open_recovery_pairing_window(type_controlled_recovery, false);
+    ble_hid_gap_open_recovery_pairing_window(
+        type_controlled_recovery,
+        silent_explicit_recovery);
     s_directed_adv_pending = false;
     s_last_adv_was_directed = false;
     if (denzic_ble_pairing_v1_identity_for_recovery(type_controlled_recovery, true) ==
@@ -4454,6 +4540,7 @@ static esp_err_t ble_hid_gap_forget_bonds_and_repair_inner(
     bool suppress_swift_pair_prompt,
     bool force_fresh_native_identity)
 {
+    ble_hid_gap_set_explicit_recovery_required_after_security_failure(false);
     s_shutdown_quiesce = false;
     s_low_power_advertising = false;
     s_key_wake_only_advertising = false;
@@ -4543,7 +4630,7 @@ static esp_err_t ble_hid_gap_forget_bonds_and_repair_inner(
             type_controlled_request,
             type_link_ready_before_recovery,
             type_host_recent_before_recovery,
-            conn.connected);
+            conn.secure_connected);
     ble_hid_gap_platform_device_control_begin_recovery(type_controlled_recovery);
 
     ESP_LOGW(
@@ -4713,6 +4800,17 @@ bool ble_hid_gap_is_securely_connected(void)
 bool ble_hid_gap_is_recovery_pairing_window_open(void)
 {
     return ble_hid_gap_recovery_pairing_window_open();
+}
+
+bool ble_hid_gap_is_waiting_for_explicit_recovery(void)
+{
+    return ble_hid_gap_explicit_recovery_required_after_security_failure();
+}
+
+bool ble_hid_gap_is_manual_unpair_search_active(void)
+{
+    return ble_hid_gap_explicit_recovery_required_after_security_failure() &&
+        s_last_disconnect_host_deliberate;
 }
 
 esp_err_t ble_hid_gap_set_low_power_advertising(bool enabled)
@@ -5306,6 +5404,13 @@ esp_err_t ble_hid_gap_schedule_ota_reconnect(void)
 
 esp_err_t ble_hid_gap_apply_pending_ble_name(void)
 {
+    if (!device_settings_ble_name_pending_restart()) {
+        ESP_LOGI(
+            TAG,
+            "BLE name apply skipped: no pending name change; preserving current connection/recovery state");
+        return ESP_OK;
+    }
+
     portENTER_CRITICAL(&s_ble_gap_state_lock);
     s_recovery_pairing_window_active = false;
     s_recovery_type_controlled_pairing = false;
@@ -5314,6 +5419,7 @@ esp_err_t ble_hid_gap_apply_pending_ble_name(void)
     s_recovery_swift_pair_consumed = true;
     s_recovery_security_request_conn_handle = BLE_HS_CONN_HANDLE_NONE;
     s_recovery_security_failed_conn_handle = BLE_HS_CONN_HANDLE_NONE;
+    s_explicit_recovery_required_after_security_failure = false;
     s_recovery_pairing_window_opened_at_ms = 0;
     portEXIT_CRITICAL(&s_ble_gap_state_lock);
 

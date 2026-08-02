@@ -3306,10 +3306,10 @@ bool ble_audio_stream_was_type_host_recently_seen(void)
 void ble_audio_stream_note_type_activity(const char *reason)
 {
     bool ota_activity = reason != NULL && strcmp(reason, "TYPE:OTA") == 0;
-    ble_audio_stream_note_type_host_seen(reason);
     if (!ble_audio_stream_type_activity_accepts_link(reason)) {
         return;
     }
+    ble_audio_stream_note_type_host_seen(reason);
     ble_audio_stream_set_type_heartbeat_active(
         true,
         reason != NULL ? reason : "type_activity");

@@ -1364,7 +1364,12 @@ static void ble_hid_event_callback(void *handler_args, esp_event_base_t base, in
             power_manager_set_ble_connected(false);
             ble_diag_log_on_gap_disconnect(0);
             ble_firmware_ota_on_gap_disconnect(0);
-            status_led_set_ble_state(STATUS_LED_BLE_RECONNECTING, false);
+            status_led_set_ble_state(
+                ble_hid_gap_is_waiting_for_explicit_recovery() &&
+                        !ble_hid_gap_is_manual_unpair_search_active()
+                    ? STATUS_LED_BLE_DISCONNECTED
+                    : STATUS_LED_BLE_RECONNECTING,
+                false);
             if (s_ascii_queue != NULL) {
                 xQueueReset(s_ascii_queue);
             }

@@ -674,7 +674,7 @@ CHECKS = {
     "ports/esp32/ble_hid/ble_hid.c": [
         "status_led_consume_usb_command(line)",
         "ble_hid_gap_is_securely_connected()",
-        "status_led_set_ble_state(STATUS_LED_BLE_RECONNECTING, false)",
+        "ble_hid_gap_is_waiting_for_explicit_recovery()",
         "ble_audio_stream_type_link_poll_wait_ms(",
         "ble_audio_stream_poll_type_link()",
     ],
@@ -1142,6 +1142,7 @@ def main() -> int:
     status_led_backend = read("components/status_led/status_led_strip_backend.c")
     status_led_backend_header = read("components/status_led/status_led_strip_backend.h")
     ble_gap = read("ports/esp32/ble_hid_gap/ble_hid_gap_esp32.c")
+    ble_hid = read("ports/esp32/ble_hid/ble_hid.c")
     ble_firmware_ota = read("ports/esp32/ble_firmware_ota/ble_firmware_ota_esp32.c")
     ble_audio_stream = read("ports/esp32/ble_audio_stream/ble_audio_stream_esp32.c")
     audio_capture = read("ports/esp32/audio_capture/audio_capture_esp32.c")
@@ -1906,7 +1907,11 @@ def main() -> int:
                 r"force_fresh_native_identity\)",
                 recovery_body,
             )
-            or "ble_hid_gap_forget_bonds_and_repair_inner(false, false, true)" not in ble_gap
+            or not re.search(
+                r"ble_hid_gap_forget_bonds_and_repair_inner\(\s*"
+                r"false,\s*silent_explicit_recovery,\s*true\)",
+                ble_gap,
+            )
         ):
             failures.append(
                 "ble_hid_gap_esp32.c: physical EC11 fresh recovery must bypass an already-open stale pairing window"
@@ -1920,11 +1925,11 @@ def main() -> int:
             r"type_controlled_request,\s*"
             r"type_link_ready_before_recovery,\s*"
             r"type_host_recent_before_recovery,\s*"
-            r"conn\.connected\)\s*;",
+            r"conn\.secure_connected\)\s*;",
             recovery_body,
         ):
             failures.append(
-                "ble_hid_gap_esp32.c: recovery must preserve stable identity only for an explicit/active Type link; a disconnected recent host must rotate for fresh Windows pairing"
+                "ble_hid_gap_esp32.c: recovery must preserve stable identity only for an explicit/secure Type link; an insecure or disconnected recent host must rotate for fresh Windows pairing"
             )
         refresh_index = recovery_body.find("pairing window already active; refreshing advertising with stable BLE identity")
         refresh_reopen_index = recovery_body.find("ble_hid_gap_open_recovery_pairing_window(", refresh_index)
@@ -2077,6 +2082,122 @@ def main() -> int:
     if enc_failed_skip_index < 0:
         failures.append(
             "ble_hid_gap_esp32.c: recovery security helper must not restart SMP on a connection that already failed encryption"
+        )
+    outside_failure_index = ble_gap.find(
+        "security failure outside pairing window status=%d; retaining bond and waiting for explicit recovery",
+        enc_change_index,
+    )
+    outside_wait_index = ble_gap.find(
+        "ble_hid_gap_set_explicit_recovery_required_after_security_failure(true)",
+        outside_failure_index,
+        enc_next_case_index,
+    )
+    outside_dark_index = ble_gap.find(
+        "status_led_set_ble_state(ble_hid_gap_explicit_recovery_led_state(), false)",
+        outside_failure_index,
+        enc_next_case_index,
+    )
+    if min(outside_failure_index, outside_wait_index, outside_dark_index) < 0:
+        failures.append(
+            "ble_hid_gap_esp32.c: out-of-window encryption failure must retain the bond and wait dark for explicit recovery"
+        )
+    if not re.search(
+        r"security failure outside pairing window status=%d; retaining bond and waiting for explicit recovery[\s\S]*?"
+        r"s_last_disconnect_host_deliberate\s*=\s*true;[\s\S]*?"
+        r"ble_hid_gap_set_explicit_recovery_required_after_security_failure\(true\);[\s\S]*?"
+        r"ble_hid_gap_explicit_recovery_led_state\(\)",
+        ble_gap[outside_failure_index:enc_next_case_index],
+    ):
+        failures.append(
+            "ble_hid_gap_esp32.c: lost host bond via encryption failure must use the pairing-search LED"
+        )
+    if "ble_hid_gap_forget_bonds_and_repair_inner(" in ble_gap[outside_failure_index:enc_next_case_index]:
+        failures.append(
+            "ble_hid_gap_esp32.c: out-of-window encryption failure must not automatically open a pairing reset"
+        )
+    if not re.search(
+        r"ble_hid_gap_handle_disconnect\([^)]*\)[\s\S]*?"
+        r"ble_hid_gap_explicit_recovery_required_after_security_failure\(\)[\s\S]*?"
+        r"ble_hid_gap_explicit_recovery_led_state\(\)[\s\S]*?"
+        r"advertising remains off until explicit EC11/Type recovery[\s\S]*?return;",
+        ble_gap,
+    ):
+        failures.append(
+            "ble_hid_gap_esp32.c: security-failed disconnect must stay dark with advertising suppressed until explicit recovery"
+        )
+    if not re.search(
+        r"host_deliberate_disconnect[\s\S]*?"
+        r"ble_hid_gap_set_explicit_recovery_required_after_security_failure\(true\)[\s\S]*?"
+        r"STATUS_LED_BLE_RECONNECTING[\s\S]*?"
+        r"pairing-search LED remains visible while all advertising is suppressed until explicit EC11 recovery[\s\S]*?return;",
+        ble_gap,
+    ):
+        failures.append(
+            "ble_hid_gap_esp32.c: host-deliberate unpair must show the pairing-search LED while stopping advertising until explicit recovery"
+        )
+    note_type_audio = extract_c_function(ble_gap, "ble_hid_gap_note_type_audio_ready")
+    if not re.search(
+        r"bonded_peer_count\s*==\s*0[\s\S]*?!pairing_window_open[\s\S]*?"
+        r"type audio ready rejected on unbonded link outside explicit recovery[\s\S]*?"
+        r"ble_hid_gap_set_explicit_recovery_required_after_security_failure\(true\)[\s\S]*?"
+        r"ble_hid_gap_explicit_recovery_led_state\(\)[\s\S]*?ble_gap_terminate\(",
+        note_type_audio,
+    ):
+        failures.append(
+            "ble_hid_gap_esp32.c: insecure out-of-window Type-ready must terminate into the explicit-recovery hold"
+        )
+    if "ble_hid_gap_open_recovery_pairing_window" in note_type_audio:
+        failures.append(
+            "ble_hid_gap_esp32.c: insecure Type-ready must not open a pairing window"
+        )
+    apply_name = extract_c_function(ble_gap, "ble_hid_gap_apply_pending_ble_name")
+    no_pending_index = apply_name.find("!device_settings_ble_name_pending_restart()")
+    preserve_index = apply_name.find(
+        "BLE name apply skipped: no pending name change; preserving current connection/recovery state"
+    )
+    clear_hold_index = apply_name.find(
+        "s_explicit_recovery_required_after_security_failure = false"
+    )
+    if not (0 <= no_pending_index < preserve_index < clear_hold_index):
+        failures.append(
+            "ble_hid_gap_esp32.c: no-op BLE name apply must return before clearing the explicit-recovery hold"
+        )
+    if not re.search(
+        r"bool\s+ble_hid_gap_is_waiting_for_explicit_recovery\(void\)[\s\S]*?"
+        r"ble_hid_gap_explicit_recovery_required_after_security_failure\(\)",
+        ble_gap,
+    ):
+        failures.append(
+            "ble_hid_gap_esp32.c: HID callbacks need a read-only authoritative explicit-recovery query"
+        )
+    if not re.search(
+        r"bool\s+ble_hid_gap_is_manual_unpair_search_active\(void\)[\s\S]*?"
+        r"ble_hid_gap_explicit_recovery_required_after_security_failure\(\)[\s\S]*?"
+        r"s_last_disconnect_host_deliberate",
+        ble_gap,
+    ):
+        failures.append(
+            "ble_hid_gap_esp32.c: HID callbacks need a read-only manual-delete search query"
+        )
+    if not re.search(
+        r"ble_hid_gap_forget_bonds_and_repair_ec11_fast_inner\(void\)[\s\S]*?"
+        r"const bool silent_explicit_recovery\s*=\s*true;[\s\S]*?"
+        r"ble_hid_gap_forget_bonds_and_repair_inner\(\s*false,\s*silent_explicit_recovery,\s*true\)[\s\S]*?"
+        r"ble_hid_gap_open_recovery_pairing_window\(\s*type_controlled_recovery,\s*silent_explicit_recovery\)",
+        ble_gap,
+    ):
+        failures.append(
+            "ble_hid_gap_esp32.c: every explicit EC11 recovery must rotate identity without Swift Pair"
+        )
+    if not re.search(
+        r"case\s+ESP_HIDD_DISCONNECT_EVENT:[\s\S]*?"
+        r"ble_hid_gap_is_waiting_for_explicit_recovery\(\)[\s\S]*?"
+        r"!ble_hid_gap_is_manual_unpair_search_active\(\)[\s\S]*?"
+        r"STATUS_LED_BLE_DISCONNECTED[\s\S]*?STATUS_LED_BLE_RECONNECTING",
+        ble_hid,
+    ):
+        failures.append(
+            "ble_hid.c: duplicate HID disconnect must preserve manual-delete search and other explicit-hold states"
         )
     recording_active_preview = re.search(
         r"}\s*else\s+if\s*\(\s*strcasecmp\(state,\s*\"capture\"\)\s*==\s*0\s*\|\|"
@@ -3079,7 +3200,7 @@ def main() -> int:
         recovery_audio_note_index,
     )
     recovery_audio_silent_window_index = ble_hid_gap.find(
-        "ble_hid_gap_open_recovery_pairing_window(true, true);",
+        "type audio ready rejected before BLE bond inside explicit recovery; keeping pairing window available",
         recovery_audio_note_index,
         recovery_helper_index,
     )
@@ -3816,7 +3937,6 @@ def main() -> int:
     if "LED15..LED28" in board_leds and "LED23..LED28" not in board_leds:
         failures.append("board.c: stale edge LED15..LED28 map")
 
-    ble_hid = read("ports/esp32/ble_hid/ble_hid.c")
     status_dispatch = ble_hid.find("status_led_consume_usb_command(line)")
     board_dispatch = ble_hid.find("board_consume_usb_command(line)")
     if status_dispatch < 0:

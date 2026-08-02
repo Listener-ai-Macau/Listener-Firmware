@@ -26,6 +26,8 @@ void ble_hid_gap_note_ec11_recovery_accepted(uint64_t accepted_at_us, bool gener
 bool ble_hid_gap_is_connected(void);
 bool ble_hid_gap_is_securely_connected(void);
 bool ble_hid_gap_is_recovery_pairing_window_open(void);
+bool ble_hid_gap_is_waiting_for_explicit_recovery(void);
+bool ble_hid_gap_is_manual_unpair_search_active(void);
 bool ble_hid_gap_note_type_audio_ready(const char *reason);
 esp_err_t ble_hid_gap_set_low_power_advertising(bool enabled);
 esp_err_t ble_hid_gap_stop_advertising_for_key_wake(void);
