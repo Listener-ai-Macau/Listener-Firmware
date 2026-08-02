@@ -230,7 +230,7 @@ static void ble_hid_gap_set_explicit_recovery_required_after_security_failure(
 static status_led_ble_state_t ble_hid_gap_explicit_recovery_led_state(void)
 {
     return s_last_disconnect_host_deliberate
-        ? STATUS_LED_BLE_RECONNECTING
+        ? STATUS_LED_BLE_PAIRING
         : STATUS_LED_BLE_DISCONNECTED;
 }
 static uint16_t s_ota_reconnect_radio_quiet_conn_handle = BLE_HS_CONN_HANDLE_NONE;
@@ -2739,9 +2739,9 @@ static void ble_hid_gap_handle_disconnect(uint16_t conn_handle, int reason, cons
         ble_hid_gap_set_explicit_recovery_required_after_security_failure(true);
         s_directed_adv_pending = false;
         s_last_adv_was_directed = false;
-        status_led_set_ble_state(STATUS_LED_BLE_RECONNECTING, false);
+        status_led_set_ble_state(ble_hid_gap_explicit_recovery_led_state(), false);
         ESP_LOGI(TAG,
-                 "host deliberately terminated the connection; pairing-search LED remains visible while all advertising is suppressed until explicit EC11 recovery");
+                 "host deliberately terminated the connection; dark-phase pairing LED remains visible while all advertising is suppressed until explicit EC11 recovery");
         diag_log(DIAG_SRC_BLE_GAP, DIAG_GAP_BOND, DIAG_SEV_INFO,
                  2, (uint32_t)reason, conn_handle, 0);
         return;

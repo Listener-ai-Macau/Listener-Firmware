@@ -2099,7 +2099,7 @@ def main() -> int:
     )
     if min(outside_failure_index, outside_wait_index, outside_dark_index) < 0:
         failures.append(
-            "ble_hid_gap_esp32.c: out-of-window encryption failure must retain the bond and wait dark for explicit recovery"
+            "ble_hid_gap_esp32.c: out-of-window encryption failure must retain the bond and wait without advertising for explicit recovery"
         )
     if not re.search(
         r"security failure outside pairing window status=%d; retaining bond and waiting for explicit recovery[\s\S]*?"
@@ -2123,13 +2123,22 @@ def main() -> int:
         ble_gap,
     ):
         failures.append(
-            "ble_hid_gap_esp32.c: security-failed disconnect must stay dark with advertising suppressed until explicit recovery"
+            "ble_hid_gap_esp32.c: security-failed disconnect must preserve the explicit-hold LED state with advertising suppressed until recovery"
+        )
+    if not re.search(
+        r"static\s+status_led_ble_state_t\s+ble_hid_gap_explicit_recovery_led_state\(void\)[\s\S]*?"
+        r"s_last_disconnect_host_deliberate[\s\S]*?"
+        r"STATUS_LED_BLE_PAIRING[\s\S]*?STATUS_LED_BLE_DISCONNECTED",
+        ble_gap,
+    ):
+        failures.append(
+            "ble_hid_gap_esp32.c: manual deletion must use pairing attention while other explicit recovery holds remain dark"
         )
     if not re.search(
         r"host_deliberate_disconnect[\s\S]*?"
         r"ble_hid_gap_set_explicit_recovery_required_after_security_failure\(true\)[\s\S]*?"
-        r"STATUS_LED_BLE_RECONNECTING[\s\S]*?"
-        r"pairing-search LED remains visible while all advertising is suppressed until explicit EC11 recovery[\s\S]*?return;",
+        r"ble_hid_gap_explicit_recovery_led_state\(\)[\s\S]*?"
+        r"dark-phase pairing LED remains visible while all advertising is suppressed until explicit EC11 recovery[\s\S]*?return;",
         ble_gap,
     ):
         failures.append(
@@ -2192,8 +2201,8 @@ def main() -> int:
     if not re.search(
         r"case\s+ESP_HIDD_DISCONNECT_EVENT:[\s\S]*?"
         r"ble_hid_gap_is_waiting_for_explicit_recovery\(\)[\s\S]*?"
-        r"!ble_hid_gap_is_manual_unpair_search_active\(\)[\s\S]*?"
-        r"STATUS_LED_BLE_DISCONNECTED[\s\S]*?STATUS_LED_BLE_RECONNECTING",
+        r"ble_hid_gap_is_manual_unpair_search_active\(\)[\s\S]*?"
+        r"STATUS_LED_BLE_PAIRING[\s\S]*?STATUS_LED_BLE_DISCONNECTED[\s\S]*?STATUS_LED_BLE_RECONNECTING",
         ble_hid,
     ):
         failures.append(

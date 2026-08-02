@@ -249,21 +249,23 @@ Assert-NotContains $gap 'pairing encryption failure[\s\S]*?restarting pairing re
 Assert-Contains $pairingContract 'DENZIC_BLE_PAIRING_V1_SECURITY_FAILURE_WAIT_FOR_EXPLICIT_RECOVERY' `
     "shared pairing policy must expose the quiet out-of-window security-failure decision"
 Assert-Contains $gap 'security failure outside pairing window status=%d; retaining bond and waiting for explicit recovery[\s\S]*?ble_hid_gap_set_explicit_recovery_required_after_security_failure\(true\);[\s\S]*?ble_hid_gap_explicit_recovery_led_state\(\)[\s\S]*?ble_gap_terminate\(' `
-    "out-of-window encryption failure must retain the bond, go dark, and wait for explicit recovery"
+    "out-of-window encryption failure must retain the bond and wait without advertising for explicit recovery"
 Assert-Contains $gap 'security failure outside pairing window status=%d; retaining bond and waiting for explicit recovery[\s\S]*?s_last_disconnect_host_deliberate\s*=\s*true;[\s\S]*?ble_hid_gap_set_explicit_recovery_required_after_security_failure\(true\);[\s\S]*?ble_hid_gap_explicit_recovery_led_state\(\)' `
     "lost host bond via encryption failure must select the same pairing-search LED state as Windows manual delete"
 Assert-NotContains $gap 'security failure outside pairing window[\s\S]*?ble_hid_gap_forget_bonds_and_repair_inner\([\s\S]*?case BLE_GAP_EVENT_NOTIFY_TX:' `
     "manual Windows bond loss must not open a pairing reset from the encryption-failure callback"
 Assert-Contains $gap 'ble_hid_gap_handle_disconnect\([^)]*\)[\s\S]*?ble_hid_gap_explicit_recovery_required_after_security_failure\(\)[\s\S]*?ble_hid_gap_explicit_recovery_led_state\(\)[\s\S]*?advertising remains off until explicit EC11/Type recovery[\s\S]*?return;' `
-    "security-failed disconnect must stay dark and suppress automatic advertising"
-Assert-Contains $gap 'host_deliberate_disconnect[\s\S]*?ble_hid_gap_set_explicit_recovery_required_after_security_failure\(true\)[\s\S]*?STATUS_LED_BLE_RECONNECTING[\s\S]*?pairing-search LED remains visible while all advertising is suppressed until explicit EC11 recovery[\s\S]*?return;' `
+    "security-failed disconnect must preserve the explicit-hold LED state and suppress automatic advertising"
+Assert-Contains $gap 'static\s+status_led_ble_state_t\s+ble_hid_gap_explicit_recovery_led_state\(void\)[\s\S]*?s_last_disconnect_host_deliberate[\s\S]*?STATUS_LED_BLE_PAIRING[\s\S]*?STATUS_LED_BLE_DISCONNECTED' `
+    "manual deletion must use pairing attention while other explicit recovery holds remain dark"
+Assert-Contains $gap 'host_deliberate_disconnect[\s\S]*?ble_hid_gap_set_explicit_recovery_required_after_security_failure\(true\)[\s\S]*?ble_hid_gap_explicit_recovery_led_state\(\)[\s\S]*?dark-phase pairing LED remains visible while all advertising is suppressed until explicit EC11 recovery[\s\S]*?return;' `
     "host-deliberate unpair disconnect must show pairing-search LED while suppressing advertising"
 Assert-Contains $gap 'bool\s+ble_hid_gap_is_waiting_for_explicit_recovery\(void\)[\s\S]*?ble_hid_gap_explicit_recovery_required_after_security_failure\(\)' `
     "HID callbacks must be able to read the authoritative explicit-recovery hold"
 Assert-Contains $gap 'bool\s+ble_hid_gap_is_manual_unpair_search_active\(void\)[\s\S]*?ble_hid_gap_explicit_recovery_required_after_security_failure\(\)[\s\S]*?s_last_disconnect_host_deliberate' `
     "HID callbacks must be able to distinguish manual-delete search from other explicit holds"
-Assert-Contains $hid 'case\s+ESP_HIDD_DISCONNECT_EVENT:[\s\S]*?ble_hid_gap_is_waiting_for_explicit_recovery\(\)[\s\S]*?!ble_hid_gap_is_manual_unpair_search_active\(\)[\s\S]*?STATUS_LED_BLE_DISCONNECTED[\s\S]*?STATUS_LED_BLE_RECONNECTING' `
-    "the duplicate HID disconnect callback must retain search LED for manual delete and dark state for other holds"
+Assert-Contains $hid 'case\s+ESP_HIDD_DISCONNECT_EVENT:[\s\S]*?ble_hid_gap_is_waiting_for_explicit_recovery\(\)[\s\S]*?ble_hid_gap_is_manual_unpair_search_active\(\)[\s\S]*?STATUS_LED_BLE_PAIRING[\s\S]*?STATUS_LED_BLE_DISCONNECTED[\s\S]*?STATUS_LED_BLE_RECONNECTING' `
+    "the duplicate HID disconnect callback must retain pairing attention for manual delete, dark for other holds, and reconnecting otherwise"
 Assert-Contains $gap 'ble_hid_gap_forget_bonds_and_repair_ec11_fast_inner\(void\)[\s\S]*?const bool silent_explicit_recovery\s*=\s*true;[\s\S]*?ble_hid_gap_forget_bonds_and_repair_inner\(\s*false,\s*silent_explicit_recovery,\s*true\)[\s\S]*?ble_hid_gap_open_recovery_pairing_window\(\s*type_controlled_recovery,\s*silent_explicit_recovery\)' `
     "every explicit EC11 recovery must rotate identity while suppressing Swift Pair"
 Assert-Contains $gap 'ble_hid_gap_start_advertising\(void\)[\s\S]*?ble_hid_gap_explicit_recovery_required_after_security_failure\(\)[\s\S]*?!ble_hid_gap_recovery_pairing_window_open\(\)[\s\S]*?advertising suppressed while security-failed bond waits for explicit recovery[\s\S]*?return ESP_OK;' `
