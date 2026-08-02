@@ -87,6 +87,14 @@ def main() -> int:
         worker_start,
     )
     worker_body = ota_adapter[worker_start:worker_end]
+    control_start = ota_adapter.index(
+        "static int ble_firmware_ota_handle_control_write(struct os_mbuf *om)"
+    )
+    control_end = ota_adapter.index(
+        "static int ble_firmware_ota_handle_data_write(struct os_mbuf *om)",
+        control_start,
+    )
+    control_body = ota_adapter[control_start:control_end]
 
     require(
         all(
@@ -366,6 +374,16 @@ def main() -> int:
         and ota_adapter.count("ble_firmware_ota_drain_queued_data_locked();") >= 2
         and "xQueueReceive(s_ota_worker_queue, &job, 0)" in ota_adapter,
         "SYNC/status must retain the bounded 32-entry 1.0.3 tail-drain fast path",
+    )
+    require(
+        control_body.index("if (op == DENZIC_OTA_V1_OP_SYNC)")
+        < control_body.index("ble_firmware_ota_drain_queued_data_locked();")
+        < control_body.index("denzic_ota_v1_handle_control(&s_ota, control, length)"),
+        "SYNC must drain the fixed worker tail before validating the confirmed offset",
+    )
+    require(
+        "sync_predrain=1" in ota_adapter,
+        "boot diagnostics must identify firmware with the SYNC pre-drain fix",
     )
     require(
         "BLE_FIRMWARE_OTA_STORAGE_BATCH_CHUNKS 8" in ota_adapter

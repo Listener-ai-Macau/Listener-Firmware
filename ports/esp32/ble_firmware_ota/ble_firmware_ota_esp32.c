@@ -652,10 +652,13 @@ static int ble_firmware_ota_handle_control_write(struct os_mbuf *om)
         return BLE_ATT_ERR_INSUFFICIENT_RES;
     }
     ble_firmware_ota_lock();
-    accepted = denzic_ota_v1_handle_control(&s_ota, control, length);
-    if (accepted && op == DENZIC_OTA_V1_OP_SYNC) {
+    if (op == DENZIC_OTA_V1_OP_SYNC) {
+        /* DATA uses a worker queue. A fast link can deliver SYNC while the
+         * tail is still queued; drain it before core validation so the
+         * confirmed offset cannot falsely lag and force a host rewind. */
         ble_firmware_ota_drain_queued_data_locked();
     }
+    accepted = denzic_ota_v1_handle_control(&s_ota, control, length);
     ble_firmware_ota_update_active_link();
     if (!accepted) {
         result = ble_firmware_ota_att_error_from_core();
@@ -906,7 +909,7 @@ esp_err_t ble_firmware_ota_register_gatt(void)
     s_registered = true;
     ESP_LOGI(
         TAG,
-        "Denzic OTA v1 GATT driver registered (DATA+DATA_B, reorder_slots=%u)",
+        "Denzic OTA v1 GATT driver registered (DATA+DATA_B, reorder_slots=%u) sync_predrain=1",
         (unsigned)BLE_FIRMWARE_OTA_REORDER_SLOTS);
     return ESP_OK;
 }
