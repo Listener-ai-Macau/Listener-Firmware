@@ -3999,11 +3999,36 @@ static void ble_hid_gap_recovery_bond_delete_task(void *arg)
             pdTRUE,
             pdMS_TO_TICKS(BLE_HID_GAP_RECOVERY_BOND_DELETE_WAIT_MS));
     }
+    ble_hid_gap_connection_snapshot_t remaining_conn =
+        ble_hid_gap_reconcile_connection_snapshot("bond_delete_disconnect_wait");
+    if (remaining_conn.connected) {
+        int retry_rc = ble_gap_terminate(
+            remaining_conn.conn_handle,
+            BLE_ERR_REM_USER_CONN_TERM);
+        ESP_LOGI(
+            TAG,
+            "recovery: disconnect still pending after first bounded wait; retrying controller terminate conn=%u rc=%d",
+            remaining_conn.conn_handle,
+            retry_rc);
+        diag_log(
+            DIAG_SRC_BLE_GAP,
+            DIAG_GAP_RECOVERY,
+            DIAG_SEV_INFO,
+            15,
+            3,
+            (uint32_t)retry_rc,
+            remaining_conn.conn_handle);
+        (void)ulTaskNotifyTake(
+            pdTRUE,
+            pdMS_TO_TICKS(BLE_HID_GAP_RECOVERY_BOND_DELETE_WAIT_MS));
+        remaining_conn =
+            ble_hid_gap_reconcile_connection_snapshot("bond_delete_disconnect_retry");
+    }
     const uint32_t waited_ms = (uint32_t)pdTICKS_TO_MS(xTaskGetTickCount() - wait_started);
 
-    if (ble_hid_gap_connection_snapshot().connected) {
+    if (remaining_conn.connected) {
         ESP_LOGW(TAG,
-                 "recovery: async local bond delete timed out waiting for disconnect scheduled_bonds=%s waited_ms=%lu",
+                 "recovery: async local bond delete timed out after controller reconciliation and bounded retry scheduled_bonds=%s waited_ms=%lu",
                  scheduled_bond_count_known ? "known" : "deferred",
                  (unsigned long)waited_ms);
         diag_log(DIAG_SRC_BLE_GAP, DIAG_GAP_RECOVERY, DIAG_SEV_WARN,

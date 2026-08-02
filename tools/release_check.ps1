@@ -22,6 +22,7 @@ $checks = @(
     @{ Label = "status LED static contract"; File = "python"; Args = @((Join-Path $PSScriptRoot "verify_status_led_static.py")) },
     @{ Label = "shared audio leveling adapter"; File = "python"; Args = @((Join-Path $PSScriptRoot "verify_audio_leveling_platform_static.py")) },
     @{ Label = "BLE status LED sync contract"; File = "pwsh"; Args = @("-NoProfile", "-File", (Join-Path $PSScriptRoot "verify_ble_status_led_connected_sync.ps1")) },
+    @{ Label = "BLE rename recovery contract"; File = "python"; Args = @((Join-Path $PSScriptRoot "verify_ble_rename_recovery_static.py")) },
     @{ Label = "diagnostic log coverage"; File = "pwsh"; Args = @("-NoProfile", "-File", (Join-Path $PSScriptRoot "verify_diagnostic_log_coverage.ps1")) }
 )
 
