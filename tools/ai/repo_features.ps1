@@ -190,6 +190,8 @@ function Test-FeatureSnapshot {
     $errors += @(Test-RepoText "components/device_settings/include/device_settings.h" 'DEVICE_SETTINGS_DEFAULT_LOW_POWER_IDLE_MS\s+60000U' 'battery low-power idle default')
     $errors += @(Test-RepoText "components/device_settings/include/device_settings.h" 'DEVICE_SETTINGS_DEFAULT_PLUGGED_LOW_POWER_IDLE_MS\s+180000U' 'plugged low-power idle default')
     $errors += @(Test-RepoText "components/device_settings/include/device_settings.h" 'DEVICE_SETTINGS_DEFAULT_PLUGGED_LOW_POWER_ENABLED\s+1' 'plugged low-power default on')
+    $errors += @(Test-RepoText "components/device_settings/include/device_settings.h" 'DEVICE_SETTINGS_DEFAULT_VOICE_AUTO_START_ENABLED\s+1' 'voice auto-start default on')
+    $errors += @(Test-RepoText "components/device_settings/include/device_settings.h" 'DEVICE_SETTINGS_DEFAULT_VOICE_AUTO_STOP_ENABLED\s+1' 'voice auto-stop default on')
     $errors += @(Test-RepoText "sdkconfig.defaults.esp32s3" 'CONFIG_USJ_NO_AUTO_LS_ON_CONNECTION=y' 'USB Serial/JTAG stays awake while connected in release defaults')
     $errors += @(Test-RepoText "components/power_manager/power_manager.c" 'plugged_low_power_enabled' 'plugged low-power effective status')
     $errors += @(Test-RepoText "components/power_manager/power_manager.c" 'TEST:SHUTDOWN' 'serial manual shutdown test alias')
