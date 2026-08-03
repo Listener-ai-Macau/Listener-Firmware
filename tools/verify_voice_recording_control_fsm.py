@@ -230,6 +230,23 @@ def main() -> int:
     power_source = POWER_MANAGER.read_text(encoding="utf-8")
     cases = extract_transition_artifact(source)
 
+    for token in [
+        "#define VOICE_RECORDING_CONTROL_DICTATION_SILENCE_STOP_MS 2000",
+        "#define VOICE_RECORDING_CONTROL_DICTATION_TAIL_MS 0",
+        "#define VOICE_RECORDING_CONTROL_HOST_SPEECH_PROTECTION_MS 2000",
+        'strcmp(action, "SPEECH") == 0',
+        "voice_recording_control_note_host_speech();",
+        "voice_recording_control_host_speech_protection_active()",
+        "if (xQueueSend(s_vad_queue, &event, 0) != pdTRUE)",
+    ]:
+        require_contains(
+            source,
+            token,
+            f"target-speaker 2000ms auto-end contract is missing {token}",
+        )
+    if "VOICE_RECORDING_CONTROL_DICTATION_SILENCE_STOP_MS 1700" in source:
+        fail("2s endpoint must not be split into a 1700ms threshold plus a tail")
+
     missing = sorted(set(EXPECTED_CASES) - set(cases))
     if missing:
         fail(f"transition artifact missing cases: {', '.join(missing)}")
