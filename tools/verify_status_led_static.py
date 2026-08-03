@@ -1909,7 +1909,7 @@ def main() -> int:
             )
             or not re.search(
                 r"ble_hid_gap_forget_bonds_and_repair_inner\(\s*"
-                r"false,\s*silent_explicit_recovery,\s*true\)",
+                r"false,\s*suppress_native_swift_pair,\s*true\)",
                 ble_gap,
             )
         ):
@@ -1950,6 +1950,7 @@ def main() -> int:
             "stable Type-controlled" not in recovery_body
             or "rotated native Windows" not in recovery_body
             or "switch (denzic_ble_pairing_v1_identity_for_recovery(" not in recovery_body
+            or "type_controlled_recovery && !force_fresh_native_identity" not in recovery_body
             or "DENZIC_BLE_PAIRING_V1_IDENTITY_KEEP_STABLE" not in recovery_body
             or "DENZIC_BLE_PAIRING_V1_IDENTITY_DEFER_ROTATE_UNTIL_DISCONNECT" not in recovery_body
             or 'ble_hid_gap_defer_native_recovery_identity_rotation("recovery_pairing_reset_connected")' not in recovery_body
@@ -1959,6 +1960,14 @@ def main() -> int:
         ):
             failures.append(
                 "ble_hid_gap_esp32.c: connected recovery must terminate first, delete the local bond asynchronously, keep Type identity stable, and rotate native Windows identity before advertising"
+            )
+        if not re.search(
+            r"ble_hid_gap_forget_bonds_and_repair_type_controlled_silent_fresh_identity\(void\)\s*"
+            r"\{\s*return\s+ble_hid_gap_forget_bonds_and_repair_inner\(true,\s*true,\s*true\);",
+            ble_gap,
+        ):
+            failures.append(
+                "ble_hid_gap_esp32.c: Type rename recovery must suppress Swift Pair while forcing a fresh BLE identity"
             )
         active_swift_pair_index = recovery_body.find(
             "Swift Pair window already active; retaining session and BLE identity"
@@ -2190,13 +2199,14 @@ def main() -> int:
         )
     if not re.search(
         r"ble_hid_gap_forget_bonds_and_repair_ec11_fast_inner\(void\)[\s\S]*?"
-        r"const bool silent_explicit_recovery\s*=\s*true;[\s\S]*?"
-        r"ble_hid_gap_forget_bonds_and_repair_inner\(\s*false,\s*silent_explicit_recovery,\s*true\)[\s\S]*?"
-        r"ble_hid_gap_open_recovery_pairing_window\(\s*type_controlled_recovery,\s*silent_explicit_recovery\)",
+        r"const bool suppress_native_swift_pair\s*=\s*false;[\s\S]*?"
+        r"const bool type_controlled_recovery\s*=\s*false;[\s\S]*?"
+        r"ble_hid_gap_forget_bonds_and_repair_inner\(\s*false,\s*suppress_native_swift_pair,\s*true\)[\s\S]*?"
+        r"ble_hid_gap_open_recovery_pairing_window\(\s*type_controlled_recovery,\s*suppress_native_swift_pair\)",
         ble_gap,
     ):
         failures.append(
-            "ble_hid_gap_esp32.c: every explicit EC11 recovery must rotate identity without Swift Pair"
+            "ble_hid_gap_esp32.c: physical EC11 recovery must rotate identity and expose native Swift Pair without Type ownership"
         )
     if not re.search(
         r"case\s+ESP_HIDD_DISCONNECT_EVENT:[\s\S]*?"

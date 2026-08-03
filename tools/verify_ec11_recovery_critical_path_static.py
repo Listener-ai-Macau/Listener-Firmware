@@ -41,7 +41,8 @@ def require_fast_recovery_worker_boundary(path: Path, failures: list[str]) -> No
         )
     for fragment in (
         "BLE_HID_GAP_RECOVERY_BOND_COUNT_UNKNOWN",
-        "ble_hid_gap_open_recovery_pairing_window(type_controlled_recovery, false);",
+        "const bool type_controlled_recovery = false;",
+        "const bool suppress_native_swift_pair = false;",
         "known_type_peer ? &type_peer : NULL",
         "ble_hid_gap_schedule_recovery_bond_delete(",
         "ble_gap_terminate(conn.conn_handle, BLE_ERR_REM_USER_CONN_TERM)",
@@ -55,7 +56,7 @@ def require_fast_recovery_worker_boundary(path: Path, failures: list[str]) -> No
             f"{path.relative_to(REPO_ROOT)}: EC11 cleanup worker must be armed before GAP termination"
         )
     recovery_window_index = body.find(
-        "ble_hid_gap_open_recovery_pairing_window(type_controlled_recovery, false);"
+        "ble_hid_gap_open_recovery_pairing_window("
     )
     cleanup_worker_index = body.find("ble_hid_gap_schedule_recovery_bond_delete(")
     terminate_index = body.find(
@@ -160,6 +161,83 @@ def require_precleanup_advertising_boundary(path: Path, failures: list[str]) -> 
             )
 
 
+def require_recovery_worker_single_owner(path: Path, failures: list[str]) -> None:
+    source = path.read_text(encoding="utf-8")
+    start = source.find("static esp_err_t ble_hid_gap_forget_bonds_and_repair_inner(")
+    end = source.find("esp_err_t ble_hid_gap_forget_bonds_and_repair(", start)
+    if start < 0 or end < 0:
+        failures.append(f"{path.relative_to(REPO_ROOT)}: missing full recovery boundary")
+        return
+    body = source[start:end]
+    worker_return = "if (need_recovery_flash_worker) {\n        return ESP_OK;\n    }"
+    caller_adv = "if (ble_gap_adv_active()) {"
+    if worker_return not in body:
+        failures.append(
+            f"{path.relative_to(REPO_ROOT)}: scheduled identity worker must return before caller advertising"
+        )
+    elif body.find(worker_return) >= body.find(caller_adv, body.find(worker_return)):
+        failures.append(
+            f"{path.relative_to(REPO_ROOT)}: worker ownership return must precede caller advertising"
+        )
+
+    worker_start = source.find("static void ble_hid_gap_recovery_bond_delete_task(void *arg)\n{")
+    worker_end = source.find("static esp_err_t ble_hid_gap_schedule_recovery_bond_delete(", worker_start)
+    if worker_start < 0 or worker_end < 0:
+        failures.append(f"{path.relative_to(REPO_ROOT)}: missing recovery identity worker")
+        return
+    worker = source[worker_start:worker_end]
+    reset = worker.find("ble_hid_gap_reset_local_irk_without_bonds();")
+    rotate = worker.find("ble_hid_gap_rotate_native_recovery_identity(")
+    advertise = worker.find("esp_err_t adv_ret = ble_hid_gap_start_advertising();")
+    if not (0 <= reset < rotate < advertise):
+        failures.append(
+            f"{path.relative_to(REPO_ROOT)}: identity worker must reset IRK, rotate address, then advertise"
+        )
+
+
+def require_pre_reset_connection_quarantine(path: Path, failures: list[str]) -> None:
+    source = path.read_text(encoding="utf-8")
+    boundaries = (
+        (
+            "static esp_err_t ble_hid_gap_forget_bonds_and_repair_ec11_fast_inner(void)\n{",
+            "static esp_err_t ble_hid_gap_forget_bonds_and_repair_inner(",
+            "EC11 fast recovery",
+        ),
+        (
+            "static esp_err_t ble_hid_gap_forget_bonds_and_repair_inner(",
+            "esp_err_t ble_hid_gap_forget_bonds_and_repair(",
+            "full recovery",
+        ),
+    )
+    for start_marker, end_marker, label in boundaries:
+        start = source.find(start_marker)
+        end = source.find(end_marker, start + 1)
+        if start < 0 or end < 0:
+            failures.append(f"{path.relative_to(REPO_ROOT)}: missing {label} boundary")
+            continue
+        body = source[start:end]
+        quarantine = body.find("s_recovery_waiting_for_disconnect = true;")
+        window = body.find("ble_hid_gap_open_recovery_pairing_window(", quarantine)
+        worker = body.find("ble_hid_gap_schedule_recovery_bond_delete(", window)
+        if not (0 <= quarantine < window < worker):
+            failures.append(
+                f"{path.relative_to(REPO_ROOT)}: {label} must quarantine the old connection before exposing its window and scheduling cleanup"
+            )
+        schedule_failure = body.find("if (delete_ret != ESP_OK)", worker)
+        release = body.find(
+            "s_recovery_waiting_for_disconnect = false;",
+            schedule_failure,
+        )
+        error_log = body.find(
+            'ESP_LOGE(TAG, "recovery: async local bond delete scheduling failed:',
+            schedule_failure,
+        )
+        if not (0 <= schedule_failure < release < error_log):
+            failures.append(
+                f"{path.relative_to(REPO_ROOT)}: {label} must release old-link quarantine when cleanup scheduling fails"
+            )
+
+
 def main() -> int:
     failures: list[str] = []
     gap = REPO_ROOT / "ports/esp32/ble_hid_gap/ble_hid_gap_esp32.c"
@@ -182,18 +260,25 @@ def main() -> int:
         "ble_hid_gap_defer_native_recovery_identity_rotation(\n            \"recovery_pairing_reset_connected_fast\")",
         "int delete_rc = denzic_ble_pairing_v1_orch_bond_delete_use_unpair_api(\n                                type_controlled_recovery)\n                ? ble_gap_unpair(&bonded_peers[index])\n                : ble_store_util_delete_peer(&bonded_peers[index]);",
         "recovery: Type-controlled bond records cleared without rotating the local IRK",
+        "case DENZIC_BLE_PAIRING_V1_IDENTITY_DEFER_ROTATE_UNTIL_DISCONNECT:\n        if (force_fresh_native_identity) {\n            s_recovery_need_local_irk_reset = true;\n        }",
         "advertising_command_accepted_ms=%lld target_ms=250",
         "ble_hid_gap_begin_recovery_pairing_window(",
         "ble_gap_terminate(conn.conn_handle, BLE_ERR_REM_USER_CONN_TERM)",
         "The worker owns bond deletion and the single recovery advertising start.",
         "The planned terminate owns old-session teardown; disconnect resets audio atomically.",
         "ble_hid_gap_notify_recovery_bond_delete_disconnect();\n    ESP_LOGI(TAG, \"disconnect;",
+        "#define BLE_HID_GAP_SWIFT_PAIR_ADV_TX_POWER ESP_PWR_LVL_P20",
+        "#define BLE_HID_GAP_NORMAL_ADV_TX_POWER ESP_PWR_LVL_P9",
+        "ble_hid_gap_set_advertising_tx_power(\n        swift_pair_enabled,",
+        "advertising TX power applied profile=%s requested=%d applied=%d",
     ):
         require_fragment(gap, fragment, failures)
     require_fast_recovery_worker_boundary(gap, failures)
     require_retryable_security_error_classification(gap, failures)
     require_type_recovery_ack_boundary(audio, failures)
     require_precleanup_advertising_boundary(gap, failures)
+    require_recovery_worker_single_owner(gap, failures)
+    require_pre_reset_connection_quarantine(gap, failures)
     require_fragment(diag_events, "22=transaction_begin", failures)
     require_ordered(
         gap,

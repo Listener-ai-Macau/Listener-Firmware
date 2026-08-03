@@ -1182,10 +1182,31 @@ def main() -> int:
         failures.append(
             "ports/esp32/ble_hid_gap/ble_hid_gap_esp32.c: physical wake reconnect must leave key-wake-only mode and restart advertising"
         )
-    if not re.search(
-        r"ble_hid_gap_forget_bonds_and_repair[\s\S]{0,260}"
-        r"s_key_wake_only_advertising\s*=\s*false",
-        ble_gap,
+    fast_recovery_start = ble_gap.find(
+        "static esp_err_t ble_hid_gap_forget_bonds_and_repair_ec11_fast_inner(void)\n{"
+    )
+    full_recovery_start = ble_gap.find(
+        "static esp_err_t ble_hid_gap_forget_bonds_and_repair_inner(",
+        fast_recovery_start + 1,
+    )
+    public_recovery_start = ble_gap.find(
+        "esp_err_t ble_hid_gap_forget_bonds_and_repair(",
+        full_recovery_start + 1,
+    )
+    fast_recovery_body = (
+        ble_gap[fast_recovery_start:full_recovery_start]
+        if 0 <= fast_recovery_start < full_recovery_start
+        else ""
+    )
+    full_recovery_body = (
+        ble_gap[full_recovery_start:public_recovery_start]
+        if 0 <= full_recovery_start < public_recovery_start
+        else ""
+    )
+    key_wake_reset = "s_key_wake_only_advertising = false;"
+    if (
+        key_wake_reset not in fast_recovery_body
+        or key_wake_reset not in full_recovery_body
     ):
         failures.append(
             "ports/esp32/ble_hid_gap/ble_hid_gap_esp32.c: recovery pairing must be able to reopen advertising from key-wake-only idle"
@@ -1223,13 +1244,13 @@ def main() -> int:
         failures.append(
             "ports/esp32/ble_hid_gap/ble_hid_gap_esp32.c: recovery pairing window must hold pairing/reconnect blockers and arm expiry before returning to idle logic"
         )
-    if not re.search(
-        r"static\s+esp_err_t\s+ble_hid_gap_forget_bonds_and_repair_ec11_fast_inner\(void\)"
-        r"[\s\S]{0,1800}"
-        r"ble_hid_gap_open_recovery_pairing_window\([\s\S]{0,1800}"
-        r"ble_gap_terminate\(conn\.conn_handle,\s*BLE_ERR_REM_USER_CONN_TERM\)",
-        ble_gap,
-    ):
+    fast_window = fast_recovery_body.find(
+        "ble_hid_gap_open_recovery_pairing_window("
+    )
+    fast_terminate = fast_recovery_body.find(
+        "ble_gap_terminate(conn.conn_handle, BLE_ERR_REM_USER_CONN_TERM)"
+    )
+    if not (0 <= fast_window < fast_terminate):
         failures.append(
             "ports/esp32/ble_hid_gap/ble_hid_gap_esp32.c: fast EC11 recovery must fully open the pairing power guard before requesting disconnect"
         )
@@ -1253,7 +1274,7 @@ def main() -> int:
         )
     voice_recovery = (REPO_ROOT / "components/voice_recording_control/voice_recording_control.c").read_text(encoding="utf-8")
     if not re.search(
-        r"static\s+void\s+voice_recording_control_recovery[\s\S]*"
+        r"static\s+esp_err_t\s+voice_recording_control_recovery[\s\S]*"
         r"bool\s+pairing_window_open\s*=\s*ble_hid_gap_is_recovery_pairing_window_open\(\)[\s\S]*"
         r"recovery reset accepted; waiting for a fresh Windows/Type bond while BLE recovery pairing window is open[\s\S]*"
         r"else\s*\{[\s\S]*"

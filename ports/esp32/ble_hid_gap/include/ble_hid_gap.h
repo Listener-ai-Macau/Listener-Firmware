@@ -22,6 +22,7 @@ esp_err_t ble_hid_gap_forget_bonds_and_repair(void);
 esp_err_t ble_hid_gap_forget_bonds_and_repair_ec11_fast(void);
 esp_err_t ble_hid_gap_forget_bonds_and_repair_type_controlled(void);
 esp_err_t ble_hid_gap_forget_bonds_and_repair_type_controlled_silent(void);
+esp_err_t ble_hid_gap_forget_bonds_and_repair_type_controlled_silent_fresh_identity(void);
 void ble_hid_gap_note_ec11_recovery_accepted(uint64_t accepted_at_us, bool generated);
 bool ble_hid_gap_is_connected(void);
 bool ble_hid_gap_is_securely_connected(void);

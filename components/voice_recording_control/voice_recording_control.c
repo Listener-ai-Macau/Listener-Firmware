@@ -1610,11 +1610,12 @@ static void voice_recording_control_cancel(const char *source)
         false);
 }
 
-static void voice_recording_control_recovery(
+static esp_err_t voice_recording_control_recovery(
     const char *source,
     bool type_controlled,
     bool suppress_swift_pair_prompt,
-    bool manual_pairing_visual)
+    bool manual_pairing_visual,
+    bool force_fresh_identity)
 {
     /*
      * Windows manual deletion is only a user-pairing handoff cue. Do not
@@ -1646,7 +1647,7 @@ static void voice_recording_control_recovery(
             TAG,
             "manual Windows pairing cue armed source=%s; waiting for physical EC11 recovery reset",
             source != NULL ? source : "unknown");
-        return;
+        return ESP_OK;
     }
 
     voice_recording_control_snapshot_t snapshot = voice_recording_control_make_snapshot(source);
@@ -1716,10 +1717,11 @@ static void voice_recording_control_recovery(
     status_led_notify_ble_repairing("voice_recovery_requested");
     ESP_LOGW(
         TAG,
-        "recovery requested source=%s type_controlled=%u suppress_swift_pair=%u: preparing BLE pairing reset",
+        "recovery requested source=%s type_controlled=%u suppress_swift_pair=%u force_fresh_identity=%u: preparing BLE pairing reset",
         source,
         type_controlled ? 1u : 0u,
-        suppress_swift_pair_prompt ? 1u : 0u);
+        suppress_swift_pair_prompt ? 1u : 0u,
+        force_fresh_identity ? 1u : 0u);
     voice_recording_control_log_device_status("recovery", "forget_pairing_and_clear_session");
 
     if (!ec11_fast_idle_recovery &&
@@ -1753,7 +1755,9 @@ static void voice_recording_control_recovery(
     s_active_session_visible = false;
     esp_err_t ret = ec11_fast_idle_recovery
         ? fast_recovery_ret
-        : (suppress_swift_pair_prompt
+        : (force_fresh_identity
+            ? ble_hid_gap_forget_bonds_and_repair_type_controlled_silent_fresh_identity()
+            : suppress_swift_pair_prompt
             ? ble_hid_gap_forget_bonds_and_repair_type_controlled_silent()
             : (type_controlled
                 ? ble_hid_gap_forget_bonds_and_repair_type_controlled()
@@ -1765,7 +1769,7 @@ static void voice_recording_control_recovery(
         power_manager_set_blocker(
             POWER_MANAGER_BLOCKER_PAIRING | POWER_MANAGER_BLOCKER_RECONNECT,
             false);
-        return;
+        return ret;
     }
 
     s_state = VOICE_RECORDING_STATE_IDLE;
@@ -1788,6 +1792,7 @@ static void voice_recording_control_recovery(
     } else {
         voice_recording_control_log_device_status("ready", "recovery_complete_no_pairing_window");
     }
+    return ESP_OK;
 }
 
 static void voice_recording_control_handle_fast_idle_ec11_start(uint32_t press_to_control_ms)
@@ -1980,23 +1985,23 @@ static esp_err_t voice_recording_control_handle_control_command(
         return ESP_OK;
     }
     if (strcmp(action, "RECOVERY:TYPE:MANUAL") == 0) {
-        voice_recording_control_recovery(source, true, false, true);
-        return ESP_OK;
+        return voice_recording_control_recovery(source, true, false, true, false);
+    }
+    if (strcmp(action, "RECOVERY:TYPE:SILENT:FRESH") == 0 ||
+        strcmp(action, "RECOVERY_TYPE_SILENT_FRESH") == 0) {
+        return voice_recording_control_recovery(source, true, true, false, true);
     }
     if (strcmp(action, "RECOVERY:TYPE:SILENT") == 0 ||
         strcmp(action, "RECOVERY_TYPE_SILENT") == 0 ||
         strcmp(action, "RECOVERY:TYPE_NO_PROMPT") == 0 ||
         strcmp(action, "RECOVERY_TYPE_NO_PROMPT") == 0) {
-        voice_recording_control_recovery(source, true, true, false);
-        return ESP_OK;
+        return voice_recording_control_recovery(source, true, true, false, false);
     }
     if (strcmp(action, "RECOVERY:TYPE") == 0 || strcmp(action, "RECOVERY_TYPE") == 0) {
-        voice_recording_control_recovery(source, true, false, false);
-        return ESP_OK;
+        return voice_recording_control_recovery(source, true, false, false, false);
     }
     if (strcmp(action, "RECOVERY") == 0 || strcmp(action, "RESET") == 0 || strcmp(action, "FORGET") == 0) {
-        voice_recording_control_recovery(source, false, false, false);
-        return ESP_OK;
+        return voice_recording_control_recovery(source, false, false, false, false);
     }
 
     ESP_LOGW(TAG, "drop control command source=%s command=%s", source, command);
@@ -2513,9 +2518,16 @@ static void voice_recording_control_task(void *parameter)
              s_command_queue != NULL &&
              xQueueReceive(s_command_queue, &queued, 0) == pdTRUE;
              ++command_index) {
-            (void)voice_recording_control_handle_control_command(
+            esp_err_t command_ret = voice_recording_control_handle_control_command(
                 queued.command,
                 queued.source);
+            if (strcmp(queued.source, "usb") == 0 &&
+                strcmp(queued.command, "VREC:RECOVERY:TYPE:SILENT:FRESH") == 0) {
+                printf(
+                    "~VREC:RESULT command=%s result=%s\n",
+                    queued.command,
+                    command_ret == ESP_OK ? "OK" : esp_err_to_name(command_ret));
+            }
             watchdog_platform_feed_current_task();
         }
 
@@ -2557,7 +2569,12 @@ static void voice_recording_control_task(void *parameter)
             ble_hid_gap_note_ec11_recovery_accepted(
                 recovery_accepted_at_us,
                 recovery_generated);
-            voice_recording_control_recovery(source != NULL ? source : "voice_key_hold", false, false, false);
+            (void)voice_recording_control_recovery(
+                source != NULL ? source : "voice_key_hold",
+                false,
+                false,
+                false,
+                false);
         }
 
         if ((s_state == VOICE_RECORDING_STATE_RECORDING || s_state == VOICE_RECORDING_STATE_TRANSFERRING) &&

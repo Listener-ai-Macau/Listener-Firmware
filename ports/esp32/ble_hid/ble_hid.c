@@ -997,6 +997,7 @@ static bool ble_hid_usb_command_records_activity(const char *line)
         /* VREC:STOP/CLEANUP/PROCESSING* must NOT record activity: Type sends
          * STOP after ambient wake rejects and would reset the 5-minute
          * low-power idle clock (owner: 两次都只能进一次). */
+        ble_hid_usb_command_matches(line, "VREC:RECOVERY:TYPE:SILENT:FRESH") ||
         ble_hid_usb_command_matches(line, "VREC:RECOVERY:TYPE:MANUAL") ||
         ble_hid_usb_command_matches(line, "VREC:RECOVERY:TYPE") ||
         ble_hid_usb_command_matches(line, "VREC:RECOVERY_TYPE") ||

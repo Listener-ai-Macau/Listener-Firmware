@@ -188,16 +188,22 @@ Assert-Contains $gap 'denzic_ble_pairing_v1_refresh_existing_pairing_window\([\s
     "forget-bonds recovery must bypass stale windows when fresh native identity is requested and open the reset window"
 Assert-Contains $gap 'denzic_ble_pairing_v1_identity_for_recovery\([\s\S]*?DENZIC_BLE_PAIRING_V1_IDENTITY_KEEP_STABLE[\s\S]*?DENZIC_BLE_PAIRING_V1_IDENTITY_DEFER_ROTATE_UNTIL_DISCONNECT[\s\S]*?ble_hid_gap_defer_native_recovery_identity_rotation\("recovery_pairing_reset"\)' `
     "forget-bonds recovery must keep Type identity stable and defer native Windows identity rotation"
+Assert-Contains $gap 'type_controlled_recovery\s*&&\s*!force_fresh_native_identity[\s\S]*?denzic_ble_pairing_v1_identity_for_recovery\(\s*keep_stable_type_identity' `
+    "Type rename recovery must override stable Type identity while ordinary Type recovery remains stable"
+Assert-Contains $gap 'ble_hid_gap_forget_bonds_and_repair_type_controlled_silent_fresh_identity\(void\)\s*\{\s*return\s+ble_hid_gap_forget_bonds_and_repair_inner\(true,\s*true,\s*true\);' `
+    "Type rename recovery must suppress Swift Pair and force a fresh identity"
 Assert-Contains $gap 'ble_hid_gap_schedule_recovery_bond_delete\([\s\S]*?stable Type-controlled[\s\S]*?rotated native Windows[\s\S]*?ble_hid_gap_start_advertising\(\)' `
     "forget-bonds recovery must avoid synchronous full-store erase, open the pairing window, delete the local bond asynchronously, keep Type identity stable, and rotate native Windows identity"
 Assert-Contains $gap 'static\s+void\s+ble_hid_gap_recovery_bond_delete_task\([\s\S]*?ble_gap_adv_stop\(\)[\s\S]*?for\s*\(int index = 0; index < bonded_peer_count; \+\+index\)[\s\S]*?ble_gap_unpair\(&bonded_peers\[index\]\)' `
     "recovery bond deletion must use NimBLE unpair after advertising stops so the final deleted bond rotates the local IRK"
 Assert-Contains $gap 'static\s+esp_err_t\s+ble_hid_gap_reset_local_irk_without_bonds\(void\)[\s\S]*?ble_gap_adv_active\(\)[\s\S]*?ble_gap_adv_stop\(\)[\s\S]*?ble_store_delete_local_irk\(&key\)[\s\S]*?ble_hs_pvcy_set_default_irk\(\)[\s\S]*?ble_hs_pvcy_remove_entry\(BLE_ADDR_PUBLIC, zero_addr\)[\s\S]*?ble_hs_pvcy_set_our_irk\(NULL\)[\s\S]*?ble_gap_read_local_irk\(refreshed_irk\)' `
     "native recovery with no local bonds must refresh the stored and active local IRK before pairing"
-Assert-Contains $gap 'if\s*\(\s*bonded_peer_count\s*==\s*0\s*\)\s*\{\s*s_recovery_need_local_irk_reset\s*=\s*true;[\s\S]*?ble_hid_gap_defer_native_recovery_identity_rotation\("recovery_pairing_reset"\)[\s\S]*?need_recovery_flash_worker[\s\S]*?ble_hid_gap_schedule_recovery_bond_delete' `
-    "disconnected native recovery must defer zero-bond IRK reset and identity rotation to the internal-DRAM worker"
-Assert-Contains $gap 'static\s+void\s+ble_hid_gap_recovery_bond_delete_task\([^)]*\)[\s\S]*?need_local_irk_reset\s*=\s*s_recovery_need_local_irk_reset[\s\S]*?ble_hid_gap_reset_local_irk_without_bonds\(\)[\s\S]*?ble_hid_gap_rotate_native_recovery_identity\("async_bond_delete_complete"\)[\s\S]*?ble_hid_gap_start_advertising\(\)' `
-    "native recovery flash work must reset the local IRK and rotate identity on the internal-DRAM bond worker before advertising"
+Assert-Contains $gap 'if\s*\(\s*force_fresh_native_identity\s*\|\|\s*bonded_peer_count\s*==\s*0\s*\)\s*\{\s*s_recovery_need_local_irk_reset\s*=\s*true;[\s\S]*?ble_hid_gap_defer_native_recovery_identity_rotation\("recovery_pairing_reset"\)[\s\S]*?need_recovery_flash_worker[\s\S]*?ble_hid_gap_schedule_recovery_bond_delete' `
+    "fresh Type rename and disconnected zero-bond native recovery must defer complete IRK/address rotation to the internal-DRAM worker"
+Assert-Contains $gap 'static\s+void\s+ble_hid_gap_recovery_bond_delete_task\([^)]*\)[\s\S]*?need_local_irk_reset\s*=\s*s_recovery_need_local_irk_reset[\s\S]*?s_recovery_need_local_irk_reset\s*=\s*false[\s\S]*?ble_hid_gap_recovery_bond_delete_set_state\(false,\s*false,\s*NULL\)[\s\S]*?if\s*\(need_local_irk_reset\)\s*\{[\s\S]*?ble_hid_gap_reset_local_irk_without_bonds\(\)[\s\S]*?ble_hid_gap_rotate_native_recovery_identity\("async_bond_delete_complete"\)[\s\S]*?ble_hid_gap_start_advertising\(\)' `
+    "fresh recovery must snapshot its IRK-reset intent before worker state clear, then reset IRK and rotate address before advertising"
+Assert-Contains $gap '23,\s*0,\s*1,\s*s_ble_gap_conn_handle' `
+    "successful fresh-identity IRK reset must be preserved in firmware diagnostics"
 Assert-Contains $gap 'disconnect_recovery_pairing_window[\s\S]*?denzic_ble_pairing_v1_orch_irk_reset_after_disconnect\([\s\S]*?ble_hid_gap_reset_local_irk_without_bonds\(\)[\s\S]*?denzic_ble_pairing_v1_rotate_before_advertising\([^)]*\)[\s\S]*?ble_hid_gap_rotate_native_recovery_identity\("recovery_disconnect"\)' `
     "connected native recovery must reset a no-bond IRK after disconnect before advertising a new identity"
 Assert-Contains $noteTypeAudio 'bonded_peer_count\s*==\s*0[\s\S]*?!pairing_window_open[\s\S]*?type audio ready rejected on unbonded link outside explicit recovery[\s\S]*?ble_hid_gap_set_explicit_recovery_required_after_security_failure\(true\)[\s\S]*?ble_hid_gap_explicit_recovery_led_state\(\)[\s\S]*?ble_gap_terminate\([\s\S]*?return false;' `
@@ -266,8 +272,8 @@ Assert-Contains $gap 'bool\s+ble_hid_gap_is_manual_unpair_search_active\(void\)[
     "HID callbacks must be able to distinguish manual-delete search from other explicit holds"
 Assert-Contains $hid 'case\s+ESP_HIDD_DISCONNECT_EVENT:[\s\S]*?ble_hid_gap_is_waiting_for_explicit_recovery\(\)[\s\S]*?ble_hid_gap_is_manual_unpair_search_active\(\)[\s\S]*?STATUS_LED_BLE_PAIRING[\s\S]*?STATUS_LED_BLE_DISCONNECTED[\s\S]*?STATUS_LED_BLE_RECONNECTING' `
     "the duplicate HID disconnect callback must retain pairing attention for manual delete, dark for other holds, and reconnecting otherwise"
-Assert-Contains $gap 'ble_hid_gap_forget_bonds_and_repair_ec11_fast_inner\(void\)[\s\S]*?const bool silent_explicit_recovery\s*=\s*true;[\s\S]*?ble_hid_gap_forget_bonds_and_repair_inner\(\s*false,\s*silent_explicit_recovery,\s*true\)[\s\S]*?ble_hid_gap_open_recovery_pairing_window\(\s*type_controlled_recovery,\s*silent_explicit_recovery\)' `
-    "every explicit EC11 recovery must rotate identity while suppressing Swift Pair"
+Assert-Contains $gap 'ble_hid_gap_forget_bonds_and_repair_ec11_fast_inner\(void\)[\s\S]*?const bool suppress_native_swift_pair\s*=\s*false;[\s\S]*?const bool type_controlled_recovery\s*=\s*false;[\s\S]*?ble_hid_gap_forget_bonds_and_repair_inner\(\s*false,\s*suppress_native_swift_pair,\s*true\)[\s\S]*?ble_hid_gap_open_recovery_pairing_window\(\s*type_controlled_recovery,\s*suppress_native_swift_pair\)' `
+    "physical EC11 recovery must rotate identity and expose native Swift Pair without Type ownership"
 Assert-Contains $gap 'ble_hid_gap_start_advertising\(void\)[\s\S]*?ble_hid_gap_explicit_recovery_required_after_security_failure\(\)[\s\S]*?!ble_hid_gap_recovery_pairing_window_open\(\)[\s\S]*?advertising suppressed while security-failed bond waits for explicit recovery[\s\S]*?return ESP_OK;' `
     "all background advertising callers must respect the explicit-recovery hold"
 Assert-Contains $gap 'case BLE_GAP_EVENT_ENC_CHANGE:[\s\S]*?ble_hid_gap_recovery_bond_delete_active\(\)[\s\S]*?ble_gap_terminate\(event->enc_change\.conn_handle,\s*BLE_ERR_REM_USER_CONN_TERM\)' `
@@ -350,8 +356,8 @@ Assert-Contains $audio 'static\s+int\s+ble_audio_stream_handle_control_write\(ui
     "audio control write handler must record conn_handle before consuming TYPE heartbeat"
 Assert-Contains $audio 'void\s+ble_audio_stream_note_type_activity\([^)]*\)[\s\S]*?!ble_audio_stream_type_activity_accepts_link\(reason\)[\s\S]*?return;[\s\S]*?ble_audio_stream_note_type_host_seen\(reason\);[\s\S]*?ble_audio_stream_set_type_heartbeat_active\(\s*true[\s\S]*?ble_audio_stream_sync_power_manager_for_type_link\(\s*true[\s\S]*?ble_audio_stream_sync_status_led_for_type_link' `
     "Type activity helper must wait for secure GAP acceptance before refreshing host recency, heartbeat, and power-manager state"
-Assert-Contains $gap 'ble_hid_gap_forget_bonds_and_repair_ec11_fast_inner\([^)]*\)[\s\S]*?denzic_ble_pairing_v1_type_controlled_recovery\(\s*false,[\s\S]*?conn\.secure_connected\)' `
-    "EC11 fast recovery must not treat an insecure post-delete GATT connection as Type-controlled ownership"
+Assert-Contains $gap 'ble_hid_gap_forget_bonds_and_repair_ec11_fast_inner\([^)]*\)[\s\S]*?const bool type_controlled_recovery\s*=\s*false;' `
+    "physical EC11 recovery must always yield ownership to native Windows pairing"
 Assert-Contains $audio 'void\s+ble_audio_stream_poll_type_link\(void\)[\s\S]*?ble_audio_stream_set_type_heartbeat_active\(false,\s*"timeout"\);[\s\S]*?ble_audio_stream_sync_power_manager_for_type_link\(false,\s*"type_heartbeat_timeout"\);[\s\S]*?ble_audio_stream_sync_status_led_for_type_link\("type_heartbeat_timeout"\)[\s\S]*?type_heartbeat_led_grace_timeout' `
     "firmware must poll strict Type heartbeat timeout first, then demote the BLE status LED only after the LED grace expires"
 Assert-Contains $audio 's_transport_state\s*=\s*next_state;[\s\S]*?ble_audio_stream_transport_link_ready\(\)[\s\S]*?ble_audio_stream_sync_status_led_for_type_link\(reason\)' `

@@ -144,6 +144,8 @@ static void ble_hid_gap_log_conn_desc(const char *context, uint16_t conn_handle)
 #define BLE_HID_GAP_OTA_RECONNECT_DEFER_MS 750U
 #define BLE_HID_GAP_OTA_RECONNECT_RADIO_QUIET_MS 1200U
 #define BLE_HID_GAP_OTA_RECONNECT_TASK_STACK_BYTES 3072U
+#define BLE_HID_GAP_NORMAL_ADV_TX_POWER ESP_PWR_LVL_P9
+#define BLE_HID_GAP_SWIFT_PAIR_ADV_TX_POWER ESP_PWR_LVL_P20
 
 static struct ble_hs_adv_fields s_adv_fields;
 static struct ble_hs_adv_fields s_scan_rsp_fields;
@@ -673,6 +675,48 @@ esp_err_t ble_hid_gap_set_ota_tx_power(bool enabled)
         ESP_BLE_ENHANCED_PWR_TYPE_CONN,
         conn.conn_handle,
         enabled ? ESP_PWR_LVL_N0 : ESP_PWR_LVL_P9);
+}
+
+static esp_err_t ble_hid_gap_set_advertising_tx_power(bool swift_pair, const char *reason)
+{
+    const esp_power_level_t requested = swift_pair
+        ? BLE_HID_GAP_SWIFT_PAIR_ADV_TX_POWER
+        : BLE_HID_GAP_NORMAL_ADV_TX_POWER;
+    esp_err_t ret = esp_ble_tx_power_set_enhanced(
+        ESP_BLE_ENHANCED_PWR_TYPE_ADV,
+        0,
+        requested);
+    esp_power_level_t applied = esp_ble_tx_power_get_enhanced(
+        ESP_BLE_ENHANCED_PWR_TYPE_ADV,
+        0);
+    for (uint32_t attempt = 0;
+         ret == ESP_OK && applied != requested && attempt < 4U;
+         ++attempt) {
+        vTaskDelay(pdMS_TO_TICKS(5));
+        applied = esp_ble_tx_power_get_enhanced(
+            ESP_BLE_ENHANCED_PWR_TYPE_ADV,
+            0);
+    }
+    if (ret != ESP_OK || applied != requested) {
+        ESP_LOGE(
+            TAG,
+            "advertising TX power apply failed profile=%s requested=%d applied=%d ret=%s reason=%s",
+            swift_pair ? "swift_pair" : "normal",
+            (int)requested,
+            (int)applied,
+            esp_err_to_name(ret),
+            reason != NULL ? reason : "unknown");
+        return ret == ESP_OK ? ESP_FAIL : ret;
+    }
+
+    ESP_LOGI(
+        TAG,
+        "advertising TX power applied profile=%s requested=%d applied=%d reason=%s",
+        swift_pair ? "swift_pair" : "normal",
+        (int)requested,
+        (int)applied,
+        reason != NULL ? reason : "unknown");
+    return ESP_OK;
 }
 
 static bool ble_hid_gap_ota_tx_power_requested(void)
@@ -1210,9 +1254,9 @@ static esp_err_t ble_hid_gap_reset_local_irk_without_bonds(void)
         return ESP_FAIL;
     }
 
-    ESP_LOGW(TAG, "recovery: local IRK reset before native re-pair without local bonds");
+    ESP_LOGW(TAG, "recovery: local IRK reset before fresh-identity re-pair without local bonds");
     diag_log(DIAG_SRC_BLE_GAP, DIAG_GAP_RECOVERY, DIAG_SEV_INFO,
-             17, 0, 0, s_ble_gap_conn_handle);
+             23, 0, 1, s_ble_gap_conn_handle);
     return ESP_OK;
 #else
     ESP_LOGE(TAG, "recovery: native no-bond IRK reset requires NimBLE SMP identity reset support");
@@ -3748,6 +3792,19 @@ esp_err_t esp_hid_ble_gap_adv_start(void)
         DENZIC_BLE_PAIRING_V1_ADV_PROFILE_NORMAL) {
         (void)ble_hid_gap_configure_normal_adv_fields();
     }
+    esp_err_t tx_power_ret = ble_hid_gap_set_advertising_tx_power(
+        swift_pair_enabled,
+        "advertising_start");
+    if (tx_power_ret != ESP_OK) {
+        diag_log(
+            DIAG_SRC_BLE_GAP,
+            DIAG_GAP_ADV_START,
+            DIAG_SEV_WARN,
+            0,
+            (uint32_t)tx_power_ret,
+            swift_pair_enabled ? 19U : 20U,
+            0);
+    }
     if (!pairing_window) {
         ESP_LOGI(
             TAG,
@@ -4213,6 +4270,14 @@ static void ble_hid_gap_recovery_bond_delete_task(void *arg)
     const bool delete_ok = denzic_ble_pairing_v1_orch_bond_delete_cleanup_succeeded(
         fallback_to_peer_enumeration, lookup_rc, first_delete_rc);
 
+    /* Preserve the transaction input before set_state() clears worker state.
+     * Losing it leaves a fresh random address attached to the old local IRK. */
+    bool need_local_irk_reset = false;
+    portENTER_CRITICAL(&s_ble_gap_state_lock);
+    need_local_irk_reset = s_recovery_need_local_irk_reset;
+    s_recovery_need_local_irk_reset = false;
+    portEXIT_CRITICAL(&s_ble_gap_state_lock);
+
     ble_hid_gap_recovery_bond_delete_set_state(false, false, NULL);
 
     if (!delete_ok) {
@@ -4239,7 +4304,7 @@ static void ble_hid_gap_recovery_bond_delete_task(void *arg)
         return;
     }
 
-    if (type_controlled_recovery) {
+    if (type_controlled_recovery && !need_local_irk_reset) {
         ESP_LOGI(
             TAG,
             "recovery: Type-controlled bond records cleared without rotating the local IRK");
@@ -4256,12 +4321,7 @@ static void ble_hid_gap_recovery_bond_delete_task(void *arg)
      * stay on this internal-DRAM worker: callers such as voice_recording_control
      * run on PSRAM stacks and panic on cache-disabled flash ops.
      */
-    bool need_local_irk_reset = false;
-    portENTER_CRITICAL(&s_ble_gap_state_lock);
-    need_local_irk_reset = s_recovery_need_local_irk_reset;
-    s_recovery_need_local_irk_reset = false;
-    portEXIT_CRITICAL(&s_ble_gap_state_lock);
-    if (need_local_irk_reset && !type_controlled_recovery) {
+    if (need_local_irk_reset) {
         esp_err_t irk_ret = ble_hid_gap_reset_local_irk_without_bonds();
         if (irk_ret != ESP_OK) {
             ESP_LOGE(
@@ -4431,37 +4491,31 @@ esp_err_t ble_hid_gap_mark_stack_ready(void)
 
 static esp_err_t ble_hid_gap_forget_bonds_and_repair_ec11_fast_inner(void)
 {
-    /* EC11 is the explicit local handoff to Type (or the Windows Settings UI).
-     * Keep it name-bearing/connectable, but never race Type's PairAsync with a
-     * Microsoft Swift Pair prompt. First-boot advertising still retains the
-     * native Swift Pair onboarding window. */
-    const bool silent_explicit_recovery = true;
+    /* A physical EC11 double click is the user's native Windows pairing action.
+     * Always rotate identity and publish the bounded Swift Pair payload. Type
+     * observes this handoff but must not race it with its own PairAsync. */
+    const bool suppress_native_swift_pair = false;
     ble_hid_gap_set_explicit_recovery_required_after_security_failure(false);
     s_shutdown_quiesce = false;
     s_low_power_advertising = false;
     s_key_wake_only_advertising = false;
 
-    const bool type_link_ready_before_recovery = ble_audio_stream_is_type_link_ready();
-    const bool type_host_recent_before_recovery =
-        ble_audio_stream_was_type_host_recently_seen();
     ble_hid_gap_connection_snapshot_t conn =
         ble_hid_gap_reconcile_connection_snapshot("ec11_fast_recovery_pairing_reset");
-    /* A disconnected recent Type host is stale after manual Windows delete. */
-    const bool type_controlled_recovery =
-        denzic_ble_pairing_v1_type_controlled_recovery(
-            false,
-            type_link_ready_before_recovery,
-            type_host_recent_before_recovery,
-            conn.secure_connected);
+    const bool type_controlled_recovery = false;
     ble_hid_gap_platform_device_control_begin_recovery(type_controlled_recovery);
 
     if (!conn.connected || conn.conn_handle == BLE_HS_CONN_HANDLE_NONE) {
         /* A physical EC11 handoff must not reuse an already-open stale window. */
         return ble_hid_gap_forget_bonds_and_repair_inner(
             false,
-            silent_explicit_recovery,
+            suppress_native_swift_pair,
             true);
     }
+
+    /* Quarantine the old connection before the recovery window is visible.
+     * A queued TYPE:READY from this link must not close the new transaction. */
+    s_recovery_waiting_for_disconnect = true;
 
     /*
      * The Type notice is delivered before this entry point.  Keep the EC11
@@ -4476,7 +4530,7 @@ static esp_err_t ble_hid_gap_forget_bonds_and_repair_ec11_fast_inner(void)
      */
     ble_hid_gap_open_recovery_pairing_window(
         type_controlled_recovery,
-        silent_explicit_recovery);
+        suppress_native_swift_pair);
     s_directed_adv_pending = false;
     s_last_adv_was_directed = false;
     if (denzic_ble_pairing_v1_identity_for_recovery(type_controlled_recovery, true) ==
@@ -4509,13 +4563,13 @@ static esp_err_t ble_hid_gap_forget_bonds_and_repair_ec11_fast_inner(void)
         true,
         known_type_peer ? &type_peer : NULL);
     if (delete_ret != ESP_OK) {
+        s_recovery_waiting_for_disconnect = false;
         ESP_LOGE(TAG, "recovery: async local bond delete scheduling failed: %s", esp_err_to_name(delete_ret));
         diag_log(DIAG_SRC_BLE_GAP, DIAG_GAP_RECOVERY, DIAG_SEV_ERROR,
                  15, (uint32_t)delete_ret, 0, s_ble_gap_conn_handle);
         return delete_ret;
     }
 
-    s_recovery_waiting_for_disconnect = true;
     ble_hid_gap_log_ec11_recovery_timing("terminate_requested", false);
     int rc = ble_gap_terminate(conn.conn_handle, BLE_ERR_REM_USER_CONN_TERM);
     if (rc == 0 || rc == BLE_HS_EALREADY) {
@@ -4633,6 +4687,14 @@ static esp_err_t ble_hid_gap_forget_bonds_and_repair_inner(
             conn.secure_connected);
     ble_hid_gap_platform_device_control_begin_recovery(type_controlled_recovery);
 
+    const bool recovery_requires_disconnect =
+        conn.connected && conn.conn_handle != BLE_HS_CONN_HANDLE_NONE;
+    if (recovery_requires_disconnect) {
+        /* Publish the old-link quarantine before opening the window. Otherwise
+         * a delayed TYPE:READY can close it before the worker rotates identity. */
+        s_recovery_waiting_for_disconnect = true;
+    }
+
     ESP_LOGW(
         TAG,
         "recovery: opening pairing reset window bonded_peers=%d bond_delete=async_after_disconnect type_controlled=%u force_fresh_identity=%u suppress_swift_pair=%u type_link_ready_before_recovery=%u type_host_recent=%u conn_connected=%u type_request=%u",
@@ -4655,14 +4717,19 @@ static esp_err_t ble_hid_gap_forget_bonds_and_repair_inner(
     s_directed_adv_pending = false;
     s_last_adv_was_directed = false;
 
+    const bool keep_stable_type_identity =
+        type_controlled_recovery && !force_fresh_native_identity;
     switch (denzic_ble_pairing_v1_identity_for_recovery(
-        type_controlled_recovery,
+        keep_stable_type_identity,
         conn.connected && conn.conn_handle != BLE_HS_CONN_HANDLE_NONE)) {
     case DENZIC_BLE_PAIRING_V1_IDENTITY_KEEP_STABLE:
         s_native_recovery_identity_rotate_pending = false;
         s_recovery_need_local_irk_reset = false;
         break;
     case DENZIC_BLE_PAIRING_V1_IDENTITY_DEFER_ROTATE_UNTIL_DISCONNECT:
+        if (force_fresh_native_identity) {
+            s_recovery_need_local_irk_reset = true;
+        }
         ble_hid_gap_defer_native_recovery_identity_rotation("recovery_pairing_reset_connected");
         break;
     default:
@@ -4674,7 +4741,7 @@ static esp_err_t ble_hid_gap_forget_bonds_and_repair_inner(
          * Hop all flash work to the internal-DRAM bond-delete worker, even
          * when bonded_peer_count is already 0.
          */
-        if (bonded_peer_count == 0) {
+        if (force_fresh_native_identity || bonded_peer_count == 0) {
             s_recovery_need_local_irk_reset = true;
         }
         ble_hid_gap_defer_native_recovery_identity_rotation("recovery_pairing_reset");
@@ -4693,6 +4760,7 @@ static esp_err_t ble_hid_gap_forget_bonds_and_repair_inner(
             false,
             NULL);
         if (delete_ret != ESP_OK) {
+            s_recovery_waiting_for_disconnect = false;
             ESP_LOGE(TAG, "recovery: async local bond delete scheduling failed: %s", esp_err_to_name(delete_ret));
             diag_log(DIAG_SRC_BLE_GAP, DIAG_GAP_RECOVERY, DIAG_SEV_ERROR,
                      15, (uint32_t)delete_ret, (uint32_t)bonded_peer_count, s_ble_gap_conn_handle);
@@ -4700,8 +4768,7 @@ static esp_err_t ble_hid_gap_forget_bonds_and_repair_inner(
         }
     }
 
-    if (conn.connected && conn.conn_handle != BLE_HS_CONN_HANDLE_NONE) {
-        s_recovery_waiting_for_disconnect = true;
+    if (recovery_requires_disconnect) {
         ble_hid_gap_log_ec11_recovery_timing("terminate_requested", false);
         rc = ble_gap_terminate(conn.conn_handle, BLE_ERR_REM_USER_CONN_TERM);
         if (rc == 0 || rc == BLE_HS_EALREADY) {
@@ -4709,7 +4776,9 @@ static esp_err_t ble_hid_gap_forget_bonds_and_repair_inner(
                 TAG,
                 "recovery: active BLE connection %s for re-pair; %s identity will advertise after disconnect and async local bond delete",
                 rc == 0 ? "terminating" : "termination already in progress",
-                type_controlled_recovery ? "stable Type-controlled" : "rotated native Windows");
+                keep_stable_type_identity
+                    ? "stable Type-controlled"
+                    : "rotated native Windows/Type rename");
             diag_log(DIAG_SRC_BLE_GAP, DIAG_GAP_RECOVERY, DIAG_SEV_WARN,
                      2, (uint32_t)rc, (uint32_t)bonded_peer_count, conn.conn_handle);
             return ESP_OK;
@@ -4725,6 +4794,13 @@ static esp_err_t ble_hid_gap_forget_bonds_and_repair_inner(
         ble_hid_gap_set_connection_state(false, BLE_HS_CONN_HANDLE_NONE);
         ble_hid_gap_notify_recovery_bond_delete_disconnect();
         power_manager_set_ble_connected(false);
+    }
+
+    /* The internal-DRAM worker owns the complete post-disconnect identity
+     * transaction. Starting advertising here as well can expose an address
+     * while the worker is still resetting privacy state or rotating identity. */
+    if (need_recovery_flash_worker) {
+        return ESP_OK;
     }
 
     if (ble_gap_adv_active()) {
@@ -4785,6 +4861,11 @@ esp_err_t ble_hid_gap_forget_bonds_and_repair_type_controlled(void)
 esp_err_t ble_hid_gap_forget_bonds_and_repair_type_controlled_silent(void)
 {
     return ble_hid_gap_forget_bonds_and_repair_inner(true, true, false);
+}
+
+esp_err_t ble_hid_gap_forget_bonds_and_repair_type_controlled_silent_fresh_identity(void)
+{
+    return ble_hid_gap_forget_bonds_and_repair_inner(true, true, true);
 }
 
 bool ble_hid_gap_is_connected(void)

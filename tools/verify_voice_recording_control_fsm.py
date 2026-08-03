@@ -155,9 +155,9 @@ def require_contains(source: str, token: str, message: str) -> None:
         fail(message)
 
 
-def extract_void_function(source: str, name: str) -> str:
-    marker = f"static void {name}("
-    start = source.find(marker)
+def extract_static_function(source: str, name: str) -> str:
+    match = re.search(rf"static\s+\w+\s+{re.escape(name)}\(", source)
+    start = match.start() if match else -1
     if start < 0:
         fail(f"missing {name}()")
     brace = source.find("{", start)
@@ -176,18 +176,22 @@ def extract_void_function(source: str, name: str) -> str:
     return ""
 
 
+def extract_void_function(source: str, name: str) -> str:
+    return extract_static_function(source, name)
+
+
 def verify_manual_pairing_handoff(source: str) -> None:
-    recovery_body = extract_void_function(source, "voice_recording_control_recovery")
+    recovery_body = extract_static_function(source, "voice_recording_control_recovery")
     manual_start = recovery_body.find("if (manual_pairing_visual)")
     if manual_start < 0:
         fail("manual pairing recovery branch is missing")
-    return_start = recovery_body.find("return;", manual_start)
+    return_start = recovery_body.find("return ESP_OK;", manual_start)
     if return_start < 0:
         fail("manual pairing recovery branch has no early return")
     snapshot_start = recovery_body.find("voice_recording_control_make_snapshot", manual_start)
     if snapshot_start >= 0 and snapshot_start < return_start:
         fail("manual pairing cue must return before the normal recovery snapshot")
-    manual_branch = recovery_body[manual_start : return_start + len("return;")]
+    manual_branch = recovery_body[manual_start : return_start + len("return ESP_OK;")]
     for token in [
         '"manual_windows_unpair_wait"',
         "waiting for physical EC11 recovery reset",
@@ -203,9 +207,20 @@ def verify_manual_pairing_handoff(source: str) -> None:
         fail("manual pairing cue must not reset bonds before physical EC11 recovery")
     require_contains(
         source,
-        'voice_recording_control_recovery(source, true, false, true);',
+        'return voice_recording_control_recovery(source, true, false, true, false);',
         "manual RECOVERY:TYPE:MANUAL command is not routed to the handoff cue",
     )
+    for token in [
+        "static esp_err_t voice_recording_control_recovery(",
+        'strcmp(queued.command, "VREC:RECOVERY:TYPE:SILENT:FRESH") == 0',
+        '"~VREC:RESULT command=%s result=%s\\n"',
+        'command_ret == ESP_OK ? "OK" : esp_err_to_name(command_ret)',
+    ]:
+        require_contains(
+            source,
+            token,
+            f"fresh-identity recovery execution acknowledgement is missing {token}",
+        )
 
 
 def main() -> int:
