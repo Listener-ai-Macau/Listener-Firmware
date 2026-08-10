@@ -242,9 +242,10 @@ Assert-Contains -RelativePath $transportModel -Pattern "RICE_V2_PARAMETER_K_SPAN
 foreach ($sdkPath in @($sdkDefaults, $sdkDefaultsEsp32s3)) {
     Assert-Contains -RelativePath $sdkPath -Pattern "CONFIG_BT_NIMBLE_MSYS_1_BLOCK_COUNT=64" -Description "audio-sized NimBLE MSYS1 block count"
     Assert-Contains -RelativePath $sdkPath -Pattern "CONFIG_BT_NIMBLE_MSYS_2_BLOCK_COUNT=96" -Description "audio-sized NimBLE MSYS2 block count"
-    Assert-Contains -RelativePath $sdkPath -Pattern "CONFIG_BT_NIMBLE_TRANSPORT_ACL_FROM_LL_COUNT=24" -Description "default NimBLE ACL buffer count for sustained audio"
     Assert-Contains -RelativePath $sdkPath -Pattern "CONFIG_BT_CTRL_CE_LENGTH_TYPE_CE=y" -Description "controller honors active-audio connection-event budget"
 }
+Assert-Contains -RelativePath $sdkDefaults -Pattern "CONFIG_BT_NIMBLE_TRANSPORT_ACL_FROM_LL_COUNT=128" -Description "generic OTA pipeline ACL buffering in external RAM"
+Assert-Contains -RelativePath $sdkDefaultsEsp32s3 -Pattern "CONFIG_BT_NIMBLE_TRANSPORT_ACL_FROM_LL_COUNT=24" -Description "ESP32-S3 sustained-audio ACL buffer override"
 
 Assert-Contains -RelativePath $voiceControl -Pattern "voice_recording_control_source_is_user_start_intent" -Description "user start intent source classifier"
 Assert-Contains -RelativePath $voiceControl -Pattern "voice_recording_control_source_is_host_control" -Description "host cleanup/control source classifier"

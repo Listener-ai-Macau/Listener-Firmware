@@ -173,7 +173,6 @@ typedef enum {
     BLE_AUDIO_STREAM_JOB_TYPE_SESSION_START = 0,
     BLE_AUDIO_STREAM_JOB_TYPE_SESSION_AUDIO_DATA,
     BLE_AUDIO_STREAM_JOB_TYPE_SESSION_STOP,
-    BLE_AUDIO_STREAM_JOB_TYPE_SESSION_FINALIZE_STOP,
     BLE_AUDIO_STREAM_JOB_TYPE_SESSION_CANCEL,
     BLE_AUDIO_STREAM_JOB_TYPE_SESSION_ERROR,
 } ble_audio_stream_job_type_t;
@@ -306,6 +305,7 @@ static QueueHandle_t s_export_queue;
 static TaskHandle_t s_export_task_handle;
 static SemaphoreHandle_t s_type_recovery_ack_sem;
 static SemaphoreHandle_t s_audio_pool_mutex;
+static SemaphoreHandle_t s_replay_window_mutex;
 static uint32_t s_connection_epoch;
 static denzic_audio_transport_v1_pacing_t s_audio_pacing;
 static bool s_type_recovery_ack_pending;
@@ -1028,14 +1028,54 @@ uint16_t ble_audio_stream_count_audio_packets(const uint8_t *pcm_buffer, uint16_
     return packet_count;
 }
 
+/* The replay window is written by the export task (store/remove/drain), the
+ * audio capture task (session-start clear), and the NimBLE host task (link
+ * suspended on GAP disconnect/notify-off). The platform replay helpers carry
+ * no internal locking, so every access serializes on this mutex; critical
+ * sections stay short and never span notify or queue waits. */
+static bool ble_audio_stream_replay_window_lock(void)
+{
+    if (s_replay_window_mutex == NULL) {
+        return false;
+    }
+    return xSemaphoreTake(s_replay_window_mutex, portMAX_DELAY) == pdTRUE;
+}
+
+static void ble_audio_stream_replay_window_unlock(void)
+{
+    if (s_replay_window_mutex != NULL) {
+        xSemaphoreGive(s_replay_window_mutex);
+    }
+}
+
 static void ble_audio_stream_replay_clear_session(uint32_t session_id)
 {
-    denzic_audio_transport_v1_replay_clear_session(s_replay_window, session_id);
+    if (ble_audio_stream_replay_window_lock()) {
+        denzic_audio_transport_v1_replay_clear_session(s_replay_window, session_id);
+        ble_audio_stream_replay_window_unlock();
+    }
 }
 
 static uint32_t ble_audio_stream_replay_count_retained(uint32_t session_id)
 {
-    return denzic_audio_transport_v1_replay_count_retained(s_replay_window, session_id);
+    uint32_t retained = 0;
+    if (ble_audio_stream_replay_window_lock()) {
+        retained = denzic_audio_transport_v1_replay_count_retained(s_replay_window, session_id);
+        ble_audio_stream_replay_window_unlock();
+    }
+    return retained;
+}
+
+static bool ble_audio_stream_replay_pending_for_session(uint32_t session_id)
+{
+    bool pending = false;
+    if (ble_audio_stream_replay_window_lock()) {
+        pending = !s_replay_window->in_progress &&
+            s_replay_window->pending &&
+            s_replay_window->pending_session_id == session_id;
+        ble_audio_stream_replay_window_unlock();
+    }
+    return pending;
 }
 
 static void ble_audio_stream_stats_begin(uint32_t session_id)
@@ -1670,7 +1710,9 @@ static void ble_audio_stream_replay_store_packet(
     uint8_t flags)
 {
     denzic_audio_transport_v1_replay_store_result_t store_result =
-        denzic_audio_transport_v1_replay_store(
+        DENZIC_AUDIO_TRANSPORT_V1_REPLAY_STORE_IGNORED;
+    if (ble_audio_stream_replay_window_lock()) {
+        store_result = denzic_audio_transport_v1_replay_store(
             s_replay_window,
             session_id,
             sequence,
@@ -1678,6 +1720,8 @@ static void ble_audio_stream_replay_store_packet(
             payload_len,
             packet_pcm_bytes,
             flags);
+        ble_audio_stream_replay_window_unlock();
+    }
     if (store_result == DENZIC_AUDIO_TRANSPORT_V1_REPLAY_STORE_IGNORED) {
         return;
     }
@@ -1692,7 +1736,12 @@ static void ble_audio_stream_replay_store_packet(
 
 static void ble_audio_stream_replay_remove_packet(uint32_t session_id, uint16_t sequence)
 {
-    if (denzic_audio_transport_v1_replay_remove(s_replay_window, session_id, sequence)) {
+    bool removed = false;
+    if (ble_audio_stream_replay_window_lock()) {
+        removed = denzic_audio_transport_v1_replay_remove(s_replay_window, session_id, sequence);
+        ble_audio_stream_replay_window_unlock();
+    }
+    if (removed) {
         ble_audio_stream_stats_replay_removed(session_id);
     }
 }
@@ -1704,7 +1753,12 @@ static void ble_audio_stream_replay_mark_link_suspended(const char *reason)
     }
 
     uint32_t session_id = s_transport_session_id;
-    if (!denzic_audio_transport_v1_replay_mark_suspended(s_replay_window, session_id)) {
+    bool armed = false;
+    if (ble_audio_stream_replay_window_lock()) {
+        armed = denzic_audio_transport_v1_replay_mark_suspended(s_replay_window, session_id);
+        ble_audio_stream_replay_window_unlock();
+    }
+    if (!armed) {
         return;
     }
 
@@ -1726,8 +1780,12 @@ static esp_err_t ble_audio_stream_replay_pending_packets(
     bool skip_current_sequence,
     uint16_t current_sequence)
 {
+    if (!ble_audio_stream_replay_window_lock()) {
+        return ESP_ERR_INVALID_STATE;
+    }
     if (s_replay_window->in_progress || !s_replay_window->pending ||
         s_replay_window->pending_session_id != session_id) {
+        ble_audio_stream_replay_window_unlock();
         return ESP_OK;
     }
 
@@ -1745,6 +1803,7 @@ static esp_err_t ble_audio_stream_replay_pending_packets(
 
     if (count == 0) {
         denzic_audio_transport_v1_replay_dismiss_pending(s_replay_window);
+        ble_audio_stream_replay_window_unlock();
         if (skipped_current) {
             ble_audio_stream_stats_replay_skip_current(session_id);
             ESP_LOGW(
@@ -1778,7 +1837,10 @@ static esp_err_t ble_audio_stream_replay_pending_packets(
                  session_id, 3U, current_sequence, 0);
     }
 
+    /* Arm the drain inside the lock so a concurrent link-suspended mark sees
+     * a consistent window; the notify loop below runs unlocked. */
     denzic_audio_transport_v1_replay_begin_drain(s_replay_window);
+    ble_audio_stream_replay_window_unlock();
     for (uint32_t i = 0; i < count; ++i) {
         uint16_t sequence = packets[i]->sequence;
         esp_err_t ret = ble_audio_stream_send_packet(
@@ -1795,12 +1857,18 @@ static esp_err_t ble_audio_stream_replay_pending_packets(
             ble_audio_stream_stats_replay_resend_failed(session_id);
             diag_log(DIAG_SRC_BLE_AUDIO, DIAG_BAUD_REPLAY, DIAG_SEV_WARN,
                      session_id, 5U, sequence, (uint32_t)ret);
-            denzic_audio_transport_v1_replay_abort_drain(s_replay_window);
+            if (ble_audio_stream_replay_window_lock()) {
+                denzic_audio_transport_v1_replay_abort_drain(s_replay_window);
+                ble_audio_stream_replay_window_unlock();
+            }
             return ret;
         }
         ble_audio_stream_stats_replay_resent(session_id);
     }
-    denzic_audio_transport_v1_replay_complete_drain(s_replay_window);
+    if (ble_audio_stream_replay_window_lock()) {
+        denzic_audio_transport_v1_replay_complete_drain(s_replay_window);
+        ble_audio_stream_replay_window_unlock();
+    }
     return ESP_OK;
 }
 
@@ -2141,10 +2209,8 @@ static esp_err_t ble_audio_stream_send_packet(
     }
 
     bool skip_replay_current_packet = false;
-    if (!s_replay_window->in_progress &&
-        packet_type == LISTENER_AUDIO_PACKET_TYPE_AUDIO_DATA &&
-        s_replay_window->pending &&
-        s_replay_window->pending_session_id == session_id) {
+    if (packet_type == LISTENER_AUDIO_PACKET_TYPE_AUDIO_DATA &&
+        ble_audio_stream_replay_pending_for_session(session_id)) {
         ble_audio_stream_replay_store_packet(
             session_id,
             sequence_or_count,
@@ -2155,9 +2221,10 @@ static esp_err_t ble_audio_stream_send_packet(
         skip_replay_current_packet = true;
     }
 
-    if (!s_replay_window->in_progress &&
-        (packet_type == LISTENER_AUDIO_PACKET_TYPE_AUDIO_DATA ||
-         packet_type == LISTENER_AUDIO_PACKET_TYPE_SESSION_STOP)) {
+    /* replay_pending_packets re-checks in_progress/pending under the lock, so
+     * this gate only skips the call for packet types that never drain. */
+    if (packet_type == LISTENER_AUDIO_PACKET_TYPE_AUDIO_DATA ||
+        packet_type == LISTENER_AUDIO_PACKET_TYPE_SESSION_STOP) {
         esp_err_t replay_ret = ble_audio_stream_replay_pending_packets(
             session_id,
             skip_replay_current_packet,
@@ -2531,7 +2598,6 @@ static void ble_audio_stream_purge_queued_session_jobs(uint32_t session_id, bool
             ((job.type == BLE_AUDIO_STREAM_JOB_TYPE_SESSION_START && !keep_session_start) ||
              job.type == BLE_AUDIO_STREAM_JOB_TYPE_SESSION_AUDIO_DATA ||
              job.type == BLE_AUDIO_STREAM_JOB_TYPE_SESSION_STOP ||
-             job.type == BLE_AUDIO_STREAM_JOB_TYPE_SESSION_FINALIZE_STOP ||
              job.type == BLE_AUDIO_STREAM_JOB_TYPE_SESSION_CANCEL ||
              job.type == BLE_AUDIO_STREAM_JOB_TYPE_SESSION_ERROR);
         if (drop_job) {
@@ -2858,20 +2924,22 @@ static void ble_audio_stream_task(void *parameter)
             }
             case BLE_AUDIO_STREAM_JOB_TYPE_SESSION_STOP:
             {
+                /* Finalize rides the same job as STOP: one xQueueSend is atomic,
+                 * so a full queue can never strand a sent STOP without the
+                 * transport state cleanup that must follow it. */
                 esp_err_t stop_ret = ble_audio_stream_send_session_stop_internal(
                     job.session_id,
                     job.expected_packet_count,
                     job.stop_origin);
                 if (stop_ret != ESP_OK) {
                     ble_audio_stream_abort_active_session("session_stop_failed");
+                } else {
+                    ble_audio_stream_finalize_session_stop_internal(
+                        job.session_id,
+                        job.expected_packet_count);
                 }
                 break;
             }
-            case BLE_AUDIO_STREAM_JOB_TYPE_SESSION_FINALIZE_STOP:
-                ble_audio_stream_finalize_session_stop_internal(
-                    job.session_id,
-                    job.expected_packet_count);
-                break;
             case BLE_AUDIO_STREAM_JOB_TYPE_SESSION_CANCEL:
                 ble_audio_stream_send_session_cancel_internal(job.session_id, job.expected_packet_count);
                 break;
@@ -2960,6 +3028,13 @@ esp_err_t ble_audio_stream_init(void)
         }
     }
     denzic_audio_transport_v1_replay_window_init(s_replay_window);
+
+    if (s_replay_window_mutex == NULL) {
+        s_replay_window_mutex = xSemaphoreCreateMutex();
+        if (s_replay_window_mutex == NULL) {
+            return ESP_ERR_NO_MEM;
+        }
+    }
 
     s_export_queue = xQueueCreate(BLE_AUDIO_STREAM_NOTIFY_QUEUE_LENGTH, sizeof(ble_audio_stream_job_t));
     if (s_export_queue == NULL) {
@@ -3923,11 +3998,6 @@ esp_err_t ble_audio_stream_send_session_stop_with_origin(
         .expected_packet_count = expected_packet_count,
         .stop_origin = stop_origin,
     };
-    ble_audio_stream_job_t finalize_job = {
-        .type = BLE_AUDIO_STREAM_JOB_TYPE_SESSION_FINALIZE_STOP,
-        .session_id = session_id,
-        .expected_packet_count = expected_packet_count,
-    };
 
     ble_audio_stream_transport_state_t previous_state = s_transport_state;
     ble_audio_stream_note_transport_progress(session_id, expected_packet_count);
@@ -3940,12 +4010,6 @@ esp_err_t ble_audio_stream_send_session_stop_with_origin(
         ble_audio_stream_set_transport_state(
             previous_state,
             "session_stop_enqueue_failed");
-        return ESP_ERR_TIMEOUT;
-    }
-    if (xQueueSend(s_export_queue, &finalize_job, pdMS_TO_TICKS(1000)) != pdTRUE) {
-        ble_audio_stream_set_transport_state(
-            previous_state,
-            "session_stop_finalize_enqueue_failed");
         return ESP_ERR_TIMEOUT;
     }
     return ESP_OK;
