@@ -35,6 +35,7 @@ const char *listener_device_get_build_id(void);
 const char *listener_device_get_serial(void);
 const char *listener_device_get_ble_name(void);
 const char *listener_device_get_protocol_version(void);
+const char *listener_device_get_software_revision(void);
 const char *listener_device_get_factory_readiness(void);
 const char *listener_device_get_capabilities(void);
 void listener_device_set_safe_mode(bool enabled);

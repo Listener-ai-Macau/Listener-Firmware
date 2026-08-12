@@ -304,7 +304,12 @@ static uint16_t s_packet_value_max_bytes = BLE_AUDIO_STREAM_PACKET_DEFAULT_BYTES
 static QueueHandle_t s_export_queue;
 static TaskHandle_t s_export_task_handle;
 static SemaphoreHandle_t s_type_recovery_ack_sem;
-static SemaphoreHandle_t s_audio_pool_mutex;
+/* Pool bookkeeping is a fixed 264-bit scan/update and must never turn a
+ * scheduler hiccup into a wire-level QueueFull. The former 10 ms mutex timeout
+ * could fail while capacity was healthy (observed after 381 packets with the
+ * consumer still above 32 kB/s). A short cross-core critical section makes
+ * acquire/release atomic without any fallible wait or queue-depth masking. */
+static portMUX_TYPE s_audio_pool_lock = portMUX_INITIALIZER_UNLOCKED;
 static SemaphoreHandle_t s_replay_window_mutex;
 static uint32_t s_connection_epoch;
 static denzic_audio_transport_v1_pacing_t s_audio_pacing;
@@ -2413,13 +2418,6 @@ static esp_err_t ble_audio_stream_audio_pool_init(void)
         return ESP_OK;
     }
 
-    if (s_audio_pool_mutex == NULL) {
-        s_audio_pool_mutex = xSemaphoreCreateMutex();
-        if (s_audio_pool_mutex == NULL) {
-            return ESP_ERR_NO_MEM;
-        }
-    }
-
     size_t total_bytes =
         (size_t)BLE_AUDIO_STREAM_AUDIO_POOL_LENGTH *
         (size_t)BLE_AUDIO_STREAM_AUDIO_POOL_BUFFER_BYTES;
@@ -2461,10 +2459,6 @@ static void ble_audio_stream_audio_pool_deinit(void)
     memset(s_audio_pool_used, 0, sizeof(s_audio_pool_used));
     s_audio_pool_in_use = 0;
     s_audio_pool_global_high_water = 0;
-    if (s_audio_pool_mutex != NULL) {
-        vSemaphoreDelete(s_audio_pool_mutex);
-        s_audio_pool_mutex = NULL;
-    }
 }
 
 static uint8_t *ble_audio_stream_audio_pool_buffer(size_t index)
@@ -2487,16 +2481,13 @@ static esp_err_t ble_audio_stream_audio_pool_acquire(
         ble_audio_stream_stats_drop(session_id, "packet_too_large", ESP_ERR_INVALID_SIZE);
         return ESP_ERR_INVALID_SIZE;
     }
-    if (s_audio_pool_storage == NULL || s_audio_pool_mutex == NULL) {
+    if (s_audio_pool_storage == NULL) {
         ble_audio_stream_stats_drop(session_id, "pool_unavailable", ESP_ERR_NO_MEM);
         return ESP_ERR_NO_MEM;
     }
-    if (xSemaphoreTake(s_audio_pool_mutex, pdMS_TO_TICKS(10)) != pdTRUE) {
-        ble_audio_stream_stats_drop(session_id, "pool_lock_timeout", ESP_ERR_TIMEOUT);
-        return ESP_ERR_TIMEOUT;
-    }
 
     esp_err_t ret = ESP_ERR_TIMEOUT;
+    portENTER_CRITICAL(&s_audio_pool_lock);
     for (size_t i = 0; i < BLE_AUDIO_STREAM_AUDIO_POOL_LENGTH; ++i) {
         if (s_audio_pool_used[i]) {
             continue;
@@ -2511,6 +2502,9 @@ static esp_err_t ble_audio_stream_audio_pool_acquire(
         ret = ESP_OK;
         break;
     }
+    uint32_t pool_in_use = s_audio_pool_in_use;
+    uint32_t global_high_water = s_audio_pool_global_high_water;
+    portEXIT_CRITICAL(&s_audio_pool_lock);
 
     if (ret != ESP_OK) {
         ble_audio_stream_stats_drop(session_id, "pool_exhausted", ESP_ERR_TIMEOUT);
@@ -2518,20 +2512,19 @@ static esp_err_t ble_audio_stream_audio_pool_acquire(
             TAG,
             "audio buffer pool exhausted: session=%" PRIu32 " in_use=%" PRIu32 "/%u global_high_water=%" PRIu32,
             session_id,
-            s_audio_pool_in_use,
+            pool_in_use,
             (unsigned)BLE_AUDIO_STREAM_AUDIO_POOL_LENGTH,
-            s_audio_pool_global_high_water);
+            global_high_water);
         diag_log(DIAG_SRC_BLE_AUDIO, DIAG_BAUD_POOL_EXHAUST, DIAG_SEV_WARN,
-                 session_id, s_audio_pool_in_use, BLE_AUDIO_STREAM_AUDIO_POOL_LENGTH, s_audio_pool_global_high_water);
+                 session_id, pool_in_use, BLE_AUDIO_STREAM_AUDIO_POOL_LENGTH, global_high_water);
     }
 
-    xSemaphoreGive(s_audio_pool_mutex);
     return ret;
 }
 
 static bool ble_audio_stream_audio_pool_release(uint8_t *buffer)
 {
-    if (buffer == NULL || s_audio_pool_storage == NULL || s_audio_pool_mutex == NULL) {
+    if (buffer == NULL || s_audio_pool_storage == NULL) {
         return false;
     }
 
@@ -2554,18 +2547,18 @@ static bool ble_audio_stream_audio_pool_release(uint8_t *buffer)
         return false;
     }
 
-    if (xSemaphoreTake(s_audio_pool_mutex, portMAX_DELAY) != pdTRUE) {
-        return false;
-    }
+    portENTER_CRITICAL(&s_audio_pool_lock);
     if (s_audio_pool_used[index]) {
         s_audio_pool_used[index] = false;
         if (s_audio_pool_in_use > 0) {
             s_audio_pool_in_use--;
         }
     } else {
+        portEXIT_CRITICAL(&s_audio_pool_lock);
         ESP_LOGW(TAG, "audio buffer pool double release ignored: index=%u", (unsigned)index);
+        return true;
     }
-    xSemaphoreGive(s_audio_pool_mutex);
+    portEXIT_CRITICAL(&s_audio_pool_lock);
     return true;
 }
 
@@ -3796,15 +3789,10 @@ void ble_audio_stream_get_backpressure(ble_audio_stream_backpressure_t *snapshot
         snapshot->queue_depth = (uint32_t)uxQueueMessagesWaiting(s_export_queue);
     }
 
-    if (s_audio_pool_mutex != NULL &&
-        xSemaphoreTake(s_audio_pool_mutex, pdMS_TO_TICKS(2)) == pdTRUE) {
-        snapshot->audio_pool_in_use = s_audio_pool_in_use;
-        snapshot->audio_pool_high_water = s_audio_pool_global_high_water;
-        xSemaphoreGive(s_audio_pool_mutex);
-    } else {
-        snapshot->audio_pool_in_use = s_audio_pool_in_use;
-        snapshot->audio_pool_high_water = s_audio_pool_global_high_water;
-    }
+    portENTER_CRITICAL(&s_audio_pool_lock);
+    snapshot->audio_pool_in_use = s_audio_pool_in_use;
+    snapshot->audio_pool_high_water = s_audio_pool_global_high_water;
+    portEXIT_CRITICAL(&s_audio_pool_lock);
 
     snapshot->pressure_percent = ble_audio_stream_pressure_percent(
         snapshot->queue_depth,

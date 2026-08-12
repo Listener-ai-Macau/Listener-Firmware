@@ -13,7 +13,8 @@ static const char *TAG = "listener_device";
 
 static char s_serial_str[18];
 static char s_build_id_str[32];
-static char s_readiness_str[256];
+static char s_software_revision_str[48];
+static char s_readiness_str[320];
 static char s_capabilities_str[224];
 static bool s_serial_initialized = false;
 static bool s_safe_mode;
@@ -94,8 +95,18 @@ const char *listener_device_get_build_id(void)
 {
     if (s_build_id_str[0] == '\0') {
         const esp_app_desc_t *app_desc = esp_app_get_description();
-        snprintf(s_build_id_str, sizeof(s_build_id_str), "%s %s",
-                 app_desc->date, app_desc->time);
+        /*
+         * app_elf_sha256 is stable for the exact linked image, unlike the old
+         * compile date/time string. Expose a compact prefix so Type can prove
+         * which binary is running after notify becomes ready.
+         */
+        for (size_t index = 0; index < 8; ++index) {
+            snprintf(
+                s_build_id_str + (index * 2),
+                sizeof(s_build_id_str) - (index * 2),
+                "%02x",
+                app_desc->app_elf_sha256[index]);
+        }
     }
     return s_build_id_str;
 }
@@ -128,6 +139,19 @@ const char *listener_device_get_protocol_version(void)
     return LISTENER_PROTOCOL_VERSION_STR;
 }
 
+const char *listener_device_get_software_revision(void)
+{
+    if (s_software_revision_str[0] == '\0') {
+        snprintf(
+            s_software_revision_str,
+            sizeof(s_software_revision_str),
+            "protocol=%s;build_id=%s",
+            listener_device_get_protocol_version(),
+            listener_device_get_build_id());
+    }
+    return s_software_revision_str;
+}
+
 const char *listener_device_get_factory_readiness(void)
 {
     s_readiness_str[0] = '\0';
@@ -149,6 +173,12 @@ const char *listener_device_get_factory_readiness(void)
         s_readiness_str,
         sizeof(s_readiness_str),
         fw_token);
+    char build_token[40];
+    snprintf(build_token, sizeof(build_token), "build_id=%s", listener_device_get_build_id());
+    listener_device_append_token(
+        s_readiness_str,
+        sizeof(s_readiness_str),
+        build_token);
     listener_device_append_subsystem_tokens(
         s_readiness_str,
         sizeof(s_readiness_str),

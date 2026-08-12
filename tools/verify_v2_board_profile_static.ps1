@@ -72,6 +72,8 @@ $boardKconfig = Read-RepoFile "ports\esp32\board_pins\Kconfig.projbuild"
 $sdkconfig = Read-RepoFile "sdkconfig.defaults.esp32s3"
 $partitions = Read-RepoFile "partitions.csv"
 $listenerDevice = Read-RepoFile "protocols\listener_device\include\listener_device.h"
+$listenerDeviceSource = Read-RepoFile "protocols\listener_device\listener_device.c"
+$bleHid = Read-RepoFile "ports\esp32\ble_hid\ble_hid.c"
 $keyboard = Read-RepoFile "components\keyboard\keyboard.c"
 $voiceKeyInput = Read-RepoFile "ports\esp32\voice_key_input\voice_key_input_esp32.c"
 $board = Read-RepoFile "components\board\board.c"
@@ -128,6 +130,8 @@ foreach ($item in @(
     @($boardPins, "BOARD_PINS_TPS63020_I_ADC_IO\s+\(GPIO_NUM_NC\)", "TPS63020 current ADC not populated"),
     @($boardPins, "BOARD_PINS_SY7088_I_ADC_IO\s+\(GPIO_NUM_NC\)", "SY7088 current ADC not populated"),
     @($listenerDevice, 'LISTENER_DEVICE_HW_REV\s+"esp32s3-wroom-1-n16r8"', "BLE/DIS hardware revision"),
+    @($listenerDeviceSource, 'protocol=%s;build_id=%s', "DIS software revision exact-image build identity"),
+    @($bleHid, 'ble_svc_dis_software_revision_set\(listener_device_get_software_revision\(\)\)', "DIS software revision publishes runtime build identity"),
     @($listenerDevice, "board=voice-keyboard-v2-n16r8", "factory readiness board metadata"),
     @($listenerDevice, "flash_16mb;psram_8mb_octal", "V2 memory capabilities"),
     @($keyboard, "key1\.gpio38\.f13", "KEY1 V2 diagnostic label"),

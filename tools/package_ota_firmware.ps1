@@ -53,7 +53,7 @@ function Get-SourceVersion {
     }
     $version = (& git -C $project_root describe --tags --always --dirty 2>$null)
     if ($version) { return $version }
-    return "1.0.4"
+    return "1.0.5"
 }
 
 if (-not $project_version) {

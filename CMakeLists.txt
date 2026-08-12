@@ -17,7 +17,7 @@ else()
         RESULT_VARIABLE GIT_DESCRIBE_RESULT
     )
     if(NOT GIT_DESCRIBE_RESULT EQUAL 0)
-        set(PROJECT_VER "1.0.4")
+        set(PROJECT_VER "1.0.5")
     endif()
 endif()
 

@@ -1423,15 +1423,15 @@ static void ble_hid_configure_dis_identity(void)
     ble_hid_log_dis_result("serial", ble_svc_dis_serial_number_set(listener_device_get_serial()));
     ble_hid_log_dis_result("hardware_revision", ble_svc_dis_hardware_revision_set(LISTENER_DEVICE_HW_REV));
     ble_hid_log_dis_result("firmware_revision", ble_svc_dis_firmware_revision_set(listener_device_get_fw_version()));
-    ble_hid_log_dis_result("software_revision", ble_svc_dis_software_revision_set(listener_device_get_protocol_version()));
+    ble_hid_log_dis_result("software_revision", ble_svc_dis_software_revision_set(listener_device_get_software_revision()));
 
     ESP_LOGI(TAG,
-             "DIS identity: manufacturer=%s model=%s hw=%s fw=%s proto=%s serial=%s vid=0x%04x pid=0x%04x product_version=%u",
+             "DIS identity: manufacturer=%s model=%s hw=%s fw=%s software=%s serial=%s vid=0x%04x pid=0x%04x product_version=%u",
              LISTENER_DEVICE_MANUFACTURER,
              LISTENER_DEVICE_MODEL,
              LISTENER_DEVICE_HW_REV,
              listener_device_get_fw_version(),
-             listener_device_get_protocol_version(),
+             listener_device_get_software_revision(),
              listener_device_get_serial(),
              LISTENER_VENDOR_ID,
              LISTENER_PRODUCT_ID,
