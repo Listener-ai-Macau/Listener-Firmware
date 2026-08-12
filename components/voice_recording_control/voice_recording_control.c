@@ -30,6 +30,8 @@
 #define VOICE_RECORDING_CONTROL_SESSION_CHECK_MS 50
 #define VOICE_RECORDING_CONTROL_PENDING_START_TIMEOUT_MS 12000
 #define VOICE_RECORDING_CONTROL_PENDING_START_RETRY_MS 250
+#define VOICE_RECORDING_CONTROL_ENROLLMENT_START_TIMEOUT_MS 6000
+#define VOICE_RECORDING_CONTROL_ENROLLMENT_START_RETRY_MS 100
 #define VOICE_RECORDING_CONTROL_HOST_CLEANUP_TOGGLE_GUARD_MS 1500
 #define VOICE_RECORDING_CONTROL_DICTATION_SILENCE_STOP_MS 2000
 #define VOICE_RECORDING_CONTROL_DICTATION_TAIL_MS 0
@@ -177,6 +179,8 @@ static bool s_active_session_enrollment;
  * Queue the owner session across that exact boundary instead of silently
  * accepting the GATT write and misclassifying the next automatic candidate. */
 static bool s_enrollment_start_pending;
+static TickType_t s_enrollment_start_deadline_tick;
+static TickType_t s_enrollment_start_next_retry_tick;
 static TickType_t s_host_speech_protect_until_tick;
 static TickType_t s_host_cleanup_toggle_guard_until_tick;
 static uint32_t s_session_count;
@@ -1583,6 +1587,9 @@ static void voice_recording_control_toggle(const char *source)
 
 static void voice_recording_control_cancel(const char *source)
 {
+    s_enrollment_start_pending = false;
+    s_enrollment_start_deadline_tick = 0;
+    s_enrollment_start_next_retry_tick = 0;
     voice_recording_control_snapshot_t snapshot = voice_recording_control_make_snapshot(source);
     voice_recording_control_decision_t decision =
         voice_recording_control_decide_transition(VOICE_RECORDING_EVENT_CANCEL, &snapshot);
@@ -1820,6 +1827,9 @@ static esp_err_t voice_recording_control_recovery(
     s_active_session_automatic = false;
     s_active_session_visible = false;
     s_active_session_enrollment = false;
+    s_enrollment_start_pending = false;
+    s_enrollment_start_deadline_tick = 0;
+    s_enrollment_start_next_retry_tick = 0;
     esp_err_t ret = ec11_fast_idle_recovery
         ? fast_recovery_ret
         : (force_fresh_identity
@@ -2001,6 +2011,10 @@ static esp_err_t voice_recording_control_activate_automatic_session(
 
 static esp_err_t voice_recording_control_start_enrollment(const char *source)
 {
+    const bool pending_retry =
+        s_enrollment_start_pending &&
+        strcmp(source, "owner_enrollment.pending") == 0;
+    const TickType_t pending_deadline = s_enrollment_start_deadline_tick;
     if (s_pending_start && s_state == VOICE_RECORDING_STATE_IDLE) {
         voice_recording_control_cancel_pending_start(
             "owner_enrollment_supersedes_pending_start");
@@ -2012,6 +2026,10 @@ static esp_err_t voice_recording_control_start_enrollment(const char *source)
         (s_state == VOICE_RECORDING_STATE_RECORDING ||
          s_state == VOICE_RECORDING_STATE_TRANSFERRING)) {
         s_enrollment_start_pending = true;
+        TickType_t now = xTaskGetTickCount();
+        s_enrollment_start_deadline_tick =
+            now + pdMS_TO_TICKS(VOICE_RECORDING_CONTROL_ENROLLMENT_START_TIMEOUT_MS);
+        s_enrollment_start_next_retry_tick = now;
         ESP_LOGI(
             TAG,
             "owner enrollment queued behind hidden automatic candidate source=%s state=%s",
@@ -2025,6 +2043,8 @@ static esp_err_t voice_recording_control_start_enrollment(const char *source)
             AUDIO_CAPTURE_STOP_ORIGIN_USER);
         if (stop_ret != ESP_OK) {
             s_enrollment_start_pending = false;
+            s_enrollment_start_deadline_tick = 0;
+            s_enrollment_start_next_retry_tick = 0;
         }
         return stop_ret;
     }
@@ -2044,8 +2064,27 @@ static esp_err_t voice_recording_control_start_enrollment(const char *source)
     }
 
     s_enrollment_start_pending = false;
+    s_enrollment_start_deadline_tick = 0;
+    s_enrollment_start_next_retry_tick = 0;
     esp_err_t ret = voice_recording_control_enter_recording(source, true, true, 0u);
     if (ret != ESP_OK) {
+        if (ret == ESP_ERR_INVALID_STATE &&
+            s_state == VOICE_RECORDING_STATE_IDLE &&
+            !audio_capture_session_is_active()) {
+            TickType_t now = xTaskGetTickCount();
+            s_enrollment_start_pending = true;
+            s_enrollment_start_deadline_tick = pending_retry
+                ? pending_deadline
+                : now + pdMS_TO_TICKS(
+                    VOICE_RECORDING_CONTROL_ENROLLMENT_START_TIMEOUT_MS);
+            s_enrollment_start_next_retry_tick =
+                now + pdMS_TO_TICKS(VOICE_RECORDING_CONTROL_ENROLLMENT_START_RETRY_MS);
+            ESP_LOGI(
+                TAG,
+                "owner enrollment waiting for audio transport source=%s",
+                source);
+            return ESP_OK;
+        }
         return ret;
     }
 
@@ -2069,20 +2108,50 @@ static void voice_recording_control_try_start_pending_enrollment(const char *con
     if (!s_enrollment_start_pending) {
         return;
     }
-    s_enrollment_start_pending = false;
+    TickType_t now = xTaskGetTickCount();
+    if (voice_recording_control_tick_reached(
+            now,
+            s_enrollment_start_deadline_tick)) {
+        s_enrollment_start_pending = false;
+        s_enrollment_start_deadline_tick = 0;
+        s_enrollment_start_next_retry_tick = 0;
+        ESP_LOGW(
+            TAG,
+            "pending owner enrollment start timed out context=%s state=%s audio_active=%u ble_ready=%u",
+            context,
+            voice_recording_state_name(s_state),
+            audio_capture_session_is_active() ? 1u : 0u,
+            ble_audio_stream_is_ready() ? 1u : 0u);
+        voice_recording_control_log_device_error(
+            "error",
+            "owner_enrollment_pending_start_timeout",
+            ESP_ERR_TIMEOUT);
+        return;
+    }
+    if (s_state != VOICE_RECORDING_STATE_IDLE ||
+        audio_capture_session_is_active() ||
+        !ble_audio_stream_is_ready() ||
+        !voice_recording_control_tick_reached(
+            now,
+            s_enrollment_start_next_retry_tick)) {
+        return;
+    }
+    s_enrollment_start_next_retry_tick =
+        now + pdMS_TO_TICKS(VOICE_RECORDING_CONTROL_ENROLLMENT_START_RETRY_MS);
+    denzic_voice_activation_v1_reset(&s_voice_activation_machine);
+    if (s_vad_queue != NULL) {
+        xQueueReset(s_vad_queue);
+    }
     esp_err_t ret = voice_recording_control_start_enrollment(
         "owner_enrollment.pending");
     if (ret != ESP_OK) {
+        s_enrollment_start_pending = true;
         ESP_LOGW(
             TAG,
             "pending owner enrollment start failed context=%s state=%s: %s",
             context,
             voice_recording_state_name(s_state),
             esp_err_to_name(ret));
-        voice_recording_control_log_device_error(
-            "error",
-            "owner_enrollment_pending_start_failed",
-            ret);
     }
 }
 
@@ -2640,6 +2709,7 @@ static void voice_recording_control_process_voice_activity(void)
             .start_blocked =
                 s_state != VOICE_RECORDING_STATE_IDLE ||
                 s_pending_start ||
+                s_enrollment_start_pending ||
                 s_cancel_pending,
         };
         denzic_voice_activation_v1_decision_t decision =
@@ -2650,7 +2720,8 @@ static void voice_recording_control_process_voice_activity(void)
         if (decision.action ==
                 DENZIC_VOICE_ACTIVATION_V1_ACTION_START &&
             s_state == VOICE_RECORDING_STATE_IDLE &&
-            !s_pending_start) {
+            !s_pending_start &&
+            !s_enrollment_start_pending) {
             const bool transport_ready = ble_audio_stream_is_ready();
             esp_err_t start_ret = voice_recording_control_enter_recording(
                 "voice_activation.auto_start",
@@ -2784,6 +2855,7 @@ static void voice_recording_control_task(void *parameter)
             voice_recording_control_handle_session_inactive();
         }
 
+        voice_recording_control_try_start_pending_enrollment("task_poll");
         voice_recording_control_poll_pending_start();
         (void)watchdog_platform_task_notify_take(
             pdTRUE,
