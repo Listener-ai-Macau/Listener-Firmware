@@ -32,6 +32,7 @@
 #define VOICE_RECORDING_CONTROL_PENDING_START_RETRY_MS 250
 #define VOICE_RECORDING_CONTROL_ENROLLMENT_START_TIMEOUT_MS 6000
 #define VOICE_RECORDING_CONTROL_ENROLLMENT_START_RETRY_MS 100
+#define VOICE_RECORDING_CONTROL_ENROLLMENT_STALE_STOP_GUARD_MS 2000
 #define VOICE_RECORDING_CONTROL_HOST_CLEANUP_TOGGLE_GUARD_MS 1500
 #define VOICE_RECORDING_CONTROL_DICTATION_SILENCE_STOP_MS 2000
 #define VOICE_RECORDING_CONTROL_DICTATION_TAIL_MS 0
@@ -181,6 +182,7 @@ static bool s_active_session_enrollment;
 static bool s_enrollment_start_pending;
 static TickType_t s_enrollment_start_deadline_tick;
 static TickType_t s_enrollment_start_next_retry_tick;
+static TickType_t s_enrollment_stale_stop_guard_until_tick;
 static TickType_t s_host_speech_protect_until_tick;
 static TickType_t s_host_cleanup_toggle_guard_until_tick;
 static uint32_t s_session_count;
@@ -1389,6 +1391,23 @@ static void voice_recording_control_complete_transfer_cleanup(
 
 static void voice_recording_control_stop(const char *source)
 {
+    if (s_state == VOICE_RECORDING_STATE_RECORDING &&
+        s_active_session_enrollment &&
+        voice_recording_control_source_is_ble_audio_control(source) &&
+        !voice_recording_control_tick_reached(
+            xTaskGetTickCount(),
+            s_enrollment_stale_stop_guard_until_tick)) {
+        ESP_LOGI(
+            TAG,
+            "stale hidden-candidate cleanup stop ignored during enrollment guard source=%s",
+            source);
+        voice_recording_control_log_toggle_ignored(
+            source,
+            "owner_enrollment_stale_cleanup_stop_ignored",
+            ESP_OK,
+            false);
+        return;
+    }
     voice_recording_control_snapshot_t snapshot = voice_recording_control_make_snapshot(source);
     voice_recording_control_decision_t decision =
         voice_recording_control_decide_transition(VOICE_RECORDING_EVENT_STOP, &snapshot);
@@ -2089,6 +2108,9 @@ static esp_err_t voice_recording_control_start_enrollment(const char *source)
     }
 
     s_active_session_enrollment = true;
+    s_enrollment_stale_stop_guard_until_tick =
+        xTaskGetTickCount() +
+        pdMS_TO_TICKS(VOICE_RECORDING_CONTROL_ENROLLMENT_STALE_STOP_GUARD_MS);
     denzic_voice_activation_v1_reset(&s_voice_activation_machine);
     if (s_vad_queue != NULL) {
         xQueueReset(s_vad_queue);

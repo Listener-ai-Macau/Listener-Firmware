@@ -317,6 +317,7 @@ def main() -> int:
         "owner enrollment waiting for audio transport",
         "owner_enrollment_pending_start_timeout",
         "s_enrollment_start_pending ||",
+        "owner_enrollment_stale_cleanup_stop_ignored",
         "voice_recording_control_try_start_pending_enrollment",
         "denzic_voice_activation_v1_reset(&s_voice_activation_machine);",
         "owner enrollment recording started; host owns bounded stop",
@@ -329,6 +330,7 @@ def main() -> int:
             or token.startswith('voice_recording_control_try')
             or token == "owner_enrollment_pending_start_timeout"
             or token == "s_enrollment_start_pending ||"
+            or token == "owner_enrollment_stale_cleanup_stop_ignored"
             else enrollment_body,
             token,
             f"host-timed owner enrollment contract is missing {token}",
