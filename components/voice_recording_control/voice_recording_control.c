@@ -169,6 +169,10 @@ static const char *s_active_session_source;
 static char s_active_session_source_storage[VOICE_RECORDING_CONTROL_STORED_SOURCE_BYTES];
 static bool s_active_session_automatic;
 static bool s_active_session_visible;
+/* Explicit owner enrollment is host-timed. It must not inherit the normal
+ * dictation silence endpoint, otherwise the gap between the three wake-phrase
+ * repetitions and the free-speech prompt truncates the biometric sample. */
+static bool s_active_session_enrollment;
 static TickType_t s_host_speech_protect_until_tick;
 static TickType_t s_host_cleanup_toggle_guard_until_tick;
 static uint32_t s_session_count;
@@ -1238,6 +1242,7 @@ static esp_err_t voice_recording_control_enter_recording(
         source);
     s_active_session_automatic = pre_roll_ms > 0u;
     s_active_session_visible = !s_active_session_automatic;
+    s_active_session_enrollment = false;
     voice_recording_control_clear_host_speech_protection();
     __atomic_store_n(&s_vad_queue_drop_count, 0u, __ATOMIC_RELAXED);
     s_state = VOICE_RECORDING_STATE_RECORDING;
@@ -1282,6 +1287,7 @@ static esp_err_t voice_recording_control_exit_recording_with_origin(
             s_active_session_source = NULL;
             s_active_session_automatic = false;
             s_active_session_visible = false;
+            s_active_session_enrollment = false;
             voice_recording_control_clear_power_blockers();
             (void)voice_key_input_set_recording_output(false);
         }
@@ -1303,6 +1309,7 @@ static esp_err_t voice_recording_control_exit_recording_with_origin(
     s_cancel_source = NULL;
     s_state = VOICE_RECORDING_STATE_TRANSFERRING;
     s_active_session_visible = false;
+    s_active_session_enrollment = false;
     voice_recording_control_clear_host_speech_protection();
     (void)voice_key_input_set_recording_output(false);
     status_led_set_recording(false, STATUS_LED_REC_SOURCE_NONE);
@@ -1357,6 +1364,7 @@ static void voice_recording_control_complete_transfer_cleanup(
     s_active_session_source = NULL;
     s_active_session_automatic = false;
     s_active_session_visible = false;
+    s_active_session_enrollment = false;
     voice_recording_control_clear_host_speech_protection();
     voice_recording_control_clear_power_blockers();
     (void)voice_key_input_set_recording_output(false);
@@ -1606,6 +1614,7 @@ static void voice_recording_control_cancel(const char *source)
             s_active_session_source = NULL;
             s_active_session_automatic = false;
             s_active_session_visible = false;
+            s_active_session_enrollment = false;
             voice_recording_control_clear_power_blockers();
         }
         status_led_set_error(STATUS_LED_ERROR_DOMAIN_REC, STATUS_LED_ERROR_RETRYABLE, "recording_cancel_rejected");
@@ -1634,6 +1643,7 @@ static void voice_recording_control_cancel(const char *source)
         s_active_session_source = NULL;
         s_active_session_automatic = false;
         s_active_session_visible = false;
+        s_active_session_enrollment = false;
         voice_recording_control_clear_power_blockers();
         (void)voice_key_input_set_recording_output(false);
         status_led_set_recording(false, STATUS_LED_REC_SOURCE_NONE);
@@ -1803,6 +1813,7 @@ static esp_err_t voice_recording_control_recovery(
     s_active_session_source = NULL;
     s_active_session_automatic = false;
     s_active_session_visible = false;
+    s_active_session_enrollment = false;
     esp_err_t ret = ec11_fast_idle_recovery
         ? fast_recovery_ret
         : (force_fresh_identity
@@ -1982,6 +1993,42 @@ static esp_err_t voice_recording_control_activate_automatic_session(
     return ESP_OK;
 }
 
+static esp_err_t voice_recording_control_start_enrollment(const char *source)
+{
+    if (s_state != VOICE_RECORDING_STATE_IDLE ||
+        s_pending_start ||
+        s_cancel_pending ||
+        audio_capture_session_is_active()) {
+        ESP_LOGW(
+            TAG,
+            "owner enrollment start rejected source=%s state=%s pending=%u cancel=%u",
+            source,
+            voice_recording_state_name(s_state),
+            s_pending_start ? 1u : 0u,
+            s_cancel_pending ? 1u : 0u);
+        return ESP_ERR_INVALID_STATE;
+    }
+
+    esp_err_t ret = voice_recording_control_enter_recording(source, true, true, 0u);
+    if (ret != ESP_OK) {
+        return ret;
+    }
+
+    s_active_session_enrollment = true;
+    denzic_voice_activation_v1_reset(&s_voice_activation_machine);
+    if (s_vad_queue != NULL) {
+        xQueueReset(s_vad_queue);
+    }
+    ESP_LOGI(
+        TAG,
+        "owner enrollment recording started; host owns bounded stop source=%s",
+        source);
+    voice_recording_control_log_device_status(
+        "recording",
+        "owner_enrollment_capture_active");
+    return ESP_OK;
+}
+
 static esp_err_t voice_recording_control_handle_control_command(
     const char *command,
     const char *source)
@@ -2004,6 +2051,9 @@ static esp_err_t voice_recording_control_handle_control_command(
     }
     if (strcmp(action, "ACTIVATE") == 0) {
         return voice_recording_control_activate_automatic_session(source);
+    }
+    if (strcmp(action, "ENROLL") == 0) {
+        return voice_recording_control_start_enrollment(source);
     }
     if (strcmp(action, "SPEECH") == 0) {
         voice_recording_control_note_host_speech();
@@ -2136,6 +2186,7 @@ static esp_err_t voice_recording_control_ble_control_write(
     const bool user_intent_control =
         strcmp(action, "TOGGLE") == 0 ||
         strcmp(action, "ACTIVATE") == 0 ||
+        strcmp(action, "ENROLL") == 0 ||
         strncmp(action, "RECOVERY", 8) == 0 ||
         strcmp(action, "RESET") == 0 ||
         strcmp(action, "FORGET") == 0;
@@ -2241,6 +2292,7 @@ static void voice_recording_control_handle_session_inactive(void)
         s_active_session_source = NULL;
         s_active_session_automatic = false;
         s_active_session_visible = false;
+        s_active_session_enrollment = false;
         voice_recording_control_clear_power_blockers();
         (void)voice_key_input_set_recording_output(false);
         status_led_set_recording(false, STATUS_LED_REC_SOURCE_NONE);
@@ -2263,6 +2315,7 @@ static void voice_recording_control_handle_session_inactive(void)
     s_active_session_source = NULL;
     s_active_session_automatic = false;
     s_active_session_visible = false;
+    s_active_session_enrollment = false;
     voice_recording_control_clear_power_blockers();
     (void)voice_key_input_set_recording_output(false);
     status_led_set_recording(false, STATUS_LED_REC_SOURCE_NONE);
@@ -2415,6 +2468,7 @@ static void voice_recording_control_refresh_voice_monitoring(void)
     bool active_stop_monitoring =
         s_state == VOICE_RECORDING_STATE_RECORDING &&
         !s_cancel_pending &&
+        !s_active_session_enrollment &&
         (s_active_session_automatic || s_voice_auto_stop_enabled);
     bool ota_active =
         (power.blockers & POWER_MANAGER_BLOCKER_OTA) != 0u ||
@@ -2518,7 +2572,8 @@ static void voice_recording_control_process_voice_activity(void)
             .enabled = s_voice_monitoring,
             .auto_start_enabled = s_voice_auto_start_enabled,
             .auto_stop_enabled =
-                s_voice_auto_stop_enabled || hidden_automatic,
+                !s_active_session_enrollment &&
+                (s_voice_auto_stop_enabled || hidden_automatic),
             .recording_active =
                 s_state == VOICE_RECORDING_STATE_RECORDING,
             .speech_detected = event.speech_detected,

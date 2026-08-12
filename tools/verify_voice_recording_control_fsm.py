@@ -306,6 +306,22 @@ def main() -> int:
         "automatic-session activation must log the fresh endpoint boundary",
     )
 
+    enrollment_body = extract_static_function(
+        source, "voice_recording_control_start_enrollment"
+    )
+    for token in [
+        'strcmp(action, "ENROLL") == 0',
+        "s_active_session_enrollment = true;",
+        "denzic_voice_activation_v1_reset(&s_voice_activation_machine);",
+        "owner enrollment recording started; host owns bounded stop",
+        "!s_active_session_enrollment &&",
+    ]:
+        require_contains(
+            source if token.startswith('strcmp') or token.startswith('!') else enrollment_body,
+            token,
+            f"host-timed owner enrollment contract is missing {token}",
+        )
+
     decision_body = extract_function(source, "voice_recording_control_decide_transition")
     for token in DISALLOWED_DECISION_EFFECTS:
         if token in decision_body:
