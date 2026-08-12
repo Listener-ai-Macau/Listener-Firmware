@@ -312,12 +312,19 @@ def main() -> int:
     for token in [
         'strcmp(action, "ENROLL") == 0',
         "s_active_session_enrollment = true;",
+        "s_enrollment_start_pending = true;",
+        "owner enrollment queued behind hidden automatic candidate",
+        "voice_recording_control_try_start_pending_enrollment",
         "denzic_voice_activation_v1_reset(&s_voice_activation_machine);",
         "owner enrollment recording started; host owns bounded stop",
         "!s_active_session_enrollment &&",
     ]:
         require_contains(
-            source if token.startswith('strcmp') or token.startswith('!') else enrollment_body,
+            source
+            if token.startswith('strcmp')
+            or token.startswith('!')
+            or token.startswith('voice_recording_control_try')
+            else enrollment_body,
             token,
             f"host-timed owner enrollment contract is missing {token}",
         )
