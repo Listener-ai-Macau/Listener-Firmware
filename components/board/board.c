@@ -26,7 +26,7 @@ static const char *TAG = "board";
 #define BOARD_V2_USB_DET_POLICY "v2_gpio7_usb_det_disabled_highz_usb_sof_and_charger_status"
 #define BOARD_V2_CHARGER_POLARITY "v2_gpio14_chg_gpio21_std_active_low"
 #define BOARD_V2_PWR_HOLD_POLICY "v2_gpio9_power_latch_runtime_low_drive_high_for_hardware_shutdown"
-#define BOARD_V2_LED_POLICY "v2_four_zone_ws2812_status_gpio1_ec11_gpio5_key_gpio13_edge_gpio4"
+#define BOARD_V2_LED_POLICY "v2_2_two_ws2812_routes_main_gpio1_status_ec11_key_edge_gpio5"
 #define BOARD_V2_MIC_POLICY "v2_sph0655_pdm_clk_gpio48_dout_gpio47_enabled_for_a1_a2_hardware_validation"
 #define BOARD_PWR_HOLD_SHUTDOWN_MIN_HIGH_MS 10000U
 #define BOARD_PWR_HOLD_RELEASE_SETTLE_MS 15000U
@@ -54,7 +54,7 @@ static const board_led_group_t s_led_groups[] = {
         .led_count = 6,
         .brightness_cap_percent = 8,
         .led_refs = "LED1..LED6",
-        .policy = "LED1..LED6 semantic PWR/BLE/REC/AI/OK/WARN rail",
+        .policy = "LED1..LED6 semantic PWR/BLE/REC/AI/OK/WARN zone on PWM_RGB main chain",
     },
     {
         .name = "ec11",
@@ -63,7 +63,7 @@ static const board_led_group_t s_led_groups[] = {
         .led_count = 12,
         .brightness_cap_percent = 8,
         .led_refs = "LED7..LED10+LED15..LED16+LED23..LED28",
-        .policy = "EC11 knob ring feedback on the dedicated PWM_RGB_EC11 strip",
+        .policy = "EC11 knob ring feedback zone on PWM_RGB main chain",
     },
     {
         .name = "key",
@@ -72,7 +72,7 @@ static const board_led_group_t s_led_groups[] = {
         .led_count = 4,
         .brightness_cap_percent = 8,
         .led_refs = "LED11..LED14",
-        .policy = "LED11..LED14 transient local key feedback",
+        .policy = "LED11..LED14 transient local key feedback zone on PWM_RGB main chain",
     },
     {
         .name = "edge",
@@ -1087,7 +1087,7 @@ void board_log_v2_diagnostics(void)
 
     ESP_LOGI(
         TAG,
-        "board profile: id=%s module=%s flash=%uMB psram=%uMB %s key_gpios=%d,%d,%d,%d ec11=%d,%d,%d mic=%d,%d usb_det=%d charger=%d,%d battery_adc=%d current_adc=%d,%d rgb=%d,%d,%d,%d pwr_hold=%d pwr_hold_level=%s pwr_hold_configured=%u reserved_mspi=%s",
+        "board profile: id=%s module=%s flash=%uMB psram=%uMB %s key_gpios=%d,%d,%d,%d ec11=%d,%d,%d mic=%d,%d usb_det=%d charger=%d,%d battery_adc=%d current_adc=%d,%d rgb_routes=%d,%d rgb_route_count=2 pwr_hold=%d pwr_hold_level=%s pwr_hold_configured=%u reserved_mspi=%s",
         BOARD_PINS_PROFILE_ID,
         BOARD_PINS_MODULE,
         (unsigned)BOARD_PINS_FLASH_SIZE_MB,
@@ -1108,9 +1108,7 @@ void board_log_v2_diagnostics(void)
         (int)BOARD_PINS_BAT_V_ADC_IO,
         (int)BOARD_PINS_TPS63020_I_ADC_IO,
         (int)BOARD_PINS_SY7088_I_ADC_IO,
-        (int)BOARD_PINS_RGB_STATUS_IO,
-        (int)BOARD_PINS_RGB_EC11_IO,
-        (int)BOARD_PINS_RGB_KEY_IO,
+        (int)BOARD_PINS_RGB_MAIN_IO,
         (int)BOARD_PINS_RGB_EDGE_IO,
         (int)BOARD_PINS_PWR_HOLD_IO,
         board_gpio_level_name(power_hold.level),

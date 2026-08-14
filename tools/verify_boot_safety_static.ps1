@@ -26,17 +26,26 @@ function Assert-Contains {
 
 $bootSafety = Read-RepoFile "components/boot_safety/boot_safety.c"
 Assert-Contains $bootSafety 'RTC_NOINIT_ATTR static boot_safety_rtc_state_t s_rtc_state' 'RTC noinit crash counter state'
-Assert-Contains $bootSafety 'BOOT_SAFETY_SAFE_MODE_THRESHOLD 3u' 'three-crash safe mode threshold'
+Assert-Contains $bootSafety 'esp_app_get_description\(\)' 'current application image identity source'
+Assert-Contains $bootSafety 'app_image_fingerprint' 'RTC application image fingerprint'
+Assert-Contains $bootSafety 'app_image_changed' 'new application image clears stale safe mode latch'
+Assert-Contains $bootSafety 'cleared crash counter and safe mode latch' 'new image safe mode recovery log'
+Assert-Contains $bootSafety 'BOOT_SAFETY_SAFE_MODE_THRESHOLD DENZIC_DEVICE_HEALTH_V1_SAFE_MODE_THRESHOLD' 'shared safe mode threshold'
 Assert-Contains $bootSafety 'BOOT_SAFETY_NORMAL_CLEAR_DELAY_MS 30000u' '30 second normal boot clear timer'
 Assert-Contains $bootSafety 'ESP_RST_POWERON' 'power-on reset does not count as crash'
 Assert-Contains $bootSafety 'ESP_RST_DEEPSLEEP' 'deep sleep reset does not count as crash'
 Assert-Contains $bootSafety 'ESP_RST_USB' 'USB serial reset does not count as crash'
 Assert-Contains $bootSafety 'ESP_RST_EXT' 'external/manual reset does not count as crash'
 Assert-Contains $bootSafety 'ESP_RST_JTAG' 'JTAG reset does not count as crash'
-Assert-Contains $bootSafety 'crash_count \+= 1|s_rtc_state\.crash_count\+\+' 'crash counter increment'
-Assert-Contains $bootSafety 's_rtc_state\.safe_mode_latched = 1' 'safe mode latch'
 Assert-Contains $bootSafety 'esp_restart\(\)' 'USB crash validation restart command'
 Assert-Contains $bootSafety 'BOOT_SAFETY_USB_PREFIX "BOOT:"' 'BOOT USB command prefix'
+
+$bootSafetyGenerated = Read-RepoFile "third_party/denzic-platform/device_health/embedded/c/include/denzic_device_health_v1_generated.h"
+Assert-Contains $bootSafetyGenerated 'DENZIC_DEVICE_HEALTH_V1_SAFE_MODE_THRESHOLD \(3u\)' 'three-crash safe mode threshold'
+
+$bootSafetyPlatform = Read-RepoFile "third_party/denzic-platform/device_health/embedded/c/src/denzic_device_health_v1.c"
+Assert-Contains $bootSafetyPlatform 'state->crash_count\+\+' 'crash counter increment'
+Assert-Contains $bootSafetyPlatform 'state->safe_mode_latched = true' 'safe mode latch'
 
 $bootSafetyHeader = Read-RepoFile "components/boot_safety/include/boot_safety.h"
 Assert-Contains $bootSafetyHeader 'boot_safety_is_safe_mode' 'safe mode query API'
@@ -51,7 +60,7 @@ Assert-Contains $main 'device_status state=recovery detail=boot_safety_safe_mode
 
 $keyboard = Read-RepoFile "components/keyboard/keyboard.c"
 Assert-Contains $keyboard 'keyboard_start_safe_mode' 'keyboard safe mode entry point'
-Assert-Contains $keyboard 'voice recording control and audio capture are disabled' 'safe mode disables voice recording'
+Assert-Contains $keyboard 'safe mode: audio capture disabled; EC11 double-click re-pair recovery remains available' 'safe mode disables audio while retaining recovery'
 
 $bleHid = Read-RepoFile "ports/esp32/ble_hid/ble_hid.c"
 Assert-Contains $bleHid 'boot_safety_consume_usb_command\(line\)' 'BOOT USB command dispatch'

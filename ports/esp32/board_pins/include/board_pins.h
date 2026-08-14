@@ -51,10 +51,18 @@ extern "C" {
 #define BOARD_PINS_USB_DP_IO         (GPIO_NUM_20)
 #define BOARD_PINS_USB_DN_IO         (GPIO_NUM_19)
 
-#define BOARD_PINS_RGB_STATUS_IO     (GPIO_NUM_1)
-#define BOARD_PINS_RGB_EC11_IO       (GPIO_NUM_5)
-#define BOARD_PINS_RGB_KEY_IO        (GPIO_NUM_13)
-#define BOARD_PINS_RGB_EDGE_IO       (GPIO_NUM_4)
+/* Voice Keyboard V2.2 reduces the four independent WS2812 data rails to two.
+   PWM_RGB/GPIO1 clocks the daisy-chained status + EC11 + key LEDs; the
+   PWM_RGB_Edge/GPIO5 rail remains a separate six-pixel chain. */
+#define BOARD_PINS_RGB_MAIN_IO       (GPIO_NUM_1)
+#define BOARD_PINS_RGB_EDGE_IO       (GPIO_NUM_5)
+
+/* Logical-zone aliases. These are deliberately the same physical GPIO on
+   V2.2; status_led owns a single composite backend and must not initialize
+   one peripheral per alias. */
+#define BOARD_PINS_RGB_STATUS_IO     BOARD_PINS_RGB_MAIN_IO
+#define BOARD_PINS_RGB_EC11_IO       BOARD_PINS_RGB_MAIN_IO
+#define BOARD_PINS_RGB_KEY_IO        BOARD_PINS_RGB_MAIN_IO
 
 #define BOARD_PINS_PWR_HOLD_IO       (GPIO_NUM_9)
 

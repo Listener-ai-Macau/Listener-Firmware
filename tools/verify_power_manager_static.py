@@ -1529,9 +1529,13 @@ def main() -> int:
         failures.append(
             "components/status_led/status_led.c: missing low-power quiet transport suspend helper"
         )
-    elif "STATUS_LED_STRIP_STATUS" in quiet_suspend.group(0):
+    elif (
+        "STATUS_LED_STRIP_STATUS" not in quiet_suspend.group(0)
+        or "STATUS_LED_STRIP_EDGE" not in quiet_suspend.group(0)
+        or "status_led_strip_backend_suspend(s_strips[index].backend)" not in quiet_suspend.group(0)
+    ):
         failures.append(
-            "components/status_led/status_led.c: low-power quiet suspend must not skip the status rail"
+            "components/status_led/status_led.c: low-power quiet suspend must release both V2.2 physical routes"
         )
     if (
         "rmt_idle_drive=active_dma_low_power_all_zone_non_dma_final_frame_then_release_gpio_low" not in status_led
@@ -1652,22 +1656,11 @@ def main() -> int:
         or "key_multi_key_independent_fade=%u" not in status_led
         or "#define STATUS_LED_KEY_SINGLE_WHITE_HOLD_MS 160U" not in status_led
         or "key_single_white_hold_ms=%u" not in status_led
-        or "key_lit_edge_tx=spi_dma_only" not in status_led
-        or "key_feedback_dynamic_tx=spi_dma_until_dark_latch" not in status_led
-        or "spi_ws2812_waveform=4bit_3m2_0x8_0xE" not in status_led
-        or "#define STATUS_LED_KEY_DARK_LATCH_RMT_WRITES 2U" not in status_led
-        or "key_dark_latch_rmt_writes=%u" not in status_led
-        or "key_dark_latch_expiry_dirty=1" not in status_led
-        or "uint8_t key_dark_latch_pending_mask;" not in status_led
-        or "s_state.key_dark_latch_pending_mask != 0U" not in status_led
-        or "uint8_t dark_latch_rmt_writes;" not in status_led_backend_header
-        or "status_led_strip_backend_colors_all_dark(backend, colors)" not in status_led_backend
-        or "rmt_writes=%u dark=%u" not in status_led_backend
-        or "STATUS_LED_SPI_CLOCK_HZ       3200000" not in status_led_backend
-        or "STATUS_LED_SPI_BITS_PER_BIT   4U" not in status_led_backend
-        or "STATUS_LED_SPI_RESET_BYTES    240U" not in status_led_backend
-        or "spi_waveform=4bit_3m2_0x8_0xE" not in status_led_backend
-        or "bool key_force_non_dma = force_non_dma || !key_has_light;" not in status_led
+        or "key_lit_edge_tx=main_chain_rmt_dma" not in status_led
+        or "key_feedback_dynamic_tx=main_chain_rmt_dma" not in status_led
+        or "STATUS_LED_MAIN_KEY_OFFSET" not in status_led
+        or "main_pixels[STATUS_LED_MAIN_KEY_OFFSET + index] =" not in status_led
+        or "frame->key[STATUS_LED_KEY_COUNT - 1U - index];" not in status_led
         or "status_led_clear_other_key_visuals_locked" in status_led
         or "key_cross_key_visual_cancel" in status_led
         or "s_state.key_feedback_started_ms[key_index] = 0U;" not in status_led
@@ -1683,7 +1676,7 @@ def main() -> int:
         or "STATUS_LED_SPI_BITS_PER_BIT   3U" in status_led_backend
     ):
         failures.append(
-            "components/status_led/status_led.c: KEY must keep independent per-key fades, keep lit frames on SPI DMA, use the accepted white hold, and reserve RMT for the final all-dark latch so pressing one key cannot make another key flash"
+            "components/status_led/status_led.c: KEY must keep independent per-key fades and pack into the V2.2 main route without cross-key cancellation"
         )
     if "pwr_only_final_latch || force_clear_tx" in status_led or "bool force_non_dma = pwr_only_final_latch;" not in status_led:
         failures.append(
@@ -1975,19 +1968,19 @@ def main() -> int:
             "components/status_led/status_led.c: low-power transition clear must not suspend transports before the final PWR-only latch frame"
         )
     if not re.search(
-        r'\.name\s*=\s*"status"[\s\S]{0,620}\.prefer_dma\s*=\s*true',
+        r'\.name\s*=\s*"main"[\s\S]{0,260}\.gpio\s*=\s*BOARD_PINS_RGB_MAIN_IO[\s\S]{0,700}\.prefer_dma\s*=\s*true',
         status_led,
     ):
         failures.append(
-            "components/status_led/status_led.c: active status rail must keep DMA for advanced no-flicker REC/AI effects"
+            "components/status_led/status_led.c: active V2.2 main route must keep DMA for no-flicker REC/AI/EC11/key effects"
         )
     if (
-        "rmt_tx_dma_strategy=status_strip_dma_full_frame_buffer" not in status_led
+        "rmt_tx_dma_strategy=main_chain_dma_full_frame_buffer" not in status_led
         or "status_tail_overlap_style=dma_audio_rec_ai_da_dada" not in status_led
         or "status_led_strip_backend_transmit_non_dma_once" not in status_led
     ):
         failures.append(
-            "components/status_led/status_led.c: LED contract must preserve active status DMA and expose non-DMA low-power latch frame path"
+            "components/status_led/status_led.c: LED contract must preserve active main-chain DMA and expose non-DMA low-power latch frame path"
         )
     if "bool force_non_dma = force_clear_tx || low_power_active;" in status_led:
         failures.append(
@@ -2484,9 +2477,9 @@ def main() -> int:
             "components/keyboard/keyboard.c: EC11 A/B pins must both be light-sleep wake sources"
         )
     if not re.search(
-        r"keyboard_ec11_start[\s\S]{0,1200}"
-        r"\.intr_type\s*=\s*GPIO_INTR_DISABLE[\s\S]{0,1200}"
-        r"gpio_isr_handler_add\(\s*BOARD_PINS_EC11_A_IO\s*,\s*keyboard_ec11_queue_edge_from_isr[\s\S]{0,600}"
+        r"keyboard_ec11_start[\s\S]{0,1600}"
+        r"\.intr_type\s*=\s*GPIO_INTR_DISABLE[\s\S]{0,2600}"
+        r"gpio_isr_handler_add\(\s*BOARD_PINS_EC11_A_IO\s*,\s*keyboard_ec11_queue_edge_from_isr[\s\S]{0,700}"
         r"gpio_isr_handler_add\(\s*BOARD_PINS_EC11_B_IO\s*,\s*keyboard_ec11_queue_edge_from_isr[\s\S]{0,900}"
         r"gpio_set_intr_type\(\s*BOARD_PINS_EC11_A_IO\s*,\s*GPIO_INTR_ANYEDGE\s*\)[\s\S]{0,500}"
         r"gpio_set_intr_type\(\s*BOARD_PINS_EC11_B_IO\s*,\s*GPIO_INTR_ANYEDGE\s*\)[\s\S]{0,500}"
@@ -2496,6 +2489,17 @@ def main() -> int:
     ):
         failures.append(
             "components/keyboard/keyboard.c: EC11 A/B any-edge interrupts must be armed only after both GPIO ISR handlers are installed so rotation feedback cannot be lost to startup ISR races"
+        )
+    if not re.search(
+        r"keyboard_enable_active_low_light_sleep_wake\(BOARD_PINS_EC11_A_IO[\s\S]{0,240}"
+        r"keyboard_enable_active_low_light_sleep_wake\(BOARD_PINS_EC11_B_IO[\s\S]{0,1000}"
+        r"gpio_set_intr_type\(BOARD_PINS_EC11_A_IO, GPIO_INTR_DISABLE\)[\s\S]{0,700}"
+        r"gpio_set_intr_type\(BOARD_PINS_EC11_B_IO, GPIO_INTR_DISABLE\)[\s\S]{0,700}"
+        r"gpio_isr_handler_add\(BOARD_PINS_EC11_A_IO",
+        keyboard,
+    ):
+        failures.append(
+            "components/keyboard/keyboard.c: EC11 startup must quarantine wake-configured LOW_LEVEL triggers before handler installation so a phase held low cannot create an ISR storm"
         )
 
     voice_key = (

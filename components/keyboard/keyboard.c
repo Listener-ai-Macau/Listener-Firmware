@@ -1792,6 +1792,26 @@ static esp_err_t keyboard_ec11_start(void)
     }
     keyboard_enable_active_low_light_sleep_wake(BOARD_PINS_EC11_A_IO, "EC11_A");
     keyboard_enable_active_low_light_sleep_wake(BOARD_PINS_EC11_B_IO, "EC11_B");
+    /* gpio_wakeup_enable() selects a LOW_LEVEL trigger. gpio_isr_handler_add()
+     * also enables the CPU interrupt immediately, so a new board whose EC11
+     * phase powers up low can otherwise enter a level-triggered ISR storm
+     * before the second handler and decoder task exist. Keep the runtime
+     * trigger disabled while handlers are installed; both phases are switched
+     * to ANYEDGE together below. */
+    ret = gpio_set_intr_type(BOARD_PINS_EC11_A_IO, GPIO_INTR_DISABLE);
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "EC11 A ISR quarantine failed: %s", esp_err_to_name(ret));
+        diag_log(DIAG_SRC_KEYBOARD, DIAG_KBD_GPIO_FAIL, DIAG_SEV_ERROR, 2, ret, 0, 0);
+        return ret;
+    }
+    ret = gpio_set_intr_type(BOARD_PINS_EC11_B_IO, GPIO_INTR_DISABLE);
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "EC11 B ISR quarantine failed: %s", esp_err_to_name(ret));
+        diag_log(DIAG_SRC_KEYBOARD, DIAG_KBD_GPIO_FAIL, DIAG_SEV_ERROR, 2, ret, 0, 0);
+        return ret;
+    }
+    (void)gpio_intr_disable(BOARD_PINS_EC11_A_IO);
+    (void)gpio_intr_disable(BOARD_PINS_EC11_B_IO);
     ret = gpio_isr_handler_add(BOARD_PINS_EC11_A_IO, keyboard_ec11_queue_edge_from_isr, NULL);
     if (ret != ESP_OK) {
         ESP_LOGE(TAG, "EC11 A ISR handler add failed: %s", esp_err_to_name(ret));

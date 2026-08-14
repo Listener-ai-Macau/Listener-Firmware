@@ -31,7 +31,16 @@
 #define STATUS_LED_KEY_COUNT 4
 #define STATUS_LED_EDGE_COUNT 6
 #define STATUS_LED_STRIP_COUNT 4
-#define STATUS_LED_MAX_STRIP_COUNT STATUS_LED_EC11_COUNT
+#define STATUS_LED_PHYSICAL_ROUTE_COUNT 2
+#define STATUS_LED_MAIN_STATUS_OFFSET 0U
+#define STATUS_LED_MAIN_EC11_OFFSET (STATUS_LED_MAIN_STATUS_OFFSET + STATUS_LED_STATUS_COUNT)
+#define STATUS_LED_MAIN_KEY_OFFSET (STATUS_LED_MAIN_EC11_OFFSET + STATUS_LED_EC11_COUNT)
+#define STATUS_LED_MAIN_COUNT (STATUS_LED_MAIN_KEY_OFFSET + STATUS_LED_KEY_COUNT)
+#define STATUS_LED_MAX_STRIP_COUNT STATUS_LED_MAIN_COUNT
+
+_Static_assert(STATUS_LED_MAIN_COUNT == 22U, "V2.2 main RGB chain must contain 22 pixels");
+_Static_assert(BOARD_PINS_RGB_MAIN_IO != BOARD_PINS_RGB_EDGE_IO,
+               "V2.2 RGB routes must use distinct GPIOs");
 #define STATUS_LED_STATUS_TAIL_GUARD_PIXELS 6U
 #define STATUS_LED_KEY_TAIL_GUARD_PIXELS 0U
 #define STATUS_LED_KEY_DARK_LATCH_RMT_WRITES 2U
@@ -75,6 +84,8 @@
 #define STATUS_LED_STRIP_MASK_EDGE (1U << STATUS_LED_STRIP_EDGE)
 #define STATUS_LED_STRIP_MASK_ALL \
     (STATUS_LED_STRIP_MASK_STATUS | STATUS_LED_STRIP_MASK_EC11 | STATUS_LED_STRIP_MASK_KEY | STATUS_LED_STRIP_MASK_EDGE)
+#define STATUS_LED_STRIP_MASK_MAIN \
+    (STATUS_LED_STRIP_MASK_STATUS | STATUS_LED_STRIP_MASK_EC11 | STATUS_LED_STRIP_MASK_KEY)
 #define STATUS_LED_TRANSITION_CLEAR_STATUS_ACCENTS (1U << 0)
 #define STATUS_LED_TRANSITION_CLEAR_BLE (1U << 1)
 #define STATUS_LED_TRANSITION_CLEAR_EC11 (1U << 2)
@@ -572,38 +583,29 @@ static status_led_state_t s_state;
 static char s_print_line[384];
 static status_led_strip_t s_strips[STATUS_LED_STRIP_COUNT] = {
     {
-        .name = "status",
-        .gpio = BOARD_PINS_RGB_STATUS_IO,
-        .led_count = STATUS_LED_STATUS_COUNT,
+        .name = "main",
+        .gpio = BOARD_PINS_RGB_MAIN_IO,
+        .led_count = STATUS_LED_MAIN_COUNT,
         .tail_guard_pixels = STATUS_LED_STATUS_TAIL_GUARD_PIXELS,
         .color_order = STATUS_LED_STATUS_DEFAULT_COLOR_ORDER,
-        // Keep advanced REC/AI status effects on the historical status-only DMA rail.
-        // Low-power clear/final latch frames temporarily transmit without DMA.
+        // V2.2 daisy-chains status, EC11 and key pixels on PWM_RGB/GPIO1.
+        // Keep the composite chain on RMT DMA; low-power final latch frames
+        // temporarily transmit without DMA.
         .prefer_dma = true,
     },
     {
         .name = "ec11",
-        .gpio = BOARD_PINS_RGB_EC11_IO,
+        .gpio = GPIO_NUM_NC,
         .led_count = STATUS_LED_EC11_COUNT,
         .color_order = STATUS_LED_COLOR_ORDER_GRB,
-        // EC11 flickers on non-DMA (interrupt-backed) RMT. Drive it from SPI2
-        // MOSI + GDMA via the SPI clock-hack (4 SPI bits per WS2812 bit); only
-        // MOSI is wired to the LED DIN (SCLK/MISO/CS internal). GPIO5 is
-        // reassigned to SPI2 MOSI by the GPIO matrix - no hardware change.
-        .transport = STATUS_LED_STRIP_TRANSPORT_SPI,
-        .spi_host = SPI2_HOST,
+        // Logical zone only. Its pixels are packed into the main backend.
     },
     {
         .name = "key",
-        .gpio = BOARD_PINS_RGB_KEY_IO,
+        .gpio = GPIO_NUM_NC,
         .led_count = STATUS_LED_KEY_COUNT,
-        .tail_guard_pixels = STATUS_LED_KEY_TAIL_GUARD_PIXELS,
-        .dark_latch_rmt_writes = STATUS_LED_KEY_DARK_LATCH_RMT_WRITES,
         .color_order = STATUS_LED_KEY_DEFAULT_COLOR_ORDER,
-        // Same rationale as ec11: SPI3 MOSI + GDMA removes the non-DMA RMT
-        // flicker. GPIO13 is reassigned to SPI3 MOSI by the GPIO matrix.
-        .transport = STATUS_LED_STRIP_TRANSPORT_SPI,
-        .spi_host = SPI3_HOST,
+        // Logical zone only. Its pixels are packed into the main backend.
     },
     {
         .name = "edge",
@@ -1524,6 +1526,24 @@ static esp_err_t status_led_transmit_strip(
         : status_led_strip_backend_transmit(strip->backend, strip->color_order, colors);
 }
 
+static void status_led_pack_main_chain(
+    const status_led_frame_t *frame,
+    status_led_rgb_t main_pixels[STATUS_LED_MAIN_COUNT])
+{
+    memcpy(&main_pixels[STATUS_LED_MAIN_STATUS_OFFSET], frame->status, sizeof(frame->status));
+    /* V2.2 routes EC11 and KEY from the far end of their former standalone
+     * strips. Keep logical animation/key indexes stable and reverse only the
+     * physical serialization inside the shared GPIO1 chain. */
+    for (size_t index = 0; index < STATUS_LED_EC11_COUNT; ++index) {
+        main_pixels[STATUS_LED_MAIN_EC11_OFFSET + index] =
+            frame->ec11[STATUS_LED_EC11_COUNT - 1U - index];
+    }
+    for (size_t index = 0; index < STATUS_LED_KEY_COUNT; ++index) {
+        main_pixels[STATUS_LED_MAIN_KEY_OFFSET + index] =
+            frame->key[STATUS_LED_KEY_COUNT - 1U - index];
+    }
+}
+
 static bool status_led_frame_equal(const status_led_frame_t *left, const status_led_frame_t *right)
 {
     return memcmp(left, right, sizeof(*left)) == 0;
@@ -1642,6 +1662,18 @@ static void status_led_note_strip_transmitted(status_led_strip_id_t strip_index,
         !status_led_strip_backend_available(s_strips[strip_index].backend);
 }
 
+static void status_led_note_main_transmitted(uint32_t now_ms)
+{
+    const bool suspended =
+        !status_led_strip_backend_available(s_strips[STATUS_LED_STRIP_STATUS].backend);
+    s_strip_last_tx_ms[STATUS_LED_STRIP_STATUS] = now_ms;
+    s_strip_last_tx_ms[STATUS_LED_STRIP_EC11] = now_ms;
+    s_strip_last_tx_ms[STATUS_LED_STRIP_KEY] = now_ms;
+    s_strip_transport_suspended[STATUS_LED_STRIP_STATUS] = suspended;
+    s_strip_transport_suspended[STATUS_LED_STRIP_EC11] = suspended;
+    s_strip_transport_suspended[STATUS_LED_STRIP_KEY] = suspended;
+}
+
 static uint8_t status_led_strip_mask_for_index(status_led_strip_id_t strip_index)
 {
     switch (strip_index) {
@@ -1730,30 +1762,13 @@ static bool status_led_transport_release_due(uint32_t now_ms, uint32_t last_tx_m
 static uint8_t status_led_suspended_strip_mask(void)
 {
     uint8_t mask = 0U;
-    for (size_t index = 0; index < STATUS_LED_STRIP_COUNT; ++index) {
-        if (s_strip_transport_suspended[index]) {
-            mask = (uint8_t)(mask | status_led_strip_mask_for_index((status_led_strip_id_t)index));
-        }
+    if (s_strip_transport_suspended[STATUS_LED_STRIP_STATUS]) {
+        mask = (uint8_t)(mask | STATUS_LED_STRIP_MASK_MAIN);
+    }
+    if (s_strip_transport_suspended[STATUS_LED_STRIP_EDGE]) {
+        mask = (uint8_t)(mask | STATUS_LED_STRIP_MASK_EDGE);
     }
     return mask;
-}
-
-static bool status_led_skip_suspended_spi_final_latch(
-    status_led_strip_id_t strip_index,
-    const status_led_rgb_t *colors,
-    size_t count,
-    bool force_non_dma)
-{
-    if (!force_non_dma || strip_index >= STATUS_LED_STRIP_COUNT) {
-        return false;
-    }
-    if (s_strips[strip_index].transport != STATUS_LED_STRIP_TRANSPORT_SPI) {
-        return false;
-    }
-    if (!s_strip_transport_suspended[strip_index]) {
-        return false;
-    }
-    return !status_led_strip_has_light(colors, count);
 }
 
 static void status_led_suspend_quiet_idle_transports(bool low_power_active, uint32_t now_ms)
@@ -1761,7 +1776,14 @@ static void status_led_suspend_quiet_idle_transports(bool low_power_active, uint
     if (!low_power_active || !status_led_idle_transport_release_pending()) {
         return;
     }
-    for (size_t index = 0; index < STATUS_LED_STRIP_COUNT; ++index) {
+    static const status_led_strip_id_t physical_strips[] = {
+        STATUS_LED_STRIP_STATUS,
+        STATUS_LED_STRIP_EDGE,
+    };
+    for (size_t physical_index = 0;
+         physical_index < sizeof(physical_strips) / sizeof(physical_strips[0]);
+         ++physical_index) {
+        status_led_strip_id_t index = physical_strips[physical_index];
         if (s_strip_transport_suspended[index] || s_strip_last_tx_ms[index] == 0U) {
             continue;
         }
@@ -1770,6 +1792,10 @@ static void status_led_suspend_quiet_idle_transports(bool low_power_active, uint
         }
         (void)status_led_strip_backend_suspend(s_strips[index].backend);
         s_strip_transport_suspended[index] = true;
+        if (index == STATUS_LED_STRIP_STATUS) {
+            s_strip_transport_suspended[STATUS_LED_STRIP_EC11] = true;
+            s_strip_transport_suspended[STATUS_LED_STRIP_KEY] = true;
+        }
     }
 }
 
@@ -1796,42 +1822,16 @@ static uint8_t status_led_transmit_changed_frame(
 
     const uint32_t tx_ms = status_led_now_ms();
     uint8_t failed_strip_mask = 0U;
-    if ((strip_mask & STATUS_LED_STRIP_MASK_EC11) != 0U &&
-        !status_led_skip_suspended_spi_final_latch(
-            STATUS_LED_STRIP_EC11,
-            frame->ec11,
-            STATUS_LED_EC11_COUNT,
-            force_non_dma)) {
-        esp_err_t ret = status_led_transmit_strip(&s_strips[STATUS_LED_STRIP_EC11], frame->ec11, force_non_dma);
-        failed_strip_mask = (uint8_t)(
-            failed_strip_mask |
-            status_led_note_strip_transmit_result(STATUS_LED_STRIP_EC11, ret, tx_ms, force_non_dma));
-    }
-    if ((strip_mask & STATUS_LED_STRIP_MASK_KEY) != 0U) {
-        bool key_has_light = status_led_strip_has_light(frame->key, STATUS_LED_KEY_COUNT);
-        bool key_force_non_dma = force_non_dma || !key_has_light;
-        if (!key_dark_latch_pending_tx &&
-            status_led_skip_suspended_spi_final_latch(
-                STATUS_LED_STRIP_KEY,
-                frame->key,
-                STATUS_LED_KEY_COUNT,
-                key_force_non_dma)) {
-            /* Suspended dark KEY frames are normally skipped to avoid periodic
-             * idle chatter. A pending latch is the one bounded exception. */
-        } else {
-            esp_err_t ret = status_led_transmit_strip(&s_strips[STATUS_LED_STRIP_KEY], frame->key, key_force_non_dma);
-            failed_strip_mask = (uint8_t)(
-                failed_strip_mask |
-                status_led_note_strip_transmit_result(STATUS_LED_STRIP_KEY, ret, tx_ms, key_force_non_dma));
-        }
-    }
+    (void)key_dark_latch_pending_tx;
     if ((strip_mask & STATUS_LED_STRIP_MASK_EDGE) != 0U) {
         esp_err_t ret = status_led_transmit_strip(&s_strips[STATUS_LED_STRIP_EDGE], frame->edge, force_non_dma);
         failed_strip_mask = (uint8_t)(
             failed_strip_mask |
             status_led_note_strip_transmit_result(STATUS_LED_STRIP_EDGE, ret, tx_ms, force_non_dma));
     }
-    if ((strip_mask & STATUS_LED_STRIP_MASK_STATUS) != 0U) {
+    if ((strip_mask & STATUS_LED_STRIP_MASK_MAIN) != 0U) {
+        status_led_rgb_t main_pixels[STATUS_LED_MAIN_COUNT] = {0};
+        status_led_pack_main_chain(frame, main_pixels);
         uint8_t status_writes = status_led_status_tail_reinforce_write_count(frame);
         if (force_non_dma && status_writes < STATUS_LED_LOW_POWER_FINAL_LATCH_WRITES) {
             status_writes = STATUS_LED_LOW_POWER_FINAL_LATCH_WRITES;
@@ -1847,7 +1847,7 @@ static uint8_t status_led_transmit_changed_frame(
              ++write_index) {
             esp_err_t status_ret = status_led_transmit_strip(
                 &s_strips[STATUS_LED_STRIP_STATUS],
-                frame->status,
+                main_pixels,
                 force_non_dma);
             if (status_ret != ESP_OK) {
                 last_status_ret = status_ret;
@@ -1856,21 +1856,28 @@ static uint8_t status_led_transmit_changed_frame(
                 }
                 (void)status_led_strip_backend_suspend(s_strips[STATUS_LED_STRIP_STATUS].backend);
                 s_strip_transport_suspended[STATUS_LED_STRIP_STATUS] = true;
+                s_strip_transport_suspended[STATUS_LED_STRIP_EC11] = true;
+                s_strip_transport_suspended[STATUS_LED_STRIP_KEY] = true;
                 continue;
             }
             status_transmitted = true;
             ++successful_writes;
         }
         if (status_transmitted) {
-            status_led_note_strip_transmitted(STATUS_LED_STRIP_STATUS, tx_ms);
+            status_led_note_main_transmitted(tx_ms);
         } else {
+            esp_err_t failure = last_status_ret == ESP_OK ? ESP_FAIL : last_status_ret;
+            ESP_LOGW(TAG,
+                     "LED strip tx failed strip=main ret=%s force_non_dma=%u",
+                     esp_err_to_name(failure),
+                     force_non_dma ? 1U : 0U);
+            diag_log(DIAG_SRC_STATUS_LED, DIAG_LED_OUTPUT_FAIL, DIAG_SEV_WARN,
+                     (uint32_t)BOARD_PINS_RGB_MAIN_IO,
+                     (uint32_t)failure,
+                     20U + (uint32_t)STATUS_LED_STRIP_STATUS,
+                     force_non_dma ? 1U : 0U);
             failed_strip_mask = (uint8_t)(
-                failed_strip_mask |
-                status_led_note_strip_transmit_result(
-                    STATUS_LED_STRIP_STATUS,
-                    last_status_ret == ESP_OK ? ESP_FAIL : last_status_ret,
-                    tx_ms,
-                    force_non_dma));
+                failed_strip_mask | (strip_mask & STATUS_LED_STRIP_MASK_MAIN));
         }
     }
 
@@ -4796,8 +4803,9 @@ static void status_led_force_all_off(bool force_non_dma)
 
 static void status_led_suspend_all_strips(void)
 {
+    (void)status_led_strip_backend_suspend(s_strips[STATUS_LED_STRIP_STATUS].backend);
+    (void)status_led_strip_backend_suspend(s_strips[STATUS_LED_STRIP_EDGE].backend);
     for (size_t index = 0; index < STATUS_LED_STRIP_COUNT; ++index) {
-        (void)status_led_strip_backend_suspend(s_strips[index].backend);
         s_strip_transport_suspended[index] = true;
     }
 }
@@ -4934,7 +4942,14 @@ esp_err_t status_led_init(void)
     status_led_configure_power_inputs();
 
     esp_err_t final_ret = ESP_OK;
-    for (size_t index = 0; index < STATUS_LED_STRIP_COUNT; ++index) {
+    static const status_led_strip_id_t physical_strips[] = {
+        STATUS_LED_STRIP_STATUS,
+        STATUS_LED_STRIP_EDGE,
+    };
+    for (size_t physical_index = 0;
+         physical_index < sizeof(physical_strips) / sizeof(physical_strips[0]);
+         ++physical_index) {
+        status_led_strip_id_t index = physical_strips[physical_index];
         esp_err_t ret = status_led_init_strip_backend(&s_strips[index]);
         if (ret != ESP_OK && final_ret == ESP_OK) {
             final_ret = ret;
@@ -4944,15 +4959,15 @@ esp_err_t status_led_init(void)
     s_state.initialized = true;
     ESP_LOGI(
         TAG,
-        "status LED init: profile=%s status_gpio=%d ec11_gpio=%d key_gpio=%d edge_gpio=%d key_pin_contract=GPIO13 ec11_pin_contract=GPIO5 vdd_led_enable=always_on_assumed",
+        "status LED init: profile=%s physical_routes=2 main_gpio=%d main_count=%u main_order=status_ec11_key edge_gpio=%d edge_count=%u vdd_led_enable=always_on_assumed",
         status_led_profile_name(s_state.profile),
-        (int)BOARD_PINS_RGB_STATUS_IO,
-        (int)BOARD_PINS_RGB_EC11_IO,
-        (int)BOARD_PINS_RGB_KEY_IO,
-        (int)BOARD_PINS_RGB_EDGE_IO);
+        (int)BOARD_PINS_RGB_MAIN_IO,
+        (unsigned)STATUS_LED_MAIN_COUNT,
+        (int)BOARD_PINS_RGB_EDGE_IO,
+        (unsigned)STATUS_LED_EDGE_COUNT);
     diag_log(DIAG_SRC_STATUS_LED, DIAG_LED_STATE, DIAG_SEV_INFO,
-             (uint32_t)s_state.profile, (uint32_t)BOARD_PINS_RGB_STATUS_IO,
-             (uint32_t)BOARD_PINS_RGB_KEY_IO, (uint32_t)BOARD_PINS_RGB_EDGE_IO);
+             (uint32_t)s_state.profile, (uint32_t)BOARD_PINS_RGB_MAIN_IO,
+             (uint32_t)STATUS_LED_MAIN_COUNT, (uint32_t)BOARD_PINS_RGB_EDGE_IO);
     /* Boot cue is armed once in status_led_start only — init+start both used to
      * call force_boot_feedback which owners read as two power-on lights after OTA. */
     return final_ret;
@@ -6519,6 +6534,28 @@ static void status_led_print_status(void)
             strip_mem_block_symbols[index] =
                 (unsigned int)status_led_strip_backend_mem_block_symbols(s_strips[index].backend);
         }
+        /* EC11 and key remain logical zones, but V2.2 clocks both through the
+         * GPIO1 main backend. Mirror its physical transport data in diagnostic
+         * readback so shared zones are not reported as unavailable. */
+        for (size_t index = STATUS_LED_STRIP_EC11; index <= STATUS_LED_STRIP_KEY; ++index) {
+            strip_gpios[index] = BOARD_PINS_RGB_MAIN_IO;
+            strip_orders[index] = strip_orders[STATUS_LED_STRIP_STATUS];
+            strip_available[index] = strip_available[STATUS_LED_STRIP_STATUS];
+            strip_dma_requested[index] = strip_dma_requested[STATUS_LED_STRIP_STATUS];
+            strip_dma[index] = strip_dma[STATUS_LED_STRIP_STATUS];
+            strip_dma_fallback[index] = strip_dma_fallback[STATUS_LED_STRIP_STATUS];
+            strip_transport_actual[index] = strip_transport_actual[STATUS_LED_STRIP_STATUS];
+            strip_rmt_dma_requested[index] = strip_rmt_dma_requested[STATUS_LED_STRIP_STATUS];
+            strip_rmt_dma[index] = strip_rmt_dma[STATUS_LED_STRIP_STATUS];
+            strip_rmt_dma_fallback[index] = strip_rmt_dma_fallback[STATUS_LED_STRIP_STATUS];
+            strip_spi_dma_requested[index] = 0U;
+            strip_spi_dma[index] = 0U;
+            strip_spi_dma_fallback[index] = 0U;
+            strip_mem_block_symbols[index] = strip_mem_block_symbols[STATUS_LED_STRIP_STATUS];
+        }
+        strip_counts[STATUS_LED_STRIP_STATUS] = STATUS_LED_STATUS_COUNT;
+        strip_counts[STATUS_LED_STRIP_EC11] = STATUS_LED_EC11_COUNT;
+        strip_counts[STATUS_LED_STRIP_KEY] = STATUS_LED_KEY_COUNT;
         status_tail_guard_pixels = s_strips[STATUS_LED_STRIP_STATUS].tail_guard_pixels;
         key_tail_guard_pixels = s_strips[STATUS_LED_STRIP_KEY].tail_guard_pixels;
         xSemaphoreGive(s_mutex);
@@ -6596,15 +6633,15 @@ static void status_led_print_status(void)
             : 0U;
 
     printf(
-        "~LED:STATUS detail=contract backend=mixed_rmt_and_spi_ws2812_800khz refresh_ms=%u reset_us=300 rmt_reset_us=300 spi_reset_us=600 spi_ws2812_waveform=4bit_3m2_0x8_0xE"
+        "~LED:STATUS detail=contract backend=rmt_ws2812_800khz physical_routes=2 main_chain_count=22 main_chain_order=status_ec11_key refresh_ms=%u reset_us=300 rmt_reset_us=300"
         " task_priority=%u task_core=%d task_affinity=cpu1"
-        " strip_transport_requested=status:rmt,ec11:spi2,key:spi3,edge:rmt"
-        " strip_transport_actual=status:%s,ec11:%s,key:%s,edge:%s"
-        " spi_dma_outputs_requested=ec11:SPI2,key:SPI3"
+        " strip_transport_requested=main:rmt,edge:rmt logical_zone_transport=status:main,ec11:main,key:main,edge:edge"
+        " strip_transport_actual=main:%s,ec11_alias:%s,key_alias:%s,edge:%s"
+        " spi_dma_outputs_requested=none"
         " spi_dma_requested=status:%u,ec11:%u,key:%u,edge:%u"
         " spi_dma_actual=status:%u,ec11:%u,key:%u,edge:%u"
         " spi_dma_fallback=status:%u,ec11:%u,key:%u,edge:%u"
-        " rmt_tx_dma_supported=%u rmt_tx_dma_strategy=status_strip_dma_full_frame_buffer"
+        " rmt_tx_dma_supported=%u rmt_tx_dma_strategy=main_chain_dma_full_frame_buffer"
         " rmt_strip_all_available=%u rmt_tx_dma_all_strips=%u"
         " rmt_tx_dma_requested=status:%u,ec11:%u,key:%u,edge:%u"
         " rmt_tx_dma_actual=status:%u,ec11:%u,key:%u,edge:%u"
@@ -6613,12 +6650,12 @@ static void status_led_print_status(void)
         " idle_refresh_ms=%u unchanged_tx_suppression=1 timing=ws2812_4020_compatible"
         " low_power_transport_suspend_ms=%u low_power_status_tx=non_dma_clear_and_final_frame"
         " low_power_all_zone_tx=non_dma_clear_and_final_frame"
-        " low_power_spi_latch=spi_dma_prelatch_then_one_shot_rmt_gpio_low"
+        " low_power_spi_latch=not_applicable_v2_2_two_rmt_routes"
         " key_dark_idle_resync_ms=%u key_tail_guard_pixels=%u key_dark_latch_rmt_writes=%u"
         " key_dark_latch_expiry_dirty=1"
-        " key_dark_clear_tx=spi_dma_prelatch_then_one_shot_rmt_gpio_low"
-        " key_lit_edge_tx=spi_dma_only"
-        " key_feedback_dynamic_tx=spi_dma_until_dark_latch key_release_fade_ms=%u key_single_white_hold_ms=%u"
+        " key_dark_clear_tx=main_chain_frame"
+        " key_lit_edge_tx=main_chain_rmt_dma"
+        " key_feedback_dynamic_tx=main_chain_rmt_dma key_release_fade_ms=%u key_single_white_hold_ms=%u"
         " key_multi_key_independent_fade=%u"
         " shutdown_final_status_tx=dma_visible_pwr_no_black_latch"
         " shutdown_final_all_zone_tx=non_dma_pwr_only_latch_or_all_off"
@@ -6659,7 +6696,7 @@ static void status_led_print_status(void)
         " mapping_contract=" STATUS_LED_STATUS_KEY_MAPPING_CONTRACT
         " status_physical_map=" STATUS_LED_STATUS_PHYSICAL_MAP
         " key_physical_map=" STATUS_LED_KEY_PHYSICAL_MAP
-        " separate_status_key_color_order=1 status_default_order=GRB key_default_order=GRB\n",
+        " separate_status_key_color_order=0 shared_main_color_order=GRB status_default_order=GRB key_default_order=GRB\n",
         STATUS_LED_REFRESH_MS,
         STATUS_LED_TASK_PRIORITY,
         STATUS_LED_TASK_CORE_ID,
@@ -6777,7 +6814,8 @@ static void status_led_print_status(void)
         "~LED:STATUS detail=strips"
         " strips=status:gpio%d:count%u:order%s:transport%s:avail%u:dma_req%u:dma%u:dma_fb%u:rmt_dma_req%u:rmt_dma%u:rmt_dma_fb%u:spi_dma_req%u:spi_dma%u:spi_dma_fb%u:refsLED1..LED6,ec11:gpio%d:count%u:order%s:transport%s:avail%u:dma_req%u:dma%u:dma_fb%u:rmt_dma_req%u:rmt_dma%u:rmt_dma_fb%u:spi_dma_req%u:spi_dma%u:spi_dma_fb%u:refsLED7..LED10+LED15..LED16+LED23..LED28,key:gpio%d:count%u:order%s:transport%s:avail%u:dma_req%u:dma%u:dma_fb%u:rmt_dma_req%u:rmt_dma%u:rmt_dma_fb%u:spi_dma_req%u:spi_dma%u:spi_dma_fb%u:refsLED11..LED14,edge:gpio%d:count%u:order%s:transport%s:avail%u:dma_req%u:dma%u:dma_fb%u:rmt_dma_req%u:rmt_dma%u:rmt_dma_fb%u:spi_dma_req%u:spi_dma%u:spi_dma_fb%u:refsLED17..LED22"
         " status_tail_guard_pixels=%u key_tail_guard_pixels=%u"
-        " key_pin_contract=PWM_RGB_KEY_GPIO13 ec11_pin_contract=PWM_RGB_EC11_GPIO5 edge_pin_contract=PWM_RGB_Edge_GPIO4 gpio14_reserved=BAT_CHG_IO vdd_led_enable=always_on_assumed"
+        " physical_routes=main:gpio1:count22:order_status_ec11_key,edge:gpio5:count6"
+        " key_pin_contract=PWM_RGB_MAIN_GPIO1_SHARED ec11_pin_contract=PWM_RGB_MAIN_GPIO1_SHARED edge_pin_contract=PWM_RGB_Edge_GPIO5 gpio14_reserved=BAT_CHG_IO vdd_led_enable=always_on_assumed"
         "\n",
         (int)strip_gpios[STATUS_LED_STRIP_STATUS],
         (unsigned)strip_counts[STATUS_LED_STRIP_STATUS],

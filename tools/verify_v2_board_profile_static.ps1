@@ -121,10 +121,11 @@ foreach ($item in @(
     @($boardPins, "BOARD_PINS_BAT_V_ADC_IO\s+\(GPIO_NUM_10\)", "battery ADC GPIO10"),
     @($boardPins, "BOARD_PINS_USB_DET_DISABLED_IO\s+\(GPIO_NUM_7\)", "retired physical USB_DET GPIO7"),
     @($boardPins, "BOARD_PINS_USB_DET_IO\s+\(GPIO_NUM_NC\)", "retired USB_DET not configured"),
-    @($boardPins, "BOARD_PINS_RGB_STATUS_IO\s+\(GPIO_NUM_1\)", "status strip GPIO1"),
-    @($boardPins, "BOARD_PINS_RGB_EC11_IO\s+\(GPIO_NUM_5\)", "EC11 strip GPIO5"),
-    @($boardPins, "BOARD_PINS_RGB_KEY_IO\s+\(GPIO_NUM_13\)", "key strip GPIO13"),
-    @($boardPins, "BOARD_PINS_RGB_EDGE_IO\s+\(GPIO_NUM_4\)", "edge strip GPIO4"),
+    @($boardPins, "BOARD_PINS_RGB_MAIN_IO\s+\(GPIO_NUM_1\)", "V2.2 main RGB route GPIO1"),
+    @($boardPins, "BOARD_PINS_RGB_EDGE_IO\s+\(GPIO_NUM_5\)", "V2.2 edge RGB route GPIO5"),
+    @($boardPins, "BOARD_PINS_RGB_STATUS_IO\s+BOARD_PINS_RGB_MAIN_IO", "status logical zone shares main route"),
+    @($boardPins, "BOARD_PINS_RGB_EC11_IO\s+BOARD_PINS_RGB_MAIN_IO", "EC11 logical zone shares main route"),
+    @($boardPins, "BOARD_PINS_RGB_KEY_IO\s+BOARD_PINS_RGB_MAIN_IO", "key logical zone shares main route"),
     @($boardPins, "BOARD_PINS_PWR_HOLD_IO\s+\(GPIO_NUM_9\)", "PWR_HOLD GPIO9"),
     @($boardPins, "BOARD_PINS_CURRENT_TELEMETRY_PRESENT\s+\(0\)", "current V2 board current telemetry absent flag"),
     @($boardPins, "BOARD_PINS_TPS63020_I_ADC_IO\s+\(GPIO_NUM_NC\)", "TPS63020 current ADC not populated"),
@@ -195,10 +196,12 @@ foreach ($item in @(
     @($lowPowerDoc, "PWR_HOLD/GPIO9", "low-power hardware shutdown PWR_HOLD doc"),
     @($statusLed, "STATUS_LED_EC11_COUNT 12", "EC11 12-LED strip count"),
     @($statusLed, "STATUS_LED_EDGE_COUNT 6", "edge 6-LED strip count"),
-    @($statusLed, "STATUS_LED_STRIP_COUNT 4", "four LED strips"),
-    @($statusLed, "BOARD_PINS_RGB_EC11_IO", "EC11 strip firmware resource"),
+    @($statusLed, "STATUS_LED_PHYSICAL_ROUTE_COUNT 2", "two physical RGB routes"),
+    @($statusLed, "STATUS_LED_MAIN_COUNT == 22U", "22-pixel main chain assertion"),
+    @($statusLed, "BOARD_PINS_RGB_MAIN_IO", "main-chain firmware resource"),
+    @($statusLed, "main_chain_order=status_ec11_key", "main-chain order diagnostic"),
     @($statusLed, "ec11_order=LED7..LED10\+LED15..LED16\+LED23..LED28", "EC11 LED order status"),
-    @($statusLedDoc, "GPIO5", "status LED doc EC11 GPIO5"),
+    @($statusLedDoc, "two physical WS2812 data routes", "status LED doc V2.2 two-route topology"),
     @($statusLedDoc, "LED17.*LED22", "status LED doc edge LED refs"),
     @($otaPackage, 'hardware_revision = "keyboard-v2-n16r8"', "OTA package V2 hardware requirement"),
     @($otaPackage, 'hardware_revision = "esp32s3-wroom-1-n16r8"', "OTA package V2 DIS revision"),
@@ -259,7 +262,9 @@ foreach ($item in @(
     @($boardPins, "BOARD_PINS_CURRENT_TELEMETRY_PRESENT\s+\(1\)", "stale populated current telemetry flag"),
     @($boardPins, "BOARD_PINS_TPS63020_I_ADC_IO\s+\(GPIO_NUM_10\)", "stale TPS63020 current ADC GPIO10"),
     @($boardPins, "BOARD_PINS_SY7088_I_ADC_IO\s+\(GPIO_NUM_9\)", "stale SY7088 current ADC GPIO9"),
-    @($boardPins, "BOARD_PINS_RGB_EC11_IO\s+\(GPIO_NUM_4\)", "stale EC11 strip on edge GPIO"),
+    @($boardPins, "BOARD_PINS_RGB_EC11_IO\s+\(GPIO_NUM_(4|5)\)", "stale dedicated EC11 RGB route"),
+    @($boardPins, "BOARD_PINS_RGB_KEY_IO\s+\(GPIO_NUM_13\)", "stale dedicated key RGB route"),
+    @($boardPins, "BOARD_PINS_RGB_EDGE_IO\s+\(GPIO_NUM_4\)", "stale edge RGB GPIO4 route"),
     @($sdkconfig, "CONFIG_LISTENER_BOARD_PROFILE_N4=y", "active N4 sdkconfig"),
     @($sdkconfig, "CONFIG_ESPTOOLPY_FLASHSIZE_4MB=y", "active 4 MB flash sdkconfig"),
     @($sdkconfig, "# CONFIG_SPIRAM is not set", "disabled PSRAM sdkconfig"),
@@ -301,4 +306,4 @@ if ($errors.Count -gt 0) {
     exit 1
 }
 
-Write-Host "PASS: V2 N16R8 board profile, memory defaults, pin map, four-zone LED resources, GPIO10 battery ADC, GPIO9 PWR_HOLD, absent current telemetry, disabled USB_Det high-Z plus USB SOF policy, diagnostics, partitions, and package identity checks passed."
+Write-Host "PASS: V2.2 N16R8 board profile, two-route GPIO1 main/GPIO5 edge LED topology, logical four-zone mapping, memory defaults, pin map, GPIO10 battery ADC, GPIO9 PWR_HOLD, diagnostics, partitions, and package identity checks passed."

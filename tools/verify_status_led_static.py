@@ -10,10 +10,11 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 
 CHECKS = {
     "ports/esp32/board_pins/include/board_pins.h": [
-        r"BOARD_PINS_RGB_STATUS_IO\s+\(GPIO_NUM_1\)",
-        r"BOARD_PINS_RGB_EC11_IO\s+\(GPIO_NUM_5\)",
-        r"BOARD_PINS_RGB_KEY_IO\s+\(GPIO_NUM_13\)",
-        r"BOARD_PINS_RGB_EDGE_IO\s+\(GPIO_NUM_4\)",
+        r"BOARD_PINS_RGB_MAIN_IO\s+\(GPIO_NUM_1\)",
+        r"BOARD_PINS_RGB_EDGE_IO\s+\(GPIO_NUM_5\)",
+        r"BOARD_PINS_RGB_STATUS_IO\s+BOARD_PINS_RGB_MAIN_IO",
+        r"BOARD_PINS_RGB_EC11_IO\s+BOARD_PINS_RGB_MAIN_IO",
+        r"BOARD_PINS_RGB_KEY_IO\s+BOARD_PINS_RGB_MAIN_IO",
         r"BOARD_PINS_BAT_CHG_IO\s+\(GPIO_NUM_14\)",
         r"BOARD_PINS_USB_DET_IO\s+\(GPIO_NUM_NC\)",
     ],
@@ -218,12 +219,12 @@ CHECKS = {
         "STATUS_LED_NVS_BRIGHTNESS_KEY \"brightness\"",
         "led_contract_rev=",
         "rmt_tx_dma_supported=%u",
-        "strip_transport_requested=status:rmt,ec11:spi2,key:spi3,edge:rmt",
-        "strip_transport_actual=status:%s,ec11:%s,key:%s,edge:%s",
+        "strip_transport_requested=main:rmt,edge:rmt",
+        "strip_transport_actual=main:%s,ec11_alias:%s,key_alias:%s,edge:%s",
         "spi_dma_requested=status:%u,ec11:%u,key:%u,edge:%u",
         "spi_dma_actual=status:%u,ec11:%u,key:%u,edge:%u",
         "spi_dma_fallback=status:%u,ec11:%u,key:%u,edge:%u",
-        "rmt_tx_dma_strategy=status_strip_dma_full_frame_buffer",
+        "rmt_tx_dma_strategy=main_chain_dma_full_frame_buffer",
         "rmt_strip_all_available=%u",
         "rmt_tx_dma_all_strips=%u",
         "rmt_tx_dma_requested=status:%u,ec11:%u,key:%u,edge:%u",
@@ -232,12 +233,14 @@ CHECKS = {
         "rmt_mem_block_symbols=status:%u,ec11:%u,key:%u,edge:%u",
         "unchanged_tx_suppression=1",
         "timing=ws2812_4020_compatible",
-        "spi_ws2812_waveform=4bit_3m2_0x8_0xE",
+        "physical_routes=2 main_chain_count=22 main_chain_order=status_ec11_key",
+        "frame->ec11[STATUS_LED_EC11_COUNT - 1U - index]",
+        "frame->key[STATUS_LED_KEY_COUNT - 1U - index]",
         "status_tail_guard_pixels=%u",
         "key_tail_guard_pixels=%u",
-        "key_dark_clear_tx=spi_dma_prelatch_then_one_shot_rmt_gpio_low",
-        "key_lit_edge_tx=spi_dma_only",
-        "key_feedback_dynamic_tx=spi_dma_until_dark_latch",
+        "key_dark_clear_tx=main_chain_frame",
+        "key_lit_edge_tx=main_chain_rmt_dma",
+        "key_feedback_dynamic_tx=main_chain_rmt_dma",
         "key_release_fade_ms=%u",
         "key_single_white_hold_ms=%u",
         "key_multi_key_independent_fade=%u",
@@ -326,7 +329,8 @@ CHECKS = {
         "mapping_contract=",
         "status_physical_map=",
         "key_physical_map=",
-        "separate_status_key_color_order=1",
+        "separate_status_key_color_order=0",
+        "shared_main_color_order=GRB",
         "~LED:BUDGET",
         "BRIGHTNESS ",
         "~LED:PRIVACY",
@@ -372,8 +376,9 @@ CHECKS = {
         "s_state.error_until_ms = 0",
         "strcmp(s_state.last_reason, \"preview\") == 0",
         "status_led_ble_elapsed_locked(now_ms)",
-        "PWM_RGB_EC11_GPIO5",
-        "PWM_RGB_KEY_GPIO13",
+        "physical_routes=2",
+        "main_chain_count=22",
+        "PWM_RGB_MAIN_GPIO1_SHARED",
         "gpio14_reserved=BAT_CHG_IO",
         "vdd_led_enable=always_on_assumed",
         "~LED:STATUS detail=contract",
@@ -499,10 +504,8 @@ CHECKS = {
         "shutdown_confirm_active=%u shutdown_confirm_final=%u shutdown_confirm_latched=%u shutdown_confirm_elapsed_ms=%",
         "shutdown_confirm_active=%u shutdown_confirm_latched=%u",
         "status_led_apply_status_tail_guard_locked",
-        "status_led_transmit_strip(\n                &s_strips[STATUS_LED_STRIP_STATUS],\n                frame->status,\n                force_non_dma)",
-        "status_led_transmit_strip(&s_strips[STATUS_LED_STRIP_EC11], frame->ec11, force_non_dma)",
-        "bool key_force_non_dma =",
-        "status_led_transmit_strip(&s_strips[STATUS_LED_STRIP_KEY], frame->key, key_force_non_dma)",
+        "status_led_pack_main_chain(frame, main_pixels)",
+        "status_led_transmit_strip(\n                &s_strips[STATUS_LED_STRIP_STATUS],\n                main_pixels,\n                force_non_dma)",
         "status_led_transmit_strip(&s_strips[STATUS_LED_STRIP_EDGE], frame->edge, force_non_dma)",
         "low_power_all_zone_tx=non_dma_clear_and_final_frame",
         "shutdown_final_status_tx=dma_visible_pwr_no_black_latch",
@@ -552,7 +555,7 @@ CHECKS = {
         "status_led_pack_status_intensity_b",
     ],
     "components/status_led/status_led_strip_backend.h": [
-        "STATUS_LED_STRIP_BACKEND_MAX_LED_COUNT 12U",
+        "STATUS_LED_STRIP_BACKEND_MAX_LED_COUNT 28U",
         "STATUS_LED_COLOR_ORDER_GRB",
         "STATUS_LED_COLOR_ORDER_RGB",
         "tail_guard_pixels",
@@ -831,13 +834,13 @@ CHECKS = {
     ],
     "docs/features/status_led.md": [
         "GPIO5",
-        "GPIO13",
+        "two physical WS2812 data routes",
         "`GPIO14` is reserved for `BAT_CHG_IO`",
         "`LED1=PWR`",
         "`LED6=WARN`",
         "`LED11=KEY1`",
         "`LED14=KEY4`",
-        "status and key strips keep separate color-order storage",
+        "Status, EC11 and key share the main chain's `GRB` color order",
         "`standard` is the product default",
         "Product Effect Language",
         "Repeated same-state BLE callbacks are idempotent",
@@ -874,7 +877,7 @@ CHECKS = {
         "design peak to the Type zone cap",
         "A 50% Type zone setting means the active effect's high point is 50%",
         "PWR, BLE, KEY, and OTA status cues all use that design-peak mapping in active and low-power states",
-        "Low-power may decide which semantic LEDs stay visible, but it must not own brightness or apply a hidden dimming layer",
+        "Low-power may decide which logical zones stay visible, but it must not own brightness or apply a hidden dimming layer",
         "Low-power does not have separate brightness constants",
         "Status-strip mixed RGB colors are then balanced so their channel sum matches the single-channel peak",
         "charging breath is intentionally shallow and slow",
@@ -909,13 +912,11 @@ CHECKS = {
         "status_tail_reinforce=recording_processing",
         "status_tail_reinforce_writes=3",
         "status_tail_overlap_reinforce_writes=1",
-        "strip_transport_requested=status:rmt,ec11:spi2,key:spi3,edge:rmt",
-        "spi_dma_requested=status:0,ec11:1,key:1,edge:0",
-        "spi_dma_fallback",
-        "rmt_tx_dma_strategy=status_strip_dma_full_frame_buffer",
-        "rmt_tx_dma_all_strips=0",
-        "rmt_tx_dma_actual=status:1,ec11:0,key:0,edge:0",
-        "rmt_mem_block_symbols=status:1024,ec11:0,key:0,edge:48",
+        "strip_transport_requested=main:rmt,edge:rmt",
+        "rmt_tx_dma_strategy=main_chain_dma_full_frame_buffer",
+        "physical_routes=2",
+        "main_chain_count=22",
+        "main_chain_order=status_ec11_key",
         "dynamic_active_accents=1",
         "startup_complete_gate=ble_visible_ready_frame_no_early_pwr_normal",
         "status_tail_overlap_style=dma_audio_rec_ai_da_dada",
@@ -1701,9 +1702,15 @@ def main() -> int:
             or "return failed_strip_mask;" not in transmit_changed_frame
         ):
             failures.append("status_led.c: tx mutex timeout and strip transmit errors must report failed strip masks")
-        for strip in ("STATUS_LED_STRIP_EC11", "STATUS_LED_STRIP_KEY", "STATUS_LED_STRIP_EDGE", "STATUS_LED_STRIP_STATUS"):
+        for strip in ("STATUS_LED_STRIP_EDGE",):
             if not re.search(rf"status_led_note_strip_transmit_result\(\s*{strip}", transmit_changed_frame):
                 failures.append(f"status_led.c: {strip} transmit failures must flow into the failed-strip mask")
+        if (
+            "LED strip tx failed strip=main" not in transmit_changed_frame
+            or "strip_mask & STATUS_LED_STRIP_MASK_MAIN" not in transmit_changed_frame
+            or "BOARD_PINS_RGB_MAIN_IO" not in transmit_changed_frame
+        ):
+            failures.append("status_led.c: composite main-route failures must be logged and mark attempted main logical zones dirty")
         if (
             "LED strip tx failed strip=%s" not in tx_result
             or "status_led_strip_mask_for_index(strip_index)" not in tx_result
@@ -1730,29 +1737,22 @@ def main() -> int:
         ):
             failures.append("status_led.c: KEY lit frames must not use one-shot RMT or a lit-latch pending path; active white/purple/fade frames stay on SPI DMA")
         if (
-            "bool key_dark_latch_pending_tx = false;" not in refresh_once
-            or "key_dark_latch_pending_tx = !force_clear_tx &&" not in refresh_once
-            or "s_state.key_dark_latch_pending_mask != 0U" not in refresh_once
-            or "tx_strip_mask = (uint8_t)(tx_strip_mask | STATUS_LED_STRIP_MASK_KEY);" not in refresh_once
-            or "key_dark_latch_pending_tx)" not in refresh_once
-            or "key_dark_latch_pending_tx" not in transmit_changed_frame
-            or "bool key_has_light = status_led_strip_has_light(frame->key, STATUS_LED_KEY_COUNT);" not in transmit_changed_frame
-            or "bool key_force_non_dma = force_non_dma || !key_has_light;" not in transmit_changed_frame
-            or "!key_dark_latch_pending_tx &&" not in transmit_changed_frame
-            or "key_lit_edge_tx=spi_dma_only" not in status_led
-            or "key_feedback_dynamic_tx=spi_dma_until_dark_latch" not in status_led
-            or "key_dark_latch_expiry_dirty=1" not in status_led
+            "status_led_pack_main_chain(frame, main_pixels);" not in transmit_changed_frame
+            or "STATUS_LED_STRIP_MASK_MAIN" not in transmit_changed_frame
+            or "status_led_note_main_transmitted(tx_ms);" not in transmit_changed_frame
+            or "key_feedback_dynamic_tx=main_chain_rmt_dma" not in status_led
         ):
-            failures.append("status_led.c: KEY feedback must keep lit white/purple/fade frames on SPI DMA and leave a pending all-dark latch dirty until it is physically transmitted")
+            failures.append("status_led.c: status/EC11/key changes must transmit one complete V2.2 main-chain frame")
         if "status_led_key_feedback_latch_active_locked" in status_led or "key_feedback_latch_tx" in status_led:
             failures.append("status_led.c: KEY feedback latch must not stay active for the whole fade window; that reintroduces SPI/RMT transport churn flicker")
         if (
-            "s_strip_transport_suspended[index]" not in suspended_mask
-            or "status_led_strip_mask_for_index((status_led_strip_id_t)index)" not in suspended_mask
+            "s_strip_transport_suspended[STATUS_LED_STRIP_STATUS]" not in suspended_mask
+            or "STATUS_LED_STRIP_MASK_MAIN" not in suspended_mask
+            or "s_strip_transport_suspended[STATUS_LED_STRIP_EDGE]" not in suspended_mask
             or "tx_strip_mask = (uint8_t)(tx_strip_mask | status_led_suspended_strip_mask());" not in refresh_once
             or "if (!pwr_only_final_latch)" not in refresh_once
         ):
-            failures.append("status_led.c: suspended EC11/KEY SPI transports must become dirty on resume so unchanged-frame suppression cannot leave them unavailable")
+            failures.append("status_led.c: suspended V2.2 physical routes must dirty all shared main zones plus edge on resume")
         if (
             "status_led_strip_backend_available(s_strips[strip_index].backend)" not in note_transmitted
             or "s_strip_transport_suspended[strip_index] =" not in note_transmitted
@@ -3425,22 +3425,24 @@ def main() -> int:
         or "return false;" not in key_dark_rewrite
     ):
         failures.append("status_led.c: dark KEY strip must not be periodically rewritten during idle")
-    if (
-        "status_led_key_dark_latch_needed" in status_led
-        or "STATUS_LED_KEY_DARK_CLEAR_WRITES" in status_led
-        or "key_dark_clear_writes=%u" in status_led
-            or "key_dark_clear_tx=spi_dma_prelatch_then_one_shot_rmt_gpio_low" not in status_led
-            or "key_tail_guard_pixels=%u" not in status_led
-            or "key_dark_latch_rmt_writes=%u" not in status_led
-            or "key_dark_latch_expiry_dirty=1" not in status_led
-            or "uint8_t key_dark_latch_pending_mask;" not in status_led
-            or "s_state.key_dark_latch_pending_mask =" not in status_led
-            or ".dark_latch_rmt_writes = STATUS_LED_KEY_DARK_LATCH_RMT_WRITES" not in status_led
-            or ".dark_latch_rmt_writes = strip->dark_latch_rmt_writes" not in status_led
-            or "bool key_has_light = status_led_strip_has_light(frame->key, STATUS_LED_KEY_COUNT);" not in status_led
-            or "bool key_force_non_dma = force_non_dma || !key_has_light;" not in status_led
+    try:
+        pack_main = extract_c_function(status_led, "status_led_pack_main_chain")
+    except ValueError as exc:
+        failures.append(f"status_led.c: {exc}")
+    else:
+        ordered_offsets = [
+            pack_main.find("STATUS_LED_MAIN_STATUS_OFFSET"),
+            pack_main.find("STATUS_LED_MAIN_EC11_OFFSET"),
+            pack_main.find("STATUS_LED_MAIN_KEY_OFFSET"),
+        ]
+        if (
+            not all(index >= 0 for index in ordered_offsets)
+            or ordered_offsets != sorted(ordered_offsets)
+            or "STATUS_LED_MAIN_COUNT == 22U" not in status_led
+            or "STATUS_LED_MAIN_EC11_OFFSET" not in status_led
+            or "STATUS_LED_MAIN_KEY_OFFSET" not in status_led
         ):
-        failures.append("status_led.c: KEY dark transitions must stay bounded: no periodic dark rewrites and no normal tail guard, but the all-dark latch must expose the fixed RMT black-latch write count")
+            failures.append("status_led.c: V2.2 main-chain packing must stay status[6] then EC11[12] then key[4]")
     if not re.search(
         r"status_led_key_dark_rewrite_needed\(&frame,\s*changed_strip_mask,\s*low_power_active,\s*now_ms\)[\s\S]{0,160}"
         r"tx_strip_mask\s*=\s*\(uint8_t\)\(tx_strip_mask\s*\|\s*STATUS_LED_STRIP_MASK_KEY\);",
@@ -3711,23 +3713,24 @@ def main() -> int:
     ):
         failures.append("status_led_strip_backend.c: runtime status must expose whether each available strip uses RMT TX DMA")
     if (
-        "strip_transport_requested=status:rmt,ec11:spi2,key:spi3,edge:rmt" not in status_led or
-        "strip_transport_actual=status:%s,ec11:%s,key:%s,edge:%s" not in status_led or
-        "reset_us=300 rmt_reset_us=300 spi_reset_us=600 spi_ws2812_waveform=4bit_3m2_0x8_0xE" not in status_led or
+        "physical_routes=2 main_chain_count=22 main_chain_order=status_ec11_key" not in status_led or
+        "strip_transport_requested=main:rmt,edge:rmt" not in status_led or
+        "strip_transport_actual=main:%s,ec11_alias:%s,key_alias:%s,edge:%s" not in status_led or
+        "reset_us=300 rmt_reset_us=300" not in status_led or
         "spi_dma_requested=status:%u,ec11:%u,key:%u,edge:%u" not in status_led or
         "spi_dma_actual=status:%u,ec11:%u,key:%u,edge:%u" not in status_led or
         "spi_dma_fallback=status:%u,ec11:%u,key:%u,edge:%u" not in status_led or
-        "rmt_tx_dma_strategy=status_strip_dma_full_frame_buffer" not in status_led or
+        "rmt_tx_dma_strategy=main_chain_dma_full_frame_buffer" not in status_led or
         "rmt_tx_dma_actual=status:%u,ec11:%u,key:%u,edge:%u" not in status_led or
         "rmt_tx_dma_fallback=status:%u,ec11:%u,key:%u,edge:%u" not in status_led or
         "rmt_mem_block_symbols=status:%u,ec11:%u,key:%u,edge:%u" not in status_led or
         "rmt_idle_drive=active_dma_low_power_all_zone_non_dma_final_frame_then_release_gpio_low" not in status_led
         or "shutdown_final_status_tx=dma_visible_pwr_no_black_latch" not in status_led
         or "low_power_all_zone_tx=non_dma_clear_and_final_frame" not in status_led
-        or "low_power_spi_latch=spi_dma_prelatch_then_one_shot_rmt_gpio_low" not in status_led
+        or "low_power_spi_latch=not_applicable_v2_2_two_rmt_routes" not in status_led
         or "shutdown_final_all_zone_tx=non_dma_pwr_only_latch_or_all_off" not in status_led
     ):
-        failures.append("status_led.c: ~LED:STATUS contract must expose RMT/SPI transport, per-strip DMA actual/fallback state, reset-tail timing, buffer size, and idle-drive policy")
+        failures.append("status_led.c: ~LED:STATUS contract must expose the V2.2 two-route topology, main-chain DMA state, reset timing, and idle-drive policy")
     if (
         "STATUS_LED_SPI_CLOCK_HZ       3200000" not in status_led_backend
         or "STATUS_LED_SPI_BITS_PER_BIT   4U" not in status_led_backend
@@ -3754,20 +3757,17 @@ def main() -> int:
     ):
         failures.append("status_led.c: low-power resume must all-zone clear so physical WS2812 latch state cannot survive wake")
     if status_led.count(".prefer_dma = true") != 1 or not re.search(
-        r"\.name\s*=\s*\"status\"[\s\S]*?\.prefer_dma\s*=\s*true",
+        r"\.name\s*=\s*\"main\"[\s\S]*?\.gpio\s*=\s*BOARD_PINS_RGB_MAIN_IO[\s\S]*?"
+        r"\.led_count\s*=\s*STATUS_LED_MAIN_COUNT[\s\S]*?\.prefer_dma\s*=\s*true",
         status_led,
     ):
-        failures.append("status_led.c: current V2 hardware must request RMT TX DMA only for the status strip")
+        failures.append("status_led.c: V2.2 main 22-pixel route must be the only DMA-preferring RMT backend")
     if not re.search(
-        r"\.name\s*=\s*\"ec11\"[\s\S]*?\.transport\s*=\s*STATUS_LED_STRIP_TRANSPORT_SPI[\s\S]*?\.spi_host\s*=\s*SPI2_HOST",
+        r"\.name\s*=\s*\"ec11\"[\s\S]*?\.gpio\s*=\s*GPIO_NUM_NC[\s\S]*?"
+        r"\.name\s*=\s*\"key\"[\s\S]*?\.gpio\s*=\s*GPIO_NUM_NC",
         status_led,
     ):
-        failures.append("status_led.c: EC11 strip must request SPI2 DMA")
-    if not re.search(
-        r"\.name\s*=\s*\"key\"[\s\S]*?\.tail_guard_pixels\s*=\s*STATUS_LED_KEY_TAIL_GUARD_PIXELS[\s\S]*?\.transport\s*=\s*STATUS_LED_STRIP_TRANSPORT_SPI[\s\S]*?\.spi_host\s*=\s*SPI3_HOST",
-        status_led,
-    ):
-        failures.append("status_led.c: key strip must request SPI3 DMA and explicitly use the KEY tail-guard constant")
+        failures.append("status_led.c: EC11 and key must remain logical zones without duplicate GPIO1 backends")
     if "key_tail_guard_pixels=%u" not in status_led:
         failures.append("status_led.c: ~LED:STATUS must expose the KEY tail-guard contract")
     if re.search(
@@ -3841,21 +3841,12 @@ def main() -> int:
         or "status_led_transmit_changed_frame(frame, STATUS_LED_STRIP_MASK_STATUS, true, false)" in shutdown_final_latch
     ):
         failures.append("status_led.c: shutdown-final PWR/status visible frame must stay on the normal DMA path before non-status strips use the dark latch")
-    spi_final_skip = extract_c_function(status_led, "status_led_skip_suspended_spi_final_latch")
     if (
-        "s_strips[strip_index].transport != STATUS_LED_STRIP_TRANSPORT_SPI" not in spi_final_skip
-        or "!s_strip_transport_suspended[strip_index]" not in spi_final_skip
-        or "return !status_led_strip_has_light(colors, count);" not in spi_final_skip
-        or "status_led_skip_suspended_spi_final_latch(\n            STATUS_LED_STRIP_EC11" not in status_led
-        or not re.search(
-            r"!key_dark_latch_pending_tx\s*&&\s*"
-            r"status_led_skip_suspended_spi_final_latch\(\s*STATUS_LED_STRIP_KEY",
-            transmit_changed_frame,
-        )
+        "status_led_note_main_transmitted" not in status_led
+        or "s_strip_transport_suspended[STATUS_LED_STRIP_EC11] = suspended;" not in status_led
+        or "s_strip_transport_suspended[STATUS_LED_STRIP_KEY] = suspended;" not in status_led
     ):
-        failures.append(
-            "status_led.c: SPI EC11/KEY suspended dark frames must normally skip re-entry; KEY feedback expiry may bypass that skip only while a pending dark latch is dirty"
-        )
+        failures.append("status_led.c: a main-route transmit must synchronize status/EC11/key transport state")
     if (
         "shutdown_final_all_zone_latched_started_ms" not in status_led
         or "shutdown_final_all_zone_latch_needed" not in status_led
@@ -3898,15 +3889,19 @@ def main() -> int:
         or "config->dark_latch_rmt_writes > 0U ? config->dark_latch_rmt_writes : 1U" not in status_led_backend
     ):
         failures.append("status_led_strip_backend.c/.h: backend must expose configurable all-dark one-shot RMT latch writes with default 1")
-    if not re.search(
-        r"status_led_suspend_quiet_idle_transports[\s\S]*?"
-        r"for\s*\(size_t\s+index\s*=\s*0;[\s\S]*?"
-        r"status_led_strip_backend_suspend\(s_strips\[index\]\.backend\)",
-        status_led,
+    suspend_quiet = extract_c_function(status_led, "status_led_suspend_quiet_idle_transports")
+    if (
+        "STATUS_LED_STRIP_STATUS" not in suspend_quiet
+        or "STATUS_LED_STRIP_EDGE" not in suspend_quiet
+        or "status_led_strip_backend_suspend(s_strips[index].backend)" not in suspend_quiet
     ):
-        failures.append("status_led.c: low-power quiet suspend must release every strip only after the final non-DMA idle latch")
-    if "status_led_suspend_all_strips" not in status_led or "status_led_strip_backend_suspend(s_strips[index].backend)" not in status_led:
-        failures.append("status_led.c: prepare_sleep must explicitly suspend strip backends after the all-off frame")
+        failures.append("status_led.c: low-power quiet suspend must release both V2.2 physical routes after the final latch")
+    suspend_all = extract_c_function(status_led, "status_led_suspend_all_strips")
+    if (
+        "s_strips[STATUS_LED_STRIP_STATUS].backend" not in suspend_all
+        or "s_strips[STATUS_LED_STRIP_EDGE].backend" not in suspend_all
+    ):
+        failures.append("status_led.c: prepare_sleep must explicitly suspend both V2.2 physical backends after all-off")
     if not re.search(
         r"status_led_strip_backend_new_channel\(backend,\s*channel_with_dma\);[\s\S]*?"
         r"falling back to non-DMA RMT[\s\S]*?"
@@ -3983,8 +3978,8 @@ def main() -> int:
         return 1
 
     print(
-        "PASS: status LED static verification covers V2 four-zone WS2812 resources, "
-        "EC11 GPIO5/count12, key GPIO13/count4, edge GPIO4/count6, diagnostics, "
+        "PASS: status LED static verification covers V2.2 two-route WS2812 resources, "
+        "GPIO1 status/EC11/key main chain, GPIO5 edge chain, logical four-zone diagnostics, "
         "USB validation hooks, camera/manual one-pixel status/key/EC11/edge harness, and sleep all-off path."
     )
     return 0

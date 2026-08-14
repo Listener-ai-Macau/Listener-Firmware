@@ -12,7 +12,7 @@
 extern "C" {
 #endif
 
-#define STATUS_LED_STRIP_BACKEND_MAX_LED_COUNT 12U
+#define STATUS_LED_STRIP_BACKEND_MAX_LED_COUNT 28U
 
 typedef enum {
     STATUS_LED_COLOR_ORDER_GRB = 0,

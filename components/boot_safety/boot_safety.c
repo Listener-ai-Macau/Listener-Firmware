@@ -6,6 +6,7 @@
 
 #include "diag_log.h"
 #include "denzic_device_health_v1.h"
+#include "esp_app_desc.h"
 #include "esp_attr.h"
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
@@ -23,6 +24,7 @@ typedef struct {
     uint32_t crash_count;
     uint32_t last_reset_reason;
     uint32_t safe_mode_latched;
+    uint32_t app_image_fingerprint;
 } boot_safety_rtc_state_t;
 
 RTC_NOINIT_ATTR static boot_safety_rtc_state_t s_rtc_state;
@@ -83,7 +85,17 @@ const char *boot_safety_reset_reason_name(esp_reset_reason_t reason)
     }
 }
 
-static void boot_safety_reset_rtc_state(void)
+static uint32_t boot_safety_app_image_fingerprint(void)
+{
+    const esp_app_desc_t *description = esp_app_get_description();
+    uint32_t fingerprint = 0u;
+    if (description != NULL) {
+        memcpy(&fingerprint, description->app_elf_sha256, sizeof(fingerprint));
+    }
+    return fingerprint;
+}
+
+static void boot_safety_reset_rtc_state(uint32_t app_image_fingerprint)
 {
     denzic_device_health_v1_boot_state_t state = {
         .crash_count = s_rtc_state.crash_count,
@@ -94,12 +106,27 @@ static void boot_safety_reset_rtc_state(void)
     s_rtc_state.crash_count = state.crash_count;
     s_rtc_state.last_reset_reason = 0;
     s_rtc_state.safe_mode_latched = state.safe_mode_latched ? 1u : 0u;
+    s_rtc_state.app_image_fingerprint = app_image_fingerprint;
 }
 
 void boot_safety_init(void)
 {
-    if (s_rtc_state.magic != BOOT_SAFETY_RTC_MAGIC) {
-        boot_safety_reset_rtc_state();
+    uint32_t app_image_fingerprint = boot_safety_app_image_fingerprint();
+    bool valid_rtc_state = s_rtc_state.magic == BOOT_SAFETY_RTC_MAGIC;
+    bool app_image_changed =
+        valid_rtc_state && s_rtc_state.app_image_fingerprint != app_image_fingerprint;
+    uint32_t previous_app_image_fingerprint = s_rtc_state.app_image_fingerprint;
+    if (!valid_rtc_state || app_image_changed) {
+        boot_safety_reset_rtc_state(app_image_fingerprint);
+    }
+    if (app_image_changed) {
+        ESP_LOGW(
+            TAG,
+            "application image changed: previous_fingerprint=%08" PRIx32
+            " current_fingerprint=%08" PRIx32
+            "; cleared crash counter and safe mode latch",
+            previous_app_image_fingerprint,
+            app_image_fingerprint);
     }
 
     esp_reset_reason_t reason = esp_reset_reason();
@@ -246,7 +273,7 @@ bool boot_safety_consume_usb_command(const char *line)
     }
 
     if (strcmp(command, "CLEAR") == 0) {
-        boot_safety_reset_rtc_state();
+        boot_safety_reset_rtc_state(boot_safety_app_image_fingerprint());
         portENTER_CRITICAL(&s_status_lock);
         s_status.crash_count = 0;
         s_status.safe_mode = false;
