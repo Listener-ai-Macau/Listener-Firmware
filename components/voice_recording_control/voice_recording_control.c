@@ -2920,12 +2920,15 @@ static esp_err_t voice_recording_control_start_internal(bool enable_audio_captur
     /* Product VA window for 「开始录音」(~0.8–1.0 s):
      * - speech_confirm 420: fewer ambient ticks than 300 (owner: 假窗刷屏导致
      *   低功耗进不去 + 真词被占窗). Still well under 1.0.3-feel latency.
-     * - pre_roll 1000: keep full phrase for KWS.
+     * - pre_roll 2000: preserve a softly spoken wake phrase even when VAD does
+     *   not cross its start threshold until the louder dictation body begins.
+     *   Type still requires KWS/local-ASR phrase evidence, so the extra history
+     *   does not turn arbitrary owner speech into a wake.
      * - cooldown 1200: re-arm after Type VREC:STOP without 3s lockout.
      * - max_session for hidden path is forced to 3500 in process_voice_activity.
      */
     s_voice_activation_config.speech_confirm_ms = 420u;
-    s_voice_activation_config.pre_roll_ms = 1000u;
+    s_voice_activation_config.pre_roll_ms = 2000u;
     s_voice_activation_config.cooldown_ms = 1200u;
     denzic_voice_activation_v1_reset(
         &s_voice_activation_machine);

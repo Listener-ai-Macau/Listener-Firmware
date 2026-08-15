@@ -79,10 +79,9 @@
  * the unboosted post-NS signal; the one adaptive AGC runs only after that
  * decision so stationary room noise cannot open automatic sessions. */
 #define AUDIO_CAPTURE_PDM_SOFTWARE_GAIN_NUM 1
-/* WebRTC AFE accepts 10 ms feed blocks. Starting a session queues the complete
- * 1 s pre-roll and creates a measured ~100 ms bounded fetch-task burst. Keep
- * 240 ms of producer/consumer headroom so that burst cannot overwrite the
- * phrase tail; fetch still drains continuously, so this adds no steady delay. */
+/* WebRTC AFE accepts 10 ms feed blocks. Starting a session can queue the complete
+ * 2 s pre-roll; PSRAM owns that history and the fetch task drains it continuously
+ * in bounded batches so the producer stays ahead without steady-state delay. */
 #define AUDIO_CAPTURE_PDM_AFE_RINGBUF_FRAMES 24
 #define AUDIO_CAPTURE_PDM_AFE_FETCH_WAIT_MS 100U
 #define AUDIO_CAPTURE_PDM_AFE_IDLE_BUDGET_FETCHES 64U
@@ -102,7 +101,7 @@
 #define AUDIO_CAPTURE_PDM_VAD_LOW_SNR_NUMERATOR 3U
 #define AUDIO_CAPTURE_PDM_VAD_LOW_SNR_DENOMINATOR 2U
 #define AUDIO_CAPTURE_PDM_VAD_LOW_SNR_MIN_MARGIN 3U
-#define AUDIO_CAPTURE_VOICE_PREROLL_MAX_MS 1000U
+#define AUDIO_CAPTURE_VOICE_PREROLL_MAX_MS 2000U
 #define AUDIO_CAPTURE_VOICE_PREROLL_FRAMES \
     (AUDIO_CAPTURE_VOICE_PREROLL_MAX_MS / AUDIO_CAPTURE_FRAME_MS)
 #define AUDIO_CAPTURE_VOICE_PREROLL_BYTES \

@@ -537,7 +537,7 @@ def main() -> int:
 
     for token in [
         "#define AUDIO_CAPTURE_PDM_SOFTWARE_GAIN_NUM 1",
-        "#define AUDIO_CAPTURE_VOICE_PREROLL_MAX_MS 1000U",
+        "#define AUDIO_CAPTURE_VOICE_PREROLL_MAX_MS 2000U",
         "config->vad_init = true;",
         'config->vad_model_name = vad_model_name;',
         'esp_srmodel_filter(s_pdm_srmodels, "vadnet1_medium", NULL);',
