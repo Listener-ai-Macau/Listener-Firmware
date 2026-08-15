@@ -41,9 +41,10 @@
 #define VOICE_RECORDING_CONTROL_DICTATION_SILENCE_STOP_MS 1000
 /* A visible session that has not received any body-speech evidence must leave
  * enough time for a natural post-click / post-wake breath. Once Type sends
- * VREC:SPEECH (or manual-key firmware VAD sees speech), the strict one-second
- * body endpoint above takes over immediately. Hidden wake candidates keep
- * their existing short max-session contract. */
+ * authoritative VREC:SPEECH, the strict one-second body endpoint above takes
+ * over immediately. Local firmware VAD must not select that boundary because
+ * low-energy continuous speech can contain false one-second VAD gaps. Hidden
+ * wake candidates keep their existing short max-session contract. */
 #define VOICE_RECORDING_CONTROL_INITIAL_BODY_WAIT_MS 4000
 #define VOICE_RECORDING_CONTROL_DICTATION_TAIL_MS 0
 #define VOICE_RECORDING_CONTROL_HOST_SPEECH_PROTECTION_MS 1000
@@ -2735,14 +2736,9 @@ static void voice_recording_control_process_voice_activity(void)
         }
         const bool visible_dictation =
             s_active_session_visible && !s_active_session_enrollment;
-        /* Firmware VAD is allowed to establish the body boundary for a manual
-         * key session. An automatic session instead waits for Type's
-         * VREC:SPEECH so the wake phrase itself cannot consume the body grace. */
-        if (visible_dictation &&
-            !s_active_session_automatic &&
-            event.speech_detected) {
-            s_active_session_body_speech_seen = true;
-        }
+        /* Only Type's provider/owner timeline may establish body speech.
+         * Firmware VAD remains useful for hidden wake candidates, but its
+         * low-energy gaps are not authoritative enough to end visible text. */
         if (visible_dictation && !s_active_session_body_speech_seen) {
             step_config.silence_stop_ms =
                 VOICE_RECORDING_CONTROL_INITIAL_BODY_WAIT_MS;

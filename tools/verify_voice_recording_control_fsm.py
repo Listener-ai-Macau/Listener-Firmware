@@ -265,8 +265,6 @@ def main() -> int:
     )
     for token in [
         "s_active_session_visible && !s_active_session_enrollment",
-        "!s_active_session_automatic &&",
-        "event.speech_detected",
         "VOICE_RECORDING_CONTROL_INITIAL_BODY_WAIT_MS",
     ]:
         require_contains(
@@ -274,6 +272,12 @@ def main() -> int:
             token,
             f"initial body-wait endpoint contract is missing {token}",
         )
+    pre_body_branch = voice_activity[
+        voice_activity.find("const bool visible_dictation") :
+        voice_activity.find("denzic_voice_activation_v1_input_t input")
+    ]
+    if "event.speech_detected" in pre_body_branch:
+        fail("firmware VAD must not consume the authoritative Type body-speech grace")
 
     missing = sorted(set(EXPECTED_CASES) - set(cases))
     if missing:
