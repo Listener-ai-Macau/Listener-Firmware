@@ -231,7 +231,7 @@ def main() -> int:
     cases = extract_transition_artifact(source)
 
     for token in [
-        "#define VOICE_RECORDING_CONTROL_DICTATION_SILENCE_STOP_MS 2000",
+        "#define VOICE_RECORDING_CONTROL_DICTATION_SILENCE_STOP_MS 3000",
         "#define VOICE_RECORDING_CONTROL_DICTATION_TAIL_MS 0",
         "#define VOICE_RECORDING_CONTROL_HOST_SPEECH_PROTECTION_MS 2000",
         'strcmp(action, "SPEECH") == 0',
@@ -242,10 +242,10 @@ def main() -> int:
         require_contains(
             source,
             token,
-            f"target-speaker 2000ms auto-end contract is missing {token}",
+            f"target-speaker firmware fallback contract is missing {token}",
         )
-    if "VOICE_RECORDING_CONTROL_DICTATION_SILENCE_STOP_MS 1700" in source:
-        fail("2s endpoint must not be split into a 1700ms threshold plus a tail")
+    if "VOICE_RECORDING_CONTROL_DICTATION_SILENCE_STOP_MS 2000" in source:
+        fail("firmware safety fallback regressed to the clause-cutting 2000ms boundary")
 
     missing = sorted(set(EXPECTED_CASES) - set(cases))
     if missing:
