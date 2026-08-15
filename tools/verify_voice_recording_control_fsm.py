@@ -232,11 +232,15 @@ def main() -> int:
 
     for token in [
         "#define VOICE_RECORDING_CONTROL_DICTATION_SILENCE_STOP_MS 1000",
+        "#define VOICE_RECORDING_CONTROL_INITIAL_BODY_WAIT_MS 4000",
         "#define VOICE_RECORDING_CONTROL_DICTATION_TAIL_MS 0",
         "#define VOICE_RECORDING_CONTROL_HOST_SPEECH_PROTECTION_MS 1000",
         'strcmp(action, "SPEECH") == 0',
         "voice_recording_control_note_host_speech();",
         "voice_recording_control_host_speech_protection_active()",
+        "s_active_session_body_speech_seen = true;",
+        "visible_dictation && !s_active_session_body_speech_seen",
+        "step_config.silence_stop_ms =\n                VOICE_RECORDING_CONTROL_INITIAL_BODY_WAIT_MS;",
         "if (xQueueSend(s_vad_queue, &event, 0) != pdTRUE)",
     ]:
         require_contains(
@@ -247,6 +251,29 @@ def main() -> int:
     for slow_boundary in ("2000", "3000"):
         if f"VOICE_RECORDING_CONTROL_DICTATION_SILENCE_STOP_MS {slow_boundary}" in source:
             fail(f"firmware safety fallback regressed to the slow {slow_boundary}ms boundary")
+
+    note_host_speech = extract_void_function(
+        source, "voice_recording_control_note_host_speech"
+    )
+    if note_host_speech.find("s_active_session_body_speech_seen = true;") > note_host_speech.find(
+        "denzic_voice_activation_v1_step("
+    ):
+        fail("host body-speech evidence must select the one-second endpoint before refreshing it")
+
+    voice_activity = extract_void_function(
+        source, "voice_recording_control_process_voice_activity"
+    )
+    for token in [
+        "s_active_session_visible && !s_active_session_enrollment",
+        "!s_active_session_automatic &&",
+        "event.speech_detected",
+        "VOICE_RECORDING_CONTROL_INITIAL_BODY_WAIT_MS",
+    ]:
+        require_contains(
+            voice_activity,
+            token,
+            f"initial body-wait endpoint contract is missing {token}",
+        )
 
     missing = sorted(set(EXPECTED_CASES) - set(cases))
     if missing:

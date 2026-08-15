@@ -39,6 +39,12 @@
  * ending feel slower. Wake-only startup protection remains a separate Type
  * policy and must not be implemented by stretching this dictation timer. */
 #define VOICE_RECORDING_CONTROL_DICTATION_SILENCE_STOP_MS 1000
+/* A visible session that has not received any body-speech evidence must leave
+ * enough time for a natural post-click / post-wake breath. Once Type sends
+ * VREC:SPEECH (or manual-key firmware VAD sees speech), the strict one-second
+ * body endpoint above takes over immediately. Hidden wake candidates keep
+ * their existing short max-session contract. */
+#define VOICE_RECORDING_CONTROL_INITIAL_BODY_WAIT_MS 4000
 #define VOICE_RECORDING_CONTROL_DICTATION_TAIL_MS 0
 #define VOICE_RECORDING_CONTROL_HOST_SPEECH_PROTECTION_MS 1000
 #define VOICE_RECORDING_CONTROL_ARRAY_SIZE(array) (sizeof(array) / sizeof((array)[0]))
@@ -176,6 +182,7 @@ static const char *s_active_session_source;
 static char s_active_session_source_storage[VOICE_RECORDING_CONTROL_STORED_SOURCE_BYTES];
 static bool s_active_session_automatic;
 static bool s_active_session_visible;
+static bool s_active_session_body_speech_seen;
 /* Explicit owner enrollment is host-timed. It must not inherit the normal
  * dictation silence endpoint, otherwise the gap between the three wake-phrase
  * repetitions and the free-speech prompt truncates the biometric sample. */
@@ -410,6 +417,8 @@ static void voice_recording_control_note_host_speech(void)
         !s_active_session_visible) {
         return;
     }
+
+    s_active_session_body_speech_seen = true;
 
     denzic_voice_activation_v1_input_t input = {
         .elapsed_ms = 0,
@@ -1257,6 +1266,7 @@ static esp_err_t voice_recording_control_enter_recording(
         source);
     s_active_session_automatic = pre_roll_ms > 0u;
     s_active_session_visible = !s_active_session_automatic;
+    s_active_session_body_speech_seen = false;
     s_active_session_enrollment = false;
     voice_recording_control_clear_host_speech_protection();
     __atomic_store_n(&s_vad_queue_drop_count, 0u, __ATOMIC_RELAXED);
@@ -2018,6 +2028,7 @@ static esp_err_t voice_recording_control_activate_automatic_session(
     denzic_voice_activation_v1_reset(
         &s_voice_activation_machine);
     s_active_session_visible = true;
+    s_active_session_body_speech_seen = false;
     /* Accepted wake / promote: now it is real dictation — count activity. */
     power_manager_record_activity("automatic_candidate_accepted");
     (void)voice_key_input_set_recording_output(true);
@@ -2722,6 +2733,20 @@ static void voice_recording_control_process_voice_activity(void)
              * re-arm are not blocked by long ambient windows. */
             step_config.max_session_ms = 3500u;
         }
+        const bool visible_dictation =
+            s_active_session_visible && !s_active_session_enrollment;
+        /* Firmware VAD is allowed to establish the body boundary for a manual
+         * key session. An automatic session instead waits for Type's
+         * VREC:SPEECH so the wake phrase itself cannot consume the body grace. */
+        if (visible_dictation &&
+            !s_active_session_automatic &&
+            event.speech_detected) {
+            s_active_session_body_speech_seen = true;
+        }
+        if (visible_dictation && !s_active_session_body_speech_seen) {
+            step_config.silence_stop_ms =
+                VOICE_RECORDING_CONTROL_INITIAL_BODY_WAIT_MS;
+        }
         denzic_voice_activation_v1_input_t input = {
             .elapsed_ms = event.elapsed_ms,
             .enabled = s_voice_monitoring,
@@ -2776,13 +2801,14 @@ static void voice_recording_control_process_voice_activity(void)
             ESP_LOGI(
                 TAG,
                 "voice auto-stop reason=%s recording_ms=%" PRIu32
-                " silence_ms=%" PRIu32 " vad_queue_drops=%" PRIu32,
+                " silence_ms=%" PRIu32 " body_speech_seen=%u vad_queue_drops=%" PRIu32,
                 decision.stop_reason ==
                         DENZIC_VOICE_ACTIVATION_V1_STOP_REASON_MAX_DURATION
                     ? "max_duration"
                     : "silence",
                 s_voice_activation_machine.recording_ms,
                 s_voice_activation_machine.silence_ms,
+                s_active_session_body_speech_seen ? 1u : 0u,
                 __atomic_load_n(
                     &s_vad_queue_drop_count,
                     __ATOMIC_RELAXED));
