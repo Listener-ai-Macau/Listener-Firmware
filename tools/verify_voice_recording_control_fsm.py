@@ -568,7 +568,11 @@ def main() -> int:
         )
 
     for token in [
-        "#define AUDIO_CAPTURE_PDM_SOFTWARE_GAIN_NUM 1",
+        "#define AUDIO_CAPTURE_PDM_SOFTWARE_GAIN_MAX_NUM 8U",
+        "#define AUDIO_CAPTURE_PDM_SOFTWARE_GAIN_TARGET_PEAK 16000U",
+        "#define AUDIO_CAPTURE_PDM_SOFTWARE_GAIN_RECOVERY_Q8 64U",
+        "#define AUDIO_CAPTURE_PDM_SESSION_WARMUP_MIN_FEED_BLOCKS 5U",
+        "#define AUDIO_CAPTURE_PDM_SESSION_WARMUP_TIMEOUT_MS 1200U",
         "#define AUDIO_CAPTURE_VOICE_PREROLL_MAX_MS 2000U",
         "config->vad_init = true;",
         'config->vad_model_name = vad_model_name;',
@@ -583,6 +587,8 @@ def main() -> int:
         "#define AUDIO_CAPTURE_PDM_VAD_LOW_SNR_DENOMINATOR 2U",
         "#define AUDIO_CAPTURE_PDM_VAD_LOW_SNR_MIN_MARGIN 3U",
         "AUDIO_CAPTURE_PDM_AGC_COMPRESSION_DB,\n        1,\n        AUDIO_CAPTURE_PDM_AGC_TARGET_DBFS);",
+        '"PDM AFE session warmup: session_id=%" PRIu32',
+        '"stream session start queued: session_id=%" PRIu32',
         '" requested_preroll_ms=%" PRIu32 " actual_preroll_ms=%u"',
         '" input_clipped_samples=%" PRIu64',
         '" pre_vad_peak=%" PRIu32 " pre_vad_mean_abs=%" PRIu32',
@@ -617,7 +623,48 @@ def main() -> int:
     pre_vad_index = process_body.find("audio_capture_note_pdm_afe_session_pre_vad(")
     feed_index = process_body.find("s_pdm_afe_handle->feed(")
     if not 0 <= raw_index < pre_vad_index < feed_index:
-        fail("raw and unboosted pre-VAD telemetry must precede AFE feed")
+        fail("calibrated input and pre-VAD telemetry must precede AFE feed")
+
+    pdm_section_start = capture_source.find(
+        "/* ========== SPH0655 PDM hardware path ========== */"
+    )
+    capture_task_start = capture_source.find(
+        "static void audio_capture_task(void *arg)", pdm_section_start
+    )
+    capture_task_end = capture_source.find(
+        "static esp_err_t audio_capture_i2s_init(void)", capture_task_start
+    )
+    capture_task_body = capture_source[capture_task_start:capture_task_end]
+    raw_meter_index = capture_task_body.find(
+        "audio_capture_update_recording_level_from_raw_input(frame_buffer);"
+    )
+    calibration_index = capture_task_body.find(
+        "audio_capture_apply_pdm_software_gain(frame_buffer);"
+    )
+    afe_index = capture_task_body.find(
+        "audio_capture_pdm_afe_process(frame_buffer);"
+    )
+    if not 0 <= raw_meter_index < calibration_index < afe_index:
+        fail("raw visual meter must precede guarded board calibration and AFE feed")
+
+    session_begin_start = capture_source.find(
+        "esp_err_t audio_capture_session_begin_with_preroll("
+    )
+    session_begin_end = capture_source.find(
+        "esp_err_t audio_capture_session_begin(void)", session_begin_start
+    )
+    session_begin_body = capture_source[session_begin_start:session_begin_end]
+    warmup_wait_index = session_begin_body.find(
+        "while (!s_pdm_afe_session_warmup_ready"
+    )
+    start_queue_index = session_begin_body.find(
+        "ble_audio_stream_send_session_start_with_origin("
+    )
+    warmup_release_index = session_begin_body.find(
+        "s_export_state.warmup_pending = false;"
+    )
+    if not 0 <= warmup_wait_index < start_queue_index < warmup_release_index:
+        fail("AFE warmup and BLE START queue must complete before live PCM is released")
 
     fetch_start = capture_source.find(
         "static void audio_capture_pdm_afe_fetch_task("

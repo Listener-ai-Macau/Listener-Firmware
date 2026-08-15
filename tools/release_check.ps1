@@ -17,6 +17,8 @@ $checks = @(
     @{ Label = "OTA package release rules"; File = "pwsh"; Args = @("-NoProfile", "-File", (Join-Path $PSScriptRoot "test_ota_package_release_rules.ps1")) },
     @{ Label = "ESP-IDF environment wrapper"; File = "pwsh"; Args = @("-NoProfile", "-File", (Join-Path $PSScriptRoot "verify_idf_env_static.ps1")) },
     @{ Label = "V2 board static contract"; File = "pwsh"; Args = @("-NoProfile", "-File", (Join-Path $PSScriptRoot "verify_v2_board_profile_static.ps1")) },
+    @{ Label = "PDM AFE scheduler and calibration contract"; File = "python"; Args = @((Join-Path $PSScriptRoot "verify_pdm_afe_scheduler_static.py")) },
+    @{ Label = "physical playback leading-silence fixture"; File = "python"; Args = @((Join-Path $PSScriptRoot "verify_audio_fixture_leading_silence.py")) },
     @{ Label = "power manager static contract"; File = "python"; Args = @((Join-Path $PSScriptRoot "verify_power_manager_static.py")) },
     @{ Label = "validation tooling shell hygiene"; File = "python"; Args = @((Join-Path $PSScriptRoot "verify_validation_tooling_hygiene.py")) },
     @{ Label = "status LED static contract"; File = "python"; Args = @((Join-Path $PSScriptRoot "verify_status_led_static.py")) },

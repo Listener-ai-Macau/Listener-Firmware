@@ -535,10 +535,26 @@ def generate_profile_tts_wav(
     *,
     tts_rate: int = DEFAULT_TTS_RATE,
     tts_gain: float = DEFAULT_TTS_GAIN,
+    leading_silence_ms: int = 0,
 ) -> str:
     voice = generate_tts_wav(path, text, rate=tts_rate)
     scale_wav_pcm16(path, tts_gain)
+    if leading_silence_ms > 0:
+        prepend_wav_silence_pcm16(path, leading_silence_ms)
     return voice
+
+
+def prepend_wav_silence_pcm16(path: pathlib.Path, duration_ms: int) -> None:
+    frames = read_wav_frames(path)
+    silence_samples = max(0, int(PCM_SAMPLE_RATE * int(duration_ms) / 1000))
+    if silence_samples == 0:
+        return
+    combined = ([0] * silence_samples) + frames
+    with wave.open(str(path), "wb") as wav_file:
+        wav_file.setnchannels(PCM_CHANNELS)
+        wav_file.setsampwidth(PCM_WIDTH_BYTES)
+        wav_file.setframerate(PCM_SAMPLE_RATE)
+        wav_file.writeframes(struct.pack("<" + "h" * len(combined), *combined))
 
 
 def make_loop_wav(source_wav: pathlib.Path, loop_wav: pathlib.Path, loop_seconds: int) -> None:

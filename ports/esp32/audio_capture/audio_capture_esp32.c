@@ -75,16 +75,26 @@
 #define AUDIO_CAPTURE_OTA_SUSPEND_TIMEOUT_MS 250U
 #define AUDIO_CAPTURE_I2S_READ_TIMEOUT_MS 250U
 #define AUDIO_CAPTURE_PDM_HW_AMPLIFY_NUM 8U
-/* Keep fixed integer gain at unity. VADNet owns weak-speech classification on
- * the unboosted post-NS signal; the one adaptive AGC runs only after that
- * decision so stationary room noise cannot open automatic sessions. */
-#define AUDIO_CAPTURE_PDM_SOFTWARE_GAIN_NUM 1
+/* ESP32-S3 does not expose SOC_I2S_SUPPORTS_PDM_RX_HP_FILTER, so the nominal
+ * hardware amplify setting below is not applied on this board. Calibrate the
+ * SPH0655 path before WebRTC NS: current V2.2 hardware otherwise delivers
+ * physical speech at only 113..582 peak and NS irreversibly removes phonemes
+ * before the downstream AGC can recover them. This is a board calibration
+ * ceiling, not a second output AGC: the frame peak guard drops gain immediately
+ * for close speech and restores it gradually without exceeding 16-bit headroom.
+ * The post-NS AGC and final limiter still own output levelling. */
+#define AUDIO_CAPTURE_PDM_SOFTWARE_GAIN_MAX_NUM 8U
+#define AUDIO_CAPTURE_PDM_SOFTWARE_GAIN_Q8_ONE 256U
+#define AUDIO_CAPTURE_PDM_SOFTWARE_GAIN_TARGET_PEAK 16000U
+#define AUDIO_CAPTURE_PDM_SOFTWARE_GAIN_RECOVERY_Q8 64U
 /* WebRTC AFE accepts 10 ms feed blocks. Starting a session can queue the complete
  * 2 s pre-roll; PSRAM owns that history and the fetch task drains it continuously
  * in bounded batches so the producer stays ahead without steady-state delay. */
 #define AUDIO_CAPTURE_PDM_AFE_RINGBUF_FRAMES 24
 #define AUDIO_CAPTURE_PDM_AFE_FETCH_WAIT_MS 100U
 #define AUDIO_CAPTURE_PDM_AFE_IDLE_BUDGET_FETCHES 64U
+#define AUDIO_CAPTURE_PDM_SESSION_WARMUP_MIN_FEED_BLOCKS 5U
+#define AUDIO_CAPTURE_PDM_SESSION_WARMUP_TIMEOUT_MS 1200U
 #define AUDIO_CAPTURE_PDM_VAD_MIN_SPEECH_MS 128
 #define AUDIO_CAPTURE_PDM_VAD_MIN_NOISE_MS 128
 #define AUDIO_CAPTURE_PDM_VAD_DELAY_MS 128
@@ -162,6 +172,7 @@ typedef enum {
 typedef struct {
     audio_capture_export_mode_t mode;
     bool requested;
+    bool warmup_pending;
     bool active;
     bool ble_session_started;
     uint16_t start_origin;
@@ -252,11 +263,16 @@ static size_t s_pdm_agc_filled;
 static int16_t s_pdm_afe_emit_buffer[AUDIO_CAPTURE_FRAME_SAMPLES];
 static size_t s_pdm_afe_emit_filled;
 static volatile bool s_pdm_afe_session_boundary_requested;
+static volatile bool s_pdm_afe_session_boundary_applied;
+static volatile bool s_pdm_afe_session_warmup_ready;
 static volatile bool s_pdm_afe_stop_drain_requested;
 static volatile bool s_pdm_afe_stop_drain_feed_cutoff_ack;
 static volatile bool s_pdm_afe_stop_drain_complete;
 static uint32_t s_pdm_afe_input_frames;
 static uint32_t s_pdm_afe_output_frames;
+static uint32_t s_pdm_pre_afe_gain_q8 =
+    AUDIO_CAPTURE_PDM_SOFTWARE_GAIN_MAX_NUM *
+    AUDIO_CAPTURE_PDM_SOFTWARE_GAIN_Q8_ONE;
 static uint32_t s_pdm_afe_session_input_peak;
 static uint64_t s_pdm_afe_session_input_abs_sum;
 static uint64_t s_pdm_afe_session_input_samples;
@@ -293,6 +309,10 @@ static TaskHandle_t s_pdm_afe_fetch_task_handle;
 static void audio_capture_log_pdm_afe_session_signal(uint32_t session_id);
 #endif
 #endif
+static esp_err_t audio_capture_send_session_preroll(
+    uint32_t session_id,
+    uint16_t frame_count,
+    uint16_t *next_packet_sequence);
 
 static bool s_capture_transport_backpressure_active;
 static uint32_t s_capture_transport_backpressure_events;
@@ -355,6 +375,9 @@ static void audio_capture_export_cleanup(void)
     s_capture_transport_backpressure_events = 0;
 #ifdef CONFIG_AUDIO_CAPTURE_MIC_SPH0655_PDM
 #if CONFIG_AUDIO_CAPTURE_PDM_AFE_WEBRTC
+    s_pdm_afe_session_boundary_requested = false;
+    s_pdm_afe_session_boundary_applied = false;
+    s_pdm_afe_session_warmup_ready = false;
     s_pdm_afe_stop_drain_requested = false;
     s_pdm_afe_stop_drain_feed_cutoff_ack = false;
     s_pdm_afe_stop_drain_complete = false;
@@ -627,6 +650,8 @@ esp_err_t audio_capture_session_begin_with_preroll(uint32_t pre_roll_ms)
          s_session_preroll_count) %
         AUDIO_CAPTURE_VOICE_PREROLL_FRAMES);
     uint32_t session_id = s_export_state.session_id;
+    uint16_t session_start_origin = s_export_state.start_origin;
+    uint16_t session_preroll_count = s_session_preroll_count;
     uint32_t session_max_seconds = (s_export_state.total_frames * AUDIO_CAPTURE_FRAME_MS) / 1000U;
 
 #ifdef CONFIG_AUDIO_CAPTURE_MIC_SPH0655_PDM
@@ -636,6 +661,9 @@ esp_err_t audio_capture_session_begin_with_preroll(uint32_t pre_roll_ms)
      * after an idle wake are processed with the same acoustic calibration as
      * later words. */
     s_pdm_afe_session_boundary_requested = true;
+    s_pdm_afe_session_boundary_applied = false;
+    s_pdm_afe_session_warmup_ready = false;
+    s_export_state.warmup_pending = true;
     s_pdm_afe_stop_drain_requested = false;
     s_pdm_afe_stop_drain_feed_cutoff_ack = false;
     s_pdm_afe_stop_drain_complete = false;
@@ -677,6 +705,144 @@ esp_err_t audio_capture_session_begin_with_preroll(uint32_t pre_roll_ms)
     s_export_state.requested = true;
     xSemaphoreGive(s_state_mutex);
     audio_capture_wake_task();
+
+#ifdef CONFIG_AUDIO_CAPTURE_MIC_SPH0655_PDM
+#if CONFIG_AUDIO_CAPTURE_PDM_AFE_WEBRTC
+    /* A cold PDM/AFE path can take hundreds of milliseconds before its first
+     * output that belongs to input after the session boundary. Do not expose
+     * the recording state during that blind interval: an immediate speaker
+     * otherwise loses the first word. The capture and fetch tasks run on the
+     * other cores while this control task waits. */
+    TickType_t warmup_started = xTaskGetTickCount();
+    TickType_t warmup_timeout = pdMS_TO_TICKS(
+        AUDIO_CAPTURE_PDM_SESSION_WARMUP_TIMEOUT_MS);
+    while (!s_pdm_afe_session_warmup_ready &&
+           (xTaskGetTickCount() - warmup_started) < warmup_timeout) {
+        vTaskDelay(pdMS_TO_TICKS(5));
+    }
+    uint32_t warmup_elapsed_ms =
+        (uint32_t)((xTaskGetTickCount() - warmup_started) * portTICK_PERIOD_MS);
+    bool warmup_activation_ready = false;
+    if (xSemaphoreTake(s_state_mutex, portMAX_DELAY) == pdTRUE) {
+        if (s_pdm_afe_session_warmup_ready &&
+            s_export_state.requested &&
+            s_export_state.session_id == session_id) {
+            s_export_state.requested = false;
+            s_export_state.active = true;
+            s_export_state.captured_frames = session_preroll_count;
+            s_export_state.pcm_bytes_written =
+                (size_t)session_preroll_count * AUDIO_CAPTURE_FRAME_BYTES;
+            s_export_state.stream_next_packet_sequence = 0;
+            s_export_state.stream_batch_frame_count = 0;
+            s_export_state.stream_batch_raw_input_level_percent = 0u;
+            s_export_state.ble_session_started = true;
+            warmup_activation_ready = true;
+        }
+        xSemaphoreGive(s_state_mutex);
+    }
+    ESP_LOGI(
+        TAG,
+        "PDM AFE session warmup: session_id=%" PRIu32
+        " ready=%u elapsed_ms=%" PRIu32 " feed_blocks=%" PRIu32,
+        session_id,
+        s_pdm_afe_session_warmup_ready ? 1U : 0U,
+        warmup_elapsed_ms,
+        s_pdm_afe_input_frames);
+    if (!warmup_activation_ready) {
+        esp_err_t warmup_ret = s_pdm_afe_session_warmup_ready
+            ? ESP_ERR_INVALID_STATE
+            : ESP_ERR_TIMEOUT;
+        if (xSemaphoreTake(s_state_mutex, portMAX_DELAY) == pdTRUE) {
+            if (s_export_state.session_id == session_id) {
+                audio_capture_export_cleanup();
+            }
+            xSemaphoreGive(s_state_mutex);
+        }
+        ESP_LOGW(
+            TAG,
+            "record session rejected after AFE warmup: session_id=%" PRIu32
+            " ret=%s",
+            session_id,
+            esp_err_to_name(warmup_ret));
+        return warmup_ret;
+    }
+
+    /* Queue START before exposing recording state to the owner. On a freshly
+     * attached Type process the transport queue can need several connection
+     * intervals; doing this on the control task keeps AFE fetch running and
+     * prevents its small ring from overwriting speech while START waits. */
+    bool stream_start_queued = false;
+    uint16_t pre_roll_packet_count = 0u;
+    esp_err_t stream_start_ret =
+        ble_audio_stream_send_session_start_with_origin(
+            session_id,
+            session_start_origin);
+    stream_start_queued = stream_start_ret == ESP_OK;
+    if (stream_start_ret == ESP_OK && session_preroll_count > 0u) {
+        stream_start_ret = audio_capture_send_session_preroll(
+            session_id,
+            session_preroll_count,
+            &pre_roll_packet_count);
+        if (stream_start_ret == ESP_OK &&
+            xSemaphoreTake(s_state_mutex, portMAX_DELAY) == pdTRUE) {
+            if (s_export_state.active &&
+                s_export_state.session_id == session_id) {
+                s_export_state.stream_next_packet_sequence =
+                    pre_roll_packet_count;
+            }
+            xSemaphoreGive(s_state_mutex);
+        }
+    }
+    if (stream_start_ret != ESP_OK) {
+        if (stream_start_queued) {
+            (void)ble_audio_stream_send_session_error(
+                session_id,
+                pre_roll_packet_count,
+                audio_capture_session_error_from_stream_result(
+                    stream_start_ret));
+        }
+        if (xSemaphoreTake(s_state_mutex, portMAX_DELAY) == pdTRUE) {
+            if (s_export_state.session_id == session_id) {
+                audio_capture_export_cleanup();
+            }
+            xSemaphoreGive(s_state_mutex);
+        }
+        ESP_LOGW(
+            TAG,
+            "stream session start failed after AFE warmup: session_id=%" PRIu32
+            " ret=%s",
+            session_id,
+            esp_err_to_name(stream_start_ret));
+        return stream_start_ret;
+    }
+    if (xSemaphoreTake(s_state_mutex, portMAX_DELAY) == pdTRUE) {
+        if (s_export_state.active &&
+            s_export_state.session_id == session_id) {
+            s_export_state.warmup_pending = false;
+        }
+        xSemaphoreGive(s_state_mutex);
+    }
+    if (session_preroll_count > 0u) {
+        ESP_LOGI(
+            TAG,
+            "stream session preroll queued: session_id=%" PRIu32
+            " frames=%u ms=%u",
+            session_id,
+            session_preroll_count,
+            session_preroll_count * AUDIO_CAPTURE_FRAME_MS);
+        memset(s_voice_preroll, 0, AUDIO_CAPTURE_VOICE_PREROLL_BYTES);
+        memset(s_voice_preroll_levels, 0, sizeof(s_voice_preroll_levels));
+        s_voice_preroll_write_index = 0u;
+        s_voice_preroll_count = 0u;
+        s_session_preroll_count = 0u;
+    }
+    ESP_LOGI(
+        TAG,
+        "stream session start queued: session_id=%" PRIu32,
+        session_id);
+    audio_capture_wake_task();
+#endif
+#endif
     ESP_LOGI(
         TAG,
         "record session begin requested: session_id=%" PRIu32
@@ -684,7 +850,7 @@ esp_err_t audio_capture_session_begin_with_preroll(uint32_t pre_roll_ms)
         " buffer_ms=%u buffer_bytes=%u packet_payload_bytes=%u packet_safe_max_s=%" PRIu32,
         session_id,
         pre_roll_ms,
-        s_session_preroll_count * AUDIO_CAPTURE_FRAME_MS,
+        session_preroll_count * AUDIO_CAPTURE_FRAME_MS,
         AUDIO_CAPTURE_STREAM_BATCH_FRAMES * AUDIO_CAPTURE_FRAME_MS,
         (unsigned)AUDIO_CAPTURE_STREAM_BATCH_BYTES,
         payload_bytes,
@@ -1004,7 +1170,9 @@ static void audio_capture_process_frame(const int16_t *frame_buffer)
                 s_voice_preroll_count++;
             }
         }
-        if (s_export_state.requested && !s_export_state.active) {
+        if (s_export_state.requested &&
+            !s_export_state.warmup_pending &&
+            !s_export_state.active) {
             s_export_state.requested = false;
             s_export_state.active = true;
             s_export_state.captured_frames = 0;
@@ -1022,7 +1190,9 @@ static void audio_capture_process_frame(const int16_t *frame_buffer)
             }
         }
 
-        if (s_export_state.active && s_export_state.captured_frames < s_export_state.total_frames) {
+        if (s_export_state.active &&
+            !s_export_state.warmup_pending &&
+            s_export_state.captured_frames < s_export_state.total_frames) {
             bool stop_boundary_requested =
                 s_export_state.mode == AUDIO_CAPTURE_EXPORT_MODE_SESSION &&
                 s_export_state.stop_requested;
@@ -1553,9 +1723,11 @@ static esp_err_t audio_capture_codec_init(void)
  * board configuration deterministic: boot-time ambient noise cannot identify
  * a hardware strap reliably and must never change a device's recording route. */
 
-static int16_t audio_capture_scale_sample(int16_t sample)
+static int16_t audio_capture_scale_sample_q8(int16_t sample, uint32_t gain_q8)
 {
-    int32_t scaled = (int32_t)sample * AUDIO_CAPTURE_PDM_SOFTWARE_GAIN_NUM;
+    int32_t scaled =
+        ((int32_t)sample * (int32_t)gain_q8) /
+        (int32_t)AUDIO_CAPTURE_PDM_SOFTWARE_GAIN_Q8_ONE;
     if (scaled > INT16_MAX) {
         return INT16_MAX;
     }
@@ -1567,11 +1739,49 @@ static int16_t audio_capture_scale_sample(int16_t sample)
 
 static void audio_capture_apply_pdm_software_gain(int16_t *frame_buffer)
 {
-    if (AUDIO_CAPTURE_PDM_SOFTWARE_GAIN_NUM <= 1) {
+    if (frame_buffer == NULL ||
+        AUDIO_CAPTURE_PDM_SOFTWARE_GAIN_MAX_NUM <= 1U) {
         return;
     }
+
+    uint32_t peak = 0U;
     for (size_t i = 0; i < AUDIO_CAPTURE_FRAME_SAMPLES; i++) {
-        frame_buffer[i] = audio_capture_scale_sample(frame_buffer[i]);
+        int32_t value = frame_buffer[i];
+        uint32_t magnitude = (uint32_t)(value < 0 ? -value : value);
+        if (magnitude > peak) {
+            peak = magnitude;
+        }
+    }
+    uint32_t maximum_gain_q8 =
+        AUDIO_CAPTURE_PDM_SOFTWARE_GAIN_MAX_NUM *
+        AUDIO_CAPTURE_PDM_SOFTWARE_GAIN_Q8_ONE;
+    uint32_t target_gain_q8 = maximum_gain_q8;
+    if (peak > 0U) {
+        uint64_t peak_limited_gain_q8 =
+            ((uint64_t)AUDIO_CAPTURE_PDM_SOFTWARE_GAIN_TARGET_PEAK *
+             AUDIO_CAPTURE_PDM_SOFTWARE_GAIN_Q8_ONE) /
+            peak;
+        if (peak_limited_gain_q8 < target_gain_q8) {
+            target_gain_q8 = (uint32_t)peak_limited_gain_q8;
+        }
+    }
+    if (target_gain_q8 < AUDIO_CAPTURE_PDM_SOFTWARE_GAIN_Q8_ONE) {
+        target_gain_q8 = AUDIO_CAPTURE_PDM_SOFTWARE_GAIN_Q8_ONE;
+    }
+    if (target_gain_q8 < s_pdm_pre_afe_gain_q8) {
+        s_pdm_pre_afe_gain_q8 = target_gain_q8;
+    } else if (target_gain_q8 > s_pdm_pre_afe_gain_q8) {
+        uint32_t recovered =
+            s_pdm_pre_afe_gain_q8 +
+            AUDIO_CAPTURE_PDM_SOFTWARE_GAIN_RECOVERY_Q8;
+        s_pdm_pre_afe_gain_q8 = recovered < target_gain_q8
+            ? recovered
+            : target_gain_q8;
+    }
+    for (size_t i = 0; i < AUDIO_CAPTURE_FRAME_SAMPLES; i++) {
+        frame_buffer[i] = audio_capture_scale_sample_q8(
+            frame_buffer[i],
+            s_pdm_pre_afe_gain_q8);
     }
 }
 
@@ -1907,6 +2117,11 @@ static void audio_capture_pdm_afe_emit(const int16_t *samples, size_t sample_cou
                 s_pdm_afe_emit_buffer,
                 AUDIO_CAPTURE_FRAME_SAMPLES);
             audio_capture_process_frame(s_pdm_afe_emit_buffer);
+            if (s_pdm_afe_session_boundary_applied &&
+                s_pdm_afe_input_frames >=
+                    AUDIO_CAPTURE_PDM_SESSION_WARMUP_MIN_FEED_BLOCKS) {
+                s_pdm_afe_session_warmup_ready = true;
+            }
             if (s_pdm_afe_stop_drain_requested && !s_pdm_afe_stop_drain_complete) {
                 s_pdm_afe_stop_drain_output_frames++;
             }
@@ -2495,6 +2710,7 @@ static void audio_capture_pdm_afe_apply_session_boundary_if_requested(void)
     s_pdm_afe_session_output_abs_sum = 0;
     s_pdm_afe_session_output_samples = 0;
     s_pdm_afe_session_output_clipped_samples = 0;
+    s_pdm_afe_session_boundary_applied = true;
     s_pdm_afe_session_boundary_requested = false;
     ESP_LOGI(
         TAG,
@@ -2688,7 +2904,7 @@ static esp_err_t audio_capture_i2s_init(void)
     ESP_RETURN_ON_ERROR(i2s_channel_enable(s_i2s_rx_handle), TAG, "enable pdm rx failed");
     ESP_LOGI(
         TAG,
-        "SPH0655 V2.2 PDM contract: select=GND data_edge=falling active_slot=%s clk_invert=%u pcm=%uHz pdm_clk=%uHz dsr=16S clk=%d din=%d hp_filter=%u hw_amplify=%u sw_gain=%u",
+        "SPH0655 V2.2 PDM contract: select=GND data_edge=falling active_slot=%s clk_invert=%u pcm=%uHz pdm_clk=%uHz dsr=16S clk=%d din=%d hp_filter=%u hw_amplify=%u sw_gain_max=%u sw_gain_target_peak=%u",
  #if CONFIG_AUDIO_CAPTURE_PDM_STEREO_SLOT_CAPTURE
         s_pdm_selected_slot == 0 ? "left" : "right",
  #else
@@ -2702,11 +2918,13 @@ static esp_err_t audio_capture_i2s_init(void)
 #if defined(SOC_I2S_SUPPORTS_PDM_RX_HP_FILTER) && SOC_I2S_SUPPORTS_PDM_RX_HP_FILTER
         1u,
         AUDIO_CAPTURE_PDM_HW_AMPLIFY_NUM,
-        (unsigned)AUDIO_CAPTURE_PDM_SOFTWARE_GAIN_NUM
+        (unsigned)AUDIO_CAPTURE_PDM_SOFTWARE_GAIN_MAX_NUM,
+        (unsigned)AUDIO_CAPTURE_PDM_SOFTWARE_GAIN_TARGET_PEAK
 #else
         0u,
         1u,
-        (unsigned)AUDIO_CAPTURE_PDM_SOFTWARE_GAIN_NUM
+        (unsigned)AUDIO_CAPTURE_PDM_SOFTWARE_GAIN_MAX_NUM,
+        (unsigned)AUDIO_CAPTURE_PDM_SOFTWARE_GAIN_TARGET_PEAK
 #endif
     );
     return ESP_OK;

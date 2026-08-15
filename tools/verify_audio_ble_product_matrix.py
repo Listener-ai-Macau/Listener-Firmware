@@ -72,6 +72,12 @@ from ble_audio_regression_common import (
 from capture_audio_ble_wav import configure_utf8_stdio
 
 
+# Windows render endpoints can fade in the first 150-250 ms after opening.
+# Keep that playback-device artifact out of microphone/ASR first-word gates;
+# firmware readiness latency is measured independently from serial/Type time.
+PHYSICAL_PLAYBACK_LEADING_SILENCE_MS = 500
+
+
 CASE_ORDER = ("A1", "A2")
 EXTREME_CASES = (
     "A1",
@@ -1902,6 +1908,7 @@ async def run_listener_type_background_rounds(
             sentence,
             tts_rate=int(profile["tts_rate"]),
             tts_gain=float(profile["tts_gain"]),
+            leading_silence_ms=PHYSICAL_PLAYBACK_LEADING_SILENCE_MS,
         )
         round_specs.append(
             {
@@ -2448,6 +2455,7 @@ async def run_listener_type_product_chain(
             expected_sentence,
             tts_rate=profile_tts_rate,
             tts_gain=profile_tts_gain,
+            leading_silence_ms=PHYSICAL_PLAYBACK_LEADING_SILENCE_MS,
         )
 
     command = [

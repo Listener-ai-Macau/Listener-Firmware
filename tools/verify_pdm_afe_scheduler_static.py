@@ -37,7 +37,12 @@ REQUIRED_FRAGMENTS = (
     "#define AUDIO_CAPTURE_I2S_READ_TIMEOUT_MS 250U",
     "#define AUDIO_CAPTURE_TASK_CORE 0",
     "#define AUDIO_CAPTURE_AFE_FETCH_TASK_CORE 1",
-    "#define AUDIO_CAPTURE_PDM_SOFTWARE_GAIN_NUM 1",
+    "#define AUDIO_CAPTURE_PDM_SOFTWARE_GAIN_MAX_NUM 8U",
+    "#define AUDIO_CAPTURE_PDM_SOFTWARE_GAIN_TARGET_PEAK 16000U",
+    "#define AUDIO_CAPTURE_PDM_SOFTWARE_GAIN_RECOVERY_Q8 64U",
+    "audio_capture_apply_pdm_software_gain(frame_buffer);",
+    "if (target_gain_q8 < s_pdm_pre_afe_gain_q8) {",
+    "s_pdm_pre_afe_gain_q8 = target_gain_q8;",
     "config->afe_linear_gain = 1.0f;",
 )
 
@@ -55,6 +60,31 @@ def main() -> int:
         source.find("#else", source.find("#if CONFIG_FREERTOS_UNICORE")):
         source.find("#endif", source.find("#else", source.find("#if CONFIG_FREERTOS_UNICORE")))
     ]
+
+    # Mirror the integer Q8 policy so its product invariants remain explicit:
+    # weak V2.2 speech reaches the 8x calibration ceiling, close speech drops
+    # immediately below the target peak, and recovery rises by only 0.25x per
+    # frame without exceeding either ceiling.
+    gain_q8 = 8 * 256
+
+    def update_gain(peak: int, current_gain_q8: int) -> int:
+        target_gain_q8 = 8 * 256
+        if peak > 0:
+            target_gain_q8 = min(target_gain_q8, 16_000 * 256 // peak)
+        target_gain_q8 = max(256, target_gain_q8)
+        if target_gain_q8 < current_gain_q8:
+            return target_gain_q8
+        return min(target_gain_q8, current_gain_q8 + 64)
+
+    weak_gain_q8 = update_gain(582, gain_q8)
+    close_gain_q8 = update_gain(4_000, weak_gain_q8)
+    recovery_gain_q8 = update_gain(582, close_gain_q8)
+    if weak_gain_q8 != 8 * 256:
+        failures.append("weak V2.2 speech must retain the 8x calibration ceiling")
+    if close_gain_q8 != 4 * 256 or 4_000 * close_gain_q8 // 256 > 16_000:
+        failures.append("close speech must reduce gain immediately to the headroom target")
+    if recovery_gain_q8 != close_gain_q8 + 64:
+        failures.append("calibration recovery must be bounded to 0.25x per frame")
     if (
         "#define AUDIO_CAPTURE_TASK_CORE 0" not in multicore_core_contract
         or "#define AUDIO_CAPTURE_AFE_FETCH_TASK_CORE 1" not in multicore_core_contract
@@ -72,7 +102,27 @@ def main() -> int:
     feed_index = process_body.find("s_pdm_afe_handle->feed(")
     if not 0 <= raw_index < pre_vad_index < feed_index:
         failures.append(
-            "raw telemetry -> unboosted pre-VAD telemetry -> AFE feed order is broken"
+            "calibrated input telemetry -> pre-VAD telemetry -> AFE feed order is broken"
+        )
+
+    capture_loop_start = source.find(
+        "static void audio_capture_task(void *arg)",
+        source.find("/* ========== SPH0655 PDM hardware path ========== */"),
+    )
+    capture_loop_end = source.find(
+        "static esp_err_t audio_capture_i2s_init(void)", capture_loop_start
+    )
+    capture_loop = source[capture_loop_start:capture_loop_end]
+    raw_meter_index = capture_loop.find(
+        "audio_capture_update_recording_level_from_raw_input(frame_buffer);"
+    )
+    calibration_index = capture_loop.find(
+        "audio_capture_apply_pdm_software_gain(frame_buffer);"
+    )
+    afe_index = capture_loop.find("audio_capture_pdm_afe_process(frame_buffer);")
+    if not 0 <= raw_meter_index < calibration_index < afe_index:
+        failures.append(
+            "raw visual meter must precede guarded board calibration and AFE feed"
         )
 
     fetch_body = source[
@@ -118,10 +168,7 @@ def main() -> int:
     if re.search(r"(?<!pdm_)vad_process\(", source):
         failures.append("legacy standalone WebRTC VAD must be absent: vad_process(")
 
-    pdm_section = source.find("/* ========== SPH0655 PDM hardware path ========== */")
-    capture_start = source.find("static void audio_capture_task(void *arg)", pdm_section)
-    capture_end = source.find("static esp_err_t audio_capture_i2s_init(void)", capture_start)
-    capture_body = source[capture_start:capture_end]
+    capture_body = capture_loop
     if "i2s_channel_read(" not in capture_body:
         failures.append("PDM capture task must read from the configured I2S RX channel")
     if "portMAX_DELAY" in capture_body:
