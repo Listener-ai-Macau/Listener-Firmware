@@ -231,9 +231,9 @@ def main() -> int:
     cases = extract_transition_artifact(source)
 
     for token in [
-        "#define VOICE_RECORDING_CONTROL_DICTATION_SILENCE_STOP_MS 3000",
+        "#define VOICE_RECORDING_CONTROL_DICTATION_SILENCE_STOP_MS 1000",
         "#define VOICE_RECORDING_CONTROL_DICTATION_TAIL_MS 0",
-        "#define VOICE_RECORDING_CONTROL_HOST_SPEECH_PROTECTION_MS 2000",
+        "#define VOICE_RECORDING_CONTROL_HOST_SPEECH_PROTECTION_MS 1000",
         'strcmp(action, "SPEECH") == 0',
         "voice_recording_control_note_host_speech();",
         "voice_recording_control_host_speech_protection_active()",
@@ -244,8 +244,9 @@ def main() -> int:
             token,
             f"target-speaker firmware fallback contract is missing {token}",
         )
-    if "VOICE_RECORDING_CONTROL_DICTATION_SILENCE_STOP_MS 2000" in source:
-        fail("firmware safety fallback regressed to the clause-cutting 2000ms boundary")
+    for slow_boundary in ("2000", "3000"):
+        if f"VOICE_RECORDING_CONTROL_DICTATION_SILENCE_STOP_MS {slow_boundary}" in source:
+            fail(f"firmware safety fallback regressed to the slow {slow_boundary}ms boundary")
 
     missing = sorted(set(EXPECTED_CASES) - set(cases))
     if missing:

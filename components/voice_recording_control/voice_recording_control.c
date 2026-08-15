@@ -34,14 +34,13 @@
 #define VOICE_RECORDING_CONTROL_ENROLLMENT_START_RETRY_MS 100
 #define VOICE_RECORDING_CONTROL_ENROLLMENT_STALE_STOP_GUARD_MS 2000
 #define VOICE_RECORDING_CONTROL_HOST_CLEANUP_TOGGLE_GUARD_MS 1500
-/* Type owns the normal preview-aware 1000/1500/2000/2500 ms endpoint. This
- * firmware timer is only the transport safety fallback when the provider
- * stops publishing updates before Type can dispatch STOP. Keep one additional
- * second beyond the old 2000 ms fallback so a natural two-second clause pause
- * cannot close the microphone exactly as the owner resumes. */
-#define VOICE_RECORDING_CONTROL_DICTATION_SILENCE_STOP_MS 3000
+/* The product endpoint is one second after body speech. Keep the firmware
+ * transport fallback aligned with Type so provider stalls cannot make the same
+ * ending feel slower. Wake-only startup protection remains a separate Type
+ * policy and must not be implemented by stretching this dictation timer. */
+#define VOICE_RECORDING_CONTROL_DICTATION_SILENCE_STOP_MS 1000
 #define VOICE_RECORDING_CONTROL_DICTATION_TAIL_MS 0
-#define VOICE_RECORDING_CONTROL_HOST_SPEECH_PROTECTION_MS 2000
+#define VOICE_RECORDING_CONTROL_HOST_SPEECH_PROTECTION_MS 1000
 #define VOICE_RECORDING_CONTROL_ARRAY_SIZE(array) (sizeof(array) / sizeof((array)[0]))
 #define VOICE_RECORDING_CONTROL_VAD_QUEUE_LENGTH 24
 #define VOICE_RECORDING_CONTROL_COMMAND_QUEUE_LENGTH 24
