@@ -219,7 +219,7 @@ CHECKS = {
         "STATUS_LED_NVS_BRIGHTNESS_KEY \"brightness\"",
         "led_contract_rev=",
         "rmt_tx_dma_supported=%u",
-        "strip_transport_requested=main:rmt,edge:rmt",
+        "strip_transport_requested=main:rmt_dma,edge:spi2_dma",
         "strip_transport_actual=main:%s,ec11_alias:%s,key_alias:%s,edge:%s",
         "spi_dma_requested=status:%u,ec11:%u,key:%u,edge:%u",
         "spi_dma_actual=status:%u,ec11:%u,key:%u,edge:%u",
@@ -227,6 +227,7 @@ CHECKS = {
         "rmt_tx_dma_strategy=main_chain_dma_full_frame_buffer",
         "rmt_strip_all_available=%u",
         "rmt_tx_dma_all_strips=%u",
+        "dma_all_physical_routes=%u",
         "rmt_tx_dma_requested=status:%u,ec11:%u,key:%u,edge:%u",
         "rmt_tx_dma_actual=status:%u,ec11:%u,key:%u,edge:%u",
         "rmt_tx_dma_fallback=status:%u,ec11:%u,key:%u,edge:%u",
@@ -912,7 +913,7 @@ CHECKS = {
         "status_tail_reinforce=recording_processing",
         "status_tail_reinforce_writes=3",
         "status_tail_overlap_reinforce_writes=1",
-        "strip_transport_requested=main:rmt,edge:rmt",
+        "strip_transport_requested=main:rmt_dma,edge:spi2_dma",
         "rmt_tx_dma_strategy=main_chain_dma_full_frame_buffer",
         "physical_routes=2",
         "main_chain_count=22",
@@ -3714,7 +3715,7 @@ def main() -> int:
         failures.append("status_led_strip_backend.c: runtime status must expose whether each available strip uses RMT TX DMA")
     if (
         "physical_routes=2 main_chain_count=22 main_chain_order=status_ec11_key" not in status_led or
-        "strip_transport_requested=main:rmt,edge:rmt" not in status_led or
+        "strip_transport_requested=main:rmt_dma,edge:spi2_dma" not in status_led or
         "strip_transport_actual=main:%s,ec11_alias:%s,key_alias:%s,edge:%s" not in status_led or
         "reset_us=300 rmt_reset_us=300" not in status_led or
         "spi_dma_requested=status:%u,ec11:%u,key:%u,edge:%u" not in status_led or
@@ -3727,7 +3728,8 @@ def main() -> int:
         "rmt_idle_drive=active_dma_low_power_all_zone_non_dma_final_frame_then_release_gpio_low" not in status_led
         or "shutdown_final_status_tx=dma_visible_pwr_no_black_latch" not in status_led
         or "low_power_all_zone_tx=non_dma_clear_and_final_frame" not in status_led
-        or "low_power_spi_latch=not_applicable_v2_2_two_rmt_routes" not in status_led
+        or "low_power_spi_latch=dma_prelatch_then_non_dma_final_gpio_low" not in status_led
+        or "dma_all_physical_routes=%u" not in status_led
         or "shutdown_final_all_zone_tx=non_dma_pwr_only_latch_or_all_off" not in status_led
     ):
         failures.append("status_led.c: ~LED:STATUS contract must expose the V2.2 two-route topology, main-chain DMA state, reset timing, and idle-drive policy")
@@ -3770,11 +3772,21 @@ def main() -> int:
         failures.append("status_led.c: EC11 and key must remain logical zones without duplicate GPIO1 backends")
     if "key_tail_guard_pixels=%u" not in status_led:
         failures.append("status_led.c: ~LED:STATUS must expose the KEY tail-guard contract")
-    if re.search(
-        r"\.name\s*=\s*\"edge\"[\s\S]*?\.transport\s*=\s*STATUS_LED_STRIP_TRANSPORT_SPI",
+    if not re.search(
+        r"\.name\s*=\s*\"edge\"[\s\S]{0,420}?\.gpio\s*=\s*BOARD_PINS_RGB_EDGE_IO[\s\S]{0,420}?"
+        r"\.transport\s*=\s*STATUS_LED_STRIP_TRANSPORT_SPI[\s\S]{0,160}?\.spi_host\s*=\s*SPI2_HOST",
         status_led,
     ):
-        failures.append("status_led.c: edge strip must stay on ordinary RMT")
+        failures.append("status_led.c: V2.2 edge route must reuse the proven SPI2 DMA WS2812 transport")
+    if not re.search(
+        r"const\s+uint8_t\s+dma_all_physical_routes\s*=[\s\S]{0,420}?"
+        r"strip_dma\[STATUS_LED_STRIP_STATUS\]\s*!=\s*0U[\s\S]{0,180}?"
+        r"strip_dma\[STATUS_LED_STRIP_EDGE\]\s*!=\s*0U[\s\S]{0,220}?"
+        r"strip_dma_fallback\[STATUS_LED_STRIP_STATUS\]\s*==\s*0U[\s\S]{0,180}?"
+        r"strip_dma_fallback\[STATUS_LED_STRIP_EDGE\]\s*==\s*0U",
+        status_led,
+    ):
+        failures.append("status_led.c: DMA-all-physical-routes status must require both V2.2 routes active with zero fallback")
     if ".flags.eot_level = 0" not in status_led_backend:
         failures.append("status_led_strip_backend.c: RMT transmit config must explicitly hold the WS2812 line low at EOT")
     if "disable_ret" in status_led_backend or re.search(

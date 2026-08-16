@@ -158,12 +158,13 @@ def main() -> int:
     failures: list[str] = []
 
     for token in (
-        "strip_transport_actual=status:rmt,ec11:spi2,key:spi3,edge:rmt",
-        "spi_dma_actual=status:0,ec11:1,key:1,edge:0",
+        "strip_transport_actual=main:rmt,ec11_alias:rmt,key_alias:rmt,edge:spi2",
+        "spi_dma_actual=status:0,ec11:0,key:0,edge:1",
         "spi_dma_fallback=status:0,ec11:0,key:0,edge:0",
-        "rmt_tx_dma_actual=status:1,ec11:0,key:0,edge:0",
+        "rmt_tx_dma_actual=status:1,ec11:1,key:1,edge:0",
         "rmt_tx_dma_all_strips=0",
-        "low_power_spi_latch=spi_dma_prelatch_then_one_shot_rmt_gpio_low",
+        "dma_all_physical_routes=1",
+        "low_power_spi_latch=dma_prelatch_then_non_dma_final_gpio_low",
         "rmt_idle_drive=active_dma_low_power_all_zone_non_dma_final_frame_then_release_gpio_low",
     ):
         if token not in text:
@@ -264,7 +265,7 @@ def main() -> int:
     print(
         "PASS: LED pixel isolation log proves status/key/EC11/edge TEST:PIXEL readback "
         "lights exactly one target pixel, keeps other strips dark, preserves the "
-        "status RMT DMA + EC11 SPI2 DMA + key SPI3 DMA transport contract, and "
+        "V2.2 main-chain RMT DMA + edge SPI2 DMA transport contract, and "
         "returns dark after OFF."
     )
     return 0

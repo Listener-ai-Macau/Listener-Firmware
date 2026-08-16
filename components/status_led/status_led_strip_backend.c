@@ -1,8 +1,8 @@
 /*
- * Physical WS2812 strip backend. The current V2 transport contract is:
- * status=RMT DMA, EC11=SPI2 DMA, key=SPI3 DMA, edge=RMT. Low-power/final latch
- * frames force non-DMA before GPIO-low release; active EC11/key feedback returns
- * to SPI DMA on the next non-final frame.
+ * Physical WS2812 strip backend. The current V2.2 transport contract is:
+ * main(status+EC11+key)=RMT DMA and edge=SPI2 DMA. Low-power/final latch frames
+ * retain the proven bounded non-DMA latch before GPIO-low release; every normal
+ * visible animation frame stays on DMA.
  */
 #include "status_led_strip_backend.h"
 

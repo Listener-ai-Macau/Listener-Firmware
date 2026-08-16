@@ -399,8 +399,9 @@ typedef struct {
     uint8_t dark_latch_rmt_writes;
     status_led_color_order_t color_order;
     bool prefer_dma;
-    /* SPI+DMA strips (ec11/key) set transport=SPI and spi_host=SPI2/SPI3_HOST;
-     * status stays on RMT DMA; edge stays on RMT. */
+    /* A physical strip can use RMT DMA or SPI+GDMA. V2.2 keeps the composite
+     * main chain on RMT DMA and routes the independent edge chain through
+     * SPI2 DMA, matching the proven anti-flicker transport used on V2.1. */
     status_led_strip_transport_t transport;
     int spi_host;
     status_led_strip_backend_t *backend;
@@ -612,6 +613,11 @@ static status_led_strip_t s_strips[STATUS_LED_STRIP_COUNT] = {
         .gpio = BOARD_PINS_RGB_EDGE_IO,
         .led_count = STATUS_LED_EDGE_COUNT,
         .color_order = STATUS_LED_COLOR_ORDER_GRB,
+        // ESP32-S3 exposes only one usable RMT TX DMA lane for this product.
+        // Reuse the proven SPI-MOSI + GDMA WS2812 path for the second V2.2
+        // physical route instead of leaving edge animation on interrupt RMT.
+        .transport = STATUS_LED_STRIP_TRANSPORT_SPI,
+        .spi_host = SPI2_HOST,
     },
 };
 static uint32_t s_strip_last_tx_ms[STATUS_LED_STRIP_COUNT];
@@ -5002,7 +5008,7 @@ esp_err_t status_led_start(void)
     }
     s_state.started = true;
     ESP_LOGI(TAG,
-             "status LED task started: refresh_ms=%u idle_refresh_ms=%u task_priority=%u task_core=%d backend=rmt_ws2812_800khz",
+             "status LED task started: refresh_ms=%u idle_refresh_ms=%u task_priority=%u task_core=%d backend=main_rmt_dma_edge_spi2_dma_ws2812_800khz",
              STATUS_LED_REFRESH_MS,
              STATUS_LED_IDLE_REFRESH_MS,
              STATUS_LED_TASK_PRIORITY,
@@ -6631,18 +6637,25 @@ static void status_led_print_status(void)
         strip_rmt_dma[STATUS_LED_STRIP_EDGE] != 0U
             ? 1U
             : 0U;
+    const uint8_t dma_all_physical_routes =
+        strip_dma[STATUS_LED_STRIP_STATUS] != 0U &&
+        strip_dma[STATUS_LED_STRIP_EDGE] != 0U &&
+        strip_dma_fallback[STATUS_LED_STRIP_STATUS] == 0U &&
+        strip_dma_fallback[STATUS_LED_STRIP_EDGE] == 0U
+            ? 1U
+            : 0U;
 
     printf(
-        "~LED:STATUS detail=contract backend=rmt_ws2812_800khz physical_routes=2 main_chain_count=22 main_chain_order=status_ec11_key refresh_ms=%u reset_us=300 rmt_reset_us=300"
+        "~LED:STATUS detail=contract backend=main_rmt_dma_edge_spi2_dma_ws2812_800khz physical_routes=2 main_chain_count=22 main_chain_order=status_ec11_key refresh_ms=%u reset_us=300 rmt_reset_us=300 spi_reset_us=600"
         " task_priority=%u task_core=%d task_affinity=cpu1"
-        " strip_transport_requested=main:rmt,edge:rmt logical_zone_transport=status:main,ec11:main,key:main,edge:edge"
+        " strip_transport_requested=main:rmt_dma,edge:spi2_dma logical_zone_transport=status:main,ec11:main,key:main,edge:edge"
         " strip_transport_actual=main:%s,ec11_alias:%s,key_alias:%s,edge:%s"
-        " spi_dma_outputs_requested=none"
+        " spi_dma_outputs_requested=edge:SPI2"
         " spi_dma_requested=status:%u,ec11:%u,key:%u,edge:%u"
         " spi_dma_actual=status:%u,ec11:%u,key:%u,edge:%u"
         " spi_dma_fallback=status:%u,ec11:%u,key:%u,edge:%u"
         " rmt_tx_dma_supported=%u rmt_tx_dma_strategy=main_chain_dma_full_frame_buffer"
-        " rmt_strip_all_available=%u rmt_tx_dma_all_strips=%u"
+        " rmt_strip_all_available=%u rmt_tx_dma_all_strips=%u dma_all_physical_routes=%u"
         " rmt_tx_dma_requested=status:%u,ec11:%u,key:%u,edge:%u"
         " rmt_tx_dma_actual=status:%u,ec11:%u,key:%u,edge:%u"
         " rmt_tx_dma_fallback=status:%u,ec11:%u,key:%u,edge:%u"
@@ -6650,7 +6663,7 @@ static void status_led_print_status(void)
         " idle_refresh_ms=%u unchanged_tx_suppression=1 timing=ws2812_4020_compatible"
         " low_power_transport_suspend_ms=%u low_power_status_tx=non_dma_clear_and_final_frame"
         " low_power_all_zone_tx=non_dma_clear_and_final_frame"
-        " low_power_spi_latch=not_applicable_v2_2_two_rmt_routes"
+        " low_power_spi_latch=dma_prelatch_then_non_dma_final_gpio_low"
         " key_dark_idle_resync_ms=%u key_tail_guard_pixels=%u key_dark_latch_rmt_writes=%u"
         " key_dark_latch_expiry_dirty=1"
         " key_dark_clear_tx=main_chain_frame"
@@ -6727,6 +6740,7 @@ static void status_led_print_status(void)
         rmt_tx_dma_supported,
         rmt_strip_all_available,
         rmt_tx_dma_all_strips,
+        dma_all_physical_routes,
         strip_rmt_dma_requested[STATUS_LED_STRIP_STATUS],
         strip_rmt_dma_requested[STATUS_LED_STRIP_EC11],
         strip_rmt_dma_requested[STATUS_LED_STRIP_KEY],
