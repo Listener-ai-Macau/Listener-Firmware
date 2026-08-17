@@ -70,6 +70,12 @@ extern void firmware_ota_set_observability_correlation(uint64_t correlation_id) 
 #define BLE_AUDIO_STREAM_AUDIO_PACE_TICK_MS 10U
 #define BLE_AUDIO_STREAM_AUDIO_PACE_BYTES_PER_TICK \
     ((BLE_AUDIO_STREAM_AUDIO_TARGET_BYTES_PER_SECOND * BLE_AUDIO_STREAM_AUDIO_PACE_TICK_MS) / 1000U)
+/* A hidden voice candidate owns at most two seconds of already-captured PCM.
+ * Let that finite history drain under the existing controller/msys admission
+ * guards instead of applying the real-time media clock to audio that is
+ * already late. Live PCM resumes the proven 38.4 kB/s pacing immediately
+ * after this credit is consumed. */
+#define BLE_AUDIO_STREAM_VOICE_PREROLL_BURST_PCM_BYTES 64000U
 #define BLE_AUDIO_STREAM_LOSSLESS_RICE_FLAG 0x01u
 #define BLE_AUDIO_STREAM_LOSSLESS_RICE_VERSION_V1 1u
 #define BLE_AUDIO_STREAM_LOSSLESS_RICE_VERSION_V2 2u
@@ -235,6 +241,7 @@ typedef struct {
     uint32_t notify_retries;
     uint32_t notify_msys_waits;
     uint32_t audio_pace_wait_ticks;
+    uint32_t audio_preroll_burst_pcm_bytes;
     uint32_t notify_mbuf_alloc_retries;
     uint32_t notify_enomem_retries;
     uint32_t notify_tx_timeout_retries;
@@ -313,6 +320,7 @@ static portMUX_TYPE s_audio_pool_lock = portMUX_INITIALIZER_UNLOCKED;
 static SemaphoreHandle_t s_replay_window_mutex;
 static uint32_t s_connection_epoch;
 static denzic_audio_transport_v1_pacing_t s_audio_pacing;
+static uint32_t s_audio_pacing_burst_remaining_pcm_bytes;
 static bool s_type_recovery_ack_pending;
 static uint16_t s_type_recovery_ack_conn_handle = BLE_HS_CONN_HANDLE_NONE;
 static uint32_t s_type_recovery_ack_epoch;
@@ -1325,6 +1333,13 @@ static void ble_audio_stream_stats_log_and_end(
             s_session_stats.audio_pcm_bytes_sent;
     ESP_LOGI(
         TAG,
+        "audio preroll burst summary: session=%" PRIu32
+        " burst_pcm_bytes=%" PRIu32 " remaining_pcm_bytes=%" PRIu32,
+        session_id,
+        s_session_stats.audio_preroll_burst_pcm_bytes,
+        s_audio_pacing_burst_remaining_pcm_bytes);
+    ESP_LOGI(
+        TAG,
         "audio session transport summary: session=%" PRIu32 " reason=%s elapsed_ms=%" PRIu32 " expected_packet_count=%u notify_sent=%" PRIu32 " notify_failed=%" PRIu32 " notify_retries=%" PRIu32 " msys_waits=%" PRIu32 " audio_pace_ticks=%" PRIu32 " audio_pace_target_bytes_per_s=%u retry_mbuf=%" PRIu32 " retry_enomem=%" PRIu32 " retry_tx_timeout=%" PRIu32 " retry_tx_status=%" PRIu32 " retry_other=%" PRIu32 " audio_sent=%" PRIu32 " audio_pcm_bytes=%" PRIu32 " audio_wire_bytes=%" PRIu32 " audio_wire_pct=%" PRIu32 " audio_bytes_per_s=%" PRIu32 " audio_wire_bytes_per_s=%" PRIu32 " audio_packets_per_s=%" PRIu32 " audio_lossless_packets=%" PRIu32 " audio_raw_packets=%" PRIu32 " audio_failed=%" PRIu32 " queue_jobs_purged=%" PRIu32 " pool_high_water=%" PRIu32 " pool_capacity=%u pool_high_water_pct=%" PRIu32 " pool_alloc_failed=%" PRIu32 " queue_full=%" PRIu32 " replay_retained_high_water=%" PRIu32 " replay_stored=%" PRIu32 " replay_replaced=%" PRIu32 " replay_removed=%" PRIu32 " replay_resent=%" PRIu32 " replay_resend_failed=%" PRIu32 " replay_skip_current=%" PRIu32 " replay_pending=%" PRIu32 " last_drop_reason=%s last_error=%d",
         session_id,
         reason,
@@ -1689,6 +1704,7 @@ static void ble_audio_stream_reset_transport_session(void)
 {
     ble_audio_stream_replay_clear_session(s_transport_session_id);
     denzic_audio_transport_v1_pacing_init(&s_audio_pacing);
+    s_audio_pacing_burst_remaining_pcm_bytes = 0;
     s_transport_session_id = 0;
     s_transport_expected_packet_count = 0;
     s_transport_audio_payload_bytes = 0;
@@ -1898,6 +1914,21 @@ static void ble_audio_stream_notify_success_delay(
 {
     if (packet_type != LISTENER_AUDIO_PACKET_TYPE_AUDIO_DATA || packet_pcm_bytes == 0) {
         return;
+    }
+
+    if (s_audio_pacing_burst_remaining_pcm_bytes > 0u) {
+        uint32_t burst_pcm_bytes = packet_pcm_bytes;
+        if (burst_pcm_bytes > s_audio_pacing_burst_remaining_pcm_bytes) {
+            burst_pcm_bytes = s_audio_pacing_burst_remaining_pcm_bytes;
+        }
+        s_audio_pacing_burst_remaining_pcm_bytes -= burst_pcm_bytes;
+        s_session_stats.audio_preroll_burst_pcm_bytes += burst_pcm_bytes;
+        packet_pcm_bytes = (uint16_t)(packet_pcm_bytes - burst_pcm_bytes);
+        if (packet_pcm_bytes == 0u) {
+            watchdog_platform_feed_current_task();
+            taskYIELD();
+            return;
+        }
     }
 
     /* BLE_GAP_EVENT_NOTIFY_TX reports only a submission attempt. Pace audio
@@ -3872,6 +3903,11 @@ esp_err_t ble_audio_stream_send_session_start_with_origin(
     s_transport_lossless_rice_version = ble_audio_stream_get_type_lossless_rice_version();
     s_transport_lossless_rice_enabled = s_transport_lossless_rice_version != 0;
     denzic_audio_transport_v1_pacing_init(&s_audio_pacing);
+    s_audio_pacing_burst_remaining_pcm_bytes =
+        start_origin == LISTENER_AUDIO_SESSION_START_ORIGIN_VOICE_ACTIVATION &&
+                s_transport_lossless_rice_enabled
+            ? BLE_AUDIO_STREAM_VOICE_PREROLL_BURST_PCM_BYTES
+            : 0u;
     ble_audio_stream_set_transport_state(
         BLE_AUDIO_STREAM_TRANSPORT_STATE_STREAMING,
         "session_start_queued");

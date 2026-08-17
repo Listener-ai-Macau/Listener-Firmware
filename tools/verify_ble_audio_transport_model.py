@@ -57,6 +57,9 @@ SOURCE_TOKENS = [
     "BLE_AUDIO_STREAM_AUDIO_TARGET_BYTES_PER_SECOND 38400U",
     "BLE_AUDIO_STREAM_AUDIO_PACE_TICK_MS 10U",
     "BLE_AUDIO_STREAM_AUDIO_PACE_BYTES_PER_TICK",
+    "BLE_AUDIO_STREAM_VOICE_PREROLL_BURST_PCM_BYTES 64000U",
+    "s_audio_pacing_burst_remaining_pcm_bytes",
+    "audio_preroll_burst_pcm_bytes",
     "denzic_audio_transport_v1_pacing_note_pcm_sent",
     "denzic_audio_transport_v1_replay_window_t *s_replay_window",
     "MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT",
@@ -353,9 +356,19 @@ def static_source_checks() -> None:
     require_regex(
         stream,
         r"ble_audio_stream_notify_success_delay\(.*?"
+        r"s_audio_pacing_burst_remaining_pcm_bytes > 0u.*?"
         r"denzic_audio_transport_v1_pacing_note_pcm_sent\(\s*&s_audio_pacing,\s*packet_pcm_bytes\).*?"
         r"vTaskDelay",
-        "PCM media-clock pacing",
+        "bounded prefix burst followed by PCM media-clock pacing",
+        STREAM,
+    )
+    require_regex(
+        stream,
+        r"s_audio_pacing_burst_remaining_pcm_bytes\s*=\s*"
+        r"start_origin == LISTENER_AUDIO_SESSION_START_ORIGIN_VOICE_ACTIVATION\s*&&\s*"
+        r"s_transport_lossless_rice_enabled\s*\?\s*"
+        r"BLE_AUDIO_STREAM_VOICE_PREROLL_BURST_PCM_BYTES\s*:\s*0u",
+        "prefix burst is restricted to negotiated lossless automatic wake sessions",
         STREAM,
     )
     require_regex(
@@ -867,6 +880,20 @@ def case_media_clock_drains_faster_than_pcm_production() -> None:
     assert pace_ticks == 5000
 
 
+def case_lossless_voice_preroll_has_bounded_burst_only() -> None:
+    burst_budget = 64_000
+
+    def paced_bytes(origin_voice: bool, lossless: bool, pcm_bytes: int) -> tuple[int, int]:
+        credit = burst_budget if origin_voice and lossless else 0
+        burst = min(credit, pcm_bytes)
+        return burst, pcm_bytes - burst
+
+    assert paced_bytes(True, True, 64_000) == (64_000, 0)
+    assert paced_bytes(True, True, 96_000) == (64_000, 32_000)
+    assert paced_bytes(True, False, 64_000) == (0, 64_000)
+    assert paced_bytes(False, True, 64_000) == (0, 64_000)
+
+
 def case_long_session_rate_metrics_do_not_wrap() -> None:
     pcm_bytes = 9_198_720
     wire_bytes = 3_769_368
@@ -1329,6 +1356,7 @@ CASES = [
     case_stale_gatt_event_after_epoch_advance,
     case_bounded_retry_timeout,
     case_media_clock_drains_faster_than_pcm_production,
+    case_lossless_voice_preroll_has_bounded_burst_only,
     case_long_session_rate_metrics_do_not_wrap,
     case_single_pdu_budget_beats_pcm_production,
     case_lossless_predictive_rice_round_trip_and_wire_budget,

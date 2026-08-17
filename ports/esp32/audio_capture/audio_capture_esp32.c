@@ -640,6 +640,7 @@ esp_err_t audio_capture_session_begin_with_preroll(uint32_t pre_roll_ms)
     if (requested_pre_roll_frames > AUDIO_CAPTURE_VOICE_PREROLL_FRAMES) {
         requested_pre_roll_frames = AUDIO_CAPTURE_VOICE_PREROLL_FRAMES;
     }
+    const uint16_t buffered_pre_roll_frames = s_voice_preroll_count;
     s_session_preroll_count = (uint16_t)requested_pre_roll_frames;
     if (s_session_preroll_count > s_voice_preroll_count) {
         s_session_preroll_count = s_voice_preroll_count;
@@ -846,10 +847,12 @@ esp_err_t audio_capture_session_begin_with_preroll(uint32_t pre_roll_ms)
     ESP_LOGI(
         TAG,
         "record session begin requested: session_id=%" PRIu32
-        " requested_preroll_ms=%" PRIu32 " actual_preroll_ms=%u"
+        " requested_preroll_ms=%" PRIu32 " buffered_preroll_ms=%u"
+        " actual_preroll_ms=%u"
         " buffer_ms=%u buffer_bytes=%u packet_payload_bytes=%u packet_safe_max_s=%" PRIu32,
         session_id,
         pre_roll_ms,
+        buffered_pre_roll_frames * AUDIO_CAPTURE_FRAME_MS,
         session_preroll_count * AUDIO_CAPTURE_FRAME_MS,
         AUDIO_CAPTURE_STREAM_BATCH_FRAMES * AUDIO_CAPTURE_FRAME_MS,
         (unsigned)AUDIO_CAPTURE_STREAM_BATCH_BYTES,
