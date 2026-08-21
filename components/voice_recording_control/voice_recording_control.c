@@ -1717,6 +1717,25 @@ static void voice_recording_control_cancel(const char *source)
         false);
 }
 
+static void voice_recording_control_host_sync(const char *source)
+{
+    /*
+     * A fresh TYPE:READY can arrive after Type was closed while autonomous VAD
+     * already opened a hidden stream. The new host has no START boundary for
+     * that stream and otherwise begins with orphan PCM / a partial STOP. Reset
+     * only recording state here; pairing identity and bonds are untouched.
+     */
+    denzic_voice_activation_v1_reset(&s_voice_activation_machine);
+    if (s_vad_queue != NULL) {
+        xQueueReset(s_vad_queue);
+    }
+    voice_recording_control_cancel(source);
+    ESP_LOGI(
+        TAG,
+        "fresh Type host synchronized recording boundary source=%s",
+        source != NULL ? source : "unknown");
+}
+
 static esp_err_t voice_recording_control_recovery(
     const char *source,
     bool type_controlled,
@@ -2028,6 +2047,15 @@ static esp_err_t voice_recording_control_activate_automatic_session(
      */
     denzic_voice_activation_v1_reset(
         &s_voice_activation_machine);
+    /* The command queue is serviced before the VAD queue. A hidden candidate
+     * can therefore leave several seconds of VAD deltas queued while Type
+     * verifies the phrase/owner. Replaying those deltas into the freshly reset
+     * visible endpoint made max-duration fire within ~60 ms of ACTIVATE and
+     * created a 700+ ms capture hole before the next segment. Audio capture is
+     * already continuous; discard only the stale endpoint metadata here. */
+    if (s_vad_queue != NULL) {
+        xQueueReset(s_vad_queue);
+    }
     s_active_session_visible = true;
     s_active_session_body_speech_seen = false;
     /* Accepted wake / promote: now it is real dictation — count activity. */
@@ -2211,6 +2239,10 @@ static esp_err_t voice_recording_control_handle_control_command(
     }
     if (strcmp(action, "CANCEL") == 0) {
         voice_recording_control_cancel(source);
+        return ESP_OK;
+    }
+    if (strcmp(action, "HOST_SYNC") == 0) {
+        voice_recording_control_host_sync(source);
         return ESP_OK;
     }
     if (strcmp(action, "ACTIVATE") == 0) {

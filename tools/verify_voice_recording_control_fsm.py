@@ -318,6 +318,7 @@ def main() -> int:
     reset_at = activate_body.find(
         "denzic_voice_activation_v1_reset("
     )
+    vad_reset_at = activate_body.find("xQueueReset(s_vad_queue);")
     visible_at = activate_body.find(
         "s_active_session_visible = true;"
     )
@@ -326,17 +327,48 @@ def main() -> int:
     )
     if reset_at < 0:
         fail("accepted automatic session must reset endpointing counters")
+    if vad_reset_at < 0:
+        fail("accepted automatic session must discard hidden-candidate VAD backlog")
     if visible_at < 0 or recording_led_at < 0:
         fail("automatic-session visible recording boundary is incomplete")
-    if not reset_at < visible_at < recording_led_at:
+    if not reset_at < vad_reset_at < visible_at < recording_led_at:
         fail(
-            "endpoint reset must happen before the accepted session becomes visible"
+            "endpoint and stale VAD queue reset must happen before the accepted session becomes visible"
         )
     require_contains(
         activate_body,
         "automatic recording activated with fresh endpoint window",
         "automatic-session activation must log the fresh endpoint boundary",
     )
+    host_sync_body = extract_static_function(
+        source, "voice_recording_control_host_sync"
+    )
+    for token in [
+        "denzic_voice_activation_v1_reset(&s_voice_activation_machine);",
+        "xQueueReset(s_vad_queue);",
+        "voice_recording_control_cancel(source);",
+    ]:
+        require_contains(
+            host_sync_body,
+            token,
+            f"fresh Type host sync is missing {token}",
+        )
+    require_contains(
+        source,
+        'strcmp(action, "HOST_SYNC") == 0',
+        "recording control must accept the internal host-sync command",
+    )
+    for token in [
+        "fresh_type_ready",
+        "!ble_audio_stream_type_heartbeat_recent()",
+        'static const uint8_t host_sync_command[] = "VREC:HOST_SYNC";',
+        '"type_ready_host_sync"',
+    ]:
+        require_contains(
+            ble_audio_source,
+            token,
+            f"fresh TYPE:READY boundary sync is missing {token}",
+        )
 
     enrollment_body = extract_static_function(
         source, "voice_recording_control_start_enrollment"

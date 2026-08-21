@@ -1,8 +1,16 @@
 import argparse
 import asyncio
+import os
 import pathlib
+import shutil
+import subprocess
+import time
 
-from ble_audio_regression_common import DEFAULT_SERIAL_LOG_PATH, make_capture_args
+from ble_audio_regression_common import (
+    DEFAULT_SERIAL_LOG_PATH,
+    PlaybackVolumeGuard,
+    make_capture_args,
+)
 from capture_audio_ble_wav import configure_utf8_stdio, run_capture_with_args
 
 
@@ -29,6 +37,8 @@ def parse_args():
     parser.add_argument("--wav-path", required=True)
     parser.add_argument("--serial-log-path", default=None)
     parser.add_argument("--trigger-mode", choices=["serial-toggle", "physical-key"], default=None)
+    parser.add_argument("--playback-wav", type=pathlib.Path, default=None)
+    parser.add_argument("--playback-volume-percent", type=int, default=70)
     parser.add_argument("--no-reset-before-capture", action="store_false", dest="reset_before_capture")
     parser.set_defaults(reset_before_capture=True)
     return parser.parse_args()
@@ -71,7 +81,57 @@ def resolve_capture_args(args) -> argparse.Namespace:
 
 async def main_async(args) -> None:
     capture_args = resolve_capture_args(args)
-    summaries = await run_capture_with_args(capture_args)
+    playback_process = None
+    playback_volume_guard = None
+    playback_started_unix_ms = None
+    if args.playback_wav is not None:
+        playback_path = args.playback_wav.resolve()
+        if not playback_path.is_file():
+            raise RuntimeError(f"playback WAV does not exist: {playback_path}")
+        if capture_args.trigger_mode != "serial-toggle":
+            raise RuntimeError("--playback-wav requires serial-toggle mode")
+        playback_volume_percent = max(0, min(100, args.playback_volume_percent))
+        os.environ["LISTENER_TEST_PLAYBACK_VOLUME_PERCENT"] = str(playback_volume_percent)
+
+        def start_playback_after_session_start() -> None:
+            nonlocal playback_process, playback_started_unix_ms, playback_volume_guard
+            ffplay = shutil.which("ffplay.exe") or shutil.which("ffplay")
+            if ffplay is None:
+                raise RuntimeError("ffplay is required for synchronized playback")
+            playback_volume_guard = PlaybackVolumeGuard()
+            playback_volume_guard.__enter__()
+            creationflags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+            playback_process = subprocess.Popen(
+                [
+                    ffplay,
+                    "-nodisp",
+                    "-autoexit",
+                    "-loglevel",
+                    "error",
+                    "-volume",
+                    "100",
+                    str(playback_path),
+                ],
+                stdin=subprocess.DEVNULL,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                creationflags=creationflags,
+            )
+            playback_started_unix_ms = time.time_ns() // 1_000_000
+
+        capture_args.session_started_callbacks = [start_playback_after_session_start]
+    try:
+        summaries = await run_capture_with_args(capture_args)
+    finally:
+        if playback_process is not None and playback_process.poll() is None:
+            playback_process.terminate()
+            try:
+                playback_process.wait(timeout=3)
+            except subprocess.TimeoutExpired:
+                playback_process.kill()
+                playback_process.wait(timeout=3)
+        if playback_volume_guard is not None:
+            playback_volume_guard.__exit__(None, None, None)
     summary = summaries[0]
 
     output_dir = pathlib.Path(capture_args.output_dir)
@@ -89,6 +149,8 @@ async def main_async(args) -> None:
     print(f"duration_seconds={summary['duration_seconds']:.3f}")
     if summary.get("serial_log_path"):
         print(f"serial_log_path={summary['serial_log_path']}")
+    if playback_started_unix_ms is not None:
+        print(f"playback_started_unix_ms={playback_started_unix_ms}")
 
 
 def main() -> None:

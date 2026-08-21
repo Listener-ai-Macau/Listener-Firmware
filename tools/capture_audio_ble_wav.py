@@ -1357,6 +1357,7 @@ async def run_ble_capture(args, ser: Serial, serial_monitor: SerialLogMonitor):
         )
         session_cancel_post_wait_seconds = float(getattr(args, "session_cancel_post_wait_seconds", 2.0))
         session_start_callbacks = getattr(args, "session_start_callbacks", None)
+        session_started_callbacks = getattr(args, "session_started_callbacks", None)
         while target_sessions is None or completed_sessions < target_sessions:
             collector.reset()
             session_capture_seconds = int(args.capture_seconds)
@@ -1395,6 +1396,16 @@ async def run_ble_capture(args, ser: Serial, serial_monitor: SerialLogMonitor):
                         fail_if_unexpected_reset("during_pre_start_delay")
                         await asyncio.sleep(0.05)
                 await send_serial_toggle_and_wait_for_start(session_capture_seconds)
+                if (
+                    session_started_callbacks is not None
+                    and completed_sessions < len(session_started_callbacks)
+                    and session_started_callbacks[completed_sessions] is not None
+                ):
+                    print(
+                        f"session_started_callback=session_index={completed_sessions + 1}",
+                        flush=True,
+                    )
+                    session_started_callbacks[completed_sessions]()
 
                 session_cancel_after_start_seconds_value = session_cancel_after_start_seconds
                 if (

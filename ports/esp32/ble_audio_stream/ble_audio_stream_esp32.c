@@ -3645,7 +3645,21 @@ bool ble_audio_stream_consume_type_control_command(const char *command, const ch
     }
 
     if (strcmp(command, "TYPE:READY") == 0 || strcmp(command, "TYPE:HB") == 0) {
+        const bool fresh_type_ready =
+            strcmp(command, "TYPE:READY") == 0 &&
+            !ble_audio_stream_type_heartbeat_recent();
         ble_audio_stream_note_type_activity(command);
+        if (fresh_type_ready && s_control_write_handler != NULL) {
+            static const uint8_t host_sync_command[] = "VREC:HOST_SYNC";
+            esp_err_t sync_ret = s_control_write_handler(
+                host_sync_command,
+                sizeof(host_sync_command) - 1u,
+                "type_ready_host_sync");
+            ESP_LOGI(
+                TAG,
+                "fresh Type ready synchronized audio session ret=%s",
+                esp_err_to_name(sync_ret));
+        }
         if (strcmp(command, "TYPE:HB") == 0) {
             ESP_LOGD(
                 TAG,
