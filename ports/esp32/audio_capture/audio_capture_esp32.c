@@ -74,6 +74,7 @@
 #define AUDIO_CAPTURE_IDLE_POWER_SAVE_WAIT_MS 5000U
 #define AUDIO_CAPTURE_OTA_SUSPEND_TIMEOUT_MS 250U
 #define AUDIO_CAPTURE_I2S_READ_TIMEOUT_MS 250U
+#define AUDIO_CAPTURE_IDLE_BUDGET_FRAMES 4U
 #define AUDIO_CAPTURE_PDM_HW_AMPLIFY_NUM 8U
 /* ESP32-S3 does not expose SOC_I2S_SUPPORTS_PDM_RX_HP_FILTER, so the nominal
  * hardware amplify setting below is not applied on this board. Calibrate the
@@ -1553,6 +1554,7 @@ i2c_master_bus_handle_t audio_capture_get_i2c_bus_handle(void)
 static void audio_capture_task(void *arg)
 {
     int16_t frame_buffer[AUDIO_CAPTURE_FRAME_SAMPLES];
+    uint32_t frames_since_idle_budget = 0u;
     (void)watchdog_platform_subscribe_current_task("audio_capture_task");
 
     while (1) {
@@ -1572,6 +1574,18 @@ static void audio_capture_task(void *arg)
             audio_capture_note_transport_backpressure();
             audio_capture_update_recording_level_from_raw_input(frame_buffer);
             audio_capture_process_frame(frame_buffer);
+            if (++frames_since_idle_budget >= AUDIO_CAPTURE_IDLE_BUDGET_FRAMES) {
+                /*
+                 * I2S can return immediately while DMA data is queued. The
+                 * capture task is watchdog-subscribed and priority 5, so a
+                 * sustained recording could otherwise run forever without
+                 * letting IDLE0 execute; that starves the idle-task TWDT
+                 * subscriber even though this task feeds its own entry.
+                 */
+                frames_since_idle_budget = 0u;
+                vTaskDelay(1);
+                watchdog_platform_feed_current_task();
+            }
             continue;
         }
 
@@ -2772,6 +2786,7 @@ static void audio_capture_task(void *arg)
     int16_t interleaved_frame_buffer[AUDIO_CAPTURE_FRAME_SAMPLES * 2U];
 #endif
     int16_t frame_buffer[AUDIO_CAPTURE_FRAME_SAMPLES];
+    uint32_t frames_since_idle_budget = 0u;
     (void)watchdog_platform_subscribe_current_task("audio_capture_task");
 
     while (1) {
@@ -2819,6 +2834,16 @@ static void audio_capture_task(void *arg)
 #else
             audio_capture_process_frame(frame_buffer);
 #endif
+            if (++frames_since_idle_budget >= AUDIO_CAPTURE_IDLE_BUDGET_FRAMES) {
+                /*
+                 * A continuously filled DMA queue makes i2s_channel_read()
+                 * return without blocking. Yield periodically so CPU0's IDLE
+                 * task can run and feed its strict Task WDT subscription.
+                 */
+                frames_since_idle_budget = 0u;
+                vTaskDelay(1);
+                watchdog_platform_feed_current_task();
+            }
             continue;
         }
 

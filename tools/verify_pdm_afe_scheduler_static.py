@@ -35,6 +35,7 @@ REQUIRED_FRAGMENTS = (
     "#define AUDIO_CAPTURE_PDM_AFE_RINGBUF_FRAMES 24",
     "#define AUDIO_CAPTURE_PDM_AFE_IDLE_BUDGET_FETCHES 64U",
     "#define AUDIO_CAPTURE_I2S_READ_TIMEOUT_MS 250U",
+    "#define AUDIO_CAPTURE_IDLE_BUDGET_FRAMES 4U",
     "#define AUDIO_CAPTURE_TASK_CORE 0",
     "#define AUDIO_CAPTURE_AFE_FETCH_TASK_CORE 1",
     "#define AUDIO_CAPTURE_PDM_SOFTWARE_GAIN_MAX_NUM 8U",
@@ -182,6 +183,17 @@ def main() -> int:
     ):
         if fragment not in capture_body:
             failures.append(f"missing bounded PDM I2S recovery contract: {fragment!r}")
+
+    for fragment in (
+        "frames_since_idle_budget",
+        "if (++frames_since_idle_budget >= AUDIO_CAPTURE_IDLE_BUDGET_FRAMES)",
+        "vTaskDelay(1);",
+        "watchdog_platform_feed_current_task();",
+    ):
+        if fragment not in capture_body:
+            failures.append(
+                f"capture task must periodically yield to the CPU0 idle WDT subscriber: {fragment!r}"
+            )
 
     for fragment in (
         "CONFIG_ESP_TASK_WDT_TIMEOUT_S=5",
