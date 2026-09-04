@@ -42,6 +42,11 @@ Follow `C:\Users\Billy\Desktop\Denzic\ai-collaboration-workflow\docs\shared_prod
 After firmware changes: build → flash or deliver matching OTA zip → verify serial
 `Compile time` / version before asking owner to use the device.
 
+### Always-latest runtime gate (mandatory)
+
+- 设备验收只允许使用当前 active `Listener-Firmware` 构建刷写的固件；不得把旧 OTA、旧 build 或历史串口日志当作当前版本证据。
+- 刷写后必须核对串口 `Compile time`/固件版本与本次构建产物一致；Type 应同时满足其 Always-latest runtime gate。
+
 ## Validation
 
 Prefer the narrowest relevant check:
