@@ -38,7 +38,7 @@ REQUIRED_FRAGMENTS = (
     "#define AUDIO_CAPTURE_IDLE_BUDGET_FRAMES 4U",
     "#define AUDIO_CAPTURE_TASK_CORE 0",
     "#define AUDIO_CAPTURE_AFE_FETCH_TASK_CORE 1",
-    "#define AUDIO_CAPTURE_PDM_SOFTWARE_GAIN_MAX_NUM 8U",
+    "#define AUDIO_CAPTURE_PDM_SOFTWARE_GAIN_MAX_NUM 32U",
     "#define AUDIO_CAPTURE_PDM_SOFTWARE_GAIN_TARGET_PEAK 16000U",
     "#define AUDIO_CAPTURE_PDM_SOFTWARE_GAIN_RECOVERY_Q8 64U",
     "audio_capture_apply_pdm_software_gain(frame_buffer);",
@@ -63,13 +63,13 @@ def main() -> int:
     ]
 
     # Mirror the integer Q8 policy so its product invariants remain explicit:
-    # weak V2.2 speech reaches the 8x calibration ceiling, close speech drops
+    # weak V2.2 speech reaches the 32x calibration ceiling, close speech drops
     # immediately below the target peak, and recovery rises by only 0.25x per
     # frame without exceeding either ceiling.
-    gain_q8 = 8 * 256
+    gain_q8 = 32 * 256
 
     def update_gain(peak: int, current_gain_q8: int) -> int:
-        target_gain_q8 = 8 * 256
+        target_gain_q8 = 32 * 256
         if peak > 0:
             target_gain_q8 = min(target_gain_q8, 16_000 * 256 // peak)
         target_gain_q8 = max(256, target_gain_q8)
@@ -78,10 +78,13 @@ def main() -> int:
         return min(target_gain_q8, current_gain_q8 + 64)
 
     weak_gain_q8 = update_gain(582, gain_q8)
+    overlap_gain_q8 = update_gain(166, gain_q8)
     close_gain_q8 = update_gain(4_000, weak_gain_q8)
     recovery_gain_q8 = update_gain(582, close_gain_q8)
-    if weak_gain_q8 != 8 * 256:
-        failures.append("weak V2.2 speech must retain the 8x calibration ceiling")
+    if weak_gain_q8 != 27 * 256 + 125:
+        failures.append("weak V2.2 speech must approach the 16000 peak target above 8x")
+    if overlap_gain_q8 != 32 * 256 or 166 * overlap_gain_q8 // 256 < 5_000:
+        failures.append("air-overlap speech must reach WebRTC NS above a 5000 peak")
     if close_gain_q8 != 4 * 256 or 4_000 * close_gain_q8 // 256 > 16_000:
         failures.append("close speech must reduce gain immediately to the headroom target")
     if recovery_gain_q8 != close_gain_q8 + 64:

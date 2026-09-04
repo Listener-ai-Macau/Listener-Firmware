@@ -85,7 +85,10 @@ Assert-Contains $watchdog 'watchdog_platform_enter_shutdown_critical' 'shutdown 
 Assert-Contains $watchdog 'WATCHDOG_PLATFORM_SHUTDOWN_CRITICAL_TIMEOUT_MS 30000U' 'shutdown critical WDT timeout'
 Assert-Contains $watchdog 'esp_task_wdt_reconfigure\(&config\)' 'task watchdog reconfigure API'
 Assert-Contains $watchdog 'watchdog_platform_task_notify_take_low_power' 'low-power task wait API'
-Assert-Contains $watchdog 'esp_task_wdt_delete\(NULL\)' 'low-power wait WDT unsubscribe'
+Assert-Contains $watchdog 'return watchdog_platform_task_notify_take\(clear_on_exit, wait_ms\);' 'low-power wait uses bounded feed chunks'
+if ($watchdog -match 'esp_task_wdt_delete\(NULL\)') {
+    throw 'Low-power runtime waits must not unsubscribe and resubscribe tasks from the shared TWDT.'
+}
 Assert-Contains $watchdog 'WATCHDOG_PLATFORM_FEED_INTERVAL_MS 1000U' 'bounded long-wait feed interval'
 Assert-Contains $watchdog 'WDT DEADLOCK test command accepted' 'watchdog deadlock validation command'
 

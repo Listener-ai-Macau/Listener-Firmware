@@ -38,6 +38,7 @@
 
 extern void power_manager_set_ble_connected(bool connected) __attribute__((weak));
 extern void power_manager_record_activity(const char *reason) __attribute__((weak));
+extern void power_manager_record_background_activity(const char *reason) __attribute__((weak));
 extern bool ble_hid_gap_is_securely_connected(void) __attribute__((weak));
 extern bool ble_hid_gap_is_recovery_pairing_window_open(void) __attribute__((weak));
 extern uint16_t ble_hid_gap_get_audio_notification_value_max_bytes(void) __attribute__((weak));
@@ -100,6 +101,16 @@ _Static_assert(BLE_AUDIO_STREAM_LOSSLESS_RICE_VERSION_V3 == DENZIC_AUDIO_LOSSLES
 _Static_assert(BLE_AUDIO_STREAM_LOSSLESS_RICE_HEADER_BYTES == DENZIC_AUDIO_LOSSLESS_V1_HEADER_BYTES,
     "lossless Rice seed header must match the platform contract");
 #define BLE_AUDIO_STREAM_AUDIO_JOB_COOPERATIVE_YIELD_BATCHES 5U
+/* A scheduler-only yield hands CPU0 to an equal-or-higher-priority ready task; it
+ * cannot let the watched IDLE0 task run.  During repeated lossless preroll
+ * bursts that allowed this high-priority exporter to feed its own watchdog
+ * while starving IDLE0 until a Task-WDT reset.  Enforce a real Blocked
+ * interval both between sustained audio jobs and inside a large preroll
+ * drain.  Two milliseconds is long enough to span a complete scheduler tick;
+ * the 7.68 kB quantum adds at most 16 ms to a 64 kB wake preroll. */
+#define BLE_AUDIO_STREAM_COOPERATIVE_IDLE_BLOCK_MS 2U
+#define BLE_AUDIO_STREAM_AUDIO_PACKET_IDLE_BLOCK_MS 1U
+#define BLE_AUDIO_STREAM_PREROLL_IDLE_BLOCK_PCM_BYTES 7680U
 #define BLE_AUDIO_NOTIFY_STATE_DISABLED 0U
 #define BLE_AUDIO_NOTIFY_STATE_ENABLED 1U
 #define BLE_AUDIO_NOTIFY_STATE_DISABLED_ABORT 2U
@@ -1917,6 +1928,8 @@ static void ble_audio_stream_notify_success_delay(
     }
 
     if (s_audio_pacing_burst_remaining_pcm_bytes > 0u) {
+        uint32_t previous_burst_pcm_bytes =
+            s_session_stats.audio_preroll_burst_pcm_bytes;
         uint32_t burst_pcm_bytes = packet_pcm_bytes;
         if (burst_pcm_bytes > s_audio_pacing_burst_remaining_pcm_bytes) {
             burst_pcm_bytes = s_audio_pacing_burst_remaining_pcm_bytes;
@@ -1925,8 +1938,22 @@ static void ble_audio_stream_notify_success_delay(
         s_session_stats.audio_preroll_burst_pcm_bytes += burst_pcm_bytes;
         packet_pcm_bytes = (uint16_t)(packet_pcm_bytes - burst_pcm_bytes);
         if (packet_pcm_bytes == 0u) {
-            watchdog_platform_feed_current_task();
-            taskYIELD();
+            bool idle_block_boundary_crossed =
+                previous_burst_pcm_bytes /
+                    BLE_AUDIO_STREAM_PREROLL_IDLE_BLOCK_PCM_BYTES !=
+                s_session_stats.audio_preroll_burst_pcm_bytes /
+                    BLE_AUDIO_STREAM_PREROLL_IDLE_BLOCK_PCM_BYTES;
+            if (idle_block_boundary_crossed) {
+                ble_audio_stream_delay_ms(
+                    BLE_AUDIO_STREAM_COOPERATIVE_IDLE_BLOCK_MS);
+            } else {
+                /* A preroll packet can complete without crossing the coarse
+                 * 7.68 kB boundary.  Feeding this task's WDT alone is not a
+                 * scheduler opportunity: the high-priority exporter can keep
+                 * IDLE0 starved until a Task-WDT reset. */
+                ble_audio_stream_delay_ms(
+                    BLE_AUDIO_STREAM_AUDIO_PACKET_IDLE_BLOCK_MS);
+            }
             return;
         }
     }
@@ -1939,6 +1966,11 @@ static void ble_audio_stream_notify_success_delay(
         &s_audio_pacing,
         packet_pcm_bytes);
     if (delay_ticks == 0) {
+        /* The pacing clock intentionally permits an immediate next packet.
+         * Still block for one tick so the exporter cannot monopolize CPU0
+         * while continuously feeding its own watchdog and starving IDLE0. */
+        ble_audio_stream_delay_ms(
+            BLE_AUDIO_STREAM_AUDIO_PACKET_IDLE_BLOCK_MS);
         return;
     }
 
@@ -2981,8 +3013,8 @@ static void ble_audio_stream_task(void *parameter)
             consecutive_audio_jobs++;
             if (consecutive_audio_jobs >= BLE_AUDIO_STREAM_AUDIO_JOB_COOPERATIVE_YIELD_BATCHES) {
                 consecutive_audio_jobs = 0;
-                vTaskDelay(1);
-                watchdog_platform_feed_current_task();
+                ble_audio_stream_delay_ms(
+                    BLE_AUDIO_STREAM_COOPERATIVE_IDLE_BLOCK_MS);
             }
         } else {
             consecutive_audio_jobs = 0;
@@ -3416,8 +3448,11 @@ void ble_audio_stream_note_type_activity(const char *reason)
         status_led_set_type_ota_link_active(true, reason);
     }
     if (ble_audio_stream_type_ready_visible_event(reason) &&
-        power_manager_record_activity != NULL) {
-        power_manager_record_activity("type_ready");
+        power_manager_record_background_activity != NULL) {
+        /* TYPE:READY is also emitted after automatic GATT/notify recovery.
+         * Keep an already-active session warm, but never use that background
+         * handshake to undo the device's low-power transition. */
+        power_manager_record_background_activity("type_ready");
     }
     if (!ota_activity) {
         ble_audio_stream_sync_power_manager_for_type_link(

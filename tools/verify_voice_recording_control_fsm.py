@@ -266,6 +266,8 @@ def main() -> int:
     for token in [
         "s_active_session_visible && !s_active_session_enrollment",
         "VOICE_RECORDING_CONTROL_INITIAL_BODY_WAIT_MS",
+        "if (hidden_automatic && max_duration_stop)",
+        "A max-duration stop is a streaming window rotation, not the",
     ]:
         require_contains(
             voice_activity,
@@ -437,6 +439,16 @@ def main() -> int:
     ]:
         require_contains(source, boundary, f"missing effect boundary {boundary}")
 
+    inactive_body = extract_void_function(
+        source, "voice_recording_control_handle_session_inactive"
+    )
+    cancel_cleanup = inactive_body.find(
+        'status_led_set_processing(false, "recording_canceled")'
+    )
+    first_release = inactive_body.find("voice_recording_control_clear_power_blockers()")
+    if cancel_cleanup < 0 or first_release < cancel_cleanup:
+        fail("session-inactive teardown must release VA/audio blockers only after output cleanup")
+
     for token in [
         "s_active_session_automatic = pre_roll_ms > 0u;",
         "s_active_session_visible = !s_active_session_automatic;",
@@ -600,7 +612,7 @@ def main() -> int:
         )
 
     for token in [
-        "#define AUDIO_CAPTURE_PDM_SOFTWARE_GAIN_MAX_NUM 8U",
+        "#define AUDIO_CAPTURE_PDM_SOFTWARE_GAIN_MAX_NUM 32U",
         "#define AUDIO_CAPTURE_PDM_SOFTWARE_GAIN_TARGET_PEAK 16000U",
         "#define AUDIO_CAPTURE_PDM_SOFTWARE_GAIN_RECOVERY_Q8 64U",
         "#define AUDIO_CAPTURE_PDM_SESSION_WARMUP_MIN_FEED_BLOCKS 5U",
@@ -635,6 +647,8 @@ def main() -> int:
         "if (!session_active && state != VAD_SPEECH)",
         "PDM VAD low-SNR speech preserved:",
         "handler(speech_detected, elapsed_ms);",
+        "(!s_export_state.active || s_session_preroll_count == 0u)",
+        "The ring is continuous wake history, not one-shot session storage.",
     ]:
         require_contains(
             capture_source,
@@ -643,6 +657,15 @@ def main() -> int:
         )
     if "AUDIO_CAPTURE_VAD_SPEECH_MIN_PEAK" in capture_source:
         fail("fixed raw-volume VAD gate is forbidden by the 1.0.4 wake contract")
+    session_begin_start = capture_source.find(
+        "esp_err_t audio_capture_session_begin_with_preroll("
+    )
+    session_begin_end = capture_source.find(
+        "esp_err_t audio_capture_session_begin(void)", session_begin_start
+    )
+    session_begin_body = capture_source[session_begin_start:session_begin_end]
+    if "memset(s_voice_preroll" in session_begin_body:
+        fail("wake pre-roll must remain continuous across hidden candidate rotation")
     for forbidden in ("vad_create(", "s_pdm_vad_handle"):
         if forbidden in capture_source:
             fail(f"legacy standalone WebRTC VAD must be absent: {forbidden}")
@@ -681,13 +704,6 @@ def main() -> int:
     if not 0 <= raw_meter_index < calibration_index < afe_index:
         fail("raw visual meter must precede guarded board calibration and AFE feed")
 
-    session_begin_start = capture_source.find(
-        "esp_err_t audio_capture_session_begin_with_preroll("
-    )
-    session_begin_end = capture_source.find(
-        "esp_err_t audio_capture_session_begin(void)", session_begin_start
-    )
-    session_begin_body = capture_source[session_begin_start:session_begin_end]
     warmup_wait_index = session_begin_body.find(
         "while (!s_pdm_afe_session_warmup_ready"
     )

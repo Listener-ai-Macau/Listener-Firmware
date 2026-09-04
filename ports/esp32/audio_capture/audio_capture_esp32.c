@@ -83,8 +83,13 @@
  * before the downstream AGC can recover them. This is a board calibration
  * ceiling, not a second output AGC: the frame peak guard drops gain immediately
  * for close speech and restores it gradually without exceeding 16-bit headroom.
- * The post-NS AGC and final limiter still own output levelling. */
-#define AUDIO_CAPTURE_PDM_SOFTWARE_GAIN_MAX_NUM 8U
+ * The post-NS AGC and final limiter still own output levelling. The V2.2 air
+ * overlap bench later measured raw peaks of only 166..215 for strong Chinese
+ * speech. An 8x ceiling still fed WebRTC NS at just 1160..1720 peak, where it
+ * intermittently removed an entire speaker. A 32x ceiling lets weak speech
+ * approach the existing 16000 target; the per-frame peak guard still drops
+ * gain immediately for close speech, so this does not weaken headroom. */
+#define AUDIO_CAPTURE_PDM_SOFTWARE_GAIN_MAX_NUM 32U
 #define AUDIO_CAPTURE_PDM_SOFTWARE_GAIN_Q8_ONE 256U
 #define AUDIO_CAPTURE_PDM_SOFTWARE_GAIN_TARGET_PEAK 16000U
 #define AUDIO_CAPTURE_PDM_SOFTWARE_GAIN_RECOVERY_Q8 64U
@@ -832,11 +837,15 @@ esp_err_t audio_capture_session_begin_with_preroll(uint32_t pre_roll_ms)
             session_id,
             session_preroll_count,
             session_preroll_count * AUDIO_CAPTURE_FRAME_MS);
-        memset(s_voice_preroll, 0, AUDIO_CAPTURE_VOICE_PREROLL_BYTES);
-        memset(s_voice_preroll_levels, 0, sizeof(s_voice_preroll_levels));
-        s_voice_preroll_write_index = 0u;
-        s_voice_preroll_count = 0u;
-        s_session_preroll_count = 0u;
+        /* The ring is continuous wake history, not one-shot session storage.
+         * Keep the snapshot after sending it, then let live capture overwrite
+         * it in rolling order. A 3.5 s hidden candidate may end between the
+         * words of 「开始录音」; clearing here made the next candidate lose
+         * the phrase prefix even though voice monitoring never stopped. */
+        if (xSemaphoreTake(s_state_mutex, portMAX_DELAY) == pdTRUE) {
+            s_session_preroll_count = 0u;
+            xSemaphoreGive(s_state_mutex);
+        }
     }
     ESP_LOGI(
         TAG,
@@ -1056,10 +1065,8 @@ esp_err_t audio_capture_set_voice_activation_monitoring(bool enabled)
     }
     s_voice_activation_monitoring = enabled;
     /* 不清空 preroll：保留跨录音会话的前缀缓冲。
-     * 此前 enabled=false（录音开始）时 memset 清零，导致录音结束、重新开启监测时
-     * 环形缓冲从空开始重新累积；若用户随即再次说出唤醒词，前缀"开始"尚未攒够，
-     * 桌面 KWS 只能从后半段凑齐，造成延迟命中（实测 wake_to_capsule 5s+）或漏检。
-     * 现仅切换监测标志，缓冲连续累积，下次唤醒能立即带上完整前缀。
+     * 监听开启时环形缓冲连续累积，包括隐藏候选正在录制时；下一候选因此
+     * 仍能拿到上一窗末尾的完整唤醒词，不会在 3.5 s 候选轮换处截断。
      * power-save（audio_capture_set_idle_power_save）仍保留清零：深度休眠唤醒后
      * 缓冲内容已过期，不应作为前缀使用。 */
     return ESP_OK;
@@ -1158,9 +1165,15 @@ static void audio_capture_process_frame(const int16_t *frame_buffer)
     const uint8_t *audio_batch_copy = NULL;
 
     if (xSemaphoreTake(s_state_mutex, portMAX_DELAY) == pdTRUE) {
+        /* Keep a continuous two-second wake history across hidden candidate
+         * rotations. While a session snapshot is still being exported,
+         * s_session_preroll_count stays non-zero and freezes the ring so the
+         * sender cannot race an overwrite. Once it reaches zero, active live
+         * PCM rolls into the same ring and becomes the next candidate's
+         * overlap. */
         if (s_voice_activation_monitoring &&
             !s_export_state.requested &&
-            !s_export_state.active) {
+            (!s_export_state.active || s_session_preroll_count == 0u)) {
             memcpy(
                 s_voice_preroll[s_voice_preroll_write_index],
                 frame_buffer,
@@ -1421,10 +1434,6 @@ static void audio_capture_process_frame(const int16_t *frame_buffer)
                             s_session_preroll_count *
                                 AUDIO_CAPTURE_FRAME_MS);
                     }
-                    memset(s_voice_preroll, 0, AUDIO_CAPTURE_VOICE_PREROLL_BYTES);
-                    memset(s_voice_preroll_levels, 0, sizeof(s_voice_preroll_levels));
-                    s_voice_preroll_write_index = 0u;
-                    s_voice_preroll_count = 0u;
                     s_session_preroll_count = 0u;
                 }
             }
@@ -2103,6 +2112,25 @@ static void audio_capture_log_pdm_afe_session_signal(uint32_t session_id)
         leveling.gain_ceiling_frames,
         leveling.limiter_frames,
         leveling.clipped_samples);
+    /* Persist the three signal points that determine model input quality.
+     * LED brightness is derived from the raw capture frame and cannot stand in
+     * for the AFE/AGC/leveling output actually transported to Type. */
+    diag_log(
+        DIAG_SRC_AUDIO,
+        DIAG_AUDIO_SIGNAL_PATH,
+        DIAG_SEV_INFO,
+        session_id,
+        input_mean_abs,
+        agc_output_mean_abs,
+        mean_abs);
+    diag_log(
+        DIAG_SRC_AUDIO,
+        DIAG_AUDIO_LEVELING,
+        DIAG_SEV_INFO,
+        session_id,
+        s_pdm_leveling_last_noise_floor_mean_abs,
+        s_pdm_leveling_last_allowed_gain_permille,
+        leveling.gain_limited_frames);
 }
 
 static void audio_capture_pdm_afe_emit(const int16_t *samples, size_t sample_count)

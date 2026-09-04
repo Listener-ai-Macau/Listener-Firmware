@@ -37,13 +37,23 @@ typedef struct {
     const char *policy;
 } board_v2_power_hold_snapshot_t;
 
+typedef struct {
+    bool charging;
+    bool standby_full;
+    bool vin_present;
+} board_v2_charger_pin_decode_t;
+
 void board_print_help(void);
 void board_log_v2_diagnostics(void);
 bool board_consume_usb_command(const char *line);
+board_v2_charger_pin_decode_t board_decode_charger_status_pins(int bat_chg_level, int bat_std_level);
 void board_get_v2_power_input_snapshot(board_v2_power_input_snapshot_t *out_snapshot);
 void board_get_v2_power_hold_snapshot(board_v2_power_hold_snapshot_t *out_snapshot);
 esp_err_t board_configure_power_hold_latch(void);
 esp_err_t board_set_power_hold_enabled(bool enabled);
+/* Manual plugged soft-off keeps USB power but disconnects the native
+ * Serial/JTAG data PHY so host DTR/RTS scans cannot reset the chip. */
+esp_err_t board_set_usb_serial_jtag_data_connected(bool connected);
 
 #ifdef __cplusplus
 }

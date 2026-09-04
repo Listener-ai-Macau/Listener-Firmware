@@ -428,10 +428,6 @@ def main() -> int:
         in audio_capture
         and "heap_caps_calloc(" in audio_capture
         and "MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT" in audio_capture
-        and audio_capture.count(
-            "memset(s_voice_preroll, 0, AUDIO_CAPTURE_VOICE_PREROLL_BYTES);"
-        )
-        >= 1
         and re.search(
             r"if \(s_voice_preroll != NULL\) \{\s+memset\(\s+"
             r"s_voice_preroll,\s+0,\s+AUDIO_CAPTURE_VOICE_PREROLL_BYTES\);",
@@ -440,7 +436,7 @@ def main() -> int:
         is not None
         and "static int16_t\n    s_voice_preroll[" not in audio_capture
         and "xTaskCreatePinnedToCoreWithCaps(" not in audio_capture,
-        "only the task-owned voice pre-roll may move to PSRAM; safe-mode cleanup must tolerate it being absent and both audio task stacks must remain internal",
+        "only the task-owned voice pre-roll may move to PSRAM; only safe-mode cleanup clears it, must tolerate it being absent, and both audio task stacks must remain internal",
     )
     require(
         "BLE_FIRMWARE_OTA_WORKER_TASK_STACK_BYTES 4096" in ota_adapter

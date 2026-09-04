@@ -102,6 +102,8 @@ SOURCE_TOKENS = [
     "audio_pace_ticks=",
     "audio_pace_target_bytes_per_s=",
     "BLE_AUDIO_STREAM_AUDIO_JOB_COOPERATIVE_YIELD_BATCHES 5U",
+    "BLE_AUDIO_STREAM_COOPERATIVE_IDLE_BLOCK_MS 2U",
+    "BLE_AUDIO_STREAM_PREROLL_IDLE_BLOCK_PCM_BYTES 7680U",
     "consecutive_audio_jobs",
     "ble_audio_stream_wait_msys_blocks",
     "os_msys_num_free()",
@@ -144,7 +146,7 @@ GAP_SOURCE_TOKENS = [
     "s_active_connection_required",
     "s_ec11_fast_recording_armed",
     "ble_hid_gap_set_ec11_fast_recording_enabled",
-    "low-power idle connection retained active: e11r fast recording is armed",
+    "low-power idle retains stable BLE connection parameters: runtime switch disabled by INT_WDT guard",
     "BLE_HID_GAP_ACTIVE_PROMOTION_RETRY_MS 50U",
     "BLE_HID_GAP_ACTIVE_PROMOTION_TIMEOUT_MS",
     "BLE_HID_GAP_AUDIO_DATA_LEN_OCTETS 251U",
@@ -263,10 +265,10 @@ def static_source_checks() -> None:
     require_regex(
         gap,
         r"ble_hid_gap_request_low_power_connection\(.*?"
-        r"ble_hid_gap_ec11_fast_recording_armed\(\).*?"
-        r"ble_hid_gap_request_active_connection\(\).*?"
-        r"ble_hid_gap_set_active_connection_required\(false\)",
-        "armed e11r retains the active connection before low-power can apply",
+        r"ble_hid_gap_set_active_connection_required\(false\).*?"
+        r"runtime switch disabled by INT_WDT guard.*?"
+        r"return ESP_OK",
+        "low-power bookkeeping disarms active promotion without re-entering the unsafe runtime connection update",
         GAP,
     )
     require_regex(
@@ -339,10 +341,23 @@ def static_source_checks() -> None:
         stream,
         r"ble_audio_stream_task\(.*?consecutive_audio_jobs.*?"
         r"BLE_AUDIO_STREAM_AUDIO_JOB_COOPERATIVE_YIELD_BATCHES.*?"
-        r"vTaskDelay\(1\).*?watchdog_platform_feed_current_task",
+        r"ble_audio_stream_delay_ms\(\s*"
+        r"BLE_AUDIO_STREAM_COOPERATIVE_IDLE_BLOCK_MS\s*\)",
         "continuous audio batches periodically yield to the idle task without disabling the watchdog",
         STREAM,
     )
+    require_regex(
+        stream,
+        r"s_audio_pacing_burst_remaining_pcm_bytes > 0u.*?"
+        r"idle_block_boundary_crossed.*?"
+        r"BLE_AUDIO_STREAM_PREROLL_IDLE_BLOCK_PCM_BYTES.*?"
+        r"ble_audio_stream_delay_ms\(\s*"
+        r"BLE_AUDIO_STREAM_COOPERATIVE_IDLE_BLOCK_MS\s*\)",
+        "accelerated preroll periodically enters a real Blocked state for IDLE0",
+        STREAM,
+    )
+    if "taskYIELD()" in stream:
+        fail("BLE audio must not use a same-priority yield as an IDLE0 fairness mechanism")
     require_regex(
         stream,
         r"uint16_t ble_audio_stream_count_audio_packets\(.*?"
@@ -882,6 +897,8 @@ def case_media_clock_drains_faster_than_pcm_production() -> None:
 
 def case_lossless_voice_preroll_has_bounded_burst_only() -> None:
     burst_budget = 64_000
+    idle_block_quantum = 7_680
+    idle_block_ms = 2
 
     def paced_bytes(origin_voice: bool, lossless: bool, pcm_bytes: int) -> tuple[int, int]:
         credit = burst_budget if origin_voice and lossless else 0
@@ -892,6 +909,8 @@ def case_lossless_voice_preroll_has_bounded_burst_only() -> None:
     assert paced_bytes(True, True, 96_000) == (64_000, 32_000)
     assert paced_bytes(True, False, 64_000) == (0, 64_000)
     assert paced_bytes(False, True, 64_000) == (0, 64_000)
+    assert burst_budget // idle_block_quantum == 8
+    assert (burst_budget // idle_block_quantum) * idle_block_ms == 16
 
 
 def case_long_session_rate_metrics_do_not_wrap() -> None:

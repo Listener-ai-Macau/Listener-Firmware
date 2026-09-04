@@ -251,10 +251,12 @@ static esp_err_t ble_hid_update_battery_level(const char *reason, bool force_not
     board_v2_power_input_snapshot_t power = {0};
     board_get_v2_power_input_snapshot(&power);
     bool usb_power_present = power.usb_power_present;
-    bool charger_active = power.bat_chg_level == 0;
-    bool charge_power_present = usb_power_present || charger_active;
+    board_v2_charger_pin_decode_t charger =
+        board_decode_charger_status_pins(power.bat_chg_level, power.bat_std_level);
+    bool charger_active = charger.charging;
+    bool charge_power_present = usb_power_present || charger_active || charger.standby_full;
     bool raw_charging = charger_active;
-    bool raw_full = power.bat_std_level == 0;
+    bool raw_full = charger.standby_full;
     uint32_t now_ms = ble_hid_now_ms();
     denzic_battery_v1_charge_input_t charge_input = {
         .charge_power_present = charge_power_present,

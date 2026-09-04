@@ -97,6 +97,8 @@
 #define VOICE_KEY_INPUT_EC11_LOGICAL_KEY 5u
 #define VOICE_KEY_INPUT_EC11_FALLBACK_USAGE HID_KEYBOARD_USAGE_F13
 #define VOICE_KEY_INPUT_EC11_FALLBACK_MODIFIER HID_KEYBOARD_MODIFIER_LEFT_SHIFT
+#define VOICE_KEY_INPUT_ISR_NOTIFY_MIN_MS (2)
+#define VOICE_KEY_INPUT_ISR_STORM_EDGE_THRESHOLD (64)
 
 static const char *TAG = "voice_key_input";
 
@@ -154,7 +156,13 @@ static uint8_t s_direct_generated_click_count;
 static TickType_t s_direct_generated_start_tick;
 static volatile TickType_t s_direct_gpio_press_activity_tick;
 static volatile TickType_t s_direct_gpio_isr_tick;
+static volatile TickType_t s_direct_gpio_isr_last_notify_tick;
 static volatile bool s_direct_gpio_isr_edge_pending;
+static volatile uint32_t s_direct_gpio_isr_edge_count;
+static volatile uint32_t s_direct_gpio_isr_task_wake_count;
+static volatile uint32_t s_direct_gpio_isr_coalesced_count;
+static uint32_t s_direct_gpio_isr_last_logged_edge_count;
+static TickType_t s_direct_gpio_isr_last_log_tick;
 static bool s_fast_idle_recording_cancelled;
 static bool s_fast_idle_recording_hid_suppression_pending;
 static TickType_t s_fast_idle_recording_press_tick;
@@ -192,19 +200,55 @@ static void voice_key_input_notify_recording_control_task(void);
 static void IRAM_ATTR voice_key_input_direct_gpio_wake_from_isr(void *arg)
 {
     (void)arg;
-    s_direct_gpio_isr_tick = xTaskGetTickCountFromISR();
+    TickType_t now = xTaskGetTickCountFromISR();
+    s_direct_gpio_isr_tick = now;
     s_direct_gpio_isr_edge_pending = true;
+    ++s_direct_gpio_isr_edge_count;
 
     TaskHandle_t task_handle = s_poll_task_handle;
     if (task_handle == NULL) {
         return;
     }
 
+    TickType_t min_notify_ticks = pdMS_TO_TICKS(VOICE_KEY_INPUT_ISR_NOTIFY_MIN_MS);
+    if (min_notify_ticks == 0) {
+        min_notify_ticks = 1;
+    }
+    if (s_direct_gpio_isr_last_notify_tick != 0 &&
+        (now - s_direct_gpio_isr_last_notify_tick) < min_notify_ticks) {
+        ++s_direct_gpio_isr_coalesced_count;
+        return;
+    }
+    s_direct_gpio_isr_last_notify_tick = now;
+    ++s_direct_gpio_isr_task_wake_count;
+
     BaseType_t higher_priority_woken = pdFALSE;
     vTaskNotifyGiveFromISR(task_handle, &higher_priority_woken);
     if (higher_priority_woken == pdTRUE) {
         portYIELD_FROM_ISR();
     }
+}
+
+static void voice_key_input_log_isr_storm_if_due(TickType_t now)
+{
+    uint32_t edge_count = s_direct_gpio_isr_edge_count;
+    if (edge_count - s_direct_gpio_isr_last_logged_edge_count <
+        VOICE_KEY_INPUT_ISR_STORM_EDGE_THRESHOLD) {
+        return;
+    }
+    uint32_t window_ms = s_direct_gpio_isr_last_log_tick == 0
+        ? 0U
+        : (uint32_t)((now - s_direct_gpio_isr_last_log_tick) * portTICK_PERIOD_MS);
+    diag_log(
+        DIAG_SRC_VOICE_KEY,
+        DIAG_VKEY_ISR_STORM,
+        DIAG_SEV_WARN,
+        edge_count,
+        s_direct_gpio_isr_task_wake_count,
+        s_direct_gpio_isr_coalesced_count,
+        window_ms);
+    s_direct_gpio_isr_last_logged_edge_count = edge_count;
+    s_direct_gpio_isr_last_log_tick = now;
 }
 
 static bool voice_key_input_take_direct_gpio_isr_edge_pending(void)
@@ -1293,6 +1337,7 @@ static void voice_key_input_poll_task(void *parameter)
     while (1) {
         watchdog_platform_feed_current_task();
         TickType_t now = xTaskGetTickCount();
+        voice_key_input_log_isr_storm_if_due(now);
         voice_key_input_drain_generated_events(now);
 #if VOICE_KEY_INPUT_ENABLE_LEGACY_EXPANDER
         if (s_io_expander != NULL) {
@@ -1362,10 +1407,14 @@ static void voice_key_input_poll_task(void *parameter)
         bool low_power_wait =
             voice_key_input_power_state_is_low_power_idle() &&
             wait_ms > VOICE_KEY_INPUT_POLL_MS;
-        if (low_power_wait) {
-            (void)watchdog_platform_task_notify_take_low_power(pdTRUE, wait_ms);
-        } else {
-            (void)watchdog_platform_task_notify_take(pdTRUE, wait_ms);
+        uint32_t notified = low_power_wait
+            ? watchdog_platform_task_notify_take_low_power(pdTRUE, wait_ms)
+            : watchdog_platform_task_notify_take(pdTRUE, wait_ms);
+        if (notified != 0U) {
+            /* A noisy encoder switch can keep the notification count nonzero.
+             * Enter Blocked for one tick so IDLE0 still runs and the interrupt
+             * watchdog remains an honest safety net. */
+            vTaskDelay(1);
         }
     }
 }

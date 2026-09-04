@@ -864,6 +864,21 @@ esp_err_t status_led_strip_backend_transmit_non_dma_once(
     return status_led_strip_backend_transmit_mode(backend, color_order, colors, false);
 }
 
+esp_err_t status_led_strip_backend_quiet(status_led_strip_backend_t *backend)
+{
+    if (backend == NULL || backend->gpio == GPIO_NUM_NC) {
+        return ESP_OK;
+    }
+    /* A latched all-dark WS2812 frame needs no further bus activity. Keep both
+     * runtime transports resident while product idle is reversible. Hardware
+     * traces place ESP_RST_INT_WDT immediately after the main-chain RMT DMA
+     * frame and before the next diagnostic event; deleting its encoder/channel
+     * at that boundary is therefore unsafe for the same reason that releasing
+     * the SPI DMA device was unsafe. Resume reuses the existing transport and
+     * avoids allocator, interrupt, GPIO-matrix, and GDMA teardown entirely. */
+    return ESP_OK;
+}
+
 esp_err_t status_led_strip_backend_suspend(status_led_strip_backend_t *backend)
 {
     if (backend == NULL || backend->gpio == GPIO_NUM_NC) {

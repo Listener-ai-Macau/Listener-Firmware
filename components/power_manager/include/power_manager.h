@@ -107,6 +107,9 @@ esp_err_t power_manager_init(void);
 esp_err_t power_manager_start(void);
 void power_manager_record_activity(const char *reason);
 void power_manager_set_blocker(uint32_t blocker_mask, bool enabled);
+/* Atomically reserve the active power state for a hidden voice candidate.
+ * Unlike set_blocker(), this refuses to resurrect an already-idle device. */
+bool power_manager_try_acquire_voice_activation(void);
 void power_manager_set_ble_connected(bool connected);
 bool power_manager_consume_usb_command(const char *line);
 power_manager_state_t power_manager_get_state(void);

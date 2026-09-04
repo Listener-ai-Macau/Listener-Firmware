@@ -2890,7 +2890,9 @@ static void voice_recording_control_process_voice_activity(void)
                 max_duration_stop
                     ? "voice_activation.auto_stop_max_duration"
                     : "voice_activation.auto_stop_silence",
-                AUDIO_CAPTURE_STOP_ORIGIN_VOICE_ACTIVATION);
+                max_duration_stop
+                    ? AUDIO_CAPTURE_STOP_ORIGIN_VOICE_ACTIVATION_MAX_DURATION
+                    : AUDIO_CAPTURE_STOP_ORIGIN_VOICE_ACTIVATION);
             if (hidden_automatic && max_duration_stop) {
                 /* A max-duration stop is a streaming window rotation, not the
                  * end of an utterance. Bypass the ordinary 1.2 s cooldown so

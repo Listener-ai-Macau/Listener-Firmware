@@ -18,6 +18,7 @@ typedef void (*audio_capture_voice_activity_handler_t)(
 typedef enum {
     AUDIO_CAPTURE_STOP_ORIGIN_USER = 0,
     AUDIO_CAPTURE_STOP_ORIGIN_VOICE_ACTIVATION = 1,
+    AUDIO_CAPTURE_STOP_ORIGIN_VOICE_ACTIVATION_MAX_DURATION = 2,
 } audio_capture_stop_origin_t;
 
 esp_err_t audio_capture_start(void);

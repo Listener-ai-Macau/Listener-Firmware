@@ -70,6 +70,7 @@ esp_err_t status_led_strip_backend_transmit_non_dma_once(
     status_led_strip_backend_t *backend,
     status_led_color_order_t color_order,
     const status_led_rgb_t *colors);
+esp_err_t status_led_strip_backend_quiet(status_led_strip_backend_t *backend);
 esp_err_t status_led_strip_backend_suspend(status_led_strip_backend_t *backend);
 
 #ifdef __cplusplus

@@ -32,6 +32,11 @@ CHECKS = {
         "s_fast_idle_recording_cancelled = true;",
         "voice_key_input_cancel_fast_idle_recording_for_long_press();",
         "voice_key_input_take_fast_idle_recording_cancel_event",
+        "VOICE_KEY_INPUT_ISR_STORM_EDGE_THRESHOLD (64)",
+        "(now - s_direct_gpio_isr_last_notify_tick) < min_notify_ticks",
+        "DIAG_VKEY_ISR_STORM",
+        "if (notified != 0U) {",
+        "vTaskDelay(1);",
     ),
     "ports/esp32/ble_hid/ble_hid.c": (
         "The generated EC11 single click is a diagnostic stand-in for the first",
@@ -59,7 +64,7 @@ CHECKS = {
     ),
     "ports/esp32/ble_hid_gap/ble_hid_gap_esp32.c": (
         "s_ec11_fast_recording_armed",
-        "low-power idle connection retained active: e11r fast recording is armed",
+        "low-power idle retains stable BLE connection parameters: runtime switch disabled by INT_WDT guard",
         "ble_hid_gap_set_ec11_fast_recording_enabled",
         "power_manager_get_state() == POWER_MANAGER_STATE_CONNECTED_IDLE",
     ),
@@ -72,6 +77,13 @@ CHECKS = {
         '#include "freertos/FreeRTOS.h"',
         '#include "freertos/task.h"',
         "voice_key_input_set_recording_control_task",
+    ),
+}
+
+
+FORBIDDEN_FRAGMENTS = {
+    "ports/esp32/voice_key_input/voice_key_input_esp32.c": (
+        "taskYIELD();",
     ),
 }
 
@@ -101,6 +113,14 @@ def main() -> int:
             if sequence not in source:
                 failures.append(
                     f"{relative_path}: fast recording must queue before restoring power activity"
+                )
+
+    for relative_path, forbidden_fragments in FORBIDDEN_FRAGMENTS.items():
+        source = (REPO_ROOT / relative_path).read_text(encoding="utf-8")
+        for fragment in forbidden_fragments:
+            if fragment in source:
+                failures.append(
+                    f"{relative_path}: {fragment!r} cannot provide IDLE0 a Blocked interval"
                 )
 
     if failures:

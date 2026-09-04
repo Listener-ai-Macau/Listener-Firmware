@@ -693,7 +693,7 @@ def main() -> int:
         ),
         "pin_low_level_wake": (
             r"power_manager_configure_power_input_wake_pin[\s\S]*"
-            r"GPIO_INTR_DISABLE[\s\S]*"
+            r"GPIO_INTR_ANYEDGE[\s\S]*"
             r"gpio_isr_handler_add\(gpio,\s*power_manager_power_input_wake_from_isr[\s\S]*"
             r"gpio_wakeup_enable\(gpio,\s*GPIO_INTR_LOW_LEVEL\)[\s\S]*"
             r"gpio_intr_disable\(gpio\)"
@@ -1504,13 +1504,12 @@ def main() -> int:
             "components/status_led/status_led.c: low-power status rewrite helper must be removed; idle should settle then suspend all LED transports"
         )
     if (
-        "const bool preserve_repair_cue =" not in status_led
-        or "disabled && status_led_ble_repair_cue_active_locked(now_ms)" not in status_led
-        or "const bool next_low_power_disabled = disabled && !preserve_repair_cue;" not in status_led
-        or "if (next_low_power_disabled) {\n            status_led_force_transition_clear_locked(STATUS_LED_TRANSITION_CLEAR_NON_KEY_ACCENTS);" not in status_led
+        "const bool next_low_power_disabled = disabled;" not in status_led
+        or "preserve_repair_cue" in status_led
+        or "if (next_low_power_disabled) {\n            s_state.transition_clear_mask = 0U;" not in status_led
     ):
         failures.append(
-            "components/status_led/status_led.c: entering low-power idle must schedule a scoped non-KEY accent clear frame, while active repair cue must defer the low-power LED cutoff"
+            "components/status_led/status_led.c: entering low-power idle must cancel stale effects and render one authoritative DMA frame without deferring to a repair cue"
         )
     if not re.search(
         r"status_led_idle_transport_release_pending[\s\S]{0,260}"
@@ -1532,23 +1531,23 @@ def main() -> int:
     elif (
         "STATUS_LED_STRIP_STATUS" not in quiet_suspend.group(0)
         or "STATUS_LED_STRIP_EDGE" not in quiet_suspend.group(0)
-        or "status_led_strip_backend_suspend(s_strips[index].backend)" not in quiet_suspend.group(0)
+        or "status_led_strip_backend_quiet(s_strips[index].backend)" not in quiet_suspend.group(0)
     ):
         failures.append(
-            "components/status_led/status_led.c: low-power quiet suspend must release both V2.2 physical routes"
+            "components/status_led/status_led.c: reversible low-power quiet must keep both V2.2 physical routes resident"
         )
     if (
-        "rmt_idle_drive=active_dma_low_power_all_zone_non_dma_final_frame_then_release_gpio_low" not in status_led
+        "rmt_idle_drive=active_dma_low_power_all_zone_dma_final_frame_keep_spi_resident" not in status_led
         or "low_power_transport_suspend_ms=%u" not in status_led
-        or "low_power_status_tx=non_dma_clear_and_final_frame" not in status_led
-        or "low_power_all_zone_tx=non_dma_clear_and_final_frame" not in status_led
+        or "low_power_status_tx=dma_final_frame_keep_resident" not in status_led
+        or "low_power_all_zone_tx=dma_final_frame_keep_spi_resident" not in status_led
         or "shutdown_final_status_tx=dma_visible_pwr_no_black_latch" not in status_led
         or "shutdown_final_all_zone_tx=non_dma_pwr_only_latch_or_all_off" not in status_led
         or "low_power_final_latch_writes=%u" not in status_led
         or not re.search(r"#define\s+STATUS_LED_RMT_IDLE_RELEASE_MS\s+0U\b", status_led)
     ):
         failures.append(
-            "components/status_led/status_led.c: LED contract must report active-DMA PWR shutdown-final plus non-DMA low-power final-frame suspend policy"
+            "components/status_led/status_led.c: LED contract must report resident-DMA reversible idle and dedicated shutdown-final policy"
         )
     if (
         "STATUS_LED_LOW_POWER_PWR_PERCENT" in status_led
@@ -1678,9 +1677,9 @@ def main() -> int:
         failures.append(
             "components/status_led/status_led.c: KEY must keep independent per-key fades and pack into the V2.2 main route without cross-key cancellation"
         )
-    if "pwr_only_final_latch || force_clear_tx" in status_led or "bool force_non_dma = pwr_only_final_latch;" not in status_led:
+    if "pwr_only_final_latch || force_clear_tx" in status_led or "bool force_non_dma = false;" not in status_led:
         failures.append(
-            "components/status_led/status_led.c: interactive transition clears must keep SPI EC11/KEY strips on DMA; non-DMA latch use must stay scoped to low-power and non-status shutdown-final clearing"
+            "components/status_led/status_led.c: interactive and reversible low-power frames must stay on resident DMA; only shutdown-final may use a dedicated latch"
         )
     key_physical_token = re.search(
         r"static\s+status_led_rgb_t\s+status_led_key_physical_token_locked[\s\S]*?"
@@ -1802,7 +1801,8 @@ def main() -> int:
         interactive_resume_body is None
         or "s_state.low_power_disabled = false;" not in interactive_resume_body.group(0)
         or "s_state.output_disabled = false;" not in interactive_resume_body.group(0)
-        or "status_led_force_transition_clear_locked(STATUS_LED_TRANSITION_CLEAR_NON_KEY_ACCENTS);" not in interactive_resume_body.group(0)
+        or "s_state.transition_clear_mask = 0U;" not in interactive_resume_body.group(0)
+        or "status_led_force_transition_clear_locked" in interactive_resume_body.group(0)
         or key_event_body is None
         or "status_led_resume_interactive_output_locked();" not in key_event_body.group(0)
         or key_feedback_body is None
@@ -1811,7 +1811,7 @@ def main() -> int:
         or "status_led_resume_interactive_output_locked();" not in ec11_feedback_body.group(0)
     ):
         failures.append(
-            "components/status_led/status_led.c: idle key/EC11 feedback must explicitly resume interactive output from low-power idle and preserve the scoped non-KEY transition-clear frame before feedback"
+            "components/status_led/status_led.c: idle key/EC11 feedback must resume interactive output and cancel stale clear work before one active frame"
         )
     if (
         ec11_press_yield_body is None
@@ -1986,9 +1986,9 @@ def main() -> int:
         failures.append(
             "components/status_led/status_led.c: ordinary transition clear frames must not force non-DMA; scope force_non_dma to clear/latch paths only"
         )
-    if not re.search(r"bool\s+force_non_dma\s*=\s*pwr_only_final_latch\s*;", status_led):
+    if not re.search(r"bool\s+force_non_dma\s*=\s*false\s*;", status_led):
         failures.append(
-            "components/status_led/status_led.c: low-power/final latch state must be scoped so interactive transition clears keep EC11/KEY on SPI DMA"
+            "components/status_led/status_led.c: reversible low-power and interactive frames must remain on DMA"
         )
     if (
         "shutdown_final_all_zone_latched_started_ms" not in status_led
@@ -2742,7 +2742,8 @@ def main() -> int:
         else ""
     )
     if not re.search(
-        r"s_direct_gpio_isr_tick\s*=\s*xTaskGetTickCountFromISR\(\);\s*"
+        r"TickType_t\s+now\s*=\s*xTaskGetTickCountFromISR\(\);\s*"
+        r"s_direct_gpio_isr_tick\s*=\s*now;\s*"
         r"s_direct_gpio_isr_edge_pending\s*=\s*true;",
         voice_isr_body,
     ) or voice_isr_body.count("xTaskGetTickCountFromISR") != 1:

@@ -266,6 +266,30 @@ def constant_label(group: str, value: Any, schema: dict[str, Any]) -> str | None
     return entry["name"]
 
 
+# ESP-IDF's esp_reset_reason_t values are not part of the firmware event
+# schema.  Keep the raw number in args_named, but expose the human-readable
+# cause in args_decoded so a post-reconnect bundle immediately distinguishes a
+# USB probe reset from an interrupt/task watchdog reset.
+ESP_RESET_REASON_NAMES = {
+    0: "unknown",
+    1: "power_on",
+    2: "external",
+    3: "software",
+    4: "panic",
+    5: "interrupt_wdt",
+    6: "task_wdt",
+    7: "other_wdt",
+    8: "deep_sleep",
+    9: "brownout",
+    10: "sdio",
+    11: "usb",
+    12: "jtag",
+    13: "efuse",
+    14: "power_glitch",
+    15: "cpu_lockup",
+}
+
+
 def decode_arg_value(
     source: dict[str, Any],
     event_def: dict[str, Any] | None,
@@ -290,6 +314,8 @@ def decode_arg_value(
 
     if spec_name == "boot_reason":
         return constant_label("DIAG_BOOT", value, schema)
+    if spec_name == "reset_reason":
+        return ESP_RESET_REASON_NAMES.get(value)
     if spec_name in ("component", "component_id"):
         return constant_label("DIAG_COMP", value, schema)
     if spec_name == "event" and source.get("macro"):
@@ -301,9 +327,11 @@ def decode_arg_value(
 
 
 def decode_event(raw: dict[str, Any], line_number: int, event_index: int, schema: dict[str, Any]) -> dict[str, Any]:
-    source = normalize_source(raw.get("src"), schema)
-    severity = normalize_severity(raw.get("sev"), schema)
-    evt_value = raw.get("evt")
+    src_value = raw.get("src", raw.get("source"))
+    sev_value = raw.get("sev", raw.get("severity"))
+    source = normalize_source(src_value, schema)
+    severity = normalize_severity(sev_value, schema)
+    evt_value = raw.get("evt", raw.get("event"))
     if isinstance(evt_value, str) and evt_value.isdigit():
         evt_value = int(evt_value)
     event_def = None
@@ -339,9 +367,9 @@ def decode_event(raw: dict[str, Any], line_number: int, event_index: int, schema
         "index": event_index,
         "line_number": line_number,
         "boot_segment_index": 0,
-        "t_ms": raw.get("t"),
+        "t_ms": raw.get("t", raw.get("timestamp_ms")),
         "source": {
-            "raw": raw.get("src"),
+            "raw": src_value,
             "id": source.get("id"),
             "name": source.get("name"),
             "macro": source.get("macro"),
@@ -353,7 +381,7 @@ def decode_event(raw: dict[str, Any], line_number: int, event_index: int, schema
             "comment": event_def.get("comment") if event_def else None,
         },
         "severity": {
-            "raw": raw.get("sev"),
+            "raw": sev_value,
             "level": severity.get("level"),
             "name": severity.get("name"),
             "macro": severity.get("macro"),
@@ -510,6 +538,8 @@ PARAM_HIGHLIGHT_EVENT_MAP: dict[tuple[str, str], tuple[str, str]] = {
     ("ble_audio", "baud_link_timeout"): ("ble_audio", "session_flow"),
     ("ble_audio", "baud_state_change"): ("ble_audio", "session_flow"),
     ("audio", "audio_session"): ("audio_voice", "audio_sessions"),
+    ("audio", "audio_signal_path"): ("audio_voice", "audio_sessions"),
+    ("audio", "audio_leveling"): ("audio_voice", "audio_sessions"),
     ("audio", "audio_session_rej"): ("audio_voice", "rejects_and_flow"),
     ("audio", "audio_drop"): ("audio_voice", "rejects_and_flow"),
     ("audio", "audio_backpressure"): ("audio_voice", "rejects_and_flow"),
@@ -1069,6 +1099,9 @@ def decode_file(input_path: pathlib.Path, header_path: pathlib.Path) -> dict[str
                         "line_preview": line.strip()[:160],
                     }
                 )
+            continue
+        if raw.get("schema") == "listener.diag_log.ble_export_manifest.v1":
+            skipped_lines += 1
             continue
         events.append(decode_event(raw, line_number, len(events), schema))
 

@@ -82,6 +82,8 @@
 #define DIAG_AUDIO_I2S_FAIL    6   /* a1=drop_count, a2=esp_err, a3=0, a4=0 */
 #define DIAG_AUDIO_IDLE_POWER  7   /* a1=enabled, a2=esp_err, a3=0, a4=0 */
 #define DIAG_AUDIO_BACKPRESSURE 8  /* a1=session_id, a2=state(1=pause,2=resume), a3=queue_depth, a4=pool_in_use */
+#define DIAG_AUDIO_SIGNAL_PATH 9 /* a1=session_id, a2=afe_input_mean_abs, a3=post_agc_mean_abs, a4=ble_output_mean_abs */
+#define DIAG_AUDIO_LEVELING 10 /* a1=session_id, a2=noise_floor_mean_abs, a3=allowed_gain_permille, a4=gain_limited_frames */
 
 /* BLE Audio Stream events (DIAG_SRC_BLE_AUDIO) */
 #define DIAG_BAUD_STATE_CHANGE 1   /* a1=old_state, a2=new_state, a3=reason, a4=session_id */
@@ -95,7 +97,7 @@
 #define DIAG_BAUD_REPLAY       9   /* a1=session_id, a2=event(1=armed,2=resend,3=skip_current,5=fail), a3=count_or_seq, a4=window_or_err */
 
 /* Voice recording events (DIAG_SRC_VOICE_REC) */
-#define DIAG_VREC_SESSION      1   /* a1=type(1=start,2=stop,3=cancel), a2=source_code, a3=session_count, a4=0 */
+#define DIAG_VREC_SESSION      1   /* a1=type(1=start,2=stop,3=cancel), a2=source_code, a3=session_count, a4=session_flags(bit0=automatic_candidate,bit1=visible,bit2=enrollment) */
 #define DIAG_VREC_REJECTED     2   /* a1=source_code, a2=reject_reason, a3=current_state, a4=0 */
 #define DIAG_VREC_FLOW         3   /* a1=stage(1=toggle_start,2=toggle_stop,3=start_ok,4=stop_requested,5=pending_start,6=pending_ready,7=pending_timeout,8=session_finished,9=session_aborted,10=toggle_ignored,11=cancel,12=recovery,13=start_rejected,14=stop_rejected), a2=source_code, a3=session_count, a4=current_state */
 #define DIAG_VREC_TIMING       4   /* a1=press_to_control_ms, a2=source_code, a3=active_session_id_or_0, a4=current_state; emitted only after recording-control dispatch */
@@ -105,6 +107,7 @@
 #define DIAG_VKEY_QUEUE_DROP   2   /* a1=type(1=single_click_toggle,2=double_click_recovery), a2=reason(1=no_queue,2=queue_full), a3=0, a4=0 */
 #define DIAG_VKEY_EXPANDER     3   /* a1=status(0=fail,1=degraded_fallback), a2=esp_err, a3=0, a4=0 */
 #define DIAG_VKEY_INPUT_DEBUG  4   /* a1=kind(1=raw,2=stable), a2=source(1=direct_gpio,2=legacy_io0_4,3=legacy_io0_5), a3=raw_high, a4=pressed_or_stable_high */
+#define DIAG_VKEY_ISR_STORM    5   /* a1=edge_count, a2=task_wake_count, a3=coalesced_count, a4=window_ms */
 
 /* Self-test events (DIAG_SRC_SELF_TEST) */
 #define DIAG_ST_POST_RESULT    1   /* a1=nvs_ok, a2=spiram_ok, a3=heap_free_kb, a4=critical_ok */
@@ -127,6 +130,9 @@
 #define DIAG_POWER_USB_DETECT     10 /* a1=level, a2=usb_power_present, a3=idle_ms, a4=raw_levels */
 #define DIAG_POWER_CHARGE_STATE   11 /* a1=charging, a2=charge_full, a3=idle_ms, a4=raw_levels */
 #define DIAG_POWER_HOLD_STATE     12 /* a1=configured, a2=gpio, a3=level(0=low,1=high,2=unknown), a4=action(0=source_snapshot,1=runtime_guard,2=shutdown_entry,3=shutdown_drive_high,4=shutdown_failed_restore,5=init,6=shutdown_failure_backoff) */
+#define DIAG_POWER_IDLE_ACTION    13 /* a1=action(1=audio_i2s_resident_guard,2=ble_low_power_request_begin,3=ble_low_power_request_end,4=connected_idle_visual_only,5=connected_idle_state_only), a2=requested_enabled_or_min_interval, a3=applied_or_max_interval, a4=esp_err_or_latency */
+#define DIAG_POWER_SOFT_OFF_GUARD 14 /* a1=action(1=boot_read,2=arm,3=cancel,4=commit,5=wake_clear), a2=result_or_marker(0/1), a3=boot_generation, a4=reset_reason_or_esp_err */
+#define DIAG_POWER_SOFT_OFF_WAKE  15 /* a1=action(1=request,2=accepted,3=rejected,4=restart), a2=press_ms_or_esp_err, a3=boot_generation, a4=state_or_detail */
 
 /* Board events (DIAG_SRC_BOARD) */
 #define DIAG_BOARD_PROFILE        1 /* a1=flash_mb, a2=psram_mb, a3=key1_gpio, a4=ec11_key_gpio */

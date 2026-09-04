@@ -107,6 +107,8 @@ static void ble_hid_gap_log_conn_desc(const char *context, uint16_t conn_handle)
 #define GATT_SVR_SVC_HID_UUID 0x1812
 #define BLE_HID_GAP_FAST_ADV_MIN_MS 30U
 #define BLE_HID_GAP_FAST_ADV_MAX_MS 50U
+#define BLE_HID_GAP_LOW_POWER_ADV_MIN_MS 500U
+#define BLE_HID_GAP_LOW_POWER_ADV_MAX_MS 1000U
 #define BLE_HID_GAP_SWIFT_PAIR_ADV_INTERVAL_MS 30U
 #define BLE_HID_GAP_ACTIVE_ITVL_MIN 6U
 #define BLE_HID_GAP_ACTIVE_ITVL_MAX 6U
@@ -129,10 +131,15 @@ static void ble_hid_gap_log_conn_desc(const char *context, uint16_t conn_handle)
 #define BLE_HID_GAP_AUDIO_DATA_LEN_TIME_US 1590U
 #define BLE_HID_GAP_AUDIO_DATA_LEN_2M_PACKET_TIME_US 965U
 #define BLE_HID_GAP_AUDIO_DATA_LEN_REQUEST_TIMEOUT_MS 750U
-#define BLE_HID_GAP_LOW_POWER_ITVL_MIN 80U
-#define BLE_HID_GAP_LOW_POWER_ITVL_MAX 120U
-#define BLE_HID_GAP_LOW_POWER_LATENCY 9U
-#define BLE_HID_GAP_LOW_POWER_SUPERVISION_TIMEOUT 600U
+/* Reversible connected idle must remain conservative on Windows + ESP32-S3.
+ * The previous 100-150 ms / latency 9 request repeatedly ended in an interrupt
+ * watchdog reset at the 60 s idle boundary. 30-50 ms still cuts connection
+ * event frequency substantially from the 7.5 ms audio path without entering
+ * the controller's long slave-latency path. */
+#define BLE_HID_GAP_LOW_POWER_ITVL_MIN 24U
+#define BLE_HID_GAP_LOW_POWER_ITVL_MAX 40U
+#define BLE_HID_GAP_LOW_POWER_LATENCY 0U
+#define BLE_HID_GAP_LOW_POWER_SUPERVISION_TIMEOUT 800U
 #define BLE_HID_GAP_PAIRING_PASSKEY 123456U
 #define BLE_HID_GAP_CONN_PARAM_COLLISION_BACKOFF_MS 4200U
 #define BLE_HID_GAP_CONN_PARAM_REJECT_BACKOFF_MS 750U
@@ -2780,21 +2787,29 @@ static void ble_hid_gap_handle_disconnect(uint16_t conn_handle, int reason, cons
         DENZIC_BLE_PAIRING_V1_DISCONNECT_HOST_DELIBERATE_UNPAIR;
     s_last_disconnect_host_deliberate = host_deliberate_disconnect;
     if (host_deliberate_disconnect) {
-        ble_hid_gap_set_explicit_recovery_required_after_security_failure(true);
+        /* HCI remote-user-terminated (0x13) is not proof that Windows deleted
+         * the bond.  Windows Bluetooth restarts and ordinary host-side link
+         * teardown use the same reason.  Treating it as an unpair used to put
+         * the device into the security-failure dark phase, suppress every
+         * advertisement, and leave Type permanently unable to reconnect.
+         *
+         * The pairing policy already maps this classification to undirected
+         * advertising: do not chase the old host, but remain connectable.  A
+         * real encryption/security failure still takes the explicit-recovery
+         * path above and remains fail-closed. */
         s_directed_adv_pending = false;
         s_last_adv_was_directed = false;
-        status_led_set_ble_state(ble_hid_gap_explicit_recovery_led_state(), false);
         ESP_LOGI(TAG,
-                 "host deliberately terminated the connection; dark-phase pairing LED remains visible while all advertising is suppressed until explicit EC11 recovery");
+                 "host terminated the connection; restarting undirected connectable advertising while retaining the bond");
         diag_log(DIAG_SRC_BLE_GAP, DIAG_GAP_BOND, DIAG_SEV_INFO,
                  2, (uint32_t)reason, conn_handle, 0);
-        return;
+    } else {
+        s_directed_adv_pending =
+            denzic_ble_pairing_v1_advertising_after_disconnect(
+                disconnect_classification,
+                false) ==
+            DENZIC_BLE_PAIRING_V1_ADVERTISING_AFTER_DISCONNECT_DIRECTED_RECONNECT;
     }
-    s_directed_adv_pending =
-        denzic_ble_pairing_v1_advertising_after_disconnect(
-            disconnect_classification,
-            false) ==
-        DENZIC_BLE_PAIRING_V1_ADVERTISING_AFTER_DISCONNECT_DIRECTED_RECONNECT;
     s_last_adv_was_directed = false;
     /*
      * Restart routing is decided by the platform orchestration layer. The
@@ -3890,10 +3905,14 @@ esp_err_t esp_hid_ble_gap_adv_start(void)
     adv_params.disc_mode = BLE_GAP_DISC_MODE_GEN;
     const uint32_t adv_min_ms = swift_pair_enabled
         ? BLE_HID_GAP_SWIFT_PAIR_ADV_INTERVAL_MS
-        : BLE_HID_GAP_FAST_ADV_MIN_MS;
+        : (s_low_power_advertising
+            ? BLE_HID_GAP_LOW_POWER_ADV_MIN_MS
+            : BLE_HID_GAP_FAST_ADV_MIN_MS);
     const uint32_t adv_max_ms = swift_pair_enabled
         ? BLE_HID_GAP_SWIFT_PAIR_ADV_INTERVAL_MS
-        : BLE_HID_GAP_FAST_ADV_MAX_MS;
+        : (s_low_power_advertising
+            ? BLE_HID_GAP_LOW_POWER_ADV_MAX_MS
+            : BLE_HID_GAP_FAST_ADV_MAX_MS);
     const int64_t swift_pair_remaining_ms =
         recovery_swift_pair_remaining_ms > 0
             ? recovery_swift_pair_remaining_ms
@@ -5151,25 +5170,25 @@ esp_err_t ble_hid_gap_request_reconnect(void)
 
 esp_err_t ble_hid_gap_request_low_power_connection(void)
 {
-    if (ble_hid_gap_ec11_fast_recording_armed()) {
-        ESP_LOGI(
-            TAG,
-            "low-power idle connection retained active: e11r fast recording is armed");
-        return ble_hid_gap_request_active_connection();
-    }
-    /* voice_auto_start no longer forces active connection here. Keeping active
-     * forever made low-power idle feel unreachable while auto-start was on.
-     * Hidden VA start path requests active connection only when a candidate
-     * actually begins streaming (enter_recording). */
-
+    /* Keep the established Windows link parameters for reversible product
+     * idle. Real retained logs prove both the 100-150 ms/latency-9 request and
+     * a conservative 30-50 ms/latency-0 request return ESP_OK, then reset the
+     * ESP32-S3 with ESP_RST_INT_WDT while the controller applies the update.
+     * Centralize the guard here so power-manager and post-audio callers cannot
+     * re-enter the unsafe asynchronous transition through different paths. */
     ble_hid_gap_set_active_connection_required(false);
-    return ble_hid_gap_request_connection_params(
-        "low-power idle",
-        BLE_HID_GAP_LOW_POWER_ITVL_MIN,
-        BLE_HID_GAP_LOW_POWER_ITVL_MAX,
-        BLE_HID_GAP_LOW_POWER_LATENCY,
-        BLE_HID_GAP_LOW_POWER_SUPERVISION_TIMEOUT,
-        BLE_HID_CONN_PARAM_MODE_LOW_POWER);
+    ESP_LOGI(
+        TAG,
+        "low-power idle retains stable BLE connection parameters: runtime switch disabled by INT_WDT guard");
+    diag_log(
+        DIAG_SRC_BLE_GAP,
+        DIAG_GAP_CONN_PARAM_REQ,
+        DIAG_SEV_INFO,
+        BLE_HID_CONN_PARAM_MODE_LOW_POWER,
+        (uint32_t)ESP_OK,
+        s_ble_gap_conn_handle,
+        0U);
+    return ESP_OK;
 }
 
 static esp_err_t ble_hid_gap_request_active_connection_once(void)

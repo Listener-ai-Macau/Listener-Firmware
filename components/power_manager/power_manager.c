@@ -282,7 +282,11 @@ static esp_err_t power_manager_configure_power_input_wake_pin(gpio_num_t gpio, c
         .mode = GPIO_MODE_INPUT,
         .pull_up_en = GPIO_PULLUP_ENABLE,
         .pull_down_en = GPIO_PULLDOWN_DISABLE,
-        .intr_type = GPIO_INTR_DISABLE,
+        /* Runtime notification is edge-triggered and one-shot. Low-level is
+         * reserved for the separate light-sleep wake source below; using a
+         * level ISR here can retrigger continuously while a charger pin stays
+         * asserted and starve CPU0. */
+        .intr_type = GPIO_INTR_ANYEDGE,
     };
     esp_err_t ret = gpio_config(&config);
     if (ret != ESP_OK) {
@@ -714,8 +718,10 @@ static void power_manager_apply_charge_state_filter_locked(
         return;
     }
 
-    bool raw_charging = source->charger_active;
-    bool raw_full_status = source->bat_std_level == 0;
+    board_v2_charger_pin_decode_t pins =
+        board_decode_charger_status_pins(source->bat_chg_level, source->bat_std_level);
+    bool raw_charging = pins.charging;
+    bool raw_full_status = pins.standby_full;
     bool raw_full_external =
         raw_full_status &&
         power_manager_charge_full_battery_allowed(battery_snapshot);
@@ -768,8 +774,10 @@ static void power_manager_read_power_source(power_manager_power_source_snapshot_
 
     bool usb_serial_jtag_sof_active = board_snapshot.usb_serial_jtag_sof_active;
     bool usb_power_present = board_snapshot.usb_power_present;
-    bool charger_active = board_snapshot.bat_chg_level == 0;
-    bool raw_full = board_snapshot.bat_std_level == 0;
+    board_v2_charger_pin_decode_t charger =
+        board_decode_charger_status_pins(board_snapshot.bat_chg_level, board_snapshot.bat_std_level);
+    bool charger_active = charger.charging;
+    bool raw_full = charger.standby_full;
     bool charge_power_present = usb_power_present || charger_active || raw_full;
 
     *out_source = (power_manager_power_source_snapshot_t){
@@ -786,7 +794,7 @@ static void power_manager_read_power_source(power_manager_power_source_snapshot_
         .charge_power_present = charge_power_present,
         .external_power_present = usb_power_present || charger_active || raw_full,
         .charging = charger_active,
-        .charge_full = charge_power_present && board_snapshot.bat_std_level == 0,
+        .charge_full = charge_power_present && raw_full,
         .usb_det_policy = board_snapshot.usb_det_policy,
         .charger_polarity_policy = board_snapshot.charger_polarity_policy,
         .pwr_hold_policy = board_snapshot.pwr_hold_policy,
@@ -1793,6 +1801,13 @@ static void power_manager_restore_after_shutdown_failure(
     uint32_t final_idle_ms,
     esp_err_t failure_ret)
 {
+    /* If USB/VBUS kept the rail alive, the host may continue probing the
+     * native USB Serial/JTAG port while PWR_HOLD is high.  DTR/RTS probing is
+     * interpreted by the ESP32-S3 as a USB reset and was the source of the
+     * apparent "automatic reboot" after plugged shutdown.  Re-enable the
+     * data PHY only when shutdown actually failed and we are returning to the
+     * normal runtime path. */
+    (void)board_set_usb_serial_jtag_data_connected(true);
     esp_err_t restore_ret = board_set_power_hold_enabled(true);
     if (restore_ret != ESP_OK) {
         ESP_LOGE(TAG, "PWR_HOLD/GPIO9 runtime-low restore failed after shutdown failure: %s",
@@ -2118,6 +2133,15 @@ static esp_err_t power_manager_enter_hardware_shutdown(power_manager_shutdown_re
         DIAG_SEV_WARN,
         NULL,
         POWER_MANAGER_POWER_HOLD_ACTION_SHUTDOWN_DRIVE_HIGH);
+    if (final_power_source.external_power_present) {
+        esp_err_t usb_ret = board_set_usb_serial_jtag_data_connected(false);
+        if (usb_ret == ESP_OK) {
+            ESP_LOGI(TAG, "USB Serial/JTAG data PHY detached before plugged shutdown");
+        } else {
+            ESP_LOGW(TAG, "USB Serial/JTAG data PHY detach failed before plugged shutdown: %s",
+                     esp_err_to_name(usb_ret));
+        }
+    }
     esp_err_t hold_ret = board_set_power_hold_enabled(false);
     if (hold_ret != ESP_OK) {
         diag_log(
@@ -2586,6 +2610,30 @@ void power_manager_set_blocker(uint32_t blocker_mask, bool enabled)
     if (s_task_handle != NULL) {
         xTaskNotifyGive(s_task_handle);
     }
+}
+
+bool power_manager_try_acquire_voice_activation(void)
+{
+    bool accepted = false;
+    uint32_t old_blockers = 0U;
+    if (s_mutex == NULL || xSemaphoreTake(s_mutex, portMAX_DELAY) != pdTRUE) {
+        return false;
+    }
+    old_blockers = s_blockers;
+    /* A hidden candidate may reserve an awake device, but must not wake a
+     * device that has already crossed its reversible-idle boundary. */
+    if (s_state == POWER_MANAGER_STATE_ACTIVE) {
+        s_blockers |= POWER_MANAGER_BLOCKER_VOICE_ACTIVATION;
+        accepted = true;
+    }
+    uint32_t new_blockers = s_blockers;
+    xSemaphoreGive(s_mutex);
+    if (accepted && old_blockers != new_blockers) {
+        diag_log(DIAG_SRC_POWER, DIAG_POWER_BLOCKER_CHANGE, DIAG_SEV_INFO,
+                 old_blockers, new_blockers,
+                 old_blockers ^ new_blockers, 1U);
+    }
+    return accepted;
 }
 
 void power_manager_set_ble_connected(bool connected)

@@ -3,11 +3,14 @@
 #include <inttypes.h>
 #include <stdbool.h>
 #include <stddef.h>
+#include <stdlib.h>
 #include <stdio.h>
+#include <string.h>
 
 #include "denzic_diag_log_store.h"
 
 #include "esp_log.h"
+#include "esp_attr.h"
 #include "esp_partition.h"
 #include "esp_timer.h"
 #include "watchdog_platform.h"
@@ -23,6 +26,14 @@ static const char *TAG = "diag_log";
 #define DIAG_LOG_WRITE_QUEUE_DEPTH 64U
 #define DIAG_LOG_WRITER_STACK_SIZE 3072U
 #define DIAG_LOG_WRITER_PRIORITY (tskIDLE_PRIORITY + 1U)
+/* Keep enough post-reset history to cover a normal wake/capsule interaction
+ * even while the status renderer emits frame telemetry.  At 256 events the
+ * RTC ring retains roughly 20-30 seconds on the production cadence, while
+ * remaining small enough for RTC_NOINIT on ESP32-S3. */
+#define DIAG_LOG_RECENT_CAPACITY 256U
+#define DIAG_LOG_RECENT_MAGIC UINT32_C(0x44524732)
+#define DIAG_LOG_FLASH_SECTOR_EVENT_RESERVE 170U
+#define DIAG_LOG_FLASH_MIN_SEVERITY 1U
 
 static const esp_partition_t *s_partition;
 static SemaphoreHandle_t s_mutex;
@@ -31,12 +42,128 @@ static denzic_diag_log_store_t s_store;
 static bool s_store_ready;
 static bool s_input_debug_enabled;
 static portMUX_TYPE s_input_debug_lock = portMUX_INITIALIZER_UNLOCKED;
+static portMUX_TYPE s_recent_lock = portMUX_INITIALIZER_UNLOCKED;
+RTC_NOINIT_ATTR static uint32_t s_recent_magic;
+RTC_NOINIT_ATTR static uint16_t s_recent_write_index;
+RTC_NOINIT_ATTR static uint16_t s_recent_count;
+RTC_NOINIT_ATTR static denzic_diag_log_event_t
+    s_recent_events[DIAG_LOG_RECENT_CAPACITY];
 /* Writer touches flash; stack must stay internal DRAM (static BSS), never xTaskCreate
  * under SPIRAM_USE_MALLOC (large/fragmented heaps fall into PSRAM). */
 static StaticTask_t s_diag_log_writer_tcb;
 static StackType_t s_diag_log_writer_stack[DIAG_LOG_WRITER_STACK_SIZE];
 
 static void diag_log_platform_writer_task(void *arg);
+static const char *diag_port_source_name(void *context, uint16_t source);
+
+static void diag_log_recent_init(void)
+{
+    portENTER_CRITICAL(&s_recent_lock);
+    if (s_recent_magic != DIAG_LOG_RECENT_MAGIC ||
+        s_recent_write_index >= DIAG_LOG_RECENT_CAPACITY ||
+        s_recent_count > DIAG_LOG_RECENT_CAPACITY) {
+        s_recent_write_index = 0U;
+        s_recent_count = 0U;
+        memset(s_recent_events, 0, sizeof(s_recent_events));
+        s_recent_magic = DIAG_LOG_RECENT_MAGIC;
+    }
+    portEXIT_CRITICAL(&s_recent_lock);
+}
+
+static void diag_log_recent_write(const denzic_diag_log_event_t *event)
+{
+    if (event == NULL) {
+        return;
+    }
+    portENTER_CRITICAL(&s_recent_lock);
+    s_recent_events[s_recent_write_index] = *event;
+    s_recent_write_index =
+        (uint16_t)((s_recent_write_index + 1U) % DIAG_LOG_RECENT_CAPACITY);
+    if (s_recent_count < DIAG_LOG_RECENT_CAPACITY) {
+        s_recent_count++;
+    }
+    portEXIT_CRITICAL(&s_recent_lock);
+}
+
+static uint32_t diag_log_recent_dump_last(uint32_t count, uint16_t source, bool use_source_filter)
+{
+    if (count == 0U) {
+        return 0U;
+    }
+    if (count > DIAG_LOG_RECENT_CAPACITY) {
+        count = DIAG_LOG_RECENT_CAPACITY;
+    }
+
+    denzic_diag_log_event_t *snapshot =
+        (denzic_diag_log_event_t *)malloc(DIAG_LOG_RECENT_CAPACITY * sizeof(*snapshot));
+    if (snapshot == NULL) {
+        return 0U;
+    }
+
+    uint32_t available = 0U;
+    portENTER_CRITICAL(&s_recent_lock);
+    available = s_recent_count;
+    if (available > DIAG_LOG_RECENT_CAPACITY) {
+        available = DIAG_LOG_RECENT_CAPACITY;
+    }
+    uint32_t take = available;
+    uint16_t start = (uint16_t)(
+        (s_recent_write_index + DIAG_LOG_RECENT_CAPACITY - available) %
+        DIAG_LOG_RECENT_CAPACITY);
+    for (uint32_t i = 0U; i < available; ++i) {
+        snapshot[i] = s_recent_events[(start + i) % DIAG_LOG_RECENT_CAPACITY];
+    }
+    portEXIT_CRITICAL(&s_recent_lock);
+
+    denzic_diag_log_event_t *matches = NULL;
+    uint32_t match_count = 0U;
+    if (use_source_filter) {
+        matches = (denzic_diag_log_event_t *)malloc(count * sizeof(*matches));
+        if (matches == NULL) {
+            free(snapshot);
+            return 0U;
+        }
+        for (uint32_t i = 0U; i < take; ++i) {
+            if (snapshot[i].source != source) {
+                continue;
+            }
+            if (match_count < count) {
+                matches[match_count++] = snapshot[i];
+            } else {
+                memmove(matches, matches + 1U, (count - 1U) * sizeof(*matches));
+                matches[count - 1U] = snapshot[i];
+            }
+        }
+    }
+
+    const denzic_diag_log_event_t *events = use_source_filter ? matches : snapshot;
+    uint32_t event_count = use_source_filter
+        ? match_count
+        : (take < count ? take : count);
+    uint32_t event_start = use_source_filter ? 0U : (take - event_count);
+    uint32_t dumped = 0U;
+    for (uint32_t i = 0U; i < event_count; ++i) {
+        const denzic_diag_log_event_t *event = &events[event_start + i];
+        const char *source_name = diag_port_source_name(NULL, event->source);
+        printf(
+            "{\"t\":%" PRIu32 ",\"src\":\"%s\",\"evt\":%u,\"sev\":\"%s\",\"a1\":%" PRIu32 ",\"a2\":%" PRIu32 ",\"a3\":%" PRIu32 ",\"a4\":%" PRIu32 "}\n",
+            event->timestamp_ms,
+            source_name != NULL ? source_name : "unknown",
+            (unsigned)event->event,
+            event->severity >= 2U
+                ? "ERROR"
+                : (event->severity >= 1U ? "WARN" : "INFO"),
+            event->arg1,
+            event->arg2,
+            event->arg3,
+            event->arg4);
+        dumped++;
+    }
+    fflush(stdout);
+    free(matches);
+    free(snapshot);
+    return dumped;
+}
 
 bool diag_log_input_debug_enabled(void)
 {
@@ -151,6 +278,7 @@ static const char *diag_port_source_name(void *context, uint16_t source)
 
 void diag_log_platform_init(void)
 {
+    diag_log_recent_init();
     s_partition = esp_partition_find_first(ESP_PARTITION_TYPE_DATA,
                                            ESP_PARTITION_SUBTYPE_DATA_FAT,
                                            "diag_log");
@@ -250,6 +378,19 @@ void diag_log_platform_write(
         .arg4 = arg4,
     };
 
+    /* The recent ring is the live diagnostic source and survives watchdog
+     * resets. Flash is an archive, not a synchronous event sink: continuously
+     * persisting INFO traffic filled this 1 MiB partition in a few hours, then
+     * sector rotation erased flash while BLE + I2S/GDMA were active and the
+     * ESP32-S3 entered INT_WDT. Keep one whole sector in reserve so the runtime
+     * writer never has to erase, and archive only warnings/errors. */
+    diag_log_recent_write(&evt);
+    if (severity < DIAG_LOG_FLASH_MIN_SEVERITY ||
+        s_store.retained_events >=
+            s_store.capacity_events - DIAG_LOG_FLASH_SECTOR_EVENT_RESERVE) {
+        return;
+    }
+
     if (s_write_queue != NULL &&
         xQueueSend(s_write_queue, &evt, 0) == pdTRUE) {
         return;
@@ -263,7 +404,10 @@ void diag_log_platform_write(
 
 uint32_t diag_log_platform_count(void)
 {
-    return denzic_diag_log_store_count(&s_store);
+    portENTER_CRITICAL(&s_recent_lock);
+    uint32_t count = s_recent_count;
+    portEXIT_CRITICAL(&s_recent_lock);
+    return count;
 }
 
 void diag_log_platform_dump(void)
@@ -281,7 +425,9 @@ void diag_log_platform_dump_last(uint32_t count)
         ESP_LOGI(TAG, "DIAGLOG: not initialized");
         return;
     }
-    denzic_diag_log_store_dump_last(&s_store, count);
+    if (diag_log_recent_dump_last(count, 0U, false) == 0U) {
+        denzic_diag_log_store_dump_last(&s_store, count);
+    }
 }
 
 void diag_log_platform_dump_last_by_source(uint32_t count, uint16_t source)
@@ -290,15 +436,19 @@ void diag_log_platform_dump_last_by_source(uint32_t count, uint16_t source)
         ESP_LOGI(TAG, "DIAGLOG: not initialized");
         return;
     }
-    denzic_diag_log_store_dump_last_by_source(&s_store, count, source);
+    if (diag_log_recent_dump_last(count, source, true) == 0U) {
+        denzic_diag_log_store_dump_last_by_source(&s_store, count, source);
+    }
 }
 
 void diag_log_platform_clear(void)
 {
-    if (!s_store_ready) {
-        return;
-    }
-    denzic_diag_log_store_clear(&s_store);
+    portENTER_CRITICAL(&s_recent_lock);
+    s_recent_write_index = 0U;
+    s_recent_count = 0U;
+    memset(s_recent_events, 0, sizeof(s_recent_events));
+    s_recent_magic = DIAG_LOG_RECENT_MAGIC;
+    portEXIT_CRITICAL(&s_recent_lock);
 }
 
 bool diag_log_platform_is_dumping(void)
@@ -309,5 +459,37 @@ bool diag_log_platform_is_dumping(void)
 uint32_t diag_log_platform_read_range(uint32_t offset, uint32_t limit,
                                        void *buffer, uint32_t buffer_size)
 {
-    return denzic_diag_log_store_read_range(&s_store, offset, limit, buffer, buffer_size);
+    if (buffer == NULL || limit == 0U ||
+        buffer_size < DENZIC_DIAG_LOG_EVENT_WIRE_BYTES) {
+        return 0U;
+    }
+
+    uint32_t max_events = buffer_size / DENZIC_DIAG_LOG_EVENT_WIRE_BYTES;
+    if (limit > max_events) {
+        limit = max_events;
+    }
+
+    portENTER_CRITICAL(&s_recent_lock);
+    uint32_t count = s_recent_count;
+    if (offset >= count) {
+        portEXIT_CRITICAL(&s_recent_lock);
+        return 0U;
+    }
+    if (limit > count - offset) {
+        limit = count - offset;
+    }
+    uint16_t oldest = (uint16_t)(
+        (s_recent_write_index + DIAG_LOG_RECENT_CAPACITY - s_recent_count) %
+        DIAG_LOG_RECENT_CAPACITY);
+    uint8_t *out = (uint8_t *)buffer;
+    for (uint32_t i = 0U; i < limit; ++i) {
+        uint16_t slot =
+            (uint16_t)((oldest + offset + i) % DIAG_LOG_RECENT_CAPACITY);
+        memcpy(
+            out + i * DENZIC_DIAG_LOG_EVENT_WIRE_BYTES,
+            &s_recent_events[slot],
+            DENZIC_DIAG_LOG_EVENT_WIRE_BYTES);
+    }
+    portEXIT_CRITICAL(&s_recent_lock);
+    return limit;
 }

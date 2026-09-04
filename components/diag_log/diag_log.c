@@ -72,9 +72,40 @@ static uint32_t diag_log_default_source_mask(void)
     return mask;
 }
 
-static bool diag_log_source_allowed(uint16_t source, uint8_t severity)
+/* Keep the low-rate control-plane events needed to reconstruct a failed
+ * recording/wake interaction even when high-rate INFO sources remain off.
+ * These are deliberately event-scoped: enabling an entire source by default
+ * would let frame telemetry evict the very lifecycle evidence we need. */
+static bool diag_log_event_always_enabled(uint16_t source, uint8_t event)
+{
+    switch (source) {
+    case DIAG_SRC_AUDIO:
+        return event == DIAG_AUDIO_SESSION ||
+               event == DIAG_AUDIO_SESSION_REJ ||
+               event == DIAG_AUDIO_IDLE_POWER ||
+               event == DIAG_AUDIO_BACKPRESSURE ||
+               event == DIAG_AUDIO_SIGNAL_PATH ||
+               event == DIAG_AUDIO_LEVELING;
+    case DIAG_SRC_VOICE_REC:
+        return event == DIAG_VREC_SESSION ||
+               event == DIAG_VREC_REJECTED ||
+               event == DIAG_VREC_FLOW ||
+               event == DIAG_VREC_TIMING;
+    case DIAG_SRC_VOICE_KEY:
+        return event == DIAG_VKEY_PRESS ||
+               event == DIAG_VKEY_QUEUE_DROP;
+    default:
+        return false;
+    }
+}
+
+static bool diag_log_source_allowed(uint16_t source, uint8_t event, uint8_t severity)
 {
     if (severity >= DIAG_SEV_WARN) {
+        return true;
+    }
+
+    if (diag_log_event_always_enabled(source, event)) {
         return true;
     }
 
@@ -265,6 +296,10 @@ static uint32_t diag_platform_audio_session_id(const diag_log_event_wire_t *raw)
             return raw->arg2;
         }
         if (raw->event == DIAG_AUDIO_BACKPRESSURE) {
+            return raw->arg1;
+        }
+        if (raw->event == DIAG_AUDIO_SIGNAL_PATH ||
+            raw->event == DIAG_AUDIO_LEVELING) {
             return raw->arg1;
         }
     }
@@ -540,7 +575,7 @@ void diag_log_init(void)
 void diag_log_write(uint16_t source, uint8_t event, uint8_t severity,
                     uint32_t arg1, uint32_t arg2, uint32_t arg3, uint32_t arg4)
 {
-    if (!diag_log_source_allowed(source, severity)) {
+    if (!diag_log_source_allowed(source, event, severity)) {
         return;
     }
     diag_log_platform_write(source, event, severity, arg1, arg2, arg3, arg4);

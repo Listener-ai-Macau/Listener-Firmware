@@ -918,8 +918,10 @@ static void device_settings_print_status(const char *result)
     board_v2_power_input_snapshot_t power = {0};
     board_get_v2_power_input_snapshot(&power);
     bool usb_power_present = power.usb_power_present;
-    bool charger_active = power.bat_chg_level == 0;
-    bool raw_full = power.bat_std_level == 0;
+    board_v2_charger_pin_decode_t charger =
+        board_decode_charger_status_pins(power.bat_chg_level, power.bat_std_level);
+    bool charger_active = charger.charging;
+    bool raw_full = charger.standby_full;
     bool charging = charger_active;
     bool charge_full = raw_full && !charging;
     bool charge_power_present = usb_power_present || charger_active || charge_full;

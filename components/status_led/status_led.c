@@ -1796,7 +1796,10 @@ static void status_led_suspend_quiet_idle_transports(bool low_power_active, uint
         if (!status_led_transport_release_due(now_ms, s_strip_last_tx_ms[index])) {
             continue;
         }
-        (void)status_led_strip_backend_suspend(s_strips[index].backend);
+        (void)status_led_strip_backend_quiet(s_strips[index].backend);
+        /* `s_strip_transport_suspended` is a logical dirty marker here: the
+         * backend remains resident, but the first active frame must rewrite
+         * the full physical chain after the long quiet interval. */
         s_strip_transport_suspended[index] = true;
         if (index == STATUS_LED_STRIP_STATUS) {
             s_strip_transport_suspended[STATUS_LED_STRIP_EC11] = true;
@@ -4143,13 +4146,10 @@ static uint32_t status_led_refresh_once(void)
             ? STATUS_LED_TRANSITION_CLEAR_WRITES
             : (pwr_only_final_latch ? STATUS_LED_LOW_POWER_FINAL_LATCH_WRITES : 1U);
         for (uint8_t write_index = 0U; write_index < write_count; ++write_index) {
-            /* Entering quiet low-power still uses the non-DMA latch path.
-             * Shutdown-final keeps the visible PWR/status frame on DMA and
-             * uses the non-DMA latch only to clear non-status strips.
-             * Interactive resume transition clears must keep EC11/KEY on their
-             * SPI DMA transports so dynamic feedback does not regress into the
-             * old interrupt-backed RMT flicker. */
-            bool force_non_dma = pwr_only_final_latch;
+            /* Reversible idle sends its final frame on the already-resident
+             * DMA routes. Only irreversible shutdown-final owns the dedicated
+             * non-DMA all-zone latch inside its specialized helper. */
+            bool force_non_dma = false;
             uint8_t failed_strip_mask = shutdown_final_active
                 ? status_led_transmit_shutdown_final_latch_frame(
                     &frame,
@@ -4232,10 +4232,10 @@ static void status_led_resume_interactive_output_locked(void)
     s_state.low_power_disabled = false;
     if (was_low_power_output) {
         s_state.last_power_poll_ms = 0U;
-        status_led_force_transition_clear_locked(STATUS_LED_TRANSITION_CLEAR_ALL_STRIPS);
-    } else if (s_state.transition_clear_mask != 0U) {
-        s_state.last_power_poll_ms = 0U;
-        status_led_force_transition_clear_locked(STATUS_LED_TRANSITION_CLEAR_NON_KEY_ACCENTS);
+        /* The low-power frame is already the authoritative cached frame.
+         * Cancel stale clear work and let the next active render produce one
+         * full-chain DMA update. */
+        s_state.transition_clear_mask = 0U;
     }
 }
 
@@ -4532,9 +4532,12 @@ static void status_led_poll_power_inputs(void)
     board_v2_power_input_snapshot_t power_input = {0};
     board_get_v2_power_input_snapshot(&power_input);
     bool usb_serial_jtag_sof_active = power_input.usb_serial_jtag_sof_active;
-    bool usb_power_present = power_input.usb_power_present;
-    bool raw_charging = power_input.bat_chg_level == 0;
-    bool raw_full = power_input.bat_std_level == 0;
+    board_v2_charger_pin_decode_t charger =
+        board_decode_charger_status_pins(power_input.bat_chg_level, power_input.bat_std_level);
+    bool usb_power_present =
+        power_input.usb_power_present && charger.vin_present && usb_serial_jtag_sof_active;
+    bool raw_charging = charger.charging;
+    bool raw_full = charger.standby_full;
     bool battery_allows_full = !battery_valid ||
                                battery_mv >= STATUS_LED_CHARGE_FULL_MIN_MV ||
                                battery_level >= STATUS_LED_CHARGE_FULL_MIN_PERCENT;
@@ -4660,6 +4663,15 @@ static void status_led_task(void *parameter)
     while (1) {
         status_led_poll_power_inputs();
         uint32_t delay_ms = status_led_refresh_once();
+        /* A zero delay is used to request an immediate retry after a quiet
+         * transport was suspended.  Never turn that state into a tight
+         * notification poll: a stale retry/suspend race would otherwise keep
+         * this priority-6 CPU1 task runnable continuously and starve the
+         * interrupt watchdog under an active audio session. */
+        if (delay_ms == 0U) {
+            vTaskDelay(1);
+            continue;
+        }
         (void)ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(delay_ms));
     }
 }
@@ -6092,9 +6104,7 @@ void status_led_set_low_power_disabled(bool disabled)
     uint32_t now_ms = status_led_now_ms();
     bool changed = false;
     if (xSemaphoreTake(s_mutex, portMAX_DELAY) == pdTRUE) {
-        const bool preserve_repair_cue =
-            disabled && status_led_ble_repair_cue_active_locked(now_ms);
-        const bool next_low_power_disabled = disabled && !preserve_repair_cue;
+        const bool next_low_power_disabled = disabled;
         bool was_low_power_output = s_state.low_power_disabled || s_state.output_disabled;
         changed = s_state.low_power_disabled != next_low_power_disabled ||
                   (s_state.output_disabled && !next_low_power_disabled);
@@ -6108,14 +6118,14 @@ void status_led_set_low_power_disabled(bool disabled)
             * cannot visually latch stale bus state as an all-on status flash.
              */
             if (was_low_power_output) {
-                status_led_force_transition_clear_locked(STATUS_LED_TRANSITION_CLEAR_ALL_STRIPS);
+                s_state.transition_clear_mask = 0U;
             }
         }
         s_state.preview_suppress_accents = false;
         s_state.preview_effect_only = false;
         s_state.preview_ble_override_until_ms = 0U;
         if (next_low_power_disabled) {
-            status_led_force_transition_clear_locked(STATUS_LED_TRANSITION_CLEAR_NON_KEY_ACCENTS);
+            s_state.transition_clear_mask = 0U;
             s_state.ble_repair_until_ms = 0U;
             s_state.ble_repair_cue_started_ms = 0U;
             s_state.ble_repair_cue_until_ms = 0U;
@@ -6128,9 +6138,7 @@ void status_led_set_low_power_disabled(bool disabled)
         }
         s_state.last_transition_ms = now_ms;
         status_led_set_last_reason_locked(
-            disabled
-                ? (preserve_repair_cue ? "repair_low_power_hold" : "low_power_off")
-                : "low_power_resume");
+            disabled ? "low_power_off" : "low_power_resume");
         status_led_log_output_state_locked(
             status_led_active_flags_from_frame(&s_state.last_frame));
         xSemaphoreGive(s_mutex);
@@ -6661,9 +6669,9 @@ static void status_led_print_status(void)
         " rmt_tx_dma_fallback=status:%u,ec11:%u,key:%u,edge:%u"
         " rmt_mem_block_symbols=status:%u,ec11:%u,key:%u,edge:%u"
         " idle_refresh_ms=%u unchanged_tx_suppression=1 timing=ws2812_4020_compatible"
-        " low_power_transport_suspend_ms=%u low_power_status_tx=non_dma_clear_and_final_frame"
-        " low_power_all_zone_tx=non_dma_clear_and_final_frame"
-        " low_power_spi_latch=dma_prelatch_then_non_dma_final_gpio_low"
+        " low_power_transport_suspend_ms=%u low_power_status_tx=dma_final_frame_keep_resident"
+        " low_power_all_zone_tx=dma_final_frame_keep_spi_resident"
+        " low_power_spi_latch=no_runtime_transport_teardown"
         " key_dark_idle_resync_ms=%u key_tail_guard_pixels=%u key_dark_latch_rmt_writes=%u"
         " key_dark_latch_expiry_dirty=1"
         " key_dark_clear_tx=main_chain_frame"
@@ -6696,7 +6704,7 @@ static void status_led_print_status(void)
         " ota_progress_style=LED5_OK_cyan_write_progress_EC11_v1.0.2_progress_EDGE_v1.0.2_chase"
         " ota_progress_idle_blocker=POWER_MANAGER_BLOCKER_OTA"
         " strip_dirty_tx=1 strip_tx_failure_retry_dirty=1 suspended_strip_resume_dirty=1"
-        " status_tx_last=1 rmt_idle_drive=active_dma_low_power_all_zone_non_dma_final_frame_then_release_gpio_low"
+        " status_tx_last=1 rmt_idle_drive=active_dma_low_power_all_zone_dma_final_frame_keep_spi_resident"
         " dynamic_active_accents=1"
         " startup_complete_gate=ble_visible_ready_frame_no_early_pwr_normal"
         " status_query_samples_current_render=1"

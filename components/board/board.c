@@ -14,8 +14,11 @@
 #include "diag_log.h"
 #include "esp_err.h"
 #include "esp_log.h"
+#include "esp_rom_sys.h"
+#include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include "hal/usb_serial_jtag_ll.h"
 #include "watchdog_platform.h"
 
 static const char *TAG = "board";
@@ -23,6 +26,9 @@ static const char *TAG = "board";
 #define BOARD_USB_PREFIX "BOARD:"
 #define BOARD_BATTERY_USB_PREFIX "BATTERY:"
 
+#define BOARD_USB_SOF_BOOT_IGNORE_US 100000
+#define BOARD_CHARGER_PIN_SETTLE_US 200
+#define BOARD_CHARGER_PIN_STABLE_US 30000
 #define BOARD_V2_USB_DET_POLICY "v2_gpio7_usb_det_disabled_highz_usb_sof_and_charger_status"
 #define BOARD_V2_CHARGER_POLARITY "v2_gpio14_chg_gpio21_std_active_low"
 #define BOARD_V2_PWR_HOLD_POLICY "v2_gpio9_power_latch_runtime_low_drive_high_for_hardware_shutdown"
@@ -174,7 +180,55 @@ static const char *board_gpio_level_name(int level)
 
 static bool board_usb_serial_jtag_sof_active(void)
 {
+    /* ESP-IDF starts usb_serial_jtag_is_connected() as true until the tick
+     * hook sees missing SOF. Unplugged reboot would inherit that assumed
+     * host and light PWR white. Ignore SOF until the monitor can settle. */
+    if (esp_timer_get_time() < BOARD_USB_SOF_BOOT_IGNORE_US) {
+        return false;
+    }
     return usb_serial_jtag_is_connected();
+}
+
+static void board_stable_charger_pin_levels(int raw_chg, int raw_std, int *out_chg, int *out_std)
+{
+    static int s_stable_chg = 1;
+    static int s_stable_std = 1;
+    static int s_pending_chg = -1;
+    static int s_pending_std = -1;
+    static int64_t s_pending_since_us;
+    const int64_t now_us = esp_timer_get_time();
+
+    if (raw_chg == s_pending_chg && raw_std == s_pending_std) {
+        if ((now_us - s_pending_since_us) >= (int64_t)BOARD_CHARGER_PIN_STABLE_US) {
+            s_stable_chg = raw_chg;
+            s_stable_std = raw_std;
+        }
+    } else {
+        s_pending_chg = raw_chg;
+        s_pending_std = raw_std;
+        s_pending_since_us = now_us;
+    }
+
+    /* Unplugged default is both high until two 30 ms samples agree. A single
+     * boot-time STD=0 cannot light PWR white. */
+    *out_chg = s_stable_chg;
+    *out_std = s_stable_std;
+}
+
+board_v2_charger_pin_decode_t board_decode_charger_status_pins(int bat_chg_level, int bat_std_level)
+{
+    /* Active-low open-drain CHG/STD. Charging and full cannot both be true.
+     * Unplugged with 3V3 pull-ups is both high; unplugged with VBUS-domain
+     * pull-ups is both low. Either pair is no VIN, not white PWR. */
+    const bool chg = bat_chg_level == 0;
+    const bool std = bat_std_level == 0;
+    const bool charging = chg && !std;
+    const bool standby_full = std && !chg;
+    return (board_v2_charger_pin_decode_t){
+        .charging = charging,
+        .standby_full = standby_full,
+        .vin_present = charging || standby_full,
+    };
 }
 
 static int board_read_gpio_level(gpio_num_t gpio)
@@ -460,6 +514,20 @@ esp_err_t board_set_power_hold_enabled(bool enabled)
     return ESP_OK;
 }
 
+esp_err_t board_set_usb_serial_jtag_data_connected(bool connected)
+{
+    /* ESP32-S3's native USB Serial/JTAG controller interprets host CDC
+     * DTR/RTS sequences as a chip reset.  During manual plugged soft-off the
+     * USB rail must continue powering the board, but the data PHY must not
+     * remain exposed to background COM probing.  Disabling only the PHY pad
+     * preserves CPU power and the GPIO18 wake task; a subsequent chip reset
+     * restores the normal USB controller defaults. */
+    usb_serial_jtag_ll_phy_enable_pad(connected);
+    return usb_serial_jtag_ll_phy_is_pad_enabled() == connected
+        ? ESP_OK
+        : ESP_ERR_INVALID_STATE;
+}
+
 static void board_print_power_hold_test(bool drive_high)
 {
     board_v2_power_hold_snapshot_t before = {0};
@@ -520,16 +588,26 @@ void board_get_v2_power_input_snapshot(board_v2_power_input_snapshot_t *out_snap
     board_set_usb_det_highz_mode(true);
     board_configure_status_input(BOARD_PINS_BAT_CHG_IO);
     board_configure_status_input(BOARD_PINS_BAT_STD_IO);
+    esp_rom_delay_us(BOARD_CHARGER_PIN_SETTLE_US);
     board_v2_power_hold_snapshot_t power_hold = {0};
     board_get_v2_power_hold_snapshot(&power_hold);
     bool usb_serial_jtag_sof_active = board_usb_serial_jtag_sof_active();
+    int raw_chg_level = board_read_gpio_level(BOARD_PINS_BAT_CHG_IO);
+    int raw_std_level = board_read_gpio_level(BOARD_PINS_BAT_STD_IO);
+    int bat_chg_level = raw_chg_level;
+    int bat_std_level = raw_std_level;
+    board_stable_charger_pin_levels(raw_chg_level, raw_std_level, &bat_chg_level, &bat_std_level);
+    board_v2_charger_pin_decode_t charger =
+        board_decode_charger_status_pins(bat_chg_level, bat_std_level);
     esp_err_t usb_det_adc_ret = ESP_ERR_INVALID_STATE;
     bool usb_det_adc_valid = false;
     int usb_det_level = board_read_gpio_level(BOARD_PINS_USB_DET_DISABLED_IO);
 
     *out_snapshot = (board_v2_power_input_snapshot_t){
         .usb_det_level = usb_det_level,
-        .usb_power_present = usb_serial_jtag_sof_active,
+        /* SOF alone is a USB host talking, not VBUS. Ghost SOF after unplug
+         * must not keep PWR white; computer USB is SOF plus charger VIN. */
+        .usb_power_present = usb_serial_jtag_sof_active && charger.vin_present,
         .usb_serial_jtag_sof_active = usb_serial_jtag_sof_active,
         .usb_det_highz = true,
         .usb_det_adc_valid = usb_det_adc_valid,
@@ -539,8 +617,8 @@ void board_get_v2_power_input_snapshot(board_v2_power_input_snapshot_t *out_snap
         .usb_det_adc_samples = 0,
         .usb_det_adc_result = usb_det_adc_ret,
         .usb_det_mismatch = false,
-        .bat_chg_level = board_read_gpio_level(BOARD_PINS_BAT_CHG_IO),
-        .bat_std_level = board_read_gpio_level(BOARD_PINS_BAT_STD_IO),
+        .bat_chg_level = bat_chg_level,
+        .bat_std_level = bat_std_level,
         .pwr_hold_level = power_hold.level,
         .usb_det_policy = BOARD_V2_USB_DET_POLICY,
         .charger_polarity_policy = BOARD_V2_CHARGER_POLARITY,

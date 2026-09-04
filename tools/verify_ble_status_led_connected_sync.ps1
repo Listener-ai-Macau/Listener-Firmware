@@ -206,6 +206,10 @@ Assert-Contains $gap '23,\s*0,\s*1,\s*s_ble_gap_conn_handle' `
     "successful fresh-identity IRK reset must be preserved in firmware diagnostics"
 Assert-Contains $gap 'disconnect_recovery_pairing_window[\s\S]*?denzic_ble_pairing_v1_orch_irk_reset_after_disconnect\([\s\S]*?ble_hid_gap_reset_local_irk_without_bonds\(\)[\s\S]*?denzic_ble_pairing_v1_rotate_before_advertising\([^)]*\)[\s\S]*?ble_hid_gap_rotate_native_recovery_identity\("recovery_disconnect"\)' `
     "connected native recovery must reset a no-bond IRK after disconnect before advertising a new identity"
+Assert-Contains $gap 'if\s*\(host_deliberate_disconnect\)\s*\{[\s\S]*?s_directed_adv_pending\s*=\s*false;[\s\S]*?restarting undirected connectable advertising while retaining the bond[\s\S]*?\}\s*else\s*\{[\s\S]*?DENZIC_BLE_PAIRING_V1_ADVERTISING_AFTER_DISCONNECT_DIRECTED_RECONNECT' `
+    "remote-user-terminated disconnect must retain the bond and fall through to undirected connectable advertising"
+Assert-NotContains $gap 'if\s*\(host_deliberate_disconnect\)\s*\{[\s\S]{0,900}?ble_hid_gap_set_explicit_recovery_required_after_security_failure\(true\)' `
+    "remote-user-terminated disconnect is not proof of unpair and must not enter the security-failure dark phase"
 Assert-Contains $noteTypeAudio 'bonded_peer_count\s*==\s*0[\s\S]*?!pairing_window_open[\s\S]*?type audio ready rejected on unbonded link outside explicit recovery[\s\S]*?ble_hid_gap_set_explicit_recovery_required_after_security_failure\(true\)[\s\S]*?ble_hid_gap_explicit_recovery_led_state\(\)[\s\S]*?ble_gap_terminate\([\s\S]*?return false;' `
     "out-of-window unbonded Type heartbeat must terminate into the explicit-recovery hold"
 Assert-Contains $noteTypeAudio 'type audio ready rejected before BLE bond inside explicit recovery; keeping pairing window available[\s\S]*?return false;' `
@@ -264,8 +268,8 @@ Assert-Contains $gap 'ble_hid_gap_handle_disconnect\([^)]*\)[\s\S]*?ble_hid_gap_
     "security-failed disconnect must preserve the explicit-hold LED state and suppress automatic advertising"
 Assert-Contains $gap 'static\s+status_led_ble_state_t\s+ble_hid_gap_explicit_recovery_led_state\(void\)[\s\S]*?s_last_disconnect_host_deliberate[\s\S]*?STATUS_LED_BLE_PAIRING[\s\S]*?STATUS_LED_BLE_DISCONNECTED' `
     "manual deletion must use pairing attention while other explicit recovery holds remain dark"
-Assert-Contains $gap 'host_deliberate_disconnect[\s\S]*?ble_hid_gap_set_explicit_recovery_required_after_security_failure\(true\)[\s\S]*?ble_hid_gap_explicit_recovery_led_state\(\)[\s\S]*?dark-phase pairing LED remains visible while all advertising is suppressed until explicit EC11 recovery[\s\S]*?return;' `
-    "host-deliberate unpair disconnect must show pairing-search LED while suppressing advertising"
+Assert-Contains $gap 'host_deliberate_disconnect[\s\S]*?s_directed_adv_pending\s*=\s*false;[\s\S]*?restarting undirected connectable advertising while retaining the bond' `
+    "host-terminated disconnect must avoid directed chasing while remaining connectable"
 Assert-Contains $gap 'bool\s+ble_hid_gap_is_waiting_for_explicit_recovery\(void\)[\s\S]*?ble_hid_gap_explicit_recovery_required_after_security_failure\(\)' `
     "HID callbacks must be able to read the authoritative explicit-recovery hold"
 Assert-Contains $gap 'bool\s+ble_hid_gap_is_manual_unpair_search_active\(void\)[\s\S]*?ble_hid_gap_explicit_recovery_required_after_security_failure\(\)[\s\S]*?s_last_disconnect_host_deliberate' `
@@ -521,4 +525,4 @@ if (-not [string]::IsNullOrWhiteSpace($ReadbackLog)) {
     }
 }
 
-Write-Host "PASS: BLE status LED connected-sync checks cover GAP/HID connected source of truth, stable-identity re-pair advertising, audio-stream TYPE_READY sync with LED hold, stale advertising suppression, connected battery resync after preview clears, pairing/reconnect dark-phase pulses, HID-only connected low-floor find-Type, disconnected/no-host dark, steady TYPE_READY brightness, idle BLE dark, active-work PWR/OTA visibility, and disconnect/advertising negative transitions."
+Write-Host "PASS: BLE status LED connected-sync checks cover GAP/HID connected source of truth, stable-identity re-pair advertising, host-terminated undirected reconnect, audio-stream TYPE_READY sync with LED hold, stale advertising suppression, connected battery resync after preview clears, pairing/reconnect dark-phase pulses, HID-only connected low-floor find-Type, disconnected/no-host dark, steady TYPE_READY brightness, idle BLE dark, active-work PWR/OTA visibility, and disconnect/advertising negative transitions."

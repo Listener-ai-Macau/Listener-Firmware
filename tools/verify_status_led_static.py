@@ -508,7 +508,7 @@ CHECKS = {
         "status_led_pack_main_chain(frame, main_pixels)",
         "status_led_transmit_strip(\n                &s_strips[STATUS_LED_STRIP_STATUS],\n                main_pixels,\n                force_non_dma)",
         "status_led_transmit_strip(&s_strips[STATUS_LED_STRIP_EDGE], frame->edge, force_non_dma)",
-        "low_power_all_zone_tx=non_dma_clear_and_final_frame",
+        "low_power_all_zone_tx=dma_final_frame_keep_spi_resident",
         "shutdown_final_status_tx=dma_visible_pwr_no_black_latch",
         "shutdown_final_all_zone_tx=non_dma_pwr_only_latch_or_all_off",
         "status_led_notify_shutdown_confirm",
@@ -529,6 +529,10 @@ CHECKS = {
         "status_led_power_poll_interval_ms_locked",
         "s_state.external_power_present",
         "raw_full_external",
+        "board_decode_charger_status_pins(power_input.bat_chg_level, power_input.bat_std_level)",
+        "raw_charging = charger.charging",
+        "raw_full = charger.standby_full",
+        "power_input.usb_power_present && charger.vin_present && usb_serial_jtag_sof_active",
         "status_led_charger_status_external_locked(\n                raw_charging,\n                raw_full_external,",
         "external_power_source_flags |= STATUS_LED_POWER_SOURCE_CHARGER_STATUS",
         "s_state.charge_full_latched = true",
@@ -693,7 +697,7 @@ CHECKS = {
         "status_led_set_type_ota_link_active(false, \"type_ota_handoff_failed\")",
         "TYPE:BYE",
         "ble_audio_stream_type_ready_visible_event",
-        "power_manager_record_activity(\"type_ready\")",
+        "power_manager_record_background_activity(\"type_ready\")",
         "ble_audio_stream_type_ready_visible_event(reason))",
         "ble_audio_stream_type_heartbeat_recent()",
         "ble_audio_stream_type_heartbeat_led_recent()",
@@ -1530,16 +1534,11 @@ def main() -> int:
     if re.search(r"\bSTATUS_LED_TRANSITION_CLEAR_ACCENTS\b", status_led):
         failures.append("status_led.c: generic transition clear ACCENTS mask must not exist; use NON_KEY_ACCENTS or an explicit strip mask")
     resume_output = extract_c_function(status_led, "status_led_resume_interactive_output_locked")
-    if "s_state.transition_clear_mask = 0U;" in resume_output:
-        failures.append("status_led.c: interactive low-power resume must preserve the pending clear frame, not cancel it")
-    if not re.search(
-        r"if\s*\(\s*was_low_power_output\s*\)\s*\{[\s\S]*?"
-        r"status_led_force_transition_clear_locked\(STATUS_LED_TRANSITION_CLEAR_ALL_STRIPS\);[\s\S]*?"
-        r"\}\s*else\s+if\s*\(\s*s_state\.transition_clear_mask\s*!=\s*0U\s*\)\s*\{[\s\S]*?"
-        r"status_led_force_transition_clear_locked\(STATUS_LED_TRANSITION_CLEAR_NON_KEY_ACCENTS\);",
-        resume_output,
+    if (
+        "s_state.transition_clear_mask = 0U;" not in resume_output
+        or "status_led_force_transition_clear_locked" in resume_output
     ):
-        failures.append("status_led.c: interactive resume from manual-off/low-power must all-zone clear, while active scoped clears stay non-KEY")
+        failures.append("status_led.c: interactive low-power resume must cancel stale clear work and let one authoritative active DMA frame render")
     if "status_led_force_transition_clear_locked(STATUS_LED_TRANSITION_CLEAR_ACCENTS);" in resume_output:
         failures.append("status_led.c: interactive low-power resume must not black-frame the KEY strip through the generic accent clear")
     for function_name in ("status_led_notify_key_event", "status_led_cancel_key_preview", "status_led_notify_key_feedback"):
@@ -1768,8 +1767,8 @@ def main() -> int:
             failures.append("status_led.c: ~LED:STATUS contract must expose failed-strip retry-dirty protection")
         if "suspended_strip_resume_dirty=1" not in status_led:
             failures.append("status_led.c: ~LED:STATUS contract must expose suspended-strip resume dirty protection")
-    if "bool force_non_dma = pwr_only_final_latch;" not in refresh_once or "pwr_only_final_latch || force_clear_tx" in refresh_once:
-        failures.append("status_led.c: interactive transition clears must keep SPI EC11/KEY strips on DMA; non-DMA latch use must stay scoped to low-power and non-status shutdown-final clearing")
+    if "bool force_non_dma = false;" not in refresh_once or "bool force_non_dma = pwr_only_final_latch;" in refresh_once:
+        failures.append("status_led.c: low-power final frames must remain on the stable DMA transport instead of switching live SPI routes to non-DMA RMT at the idle boundary")
     for function_name in ("status_led_set_recording", "status_led_set_processing"):
         try:
             body = extract_c_function(status_led, function_name)
@@ -1816,16 +1815,16 @@ def main() -> int:
     if (
         "#define BLE_HID_GAP_SWIFT_PAIR_ADV_INTERVAL_MS 30U" not in ble_gap
         or not re.search(
-            r"const\s+uint32_t\s+adv_min_ms\s*=\s*swift_pair_enabled\s*\?\s*BLE_HID_GAP_SWIFT_PAIR_ADV_INTERVAL_MS\s*:\s*BLE_HID_GAP_FAST_ADV_MIN_MS\s*;",
+            r"const\s+uint32_t\s+adv_min_ms\s*=\s*swift_pair_enabled\s*\?\s*BLE_HID_GAP_SWIFT_PAIR_ADV_INTERVAL_MS\s*:\s*\(s_low_power_advertising\s*\?\s*BLE_HID_GAP_LOW_POWER_ADV_MIN_MS\s*:\s*BLE_HID_GAP_FAST_ADV_MIN_MS\)\s*;",
             ble_gap,
         )
         or not re.search(
-            r"const\s+uint32_t\s+adv_max_ms\s*=\s*swift_pair_enabled\s*\?\s*BLE_HID_GAP_SWIFT_PAIR_ADV_INTERVAL_MS\s*:\s*BLE_HID_GAP_FAST_ADV_MAX_MS\s*;",
+            r"const\s+uint32_t\s+adv_max_ms\s*=\s*swift_pair_enabled\s*\?\s*BLE_HID_GAP_SWIFT_PAIR_ADV_INTERVAL_MS\s*:\s*\(s_low_power_advertising\s*\?\s*BLE_HID_GAP_LOW_POWER_ADV_MAX_MS\s*:\s*BLE_HID_GAP_FAST_ADV_MAX_MS\)\s*;",
             ble_gap,
         )
     ):
         failures.append(
-            "ble_hid_gap_esp32.c: Swift Pair discovery must use the exact 30ms cadence while normal advertising retains its 30-50ms range"
+            "ble_hid_gap_esp32.c: Swift Pair must remain exactly 30ms while normal and low-power advertising retain their own bounded cadence"
         )
     if (
         "#define BLE_HID_GAP_RECOVERY_SWIFT_PAIR_PROMPT_MS "
@@ -2146,13 +2145,12 @@ def main() -> int:
         )
     if not re.search(
         r"host_deliberate_disconnect[\s\S]*?"
-        r"ble_hid_gap_set_explicit_recovery_required_after_security_failure\(true\)[\s\S]*?"
-        r"ble_hid_gap_explicit_recovery_led_state\(\)[\s\S]*?"
-        r"dark-phase pairing LED remains visible while all advertising is suppressed until explicit EC11 recovery[\s\S]*?return;",
+        r"s_directed_adv_pending\s*=\s*false[\s\S]*?"
+        r"restarting undirected connectable advertising while retaining the bond",
         ble_gap,
     ):
         failures.append(
-            "ble_hid_gap_esp32.c: host-deliberate unpair must show the pairing-search LED while stopping advertising until explicit recovery"
+            "ble_hid_gap_esp32.c: an ambiguous host-terminated disconnect must remain connectable instead of entering a false explicit-recovery hold"
         )
     note_type_audio = extract_c_function(ble_gap, "ble_hid_gap_note_type_audio_ready")
     if not re.search(
@@ -3466,14 +3464,13 @@ def main() -> int:
     else:
         low_power_body = low_power_setter.group("body")
         if (
-            "const bool preserve_repair_cue =" not in low_power_body
-            or "disabled && status_led_ble_repair_cue_active_locked(now_ms)" not in low_power_body
-            or "const bool next_low_power_disabled = disabled && !preserve_repair_cue;" not in low_power_body
+            "const bool next_low_power_disabled = disabled;" not in low_power_body
+            or "preserve_repair_cue" in low_power_body
             or "s_state.low_power_disabled = next_low_power_disabled;" not in low_power_body
             or "if (next_low_power_disabled)" not in low_power_body
-            or '"repair_low_power_hold"' not in low_power_body
+            or 'disabled ? "low_power_off" : "low_power_resume"' not in low_power_body
         ):
-            failures.append("status_led.c: low-power idle must preserve the active BLE+EC11 repair cue instead of truncating the double-flash")
+            failures.append("status_led.c: low-power idle must unconditionally cut off an active BLE+EC11 repair cue instead of discarding the one-shot idle request")
     if not re.search(
         r"void\s+status_led_prepare_sleep\(void\)[\s\S]{0,1200}"
         r"status_led_force_all_off\(true\);[\s\S]{0,120}status_led_suspend_all_strips\(\);",
@@ -3725,10 +3722,10 @@ def main() -> int:
         "rmt_tx_dma_actual=status:%u,ec11:%u,key:%u,edge:%u" not in status_led or
         "rmt_tx_dma_fallback=status:%u,ec11:%u,key:%u,edge:%u" not in status_led or
         "rmt_mem_block_symbols=status:%u,ec11:%u,key:%u,edge:%u" not in status_led or
-        "rmt_idle_drive=active_dma_low_power_all_zone_non_dma_final_frame_then_release_gpio_low" not in status_led
+        "rmt_idle_drive=active_dma_low_power_all_zone_dma_final_frame_keep_spi_resident" not in status_led
         or "shutdown_final_status_tx=dma_visible_pwr_no_black_latch" not in status_led
-        or "low_power_all_zone_tx=non_dma_clear_and_final_frame" not in status_led
-        or "low_power_spi_latch=dma_prelatch_then_non_dma_final_gpio_low" not in status_led
+        or "low_power_all_zone_tx=dma_final_frame_keep_spi_resident" not in status_led
+        or "low_power_spi_latch=no_runtime_transport_teardown" not in status_led
         or "dma_all_physical_routes=%u" not in status_led
         or "shutdown_final_all_zone_tx=non_dma_pwr_only_latch_or_all_off" not in status_led
     ):
@@ -3755,9 +3752,10 @@ def main() -> int:
     )
     if (
         not low_power_resume
-        or "status_led_force_transition_clear_locked(STATUS_LED_TRANSITION_CLEAR_ALL_STRIPS);" not in low_power_resume.group("body")
+        or "s_state.transition_clear_mask = 0U;" not in low_power_resume.group("body")
+        or "status_led_force_transition_clear_locked" in low_power_resume.group("body")
     ):
-        failures.append("status_led.c: low-power resume must all-zone clear so physical WS2812 latch state cannot survive wake")
+        failures.append("status_led.c: reversible low-power entry/resume must bypass repeated transition-clear writes and render one authoritative frame")
     if status_led.count(".prefer_dma = true") != 1 or not re.search(
         r"\.name\s*=\s*\"main\"[\s\S]*?\.gpio\s*=\s*BOARD_PINS_RGB_MAIN_IO[\s\S]*?"
         r"\.led_count\s*=\s*STATUS_LED_MAIN_COUNT[\s\S]*?\.prefer_dma\s*=\s*true",
@@ -3837,8 +3835,8 @@ def main() -> int:
         failures.append("status_led.c: low-power idle and final shutdown PWR-only confirmation must keep bounded final-latch state")
     if "bool force_non_dma = force_clear_tx || low_power_active;" in status_led:
         failures.append("status_led.c: ordinary transition clear frames must not force non-DMA; scope force_non_dma to clear/latch paths only")
-    if not re.search(r"bool\s+force_non_dma\s*=\s*pwr_only_final_latch\s*;", status_led):
-        failures.append("status_led.c: low-power/final latch state must stay scoped; interactive transition clears keep EC11/KEY on SPI DMA and shutdown-final PWR/status stays on DMA")
+    if not re.search(r"bool\s+force_non_dma\s*=\s*false\s*;", status_led):
+        failures.append("status_led.c: low-power final frames and interactive transition clears must stay on DMA; shutdown-final owns any dedicated non-status dark latch")
     shutdown_final_latch = extract_c_function(status_led, "status_led_transmit_shutdown_final_latch_frame")
     status_dma_index = shutdown_final_latch.find(
         "status_led_transmit_changed_frame(frame, STATUS_LED_STRIP_MASK_STATUS, false, false)"
@@ -3905,9 +3903,16 @@ def main() -> int:
     if (
         "STATUS_LED_STRIP_STATUS" not in suspend_quiet
         or "STATUS_LED_STRIP_EDGE" not in suspend_quiet
-        or "status_led_strip_backend_suspend(s_strips[index].backend)" not in suspend_quiet
+        or "status_led_strip_backend_quiet(s_strips[index].backend)" not in suspend_quiet
     ):
-        failures.append("status_led.c: low-power quiet suspend must release both V2.2 physical routes after the final latch")
+        failures.append("status_led.c: low-power quiet path must keep both V2.2 physical routes resident after the final latch")
+    quiet_backend = extract_c_function(status_led_backend, "status_led_strip_backend_quiet")
+    if (
+        "main-chain RMT DMA" not in quiet_backend
+        or quiet_backend.count("return ESP_OK;") < 2
+        or "status_led_strip_backend_suspend" in quiet_backend
+    ):
+        failures.append("status_led_strip_backend.c: reversible idle must retain both RMT DMA and SPI DMA transports")
     suspend_all = extract_c_function(status_led, "status_led_suspend_all_strips")
     if (
         "s_strips[STATUS_LED_STRIP_STATUS].backend" not in suspend_all
