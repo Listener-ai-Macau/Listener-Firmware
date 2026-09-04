@@ -47,6 +47,12 @@
  * wake candidates keep their existing short max-session contract. */
 #define VOICE_RECORDING_CONTROL_INITIAL_BODY_WAIT_MS 4000
 #define VOICE_RECORDING_CONTROL_DICTATION_TAIL_MS 0
+/* Hidden VoiceActivation is a wake candidate, not a dictation session. Keep
+ * enough room for the 2 s pre-roll plus a normal wake phrase, but do not hold
+ * the microphone until the old 3.5 s terminal window. The host can begin its
+ * owner/phrase arbitration earlier; this is separate from the visible owner
+ * endpoint timeout and does not alter either watchdog threshold. */
+#define VOICE_RECORDING_CONTROL_AUTOMATIC_WAKE_MAX_SESSION_MS 2600u
 #define VOICE_RECORDING_CONTROL_HOST_SPEECH_PROTECTION_MS 1000
 #define VOICE_RECORDING_CONTROL_ARRAY_SIZE(array) (sizeof(array) / sizeof((array)[0]))
 #define VOICE_RECORDING_CONTROL_VAD_QUEUE_LENGTH 24
@@ -1110,6 +1116,13 @@ static void voice_recording_control_schedule_pending_start(
     const char *reason,
     const char *detail)
 {
+    const bool pending_va =
+        source != NULL && strstr(source, "voice_activation") != NULL;
+    if (pending_va && !power_manager_try_acquire_voice_activation()) {
+        ESP_LOGI(TAG, "pending hidden voice candidate rejected at idle commit boundary");
+        return;
+    }
+
     TickType_t now = xTaskGetTickCount();
     s_pending_start = true;
     s_pending_start_source = voice_recording_control_store_source(
@@ -1121,17 +1134,13 @@ static void voice_recording_control_schedule_pending_start(
     s_pending_start_deadline_tick = now + pdMS_TO_TICKS(VOICE_RECORDING_CONTROL_PENDING_START_TIMEOUT_MS);
     s_pending_start_next_retry_tick = now + pdMS_TO_TICKS(VOICE_RECORDING_CONTROL_PENDING_START_RETRY_MS);
 
-    const bool pending_va =
-        source != NULL && strstr(source, "voice_activation") != NULL;
     /* VA pending must not reset low-power idle clocks. */
     if (!pending_va) {
         power_manager_record_activity("voice_recording_wait_transport");
     }
     (void)ble_hid_gap_request_active_connection();
     /* Pending VA auto-start uses the non-sleep VOICE_ACTIVATION marker only. */
-    if (pending_va) {
-        power_manager_set_blocker(POWER_MANAGER_BLOCKER_VOICE_ACTIVATION, true);
-    } else {
+    if (!pending_va) {
         power_manager_set_blocker(
             POWER_MANAGER_BLOCKER_RECORDING | POWER_MANAGER_BLOCKER_BLE_AUDIO,
             true);
@@ -1195,6 +1204,11 @@ static esp_err_t voice_recording_control_enter_recording(
             source != NULL ? source : "unknown");
         return ESP_ERR_NOT_ALLOWED;
     }
+    if (pre_roll_ms > 0u && !power_manager_try_acquire_voice_activation()) {
+        ESP_LOGI(TAG, "hidden voice candidate rejected at idle commit boundary source=%s",
+                 source != NULL ? source : "unknown");
+        return ESP_ERR_NOT_ALLOWED;
+    }
 
     /* Hidden automatic (VAD) candidates must not look like user activity —
      * otherwise every ambient false-start restarts the low-power idle clock
@@ -1204,13 +1218,11 @@ static esp_err_t voice_recording_control_enter_recording(
         power_manager_record_activity("voice_recording_start");
     }
     (void)ble_hid_gap_request_active_connection();
-    /* Hidden VA (pre_roll>0) must NOT set RECORDING|BLE_AUDIO sleep blockers —
-     * ambient false-starts every few seconds kept the device forever ACTIVE and
-     * owner saw "又进不了低功耗". Use VOICE_ACTIVATION only (excluded from
-     * sleep_blockers). Visible/user recording still holds full awake blockers. */
-    if (pre_roll_ms > 0u) {
-        power_manager_set_blocker(POWER_MANAGER_BLOCKER_VOICE_ACTIVATION, true);
-    } else {
+    /* Hidden VA (pre_roll>0) must NOT set RECORDING|BLE_AUDIO or reset idle
+     * clocks. Its atomically acquired VOICE_ACTIVATION blocker only drains the
+     * in-flight candidate before idle commit. Visible/user recording still
+     * holds the full awake blockers. */
+    if (pre_roll_ms == 0u) {
         power_manager_set_blocker(
             POWER_MANAGER_BLOCKER_RECORDING | POWER_MANAGER_BLOCKER_BLE_AUDIO,
             true);
@@ -1289,7 +1301,12 @@ static esp_err_t voice_recording_control_enter_recording(
         false);
     voice_recording_control_log_device_status("recording", "capture_active");
     diag_log(DIAG_SRC_VOICE_REC, DIAG_VREC_SESSION, DIAG_SEV_INFO,
-             1, voice_recording_source_code(source), s_session_count, 0);
+             1,
+             voice_recording_source_code(source),
+             s_session_count,
+             (s_active_session_automatic ? 1u : 0u) |
+                 (s_active_session_visible ? 2u : 0u) |
+                 (s_active_session_enrollment ? 4u : 0u));
     return ESP_OK;
 }
 
@@ -1297,6 +1314,10 @@ static esp_err_t voice_recording_control_exit_recording_with_origin(
     const char *source,
     audio_capture_stop_origin_t origin)
 {
+    const uint32_t session_flags =
+        (s_active_session_automatic ? 1u : 0u) |
+        (s_active_session_visible ? 2u : 0u) |
+        (s_active_session_enrollment ? 4u : 0u);
     /* Only count stop as user activity for visible / non-automatic sessions.
      * Silent VA reject must not reset the low-power idle countdown. */
     if (!s_active_session_automatic || s_active_session_visible) {
@@ -1356,7 +1377,7 @@ static esp_err_t voice_recording_control_exit_recording_with_origin(
         false);
     voice_recording_control_log_device_status("transferring", "audio_session_finishing");
     diag_log(DIAG_SRC_VOICE_REC, DIAG_VREC_SESSION, DIAG_SEV_INFO,
-             2, voice_recording_source_code(source), s_session_count, 0);
+             2, voice_recording_source_code(source), s_session_count, session_flags);
     return ESP_OK;
 }
 
@@ -1621,6 +1642,10 @@ static void voice_recording_control_toggle(const char *source)
 
 static void voice_recording_control_cancel(const char *source)
 {
+    const uint32_t session_flags =
+        (s_active_session_automatic ? 1u : 0u) |
+        (s_active_session_visible ? 2u : 0u) |
+        (s_active_session_enrollment ? 4u : 0u);
     s_enrollment_start_pending = false;
     s_enrollment_start_deadline_tick = 0;
     s_enrollment_start_next_retry_tick = 0;
@@ -1635,7 +1660,7 @@ static void voice_recording_control_cancel(const char *source)
     if (decision.effect == VOICE_RECORDING_EFFECT_CLEAR_PENDING_START) {
         voice_recording_control_cancel_pending_start(decision.detail);
         diag_log(DIAG_SRC_VOICE_REC, DIAG_VREC_SESSION, DIAG_SEV_INFO,
-                 3, voice_recording_source_code(source), s_session_count, 0);
+                 3, voice_recording_source_code(source), s_session_count, session_flags);
         return;
     }
 
@@ -1691,7 +1716,6 @@ static void voice_recording_control_cancel(const char *source)
         s_active_session_automatic = false;
         s_active_session_visible = false;
         s_active_session_enrollment = false;
-        voice_recording_control_clear_power_blockers();
         (void)voice_key_input_set_recording_output(false);
         status_led_set_recording(false, STATUS_LED_REC_SOURCE_NONE);
         status_led_set_processing(false, "recording_canceled");
@@ -1704,7 +1728,7 @@ static void voice_recording_control_cancel(const char *source)
             false);
         voice_recording_control_log_device_status("ready", "recording_canceled");
         diag_log(DIAG_SRC_VOICE_REC, DIAG_VREC_SESSION, DIAG_SEV_INFO,
-                 3, voice_recording_source_code(source), s_session_count, 0);
+                 3, voice_recording_source_code(source), s_session_count, session_flags);
         return;
     }
 
@@ -2467,6 +2491,10 @@ static void voice_recording_control_poll_pending_start(void)
 
 static void voice_recording_control_handle_session_inactive(void)
 {
+    const uint32_t session_flags =
+        (s_active_session_automatic ? 1u : 0u) |
+        (s_active_session_visible ? 2u : 0u) |
+        (s_active_session_enrollment ? 4u : 0u);
     voice_recording_control_snapshot_t snapshot = voice_recording_control_make_snapshot(
         s_cancel_pending ?
             (s_cancel_source != NULL ? s_cancel_source : "unknown") :
@@ -2489,7 +2517,6 @@ static void voice_recording_control_handle_session_inactive(void)
         s_active_session_automatic = false;
         s_active_session_visible = false;
         s_active_session_enrollment = false;
-        voice_recording_control_clear_power_blockers();
         (void)voice_key_input_set_recording_output(false);
         status_led_set_recording(false, STATUS_LED_REC_SOURCE_NONE);
         status_led_set_processing(false, "recording_canceled");
@@ -2502,7 +2529,12 @@ static void voice_recording_control_handle_session_inactive(void)
             decision.warn);
         voice_recording_control_log_device_status("ready", "recording_canceled");
         diag_log(DIAG_SRC_VOICE_REC, DIAG_VREC_SESSION, DIAG_SEV_INFO,
-                 3, voice_recording_source_code(source), s_session_count, 0);
+                 3, voice_recording_source_code(source), s_session_count, session_flags);
+        /* Release the final VA/audio owner only after every session resource
+         * and observable output is quiescent. Releasing it earlier can commit
+         * CONNECTED_IDLE re-entrantly from power_manager_set_blocker() while
+         * this teardown is still running. */
+        voice_recording_control_clear_power_blockers();
         voice_recording_control_try_start_pending_enrollment("finish_cancel");
         return;
     }
@@ -2513,7 +2545,6 @@ static void voice_recording_control_handle_session_inactive(void)
     s_active_session_automatic = false;
     s_active_session_visible = false;
     s_active_session_enrollment = false;
-    voice_recording_control_clear_power_blockers();
     (void)voice_key_input_set_recording_output(false);
     status_led_set_recording(false, STATUS_LED_REC_SOURCE_NONE);
 
@@ -2526,6 +2557,7 @@ static void voice_recording_control_handle_session_inactive(void)
             decision.result,
             decision.warn);
         voice_recording_control_log_device_status("ready", "recording_session_finished");
+        voice_recording_control_clear_power_blockers();
         voice_recording_control_try_start_pending_enrollment("finish_transfer");
         return;
     }
@@ -2542,8 +2574,12 @@ static void voice_recording_control_handle_session_inactive(void)
         if (voice_recording_control_source_is_host_control(source)) {
             voice_recording_control_arm_host_cleanup_toggle_guard();
         }
+        voice_recording_control_clear_power_blockers();
         voice_recording_control_try_start_pending_enrollment("finish_abort");
+        return;
     }
+
+    voice_recording_control_clear_power_blockers();
 }
 
 static void voice_recording_control_on_voice_activity(
@@ -2762,15 +2798,22 @@ static void voice_recording_control_process_voice_activity(void)
         denzic_voice_activation_v1_config_t step_config =
             s_voice_activation_config;
         if (hidden_automatic) {
-            /* ~1s phrase + pad; free BLE faster than 4.5s so low-power and
-             * re-arm are not blocked by long ambient windows. */
-            step_config.max_session_ms = 3500u;
+            /* ~1s phrase + bounded pad; free BLE quickly so host wake
+             * arbitration and re-arm are not blocked by ambient windows. */
+            step_config.max_session_ms =
+                VOICE_RECORDING_CONTROL_AUTOMATIC_WAKE_MAX_SESSION_MS;
         }
         const bool visible_dictation =
             s_active_session_visible && !s_active_session_enrollment;
+        const bool host_endpoint_owned_visible =
+            s_active_session_automatic && s_active_session_visible &&
+            !s_active_session_enrollment;
         /* Only Type's provider/owner timeline may establish body speech.
          * Firmware VAD remains useful for hidden wake candidates, but its
-         * low-energy gaps are not authoritative enough to end visible text. */
+         * low-energy gaps are not authoritative enough to end visible text.
+         * For an accepted automatic candidate, keep the VA machine's hard
+         * max-session guard but force its silence clock to stay clear: Type
+         * owns the actual quiet-tail endpoint and will send VREC:STOP. */
         if (visible_dictation && !s_active_session_body_speech_seen) {
             step_config.silence_stop_ms =
                 VOICE_RECORDING_CONTROL_INITIAL_BODY_WAIT_MS;
@@ -2784,7 +2827,7 @@ static void voice_recording_control_process_voice_activity(void)
                 (s_voice_auto_stop_enabled || hidden_automatic),
             .recording_active =
                 s_state == VOICE_RECORDING_STATE_RECORDING,
-            .speech_detected = event.speech_detected,
+            .speech_detected = event.speech_detected || host_endpoint_owned_visible,
             .start_blocked =
                 s_state != VOICE_RECORDING_STATE_IDLE ||
                 s_pending_start ||
@@ -2819,6 +2862,9 @@ static void voice_recording_control_process_voice_activity(void)
             decision.action ==
                 DENZIC_VOICE_ACTIVATION_V1_ACTION_STOP &&
             s_state == VOICE_RECORDING_STATE_RECORDING) {
+            const bool max_duration_stop =
+                decision.stop_reason ==
+                DENZIC_VOICE_ACTIVATION_V1_STOP_REASON_MAX_DURATION;
             const bool silence_stop =
                 decision.stop_reason ==
                 DENZIC_VOICE_ACTIVATION_V1_STOP_REASON_SILENCE;
@@ -2841,11 +2887,21 @@ static void voice_recording_control_process_voice_activity(void)
                     &s_vad_queue_drop_count,
                     __ATOMIC_RELAXED));
             (void)voice_recording_control_exit_recording_with_origin(
-                decision.stop_reason ==
-                        DENZIC_VOICE_ACTIVATION_V1_STOP_REASON_MAX_DURATION
+                max_duration_stop
                     ? "voice_activation.auto_stop_max_duration"
                     : "voice_activation.auto_stop_silence",
                 AUDIO_CAPTURE_STOP_ORIGIN_VOICE_ACTIVATION);
+            if (hidden_automatic && max_duration_stop) {
+                /* A max-duration stop is a streaming window rotation, not the
+                 * end of an utterance. Bypass the ordinary 1.2 s cooldown so
+                 * continuous speech can confirm the next overlapping window
+                 * immediately. The rolling two-second pre-roll then spans the
+                 * boundary; phrase and voiceprint are still verified together
+                 * by Type on that next candidate. Silence stops retain the
+                 * cooldown to avoid repeatedly reopening on one noise burst. */
+                denzic_voice_activation_v1_reset(
+                    &s_voice_activation_machine);
+            }
         }
     }
 }
