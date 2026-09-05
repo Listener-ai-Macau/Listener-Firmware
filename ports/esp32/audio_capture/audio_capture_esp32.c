@@ -664,11 +664,15 @@ esp_err_t audio_capture_session_begin_with_preroll(uint32_t pre_roll_ms)
 #ifdef CONFIG_AUDIO_CAPTURE_MIC_SPH0655_PDM
 #if CONFIG_AUDIO_CAPTURE_PDM_AFE_WEBRTC
     /* Apply the session boundary only in the capture task. It clears partial
-     * PCM without discarding the already trained NS/AGC state, so first words
-     * after an idle wake are processed with the same acoustic calibration as
-     * later words. */
+     * PCM and resets the short-term pre-AFE gain controller, while preserving
+     * the trained NS/AGC state. The pre-AFE controller is deliberately
+     * session-scoped: a loud transient in the previous recording must not
+     * suppress the first words of the next wake candidate. */
     s_pdm_afe_session_boundary_requested = true;
     s_pdm_afe_session_boundary_applied = false;
+    s_pdm_pre_afe_gain_q8 =
+        AUDIO_CAPTURE_PDM_SOFTWARE_GAIN_MAX_NUM *
+        AUDIO_CAPTURE_PDM_SOFTWARE_GAIN_Q8_ONE;
     s_pdm_afe_session_warmup_ready = false;
     s_export_state.warmup_pending = true;
     s_pdm_afe_stop_drain_requested = false;
@@ -2015,6 +2019,7 @@ static void audio_capture_log_pdm_afe_session_signal(uint32_t session_id)
         " pre_vad_clipped_samples=%" PRIu64
         " agc_input_mean_abs=%" PRIu32 " agc_output_mean_abs=%" PRIu32
         " effective_gain_permille=%" PRIu32
+        " pre_afe_gain_permille=%" PRIu32
         " output_frames=%" PRIu32 " output_peak=%" PRIu32
         " output_mean_abs=%" PRIu32 " output_clipped_samples=%" PRIu64
         " output_clip_ratio_ppm=%" PRIu64
@@ -2045,6 +2050,8 @@ static void audio_capture_log_pdm_afe_session_signal(uint32_t session_id)
         agc_input_mean_abs,
         agc_output_mean_abs,
         effective_gain_permille,
+        (uint32_t)(((uint64_t)s_pdm_pre_afe_gain_q8 * 1000U) /
+                    AUDIO_CAPTURE_PDM_SOFTWARE_GAIN_Q8_ONE),
         s_pdm_afe_output_frames,
         s_pdm_afe_session_output_peak,
         mean_abs,
