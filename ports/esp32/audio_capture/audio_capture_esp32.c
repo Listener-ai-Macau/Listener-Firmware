@@ -668,11 +668,11 @@ esp_err_t audio_capture_session_begin_with_preroll(uint32_t pre_roll_ms)
      * the trained NS/AGC state. The pre-AFE controller is deliberately
      * session-scoped: a loud transient in the previous recording must not
      * suppress the first words of the next wake candidate. */
-    s_pdm_afe_session_boundary_requested = true;
-    s_pdm_afe_session_boundary_applied = false;
     s_pdm_pre_afe_gain_q8 =
         AUDIO_CAPTURE_PDM_SOFTWARE_GAIN_MAX_NUM *
         AUDIO_CAPTURE_PDM_SOFTWARE_GAIN_Q8_ONE;
+    s_pdm_afe_session_boundary_requested = true;
+    s_pdm_afe_session_boundary_applied = false;
     s_pdm_afe_session_warmup_ready = false;
     s_export_state.warmup_pending = true;
     s_pdm_afe_stop_drain_requested = false;

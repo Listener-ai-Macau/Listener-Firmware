@@ -42,6 +42,7 @@ REQUIRED_FRAGMENTS = (
     "#define AUDIO_CAPTURE_PDM_SOFTWARE_GAIN_TARGET_PEAK 16000U",
     "#define AUDIO_CAPTURE_PDM_SOFTWARE_GAIN_RECOVERY_Q8 64U",
     "audio_capture_apply_pdm_software_gain(frame_buffer);",
+    "s_pdm_pre_afe_gain_q8 =\n        AUDIO_CAPTURE_PDM_SOFTWARE_GAIN_MAX_NUM *",
     "if (target_gain_q8 < s_pdm_pre_afe_gain_q8) {",
     "s_pdm_pre_afe_gain_q8 = target_gain_q8;",
     "config->afe_linear_gain = 1.0f;",
@@ -101,6 +102,20 @@ def main() -> int:
         source.find("static void audio_capture_pdm_afe_process("):
         source.find("#endif", source.find("static void audio_capture_pdm_afe_process("))
     ]
+
+    session_start = source.find("esp_err_t audio_capture_session_begin_with_preroll(")
+    session_boundary = source.find(
+        "s_pdm_afe_session_boundary_requested = true;", session_start
+    )
+    if session_start < 0 or session_boundary < 0:
+        failures.append("session boundary gain reset request is missing")
+    else:
+        session_body = source[session_start:session_boundary]
+        reset_at = session_body.find("s_pdm_pre_afe_gain_q8 =")
+        if reset_at < 0:
+            failures.append(
+                "pre-AFE gain must reset before the session boundary is requested"
+            )
     raw_index = process_body.find("audio_capture_note_pdm_afe_session_input(")
     pre_vad_index = process_body.find("audio_capture_note_pdm_afe_session_pre_vad(")
     feed_index = process_body.find("s_pdm_afe_handle->feed(")
