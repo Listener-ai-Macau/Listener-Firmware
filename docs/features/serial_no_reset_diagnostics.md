@@ -50,6 +50,13 @@ The apparent "recent spontaneous reboot" was split into two different signals:
   Small `system`-only tails that contain old `interrupt_wdt(5)` records are RTC
   retained history unless a new boot segment and matching boot-safety record are
   observed.
+- The 2026-09-07 capture used the checked-in PowerShell/.NET sequence (DTR/RTS
+  disabled before `Open`) and still returned a fresh USB boot tail. Therefore the
+  no-reset serial contract is a necessary guard, but not a proof that this
+  board/driver combination is observationally side-effect free. Until that
+  host/USB path is isolated, treat opening COM5 itself as a possible reset
+  stimulus and prefer already-running Type telemetry or previously captured
+  artifacts for product behavior conclusions.
 
 This is a tooling/observation failure, not a product-level watchdog root cause.
 Future diagnosis must use the no-reset constructor/open sequence above and must
