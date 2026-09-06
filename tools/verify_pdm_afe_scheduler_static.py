@@ -39,10 +39,12 @@ REQUIRED_FRAGMENTS = (
     "#define AUDIO_CAPTURE_TASK_CORE 0",
     "#define AUDIO_CAPTURE_AFE_FETCH_TASK_CORE 1",
     "#define AUDIO_CAPTURE_PDM_SOFTWARE_GAIN_MAX_NUM 32U",
+    "#define AUDIO_CAPTURE_PDM_SOFTWARE_GAIN_SESSION_FLOOR_NUM 8U",
     "#define AUDIO_CAPTURE_PDM_SOFTWARE_GAIN_TARGET_PEAK 16000U",
     "#define AUDIO_CAPTURE_PDM_SOFTWARE_GAIN_RECOVERY_Q8 64U",
     "audio_capture_apply_pdm_software_gain(frame_buffer);",
-    "s_pdm_pre_afe_gain_q8 =\n        AUDIO_CAPTURE_PDM_SOFTWARE_GAIN_MAX_NUM *",
+    "const uint32_t session_floor_gain_q8 =\n        AUDIO_CAPTURE_PDM_SOFTWARE_GAIN_SESSION_FLOOR_NUM *",
+    "if (s_pdm_pre_afe_gain_q8 < session_floor_gain_q8) {",
     "if (target_gain_q8 < s_pdm_pre_afe_gain_q8) {",
     "s_pdm_pre_afe_gain_q8 = target_gain_q8;",
     "config->afe_linear_gain = 1.0f;",
@@ -66,8 +68,14 @@ def main() -> int:
     # Mirror the integer Q8 policy so its product invariants remain explicit:
     # weak V2.2 speech reaches the 32x calibration ceiling, close speech drops
     # immediately below the target peak, and recovery rises by only 0.25x per
-    # frame without exceeding either ceiling.
+    # frame without exceeding either ceiling.  Session start only applies the
+    # 8x floor: it must preserve a healthy calibrated gain rather than reset to
+    # the 32x ceiling and let the first pre-roll peak suppress the wake word.
     gain_q8 = 32 * 256
+    session_floor_q8 = 8 * 256
+
+    def session_start_gain(current_gain_q8: int) -> int:
+        return max(current_gain_q8, session_floor_q8)
 
     def update_gain(peak: int, current_gain_q8: int) -> int:
         target_gain_q8 = 32 * 256
@@ -82,6 +90,12 @@ def main() -> int:
     overlap_gain_q8 = update_gain(166, gain_q8)
     close_gain_q8 = update_gain(4_000, weak_gain_q8)
     recovery_gain_q8 = update_gain(582, close_gain_q8)
+    if session_start_gain(256) != session_floor_q8:
+        failures.append("session start must recover a suppressed gain to the 8x floor")
+    if session_start_gain(12 * 256) != 12 * 256:
+        failures.append("session start must preserve an already calibrated gain")
+    if session_start_gain(gain_q8) != gain_q8:
+        failures.append("session start must never exceed the 32x gain ceiling")
     if weak_gain_q8 != 27 * 256 + 125:
         failures.append("weak V2.2 speech must approach the 16000 peak target above 8x")
     if overlap_gain_q8 != 32 * 256 or 166 * overlap_gain_q8 // 256 < 5_000:
@@ -111,10 +125,14 @@ def main() -> int:
         failures.append("session boundary gain reset request is missing")
     else:
         session_body = source[session_start:session_boundary]
-        reset_at = session_body.find("s_pdm_pre_afe_gain_q8 =")
-        if reset_at < 0:
+        floor_at = session_body.find("const uint32_t session_floor_gain_q8 =")
+        if floor_at < 0:
             failures.append(
-                "pre-AFE gain must reset before the session boundary is requested"
+                "pre-AFE gain must apply its bounded session floor before the session boundary is requested"
+            )
+        if "AUDIO_CAPTURE_PDM_SOFTWARE_GAIN_MAX_NUM *" in session_body:
+            failures.append(
+                "session start must not reset pre-AFE gain to the 32x ceiling"
             )
     raw_index = process_body.find("audio_capture_note_pdm_afe_session_input(")
     pre_vad_index = process_body.find("audio_capture_note_pdm_afe_session_pre_vad(")

@@ -90,6 +90,13 @@
  * approach the existing 16000 target; the per-frame peak guard still drops
  * gain immediately for close speech, so this does not weaken headroom. */
 #define AUDIO_CAPTURE_PDM_SOFTWARE_GAIN_MAX_NUM 32U
+/* A new wake candidate must not inherit a near-1x gain after a loud prior
+ * session, but jumping straight to 32x makes the first pre-roll frame decide
+ * the entire candidate gain before the owner's phrase arrives.  Keep the
+ * calibrated gain across sessions and raise only its lower bound.  The
+ * per-frame peak guard below still attacks immediately for a close/loud frame.
+ */
+#define AUDIO_CAPTURE_PDM_SOFTWARE_GAIN_SESSION_FLOOR_NUM 8U
 #define AUDIO_CAPTURE_PDM_SOFTWARE_GAIN_Q8_ONE 256U
 #define AUDIO_CAPTURE_PDM_SOFTWARE_GAIN_TARGET_PEAK 16000U
 #define AUDIO_CAPTURE_PDM_SOFTWARE_GAIN_RECOVERY_Q8 64U
@@ -664,13 +671,18 @@ esp_err_t audio_capture_session_begin_with_preroll(uint32_t pre_roll_ms)
 #ifdef CONFIG_AUDIO_CAPTURE_MIC_SPH0655_PDM
 #if CONFIG_AUDIO_CAPTURE_PDM_AFE_WEBRTC
     /* Apply the session boundary only in the capture task. It clears partial
-     * PCM and resets the short-term pre-AFE gain controller, while preserving
-     * the trained NS/AGC state. The pre-AFE controller is deliberately
-     * session-scoped: a loud transient in the previous recording must not
-     * suppress the first words of the next wake candidate. */
-    s_pdm_pre_afe_gain_q8 =
-        AUDIO_CAPTURE_PDM_SOFTWARE_GAIN_MAX_NUM *
+     * PCM while preserving the trained NS/AGC state and the calibrated
+     * pre-AFE gain.  A previous loud session may have driven that gain close
+     * to 1x, so raise only a bounded startup floor; resetting to the 32x
+     * ceiling made the first pre-roll peak rebase too aggressively and could
+     * remove the owner's wake phrase before the detector saw it.  The
+     * per-frame peak guard still reduces gain immediately for close speech. */
+    const uint32_t session_floor_gain_q8 =
+        AUDIO_CAPTURE_PDM_SOFTWARE_GAIN_SESSION_FLOOR_NUM *
         AUDIO_CAPTURE_PDM_SOFTWARE_GAIN_Q8_ONE;
+    if (s_pdm_pre_afe_gain_q8 < session_floor_gain_q8) {
+        s_pdm_pre_afe_gain_q8 = session_floor_gain_q8;
+    }
     s_pdm_afe_session_boundary_requested = true;
     s_pdm_afe_session_boundary_applied = false;
     s_pdm_afe_session_warmup_ready = false;
