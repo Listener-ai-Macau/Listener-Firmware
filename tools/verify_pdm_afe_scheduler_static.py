@@ -33,9 +33,11 @@ REQUIRED_FRAGMENTS = (
     "PDM VAD low-SNR speech preserved:",
     "config->afe_ringbuf_size = AUDIO_CAPTURE_PDM_AFE_RINGBUF_FRAMES;",
     "#define AUDIO_CAPTURE_PDM_AFE_RINGBUF_FRAMES 24",
-    "#define AUDIO_CAPTURE_PDM_AFE_IDLE_BUDGET_FETCHES 64U",
     "#define AUDIO_CAPTURE_I2S_READ_TIMEOUT_MS 250U",
-    "#define AUDIO_CAPTURE_IDLE_BUDGET_FRAMES 4U",
+    "#define AUDIO_CAPTURE_IDLE_BUDGET_US 20000LL",
+    "#include \"esp_timer.h\"",
+    "static void audio_capture_yield_if_over_budget(int64_t *budget_started_us)",
+    "esp_timer_get_time()",
     "#define AUDIO_CAPTURE_TASK_CORE 0",
     "#define AUDIO_CAPTURE_AFE_FETCH_TASK_CORE 1",
     "#define AUDIO_CAPTURE_PDM_SOFTWARE_GAIN_MAX_NUM 32U",
@@ -191,16 +193,13 @@ def main() -> int:
     agc_index = fetch_body.find("audio_capture_pdm_agc_process(")
     if not 0 <= vad_index < agc_index:
         failures.append("post-NS VAD must classify before the one adaptive AGC")
-    idle_budget_count_index = fetch_body.find(
-        "fetches_since_idle_budget >=\n"
-        "                AUDIO_CAPTURE_PDM_AFE_IDLE_BUDGET_FETCHES"
+    idle_budget_index = fetch_body.find(
+        "audio_capture_yield_if_over_budget(&scheduler_budget_started_us);",
+        agc_index,
     )
-    idle_budget_delay_index = fetch_body.find(
-        "vTaskDelay(1);", idle_budget_count_index
-    )
-    if not 0 <= agc_index < idle_budget_count_index < idle_budget_delay_index:
+    if not 0 <= agc_index < idle_budget_index:
         failures.append(
-            "continuous VADNet fetch must reserve one idle-task tick at the bounded cadence"
+            "continuous VADNet fetch must reserve one idle-task tick at the time budget"
         )
     low_snr_branch = source[
         source.find("if (mean_abs < diagnostic_threshold) {"):
@@ -242,14 +241,12 @@ def main() -> int:
             failures.append(f"missing bounded PDM I2S recovery contract: {fragment!r}")
 
     for fragment in (
-        "frames_since_idle_budget",
-        "if (++frames_since_idle_budget >= AUDIO_CAPTURE_IDLE_BUDGET_FRAMES)",
-        "vTaskDelay(1);",
-        "watchdog_platform_feed_current_task();",
+        "int64_t scheduler_budget_started_us = esp_timer_get_time();",
+        "audio_capture_yield_if_over_budget(&scheduler_budget_started_us);",
     ):
         if fragment not in capture_body:
             failures.append(
-                f"capture task must periodically yield to the CPU0 idle WDT subscriber: {fragment!r}"
+                f"capture task must use the shared time-based scheduler budget: {fragment!r}"
             )
 
     for fragment in (

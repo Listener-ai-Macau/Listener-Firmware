@@ -24,6 +24,17 @@ This is an identity/transport fix only.  It does not change wake thresholds,
 voiceprint scoring, endpoint timing, watchdog limits, audio gain, or the
 recording state machine.
 
+## Scheduler root-cause hardening
+
+The retained September 3 incident was a separate firmware path: during an
+active PDM/AFE session, the watchdog reported `task_wdt` while CPU0 was running
+the audio capture task.  The old guard yielded after a fixed number of frames,
+which is not a time bound when I2S/DSP calls or an empty AFE result change their
+return cadence.  The capture and AFE-fetch loops now share a 20 ms runnable-time
+budget and invoke the same one-tick yield after successful frames, empty/error
+results, and I2S recovery.  The watchdog remains strict (`task_wdt=5 s`,
+`interrupt_wdt=300 ms`); no timeout is extended or disabled.
+
 ## Verification
 
 - `python tools/verify_pdm_afe_scheduler_static.py` passes and requires the

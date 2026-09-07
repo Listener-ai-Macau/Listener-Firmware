@@ -35,6 +35,7 @@
 #include "esp_heap_caps.h"
 #include "esp_log.h"
 #include "esp_random.h"
+#include "esp_timer.h"
 #include "diag_log.h"
 #include "diag_log_events.h"
 #include "watchdog_platform.h"
@@ -75,7 +76,12 @@
 #define AUDIO_CAPTURE_IDLE_POWER_SAVE_WAIT_MS 5000U
 #define AUDIO_CAPTURE_OTA_SUSPEND_TIMEOUT_MS 250U
 #define AUDIO_CAPTURE_I2S_READ_TIMEOUT_MS 250U
-#define AUDIO_CAPTURE_IDLE_BUDGET_FRAMES 4U
+/* The audio tasks are watchdog-subscribed and run at priority 5.  A frame
+ * counter is not a scheduler budget: I2S/AFE can return a variable number of
+ * frames per tick, and an empty AFE result can make the fetch loop spin without
+ * producing a frame at all.  Bound runnable time directly so both success and
+ * error paths always give the core idle task a chance to feed its TWDT entry. */
+#define AUDIO_CAPTURE_IDLE_BUDGET_US 20000LL
 #define AUDIO_CAPTURE_PDM_HW_AMPLIFY_NUM 8U
 /* ESP32-S3 does not expose SOC_I2S_SUPPORTS_PDM_RX_HP_FILTER, so the nominal
  * hardware amplify setting below is not applied on this board. Calibrate the
@@ -380,6 +386,27 @@ static void audio_capture_wake_task(void)
     }
 #endif
 #endif
+}
+
+/* Keep the capture and AFE fetch loops on one scheduler contract.  This is
+ * deliberately time based rather than frame based: driver queues may drain in
+ * a burst, while an AFE error result may return immediately with no PCM.  The
+ * helper is safe to call after every loop branch and performs only one tick of
+ * delay when the bounded runnable budget is exceeded. */
+static void audio_capture_yield_if_over_budget(int64_t *budget_started_us)
+{
+    if (budget_started_us == NULL) {
+        return;
+    }
+
+    int64_t now_us = esp_timer_get_time();
+    if (now_us - *budget_started_us < AUDIO_CAPTURE_IDLE_BUDGET_US) {
+        return;
+    }
+
+    *budget_started_us = now_us;
+    vTaskDelay(1);
+    watchdog_platform_feed_current_task();
 }
 
 static esp_err_t audio_capture_voice_preroll_init(void)
@@ -1617,7 +1644,7 @@ i2c_master_bus_handle_t audio_capture_get_i2c_bus_handle(void)
 static void audio_capture_task(void *arg)
 {
     int16_t frame_buffer[AUDIO_CAPTURE_FRAME_SAMPLES];
-    uint32_t frames_since_idle_budget = 0u;
+    int64_t scheduler_budget_started_us = esp_timer_get_time();
     (void)watchdog_platform_subscribe_current_task("audio_capture_task");
 
     while (1) {
@@ -1637,18 +1664,7 @@ static void audio_capture_task(void *arg)
             audio_capture_note_transport_backpressure();
             audio_capture_update_recording_level_from_raw_input(frame_buffer);
             audio_capture_process_frame(frame_buffer);
-            if (++frames_since_idle_budget >= AUDIO_CAPTURE_IDLE_BUDGET_FRAMES) {
-                /*
-                 * I2S can return immediately while DMA data is queued. The
-                 * capture task is watchdog-subscribed and priority 5, so a
-                 * sustained recording could otherwise run forever without
-                 * letting IDLE0 execute; that starves the idle-task TWDT
-                 * subscriber even though this task feeds its own entry.
-                 */
-                frames_since_idle_budget = 0u;
-                vTaskDelay(1);
-                watchdog_platform_feed_current_task();
-            }
+            audio_capture_yield_if_over_budget(&scheduler_budget_started_us);
             continue;
         }
 
@@ -1672,6 +1688,7 @@ static void audio_capture_task(void *arg)
             diag_log(DIAG_SRC_AUDIO, DIAG_AUDIO_DROP, DIAG_SEV_WARN, s_dropped_frame_count, ret, 0, 0);
         }
 
+        audio_capture_yield_if_over_budget(&scheduler_budget_started_us);
         vTaskDelay(pdMS_TO_TICKS(5));
     }
 }
@@ -2538,7 +2555,7 @@ static void audio_capture_pdm_afe_fetch_task(void *arg)
 {
     (void)arg;
     (void)watchdog_platform_subscribe_current_task("audio_afe_fetch_task");
-    uint32_t fetches_since_idle_budget = 0u;
+    int64_t scheduler_budget_started_us = esp_timer_get_time();
 
     while (true) {
         watchdog_platform_feed_current_task();
@@ -2550,6 +2567,7 @@ static void audio_capture_pdm_afe_fetch_task(void *arg)
             (void)watchdog_platform_task_notify_take_low_power(
                 pdTRUE,
                 AUDIO_CAPTURE_IDLE_POWER_SAVE_WAIT_MS);
+            scheduler_budget_started_us = esp_timer_get_time();
             continue;
         }
         size_t sample_count = 0;
@@ -2559,6 +2577,7 @@ static void audio_capture_pdm_afe_fetch_task(void *arg)
                 pdMS_TO_TICKS(AUDIO_CAPTURE_PDM_AFE_FETCH_WAIT_MS));
         if (result == NULL || result->ret_value != ESP_OK) {
             audio_capture_pdm_afe_complete_stop_drain();
+            audio_capture_yield_if_over_budget(&scheduler_budget_started_us);
             continue;
         }
         if (!s_pdm_afe_session_boundary_requested && result->data != NULL && result->data_size > 0) {
@@ -2587,20 +2606,12 @@ static void audio_capture_pdm_afe_fetch_task(void *arg)
             audio_capture_pdm_agc_process(
                 s_pdm_afe_fetch_buffer,
                 sample_count);
-            fetches_since_idle_budget++;
-            if (fetches_since_idle_budget >=
-                AUDIO_CAPTURE_PDM_AFE_IDLE_BUDGET_FETCHES) {
-                fetches_since_idle_budget = 0u;
-                /*
-                 * VADNet can keep the fetch queue continuously runnable under
-                 * sustained noise. Give the watched CPU1 idle task one tick
-                 * at a bounded cadence; the 240 ms AFE ring absorbs this
-                 * 10 ms scheduler budget without dropping PCM.
-                 */
-                vTaskDelay(1);
-                watchdog_platform_feed_current_task();
-            }
         }
+        /* VADNet can keep the fetch queue continuously runnable under
+         * sustained noise. Use the same time budget as the I2S producer so an
+         * error/empty result and a normal burst have identical scheduler
+         * behavior; the 240 ms AFE ring absorbs the one-tick yield. */
+        audio_capture_yield_if_over_budget(&scheduler_budget_started_us);
     }
 }
 
@@ -2871,7 +2882,7 @@ static void audio_capture_task(void *arg)
     int16_t interleaved_frame_buffer[AUDIO_CAPTURE_FRAME_SAMPLES * 2U];
 #endif
     int16_t frame_buffer[AUDIO_CAPTURE_FRAME_SAMPLES];
-    uint32_t frames_since_idle_budget = 0u;
+    int64_t scheduler_budget_started_us = esp_timer_get_time();
     (void)watchdog_platform_subscribe_current_task("audio_capture_task");
 
     while (1) {
@@ -2919,16 +2930,7 @@ static void audio_capture_task(void *arg)
 #else
             audio_capture_process_frame(frame_buffer);
 #endif
-            if (++frames_since_idle_budget >= AUDIO_CAPTURE_IDLE_BUDGET_FRAMES) {
-                /*
-                 * A continuously filled DMA queue makes i2s_channel_read()
-                 * return without blocking. Yield periodically so CPU0's IDLE
-                 * task can run and feed its strict Task WDT subscription.
-                 */
-                frames_since_idle_budget = 0u;
-                vTaskDelay(1);
-                watchdog_platform_feed_current_task();
-            }
+            audio_capture_yield_if_over_budget(&scheduler_budget_started_us);
             continue;
         }
 
@@ -2961,7 +2963,7 @@ static void audio_capture_task(void *arg)
                 ESP_ERR_TIMEOUT,
                 s_i2s_stall_recovery_count,
                 (uint32_t)enable_ret);
-            watchdog_platform_feed_current_task();
+            audio_capture_yield_if_over_budget(&scheduler_budget_started_us);
             vTaskDelay(1);
             continue;
         }
@@ -2971,6 +2973,7 @@ static void audio_capture_task(void *arg)
                      s_dropped_frame_count, esp_err_to_name(ret));
             diag_log(DIAG_SRC_AUDIO, DIAG_AUDIO_I2S_FAIL, DIAG_SEV_WARN, s_dropped_frame_count, ret, 0, 0);
         }
+        audio_capture_yield_if_over_budget(&scheduler_budget_started_us);
         vTaskDelay(pdMS_TO_TICKS(5));
     }
 }
