@@ -34,6 +34,7 @@
 
 #include "esp_heap_caps.h"
 #include "esp_log.h"
+#include "esp_random.h"
 #include "diag_log.h"
 #include "diag_log_events.h"
 #include "watchdog_platform.h"
@@ -229,7 +230,16 @@ static uint32_t s_dropped_frame_count;
 static uint32_t s_i2s_stall_recovery_count;
 static audio_capture_export_state_t s_export_state;
 static SemaphoreHandle_t s_state_mutex;
-static uint32_t s_session_id_counter;
+/*
+ * Session ids cross the BLE reconnect boundary.  A plain per-boot counter
+ * restarted at 1 after USB/WDT reset, so the host's orphan-tail quarantine
+ * could mistake the first post-reset session for a replay of an old one.
+ * Keep the familiar monotonically increasing low word for diagnostics, but
+ * put it in a boot-local random namespace.  The namespace is regenerated if
+ * the low word wraps, so a single boot never reuses an id.
+ */
+static uint16_t s_session_id_boot_namespace;
+static uint16_t s_session_id_counter;
 static audio_capture_voice_activity_handler_t s_voice_activity_handler;
 static volatile bool s_voice_activation_monitoring;
 static volatile uint8_t s_raw_input_level_percent;
@@ -242,6 +252,34 @@ static uint16_t s_session_preroll_start_index;
 static uint16_t s_session_preroll_count;
 
 static esp_err_t audio_capture_i2s_init(void);
+
+static uint16_t audio_capture_next_boot_namespace(uint16_t previous)
+{
+    uint16_t namespace_id = (uint16_t)(esp_random() & UINT16_MAX);
+    if (namespace_id == 0u || namespace_id == previous) {
+        namespace_id = (uint16_t)(previous + 1u);
+        if (namespace_id == 0u) {
+            namespace_id = 1u;
+        }
+    }
+    return namespace_id;
+}
+
+static uint32_t audio_capture_next_session_id(void)
+{
+    if (s_session_id_boot_namespace == 0u) {
+        s_session_id_boot_namespace = audio_capture_next_boot_namespace(0u);
+    }
+
+    uint16_t counter = (uint16_t)(s_session_id_counter + 1u);
+    if (counter == 0u) {
+        s_session_id_boot_namespace =
+            audio_capture_next_boot_namespace(s_session_id_boot_namespace);
+        counter = 1u;
+    }
+    s_session_id_counter = counter;
+    return ((uint32_t)s_session_id_boot_namespace << 16) | (uint32_t)counter;
+}
 #ifdef CONFIG_AUDIO_CAPTURE_MIC_SPH0655_PDM
 #if CONFIG_AUDIO_CAPTURE_PDM_STEREO_SLOT_CAPTURE
 /* ESP-IDF returns the right PDM slot first in a stereo PCM buffer. Keep the
@@ -643,7 +681,7 @@ esp_err_t audio_capture_session_begin_with_preroll(uint32_t pre_roll_ms)
     s_export_state.duration_seconds = 0;
     s_export_state.total_frames = total_frames;
     s_export_state.pcm_bytes_total = 0;
-    s_export_state.session_id = ++s_session_id_counter;
+    s_export_state.session_id = audio_capture_next_session_id();
     s_export_state.start_origin = pre_roll_ms > 0u
         ? LISTENER_AUDIO_SESSION_START_ORIGIN_VOICE_ACTIVATION
         : LISTENER_AUDIO_SESSION_START_ORIGIN_USER;

@@ -42,6 +42,12 @@ REQUIRED_FRAGMENTS = (
     "#define AUDIO_CAPTURE_PDM_SOFTWARE_GAIN_SESSION_FLOOR_NUM 8U",
     "#define AUDIO_CAPTURE_PDM_SOFTWARE_GAIN_TARGET_PEAK 16000U",
     "#define AUDIO_CAPTURE_PDM_SOFTWARE_GAIN_RECOVERY_Q8 64U",
+    "#include \"esp_random.h\"",
+    "static uint16_t s_session_id_boot_namespace;",
+    "static uint32_t audio_capture_next_session_id(void)",
+    "esp_random()",
+    "return ((uint32_t)s_session_id_boot_namespace << 16) | (uint32_t)counter;",
+    "s_export_state.session_id = audio_capture_next_session_id();",
     "audio_capture_apply_pdm_software_gain(frame_buffer);",
     "const uint32_t session_floor_gain_q8 =\n        AUDIO_CAPTURE_PDM_SOFTWARE_GAIN_SESSION_FLOOR_NUM *",
     "if (s_pdm_pre_afe_gain_q8 < session_floor_gain_q8) {",
@@ -134,6 +140,21 @@ def main() -> int:
             failures.append(
                 "session start must not reset pre-AFE gain to the 32x ceiling"
             )
+
+    if "s_export_state.session_id = ++s_session_id_counter;" in source:
+        failures.append(
+            "audio session ids must not restart from 1 after a firmware reboot"
+        )
+    session_id_helper_start = source.find(
+        "static uint32_t audio_capture_next_session_id(void)"
+    )
+    session_begin_start = source.find(
+        "esp_err_t audio_capture_session_begin_with_preroll("
+    )
+    if not 0 <= session_id_helper_start < session_begin_start:
+        failures.append(
+            "boot-scoped session-id allocator must be defined before session begin"
+        )
     raw_index = process_body.find("audio_capture_note_pdm_afe_session_input(")
     pre_vad_index = process_body.find("audio_capture_note_pdm_afe_session_pre_vad(")
     feed_index = process_body.find("s_pdm_afe_handle->feed(")
