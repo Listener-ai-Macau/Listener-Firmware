@@ -75,10 +75,10 @@ CONFIG_PM_SLEEP_FUNC_IN_IRAM=y
 CONFIG_FREERTOS_USE_TICKLESS_IDLE=y
 CONFIG_FREERTOS_IDLE_TIME_BEFORE_SLEEP=3
 # Keep the BLE controller awake. Windows HID pairing is sensitive to missed HCI
-# control events during SMP / remote feature exchange. Runtime PM keeps DFS,
-# while main/main.c globally disables automatic Light Sleep: without controller
-# modem sleep, real CONNECTED_IDLE transitions caused ESP_RST_INT_WDT. The
-# connected NO_LIGHT_SLEEP lock remains a defensive invariant, not the sole gate.
+# control events during SMP / remote feature exchange. Runtime PM keeps DFS;
+# power_manager holds ESP_PM_NO_LIGHT_SLEEP while CONNECTED_IDLE is active.
+# Without that lock, real CONNECTED_IDLE transitions can trigger ESP_RST_INT_WDT
+# because controller modem sleep is intentionally disabled for Windows HID.
 # CONFIG_BT_CTRL_MODEM_SLEEP is not set
 CONFIG_BT_CTRL_LPCLK_SEL_MAIN_XTAL=y
 CONFIG_BT_CTRL_MAIN_XTAL_PU_DURING_LIGHT_SLEEP=y

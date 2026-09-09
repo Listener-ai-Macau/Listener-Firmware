@@ -245,6 +245,10 @@ static power_manager_state_t s_state = POWER_MANAGER_STATE_ACTIVE;
 /* Test-only and RAM-only. It expires on real activity, loss of the BLE link,
  * or any awake blocker; production inactivity timers remain unchanged. */
 static bool s_test_idle_override_active;
+#if CONFIG_PM_ENABLE
+static esp_pm_lock_handle_t s_connected_idle_no_light_sleep_lock;
+static bool s_connected_idle_no_light_sleep_lock_held;
+#endif
 
 static bool power_manager_gpio_is_valid(gpio_num_t gpio)
 {
@@ -1223,11 +1227,6 @@ static power_manager_state_t power_manager_target_state_locked(uint64_t now_ms)
         .shutdown_idle_ms = hardware_shutdown_ms,
         .sleep_enabled =
             low_power_idle_ms > 0u &&
-            /* The connected-idle transition has a retained ESP_RST_INT_WDT
-             * failure at the 60 s boundary on the Windows BLE path. Keep a
-             * live link in ACTIVE until the independent hardware-shutdown
-             * deadline; disconnected idle remains available. */
-            !s_ble_connected &&
             (!s_external_power_present || power_manager_plugged_low_power_enabled()),
         .shutdown_enabled = CONFIG_POWER_MANAGER_ENABLE && hardware_shutdown_ms > 0u,
     };
@@ -1380,6 +1379,8 @@ static void power_manager_set_audio_idle_power_save(bool enabled)
     }
 }
 
+static void power_manager_set_connected_idle_no_light_sleep(bool hold);
+
 static void power_manager_apply_state(
     power_manager_state_t previous,
     power_manager_state_t next,
@@ -1395,6 +1396,7 @@ static void power_manager_apply_state(
 
     switch (next) {
     case POWER_MANAGER_STATE_ACTIVE:
+        power_manager_set_connected_idle_no_light_sleep(false);
         if (status_led_set_low_power_disabled != NULL) {
             status_led_set_low_power_disabled(false);
         }
@@ -1414,6 +1416,7 @@ static void power_manager_apply_state(
         }
         break;
     case POWER_MANAGER_STATE_CONNECTED_IDLE:
+        power_manager_set_connected_idle_no_light_sleep(true);
         if (status_led_set_low_power_disabled != NULL) {
             status_led_set_low_power_disabled(true);
         }
@@ -1433,6 +1436,7 @@ static void power_manager_apply_state(
         }
         break;
     case POWER_MANAGER_STATE_DISCONNECTED_IDLE:
+        power_manager_set_connected_idle_no_light_sleep(false);
         if (status_led_set_low_power_disabled != NULL) {
             status_led_set_low_power_disabled(true);
         }
@@ -1457,6 +1461,7 @@ static void power_manager_apply_state(
         }
         break;
     case POWER_MANAGER_STATE_HARDWARE_SHUTDOWN:
+        power_manager_set_connected_idle_no_light_sleep(false);
         /*
          * The final shutdown LED cue is owned by power_manager_enter_hardware_shutdown().
          * Do not enqueue the ordinary idle low-power LED clear here; depending on
@@ -1743,7 +1748,6 @@ void power_manager_get_snapshot(power_manager_snapshot_t *snapshot)
     snapshot->plugged_low_power_enabled = power_manager_plugged_low_power_enabled();
     snapshot->low_power_idle_allowed =
         snapshot->low_power_idle_threshold_ms > 0U &&
-        !snapshot->ble_connected &&
         (!snapshot->external_power_present || snapshot->plugged_low_power_enabled);
     snapshot->power_input_wake_configured = s_power_input_wake_configured;
     snapshot->power_input_irq_armed = s_power_input_irq_armed;
@@ -2678,6 +2682,54 @@ void power_manager_set_blocker(uint32_t blocker_mask, bool enabled)
     if (s_task_handle != NULL) {
         xTaskNotifyGive(s_task_handle);
     }
+}
+
+/*
+ * The BLE controller is deliberately built without controller modem sleep for
+ * Windows HID stability. A connected-idle CPU light-sleep entry is therefore
+ * unsafe: the controller still expects its interrupt/timer service while both
+ * FreeRTOS idle tasks may enter light sleep. Keep CONNECTED_IDLE as the
+ * product state, but hold the PM lock across that state. Audio and LED power
+ * saving remain independent of this controller-safety lock.
+ */
+static void power_manager_set_connected_idle_no_light_sleep(bool hold)
+{
+#if CONFIG_PM_ENABLE
+    if (s_connected_idle_no_light_sleep_lock == NULL) {
+        esp_err_t create_ret = esp_pm_lock_create(
+            ESP_PM_NO_LIGHT_SLEEP,
+            0,
+            "listener_ble_idle",
+            &s_connected_idle_no_light_sleep_lock);
+        if (create_ret != ESP_OK) {
+            ESP_LOGE(TAG, "connected-idle NO_LIGHT_SLEEP lock create failed: %s",
+                     esp_err_to_name(create_ret));
+            return;
+        }
+    }
+
+    if (hold && !s_connected_idle_no_light_sleep_lock_held) {
+        esp_err_t acquire_ret = esp_pm_lock_acquire(s_connected_idle_no_light_sleep_lock);
+        if (acquire_ret == ESP_OK) {
+            s_connected_idle_no_light_sleep_lock_held = true;
+            ESP_LOGI(TAG, "connected-idle NO_LIGHT_SLEEP lock acquired");
+        } else {
+            ESP_LOGE(TAG, "connected-idle NO_LIGHT_SLEEP lock acquire failed: %s",
+                     esp_err_to_name(acquire_ret));
+        }
+    } else if (!hold && s_connected_idle_no_light_sleep_lock_held) {
+        esp_err_t release_ret = esp_pm_lock_release(s_connected_idle_no_light_sleep_lock);
+        if (release_ret == ESP_OK) {
+            s_connected_idle_no_light_sleep_lock_held = false;
+            ESP_LOGI(TAG, "connected-idle NO_LIGHT_SLEEP lock released");
+        } else {
+            ESP_LOGE(TAG, "connected-idle NO_LIGHT_SLEEP lock release failed: %s",
+                     esp_err_to_name(release_ret));
+        }
+    }
+#else
+    (void)hold;
+#endif
 }
 
 bool power_manager_try_acquire_voice_activation(void)
