@@ -1468,45 +1468,24 @@ static void power_manager_apply_state(
         }
         break;
     case POWER_MANAGER_STATE_CONNECTED_IDLE:
-        diag_log(DIAG_SRC_POWER, DIAG_POWER_IDLE_ACTION, DIAG_SEV_INFO,
-                 5U, 1U, (uint32_t)next, blockers);
         power_manager_set_connected_idle_no_light_sleep(true);
-        diag_log(DIAG_SRC_POWER, DIAG_POWER_IDLE_ACTION, DIAG_SEV_INFO,
-                 5U, 2U, (uint32_t)next, blockers);
-        /* Diagnostic isolation: do not enqueue the asynchronous LED/RMT idle
-         * frame here.  Retained stage markers determine whether that worker,
-         * rather than the synchronous power transition, owns the INT_WDT. */
-        diag_log(DIAG_SRC_POWER, DIAG_POWER_IDLE_ACTION, DIAG_SEV_INFO,
-                 5U, 3U, (uint32_t)next, blockers);
+        if (status_led_set_low_power_disabled != NULL) {
+            status_led_set_low_power_disabled(true);
+        }
         /* Voice wake is intentionally unavailable after the Bluetooth light
          * turns off. ACTIVE re-enables audio and refreshes voice monitoring. */
-        /* Keep the I2S channel resident while the live BLE link is in
-         * CONNECTED_IDLE.  On this ESP32-S3 board, synchronously disabling
-         * the audio DMA channel at the same boundary as the BLE idle policy
-         * can starve the interrupt watchdog and reboot the device.  Voice
-         * activation is already disabled by the power-state transition; the
-         * physical audio shutdown is deferred to DISCONNECTED_IDLE, where no
-         * link service has to share that critical section. */
-        if (!s_ble_connected && power_manager_audio_idle_blockers(blockers) == 0) {
+        if (power_manager_audio_idle_blockers(blockers) == 0) {
             power_manager_set_audio_idle_power_save(true);
         }
-        diag_log(DIAG_SRC_POWER, DIAG_POWER_IDLE_ACTION, DIAG_SEV_INFO,
-                 5U, 4U, (uint32_t)next, blockers);
         if (system_health_set_low_power_mode != NULL) {
             system_health_set_low_power_mode(true);
         }
-        diag_log(DIAG_SRC_POWER, DIAG_POWER_IDLE_ACTION, DIAG_SEV_INFO,
-                 5U, 5U, (uint32_t)next, blockers);
         if (ble_hid_gap_set_low_power_advertising != NULL) {
             (void)ble_hid_gap_set_low_power_advertising(false);
         }
-        diag_log(DIAG_SRC_POWER, DIAG_POWER_IDLE_ACTION, DIAG_SEV_INFO,
-                 5U, 6U, (uint32_t)next, blockers);
         if (ble_hid_gap_request_low_power_connection != NULL) {
             (void)ble_hid_gap_request_low_power_connection();
         }
-        diag_log(DIAG_SRC_POWER, DIAG_POWER_IDLE_ACTION, DIAG_SEV_INFO,
-                 5U, 7U, (uint32_t)next, blockers);
         break;
     case POWER_MANAGER_STATE_DISCONNECTED_IDLE:
         power_manager_set_connected_idle_no_light_sleep(false);
@@ -1552,19 +1531,11 @@ static void power_manager_apply_state(
     if (ble_hid_battery_task_wake != NULL) {
         ble_hid_battery_task_wake();
     }
-    if (next == POWER_MANAGER_STATE_CONNECTED_IDLE) {
-        diag_log(DIAG_SRC_POWER, DIAG_POWER_IDLE_ACTION, DIAG_SEV_INFO,
-                 5U, 8U, (uint32_t)next, blockers);
-    }
 
     /* Re-evaluate VA after every power transition. LST-WAKE-012 keeps it off
      * in Bluetooth-light-off idle and re-arms only after normal recovery. */
     if (voice_recording_control_on_power_state_changed != NULL) {
         voice_recording_control_on_power_state_changed();
-    }
-    if (next == POWER_MANAGER_STATE_CONNECTED_IDLE) {
-        diag_log(DIAG_SRC_POWER, DIAG_POWER_IDLE_ACTION, DIAG_SEV_INFO,
-                 5U, 9U, (uint32_t)next, blockers);
     }
 }
 
@@ -1574,10 +1545,7 @@ static void power_manager_apply_fast_idle_actions(power_manager_state_t state, u
         /* Hidden voice candidates are canceled asynchronously at the idle
          * boundary. Retry the mic power-save transition after their audio
          * drain clears the VOICE_ACTIVATION blocker. */
-        const bool keep_connected_i2s_resident =
-            state == POWER_MANAGER_STATE_CONNECTED_IDLE && s_ble_connected;
-        if (!keep_connected_i2s_resident &&
-            power_manager_audio_idle_blockers(blockers) == 0) {
+        if (power_manager_audio_idle_blockers(blockers) == 0) {
             power_manager_set_audio_idle_power_save(true);
         }
         return;
@@ -2461,20 +2429,8 @@ static void power_manager_evaluate(void)
     power_manager_log_transition(previous, next, user_idle_ms, blockers);
     power_manager_apply_state(previous, next, blockers);
     power_manager_apply_fast_idle_actions(next, user_idle_ms, blockers);
-    if (next == POWER_MANAGER_STATE_CONNECTED_IDLE) {
-        diag_log(DIAG_SRC_POWER, DIAG_POWER_IDLE_ACTION, DIAG_SEV_INFO,
-                 5U, 10U, (uint32_t)next, blockers);
-    }
     power_manager_guard_runtime_power_hold_low(next);
-    if (next == POWER_MANAGER_STATE_CONNECTED_IDLE) {
-        diag_log(DIAG_SRC_POWER, DIAG_POWER_IDLE_ACTION, DIAG_SEV_INFO,
-                 5U, 11U, (uint32_t)next, blockers);
-    }
     power_manager_update_power_input_irq_arm(next, &power_source);
-    if (next == POWER_MANAGER_STATE_CONNECTED_IDLE) {
-        diag_log(DIAG_SRC_POWER, DIAG_POWER_IDLE_ACTION, DIAG_SEV_INFO,
-                 5U, 12U, (uint32_t)next, blockers);
-    }
 
     if (log_automatic_shutdown_blocked) {
         char shutdown_blocker_text[96];

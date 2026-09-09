@@ -5176,11 +5176,7 @@ esp_err_t ble_hid_gap_request_low_power_connection(void)
      * ESP32-S3 with ESP_RST_INT_WDT while the controller applies the update.
      * Centralize the guard here so power-manager and post-audio callers cannot
      * re-enter the unsafe asynchronous transition through different paths. */
-    /* This guard must be side-effect free.  Clearing
-     * s_active_connection_required here races the low-priority active-link
-     * worker at the CONNECTED_IDLE boundary even though no connection update
-     * is sent.  The live Windows link keeps its already-negotiated parameters
-     * and promotion ownership until an ordinary disconnect resets the state. */
+    ble_hid_gap_set_active_connection_required(false);
     ESP_LOGI(
         TAG,
         "low-power idle retains stable BLE connection parameters: runtime switch disabled by INT_WDT guard");
