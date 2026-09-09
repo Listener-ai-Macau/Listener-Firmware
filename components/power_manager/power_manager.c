@@ -1427,9 +1427,9 @@ static void power_manager_apply_state(
         power_manager_set_connected_idle_no_light_sleep(true);
         diag_log(DIAG_SRC_POWER, DIAG_POWER_IDLE_ACTION, DIAG_SEV_INFO,
                  5U, 2U, (uint32_t)next, blockers);
-        if (status_led_set_low_power_disabled != NULL) {
-            status_led_set_low_power_disabled(true);
-        }
+        /* Diagnostic isolation: do not enqueue the asynchronous LED/RMT idle
+         * frame here.  Retained stage markers determine whether that worker,
+         * rather than the synchronous power transition, owns the INT_WDT. */
         diag_log(DIAG_SRC_POWER, DIAG_POWER_IDLE_ACTION, DIAG_SEV_INFO,
                  5U, 3U, (uint32_t)next, blockers);
         /* Voice wake is intentionally unavailable after the Bluetooth light
