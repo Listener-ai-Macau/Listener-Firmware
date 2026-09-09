@@ -343,7 +343,34 @@ static esp_err_t power_manager_set_power_input_interrupt(gpio_num_t gpio, bool e
     if (!power_manager_gpio_is_valid(gpio)) {
         return ESP_ERR_NOT_SUPPORTED;
     }
-    return enabled ? gpio_intr_enable(gpio) : gpio_intr_disable(gpio);
+    if (!enabled) {
+        return gpio_intr_disable(gpio);
+    }
+
+    /* gpio_wakeup_enable(..., GPIO_INTR_LOW_LEVEL) uses the GPIO interrupt
+     * type field too.  Reassert the runtime edge type immediately before the
+     * ordinary ISR is enabled; otherwise an asserted charger-status pin can
+     * become a level-triggered interrupt storm in CONNECTED_IDLE. */
+    (void)gpio_wakeup_disable(gpio);
+    esp_err_t type_ret = gpio_set_intr_type(gpio, GPIO_INTR_ANYEDGE);
+    if (type_ret != ESP_OK) {
+        return type_ret;
+    }
+    return gpio_intr_enable(gpio);
+}
+
+static esp_err_t power_manager_set_power_input_light_sleep_wake(
+    gpio_num_t gpio,
+    bool enabled)
+{
+    if (!power_manager_gpio_is_valid(gpio)) {
+        return ESP_ERR_NOT_SUPPORTED;
+    }
+    if (!enabled) {
+        return gpio_wakeup_disable(gpio);
+    }
+    (void)gpio_intr_disable(gpio);
+    return gpio_wakeup_enable(gpio, GPIO_INTR_LOW_LEVEL);
 }
 
 static esp_err_t power_manager_set_power_input_irq_armed(bool armed)
@@ -411,17 +438,36 @@ static void power_manager_update_power_input_irq_arm(
     power_manager_state_t state,
     const power_manager_power_source_snapshot_t *source)
 {
-    bool should_arm =
+    bool source_is_battery =
         source != NULL &&
-        !source->external_power_present &&
-        (state == POWER_MANAGER_STATE_CONNECTED_IDLE ||
-         state == POWER_MANAGER_STATE_DISCONNECTED_IDLE);
-    esp_err_t ret = power_manager_set_power_input_irq_armed(should_arm);
+        !source->external_power_present;
+    bool should_arm_runtime_edge =
+        source_is_battery && state == POWER_MANAGER_STATE_CONNECTED_IDLE;
+    bool should_arm_light_sleep_wake =
+        source_is_battery && state == POWER_MANAGER_STATE_DISCONNECTED_IDLE;
+    esp_err_t chg_wake_ret = power_manager_set_power_input_light_sleep_wake(
+        BOARD_PINS_BAT_CHG_IO,
+        should_arm_light_sleep_wake);
+    esp_err_t std_wake_ret = power_manager_set_power_input_light_sleep_wake(
+        BOARD_PINS_BAT_STD_IO,
+        should_arm_light_sleep_wake);
+    if (chg_wake_ret != ESP_OK && std_wake_ret != ESP_OK) {
+        ESP_LOGW(
+            TAG,
+            "power input light-sleep wake %s failed: chg=%s std=%s",
+            should_arm_light_sleep_wake ? "arm" : "disarm",
+            esp_err_to_name(chg_wake_ret),
+            esp_err_to_name(std_wake_ret));
+    }
+
+    /* Configure the ordinary edge ISR last because the wake-source helper
+     * intentionally disarms the normal interrupt while changing wake type. */
+    esp_err_t ret = power_manager_set_power_input_irq_armed(should_arm_runtime_edge);
     if (ret != ESP_OK) {
         ESP_LOGW(
             TAG,
             "power input wake interrupt %s failed: %s",
-            should_arm ? "arm" : "disarm",
+            should_arm_runtime_edge ? "arm" : "disarm",
             esp_err_to_name(ret));
     }
 }
@@ -2415,8 +2461,20 @@ static void power_manager_evaluate(void)
     power_manager_log_transition(previous, next, user_idle_ms, blockers);
     power_manager_apply_state(previous, next, blockers);
     power_manager_apply_fast_idle_actions(next, user_idle_ms, blockers);
+    if (next == POWER_MANAGER_STATE_CONNECTED_IDLE) {
+        diag_log(DIAG_SRC_POWER, DIAG_POWER_IDLE_ACTION, DIAG_SEV_INFO,
+                 5U, 10U, (uint32_t)next, blockers);
+    }
     power_manager_guard_runtime_power_hold_low(next);
+    if (next == POWER_MANAGER_STATE_CONNECTED_IDLE) {
+        diag_log(DIAG_SRC_POWER, DIAG_POWER_IDLE_ACTION, DIAG_SEV_INFO,
+                 5U, 11U, (uint32_t)next, blockers);
+    }
     power_manager_update_power_input_irq_arm(next, &power_source);
+    if (next == POWER_MANAGER_STATE_CONNECTED_IDLE) {
+        diag_log(DIAG_SRC_POWER, DIAG_POWER_IDLE_ACTION, DIAG_SEV_INFO,
+                 5U, 12U, (uint32_t)next, blockers);
+    }
 
     if (log_automatic_shutdown_blocked) {
         char shutdown_blocker_text[96];
