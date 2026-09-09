@@ -1506,7 +1506,10 @@ static void power_manager_apply_fast_idle_actions(power_manager_state_t state, u
         /* Hidden voice candidates are canceled asynchronously at the idle
          * boundary. Retry the mic power-save transition after their audio
          * drain clears the VOICE_ACTIVATION blocker. */
-        if (power_manager_audio_idle_blockers(blockers) == 0) {
+        const bool keep_connected_i2s_resident =
+            state == POWER_MANAGER_STATE_CONNECTED_IDLE && s_ble_connected;
+        if (!keep_connected_i2s_resident &&
+            power_manager_audio_idle_blockers(blockers) == 0) {
             power_manager_set_audio_idle_power_save(true);
         }
         return;
