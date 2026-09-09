@@ -1396,7 +1396,13 @@ static void power_manager_apply_state(
 
     switch (next) {
     case POWER_MANAGER_STATE_ACTIVE:
-        power_manager_set_connected_idle_no_light_sleep(false);
+        /* The controller is built without modem sleep for Windows HID
+         * stability.  A connected ACTIVE session can still reach a FreeRTOS
+         * light-sleep window between audio packets, which is the same
+         * interrupt-WDT hazard as CONNECTED_IDLE.  Keep the CPU awake for the
+         * whole live BLE link; disconnected idle and hardware shutdown still
+         * release the lock below. */
+        power_manager_set_connected_idle_no_light_sleep(s_ble_connected);
         if (status_led_set_low_power_disabled != NULL) {
             status_led_set_low_power_disabled(false);
         }
@@ -2791,6 +2797,13 @@ void power_manager_set_ble_connected(bool connected)
         power_manager_log_transition(previous, next, 0, blockers);
         power_manager_apply_state(previous, next, blockers);
     }
+    /* State transitions are not guaranteed on a link edge (for example an
+     * ACTIVE device may remain ACTIVE when Type reconnects).  Refresh the
+     * controller-safety PM lock explicitly so every connected interval is
+     * protected from automatic light sleep, not only the idle transition. */
+    power_manager_set_connected_idle_no_light_sleep(
+        effective_connected && next != POWER_MANAGER_STATE_DISCONNECTED_IDLE &&
+        next != POWER_MANAGER_STATE_HARDWARE_SHUTDOWN);
     power_manager_apply_fast_idle_actions(next, user_idle_ms, blockers);
     if (s_task_handle != NULL) {
         xTaskNotifyGive(s_task_handle);
