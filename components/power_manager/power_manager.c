@@ -132,6 +132,11 @@ static StackType_t s_power_manager_task_stack[POWER_MANAGER_TASK_STACK_BYTES];
 
 static const char *TAG = "power_manager";
 
+static void power_manager_apply_state(
+    power_manager_state_t previous,
+    power_manager_state_t next,
+    uint32_t blockers);
+
 _Static_assert(
     POWER_MANAGER_BLOCKER_RECORDING ==
         (1u << DENZIC_POWER_POLICY_V1_BLOCKER_RECORDING),
@@ -228,6 +233,10 @@ static uint32_t s_last_shutdown_idle_ms;
 static uint32_t s_last_shutdown_blockers;
 static uint64_t s_shutdown_failure_retry_after_ms;
 static esp_err_t s_last_shutdown_failure_ret = ESP_OK;
+/* Automatic shutdown must not fall back to a normal runtime/reconnect path if
+ * the external power latch fails to remove the rail. Keep the MCU quiet and
+ * PWR_HOLD high until real user activity or a power-source change recovers it. */
+static bool s_shutdown_failure_quiescent;
 static bool s_last_shutdown_persisted;
 static uint32_t s_last_shutdown_battery_mv;
 static uint8_t s_last_shutdown_battery_level_percent = 0xFF;
@@ -1099,6 +1108,7 @@ static void power_manager_clear_shutdown_failure_retry_locked(void)
 {
     s_shutdown_failure_retry_after_ms = 0;
     s_last_shutdown_failure_ret = ESP_OK;
+    s_shutdown_failure_quiescent = false;
 }
 
 static uint32_t power_manager_radio_idle_ms_locked(uint64_t now_ms)
@@ -1185,6 +1195,13 @@ static power_manager_state_t power_manager_target_state_locked(uint64_t now_ms)
     uint32_t awake_blockers = power_manager_awake_blockers(s_blockers);
     if (awake_blockers != 0u) {
         s_test_idle_override_active = false;
+    }
+
+    /* Do not retry a failed automatic shutdown while the rail is still alive:
+     * re-entering the normal runtime path is indistinguishable from an
+     * unsolicited power-on. Activity or a power-source transition clears it. */
+    if (s_shutdown_failure_quiescent) {
+        return POWER_MANAGER_STATE_DISCONNECTED_IDLE;
     }
 
     if (s_test_idle_override_active) {
@@ -1479,7 +1496,7 @@ static void power_manager_apply_fast_idle_actions(power_manager_state_t state, u
 
 static void power_manager_guard_runtime_power_hold_low(power_manager_state_t state)
 {
-    if (state == POWER_MANAGER_STATE_HARDWARE_SHUTDOWN) {
+    if (state == POWER_MANAGER_STATE_HARDWARE_SHUTDOWN || s_shutdown_failure_quiescent) {
         return;
     }
 
@@ -1678,6 +1695,7 @@ void power_manager_get_snapshot(power_manager_snapshot_t *snapshot)
         snapshot->last_shutdown_idle_ms = s_last_shutdown_idle_ms;
         snapshot->last_shutdown_blockers = s_last_shutdown_blockers;
         snapshot->last_shutdown_failure_ret = s_last_shutdown_failure_ret;
+        snapshot->shutdown_failure_quiescent = s_shutdown_failure_quiescent;
         snapshot->shutdown_failure_retry_ms_left =
             power_manager_shutdown_failure_retry_ms_left_locked(now_ms);
         snapshot->last_shutdown_persisted = s_last_shutdown_persisted;
@@ -1768,23 +1786,32 @@ static void power_manager_schedule_shutdown_failure_retry(
     uint32_t final_idle_ms,
     esp_err_t failure_ret)
 {
+    power_manager_state_t previous_state = POWER_MANAGER_STATE_HARDWARE_SHUTDOWN;
+    power_manager_state_t next_state = POWER_MANAGER_STATE_HARDWARE_SHUTDOWN;
+    uint32_t blockers = 0;
     uint32_t retry_ms_left = 0;
     if (s_mutex != NULL && xSemaphoreTake(s_mutex, portMAX_DELAY) == pdTRUE) {
         uint64_t now_ms = power_manager_now_ms();
         s_shutdown_failure_retry_after_ms = now_ms + POWER_MANAGER_SHUTDOWN_FAILURE_RETRY_MS;
         s_last_shutdown_failure_ret = failure_ret;
+        previous_state = s_state;
+        blockers = s_blockers;
+        s_shutdown_failure_quiescent = true;
         if (s_state == POWER_MANAGER_STATE_HARDWARE_SHUTDOWN) {
-            s_state = s_ble_connected
-                ? POWER_MANAGER_STATE_CONNECTED_IDLE
-                : POWER_MANAGER_STATE_DISCONNECTED_IDLE;
+            s_state = POWER_MANAGER_STATE_DISCONNECTED_IDLE;
         }
+        next_state = s_state;
         retry_ms_left = power_manager_shutdown_failure_retry_ms_left_locked(now_ms);
         xSemaphoreGive(s_mutex);
     }
 
+    if (previous_state != next_state) {
+        power_manager_apply_state(previous_state, next_state, blockers);
+    }
+
     ESP_LOGW(
         TAG,
-        "hardware shutdown failed; staying in low-power idle until retry window expires"
+        "automatic hardware shutdown failed; staying key-wake-only with PWR_HOLD high"
         " reason=%s idle_ms=%" PRIu32 " ret=%s retry_ms=%" PRIu32,
         power_manager_shutdown_reason_name(reason),
         final_idle_ms,
@@ -1801,6 +1828,29 @@ static void power_manager_restore_after_shutdown_failure(
     uint32_t final_idle_ms,
     esp_err_t failure_ret)
 {
+    if (reason != POWER_MANAGER_SHUTDOWN_REASON_MANUAL_COMMAND) {
+        /* For automatic battery/low-battery shutdown, restoring GPIO9 low is
+         * exactly the behavior users experience as an automatic power-on.
+         * Leave the latch request high, stop advertising through the quiescent
+         * idle transition, and wait for a physical key or power-source change
+         * to resume normal runtime. */
+        if (status_led_cancel_shutdown_confirm != NULL) {
+            status_led_cancel_shutdown_confirm("hardware_shutdown_failed");
+        }
+        if (ble_hid_gap_prepare_shutdown_disconnect != NULL) {
+            esp_err_t ble_ret = ble_hid_gap_prepare_shutdown_disconnect();
+            if (ble_ret != ESP_OK && ble_ret != ESP_ERR_INVALID_STATE) {
+                ESP_LOGW(TAG, "automatic shutdown failure BLE quiesce failed: %s",
+                         esp_err_to_name(ble_ret));
+            }
+        }
+        diag_log(DIAG_SRC_POWER, DIAG_POWER_SLEEP_BLOCKED, DIAG_SEV_ERROR,
+                 0, final_idle_ms, (uint32_t)reason, (uint32_t)failure_ret);
+        power_manager_notify_power_led_error(true, "hardware_shutdown_failed_key_wake_only");
+        power_manager_schedule_shutdown_failure_retry(reason, final_idle_ms, failure_ret);
+        return;
+    }
+
     /* If USB/VBUS kept the rail alive, the host may continue probing the
      * native USB Serial/JTAG port while PWR_HOLD is high.  DTR/RTS probing is
      * interpreted by the ESP32-S3 as a USB reset and was the source of the
@@ -2516,8 +2566,10 @@ void power_manager_record_activity(const char *reason)
     power_manager_state_t previous = POWER_MANAGER_STATE_ACTIVE;
     power_manager_state_t next = POWER_MANAGER_STATE_ACTIVE;
     uint32_t blockers = 0;
+    bool recover_shutdown_failure_quiescent = false;
     if (xSemaphoreTake(s_mutex, portMAX_DELAY) == pdTRUE) {
         previous = s_state;
+        recover_shutdown_failure_quiescent = s_shutdown_failure_quiescent;
         uint64_t now_ms = power_manager_now_ms();
         s_last_user_activity_ms = now_ms;
         s_last_radio_activity_ms = now_ms;
@@ -2530,6 +2582,15 @@ void power_manager_record_activity(const char *reason)
         next = s_state;
         blockers = s_blockers;
         xSemaphoreGive(s_mutex);
+    }
+
+    if (recover_shutdown_failure_quiescent) {
+        (void)board_set_usb_serial_jtag_data_connected(true);
+        esp_err_t hold_ret = board_set_power_hold_enabled(true);
+        if (hold_ret != ESP_OK) {
+            ESP_LOGW(TAG, "failed to restore PWR_HOLD low after key wake: %s",
+                     esp_err_to_name(hold_ret));
+        }
     }
 
     if (previous != next) {
@@ -2573,7 +2634,8 @@ void power_manager_set_blocker(uint32_t blocker_mask, bool enabled)
          * idle resumes from the last real user/radio activity after clear. */
         s_auto_shutdown_block_logged = false;
         previous = s_state;
-        if (power_manager_awake_blockers(s_blockers) != 0 &&
+        if (!s_shutdown_failure_quiescent &&
+            power_manager_awake_blockers(s_blockers) != 0 &&
             s_state != POWER_MANAGER_STATE_ACTIVE) {
             s_state = POWER_MANAGER_STATE_ACTIVE;
         }
@@ -2723,7 +2785,8 @@ static void power_manager_print_status(void)
         " battery_mv=%" PRIu32 " battery_level=%u battery_valid=%u"
         " last_shutdown_reason=%s last_shutdown_idle_ms=%" PRIu32
         " last_shutdown_blockers=0x%08" PRIx32
-        " last_shutdown_failure_ret=%s shutdown_failure_retry_ms_left=%" PRIu32
+        " last_shutdown_failure_ret=%s shutdown_failure_quiescent=%u"
+        " shutdown_failure_retry_ms_left=%" PRIu32
         " shutdown_failure_retry_ms=%" PRIu32
         " last_shutdown_persisted=%u last_shutdown_battery_mv=%" PRIu32
         " last_shutdown_battery_level=%u last_shutdown_power_flags=0x%08" PRIx32
@@ -2780,6 +2843,7 @@ static void power_manager_print_status(void)
         snapshot.last_shutdown_idle_ms,
         snapshot.last_shutdown_blockers,
         esp_err_to_name(snapshot.last_shutdown_failure_ret),
+        snapshot.shutdown_failure_quiescent ? 1u : 0u,
         snapshot.shutdown_failure_retry_ms_left,
         snapshot.shutdown_failure_retry_ms,
         snapshot.last_shutdown_persisted ? 1u : 0u,

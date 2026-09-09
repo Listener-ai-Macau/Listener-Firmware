@@ -866,6 +866,27 @@ def main() -> int:
         failures.append(
             "components/power_manager/power_manager.c: automatic failed shutdown must restore PWR_HOLD low, record diag, and enter retry cooldown"
         )
+    if "shutdown_failure_quiescent" not in power_manager:
+        failures.append(
+            "components/power_manager/power_manager.c: failed automatic shutdown must expose an explicit key-wake-only quiescent latch"
+        )
+    if not re.search(
+        r"if\s*\(reason\s*!?=\s*POWER_MANAGER_SHUTDOWN_REASON_MANUAL_COMMAND\)[\s\S]*?"
+        r"power_manager_schedule_shutdown_failure_retry\(reason,\s*final_idle_ms,\s*failure_ret\)[\s\S]*?"
+        r"return;",
+        power_manager,
+    ):
+        failures.append(
+            "components/power_manager/power_manager.c: automatic shutdown failure must enter the quiescent branch before any runtime-low restore"
+        )
+    if not re.search(
+        r"if\s*\(s_shutdown_failure_quiescent\)[\s\S]*?"
+        r"return\s+POWER_MANAGER_STATE_DISCONNECTED_IDLE",
+        power_manager,
+    ):
+        failures.append(
+            "components/power_manager/power_manager.c: quiescent shutdown failure must remain in disconnected/key-wake-only idle"
+        )
     if "POWER_MANAGER_SHUTDOWN_FAILURE_RETRY_MS 900000U" not in power_manager:
         failures.append(
             "components/power_manager/power_manager.c: shutdown failure retry cooldown must be explicit"

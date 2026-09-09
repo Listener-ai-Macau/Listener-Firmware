@@ -91,6 +91,7 @@ typedef struct {
     uint32_t last_shutdown_idle_ms;
     uint32_t last_shutdown_blockers;
     esp_err_t last_shutdown_failure_ret;
+    bool shutdown_failure_quiescent;
     uint32_t shutdown_failure_retry_ms_left;
     uint32_t shutdown_failure_retry_ms;
     bool last_shutdown_persisted;
