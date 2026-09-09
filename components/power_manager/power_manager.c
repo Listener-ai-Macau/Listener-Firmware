@@ -1422,10 +1422,16 @@ static void power_manager_apply_state(
         }
         break;
     case POWER_MANAGER_STATE_CONNECTED_IDLE:
+        diag_log(DIAG_SRC_POWER, DIAG_POWER_IDLE_ACTION, DIAG_SEV_INFO,
+                 5U, 1U, (uint32_t)next, blockers);
         power_manager_set_connected_idle_no_light_sleep(true);
+        diag_log(DIAG_SRC_POWER, DIAG_POWER_IDLE_ACTION, DIAG_SEV_INFO,
+                 5U, 2U, (uint32_t)next, blockers);
         if (status_led_set_low_power_disabled != NULL) {
             status_led_set_low_power_disabled(true);
         }
+        diag_log(DIAG_SRC_POWER, DIAG_POWER_IDLE_ACTION, DIAG_SEV_INFO,
+                 5U, 3U, (uint32_t)next, blockers);
         /* Voice wake is intentionally unavailable after the Bluetooth light
          * turns off. ACTIVE re-enables audio and refreshes voice monitoring. */
         /* Keep the I2S channel resident while the live BLE link is in
@@ -1438,15 +1444,23 @@ static void power_manager_apply_state(
         if (!s_ble_connected && power_manager_audio_idle_blockers(blockers) == 0) {
             power_manager_set_audio_idle_power_save(true);
         }
+        diag_log(DIAG_SRC_POWER, DIAG_POWER_IDLE_ACTION, DIAG_SEV_INFO,
+                 5U, 4U, (uint32_t)next, blockers);
         if (system_health_set_low_power_mode != NULL) {
             system_health_set_low_power_mode(true);
         }
+        diag_log(DIAG_SRC_POWER, DIAG_POWER_IDLE_ACTION, DIAG_SEV_INFO,
+                 5U, 5U, (uint32_t)next, blockers);
         if (ble_hid_gap_set_low_power_advertising != NULL) {
             (void)ble_hid_gap_set_low_power_advertising(false);
         }
+        diag_log(DIAG_SRC_POWER, DIAG_POWER_IDLE_ACTION, DIAG_SEV_INFO,
+                 5U, 6U, (uint32_t)next, blockers);
         if (ble_hid_gap_request_low_power_connection != NULL) {
             (void)ble_hid_gap_request_low_power_connection();
         }
+        diag_log(DIAG_SRC_POWER, DIAG_POWER_IDLE_ACTION, DIAG_SEV_INFO,
+                 5U, 7U, (uint32_t)next, blockers);
         break;
     case POWER_MANAGER_STATE_DISCONNECTED_IDLE:
         power_manager_set_connected_idle_no_light_sleep(false);
@@ -1492,11 +1506,19 @@ static void power_manager_apply_state(
     if (ble_hid_battery_task_wake != NULL) {
         ble_hid_battery_task_wake();
     }
+    if (next == POWER_MANAGER_STATE_CONNECTED_IDLE) {
+        diag_log(DIAG_SRC_POWER, DIAG_POWER_IDLE_ACTION, DIAG_SEV_INFO,
+                 5U, 8U, (uint32_t)next, blockers);
+    }
 
     /* Re-evaluate VA after every power transition. LST-WAKE-012 keeps it off
      * in Bluetooth-light-off idle and re-arms only after normal recovery. */
     if (voice_recording_control_on_power_state_changed != NULL) {
         voice_recording_control_on_power_state_changed();
+    }
+    if (next == POWER_MANAGER_STATE_CONNECTED_IDLE) {
+        diag_log(DIAG_SRC_POWER, DIAG_POWER_IDLE_ACTION, DIAG_SEV_INFO,
+                 5U, 9U, (uint32_t)next, blockers);
     }
 }
 
