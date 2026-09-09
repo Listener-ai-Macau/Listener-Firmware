@@ -1428,7 +1428,14 @@ static void power_manager_apply_state(
         }
         /* Voice wake is intentionally unavailable after the Bluetooth light
          * turns off. ACTIVE re-enables audio and refreshes voice monitoring. */
-        if (power_manager_audio_idle_blockers(blockers) == 0) {
+        /* Keep the I2S channel resident while the live BLE link is in
+         * CONNECTED_IDLE.  On this ESP32-S3 board, synchronously disabling
+         * the audio DMA channel at the same boundary as the BLE idle policy
+         * can starve the interrupt watchdog and reboot the device.  Voice
+         * activation is already disabled by the power-state transition; the
+         * physical audio shutdown is deferred to DISCONNECTED_IDLE, where no
+         * link service has to share that critical section. */
+        if (!s_ble_connected && power_manager_audio_idle_blockers(blockers) == 0) {
             power_manager_set_audio_idle_power_save(true);
         }
         if (system_health_set_low_power_mode != NULL) {
