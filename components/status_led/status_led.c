@@ -4142,18 +4142,9 @@ static uint32_t status_led_refresh_once(void)
 
     if (tx_strip_mask != 0U) {
         uint8_t final_failed_strip_mask = 0U;
-        /* A reversible idle transition only needs one completed DMA frame.
-         * Replaying the same frame three times was originally intended as a
-         * physical latch margin for irreversible shutdown, but on the live
-         * BLE path it creates a back-to-back RMT queue boundary exactly while
-         * CONNECTED_IDLE is being entered.  That boundary has reproduced an
-         * ESP_RST_INT_WDT reset.  Keep the stronger multi-write latch for the
-         * irreversible shutdown-confirm frame only. */
         uint8_t write_count = force_clear_tx
             ? STATUS_LED_TRANSITION_CLEAR_WRITES
-            : (shutdown_final_active
-                ? STATUS_LED_LOW_POWER_FINAL_LATCH_WRITES
-                : 1U);
+            : (pwr_only_final_latch ? STATUS_LED_LOW_POWER_FINAL_LATCH_WRITES : 1U);
         for (uint8_t write_index = 0U; write_index < write_count; ++write_index) {
             /* Reversible idle sends its final frame on the already-resident
              * DMA routes. Only irreversible shutdown-final owns the dedicated
