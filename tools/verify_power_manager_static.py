@@ -714,9 +714,16 @@ def main() -> int:
         "battery_idle_arm_policy": (
             r"power_manager_update_power_input_irq_arm[\s\S]*"
             r"!source->external_power_present[\s\S]*"
-            r"POWER_MANAGER_STATE_CONNECTED_IDLE[\s\S]*"
-            r"POWER_MANAGER_STATE_DISCONNECTED_IDLE[\s\S]*"
-            r"power_manager_set_power_input_irq_armed\(should_arm\)"
+            r"should_arm_runtime_edge[\s\S]*POWER_MANAGER_STATE_CONNECTED_IDLE[\s\S]*"
+            r"should_arm_light_sleep_wake[\s\S]*POWER_MANAGER_STATE_DISCONNECTED_IDLE[\s\S]*"
+            r"power_manager_set_power_input_light_sleep_wake[\s\S]*"
+            r"power_manager_set_power_input_irq_armed\(should_arm_runtime_edge\)"
+        ),
+        "runtime_edge_does_not_reuse_sleep_level": (
+            r"power_manager_set_power_input_interrupt[\s\S]*"
+            r"gpio_wakeup_disable\(gpio\)[\s\S]*"
+            r"gpio_set_intr_type\(gpio,\s*GPIO_INTR_ANYEDGE\)[\s\S]*"
+            r"gpio_intr_enable\(gpio\)"
         ),
         "evaluate_wiring": (
             r"power_manager_evaluate[\s\S]*"
