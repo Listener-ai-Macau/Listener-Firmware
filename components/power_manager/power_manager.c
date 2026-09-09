@@ -1223,6 +1223,11 @@ static power_manager_state_t power_manager_target_state_locked(uint64_t now_ms)
         .shutdown_idle_ms = hardware_shutdown_ms,
         .sleep_enabled =
             low_power_idle_ms > 0u &&
+            /* The connected-idle transition has a retained ESP_RST_INT_WDT
+             * failure at the 60 s boundary on the Windows BLE path. Keep a
+             * live link in ACTIVE until the independent hardware-shutdown
+             * deadline; disconnected idle remains available. */
+            !s_ble_connected &&
             (!s_external_power_present || power_manager_plugged_low_power_enabled()),
         .shutdown_enabled = CONFIG_POWER_MANAGER_ENABLE && hardware_shutdown_ms > 0u,
     };
@@ -1738,6 +1743,7 @@ void power_manager_get_snapshot(power_manager_snapshot_t *snapshot)
     snapshot->plugged_low_power_enabled = power_manager_plugged_low_power_enabled();
     snapshot->low_power_idle_allowed =
         snapshot->low_power_idle_threshold_ms > 0U &&
+        !snapshot->ble_connected &&
         (!snapshot->external_power_present || snapshot->plugged_low_power_enabled);
     snapshot->power_input_wake_configured = s_power_input_wake_configured;
     snapshot->power_input_irq_armed = s_power_input_irq_armed;
