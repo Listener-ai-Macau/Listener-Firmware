@@ -4155,12 +4155,10 @@ static uint32_t status_led_refresh_once(void)
                 ? STATUS_LED_LOW_POWER_FINAL_LATCH_WRITES
                 : 1U);
         for (uint8_t write_index = 0U; write_index < write_count; ++write_index) {
-            /* The reversible low-power boundary uses the bounded non-DMA
-             * latch path.  It tears down the active DMA route only after the
-             * frame has completed, avoiding the live-link DMA/RMT transition
-             * that can starve the interrupt watchdog.  Shutdown-final keeps
-             * its specialized all-zone latch path below. */
-            bool force_non_dma = pwr_only_final_latch && !shutdown_final_active;
+            /* Reversible idle sends its final frame on the already-resident
+             * DMA routes. Only irreversible shutdown-final owns the dedicated
+             * non-DMA all-zone latch inside its specialized helper. */
+            bool force_non_dma = false;
             uint8_t failed_strip_mask = shutdown_final_active
                 ? status_led_transmit_shutdown_final_latch_frame(
                     &frame,
