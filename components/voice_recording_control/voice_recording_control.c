@@ -47,12 +47,12 @@
  * wake candidates keep their existing short max-session contract. */
 #define VOICE_RECORDING_CONTROL_INITIAL_BODY_WAIT_MS 4000
 #define VOICE_RECORDING_CONTROL_DICTATION_TAIL_MS 0
-/* Hidden VoiceActivation is a wake candidate, not a dictation session. Keep
- * enough room for the 2 s pre-roll plus a normal wake phrase, but do not hold
- * the microphone until the old 3.5 s terminal window. The host can begin its
- * owner/phrase arbitration earlier; this is separate from the visible owner
- * endpoint timeout and does not alter either watchdog threshold. */
-#define VOICE_RECORDING_CONTROL_AUTOMATIC_WAKE_MAX_SESSION_MS 2600u
+/* Hidden VoiceActivation is a wake candidate, not a dictation session.
+ * 2 s pre-roll + ~2 s for a complete 开始录音 (four characters ~0.8 s plus
+ * trailing audio). 2600 ms left only ~0.6 s after pre-roll and cut the phrase.
+ * Type still requires KWS/local-ASR evidence, so the extra window is not a
+ * false-wake gate. Visible owner endpoint is unchanged. */
+#define VOICE_RECORDING_CONTROL_AUTOMATIC_WAKE_MAX_SESSION_MS 4000u
 #define VOICE_RECORDING_CONTROL_HOST_SPEECH_PROTECTION_MS 1000
 #define VOICE_RECORDING_CONTROL_ARRAY_SIZE(array) (sizeof(array) / sizeof((array)[0]))
 #define VOICE_RECORDING_CONTROL_VAD_QUEUE_LENGTH 24
@@ -2798,8 +2798,8 @@ static void voice_recording_control_process_voice_activity(void)
         denzic_voice_activation_v1_config_t step_config =
             s_voice_activation_config;
         if (hidden_automatic) {
-            /* ~1s phrase + bounded pad; free BLE quickly so host wake
-             * arbitration and re-arm are not blocked by ambient windows. */
+            /* Pre-roll plus a complete wake phrase. Ambient windows still
+             * auto-stop; Type rejects clips that do not contain the phrase. */
             step_config.max_session_ms =
                 VOICE_RECORDING_CONTROL_AUTOMATIC_WAKE_MAX_SESSION_MS;
         }
@@ -3041,7 +3041,7 @@ static esp_err_t voice_recording_control_start_internal(bool enable_audio_captur
      *   Type still requires KWS/local-ASR phrase evidence, so the extra history
      *   does not turn arbitrary owner speech into a wake.
      * - cooldown 1200: re-arm after Type VREC:STOP without 3s lockout.
-     * - max_session for hidden path is forced to 3500 in process_voice_activity.
+     * - max_session for hidden path is forced to 4000 in process_voice_activity.
      */
     s_voice_activation_config.speech_confirm_ms = 420u;
     s_voice_activation_config.pre_roll_ms = 2000u;
