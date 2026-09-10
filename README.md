@@ -36,6 +36,7 @@ ESP-IDF seed firmware for the voice keyboard product.
 
 ## Key Docs
 
+- User-facing product features (Type repo): `../Listener-Type/docs/product/features.md`
 - `docs/features/firmware-feature-map.md`
 - `docs/tools/device_maintenance.md`
 - `docs/ota_manifest_schema.md`
