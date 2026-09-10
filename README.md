@@ -1,42 +1,74 @@
-# voice-keyboard-firmware
+# Listener Firmware
 
-ESP-IDF seed firmware for the voice keyboard product.
+<p align="center">
+  <strong>Open firmware for the Listener voice keyboard.</strong><br/>
+  Press, speak, watch the lights. Listener Type puts the words at your cursor.
+</p>
 
-## Quick Start
+<p align="center">
+  <a href="README.zh.md">中文</a> ·
+  <a href="docs/product/features.md">Features</a> ·
+  <a href="https://github.com/Listener-ai-Macau/Listener-Type">Listener Type</a>
+</p>
 
-- New Windows machine bootstrap:
-  `pwsh -NoProfile -File .\tools\setup_windows.ps1`
-- Build:
-  `pwsh -NoProfile -File .\tools\build.ps1`
-- Flash:
-  `pwsh -NoProfile -File .\tools\flash.ps1 -Port COM5`
-- Flash bootloader only:
-  `pwsh -NoProfile -File .\tools\flash_bootloader.ps1 -Port COMx`
-- Monitor in an interactive terminal:
-  `pwsh -NoProfile -File .\tools\monitor.ps1 -Port COM5`
-- Capture boot logs in a non-interactive Codex session:
-  `pwsh -NoProfile -File .\tools\capture_serial.ps1 -Port COM5 -ResetBeforeRead`
-- Send test input to firmware over serial without interactive monitor:
-  `pwsh -NoProfile -File .\tools\send_serial.ps1 -Port COM5 -Text "abc123"`
-- Run a single non-interactive BLE HID runtime verification:
-  `pwsh -NoProfile -File .\tools\verify_ble_hid.ps1 -Port COM5 -Text "abc123"`
-- Serial diagnostics must avoid reset-prone DTR/RTS opens; see
-  `docs\features\serial_no_reset_diagnostics.md`.
+This is not an ESP32 sample. It is the software on the keyboard you buy: microphone, EC11, four keys, status LEDs, BLE audio, pairing recovery, low power, OTA.
+
+Speech-to-text and cursor insertion live in the desktop app. Use this repo with [Listener Type](https://github.com/Listener-ai-Macau/Listener-Type).
+
+## Why buy the keyboard
+
+Type works with a computer mic. The keyboard is the **desk device**:
+
+- Click the knob to start/stop — no hunting for a hotkey
+- REC / AI / BLE lights, so you are not guessing whether it heard you
+- Wake phrase “开始录音”, optional voiceprint
+- Four keys you can bind (paste, copy, open Type)
+- Open firmware, OTA from Type, double-click the knob to re-pair
+
+1.0.5 is the daily-driver firmware baseline. The product is keyboard plus Type.
+
+## 30 seconds
+
+1. Charge, click EC11 to power on.
+2. Open Listener Type, start pairing, pick `listener` in Windows Bluetooth.
+3. Click a notepad field, click EC11, speak, click again.
+4. Watch REC and the Type capsule; text should hit the cursor.
+
+Handbook in the Type repo: [voice keyboard](https://github.com/Listener-ai-Macau/Listener-Type/blob/master/docs/quickstart/voice-keyboard-readme.md)
+
+## What the firmware owns
+
+| Capability | How you use it |
+| --- | --- |
+| Record | EC11 click (remap in Type) |
+| Re-pair | EC11 double-click, then choose `listener` |
+| Lights | PWR power, BLE link, REC capture, AI processing |
+| Wake | Device waits for the wake phrase |
+| Update | OTA in Type, or USB flash from this repo |
+| Battery | Plugged/battery idle; dark LEDs usually mean sleep |
+
+GPIO, HID fallbacks, and bench scripts stay in the [firmware feature map](docs/features/firmware-feature-map.md). User-facing catalog: [product features](docs/product/features.md).
+
+## Open source
+
+Read the protocol, LED, and audio paths. File issues and PRs.
+Flash a current 1.0.5 build — do not treat an old OTA zip as “latest.”
+
+```powershell
+pwsh -NoProfile -File .\tools\setup_windows.ps1
+pwsh -NoProfile -File .\tools\build.ps1
+pwsh -NoProfile -File .\tools\flash.ps1 -Port COMx
+```
+
+Do not run bare `idf.py` outside the IDF env this repo loads.
+
+Repo: [Listener-ai-Macau/Listener-Firmware](https://github.com/Listener-ai-Macau/Listener-Firmware)
 
 ## Layout
 
-- `main/`: thin `app_main()` entry
-- `components/`: cross-platform product modules
-- `drivers/`: device/peripheral semantic drivers
-- `protocols/`: protocol definitions and codecs
-- `ports/`: platform-specific SDK bindings
-- `tools/`: build, flash, monitor, and helper scripts
-- `tests/`: smoke checks
-- `docs/`: product, feature, maintenance, and release documents
-
-## Key Docs
-
-- User-facing product features (Type repo): `../Listener-Type/docs/product/features.md`
-- `docs/features/firmware-feature-map.md`
-- `docs/tools/device_maintenance.md`
-- `docs/ota_manifest_schema.md`
+- `main/` — thin `app_main()`
+- `components/` — product logic
+- `protocols/` — codecs and protocol
+- `ports/` — ESP-IDF bindings
+- `tools/` — build, flash, monitor, diagnostics
+- `docs/` — product and maintenance docs
