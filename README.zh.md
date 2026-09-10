@@ -8,6 +8,7 @@
 <p align="center">
   <a href="README.md">English</a> ·
   <a href="docs/product/features.md">产品功能</a> ·
+  <a href="docs/release/1.0.5.md">发布说明</a> ·
   <a href="https://github.com/Listener-ai-Macau/Listener-Type">Listener Type</a>
 </p>
 
@@ -25,7 +26,7 @@ Type 可以先用电脑麦克风。键盘卖的是**手上的输入设备**：
 - 四颗键自定义：粘贴、复制、打开 Type 页面
 - 固件开源，OTA 从 Type 里走，配对坏了双击旋钮就能重来
 
-1.0.5 是可以日常用的设备基线。和 Type 装在一起，才是完整产品。
+1.0.5 是可以日常用的设备基线。[发布说明](docs/release/1.0.5.md)。和 Type 装在一起，才是完整产品。
 
 ## 30 秒
 

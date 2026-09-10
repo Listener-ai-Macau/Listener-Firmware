@@ -54,4 +54,4 @@ Type：转写、整理、插入光标、OTA、配对引导
 没有 Type，键盘仍是一块带灯的 BLE 设备，不能完成「字出现在光标」。
 没有键盘，Type 仍可用电脑麦克风试用。
 
-完整硬件音频路径以 Windows 为主。刷写和工程地图见仓库根 README 与 `docs/features/firmware-feature-map.md`。
+完整硬件音频路径以 Windows 为主。装哪个 OTA、哈希见 [1.0.5 发布说明](../release/1.0.5.md)。刷写和工程地图见仓库根 README 与 `docs/features/firmware-feature-map.md`。

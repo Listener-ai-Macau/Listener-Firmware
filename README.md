@@ -8,6 +8,7 @@
 <p align="center">
   <a href="README.zh.md">中文</a> ·
   <a href="docs/product/features.md">Features</a> ·
+  <a href="docs/release/1.0.5.md">Release notes</a> ·
   <a href="https://github.com/Listener-ai-Macau/Listener-Type">Listener Type</a>
 </p>
 
@@ -25,7 +26,7 @@ Type works with a computer mic. The keyboard is the **desk device**:
 - Four keys you can bind (paste, copy, open Type)
 - Open firmware, OTA from Type, double-click the knob to re-pair
 
-1.0.5 is the daily-driver firmware baseline. The product is keyboard plus Type.
+1.0.5 is the daily-driver firmware baseline. [Release notes](docs/release/1.0.5.md). The product is keyboard plus Type.
 
 ## 30 seconds
 
