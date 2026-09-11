@@ -3040,12 +3040,14 @@ static esp_err_t voice_recording_control_start_internal(bool enable_audio_captur
      *   not cross its start threshold until the louder dictation body begins.
      *   Type still requires KWS/local-ASR phrase evidence, so the extra history
      *   does not turn arbitrary owner speech into a wake.
-     * - cooldown 1200: re-arm after Type VREC:STOP without 3s lockout.
+     * - cooldown 400: re-arm after a rejected hidden window so a retry of
+     *   开始录音 is not eaten by 1.2s of dead air. Type still requires the
+     *   phrase. Visible dictation endpoint is unchanged.
      * - max_session for hidden path is forced to 4000 in process_voice_activity.
      */
     s_voice_activation_config.speech_confirm_ms = 420u;
     s_voice_activation_config.pre_roll_ms = 2000u;
-    s_voice_activation_config.cooldown_ms = 1200u;
+    s_voice_activation_config.cooldown_ms = 400u;
     denzic_voice_activation_v1_reset(
         &s_voice_activation_machine);
     if (enable_audio_capture) {
