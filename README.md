@@ -1,10 +1,18 @@
 # Listener Firmware
 
-This is the firmware that runs on the Listener voice keyboard — an ESP32-S3 desk device with a PDM microphone, a clickable rotary knob, four keys and six status LEDs. It handles audio capture, the buttons and lights, Bluetooth pairing, power management and OTA updates.
+This is the firmware that runs on the Listener voice keyboard. It handles audio capture, the buttons and lights, Bluetooth pairing, power management and OTA updates.
 
 Everything that turns speech into text — recognition, rewriting, typing into the focused field — happens on the computer, in [Listener Type](https://github.com/Listener-ai-Macau/Listener-Type). Without that app the keyboard is just a well-behaved BLE peripheral; without the keyboard, the app works with any microphone.
 
 [中文](README.zh.md) · [繁體中文](README.zh-TW.md) · [1.0.5 release notes](docs/release/1.0.5.md)
+
+### Hardware
+
+- ESP32-S3 module (ESP32-S3-WROOM-1-N16R8: 16 MB flash, 8 MB PSRAM)
+- PDM digital microphone, captured at 16 kHz
+- EC11 rotary encoder with push button
+- Four keys (KEY1–KEY4) and six status LEDs
+- Li-ion battery, USB-C charging
 
 ### Controls
 
@@ -22,7 +30,7 @@ PWR is power and battery. BLE goes steady blue once the desktop app is ready. RE
 
 Pairing is done from the app: click "Start pairing", choose `listener` in Windows Bluetooth, then "Check connection". If pairing gets wedged, Settings → About → Device recovery sorts it out — no serial cable involved.
 
-Updates arrive as OTA from the app and keep your pairing and settings. USB flashing from this repo works too. The current release is 1.0.5 ([notes](docs/release/1.0.5.md)); its known bug is a wrong battery reading right after power-off.
+Updates arrive as OTA from the app. There are two firmware slots with automatic rollback, and pairing and device settings survive the update. USB flashing from this repo works too. The current release is 1.0.5 ([notes](docs/release/1.0.5.md)); its known bug is a wrong battery reading right after power-off.
 
 ### Building and flashing
 
@@ -36,4 +44,8 @@ pwsh -NoProfile -File .\tools\flash.ps1 -Port COMx
 
 Don't run bare `idf.py` — go through `tools\idf.ps1`, which loads the IDF environment first.
 
-The GPIO map and the rest of the engineering detail are in [docs/features/firmware-feature-map.md](docs/features/firmware-feature-map.md). Contributions: [CONTRIBUTING.md](CONTRIBUTING.md). Security reports: [SECURITY.md](SECURITY.md).
+### Reading the code
+
+`components/` holds the product logic and is kept platform-independent; ESP-IDF specifics are quarantined in `ports/esp32/`; `protocols/` defines the codecs and the audio protocol; `tools/` has the build, flash and monitor scripts. The GPIO map and the validation tooling are documented in [docs/features/firmware-feature-map.md](docs/features/firmware-feature-map.md).
+
+Contributions: [CONTRIBUTING.md](CONTRIBUTING.md). Security reports: [SECURITY.md](SECURITY.md).
