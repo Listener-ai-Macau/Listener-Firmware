@@ -1,28 +1,32 @@
 # Listener Firmware
 
-Listener 语音键盘的固件——真正跑在设备上的那份代码。ESP32-S3、PDM 麦克风、一颗能按的旋钮、四颗键、六盏灯、蓝牙音频、OTA 升级。
+这是 Listener 语音键盘上跑的固件。键盘是一台 ESP32-S3 桌面设备,带 PDM 麦克风、一颗能按能转的旋钮、四颗键和六盏状态灯;固件管收音、按键、灯、蓝牙配对、功耗和 OTA 升级。
 
-键盘只管听和亮灯。把语音变成文字是电脑那边的事,归 [Listener Type](https://github.com/Listener-ai-Macau/Listener-Type) 管。
+把语音变成文字的所有环节——识别、改写、打进焦点框——都在电脑上的 [Listener Type](https://github.com/Listener-ai-Macau/Listener-Type) 里。没有那个软件,键盘只是个守规矩的 BLE 外设;没有键盘,软件用任何麦克风都能跑。
 
-[English](README.md) · [繁體中文](README.zh-TW.md) · [发布说明](docs/release/1.0.5.md)
+[English](README.md) · [繁體中文](README.zh-TW.md) · [1.0.5 发布说明](docs/release/1.0.5.md)
 
-## 键盘怎么用
+### 按键
 
-- 单击旋钮:开始、停止听写。
-- 双击:重新配对;长按:关机;转动:调电脑音量(都能在 Type 里改)。
-- 四颗键随你绑,在 Type 里设置:粘贴、复制、打开应用,想绑什么绑什么。
-- 灯会说话:电源、蓝牙、录音、处理各占一盏。全黑多半是睡着了,不是坏了。
-- 懒得伸手也行:说一句「开始录音」,它自己开始。
+1.0.5 的默认行为:
 
-第一次用:充电,按旋钮开机,在 Type 里发起配对,Windows 蓝牙里选 `listener`。完整步骤看[语音键盘手册](https://github.com/Listener-ai-Macau/Listener-Type/blob/master/docs/quickstart/voice-keyboard-readme.md)。
+- 单击旋钮开始/停止录音;双击重置蓝牙配对;长按关机;转动调电脑音量。这些都能在 Type 里改。
+- KEY1–KEY4 可以绑单击、双击、长按动作(Type 的设置 → 设备)。没配置的键走无害的 HID 兜底,不会误打任何字。
+- 在 Type 里打开「检测到人声后自动开始」,键盘会先等唤醒词(默认「开始录音」),听到才开录。
 
-## 升级
+### 灯
 
-最省事是在 Listener Type 里 OTA,设置都会保留。当前版本 1.0.5([发布说明](docs/release/1.0.5.md))。已知问题一个:刚关机后的电量读数可能不准。
+PWR 是电源和电量;BLE 常亮蓝表示桌面端就绪;REC 亮表示确实在采音;AI 亮表示音频在传输或主机在处理;OK 是成功确认(或升级进行中);WARN 是有要处理的错误。灯全灭通常是设备休眠省电,不是坏了。
 
-## 自己构建刷机
+### 配对、恢复、升级
 
-脚本是 Windows 的,会帮你装好 ESP-IDF v5.5:
+配对在软件里完成:点「开始配对」,在 Windows 蓝牙里选 `listener`,再点「检查连接」。配对卡死了去设置 → 关于 → 设备恢复,用不上串口线。
+
+升级走软件里的 OTA,配对和设置都保留;用本仓库 USB 刷写也行。当前版本是 1.0.5([发布说明](docs/release/1.0.5.md)),已知 bug 是刚关机后电量读数可能不准。
+
+### 构建和刷写
+
+脚本只做了 Windows 版,会帮你装好 ESP-IDF `release/v5.5`:
 
 ```powershell
 pwsh -NoProfile -File .\tools\setup_windows.ps1
@@ -30,6 +34,6 @@ pwsh -NoProfile -File .\tools\build.ps1
 pwsh -NoProfile -File .\tools\flash.ps1 -Port COMx
 ```
 
-别直接跑 `idf.py`——用 `tools\idf.ps1`,它会先加载 IDF 环境。
+不要裸跑 `idf.py`——走 `tools\idf.ps1`,它先加载 IDF 环境。
 
-有意思的部分都能读:音频链路、灯效逻辑、蓝牙协议。GPIO 细节在 [docs/features/firmware-feature-map.md](docs/features/firmware-feature-map.md)。欢迎报 bug、提 PR——先翻翻 [CONTRIBUTING.md](CONTRIBUTING.md);安全问题发 [SECURITY.md](SECURITY.md)。
+GPIO 表和其余工程细节在 [docs/features/firmware-feature-map.md](docs/features/firmware-feature-map.md)。贡献见 [CONTRIBUTING.md](CONTRIBUTING.md);安全问题发 [SECURITY.md](SECURITY.md)。
