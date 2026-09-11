@@ -4,6 +4,10 @@ Listener 語音鍵盤的韌體。鍵盤是一台 ESP32-S3 桌面小裝置(16 MB 
 
 [English](README.md) · [简体中文](README.zh.md) · [1.0.5 版本說明](docs/release/1.0.5.md)
 
+<p align="center">
+  <img src="docs/assets/readme/keyboard-front.jpg" alt="Listener 語音鍵盤:VOICE 鍵、KEY1–KEY3、EC11 旋鈕和 PWR/BLE/REC/AI/OK/WARN 狀態燈" width="900" />
+</p>
+
 ## 從開機到第一段字
 
 1. 充電,按一下旋鈕開機。
@@ -20,6 +24,10 @@ REC 燈亮就是真在收音;字歸 Type 打進游標。詳細手冊在 Type 倉
 - 不想伸手:打開「檢測到人聲後自動開始」,裝置先等喚醒詞(預設「開始錄音」),聽到才開錄。
 
 燈是狀態,不是裝飾:PWR 是電源電量,BLE 常亮藍表示桌面端就緒,REC 亮才表示真在採音,AI 亮是傳輸或處理中,OK 是成功或升級中,WARN 有要處理的錯誤。燈全滅通常是休眠省電,不是壞了。亮度上限和低功耗定時都能在 Type 的設定 → 裝置 裡調;電量透過標準藍牙電量服務上報,Windows 裡直接看得到。
+
+<p align="center">
+  <img src="docs/assets/readme/device-settings.png" alt="裝置設定:各組燈的亮度和 KEY1–KEY4 的動作都在 Type 裡調" width="720" />
+</p>
 
 ## 升級
 

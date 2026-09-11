@@ -4,6 +4,10 @@ Firmware for the Listener voice keyboard. The keyboard is a small ESP32-S3 desk 
 
 [中文](README.zh.md) · [繁體中文](README.zh-TW.md) · [1.0.5 release notes](docs/release/1.0.5.md)
 
+<p align="center">
+  <img src="docs/assets/readme/keyboard-front.jpg" alt="The Listener voice keyboard: VOICE key, KEY1–KEY3, EC11 knob, and the PWR/BLE/REC/AI/OK/WARN status LEDs" width="900" />
+</p>
+
 ## From power-on to the first words
 
 1. Charge the keyboard, click the knob to power on.
@@ -20,6 +24,10 @@ REC lit means it's really capturing; getting the words to the cursor is Type's j
 - Don't want to reach for it: turn on "start on voice" in Type, and the device waits for a wake phrase (default: 「开始录音」) before recording.
 
 The lights are status, not decoration: PWR is power and battery, BLE steady blue means the desktop app is ready, REC lit means audio is actually being captured, AI lit means transferring or processing, OK is success (or an upgrade in progress), WARN is an error that needs attention. All dark usually means it's asleep saving power, not broken. LED brightness and the low-power timers are adjustable in Type (Settings → Device), and the battery level is reported over the standard Bluetooth Battery Service, so Windows shows it directly.
+
+<p align="center">
+  <img src="docs/assets/readme/device-settings.png" alt="Device settings in Type: per-group LED brightness and KEY1–KEY4 actions" width="720" />
+</p>
 
 ## Updating
 

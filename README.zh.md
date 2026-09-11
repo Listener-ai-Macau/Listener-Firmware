@@ -4,6 +4,10 @@ Listener 语音键盘的固件。键盘是一台 ESP32-S3 桌面小设备(16 MB 
 
 [English](README.md) · [繁體中文](README.zh-TW.md) · [1.0.5 发布说明](docs/release/1.0.5.md)
 
+<p align="center">
+  <img src="docs/assets/readme/keyboard-front.jpg" alt="Listener 语音键盘:VOICE 键、KEY1–KEY3、EC11 旋钮和 PWR/BLE/REC/AI/OK/WARN 状态灯" width="900" />
+</p>
+
 ## 从开机到第一段字
 
 1. 充电,按一下旋钮开机。
@@ -20,6 +24,10 @@ REC 灯亮就是真在收音;字归 Type 打进光标。详细手册在 Type 仓
 - 不想伸手:打开「检测到人声后自动开始」,设备先等唤醒词(默认「开始录音」),听到才开录。
 
 灯是状态,不是装饰:PWR 是电源电量,BLE 常亮蓝表示桌面端就绪,REC 亮才表示真在采音,AI 亮是传输或处理中,OK 是成功或升级中,WARN 有要处理的错误。灯全灭通常是休眠省电,不是坏了。亮度上限和低功耗定时都能在 Type 的设置 → 设备 里调;电量通过标准蓝牙电量服务上报,Windows 里直接看得到。
+
+<p align="center">
+  <img src="docs/assets/readme/device-settings.png" alt="设备设置:各组灯的亮度和 KEY1–KEY4 的动作都在 Type 里调" width="720" />
+</p>
 
 ## 升级
 
