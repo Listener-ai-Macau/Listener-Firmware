@@ -213,9 +213,6 @@ static bool s_voice_auto_start_enabled;
 static bool s_voice_auto_stop_enabled;
 static denzic_voice_activation_v1_machine_t s_voice_activation_machine;
 static denzic_voice_activation_v1_config_t s_voice_activation_config;
-/* After a hidden miss/max-duration rotation, the next speech tick may start
- * immediately (confirm_ms=0) so 开始录音 is not eaten by 420 ms + cooldown. */
-static bool s_hidden_overlap_rearm;
 
 static const voice_recording_control_transition_case_t VOICE_RECORDING_CONTROL_FSM_ARTIFACT[] = {
     {
@@ -1405,11 +1402,9 @@ static void voice_recording_control_complete_transfer_cleanup(
     } else {
         /* The audio drain is now complete, so no subsequent recording-active
          * VAD step can recreate cooldown state. Re-arm here rather than when
-         * Type first sends STOP. LST-WAKE-013: no blind cooldown after Type
-         * rejects a hidden candidate. Skip the 420 ms speech-confirm once so
-         * a retry of 开始录音 is not delayed. */
+         * Type first sends STOP. Keep 400 ms cooldown so Type is not flooded
+         * with overlapping rejects (owner: 预览出不来 / 还是不行). */
         denzic_voice_activation_v1_reset(&s_voice_activation_machine);
-        s_hidden_overlap_rearm = true;
     }
     s_state = VOICE_RECORDING_STATE_IDLE;
     s_cancel_pending = false;
@@ -2808,13 +2803,6 @@ static void voice_recording_control_process_voice_activity(void)
              * auto-stop; Type rejects clips that do not contain the phrase. */
             step_config.max_session_ms =
                 VOICE_RECORDING_CONTROL_AUTOMATIC_WAKE_MAX_SESSION_MS;
-            step_config.cooldown_ms = 0u;
-        }
-        if (s_hidden_overlap_rearm &&
-            s_state == VOICE_RECORDING_STATE_IDLE &&
-            !s_pending_start) {
-            step_config.speech_confirm_ms = 0u;
-            step_config.cooldown_ms = 0u;
         }
         const bool visible_dictation =
             s_active_session_visible && !s_active_session_enrollment;
@@ -2858,22 +2846,11 @@ static void voice_recording_control_process_voice_activity(void)
             !s_pending_start &&
             !s_enrollment_start_pending) {
             const bool transport_ready = ble_audio_stream_is_ready();
-            const bool overlap_rearm = s_hidden_overlap_rearm;
-            if (overlap_rearm) {
-                ESP_LOGI(
-                    TAG,
-                    "hidden overlap re-arm start preroll_ms=%" PRIu32
-                    " speech_confirm_ms=0",
-                    decision.pre_roll_ms);
-            }
             esp_err_t start_ret = voice_recording_control_enter_recording(
                 "voice_activation.auto_start",
                 transport_ready, /* log only unexpected rejects */
                 false,
                 decision.pre_roll_ms);
-            if (start_ret == ESP_OK) {
-                s_hidden_overlap_rearm = false;
-            }
             /* A short non-idle transport flap may race a VAD edge. Preserve
              * pre-roll while waiting for the ready notification. */
             if (start_ret == ESP_ERR_INVALID_STATE && !transport_ready) {
@@ -2919,13 +2896,11 @@ static void voice_recording_control_process_voice_activity(void)
                     : AUDIO_CAPTURE_STOP_ORIGIN_VOICE_ACTIVATION);
             if (hidden_automatic && max_duration_stop) {
                 /* A max-duration stop is a streaming window rotation, not the
-                 * end of an utterance. Bypass cooldown and the 420 ms confirm
-                 * so continuous speech keeps overlapping 2 s pre-roll. Type
-                 * still requires the phrase. Wake speed stays on the live
-                 * ExactStart path. */
+                 * end of an utterance. Bypass the ordinary cooldown so the
+                 * next overlapping window can start after speech_confirm.
+                 * Type still requires the phrase. */
                 denzic_voice_activation_v1_reset(
                     &s_voice_activation_machine);
-                s_hidden_overlap_rearm = true;
             }
         }
     }
@@ -3063,13 +3038,13 @@ static esp_err_t voice_recording_control_start_internal(bool enable_audio_captur
      *   not cross its start threshold until the louder dictation body begins.
      *   Type still requires KWS/local-ASR phrase evidence, so the extra history
      *   does not turn arbitrary owner speech into a wake.
-     * - cooldown 0 after hidden miss/rotation (LST-WAKE-013): Type still
-     *   requires the phrase. Cold start from silence keeps 420 ms confirm.
+     * - cooldown 400: re-arm after a miss without flooding Type (zero cooldown
+     *   opened overlapping windows, websocket stalled, capsule stayed empty).
      * - max_session for hidden path is forced to 4000 in process_voice_activity.
      */
     s_voice_activation_config.speech_confirm_ms = 420u;
     s_voice_activation_config.pre_roll_ms = 2000u;
-    s_voice_activation_config.cooldown_ms = 0u;
+    s_voice_activation_config.cooldown_ms = 400u;
     denzic_voice_activation_v1_reset(
         &s_voice_activation_machine);
     if (enable_audio_capture) {
