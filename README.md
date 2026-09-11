@@ -19,7 +19,7 @@ REC lit means it's really capturing; getting the words to the cursor is Type's j
 - KEY1–KEY4 take single-, double- and long-press actions (Settings → Device in Type). Keys you haven't configured fall back to inert HID keys and can't type anything by accident.
 - Don't want to reach for it: turn on "start on voice" in Type, and the device waits for a wake phrase (default: 「开始录音」) before recording.
 
-The lights are status, not decoration: PWR is power and battery, BLE steady blue means the desktop app is ready, REC lit means audio is actually being captured, AI lit means transferring or processing, OK is success (or an upgrade in progress), WARN is an error that needs attention. All dark usually means it's asleep saving power, not broken.
+The lights are status, not decoration: PWR is power and battery, BLE steady blue means the desktop app is ready, REC lit means audio is actually being captured, AI lit means transferring or processing, OK is success (or an upgrade in progress), WARN is an error that needs attention. All dark usually means it's asleep saving power, not broken. LED brightness and the low-power timers are adjustable in Type (Settings → Device), and the battery level is reported over the standard Bluetooth Battery Service, so Windows shows it directly.
 
 ## Updating
 
