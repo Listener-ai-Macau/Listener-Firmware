@@ -1254,13 +1254,16 @@ static void power_manager_apply_ble_connection_change_locked(
 
     if (connected) {
         /*
-         * BT connect (reconnect after a disconnect): pull the device back to
-         * ACTIVE by refreshing the radio clock only. The user clock and
-         * hardware-shutdown timer are intentionally left untouched so this does
-         * not disturb overnight shutdown timing, and subsequent idle behavior
-         * is decided purely by the existing idle logic (subject to the
-         * disable-idle setting from af05627). No extra timeout is armed here.
+         * Type actor restarts reopen BLE without user intent. Forcing ACTIVE
+         * and resetting radio idle here zeroed CONNECTED_IDLE forever
+         * (owner: 低功耗进不去、不能自动关机). Preserve idle clocks once the
+         * user has already been quiet past the audio/user idle threshold.
+         * Fresh user activity still pulls the device awake.
          */
+        if (power_manager_should_preserve_idle_for_ble_change_locked(now_ms)) {
+            s_state = power_manager_target_state_locked(now_ms);
+            return;
+        }
         s_last_radio_activity_ms = now_ms;
         s_state = POWER_MANAGER_STATE_ACTIVE;
         return;
