@@ -68,4 +68,4 @@ Most reusable product logic is under `components/`; ESP32-specific bindings live
 
 Read [CONTRIBUTING.md](CONTRIBUTING.md) before changing firmware, [SUPPORT.md](SUPPORT.md) before reporting a device problem, and [SECURITY.md](SECURITY.md) for private security reports.
 
-This repository does not yet include a `LICENSE`, so viewing the source does not grant permission to redistribute or modify it.
+Listener Firmware is available under the [Apache License 2.0](LICENSE). Third-party source keeps its original license; see [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).

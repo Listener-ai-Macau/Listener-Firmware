@@ -5,10 +5,13 @@ This repository is an ESP-IDF firmware project for the Listener voice keyboard.
 ## Development
 
 ```powershell
+git submodule update --init --recursive
 pwsh -NoProfile -File .\tools\setup_windows.ps1
 pwsh -NoProfile -File .\tools\build.ps1
 pwsh -NoProfile -File .\tools\flash.ps1 -Port COMx
 ```
+
+The submodule command checks out the exact Denzic Platform revision recorded by this repository.
 
 ESP-IDF downloads component-manager dependencies into `managed_components/`.
 That directory is generated and should not be committed.

@@ -68,4 +68,4 @@ pwsh -NoProfile -File .\tools\monitor.ps1 -Port COMx
 
 修改固件前请阅读 [CONTRIBUTING.md](CONTRIBUTING.md)，报告设备问题前请阅读 [SUPPORT.md](SUPPORT.md)，安全问题请按 [SECURITY.md](SECURITY.md) 私下提交。
 
-当前仓库还没有 `LICENSE`，因此能看到源码不代表已经获得再分发或修改授权。
+Listener Firmware 采用 [Apache License 2.0](LICENSE) 开源；第三方源码仍遵循其原始许可，详见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。
