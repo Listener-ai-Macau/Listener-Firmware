@@ -1,52 +1,119 @@
 # Listener Firmware
 
-Listener 语音键盘的固件。键盘是一台 ESP32-S3 桌面小设备(16 MB 闪存、8 MB PSRAM),带 PDM 麦克风(16 kHz 采音)、一颗能按能转的 EC11 旋钮、四颗键、六盏状态灯,锂电池 USB-C 充电。固件管收音、按键、灯、蓝牙配对、省电和 OTA 升级;把语音变成文字,是电脑上 [Listener Type](https://github.com/Listener-ai-Macau/Listener-Type) 的事。
+Listener 语音键盘的固件。它运行在 ESP32-S3 桌面设备上，采集语音并通过蓝牙送给 Listener Type，把录音控制和产品状态放在手边。
 
-[English](README.md) · [繁體中文](README.zh-TW.md) · [1.0.5 发布说明](docs/release/1.0.5.md)
-
-<p align="center">
-  <img src="docs/assets/readme/keyboard-front.jpg" alt="Listener 语音键盘:VOICE 键、KEY1–KEY3、EC11 旋钮和 PWR/BLE/REC/AI/OK/WARN 状态灯" width="900" />
-</p>
-
-## 从开机到第一段字
-
-1. 充电,按一下旋钮开机。
-2. 打开电脑上的 Listener Type,点「开始配对」,在 Windows 蓝牙里选 `listener`,回来点「检查连接」。
-3. 光标点进记事本,单击旋钮,说话,再单击。
-
-REC 灯亮就是真在收音;字归 Type 打进光标。详细手册在 Type 仓库:[语音键盘手册](https://github.com/Listener-ai-Macau/Listener-Type/blob/master/docs/quickstart/voice-keyboard-readme.md)。
-
-## 手上的动作
-
-- 单击旋钮开始 / 停止,长按关机,转动调电脑音量——都能在 Type 里改。
-- 配对乱了,双击旋钮:重置蓝牙,重新可被搜索。
-- KEY1–KEY4 的单击、双击、长按各绑一个动作(Type 的设置 → 设备)。没配置的键走无害的 HID 兜底,不会乱打字。
-- 不想伸手:打开「检测到人声后自动开始」,设备先等唤醒词(默认「开始录音」),听到才开录。
-
-灯是状态,不是装饰:PWR 是电源电量,BLE 常亮蓝表示桌面端就绪,REC 亮才表示真在采音,AI 亮是传输或处理中,OK 是成功或升级中,WARN 有要处理的错误。灯全灭通常是休眠省电,不是坏了。亮度上限和低功耗定时都能在 Type 的设置 → 设备 里调;电量通过标准蓝牙电量服务上报,Windows 里直接看得到。
+[English](README.md) · [繁體中文](README.zh-TW.md) · [固件发布](https://github.com/Listener-ai-Macau/Listener-Firmware/releases) · [Listener Type](https://github.com/Listener-ai-Macau/Listener-Type)
 
 <p align="center">
-  <img src="docs/assets/readme/device-settings.png" alt="设备设置:各组灯的亮度和 KEY1–KEY4 的动作都在 Type 里调" width="720" />
+  <img src="docs/assets/readme/keyboard-front.jpg" alt="带按键、旋钮和状态灯的 Listener 语音键盘" width="900" />
 </p>
 
-## 升级
+## 一个完整的 Listener 产品
 
-在 Listener Type 里 OTA 就行:双分区,失败自动回滚,配对和设备设置都保留。想刷自己改的固件,用本仓库脚本走 USB。当前版本 1.0.5,已知问题一个:刚关机后电量读数可能不准。
+| 仓库 | 负责什么 |
+| --- | --- |
+| [Listener Type](https://github.com/Listener-ai-Macau/Listener-Type) | 语音识别、文字清理与风格、翻译、历史、光标插入、设置界面和桌面端更新 |
+| Listener Firmware | 麦克风采集、BLE 音频/HID、实体控制、灯、电池与电源、设备设置、诊断和固件 OTA |
 
-## 刷自己的固件
+固件本身不会把语音变成文字。Listener Type 接收音频、生成最终文字并插入当前应用。
 
-Windows 下三条命令,ESP-IDF `release/v5.5` 由脚本装好:
+## 硬件一览
+
+| 部分 | 当前 V2 配置 |
+| --- | --- |
+| 主控 | ESP32-S3-WROOM-1-N16R8，16 MB 闪存，8 MB Octal PSRAM |
+| 音频 | PDM 麦克风，16 kHz 采集，分帧 BLE 传输和保留/重放包 |
+| 控制 | 可按压、可旋转的 EC11 旋钮和 KEY1–KEY4 |
+| 反馈 | 六组状态灯：PWR、BLE、REC、AI、OK、WARN |
+| 无线 | BLE 音频、BLE HID 键盘、设置、诊断、电量服务和 OTA |
+| 电源 | 锂电池、USB-C 充电、电量检测、低功耗休眠、按键唤醒和定时关机 |
+
+## 固件包含的完整能力
+
+| 范围 | 功能 |
+| --- | --- |
+| 语音采集 | 开始/停止设备录音、PDM 采音、PCM 分帧排队、保留尾包并报告传输状态 |
+| BLE 音频 | 可订阅音频流、按速率通知、重试与背压、保留包重放和会话身份 |
+| 键盘控制 | EC11 单击/双击/长按/旋转；KEY1–KEY4 单击/双击/长按；安全 BLE HID 兜底 |
+| 产品反馈 | 录音、传输、处理、成功、警告、配对、充电、电量和低功耗灯效 |
+| 设备设置 | 持久化蓝牙名称、分区灯光亮度、旋钮动作、插电/电池休眠时间、低功耗与关机时间 |
+| 电池与电源 | 标准 BLE 电量上报、充电/充满状态、低电保护、空闲麦克风休眠、按键唤醒和硬件关机 |
+| 配对与恢复 | 可发现配对、清除绑定、重连、串口维护和显式恢复出厂路径 |
+| OTA | 双应用分区、包验证、进度状态、待验证启动、失败回滚，并在正常升级中保留配对/设置 |
+| 诊断 | Flash 事件日志、健康心跳、BLE/串口导出、来源开关、有限长度报告和机器可读诊断包 |
+| 工程工具 | 可重复的安装/构建/刷写/监控，以及主板、音频、BLE、电源、按键和 OTA 验证 |
+
+## 从开机到文字
+
+1. 给键盘充电，单击旋钮开机。
+2. 在 Listener Type 中进入设置 → 设备 → 开始配对；Windows 蓝牙选择 `listener`，再回 Type 检查连接。
+3. 光标点进输入框，单击旋钮，说话，再单击。
+4. REC 表示正在采音，AI 表示传输或处理，OK 表示完成；文字由 Listener Type 放回光标。
+
+语音自动开始在 Listener Type 中配置。固件维持低功耗人声活动路径并传输候选音频；桌面端检查唤醒词和可选声纹后，才接受正式听写会话。
+
+## 控制与灯
+
+| 控制 | 默认产品行为 |
+| --- | --- |
+| 旋钮单击 | 开始或停止听写 |
+| 旋钮双击 | 清除蓝牙绑定并重新可被发现 |
+| 旋钮长按 | 关机 |
+| 旋钮旋转 | 系统音量；可改为屏幕亮度或关闭 |
+| KEY1–KEY4 | 在 Listener Type 中配置单击、双击和长按动作 |
+
+| 灯 | 含义 |
+| --- | --- |
+| PWR | 电源、充电和电量等级 |
+| BLE | 配对、重连、已连接和 Type 就绪 |
+| REC | 设备正在采集音频 |
+| AI | 音频传输或桌面端处理 |
+| OK | 成功或 OTA 进度 |
+| WARN | 有需要处理的可恢复错误 |
+
+灯全灭通常表示低功耗休眠。亮度和休眠/关机时间可以从 Listener Type 调整。Windows 可通过标准蓝牙电量服务读取当前电量。
+
+<p align="center">
+  <img src="docs/assets/readme/device-settings.png" alt="Listener Type 中的设备设置" width="720" />
+</p>
+
+## 升级与恢复
+
+普通用户在 Listener Type 中选择正式 OTA ZIP。OTA 使用两个固件分区，未验证的新固件可以回滚；正常升级保留蓝牙绑定和设备设置。配对出错时双击旋钮恢复。USB 刷写和整片擦除属于工程/恢复操作，可能清除保存的状态。
+
+最新标记版本在 [Releases](https://github.com/Listener-ai-Macau/Listener-Firmware/releases)。尽量与同版本 Listener Type 配套，并核对发布页的 SHA-256。
+
+## 版本脉络
+
+| 版本 | 固件进展 |
+| --- | --- |
+| 1.0.1 | 建立 Listener 固件发布包 |
+| 1.0.3 | 完成 BLE 传输速度、OTA/启动和状态灯约束 |
+| 1.0.4 | 收拢录音、唤醒、自动结束、配对恢复、电源和产品灯效 |
+| 1.0.5 | 让当前语音键盘控制与反馈配套 Type 1.0.5 日常使用链路 |
+
+准确 OTA 包与校验值以 [GitHub Releases](https://github.com/Listener-ai-Macau/Listener-Firmware/releases) 为准。
+
+## 构建与刷写
+
+Windows 脚本会准备 ESP-IDF `release/v5.5` 并保持环境一致：
 
 ```powershell
 pwsh -NoProfile -File .\tools\setup_windows.ps1
 pwsh -NoProfile -File .\tools\build.ps1
 pwsh -NoProfile -File .\tools\flash.ps1 -Port COMx
+pwsh -NoProfile -File .\tools\monitor.ps1 -Port COMx
 ```
 
-别裸跑 `idf.py`,走 `tools\idf.ps1`,它先加载 IDF 环境。
+临时运行 ESP-IDF 命令时使用 `tools\idf.ps1`，不要直接运行 `idf.py`。
 
-## 读代码
+## 仓库结构
 
-`components/` 是产品逻辑,刻意保持跨平台;ESP-IDF 的绑定收在 `ports/esp32/`;`protocols/` 定义编解码和音频协议;`tools/` 是构建、刷写、监控脚本。GPIO 表和验收工具写在 [docs/features/firmware-feature-map.md](docs/features/firmware-feature-map.md)。
+- `components/` — 控制、电源、设置、健康、OTA 和诊断等可移植产品逻辑
+- `ports/esp32/` — 主板、音频、BLE、存储和硬件服务的 ESP-IDF 绑定
+- `protocols/` — 共享设备协议和编解码
+- `main/` — 启动与子系统装配
+- `tools/` — 环境、构建、刷写、监控、打包、诊断和验证
+- `docs/features/firmware-feature-map.md` — 完整实现与验证地图
 
-贡献见 [CONTRIBUTING.md](CONTRIBUTING.md);安全问题发 [SECURITY.md](SECURITY.md)。
+贡献前请阅读 [CONTRIBUTING.md](CONTRIBUTING.md)，安全问题见 [SECURITY.md](SECURITY.md)。当前仓库没有 `LICENSE` 文件，因此能看到源码不代表自动获得再分发或修改授权。
