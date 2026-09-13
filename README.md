@@ -1,5 +1,16 @@
 # Listener Firmware
 
+<p align="center">
+  <strong>Production firmware for the Listener voice keyboard</strong><br />
+  ESP32-S3 · ESP-IDF 5.5 · BLE audio and HID · dual-slot OTA
+</p>
+
+<p align="center">
+  <a href="https://github.com/Listener-ai-Macau/Listener-Firmware/releases"><img alt="Release 1.0.5" src="https://img.shields.io/badge/release-1.0.5-6f42c1" /></a>
+  <img alt="ESP32-S3" src="https://img.shields.io/badge/target-ESP32--S3-00599c" />
+  <img alt="ESP-IDF 5.5" src="https://img.shields.io/badge/ESP--IDF-5.5-e7352c" />
+</p>
+
 Firmware for the Listener voice keyboard: an ESP32-S3 desktop controller that captures speech, streams it to Listener Type over Bluetooth, and puts recording controls and product status under your hand.
 
 [简体中文](README.zh.md) · [繁體中文](README.zh-TW.md) · [Firmware releases](https://github.com/Listener-ai-Macau/Listener-Firmware/releases) · [Listener Type](https://github.com/Listener-ai-Macau/Listener-Type)
@@ -16,6 +27,18 @@ Firmware for the Listener voice keyboard: an ESP32-S3 desktop controller that ca
 | Listener Firmware | Microphone capture, BLE audio/HID, physical controls, LEDs, battery and power behavior, device settings, diagnostics, and firmware OTA |
 
 The firmware does not turn speech into text on its own. Listener Type receives the audio, produces the final text, and inserts it into the focused app.
+
+```mermaid
+flowchart LR
+    Controls[Knob and keys] --> Session[Recording session]
+    PDM[PDM microphone] --> Session
+    Session --> Transport[BLE audio transport]
+    Transport --> Type[Listener Type]
+    Type -->|settings, status and OTA| Device[Device services]
+    Device --> Controls
+    Power[Battery and power manager] --> Session
+    Power --> Device
+```
 
 ## Hardware at a glance
 
@@ -83,6 +106,18 @@ Normal users update from Listener Type with a release OTA ZIP. OTA uses two firm
 
 The latest tagged firmware is on [Releases](https://github.com/Listener-ai-Macau/Listener-Firmware/releases). Match it with the same Listener Type release where possible, and verify the SHA-256 published on the release page.
 
+## Product status
+
+| Status | Capability | Current scope |
+| --- | --- | --- |
+| **Stable** | Manual dictation transport | Knob-controlled PDM capture, BLE streaming, tail preservation, and desktop completion feedback |
+| **Stable** | Controls and product feedback | EC11, KEY1–KEY4, BLE HID fallbacks, LEDs, battery, persistent settings, and low-power behavior |
+| **Stable** | Update and recovery | Type-driven OTA, package checks, dual slots, pending verification, rollback, pairing reset, and USB recovery |
+| **Limited** | Voice-triggered sessions | Firmware transports candidate audio; wake phrase, voiceprint, session ending, and speaker ownership are decided by Listener Type |
+| **Engineering** | Factory and diagnostics | Serial commands, flash-backed logs, diagnostic bundles, replay, full erase, and wired flashing require trained handling |
+
+These labels describe the current product contract. Low-level commands and validation entry points are catalogued in the [firmware feature map](docs/features/firmware-feature-map.md).
+
 ## Release history
 
 | Release | Firmware milestone |
@@ -116,4 +151,4 @@ Use `tools\idf.ps1` for ad hoc ESP-IDF commands instead of running bare `idf.py`
 - `tools/` — setup, build, flash, monitor, packaging, diagnostics, and validation
 - `docs/features/firmware-feature-map.md` — full implementation and validation map
 
-Read [CONTRIBUTING.md](CONTRIBUTING.md) before contributing and [SECURITY.md](SECURITY.md) for security reports. This repository currently has no `LICENSE` file, so source availability alone does not grant redistribution or modification rights.
+Read [CONTRIBUTING.md](CONTRIBUTING.md) before contributing, [SUPPORT.md](SUPPORT.md) for useful bug reports, and [SECURITY.md](SECURITY.md) for security reports. This repository currently has no `LICENSE` file, so source availability alone does not grant redistribution or modification rights.

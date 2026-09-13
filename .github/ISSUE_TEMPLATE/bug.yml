@@ -1,0 +1,53 @@
+name: Firmware bug report
+description: Report a reproducible Listener voice keyboard defect
+title: "[Bug]: "
+labels: ["bug"]
+body:
+  - type: textarea
+    id: summary
+    attributes:
+      label: Summary
+      description: Describe the device behavior that failed.
+    validations:
+      required: true
+  - type: input
+    id: versions
+    attributes:
+      label: Firmware and Listener Type versions
+      placeholder: Firmware 1.0.5 build ...; Type 1.0.5
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: Affected area
+      options:
+        - Audio capture or BLE transport
+        - Knob, keys, or BLE HID
+        - LEDs or product feedback
+        - Battery, charging, or low power
+        - Pairing or reconnect
+        - Device settings
+        - OTA or boot recovery
+        - Diagnostics or factory tooling
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps and observed state
+      description: Include power source, BLE state, control action, LED sequence, expected result, and actual result.
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Redacted evidence
+      description: Add relevant counters, diagnostic output, or a short serial excerpt. Remove identifiers, recordings, transcripts, paths, credentials, and signing data.
+  - type: checkboxes
+    id: privacy
+    attributes:
+      label: Privacy check
+      options:
+        - label: I removed private data and unreleased distributable artifacts.
+          required: true

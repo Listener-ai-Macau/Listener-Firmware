@@ -1,5 +1,16 @@
 # Listener Firmware
 
+<p align="center">
+  <strong>Listener 語音鍵盤的產品韌體</strong><br />
+  ESP32-S3 · ESP-IDF 5.5 · BLE 音訊與 HID · 雙分割區 OTA
+</p>
+
+<p align="center">
+  <a href="https://github.com/Listener-ai-Macau/Listener-Firmware/releases"><img alt="1.0.5 版本" src="https://img.shields.io/badge/release-1.0.5-6f42c1" /></a>
+  <img alt="ESP32-S3" src="https://img.shields.io/badge/target-ESP32--S3-00599c" />
+  <img alt="ESP-IDF 5.5" src="https://img.shields.io/badge/ESP--IDF-5.5-e7352c" />
+</p>
+
 Listener 語音鍵盤的韌體。它執行在 ESP32-S3 桌面裝置上，採集語音並透過藍牙送給 Listener Type，把錄音控制和產品狀態放在手邊。
 
 [English](README.md) · [简体中文](README.zh.md) · [韌體發布](https://github.com/Listener-ai-Macau/Listener-Firmware/releases) · [Listener Type](https://github.com/Listener-ai-Macau/Listener-Type)
@@ -16,6 +27,18 @@ Listener 語音鍵盤的韌體。它執行在 ESP32-S3 桌面裝置上，採集�
 | Listener Firmware | 麥克風採集、BLE 音訊/HID、實體控制、燈、電池與電源、裝置設定、診斷和韌體 OTA |
 
 韌體本身不會把語音變成文字。Listener Type 接收音訊、產生最終文字並插入目前應用程式。
+
+```mermaid
+flowchart LR
+    Controls[旋鈕與按鍵] --> Session[錄音工作階段]
+    PDM[PDM 麥克風] --> Session
+    Session --> Transport[BLE 音訊傳輸]
+    Transport --> Type[Listener Type]
+    Type -->|設定、狀態與 OTA| Device[裝置服務]
+    Device --> Controls
+    Power[電池與電源管理] --> Session
+    Power --> Device
+```
 
 ## 硬體一覽
 
@@ -83,6 +106,18 @@ Listener 語音鍵盤的韌體。它執行在 ESP32-S3 桌面裝置上，採集�
 
 最新標記版本在 [Releases](https://github.com/Listener-ai-Macau/Listener-Firmware/releases)。儘量與同版本 Listener Type 配套，並核對發布頁的 SHA-256。
 
+## 產品狀態
+
+| 狀態 | 能力 | 目前範圍 |
+| --- | --- | --- |
+| **穩定** | 手動聽寫傳輸 | 旋鈕控制 PDM 收音、BLE 串流傳輸、尾音保留和桌面端完成回饋 |
+| **穩定** | 控制與產品回饋 | EC11、KEY1–KEY4、BLE HID 備援、燈、電量、持久設定和低功耗行為 |
+| **穩定** | 升級與復原 | Type 內 OTA、套件校驗、雙分割區、待確認啟動、回復、配對重設和 USB 復原 |
+| **受限** | 語音觸發工作階段 | 韌體傳送候選音訊；喚醒詞、聲紋、自動結束和說話人歸屬由 Listener Type 判斷 |
+| **工程能力** | 工廠與診斷 | 序列埠命令、快閃記憶體日誌、診斷包、重播、全擦和有線燒錄需要專業操作 |
+
+這些標籤定義目前產品邊界。底層命令和驗證入口見[韌體功能對照](docs/features/firmware-feature-map.md)。
+
 ## 版本脈絡
 
 | 版本 | 韌體進展 |
@@ -116,4 +151,4 @@ pwsh -NoProfile -File .\tools\monitor.ps1 -Port COMx
 - `tools/` — 環境、建置、刷寫、監控、打包、診斷和驗證
 - `docs/features/firmware-feature-map.md` — 完整實作與驗證地圖
 
-貢獻前請閱讀 [CONTRIBUTING.md](CONTRIBUTING.md)，安全問題見 [SECURITY.md](SECURITY.md)。目前倉庫沒有 `LICENSE` 檔案，因此能看到原始碼不代表自動獲得再散布或修改授權。
+貢獻前請閱讀 [CONTRIBUTING.md](CONTRIBUTING.md)，問題回報見 [SUPPORT.md](SUPPORT.md)，安全問題見 [SECURITY.md](SECURITY.md)。目前倉庫沒有 `LICENSE` 檔案，因此能看到原始碼不代表自動獲得再散布或修改授權。

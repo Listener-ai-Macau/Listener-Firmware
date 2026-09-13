@@ -1,5 +1,16 @@
 # Listener Firmware
 
+<p align="center">
+  <strong>Listener 语音键盘的产品固件</strong><br />
+  ESP32-S3 · ESP-IDF 5.5 · BLE 音频与 HID · 双分区 OTA
+</p>
+
+<p align="center">
+  <a href="https://github.com/Listener-ai-Macau/Listener-Firmware/releases"><img alt="1.0.5 版本" src="https://img.shields.io/badge/release-1.0.5-6f42c1" /></a>
+  <img alt="ESP32-S3" src="https://img.shields.io/badge/target-ESP32--S3-00599c" />
+  <img alt="ESP-IDF 5.5" src="https://img.shields.io/badge/ESP--IDF-5.5-e7352c" />
+</p>
+
 Listener 语音键盘的固件。它运行在 ESP32-S3 桌面设备上，采集语音并通过蓝牙送给 Listener Type，把录音控制和产品状态放在手边。
 
 [English](README.md) · [繁體中文](README.zh-TW.md) · [固件发布](https://github.com/Listener-ai-Macau/Listener-Firmware/releases) · [Listener Type](https://github.com/Listener-ai-Macau/Listener-Type)
@@ -16,6 +27,18 @@ Listener 语音键盘的固件。它运行在 ESP32-S3 桌面设备上，采集�
 | Listener Firmware | 麦克风采集、BLE 音频/HID、实体控制、灯、电池与电源、设备设置、诊断和固件 OTA |
 
 固件本身不会把语音变成文字。Listener Type 接收音频、生成最终文字并插入当前应用。
+
+```mermaid
+flowchart LR
+    Controls[旋钮与按键] --> Session[录音会话]
+    PDM[PDM 麦克风] --> Session
+    Session --> Transport[BLE 音频传输]
+    Transport --> Type[Listener Type]
+    Type -->|设置、状态与 OTA| Device[设备服务]
+    Device --> Controls
+    Power[电池与电源管理] --> Session
+    Power --> Device
+```
 
 ## 硬件一览
 
@@ -83,6 +106,18 @@ Listener 语音键盘的固件。它运行在 ESP32-S3 桌面设备上，采集�
 
 最新标记版本在 [Releases](https://github.com/Listener-ai-Macau/Listener-Firmware/releases)。尽量与同版本 Listener Type 配套，并核对发布页的 SHA-256。
 
+## 产品状态
+
+| 状态 | 能力 | 当前范围 |
+| --- | --- | --- |
+| **稳定** | 手动听写传输 | 旋钮控制 PDM 收音、BLE 流式传输、尾音保留和桌面端完成反馈 |
+| **稳定** | 控制与产品反馈 | EC11、KEY1–KEY4、BLE HID 兜底、灯、电量、持久设置和低功耗行为 |
+| **稳定** | 升级与恢复 | Type 内 OTA、包校验、双分区、待确认启动、回滚、配对重置和 USB 恢复 |
+| **受限** | 语音触发会话 | 固件传送候选音频；唤醒词、声纹、自动结束和说话人归属由 Listener Type 判断 |
+| **工程能力** | 工厂与诊断 | 串口命令、闪存日志、诊断包、重放、全擦和有线刷机需要专业操作 |
+
+这些标签定义当前产品边界。底层命令和验证入口见[固件功能映射](docs/features/firmware-feature-map.md)。
+
 ## 版本脉络
 
 | 版本 | 固件进展 |
@@ -116,4 +151,4 @@ pwsh -NoProfile -File .\tools\monitor.ps1 -Port COMx
 - `tools/` — 环境、构建、刷写、监控、打包、诊断和验证
 - `docs/features/firmware-feature-map.md` — 完整实现与验证地图
 
-贡献前请阅读 [CONTRIBUTING.md](CONTRIBUTING.md)，安全问题见 [SECURITY.md](SECURITY.md)。当前仓库没有 `LICENSE` 文件，因此能看到源码不代表自动获得再分发或修改授权。
+贡献前请阅读 [CONTRIBUTING.md](CONTRIBUTING.md)，问题报告见 [SUPPORT.md](SUPPORT.md)，安全问题见 [SECURITY.md](SECURITY.md)。当前仓库没有 `LICENSE` 文件，因此能看到源码不代表自动获得再分发或修改授权。
