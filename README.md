@@ -130,4 +130,4 @@ Use `tools\idf.ps1` for ad hoc ESP-IDF commands instead of running bare `idf.py`
 - `tools/` — setup, build, flash, monitor, packaging, diagnostics, and validation
 - `docs/features/firmware-feature-map.md` — full implementation and validation map
 
-Read [CONTRIBUTING.md](CONTRIBUTING.md) before contributing and [SECURITY.md](SECURITY.md) for security reports. This repository currently has no `LICENSE` file, so source availability alone does not grant redistribution or modification rights.
+Read [CONTRIBUTING.md](CONTRIBUTING.md) before contributing and [SECURITY.md](SECURITY.md) for security reports. Listener Firmware is open source under the [Apache-2.0 license](LICENSE).

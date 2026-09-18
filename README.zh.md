@@ -130,4 +130,4 @@ pwsh -NoProfile -File .\tools\monitor.ps1 -Port COMx
 - `tools/` — 环境、构建、刷写、监控、打包、诊断和验证
 - `docs/features/firmware-feature-map.md` — 完整实现与验证地图
 
-贡献前请阅读 [CONTRIBUTING.md](CONTRIBUTING.md)，安全问题见 [SECURITY.md](SECURITY.md)。当前仓库没有 `LICENSE` 文件，因此能看到源码不代表自动获得再分发或修改授权。
+贡献前请阅读 [CONTRIBUTING.md](CONTRIBUTING.md)，安全问题见 [SECURITY.md](SECURITY.md)。本仓库以 [Apache-2.0 许可证](LICENSE) 开源。
