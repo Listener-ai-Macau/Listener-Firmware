@@ -19,6 +19,9 @@ Listener 語音鍵盤的韌體。它執行在 ESP32-S3 桌面裝置上，採集�
 
 ## 硬體一覽
 
+<details>
+<summary>硬體一覽（V2 規格）</summary>
+
 | 部分 | 目前 V2 設定 |
 | --- | --- |
 | 主控 | ESP32-S3-WROOM-1-N16R8，16 MB 快閃記憶體，8 MB Octal PSRAM |
@@ -27,6 +30,8 @@ Listener 語音鍵盤的韌體。它執行在 ESP32-S3 桌面裝置上，採集�
 | 回饋 | 六組狀態燈：PWR、BLE、REC、AI、OK、WARN |
 | 無線 | BLE 音訊、BLE HID 鍵盤、設定、診斷、電量服務和 OTA |
 | 電源 | 鋰電池、USB-C 充電、電量偵測、低功耗休眠、按鍵喚醒和定時關機 |
+
+</details>
 
 ## 韌體包含的完整能力
 
@@ -96,17 +101,6 @@ Listener 語音鍵盤的韌體。它執行在 ESP32-S3 桌面裝置上，採集�
 一般使用者在 Listener Type 中選擇正式 OTA ZIP。OTA 使用兩個韌體分區，未驗證的新韌體可以回滾；正常升級保留藍牙綁定和裝置設定。配對出錯時雙擊旋鈕復原。USB 刷寫和整片抹除屬於工程/復原操作，可能清除儲存狀態。
 
 最新標記版本在 [Releases](https://github.com/Listener-ai-Macau/Listener-Firmware/releases)。儘量與同版本 Listener Type 配套，並核對發布頁的 SHA-256。
-
-## 版本脈絡
-
-| 版本 | 韌體進展 |
-| --- | --- |
-| 1.0.1 | 建立 Listener 韌體發布包 |
-| 1.0.3 | 完成 BLE 傳輸速度、OTA/啟動和狀態燈約束 |
-| 1.0.4 | 收攏錄音、喚醒、自動結束、配對復原、電源和產品燈效 |
-| 1.0.5 | 讓目前語音鍵盤控制與回饋配套 Type 1.0.5 日常使用鏈路 |
-
-準確 OTA 包與校驗值以 [GitHub Releases](https://github.com/Listener-ai-Macau/Listener-Firmware/releases) 為準。
 
 ## 建置與刷寫
 

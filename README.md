@@ -19,6 +19,9 @@ The firmware does not turn speech into text on its own. Listener Type receives t
 
 ## Hardware at a glance
 
+<details>
+<summary>Hardware at a glance (V2 specs)</summary>
+
 | Part | Current V2 profile |
 | --- | --- |
 | Controller | ESP32-S3-WROOM-1-N16R8, 16 MB flash, 8 MB Octal PSRAM |
@@ -27,6 +30,8 @@ The firmware does not turn speech into text on its own. Listener Type receives t
 | Feedback | Six status zones: PWR, BLE, REC, AI, OK, WARN |
 | Wireless | BLE audio services, BLE HID keyboard, settings, diagnostics, battery service, and OTA |
 | Power | Li-ion battery, USB-C charging, battery measurement, low-power idle, wake on controls, and timed shutdown |
+
+</details>
 
 ## What the firmware does
 
@@ -96,17 +101,6 @@ Status lights, key lights, the knob ring, and the edge glow each have their own 
 Normal users update from Listener Type with a release OTA ZIP. OTA uses two firmware slots and can roll back an unverified image; normal updates preserve Bluetooth bonds and device settings. Double-click the knob for pairing recovery. USB flashing and full erase are engineering/recovery operations and can reset stored state.
 
 The latest tagged firmware is on [Releases](https://github.com/Listener-ai-Macau/Listener-Firmware/releases). Match it with the same Listener Type release where possible, and verify the SHA-256 published on the release page.
-
-## Release history
-
-| Release | Firmware milestone |
-| --- | --- |
-| 1.0.1 | Established the Listener firmware release package |
-| 1.0.3 | Accepted BLE transfer throughput, OTA/boot behavior, and status-light contracts |
-| 1.0.4 | Consolidated recording, wake, automatic ending, pairing recovery, power, and product-light behavior |
-| 1.0.5 | Matched the current voice keyboard controls and feedback with the Type 1.0.5 daily-use path |
-
-Exact OTA packages and checksums are kept on the [GitHub Releases page](https://github.com/Listener-ai-Macau/Listener-Firmware/releases).
 
 ## Build and flash
 

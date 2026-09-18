@@ -19,6 +19,9 @@ Listener 语音键盘的固件。它运行在 ESP32-S3 桌面设备上，采集�
 
 ## 硬件一览
 
+<details>
+<summary>硬件一览（V2 规格）</summary>
+
 | 部分 | 当前 V2 配置 |
 | --- | --- |
 | 主控 | ESP32-S3-WROOM-1-N16R8，16 MB 闪存，8 MB Octal PSRAM |
@@ -27,6 +30,8 @@ Listener 语音键盘的固件。它运行在 ESP32-S3 桌面设备上，采集�
 | 反馈 | 六组状态灯：PWR、BLE、REC、AI、OK、WARN |
 | 无线 | BLE 音频、BLE HID 键盘、设置、诊断、电量服务和 OTA |
 | 电源 | 锂电池、USB-C 充电、电量检测、低功耗休眠、按键唤醒和定时关机 |
+
+</details>
 
 ## 固件包含的完整能力
 
@@ -96,17 +101,6 @@ Listener 语音键盘的固件。它运行在 ESP32-S3 桌面设备上，采集�
 普通用户在 Listener Type 中选择正式 OTA ZIP。OTA 使用两个固件分区，未验证的新固件可以回滚；正常升级保留蓝牙绑定和设备设置。配对出错时双击旋钮恢复。USB 刷写和整片擦除属于工程/恢复操作，可能清除保存的状态。
 
 最新标记版本在 [Releases](https://github.com/Listener-ai-Macau/Listener-Firmware/releases)。尽量与同版本 Listener Type 配套，并核对发布页的 SHA-256。
-
-## 版本脉络
-
-| 版本 | 固件进展 |
-| --- | --- |
-| 1.0.1 | 建立 Listener 固件发布包 |
-| 1.0.3 | 完成 BLE 传输速度、OTA/启动和状态灯约束 |
-| 1.0.4 | 收拢录音、唤醒、自动结束、配对恢复、电源和产品灯效 |
-| 1.0.5 | 让当前语音键盘控制与反馈配套 Type 1.0.5 日常使用链路 |
-
-准确 OTA 包与校验值以 [GitHub Releases](https://github.com/Listener-ai-Macau/Listener-Firmware/releases) 为准。
 
 ## 构建与刷写
 
