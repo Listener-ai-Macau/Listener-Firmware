@@ -13,7 +13,7 @@ Listener 語音鍵盤的韌體。它執行在 ESP32-S3 桌面裝置上，採集�
 | 倉庫 | 負責什麼 |
 | --- | --- |
 | [Listener Type](https://github.com/Listener-ai-Macau/Listener-Type) | 語音辨識、文字清理與風格、翻譯、歷史、游標插入、設定介面和桌面端更新 |
-| Listener Firmware | 麥克風採集、BLE 音訊/HID、實體控制、燈、電池與電源、裝置設定、診斷和韌體 OTA |
+| Listener Firmware | 麥克風採集、BLE 音訊/HID、實體控制、燈、電池與電源、裝置設定、診斷和韌體線上升級（OTA） |
 
 韌體本身不會把語音變成文字。Listener Type 接收音訊、產生最終文字並插入目前應用程式。
 

@@ -13,7 +13,7 @@ Firmware for the Listener voice keyboard: an ESP32-S3 desktop controller that ca
 | Repository | Responsibility |
 | --- | --- |
 | [Listener Type](https://github.com/Listener-ai-Macau/Listener-Type) | Speech recognition, text cleanup and styles, translation, history, cursor insertion, settings UI, and desktop updates |
-| Listener Firmware | Microphone capture, BLE audio/HID, physical controls, LEDs, battery and power behavior, device settings, diagnostics, and firmware OTA |
+| Listener Firmware | Microphone capture, BLE audio/HID, physical controls, LEDs, battery and power behavior, device settings, diagnostics, and over-the-air (OTA) firmware updates |
 
 The firmware does not turn speech into text on its own. Listener Type receives the audio, produces the final text, and inserts it into the focused app.
 
