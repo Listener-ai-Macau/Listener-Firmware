@@ -13,7 +13,7 @@ Listener 语音键盘的固件。它运行在 ESP32-S3 桌面设备上，采集�
 | 仓库 | 负责什么 |
 | --- | --- |
 | [Listener Type](https://github.com/Listener-ai-Macau/Listener-Type) | 语音识别、文字清理与风格、翻译、历史、光标插入、设置界面和桌面端更新 |
-| Listener Firmware | 麦克风采集、BLE 音频/HID、实体控制、灯、电池与电源、设备设置、诊断和固件 OTA |
+| Listener Firmware | 麦克风采集、BLE 音频/HID、实体控制、灯、电池与电源、设备设置、诊断和固件在线升级（OTA） |
 
 固件本身不会把语音变成文字。Listener Type 接收音频、生成最终文字并插入当前应用。
 
