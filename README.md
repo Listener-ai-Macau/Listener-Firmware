@@ -5,7 +5,7 @@
   <img src="docs/assets/listener/firmware-hero-en.png" alt="Listener voice keyboard: one press, start speaking" width="1600">
 </picture>
 
-**English** · [简体中文](README.zh-CN.md)
+**English** · [Chinese](README.zh-CN.md)
 
 # Listener Firmware
 
@@ -22,16 +22,6 @@
 | See the current state | Six lights distinguish recording, processing, completion and connection issues. |
 | Physical keys for everyday actions | Customize four keys; rotate the knob for volume by default. |
 
-## At your desk, with the app you are using
-
-<picture>
-  <source media="(prefers-color-scheme: dark) and (max-width: 600px)" srcset="docs/assets/listener/usage-scene-en-mobile-dark.png">
-  <source media="(prefers-color-scheme: dark)" srcset="docs/assets/listener/usage-scene-en-dark.png">
-  <source media="(max-width: 600px)" srcset="docs/assets/listener/usage-scene-en-mobile.png">
-  <img src="docs/assets/listener/usage-scene-en.png" alt="Keyboard and computer input composite; not a live-use photograph" width="1200">
-</picture>
-
-The keyboard captures audio and provides controls; Type on the computer handles text. This composite uses repository photos and a screenshot; the input field is illustrated.
 
 ## From power-on to the first sentence
 

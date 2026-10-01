@@ -5,7 +5,7 @@
   <img src="docs/assets/listener/firmware-hero.png" alt="Listener 语音键盘：按一下，开始表达" width="1600">
 </picture>
 
-**简体中文** · [English](README.md)
+**简体中文** · [英文](README.md)
 
 # Listener Firmware
 
@@ -22,20 +22,10 @@
 | 抬眼知道进行到哪 | 六颗状态灯区分录音、处理、完成和连接问题。 |
 | 常用动作有实体按键 | 四键支持自定义；旋转旋钮默认调节音量。 |
 
-## 放在桌上，配合正在用的电脑
-
-<picture>
-  <source media="(prefers-color-scheme: dark) and (max-width: 600px)" srcset="docs/assets/listener/usage-scene-zh-mobile-dark.png">
-  <source media="(prefers-color-scheme: dark)" srcset="docs/assets/listener/usage-scene-zh-dark.png">
-  <source media="(max-width: 600px)" srcset="docs/assets/listener/usage-scene-zh-mobile.png">
-  <img src="docs/assets/listener/usage-scene-zh.png" alt="键盘与电脑输入场景组合示意；非实机操作照片" width="1200">
-</picture>
-
-键盘负责收音与按键控制，电脑上的 Type 处理文字。图片使用仓库实物照片和软件截图组合；输入框为示意。
 
 ## 从开机到第一句话
 
-配套 Type 软件免费开源；云端识别或文字服务按提供方计费。没有 API Key，可先用 Windows 本地模型与 Raw 试录；详见[软件配置说明](https://github.com/Listener-ai-Macau/Listener-Type/blob/master/README.zh-CN.md#软件免费服务费用分别计算)。
+配套 Type 软件免费开源；云端识别或文字服务按提供方计费。没有云端密钥，可先用 Windows 本地模型与原文模式（Raw）试录；详见[软件配置说明](https://github.com/Listener-ai-Macau/Listener-Type/blob/master/README.zh-CN.md#软件免费服务费用分别计算)。
 
 1. 先安装并打开 [Listener Type](https://github.com/Listener-ai-Macau/Listener-Type/releases)，配置识别服务凭据或准备本地模型。
 2. USB-C 充电，单击旋钮开机。
@@ -60,7 +50,7 @@
 | OK | 绿色短亮：完成；OTA 显示青绿色进度 |
 | WARN | 琥珀或红色：关注软件错误提示 |
 
-[完整灯语](docs/features/status_led.md) · 不只看颜色，也看灯名与节奏。
+[完整灯语](docs/features/status_led.zh-CN.md) · 不只看颜色，也看灯名与节奏。
 
 ## 默认动作与个人设置
 
@@ -80,7 +70,7 @@
 
 ## 更新与恢复
 
-普通用户从 Releases 获取匹配的 OTA ZIP，在 Type 的设备页更新。保持供电与连接，完成重启后核对版本。正常 OTA 保留配对与设置；双击旋钮重配与工程全擦写是不同操作。
+普通用户从发布页获取匹配的 OTA ZIP，在 Type 的设备页更新。保持供电与连接，完成重启后核对版本。正常 OTA 保留配对与设置；双击旋钮重配与工程全擦写是不同操作。
 
 ## 开发入口
 
@@ -100,8 +90,8 @@ pwsh -NoProfile -File .\tools\flash.ps1 -Port COMx
 pwsh -NoProfile -File .\tools\monitor.ps1 -Port COMx
 ```
 
-临时 ESP-IDF 命令使用 `tools/idf.ps1`。从[贡献指南](CONTRIBUTING.md)与[功能映射](docs/features/firmware-feature-map.md)继续。
+临时 ESP-IDF 命令使用 `tools/idf.ps1`。从[贡献指南](CONTRIBUTING.zh-CN.md)与[产品功能目录](docs/product/features.md)继续。
 
-[安全](SECURITY.md)
+[安全](SECURITY.zh-CN.md)
 
 [Apache-2.0](https://github.com/Listener-ai-Macau/Listener-Firmware/blob/master/LICENSE)
