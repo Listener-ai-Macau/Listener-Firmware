@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Listener Type speech and text issues
+    url: https://github.com/Listener-ai-Macau/Listener-Type/issues
+    about: Report recognition, writing, cursor insertion, wake phrase, or voiceprint behavior in the desktop repository.
+  - name: Security report
+    url: https://github.com/Listener-ai-Macau/Listener-Firmware/security/advisories/new
+    about: Report vulnerabilities privately and exclude credentials, recordings, and signing material.

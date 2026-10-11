@@ -1,0 +1,27 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [master]
+
+jobs:
+  firmware-build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - name: Resolve pinned Denzic Platform commit
+        id: platform-ref
+        run: echo "commit=$(git rev-parse HEAD:third_party/denzic-platform)" >> "$GITHUB_OUTPUT"
+      - uses: actions/checkout@v6
+        with:
+          repository: Listener-ai-Macau/Denzic-Platform
+          ref: ${{ steps.platform-ref.outputs.commit }}
+          path: third_party/denzic-platform
+          persist-credentials: false
+      - name: Build ESP32-S3 firmware
+        uses: espressif/esp-idf-ci-action@v1
+        with:
+          esp_idf_version: release-v5.5
+          target: esp32s3
+          path: .

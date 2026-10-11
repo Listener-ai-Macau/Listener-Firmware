@@ -1,110 +1,87 @@
+<picture>
+  <source media="(prefers-color-scheme: dark) and (max-width: 600px)" srcset="docs/assets/listener/firmware-hero-mobile-dark.png">
+  <source media="(prefers-color-scheme: dark)" srcset="docs/assets/listener/firmware-hero-dark.png">
+  <source media="(max-width: 600px)" srcset="docs/assets/listener/firmware-hero-mobile.png">
+  <img src="docs/assets/listener/firmware-hero.png" alt="Listener 语音键盘：按一下，开始表达" width="1600">
+</picture>
+
+**简体中文** · [英文](README.md)
+
 # Listener Firmware
 
-Listener 语音键盘的固件。它运行在 ESP32-S3 桌面设备上，采集语音并通过蓝牙送给 Listener Type，把录音控制和产品状态放在手边。
+**把收音、录音控制和状态提示放到手边。**
 
-[English](README.md) · [繁體中文](README.zh-TW.md) · [固件发布](https://github.com/Listener-ai-Macau/Listener-Firmware/releases) · [Listener Type](https://github.com/Listener-ai-Macau/Listener-Type)
+**[先用电脑麦克风体验](https://github.com/Listener-ai-Macau/Listener-Type/releases)** · [已有键盘：开始连接](#从开机到第一句话) · [固件下载](https://github.com/Listener-ai-Macau/Listener-Firmware/releases) · [折页说明书](https://github.com/Listener-ai-Macau/Listener-Type/blob/master/docs/manuals/Listener-fold-ZH.pdf)
 
-<p align="center">
-  <img src="docs/assets/readme/keyboard-front.jpg" alt="带按键、旋钮和状态灯的 Listener 语音键盘" width="900" />
-</p>
+> **硬件预售阶段 · 购买入口尚未公布**
+> 可以先用电脑麦克风体验软件。已有键盘的用户按下方步骤连接。
 
-## 一个完整的 Listener 产品
-
-| 仓库 | 负责什么 |
+| 放到手边的体验 | 怎样使用 |
 | --- | --- |
-| [Listener Type](https://github.com/Listener-ai-Macau/Listener-Type) | 语音识别、文字清理与风格、翻译、历史、光标插入、设置界面和桌面端更新 |
-| Listener Firmware | 麦克风采集、BLE 音频/HID、实体控制、灯、电池与电源、设备设置、诊断和固件在线升级（OTA） |
+| 一按就开始，再按就结束 | 旋钮默认控制录音，电脑完成识别和写入。 |
+| 抬眼知道进行到哪 | 六颗状态灯区分录音、处理、完成和连接问题。 |
+| 常用动作有实体按键 | 四键支持自定义；旋转旋钮默认调节音量。 |
 
-固件本身不会把语音变成文字。Listener Type 接收音频、生成最终文字并插入当前应用。
 
-## 硬件一览
+## 从开机到第一句话
 
-<details>
-<summary>硬件一览（V2 规格）</summary>
+配套 Type 软件免费开源；云端识别或文字服务按提供方计费。没有云端密钥，可先用 Windows 本地模型与原文模式（Raw）试录；详见[软件配置说明](https://github.com/Listener-ai-Macau/Listener-Type/blob/master/README.zh-CN.md#软件免费服务费用分别计算)。
 
-| 部分 | 当前 V2 配置 |
+1. 先安装并打开 [Listener Type](https://github.com/Listener-ai-Macau/Listener-Type/releases)，配置识别服务凭据或准备本地模型。
+2. USB-C 充电，单击旋钮开机。
+3. Type「设置 → 设备」开始配对，在 Windows 蓝牙选择 `listener`，返回软件检查连接。
+4. 输入来源选 Listener BLE，放好光标；旋钮单击开始，说完再单击停止。
+
+蓝牙“已配对”不等于 Type 已就绪。硬件完整音频路径当前以 Windows 为主。
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/assets/listener/keyboard-lineart-dark.png">
+  <img src="docs/assets/listener/keyboard-lineart.png" alt="控件布局：四键、旋钮与六位状态区" width="720">
+</picture>
+
+## 读懂状态，操作就有把握
+
+| 灯 | 颜色与节奏 |
 | --- | --- |
-| 主控 | ESP32-S3-WROOM-1-N16R8，16 MB 闪存，8 MB Octal PSRAM |
-| 音频 | PDM 麦克风，16 kHz 采集，分帧 BLE 传输和保留/重放包 |
-| 控制 | 可按压、可旋转的 EC11 旋钮和 KEY1–KEY4 |
-| 反馈 | 六组状态灯：PWR、BLE、REC、AI、OK、WARN |
-| 无线 | BLE 音频、BLE HID 键盘、设置、诊断、电量服务和 OTA |
-| 电源 | 锂电池、USB-C 充电、电量检测、低功耗休眠、按键唤醒和定时关机 |
+| PWR | 电池绿 / 琥珀 / 红；极低电量红双闪。白色呼吸充电，常亮充满 |
+| BLE | 蓝色脉冲：配对 / 重连；暗蓝双闪：Type 未就绪；蓝常亮：就绪 |
+| REC | 金色随声音变化：录音 |
+| AI | 紫色节拍：传输或处理 |
+| OK | 绿色短亮：完成；OTA 显示青绿色进度 |
+| WARN | 琥珀或红色：关注软件错误提示 |
 
-</details>
+[完整灯语](docs/features/status_led.zh-CN.md) · 不只看颜色，也看灯名与节奏。
 
-## 固件包含的完整能力
+## 默认动作与个人设置
 
-| 范围 | 功能 |
+| 控件 | 默认动作 |
 | --- | --- |
-| 语音采集 | 开始/停止设备录音、PDM 采音、PCM 分帧排队、保留尾包并报告传输状态 |
-| BLE 音频 | 可订阅音频流、按速率通知、重试与背压、保留包重放和会话身份 |
-| 键盘控制 | EC11 单击/双击/长按/旋转；KEY1–KEY4 单击/双击/长按；安全 BLE HID 兜底 |
-| 产品反馈 | 录音、传输、处理、成功、警告、配对、充电、电量和低功耗灯效 |
-| 设备设置 | 持久化蓝牙名称、分区灯光亮度、旋钮动作、插电/电池休眠时间、低功耗与关机时间 |
-| 电池与电源 | 标准 BLE 电量上报、充电/充满状态、低电保护、空闲麦克风休眠、按键唤醒和硬件关机 |
-| 配对与恢复 | 可发现配对、清除绑定、重连、串口维护和显式恢复出厂路径 |
-| OTA | 双应用分区、包验证、进度状态、待验证启动、失败回滚，并在正常升级中保留配对/设置 |
-| 诊断 | Flash 事件日志、健康心跳、BLE/串口导出、来源开关、有限长度报告和机器可读诊断包 |
-| 工程工具 | 可重复的安装/构建/刷写/监控，以及主板、音频、BLE、电源、按键和 OTA 验证 |
+| 旋钮单击 / 旋转 | 开始或停止录音 / 系统音量 |
+| 旋钮双击 / 持续长按 | 重置蓝牙配对 / 等待确认完成后关机 |
+| KEY1 / KEY2 / KEY3 / KEY4 | 右 Ctrl / Ctrl+C / Ctrl+V / Ctrl+Z |
 
-## 从开机到文字
+四键的双击和长按默认禁用；可在 Type 设备页映射听写、模板、快捷键与其他动作。状态区、按键、旋钮和板边亮度可分别调节。
 
-1. 给键盘充电，单击旋钮开机。
-2. 在 Listener Type 中进入设置 → 设备 → 开始配对；Windows 蓝牙选择 `listener`，再回 Type 检查连接。
-3. 光标点进输入框，单击旋钮，说话，再单击。
-4. REC 表示正在采音，AI 表示传输或处理，OK 表示完成；文字由 Listener Type 放回光标。
+同页可配置唤醒词与声纹。未录制声纹时，任何人说对唤醒词都可能触发；删除声纹不会关闭唤醒。启用唤醒时，REC 熄灭不代表麦克风完全关闭。
 
-语音自动开始在 Listener Type 中配置。固件维持低功耗人声活动路径并传输候选音频；桌面端检查唤醒词和可选声纹后，才接受正式听写会话。
+## 空闲时省电，需要时唤醒
 
-## 灯在说什么
+电池默认空闲约 1 分钟低功耗、10 分钟关机；USB 默认约 3 分钟低功耗，不自动关机。低功耗保留电源提示，按键或旋钮可唤醒；真正关机后用旋钮开机。计时与亮度可调整。
 
-键盘用光说话：六颗状态灯、一圈旋钮灯环、每颗按键下面一盏灯。词汇表学会一次，以后扫一眼就知道设备在做什么。
+## 更新与恢复
 
-| 灯 | 它在说什么 |
+普通用户从发布页获取匹配的 OTA ZIP，在 Type 的设备页更新。保持供电与连接，完成重启后核对版本。正常 OTA 保留配对与设置；双击旋钮重配与工程全擦写是不同操作。
+
+## 开发入口
+
+这是 Listener 语音键盘的开源固件仓库。键盘通过蓝牙把声音交给 Listener Type，由电脑完成识别与文字输入；它需要配套软件。
+
+| 目录 | 内容 |
 | --- | --- |
-| **PWR** | 绿色：电量充足。琥珀色：该充电了。红色：低电量。红色双闪：快没电了。插上 USB-C 后变白色——呼吸是充电中，常亮是充满了 |
-| **BLE** | 蓝色闪烁：正在配对或回连。低亮度双闪：蓝牙连上了，但电脑上的 Listener Type 还没打开。常亮：就绪，可以说话 |
-| **REC** | 金色，随你的声音起伏。灯亮着，就是在认真听 |
-| **AI** | 紫色「哒-哒哒」的节拍：录音收到了，正在转写 |
-| **OK** | 绿色亮两秒：文字送到了。固件升级时变青绿色显示进度，旋钮环跟着一起填满 |
-| **WARN** | 红色或琥珀色：有状况需要处理。所有错误只由这一颗灯报告 |
-
-绿是好消息，金是在听，紫是在想，蓝是蓝牙，白是充电，红是有问题。
-
-按键也会回应：按下先亮白色，动作生效闪紫色——单击一次，双击两次，长按期间常亮。
-
-## 键怎么用
-
-| 操作 | 默认行为 |
-| --- | --- |
-| 单击旋钮 | 开始 / 停止听写 |
-| 双击旋钮 | 清除蓝牙绑定，重新可被搜索 |
-| 长按旋钮 | 关机——旋钮周围亮起琥珀色确认环，环转满后继续按住即关机 |
-| 旋转旋钮 | 系统音量；可改成屏幕亮度或禁用 |
-| KEY1–KEY4 | 在 Listener Type「设置 → 设备」里自定义单击、双击、长按动作。KEY3 出厂是 Ctrl+V |
-
-没配置的键只会发出 F13–F24 这类无害按键，旋钮的兜底是 Shift+F13——不会自己往你的文档里打字。电脑上的 `Esc` 随时可以取消录音。
-
-## 电源，简单说
-
-旋钮是唯一的开机键。放着不用，键盘会打个盹——电池约一分钟，插电约三分钟——只留 PWR 一颗灯。灯全灭不是坏了，是睡着了；按任意键或转一下旋钮就醒。电池下闲置约十分钟会真正关机，再按一下旋钮开机。
-
-状态灯、键位灯、旋钮环、边框四个分区的亮度都能在 Listener Type 里分别调节，也有几档预设。就算把灯效整个关掉，低电量和错误提示依然会亮——重要的消息不缺席。Windows 可以通过标准蓝牙电量服务读取当前电量。
-
-<p align="center">
-  <img src="docs/assets/readme/device-settings.png" alt="Listener Type 中的设备设置" width="720" />
-</p>
-
-## 升级与恢复
-
-普通用户在 Listener Type 中选择正式 OTA ZIP。OTA 使用两个固件分区，未验证的新固件可以回滚；正常升级保留蓝牙绑定和设备设置。配对出错时双击旋钮恢复。USB 刷写和整片擦除属于工程/恢复操作，可能清除保存的状态。
-
-最新标记版本在 [Releases](https://github.com/Listener-ai-Macau/Listener-Firmware/releases)。尽量与同版本 Listener Type 配套，并核对发布页的 SHA-256。
-
-## 构建与刷写
-
-Windows 脚本会准备 ESP-IDF `release/v5.5` 并保持环境一致：
+| `components/` | 控制、灯光、电源、设置、OTA 与诊断逻辑 |
+| `ports/esp32/` | 音频、BLE、存储与硬件适配 |
+| `protocols/` | 设备协议与编解码 |
+| `tools/` | 构建、刷写、监控、打包与验证 |
 
 ```powershell
 pwsh -NoProfile -File .\tools\setup_windows.ps1
@@ -113,15 +90,8 @@ pwsh -NoProfile -File .\tools\flash.ps1 -Port COMx
 pwsh -NoProfile -File .\tools\monitor.ps1 -Port COMx
 ```
 
-临时运行 ESP-IDF 命令时使用 `tools\idf.ps1`，不要直接运行 `idf.py`。
+临时 ESP-IDF 命令使用 `tools/idf.ps1`。从[贡献指南](CONTRIBUTING.zh-CN.md)与[产品功能目录](docs/product/features.md)继续。
 
-## 仓库结构
+[安全](SECURITY.zh-CN.md)
 
-- `components/` — 控制、电源、设置、健康、OTA 和诊断等可移植产品逻辑
-- `ports/esp32/` — 主板、音频、BLE、存储和硬件服务的 ESP-IDF 绑定
-- `protocols/` — 共享设备协议和编解码
-- `main/` — 启动与子系统装配
-- `tools/` — 环境、构建、刷写、监控、打包、诊断和验证
-- `docs/features/firmware-feature-map.md` — 完整实现与验证地图
-
-贡献前请阅读 [CONTRIBUTING.md](CONTRIBUTING.md)，安全问题见 [SECURITY.md](SECURITY.md)。本仓库以 [Apache-2.0 许可证](LICENSE) 开源。
+[Apache-2.0](https://github.com/Listener-ai-Macau/Listener-Firmware/blob/master/LICENSE)
