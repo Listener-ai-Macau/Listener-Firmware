@@ -41,6 +41,13 @@ if (-not $project_version) {
     $project_version = Get-SourceVersion
 }
 
+$expected_source_version = if ([string]::IsNullOrWhiteSpace($env:LISTENER_FIRMWARE_VERSION_OVERRIDE)) {
+    Get-SourceVersion
+} else { $env:LISTENER_FIRMWARE_VERSION_OVERRIDE.Trim() }
+if ($project_version.Trim() -ne $expected_source_version) {
+    throw "Build version '$project_version' does not match source version '$expected_source_version'. Reconfigure and rebuild before packaging."
+}
+
 function Write-JsonUtf8NoBom {
     param(
         [Parameter(Mandatory = $true)]$Value,
