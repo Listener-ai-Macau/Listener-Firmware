@@ -24,15 +24,28 @@ typedef enum {
 esp_err_t audio_capture_start(void);
 bool audio_capture_is_available(void);
 const char *audio_capture_get_unavailable_reason(void);
-esp_err_t audio_capture_set_idle_power_save(bool enabled);
+/* Requests the idle mic power-save state.  Returns ESP_ERR_INVALID_STATE when
+ * enabled and voice monitoring or a capture session is active, unless force
+ * is set (reserved for OTA and hardware shutdown). */
+esp_err_t audio_capture_set_idle_power_save(bool enabled, bool force);
 bool audio_capture_idle_power_save_is_applied(void);
 esp_err_t audio_capture_set_ota_suspended(bool suspended);
 esp_err_t audio_capture_session_begin(void);
 esp_err_t audio_capture_session_begin_with_preroll(uint32_t pre_roll_ms);
+esp_err_t audio_capture_session_begin_with_preroll_and_origin(
+    uint32_t pre_roll_ms,
+    uint16_t start_origin);
+/* Resume an expired hidden wake window at its first unexported source frame.
+ * Reject a mismatched/overwritten history rather than silently starting after
+ * missing speech. The new transport segment contains no predecessor overlap. */
+esp_err_t audio_capture_session_resume_wake(
+    uint32_t previous_session_id,
+    uint16_t start_origin);
 esp_err_t audio_capture_session_stop(void);
 esp_err_t audio_capture_session_stop_with_origin(audio_capture_stop_origin_t origin);
 esp_err_t audio_capture_session_cancel(void);
 bool audio_capture_session_is_active(void);
+uint32_t audio_capture_session_id(void);
 uint32_t audio_capture_get_frame_count(void);
 uint32_t audio_capture_get_dropped_frame_count(void);
 void audio_capture_set_voice_activity_handler(

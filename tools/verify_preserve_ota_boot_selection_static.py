@@ -31,10 +31,12 @@ def main() -> int:
         text,
     )
     require(
-        r'if\s*\(\$bootPartitionBeforeFlash\s*-eq\s*"ota_1"\)\s*\{[\s\S]*?Invoke-OtaBootInactiveForPreservedFlash',
-        "ota_1 to ota_0 handoff after preserved app flash",
+        r'for\s*\(\$handoffAttempt\s*=\s*1;\s*\$bootPartitionAfterFlash\s*-ne\s*"ota_0"\s*-and\s*\$handoffAttempt\s*-le\s*2;\s*\$handoffAttempt\+\+\)\s*\{[\s\S]*?Invoke-OtaBootInactiveForPreservedFlash[\s\S]*?\$bootPartitionAfterFlash\s*=\s*Get-OtaBootPartition',
+        "bounded observed-slot handoff with a fresh probe after each request",
         text,
     )
+    preserved = text[text.index('if ($PreserveOtaData.IsPresent) {'):]
+    assert preserved.index('"app-flash"') < preserved.index('$bootPartitionAfterFlash = Get-OtaBootPartition')
     require(
         r'\$bootPartitionAfterFlash\s*=\s*Get-OtaBootPartition[\s\S]*?\$bootPartitionAfterFlash\s*-ne\s*"ota_0"',
         "post-flash ota_0 verification",

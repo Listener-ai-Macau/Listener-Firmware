@@ -123,7 +123,7 @@ def read_serial_for(
     output_signal: OutputSignal | None = None,
 ) -> None:
     deadline = time.monotonic() + max(milliseconds, 0) / 1000.0
-    chunks: list[bytes] = []
+    pending = b""
     while time.monotonic() < deadline:
         try:
             data = ser.read(4096)
@@ -131,16 +131,20 @@ def read_serial_for(
             transcript.add(f"READ_ERROR {exc}")
             break
         if data:
-            chunks.append(data)
+            pending += data
             if output_signal is not None:
                 output_signal.observe(data)
+            while b"\n" in pending:
+                line, pending = pending.split(b"\n", 1)
+                transcript.add(line.rstrip(b"\r").decode("utf-8", errors="replace"))
         else:
             time.sleep(0.02)
-    if chunks:
-        transcript.add_text(b"".join(chunks).decode("utf-8", errors="replace"))
+    if pending:
+        transcript.add(pending.rstrip(b"\r").decode("utf-8", errors="replace"))
 
 
 def write_serial_command(ser, command: str, args: argparse.Namespace, transcript: Transcript) -> None:
+    validate_serial_control_command(command)
     payload = f"{command}\n".encode("utf-8")
     for attempt in range(1, args.write_retries + 1):
         try:
@@ -174,6 +178,18 @@ def command_list(args: argparse.Namespace) -> list[str]:
     return commands
 
 
+def validate_serial_control_command(command: str) -> None:
+    # The firmware sends unprefixed serial text through HID. Enforce the same
+    # control-plane contract as send_serial_and_capture.ps1 for direct Python
+    # callers and scheduled writes, before opening the port or sending bytes.
+    match = re.match(r"^~?(DIAGLOG|LED|POWER|DEVICE|OTA|BOARD|WDT|BOOT|VREC|EC11|KEY)(?::|$)",
+                     command.strip(), re.IGNORECASE)
+    if match and not command.strip().startswith("~"):
+        raise ValueError(f"{match.group(1)} control commands require the '~' prefix; unprefixed text becomes HID input")
+    if match and ("\r" in command or "\n" in command):
+        raise ValueError("A firmware control command must contain one line")
+
+
 def parse_wait_command(command: str) -> int | None:
     upper = command.upper()
     for prefix in ("WAIT:", "__WAIT_MS:"):
@@ -198,6 +214,13 @@ def main() -> int:
     args = parse_args()
     commands = command_list(args)
     transcript = Transcript(args.output_path)
+    try:
+        for command in commands + ([args.scheduled_command] if args.scheduled_command else []):
+            validate_serial_control_command(command)
+    except ValueError as exc:
+        transcript.add(f"ERROR {exc}")
+        transcript.write(args.output_path)
+        return 2
     if args.capture_only_ms < 0:
         transcript.add("ERROR --capture-only-ms must be >= 0.")
         transcript.write(args.output_path)

@@ -141,7 +141,7 @@ Assert-Contains -RelativePath $platformLosslessContract -Pattern "DENZIC_AUDIO_V
 Assert-Contains -RelativePath $stream -Pattern "BLE_AUDIO_STREAM_LOSSLESS_RICE_HEADER_BYTES\s+6u" -Description "lossless Rice seed header"
 Assert-Contains -RelativePath $stream -Pattern "BLE_AUDIO_STREAM_LOSSLESS_RICE_PREFERRED_PCM_BYTES\s+480U" -Description "lossless Rice expands raw PCM per single-PDU notification"
 Assert-Contains -RelativePath $stream -Pattern "BLE_AUDIO_STREAM_LOSSLESS_RICE_FALLBACK_STEP_BYTES\s+32U" -Description "lossless Rice has bounded smaller-frame fallback"
-Assert-Contains -RelativePath $stream -Pattern "BLE_AUDIO_STREAM_LOSSLESS_RICE_FINE_FALLBACK_STEP_BYTES\s+16U" -Description "lossless Rice probes larger packets before the existing fallback ladder"
+Assert-Contains -RelativePath $stream -Pattern "candidate_pcm_bytes - raw_packet_bytes\) / 2U" -Description "failed compression probes halve excess PCM to bound capture-thread work"
 Assert-Contains -RelativePath $stream -Pattern "ble_audio_stream_encode_lossless_rice" -Description "lossless Rice encoder"
 Assert-Contains -RelativePath $stream -Pattern "denzic_audio_lossless_v1_encode" -Description "lossless Rice encoder delegates to the shared platform codec"
 Assert-Contains -RelativePath $platformLosslessCodec -Pattern "denzic_audio_lossless_v1_encode" -Description "shared platform lossless Rice encoder"
@@ -243,7 +243,7 @@ Assert-Contains -RelativePath $transportModel -Pattern "case_single_pdu_budget_b
 Assert-Contains -RelativePath $transportModel -Pattern "case_lossless_predictive_rice_round_trip_and_wire_budget" -Description "transport model verifies lossless speech wire budget"
 Assert-Contains -RelativePath $transportModel -Pattern "case_lossless_predictive_rice_preserves_extremes_and_falls_back_for_noise" -Description "transport model preserves PCM extremes and raw noise fallback"
 Assert-Contains -RelativePath $transportModel -Pattern "case_lossless_adaptive_packet_plan_reduces_notification_demand" -Description "transport model proves adaptive lossless packets reduce Windows notification demand"
-Assert-Contains -RelativePath $transportModel -Pattern "case_lossless_v2_first_order_reduces_noisy_voice_notification_rate" -Description "transport model proves V2 lowers noisy-voice notification demand"
+Assert-Contains -RelativePath $transportModel -Pattern "case_lossless_v2_first_order_reduces_noisy_voice_wire_cost" -Description "transport model proves V2 lowers noisy-voice wire cost"
 Assert-Contains -RelativePath $transportModel -Pattern "case_lossless_v3_higher_order_reduces_smooth_voice_notification_rate" -Description "transport model proves V3 lowers smooth-voice notification demand"
 Assert-Contains -RelativePath $transportModel -Pattern "RICE_V2_PARAMETER_K_SPAN" -Description "transport model mirrors bounded V2 parameter search"
 

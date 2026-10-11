@@ -15,7 +15,7 @@ REQUIRED_FRAGMENTS = (
     "s_pdm_afe_handle->fetch_with_delay(",
     "audio_capture_pdm_afe_fetch_task",
     "xTaskCreatePinnedToCore(",
-    "config->ns_init = true;",
+    "config->ns_init = false;",
     "config->vad_init = true;",
     'config->vad_model_name = vad_model_name;',
     "config->vad_mode = VAD_MODE_1;",
@@ -125,7 +125,7 @@ def main() -> int:
         source.find("#endif", source.find("static void audio_capture_pdm_afe_process("))
     ]
 
-    session_start = source.find("esp_err_t audio_capture_session_begin_with_preroll(")
+    session_start = source.find("static esp_err_t audio_capture_session_begin_internal(")
     session_boundary = source.find(
         "s_pdm_afe_session_boundary_requested = true;", session_start
     )
@@ -151,7 +151,7 @@ def main() -> int:
         "static uint32_t audio_capture_next_session_id(void)"
     )
     session_begin_start = source.find(
-        "esp_err_t audio_capture_session_begin_with_preroll("
+        "static esp_err_t audio_capture_session_begin_internal("
     )
     if not 0 <= session_id_helper_start < session_begin_start:
         failures.append(

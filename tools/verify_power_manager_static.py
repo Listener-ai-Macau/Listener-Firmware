@@ -115,6 +115,8 @@ CHECKS = {
         "POWER_MANAGER_BLOCKER_EXTERNAL_POWER",
         "POWER_MANAGER_BLOCKER_OTA",
         "power_manager_awake_blockers",
+        "power_manager_visible_audio_blockers",
+        "power_manager_cancel_hidden_capture_for_shutdown",
         "power_manager_audio_idle_blockers",
         "power_manager_read_power_source",
         "power_manager_apply_charge_state_filter_locked",
@@ -602,7 +604,7 @@ def main() -> int:
         r"raw_full_external\s*=[\s\S]*"
         r"power_manager_charge_full_battery_allowed[\s\S]*"
         r"power_manager_charger_status_external_locked[\s\S]*"
-        r"source->charge_power_present\s*=\s*source->charge_power_present\s*\|\|\s*charger_status_external[\s\S]*"
+        r"source->charge_power_present\s*=\s*charger_status_external[\s\S]*"
         r"raw_full\s*&&[\s\S]*"
         r"!raw_charging\s*&&[\s\S]*"
         r"power_manager_charge_full_battery_allowed[\s\S]*"
@@ -674,6 +676,8 @@ def main() -> int:
         r"POWER_MANAGER_LOW_POWER_EVALUATE_INTERVAL_MS\s+60000U[\s\S]*"
         r"power_manager_task[\s\S]*"
         r"state\s*==\s*POWER_MANAGER_STATE_ACTIVE[\s\S]*"
+        r"watchdog_platform_task_notify_take\([\s\S]*CONFIG_POWER_MANAGER_EVALUATE_INTERVAL_MS[\s\S]*"
+        r"ble_connected[\s\S]*"
         r"watchdog_platform_task_notify_take\([\s\S]*CONFIG_POWER_MANAGER_EVALUATE_INTERVAL_MS[\s\S]*"
         r"external_power_present[\s\S]*"
         r"watchdog_platform_task_notify_take_low_power\([\s\S]*POWER_MANAGER_LOW_POWER_EXTERNAL_EVALUATE_INTERVAL_MS[\s\S]*"
@@ -804,7 +808,7 @@ def main() -> int:
     if not re.search(
         r"case\s+POWER_MANAGER_STATE_CONNECTED_IDLE:[\s\S]{0,260}"
         r"status_led_set_low_power_disabled\(true\)[\s\S]{0,420}"
-        r"power_manager_set_audio_idle_power_save\(true\)",
+        r"power_manager_set_audio_idle_power_save\(true,\s*false\)",
         power_manager,
     ):
         failures.append(
@@ -813,7 +817,7 @@ def main() -> int:
     if not re.search(
         r"case\s+POWER_MANAGER_STATE_DISCONNECTED_IDLE:[\s\S]{0,260}"
         r"status_led_set_low_power_disabled\(true\)[\s\S]{0,420}"
-        r"power_manager_set_audio_idle_power_save\(true\)",
+        r"power_manager_set_audio_idle_power_save\(true,\s*false\)",
         power_manager,
     ):
         failures.append(
@@ -823,7 +827,7 @@ def main() -> int:
         r"static\s+void\s+power_manager_apply_fast_idle_actions[\s\S]{0,500}"
         r"if\s*\(state\s*!=\s*POWER_MANAGER_STATE_ACTIVE\)[\s\S]{0,260}"
         r"power_manager_audio_idle_blockers\(blockers\)\s*==\s*0[\s\S]{0,180}"
-        r"power_manager_set_audio_idle_power_save\(true\)",
+        r"power_manager_set_audio_idle_power_save\(true,\s*false\)",
         power_manager,
     ):
         failures.append(
@@ -1055,6 +1059,27 @@ def main() -> int:
     ):
         failures.append(
             "components/power_manager/power_manager.c: external power must not block connected/disconnected awake idle"
+        )
+    if not re.search(
+        r"power_manager_automatic_shutdown_blockers_for_source[\s\S]*"
+        r"power_manager_awake_blockers\(blockers\)[\s\S]*"
+        r"power_manager_shutdown_blockers_for_source",
+        power_manager,
+    ):
+        failures.append(
+            "components/power_manager/power_manager.c: automatic long-idle shutdown must ignore hidden voice-activation blockers"
+        )
+    if not re.search(
+        r"power_manager_enter_hardware_shutdown[\s\S]*"
+        r"uint32_t entry_blockers\s*=\s*power_manager_awake_blockers\(snapshot\.blockers\)[\s\S]*"
+        r"power_manager_visible_audio_blockers\(snapshot\.blockers\)[\s\S]*"
+        r"power_manager_cancel_hidden_capture_for_shutdown\(\)[\s\S]*"
+        r"uint32_t final_blockers\s*=\s*power_manager_awake_blockers\(s_blockers\)[\s\S]*"
+        r"power_manager_visible_audio_blockers\(s_blockers\)",
+        power_manager,
+    ):
+        failures.append(
+            "components/power_manager/power_manager.c: hardware shutdown must proceed past hidden voice-activation capture and only reject visible recording"
         )
     if not re.search(
         r"power_manager_target_state_locked[\s\S]*"

@@ -233,7 +233,7 @@ Assert-Contains $powerManager 'power_manager_low_power_idle_ms' 'power manager d
 Assert-Contains $powerManager 'power_manager_plugged_low_power_enabled' 'power manager plugged low-power helper'
 Assert-Contains $powerManager 'device_settings_get_active_low_power_idle_ms\(s_external_power_present\)' 'power manager reads active configured low-power timeout'
 Assert-Contains $powerManager 'device_settings_get_plugged_low_power_enabled\(\)' 'power manager reads configured plugged low-power switch'
-Assert-Contains $powerManager 'device_settings_get_active_auto_shutdown_ms\(s_external_power_present\)' 'power manager reads active configured timeout'
+Assert-Contains $powerManager 'device_settings_get_active_auto_shutdown_ms\(s_external_power_present\)' 'shutdown and idle use the same filtered power mode, including qualified charge-full'
 Assert-Contains $powerManager 'hardware_shutdown_ms > 0U' 'automatic shutdown ignores disabled zero timeout'
 Assert-Contains $powerManager 'TEST:SHUTDOWN' 'manual serial shutdown test alias'
 Assert-Contains $powerManager 'low_power_idle_threshold_ms\s*=\s*power_manager_low_power_idle_ms\(\)' 'POWER:STATUS reports effective low-power timeout'

@@ -605,9 +605,10 @@ void board_get_v2_power_input_snapshot(board_v2_power_input_snapshot_t *out_snap
 
     *out_snapshot = (board_v2_power_input_snapshot_t){
         .usb_det_level = usb_det_level,
-        /* SOF alone is a USB host talking, not VBUS. Ghost SOF after unplug
-         * must not keep PWR white; computer USB is SOF plus charger VIN. */
-        .usb_power_present = usb_serial_jtag_sof_active && charger.vin_present,
+        /* SOF plus exclusive charging. Exclusive STD at mid-battery is not
+         * computer USB VIN; that false-full kept usb_power after unplug so
+         * battery auto-shutdown never armed (owner: 拔电后低功耗都没有/不能关机). */
+        .usb_power_present = usb_serial_jtag_sof_active && charger.charging,
         .usb_serial_jtag_sof_active = usb_serial_jtag_sof_active,
         .usb_det_highz = true,
         .usb_det_adc_valid = usb_det_adc_valid,

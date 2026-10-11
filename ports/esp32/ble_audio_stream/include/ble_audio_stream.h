@@ -69,6 +69,11 @@ esp_err_t ble_audio_stream_send_session_start(uint32_t session_id);
 esp_err_t ble_audio_stream_send_session_start_with_origin(
     uint32_t session_id,
     uint16_t start_origin);
+/* Send an ownership marker for an already-running transport session without
+ * resetting its packet counters or creating another audio boundary. */
+esp_err_t ble_audio_stream_send_session_start_marker(
+    uint32_t session_id,
+    uint16_t start_origin);
 esp_err_t ble_audio_stream_send_session_audio(
     uint32_t session_id,
     uint16_t packet_sequence,
@@ -90,6 +95,8 @@ esp_err_t ble_audio_stream_prepare_type_recovery_ack(void);
 esp_err_t ble_audio_stream_send_type_recovery_notice(void);
 esp_err_t ble_audio_stream_wait_for_type_recovery_ack(uint32_t timeout_ms);
 bool ble_audio_stream_is_ready(void);
+/* A subscribed, MTU-ready connection with a live Type heartbeat. Independent
+ * of audio-session drain/terminal phases; not permission to start a session. */
 bool ble_audio_stream_is_type_link_ready(void);
 bool ble_audio_stream_is_type_led_ready(void);
 bool ble_audio_stream_type_ota_hold_is_active(void);

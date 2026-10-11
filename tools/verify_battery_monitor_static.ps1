@@ -10,6 +10,9 @@ if (-not (Test-Path -LiteralPath $batteryMonitor)) {
 }
 
 $text = Get-Content -LiteralPath $batteryMonitor -Raw
+$batteryCorePath = Join-Path $RepoRoot "third_party\denzic-platform\battery\embedded\c\src\denzic_battery_v1.c"
+$batteryCore = Get-Content -LiteralPath $batteryCorePath -Raw
+$batteryCoreHeader = Get-Content -LiteralPath (Join-Path $RepoRoot "third_party\denzic-platform\battery\embedded\c\include\denzic_battery_v1_generated.h") -Raw
 $bleHidPath = Join-Path $RepoRoot "ports\esp32\ble_hid\ble_hid.c"
 $boardPath = Join-Path $RepoRoot "components\board\board.c"
 $diagEventsPath = Join-Path $RepoRoot "components\diag_log\include\diag_log_events.h"
@@ -60,15 +63,20 @@ if ($text -notmatch 'esp_rom_delay_us\(BATTERY_MONITOR_ADC_SETTLE_US\)[\s\S]*adc
     throw "ADC reads must allow mux settle and discard stale samples before averaging reported samples."
 }
 
-if ($text -notmatch 'battery_mv <= BATTERY_MONITOR_EMPTY_MV[\s\S]*return 0;') {
+if ($text -notmatch 'return\s+denzic_battery_v1_percent_from_mv\(\s*battery_mv,\s*BATTERY_MONITOR_EMPTY_MV,\s*BATTERY_MONITOR_FULL_MV\s*\)') {
+    throw "Battery percentage must pass configured voltage endpoints to the shared battery policy."
+}
+
+if ($batteryCore -notmatch 'battery_mv <= empty_mv[\s\S]*return 0u;') {
     throw "Battery percentage must clamp at empty voltage."
 }
 
-if ($text -notmatch 'battery_mv >= BATTERY_MONITOR_FULL_MV[\s\S]*return 100;') {
+if ($batteryCore -notmatch 'battery_mv >= full_mv[\s\S]*return 100u;') {
     throw "Battery percentage must clamp at full voltage."
 }
 
-if ($text -notmatch 'BATTERY_MONITOR_FULL_MV - BATTERY_MONITOR_EMPTY_MV') {
+if ($batteryCore -notmatch 'range_mv = full_mv - empty_mv;' -or
+    $batteryCore -notmatch 'full_mv <= empty_mv[\s\S]*return 0u;') {
     throw "Battery percentage must derive range from configured endpoints."
 }
 
@@ -101,7 +109,8 @@ if ($text -notmatch 'bool\s+battery_monitor_get_cached_power_rail[\s\S]*battery_
     throw "Power rail current telemetry must expose cached samples for passive idle diagnostics."
 }
 
-if ($bleHid -notmatch '#define BLE_HID_BATTERY_NOTIFY_THRESHOLD_PERCENT 1\b') {
+if ($bleHid -notmatch '#define BLE_HID_BATTERY_NOTIFY_THRESHOLD_PERCENT DENZIC_BATTERY_V1_NOTIFY_THRESHOLD_PERCENT\b' -or
+    $batteryCoreHeader -notmatch '#define DENZIC_BATTERY_V1_NOTIFY_THRESHOLD_PERCENT \(1u\)') {
     throw "BLE HID battery updates must use a 1 percent notify threshold."
 }
 
@@ -117,11 +126,12 @@ if ($bleHid -notmatch 'ble_hid_low_power_idle_active[\s\S]*POWER_MANAGER_STATE_C
     throw "BLE HID battery monitor must detect connected and disconnected low-power idle states."
 }
 
-if ($bleHid -notmatch 's_ble_connected\s*&&\s*!low_power_idle[\s\S]*BLE_HID_BATTERY_SAMPLE_INTERVAL_MS[\s\S]*BLE_HID_BATTERY_DISCONNECTED_IDLE_INTERVAL_MS') {
-    throw "BLE HID battery monitor must use the active interval only while connected and not in low-power idle."
+if ($bleHid -notmatch 'ble_hid_battery_sample_interval_ms\(bool low_power_idle\)[\s\S]*!s_ble_connected[\s\S]*return BLE_HID_BATTERY_DISCONNECTED_IDLE_INTERVAL_MS;[\s\S]*return low_power_idle\s*\? BLE_HID_BATTERY_CONNECTED_IDLE_INTERVAL_MS\s*: BLE_HID_BATTERY_SAMPLE_INTERVAL_MS;' -or
+    $bleHid -notmatch '#define BLE_HID_BATTERY_CONNECTED_IDLE_INTERVAL_MS 60000\b') {
+    throw "BLE HID battery monitor must retain active, connected-idle and disconnected-idle intervals."
 }
 
-if ($bleHid -notmatch 's_ble_connected\s*&&\s*!low_power_idle[\s\S]*"threshold_sample"[\s\S]*"idle_sample"') {
+if ($bleHid -notmatch 'ble_hid_battery_sample_reason\(bool low_power_idle\)[\s\S]*!s_ble_connected[\s\S]*return "idle_sample";[\s\S]*return low_power_idle \? "connected_idle_sample" : "threshold_sample";') {
     throw "BLE HID battery monitor must mark connected/disconnected low-power samples as idle_sample."
 }
 
@@ -137,7 +147,9 @@ if ($bleHid -notmatch 'notified\s*!=\s*0\s*&&\s*low_power_idle[\s\S]*continue;')
     throw "BLE HID battery task must not take an immediate ADC sample just because low-power idle notified it."
 }
 
-if ($bleHid -notmatch 'ble_hid_battery_level_exceeds_notify_threshold') {
+if ($bleHid -notmatch '\.previous_level = battery_valid \? s_battery_service_level : level' -or
+    $bleHid -notmatch 'denzic_battery_v1_decide_notify\(&notify_input\)[\s\S]*bool should_notify = notify\.notify;' -or
+    $batteryCore -notmatch 'delta = input->level > input->previous_level[\s\S]*delta >= input->threshold_percent[\s\S]*decision.notify = true;') {
     throw "BLE HID must compare the current battery level against the last notified level."
 }
 

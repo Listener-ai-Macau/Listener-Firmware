@@ -84,8 +84,6 @@ extern void firmware_ota_set_observability_correlation(uint64_t correlation_id) 
 #define BLE_AUDIO_STREAM_LOSSLESS_RICE_HEADER_BYTES 6u
 #define BLE_AUDIO_STREAM_LOSSLESS_RICE_PREFERRED_PCM_BYTES 480U
 #define BLE_AUDIO_STREAM_LOSSLESS_RICE_FALLBACK_STEP_BYTES 32U
-#define BLE_AUDIO_STREAM_LOSSLESS_RICE_FINE_FALLBACK_STEP_BYTES 16U
-#define BLE_AUDIO_STREAM_LOSSLESS_RICE_FINE_FALLBACK_FLOOR_BYTES 400U
 
 /* The lossless Rice codec itself lives in the shared platform core
  * (denzic_audio_lossless_v1); the transport keeps only its packet-planning
@@ -188,6 +186,7 @@ _Static_assert(BLE_AUDIO_STREAM_PACKET_MAX_BYTES == DENZIC_AUDIO_TRANSPORT_V1_PA
 
 typedef enum {
     BLE_AUDIO_STREAM_JOB_TYPE_SESSION_START = 0,
+    BLE_AUDIO_STREAM_JOB_TYPE_SESSION_START_MARKER,
     BLE_AUDIO_STREAM_JOB_TYPE_SESSION_AUDIO_DATA,
     BLE_AUDIO_STREAM_JOB_TYPE_SESSION_STOP,
     BLE_AUDIO_STREAM_JOB_TYPE_SESSION_CANCEL,
@@ -331,6 +330,7 @@ static portMUX_TYPE s_audio_pool_lock = portMUX_INITIALIZER_UNLOCKED;
 static SemaphoreHandle_t s_replay_window_mutex;
 static uint32_t s_connection_epoch;
 static denzic_audio_transport_v1_pacing_t s_audio_pacing;
+static uint32_t s_audio_pacing_cooperative_credit_ticks;
 static uint32_t s_audio_pacing_burst_remaining_pcm_bytes;
 static bool s_type_recovery_ack_pending;
 static uint16_t s_type_recovery_ack_conn_handle = BLE_HS_CONN_HANDLE_NONE;
@@ -543,10 +543,18 @@ static bool ble_audio_stream_plan_session_audio_packet(
         if (candidate_pcm_bytes == raw_packet_bytes) {
             break;
         }
-        uint16_t fallback_step = candidate_pcm_bytes >
-                BLE_AUDIO_STREAM_LOSSLESS_RICE_FINE_FALLBACK_FLOOR_BYTES
-            ? BLE_AUDIO_STREAM_LOSSLESS_RICE_FINE_FALLBACK_STEP_BYTES
-            : BLE_AUDIO_STREAM_LOSSLESS_RICE_FALLBACK_STEP_BYTES;
+        /* A linear 16-byte scan repeatedly recompressed the same waveform
+         * while the capture mutex was held. On the keyboard this consumed
+         * 4.6 seconds in a 22-second session and coincided with DMA loss.
+         * Halve the excess over the always-valid raw packet after a failed
+         * probe, keeping the planner logarithmic and identical at both ends
+         * of the export queue. Every selected compressed packet is still
+         * encoded and checked against the actual ATT payload capacity. */
+        uint16_t fallback_step = (uint16_t)(
+            ((candidate_pcm_bytes - raw_packet_bytes) / 2U) & ~1U);
+        if (fallback_step < BLE_AUDIO_STREAM_LOSSLESS_RICE_FALLBACK_STEP_BYTES) {
+            fallback_step = BLE_AUDIO_STREAM_LOSSLESS_RICE_FALLBACK_STEP_BYTES;
+        }
         if (candidate_pcm_bytes - raw_packet_bytes <= fallback_step) {
             candidate_pcm_bytes = raw_packet_bytes;
         } else {
@@ -1456,13 +1464,6 @@ static uint32_t ble_audio_stream_reason_code(const char *reason)
     return hash;
 }
 
-static bool ble_audio_stream_transport_state_type_ready(ble_audio_stream_transport_state_t state)
-{
-    return state == BLE_AUDIO_STREAM_TRANSPORT_STATE_STREAM_READY ||
-           state == BLE_AUDIO_STREAM_TRANSPORT_STATE_STREAMING ||
-           state == BLE_AUDIO_STREAM_TRANSPORT_STATE_DRAINING;
-}
-
 static bool ble_audio_stream_transport_link_ready(void);
 
 static void ble_audio_stream_set_transport_state(
@@ -1715,6 +1716,7 @@ static void ble_audio_stream_reset_transport_session(void)
 {
     ble_audio_stream_replay_clear_session(s_transport_session_id);
     denzic_audio_transport_v1_pacing_init(&s_audio_pacing);
+    s_audio_pacing_cooperative_credit_ticks = 0;
     s_audio_pacing_burst_remaining_pcm_bytes = 0;
     s_transport_session_id = 0;
     s_transport_expected_packet_count = 0;
@@ -1965,17 +1967,29 @@ static void ble_audio_stream_notify_success_delay(
     uint32_t delay_ticks = denzic_audio_transport_v1_pacing_note_pcm_sent(
         &s_audio_pacing,
         packet_pcm_bytes);
-    if (delay_ticks == 0) {
-        /* The pacing clock intentionally permits an immediate next packet.
-         * Still block for one tick so the exporter cannot monopolize CPU0
-         * while continuously feeding its own watchdog and starving IDLE0. */
-        ble_audio_stream_delay_ms(
-            BLE_AUDIO_STREAM_AUDIO_PACKET_IDLE_BLOCK_MS);
-        return;
+    if (s_audio_pacing_cooperative_credit_ticks > 0u) {
+        /* A previous sub-quantum packet already yielded for one tick. Charge
+         * that wait against this same media budget instead of waiting twice.
+         * Installed 1926430744 averaged only 28.2 kB/s against 32 kB/s
+         * capture, accumulating 5.6 seconds of audio behind the preview. */
+        uint32_t credited_ticks = delay_ticks;
+        if (credited_ticks > s_audio_pacing_cooperative_credit_ticks) {
+            credited_ticks = s_audio_pacing_cooperative_credit_ticks;
+        }
+        delay_ticks -= credited_ticks;
+        s_audio_pacing_cooperative_credit_ticks -= credited_ticks;
+    } else if (delay_ticks == 0u) {
+        /* Yield early for IDLE0, then retain the credit until a full 384-byte
+         * media quantum has been sent. Immediate packets between yields are
+         * bounded by that quantum; controller admission guards still apply. */
+        delay_ticks = 1u;
+        s_audio_pacing_cooperative_credit_ticks = 1u;
     }
 
     ble_audio_stream_stats_audio_pace_wait(session_id, delay_ticks);
-    vTaskDelay((TickType_t)delay_ticks);
+    if (delay_ticks > 0u) {
+        vTaskDelay((TickType_t)delay_ticks);
+    }
     watchdog_platform_feed_current_task();
 }
 
@@ -2652,6 +2666,7 @@ static void ble_audio_stream_purge_queued_session_jobs(uint32_t session_id, bool
 
         bool drop_job = job.session_id == session_id &&
             ((job.type == BLE_AUDIO_STREAM_JOB_TYPE_SESSION_START && !keep_session_start) ||
+             job.type == BLE_AUDIO_STREAM_JOB_TYPE_SESSION_START_MARKER ||
              job.type == BLE_AUDIO_STREAM_JOB_TYPE_SESSION_AUDIO_DATA ||
              job.type == BLE_AUDIO_STREAM_JOB_TYPE_SESSION_STOP ||
              job.type == BLE_AUDIO_STREAM_JOB_TYPE_SESSION_CANCEL ||
@@ -2950,6 +2965,31 @@ static void ble_audio_stream_task(void *parameter)
                     job.start_origin);
                 if (start_ret != ESP_OK) {
                     ble_audio_stream_abort_active_session("session_start_failed");
+                }
+                break;
+            }
+            case BLE_AUDIO_STREAM_JOB_TYPE_SESSION_START_MARKER:
+            {
+                if (job.session_id != s_transport_session_id ||
+                    s_transport_state != BLE_AUDIO_STREAM_TRANSPORT_STATE_STREAMING) {
+                    ESP_LOGW(
+                        TAG,
+                        "session start marker rejected: session=%" PRIu32
+                        " current=%" PRIu32 " state=%d",
+                        job.session_id,
+                        s_transport_session_id,
+                        (int)s_transport_state);
+                    break;
+                }
+                esp_err_t marker_ret = ble_audio_stream_send_session_start_internal(
+                    job.session_id,
+                    job.start_origin);
+                if (marker_ret != ESP_OK) {
+                    ESP_LOGW(
+                        TAG,
+                        "session start marker failed: session=%" PRIu32 " ret=%s",
+                        job.session_id,
+                        esp_err_to_name(marker_ret));
                 }
                 break;
             }
@@ -3408,8 +3448,13 @@ bool ble_audio_stream_is_ready(void)
 
 bool ble_audio_stream_is_type_link_ready(void)
 {
+    /* The Type link belongs to the connection/heartbeat lifecycle, not the
+     * export task's current audio session. STOP/CANCEL/ERROR completion visits
+     * STOPPED and SUBSCRIBED before STREAM_READY without disconnecting Type.
+     * Using those phases here makes the control task stop AFE/history capture
+     * in the middle of an otherwise continuous wake handover. New session
+     * admission remains gated separately by ble_audio_stream_is_ready(). */
     return ble_audio_stream_transport_link_ready() &&
-           ble_audio_stream_transport_state_type_ready(s_transport_state) &&
            ble_audio_stream_type_heartbeat_recent();
 }
 
@@ -3952,6 +3997,7 @@ esp_err_t ble_audio_stream_send_session_start_with_origin(
     s_transport_lossless_rice_version = ble_audio_stream_get_type_lossless_rice_version();
     s_transport_lossless_rice_enabled = s_transport_lossless_rice_version != 0;
     denzic_audio_transport_v1_pacing_init(&s_audio_pacing);
+    s_audio_pacing_cooperative_credit_ticks = 0;
     s_audio_pacing_burst_remaining_pcm_bytes =
         start_origin == LISTENER_AUDIO_SESSION_START_ORIGIN_VOICE_ACTIVATION &&
                 s_transport_lossless_rice_enabled
@@ -3967,6 +4013,31 @@ esp_err_t ble_audio_stream_send_session_start_with_origin(
         ble_audio_stream_refresh_link_state("session_start_enqueue_failed");
         return ESP_ERR_TIMEOUT;
     }
+    return ESP_OK;
+}
+
+esp_err_t ble_audio_stream_send_session_start_marker(
+    uint32_t session_id,
+    uint16_t start_origin)
+{
+    if (!s_started || s_export_queue == NULL ||
+        s_transport_state != BLE_AUDIO_STREAM_TRANSPORT_STATE_STREAMING ||
+        s_transport_session_id != session_id) {
+        return ESP_ERR_INVALID_STATE;
+    }
+    ble_audio_stream_job_t job = {
+        .type = BLE_AUDIO_STREAM_JOB_TYPE_SESSION_START_MARKER,
+        .session_id = session_id,
+        .start_origin = start_origin,
+    };
+    if (xQueueSend(s_export_queue, &job, pdMS_TO_TICKS(1000)) != pdTRUE) {
+        return ESP_ERR_TIMEOUT;
+    }
+    ESP_LOGI(
+        TAG,
+        "session start marker queued: session=%" PRIu32 " origin=%u",
+        session_id,
+        (unsigned)start_origin);
     return ESP_OK;
 }
 

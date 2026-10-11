@@ -11,6 +11,7 @@
 #include "status_led.h"
 #include "voice_recording_control.h"
 #include "watchdog_platform.h"
+#include "voice_stack_diag.h"
 
 #include "esp_err.h"
 #include "esp_log.h"
@@ -85,6 +86,7 @@ static void log_power_boot_diagnostics(void)
 void app_main(void)
 {
     configure_boot_power_hold_latch();
+    voice_stack_diag_boot_report();
 
     self_test_init();
     esp_err_t led_ret = status_led_init();

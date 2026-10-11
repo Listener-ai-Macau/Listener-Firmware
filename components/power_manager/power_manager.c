@@ -27,9 +27,11 @@
 #include "diag_log.h"
 #include "watchdog_platform.h"
 
-extern esp_err_t audio_capture_set_idle_power_save(bool enabled) __attribute__((weak));
+extern esp_err_t audio_capture_set_idle_power_save(bool enabled, bool force) __attribute__((weak));
 extern bool audio_capture_session_is_active(void) __attribute__((weak));
+extern esp_err_t audio_capture_session_cancel(void) __attribute__((weak));
 extern bool audio_capture_voice_activation_monitoring_is_enabled(void) __attribute__((weak));
+extern esp_err_t audio_capture_set_voice_activation_monitoring(bool enabled) __attribute__((weak));
 extern void voice_recording_control_on_power_state_changed(void) __attribute__((weak));
 extern bool ble_hid_gap_is_connected(void) __attribute__((weak));
 extern bool ble_audio_stream_is_type_link_ready(void) __attribute__((weak));
@@ -425,6 +427,8 @@ static uint32_t power_manager_clamp_u64_to_u32(uint64_t value)
 
 static uint32_t power_manager_hardware_shutdown_ms(void)
 {
+    /* The filtered source rejects false-full pins but retains a real full
+     * charger. Every power policy must select the same plugged/battery mode. */
     return device_settings_get_active_auto_shutdown_ms(s_external_power_present);
 }
 
@@ -729,11 +733,13 @@ static void power_manager_apply_charge_state_filter_locked(
         raw_charging,
         raw_full_external,
         now_ms);
-    source->charge_power_present = source->charge_power_present || charger_status_external;
-    raw_charging = source->charge_power_present && raw_charging;
-    bool raw_full = source->charge_power_present && raw_full_status;
+    /* Raw BAT_STD and the board's SOF/VIN guess are not independent evidence.
+     * Qualify them here, before either can preserve a full-charge latch. */
+    source->charge_power_present = charger_status_external;
+    source->usb_power_present = source->usb_serial_jtag_sof_active && charger_status_external;
+    bool raw_full = raw_full_external;
 
-    if (!source->charge_power_present) {
+    if (!raw_full_external) {
         s_charge_full_latched = false;
         s_charge_full_candidate_since_ms = 0;
     } else if (!s_charge_full_latched) {
@@ -814,12 +820,15 @@ static uint32_t power_manager_shutdown_blockers_for_source(
 {
     uint32_t shutdown_blockers = blockers;
     if (reason == POWER_MANAGER_SHUTDOWN_REASON_LONG_IDLE &&
-        source != NULL &&
-        source->external_power_present) {
-        if (power_manager_plugged_auto_shutdown_enabled()) {
-            shutdown_blockers &= ~(uint32_t)POWER_MANAGER_BLOCKER_EXTERNAL_POWER;
+        source != NULL) {
+        if (source->external_power_present) {
+            if (power_manager_plugged_auto_shutdown_enabled()) {
+                shutdown_blockers &= ~(uint32_t)POWER_MANAGER_BLOCKER_EXTERNAL_POWER;
+            } else {
+                shutdown_blockers |= POWER_MANAGER_BLOCKER_EXTERNAL_POWER;
+            }
         } else {
-            shutdown_blockers |= POWER_MANAGER_BLOCKER_EXTERNAL_POWER;
+            shutdown_blockers &= ~(uint32_t)POWER_MANAGER_BLOCKER_EXTERNAL_POWER;
         }
     }
     if (reason == POWER_MANAGER_SHUTDOWN_REASON_LOW_BATTERY &&
@@ -843,16 +852,6 @@ static bool power_manager_low_battery_shutdown_allowed(
            !source->charge_full;
 }
 
-static uint32_t power_manager_automatic_shutdown_blockers_for_source(
-    uint32_t blockers,
-    const power_manager_power_source_snapshot_t *source)
-{
-    return power_manager_shutdown_blockers_for_source(
-        blockers,
-        source,
-        POWER_MANAGER_SHUTDOWN_REASON_LONG_IDLE);
-}
-
 static uint32_t power_manager_without_external_power_blocker(uint32_t blockers)
 {
     return blockers & ~(uint32_t)POWER_MANAGER_BLOCKER_EXTERNAL_POWER;
@@ -865,6 +864,41 @@ static uint32_t power_manager_awake_blockers(uint32_t blockers)
      * keep the product permanently ACTIVE (owner: 又进不了低功耗). */
     return power_manager_without_external_power_blocker(blockers) &
            ~(uint32_t)POWER_MANAGER_BLOCKER_VOICE_ACTIVATION;
+}
+
+static uint32_t power_manager_visible_audio_blockers(uint32_t blockers)
+{
+    return blockers &
+           (POWER_MANAGER_BLOCKER_RECORDING | POWER_MANAGER_BLOCKER_BLE_AUDIO);
+}
+
+static uint32_t power_manager_automatic_shutdown_blockers_for_source(
+    uint32_t blockers,
+    const power_manager_power_source_snapshot_t *source)
+{
+    /* Hidden VA already cannot block CONNECTED_IDLE. LONG_IDLE used the raw
+     * mask, so overnight battery shutdown never fired while monitoring or a
+     * hidden candidate was up (owner: 拔电后进不了、放一晚没电、不能自动关机). */
+    return power_manager_shutdown_blockers_for_source(
+        power_manager_awake_blockers(blockers),
+        source,
+        POWER_MANAGER_SHUTDOWN_REASON_LONG_IDLE);
+}
+
+static void power_manager_cancel_hidden_capture_for_shutdown(void)
+{
+    if (audio_capture_set_voice_activation_monitoring != NULL) {
+        (void)audio_capture_set_voice_activation_monitoring(false);
+    }
+    if (audio_capture_session_cancel != NULL &&
+        audio_capture_session_is_active != NULL &&
+        audio_capture_session_is_active()) {
+        ESP_LOGW(TAG, "hardware shutdown canceling hidden voice-activation capture");
+        (void)audio_capture_session_cancel();
+    }
+    if (voice_recording_control_on_power_state_changed != NULL) {
+        voice_recording_control_on_power_state_changed();
+    }
 }
 
 static uint32_t power_manager_audio_idle_blockers(uint32_t blockers)
@@ -1170,7 +1204,7 @@ static bool power_manager_automatic_shutdown_blocked_by_external_power_locked(ui
     uint32_t hardware_shutdown_ms = power_manager_hardware_shutdown_ms();
     return CONFIG_POWER_MANAGER_ENABLE &&
            hardware_shutdown_ms > 0U &&
-           power_manager_without_external_power_blocker(s_blockers) == 0 &&
+           power_manager_awake_blockers(s_blockers) == 0 &&
            s_external_power_present &&
            !power_manager_plugged_auto_shutdown_enabled() &&
            power_manager_user_idle_ms_locked(now_ms) >=
@@ -1346,13 +1380,13 @@ static void power_manager_log_transition(
              (uint32_t)previous, (uint32_t)next, idle_ms, blockers);
 }
 
-static void power_manager_set_audio_idle_power_save(bool enabled)
+static void power_manager_set_audio_idle_power_save(bool enabled, bool force)
 {
     if (s_audio_idle_power_save_enabled == enabled || audio_capture_set_idle_power_save == NULL) {
         return;
     }
 
-    esp_err_t ret = audio_capture_set_idle_power_save(enabled);
+    esp_err_t ret = audio_capture_set_idle_power_save(enabled, force);
     if (ret == ESP_OK) {
         s_audio_idle_power_save_enabled = enabled;
     } else if (ret != ESP_ERR_INVALID_STATE || enabled) {
@@ -1379,7 +1413,7 @@ static void power_manager_apply_state(
         if (status_led_set_low_power_disabled != NULL) {
             status_led_set_low_power_disabled(false);
         }
-        power_manager_set_audio_idle_power_save(false);
+        power_manager_set_audio_idle_power_save(false, false);
         if (system_health_set_low_power_mode != NULL) {
             system_health_set_low_power_mode(false);
         }
@@ -1401,7 +1435,7 @@ static void power_manager_apply_state(
         /* Voice wake is intentionally unavailable after the Bluetooth light
          * turns off. ACTIVE re-enables audio and refreshes voice monitoring. */
         if (power_manager_audio_idle_blockers(blockers) == 0) {
-            power_manager_set_audio_idle_power_save(true);
+            power_manager_set_audio_idle_power_save(true, false);
         }
         if (system_health_set_low_power_mode != NULL) {
             system_health_set_low_power_mode(true);
@@ -1418,7 +1452,7 @@ static void power_manager_apply_state(
             status_led_set_low_power_disabled(true);
         }
         if (power_manager_audio_idle_blockers(blockers) == 0) {
-            power_manager_set_audio_idle_power_save(true);
+            power_manager_set_audio_idle_power_save(true, false);
         }
         if (system_health_set_low_power_mode != NULL) {
             system_health_set_low_power_mode(true);
@@ -1443,7 +1477,9 @@ static void power_manager_apply_state(
          * Do not enqueue the ordinary idle low-power LED clear here; depending on
          * task scheduling it can render a brief black frame before final PWR amber.
          */
-        power_manager_set_audio_idle_power_save(true);
+        /* Hardware shutdown must be able to stop the mic even while voice
+         * monitoring or a capture session is live: forced. */
+        power_manager_set_audio_idle_power_save(true, true);
         if (system_health_set_low_power_mode != NULL) {
             system_health_set_low_power_mode(true);
         }
@@ -1470,14 +1506,14 @@ static void power_manager_apply_fast_idle_actions(power_manager_state_t state, u
          * boundary. Retry the mic power-save transition after their audio
          * drain clears the VOICE_ACTIVATION blocker. */
         if (power_manager_audio_idle_blockers(blockers) == 0) {
-            power_manager_set_audio_idle_power_save(true);
+            power_manager_set_audio_idle_power_save(true, false);
         }
         return;
     }
 
     bool audio_idle = power_manager_audio_idle_blockers(blockers) == 0 &&
         user_idle_ms >= (uint32_t)CONFIG_POWER_MANAGER_AUDIO_IDLE_MS;
-    power_manager_set_audio_idle_power_save(audio_idle);
+    power_manager_set_audio_idle_power_save(audio_idle, false);
 }
 
 static void power_manager_guard_runtime_power_hold_low(power_manager_state_t state)
@@ -1673,7 +1709,7 @@ void power_manager_get_snapshot(power_manager_snapshot_t *snapshot)
         snapshot->automatic_shutdown_blocked_by_external_power =
             CONFIG_POWER_MANAGER_ENABLE &&
             hardware_shutdown_ms > 0U &&
-            power_manager_without_external_power_blocker(s_blockers) == 0 &&
+            power_manager_awake_blockers(s_blockers) == 0 &&
             power_source.external_power_present &&
             !power_manager_plugged_auto_shutdown_enabled() &&
             snapshot->user_idle_ms >= hardware_shutdown_ms;
@@ -1851,7 +1887,8 @@ static esp_err_t power_manager_enter_hardware_shutdown(power_manager_shutdown_re
     power_manager_get_snapshot(&snapshot);
 
     if (reason == POWER_MANAGER_SHUTDOWN_REASON_LONG_IDLE &&
-        snapshot.external_power_present) {
+        snapshot.external_power_present &&
+        !power_manager_plugged_auto_shutdown_enabled()) {
         power_manager_power_source_snapshot_t power_source = {
             .usb_det_level = snapshot.usb_det_level,
             .usb_det_adc_valid = snapshot.usb_det_adc_valid,
@@ -1904,9 +1941,7 @@ static esp_err_t power_manager_enter_hardware_shutdown(power_manager_shutdown_re
         return ESP_ERR_INVALID_STATE;
     }
 
-    uint32_t entry_blockers = reason == POWER_MANAGER_SHUTDOWN_REASON_LONG_IDLE
-        ? snapshot.blockers
-        : power_manager_without_external_power_blocker(snapshot.blockers);
+    uint32_t entry_blockers = power_manager_awake_blockers(snapshot.blockers);
     if (entry_blockers != 0) {
         char blocker_text[96];
         power_manager_blocker_names(entry_blockers, blocker_text, sizeof(blocker_text));
@@ -1922,10 +1957,13 @@ static esp_err_t power_manager_enter_hardware_shutdown(power_manager_shutdown_re
     }
 
     if (audio_capture_session_is_active != NULL && audio_capture_session_is_active()) {
-        ESP_LOGW(TAG, "hardware shutdown rejected: audio capture session active");
-        diag_log(DIAG_SRC_POWER, DIAG_POWER_SLEEP_BLOCKED, DIAG_SEV_WARN,
-                 POWER_MANAGER_BLOCKER_RECORDING, snapshot.idle_ms, (uint32_t)reason, 0);
-        return ESP_ERR_INVALID_STATE;
+        if (power_manager_visible_audio_blockers(snapshot.blockers) != 0) {
+            ESP_LOGW(TAG, "hardware shutdown rejected: audio capture session active");
+            diag_log(DIAG_SRC_POWER, DIAG_POWER_SLEEP_BLOCKED, DIAG_SEV_WARN,
+                     POWER_MANAGER_BLOCKER_RECORDING, snapshot.idle_ms, (uint32_t)reason, 0);
+            return ESP_ERR_INVALID_STATE;
+        }
+        power_manager_cancel_hidden_capture_for_shutdown();
     }
 
     power_manager_power_source_snapshot_t final_power_source = {0};
@@ -1944,9 +1982,7 @@ static esp_err_t power_manager_enter_hardware_shutdown(power_manager_shutdown_re
         &final_power_source,
         power_manager_now_ms(),
         &final_battery_snapshot);
-    uint32_t final_blockers = reason == POWER_MANAGER_SHUTDOWN_REASON_LONG_IDLE
-        ? s_blockers
-        : power_manager_without_external_power_blocker(s_blockers);
+    uint32_t final_blockers = power_manager_awake_blockers(s_blockers);
     uint32_t final_shutdown_blockers = power_manager_shutdown_blockers_for_source(
         final_blockers,
         &final_power_source,
@@ -1990,11 +2026,50 @@ static esp_err_t power_manager_enter_hardware_shutdown(power_manager_shutdown_re
     }
 
     if (audio_capture_session_is_active != NULL && audio_capture_session_is_active()) {
+        if (power_manager_visible_audio_blockers(s_blockers) != 0) {
+            xSemaphoreGive(s_mutex);
+            ESP_LOGW(TAG, "hardware shutdown rejected: final audio capture session active");
+            diag_log(DIAG_SRC_POWER, DIAG_POWER_SLEEP_BLOCKED, DIAG_SEV_WARN,
+                     POWER_MANAGER_BLOCKER_RECORDING, final_idle_ms, (uint32_t)reason, 0);
+            return ESP_ERR_INVALID_STATE;
+        }
         xSemaphoreGive(s_mutex);
-        ESP_LOGW(TAG, "hardware shutdown rejected: final audio capture session active");
-        diag_log(DIAG_SRC_POWER, DIAG_POWER_SLEEP_BLOCKED, DIAG_SEV_WARN,
-                 POWER_MANAGER_BLOCKER_RECORDING, final_idle_ms, (uint32_t)reason, 0);
-        return ESP_ERR_INVALID_STATE;
+        power_manager_cancel_hidden_capture_for_shutdown();
+        /* Cancellation calls other tasks while unlocked. Re-read power and
+         * battery so plugging in during cancellation cannot race shutdown. */
+        power_manager_read_power_source(&final_power_source);
+        power_manager_update_battery_snapshot(&final_battery_snapshot);
+        if (s_mutex == NULL || xSemaphoreTake(s_mutex, portMAX_DELAY) != pdTRUE) {
+            ESP_LOGW(TAG, "hardware shutdown rejected: failed to reacquire after hidden capture cancel");
+            diag_log(DIAG_SRC_POWER, DIAG_POWER_SLEEP_BLOCKED, DIAG_SEV_WARN,
+                     0, final_idle_ms, (uint32_t)reason, (uint32_t)ESP_ERR_TIMEOUT);
+            return ESP_ERR_TIMEOUT;
+        }
+        power_manager_apply_charge_state_filter_locked(
+            &final_power_source,
+            power_manager_now_ms(),
+            &final_battery_snapshot);
+        final_blockers = power_manager_awake_blockers(s_blockers);
+        final_shutdown_blockers = power_manager_shutdown_blockers_for_source(
+            final_blockers,
+            &final_power_source,
+            reason);
+        final_idle_ms = power_manager_user_idle_ms_locked(power_manager_now_ms());
+        if (final_shutdown_blockers != 0) {
+            xSemaphoreGive(s_mutex);
+            char blocker_text[96];
+            power_manager_blocker_names(final_shutdown_blockers, blocker_text, sizeof(blocker_text));
+            ESP_LOGW(
+                TAG,
+                "hardware shutdown rejected: blockers after hidden capture cancel=0x%08" PRIx32
+                " (%s) idle_ms=%" PRIu32,
+                final_shutdown_blockers,
+                blocker_text,
+                final_idle_ms);
+            diag_log(DIAG_SRC_POWER, DIAG_POWER_SLEEP_BLOCKED, DIAG_SEV_WARN,
+                     final_shutdown_blockers, final_idle_ms, (uint32_t)reason, 0);
+            return ESP_ERR_INVALID_STATE;
+        }
     }
 
     uint32_t shutdown_power_flags = power_manager_encode_power_source_flags(&final_power_source, false);
@@ -2098,7 +2173,8 @@ static esp_err_t power_manager_enter_hardware_shutdown(power_manager_shutdown_re
         if (status_led_prepare_sleep != NULL) {
             status_led_prepare_sleep();
         }
-        power_manager_set_audio_idle_power_save(true);
+        /* Pre-shutdown mic stop must win over live monitoring: forced. */
+        power_manager_set_audio_idle_power_save(true, true);
         if (system_health_set_low_power_mode != NULL) {
             system_health_set_low_power_mode(true);
         }
@@ -2377,13 +2453,22 @@ static void power_manager_task(void *parameter)
     while (1) {
         power_manager_state_t state = POWER_MANAGER_STATE_ACTIVE;
         bool external_power_present = false;
+        bool ble_connected = false;
         if (s_mutex != NULL && xSemaphoreTake(s_mutex, portMAX_DELAY) == pdTRUE) {
             state = s_state;
             external_power_present = s_external_power_present;
+            ble_connected = s_ble_connected;
             xSemaphoreGive(s_mutex);
         }
 
         if (state == POWER_MANAGER_STATE_ACTIVE) {
+            (void)watchdog_platform_task_notify_take(
+                pdTRUE,
+                CONFIG_POWER_MANAGER_EVALUATE_INTERVAL_MS);
+        } else if (ble_connected) {
+            /* Light-sleep while Type still holds the link drops BLE ~60s after
+             * CONNECTED_IDLE. Type then reconnects in 200ms with stale
+             * usb_powered=true and wakes the board (owner: 自动开回来了). */
             (void)watchdog_platform_task_notify_take(
                 pdTRUE,
                 CONFIG_POWER_MANAGER_EVALUATE_INTERVAL_MS);
@@ -2544,7 +2629,7 @@ void power_manager_record_activity(const char *reason)
         power_manager_log_transition(previous, next, 0, blockers);
         power_manager_apply_state(previous, next, blockers);
     } else {
-        power_manager_set_audio_idle_power_save(false);
+        power_manager_set_audio_idle_power_save(false, false);
     }
     if (s_task_handle != NULL) {
         xTaskNotifyGive(s_task_handle);
@@ -2608,7 +2693,7 @@ void power_manager_set_blocker(uint32_t blocker_mask, bool enabled)
         power_manager_log_transition(previous, next, 0, new_blockers);
         power_manager_apply_state(previous, next, new_blockers);
     } else if (new_blockers != 0) {
-        power_manager_set_audio_idle_power_save(false);
+        power_manager_set_audio_idle_power_save(false, false);
     }
     if (s_task_handle != NULL) {
         xTaskNotifyGive(s_task_handle);

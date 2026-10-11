@@ -147,7 +147,7 @@ foreach ($item in @(
     @($board, "usb_power_present=%u", "USB host power diagnostic field"),
     @($board, "usb_serial_jtag_sof_active=%u", "USB Serial/JTAG SOF diagnostic field"),
     @($board, "usb_det_highz=%u", "USB_DET high-Z diagnostic field"),
-    @($board, "\.usb_power_present\s*=\s*usb_serial_jtag_sof_active\s*&&\s*charger\.vin_present", "USB host power requires SOF plus exclusive charger VIN"),
+    @($board, "\.usb_power_present\s*=\s*usb_serial_jtag_sof_active\s*&&\s*charger\.charging", "USB host power requires SOF plus charging; stale STD alone cannot establish host power"),
     @($board, "const bool charging = chg && !std", "charger decode charging is exclusive of full"),
     @($board, "const bool standby_full = std && !chg", "charger decode full is exclusive of charging"),
     @($board, "\.vin_present = charging \|\| standby_full", "charger VIN is exclusive charging or exclusive full"),

@@ -2,6 +2,17 @@
 
 This repository contains ESP32-S3 firmware for the Listener voice keyboard.
 
+## 开发优先硬约束（2026-10-07）
+
+- 功能开发和用户实际故障优先；不得用冒烟测试、全量检查、验收框架、目标台账、审批表或文档整理替代开发，也不得将它们单独报为修复进度。
+- 每次修复都从实际现象追查相关完整数据流、状态流和职责边界，找到首次错误决策及其上游成因，确认根因和受影响范围，再修产生问题的源头。不得止于现象位置，也不得在根因未明时靠阈值、延时、特例或回退遮住症状。
+- 修复范围由根因决定，不限制为最小补丁、最少文件或最少代码。根因涉及架构、跨模块状态所有权、生命周期、协议契约或数据模型时，允许并应当进行必要的架构修复；范围须与根因有直接关系。
+- 验证必须足以证明根因被消除，并覆盖原始现象、同源触发条件、受影响链路及必须保住的正常行为。不得只验证单个样例、局部补丁或为了通过而写的断言；架构修复按其影响范围验证。检查必须回答具体根因问题或交付风险，无关检查不运行。
+- 已通过且仍适用于当前实现的检查结果复用；新改动使结果失效、出现新故障或上次失败需要复核时，再做对应验证。禁止每轮、每次连接或更换任务名就重复冒烟、全套矩阵、断线重连和电源验收。
+- 编译、刷写/OTA及功能实机验证按修复范围执行。全量验收在用户明确要求全面验收、准备正式发布或架构修复确实影响整体行为时按需要执行，不把固定行政清单当作开发前提。纯文档、规则或进度修改不触发编译、刷写、设备重启或测试。
+- AIW 合同、归档、目标管理和行政验收不是开发前提。复用现有进度文档，只记实际完成时间、功能变化、验证结果和剩余问题；不另造管理流程，不用检查通过冒充实际修复。
+- 本节优先于本文及引用文档中的旧最小补丁限制和验证流程；下文命令是按根因及影响范围选择的工具，不是每轮整套执行的门槛。
+
 ## Project Map
 
 - `main/` keeps `app_main()` thin.
@@ -35,12 +46,12 @@ The project uses ESP-IDF component manager dependencies from
 - Keep subscribe-before-connect compatibility.
 - Use `snake_case` for files, functions, and variables.
 
-## Shared product engineering
+## Product delivery
 
-Follow `C:\Users\Billy\Desktop\Denzic\ai-collaboration-workflow\docs\shared_product_engineering_rules.md`
-(§1 install/flash + **always-latest Type install + matching firmware** on device).
-After firmware changes: build → flash or deliver matching OTA zip → verify serial
-`Compile time` / version before asking owner to use the device.
+- Follow the user's current scope and this repository's product policies. AIW contracts, archives and blocking acceptance popups are not development prerequisites.
+- Preserve existing uncommitted work. Use focused behavioral checks during development; build the final candidate and deliver a matching OTA package.
+- Respect the requested OTA transport. Verify the running firmware build identity after update, using serial or BLE diagnostics, and record the matching Type identity.
+- Static checks and a successful build do not establish physical power-off, wake reliability or audio quality. Report real-device evidence and remaining gaps separately.
 
 ### Always-latest runtime gate (mandatory)
 
@@ -49,7 +60,7 @@ After firmware changes: build → flash or deliver matching OTA zip → verify s
 
 ## Validation
 
-Prefer the narrowest relevant check:
+Choose checks sufficient to establish the causal fix and cover affected capture, protocol, lifecycle and host behavior. Expand validation when architecture changes affect those boundaries; reuse evidence that remains applicable:
 
 ```powershell
 pwsh -NoProfile -File .\tools\build.ps1

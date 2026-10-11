@@ -2,6 +2,7 @@
 
 #include <inttypes.h>
 #include <stdbool.h>
+#include <stdlib.h>
 #include <string.h>
 
 #include "esp_attr.h"
@@ -10,6 +11,7 @@
 #include "esp_task_wdt.h"
 #include "freertos/task.h"
 #include "sdkconfig.h"
+#include "voice_stack_diag.h"
 
 #ifndef CONFIG_ESP_TASK_WDT_EN
 #define CONFIG_ESP_TASK_WDT_EN 0
@@ -362,6 +364,28 @@ bool watchdog_platform_consume_usb_command(const char *line)
         return true;
     }
 
+    const char *arm_prefix = "VOICE_DIAG:ARM:";
+    const size_t arm_prefix_len = strlen(arm_prefix);
+    if (strncmp(command, arm_prefix, arm_prefix_len) == 0) {
+        const char *digits = command + arm_prefix_len;
+        char *end = NULL;
+        unsigned long parsed = strtoul(digits, &end, 0);
+        bool valid = digits[0] != '\0' && end != digits && *end == '\0' &&
+                     parsed <= UINT32_MAX;
+        bool armed = valid && voice_stack_diag_arm((uint32_t)parsed);
+        ESP_LOGI(
+            TAG,
+            "VOICE_DIAG ARM: run_id=%s result=%s",
+            digits,
+            armed ? "OK" : "REJECTED");
+        return true;
+    }
+
+    if (strcmp(command, "VOICE_DIAG:DUMP") == 0) {
+        voice_stack_diag_dump();
+        return true;
+    }
+
     if (strcmp(command, "DEADLOCK") == 0) {
         watchdog_platform_deadlock_for_test();
         return true;
@@ -387,6 +411,11 @@ BaseType_t watchdog_platform_start_task_on_spiram(
     }
     if (*task_stack == NULL) {
         return pdFAIL;
+    }
+    if (name != NULL && strcmp(name, "voice_recording_control_task") == 0) {
+        voice_stack_diag_register_stack(
+            *task_stack,
+            stack_words * (uint32_t)sizeof(StackType_t));
     }
     *handle_out = xTaskCreateStatic(
         task_func,

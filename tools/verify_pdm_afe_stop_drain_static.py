@@ -9,7 +9,7 @@ SOURCE_PATH = REPO_ROOT / "ports/esp32/audio_capture/audio_capture_esp32.c"
 
 
 REQUIRED_FRAGMENTS = (
-    "s_pdm_afe_stop_drain_requested = true;",
+    "s_pdm_afe_stop_drain_requested = !s_export_state.continuous_wake_boundary;",
     "s_pdm_afe_stop_drain_feed_cutoff_ack = true;",
     "audio_capture_pdm_afe_complete_stop_drain();",
     "s_pdm_afe_stop_drain_padding_samples += padding_samples;",
@@ -52,11 +52,11 @@ def main() -> int:
     stop_start = source.find("esp_err_t audio_capture_session_stop_with_origin(")
     stop_end = source.find("esp_err_t audio_capture_session_cancel(", stop_start)
     stop_body = source[stop_start:stop_end]
-    request_index = stop_body.find("s_pdm_afe_stop_drain_requested = true;")
+    request_index = stop_body.find("s_pdm_afe_stop_drain_requested = !s_export_state.continuous_wake_boundary;")
     unlock_index = stop_body.find("xSemaphoreGive(s_state_mutex);", request_index)
     if not 0 <= request_index < unlock_index:
         failures.append(
-            "session stop must request AFE drain before releasing the state lock"
+            "session stop must select acoustic drain ownership before releasing the state lock"
         )
 
     if failures:
@@ -64,7 +64,7 @@ def main() -> int:
         print("\n".join(failures))
         return 1
 
-    print("PASS: PDM AFE stop-drain preserves pre-stop enhanced PCM before session stop")
+    print("PASS: explicit PDM stops drain enhanced PCM; wake-window rotations preserve the acoustic stream")
     return 0
 
 

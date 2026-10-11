@@ -3,10 +3,12 @@ from __future__ import annotations
 import pathlib
 import re
 import sys
+from test_wake_capture_ownership import verify_source as verify_ensure_capture_ownership
 
 
 REPO_ROOT = pathlib.Path(__file__).resolve().parents[1]
 VOICE_CONTROL = REPO_ROOT / "components" / "voice_recording_control" / "voice_recording_control.c"
+VOICE_CONTROL_CMAKE = REPO_ROOT / "components" / "voice_recording_control" / "CMakeLists.txt"
 CAPTURE_ADAPTER = (
     REPO_ROOT / "ports" / "esp32" / "audio_capture" / "audio_capture_esp32.c"
 )
@@ -156,12 +158,19 @@ def require_contains(source: str, token: str, message: str) -> None:
 
 
 def extract_static_function(source: str, name: str) -> str:
-    match = re.search(rf"static\s+\w+\s+{re.escape(name)}\(", source)
-    start = match.start() if match else -1
+    start = -1
+    brace = -1
+    for match in re.finditer(rf"static\s+\w+\s+{re.escape(name)}\(", source):
+        candidate_start = match.start()
+        candidate_brace = source.find("{", candidate_start)
+        candidate_semicolon = source.find(";", candidate_start)
+        if candidate_brace >= 0 and (
+            candidate_semicolon < 0 or candidate_brace < candidate_semicolon
+        ):
+            start = candidate_start
+            brace = candidate_brace
+            break
     if start < 0:
-        fail(f"missing {name}()")
-    brace = source.find("{", start)
-    if brace < 0:
         fail(f"missing body for {name}()")
     depth = 0
     for index in range(brace, len(source)):
@@ -225,10 +234,166 @@ def verify_manual_pairing_handoff(source: str) -> None:
 
 def main() -> int:
     source = VOICE_CONTROL.read_text(encoding="utf-8")
+    voice_control_cmake = VOICE_CONTROL_CMAKE.read_text(encoding="utf-8")
     capture_source = CAPTURE_ADAPTER.read_text(encoding="utf-8")
     ble_audio_source = BLE_AUDIO_STREAM.read_text(encoding="utf-8")
     power_source = POWER_MANAGER.read_text(encoding="utf-8")
     cases = extract_transition_artifact(source)
+    verify_ensure_capture_ownership(source)
+
+    ensure_body = extract_static_function(
+        source, "voice_recording_control_ensure_wake_session"
+    )
+    ensure_schedule = extract_static_function(
+        source, "voice_recording_control_schedule_ensure_successor"
+    )
+    for token in [
+        "voice_recording_control_ensure_pending_for_segment(",
+        "voice_recording_control_ensure_deadline_reached(now)",
+        "predecessor_stopped_after_deadline",
+        "voice_recording_control_schedule_pending_start(",
+        "s_pending_start_deadline_tick = s_ensure_deadline_tick;",
+        "s_pending_start_next_retry_tick = now;",
+        "predecessor_stopped_successor_reserved",
+    ]:
+        require_contains(
+            ensure_schedule,
+            token,
+            f"ENSURE successor reservation is missing {token}",
+        )
+
+    ensure_poll = extract_static_function(
+        source, "voice_recording_control_poll_ensure_reservation"
+    )
+    for token in [
+        "VOICE_RECORDING_ENSURE_STATUS_PENDING",
+        "s_pending_start",
+        "voice_recording_control_ensure_deadline_reached(",
+        "predecessor_did_not_finish_before_deadline",
+    ]:
+        require_contains(
+            ensure_poll,
+            token,
+            f"ENSURE predecessor deadline cleanup is missing {token}",
+        )
+
+    inactive_body = extract_void_function(
+        source, "voice_recording_control_handle_session_inactive"
+    )
+    for token in [
+        "const uint32_t ended_segment_id = audio_capture_session_id();",
+        "predecessor_cancelled_before_successor",
+        "voice_recording_control_schedule_ensure_successor(",
+        "predecessor_aborted_before_successor",
+    ]:
+        require_contains(
+            inactive_body,
+            token,
+            f"ENSURE inactive-session ownership is missing {token}",
+        )
+
+    ensure_abort = extract_static_function(
+        source, "voice_recording_control_abort_wake_session"
+    )
+    for token in [
+        "s_ensure_status = VOICE_RECORDING_ENSURE_STATUS_ABORTED;",
+        "s_ensure_deadline_tick = 0;",
+        "voice_recording_control_cancel_pending_start(\"ensure_abort\")",
+        "voice_recording_control_cancel(\"ensure_wake_capture_abort\")",
+    ]:
+        require_contains(
+            ensure_abort,
+            token,
+            f"explicit ENSURE abort cleanup is missing {token}",
+        )
+
+    # The diagnostic state query must be serialized by the voice-control actor.
+    # This is intentionally a source-level contract: there is no host unit-test
+    # harness for the ESP-IDF component, and a USB callback must never read or
+    # mutate the actor's private FSM directly.
+    diag_handler = extract_static_function(
+        source, "voice_recording_control_handle_control_command"
+    )
+    diag_query_at = diag_handler.find(
+        "if (voice_recording_control_is_diag_state_command(action))"
+    )
+    first_mutation_at = diag_handler.find('if (strcmp(action, "TOGGLE") == 0)')
+    if diag_query_at < 0 or first_mutation_at < 0 or diag_query_at > first_mutation_at:
+        fail("diagnostic state query must be handled before recording FSM mutations")
+    diag_branch = diag_handler[diag_query_at:first_mutation_at]
+    for token in [
+        "voice_recording_control_parse_diag_state_request(action, &request_id)",
+        "voice_recording_control_print_diag_state(request_id);",
+        "ESP_ERR_INVALID_ARG",
+        "reason=invalid_request",
+    ]:
+        require_contains(
+            diag_branch,
+            token,
+            f"diagnostic state query validation/response is missing {token}",
+        )
+    for forbidden in [
+        "voice_recording_control_toggle(",
+        "voice_recording_control_cancel(",
+        "voice_recording_control_enter_recording(",
+        "voice_recording_control_stop(",
+        "voice_recording_control_recovery(",
+    ]:
+        if forbidden in diag_branch:
+            fail(f"diagnostic state query branch mutates the FSM: {forbidden}")
+
+    diag_parser = extract_static_function(
+        source, "voice_recording_control_parse_diag_state_request"
+    )
+    for token in [
+        'VOICE_RECORDING_CONTROL_DIAG_STATE_PREFIX',
+        "VOICE_RECORDING_CONTROL_DIAG_REQUEST_ID_MAX_DIGITS",
+        "parsed > (UINT32_MAX - digit) / 10u",
+        "parsed = parsed * 10u + digit",
+        "parsed == 0u",
+    ]:
+        require_contains(
+            diag_parser,
+            token,
+            f"bounded diagnostic request parsing is missing {token}",
+        )
+
+    diag_print = extract_static_function(
+        source, "voice_recording_control_print_diag_state"
+    )
+    for token in [
+        "schema=listener.voice_recording_diag_state.v1",
+        'request_id=%" PRIu32',
+        'uptime_ms=%" PRIu64',
+        "listener_device_get_fw_version()",
+        "listener_device_get_build_id()",
+        "device_settings_get_revision()",
+        "state=%s",
+        "pending_start=%u",
+        "cancel_pending=%u",
+        "enrollment_pending=%u",
+        "audio_active=%u",
+        "monitoring=%u",
+        "audio_monitoring=%u",
+        "transport_ready=%u",
+    ]:
+        require_contains(
+            diag_print,
+            token,
+            f"diagnostic state response is missing {token}",
+        )
+    task_body = extract_void_function(source, "voice_recording_control_task")
+    require_contains(
+        task_body,
+        "voice_recording_control_handle_control_command(",
+        "diagnostic state query is not serialized by the voice-control task",
+    )
+    for dependency in ["listener_device", "esp_timer"]:
+        require_contains(
+            voice_control_cmake,
+            dependency,
+            f"diagnostic state query component dependency is missing {dependency}",
+        )
 
     for token in [
         "#define VOICE_RECORDING_CONTROL_DICTATION_SILENCE_STOP_MS 1000",
@@ -239,6 +404,7 @@ def main() -> int:
         "voice_recording_control_note_host_speech();",
         "voice_recording_control_host_speech_protection_active()",
         "s_active_session_body_speech_seen = true;",
+        "step_config = voice_recording_endpoint_config(\n            step_config, host_endpoint_owned_visible);",
         "visible_dictation && !s_active_session_body_speech_seen",
         "step_config.silence_stop_ms =\n                VOICE_RECORDING_CONTROL_INITIAL_BODY_WAIT_MS;",
         "if (xQueueSend(s_vad_queue, &event, 0) != pdTRUE)",
@@ -307,16 +473,9 @@ def main() -> int:
     ]:
         require_contains(source, token, f"FSM artifact/source missing {token}")
 
-    activate_start = source.find(
-        "static esp_err_t voice_recording_control_activate_automatic_session("
+    activate_body = extract_static_function(
+        source, "voice_recording_control_adopt_active_wake_session"
     )
-    activate_end = source.find(
-        "esp_err_t voice_recording_control_dispatch_control_command(",
-        activate_start,
-    )
-    if activate_start < 0 or activate_end < 0:
-        fail("automatic-session activation function is missing")
-    activate_body = source[activate_start:activate_end]
     reset_at = activate_body.find(
         "denzic_voice_activation_v1_reset("
     )
@@ -439,9 +598,6 @@ def main() -> int:
     ]:
         require_contains(source, boundary, f"missing effect boundary {boundary}")
 
-    inactive_body = extract_void_function(
-        source, "voice_recording_control_handle_session_inactive"
-    )
     cancel_cleanup = inactive_body.find(
         'status_led_set_processing(false, "recording_canceled")'
     )
@@ -462,8 +618,9 @@ def main() -> int:
         "!s_voice_auto_start_enabled &&",
         "s_active_session_automatic &&",
         "bool idle_start_monitoring =",
-        "s_state == VOICE_RECORDING_STATE_IDLE &&",
-        "ble_audio_stream_is_ready() &&",
+        "(s_state == VOICE_RECORDING_STATE_IDLE ||",
+        "s_state == VOICE_RECORDING_STATE_TRANSFERRING) &&",
+        "ble_audio_stream_is_type_link_ready() &&",
         "bool active_stop_monitoring =",
         "s_state == VOICE_RECORDING_STATE_RECORDING &&",
         "(s_active_session_automatic || s_voice_auto_stop_enabled);",
@@ -509,7 +666,7 @@ def main() -> int:
         fail("voice monitoring refresh boundary is missing")
     refresh_body = source[refresh_start:refresh_end]
     for token in [
-        "ble_audio_stream_is_ready() &&",
+        "ble_audio_stream_is_type_link_ready() &&",
         "power.state == POWER_MANAGER_STATE_ACTIVE &&",
         "(idle_start_monitoring || active_stop_monitoring);",
     ]:
@@ -603,7 +760,7 @@ def main() -> int:
     for token in [
         "if (state != POWER_MANAGER_STATE_ACTIVE)",
         "power_manager_audio_idle_blockers(blockers) == 0",
-        "power_manager_set_audio_idle_power_save(true);",
+        "power_manager_set_audio_idle_power_save(true, false);",
     ]:
         require_contains(
             fast_idle_body,
@@ -658,7 +815,7 @@ def main() -> int:
     if "AUDIO_CAPTURE_VAD_SPEECH_MIN_PEAK" in capture_source:
         fail("fixed raw-volume VAD gate is forbidden by the 1.0.4 wake contract")
     session_begin_start = capture_source.find(
-        "esp_err_t audio_capture_session_begin_with_preroll("
+        "static esp_err_t audio_capture_session_begin_internal("
     )
     session_begin_end = capture_source.find(
         "esp_err_t audio_capture_session_begin(void)", session_begin_start
@@ -792,7 +949,8 @@ def main() -> int:
 
     print(
         "PASS: voice_recording_control FSM artifact covers "
-        f"{len(EXPECTED_CASES)} extreme transition cases and keeps decisions effect-free."
+        f"{len(EXPECTED_CASES)} extreme transition cases plus production ENSURE capture ownership "
+        "and keeps decisions effect-free."
     )
     return 0
 

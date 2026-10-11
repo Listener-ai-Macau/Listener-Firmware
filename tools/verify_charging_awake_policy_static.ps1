@@ -75,7 +75,7 @@ Assert-Contains $boardSource 'bool\s+usb_serial_jtag_sof_active\s*=\s*board_usb_
 Assert-Contains $boardSource 'const bool charging = chg && !std' 'exclusive charging decode rejects both-low and both-high'
 Assert-Contains $boardSource 'const bool standby_full = std && !chg' 'exclusive full decode rejects both-low and both-high'
 Assert-Contains $boardSource '\.vin_present = charging \|\| standby_full' 'charger VIN is exclusive charging or exclusive full'
-Assert-Contains $boardSource '\.usb_power_present\s*=\s*usb_serial_jtag_sof_active\s*&&\s*charger\.vin_present' 'computer USB power requires SOF plus charger VIN so unplug cannot keep PWR white'
+Assert-Contains $boardSource '\.usb_power_present\s*=\s*usb_serial_jtag_sof_active\s*&&\s*charger\.charging' 'computer USB power requires SOF plus exclusive charging so a false BAT_STD full cannot keep usb_power after unplug'
 if ($boardSource -match 'usb_serial_jtag_ll_module_is_enabled') {
     throw "board.c must not call usb_serial_jtag_ll_module_is_enabled directly; use the ESP-IDF USB Serial/JTAG connection monitor"
 }
@@ -106,7 +106,7 @@ Assert-NotContains $powerManager 'power_manager_charger_status_external_locked[\
 Assert-Contains $powerManager 'board_decode_charger_status_pins\(source->bat_chg_level,\s*source->bat_std_level\)' 'central filter re-decodes exclusive charger pins'
 Assert-Contains $powerManager 'raw_charging\s*=\s*pins\.charging' 'central filter trusts exclusive charging decode'
 Assert-Contains $powerManager 'raw_full_status\s*=\s*pins\.standby_full' 'central filter trusts exclusive full decode'
-Assert-Contains $powerManager 'source->charge_power_present\s*=\s*source->charge_power_present\s*\|\|\s*charger_status_external' 'charger status retention becomes charge-power evidence'
+Assert-Contains $powerManager 'source->charge_power_present\s*=\s*charger_status_external' 'only qualified charger status becomes charge-power evidence'
 Assert-Contains $powerManager 'raw_full\s*&&[\s\S]*!raw_charging\s*&&[\s\S]*power_manager_charge_full_battery_allowed' 'charge-full candidate requires raw full, not charging, and near-full battery'
 Assert-Contains $powerManager 'source->charge_full\s*=\s*source->charge_power_present\s*&&\s*s_charge_full_latched' 'interpreted charge-full uses charge-power debounce latch'
 Assert-Contains $powerManager 'source->charge_power_present\s*=\s*source->charge_power_present\s*\|\|\s*source->charge_full' 'debounced full status becomes charge-power evidence'
@@ -129,8 +129,8 @@ Assert-Contains $powerManager 'source->external_power_present[\s\S]*s_blockers\s
 Assert-Contains $powerManager '\.sleep_enabled\s*=\s*[\s\S]*low_power_idle_ms\s*>\s*0u\s*&&\s*[\s\S]*\(!s_external_power_present\s*\|\|\s*power_manager_plugged_low_power_enabled\(\)\)' 'external power disables shared-policy runtime idle when plugged low-power is disabled'
 Assert-Contains $powerManager 'power_manager_audio_idle_blockers\(uint32_t blockers\)[\s\S]*audio_blockers\s*=\s*power_manager_awake_blockers\(blockers\)[\s\S]*audio_capture_voice_activation_monitoring_is_enabled\(\)[\s\S]*audio_blockers\s*\|=\s*POWER_MANAGER_BLOCKER_VOICE_ACTIVATION[\s\S]*return\s+audio_blockers' 'audio idle preserves only actual non-idle voice monitoring'
 Assert-NotContains $powerManager 'power_manager_audio_idle_blockers\(uint32_t blockers\)[\s\S]{0,700}device_settings_get_voice_auto_start_enabled\(\)' 'Bluetooth-light-off idle must not keep the mic awake merely because auto-start is configured'
-Assert-Contains $powerManager 'power_manager_without_external_power_blocker\(s_blockers\)\s*==\s*0[\s\S]*s_external_power_present[\s\S]*hardware_shutdown_ms' 'automatic shutdown blocked status ignores external blocker itself'
-Assert-Contains $powerManager 'reason\s*==\s*POWER_MANAGER_SHUTDOWN_REASON_LONG_IDLE[\s\S]*\?\s*snapshot\.blockers[\s\S]*:\s*power_manager_without_external_power_blocker\(snapshot\.blockers\)' 'manual shutdown entry gate ignores external-power awake blocker'
+Assert-Contains $powerManager 'power_manager_awake_blockers\(s_blockers\)\s*==\s*0[\s\S]*s_external_power_present[\s\S]*hardware_shutdown_ms' 'automatic shutdown blocked status ignores external and hidden-VA blockers'
+Assert-Contains $powerManager 'uint32_t entry_blockers\s*=\s*power_manager_awake_blockers\(snapshot\.blockers\)' 'hardware shutdown entry gate ignores external-power and hidden-VA blockers'
 if ($powerManager -notmatch 'strcmp\(command,\s*"SHUTDOWN"\)[\s\S]*(power_manager_request_manual_shutdown\(|power_manager_enter_hardware_shutdown\(POWER_MANAGER_SHUTDOWN_REASON_MANUAL_COMMAND\))') {
     throw "Missing manual hardware shutdown command remains explicit (direct or queued dispatch)"
 }

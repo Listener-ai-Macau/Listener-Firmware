@@ -36,9 +36,11 @@
 #include "esp_log.h"
 #include "esp_random.h"
 #include "esp_timer.h"
+#include "esp_attr.h"
 #include "diag_log.h"
 #include "diag_log_events.h"
 #include "watchdog_platform.h"
+#include "voice_stack_diag.h"
 #include "freertos/idf_additions.h"
 
 /* ---------- Shared defines ---------- */
@@ -113,8 +115,27 @@
 #define AUDIO_CAPTURE_PDM_AFE_RINGBUF_FRAMES 24
 #define AUDIO_CAPTURE_PDM_AFE_FETCH_WAIT_MS 100U
 #define AUDIO_CAPTURE_PDM_AFE_IDLE_BUDGET_FETCHES 64U
+/* Feed-starvation watchdog.  The fetch task observes every empty AFE fetch;
+ * when the pipeline should be producing (monitoring on or a live session) yet
+ * no feed() has landed for this long, it asks the capture task to cycle I2S
+ * in place — the same recovery as the read-timeout path.  Three seconds is an
+ * order of magnitude above the ~240 ms AFE ring, so it only trips on a real
+ * producer stall, never on ordinary scheduling jitter. */
+#define AUDIO_CAPTURE_PDM_AFE_STARVATION_RESTART_MS 3000U
+/* A SPH0645 LM4H needs its PDM clock running before the hardware PDM2PCM
+ * decimator output is trustworthy.  The first DMA buffers after every
+ * i2s_channel_enable carry settle junk; feeding them into the gain governor,
+ * AFE and preroll ring poisons the opening of the next wake window.  Discard
+ * 100 ms (five 20 ms frames) of raw input after each (re)enable. */
+#define AUDIO_CAPTURE_I2S_RESTART_DISCARD_FRAMES 5U
 #define AUDIO_CAPTURE_PDM_SESSION_WARMUP_MIN_FEED_BLOCKS 5U
 #define AUDIO_CAPTURE_PDM_SESSION_WARMUP_TIMEOUT_MS 1200U
+/* Keep every enhanced 20 ms frame produced while the session start control
+ * path is queueing START and the wake pre-roll.  This path can take hundreds
+ * of milliseconds when the BLE exporter is busy; dropping these frames makes
+ * the handoff jump forward in the source timeline.  The queue lives in PSRAM
+ * and overflow is a hard session error, never an implicit audio gap. */
+#define AUDIO_CAPTURE_PDM_HANDOFF_FIFO_FRAMES 128U
 #define AUDIO_CAPTURE_PDM_VAD_MIN_SPEECH_MS 128
 #define AUDIO_CAPTURE_PDM_VAD_MIN_NOISE_MS 128
 #define AUDIO_CAPTURE_PDM_VAD_DELAY_MS 128
@@ -205,12 +226,19 @@ typedef struct {
     size_t pcm_bytes_total;
     size_t pcm_bytes_written;
     uint32_t session_id;
+    uint64_t last_source_frame_id;
+    bool continuous_wake_boundary;
     uint16_t stream_next_packet_sequence;
     uint16_t stream_batch_frame_count;
     uint8_t stream_batch_raw_input_level_percent;
     uint8_t stream_batch_buffer[AUDIO_CAPTURE_STREAM_BATCH_BYTES];
     uint8_t stream_emit_buffer[AUDIO_CAPTURE_STREAM_BATCH_BYTES];
 } audio_capture_export_state_t;
+
+_Static_assert(
+    sizeof(((audio_capture_export_state_t *)0)->stream_emit_buffer) ==
+        AUDIO_CAPTURE_STREAM_BATCH_BYTES,
+    "session emit scratch must remain exactly one bounded audio batch");
 
 /* ---------- Shared state ---------- */
 
@@ -228,12 +256,21 @@ static bool s_i2s_low_power_disabled;
 static volatile bool s_ota_suspended;
 static uint32_t s_frame_count;
 static uint32_t s_frame_captured_count;
+static uint64_t s_source_frame_id;
 #ifdef CONFIG_AUDIO_CAPTURE_MIC_ES8311
 static uint32_t s_overflow_count;
 static uint32_t s_underrun_count;
 #endif
 static uint32_t s_dropped_frame_count;
+static volatile uint32_t s_i2s_overrun_bytes;
+static uint32_t s_session_i2s_overrun_start;
+static uint64_t s_session_packet_planning_us;
+static uint32_t s_session_packet_planning_max_us;
+static int64_t s_capture_session_started_us;
 static uint32_t s_i2s_stall_recovery_count;
+/* Raw 20 ms frames still to discard after the latest I2S (re)enable.  Set on
+ * the power/OTA/capture paths, consumed only by the capture loop. */
+static volatile uint32_t s_i2s_restart_discard_frames;
 static audio_capture_export_state_t s_export_state;
 static SemaphoreHandle_t s_state_mutex;
 /*
@@ -252,10 +289,13 @@ static volatile uint8_t s_raw_input_level_percent;
 /* Ordinary task-owned PCM history: never a DMA target or Flash API input. */
 static int16_t (*s_voice_preroll)[AUDIO_CAPTURE_FRAME_SAMPLES];
 static uint8_t s_voice_preroll_levels[AUDIO_CAPTURE_VOICE_PREROLL_FRAMES];
+static uint64_t s_voice_preroll_frame_ids[AUDIO_CAPTURE_VOICE_PREROLL_FRAMES];
 static uint16_t s_voice_preroll_write_index;
 static uint16_t s_voice_preroll_count;
 static uint16_t s_session_preroll_start_index;
 static uint16_t s_session_preroll_count;
+static uint32_t s_wake_resume_session_id;
+static uint64_t s_wake_resume_next_frame_id;
 
 static esp_err_t audio_capture_i2s_init(void);
 
@@ -322,6 +362,17 @@ static size_t s_pdm_afe_emit_filled;
 static volatile bool s_pdm_afe_session_boundary_requested;
 static volatile bool s_pdm_afe_session_boundary_applied;
 static volatile bool s_pdm_afe_session_warmup_ready;
+/* A valid wake pre-roll already represents the continuous AFE timeline. Keep
+ * the pipeline's partial blocks and fetch output across that boundary; a cold
+ * session without pre-roll still starts from a clean local frame boundary. */
+static volatile bool s_pdm_afe_preserve_session_pipeline;
+static int16_t (*s_pdm_afe_handoff_fifo)[AUDIO_CAPTURE_FRAME_SAMPLES];
+static uint8_t s_pdm_afe_handoff_levels[AUDIO_CAPTURE_PDM_HANDOFF_FIFO_FRAMES];
+static uint64_t s_pdm_afe_handoff_frame_ids[AUDIO_CAPTURE_PDM_HANDOFF_FIFO_FRAMES];
+static uint16_t s_pdm_afe_handoff_read_index;
+static uint16_t s_pdm_afe_handoff_write_index;
+static uint16_t s_pdm_afe_handoff_count;
+static volatile bool s_pdm_afe_handoff_overflow;
 static volatile bool s_pdm_afe_stop_drain_requested;
 static volatile bool s_pdm_afe_stop_drain_feed_cutoff_ack;
 static volatile bool s_pdm_afe_stop_drain_complete;
@@ -363,6 +414,20 @@ static uint32_t s_pdm_vad_low_snr_speech_frames;
 static uint32_t s_pdm_afe_stop_drain_output_frames;
 static size_t s_pdm_afe_stop_drain_padding_samples;
 static TaskHandle_t s_pdm_afe_fetch_task_handle;
+/* Producer-health state shared with the fetch task.  Milliseconds since boot
+ * keep these 32-bit and wrap-safe under unsigned subtraction; only the
+ * starvation gap below depends on the difference, never the absolute value. */
+static volatile uint32_t s_pdm_afe_last_feed_ms;
+static volatile uint32_t s_pdm_afe_starvation_restart_count;
+static volatile bool s_i2s_restart_requested;
+/* Per-session pipeline forensics: distinguish a crowded fetch path (many
+ * empty polls, long feed gaps) from a stopped producer.  Reset at each
+ * session boundary. */
+static volatile uint32_t s_pdm_afe_fetch_empty_count;
+static volatile uint32_t s_pdm_afe_feed_error_count;
+static volatile uint32_t s_pdm_afe_session_feed_gap_max_ms;
+static volatile uint32_t s_pdm_afe_session_last_feed_ms;
+static volatile uint32_t s_pdm_afe_session_first_fetch_ms;
 static void audio_capture_log_pdm_afe_session_signal(uint32_t session_id);
 #endif
 #endif
@@ -370,6 +435,13 @@ static esp_err_t audio_capture_send_session_preroll(
     uint32_t session_id,
     uint16_t frame_count,
     uint16_t *next_packet_sequence);
+#ifdef CONFIG_AUDIO_CAPTURE_MIC_SPH0655_PDM
+#if CONFIG_AUDIO_CAPTURE_PDM_AFE_WEBRTC
+static esp_err_t audio_capture_send_session_handoff(
+    uint32_t session_id,
+    uint16_t *next_packet_sequence);
+#endif
+#endif
 
 static bool s_capture_transport_backpressure_active;
 static uint32_t s_capture_transport_backpressure_events;
@@ -449,6 +521,8 @@ static const char *audio_capture_static_unavailable_reason(void)
 static void audio_capture_export_cleanup(void)
 {
     memset(&s_export_state, 0, sizeof(s_export_state));
+    s_wake_resume_session_id = 0u;
+    s_wake_resume_next_frame_id = 0u;
     s_capture_transport_backpressure_active = false;
     s_capture_transport_backpressure_events = 0;
 #ifdef CONFIG_AUDIO_CAPTURE_MIC_SPH0655_PDM
@@ -456,6 +530,11 @@ static void audio_capture_export_cleanup(void)
     s_pdm_afe_session_boundary_requested = false;
     s_pdm_afe_session_boundary_applied = false;
     s_pdm_afe_session_warmup_ready = false;
+    s_pdm_afe_preserve_session_pipeline = false;
+    s_pdm_afe_handoff_read_index = 0u;
+    s_pdm_afe_handoff_write_index = 0u;
+    s_pdm_afe_handoff_count = 0u;
+    s_pdm_afe_handoff_overflow = false;
     s_pdm_afe_stop_drain_requested = false;
     s_pdm_afe_stop_drain_feed_cutoff_ack = false;
     s_pdm_afe_stop_drain_complete = false;
@@ -613,6 +692,9 @@ static esp_err_t audio_capture_apply_idle_power_save(bool enabled)
         }
         if (ret == ESP_OK) {
             s_i2s_low_power_disabled = false;
+            /* PDM settle guard: the mic's first clock burst after this enable
+             * carries decimator junk.  See AUDIO_CAPTURE_I2S_RESTART_DISCARD_FRAMES. */
+            s_i2s_restart_discard_frames = AUDIO_CAPTURE_I2S_RESTART_DISCARD_FRAMES;
 #ifdef CONFIG_AUDIO_CAPTURE_MIC_ES8311
             if (s_codec_handle != NULL) {
                 int mute_ret = esp_codec_dev_set_in_mute(s_codec_handle, false);
@@ -648,7 +730,50 @@ static esp_err_t audio_capture_apply_idle_power_save(bool enabled)
 
 /* ---------- Session API (shared) ---------- */
 
-esp_err_t audio_capture_session_begin_with_preroll(uint32_t pre_roll_ms)
+/* Called under s_state_mutex. The ring may contain predecessor overlap, but
+ * a continuation must export each real source frame exactly once. */
+static esp_err_t audio_capture_select_wake_resume(
+    uint32_t previous_session_id,
+    uint16_t *start_index,
+    uint16_t *frame_count)
+{
+    if (previous_session_id == 0u ||
+        previous_session_id != s_wake_resume_session_id ||
+        s_wake_resume_next_frame_id == 0u ||
+        s_wake_resume_next_frame_id > s_source_frame_id + 1u) {
+        return ESP_ERR_NOT_FOUND;
+    }
+    uint64_t expected = s_wake_resume_next_frame_id;
+    *start_index = s_voice_preroll_write_index;
+    *frame_count = 0u;
+    const uint16_t oldest = (uint16_t)(
+        (s_voice_preroll_write_index + AUDIO_CAPTURE_VOICE_PREROLL_FRAMES -
+         s_voice_preroll_count) % AUDIO_CAPTURE_VOICE_PREROLL_FRAMES);
+    for (uint16_t i = 0u; i < s_voice_preroll_count; ++i) {
+        const uint16_t index = (uint16_t)(
+            (oldest + i) % AUDIO_CAPTURE_VOICE_PREROLL_FRAMES);
+        const uint64_t frame_id = s_voice_preroll_frame_ids[index];
+        if (frame_id < expected) {
+            continue;
+        }
+        if (frame_id != expected) {
+            return ESP_ERR_NOT_FOUND;
+        }
+        if (*frame_count == 0u) {
+            *start_index = index;
+        }
+        ++*frame_count;
+        ++expected;
+    }
+    return expected == s_source_frame_id + 1u
+        ? ESP_OK
+        : ESP_ERR_NOT_FOUND;
+}
+
+static esp_err_t audio_capture_session_begin_internal(
+    uint32_t pre_roll_ms,
+    uint16_t start_origin_override,
+    uint32_t previous_session_id)
 {
     const char *unavailable_reason = audio_capture_static_unavailable_reason();
     if (unavailable_reason != NULL) {
@@ -681,6 +806,22 @@ esp_err_t audio_capture_session_begin_with_preroll(uint32_t pre_roll_ms)
         return ESP_ERR_INVALID_STATE;
     }
 
+    uint16_t resume_start_index = 0u;
+    uint16_t resume_frame_count = 0u;
+    if (previous_session_id != 0u) {
+        esp_err_t resume_ret = audio_capture_select_wake_resume(
+            previous_session_id, &resume_start_index, &resume_frame_count);
+        if (resume_ret != ESP_OK) {
+            ESP_LOGW(TAG, "wake continuity unavailable: previous_session_id=%" PRIu32
+                     " checkpoint_session_id=%" PRIu32 " next_frame=%" PRIu64
+                     " current_frame=%" PRIu64,
+                     previous_session_id, s_wake_resume_session_id,
+                     s_wake_resume_next_frame_id, s_source_frame_id);
+            xSemaphoreGive(s_state_mutex);
+            return resume_ret;
+        }
+    }
+
     if (!ble_audio_stream_is_ready()) {
         xSemaphoreGive(s_state_mutex);
         ESP_LOGW(TAG, "record session start rejected: BLE audio transport not ready");
@@ -709,9 +850,11 @@ esp_err_t audio_capture_session_begin_with_preroll(uint32_t pre_roll_ms)
     s_export_state.total_frames = total_frames;
     s_export_state.pcm_bytes_total = 0;
     s_export_state.session_id = audio_capture_next_session_id();
-    s_export_state.start_origin = pre_roll_ms > 0u
-        ? LISTENER_AUDIO_SESSION_START_ORIGIN_VOICE_ACTIVATION
-        : LISTENER_AUDIO_SESSION_START_ORIGIN_USER;
+    s_export_state.start_origin = start_origin_override != UINT16_MAX
+        ? start_origin_override
+        : (pre_roll_ms > 0u
+            ? LISTENER_AUDIO_SESSION_START_ORIGIN_VOICE_ACTIVATION
+            : LISTENER_AUDIO_SESSION_START_ORIGIN_USER);
     uint32_t requested_pre_roll_frames =
         (pre_roll_ms + AUDIO_CAPTURE_FRAME_MS - 1u) /
         AUDIO_CAPTURE_FRAME_MS;
@@ -728,6 +871,13 @@ esp_err_t audio_capture_session_begin_with_preroll(uint32_t pre_roll_ms)
          AUDIO_CAPTURE_VOICE_PREROLL_FRAMES -
          s_session_preroll_count) %
         AUDIO_CAPTURE_VOICE_PREROLL_FRAMES);
+    if (previous_session_id != 0u) {
+        s_session_preroll_start_index = resume_start_index;
+        s_session_preroll_count = resume_frame_count;
+    }
+    s_export_state.last_source_frame_id = s_source_frame_id;
+    s_wake_resume_session_id = 0u;
+    s_wake_resume_next_frame_id = 0u;
     uint32_t session_id = s_export_state.session_id;
     uint16_t session_start_origin = s_export_state.start_origin;
     uint16_t session_preroll_count = s_session_preroll_count;
@@ -745,19 +895,36 @@ esp_err_t audio_capture_session_begin_with_preroll(uint32_t pre_roll_ms)
     const uint32_t session_floor_gain_q8 =
         AUDIO_CAPTURE_PDM_SOFTWARE_GAIN_SESSION_FLOOR_NUM *
         AUDIO_CAPTURE_PDM_SOFTWARE_GAIN_Q8_ONE;
-    if (s_pdm_pre_afe_gain_q8 < session_floor_gain_q8) {
+    if (previous_session_id == 0u && s_pdm_pre_afe_gain_q8 < session_floor_gain_q8) {
         s_pdm_pre_afe_gain_q8 = session_floor_gain_q8;
     }
-    s_pdm_afe_session_boundary_requested = true;
+    /* The fetch task observes the boundary flags without taking the state
+     * mutex. Publish the preserve mode and the handoff gate before publishing
+     * the request itself; otherwise it can see requested=1/preserve=0 and
+     * discard an already-produced AFE fetch result during this startup edge. */
     s_pdm_afe_session_boundary_applied = false;
     s_pdm_afe_session_warmup_ready = false;
+    s_pdm_afe_preserve_session_pipeline =
+        previous_session_id != 0u || session_preroll_count > 0u;
+    s_pdm_afe_handoff_read_index = 0u;
+    s_pdm_afe_handoff_write_index = 0u;
+    s_pdm_afe_handoff_count = 0u;
+    s_pdm_afe_handoff_overflow = false;
     s_export_state.warmup_pending = true;
+    /* Keep this store last: fetch_task's requested/preserve decision is now
+     * coherent before it is allowed to observe the new session boundary. */
+    __atomic_thread_fence(__ATOMIC_RELEASE);
+    s_pdm_afe_session_boundary_requested = true;
     s_pdm_afe_stop_drain_requested = false;
     s_pdm_afe_stop_drain_feed_cutoff_ack = false;
     s_pdm_afe_stop_drain_complete = false;
     s_pdm_afe_stop_drain_output_frames = 0;
     s_pdm_afe_stop_drain_padding_samples = 0;
     s_pdm_afe_session_input_peak = 0;
+    s_session_i2s_overrun_start = __atomic_load_n(&s_i2s_overrun_bytes, __ATOMIC_RELAXED);
+    s_session_packet_planning_us = 0;
+    s_session_packet_planning_max_us = 0;
+    s_capture_session_started_us = esp_timer_get_time();
     s_pdm_afe_session_input_abs_sum = 0;
     s_pdm_afe_session_input_samples = 0;
     s_pdm_afe_session_input_clipped_samples = 0;
@@ -836,6 +1003,13 @@ esp_err_t audio_capture_session_begin_with_preroll(uint32_t pre_roll_ms)
         s_pdm_afe_session_warmup_ready ? 1U : 0U,
         warmup_elapsed_ms,
         s_pdm_afe_input_frames);
+    if (warmup_activation_ready) {
+        voice_stack_diag_mark(
+            VOICE_STACK_DIAG_STAGE_WARMUP_READY,
+            session_id,
+            warmup_elapsed_ms,
+            s_pdm_afe_input_frames);
+    }
     if (!warmup_activation_ready) {
         esp_err_t warmup_ret = s_pdm_afe_session_warmup_ready
             ? ESP_ERR_INVALID_STATE
@@ -881,6 +1055,24 @@ esp_err_t audio_capture_session_begin_with_preroll(uint32_t pre_roll_ms)
             xSemaphoreGive(s_state_mutex);
         }
     }
+    if (stream_start_ret == ESP_OK) {
+        /* Keep the startup gate closed while the AFE output made during
+         * warmup and pre-roll queueing is emitted after the snapshot. The
+         * drain releases warmup_pending atomically with the empty check. */
+        voice_stack_diag_mark(
+            VOICE_STACK_DIAG_STAGE_HANDOFF_BEFORE,
+            session_id,
+            pre_roll_packet_count,
+            session_preroll_count);
+        stream_start_ret = audio_capture_send_session_handoff(
+            session_id,
+            &pre_roll_packet_count);
+        voice_stack_diag_mark(
+            VOICE_STACK_DIAG_STAGE_HANDOFF_AFTER,
+            session_id,
+            (uint32_t)stream_start_ret,
+            pre_roll_packet_count);
+    }
     if (stream_start_ret != ESP_OK) {
         if (stream_start_queued) {
             (void)ble_audio_stream_send_session_error(
@@ -903,9 +1095,14 @@ esp_err_t audio_capture_session_begin_with_preroll(uint32_t pre_roll_ms)
             esp_err_to_name(stream_start_ret));
         return stream_start_ret;
     }
+    /* The handoff helper performs the actual empty-check and release while
+     * holding the state mutex. Keep this guarded assignment as an invariant
+     * assertion at the session boundary for the zero-frame handoff case. */
     if (xSemaphoreTake(s_state_mutex, portMAX_DELAY) == pdTRUE) {
         if (s_export_state.active &&
-            s_export_state.session_id == session_id) {
+            s_export_state.session_id == session_id &&
+            s_pdm_afe_handoff_count == 0u &&
+            !s_pdm_afe_handoff_overflow) {
             s_export_state.warmup_pending = false;
         }
         xSemaphoreGive(s_state_mutex);
@@ -950,7 +1147,36 @@ esp_err_t audio_capture_session_begin_with_preroll(uint32_t pre_roll_ms)
         payload_bytes,
         session_max_seconds);
     diag_log(DIAG_SRC_AUDIO, DIAG_AUDIO_SESSION, DIAG_SEV_INFO, 1, session_id, 0, 0);
+    if (previous_session_id != 0u) {
+        ESP_LOGI(TAG, "wake continuity resumed: previous_session_id=%" PRIu32
+                 " session_id=%" PRIu32 " recovered_frames=%u recovered_ms=%u",
+                 previous_session_id, session_id,
+                 (unsigned)resume_frame_count,
+                 (unsigned)(resume_frame_count * AUDIO_CAPTURE_FRAME_MS));
+    }
     return ESP_OK;
+}
+
+esp_err_t audio_capture_session_begin_with_preroll(uint32_t pre_roll_ms)
+{
+    return audio_capture_session_begin_internal(pre_roll_ms, UINT16_MAX, 0u);
+}
+
+esp_err_t audio_capture_session_begin_with_preroll_and_origin(
+    uint32_t pre_roll_ms,
+    uint16_t start_origin)
+{
+    return audio_capture_session_begin_internal(pre_roll_ms, start_origin, 0u);
+}
+
+esp_err_t audio_capture_session_resume_wake(
+    uint32_t previous_session_id,
+    uint16_t start_origin)
+{
+    if (previous_session_id == 0u) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    return audio_capture_session_begin_internal(0u, start_origin, previous_session_id);
 }
 
 esp_err_t audio_capture_session_begin(void)
@@ -979,9 +1205,15 @@ esp_err_t audio_capture_session_stop_with_origin(
 
     s_export_state.stop_requested = true;
     s_export_state.stop_origin = (uint16_t)origin;
+    /* A bounded hidden transport window is not an acoustic stop. Keep AFE
+     * and its partial PCM running so a late accepted wake can resume from
+     * the source cursor. Explicit user/end-of-dictation stops still drain. */
+    s_export_state.continuous_wake_boundary =
+        origin == AUDIO_CAPTURE_STOP_ORIGIN_VOICE_ACTIVATION_MAX_DURATION &&
+        s_voice_activation_monitoring;
 #ifdef CONFIG_AUDIO_CAPTURE_MIC_SPH0655_PDM
 #if CONFIG_AUDIO_CAPTURE_PDM_AFE_WEBRTC
-    s_pdm_afe_stop_drain_requested = true;
+    s_pdm_afe_stop_drain_requested = !s_export_state.continuous_wake_boundary;
     s_pdm_afe_stop_drain_feed_cutoff_ack = false;
     s_pdm_afe_stop_drain_complete = false;
 #endif
@@ -1034,10 +1266,33 @@ bool audio_capture_session_is_active(void)
     return active;
 }
 
-esp_err_t audio_capture_set_idle_power_save(bool enabled)
+uint32_t audio_capture_session_id(void)
+{
+    if (s_state_mutex == NULL || xSemaphoreTake(s_state_mutex, portMAX_DELAY) != pdTRUE) {
+        return 0u;
+    }
+
+    const uint32_t session_id =
+        (s_export_state.requested || s_export_state.active)
+            ? s_export_state.session_id
+            : 0u;
+    xSemaphoreGive(s_state_mutex);
+    return session_id;
+}
+
+esp_err_t audio_capture_set_idle_power_save(bool enabled, bool force)
 {
     if (!enabled && s_ota_suspended) {
         enabled = true;
+    }
+    if (enabled && !force &&
+        (s_voice_activation_monitoring || audio_capture_session_is_active())) {
+        /* Voice monitoring or a live session owns the mic.  Idle power save
+         * used to clear the capture-layer monitoring flag and zero the preroll
+         * ring from under the voice task ("works once, dead after idle"), so
+         * refuse it here; only OTA and hardware shutdown may force the mic
+         * off while audio work is in flight. */
+        return ESP_ERR_INVALID_STATE;
     }
     if (enabled) {
         s_voice_activation_monitoring = false;
@@ -1046,6 +1301,8 @@ esp_err_t audio_capture_set_idle_power_save(bool enabled)
             s_voice_preroll_write_index = 0u;
             s_voice_preroll_count = 0u;
             s_session_preroll_count = 0u;
+            s_wake_resume_session_id = 0u;
+            s_wake_resume_next_frame_id = 0u;
             if (s_voice_preroll != NULL) {
                 memset(
                     s_voice_preroll,
@@ -1088,7 +1345,7 @@ esp_err_t audio_capture_set_ota_suspended(bool suspended)
             s_i2s_low_power_disabled = false;
         }
         s_ota_suspended = false;
-        esp_err_t ret = audio_capture_set_idle_power_save(false);
+        esp_err_t ret = audio_capture_set_idle_power_save(false, false);
         ESP_LOGI(
             TAG,
             "audio OTA suspension=0 applied=%u ret=%s",
@@ -1098,7 +1355,8 @@ esp_err_t audio_capture_set_ota_suspended(bool suspended)
     }
 
     s_ota_suspended = true;
-    esp_err_t ret = audio_capture_set_idle_power_save(true);
+    /* OTA must win over monitoring/live sessions: forced idle power save. */
+    esp_err_t ret = audio_capture_set_idle_power_save(true, true);
     const TickType_t suspend_started = xTaskGetTickCount();
     while (ret == ESP_OK &&
            !s_i2s_low_power_disabled &&
@@ -1136,7 +1394,7 @@ esp_err_t audio_capture_set_voice_activation_monitoring(bool enabled)
         /* Prefer wake-listen over audio idle power-save. Leaving this as a hard
          * failure made voice_auto_start permanently stuck after the first
          * 5 s audio-idle window (monitoring=0 ret=ESP_ERR_INVALID_STATE spam). */
-        esp_err_t wake_ret = audio_capture_set_idle_power_save(false);
+        esp_err_t wake_ret = audio_capture_set_idle_power_save(false, false);
         if (wake_ret != ESP_OK && wake_ret != ESP_ERR_INVALID_STATE) {
             return wake_ret;
         }
@@ -1171,12 +1429,27 @@ static esp_err_t audio_capture_send_session_preroll(
 
     uint16_t packet_sequence = 0u;
     uint16_t emitted_frames = 0u;
-    uint8_t batch[AUDIO_CAPTURE_STREAM_BATCH_BYTES];
+    /* The startup gate prevents the fetch task from using the stream emit
+     * buffer until pre-roll and handoff finish. Reuse that session-owned
+     * scratch, as handoff already does, instead of putting another 1920-byte
+     * PCM block on the voice-control task's nested command/start/codec stack.
+     * The non-PDM path calls this synchronously on its sole capture task. */
+    uint8_t *batch = s_export_state.stream_emit_buffer;
     while (emitted_frames < frame_count) {
         uint16_t batch_frames =
             (uint16_t)(frame_count - emitted_frames);
         if (batch_frames > AUDIO_CAPTURE_STREAM_BATCH_FRAMES) {
             batch_frames = AUDIO_CAPTURE_STREAM_BATCH_FRAMES;
+        }
+        uint8_t raw_input_level_percent = 0u;
+        /* Snapshot the frames under the state mutex: the forced idle power
+         * save path (OTA/shutdown) zeroes this ring under the same lock, and
+         * an unsynchronized read here ships zeroed or torn frames as the
+         * opening of a wake window.  Only the copy holds the lock; the BLE
+         * send below may block and must stay outside it. */
+        if (s_state_mutex == NULL ||
+            xSemaphoreTake(s_state_mutex, portMAX_DELAY) != pdTRUE) {
+            return ESP_ERR_INVALID_STATE;
         }
         for (uint16_t i = 0u; i < batch_frames; ++i) {
             uint16_t ring_index = (uint16_t)(
@@ -1186,20 +1459,15 @@ static esp_err_t audio_capture_send_session_preroll(
                 batch + ((size_t)i * AUDIO_CAPTURE_FRAME_BYTES),
                 s_voice_preroll[ring_index],
                 AUDIO_CAPTURE_FRAME_BYTES);
-        }
-        uint16_t pcm_bytes =
-            (uint16_t)(batch_frames * AUDIO_CAPTURE_FRAME_BYTES);
-        uint8_t raw_input_level_percent = 0u;
-        for (uint16_t i = 0u; i < batch_frames; ++i) {
-            uint16_t ring_index = (uint16_t)(
-                (s_session_preroll_start_index + emitted_frames + i) %
-                AUDIO_CAPTURE_VOICE_PREROLL_FRAMES);
             if (s_voice_preroll_levels[ring_index] >
                 raw_input_level_percent) {
                 raw_input_level_percent =
                     s_voice_preroll_levels[ring_index];
             }
         }
+        xSemaphoreGive(s_state_mutex);
+        uint16_t pcm_bytes =
+            (uint16_t)(batch_frames * AUDIO_CAPTURE_FRAME_BYTES);
         uint16_t packet_count =
             ble_audio_stream_count_audio_packets(batch, pcm_bytes);
         esp_err_t ret = ble_audio_stream_send_session_audio(
@@ -1219,6 +1487,161 @@ static esp_err_t audio_capture_send_session_preroll(
     return ESP_OK;
 }
 
+static uint16_t audio_capture_count_audio_packets(const uint8_t *pcm, uint16_t bytes)
+{
+    int64_t started_us = esp_timer_get_time();
+    uint16_t packets = ble_audio_stream_count_audio_packets(pcm, bytes);
+    uint32_t elapsed_us = (uint32_t)(esp_timer_get_time() - started_us);
+    s_session_packet_planning_us += elapsed_us;
+    if (elapsed_us > s_session_packet_planning_max_us) {
+        s_session_packet_planning_max_us = elapsed_us;
+    }
+    return packets;
+}
+
+#ifdef CONFIG_AUDIO_CAPTURE_MIC_SPH0655_PDM
+#if CONFIG_AUDIO_CAPTURE_PDM_AFE_WEBRTC
+static esp_err_t audio_capture_send_session_handoff(
+    uint32_t session_id,
+    uint16_t *next_packet_sequence)
+{
+    if (next_packet_sequence == NULL || s_state_mutex == NULL) {
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    uint16_t packet_sequence = *next_packet_sequence;
+    voice_stack_diag_mark(
+        VOICE_STACK_DIAG_STAGE_HANDOFF_ENTER,
+        session_id,
+        packet_sequence,
+        0u);
+    uint16_t emitted_frames = 0u;
+    /* warmup_pending keeps the capture task away from the ordinary stream
+     * batch buffers while this serialized handoff drains the FIFO. The
+     * existing session-owned emit buffer is therefore bounded scratch for
+     * this path; ble_audio_stream_send_session_audio copies it into its own
+     * pool before returning and never retains the pointer. Keep the 1920-byte
+     * object off the voice_recording task stack. */
+    uint8_t *batch = s_export_state.stream_emit_buffer;
+
+    while (true) {
+        uint16_t batch_frames = 0u;
+        uint8_t raw_input_level_percent = 0u;
+        uint64_t last_source_frame_id = 0u;
+
+        if (xSemaphoreTake(s_state_mutex, portMAX_DELAY) != pdTRUE) {
+            return ESP_ERR_INVALID_STATE;
+        }
+        if (s_pdm_afe_handoff_overflow) {
+            xSemaphoreGive(s_state_mutex);
+            ESP_LOGE(
+                TAG,
+                "PDM AFE handoff failed after FIFO overflow: session_id=%" PRIu32
+                " queued_frames=%u emitted_frames=%u",
+                session_id,
+                (unsigned)s_pdm_afe_handoff_count,
+                (unsigned)emitted_frames);
+            return ESP_ERR_NO_MEM;
+        }
+        batch_frames = s_pdm_afe_handoff_count;
+        if (batch_frames > AUDIO_CAPTURE_STREAM_BATCH_FRAMES) {
+            batch_frames = AUDIO_CAPTURE_STREAM_BATCH_FRAMES;
+        }
+        for (uint16_t i = 0u; i < batch_frames; ++i) {
+            uint16_t fifo_index = (uint16_t)(
+                (s_pdm_afe_handoff_read_index + i) %
+                AUDIO_CAPTURE_PDM_HANDOFF_FIFO_FRAMES);
+            memcpy(
+                batch + ((size_t)i * AUDIO_CAPTURE_FRAME_BYTES),
+                s_pdm_afe_handoff_fifo[fifo_index],
+                AUDIO_CAPTURE_FRAME_BYTES);
+            last_source_frame_id = s_pdm_afe_handoff_frame_ids[fifo_index];
+            if (s_pdm_afe_handoff_levels[fifo_index] > raw_input_level_percent) {
+                raw_input_level_percent = s_pdm_afe_handoff_levels[fifo_index];
+            }
+        }
+        if (batch_frames > 0u) {
+            s_pdm_afe_handoff_read_index = (uint16_t)(
+                (s_pdm_afe_handoff_read_index + batch_frames) %
+                AUDIO_CAPTURE_PDM_HANDOFF_FIFO_FRAMES);
+            s_pdm_afe_handoff_count = (uint16_t)(
+                s_pdm_afe_handoff_count - batch_frames);
+        } else {
+            /* No producer can enqueue between this check and releasing the
+             * startup gate: both operations use the state mutex. */
+            if (s_export_state.active &&
+                s_export_state.session_id == session_id &&
+                s_export_state.warmup_pending) {
+                s_session_preroll_count = 0u;
+                s_export_state.stream_next_packet_sequence = packet_sequence;
+                s_export_state.warmup_pending = false;
+            }
+            xSemaphoreGive(s_state_mutex);
+            *next_packet_sequence = packet_sequence;
+            return ESP_OK;
+        }
+        xSemaphoreGive(s_state_mutex);
+
+        uint16_t pcm_bytes = (uint16_t)(
+            batch_frames * AUDIO_CAPTURE_FRAME_BYTES);
+        voice_stack_diag_mark(
+            VOICE_STACK_DIAG_STAGE_HANDOFF_SEND,
+            session_id,
+            pcm_bytes,
+            packet_sequence);
+        uint16_t packet_count = audio_capture_count_audio_packets(
+            batch,
+            pcm_bytes);
+        if (!audio_capture_packet_sequence_can_advance(
+                packet_sequence,
+                packet_count)) {
+            ESP_LOGE(
+                TAG,
+                "PDM AFE handoff packet sequence overflow: session_id=%" PRIu32
+                " seq=%u packets=%u",
+                session_id,
+                packet_sequence,
+                packet_count);
+            return ESP_ERR_INVALID_SIZE;
+        }
+        esp_err_t ret = ble_audio_stream_send_session_audio(
+            session_id,
+            packet_sequence,
+            batch,
+            pcm_bytes,
+            packet_count,
+            raw_input_level_percent);
+        if (ret != ESP_OK) {
+            ESP_LOGW(
+                TAG,
+                "PDM AFE handoff audio failed: session_id=%" PRIu32
+                " seq=%u frames=%u ret=%s",
+                session_id,
+                packet_sequence,
+                batch_frames,
+                esp_err_to_name(ret));
+            return ret;
+        }
+        packet_sequence = (uint16_t)(packet_sequence + packet_count);
+        emitted_frames = (uint16_t)(emitted_frames + batch_frames);
+        if (xSemaphoreTake(s_state_mutex, portMAX_DELAY) != pdTRUE) {
+            return ESP_ERR_INVALID_STATE;
+        }
+        if (!s_export_state.active ||
+            s_export_state.session_id != session_id) {
+            xSemaphoreGive(s_state_mutex);
+            return ESP_ERR_INVALID_STATE;
+        }
+        s_export_state.stream_next_packet_sequence = packet_sequence;
+        s_export_state.captured_frames += batch_frames;
+        s_export_state.pcm_bytes_written += pcm_bytes;
+        s_export_state.last_source_frame_id = last_source_frame_id;
+        xSemaphoreGive(s_state_mutex);
+    }
+}
+#endif
+#endif
+
 static void audio_capture_process_frame(const int16_t *frame_buffer)
 {
     s_frame_captured_count++;
@@ -1234,6 +1657,7 @@ static void audio_capture_process_frame(const int16_t *frame_buffer)
     bool should_session_stop = false;
     bool should_session_cancel = false;
     bool should_session_error = false;
+    bool session_stop_queued = false;
     uint32_t session_id = 0;
     uint16_t packet_sequence_start = 0;
     uint16_t batch_pcm_bytes = 0;
@@ -1246,6 +1670,43 @@ static void audio_capture_process_frame(const int16_t *frame_buffer)
     const uint8_t *audio_batch_copy = NULL;
 
     if (xSemaphoreTake(s_state_mutex, portMAX_DELAY) == pdTRUE) {
+        const uint64_t source_frame_id = ++s_source_frame_id;
+#ifdef CONFIG_AUDIO_CAPTURE_MIC_SPH0655_PDM
+#if CONFIG_AUDIO_CAPTURE_PDM_AFE_WEBRTC
+        /* Session startup deliberately withholds live transport until START
+         * and the wake pre-roll are ordered. Preserve the enhanced frames
+         * produced after the AFE boundary during that interval so the first
+         * live packet follows the pre-roll in source order. */
+        if (s_export_state.warmup_pending &&
+            (s_export_state.requested || s_export_state.active)) {
+            if (s_pdm_afe_handoff_count >=
+                AUDIO_CAPTURE_PDM_HANDOFF_FIFO_FRAMES) {
+                if (!s_pdm_afe_handoff_overflow) {
+                    ESP_LOGE(
+                        TAG,
+                        "PDM AFE handoff FIFO overflow: session_id=%" PRIu32
+                        " capacity_frames=%u",
+                        s_export_state.session_id,
+                        (unsigned)AUDIO_CAPTURE_PDM_HANDOFF_FIFO_FRAMES);
+                }
+                s_pdm_afe_handoff_overflow = true;
+            } else if (!s_pdm_afe_handoff_overflow) {
+                memcpy(
+                    s_pdm_afe_handoff_fifo[s_pdm_afe_handoff_write_index],
+                    frame_buffer,
+                    AUDIO_CAPTURE_FRAME_BYTES);
+                s_pdm_afe_handoff_levels[s_pdm_afe_handoff_write_index] =
+                    s_raw_input_level_percent;
+                s_pdm_afe_handoff_frame_ids[s_pdm_afe_handoff_write_index] =
+                    source_frame_id;
+                s_pdm_afe_handoff_write_index = (uint16_t)(
+                    (s_pdm_afe_handoff_write_index + 1u) %
+                    AUDIO_CAPTURE_PDM_HANDOFF_FIFO_FRAMES);
+                s_pdm_afe_handoff_count++;
+            }
+        }
+#endif
+#endif
         /* Keep a continuous two-second wake history across hidden candidate
          * rotations. While a session snapshot is still being exported,
          * s_session_preroll_count stays non-zero and freezes the ring so the
@@ -1261,6 +1722,8 @@ static void audio_capture_process_frame(const int16_t *frame_buffer)
                 AUDIO_CAPTURE_FRAME_BYTES);
             s_voice_preroll_levels[s_voice_preroll_write_index] =
                 s_raw_input_level_percent;
+            s_voice_preroll_frame_ids[s_voice_preroll_write_index] =
+                source_frame_id;
             s_voice_preroll_write_index = (uint16_t)(
                 (s_voice_preroll_write_index + 1u) %
                 AUDIO_CAPTURE_VOICE_PREROLL_FRAMES);
@@ -1324,6 +1787,7 @@ static void audio_capture_process_frame(const int16_t *frame_buffer)
                             s_raw_input_level_percent;
                     }
                     s_export_state.pcm_bytes_written += AUDIO_CAPTURE_FRAME_BYTES;
+                    s_export_state.last_source_frame_id = source_frame_id;
 
                     if (s_export_state.stream_batch_frame_count >= AUDIO_CAPTURE_STREAM_BATCH_FRAMES) {
                         session_id = s_export_state.session_id;
@@ -1333,7 +1797,7 @@ static void audio_capture_process_frame(const int16_t *frame_buffer)
                         audio_batch_copy = s_export_state.stream_emit_buffer;
                         batch_raw_input_level_percent =
                             s_export_state.stream_batch_raw_input_level_percent;
-                        packet_count = ble_audio_stream_count_audio_packets(audio_batch_copy, batch_pcm_bytes);
+                        packet_count = audio_capture_count_audio_packets(audio_batch_copy, batch_pcm_bytes);
                         if (!audio_capture_packet_sequence_can_advance(
                                 s_export_state.stream_next_packet_sequence,
                                 packet_count)) {
@@ -1388,7 +1852,7 @@ static void audio_capture_process_frame(const int16_t *frame_buffer)
                     audio_batch_copy = s_export_state.stream_emit_buffer;
                     batch_raw_input_level_percent =
                         s_export_state.stream_batch_raw_input_level_percent;
-                    packet_count = ble_audio_stream_count_audio_packets(audio_batch_copy, batch_pcm_bytes);
+                    packet_count = audio_capture_count_audio_packets(audio_batch_copy, batch_pcm_bytes);
                     if (!audio_capture_packet_sequence_can_advance(
                             s_export_state.stream_next_packet_sequence,
                             packet_count)) {
@@ -1588,6 +2052,7 @@ static void audio_capture_process_frame(const int16_t *frame_buffer)
                     expected_packet_count_at_end,
                     esp_err_to_name(stop_ret));
             } else {
+                session_stop_queued = true;
                 ESP_LOGI(
                     TAG,
                     "stream session stop queued: session_id=%" PRIu32 " expected_packet_count=%u duration_s=%" PRIu32,
@@ -1605,7 +2070,15 @@ static void audio_capture_process_frame(const int16_t *frame_buffer)
                 stop_duration = s_export_state.duration_seconds;
                 stop_frames = s_export_state.captured_frames;
                 stop_transport_backpressure_events = s_capture_transport_backpressure_events;
+                const bool resumable_wake = session_stop_queued &&
+                    s_export_state.continuous_wake_boundary;
+                const uint64_t resume_next_frame_id =
+                    s_export_state.last_source_frame_id + 1u;
                 audio_capture_export_cleanup();
+                if (resumable_wake) {
+                    s_wake_resume_session_id = session_id;
+                    s_wake_resume_next_frame_id = resume_next_frame_id;
+                }
                 xSemaphoreGive(s_state_mutex);
             }
             ESP_LOGI(
@@ -2186,6 +2659,34 @@ static void audio_capture_log_pdm_afe_session_signal(uint32_t session_id)
         leveling.gain_ceiling_frames,
         leveling.limiter_frames,
         leveling.clipped_samples);
+    ESP_LOGI(TAG,
+        "PDM capture timing: session_id=%" PRIu32 " wall_ms=%" PRIu64
+        " i2s_overrun_bytes=%" PRIu32 " packet_planning_us=%" PRIu64
+        " packet_planning_max_us=%" PRIu32,
+        session_id,
+        (uint64_t)((esp_timer_get_time() - s_capture_session_started_us) / 1000),
+        __atomic_load_n(&s_i2s_overrun_bytes, __ATOMIC_RELAXED) - s_session_i2s_overrun_start,
+        s_session_packet_planning_us,
+        s_session_packet_planning_max_us);
+    /* Pipeline forensics: separate a crowded fetch path (many empty polls,
+     * long feed gaps after the session boundary) from a stopped producer.
+     * first_fetch_ms=0 means the session never observed a successful fetch
+     * before it ended; esp-sr exposes no ring-drop counter, so feed errors
+     * stand in for rejected feed() blocks. */
+    ESP_LOGI(
+        TAG,
+        "PDM AFE pipeline forensics: session_id=%" PRIu32
+        " fetch_empty=%" PRIu32 " feed_errors=%" PRIu32
+        " feed_gap_max_ms=%" PRIu32 " first_fetch_ms=%" PRIu32
+        " starvation_restarts=%" PRIu32,
+        session_id,
+        s_pdm_afe_fetch_empty_count,
+        s_pdm_afe_feed_error_count,
+        s_pdm_afe_session_feed_gap_max_ms,
+        s_pdm_afe_session_first_fetch_ms == UINT32_MAX
+            ? 0u
+            : s_pdm_afe_session_first_fetch_ms,
+        s_pdm_afe_starvation_restart_count);
     /* Persist the three signal points that determine model input quality.
      * LED brightness is derived from the raw capture frame and cannot stand in
      * for the AFE/AGC/leveling output actually transported to Type. */
@@ -2551,6 +3052,47 @@ static void audio_capture_pdm_vad_process(
 /* ESP-SR requires its feed and fetch calls to run concurrently. Keep this
  * task separate from I2S capture; serializing them stalls feed and leaves the
  * user with a recording state that never emits PCM. */
+static void audio_capture_pdm_afe_check_feed_starvation(void)
+{
+    if (s_i2s_restart_requested || s_idle_power_save_requested) {
+        return;
+    }
+    if (!s_voice_activation_monitoring &&
+        !s_export_state.requested && !s_export_state.active) {
+        return;
+    }
+    const uint32_t last_feed_ms = s_pdm_afe_last_feed_ms;
+    if (last_feed_ms == 0u) {
+        return;
+    }
+    const uint32_t now_ms = (uint32_t)(esp_timer_get_time() / 1000);
+    const uint32_t starvation_ms = (uint32_t)(now_ms - last_feed_ms);
+    if (starvation_ms < AUDIO_CAPTURE_PDM_AFE_STARVATION_RESTART_MS) {
+        return;
+    }
+    /* The producer is mute while the consumer still runs.  Ask the capture
+     * task (which owns the RX channel) for an in-place I2S cycle instead of
+     * staying starved until the next reboot. */
+    s_i2s_restart_requested = true;
+    if (s_capture_task_handle != NULL) {
+        xTaskNotifyGive(s_capture_task_handle);
+    }
+    s_pdm_afe_starvation_restart_count++;
+    ESP_LOGW(
+        TAG,
+        "PDM AFE feed starvation: gap_ms=%" PRIu32 " restarts=%" PRIu32,
+        starvation_ms,
+        s_pdm_afe_starvation_restart_count);
+    diag_log(
+        DIAG_SRC_AUDIO,
+        DIAG_AUDIO_I2S_FAIL,
+        DIAG_SEV_ERROR,
+        s_pdm_afe_starvation_restart_count,
+        starvation_ms,
+        AUDIO_CAPTURE_PDM_AFE_STARVATION_RESTART_MS,
+        0);
+}
+
 static void audio_capture_pdm_afe_fetch_task(void *arg)
 {
     (void)arg;
@@ -2576,11 +3118,29 @@ static void audio_capture_pdm_afe_fetch_task(void *arg)
                 s_pdm_afe_data,
                 pdMS_TO_TICKS(AUDIO_CAPTURE_PDM_AFE_FETCH_WAIT_MS));
         if (result == NULL || result->ret_value != ESP_OK) {
+            if (s_export_state.requested || s_export_state.active) {
+                s_pdm_afe_fetch_empty_count++;
+            }
             audio_capture_pdm_afe_complete_stop_drain();
+            audio_capture_pdm_afe_check_feed_starvation();
             audio_capture_yield_if_over_budget(&scheduler_budget_started_us);
             continue;
         }
-        if (!s_pdm_afe_session_boundary_requested && result->data != NULL && result->data_size > 0) {
+        if ((s_export_state.requested || s_export_state.active) &&
+            s_pdm_afe_session_first_fetch_ms == UINT32_MAX) {
+            /* Forensics: how long this session waited for its first enhanced
+             * block after the boundary. */
+            s_pdm_afe_session_first_fetch_ms = (uint32_t)(
+                (esp_timer_get_time() - s_capture_session_started_us) / 1000);
+        }
+        const bool boundary_requested = __atomic_load_n(
+            &s_pdm_afe_session_boundary_requested,
+            __ATOMIC_ACQUIRE);
+        const bool preserve_session_pipeline = __atomic_load_n(
+            &s_pdm_afe_preserve_session_pipeline,
+            __ATOMIC_ACQUIRE);
+        if ((!boundary_requested || preserve_session_pipeline) &&
+            result->data != NULL && result->data_size > 0) {
             sample_count = (size_t)result->data_size / sizeof(*result->data);
             if (sample_count <= s_pdm_afe_fetch_samples) {
                 memcpy(
@@ -2641,12 +3201,14 @@ static esp_err_t audio_capture_pdm_afe_init(void)
         return ESP_ERR_NO_MEM;
     }
 
-    /* The PDM board has one microphone and no playback reference. Use the
-     * official neural VAD in the same post-NS AFE pipeline so weak speech does
-     * not depend on the old absolute-level-biased WebRTC classifier. */
+    /* Preserve the single-microphone waveform for ASR. On the keyboard,
+     * WebRTC NS removed speech detail: the same acoustic replay repeatedly
+     * produced empty cloud results with NS and a full paragraph without it.
+     * Neural VAD still detects candidates; the one downstream AGC, noise-gain
+     * governor and final limiter retain their existing responsibilities. */
     config->aec_init = false;
     config->se_init = false;
-    config->ns_init = true;
+    config->ns_init = false;
     config->ns_model_name = NULL;
     config->afe_ns_mode = AFE_NS_MODE_WEBRTC;
     config->vad_init = true;
@@ -2700,12 +3262,25 @@ static esp_err_t audio_capture_pdm_afe_init(void)
 
     s_pdm_afe_feed_buffer = calloc((size_t)feed_samples, sizeof(*s_pdm_afe_feed_buffer));
     s_pdm_afe_fetch_buffer = calloc((size_t)fetch_samples, sizeof(*s_pdm_afe_fetch_buffer));
-    if (s_pdm_afe_feed_buffer == NULL || s_pdm_afe_fetch_buffer == NULL) {
-        ESP_LOGE(TAG, "PDM AFE buffer allocation failed: feed=%d fetch=%d", feed_samples, fetch_samples);
+    s_pdm_afe_handoff_fifo = heap_caps_calloc(
+        AUDIO_CAPTURE_PDM_HANDOFF_FIFO_FRAMES,
+        AUDIO_CAPTURE_FRAME_BYTES,
+        MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    if (s_pdm_afe_feed_buffer == NULL ||
+        s_pdm_afe_fetch_buffer == NULL ||
+        s_pdm_afe_handoff_fifo == NULL) {
+        ESP_LOGE(
+            TAG,
+            "PDM AFE buffer allocation failed: feed=%d fetch=%d handoff_frames=%u",
+            feed_samples,
+            fetch_samples,
+            (unsigned)AUDIO_CAPTURE_PDM_HANDOFF_FIFO_FRAMES);
         free(s_pdm_afe_feed_buffer);
         free(s_pdm_afe_fetch_buffer);
+        free(s_pdm_afe_handoff_fifo);
         s_pdm_afe_feed_buffer = NULL;
         s_pdm_afe_fetch_buffer = NULL;
+        s_pdm_afe_handoff_fifo = NULL;
         s_pdm_afe_handle->destroy(s_pdm_afe_data);
         s_pdm_afe_data = NULL;
         s_pdm_afe_handle = NULL;
@@ -2714,13 +3289,19 @@ static esp_err_t audio_capture_pdm_afe_init(void)
 
     s_pdm_afe_feed_samples = (size_t)feed_samples;
     s_pdm_afe_fetch_samples = (size_t)fetch_samples;
+    /* Watchdog baseline: treat boot as a fresh feed so the first seconds
+     * after power-on cannot trip the starvation restart before the first
+     * I2S frame arrives. */
+    s_pdm_afe_last_feed_ms = (uint32_t)(esp_timer_get_time() / 1000);
     s_pdm_agc_handle = esp_agc_open(AGC_MODE_2, AUDIO_CAPTURE_SAMPLE_RATE_HZ);
     if (s_pdm_agc_handle == NULL) {
         ESP_LOGE(TAG, "PDM standalone AGC allocation failed");
         free(s_pdm_afe_feed_buffer);
         free(s_pdm_afe_fetch_buffer);
+        free(s_pdm_afe_handoff_fifo);
         s_pdm_afe_feed_buffer = NULL;
         s_pdm_afe_fetch_buffer = NULL;
+        s_pdm_afe_handoff_fifo = NULL;
         s_pdm_afe_handle->destroy(s_pdm_afe_data);
         s_pdm_afe_data = NULL;
         s_pdm_afe_handle = NULL;
@@ -2759,8 +3340,10 @@ static esp_err_t audio_capture_pdm_afe_init(void)
         s_pdm_agc_handle = NULL;
         free(s_pdm_afe_feed_buffer);
         free(s_pdm_afe_fetch_buffer);
+        free(s_pdm_afe_handoff_fifo);
         s_pdm_afe_feed_buffer = NULL;
         s_pdm_afe_fetch_buffer = NULL;
+        s_pdm_afe_handoff_fifo = NULL;
         s_pdm_afe_handle->destroy(s_pdm_afe_data);
         s_pdm_afe_data = NULL;
         s_pdm_afe_handle = NULL;
@@ -2810,24 +3393,41 @@ static esp_err_t audio_capture_pdm_afe_init(void)
 
 static void audio_capture_pdm_afe_apply_session_boundary_if_requested(void)
 {
-    if (!s_pdm_afe_session_boundary_requested) {
+    if (!__atomic_load_n(
+            &s_pdm_afe_session_boundary_requested,
+            __ATOMIC_ACQUIRE)) {
         return;
     }
 
-    s_pdm_afe_feed_filled = 0;
-    s_pdm_agc_filled = 0;
-    s_pdm_afe_emit_filled = 0;
+    if (!s_pdm_afe_preserve_session_pipeline) {
+        s_pdm_afe_feed_filled = 0;
+        s_pdm_agc_filled = 0;
+        s_pdm_afe_emit_filled = 0;
+    }
     s_pdm_afe_input_frames = 0;
     s_pdm_afe_output_frames = 0;
+    /* Per-session pipeline forensics restart with the session.  The global
+     * feed heartbeat (s_pdm_afe_last_feed_ms) deliberately survives: the
+     * starvation watchdog must keep its timeline across boundaries. */
+    s_pdm_afe_fetch_empty_count = 0;
+    s_pdm_afe_feed_error_count = 0;
+    s_pdm_afe_session_feed_gap_max_ms = 0;
+    s_pdm_afe_session_last_feed_ms = 0;
+    s_pdm_afe_session_first_fetch_ms = UINT32_MAX;
     s_pdm_afe_session_output_peak = 0;
     s_pdm_afe_session_output_abs_sum = 0;
     s_pdm_afe_session_output_samples = 0;
     s_pdm_afe_session_output_clipped_samples = 0;
     s_pdm_afe_session_boundary_applied = true;
-    s_pdm_afe_session_boundary_requested = false;
+    __atomic_store_n(
+        &s_pdm_afe_session_boundary_requested,
+        false,
+        __ATOMIC_RELEASE);
     ESP_LOGI(
         TAG,
-        "PDM AFE session boundary: cleared partial PCM, preserving trained NS/AGC state");
+        "PDM AFE session boundary: pipeline=%s partial PCM=%s trained NS/AGC state preserved",
+        s_pdm_afe_preserve_session_pipeline ? "continuous" : "reset",
+        s_pdm_afe_preserve_session_pipeline ? "preserved" : "cleared");
 }
 
 static void audio_capture_pdm_afe_process(int16_t *frame_buffer)
@@ -2862,10 +3462,29 @@ static void audio_capture_pdm_afe_process(int16_t *frame_buffer)
         if (s_pdm_afe_feed_filled == s_pdm_afe_feed_samples) {
             int ret = s_pdm_afe_handle->feed(s_pdm_afe_data, s_pdm_afe_feed_buffer);
             if (ret < 0) {
-                ESP_LOGW(TAG, "PDM AFE feed failed: ret=%d", ret);
+                s_pdm_afe_feed_error_count++;
+                ESP_LOGW(
+                    TAG,
+                    "PDM AFE feed failed: ret=%d count=%" PRIu32,
+                    ret,
+                    s_pdm_afe_feed_error_count);
             }
             s_pdm_afe_feed_filled = 0;
             s_pdm_afe_input_frames++;
+            /* Refresh the producer heartbeat for the fetch-side starvation
+             * watchdog and record the largest in-session gap between feed
+             * blocks (0 = none observed yet; UINT32_MAX first-fetch sentinel
+             * is reset at the session boundary). */
+            const uint32_t now_feed_ms = (uint32_t)(esp_timer_get_time() / 1000);
+            s_pdm_afe_last_feed_ms = now_feed_ms;
+            if (s_pdm_afe_session_last_feed_ms != 0u) {
+                const uint32_t feed_gap_ms =
+                    now_feed_ms - s_pdm_afe_session_last_feed_ms;
+                if (feed_gap_ms > s_pdm_afe_session_feed_gap_max_ms) {
+                    s_pdm_afe_session_feed_gap_max_ms = feed_gap_ms;
+                }
+            }
+            s_pdm_afe_session_last_feed_ms = now_feed_ms;
             audio_capture_log_pdm_afe_level(
                 "pre-vad",
                 s_pdm_afe_input_frames,
@@ -2896,6 +3515,39 @@ static void audio_capture_task(void *arg)
         }
         (void)audio_capture_apply_idle_power_save(false);
 
+#if CONFIG_AUDIO_CAPTURE_PDM_AFE_WEBRTC
+        /* The fetch task requested an in-place I2S cycle because feed() went
+         * silent past the starvation budget (request counter is owned by the
+         * fetch side).  This task owns the RX channel; reuse the
+         * stall-recovery dance so a mute producer cannot outlive the session
+         * still waiting on it. */
+        if (s_i2s_restart_requested && s_i2s_rx_handle != NULL) {
+            s_i2s_restart_requested = false;
+            esp_err_t disable_ret = i2s_channel_disable(s_i2s_rx_handle);
+            esp_err_t enable_ret = disable_ret == ESP_OK
+                ? i2s_channel_enable(s_i2s_rx_handle)
+                : disable_ret;
+            s_i2s_restart_discard_frames = AUDIO_CAPTURE_I2S_RESTART_DISCARD_FRAMES;
+            s_pdm_afe_last_feed_ms = (uint32_t)(esp_timer_get_time() / 1000);
+            ESP_LOGW(
+                TAG,
+                "PDM I2S starvation restart: disable=%s enable=%s",
+                esp_err_to_name(disable_ret),
+                esp_err_to_name(enable_ret));
+            diag_log(
+                DIAG_SRC_AUDIO,
+                DIAG_AUDIO_I2S_FAIL,
+                enable_ret == ESP_OK ? DIAG_SEV_WARN : DIAG_SEV_ERROR,
+                s_pdm_afe_starvation_restart_count,
+                disable_ret,
+                enable_ret,
+                0);
+            audio_capture_yield_if_over_budget(&scheduler_budget_started_us);
+            vTaskDelay(1);
+            continue;
+        }
+#endif
+
         audio_capture_note_transport_backpressure();
         size_t bytes_read = 0;
 #if CONFIG_AUDIO_CAPTURE_PDM_STEREO_SLOT_CAPTURE
@@ -2915,6 +3567,14 @@ static void audio_capture_task(void *arg)
 #endif
             )) {
             audio_capture_note_transport_backpressure();
+            if (s_i2s_restart_discard_frames > 0u) {
+                /* Post-enable PDM settle guard: the discarded frames never
+                 * reach the gain governor, AFE or preroll ring.  See
+                 * AUDIO_CAPTURE_I2S_RESTART_DISCARD_FRAMES. */
+                s_i2s_restart_discard_frames--;
+                audio_capture_yield_if_over_budget(&scheduler_budget_started_us);
+                continue;
+            }
 #if CONFIG_AUDIO_CAPTURE_PDM_STEREO_SLOT_CAPTURE
  #if CONFIG_AUDIO_CAPTURE_PDM_AFE_WEBRTC
             audio_capture_note_pdm_session_raw_slots(
@@ -2947,6 +3607,14 @@ static void audio_capture_task(void *arg)
             esp_err_t enable_ret = disable_ret == ESP_OK
                 ? i2s_channel_enable(s_i2s_rx_handle)
                 : disable_ret;
+            if (enable_ret == ESP_OK) {
+                /* Same PDM settle guard as idle-power-save exit, plus a fresh
+                 * producer heartbeat so the fetch watchdog re-arms. */
+                s_i2s_restart_discard_frames = AUDIO_CAPTURE_I2S_RESTART_DISCARD_FRAMES;
+#if CONFIG_AUDIO_CAPTURE_PDM_AFE_WEBRTC
+                s_pdm_afe_last_feed_ms = (uint32_t)(esp_timer_get_time() / 1000);
+#endif
+            }
             ESP_LOGW(
                 TAG,
                 "PDM I2S stall recovery: count=%" PRIu32
@@ -2976,6 +3644,17 @@ static void audio_capture_task(void *arg)
         audio_capture_yield_if_over_budget(&scheduler_budget_started_us);
         vTaskDelay(pdMS_TO_TICKS(5));
     }
+}
+
+static bool IRAM_ATTR audio_capture_i2s_overrun(
+    i2s_chan_handle_t handle, i2s_event_data_t *event, void *context)
+{
+    (void)handle;
+    (void)context;
+    // The driver silently discards an unread DMA buffer on this event. A
+    // successful later i2s_channel_read does not report that lost audio.
+    __atomic_fetch_add(&s_i2s_overrun_bytes, (uint32_t)event->size, __ATOMIC_RELAXED);
+    return false;
 }
 
 static esp_err_t audio_capture_i2s_init(void)
@@ -3017,7 +3696,12 @@ static esp_err_t audio_capture_i2s_init(void)
 #endif
 
     ESP_RETURN_ON_ERROR(i2s_channel_init_pdm_rx_mode(s_i2s_rx_handle, &pdm_cfg), TAG, "init pdm rx failed");
+    const i2s_event_callbacks_t callbacks = {.on_recv_q_ovf = audio_capture_i2s_overrun};
+    ESP_RETURN_ON_ERROR(i2s_channel_register_event_callback(s_i2s_rx_handle, &callbacks, NULL), TAG, "register pdm overrun monitor failed");
     ESP_RETURN_ON_ERROR(i2s_channel_enable(s_i2s_rx_handle), TAG, "enable pdm rx failed");
+    /* The mic's first clock after power-up sees the same PDM2PCM settle ramp
+     * as any later re-enable; drop the opening 100 ms of raw input. */
+    s_i2s_restart_discard_frames = AUDIO_CAPTURE_I2S_RESTART_DISCARD_FRAMES;
     ESP_LOGI(
         TAG,
         "SPH0655 V2.2 PDM contract: select=GND data_edge=falling active_slot=%s clk_invert=%u pcm=%uHz pdm_clk=%uHz dsr=16S clk=%d din=%d hp_filter=%u hw_amplify=%u sw_gain_max=%u sw_gain_target_peak=%u",
@@ -3154,8 +3838,10 @@ esp_err_t audio_capture_start(void)
         }
         free(s_pdm_afe_feed_buffer);
         free(s_pdm_afe_fetch_buffer);
+        free(s_pdm_afe_handoff_fifo);
         s_pdm_afe_feed_buffer = NULL;
         s_pdm_afe_fetch_buffer = NULL;
+        s_pdm_afe_handoff_fifo = NULL;
         if (s_pdm_afe_handle != NULL && s_pdm_afe_data != NULL) {
             s_pdm_afe_handle->destroy(s_pdm_afe_data);
         }
