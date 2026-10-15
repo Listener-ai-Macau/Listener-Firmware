@@ -1834,6 +1834,8 @@ static esp_err_t voice_recording_control_enter_recording(
     return ESP_OK;
 }
 
+static void voice_recording_control_handle_session_inactive(void);
+
 static esp_err_t voice_recording_control_exit_recording_with_origin(
     const char *source,
     audio_capture_stop_origin_t origin)
@@ -1851,20 +1853,6 @@ static esp_err_t voice_recording_control_exit_recording_with_origin(
         !s_active_session_automatic || s_active_session_visible;
     esp_err_t ret = audio_capture_session_stop_with_origin(origin);
     if (ret != ESP_OK) {
-        if (!audio_capture_session_is_active()) {
-            voice_stack_diag_set_session_active(false);
-            s_state = VOICE_RECORDING_STATE_IDLE;
-            s_cancel_pending = false;
-            s_cancel_source = NULL;
-            s_active_session_source = NULL;
-            s_active_session_id = 0u;
-            s_active_session_automatic = false;
-            s_active_session_visible = false;
-            s_active_session_host_endpoint_owned = false;
-            s_active_session_enrollment = false;
-            voice_recording_control_clear_power_blockers();
-            (void)voice_key_input_set_recording_output(false);
-        }
         status_led_set_error(STATUS_LED_ERROR_DOMAIN_REC, STATUS_LED_ERROR_RETRYABLE, "recording_stop_rejected");
         ESP_LOGW(TAG, "recording stop rejected source=%s: %s", source, esp_err_to_name(ret));
         voice_recording_control_log_flow(
@@ -1876,6 +1864,13 @@ static esp_err_t voice_recording_control_exit_recording_with_origin(
         voice_recording_control_log_device_error("error", "recording_stop_rejected", ret);
         diag_log(DIAG_SRC_VOICE_REC, DIAG_VREC_REJECTED, DIAG_SEV_WARN,
                  voice_recording_source_code(source), (uint32_t)ret, (uint32_t)s_state, 0);
+        if (!audio_capture_session_is_active()) {
+            /* Capture may complete before this stop reaches it. Retire the
+             * original session through the same terminal owner as polling;
+             * setting Idle here would prevent that owner from clearing LEDs,
+             * physical recording output and pending continuation bookkeeping. */
+            voice_recording_control_handle_session_inactive();
+        }
         return ret;
     }
 
@@ -2226,16 +2221,6 @@ static void voice_recording_control_cancel(const char *source)
 
     esp_err_t ret = audio_capture_session_cancel();
     if (ret != ESP_OK) {
-        if (!audio_capture_session_is_active()) {
-            s_state = VOICE_RECORDING_STATE_IDLE;
-            s_active_session_source = NULL;
-            s_active_session_id = 0u;
-            s_active_session_automatic = false;
-            s_active_session_visible = false;
-            s_active_session_host_endpoint_owned = false;
-            s_active_session_enrollment = false;
-            voice_recording_control_clear_power_blockers();
-        }
         status_led_set_error(STATUS_LED_ERROR_DOMAIN_REC, STATUS_LED_ERROR_RETRYABLE, "recording_cancel_rejected");
         ESP_LOGW(TAG, "recording cancel rejected source=%s: %s", source, esp_err_to_name(ret));
         voice_recording_control_log_flow(
@@ -2247,6 +2232,17 @@ static void voice_recording_control_cancel(const char *source)
         voice_recording_control_log_device_error("error", "recording_cancel_rejected", ret);
         diag_log(DIAG_SRC_VOICE_REC, DIAG_VREC_REJECTED, DIAG_SEV_WARN,
                  voice_recording_source_code(source), (uint32_t)ret, (uint32_t)s_state, 0);
+        if (!audio_capture_session_is_active()) {
+            /* Cancellation intent still owns the inactive capture, even if
+             * the capture layer has already retired it. Preserve that intent
+             * until the shared terminal transition settles its ensure state. */
+            s_cancel_pending = true;
+            s_cancel_source = voice_recording_control_store_source(
+                s_cancel_source_storage,
+                sizeof(s_cancel_source_storage),
+                source);
+            voice_recording_control_handle_session_inactive();
+        }
         return;
     }
 
@@ -2256,28 +2252,7 @@ static void voice_recording_control_cancel(const char *source)
         sizeof(s_cancel_source_storage),
         source);
     if (!audio_capture_session_is_active()) {
-        s_cancel_pending = false;
-        s_cancel_source = NULL;
-        s_state = VOICE_RECORDING_STATE_IDLE;
-        s_active_session_source = NULL;
-        s_active_session_id = 0u;
-        s_active_session_automatic = false;
-        s_active_session_visible = false;
-        s_active_session_host_endpoint_owned = false;
-        s_active_session_enrollment = false;
-        (void)voice_key_input_set_recording_output(false);
-        status_led_set_recording(false, STATUS_LED_REC_SOURCE_NONE);
-        status_led_set_processing(false, "recording_canceled");
-        ESP_LOGI(TAG, "recording cancel source=%s", source);
-        voice_recording_control_log_flow(
-            VOICE_RECORDING_FLOW_CANCEL,
-            "cancel_complete",
-            source,
-            ESP_OK,
-            false);
-        voice_recording_control_log_device_status("ready", "recording_canceled");
-        diag_log(DIAG_SRC_VOICE_REC, DIAG_VREC_SESSION, DIAG_SEV_INFO,
-                 3, voice_recording_source_code(source), s_session_count, session_flags);
+        voice_recording_control_handle_session_inactive();
         return;
     }
 
@@ -3575,6 +3550,12 @@ static void voice_recording_control_handle_session_inactive(void)
         return;
     }
 
+    /* This function is the terminal owner for all inactive capture paths,
+     * including a stop/cancel racing capture completion. Outputs and speech
+     * protection must be quiescent before power blockers can be released. */
+    voice_stack_diag_set_session_active(false);
+    voice_recording_control_clear_host_speech_protection();
+
     if (decision.effect == VOICE_RECORDING_EFFECT_FINISH_CANCEL) {
         const char *source = s_cancel_source != NULL ? s_cancel_source : "unknown";
         if (!hidden_automatic &&
@@ -3644,6 +3625,7 @@ static void voice_recording_control_handle_session_inactive(void)
     }
 
     if (decision.effect == VOICE_RECORDING_EFFECT_FINISH_ABORT) {
+        status_led_set_processing(false, "recording_aborted");
         if (!hidden_automatic &&
             voice_recording_control_source_is_explicit_manual_control(source)) {
             voice_recording_control_clear_auto_rearm_latch("finish_abort");

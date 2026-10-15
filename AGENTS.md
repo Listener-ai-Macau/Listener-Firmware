@@ -70,3 +70,5 @@ pwsh -NoProfile -File .\tools\capture_serial.ps1 -Port COMx -ResetBeforeRead
 
 Do not commit generated validation logs, serial captures, diagnostic packages,
 build outputs, or firmware binaries.
+
+- 2026-10-15 已确认停止/取消与底层采集完成竞态：接口报错但采集已不活跃时，不得先直接置Idle而绕过完整收尾。错误路径、同步取消与异步完成共用SESSION_INACTIVE终态所有者，结算原会话/ensure、诊断、录音输出/LED及主机语音保护后才能释放电源blocker；仍有真实采集时不得伪造结束。错误日志须在可能启动后继的终态清理之前完成，避免污染新会话状态。
