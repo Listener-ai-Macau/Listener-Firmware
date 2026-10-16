@@ -6,7 +6,7 @@ For wired flashing, choose the **USB flashing ZIP**. Binaries and flashing instr
 | --- | --- |
 | **Flash firmware over USB** | **[Download USB flashing ZIP · RC1](https://github.com/Listener-ai-Macau/Listener-Firmware/releases/download/v1.0.6-rc1/listener-usb-flash-1.0.6-rc1-9d92421e915196b4.zip)** |
 | Update firmware over Bluetooth in Type | [Download OTA ZIP](https://github.com/Listener-ai-Macau/Listener-Firmware/releases/download/v1.0.6-rc1/listener-ota-1.0.6-rc1-20261015-135227.zip) |
-| **Install the Windows app** | **[Download MSI · RC1 / build22](https://github.com/Listener-ai-Macau/Listener-Type/releases/download/v1.0.6-rc1/ListenerType_1.0.6-rc1_x64_en-US.msi)** |
+| **Install the Windows app** | **[Download MSI · RC1 / build23](https://github.com/Listener-ai-Macau/Listener-Type/releases/download/v1.0.6-rc1/ListenerType_1.0.6-rc1_x64_en-US.msi)** |
 
 Firmware target: **ESP32-S3 N16R8**, build `9d92421e915196b4`. RC1 is a prerelease; see the release notes for known issues.
 [App release and changes](https://github.com/Listener-ai-Macau/Listener-Type/releases/tag/v1.0.6-rc1) · [Firmware release and flashing instructions](https://github.com/Listener-ai-Macau/Listener-Firmware/releases/tag/v1.0.6-rc1)
