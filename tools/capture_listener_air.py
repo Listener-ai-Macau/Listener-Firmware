@@ -162,7 +162,7 @@ def capture(output, seconds, port, bond_path, proof):
         record.update(bondSnapshotSha256=proof["binding"]["bondSnapshotSha256"], legacyLookupObservations=[], authenticatedNonempty=0, coverageScope="Receiver observations only; complete OTA coverage requires independent HCI/firmware alignment", ready=True,targetAddress=bond['listenerAddress'],keyCommandSent=True,
                       readinessScope="Serial clock and command submission only; no key/follow acknowledgement or complete RF coverage implied",
                       keyRepresentation='current read-only bond; all9 saved encrypted frames MIC-verified offline; big-endian wire format from primary nrf4 implementation',
-                      scope='Single-reader bulk transport, timestamp-acknowledged and address-followed; capture new connections during authorized same-image raw OTA, no product commands from analyzer')
+                      scope='Single-reader bulk transport, timestamp-acknowledged and address-followed; receiver observations only, no product commands from analyzer')
         save()
         until = time.perf_counter() + seconds
         previous_counter = None
@@ -236,7 +236,7 @@ if __name__ == "__main__":
     parser.add_argument("--seconds", type=int, default=30)
     parser.add_argument("--port", default="COM14")
     args = parser.parse_args()
-    if not 1 <= args.seconds <= 60:
+    if not 1 <= args.seconds <= 90:
         parser.error("duration must fit the bounded analyzer run")
     proof = validate_bond_proof(args.bond, args.mic_proof)
     if args.check_config_only:
