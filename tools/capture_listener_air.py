@@ -62,7 +62,21 @@ class BulkPackets:
         return block, packets
 
 
-def capture(output, seconds, port, bond_path, proof):
+def observe_legacy_lookup(frame, proof, seen):
+    if len(frame) < 45 or (frame[20] & 3) != 3 or frame[21] != 23 or frame[22] != 3:
+        return None
+    address = bytes(frame[16:20])[::-1].hex()
+    fingerprint = hashlib.sha256(bytes(frame[23:33])).hexdigest()
+    request = hashlib.sha256(bytes(frame[22:45])).hexdigest()
+    requests = seen.setdefault(address, set())
+    new_request = request not in requests
+    requests.add(request)
+    return dict(accessAddress=address,
+                matchesReference=fingerprint in proof["binding"].get("legacyLookupFingerprints", []),
+                requestIndex=len(requests), newRequest=new_request)
+
+
+def capture(output, seconds, port, bond_path, proof, reload_legacy_refresh=False):
     from SnifferAPI import Packet, Pcap, Notifications
     output.mkdir(exist_ok=False)
     if sys.platform == "win32":
@@ -151,7 +165,10 @@ def capture(output, seconds, port, bond_path, proof):
                       hostWallClock="GetSystemTimePreciseAsFileTime()",
                       hostBracketClock=time.get_clock_info("perf_counter").implementation,
                       alignmentScope="Two explicit timestamp replies consistent with host brackets; relative RF times use one fixed hardware anchor. Not a new Listener connection.")
-        bond=json.loads(bond_path.read_text())
+        bond_bytes = bond_path.read_bytes()
+        if hashlib.sha256(bond_bytes).hexdigest() != proof['binding']['bondSnapshotSha256']:
+            raise ValueError('Bond changed after capture admission; no key loaded')
+        bond=json.loads(bond_bytes)
         address=list(bytes.fromhex(bond['listenerAddress'].replace(':','')))+[1]
         writer.sendHopSequence([37,38,39])
         record["advertisingHopSequence"] = [37,38,39]
@@ -159,7 +176,8 @@ def capture(output, seconds, port, bond_path, proof):
         writer.sendFollow(address, False, False, False)
         key=list(bytes.fromhex(bond['keyBigEndian'][2:]))
         (writer.sendSCLTK if bond['secureConnections'] else writer.sendLegacyLTK)(key)
-        record.update(bondSnapshotSha256=proof["binding"]["bondSnapshotSha256"], legacyLookupObservations=[], authenticatedNonempty=0, coverageScope="Receiver observations only; complete OTA coverage requires independent HCI/firmware alignment", ready=True,targetAddress=bond['listenerAddress'],keyCommandSent=True,
+        legacy_requests = {}
+        record.update(bondSnapshotSha256=proof["binding"]["bondSnapshotSha256"], legacyLookupObservations=[], reloadLegacyRefresh=reload_legacy_refresh, refreshKeyCommands=[], authenticatedNonempty=0, coverageScope="Receiver observations only; complete OTA coverage requires independent HCI/firmware alignment", ready=True,targetAddress=bond['listenerAddress'],keyCommandSent=True,
                       readinessScope="Serial clock and command submission only; no key/follow acknowledgement or complete RF coverage implied",
                       keyRepresentation='current read-only bond; all9 saved encrypted frames MIC-verified offline; big-endian wire format from primary nrf4 implementation',
                       scope='Single-reader bulk transport, timestamp-acknowledged and address-followed; receiver observations only, no product commands from analyzer')
@@ -181,9 +199,25 @@ def capture(output, seconds, port, bond_path, proof):
                         frame = packet.packetList
                         if packet.encrypted and packet.micOK and frame[21] > 0:
                             record["authenticatedNonempty"] += 1
-                        if not packet.encrypted and len(frame) >= 45 and (frame[20]&3) == 3 and frame[21] == 23 and frame[22] == 3:
-                            fingerprint = hashlib.sha256(bytes(frame[23:33])).hexdigest()
-                            record["legacyLookupObservations"].append(dict(accessAddress=bytes(frame[16:20])[::-1].hex(), matchesReference=fingerprint in proof["binding"].get("legacyLookupFingerprints", [])))
+                        if not packet.encrypted:
+                            lookup = observe_legacy_lookup(frame, proof, legacy_requests)
+                            if lookup is not None:
+                                record["legacyLookupObservations"].append(lookup)
+                                if (reload_legacy_refresh and not bond['secureConnections']
+                                        and lookup['matchesReference'] and lookup['newRequest']
+                                        and lookup['requestIndex'] > 1):
+                                    # Opt-in analyzer experiment: the same LTK
+                                    # authenticated the saved refresh epoch
+                                    # offline, while firmware reported bad MIC.
+                                    # Retransmitted/unknown requests never cause
+                                    # repeated key writes or a new follow/scan.
+                                    writer.sendLegacyLTK(key)
+                                    record['refreshKeyCommands'].append(dict(
+                                        accessAddress=lookup['accessAddress'],
+                                        requestIndex=lookup['requestIndex'],
+                                        radioTimestampUs=int(packet.timestamp),
+                                        commandSentEpoch=precise_utc(),
+                                        firmwareAcknowledged=False))
                     if packet.protover != 3:
                         raise RuntimeError("Relative/unknown protocol cannot use absolute hardware clock")
                     delta = (int(packet.timestamp) - anchor) & 0xffffffff
@@ -208,6 +242,31 @@ def capture(output, seconds, port, bond_path, proof):
         except Exception as error:
             record["stopError"] = str(error)
         link.close()
+        # Keep raw RF evidence intact. The receiver can report bad MIC after
+        # an encryption refresh even though the known current bond authenticates
+        # those packets. Recover metadata offline after releasing the serial
+        # port; never treat absent RF or missing handshakes as recovered traffic.
+        if (output / "radio.pcap").exists():
+            try:
+                import analyze_listener_air_refresh as refresh
+                if bond.get('secureConnections'):
+                    record['offlineRefreshRecovery'] = 'legacy-only; not run for SC bond'
+                else:
+                    recovered = refresh.analyze(
+                        output / "radio.pcap", bytes(key),
+                        set(proof['binding'].get('legacyLookupFingerprints', [])),
+                        seconds=10)
+                    recovered.update(bondSnapshotSha256=proof['binding']['bondSnapshotSha256'])
+                    with (output / 'independent-refresh-metadata.json').open('x', encoding='utf-8') as metadata:
+                        json.dump(recovered, metadata, indent=2)
+                    record['offlineRefreshRecovery'] = dict(
+                        independentlyVerified=sum(e['verifiedFrames'] for e in recovered['epochs']),
+                        usableEpochs=sum(e['usableIndependentEpoch'] for e in recovered['epochs']),
+                        elapsedSec=recovered['elapsedSec'],
+                        decoderSha256=hashlib.sha256(Path(refresh.__file__).read_bytes()).hexdigest(),
+                        scope='Offline metadata only; no live following or complete RF coverage implied')
+            except Exception as error:
+                record['offlineRefreshRecoveryError'] = str(error)
         record.update(completedAt=datetime.datetime.now().astimezone().isoformat(),
                       transportBytes=reader.bytes, invalidFrames=reader.invalid,
                       sourceSha256=hashlib.sha256(Path(__file__).read_bytes()).hexdigest())
@@ -235,6 +294,8 @@ if __name__ == "__main__":
     parser.add_argument("--check-config-only", action="store_true")
     parser.add_argument("--seconds", type=int, default=30)
     parser.add_argument("--port", default="COM14")
+    parser.add_argument("--reload-legacy-refresh", action="store_true",
+                        help="Analyzer-only experiment: reload the verified existing LTK on distinct matching refresh requests")
     args = parser.parse_args()
     if not 1 <= args.seconds <= 90:
         parser.error("duration must fit the bounded analyzer run")
@@ -250,4 +311,4 @@ if __name__ == "__main__":
     proc.nice(psutil.BELOW_NORMAL_PRIORITY_CLASS)
     proc.cpu_affinity([1, 3])
     sys.path.insert(0, str(args.sdk))
-    capture(args.output, args.seconds, args.port, args.bond, proof)
+    capture(args.output, args.seconds, args.port, args.bond, proof, args.reload_legacy_refresh)
