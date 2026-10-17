@@ -2,6 +2,7 @@
 #define BLE_FIRMWARE_OTA_H
 
 #include <stdint.h>
+#include <stdbool.h>
 
 #include "denzic_ota_v1_generated.h"
 #include "esp_err.h"
@@ -30,6 +31,10 @@ extern "C" {
 esp_err_t ble_firmware_ota_register_gatt(void);
 void ble_firmware_ota_on_gap_disconnect(uint16_t conn_handle);
 void ble_firmware_ota_log_gatt_state(void);
+/* Per-boot diagnostic advertisement override; never changes an active image
+ * or the decoder's integrity checks. AUTO is restored by every boot. */
+bool ble_firmware_ota_set_deflate_advertisement(bool enabled);
+bool ble_firmware_ota_is_deflate_advertised(void);
 
 #ifdef __cplusplus
 }

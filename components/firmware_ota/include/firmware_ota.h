@@ -56,6 +56,13 @@ esp_err_t firmware_ota_confirm_pending_verify_if_ready(void);
  */
 void firmware_ota_note_runtime_ble_readiness_and_confirm(void);
 void firmware_ota_set_observability_correlation(uint64_t correlation_id);
+/* Transport lock order: port mutex -> transaction -> writer state mutex.
+ * Recursive for calls to begin/write/finish/abort within a guarded protocol
+ * transition. Abort notification runs inside this transaction and must not
+ * acquire a transport mutex. A false result grants no writer access. */
+bool firmware_ota_transaction_lock(void);
+void firmware_ota_transaction_unlock(void);
+
 esp_err_t firmware_ota_begin(size_t image_size, const char *target_version);
 esp_err_t firmware_ota_write(const void *data, size_t size);
 esp_err_t firmware_ota_finish(bool reboot_after_set_boot);

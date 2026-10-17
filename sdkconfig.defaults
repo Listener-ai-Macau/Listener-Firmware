@@ -57,6 +57,11 @@ CONFIG_SPIRAM=y
 CONFIG_SPIRAM_MODE_OCT=y
 CONFIG_SPIRAM_SPEED_80M=y
 CONFIG_SPIRAM_USE_MALLOC=y
+# Keep code and read-only data accessible while OTA erases/programs the other
+# Flash partition. On this N16R8 profile, PSRAM XIP avoids suspending both CPUs
+# and non-IRAM interrupts for each Flash operation, without relying on a
+# vendor-specific Flash suspend implementation.
+CONFIG_SPIRAM_XIP_FROM_PSRAM=y
 CONFIG_I2S_ISR_IRAM_SAFE=y
 
 # Low-power hardware shutdown guard

@@ -1,4 +1,5 @@
 #include "ble_audio_stream.h"
+#include "ble_audio_cooperative_wait.h"
 
 #include <inttypes.h>
 #include <limits.h>
@@ -232,6 +233,7 @@ typedef enum {
 typedef struct {
     ble_audio_stream_job_type_t type;
     uint32_t session_id;
+    uint32_t connection_epoch; /* Ownership receipt only; never a PCM sequence. */
     uint16_t packet_sequence;
     uint16_t pcm_bytes;
     uint16_t expected_packet_count;
@@ -329,6 +331,9 @@ static SemaphoreHandle_t s_type_recovery_ack_sem;
 static portMUX_TYPE s_audio_pool_lock = portMUX_INITIALIZER_UNLOCKED;
 static SemaphoreHandle_t s_replay_window_mutex;
 static uint32_t s_connection_epoch;
+/* Actual export, not merely a queued capture START. Protected by link lock. */
+static uint32_t s_export_started_session_id;
+static uint32_t s_export_started_connection_epoch;
 static denzic_audio_transport_v1_pacing_t s_audio_pacing;
 static uint32_t s_audio_pacing_cooperative_credit_ticks;
 static uint32_t s_audio_pacing_burst_remaining_pcm_bytes;
@@ -1714,6 +1719,10 @@ static void ble_audio_stream_refresh_link_state(const char *reason)
 
 static void ble_audio_stream_reset_transport_session(void)
 {
+    portENTER_CRITICAL(&s_link_state_lock);
+    s_export_started_session_id = 0;
+    s_export_started_connection_epoch = 0;
+    portEXIT_CRITICAL(&s_link_state_lock);
     ble_audio_stream_replay_clear_session(s_transport_session_id);
     denzic_audio_transport_v1_pacing_init(&s_audio_pacing);
     s_audio_pacing_cooperative_credit_ticks = 0;
@@ -1946,16 +1955,17 @@ static void ble_audio_stream_notify_success_delay(
                 s_session_stats.audio_preroll_burst_pcm_bytes /
                     BLE_AUDIO_STREAM_PREROLL_IDLE_BLOCK_PCM_BYTES;
             if (idle_block_boundary_crossed) {
-                ble_audio_stream_delay_ms(
+                ble_audio_cooperative_wait_ms(
                     BLE_AUDIO_STREAM_COOPERATIVE_IDLE_BLOCK_MS);
             } else {
                 /* A preroll packet can complete without crossing the coarse
                  * 7.68 kB boundary.  Feeding this task's WDT alone is not a
                  * scheduler opportunity: the high-priority exporter can keep
                  * IDLE0 starved until a Task-WDT reset. */
-                ble_audio_stream_delay_ms(
+                ble_audio_cooperative_wait_ms(
                     BLE_AUDIO_STREAM_AUDIO_PACKET_IDLE_BLOCK_MS);
             }
+            watchdog_platform_feed_current_task();
             return;
         }
     }
@@ -2721,12 +2731,43 @@ static esp_err_t ble_audio_stream_send_session_start_internal(
     uint32_t session_id,
     uint16_t start_origin)
 {
+    const uint32_t epoch = ble_audio_stream_get_link_snapshot().connection_epoch;
     ble_audio_stream_set_backpressure_active(false);
-    return ble_audio_stream_send_control_packet_repeated(
+    esp_err_t ret = ble_audio_stream_send_control_packet_repeated(
         LISTENER_AUDIO_PACKET_TYPE_SESSION_START,
         session_id,
         0,
         start_origin);
+    if (ret == ESP_OK) {
+        portENTER_CRITICAL(&s_link_state_lock);
+        if (s_connection_epoch == epoch && s_transport_session_id == session_id) {
+            s_export_started_session_id = session_id;
+            s_export_started_connection_epoch = epoch;
+        }
+        portEXIT_CRITICAL(&s_link_state_lock);
+    }
+    return ret;
+}
+
+static void ble_audio_stream_send_session_start_marker_internal(
+    const ble_audio_stream_job_t *job)
+{
+    if (job->session_id != s_transport_session_id ||
+        !ble_audio_stream_transport_session_active() ||
+        job->connection_epoch != ble_audio_stream_get_link_snapshot().connection_epoch) {
+        ESP_LOGW(TAG, "session start marker retired: session=%" PRIu32
+                 " epoch=%" PRIu32, job->session_id, job->connection_epoch);
+        return;
+    }
+    /* This is ownership of the same stream, not a new capture. A STOP queued
+     * behind accepted PCM changes state to DRAINING before its wire boundary;
+     * it must not revoke the already accepted receipt. Keep PCM pressure and
+     * sequence intact. The sole exporter still serializes every notification. */
+    esp_err_t ret = ble_audio_stream_send_control_packet_repeated(
+        LISTENER_AUDIO_PACKET_TYPE_SESSION_START, job->session_id, 0, job->start_origin);
+    ESP_LOGI(TAG, "session start marker exported: session=%" PRIu32
+             " origin=%u epoch=%" PRIu32 " result=%s", job->session_id,
+             (unsigned)job->start_origin, job->connection_epoch, esp_err_to_name(ret));
 }
 
 static esp_err_t ble_audio_stream_send_session_audio_internal(
@@ -2949,6 +2990,7 @@ static void ble_audio_stream_task(void *parameter)
 {
     (void)parameter;
     (void)watchdog_platform_subscribe_current_task("ble_audio_stream_task");
+    ble_audio_cooperative_wait_init();
 
     ble_audio_stream_job_t job;
     uint8_t consecutive_audio_jobs = 0;
@@ -2970,27 +3012,7 @@ static void ble_audio_stream_task(void *parameter)
             }
             case BLE_AUDIO_STREAM_JOB_TYPE_SESSION_START_MARKER:
             {
-                if (job.session_id != s_transport_session_id ||
-                    s_transport_state != BLE_AUDIO_STREAM_TRANSPORT_STATE_STREAMING) {
-                    ESP_LOGW(
-                        TAG,
-                        "session start marker rejected: session=%" PRIu32
-                        " current=%" PRIu32 " state=%d",
-                        job.session_id,
-                        s_transport_session_id,
-                        (int)s_transport_state);
-                    break;
-                }
-                esp_err_t marker_ret = ble_audio_stream_send_session_start_internal(
-                    job.session_id,
-                    job.start_origin);
-                if (marker_ret != ESP_OK) {
-                    ESP_LOGW(
-                        TAG,
-                        "session start marker failed: session=%" PRIu32 " ret=%s",
-                        job.session_id,
-                        esp_err_to_name(marker_ret));
-                }
+                ble_audio_stream_send_session_start_marker_internal(&job);
                 break;
             }
             case BLE_AUDIO_STREAM_JOB_TYPE_SESSION_AUDIO_DATA:
@@ -4030,14 +4052,28 @@ esp_err_t ble_audio_stream_send_session_start_marker(
         .session_id = session_id,
         .start_origin = start_origin,
     };
-    if (xQueueSend(s_export_queue, &job, pdMS_TO_TICKS(1000)) != pdTRUE) {
+    portENTER_CRITICAL(&s_link_state_lock);
+    job.connection_epoch = s_connection_epoch;
+    const bool start_exported = s_export_started_session_id == session_id &&
+        s_export_started_connection_epoch == job.connection_epoch;
+    portEXIT_CRITICAL(&s_link_state_lock);
+    /* A confirmed original START is the barrier. Only this same-stream
+     * acknowledgement may pass queued PCM; original START, PCM and STOP keep
+     * their order. Otherwise use the ordered queue so the marker cannot open
+     * a capture ahead of its real START. Queue failure grants no ownership. */
+    BaseType_t enqueue_result = start_exported
+        ? xQueueSendToFront(s_export_queue, &job, pdMS_TO_TICKS(1000))
+        : xQueueSend(s_export_queue, &job, pdMS_TO_TICKS(1000));
+    if (enqueue_result != pdTRUE) {
         return ESP_ERR_TIMEOUT;
     }
     ESP_LOGI(
         TAG,
-        "session start marker queued: session=%" PRIu32 " origin=%u",
+        "session start marker queued: session=%" PRIu32 " origin=%u epoch=%" PRIu32 " priority=%u",
         session_id,
-        (unsigned)start_origin);
+        (unsigned)start_origin,
+        job.connection_epoch,
+        start_exported ? 1u : 0u);
     return ESP_OK;
 }
 

@@ -1,6 +1,7 @@
 idf_component_register(
     SRCS
         firmware_ota.c
+        firmware_ota_wire.c
         ../../third_party/denzic-platform/ota/embedded/c/src/denzic_ota_orchestration_v1.c
     INCLUDE_DIRS
         include

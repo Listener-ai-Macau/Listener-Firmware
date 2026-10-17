@@ -33,6 +33,7 @@
 #include "esp_log.h"
 #include "esp_timer.h"
 #include "esp_system.h"
+#include "esp_heap_caps.h"
 #include "host/ble_hs.h"
 #include "host/ble_att.h"
 #include "host/util/util.h"
@@ -130,7 +131,6 @@ static void ble_hid_gap_log_conn_desc(const char *context, uint16_t conn_handle)
  * to two link packets at that measured envelope before releasing its 15-ms lease. */
 #define BLE_HID_GAP_AUDIO_DATA_LEN_TIME_US 1590U
 #define BLE_HID_GAP_AUDIO_DATA_LEN_2M_PACKET_TIME_US 965U
-#define BLE_HID_GAP_AUDIO_DATA_LEN_REQUEST_TIMEOUT_MS 750U
 /* Reversible connected idle must remain conservative on Windows + ESP32-S3.
  * The previous 100-150 ms / latency 9 request repeatedly ended in an interrupt
  * watchdog reset at the 60 s idle boundary. 30-50 ms still cuts connection
@@ -206,7 +206,11 @@ static bool s_active_preferred_interval_rejected = false;
 static bool s_active_connection_request_pending = false;
 static bool s_active_connection_required = false;
 static bool s_audio_data_length_request_pending = false;
-static TickType_t s_audio_data_length_request_started_tick = 0;
+/* HCI command completion owns configuration; DATA_LEN_CHG only reports the
+ * effective peer-limited lengths and is optional when those remain equal. */
+static bool s_audio_data_length_configured = false;
+static bool s_audio_data_length_reconfigure_after_pending = false;
+static uint32_t s_audio_data_length_generation = 0;
 static bool s_audio_data_length_ready = false;
 static uint16_t s_audio_data_length_max_tx_octets = 0;
 static uint16_t s_audio_data_length_max_rx_octets = 0;
@@ -265,6 +269,26 @@ static bool ble_hid_gap_data_length_ready_for_phy(
         : BLE_HID_GAP_AUDIO_DATA_LEN_TIME_US;
     return max_tx_octets >= BLE_HID_GAP_AUDIO_DATA_LEN_OCTETS &&
            max_tx_time_us >= minimum_packet_time_us;
+}
+
+/* Called only under the GAP state lock after an actual PHY/length observation.
+ * An unchanged peer-limited tuple is not a retry timer. A real transition out
+ * of readiness invalidates the older configuration, including a command whose
+ * completion has not returned yet. Keep that command's pending ownership. */
+static void ble_hid_gap_refresh_audio_data_length_readiness_locked(void)
+{
+    const bool was_ready = s_audio_data_length_ready;
+    s_audio_data_length_ready = ble_hid_gap_data_length_ready_for_phy(
+        s_audio_data_length_max_tx_octets,
+        s_audio_data_length_max_tx_time_us,
+        s_audio_tx_phy,
+        s_audio_rx_phy);
+    if (was_ready && !s_audio_data_length_ready) {
+        s_audio_data_length_configured = false;
+        if (s_audio_data_length_request_pending) {
+            s_audio_data_length_reconfigure_after_pending = true;
+        }
+    }
 }
 
 static void ble_hid_gap_platform_device_control_complete_recovery(
@@ -580,6 +604,7 @@ typedef struct {
     bool secure_connected;
     bool audio_data_length_request_pending;
     bool audio_data_length_ready;
+    bool audio_data_length_configured;
     uint16_t audio_data_length_max_tx_octets;
     uint16_t audio_data_length_max_rx_octets;
     uint16_t audio_data_length_max_tx_time_us;
@@ -597,6 +622,7 @@ static ble_hid_gap_connection_snapshot_t ble_hid_gap_connection_snapshot(void)
         .secure_connected = s_ble_gap_secure_connected,
         .audio_data_length_request_pending = s_audio_data_length_request_pending,
         .audio_data_length_ready = s_audio_data_length_ready,
+        .audio_data_length_configured = s_audio_data_length_configured,
         .audio_data_length_max_tx_octets = s_audio_data_length_max_tx_octets,
         .audio_data_length_max_rx_octets = s_audio_data_length_max_rx_octets,
         .audio_data_length_max_tx_time_us = s_audio_data_length_max_tx_time_us,
@@ -607,6 +633,27 @@ static ble_hid_gap_connection_snapshot_t ble_hid_gap_connection_snapshot(void)
     };
     portEXIT_CRITICAL(&s_ble_gap_state_lock);
     return snapshot;
+}
+
+bool ble_hid_gap_get_ota_rx_budget(uint16_t conn_handle, uint16_t *octets,
+                                  uint16_t *time_us, uint8_t *phy)
+{
+    if (octets == NULL || time_us == NULL || phy == NULL) {
+        return false;
+    }
+    *octets = 0;
+    *time_us = 0;
+    *phy = 0;
+    const ble_hid_gap_connection_snapshot_t conn = ble_hid_gap_connection_snapshot();
+    if (!conn.connected || !conn.secure_connected || conn.conn_handle != conn_handle ||
+        !conn.audio_data_length_ready || conn.audio_data_length_request_pending ||
+        conn.audio_data_length_max_rx_octets == 0 || conn.audio_rx_phy == 0) {
+        return false;
+    }
+    *octets = conn.audio_data_length_max_rx_octets;
+    *time_us = conn.audio_data_length_max_rx_time_us;
+    *phy = conn.audio_rx_phy;
+    return true;
 }
 
 void ble_hid_gap_print_status(void)
@@ -627,7 +674,7 @@ void ble_hid_gap_print_status(void)
     }
 
     printf(
-        "~BLE:STATUS connected=%u secure=%u conn_handle=%u descriptor_valid=%u descriptor_rc=%d interval_units=%u interval_ms_x100=%u latency=%u supervision_timeout_units=%u supervision_timeout_ms=%u active_required=%u active_applied=%u e11r=%u lossless_rice=%u lossless_rice_version=%u dle_pending=%u dle_ready=%u dle_tx_octets=%u dle_rx_octets=%u dle_tx_time_us=%u dle_rx_time_us=%u phy_tx=%u phy_rx=%u active_ce_min=%u active_ce_max=%u last_conn_param_mode=%u\n",
+        "~BLE:STATUS connected=%u secure=%u conn_handle=%u descriptor_valid=%u descriptor_rc=%d interval_units=%u interval_ms_x100=%u latency=%u supervision_timeout_units=%u supervision_timeout_ms=%u active_required=%u active_applied=%u e11r=%u lossless_rice=%u lossless_rice_version=%u dle_pending=%u dle_configured=%u dle_ready=%u dle_tx_octets=%u dle_rx_octets=%u dle_tx_time_us=%u dle_rx_time_us=%u phy_tx=%u phy_rx=%u active_ce_min=%u active_ce_max=%u last_conn_param_mode=%u\n",
         conn.connected ? 1U : 0U,
         conn.secure_connected ? 1U : 0U,
         (unsigned)conn.conn_handle,
@@ -644,6 +691,7 @@ void ble_hid_gap_print_status(void)
         ble_audio_stream_is_type_lossless_rice_enabled() ? 1U : 0U,
         (unsigned)ble_audio_stream_get_type_lossless_rice_version(),
         conn.audio_data_length_request_pending ? 1U : 0U,
+        conn.audio_data_length_configured ? 1U : 0U,
         conn.audio_data_length_ready ? 1U : 0U,
         (unsigned)conn.audio_data_length_max_tx_octets,
         (unsigned)conn.audio_data_length_max_rx_octets,
@@ -654,6 +702,25 @@ void ble_hid_gap_print_status(void)
         (unsigned)BLE_HID_GAP_ACTIVE_MIN_CE_LEN,
         (unsigned)BLE_HID_GAP_ACTIVE_MAX_CE_LEN,
         (unsigned)ble_hid_gap_last_conn_param_mode());
+
+    /* Explicit diagnostics only: measure the resource cost of PSRAM XIP
+     * without adding allocation probes to notification or recording paths. */
+#if defined(CONFIG_SPIRAM_FETCH_INSTRUCTIONS) && defined(CONFIG_SPIRAM_RODATA)
+    const unsigned xip_psram = 1U;
+#else
+    const unsigned xip_psram = 0U;
+#endif
+    printf(
+        "~BLE:MEMORY internal_free=%u internal_largest=%u dma_free=%u"
+        " psram_free=%u psram_largest=%u psram_heap_total=%u xip_psram=%u acl_from_ll_count=%u\n",
+        (unsigned)heap_caps_get_free_size(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT),
+        (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT),
+        (unsigned)heap_caps_get_free_size(MALLOC_CAP_INTERNAL | MALLOC_CAP_DMA),
+        (unsigned)heap_caps_get_free_size(MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT),
+        (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT),
+        (unsigned)heap_caps_get_total_size(MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT),
+        xip_psram,
+        (unsigned)CONFIG_BT_NIMBLE_TRANSPORT_ACL_FROM_LL_COUNT);
 }
 
 uint16_t ble_hid_gap_get_audio_notification_value_max_bytes(void)
@@ -747,7 +814,9 @@ static void ble_hid_gap_set_connection_state(bool connected, uint16_t conn_handl
     s_conn_param_request_pending_until_tick = 0;
     s_active_preferred_interval_rejected = false;
     s_audio_data_length_request_pending = false;
-    s_audio_data_length_request_started_tick = 0;
+    s_audio_data_length_configured = false;
+    s_audio_data_length_reconfigure_after_pending = false;
+    s_audio_data_length_generation++;
     s_audio_data_length_ready = false;
     s_audio_data_length_max_tx_octets = 0;
     s_audio_data_length_max_rx_octets = 0;
@@ -2166,6 +2235,16 @@ static esp_err_t ble_hid_gap_request_preferred_2m_phy(const char *policy)
         return ESP_ERR_INVALID_STATE;
     }
 
+    /* A completed current-connection PHY event owns this fact. Promotion
+     * is idempotent: do not issue LE_SET_PHY synchronously from an already
+     * ready BEGIN callback while bulk DATA is entering the same HCI path.
+     * Repeating it made the host wait for an ACK behind exhausted RX buffers.
+     * Missing/reset/one-direction-only evidence still takes the real request. */
+    if (conn.audio_tx_phy == BLE_HCI_LE_PHY_2M &&
+        conn.audio_rx_phy == BLE_HCI_LE_PHY_2M) {
+        return ESP_OK;
+    }
+
     const uint8_t tx_phys_mask = BLE_GAP_LE_PHY_2M_MASK;
     const uint8_t rx_phys_mask = BLE_GAP_LE_PHY_2M_MASK;
     int rc = ble_gap_set_prefered_le_phy(conn.conn_handle, tx_phys_mask, rx_phys_mask, 0);
@@ -2240,81 +2319,96 @@ static esp_err_t ble_hid_gap_request_audio_data_length(const char *policy)
     }
 
     portENTER_CRITICAL(&s_ble_gap_state_lock);
-    bool ready = s_audio_data_length_ready;
-    bool pending = s_audio_data_length_request_pending;
-    TickType_t pending_started_tick = s_audio_data_length_request_started_tick;
-    TickType_t now = xTaskGetTickCount();
-    bool pending_expired = pending && pending_started_tick != 0 &&
-        (TickType_t)(now - pending_started_tick) >=
-            pdMS_TO_TICKS(BLE_HID_GAP_AUDIO_DATA_LEN_REQUEST_TIMEOUT_MS);
-    if (pending_expired) {
-        s_audio_data_length_request_pending = false;
-        s_audio_data_length_request_started_tick = 0;
-        pending = false;
-    }
-    if (!ready && !pending) {
-        s_audio_data_length_request_pending = true;
-        s_audio_data_length_request_started_tick = now;
-    }
+    const uint32_t generation = s_audio_data_length_generation;
     portEXIT_CRITICAL(&s_ble_gap_state_lock);
-    if (ready) {
-        ESP_LOGD(
-            TAG,
-            "%s data length already ready: conn=%u",
-            policy,
-            conn.conn_handle);
-        return ESP_OK;
-    }
-    if (pending) {
-        ESP_LOGD(
-            TAG,
-            "%s data length update already pending: conn=%u",
-            policy,
-            conn.conn_handle);
-        return ESP_OK;
-    }
-    if (pending_expired) {
-        ESP_LOGW(
-            TAG,
-            "%s data length completion timed out after %u ms; retrying conn=%u",
-            policy,
-            (unsigned)BLE_HID_GAP_AUDIO_DATA_LEN_REQUEST_TIMEOUT_MS,
-            conn.conn_handle);
-    }
-
-    int rc = ble_gap_set_data_len(
-        conn.conn_handle,
-        BLE_HID_GAP_AUDIO_DATA_LEN_OCTETS,
-        BLE_HID_GAP_AUDIO_DATA_LEN_TIME_US);
-    const bool accepted = rc == 0 || rc == BLE_HS_EALREADY;
-    if (!accepted) {
+    for (;;) {
         portENTER_CRITICAL(&s_ble_gap_state_lock);
-        if (s_ble_gap_connected && s_ble_gap_conn_handle == conn.conn_handle) {
-            s_audio_data_length_request_pending = false;
-            s_audio_data_length_request_started_tick = 0;
+        if (!s_ble_gap_connected || !s_ble_gap_secure_connected ||
+            s_ble_gap_conn_handle != conn.conn_handle ||
+            s_audio_data_length_generation != generation) {
+            portEXIT_CRITICAL(&s_ble_gap_state_lock);
+            return ESP_ERR_INVALID_STATE;
+        }
+        bool ready = s_audio_data_length_ready;
+        bool pending = s_audio_data_length_request_pending;
+        bool configured = s_audio_data_length_configured;
+        if (!ready && !pending && !configured) {
+            s_audio_data_length_request_pending = true;
+            s_audio_data_length_reconfigure_after_pending = false;
         }
         portEXIT_CRITICAL(&s_ble_gap_state_lock);
-    }
-    if (accepted) {
-        ESP_LOGI(
-            TAG,
-            "%s data length update requested: conn=%u tx_octets=%u tx_time_us=%u rc=%d",
-            policy,
+        if (ready || configured) {
+            ESP_LOGD(
+                TAG,
+                "%s data length configuration retained: conn=%u effective_ready=%u",
+                policy,
+                conn.conn_handle,
+                ready ? 1u : 0u);
+            return ESP_OK;
+        }
+        if (pending) {
+            ESP_LOGD(
+                TAG,
+                "%s data length update already pending: conn=%u",
+                policy,
+                conn.conn_handle);
+            return ESP_OK;
+        }
+        int rc = ble_gap_set_data_len(
             conn.conn_handle,
             BLE_HID_GAP_AUDIO_DATA_LEN_OCTETS,
-            BLE_HID_GAP_AUDIO_DATA_LEN_TIME_US,
-            rc);
-    } else {
-        ESP_LOGW(
-            TAG,
-            "%s data length update request failed: conn=%u tx_octets=%u tx_time_us=%u rc=%d",
-            policy,
-            conn.conn_handle,
-            BLE_HID_GAP_AUDIO_DATA_LEN_OCTETS,
-            BLE_HID_GAP_AUDIO_DATA_LEN_TIME_US,
-            rc);
+            BLE_HID_GAP_AUDIO_DATA_LEN_TIME_US);
+        /* ble_gap_set_data_len synchronously receives Command Complete. A length
+         * change notification is not its completion: the peer may constrain the
+         * effective tuple to exactly the old value, which generates no event.
+         * Never release a live command by elapsed time, and never let its return
+         * mutate a replacement connection that reuses the numeric handle. */
+        const bool accepted = rc == 0;
+        bool reconfigure_requested = false;
+        portENTER_CRITICAL(&s_ble_gap_state_lock);
+        const bool current = s_ble_gap_connected &&
+            s_ble_gap_conn_handle == conn.conn_handle &&
+            s_audio_data_length_generation == generation;
+        if (current) {
+            s_audio_data_length_request_pending = false;
+            reconfigure_requested = s_audio_data_length_reconfigure_after_pending &&
+                !s_audio_data_length_ready;
+            s_audio_data_length_reconfigure_after_pending = false;
+            if (accepted) {
+                s_audio_data_length_configured = !reconfigure_requested;
+            }
+        }
+        portEXIT_CRITICAL(&s_ble_gap_state_lock);
+        if (!current) {
+            return ESP_ERR_INVALID_STATE;
+        }
+        if (accepted) {
+            ESP_LOGI(
+                TAG,
+                "%s data length update requested: conn=%u tx_octets=%u tx_time_us=%u rc=%d",
+                policy,
+                conn.conn_handle,
+                BLE_HID_GAP_AUDIO_DATA_LEN_OCTETS,
+                BLE_HID_GAP_AUDIO_DATA_LEN_TIME_US,
+                rc);
+        } else {
+            ESP_LOGW(
+                TAG,
+                "%s data length update request failed: conn=%u tx_octets=%u tx_time_us=%u rc=%d",
+                policy,
+                conn.conn_handle,
+                BLE_HID_GAP_AUDIO_DATA_LEN_OCTETS,
+                BLE_HID_GAP_AUDIO_DATA_LEN_TIME_US,
+                rc);
+        }
+        if (accepted && reconfigure_requested) {
+            /* Coalesce a real newer observation here. Scheduling the active-link
+             * worker from its own HCI call could be swallowed by its pending flag.
+             * No event, unchanged parameters or a real HCI error cannot loop. */
+            continue;
+        }
+        return accepted ? ESP_OK : ESP_FAIL;
     }
-    return accepted ? ESP_OK : ESP_FAIL;
 }
 
 static bool ble_hid_gap_configure_swift_pair_fields(void)
@@ -3114,18 +3208,7 @@ nimble_hid_gap_event(struct ble_gap_event *event, void *arg)
                 s_ble_gap_conn_handle == event->phy_updated.conn_handle) {
                 s_audio_tx_phy = event->phy_updated.tx_phy;
                 s_audio_rx_phy = event->phy_updated.rx_phy;
-                s_audio_data_length_ready = ble_hid_gap_data_length_ready_for_phy(
-                    s_audio_data_length_max_tx_octets,
-                    s_audio_data_length_max_tx_time_us,
-                    s_audio_tx_phy,
-                    s_audio_rx_phy);
-                if (s_audio_data_length_ready) {
-                    /* DATA_LEN_CHG can arrive before PHY_UPDATE_COMPLETE. Once
-                     * the PHY-specific full-packet time is satisfied, a repeated
-                     * HCI request may return EALREADY without another event. */
-                    s_audio_data_length_request_pending = false;
-                    s_audio_data_length_request_started_tick = 0;
-                }
+                ble_hid_gap_refresh_audio_data_length_readiness_locked();
             }
             portEXIT_CRITICAL(&s_ble_gap_state_lock);
             (void)ble_hid_gap_request_audio_data_length("after 2M PHY");
@@ -3253,17 +3336,12 @@ nimble_hid_gap_event(struct ble_gap_event *event, void *arg)
             applied_conn_handle = s_ble_gap_conn_handle;
             attributed_missing_handle =
                 reported_conn_handle != applied_conn_handle;
-            s_audio_data_length_request_pending = false;
-            s_audio_data_length_request_started_tick = 0;
+            /* Command Complete, not this optional observation, owns pending. */
             s_audio_data_length_max_tx_octets = event->data_len_chg.max_tx_octets;
             s_audio_data_length_max_rx_octets = event->data_len_chg.max_rx_octets;
             s_audio_data_length_max_tx_time_us = event->data_len_chg.max_tx_time;
             s_audio_data_length_max_rx_time_us = event->data_len_chg.max_rx_time;
-            s_audio_data_length_ready = ble_hid_gap_data_length_ready_for_phy(
-                s_audio_data_length_max_tx_octets,
-                s_audio_data_length_max_tx_time_us,
-                s_audio_tx_phy,
-                s_audio_rx_phy);
+            ble_hid_gap_refresh_audio_data_length_readiness_locked();
             restore_full_data_length =
                 s_ble_gap_secure_connected && !s_audio_data_length_ready;
         }

@@ -41,6 +41,10 @@ bool ble_hid_gap_active_connection_applied(void);
 /* Returns the largest single-link-layer ATT value after DLE, or zero until
  * the active connection has reported its negotiated data length. */
 uint16_t ble_hid_gap_get_audio_notification_value_max_bytes(void);
+/* Advisory OTA receive geometry, frozen from this secure connection only.
+ * Missing/in-flight negotiation returns false, never authority to start OTA. */
+bool ble_hid_gap_get_ota_rx_budget(uint16_t conn_handle, uint16_t *octets,
+                                  uint16_t *time_us, uint8_t *phy);
 void ble_hid_gap_print_status(void);
 bool ble_hid_gap_ota_connection_ready(void);
 /* Reduce connection TX power while OTA receives and restore the configured

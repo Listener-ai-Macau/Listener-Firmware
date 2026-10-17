@@ -41,6 +41,13 @@ esp_err_t audio_capture_session_begin_with_preroll_and_origin(
 esp_err_t audio_capture_session_resume_wake(
     uint32_t previous_session_id,
     uint16_t start_origin);
+/* Reserve only a source-validated, still-retained hidden boundary before
+ * retiring a newer unowned ambient segment. The caller owns the existing
+ * bounded ENSURE deadline and releases this exact request on every failure. */
+esp_err_t audio_capture_reserve_wake_resume(
+    uint32_t previous_session_id,
+    uint32_t request_id);
+void audio_capture_release_wake_resume(uint32_t request_id);
 esp_err_t audio_capture_session_stop(void);
 esp_err_t audio_capture_session_stop_with_origin(audio_capture_stop_origin_t origin);
 esp_err_t audio_capture_session_cancel(void);
