@@ -76,6 +76,40 @@ def observe_legacy_lookup(frame, proof, seen):
                 requestIndex=len(requests), newRequest=new_request)
 
 
+def observe_target_link(packet, target_address, stamp, links, proof):
+    """Metadata for an actually captured target CONNECT, never an old link.
+
+    Caller must first admit the hardware timestamp into this capture. Receiver
+    MIC flags are observations, not an independent full-link certificate.
+    """
+    frame = packet.packetList
+    if not packet.crcOK or len(frame) < 22:
+        return
+    if (packet.id == 2 and bytes(frame[16:20]) == bytes.fromhex('d6be898e')
+            and frame[20] & 15 == 5 and frame[21] == 34 and len(frame) >= 56
+            and bytes(frame[28:34])[::-1].hex() == target_address.replace(':', '').lower()):
+        aa = bytes(frame[34:38])[::-1].hex()
+        # A later CONNECT starts a new epoch even if the AA happens to repeat.
+        links[aa] = dict(accessAddress=aa, connectEpoch=stamp, firstDataEpoch=None,
+                         lastDataEpoch=None, crcGoodData=0,
+                         receiverMicAcceptedNonempty=0, matchingLegacyRequest=False)
+    elif packet.id == 6:
+        aa = bytes(frame[16:20])[::-1].hex()
+        link = links.get(aa)
+        if link is None or stamp < link['connectEpoch']:
+            return
+        link['crcGoodData'] += 1
+        if link['firstDataEpoch'] is None:
+            link['firstDataEpoch'] = stamp
+        link['lastDataEpoch'] = stamp
+        if packet.encrypted and packet.micOK and frame[21] > 0:
+            link['receiverMicAcceptedNonempty'] += 1
+        elif not packet.encrypted:
+            lookup = observe_legacy_lookup(frame, proof, {})
+            if lookup and lookup['matchesReference']:
+                link['matchingLegacyRequest'] = True
+
+
 def capture(output, seconds, port, bond_path, proof, reload_legacy_refresh=False):
     from SnifferAPI import Packet, Pcap, Notifications
     output.mkdir(exist_ok=False)
@@ -176,10 +210,11 @@ def capture(output, seconds, port, bond_path, proof, reload_legacy_refresh=False
         writer.sendFollow(address, False, False, False)
         key=list(bytes.fromhex(bond['keyBigEndian'][2:]))
         (writer.sendSCLTK if bond['secureConnections'] else writer.sendLegacyLTK)(key)
-        legacy_requests = {}
+        legacy_requests, target_links = {}, {}
         record.update(bondSnapshotSha256=proof["binding"]["bondSnapshotSha256"], legacyLookupObservations=[], reloadLegacyRefresh=reload_legacy_refresh, refreshKeyCommands=[], authenticatedNonempty=0, coverageScope="Receiver observations only; complete OTA coverage requires independent HCI/firmware alignment", ready=True,targetAddress=bond['listenerAddress'],keyCommandSent=True,
                       readinessScope="Serial clock and command submission only; no key/follow acknowledgement or complete RF coverage implied",
                       keyRepresentation='current read-only bond; all9 saved encrypted frames MIC-verified offline; big-endian wire format from primary nrf4 implementation',
+                      linkObservations=[],
                       scope='Single-reader bulk transport, timestamp-acknowledged and address-followed; receiver observations only, no product commands from analyzer')
         save()
         until = time.perf_counter() + seconds
@@ -195,6 +230,17 @@ def capture(output, seconds, port, bond_path, proof, reload_legacy_refresh=False
                     previous_counter=packet.packetCounter
                     if packet.id not in (2, 6):
                         continue
+                    # Reject stale/out-of-run RF before it can populate any
+                    # readiness/MIC/key-refresh observations, not just the PCAP.
+                    if packet.protover != 3:
+                        raise RuntimeError("Relative/unknown protocol cannot use absolute hardware clock")
+                    delta = (int(packet.timestamp) - anchor) & 0xffffffff
+                    if delta > (seconds + 5) * 1_000_000:
+                        record["rejectedStaleOrOutOfRun"] += 1
+                        continue
+                    stamp = anchor_wall + delta / 1_000_000
+                    observe_target_link(packet, bond['listenerAddress'], stamp, target_links, proof)
+                    record['linkObservations'] = list(target_links.values())
                     if packet.id == 6 and packet.crcOK:
                         frame = packet.packetList
                         if packet.encrypted and packet.micOK and frame[21] > 0:
@@ -218,14 +264,8 @@ def capture(output, seconds, port, bond_path, proof, reload_legacy_refresh=False
                                         radioTimestampUs=int(packet.timestamp),
                                         commandSentEpoch=precise_utc(),
                                         firmwareAcknowledged=False))
-                    if packet.protover != 3:
-                        raise RuntimeError("Relative/unknown protocol cannot use absolute hardware clock")
-                    delta = (int(packet.timestamp) - anchor) & 0xffffffff
-                    if delta > (seconds + 5) * 1_000_000:
-                        record["rejectedStaleOrOutOfRun"] += 1
-                        continue
                     pcap.write(Pcap.create_packet(bytes([int(port[3:])] + packet.getList()),
-                                                 anchor_wall + delta / 1_000_000))
+                                                 stamp))
                     record["accepted"] += 1
                 save()
     except Exception as error:
