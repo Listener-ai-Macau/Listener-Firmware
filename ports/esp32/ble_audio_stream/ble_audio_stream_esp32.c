@@ -253,6 +253,9 @@ typedef struct {
     uint32_t notify_retries;
     uint32_t notify_msys_waits;
     uint32_t audio_pace_wait_ticks;
+    uint64_t audio_media_block_us;
+    uint64_t audio_transport_block_us;
+    uint64_t audio_preroll_block_us;
     uint32_t audio_preroll_burst_pcm_bytes;
     uint32_t notify_mbuf_alloc_retries;
     uint32_t notify_enomem_retries;
@@ -280,6 +283,12 @@ typedef struct {
     const char *last_drop_reason;
     int last_error;
 } ble_audio_stream_session_stats_t;
+
+typedef enum {
+    BLE_AUDIO_WAIT_MEDIA,
+    BLE_AUDIO_WAIT_TRANSPORT,
+    BLE_AUDIO_WAIT_PREROLL,
+} ble_audio_stream_wait_kind_t;
 
 typedef struct {
     uint32_t subscribe;
@@ -1227,6 +1236,31 @@ static void ble_audio_stream_stats_audio_pace_wait(uint32_t session_id, uint32_t
     s_session_stats.audio_pace_wait_ticks += ticks;
 }
 
+static void ble_audio_stream_stats_block_wait(
+    uint32_t session_id,
+    ble_audio_stream_wait_kind_t kind,
+    int64_t began_us)
+{
+    if (!s_session_stats.active || s_session_stats.session_id != session_id) {
+        return;
+    }
+    const int64_t elapsed_us = esp_timer_get_time() - began_us;
+    if (elapsed_us <= 0) {
+        return;
+    }
+    switch (kind) {
+    case BLE_AUDIO_WAIT_MEDIA:
+        s_session_stats.audio_media_block_us += (uint64_t)elapsed_us;
+        break;
+    case BLE_AUDIO_WAIT_TRANSPORT:
+        s_session_stats.audio_transport_block_us += (uint64_t)elapsed_us;
+        break;
+    case BLE_AUDIO_WAIT_PREROLL:
+        s_session_stats.audio_preroll_block_us += (uint64_t)elapsed_us;
+        break;
+    }
+}
+
 static void ble_audio_stream_stats_packet_result(
     uint32_t session_id,
     listener_audio_packet_type_t packet_type,
@@ -1362,6 +1396,10 @@ static void ble_audio_stream_stats_log_and_end(
         session_id,
         s_session_stats.audio_preroll_burst_pcm_bytes,
         s_audio_pacing_burst_remaining_pcm_bytes);
+    ESP_LOGI(TAG, "audio blocking summary: session=%" PRIu32
+        " media_us=%" PRIu64 " transport_us=%" PRIu64 " preroll_us=%" PRIu64,
+        session_id, s_session_stats.audio_media_block_us,
+        s_session_stats.audio_transport_block_us, s_session_stats.audio_preroll_block_us);
     ESP_LOGI(
         TAG,
         "audio session transport summary: session=%" PRIu32 " reason=%s elapsed_ms=%" PRIu32 " expected_packet_count=%u notify_sent=%" PRIu32 " notify_failed=%" PRIu32 " notify_retries=%" PRIu32 " msys_waits=%" PRIu32 " audio_pace_ticks=%" PRIu32 " audio_pace_target_bytes_per_s=%u retry_mbuf=%" PRIu32 " retry_enomem=%" PRIu32 " retry_tx_timeout=%" PRIu32 " retry_tx_status=%" PRIu32 " retry_other=%" PRIu32 " audio_sent=%" PRIu32 " audio_pcm_bytes=%" PRIu32 " audio_wire_bytes=%" PRIu32 " audio_wire_pct=%" PRIu32 " audio_bytes_per_s=%" PRIu32 " audio_wire_bytes_per_s=%" PRIu32 " audio_packets_per_s=%" PRIu32 " audio_lossless_packets=%" PRIu32 " audio_raw_packets=%" PRIu32 " audio_failed=%" PRIu32 " queue_jobs_purged=%" PRIu32 " pool_high_water=%" PRIu32 " pool_capacity=%u pool_high_water_pct=%" PRIu32 " pool_alloc_failed=%" PRIu32 " queue_full=%" PRIu32 " replay_retained_high_water=%" PRIu32 " replay_stored=%" PRIu32 " replay_replaced=%" PRIu32 " replay_removed=%" PRIu32 " replay_resent=%" PRIu32 " replay_resend_failed=%" PRIu32 " replay_skip_current=%" PRIu32 " replay_pending=%" PRIu32 " last_drop_reason=%s last_error=%d",
@@ -1925,7 +1963,28 @@ static void ble_audio_stream_delay_ms(uint32_t delay_ms)
     if (delay_ticks == 0) {
         delay_ticks = 1;
     }
+    /* Admission/retry and the per-job IDLE0 blocker already spend real
+     * Blocked time. Reuse that opportunity in this same media clock instead
+     * of sleeping again for the same PCM quantum after notify succeeds.
+     * Keep only the existing one-tick early-yield allowance: a long outage
+     * must never bank an unbounded burst or carry into another source/link. */
+    const bool media_worker = s_export_task_handle != NULL &&
+        xTaskGetCurrentTaskHandle() == s_export_task_handle;
+    const uint32_t session_id = media_worker ? s_transport_session_id : 0u;
+    const uint32_t epoch = media_worker
+        ? ble_audio_stream_get_link_snapshot().connection_epoch : 0u;
+    const bool paced_media = session_id != 0u &&
+        s_audio_pacing_burst_remaining_pcm_bytes == 0u;
+    const int64_t began_us = esp_timer_get_time();
     vTaskDelay(delay_ticks);
+    if (media_worker && epoch == ble_audio_stream_get_link_snapshot().connection_epoch) {
+        ble_audio_stream_stats_block_wait(session_id, BLE_AUDIO_WAIT_TRANSPORT, began_us);
+    }
+    if (paced_media && session_id == s_transport_session_id &&
+        s_audio_pacing_burst_remaining_pcm_bytes == 0u &&
+        epoch == ble_audio_stream_get_link_snapshot().connection_epoch) {
+        s_audio_pacing_cooperative_credit_ticks = 1u;
+    }
     watchdog_platform_feed_current_task();
 }
 
@@ -1954,6 +2013,7 @@ static void ble_audio_stream_notify_success_delay(
                     BLE_AUDIO_STREAM_PREROLL_IDLE_BLOCK_PCM_BYTES !=
                 s_session_stats.audio_preroll_burst_pcm_bytes /
                     BLE_AUDIO_STREAM_PREROLL_IDLE_BLOCK_PCM_BYTES;
+            const int64_t began_us = esp_timer_get_time();
             if (idle_block_boundary_crossed) {
                 ble_audio_cooperative_wait_ms(
                     BLE_AUDIO_STREAM_COOPERATIVE_IDLE_BLOCK_MS);
@@ -1965,6 +2025,7 @@ static void ble_audio_stream_notify_success_delay(
                 ble_audio_cooperative_wait_ms(
                     BLE_AUDIO_STREAM_AUDIO_PACKET_IDLE_BLOCK_MS);
             }
+            ble_audio_stream_stats_block_wait(session_id, BLE_AUDIO_WAIT_PREROLL, began_us);
             watchdog_platform_feed_current_task();
             return;
         }
@@ -1978,8 +2039,8 @@ static void ble_audio_stream_notify_success_delay(
         &s_audio_pacing,
         packet_pcm_bytes);
     if (s_audio_pacing_cooperative_credit_ticks > 0u) {
-        /* A previous sub-quantum packet already yielded for one tick. Charge
-         * that wait against this same media budget instead of waiting twice.
+        /* A sub-quantum packet, admission/retry or job-boundary wait already
+         * yielded. Charge it against this same media budget instead of waiting twice.
          * Installed 1926430744 averaged only 28.2 kB/s against 32 kB/s
          * capture, accumulating 5.6 seconds of audio behind the preview. */
         uint32_t credited_ticks = delay_ticks;
@@ -1998,7 +2059,9 @@ static void ble_audio_stream_notify_success_delay(
 
     ble_audio_stream_stats_audio_pace_wait(session_id, delay_ticks);
     if (delay_ticks > 0u) {
+        const int64_t began_us = esp_timer_get_time();
         vTaskDelay((TickType_t)delay_ticks);
+        ble_audio_stream_stats_block_wait(session_id, BLE_AUDIO_WAIT_MEDIA, began_us);
     }
     watchdog_platform_feed_current_task();
 }
