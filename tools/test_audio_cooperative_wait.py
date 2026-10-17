@@ -136,6 +136,10 @@ esp_err_t esp_timer_stop(esp_timer_handle_t handle) {assert(handle==&timer);time
 int64_t esp_timer_get_time(void) {return (int64_t)now_us;}
 typedef uint32_t listener_audio_packet_type_t;
 #define LISTENER_AUDIO_PACKET_TYPE_AUDIO_DATA 1u
+enum { BLE_AUDIO_WAIT_MEDIA, BLE_AUDIO_WAIT_TRANSPORT, BLE_AUDIO_WAIT_PREROLL };
+static void ble_audio_stream_stats_block_wait(uint32_t session, int kind, int64_t began) {
+    (void)session; (void)kind; (void)began;
+}
 static denzic_audio_transport_v1_pacing_t s_audio_pacing;
 static uint32_t s_audio_pacing_cooperative_credit_ticks;
 static uint32_t s_audio_pacing_burst_remaining_pcm_bytes;
