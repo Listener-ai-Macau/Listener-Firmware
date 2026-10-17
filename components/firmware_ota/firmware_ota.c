@@ -1,4 +1,5 @@
 #include "firmware_ota.h"
+#include "firmware_ota_erase_plan.h"
 
 #include <inttypes.h>
 #include <stdio.h>
@@ -22,6 +23,9 @@
 
 extern esp_err_t ble_hid_gap_request_active_connection(void) __attribute__((weak));
 extern esp_err_t ble_hid_gap_schedule_active_connection(void) __attribute__((weak));
+extern uint32_t firmware_ota_platform_cpu_mhz(void) __attribute__((weak));
+extern bool ble_firmware_ota_set_deflate_advertisement(bool enabled) __attribute__((weak));
+extern bool ble_firmware_ota_is_deflate_advertised(void) __attribute__((weak));
 extern void ble_firmware_ota_on_firmware_abort(uint32_t reason) __attribute__((weak));
 
 static const char *TAG = "firmware_ota";
@@ -35,6 +39,21 @@ static const char *TAG = "firmware_ota";
  * 则此回调为 no-op。崩溃式故障在到时前已由 ESP-IDF rollback 机制回滚。 */
 #define FIRMWARE_OTA_PENDING_VERIFY_FALLBACK_MS (60U * 1000U)
 typedef struct {
+    uint32_t calls;
+    uint64_t transaction_wait_us;
+    uint64_t writer_wait_us;
+    uint64_t sdk_write_us;
+    uint64_t runtime_publish_us;
+    uint64_t timer_refresh_us;
+    uint32_t sdk_write_max_us;
+    uint32_t cpu_40;
+    uint32_t cpu_80;
+    uint32_t cpu_160;
+    uint32_t cpu_other;
+    uint32_t cpu_changed;
+} firmware_ota_write_timing_t;
+
+typedef struct {
     SemaphoreHandle_t mutex;
     esp_ota_handle_t handle;
     const esp_partition_t *running_partition;
@@ -42,6 +61,11 @@ typedef struct {
     const esp_partition_t *update_partition;
     size_t expected_size;
     size_t bytes_written;
+    bool erase_ahead;
+    size_t erased_through;
+    uint32_t erase_calls;
+    uint64_t erase_total_us;
+    firmware_ota_write_timing_t write_timing;
     bool active;
     bool self_check_recorded;
     bool post_ok;
@@ -57,6 +81,23 @@ typedef struct {
 } firmware_ota_ctx_t;
 
 static firmware_ota_ctx_t s_ota;
+/* Serializes the complete writer transition, including timer/runtime and
+ * transport notification after the inner state mutex is released. The BLE
+ * port takes this after its own lock; callbacks must never take the port lock.
+ * Recursive because a guarded transport operation invokes the writer API. */
+static SemaphoreHandle_t s_transaction_mutex;
+
+bool firmware_ota_transaction_lock(void)
+{
+    return s_transaction_mutex != NULL &&
+        xSemaphoreTakeRecursive(s_transaction_mutex, portMAX_DELAY) == pdTRUE;
+}
+
+void firmware_ota_transaction_unlock(void)
+{
+    xSemaphoreGiveRecursive(s_transaction_mutex);
+}
+
 static esp_timer_handle_t s_inactivity_timer;
 static esp_timer_handle_t s_pending_verify_fallback_timer;
 
@@ -197,6 +238,11 @@ static void firmware_ota_reset_session_locked(void)
     s_ota.update_partition = NULL;
     s_ota.expected_size = 0;
     s_ota.bytes_written = 0;
+    s_ota.erase_ahead = false;
+    s_ota.erased_through = 0;
+    s_ota.erase_calls = 0;
+    s_ota.erase_total_us = 0;
+    memset(&s_ota.write_timing, 0, sizeof(s_ota.write_timing));
     s_ota.active = false;
     s_ota.inactivity_deadline_us = 0;
     s_ota.target_version[0] = '\0';
@@ -258,7 +304,18 @@ static void firmware_ota_refresh_inactivity_timeout(void)
     }
 }
 
+static void firmware_ota_inactivity_in_transaction(void *arg);
+
 static void firmware_ota_inactivity_timer_callback(void *arg)
+{
+    if (!firmware_ota_transaction_lock()) {
+        return;
+    }
+    firmware_ota_inactivity_in_transaction(arg);
+    firmware_ota_transaction_unlock();
+}
+
+static void firmware_ota_inactivity_in_transaction(void *arg)
 {
     (void)arg;
     int64_t deadline_us = 0;
@@ -387,6 +444,13 @@ firmware_ota_blocker_t firmware_ota_get_blocker(void)
 
 esp_err_t firmware_ota_init(void)
 {
+    if (s_transaction_mutex == NULL) {
+        s_transaction_mutex = xSemaphoreCreateRecursiveMutex();
+        if (s_transaction_mutex == NULL) {
+            ESP_LOGE(TAG, "OTA transaction mutex create failed; OTA disabled");
+            return ESP_ERR_NO_MEM;
+        }
+    }
     if (s_ota.mutex == NULL) {
         s_ota.mutex = xSemaphoreCreateMutex();
         /* 修复1：mutex 创建失败（堆耗尽）属致命——后续 lock/unlock 退化为 no-op，OTA 数据路径
@@ -476,7 +540,7 @@ bool firmware_ota_is_ready(void)
 {
     /* 修复1：register_gatt 在注册 OTA GATT 前检查——init 失败（mutex 未建）则不注册，
      * OTA 不可达，从根上避免无锁裸奔。 */
-    return s_ota.mutex != NULL;
+    return s_ota.mutex != NULL && s_transaction_mutex != NULL;
 }
 
 void firmware_ota_record_self_check(bool post_ok, bool ble_ready, bool keyboard_ready)
@@ -582,7 +646,19 @@ void firmware_ota_note_runtime_ble_readiness_and_confirm(void)
     (void)firmware_ota_confirm_pending_verify_if_ready();
 }
 
+static esp_err_t firmware_ota_begin_in_transaction(size_t image_size, const char *target_version);
+
 esp_err_t firmware_ota_begin(size_t image_size, const char *target_version)
+{
+    if (!firmware_ota_transaction_lock()) {
+        return ESP_ERR_INVALID_STATE;
+    }
+    esp_err_t result = firmware_ota_begin_in_transaction(image_size, target_version);
+    firmware_ota_transaction_unlock();
+    return result;
+}
+
+static esp_err_t firmware_ota_begin_in_transaction(size_t image_size, const char *target_version)
 {
     uint64_t correlation_id = firmware_ota_take_observability_correlation();
     firmware_ota_log_observability_correlation(correlation_id);
@@ -620,11 +696,19 @@ esp_err_t firmware_ota_begin(size_t image_size, const char *target_version)
     }
 
     esp_ota_handle_t handle = 0;
-    /* 修复2：不预先擦除整个 image 分区（数 MB，会阻塞 NimBLE host task 数秒）。改用
-     * SEQUENTIAL_WRITES：begin 仅初始化 handle，擦除分摊到每次 write（已在 worker task）。
-     * 固件 OTA 严格顺序传输（denzic core 仅在 offset 匹配时才 driver.write），满足该模式
-     * 顺序写约束。image_size 分区容量预检仍保留（上方），expected_size 仍用于 finish 校验。 */
-    esp_err_t ret = esp_ota_begin(partition, OTA_WITH_SEQUENTIAL_WRITES, &handle);
+    /* Keep BEGIN free of Flash erase work. The old whole-image erase blocked
+     * the NimBLE callback for seconds; per-4KB lazy erase instead made the
+     * measured 437 writes spend 9236ms in storage. For a sized image, resume at
+     * offset zero without IDF auto-erase, then erase one bounded block ahead
+     * inside the existing sequential storage owner. This needs no 64KB buffer.
+     * Unknown-size/other erase geometries retain the sequential IDF path. */
+    const bool erase_ahead = image_size > 0 && image_size != OTA_SIZE_UNKNOWN &&
+        partition->erase_size > 0 && partition->erase_size <= 65536U &&
+        (65536U % partition->erase_size) == 0 &&
+        (partition->address % 65536U) == 0;
+    esp_err_t ret = erase_ahead
+        ? esp_ota_resume(partition, 0, 0, &handle)
+        : esp_ota_begin(partition, OTA_WITH_SEQUENTIAL_WRITES, &handle);
     if (ret != ESP_OK) {
         ESP_LOGE(TAG, "OTA begin failed partition=%s: %s", partition->label, esp_err_to_name(ret));
         firmware_ota_log_version_values(DIAG_OTA_BEGIN, partition, listener_device_get_fw_version(), target_version);
@@ -638,6 +722,11 @@ esp_err_t firmware_ota_begin(size_t image_size, const char *target_version)
     s_ota.update_partition = partition;
     s_ota.expected_size = image_size;
     s_ota.bytes_written = 0;
+    s_ota.erase_ahead = erase_ahead;
+    s_ota.erased_through = 0;
+    s_ota.erase_calls = 0;
+    s_ota.erase_total_us = 0;
+    memset(&s_ota.write_timing, 0, sizeof(s_ota.write_timing));
     s_ota.active = true;
     snprintf(s_ota.target_version, sizeof(s_ota.target_version), "%s", target_version != NULL ? target_version : "unknown");
     firmware_ota_unlock();
@@ -659,16 +748,36 @@ esp_err_t firmware_ota_begin(size_t image_size, const char *target_version)
     return ESP_OK;
 }
 
+static esp_err_t firmware_ota_write_in_transaction(const void *data, size_t size);
+
 esp_err_t firmware_ota_write(const void *data, size_t size)
+{
+    const int64_t transaction_started_us = esp_timer_get_time();
+    if (!firmware_ota_transaction_lock()) {
+        return ESP_ERR_INVALID_STATE;
+    }
+    s_ota.write_timing.transaction_wait_us += (uint64_t)(esp_timer_get_time() - transaction_started_us);
+    esp_err_t result = firmware_ota_write_in_transaction(data, size);
+    firmware_ota_transaction_unlock();
+    return result;
+}
+
+static esp_err_t firmware_ota_write_in_transaction(const void *data, size_t size)
 {
     if (data == NULL || size == 0) {
         return ESP_ERR_INVALID_ARG;
     }
 
+    const int64_t writer_started_us = esp_timer_get_time();
     firmware_ota_lock();
+    s_ota.write_timing.writer_wait_us += (uint64_t)(esp_timer_get_time() - writer_started_us);
     bool active = s_ota.active;
     esp_ota_handle_t handle = s_ota.handle;
     const esp_partition_t *partition = s_ota.update_partition;
+    if (size > SIZE_MAX - s_ota.bytes_written) {
+        firmware_ota_unlock();
+        return ESP_ERR_INVALID_SIZE;
+    }
     size_t next_size = s_ota.bytes_written + size;
     size_t expected_size = s_ota.expected_size;
 
@@ -686,7 +795,42 @@ esp_err_t firmware_ota_write(const void *data, size_t size)
     /* 修复3/5：持锁跑 esp_ota_write，与 abort/finish 串行访问同一 esp_ota handle，
      * 消除 write(worker) vs abort(timer/host) 的 handle race（砖机风险）。esp_ota_write
      * 通常 <50ms；期间 abort 会等锁——等 write 完成再取消，正是期望语义（不并发损坏）。 */
-    esp_err_t ret = esp_ota_write(handle, data, size);
+    esp_err_t ret = ESP_OK;
+    if (s_ota.erase_ahead) {
+        while (ret == ESP_OK && s_ota.erased_through < next_size) {
+            firmware_ota_erase_range_t range;
+            if (!firmware_ota_next_erase_range(
+                    partition->size, expected_size, partition->erase_size,
+                    s_ota.erased_through, next_size, &range) || range.length == 0) {
+                ret = ESP_ERR_INVALID_SIZE;
+                break;
+            }
+            const int64_t started_us = esp_timer_get_time();
+            ret = esp_partition_erase_range(partition, range.offset, range.length);
+            s_ota.erase_total_us += (uint64_t)(esp_timer_get_time() - started_us);
+            s_ota.erase_calls++;
+            if (ret == ESP_OK) {
+                s_ota.erased_through = range.offset + range.length;
+            }
+        }
+    }
+    if (ret == ESP_OK) {
+        uint32_t cpu_before = firmware_ota_platform_cpu_mhz != NULL
+            ? firmware_ota_platform_cpu_mhz() : 0;
+        const int64_t sdk_started_us = esp_timer_get_time();
+        ret = esp_ota_write(handle, data, size);
+        uint32_t elapsed_us = (uint32_t)(esp_timer_get_time() - sdk_started_us);
+        uint32_t cpu_after = firmware_ota_platform_cpu_mhz != NULL
+            ? firmware_ota_platform_cpu_mhz() : 0;
+        s_ota.write_timing.calls++;
+        s_ota.write_timing.sdk_write_us += elapsed_us;
+        if (elapsed_us > s_ota.write_timing.sdk_write_max_us) s_ota.write_timing.sdk_write_max_us = elapsed_us;
+        if (cpu_before == 40) s_ota.write_timing.cpu_40++;
+        else if (cpu_before == 80) s_ota.write_timing.cpu_80++;
+        else if (cpu_before == 160) s_ota.write_timing.cpu_160++;
+        else s_ota.write_timing.cpu_other++;
+        s_ota.write_timing.cpu_changed += cpu_before != cpu_after ? 1U : 0U;
+    }
     if (ret == ESP_OK) {
         s_ota.bytes_written = next_size;
     }
@@ -699,12 +843,28 @@ esp_err_t firmware_ota_write(const void *data, size_t size)
         status_led_set_error(STATUS_LED_ERROR_DOMAIN_OTA, STATUS_LED_ERROR_HARD, "ota_write_failed");
         return ret;
     }
+    const int64_t runtime_started_us = esp_timer_get_time();
     firmware_ota_set_runtime_active(true, next_size, expected_size, NULL);
+    s_ota.write_timing.runtime_publish_us += (uint64_t)(esp_timer_get_time() - runtime_started_us);
+    const int64_t timer_started_us = esp_timer_get_time();
     firmware_ota_refresh_inactivity_timeout();
+    s_ota.write_timing.timer_refresh_us += (uint64_t)(esp_timer_get_time() - timer_started_us);
     return ESP_OK;
 }
 
+static esp_err_t firmware_ota_finish_in_transaction(bool reboot_after_set_boot);
+
 esp_err_t firmware_ota_finish(bool reboot_after_set_boot)
+{
+    if (!firmware_ota_transaction_lock()) {
+        return ESP_ERR_INVALID_STATE;
+    }
+    esp_err_t result = firmware_ota_finish_in_transaction(reboot_after_set_boot);
+    firmware_ota_transaction_unlock();
+    return result;
+}
+
+static esp_err_t firmware_ota_finish_in_transaction(bool reboot_after_set_boot)
 {
     firmware_ota_lock();
     bool active = s_ota.active;
@@ -737,6 +897,21 @@ esp_err_t firmware_ota_finish(bool reboot_after_set_boot)
 
     /* 修复3/5：持锁跑 esp_ota_end + set_boot_partition，与 write/abort 串行访问同一 handle，
      * 消除 finish(host) vs write(worker)/abort(timer) 的 handle race（砖机风险）。 */
+    ESP_LOGI(TAG, "OTA write phases calls=%u transaction_wait_us=%llu writer_wait_us=%llu sdk_write_us=%llu sdk_write_max_us=%u runtime_publish_us=%llu timer_refresh_us=%llu cpu40=%u cpu80=%u cpu160=%u cpu_other=%u cpu_changed=%u",
+        (unsigned)s_ota.write_timing.calls,
+        (unsigned long long)s_ota.write_timing.transaction_wait_us,
+        (unsigned long long)s_ota.write_timing.writer_wait_us,
+        (unsigned long long)s_ota.write_timing.sdk_write_us,
+        (unsigned)s_ota.write_timing.sdk_write_max_us,
+        (unsigned long long)s_ota.write_timing.runtime_publish_us,
+        (unsigned long long)s_ota.write_timing.timer_refresh_us,
+        (unsigned)s_ota.write_timing.cpu_40, (unsigned)s_ota.write_timing.cpu_80,
+        (unsigned)s_ota.write_timing.cpu_160, (unsigned)s_ota.write_timing.cpu_other,
+        (unsigned)s_ota.write_timing.cpu_changed);
+    ESP_LOGI(TAG, "OTA storage erase mode=%s calls=%u total_ms=%u erased_bytes=%u image_bytes=%u",
+             s_ota.erase_ahead ? "bounded_ahead" : "idf_sequential",
+             (unsigned)s_ota.erase_calls, (unsigned)(s_ota.erase_total_us / 1000),
+             (unsigned)s_ota.erased_through, (unsigned)bytes_written);
     esp_err_t ret = esp_ota_end(handle);
     if (ret != ESP_OK) {
         firmware_ota_reset_session_locked();
@@ -786,7 +961,18 @@ esp_err_t firmware_ota_finish(bool reboot_after_set_boot)
     return ESP_OK;
 }
 
+static void firmware_ota_abort_in_transaction(uint32_t reason);
+
 void firmware_ota_abort(uint32_t reason)
+{
+    if (!firmware_ota_transaction_lock()) {
+        return;
+    }
+    firmware_ota_abort_in_transaction(reason);
+    firmware_ota_transaction_unlock();
+}
+
+static void firmware_ota_abort_in_transaction(uint32_t reason)
 {
     firmware_ota_lock();
     bool active = s_ota.active;
@@ -945,6 +1131,23 @@ bool firmware_ota_consume_usb_command(const char *line)
     if (strcmp(cmd, "BLOCKER") == 0) {
         firmware_ota_blocker_t blocker = firmware_ota_get_blocker();
         ESP_LOGI(TAG, "OTA BLOCKER: %s", firmware_ota_blocker_name(blocker));
+        return true;
+    }
+    if (strcmp(cmd, "WIRE:STATUS") == 0) {
+        if (ble_firmware_ota_is_deflate_advertised != NULL) {
+            ESP_LOGI(TAG, "OTA WIRE mode=%s persistent=0 default_on_boot=auto",
+                ble_firmware_ota_is_deflate_advertised() ? "auto" : "raw");
+        } else {
+            ESP_LOGW(TAG, "OTA WIRE advertisement override unsupported");
+        }
+        return true;
+    }
+    if (strcmp(cmd, "WIRE:RAW") == 0 || strcmp(cmd, "WIRE:AUTO") == 0) {
+        bool enabled = strcmp(cmd, "WIRE:AUTO") == 0;
+        bool applied = ble_firmware_ota_set_deflate_advertisement != NULL &&
+            ble_firmware_ota_set_deflate_advertisement(enabled);
+        ESP_LOGI(TAG, "OTA WIRE requested=%s applied=%u persistent=0 default_on_boot=auto",
+            enabled ? "auto" : "raw", applied ? 1U : 0U);
         return true;
     }
     if (strcmp(cmd, "ABORT") == 0) {

@@ -170,10 +170,12 @@ def main() -> int:
         "concurrent DLE callers must coalesce behind one in-flight HCI request",
     )
     require(
-        "BLE_HID_GAP_AUDIO_DATA_LEN_REQUEST_TIMEOUT_MS 750U" in gap
-        and "pending_expired" in dle_request
-        and "data length completion timed out" in dle_request,
-        "a lost DLE completion event must expire the single-flight owner and permit a bounded retry",
+        "pending_expired" not in dle_request
+        and "s_audio_data_length_configured = !reconfigure_requested;" in dle_request
+        and "s_audio_data_length_generation == generation" in dle_request
+        and dle_request.index("s_audio_data_length_request_pending = false;")
+        > dle_request.index("int rc = ble_gap_set_data_len("),
+        "actual HCI completion owns single-flight; unchanged effective length needs no change event, and old links cannot settle new commands",
     )
     require(
         "if (transfer_link_ready) {" in ota_adapter
@@ -216,9 +218,9 @@ def main() -> int:
     require(
         "#define BLE_HID_GAP_AUDIO_DATA_LEN_2M_PACKET_TIME_US 965U" in gap
         and "max_tx_time_us >= minimum_packet_time_us" in gap
-        and "s_audio_data_length_ready = ble_hid_gap_data_length_ready_for_phy(" in phy_update
-        and "s_audio_data_length_request_pending = false;" in phy_update,
-        "a 251-octet result must also carry the measured Windows bulk-ready airtime at the negotiated PHY without leaving EALREADY pending",
+        and "ble_hid_gap_refresh_audio_data_length_readiness_locked();" in phy_update
+        and "s_audio_data_length_request_pending = false;" not in phy_update,
+        "the measured Windows bulk-ready PHY policy stays separate from the HCI command owner's pending slot",
     )
     require(
         "restore_full_data_length" in gap

@@ -39,6 +39,9 @@ static void ble_audio_stream_stats_audio_pace_wait(uint32_t session, uint32_t ti
     (void)session; (void)ticks;
 }
 static void ble_audio_stream_delay_ms(uint32_t ms) { vTaskDelay((ms + 9u) / 10u); }
+/* This normal-media fixture never enters preroll; its actual precise blocker
+ * and saved preroll packet sequence are covered by test_audio_cooperative_wait. */
+static void ble_audio_cooperative_wait_ms(uint32_t ms) { vTaskDelay((ms + 9u) / 10u); }
 '''
     code += constants + '\n' + function(source, 'ble_audio_stream_notify_success_delay')
     code += r'''
@@ -63,6 +66,7 @@ static void run(const uint16_t *sizes, uint32_t count) {
         bytes, waited, max_between_yields);
 }
 int main(void) {
+    (void)ble_audio_stream_delay_ms;
     /* Full ATT packets, smallest tails, and the installed-session mixture. */
     for (uint16_t size = 32u; size <= 480u; size += 16u) run(&size, 1u);
     const uint16_t mixed[] = {288u, 160u, 352u, 480u, 128u, 64u, 224u};

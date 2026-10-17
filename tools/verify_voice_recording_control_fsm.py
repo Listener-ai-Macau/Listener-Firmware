@@ -221,7 +221,7 @@ def verify_manual_pairing_handoff(source: str) -> None:
     )
     for token in [
         "static esp_err_t voice_recording_control_recovery(",
-        'strcmp(queued.command, "VREC:RECOVERY:TYPE:SILENT:FRESH") == 0',
+        'strcmp(queued->command, "VREC:RECOVERY:TYPE:SILENT:FRESH") == 0',
         '"~VREC:RESULT command=%s result=%s\\n"',
         'command_ret == ESP_OK ? "OK" : esp_err_to_name(command_ret)',
     ]:

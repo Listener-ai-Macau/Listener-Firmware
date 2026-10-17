@@ -22,7 +22,7 @@ def main():
     names = ('SAMPLE_RATE_HZ', 'FRAME_MS', 'FRAME_SAMPLES', 'FRAME_BYTES',
              'LOG_INTERVAL_FRAMES', 'STREAM_BATCH_FRAMES', 'STREAM_BATCH_BYTES',
              'STREAM_PROGRESS_LOG_PACKET_INTERVAL', 'VOICE_PREROLL_MAX_MS',
-             'VOICE_PREROLL_FRAMES', 'VOICE_PREROLL_BYTES')
+             'WAKE_RESUME_LEASE_MS', 'VOICE_PREROLL_FRAMES', 'VOICE_PREROLL_BYTES')
     constants = '\n'.join(re.search(r'^#define AUDIO_CAPTURE_'+name+r'[^\n]*(?:\n[ \t]+[^\n]+)?', source, re.M).group() for name in names)
     types = re.search(r'typedef enum \{[^}]*\} audio_capture_export_mode_t;', source).group()
     types += re.search(r'typedef struct \{[^}]*\} audio_capture_export_state_t;', source).group()
@@ -33,6 +33,7 @@ def main():
 #include <stdint.h>
 #include <stdio.h>
 #include <string.h>
+#include <stdlib.h>
 #include <inttypes.h>
 #ifdef _MSC_VER
 #pragma warning(disable:4505 4189)
@@ -40,7 +41,12 @@ def main():
 typedef int esp_err_t;
 typedef unsigned TickType_t;
 enum { ESP_OK=0, ESP_ERR_INVALID_STATE=1, ESP_ERR_INVALID_ARG=2,
-       ESP_ERR_INVALID_SIZE=3, ESP_ERR_NOT_SUPPORTED=4, ESP_ERR_NOT_FOUND=5 };
+       ESP_ERR_INVALID_SIZE=3, ESP_ERR_NOT_SUPPORTED=4, ESP_ERR_NOT_FOUND=5, ESP_ERR_NO_MEM=6 };
+#define MALLOC_CAP_SPIRAM 1
+#define MALLOC_CAP_8BIT 2
+static bool fail_allocation;
+static void *heap_caps_malloc(size_t n,int caps) {(void)caps;return fail_allocation?NULL:malloc(n);}
+static void heap_caps_free(void *p) {free(p);}
 enum { AUDIO_CAPTURE_STOP_ORIGIN_USER=0, AUDIO_CAPTURE_STOP_ORIGIN_VOICE_ACTIVATION=1,
        AUDIO_CAPTURE_STOP_ORIGIN_VOICE_ACTIVATION_MAX_DURATION=2 };
 typedef int audio_capture_stop_origin_t;
@@ -98,6 +104,10 @@ static uint64_t s_voice_preroll_frame_ids[AUDIO_CAPTURE_VOICE_PREROLL_FRAMES];
 static uint16_t s_voice_preroll_write_index,s_voice_preroll_count,s_session_preroll_start_index,s_session_preroll_count;
 static uint32_t s_wake_resume_session_id;
 static uint64_t s_wake_resume_next_frame_id;
+static uint32_t s_prior_wake_resume_session_id,s_wake_resume_lease_request_id,s_wake_resume_lease_session_id;
+static uint64_t s_prior_wake_resume_next_frame_id,s_wake_resume_lease_next_frame_id;
+static uint8_t *s_session_resume_snapshot;
+static uint16_t s_session_resume_snapshot_frames;
 static uint16_t s_next_session_start_origin_override=UINT16_MAX;
 static bool s_pdm_afe_stop_drain_requested,s_pdm_afe_stop_drain_feed_cutoff_ack,s_pdm_afe_stop_drain_complete;
 static esp_err_t ble_audio_stream_send_session_audio(uint32_t id,uint16_t seq,const uint8_t *p,uint16_t n,uint16_t count,uint8_t level) {
@@ -114,7 +124,8 @@ static esp_err_t ble_audio_stream_send_session_audio(uint32_t id,uint16_t seq,co
                  'audio_capture_count_audio_packets', 'audio_capture_packet_sequence_can_advance'):
         code += function(source,name)+'\n'
     if 'static esp_err_t audio_capture_session_begin_internal(' in source:
-        for name in ('audio_capture_select_wake_resume','audio_capture_session_begin_internal',
+        for name in ('audio_capture_select_wake_resume','audio_capture_reserve_wake_resume',
+                     'audio_capture_release_wake_resume','audio_capture_session_begin_internal',
                      'audio_capture_session_begin_with_preroll', 'audio_capture_session_begin_with_preroll_and_origin',
                      'audio_capture_session_resume_wake'):
             code += function(source,name)+'\n'
@@ -179,6 +190,46 @@ int main(void) {
     previous=s_export_state.session_id;fail_stop=true;
     assert(audio_capture_session_stop_with_origin(AUDIO_CAPTURE_STOP_ORIGIN_VOICE_ACTIVATION_MAX_DURATION)==ESP_OK);pump(1);
     assert(audio_capture_session_resume_wake(previous,0x8001)!=ESP_OK);
+    /* Reproduce the actual missing lifecycle boundary: a newer hidden
+     * segment has started while Type is still confirming the old phrase.
+     * Its PCM is unowned and must not be spliced into the accepted body. */
+    previous=expired_wake(24);
+    const unsigned owner_prefix_count=output_count;
+    assert(audio_capture_session_begin_with_preroll(2000)==ESP_OK);pump(25);
+    uint16_t index=0,frames=0;
+    printf("rotation checkpoint previous=%u primary=%u next=%llu source=%llu active=%u\n",previous,s_wake_resume_session_id,(unsigned long long)s_wake_resume_next_frame_id,(unsigned long long)s_source_frame_id,s_export_state.active?1:0);fflush(stdout);
+    assert(audio_capture_select_wake_resume(previous,&index,&frames)==ESP_OK);
+    assert(audio_capture_reserve_wake_resume(previous,100)==ESP_OK);
+    assert(audio_capture_reserve_wake_resume(previous,101)==ESP_ERR_INVALID_STATE);
+    audio_capture_release_wake_resume(99); /* A stale release cannot revoke the lease. */
+    assert(s_wake_resume_lease_request_id==100);
+    assert(audio_capture_session_stop_with_origin(AUDIO_CAPTURE_STOP_ORIGIN_VOICE_ACTIVATION_MAX_DURATION)==ESP_OK);
+    pump(1);pump(120); /* Existing transaction may drain >2 s; no new expiry. */
+    assert(audio_capture_select_wake_resume(previous,&index,&frames)==ESP_OK && frames>100);
+    output_count=owner_prefix_count; /* Type withheld all unconfirmed ambient PCM. */
+    fail_allocation=true;
+    assert(audio_capture_session_resume_wake(previous,0x8001)==ESP_ERR_NO_MEM);
+    assert(!s_export_state.active && s_wake_resume_lease_request_id==100);
+    fail_allocation=false;
+    assert(audio_capture_session_resume_wake(previous,0x8001)==ESP_OK);
+    pump(10);
+    assert(audio_capture_session_stop_with_origin(AUDIO_CAPTURE_STOP_ORIGIN_USER)==ESP_OK);pump(1);
+    assert(output_count==marker-1);
+    for(unsigned k=0;k<output_count;k++)assert(output[k]==k+1);
+    assert(s_session_resume_snapshot==NULL && s_wake_resume_lease_request_id==0);
+    /* Enlarged storage cannot authorize an already stale source. */
+    previous=expired_wake(100);
+    assert(audio_capture_reserve_wake_resume(previous,200)==ESP_ERR_NOT_FOUND);
+    previous=expired_wake(24);
+    assert(audio_capture_reserve_wake_resume(previous,201)==ESP_OK);
+    pump(110);audio_capture_release_wake_resume(201);
+    assert(audio_capture_session_resume_wake(previous,0x8001)==ESP_ERR_NOT_FOUND);
+    /* An explicit stop still severs continuity, including a reserved cursor. */
+    previous=expired_wake(24);
+    assert(audio_capture_session_begin_with_preroll(2000)==ESP_OK);pump(1);
+    assert(audio_capture_reserve_wake_resume(previous,202)==ESP_OK);
+    assert(audio_capture_session_stop_with_origin(AUDIO_CAPTURE_STOP_ORIGIN_USER)==ESP_OK);pump(1);
+    assert(audio_capture_session_resume_wake(previous,0x8001)==ESP_ERR_NOT_FOUND);
     puts("PASS: production wake rotation/resume PCM has no gaps or overlaps; user STOP drains; expired/mismatched/failed histories rejected");
 }
 '''

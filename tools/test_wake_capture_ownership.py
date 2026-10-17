@@ -91,6 +91,7 @@ static bool s_active_session_body_speech_seen, s_active_session_host_endpoint_ow
 static bool s_host_endpoint_ownership_logged;
 static bool s_ensure_valid, s_ensure_cancelled_request_valid, s_ensure_request_watermark_valid;
 static uint32_t s_ensure_request_id, s_ensure_previous_segment_id, s_ensure_actual_segment_id;
+static uint32_t s_ensure_retiring_segment_id;
 static uint32_t s_ensure_cancelled_request_id, s_ensure_request_watermark;
 static voice_recording_ensure_status_t s_ensure_status;
 static TickType_t s_ensure_deadline_tick, s_pending_start_deadline_tick, s_pending_start_next_retry_tick;
@@ -109,6 +110,22 @@ static unsigned begin_calls, cancel_calls, marker_calls, queue_resets;
 static uint32_t marker_id;
 static uint16_t marker_origin;
 static esp_err_t marker_result, begin_result;
+static esp_err_t reserve_result=ESP_ERR_NOT_FOUND, retire_result;
+static uint32_t reserved_previous,reserved_request;
+static unsigned retire_calls;
+enum { AUDIO_CAPTURE_STOP_ORIGIN_VOICE_ACTIVATION_MAX_DURATION=2 };
+typedef int audio_capture_stop_origin_t;
+static esp_err_t audio_capture_reserve_wake_resume(uint32_t previous,uint32_t request) {
+    reserved_previous=previous;reserved_request=request;return reserve_result;
+}
+static void audio_capture_release_wake_resume(uint32_t request) {
+    if(reserved_request==request)reserved_request=0;
+}
+static esp_err_t voice_recording_control_exit_recording_with_origin(const char *source,audio_capture_stop_origin_t origin) {
+    (void)source;assert(origin==AUDIO_CAPTURE_STOP_ORIGIN_VOICE_ACTIVATION_MAX_DURATION);
+    retire_calls++;if(retire_result==ESP_OK)s_state=VOICE_RECORDING_STATE_TRANSFERRING;
+    return retire_result;
+}
 static bool transport_ready=true, va_power_allowed=true;
 static unsigned activity_calls;
 static uint32_t selected_preroll;
@@ -167,6 +184,7 @@ static esp_err_t voice_recording_control_enter_recording(const char *source, boo
         'ensure_start_origin', 'tick_reached', 'ensure_status_terminal',
         'ensure_failed', 'ensure_pending_for_segment', 'ensure_deadline_reached',
         'expire_ensure_reservation', 'schedule_ensure_successor', 'poll_ensure_reservation',
+        'resume_older_wake_source',
     ]
     if re.search(r'voice_recording_control_adopt_active_wake_session\([^;]*\)\s*\{', source):
         functions += ['adopt_active_wake_session']
@@ -219,6 +237,8 @@ static void reset_capture(bool automatic, bool visible) {
     s_enrollment_start_pending=false; s_ensure_valid=false; s_ensure_cancelled_request_valid=false;
     s_ensure_request_watermark_valid=false; s_ensure_request_watermark=0;
     s_ensure_status=VOICE_RECORDING_ENSURE_STATUS_NONE;
+    s_ensure_retiring_segment_id=0;reserved_previous=reserved_request=0;
+    reserve_result=ESP_ERR_NOT_FOUND;retire_result=ESP_OK;retire_calls=0;
     s_ensure_deadline_tick=0; voice_recording_control_reset_pending_start();
     s_pending_start_owner=VOICE_RECORDING_PENDING_OWNER_NONE;
     s_voice_auto_rearm_await_quiet_edge=false; transport_ready=va_power_allowed=true; activity_calls=0;
@@ -399,7 +419,40 @@ int main(void) {
     assert(!endpoint_step(6000,false)); /* Normal body follows the host endpoint. */
     reset_capture(false,true); s_active_session_enrollment=true;
     assert(!endpoint_step(6000,false)); /* Enrollment remains explicitly host timed. */
-    puts("PASS: production ENSURE/pending lifecycle promotes queued ambient only; preserves source, explicit/enrollment owners, transport retry, cancel/timeout, 120s body and hidden rotations");
+    /* Late admission must resume the original source, never grant the newer
+     * ambient segment ownership or replay its overlapping pre-roll. */
+    reset_capture(true,false);reserve_result=ESP_OK;
+    uint32_t original=physical_id-1, retired=physical_id;
+    assert(ensure(100,original)==ESP_OK && retire_calls==1);
+    assert(reserved_previous==original && reserved_request==100);
+    assert(s_ensure_retiring_segment_id==retired && s_ensure_actual_segment_id==0);
+    assert(!s_active_session_host_endpoint_owned && marker_calls==0);
+    assert(s_pending_start_owner==VOICE_RECORDING_PENDING_OWNER_WAKE_CONTINUATION);
+    deadline=s_ensure_deadline_tick;
+    s_state=VOICE_RECORDING_STATE_IDLE;now_tick+=200;
+    assert(voice_recording_control_schedule_ensure_successor(retired,"retire_complete"));
+    assert(s_pending_start_deadline_tick==deadline);
+    voice_recording_control_poll_pending_start();
+    assert(s_ensure_status==VOICE_RECORDING_ENSURE_STATUS_ACTIVE && begin_calls==1);
+    assert(s_active_session_host_endpoint_owned && selected_preroll==0);
+    /* Even a positive stale-source stub cannot steal a visible/manual owner. */
+    reset_capture(false,true);reserve_result=ESP_OK;
+    assert(ensure(100,physical_id-1)==ESP_ERR_INVALID_STATE && retire_calls==0 && reserved_request==0);
+    reset_capture(true,true);reserve_result=ESP_OK;
+    assert(ensure(100,physical_id-1)==ESP_ERR_INVALID_STATE && retire_calls==0);
+    reset_capture(true,false);reserve_result=ESP_OK;s_active_session_enrollment=true;
+    assert(ensure(100,physical_id-1)==ESP_ERR_INVALID_STATE && retire_calls==0);
+    /* Admission failure cannot leave an orphan source lease or cancel owner. */
+    reset_capture(true,false);reserve_result=ESP_OK;retire_result=ESP_ERR_INVALID_STATE;
+    assert(ensure(100,physical_id-1)==ESP_ERR_INVALID_STATE && reserved_request==0);
+    reset_capture(true,false);reserve_result=ESP_OK;
+    assert(ensure(100,physical_id-1)==ESP_OK);
+    assert(abort_request(100)==ESP_OK && reserved_request==0 && !s_pending_start);
+    reset_capture(true,false);reserve_result=ESP_OK;
+    assert(ensure(100,physical_id-1)==ESP_OK);
+    now_tick=s_pending_start_deadline_tick;voice_recording_control_poll_pending_start();
+    assert(reserved_request==0 && !s_pending_start && s_ensure_status==VOICE_RECORDING_ENSURE_STATUS_FAILED);
+    puts("PASS: production ENSURE original-source retirement/resume, explicit owners, bounded lease, cancellation and deadline cleanup");
     return 0;
 }
 '''

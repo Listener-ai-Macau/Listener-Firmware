@@ -153,8 +153,9 @@
 #define AUDIO_CAPTURE_PDM_VAD_LOW_SNR_DENOMINATOR 2U
 #define AUDIO_CAPTURE_PDM_VAD_LOW_SNR_MIN_MARGIN 3U
 #define AUDIO_CAPTURE_VOICE_PREROLL_MAX_MS 2000U
+#define AUDIO_CAPTURE_WAKE_RESUME_LEASE_MS 3000U
 #define AUDIO_CAPTURE_VOICE_PREROLL_FRAMES \
-    (AUDIO_CAPTURE_VOICE_PREROLL_MAX_MS / AUDIO_CAPTURE_FRAME_MS)
+    ((AUDIO_CAPTURE_VOICE_PREROLL_MAX_MS + AUDIO_CAPTURE_WAKE_RESUME_LEASE_MS) / AUDIO_CAPTURE_FRAME_MS)
 #define AUDIO_CAPTURE_VOICE_PREROLL_BYTES \
     ((size_t)AUDIO_CAPTURE_VOICE_PREROLL_FRAMES * AUDIO_CAPTURE_FRAME_BYTES)
 #if defined(CONFIG_AUDIO_CAPTURE_SPH0655_CLK_INVERT) && CONFIG_AUDIO_CAPTURE_SPH0655_CLK_INVERT
@@ -296,6 +297,16 @@ static uint16_t s_session_preroll_start_index;
 static uint16_t s_session_preroll_count;
 static uint32_t s_wake_resume_session_id;
 static uint64_t s_wake_resume_next_frame_id;
+static uint32_t s_prior_wake_resume_session_id;
+static uint64_t s_prior_wake_resume_next_frame_id;
+static uint32_t s_wake_resume_lease_request_id;
+static uint32_t s_wake_resume_lease_session_id;
+static uint64_t s_wake_resume_lease_next_frame_id;
+/* Only a qualified continuation snapshots PCM; normal pre-roll is still 2 s.
+ * The extra history holds the original cursor during the existing 3 s ENSURE
+ * transaction. It grants neither a longer recording nor a fresh owner. */
+static uint8_t *s_session_resume_snapshot;
+static uint16_t s_session_resume_snapshot_frames;
 
 static esp_err_t audio_capture_i2s_init(void);
 
@@ -523,6 +534,16 @@ static void audio_capture_export_cleanup(void)
     memset(&s_export_state, 0, sizeof(s_export_state));
     s_wake_resume_session_id = 0u;
     s_wake_resume_next_frame_id = 0u;
+    s_prior_wake_resume_session_id = 0u;
+    s_prior_wake_resume_next_frame_id = 0u;
+    s_wake_resume_lease_request_id = 0u;
+    s_wake_resume_lease_session_id = 0u;
+    s_wake_resume_lease_next_frame_id = 0u;
+    if (s_session_resume_snapshot != NULL) {
+        heap_caps_free(s_session_resume_snapshot);
+        s_session_resume_snapshot = NULL;
+    }
+    s_session_resume_snapshot_frames = 0u;
     s_capture_transport_backpressure_active = false;
     s_capture_transport_backpressure_events = 0;
 #ifdef CONFIG_AUDIO_CAPTURE_MIC_SPH0655_PDM
@@ -737,13 +758,21 @@ static esp_err_t audio_capture_select_wake_resume(
     uint16_t *start_index,
     uint16_t *frame_count)
 {
-    if (previous_session_id == 0u ||
-        previous_session_id != s_wake_resume_session_id ||
-        s_wake_resume_next_frame_id == 0u ||
-        s_wake_resume_next_frame_id > s_source_frame_id + 1u) {
+    const bool leased = previous_session_id != 0u &&
+        previous_session_id == s_wake_resume_lease_session_id &&
+        s_wake_resume_lease_request_id != 0u;
+    uint64_t next_frame_id = leased ? s_wake_resume_lease_next_frame_id :
+        previous_session_id == s_wake_resume_session_id
+            ? s_wake_resume_next_frame_id :
+        previous_session_id == s_prior_wake_resume_session_id
+            ? s_prior_wake_resume_next_frame_id : 0u;
+    if (previous_session_id == 0u || next_frame_id == 0u ||
+        next_frame_id > s_source_frame_id + 1u ||
+        (!leased && s_source_frame_id + 1u - next_frame_id >
+            AUDIO_CAPTURE_VOICE_PREROLL_MAX_MS / AUDIO_CAPTURE_FRAME_MS)) {
         return ESP_ERR_NOT_FOUND;
     }
-    uint64_t expected = s_wake_resume_next_frame_id;
+    uint64_t expected = next_frame_id;
     *start_index = s_voice_preroll_write_index;
     *frame_count = 0u;
     const uint16_t oldest = (uint16_t)(
@@ -768,6 +797,46 @@ static esp_err_t audio_capture_select_wake_resume(
     return expected == s_source_frame_id + 1u
         ? ESP_OK
         : ESP_ERR_NOT_FOUND;
+}
+
+esp_err_t audio_capture_reserve_wake_resume(
+    uint32_t previous_session_id,
+    uint32_t request_id)
+{
+    if (request_id == 0u || s_state_mutex == NULL ||
+        xSemaphoreTake(s_state_mutex, portMAX_DELAY) != pdTRUE) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    esp_err_t result = ESP_ERR_INVALID_STATE;
+    if (s_wake_resume_lease_request_id == 0u ||
+        (s_wake_resume_lease_request_id == request_id &&
+         s_wake_resume_lease_session_id == previous_session_id)) {
+        uint16_t index = 0u;
+        uint16_t count = 0u;
+        result = audio_capture_select_wake_resume(previous_session_id, &index, &count);
+        if (result == ESP_OK) {
+            const uint64_t next_frame_id = s_source_frame_id + 1u - count;
+            s_wake_resume_lease_request_id = request_id;
+            s_wake_resume_lease_session_id = previous_session_id;
+            s_wake_resume_lease_next_frame_id = next_frame_id;
+        }
+    }
+    xSemaphoreGive(s_state_mutex);
+    return result;
+}
+
+void audio_capture_release_wake_resume(uint32_t request_id)
+{
+    if (request_id == 0u || s_state_mutex == NULL ||
+        xSemaphoreTake(s_state_mutex, portMAX_DELAY) != pdTRUE) {
+        return;
+    }
+    if (s_wake_resume_lease_request_id == request_id) {
+        s_wake_resume_lease_request_id = 0u;
+        s_wake_resume_lease_session_id = 0u;
+        s_wake_resume_lease_next_frame_id = 0u;
+    }
+    xSemaphoreGive(s_state_mutex);
 }
 
 static esp_err_t audio_capture_session_begin_internal(
@@ -844,7 +913,40 @@ static esp_err_t audio_capture_session_begin_internal(
      * limit is approached. */
     uint32_t total_frames = packet_safe_total_frames;
 
+    uint32_t snapshot_requested_frames =
+        (pre_roll_ms + AUDIO_CAPTURE_FRAME_MS - 1u) / AUDIO_CAPTURE_FRAME_MS;
+    if (snapshot_requested_frames > AUDIO_CAPTURE_VOICE_PREROLL_MAX_MS / AUDIO_CAPTURE_FRAME_MS) {
+        snapshot_requested_frames = AUDIO_CAPTURE_VOICE_PREROLL_MAX_MS / AUDIO_CAPTURE_FRAME_MS;
+    }
+    const uint16_t snapshot_frames = previous_session_id != 0u ? resume_frame_count :
+        (uint16_t)(snapshot_requested_frames < s_voice_preroll_count
+            ? snapshot_requested_frames : s_voice_preroll_count);
+    const uint16_t snapshot_start = previous_session_id != 0u ? resume_start_index :
+        (uint16_t)((s_voice_preroll_write_index + AUDIO_CAPTURE_VOICE_PREROLL_FRAMES -
+                    snapshot_frames) % AUDIO_CAPTURE_VOICE_PREROLL_FRAMES);
+    uint8_t *resume_snapshot = NULL;
+    if (snapshot_frames > 0u) {
+        /* Pin before queueing START: the capture task continues filling the
+         * ring while the BLE worker drains the retired ambient segment. */
+        resume_snapshot = heap_caps_malloc(
+            (size_t)snapshot_frames * (AUDIO_CAPTURE_FRAME_BYTES + 1u),
+            MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+        if (resume_snapshot == NULL) {
+            xSemaphoreGive(s_state_mutex);
+            return ESP_ERR_NO_MEM;
+        }
+        for (uint16_t i = 0u; i < snapshot_frames; ++i) {
+            const uint16_t index = (uint16_t)(
+                (snapshot_start + i) % AUDIO_CAPTURE_VOICE_PREROLL_FRAMES);
+            memcpy(resume_snapshot + (size_t)i * AUDIO_CAPTURE_FRAME_BYTES,
+                   s_voice_preroll[index], AUDIO_CAPTURE_FRAME_BYTES);
+            resume_snapshot[(size_t)snapshot_frames * AUDIO_CAPTURE_FRAME_BYTES + i] =
+                s_voice_preroll_levels[index];
+        }
+    }
     memset(&s_export_state, 0, sizeof(s_export_state));
+    s_session_resume_snapshot = resume_snapshot;
+    s_session_resume_snapshot_frames = snapshot_frames;
     s_export_state.mode = AUDIO_CAPTURE_EXPORT_MODE_SESSION;
     s_export_state.duration_seconds = 0;
     s_export_state.total_frames = total_frames;
@@ -858,8 +960,8 @@ static esp_err_t audio_capture_session_begin_internal(
     uint32_t requested_pre_roll_frames =
         (pre_roll_ms + AUDIO_CAPTURE_FRAME_MS - 1u) /
         AUDIO_CAPTURE_FRAME_MS;
-    if (requested_pre_roll_frames > AUDIO_CAPTURE_VOICE_PREROLL_FRAMES) {
-        requested_pre_roll_frames = AUDIO_CAPTURE_VOICE_PREROLL_FRAMES;
+    if (requested_pre_roll_frames > AUDIO_CAPTURE_VOICE_PREROLL_MAX_MS / AUDIO_CAPTURE_FRAME_MS) {
+        requested_pre_roll_frames = AUDIO_CAPTURE_VOICE_PREROLL_MAX_MS / AUDIO_CAPTURE_FRAME_MS;
     }
     const uint16_t buffered_pre_roll_frames = s_voice_preroll_count;
     s_session_preroll_count = (uint16_t)requested_pre_roll_frames;
@@ -872,12 +974,19 @@ static esp_err_t audio_capture_session_begin_internal(
          s_session_preroll_count) %
         AUDIO_CAPTURE_VOICE_PREROLL_FRAMES);
     if (previous_session_id != 0u) {
-        s_session_preroll_start_index = resume_start_index;
+        s_session_preroll_start_index = 0u;
         s_session_preroll_count = resume_frame_count;
     }
     s_export_state.last_source_frame_id = s_source_frame_id;
-    s_wake_resume_session_id = 0u;
-    s_wake_resume_next_frame_id = 0u;
+    if (previous_session_id != 0u || pre_roll_ms == 0u) {
+        s_wake_resume_session_id = 0u;
+        s_wake_resume_next_frame_id = 0u;
+        s_prior_wake_resume_session_id = 0u;
+        s_prior_wake_resume_next_frame_id = 0u;
+        s_wake_resume_lease_request_id = 0u;
+        s_wake_resume_lease_session_id = 0u;
+        s_wake_resume_lease_next_frame_id = 0u;
+    }
     uint32_t session_id = s_export_state.session_id;
     uint16_t session_start_origin = s_export_state.start_origin;
     uint16_t session_preroll_count = s_session_preroll_count;
@@ -1303,6 +1412,11 @@ esp_err_t audio_capture_set_idle_power_save(bool enabled, bool force)
             s_session_preroll_count = 0u;
             s_wake_resume_session_id = 0u;
             s_wake_resume_next_frame_id = 0u;
+            s_prior_wake_resume_session_id = 0u;
+            s_prior_wake_resume_next_frame_id = 0u;
+            s_wake_resume_lease_request_id = 0u;
+            s_wake_resume_lease_session_id = 0u;
+            s_wake_resume_lease_next_frame_id = 0u;
             if (s_voice_preroll != NULL) {
                 memset(
                     s_voice_preroll,
@@ -1451,18 +1565,28 @@ static esp_err_t audio_capture_send_session_preroll(
             xSemaphoreTake(s_state_mutex, portMAX_DELAY) != pdTRUE) {
             return ESP_ERR_INVALID_STATE;
         }
+        if (s_export_state.session_id != session_id ||
+            (s_session_resume_snapshot != NULL &&
+             s_session_resume_snapshot_frames != frame_count)) {
+            xSemaphoreGive(s_state_mutex);
+            return ESP_ERR_INVALID_STATE;
+        }
         for (uint16_t i = 0u; i < batch_frames; ++i) {
             uint16_t ring_index = (uint16_t)(
                 (s_session_preroll_start_index + emitted_frames + i) %
                 AUDIO_CAPTURE_VOICE_PREROLL_FRAMES);
             memcpy(
                 batch + ((size_t)i * AUDIO_CAPTURE_FRAME_BYTES),
-                s_voice_preroll[ring_index],
+                s_session_resume_snapshot != NULL
+                    ? s_session_resume_snapshot +
+                        (size_t)(emitted_frames + i) * AUDIO_CAPTURE_FRAME_BYTES
+                    : (const uint8_t *)s_voice_preroll[ring_index],
                 AUDIO_CAPTURE_FRAME_BYTES);
-            if (s_voice_preroll_levels[ring_index] >
-                raw_input_level_percent) {
-                raw_input_level_percent =
-                    s_voice_preroll_levels[ring_index];
+            const uint8_t level = s_session_resume_snapshot != NULL
+                ? s_session_resume_snapshot[(size_t)frame_count * AUDIO_CAPTURE_FRAME_BYTES + emitted_frames + i]
+                : s_voice_preroll_levels[ring_index];
+            if (level > raw_input_level_percent) {
+                raw_input_level_percent = level;
             }
         }
         xSemaphoreGive(s_state_mutex);
@@ -1484,6 +1608,17 @@ static esp_err_t audio_capture_send_session_preroll(
         emitted_frames = (uint16_t)(emitted_frames + batch_frames);
     }
     *next_packet_sequence = packet_sequence;
+    if (xSemaphoreTake(s_state_mutex, portMAX_DELAY) == pdTRUE) {
+        if (s_export_state.session_id == session_id) {
+            s_session_preroll_count = 0u;
+            if (s_session_resume_snapshot != NULL) {
+                heap_caps_free(s_session_resume_snapshot);
+                s_session_resume_snapshot = NULL;
+                s_session_resume_snapshot_frames = 0u;
+            }
+        }
+        xSemaphoreGive(s_state_mutex);
+    }
     return ESP_OK;
 }
 
@@ -1707,15 +1842,10 @@ static void audio_capture_process_frame(const int16_t *frame_buffer)
         }
 #endif
 #endif
-        /* Keep a continuous two-second wake history across hidden candidate
-         * rotations. While a session snapshot is still being exported,
-         * s_session_preroll_count stays non-zero and freezes the ring so the
-         * sender cannot race an overwrite. Once it reaches zero, active live
-         * PCM rolls into the same ring and becomes the next candidate's
-         * overlap. */
-        if (s_voice_activation_monitoring &&
-            !s_export_state.requested &&
-            (!s_export_state.active || s_session_preroll_count == 0u)) {
+        /* Source history must stay continuous while START/pre-roll queueing
+         * waits on BLE. Each session owns its immutable pre-roll snapshot;
+         * freezing this producer leaves holes in the next resume boundary. */
+        if (s_voice_activation_monitoring) {
             memcpy(
                 s_voice_preroll[s_voice_preroll_write_index],
                 frame_buffer,
@@ -2074,10 +2204,20 @@ static void audio_capture_process_frame(const int16_t *frame_buffer)
                     s_export_state.continuous_wake_boundary;
                 const uint64_t resume_next_frame_id =
                     s_export_state.last_source_frame_id + 1u;
+                const uint32_t prior_session_id = s_wake_resume_session_id;
+                const uint64_t prior_next_frame_id = s_wake_resume_next_frame_id;
+                const uint32_t lease_request_id = s_wake_resume_lease_request_id;
+                const uint32_t lease_session_id = s_wake_resume_lease_session_id;
+                const uint64_t lease_next_frame_id = s_wake_resume_lease_next_frame_id;
                 audio_capture_export_cleanup();
                 if (resumable_wake) {
                     s_wake_resume_session_id = session_id;
                     s_wake_resume_next_frame_id = resume_next_frame_id;
+                    s_prior_wake_resume_session_id = prior_session_id;
+                    s_prior_wake_resume_next_frame_id = prior_next_frame_id;
+                    s_wake_resume_lease_request_id = lease_request_id;
+                    s_wake_resume_lease_session_id = lease_session_id;
+                    s_wake_resume_lease_next_frame_id = lease_next_frame_id;
                 }
                 xSemaphoreGive(s_state_mutex);
             }

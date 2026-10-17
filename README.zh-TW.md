@@ -1,3 +1,16 @@
+## 下载 Listener · RC1
+
+| 用途 | 直接下载 |
+| --- | --- |
+| **Windows 软件** | **[下载 MSI · Type build36](https://github.com/Listener-ai-Macau/Listener-Type/releases/download/v1.0.6-rc1/ListenerType_1.0.6-rc1_x64_en-US.msi)** |
+| **固件：USB 烧写 / 蓝牙 OTA** | **[下载固件 ZIP · 两种方式共用](https://github.com/Listener-ai-Macau/Listener-Firmware/releases/download/v1.0.6-rc1/ListenerFirmware_1.0.6-rc1_ESP32S3.zip)** |
+
+固件适用 **ESP32-S3 N16R8**，构建 `c187a2cf42ab1d76`。USB 和蓝牙更新选择同一个 ZIP，无需再猜下载哪一个。
+RC1 仍为候选版本，偶发提前结束及强干扰限制见发布说明。
+[软件发布说明与校验](https://github.com/Listener-ai-Macau/Listener-Type/releases/tag/v1.0.6-rc1) · [固件发布说明与烧写方法](https://github.com/Listener-ai-Macau/Listener-Firmware/releases/tag/v1.0.6-rc1)
+
+---
+
 # Listener Firmware
 
 Listener 語音鍵盤的韌體。它執行在 ESP32-S3 桌面裝置上，採集語音並透過藍牙送給 Listener Type，把錄音控制和產品狀態放在手邊。

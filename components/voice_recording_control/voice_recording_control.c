@@ -290,6 +290,7 @@ static denzic_voice_activation_v1_config_t s_voice_activation_config;
 static bool s_ensure_valid;
 static uint32_t s_ensure_request_id;
 static uint32_t s_ensure_previous_segment_id;
+static uint32_t s_ensure_retiring_segment_id;
 static uint32_t s_ensure_actual_segment_id;
 static voice_recording_ensure_status_t s_ensure_status;
 static TickType_t s_ensure_deadline_tick;
@@ -297,6 +298,17 @@ static bool s_ensure_cancelled_request_valid;
 static uint32_t s_ensure_cancelled_request_id;
 static bool s_ensure_request_watermark_valid;
 static uint32_t s_ensure_request_watermark;
+/* Actor-owned execution evidence survives later STOP/ABORT cleanup. It is not
+ * an ownership grant or a replacement for the transport's ENSURE marker. */
+static struct {
+    bool valid;
+    uint32_t request_id;
+    uint32_t previous_segment_id;
+    uint32_t actual_segment_id;
+    esp_err_t result;
+    uint64_t uptime_ms;
+    bool host_endpoint_owned;
+} s_last_ensure_execution;
 
 static void voice_recording_control_set_auto_rearm_latch(
     const char *terminal_reason)
@@ -1040,7 +1052,11 @@ static void voice_recording_control_print_diag_state(uint32_t request_id)
         " session_count=%" PRIu32 " session_id=%" PRIu32
         " automatic=%u visible=%u enrollment=%u host_endpoint_owned=%u"
         " audio_active=%u monitoring=%u audio_monitoring=%u"
-        " auto_start=%u auto_stop=%u transport_ready=%u\n",
+        " auto_start=%u auto_stop=%u transport_ready=%u"
+        " last_ensure_valid=%u last_ensure_request=%" PRIu32
+        " last_ensure_previous=%" PRIu32 " last_ensure_actual=%" PRIu32
+        " last_ensure_result=%s last_ensure_uptime_ms=%" PRIu64
+        " last_ensure_host_owned=%u\n",
         request_id,
         uptime_ms,
         listener_device_get_fw_version(),
@@ -1061,7 +1077,14 @@ static void voice_recording_control_print_diag_state(uint32_t request_id)
         audio_monitoring ? 1u : 0u,
         s_voice_auto_start_enabled ? 1u : 0u,
         s_voice_auto_stop_enabled ? 1u : 0u,
-        transport_ready ? 1u : 0u);
+        transport_ready ? 1u : 0u,
+        s_last_ensure_execution.valid ? 1u : 0u,
+        s_last_ensure_execution.request_id,
+        s_last_ensure_execution.previous_segment_id,
+        s_last_ensure_execution.actual_segment_id,
+        esp_err_to_name(s_last_ensure_execution.result),
+        s_last_ensure_execution.uptime_ms,
+        s_last_ensure_execution.host_endpoint_owned ? 1u : 0u);
     fflush(stdout);
 }
 
@@ -1527,6 +1550,7 @@ static void voice_recording_control_cancel_pending_start(const char *detail)
     if (ensure_pending) {
         s_ensure_status = VOICE_RECORDING_ENSURE_STATUS_FAILED;
         s_ensure_deadline_tick = 0;
+        audio_capture_release_wake_resume(s_ensure_request_id);
         voice_recording_control_log_ensure_result(
             "pending_canceled",
             source,
@@ -1640,6 +1664,7 @@ static void voice_recording_control_timeout_pending_start(esp_err_t reason)
     if (ensure_pending) {
         s_ensure_status = VOICE_RECORDING_ENSURE_STATUS_FAILED;
         s_ensure_deadline_tick = 0;
+        audio_capture_release_wake_resume(s_ensure_request_id);
         voice_recording_control_log_ensure_result(
             "pending_timeout",
             source,
@@ -2280,6 +2305,7 @@ static esp_err_t voice_recording_control_ensure_failed(
 {
     s_ensure_status = VOICE_RECORDING_ENSURE_STATUS_FAILED;
     s_ensure_deadline_tick = 0;
+    audio_capture_release_wake_resume(s_ensure_request_id);
     voice_recording_control_log_ensure_result(
         "failed",
         source,
@@ -2293,7 +2319,8 @@ static bool voice_recording_control_ensure_pending_for_segment(
 {
     return s_ensure_valid &&
         s_ensure_status == VOICE_RECORDING_ENSURE_STATUS_PENDING &&
-        s_ensure_previous_segment_id == segment_id;
+        (s_ensure_previous_segment_id == segment_id ||
+         s_ensure_retiring_segment_id == segment_id);
 }
 
 static bool voice_recording_control_ensure_deadline_reached(TickType_t now)
@@ -2312,6 +2339,7 @@ static void voice_recording_control_expire_ensure_reservation(
     }
     s_ensure_status = VOICE_RECORDING_ENSURE_STATUS_FAILED;
     s_ensure_deadline_tick = 0;
+    audio_capture_release_wake_resume(s_ensure_request_id);
     voice_recording_control_log_ensure_result(
         "expired",
         source,
@@ -2365,6 +2393,43 @@ static void voice_recording_control_poll_ensure_reservation(void)
     voice_recording_control_expire_ensure_reservation(
         VOICE_RECORDING_CONTROL_ENSURE_SOURCE,
         "predecessor_did_not_finish_before_deadline");
+}
+
+static esp_err_t voice_recording_control_resume_older_wake_source(const char *source)
+{
+    /* A subsequent hidden VAD window is not an owner. Do not adopt its
+     * overlapping pre-roll: reserve the original source cursor and retire
+     * only that unowned window, then emit a new request-tagged continuation. */
+    if (!s_active_session_automatic || s_active_session_visible ||
+        s_active_session_host_endpoint_owned || s_active_session_enrollment) {
+        return voice_recording_control_ensure_failed(
+            source, ESP_ERR_INVALID_STATE, "newer_capture_has_owner");
+    }
+    esp_err_t ret = audio_capture_reserve_wake_resume(
+        s_ensure_previous_segment_id, s_ensure_request_id);
+    if (ret != ESP_OK) {
+        return voice_recording_control_ensure_failed(
+            source, ESP_ERR_INVALID_STATE, "original_wake_source_unavailable");
+    }
+    s_ensure_retiring_segment_id = s_active_session_id;
+    if (s_state == VOICE_RECORDING_STATE_RECORDING) {
+        ret = voice_recording_control_exit_recording_with_origin(
+            "ensure_retire_unowned_hidden",
+            AUDIO_CAPTURE_STOP_ORIGIN_VOICE_ACTIVATION_MAX_DURATION);
+        if (ret != ESP_OK) {
+            return voice_recording_control_ensure_failed(
+                source, ret, "retire_unowned_hidden_failed");
+        }
+    }
+    voice_recording_control_schedule_pending_start(
+        VOICE_RECORDING_CONTROL_ENSURE_SOURCE,
+        "original_wake_source_reserved",
+        "wake_capture_continuation_pending",
+        VOICE_RECORDING_PENDING_OWNER_WAKE_CONTINUATION);
+    s_pending_start_deadline_tick = s_ensure_deadline_tick;
+    voice_recording_control_log_ensure_result(
+        "pending", source, ESP_OK, "retiring_unowned_hidden_for_original_source");
+    return ESP_OK;
 }
 
 static esp_err_t voice_recording_control_ensure_wake_session(
@@ -2475,6 +2540,7 @@ static esp_err_t voice_recording_control_ensure_wake_session(
     s_ensure_valid = true;
     s_ensure_request_id = request_id;
     s_ensure_previous_segment_id = previous_segment_id;
+    s_ensure_retiring_segment_id = 0u;
     s_ensure_actual_segment_id = 0u;
     s_ensure_status = VOICE_RECORDING_ENSURE_STATUS_PENDING;
     s_ensure_deadline_tick =
@@ -2491,10 +2557,7 @@ static esp_err_t voice_recording_control_ensure_wake_session(
     if (s_state == VOICE_RECORDING_STATE_RECORDING) {
         const uint32_t actual_segment_id = s_active_session_id;
         if (actual_segment_id != previous_segment_id) {
-            return voice_recording_control_ensure_failed(
-                source,
-                ESP_ERR_INVALID_STATE,
-                "recording_segment_mismatch");
+            return voice_recording_control_resume_older_wake_source(source);
         }
         s_ensure_actual_segment_id = actual_segment_id;
         if (s_active_session_automatic || s_active_session_visible) {
@@ -2528,10 +2591,7 @@ static esp_err_t voice_recording_control_ensure_wake_session(
     if (s_state == VOICE_RECORDING_STATE_TRANSFERRING) {
         const uint32_t actual_segment_id = s_active_session_id;
         if (actual_segment_id != previous_segment_id) {
-            return voice_recording_control_ensure_failed(
-                source,
-                ESP_ERR_INVALID_STATE,
-                "transferring_segment_mismatch");
+            return voice_recording_control_resume_older_wake_source(source);
         }
         voice_recording_control_schedule_pending_start(
             VOICE_RECORDING_CONTROL_ENSURE_SOURCE,
@@ -2636,6 +2696,7 @@ static esp_err_t voice_recording_control_abort_wake_session(
         return ESP_OK;
     }
 
+    audio_capture_release_wake_resume(request_id);
     s_ensure_status = VOICE_RECORDING_ENSURE_STATUS_ABORTED;
     s_ensure_deadline_tick = 0;
     const bool pending_ensure =
@@ -2645,6 +2706,7 @@ static esp_err_t voice_recording_control_abort_wake_session(
         (s_state == VOICE_RECORDING_STATE_RECORDING ||
          s_state == VOICE_RECORDING_STATE_TRANSFERRING) &&
         (s_active_session_id == s_ensure_previous_segment_id ||
+         s_active_session_id == s_ensure_retiring_segment_id ||
          (s_ensure_actual_segment_id != 0u &&
           s_active_session_id == s_ensure_actual_segment_id));
     if (pending_ensure) {
@@ -2679,6 +2741,8 @@ static void voice_recording_control_host_sync(const char *source)
     // TYPE:READY starts a new host transaction epoch.  Cancel any physical
     // capture first, then forget request watermarks so a restarted Type
     // process may safely allocate ids from 1 again.
+    audio_capture_release_wake_resume(s_ensure_request_id);
+    s_ensure_retiring_segment_id = 0u;
     s_ensure_valid = false;
     s_ensure_request_id = 0u;
     s_ensure_previous_segment_id = 0u;
@@ -4062,6 +4126,54 @@ static void voice_recording_control_process_voice_activity(void)
     }
 }
 
+static void voice_recording_control_observe_ensure_execution(
+    const char *command,
+    esp_err_t result)
+{
+    const char *action = command;
+    if (strncmp(command, VOICE_RECORDING_CONTROL_VREC_PREFIX,
+                strlen(VOICE_RECORDING_CONTROL_VREC_PREFIX)) == 0) {
+        action += strlen(VOICE_RECORDING_CONTROL_VREC_PREFIX);
+    }
+    uint32_t request_id = 0u;
+    uint32_t previous_segment_id = 0u;
+    if (!voice_recording_control_parse_ensure_action(
+            action, &request_id, &previous_segment_id)) {
+        return;
+    }
+    s_last_ensure_execution.valid = true;
+    s_last_ensure_execution.request_id = request_id;
+    s_last_ensure_execution.previous_segment_id = previous_segment_id;
+    s_last_ensure_execution.actual_segment_id = s_ensure_actual_segment_id;
+    s_last_ensure_execution.result = result;
+    s_last_ensure_execution.uptime_ms = (uint64_t)(esp_timer_get_time() / 1000LL);
+    s_last_ensure_execution.host_endpoint_owned = s_active_session_host_endpoint_owned;
+}
+
+static void voice_recording_control_execute_queued_command(
+    const voice_recording_control_command_t *queued)
+{
+    esp_err_t command_ret = voice_recording_control_handle_control_command(
+        queued->command,
+        queued->source);
+    voice_recording_control_observe_ensure_execution(queued->command, command_ret);
+    /* All four USB recovery requests use the same execution-result contract in
+     * Type. A successful queue write is not completion: acknowledge only after
+     * the handler returns, including its real error. In particular, stable
+     * identity recovery must not execute successfully and then time out on the
+     * host merely because only FRESH used to publish this result. */
+    if (strcmp(queued->source, "usb") == 0 &&
+        (strcmp(queued->command, "VREC:RECOVERY:TYPE") == 0 ||
+         strcmp(queued->command, "VREC:RECOVERY:TYPE:MANUAL") == 0 ||
+         strcmp(queued->command, "VREC:RECOVERY:TYPE:SILENT") == 0 ||
+         strcmp(queued->command, "VREC:RECOVERY:TYPE:SILENT:FRESH") == 0)) {
+        printf(
+            "~VREC:RESULT command=%s result=%s\n",
+            queued->command,
+            command_ret == ESP_OK ? "OK" : esp_err_to_name(command_ret));
+    }
+}
+
 static void voice_recording_control_task(void *parameter)
 {
     (void)parameter;
@@ -4084,16 +4196,7 @@ static void voice_recording_control_task(void *parameter)
              s_command_queue != NULL &&
              xQueueReceive(s_command_queue, &queued, 0) == pdTRUE;
              ++command_index) {
-            esp_err_t command_ret = voice_recording_control_handle_control_command(
-                queued.command,
-                queued.source);
-            if (strcmp(queued.source, "usb") == 0 &&
-                strcmp(queued.command, "VREC:RECOVERY:TYPE:SILENT:FRESH") == 0) {
-                printf(
-                    "~VREC:RESULT command=%s result=%s\n",
-                    queued.command,
-                    command_ret == ESP_OK ? "OK" : esp_err_to_name(command_ret));
-            }
+            voice_recording_control_execute_queued_command(&queued);
             watchdog_platform_feed_current_task();
         }
 

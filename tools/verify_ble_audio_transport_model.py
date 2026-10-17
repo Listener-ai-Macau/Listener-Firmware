@@ -186,6 +186,14 @@ def require_regex(source: str, pattern: str, description: str, path: pathlib.Pat
 
 def static_source_checks() -> None:
     stream = STREAM.read_text(encoding="utf-8")
+    blocker_path = STREAM.parent / "ble_audio_cooperative_wait.c"
+    blocker = blocker_path.read_text(encoding="utf-8")
+    for token in ("ESP_TIMER_TASK", "xSemaphoreTake(s_elapsed, pdMS_TO_TICKS(delay_ms) + 2)",
+                  "eTaskGetState(owner) == eBlocked", "owner != xTaskGetCurrentTaskHandle()",
+                  "s_disabled = true", "coarse_block(delay_ms)"):
+        require(blocker, token, blocker_path)
+    if "taskYIELD()" in blocker or "watchdog_platform_feed" in blocker:
+        fail("precise audio blocking must not replace real blocking with yield/watchdog feeding")
     events = EVENTS.read_text(encoding="utf-8")
     gap = GAP.read_text(encoding="utf-8")
     platform_codec = PLATFORM_LOSSLESS_CODEC.read_text(encoding="utf-8")
@@ -350,7 +358,7 @@ def static_source_checks() -> None:
         r"s_audio_pacing_burst_remaining_pcm_bytes > 0u.*?"
         r"idle_block_boundary_crossed.*?"
         r"BLE_AUDIO_STREAM_PREROLL_IDLE_BLOCK_PCM_BYTES.*?"
-        r"ble_audio_stream_delay_ms\(\s*"
+        r"ble_audio_cooperative_wait_ms\(\s*"
         r"BLE_AUDIO_STREAM_COOPERATIVE_IDLE_BLOCK_MS\s*\)",
         "accelerated preroll periodically enters a real Blocked state for IDLE0",
         STREAM,
