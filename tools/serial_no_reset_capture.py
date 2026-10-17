@@ -188,6 +188,13 @@ def validate_serial_control_command(command: str) -> None:
         raise ValueError(f"{match.group(1)} control commands require the '~' prefix; unprefixed text becomes HID input")
     if match and ("\r" in command or "\n" in command):
         raise ValueError("A firmware control command must contain one line")
+    if command.strip().upper().startswith("~VREC:DIAG:STATE"):
+        # Match the firmware actor's request contract before touching the port.
+        # A descriptive label is not a request ID; it otherwise returns only
+        # invalid_request and loses the intended correlated execution snapshot.
+        request = command.strip().removeprefix("~VREC:DIAG:STATE:")
+        if not re.fullmatch(r"[0-9]{1,10}", request) or not 0 < int(request) <= 0xFFFFFFFF:
+            raise ValueError("VREC:DIAG:STATE requires a decimal request ID in 1..4294967295")
 
 
 def parse_wait_command(command: str) -> int | None:
