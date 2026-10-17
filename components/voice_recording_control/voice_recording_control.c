@@ -2314,6 +2314,24 @@ static esp_err_t voice_recording_control_ensure_failed(
     return result;
 }
 
+static esp_err_t voice_recording_control_reserve_ensure_source(const char *source)
+{
+    esp_err_t ret = audio_capture_reserve_wake_resume(
+        s_ensure_previous_segment_id, s_ensure_request_id);
+    if (ret != ESP_OK) {
+        /* A failed source reservation must not leave an owned pending start
+         * capable of running after the transaction has failed. Unqualified
+         * ambient work and explicit/manual owners remain independent. */
+        if (s_pending_start &&
+            s_pending_start_owner == VOICE_RECORDING_PENDING_OWNER_WAKE_CONTINUATION) {
+            voice_recording_control_cancel_pending_start("ensure_source_unavailable");
+        }
+        return voice_recording_control_ensure_failed(
+            source, ret, "original_wake_source_unavailable");
+    }
+    return ESP_OK;
+}
+
 static bool voice_recording_control_ensure_pending_for_segment(
     uint32_t segment_id)
 {
@@ -2361,6 +2379,15 @@ static bool voice_recording_control_schedule_ensure_successor(
         voice_recording_control_expire_ensure_reservation(
             source,
             "predecessor_stopped_after_deadline");
+        return false;
+    }
+
+    /* Physical capture has ended, while the BLE worker may still be draining
+     * its tail. Pin the original source now, before waiting for readiness can
+     * age it past the ordinary two-second unowned checkpoint limit. This is
+     * the same request/source lease as the newer-hidden retirement path;
+     * neither source eligibility nor the transaction deadline is renewed. */
+    if (voice_recording_control_reserve_ensure_source(source) != ESP_OK) {
         return false;
     }
 
@@ -2593,6 +2620,12 @@ static esp_err_t voice_recording_control_ensure_wake_session(
         if (actual_segment_id != previous_segment_id) {
             return voice_recording_control_resume_older_wake_source(source);
         }
+        if (!audio_capture_session_is_active()) {
+            esp_err_t reserve_ret = voice_recording_control_reserve_ensure_source(source);
+            if (reserve_ret != ESP_OK) {
+                return reserve_ret;
+            }
+        }
         voice_recording_control_schedule_pending_start(
             VOICE_RECORDING_CONTROL_ENSURE_SOURCE,
             "audio_session_transferring",
@@ -2614,6 +2647,13 @@ static esp_err_t voice_recording_control_ensure_wake_session(
             "recording_state_not_startable");
     }
 
+    /* Cleanup can reach Idle before the transport is ready. Reserve before
+     * the first resume attempt, so a legitimate readiness retry retains its
+     * original PCM instead of acquiring a fresh/stale ambient source later. */
+    esp_err_t reserve_ret = voice_recording_control_reserve_ensure_source(source);
+    if (reserve_ret != ESP_OK) {
+        return reserve_ret;
+    }
     esp_err_t ret = voice_recording_control_enter_recording(
         VOICE_RECORDING_CONTROL_ENSURE_SOURCE,
         true,

@@ -52,6 +52,10 @@ def verify_source(source):
     enter = function(source, 'voice_recording_control_enter_recording')
     initial = enter[enter.index('s_active_session_automatic = pre_roll_ms > 0u;'):
                     enter.index('voice_recording_control_clear_host_speech_protection();')]
+    capture_source = (ROOT/'ports/esp32/audio_capture/audio_capture_esp32.c').read_text(encoding='utf-8')
+    capture_constants = '\n'.join(re.search(
+        r'^#define AUDIO_CAPTURE_'+name+r'[^\n]*(?:\n[ \t]+[^\n]+)?', capture_source, re.M).group()
+        for name in ('FRAME_MS', 'VOICE_PREROLL_MAX_MS', 'WAKE_RESUME_LEASE_MS', 'VOICE_PREROLL_FRAMES'))
     # Only the hardware edges are simulated; the real initializer still owns
     # the new capture's visibility, body evidence and endpoint lease.
     code = r'''
@@ -111,14 +115,57 @@ static uint32_t marker_id;
 static uint16_t marker_origin;
 static esp_err_t marker_result, begin_result;
 static esp_err_t reserve_result=ESP_ERR_NOT_FOUND, retire_result;
+static bool checkpoint_requires_lease;
+static bool current_checkpoint_available=true;
+static int capture_activity_override=-1;
 static uint32_t reserved_previous,reserved_request;
 static unsigned retire_calls;
 enum { AUDIO_CAPTURE_STOP_ORIGIN_VOICE_ACTIVATION_MAX_DURATION=2 };
 typedef int audio_capture_stop_origin_t;
+'''
+    code += capture_constants + r'''
+/* Numbered source-frame geometry is driven by the test clock. Selection,
+ * qualification and lease ownership execute the real capture implementation. */
+static void *s_state_mutex=(void *)1;
+enum { pdTRUE=1, portMAX_DELAY=0x7fffffff };
+static int xSemaphoreTake(void *mutex,unsigned timeout) {(void)mutex;(void)timeout;return pdTRUE;}
+static void xSemaphoreGive(void *mutex) {(void)mutex;}
+static uint64_t s_source_frame_id,s_wake_resume_next_frame_id,s_prior_wake_resume_next_frame_id,s_wake_resume_lease_next_frame_id;
+static uint32_t s_wake_resume_session_id,s_prior_wake_resume_session_id,s_wake_resume_lease_request_id,s_wake_resume_lease_session_id;
+static uint16_t s_voice_preroll_write_index,s_voice_preroll_count;
+static uint64_t s_voice_preroll_frame_ids[AUDIO_CAPTURE_VOICE_PREROLL_FRAMES];
+static void advance_checkpoint_source(void) {
+    s_source_frame_id=100+(now_tick-1000)/AUDIO_CAPTURE_FRAME_MS;
+    s_wake_resume_session_id=981798109u;
+    s_wake_resume_next_frame_id=101;
+    s_voice_preroll_count=(uint16_t)(s_source_frame_id<AUDIO_CAPTURE_VOICE_PREROLL_FRAMES?s_source_frame_id:AUDIO_CAPTURE_VOICE_PREROLL_FRAMES);
+    s_voice_preroll_write_index=(uint16_t)(s_source_frame_id%AUDIO_CAPTURE_VOICE_PREROLL_FRAMES);
+    for(uint64_t id=s_source_frame_id-s_voice_preroll_count+1;id<=s_source_frame_id;id++)
+        s_voice_preroll_frame_ids[(id-1)%AUDIO_CAPTURE_VOICE_PREROLL_FRAMES]=id;
+}
+'''
+    for capture_name in ('audio_capture_select_wake_resume', 'audio_capture_reserve_wake_resume',
+                         'audio_capture_release_wake_resume'):
+        production_capture_function = function(capture_source, capture_name)
+        for original in ('audio_capture_select_wake_resume', 'audio_capture_reserve_wake_resume',
+                         'audio_capture_release_wake_resume'):
+            production_capture_function = production_capture_function.replace(original,'production_'+original)
+        code += production_capture_function+'\n'
+    code += r'''
 static esp_err_t audio_capture_reserve_wake_resume(uint32_t previous,uint32_t request) {
-    reserved_previous=previous;reserved_request=request;return reserve_result;
+    if (checkpoint_requires_lease) {
+        advance_checkpoint_source();
+        esp_err_t ret=production_audio_capture_reserve_wake_resume(previous,request);
+        if(ret==ESP_OK){reserved_previous=previous;reserved_request=request;}
+        return ret;
+    }
+    esp_err_t ret=reserve_result;
+    if (ret==ESP_ERR_NOT_FOUND && current_checkpoint_available && previous==s_active_session_id) ret=ESP_OK;
+    if (ret==ESP_OK) { reserved_previous=previous;reserved_request=request; }
+    return ret;
 }
 static void audio_capture_release_wake_resume(uint32_t request) {
+    if(checkpoint_requires_lease)production_audio_capture_release_wake_resume(request);
     if(reserved_request==request)reserved_request=0;
 }
 static esp_err_t voice_recording_control_exit_recording_with_origin(const char *source,audio_capture_stop_origin_t origin) {
@@ -131,7 +178,7 @@ static unsigned activity_calls;
 static uint32_t selected_preroll;
 static TickType_t xTaskGetTickCount(void) { return now_tick; }
 static uint32_t audio_capture_session_id(void) { return physical_id; }
-static bool audio_capture_session_is_active(void) { return s_state != VOICE_RECORDING_STATE_IDLE; }
+static bool audio_capture_session_is_active(void) { return capture_activity_override>=0 ? capture_activity_override!=0 : s_state != VOICE_RECORDING_STATE_IDLE; }
 static esp_err_t ble_audio_stream_send_session_start_marker(uint32_t id, uint16_t origin) {
     marker_calls++; marker_id=id; marker_origin=origin; return marker_result;
 }
@@ -173,6 +220,11 @@ static void voice_recording_control_log_ensure_result(const char *, const char *
 static esp_err_t voice_recording_control_enter_recording(const char *source, bool log, bool reconnect, uint32_t pre_roll_ms) {
     (void)source; (void)log; (void)reconnect; begin_calls++;
     if (begin_result != ESP_OK) return begin_result;
+    if (checkpoint_requires_lease) {
+        uint16_t index=0,count=0;advance_checkpoint_source();
+        esp_err_t ret=production_audio_capture_select_wake_resume(s_ensure_previous_segment_id,&index,&count);
+        if(ret!=ESP_OK)return ret;
+    }
     physical_id++; packet_sequence=0; s_state=VOICE_RECORDING_STATE_RECORDING;
     selected_preroll=pre_roll_ms;
     voice_recording_control_reset_pending_start();
@@ -182,7 +234,12 @@ static esp_err_t voice_recording_control_enter_recording(const char *source, boo
         'source_is_ensure', 'ensure_status_name', 'log_ensure_result',
         'parse_hex_u32_fixed', 'parse_ensure_action', 'parse_abort_action',
         'ensure_start_origin', 'tick_reached', 'ensure_status_terminal',
-        'ensure_failed', 'ensure_pending_for_segment', 'ensure_deadline_reached',
+        'ensure_failed',
+    ]
+    if re.search(r'voice_recording_control_reserve_ensure_source\([^;]*\)\s*\{', source):
+        functions += ['reserve_ensure_source']
+    functions += [
+        'ensure_pending_for_segment', 'ensure_deadline_reached',
         'expire_ensure_reservation', 'schedule_ensure_successor', 'poll_ensure_reservation',
         'resume_older_wake_source',
     ]
@@ -239,6 +296,12 @@ static void reset_capture(bool automatic, bool visible) {
     s_ensure_status=VOICE_RECORDING_ENSURE_STATUS_NONE;
     s_ensure_retiring_segment_id=0;reserved_previous=reserved_request=0;
     reserve_result=ESP_ERR_NOT_FOUND;retire_result=ESP_OK;retire_calls=0;
+    checkpoint_requires_lease=false;
+    s_wake_resume_lease_request_id=s_wake_resume_lease_session_id=0;
+    s_wake_resume_lease_next_frame_id=s_prior_wake_resume_next_frame_id=0;
+    s_prior_wake_resume_session_id=0;
+    current_checkpoint_available=true;
+    capture_activity_override=-1;
     s_ensure_deadline_tick=0; voice_recording_control_reset_pending_start();
     s_pending_start_owner=VOICE_RECORDING_PENDING_OWNER_NONE;
     s_voice_auto_rearm_await_quiet_edge=false; transport_ready=va_power_allowed=true; activity_calls=0;
@@ -267,6 +330,64 @@ static void assert_adopted(void) {
     for (int n=0; n<1200; n++) assert(!endpoint_step(100,false));
 }
 int main(void) {
+    /* The original physical segment has ended, but BLE is still draining it.
+     * Its PCM checkpoint is fresh at admission and ages past the ordinary
+     * two-second selection bound before transport readiness. The same
+     * request must pin that checkpoint; its three-second deadline is fixed. */
+    reset_capture(true,false); s_state=VOICE_RECORDING_STATE_TRANSFERRING;
+    reserve_result=ESP_OK; checkpoint_requires_lease=true;
+    uint32_t draining_predecessor=physical_id;
+    assert(ensure(100,draining_predecessor)==ESP_OK);
+    TickType_t original_deadline=s_ensure_deadline_tick;
+    s_state=VOICE_RECORDING_STATE_IDLE; physical_id=0; now_tick+=100;
+    assert(voice_recording_control_schedule_ensure_successor(draining_predecessor,"physical_eof"));
+    transport_ready=false; voice_recording_control_poll_pending_start();
+    assert(begin_calls==0 && s_ensure_deadline_tick==original_deadline);
+    now_tick=3200; transport_ready=true; voice_recording_control_poll_pending_start();
+    assert(begin_calls==1 && s_active_session_host_endpoint_owned);
+    assert(reserved_previous==draining_predecessor && reserved_request==100);
+    assert(s_ensure_status==VOICE_RECORDING_ENSURE_STATUS_ACTIVE);
+
+    /* Capture cleanup may precede ENSURE while the same BLE tail is busy.
+     * Pin before the first readiness failure, not after the source expires. */
+    reset_capture(true,false); s_state=VOICE_RECORDING_STATE_IDLE;
+    reserve_result=ESP_OK; checkpoint_requires_lease=true;
+    begin_result=ESP_ERR_INVALID_STATE; transport_ready=false;
+    assert(ensure(100,physical_id)==ESP_OK && s_pending_start);
+    assert(reserved_request==100 && reserved_previous==physical_id);
+    original_deadline=s_ensure_deadline_tick;
+    now_tick=3200; begin_result=ESP_OK; transport_ready=true;
+    voice_recording_control_poll_pending_start();
+    assert(s_active_session_host_endpoint_owned && begin_calls==2);
+    assert(s_ensure_status==VOICE_RECORDING_ENSURE_STATUS_ACTIVE);
+
+    /* Controller state can lag physical EOF. Pin immediately in that gap. */
+    reset_capture(true,false); s_state=VOICE_RECORDING_STATE_TRANSFERRING;
+    capture_activity_override=0;
+    assert(ensure(100,physical_id)==ESP_OK && reserved_request==100);
+    original_deadline=s_ensure_deadline_tick;
+    now_tick=original_deadline; voice_recording_control_poll_ensure_reservation();
+    voice_recording_control_poll_pending_start();
+    assert(reserved_request==0 && s_ensure_status==VOICE_RECORDING_ENSURE_STATUS_FAILED);
+    assert(!s_pending_start && !s_active_session_host_endpoint_owned);
+
+    /* Missing original PCM revokes only this owned pending continuation.
+     * It must not later start from stale ambient audio after failure. */
+    reset_capture(true,false); s_state=VOICE_RECORDING_STATE_TRANSFERRING;
+    assert(ensure(100,physical_id)==ESP_OK && s_pending_start);
+    current_checkpoint_available=false; s_state=VOICE_RECORDING_STATE_IDLE;
+    assert(!voice_recording_control_schedule_ensure_successor(physical_id,"missing_source_eof"));
+    assert(s_ensure_status==VOICE_RECORDING_ENSURE_STATUS_FAILED && !s_pending_start);
+    voice_recording_control_poll_pending_start();
+    assert(begin_calls==0 && reserved_request==0 && !s_active_session_host_endpoint_owned);
+
+    reset_capture(true,false); s_state=VOICE_RECORDING_STATE_IDLE;
+    current_checkpoint_available=false;
+    schedule_owner(VOICE_RECORDING_PENDING_OWNER_AUTOMATIC_CANDIDATE,"voice_activation.unqualified");
+    assert(ensure(100,physical_id)==ESP_ERR_NOT_FOUND);
+    assert(s_pending_start_owner==VOICE_RECORDING_PENDING_OWNER_AUTOMATIC_CANDIDATE);
+    assert(reserved_request==0 && begin_calls==0);
+
     reset_capture(true,true); /* Field ordering: ACTIVATE before ENSURE. */
     assert(ensure(100,physical_id)==ESP_OK); assert_adopted();
     assert(queue_resets==0); /* Existing body/metadata is not discarded twice. */

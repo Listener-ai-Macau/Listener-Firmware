@@ -178,6 +178,24 @@ int main(void) {
     }
     uint32_t previous=expired_wake(100);
     assert(audio_capture_session_resume_wake(previous,0x8001)!=ESP_OK && !s_export_state.active);
+    /* Same predecessor already finished; only its BLE tail is draining.
+     * A transaction admitted while its checkpoint is fresh must pin the
+     * original frame cursor before that independent drain exceeds two seconds.
+     * No later ambient session or larger unowned age allowance is involved. */
+    previous=expired_wake(5);
+    const unsigned same_predecessor_prefix=output_count;
+    assert(audio_capture_reserve_wake_resume(previous,90)==ESP_OK);
+    pump(110);
+    assert(audio_capture_session_resume_wake(previous,0x805a)==ESP_OK);
+    pump(10);
+    assert(audio_capture_session_stop_with_origin(AUDIO_CAPTURE_STOP_ORIGIN_USER)==ESP_OK);pump(1);
+    assert(output_count==marker-1 && output_count>same_predecessor_prefix);
+    for(unsigned k=0;k<output_count;k++)assert(output[k]==k+1);
+    assert(s_session_resume_snapshot==NULL && s_wake_resume_lease_request_id==0);
+    previous=expired_wake(5);
+    assert(audio_capture_reserve_wake_resume(previous,91)==ESP_OK);
+    pump(110);audio_capture_release_wake_resume(91);
+    assert(audio_capture_session_resume_wake(previous,0x805b)==ESP_ERR_NOT_FOUND);
     previous=expired_wake(24);
     assert(audio_capture_session_resume_wake(previous+1,0x8001)!=ESP_OK);
     assert(audio_capture_session_resume_wake(previous,0x8001)==ESP_OK);
