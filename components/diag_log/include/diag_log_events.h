@@ -165,6 +165,10 @@
 #define DIAG_OTA_VERSION        12  /* a1=from_version_hash, a2=to_version_hash, a3=partition_subtype, a4=event */
 #define DIAG_OTA_PARTITION      13  /* a1=role, a2=partition_subtype, a3=offset, a4=size_bytes */
 #define DIAG_OTA_CORRELATION    14  /* a1=opaque_correlation_id_hi, a2=opaque_correlation_id_lo, a3=0, a4=0 */
+#define DIAG_OTA_RX_TIMING      15  /* a1=received, a2=processed, a3=arrival_span_us, a4=arrival_gap_max_us */
+#define DIAG_OTA_QUEUE_TIMING   16  /* a1=queue_depth_max, a2=residence_total_ms, a3=residence_max_us, a4=callback_drained */
+#define DIAG_OTA_SERVICE_TIMING 17  /* a1=service_total_ms, a2=service_max_us, a3=worker_lock_total_ms, a4=worker_lock_max_us */
+#define DIAG_OTA_FLASH_TIMING   18  /* a1=flash_write_calls, a2=flash_total_ms, a3=flash_max_us, a4=image_bytes */
 
 #define DIAG_OTA_ABORT_USB                  1
 #define DIAG_OTA_ROLLBACK_USB               1

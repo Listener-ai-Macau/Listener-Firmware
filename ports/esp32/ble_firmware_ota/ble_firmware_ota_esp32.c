@@ -124,6 +124,19 @@ static void ble_firmware_ota_timing_print(void)
     portENTER_CRITICAL(&s_ota_timing_lock);
     ble_firmware_ota_timing_t timing = s_ota_timing;
     portEXIT_CRITICAL(&s_ota_timing_lock);
+    /* Keep the once-per-transfer summary in the existing persistent diagnostic
+     * stream too. USB-only ESP_LOG output cannot be recovered on BLE-only units.
+     * No per-packet logging or new work is added to the radio/worker hot path. */
+    diag_log(DIAG_SRC_OTA, DIAG_OTA_RX_TIMING, DIAG_SEV_INFO,
+             timing.received, timing.processed,
+             timing.last_arrival_us - timing.first_arrival_us,
+             timing.max_arrival_gap_us);
+    diag_log(DIAG_SRC_OTA, DIAG_OTA_QUEUE_TIMING, DIAG_SEV_INFO,
+             timing.max_queue_depth, (uint32_t)(timing.residence_total_us / 1000U),
+             timing.residence_max_us, timing.callback_drained);
+    diag_log(DIAG_SRC_OTA, DIAG_OTA_SERVICE_TIMING, DIAG_SEV_INFO,
+             (uint32_t)(timing.service_total_us / 1000U), timing.service_max_us,
+             (uint32_t)(timing.worker_lock_total_us / 1000U), timing.worker_lock_max_us);
     ESP_LOGI("ble_firmware_ota",
         "OTA queue timing received=%u processed=%u callback_drained=%u arrival_span_us=%u arrival_gap_max_us=%u queue_depth_max=%u enqueue_us=%llu enqueue_max_us=%u residence_us=%llu residence_max_us=%u service_us=%llu service_max_us=%u worker_lock_us=%llu worker_lock_max_us=%u",
         (unsigned)timing.received, (unsigned)timing.processed,
@@ -629,6 +642,10 @@ static bool ble_firmware_ota_storage_finish(void *driver_context)
     esp_err_t ret = firmware_ota_finish(false);
     ble_firmware_ota_release_wire();
     ble_firmware_ota_timing_print();
+    diag_log(DIAG_SRC_OTA, DIAG_OTA_FLASH_TIMING, DIAG_SEV_INFO,
+             s_ota_storage_write_calls,
+             (uint32_t)(s_ota_storage_write_total_us / 1000U),
+             s_ota_storage_write_max_us, s_ota.expected_size);
     ble_firmware_ota_reorder_bank_release(&s_ota_reorder_bank, heap_caps_free);
     s_prepare_link_active = false;
     ble_firmware_ota_set_transfer_tx_power(false);
