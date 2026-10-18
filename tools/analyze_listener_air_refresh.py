@@ -107,7 +107,8 @@ def analyze(pcap, key, fingerprints, max_counter_gap=2048, seconds=25):
     for e in epochs:
         row = dict(accessAddress=e['aa'], requestUtc=datetime.datetime.fromtimestamp(
             e['requestTime'], datetime.timezone.utc).isoformat(),
-            badMicCapturedFrames=len(e['frames']), verifiedFrames=0, unverifiedFrames=0,
+            badMicCapturedFrames=len(e['frames']), verifiedFrames=0,
+            unverifiedFrames=len(e['frames']),
             usableIndependentEpoch=False, recovered=[], missingResponse=not bool(e['response']))
         results.append(row)
         if not e['response']:

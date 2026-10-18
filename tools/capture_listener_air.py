@@ -110,7 +110,23 @@ def observe_target_link(packet, target_address, stamp, links, proof):
                 link['matchingLegacyRequest'] = True
 
 
-def capture(output, seconds, port, bond_path, proof, reload_legacy_refresh=False):
+def target_advertisement_after_handoff(frame, stamp, target_address, marker):
+    """Admit one post-handoff directed advertisement, never an old-link guess."""
+    if len(frame) < 34 or frame[5] != 2 or not frame[7] & 1:
+        return False
+    if bytes(frame[16:20]) != bytes.fromhex('d6be898e') or frame[20] & 15 != 1:
+        return False
+    target = target_address.replace(':', '').lower()
+    if bytes(frame[22:28])[::-1].hex() != target:
+        return False
+    if marker.get('targetAddress', '').replace(':', '').lower() != target:
+        return False
+    accepted = marker.get('acceptedEpoch')
+    return (marker.get('source') == 'installed_type_active_capture_ota_handoff_accepted'
+            and isinstance(accepted, (int, float)) and accepted <= stamp <= accepted + 8)
+
+
+def capture(output, seconds, port, bond_path, proof, reload_legacy_refresh=False, handoff_marker=None):
     from SnifferAPI import Packet, Pcap, Notifications
     output.mkdir(exist_ok=False)
     if sys.platform == "win32":
@@ -211,10 +227,11 @@ def capture(output, seconds, port, bond_path, proof, reload_legacy_refresh=False
         key=list(bytes.fromhex(bond['keyBigEndian'][2:]))
         (writer.sendSCLTK if bond['secureConnections'] else writer.sendLegacyLTK)(key)
         legacy_requests, target_links = {}, {}
+        handoff_refollowed = False
         record.update(bondSnapshotSha256=proof["binding"]["bondSnapshotSha256"], legacyLookupObservations=[], reloadLegacyRefresh=reload_legacy_refresh, refreshKeyCommands=[], authenticatedNonempty=0, coverageScope="Receiver observations only; complete OTA coverage requires independent HCI/firmware alignment", ready=True,targetAddress=bond['listenerAddress'],keyCommandSent=True,
                       readinessScope="Serial clock and command submission only; no key/follow acknowledgement or complete RF coverage implied",
                       keyRepresentation='current read-only bond; all9 saved encrypted frames MIC-verified offline; big-endian wire format from primary nrf4 implementation',
-                      linkObservations=[],
+                      linkObservations=[], handoffRefollowCommands=[],
                       scope='Single-reader bulk transport, timestamp-acknowledged and address-followed; receiver observations only, no product commands from analyzer')
         save()
         until = time.perf_counter() + seconds
@@ -239,6 +256,26 @@ def capture(output, seconds, port, bond_path, proof, reload_legacy_refresh=False
                         record["rejectedStaleOrOutOfRun"] += 1
                         continue
                     stamp = anchor_wall + delta / 1_000_000
+                    if handoff_marker is not None and not handoff_refollowed and packet.id == 2:
+                        try:
+                            marker = json.loads(handoff_marker.read_text(encoding='utf-8-sig'))
+                        except (OSError, ValueError):
+                            marker = {}
+                        if target_advertisement_after_handoff(packet.packetList, stamp, bond['listenerAddress'], marker):
+                            # Diagnostic receiver-only experiment. The old raw
+                            # capture had a good termination and new directed
+                            # adverts, but missed the second OTA CONNECT. Re-arm
+                            # this receiver once at that observed boundary; do
+                            # not reset/unpair/control the product or repeat keys
+                            # on unrelated adverts/retransmissions.
+                            writer.sendHopSequence([37, 38, 39])
+                            writer.sendFollow(address, False, False, False)
+                            (writer.sendSCLTK if bond['secureConnections'] else writer.sendLegacyLTK)(key)
+                            handoff_refollowed = True
+                            record['handoffRefollowCommands'].append(dict(
+                                observedRadioEpoch=stamp, commandSentEpoch=precise_utc(),
+                                acceptedHandoffEpoch=marker['acceptedEpoch'],
+                                firmwareAcknowledged=False, productOperations=0))
                     observe_target_link(packet, bond['listenerAddress'], stamp, target_links, proof)
                     record['linkObservations'] = list(target_links.values())
                     if packet.id == 6 and packet.crcOK:
@@ -334,6 +371,7 @@ if __name__ == "__main__":
     parser.add_argument("--check-config-only", action="store_true")
     parser.add_argument("--seconds", type=int, default=30)
     parser.add_argument("--port", default="COM14")
+    parser.add_argument("--handoff-marker", type=Path, help="Opt-in receiver-only one-shot re-follow on target directed advertising after an installed Type OTA handoff receipt")
     parser.add_argument("--reload-legacy-refresh", action="store_true",
                         help="Analyzer-only experiment: reload the verified existing LTK on distinct matching refresh requests")
     args = parser.parse_args()
@@ -351,4 +389,4 @@ if __name__ == "__main__":
     proc.nice(psutil.BELOW_NORMAL_PRIORITY_CLASS)
     proc.cpu_affinity([1, 3])
     sys.path.insert(0, str(args.sdk))
-    capture(args.output, args.seconds, args.port, args.bond, proof, args.reload_legacy_refresh)
+    capture(args.output, args.seconds, args.port, args.bond, proof, args.reload_legacy_refresh, args.handoff_marker)
