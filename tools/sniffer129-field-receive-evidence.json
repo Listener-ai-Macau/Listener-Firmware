@@ -1,0 +1,363 @@
+{
+  "at": "2026-10-19T20:32:15.979222+08:00",
+  "receiverVersion": "1.1.129",
+  "receiverSource": "ac52b1fc67a6041427bb785a4042829cb9ac2de5",
+  "installation": {
+    "startedAt": "2026-10-19T20:20:05.978167+08:00",
+    "serial": "C06430228A01",
+    "dfuPort": "COM12",
+    "applicationOnly": true,
+    "ListenerOperations": 0,
+    "TypeQuitRequested": false,
+    "packageSha256": "3550b9e4f87b681e34fb10b9231aab7597045824a3908d4f651862f2d99c15c9",
+    "sourceCommit": "ac52b1fc67a6041427bb785a4042829cb9ac2de5",
+    "programExit": 0,
+    "candidateUsbDevices": [
+      {
+        "port": "COM18",
+        "vid": 49407,
+        "pid": 61166,
+        "serial": "C06430228A01",
+        "product": null
+      }
+    ],
+    "completedAt": "2026-10-19T20:20:15.381863+08:00"
+  },
+  "pureReceive": {
+    "at": "2026-10-19T20:21:16.079136+08:00",
+    "frames": 1437,
+    "crcMatches": 1437,
+    "advertisements": 1437,
+    "receiverVersion": "1.1.129",
+    "fullConnectionQualified": false,
+    "productChanges": 0
+  },
+  "peerMicProof": {
+    "distinctNonempty": 9,
+    "directions": [
+      0,
+      1
+    ],
+    "wrongKeyRepresentationVerified": [
+      0
+    ],
+    "totalMicVerified": 9,
+    "keyExported": false
+  },
+  "livePairTiming": {
+    "at": "2026-10-19T20:27:57.995627+08:00",
+    "source": "work/sniffer-alternative-butterfly-20261018/passive-current-20261019-202524/rf-private",
+    "receiver": 129,
+    "assumption": "BothPDUs LE2M after observed switch/rekey; consecutive same-channel pairs selected, no missing-frame proof",
+    "pairs": 2007,
+    "gapQuantilesUs": {
+      "min": 149,
+      "median": 150,
+      "max": 151
+    },
+    "gapHistogramUs": {
+      "150": 1690,
+      "149": 174,
+      "151": 143
+    },
+    "notAntennaCalibration": true,
+    "speedClaim": false
+  },
+  "runs": [
+    {
+      "capture": "passive-current-20261019-202148",
+      "receiver": "1.1.129",
+      "mode": "hop",
+      "keyLoaded": false,
+      "messageCounts": {
+        "generic.debug": 10,
+        "discovery.info_resp": 1,
+        "discovery.ready_resp": 1,
+        "generic.cmd_result": 4,
+        "ble.raw_pdu": 166,
+        "ble.synchronized": 1,
+        "ble.disconnected": 1,
+        "ble.desynchronized": 1
+      },
+      "rx": {
+        "copies": 11679,
+        "bad_length": 0,
+        "end_during_copy": 0,
+        "alloc_failed": 0,
+        "max_irq_age_us": 4,
+        "auto_start_skipped": 23706,
+        "crc_good": 8646,
+        "crc_bad": 3033,
+        "adv_good": 8586,
+        "adv_bad": 3033,
+        "connect_good": 1,
+        "connect_bad": 0
+      },
+      "export": {
+        "depth": 0,
+        "peak": 3,
+        "drops": 0,
+        "invalid": 0,
+        "sent": 166,
+        "waits": 0,
+        "errors": 0,
+        "first_drop_us": 0,
+        "first_drop_aa": 0,
+        "gap_us": 701,
+        "drain_us": 254
+      },
+      "crypto": {
+        "handshakes": 0,
+        "controlsOk": 0,
+        "controlsRejected": 0,
+        "maxUs": 4,
+        "callbackMaxUs": 133,
+        "queueDrops": 0,
+        "queuePeak": 3,
+        "hops": 3486,
+        "usbWaits": 0,
+        "usbDrops": 0,
+        "usbPeak": 7
+      },
+      "framingDiscarded": 0,
+      "sourceSha256": "646fb04a8cf1ee6d653b7b4b27c80b6f70d64e53f11b5310b1438f07a5e04a76"
+    },
+    {
+      "capture": "passive-current-20261019-202349",
+      "receiver": "1.1.129",
+      "mode": "hop",
+      "keyLoaded": true,
+      "messageCounts": {
+        "generic.debug": 10,
+        "discovery.info_resp": 1,
+        "discovery.ready_resp": 1,
+        "generic.cmd_result": 4,
+        "ble.raw_pdu": 115
+      },
+      "rx": {
+        "copies": 11799,
+        "bad_length": 0,
+        "end_during_copy": 0,
+        "alloc_failed": 0,
+        "max_irq_age_us": 4,
+        "auto_start_skipped": 23944,
+        "crc_good": 8979,
+        "crc_bad": 2820,
+        "adv_good": 8979,
+        "adv_bad": 2820,
+        "connect_good": 0,
+        "connect_bad": 0
+      },
+      "export": {
+        "depth": 0,
+        "peak": 1,
+        "drops": 0,
+        "invalid": 0,
+        "sent": 115,
+        "waits": 0,
+        "errors": 0,
+        "first_drop_us": 0,
+        "first_drop_aa": 0,
+        "gap_us": 202,
+        "drain_us": 206
+      },
+      "crypto": {
+        "handshakes": 0,
+        "controlsOk": 0,
+        "controlsRejected": 0,
+        "maxUs": 0,
+        "callbackMaxUs": 0,
+        "queueDrops": 0,
+        "queuePeak": 0,
+        "hops": 4154,
+        "usbWaits": 0,
+        "usbDrops": 0,
+        "usbPeak": 7
+      },
+      "framingDiscarded": 0,
+      "sourceSha256": "cf4bef6691e305249456c46b2bba2af05da593d228ce65b6994e27c234de68c8"
+    },
+    {
+      "capture": "passive-current-20261019-202524",
+      "receiver": "1.1.129",
+      "mode": "fixed",
+      "keyLoaded": true,
+      "messageCounts": {
+        "generic.debug": 10,
+        "discovery.info_resp": 1,
+        "discovery.ready_resp": 1,
+        "generic.cmd_result": 5,
+        "ble.raw_pdu": 4147,
+        "ble.synchronized": 1
+      },
+      "rx": {
+        "copies": 8909,
+        "bad_length": 0,
+        "end_during_copy": 0,
+        "alloc_failed": 0,
+        "max_irq_age_us": 30,
+        "auto_start_skipped": 17930,
+        "crc_good": 8042,
+        "crc_bad": 867,
+        "adv_good": 3985,
+        "adv_bad": 867,
+        "connect_good": 1,
+        "connect_bad": 0
+      },
+      "export": {
+        "depth": 0,
+        "peak": 5,
+        "drops": 0,
+        "invalid": 0,
+        "sent": 4147,
+        "waits": 0,
+        "errors": 0,
+        "first_drop_us": 0,
+        "first_drop_aa": 0,
+        "gap_us": 1459,
+        "drain_us": 1075
+      },
+      "crypto": {
+        "handshakes": 2,
+        "controlsOk": 14,
+        "controlsRejected": 0,
+        "maxUs": 995,
+        "callbackMaxUs": 165,
+        "queueDrops": 0,
+        "queuePeak": 5,
+        "hops": 0,
+        "usbWaits": 0,
+        "usbDrops": 0,
+        "usbPeak": 7
+      },
+      "framingDiscarded": 0,
+      "sourceSha256": "b1e1a41a9b5643c2dbfbd2e079ebcd8e64640ed7b41abd6534a5916f70fd8c95"
+    },
+    {
+      "capture": "passive-current-20261019-202721",
+      "receiver": "1.1.129",
+      "mode": "fixed",
+      "keyLoaded": true,
+      "messageCounts": {
+        "generic.debug": 10,
+        "discovery.info_resp": 1,
+        "discovery.ready_resp": 1,
+        "ble.raw_pdu": 84,
+        "generic.cmd_result": 5
+      },
+      "rx": {
+        "copies": 14303,
+        "bad_length": 0,
+        "end_during_copy": 0,
+        "alloc_failed": 0,
+        "max_irq_age_us": 4,
+        "auto_start_skipped": 28948,
+        "crc_good": 11497,
+        "crc_bad": 2806,
+        "adv_good": 11497,
+        "adv_bad": 2806,
+        "connect_good": 0,
+        "connect_bad": 0
+      },
+      "export": {
+        "depth": 0,
+        "peak": 1,
+        "drops": 0,
+        "invalid": 0,
+        "sent": 83,
+        "waits": 0,
+        "errors": 0,
+        "first_drop_us": 0,
+        "first_drop_aa": 0,
+        "gap_us": 201,
+        "drain_us": 207
+      },
+      "crypto": {
+        "handshakes": 0,
+        "controlsOk": 0,
+        "controlsRejected": 0,
+        "maxUs": 0,
+        "callbackMaxUs": 0,
+        "queueDrops": 0,
+        "queuePeak": 0,
+        "hops": 0,
+        "usbWaits": 0,
+        "usbDrops": 0,
+        "usbPeak": 7
+      },
+      "framingDiscarded": 0,
+      "sourceSha256": "575b1cb5953a48597baad39226b60477d0150059b494fd3761cf7f19b84837d2",
+      "measuredRequested": false,
+      "measuredError": "TimeoutError: No fresh sustained link in the authorized bounded wait; OTA not started",
+      "measuredResultStatus": null
+    },
+    {
+      "capture": "passive-current-20261019-202938",
+      "receiver": "1.1.129",
+      "mode": "hop",
+      "keyLoaded": true,
+      "messageCounts": {
+        "generic.debug": 10,
+        "discovery.info_resp": 1,
+        "discovery.ready_resp": 1,
+        "generic.cmd_result": 4,
+        "ble.raw_pdu": 69
+      },
+      "rx": {
+        "copies": 15035,
+        "bad_length": 0,
+        "end_during_copy": 0,
+        "alloc_failed": 0,
+        "max_irq_age_us": 4,
+        "auto_start_skipped": 30506,
+        "crc_good": 11818,
+        "crc_bad": 3217,
+        "adv_good": 11818,
+        "adv_bad": 3217,
+        "connect_good": 1,
+        "connect_bad": 0
+      },
+      "export": {
+        "depth": 0,
+        "peak": 1,
+        "drops": 0,
+        "invalid": 0,
+        "sent": 69,
+        "waits": 0,
+        "errors": 0,
+        "first_drop_us": 0,
+        "first_drop_aa": 0,
+        "gap_us": 201,
+        "drain_us": 207
+      },
+      "crypto": {
+        "handshakes": 0,
+        "controlsOk": 0,
+        "controlsRejected": 0,
+        "maxUs": 0,
+        "callbackMaxUs": 0,
+        "queueDrops": 0,
+        "queuePeak": 0,
+        "hops": 6002,
+        "usbWaits": 0,
+        "usbDrops": 0,
+        "usbPeak": 7
+      },
+      "framingDiscarded": 0,
+      "sourceSha256": "59672037efca91b36604b57ce8228f9d5b73ccfb688d7e48614ca5cdccaee2b4",
+      "measuredRequested": false,
+      "measuredError": "TimeoutError: No fresh sustained link in the authorized bounded wait; OTA not started",
+      "measuredResultStatus": null
+    }
+  ],
+  "currentPeerWholeImageQualified": false,
+  "stableProductSpeedGainProven": false,
+  "restoredDaily31Needed": false,
+  "typeQuitRequested": false,
+  "remaining": "New-link acquisition remains intermittent; formal measured transfers refused when no current sustained authenticated RF. No product speed parameter changed. Original goal still open; current field dependency is capture reliability, no button request pending.",
+  "sources": [
+    "https://github.com/espressif/esp-idf/blob/master/examples/bluetooth/nimble/throughput_app/README.md",
+    "https://learn.microsoft.com/en-us/uwp/api/windows.devices.bluetooth.bluetoothledevice.requestpreferredconnectionparameters?view=winrt-26100"
+  ],
+  "sourceScope": "No keys, user text, audio, raw HCI/RF or IPC authentication. Installation identity metadata and cryptographic evidence digests only."
+}
