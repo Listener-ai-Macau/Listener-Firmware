@@ -36,15 +36,18 @@ def normalize_address(value: str) -> str:
 async def resolve_target(address: str, name: str, timeout: float) -> BLEDevice:
     if address:
         wanted = normalize_address(address)
-        devices = await BleakScanner.discover(timeout=timeout)
-        for device in devices:
-            if normalize_address(device.address) == wanted:
-                return device
+        if len(wanted) != 12:
+            raise ValueError("An explicit Listener Bluetooth address must contain12 hex digits")
         # A connected or low-power bonded device commonly stops advertising.
         # Supplying a BLEDevice lets Bleak's WinRT backend open the cached
         # Bluetooth address directly instead of performing a second mandatory
         # discovery pass that can never see the device in that state.
-        return BLEDevice(address, name, None)
+        # The explicit address is the target, not a discovery hint. Starting a
+        # scanner here reconfigures Windows' shared radio schedule even when
+        # this exact bonded device is already connected and discoverable via
+        # GATT. Name-only discovery remains available below.
+        canonical = ":".join(wanted[i:i+2] for i in range(0, 12, 2))
+        return BLEDevice(canonical, name, None)
 
     devices = await BleakScanner.discover(timeout=timeout)
     for device in devices:
@@ -132,8 +135,13 @@ async def main() -> int:
     parser.add_argument("--output", required=True)
     parser.add_argument("--scan-timeout", type=float, default=8.0)
     parser.add_argument("--notify-timeout", type=float, default=5.0)
+    parser.add_argument("--connect-timeout", type=float, default=8.0)
     args = parser.parse_args()
 
+    started = time.monotonic()
+    def phase(label: str) -> None:
+        print(f"BLE_DIAG_PHASE: {label} elapsed_ms={int((time.monotonic()-started)*1000)}", flush=True)
+    phase("resolve_explicit_address" if args.address else "discover_name")
     target = await resolve_target(args.address, args.name, args.scan_timeout)
     output_path = Path(args.output)
     output_path.parent.mkdir(parents=True, exist_ok=True)
@@ -141,26 +149,47 @@ async def main() -> int:
     queue: asyncio.Queue[bytes] = asyncio.Queue()
     chunks: list[dict] = []
     events: list[dict] = []
+    count = start_offset = 0
+
+    def persist_partial() -> None:
+        # Keep validated evidence even if a later GATT operation or cleanup
+        # stalls. An incomplete file never authorizes a completed export.
+        with output_path.open("w", encoding="utf-8") as handle:
+            handle.write(json.dumps({"schema": "listener.diag_log.ble_export_manifest.v1",
+                "captured_at": now_iso(), "target": target.address,
+                "total_count": count, "requested_count": args.count,
+                "start_offset": start_offset, "event_count": len(events),
+                "chunks": chunks, "complete": False}, sort_keys=True)+"\n")
+            for event in events: handle.write(json.dumps(event, sort_keys=True)+"\n")
+
+    async def bounded(operation):
+        return await asyncio.wait_for(operation, timeout=args.notify_timeout)
 
     def on_notify(_sender, data: bytearray):
         queue.put_nowait(bytes(data))
 
-    async with BleakClient(target) as client:
-        count = decode_count(await client.read_gatt_char(COUNT_UUID))
+    phase("connect_and_discover")
+    async with BleakClient(target, timeout=args.connect_timeout,
+                           winrt={"use_cached_services": False}) as client:
+        phase("read_count")
+        count = decode_count(await bounded(client.read_gatt_char(COUNT_UUID, use_cached=False)))
         start_offset = max(0, count - max(args.count, 1))
-        await client.start_notify(DATA_UUID, on_notify)
+        persist_partial()
+        await bounded(client.start_notify(DATA_UUID, on_notify))
+        phase("export_chunks")
         export_started = False
         try:
-            await client.write_gatt_char(CONTROL_UUID, b'{"op":"start"}', response=True)
+            await bounded(client.write_gatt_char(CONTROL_UUID, b'{"op":"start"}', response=True))
             export_started = True
 
             offset = start_offset
             while offset < count:
-                await client.write_gatt_char(
+                phase(f"read_chunk_{offset}")
+                await bounded(client.write_gatt_char(
                     CONTROL_UUID,
                     json.dumps({"op": "read", "offset": offset}, separators=(",", ":")).encode("ascii"),
                     response=True,
-                )
+                ))
                 data, event_count, chunk_offset, actual_crc = await read_matching_chunk(
                     queue, offset, args.notify_timeout
                 )
@@ -182,13 +211,17 @@ async def main() -> int:
                     end = begin + EVENT.size
                     events.append(decode_event(chunk_offset + index, event_bytes[begin:end]))
                 offset = chunk_offset + event_count
+                persist_partial()
         finally:
+            persist_partial()
             if export_started:
                 try:
-                    await client.write_gatt_char(CONTROL_UUID, b'{"op":"stop"}', response=True)
+                    phase("stop_export")
+                    await bounded(client.write_gatt_char(CONTROL_UUID, b'{"op":"stop"}', response=True))
                 except Exception:
                     pass
-            await client.stop_notify(DATA_UUID)
+            phase("stop_own_notify")
+            await bounded(client.stop_notify(DATA_UUID))
 
     with output_path.open("w", encoding="utf-8") as handle:
         manifest = {
@@ -200,6 +233,7 @@ async def main() -> int:
             "start_offset": start_offset,
             "event_count": len(events),
             "chunks": chunks,
+            "complete": True,
         }
         handle.write(json.dumps(manifest, sort_keys=True) + "\n")
         for event in events:
