@@ -1,0 +1,506 @@
+{
+  "at": "2026-10-20T03:48:59.607068+08:00",
+  "scope": "Current E1 single-board raw32 engineering receive trace; original CD/FW22 identity still pending. Not stable throughput gain or controller ceiling proof.",
+  "sourceCommit": "94e52afdaf6ea8787ac94ff9281f768307acc269",
+  "baseCommit": "2e1b845",
+  "imageBuildId": "2824dec3eb1599d3",
+  "imageSha256": "3573130d03c42e138e952e6d1b4c7b4164f535d7eb4ad81a7e230115b4c57267",
+  "measuredRawBytes": 1734832,
+  "rawDataRfBytes": 1734832,
+  "rawDataRfChunks": 3917,
+  "airSpanUs": 16377874,
+  "airDecimalKBps": 105.92534781986966,
+  "protocolTransferMs": 17190,
+  "allocation": {
+    "at": "2026-10-20T03:42:16.641159+08:00",
+    "sourceCommit": "94e52afdaf6ea8787ac94ff9281f768307acc269",
+    "sourcePacketSha256": "a1e7b8292ffe9e384a718b544f3dade6c7d10a543f2f7be7cbac0fb30e86db6f",
+    "fullImageRfQualified": true,
+    "allocationCalls": 8862,
+    "allocationFailures": 0,
+    "pointerMatchedCallbacks": 8862,
+    "unmatchedCallbacks": 0,
+    "trackingOverwrites": 0,
+    "totalAllocatorUs": 52181,
+    "maxAllocatorUs": 26,
+    "sampledAllocationUs": {
+      "n": 57,
+      "min": 3,
+      "median": 6,
+      "max": 14
+    },
+    "sampledSuccessToObserverUs": {
+      "n": 57,
+      "min": 8,
+      "median": 14,
+      "max": 26
+    },
+    "sampledAllocationStartToHciSampleUs": {
+      "n": 57,
+      "min": 15,
+      "median": 27,
+      "max": 62
+    },
+    "offsetFreeRepeatComparisons": [
+      {
+        "imageOffset": 443443,
+        "firmwareUs": 19138976,
+        "referenceFirmwareUs": 19139996,
+        "originalDeliveryDelayUntilAllocatorRelativeToReferenceUs": [
+          2224.555829499758,
+          2227.473260603083
+        ],
+        "repeatDeliveryDelayUntilAllocatorRelativeToReferenceUs": [
+          -27.44417050024208,
+          -24.52673939691715
+        ],
+        "originalToRepeatEndUs": 2252,
+        "allocationDurationUs": 6,
+        "successToObserverEntryUs": 14
+      },
+      {
+        "imageOffset": 445215,
+        "firmwareUs": 19154008,
+        "referenceFirmwareUs": 19154977,
+        "originalDeliveryDelayUntilAllocatorRelativeToReferenceUs": [
+          2275.629309799183,
+          2278.3983001810084
+        ],
+        "repeatDeliveryDelayUntilAllocatorRelativeToReferenceUs": [
+          27.629309799183147,
+          30.398300181008267
+        ],
+        "originalToRepeatEndUs": 2248,
+        "allocationDurationUs": 8,
+        "successToObserverEntryUs": 16
+      },
+      {
+        "imageOffset": 443000,
+        "firmwareUs": 19168991,
+        "referenceFirmwareUs": 19169971,
+        "originalDeliveryDelayUntilAllocatorRelativeToReferenceUs": [
+          2256.606700476283,
+          2259.421364926262
+        ],
+        "repeatDeliveryDelayUntilAllocatorRelativeToReferenceUs": [
+          4.606700476283095,
+          7.421364926261958
+        ],
+        "originalToRepeatEndUs": 2252,
+        "allocationDurationUs": 7,
+        "successToObserverEntryUs": 17
+      },
+      {
+        "imageOffset": 444772,
+        "firmwareUs": 19183981,
+        "referenceFirmwareUs": 19185001,
+        "originalDeliveryDelayUntilAllocatorRelativeToReferenceUs": [
+          2223.554416417077,
+          2226.4747021496614
+        ],
+        "repeatDeliveryDelayUntilAllocatorRelativeToReferenceUs": [
+          -27.44558358292329,
+          -24.525297850338802
+        ],
+        "originalToRepeatEndUs": 2251,
+        "allocationDurationUs": 8,
+        "successToObserverEntryUs": 13
+      },
+      {
+        "imageOffset": 446544,
+        "firmwareUs": 19198984,
+        "referenceFirmwareUs": 19200005,
+        "originalDeliveryDelayUntilAllocatorRelativeToReferenceUs": [
+          2225.5572425824394,
+          2228.4718190565045
+        ],
+        "repeatDeliveryDelayUntilAllocatorRelativeToReferenceUs": [
+          -25.442757417560756,
+          -22.5281809434955
+        ],
+        "originalToRepeatEndUs": 2251,
+        "allocationDurationUs": 7,
+        "successToObserverEntryUs": 15
+      },
+      {
+        "imageOffset": 448316,
+        "firmwareUs": 19214004,
+        "referenceFirmwareUs": 19211088,
+        "originalDeliveryDelayUntilAllocatorRelativeToReferenceUs": [
+          2282.8079825501322,
+          2291.109244437088
+        ],
+        "repeatDeliveryDelayUntilAllocatorRelativeToReferenceUs": [
+          33.80798255013224,
+          42.10924443708791
+        ],
+        "originalToRepeatEndUs": 2249,
+        "allocationDurationUs": 6,
+        "successToObserverEntryUs": 15
+      },
+      {
+        "imageOffset": 448316,
+        "firmwareUs": 19216008,
+        "referenceFirmwareUs": 19217428,
+        "originalDeliveryDelayUntilAllocatorRelativeToReferenceUs": [
+          1006.0216842462437,
+          1010.0181652097026
+        ],
+        "repeatDeliveryDelayUntilAllocatorRelativeToReferenceUs": [
+          6.021684246243694,
+          10.018165209702602
+        ],
+        "originalToRepeatEndUs": 1000,
+        "allocationDurationUs": 8,
+        "successToObserverEntryUs": 15
+      },
+      {
+        "imageOffset": 449202,
+        "firmwareUs": 19221524,
+        "referenceFirmwareUs": 19222680,
+        "originalDeliveryDelayUntilAllocatorRelativeToReferenceUs": [
+          2265.3438670975697,
+          2268.689492589837
+        ],
+        "repeatDeliveryDelayUntilAllocatorRelativeToReferenceUs": [
+          10.343867097569728,
+          13.689492589836618
+        ],
+        "originalToRepeatEndUs": 2255,
+        "allocationDurationUs": 8,
+        "successToObserverEntryUs": 17
+      },
+      {
+        "imageOffset": 450088,
+        "firmwareUs": 19237092,
+        "referenceFirmwareUs": 19241099,
+        "originalDeliveryDelayUntilAllocatorRelativeToReferenceUs": [
+          4888.327886117444,
+          4899.786367965533
+        ],
+        "repeatDeliveryDelayUntilAllocatorRelativeToReferenceUs": [
+          12.32788611744445,
+          23.786367965532918
+        ],
+        "originalToRepeatEndUs": 4876,
+        "allocationDurationUs": 8,
+        "successToObserverEntryUs": 20
+      },
+      {
+        "imageOffset": 450974,
+        "firmwareUs": 19243979,
+        "referenceFirmwareUs": 19245010,
+        "originalDeliveryDelayUntilAllocatorRelativeToReferenceUs": [
+          2221.5572425824394,
+          2224.4718190565045
+        ],
+        "repeatDeliveryDelayUntilAllocatorRelativeToReferenceUs": [
+          -30.442757417560756,
+          -27.5281809434955
+        ],
+        "originalToRepeatEndUs": 2252,
+        "allocationDurationUs": 6,
+        "successToObserverEntryUs": 11
+      },
+      {
+        "imageOffset": 452746,
+        "firmwareUs": 19258987,
+        "referenceFirmwareUs": 19260002,
+        "originalDeliveryDelayUntilAllocatorRelativeToReferenceUs": [
+          2226.5586556651206,
+          2229.470377509926
+        ],
+        "repeatDeliveryDelayUntilAllocatorRelativeToReferenceUs": [
+          -24.441344334879545,
+          -21.529622490073848
+        ],
+        "originalToRepeatEndUs": 2251,
+        "allocationDurationUs": 9,
+        "successToObserverEntryUs": 15
+      }
+    ],
+    "limitations": [
+      "Offset-free differences are relative to a nearby observed nonrepeated packet, not absolute controller receipt timestamps.",
+      "No allocation failures in this run excludes retry waits here, not all future sessions.",
+      "Timing before allocator includes controller/radio delivery and SDK pre-allocation dispatch; it does not prove which side rejected or missed an original PDU.",
+      "Both full-image coverage and missing-ACK limitations from underlying authenticated RF proof remain unchanged.",
+      "Current E1/FW32 engineering evidence does not establish original CD/FW22 same-board qualification."
+    ]
+  },
+  "actualHciBudget": {
+    "hciPcapSha256": "1893ee71c790aaa670b1e6869dc5a43aa59c72b46c06212ecaf6040a9aa1f347",
+    "sourceRfSha256": "a1e7b8292ffe9e384a718b544f3dade6c7d10a543f2f7be7cbac0fb30e86db6f",
+    "connection": {
+      "t": 1792438783.8919148,
+      "key": [
+        2048,
+        1
+      ],
+      "peer": "E1:B2:07:53:12:B8"
+    },
+    "dataObservedHostEpoch": [
+      1792438797.1708696,
+      1792438813.5476468
+    ],
+    "lastObservedStateBeforeData": {
+      "DLE": {
+        "t": 1792438784.507963,
+        "key": [
+          2048,
+          1
+        ],
+        "kind": "DLE",
+        "hostTxOctets": 251,
+        "hostTxTimeUs": 2120,
+        "hostRxOctets": 251,
+        "hostRxTimeUs": 2120
+      },
+      "PHY": {
+        "t": 1792438784.252959,
+        "key": [
+          2048,
+          1
+        ],
+        "kind": "PHY",
+        "hostTxPhy": 2,
+        "hostRxPhy": 2
+      },
+      "interval": {
+        "t": 1792438796.58464,
+        "key": [
+          2048,
+          1
+        ],
+        "kind": "interval",
+        "intervalUs": 15000,
+        "latency": 0
+      }
+    },
+    "changesDuringData": [
+      {
+        "t": 1792438797.86572,
+        "key": [
+          2048,
+          1
+        ],
+        "kind": "interval",
+        "intervalUs": 7500,
+        "latency": 0
+      }
+    ],
+    "scope": "Observed HCI controller events only. Missing PHY/interval event remains unavailable; no credit-FIFO latency inference."
+  },
+  "eventClock": {
+    "at": "2026-10-20T03:40:56.873498+08:00",
+    "capture": "E:\\ListenerAnalysisState\\listener-repair-handoff\\work\\sniffer-alternative-butterfly-20261018\\passive-current-20261020-033920\\rf-private",
+    "sourceSha256": "a1e7b8292ffe9e384a718b544f3dade6c7d10a543f2f7be7cbac0fb30e86db6f",
+    "accessAddress": "572bd334",
+    "qualifiedClockAndCsa2": true,
+    "phyEvidence": {
+      "kind": "MIC-verified LL_PHY_UPDATE_IND",
+      "control": {
+        "deviceUs": 599711444,
+        "sessionIndex": 1,
+        "direction": 1,
+        "counter": 4,
+        "opcode": "0x18",
+        "c2p": 2,
+        "p2c": 2,
+        "instant": 50
+      }
+    },
+    "roiDeviceUs": [
+      614679005,
+      622712045
+    ],
+    "fittedIntervalUs": 7500.030204927298,
+    "phaseRelativeToRoiUs": 2507.965727798177,
+    "anchorSamples": 1037,
+    "anchorResidualMaxUs": 0.5466876309365034,
+    "csa2BaseCounterAtRelativeZero": 1953,
+    "channelMap": "b2ffffff1f",
+    "usedChannels": [
+      1,
+      4,
+      5,
+      7,
+      8,
+      9,
+      10,
+      11,
+      12,
+      13,
+      14,
+      15,
+      16,
+      17,
+      18,
+      19,
+      20,
+      21,
+      22,
+      23,
+      24,
+      25,
+      26,
+      27,
+      28,
+      29,
+      30,
+      31,
+      32,
+      33,
+      34,
+      35,
+      36
+    ],
+    "observedEvents": 1068,
+    "observedCrcPackets": 9575,
+    "channelMismatches": 0,
+    "medianObservedEventLastEndOffsetUs": 5505.077993287705,
+    "medianAfterLastObservedToNextAnchorUs": 1994.9522116395929,
+    "eventTailOffsetPercentilesUs": {
+      "0": 237.51324530458078,
+      "10": 5308.053178626578,
+      "50": 5505.077993287705,
+      "90": 5531.41637910991,
+      "100": 5533.1130381166
+    },
+    "actualCounterRepeatEventDistance": {
+      "1": 572
+    },
+    "scope": [
+      "Event boundaries inferred from hardware timing and uniquely checked across every observed CSA#2 channel; not raw exported event counters.",
+      "Last observed packet is not proof of the event last physical packet. Missing empty responses and absolute antenna delay remain unqualified.",
+      "No unique Windows-versus-ESP blame or theoretical ceiling from this artifact alone."
+    ]
+  },
+  "clockedTail": {
+    "at": "2026-10-20T03:41:28.848595+08:00",
+    "capture": "E:\\ListenerAnalysisState\\listener-repair-handoff\\work\\sniffer-alternative-butterfly-20261018\\passive-current-20261020-033920\\rf-private",
+    "sourceSha256": "a1e7b8292ffe9e384a718b544f3dade6c7d10a543f2f7be7cbac0fb30e86db6f",
+    "clock": "E:\\ListenerAnalysisState\\listener-repair-handoff\\work\\sniffer-alternative-butterfly-20261018\\passive-current-20261020-033920\\event-clock.json",
+    "intervalUs": 7500.030204927298,
+    "observedEvents": 1068,
+    "counts": {
+      "dataEvents": 1038,
+      "dataEventTailMd1": 1027,
+      "actualCrossEventRepeats": 572,
+      "repeatDistance1": 572,
+      "repeatOriginLastObservedCentral": 572,
+      "repeatIsNextEventFirstObservedCentral": 572,
+      "repeatOriginMd1": 571,
+      "repeatOriginNoCaptured150usReply": 562,
+      "centralPacketsWith150usReplyCandidate": 4466,
+      "dataEventTailFull255": 444,
+      "dataEventTailHas150usReplyCandidate": 476,
+      "repeatOriginCapturedAckToggle": 7,
+      "repeatOriginCapturedStaleNesn": 3
+    },
+    "observedCentralPacketsPerDataEvent": {
+      "1": 22,
+      "5": 976,
+      "3": 14,
+      "2": 12,
+      "4": 12,
+      "6": 2
+    },
+    "repeatOriginStartOffsetUs": {
+      "n": 572,
+      "minimum": -0.007781592663377523,
+      "median": 5248.261909886263,
+      "maximum": 5252.308285612147
+    },
+    "repeatOriginEndOffsetUs": {
+      "n": 572,
+      "minimum": 871.9922184073366,
+      "median": 5528.648649507202,
+      "maximum": 5533.1130381166
+    },
+    "replyCandidateAfterEndUs": {
+      "n": 4466,
+      "minimum": 149,
+      "median": 150.0,
+      "maximum": 151
+    },
+    "uniqueCentralLinkPayloadBytesPerObservedDataEvent": {
+      "n": 1030,
+      "minimum": 7,
+      "median": 853.0,
+      "maximum": 964
+    },
+    "scope": [
+      "Event clock uniquely validated against all observed CSA2 channels; every analyzed packet CRC recomputed.",
+      "Nonempty repeated data independently MIC checked; empty ACK candidates and SN/NESN headers are CRC checked, not MIC authenticated.",
+      "Missing captured reply is not peripheral silence. An ACK observed by sniffer is not proof central received it.",
+      "Link payload counts are not useful application bytes. No attribution or hard throughput ceiling claimed."
+    ]
+  },
+  "concurrentHciMetadata": {
+    "hciPcapSha256": "1893ee71c790aaa670b1e6869dc5a43aa59c72b46c06212ecaf6040a9aa1f347",
+    "sourceRfSha256": "a1e7b8292ffe9e384a718b544f3dade6c7d10a543f2f7be7cbac0fb30e86db6f",
+    "dataSpanSeconds": 16.376777172088623,
+    "targetHandle": 2048,
+    "aclMetadataByHandle": {
+      "2048": {
+        "txAclPackets": 7840,
+        "txAclPayloadBytes": 1775252,
+        "rxAclPackets": 20,
+        "rxAclPayloadBytes": 340
+      }
+    },
+    "aclLengthMismatchPackets": 0,
+    "lastObservedScanCommandBeforeData": {
+      "relativeToDataMs": -13258.926630020142,
+      "opcode": "0x2042",
+      "enabled": true
+    },
+    "scanEnableCommandsDuringData": [],
+    "hciCommandCountsDuringData": {
+      "0x2013": 1
+    },
+    "successfulConnectionEventsDuringData": [],
+    "scope": [
+      "Header counts only; no payload, other-peer identity, pairing material or audio exported.",
+      "HCI observation timestamps are not air-slot timestamps. Scan commands do not prove scanning consumed a particular gap.",
+      "No other-handle ACL traffic would not exclude empty polls or reserved controller airtime.",
+      "No blind scan-policy rewrite or repetition of the previous ineffective scan refresh trial."
+    ]
+  },
+  "dailyRestore": {
+    "at": "2026-10-20T03:48:59.607068+08:00",
+    "result": "PASS",
+    "typeBuild": 62,
+    "typeExeSha256": "d3775bbdff37b0b3d4cab0afcfa1256ccc01d9d1252057e42014a3260316eda5",
+    "typeProcesses": [
+      [
+        12932,
+        1792434230.163843
+      ],
+      [
+        37052,
+        1792434230.8749375
+      ]
+    ],
+    "firmware32Restored": {
+      "expectedBuild": "ad73e1113e429ca7",
+      "actualSamePeerRuntimeProbeAt": "2026-10-19T19:40:20.617423+00:00"
+    },
+    "deviceUid": "98c377b4e88c",
+    "profileRevision": 5,
+    "coreSettingsPreserved": true,
+    "nativeTrialAbsent": true,
+    "packetPackingTrialAbsent": true,
+    "source": "current62-measure-20261020-033920/measurement.json",
+    "receiverPid": 39004,
+    "receiverFirmware": "1.1.129",
+    "receiverIdle": true,
+    "publicArtifactsUnchanged": true
+  },
+  "excludedRepeatHypotheses": [
+    "Allocation retry wait absent in actual8862 calls; do not merely increase mbufs.",
+    "First-SYNC throughput request release is intended to permit7.5ms after the initial15ms; prior permanent15ms failed, not a newly found release regression.",
+    "Only target handle2048 carries observed ACL during DATA; enabled scan beforeDATA remains not airtime causation or proof other radio slots absent."
+  ],
+  "nextSourceProbe": "Offline exactSDK object inspection identifies ble_con_evt_cb_register/con_evt_func_cb and2uint8 status callback. Actual callsites report1 after event-start setup and0 after normal-frame/skip ISR. Need safe ownership/IRAM/bounded observer proof before any installation, labels remain opaque/no invented end reason."
+}
