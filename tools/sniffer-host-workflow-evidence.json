@@ -1,0 +1,65 @@
+{
+  "at": "2026-10-19T18:40:26.784513+08:00",
+  "archiveSha256": "aed6dca6b6bfb969243add9f3f40da15283f3dc4a60ae16e90910e9e887bfe07",
+  "scope": "Exact host tool snapshots and metadata only. No keys, IPC token, registry export, raw RF/HCI, audio or user text included. Extract into the documented analysis workspace to restore tools; this is not a customer firmware package.",
+  "runtime": "Type54 59ca7597 / FW31 8c549829 / receiver127 owner7",
+  "fixedHostDefects": [
+    "Requested hopping was overridden to fixed in two places; before/after actual production branch wire fields differ65534->65535.",
+    "Idle SHA-bound capture-module reload now keeps owner37048 and one COM18 handle; active and wrong-digest requests were actually rejected.",
+    "New F8 key lookup is explicitly peer-bound and remains rejected without independent bidirectional MIC proof.",
+    "Natural audio collector has an explicit pinned daily54/FW31 profile and discovers actual VKA1 HCI/GATT streams; does not assume old F0/0x800/3. Device-session join remains required."
+  ],
+  "actualResults": {
+    "savedArmConnectVectors": 8,
+    "f8SyntheticParserPass": 8,
+    "rx128ArmCounterCases": 5,
+    "receiver128Installed": false,
+    "receiver128Source": "75c382000308d7d78f5c9302ea274b1553981552",
+    "realOldAudioNotifications": 4671,
+    "realOldAudioSessions": 2,
+    "oldAudioKnownMissingExportSequence": 865,
+    "latestPassiveSeconds": 150,
+    "latestPassiveHadVkaAudio": false,
+    "typePidsUnchanged": [
+      27032,
+      32528
+    ],
+    "stableSpeedGainProven": false
+  },
+  "remaining": [
+    "New F8 capture missed CONNECT on fixed37/38/39, hopping and unfiltered diagnostic trials. CRC failure vs pre-export loss remains unobserved; candidate128 adds counters and awaits physical DFU button.",
+    "Daily32/33 are built, exact source pinned and retain FW31 settings, but are not installed or measured. Restore31 is mandatory after any speed trial.",
+    "Latest passive interval contains no VKA1 audio; absence is not an audio latency pass. Old sequence865 remains an HCI export hole, not proven product loss."
+  ],
+  "sourceManifest": {
+    "at": "2026-10-19T18:40:26.784513+08:00",
+    "sourceFiles": {
+      "receiver_session.py": "c38ff6bb375e2cb4634406871fc978d8f8ff48bb61cd5d844d8f6a810c69a34b",
+      "butterfly_passive_capture.py": "c14347833e73d40104dfbb2847a78f9939f54ffb56aa46b96627b4bc5bb8e35e",
+      "peer_binding.py": "2badfc14147e691d6b9a5a43726bce69708ac145de0a89c123db04959bfb0b60",
+      "passive_current_round.py": "2561072d67f793648c83259b7a6d2b499153f52524de8191eb94a2f716b60d45",
+      "ota_with_active_capture.py": "b96d6a8d529bc221ddfa65837ee839960315361bf74a07759e0cef664aab95fc",
+      "run_f834_bootstrap.py": "db0c5516d2bedc80bae2ee53494f3781907003dfce42001a3e7faf6ffc46d6b7",
+      "collect_natural_audio.py": "0933cf52a3e13dcb3815982cc97633a5adeab0ca5f4fcf80360dcfbfc0f62b4b",
+      "find_vka_hci_streams.py": "b78c60ce8fe9ac47ec303bdcda4ac9588beca7edb237be554f5b4b353468d7b2",
+      "audit_peer_filter_arm.py": "567c50e9728e9c559ed9edddc9ee98005e246d7cde5cd5c051cc9379f161704a",
+      "replay_rx_diagnostics128.py": "1397c17d67d3dec26058d4a15fa78a9345224af4e3a40f40249ad0396c4cc595",
+      "freeze_rxdiag128.py": "8bdfb84785ac39e6f6cbf8868dc134a00e2200838cb2645039c7b79c0b14bcdd",
+      "build_receiver128.py": "93cac98965e763d5582ee705ff738fd06d0616b90ccbd9dab8d280ca13c6177c"
+    },
+    "evidenceFiles": {
+      "tracking-mode-override-before-after.json": "b7cbf47c2725c640246cc54a09582d226063170cad525cd389b31413423ff2e9",
+      "owner7-pure-rx-and-reload.json": "14197136622f5a25b267d80f96e41d9baf507f83762b9fa25106ef66874a6c58",
+      "f834-filter-arm-exclusion.json": "6f3a7770071a60acd1cd1c632b0aa4643b71a7c85864b7ce69a52fb31ebf063b",
+      "rxdiag128-arm-counters.json": "202908ecfeaeec23f90487b94a852a6959d5ce44eff34f1462330c7698e450e9",
+      "rxdiag128-dma-snapshot.json": "407190cd33da59d4ce266eccd6366708cb1b770898693ab14e7760329c002ab8",
+      "prepared-custom-128.json": "dfaca08747881b4350007e1749f15c6b84a7eac8f755266ef011f5ba1d079fbe",
+      "daily-baseline-type54-fw31.json": "d2247683cfe3e93e7b2b51f31ac41e8e48d254288da1703f543495bc55fd184e",
+      "prepared-daily32.json": "f12106618adf6890f71d1e6dbacec535945ff710bfbe20c94f8ffb87ba6476f4",
+      "prepared-daily33.json": "131cd00a32a532bd6fd2bf6fc532ea1fe63cf65b55e38bc4c186fe0f06192b1a",
+      "audio-workflow-old-real-vector.json": "7eb2d429805d3eacc20dca5a33a019f2c9f872fc5c6c16bcab037ed57783eb0d"
+    },
+    "workspace": "E:\\ListenerAnalysisState\\listener-repair-handoff\\work\\sniffer-alternative-butterfly-20261018",
+    "scope": "Exact host tool snapshots and metadata only. No keys, IPC token, registry export, raw RF/HCI, audio or user text included. Extract into the documented analysis workspace to restore tools; this is not a customer firmware package."
+  }
+}
