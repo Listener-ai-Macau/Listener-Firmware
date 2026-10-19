@@ -1,0 +1,64 @@
+{
+  "at": "2026-10-19T19:25:14.382604+08:00",
+  "sourceCommit": "ac52b1fc67a6041427bb785a4042829cb9ac2de5",
+  "base128": "75c382000308d7d78f5c9302ea274b1553981552",
+  "package": {
+    "at": "2026-10-19T19:20:57.022263+08:00",
+    "firmware": "1.1.129",
+    "sourceCommit": "ac52b1fc67a6041427bb785a4042829cb9ac2de5",
+    "baseCommit": "75c382000308d7d78f5c9302ea274b1553981552",
+    "whadLibraryCommit": "d856d1ddde7384d24bf3303ba22ce2201756712b",
+    "nanopbCommit": "ae4959ec848503796f63319a7f3ae345b41f354a",
+    "package": "butterfly-passive-1.1.129.zip",
+    "packageSha256": "3550b9e4f87b681e34fb10b9231aab7597045824a3908d4f651862f2d99c15c9",
+    "applicationBytes": 189568,
+    "applicationSha256": "4340c05bb92fa70e3acfe25eef36c2132c383f12b2b5a0abae0d2e9f3613a8e0",
+    "elfSha256": "112de466b3239d6fa2ee23d5fea1b72fc85a5e65ebf981be41816d62d8739753",
+    "stackPointer": "0x2003ff08",
+    "resetVector": "0x1931",
+    "loadStart": "0x1000",
+    "lastApplicationAddress": "0x2f47f",
+    "applicationOnly": true,
+    "bootloaderWritten": false,
+    "restoredNordicPackageSha256": "a5ec3b26bfe1d5db7bf77c4fb0d4470924778ccf440ea846965b8a2bcb719048",
+    "actualArmProof": "rx-export-timestamp129-arm-before-after.json",
+    "crossBuild": {
+      "startedAt": "2026-10-19T18:51:00.512093+08:00",
+      "jobs": 1,
+      "source": "E:\\ListenerAnalysisState\\listener-repair-handoff\\work\\sniffer-alternative-butterfly-20261018\\source-rxtiming129",
+      "hardwareInstalled": false,
+      "scope": "Analyzer receive counters only; no product changes or upload",
+      "pid": 24608,
+      "exit": 0,
+      "log": "cross-build129-1792407060512093000.log",
+      "completedAt": "2026-10-19T18:52:11.681351+08:00"
+    },
+    "hardwareInstalled": false,
+    "supersedesUninstalled128": true,
+    "timestampBasis": "PPI END minus complete BLE airtime; legacy controller and relative clocks unchanged",
+    "scope": "Combines128 receive counters with raw-export clock correction. Actual ARM11 clock cases/3 full1M receive-export paths; MMIO and allocator fixtures disclosed. Global write observer artifact retained. No live RF calibration, current-peer capture, speed gain or product-firmware acceptance claimed.",
+    "primaryReferences": [
+      "https://docs.nordicsemi.com/r/bundle/ps_nrf52840/page/radio.html",
+      "https://www.bluetooth.com/wp-content/uploads/Files/Specification/HTML/Core-54/out/en/low-energy-controller/link-layer-specification.html"
+    ]
+  },
+  "toolSourceArchiveSha256": "987365c9a55a4a90658e20457392a92a830bbe25c59a7dcdf7124010ee401748",
+  "actualProof": {
+    "clockCases": 11,
+    "hardwareClockCases": 10,
+    "full1mReceivePaths": 3,
+    "rawBytesAndLegacyClockUnchanged": true,
+    "packetControllerAndExportLayoutSizesUnchanged": true
+  },
+  "observerCounterexample": {
+    "source": "arm-it-memory-hook-diagnostic.json",
+    "withoutWriteHookCrc": 0,
+    "withNoopWriteHookCrc": 1,
+    "scope": "Unicorn test instrumentation changes retained Thumb IT fragment. No physical receiver CRC fault inferred. Invasive hook removed, final fixed register snapshots used."
+  },
+  "metadataScope": "Hardware END derived export time only; pipeline offset not antenna calibrated, relative field still legacy.129 supersedes uninstalled128; actual device remains127. Neither full F8 coverage nor product speed gain accepted.",
+  "references": [
+    "https://docs.nordicsemi.com/r/bundle/ps_nrf52840/page/radio.html",
+    "https://www.bluetooth.com/wp-content/uploads/Files/Specification/HTML/Core-54/out/en/low-energy-controller/link-layer-specification.html"
+  ]
+}
