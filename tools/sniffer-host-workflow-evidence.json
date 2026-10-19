@@ -1,6 +1,6 @@
 {
   "at": "2026-10-19T18:40:26.784513+08:00",
-  "archiveSha256": "aed6dca6b6bfb969243add9f3f40da15283f3dc4a60ae16e90910e9e887bfe07",
+  "archiveSha256": "c6926c92e3d682428bf337a4a5eaf6945d8ebbdb297fbf3a8aa3b025611d4055",
   "scope": "Exact host tool snapshots and metadata only. No keys, IPC token, registry export, raw RF/HCI, audio or user text included. Extract into the documented analysis workspace to restore tools; this is not a customer firmware package.",
   "runtime": "Type54 59ca7597 / FW31 8c549829 / receiver127 owner7",
   "fixedHostDefects": [
@@ -60,6 +60,12 @@
       "audio-workflow-old-real-vector.json": "7eb2d429805d3eacc20dca5a33a019f2c9f872fc5c6c16bcab037ed57783eb0d"
     },
     "workspace": "E:\\ListenerAnalysisState\\listener-repair-handoff\\work\\sniffer-alternative-butterfly-20261018",
-    "scope": "Exact host tool snapshots and metadata only. No keys, IPC token, registry export, raw RF/HCI, audio or user text included. Extract into the documented analysis workspace to restore tools; this is not a customer firmware package."
-  }
+    "scope": "Exact host tool snapshots and metadata only. No keys, IPC token, registry export, raw RF/HCI, audio or user text included. Extract into the documented analysis workspace to restore tools; this is not a customer firmware package.",
+    "receiver128SourceFiles": {
+      "receiver128/src/radio.cpp": "89048916118db1aae67b98dbf8aa9a4a645a7b52b9c4ccaf9ff6cc23490b1354",
+      "receiver128/src/controllers/blecontroller.cpp": "b5cef663cf787294847d1f9fa0641d9d847f6501f8597639d924cf1673383d4f",
+      "receiver128/src/version.h": "412c0a99fe77e07ddb3ceb064dcf5350809fcc3c8ee44cb5733f3abf6ac0222a"
+    }
+  },
+  "receiver128ExactChangedBlobsIncluded": true
 }
