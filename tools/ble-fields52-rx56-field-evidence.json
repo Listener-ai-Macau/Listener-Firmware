@@ -1,0 +1,220 @@
+{
+  "at": "2026-10-20T06:15:18.278685+08:00",
+  "archive": "C:\\Users\\Billy\\Documents\\Codex\\2026-10-04\\listener-repair-handoff\\outputs\\ble-fields52-rx56-20261020.zip",
+  "bytes": 328665,
+  "sha256": "cb71e383f3bfc1bd62edae7474db2ba392337919335e6ae8cfe850e323cc2b1c",
+  "members": 115,
+  "fullPrivateRfAndHciExcluded": true,
+  "keysAudioProfilesExcluded": true,
+  "summary": {
+    "at": "2026-10-20T06:15:18.278685+08:00",
+    "scope": "CurrentE1/Type64 default443 receiving exact uncompressed FW32/1734832B. OriginalCD/FW22 same-board1731024B qualification, stable gain and160 exploration remain incomplete.",
+    "rounds": [
+      {
+        "candidate": 52,
+        "measurement": "current64-measure-20261020-051634",
+        "result": "PASS",
+        "error": null,
+        "sourceCommit": "8f757a53e5484c5c8c0841c71c730e5cac0f0f39",
+        "typeSource": "6ea535aa3e7413c7da77a49c1d3b87d16eac5419",
+        "normal32Restore": {
+          "expectedBuild": "ad73e1113e429ca7",
+          "actualSamePeerRuntimeProbeAt": "2026-10-19T21:17:34.215098+00:00"
+        },
+        "typePreserved": true,
+        "fullRawRf": true,
+        "actualCurrentImageBytes": 1734832,
+        "originalCdSameBoardQualified": false,
+        "airDecimalKBps": 107.31860008351248,
+        "rawBytes": 1734832,
+        "rawChunks": 3917,
+        "hciRows": 54,
+        "gattRows": 24,
+        "stateRows": 64,
+        "irqRows": 32,
+        "allHciCounterMatched": true,
+        "deviceConfigurationPreserved": true
+      },
+      {
+        "candidate": 53,
+        "measurement": "current64-measure-20261020-052439",
+        "result": "INCOMPLETE",
+        "error": "TimeoutError: No independently authenticated sustained link after natural prime; measured OTA not requested",
+        "sourceCommit": "479cf64947016092a7366f39b08228b8dab1a25f",
+        "typeSource": "6ea535aa3e7413c7da77a49c1d3b87d16eac5419",
+        "normal32Restore": {
+          "expectedBuild": "ad73e1113e429ca7",
+          "actualSamePeerRuntimeProbeAt": "2026-10-19T21:26:16.381319+00:00"
+        },
+        "typePreserved": true,
+        "fullRawRf": false,
+        "actualCurrentImageBytes": 1734832,
+        "originalCdSameBoardQualified": false,
+        "measuredTransferRequested": false
+      },
+      {
+        "candidate": 54,
+        "measurement": "current64-measure-20261020-055316",
+        "result": "PASS",
+        "error": null,
+        "sourceCommit": "069ae7f321aaea0b3e64c00513d7d949acb62c1a",
+        "typeSource": "6ea535aa3e7413c7da77a49c1d3b87d16eac5419",
+        "normal32Restore": {
+          "expectedBuild": "ad73e1113e429ca7",
+          "actualSamePeerRuntimeProbeAt": "2026-10-19T21:54:16.487708+00:00"
+        },
+        "typePreserved": true,
+        "fullRawRf": true,
+        "actualCurrentImageBytes": 1734832,
+        "originalCdSameBoardQualified": false,
+        "airDecimalKBps": 105.73934379427311,
+        "rawBytes": 1734832,
+        "rawChunks": 3917,
+        "hciRows": 55,
+        "gattRows": 24,
+        "stateRows": 64,
+        "irqRows": 32,
+        "allHciCounterMatched": true,
+        "deviceConfigurationPreserved": true
+      },
+      {
+        "candidate": 55,
+        "measurement": "current64-measure-20261020-060220",
+        "result": "PASS",
+        "error": null,
+        "sourceCommit": "efb8fc4cb6760abadc3e7a1b98d105c92b0f39b1",
+        "typeSource": "6ea535aa3e7413c7da77a49c1d3b87d16eac5419",
+        "normal32Restore": {
+          "expectedBuild": "ad73e1113e429ca7",
+          "actualSamePeerRuntimeProbeAt": "2026-10-19T22:03:20.517164+00:00"
+        },
+        "typePreserved": true,
+        "fullRawRf": true,
+        "actualCurrentImageBytes": 1734832,
+        "originalCdSameBoardQualified": false,
+        "airDecimalKBps": 106.19320600055225,
+        "rawBytes": 1734832,
+        "rawChunks": 3917,
+        "hciRows": 54,
+        "gattRows": 24,
+        "stateRows": 64,
+        "irqRows": 32,
+        "allHciCounterMatched": true,
+        "deviceConfigurationPreserved": true
+      },
+      {
+        "candidate": 56,
+        "measurement": "current64-measure-20261020-060913",
+        "result": "PASS",
+        "error": null,
+        "sourceCommit": "82001889f60f64d81c660b8e4f2c3242b0c2816e",
+        "typeSource": "6ea535aa3e7413c7da77a49c1d3b87d16eac5419",
+        "normal32Restore": {
+          "expectedBuild": "ad73e1113e429ca7",
+          "actualSamePeerRuntimeProbeAt": "2026-10-19T22:10:12.567513+00:00"
+        },
+        "typePreserved": true,
+        "fullRawRf": true,
+        "actualCurrentImageBytes": 1734832,
+        "originalCdSameBoardQualified": false,
+        "airDecimalKBps": 107.60068057353553,
+        "rawBytes": 1734832,
+        "rawChunks": 3917,
+        "hciRows": 54,
+        "gattRows": 24,
+        "stateRows": 64,
+        "irqRows": 32,
+        "allHciCounterMatched": true,
+        "deviceConfigurationPreserved": true
+      }
+    ],
+    "actualTimeFields52": {
+      "effective136Us": 1064,
+      "effective138Us": 1064,
+      "phy147": 1,
+      "phy148": 1,
+      "minReservationHalfUs": 8750,
+      "snapshotCostUs": 4
+    },
+    "margin53": {
+      "formalResult": "INCOMPLETE",
+      "onlyReadFromRestoration": true,
+      "option50HalfUs": 400,
+      "option50Us": 200,
+      "notA2msGuard": true
+    },
+    "rx54": {
+      "events": 32,
+      "observedCrossEventTailRepeats": 19,
+      "lastDescriptorDidNotMatchTail": 19,
+      "normalEarlierDescriptors": 17,
+      "rawStatusBit0Rejects": 2,
+      "observerMaxUs": 5
+    },
+    "rx55": {
+      "position": "last",
+      "events": 32,
+      "normalPhysicalTimeMatches": 31,
+      "anchorCount": 14,
+      "maxResidualUs": 0.6017968654632568,
+      "repeatTailEvents": 17,
+      "lastNormalRxToMissingTailStartUs": "approximately1408; one full255B packet cycle",
+      "observerMaxUs": 6
+    },
+    "rx56": {
+      "position": "first",
+      "events": 32,
+      "normalPhysicalTimeMatches": 32,
+      "anchorCount": 16,
+      "maxResidualUs": 0.6261028051376343,
+      "firstDataCopiesAlsoSeenEarlier": 16,
+      "all16HardwareTimeMatchCurrentRetransmissionNotDeferredOriginal": true
+    },
+    "interpretation": [
+      "These actual samples narrow the loss to controller RX/ACK processing before HCI acceptance; no evidence it is an application/Flash queue delay.",
+      "Exact HW RX window end/remaining budget and why the tail is not accepted remain unproven. Do not promote the scheduling hypothesis to exclusive root cause.",
+      "No stable useful-air throughput gain is established; observations are not a release candidate policy change."
+    ],
+    "failuresRetained": [
+      "53 missedCONNECT and requested no measured transfer; restoration-only scalar is not full transfer evidence.",
+      "54 first declaration-order native compile failed before field install.",
+      "54 initial ROM-only entry does not cover SDK runtime hack; linked proof rejected before installation;069ae7f covers both entries without nesting.",
+      "53 old linear Xtensa verifier decoded unreachable padding as call; actual branch-boundary walker retained strict original-call proof."
+    ],
+    "restoration": {
+      "at": "2026-10-20T06:14:36.172588+08:00",
+      "typeBuild": 64,
+      "typeSource": "6ea535a",
+      "exeSha256": "ab7e31422c7fa5d22649b9d08eb7a6ad434d8f282fc9571d1b45c8f8e1e25767",
+      "typeProcesses": [
+        27932,
+        34120
+      ],
+      "normal32Restore": {
+        "expectedBuild": "ad73e1113e429ca7",
+        "actualSamePeerRuntimeProbeAt": "2026-10-19T22:10:12.567513+00:00"
+      },
+      "deviceUid": "98c377b4e88c",
+      "profileRevision": 5,
+      "keysAndCorePreservedAgainst56": true,
+      "volatileFieldsExcluded": [
+        "activePowerSource",
+        "batteryPercent",
+        "connected",
+        "detail",
+        "lastUpdatedAt"
+      ],
+      "default443": true,
+      "nativeTrialAbsent": true,
+      "receiverPid": 39004,
+      "receiverIdle": true,
+      "publicReleaseUnchanged": true,
+      "source": "current64-measure-20261020-060913/measurement.json"
+    },
+    "nextAction": "Read the exact programmed RX/event duration budget and ROM scheduler inputs. Account for hardware timestamp evidence before any policy variant; do not repeat CE enum/core/Flash/RAM/localTX-only changes.",
+    "officialReference": {
+      "url": "https://github.com/espressif/esp-idf/blob/master/examples/bluetooth/nimble/throughput_app/README.md",
+      "scope": "TwoESP boards, shield box, MTU512,CI7.5ms,DLE251; S3 WRITE1.34Mbps is a reference, not a Windows guarantee."
+    }
+  }
+}
