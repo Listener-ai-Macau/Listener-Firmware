@@ -1,0 +1,527 @@
+{
+  "at": "2026-10-20T05:02:46.689438+08:00",
+  "scope": "Current E1 engineering only; exact current32 raw1734832B, not originalCD/FW22 same-board1731024B qualification. No stable speed gain or controller maximum proved.",
+  "type64": {
+    "source": "6ea535a",
+    "cause": "Successful active TYPE:OTA did not refresh expiring runtime peer. Default name service discovery tried Companion and consumed6007ms.",
+    "fix": "Refresh exact successful live handoff address and bind both normal/deadline fallback discovery plus nativeHID fallback to same address.",
+    "field": "Installed64, six observed exact-peer successful prepares626/667/678/678/677/671ms across50/51 rounds; not DATA throughput gain.",
+    "sourceTests": "Four actual Rust policy tests and actual caller wiring checks; full cargo lib remains blocked by ten old install() test signatures.",
+    "publicReleaseUnchanged": true
+  },
+  "rounds": [
+    {
+      "measurement": "current62-measure-20261020-042312",
+      "candidate": 49,
+      "receiverSource": "c0d19712d67c2ff2950a47879dc5c41d2334b703",
+      "typeSource": "d5a8ff6",
+      "result": "PASS",
+      "error": null,
+      "receiverConfirmed": {
+        "expectedBuild": "5f86deb893b45ced",
+        "actualSamePeerRuntimeProbeAt": "2026-10-19T20:23:39.478789+00:00"
+      },
+      "normal32Restored": {
+        "expectedBuild": "ad73e1113e429ca7",
+        "actualSamePeerRuntimeProbeAt": "2026-10-19T20:24:12.174001+00:00"
+      },
+      "typePreserved": true,
+      "rawTransferRequested": true,
+      "transfers": [
+        {
+          "label": "unmeasured-receiver49-prime",
+          "imageBytes": 1737312,
+          "status": "PASS",
+          "stats": {
+            "bytesTransferred": 1737312,
+            "chunksSent": 3922,
+            "confirmElapsedMs": 0,
+            "confirmedVersion": "1.0.6-rc1",
+            "nonTransferFixedElapsedMs": 4910,
+            "pretransferTypeReady": true,
+            "pretransferTypeReadyElapsedMs": 0,
+            "targetPrepareElapsedMs": 610,
+            "totalElapsedMs": 22594,
+            "transferElapsedMs": 17026,
+            "transport": "denzic_ota_v1",
+            "typeReady": true,
+            "typeReadyElapsedMs": 953
+          }
+        },
+        {
+          "label": "measured",
+          "imageBytes": 1734832,
+          "status": "PASS",
+          "stats": {
+            "bytesTransferred": 1734832,
+            "chunksSent": 3917,
+            "confirmElapsedMs": 0,
+            "confirmedVersion": "1.0.6-rc1",
+            "nonTransferFixedElapsedMs": 4930,
+            "pretransferTypeReady": true,
+            "pretransferTypeReadyElapsedMs": 0,
+            "targetPrepareElapsedMs": 677,
+            "totalElapsedMs": 22430,
+            "transferElapsedMs": 16882,
+            "transport": "denzic_ota_v1",
+            "typeReady": true,
+            "typeReadyElapsedMs": 947
+          }
+        }
+      ],
+      "sourceRfSha256": "05ac063482ef2356a0c5ce3713e45c30fb40ab18402f176bbe420ad7e241af43",
+      "airDecimalKBps": 107.97510394465961,
+      "fullRawRf": true,
+      "rawBytes": 1734832,
+      "rawChunks": 3917,
+      "coreAndKeysPreserved": true,
+      "hciRows": 53,
+      "gattRows": 24
+    },
+    {
+      "measurement": "current64-measure-20261020-044750",
+      "candidate": 50,
+      "receiverSource": "c8e12ffae693e155b7d39dc191b48bc10898df5b",
+      "typeSource": "6ea535aa3e7413c7da77a49c1d3b87d16eac5419",
+      "result": "INCOMPLETE",
+      "error": "AssertionError: ",
+      "receiverConfirmed": {
+        "expectedBuild": "d8e22c14334c193c",
+        "actualSamePeerRuntimeProbeAt": "2026-10-19T20:48:17.319808+00:00"
+      },
+      "normal32Restored": {
+        "expectedBuild": "ad73e1113e429ca7",
+        "actualSamePeerRuntimeProbeAt": "2026-10-19T20:48:51.222235+00:00"
+      },
+      "typePreserved": true,
+      "rawTransferRequested": true,
+      "transfers": [
+        {
+          "label": "unmeasured-receiver50-prime",
+          "imageBytes": 1737776,
+          "status": "PASS",
+          "stats": {
+            "bytesTransferred": 1737776,
+            "chunksSent": 3923,
+            "confirmElapsedMs": 0,
+            "confirmedVersion": "1.0.6-rc1",
+            "nonTransferFixedElapsedMs": 4938,
+            "pretransferTypeReady": true,
+            "pretransferTypeReadyElapsedMs": 0,
+            "targetPrepareElapsedMs": 667,
+            "totalElapsedMs": 22972,
+            "transferElapsedMs": 17424,
+            "transport": "denzic_ota_v1",
+            "typeReady": true,
+            "typeReadyElapsedMs": 944
+          }
+        },
+        {
+          "label": "measured",
+          "imageBytes": 1734832,
+          "status": "PASS",
+          "stats": {
+            "bytesTransferred": 1734832,
+            "chunksSent": 3917,
+            "confirmElapsedMs": 0,
+            "confirmedVersion": "1.0.6-rc1",
+            "nonTransferFixedElapsedMs": 4924,
+            "pretransferTypeReady": true,
+            "pretransferTypeReadyElapsedMs": 0,
+            "targetPrepareElapsedMs": 626,
+            "totalElapsedMs": 22867,
+            "transferElapsedMs": 17377,
+            "transport": "denzic_ota_v1",
+            "typeReady": true,
+            "typeReadyElapsedMs": 944
+          }
+        }
+      ],
+      "sourceRfSha256": "a2c23d989cc3235118d28242e792fcfe9d2f2e63342894d1f7dbd158340df42d",
+      "airDecimalKBps": 104.98821597398799
+    },
+    {
+      "measurement": "current64-measure-20261020-045526",
+      "candidate": 51,
+      "receiverSource": "61ce64f8053cb4dd556323b388f7bde09c48176f",
+      "typeSource": "6ea535aa3e7413c7da77a49c1d3b87d16eac5419",
+      "result": "INCOMPLETE",
+      "error": "TimeoutError: No independently authenticated sustained link after natural prime; measured OTA not requested",
+      "receiverConfirmed": {
+        "expectedBuild": "e1f6306f1e84ee70",
+        "actualSamePeerRuntimeProbeAt": "2026-10-19T20:55:52.520158+00:00"
+      },
+      "normal32Restored": {
+        "expectedBuild": "ad73e1113e429ca7",
+        "actualSamePeerRuntimeProbeAt": "2026-10-19T20:57:02.508817+00:00"
+      },
+      "typePreserved": true,
+      "rawTransferRequested": false,
+      "transfers": [
+        {
+          "label": "unmeasured-receiver51-prime",
+          "imageBytes": 1738336,
+          "status": "PASS",
+          "stats": {
+            "bytesTransferred": 1738336,
+            "chunksSent": 3925,
+            "confirmElapsedMs": 0,
+            "confirmedVersion": "1.0.6-rc1",
+            "nonTransferFixedElapsedMs": 4990,
+            "pretransferTypeReady": true,
+            "pretransferTypeReadyElapsedMs": 0,
+            "targetPrepareElapsedMs": 678,
+            "totalElapsedMs": 22584,
+            "transferElapsedMs": 16982,
+            "transport": "denzic_ota_v1",
+            "typeReady": true,
+            "typeReadyElapsedMs": 955
+          }
+        },
+        {
+          "label": "unmeasured-restore-current32",
+          "imageBytes": 1734832,
+          "status": "PASS",
+          "stats": {
+            "bytesTransferred": 1734832,
+            "chunksSent": 3917,
+            "confirmElapsedMs": 0,
+            "confirmedVersion": "1.0.6-rc1",
+            "nonTransferFixedElapsedMs": 4952,
+            "pretransferTypeReady": true,
+            "pretransferTypeReadyElapsedMs": 0,
+            "targetPrepareElapsedMs": 678,
+            "totalElapsedMs": 22390,
+            "transferElapsedMs": 16846,
+            "transport": "denzic_ota_v1",
+            "typeReady": true,
+            "typeReadyElapsedMs": 950
+          }
+        }
+      ],
+      "sourceRfSha256": "1d3a643137c9a0af4b475bea87a09b9d92eecef1187d6607c279d1c45cf3dce7"
+    },
+    {
+      "measurement": "current64-measure-20261020-045825",
+      "candidate": 51,
+      "receiverSource": "61ce64f8053cb4dd556323b388f7bde09c48176f",
+      "typeSource": "6ea535aa3e7413c7da77a49c1d3b87d16eac5419",
+      "result": "PASS",
+      "error": null,
+      "receiverConfirmed": {
+        "expectedBuild": "e1f6306f1e84ee70",
+        "actualSamePeerRuntimeProbeAt": "2026-10-19T20:58:52.160283+00:00"
+      },
+      "normal32Restored": {
+        "expectedBuild": "ad73e1113e429ca7",
+        "actualSamePeerRuntimeProbeAt": "2026-10-19T20:59:25.409600+00:00"
+      },
+      "typePreserved": true,
+      "rawTransferRequested": true,
+      "transfers": [
+        {
+          "label": "unmeasured-receiver51-prime",
+          "imageBytes": 1738336,
+          "status": "PASS",
+          "stats": {
+            "bytesTransferred": 1738336,
+            "chunksSent": 3925,
+            "confirmElapsedMs": 0,
+            "confirmedVersion": "1.0.6-rc1",
+            "nonTransferFixedElapsedMs": 4982,
+            "pretransferTypeReady": true,
+            "pretransferTypeReadyElapsedMs": 0,
+            "targetPrepareElapsedMs": 677,
+            "totalElapsedMs": 22642,
+            "transferElapsedMs": 17034,
+            "transport": "denzic_ota_v1",
+            "typeReady": true,
+            "typeReadyElapsedMs": 948
+          }
+        },
+        {
+          "label": "measured",
+          "imageBytes": 1734832,
+          "status": "PASS",
+          "stats": {
+            "bytesTransferred": 1734832,
+            "chunksSent": 3917,
+            "confirmElapsedMs": 0,
+            "confirmedVersion": "1.0.6-rc1",
+            "nonTransferFixedElapsedMs": 4944,
+            "pretransferTypeReady": true,
+            "pretransferTypeReadyElapsedMs": 0,
+            "targetPrepareElapsedMs": 671,
+            "totalElapsedMs": 22501,
+            "transferElapsedMs": 16949,
+            "transport": "denzic_ota_v1",
+            "typeReady": true,
+            "typeReadyElapsedMs": 939
+          }
+        }
+      ],
+      "sourceRfSha256": "10400a91023e7fe49896165f8409b7cdc5280d0a440379bc30acca6ea952828b",
+      "airDecimalKBps": 107.47609184290839,
+      "fullRawRf": true,
+      "rawBytes": 1734832,
+      "rawChunks": 3917,
+      "coreAndKeysPreserved": true,
+      "hciRows": 56,
+      "gattRows": 24
+    }
+  ],
+  "budget49": {
+    "at": "2026-10-20T04:29:26.955308+08:00",
+    "compilerSourceSha256": "174cf2aa6c4e8938145f4d2edd838b4aac8f4251877e6fb42895674a07dbbf04",
+    "compilerAssemblySha256": "9a7d52293d2325cfbdc6cc20719baa6c8b48481242e6b7edf86bd7252532e3f4",
+    "romInstruction": "40019d05 addx2 a5,a5,a9",
+    "arithmetic": "Xtensa ADDX2 scales its first source by2: raw_duration=2*(tx_us+rx_us+150us)+guard_half_us. Later CE625us quantization multiplies by1250 in same field.",
+    "rawDurationUnit": "half microsecond, derived from known BLE150us IFS andactual compiled ADDX2 semantics; not RTT fitting",
+    "actual49Raw": 8750,
+    "actual49MinReservationUs": 4375.0,
+    "scope": "Minimum reservation readback only. Not maximum connection event duration or proof8750us active window. g_max_evt_env[0] isnot ce_len_type; configstruct ce_len_type isat21andread byanotherROMbranch."
+  },
+  "partial50": {
+    "at": "2026-10-20T04:55:57.680709+08:00",
+    "measurement": "2026-10-20T04:47:50.782511+08:00",
+    "measurementResult": "INCOMPLETE",
+    "sourceSha256": "706a3b98fef3da8678732cfead099a1040ae280a61f13f0913cb9bac33f6bfa7",
+    "scope": "Partial: exactly32retained unique IRQ/state0 identity matches; HCI prefix54declared/36exported remains missing. Original measurement staysINCOMPLETE.",
+    "rawOpaqueThirdByteHistogram": {
+      "0": 32
+    },
+    "opaqueSecondWordStepHistogram": {
+      "24": 31
+    },
+    "state0MinusIrqUsHistogram": {
+      "24": 21,
+      "23": 10,
+      "25": 1
+    },
+    "exactRetainedIrqCounterMatches": 32,
+    "romBranch": "At4001b6a9 BEQZ a4 branchespastpriorityincrement at4001b6b1 when thirdbyte0. This observedbranch is not a general event-end reason.",
+    "normal32Restored": true,
+    "typePreserved": true,
+    "notClaimed": [
+      "complete HCI observation",
+      "all-transfer end reason",
+      "stable throughput gain",
+      "original CD qualification"
+    ]
+  },
+  "compact51": {
+    "source": "61ce64f",
+    "native": {
+      "result": "PASS",
+      "sourceSha256": "f82f86a36ab0369a71eba24995a7c81d08dd06df79ead6284dcb4deec70b26ad",
+      "checks": [
+        "exact_real_return",
+        "original_buffer_and_forward_once",
+        "both_acl_fragments",
+        "actual_payload_crc",
+        "sdu_position_and_handle",
+        "gatt_receipt_metadata",
+        "non_target_malformed_unchanged",
+        "non_target_not_sampled",
+        "inactive_passthrough",
+        "bounded_capacity_and_explicit_overflow",
+        "overflow_never_changes_forwarding",
+        "only_empty_owner_install",
+        "bounded_rolling_controller_rows",
+        "opaque_fields_and_timer_kept",
+        "freeze_after_all24_andfinal_state0",
+        "flush_detaches_own_callback",
+        "foreign_owner_not_replaced",
+        "foreign_owner_kept_after_flush",
+        "release_stop_preserves_rows_for_finish_flush",
+        "lost_ownership_not_cleared_on_stop",
+        "non_raw_never_registers",
+        "all_existing_wire_release_paths_stop_observer",
+        "original_uint16_counter_packed_without_changing_link_state",
+        "higher_offset_alone_never_freezes_out_of_order_window",
+        "one_read_only_budget_snapshot_for_actual_observed_hci_link",
+        "foreign_controller_link_never_indexes_getter",
+        "wide_hci_handle_never_truncated_to_link_index",
+        "old_generation_budget_not_relabelled_or_forwarding_changed",
+        "inactive_irq_original_three_arguments_forwarded_once",
+        "compact_reduces32records_without_changing_RTC",
+        "both_actual_sequences_and_timestamps_kept",
+        "all_three_bounded_costs_preserved",
+        "actual_C_state_rows_roundtrip_exact_all256words",
+        "actual_C_IRQ_rows_roundtrip_exact_all128words",
+        "decoder_rejects_missing_end",
+        "decoder_rejects_wrong_sequence",
+        "decoder_rejects_bad_schema",
+        "every_original_irq_called_once",
+        "bounded_irq_counter_to_state0_join",
+        "opaque_words_andbyte_preserved_in_matched_rows",
+        "unobserved_irq_explicit_not_synthesized",
+        "foreign_callback_kept_andoriginal_irq_not_skipped",
+        "corrupt_cost_never_truncated_or_synthesized",
+        "corrupt_counter_never_truncated_or_synthesized",
+        "corrupt_irq_time_never_truncated_or_synthesized"
+      ],
+      "fixture": "Single-thread native C with mbuf/timer/critical fixtures; real device concurrency and linked call-site coverage require separate proof.",
+      "build": "C:\\Users\\Billy\\AppData\\Local\\Temp\\listener-controller-compact51-jvuucg3v"
+    },
+    "samplingAndRtcLayoutUnchanged": true,
+    "lossless": "Actual C output vs actual C memory256state words+128IRQ words exact; failurebits/schema/cost overflow reject, no reconstruction of missing records.",
+    "fieldFullHci": 56,
+    "fieldGatt": 24,
+    "fieldActualStateRows": 64,
+    "fieldCompletePairs": 32,
+    "fieldIrqMatches": 32,
+    "fieldIrqMissing": 0,
+    "fieldFullRawRf": true
+  },
+  "irqGroups": {
+    "tailRepeatedNext": {
+      "n": 16,
+      "opaqueThirdByteHistogram": {
+        "0": 16
+      },
+      "state0MinusIrqUs": {
+        "n": 16,
+        "minimum": 23,
+        "median": 24.0,
+        "maximum": 24
+      },
+      "deviceState1To0Us": {
+        "n": 16,
+        "minimum": 5515,
+        "median": 6077.0,
+        "maximum": 6078
+      },
+      "observerUs": {
+        "n": 16,
+        "minimum": 3,
+        "median": 4.0,
+        "maximum": 4
+      }
+    },
+    "tailNotObservedNext": {
+      "n": 16,
+      "opaqueThirdByteHistogram": {
+        "0": 16
+      },
+      "state0MinusIrqUs": {
+        "n": 16,
+        "minimum": 23,
+        "median": 23.5,
+        "maximum": 24
+      },
+      "deviceState1To0Us": {
+        "n": 16,
+        "minimum": 1677,
+        "median": 6481.0,
+        "maximum": 6494
+      },
+      "observerUs": {
+        "n": 16,
+        "minimum": 4,
+        "median": 4.0,
+        "maximum": 4
+      }
+    }
+  },
+  "allSampledIrqFinalArgZero": true,
+  "counterJoin": {
+    "completePairs": 32,
+    "pairsInRadio": 32,
+    "all56HciCompared": 56,
+    "outsideStoredWindow": 0,
+    "nonrepeatDifferences": {
+      "0": 49
+    },
+    "repeatDifferences": {
+      "0": 7
+    },
+    "repeatedOriginalToHciCounterDifference": {
+      "1": 7
+    }
+  },
+  "tailCounts": {
+    "dataEvents": 1760,
+    "dataEventTailMd1": 1742,
+    "actualCrossEventRepeats": 916,
+    "repeatDistance1": 916,
+    "repeatOriginLastObservedCentral": 916,
+    "repeatIsNextEventFirstObservedCentral": 916,
+    "repeatOriginMd1": 916,
+    "repeatOriginNoCaptured150usReply": 902,
+    "centralPacketsWith150usReplyCandidate": 7663,
+    "dataEventTailFull255": 789,
+    "dataEventTailHas150usReplyCandidate": 857,
+    "repeatOriginCapturedAckToggle": 10,
+    "repeatOriginCapturedStaleNesn": 4
+  },
+  "actualHciDataBudget": {
+    "DLE": {
+      "t": 1792443529.629361,
+      "key": [
+        2048,
+        1
+      ],
+      "kind": "DLE",
+      "hostTxOctets": 251,
+      "hostTxTimeUs": 2120,
+      "hostRxOctets": 251,
+      "hostRxTimeUs": 1590
+    },
+    "PHY": {
+      "t": 1792443529.329334,
+      "key": [
+        2048,
+        1
+      ],
+      "kind": "PHY",
+      "hostTxPhy": 2,
+      "hostRxPhy": 2
+    },
+    "interval": {
+      "t": 1792443541.5788999,
+      "key": [
+        2048,
+        1
+      ],
+      "kind": "interval",
+      "intervalUs": 15000,
+      "latency": 0
+    }
+  },
+  "restored": {
+    "at": "2026-10-20T05:01:44.831262+08:00",
+    "installedTypeBuild": 64,
+    "typeSourceCommit": "6ea535a",
+    "exeSha256": "ab7e31422c7fa5d22649b9d08eb7a6ad434d8f282fc9571d1b45c8f8e1e25767",
+    "typeProcesses": [
+      [
+        27932,
+        1792442852.8198948
+      ],
+      [
+        34120,
+        1792442853.9420395
+      ]
+    ],
+    "sameMeasurementTypeProcesses": true,
+    "normal32Restore": {
+      "expectedBuild": "ad73e1113e429ca7",
+      "actualSamePeerRuntimeProbeAt": "2026-10-19T20:59:25.409600+00:00"
+    },
+    "deviceUid": "98c377b4e88c",
+    "profileRevision": 5,
+    "currentKeysAndCoreExactlyMatchMeasuredAfter": true,
+    "currentProfileSha256": "c7305d36785f05bc296dbe1c1eac8315c3847254aff1fc0270ec6cd5f5cfe21d",
+    "packetPackingTrialAbsent": true,
+    "nativeIntervalTrialAbsent": true,
+    "receiverPid": 39004,
+    "receiverFirmware": "1.1.129",
+    "receiverIdle": true,
+    "publicReleaseUnchanged": true,
+    "source": "current64-measure-20261020-045825/measurement.json"
+  },
+  "stableSpeedGainProven": false,
+  "originalCdSameBoardProven": false,
+  "nextProbe": "32/32 frame-ISR third arguments are0 in both repeated/nonrepeated groups; ~24us handler tail is comparable. Next inspect exact RX/frame completion status and effective event-budget fields, with pinned ABI/read-only bounded sampling; do not repeat old CE/core/RAM/localTX1064 changes or call a mutating max-budget routine as a getter."
+}
