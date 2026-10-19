@@ -911,6 +911,47 @@ static void device_settings_print_error(const char *key, const char *reason)
     fflush(stdout);
 }
 
+bool device_settings_format_ble_snapshot(char *out, size_t out_size)
+{
+    if (out == NULL || out_size == 0u) {
+        return false;
+    }
+    out[0] = '\0';
+    device_settings_snapshot_t snapshot = {0};
+    device_settings_get_snapshot(&snapshot);
+    if (snapshot.settings_revision == 0u) {
+        return false;
+    }
+    board_v2_power_input_snapshot_t power = {0};
+    board_get_v2_power_input_snapshot(&power);
+    board_v2_charger_pin_decode_t charger =
+        board_decode_charger_status_pins(power.bat_chg_level, power.bat_std_level);
+    bool full = charger.standby_full && !charger.charging;
+    bool external = power.usb_power_present || charger.charging || full;
+    int written = snprintf(out, out_size,
+        "schema=listener.device_settings.v1;settings_revision=%" PRIu32
+        ";snapshot=1;ls=%u;lk=%u;l11=%u;le=%u;pl=%" PRIu32 ";bl=%" PRIu32
+        ";pe=%u;pa=%" PRIu32 ";ba=%" PRIu32 ";vs=%u;ve=%u"
+        ";kn=%s;bn=%s;bp=%u;ep=%u;up=%u;cg=%u;cf=%u",
+        snapshot.settings_revision,
+        snapshot.status_led_brightness_percent, snapshot.key_led_brightness_percent,
+        snapshot.ec11_led_brightness_percent, snapshot.edge_led_brightness_percent,
+        snapshot.plugged_low_power_idle_ms, snapshot.battery_low_power_idle_ms,
+        snapshot.plugged_low_power_enabled ? 1u : 0u,
+        snapshot.plugged_auto_shutdown_ms, snapshot.battery_auto_shutdown_ms,
+        snapshot.voice_auto_start_enabled ? 1u : 0u,
+        snapshot.voice_auto_stop_enabled ? 1u : 0u,
+        ec11_rotation_control_action_name(ec11_rotation_control_get_action()),
+        snapshot.ble_name, snapshot.ble_name_pending_restart ? 1u : 0u,
+        external ? 1u : 0u, power.usb_power_present ? 1u : 0u,
+        charger.charging ? 1u : 0u, full ? 1u : 0u);
+    if (written < 0 || (size_t)written >= out_size || written > 512) {
+        out[0] = '\0';
+        return false;
+    }
+    return true;
+}
+
 static void device_settings_print_status(const char *result)
 {
     device_settings_snapshot_t snapshot = {0};
