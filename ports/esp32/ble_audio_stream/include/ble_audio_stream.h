@@ -94,6 +94,7 @@ esp_err_t ble_audio_stream_send_session_error(
 esp_err_t ble_audio_stream_prepare_type_recovery_ack(void);
 esp_err_t ble_audio_stream_send_type_recovery_notice(void);
 esp_err_t ble_audio_stream_wait_for_type_recovery_ack(uint32_t timeout_ms);
+esp_err_t ble_audio_stream_send_device_key_event(uint8_t key, uint8_t gesture);
 bool ble_audio_stream_is_ready(void);
 /* A subscribed, MTU-ready connection with a live Type heartbeat. Independent
  * of audio-session drain/terminal phases; not permission to start a session. */

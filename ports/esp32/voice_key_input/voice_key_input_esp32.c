@@ -1,5 +1,6 @@
 #include "voice_key_input.h"
 
+#include "device_key_profile.h"
 #include <stdbool.h>
 #include <stdint.h>
 #include <inttypes.h>
@@ -441,6 +442,11 @@ static const voice_key_input_bus_candidate_t s_bus_candidates[] = {
 
 static void voice_key_input_dispatch_custom_key_event(const char *source, uint32_t event_type, const char *edge_label)
 {
+    uint8_t native_usage=0,native_modifier=0;
+    uint8_t native=device_key_profile_hid(5,0,&native_usage,&native_modifier);
+    if (native==1) return;
+    if (native==3) { (void)ble_audio_stream_send_device_key_event(5,0);return; }
+    if (native==2) { (void)ble_hid_send_keyboard_usage_with_modifier_async(native_usage,native_modifier,"ec11.push.custom");return; }
     esp_err_t ret = ble_hid_send_keyboard_usage_with_modifier_async(
         VOICE_KEY_INPUT_EC11_FALLBACK_USAGE,
         VOICE_KEY_INPUT_EC11_FALLBACK_MODIFIER,
