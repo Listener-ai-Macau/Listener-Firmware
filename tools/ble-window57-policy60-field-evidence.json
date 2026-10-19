@@ -1,0 +1,111 @@
+{
+  "at": "2026-10-20T07:05:20.565848+08:00",
+  "scope": "Current E1 engineering window-policy study; all four formal RF admissions incomplete. Recovery scalar evidence is separate, not measured air throughput or originalCD qualification.",
+  "originalBaseline": {
+    "type": "52c2",
+    "firmware": 22,
+    "imageBytes": 1731024,
+    "imageSha256": "5ada03ae6929927393e49438088cbd78e26283cd283326ce71f41c43d9a24550",
+    "sameCdBoardProven": false
+  },
+  "stableGainProven": false,
+  "goalComplete": false,
+  "restorationReceipt": "post-policy60-daily64-restored.json",
+  "actualPolicy60": {
+    "appliedOffset": 37655,
+    "applyAndRestoreOnce": true,
+    "costUs": 10,
+    "csMinBefore": 7,
+    "csMaxBefore": 7,
+    "csMinDuring": 8,
+    "csMaxDuring": 8,
+    "originalMinDurationBeforeHalfUs": 8750,
+    "observedMinDurationDuringHalfUs": 10000,
+    "plannerBoundsUnchanged": [
+      8,
+      8
+    ],
+    "initialContext100": 48,
+    "finalContext100": 24,
+    "readinessDeferrals": 84,
+    "oldVendorPolicy": [
+      0,
+      0
+    ],
+    "duringVendorPolicy": [
+      2,
+      1
+    ],
+    "hardwareDeadlineMeaningProven": false,
+    "fullRfAndStableGainProven": false
+  },
+  "newCounterexamples": [
+    "58 early ineligible check consumes sole attempt; field state2/reason5, no mutation.",
+    "59 initial actualCI48/plan8/8,67 deferred probes; later reason5 latches attempt before final readiness, never mutates. Exact failed-point inputs not retained; do not assert which input caused it.",
+    "60 all early unready probes are read-only; only a fully qualified actual snapshot can mutate once. Feedback proves actualCS7->8 and restore.",
+    "59 controller edit accidentally nested allocator-only qualification in policy59 block; no physical run reached it because RF admission failed. Restored independent allocator guard before60; executed old sources retained."
+  ],
+  "trialSources": {
+    "57": {
+      "sourceCommit": "ea3136cba1d4b79084fcbd8ce1c884177655f7eb",
+      "receiverBuild": "a7ba01277680bc01",
+      "formalResult": "INCOMPLETE",
+      "measuredTransferRequested": false,
+      "normal32Restored": {
+        "expectedBuild": "ad73e1113e429ca7",
+        "actualSamePeerRuntimeProbeAt": "2026-10-19T22:31:06.972149+00:00"
+      },
+      "typePreserved": true,
+      "followCount": 2,
+      "handshakes": 1
+    },
+    "58": {
+      "sourceCommit": "a2e2cd18264ff192751fd4772b9ad9ca71f11ce3",
+      "receiverBuild": "e70cf45fa73b2f9f",
+      "formalResult": "INCOMPLETE",
+      "measuredTransferRequested": false,
+      "normal32Restored": {
+        "expectedBuild": "ad73e1113e429ca7",
+        "actualSamePeerRuntimeProbeAt": "2026-10-19T22:50:53.836024+00:00"
+      },
+      "typePreserved": true,
+      "followCount": 0,
+      "handshakes": 0
+    },
+    "59": {
+      "sourceCommit": "2bb28e716addcdabcac0311c705519987bbfd390",
+      "receiverBuild": "d225614f8b58f2a2",
+      "formalResult": "INCOMPLETE",
+      "measuredTransferRequested": false,
+      "normal32Restored": {
+        "expectedBuild": "ad73e1113e429ca7",
+        "actualSamePeerRuntimeProbeAt": "2026-10-19T22:56:14.302208+00:00"
+      },
+      "typePreserved": true,
+      "followCount": 1,
+      "handshakes": 1
+    },
+    "60": {
+      "sourceCommit": "1c7fb640bf8d02c6cec4e90ee35f5eba83796735",
+      "receiverBuild": "cd79393684a2d97d",
+      "formalResult": "INCOMPLETE",
+      "measuredTransferRequested": false,
+      "normal32Restored": {
+        "expectedBuild": "ad73e1113e429ca7",
+        "actualSamePeerRuntimeProbeAt": "2026-10-19T23:02:46.105116+00:00"
+      },
+      "typePreserved": true,
+      "followCount": 0,
+      "handshakes": 0
+    }
+  },
+  "archive": {
+    "archive": "C:\\Users\\Billy\\Documents\\Codex\\2026-10-04\\listener-repair-handoff\\outputs\\ble-window57-policy60-20261020.zip",
+    "sha256": "3415661b795d7826f6d9b13fb2e6428c00160cb8400e0f08eb715607297603e1",
+    "bytes": 329474,
+    "members": 95,
+    "rawRfOrHciIncluded": false,
+    "keysAudioOrCompleteUserProfilesIncluded": false
+  },
+  "evidenceRoot": "E:\\ListenerAnalysisState\\listener-repair-handoff\\work\\sniffer-alternative-butterfly-20261018"
+}
