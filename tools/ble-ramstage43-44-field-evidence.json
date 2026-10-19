@@ -1,0 +1,228 @@
+{
+  "at": "2026-10-20T03:30:16.205691+08:00",
+  "source43": "be20323",
+  "source44": "b3c0897",
+  "base40": "2e1b845",
+  "sourceArchive": "C:\\Users\\Billy\\Documents\\Codex\\2026-10-04\\listener-repair-handoff\\outputs\\ble-ramstage43-44-20261020.zip",
+  "sourceArchiveSha256": "6215fa386c8ec2ddeb9bd9f518957e808b2e1ea1038e472fcdd9e1b871315381",
+  "rawImageBytes": 1734832,
+  "rawImageSha256": "bfa14cf79f24dea045d34a06d274b2803d6b249fb3339ff79b986f6f6d9a729d",
+  "records": [
+    {
+      "measurement": "C:\\Users\\Billy\\Documents\\Codex\\2026-10-04\\listener-repair-handoff\\work\\sniffer-alternative-butterfly-20261018\\current62-measure-20261020-024433\\measurement.json",
+      "result": "PASS",
+      "receiverCandidate": 40,
+      "error": null,
+      "typePreserved": true,
+      "receiver32Restored": {
+        "expectedBuild": "ad73e1113e429ca7",
+        "actualSamePeerRuntimeProbeAt": "2026-10-19T18:45:33.103216+00:00"
+      },
+      "actualRamStage": null,
+      "pureAirDecimalKBps": 105.54640123100316,
+      "fullImageRfProved": true,
+      "sourceRfSha256": "344fd0bb7e8107c6ea9e7e51fc0fecf126a5b9555c10f6fc3c27215f79e138c9",
+      "transfers": [
+        {
+          "label": "unmeasured-receiver40-prime",
+          "status": "PASS",
+          "protocolTransferMs": 17033
+        },
+        {
+          "label": "measured",
+          "status": "PASS",
+          "protocolTransferMs": 17294
+        }
+      ]
+    },
+    {
+      "measurement": "C:\\Users\\Billy\\Documents\\Codex\\2026-10-04\\listener-repair-handoff\\work\\sniffer-alternative-butterfly-20261018\\current62-measure-20261020-031101\\measurement.json",
+      "result": "INCOMPLETE",
+      "receiverCandidate": 43,
+      "error": "AssertionError: Actual whole-image stage metrics missing",
+      "typePreserved": true,
+      "receiver32Restored": {
+        "expectedBuild": "ad73e1113e429ca7",
+        "actualSamePeerRuntimeProbeAt": "2026-10-19T19:12:10.442055+00:00"
+      },
+      "actualRamStage": {
+        "received": [],
+        "drained": [
+          {
+            "a1": 433,
+            "a2": 9184764,
+            "a3": 1734832,
+            "a4": 2832,
+            "captured_at": "2026-10-20T03:12:09.120+08:00",
+            "event": 26,
+            "global_offset": 72,
+            "schema": "listener.diag_log.ble_event.v1",
+            "severity": 0,
+            "source": 11,
+            "timestamp_ms": 40024
+          }
+        ]
+      },
+      "pureAirDecimalKBps": 106.72962540241272,
+      "fullImageRfProved": true,
+      "sourceRfSha256": "020e0d1eb7c6469407e3a34fa3cf110a97f993ab61db910b51f5215227550f7f",
+      "transfers": [
+        {
+          "label": "unmeasured-receiver43-prime",
+          "status": "PASS",
+          "protocolTransferMs": 17213
+        },
+        {
+          "label": "measured",
+          "status": "PASS",
+          "protocolTransferMs": 26273
+        }
+      ]
+    },
+    {
+      "measurement": "C:\\Users\\Billy\\Documents\\Codex\\2026-10-04\\listener-repair-handoff\\work\\sniffer-alternative-butterfly-20261018\\current62-measure-20261020-031506\\measurement.json",
+      "result": "PASS",
+      "receiverCandidate": 44,
+      "error": null,
+      "typePreserved": true,
+      "receiver32Restored": {
+        "expectedBuild": "ad73e1113e429ca7",
+        "actualSamePeerRuntimeProbeAt": "2026-10-19T19:16:15.893861+00:00"
+      },
+      "actualRamStage": {
+        "received": [
+          {
+            "a1": 1734832,
+            "a2": 1734832,
+            "a3": 0,
+            "a4": 1,
+            "captured_at": "2026-10-20T03:16:14.585+08:00",
+            "event": 25,
+            "global_offset": 74,
+            "schema": "listener.diag_log.ble_event.v1",
+            "severity": 0,
+            "source": 11,
+            "timestamp_ms": 39674
+          }
+        ],
+        "drained": [
+          {
+            "a1": 433,
+            "a2": 9154292,
+            "a3": 1734832,
+            "a4": 2832,
+            "captured_at": "2026-10-20T03:16:14.585+08:00",
+            "event": 26,
+            "global_offset": 75,
+            "schema": "listener.diag_log.ble_event.v1",
+            "severity": 0,
+            "source": 11,
+            "timestamp_ms": 39674
+          }
+        ]
+      },
+      "pureAirDecimalKBps": 107.87713004121802,
+      "fullImageRfProved": true,
+      "sourceRfSha256": "068ff1828ec16a578ca55239370649f4347ad304e811d09ab2ddba957245709f",
+      "transfers": [
+        {
+          "label": "unmeasured-receiver44-prime",
+          "status": "PASS",
+          "protocolTransferMs": 17279
+        },
+        {
+          "label": "measured",
+          "status": "PASS",
+          "protocolTransferMs": 26101
+        }
+      ]
+    },
+    {
+      "measurement": "C:\\Users\\Billy\\Documents\\Codex\\2026-10-04\\listener-repair-handoff\\work\\sniffer-alternative-butterfly-20261018\\current62-measure-20261020-032426\\measurement.json",
+      "result": "INCOMPLETE",
+      "receiverCandidate": 40,
+      "error": "AssertionError: {'error': 'Listener BLE OTA target preparation timed out: timed out waiting on channel', 'servicePid': 12932, 'status': 'FAIL'}",
+      "typePreserved": true,
+      "receiver32Restored": {
+        "expectedBuild": "ad73e1113e429ca7",
+        "actualSamePeerRuntimeProbeAt": "2026-10-19T19:24:59.829936+00:00"
+      },
+      "actualRamStage": null,
+      "fullImageRfProved": false,
+      "sourceRfSha256": "7386bb3a73d281959c41d4fddfb57449a4a59c32f529a30893e2eb0b017dc249",
+      "transfers": [
+        {
+          "label": "unmeasured-receiver40-prime",
+          "status": "FAIL",
+          "protocolTransferMs": null
+        },
+        {
+          "label": "unmeasured-restore-current32",
+          "status": "PASS",
+          "protocolTransferMs": 16972
+        }
+      ]
+    },
+    {
+      "measurement": "C:\\Users\\Billy\\Documents\\Codex\\2026-10-04\\listener-repair-handoff\\work\\sniffer-alternative-butterfly-20261018\\current62-measure-20261020-032527\\measurement.json",
+      "result": "PASS",
+      "receiverCandidate": 40,
+      "error": null,
+      "typePreserved": true,
+      "receiver32Restored": {
+        "expectedBuild": "ad73e1113e429ca7",
+        "actualSamePeerRuntimeProbeAt": "2026-10-19T19:26:27.556576+00:00"
+      },
+      "actualRamStage": null,
+      "pureAirDecimalKBps": 104.89049248829723,
+      "fullImageRfProved": true,
+      "sourceRfSha256": "3beb3bccbf3470751bf3fd09f7014f31fab693e168746b1c1ca8cc006fe7dde2",
+      "transfers": [
+        {
+          "label": "unmeasured-receiver40-prime",
+          "status": "PASS",
+          "protocolTransferMs": 17565
+        },
+        {
+          "label": "measured",
+          "status": "PASS",
+          "protocolTransferMs": 17392
+        }
+      ]
+    }
+  ],
+  "qualifiedRam44PreFlashSnapshot": {
+    "capacity": 1734832,
+    "received": 1734832,
+    "otaFlashCallsDuringData": 0,
+    "PSRAM": true,
+    "snapshotPublishedAfterDrain": true
+  },
+  "qualifiedRam44Drain": {
+    "full4000ByteFlashBatches": 433,
+    "pendingFinalInternalBatchBytes": 2832,
+    "drainUs": 9154292,
+    "includesOne10msYieldPerBatch": true
+  },
+  "qualifiedRam44Events": {
+    "intervalUs": 7500.027118911615,
+    "events": 1812,
+    "channelMismatches": 0,
+    "observedTailMedianUs": 5505.069004935096,
+    "observedNextAnchorGapMedianUs": 1994.9581139765187,
+    "crossEventRepeats": 947,
+    "repeatOriginLastObserved": 947,
+    "repeatIsNextEventFirstObserved": 947
+  },
+  "stableProductGainProven": false,
+  "originalCdSameBoardProven": false,
+  "limitations": [
+    "Full RF means each image byte is CRC/MIC authenticated, not every physical retransmission/ACK observed. First observed copy is not necessarily first physical transmission.",
+    "RAM staging and worker-only DATA ownership are a combined research change. It does not remove the main observed event-tail/repeat pattern; no claim Flash has zero minor throughput impact.",
+    "43 product and byte-complete RF passed but pre-drain snapshot was evicted, so original controller result remains INCOMPLETE.44 retains the actual pre-drain snapshot after draining.",
+    "Research full-image buffer is capped2MiB, adds temporary PSRAM usage and a safety-yield drain. Not a production memory or overall-OTA-speed optimization.",
+    "Original validation, safe partition/boot transition, NVS/pairing and Type preserved. No physical power-cut qualification claimed."
+  ],
+  "restoration": "C:\\Users\\Billy\\Documents\\Codex\\2026-10-04\\listener-repair-handoff\\work\\sniffer-alternative-butterfly-20261018\\post-ram44-control40-daily-restored.json",
+  "controllerDiagnosticsResearch": "C:\\Users\\Billy\\Documents\\Codex\\2026-10-04\\listener-repair-handoff\\work\\sniffer-alternative-butterfly-20261018\\controller-log-decoder-research.json"
+}
