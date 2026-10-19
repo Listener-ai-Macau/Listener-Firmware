@@ -1,0 +1,84 @@
+{
+  "at": "2026-10-20T03:02:22.974053+08:00",
+  "sourceCommits": {
+    "observer40": "2e1b845",
+    "nominal41": "dfbceb2",
+    "actual42": "7f0fe72"
+  },
+  "sourceArchive": "C:\\Users\\Billy\\Documents\\Codex\\2026-10-04\\listener-repair-handoff\\outputs\\ble-rxclock40-time42-20261020.zip",
+  "sourceArchiveSha256": "2d552f7c8fe1b6d519141e426c185aa333bd41776f5cf51af5ca9d820cbf7fdd",
+  "receiverVersion": "1.1.129",
+  "actualSameE1EngineeringImageBytes": 1734832,
+  "originalCdSameBoardProven": false,
+  "stableThroughputGainProven": false,
+  "trials": [
+    {
+      "candidate": 40,
+      "measurement": "C:\\Users\\Billy\\Documents\\Codex\\2026-10-04\\listener-repair-handoff\\work\\sniffer-alternative-butterfly-20261018\\current62-measure-20261020-024433\\measurement.json",
+      "sourceCommit": "2e1b845",
+      "fullImageBytes": 1734832,
+      "rawDecimalKBps": 105.54640123100316,
+      "protocolTransferMs": 17294,
+      "sampleHciRows": 53,
+      "sampleGattRows": 24,
+      "overflow": 0,
+      "settingsPreserved": true,
+      "firmware32Restored": {
+        "expectedBuild": "ad73e1113e429ca7",
+        "actualSamePeerRuntimeProbeAt": "2026-10-19T18:45:33.103216+00:00"
+      }
+    },
+    {
+      "candidate": 41,
+      "measurement": "C:\\Users\\Billy\\Documents\\Codex\\2026-10-04\\listener-repair-handoff\\work\\sniffer-alternative-butterfly-20261018\\current62-measure-20261020-025220\\measurement.json",
+      "sourceCommit": "dfbceb2",
+      "fullImageBytes": 1734832,
+      "rawDecimalKBps": 105.45930912904059,
+      "protocolTransferMs": 17260,
+      "sampleHciRows": 54,
+      "sampleGattRows": 24,
+      "overflow": 0,
+      "settingsPreserved": true,
+      "firmware32Restored": {
+        "expectedBuild": "ad73e1113e429ca7",
+        "actualSamePeerRuntimeProbeAt": "2026-10-19T18:53:20.911670+00:00"
+      }
+    },
+    {
+      "candidate": 42,
+      "measurement": "C:\\Users\\Billy\\Documents\\Codex\\2026-10-04\\listener-repair-handoff\\work\\sniffer-alternative-butterfly-20261018\\current62-measure-20261020-025750\\measurement.json",
+      "sourceCommit": "7f0fe72",
+      "fullImageBytes": 1734832,
+      "rawDecimalKBps": 106.28576042756623,
+      "protocolTransferMs": 17122,
+      "sampleHciRows": 55,
+      "sampleGattRows": 24,
+      "overflow": 0,
+      "settingsPreserved": true,
+      "firmware32Restored": {
+        "expectedBuild": "ad73e1113e429ca7",
+        "actualSamePeerRuntimeProbeAt": "2026-10-19T18:58:50.063928+00:00"
+      }
+    }
+  ],
+  "observer40RelativeExtraHciWaitUs": [
+    2233.6233019351694,
+    2266.401917862809
+  ],
+  "observer40OriginalToRepeatAirWaitUs": [
+    2251,
+    2253
+  ],
+  "observer40AbsoluteClockWidthUs": [
+    25642.01342868805,
+    25915.631366491318
+  ],
+  "qualificationLimits": [
+    "Absolute firmware/RF clock bounds are too wide to prove original packet received/rejected. Offset-free local delay comparison is narrower evidence.",
+    "41 source request1064 not applied because old readiness returned early. Not a1064 performance trial.",
+    "42 actual authenticated peripheralTX1064 / HCI centralRX1064; centralTX/peripheralRX stays2120. No stable gain; event-tail repeats remain.",
+    "04b745d1M readiness regression was caught by native test before installation. Corrected7f0fe72 actual-source ownership checks passed.",
+    "Only current E1 image, not original CD/FW22 same-board qualification."
+  ],
+  "type62Firmware32RestorationProof": "C:\\Users\\Billy\\Documents\\Codex\\2026-10-04\\listener-repair-handoff\\work\\sniffer-alternative-butterfly-20261018\\post-time42-daily62-restored.json"
+}
