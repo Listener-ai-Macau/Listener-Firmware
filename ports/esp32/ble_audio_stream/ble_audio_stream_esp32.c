@@ -2249,7 +2249,7 @@ static int ble_audio_stream_access(
         return BLE_ATT_ERR_READ_NOT_PERMITTED;
     }
 
-    char device_settings_revision[80];
+    char device_settings_revision[512];
     const char *value = NULL;
     switch (attr) {
     case BLE_AUDIO_STREAM_GATT_ATTR_READINESS:
@@ -2259,10 +2259,9 @@ static int ble_audio_stream_access(
         value = listener_device_get_capabilities();
         break;
     case BLE_AUDIO_STREAM_GATT_ATTR_DEVICE_SETTINGS_REVISION:
-        if (!denzic_device_control_v1_format_settings_revision(
+        if (!device_settings_format_ble_snapshot(
                 device_settings_revision,
-                sizeof(device_settings_revision),
-                device_settings_get_revision())) {
+                sizeof(device_settings_revision))) {
             return BLE_ATT_ERR_UNLIKELY;
         }
         value = device_settings_revision;

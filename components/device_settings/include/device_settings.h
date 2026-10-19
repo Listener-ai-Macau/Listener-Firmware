@@ -2,6 +2,7 @@
 #define DEVICE_SETTINGS_H
 
 #include <stdbool.h>
+#include <stddef.h>
 #include <stdint.h>
 
 #include "esp_err.h"
@@ -50,6 +51,9 @@ typedef struct {
 
 esp_err_t device_settings_init(void);
 void device_settings_get_snapshot(device_settings_snapshot_t *out_snapshot);
+/* Additive fields on the existing revision characteristic; bounded to ATT's
+ * 512-byte value limit. Older hosts ignore unknown semicolon fields. */
+bool device_settings_format_ble_snapshot(char *out, size_t out_size);
 uint8_t device_settings_get_active_brightness_percent(bool external_power_present);
 uint32_t device_settings_get_low_power_idle_ms(void);
 uint32_t device_settings_get_active_low_power_idle_ms(bool external_power_present);
