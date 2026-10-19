@@ -60,5 +60,7 @@
   "references": [
     "https://docs.nordicsemi.com/r/bundle/ps_nrf52840/page/radio.html",
     "https://www.bluetooth.com/wp-content/uploads/Files/Specification/HTML/Core-54/out/en/low-energy-controller/link-layer-specification.html"
-  ]
+  ],
+  "archiveReference": "577a9627d061e6e0dfc8fc59d476f9e921028636:tools/sniffer-host-workflow-sources.zip",
+  "archiveScope": "Immutable Git blob at the reference commit; a later working-tree archive can have another hash."
 }

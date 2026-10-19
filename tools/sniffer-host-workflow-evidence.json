@@ -67,5 +67,7 @@
       "receiver128/src/version.h": "412c0a99fe77e07ddb3ceb064dcf5350809fcc3c8ee44cb5733f3abf6ac0222a"
     }
   },
-  "receiver128ExactChangedBlobsIncluded": true
+  "receiver128ExactChangedBlobsIncluded": true,
+  "archiveReference": "bc7837af390af0c01342c3bfc9a822a25331a55e:tools/sniffer-host-workflow-sources.zip",
+  "archiveScope": "Immutable Git blob at the reference commit; a later working-tree archive can have another hash."
 }
