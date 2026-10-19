@@ -1,0 +1,21 @@
+--- a/butterfly_passive_capture.py
++++ b/butterfly_passive_capture.py
+@@ -340,6 +340,18 @@
+                 if binding is not None: meta['bondBindingSha256'] = binding
+                 if tracking_only: meta['configurationScope'] = 'wide passive RX with dummy non-peer key; no bond read or authentication claim'
+             acknowledged(command('ble','start'))
++            if not radio_check and fixed_advertising:
++                # Firmware start() overwrites lastAdvertisingChannel with 37,
++                # while leaving the initially requested RF channel unchanged.
++                # stopConnection() then silently returns to 37 after the first
++                # link. Reapply the existing passive configuration *after*
++                # start, before declaring ready or allowing product actions.
++                # SniffConnReq sets both current and remembered channel and
++                # retains the loaded key. Never abort an already acquired link.
++                assert not counts['ble.synchronized'], 'Link acquired during initial setup; refusing to reconfigure a live connection'
++                acknowledged(connection_sniff_command(channel, target_address))
++                meta['fixedChannelReappliedAfterStart'] = channel
++                meta['fixedChannelReapplyReason'] = 'Receiver start resets remembered advertising channel to37; preserve explicit reconnect channel'
+             meta['ready'] = True
+             save()
+             deadline = time.monotonic() + seconds

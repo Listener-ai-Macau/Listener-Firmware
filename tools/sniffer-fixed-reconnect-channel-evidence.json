@@ -1,0 +1,26 @@
+{
+  "at": "2026-10-19T15:44:03.758042+08:00",
+  "source": "source/src/controllers/blecontroller.cpp",
+  "sourceCommit": "cb455ae25a8701530f0c51d49172b672e33ebc9e",
+  "receiverStartAssignsRememberedChannel": 37,
+  "requestedChannel": 38,
+  "observedFirstConnectChannel": 38,
+  "observedPostTerminateAdvertisementsChannel": 37,
+  "observedPostTerminateExactPeerAdvertisements": 206,
+  "collectorSha256": "d0ad66278c7fefd1d20505098056554a2c74366379e8af21e8a327f10d7d9ca7",
+  "fix": "Reapply explicitly requested passive SniffConnReq after start, before ready; refuse if already synchronized",
+  "deviceFirmwareFlashed": false,
+  "validatedActualReconnectAfterFix": true,
+  "scopeOfValidation": "Saved complete first-session termination followed by151 advertising packets remained on38; no subsequent CONNECT was captured, so this does not prove full second-session tracking",
+  "afterCapture": "passive-current-20261019-154313",
+  "afterAdvertisingChannels": [
+    38
+  ],
+  "typePidsUnchanged": [
+    19340,
+    21676
+  ],
+  "analyzerOwner": 19768,
+  "previousCollectorSha256": "dfcbeaeb727eb71b551e5b95db4c0d206f4460c6ac78cfc627704d796ad1bc37",
+  "scope": "Exact host collector patch retained for source traceability; not an analyzer firmware update. Fixed reconnect channel physically validated; no throughput gain or full second-session coverage claimed."
+}
