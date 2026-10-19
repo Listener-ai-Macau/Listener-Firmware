@@ -194,10 +194,10 @@ esp_err_t device_key_profile_command(const char *cmd) {
 bool device_key_profile_format(char *out, size_t size, char sep) {
     if (!lock || xSemaphoreTake(lock, portMAX_DELAY) != pdTRUE)
         return false;
-    char hex[129];
+    char hex[97];
     size_t bytes = saved.length > page_offset ? saved.length - page_offset : 0;
-    if (bytes > 64)
-        bytes = 64;
+    if (bytes > 48)
+        bytes = 48;
     for (size_t i = 0; i < bytes; i++)
         snprintf(hex + 2 * i, 3, "%02x", saved.data[page_offset + i]);
     hex[bytes * 2] = 0;

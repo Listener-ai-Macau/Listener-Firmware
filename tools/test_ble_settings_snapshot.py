@@ -41,6 +41,11 @@ int main(void) {
  assert(!device_settings_format_ble_snapshot(NULL,512));
  assert(!device_settings_format_ble_snapshot(out,0));
  assert(!device_settings_format_ble_snapshot(out,sizeof(out)));
+ settings.status_led_brightness_percent=100;
+ settings.key_led_brightness_percent=100;
+ settings.ec11_led_brightness_percent=100;
+ settings.edge_led_brightness_percent=100;
+ settings.plugged_auto_shutdown_ms=UINT32_MAX;
  settings.settings_revision=UINT32_MAX;
  settings.plugged_low_power_idle_ms=UINT32_MAX;
  settings.battery_low_power_idle_ms=UINT32_MAX;
