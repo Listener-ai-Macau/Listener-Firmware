@@ -336,7 +336,7 @@ esp_err_t hid_keyboard_send_usage_with_modifier(uint8_t usage, uint8_t modifier,
     }
 
     bool connected = esp_hidd_dev_connected(hid_device);
-    if (!hid_keyboard_is_supported_usage(usage)) {
+    if (!hid_keyboard_is_supported_usage(usage) && !(usage == 0 && modifier != 0)) {
         ESP_LOGW(TAG, "unsupported HID usage=0x%02X", usage);
         diag_log(DIAG_SRC_KEYBOARD, DIAG_KBD_KEY_FAIL, DIAG_SEV_WARN,
                  usage, ESP_ERR_NOT_SUPPORTED, connected ? 1 : 0, 0);

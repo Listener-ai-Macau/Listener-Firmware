@@ -5,6 +5,7 @@ from test_power_source_filter import function
 
 ROOT = Path(__file__).resolve().parents[1]
 source = (ROOT/'components/device_settings/device_settings.c').read_text(encoding='utf-8')
+profile_source = (ROOT/'components/device_settings/device_key_profile.c').read_text(encoding='utf-8')
 header = (ROOT/'components/device_settings/include/device_settings.h').read_text(encoding='utf-8')
 snapshot = re.search(r'typedef struct \{[^}]+\} device_settings_snapshot_t;', header).group()
 code = r'''
@@ -25,12 +26,26 @@ static void board_get_v2_power_input_snapshot(board_v2_power_input_snapshot_t *o
 static board_v2_charger_pin_decode_t board_decode_charger_status_pins(int chg, int std) { (void)chg; (void)std; board_v2_charger_pin_decode_t out={0}; return out; }
 static int ec11_rotation_control_get_action(void) { return 0; }
 static const char *ec11_rotation_control_action_name(int action) { (void)action; return "system_volume"; }
-'''+function(source,'device_settings_format_ble_snapshot')+r'''
+typedef struct { uint32_t revision,length,crc; uint8_t data[4096]; } record_t;
+static record_t saved={UINT32_MAX,4096,UINT32_MAX,{0}};
+static uint32_t page_offset=0;
+static const char *device_uid="ffffffffffff";
+static void *lock=(void*)1;
+#define portMAX_DELAY 0xffffffff
+#define pdTRUE 1
+static int xSemaphoreTake(void *m,unsigned t){(void)m;(void)t;return 1;}
+static void xSemaphoreGive(void *m){(void)m;}
+'''+function(profile_source,'device_key_profile_format')+function(source,'device_settings_format_ble_snapshot')+r'''
 int main(void) {
  char out[512];
  assert(!device_settings_format_ble_snapshot(NULL,512));
  assert(!device_settings_format_ble_snapshot(out,0));
  assert(!device_settings_format_ble_snapshot(out,sizeof(out)));
+ settings.status_led_brightness_percent=100;
+ settings.key_led_brightness_percent=100;
+ settings.ec11_led_brightness_percent=100;
+ settings.edge_led_brightness_percent=100;
+ settings.plugged_auto_shutdown_ms=UINT32_MAX;
  settings.settings_revision=UINT32_MAX;
  settings.plugged_low_power_idle_ms=UINT32_MAX;
  settings.battery_low_power_idle_ms=UINT32_MAX;
@@ -48,7 +63,8 @@ int main(void) {
  assert(!device_settings_format_ble_snapshot(small.out,sizeof(small.out)));
  assert(small.out[0]==0);
  for(size_t i=0;i<sizeof(small.sentinel);i++) assert(small.sentinel[i]==0x55);
- puts("PASS: actual BLE settings encoder, maximum fields/name, ATT bound and short-buffer sentinel");
+ assert(strstr(out,";ki=ffffffffffff;kr=4294967295;ks=4096;"));
+ puts("PASS: actual settings + onboard key page encoders, maximum fields/name/profile, ATT bound and short-buffer sentinel");
  return 0;
 }
 '''

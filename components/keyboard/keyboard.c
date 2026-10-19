@@ -20,6 +20,7 @@
 #include "board_pins.h"
 #include "diag_log.h"
 #include "device_settings.h"
+#include "device_key_profile.h"
 #include "ec11_rotation_control.h"
 #include "hid_keyboard.h"
 #include "power_manager.h"
@@ -507,6 +508,11 @@ static esp_err_t keyboard_custom_send_gesture_internal(
         key->pending_single_visual_started = false;
         status_led_notify_key_feedback(key->index, keyboard_custom_led_feedback_for_gesture(gesture));
     }
+    uint8_t native_usage=0, native_modifier=0;
+    uint8_t native=device_key_profile_hid(key->logical_key,(uint8_t)gesture,&native_usage,&native_modifier);
+    if (native==1) return ESP_OK;
+    if (native==3) return ble_audio_stream_send_device_key_event(key->logical_key,(uint8_t)gesture);
+    if (native==2) return ble_hid_send_keyboard_usage_with_modifier_async(native_usage,native_modifier,source_label);
     esp_err_t ret = pending_transport_test
         ? ble_hid_send_keyboard_usage_pending_test_async(usage, 0, source_label)
         : ble_hid_send_keyboard_usage_async(usage, source_label);

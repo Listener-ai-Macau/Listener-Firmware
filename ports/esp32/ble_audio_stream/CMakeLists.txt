@@ -10,5 +10,5 @@ idf_component_register(
         "../../../third_party/denzic-platform/audio/embedded/c/include"
         "../../../third_party/denzic-platform/device_control/embedded/c/include"
     REQUIRES listener_proto bt
-    PRIV_REQUIRES mbedtls listener_device diag_log status_led watchdog_platform esp_timer
+    PRIV_REQUIRES device_settings mbedtls listener_device diag_log status_led watchdog_platform esp_timer
 )

@@ -11,6 +11,9 @@
 extern "C" {
 #endif
 
+/* Serializes flash commits on the existing internal-stack NVS worker. */
+esp_err_t device_settings_run_flash_job(esp_err_t (*job)(void *), void *context);
+
 #define DEVICE_SETTINGS_DEFAULT_BLE_NAME "listener"
 #define DEVICE_SETTINGS_DEFAULT_PLUGGED_BRIGHTNESS_PERCENT 100U
 #define DEVICE_SETTINGS_DEFAULT_BATTERY_BRIGHTNESS_PERCENT DEVICE_SETTINGS_DEFAULT_PLUGGED_BRIGHTNESS_PERCENT

@@ -1,4 +1,5 @@
 #include "ble_audio_stream.h"
+#include "device_key_profile.h"
 #include "ble_audio_cooperative_wait.h"
 
 #include <inttypes.h>
@@ -4426,4 +4427,14 @@ esp_err_t ble_audio_stream_send_session_cancel(uint32_t session_id, uint16_t exp
         return ESP_ERR_TIMEOUT;
     }
     return ESP_OK;
+}
+
+esp_err_t ble_audio_stream_send_device_key_event(uint8_t key,uint8_t gesture) {
+    if (!s_started || !ble_audio_stream_is_type_link_ready() || s_notify_attr_handle==0) return ESP_ERR_INVALID_STATE;
+    char value[48];
+    if (!device_key_profile_event(value,sizeof(value),key,gesture)) return ESP_ERR_INVALID_STATE;
+    ble_audio_stream_link_snapshot_t link=ble_audio_stream_get_link_snapshot();
+    struct os_mbuf *om=ble_hs_mbuf_from_flat(value,strlen(value));
+    if (!om) return ESP_ERR_NO_MEM;
+    return ble_gatts_notify_custom(link.conn_handle,s_notify_attr_handle,om)==0 ? ESP_OK : ESP_FAIL;
 }

@@ -1,4 +1,5 @@
 #include "device_settings.h"
+#include "device_key_profile.h"
 
 #include <inttypes.h>
 #include <stdio.h>
@@ -99,6 +100,8 @@ static TaskHandle_t s_nvs_worker_handle;
 static TaskHandle_t s_nvs_client_handle;
 static bool s_nvs_worker_loaded_from_nvs_after_persist;
 static esp_err_t s_nvs_worker_result;
+static esp_err_t (*s_flash_job)(void *);
+static void *s_flash_context;
 
 static esp_err_t device_settings_persist_locked(bool loaded_from_nvs_after_persist);
 static esp_err_t device_settings_persist_nvs_body(bool loaded_from_nvs_after_persist);
@@ -533,7 +536,9 @@ static void device_settings_nvs_worker_task(void *arg)
     (void)arg;
     for (;;) {
         (void)ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
-        s_nvs_worker_result = device_settings_persist_nvs_body(s_nvs_worker_loaded_from_nvs_after_persist);
+        s_nvs_worker_result = s_flash_job != NULL
+            ? s_flash_job(s_flash_context)
+            : device_settings_persist_nvs_body(s_nvs_worker_loaded_from_nvs_after_persist);
         TaskHandle_t client = s_nvs_client_handle;
         s_nvs_client_handle = NULL;
         if (client != NULL) {
@@ -591,8 +596,28 @@ static esp_err_t device_settings_persist_locked(bool loaded_from_nvs_after_persi
     return s_nvs_worker_result;
 }
 
+esp_err_t device_settings_run_flash_job(esp_err_t (*job)(void *), void *context)
+{
+    if (job == NULL || !device_settings_ensure_mutex()) return ESP_ERR_INVALID_ARG;
+    if (xSemaphoreTake(s_mutex, portMAX_DELAY) != pdTRUE) return ESP_ERR_TIMEOUT;
+    esp_err_t result;
+    if (device_settings_current_stack_allows_flash()) result = job(context);
+    else if (!device_settings_ensure_nvs_worker()) result = ESP_ERR_NO_MEM;
+    else {
+        s_flash_job = job; s_flash_context = context;
+        s_nvs_client_handle = xTaskGetCurrentTaskHandle();
+        xTaskNotifyGive(s_nvs_worker_handle);
+        (void)ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
+        result = s_nvs_worker_result;
+        s_flash_job = NULL; s_flash_context = NULL;
+    }
+    xSemaphoreGive(s_mutex);
+    return result;
+}
+
 esp_err_t device_settings_init(void)
 {
+    device_key_profile_init();
     if (!device_settings_ensure_mutex()) {
         return ESP_ERR_NO_MEM;
     }
@@ -949,6 +974,10 @@ bool device_settings_format_ble_snapshot(char *out, size_t out_size)
         out[0] = '\0';
         return false;
     }
+    if (!device_key_profile_format(out + written, out_size - written, ';')) {
+        out[0] = '\0';
+        return false;
+    }
     return true;
 }
 
@@ -975,6 +1004,8 @@ static void device_settings_print_status(const char *result)
         ? snapshot.plugged_auto_shutdown_ms
         : snapshot.battery_auto_shutdown_ms;
 
+    char key_fields[224];
+    if (!device_key_profile_format(key_fields, sizeof(key_fields), ' ')) key_fields[0] = '\0';
     printf(
         "~DEVICE:SETTINGS schema=listener.device_settings.v1 result=%s settings_revision=%" PRIu32
         " legacy_plugged_brightness=%u legacy_battery_brightness=%u active_power=%s neutral_legacy_brightness=%u"
@@ -992,7 +1023,7 @@ static void device_settings_print_status(const char *result)
         " loaded_from_nvs=%u external_power_present=%u usb_power_present=%u usb_serial_jtag_sof_active=%u"
         " charger_active=%u charge_power_present=%u charging=%u charge_full=%u"
         " usb_det_adc_valid=%u usb_det_adc_mv=%d usb_det_mismatch=%u"
-        " valid_ranges=legacy_brightness_0_100_maps_to_led_zones,led_zone_brightness_0_100,low_power_idle_ms_%u_%u,plugged_low_power_idle_ms_%u_%u,battery_low_power_idle_ms_%u_%u,plugged_low_power_enabled_0_1,auto_shutdown_ms_0_off_or_%u_%u,plugged_auto_shutdown_ms_off_only,battery_auto_shutdown_ms_0_off_or_%u_%u,ble_name_ascii_1_%u,knob_rotation_system_volume_screen_brightness_disabled\n",
+        " valid_ranges=legacy_brightness_0_100_maps_to_led_zones,led_zone_brightness_0_100,low_power_idle_ms_%u_%u,plugged_low_power_idle_ms_%u_%u,battery_low_power_idle_ms_%u_%u,plugged_low_power_enabled_0_1,auto_shutdown_ms_0_off_or_%u_%u,plugged_auto_shutdown_ms_off_only,battery_auto_shutdown_ms_0_off_or_%u_%u,ble_name_ascii_1_%u,knob_rotation_system_volume_screen_brightness_disabled%s\n",
         result != NULL ? result : "OK",
         snapshot.settings_revision,
         snapshot.plugged_brightness_percent,
@@ -1042,7 +1073,7 @@ static void device_settings_print_status(const char *result)
         (unsigned)DEVICE_SETTINGS_AUTO_SHUTDOWN_MAX_MS,
         (unsigned)DEVICE_SETTINGS_AUTO_SHUTDOWN_MIN_MS,
         (unsigned)DEVICE_SETTINGS_AUTO_SHUTDOWN_MAX_MS,
-        (unsigned)DEVICE_SETTINGS_BLE_NAME_MAX_LEN);
+        (unsigned)DEVICE_SETTINGS_BLE_NAME_MAX_LEN, key_fields);
     fflush(stdout);
 }
 
@@ -1582,6 +1613,8 @@ static esp_err_t device_settings_apply_set_command(const char *arguments)
             bool name_changed = strcmp(s_settings.ble_name, next.ble_name) != 0;
             next.plugged_brightness_percent = DEVICE_SETTINGS_DEFAULT_PLUGGED_BRIGHTNESS_PERCENT;
             next.battery_brightness_percent = DEVICE_SETTINGS_DEFAULT_BATTERY_BRIGHTNESS_PERCENT;
+            device_settings_config_t previous = s_settings;
+            bool previous_pending = s_ble_name_pending_restart;
             s_settings = next;
             s_settings.settings_revision = s_settings.settings_revision == UINT32_MAX
                 ? DEVICE_SETTINGS_INITIAL_REVISION
@@ -1592,6 +1625,8 @@ static esp_err_t device_settings_apply_set_command(const char *arguments)
             }
             ret = device_settings_persist_locked(true);
             if (ret != ESP_OK) {
+                s_settings = previous;
+                s_ble_name_pending_restart = previous_pending;
                 ok = false;
                 name_changed_for_led = false;
                 snprintf(error_key, sizeof(error_key), "persist");
@@ -1629,6 +1664,12 @@ esp_err_t device_settings_consume_control_command(const char *line)
         return ESP_ERR_NOT_FOUND;
     }
 
+    if (strncmp(command, "KEY ", 4) == 0) {
+        esp_err_t ret = device_key_profile_command(command + 4);
+        if (ret == ESP_OK) device_settings_print_status("OK");
+        else device_settings_print_error("KEY", esp_err_to_name(ret));
+        return ret;
+    }
     if (strcmp(command, "SETTINGS") == 0 || strcmp(command, "STATUS") == 0) {
         device_settings_print_status("OK");
         return ESP_OK;
