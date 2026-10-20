@@ -1,0 +1,178 @@
+{
+  "at": "2026-10-20T08:12:42+08:00",
+  "candidate": 63,
+  "sourceCommit": "8affa162b1772b32c296b23ada1433bd1bee864d",
+  "buildId": "1c087c0da72c6d51",
+  "imageSha256": "2b24c4c4acd725068d05f4d86174cb456e18f6731768e165e4ee3e0ef8c7dc57",
+  "formalMeasurementResult": "INCOMPLETE",
+  "formalFailure": "77 local HCI samples counted but63 retained after RTC256 ring overwrite; full local HCI/IRQ qualification remains INCOMPLETE. No gate was relaxed or original result rewritten.",
+  "independentRf": {
+    "fullImageBytes": 1734832,
+    "pureDataSpanUs": 27993006,
+    "usefulDecimalKBps": 61.97376587566194,
+    "sourceSha256": "e36e79704627242c2cba4b8285f9f001f5ba6df6dee06ee962d417d3f71047c0",
+    "samePeerConnectAndMic": true,
+    "qualifiedCsa2": true,
+    "channelMismatches": 0,
+    "steadyPeriodUs": 7500.034210754571,
+    "rfPhyEvidence": {
+      "kind": "MIC-verified LL_PHY_UPDATE_IND",
+      "control": {
+        "deviceUs": 3710292089,
+        "sessionIndex": 1,
+        "direction": 1,
+        "counter": 4,
+        "opcode": "0x18",
+        "c2p": 2,
+        "p2c": 2,
+        "instant": 19
+      }
+    },
+    "crossEventRepeatEdges": 1606,
+    "steadyChannelCount": 15
+  },
+  "actualCeReceipt": {
+    "flags": 7,
+    "generation": 3,
+    "localApiAcceptedCe": [
+      12,
+      24
+    ],
+    "remoteReplyPreparedCe": [
+      12,
+      24
+    ],
+    "currentLocalRequestOwnerValid": true,
+    "actualControllerPlan": [
+      8,
+      8
+    ],
+    "actualCsRaw": [
+      7,
+      7
+    ],
+    "interpretation": "Local acceptance and own reply preparation are proved. Controller planning did not increase. Remote prepared is not itself proof of HCI reply success or hardware application."
+  },
+  "slowPacketBudgetCondition": {
+    "windowsEffectiveBeforeData": {
+      "DLE": {
+        "t": 1792454780.600548,
+        "key": [
+          2048,
+          3
+        ],
+        "kind": "DLE",
+        "hostTxOctets": 251,
+        "hostTxTimeUs": 965,
+        "hostRxOctets": 251,
+        "hostRxTimeUs": 965
+      },
+      "PHY": {
+        "t": 1792454780.7334569,
+        "key": [
+          2048,
+          3
+        ],
+        "kind": "PHY",
+        "hostTxPhy": 2,
+        "hostRxPhy": 2
+      },
+      "interval": null
+    },
+    "changesDuringData": [
+      {
+        "t": 1792454782.4515169,
+        "key": [
+          2048,
+          3
+        ],
+        "kind": "interval",
+        "intervalUs": 7500,
+        "latency": 0
+      }
+    ],
+    "actualDeviceRawTxAndRxUs": [
+      965,
+      965
+    ],
+    "full251Encrypted2MPacketAirUs": 1064,
+    "observedMaximumCiphertextLength": 230,
+    "actualFullPacketSplitExample": {
+      "hostPlaintextAcl": [
+        251,
+        203
+      ],
+      "radioPlaintext": [
+        226,
+        25,
+        203
+      ],
+      "radio230ByteEncryptedPacketAirUs": 964,
+      "exactHostImageJoinedChunks": 3911
+    },
+    "existingNormalFirmwareGate": "normalFW32 and63 both use audio2M threshold965 and TX-side readiness in OTA readiness; daily Type64 skips the explicit native-trial same-link fullRX>=1064 check. This permits a slow fragmented OTA link to be labelled ready.",
+    "causalLimit": "The physical965us cap explains inability to emit a full251+MIC PDU. Do not attribute the entire61.974 vs106.526 difference solely to CE63; DLE and AFH state differ. No stable A/B/A gain or hardware ceiling proven."
+  },
+  "previousComplete61Analysis": "C:\\Users\\Billy\\Documents\\Codex\\2026-10-04\\listener-repair-handoff\\work\\sniffer-alternative-butterfly-20261018\\air-efficiency64-interpretation.json",
+  "restoration": {
+    "at": "2026-10-20T08:09:59.865127+08:00",
+    "normal32Restore": {
+      "expectedBuild": "ad73e1113e429ca7",
+      "actualSamePeerRuntimeProbeAt": "2026-10-20T00:06:57.189268+00:00"
+    },
+    "typeBuild": 64,
+    "typeSource": "6ea535aa3e7413c7da77a49c1d3b87d16eac5419",
+    "exeSha256": "ab7e31422c7fa5d22649b9d08eb7a6ad434d8f282fc9571d1b45c8f8e1e25767",
+    "typeProcesses": [
+      [
+        27932,
+        1792442852.8198948
+      ],
+      [
+        34120,
+        1792442853.9420395
+      ]
+    ],
+    "deviceUid": "98c377b4e88c",
+    "profileRevision": 5,
+    "keysAndCorePreserved": true,
+    "verifiedCoreFields": [
+      "bleName",
+      "statusLedBrightnessPercent",
+      "keyLedBrightnessPercent",
+      "knobLedBrightnessPercent",
+      "edgeLedBrightnessPercent",
+      "pluggedLowPowerIdleMinutes",
+      "batteryLowPowerIdleMinutes",
+      "pluggedLowPowerEnabled",
+      "pluggedAutoShutdownMs",
+      "batteryAutoShutdownMs",
+      "knobRotationAction"
+    ],
+    "default443": true,
+    "nativeTrialAbsent": true,
+    "receiverPid": 39004,
+    "receiverIdle": true,
+    "listenerWppReleased": true,
+    "productSettingsWrites": 0,
+    "focusOperations": 0,
+    "publicReleaseUnchanged": true,
+    "measurementFullLocalTelemetryQualified": false
+  },
+  "notPublished": true,
+  "nextAction": "Audit normal OTA readiness separately from audio: both effective directions, PHY and full encrypted251 packet time must be read on the current generation; investigate965 negotiation/reversion before implementing a bounded repair. Do not simply repeat prior one-direction TX1064 or491 trials. Preserve event-tail/ACK evidence and original52c2/FW22 controlled-baseline requirement.",
+  "proofToolCorrections": [
+    "LF/CRLF source/fixture hashing distinguished without firmware changes.",
+    "Xtensa .xt.prop made flash appear as data; analysis-only ELF removes metadata, verifies every allocated file-backed section address+byte identical, then validates reachable flush getter.",
+    "63 trace77-vs63 retention failure preserved; no widening RTC or reducing qualification in this round."
+  ],
+  "archive": {
+    "at": "2026-10-20T08:12:42+08:00",
+    "path": "C:\\Users\\Billy\\Documents\\Codex\\2026-10-04\\listener-repair-handoff\\outputs\\ble-air-efficiency-reply63-20261020.zip",
+    "bytes": 115805,
+    "sha256": "6853c28e64898d4fc1a16640fae29dc64b78217dbe0e20ffc6bf7b99eee222ca",
+    "explicitAllowlistOnly": true,
+    "rawRfHciKeysAudioProfilesIncluded": false,
+    "members": 28
+  }
+}
