@@ -2,6 +2,7 @@
 
 #include <inttypes.h>
 #include <stdbool.h>
+#include <stdatomic.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <string.h>
@@ -234,7 +235,7 @@ static bool s_last_shutdown_persisted;
 static uint32_t s_last_shutdown_battery_mv;
 static uint8_t s_last_shutdown_battery_level_percent = 0xFF;
 static uint32_t s_last_shutdown_power_flags;
-static power_manager_state_t s_state = POWER_MANAGER_STATE_ACTIVE;
+static _Atomic(power_manager_state_t) s_state = POWER_MANAGER_STATE_ACTIVE;
 /* Test-only and RAM-only. It expires on real activity, loss of the BLE link,
  * or any awake blocker; production inactivity timers remain unchanged. */
 static bool s_test_idle_override_active;
@@ -1634,12 +1635,11 @@ static bool power_manager_should_refresh_battery_for_snapshot_locked(
 
 power_manager_state_t power_manager_get_state(void)
 {
-    power_manager_state_t state = s_state;
-    if (s_mutex != NULL && xSemaphoreTake(s_mutex, portMAX_DELAY) == pdTRUE) {
-        state = s_state;
-        xSemaphoreGive(s_mutex);
-    }
-    return state;
+    /* Settings apply calls this from the BLE host while holding its mutex.
+     * PM snapshot/policy paths hold s_mutex and read device settings in the
+     * opposite order. A state-only query must never join that lock cycle or
+     * hold up an ATT response. Compound snapshots still take s_mutex. */
+    return atomic_load_explicit(&s_state, memory_order_acquire);
 }
 
 void power_manager_get_snapshot(power_manager_snapshot_t *snapshot)
