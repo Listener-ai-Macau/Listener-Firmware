@@ -2,15 +2,17 @@
 
 | Purpose | Direct download |
 | --- | --- |
-| **Windows app** | **[Download MSI · Type build65](https://github.com/Listener-ai-Macau/Listener-Type/releases/download/v1.0.6-rc1/ListenerType_1.0.6-rc1_x64_en-US.msi)** |
+| **Windows app** | **[Download MSI · Type build67](https://github.com/Listener-ai-Macau/Listener-Type/releases/download/v1.0.6-rc1/ListenerType_1.0.6-rc1_x64_en-US.msi)** |
 | **Firmware: USB flashing / Bluetooth OTA** | **[Download firmware ZIP · both methods](https://github.com/Listener-ai-Macau/Listener-Firmware/releases/download/v1.0.6-rc1/ListenerFirmware_1.0.6-rc1_ESP32S3.zip)** |
 
-Firmware: **ESP32-S3 N16R8**, build `ad73e1113e429ca7`. Select the same ZIP for USB flashing or Bluetooth OTA in Type.
+Firmware: **ESP32-S3 N16R8**, build `e7bd1f1619b696a1`. Select the same ZIP for USB flashing or Bluetooth OTA in Type.
 Type defaults to **USB wired flashing**, with the flasher included in the MSI. No Python, ESP-IDF or separate flashing software is required.
 Device settings are independent: select one USB/Bluetooth device, read its settings, then write changes back to that device. Names, lights, power, keys and knob configuration stay on the board. Use this paired MSI and firmware ZIP.
 RC1 remains a prerelease; intermittent early close and strong-interference limits are documented in the release notes.
-This refresh includes exact-device OTA handoff, removes connection-policy changes to unrelated Bluetooth devices, and updates the build dependency source-map-js to 1.2.2. Firmware remains the verified Firmware32 image; experimental throughput firmware is excluded.
+This refresh fixes device-name confirmation after Bluetooth reconnect, key/knob saves that could stall, and firmware-package errors hidden in USB mode. The paired release uses normal firmware with per-device settings preserved; throughput experiments are excluded.
 [App release notes and checksum](https://github.com/Listener-ai-Macau/Listener-Type/releases/tag/v1.0.6-rc1) · [Firmware notes and flashing instructions](https://github.com/Listener-ai-Macau/Listener-Firmware/releases/tag/v1.0.6-rc1)
+
+[English first setup](https://github.com/Listener-ai-Macau/Listener-Type#make-your-first-dictation) · [English user guide](https://github.com/Listener-ai-Macau/Listener-Type/blob/master/docs/USAGE.en.md)
 
 ---
 
@@ -74,7 +76,7 @@ The companion Type app is free and open source; cloud recognition and text servi
 | --- | --- |
 | Knob click / rotation | Toggle dictation / system volume |
 | Knob double-click / hold | Reset pairing / hold until shutdown confirms |
-| KEY1 / KEY2 / KEY3 / KEY4 | Right Ctrl / Ctrl+C / Ctrl+V / Ctrl+Z |
+| KEY1 / KEY2 / KEY3 / KEY4 | Right Ctrl / Ctrl+C / Ctrl+V / Enter |
 
 Key double-click and long-press actions default to disabled. Assign dictation, templates, shortcuts and other actions in Type's Device page. Status, key, knob and edge brightness are independently adjustable.
 
