@@ -1,53 +1,46 @@
-## Download Listener · RC1
+# Listener
+
+## An AI starter gadget for your desk · US$49
+
+A microphone, a recording knob and four customizable keys. Speak a message, email or note into the field you are using with Windows Type.
+
+**US$49 is the hardware price. Type is free and open source.**
 
 | Purpose | Direct download |
 | --- | --- |
 | **Windows app** | **[Download MSI · Type build92](https://github.com/Listener-ai-Macau/Listener-Type/releases/download/v1.0.6-rc1/ListenerType_1.0.6-rc1_x64_en-US.msi)** |
 | **Firmware: USB flashing / Bluetooth OTA** | **[Download firmware ZIP · both methods](https://github.com/Listener-ai-Macau/Listener-Firmware/releases/download/v1.0.6-rc1/ListenerFirmware_1.0.6-rc1_ESP32S3.zip)** |
 
+**English** · [简体中文](README.zh-CN.md) · [繁體中文](README.zh-TW.md)
+
+<img src="docs/assets/readme/keyboard-front.jpg" alt="Listener hardware: four transparent keys, black knob and six status lights" width="720">
+
+*Actual Listener hardware. Planned appearance: transparent case and keycaps, black knob, broadly as shown. This is a photograph, not an operation video.*
+
+- **Say it:** the knob starts and stops dictation; Type handles recognition and writing on the computer.
+- **Shape the words:** keep the original by default, or choose a text style or translation with a configured text service.
+- **Make it yours:** assign the four keys and adjust lights or power settings. Each device keeps its own settings.
+
+**Before you start:** the full hardware-audio path needs Windows Type and a configured recognition service or local model. Cloud usage is billed separately; no ready-to-use official cloud account or allowance is included in this release.
+
+**RC1 is a prerelease.** Strong-interference separation is incomplete and intermittent early-close cases remain under review. [Current limits and release notes](https://github.com/Listener-ai-Macau/Listener-Type/releases/tag/v1.0.6-rc1). Hardware purchase link not yet announced.
+
+[First setup](https://github.com/Listener-ai-Macau/Listener-Type#make-your-first-dictation) · [Look through the user guide when needed](https://github.com/Listener-ai-Macau/Listener-Type/blob/master/docs/USAGE.en.md)
+
 <details>
-<summary>Firmware and device settings</summary>
+<summary>Already have a device? Firmware, settings and current build</summary>
 
 Firmware: **ESP32-S3 N16R8**, build `e7bd1f1619b696a1`. Select the same ZIP for USB flashing or Bluetooth OTA in Type.
 Type defaults to **USB wired flashing**, with the flasher included in the MSI. No Python, ESP-IDF or separate flashing software is required.
 Device settings are independent: select one USB/Bluetooth device, read its settings, then write changes back to that device. Names, lights, power, keys and knob configuration stay on the board. Use this paired MSI and firmware ZIP.
 
+Type build92 keeps the trial draft editable while service availability is checked, fails or is retried; submission stays protected until ready. The selected purpose, optional Everyday list, existing styles, side-by-side results and explicit copying remain. Firmware33 is unchanged.
+
+[Release notes / 发布说明](https://github.com/Listener-ai-Macau/Listener-Type/releases/tag/v1.0.6-rc1) · [Firmware / 固件](https://github.com/Listener-ai-Macau/Listener-Firmware/releases/tag/v1.0.6-rc1)
+
 </details>
 
-RC1 remains a prerelease; intermittent early close and strong-interference limits are documented in the release notes.
-Type build92 keeps the trial draft editable while service availability is checked, fails or is retried; submission stays protected until ready. The selected purpose, optional Everyday list, existing styles, side-by-side results and explicit copying remain. Firmware33 is unchanged.
-[App release notes and checksum](https://github.com/Listener-ai-Macau/Listener-Type/releases/tag/v1.0.6-rc1) · [Firmware notes and flashing instructions](https://github.com/Listener-ai-Macau/Listener-Firmware/releases/tag/v1.0.6-rc1)
-
-[English first setup](https://github.com/Listener-ai-Macau/Listener-Type#make-your-first-dictation) · [English user guide](https://github.com/Listener-ai-Macau/Listener-Type/blob/master/docs/USAGE.en.md)
-
 ---
-
-<picture>
-  <source media="(prefers-color-scheme: dark) and (max-width: 600px)" srcset="docs/assets/listener/firmware-hero-en-mobile-dark.png">
-  <source media="(prefers-color-scheme: dark)" srcset="docs/assets/listener/firmware-hero-en-dark.png">
-  <source media="(max-width: 600px)" srcset="docs/assets/listener/firmware-hero-en-mobile.png">
-  <img src="docs/assets/listener/firmware-hero-en.png" alt="Listener voice keyboard: one press, start speaking" width="1600">
-</picture>
-
-**English** · [Chinese](README.zh-CN.md)
-
-# Listener Firmware
-
-**Listener is a US$49 AI starter desk gadget.** Explore voice input and customizable physical controls, enjoy the visible electronics, or use it occasionally. Normal Type use needs no programming. The board handles audio and controls; Windows Type connects to the recognizer and text services you configure, with service costs separate. The planned hardware appearance is broadly the transparent case/keycaps and black knob in the [real hardware photograph](https://github.com/Listener-ai-Macau/Listener-Type#an-ai-starter-gadget-for-your-desk--us49). No course or cloud allowance is included in the current release.
-
-**Put audio capture, recording controls and visible status within reach.**
-
-**[Try with a computer microphone first](https://github.com/Listener-ai-Macau/Listener-Type/releases)** · [Have a keyboard? Connect it](#from-power-on-to-the-first-sentence) · [Firmware downloads](https://github.com/Listener-ai-Macau/Listener-Firmware/releases) · [Foldout manual](https://github.com/Listener-ai-Macau/Listener-Type/blob/master/docs/manuals/Listener-fold-EN.pdf)
-
-> **Hardware presale phase · Purchase link not yet announced**
-> Try the app with your computer microphone. If you already have a keyboard, follow the connection steps below.
-
-| Within reach | How it works |
-| --- | --- |
-| Press to start, press to stop | The knob controls recording; the computer transcribes and inserts. |
-| See the current state | Six lights distinguish recording, processing, completion and connection issues. |
-| Physical keys for everyday actions | Customize four keys; rotate the knob for volume by default. |
-
 
 ## From power-on to the first sentence
 

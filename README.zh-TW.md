@@ -1,38 +1,46 @@
-## 下载 Listener · RC1
+# Listener
+
+## 放在桌邊的 AI 入門小工具 · 49 美元
+
+一個麥克風、一個錄音旋鈕、四顆可自訂按鍵。配合 Windows Type，用說話起草訊息、郵件或筆記，文字進入正在使用的輸入框。
+
+**49 美元為硬體價格，Type 軟體免費開源。**
 
 | 用途 | 直接下载 |
 | --- | --- |
 | **Windows 软件** | **[下载 MSI · Type build92](https://github.com/Listener-ai-Macau/Listener-Type/releases/download/v1.0.6-rc1/ListenerType_1.0.6-rc1_x64_en-US.msi)** |
 | **固件：USB 烧写 / 蓝牙 OTA** | **[下载固件 ZIP · 两种方式共用](https://github.com/Listener-ai-Macau/Listener-Firmware/releases/download/v1.0.6-rc1/ListenerFirmware_1.0.6-rc1_ESP32S3.zip)** |
 
+[English](README.md) · **繁體中文** · [简体中文](README.zh-CN.md)
+
+<img src="docs/assets/readme/keyboard-front.jpg" alt="Listener 實物：四顆透明按鍵、黑色旋鈕與六顆狀態燈" width="720">
+
+*Listener 實物照片。計劃交付外觀基本如圖：透明外殼、透明鍵帽、黑色旋鈕；此圖不是操作錄影。*
+
+- **說出來：** 旋鈕開停錄音，電腦上的 Type 完成辨識與寫入。
+- **按需要整理：** 預設保留原文，也可在設定文字服務後選擇風格或翻譯。
+- **設成自己的：** 自訂四顆按鍵、燈光與電源設定，每台裝置獨立儲存。
+
+**開始前需要：** Windows Type，以及已設定的辨識服務或本機模型。雲端用量單獨計費；目前版本不附帶開箱可用的官方雲端帳號或辨識額度。
+
+**RC1 仍為候選版本。** 強干擾分離尚未完善，偶發提前結束仍在跟進，詳見[目前限制與發布說明](https://github.com/Listener-ai-Macau/Listener-Type/releases/tag/v1.0.6-rc1)。硬體購買入口尚未公布。
+
+[首次設定](https://github.com/Listener-ai-Macau/Listener-Type/blob/master/README.zh-TW.md#先完成一次輸入) · [需要時再查使用指南](https://github.com/Listener-ai-Macau/Listener-Type/blob/master/docs/USAGE.md)
+
 <details>
-<summary>已有设备：固件与设置说明</summary>
+<summary>已有裝置：韌體、設定與本次版本</summary>
 
 固件适用 **ESP32-S3 N16R8**，构建 `e7bd1f1619b696a1`。USB 和蓝牙更新选择同一个 ZIP，无需再猜下载哪一个。
 Type 默认使用 **USB 有线刷机**，刷机能力已内置；客户无需另装 Python、ESP-IDF 或其它刷机软件。
 设备设置各自独立：选择一台有线／蓝牙设备，读取后修改并写入；名称、灯光、电源、按键和旋钮设置保存在该设备中。请配套使用本页 MSI 与固件 ZIP。
 
+Type build92在檢查風格可用性、檢查失敗或重試時仍可編輯草稿，提交按鈕繼續依真實可用狀態保護。保留用途說明、可選日常清單、既有風格、並排結果和明確複製，Firmware33不變。
+
+[Release notes / 发布说明](https://github.com/Listener-ai-Macau/Listener-Type/releases/tag/v1.0.6-rc1) · [Firmware / 固件](https://github.com/Listener-ai-Macau/Listener-Firmware/releases/tag/v1.0.6-rc1)
+
 </details>
 
-RC1 仍为候选版本，偶发提前结束及强干扰限制见发布说明。
-Type build92在檢查風格可用性、檢查失敗或重試時仍可編輯草稿，提交按鈕繼續依真實可用狀態保護。保留用途說明、可選日常清單、既有風格、並排結果和明確複製，Firmware33不變。
-[软件发布说明与校验](https://github.com/Listener-ai-Macau/Listener-Type/releases/tag/v1.0.6-rc1) · [固件发布说明与烧写方法](https://github.com/Listener-ai-Macau/Listener-Firmware/releases/tag/v1.0.6-rc1)
-
-[English first setup](https://github.com/Listener-ai-Macau/Listener-Type#make-your-first-dictation) · [English user guide](https://github.com/Listener-ai-Macau/Listener-Type/blob/master/docs/USAGE.en.md)
-
 ---
-
-# Listener Firmware
-
-**Listener 是49美元的 AI 入門桌面小工具。** 帶一點開發板氣質，可買來玩聲音輸入、學習辨識與文字風格如何配合，或自訂手邊的按鍵；正常使用 Type 不需要程式設計。裝置負責音訊與實體控制，Windows Type 連接你設定的辨識與文字服務，費用另計。計劃交付外觀基本按[實物照片](https://github.com/Listener-ai-Macau/Listener-Type/blob/master/README.zh-TW.md)：透明外殼、透明鍵帽與黑色旋鈕；目前版本不附帶課程或雲端額度。
-
-Listener 語音鍵盤的韌體。它執行在 ESP32-S3 桌面裝置上，採集語音並透過藍牙送給 Listener Type，把錄音控制和產品狀態放在手邊。
-
-[English](README.md) · [简体中文](README.zh.md) · [韌體發布](https://github.com/Listener-ai-Macau/Listener-Firmware/releases) · [Listener Type](https://github.com/Listener-ai-Macau/Listener-Type)
-
-<p align="center">
-  <img src="docs/assets/readme/keyboard-front.jpg" alt="帶按鍵、旋鈕和狀態燈的 Listener 語音鍵盤" width="900" />
-</p>
 
 ## 一個完整的 Listener 產品
 
