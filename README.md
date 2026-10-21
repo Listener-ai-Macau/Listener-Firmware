@@ -33,6 +33,8 @@ Type build90 opens a typed-text workspace directly from Overview. Choose a trial
 
 # Listener Firmware
 
+**Listener is a US$49 AI starter desk gadget.** Explore voice input and customizable physical controls, enjoy the visible electronics, or use it occasionally. Normal Type use needs no programming. The board handles audio and controls; Windows Type connects to the recognizer and text services you configure, with service costs separate. The planned hardware appearance is broadly the transparent case/keycaps and black knob in the [real hardware photograph](https://github.com/Listener-ai-Macau/Listener-Type#an-ai-starter-gadget-for-your-desk--us49). No course or cloud allowance is included in the current release.
+
 **Put audio capture, recording controls and visible status within reach.**
 
 **[Try with a computer microphone first](https://github.com/Listener-ai-Macau/Listener-Type/releases)** · [Have a keyboard? Connect it](#from-power-on-to-the-first-sentence) · [Firmware downloads](https://github.com/Listener-ai-Macau/Listener-Firmware/releases) · [Foldout manual](https://github.com/Listener-ai-Macau/Listener-Type/blob/master/docs/manuals/Listener-fold-EN.pdf)

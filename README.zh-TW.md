@@ -24,6 +24,8 @@ Type build90讓首頁直接開啟文字草稿窗，可在窗內選擇試用風�
 
 # Listener Firmware
 
+**Listener 是49美元的 AI 入門桌面小工具。** 帶一點開發板氣質，可買來玩聲音輸入、學習辨識與文字風格如何配合，或自訂手邊的按鍵；正常使用 Type 不需要程式設計。裝置負責音訊與實體控制，Windows Type 連接你設定的辨識與文字服務，費用另計。計劃交付外觀基本按[實物照片](https://github.com/Listener-ai-Macau/Listener-Type/blob/master/README.zh-TW.md)：透明外殼、透明鍵帽與黑色旋鈕；目前版本不附帶課程或雲端額度。
+
 Listener 語音鍵盤的韌體。它執行在 ESP32-S3 桌面裝置上，採集語音並透過藍牙送給 Listener Type，把錄音控制和產品狀態放在手邊。
 
 [English](README.md) · [简体中文](README.zh.md) · [韌體發布](https://github.com/Listener-ai-Macau/Listener-Firmware/releases) · [Listener Type](https://github.com/Listener-ai-Macau/Listener-Type)
