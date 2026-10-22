@@ -8,7 +8,7 @@
 
 | 用途 | 直接下载 |
 | --- | --- |
-| **Windows 软件** | **[下载 MSI · Type build137](https://github.com/Listener-ai-Macau/Listener-Type/releases/download/v1.0.6-rc1/ListenerType_1.0.6-rc1_x64_en-US.msi)** |
+| **Windows 软件** | **[下载 MSI · Type build138](https://github.com/Listener-ai-Macau/Listener-Type/releases/download/v1.0.6-rc1/ListenerType_1.0.6-rc1_x64_en-US.msi)** |
 | **固件：USB 烧写 / 蓝牙 OTA** | **[下载固件 ZIP · 两种方式共用](https://github.com/Listener-ai-Macau/Listener-Firmware/releases/download/v1.0.6-rc1/ListenerFirmware_1.0.6-rc1_ESP32S3.zip)** |
 
 [English](README.md) · **繁體中文** · [简体中文](README.zh-CN.md)
@@ -36,7 +36,7 @@
 Type 默认使用 **USB 有线刷机**，刷机能力已内置；客户无需另装 Python、ESP-IDF 或其它刷机软件。
 设备设置各自独立：选择一台有线／蓝牙设备，读取后修改并写入；名称、灯光、电源、按键和旋钮设置保存在该设备中。请配套使用本页 MSI 与固件 ZIP。
 
-Type build137修復舊接管請求逾時誤取消新錄音、殘留共用取消標記的問題；同時修正新縮短結果被標成快取還原、成稿日期未跟隨介面語言。Firmware33不變，舊現場問題仍待完整歸因。
+Type build138修復未取得錄音歸屬的串流失敗誤結束其他錄音；本次錄音自己的錯誤仍正常收尾。Firmware33不變，舊現場故障仍分別保留未完成範圍。
 
 [Release notes / 发布说明](https://github.com/Listener-ai-Macau/Listener-Type/releases/tag/v1.0.6-rc1) · [Firmware / 固件](https://github.com/Listener-ai-Macau/Listener-Firmware/releases/tag/v1.0.6-rc1)
 
