@@ -72,6 +72,7 @@ for command in ['~DEVICE:SET ls=45 rev=70','~DEVICE:RESET','~DEVICE:APPLY_BLE_NA
 r={'source':str(a.source),'scope':__doc__,'cases':cases,'hasCompactKeyAck':has_key_ack}
 if has_key_ack:
  d.ack.restype=ctypes.c_char_p;line=d.ack().decode();r['ack']=line;r['ackBytes']=len(line.encode());assert line.endswith('\n') and ' result=OK ' in line and ' ki=98c377b4e88c kr=13 ks=3999 kc=0123abcd ko=48 kd=1234' in line and len(line)<300
-r['passed']=any(not c['passed'] for c in cases) if a.expect_before else all(c['passed'] for c in cases) and has_key_ack
+r['legacyFullSettingsAck']=bool(re.search(r'if\s*\(ret\s*==\s*ESP_OK\)\s*device_settings_print_status\("OK"\)',settings))
+r['passed']=any(not c['passed'] for c in cases) if a.expect_before else all(c['passed'] for c in cases) and not has_key_ack and r['legacyFullSettingsAck']
 if a.output:a.output.write_text(json.dumps(r,ensure_ascii=False,indent=2)+'\n',encoding='utf-8')
 print(json.dumps(r,ensure_ascii=False));raise SystemExit(0 if r['passed'] else 1)

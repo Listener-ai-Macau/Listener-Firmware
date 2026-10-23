@@ -1077,20 +1077,6 @@ static void device_settings_print_status(const char *result)
     fflush(stdout);
 }
 
-static void device_settings_print_key_ack(void)
-{
-    // Every 16-byte upload chunk needs an execution acknowledgement, not a
-    // complete power/ADC/settings/help dump. SETTINGS remains the authoritative
-    // full read, including after COMMIT and each requested profile page.
-    char fields[224];
-    if (!device_key_profile_format(fields, sizeof(fields), ' ')) {
-        device_settings_print_error("KEY", "profile_snapshot_unavailable");
-        return;
-    }
-    printf("~DEVICE:SETTINGS schema=listener.device_settings.v1 result=OK key_ack=1%s\n", fields);
-    fflush(stdout);
-}
-
 static bool device_settings_parse_u32(const char *value, uint32_t *out_value)
 {
     if (value == NULL || out_value == NULL || value[0] == '\0') {
@@ -1680,7 +1666,10 @@ esp_err_t device_settings_consume_control_command(const char *line)
 
     if (strncmp(command, "KEY ", 4) == 0) {
         esp_err_t ret = device_key_profile_command(command + 4);
-        if (ret == ESP_OK) device_settings_print_key_ack();
+        // Legacy desktop versions also use this line as a complete SETTINGS
+        // snapshot. A key-only reply under the same marker can be mistaken for
+        // a later query's response, so preserve the full wire contract.
+        if (ret == ESP_OK) device_settings_print_status("OK");
         else device_settings_print_error("KEY", esp_err_to_name(ret));
         return ret;
     }
