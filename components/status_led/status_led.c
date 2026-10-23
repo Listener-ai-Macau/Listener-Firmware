@@ -465,7 +465,9 @@ typedef struct {
     uint32_t recording_level_updated_ms;
     uint32_t recording_level_hold_until_ms;
     uint32_t recording_level_visual_updated_ms;
+    uint32_t recording_started_ms;
     uint32_t processing_started_ms;
+    uint32_t processing_updated_ms;
     uint32_t ota_started_ms;
     size_t ota_bytes_written;
     size_t ota_expected_size;
@@ -3279,9 +3281,16 @@ static uint8_t status_led_recording_accent_percent_locked(
 
 static uint32_t status_led_effect_elapsed_ms_locked(uint32_t now_ms)
 {
+    /* Match accent ownership: an unrelated status update must not replay the
+     * recording entry ramp (which starts at black) or rewind either chase. */
     uint32_t started_ms = s_state.last_transition_ms;
-    if (started_ms == 0U || now_ms < started_ms) {
-        return now_ms;
+    if (s_state.ota_active) {
+        started_ms = s_state.ota_started_ms;
+    } else if (s_state.recording_active &&
+               s_state.rec_source != STATUS_LED_REC_SOURCE_NOT_AVAILABLE) {
+        started_ms = s_state.recording_started_ms;
+    } else if (s_state.processing_active) {
+        started_ms = s_state.processing_started_ms;
     }
     return now_ms - started_ms;
 }
@@ -4050,16 +4059,17 @@ static void status_led_render_frame_locked(status_led_frame_t *frame, uint32_t n
 
 static void status_led_clear_stale_processing_locked(uint32_t now_ms)
 {
-    if (!s_state.processing_active || s_state.processing_started_ms == 0U) {
+    if (!s_state.processing_active || s_state.processing_updated_ms == 0U) {
         return;
     }
-    if (now_ms - s_state.processing_started_ms < STATUS_LED_PROCESSING_STALE_TIMEOUT_MS) {
+    if (now_ms - s_state.processing_updated_ms < STATUS_LED_PROCESSING_STALE_TIMEOUT_MS) {
         return;
     }
 
     status_led_schedule_idle_transition_clear_locked(now_ms);
     s_state.processing_active = false;
     s_state.processing_started_ms = 0U;
+    s_state.processing_updated_ms = 0U;
     s_state.last_transition_ms = now_ms;
     status_led_set_last_reason_locked("processing_stale_timeout");
     diag_log(DIAG_SRC_STATUS_LED, DIAG_LED_STATE, DIAG_SEV_WARN,
@@ -5339,6 +5349,9 @@ void status_led_set_recording(bool active, status_led_rec_source_t source)
         }
         s_state.recording_active = next_recording_active;
         s_state.rec_source = source;
+        if (recording_state_changed) {
+            s_state.recording_started_ms = next_recording_active ? now_ms : 0U;
+        }
         if (recording_state_changed || !next_recording_active) {
             s_state.recording_level_percent = 0U;
             s_state.recording_level_updated_ms = active ? now_ms : 0U;
@@ -5433,6 +5446,7 @@ void status_led_set_processing(bool active, const char *reason)
     if (xSemaphoreTake(s_mutex, portMAX_DELAY) == pdTRUE) {
         status_led_resume_output_locked();
         s_state.preview_effect_only = false;
+        const bool processing_state_changed = s_state.processing_active != active;
         if (s_state.processing_active && !active) {
             status_led_schedule_idle_transition_clear_locked(now_ms);
         }
@@ -5442,13 +5456,21 @@ void status_led_set_processing(bool active, const char *reason)
             s_state.ble_repair_until_ms = 0U;
             s_state.ble_repair_cue_started_ms = 0U;
             s_state.ble_repair_cue_until_ms = 0U;
-            s_state.processing_started_ms = now_ms;
+            if (processing_state_changed) {
+                s_state.processing_started_ms = now_ms;
+            }
+            /* Keep liveness separate from the animation's entry time. */
+            s_state.processing_updated_ms = now_ms;
             (void)status_led_clear_ec11_press_feedback_locked();
             status_led_clear_ok_locked();
             status_led_clear_retryable_error_locked(STATUS_LED_ERROR_DOMAIN_AI);
             status_led_clear_retryable_error_locked(STATUS_LED_ERROR_DOMAIN_OTA);
+        } else {
+            s_state.processing_updated_ms = 0U;
         }
-        s_state.last_transition_ms = now_ms;
+        if (processing_state_changed) {
+            s_state.last_transition_ms = now_ms;
+        }
         status_led_set_last_reason_locked(reason != NULL ? reason : (active ? "processing_start" : "processing_stop"));
         diag_log(DIAG_SRC_STATUS_LED, DIAG_LED_STATE, DIAG_SEV_INFO,
                  3, active ? 1U : 0U, now_ms - s_state.processing_started_ms, 0);
@@ -7581,6 +7603,8 @@ static void status_led_preview_state(const char *state)
         s_state.battery_mv,
         s_state.battery_level_percent);
     s_state.last_transition_ms = now_ms;
+    s_state.recording_started_ms = s_state.recording_active ? now_ms : 0U;
+    s_state.processing_updated_ms = s_state.processing_active ? now_ms : 0U;
     effect_only_after = s_state.preview_effect_only || keep_usb_command_blocker_after;
     xSemaphoreGive(s_mutex);
     power_manager_set_blocker(POWER_MANAGER_BLOCKER_USB_COMMAND, effect_only_after);
