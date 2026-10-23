@@ -1034,7 +1034,13 @@ static bool ble_hid_dispatch_usb_command_line(const char *line)
     }
 
     if (device_settings_consume_usb_command(line)) {
-        status_led_apply_device_settings();
+        // Queries and profile staging are read/transfer operations. Re-entering
+        // the LED settings animation after every page/chunk adds unrelated
+        // work and changes visible state even though brightness never changed.
+        if (ble_hid_usb_command_starts_with(line, "DEVICE:SET ") ||
+            ble_hid_usb_command_matches(line, "DEVICE:RESET")) {
+            status_led_apply_device_settings();
+        }
         return true;
     }
 
