@@ -1010,7 +1010,7 @@ static void device_settings_print_status(const char *result)
         "~DEVICE:SETTINGS schema=listener.device_settings.v1 result=%s settings_revision=%" PRIu32
         " legacy_plugged_brightness=%u legacy_battery_brightness=%u active_power=%s neutral_legacy_brightness=%u"
         " led_status=%u led_key=%u led_ec11=%u led_edge=%u"
-        " compact_set=1"
+        " compact_set=1 usb_key_ack=1"
         " low_power_idle_ms=%" PRIu32
         " plugged_low_power_idle_ms=%" PRIu32 " battery_low_power_idle_ms=%" PRIu32
         " low_power_idle_mode=power_mode"
@@ -1727,5 +1727,28 @@ esp_err_t device_settings_consume_control_command(const char *line)
 
 bool device_settings_consume_usb_command(const char *line)
 {
+    const char *command = device_settings_strip_prefix(line);
+    if (command != NULL && strncmp(command, "KEY2 ", 5) == 0) {
+        // USB-only, correlated reply. Keep legacy KEY/SETTINGS snapshots intact:
+        // a delayed staging ACK must never impersonate the next settings read.
+        const char *id = command + 5;
+        uint32_t request = 0;
+        bool valid = strlen(id) > 9 && id[8] == ' ';
+        for (size_t i = 0; valid && i < 8; ++i) {
+            char c = id[i];
+            unsigned digit;
+            if (c >= '0' && c <= '9') digit = (unsigned)(c - '0');
+            else if (c >= 'a' && c <= 'f') digit = (unsigned)(c - 'a' + 10);
+            else if (c >= 'A' && c <= 'F') digit = (unsigned)(c - 'A' + 10);
+            else { valid = false; break; }
+            request = (request << 4) | digit;
+        }
+        esp_err_t ret = valid && request != 0
+            ? device_key_profile_command(id + 9) : ESP_ERR_INVALID_ARG;
+        printf("~DEVICE:KEY_ACK id=%08" PRIx32 " result=%s reason=%s\n",
+               request, ret == ESP_OK ? "OK" : "ERROR", esp_err_to_name(ret));
+        fflush(stdout);
+        return true;
+    }
     return device_settings_consume_control_command(line) != ESP_ERR_NOT_FOUND;
 }

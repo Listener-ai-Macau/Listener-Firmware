@@ -17,12 +17,14 @@ ack=function(settings,'device_settings_print_key_ack') if has_key_ack else ''
 fixture=r'''
 #include <stdbool.h>
 #include <stdint.h>
+#include <inttypes.h>
 #include <stdio.h>
 #include <stdarg.h>
 #include <string.h>
 typedef int esp_err_t;
 #define ESP_OK 0
 #define ESP_ERR_NOT_FOUND 1
+#define ESP_ERR_INVALID_ARG 2
 #define POWER_MANAGER_BLOCKER_USB_COMMAND 1
 #define POWER_MANAGER_BLOCKER_FLASH_WRITE 2
 #define POWER_MANAGER_BLOCKER_DIAG_EXPORT 4
@@ -35,7 +37,11 @@ static bool ble_hid_usb_command_is_passive_query(const char*s){return false;}
 static void power_manager_record_activity(const char*s){}
 static void power_manager_set_blocker(unsigned b,bool active){}
 static bool power_manager_consume_usb_command(const char*s){return false;}
-static bool device_settings_consume_usb_command(const char*s){if(*s=='~')s++;return strncmp(s,"DEVICE:",7)==0;}
+static unsigned key_calls;
+static char key_command[192];
+static const char*device_settings_strip_prefix(const char*s){if(*s=='~')s++;return strncmp(s,"DEVICE:",7)==0?s+7:NULL;}
+static esp_err_t device_settings_consume_control_command(const char*s){return device_settings_strip_prefix(s)?ESP_OK:ESP_ERR_NOT_FOUND;}
+static esp_err_t device_key_profile_command(const char*s){key_calls++;snprintf(key_command,sizeof(key_command),"%s",s);return strcmp(s,"BAD")==0?ESP_ERR_INVALID_ARG:ESP_OK;}
 static void status_led_apply_device_settings(void){applies++;}
 static int ble_hid_gap_apply_pending_ble_name(void){return 0;}
 static const char*esp_err_to_name(int e){return "controlled_error";}
@@ -58,8 +64,11 @@ static int capture_printf(const char*format,...){va_list ap;va_start(ap,format);
 #define fflush(file) (0)
 static bool device_key_profile_format(char*out,size_t size,char sep){return snprintf(out,size," ki=98c377b4e88c kr=13 ks=3999 kc=0123abcd ko=48 kd=1234")<(int)size;}
 static void device_settings_print_error(const char*k,const char*r){printf("~DEVICE:ERROR key=%s reason=%s\n",k,r);}
-'''+actual+ack+r'''
+'''+function(settings,'device_settings_consume_usb_command')+actual+ack+r'''
 __declspec(dllexport) unsigned dispatch(const char*line){applies=0;ble_hid_dispatch_usb_command_line(line);return applies;}
+__declspec(dllexport) const char*rpc(const char*line){captured[0]=0;key_calls=0;key_command[0]=0;device_settings_consume_usb_command(line);return captured;}
+__declspec(dllexport) unsigned rpc_calls(void){return key_calls;}
+__declspec(dllexport) const char*rpc_command(void){return key_command;}
 '''+('''__declspec(dllexport) const char*ack(void){captured[0]=0;device_settings_print_key_ack();return captured;}''' if has_key_ack else '')
 (build/'fixture.c').write_text(fixture,encoding='utf-8');vc=Path('C:/Program Files (x86)/Microsoft Visual Studio/2022/BuildTools/Common7/Tools/VsDevCmd.bat')
 (build/'build.cmd').write_text(f'@echo off\ncall "{vc}" -arch=x64 -host_arch=x64 >nul\ncd /d "{build}"\ncl /nologo /std:c11 /LD fixture.c /link /OUT:settings.dll\nexit /b %errorlevel%\n',encoding='utf-8')
@@ -74,5 +83,18 @@ if has_key_ack:
  d.ack.restype=ctypes.c_char_p;line=d.ack().decode();r['ack']=line;r['ackBytes']=len(line.encode());assert line.endswith('\n') and ' result=OK ' in line and ' ki=98c377b4e88c kr=13 ks=3999 kc=0123abcd ko=48 kd=1234' in line and len(line)<300
 r['legacyFullSettingsAck']=bool(re.search(r'if\s*\(ret\s*==\s*ESP_OK\)\s*device_settings_print_status\("OK"\)',settings))
 r['passed']=any(not c['passed'] for c in cases) if a.expect_before else all(c['passed'] for c in cases) and not has_key_ack and r['legacyFullSettingsAck']
+if 'KEY2 ' in settings:
+ d.rpc.argtypes=[ctypes.c_char_p];d.rpc.restype=ctypes.c_char_p;d.rpc_calls.restype=ctypes.c_uint;d.rpc_command.restype=ctypes.c_char_p
+ checks=[]
+ for token in ['00000001','abcdef12','ABCDEF12']:
+  line=d.rpc(('~DEVICE:KEY2 '+token+' D 11112222 0000 00').encode()).decode()
+  assert line.startswith('~DEVICE:KEY_ACK id='+token.lower()+' result=OK ') and line.endswith('\n') and d.rpc_calls()==1 and d.rpc_command()==b'D 11112222 0000 00'
+  assert '~DEVICE:SETTINGS' not in line
+  checks.append('exact request identifier and unmodified payload '+token)
+ for bad in ['','00000000 R 0000','0000000g R 0000','000000001 R 0000','00000001','00000001 ']:
+  line=d.rpc(('~DEVICE:KEY2 '+bad).encode()).decode();assert ' result=ERROR ' in line and d.rpc_calls()==0
+  checks.append('reject malformed identifier/payload '+bad)
+ assert ' result=ERROR ' in d.rpc(b'~DEVICE:KEY2 00000001 BAD').decode() and d.rpc_calls()==1
+ r['correlatedUsbKeyReplyChecks']=checks;r['passed']=r['passed'] and 'usb_key_ack=1' in settings
 if a.output:a.output.write_text(json.dumps(r,ensure_ascii=False,indent=2)+'\n',encoding='utf-8')
 print(json.dumps(r,ensure_ascii=False));raise SystemExit(0 if r['passed'] else 1)

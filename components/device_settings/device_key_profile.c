@@ -125,7 +125,8 @@ esp_err_t device_key_profile_command(const char *cmd) {
         cmd[end] == 0) {
         /* Do not allow another client to replace an unfinished transaction. */
         if (rev == saved.revision && len > 0 && len <= DEVICE_KEY_PROFILE_MAX && tx != 0 &&
-            (!uploading || transaction == tx)) {
+            (!uploading || (transaction == tx && received == 0 &&
+                            expected_revision == rev && pending.length == len && pending.crc == crc))) {
             memset(&pending, 0, sizeof(pending));
             pending.magic = MAGIC;
             pending.length = len;

@@ -61,6 +61,7 @@ def upload(payload,rev,tx=0x1234,commit=True):
         chunk=f'D {tx:08x} {i:04x} {payload[i:i+16].hex()}'
         assert command(chunk)==0
         check('identical_chunk_replay_safe',command(chunk)==0)
+        check('begin_cannot_reset_received_chunks',command(begin)!=0)
     return command(f'C {tx:08x}') if commit else 0
 p=json.dumps({'schema':1,'hid':[[2,1,6]]+[[1,0,0]]*14,'deviceCustomKeys':{'key1':{'action':'copyShortcut'}}},separators=(',',':')).encode()
 dll.select_board(0);check('fresh_A_defaults',status()['ks']=='0')
