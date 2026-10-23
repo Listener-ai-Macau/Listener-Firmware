@@ -54,8 +54,13 @@ def command(text):
 def status():
     buf=ctypes.create_string_buffer(224);assert dll.status(buf,len(buf));return dict(v.split('=',1) for v in buf.value.decode().split())
 def upload(payload,rev,tx=0x1234,commit=True):
-    assert command(f'B {rev:08x} {len(payload):04x} {zlib.crc32(payload):08x} {tx:08x}')==0
-    for i in range(0,len(payload),16):assert command(f'D {tx:08x} {i:04x} {payload[i:i+16].hex()}')==0
+    begin=f'B {rev:08x} {len(payload):04x} {zlib.crc32(payload):08x} {tx:08x}'
+    assert command(begin)==0
+    check('same_begin_replay_before_chunks_safe',command(begin)==0)
+    for i in range(0,len(payload),16):
+        chunk=f'D {tx:08x} {i:04x} {payload[i:i+16].hex()}'
+        assert command(chunk)==0
+        check('identical_chunk_replay_safe',command(chunk)==0)
     return command(f'C {tx:08x}') if commit else 0
 p=json.dumps({'schema':1,'hid':[[2,1,6]]+[[1,0,0]]*14,'deviceCustomKeys':{'key1':{'action':'copyShortcut'}}},separators=(',',':')).encode()
 dll.select_board(0);check('fresh_A_defaults',status()['ks']=='0')
@@ -76,4 +81,15 @@ command('X 00005678');assembled=b''
 while len(assembled)<len(p):
     command(f'R {len(assembled):04x}');page=status();check('page_offset',int(page['ko'])==len(assembled));assembled+=bytes.fromhex(page['kd'])
 check('all_pages_exact',assembled==p)
+big=json.loads(p);big['deviceCustomKeys']['key4']={'action':'disabled','pasteTemplate':''}
+encode=lambda:json.dumps(big,separators=(',',':')).encode()
+big['deviceCustomKeys']['key4']['pasteTemplate']='x'*(4096-len(encode()))
+maximum=encode();check('capacity_fixture_exactly4096',len(maximum)==4096)
+upload(maximum,2);dll.select_board(0)
+check('maximum_profile_reloads_from_own_nvs',status()['ks']=='4096' and status()['kr']=='3')
+assembled=b''
+while len(assembled)<len(maximum):
+    assert command(f'R {len(assembled):04x}')==0
+    assembled+=bytes.fromhex(status()['kd'])
+check('maximum_profile_all_bytes_crc_exact_after_reboot',assembled==maximum)
 print(json.dumps({'source':str(ROOT/'components/device_settings/device_key_profile.c'),'checks':list(dict.fromkeys(checks)),'result':'PASS','build':str(BUILD)},indent=2))
