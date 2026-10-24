@@ -8,8 +8,11 @@
 
 | 用途 | 直接下载 |
 | --- | --- |
-| **Windows 软件** | **[下载 MSI · Type build172](https://github.com/Listener-ai-Macau/Listener-Type/releases/download/v1.0.6-rc1/ListenerType_1.0.6-rc1_x64_en-US.msi)** |
+| **Windows 软件** | **[下载 MSI · Type build173](https://github.com/Listener-ai-Macau/Listener-Type/releases/download/v1.0.6-rc1/ListenerType_1.0.6-rc1_x64_en-US.msi)** |
 | **固件：USB 烧写 / 蓝牙 OTA** | **[下载固件 ZIP · 两种方式共用](https://github.com/Listener-ai-Macau/Listener-Firmware/releases/download/v1.0.6-rc1/ListenerFirmware_1.0.6-rc1_ESP32S3.zip)** |
+
+<!-- listener-local-text-entry -->
+**没有硬件或云 Key，也能先试：** [下载 Windows MSI](https://github.com/Listener-ai-Macau/Listener-Type/releases/download/v1.0.6-rc1/ListenerType_1.0.6-rc1_x64_en-US.msi)，打开「概览 → 本机中英翻译」，首次明确下载所需组件即可。文字翻译无逐次 API 费用；语音识别另行配置。[具体设置](https://github.com/Listener-ai-Macau/Listener-Type/blob/master/docs/USAGE.md)。
 
 [English](README.md) · **简体中文** · [繁體中文](README.zh-TW.md)
 
@@ -36,7 +39,7 @@
 Type 默认使用 **USB 有线刷机**，刷机能力已内置；客户无需另装 Python、ESP-IDF 或其它刷机软件。
 设备设置各自独立：选择一台有线／蓝牙设备并读取；完成编辑后自动保存明确修改，读取或切换设备不会写入电脑默认值。名称、灯光、电源、按键和旋钮设置保存在所选设备中。请配套使用本页 MSI 与固件 ZIP。
 
-Type build172将文字任务与风格分开：选择保留原语言或翻译，切换保留上次译文语言；含汉字时可明确确认原文是中文。不会自动改语种、下载、请求云端或写设备。成稿、本机按键练习与原模型保留，译文仍需检查；固件37不变。
+Type build173让译文和保存回到视线内：成功后收起已选设置，语言和处理方式保留在摘要里，失败时展开；重新展开不丢正文或选择。Windows概览可直接打开本机中英翻译。原模型、语音／设备设置及固件37不变，译文仍需检查。
 
 [Release notes / 发布说明](https://github.com/Listener-ai-Macau/Listener-Type/releases/tag/v1.0.6-rc1) · [Firmware / 固件](https://github.com/Listener-ai-Macau/Listener-Firmware/releases/tag/v1.0.6-rc1)
 
