@@ -54,6 +54,10 @@ esp_err_t board_set_power_hold_enabled(bool enabled);
 /* Manual plugged soft-off keeps USB power but disconnects the native
  * Serial/JTAG data PHY so host DTR/RTS scans cannot reset the chip. */
 esp_err_t board_set_usb_serial_jtag_data_connected(bool connected);
+/* Before the USB driver or app tasks start, force a clean host detach and
+ * reset stale native USB state left by a ROM/RTC reset. Preserves power and
+ * skips an attached JTAG debugger or an already running USB driver. */
+bool board_prepare_usb_serial_jtag_startup(void);
 
 #ifdef __cplusplus
 }

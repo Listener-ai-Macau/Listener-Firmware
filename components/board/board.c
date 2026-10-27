@@ -13,6 +13,8 @@
 #include "board_pins.h"
 #include "diag_log.h"
 #include "esp_err.h"
+#include "esp_cpu.h"
+#include "esp_private/periph_ctrl.h"
 #include "esp_log.h"
 #include "esp_rom_sys.h"
 #include "esp_timer.h"
@@ -526,6 +528,30 @@ esp_err_t board_set_usb_serial_jtag_data_connected(bool connected)
     return usb_serial_jtag_ll_phy_is_pad_enabled() == connected
         ? ESP_OK
         : ESP_ERR_INVALID_STATE;
+}
+
+bool board_prepare_usb_serial_jtag_startup(void)
+{
+    if (esp_cpu_dbgr_is_attached() || usb_serial_jtag_is_driver_installed()) {
+        return false;
+    }
+
+    /* USB core/RTC resets can leave a running S3 with an unusable USB
+     * peripheral. Driver install enables the pad and IRQs but does not reset
+     * its registers. Do this once, before driver/IRQ ownership, and leave a
+     * real detach interval for the host. Never pulse EN, BOOT or PWR_HOLD. */
+    PERIPH_RCC_ATOMIC() {
+        usb_serial_jtag_ll_enable_bus_clock(true);
+    }
+    const usb_serial_jtag_pull_override_vals_t detached = {0};
+    usb_serial_jtag_ll_phy_enable_pull_override(&detached);
+    vTaskDelay(pdMS_TO_TICKS(500));
+    PERIPH_RCC_ATOMIC() {
+        usb_serial_jtag_ll_reset_register();
+    }
+    usb_serial_jtag_ll_phy_enable_external(false);
+    usb_serial_jtag_ll_phy_enable_pad(true);
+    return true;
 }
 
 static void board_print_power_hold_test(bool drive_high)

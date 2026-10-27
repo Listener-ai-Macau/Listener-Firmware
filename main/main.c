@@ -86,6 +86,10 @@ static void log_power_boot_diagnostics(void)
 void app_main(void)
 {
     configure_boot_power_hold_latch();
+    bool usb_startup_reinitialized = board_prepare_usb_serial_jtag_startup();
+    if (usb_startup_reinitialized) {
+        ESP_LOGI(TAG, "native USB startup: clean detach and peripheral reset completed");
+    }
     voice_stack_diag_boot_report();
 
     self_test_init();
