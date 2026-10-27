@@ -145,6 +145,8 @@ def read_serial_for(
 
 def write_serial_command(ser, command: str, args: argparse.Namespace, transcript: Transcript) -> None:
     validate_serial_control_command(command)
+    if args.write_retries < 1:
+        raise ValueError("write_retries counts total write attempts and must be at least 1; use 1 for no retries")
     payload = f"{command}\n".encode("utf-8")
     for attempt in range(1, args.write_retries + 1):
         try:
