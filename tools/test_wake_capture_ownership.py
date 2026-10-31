@@ -401,6 +401,14 @@ int main(void) {
     assert(abort_request(100)==ESP_OK && cancel_calls==1);
     assert(ensure(100,physical_id)==ESP_OK && marker_calls==1 && begin_calls==0);
 
+    /* A delayed host retry for an old request must not cancel a newer
+     * physical recording, even if the old ENSURE is still remembered. */
+    reset_capture(true,true);
+    assert(ensure(100,physical_id)==ESP_OK);
+    s_active_session_id=physical_id+1;
+    assert(abort_request(100)==ESP_OK && cancel_calls==0);
+    assert(s_active_session_id==physical_id+1);
+
     reset_capture(true,false); /* ENSURE owns hidden capture directly. */
     assert(ensure(100,physical_id)==ESP_OK); assert_adopted(); assert(queue_resets==1);
     reset_capture(false,true); /* Already visible, body acknowledgement still in flight. */
